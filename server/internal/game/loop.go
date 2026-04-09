@@ -1,0 +1,46 @@
+package game
+
+import "time"
+
+type Broadcaster interface {
+	BroadcastSnapshot()
+}
+
+type Loop struct {
+	state       *GameState
+	broadcaster Broadcaster
+	ticker      *time.Ticker
+	quit        chan struct{}
+}
+
+func NewLoop(state *GameState, broadcaster Broadcaster) *Loop {
+	return &Loop{
+		state:       state,
+		broadcaster: broadcaster,
+		ticker:      time.NewTicker(50 * time.Millisecond), // 20 ticks/sec
+		quit:        make(chan struct{}),
+	}
+}
+
+func (l *Loop) Start() {
+	go func() {
+		const dt = 1.0 / 20.0
+
+		for {
+			select {
+			case <-l.ticker.C:
+				l.state.IncrementTick()
+				l.state.Update(dt)
+				l.broadcaster.BroadcastSnapshot()
+
+			case <-l.quit:
+				l.ticker.Stop()
+				return
+			}
+		}
+	}()
+}
+
+func (l *Loop) Stop() {
+	close(l.quit)
+}
