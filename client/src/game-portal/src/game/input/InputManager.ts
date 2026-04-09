@@ -1,6 +1,7 @@
 // src/game/input/InputManager.ts
 import { GameState } from '../core/GameState'
 import { Camera } from '../rendering/Camera'
+import { getMinimapBounds } from '../rendering/CanvasRenderer'
 import { NetworkClient } from '../network/NetworkClient'
 
 export class InputManager {
@@ -16,6 +17,7 @@ export class InputManager {
   private dragThreshold = 6
   private dragStarted = false
   private isSpacePanning = false
+  private isMinimapNavigating = false
 
   private lastMouseX = 0
   private lastMouseY = 0
@@ -73,12 +75,20 @@ export class InputManager {
 
   private onMouseDown = (e: MouseEvent) => {
     const screen = this.getScreenPosition(e)
-    const world = this.getWorldPosition(e)
 
     this.lastMouseX = screen.x
     this.lastMouseY = screen.y
 
     if (e.button === 0) {
+      if (this.isInsideMinimap(screen.x, screen.y)) {
+        this.isLeftMouseDown = true
+        this.isMinimapNavigating = true
+        this.dragStarted = false
+        this.centerCameraFromMinimap(screen.x, screen.y)
+        return
+      }
+
+      const world = this.getWorldPosition(e)
       this.isLeftMouseDown = true
       this.dragStarted = false
 
@@ -100,6 +110,13 @@ export class InputManager {
 
   private onMouseMove = (e: MouseEvent) => {
     const screen = this.getScreenPosition(e)
+
+    if (this.isLeftMouseDown && this.isMinimapNavigating) {
+      this.centerCameraFromMinimap(screen.x, screen.y)
+      this.lastMouseX = screen.x
+      this.lastMouseY = screen.y
+      return
+    }
 
     if (this.isMiddleMouseDown || (this.isLeftMouseDown && this.isSpacePanning)) {
       const dx = screen.x - this.lastMouseX
@@ -140,6 +157,13 @@ export class InputManager {
 
     if (e.button !== 0 || !this.isLeftMouseDown) return
 
+    if (this.isMinimapNavigating) {
+      this.isLeftMouseDown = false
+      this.isMinimapNavigating = false
+      this.state.endSelectionBox()
+      return
+    }
+
     if (this.isSpacePanning) {
       this.isLeftMouseDown = false
       this.isSpacePanning = false
@@ -179,6 +203,9 @@ export class InputManager {
 
   private onRightClick = (e: MouseEvent) => {
     e.preventDefault()
+    const screen = this.getScreenPosition(e)
+    if (this.isInsideMinimap(screen.x, screen.y)) return
+
     const world = this.getWorldPosition(e)
     const unitIds = this.state.getOrderedSelectedUnitIds()
 
@@ -209,5 +236,44 @@ export class InputManager {
     window.removeEventListener('mouseup', this.onMouseUp)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
+  }
+
+  private isInsideMinimap(screenX: number, screenY: number) {
+    const bounds = getMinimapBounds(
+      this.canvas.width,
+      this.canvas.height,
+      this.state.mapWidth,
+      this.state.mapHeight,
+    )
+
+    return (
+      screenX >= bounds.x &&
+      screenX <= bounds.x + bounds.width &&
+      screenY >= bounds.y &&
+      screenY <= bounds.y + bounds.height
+    )
+  }
+
+  private centerCameraFromMinimap(screenX: number, screenY: number) {
+    const bounds = getMinimapBounds(
+      this.canvas.width,
+      this.canvas.height,
+      this.state.mapWidth,
+      this.state.mapHeight,
+    )
+
+    const normalizedX = (screenX - bounds.x) / bounds.width
+    const normalizedY = (screenY - bounds.y) / bounds.height
+    const worldX = normalizedX * this.state.mapWidth
+    const worldY = normalizedY * this.state.mapHeight
+
+    this.camera.centerOn(
+      worldX,
+      worldY,
+      this.canvas.width,
+      this.canvas.height,
+      this.state.mapWidth,
+      this.state.mapHeight,
+    )
   }
 }

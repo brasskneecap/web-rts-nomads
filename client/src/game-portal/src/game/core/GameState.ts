@@ -5,6 +5,7 @@ export type Unit = {
   x: number
   y: number
   hp?: number
+  maxHp?: number
   ownerId?: string
   color?: string
   targetX?: number
@@ -40,7 +41,29 @@ export type Vec2 = {
   y: number
 }
 
+export type PlayerSummary = {
+  playerId: string | null
+  color: string | null
+  totalUnits: number
+  selectedUnits: number
+  totalHp: number
+  resources: ResourceStock[]
+}
+
+export type ResourceStock = {
+  id: string
+  label: string
+  amount: number
+  accent: string
+}
+
 export class GameState {
+  private resourceStocks: ResourceStock[] = [
+    { id: 'gold', label: 'Gold', amount: 500, accent: '#d4a84f' },
+    { id: 'wood', label: 'Wood', amount: 180, accent: '#7a9a52' },
+    { id: 'food', label: 'Food', amount: 24, accent: '#c96e43' },
+  ]
+
   units: Unit[] = []
 
   snapshotBuffer: InterpolationFrame[] = []
@@ -114,6 +137,7 @@ export class GameState {
         x: unit.x,
         y: unit.y,
         hp: unit.hp,
+        maxHp: unit.maxHp,
         ownerId: unit.ownerId,
         color: unit.color,
         targetX: unit.targetX,
@@ -393,5 +417,50 @@ export class GameState {
   setMapConfig(map: MapConfig) {
     this.mapWidth = map.width
     this.mapHeight = map.height
+  }
+
+  getLocalPlayerUnits(): Unit[] {
+    if (!this.localPlayerId) return []
+    return this.units.filter((unit) => unit.ownerId === this.localPlayerId)
+  }
+
+  getSelectedUnits(): Unit[] {
+    const selectedIds = this.getOrderedSelectedUnitIds()
+
+    return selectedIds
+      .map((id) => this.units.find((unit) => unit.id === id))
+      .filter((unit): unit is Unit => !!unit)
+  }
+
+  getLocalPlayerSpawnCenter(): Vec2 | null {
+    const localUnits = this.getLocalPlayerUnits()
+    if (localUnits.length === 0) return null
+
+    const totals = localUnits.reduce(
+      (acc, unit) => {
+        acc.x += unit.x
+        acc.y += unit.y
+        return acc
+      },
+      { x: 0, y: 0 },
+    )
+
+    return {
+      x: totals.x / localUnits.length,
+      y: totals.y / localUnits.length,
+    }
+  }
+
+  getPlayerSummary(): PlayerSummary {
+    const localUnits = this.getLocalPlayerUnits()
+
+    return {
+      playerId: this.localPlayerId,
+      color: localUnits[0]?.color ?? null,
+      totalUnits: localUnits.length,
+      selectedUnits: this.selectedUnitIds.size,
+      totalHp: localUnits.reduce((sum, unit) => sum + (unit.hp ?? 0), 0),
+      resources: this.resourceStocks.map((resource) => ({ ...resource })),
+    }
   }
 }

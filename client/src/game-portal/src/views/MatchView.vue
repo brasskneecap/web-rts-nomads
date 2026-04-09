@@ -28,12 +28,17 @@
       </div>
     </div>
 
-    <canvas ref="canvas" class="game-canvas"></canvas>
+    <MatchHud v-if="hasStarted" :ui="ui" />
+
+    <div class="match-stage">
+      <canvas ref="canvas" class="game-canvas"></canvas>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import MatchHud from '@/components/MatchHud.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import type { MapSize } from '@/game/network/protocol'
 
@@ -68,7 +73,7 @@ const showSizeMenu = computed(
   () => !hasStarted.value && !hasPreviousSession.value,
 )
 
-const { init, destroy, leaveStoredMatch } = useGameClient()
+const { init, destroy, leaveStoredMatch, ui } = useGameClient()
 
 async function startGame(size: MapSize, options: { resume?: boolean } = {}) {
   if (!canvas.value) return
@@ -103,6 +108,11 @@ function markActiveSession() {
 }
 
 window.addEventListener('beforeunload', markActiveSession)
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', markActiveSession)
+  destroy()
+})
 </script>
 
 <style scoped>
@@ -113,18 +123,25 @@ window.addEventListener('beforeunload', markActiveSession)
   overflow: hidden;
   margin: 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%),
+    #05080d;
 }
 
 .menu {
   position: absolute;
   top: 16px;
   left: 16px;
-  z-index: 10;
+  z-index: 20;
   min-width: 260px;
   background: rgba(0, 0, 0, 0.75);
   color: white;
   padding: 12px;
   border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
 }
 
 .menu-title {
@@ -140,6 +157,12 @@ window.addEventListener('beforeunload', markActiveSession)
   display: flex;
   gap: 8px;
   margin-top: 10px;
+}
+
+.match-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .game-canvas {

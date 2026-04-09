@@ -1,11 +1,40 @@
-import { ref } from 'vue'
-import { GameClient } from '@/game/core/GameClient'
+import { onBeforeUnmount, ref } from 'vue'
+import { GameClient, type GameUiSnapshot } from '@/game/core/GameClient'
 import type { MapSize } from '@/game/network/protocol'
 
 let client: GameClient | null = null
 
+const emptyUiSnapshot: GameUiSnapshot = {
+  player: {
+    playerId: null,
+    color: null,
+    totalUnits: 0,
+    selectedUnits: 0,
+    totalHp: 0,
+    resources: [],
+  },
+  selectedUnits: [],
+}
+
 export function useGameClient() {
   const isRunning = ref(false)
+  const ui = ref<GameUiSnapshot>(emptyUiSnapshot)
+  let rafId = 0
+
+  function syncUi() {
+    ui.value = client?.getUiSnapshot() ?? emptyUiSnapshot
+
+    if (client) {
+      rafId = requestAnimationFrame(syncUi)
+    }
+  }
+
+  function stopUiSync() {
+    if (rafId) {
+      cancelAnimationFrame(rafId)
+      rafId = 0
+    }
+  }
 
   async function init(
     canvas: HTMLCanvasElement,
@@ -13,8 +42,10 @@ export function useGameClient() {
     options: { resume?: boolean } = {},
   ) {
     client?.stop()
+    stopUiSync()
     client = new GameClient(canvas, mapSize)
     await client.start(options)
+    syncUi()
     isRunning.value = true
   }
 
@@ -27,15 +58,22 @@ export function useGameClient() {
   }
 
   function destroy() {
+    stopUiSync()
     client?.stop()
     client = null
+    ui.value = emptyUiSnapshot
     isRunning.value = false
   }
+
+  onBeforeUnmount(() => {
+    destroy()
+  })
 
   return {
     init,
     destroy,
     isRunning,
     leaveStoredMatch,
+    ui,
   }
 }

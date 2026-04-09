@@ -23,6 +23,19 @@ export class Camera {
     this.y += dy
   }
 
+  centerOn(
+    worldX: number,
+    worldY: number,
+    viewportWidth: number,
+    viewportHeight: number,
+    mapWidth: number,
+    mapHeight: number,
+  ) {
+    this.x = worldX - viewportWidth / this.zoom / 2
+    this.y = worldY - viewportHeight / this.zoom / 2
+    this.clamp(viewportWidth, viewportHeight, mapWidth, mapHeight)
+  }
+
   adjustZoom(delta: number, mouseX: number, mouseY: number) {
     const oldZoom = this.zoom
     const zoomFactor = delta > 0 ? 0.9 : 1.1

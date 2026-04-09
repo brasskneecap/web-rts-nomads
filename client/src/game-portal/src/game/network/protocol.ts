@@ -43,6 +43,7 @@ export type UnitSnapshot = {
   x: number
   y: number
   hp: number
+  maxHp: number
   targetX?: number
   targetY?: number
   moving: boolean

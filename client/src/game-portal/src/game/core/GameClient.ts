@@ -5,6 +5,12 @@ import { InputManager } from '../input/InputManager'
 import { Camera } from '../rendering/Camera'
 import { NetworkClient } from '../network/NetworkClient'
 import type { MapSize } from '../network/protocol'
+import type { PlayerSummary, Unit } from './GameState'
+
+export type GameUiSnapshot = {
+  player: PlayerSummary
+  selectedUnits: Unit[]
+}
 
 export class GameClient {
   private state: GameState
@@ -13,8 +19,11 @@ export class GameClient {
   private loop: GameLoop
   private camera: Camera
   private network: NetworkClient
+  private canvas: HTMLCanvasElement
+  private hasCenteredCameraOnSpawn = false
 
   constructor(canvas: HTMLCanvasElement, mapSize: MapSize = 'large') {
+    this.canvas = canvas
     this.state = new GameState()
     this.camera = new Camera()
     this.network = new NetworkClient(this.state)
@@ -23,7 +32,10 @@ export class GameClient {
     this.input = new InputManager(canvas, this.state, this.camera, this.network)
 
     this.loop = new GameLoop({
-      update: (dt) => this.state.update(dt),
+      update: (dt) => {
+        this.state.update(dt)
+        this.centerCameraOnSpawnIfNeeded()
+      },
       render: () => this.renderer.render(),
     })
   }
@@ -40,6 +52,32 @@ export class GameClient {
   stop() {
     this.loop.stop()
     this.input.destroy()
+    this.renderer.destroy()
     this.network.disconnect()
+  }
+
+  getUiSnapshot(): GameUiSnapshot {
+    return {
+      player: this.state.getPlayerSummary(),
+      selectedUnits: this.state.getSelectedUnits(),
+    }
+  }
+
+  private centerCameraOnSpawnIfNeeded() {
+    if (this.hasCenteredCameraOnSpawn) return
+
+    const spawnCenter = this.state.getLocalPlayerSpawnCenter()
+    if (!spawnCenter) return
+
+    this.camera.centerOn(
+      spawnCenter.x,
+      spawnCenter.y,
+      this.canvas.width,
+      this.canvas.height,
+      this.state.mapWidth,
+      this.state.mapHeight,
+    )
+
+    this.hasCenteredCameraOnSpawn = true
   }
 }

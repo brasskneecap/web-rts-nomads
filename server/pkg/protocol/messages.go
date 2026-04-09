@@ -41,6 +41,7 @@ type UnitSnapshot struct {
 	X       float64 `json:"x"`
 	Y       float64 `json:"y"`
 	HP      int     `json:"hp"`
+	MaxHP   int     `json:"maxHp"`
 	TargetX float64 `json:"targetX,omitempty"`
 	TargetY float64 `json:"targetY,omitempty"`
 	Moving  bool    `json:"moving"`

@@ -16,6 +16,7 @@ type Unit struct {
 	X       float64
 	Y       float64
 	HP      int
+	MaxHP   int
 
 	TargetX float64
 	TargetY float64
@@ -103,6 +104,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			X:       unit.X,
 			Y:       unit.Y,
 			HP:      unit.HP,
+			MaxHP:   unit.MaxHP,
 			Moving:  unit.Moving,
 		}
 
@@ -288,6 +290,7 @@ func (s *GameState) spawnUnitsForPlayerLocked(playerID, color string, count int)
 			X:       baseX + float64(col)*spacing,
 			Y:       baseY + float64(row)*spacing,
 			HP:      100,
+			MaxHP:   100,
 		}
 
 		s.nextUnitID++
