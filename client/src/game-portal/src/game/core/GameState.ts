@@ -384,8 +384,8 @@ export class GameState {
   }
 
   getFormationDestinations(destX: number, destY: number): Vec2[] {
-    const selectedIds = this.getOrderedSelectedUnitIds()
-    const count = selectedIds.length
+    const selectedUnits = this.getSelectedUnits()
+    const count = selectedUnits.length
 
     if (count === 0) {
       return []
@@ -395,29 +395,7 @@ export class GameState {
       return [{ x: destX, y: destY }]
     }
 
-    const spacing = 24
-    const cols = Math.ceil(Math.sqrt(count))
-    const rows = Math.ceil(count / cols)
-
-    const totalWidth = (cols - 1) * spacing
-    const totalHeight = (rows - 1) * spacing
-
-    const startX = destX - totalWidth / 2
-    const startY = destY - totalHeight / 2
-
-    const points: Vec2[] = []
-
-    for (let i = 0; i < count; i++) {
-      const col = i % cols
-      const row = Math.floor(i / cols)
-
-      points.push({
-        x: startX + col * spacing,
-        y: startY + row * spacing,
-      })
-    }
-
-    return points
+    return buildFormationDestinations(selectedUnits, { x: destX, y: destY }, 28)
   }
 
   setMapConfig(map: MapConfig) {
@@ -469,5 +447,103 @@ export class GameState {
       totalHp: localUnits.reduce((sum, unit) => sum + (unit.hp ?? 0), 0),
       resources: this.resourceStocks.map((resource) => ({ ...resource })),
     }
+  }
+}
+
+function buildFormationDestinations(units: Unit[], anchor: Vec2, spacing: number): Vec2[] {
+  if (units.length === 0) return []
+  if (units.length === 1) return [anchor]
+
+  const center = getUnitCenter(units)
+  let forwardX = anchor.x - center.x
+  let forwardY = anchor.y - center.y
+  let forwardLength = Math.hypot(forwardX, forwardY)
+
+  if (forwardLength < 0.001) {
+    forwardX = 0
+    forwardY = 1
+    forwardLength = 1
+  }
+
+  forwardX /= forwardLength
+  forwardY /= forwardLength
+
+  const rightX = forwardY
+  const rightY = -forwardX
+  const cols = Math.ceil(Math.sqrt(units.length))
+  const rows = Math.ceil(units.length / cols)
+  const totalWidth = (cols - 1) * spacing
+  const totalHeight = (rows - 1) * spacing
+  const slots = units.map((_, index) => {
+    const col = index % cols
+    const row = Math.floor(index / cols)
+    const rightOffset = col * spacing - totalWidth / 2
+    const forwardOffset = row * spacing - totalHeight / 2
+
+    return {
+      x: anchor.x + rightX * rightOffset + forwardX * forwardOffset,
+      y: anchor.y + rightY * rightOffset + forwardY * forwardOffset,
+    }
+  })
+
+  const unitOrder = units
+    .map((unit, index) => {
+      const relativeX = unit.x - center.x
+      const relativeY = unit.y - center.y
+
+      return {
+        index,
+        right: relativeX * rightX + relativeY * rightY,
+        forward: relativeX * forwardX + relativeY * forwardY,
+      }
+    })
+    .sort((a, b) => {
+      if (Math.abs(a.forward - b.forward) > 8) {
+        return a.forward - b.forward
+      }
+
+      return a.right - b.right
+    })
+
+  const slotOrder = slots
+    .map((slot, index) => {
+      const relativeX = slot.x - anchor.x
+      const relativeY = slot.y - anchor.y
+
+      return {
+        index,
+        right: relativeX * rightX + relativeY * rightY,
+        forward: relativeX * forwardX + relativeY * forwardY,
+      }
+    })
+    .sort((a, b) => {
+      if (Math.abs(a.forward - b.forward) > 8) {
+        return a.forward - b.forward
+      }
+
+      return a.right - b.right
+    })
+
+  const targets = new Array<Vec2>(units.length)
+  for (let i = 0; i < units.length; i++) {
+    targets[unitOrder[i].index] = slots[slotOrder[i].index]
+  }
+
+  return targets
+}
+
+function getUnitCenter(units: Unit[]): Vec2 {
+  const totals = units.reduce(
+    (acc, unit) => {
+      acc.x += unit.x
+      acc.y += unit.y
+      return acc
+    },
+    { x: 0, y: 0 },
+  )
+
+  return {
+    x: totals.x / units.length,
+    y: totals.y / units.length,
   }
 }

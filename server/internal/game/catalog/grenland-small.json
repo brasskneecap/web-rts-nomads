@@ -5,10 +5,10 @@
   "sortOrder": 1000,
   "map": {
     "cellSize": 64,
-    "gridCols": 24,
-    "gridRows": 18,
-    "width": 1536,
-    "height": 1152,
+    "gridCols": 64,
+    "gridRows": 64,
+    "width": 4096,
+    "height": 4096,
     "terrain": [],
     "obstacles": [
       {
@@ -284,10 +284,10 @@
     ],
     "buildings": [
       {
-        "id": "townhall-4-3",
+        "id": "townhall-6-2",
         "buildingType": "townhall",
-        "x": 4,
-        "y": 3,
+        "x": 6,
+        "y": 2,
         "width": 3,
         "height": 3,
         "occupied": false,
@@ -307,10 +307,10 @@
         }
       },
       {
-        "id": "goldmine-2-6",
+        "id": "goldmine-3-7",
         "buildingType": "goldmine",
-        "x": 2,
-        "y": 6,
+        "x": 3,
+        "y": 7,
         "width": 2,
         "height": 2,
         "occupied": true,
