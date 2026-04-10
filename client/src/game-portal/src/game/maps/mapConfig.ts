@@ -35,6 +35,7 @@ export function createEditorMapConfig(
   return sanitizeMapConfig({
     id: existing?.id ?? 'editor-draft',
     name: existing?.name ?? 'Editor Draft',
+    description: existing?.description ?? '',
     width: safeCols * cellSize,
     height: safeRows * cellSize,
     gridCols: safeCols,
@@ -54,6 +55,7 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
   return {
     id: map.id,
     name: map.name,
+    description: map.description ?? '',
     cellSize,
     gridCols,
     gridRows,

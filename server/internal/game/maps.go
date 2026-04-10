@@ -63,6 +63,17 @@ func GetMapConfigByID(mapID string) protocol.MapConfig {
 	return cloneMapConfig(entry.Map)
 }
 
+func GetMapCatalogEntryByID(mapID string) (MapCatalogEntry, bool) {
+	entry, ok := mapCatalogByID[mapID]
+	if !ok {
+		return MapCatalogEntry{}, false
+	}
+
+	cloned := entry
+	cloned.Map = cloneMapConfig(entry.Map)
+	return cloned, true
+}
+
 func mustLoadMapCatalog() []MapCatalogEntry {
 	files, err := mapCatalogFS.ReadDir("catalog")
 	if err != nil {
@@ -89,12 +100,15 @@ func mustLoadMapCatalog() []MapCatalogEntry {
 		if entry.Map.ID == "" {
 			entry.Map.ID = entry.ID
 		}
-		if entry.Map.Name == "" {
-			entry.Map.Name = entry.Name
-		}
-		if entry.Map.Size == "" {
-			entry.Map.Size = entry.ID
-		}
+			if entry.Map.Name == "" {
+				entry.Map.Name = entry.Name
+			}
+			if entry.Map.Description == "" {
+				entry.Map.Description = entry.Description
+			}
+			if entry.Map.Size == "" {
+				entry.Map.Size = entry.ID
+			}
 		if entry.Map.Terrain == nil {
 			entry.Map.Terrain = []protocol.TerrainTile{}
 		}
@@ -158,7 +172,7 @@ func parseMapCatalogEntry(filename string, raw []byte) (MapCatalogEntry, error) 
 	return MapCatalogEntry{
 		ID:          firstNonEmpty(mapConfig.ID, baseName),
 		Name:        name,
-		Description: "",
+		Description: mapConfig.Description,
 		SortOrder:   1000,
 		Map:         mapConfig,
 	}, nil

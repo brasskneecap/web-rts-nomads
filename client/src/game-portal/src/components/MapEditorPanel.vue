@@ -8,6 +8,53 @@
       </p>
 
       <div class="control-group">
+        <label for="editor-map-id">Map ID</label>
+        <input id="editor-map-id" v-model.trim="model.id" type="text" />
+      </div>
+
+      <div class="control-group">
+        <label for="editor-map-name">Map Name</label>
+        <input id="editor-map-name" v-model.trim="model.name" type="text" />
+      </div>
+
+      <div class="control-group">
+        <label for="editor-map-description">Description</label>
+        <textarea
+          id="editor-map-description"
+          v-model.trim="model.description"
+          class="metadata-box"
+          rows="3"
+        ></textarea>
+      </div>
+
+      <div class="control-group">
+        <label for="editor-load-map">Load Existing Map</label>
+        <select
+          id="editor-load-map"
+          v-model="selectedLoadMapId"
+          :disabled="isLoadingMapCatalog || isLoadingSelectedMap || availableMaps.length === 0"
+        >
+          <option v-for="map in availableMaps" :key="map.id" :value="map.id">
+            {{ map.name }}
+          </option>
+        </select>
+      </div>
+
+      <div class="menu-text" v-if="mapLoadError">
+        {{ mapLoadError }}
+      </div>
+
+      <div class="menu-actions">
+        <button
+          type="button"
+          @click="loadSelectedMapIntoEditor"
+          :disabled="!selectedLoadMapId || isLoadingMapCatalog || isLoadingSelectedMap"
+        >
+          {{ isLoadingSelectedMap ? 'Loading...' : 'Load Into Editor' }}
+        </button>
+      </div>
+
+      <div class="control-group">
         <label for="editor-cols">Columns</label>
         <input id="editor-cols" v-model.number="draftCols" type="number" min="6" max="500" />
       </div>
@@ -120,7 +167,15 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { BuildingType, MapConfig, ObstacleType, TerrainType } from '@/game/network/protocol'
+import { fetchMapCatalog, fetchMapCatalogFile } from '@/game/maps/catalog'
+import type {
+  BuildingType,
+  MapCatalogEntry,
+  MapCatalogFile,
+  MapConfig,
+  ObstacleType,
+  TerrainType,
+} from '@/game/network/protocol'
 import { Camera } from '@/game/rendering/Camera'
 import {
   DEFAULT_GRASS_COLOR,
@@ -148,6 +203,11 @@ const copiedLabel = ref('Copy Export')
 const hoverLabel = ref('Hover a tile')
 const paintModeEnabled = ref(false)
 const isControlHeld = ref(false)
+const availableMaps = ref<MapCatalogEntry[]>([])
+const selectedLoadMapId = ref('')
+const isLoadingMapCatalog = ref(false)
+const isLoadingSelectedMap = ref(false)
+const mapLoadError = ref('')
 
 const camera = new Camera()
 let resizeObserver: ResizeObserver | null = null
@@ -171,7 +231,15 @@ watch(
   { deep: true },
 )
 
-const serializedMap = computed(() => JSON.stringify(model.value, null, 2))
+const exportedCatalogFile = computed<MapCatalogFile>(() => ({
+  id: model.value.id,
+  name: model.value.name,
+  description: model.value.description,
+  sortOrder: 1000,
+  map: (({ id: _id, name: _name, description: _description, ...map }) => map)(model.value),
+}))
+
+const serializedMap = computed(() => JSON.stringify(exportedCatalogFile.value, null, 2))
 const activeBrushMode = computed(() =>
   isControlHeld.value ? 'erase' : brushMode.value,
 )
@@ -198,6 +266,48 @@ function applyPreset(cols: number, rows: number) {
 
 function clearMap() {
   model.value = createEditorMapConfig(model.value.gridCols, model.value.gridRows)
+}
+
+async function loadAvailableMaps() {
+  isLoadingMapCatalog.value = true
+  mapLoadError.value = ''
+
+  try {
+    const maps = await fetchMapCatalog()
+    availableMaps.value = maps
+    if (!selectedLoadMapId.value) {
+      selectedLoadMapId.value = maps[0]?.id ?? ''
+    }
+  } catch (error) {
+    mapLoadError.value =
+      error instanceof Error ? error.message : 'Failed to load saved maps.'
+  } finally {
+    isLoadingMapCatalog.value = false
+  }
+}
+
+async function loadSelectedMapIntoEditor() {
+  if (!selectedLoadMapId.value) return
+
+  isLoadingSelectedMap.value = true
+  mapLoadError.value = ''
+
+  try {
+    const catalogFile = await fetchMapCatalogFile(selectedLoadMapId.value)
+    model.value = createEditorMapConfig(
+      catalogFile.map.gridCols,
+      catalogFile.map.gridRows,
+      catalogFile.map,
+    )
+    draftCols.value = model.value.gridCols
+    draftRows.value = model.value.gridRows
+    recenterCamera()
+  } catch (error) {
+    mapLoadError.value =
+      error instanceof Error ? error.message : 'Failed to load selected map.'
+  } finally {
+    isLoadingSelectedMap.value = false
+  }
 }
 
 function recenterCamera() {
@@ -585,6 +695,7 @@ onMounted(() => {
   resizeCanvas()
   recenterCamera()
   targetCanvas.style.cursor = getCanvasCursor()
+  void loadAvailableMaps()
 
   targetCanvas.addEventListener('mousedown', onMouseDown)
   targetCanvas.addEventListener('mousemove', onMouseMove)
@@ -731,6 +842,11 @@ onBeforeUnmount(() => {
   padding: 12px;
   font-family: Consolas, 'Courier New', monospace;
   font-size: 0.85rem;
+}
+
+.metadata-box {
+  min-height: 84px;
+  resize: vertical;
 }
 
 .editor-preview {

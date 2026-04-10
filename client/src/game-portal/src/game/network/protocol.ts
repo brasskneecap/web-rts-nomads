@@ -47,6 +47,7 @@ export type BuildingTile = GridCoord & {
 export type MapConfig = {
   id: MapId
   name: string
+  description: string
   width: number
   height: number
   gridCols: number
@@ -63,6 +64,16 @@ export type MapCatalogEntry = {
   description: string
   gridCols: number
   gridRows: number
+}
+
+export type MapCatalogMapPayload = Omit<MapConfig, 'id' | 'name' | 'description'>
+
+export type MapCatalogFile = {
+  id: MapId
+  name: string
+  description: string
+  sortOrder: number
+  map: MapCatalogMapPayload
 }
 
 export type JoinMatchMessage = {

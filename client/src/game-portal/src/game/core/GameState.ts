@@ -77,6 +77,7 @@ export class GameState {
   mapConfig: MapConfig = createEditorMapConfig(96, 64, {
     id: 'loading-map',
     name: 'Loading Map',
+    description: '',
   })
   
   selectedUnitIds = new Set<number>()

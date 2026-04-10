@@ -4,6 +4,7 @@ package httpserver
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"webrts/server/internal/game"
 	"webrts/server/internal/ws"
@@ -22,6 +23,23 @@ func NewRouter(hub *ws.Hub) http.Handler {
 	mux.HandleFunc("/maps", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(game.ListMapCatalogSummaries())
+	})
+
+	mux.HandleFunc("/maps/", func(w http.ResponseWriter, r *http.Request) {
+		mapID := strings.TrimPrefix(r.URL.Path, "/maps/")
+		if mapID == "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		entry, ok := game.GetMapCatalogEntryByID(mapID)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(entry)
 	})
 
 	mux.HandleFunc("/ws", hub.HandleWS)

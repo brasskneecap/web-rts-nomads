@@ -8,6 +8,7 @@ type Vec2 struct {
 type MapConfig struct {
 	ID        string         `json:"id"`
 	Name      string         `json:"name"`
+	Description string       `json:"description"`
 	Size      string         `json:"size"`
 	Width     float64        `json:"width"`
 	Height    float64        `json:"height"`

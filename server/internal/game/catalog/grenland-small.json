@@ -1,332 +1,330 @@
 {
   "id": "grenland-small",
-  "name": "Grenland (Small)",
+  "name": "Greenland(small)",
   "description": "A compact battleground for fast openings and early pressure.",
-  "sortOrder": 10,
+  "sortOrder": 1000,
   "map": {
-  "id": "editor-draft",
-  "name": "Editor Draft",
-  "cellSize": 64,
-  "gridCols": 64,
-  "gridRows": 64,
-  "width": 4096,
-  "height": 4096,
-  "terrain": [],
-  "obstacles": [
-    {
-      "x": 0,
-      "y": 0,
-      "obstacle": "tree"
-    },
-    {
-      "x": 1,
-      "y": 0,
-      "obstacle": "tree"
-    },
-    {
-      "x": 2,
-      "y": 0,
-      "obstacle": "tree"
-    },
-    {
-      "x": 3,
-      "y": 0,
-      "obstacle": "tree"
-    },
-    {
-      "x": 4,
-      "y": 0,
-      "obstacle": "tree"
-    },
-    {
-      "x": 5,
-      "y": 0,
-      "obstacle": "tree"
-    },
-    {
-      "x": 6,
-      "y": 0,
-      "obstacle": "tree"
-    },
-    {
-      "x": 7,
-      "y": 0,
-      "obstacle": "tree"
-    },
-    {
-      "x": 8,
-      "y": 0,
-      "obstacle": "tree"
-    },
-    {
-      "x": 13,
-      "y": 0,
-      "obstacle": "rock"
-    },
-    {
-      "x": 0,
-      "y": 1,
-      "obstacle": "tree"
-    },
-    {
-      "x": 1,
-      "y": 1,
-      "obstacle": "tree"
-    },
-    {
-      "x": 2,
-      "y": 1,
-      "obstacle": "tree"
-    },
-    {
-      "x": 3,
-      "y": 1,
-      "obstacle": "tree"
-    },
-    {
-      "x": 4,
-      "y": 1,
-      "obstacle": "tree"
-    },
-    {
-      "x": 5,
-      "y": 1,
-      "obstacle": "tree"
-    },
-    {
-      "x": 6,
-      "y": 1,
-      "obstacle": "tree"
-    },
-    {
-      "x": 7,
-      "y": 1,
-      "obstacle": "tree"
-    },
-    {
-      "x": 8,
-      "y": 1,
-      "obstacle": "tree"
-    },
-    {
-      "x": 13,
-      "y": 1,
-      "obstacle": "rock"
-    },
-    {
-      "x": 0,
-      "y": 2,
-      "obstacle": "tree"
-    },
-    {
-      "x": 1,
-      "y": 2,
-      "obstacle": "tree"
-    },
-    {
-      "x": 2,
-      "y": 2,
-      "obstacle": "tree"
-    },
-    {
-      "x": 12,
-      "y": 2,
-      "obstacle": "rock"
-    },
-    {
-      "x": 13,
-      "y": 2,
-      "obstacle": "rock"
-    },
-    {
-      "x": 0,
-      "y": 3,
-      "obstacle": "tree"
-    },
-    {
-      "x": 1,
-      "y": 3,
-      "obstacle": "tree"
-    },
-    {
-      "x": 11,
-      "y": 3,
-      "obstacle": "rock"
-    },
-    {
-      "x": 12,
-      "y": 3,
-      "obstacle": "rock"
-    },
-    {
-      "x": 0,
-      "y": 4,
-      "obstacle": "tree"
-    },
-    {
-      "x": 1,
-      "y": 4,
-      "obstacle": "tree"
-    },
-    {
-      "x": 2,
-      "y": 4,
-      "obstacle": "tree"
-    },
-    {
-      "x": 11,
-      "y": 4,
-      "obstacle": "rock"
-    },
-    {
-      "x": 0,
-      "y": 5,
-      "obstacle": "tree"
-    },
-    {
-      "x": 1,
-      "y": 5,
-      "obstacle": "tree"
-    },
-    {
-      "x": 2,
-      "y": 5,
-      "obstacle": "tree"
-    },
-    {
-      "x": 11,
-      "y": 5,
-      "obstacle": "rock"
-    },
-    {
-      "x": 0,
-      "y": 6,
-      "obstacle": "tree"
-    },
-    {
-      "x": 1,
-      "y": 6,
-      "obstacle": "tree"
-    },
-    {
-      "x": 11,
-      "y": 6,
-      "obstacle": "rock"
-    },
-    {
-      "x": 0,
-      "y": 7,
-      "obstacle": "tree"
-    },
-    {
-      "x": 1,
-      "y": 7,
-      "obstacle": "tree"
-    },
-    {
-      "x": 0,
-      "y": 8,
-      "obstacle": "tree"
-    },
-    {
-      "x": 7,
-      "y": 10,
-      "obstacle": "rock"
-    },
-    {
-      "x": 8,
-      "y": 10,
-      "obstacle": "rock"
-    },
-    {
-      "x": 4,
-      "y": 11,
-      "obstacle": "rock"
-    },
-    {
-      "x": 5,
-      "y": 11,
-      "obstacle": "rock"
-    },
-    {
-      "x": 6,
-      "y": 11,
-      "obstacle": "rock"
-    },
-    {
-      "x": 7,
-      "y": 11,
-      "obstacle": "rock"
-    },
-    {
-      "x": 0,
-      "y": 12,
-      "obstacle": "rock"
-    },
-    {
-      "x": 1,
-      "y": 12,
-      "obstacle": "rock"
-    },
-    {
-      "x": 2,
-      "y": 12,
-      "obstacle": "rock"
-    },
-    {
-      "x": 3,
-      "y": 12,
-      "obstacle": "rock"
-    },
-    {
-      "x": 4,
-      "y": 12,
-      "obstacle": "rock"
-    }
-  ],
-  "buildings": [
-    {
-      "id": "townhall-4-3",
-      "buildingType": "townhall",
-      "x": 4,
-      "y": 3,
-      "width": 3,
-      "height": 3,
-      "occupied": false,
-      "visible": false,
-      "ownerId": null,
-      "capabilities": [
-        "unit-spawner",
-        "occupiable",
-        "deposit-point"
-      ],
-      "spawnUnitTypes": [
-        "worker"
-      ],
-      "metadata": {
-        "occupiedLabel": "occupied",
-        "unoccupiedLabel": "unoccupied"
+    "cellSize": 64,
+    "gridCols": 24,
+    "gridRows": 18,
+    "width": 1536,
+    "height": 1152,
+    "terrain": [],
+    "obstacles": [
+      {
+        "x": 0,
+        "y": 0,
+        "obstacle": "tree"
+      },
+      {
+        "x": 1,
+        "y": 0,
+        "obstacle": "tree"
+      },
+      {
+        "x": 2,
+        "y": 0,
+        "obstacle": "tree"
+      },
+      {
+        "x": 3,
+        "y": 0,
+        "obstacle": "tree"
+      },
+      {
+        "x": 4,
+        "y": 0,
+        "obstacle": "tree"
+      },
+      {
+        "x": 5,
+        "y": 0,
+        "obstacle": "tree"
+      },
+      {
+        "x": 6,
+        "y": 0,
+        "obstacle": "tree"
+      },
+      {
+        "x": 7,
+        "y": 0,
+        "obstacle": "tree"
+      },
+      {
+        "x": 8,
+        "y": 0,
+        "obstacle": "tree"
+      },
+      {
+        "x": 13,
+        "y": 0,
+        "obstacle": "rock"
+      },
+      {
+        "x": 0,
+        "y": 1,
+        "obstacle": "tree"
+      },
+      {
+        "x": 1,
+        "y": 1,
+        "obstacle": "tree"
+      },
+      {
+        "x": 2,
+        "y": 1,
+        "obstacle": "tree"
+      },
+      {
+        "x": 3,
+        "y": 1,
+        "obstacle": "tree"
+      },
+      {
+        "x": 4,
+        "y": 1,
+        "obstacle": "tree"
+      },
+      {
+        "x": 5,
+        "y": 1,
+        "obstacle": "tree"
+      },
+      {
+        "x": 6,
+        "y": 1,
+        "obstacle": "tree"
+      },
+      {
+        "x": 7,
+        "y": 1,
+        "obstacle": "tree"
+      },
+      {
+        "x": 8,
+        "y": 1,
+        "obstacle": "tree"
+      },
+      {
+        "x": 13,
+        "y": 1,
+        "obstacle": "rock"
+      },
+      {
+        "x": 0,
+        "y": 2,
+        "obstacle": "tree"
+      },
+      {
+        "x": 1,
+        "y": 2,
+        "obstacle": "tree"
+      },
+      {
+        "x": 2,
+        "y": 2,
+        "obstacle": "tree"
+      },
+      {
+        "x": 12,
+        "y": 2,
+        "obstacle": "rock"
+      },
+      {
+        "x": 13,
+        "y": 2,
+        "obstacle": "rock"
+      },
+      {
+        "x": 0,
+        "y": 3,
+        "obstacle": "tree"
+      },
+      {
+        "x": 1,
+        "y": 3,
+        "obstacle": "tree"
+      },
+      {
+        "x": 11,
+        "y": 3,
+        "obstacle": "rock"
+      },
+      {
+        "x": 12,
+        "y": 3,
+        "obstacle": "rock"
+      },
+      {
+        "x": 0,
+        "y": 4,
+        "obstacle": "tree"
+      },
+      {
+        "x": 1,
+        "y": 4,
+        "obstacle": "tree"
+      },
+      {
+        "x": 2,
+        "y": 4,
+        "obstacle": "tree"
+      },
+      {
+        "x": 11,
+        "y": 4,
+        "obstacle": "rock"
+      },
+      {
+        "x": 0,
+        "y": 5,
+        "obstacle": "tree"
+      },
+      {
+        "x": 1,
+        "y": 5,
+        "obstacle": "tree"
+      },
+      {
+        "x": 2,
+        "y": 5,
+        "obstacle": "tree"
+      },
+      {
+        "x": 11,
+        "y": 5,
+        "obstacle": "rock"
+      },
+      {
+        "x": 0,
+        "y": 6,
+        "obstacle": "tree"
+      },
+      {
+        "x": 1,
+        "y": 6,
+        "obstacle": "tree"
+      },
+      {
+        "x": 11,
+        "y": 6,
+        "obstacle": "rock"
+      },
+      {
+        "x": 0,
+        "y": 7,
+        "obstacle": "tree"
+      },
+      {
+        "x": 1,
+        "y": 7,
+        "obstacle": "tree"
+      },
+      {
+        "x": 0,
+        "y": 8,
+        "obstacle": "tree"
+      },
+      {
+        "x": 7,
+        "y": 10,
+        "obstacle": "rock"
+      },
+      {
+        "x": 8,
+        "y": 10,
+        "obstacle": "rock"
+      },
+      {
+        "x": 4,
+        "y": 11,
+        "obstacle": "rock"
+      },
+      {
+        "x": 5,
+        "y": 11,
+        "obstacle": "rock"
+      },
+      {
+        "x": 6,
+        "y": 11,
+        "obstacle": "rock"
+      },
+      {
+        "x": 7,
+        "y": 11,
+        "obstacle": "rock"
+      },
+      {
+        "x": 0,
+        "y": 12,
+        "obstacle": "rock"
+      },
+      {
+        "x": 1,
+        "y": 12,
+        "obstacle": "rock"
+      },
+      {
+        "x": 2,
+        "y": 12,
+        "obstacle": "rock"
+      },
+      {
+        "x": 3,
+        "y": 12,
+        "obstacle": "rock"
+      },
+      {
+        "x": 4,
+        "y": 12,
+        "obstacle": "rock"
       }
-    },
-    {
-      "id": "goldmine-2-6",
-      "buildingType": "goldmine",
-      "x": 2,
-      "y": 6,
-      "width": 2,
-      "height": 2,
-      "occupied": true,
-      "visible": true,
-      "ownerId": null,
-      "capabilities": [
-        "resource-source"
-      ],
-      "resourceType": "gold",
-      "resourceAmount": 15000,
-      "metadata": {
-        "gatherRate": 10
+    ],
+    "buildings": [
+      {
+        "id": "townhall-4-3",
+        "buildingType": "townhall",
+        "x": 4,
+        "y": 3,
+        "width": 3,
+        "height": 3,
+        "occupied": false,
+        "visible": false,
+        "ownerId": null,
+        "capabilities": [
+          "unit-spawner",
+          "occupiable",
+          "deposit-point"
+        ],
+        "spawnUnitTypes": [
+          "worker"
+        ],
+        "metadata": {
+          "occupiedLabel": "occupied",
+          "unoccupiedLabel": "unoccupied"
+        }
+      },
+      {
+        "id": "goldmine-2-6",
+        "buildingType": "goldmine",
+        "x": 2,
+        "y": 6,
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "gold",
+        "resourceAmount": 15000,
+        "metadata": {
+          "gatherRate": 10
+        }
       }
-    }
-  ]
-}
+    ]
+  }
 }
