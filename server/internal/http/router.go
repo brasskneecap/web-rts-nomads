@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"webrts/server/internal/game"
 	"webrts/server/internal/ws"
 )
 
@@ -16,6 +17,11 @@ func NewRouter(hub *ws.Hub) http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "ok",
 		})
+	})
+
+	mux.HandleFunc("/maps", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(game.ListMapCatalogSummaries())
 	})
 
 	mux.HandleFunc("/ws", hub.HandleWS)

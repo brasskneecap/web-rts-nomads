@@ -18,12 +18,12 @@ func NewMatchManager() *MatchManager {
 	}
 }
 
-func (m *MatchManager) FindOrCreateMatch(mapSize string) *Match {
+func (m *MatchManager) FindOrCreateMatch(mapID string) *Match {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for _, match := range m.matches {
-		if match.MapSize == mapSize && match.PlayerCount() < 4 {
+		if match.MapID == mapID && match.PlayerCount() < 4 {
 			return match
 		}
 	}
@@ -31,7 +31,7 @@ func (m *MatchManager) FindOrCreateMatch(mapSize string) *Match {
 	matchID := fmt.Sprintf("match-%d", m.nextID)
 	m.nextID++
 
-	match := NewMatch(matchID, mapSize)
+	match := NewMatch(matchID, mapID)
 	m.matches[matchID] = match
 
 	return match

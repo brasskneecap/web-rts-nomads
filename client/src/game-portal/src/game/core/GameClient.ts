@@ -4,7 +4,7 @@ import { CanvasRenderer } from '../rendering/CanvasRenderer'
 import { InputManager } from '../input/InputManager'
 import { Camera } from '../rendering/Camera'
 import { NetworkClient } from '../network/NetworkClient'
-import type { MapSize } from '../network/protocol'
+import type { MapId } from '../network/protocol'
 import type { PlayerSummary, Unit } from './GameState'
 
 export type GameUiSnapshot = {
@@ -22,12 +22,12 @@ export class GameClient {
   private canvas: HTMLCanvasElement
   private hasCenteredCameraOnSpawn = false
 
-  constructor(canvas: HTMLCanvasElement, mapSize: MapSize = 'large') {
+  constructor(canvas: HTMLCanvasElement, mapId: MapId = '') {
     this.canvas = canvas
     this.state = new GameState()
     this.camera = new Camera()
     this.network = new NetworkClient(this.state)
-    this.network.setPreferredMapSize(mapSize)
+    this.network.setPreferredMapId(mapId)
     this.renderer = new CanvasRenderer(canvas, this.state, this.camera)
     this.input = new InputManager(canvas, this.state, this.camera, this.network)
 

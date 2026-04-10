@@ -1,5 +1,11 @@
 // src/game/rendering/CanvasRenderer.ts
 import { GameState } from '../core/GameState'
+import {
+  DEFAULT_GRASS_COLOR,
+  getBuildingColor,
+  getObstacleColor,
+  getTerrainColor,
+} from '../maps/mapConfig'
 import { Camera } from './Camera'
 
 export type MinimapBounds = {
@@ -103,7 +109,7 @@ export class CanvasRenderer {
 
   private drawGrid() {
     const ctx = this.ctx
-    const gridSize = 40
+    const gridSize = this.state.mapConfig.cellSize
 
     const worldWidth = this.canvas.width / this.camera.zoom
     const worldHeight = this.canvas.height / this.camera.zoom
@@ -139,8 +145,55 @@ export class CanvasRenderer {
   private drawMapBackground() {
     const ctx = this.ctx
 
-    ctx.fillStyle = '#111'
+    ctx.fillStyle = DEFAULT_GRASS_COLOR
     ctx.fillRect(0, 0, this.state.mapWidth, this.state.mapHeight)
+
+    const { cellSize, terrain, obstacles, buildings } = this.state.mapConfig
+
+    for (const tile of terrain) {
+      ctx.fillStyle = getTerrainColor(tile.terrain)
+      ctx.fillRect(tile.x * cellSize, tile.y * cellSize, cellSize, cellSize)
+    }
+
+    for (const tile of obstacles) {
+      const worldX = tile.x * cellSize
+      const worldY = tile.y * cellSize
+      const inset = cellSize * 0.14
+
+      ctx.fillStyle = getObstacleColor(tile.obstacle)
+      ctx.fillRect(
+        worldX + inset,
+        worldY + inset,
+        cellSize - inset * 2,
+        cellSize - inset * 2,
+      )
+
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)'
+      ctx.lineWidth = 2 / this.camera.zoom
+      ctx.strokeRect(
+        worldX + inset,
+        worldY + inset,
+        cellSize - inset * 2,
+        cellSize - inset * 2,
+      )
+    }
+
+    for (const building of buildings) {
+      if (!building.visible) continue
+
+      const worldX = building.x * cellSize
+      const worldY = building.y * cellSize
+      const width = building.width * cellSize
+      const height = building.height * cellSize
+      const inset = cellSize * 0.18
+
+      ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied)
+      ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
+      ctx.lineWidth = 2 / this.camera.zoom
+      ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+    }
   }
 
   private drawMapBounds() {
@@ -292,6 +345,38 @@ export class CanvasRenderer {
 
     ctx.fillStyle = 'rgba(5, 10, 18, 0.82)'
     ctx.fillRect(x, y, minimapWidth, minimapHeight)
+
+    for (const tile of this.state.mapConfig.terrain) {
+      ctx.fillStyle = getTerrainColor(tile.terrain)
+      ctx.fillRect(
+        x + (tile.x / this.state.mapConfig.gridCols) * minimapWidth,
+        y + (tile.y / this.state.mapConfig.gridRows) * minimapHeight,
+        minimapWidth / this.state.mapConfig.gridCols,
+        minimapHeight / this.state.mapConfig.gridRows,
+      )
+    }
+
+    for (const tile of this.state.mapConfig.obstacles) {
+      ctx.fillStyle = getObstacleColor(tile.obstacle)
+      ctx.fillRect(
+        x + (tile.x / this.state.mapConfig.gridCols) * minimapWidth,
+        y + (tile.y / this.state.mapConfig.gridRows) * minimapHeight,
+        minimapWidth / this.state.mapConfig.gridCols,
+        minimapHeight / this.state.mapConfig.gridRows,
+      )
+    }
+
+    for (const building of this.state.mapConfig.buildings) {
+      if (!building.visible) continue
+
+      ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied)
+      ctx.fillRect(
+        x + (building.x / this.state.mapConfig.gridCols) * minimapWidth,
+        y + (building.y / this.state.mapConfig.gridRows) * minimapHeight,
+        (building.width / this.state.mapConfig.gridCols) * minimapWidth,
+        (building.height / this.state.mapConfig.gridRows) * minimapHeight,
+      )
+    }
 
     ctx.strokeStyle = 'rgba(166, 191, 255, 0.35)'
     ctx.lineWidth = 1

@@ -1,7 +1,7 @@
 import type {
   ClientMessage,
   LeaveMatchMessage,
-  MapSize,
+  MapId,
   MatchSnapshotMessage,
   MoveCommandMessage,
   ServerMessage,
@@ -9,7 +9,7 @@ import type {
 import { GameState } from '../core/GameState'
 
 const PLAYER_ID_STORAGE_KEY = 'webrts.playerId'
-const MAP_SIZE_STORAGE_KEY = 'webrts.mapSize'
+const MAP_ID_STORAGE_KEY = 'webrts.mapId'
 const MATCH_ID_STORAGE_KEY = 'webrts.matchId'
 
 function getOrCreatePlayerId(): string {
@@ -21,12 +21,8 @@ function getOrCreatePlayerId(): string {
   return created
 }
 
-function getPreferredMapSize(): MapSize {
-  const stored = localStorage.getItem(MAP_SIZE_STORAGE_KEY)
-  if (stored === 'small' || stored === 'medium' || stored === 'large') {
-    return stored
-  }
-  return 'large'
+function getPreferredMapId(): MapId {
+  return localStorage.getItem(MAP_ID_STORAGE_KEY) ?? ''
 }
 
 function getStoredMatchId(): string | null {
@@ -38,16 +34,16 @@ export class NetworkClient {
   private state: GameState
   private playerId = getOrCreatePlayerId()
   private matchId: string | null = getStoredMatchId()
-  private mapSize: MapSize = getPreferredMapSize()
+  private mapId: MapId = getPreferredMapId()
 
   constructor(state: GameState) {
     this.state = state
     this.state.setLocalPlayerId(this.playerId)
   }
 
-  setPreferredMapSize(size: MapSize) {
-    this.mapSize = size
-    localStorage.setItem(MAP_SIZE_STORAGE_KEY, size)
+  setPreferredMapId(mapId: MapId) {
+    this.mapId = mapId
+    localStorage.setItem(MAP_ID_STORAGE_KEY, mapId)
   }
 
   connect({ resume = true }: { resume?: boolean } = {}) {
@@ -58,7 +54,7 @@ export class NetworkClient {
         const joinMessage: ClientMessage = {
           type: 'join_match',
           playerId: this.playerId,
-          mapSize: this.mapSize,
+          mapId: this.mapId,
           matchId: resume ? (this.matchId ?? undefined) : undefined,
         }
 
@@ -135,7 +131,7 @@ export class NetworkClient {
         this.state.setLocalPlayerId(message.playerId)
         this.state.setMapConfig(message.map)
         localStorage.setItem(PLAYER_ID_STORAGE_KEY, message.playerId)
-        localStorage.setItem(MAP_SIZE_STORAGE_KEY, message.map.size)
+        localStorage.setItem(MAP_ID_STORAGE_KEY, message.map.id)
         localStorage.setItem(MATCH_ID_STORAGE_KEY, message.matchId)
         console.log('connected as', message.playerId, 'in', message.matchId)
         break

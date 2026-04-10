@@ -11,7 +11,7 @@ type MatchClient interface {
 
 type Match struct {
 	ID      string
-	MapSize string
+	MapID   string
 	State   *GameState
 
 	mu      sync.RWMutex
@@ -20,13 +20,12 @@ type Match struct {
 	loop *Loop
 }
 
-func NewMatch(id string, mapSize string) *Match {
-	state := NewGameState()
-	state.SetMapSize(mapSize)
+func NewMatch(id string, mapID string) *Match {
+	state := NewGameState(GetMapConfigByID(mapID))
 
 	match := &Match{
 		ID:      id,
-		MapSize: mapSize,
+		MapID:   state.GetMapConfig().ID,
 		State:   state,
 		Clients: make(map[MatchClient]struct{}),
 	}

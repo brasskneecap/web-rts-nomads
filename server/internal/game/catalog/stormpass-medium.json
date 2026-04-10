@@ -1,0 +1,19 @@
+{
+  "id": "stormpass-medium",
+  "name": "Stormpass (Medium)",
+  "description": "Balanced space for scouting, expansion, and mid-map skirmishes.",
+  "sortOrder": 20,
+  "map": {
+    "id": "stormpass-medium",
+    "name": "Stormpass (Medium)",
+    "size": "stormpass-medium",
+    "width": 4096,
+    "height": 3072,
+    "gridCols": 64,
+    "gridRows": 48,
+    "cellSize": 64,
+    "terrain": [],
+    "obstacles": [],
+    "buildings": []
+  }
+}

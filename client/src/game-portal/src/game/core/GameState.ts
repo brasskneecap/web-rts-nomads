@@ -1,4 +1,5 @@
 import type { MapConfig, MatchSnapshotMessage } from '../network/protocol'
+import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 
 export type Unit = {
   id: number
@@ -73,6 +74,10 @@ export class GameState {
   localPlayerId: string | null = null
   mapWidth = 6144
   mapHeight = 4096
+  mapConfig: MapConfig = createEditorMapConfig(96, 64, {
+    id: 'loading-map',
+    name: 'Loading Map',
+  })
   
   selectedUnitIds = new Set<number>()
   selectedUnitOrder: number[] = []
@@ -415,8 +420,9 @@ export class GameState {
   }
 
   setMapConfig(map: MapConfig) {
-    this.mapWidth = map.width
-    this.mapHeight = map.height
+    this.mapConfig = sanitizeMapConfig(map)
+    this.mapWidth = this.mapConfig.width
+    this.mapHeight = this.mapConfig.height
   }
 
   getLocalPlayerUnits(): Unit[] {

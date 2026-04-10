@@ -1,6 +1,5 @@
 import { onBeforeUnmount, ref } from 'vue'
 import { GameClient, type GameUiSnapshot } from '@/game/core/GameClient'
-import type { MapSize } from '@/game/network/protocol'
 
 let client: GameClient | null = null
 
@@ -38,12 +37,12 @@ export function useGameClient() {
 
   async function init(
     canvas: HTMLCanvasElement,
-    mapSize: MapSize = 'large',
+    mapId = '',
     options: { resume?: boolean } = {},
   ) {
     client?.stop()
     stopUiSync()
-    client = new GameClient(canvas, mapSize)
+    client = new GameClient(canvas, mapId)
     await client.start(options)
     syncUi()
     isRunning.value = true

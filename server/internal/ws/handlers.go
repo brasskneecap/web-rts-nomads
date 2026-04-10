@@ -76,9 +76,9 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			mapSize := msg.MapSize
-			if mapSize == "" {
-				mapSize = "large"
+			mapID := msg.MapID
+			if mapID == "" {
+				mapID = game.DefaultMapID()
 			}
 
 			var match *game.Match
@@ -88,7 +88,7 @@ func (h *Hub) readLoop(client *Client) {
 				}
 			}
 			if match == nil {
-				match = h.manager.FindOrCreateMatch(mapSize)
+				match = h.manager.FindOrCreateMatch(mapID)
 			}
 
 			client.PlayerID = msg.PlayerID

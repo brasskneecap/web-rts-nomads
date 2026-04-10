@@ -6,15 +6,54 @@ type Vec2 struct {
 }
 
 type MapConfig struct {
-	Size   string  `json:"size"`
-	Width  float64 `json:"width"`
-	Height float64 `json:"height"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Size      string         `json:"size"`
+	Width     float64        `json:"width"`
+	Height    float64        `json:"height"`
+	GridCols  int            `json:"gridCols"`
+	GridRows  int            `json:"gridRows"`
+	CellSize  float64        `json:"cellSize"`
+	Terrain   []TerrainTile  `json:"terrain"`
+	Obstacles []ObstacleTile `json:"obstacles"`
+	Buildings []BuildingTile `json:"buildings"`
+}
+
+type GridCoord struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+type TerrainTile struct {
+	GridCoord
+	Terrain string `json:"terrain"`
+}
+
+type ObstacleTile struct {
+	GridCoord
+	Obstacle string `json:"obstacle"`
+}
+
+type BuildingTile struct {
+	GridCoord
+	ID            string                 `json:"id"`
+	BuildingType  string                 `json:"buildingType"`
+	Width         int                    `json:"width"`
+	Height        int                    `json:"height"`
+	Occupied      bool                   `json:"occupied"`
+	Visible       bool                   `json:"visible"`
+	OwnerID       *string                `json:"ownerId,omitempty"`
+	Capabilities  []string               `json:"capabilities"`
+	ResourceType  string                 `json:"resourceType,omitempty"`
+	ResourceAmount int                   `json:"resourceAmount,omitempty"`
+	SpawnUnitTypes []string              `json:"spawnUnitTypes,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type JoinMatchMessage struct {
 	Type     string `json:"type"`
 	PlayerID string `json:"playerId"`
-	MapSize  string `json:"mapSize"`
+	MapID    string `json:"mapId"`
 	MatchID  string `json:"matchId,omitempty"`
 }
 

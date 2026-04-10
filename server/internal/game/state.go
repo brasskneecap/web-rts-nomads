@@ -33,7 +33,8 @@ type GameState struct {
 
 	Tick int
 
-	MapSize   string
+	MapConfig protocol.MapConfig
+	MapID     string
 	MapWidth  float64
 	MapHeight float64
 
@@ -44,7 +45,7 @@ type GameState struct {
 	rng        *rand.Rand
 }
 
-func NewGameState() *GameState {
+func NewGameState(mapConfig protocol.MapConfig) *GameState {
 	state := &GameState{
 		Units:      []*Unit{},
 		Players:    map[string]*Player{},
@@ -52,43 +53,29 @@ func NewGameState() *GameState {
 		rng:        rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 
-	state.SetMapSize("large")
+	state.SetMapConfig(mapConfig)
 	return state
 }
 
-func (s *GameState) SetMapSize(size string) {
+func (s *GameState) SetMapConfig(mapConfig protocol.MapConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.setMapSizeLocked(size)
+	s.setMapConfigLocked(mapConfig)
 }
 
-func (s *GameState) setMapSizeLocked(size string) {
-	switch size {
-	case "small":
-		s.MapSize = "small"
-		s.MapWidth = 3072
-		s.MapHeight = 2048
-	case "medium":
-		s.MapSize = "medium"
-		s.MapWidth = 4096
-		s.MapHeight = 3072
-	default:
-		s.MapSize = "large"
-		s.MapWidth = 6144
-		s.MapHeight = 4096
-	}
+func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
+	s.MapConfig = cloneMapConfig(mapConfig)
+	s.MapID = s.MapConfig.ID
+	s.MapWidth = s.MapConfig.Width
+	s.MapHeight = s.MapConfig.Height
 }
 
 func (s *GameState) GetMapConfig() protocol.MapConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return protocol.MapConfig{
-		Size:   s.MapSize,
-		Width:  s.MapWidth,
-		Height: s.MapHeight,
-	}
+	return s.MapConfig
 }
 
 func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
@@ -120,11 +107,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Type:      "match_snapshot",
 		Tick:      s.Tick,
 		ServerNow: time.Now().UnixMilli(),
-		Map: protocol.MapConfig{
-			Size:   s.MapSize,
-			Width:  s.MapWidth,
-			Height: s.MapHeight,
-		},
+		Map:       s.MapConfig,
 		Units: units,
 	}
 }

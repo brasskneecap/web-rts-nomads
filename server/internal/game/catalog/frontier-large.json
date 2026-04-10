@@ -1,0 +1,19 @@
+{
+  "id": "frontier-large",
+  "name": "Frontier (Large)",
+  "description": "A wide-open map for longer routes, bigger armies, and macro play.",
+  "sortOrder": 30,
+  "map": {
+    "id": "frontier-large",
+    "name": "Frontier (Large)",
+    "size": "frontier-large",
+    "width": 6144,
+    "height": 4096,
+    "gridCols": 96,
+    "gridRows": 64,
+    "cellSize": 64,
+    "terrain": [],
+    "obstacles": [],
+    "buildings": []
+  }
+}
