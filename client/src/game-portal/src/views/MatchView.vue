@@ -49,7 +49,7 @@
       </div>
     </div>
 
-    <SelectionHud v-if="hasStarted" :ui="ui" />
+    <SelectionHud v-if="hasStarted" :ui="ui" @action="performSelectionAction" />
   </div>
 </template>
 
@@ -140,7 +140,7 @@ const selectedMapDescription = computed(
   () => selectedMap.value?.description ?? '',
 )
 
-const { init, destroy, leaveStoredMatch, ui } = useGameClient()
+const { init, destroy, leaveStoredMatch, performSelectionAction, ui } = useGameClient()
 
 async function startGame(mapId: MapId, options: { resume?: boolean } = {}) {
   if (!canvas.value) return

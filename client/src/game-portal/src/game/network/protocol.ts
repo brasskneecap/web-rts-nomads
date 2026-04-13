@@ -103,6 +103,17 @@ export type GatherCommandMessage = {
   buildingId: string
 }
 
+export type TrainWorkerCommandMessage = {
+  type: 'train_worker_command'
+  buildingId: string
+}
+
+export type SetBuildingSpawnPointCommandMessage = {
+  type: 'set_building_spawn_point_command'
+  buildingId: string
+  point: Vec2
+}
+
 export type ResourceStockSnapshot = {
   id: string
   label: string
@@ -121,6 +132,8 @@ export type ClientMessage =
   | LeaveMatchMessage
   | MoveCommandMessage
   | GatherCommandMessage
+  | TrainWorkerCommandMessage
+  | SetBuildingSpawnPointCommandMessage
   | PongMessage
 
 export type UnitSnapshot = {

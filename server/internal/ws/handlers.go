@@ -202,6 +202,66 @@ func (h *Hub) readLoop(client *Client) {
 			match.State.GatherWithUnits(client.PlayerID, msg.UnitIDs, msg.BuildingID)
 			match.BroadcastSnapshot()
 
+		case "train_worker_command":
+			if client.MatchID == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID)
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.TrainWorkerCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid train_worker_command payload",
+				})
+				continue
+			}
+
+			match.State.TrainWorker(client.PlayerID, msg.BuildingID)
+			match.BroadcastSnapshot()
+
+		case "set_building_spawn_point_command":
+			if client.MatchID == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID)
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.SetBuildingSpawnPointCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid set_building_spawn_point_command payload",
+				})
+				continue
+			}
+
+			match.State.SetBuildingSpawnPoint(client.PlayerID, msg.BuildingID, msg.Point)
+			match.BroadcastSnapshot()
+
 		case "pong":
 			client.TouchPong()
 

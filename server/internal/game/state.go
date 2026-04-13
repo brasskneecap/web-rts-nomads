@@ -354,25 +354,29 @@ func (s *GameState) spawnUnitsForPlayerLocked(playerID, color string, count int,
 
 	for i := 0; i < count; i++ {
 		spawn := spawnPositions[minInt(i, len(spawnPositions)-1)]
-
-		unit := &Unit{
-			ID:           s.nextUnitID,
-			OwnerID:      playerID,
-			Color:        color,
-			UnitType:     "worker",
-			Name:         "Worker",
-			Capabilities: []string{"move", "gather", "build"},
-			Visible:      true,
-			Status:       "Idle",
-			X:            spawn.X,
-			Y:            spawn.Y,
-			HP:           100,
-			MaxHP:        100,
-		}
-
-		s.nextUnitID++
-		s.Units = append(s.Units, unit)
+		s.spawnWorkerUnitLocked(playerID, color, spawn)
 	}
+}
+
+func (s *GameState) spawnWorkerUnitLocked(playerID, color string, spawn protocol.Vec2) *Unit {
+	unit := &Unit{
+		ID:           s.nextUnitID,
+		OwnerID:      playerID,
+		Color:        color,
+		UnitType:     "worker",
+		Name:         "Worker",
+		Capabilities: []string{"move", "gather", "build"},
+		Visible:      true,
+		Status:       "Idle",
+		X:            spawn.X,
+		Y:            spawn.Y,
+		HP:           100,
+		MaxHP:        100,
+	}
+
+	s.nextUnitID++
+	s.Units = append(s.Units, unit)
+	return unit
 }
 
 func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[gridPoint]bool, reservedGoals map[gridPoint]bool) {
@@ -469,6 +473,69 @@ func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, buildingID s
 	}
 }
 
+func (s *GameState) TrainWorker(playerID, buildingID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil || !building.Visible {
+		return
+	}
+	if building.BuildingType != "townhall" {
+		return
+	}
+	if building.OwnerID == nil || *building.OwnerID != playerID {
+		return
+	}
+	if !containsString(building.SpawnUnitTypes, "worker") {
+		return
+	}
+
+	player, ok := s.Players[playerID]
+	if !ok {
+		return
+	}
+
+	blocked := s.buildBlockedCells()
+	spawnPositions := s.getTownhallSpawnPositionsLocked(*building, 1, blocked)
+	if len(spawnPositions) == 0 {
+		return
+	}
+
+	unit := s.spawnWorkerUnitLocked(playerID, player.Color, spawnPositions[0])
+	rallyPoint := s.getTownhallSpawnOriginLocked(*building)
+	if distanceSquared(unit.X, unit.Y, rallyPoint.X, rallyPoint.Y) > unitRadius*unitRadius {
+		unit.Status = "Moving To Spawn Point"
+		s.assignUnitPath(unit, rallyPoint, blocked, nil)
+	}
+}
+
+func (s *GameState) SetBuildingSpawnPoint(playerID, buildingID string, point protocol.Vec2) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil || !building.Visible {
+		return
+	}
+	if building.BuildingType != "townhall" {
+		return
+	}
+	if building.OwnerID == nil || *building.OwnerID != playerID {
+		return
+	}
+
+	clampedPoint := protocol.Vec2{
+		X: clampFloat(point.X, unitRadius, s.MapWidth-unitRadius),
+		Y: clampFloat(point.Y, unitRadius, s.MapHeight-unitRadius),
+	}
+	if building.Metadata == nil {
+		building.Metadata = map[string]interface{}{}
+	}
+	building.Metadata["spawnPointX"] = clampedPoint.X
+	building.Metadata["spawnPointY"] = clampedPoint.Y
+}
+
 func (s *GameState) repathUnitLocked(unit *Unit, blocked map[gridPoint]bool) bool {
 	if !unit.Moving {
 		return false
@@ -530,6 +597,7 @@ func (s *GameState) getTownhallSpawnPositionsLocked(home protocol.BuildingTile, 
 		X: (float64(home.X) + float64(home.Width)/2) * s.MapConfig.CellSize,
 		Y: (float64(home.Y) + float64(home.Height)/2) * s.MapConfig.CellSize,
 	}
+	spawnOrigin := s.getTownhallSpawnOriginLocked(home)
 	candidates := make([]gridPoint, 0, (home.Width+2)*(home.Height+2))
 	seen := make(map[gridPoint]bool)
 
@@ -553,7 +621,7 @@ func (s *GameState) getTownhallSpawnPositionsLocked(home protocol.BuildingTile, 
 	sort.Slice(candidates, func(i, j int) bool {
 		a := s.gridToWorldCenter(candidates[i])
 		b := s.gridToWorldCenter(candidates[j])
-		return distanceSquared(a.X, a.Y, homeCenter.X, homeCenter.Y) < distanceSquared(b.X, b.Y, homeCenter.X, homeCenter.Y)
+		return distanceSquared(a.X, a.Y, spawnOrigin.X, spawnOrigin.Y) < distanceSquared(b.X, b.Y, spawnOrigin.X, spawnOrigin.Y)
 	})
 
 	positions := make([]protocol.Vec2, 0, minInt(count, len(candidates)))
@@ -579,6 +647,24 @@ func (s *GameState) getTownhallSpawnPositionsLocked(home protocol.BuildingTile, 
 	}
 
 	return positions
+}
+
+func (s *GameState) getTownhallSpawnOriginLocked(home protocol.BuildingTile) protocol.Vec2 {
+	if home.Metadata != nil {
+		x, xOk := getMetadataFloat(home.Metadata, "spawnPointX")
+		y, yOk := getMetadataFloat(home.Metadata, "spawnPointY")
+		if xOk && yOk {
+			return protocol.Vec2{
+				X: clampFloat(x, unitRadius, s.MapWidth-unitRadius),
+				Y: clampFloat(y, unitRadius, s.MapHeight-unitRadius),
+			}
+		}
+	}
+
+	return protocol.Vec2{
+		X: (float64(home.X) + float64(home.Width)/2) * s.MapConfig.CellSize,
+		Y: (float64(home.Y) + float64(home.Height)/2) * s.MapConfig.CellSize,
+	}
 }
 
 func (s *GameState) getFallbackSpawnPositionsLocked(playerIndex, count int, blocked map[gridPoint]bool) []protocol.Vec2 {
@@ -1262,6 +1348,37 @@ func simplifyLeadingWaypoints(unit *Unit, path []protocol.Vec2, finalTarget prot
 
 func dotProduct(ax, ay, bx, by float64) float64 {
 	return ax*bx + ay*by
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func getMetadataFloat(metadata map[string]interface{}, key string) (float64, bool) {
+	value, ok := metadata[key]
+	if !ok {
+		return 0, false
+	}
+
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int32:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	default:
+		return 0, false
+	}
 }
 
 func buildFormationTargets(units []*Unit, anchor protocol.Vec2, spacing float64) []protocol.Vec2 {

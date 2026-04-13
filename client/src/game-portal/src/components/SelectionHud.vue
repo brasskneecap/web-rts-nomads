@@ -1,39 +1,9 @@
 <template>
   <footer class="selection-hud">
-    <section class="selection-panel">
+    <section class="selection-panel selection-panel--primary">
       <div class="selection-kicker">Selection</div>
       <div class="selection-title">{{ ui.selection.title }}</div>
       <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
-    </section>
-
-    <section v-if="'hp' in ui.selection" class="selection-panel">
-      <div class="selection-kicker">Durability</div>
-      <div class="stat-value">{{ ui.selection.hp }} / {{ ui.selection.maxHp }}</div>
-      <div class="health-track">
-        <div
-          class="health-fill"
-          :style="{ width: `${getHealthPercent(ui.selection.hp ?? 0, ui.selection.maxHp ?? 0)}%` }"
-        ></div>
-      </div>
-    </section>
-
-    <section
-      v-else-if="'resourceStockLabel' in ui.selection && ui.selection.resourceStockLabel"
-      class="selection-panel"
-    >
-      <div class="selection-kicker">{{ ui.selection.resourceStockLabel }}</div>
-      <div class="stat-value">{{ ui.selection.resourceStockAmount ?? 0 }}</div>
-      <div class="health-track">
-        <div class="health-fill resource-fill" :style="{ width: '100%' }"></div>
-      </div>
-    </section>
-
-    <section
-      v-if="'resourceLabel' in ui.selection && ui.selection.resourceLabel"
-      class="selection-panel"
-    >
-      <div class="selection-kicker">{{ ui.selection.resourceLabel }}</div>
-      <div class="stat-value">{{ ui.selection.resourceAmount ?? 0 }}</div>
     </section>
 
     <section class="selection-panel selection-panel--actions">
@@ -45,6 +15,7 @@
           class="action-button"
           :disabled="action.disabled"
           type="button"
+          @click="$emit('action', action.id)"
         >
           {{ action.label }}
         </button>
@@ -53,28 +24,41 @@
         </div>
       </div>
     </section>
+
+    <section class="selection-panel selection-panel--details">
+      <div class="selection-kicker">Details</div>
+      <div class="detail-inline">
+        <template v-for="(detail, index) in ui.selection.details" :key="detail.id">
+          <span class="detail-entry">
+            <span>{{ detail.label }}</span>
+            <strong v-if="detail.value">{{ detail.value }}</strong>
+          </span>
+          <span v-if="index < ui.selection.details.length - 1" class="detail-separator">,</span>
+        </template>
+        <span v-if="ui.selection.details.length === 0" class="detail-empty">No details available</span>
+      </div>
+    </section>
   </footer>
 </template>
 
 <script setup lang="ts">
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 
+defineEmits<{
+  action: [actionId: string]
+}>()
+
 defineProps<{
   ui: GameUiSnapshot
 }>()
-
-function getHealthPercent(hp: number, maxHp: number) {
-  if (!maxHp) return 0
-  return Math.max(0, Math.min((hp / maxHp) * 100, 100))
-}
 </script>
 
 <style scoped>
 .selection-hud {
   position: relative;
   z-index: 5;
-  display: grid;
-  grid-template-columns: minmax(220px, 0.9fr) minmax(180px, 0.8fr) minmax(160px, 0.6fr) minmax(280px, 1.2fr);
+  display: flex;
+  align-items: stretch;
   gap: 14px;
   padding: 14px 18px 18px;
   border-top: 1px solid rgba(123, 93, 48, 0.5);
@@ -92,9 +76,20 @@ function getHealthPercent(hp: number, maxHp: number) {
   border: 1px solid rgba(198, 160, 104, 0.2);
 }
 
+.selection-panel--primary {
+  flex: 0 1 300px;
+}
+
 .selection-panel--actions {
   display: flex;
   flex-direction: column;
+  flex: 1 1 420px;
+}
+
+.selection-panel--details {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 240px;
 }
 
 .selection-kicker {
@@ -118,41 +113,44 @@ function getHealthPercent(hp: number, maxHp: number) {
   color: #cbb893;
 }
 
-.stat-value {
-  margin-top: 6px;
-  font-size: 24px;
-  font-weight: 700;
-  color: #fff2d6;
-}
-
-.health-track {
-  margin-top: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.8);
-  overflow: hidden;
-}
-
-.health-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #c96e43, #d6b45c);
-}
-
-.health-fill.resource-fill {
-  background: linear-gradient(90deg, #4a7c3f, #a3c96e);
-}
-
 .action-grid {
   margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: 8px;
+  width: 100%;
+}
+
+.detail-inline {
+  margin-top: 10px;
+  color: #e7d7b6;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.detail-entry {
+  display: inline;
+}
+
+.detail-entry strong {
+  margin-left: 4px;
+  color: #fff2d6;
+  font-size: 13px;
+}
+
+.detail-separator {
+  margin-right: 4px;
+}
+
+.detail-empty {
+  color: #cbb893;
 }
 
 .action-button,
 .action-empty {
-  min-width: 112px;
+  width: auto;
+  min-width: 108px;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid rgba(200, 164, 106, 0.28);
@@ -168,19 +166,96 @@ function getHealthPercent(hp: number, maxHp: number) {
 }
 
 .action-empty {
+  min-width: 0;
   color: #cbb893;
 }
 
 @media (max-width: 1000px) {
   .selection-hud {
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    align-items: stretch;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 10px;
+    padding: 10px 14px 14px;
+  }
+
+  .selection-hud::-webkit-scrollbar {
+    display: none;
+  }
+
+  .selection-panel--primary {
+    flex: 0 0 240px;
+  }
+
+  .selection-panel--actions {
+    flex: 1 0 320px;
+  }
+
+  .selection-panel--details {
+    flex: 0 0 220px;
+  }
+
+  .selection-title {
+    font-size: 16px;
   }
 }
 
 @media (max-width: 720px) {
   .selection-hud {
-    grid-template-columns: 1fr;
-    padding: 12px;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 8px;
+    padding: 8px 10px 10px;
+  }
+
+  .selection-hud::-webkit-scrollbar {
+    display: none;
+  }
+
+  .selection-panel {
+    flex: 0 0 auto;
+    min-width: 130px;
+    padding: 8px 10px;
+  }
+
+  .selection-panel--actions {
+    min-width: 180px;
+  }
+
+  .selection-title {
+    font-size: 14px;
+    margin-top: 2px;
+  }
+
+  .selection-subtitle {
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  .action-grid {
+    margin-top: 6px;
+    gap: 5px;
+  }
+
+  .detail-inline {
+    margin-top: 6px;
+    font-size: 11px;
+  }
+
+  .detail-entry strong {
+    font-size: 11px;
+  }
+
+  .action-button,
+  .action-empty {
+    width: auto;
+    min-width: 84px;
+    padding: 7px 8px;
+    font-size: 11px;
   }
 }
 </style>

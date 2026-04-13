@@ -93,6 +93,7 @@ export class CanvasRenderer {
     this.drawGrid()
     this.drawMapBounds()
     this.drawMoveMarkers()
+    this.drawBuildingSpawnMarkers()
     this.drawUnits(units)
     this.drawSelectionBox()
 
@@ -259,6 +260,38 @@ export class CanvasRenderer {
 
       ctx.restore()
     }
+  }
+
+  private drawBuildingSpawnMarkers() {
+    const selectedBuilding = this.state.getSelectedBuilding()
+    if (!selectedBuilding) return
+
+    const spawnPoint = this.state.getBuildingSpawnPoint(selectedBuilding)
+    if (!spawnPoint) return
+
+    this.drawSpawnPointMarker(spawnPoint.x, spawnPoint.y, '#93c5fd')
+  }
+
+  private drawSpawnPointMarker(x: number, y: number, color: string) {
+    const ctx = this.ctx
+
+    ctx.save()
+    ctx.strokeStyle = color
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
+    ctx.lineWidth = 2 / this.camera.zoom
+
+    ctx.beginPath()
+    ctx.arc(x, y, 9, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+
+    ctx.beginPath()
+    ctx.moveTo(x - 13, y)
+    ctx.lineTo(x + 13, y)
+    ctx.moveTo(x, y - 13)
+    ctx.lineTo(x, y + 13)
+    ctx.stroke()
+    ctx.restore()
   }
 
   private drawUnits(

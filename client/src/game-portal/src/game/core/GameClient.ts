@@ -30,7 +30,7 @@ export class GameClient {
     this.network = new NetworkClient(this.state)
     this.network.setPreferredMapId(mapId)
     this.renderer = new CanvasRenderer(canvas, this.state, this.camera)
-    this.input = new InputManager(canvas, this.state, this.camera, this.network)
+    this.input = new InputManager(canvas, this.state, this, this.camera, this.network)
 
     this.loop = new GameLoop({
       update: (dt) => {
@@ -63,6 +63,38 @@ export class GameClient {
       selectedUnits: this.state.getSelectedUnits(),
       selection: this.state.getSelectionSummary(),
     }
+  }
+
+  performSelectionAction(actionId: string) {
+    const selectedBuilding = this.state.getSelectedBuilding()
+
+    if (selectedBuilding && actionId === 'train-worker') {
+      this.network.sendTrainWorkerCommand(selectedBuilding.id)
+      return
+    }
+
+    if (selectedBuilding && actionId === 'set-spawn-point') {
+      this.state.beginBuildingTargeting('set-spawn-point')
+    }
+  }
+
+  tryHandleWorldClick(x: number, y: number) {
+    const selectedBuilding = this.state.getSelectedBuilding()
+    if (!selectedBuilding || !this.state.isBuildingTargetingActive('set-spawn-point')) {
+      return false
+    }
+
+    const spawnPoint = this.state.getTargetedBuildingSpawnPoint(x, y)
+    if (!spawnPoint) return false
+
+    this.network.sendSetBuildingSpawnPointCommand(selectedBuilding.id, spawnPoint.x, spawnPoint.y)
+    this.state.addMoveMarker(spawnPoint.x, spawnPoint.y, 800)
+    this.state.cancelBuildingTargeting()
+    return true
+  }
+
+  cancelTargeting() {
+    this.state.cancelBuildingTargeting()
   }
 
   private centerCameraOnSpawnIfNeeded() {

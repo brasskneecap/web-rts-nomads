@@ -197,18 +197,22 @@ defineProps<{
 
 @media (max-width: 900px) {
   .hud {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 12px;
+    gap: 10px;
+    padding: 8px 12px;
   }
 
-  .hud-crest,
   .hud-command {
-    flex: 1 1 auto;
+    display: none;
+  }
+
+  .hud-crest {
+    flex: 0 0 auto;
   }
 
   .resource-tray {
-    justify-content: flex-start;
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: flex-end;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -216,13 +220,35 @@ defineProps<{
   .resource-tray::-webkit-scrollbar {
     display: none;
   }
+}
 
-  .hud-copy {
-    text-align: left;
+@media (max-width: 600px) {
+  .hud {
+    gap: 8px;
+    padding: 6px 10px;
   }
 
-  .hud-command {
-    text-align: left;
+  .crest-mark {
+    width: 26px;
+    height: 26px;
+  }
+
+  .player-name {
+    font-size: 13px;
+  }
+
+  .resource-card {
+    min-width: 0;
+    padding: 5px 9px;
+    gap: 6px;
+  }
+
+  .resource-label {
+    font-size: 10px;
+  }
+
+  .resource-amount {
+    font-size: 14px;
   }
 }
 </style>

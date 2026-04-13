@@ -5,7 +5,9 @@ import type {
   MapId,
   MatchSnapshotMessage,
   MoveCommandMessage,
+  SetBuildingSpawnPointCommandMessage,
   ServerMessage,
+  TrainWorkerCommandMessage,
 } from './protocol'
 import { GameState } from '../core/GameState'
 
@@ -130,6 +132,25 @@ export class NetworkClient {
       type: 'gather_command',
       unitIds,
       buildingId,
+    }
+
+    this.send(message)
+  }
+
+  sendTrainWorkerCommand(buildingId: string) {
+    const message: TrainWorkerCommandMessage = {
+      type: 'train_worker_command',
+      buildingId,
+    }
+
+    this.send(message)
+  }
+
+  sendSetBuildingSpawnPointCommand(buildingId: string, x: number, y: number) {
+    const message: SetBuildingSpawnPointCommandMessage = {
+      type: 'set_building_spawn_point_command',
+      buildingId,
+      point: { x, y },
     }
 
     this.send(message)

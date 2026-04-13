@@ -1,5 +1,6 @@
 // src/game/input/InputManager.ts
 import { GameState } from '../core/GameState'
+import type { GameClient } from '../core/GameClient'
 import { Camera } from '../rendering/Camera'
 import { getMinimapBounds } from '../rendering/CanvasRenderer'
 import { NetworkClient } from '../network/NetworkClient'
@@ -7,6 +8,7 @@ import { NetworkClient } from '../network/NetworkClient'
 export class InputManager {
   private canvas: HTMLCanvasElement
   private state: GameState
+  private client: GameClient
   private camera: Camera
   private network: NetworkClient
 
@@ -26,11 +28,13 @@ export class InputManager {
   constructor(
     canvas: HTMLCanvasElement,
     state: GameState,
+    client: GameClient,
     camera: Camera,
     network: NetworkClient,
   ) {
     this.canvas = canvas
     this.state = state
+    this.client = client
     this.camera = camera
     this.network = network
 
@@ -91,6 +95,12 @@ export class InputManager {
       }
 
       const world = this.getWorldPosition(e)
+      if (this.client.tryHandleWorldClick(world.x, world.y)) {
+        this.isLeftMouseDown = false
+        this.dragStarted = false
+        this.state.endSelectionBox()
+        return
+      }
       this.isLeftMouseDown = true
       this.dragStarted = false
 
@@ -209,6 +219,10 @@ export class InputManager {
 
   private onRightClick = (e: MouseEvent) => {
     e.preventDefault()
+    if (this.state.isBuildingTargetingActive()) {
+      this.client.cancelTargeting()
+      return
+    }
     const screen = this.getScreenPosition(e)
     if (this.isInsideMinimap(screen.x, screen.y)) return
 

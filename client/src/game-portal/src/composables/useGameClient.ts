@@ -17,6 +17,7 @@ const emptyUiSnapshot: GameUiSnapshot = {
     kind: 'none',
     title: 'No Selection',
     subtitle: 'Select a unit or building to inspect details and actions.',
+    details: [],
     actions: [],
   },
 }
@@ -70,6 +71,10 @@ export function useGameClient() {
     isRunning.value = false
   }
 
+  function performSelectionAction(actionId: string) {
+    client?.performSelectionAction(actionId)
+  }
+
   onBeforeUnmount(() => {
     destroy()
   })
@@ -79,6 +84,7 @@ export function useGameClient() {
     destroy,
     isRunning,
     leaveStoredMatch,
+    performSelectionAction,
     ui,
   }
 }

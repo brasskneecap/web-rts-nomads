@@ -76,6 +76,17 @@ type GatherCommandMessage struct {
 	BuildingID string `json:"buildingId"`
 }
 
+type TrainWorkerCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+}
+
+type SetBuildingSpawnPointCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+	Point      Vec2   `json:"point"`
+}
+
 type ClientMessage struct {
 	Type string `json:"type"`
 }

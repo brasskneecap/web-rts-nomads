@@ -35,41 +35,39 @@ export type ActionItem = {
   disabled?: boolean
 }
 
+export type DetailItem = {
+  id: string
+  label: string
+  value?: string
+}
+
 export type SelectionSummary =
   | {
       kind: 'none'
       title: string
       subtitle: string
+      details: DetailItem[]
       actions: ActionItem[]
     }
   | {
       kind: 'unit'
       title: string
       subtitle: string
-      hp: number
-      maxHp: number
+      details: DetailItem[]
       actions: ActionItem[]
-      resourceLabel?: string
-      resourceAmount?: number
     }
   | {
       kind: 'building'
       title: string
       subtitle: string
-      hp?: number
-      maxHp?: number
+      details: DetailItem[]
       actions: ActionItem[]
-      resourceLabel?: string
-      resourceAmount?: number
-      resourceStockLabel?: string
-      resourceStockAmount?: number
     }
   | {
       kind: 'group'
       title: string
       subtitle: string
-      hp: number
-      maxHp: number
+      details: DetailItem[]
       actions: ActionItem[]
     }
 
@@ -100,6 +98,8 @@ export type Vec2 = {
   x: number
   y: number
 }
+
+export type BuildingTargetingMode = 'set-spawn-point'
 
 export type PlayerSummary = {
   playerId: string | null
@@ -144,6 +144,7 @@ export class GameState {
   selectedUnitOrder: number[] = []
   selectedBuildingId: string | null = null
   hoveredInteractableBuildingId: string | null = null
+  buildingTargetingMode: BuildingTargetingMode | null = null
 
   selectionBox: SelectionBox = {
     startX: 0,
@@ -314,6 +315,7 @@ export class GameState {
     this.selectedUnitIds.clear()
     this.selectedUnitOrder = []
     this.selectedBuildingId = null
+    this.buildingTargetingMode = null
   }
 
   selectUnit(unitId: number) {
@@ -324,6 +326,7 @@ export class GameState {
     this.selectedUnitIds.add(unitId)
     this.selectedUnitOrder = [unitId]
     this.selectedBuildingId = null
+    this.buildingTargetingMode = null
   }
 
   setSelection(unitIds: number[]) {
@@ -334,6 +337,7 @@ export class GameState {
 
     this.selectedUnitIds.clear()
     this.selectedBuildingId = null
+    this.buildingTargetingMode = null
 
     for (const id of ownedIds) {
       this.selectedUnitIds.add(id)
@@ -490,11 +494,39 @@ export class GameState {
     this.selectedUnitIds.clear()
     this.selectedUnitOrder = []
     this.selectedBuildingId = buildingId
+    this.buildingTargetingMode = null
   }
 
   getSelectedBuilding(): BuildingTile | null {
     if (!this.selectedBuildingId) return null
     return this.mapConfig.buildings.find((building) => building.id === this.selectedBuildingId) ?? null
+  }
+
+  beginBuildingTargeting(mode: BuildingTargetingMode) {
+    if (!this.getSelectedBuilding()) return
+    this.buildingTargetingMode = mode
+  }
+
+  cancelBuildingTargeting() {
+    this.buildingTargetingMode = null
+  }
+
+  isBuildingTargetingActive(mode?: BuildingTargetingMode) {
+    if (!this.buildingTargetingMode) return false
+    return mode ? this.buildingTargetingMode === mode : true
+  }
+
+  getTargetedBuildingSpawnPoint(worldX: number, worldY: number): Vec2 | null {
+    const building = this.getSelectedBuilding()
+    if (!building || this.buildingTargetingMode !== 'set-spawn-point') return null
+    return clampBuildingSpawnPoint(this.mapConfig, building, { x: worldX, y: worldY })
+  }
+
+  getBuildingSpawnPoint(building: BuildingTile): Vec2 | null {
+    const x = getBuildingMetadataNumber(building, 'spawnPointX')
+    const y = getBuildingMetadataNumber(building, 'spawnPointY')
+    if (x === undefined || y === undefined) return null
+    return { x, y }
   }
 
   setHoveredInteractableBuilding(buildingId: string | null) {
@@ -536,21 +568,21 @@ export class GameState {
     const selectedBuilding = this.getSelectedBuilding()
     if (selectedBuilding) {
       const title = formatBuildingName(selectedBuilding.buildingType)
-      const subtitle = selectedBuilding.ownerId
+      const defaultSubtitle = selectedBuilding.ownerId
         ? `Owned by ${selectedBuilding.ownerId}`
         : selectedBuilding.occupied
           ? 'Occupied'
           : 'Neutral'
+      const subtitle = this.buildingTargetingMode === 'set-spawn-point'
+        ? 'Click anywhere on the map to set the spawn point target.'
+        : defaultSubtitle
 
       return {
         kind: 'building',
         title,
         subtitle,
+        details: getBuildingDetails(selectedBuilding),
         actions: getBuildingActions(selectedBuilding),
-        resourceLabel: getBuildingResourceLabel(selectedBuilding),
-        resourceAmount: getBuildingResourceAmount(selectedBuilding),
-        resourceStockLabel: getBuildingStockLabel(selectedBuilding),
-        resourceStockAmount: getBuildingStockAmount(selectedBuilding),
       }
     }
 
@@ -560,6 +592,7 @@ export class GameState {
         kind: 'none',
         title: 'No Selection',
         subtitle: 'Select a unit or building to inspect details and actions.',
+        details: [],
         actions: [],
       }
     }
@@ -570,11 +603,8 @@ export class GameState {
         kind: 'unit',
         title: unit.name,
         subtitle: unit.status || formatUnitType(unit.unitType),
-        hp: unit.hp ?? 0,
-        maxHp: unit.maxHp ?? unit.hp ?? 0,
+        details: getUnitDetails(unit),
         actions: getUnitActions(unit),
-        resourceLabel: unit.carriedResourceType ? `${formatResourceLabel(unit.carriedResourceType)} Carried` : undefined,
-        resourceAmount: unit.carriedAmount,
       }
     }
 
@@ -587,8 +617,7 @@ export class GameState {
       subtitle: selectedUnits.every((unit) => unit.unitType === 'worker')
         ? summarizeWorkerGroupStatus(selectedUnits)
         : 'Mixed Detachment',
-      hp: totalHp,
-      maxHp: totalMaxHp,
+      details: getGroupDetails(selectedUnits, totalHp, totalMaxHp),
       actions: getGroupActions(selectedUnits),
     }
   }
@@ -814,16 +843,124 @@ function getBuildingActions(building: BuildingTile): ActionItem[] {
 
   if (building.capabilities.includes('resource-source')) {
     const label = building.buildingType === 'tree' ? 'Chop Wood' : 'Harvest Gold'
-    actions.push({ id: 'harvest', label, disabled: true })
+    actions.push({ id: 'harvest', label })
   }
-  if (building.capabilities.includes('unit-spawner')) {
-    actions.push({ id: 'train-worker', label: 'Train Worker', disabled: true })
-  }
-  if (building.capabilities.includes('deposit-point')) {
-    actions.push({ id: 'deposit', label: 'Deposit Point', disabled: true })
+  if (
+    building.capabilities.includes('unit-spawner') &&
+    building.spawnUnitTypes?.includes('worker')
+  ) {
+    actions.push({ id: 'train-worker', label: 'Train Worker' })
+    actions.push({ id: 'set-spawn-point', label: 'Set Spawn Point' })
   }
 
   return actions
+}
+
+function getBuildingDetails(building: BuildingTile): DetailItem[] {
+  const details: DetailItem[] = []
+
+  const hp = getBuildingMetadataNumber(building, 'hp')
+  const maxHp = getBuildingMetadataNumber(building, 'maxHp')
+  if (hp !== undefined) {
+    details.push({
+      id: 'durability',
+      label: 'Durability',
+      value: `${hp} / ${maxHp ?? hp}`,
+    })
+  }
+
+  const workerLabel = getBuildingResourceLabel(building)
+  const workerAmount = getBuildingResourceAmount(building)
+  if (workerLabel && workerAmount !== undefined) {
+    details.push({
+      id: 'workers-inside',
+      label: workerLabel,
+      value: String(workerAmount),
+    })
+  }
+
+  const stockLabel = getBuildingStockLabel(building)
+  const stockAmount = getBuildingStockAmount(building)
+  if (stockLabel && stockAmount !== undefined) {
+    details.push({
+      id: 'resource-stock',
+      label: stockLabel,
+      value: String(stockAmount),
+    })
+  }
+
+  if (building.capabilities.includes('deposit-point')) {
+    details.push({ id: 'deposit-point', label: 'Deposit Point' })
+  }
+  if (building.capabilities.includes('occupiable')) {
+    details.push({ id: 'occupiable', label: 'Occupiable' })
+  }
+  if (building.capabilities.includes('unit-spawner') && building.spawnUnitTypes?.length) {
+    details.push({
+      id: 'trains-units',
+      label: 'Trains',
+      value: building.spawnUnitTypes.map(formatSpawnUnitType).join(', '),
+    })
+  }
+
+  const spawnPointLabel = getBuildingSpawnPointLabel(building)
+  if (spawnPointLabel) {
+    details.push({
+      id: 'spawn-point',
+      label: 'Spawn Point',
+      value: spawnPointLabel,
+    })
+  }
+
+  return details
+}
+
+function getUnitDetails(unit: Unit): DetailItem[] {
+  const details: DetailItem[] = [
+    {
+      id: 'durability',
+      label: 'Durability',
+      value: `${unit.hp ?? 0} / ${unit.maxHp ?? unit.hp ?? 0}`,
+    },
+  ]
+
+  if (unit.carriedResourceType && unit.carriedAmount !== undefined) {
+    details.push({
+      id: 'carried-resource',
+      label: `${formatResourceLabel(unit.carriedResourceType)} Carried`,
+      value: String(unit.carriedAmount),
+    })
+  }
+
+  return details
+}
+
+function getGroupDetails(units: Unit[], totalHp: number, totalMaxHp: number): DetailItem[] {
+  const details: DetailItem[] = [
+    {
+      id: 'durability',
+      label: 'Durability',
+      value: `${totalHp} / ${totalMaxHp}`,
+    },
+  ]
+
+  const carryingGold = units.reduce(
+    (sum, unit) => sum + (unit.carriedResourceType === 'gold' ? unit.carriedAmount ?? 0 : 0),
+    0,
+  )
+  const carryingWood = units.reduce(
+    (sum, unit) => sum + (unit.carriedResourceType === 'wood' ? unit.carriedAmount ?? 0 : 0),
+    0,
+  )
+
+  if (carryingGold > 0) {
+    details.push({ id: 'group-gold', label: 'Gold Carried', value: String(carryingGold) })
+  }
+  if (carryingWood > 0) {
+    details.push({ id: 'group-wood', label: 'Wood Carried', value: String(carryingWood) })
+  }
+
+  return details
 }
 
 function summarizeWorkerGroupStatus(units: Unit[]) {
@@ -868,6 +1005,13 @@ function getBuildingMetadataNumber(building: BuildingTile, key: string) {
   return typeof value === 'number' ? value : undefined
 }
 
+function getBuildingSpawnPointLabel(building: BuildingTile) {
+  const x = getBuildingMetadataNumber(building, 'spawnPointX')
+  const y = getBuildingMetadataNumber(building, 'spawnPointY')
+  if (x === undefined || y === undefined) return undefined
+  return `${Math.round(x)}, ${Math.round(y)}`
+}
+
 function getBuildingStockLabel(building: BuildingTile): string | undefined {
   if (!building.resourceType) return undefined
   return formatResourceLabel(building.resourceType as ResourceType) + ' Remaining'
@@ -876,4 +1020,24 @@ function getBuildingStockLabel(building: BuildingTile): string | undefined {
 function getBuildingStockAmount(building: BuildingTile): number | undefined {
   if (!building.resourceType) return undefined
   return building.resourceAmount ?? 0
+}
+
+function formatSpawnUnitType(unitType: string) {
+  switch (unitType) {
+    case 'worker':
+      return 'Worker'
+    default:
+      return unitType
+  }
+}
+
+function clampBuildingSpawnPoint(map: MapConfig, _building: BuildingTile, point: Vec2): Vec2 {
+  return {
+    x: clamp(point.x, 10, map.width - 10),
+    y: clamp(point.y, 10, map.height - 10),
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
 }
