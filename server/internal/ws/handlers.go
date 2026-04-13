@@ -292,6 +292,36 @@ func (h *Hub) readLoop(client *Client) {
 			match.State.SetBuildingSpawnPoint(client.PlayerID, msg.BuildingID, msg.Point)
 			match.BroadcastSnapshot()
 
+		case "build_barracks_command":
+			if client.MatchID == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID)
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.BuildBarracksCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid build_barracks_command payload",
+				})
+				continue
+			}
+
+			match.State.BuildBarracks(client.PlayerID, msg.UnitIDs, msg.GridX, msg.GridY)
+			match.BroadcastSnapshot()
+
 		case "pong":
 			client.TouchPong()
 

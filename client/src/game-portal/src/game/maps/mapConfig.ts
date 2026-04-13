@@ -16,6 +16,7 @@ const BUILDING_CAPABILITY_SETS: Record<BuildingType, BuildingCapability[]> = {
   goldmine: ['resource-source'],
   townhall: ['unit-spawner', 'occupiable', 'deposit-point'],
   tree: ['resource-source'],
+  barracks: [],
 }
 
 export const MAP_EDITOR_PRESETS = [
@@ -144,6 +145,8 @@ export function getBuildingColor(
       return '#ca8a04'
     case 'tree':
       return '#2d6a4f'
+    case 'barracks':
+      return occupied ? (ownerColor ?? '#1e40af') : '#64748b'
   }
 }
 

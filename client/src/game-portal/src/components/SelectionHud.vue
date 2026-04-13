@@ -2,13 +2,11 @@
   <footer class="selection-hud">
     <div class="selection-main">
       <section class="selection-panel selection-panel--primary">
-        <div class="selection-kicker">Selection</div>
         <div class="selection-title">{{ ui.selection.title }}</div>
         <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
       </section>
 
       <section class="selection-panel selection-panel--details">
-        <div class="selection-kicker">Details</div>
         <div v-if="ui.selection.production" class="production-card">
           <div class="production-bar">
             <div
@@ -41,7 +39,6 @@
     </div>
 
     <section class="selection-panel selection-panel--actions">
-      <div class="selection-kicker">Actions</div>
       <div class="action-grid">
         <template v-for="i in GRID_SIZE" :key="i">
           <button
@@ -78,14 +75,16 @@ defineProps<{
 const GRID_SIZE = 9
 
 const ACTION_ICONS: Record<string, string> = {
-  'harvest':         'M6 18l7-7 M12 6l6 6 M10 8l6-2 3 3-2 6 M5 19l4-1-3-3-1 4',
-  'train-worker':    'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
-  'set-spawn-point': 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7',
-  'build':           'M10 13l-5.5 5.5a2.12 2.12 0 0 1-3-3L7 10 M16 4l4 4-4 4-4-4 4-4z M7 10l4 4',
-  'attack':          'M14.5 17.5L3 6V3h3l11.5 11.5 M18 16l4-4 M9 9l4-4',
-  'move':            'M12 2v20 M2 12h20 M7 7L2 12l5 5 M17 7l5 5-5 5',
-  'gather':          'M6 18l7-7 M12 6l6 6 M10 8l6-2 3 3-2 6 M5 19l4-1-3-3-1 4',
-  'cancel-training': 'M18 6L6 18 M6 6l12 12',
+  'harvest':          'M6 18l7-7 M12 6l6 6 M10 8l6-2 3 3-2 6 M5 19l4-1-3-3-1 4',
+  'train-worker':     'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  'set-spawn-point':  'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7',
+  'build':            'M10 13l-5.5 5.5a2.12 2.12 0 0 1-3-3L7 10 M16 4l4 4-4 4-4-4 4-4z M7 10l4 4',
+  'attack':           'M14.5 17.5L3 6V3h3l11.5 11.5 M18 16l4-4 M9 9l4-4',
+  'move':             'M12 2v20 M2 12h20 M7 7L2 12l5 5 M17 7l5 5-5 5',
+  'gather':           'M6 18l7-7 M12 6l6 6 M10 8l6-2 3 3-2 6 M5 19l4-1-3-3-1 4',
+  'cancel-training':  'M18 6L6 18 M6 6l12 12',
+  'build-barracks':   'M3 21h18 M5 21V9h14v12 M10 21v-5h4v5 M3 9l9-6 9 6 M8 14h2 M14 14h2',
+  'close-build-menu': 'M19 12H5 M12 5l-7 7 7 7',
 }
 
 function getActionIcon(id: string): string {
@@ -154,16 +153,7 @@ function getActionIcon(id: string): string {
   pointer-events: auto;
 }
 
-.selection-kicker {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #d7bb84;
-}
-
 .selection-title {
-  margin-top: 4px;
   font-size: 17px;
   font-weight: 700;
   line-height: 1.15;
@@ -180,7 +170,6 @@ function getActionIcon(id: string): string {
 }
 
 .action-grid {
-  margin-top: 8px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
@@ -189,7 +178,7 @@ function getActionIcon(id: string): string {
 }
 
 .detail-inline {
-  margin-top: 10px;
+  margin-top: 8px;
   color: #e7d7b6;
   font-size: 13px;
   line-height: 1.45;
@@ -197,7 +186,7 @@ function getActionIcon(id: string): string {
 }
 
 .production-card {
-  margin-top: 10px;
+  margin-top: 2px;
 }
 
 .production-bar {
@@ -354,7 +343,6 @@ function getActionIcon(id: string): string {
 
   .selection-title {
     font-size: 13px;
-    margin-top: 2px;
   }
 
   .selection-subtitle {
@@ -363,17 +351,16 @@ function getActionIcon(id: string): string {
   }
 
   .action-grid {
-    margin-top: 6px;
     gap: 5px;
   }
 
   .detail-inline {
-    margin-top: 6px;
+    margin-top: 4px;
     font-size: 11px;
   }
 
   .production-card {
-    margin-top: 6px;
+    margin-top: 2px;
   }
 
   .production-bar {

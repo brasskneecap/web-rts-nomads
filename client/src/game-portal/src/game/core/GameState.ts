@@ -117,6 +117,16 @@ export type Vec2 = {
 export type BuildingTargetingMode = 'set-spawn-point'
 export type UnitTargetingMode = 'move' | 'gather'
 
+export type BuildPlacement = {
+  buildingType: string
+  gridW: number
+  gridH: number
+  cursorGridX: number
+  cursorGridY: number
+  valid: boolean
+  builderUnitIds: number[]
+}
+
 export type PlayerSummary = {
   playerId: string | null
   color: string | null
@@ -162,6 +172,8 @@ export class GameState {
   hoveredInteractableBuildingId: string | null = null
   buildingTargetingMode: BuildingTargetingMode | null = null
   unitTargetingMode: UnitTargetingMode | null = null
+  workerBuildMenuOpen = false
+  buildPlacement: BuildPlacement | null = null
 
   selectionBox: SelectionBox = {
     startX: 0,
@@ -338,6 +350,8 @@ export class GameState {
     this.selectedBuildingId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
   }
 
   selectUnit(unitId: number) {
@@ -350,6 +364,8 @@ export class GameState {
     this.selectedBuildingId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
   }
 
   setSelection(unitIds: number[]) {
@@ -362,12 +378,24 @@ export class GameState {
     this.selectedBuildingId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
 
     for (const id of ownedIds) {
       this.selectedUnitIds.add(id)
     }
 
     this.selectedUnitOrder = [...ownedIds]
+  }
+
+  openWorkerBuildMenu() {
+    const selectedUnits = this.getSelectedUnits()
+    if (!selectedUnits.some((u) => u.capabilities.includes('build'))) return
+    this.workerBuildMenuOpen = true
+  }
+
+  closeWorkerBuildMenu() {
+    this.workerBuildMenuOpen = false
   }
 
   addFormationMoveMarkers(destX: number, destY: number, durationMs = 550) {
@@ -520,6 +548,8 @@ export class GameState {
     this.selectedBuildingId = buildingId
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
   }
 
   getSelectedBuilding(): BuildingTile | null {
@@ -556,7 +586,82 @@ export class GameState {
   }
 
   isAnyTargetingActive() {
-    return this.isBuildingTargetingActive() || this.isUnitTargetingActive()
+    return this.isBuildingTargetingActive() || this.isUnitTargetingActive() || this.buildPlacement !== null
+  }
+
+  isBuildPlacementActive(): boolean {
+    return this.buildPlacement !== null
+  }
+
+  beginBuildPlacement(buildingType: string, builderUnitIds: number[]) {
+    const gridW = 2
+    const gridH = 2
+    const { gridCols, gridRows } = this.mapConfig
+    const startX = Math.max(0, Math.floor(gridCols / 2) - 1)
+    const startY = Math.max(0, Math.floor(gridRows / 2) - 1)
+
+    this.buildPlacement = {
+      buildingType,
+      gridW,
+      gridH,
+      cursorGridX: startX,
+      cursorGridY: startY,
+      valid: this.isBuildPlacementCellsValid(startX, startY, gridW, gridH),
+      builderUnitIds,
+    }
+    this.workerBuildMenuOpen = false
+  }
+
+  cancelBuildPlacement() {
+    this.buildPlacement = null
+  }
+
+  updateBuildPlacement(worldX: number, worldY: number) {
+    if (!this.buildPlacement) return
+
+    const { cellSize, gridCols, gridRows } = this.mapConfig
+    const { gridW, gridH } = this.buildPlacement
+
+    const rawGridX = Math.round(worldX / cellSize - gridW / 2)
+    const rawGridY = Math.round(worldY / cellSize - gridH / 2)
+    const gridX = Math.max(0, Math.min(rawGridX, gridCols - gridW))
+    const gridY = Math.max(0, Math.min(rawGridY, gridRows - gridH))
+
+    this.buildPlacement = {
+      ...this.buildPlacement,
+      cursorGridX: gridX,
+      cursorGridY: gridY,
+      valid: this.isBuildPlacementCellsValid(gridX, gridY, gridW, gridH),
+    }
+  }
+
+  private isBuildPlacementCellsValid(gridX: number, gridY: number, gridW: number, gridH: number): boolean {
+    const { gridCols, gridRows, buildings, obstacles } = this.mapConfig
+
+    if (gridX < 0 || gridY < 0 || gridX + gridW > gridCols || gridY + gridH > gridRows) {
+      return false
+    }
+
+    for (const obs of obstacles) {
+      if (obs.x >= gridX && obs.x < gridX + gridW && obs.y >= gridY && obs.y < gridY + gridH) {
+        return false
+      }
+    }
+
+    for (const building of buildings) {
+      if (!building.visible) continue
+
+      const bRight = building.x + building.width
+      const bBottom = building.y + building.height
+      const pRight = gridX + gridW
+      const pBottom = gridY + gridH
+
+      if (gridX < bRight && pRight > building.x && gridY < bBottom && pBottom > building.y) {
+        return false
+      }
+    }
+
+    return true
   }
 
   isBuildingTargetingActive(mode?: BuildingTargetingMode) {
@@ -618,23 +723,26 @@ export class GameState {
     if (selectedBuilding) {
       const title = formatBuildingName(selectedBuilding.buildingType)
       const activeProduction = getBuildingProductionState(selectedBuilding)
+      const isUnderConstruction = selectedBuilding.metadata?.['underConstruction'] === true
       const defaultSubtitle = selectedBuilding.ownerId
         ? `Owned by ${selectedBuilding.ownerId}`
         : selectedBuilding.occupied
           ? 'Occupied'
           : 'Neutral'
-      const subtitle = this.buildingTargetingMode === 'set-spawn-point'
-        ? 'Click anywhere on the map to set the spawn point target.'
-        : activeProduction
-          ? `Training ${formatSpawnUnitType(activeProduction.unitType)}`
-        : defaultSubtitle
+      const subtitle = isUnderConstruction
+        ? 'Under Construction'
+        : this.buildingTargetingMode === 'set-spawn-point'
+          ? 'Click anywhere on the map to set the spawn point target.'
+          : activeProduction
+            ? `Training ${formatSpawnUnitType(activeProduction.unitType)}`
+            : defaultSubtitle
 
       return {
         kind: 'building',
         title,
         subtitle,
         details: getBuildingDetails(selectedBuilding),
-        actions: getBuildingActions(selectedBuilding),
+        actions: isUnderConstruction ? [] : getBuildingActions(selectedBuilding),
         production: activeProduction ? toProductionSummary(activeProduction) : undefined,
       }
     }
@@ -652,32 +760,42 @@ export class GameState {
 
     if (selectedUnits.length === 1) {
       const unit = selectedUnits[0]
+      const buildMenuOpen = this.workerBuildMenuOpen && unit.capabilities.includes('build')
+      const placementActive = this.buildPlacement !== null
       return {
         kind: 'unit',
         title: unit.name,
-        subtitle: getSelectionUnitSubtitle(
-          unit.status || formatUnitType(unit.unitType),
-          this.unitTargetingMode,
-        ),
+        subtitle: placementActive
+          ? 'Click to place the Barracks. Right-click to cancel.'
+          : buildMenuOpen
+            ? 'Choose a structure to build.'
+            : getSelectionUnitSubtitle(
+                unit.status || formatUnitType(unit.unitType),
+                this.unitTargetingMode,
+              ),
         details: getUnitDetails(unit),
-        actions: getUnitActions(unit, this.unitTargetingMode),
+        actions: getUnitActions(unit, this.unitTargetingMode, buildMenuOpen),
       }
     }
 
     const totalHp = selectedUnits.reduce((sum, unit) => sum + (unit.hp ?? 0), 0)
     const totalMaxHp = selectedUnits.reduce((sum, unit) => sum + (unit.maxHp ?? unit.hp ?? 0), 0)
+    const groupBuildMenuOpen =
+      this.workerBuildMenuOpen && selectedUnits.every((u) => u.capabilities.includes('build'))
 
     return {
       kind: 'group',
       title: `${selectedUnits.length} Units Selected`,
-      subtitle: getSelectionUnitSubtitle(
-        selectedUnits.every((unit) => unit.unitType === 'worker')
-          ? summarizeWorkerGroupStatus(selectedUnits)
-          : 'Mixed Detachment',
-        this.unitTargetingMode,
-      ),
+      subtitle: groupBuildMenuOpen
+        ? 'Choose a structure to build.'
+        : getSelectionUnitSubtitle(
+            selectedUnits.every((unit) => unit.unitType === 'worker')
+              ? summarizeWorkerGroupStatus(selectedUnits)
+              : 'Mixed Detachment',
+            this.unitTargetingMode,
+          ),
       details: getGroupDetails(selectedUnits, totalHp, totalMaxHp),
-      actions: getGroupActions(selectedUnits, this.unitTargetingMode),
+      actions: getGroupActions(selectedUnits, this.unitTargetingMode, groupBuildMenuOpen),
     }
   }
 
@@ -851,6 +969,8 @@ function formatBuildingName(buildingType: BuildingTile['buildingType']) {
       return 'Townhall'
     case 'tree':
       return 'Tree'
+    case 'barracks':
+      return 'Barracks'
   }
 }
 
@@ -863,7 +983,17 @@ function formatResourceLabel(resourceType: ResourceType) {
   }
 }
 
-function getUnitActions(unit: Unit, activeMode: UnitTargetingMode | null): ActionItem[] {
+function getUnitActions(
+  unit: Unit,
+  activeMode: UnitTargetingMode | null,
+  buildMenuOpen: boolean,
+): ActionItem[] {
+  if (buildMenuOpen) {
+    const actions: ActionItem[] = []
+    actions[0] = { id: 'build-barracks', label: 'Build Barracks' }
+    actions[6] = { id: 'close-build-menu', label: 'Back' }
+    return actions
+  }
   return unit.capabilities.map((capability) => {
     switch (capability) {
       case 'build':
@@ -876,7 +1006,18 @@ function getUnitActions(unit: Unit, activeMode: UnitTargetingMode | null): Actio
   })
 }
 
-function getGroupActions(units: Unit[], activeMode: UnitTargetingMode | null): ActionItem[] {
+function getGroupActions(
+  units: Unit[],
+  activeMode: UnitTargetingMode | null,
+  buildMenuOpen: boolean,
+): ActionItem[] {
+  if (buildMenuOpen) {
+    const actions: ActionItem[] = []
+    actions[0] = { id: 'build-barracks', label: 'Build Barracks' }
+    actions[6] = { id: 'close-build-menu', label: 'Back' }
+    return actions
+  }
+
   const capabilities = new Set<UnitCapability>()
 
   for (const unit of units) {
@@ -911,6 +1052,19 @@ function getBuildingActions(building: BuildingTile): ActionItem[] {
 }
 
 function getBuildingDetails(building: BuildingTile): DetailItem[] {
+  const isUnderConstruction = building.metadata?.['underConstruction'] === true
+  if (isUnderConstruction) {
+    const remaining = getBuildingMetadataNumber(building, 'constructionRemainingSeconds')
+    const total = getBuildingMetadataNumber(building, 'constructionTotalSeconds')
+    const details: DetailItem[] = []
+    if (remaining !== undefined && total !== undefined && total > 0) {
+      const pct = Math.round(((total - remaining) / total) * 100)
+      details.push({ id: 'construction-time', label: 'Build Time', value: `${Math.ceil(remaining)}s` })
+      details.push({ id: 'construction-progress', label: 'Progress', value: `${pct}%` })
+    }
+    return details
+  }
+
   const activeProduction = getBuildingProductionState(building)
   if (activeProduction) {
     const nextQueuedUnit = activeProduction.queuedUnitTypes[1]

@@ -92,6 +92,13 @@ type SetBuildingSpawnPointCommandMessage struct {
 	Point      Vec2   `json:"point"`
 }
 
+type BuildBarracksCommandMessage struct {
+	Type    string `json:"type"`
+	UnitIDs []int  `json:"unitIds"`
+	GridX   int    `json:"gridX"`
+	GridY   int    `json:"gridY"`
+}
+
 type ClientMessage struct {
 	Type string `json:"type"`
 }

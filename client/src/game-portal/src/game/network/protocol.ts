@@ -8,7 +8,7 @@ export type MapId = string
 export type TerrainType = 'dirt' | 'water' | 'forest'
 
 export type ObstacleType = 'rock' | 'wall' | 'tree'
-export type BuildingType = 'goldmine' | 'townhall' | 'tree'
+export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks'
 export type BuildingCapability =
   | 'resource-source'
   | 'unit-spawner'
@@ -119,6 +119,13 @@ export type SetBuildingSpawnPointCommandMessage = {
   point: Vec2
 }
 
+export type BuildBarracksCommandMessage = {
+  type: 'build_barracks_command'
+  unitIds: number[]
+  gridX: number
+  gridY: number
+}
+
 export type ResourceStockSnapshot = {
   id: string
   label: string
@@ -140,6 +147,7 @@ export type ClientMessage =
   | TrainWorkerCommandMessage
   | CancelTrainingCommandMessage
   | SetBuildingSpawnPointCommandMessage
+  | BuildBarracksCommandMessage
   | PongMessage
 
 export type UnitSnapshot = {

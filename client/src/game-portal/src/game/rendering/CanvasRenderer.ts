@@ -95,6 +95,7 @@ export class CanvasRenderer {
     this.drawMoveMarkers()
     this.drawBuildingSpawnMarkers()
     this.drawUnits(units)
+    this.drawBuildPlacementGhost()
     this.drawSelectionBox()
 
     ctx.restore()
@@ -195,9 +196,30 @@ export class CanvasRenderer {
       ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied, ownerColor)
       ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
 
-      ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
-      ctx.lineWidth = 2 / this.camera.zoom
-      ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+      if (building.buildingType === 'barracks') {
+        this.drawBarracksCornersAt(worldX, worldY, width, height, inset, cellSize)
+      }
+
+      const isUnderConstruction = building.metadata?.['underConstruction'] === true
+
+      if (isUnderConstruction) {
+        ctx.save()
+        ctx.globalAlpha = 0.45
+        ctx.fillStyle = '#0f172a'
+        ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+        ctx.restore()
+
+        ctx.save()
+        ctx.strokeStyle = '#fbbf24'
+        ctx.lineWidth = 2 / this.camera.zoom
+        ctx.setLineDash([8 / this.camera.zoom, 5 / this.camera.zoom])
+        ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+        ctx.restore()
+      } else {
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
+        ctx.lineWidth = 2 / this.camera.zoom
+        ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+      }
 
       if (this.state.selectedBuildingId === building.id) {
         ctx.strokeStyle = '#fde68a'
@@ -366,6 +388,57 @@ export class CanvasRenderer {
     ctx.strokeStyle = 'rgba(248, 250, 252, 0.8)'
     ctx.lineWidth = 1 / this.camera.zoom
     ctx.strokeRect(barX, barY, barWidth, barHeight)
+    ctx.restore()
+  }
+
+  private drawBarracksCornersAt(
+    worldX: number,
+    worldY: number,
+    width: number,
+    height: number,
+    inset: number,
+    cellSize: number,
+  ) {
+    const ctx = this.ctx
+    const cornerSize = cellSize * 0.28
+    const left = worldX + inset
+    const top = worldY + inset
+    const right = worldX + width - inset - cornerSize
+    const bottom = worldY + height - inset - cornerSize
+
+    ctx.fillStyle = '#94a3b8'
+    ctx.fillRect(left, top, cornerSize, cornerSize)
+    ctx.fillRect(right, top, cornerSize, cornerSize)
+    ctx.fillRect(left, bottom, cornerSize, cornerSize)
+    ctx.fillRect(right, bottom, cornerSize, cornerSize)
+  }
+
+  private drawBuildPlacementGhost() {
+    const placement = this.state.buildPlacement
+    if (!placement) return
+
+    const ctx = this.ctx
+    const { cellSize } = this.state.mapConfig
+    const { cursorGridX, cursorGridY, gridW, gridH, valid } = placement
+
+    const worldX = cursorGridX * cellSize
+    const worldY = cursorGridY * cellSize
+    const width = gridW * cellSize
+    const height = gridH * cellSize
+    const inset = cellSize * 0.18
+
+    ctx.save()
+    ctx.globalAlpha = 0.6
+    ctx.fillStyle = valid ? '#1e40af' : '#dc2626'
+    ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+
+    this.drawBarracksCornersAt(worldX, worldY, width, height, inset, cellSize)
+
+    ctx.globalAlpha = 0.9
+    ctx.strokeStyle = valid ? '#93c5fd' : '#fca5a5'
+    ctx.lineWidth = 2 / this.camera.zoom
+    ctx.setLineDash([8 / this.camera.zoom, 4 / this.camera.zoom])
+    ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
     ctx.restore()
   }
 

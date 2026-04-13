@@ -78,6 +78,23 @@ export class GameClient {
       return
     }
 
+    if (actionId === 'build') {
+      this.state.openWorkerBuildMenu()
+      return
+    }
+
+    if (actionId === 'close-build-menu') {
+      this.state.closeWorkerBuildMenu()
+      return
+    }
+
+    if (actionId === 'build-barracks') {
+      const unitIds = this.state.getOrderedSelectedUnitIds()
+      this.state.closeWorkerBuildMenu()
+      this.state.beginBuildPlacement('barracks', unitIds)
+      return
+    }
+
     if (selectedBuilding && actionId === 'train-worker') {
       this.network.sendTrainWorkerCommand(selectedBuilding.id)
       return
@@ -94,6 +111,16 @@ export class GameClient {
   }
 
   tryHandleWorldClick(x: number, y: number) {
+    if (this.state.isBuildPlacementActive()) {
+      this.state.updateBuildPlacement(x, y)
+      const placement = this.state.buildPlacement
+      if (placement?.valid) {
+        this.network.sendBuildBarracksCommand(placement.builderUnitIds, placement.cursorGridX, placement.cursorGridY)
+        this.state.cancelBuildPlacement()
+      }
+      return true
+    }
+
     const selectedBuilding = this.state.getSelectedBuilding()
     if (!selectedBuilding || !this.state.isBuildingTargetingActive('set-spawn-point')) {
       const unitIds = this.state.getOrderedSelectedUnitIds()
@@ -139,6 +166,7 @@ export class GameClient {
   cancelTargeting() {
     this.state.cancelBuildingTargeting()
     this.state.cancelUnitTargeting()
+    this.state.cancelBuildPlacement()
   }
 
   private centerCameraOnSpawnIfNeeded() {

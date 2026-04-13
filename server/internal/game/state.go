@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
@@ -34,6 +35,8 @@ type Unit struct {
 	MiningRemaining     float64
 	Gathering           bool
 	Returning           bool
+	BuildTargetID       string
+	Building            bool
 	TargetX             float64
 	TargetY             float64
 	Moving              bool
@@ -79,9 +82,10 @@ type GameState struct {
 
 	Productions map[string][]*UnitProduction
 
-	nextUnitID  int
-	nextOrderID int64
-	rng         *rand.Rand
+	nextUnitID     int
+	nextBuildingID int
+	nextOrderID    int64
+	rng            *rand.Rand
 }
 
 const (
@@ -95,6 +99,12 @@ const (
 
 var defaultUnitSpawnTimesSeconds = map[string]float64{
 	"worker": 5,
+}
+
+var unitResourceCosts = map[string]map[string]int{
+	"worker": {
+		"gold": 150,
+	},
 }
 
 func NewGameState(mapConfig protocol.MapConfig) *GameState {
@@ -194,6 +204,7 @@ func (s *GameState) Update(dt float64) {
 	defer s.mu.Unlock()
 
 	s.updateUnitProductionsLocked(dt)
+	s.tickBuildingConstructionsLocked(dt)
 	blocked := s.buildBlockedCells()
 
 	for _, unit := range s.Units {
@@ -335,7 +346,7 @@ func (s *GameState) EnsurePlayer(playerID string) {
 	}
 
 	home := s.claimTownhallForPlayerLocked(playerID)
-	s.spawnUnitsForPlayerLocked(playerID, color, 5, home)
+	s.spawnUnitsForPlayerLocked(playerID, color, 3, home)
 }
 
 func (s *GameState) RemovePlayer(playerID string) {
@@ -517,7 +528,11 @@ func (s *GameState) TrainWorker(playerID, buildingID string) {
 	if !ok {
 		return
 	}
+	if !s.canAffordUnitCostLocked(player, "worker") {
+		return
+	}
 
+	s.payUnitCostLocked(player, "worker")
 	s.beginUnitProductionLocked(player, *building, "worker")
 }
 
@@ -541,6 +556,12 @@ func (s *GameState) CancelCurrentTraining(playerID, buildingID string) {
 		return
 	}
 
+	player, ok := s.Players[playerID]
+	if !ok {
+		return
+	}
+
+	s.refundUnitCostLocked(player, queue[0].UnitType)
 	s.consumeProductionQueueItemLocked(building.ID)
 }
 
@@ -568,6 +589,88 @@ func (s *GameState) SetBuildingSpawnPoint(playerID, buildingID string, point pro
 	}
 	building.Metadata["spawnPointX"] = clampedPoint.X
 	building.Metadata["spawnPointY"] = clampedPoint.Y
+}
+
+var barracksResourceCost = map[string]int{
+	"gold": 200,
+	"wood": 150,
+}
+
+const barricksBuildSeconds = 15.0
+
+func (s *GameState) BuildBarracks(playerID string, unitIDs []int, gridX, gridY int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	player, ok := s.Players[playerID]
+	if !ok {
+		return
+	}
+
+	for resource, cost := range barracksResourceCost {
+		if player.Resources[resource] < cost {
+			return
+		}
+	}
+
+	const gridW, gridH = 2, 2
+
+	if gridX < 0 || gridY < 0 || gridX+gridW > s.MapConfig.GridCols || gridY+gridH > s.MapConfig.GridRows {
+		return
+	}
+
+	blocked := s.buildBlockedCells()
+	for dy := 0; dy < gridH; dy++ {
+		for dx := 0; dx < gridW; dx++ {
+			if blocked[gridPoint{X: gridX + dx, Y: gridY + dy}] {
+				return
+			}
+		}
+	}
+
+	for resource, cost := range barracksResourceCost {
+		player.Resources[resource] -= cost
+	}
+
+	s.nextBuildingID++
+	ownerID := playerID
+	barracks := protocol.BuildingTile{
+		GridCoord:    protocol.GridCoord{X: gridX, Y: gridY},
+		ID:           fmt.Sprintf("barracks-%d", s.nextBuildingID),
+		BuildingType: "barracks",
+		Width:        gridW,
+		Height:       gridH,
+		Occupied:     true,
+		Visible:      true,
+		OwnerID:      &ownerID,
+		Capabilities: []string{},
+		Metadata: map[string]interface{}{
+			"underConstruction":            true,
+			"constructionRemainingSeconds": barricksBuildSeconds,
+			"constructionTotalSeconds":     barricksBuildSeconds,
+		},
+	}
+
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, barracks)
+	buildingID := barracks.ID
+
+	// Recompute blocked cells now that the building occupies space
+	blocked = s.buildBlockedCells()
+	orderID := s.nextMovementOrderIDLocked()
+
+	for _, unitID := range unitIDs {
+		unit := s.getUnitByIDLocked(unitID)
+		if unit == nil || unit.OwnerID != playerID || unit.UnitType != "worker" {
+			continue
+		}
+		approachPoints := s.getBuildingApproachPositionsLocked(barracks, 1, blocked, &protocol.Vec2{X: unit.X, Y: unit.Y})
+		if len(approachPoints) == 0 {
+			continue
+		}
+		s.resetUnitMovementLocked(unit, orderID)
+		unit.BuildTargetID = buildingID
+		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+	}
 }
 
 func (s *GameState) repathUnitLocked(unit *Unit, blocked map[gridPoint]bool) bool {
@@ -796,6 +899,8 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.MiningRemaining = 0
 	unit.Gathering = false
 	unit.Returning = false
+	unit.BuildTargetID = ""
+	unit.Building = false
 	unit.Visible = true
 	unit.Status = "Idle"
 }
@@ -943,8 +1048,71 @@ func (s *GameState) redirectUnitToTreeLocked(unit *Unit, blocked map[gridPoint]b
 	}
 }
 
+func (s *GameState) updateWorkerBuildStateLocked(unit *Unit) {
+	if unit.Moving || unit.Building {
+		return
+	}
+	building := s.getBuildingByIDLocked(unit.BuildTargetID)
+	if building == nil {
+		unit.BuildTargetID = ""
+		unit.Status = "Idle"
+		return
+	}
+	unit.Building = true
+	unit.Status = "Building"
+}
+
+func (s *GameState) tickBuildingConstructionsLocked(dt float64) {
+	for i := range s.MapConfig.Buildings {
+		building := &s.MapConfig.Buildings[i]
+		if building.Metadata == nil {
+			continue
+		}
+		remaining, ok := building.Metadata["constructionRemainingSeconds"].(float64)
+		if !ok || remaining <= 0 {
+			continue
+		}
+
+		hasActiveBuilder := false
+		for _, unit := range s.Units {
+			if unit.BuildTargetID == building.ID && unit.Building {
+				hasActiveBuilder = true
+				break
+			}
+		}
+		if !hasActiveBuilder {
+			continue
+		}
+
+		remaining = math.Max(0, remaining-dt)
+		building.Metadata["constructionRemainingSeconds"] = remaining
+
+		if remaining == 0 {
+			delete(building.Metadata, "underConstruction")
+			delete(building.Metadata, "constructionRemainingSeconds")
+			delete(building.Metadata, "constructionTotalSeconds")
+			for _, unit := range s.Units {
+				if unit.BuildTargetID == building.ID {
+					unit.BuildTargetID = ""
+					unit.Building = false
+					unit.Status = "Idle"
+				}
+			}
+		}
+	}
+}
+
 func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[gridPoint]bool) {
-	if unit.UnitType != "worker" || unit.GatherTargetID == "" {
+	if unit.UnitType != "worker" {
+		return
+	}
+
+	if unit.BuildTargetID != "" {
+		s.updateWorkerBuildStateLocked(unit)
+		return
+	}
+
+	if unit.GatherTargetID == "" {
 		return
 	}
 
@@ -1390,6 +1558,28 @@ func (s *GameState) getConfiguredUnitSpawnSecondsLocked(building protocol.Buildi
 	}
 
 	return spawnSeconds
+}
+
+func (s *GameState) canAffordUnitCostLocked(player *Player, unitType string) bool {
+	for resourceID, amount := range unitResourceCosts[unitType] {
+		if player.Resources[resourceID] < amount {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *GameState) payUnitCostLocked(player *Player, unitType string) {
+	for resourceID, amount := range unitResourceCosts[unitType] {
+		player.Resources[resourceID] -= amount
+	}
+}
+
+func (s *GameState) refundUnitCostLocked(player *Player, unitType string) {
+	for resourceID, amount := range unitResourceCosts[unitType] {
+		player.Resources[resourceID] += amount
+	}
 }
 
 func (s *GameState) consumeProductionQueueItemLocked(buildingID string) {

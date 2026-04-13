@@ -1,4 +1,5 @@
 import type {
+  BuildBarracksCommandMessage,
   CancelTrainingCommandMessage,
   ClientMessage,
   GatherCommandMessage,
@@ -153,6 +154,16 @@ export class NetworkClient {
       buildingId,
     }
 
+    this.send(message)
+  }
+
+  sendBuildBarracksCommand(unitIds: number[], gridX: number, gridY: number) {
+    const message: BuildBarracksCommandMessage = {
+      type: 'build_barracks_command',
+      unitIds,
+      gridX,
+      gridY,
+    }
     this.send(message)
   }
 

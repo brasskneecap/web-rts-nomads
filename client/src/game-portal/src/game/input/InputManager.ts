@@ -125,6 +125,11 @@ export class InputManager {
     const screen = this.getScreenPosition(e)
     this.updateHoverCursor(screen.x, screen.y)
 
+    if (this.state.isBuildPlacementActive()) {
+      const world = this.getWorldPosition(e)
+      this.state.updateBuildPlacement(world.x, world.y)
+    }
+
     if (this.isLeftMouseDown && this.isMinimapNavigating) {
       this.centerCameraFromMinimap(screen.x, screen.y)
       this.lastMouseX = screen.x
@@ -292,6 +297,12 @@ export class InputManager {
     if (this.isMiddleMouseDown || this.isMinimapNavigating) {
       this.canvas.style.cursor = 'default'
       this.state.setHoveredInteractableBuilding(null)
+      return
+    }
+
+    if (this.state.isBuildPlacementActive()) {
+      this.state.setHoveredInteractableBuilding(null)
+      this.canvas.style.cursor = 'crosshair'
       return
     }
 
