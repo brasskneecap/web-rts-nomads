@@ -73,6 +73,11 @@ export class GameClient {
       return
     }
 
+    if (selectedBuilding && actionId === 'cancel-training') {
+      this.network.sendCancelTrainingCommand(selectedBuilding.id)
+      return
+    }
+
     if (selectedBuilding && actionId === 'set-spawn-point') {
       this.state.beginBuildingTargeting('set-spawn-point')
     }

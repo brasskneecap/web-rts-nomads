@@ -41,6 +41,16 @@ export type DetailItem = {
   value?: string
 }
 
+export type ProductionSummary = {
+  unitType: string
+  remainingSeconds: number
+  totalSeconds: number
+  queueLength: number
+  queuedUnitTypes: string[]
+  progress: number
+  timeLabel: string
+}
+
 export type SelectionSummary =
   | {
       kind: 'none'
@@ -48,6 +58,7 @@ export type SelectionSummary =
       subtitle: string
       details: DetailItem[]
       actions: ActionItem[]
+      production?: undefined
     }
   | {
       kind: 'unit'
@@ -55,6 +66,7 @@ export type SelectionSummary =
       subtitle: string
       details: DetailItem[]
       actions: ActionItem[]
+      production?: undefined
     }
   | {
       kind: 'building'
@@ -62,6 +74,7 @@ export type SelectionSummary =
       subtitle: string
       details: DetailItem[]
       actions: ActionItem[]
+      production?: ProductionSummary
     }
   | {
       kind: 'group'
@@ -69,6 +82,7 @@ export type SelectionSummary =
       subtitle: string
       details: DetailItem[]
       actions: ActionItem[]
+      production?: undefined
     }
 
 export type InterpolationFrame = {
@@ -568,6 +582,7 @@ export class GameState {
     const selectedBuilding = this.getSelectedBuilding()
     if (selectedBuilding) {
       const title = formatBuildingName(selectedBuilding.buildingType)
+      const activeProduction = getBuildingProductionState(selectedBuilding)
       const defaultSubtitle = selectedBuilding.ownerId
         ? `Owned by ${selectedBuilding.ownerId}`
         : selectedBuilding.occupied
@@ -575,6 +590,8 @@ export class GameState {
           : 'Neutral'
       const subtitle = this.buildingTargetingMode === 'set-spawn-point'
         ? 'Click anywhere on the map to set the spawn point target.'
+        : activeProduction
+          ? `Training ${formatSpawnUnitType(activeProduction.unitType)}`
         : defaultSubtitle
 
       return {
@@ -583,6 +600,7 @@ export class GameState {
         subtitle,
         details: getBuildingDetails(selectedBuilding),
         actions: getBuildingActions(selectedBuilding),
+        production: activeProduction ? toProductionSummary(activeProduction) : undefined,
       }
     }
 
@@ -857,6 +875,26 @@ function getBuildingActions(building: BuildingTile): ActionItem[] {
 }
 
 function getBuildingDetails(building: BuildingTile): DetailItem[] {
+  const activeProduction = getBuildingProductionState(building)
+  if (activeProduction) {
+    const nextQueuedUnit = activeProduction.queuedUnitTypes[1]
+    const hiddenQueueCount = Math.max(activeProduction.queueLength - 2, 0)
+    return [
+      {
+        id: 'current-training-unit',
+        label: 'Training',
+        value: formatSpawnUnitType(activeProduction.unitType),
+      },
+      {
+        id: 'next-queued-unit',
+        label: 'Next In Queue',
+        value: nextQueuedUnit
+          ? `${formatSpawnUnitType(nextQueuedUnit)}${hiddenQueueCount > 0 ? ` (${hiddenQueueCount})` : ''}`
+          : 'None',
+      },
+    ]
+  }
+
   const details: DetailItem[] = []
 
   const hp = getBuildingMetadataNumber(building, 'hp')
@@ -1005,6 +1043,45 @@ function getBuildingMetadataNumber(building: BuildingTile, key: string) {
   return typeof value === 'number' ? value : undefined
 }
 
+function getBuildingMetadataString(building: BuildingTile, key: string) {
+  const value = building.metadata?.[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+function getBuildingProductionState(building: BuildingTile) {
+  const unitType = getBuildingMetadataString(building, 'producingUnitType')
+  const remainingSeconds = getBuildingMetadataNumber(building, 'productionRemainingSeconds')
+  const totalSeconds = getBuildingMetadataNumber(building, 'productionTotalSeconds')
+  const queueLength = getBuildingMetadataNumber(building, 'productionQueueLength')
+  const queuedUnitTypesRaw = getBuildingMetadataString(building, 'queuedUnitTypes')
+
+  if (!unitType || remainingSeconds === undefined || totalSeconds === undefined) {
+    return null
+  }
+
+  return {
+    unitType,
+    remainingSeconds,
+    totalSeconds,
+    queueLength: Math.max(1, Math.round(queueLength ?? 1)),
+    queuedUnitTypes: queuedUnitTypesRaw
+      ? queuedUnitTypesRaw.split(',').map((item) => item.trim()).filter(Boolean)
+      : [unitType],
+  }
+}
+
+function toProductionSummary(production: NonNullable<ReturnType<typeof getBuildingProductionState>>): ProductionSummary {
+  const progress = production.totalSeconds > 0
+    ? 1 - Math.max(0, Math.min(production.remainingSeconds / production.totalSeconds, 1))
+    : 1
+
+  return {
+    ...production,
+    progress,
+    timeLabel: formatRemainingSeconds(production.remainingSeconds),
+  }
+}
+
 function getBuildingSpawnPointLabel(building: BuildingTile) {
   const x = getBuildingMetadataNumber(building, 'spawnPointX')
   const y = getBuildingMetadataNumber(building, 'spawnPointY')
@@ -1029,6 +1106,14 @@ function formatSpawnUnitType(unitType: string) {
     default:
       return unitType
   }
+}
+
+function formatRemainingSeconds(seconds: number) {
+  if (seconds >= 10) {
+    return `${seconds.toFixed(0)}s`
+  }
+
+  return `${seconds.toFixed(1)}s`
 }
 
 function clampBuildingSpawnPoint(map: MapConfig, _building: BuildingTile, point: Vec2): Vec2 {

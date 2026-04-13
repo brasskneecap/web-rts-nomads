@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,12 +25,12 @@ type Unit struct {
 	HP           int
 	MaxHP        int
 
-	CarriedResourceType  string
-	CarriedAmount        int
-	GatherTargetID       string
-	GatherBuildingType   string
-	ReturnTargetID       string
-	MiningInside         bool
+	CarriedResourceType string
+	CarriedAmount       int
+	GatherTargetID      string
+	GatherBuildingType  string
+	ReturnTargetID      string
+	MiningInside        bool
 	MiningRemaining     float64
 	Gathering           bool
 	Returning           bool
@@ -51,6 +52,16 @@ type Player struct {
 	ID        string
 	Color     string
 	Resources map[string]int
+
+	GlobalUnitSpawnTimeMultiplier float64
+	UnitSpawnTimeMultipliers      map[string]float64
+}
+
+type UnitProduction struct {
+	PlayerID         string
+	UnitType         string
+	RemainingSeconds float64
+	TotalSeconds     float64
 }
 
 type GameState struct {
@@ -66,6 +77,8 @@ type GameState struct {
 	Units   []*Unit
 	Players map[string]*Player
 
+	Productions map[string][]*UnitProduction
+
 	nextUnitID  int
 	nextOrderID int64
 	rng         *rand.Rand
@@ -77,14 +90,20 @@ const (
 	goldmineMiningSeconds = 5.0
 	treeWorkerCap         = 1
 	treeChoppingSeconds   = 3.0
+	minUnitSpawnSeconds   = 0.25
 )
+
+var defaultUnitSpawnTimesSeconds = map[string]float64{
+	"worker": 5,
+}
 
 func NewGameState(mapConfig protocol.MapConfig) *GameState {
 	state := &GameState{
-		Units:      []*Unit{},
-		Players:    map[string]*Player{},
-		nextUnitID: 1,
-		rng:        rand.New(rand.NewSource(time.Now().UnixNano())),
+		Units:       []*Unit{},
+		Players:     map[string]*Player{},
+		Productions: map[string][]*UnitProduction{},
+		nextUnitID:  1,
+		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 
 	state.SetMapConfig(mapConfig)
@@ -103,6 +122,7 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 	s.MapID = s.MapConfig.ID
 	s.MapWidth = s.MapConfig.Width
 	s.MapHeight = s.MapConfig.Height
+	s.Productions = map[string][]*UnitProduction{}
 }
 
 func (s *GameState) GetMapConfig() protocol.MapConfig {
@@ -173,6 +193,7 @@ func (s *GameState) Update(dt float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.updateUnitProductionsLocked(dt)
 	blocked := s.buildBlockedCells()
 
 	for _, unit := range s.Units {
@@ -309,6 +330,8 @@ func (s *GameState) EnsurePlayer(playerID string) {
 			"wood": 180,
 			"food": 24,
 		},
+		GlobalUnitSpawnTimeMultiplier: 1,
+		UnitSpawnTimeMultipliers:      map[string]float64{},
 	}
 
 	home := s.claimTownhallForPlayerLocked(playerID)
@@ -490,24 +513,35 @@ func (s *GameState) TrainWorker(playerID, buildingID string) {
 	if !containsString(building.SpawnUnitTypes, "worker") {
 		return
 	}
-
 	player, ok := s.Players[playerID]
 	if !ok {
 		return
 	}
 
-	blocked := s.buildBlockedCells()
-	spawnPositions := s.getTownhallSpawnPositionsLocked(*building, 1, blocked)
-	if len(spawnPositions) == 0 {
+	s.beginUnitProductionLocked(player, *building, "worker")
+}
+
+func (s *GameState) CancelCurrentTraining(playerID, buildingID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil || !building.Visible {
+		return
+	}
+	if building.BuildingType != "townhall" {
+		return
+	}
+	if building.OwnerID == nil || *building.OwnerID != playerID {
 		return
 	}
 
-	unit := s.spawnWorkerUnitLocked(playerID, player.Color, spawnPositions[0])
-	rallyPoint := s.getTownhallSpawnOriginLocked(*building)
-	if distanceSquared(unit.X, unit.Y, rallyPoint.X, rallyPoint.Y) > unitRadius*unitRadius {
-		unit.Status = "Moving To Spawn Point"
-		s.assignUnitPath(unit, rallyPoint, blocked, nil)
+	queue := s.Productions[building.ID]
+	if len(queue) == 0 {
+		return
 	}
+
+	s.consumeProductionQueueItemLocked(building.ID)
 }
 
 func (s *GameState) SetBuildingSpawnPoint(playerID, buildingID string, point protocol.Vec2) {
@@ -585,6 +619,7 @@ func (s *GameState) releaseTownhallForPlayerLocked(playerID string) {
 		building.OwnerID = nil
 		building.Occupied = false
 		building.Visible = false
+		delete(s.Productions, building.ID)
 	}
 }
 
@@ -778,6 +813,7 @@ func (s *GameState) clearUnitGatherStateLocked(unit *Unit) {
 }
 
 func (s *GameState) removeBuildingByIDLocked(buildingID string) {
+	delete(s.Productions, buildingID)
 	filtered := make([]protocol.BuildingTile, 0, len(s.MapConfig.Buildings)-1)
 	for _, b := range s.MapConfig.Buildings {
 		if b.ID != buildingID {
@@ -1215,7 +1251,164 @@ func (s *GameState) refreshBuildingRuntimeMetadataLocked() {
 			building.Metadata["currentWorkers"] = s.countWorkersInsideBuildingLocked(building.ID)
 			building.Metadata["maxWorkers"] = treeWorkerCap
 		}
+
+		if queue := s.Productions[building.ID]; len(queue) > 0 {
+			activeProduction := queue[0]
+			building.Metadata["producingUnitType"] = activeProduction.UnitType
+			building.Metadata["productionRemainingSeconds"] = activeProduction.RemainingSeconds
+			building.Metadata["productionTotalSeconds"] = activeProduction.TotalSeconds
+			building.Metadata["productionQueueLength"] = len(queue)
+			building.Metadata["queuedUnitTypes"] = joinProductionUnitTypes(queue)
+		} else {
+			delete(building.Metadata, "producingUnitType")
+			delete(building.Metadata, "productionRemainingSeconds")
+			delete(building.Metadata, "productionTotalSeconds")
+			delete(building.Metadata, "productionQueueLength")
+			delete(building.Metadata, "queuedUnitTypes")
+		}
 	}
+}
+
+func (s *GameState) beginUnitProductionLocked(player *Player, building protocol.BuildingTile, unitType string) {
+	spawnSeconds := s.getEffectiveUnitSpawnSecondsLocked(player, building, unitType)
+	s.Productions[building.ID] = append(s.Productions[building.ID], &UnitProduction{
+		PlayerID:         player.ID,
+		UnitType:         unitType,
+		RemainingSeconds: spawnSeconds,
+		TotalSeconds:     spawnSeconds,
+	})
+}
+
+func (s *GameState) updateUnitProductionsLocked(dt float64) {
+	if len(s.Productions) == 0 {
+		return
+	}
+
+	completed := make([]string, 0, len(s.Productions))
+
+	for buildingID, queue := range s.Productions {
+		if len(queue) == 0 {
+			completed = append(completed, buildingID)
+			continue
+		}
+
+		production := queue[0]
+		production.RemainingSeconds = math.Max(0, production.RemainingSeconds-dt)
+		if production.RemainingSeconds <= 0 {
+			completed = append(completed, buildingID)
+		}
+	}
+
+	for _, buildingID := range completed {
+		s.completeUnitProductionLocked(buildingID)
+	}
+}
+
+func (s *GameState) completeUnitProductionLocked(buildingID string) {
+	queue, ok := s.Productions[buildingID]
+	if !ok || len(queue) == 0 {
+		delete(s.Productions, buildingID)
+		return
+	}
+	production := queue[0]
+
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil || !building.Visible || building.OwnerID == nil || *building.OwnerID != production.PlayerID {
+		s.consumeProductionQueueItemLocked(buildingID)
+		return
+	}
+
+	player, ok := s.Players[production.PlayerID]
+	if !ok {
+		s.consumeProductionQueueItemLocked(buildingID)
+		return
+	}
+
+	spawnPosition, ok := s.getProductionSpawnPositionLocked(*building)
+	if !ok {
+		return
+	}
+
+	switch production.UnitType {
+	case "worker":
+		unit := s.spawnWorkerUnitLocked(production.PlayerID, player.Color, spawnPosition)
+		rallyPoint := s.getTownhallSpawnOriginLocked(*building)
+		if distanceSquared(unit.X, unit.Y, rallyPoint.X, rallyPoint.Y) > unitRadius*unitRadius {
+			unit.Status = "Moving To Spawn Point"
+			s.assignUnitPath(unit, rallyPoint, s.buildBlockedCells(), nil)
+		}
+	}
+
+	s.consumeProductionQueueItemLocked(buildingID)
+}
+
+func (s *GameState) getProductionSpawnPositionLocked(building protocol.BuildingTile) (protocol.Vec2, bool) {
+	blocked := s.buildBlockedCells()
+	spawnPositions := s.getTownhallSpawnPositionsLocked(building, 1, blocked)
+	if len(spawnPositions) > 0 {
+		return spawnPositions[0], true
+	}
+
+	rallyPoint := s.getTownhallSpawnOriginLocked(building)
+	spawnCell, ok := s.findNearestWalkable(s.worldToGrid(rallyPoint.X, rallyPoint.Y), blocked)
+	if !ok {
+		return protocol.Vec2{}, false
+	}
+
+	return s.clampPointToCell(rallyPoint, spawnCell), true
+}
+
+func (s *GameState) getEffectiveUnitSpawnSecondsLocked(player *Player, building protocol.BuildingTile, unitType string) float64 {
+	spawnSeconds := s.getConfiguredUnitSpawnSecondsLocked(building, unitType)
+
+	if player.GlobalUnitSpawnTimeMultiplier > 0 {
+		spawnSeconds *= player.GlobalUnitSpawnTimeMultiplier
+	}
+	if multiplier, ok := player.UnitSpawnTimeMultipliers[unitType]; ok && multiplier > 0 {
+		spawnSeconds *= multiplier
+	}
+
+	return math.Max(minUnitSpawnSeconds, spawnSeconds)
+}
+
+func (s *GameState) getConfiguredUnitSpawnSecondsLocked(building protocol.BuildingTile, unitType string) float64 {
+	spawnSeconds := defaultUnitSpawnTimesSeconds[unitType]
+	if spawnSeconds <= 0 {
+		spawnSeconds = 1
+	}
+
+	if building.Metadata != nil {
+		if configured, ok := getMetadataFloat(building.Metadata, "spawnTime"+formatMetadataUnitTypeSuffix(unitType)); ok && configured > 0 {
+			spawnSeconds = configured
+		}
+		if multiplier, ok := getMetadataFloat(building.Metadata, "spawnTimeMultiplier"); ok && multiplier > 0 {
+			spawnSeconds *= multiplier
+		}
+		if multiplier, ok := getMetadataFloat(building.Metadata, "spawnTime"+formatMetadataUnitTypeSuffix(unitType)+"Multiplier"); ok && multiplier > 0 {
+			spawnSeconds *= multiplier
+		}
+	}
+
+	return spawnSeconds
+}
+
+func (s *GameState) consumeProductionQueueItemLocked(buildingID string) {
+	queue := s.Productions[buildingID]
+	if len(queue) <= 1 {
+		delete(s.Productions, buildingID)
+		return
+	}
+
+	s.Productions[buildingID] = queue[1:]
+}
+
+func joinProductionUnitTypes(queue []*UnitProduction) string {
+	unitTypes := make([]string, 0, len(queue))
+	for _, production := range queue {
+		unitTypes = append(unitTypes, production.UnitType)
+	}
+
+	return strings.Join(unitTypes, ",")
 }
 
 func (s *GameState) applyUnitSeparationLocked(blocked map[gridPoint]bool) {
@@ -1357,6 +1550,19 @@ func containsString(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func formatMetadataUnitTypeSuffix(unitType string) string {
+	if unitType == "" {
+		return ""
+	}
+
+	first := unitType[:1]
+	if first >= "a" && first <= "z" {
+		first = strings.ToUpper(first)
+	}
+
+	return first + unitType[1:]
 }
 
 func getMetadataFloat(metadata map[string]interface{}, key string) (float64, bool) {

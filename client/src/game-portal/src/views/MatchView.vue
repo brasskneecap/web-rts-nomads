@@ -47,9 +47,8 @@
       <div v-if="showEditor" class="editor-stage">
         <MapEditorPanel v-model="editorMap" />
       </div>
+      <SelectionHud v-if="hasStarted" :ui="ui" @action="performSelectionAction" />
     </div>
-
-    <SelectionHud v-if="hasStarted" :ui="ui" @action="performSelectionAction" />
   </div>
 </template>
 

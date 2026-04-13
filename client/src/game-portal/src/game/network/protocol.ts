@@ -108,6 +108,11 @@ export type TrainWorkerCommandMessage = {
   buildingId: string
 }
 
+export type CancelTrainingCommandMessage = {
+  type: 'cancel_training_command'
+  buildingId: string
+}
+
 export type SetBuildingSpawnPointCommandMessage = {
   type: 'set_building_spawn_point_command'
   buildingId: string
@@ -133,6 +138,7 @@ export type ClientMessage =
   | MoveCommandMessage
   | GatherCommandMessage
   | TrainWorkerCommandMessage
+  | CancelTrainingCommandMessage
   | SetBuildingSpawnPointCommandMessage
   | PongMessage
 

@@ -1,4 +1,5 @@
 import type {
+  CancelTrainingCommandMessage,
   ClientMessage,
   GatherCommandMessage,
   LeaveMatchMessage,
@@ -140,6 +141,15 @@ export class NetworkClient {
   sendTrainWorkerCommand(buildingId: string) {
     const message: TrainWorkerCommandMessage = {
       type: 'train_worker_command',
+      buildingId,
+    }
+
+    this.send(message)
+  }
+
+  sendCancelTrainingCommand(buildingId: string) {
+    const message: CancelTrainingCommandMessage = {
+      type: 'cancel_training_command',
       buildingId,
     }
 

@@ -309,6 +309,7 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
     metadata: {
       occupiedLabel: 'occupied',
       unoccupiedLabel: 'unoccupied',
+      spawnTimeWorker: 5,
     },
   }
 }

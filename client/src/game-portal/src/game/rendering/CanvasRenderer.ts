@@ -17,7 +17,7 @@ export type MinimapBounds = {
 
 export function getMinimapBounds(
   canvasWidth: number,
-  canvasHeight: number,
+  _canvasHeight: number,
   mapWidth: number,
   mapHeight: number,
 ): MinimapBounds {
@@ -29,7 +29,7 @@ export function getMinimapBounds(
 
   return {
     x: canvasWidth - width - padding,
-    y: canvasHeight - height - padding,
+    y: padding,
     width,
     height,
   }
