@@ -1,18 +1,77 @@
-import type { MapConfig, MatchSnapshotMessage } from '../network/protocol'
+import type {
+  BuildingTile,
+  MapConfig,
+  MatchSnapshotMessage,
+  PlayerSnapshot,
+  ResourceType,
+  UnitCapability,
+  UnitType,
+} from '../network/protocol'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 
 export type Unit = {
   id: number
+  unitType: UnitType
+  name: string
+  capabilities: UnitCapability[]
+  visible: boolean
+  status?: string
   x: number
   y: number
   hp?: number
   maxHp?: number
   ownerId?: string
   color?: string
+  carriedResourceType?: ResourceType
+  carriedAmount?: number
   targetX?: number
   targetY?: number
   moving?: boolean
 }
+
+export type ActionItem = {
+  id: string
+  label: string
+  disabled?: boolean
+}
+
+export type SelectionSummary =
+  | {
+      kind: 'none'
+      title: string
+      subtitle: string
+      actions: ActionItem[]
+    }
+  | {
+      kind: 'unit'
+      title: string
+      subtitle: string
+      hp: number
+      maxHp: number
+      actions: ActionItem[]
+      resourceLabel?: string
+      resourceAmount?: number
+    }
+  | {
+      kind: 'building'
+      title: string
+      subtitle: string
+      hp?: number
+      maxHp?: number
+      actions: ActionItem[]
+      resourceLabel?: string
+      resourceAmount?: number
+      resourceStockLabel?: string
+      resourceStockAmount?: number
+    }
+  | {
+      kind: 'group'
+      title: string
+      subtitle: string
+      hp: number
+      maxHp: number
+      actions: ActionItem[]
+    }
 
 export type InterpolationFrame = {
   tick: number
@@ -64,6 +123,7 @@ export class GameState {
     { id: 'wood', label: 'Wood', amount: 180, accent: '#7a9a52' },
     { id: 'food', label: 'Food', amount: 24, accent: '#c96e43' },
   ]
+  private playerColors = new Map<string, string>()
 
   units: Unit[] = []
 
@@ -82,6 +142,8 @@ export class GameState {
   
   selectedUnitIds = new Set<number>()
   selectedUnitOrder: number[] = []
+  selectedBuildingId: string | null = null
+  hoveredInteractableBuildingId: string | null = null
 
   selectionBox: SelectionBox = {
     startX: 0,
@@ -140,12 +202,19 @@ export class GameState {
       receivedAt: now,
       units: message.units.map((unit) => ({
         id: unit.id,
+        unitType: unit.unitType,
+        name: unit.name,
+        capabilities: unit.capabilities ?? [],
+        visible: unit.visible,
+        status: unit.status,
         x: unit.x,
         y: unit.y,
         hp: unit.hp,
         maxHp: unit.maxHp,
         ownerId: unit.ownerId,
         color: unit.color,
+        carriedResourceType: unit.carriedResourceType,
+        carriedAmount: unit.carriedAmount,
         targetX: unit.targetX,
         targetY: unit.targetY,
         moving: unit.moving,
@@ -159,6 +228,7 @@ export class GameState {
     }
 
     this.units = frame.units.map((unit) => ({ ...unit }))
+    this.applyPlayerSnapshots(message.players)
 
     const validIds = new Set(this.units.map((u) => u.id))
 
@@ -243,6 +313,7 @@ export class GameState {
   clearSelection() {
     this.selectedUnitIds.clear()
     this.selectedUnitOrder = []
+    this.selectedBuildingId = null
   }
 
   selectUnit(unitId: number) {
@@ -252,6 +323,7 @@ export class GameState {
     this.selectedUnitIds.clear()
     this.selectedUnitIds.add(unitId)
     this.selectedUnitOrder = [unitId]
+    this.selectedBuildingId = null
   }
 
   setSelection(unitIds: number[]) {
@@ -261,6 +333,7 @@ export class GameState {
     })
 
     this.selectedUnitIds.clear()
+    this.selectedBuildingId = null
 
     for (const id of ownedIds) {
       this.selectedUnitIds.add(id)
@@ -367,7 +440,7 @@ export class GameState {
 
   getUnitAtPosition(x: number, y: number, radius = 14): Unit | undefined {
     return this.getInteractionUnits().find((unit) => {
-      if (!this.isOwnedByLocalPlayer(unit)) return false
+      if (!this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
 
       const dx = unit.x - x
       const dy = unit.y - y
@@ -398,10 +471,47 @@ export class GameState {
     return buildFormationDestinations(selectedUnits, { x: destX, y: destY }, 28)
   }
 
+  getBuildingAtPosition(x: number, y: number, padding = 0): BuildingTile | undefined {
+    const { cellSize, buildings } = this.mapConfig
+
+    return buildings.find((building) => {
+      if (!building.visible) return false
+
+      const left = building.x * cellSize - padding
+      const top = building.y * cellSize - padding
+      const right = left + building.width * cellSize + padding * 2
+      const bottom = top + building.height * cellSize + padding * 2
+
+      return x >= left && x <= right && y >= top && y <= bottom
+    })
+  }
+
+  selectBuilding(buildingId: string) {
+    this.selectedUnitIds.clear()
+    this.selectedUnitOrder = []
+    this.selectedBuildingId = buildingId
+  }
+
+  getSelectedBuilding(): BuildingTile | null {
+    if (!this.selectedBuildingId) return null
+    return this.mapConfig.buildings.find((building) => building.id === this.selectedBuildingId) ?? null
+  }
+
+  setHoveredInteractableBuilding(buildingId: string | null) {
+    this.hoveredInteractableBuildingId = buildingId
+  }
+
   setMapConfig(map: MapConfig) {
     this.mapConfig = sanitizeMapConfig(map)
     this.mapWidth = this.mapConfig.width
     this.mapHeight = this.mapConfig.height
+
+    if (
+      this.selectedBuildingId &&
+      !this.mapConfig.buildings.some((building) => building.id === this.selectedBuildingId && building.visible)
+    ) {
+      this.selectedBuildingId = null
+    }
   }
 
   getLocalPlayerUnits(): Unit[] {
@@ -415,6 +525,72 @@ export class GameState {
     return selectedIds
       .map((id) => this.units.find((unit) => unit.id === id))
       .filter((unit): unit is Unit => !!unit)
+  }
+
+  selectedUnitsCanGather(): boolean {
+    const units = this.getSelectedUnits()
+    return units.length > 0 && units.every((unit) => unit.capabilities.includes('gather'))
+  }
+
+  getSelectionSummary(): SelectionSummary {
+    const selectedBuilding = this.getSelectedBuilding()
+    if (selectedBuilding) {
+      const title = formatBuildingName(selectedBuilding.buildingType)
+      const subtitle = selectedBuilding.ownerId
+        ? `Owned by ${selectedBuilding.ownerId}`
+        : selectedBuilding.occupied
+          ? 'Occupied'
+          : 'Neutral'
+
+      return {
+        kind: 'building',
+        title,
+        subtitle,
+        actions: getBuildingActions(selectedBuilding),
+        resourceLabel: getBuildingResourceLabel(selectedBuilding),
+        resourceAmount: getBuildingResourceAmount(selectedBuilding),
+        resourceStockLabel: getBuildingStockLabel(selectedBuilding),
+        resourceStockAmount: getBuildingStockAmount(selectedBuilding),
+      }
+    }
+
+    const selectedUnits = this.getSelectedUnits()
+    if (selectedUnits.length === 0) {
+      return {
+        kind: 'none',
+        title: 'No Selection',
+        subtitle: 'Select a unit or building to inspect details and actions.',
+        actions: [],
+      }
+    }
+
+    if (selectedUnits.length === 1) {
+      const unit = selectedUnits[0]
+      return {
+        kind: 'unit',
+        title: unit.name,
+        subtitle: unit.status || formatUnitType(unit.unitType),
+        hp: unit.hp ?? 0,
+        maxHp: unit.maxHp ?? unit.hp ?? 0,
+        actions: getUnitActions(unit),
+        resourceLabel: unit.carriedResourceType ? `${formatResourceLabel(unit.carriedResourceType)} Carried` : undefined,
+        resourceAmount: unit.carriedAmount,
+      }
+    }
+
+    const totalHp = selectedUnits.reduce((sum, unit) => sum + (unit.hp ?? 0), 0)
+    const totalMaxHp = selectedUnits.reduce((sum, unit) => sum + (unit.maxHp ?? unit.hp ?? 0), 0)
+
+    return {
+      kind: 'group',
+      title: `${selectedUnits.length} Units Selected`,
+      subtitle: selectedUnits.every((unit) => unit.unitType === 'worker')
+        ? summarizeWorkerGroupStatus(selectedUnits)
+        : 'Mixed Detachment',
+      hp: totalHp,
+      maxHp: totalMaxHp,
+      actions: getGroupActions(selectedUnits),
+    }
   }
 
   getLocalPlayerSpawnCenter(): Vec2 | null {
@@ -441,12 +617,36 @@ export class GameState {
 
     return {
       playerId: this.localPlayerId,
-      color: localUnits[0]?.color ?? null,
+      color:
+        (this.localPlayerId ? this.playerColors.get(this.localPlayerId) : null) ??
+        localUnits[0]?.color ??
+        null,
       totalUnits: localUnits.length,
       selectedUnits: this.selectedUnitIds.size,
       totalHp: localUnits.reduce((sum, unit) => sum + (unit.hp ?? 0), 0),
       resources: this.resourceStocks.map((resource) => ({ ...resource })),
     }
+  }
+
+  getPlayerColor(playerId: string | null | undefined): string | null {
+    if (!playerId) return null
+    return this.playerColors.get(playerId) ?? null
+  }
+
+  private applyPlayerSnapshots(players: PlayerSnapshot[]) {
+    this.playerColors = new Map(players.map((player) => [player.playerId, player.color]))
+
+    if (!this.localPlayerId) return
+
+    const localPlayer = players.find((player) => player.playerId === this.localPlayerId)
+    if (!localPlayer) return
+
+    this.resourceStocks = localPlayer.resources.map((resource) => ({
+      id: resource.id,
+      label: resource.label,
+      amount: resource.amount,
+      accent: resource.accent,
+    }))
   }
 }
 
@@ -546,4 +746,134 @@ function getUnitCenter(units: Unit[]): Vec2 {
     x: totals.x / units.length,
     y: totals.y / units.length,
   }
+}
+
+function formatUnitType(unitType: UnitType) {
+  switch (unitType) {
+    case 'worker':
+      return 'Worker Unit'
+  }
+}
+
+function formatBuildingName(buildingType: BuildingTile['buildingType']) {
+  switch (buildingType) {
+    case 'goldmine':
+      return 'Goldmine'
+    case 'townhall':
+      return 'Townhall'
+    case 'tree':
+      return 'Tree'
+  }
+}
+
+function formatResourceLabel(resourceType: ResourceType) {
+  switch (resourceType) {
+    case 'gold':
+      return 'Gold'
+    case 'wood':
+      return 'Wood'
+  }
+}
+
+function getUnitActions(unit: Unit): ActionItem[] {
+  return unit.capabilities.map((capability) => {
+    switch (capability) {
+      case 'build':
+        return { id: 'build', label: 'Build' }
+      case 'gather':
+        return { id: 'gather', label: 'Gather' }
+      default:
+        return { id: capability, label: 'Move' }
+    }
+  })
+}
+
+function getGroupActions(units: Unit[]): ActionItem[] {
+  const capabilities = new Set<UnitCapability>()
+
+  for (const unit of units) {
+    for (const capability of unit.capabilities) {
+      capabilities.add(capability)
+    }
+  }
+
+  return Array.from(capabilities).map((capability) => {
+    switch (capability) {
+      case 'build':
+        return { id: 'build', label: 'Build' }
+      case 'gather':
+        return { id: 'gather', label: 'Gather' }
+      default:
+        return { id: capability, label: 'Move' }
+    }
+  })
+}
+
+function getBuildingActions(building: BuildingTile): ActionItem[] {
+  const actions: ActionItem[] = []
+
+  if (building.capabilities.includes('resource-source')) {
+    const label = building.buildingType === 'tree' ? 'Chop Wood' : 'Harvest Gold'
+    actions.push({ id: 'harvest', label, disabled: true })
+  }
+  if (building.capabilities.includes('unit-spawner')) {
+    actions.push({ id: 'train-worker', label: 'Train Worker', disabled: true })
+  }
+  if (building.capabilities.includes('deposit-point')) {
+    actions.push({ id: 'deposit', label: 'Deposit Point', disabled: true })
+  }
+
+  return actions
+}
+
+function summarizeWorkerGroupStatus(units: Unit[]) {
+  const gathering = units.filter(
+    (unit) => unit.status === 'Mining Gold' || unit.status === 'Chopping Wood',
+  ).length
+  const returning = units.filter(
+    (unit) => unit.status === 'Returning Gold' || unit.status === 'Returning Wood',
+  ).length
+  const heading = units.filter(
+    (unit) => unit.status === 'Heading To Mine' || unit.status === 'Heading To Tree',
+  ).length
+
+  if (gathering > 0) return `${gathering} Gathering, ${returning} Returning`
+  if (heading > 0) return `${heading} Heading Out`
+  if (returning > 0) return `${returning} Returning Resources`
+  return 'Worker Crew'
+}
+
+function getBuildingResourceLabel(building: BuildingTile) {
+  const currentWorkers = getBuildingMetadataNumber(building, 'currentWorkers')
+  const maxWorkers = getBuildingMetadataNumber(building, 'maxWorkers')
+  if (currentWorkers !== undefined && maxWorkers !== undefined) {
+    const workerLabel = building.buildingType === 'tree' ? 'Chopping' : 'Workers Inside'
+    return `${workerLabel} / ${maxWorkers} Max`
+  }
+
+  return building.resourceType ? formatResourceLabel(building.resourceType) : undefined
+}
+
+function getBuildingResourceAmount(building: BuildingTile) {
+  const currentWorkers = getBuildingMetadataNumber(building, 'currentWorkers')
+  if (currentWorkers !== undefined) {
+    return currentWorkers
+  }
+
+  return building.resourceAmount
+}
+
+function getBuildingMetadataNumber(building: BuildingTile, key: string) {
+  const value = building.metadata?.[key]
+  return typeof value === 'number' ? value : undefined
+}
+
+function getBuildingStockLabel(building: BuildingTile): string | undefined {
+  if (!building.resourceType) return undefined
+  return formatResourceLabel(building.resourceType as ResourceType) + ' Remaining'
+}
+
+function getBuildingStockAmount(building: BuildingTile): number | undefined {
+  if (!building.resourceType) return undefined
+  return building.resourceAmount ?? 0
 }

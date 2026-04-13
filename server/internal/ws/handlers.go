@@ -172,6 +172,36 @@ func (h *Hub) readLoop(client *Client) {
 			match.State.MoveUnits(client.PlayerID, msg.UnitIDs, msg.Destination)
 			match.BroadcastSnapshot()
 
+		case "gather_command":
+			if client.MatchID == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID)
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.GatherCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid gather_command payload",
+				})
+				continue
+			}
+
+			match.State.GatherWithUnits(client.PlayerID, msg.UnitIDs, msg.BuildingID)
+			match.BroadcastSnapshot()
+
 		case "pong":
 			client.TouchPong()
 

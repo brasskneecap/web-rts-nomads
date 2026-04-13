@@ -15,6 +15,7 @@ export const DEFAULT_GRASS_COLOR = '#365b2c'
 const BUILDING_CAPABILITY_SETS: Record<BuildingType, BuildingCapability[]> = {
   goldmine: ['resource-source'],
   townhall: ['unit-spawner', 'occupiable', 'deposit-point'],
+  tree: ['resource-source'],
 }
 
 export const MAP_EDITOR_PRESETS = [
@@ -131,12 +132,18 @@ export function setBuildingTile(
   })
 }
 
-export function getBuildingColor(buildingType: BuildingType, occupied = true): string {
+export function getBuildingColor(
+  buildingType: BuildingType,
+  occupied = true,
+  ownerColor?: string | null,
+): string {
   switch (buildingType) {
     case 'townhall':
-      return occupied ? '#b45309' : '#64748b'
+      return occupied ? (ownerColor ?? '#b45309') : '#64748b'
     case 'goldmine':
       return '#ca8a04'
+    case 'tree':
+      return '#2d6a4f'
   }
 }
 
@@ -266,6 +273,24 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
       metadata: {
         gatherRate: 10,
       },
+    }
+  }
+
+  if (buildingType === 'tree') {
+    return {
+      id: `tree-${x}-${y}`,
+      buildingType,
+      x,
+      y,
+      width: 1,
+      height: 1,
+      occupied: true,
+      visible: true,
+      ownerId: null,
+      capabilities: [...BUILDING_CAPABILITY_SETS[buildingType]],
+      resourceType: 'wood',
+      resourceAmount: 1000,
+      metadata: {},
     }
   }
 

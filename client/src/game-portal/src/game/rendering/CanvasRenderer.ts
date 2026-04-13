@@ -186,13 +186,42 @@ export class CanvasRenderer {
       const width = building.width * cellSize
       const height = building.height * cellSize
       const inset = cellSize * 0.18
+      const ownerColor =
+        building.occupied && building.ownerId
+          ? this.state.getPlayerColor(building.ownerId)
+          : null
 
-      ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied)
+      ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied, ownerColor)
       ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
 
       ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
       ctx.lineWidth = 2 / this.camera.zoom
       ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+
+      if (this.state.selectedBuildingId === building.id) {
+        ctx.strokeStyle = '#fde68a'
+        ctx.lineWidth = 3 / this.camera.zoom
+        ctx.strokeRect(
+          worldX + inset - 4 / this.camera.zoom,
+          worldY + inset - 4 / this.camera.zoom,
+          width - inset * 2 + 8 / this.camera.zoom,
+          height - inset * 2 + 8 / this.camera.zoom,
+        )
+      }
+
+      if (this.state.hoveredInteractableBuildingId === building.id) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.95)'
+        ctx.lineWidth = 4 / this.camera.zoom
+        ctx.setLineDash([10 / this.camera.zoom, 6 / this.camera.zoom])
+        ctx.strokeRect(
+          worldX + inset - 8 / this.camera.zoom,
+          worldY + inset - 8 / this.camera.zoom,
+          width - inset * 2 + 16 / this.camera.zoom,
+          height - inset * 2 + 16 / this.camera.zoom,
+        )
+        ctx.restore()
+      }
     }
   }
 
@@ -240,11 +269,16 @@ export class CanvasRenderer {
       hp?: number
       maxHp?: number
       color?: string
+      visible?: boolean
     }>,
   ) {
     const ctx = this.ctx
 
     for (const unit of units) {
+      if (unit.visible === false) {
+        continue
+      }
+
       const selected = this.state.selectedUnitIds.has(unit.id)
 
       if (selected) {
@@ -261,11 +295,6 @@ export class CanvasRenderer {
       ctx.beginPath()
       ctx.arc(unit.x, unit.y, 10, 0, Math.PI * 2)
       ctx.fill()
-
-      ctx.fillStyle = '#000'
-      ctx.font = `${10 / this.camera.zoom}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.fillText(String(unit.id), unit.x, unit.y + 3 / this.camera.zoom)
     }
   }
 
@@ -330,6 +359,7 @@ export class CanvasRenderer {
       y: number
       ownerId?: string
       color?: string
+      visible?: boolean
     }>,
   ) {
     const ctx = this.ctx
@@ -369,7 +399,12 @@ export class CanvasRenderer {
     for (const building of this.state.mapConfig.buildings) {
       if (!building.visible) continue
 
-      ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied)
+      const ownerColor =
+        building.occupied && building.ownerId
+          ? this.state.getPlayerColor(building.ownerId)
+          : null
+
+      ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied, ownerColor)
       ctx.fillRect(
         x + (building.x / this.state.mapConfig.gridCols) * minimapWidth,
         y + (building.y / this.state.mapConfig.gridRows) * minimapHeight,
@@ -383,6 +418,10 @@ export class CanvasRenderer {
     ctx.strokeRect(x, y, minimapWidth, minimapHeight)
 
     for (const unit of units) {
+      if (unit.visible === false) {
+        continue
+      }
+
       const dotX = x + (unit.x / this.state.mapWidth) * minimapWidth
       const dotY = y + (unit.y / this.state.mapHeight) * minimapHeight
       const isLocalPlayerUnit =

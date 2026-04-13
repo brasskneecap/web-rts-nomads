@@ -48,6 +48,8 @@
         <MapEditorPanel v-model="editorMap" />
       </div>
     </div>
+
+    <SelectionHud v-if="hasStarted" :ui="ui" />
   </div>
 </template>
 
@@ -55,6 +57,7 @@
 import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
 import MapEditorPanel from '@/components/MapEditorPanel.vue'
 import MatchHud from '@/components/MatchHud.vue'
+import SelectionHud from '@/components/SelectionHud.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { fetchMapCatalog } from '@/game/maps/catalog'
 import type { MapCatalogEntry, MapId } from '@/game/network/protocol'

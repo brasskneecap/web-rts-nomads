@@ -8,13 +8,15 @@ export type MapId = string
 export type TerrainType = 'dirt' | 'water' | 'forest'
 
 export type ObstacleType = 'rock' | 'wall' | 'tree'
-export type BuildingType = 'goldmine' | 'townhall'
+export type BuildingType = 'goldmine' | 'townhall' | 'tree'
 export type BuildingCapability =
   | 'resource-source'
   | 'unit-spawner'
   | 'occupiable'
   | 'deposit-point'
-export type ResourceType = 'gold'
+export type ResourceType = 'gold' | 'wood'
+export type UnitType = 'worker'
+export type UnitCapability = 'move' | 'gather' | 'build'
 
 export type GridCoord = {
   x: number
@@ -95,20 +97,47 @@ export type MoveCommandMessage = {
   destination: Vec2
 }
 
+export type GatherCommandMessage = {
+  type: 'gather_command'
+  unitIds: number[]
+  buildingId: string
+}
+
+export type ResourceStockSnapshot = {
+  id: string
+  label: string
+  amount: number
+  accent: string
+}
+
+export type PlayerSnapshot = {
+  playerId: string
+  color: string
+  resources: ResourceStockSnapshot[]
+}
+
 export type ClientMessage =
   | JoinMatchMessage
   | LeaveMatchMessage
   | MoveCommandMessage
+  | GatherCommandMessage
   | PongMessage
 
 export type UnitSnapshot = {
   id: number
   ownerId: string
   color: string
+  unitType: UnitType
+  name: string
+  capabilities?: UnitCapability[]
+  visible: boolean
+  status?: string
   x: number
   y: number
   hp: number
   maxHp: number
+  carriedResourceType?: ResourceType
+  carriedAmount?: number
   targetX?: number
   targetY?: number
   moving: boolean
@@ -127,6 +156,7 @@ export type MatchSnapshotMessage = {
   serverNow: number
   matchId: string
   map: MapConfig
+  players: PlayerSnapshot[]
   units: UnitSnapshot[]
 }
 

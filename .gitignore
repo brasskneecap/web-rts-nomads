@@ -16,3 +16,4 @@ bin/
 
 # IDE
 .vscode/
+settings.local.json

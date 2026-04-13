@@ -11,19 +11,33 @@ import (
 )
 
 type Unit struct {
-	ID      int
-	OwnerID string
-	Color   string
-	X       float64
-	Y       float64
-	HP      int
-	MaxHP   int
+	ID           int
+	OwnerID      string
+	Color        string
+	UnitType     string
+	Name         string
+	Capabilities []string
+	Visible      bool
+	Status       string
+	X            float64
+	Y            float64
+	HP           int
+	MaxHP        int
 
-	TargetX float64
-	TargetY float64
-	Moving  bool
-	Path    []protocol.Vec2
-	OrderID int64
+	CarriedResourceType  string
+	CarriedAmount        int
+	GatherTargetID       string
+	GatherBuildingType   string
+	ReturnTargetID       string
+	MiningInside         bool
+	MiningRemaining     float64
+	Gathering           bool
+	Returning           bool
+	TargetX             float64
+	TargetY             float64
+	Moving              bool
+	Path                []protocol.Vec2
+	OrderID             int64
 }
 
 const (
@@ -34,8 +48,9 @@ const (
 )
 
 type Player struct {
-	ID    string
-	Color string
+	ID        string
+	Color     string
+	Resources map[string]int
 }
 
 type GameState struct {
@@ -51,10 +66,18 @@ type GameState struct {
 	Units   []*Unit
 	Players map[string]*Player
 
-	nextUnitID int
+	nextUnitID  int
 	nextOrderID int64
-	rng        *rand.Rand
+	rng         *rand.Rand
 }
+
+const (
+	workerCarryCapacity   = 25
+	goldmineWorkerCap     = 3
+	goldmineMiningSeconds = 5.0
+	treeWorkerCap         = 1
+	treeChoppingSeconds   = 3.0
+)
 
 func NewGameState(mapConfig protocol.MapConfig) *GameState {
 	state := &GameState{
@@ -96,14 +119,21 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	units := make([]protocol.UnitSnapshot, 0, len(s.Units))
 	for _, unit := range s.Units {
 		snapshot := protocol.UnitSnapshot{
-			ID:      unit.ID,
-			OwnerID: unit.OwnerID,
-			Color:   unit.Color,
-			X:       unit.X,
-			Y:       unit.Y,
-			HP:      unit.HP,
-			MaxHP:   unit.MaxHP,
-			Moving:  unit.Moving,
+			ID:                  unit.ID,
+			OwnerID:             unit.OwnerID,
+			Color:               unit.Color,
+			UnitType:            unit.UnitType,
+			Name:                unit.Name,
+			Capabilities:        append([]string(nil), unit.Capabilities...),
+			Visible:             unit.Visible,
+			Status:              unit.Status,
+			X:                   unit.X,
+			Y:                   unit.Y,
+			HP:                  unit.HP,
+			MaxHP:               unit.MaxHP,
+			CarriedResourceType: unit.CarriedResourceType,
+			CarriedAmount:       unit.CarriedAmount,
+			Moving:              unit.Moving,
 		}
 
 		if unit.Moving {
@@ -114,12 +144,22 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		units = append(units, snapshot)
 	}
 
+	players := make([]protocol.PlayerSnapshot, 0, len(s.Players))
+	for _, player := range s.Players {
+		players = append(players, protocol.PlayerSnapshot{
+			PlayerID:  player.ID,
+			Color:     player.Color,
+			Resources: s.getPlayerResourceStocksLocked(player),
+		})
+	}
+
 	return protocol.MatchSnapshotMessage{
 		Type:      "match_snapshot",
 		Tick:      s.Tick,
 		ServerNow: time.Now().UnixMilli(),
 		Map:       s.MapConfig,
-		Units: units,
+		Players:   players,
+		Units:     units,
 	}
 }
 
@@ -136,6 +176,12 @@ func (s *GameState) Update(dt float64) {
 	blocked := s.buildBlockedCells()
 
 	for _, unit := range s.Units {
+		s.updateWorkerTaskLocked(unit, dt, blocked)
+
+		if unit.MiningInside {
+			continue
+		}
+
 		if !unit.Moving {
 			continue
 		}
@@ -183,6 +229,7 @@ func (s *GameState) Update(dt float64) {
 	}
 
 	s.applyUnitSeparationLocked(blocked)
+	s.refreshBuildingRuntimeMetadataLocked()
 }
 
 func (s *GameState) MoveUnits(playerID string, unitIDs []int, dest protocol.Vec2) {
@@ -257,6 +304,11 @@ func (s *GameState) EnsurePlayer(playerID string) {
 	s.Players[playerID] = &Player{
 		ID:    playerID,
 		Color: color,
+		Resources: map[string]int{
+			"gold": 500,
+			"wood": 180,
+			"food": 24,
+		},
 	}
 
 	home := s.claimTownhallForPlayerLocked(playerID)
@@ -304,13 +356,18 @@ func (s *GameState) spawnUnitsForPlayerLocked(playerID, color string, count int,
 		spawn := spawnPositions[minInt(i, len(spawnPositions)-1)]
 
 		unit := &Unit{
-			ID:      s.nextUnitID,
-			OwnerID: playerID,
-			Color:   color,
-			X:       spawn.X,
-			Y:       spawn.Y,
-			HP:      100,
-			MaxHP:   100,
+			ID:           s.nextUnitID,
+			OwnerID:      playerID,
+			Color:        color,
+			UnitType:     "worker",
+			Name:         "Worker",
+			Capabilities: []string{"move", "gather", "build"},
+			Visible:      true,
+			Status:       "Idle",
+			X:            spawn.X,
+			Y:            spawn.Y,
+			HP:           100,
+			MaxHP:        100,
 		}
 
 		s.nextUnitID++
@@ -369,6 +426,47 @@ func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[g
 	unit.TargetY = finalTarget.Y
 	unit.Path = path
 	unit.Moving = len(path) > 0
+}
+
+func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, buildingID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil || !building.Visible || building.ResourceAmount <= 0 {
+		return
+	}
+	if building.BuildingType != "goldmine" && building.BuildingType != "tree" {
+		return
+	}
+
+	blocked := s.buildBlockedCells()
+	if len(s.getBuildingApproachPositionsLocked(*building, 1, blocked, nil)) == 0 {
+		return
+	}
+
+	orderID := s.nextMovementOrderIDLocked()
+
+	for _, unitID := range unitIDs {
+		unit := s.getUnitByIDLocked(unitID)
+		if unit == nil || unit.OwnerID != playerID || unit.UnitType != "worker" {
+			continue
+		}
+
+		unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
+		approachPoints := s.getBuildingApproachPositionsLocked(*building, 1, blocked, unitPos)
+		if len(approachPoints) == 0 {
+			continue
+		}
+
+		s.resetUnitMovementLocked(unit, orderID)
+		unit.GatherTargetID = buildingID
+		unit.GatherBuildingType = building.BuildingType
+		unit.ReturnTargetID = ""
+		unit.Gathering = false
+		unit.Returning = false
+		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+	}
 }
 
 func (s *GameState) repathUnitLocked(unit *Unit, blocked map[gridPoint]bool) bool {
@@ -570,6 +668,468 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.Moving = false
 	unit.TargetX = unit.X
 	unit.TargetY = unit.Y
+	unit.GatherTargetID = ""
+	unit.GatherBuildingType = ""
+	unit.ReturnTargetID = ""
+	unit.MiningInside = false
+	unit.MiningRemaining = 0
+	unit.Gathering = false
+	unit.Returning = false
+	unit.Visible = true
+	unit.Status = "Idle"
+}
+
+func (s *GameState) clearUnitGatherStateLocked(unit *Unit) {
+	unit.GatherTargetID = ""
+	unit.GatherBuildingType = ""
+	unit.ReturnTargetID = ""
+	unit.MiningInside = false
+	unit.MiningRemaining = 0
+	unit.Gathering = false
+	unit.Returning = false
+	unit.Visible = true
+	unit.Status = "Idle"
+}
+
+func (s *GameState) removeBuildingByIDLocked(buildingID string) {
+	filtered := make([]protocol.BuildingTile, 0, len(s.MapConfig.Buildings)-1)
+	for _, b := range s.MapConfig.Buildings {
+		if b.ID != buildingID {
+			filtered = append(filtered, b)
+		}
+	}
+	s.MapConfig.Buildings = filtered
+}
+
+// completeReturnDepositLocked handles a worker who is returning to deposit but the
+// resource node is already depleted or gone. The worker deposits their carried load
+// and then idles instead of looping back to the resource.
+func (s *GameState) completeReturnDepositLocked(unit *Unit, blocked map[gridPoint]bool) {
+	townhall := s.getBuildingByIDLocked(unit.ReturnTargetID)
+	if townhall == nil {
+		townhall = s.findOwnedTownhallLocked(unit.OwnerID)
+		if townhall != nil {
+			unit.ReturnTargetID = townhall.ID
+		}
+	}
+	if townhall == nil {
+		s.clearUnitGatherStateLocked(unit)
+		return
+	}
+
+	if s.isUnitNearBuildingLocked(unit, *townhall, s.MapConfig.CellSize*1.5) && !unit.Moving {
+		if player, ok := s.Players[unit.OwnerID]; ok && unit.CarriedAmount > 0 {
+			player.Resources[unit.CarriedResourceType] += unit.CarriedAmount
+		}
+		unit.CarriedAmount = 0
+		unit.CarriedResourceType = ""
+		unit.Returning = false
+		unit.Gathering = false
+		if unit.GatherBuildingType == "tree" {
+			s.redirectUnitToTreeLocked(unit, blocked)
+		} else {
+			s.clearUnitGatherStateLocked(unit)
+		}
+		return
+	}
+
+	if !unit.Moving {
+		unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
+		approachPoints := s.getBuildingApproachPositionsLocked(*townhall, 1, blocked, unitPos)
+		if len(approachPoints) > 0 {
+			s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+		}
+	}
+}
+
+func (s *GameState) getUnitByIDLocked(unitID int) *Unit {
+	for _, unit := range s.Units {
+		if unit.ID == unitID {
+			return unit
+		}
+	}
+	return nil
+}
+
+func (s *GameState) getBuildingByIDLocked(buildingID string) *protocol.BuildingTile {
+	for i := range s.MapConfig.Buildings {
+		if s.MapConfig.Buildings[i].ID == buildingID {
+			return &s.MapConfig.Buildings[i]
+		}
+	}
+	return nil
+}
+
+func (s *GameState) getPlayerResourceStocksLocked(player *Player) []protocol.ResourceStock {
+	return []protocol.ResourceStock{
+		{ID: "gold", Label: "Gold", Amount: player.Resources["gold"], Accent: "#d4a84f"},
+		{ID: "wood", Label: "Wood", Amount: player.Resources["wood"], Accent: "#7a9a52"},
+		{ID: "food", Label: "Food", Amount: player.Resources["food"], Accent: "#c96e43"},
+	}
+}
+
+func (s *GameState) findNearestAvailableTreeLocked(excludeID string, unitX, unitY float64, blocked map[gridPoint]bool) *protocol.BuildingTile {
+	var best *protocol.BuildingTile
+	bestDist := math.MaxFloat64
+
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "tree" || b.ID == excludeID {
+			continue
+		}
+		if b.ResourceAmount <= 0 {
+			continue
+		}
+		if s.countWorkersInsideBuildingLocked(b.ID) >= treeWorkerCap {
+			continue
+		}
+		if len(s.getBuildingApproachPositionsLocked(*b, 1, blocked, nil)) == 0 {
+			continue
+		}
+		centerX := (float64(b.X) + float64(b.Width)/2) * s.MapConfig.CellSize
+		centerY := (float64(b.Y) + float64(b.Height)/2) * s.MapConfig.CellSize
+		dist := distanceSquared(unitX, unitY, centerX, centerY)
+		if dist < bestDist {
+			bestDist = dist
+			best = b
+		}
+	}
+
+	return best
+}
+
+func (s *GameState) redirectUnitToTreeLocked(unit *Unit, blocked map[gridPoint]bool) {
+	next := s.findNearestAvailableTreeLocked(unit.GatherTargetID, unit.X, unit.Y, blocked)
+	if next == nil {
+		s.clearUnitGatherStateLocked(unit)
+		return
+	}
+
+	unit.GatherTargetID = next.ID
+	unit.GatherBuildingType = "tree"
+	unit.ReturnTargetID = ""
+	unit.Returning = false
+	unit.Gathering = false
+	unit.MiningInside = false
+	unit.MiningRemaining = 0
+	unit.Status = "Heading To Tree"
+
+	unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
+	approachPoints := s.getBuildingApproachPositionsLocked(*next, 1, blocked, unitPos)
+	if len(approachPoints) > 0 {
+		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+	}
+}
+
+func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[gridPoint]bool) {
+	if unit.UnitType != "worker" || unit.GatherTargetID == "" {
+		return
+	}
+
+	resourceNode := s.getBuildingByIDLocked(unit.GatherTargetID)
+	nodeAlive := resourceNode != nil && resourceNode.ResourceAmount > 0
+
+	if !nodeAlive {
+		if unit.Returning && unit.CarriedAmount > 0 {
+			// Node is gone but the worker has resources to deposit.
+			// completeReturnDepositLocked will redirect to a new tree afterwards
+			// (if GatherBuildingType is "tree") rather than idling.
+			s.completeReturnDepositLocked(unit, blocked)
+		} else if unit.GatherBuildingType == "tree" {
+			s.redirectUnitToTreeLocked(unit, blocked)
+		} else {
+			s.clearUnitGatherStateLocked(unit)
+		}
+		return
+	}
+
+	isTree := resourceNode.BuildingType == "tree"
+
+	if unit.MiningInside {
+		if isTree {
+			unit.Status = "Chopping Wood"
+		} else {
+			unit.Status = "Mining Gold"
+		}
+		unit.MiningRemaining -= dt
+		if unit.MiningRemaining > 0 {
+			return
+		}
+
+		unit.MiningInside = false
+		unit.Gathering = false
+		unit.Visible = true
+		gathered := minInt(workerCarryCapacity, resourceNode.ResourceAmount)
+		if gathered > 0 {
+			unit.CarriedResourceType = resourceNode.ResourceType
+			unit.CarriedAmount = gathered
+			resourceNode.ResourceAmount -= gathered
+		}
+
+		if !isTree {
+			if exitPoint := s.getUnitExitPositionForBuildingLocked(*resourceNode, unit); exitPoint != nil {
+				unit.X = exitPoint.X
+				unit.Y = exitPoint.Y
+				unit.TargetX = exitPoint.X
+				unit.TargetY = exitPoint.Y
+			}
+		}
+
+		// Remove the building once its resource pool is empty.
+		if resourceNode.ResourceAmount <= 0 {
+			s.removeBuildingByIDLocked(resourceNode.ID)
+		}
+
+		s.sendWorkerToDepositLocked(unit, blocked)
+		return
+	}
+
+	if unit.Returning {
+		if isTree {
+			unit.Status = "Returning Wood"
+		} else {
+			unit.Status = "Returning Gold"
+		}
+		townhall := s.getBuildingByIDLocked(unit.ReturnTargetID)
+		if townhall == nil {
+			townhall = s.findOwnedTownhallLocked(unit.OwnerID)
+			if townhall != nil {
+				unit.ReturnTargetID = townhall.ID
+			}
+		}
+		if townhall == nil {
+			unit.Returning = false
+			return
+		}
+
+		if s.isUnitNearBuildingLocked(unit, *townhall, s.MapConfig.CellSize*1.5) && !unit.Moving {
+			if player, ok := s.Players[unit.OwnerID]; ok && unit.CarriedResourceType != "" && unit.CarriedAmount > 0 {
+				player.Resources[unit.CarriedResourceType] += unit.CarriedAmount
+			}
+			unit.CarriedAmount = 0
+			unit.CarriedResourceType = ""
+			unit.Returning = false
+			unit.Gathering = false
+
+			// Re-check the node; another worker may have depleted it this tick.
+			liveNode := s.getBuildingByIDLocked(unit.GatherTargetID)
+			if liveNode == nil || liveNode.ResourceAmount <= 0 {
+				if isTree {
+					s.redirectUnitToTreeLocked(unit, blocked)
+				} else {
+					s.clearUnitGatherStateLocked(unit)
+				}
+				return
+			}
+
+			if isTree {
+				unit.Status = "Returning To Tree"
+			} else {
+				unit.Status = "Returning To Mine"
+			}
+
+			unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
+			approachPoints := s.getBuildingApproachPositionsLocked(*liveNode, 1, blocked, unitPos)
+			if len(approachPoints) > 0 {
+				s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+			}
+			return
+		}
+
+		if !unit.Moving {
+			unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
+			approachPoints := s.getBuildingApproachPositionsLocked(*townhall, 1, blocked, unitPos)
+			if len(approachPoints) > 0 {
+				s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+			}
+		}
+		return
+	}
+
+	if !s.isUnitNearBuildingLocked(unit, *resourceNode, s.MapConfig.CellSize*1.5) {
+		if isTree {
+			unit.Status = "Heading To Tree"
+		} else {
+			unit.Status = "Heading To Mine"
+		}
+		if !unit.Moving {
+			unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
+			approachPoints := s.getBuildingApproachPositionsLocked(*resourceNode, 1, blocked, unitPos)
+			if len(approachPoints) > 0 {
+				s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+			}
+		}
+		return
+	}
+
+	if unit.Moving {
+		if isTree {
+			unit.Status = "Heading To Tree"
+		} else {
+			unit.Status = "Heading To Mine"
+		}
+		return
+	}
+
+	workerCap := goldmineWorkerCap
+	if isTree {
+		workerCap = treeWorkerCap
+	}
+	if s.countWorkersInsideBuildingLocked(resourceNode.ID) >= workerCap {
+		if isTree {
+			s.redirectUnitToTreeLocked(unit, blocked)
+		} else {
+			unit.Status = "Waiting For Mine Slot"
+		}
+		return
+	}
+
+	choppingDuration := goldmineMiningSeconds
+	if isTree {
+		choppingDuration = treeChoppingSeconds
+	}
+	unit.Gathering = true
+	unit.MiningInside = true
+	unit.MiningRemaining = choppingDuration
+	if !isTree {
+		unit.Visible = false
+	}
+	unit.Moving = false
+	unit.Path = nil
+	if isTree {
+		unit.Status = "Chopping Wood"
+	} else {
+		unit.Status = "Mining Gold"
+	}
+}
+
+func (s *GameState) sendWorkerToDepositLocked(unit *Unit, blocked map[gridPoint]bool) {
+	townhall := s.findOwnedTownhallLocked(unit.OwnerID)
+	if townhall == nil {
+		unit.Status = "Idle"
+		return
+	}
+
+	unit.ReturnTargetID = townhall.ID
+	unit.Returning = true
+	unit.Gathering = false
+	if unit.CarriedResourceType == "wood" {
+		unit.Status = "Returning Wood"
+	} else {
+		unit.Status = "Returning Gold"
+	}
+
+	unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
+	approachPoints := s.getBuildingApproachPositionsLocked(*townhall, 1, blocked, unitPos)
+	if len(approachPoints) > 0 {
+		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+	}
+}
+
+func (s *GameState) findOwnedTownhallLocked(ownerID string) *protocol.BuildingTile {
+	for i := range s.MapConfig.Buildings {
+		building := &s.MapConfig.Buildings[i]
+		if building.BuildingType == "townhall" && building.Visible && building.OwnerID != nil && *building.OwnerID == ownerID {
+			return building
+		}
+	}
+	return nil
+}
+
+func (s *GameState) isUnitNearBuildingLocked(unit *Unit, building protocol.BuildingTile, padding float64) bool {
+	left := float64(building.X) * s.MapConfig.CellSize
+	top := float64(building.Y) * s.MapConfig.CellSize
+	right := left + float64(building.Width)*s.MapConfig.CellSize
+	bottom := top + float64(building.Height)*s.MapConfig.CellSize
+	return unit.X >= left-padding && unit.X <= right+padding && unit.Y >= top-padding && unit.Y <= bottom+padding
+}
+
+func (s *GameState) getBuildingApproachPositionsLocked(building protocol.BuildingTile, count int, blocked map[gridPoint]bool, origin *protocol.Vec2) []protocol.Vec2 {
+	if count <= 0 {
+		return nil
+	}
+
+	candidates := make([]gridPoint, 0, (building.Width+2)*(building.Height+2))
+	seen := make(map[gridPoint]bool)
+
+	sortOrigin := protocol.Vec2{
+		X: (float64(building.X) + float64(building.Width)/2) * s.MapConfig.CellSize,
+		Y: (float64(building.Y) + float64(building.Height)/2) * s.MapConfig.CellSize,
+	}
+	if origin != nil {
+		sortOrigin = *origin
+	}
+
+	for y := building.Y - 1; y <= building.Y+building.Height; y++ {
+		for x := building.X - 1; x <= building.X+building.Width; x++ {
+			isPerimeter := x == building.X-1 || x == building.X+building.Width || y == building.Y-1 || y == building.Y+building.Height
+			if !isPerimeter {
+				continue
+			}
+
+			cell := gridPoint{X: x, Y: y}
+			if seen[cell] || !s.isWalkable(cell, blocked) {
+				continue
+			}
+
+			seen[cell] = true
+			candidates = append(candidates, cell)
+		}
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		a := s.gridToWorldCenter(candidates[i])
+		b := s.gridToWorldCenter(candidates[j])
+		return distanceSquared(a.X, a.Y, sortOrigin.X, sortOrigin.Y) < distanceSquared(b.X, b.Y, sortOrigin.X, sortOrigin.Y)
+	})
+
+	positions := make([]protocol.Vec2, 0, minInt(count, len(candidates)))
+	for _, cell := range candidates {
+		positions = append(positions, s.gridToWorldCenter(cell))
+		if len(positions) >= count {
+			break
+		}
+	}
+
+	return positions
+}
+
+func (s *GameState) getUnitExitPositionForBuildingLocked(building protocol.BuildingTile, unit *Unit) *protocol.Vec2 {
+	unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
+	positions := s.getBuildingApproachPositionsLocked(building, 1, s.buildBlockedCells(), unitPos)
+	if len(positions) == 0 {
+		return nil
+	}
+	position := positions[0]
+	return &position
+}
+
+func (s *GameState) countWorkersInsideBuildingLocked(buildingID string) int {
+	count := 0
+	for _, unit := range s.Units {
+		if unit.MiningInside && unit.GatherTargetID == buildingID {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *GameState) refreshBuildingRuntimeMetadataLocked() {
+	for i := range s.MapConfig.Buildings {
+		building := &s.MapConfig.Buildings[i]
+		if building.Metadata == nil {
+			building.Metadata = map[string]interface{}{}
+		}
+
+		if building.BuildingType == "goldmine" {
+			building.Metadata["currentWorkers"] = s.countWorkersInsideBuildingLocked(building.ID)
+			building.Metadata["maxWorkers"] = goldmineWorkerCap
+		}
+		if building.BuildingType == "tree" {
+			building.Metadata["currentWorkers"] = s.countWorkersInsideBuildingLocked(building.ID)
+			building.Metadata["maxWorkers"] = treeWorkerCap
+		}
+	}
 }
 
 func (s *GameState) applyUnitSeparationLocked(blocked map[gridPoint]bool) {

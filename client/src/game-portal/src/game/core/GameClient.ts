@@ -5,11 +5,12 @@ import { InputManager } from '../input/InputManager'
 import { Camera } from '../rendering/Camera'
 import { NetworkClient } from '../network/NetworkClient'
 import type { MapId } from '../network/protocol'
-import type { PlayerSummary, Unit } from './GameState'
+import type { PlayerSummary, SelectionSummary, Unit } from './GameState'
 
 export type GameUiSnapshot = {
   player: PlayerSummary
   selectedUnits: Unit[]
+  selection: SelectionSummary
 }
 
 export class GameClient {
@@ -60,6 +61,7 @@ export class GameClient {
     return {
       player: this.state.getPlayerSummary(),
       selectedUnits: this.state.getSelectedUnits(),
+      selection: this.state.getSelectionSummary(),
     }
   }
 

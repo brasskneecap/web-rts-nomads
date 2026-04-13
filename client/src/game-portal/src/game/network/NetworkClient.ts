@@ -1,5 +1,6 @@
 import type {
   ClientMessage,
+  GatherCommandMessage,
   LeaveMatchMessage,
   MapId,
   MatchSnapshotMessage,
@@ -119,6 +120,16 @@ export class NetworkClient {
       type: 'move_command',
       unitIds,
       destination: { x, y },
+    }
+
+    this.send(message)
+  }
+
+  sendGatherCommand(unitIds: number[], buildingId: string) {
+    const message: GatherCommandMessage = {
+      type: 'gather_command',
+      unitIds,
+      buildingId,
     }
 
     this.send(message)

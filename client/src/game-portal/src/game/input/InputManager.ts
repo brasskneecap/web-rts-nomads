@@ -21,6 +21,7 @@ export class InputManager {
 
   private lastMouseX = 0
   private lastMouseY = 0
+  private readonly gatherCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Ccircle cx='14' cy='14' r='11' fill='rgba(202,138,4,0.95)' stroke='rgba(15,23,42,0.9)' stroke-width='2'/%3E%3Cpath d='M9 16l4.2-4.4 2.6 2.6L12 18z' fill='%23fff7d6'/%3E%3Cpath d='M15.6 9.4l3 3' stroke='%230f172a' stroke-width='2.2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 14 14, pointer`
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -36,6 +37,7 @@ export class InputManager {
     canvas.addEventListener('contextmenu', this.onRightClick)
     canvas.addEventListener('mousedown', this.onMouseDown)
     canvas.addEventListener('mousemove', this.onMouseMove)
+    canvas.addEventListener('mouseleave', this.onMouseLeave)
     canvas.addEventListener('wheel', this.onWheel, { passive: false })
 
     window.addEventListener('mouseup', this.onMouseUp)
@@ -68,7 +70,7 @@ export class InputManager {
     if (e.code === 'Space') {
       this.isSpaceHeld = false
       this.isSpacePanning = false
-      this.canvas.style.cursor = 'default'
+      this.updateHoverCursor(this.lastMouseX, this.lastMouseY)
       e.preventDefault()
     }
   }
@@ -110,6 +112,7 @@ export class InputManager {
 
   private onMouseMove = (e: MouseEvent) => {
     const screen = this.getScreenPosition(e)
+    this.updateHoverCursor(screen.x, screen.y)
 
     if (this.isLeftMouseDown && this.isMinimapNavigating) {
       this.centerCameraFromMinimap(screen.x, screen.y)
@@ -184,6 +187,7 @@ export class InputManager {
       }
     } else {
       const clickedUnit = this.state.getUnitAtPosition(world.x, world.y)
+      const clickedBuilding = this.state.getBuildingAtPosition(world.x, world.y)
 
       if (clickedUnit) {
         if (isShiftHeld) {
@@ -191,6 +195,8 @@ export class InputManager {
         } else {
           this.state.selectUnit(clickedUnit.id)
         }
+      } else if (clickedBuilding && !isShiftHeld) {
+        this.state.selectBuilding(clickedBuilding.id)
       } else if (!isShiftHeld) {
         this.state.clearSelection()
       }
@@ -208,11 +214,32 @@ export class InputManager {
 
     const world = this.getWorldPosition(e)
     const unitIds = this.state.getOrderedSelectedUnitIds()
+    const clickedBuilding = this.state.getBuildingAtPosition(world.x, world.y, 16)
 
     if (unitIds.length === 0) return
 
+    if (
+      clickedBuilding &&
+      clickedBuilding.capabilities.includes('resource-source') &&
+      this.state.selectedUnitsCanGather()
+    ) {
+      const cellSize = this.state.mapConfig.cellSize
+      const buildingCenterX = (clickedBuilding.x + clickedBuilding.width / 2) * cellSize
+      const buildingCenterY = (clickedBuilding.y + clickedBuilding.height / 2) * cellSize
+      this.state.addMoveMarker(buildingCenterX, buildingCenterY, 700)
+      this.network.sendGatherCommand(unitIds, clickedBuilding.id)
+      return
+    }
+
     this.state.addFormationMoveMarkers(world.x, world.y)
     this.network.sendMoveCommand(unitIds, world.x, world.y)
+  }
+
+  private onMouseLeave = () => {
+    this.state.setHoveredInteractableBuilding(null)
+    if (!this.isSpaceHeld && !this.isSpacePanning && !this.isMiddleMouseDown) {
+      this.canvas.style.cursor = 'default'
+    }
   }
 
   private onWheel = (e: WheelEvent) => {
@@ -231,11 +258,36 @@ export class InputManager {
     this.canvas.removeEventListener('contextmenu', this.onRightClick)
     this.canvas.removeEventListener('mousedown', this.onMouseDown)
     this.canvas.removeEventListener('mousemove', this.onMouseMove)
+    this.canvas.removeEventListener('mouseleave', this.onMouseLeave)
     this.canvas.removeEventListener('wheel', this.onWheel)
 
     window.removeEventListener('mouseup', this.onMouseUp)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
+  }
+
+  private updateHoverCursor(screenX: number, screenY: number) {
+    if (this.isSpaceHeld || this.isSpacePanning) {
+      this.canvas.style.cursor = this.isSpacePanning ? 'grabbing' : 'grab'
+      this.state.setHoveredInteractableBuilding(null)
+      return
+    }
+
+    if (this.isMiddleMouseDown || this.isMinimapNavigating) {
+      this.canvas.style.cursor = 'default'
+      this.state.setHoveredInteractableBuilding(null)
+      return
+    }
+
+    const world = this.camera.screenToWorld(screenX, screenY)
+    const hoveredBuilding = this.state.getBuildingAtPosition(world.x, world.y, 16)
+    const canGather =
+      !!hoveredBuilding &&
+      hoveredBuilding.capabilities.includes('resource-source') &&
+      this.state.selectedUnitsCanGather()
+
+    this.state.setHoveredInteractableBuilding(canGather ? hoveredBuilding.id : null)
+    this.canvas.style.cursor = canGather ? this.gatherCursor : 'default'
   }
 
   private isInsideMinimap(screenX: number, screenY: number) {

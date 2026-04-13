@@ -70,21 +70,47 @@ type MoveCommandMessage struct {
 	Destination Vec2   `json:"destination"`
 }
 
+type GatherCommandMessage struct {
+	Type       string `json:"type"`
+	UnitIDs    []int  `json:"unitIds"`
+	BuildingID string `json:"buildingId"`
+}
+
 type ClientMessage struct {
 	Type string `json:"type"`
 }
 
+type ResourceStock struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Amount int    `json:"amount"`
+	Accent string `json:"accent"`
+}
+
+type PlayerSnapshot struct {
+	PlayerID   string          `json:"playerId"`
+	Color      string          `json:"color"`
+	Resources  []ResourceStock `json:"resources"`
+}
+
 type UnitSnapshot struct {
-	ID      int     `json:"id"`
-	OwnerID string  `json:"ownerId"`
-	Color   string  `json:"color"`
-	X       float64 `json:"x"`
-	Y       float64 `json:"y"`
-	HP      int     `json:"hp"`
-	MaxHP   int     `json:"maxHp"`
-	TargetX float64 `json:"targetX,omitempty"`
-	TargetY float64 `json:"targetY,omitempty"`
-	Moving  bool    `json:"moving"`
+	ID                  int      `json:"id"`
+	OwnerID             string   `json:"ownerId"`
+	Color               string   `json:"color"`
+	UnitType            string   `json:"unitType"`
+	Name                string   `json:"name"`
+	Capabilities        []string `json:"capabilities,omitempty"`
+	Visible             bool     `json:"visible"`
+	Status              string   `json:"status,omitempty"`
+	X                   float64  `json:"x"`
+	Y                   float64  `json:"y"`
+	HP                  int      `json:"hp"`
+	MaxHP               int      `json:"maxHp"`
+	CarriedResourceType string   `json:"carriedResourceType,omitempty"`
+	CarriedAmount       int      `json:"carriedAmount,omitempty"`
+	TargetX             float64  `json:"targetX,omitempty"`
+	TargetY             float64  `json:"targetY,omitempty"`
+	Moving              bool     `json:"moving"`
 }
 
 type WelcomeMessage struct {
@@ -100,6 +126,7 @@ type MatchSnapshotMessage struct {
 	ServerNow int64          `json:"serverNow"`
 	MatchID   string         `json:"matchId"`
 	Map       MapConfig      `json:"map"`
+	Players   []PlayerSnapshot `json:"players"`
 	Units     []UnitSnapshot `json:"units"`
 }
 

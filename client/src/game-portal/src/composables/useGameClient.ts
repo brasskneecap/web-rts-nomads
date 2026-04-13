@@ -13,6 +13,12 @@ const emptyUiSnapshot: GameUiSnapshot = {
     resources: [],
   },
   selectedUnits: [],
+  selection: {
+    kind: 'none',
+    title: 'No Selection',
+    subtitle: 'Select a unit or building to inspect details and actions.',
+    actions: [],
+  },
 }
 
 export function useGameClient() {

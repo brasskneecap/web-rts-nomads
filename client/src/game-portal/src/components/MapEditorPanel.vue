@@ -126,6 +126,7 @@
         <select id="building-type" v-model="selectedBuilding" :disabled="!paintModeEnabled">
           <option value="goldmine">Goldmine</option>
           <option value="townhall">Townhall</option>
+          <option value="tree">Tree (Harvestable)</option>
         </select>
       </div>
 
