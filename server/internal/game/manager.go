@@ -55,3 +55,13 @@ func (m *MatchManager) ListMatches() []*Match {
 	}
 	return matches
 }
+
+func (m *MatchManager) DeleteMatch(matchID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if match, ok := m.matches[matchID]; ok {
+		match.Stop()
+		delete(m.matches, matchID)
+	}
+}

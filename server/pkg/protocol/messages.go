@@ -99,6 +99,12 @@ type BuildBarracksCommandMessage struct {
 	GridY   int    `json:"gridY"`
 }
 
+type RepairCommandMessage struct {
+	Type       string `json:"type"`
+	UnitIDs    []int  `json:"unitIds"`
+	BuildingID string `json:"buildingId"`
+}
+
 type ClientMessage struct {
 	Type string `json:"type"`
 }

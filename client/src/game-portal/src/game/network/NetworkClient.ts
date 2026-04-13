@@ -167,6 +167,10 @@ export class NetworkClient {
     this.send(message)
   }
 
+  sendRepairCommand(unitIds: number[], buildingId: string) {
+    this.send({ type: 'repair_command', unitIds, buildingId })
+  }
+
   sendSetBuildingSpawnPointCommand(buildingId: string, x: number, y: number) {
     const message: SetBuildingSpawnPointCommandMessage = {
       type: 'set_building_spawn_point_command',

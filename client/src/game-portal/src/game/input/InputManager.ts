@@ -25,6 +25,7 @@ export class InputManager {
   private lastMouseY = 0
   private readonly moveCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' stroke='%230f172a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='14' cy='14' r='10.5' fill='rgba(125,220,255,0.92)'/%3E%3Cpath d='M14 5v18M5 14h18'/%3E%3Cpath d='M14 5l-3 3M14 5l3 3M23 14l-3-3M23 14l-3 3M14 23l-3-3M14 23l3-3M5 14l3-3M5 14l3 3'/%3E%3C/g%3E%3C/svg%3E") 14 14, pointer`
   private readonly gatherCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Ccircle cx='14' cy='14' r='11' fill='rgba(202,138,4,0.95)' stroke='rgba(15,23,42,0.9)' stroke-width='2'/%3E%3Cpath d='M9 16l4.2-4.4 2.6 2.6L12 18z' fill='%23fff7d6'/%3E%3Cpath d='M15.6 9.4l3 3' stroke='%230f172a' stroke-width='2.2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 14 14, pointer`
+  private readonly repairCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Ccircle cx='14' cy='14' r='11' fill='rgba(74,222,128,0.92)' stroke='rgba(15,23,42,0.9)' stroke-width='2'/%3E%3Cpath d='M9 14h10M14 9v10' stroke='%230f172a' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M10 10l8 8M18 10l-8 8' stroke='rgba(15,23,42,0.25)' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") 14 14, pointer`
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -68,7 +69,26 @@ export class InputManager {
       this.isSpaceHeld = true
       this.canvas.style.cursor = 'grab'
       e.preventDefault()
+      return
     }
+
+    if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) {
+      return
+    }
+
+    if ((e.key.toLowerCase() === 'x' || e.code === 'KeyX') && this.hasVisibleAction('close-build-menu')) {
+      this.client.performSelectionAction('close-build-menu')
+      e.preventDefault()
+      return
+    }
+
+    const actionId = this.getHotkeyAction(e)
+    if (!actionId) {
+      return
+    }
+
+    this.client.performSelectionAction(actionId)
+    e.preventDefault()
   }
 
   private onKeyUp = (e: KeyboardEvent) => {
@@ -241,6 +261,19 @@ export class InputManager {
 
     if (
       clickedBuilding &&
+      this.isRepairableBuilding(clickedBuilding) &&
+      this.state.selectedUnitsCanBuild()
+    ) {
+      const cellSize = this.state.mapConfig.cellSize
+      const buildingCenterX = (clickedBuilding.x + clickedBuilding.width / 2) * cellSize
+      const buildingCenterY = (clickedBuilding.y + clickedBuilding.height / 2) * cellSize
+      this.state.addMoveMarker(buildingCenterX, buildingCenterY, 700)
+      this.network.sendRepairCommand(unitIds, clickedBuilding.id)
+      return
+    }
+
+    if (
+      clickedBuilding &&
       clickedBuilding.capabilities.includes('resource-source') &&
       this.state.selectedUnitsCanGather()
     ) {
@@ -275,6 +308,10 @@ export class InputManager {
     )
   }
 
+  refreshCursor() {
+    this.updateHoverCursor(this.lastMouseX, this.lastMouseY)
+  }
+
   destroy() {
     this.canvas.removeEventListener('contextmenu', this.onRightClick)
     this.canvas.removeEventListener('mousedown', this.onMouseDown)
@@ -285,6 +322,54 @@ export class InputManager {
     window.removeEventListener('mouseup', this.onMouseUp)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
+  }
+
+  private isRepairableBuilding(
+    building: ReturnType<GameState['getBuildingAtPosition']>,
+  ): boolean {
+    return (
+      !!building &&
+      building.ownerId === this.state.localPlayerId &&
+      typeof building.metadata?.['hp'] === 'number' &&
+      typeof building.metadata?.['maxHp'] === 'number' &&
+      (building.metadata['hp'] as number) < (building.metadata['maxHp'] as number)
+    )
+  }
+
+  private hasVisibleAction(actionId: string): boolean {
+    return this.state
+      .getSelectionSummary()
+      .actions.some((action) => action.id === actionId && !action.disabled)
+  }
+
+  private getHotkeyAction(event: KeyboardEvent): string | null {
+    const selection = this.state.getSelectionSummary()
+
+    if (selection.kind !== 'unit' && selection.kind !== 'group') {
+      return null
+    }
+
+    const normalizedKey = event.key.toLowerCase()
+
+    const hotkeyActionMap: Record<string, string> = {
+      m: 'move',
+      r: 'repair',
+      g: 'gather',
+      b: selection.actions.some((action) => action.id === 'build-barracks')
+        ? 'build-barracks'
+        : 'build',
+    }
+
+    const requestedAction = hotkeyActionMap[normalizedKey]
+    if (!requestedAction) {
+      return null
+    }
+
+    const availableAction = selection.actions.find(
+      (action) => action.id === requestedAction && !action.disabled,
+    )
+
+    return availableAction?.id ?? null
   }
 
   private updateHoverCursor(screenX: number, screenY: number) {
@@ -311,6 +396,7 @@ export class InputManager {
     const isGatherableBuilding =
       !!hoveredBuilding &&
       hoveredBuilding.capabilities.includes('resource-source')
+    const isRepairableBuilding = this.isRepairableBuilding(hoveredBuilding)
 
     if (this.state.isUnitTargetingActive('move')) {
       this.state.setHoveredInteractableBuilding(null)
@@ -324,12 +410,27 @@ export class InputManager {
       return
     }
 
+    if (this.state.isUnitTargetingActive('repair')) {
+      this.state.setHoveredInteractableBuilding(isRepairableBuilding ? hoveredBuilding!.id : null)
+      this.canvas.style.cursor = this.repairCursor
+      return
+    }
+
     const canGather =
       isGatherableBuilding &&
       this.state.selectedUnitsCanGather()
+    const canRepair =
+      isRepairableBuilding &&
+      this.state.selectedUnitsCanBuild()
 
-    this.state.setHoveredInteractableBuilding(canGather ? hoveredBuilding.id : null)
-    this.canvas.style.cursor = canGather ? this.gatherCursor : 'default'
+    this.state.setHoveredInteractableBuilding(
+      canRepair || canGather ? hoveredBuilding!.id : null,
+    )
+    this.canvas.style.cursor = canRepair
+      ? this.repairCursor
+      : canGather
+        ? this.gatherCursor
+        : 'default'
   }
 
   private isInsideMinimap(screenX: number, screenY: number) {

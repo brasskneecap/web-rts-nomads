@@ -204,7 +204,7 @@ func (s *GameState) Update(dt float64) {
 	defer s.mu.Unlock()
 
 	s.updateUnitProductionsLocked(dt)
-	s.tickBuildingConstructionsLocked(dt)
+	s.tickBuildingRepairsLocked(dt)
 	blocked := s.buildBlockedCells()
 
 	for _, unit := range s.Units {
@@ -596,7 +596,12 @@ var barracksResourceCost = map[string]int{
 	"wood": 150,
 }
 
-const barricksBuildSeconds = 15.0
+const (
+	barricksBuildSeconds        = 15.0
+	barracksMaxHp               = 500.0
+	townhallMaxHp               = 1000.0
+	repairHPPerWorkerPerSecond  = barracksMaxHp / barricksBuildSeconds // ~33.33 HP/sec per worker
+)
 
 func (s *GameState) BuildBarracks(playerID string, unitIDs []int, gridX, gridY int) {
 	s.mu.Lock()
@@ -645,9 +650,9 @@ func (s *GameState) BuildBarracks(playerID string, unitIDs []int, gridX, gridY i
 		OwnerID:      &ownerID,
 		Capabilities: []string{},
 		Metadata: map[string]interface{}{
-			"underConstruction":            true,
-			"constructionRemainingSeconds": barricksBuildSeconds,
-			"constructionTotalSeconds":     barricksBuildSeconds,
+			"underConstruction": true,
+			"hp":                1.0,
+			"maxHp":             barracksMaxHp,
 		},
 	}
 
@@ -658,7 +663,11 @@ func (s *GameState) BuildBarracks(playerID string, unitIDs []int, gridX, gridY i
 	blocked = s.buildBlockedCells()
 	orderID := s.nextMovementOrderIDLocked()
 
+	assigned := 0
 	for _, unitID := range unitIDs {
+		if assigned >= maxBuildersPerBuilding {
+			break
+		}
 		unit := s.getUnitByIDLocked(unitID)
 		if unit == nil || unit.OwnerID != playerID || unit.UnitType != "worker" {
 			continue
@@ -670,6 +679,7 @@ func (s *GameState) BuildBarracks(playerID string, unitIDs []int, gridX, gridY i
 		s.resetUnitMovementLocked(unit, orderID)
 		unit.BuildTargetID = buildingID
 		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+		assigned++
 	}
 }
 
@@ -706,6 +716,11 @@ func (s *GameState) claimTownhallForPlayerLocked(playerID string) *protocol.Buil
 		building.OwnerID = &ownerID
 		building.Occupied = true
 		building.Visible = true
+		if building.Metadata == nil {
+			building.Metadata = map[string]interface{}{}
+		}
+		building.Metadata["hp"] = townhallMaxHp
+		building.Metadata["maxHp"] = townhallMaxHp
 		return building
 	}
 
@@ -1062,35 +1077,49 @@ func (s *GameState) updateWorkerBuildStateLocked(unit *Unit) {
 	unit.Status = "Building"
 }
 
-func (s *GameState) tickBuildingConstructionsLocked(dt float64) {
+const maxBuildersPerBuilding = 3
+
+func getBuildingHP(building *protocol.BuildingTile) (hp, maxHp float64, ok bool) {
+	if building.Metadata == nil {
+		return 0, 0, false
+	}
+	h, hOk := building.Metadata["hp"].(float64)
+	m, mOk := building.Metadata["maxHp"].(float64)
+	if !hOk || !mOk || m <= 0 {
+		return 0, 0, false
+	}
+	return h, m, true
+}
+
+func (s *GameState) tickBuildingRepairsLocked(dt float64) {
 	for i := range s.MapConfig.Buildings {
 		building := &s.MapConfig.Buildings[i]
-		if building.Metadata == nil {
-			continue
-		}
-		remaining, ok := building.Metadata["constructionRemainingSeconds"].(float64)
-		if !ok || remaining <= 0 {
+
+		hp, maxHp, ok := getBuildingHP(building)
+		if !ok || hp >= maxHp {
 			continue
 		}
 
-		hasActiveBuilder := false
+		builderCount := 0
 		for _, unit := range s.Units {
 			if unit.BuildTargetID == building.ID && unit.Building {
-				hasActiveBuilder = true
-				break
+				builderCount++
 			}
 		}
-		if !hasActiveBuilder {
+		if builderCount == 0 {
+			building.Metadata["builderCount"] = 0
 			continue
 		}
 
-		remaining = math.Max(0, remaining-dt)
-		building.Metadata["constructionRemainingSeconds"] = remaining
+		building.Metadata["builderCount"] = builderCount
 
-		if remaining == 0 {
+		newHp := math.Min(maxHp, hp+repairHPPerWorkerPerSecond*float64(builderCount)*dt)
+		building.Metadata["hp"] = newHp
+
+		if newHp >= maxHp {
+			// Building complete / fully repaired
 			delete(building.Metadata, "underConstruction")
-			delete(building.Metadata, "constructionRemainingSeconds")
-			delete(building.Metadata, "constructionTotalSeconds")
+			delete(building.Metadata, "builderCount")
 			for _, unit := range s.Units {
 				if unit.BuildTargetID == building.ID {
 					unit.BuildTargetID = ""
@@ -1099,6 +1128,59 @@ func (s *GameState) tickBuildingConstructionsLocked(dt float64) {
 				}
 			}
 		}
+	}
+}
+
+func (s *GameState) RepairBuilding(playerID string, unitIDs []int, buildingID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil || building.OwnerID == nil || *building.OwnerID != playerID {
+		return
+	}
+
+	hp, maxHp, ok := getBuildingHP(building)
+	if !ok || hp >= maxHp {
+		return // no HP pool or already at full health
+	}
+
+	// Count existing builders not in the incoming unit list
+	unitIDSet := make(map[int]bool, len(unitIDs))
+	for _, id := range unitIDs {
+		unitIDSet[id] = true
+	}
+	existingBuilders := 0
+	for _, unit := range s.Units {
+		if unit.BuildTargetID == buildingID && !unitIDSet[unit.ID] {
+			existingBuilders++
+		}
+	}
+
+	blocked := s.buildBlockedCells()
+	orderID := s.nextMovementOrderIDLocked()
+
+	added := 0
+	for _, unitID := range unitIDs {
+		if existingBuilders+added >= maxBuildersPerBuilding {
+			break
+		}
+		unit := s.getUnitByIDLocked(unitID)
+		if unit == nil || unit.OwnerID != playerID || unit.UnitType != "worker" {
+			continue
+		}
+		unit.GatherTargetID = ""
+		unit.MiningInside = false
+		unit.Building = false
+
+		approachPoints := s.getBuildingApproachPositionsLocked(*building, 1, blocked, &protocol.Vec2{X: unit.X, Y: unit.Y})
+		if len(approachPoints) == 0 {
+			continue
+		}
+		s.resetUnitMovementLocked(unit, orderID)
+		unit.BuildTargetID = buildingID
+		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+		added++
 	}
 }
 

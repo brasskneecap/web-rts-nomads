@@ -7,6 +7,17 @@
       </section>
 
       <section class="selection-panel selection-panel--details">
+        <div v-if="ui.selection.kind === 'building' && ui.selection.construction" class="construction-card">
+          <div class="construction-bar">
+            <div
+              class="construction-bar__fill"
+              :style="{ width: `${Math.max(0, Math.min(ui.selection.construction.progress * 100, 100))}%` }"
+            />
+            <div class="construction-bar__time">{{ ui.selection.construction.timeLabel }}</div>
+            <div class="construction-bar__builders">{{ ui.selection.construction.builderCount }}/3</div>
+          </div>
+        </div>
+
         <div v-if="ui.selection.production" class="production-card">
           <div class="production-bar">
             <div
@@ -85,6 +96,7 @@ const ACTION_ICONS: Record<string, string> = {
   'cancel-training':  'M18 6L6 18 M6 6l12 12',
   'build-barracks':   'M3 21h18 M5 21V9h14v12 M10 21v-5h4v5 M3 9l9-6 9 6 M8 14h2 M14 14h2',
   'close-build-menu': 'M19 12H5 M12 5l-7 7 7 7',
+  'repair':           'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z M3 12h1 M7 5l-4 4 M19 12h2 M12 3v1',
 }
 
 function getActionIcon(id: string): string {
@@ -114,6 +126,7 @@ function getActionIcon(id: string): string {
   align-items: stretch;
   flex: 1 1 auto;
   min-width: 0;
+  max-width: 1500px;
   height: var(--main-panel-height);
   pointer-events: auto;
 }
@@ -141,6 +154,11 @@ function getActionIcon(id: string): string {
   border-left: 0;
   border-radius: 0 14px 14px 0;
   overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.selection-panel--details::-webkit-scrollbar {
+  display: none;
 }
 
 .selection-panel--actions {
@@ -247,6 +265,54 @@ function getActionIcon(id: string): string {
 
 .production-bar__cancel:hover {
   background: rgba(88, 36, 16, 0.86);
+}
+
+.construction-card {
+  margin-top: 2px;
+}
+
+.construction-bar {
+  position: relative;
+  overflow: hidden;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: linear-gradient(180deg, rgba(54, 34, 20, 0.96), rgba(36, 22, 12, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 193, 0.08),
+    inset 0 0 0 1px rgba(70, 47, 24, 0.45);
+}
+
+.construction-bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, rgba(161, 105, 20, 0.9), rgba(251, 191, 36, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 243, 211, 0.22);
+}
+
+.construction-bar__time {
+  position: absolute;
+  inset: 0 40px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff4dc;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
+
+.construction-bar__builders {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  color: rgba(255, 244, 220, 0.75);
+  font-size: 11px;
+  font-weight: 700;
+  pointer-events: none;
 }
 
 .detail-entry {

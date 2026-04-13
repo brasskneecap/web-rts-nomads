@@ -70,11 +70,19 @@ export class GameClient {
 
     if (actionId === 'move') {
       this.state.beginUnitTargeting('move')
+      this.input.refreshCursor()
       return
     }
 
     if (actionId === 'gather') {
       this.state.beginUnitTargeting('gather')
+      this.input.refreshCursor()
+      return
+    }
+
+    if (actionId === 'repair') {
+      this.state.beginUnitTargeting('repair')
+      this.input.refreshCursor()
       return
     }
 
@@ -145,6 +153,25 @@ export class GameClient {
           const buildingCenterY = (clickedBuilding.y + clickedBuilding.height / 2) * cellSize
           this.state.addMoveMarker(buildingCenterX, buildingCenterY, 700)
           this.network.sendGatherCommand(unitIds, clickedBuilding.id)
+        }
+
+        this.state.cancelUnitTargeting()
+        return true
+      }
+
+      if (this.state.isUnitTargetingActive('repair') && unitIds.length > 0) {
+        const clickedBuilding = this.state.getBuildingAtPosition(x, y, 16)
+
+        if (
+          clickedBuilding &&
+          clickedBuilding.ownerId === this.state.localPlayerId &&
+          clickedBuilding.metadata?.['underConstruction'] === true
+        ) {
+          const cellSize = this.state.mapConfig.cellSize
+          const buildingCenterX = (clickedBuilding.x + clickedBuilding.width / 2) * cellSize
+          const buildingCenterY = (clickedBuilding.y + clickedBuilding.height / 2) * cellSize
+          this.state.addMoveMarker(buildingCenterX, buildingCenterY, 700)
+          this.network.sendRepairCommand(unitIds, clickedBuilding.id)
         }
 
         this.state.cancelUnitTargeting()

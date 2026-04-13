@@ -52,6 +52,12 @@ export type ProductionSummary = {
   timeLabel: string
 }
 
+export type RepairSummary = {
+  progress: number
+  timeLabel: string
+  builderCount: number
+}
+
 export type SelectionSummary =
   | {
       kind: 'none'
@@ -76,6 +82,7 @@ export type SelectionSummary =
       details: DetailItem[]
       actions: ActionItem[]
       production?: ProductionSummary
+      construction?: RepairSummary
     }
   | {
       kind: 'group'
@@ -115,7 +122,7 @@ export type Vec2 = {
 }
 
 export type BuildingTargetingMode = 'set-spawn-point'
-export type UnitTargetingMode = 'move' | 'gather'
+export type UnitTargetingMode = 'move' | 'gather' | 'repair'
 
 export type BuildPlacement = {
   buildingType: string
@@ -570,6 +577,7 @@ export class GameState {
   beginUnitTargeting(mode: UnitTargetingMode) {
     if (this.getSelectedUnits().length === 0) return
     if (mode === 'gather' && !this.selectedUnitsCanGather()) return
+    if (mode === 'repair' && !this.selectedUnitsCanBuild()) return
 
     this.selectedBuildingId = null
     this.buildingTargetingMode = null
@@ -718,6 +726,17 @@ export class GameState {
     return units.length > 0 && units.every((unit) => unit.capabilities.includes('gather'))
   }
 
+  selectedUnitsCanBuild(): boolean {
+    const units = this.getSelectedUnits()
+    return units.length > 0 && units.some((unit) => unit.capabilities.includes('build'))
+  }
+
+  hasUnderConstructionBuildings(): boolean {
+    return this.mapConfig.buildings.some(
+      (b) => b.ownerId === this.localPlayerId && b.metadata?.['underConstruction'] === true,
+    )
+  }
+
   getSelectionSummary(): SelectionSummary {
     const selectedBuilding = this.getSelectedBuilding()
     if (selectedBuilding) {
@@ -744,6 +763,9 @@ export class GameState {
         details: getBuildingDetails(selectedBuilding),
         actions: isUnderConstruction ? [] : getBuildingActions(selectedBuilding),
         production: activeProduction ? toProductionSummary(activeProduction) : undefined,
+        construction: isUnderConstruction
+          ? getBuildingConstructionSummary(selectedBuilding)
+          : undefined,
       }
     }
 
@@ -983,6 +1005,25 @@ function formatResourceLabel(resourceType: ResourceType) {
   }
 }
 
+function getBuildingConstructionSummary(building: BuildingTile): RepairSummary | undefined {
+  const hp = getBuildingMetadataNumber(building, 'hp')
+  const maxHp = getBuildingMetadataNumber(building, 'maxHp')
+  if (hp === undefined || maxHp === undefined || maxHp <= 0) return undefined
+
+  const progress = Math.max(0, Math.min(1, hp / maxHp))
+  const builderCount = (building.metadata?.['builderCount'] as number | undefined) ?? 0
+  const remainingHp = Math.max(0, maxHp - hp)
+  const secondsPerHpPerBuilder = 15 / 500
+  const remainingSeconds =
+    builderCount > 0 ? remainingHp * secondsPerHpPerBuilder / builderCount : undefined
+
+  return {
+    progress,
+    timeLabel: remainingSeconds !== undefined ? formatRemainingSeconds(remainingSeconds) : 'Paused',
+    builderCount,
+  }
+}
+
 function getUnitActions(
   unit: Unit,
   activeMode: UnitTargetingMode | null,
@@ -990,20 +1031,24 @@ function getUnitActions(
 ): ActionItem[] {
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
-    actions[0] = { id: 'build-barracks', label: 'Build Barracks' }
-    actions[6] = { id: 'close-build-menu', label: 'Back' }
+    actions[0] = { id: 'build-barracks', label: '(B)arracks' }
+    actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
     return actions
   }
-  return unit.capabilities.map((capability) => {
+  const actions = unit.capabilities.map((capability) => {
     switch (capability) {
       case 'build':
-        return { id: 'build', label: 'Build' }
+        return { id: 'build', label: '(B)uild' }
       case 'gather':
-        return { id: 'gather', label: 'Gather', active: activeMode === 'gather' }
+        return { id: 'gather', label: '(G)ather', active: activeMode === 'gather' }
       default:
-        return { id: capability, label: 'Move', active: activeMode === 'move' }
+        return { id: capability, label: '(M)ove', active: activeMode === 'move' }
     }
   })
+  if (unit.capabilities.includes('build')) {
+    actions.push({ id: 'repair', label: '(R)epair', active: activeMode === 'repair' })
+  }
+  return actions
 }
 
 function getGroupActions(
@@ -1013,8 +1058,8 @@ function getGroupActions(
 ): ActionItem[] {
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
-    actions[0] = { id: 'build-barracks', label: 'Build Barracks' }
-    actions[6] = { id: 'close-build-menu', label: 'Back' }
+    actions[0] = { id: 'build-barracks', label: '(B)arracks' }
+    actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
     return actions
   }
 
@@ -1026,16 +1071,20 @@ function getGroupActions(
     }
   }
 
-  return Array.from(capabilities).map((capability) => {
+  const actions = Array.from(capabilities).map((capability) => {
     switch (capability) {
       case 'build':
-        return { id: 'build', label: 'Build' }
+        return { id: 'build', label: '(B)uild' }
       case 'gather':
-        return { id: 'gather', label: 'Gather', active: activeMode === 'gather' }
+        return { id: 'gather', label: '(G)ather', active: activeMode === 'gather' }
       default:
-        return { id: capability, label: 'Move', active: activeMode === 'move' }
+        return { id: capability, label: '(M)ove', active: activeMode === 'move' }
     }
   })
+  if (capabilities.has('build')) {
+    actions.push({ id: 'repair', label: '(R)epair', active: activeMode === 'repair' })
+  }
+  return actions
 }
 
 function getBuildingActions(building: BuildingTile): ActionItem[] {
@@ -1052,15 +1101,35 @@ function getBuildingActions(building: BuildingTile): ActionItem[] {
 }
 
 function getBuildingDetails(building: BuildingTile): DetailItem[] {
+  const hp = getBuildingMetadataNumber(building, 'hp')
+  const maxHp = getBuildingMetadataNumber(building, 'maxHp')
   const isUnderConstruction = building.metadata?.['underConstruction'] === true
   if (isUnderConstruction) {
-    const remaining = getBuildingMetadataNumber(building, 'constructionRemainingSeconds')
-    const total = getBuildingMetadataNumber(building, 'constructionTotalSeconds')
     const details: DetailItem[] = []
-    if (remaining !== undefined && total !== undefined && total > 0) {
-      const pct = Math.round(((total - remaining) / total) * 100)
-      details.push({ id: 'construction-time', label: 'Build Time', value: `${Math.ceil(remaining)}s` })
+    if (hp !== undefined && maxHp !== undefined && maxHp > 0) {
+      const pct = Math.round((hp / maxHp) * 100)
+      const builderCount = getBuildingMetadataNumber(building, 'builderCount') ?? 0
+      const remainingHp = Math.max(0, maxHp - hp)
+      const secondsPerHpPerBuilder = 15 / 500
+      const remainingSeconds =
+        builderCount > 0 ? remainingHp * secondsPerHpPerBuilder / builderCount : undefined
+
+      details.push({
+        id: 'construction-health',
+        label: 'Durability',
+        value: formatDurability(hp, maxHp),
+      })
       details.push({ id: 'construction-progress', label: 'Progress', value: `${pct}%` })
+      details.push({
+        id: 'construction-time',
+        label: 'Build Time',
+        value: remainingSeconds !== undefined ? formatRemainingSeconds(remainingSeconds) : 'Paused',
+      })
+      details.push({
+        id: 'construction-builders',
+        label: 'Builders',
+        value: `${builderCount} / 3`,
+      })
     }
     return details
   }
@@ -1087,13 +1156,11 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
 
   const details: DetailItem[] = []
 
-  const hp = getBuildingMetadataNumber(building, 'hp')
-  const maxHp = getBuildingMetadataNumber(building, 'maxHp')
   if (hp !== undefined) {
     details.push({
       id: 'durability',
       label: 'Durability',
-      value: `${hp} / ${maxHp ?? hp}`,
+      value: formatDurability(hp, maxHp ?? hp),
     })
   }
 
@@ -1306,12 +1373,18 @@ function formatRemainingSeconds(seconds: number) {
   return `${seconds.toFixed(1)}s`
 }
 
+function formatDurability(current: number, max: number) {
+  return `${Math.round(current)} / ${Math.round(max)}`
+}
+
 function getSelectionUnitSubtitle(baseSubtitle: string, unitTargetingMode: UnitTargetingMode | null) {
   switch (unitTargetingMode) {
     case 'move':
       return 'Move order ready. Left-click a destination.'
     case 'gather':
       return 'Gather order ready. Left-click a goldmine or tree.'
+    case 'repair':
+      return 'Repair/build ready. Left-click a building under construction.'
     default:
       return baseSubtitle
   }

@@ -133,7 +133,11 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.RemovePlayer(msg.PlayerID)
 			match.RemoveClient(client)
-			match.BroadcastSnapshot()
+			if match.ClientCount() == 0 {
+				h.manager.DeleteMatch(match.ID)
+			} else {
+				match.BroadcastSnapshot()
+			}
 
 			if client.MatchID == msg.MatchID {
 				client.MatchID = ""
@@ -322,6 +326,36 @@ func (h *Hub) readLoop(client *Client) {
 			match.State.BuildBarracks(client.PlayerID, msg.UnitIDs, msg.GridX, msg.GridY)
 			match.BroadcastSnapshot()
 
+		case "repair_command":
+			if client.MatchID == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID)
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.RepairCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid repair_command payload",
+				})
+				continue
+			}
+
+			match.State.RepairBuilding(client.PlayerID, msg.UnitIDs, msg.BuildingID)
+			match.BroadcastSnapshot()
+
 		case "pong":
 			client.TouchPong()
 
@@ -372,7 +406,11 @@ func (h *Hub) cleanupClient(client *Client, closeConn bool) {
 				match.RemovePlayer(client.PlayerID)
 			}
 			match.RemoveClient(client)
-			match.BroadcastSnapshot()
+			if match.ClientCount() == 0 {
+				h.manager.DeleteMatch(match.ID)
+			} else {
+				match.BroadcastSnapshot()
+			}
 		}
 	}
 

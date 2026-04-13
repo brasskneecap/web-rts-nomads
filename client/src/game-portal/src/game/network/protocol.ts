@@ -126,6 +126,12 @@ export type BuildBarracksCommandMessage = {
   gridY: number
 }
 
+export type RepairCommandMessage = {
+  type: 'repair_command'
+  unitIds: number[]
+  buildingId: string
+}
+
 export type ResourceStockSnapshot = {
   id: string
   label: string
@@ -148,6 +154,7 @@ export type ClientMessage =
   | CancelTrainingCommandMessage
   | SetBuildingSpawnPointCommandMessage
   | BuildBarracksCommandMessage
+  | RepairCommandMessage
   | PongMessage
 
 export type UnitSnapshot = {

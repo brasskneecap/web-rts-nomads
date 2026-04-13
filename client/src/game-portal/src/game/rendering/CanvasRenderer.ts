@@ -215,6 +215,28 @@ export class CanvasRenderer {
         ctx.setLineDash([8 / this.camera.zoom, 5 / this.camera.zoom])
         ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
         ctx.restore()
+
+        // Construction progress bar above the building
+        const hp = building.metadata?.['hp'] as number | undefined
+        const maxHp = building.metadata?.['maxHp'] as number | undefined
+        if (hp !== undefined && maxHp !== undefined && maxHp > 0) {
+          const progress = Math.max(0, Math.min(1, hp / maxHp))
+          const barH = 6 / this.camera.zoom
+          const barX = worldX + inset
+          const barY = worldY + inset - barH - 4 / this.camera.zoom
+          const barW = width - inset * 2
+
+          ctx.save()
+          ctx.fillStyle = '#1e293b'
+          ctx.fillRect(barX, barY, barW, barH)
+          ctx.fillStyle = '#fbbf24'
+          ctx.fillRect(barX, barY, barW * progress, barH)
+          ctx.strokeStyle = 'rgba(251,191,36,0.5)'
+          ctx.lineWidth = 1 / this.camera.zoom
+          ctx.setLineDash([])
+          ctx.strokeRect(barX, barY, barW, barH)
+          ctx.restore()
+        }
       } else {
         ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
         ctx.lineWidth = 2 / this.camera.zoom

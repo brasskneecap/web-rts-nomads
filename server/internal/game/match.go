@@ -81,3 +81,13 @@ func (m *Match) BroadcastSnapshot() {
 func (m *Match) RemovePlayer(playerID string) {
 	m.State.RemovePlayer(playerID)
 }
+
+func (m *Match) ClientCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.Clients)
+}
+
+func (m *Match) Stop() {
+	m.loop.Stop()
+}
