@@ -81,6 +81,17 @@ type TrainWorkerCommandMessage struct {
 	BuildingID string `json:"buildingId"`
 }
 
+type TrainSoldierCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+}
+
+type AttackCommandMessage struct {
+	Type         string `json:"type"`
+	UnitIDs      []int  `json:"unitIds"`
+	TargetUnitID int    `json:"targetUnitId"`
+}
+
 type CancelTrainingCommandMessage struct {
 	Type       string `json:"type"`
 	BuildingID string `json:"buildingId"`
@@ -135,6 +146,7 @@ type UnitSnapshot struct {
 	Y                   float64  `json:"y"`
 	HP                  int      `json:"hp"`
 	MaxHP               int      `json:"maxHp"`
+	Damage              int      `json:"damage,omitempty"`
 	CarriedResourceType string   `json:"carriedResourceType,omitempty"`
 	CarriedAmount       int      `json:"carriedAmount,omitempty"`
 	TargetX             float64  `json:"targetX,omitempty"`

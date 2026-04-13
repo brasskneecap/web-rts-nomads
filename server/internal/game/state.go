@@ -42,6 +42,13 @@ type Unit struct {
 	Moving              bool
 	Path                []protocol.Vec2
 	OrderID             int64
+
+	Damage         int
+	AttackRange    float64
+	AttackSpeed    float64
+	AttackCooldown float64
+	AttackTargetID int
+	Attacking      bool
 }
 
 const (
@@ -67,6 +74,16 @@ type UnitProduction struct {
 	TotalSeconds     float64
 }
 
+type EnemySpawnTimer struct {
+	RemainingDelay    float64
+	TotalDelay        float64
+	RemainingInterval float64
+	TotalInterval     float64
+}
+
+const enemyPlayerID = "__enemy__"
+const enemyPlayerColor = "#e74c3c"
+
 type GameState struct {
 	mu sync.RWMutex
 
@@ -80,7 +97,8 @@ type GameState struct {
 	Units   []*Unit
 	Players map[string]*Player
 
-	Productions map[string][]*UnitProduction
+	Productions      map[string][]*UnitProduction
+	EnemySpawnTimers map[string]*EnemySpawnTimer
 
 	nextUnitID     int
 	nextBuildingID int
@@ -98,22 +116,36 @@ const (
 )
 
 var defaultUnitSpawnTimesSeconds = map[string]float64{
-	"worker": 5,
+	"worker":  5,
+	"soldier": 10,
 }
 
 var unitResourceCosts = map[string]map[string]int{
 	"worker": {
 		"gold": 150,
 	},
+	"soldier": {
+		"gold": 100,
+		"wood": 25,
+	},
 }
+
+const (
+	soldierDamage      = 10
+	soldierAttackRange = 60.0
+	soldierAttackSpeed = 1.0 // hits per second
+	soldierHP          = 150
+	soldierMaxHP       = 150
+)
 
 func NewGameState(mapConfig protocol.MapConfig) *GameState {
 	state := &GameState{
-		Units:       []*Unit{},
-		Players:     map[string]*Player{},
-		Productions: map[string][]*UnitProduction{},
-		nextUnitID:  1,
-		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		Units:            []*Unit{},
+		Players:          map[string]*Player{},
+		Productions:      map[string][]*UnitProduction{},
+		EnemySpawnTimers: map[string]*EnemySpawnTimer{},
+		nextUnitID:       1,
+		rng:              rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 
 	state.SetMapConfig(mapConfig)
@@ -133,6 +165,7 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 	s.MapWidth = s.MapConfig.Width
 	s.MapHeight = s.MapConfig.Height
 	s.Productions = map[string][]*UnitProduction{}
+	s.EnemySpawnTimers = map[string]*EnemySpawnTimer{}
 }
 
 func (s *GameState) GetMapConfig() protocol.MapConfig {
@@ -161,6 +194,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Y:                   unit.Y,
 			HP:                  unit.HP,
 			MaxHP:               unit.MaxHP,
+			Damage:              unit.Damage,
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -176,6 +210,9 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 
 	players := make([]protocol.PlayerSnapshot, 0, len(s.Players))
 	for _, player := range s.Players {
+		if player.ID == enemyPlayerID {
+			continue
+		}
 		players = append(players, protocol.PlayerSnapshot{
 			PlayerID:  player.ID,
 			Color:     player.Color,
@@ -206,6 +243,10 @@ func (s *GameState) Update(dt float64) {
 	s.updateUnitProductionsLocked(dt)
 	s.tickBuildingRepairsLocked(dt)
 	blocked := s.buildBlockedCells()
+	s.tickUnitCombatLocked(dt, blocked)
+	s.tickEnemySpawnpointsLocked(dt, blocked)
+	s.tickEnemyAILocked(blocked)
+	s.tickPlayerAutoAttackLocked(blocked)
 
 	for _, unit := range s.Units {
 		s.updateWorkerTaskLocked(unit, dt, blocked)
@@ -413,6 +454,166 @@ func (s *GameState) spawnWorkerUnitLocked(playerID, color string, spawn protocol
 	return unit
 }
 
+func (s *GameState) spawnSoldierUnitLocked(playerID, color string, spawn protocol.Vec2) *Unit {
+	unit := &Unit{
+		ID:           s.nextUnitID,
+		OwnerID:      playerID,
+		Color:        color,
+		UnitType:     "soldier",
+		Name:         "Soldier",
+		Capabilities: []string{"move", "attack"},
+		Visible:      true,
+		Status:       "Idle",
+		X:            spawn.X,
+		Y:            spawn.Y,
+		HP:           soldierHP,
+		MaxHP:        soldierMaxHP,
+		Damage:       soldierDamage,
+		AttackRange:  soldierAttackRange,
+		AttackSpeed:  soldierAttackSpeed,
+	}
+
+	s.nextUnitID++
+	s.Units = append(s.Units, unit)
+	return unit
+}
+
+func (s *GameState) removeUnitLocked(unitID int) {
+	filtered := make([]*Unit, 0, len(s.Units))
+	for _, u := range s.Units {
+		if u.ID != unitID {
+			filtered = append(filtered, u)
+		}
+	}
+	s.Units = filtered
+
+	// Clear attack targets pointing to removed unit
+	for _, u := range s.Units {
+		if u.AttackTargetID == unitID {
+			u.AttackTargetID = 0
+			u.Attacking = false
+			u.Status = "Idle"
+		}
+	}
+}
+
+func (s *GameState) TrainSoldier(playerID, buildingID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil || !building.Visible {
+		return
+	}
+	if building.BuildingType != "barracks" {
+		return
+	}
+	if building.OwnerID == nil || *building.OwnerID != playerID {
+		return
+	}
+	if building.Metadata != nil && building.Metadata["underConstruction"] == true {
+		return
+	}
+	if !containsString(building.SpawnUnitTypes, "soldier") {
+		return
+	}
+	player, ok := s.Players[playerID]
+	if !ok {
+		return
+	}
+	if !s.canAffordUnitCostLocked(player, "soldier") {
+		return
+	}
+
+	s.payUnitCostLocked(player, "soldier")
+	s.beginUnitProductionLocked(player, *building, "soldier")
+}
+
+func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	target := s.getUnitByIDLocked(targetUnitID)
+	if target == nil || !target.Visible || target.OwnerID == playerID {
+		return
+	}
+
+	blocked := s.buildBlockedCells()
+	orderID := s.nextMovementOrderIDLocked()
+
+	for _, unitID := range unitIDs {
+		unit := s.getUnitByIDLocked(unitID)
+		if unit == nil || unit.OwnerID != playerID || unit.UnitType != "soldier" {
+			continue
+		}
+
+		s.resetUnitMovementLocked(unit, orderID)
+		unit.AttackTargetID = targetUnitID
+		unit.Attacking = false
+		unit.Status = "Moving To Attack"
+
+		dx := target.X - unit.X
+		dy := target.Y - unit.Y
+		dist := math.Sqrt(dx*dx + dy*dy)
+		if dist > unit.AttackRange {
+			s.assignUnitPath(unit, protocol.Vec2{X: target.X, Y: target.Y}, blocked, nil)
+		}
+	}
+}
+
+func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool) {
+	var deadUnitIDs []int
+
+	for _, unit := range s.Units {
+		if unit.AttackTargetID == 0 {
+			if unit.AttackCooldown > 0 {
+				unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+			}
+			continue
+		}
+
+		target := s.getUnitByIDLocked(unit.AttackTargetID)
+		if target == nil || !target.Visible {
+			unit.AttackTargetID = 0
+			unit.Attacking = false
+			unit.Status = "Idle"
+			continue
+		}
+
+		dx := target.X - unit.X
+		dy := target.Y - unit.Y
+		dist := math.Sqrt(dx*dx + dy*dy)
+
+		if dist <= unit.AttackRange {
+			unit.Moving = false
+			unit.Path = nil
+			unit.Attacking = true
+			unit.Status = "Attacking"
+
+			if unit.AttackCooldown <= 0 {
+				target.HP -= unit.Damage
+				unit.AttackCooldown = 1.0 / unit.AttackSpeed
+				if target.HP <= 0 {
+					target.HP = 0
+					deadUnitIDs = append(deadUnitIDs, target.ID)
+				}
+			} else {
+				unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+			}
+		} else {
+			unit.Attacking = false
+			unit.Status = "Moving To Attack"
+			if !unit.Moving {
+				s.assignUnitPath(unit, protocol.Vec2{X: target.X, Y: target.Y}, blocked, nil)
+			}
+		}
+	}
+
+	for _, id := range deadUnitIDs {
+		s.removeUnitLocked(id)
+	}
+}
+
 func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[gridPoint]bool, reservedGoals map[gridPoint]bool) {
 	clampedDest := protocol.Vec2{
 		X: clampFloat(dest.X, unitRadius, s.MapWidth-unitRadius),
@@ -544,7 +745,7 @@ func (s *GameState) CancelCurrentTraining(playerID, buildingID string) {
 	if building == nil || !building.Visible {
 		return
 	}
-	if building.BuildingType != "townhall" {
+	if building.BuildingType != "townhall" && building.BuildingType != "barracks" {
 		return
 	}
 	if building.OwnerID == nil || *building.OwnerID != playerID {
@@ -573,7 +774,7 @@ func (s *GameState) SetBuildingSpawnPoint(playerID, buildingID string, point pro
 	if building == nil || !building.Visible {
 		return
 	}
-	if building.BuildingType != "townhall" {
+	if building.BuildingType != "townhall" && building.BuildingType != "barracks" {
 		return
 	}
 	if building.OwnerID == nil || *building.OwnerID != playerID {
@@ -640,15 +841,16 @@ func (s *GameState) BuildBarracks(playerID string, unitIDs []int, gridX, gridY i
 	s.nextBuildingID++
 	ownerID := playerID
 	barracks := protocol.BuildingTile{
-		GridCoord:    protocol.GridCoord{X: gridX, Y: gridY},
-		ID:           fmt.Sprintf("barracks-%d", s.nextBuildingID),
-		BuildingType: "barracks",
-		Width:        gridW,
-		Height:       gridH,
-		Occupied:     true,
-		Visible:      true,
-		OwnerID:      &ownerID,
-		Capabilities: []string{},
+		GridCoord:      protocol.GridCoord{X: gridX, Y: gridY},
+		ID:             fmt.Sprintf("barracks-%d", s.nextBuildingID),
+		BuildingType:   "barracks",
+		Width:          gridW,
+		Height:         gridH,
+		Occupied:       true,
+		Visible:        true,
+		OwnerID:        &ownerID,
+		Capabilities:   []string{"unit-spawner"},
+		SpawnUnitTypes: []string{"soldier"},
 		Metadata: map[string]interface{}{
 			"underConstruction": true,
 			"hp":                1.0,
@@ -1516,6 +1718,20 @@ func (s *GameState) refreshBuildingRuntimeMetadataLocked() {
 			delete(building.Metadata, "productionQueueLength")
 			delete(building.Metadata, "queuedUnitTypes")
 		}
+
+		if building.BuildingType == "enemy-spawnpoint" {
+			if timer, exists := s.EnemySpawnTimers[building.ID]; exists {
+				if timer.RemainingDelay > 0 {
+					building.Metadata["spawnTimerRemaining"] = timer.RemainingDelay
+					building.Metadata["spawnTimerTotal"] = timer.TotalDelay
+					building.Metadata["spawnTimerPhase"] = "delay"
+				} else {
+					building.Metadata["spawnTimerRemaining"] = timer.RemainingInterval
+					building.Metadata["spawnTimerTotal"] = timer.TotalInterval
+					building.Metadata["spawnTimerPhase"] = "interval"
+				}
+			}
+		}
 	}
 }
 
@@ -1582,6 +1798,13 @@ func (s *GameState) completeUnitProductionLocked(buildingID string) {
 	switch production.UnitType {
 	case "worker":
 		unit := s.spawnWorkerUnitLocked(production.PlayerID, player.Color, spawnPosition)
+		rallyPoint := s.getTownhallSpawnOriginLocked(*building)
+		if distanceSquared(unit.X, unit.Y, rallyPoint.X, rallyPoint.Y) > unitRadius*unitRadius {
+			unit.Status = "Moving To Spawn Point"
+			s.assignUnitPath(unit, rallyPoint, s.buildBlockedCells(), nil)
+		}
+	case "soldier":
+		unit := s.spawnSoldierUnitLocked(production.PlayerID, player.Color, spawnPosition)
 		rallyPoint := s.getTownhallSpawnOriginLocked(*building)
 		if distanceSquared(unit.X, unit.Y, rallyPoint.X, rallyPoint.Y) > unitRadius*unitRadius {
 			unit.Status = "Moving To Spawn Point"
@@ -1968,4 +2191,210 @@ func averageUnitPosition(units []*Unit) protocol.Vec2 {
 		X: totalX / float64(len(units)),
 		Y: totalY / float64(len(units)),
 	}
+}
+
+func (s *GameState) ensureEnemyPlayerLocked() {
+	if _, exists := s.Players[enemyPlayerID]; exists {
+		return
+	}
+	s.Players[enemyPlayerID] = &Player{
+		ID:                           enemyPlayerID,
+		Color:                        enemyPlayerColor,
+		Resources:                    map[string]int{},
+		GlobalUnitSpawnTimeMultiplier: 1,
+		UnitSpawnTimeMultipliers:      map[string]float64{},
+	}
+}
+
+func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint]bool) {
+	for i := range s.MapConfig.Buildings {
+		building := &s.MapConfig.Buildings[i]
+		if building.BuildingType != "enemy-spawnpoint" {
+			continue
+		}
+
+		s.ensureEnemyPlayerLocked()
+
+		timer, exists := s.EnemySpawnTimers[building.ID]
+		if !exists {
+			delay := 60.0
+			interval := 10.0
+			if building.Metadata != nil {
+				if v, ok := getMetadataFloat(building.Metadata, "spawnDelaySeconds"); ok && v >= 0 {
+					delay = v
+				}
+				if v, ok := getMetadataFloat(building.Metadata, "spawnIntervalSeconds"); ok && v > 0 {
+					interval = v
+				}
+			}
+			timer = &EnemySpawnTimer{
+				RemainingDelay:    delay,
+				TotalDelay:        delay,
+				RemainingInterval: interval,
+				TotalInterval:     interval,
+			}
+			s.EnemySpawnTimers[building.ID] = timer
+		}
+
+		if timer.RemainingDelay > 0 {
+			timer.RemainingDelay = math.Max(0, timer.RemainingDelay-dt)
+			continue
+		}
+
+		timer.RemainingInterval -= dt
+		if timer.RemainingInterval > 0 {
+			continue
+		}
+		timer.RemainingInterval += timer.TotalInterval
+
+		spawnPositions := s.getTownhallSpawnPositionsLocked(*building, 1, blocked)
+		var spawnPos protocol.Vec2
+		if len(spawnPositions) > 0 {
+			spawnPos = spawnPositions[0]
+		} else {
+			center := protocol.Vec2{
+				X: (float64(building.X) + float64(building.Width)/2) * s.MapConfig.CellSize,
+				Y: (float64(building.Y) + float64(building.Height)/2) * s.MapConfig.CellSize,
+			}
+			cell, ok := s.findNearestWalkable(s.worldToGrid(center.X, center.Y), blocked)
+			if !ok {
+				continue
+			}
+			spawnPos = s.gridToWorldCenter(cell)
+		}
+
+		unit := s.spawnSoldierUnitLocked(enemyPlayerID, enemyPlayerColor, spawnPos)
+		unit.Status = "Advancing"
+
+		target := s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
+		if target != nil {
+			s.assignUnitPath(unit, *target, blocked, nil)
+		}
+	}
+}
+
+func (s *GameState) tickEnemyAILocked(blocked map[gridPoint]bool) {
+	const aggroRadius = 200.0
+
+	for _, unit := range s.Units {
+		if unit.OwnerID != enemyPlayerID {
+			continue
+		}
+		if unit.AttackTargetID != 0 {
+			continue
+		}
+
+		nearest := s.findNearestPlayerUnitWithinLocked(unit, aggroRadius)
+		if nearest != nil {
+			unit.AttackTargetID = nearest.ID
+			unit.Attacking = false
+			unit.Status = "Moving To Attack"
+			if distanceSquared(unit.X, unit.Y, nearest.X, nearest.Y) > unit.AttackRange*unit.AttackRange {
+				s.assignUnitPath(unit, protocol.Vec2{X: nearest.X, Y: nearest.Y}, blocked, nil)
+			}
+			continue
+		}
+
+		if !unit.Moving {
+			target := s.getNearestPlayerTownhallCenterLocked(unit.X, unit.Y)
+			if target != nil {
+				unit.Status = "Advancing"
+				s.assignUnitPath(unit, *target, blocked, nil)
+			}
+		}
+	}
+}
+
+func (s *GameState) findNearestPlayerUnitWithinLocked(enemy *Unit, radius float64) *Unit {
+	radiusSq := radius * radius
+	var best *Unit
+	bestDistSq := radiusSq
+
+	for _, unit := range s.Units {
+		if unit.OwnerID == enemyPlayerID {
+			continue
+		}
+		if !unit.Visible {
+			continue
+		}
+		distSq := distanceSquared(enemy.X, enemy.Y, unit.X, unit.Y)
+		if distSq <= bestDistSq {
+			bestDistSq = distSq
+			best = unit
+		}
+	}
+
+	return best
+}
+
+func (s *GameState) tickPlayerAutoAttackLocked(blocked map[gridPoint]bool) {
+	const aggroRadius = 200.0
+
+	for _, unit := range s.Units {
+		if unit.OwnerID == enemyPlayerID {
+			continue
+		}
+		if unit.UnitType != "soldier" {
+			continue
+		}
+		if unit.AttackTargetID != 0 {
+			continue
+		}
+
+		nearest := s.findNearestEnemySoldierWithinLocked(unit, aggroRadius)
+		if nearest == nil {
+			continue
+		}
+
+		unit.AttackTargetID = nearest.ID
+		unit.Attacking = false
+		unit.Status = "Moving To Attack"
+		if distanceSquared(unit.X, unit.Y, nearest.X, nearest.Y) > unit.AttackRange*unit.AttackRange {
+			s.assignUnitPath(unit, protocol.Vec2{X: nearest.X, Y: nearest.Y}, blocked, nil)
+		}
+	}
+}
+
+func (s *GameState) findNearestEnemySoldierWithinLocked(playerUnit *Unit, radius float64) *Unit {
+	radiusSq := radius * radius
+	var best *Unit
+	bestDistSq := radiusSq
+
+	for _, unit := range s.Units {
+		if unit.OwnerID != enemyPlayerID {
+			continue
+		}
+		if !unit.Visible {
+			continue
+		}
+		distSq := distanceSquared(playerUnit.X, playerUnit.Y, unit.X, unit.Y)
+		if distSq <= bestDistSq {
+			bestDistSq = distSq
+			best = unit
+		}
+	}
+
+	return best
+}
+
+func (s *GameState) getNearestPlayerTownhallCenterLocked(x, y float64) *protocol.Vec2 {
+	var best *protocol.Vec2
+	bestDistSq := math.MaxFloat64
+
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "townhall" || !b.Occupied || !b.Visible {
+			continue
+		}
+		cx := (float64(b.X) + float64(b.Width)/2) * s.MapConfig.CellSize
+		cy := (float64(b.Y) + float64(b.Height)/2) * s.MapConfig.CellSize
+		distSq := distanceSquared(x, y, cx, cy)
+		if distSq < bestDistSq {
+			bestDistSq = distSq
+			pos := protocol.Vec2{X: cx, Y: cy}
+			best = &pos
+		}
+	}
+
+	return best
 }

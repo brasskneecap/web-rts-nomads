@@ -1,4 +1,5 @@
 import type {
+  AttackCommandMessage,
   BuildBarracksCommandMessage,
   CancelTrainingCommandMessage,
   ClientMessage,
@@ -9,6 +10,7 @@ import type {
   MoveCommandMessage,
   SetBuildingSpawnPointCommandMessage,
   ServerMessage,
+  TrainSoldierCommandMessage,
   TrainWorkerCommandMessage,
 } from './protocol'
 import { GameState } from '../core/GameState'
@@ -164,6 +166,25 @@ export class NetworkClient {
       gridX,
       gridY,
     }
+    this.send(message)
+  }
+
+  sendTrainSoldierCommand(buildingId: string) {
+    const message: TrainSoldierCommandMessage = {
+      type: 'train_soldier_command',
+      buildingId,
+    }
+
+    this.send(message)
+  }
+
+  sendAttackCommand(unitIds: number[], targetUnitId: number) {
+    const message: AttackCommandMessage = {
+      type: 'attack_command',
+      unitIds,
+      targetUnitId,
+    }
+
     this.send(message)
   }
 

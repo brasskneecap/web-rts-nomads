@@ -326,6 +326,66 @@ func (h *Hub) readLoop(client *Client) {
 			match.State.BuildBarracks(client.PlayerID, msg.UnitIDs, msg.GridX, msg.GridY)
 			match.BroadcastSnapshot()
 
+		case "train_soldier_command":
+			if client.MatchID == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID)
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.TrainSoldierCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid train_soldier_command payload",
+				})
+				continue
+			}
+
+			match.State.TrainSoldier(client.PlayerID, msg.BuildingID)
+			match.BroadcastSnapshot()
+
+		case "attack_command":
+			if client.MatchID == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID)
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.AttackCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid attack_command payload",
+				})
+				continue
+			}
+
+			match.State.AttackWithUnits(client.PlayerID, msg.UnitIDs, msg.TargetUnitID)
+			match.BroadcastSnapshot()
+
 		case "repair_command":
 			if client.MatchID == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{

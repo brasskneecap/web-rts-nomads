@@ -917,6 +917,24 @@
         "resourceType": "wood",
         "resourceAmount": 1000,
         "metadata": {}
+      },
+      {
+        "id": "enemy-spawnpoint-17-17",
+        "buildingType": "enemy-spawnpoint",
+        "x": 17,
+        "y": 17,
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnDelaySeconds": 60,
+          "spawnIntervalSeconds": 10
+        }
       }
     ]
   }

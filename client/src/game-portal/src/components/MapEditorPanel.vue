@@ -139,7 +139,29 @@
               <option value="goldmine">Goldmine</option>
               <option value="townhall">Townhall</option>
               <option value="tree">Tree (Harvestable)</option>
+              <option value="enemy-spawnpoint">Enemy Spawnpoint</option>
             </select>
+          </div>
+
+          <div v-if="brushMode === 'building' && selectedBuilding === 'enemy-spawnpoint'" class="control-group enemy-spawn-config">
+            <label for="enemy-spawn-delay">Spawn Delay (sec)</label>
+            <input
+              id="enemy-spawn-delay"
+              v-model.number="enemySpawnDelay"
+              type="number"
+              min="0"
+              max="3600"
+              :disabled="!paintModeEnabled"
+            />
+            <label for="enemy-spawn-interval">Spawn Interval (sec)</label>
+            <input
+              id="enemy-spawn-interval"
+              v-model.number="enemySpawnInterval"
+              type="number"
+              min="1"
+              max="3600"
+              :disabled="!paintModeEnabled"
+            />
           </div>
 
           <div class="hint-list">
@@ -219,6 +241,8 @@ const brushMode = ref<'terrain' | 'obstacle' | 'building' | 'erase'>('terrain')
 const selectedTerrain = ref<TerrainType>('dirt')
 const selectedObstacle = ref<ObstacleType>('rock')
 const selectedBuilding = ref<BuildingType>('goldmine')
+const enemySpawnDelay = ref(60)
+const enemySpawnInterval = ref(10)
 const draftCols = ref(model.value.gridCols)
 const draftRows = ref(model.value.gridRows)
 const copiedLabel = ref('Copy Export')
@@ -451,7 +475,11 @@ function paintAtScreen(screenX: number, screenY: number) {
   }
 
   if (activeBrushMode.value === 'building') {
-    model.value = setBuildingTile(model.value, cell.x, cell.y, selectedBuilding.value)
+    const metadata =
+      selectedBuilding.value === 'enemy-spawnpoint'
+        ? { spawnDelaySeconds: enemySpawnDelay.value, spawnIntervalSeconds: enemySpawnInterval.value }
+        : undefined
+    model.value = setBuildingTile(model.value, cell.x, cell.y, selectedBuilding.value, metadata)
     return
   }
 
@@ -930,6 +958,13 @@ onBeforeUnmount(() => {
 .metadata-box {
   min-height: 52px;
   resize: vertical;
+}
+
+.enemy-spawn-config {
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(127, 29, 29, 0.18);
 }
 
 .editor-preview {

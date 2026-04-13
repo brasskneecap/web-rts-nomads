@@ -16,7 +16,8 @@ const BUILDING_CAPABILITY_SETS: Record<BuildingType, BuildingCapability[]> = {
   goldmine: ['resource-source'],
   townhall: ['unit-spawner', 'occupiable', 'deposit-point'],
   tree: ['resource-source'],
-  barracks: [],
+  barracks: ['unit-spawner'],
+  'enemy-spawnpoint': ['enemy-spawner'],
 }
 
 export const MAP_EDITOR_PRESETS = [
@@ -118,13 +119,18 @@ export function setBuildingTile(
   x: number,
   y: number,
   buildingType: BuildingType | null,
+  metadata?: Record<string, string | number | boolean | null>,
 ): MapConfig {
   const nextBuildings = map.buildings.filter(
     (building) => !doesBuildingCoverCell(building, x, y),
   )
 
   if (buildingType) {
-    nextBuildings.push(createBuildingTile(buildingType, x, y))
+    const tile = createBuildingTile(buildingType, x, y)
+    if (metadata) {
+      tile.metadata = { ...(tile.metadata ?? {}), ...metadata }
+    }
+    nextBuildings.push(tile)
   }
 
   return sanitizeMapConfig({
@@ -147,6 +153,8 @@ export function getBuildingColor(
       return '#2d6a4f'
     case 'barracks':
       return occupied ? (ownerColor ?? '#1e40af') : '#64748b'
+    case 'enemy-spawnpoint':
+      return '#991b1b'
   }
 }
 
@@ -294,6 +302,44 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
       resourceType: 'wood',
       resourceAmount: 1000,
       metadata: {},
+    }
+  }
+
+  if (buildingType === 'barracks') {
+    return {
+      id: `barracks-${x}-${y}`,
+      buildingType,
+      x,
+      y,
+      width: 2,
+      height: 2,
+      occupied: false,
+      visible: false,
+      ownerId: null,
+      capabilities: [...BUILDING_CAPABILITY_SETS[buildingType]],
+      spawnUnitTypes: ['soldier'],
+      metadata: {
+        spawnTimeSoldier: 10,
+      },
+    }
+  }
+
+  if (buildingType === 'enemy-spawnpoint') {
+    return {
+      id: `enemy-spawnpoint-${x}-${y}`,
+      buildingType,
+      x,
+      y,
+      width: 2,
+      height: 2,
+      occupied: true,
+      visible: true,
+      ownerId: null,
+      capabilities: [...BUILDING_CAPABILITY_SETS[buildingType]],
+      metadata: {
+        spawnDelaySeconds: 60,
+        spawnIntervalSeconds: 10,
+      },
     }
   }
 

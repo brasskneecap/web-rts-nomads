@@ -8,15 +8,16 @@ export type MapId = string
 export type TerrainType = 'dirt' | 'water' | 'forest'
 
 export type ObstacleType = 'rock' | 'wall' | 'tree'
-export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks'
+export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks' | 'enemy-spawnpoint'
 export type BuildingCapability =
   | 'resource-source'
   | 'unit-spawner'
   | 'occupiable'
   | 'deposit-point'
+  | 'enemy-spawner'
 export type ResourceType = 'gold' | 'wood'
-export type UnitType = 'worker'
-export type UnitCapability = 'move' | 'gather' | 'build'
+export type UnitType = 'worker' | 'soldier'
+export type UnitCapability = 'move' | 'gather' | 'build' | 'attack'
 
 export type GridCoord = {
   x: number
@@ -108,6 +109,17 @@ export type TrainWorkerCommandMessage = {
   buildingId: string
 }
 
+export type TrainSoldierCommandMessage = {
+  type: 'train_soldier_command'
+  buildingId: string
+}
+
+export type AttackCommandMessage = {
+  type: 'attack_command'
+  unitIds: number[]
+  targetUnitId: number
+}
+
 export type CancelTrainingCommandMessage = {
   type: 'cancel_training_command'
   buildingId: string
@@ -151,6 +163,8 @@ export type ClientMessage =
   | MoveCommandMessage
   | GatherCommandMessage
   | TrainWorkerCommandMessage
+  | TrainSoldierCommandMessage
+  | AttackCommandMessage
   | CancelTrainingCommandMessage
   | SetBuildingSpawnPointCommandMessage
   | BuildBarracksCommandMessage
@@ -170,6 +184,7 @@ export type UnitSnapshot = {
   y: number
   hp: number
   maxHp: number
+  damage?: number
   carriedResourceType?: ResourceType
   carriedAmount?: number
   targetX?: number

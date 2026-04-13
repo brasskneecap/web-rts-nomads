@@ -41,6 +41,7 @@ export class CanvasRenderer {
   private state: GameState
   private camera: Camera
   private resizeObserver: ResizeObserver | null = null
+  private renderTime = 0
 
   constructor(canvas: HTMLCanvasElement, state: GameState, camera: Camera) {
     const ctx = canvas.getContext('2d')
@@ -77,6 +78,7 @@ export class CanvasRenderer {
   render() {
     const ctx = this.ctx
     const renderTime = performance.now()
+    this.renderTime = renderTime
     const units = this.state.getInterpolatedUnits(renderTime)
 
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
@@ -198,6 +200,18 @@ export class CanvasRenderer {
 
       if (building.buildingType === 'barracks') {
         this.drawBarracksCornersAt(worldX, worldY, width, height, inset, cellSize)
+      }
+
+      if (building.buildingType === 'enemy-spawnpoint') {
+        this.drawEnemySpawnpointAt(
+          ctx,
+          worldX,
+          worldY,
+          width,
+          height,
+          inset,
+          building.metadata,
+        )
       }
 
       const isUnderConstruction = building.metadata?.['underConstruction'] === true
@@ -341,12 +355,15 @@ export class CanvasRenderer {
   private drawUnits(
     units: Array<{
       id: number
+      unitType?: string
+      status?: string
       x: number
       y: number
       hp?: number
       maxHp?: number
       color?: string
       visible?: boolean
+      ownerId?: string
     }>,
   ) {
     const ctx = this.ctx
@@ -357,6 +374,9 @@ export class CanvasRenderer {
       }
 
       const selected = this.state.selectedUnitIds.has(unit.id)
+      const isEnemy = unit.ownerId !== this.state.localPlayerId
+      const isInspected = this.state.inspectedEnemyUnitId === unit.id
+      const isHoveredEnemy = this.state.hoveredEnemyUnitId === unit.id
 
       if (selected) {
         ctx.strokeStyle = 'yellow'
@@ -368,11 +388,107 @@ export class CanvasRenderer {
         this.drawSelectedUnitHealthBar(unit)
       }
 
+      // Enemy hover ring (orange dashed)
+      if (isHoveredEnemy && !isInspected) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(251, 146, 60, 0.9)'
+        ctx.lineWidth = 2 / this.camera.zoom
+        ctx.setLineDash([5 / this.camera.zoom, 4 / this.camera.zoom])
+        ctx.beginPath()
+        ctx.arc(unit.x, unit.y, 16, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // Inspected enemy ring (red solid)
+      if (isInspected) {
+        ctx.strokeStyle = '#ef4444'
+        ctx.lineWidth = 3 / this.camera.zoom
+        ctx.beginPath()
+        ctx.arc(unit.x, unit.y, 15, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+
+      // Health bar always visible for enemy units
+      if (isEnemy) {
+        this.drawSelectedUnitHealthBar(unit)
+      }
+
+      if (unit.status === 'Attacking') {
+        this.drawAttackEffect(unit.x, unit.y)
+      } else if (unit.status === 'Chopping Wood') {
+        this.drawChoppingEffect(unit.x, unit.y)
+      }
+
       ctx.fillStyle = unit.color || 'lime'
-      ctx.beginPath()
-      ctx.arc(unit.x, unit.y, 10, 0, Math.PI * 2)
-      ctx.fill()
+
+      if (unit.unitType === 'soldier') {
+        this.drawSoldierShape(unit.x, unit.y)
+      } else {
+        ctx.beginPath()
+        ctx.arc(unit.x, unit.y, 10, 0, Math.PI * 2)
+        ctx.fill()
+      }
     }
+  }
+
+  private drawAttackEffect(x: number, y: number) {
+    const ctx = this.ctx
+    // Pulsing red ring that expands outward and fades, cycling at ~2Hz
+    const t = (this.renderTime % 500) / 500
+    const radius = 12 + t * 10
+    const alpha = 1 - t
+
+    ctx.save()
+    ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`
+    ctx.lineWidth = 2.5 / this.camera.zoom
+    ctx.beginPath()
+    ctx.arc(x, y, radius, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  private drawChoppingEffect(x: number, y: number) {
+    const ctx = this.ctx
+    // Axe-swing arc that oscillates left and right above the unit
+    const swing = Math.sin(this.renderTime * 0.005) // ±1, ~1Hz
+    const angle = swing * (Math.PI / 3)
+
+    ctx.save()
+    ctx.translate(x, y - 16)
+    ctx.rotate(angle)
+    ctx.strokeStyle = '#92400e'
+    ctx.lineWidth = 3 / this.camera.zoom
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.arc(0, 0, 7, -Math.PI / 3, Math.PI / 3)
+    ctx.stroke()
+    // Axe head dot at the tip
+    ctx.fillStyle = '#d97706'
+    ctx.beginPath()
+    ctx.arc(0, -7, 3, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
+
+  private drawSoldierShape(x: number, y: number) {
+    const ctx = this.ctx
+    const w = 9
+    const h = 10
+    const r = 8
+
+    // Top circle
+    ctx.beginPath()
+    ctx.arc(x, y - r, r, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Bottom triangle (tip pointing down from center)
+    ctx.beginPath()
+    ctx.moveTo(x - w, y)
+    ctx.lineTo(x + w, y)
+    ctx.lineTo(x, y + h)
+    ctx.closePath()
+    ctx.fill()
   }
 
   private drawSelectedUnitHealthBar(unit: {
@@ -433,6 +549,45 @@ export class CanvasRenderer {
     ctx.fillRect(right, top, cornerSize, cornerSize)
     ctx.fillRect(left, bottom, cornerSize, cornerSize)
     ctx.fillRect(right, bottom, cornerSize, cornerSize)
+  }
+
+  private drawEnemySpawnpointAt(
+    ctx: CanvasRenderingContext2D,
+    worldX: number,
+    worldY: number,
+    width: number,
+    height: number,
+    inset: number,
+    metadata: Record<string, string | number | boolean | null> | undefined,
+  ) {
+    // Red pulsing border
+    ctx.strokeStyle = '#ef4444'
+    ctx.lineWidth = 2 / this.camera.zoom
+    ctx.setLineDash([])
+    ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+
+    // Timer bar showing spawn countdown
+    const remaining = metadata?.['spawnTimerRemaining'] as number | undefined
+    const total = metadata?.['spawnTimerTotal'] as number | undefined
+    const phase = metadata?.['spawnTimerPhase'] as string | undefined
+
+    if (remaining !== undefined && total !== undefined && total > 0) {
+      const progress = Math.max(0, Math.min(1, 1 - remaining / total))
+      const barH = 5 / this.camera.zoom
+      const barX = worldX + inset
+      const barY = worldY + height - inset - barH
+      const barW = width - inset * 2
+
+      ctx.save()
+      ctx.fillStyle = '#1e293b'
+      ctx.fillRect(barX, barY, barW, barH)
+      ctx.fillStyle = phase === 'delay' ? '#f97316' : '#dc2626'
+      ctx.fillRect(barX, barY, barW * progress, barH)
+      ctx.strokeStyle = phase === 'delay' ? 'rgba(249,115,22,0.5)' : 'rgba(220,38,38,0.5)'
+      ctx.lineWidth = 1 / this.camera.zoom
+      ctx.strokeRect(barX, barY, barW, barH)
+      ctx.restore()
+    }
   }
 
   private drawBuildPlacementGhost() {

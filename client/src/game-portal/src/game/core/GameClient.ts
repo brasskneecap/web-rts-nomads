@@ -86,6 +86,12 @@ export class GameClient {
       return
     }
 
+    if (actionId === 'attack') {
+      this.state.beginUnitTargeting('attack')
+      this.input.refreshCursor()
+      return
+    }
+
     if (actionId === 'build') {
       this.state.openWorkerBuildMenu()
       return
@@ -105,6 +111,11 @@ export class GameClient {
 
     if (selectedBuilding && actionId === 'train-worker') {
       this.network.sendTrainWorkerCommand(selectedBuilding.id)
+      return
+    }
+
+    if (selectedBuilding && actionId === 'train-soldier') {
+      this.network.sendTrainSoldierCommand(selectedBuilding.id)
       return
     }
 
@@ -153,6 +164,17 @@ export class GameClient {
           const buildingCenterY = (clickedBuilding.y + clickedBuilding.height / 2) * cellSize
           this.state.addMoveMarker(buildingCenterX, buildingCenterY, 700)
           this.network.sendGatherCommand(unitIds, clickedBuilding.id)
+        }
+
+        this.state.cancelUnitTargeting()
+        return true
+      }
+
+      if (this.state.isUnitTargetingActive('attack') && unitIds.length > 0) {
+        const clickedUnit = this.state.getEnemyUnitAtPosition(x, y)
+
+        if (clickedUnit) {
+          this.network.sendAttackCommand(unitIds, clickedUnit.id)
         }
 
         this.state.cancelUnitTargeting()

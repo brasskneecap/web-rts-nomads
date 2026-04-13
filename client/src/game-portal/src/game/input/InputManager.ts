@@ -26,6 +26,7 @@ export class InputManager {
   private readonly moveCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' stroke='%230f172a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='14' cy='14' r='10.5' fill='rgba(125,220,255,0.92)'/%3E%3Cpath d='M14 5v18M5 14h18'/%3E%3Cpath d='M14 5l-3 3M14 5l3 3M23 14l-3-3M23 14l-3 3M14 23l-3-3M14 23l3-3M5 14l3-3M5 14l3 3'/%3E%3C/g%3E%3C/svg%3E") 14 14, pointer`
   private readonly gatherCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Ccircle cx='14' cy='14' r='11' fill='rgba(202,138,4,0.95)' stroke='rgba(15,23,42,0.9)' stroke-width='2'/%3E%3Cpath d='M9 16l4.2-4.4 2.6 2.6L12 18z' fill='%23fff7d6'/%3E%3Cpath d='M15.6 9.4l3 3' stroke='%230f172a' stroke-width='2.2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 14 14, pointer`
   private readonly repairCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Ccircle cx='14' cy='14' r='11' fill='rgba(74,222,128,0.92)' stroke='rgba(15,23,42,0.9)' stroke-width='2'/%3E%3Cpath d='M9 14h10M14 9v10' stroke='%230f172a' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M10 10l8 8M18 10l-8 8' stroke='rgba(15,23,42,0.25)' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") 14 14, pointer`
+  private readonly attackCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Ccircle cx='14' cy='14' r='11' fill='rgba(239,68,68,0.92)' stroke='rgba(15,23,42,0.9)' stroke-width='2'/%3E%3Cg stroke='%230f172a' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M18 10l-8 8M10 10l2 2-4 4 2 2 4-4 2 2 4-4-2-2-2 2-2-2z'/%3E%3C/g%3E%3C/svg%3E") 14 14, crosshair`
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -231,10 +232,15 @@ export class InputManager {
         } else {
           this.state.selectUnit(clickedUnit.id)
         }
-      } else if (clickedBuilding && !isShiftHeld) {
-        this.state.selectBuilding(clickedBuilding.id)
-      } else if (!isShiftHeld) {
-        this.state.clearSelection()
+      } else {
+        const clickedEnemy = this.state.getEnemyUnitAtPosition(world.x, world.y)
+        if (clickedEnemy && !isShiftHeld) {
+          this.state.inspectEnemyUnit(clickedEnemy.id)
+        } else if (clickedBuilding && !isShiftHeld) {
+          this.state.selectBuilding(clickedBuilding.id)
+        } else if (!isShiftHeld) {
+          this.state.clearSelection()
+        }
       }
     }
 
@@ -258,6 +264,12 @@ export class InputManager {
     const clickedBuilding = this.state.getBuildingAtPosition(world.x, world.y, 16)
 
     if (unitIds.length === 0) return
+
+    const clickedEnemy = this.state.getEnemyUnitAtPosition(world.x, world.y)
+    if (clickedEnemy && this.state.selectedUnitsCanAttack()) {
+      this.network.sendAttackCommand(unitIds, clickedEnemy.id)
+      return
+    }
 
     if (
       clickedBuilding &&
@@ -291,6 +303,7 @@ export class InputManager {
 
   private onMouseLeave = () => {
     this.state.setHoveredInteractableBuilding(null)
+    this.state.setHoveredEnemyUnit(null)
     if (!this.isSpaceHeld && !this.isSpacePanning && !this.isMiddleMouseDown) {
       this.canvas.style.cursor = 'default'
     }
@@ -355,6 +368,7 @@ export class InputManager {
       m: 'move',
       r: 'repair',
       g: 'gather',
+      a: 'attack',
       b: selection.actions.some((action) => action.id === 'build-barracks')
         ? 'build-barracks'
         : 'build',
@@ -400,21 +414,35 @@ export class InputManager {
 
     if (this.state.isUnitTargetingActive('move')) {
       this.state.setHoveredInteractableBuilding(null)
+      this.state.setHoveredEnemyUnit(null)
       this.canvas.style.cursor = this.moveCursor
       return
     }
 
     if (this.state.isUnitTargetingActive('gather')) {
       this.state.setHoveredInteractableBuilding(isGatherableBuilding ? hoveredBuilding.id : null)
+      this.state.setHoveredEnemyUnit(null)
       this.canvas.style.cursor = this.gatherCursor
       return
     }
 
     if (this.state.isUnitTargetingActive('repair')) {
       this.state.setHoveredInteractableBuilding(isRepairableBuilding ? hoveredBuilding!.id : null)
+      this.state.setHoveredEnemyUnit(null)
       this.canvas.style.cursor = this.repairCursor
       return
     }
+
+    // Attack cursor when hovering an enemy with attack-capable units selected
+    const hoveredEnemy = this.state.getEnemyUnitAtPosition(world.x, world.y)
+    if (hoveredEnemy && this.state.selectedUnitsCanAttack()) {
+      this.state.setHoveredEnemyUnit(hoveredEnemy.id)
+      this.state.setHoveredInteractableBuilding(null)
+      this.canvas.style.cursor = this.attackCursor
+      return
+    }
+
+    this.state.setHoveredEnemyUnit(hoveredEnemy?.id ?? null)
 
     const canGather =
       isGatherableBuilding &&

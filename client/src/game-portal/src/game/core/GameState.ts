@@ -20,6 +20,7 @@ export type Unit = {
   y: number
   hp?: number
   maxHp?: number
+  damage?: number
   ownerId?: string
   color?: string
   carriedResourceType?: ResourceType
@@ -122,7 +123,7 @@ export type Vec2 = {
 }
 
 export type BuildingTargetingMode = 'set-spawn-point'
-export type UnitTargetingMode = 'move' | 'gather' | 'repair'
+export type UnitTargetingMode = 'move' | 'gather' | 'repair' | 'attack'
 
 export type BuildPlacement = {
   buildingType: string
@@ -176,6 +177,8 @@ export class GameState {
   selectedUnitIds = new Set<number>()
   selectedUnitOrder: number[] = []
   selectedBuildingId: string | null = null
+  inspectedEnemyUnitId: number | null = null
+  hoveredEnemyUnitId: number | null = null
   hoveredInteractableBuildingId: string | null = null
   buildingTargetingMode: BuildingTargetingMode | null = null
   unitTargetingMode: UnitTargetingMode | null = null
@@ -248,6 +251,7 @@ export class GameState {
         y: unit.y,
         hp: unit.hp,
         maxHp: unit.maxHp,
+        damage: unit.damage,
         ownerId: unit.ownerId,
         color: unit.color,
         carriedResourceType: unit.carriedResourceType,
@@ -281,6 +285,10 @@ export class GameState {
 
     if (this.selectedUnitOrder.length === 0) {
       this.unitTargetingMode = null
+    }
+
+    if (this.inspectedEnemyUnitId !== null && !validIds.has(this.inspectedEnemyUnitId)) {
+      this.inspectedEnemyUnitId = null
     }
   }
 
@@ -355,6 +363,7 @@ export class GameState {
     this.selectedUnitIds.clear()
     this.selectedUnitOrder = []
     this.selectedBuildingId = null
+    this.inspectedEnemyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -369,6 +378,7 @@ export class GameState {
     this.selectedUnitIds.add(unitId)
     this.selectedUnitOrder = [unitId]
     this.selectedBuildingId = null
+    this.inspectedEnemyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -511,6 +521,16 @@ export class GameState {
     })
   }
 
+  getEnemyUnitAtPosition(x: number, y: number, radius = 14): Unit | undefined {
+    return this.getInteractionUnits().find((unit) => {
+      if (this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
+
+      const dx = unit.x - x
+      const dy = unit.y - y
+      return Math.sqrt(dx * dx + dy * dy) <= radius
+    })
+  }
+
   getOrderedSelectedUnitIds(): number[] {
     return this.selectedUnitOrder.filter((id) => {
       if (!this.selectedUnitIds.has(id)) return false
@@ -553,6 +573,7 @@ export class GameState {
     this.selectedUnitIds.clear()
     this.selectedUnitOrder = []
     this.selectedBuildingId = buildingId
+    this.inspectedEnemyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -694,6 +715,29 @@ export class GameState {
     this.hoveredInteractableBuildingId = buildingId
   }
 
+  setHoveredEnemyUnit(unitId: number | null) {
+    this.hoveredEnemyUnitId = unitId
+  }
+
+  inspectEnemyUnit(unitId: number) {
+    const unit = this.units.find((u) => u.id === unitId)
+    if (!unit || this.isOwnedByLocalPlayer(unit)) return
+
+    this.selectedUnitIds.clear()
+    this.selectedUnitOrder = []
+    this.selectedBuildingId = null
+    this.inspectedEnemyUnitId = unitId
+    this.buildingTargetingMode = null
+    this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
+  }
+
+  selectedUnitsCanAttack(): boolean {
+    const units = this.getSelectedUnits()
+    return units.length > 0 && units.some((unit) => unit.capabilities.includes('attack'))
+  }
+
   setMapConfig(map: MapConfig) {
     this.mapConfig = sanitizeMapConfig(map)
     this.mapWidth = this.mapConfig.width
@@ -738,6 +782,20 @@ export class GameState {
   }
 
   getSelectionSummary(): SelectionSummary {
+    if (this.inspectedEnemyUnitId !== null && this.selectedUnitIds.size === 0) {
+      const unit = this.units.find((u) => u.id === this.inspectedEnemyUnitId)
+      if (unit) {
+        return {
+          kind: 'unit',
+          title: `Enemy ${unit.name}`,
+          subtitle: unit.status ?? 'Hostile',
+          details: getUnitDetails(unit),
+          actions: [],
+        }
+      }
+      this.inspectedEnemyUnitId = null
+    }
+
     const selectedBuilding = this.getSelectedBuilding()
     if (selectedBuilding) {
       const title = formatBuildingName(selectedBuilding.buildingType)
@@ -980,6 +1038,8 @@ function formatUnitType(unitType: UnitType) {
   switch (unitType) {
     case 'worker':
       return 'Worker Unit'
+    case 'soldier':
+      return 'Soldier Unit'
   }
 }
 
@@ -993,6 +1053,8 @@ function formatBuildingName(buildingType: BuildingTile['buildingType']) {
       return 'Tree'
     case 'barracks':
       return 'Barracks'
+    case 'enemy-spawnpoint':
+      return 'Enemy Spawnpoint'
   }
 }
 
@@ -1041,6 +1103,8 @@ function getUnitActions(
         return { id: 'build', label: '(B)uild' }
       case 'gather':
         return { id: 'gather', label: '(G)ather', active: activeMode === 'gather' }
+      case 'attack':
+        return { id: 'attack', label: '(A)ttack', active: activeMode === 'attack' }
       default:
         return { id: capability, label: '(M)ove', active: activeMode === 'move' }
     }
@@ -1077,6 +1141,8 @@ function getGroupActions(
         return { id: 'build', label: '(B)uild' }
       case 'gather':
         return { id: 'gather', label: '(G)ather', active: activeMode === 'gather' }
+      case 'attack':
+        return { id: 'attack', label: '(A)ttack', active: activeMode === 'attack' }
       default:
         return { id: capability, label: '(M)ove', active: activeMode === 'move' }
     }
@@ -1094,6 +1160,13 @@ function getBuildingActions(building: BuildingTile): ActionItem[] {
     building.spawnUnitTypes?.includes('worker')
   ) {
     actions.push({ id: 'train-worker', label: 'Train Worker' })
+    actions.push({ id: 'set-spawn-point', label: 'Set Spawn Point' })
+  }
+  if (
+    building.capabilities.includes('unit-spawner') &&
+    building.spawnUnitTypes?.includes('soldier')
+  ) {
+    actions.push({ id: 'train-soldier', label: 'Train Soldier' })
     actions.push({ id: 'set-spawn-point', label: 'Set Spawn Point' })
   }
 
@@ -1218,6 +1291,14 @@ function getUnitDetails(unit: Unit): DetailItem[] {
       value: `${unit.hp ?? 0} / ${unit.maxHp ?? unit.hp ?? 0}`,
     },
   ]
+
+  if (unit.damage !== undefined && unit.damage > 0) {
+    details.push({
+      id: 'damage',
+      label: 'Damage',
+      value: String(unit.damage),
+    })
+  }
 
   if (unit.carriedResourceType && unit.carriedAmount !== undefined) {
     details.push({
@@ -1360,6 +1441,8 @@ function formatSpawnUnitType(unitType: string) {
   switch (unitType) {
     case 'worker':
       return 'Worker'
+    case 'soldier':
+      return 'Soldier'
     default:
       return unitType
   }
