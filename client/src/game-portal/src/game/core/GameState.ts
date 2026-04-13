@@ -33,6 +33,7 @@ export type ActionItem = {
   id: string
   label: string
   disabled?: boolean
+  active?: boolean
 }
 
 export type DetailItem = {
@@ -114,6 +115,7 @@ export type Vec2 = {
 }
 
 export type BuildingTargetingMode = 'set-spawn-point'
+export type UnitTargetingMode = 'move' | 'gather'
 
 export type PlayerSummary = {
   playerId: string | null
@@ -159,6 +161,7 @@ export class GameState {
   selectedBuildingId: string | null = null
   hoveredInteractableBuildingId: string | null = null
   buildingTargetingMode: BuildingTargetingMode | null = null
+  unitTargetingMode: UnitTargetingMode | null = null
 
   selectionBox: SelectionBox = {
     startX: 0,
@@ -256,6 +259,10 @@ export class GameState {
     this.selectedUnitOrder = this.selectedUnitOrder.filter((id) =>
       validIds.has(id),
     )
+
+    if (this.selectedUnitOrder.length === 0) {
+      this.unitTargetingMode = null
+    }
   }
 
   getInterpolatedUnits(renderTime: number): Unit[] {
@@ -330,6 +337,7 @@ export class GameState {
     this.selectedUnitOrder = []
     this.selectedBuildingId = null
     this.buildingTargetingMode = null
+    this.unitTargetingMode = null
   }
 
   selectUnit(unitId: number) {
@@ -341,6 +349,7 @@ export class GameState {
     this.selectedUnitOrder = [unitId]
     this.selectedBuildingId = null
     this.buildingTargetingMode = null
+    this.unitTargetingMode = null
   }
 
   setSelection(unitIds: number[]) {
@@ -352,6 +361,7 @@ export class GameState {
     this.selectedUnitIds.clear()
     this.selectedBuildingId = null
     this.buildingTargetingMode = null
+    this.unitTargetingMode = null
 
     for (const id of ownedIds) {
       this.selectedUnitIds.add(id)
@@ -509,6 +519,7 @@ export class GameState {
     this.selectedUnitOrder = []
     this.selectedBuildingId = buildingId
     this.buildingTargetingMode = null
+    this.unitTargetingMode = null
   }
 
   getSelectedBuilding(): BuildingTile | null {
@@ -518,11 +529,34 @@ export class GameState {
 
   beginBuildingTargeting(mode: BuildingTargetingMode) {
     if (!this.getSelectedBuilding()) return
+    this.unitTargetingMode = null
     this.buildingTargetingMode = mode
   }
 
   cancelBuildingTargeting() {
     this.buildingTargetingMode = null
+  }
+
+  beginUnitTargeting(mode: UnitTargetingMode) {
+    if (this.getSelectedUnits().length === 0) return
+    if (mode === 'gather' && !this.selectedUnitsCanGather()) return
+
+    this.selectedBuildingId = null
+    this.buildingTargetingMode = null
+    this.unitTargetingMode = mode
+  }
+
+  cancelUnitTargeting() {
+    this.unitTargetingMode = null
+  }
+
+  isUnitTargetingActive(mode?: UnitTargetingMode) {
+    if (!this.unitTargetingMode) return false
+    return mode ? this.unitTargetingMode === mode : true
+  }
+
+  isAnyTargetingActive() {
+    return this.isBuildingTargetingActive() || this.isUnitTargetingActive()
   }
 
   isBuildingTargetingActive(mode?: BuildingTargetingMode) {
@@ -557,6 +591,7 @@ export class GameState {
       !this.mapConfig.buildings.some((building) => building.id === this.selectedBuildingId && building.visible)
     ) {
       this.selectedBuildingId = null
+      this.buildingTargetingMode = null
     }
   }
 
@@ -620,9 +655,12 @@ export class GameState {
       return {
         kind: 'unit',
         title: unit.name,
-        subtitle: unit.status || formatUnitType(unit.unitType),
+        subtitle: getSelectionUnitSubtitle(
+          unit.status || formatUnitType(unit.unitType),
+          this.unitTargetingMode,
+        ),
         details: getUnitDetails(unit),
-        actions: getUnitActions(unit),
+        actions: getUnitActions(unit, this.unitTargetingMode),
       }
     }
 
@@ -632,11 +670,14 @@ export class GameState {
     return {
       kind: 'group',
       title: `${selectedUnits.length} Units Selected`,
-      subtitle: selectedUnits.every((unit) => unit.unitType === 'worker')
-        ? summarizeWorkerGroupStatus(selectedUnits)
-        : 'Mixed Detachment',
+      subtitle: getSelectionUnitSubtitle(
+        selectedUnits.every((unit) => unit.unitType === 'worker')
+          ? summarizeWorkerGroupStatus(selectedUnits)
+          : 'Mixed Detachment',
+        this.unitTargetingMode,
+      ),
       details: getGroupDetails(selectedUnits, totalHp, totalMaxHp),
-      actions: getGroupActions(selectedUnits),
+      actions: getGroupActions(selectedUnits, this.unitTargetingMode),
     }
   }
 
@@ -822,20 +863,20 @@ function formatResourceLabel(resourceType: ResourceType) {
   }
 }
 
-function getUnitActions(unit: Unit): ActionItem[] {
+function getUnitActions(unit: Unit, activeMode: UnitTargetingMode | null): ActionItem[] {
   return unit.capabilities.map((capability) => {
     switch (capability) {
       case 'build':
         return { id: 'build', label: 'Build' }
       case 'gather':
-        return { id: 'gather', label: 'Gather' }
+        return { id: 'gather', label: 'Gather', active: activeMode === 'gather' }
       default:
-        return { id: capability, label: 'Move' }
+        return { id: capability, label: 'Move', active: activeMode === 'move' }
     }
   })
 }
 
-function getGroupActions(units: Unit[]): ActionItem[] {
+function getGroupActions(units: Unit[], activeMode: UnitTargetingMode | null): ActionItem[] {
   const capabilities = new Set<UnitCapability>()
 
   for (const unit of units) {
@@ -849,20 +890,15 @@ function getGroupActions(units: Unit[]): ActionItem[] {
       case 'build':
         return { id: 'build', label: 'Build' }
       case 'gather':
-        return { id: 'gather', label: 'Gather' }
+        return { id: 'gather', label: 'Gather', active: activeMode === 'gather' }
       default:
-        return { id: capability, label: 'Move' }
+        return { id: capability, label: 'Move', active: activeMode === 'move' }
     }
   })
 }
 
 function getBuildingActions(building: BuildingTile): ActionItem[] {
   const actions: ActionItem[] = []
-
-  if (building.capabilities.includes('resource-source')) {
-    const label = building.buildingType === 'tree' ? 'Chop Wood' : 'Harvest Gold'
-    actions.push({ id: 'harvest', label })
-  }
   if (
     building.capabilities.includes('unit-spawner') &&
     building.spawnUnitTypes?.includes('worker')
@@ -1114,6 +1150,17 @@ function formatRemainingSeconds(seconds: number) {
   }
 
   return `${seconds.toFixed(1)}s`
+}
+
+function getSelectionUnitSubtitle(baseSubtitle: string, unitTargetingMode: UnitTargetingMode | null) {
+  switch (unitTargetingMode) {
+    case 'move':
+      return 'Move order ready. Left-click a destination.'
+    case 'gather':
+      return 'Gather order ready. Left-click a goldmine or tree.'
+    default:
+      return baseSubtitle
+  }
 }
 
 function clampBuildingSpawnPoint(map: MapConfig, _building: BuildingTile, point: Vec2): Vec2 {

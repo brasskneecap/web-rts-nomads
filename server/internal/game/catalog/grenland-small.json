@@ -12,103 +12,168 @@
     "terrain": [],
     "obstacles": [
       {
-        "x": 13,
+        "x": 18,
         "y": 0,
         "obstacle": "rock"
       },
       {
-        "x": 13,
+        "x": 18,
         "y": 1,
         "obstacle": "rock"
       },
       {
-        "x": 12,
+        "x": 18,
         "y": 2,
         "obstacle": "rock"
       },
       {
-        "x": 13,
-        "y": 2,
-        "obstacle": "rock"
-      },
-      {
-        "x": 11,
+        "x": 18,
         "y": 3,
         "obstacle": "rock"
       },
       {
-        "x": 12,
-        "y": 3,
-        "obstacle": "rock"
-      },
-      {
-        "x": 11,
+        "x": 18,
         "y": 4,
         "obstacle": "rock"
       },
       {
-        "x": 11,
+        "x": 18,
         "y": 5,
         "obstacle": "rock"
       },
       {
-        "x": 11,
+        "x": 17,
         "y": 6,
         "obstacle": "rock"
       },
       {
-        "x": 7,
+        "x": 18,
+        "y": 6,
+        "obstacle": "rock"
+      },
+      {
+        "x": 17,
+        "y": 7,
+        "obstacle": "rock"
+      },
+      {
+        "x": 17,
+        "y": 8,
+        "obstacle": "rock"
+      },
+      {
+        "x": 17,
+        "y": 9,
+        "obstacle": "rock"
+      },
+      {
+        "x": 16,
         "y": 10,
+        "obstacle": "rock"
+      },
+      {
+        "x": 17,
+        "y": 10,
+        "obstacle": "rock"
+      },
+      {
+        "x": 14,
+        "y": 11,
+        "obstacle": "rock"
+      },
+      {
+        "x": 15,
+        "y": 11,
+        "obstacle": "rock"
+      },
+      {
+        "x": 16,
+        "y": 11,
+        "obstacle": "rock"
+      },
+      {
+        "x": 14,
+        "y": 12,
+        "obstacle": "rock"
+      },
+      {
+        "x": 11,
+        "y": 15,
+        "obstacle": "rock"
+      },
+      {
+        "x": 10,
+        "y": 16,
+        "obstacle": "rock"
+      },
+      {
+        "x": 11,
+        "y": 16,
         "obstacle": "rock"
       },
       {
         "x": 8,
-        "y": 10,
+        "y": 17,
         "obstacle": "rock"
       },
       {
-        "x": 4,
-        "y": 11,
+        "x": 9,
+        "y": 17,
+        "obstacle": "rock"
+      },
+      {
+        "x": 10,
+        "y": 17,
         "obstacle": "rock"
       },
       {
         "x": 5,
-        "y": 11,
+        "y": 18,
         "obstacle": "rock"
       },
       {
         "x": 6,
-        "y": 11,
+        "y": 18,
         "obstacle": "rock"
       },
       {
         "x": 7,
-        "y": 11,
+        "y": 18,
+        "obstacle": "rock"
+      },
+      {
+        "x": 8,
+        "y": 18,
         "obstacle": "rock"
       },
       {
         "x": 0,
-        "y": 12,
+        "y": 19,
         "obstacle": "rock"
       },
       {
         "x": 1,
-        "y": 12,
+        "y": 19,
         "obstacle": "rock"
       },
       {
         "x": 2,
-        "y": 12,
+        "y": 19,
         "obstacle": "rock"
       },
       {
         "x": 3,
-        "y": 12,
+        "y": 19,
         "obstacle": "rock"
       },
       {
         "x": 4,
-        "y": 12,
+        "y": 19,
+        "obstacle": "rock"
+      },
+      {
+        "x": 5,
+        "y": 19,
         "obstacle": "rock"
       }
     ],
@@ -541,7 +606,8 @@
         ],
         "metadata": {
           "occupiedLabel": "occupied",
-          "unoccupiedLabel": "unoccupied"
+          "unoccupiedLabel": "unoccupied",
+          "spawnTimeWorker": 5
         }
       },
       {

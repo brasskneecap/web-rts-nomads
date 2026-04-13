@@ -43,19 +43,22 @@
     <section class="selection-panel selection-panel--actions">
       <div class="selection-kicker">Actions</div>
       <div class="action-grid">
-        <button
-          v-for="action in ui.selection.actions"
-          :key="action.id"
-          class="action-button"
-          :disabled="action.disabled"
-          type="button"
-          @click="$emit('action', action.id)"
-        >
-          {{ action.label }}
-        </button>
-        <div v-if="ui.selection.actions.length === 0" class="action-empty">
-          No actions available
-        </div>
+        <template v-for="i in GRID_SIZE" :key="i">
+          <button
+            v-if="ui.selection.actions[i - 1]"
+            class="action-cell"
+            :class="{ 'action-cell--active': ui.selection.actions[i - 1].active }"
+            :disabled="ui.selection.actions[i - 1].disabled"
+            :title="ui.selection.actions[i - 1].label"
+            type="button"
+            @click="$emit('action', ui.selection.actions[i - 1].id)"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path :d="getActionIcon(ui.selection.actions[i - 1].id)" />
+            </svg>
+          </button>
+          <div v-else class="action-cell action-cell--empty" />
+        </template>
       </div>
     </section>
   </footer>
@@ -71,6 +74,23 @@ defineEmits<{
 defineProps<{
   ui: GameUiSnapshot
 }>()
+
+const GRID_SIZE = 9
+
+const ACTION_ICONS: Record<string, string> = {
+  'harvest':         'M6 18l7-7 M12 6l6 6 M10 8l6-2 3 3-2 6 M5 19l4-1-3-3-1 4',
+  'train-worker':    'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  'set-spawn-point': 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7',
+  'build':           'M10 13l-5.5 5.5a2.12 2.12 0 0 1-3-3L7 10 M16 4l4 4-4 4-4-4 4-4z M7 10l4 4',
+  'attack':          'M14.5 17.5L3 6V3h3l11.5 11.5 M18 16l4-4 M9 9l4-4',
+  'move':            'M12 2v20 M2 12h20 M7 7L2 12l5 5 M17 7l5 5-5 5',
+  'gather':          'M6 18l7-7 M12 6l6 6 M10 8l6-2 3 3-2 6 M5 19l4-1-3-3-1 4',
+  'cancel-training': 'M18 6L6 18 M6 6l12 12',
+}
+
+function getActionIcon(id: string): string {
+  return ACTION_ICONS[id] ?? 'M12 5v14 M5 12h14'
+}
 </script>
 
 <style scoped>
@@ -82,68 +102,56 @@ defineProps<{
   z-index: 5;
   display: flex;
   align-items: flex-end;
-  gap: 14px;
+  gap: 6px;
   --selection-panel-width: clamp(180px, 20vw, 240px);
-  --selection-main-width: clamp(620px, 68vw, 980px);
   --actions-panel-width: clamp(170px, 18vw, 210px);
-  --actions-panel-height: clamp(180px, 28vh, 240px);
-  --main-panel-height: clamp(82px, 11vh, 120px);
-  padding: 10px;
-  border: 1px solid rgba(123, 93, 48, 0.5);
-  border-radius: 18px;
-  background:
-    radial-gradient(circle at top, rgba(176, 124, 52, 0.18), transparent 42%),
-    linear-gradient(180deg, rgba(58, 35, 18, 0.98), rgba(27, 16, 10, 0.94));
-  box-shadow:
-    inset 0 1px 0 rgba(240, 220, 178, 0.14),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+  --main-panel-height: clamp(100px, 14vh, 140px);
+  --hud-height: clamp(180px, 28vh, 240px);
   pointer-events: none;
 }
 
 .selection-main {
   display: flex;
   align-items: stretch;
-  gap: 14px;
-  width: min(var(--selection-main-width), calc(100% - var(--actions-panel-width) - 28px));
-  max-width: calc(100% - var(--actions-panel-width) - 28px);
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--main-panel-height);
   pointer-events: auto;
 }
 
 .selection-panel {
   min-width: 0;
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: 0;
   background:
-    radial-gradient(circle at bottom, rgba(176, 124, 52, 0.14), transparent 38%),
-    linear-gradient(180deg, rgb(26, 18, 12), rgb(17, 11, 7));
+    radial-gradient(circle at top, rgba(220, 165, 80, 0.2), transparent 50%),
+    linear-gradient(180deg, rgb(96, 64, 30), rgb(68, 44, 18));
+  border: 1px solid rgba(180, 130, 60, 0.35);
 }
 
 .selection-panel--primary {
   flex: 0 0 var(--selection-panel-width);
-  width: var(--selection-panel-width);
-  min-height: var(--main-panel-height);
-}
-
-.selection-panel--actions {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  width: var(--actions-panel-width);
-  height: var(--actions-panel-height);
-  max-height: var(--actions-panel-height);
-  overflow: hidden;
-  pointer-events: auto;
+  border-radius: 14px 0 0 14px;
 }
 
 .selection-panel--details {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  height: var(--main-panel-height);
-  min-height: var(--main-panel-height);
   min-width: 0;
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
+  overflow-y: auto;
+}
+
+.selection-panel--actions {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--actions-panel-width);
+  height: var(--hud-height);
+  overflow: hidden;
+  border-radius: 14px;
+  pointer-events: auto;
 }
 
 .selection-kicker {
@@ -172,16 +180,12 @@ defineProps<{
 }
 
 .action-grid {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  align-content: stretch;
-  gap: 8px;
-  width: 100%;
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 4px;
   flex: 1 1 auto;
-  overflow-y: auto;
-  padding-right: 2px;
 }
 
 .detail-inline {
@@ -274,43 +278,58 @@ defineProps<{
   color: #cbb893;
 }
 
-.action-button,
-.action-empty {
-  width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border-radius: 10px;
+.action-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
   border: 1px solid rgba(200, 164, 106, 0.28);
   background: linear-gradient(180deg, rgba(114, 77, 39, 0.88), rgba(60, 39, 21, 0.94));
   color: #f5ead2;
-  font-size: 13px;
-  font-weight: 700;
-  text-align: center;
+  padding: 0;
+  cursor: pointer;
 }
 
-.action-button:disabled {
-  opacity: 0.58;
+.action-cell svg {
+  width: 55%;
+  height: 55%;
 }
 
-.action-empty {
-  min-width: 0;
-  color: #cbb893;
+.action-cell:not(:disabled):hover {
+  background: linear-gradient(180deg, rgba(148, 102, 50, 0.95), rgba(90, 58, 26, 0.98));
+  border-color: rgba(220, 180, 110, 0.5);
+}
+
+.action-cell--active {
+  background:
+    linear-gradient(180deg, rgba(201, 145, 65, 0.98), rgba(121, 80, 34, 1));
+  border-color: rgba(247, 216, 142, 0.82);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 241, 202, 0.24),
+    0 0 0 1px rgba(247, 216, 142, 0.2);
+}
+
+.action-cell:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.action-cell--empty {
+  border: 1px solid rgba(180, 130, 60, 0.1);
+  background: rgba(50, 30, 10, 0.25);
+  cursor: default;
+  pointer-events: none;
 }
 
 @media (max-width: 1000px) {
   .selection-hud {
-    display: flex;
-    align-items: flex-end;
-    gap: 10px;
     left: 14px;
     right: 14px;
     bottom: 14px;
-    padding: 8px;
     --selection-panel-width: 210px;
-    --selection-main-width: 700px;
     --actions-panel-width: 180px;
-    --actions-panel-height: 200px;
-    --main-panel-height: 98px;
+    --main-panel-height: 110px;
+    --hud-height: 200px;
   }
 
   .selection-title {
@@ -320,27 +339,17 @@ defineProps<{
 
 @media (max-width: 720px) {
   .selection-hud {
-    display: flex;
-    flex-direction: row;
-    align-items: flex-end;
-    gap: 8px;
     left: 10px;
     right: 10px;
     bottom: 10px;
-    padding: 6px;
     --selection-panel-width: 170px;
-    --selection-main-width: 430px;
     --actions-panel-width: 152px;
-    --actions-panel-height: 176px;
-    --main-panel-height: 88px;
+    --main-panel-height: 90px;
+    --hud-height: 176px;
   }
 
   .selection-panel {
     padding: 8px 10px;
-  }
-
-  .selection-main {
-    gap: 8px;
   }
 
   .selection-title {
@@ -386,12 +395,5 @@ defineProps<{
     font-size: 10px;
   }
 
-  .action-button,
-  .action-empty {
-    width: 100%;
-    min-width: 0;
-    padding: 7px 8px;
-    font-size: 11px;
-  }
 }
 </style>

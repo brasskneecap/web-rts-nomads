@@ -7,150 +7,171 @@
         want clicks to edit the map.
       </p>
 
-      <div class="control-group">
-        <label for="editor-map-id">Map ID</label>
-        <input id="editor-map-id" v-model.trim="model.id" type="text" />
-      </div>
-
-      <div class="control-group">
-        <label for="editor-map-name">Map Name</label>
-        <input id="editor-map-name" v-model.trim="model.name" type="text" />
-      </div>
-
-      <div class="control-group">
-        <label for="editor-map-description">Description</label>
-        <textarea
-          id="editor-map-description"
-          v-model.trim="model.description"
-          class="metadata-box"
-          rows="3"
-        ></textarea>
-      </div>
-
-      <div class="control-group">
-        <label for="editor-load-map">Load Existing Map</label>
-        <select
-          id="editor-load-map"
-          v-model="selectedLoadMapId"
-          :disabled="isLoadingMapCatalog || isLoadingSelectedMap || availableMaps.length === 0"
-        >
-          <option v-for="map in availableMaps" :key="map.id" :value="map.id">
-            {{ map.name }}
-          </option>
-        </select>
-      </div>
-
-      <div class="menu-text" v-if="mapLoadError">
-        {{ mapLoadError }}
-      </div>
-
-      <div class="menu-actions">
-        <button
-          type="button"
-          @click="loadSelectedMapIntoEditor"
-          :disabled="!selectedLoadMapId || isLoadingMapCatalog || isLoadingSelectedMap"
-        >
-          {{ isLoadingSelectedMap ? 'Loading...' : 'Load Into Editor' }}
+      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'setup' }">
+        <button type="button" class="editor-section__summary" @click="toggleSection('setup')">
+          Map Setup
         </button>
-      </div>
+        <div v-if="openSection === 'setup'" class="editor-section__body">
+          <div class="control-group">
+            <label for="editor-map-id">Map ID</label>
+            <input id="editor-map-id" v-model.trim="model.id" type="text" />
+          </div>
 
-      <div class="control-group">
-        <label for="editor-cols">Columns</label>
-        <input id="editor-cols" v-model.number="draftCols" type="number" min="6" max="500" />
-      </div>
+          <div class="control-group">
+            <label for="editor-map-name">Map Name</label>
+            <input id="editor-map-name" v-model.trim="model.name" type="text" />
+          </div>
 
-      <div class="control-group">
-        <label for="editor-rows">Rows</label>
-        <input id="editor-rows" v-model.number="draftRows" type="number" min="6" max="500" />
-      </div>
+          <div class="control-group">
+            <label for="editor-map-description">Description</label>
+            <textarea
+              id="editor-map-description"
+              v-model.trim="model.description"
+              class="metadata-box"
+              rows="3"
+            ></textarea>
+          </div>
 
-      <div class="preset-row">
-        <button
-          v-for="preset in MAP_EDITOR_PRESETS"
-          :key="preset.label"
-          type="button"
-          @click="applyPreset(preset.cols, preset.rows)"
-        >
-          {{ preset.label }}
+          <div class="control-group">
+            <label for="editor-load-map">Load Existing Map</label>
+            <select
+              id="editor-load-map"
+              v-model="selectedLoadMapId"
+              :disabled="isLoadingMapCatalog || isLoadingSelectedMap || availableMaps.length === 0"
+            >
+              <option v-for="map in availableMaps" :key="map.id" :value="map.id">
+                {{ map.name }}
+              </option>
+            </select>
+          </div>
+
+          <div class="menu-text" v-if="mapLoadError">
+            {{ mapLoadError }}
+          </div>
+
+          <div class="menu-actions">
+            <button
+              type="button"
+              @click="loadSelectedMapIntoEditor"
+              :disabled="!selectedLoadMapId || isLoadingMapCatalog || isLoadingSelectedMap"
+            >
+              {{ isLoadingSelectedMap ? 'Loading...' : 'Load Into Editor' }}
+            </button>
+          </div>
+
+          <div class="control-group">
+            <label for="editor-cols">Columns</label>
+            <input id="editor-cols" v-model.number="draftCols" type="number" min="6" max="500" />
+          </div>
+
+          <div class="control-group">
+            <label for="editor-rows">Rows</label>
+            <input id="editor-rows" v-model.number="draftRows" type="number" min="6" max="500" />
+          </div>
+
+          <div class="preset-row">
+            <button
+              v-for="preset in MAP_EDITOR_PRESETS"
+              :key="preset.label"
+              type="button"
+              @click="applyPreset(preset.cols, preset.rows)"
+            >
+              {{ preset.label }}
+            </button>
+          </div>
+
+          <button type="button" class="apply-size" @click="applyGridSize">Apply Grid Size</button>
+
+          <div class="summary-row">
+            <span>{{ model.gridCols }} x {{ model.gridRows }}</span>
+            <span>{{ model.terrain.length }} terrain</span>
+            <span>{{ model.obstacles.length }} obstacles</span>
+            <span>{{ model.buildings.length }} buildings</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'paint' }">
+        <button type="button" class="editor-section__summary" @click="toggleSection('paint')">
+          Paint
         </button>
-      </div>
+        <div v-if="openSection === 'paint'" class="editor-section__body">
+          <button
+            type="button"
+            class="paint-toggle"
+            :class="{ 'paint-toggle--active': paintModeEnabled }"
+            @click="paintModeEnabled = !paintModeEnabled"
+          >
+            {{ paintModeEnabled ? 'Painting Enabled' : 'Painting Disabled' }}
+          </button>
 
-      <button type="button" class="apply-size" @click="applyGridSize">Apply Grid Size</button>
+          <div class="control-group">
+            <label for="brush-mode">Brush</label>
+            <select id="brush-mode" v-model="brushMode" :disabled="!paintModeEnabled">
+              <option value="terrain">Terrain</option>
+              <option value="obstacle">Obstacle</option>
+              <option value="building">Building</option>
+              <option value="erase">Erase</option>
+            </select>
+          </div>
 
-      <div class="summary-row">
-        <span>{{ model.gridCols }} x {{ model.gridRows }}</span>
-        <span>{{ model.terrain.length }} terrain</span>
-        <span>{{ model.obstacles.length }} obstacles</span>
-        <span>{{ model.buildings.length }} buildings</span>
-      </div>
+          <div v-if="brushMode === 'terrain'" class="control-group">
+            <label for="terrain-type">Terrain Type</label>
+            <select id="terrain-type" v-model="selectedTerrain" :disabled="!paintModeEnabled">
+              <option value="dirt">Dirt</option>
+              <option value="water">Water</option>
+              <option value="forest">Forest</option>
+            </select>
+          </div>
 
-      <button
-        type="button"
-        class="paint-toggle"
-        :class="{ 'paint-toggle--active': paintModeEnabled }"
-        @click="paintModeEnabled = !paintModeEnabled"
-      >
-        {{ paintModeEnabled ? 'Painting Enabled' : 'Painting Disabled' }}
-      </button>
+          <div v-if="brushMode === 'obstacle'" class="control-group">
+            <label for="obstacle-type">Obstacle Type</label>
+            <select id="obstacle-type" v-model="selectedObstacle" :disabled="!paintModeEnabled">
+              <option value="rock">Rock</option>
+              <option value="wall">Wall</option>
+              <option value="tree">Tree</option>
+            </select>
+          </div>
 
-      <div class="control-group">
-        <label for="brush-mode">Brush</label>
-        <select id="brush-mode" v-model="brushMode" :disabled="!paintModeEnabled">
-          <option value="terrain">Terrain</option>
-          <option value="obstacle">Obstacle</option>
-          <option value="building">Building</option>
-          <option value="erase">Erase</option>
-        </select>
-      </div>
+          <div v-if="brushMode === 'building'" class="control-group">
+            <label for="building-type">Building Type</label>
+            <select id="building-type" v-model="selectedBuilding" :disabled="!paintModeEnabled">
+              <option value="goldmine">Goldmine</option>
+              <option value="townhall">Townhall</option>
+              <option value="tree">Tree (Harvestable)</option>
+            </select>
+          </div>
 
-      <div v-if="brushMode === 'terrain'" class="control-group">
-        <label for="terrain-type">Terrain Type</label>
-        <select id="terrain-type" v-model="selectedTerrain" :disabled="!paintModeEnabled">
-          <option value="dirt">Dirt</option>
-          <option value="water">Water</option>
-          <option value="forest">Forest</option>
-        </select>
-      </div>
+          <div class="hint-list">
+            <div>`Wheel` zooms</div>
+            <div>`Middle mouse` pans</div>
+            <div>`Space + left drag` pans</div>
+            <div>`Left click/drag` paints when enabled</div>
+            <div>`Hold Control` temporarily erases</div>
+            <div>`Erase` removes buildings too</div>
+          </div>
+        </div>
+      </section>
 
-      <div v-if="brushMode === 'obstacle'" class="control-group">
-        <label for="obstacle-type">Obstacle Type</label>
-        <select id="obstacle-type" v-model="selectedObstacle" :disabled="!paintModeEnabled">
-          <option value="rock">Rock</option>
-          <option value="wall">Wall</option>
-          <option value="tree">Tree</option>
-        </select>
-      </div>
+      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'export' }">
+        <button type="button" class="editor-section__summary" @click="toggleSection('export')">
+          Export
+        </button>
+        <div v-if="openSection === 'export'" class="editor-section__body">
+          <div class="export-actions">
+            <button type="button" @click="recenterCamera">Recenter</button>
+            <button type="button" @click="clearMap">Clear Map</button>
+            <button type="button" @click="copyExport">{{ copiedLabel }}</button>
+          </div>
 
-      <div v-if="brushMode === 'building'" class="control-group">
-        <label for="building-type">Building Type</label>
-        <select id="building-type" v-model="selectedBuilding" :disabled="!paintModeEnabled">
-          <option value="goldmine">Goldmine</option>
-          <option value="townhall">Townhall</option>
-          <option value="tree">Tree (Harvestable)</option>
-        </select>
-      </div>
-
-      <div class="hint-list">
-        <div>`Wheel` zooms</div>
-        <div>`Middle mouse` pans</div>
-        <div>`Space + left drag` pans</div>
-        <div>`Left click/drag` paints when enabled</div>
-        <div>`Hold Control` temporarily erases</div>
-        <div>`Erase` removes buildings too</div>
-      </div>
-
-      <div class="export-actions">
-        <button type="button" @click="recenterCamera">Recenter</button>
-        <button type="button" @click="clearMap">Clear Map</button>
-        <button type="button" @click="copyExport">{{ copiedLabel }}</button>
-      </div>
-
-      <textarea
-        class="export-box"
-        :value="serializedMap"
-        readonly
-        spellcheck="false"
-      ></textarea>
+          <textarea
+            class="export-box"
+            :value="serializedMap"
+            readonly
+            spellcheck="false"
+          ></textarea>
+        </div>
+      </section>
     </div>
 
     <div class="editor-preview">
@@ -203,6 +224,7 @@ const draftRows = ref(model.value.gridRows)
 const copiedLabel = ref('Copy Export')
 const hoverLabel = ref('Hover a tile')
 const paintModeEnabled = ref(false)
+const openSection = ref<'setup' | 'paint' | 'export' | null>('paint')
 const isControlHeld = ref(false)
 const availableMaps = ref<MapCatalogEntry[]>([])
 const selectedLoadMapId = ref('')
@@ -252,6 +274,10 @@ function getCanvasCursor() {
   if (!paintModeEnabled.value) return 'default'
   if (isControlHeld.value) return eraseCursor
   return 'crosshair'
+}
+
+function toggleSection(section: 'setup' | 'paint' | 'export') {
+  openSection.value = openSection.value === section ? null : section
 }
 
 function applyGridSize() {
@@ -747,9 +773,12 @@ onBeforeUnmount(() => {
 <style scoped>
 .editor-shell {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
+  grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .editor-controls,
@@ -762,13 +791,63 @@ onBeforeUnmount(() => {
 }
 
 .editor-controls {
-  padding: 18px;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 12px;
   display: grid;
-  gap: 12px;
+  gap: 8px;
+  align-content: start;
+  scrollbar-width: none;
+}
+
+.editor-controls::-webkit-scrollbar {
+  display: none;
+}
+
+.editor-section {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(8, 14, 24, 0.55);
+  overflow: hidden;
+}
+
+.editor-section--open {
+  background: rgba(8, 14, 24, 0.72);
+}
+
+.editor-section__summary {
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f8fafc;
+  text-align: left;
+  background: linear-gradient(180deg, rgba(25, 35, 52, 0.92), rgba(14, 22, 36, 0.94));
+}
+
+.editor-section__summary::after {
+  content: '+';
+  float: right;
+  color: #d7bb84;
+}
+
+.editor-section--open .editor-section__summary::after {
+  content: '-';
+}
+
+.editor-section__body {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
 }
 
 .editor-title {
-  font-size: 1.05rem;
+  font-size: 0.9rem;
   font-weight: 700;
   color: #f8fafc;
 }
@@ -776,12 +855,13 @@ onBeforeUnmount(() => {
 .editor-copy {
   margin: 0;
   color: rgba(226, 232, 240, 0.82);
-  line-height: 1.45;
+  font-size: 0.75rem;
+  line-height: 1.2;
 }
 
 .control-group {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .control-group label,
@@ -789,11 +869,12 @@ onBeforeUnmount(() => {
 .summary-row,
 .hint-list {
   color: rgba(226, 232, 240, 0.86);
-  font-size: 0.92rem;
+  font-size: 0.75rem;
 }
 
 .control-group input,
 .control-group select,
+.control-group textarea,
 .apply-size,
 .preset-row button,
 .export-actions button,
@@ -802,7 +883,8 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.92);
   color: #f8fafc;
-  padding: 10px 12px;
+  padding: 7px 9px;
+  font-size: 0.78rem;
 }
 
 .paint-toggle {
@@ -818,52 +900,58 @@ onBeforeUnmount(() => {
 .export-actions,
 .summary-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .summary-row span {
-  padding: 6px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: rgba(30, 41, 59, 0.72);
 }
 
 .hint-list {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .export-box {
-  min-height: 200px;
+  min-height: 104px;
   resize: vertical;
   border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.2);
   background: rgba(2, 6, 23, 0.88);
   color: #dbeafe;
-  padding: 12px;
+  padding: 8px;
   font-family: Consolas, 'Courier New', monospace;
-  font-size: 0.85rem;
+  font-size: 0.72rem;
 }
 
 .metadata-box {
-  min-height: 84px;
+  min-height: 52px;
   resize: vertical;
 }
 
 .editor-preview {
-  padding: 18px;
+  min-height: 0;
+  min-width: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .preview-header {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  font-size: 0.78rem;
 }
 
 .canvas-frame {
-  height: calc(100vh - 180px);
-  min-height: 420px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   border-radius: 14px;
   border: 1px solid rgba(68, 68, 68, 0.9);
@@ -879,11 +967,26 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1100px) {
   .editor-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(200px, 230px) minmax(0, 1fr);
   }
 
   .canvas-frame {
     height: 60vh;
+  }
+}
+
+@media (max-width: 820px) {
+  .editor-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-controls {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .editor-preview {
+    min-height: 0;
   }
 }
 </style>

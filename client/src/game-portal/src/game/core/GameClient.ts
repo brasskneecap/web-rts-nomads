@@ -68,6 +68,16 @@ export class GameClient {
   performSelectionAction(actionId: string) {
     const selectedBuilding = this.state.getSelectedBuilding()
 
+    if (actionId === 'move') {
+      this.state.beginUnitTargeting('move')
+      return
+    }
+
+    if (actionId === 'gather') {
+      this.state.beginUnitTargeting('gather')
+      return
+    }
+
     if (selectedBuilding && actionId === 'train-worker') {
       this.network.sendTrainWorkerCommand(selectedBuilding.id)
       return
@@ -86,6 +96,34 @@ export class GameClient {
   tryHandleWorldClick(x: number, y: number) {
     const selectedBuilding = this.state.getSelectedBuilding()
     if (!selectedBuilding || !this.state.isBuildingTargetingActive('set-spawn-point')) {
+      const unitIds = this.state.getOrderedSelectedUnitIds()
+
+      if (this.state.isUnitTargetingActive('move') && unitIds.length > 0) {
+        this.state.addFormationMoveMarkers(x, y)
+        this.network.sendMoveCommand(unitIds, x, y)
+        this.state.cancelUnitTargeting()
+        return true
+      }
+
+      if (this.state.isUnitTargetingActive('gather') && unitIds.length > 0) {
+        const clickedBuilding = this.state.getBuildingAtPosition(x, y, 16)
+
+        if (
+          clickedBuilding &&
+          clickedBuilding.capabilities.includes('resource-source') &&
+          this.state.selectedUnitsCanGather()
+        ) {
+          const cellSize = this.state.mapConfig.cellSize
+          const buildingCenterX = (clickedBuilding.x + clickedBuilding.width / 2) * cellSize
+          const buildingCenterY = (clickedBuilding.y + clickedBuilding.height / 2) * cellSize
+          this.state.addMoveMarker(buildingCenterX, buildingCenterY, 700)
+          this.network.sendGatherCommand(unitIds, clickedBuilding.id)
+        }
+
+        this.state.cancelUnitTargeting()
+        return true
+      }
+
       return false
     }
 
@@ -100,6 +138,7 @@ export class GameClient {
 
   cancelTargeting() {
     this.state.cancelBuildingTargeting()
+    this.state.cancelUnitTargeting()
   }
 
   private centerCameraOnSpawnIfNeeded() {

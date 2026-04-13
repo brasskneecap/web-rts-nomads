@@ -13,7 +13,7 @@
       </div>
     </div>
 
-    <div v-else-if="showSizeMenu" class="menu">
+    <div v-else-if="showSizeMenu && !showEditor" class="menu">
       <div class="menu-title">Choose Map</div>
 
       <label for="map-id">Map:</label>
@@ -35,15 +35,21 @@
           Start Game
         </button>
         <button @click="editorMode = !editorMode">
-          {{ editorMode ? 'Back To Maps' : 'Open Editor' }}
+          Open Editor
         </button>
       </div>
     </div>
 
-    <MatchHud v-if="hasStarted" :ui="ui" />
+    <div v-if="showEditor" class="editor-topbar">
+      <button type="button" class="editor-topbar__button" @click="editorMode = false">
+        Back To Maps
+      </button>
+    </div>
+
+    <MatchHud v-if="hasStarted" :ui="ui" @exit="exitGame" />
 
     <div class="match-stage" :class="{ 'match-stage--editor': showEditor }">
-      <canvas v-show="!showEditor" ref="canvas" class="game-canvas"></canvas>
+      <canvas v-show="hasStarted && !showEditor" ref="canvas" class="game-canvas"></canvas>
       <div v-if="showEditor" class="editor-stage">
         <MapEditorPanel v-model="editorMap" />
       </div>
@@ -168,6 +174,17 @@ async function startNewGame() {
   hasPreviousSession.value = false
 }
 
+async function exitGame() {
+  await leaveStoredMatch()
+  destroy()
+  hasStarted.value = false
+  hasPreviousSession.value = false
+  localStorage.removeItem(PLAYER_ID_STORAGE_KEY)
+  localStorage.removeItem(MAP_ID_STORAGE_KEY)
+  localStorage.removeItem(MATCH_ID_STORAGE_KEY)
+  localStorage.removeItem(HAS_ACTIVE_SESSION_KEY)
+}
+
 async function loadMapCatalog() {
   isLoadingMaps.value = true
   mapsLoadError.value = ''
@@ -207,8 +224,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .match-view {
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100dvh;
   position: relative;
   overflow: hidden;
   margin: 0;
@@ -256,7 +273,8 @@ onBeforeUnmount(() => {
 }
 
 .match-stage--editor {
-  padding: 84px 16px 16px;
+  padding: 72px 12px 12px;
+  box-sizing: border-box;
 }
 
 .game-canvas {
@@ -267,7 +285,27 @@ onBeforeUnmount(() => {
 }
 
 .editor-stage {
-  width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.editor-topbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+}
+
+.editor-topbar__button {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+  backdrop-filter: blur(10px);
+  cursor: pointer;
 }
 </style>

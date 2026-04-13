@@ -1,7 +1,16 @@
 <template>
   <header class="hud">
     <div class="hud-crest">
-      <div class="crest-mark"></div>
+      <button
+        class="crest-button"
+        type="button"
+        :aria-expanded="settingsOpen"
+        aria-haspopup="menu"
+        title="Open Settings"
+        @click="toggleSettings"
+      >
+        <div class="crest-mark"></div>
+      </button>
       <div class="crest-copy">
         <div class="hud-kicker">Warband</div>
         <div class="player-row">
@@ -12,6 +21,13 @@
           ></span>
           <span class="player-name">{{ ui.player.playerId || 'Connecting...' }}</span>
         </div>
+      </div>
+
+      <div v-if="settingsOpen" class="settings-menu" role="menu" aria-label="Settings">
+        <div class="settings-title">Settings</div>
+        <button class="settings-item" type="button" role="menuitem" @click="exitGame">
+          Exit Game
+        </button>
       </div>
     </div>
 
@@ -43,11 +59,27 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
+
+const emit = defineEmits<{
+  exit: []
+}>()
 
 defineProps<{
   ui: GameUiSnapshot
 }>()
+
+const settingsOpen = ref(false)
+
+function toggleSettings() {
+  settingsOpen.value = !settingsOpen.value
+}
+
+function exitGame() {
+  settingsOpen.value = false
+  emit('exit')
+}
 </script>
 
 <style scoped>
@@ -69,11 +101,25 @@ defineProps<{
 }
 
 .hud-crest {
+  position: relative;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
   flex: 0 1 280px;
+}
+
+.crest-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.crest-button:focus-visible {
+  outline: 2px solid rgba(247, 216, 142, 0.9);
+  outline-offset: 3px;
+  border-radius: 12px;
 }
 
 .crest-mark {
@@ -87,6 +133,10 @@ defineProps<{
   box-shadow:
     inset 0 1px 0 rgba(255, 240, 214, 0.2),
     0 3px 10px rgba(0, 0, 0, 0.25);
+}
+
+.crest-button:hover .crest-mark {
+  filter: brightness(1.08);
 }
 
 .crest-copy {
@@ -134,6 +184,49 @@ defineProps<{
   justify-content: flex-end;
   flex-wrap: nowrap;
   gap: 10px;
+}
+
+.settings-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  min-width: 180px;
+  padding: 10px;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top, rgba(196, 140, 62, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(62, 39, 20, 0.98), rgba(29, 18, 11, 0.98));
+  border: 1px solid rgba(200, 164, 106, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(246, 225, 183, 0.12),
+    0 12px 26px rgba(0, 0, 0, 0.34);
+}
+
+.settings-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #d7bb84;
+}
+
+.settings-item {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(200, 164, 106, 0.24);
+  background: linear-gradient(180deg, rgba(113, 75, 39, 0.85), rgba(61, 39, 22, 0.95));
+  color: #f5ead2;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-item:hover {
+  background: linear-gradient(180deg, rgba(145, 96, 48, 0.95), rgba(83, 53, 28, 0.98));
+  border-color: rgba(220, 180, 110, 0.5);
 }
 
 .resource-card {
