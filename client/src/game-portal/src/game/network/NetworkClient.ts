@@ -1,7 +1,7 @@
 import type {
   AttackCommandMessage,
   AttackMoveCommandMessage,
-  BuildBarracksCommandMessage,
+  BuildBuildingCommandMessage,
   CancelTrainingCommandMessage,
   ClientMessage,
   GatherCommandMessage,
@@ -11,8 +11,7 @@ import type {
   MoveCommandMessage,
   SetBuildingSpawnPointCommandMessage,
   ServerMessage,
-  TrainSoldierCommandMessage,
-  TrainWorkerCommandMessage,
+  TrainUnitCommandMessage,
 } from './protocol'
 import { GameState } from '../core/GameState'
 
@@ -142,9 +141,10 @@ export class NetworkClient {
     this.send(message)
   }
 
-  sendTrainWorkerCommand(buildingId: string) {
-    const message: TrainWorkerCommandMessage = {
-      type: 'train_worker_command',
+  sendTrainUnitCommand(buildingId: string, unitType: string) {
+    const message: TrainUnitCommandMessage = {
+      type: 'train_unit_command',
+      unitType,
       buildingId,
     }
 
@@ -160,22 +160,14 @@ export class NetworkClient {
     this.send(message)
   }
 
-  sendBuildBarracksCommand(unitIds: number[], gridX: number, gridY: number) {
-    const message: BuildBarracksCommandMessage = {
-      type: 'build_barracks_command',
+  sendBuildBuildingCommand(unitIds: number[], buildingType: string, gridX: number, gridY: number) {
+    const message: BuildBuildingCommandMessage = {
+      type: 'build_building_command',
+      buildingType,
       unitIds,
       gridX,
       gridY,
     }
-    this.send(message)
-  }
-
-  sendTrainSoldierCommand(buildingId: string) {
-    const message: TrainSoldierCommandMessage = {
-      type: 'train_soldier_command',
-      buildingId,
-    }
-
     this.send(message)
   }
 
@@ -235,6 +227,10 @@ export class NetworkClient {
       this.send({ type: 'pong' })
       break
       
+      case 'notification':
+        this.state.addNotification(message.message)
+        break
+
       case 'error':
         console.error('server error:', message.message)
         break

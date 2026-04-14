@@ -76,13 +76,9 @@ type GatherCommandMessage struct {
 	BuildingID string `json:"buildingId"`
 }
 
-type TrainWorkerCommandMessage struct {
+type TrainUnitCommandMessage struct {
 	Type       string `json:"type"`
-	BuildingID string `json:"buildingId"`
-}
-
-type TrainSoldierCommandMessage struct {
-	Type       string `json:"type"`
+	UnitType   string `json:"unitType"`
 	BuildingID string `json:"buildingId"`
 }
 
@@ -109,11 +105,12 @@ type SetBuildingSpawnPointCommandMessage struct {
 	Point      Vec2   `json:"point"`
 }
 
-type BuildBarracksCommandMessage struct {
-	Type    string `json:"type"`
-	UnitIDs []int  `json:"unitIds"`
-	GridX   int    `json:"gridX"`
-	GridY   int    `json:"gridY"`
+type BuildBuildingCommandMessage struct {
+	Type         string `json:"type"`
+	BuildingType string `json:"buildingType"`
+	UnitIDs      []int  `json:"unitIds"`
+	GridX        int    `json:"gridX"`
+	GridY        int    `json:"gridY"`
 }
 
 type RepairCommandMessage struct {
@@ -130,6 +127,7 @@ type ResourceStock struct {
 	ID     string `json:"id"`
 	Label  string `json:"label"`
 	Amount int    `json:"amount"`
+	Max    *int   `json:"max,omitempty"`
 	Accent string `json:"accent"`
 }
 
@@ -186,6 +184,11 @@ type PongMessage struct {
 }
 
 type ErrorMessage struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
+type NotificationMessage struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
 }

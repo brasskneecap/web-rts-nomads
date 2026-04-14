@@ -203,6 +203,10 @@ export class CanvasRenderer {
         this.drawBarracksCornersAt(worldX, worldY, width, height, inset, cellSize)
       }
 
+      if (building.buildingType === 'farm') {
+        this.drawFarmDetailAt(worldX, worldY, inset, cellSize)
+      }
+
       const isUnderConstruction = building.metadata?.['underConstruction'] === true
 
       if (isUnderConstruction) {
@@ -423,7 +427,8 @@ export class CanvasRenderer {
       }
 
       // Health bar always visible for all units
-      this.drawSelectedUnitHealthBar(unit)
+      const isEnemy = unit.ownerId !== this.state.localPlayerId
+      this.drawSelectedUnitHealthBar(unit, isEnemy)
 
       if (unit.status === 'Attacking') {
         this.drawAttackEffect(unit.x, unit.y)
@@ -527,7 +532,7 @@ export class CanvasRenderer {
     y: number
     hp?: number
     maxHp?: number
-  }) {
+  }, isEnemy = false) {
     const ctx = this.ctx
     const maxHp = Math.max(unit.maxHp ?? unit.hp ?? 100, 1)
     const hp = Math.max(0, Math.min(unit.hp ?? maxHp, maxHp))
@@ -538,7 +543,9 @@ export class CanvasRenderer {
     const barY = unit.y - 22
 
     let fillColor = '#22c55e'
-    if (healthPercent <= 0.35) {
+    if (isEnemy) {
+      fillColor = '#ef4444'
+    } else if (healthPercent <= 0.35) {
       fillColor = '#ef4444'
     } else if (healthPercent <= 0.7) {
       fillColor = '#eab308'
@@ -582,6 +589,16 @@ export class CanvasRenderer {
     ctx.fillRect(right, bottom, cornerSize, cornerSize)
   }
 
+  private drawFarmDetailAt(worldX: number, worldY: number, inset: number, cellSize: number) {
+    const ctx = this.ctx
+    // Gold square filling most of the bottom-left cell
+    const tileX = worldX + inset
+    const tileY = worldY + cellSize + inset
+    const tileSize = cellSize - inset * 2
+    ctx.fillStyle = '#ca8a04'
+    ctx.fillRect(tileX, tileY, tileSize, tileSize)
+  }
+
   private drawBuildPlacementGhost() {
     const placement = this.state.buildPlacement
     if (!placement) return
@@ -598,10 +615,14 @@ export class CanvasRenderer {
 
     ctx.save()
     ctx.globalAlpha = 0.6
-    ctx.fillStyle = valid ? '#1e40af' : '#dc2626'
+    ctx.fillStyle = valid ? (placement.buildingType === 'farm' ? '#4a7c3f' : '#1e40af') : '#dc2626'
     ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
 
-    this.drawBarracksCornersAt(worldX, worldY, width, height, inset, cellSize)
+    if (placement.buildingType === 'farm') {
+      this.drawFarmDetailAt(worldX, worldY, inset, cellSize)
+    } else {
+      this.drawBarracksCornersAt(worldX, worldY, width, height, inset, cellSize)
+    }
 
     ctx.globalAlpha = 0.9
     ctx.strokeStyle = valid ? '#93c5fd' : '#fca5a5'

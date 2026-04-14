@@ -8,6 +8,7 @@ import type {
   TerrainTile,
   TerrainType,
 } from '../network/protocol'
+import { BUILDING_DEF_MAP } from './buildingDefs'
 
 export const DEFAULT_CELL_SIZE = 64
 export const DEFAULT_GRASS_COLOR = '#365b2c'
@@ -17,6 +18,7 @@ const BUILDING_CAPABILITY_SETS: Record<BuildingType, BuildingCapability[]> = {
   townhall: ['unit-spawner', 'occupiable', 'deposit-point'],
   tree: ['resource-source'],
   barracks: ['unit-spawner'],
+  farm: [],
   'enemy-spawnpoint': ['enemy-spawner'],
 }
 
@@ -144,15 +146,15 @@ export function getBuildingColor(
   occupied = true,
   ownerColor?: string | null,
 ): string {
+  const def = BUILDING_DEF_MAP.get(buildingType)
+  if (def) {
+    return occupied ? (ownerColor ?? def.color) : '#64748b'
+  }
   switch (buildingType) {
-    case 'townhall':
-      return occupied ? (ownerColor ?? '#b45309') : '#64748b'
     case 'goldmine':
       return '#ca8a04'
     case 'tree':
       return '#2d6a4f'
-    case 'barracks':
-      return occupied ? (ownerColor ?? '#1e40af') : '#64748b'
     case 'enemy-spawnpoint':
       return '#991b1b'
   }

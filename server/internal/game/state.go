@@ -117,28 +117,7 @@ const (
 	minUnitSpawnSeconds   = 0.25
 )
 
-var defaultUnitSpawnTimesSeconds = map[string]float64{
-	"worker":  5,
-	"soldier": 10,
-}
-
-var unitResourceCosts = map[string]map[string]int{
-	"worker": {
-		"gold": 150,
-	},
-	"soldier": {
-		"gold": 100,
-		"wood": 25,
-	},
-}
-
 const (
-	soldierDamage      = 10
-	soldierAttackRange = 60.0
-	soldierAttackSpeed = 1.0 // hits per second
-	soldierHP          = 150
-	soldierMaxHP       = 150
-
 	raiderDamage      = 5
 	raiderAttackRange = 60.0
 	raiderAttackSpeed = 1.0
@@ -452,7 +431,6 @@ func (s *GameState) EnsurePlayer(playerID string) {
 		Resources: map[string]int{
 			"gold": 500,
 			"wood": 180,
-			"food": 24,
 		},
 		GlobalUnitSpawnTimeMultiplier: 1,
 		UnitSpawnTimeMultipliers:      map[string]float64{},
@@ -501,51 +479,31 @@ func (s *GameState) spawnUnitsForPlayerLocked(playerID, color string, count int,
 
 	for i := 0; i < count; i++ {
 		spawn := spawnPositions[minInt(i, len(spawnPositions)-1)]
-		s.spawnWorkerUnitLocked(playerID, color, spawn)
+		s.spawnPlayerUnitLocked("worker", playerID, color, spawn)
 	}
 }
 
-func (s *GameState) spawnWorkerUnitLocked(playerID, color string, spawn protocol.Vec2) *Unit {
+func (s *GameState) spawnPlayerUnitLocked(unitType, playerID, color string, spawn protocol.Vec2) *Unit {
+	def, ok := getUnitDef(unitType)
+	if !ok {
+		return nil
+	}
 	unit := &Unit{
 		ID:           s.nextUnitID,
 		OwnerID:      playerID,
 		Color:        color,
-		UnitType:     "worker",
-		Name:         "Worker",
-		Capabilities: []string{"move", "gather", "build", "attack"},
+		UnitType:     unitType,
+		Name:         def.Name,
+		Capabilities: append([]string{}, def.Capabilities...),
 		Visible:      true,
 		Status:       "Idle",
 		X:            spawn.X,
 		Y:            spawn.Y,
-		HP:           100,
-		MaxHP:        100,
-		Damage:       3,
-		AttackRange:  soldierAttackRange,
-		AttackSpeed:  soldierAttackSpeed,
-	}
-
-	s.nextUnitID++
-	s.Units = append(s.Units, unit)
-	return unit
-}
-
-func (s *GameState) spawnSoldierUnitLocked(playerID, color string, spawn protocol.Vec2) *Unit {
-	unit := &Unit{
-		ID:           s.nextUnitID,
-		OwnerID:      playerID,
-		Color:        color,
-		UnitType:     "soldier",
-		Name:         "Soldier",
-		Capabilities: []string{"move", "attack"},
-		Visible:      true,
-		Status:       "Idle",
-		X:            spawn.X,
-		Y:            spawn.Y,
-		HP:           soldierHP,
-		MaxHP:        soldierMaxHP,
-		Damage:       soldierDamage,
-		AttackRange:  soldierAttackRange,
-		AttackSpeed:  soldierAttackSpeed,
+		HP:           def.HP,
+		MaxHP:        def.HP,
+		Damage:       def.Damage,
+		AttackRange:  def.AttackRange,
+		AttackSpeed:  def.AttackSpeed,
 	}
 
 	s.nextUnitID++
@@ -605,15 +563,16 @@ func (s *GameState) removeUnitLocked(unitID int) {
 	}
 }
 
-func (s *GameState) TrainSoldier(playerID, buildingID string) {
+func (s *GameState) TrainUnit(playerID, buildingID, unitType string) {
+	if _, ok := getUnitDef(unitType); !ok {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	building := s.getBuildingByIDLocked(buildingID)
 	if building == nil || !building.Visible {
-		return
-	}
-	if building.BuildingType != "barracks" {
 		return
 	}
 	if building.OwnerID == nil || *building.OwnerID != playerID {
@@ -622,19 +581,22 @@ func (s *GameState) TrainSoldier(playerID, buildingID string) {
 	if building.Metadata != nil && building.Metadata["underConstruction"] == true {
 		return
 	}
-	if !containsString(building.SpawnUnitTypes, "soldier") {
+	if !containsString(building.SpawnUnitTypes, unitType) {
 		return
 	}
 	player, ok := s.Players[playerID]
 	if !ok {
 		return
 	}
-	if !s.canAffordUnitCostLocked(player, "soldier") {
+	if !s.canAffordUnitCostLocked(player, unitType) {
+		return
+	}
+	if !s.canAffordMeatCostLocked(playerID, unitType) {
 		return
 	}
 
-	s.payUnitCostLocked(player, "soldier")
-	s.beginUnitProductionLocked(player, *building, "soldier")
+	s.payUnitCostLocked(player, unitType)
+	s.beginUnitProductionLocked(player, *building, unitType)
 }
 
 func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID int) {
@@ -867,34 +829,6 @@ func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, buildingID s
 	}
 }
 
-func (s *GameState) TrainWorker(playerID, buildingID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	building := s.getBuildingByIDLocked(buildingID)
-	if building == nil || !building.Visible {
-		return
-	}
-	if building.BuildingType != "townhall" {
-		return
-	}
-	if building.OwnerID == nil || *building.OwnerID != playerID {
-		return
-	}
-	if !containsString(building.SpawnUnitTypes, "worker") {
-		return
-	}
-	player, ok := s.Players[playerID]
-	if !ok {
-		return
-	}
-	if !s.canAffordUnitCostLocked(player, "worker") {
-		return
-	}
-
-	s.payUnitCostLocked(player, "worker")
-	s.beginUnitProductionLocked(player, *building, "worker")
-}
 
 func (s *GameState) CancelCurrentTraining(playerID, buildingID string) {
 	s.mu.Lock()
@@ -951,19 +885,12 @@ func (s *GameState) SetBuildingSpawnPoint(playerID, buildingID string, point pro
 	building.Metadata["spawnPointY"] = clampedPoint.Y
 }
 
-var barracksResourceCost = map[string]int{
-	"gold": 200,
-	"wood": 150,
-}
+func (s *GameState) BuildBuilding(playerID, buildingType string, unitIDs []int, gridX, gridY int) {
+	def, ok := getBuildingDef(buildingType)
+	if !ok {
+		return
+	}
 
-const (
-	barricksBuildSeconds        = 15.0
-	barracksMaxHp               = 500.0
-	townhallMaxHp               = 1000.0
-	repairHPPerWorkerPerSecond  = barracksMaxHp / barricksBuildSeconds // ~33.33 HP/sec per worker
-)
-
-func (s *GameState) BuildBarracks(playerID string, unitIDs []int, gridX, gridY int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -972,13 +899,13 @@ func (s *GameState) BuildBarracks(playerID string, unitIDs []int, gridX, gridY i
 		return
 	}
 
-	for resource, cost := range barracksResourceCost {
+	for resource, cost := range def.ResourceCost {
 		if player.Resources[resource] < cost {
 			return
 		}
 	}
 
-	const gridW, gridH = 2, 2
+	gridW, gridH := def.Width, def.Height
 
 	if gridX < 0 || gridY < 0 || gridX+gridW > s.MapConfig.GridCols || gridY+gridH > s.MapConfig.GridRows {
 		return
@@ -993,34 +920,49 @@ func (s *GameState) BuildBarracks(playerID string, unitIDs []int, gridX, gridY i
 		}
 	}
 
-	for resource, cost := range barracksResourceCost {
+	for _, unit := range s.Units {
+		if !unit.Visible {
+			continue
+		}
+		cell := s.worldToGrid(unit.X, unit.Y)
+		if cell.X >= gridX && cell.X < gridX+gridW && cell.Y >= gridY && cell.Y < gridY+gridH {
+			return
+		}
+	}
+
+	for resource, cost := range def.ResourceCost {
 		player.Resources[resource] -= cost
+	}
+
+	metadata := map[string]interface{}{
+		"underConstruction": true,
+		"hp":                1.0,
+		"maxHp":             def.MaxHp,
+		"hpPerSecond":       def.HpPerSecond(),
+	}
+	for k, v := range def.Metadata {
+		metadata[k] = v
 	}
 
 	s.nextBuildingID++
 	ownerID := playerID
-	barracks := protocol.BuildingTile{
+	building := protocol.BuildingTile{
 		GridCoord:      protocol.GridCoord{X: gridX, Y: gridY},
-		ID:             fmt.Sprintf("barracks-%d", s.nextBuildingID),
-		BuildingType:   "barracks",
+		ID:             fmt.Sprintf("%s-%d", buildingType, s.nextBuildingID),
+		BuildingType:   buildingType,
 		Width:          gridW,
 		Height:         gridH,
 		Occupied:       true,
 		Visible:        true,
 		OwnerID:        &ownerID,
-		Capabilities:   []string{"unit-spawner"},
-		SpawnUnitTypes: []string{"soldier"},
-		Metadata: map[string]interface{}{
-			"underConstruction": true,
-			"hp":                1.0,
-			"maxHp":             barracksMaxHp,
-		},
+		Capabilities:   append([]string{}, def.Capabilities...),
+		SpawnUnitTypes: append([]string{}, def.SpawnUnitTypes...),
+		Metadata:       metadata,
 	}
 
-	s.MapConfig.Buildings = append(s.MapConfig.Buildings, barracks)
-	buildingID := barracks.ID
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, building)
+	buildingID := building.ID
 
-	// Recompute blocked cells now that the building occupies space
 	blocked = s.buildBlockedCells()
 	orderID := s.nextMovementOrderIDLocked()
 
@@ -1033,7 +975,7 @@ func (s *GameState) BuildBarracks(playerID string, unitIDs []int, gridX, gridY i
 		if unit == nil || unit.OwnerID != playerID || unit.UnitType != "worker" {
 			continue
 		}
-		approachPoints := s.getBuildingApproachPositionsLocked(barracks, 1, blocked, &protocol.Vec2{X: unit.X, Y: unit.Y})
+		approachPoints := s.getBuildingApproachPositionsLocked(building, 1, blocked, &protocol.Vec2{X: unit.X, Y: unit.Y})
 		if len(approachPoints) == 0 {
 			continue
 		}
@@ -1080,8 +1022,10 @@ func (s *GameState) claimTownhallForPlayerLocked(playerID string) *protocol.Buil
 		if building.Metadata == nil {
 			building.Metadata = map[string]interface{}{}
 		}
-		building.Metadata["hp"] = townhallMaxHp
-		building.Metadata["maxHp"] = townhallMaxHp
+		def, _ := getBuildingDef("townhall")
+		building.Metadata["hp"] = def.MaxHp
+		building.Metadata["maxHp"] = def.MaxHp
+		building.SpawnUnitTypes = append([]string{}, def.SpawnUnitTypes...)
 		return building
 	}
 
@@ -1367,11 +1311,67 @@ func (s *GameState) getBuildingByIDLocked(buildingID string) *protocol.BuildingT
 	return nil
 }
 
+func (s *GameState) getUsedMeatForPlayerLocked(playerID string) int {
+	used := 0
+	for _, unit := range s.Units {
+		if unit.OwnerID == playerID {
+			if def, ok := getUnitDef(unit.UnitType); ok {
+				used += def.MeatCost
+			}
+		}
+	}
+	for _, queue := range s.Productions {
+		for _, prod := range queue {
+			if prod.PlayerID == playerID {
+				if def, ok := getUnitDef(prod.UnitType); ok {
+					used += def.MeatCost
+				}
+			}
+		}
+	}
+	return used
+}
+
+func (s *GameState) getMaxMeatForPlayerLocked(playerID string) int {
+	total := 0
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.OwnerID == nil || *b.OwnerID != playerID {
+			continue
+		}
+		underConstruction, _ := b.Metadata["underConstruction"].(bool)
+		if underConstruction {
+			continue
+		}
+		if def, ok := getBuildingDef(b.BuildingType); ok {
+			if supply, ok := def.Metadata["foodSupply"]; ok {
+				switch v := supply.(type) {
+				case float64:
+					total += int(v)
+				case int:
+					total += v
+				}
+			}
+		}
+	}
+	return total
+}
+
+func (s *GameState) canAffordMeatCostLocked(playerID, unitType string) bool {
+	def, ok := getUnitDef(unitType)
+	if !ok {
+		return true
+	}
+	return s.getUsedMeatForPlayerLocked(playerID)+def.MeatCost <= s.getMaxMeatForPlayerLocked(playerID)
+}
+
 func (s *GameState) getPlayerResourceStocksLocked(player *Player) []protocol.ResourceStock {
+	usedMeat := s.getUsedMeatForPlayerLocked(player.ID)
+	maxMeat := s.getMaxMeatForPlayerLocked(player.ID)
 	return []protocol.ResourceStock{
 		{ID: "gold", Label: "Gold", Amount: player.Resources["gold"], Accent: "#d4a84f"},
 		{ID: "wood", Label: "Wood", Amount: player.Resources["wood"], Accent: "#7a9a52"},
-		{ID: "food", Label: "Food", Amount: player.Resources["food"], Accent: "#c96e43"},
+		{ID: "food", Label: "Food", Amount: usedMeat, Max: &maxMeat, Accent: "#c96e43"},
 	}
 }
 
@@ -1478,7 +1478,13 @@ func (s *GameState) tickBuildingRepairsLocked(dt float64) {
 
 		building.Metadata["builderCount"] = builderCount
 
-		newHp := math.Min(maxHp, hp+repairHPPerWorkerPerSecond*float64(builderCount)*dt)
+		hpPerSecond := maxHp / 15.0 // fallback: match original barracks rate
+		if v, ok := building.Metadata["hpPerSecond"]; ok {
+			if f, ok := v.(float64); ok && f > 0 {
+				hpPerSecond = f
+			}
+		}
+		newHp := math.Min(maxHp, hp+hpPerSecond*float64(builderCount)*dt)
 		building.Metadata["hp"] = newHp
 
 		if newHp >= maxHp {
@@ -1962,16 +1968,8 @@ func (s *GameState) completeUnitProductionLocked(buildingID string) {
 		return
 	}
 
-	switch production.UnitType {
-	case "worker":
-		unit := s.spawnWorkerUnitLocked(production.PlayerID, player.Color, spawnPosition)
-		rallyPoint := s.getTownhallSpawnOriginLocked(*building)
-		if distanceSquared(unit.X, unit.Y, rallyPoint.X, rallyPoint.Y) > unitRadius*unitRadius {
-			unit.Status = "Moving To Spawn Point"
-			s.assignUnitPath(unit, rallyPoint, s.buildBlockedCells(), nil)
-		}
-	case "soldier":
-		unit := s.spawnSoldierUnitLocked(production.PlayerID, player.Color, spawnPosition)
+	unit := s.spawnPlayerUnitLocked(production.UnitType, production.PlayerID, player.Color, spawnPosition)
+	if unit != nil {
 		rallyPoint := s.getTownhallSpawnOriginLocked(*building)
 		if distanceSquared(unit.X, unit.Y, rallyPoint.X, rallyPoint.Y) > unitRadius*unitRadius {
 			unit.Status = "Moving To Spawn Point"
@@ -2012,9 +2010,9 @@ func (s *GameState) getEffectiveUnitSpawnSecondsLocked(player *Player, building 
 }
 
 func (s *GameState) getConfiguredUnitSpawnSecondsLocked(building protocol.BuildingTile, unitType string) float64 {
-	spawnSeconds := defaultUnitSpawnTimesSeconds[unitType]
-	if spawnSeconds <= 0 {
-		spawnSeconds = 1
+	spawnSeconds := 1.0
+	if def, ok := getUnitDef(unitType); ok && def.SpawnSeconds > 0 {
+		spawnSeconds = def.SpawnSeconds
 	}
 
 	if building.Metadata != nil {
@@ -2032,24 +2030,64 @@ func (s *GameState) getConfiguredUnitSpawnSecondsLocked(building protocol.Buildi
 	return spawnSeconds
 }
 
+func (s *GameState) CanAffordUnit(playerID, unitType string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	player, ok := s.Players[playerID]
+	if !ok {
+		return false
+	}
+	return s.canAffordUnitCostLocked(player, unitType) && s.canAffordMeatCostLocked(playerID, unitType)
+}
+
+func (s *GameState) CanAffordBuilding(playerID, buildingType string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	player, ok := s.Players[playerID]
+	if !ok {
+		return false
+	}
+	def, ok := getBuildingDef(buildingType)
+	if !ok {
+		return true
+	}
+	for resource, cost := range def.ResourceCost {
+		if player.Resources[resource] < cost {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *GameState) canAffordUnitCostLocked(player *Player, unitType string) bool {
-	for resourceID, amount := range unitResourceCosts[unitType] {
+	def, ok := getUnitDef(unitType)
+	if !ok {
+		return false
+	}
+	for resourceID, amount := range def.ResourceCost {
 		if player.Resources[resourceID] < amount {
 			return false
 		}
 	}
-
 	return true
 }
 
 func (s *GameState) payUnitCostLocked(player *Player, unitType string) {
-	for resourceID, amount := range unitResourceCosts[unitType] {
+	def, ok := getUnitDef(unitType)
+	if !ok {
+		return
+	}
+	for resourceID, amount := range def.ResourceCost {
 		player.Resources[resourceID] -= amount
 	}
 }
 
 func (s *GameState) refundUnitCostLocked(player *Player, unitType string) {
-	for resourceID, amount := range unitResourceCosts[unitType] {
+	def, ok := getUnitDef(unitType)
+	if !ok {
+		return
+	}
+	for resourceID, amount := range def.ResourceCost {
 		player.Resources[resourceID] += amount
 	}
 }
@@ -2129,7 +2167,6 @@ func (s *GameState) tryMoveUnitByOffsetLocked(unit *Unit, offsetX, offsetY float
 
 func (s *GameState) randomColor() string {
 	palette := []string{
-		"#e74c3c",
 		"#3498db",
 		"#2ecc71",
 		"#f1c40f",

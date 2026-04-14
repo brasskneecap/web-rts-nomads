@@ -5,12 +5,15 @@ import { InputManager } from '../input/InputManager'
 import { Camera } from '../rendering/Camera'
 import { NetworkClient } from '../network/NetworkClient'
 import type { MapId } from '../network/protocol'
-import type { PlayerSummary, SelectionSummary, Unit } from './GameState'
+import type { PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
+import { BUILDING_DEF_MAP } from '../maps/buildingDefs'
+import { UNIT_DEF_MAP } from '../maps/unitDefs'
 
 export type GameUiSnapshot = {
   player: PlayerSummary
   selectedUnits: Unit[]
   selection: SelectionSummary
+  notifications: Notification[]
 }
 
 export class GameClient {
@@ -62,6 +65,7 @@ export class GameClient {
       player: this.state.getPlayerSummary(),
       selectedUnits: this.state.getSelectedUnits(),
       selection: this.state.getSelectionSummary(),
+      notifications: [...this.state.notifications],
     }
   }
 
@@ -102,20 +106,15 @@ export class GameClient {
       return
     }
 
-    if (actionId === 'build-barracks') {
+    if (actionId.startsWith('build-') && BUILDING_DEF_MAP.has(actionId.slice(6))) {
       const unitIds = this.state.getOrderedSelectedUnitIds()
       this.state.closeWorkerBuildMenu()
-      this.state.beginBuildPlacement('barracks', unitIds)
+      this.state.beginBuildPlacement(actionId.slice(6), unitIds)
       return
     }
 
-    if (selectedBuilding && actionId === 'train-worker') {
-      this.network.sendTrainWorkerCommand(selectedBuilding.id)
-      return
-    }
-
-    if (selectedBuilding && actionId === 'train-soldier') {
-      this.network.sendTrainSoldierCommand(selectedBuilding.id)
+    if (selectedBuilding && actionId.startsWith('train-') && UNIT_DEF_MAP.has(actionId.slice(6))) {
+      this.network.sendTrainUnitCommand(selectedBuilding.id, actionId.slice(6))
       return
     }
 
@@ -134,8 +133,10 @@ export class GameClient {
       this.state.updateBuildPlacement(x, y)
       const placement = this.state.buildPlacement
       if (placement?.valid) {
-        this.network.sendBuildBarracksCommand(placement.builderUnitIds, placement.cursorGridX, placement.cursorGridY)
+        this.network.sendBuildBuildingCommand(placement.builderUnitIds, placement.buildingType, placement.cursorGridX, placement.cursorGridY)
         this.state.cancelBuildPlacement()
+      } else {
+        this.state.addNotification('Cannot place building here')
       }
       return true
     }

@@ -8,6 +8,8 @@ import type {
   UnitType,
 } from '../network/protocol'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
+import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
+import { UNIT_DEF_MAP } from '../maps/unitDefs'
 
 export type Unit = {
   id: number
@@ -148,16 +150,25 @@ export type ResourceStock = {
   id: string
   label: string
   amount: number
+  max?: number
   accent: string
+}
+
+export type Notification = {
+  id: number
+  message: string
+  remaining: number
 }
 
 export class GameState {
   private resourceStocks: ResourceStock[] = [
     { id: 'gold', label: 'Gold', amount: 500, accent: '#d4a84f' },
     { id: 'wood', label: 'Wood', amount: 180, accent: '#7a9a52' },
-    { id: 'food', label: 'Food', amount: 24, accent: '#c96e43' },
+    { id: 'food', label: 'Food', amount: 0, max: 0, accent: '#c96e43' },
   ]
   private playerColors = new Map<string, string>()
+  private nextNotificationId = 0
+  notifications: Notification[] = []
 
   units: Unit[] = []
 
@@ -200,11 +211,18 @@ export class GameState {
     this.localPlayerId = playerId
   }
 
-  update(_dt: number) {
+  update(dt: number) {
     const now = performance.now()
     this.moveMarkers = this.moveMarkers.filter(
       (marker) => now - marker.createdAt < marker.durationMs,
     )
+    this.notifications = this.notifications
+      .map((n) => ({ ...n, remaining: n.remaining - dt }))
+      .filter((n) => n.remaining > 0)
+  }
+
+  addNotification(message: string) {
+    this.notifications.push({ id: this.nextNotificationId++, message, remaining: 2.5 })
   }
 
   addMoveMarker(x: number, y: number, durationMs = 550) {
@@ -623,8 +641,9 @@ export class GameState {
   }
 
   beginBuildPlacement(buildingType: string, builderUnitIds: number[]) {
-    const gridW = 2
-    const gridH = 2
+    const def = BUILDING_DEF_MAP.get(buildingType)
+    const gridW = def?.width ?? 2
+    const gridH = def?.height ?? 2
     const { gridCols, gridRows } = this.mapConfig
     const startX = Math.max(0, Math.floor(gridCols / 2) - 1)
     const startY = Math.max(0, Math.floor(gridRows / 2) - 1)
@@ -665,7 +684,7 @@ export class GameState {
   }
 
   private isBuildPlacementCellsValid(gridX: number, gridY: number, gridW: number, gridH: number): boolean {
-    const { gridCols, gridRows, buildings, obstacles } = this.mapConfig
+    const { gridCols, gridRows, buildings, obstacles, cellSize } = this.mapConfig
 
     if (gridX < 0 || gridY < 0 || gridX + gridW > gridCols || gridY + gridH > gridRows) {
       return false
@@ -686,6 +705,15 @@ export class GameState {
       const pBottom = gridY + gridH
 
       if (gridX < bRight && pRight > building.x && gridY < bBottom && pBottom > building.y) {
+        return false
+      }
+    }
+
+    for (const unit of this.units) {
+      if (!unit.visible) continue
+      const ux = Math.floor(unit.x / cellSize)
+      const uy = Math.floor(unit.y / cellSize)
+      if (ux >= gridX && ux < gridX + gridW && uy >= gridY && uy < gridY + gridH) {
         return false
       }
     }
@@ -931,6 +959,7 @@ export class GameState {
       id: resource.id,
       label: resource.label,
       amount: resource.amount,
+      max: resource.max,
       accent: resource.accent,
     }))
   }
@@ -1034,16 +1063,12 @@ function getUnitCenter(units: Unit[]): Vec2 {
   }
 }
 
-function formatUnitType(unitType: UnitType) {
-  switch (unitType) {
-    case 'worker':
-      return 'Worker Unit'
-    case 'soldier':
-      return 'Soldier Unit'
-  }
+function formatUnitType(unitType: UnitType): string {
+  const def = UNIT_DEF_MAP.get(unitType)
+  return def ? `${def.name} Unit` : unitType
 }
 
-function formatBuildingName(buildingType: BuildingTile['buildingType']) {
+function formatBuildingName(buildingType: BuildingTile['buildingType']): string {
   switch (buildingType) {
     case 'goldmine':
       return 'Goldmine'
@@ -1053,6 +1078,8 @@ function formatBuildingName(buildingType: BuildingTile['buildingType']) {
       return 'Tree'
     case 'barracks':
       return 'Barracks'
+    case 'farm':
+      return 'Farm'
     case 'enemy-spawnpoint':
       return 'Enemy Spawnpoint'
   }
@@ -1093,7 +1120,9 @@ function getUnitActions(
 ): ActionItem[] {
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
-    actions[0] = { id: 'build-barracks', label: '(B)arracks' }
+    BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
+      actions[i] = { id: `build-${def.type}`, label: def.label }
+    })
     actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
     return actions
   }
@@ -1122,7 +1151,9 @@ function getGroupActions(
 ): ActionItem[] {
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
-    actions[0] = { id: 'build-barracks', label: '(B)arracks' }
+    BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
+      actions[i] = { id: `build-${def.type}`, label: def.label }
+    })
     actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
     return actions
   }
@@ -1155,19 +1186,19 @@ function getGroupActions(
 
 function getBuildingActions(building: BuildingTile): ActionItem[] {
   const actions: ActionItem[] = []
-  if (
-    building.capabilities.includes('unit-spawner') &&
-    building.spawnUnitTypes?.includes('worker')
-  ) {
-    actions.push({ id: 'train-worker', label: 'Train Worker' })
-    actions.push({ id: 'set-spawn-point', label: 'Set Spawn Point' })
-  }
-  if (
-    building.capabilities.includes('unit-spawner') &&
-    building.spawnUnitTypes?.includes('soldier')
-  ) {
-    actions.push({ id: 'train-soldier', label: 'Train Soldier' })
-    actions.push({ id: 'set-spawn-point', label: 'Set Spawn Point' })
+
+  if (building.capabilities.includes('unit-spawner')) {
+    let hasTrainable = false
+    for (const unitType of building.spawnUnitTypes ?? []) {
+      const def = UNIT_DEF_MAP.get(unitType)
+      if (def) {
+        actions.push({ id: `train-${unitType}`, label: def.trainLabel })
+        hasTrainable = true
+      }
+    }
+    if (hasTrainable) {
+      actions.push({ id: 'set-spawn-point', label: 'Set Spawn Point' })
+    }
   }
 
   return actions
@@ -1437,15 +1468,8 @@ function getBuildingStockAmount(building: BuildingTile): number | undefined {
   return building.resourceAmount ?? 0
 }
 
-function formatSpawnUnitType(unitType: string) {
-  switch (unitType) {
-    case 'worker':
-      return 'Worker'
-    case 'soldier':
-      return 'Soldier'
-    default:
-      return unitType
-  }
+function formatSpawnUnitType(unitType: string): string {
+  return UNIT_DEF_MAP.get(unitType)?.name ?? unitType
 }
 
 function formatRemainingSeconds(seconds: number) {

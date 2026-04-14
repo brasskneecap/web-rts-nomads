@@ -1,0 +1,37 @@
+{
+  "buildings": [
+    {
+      "type": "barracks",
+      "width": 2,
+      "height": 2,
+      "maxHp": 500,
+      "buildSeconds": 15,
+      "resourceCost": { "gold": 200, "wood": 150 },
+      "capabilities": ["unit-spawner"],
+      "spawnUnitTypes": ["soldier"],
+      "metadata": { "spawnTimeSoldier": 10 }
+    },
+    {
+      "type": "farm",
+      "width": 2,
+      "height": 2,
+      "maxHp": 300,
+      "buildSeconds": 10,
+      "resourceCost": { "gold": 100, "wood": 50 },
+      "capabilities": [],
+      "spawnUnitTypes": [],
+      "metadata": { "foodSupply": 10 }
+    },
+    {
+      "type": "townhall",
+      "width": 3,
+      "height": 3,
+      "maxHp": 1000,
+      "buildSeconds": 30,
+      "resourceCost": { "gold": 400, "wood": 200 },
+      "capabilities": ["unit-spawner", "occupiable", "deposit-point"],
+      "spawnUnitTypes": ["worker"],
+      "metadata": { "spawnTimeWorker": 5, "foodSupply": 15 }
+    }
+  ]
+}

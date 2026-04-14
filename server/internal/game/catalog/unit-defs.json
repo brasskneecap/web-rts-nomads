@@ -1,0 +1,28 @@
+{
+  "units": [
+    {
+      "type": "worker",
+      "name": "Worker",
+      "hp": 100,
+      "damage": 3,
+      "attackRange": 60,
+      "attackSpeed": 1.0,
+      "resourceCost": { "gold": 150 },
+      "meatCost": 1,
+      "spawnSeconds": 5,
+      "capabilities": ["move", "gather", "build", "attack"]
+    },
+    {
+      "type": "soldier",
+      "name": "Soldier",
+      "hp": 150,
+      "damage": 10,
+      "attackRange": 60,
+      "attackSpeed": 1.0,
+      "resourceCost": { "gold": 100, "wood": 25 },
+      "meatCost": 2,
+      "spawnSeconds": 10,
+      "capabilities": ["move", "attack"]
+    }
+  ]
+}

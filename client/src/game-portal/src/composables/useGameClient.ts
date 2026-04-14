@@ -20,6 +20,7 @@ const emptyUiSnapshot: GameUiSnapshot = {
     details: [],
     actions: [],
   },
+  notifications: [],
 }
 
 export function useGameClient() {

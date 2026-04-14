@@ -51,11 +51,19 @@
         ></span>
         <div class="resource-copy">
           <div class="resource-label">{{ resource.label }}</div>
-          <div class="resource-amount">{{ resource.amount }}</div>
+          <div class="resource-amount">{{ resource.max != null ? `${resource.amount}/${resource.max}` : resource.amount }}</div>
         </div>
       </article>
     </section>
   </header>
+
+  <transition-group name="toast" tag="div" class="toast-stack">
+    <div
+      v-for="n in ui.notifications"
+      :key="n.id"
+      class="toast"
+    >{{ n.message }}</div>
+  </transition-group>
 </template>
 
 <script setup lang="ts">
@@ -343,5 +351,45 @@ function exitGame() {
   .resource-amount {
     font-size: 14px;
   }
+}
+
+.toast-stack {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.toast {
+  background: rgba(20, 10, 10, 0.88);
+  color: #f0c070;
+  border: 1px solid rgba(200, 80, 60, 0.5);
+  border-radius: 6px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+}
+
+.toast-enter-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.toast-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.toast-enter-from {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 </style>

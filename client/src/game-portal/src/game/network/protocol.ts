@@ -8,7 +8,7 @@ export type MapId = string
 export type TerrainType = 'dirt' | 'water' | 'forest'
 
 export type ObstacleType = 'rock' | 'wall' | 'tree'
-export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks' | 'enemy-spawnpoint'
+export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks' | 'farm' | 'enemy-spawnpoint'
 export type BuildingCapability =
   | 'resource-source'
   | 'unit-spawner'
@@ -104,13 +104,9 @@ export type GatherCommandMessage = {
   buildingId: string
 }
 
-export type TrainWorkerCommandMessage = {
-  type: 'train_worker_command'
-  buildingId: string
-}
-
-export type TrainSoldierCommandMessage = {
-  type: 'train_soldier_command'
+export type TrainUnitCommandMessage = {
+  type: 'train_unit_command'
+  unitType: string
   buildingId: string
 }
 
@@ -137,8 +133,9 @@ export type SetBuildingSpawnPointCommandMessage = {
   point: Vec2
 }
 
-export type BuildBarracksCommandMessage = {
-  type: 'build_barracks_command'
+export type BuildBuildingCommandMessage = {
+  type: 'build_building_command'
+  buildingType: string
   unitIds: number[]
   gridX: number
   gridY: number
@@ -154,6 +151,7 @@ export type ResourceStockSnapshot = {
   id: string
   label: string
   amount: number
+  max?: number
   accent: string
 }
 
@@ -168,13 +166,12 @@ export type ClientMessage =
   | LeaveMatchMessage
   | MoveCommandMessage
   | GatherCommandMessage
-  | TrainWorkerCommandMessage
-  | TrainSoldierCommandMessage
+  | TrainUnitCommandMessage
   | AttackCommandMessage
   | AttackMoveCommandMessage
   | CancelTrainingCommandMessage
   | SetBuildingSpawnPointCommandMessage
-  | BuildBarracksCommandMessage
+  | BuildBuildingCommandMessage
   | RepairCommandMessage
   | PongMessage
 
@@ -229,8 +226,14 @@ export type ErrorMessage = {
   message: string
 }
 
+export type NotificationMessage = {
+  type: 'notification'
+  message: string
+}
+
 export type ServerMessage =
   | WelcomeMessage
   | MatchSnapshotMessage
   | ErrorMessage
+  | NotificationMessage
   | PingMessage

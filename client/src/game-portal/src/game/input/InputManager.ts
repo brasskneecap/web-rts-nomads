@@ -4,6 +4,7 @@ import type { GameClient } from '../core/GameClient'
 import { Camera } from '../rendering/Camera'
 import { getMinimapBounds } from '../rendering/CanvasRenderer'
 import { NetworkClient } from '../network/NetworkClient'
+import { BUILDABLE_BUILDING_DEFS } from '../maps/buildingDefs'
 
 export class InputManager {
   private canvas: HTMLCanvasElement
@@ -369,9 +370,12 @@ export class InputManager {
       r: 'repair',
       g: 'gather',
       a: 'attack',
-      b: selection.actions.some((action) => action.id === 'build-barracks')
-        ? 'build-barracks'
-        : 'build',
+    }
+
+    for (const def of BUILDABLE_BUILDING_DEFS) {
+      const buildActionId = `build-${def.type}`
+      const menuIsOpen = selection.actions.some((action) => action.id === buildActionId)
+      hotkeyActionMap[def.hotkey] = menuIsOpen ? buildActionId : 'build'
     }
 
     const requestedAction = hotkeyActionMap[normalizedKey]

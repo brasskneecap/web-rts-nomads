@@ -206,34 +206,29 @@ func (h *Hub) readLoop(client *Client) {
 			match.State.GatherWithUnits(client.PlayerID, msg.UnitIDs, msg.BuildingID)
 			match.BroadcastSnapshot()
 
-		case "train_worker_command":
+		case "train_unit_command":
 			if client.MatchID == "" {
-				_ = client.WriteJSON(protocol.ErrorMessage{
-					Type:    "error",
-					Message: "must join a match before sending commands",
-				})
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
 				continue
 			}
 
 			match, ok := h.manager.GetMatch(client.MatchID)
 			if !ok {
-				_ = client.WriteJSON(protocol.ErrorMessage{
-					Type:    "error",
-					Message: "match not found",
-				})
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
 				continue
 			}
 
-			var msg protocol.TrainWorkerCommandMessage
+			var msg protocol.TrainUnitCommandMessage
 			if err := json.Unmarshal(data, &msg); err != nil {
-				_ = client.WriteJSON(protocol.ErrorMessage{
-					Type:    "error",
-					Message: "invalid train_worker_command payload",
-				})
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid train_unit_command payload"})
 				continue
 			}
 
-			match.State.TrainWorker(client.PlayerID, msg.BuildingID)
+			if !match.State.CanAffordUnit(client.PlayerID, msg.UnitType) {
+				_ = client.WriteJSON(protocol.NotificationMessage{Type: "notification", Message: "Not enough resources"})
+				continue
+			}
+			match.State.TrainUnit(client.PlayerID, msg.BuildingID, msg.UnitType)
 			match.BroadcastSnapshot()
 
 		case "cancel_training_command":
@@ -296,64 +291,29 @@ func (h *Hub) readLoop(client *Client) {
 			match.State.SetBuildingSpawnPoint(client.PlayerID, msg.BuildingID, msg.Point)
 			match.BroadcastSnapshot()
 
-		case "build_barracks_command":
+		case "build_building_command":
 			if client.MatchID == "" {
-				_ = client.WriteJSON(protocol.ErrorMessage{
-					Type:    "error",
-					Message: "must join a match before sending commands",
-				})
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
 				continue
 			}
 
 			match, ok := h.manager.GetMatch(client.MatchID)
 			if !ok {
-				_ = client.WriteJSON(protocol.ErrorMessage{
-					Type:    "error",
-					Message: "match not found",
-				})
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
 				continue
 			}
 
-			var msg protocol.BuildBarracksCommandMessage
+			var msg protocol.BuildBuildingCommandMessage
 			if err := json.Unmarshal(data, &msg); err != nil {
-				_ = client.WriteJSON(protocol.ErrorMessage{
-					Type:    "error",
-					Message: "invalid build_barracks_command payload",
-				})
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid build_building_command payload"})
 				continue
 			}
 
-			match.State.BuildBarracks(client.PlayerID, msg.UnitIDs, msg.GridX, msg.GridY)
-			match.BroadcastSnapshot()
-
-		case "train_soldier_command":
-			if client.MatchID == "" {
-				_ = client.WriteJSON(protocol.ErrorMessage{
-					Type:    "error",
-					Message: "must join a match before sending commands",
-				})
+			if !match.State.CanAffordBuilding(client.PlayerID, msg.BuildingType) {
+				_ = client.WriteJSON(protocol.NotificationMessage{Type: "notification", Message: "Not enough resources"})
 				continue
 			}
-
-			match, ok := h.manager.GetMatch(client.MatchID)
-			if !ok {
-				_ = client.WriteJSON(protocol.ErrorMessage{
-					Type:    "error",
-					Message: "match not found",
-				})
-				continue
-			}
-
-			var msg protocol.TrainSoldierCommandMessage
-			if err := json.Unmarshal(data, &msg); err != nil {
-				_ = client.WriteJSON(protocol.ErrorMessage{
-					Type:    "error",
-					Message: "invalid train_soldier_command payload",
-				})
-				continue
-			}
-
-			match.State.TrainSoldier(client.PlayerID, msg.BuildingID)
+			match.State.BuildBuilding(client.PlayerID, msg.BuildingType, msg.UnitIDs, msg.GridX, msg.GridY)
 			match.BroadcastSnapshot()
 
 		case "attack_command":
