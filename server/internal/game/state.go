@@ -43,12 +43,13 @@ type Unit struct {
 	Path                []protocol.Vec2
 	OrderID             int64
 
-	Damage         int
-	AttackRange    float64
-	AttackSpeed    float64
-	AttackCooldown float64
-	AttackTargetID int
-	Attacking      bool
+	Damage                 int
+	AttackRange            float64
+	AttackSpeed            float64
+	AttackCooldown         float64
+	AttackTargetID         int
+	AttackBuildingTargetID string
+	Attacking              bool
 }
 
 const (
@@ -136,6 +137,12 @@ const (
 	soldierAttackSpeed = 1.0 // hits per second
 	soldierHP          = 150
 	soldierMaxHP       = 150
+
+	raiderDamage      = 5
+	raiderAttackRange = 60.0
+	raiderAttackSpeed = 1.0
+	raiderHP          = 75
+	raiderMaxHP       = 75
 )
 
 func NewGameState(mapConfig protocol.MapConfig) *GameState {
@@ -440,13 +447,16 @@ func (s *GameState) spawnWorkerUnitLocked(playerID, color string, spawn protocol
 		Color:        color,
 		UnitType:     "worker",
 		Name:         "Worker",
-		Capabilities: []string{"move", "gather", "build"},
+		Capabilities: []string{"move", "gather", "build", "attack"},
 		Visible:      true,
 		Status:       "Idle",
 		X:            spawn.X,
 		Y:            spawn.Y,
 		HP:           100,
 		MaxHP:        100,
+		Damage:       3,
+		AttackRange:  soldierAttackRange,
+		AttackSpeed:  soldierAttackSpeed,
 	}
 
 	s.nextUnitID++
@@ -476,6 +486,39 @@ func (s *GameState) spawnSoldierUnitLocked(playerID, color string, spawn protoco
 	s.nextUnitID++
 	s.Units = append(s.Units, unit)
 	return unit
+}
+
+func (s *GameState) spawnRaiderUnitLocked(playerID, color string, spawn protocol.Vec2) *Unit {
+	unit := &Unit{
+		ID:           s.nextUnitID,
+		OwnerID:      playerID,
+		Color:        color,
+		UnitType:     "raider",
+		Name:         "Raider",
+		Capabilities: []string{"move", "attack"},
+		Visible:      true,
+		Status:       "Idle",
+		X:            spawn.X,
+		Y:            spawn.Y,
+		HP:           raiderHP,
+		MaxHP:        raiderMaxHP,
+		Damage:       raiderDamage,
+		AttackRange:  raiderAttackRange,
+		AttackSpeed:  raiderAttackSpeed,
+	}
+
+	s.nextUnitID++
+	s.Units = append(s.Units, unit)
+	return unit
+}
+
+func (s *GameState) spawnEnemyUnitLocked(unitType string, spawn protocol.Vec2) *Unit {
+	switch unitType {
+	case "raider":
+		return s.spawnRaiderUnitLocked(enemyPlayerID, enemyPlayerColor, spawn)
+	default:
+		return s.spawnRaiderUnitLocked(enemyPlayerID, enemyPlayerColor, spawn)
+	}
 }
 
 func (s *GameState) removeUnitLocked(unitID int) {
@@ -563,54 +606,105 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 
 func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool) {
 	var deadUnitIDs []int
+	var destroyedBuildingIDs []string
 
 	for _, unit := range s.Units {
-		if unit.AttackTargetID == 0 {
-			if unit.AttackCooldown > 0 {
-				unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
-			}
-			continue
-		}
-
-		target := s.getUnitByIDLocked(unit.AttackTargetID)
-		if target == nil || !target.Visible {
-			unit.AttackTargetID = 0
-			unit.Attacking = false
-			unit.Status = "Idle"
-			continue
-		}
-
-		dx := target.X - unit.X
-		dy := target.Y - unit.Y
-		dist := math.Sqrt(dx*dx + dy*dy)
-
-		if dist <= unit.AttackRange {
-			unit.Moving = false
-			unit.Path = nil
-			unit.Attacking = true
-			unit.Status = "Attacking"
-
-			if unit.AttackCooldown <= 0 {
-				target.HP -= unit.Damage
-				unit.AttackCooldown = 1.0 / unit.AttackSpeed
-				if target.HP <= 0 {
-					target.HP = 0
-					deadUnitIDs = append(deadUnitIDs, target.ID)
-				}
+		// Handle unit-vs-unit combat
+		if unit.AttackTargetID != 0 {
+			target := s.getUnitByIDLocked(unit.AttackTargetID)
+			if target == nil || !target.Visible {
+				unit.AttackTargetID = 0
+				unit.Attacking = false
+				unit.Status = "Idle"
 			} else {
-				unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+				dx := target.X - unit.X
+				dy := target.Y - unit.Y
+				dist := math.Sqrt(dx*dx + dy*dy)
+
+				if dist <= unit.AttackRange {
+					unit.Moving = false
+					unit.Path = nil
+					unit.Attacking = true
+					unit.Status = "Attacking"
+
+					if unit.AttackCooldown <= 0 {
+						target.HP -= unit.Damage
+						unit.AttackCooldown = 1.0 / unit.AttackSpeed
+						if target.HP <= 0 {
+							target.HP = 0
+							deadUnitIDs = append(deadUnitIDs, target.ID)
+						}
+					} else {
+						unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+					}
+				} else {
+					unit.Attacking = false
+					unit.Status = "Moving To Attack"
+					if !unit.Moving {
+						s.assignUnitPath(unit, protocol.Vec2{X: target.X, Y: target.Y}, blocked, nil)
+					}
+				}
 			}
-		} else {
-			unit.Attacking = false
-			unit.Status = "Moving To Attack"
-			if !unit.Moving {
-				s.assignUnitPath(unit, protocol.Vec2{X: target.X, Y: target.Y}, blocked, nil)
+			continue
+		}
+
+		// Handle unit-vs-building combat
+		if unit.AttackBuildingTargetID != "" {
+			building := s.getBuildingByIDLocked(unit.AttackBuildingTargetID)
+			if building == nil {
+				unit.AttackBuildingTargetID = ""
+				unit.Attacking = false
+				unit.Status = "Idle"
+				continue
 			}
+			hp, _, hpOk := getBuildingHP(building)
+			if !hpOk || hp <= 0 {
+				unit.AttackBuildingTargetID = ""
+				unit.Attacking = false
+				unit.Status = "Idle"
+			} else {
+				dist := s.distanceToBuilding(unit.X, unit.Y, building)
+
+				if dist <= unit.AttackRange {
+					unit.Moving = false
+					unit.Path = nil
+					unit.Attacking = true
+					unit.Status = "Attacking"
+
+					if unit.AttackCooldown <= 0 {
+						newHP := hp - float64(unit.Damage)
+						building.Metadata["hp"] = newHP
+						unit.AttackCooldown = 1.0 / unit.AttackSpeed
+						if newHP <= 0 {
+							building.Metadata["hp"] = 0.0
+							destroyedBuildingIDs = append(destroyedBuildingIDs, building.ID)
+						}
+					} else {
+						unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+					}
+				} else {
+					unit.Attacking = false
+					unit.Status = "Moving To Attack"
+					if !unit.Moving {
+						// Re-path to the same claimed position rather than recalculating,
+						// so enemies don't all converge on the same closest cell.
+						s.assignUnitPath(unit, protocol.Vec2{X: unit.TargetX, Y: unit.TargetY}, blocked, nil)
+					}
+				}
+			}
+			continue
+		}
+
+		if unit.AttackCooldown > 0 {
+			unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
 		}
 	}
 
 	for _, id := range deadUnitIDs {
 		s.removeUnitLocked(id)
+	}
+	for _, id := range destroyedBuildingIDs {
+		s.destroyBuildingLocked(id)
 	}
 }
 
@@ -1388,6 +1482,10 @@ func (s *GameState) RepairBuilding(playerID string, unitIDs []int, buildingID st
 
 func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[gridPoint]bool) {
 	if unit.UnitType != "worker" {
+		return
+	}
+
+	if unit.AttackTargetID != 0 {
 		return
 	}
 
@@ -2247,28 +2345,46 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 		}
 		timer.RemainingInterval += timer.TotalInterval
 
-		spawnPositions := s.getTownhallSpawnPositionsLocked(*building, 1, blocked)
-		var spawnPos protocol.Vec2
-		if len(spawnPositions) > 0 {
-			spawnPos = spawnPositions[0]
-		} else {
-			center := protocol.Vec2{
-				X: (float64(building.X) + float64(building.Width)/2) * s.MapConfig.CellSize,
-				Y: (float64(building.Y) + float64(building.Height)/2) * s.MapConfig.CellSize,
+		spawnCount := 1
+		unitType := "raider"
+		if building.Metadata != nil {
+			if v, ok := getMetadataFloat(building.Metadata, "spawnCount"); ok && v >= 1 {
+				spawnCount = int(v)
 			}
-			cell, ok := s.findNearestWalkable(s.worldToGrid(center.X, center.Y), blocked)
-			if !ok {
-				continue
+			if v, ok := building.Metadata["unitType"].(string); ok && v != "" {
+				unitType = v
 			}
-			spawnPos = s.gridToWorldCenter(cell)
 		}
 
-		unit := s.spawnSoldierUnitLocked(enemyPlayerID, enemyPlayerColor, spawnPos)
-		unit.Status = "Advancing"
+		spawnPositions := s.getTownhallSpawnPositionsLocked(*building, spawnCount, blocked)
 
-		target := s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
-		if target != nil {
-			s.assignUnitPath(unit, *target, blocked, nil)
+		center := protocol.Vec2{
+			X: (float64(building.X) + float64(building.Width)/2) * s.MapConfig.CellSize,
+			Y: (float64(building.Y) + float64(building.Height)/2) * s.MapConfig.CellSize,
+		}
+
+		for i := 0; i < spawnCount; i++ {
+			var spawnPos protocol.Vec2
+			if i < len(spawnPositions) {
+				spawnPos = spawnPositions[i]
+			} else {
+				cell, ok := s.findNearestWalkable(s.worldToGrid(center.X, center.Y), blocked)
+				if !ok {
+					break
+				}
+				spawnPos = s.gridToWorldCenter(cell)
+			}
+
+			unit := s.spawnEnemyUnitLocked(unitType, spawnPos)
+			if unit == nil {
+				continue
+			}
+			unit.Status = "Advancing"
+
+			target := s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
+			if target != nil {
+				s.assignUnitPath(unit, *target, blocked, nil)
+			}
 		}
 	}
 }
@@ -2280,7 +2396,7 @@ func (s *GameState) tickEnemyAILocked(blocked map[gridPoint]bool) {
 		if unit.OwnerID != enemyPlayerID {
 			continue
 		}
-		if unit.AttackTargetID != 0 {
+		if unit.AttackTargetID != 0 || unit.AttackBuildingTargetID != "" {
 			continue
 		}
 
@@ -2295,6 +2411,19 @@ func (s *GameState) tickEnemyAILocked(blocked map[gridPoint]bool) {
 			continue
 		}
 
+		building := s.findNearestAttackablePlayerBuildingLocked(unit)
+		if building != nil {
+			unit.AttackBuildingTargetID = building.ID
+			unit.Attacking = false
+			unit.Status = "Moving To Attack"
+			if s.distanceToBuilding(unit.X, unit.Y, building) > unit.AttackRange {
+				if pos := s.findBestBuildingAttackPositionLocked(unit, building, blocked); pos != nil {
+					s.assignUnitPath(unit, *pos, blocked, nil)
+				}
+			}
+			continue
+		}
+
 		if !unit.Moving {
 			target := s.getNearestPlayerTownhallCenterLocked(unit.X, unit.Y)
 			if target != nil {
@@ -2303,6 +2432,129 @@ func (s *GameState) tickEnemyAILocked(blocked map[gridPoint]bool) {
 			}
 		}
 	}
+}
+
+func (s *GameState) buildingCenterLocked(building *protocol.BuildingTile) protocol.Vec2 {
+	return protocol.Vec2{
+		X: (float64(building.X) + float64(building.Width)/2) * s.MapConfig.CellSize,
+		Y: (float64(building.Y) + float64(building.Height)/2) * s.MapConfig.CellSize,
+	}
+}
+
+// distanceToBuilding returns the distance from a point to the nearest edge of
+// a building's world-space bounding box (0 if the point is inside the box).
+func (s *GameState) distanceToBuilding(x, y float64, building *protocol.BuildingTile) float64 {
+	cs := s.MapConfig.CellSize
+	left := float64(building.X) * cs
+	top := float64(building.Y) * cs
+	right := float64(building.X+building.Width) * cs
+	bottom := float64(building.Y+building.Height) * cs
+
+	cx := clampFloat(x, left, right)
+	cy := clampFloat(y, top, bottom)
+	dx := x - cx
+	dy := y - cy
+	return math.Sqrt(dx*dx + dy*dy)
+}
+
+func (s *GameState) findNearestAttackablePlayerBuildingLocked(enemy *Unit) *protocol.BuildingTile {
+	var best *protocol.BuildingTile
+	bestDistSq := math.MaxFloat64
+
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.OwnerID == nil || *b.OwnerID == enemyPlayerID {
+			continue
+		}
+		hp, _, ok := getBuildingHP(b)
+		if !ok || hp <= 0 {
+			continue
+		}
+		dist := s.distanceToBuilding(enemy.X, enemy.Y, b)
+		if dist < bestDistSq {
+			bestDistSq = dist
+			best = b
+		}
+	}
+
+	return best
+}
+
+// findBestBuildingAttackPositionLocked returns the walkable perimeter cell
+// closest to the enemy that is not already claimed by another enemy targeting
+// the same building. Falls back to the closest cell if all are claimed.
+func (s *GameState) findBestBuildingAttackPositionLocked(enemy *Unit, building *protocol.BuildingTile, blocked map[gridPoint]bool) *protocol.Vec2 {
+	candidates := make([]gridPoint, 0, (building.Width+2)*(building.Height+2))
+	seen := make(map[gridPoint]bool)
+
+	for y := building.Y - 1; y <= building.Y+building.Height; y++ {
+		for x := building.X - 1; x <= building.X+building.Width; x++ {
+			isPerimeter := x == building.X-1 || x == building.X+building.Width || y == building.Y-1 || y == building.Y+building.Height
+			if !isPerimeter {
+				continue
+			}
+			cell := gridPoint{X: x, Y: y}
+			if seen[cell] || !s.isWalkable(cell, blocked) {
+				continue
+			}
+			seen[cell] = true
+			candidates = append(candidates, cell)
+		}
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// Mark perimeter cells already claimed by other enemies targeting this building.
+	claimed := make(map[gridPoint]bool)
+	for _, u := range s.Units {
+		if u == enemy || u.AttackBuildingTargetID != building.ID {
+			continue
+		}
+		tx, ty := u.TargetX, u.TargetY
+		if u.Attacking {
+			tx, ty = u.X, u.Y
+		}
+		claimed[s.worldToGrid(tx, ty)] = true
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		a := s.gridToWorldCenter(candidates[i])
+		b := s.gridToWorldCenter(candidates[j])
+		return distanceSquared(a.X, a.Y, enemy.X, enemy.Y) < distanceSquared(b.X, b.Y, enemy.X, enemy.Y)
+	})
+
+	for _, cell := range candidates {
+		if !claimed[cell] {
+			pos := s.gridToWorldCenter(cell)
+			return &pos
+		}
+	}
+
+	// All cells claimed – still pick the closest so the unit keeps moving.
+	pos := s.gridToWorldCenter(candidates[0])
+	return &pos
+}
+
+func (s *GameState) destroyBuildingLocked(buildingID string) {
+	// Clear any enemy attack references to this building
+	for _, unit := range s.Units {
+		if unit.AttackBuildingTargetID == buildingID {
+			unit.AttackBuildingTargetID = ""
+			unit.Attacking = false
+			unit.Status = "Idle"
+		}
+	}
+
+	// Remove the building from the map
+	filtered := make([]protocol.BuildingTile, 0, len(s.MapConfig.Buildings))
+	for _, b := range s.MapConfig.Buildings {
+		if b.ID != buildingID {
+			filtered = append(filtered, b)
+		}
+	}
+	s.MapConfig.Buildings = filtered
 }
 
 func (s *GameState) findNearestPlayerUnitWithinLocked(enemy *Unit, radius float64) *Unit {
@@ -2334,7 +2586,7 @@ func (s *GameState) tickPlayerAutoAttackLocked(blocked map[gridPoint]bool) {
 		if unit.OwnerID == enemyPlayerID {
 			continue
 		}
-		if unit.UnitType != "soldier" {
+		if unit.Damage <= 0 {
 			continue
 		}
 		if unit.AttackTargetID != 0 {

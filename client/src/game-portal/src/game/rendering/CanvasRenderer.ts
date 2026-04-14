@@ -184,6 +184,7 @@ export class CanvasRenderer {
 
     for (const building of buildings) {
       if (!building.visible) continue
+      if (building.buildingType === 'enemy-spawnpoint') continue
 
       const worldX = building.x * cellSize
       const worldY = building.y * cellSize
@@ -200,18 +201,6 @@ export class CanvasRenderer {
 
       if (building.buildingType === 'barracks') {
         this.drawBarracksCornersAt(worldX, worldY, width, height, inset, cellSize)
-      }
-
-      if (building.buildingType === 'enemy-spawnpoint') {
-        this.drawEnemySpawnpointAt(
-          ctx,
-          worldX,
-          worldY,
-          width,
-          height,
-          inset,
-          building.metadata,
-        )
       }
 
       const isUnderConstruction = building.metadata?.['underConstruction'] === true
@@ -255,6 +244,33 @@ export class CanvasRenderer {
         ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
         ctx.lineWidth = 2 / this.camera.zoom
         ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+
+        const hp = building.metadata?.['hp'] as number | undefined
+        const maxHp = building.metadata?.['maxHp'] as number | undefined
+        if (hp !== undefined && maxHp !== undefined && maxHp > 0 && hp < maxHp) {
+          const healthPercent = Math.max(0, Math.min(1, hp / maxHp))
+          const barH = 6 / this.camera.zoom
+          const barX = worldX + inset
+          const barY = worldY + inset - barH - 4 / this.camera.zoom
+          const barW = width - inset * 2
+
+          let fillColor = '#22c55e'
+          if (healthPercent <= 0.35) fillColor = '#ef4444'
+          else if (healthPercent <= 0.7) fillColor = '#eab308'
+
+          ctx.save()
+          ctx.fillStyle = 'rgba(2, 6, 23, 0.85)'
+          ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2)
+          ctx.fillStyle = '#0f172a'
+          ctx.fillRect(barX, barY, barW, barH)
+          ctx.fillStyle = fillColor
+          ctx.fillRect(barX, barY, barW * healthPercent, barH)
+          ctx.strokeStyle = 'rgba(248, 250, 252, 0.8)'
+          ctx.lineWidth = 1 / this.camera.zoom
+          ctx.setLineDash([])
+          ctx.strokeRect(barX, barY, barW, barH)
+          ctx.restore()
+        }
       }
 
       if (this.state.selectedBuildingId === building.id) {
@@ -374,7 +390,6 @@ export class CanvasRenderer {
       }
 
       const selected = this.state.selectedUnitIds.has(unit.id)
-      const isEnemy = unit.ownerId !== this.state.localPlayerId
       const isInspected = this.state.inspectedEnemyUnitId === unit.id
       const isHoveredEnemy = this.state.hoveredEnemyUnitId === unit.id
 
@@ -384,8 +399,6 @@ export class CanvasRenderer {
         ctx.beginPath()
         ctx.arc(unit.x, unit.y, 15, 0, Math.PI * 2)
         ctx.stroke()
-
-        this.drawSelectedUnitHealthBar(unit)
       }
 
       // Enemy hover ring (orange dashed)
@@ -409,10 +422,8 @@ export class CanvasRenderer {
         ctx.stroke()
       }
 
-      // Health bar always visible for enemy units
-      if (isEnemy) {
-        this.drawSelectedUnitHealthBar(unit)
-      }
+      // Health bar always visible for all units
+      this.drawSelectedUnitHealthBar(unit)
 
       if (unit.status === 'Attacking') {
         this.drawAttackEffect(unit.x, unit.y)
@@ -422,7 +433,7 @@ export class CanvasRenderer {
 
       ctx.fillStyle = unit.color || 'lime'
 
-      if (unit.unitType === 'soldier') {
+      if (unit.unitType === 'soldier' || unit.unitType === 'raider') {
         this.drawSoldierShape(unit.x, unit.y)
       } else {
         ctx.beginPath()
@@ -549,45 +560,6 @@ export class CanvasRenderer {
     ctx.fillRect(right, top, cornerSize, cornerSize)
     ctx.fillRect(left, bottom, cornerSize, cornerSize)
     ctx.fillRect(right, bottom, cornerSize, cornerSize)
-  }
-
-  private drawEnemySpawnpointAt(
-    ctx: CanvasRenderingContext2D,
-    worldX: number,
-    worldY: number,
-    width: number,
-    height: number,
-    inset: number,
-    metadata: Record<string, string | number | boolean | null> | undefined,
-  ) {
-    // Red pulsing border
-    ctx.strokeStyle = '#ef4444'
-    ctx.lineWidth = 2 / this.camera.zoom
-    ctx.setLineDash([])
-    ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
-
-    // Timer bar showing spawn countdown
-    const remaining = metadata?.['spawnTimerRemaining'] as number | undefined
-    const total = metadata?.['spawnTimerTotal'] as number | undefined
-    const phase = metadata?.['spawnTimerPhase'] as string | undefined
-
-    if (remaining !== undefined && total !== undefined && total > 0) {
-      const progress = Math.max(0, Math.min(1, 1 - remaining / total))
-      const barH = 5 / this.camera.zoom
-      const barX = worldX + inset
-      const barY = worldY + height - inset - barH
-      const barW = width - inset * 2
-
-      ctx.save()
-      ctx.fillStyle = '#1e293b'
-      ctx.fillRect(barX, barY, barW, barH)
-      ctx.fillStyle = phase === 'delay' ? '#f97316' : '#dc2626'
-      ctx.fillRect(barX, barY, barW * progress, barH)
-      ctx.strokeStyle = phase === 'delay' ? 'rgba(249,115,22,0.5)' : 'rgba(220,38,38,0.5)'
-      ctx.lineWidth = 1 / this.camera.zoom
-      ctx.strokeRect(barX, barY, barW, barH)
-      ctx.restore()
-    }
   }
 
   private drawBuildPlacementGhost() {

@@ -144,6 +144,14 @@
           </div>
 
           <div v-if="brushMode === 'building' && selectedBuilding === 'enemy-spawnpoint'" class="control-group enemy-spawn-config">
+            <label for="enemy-unit-type">Unit Type</label>
+            <select
+              id="enemy-unit-type"
+              v-model="enemyUnitType"
+              :disabled="!paintModeEnabled"
+            >
+              <option value="raider">Raider</option>
+            </select>
             <label for="enemy-spawn-delay">Spawn Delay (sec)</label>
             <input
               id="enemy-spawn-delay"
@@ -160,6 +168,15 @@
               type="number"
               min="1"
               max="3600"
+              :disabled="!paintModeEnabled"
+            />
+            <label for="enemy-spawn-count">Spawn Count</label>
+            <input
+              id="enemy-spawn-count"
+              v-model.number="enemySpawnCount"
+              type="number"
+              min="1"
+              max="20"
               :disabled="!paintModeEnabled"
             />
           </div>
@@ -243,6 +260,8 @@ const selectedObstacle = ref<ObstacleType>('rock')
 const selectedBuilding = ref<BuildingType>('goldmine')
 const enemySpawnDelay = ref(60)
 const enemySpawnInterval = ref(10)
+const enemySpawnCount = ref(1)
+const enemyUnitType = ref('raider')
 const draftCols = ref(model.value.gridCols)
 const draftRows = ref(model.value.gridRows)
 const copiedLabel = ref('Copy Export')
@@ -477,7 +496,7 @@ function paintAtScreen(screenX: number, screenY: number) {
   if (activeBrushMode.value === 'building') {
     const metadata =
       selectedBuilding.value === 'enemy-spawnpoint'
-        ? { spawnDelaySeconds: enemySpawnDelay.value, spawnIntervalSeconds: enemySpawnInterval.value }
+        ? { spawnDelaySeconds: enemySpawnDelay.value, spawnIntervalSeconds: enemySpawnInterval.value, spawnCount: enemySpawnCount.value, unitType: enemyUnitType.value }
         : undefined
     model.value = setBuildingTile(model.value, cell.x, cell.y, selectedBuilding.value, metadata)
     return

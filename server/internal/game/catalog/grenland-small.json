@@ -919,10 +919,10 @@
         "metadata": {}
       },
       {
-        "id": "enemy-spawnpoint-17-17",
+        "id": "enemy-spawnpoint-16-16",
         "buildingType": "enemy-spawnpoint",
-        "x": 17,
-        "y": 17,
+        "x": 16,
+        "y": 16,
         "width": 2,
         "height": 2,
         "occupied": true,
@@ -933,7 +933,8 @@
         ],
         "metadata": {
           "spawnDelaySeconds": 60,
-          "spawnIntervalSeconds": 10
+          "spawnIntervalSeconds": 10,
+          "spawnCount": 2
         }
       }
     ]
