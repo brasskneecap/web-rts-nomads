@@ -1,5 +1,6 @@
 import type {
   AttackCommandMessage,
+  AttackMoveCommandMessage,
   BuildBarracksCommandMessage,
   CancelTrainingCommandMessage,
   ClientMessage,
@@ -183,6 +184,16 @@ export class NetworkClient {
       type: 'attack_command',
       unitIds,
       targetUnitId,
+    }
+
+    this.send(message)
+  }
+
+  sendAttackMoveCommand(unitIds: number[], x: number, y: number) {
+    const message: AttackMoveCommandMessage = {
+      type: 'attack_move_command',
+      unitIds,
+      destination: { x, y },
     }
 
     this.send(message)

@@ -386,6 +386,36 @@ func (h *Hub) readLoop(client *Client) {
 			match.State.AttackWithUnits(client.PlayerID, msg.UnitIDs, msg.TargetUnitID)
 			match.BroadcastSnapshot()
 
+		case "attack_move_command":
+			if client.MatchID == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID)
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.AttackMoveCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid attack_move_command payload",
+				})
+				continue
+			}
+
+			match.State.AttackMoveUnits(client.PlayerID, msg.UnitIDs, msg.Destination)
+			match.BroadcastSnapshot()
+
 		case "repair_command":
 			if client.MatchID == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{

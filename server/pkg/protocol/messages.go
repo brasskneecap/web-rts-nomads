@@ -92,6 +92,12 @@ type AttackCommandMessage struct {
 	TargetUnitID int    `json:"targetUnitId"`
 }
 
+type AttackMoveCommandMessage struct {
+	Type        string `json:"type"`
+	UnitIDs     []int  `json:"unitIds"`
+	Destination Vec2   `json:"destination"`
+}
+
 type CancelTrainingCommandMessage struct {
 	Type       string `json:"type"`
 	BuildingID string `json:"buildingId"`

@@ -175,6 +175,9 @@ export class GameClient {
 
         if (clickedUnit) {
           this.network.sendAttackCommand(unitIds, clickedUnit.id)
+        } else {
+          this.state.addFormationMoveMarkers(x, y)
+          this.network.sendAttackMoveCommand(unitIds, x, y)
         }
 
         this.state.cancelUnitTargeting()

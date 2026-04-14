@@ -50,6 +50,7 @@ type Unit struct {
 	AttackTargetID         int
 	AttackBuildingTargetID string
 	Attacking              bool
+	ManualMove             bool
 }
 
 const (
@@ -263,11 +264,13 @@ func (s *GameState) Update(dt float64) {
 		}
 
 		if !unit.Moving {
+			unit.ManualMove = false
 			continue
 		}
 
 		if len(unit.Path) == 0 {
 			unit.Moving = false
+			unit.ManualMove = false
 			continue
 		}
 
@@ -313,6 +316,68 @@ func (s *GameState) Update(dt float64) {
 }
 
 func (s *GameState) MoveUnits(playerID string, unitIDs []int, dest protocol.Vec2) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	validUnits := make([]*Unit, 0, len(unitIDs))
+	unitMap := make(map[int]*Unit, len(s.Units))
+	blocked := s.buildBlockedCells()
+
+	for _, unit := range s.Units {
+		unitMap[unit.ID] = unit
+	}
+
+	for _, unitID := range unitIDs {
+		unit, ok := unitMap[unitID]
+		if !ok {
+			continue
+		}
+		if unit.OwnerID != playerID {
+			continue
+		}
+		validUnits = append(validUnits, unit)
+	}
+
+	if len(validUnits) == 0 {
+		return
+	}
+
+	if len(validUnits) == 1 {
+		unit := validUnits[0]
+		orderID := s.nextMovementOrderIDLocked()
+		s.resetUnitMovementLocked(unit, orderID)
+		unit.ManualMove = true
+		s.assignUnitPath(unit, dest, blocked, nil)
+		return
+	}
+
+	clampedDest := protocol.Vec2{
+		X: clampFloat(dest.X, unitRadius, s.MapWidth-unitRadius),
+		Y: clampFloat(dest.Y, unitRadius, s.MapHeight-unitRadius),
+	}
+	anchorGoal := s.worldToGrid(clampedDest.X, clampedDest.Y)
+	anchorCell, ok := s.findNearestWalkable(anchorGoal, blocked)
+	if !ok {
+		return
+	}
+
+	anchor := s.clampPointToCell(clampedDest, anchorCell)
+	targets := buildFormationTargets(validUnits, anchor, unitFormationSpacing)
+	orderID := s.nextMovementOrderIDLocked()
+
+	for i, unit := range validUnits {
+		target := targets[i]
+		s.resetUnitMovementLocked(unit, orderID)
+		unit.ManualMove = true
+
+		s.assignUnitPath(unit, protocol.Vec2{
+			X: clampFloat(target.X, 0, s.MapWidth),
+			Y: clampFloat(target.Y, 0, s.MapHeight),
+		}, blocked, nil)
+	}
+}
+
+func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protocol.Vec2) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1212,6 +1277,10 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.Returning = false
 	unit.BuildTargetID = ""
 	unit.Building = false
+	unit.AttackTargetID = 0
+	unit.AttackBuildingTargetID = ""
+	unit.Attacking = false
+	unit.ManualMove = false
 	unit.Visible = true
 	unit.Status = "Idle"
 }
@@ -2396,18 +2465,23 @@ func (s *GameState) tickEnemyAILocked(blocked map[gridPoint]bool) {
 		if unit.OwnerID != enemyPlayerID {
 			continue
 		}
-		if unit.AttackTargetID != 0 || unit.AttackBuildingTargetID != "" {
+		if unit.AttackTargetID != 0 {
 			continue
 		}
 
 		nearest := s.findNearestPlayerUnitWithinLocked(unit, aggroRadius)
 		if nearest != nil {
 			unit.AttackTargetID = nearest.ID
+			unit.AttackBuildingTargetID = ""
 			unit.Attacking = false
 			unit.Status = "Moving To Attack"
 			if distanceSquared(unit.X, unit.Y, nearest.X, nearest.Y) > unit.AttackRange*unit.AttackRange {
 				s.assignUnitPath(unit, protocol.Vec2{X: nearest.X, Y: nearest.Y}, blocked, nil)
 			}
+			continue
+		}
+
+		if unit.AttackBuildingTargetID != "" {
 			continue
 		}
 
@@ -2589,7 +2663,7 @@ func (s *GameState) tickPlayerAutoAttackLocked(blocked map[gridPoint]bool) {
 		if unit.Damage <= 0 {
 			continue
 		}
-		if unit.AttackTargetID != 0 {
+		if unit.ManualMove {
 			continue
 		}
 
@@ -2598,7 +2672,23 @@ func (s *GameState) tickPlayerAutoAttackLocked(blocked map[gridPoint]bool) {
 			continue
 		}
 
+		// If already targeting this unit, no change needed
+		if unit.AttackTargetID == nearest.ID {
+			continue
+		}
+
+		// If already targeting someone, only switch if the new target is closer
+		if unit.AttackTargetID != 0 {
+			current := s.getUnitByIDLocked(unit.AttackTargetID)
+			if current != nil && current.Visible {
+				if distanceSquared(unit.X, unit.Y, nearest.X, nearest.Y) >= distanceSquared(unit.X, unit.Y, current.X, current.Y) {
+					continue
+				}
+			}
+		}
+
 		unit.AttackTargetID = nearest.ID
+		unit.AttackBuildingTargetID = ""
 		unit.Attacking = false
 		unit.Status = "Moving To Attack"
 		if distanceSquared(unit.X, unit.Y, nearest.X, nearest.Y) > unit.AttackRange*unit.AttackRange {

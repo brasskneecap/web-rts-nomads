@@ -120,6 +120,12 @@ export type AttackCommandMessage = {
   targetUnitId: number
 }
 
+export type AttackMoveCommandMessage = {
+  type: 'attack_move_command'
+  unitIds: number[]
+  destination: Vec2
+}
+
 export type CancelTrainingCommandMessage = {
   type: 'cancel_training_command'
   buildingId: string
@@ -165,6 +171,7 @@ export type ClientMessage =
   | TrainWorkerCommandMessage
   | TrainSoldierCommandMessage
   | AttackCommandMessage
+  | AttackMoveCommandMessage
   | CancelTrainingCommandMessage
   | SetBuildingSpawnPointCommandMessage
   | BuildBarracksCommandMessage
