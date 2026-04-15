@@ -200,13 +200,18 @@ export class CanvasRenderer {
       const buildingDef = BUILDING_DEF_MAP.get(building.buildingType)
       const renderDef = buildingDef?.render
       const inset = renderDef ? renderDef.inset * cellSize : cellSize * 0.18
+      const isInsetFallback = building.buildingType === 'tree' && !renderDef
 
       const playerFill = ownerColor ?? buildingDef?.color ?? getBuildingColor(building.buildingType, building.occupied, ownerColor)
 
       if (!renderDef) {
-        // No render def — solid fill fallback
-        ctx.fillStyle = playerFill
-        ctx.fillRect(worldX, worldY, width, height)
+        if (isInsetFallback) {
+          this.drawInsetTile(worldX, worldY, width, height, inset, playerFill)
+        } else {
+          // No render def — solid fill fallback
+          ctx.fillStyle = playerFill
+          ctx.fillRect(worldX, worldY, width, height)
+        }
       } else {
         // Draw every layer explicitly; 'player' color is substituted with the owner color.
         // No base fill: unpainted areas are transparent so terrain shows through.
@@ -281,7 +286,9 @@ export class CanvasRenderer {
       } else {
         ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
         ctx.lineWidth = 2 / this.camera.zoom
-        ctx.strokeRect(worldX, worldY, width, height)
+        if (!isInsetFallback) {
+          ctx.strokeRect(worldX, worldY, width, height)
+        }
 
         const hp = building.metadata?.['hp'] as number | undefined
         const maxHp = building.metadata?.['maxHp'] as number | undefined
@@ -336,6 +343,34 @@ export class CanvasRenderer {
         ctx.restore()
       }
     }
+  }
+
+  private drawInsetTile(
+    worldX: number,
+    worldY: number,
+    width: number,
+    height: number,
+    inset: number,
+    fillStyle: string,
+  ) {
+    const ctx = this.ctx
+
+    ctx.fillStyle = fillStyle
+    ctx.fillRect(
+      worldX + inset,
+      worldY + inset,
+      width - inset * 2,
+      height - inset * 2,
+    )
+
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)'
+    ctx.lineWidth = 2 / this.camera.zoom
+    ctx.strokeRect(
+      worldX + inset,
+      worldY + inset,
+      width - inset * 2,
+      height - inset * 2,
+    )
   }
 
   private drawMapBounds() {
