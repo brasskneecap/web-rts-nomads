@@ -13,7 +13,7 @@
       </div>
     </div>
 
-    <div v-else-if="showSizeMenu && !showEditor" class="menu">
+    <div v-else-if="showSizeMenu && !showEditor && !showUnitEditor" class="menu">
       <div class="menu-title">Choose Map</div>
 
       <label for="map-id">Map:</label>
@@ -34,14 +34,23 @@
         <button @click="startGame(selectedMapId, { resume: false })" :disabled="!selectedMapId || isLoadingMaps">
           Start Game
         </button>
-        <button @click="editorMode = !editorMode">
-          Open Editor
+        <button @click="editorMode = true">
+          Map Editor
+        </button>
+        <button @click="unitEditorMode = true">
+          Unit / Building Editor
         </button>
       </div>
     </div>
 
     <div v-if="showEditor" class="editor-topbar">
       <button type="button" class="editor-topbar__button" @click="editorMode = false">
+        Back To Maps
+      </button>
+    </div>
+
+    <div v-if="showUnitEditor" class="editor-topbar">
+      <button type="button" class="editor-topbar__button" @click="unitEditorMode = false">
         Back To Maps
       </button>
     </div>
@@ -53,6 +62,9 @@
       <div v-if="showEditor" class="editor-stage">
         <MapEditorPanel v-model="editorMap" />
       </div>
+      <div v-if="showUnitEditor" class="editor-stage">
+        <SpriteEditorPanel />
+      </div>
       <SelectionHud v-if="hasStarted" :ui="ui" @action="performSelectionAction" />
     </div>
   </div>
@@ -61,6 +73,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
 import MapEditorPanel from '@/components/MapEditorPanel.vue'
+import SpriteEditorPanel from '@/components/SpriteEditorPanel.vue'
 import MatchHud from '@/components/MatchHud.vue'
 import SelectionHud from '@/components/SelectionHud.vue'
 import { useGameClient } from '@/composables/useGameClient'
@@ -79,6 +92,7 @@ const mapCatalog = ref<MapCatalogEntry[]>([])
 const isLoadingMaps = ref(true)
 const mapsLoadError = ref('')
 const editorMode = ref(false)
+const unitEditorMode = ref(false)
 
 function getStoredEditorMap() {
   const stored = localStorage.getItem(MAP_EDITOR_STORAGE_KEY)
@@ -129,6 +143,10 @@ const showSizeMenu = computed(
 
 const showEditor = computed(
   () => showSizeMenu.value && editorMode.value,
+)
+
+const showUnitEditor = computed(
+  () => showSizeMenu.value && unitEditorMode.value,
 )
 
 const selectedMap = computed(
