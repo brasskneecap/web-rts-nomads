@@ -61,9 +61,7 @@
             type="button"
             @click="$emit('action', ui.selection.actions[i - 1].id)"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path :d="getActionIcon(ui.selection.actions[i - 1].id)" />
-            </svg>
+            <ActionIcon :action="ui.selection.actions[i - 1]" />
           </button>
           <div v-else class="action-cell action-cell--empty" />
         </template>
@@ -74,6 +72,7 @@
 
 <script setup lang="ts">
 import type { GameUiSnapshot } from '@/game/core/GameClient'
+import ActionIcon from '@/components/ActionIcon.vue'
 
 defineEmits<{
   action: [actionId: string]
@@ -84,24 +83,6 @@ defineProps<{
 }>()
 
 const GRID_SIZE = 9
-
-const ACTION_ICONS: Record<string, string> = {
-  'harvest':          'M6 18l7-7 M12 6l6 6 M10 8l6-2 3 3-2 6 M5 19l4-1-3-3-1 4',
-  'train-worker':     'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
-  'set-spawn-point':  'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7',
-  'build':            'M10 13l-5.5 5.5a2.12 2.12 0 0 1-3-3L7 10 M16 4l4 4-4 4-4-4 4-4z M7 10l4 4',
-  'attack':           'M14.5 17.5L3 6V3h3l11.5 11.5 M18 16l4-4 M9 9l4-4',
-  'move':             'M12 2v20 M2 12h20 M7 7L2 12l5 5 M17 7l5 5-5 5',
-  'gather':           'M6 18l7-7 M12 6l6 6 M10 8l6-2 3 3-2 6 M5 19l4-1-3-3-1 4',
-  'cancel-training':  'M18 6L6 18 M6 6l12 12',
-  'build-barracks':   'M3 21h18 M5 21V9h14v12 M10 21v-5h4v5 M3 9l9-6 9 6 M8 14h2 M14 14h2',
-  'close-build-menu': 'M19 12H5 M12 5l-7 7 7 7',
-  'repair':           'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z M3 12h1 M7 5l-4 4 M19 12h2 M12 3v1',
-}
-
-function getActionIcon(id: string): string {
-  return ACTION_ICONS[id] ?? 'M12 5v14 M5 12h14'
-}
 </script>
 
 <style scoped>
@@ -343,11 +324,6 @@ function getActionIcon(id: string): string {
   color: #f5ead2;
   padding: 0;
   cursor: pointer;
-}
-
-.action-cell svg {
-  width: 55%;
-  height: 55%;
 }
 
 .action-cell:not(:disabled):hover {

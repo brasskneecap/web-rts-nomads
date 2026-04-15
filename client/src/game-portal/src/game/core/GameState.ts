@@ -37,6 +37,7 @@ export type ActionItem = {
   label: string
   disabled?: boolean
   active?: boolean
+  iconDef?: { kind: 'building'; type: string } | { kind: 'unit'; type: string }
 }
 
 export type DetailItem = {
@@ -1123,7 +1124,7 @@ function getUnitActions(
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
     BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
-      actions[i] = { id: `build-${def.type}`, label: def.label }
+      actions[i] = { id: `build-${def.type}`, label: def.label, iconDef: { kind: 'building', type: def.type } }
     })
     actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
     return actions
@@ -1154,7 +1155,7 @@ function getGroupActions(
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
     BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
-      actions[i] = { id: `build-${def.type}`, label: def.label }
+      actions[i] = { id: `build-${def.type}`, label: def.label, iconDef: { kind: 'building', type: def.type } }
     })
     actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
     return actions
@@ -1194,7 +1195,7 @@ function getBuildingActions(building: BuildingTile): ActionItem[] {
     for (const unitType of building.spawnUnitTypes ?? []) {
       const def = UNIT_DEF_MAP.get(unitType)
       if (def) {
-        actions.push({ id: `train-${unitType}`, label: def.trainLabel })
+        actions.push({ id: `train-${unitType}`, label: def.trainLabel, iconDef: { kind: 'unit', type: unitType } })
         hasTrainable = true
       }
     }

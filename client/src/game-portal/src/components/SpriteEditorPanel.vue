@@ -9,12 +9,15 @@
       <button class="spe__tab" :class="{ 'spe__tab--active': mode === 'unit' }" @click="setMode('unit')">
         Unit
       </button>
+      <button class="spe__tab" :class="{ 'spe__tab--active': mode === 'action' }" @click="setMode('action')">
+        Action Icons
+      </button>
     </div>
 
     <div class="spe__body">
 
       <!-- ── Left sidebar: def form ── -->
-      <div class="spe__sidebar">
+      <div v-if="mode !== 'action'" class="spe__sidebar">
 
         <template v-if="mode === 'building'">
           <div class="spe__section-title">Definition</div>
@@ -154,6 +157,7 @@
           </div>
         </template>
 
+
       </div>
 
       <!-- ── Center: canvas ── -->
@@ -210,16 +214,29 @@
             <button class="spe__btn spe__btn--sm spe__btn--ghost" @click="resetCanvasZoom">100%</button>
             <span class="spe__toolbar-value">{{ canvasZoomPercent }}%</span>
           </template>
-          <template v-else>
+          <template v-else-if="mode === 'unit'">
             <span class="spe__toolbar-label">Add Layer</span>
             <button class="spe__btn spe__btn--sm" @click="openAddShape('circle')">+ Circle</button>
             <button class="spe__btn spe__btn--sm" @click="openAddShape('poly')">+ Poly</button>
+          </template>
+          <template v-else>
+            <span class="spe__toolbar-label">Zoom</span>
+            <button class="spe__btn spe__btn--sm" @click="aAdjustZoom(-2)">-</button>
+            <input v-model.number="aCanvasZoom" class="spe__zoom-slider" type="range" min="8" max="40" step="2" />
+            <button class="spe__btn spe__btn--sm" @click="aAdjustZoom(2)">+</button>
+            <span class="spe__toolbar-value">{{ aCanvasZoom }}px/u</span>
+            <div class="spe__toolbar-divider" />
+            <span class="spe__toolbar-hint">Click to place · Dbl-click to end stroke · Right-click to cancel</span>
           </template>
         </div>
 
         <!-- Canvas -->
         <div class="spe__canvas-wrap">
+          <div v-if="mode === 'action' && aSelectedIdx === null" class="spe__action-empty">
+            Select an action from the list to begin drawing
+          </div>
           <canvas
+            v-else
             ref="drawCanvas"
             class="spe__canvas"
             :width="canvasWidth"
@@ -229,12 +246,13 @@
             @mousemove="onMouseMove"
             @mouseup="onMouseUp"
             @mouseleave="onMouseLeave"
+            @dblclick="onDblClick"
             @contextmenu.prevent
           />
         </div>
 
         <!-- Add-shape form (unit mode) -->
-        <div v-if="showAddShape" class="spe__add-shape">
+        <div v-if="mode !== 'action' && showAddShape" class="spe__add-shape">
           <div class="spe__section-title">
             Add {{ pendingKind === 'circle' ? 'Circle' : 'Polygon' }}
           </div>
@@ -317,7 +335,62 @@
           >Clear All</button>
         </template>
 
-        <template v-else>
+        <template v-else-if="mode === 'action'">
+          <div class="spe__section-title">Action Icons</div>
+          <div class="spe__layer-list">
+            <div
+              v-for="(entry, i) in aEntries"
+              :key="i"
+              class="spe__layer-item"
+              :class="{ 'spe__layer-item--selected': aSelectedIdx === i }"
+              @click="aSelectEntry(i)"
+            >
+              <svg class="spe__action-preview-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path :d="entry.path" />
+              </svg>
+              <span class="spe__layer-label">{{ entry.id }}</span>
+              <button class="spe__icon-btn spe__icon-btn--del" @click.stop="aDeleteEntry(i)" title="Delete">×</button>
+            </div>
+            <div v-if="aEntries.length === 0" class="spe__layer-empty">No action icons yet.</div>
+          </div>
+          <button class="spe__btn spe__btn--full spe__btn--ghost" style="margin-top: 6px" @click="aAddEntry">+ New Action</button>
+
+          <template v-if="aSelectedIdx !== null">
+            <div class="spe__section-title" style="margin-top: 12px">Selected</div>
+            <div class="spe__field">
+              <label>ID</label>
+              <input v-model="aEntries[aSelectedIdx].id" />
+            </div>
+
+            <div class="spe__section-title" style="margin-top: 12px">Strokes</div>
+            <div class="spe__layer-list">
+              <div
+                v-for="(stroke, si) in aStrokes"
+                :key="si"
+                class="spe__layer-item"
+              >
+                <span class="spe__layer-label">Stroke {{ si + 1 }} · {{ stroke.points.length }} pts</span>
+                <button
+                  class="spe__icon-btn"
+                  :title="stroke.closed ? 'Open path' : 'Close path (Z)'"
+                  @click="aToggleStrokeClosed(si)"
+                >{{ stroke.closed ? 'O' : 'Z' }}</button>
+                <button class="spe__icon-btn spe__icon-btn--del" @click="aDeleteStroke(si)" title="Delete stroke">×</button>
+              </div>
+              <div v-if="aStrokes.length === 0 && aCurrentPoints.length === 0" class="spe__layer-empty">
+                No strokes yet. Click the canvas to draw.
+              </div>
+            </div>
+            <button
+              v-if="aCurrentPoints.length >= 2"
+              class="spe__btn spe__btn--full"
+              style="margin-top: 4px"
+              @click="aCommitCurrentStroke(false)"
+            >Commit Stroke ({{ aCurrentPoints.length }} pts)</button>
+          </template>
+        </template>
+
+        <template v-else-if="mode === 'unit'">
           <div class="spe__section-title">Layers</div>
           <div class="spe__layer-list">
             <div
@@ -347,32 +420,34 @@
           </div>
         </template>
 
-        <div class="spe__section-title" style="margin-top: 16px">Load</div>
-        <select class="spe__catalog-select" @change="onCatalogSelect">
-          <option value="">— select existing {{ mode }} —</option>
-          <template v-if="mode === 'building'">
-            <option v-for="def in catalogBuildings" :key="def.type" :value="def.type">
-              {{ def.label || def.type }}
-            </option>
+        <template v-if="mode !== 'action'">
+          <div class="spe__section-title" style="margin-top: 16px">Load</div>
+          <select class="spe__catalog-select" @change="onCatalogSelect">
+            <option value="">— select existing {{ mode }} —</option>
+            <template v-if="mode === 'building'">
+              <option v-for="def in catalogBuildings" :key="def.type" :value="def.type">
+                {{ def.label || def.type }}
+              </option>
+            </template>
+            <template v-else>
+              <option v-for="def in catalogUnits" :key="def.type" :value="def.type">
+                {{ def.name || def.type }}
+              </option>
+            </template>
+          </select>
+          <button class="spe__btn spe__btn--full spe__btn--ghost" @click="toggleLoadPanel">
+            {{ showLoadPanel ? 'Cancel paste' : 'Paste JSON...' }}
+          </button>
+          <template v-if="showLoadPanel">
+            <textarea
+              v-model="loadJsonText"
+              class="spe__load-textarea"
+              placeholder="Paste building or unit JSON here..."
+              spellcheck="false"
+            />
+            <button class="spe__btn spe__btn--full" @click="loadFromJson">Apply</button>
+            <div v-if="loadError" class="spe__error">{{ loadError }}</div>
           </template>
-          <template v-else>
-            <option v-for="def in catalogUnits" :key="def.type" :value="def.type">
-              {{ def.name || def.type }}
-            </option>
-          </template>
-        </select>
-        <button class="spe__btn spe__btn--full spe__btn--ghost" @click="toggleLoadPanel">
-          {{ showLoadPanel ? 'Cancel paste' : 'Paste JSON...' }}
-        </button>
-        <template v-if="showLoadPanel">
-          <textarea
-            v-model="loadJsonText"
-            class="spe__load-textarea"
-            placeholder="Paste building or unit JSON here..."
-            spellcheck="false"
-          />
-          <button class="spe__btn spe__btn--full" @click="loadFromJson">Apply</button>
-          <div v-if="loadError" class="spe__error">{{ loadError }}</div>
         </template>
 
         <div class="spe__section-title" style="margin-top: 16px">Export JSON</div>
@@ -387,7 +462,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { fetchBuildingDefs, fetchUnitDefs } from '../game/maps/catalog'
+import { fetchBuildingDefs, fetchUnitDefs, fetchActionIcons } from '../game/maps/catalog'
 import type { BuildingDef } from '../game/maps/buildingDefs'
 import type { UnitDef } from '../game/maps/unitDefs'
 
@@ -403,18 +478,21 @@ const ALL_BUILDING_CAPS = ['unit-spawner', 'occupiable', 'deposit-point', 'resou
 const ALL_UNIT_TYPES    = ['worker', 'soldier']
 const ALL_UNIT_CAPS     = ['move', 'attack', 'gather', 'build']
 
+const ACTION_SVG_SIZE = 24  // SVG viewBox units (24×24)
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TriId     = { cx: number; cy: number; sc: number; sr: number; h: 0 | 1 }
+type TriId      = { cx: number; cy: number; sc: number; sr: number; h: 0 | 1 }
 type UnitCircle = { kind: 'circle'; cx: number; cy: number; r: number; color: string }
 type UnitPoly   = { kind: 'poly'; points: [number, number][]; color: string }
 type UnitLayer  = UnitCircle | UnitPoly
+type ActionStroke = { points: [number, number][]; closed: boolean }
 
 // ─── Mode ─────────────────────────────────────────────────────────────────────
 
-const mode = ref<'building' | 'unit'>('building')
+const mode = ref<'building' | 'unit' | 'action'>('building')
 
-function setMode(m: 'building' | 'unit') {
+function setMode(m: 'building' | 'unit' | 'action') {
   mode.value = m
   nextTick(() => renderCanvas())
 }
@@ -572,13 +650,24 @@ function clearAllTri() {
 const drawCanvas = ref<HTMLCanvasElement | null>(null)
 const canvasZoom = ref(2)
 
-const canvasWidth  = computed(() => mode.value === 'building' ? bWidth.value  * CELL_PX : UNIT_CANVAS)
-const canvasHeight = computed(() => mode.value === 'building' ? bHeight.value * CELL_PX : UNIT_CANVAS)
+const canvasWidth  = computed(() =>
+  mode.value === 'action'   ? ACTION_SVG_SIZE * aCanvasZoom.value :
+  mode.value === 'building' ? bWidth.value  * CELL_PX : UNIT_CANVAS
+)
+const canvasHeight = computed(() =>
+  mode.value === 'action'   ? ACTION_SVG_SIZE * aCanvasZoom.value :
+  mode.value === 'building' ? bHeight.value * CELL_PX : UNIT_CANVAS
+)
 const canvasZoomPercent = computed(() => Math.round(canvasZoom.value * 100))
-const canvasStyle = computed(() => ({
-  width: `${Math.round(canvasWidth.value * canvasZoom.value)}px`,
-  height: `${Math.round(canvasHeight.value * canvasZoom.value)}px`,
-}))
+const canvasStyle = computed(() => {
+  if (mode.value === 'action') {
+    return { width: `${canvasWidth.value}px`, height: `${canvasHeight.value}px` }
+  }
+  return {
+    width:  `${Math.round(canvasWidth.value  * canvasZoom.value)}px`,
+    height: `${Math.round(canvasHeight.value * canvasZoom.value)}px`,
+  }
+})
 
 function clampCanvasZoom(value: number): number {
   return Math.min(4, Math.max(0.5, Number(value.toFixed(2))))
@@ -646,23 +735,42 @@ function applyPaint(e: MouseEvent) {
 }
 
 function onMouseDown(e: MouseEvent) {
-  if (mode.value !== 'building') return
-  e.preventDefault()
-  if (e.button === 2) isErasing.value = true
-  else {
-    isPainting.value = true
-    pushColorHistory(paintColor.value)
+  if (mode.value === 'building') {
+    e.preventDefault()
+    if (e.button === 2) isErasing.value = true
+    else {
+      isPainting.value = true
+      pushColorHistory(paintColor.value)
+    }
+    applyPaint(e)
+  } else if (mode.value === 'action') {
+    if (aSelectedIdx.value === null) return
+    e.preventDefault()
+    if (e.button === 2) {
+      // Right-click: cancel in-progress stroke
+      aCurrentPoints.value = []
+      aCursorPos.value = null
+      renderCanvas()
+    } else if (e.button === 0) {
+      const pt = actionSvgCoords(e)
+      aCurrentPoints.value = [...aCurrentPoints.value, pt]
+      renderCanvas()
+    }
   }
-  applyPaint(e)
 }
 
 function onMouseMove(e: MouseEvent) {
-  if (mode.value !== 'building') return
-  const { px, py } = canvasPx(e)
-  hoveredTri.value = triAtPos(px, py)
-  if (isPainting.value || isErasing.value) {
-    applyPaint(e)
-  } else {
+  if (mode.value === 'building') {
+    const { px, py } = canvasPx(e)
+    hoveredTri.value = triAtPos(px, py)
+    if (isPainting.value || isErasing.value) {
+      applyPaint(e)
+    } else {
+      renderCanvas()
+    }
+  } else if (mode.value === 'action') {
+    if (aSelectedIdx.value === null) return
+    aCursorPos.value = actionSvgCoords(e)
     renderCanvas()
   }
 }
@@ -676,6 +784,25 @@ function onMouseLeave() {
   hoveredTri.value = null
   isPainting.value = false
   isErasing.value  = false
+  if (mode.value === 'action') {
+    aCursorPos.value = null
+  }
+  renderCanvas()
+}
+
+function onDblClick(e: MouseEvent) {
+  if (mode.value !== 'action' || aSelectedIdx.value === null) return
+  e.preventDefault()
+  // dblclick fires after the second single click already added a point — remove it
+  const pts = aCurrentPoints.value.length > 1
+    ? aCurrentPoints.value.slice(0, -1)
+    : aCurrentPoints.value
+  if (pts.length >= 2) {
+    aStrokes.value = [...aStrokes.value, { points: [...pts], closed: false }]
+    aSyncPathFromStrokes()
+  }
+  aCurrentPoints.value = []
+  aCursorPos.value = null
   renderCanvas()
 }
 
@@ -785,7 +912,7 @@ function renderCanvas() {
     ctx.strokeRect(insetPx, insetPx, W - insetPx * 2, H - insetPx * 2)
     ctx.restore()
 
-  } else {
+  } else if (mode.value === 'unit') {
     // Unit canvas
     const cx = UNIT_CENTER
     const cy = UNIT_CENTER
@@ -811,6 +938,83 @@ function renderCanvas() {
         ctx.fill()
       }
     }
+
+  } else {
+    // Action canvas — 24×24 SVG-unit grid
+    const zoom = aCanvasZoom.value
+    const SIZE = ACTION_SVG_SIZE
+
+    // Background
+    ctx.fillStyle = '#0a111f'
+    ctx.fillRect(0, 0, W, H)
+
+    // Minor grid (0.5-unit)
+    ctx.strokeStyle = '#1a2535'
+    ctx.lineWidth = 0.5
+    for (let i = 0; i <= SIZE * 2; i++) {
+      const v = i * zoom * 0.5
+      ctx.beginPath(); ctx.moveTo(v, 0); ctx.lineTo(v, H); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(0, v); ctx.lineTo(W, v); ctx.stroke()
+    }
+
+    // Major grid (1-unit)
+    ctx.strokeStyle = '#1e293b'
+    ctx.lineWidth = 1
+    for (let i = 0; i <= SIZE; i++) {
+      const v = i * zoom
+      ctx.beginPath(); ctx.moveTo(v, 0); ctx.lineTo(v, H); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(0, v); ctx.lineTo(W, v); ctx.stroke()
+    }
+
+    // Committed icon preview rendered with SVG-like stroke semantics so it
+    // matches the list preview and in-game icon more closely.
+    const selectedPath = aSelectedIdx.value === null ? '' : aEntries.value[aSelectedIdx.value]?.path ?? ''
+    if (selectedPath) {
+      ctx.save()
+      ctx.strokeStyle = '#f1f5f9'
+      ctx.lineWidth = 2 * zoom
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      const scaledPath = new Path2D()
+      scaledPath.addPath(new Path2D(selectedPath), new DOMMatrix([zoom, 0, 0, zoom, 0, 0]))
+      ctx.stroke(scaledPath)
+      ctx.restore()
+    }
+
+    // Edit handles for committed points
+    for (const stroke of aStrokes.value) {
+      ctx.fillStyle = '#475569'
+      for (const [x, y] of stroke.points) {
+        ctx.beginPath(); ctx.arc(x * zoom, y * zoom, 2.5, 0, Math.PI * 2); ctx.fill()
+      }
+    }
+
+    // In-progress stroke
+    const pts = aCurrentPoints.value
+    if (pts.length > 0) {
+      ctx.strokeStyle = '#3b82f6'
+      ctx.lineWidth = 2 * zoom
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.beginPath()
+      ctx.moveTo(pts[0][0] * zoom, pts[0][1] * zoom)
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * zoom, pts[i][1] * zoom)
+      // Live cursor preview line
+      const cursor = aCursorPos.value
+      if (cursor) ctx.lineTo(cursor[0] * zoom, cursor[1] * zoom)
+      ctx.stroke()
+      // Point dots
+      ctx.fillStyle = '#3b82f6'
+      for (const [x, y] of pts) {
+        ctx.beginPath(); ctx.arc(x * zoom, y * zoom, 3, 0, Math.PI * 2); ctx.fill()
+      }
+      // Cursor dot
+      if (cursor) {
+        ctx.globalAlpha = 0.5
+        ctx.beginPath(); ctx.arc(cursor[0] * zoom, cursor[1] * zoom, 3, 0, Math.PI * 2); ctx.fill()
+        ctx.globalAlpha = 1
+      }
+    }
   }
 }
 
@@ -822,15 +1026,16 @@ watch(
 
 watch(canvasZoom, value => {
   const clamped = clampCanvasZoom(value)
-  if (clamped !== value) {
-    canvasZoom.value = clamped
-  }
+  if (clamped !== value) canvasZoom.value = clamped
 })
 
 onMounted(() => {
   renderCanvas()
   fetchBuildingDefs().then(defs => { catalogBuildings.value = defs }).catch(() => {})
   fetchUnitDefs().then(defs => { catalogUnits.value = defs }).catch(() => {})
+  fetchActionIcons().then(defs => {
+    if (defs.length > 0) aEntries.value = defs.map(d => ({ id: d.id, path: d.path }))
+  }).catch(() => {})
 })
 
 // ─── Load / Catalog ───────────────────────────────────────────────────────────
@@ -969,6 +1174,160 @@ function loadFromJson() {
   loadJsonText.value  = ''
 }
 
+// ─── Action icon state ────────────────────────────────────────────────────────
+
+type ActionEntry = { id: string; path: string }
+
+const ACTION_ICON_DEFAULTS: [string, string][] = [
+  ['harvest',         'M6 18l7-7 M12 6l6 6 M10 8l6-2 3 3-2 6 M5 19l4-1-3-3-1 4'],
+  ['train-worker',    'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
+  ['set-spawn-point', 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7'],
+  ['build',           'M10 13l-5.5 5.5a2.12 2.12 0 0 1-3-3L7 10 M16 4l4 4-4 4-4-4 4-4z M7 10l4 4'],
+  ['attack',          'M14.5 17.5L3 6V3h3l11.5 11.5 M18 16l4-4 M9 9l4-4'],
+  ['move',            'M12 2v20 M2 12h20 M7 7L2 12l5 5 M17 7l5 5-5 5'],
+  ['gather',          'M6 18l7-7 M12 6l6 6 M10 8l6-2 3 3-2 6 M5 19l4-1-3-3-1 4'],
+  ['cancel-training', 'M18 6L6 18 M6 6l12 12'],
+  ['close-build-menu','M19 12H5 M12 5l-7 7 7 7'],
+  ['repair',          'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z M3 12h1 M7 5l-4 4 M19 12h2 M12 3v1'],
+]
+
+const aEntries = ref<ActionEntry[]>(
+  ACTION_ICON_DEFAULTS.map(([id, path]) => ({ id, path }))
+)
+const aSelectedIdx    = ref<number | null>(null)
+const aStrokes        = ref<ActionStroke[]>([])
+const aCurrentPoints  = ref<[number, number][]>([])
+const aCursorPos      = ref<[number, number] | null>(null)
+const aCanvasZoom     = ref(20)  // pixels per SVG unit
+
+watch(aCanvasZoom, () => nextTick(() => renderCanvas()))
+
+// ── Path ↔ strokes conversion ──────────────────────────────────────────────
+
+function aStrokesToPath(strokes: ActionStroke[]): string {
+  return strokes.map(stroke => {
+    if (stroke.points.length === 0) return ''
+    const [first, ...rest] = stroke.points
+    const parts: string[] = [`M${first[0]} ${first[1]}`]
+    for (const [x, y] of rest) parts.push(`L${x} ${y}`)
+    if (stroke.closed) parts.push('Z')
+    return parts.join(' ')
+  }).filter(Boolean).join(' ')
+}
+
+function aPathToStrokes(path: string): ActionStroke[] {
+  const strokes: ActionStroke[] = []
+  // Match each command token (letter + trailing numbers/spaces)
+  const tokens = path.match(/[MLHVZmlhvz][^MLHVZmlhvzAaCcQqSsTt]*/g) ?? []
+  let curPoints: [number, number][] = []
+  let cx = 0, cy = 0
+
+  function commit(closed: boolean) {
+    if (curPoints.length > 0) {
+      strokes.push({ points: [...curPoints], closed })
+      curPoints = []
+    }
+  }
+
+  for (const token of tokens) {
+    const cmd = token[0]
+    const args = token.slice(1).trim().split(/[\s,]+/).filter(Boolean).map(Number)
+
+    switch (cmd) {
+      case 'M': {
+        commit(false)
+        cx = args[0]; cy = args[1]; curPoints = [[cx, cy]]
+        for (let i = 2; i + 1 < args.length; i += 2) { cx = args[i]; cy = args[i + 1]; curPoints.push([cx, cy]) }
+        break
+      }
+      case 'm': {
+        commit(false)
+        cx += args[0]; cy += args[1]; curPoints = [[cx, cy]]
+        for (let i = 2; i + 1 < args.length; i += 2) { cx += args[i]; cy += args[i + 1]; curPoints.push([cx, cy]) }
+        break
+      }
+      case 'L': for (let i = 0; i + 1 < args.length; i += 2) { cx = args[i]; cy = args[i + 1]; curPoints.push([cx, cy]) }; break
+      case 'l': for (let i = 0; i + 1 < args.length; i += 2) { cx += args[i]; cy += args[i + 1]; curPoints.push([cx, cy]) }; break
+      case 'H': for (const x of args) { cx = x; curPoints.push([cx, cy]) }; break
+      case 'h': for (const dx of args) { cx += dx; curPoints.push([cx, cy]) }; break
+      case 'V': for (const y of args) { cy = y; curPoints.push([cx, cy]) }; break
+      case 'v': for (const dy of args) { cy += dy; curPoints.push([cx, cy]) }; break
+      case 'Z': case 'z': commit(true); break
+    }
+  }
+  commit(false)
+  return strokes
+}
+
+function aSyncPathFromStrokes() {
+  if (aSelectedIdx.value === null) return
+  aEntries.value[aSelectedIdx.value].path = aStrokesToPath(aStrokes.value)
+}
+
+// ── Action canvas helpers ──────────────────────────────────────────────────
+
+function aAdjustZoom(delta: number) {
+  aCanvasZoom.value = Math.min(40, Math.max(8, aCanvasZoom.value + delta))
+}
+
+function actionSvgCoords(e: MouseEvent): [number, number] {
+  const canvas = drawCanvas.value!
+  const rect = canvas.getBoundingClientRect()
+  const svgX = (e.clientX - rect.left) / rect.width  * ACTION_SVG_SIZE
+  const svgY = (e.clientY - rect.top)  / rect.height * ACTION_SVG_SIZE
+  // snap to 0.5 SVG units
+  return [Math.round(svgX * 2) / 2, Math.round(svgY * 2) / 2]
+}
+
+function aCommitCurrentStroke(closed: boolean) {
+  const pts = aCurrentPoints.value
+  if (pts.length < 2) { aCurrentPoints.value = []; return }
+  aStrokes.value = [...aStrokes.value, { points: [...pts], closed }]
+  aCurrentPoints.value = []
+  aCursorPos.value = null
+  aSyncPathFromStrokes()
+  nextTick(() => renderCanvas())
+}
+
+function aDeleteStroke(si: number) {
+  aStrokes.value = aStrokes.value.filter((_, i) => i !== si)
+  aSyncPathFromStrokes()
+  nextTick(() => renderCanvas())
+}
+
+function aToggleStrokeClosed(si: number) {
+  aStrokes.value = aStrokes.value.map((s, i) => i === si ? { ...s, closed: !s.closed } : s)
+  aSyncPathFromStrokes()
+  nextTick(() => renderCanvas())
+}
+
+// ── Entry management ───────────────────────────────────────────────────────
+
+function aSelectEntry(i: number) {
+  if (aCurrentPoints.value.length >= 2) aCommitCurrentStroke(false)
+  aCurrentPoints.value = []
+  aCursorPos.value = null
+  aSelectedIdx.value = i
+  aStrokes.value = aPathToStrokes(aEntries.value[i].path)
+  nextTick(() => renderCanvas())
+}
+
+function aAddEntry() {
+  aEntries.value.push({ id: 'new-action', path: '' })
+  aSelectEntry(aEntries.value.length - 1)
+}
+
+function aDeleteEntry(i: number) {
+  aEntries.value.splice(i, 1)
+  if (aSelectedIdx.value === i) {
+    aSelectedIdx.value = null
+    aStrokes.value = []
+    aCurrentPoints.value = []
+  } else if (aSelectedIdx.value !== null && aSelectedIdx.value > i) {
+    aSelectedIdx.value--
+  }
+}
+
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 type RectLayer = { kind: 'rect'; x: number; y: number; w: number; h: number; color: string }
@@ -1088,6 +1447,15 @@ function buildOptimizedLayers(
 }
 
 const exportJson = computed(() => {
+  if (mode.value === 'action') {
+    if (aSelectedIdx.value === null) {
+      return JSON.stringify({}, null, 2)
+    }
+
+    const selectedEntry = aEntries.value[aSelectedIdx.value]
+    return JSON.stringify(selectedEntry, null, 2)
+  }
+
   if (mode.value === 'building') {
     const resourceCost: Record<string, number> = {}
     if (bGold.value > 0) resourceCost.gold = bGold.value
@@ -1542,5 +1910,67 @@ async function copyExport() {
   white-space: pre;
   margin: 0;
   flex-shrink: 0;
+}
+
+/* ── Action Icons mode ── */
+.spe__action-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  gap: 0;
+}
+
+.spe__action-id-input {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 3px;
+  color: #f1f5f9;
+  padding: 4px 7px;
+  font-family: monospace;
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.spe__action-id-input:focus { outline: none; border-color: #3b82f6; }
+
+.spe__action-path-input {
+  min-height: 80px;
+  font-size: 11px;
+  resize: vertical;
+}
+
+.spe__action-preview-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #0a111f;
+}
+
+.spe__action-preview-lg {
+  width: 160px;
+  height: 160px;
+  color: #f1f5f9;
+}
+
+.spe__action-preview-sm {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+
+.spe__action-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  font-size: 12px;
+  font-style: italic;
+  text-align: center;
+  padding: 24px;
 }
 </style>

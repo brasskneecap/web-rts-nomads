@@ -34,6 +34,13 @@ func NewRouter(hub *ws.Hub) http.Handler {
 		})
 	})
 
+	mux.HandleFunc("/catalog/action-icons", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"icons": game.ListActionIconDefs(),
+		})
+	})
+
 	mux.HandleFunc("/maps", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(game.ListMapCatalogSummaries())
