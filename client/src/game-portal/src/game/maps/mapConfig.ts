@@ -1,5 +1,4 @@
 import type {
-  BuildingCapability,
   BuildingTile,
   BuildingType,
   MapConfig,
@@ -148,6 +147,8 @@ export function getBuildingColor(
       return '#2d6a4f'
     case 'enemy-spawnpoint':
       return '#991b1b'
+    default:
+      return occupied ? (ownerColor ?? '#64748b') : '#64748b'
   }
 }
 

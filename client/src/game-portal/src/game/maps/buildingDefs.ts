@@ -1,9 +1,11 @@
 import type { BuildingCapability } from '../network/protocol'
 
-// A rectangular accent layer (legacy format).
+// A rectangular accent layer.
 // Coordinates are in cell units relative to the building's top-left origin.
 // color: 'player' means "substitute owner/player color at render time".
+// kind is optional for backwards compatibility with legacy defs that omit it.
 export type BuildingRectLayer = {
+  kind?: 'rect'
   x: number
   y: number
   w: number

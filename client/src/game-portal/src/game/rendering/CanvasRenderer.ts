@@ -201,16 +201,18 @@ export class CanvasRenderer {
       const renderDef = buildingDef?.render
       const inset = renderDef ? renderDef.inset * cellSize : cellSize * 0.18
 
-      // Fill full cell footprint with player/building color as base
-      ctx.fillStyle = ownerColor ?? buildingDef?.color ?? getBuildingColor(building.buildingType, building.occupied, ownerColor)
-      ctx.fillRect(worldX, worldY, width, height)
+      const playerFill = ownerColor ?? buildingDef?.color ?? getBuildingColor(building.buildingType, building.occupied, ownerColor)
 
-      // Draw accent layers on top; skip 'player' layers since the base is already that color
-      if (renderDef) {
+      if (!renderDef) {
+        // No render def — solid fill fallback
+        ctx.fillStyle = playerFill
+        ctx.fillRect(worldX, worldY, width, height)
+      } else {
+        // Draw every layer explicitly; 'player' color is substituted with the owner color.
+        // No base fill: unpainted areas are transparent so terrain shows through.
         for (const layer of renderDef.layers) {
-          if (layer.color === 'player') continue
-          ctx.fillStyle = layer.color
-          if (!('kind' in layer)) {
+          ctx.fillStyle = layer.color === 'player' ? playerFill : layer.color
+          if (!('kind' in layer) || layer.kind === 'rect') {
             ctx.fillRect(
               worldX + layer.x * cellSize,
               worldY + layer.y * cellSize,
@@ -613,16 +615,17 @@ export class CanvasRenderer {
     ctx.save()
     ctx.globalAlpha = 0.6
 
-    // Fill full cell footprint with valid/invalid color as base
-    ctx.fillStyle = valid ? (buildingDef?.color ?? '#1e40af') : '#dc2626'
-    ctx.fillRect(worldX, worldY, gridW * cellSize, gridH * cellSize)
+    const playerFill = valid ? (buildingDef?.color ?? '#1e40af') : '#dc2626'
 
-    // Draw accent layers on top; skip 'player' layers since the base is already that color
-    if (renderDef) {
+    if (!renderDef) {
+      // No render def — solid fill fallback
+      ctx.fillStyle = playerFill
+      ctx.fillRect(worldX, worldY, gridW * cellSize, gridH * cellSize)
+    } else {
+      // Draw every layer explicitly, substituting 'player' with the valid/invalid tint color.
       for (const layer of renderDef.layers) {
-        if (layer.color === 'player') continue
-        ctx.fillStyle = layer.color
-        if (!('kind' in layer)) {
+        ctx.fillStyle = layer.color === 'player' ? playerFill : layer.color
+        if (!('kind' in layer) || layer.kind === 'rect') {
           ctx.fillRect(
             worldX + layer.x * cellSize,
             worldY + layer.y * cellSize,
@@ -633,11 +636,14 @@ export class CanvasRenderer {
           const s = cellSize / 6
           const tlX = worldX + layer.cx * cellSize + layer.sc * s
           const tlY = worldY + layer.cy * cellSize + layer.sr * s
+          const bslash = (layer.sc + layer.sr) % 2 === 1
           ctx.beginPath()
-          if (layer.h === 0) {
-            ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX + s, tlY); ctx.lineTo(tlX,     tlY + s)
+          if (!bslash) {
+            if (layer.h === 0) { ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX + s, tlY); ctx.lineTo(tlX,     tlY + s) }
+            else               { ctx.moveTo(tlX + s, tlY); ctx.lineTo(tlX + s, tlY + s); ctx.lineTo(tlX, tlY + s) }
           } else {
-            ctx.moveTo(tlX + s, tlY); ctx.lineTo(tlX + s, tlY + s); ctx.lineTo(tlX, tlY + s)
+            if (layer.h === 0) { ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX + s, tlY); ctx.lineTo(tlX + s, tlY + s) }
+            else               { ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX,     tlY + s); ctx.lineTo(tlX + s, tlY + s) }
           }
           ctx.closePath()
           ctx.fill()

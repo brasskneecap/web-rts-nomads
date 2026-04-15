@@ -181,7 +181,34 @@
               :style="{ background: paintMode === 'player' ? '#3b82f6' : paintCustomColor }"
               :title="paintMode === 'player' ? 'player color' : paintCustomColor"
             />
-            <span class="spe__toolbar-hint">Left-click paint · Right-click erase</span>
+            <template v-if="colorHistory.length > 0">
+              <div class="spe__toolbar-divider" />
+              <span class="spe__toolbar-label">Recent</span>
+              <div
+                v-for="c in colorHistory"
+                :key="c"
+                class="spe__history-swatch"
+                :class="{ 'spe__history-swatch--active': paintMode === 'custom' && paintCustomColor === c }"
+                :style="{ background: c }"
+                :title="c"
+                @click="selectHistoryColor(c)"
+              />
+            </template>
+            <span class="spe__toolbar-hint">Left-click paint · Right-click erase (transparent)</span>
+            <div class="spe__toolbar-divider" />
+            <span class="spe__toolbar-label">Zoom</span>
+            <button class="spe__btn spe__btn--sm" @click="adjustCanvasZoom(-0.25)">-</button>
+            <input
+              v-model.number="canvasZoom"
+              class="spe__zoom-slider"
+              type="range"
+              min="0.5"
+              max="4"
+              step="0.25"
+            />
+            <button class="spe__btn spe__btn--sm" @click="adjustCanvasZoom(0.25)">+</button>
+            <button class="spe__btn spe__btn--sm spe__btn--ghost" @click="resetCanvasZoom">100%</button>
+            <span class="spe__toolbar-value">{{ canvasZoomPercent }}%</span>
           </template>
           <template v-else>
             <span class="spe__toolbar-label">Add Layer</span>
@@ -197,6 +224,7 @@
             class="spe__canvas"
             :width="canvasWidth"
             :height="canvasHeight"
+            :style="canvasStyle"
             @mousedown="onMouseDown"
             @mousemove="onMouseMove"
             @mouseup="onMouseUp"
@@ -278,7 +306,7 @@
               <button class="spe__icon-btn spe__icon-btn--del" @click="clearTriColor(group.color)" title="Clear this color">×</button>
             </div>
             <div v-if="triColorGroups.length === 0" class="spe__layer-empty">
-              No triangles yet. Left-click to paint.
+              No paint yet. Unpainted areas show terrain.
             </div>
           </div>
           <button
@@ -306,7 +334,7 @@
                   border: layer.color === 'player' ? '2px dashed #93c5fd' : '2px solid transparent'
                 }"
               />
-              <span class="spe__layer-label">{{ layerLabel(layer, i) }}</span>
+              <span class="spe__layer-label">{{ layerLabel(layer) }}</span>
               <div class="spe__layer-actions">
                 <button class="spe__icon-btn" :disabled="i === 0" @click.stop="moveLayer(i, -1)">↑</button>
                 <button class="spe__icon-btn" :disabled="i === displayLayers.length - 1" @click.stop="moveLayer(i, 1)">↓</button>
@@ -317,6 +345,34 @@
               No layers yet. Use + Circle or + Poly.
             </div>
           </div>
+        </template>
+
+        <div class="spe__section-title" style="margin-top: 16px">Load</div>
+        <select class="spe__catalog-select" @change="onCatalogSelect">
+          <option value="">— select existing {{ mode }} —</option>
+          <template v-if="mode === 'building'">
+            <option v-for="def in catalogBuildings" :key="def.type" :value="def.type">
+              {{ def.label || def.type }}
+            </option>
+          </template>
+          <template v-else>
+            <option v-for="def in catalogUnits" :key="def.type" :value="def.type">
+              {{ def.name || def.type }}
+            </option>
+          </template>
+        </select>
+        <button class="spe__btn spe__btn--full spe__btn--ghost" @click="toggleLoadPanel">
+          {{ showLoadPanel ? 'Cancel paste' : 'Paste JSON...' }}
+        </button>
+        <template v-if="showLoadPanel">
+          <textarea
+            v-model="loadJsonText"
+            class="spe__load-textarea"
+            placeholder="Paste building or unit JSON here..."
+            spellcheck="false"
+          />
+          <button class="spe__btn spe__btn--full" @click="loadFromJson">Apply</button>
+          <div v-if="loadError" class="spe__error">{{ loadError }}</div>
         </template>
 
         <div class="spe__section-title" style="margin-top: 16px">Export JSON</div>
@@ -331,6 +387,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { fetchBuildingDefs, fetchUnitDefs } from '../game/maps/catalog'
+import type { BuildingDef } from '../game/maps/buildingDefs'
+import type { UnitDef } from '../game/maps/unitDefs'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -401,6 +460,20 @@ const paintMode        = ref<'player' | 'custom'>('player')
 const paintCustomColor = ref('#94a3b8')
 const paintColor       = computed(() => paintMode.value === 'player' ? 'player' : paintCustomColor.value)
 
+const colorHistory = ref<string[]>([])
+
+function pushColorHistory(color: string) {
+  if (color === 'player') return
+  const hist = colorHistory.value.filter(c => c !== color)
+  hist.unshift(color)
+  colorHistory.value = hist.slice(0, 5)
+}
+
+function selectHistoryColor(color: string) {
+  paintCustomColor.value = color
+  paintMode.value = 'custom'
+}
+
 // ─── Interaction state (building mode) ───────────────────────────────────────
 
 const isPainting  = ref(false)
@@ -451,7 +524,7 @@ const selectedLayerIdx = ref<number | null>(null)
 
 const displayLayers = computed<UnitLayer[]>(() => uLayers.value)
 
-function layerLabel(layer: UnitLayer, i: number): string {
+function layerLabel(layer: UnitLayer): string {
   if (layer.kind === 'circle') return `Circle r=${layer.r} @ (${layer.cx}, ${layer.cy})`
   return `Poly (${layer.points.length} pts)`
 }
@@ -497,9 +570,27 @@ function clearAllTri() {
 // ─── Canvas ───────────────────────────────────────────────────────────────────
 
 const drawCanvas = ref<HTMLCanvasElement | null>(null)
+const canvasZoom = ref(2)
 
 const canvasWidth  = computed(() => mode.value === 'building' ? bWidth.value  * CELL_PX : UNIT_CANVAS)
 const canvasHeight = computed(() => mode.value === 'building' ? bHeight.value * CELL_PX : UNIT_CANVAS)
+const canvasZoomPercent = computed(() => Math.round(canvasZoom.value * 100))
+const canvasStyle = computed(() => ({
+  width: `${Math.round(canvasWidth.value * canvasZoom.value)}px`,
+  height: `${Math.round(canvasHeight.value * canvasZoom.value)}px`,
+}))
+
+function clampCanvasZoom(value: number): number {
+  return Math.min(4, Math.max(0.5, Number(value.toFixed(2))))
+}
+
+function adjustCanvasZoom(delta: number) {
+  canvasZoom.value = clampCanvasZoom(canvasZoom.value + delta)
+}
+
+function resetCanvasZoom() {
+  canvasZoom.value = 1
+}
 
 // Returns raw canvas pixel coordinates
 function canvasPx(e: MouseEvent): { px: number; py: number } {
@@ -558,7 +649,10 @@ function onMouseDown(e: MouseEvent) {
   if (mode.value !== 'building') return
   e.preventDefault()
   if (e.button === 2) isErasing.value = true
-  else isPainting.value = true
+  else {
+    isPainting.value = true
+    pushColorHistory(paintColor.value)
+  }
   applyPaint(e)
 }
 
@@ -615,8 +709,6 @@ function renderCanvas() {
   const H = canvasHeight.value
 
   ctx.clearRect(0, 0, W, H)
-  ctx.fillStyle = '#0f172a'
-  ctx.fillRect(0, 0, W, H)
 
   if (mode.value === 'building') {
 
@@ -728,9 +820,272 @@ watch(
   { deep: true },
 )
 
-onMounted(() => renderCanvas())
+watch(canvasZoom, value => {
+  const clamped = clampCanvasZoom(value)
+  if (clamped !== value) {
+    canvasZoom.value = clamped
+  }
+})
+
+onMounted(() => {
+  renderCanvas()
+  fetchBuildingDefs().then(defs => { catalogBuildings.value = defs }).catch(() => {})
+  fetchUnitDefs().then(defs => { catalogUnits.value = defs }).catch(() => {})
+})
+
+// ─── Load / Catalog ───────────────────────────────────────────────────────────
+
+const catalogBuildings = ref<BuildingDef[]>([])
+const catalogUnits     = ref<UnitDef[]>([])
+
+const showLoadPanel = ref(false)
+const loadJsonText  = ref('')
+const loadError     = ref('')
+
+function toggleLoadPanel() {
+  showLoadPanel.value = !showLoadPanel.value
+  loadError.value     = ''
+}
+
+/**
+ * Converts exported render layers back into the raw bTriangles map.
+ * Rect layers are expanded to fill every sub-cell they cover (both h=0 and h=1).
+ * Tri layers map directly to a single triangle entry.
+ */
+function layersToTriangles(layers: any[], cellW: number, cellH: number): Record<string, string> {
+  const tris: Record<string, string> = {}
+  const maxStx = cellW * SUB
+  const maxSty = cellH * SUB
+
+  for (const layer of layers) {
+    if (!layer.color) continue
+    const color = layer.color as string
+
+    if (layer.kind === 'tri') {
+      tris[`${layer.cx},${layer.cy},${layer.sc},${layer.sr},${layer.h}`] = color
+    } else {
+      // rect — no kind or kind: 'rect'
+      const stxStart = Math.round(layer.x * SUB)
+      const styStart = Math.round(layer.y * SUB)
+      const stxEnd   = Math.round((layer.x + layer.w) * SUB)
+      const styEnd   = Math.round((layer.y + layer.h) * SUB)
+      for (let sty = styStart; sty < Math.min(styEnd, maxSty); sty++) {
+        for (let stx = stxStart; stx < Math.min(stxEnd, maxStx); stx++) {
+          const cx = Math.floor(stx / SUB), sc = stx % SUB
+          const cy = Math.floor(sty / SUB), sr = sty % SUB
+          tris[`${cx},${cy},${sc},${sr},0`] = color
+          tris[`${cx},${cy},${sc},${sr},1`] = color
+        }
+      }
+    }
+  }
+  return tris
+}
+
+function applyBuildingDef(data: BuildingDef) {
+  bType.value           = data.type
+  bWidth.value          = data.width
+  bHeight.value         = data.height
+  bMaxHp.value          = data.maxHp
+  bBuildSeconds.value   = data.buildSeconds
+  bGold.value           = data.resourceCost?.gold ?? 0
+  bWood.value           = data.resourceCost?.wood ?? 0
+  bLabel.value          = data.label        ?? ''
+  bHotkey.value         = data.hotkey       ?? ''
+  bColor.value          = data.color        ?? '#1e40af'
+  bInset.value          = data.render?.inset ?? 0.18
+  bCapabilities.value   = [...(data.capabilities   ?? [])]
+  bSpawnUnitTypes.value = [...(data.spawnUnitTypes  ?? [])]
+  bTriangles.value      = data.render?.layers
+    ? layersToTriangles(data.render.layers as any[], data.width, data.height)
+    : {}
+  mode.value = 'building'
+
+  const usedColors = [...new Set(Object.values(bTriangles.value).filter(c => c !== 'player'))]
+  for (const c of usedColors.reverse()) pushColorHistory(c)
+
+  nextTick(() => renderCanvas())
+}
+
+function applyUnitDef(data: UnitDef) {
+  uType.value         = data.type
+  uName.value         = data.name
+  uHp.value           = data.hp
+  uDamage.value       = data.damage
+  uAttackRange.value  = data.attackRange
+  uAttackSpeed.value  = data.attackSpeed
+  uGold.value         = data.resourceCost?.gold ?? 0
+  uWood.value         = data.resourceCost?.wood ?? 0
+  uMeatCost.value     = data.meatCost
+  uSpawnSeconds.value = data.spawnSeconds
+  uTrainLabel.value   = data.trainLabel   ?? ''
+  uCapabilities.value = [...(data.capabilities ?? [])]
+  uLayers.value       = [...(data.render?.layers ?? [])] as typeof uLayers.value
+  mode.value = 'unit'
+
+  const usedColors = [...new Set(uLayers.value.map(l => l.color).filter(c => c !== 'player'))]
+  for (const c of usedColors.reverse()) pushColorHistory(c)
+
+  nextTick(() => renderCanvas())
+}
+
+function onCatalogSelect(e: Event) {
+  const select = e.target as HTMLSelectElement
+  const val = select.value
+  if (!val) return
+
+  if (mode.value === 'building') {
+    const def = catalogBuildings.value.find(d => d.type === val)
+    if (def) applyBuildingDef(def)
+  } else {
+    const def = catalogUnits.value.find(d => d.type === val)
+    if (def) applyUnitDef(def)
+  }
+
+  // Reset to placeholder so the select doesn't stay on a value
+  select.value = ''
+}
+
+function loadFromJson() {
+  loadError.value = ''
+  let data: any
+  try {
+    data = JSON.parse(loadJsonText.value)
+  } catch {
+    loadError.value = 'Invalid JSON — could not parse.'
+    return
+  }
+
+  if ('width' in data && 'height' in data) {
+    applyBuildingDef(data as BuildingDef)
+  } else if ('hp' in data || 'damage' in data) {
+    applyUnitDef(data as UnitDef)
+  } else {
+    loadError.value = 'Unrecognised format — expected a building (width/height) or unit (hp/damage) definition.'
+    return
+  }
+
+  showLoadPanel.value = false
+  loadJsonText.value  = ''
+}
 
 // ─── Export ───────────────────────────────────────────────────────────────────
+
+type RectLayer = { kind: 'rect'; x: number; y: number; w: number; h: number; color: string }
+type TriLayer  = { kind: 'tri';  cx: number; cy: number; sc: number; sr: number; h: 0 | 1; color: string }
+type ExportLayer = RectLayer | TriLayer
+
+/**
+ * Converts the raw triangle map into an optimized list of rect + tri layers.
+ *
+ * Strategy per color:
+ *   1. A sub-cell whose both halves (h=0 and h=1) share the same color becomes a "full square".
+ *   2. Full squares are merged into the largest possible rectangles using a greedy
+ *      row-major scan: expand right first, then expand down while the full width holds.
+ *   3. Any triangle whose partner is absent or a different color is emitted as-is.
+ */
+function buildOptimizedLayers(
+  triangles: Record<string, string>,
+  totalCellW: number,
+  totalCellH: number,
+): ExportLayer[] {
+  const SUB_W = totalCellW * SUB
+  const SUB_H = totalCellH * SUB
+
+  // --- 1. Bucket triangles by color and identify full squares ----------------
+  // squaresByColor: color → Set of "stx,sty" strings
+  // looseTrisByColor: color → array of tri descriptors
+  const squaresByColor = new Map<string, Set<string>>()
+  const looseTrisByColor = new Map<string, TriLayer[]>()
+
+  const seenSquares = new Set<string>() // "stx,sty" regardless of color
+
+  for (const [key, color] of Object.entries(triangles)) {
+    const [cx, cy, sc, sr, h] = key.split(',').map(Number)
+    const stx = cx * SUB + sc
+    const sty = cy * SUB + sr
+    const cellKey = `${stx},${sty}`
+
+    // Only process h=0 to avoid double-counting squares
+    if (h !== 0) continue
+
+    const partnerKey = `${cx},${cy},${sc},${sr},1`
+    if (triangles[partnerKey] === color) {
+      // Both halves same color → full square
+      if (!squaresByColor.has(color)) squaresByColor.set(color, new Set())
+      squaresByColor.get(color)!.add(cellKey)
+      seenSquares.add(cellKey)
+    }
+  }
+
+  // Collect loose triangles (those not part of a same-color full square)
+  for (const [key, color] of Object.entries(triangles)) {
+    const [cx, cy, sc, sr, h] = key.split(',').map(Number)
+    const stx = cx * SUB + sc
+    const sty = cy * SUB + sr
+    const cellKey = `${stx},${sty}`
+    const isInSquare = squaresByColor.get(color)?.has(cellKey) ?? false
+    if (!isInSquare) {
+      if (!looseTrisByColor.has(color)) looseTrisByColor.set(color, [])
+      looseTrisByColor.get(color)!.push({ kind: 'tri', cx, cy, sc, sr, h: h as 0 | 1, color })
+    }
+  }
+
+  // --- 2. Greedy rectangle merge per color -----------------------------------
+  const layers: ExportLayer[] = []
+
+  for (const [color, squareSet] of squaresByColor) {
+    // Build a boolean grid
+    const grid: boolean[][] = Array.from({ length: SUB_H }, () => new Array(SUB_W).fill(false))
+    for (const key of squareSet) {
+      const [stx, sty] = key.split(',').map(Number)
+      grid[sty][stx] = true
+    }
+
+    // Scan row-major; for each filled cell find the maximal width then max height
+    for (let sty = 0; sty < SUB_H; sty++) {
+      for (let stx = 0; stx < SUB_W; stx++) {
+        if (!grid[sty][stx]) continue
+
+        // Expand right
+        let rw = 0
+        while (stx + rw < SUB_W && grid[sty][stx + rw]) rw++
+
+        // Expand down while the full width is still filled
+        let rh = 1
+        outer: while (sty + rh < SUB_H) {
+          for (let dx = 0; dx < rw; dx++) {
+            if (!grid[sty + rh][stx + dx]) break outer
+          }
+          rh++
+        }
+
+        // Emit rect in cell-unit coordinates (SUB sub-cells = 1 cell)
+        layers.push({
+          kind: 'rect',
+          x: stx / SUB,
+          y: sty / SUB,
+          w: rw  / SUB,
+          h: rh  / SUB,
+          color,
+        })
+
+        // Clear consumed cells
+        for (let dy = 0; dy < rh; dy++)
+          for (let dx = 0; dx < rw; dx++)
+            grid[sty + dy][stx + dx] = false
+      }
+    }
+  }
+
+  // --- 3. Append loose triangles sorted for deterministic output -------------
+  for (const tris of looseTrisByColor.values()) {
+    tris.sort((a, b) => `${a.cx},${a.cy},${a.sc},${a.sr},${a.h}`.localeCompare(`${b.cx},${b.cy},${b.sc},${b.sr},${b.h}`))
+    layers.push(...tris)
+  }
+
+  return layers
+}
 
 const exportJson = computed(() => {
   if (mode.value === 'building') {
@@ -738,13 +1093,7 @@ const exportJson = computed(() => {
     if (bGold.value > 0) resourceCost.gold = bGold.value
     if (bWood.value > 0) resourceCost.wood = bWood.value
 
-    // Export filled triangles sorted for deterministic output
-    const layers = Object.entries(bTriangles.value)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, color]) => {
-        const [cx, cy, sc, sr, h] = key.split(',').map(Number)
-        return { kind: 'tri' as const, cx, cy, sc, sr, h: h as 0 | 1, color }
-      })
+    const layers = buildOptimizedLayers(bTriangles.value, bWidth.value, bHeight.value)
 
     return JSON.stringify({
       type: bType.value,
@@ -928,6 +1277,7 @@ async function copyExport() {
 .spe__toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 8px 14px;
   background: #1e293b;
@@ -944,6 +1294,21 @@ async function copyExport() {
   font-size: 10px;
   color: #475569;
   margin-left: 4px;
+}
+.spe__toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: #334155;
+}
+.spe__toolbar-value {
+  min-width: 44px;
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: monospace;
+}
+.spe__zoom-slider {
+  width: 120px;
+  accent-color: #3b82f6;
 }
 
 .spe__player-btn {
@@ -979,6 +1344,18 @@ async function copyExport() {
   border: 1px solid #334155;
   flex-shrink: 0;
 }
+
+.spe__history-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid #334155;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: border-color 0.1s, transform 0.1s;
+}
+.spe__history-swatch:hover { border-color: #94a3b8; transform: scale(1.15); }
+.spe__history-swatch--active { border-color: #f1f5f9; box-shadow: 0 0 0 1px #f1f5f9; }
 
 .spe__canvas-wrap {
   flex: 1;
@@ -1122,6 +1499,37 @@ async function copyExport() {
 .spe__icon-btn--del:hover:not(:disabled) { border-color: #ef4444; color: #ef4444; }
 
 /* ── Export ── */
+.spe__catalog-select {
+  width: 100%;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 3px;
+  padding: 5px 8px;
+  color: #f1f5f9;
+  font-family: monospace;
+  font-size: 12px;
+  cursor: pointer;
+}
+.spe__catalog-select:focus { outline: none; border-color: #3b82f6; }
+
+.spe__load-textarea {
+  width: 100%;
+  min-height: 120px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 3px;
+  padding: 8px;
+  font-family: monospace;
+  font-size: 10px;
+  color: #94a3b8;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.spe__load-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
 .spe__export-pre {
   background: #0f172a;
   border: 1px solid #334155;

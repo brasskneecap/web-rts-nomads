@@ -43,26 +43,24 @@
       </div>
     </div>
 
-    <div v-if="showEditor" class="editor-topbar">
-      <button type="button" class="editor-topbar__button" @click="editorMode = false">
-        Back To Maps
-      </button>
-    </div>
-
-    <div v-if="showUnitEditor" class="editor-topbar">
-      <button type="button" class="editor-topbar__button" @click="unitEditorMode = false">
-        Back To Maps
-      </button>
-    </div>
-
     <MatchHud v-if="hasStarted" :ui="ui" @exit="exitGame" />
 
-    <div class="match-stage" :class="{ 'match-stage--editor': showEditor }">
+    <div class="match-stage" :class="{ 'match-stage--editor': showEditor || showUnitEditor }">
       <canvas v-show="hasStarted && !showEditor" ref="canvas" class="game-canvas"></canvas>
       <div v-if="showEditor" class="editor-stage">
+        <div class="editor-topbar editor-topbar--right">
+          <button type="button" class="editor-topbar__button" @click="editorMode = false">
+            Back To Maps
+          </button>
+        </div>
         <MapEditorPanel v-model="editorMap" />
       </div>
       <div v-if="showUnitEditor" class="editor-stage">
+        <div class="editor-topbar editor-topbar--right">
+          <button type="button" class="editor-topbar__button" @click="unitEditorMode = false">
+            Back To Maps
+          </button>
+        </div>
         <SpriteEditorPanel />
       </div>
       <SelectionHud v-if="hasStarted" :ui="ui" @action="performSelectionAction" />
@@ -303,6 +301,7 @@ onBeforeUnmount(() => {
 }
 
 .editor-stage {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
@@ -313,8 +312,11 @@ onBeforeUnmount(() => {
 .editor-topbar {
   position: absolute;
   top: 16px;
-  left: 16px;
   z-index: 20;
+}
+
+.editor-topbar--right {
+  right: 16px;
 }
 
 .editor-topbar__button {
