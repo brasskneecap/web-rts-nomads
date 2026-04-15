@@ -375,7 +375,7 @@ export class InputManager {
     for (const def of BUILDABLE_BUILDING_DEFS) {
       const buildActionId = `build-${def.type}`
       const menuIsOpen = selection.actions.some((action) => action.id === buildActionId)
-      hotkeyActionMap[def.hotkey] = menuIsOpen ? buildActionId : 'build'
+      hotkeyActionMap[def.hotkey.toLowerCase()] = menuIsOpen ? buildActionId : 'build'
     }
 
     const requestedAction = hotkeyActionMap[normalizedKey]

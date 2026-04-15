@@ -59,6 +59,9 @@ export let BUILDABLE_BUILDING_DEFS: BuildingDef[] = []
 export let BUILDING_DEF_MAP = new Map<string, BuildingDef>()
 
 export function initBuildingDefs(defs: BuildingDef[]): void {
-  BUILDABLE_BUILDING_DEFS = defs
-  BUILDING_DEF_MAP = new Map(defs.map((def) => [def.type, def]))
+  BUILDABLE_BUILDING_DEFS = defs.map((def) => ({
+    ...def,
+    hotkey: def.hotkey.toLowerCase(),
+  }))
+  BUILDING_DEF_MAP = new Map(BUILDABLE_BUILDING_DEFS.map((def) => [def.type, def]))
 }
