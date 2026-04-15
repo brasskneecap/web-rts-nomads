@@ -1,4 +1,26 @@
 import type { BuildingCapability } from '../network/protocol'
+import rawDefs from './building-defs.json'
+
+// A single paint layer in a building's sprite.
+// Coordinates are in cell units (1.0 = one grid cell) relative to the
+// building's top-left origin, so a 2×2 building occupies a 2×2 space.
+// color: 'player' means "substitute owner/player color at render time".
+export type BuildingRenderLayer = {
+  x: number
+  y: number
+  w: number
+  h: number
+  color: string
+}
+
+// Describes how to visually paint a building.
+// inset: padding from the building edge in cell units (default 0.18).
+//   Used to anchor HP bars, selection rings, and construction overlays.
+// layers: drawn in order, back to front.
+export type BuildingRenderDef = {
+  inset: number
+  layers: BuildingRenderLayer[]
+}
 
 export type BuildingDef = {
   type: string
@@ -10,56 +32,13 @@ export type BuildingDef = {
   capabilities: BuildingCapability[]
   spawnUnitTypes: string[]
   metadata: Record<string, string | number | boolean>
-  // Client-only display properties
   color: string
   label: string
   hotkey: string
+  render: BuildingRenderDef
 }
 
-export const BUILDABLE_BUILDING_DEFS: BuildingDef[] = [
-  {
-    type: 'barracks',
-    width: 2,
-    height: 2,
-    maxHp: 500,
-    buildSeconds: 15,
-    resourceCost: { gold: 200, wood: 150 },
-    capabilities: ['unit-spawner'],
-    spawnUnitTypes: ['soldier'],
-    metadata: {},
-    color: '#1e40af',
-    label: '(B)arracks',
-    hotkey: 'b',
-  },
-  {
-    type: 'farm',
-    width: 2,
-    height: 2,
-    maxHp: 300,
-    buildSeconds: 10,
-    resourceCost: { gold: 100, wood: 50 },
-    capabilities: [],
-    spawnUnitTypes: [],
-    metadata: {},
-    color: '#4a7c3f',
-    label: '(F)arm',
-    hotkey: 'f',
-  },
-  {
-    type: 'townhall',
-    width: 3,
-    height: 3,
-    maxHp: 1000,
-    buildSeconds: 30,
-    resourceCost: { gold: 400, wood: 200 },
-    capabilities: ['unit-spawner', 'occupiable', 'deposit-point'],
-    spawnUnitTypes: ['worker'],
-    metadata: { foodSupply: 15 },
-    color: '#b45309',
-    label: '(T)ownhall',
-    hotkey: 't',
-  },
-]
+export const BUILDABLE_BUILDING_DEFS: BuildingDef[] = rawDefs.buildings as BuildingDef[]
 
 export const BUILDING_DEF_MAP = new Map<string, BuildingDef>(
   BUILDABLE_BUILDING_DEFS.map((def) => [def.type, def]),

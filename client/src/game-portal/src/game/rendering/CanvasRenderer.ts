@@ -6,6 +6,8 @@ import {
   getObstacleColor,
   getTerrainColor,
 } from '../maps/mapConfig'
+import { BUILDING_DEF_MAP } from '../maps/buildingDefs'
+import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { Camera } from './Camera'
 
 export type MinimapBounds = {
@@ -190,21 +192,31 @@ export class CanvasRenderer {
       const worldY = building.y * cellSize
       const width = building.width * cellSize
       const height = building.height * cellSize
-      const inset = cellSize * 0.18
       const ownerColor =
         building.occupied && building.ownerId
           ? this.state.getPlayerColor(building.ownerId)
           : null
 
-      ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied, ownerColor)
-      ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+      const buildingDef = BUILDING_DEF_MAP.get(building.buildingType)
+      const renderDef = buildingDef?.render
+      const inset = renderDef ? renderDef.inset * cellSize : cellSize * 0.18
 
-      if (building.buildingType === 'barracks') {
-        this.drawBarracksCornersAt(worldX, worldY, width, height, inset, cellSize)
-      }
-
-      if (building.buildingType === 'farm') {
-        this.drawFarmDetailAt(worldX, worldY, inset, cellSize)
+      if (renderDef) {
+        for (const layer of renderDef.layers) {
+          ctx.fillStyle =
+            layer.color === 'player'
+              ? (ownerColor ?? buildingDef!.color)
+              : layer.color
+          ctx.fillRect(
+            worldX + layer.x * cellSize,
+            worldY + layer.y * cellSize,
+            layer.w * cellSize,
+            layer.h * cellSize,
+          )
+        }
+      } else {
+        ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied, ownerColor)
+        ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
       }
 
       const isUnderConstruction = building.metadata?.['underConstruction'] === true
@@ -436,11 +448,28 @@ export class CanvasRenderer {
         this.drawChoppingEffect(unit.x, unit.y)
       }
 
-      ctx.fillStyle = unit.color || 'lime'
+      const unitColor = unit.color || 'lime'
+      const unitRenderDef = UNIT_DEF_MAP.get(unit.unitType ?? '')?.render
 
-      if (unit.unitType === 'soldier' || unit.unitType === 'raider') {
-        this.drawSoldierShape(unit.x, unit.y)
+      if (unitRenderDef) {
+        for (const layer of unitRenderDef.layers) {
+          ctx.fillStyle = layer.color === 'player' ? unitColor : layer.color
+          if (layer.kind === 'circle') {
+            ctx.beginPath()
+            ctx.arc(unit.x + layer.cx, unit.y + layer.cy, layer.r, 0, Math.PI * 2)
+            ctx.fill()
+          } else if (layer.kind === 'poly') {
+            ctx.beginPath()
+            ctx.moveTo(unit.x + layer.points[0][0], unit.y + layer.points[0][1])
+            for (let i = 1; i < layer.points.length; i++) {
+              ctx.lineTo(unit.x + layer.points[i][0], unit.y + layer.points[i][1])
+            }
+            ctx.closePath()
+            ctx.fill()
+          }
+        }
       } else {
+        ctx.fillStyle = unitColor
         ctx.beginPath()
         ctx.arc(unit.x, unit.y, 10, 0, Math.PI * 2)
         ctx.fill()
@@ -507,26 +536,6 @@ export class CanvasRenderer {
     ctx.restore()
   }
 
-  private drawSoldierShape(x: number, y: number) {
-    const ctx = this.ctx
-    const w = 9
-    const h = 10
-    const r = 8
-
-    // Top circle
-    ctx.beginPath()
-    ctx.arc(x, y - r, r, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Bottom triangle (tip pointing down from center)
-    ctx.beginPath()
-    ctx.moveTo(x - w, y)
-    ctx.lineTo(x + w, y)
-    ctx.lineTo(x, y + h)
-    ctx.closePath()
-    ctx.fill()
-  }
-
   private drawSelectedUnitHealthBar(unit: {
     x: number
     y: number
@@ -567,37 +576,6 @@ export class CanvasRenderer {
     ctx.restore()
   }
 
-  private drawBarracksCornersAt(
-    worldX: number,
-    worldY: number,
-    width: number,
-    height: number,
-    inset: number,
-    cellSize: number,
-  ) {
-    const ctx = this.ctx
-    const cornerSize = cellSize * 0.28
-    const left = worldX + inset
-    const top = worldY + inset
-    const right = worldX + width - inset - cornerSize
-    const bottom = worldY + height - inset - cornerSize
-
-    ctx.fillStyle = '#94a3b8'
-    ctx.fillRect(left, top, cornerSize, cornerSize)
-    ctx.fillRect(right, top, cornerSize, cornerSize)
-    ctx.fillRect(left, bottom, cornerSize, cornerSize)
-    ctx.fillRect(right, bottom, cornerSize, cornerSize)
-  }
-
-  private drawFarmDetailAt(worldX: number, worldY: number, inset: number, cellSize: number) {
-    const ctx = this.ctx
-    // Gold square filling most of the bottom-left cell
-    const tileX = worldX + inset
-    const tileY = worldY + cellSize + inset
-    const tileSize = cellSize - inset * 2
-    ctx.fillStyle = '#ca8a04'
-    ctx.fillRect(tileX, tileY, tileSize, tileSize)
-  }
 
   private drawBuildPlacementGhost() {
     const placement = this.state.buildPlacement
@@ -609,26 +587,36 @@ export class CanvasRenderer {
 
     const worldX = cursorGridX * cellSize
     const worldY = cursorGridY * cellSize
-    const width = gridW * cellSize
-    const height = gridH * cellSize
-    const inset = cellSize * 0.18
+    const buildingDef = BUILDING_DEF_MAP.get(placement.buildingType)
+    const renderDef = buildingDef?.render
+    const inset = renderDef ? renderDef.inset * cellSize : cellSize * 0.18
 
     ctx.save()
     ctx.globalAlpha = 0.6
-    ctx.fillStyle = valid ? (placement.buildingType === 'farm' ? '#4a7c3f' : '#1e40af') : '#dc2626'
-    ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
 
-    if (placement.buildingType === 'farm') {
-      this.drawFarmDetailAt(worldX, worldY, inset, cellSize)
+    if (renderDef) {
+      for (const layer of renderDef.layers) {
+        ctx.fillStyle =
+          layer.color === 'player'
+            ? (valid ? (buildingDef!.color) : '#dc2626')
+            : layer.color
+        ctx.fillRect(
+          worldX + layer.x * cellSize,
+          worldY + layer.y * cellSize,
+          layer.w * cellSize,
+          layer.h * cellSize,
+        )
+      }
     } else {
-      this.drawBarracksCornersAt(worldX, worldY, width, height, inset, cellSize)
+      ctx.fillStyle = valid ? '#1e40af' : '#dc2626'
+      ctx.fillRect(worldX + inset, worldY + inset, gridW * cellSize - inset * 2, gridH * cellSize - inset * 2)
     }
 
     ctx.globalAlpha = 0.9
     ctx.strokeStyle = valid ? '#93c5fd' : '#fca5a5'
     ctx.lineWidth = 2 / this.camera.zoom
     ctx.setLineDash([8 / this.camera.zoom, 4 / this.camera.zoom])
-    ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+    ctx.strokeRect(worldX + inset, worldY + inset, gridW * cellSize - inset * 2, gridH * cellSize - inset * 2)
     ctx.restore()
   }
 

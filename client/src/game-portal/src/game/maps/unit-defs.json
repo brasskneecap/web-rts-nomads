@@ -1,0 +1,60 @@
+{
+  "units": [
+    {
+      "type": "worker",
+      "name": "Worker",
+      "hp": 100,
+      "damage": 3,
+      "attackRange": 60,
+      "attackSpeed": 1.0,
+      "resourceCost": { "gold": 150 },
+      "meatCost": 1,
+      "spawnSeconds": 5,
+      "capabilities": ["move", "gather", "build", "attack"],
+      "trainLabel": "Train Worker",
+      "render": {
+        "layers": [
+          { "kind": "circle", "cx": 0, "cy": 0, "r": 10, "color": "player" }
+        ]
+      }
+    },
+    {
+      "type": "soldier",
+      "name": "Soldier",
+      "hp": 150,
+      "damage": 10,
+      "attackRange": 60,
+      "attackSpeed": 1.0,
+      "resourceCost": { "gold": 100, "wood": 25 },
+      "meatCost": 2,
+      "spawnSeconds": 10,
+      "capabilities": ["move", "attack"],
+      "trainLabel": "Train Soldier",
+      "render": {
+        "layers": [
+          { "kind": "circle", "cx": 0, "cy": -8, "r": 8, "color": "player" },
+          { "kind": "poly", "points": [[-9, 0], [9, 0], [0, 10]], "color": "player" }
+        ]
+      }
+    },
+    {
+      "type": "raider",
+      "name": "Raider",
+      "hp": 75,
+      "damage": 5,
+      "attackRange": 60,
+      "attackSpeed": 1.0,
+      "resourceCost": {},
+      "meatCost": 0,
+      "spawnSeconds": 0,
+      "capabilities": ["move", "attack"],
+      "trainLabel": "",
+      "render": {
+        "layers": [
+          { "kind": "circle", "cx": 0, "cy": -8, "r": 8, "color": "player" },
+          { "kind": "poly", "points": [[-9, 0], [9, 0], [0, 10]], "color": "player" }
+        ]
+      }
+    }
+  ]
+}

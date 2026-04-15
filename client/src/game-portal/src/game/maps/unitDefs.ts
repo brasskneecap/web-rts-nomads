@@ -1,4 +1,16 @@
 import type { UnitCapability } from '../network/protocol'
+import rawDefs from './unit-defs.json'
+
+// A single paint layer in a unit's sprite.
+// Coordinates are in canvas pixels relative to the unit's center point.
+// color: 'player' means "substitute the unit's assigned color at render time".
+export type UnitRenderLayer =
+  | { kind: 'circle'; cx: number; cy: number; r: number; color: string }
+  | { kind: 'poly'; points: readonly [number, number][]; color: string }
+
+export type UnitRenderDef = {
+  layers: UnitRenderLayer[]
+}
 
 export type UnitDef = {
   type: string
@@ -11,38 +23,11 @@ export type UnitDef = {
   meatCost: number
   spawnSeconds: number
   capabilities: UnitCapability[]
-  // Client-only display properties
   trainLabel: string
+  render: UnitRenderDef
 }
 
-export const UNIT_DEFS: UnitDef[] = [
-  {
-    type: 'worker',
-    name: 'Worker',
-    hp: 100,
-    damage: 3,
-    attackRange: 60,
-    attackSpeed: 1.0,
-    resourceCost: { gold: 150 },
-    meatCost: 1,
-    spawnSeconds: 5,
-    capabilities: ['move', 'gather', 'build', 'attack'],
-    trainLabel: 'Train Worker',
-  },
-  {
-    type: 'soldier',
-    name: 'Soldier',
-    hp: 150,
-    damage: 10,
-    attackRange: 60,
-    attackSpeed: 1.0,
-    resourceCost: { gold: 100, wood: 25 },
-    meatCost: 2,
-    spawnSeconds: 10,
-    capabilities: ['move', 'attack'],
-    trainLabel: 'Train Soldier',
-  },
-]
+export const UNIT_DEFS: UnitDef[] = rawDefs.units as UnitDef[]
 
 export const UNIT_DEF_MAP = new Map<string, UnitDef>(
   UNIT_DEFS.map((def) => [def.type, def]),
