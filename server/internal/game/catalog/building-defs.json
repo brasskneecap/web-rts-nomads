@@ -522,7 +522,9 @@
       },
       "capabilities": [],
       "spawnUnitTypes": [],
-      "metadata": {},
+      "metadata": {
+        "foodSupply": 10
+      },
       "color": "#4a7c3f",
       "label": "(F)arm",
       "hotkey": "f",
@@ -1305,7 +1307,9 @@
       "spawnUnitTypes": [
         "worker"
       ],
-      "metadata": {},
+      "metadata": {
+        "foodSupply": 15
+      },
       "color": "#b45309",
       "label": "(T)ownhall",
       "hotkey": "t",

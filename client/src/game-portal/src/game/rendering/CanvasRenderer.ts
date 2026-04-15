@@ -7,7 +7,7 @@ import {
   getTerrainColor,
 } from '../maps/mapConfig'
 import { BUILDING_DEF_MAP } from '../maps/buildingDefs'
-import { UNIT_DEF_MAP } from '../maps/unitDefs'
+import { getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
 import { Camera } from './Camera'
 
 export type MinimapBounds = {
@@ -430,12 +430,22 @@ export class CanvasRenderer {
       const selected = this.state.selectedUnitIds.has(unit.id)
       const isInspected = this.state.inspectedEnemyUnitId === unit.id
       const isHoveredEnemy = this.state.hoveredEnemyUnitId === unit.id
+      const unitDef = UNIT_DEF_MAP.get(unit.unitType ?? '')
+      const unitBounds = getUnitRenderBounds(unitDef)
+      const halfWidth = unitBounds
+        ? Math.max(Math.abs(unitBounds.minX), Math.abs(unitBounds.maxX))
+        : 13
+      const bottomOffset = unitBounds?.maxY ?? 12
+      const selectionRadiusX = Math.max(15, halfWidth + 2)
+      const selectionRadiusY = Math.max(8, Math.min(12, selectionRadiusX * 0.52))
+      // Anchor the ring to the sprite's lowest point so taller/larger units still sit on it naturally.
+      const selectionCenterY = unit.y + bottomOffset - selectionRadiusY * 0.35
 
       if (selected) {
         ctx.strokeStyle = 'yellow'
         ctx.lineWidth = 3 / this.camera.zoom
         ctx.beginPath()
-        ctx.arc(unit.x, unit.y, 15, 0, Math.PI * 2)
+        ctx.ellipse(unit.x, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
         ctx.stroke()
       }
 
@@ -446,7 +456,7 @@ export class CanvasRenderer {
         ctx.lineWidth = 2 / this.camera.zoom
         ctx.setLineDash([5 / this.camera.zoom, 4 / this.camera.zoom])
         ctx.beginPath()
-        ctx.arc(unit.x, unit.y, 16, 0, Math.PI * 2)
+        ctx.ellipse(unit.x, selectionCenterY, selectionRadiusX + 1, selectionRadiusY + 1, 0, 0, Math.PI * 2)
         ctx.stroke()
         ctx.restore()
       }
@@ -456,13 +466,13 @@ export class CanvasRenderer {
         ctx.strokeStyle = '#ef4444'
         ctx.lineWidth = 3 / this.camera.zoom
         ctx.beginPath()
-        ctx.arc(unit.x, unit.y, 15, 0, Math.PI * 2)
+        ctx.ellipse(unit.x, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
         ctx.stroke()
       }
 
       // Health bar always visible for all units
       const isEnemy = unit.ownerId !== this.state.localPlayerId
-      this.drawSelectedUnitHealthBar(unit, isEnemy)
+      this.drawSelectedUnitHealthBar(unit, unitDef, isEnemy)
 
       if (unit.status === 'Attacking') {
         this.drawAttackEffect(unit.x, unit.y)
@@ -471,7 +481,7 @@ export class CanvasRenderer {
       }
 
       const unitColor = unit.color || 'lime'
-      const unitRenderDef = UNIT_DEF_MAP.get(unit.unitType ?? '')?.render
+      const unitRenderDef = unitDef?.render
 
       if (unitRenderDef) {
         for (const layer of unitRenderDef.layers) {
@@ -563,7 +573,7 @@ export class CanvasRenderer {
     y: number
     hp?: number
     maxHp?: number
-  }, isEnemy = false) {
+  }, unitDef: ReturnType<typeof UNIT_DEF_MAP.get>, isEnemy = false) {
     const ctx = this.ctx
     const maxHp = Math.max(unit.maxHp ?? unit.hp ?? 100, 1)
     const hp = Math.max(0, Math.min(unit.hp ?? maxHp, maxHp))
@@ -571,7 +581,8 @@ export class CanvasRenderer {
     const barWidth = 26
     const barHeight = 4
     const barX = unit.x - barWidth / 2
-    const barY = unit.y - 22
+    const bounds = getUnitRenderBounds(unitDef)
+    const barY = unit.y - (bounds ? Math.abs(bounds.minY) + 8 : 22)
 
     let fillColor = '#22c55e'
     if (isEnemy) {

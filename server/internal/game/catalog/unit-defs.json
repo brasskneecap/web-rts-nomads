@@ -32,8 +32,85 @@
       "trainLabel": "Train Soldier",
       "render": {
         "layers": [
-          { "kind": "circle", "cx": 0, "cy": -8, "r": 8, "color": "player" },
-          { "kind": "poly", "points": [[-9, 0], [9, 0], [0, 10]], "color": "player" }
+          {
+            "kind": "poly",
+            "points": [
+              [
+                -12,
+                10
+              ],
+              [
+                0,
+                -1
+              ],
+              [
+                12,
+                10
+              ],
+              [
+                0,
+                25
+              ]
+            ],
+            "color": "player"
+          },
+          {
+            "kind": "circle",
+            "cx": 0,
+            "cy": -13,
+            "r": 10,
+            "color": "player"
+          },
+          {
+            "kind": "poly",
+            "points": [
+              [
+                17,
+                -8
+              ],
+              [
+                16,
+                30
+              ]
+            ],
+            "color": "player"
+          },
+          {
+            "kind": "poly",
+            "points": [
+              [
+                21,
+                -12
+              ],
+              [
+                20,
+                26
+              ]
+            ],
+            "color": "player"
+          },
+          {
+            "kind": "poly",
+            "points": [
+              [
+                17,
+                -18
+              ],
+              [
+                16,
+                20
+              ],
+              [
+                19,
+                19
+              ],
+              [
+                18,
+                -18
+              ]
+            ],
+            "color": "player"
+          }
         ]
       }
     },

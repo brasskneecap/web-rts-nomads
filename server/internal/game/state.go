@@ -1997,7 +1997,19 @@ func (s *GameState) getProductionSpawnPositionLocked(building protocol.BuildingT
 }
 
 func (s *GameState) getEffectiveUnitSpawnSecondsLocked(player *Player, building protocol.BuildingTile, unitType string) float64 {
-	spawnSeconds := s.getConfiguredUnitSpawnSecondsLocked(building, unitType)
+	spawnSeconds := 1.0
+	if def, ok := getUnitDef(unitType); ok && def.SpawnSeconds > 0 {
+		spawnSeconds = def.SpawnSeconds
+	}
+
+	if building.Metadata != nil {
+		if multiplier, ok := getMetadataFloat(building.Metadata, "spawnTimeMultiplier"); ok && multiplier > 0 {
+			spawnSeconds *= multiplier
+		}
+		if multiplier, ok := getMetadataFloat(building.Metadata, "spawnTime"+formatMetadataUnitTypeSuffix(unitType)+"Multiplier"); ok && multiplier > 0 {
+			spawnSeconds *= multiplier
+		}
+	}
 
 	if player.GlobalUnitSpawnTimeMultiplier > 0 {
 		spawnSeconds *= player.GlobalUnitSpawnTimeMultiplier
@@ -2007,27 +2019,6 @@ func (s *GameState) getEffectiveUnitSpawnSecondsLocked(player *Player, building 
 	}
 
 	return math.Max(minUnitSpawnSeconds, spawnSeconds)
-}
-
-func (s *GameState) getConfiguredUnitSpawnSecondsLocked(building protocol.BuildingTile, unitType string) float64 {
-	spawnSeconds := 1.0
-	if def, ok := getUnitDef(unitType); ok && def.SpawnSeconds > 0 {
-		spawnSeconds = def.SpawnSeconds
-	}
-
-	if building.Metadata != nil {
-		if configured, ok := getMetadataFloat(building.Metadata, "spawnTime"+formatMetadataUnitTypeSuffix(unitType)); ok && configured > 0 {
-			spawnSeconds = configured
-		}
-		if multiplier, ok := getMetadataFloat(building.Metadata, "spawnTimeMultiplier"); ok && multiplier > 0 {
-			spawnSeconds *= multiplier
-		}
-		if multiplier, ok := getMetadataFloat(building.Metadata, "spawnTime"+formatMetadataUnitTypeSuffix(unitType)+"Multiplier"); ok && multiplier > 0 {
-			spawnSeconds *= multiplier
-		}
-	}
-
-	return spawnSeconds
 }
 
 func (s *GameState) CanAffordUnit(playerID, unitType string) bool {

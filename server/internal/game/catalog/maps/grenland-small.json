@@ -607,8 +607,7 @@
         ],
         "metadata": {
           "occupiedLabel": "occupied",
-          "unoccupiedLabel": "unoccupied",
-          "spawnTimeWorker": 5
+          "unoccupiedLabel": "unoccupied"
         }
       },
       {

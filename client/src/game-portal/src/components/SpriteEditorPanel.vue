@@ -90,6 +90,11 @@
               <span>{{ ut }}</span>
             </label>
           </div>
+          <div class="spe__field" style="margin-top: 12px">
+            <label>Metadata <span class="spe__hint">(JSON object)</span></label>
+            <textarea v-model="bMetadataText" rows="4" class="spe__textarea" placeholder='{"foodSupply":15}' />
+          </div>
+          <div v-if="bMetadataError" class="spe__error">{{ bMetadataError }}</div>
         </template>
 
         <template v-else>
@@ -155,6 +160,11 @@
               <span>{{ cap }}</span>
             </label>
           </div>
+          <div class="spe__field" style="margin-top: 12px">
+            <label>Metadata <span class="spe__hint">(JSON object)</span></label>
+            <textarea v-model="uMetadataText" rows="4" class="spe__textarea" placeholder='{"spawnBonus":1}' />
+          </div>
+          <div v-if="uMetadataError" class="spe__error">{{ uMetadataError }}</div>
         </template>
 
 
@@ -257,6 +267,14 @@
             Add {{ pendingKind === 'circle' ? 'Circle' : 'Polygon' }}
           </div>
 
+          <div class="spe__field" style="max-width: 180px">
+            <label>Shape Type</label>
+            <select v-model="pendingKind" class="spe__catalog-select">
+              <option value="circle">Circle</option>
+              <option value="poly">Polygon</option>
+            </select>
+          </div>
+
           <template v-if="pendingKind === 'circle'">
             <div class="spe__field-row">
               <div class="spe__field">
@@ -278,6 +296,7 @@
               <label>Points <span class="spe__hint">[x,y] pairs, comma-separated</span></label>
               <textarea v-model="pendingPoints" rows="2" class="spe__textarea" placeholder="[-9,0],[9,0],[0,10]" />
             </div>
+            <div class="spe__hint">Left-click the canvas to add points. Right-click removes the last point.</div>
           </template>
 
           <div class="spe__field-row" style="margin-top: 6px; align-items: center">
@@ -298,6 +317,60 @@
           </div>
 
           <div v-if="addShapeError" class="spe__error">{{ addShapeError }}</div>
+        </div>
+
+        <div v-if="mode === 'unit' && selectedLayer" class="spe__add-shape">
+          <div class="spe__section-title">Selected Layer</div>
+
+          <div class="spe__field" style="max-width: 180px">
+            <label>Shape Type</label>
+            <select :value="selectedLayer.kind" class="spe__catalog-select" @change="setSelectedLayerKind(($event.target as HTMLSelectElement).value as 'circle' | 'poly')">
+              <option value="circle">Circle</option>
+              <option value="poly">Polygon</option>
+            </select>
+          </div>
+
+          <template v-if="selectedLayer.kind === 'circle'">
+            <div class="spe__field-row">
+              <div class="spe__field">
+                <label>cx <span class="spe__hint">(px)</span></label>
+                <input type="number" :value="selectedLayer.cx" step="1" @input="updateSelectedCircleField('cx', $event)" />
+              </div>
+              <div class="spe__field">
+                <label>cy <span class="spe__hint">(px)</span></label>
+                <input type="number" :value="selectedLayer.cy" step="1" @input="updateSelectedCircleField('cy', $event)" />
+              </div>
+              <div class="spe__field">
+                <label>r <span class="spe__hint">(px)</span></label>
+                <input type="number" :value="selectedLayer.r" min="1" step="1" @input="updateSelectedCircleField('r', $event)" />
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <div class="spe__field">
+              <label>Points <span class="spe__hint">[x,y] pairs, comma-separated</span></label>
+              <textarea :value="selectedLayerPointsText" rows="3" class="spe__textarea" @input="updateSelectedLayerPoints($event)" />
+            </div>
+          </template>
+
+          <div class="spe__field-row" style="margin-top: 6px; align-items: center">
+            <button
+              class="spe__player-btn"
+              :class="{ 'spe__player-btn--active': selectedLayer.color === 'player' }"
+              @click="setSelectedLayerColor('player')"
+            >Player</button>
+            <input
+              type="color"
+              :value="selectedLayerColorValue"
+              class="spe__color-input"
+              @input="setSelectedLayerColor(($event.target as HTMLInputElement).value)"
+            />
+            <div class="spe__spacer" />
+            <button class="spe__btn spe__btn--ghost" @click="selectUnitLayer(null)">Clear Selection</button>
+          </div>
+
+          <div class="spe__hint">Click a shape to select it, then drag it on the canvas to reposition it.</div>
+          <div v-if="selectedLayerError" class="spe__error">{{ selectedLayerError }}</div>
         </div>
 
       </div>
@@ -398,7 +471,7 @@
               :key="i"
               class="spe__layer-item"
               :class="{ 'spe__layer-item--selected': selectedLayerIdx === i }"
-              @click="selectedLayerIdx = i"
+              @click="selectUnitLayer(i)"
             >
               <div
                 class="spe__layer-swatch"
@@ -494,6 +567,12 @@ const mode = ref<'building' | 'unit' | 'action'>('building')
 
 function setMode(m: 'building' | 'unit' | 'action') {
   mode.value = m
+  if (m !== 'unit') {
+    selectedLayerIdx.value = null
+    unitHoverLayerIdx.value = null
+    selectedLayerError.value = ''
+    endUnitLayerDrag()
+  }
   nextTick(() => renderCanvas())
 }
 
@@ -512,6 +591,7 @@ const bColor        = ref('#1e40af')
 const bInset        = ref(0.18)
 const bCapabilities    = ref<string[]>([])
 const bSpawnUnitTypes  = ref<string[]>([])
+const bMetadataText    = ref('{}')
 
 // Triangle fill grid: key = "cx,cy,sc,sr,h", value = color string ('player' or hex)
 const bTriangles = ref<Record<string, string>>({})
@@ -530,6 +610,7 @@ const uMeatCost     = ref(1)
 const uSpawnSeconds = ref(5)
 const uTrainLabel   = ref('')
 const uCapabilities = ref<string[]>(['move', 'attack'])
+const uMetadataText = ref('{}')
 const uLayers       = ref<UnitLayer[]>([])
 
 // ─── Paint state (building mode) ─────────────────────────────────────────────
@@ -569,11 +650,41 @@ const pendingPoints     = ref('[-9,0],[9,0],[0,10]')
 const pendingColorMode  = ref<'player' | 'custom'>('player')
 const pendingCustomColor = ref('#94a3b8')
 const addShapeError     = ref('')
+const pendingPolyPoints = computed<[number, number][]>(() => {
+  try {
+    const points = JSON.parse(`[${pendingPoints.value}]`) as [number, number][]
+    if (!Array.isArray(points)) return []
+    return points.flatMap(point => {
+      if (!Array.isArray(point) || point.length < 2) return []
+      const x = Math.round(Number(point[0]))
+      const y = Math.round(Number(point[1]))
+      if (Number.isNaN(x) || Number.isNaN(y)) return []
+      return [[x, y] as [number, number]]
+    })
+  } catch {
+    return []
+  }
+})
 
 function openAddShape(kind: 'circle' | 'poly') {
   pendingKind.value   = kind
   addShapeError.value = ''
   showAddShape.value  = true
+}
+
+function setPendingPolyPoints(points: [number, number][]) {
+  pendingPoints.value = points.map(([x, y]) => `[${x},${y}]`).join(',')
+}
+
+function appendPendingPolyPoint(point: [number, number]) {
+  addShapeError.value = ''
+  setPendingPolyPoints([...pendingPolyPoints.value, point])
+}
+
+function popPendingPolyPoint() {
+  addShapeError.value = ''
+  if (pendingPolyPoints.value.length === 0) return
+  setPendingPolyPoints(pendingPolyPoints.value.slice(0, -1))
 }
 
 function commitShape() {
@@ -582,6 +693,7 @@ function commitShape() {
 
   if (pendingKind.value === 'circle') {
     uLayers.value.push({ kind: 'circle', cx: pendingCx.value, cy: pendingCy.value, r: pendingR.value, color })
+    selectedLayerIdx.value = uLayers.value.length - 1
     showAddShape.value = false
     return
   }
@@ -590,6 +702,7 @@ function commitShape() {
     const points = JSON.parse(`[${pendingPoints.value}]`) as [number, number][]
     if (!Array.isArray(points) || points.length < 2) throw new Error()
     uLayers.value.push({ kind: 'poly', points, color })
+    selectedLayerIdx.value = uLayers.value.length - 1
     showAddShape.value = false
   } catch {
     addShapeError.value = 'Invalid points — use [x,y] pairs separated by commas, e.g. [-9,0],[9,0],[0,10]'
@@ -599,17 +712,42 @@ function commitShape() {
 // ─── Layer panel (unit mode) ──────────────────────────────────────────────────
 
 const selectedLayerIdx = ref<number | null>(null)
+const selectedLayerError = ref('')
+const unitHoverLayerIdx = ref<number | null>(null)
+const unitDraggingLayerIdx = ref<number | null>(null)
+const unitDragStart = ref<[number, number] | null>(null)
+const unitDragOriginCircle = ref<{ cx: number; cy: number } | null>(null)
+const unitDragOriginPoly = ref<[number, number][] | null>(null)
 
 const displayLayers = computed<UnitLayer[]>(() => uLayers.value)
+const selectedLayer = computed<UnitLayer | null>(() =>
+  selectedLayerIdx.value === null ? null : uLayers.value[selectedLayerIdx.value] ?? null,
+)
+const selectedLayerPointsText = computed(() =>
+  selectedLayer.value?.kind === 'poly'
+    ? selectedLayer.value.points.map(([x, y]) => `[${x},${y}]`).join(',')
+    : '',
+)
+const selectedLayerColorValue = computed(() =>
+  selectedLayer.value?.color && selectedLayer.value.color !== 'player'
+    ? selectedLayer.value.color
+    : '#3b82f6',
+)
 
 function layerLabel(layer: UnitLayer): string {
   if (layer.kind === 'circle') return `Circle r=${layer.r} @ (${layer.cx}, ${layer.cy})`
   return `Poly (${layer.points.length} pts)`
 }
 
+function selectUnitLayer(index: number | null) {
+  selectedLayerIdx.value = index
+  selectedLayerError.value = ''
+}
+
 function deleteLayer(i: number) {
   uLayers.value.splice(i, 1)
   if (selectedLayerIdx.value === i) selectedLayerIdx.value = null
+  else if (selectedLayerIdx.value !== null && selectedLayerIdx.value > i) selectedLayerIdx.value--
 }
 
 function moveLayer(i: number, dir: -1 | 1) {
@@ -617,9 +755,176 @@ function moveLayer(i: number, dir: -1 | 1) {
   const j = i + dir
   if (j < 0 || j >= arr.length) return
   ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  if (selectedLayerIdx.value === i) selectedLayerIdx.value = j
+  else if (selectedLayerIdx.value === j) selectedLayerIdx.value = i
 }
 
 // ─── Triangle color groups (building mode right panel) ────────────────────────
+
+function replaceUnitLayerAt(index: number, layer: UnitLayer) {
+  uLayers.value.splice(index, 1, layer)
+}
+
+function replaceSelectedLayer(layer: UnitLayer) {
+  if (selectedLayerIdx.value === null) return
+  replaceUnitLayerAt(selectedLayerIdx.value, layer)
+}
+
+function setSelectedLayerKind(kind: 'circle' | 'poly') {
+  const layer = selectedLayer.value
+  if (!layer || layer.kind === kind) return
+
+  selectedLayerError.value = ''
+  if (kind === 'circle' && layer.kind === 'poly') {
+    const xs = layer.points.map(([x]) => x)
+    const ys = layer.points.map(([, y]) => y)
+    const minX = Math.min(...xs)
+    const maxX = Math.max(...xs)
+    const minY = Math.min(...ys)
+    const maxY = Math.max(...ys)
+    replaceSelectedLayer({
+      kind: 'circle',
+      color: layer.color,
+      cx: Math.round((minX + maxX) / 2),
+      cy: Math.round((minY + maxY) / 2),
+      r: Math.max(1, Math.round(Math.max(maxX - minX, maxY - minY) / 2)),
+    })
+    return
+  }
+
+  if (kind === 'poly' && layer.kind === 'circle') {
+    const r = Math.max(1, layer.r)
+    replaceSelectedLayer({
+      kind: 'poly',
+      color: layer.color,
+      points: [
+        [layer.cx, layer.cy - r],
+        [layer.cx + r, layer.cy],
+        [layer.cx, layer.cy + r],
+        [layer.cx - r, layer.cy],
+      ],
+    })
+  }
+}
+
+function updateSelectedCircleField(field: 'cx' | 'cy' | 'r', event: Event) {
+  const layer = selectedLayer.value
+  const value = Number((event.target as HTMLInputElement).value)
+  if (!layer || layer.kind !== 'circle' || Number.isNaN(value)) return
+  replaceSelectedLayer({
+    ...layer,
+    [field]: field === 'r' ? Math.max(1, Math.round(value)) : Math.round(value),
+  })
+}
+
+function updateSelectedLayerPoints(event: Event) {
+  const layer = selectedLayer.value
+  if (!layer || layer.kind !== 'poly') return
+
+  const raw = (event.target as HTMLTextAreaElement).value
+  try {
+    const points = JSON.parse(`[${raw}]`) as [number, number][]
+    if (!Array.isArray(points) || points.length < 2) throw new Error()
+    const normalized = points.map(point => {
+      if (!Array.isArray(point) || point.length < 2) throw new Error()
+      const x = Math.round(Number(point[0]))
+      const y = Math.round(Number(point[1]))
+      if (Number.isNaN(x) || Number.isNaN(y)) throw new Error()
+      return [x, y] as [number, number]
+    })
+    selectedLayerError.value = ''
+    replaceSelectedLayer({ ...layer, points: normalized })
+  } catch {
+    selectedLayerError.value = 'Invalid points — use [x,y] pairs separated by commas.'
+  }
+}
+
+function setSelectedLayerColor(color: string) {
+  const layer = selectedLayer.value
+  if (!layer) return
+  selectedLayerError.value = ''
+  replaceSelectedLayer({ ...layer, color })
+}
+
+function unitCoordsFromMouse(e: MouseEvent): [number, number] {
+  const { px, py } = canvasPx(e)
+  return [Math.round(px - UNIT_CENTER), Math.round(py - UNIT_CENTER)]
+}
+
+function pointInPoly(points: [number, number][], x: number, y: number): boolean {
+  let inside = false
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const [xi, yi] = points[i]
+    const [xj, yj] = points[j]
+    const crosses = (yi > y) !== (yj > y)
+    if (!crosses) continue
+    const edgeX = ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-6) + xi
+    if (x < edgeX) inside = !inside
+  }
+  return inside
+}
+
+function unitLayerContainsPoint(layer: UnitLayer, x: number, y: number): boolean {
+  if (layer.kind === 'circle') {
+    return Math.hypot(x - layer.cx, y - layer.cy) <= layer.r + 4
+  }
+  return layer.points.length >= 2 && pointInPoly(layer.points, x, y)
+}
+
+function findUnitLayerAt(x: number, y: number): number | null {
+  for (let i = uLayers.value.length - 1; i >= 0; i--) {
+    if (unitLayerContainsPoint(uLayers.value[i], x, y)) return i
+  }
+  return null
+}
+
+function beginUnitLayerDrag(index: number, x: number, y: number) {
+  const layer = uLayers.value[index]
+  unitDraggingLayerIdx.value = index
+  unitDragStart.value = [x, y]
+  if (layer.kind === 'circle') {
+    unitDragOriginCircle.value = { cx: layer.cx, cy: layer.cy }
+    unitDragOriginPoly.value = null
+  } else {
+    unitDragOriginCircle.value = null
+    unitDragOriginPoly.value = layer.points.map(([px, py]) => [px, py] as [number, number])
+  }
+}
+
+function dragSelectedUnitLayer(x: number, y: number) {
+  const index = unitDraggingLayerIdx.value
+  const start = unitDragStart.value
+  if (index === null || !start) return
+
+  const dx = Math.round(x - start[0])
+  const dy = Math.round(y - start[1])
+
+  const layer = uLayers.value[index]
+  if (!layer) return
+
+  if (layer.kind === 'circle' && unitDragOriginCircle.value) {
+    replaceUnitLayerAt(index, {
+      ...layer,
+      cx: unitDragOriginCircle.value.cx + dx,
+      cy: unitDragOriginCircle.value.cy + dy,
+    })
+    return
+  }
+
+  if (layer.kind === 'poly' && unitDragOriginPoly.value) {
+    replaceUnitLayerAt(index, {
+      ...layer,
+      points: unitDragOriginPoly.value.map(([px, py]) => [px + dx, py + dy] as [number, number]),
+    })
+  }
+}
+
+function endUnitLayerDrag() {
+  unitDraggingLayerIdx.value = null
+  unitDragStart.value = null
+  unitDragOriginCircle.value = null
+  unitDragOriginPoly.value = null
+}
 
 const triColorGroups = computed(() => {
   const counts: Record<string, number> = {}
@@ -756,6 +1061,25 @@ function onMouseDown(e: MouseEvent) {
       aCurrentPoints.value = [...aCurrentPoints.value, pt]
       renderCanvas()
     }
+  } else if (mode.value === 'unit') {
+    e.preventDefault()
+    if (showAddShape.value && pendingKind.value === 'poly') {
+      if (e.button === 0) {
+        appendPendingPolyPoint(unitCoordsFromMouse(e))
+      } else if (e.button === 2) {
+        popPendingPolyPoint()
+      }
+      renderCanvas()
+      return
+    }
+    if (e.button !== 0) return
+    const [x, y] = unitCoordsFromMouse(e)
+    const hit = findUnitLayerAt(x, y)
+    unitHoverLayerIdx.value = hit
+    selectedLayerIdx.value = hit
+    selectedLayerError.value = ''
+    if (hit !== null) beginUnitLayerDrag(hit, x, y)
+    renderCanvas()
   }
 }
 
@@ -772,18 +1096,29 @@ function onMouseMove(e: MouseEvent) {
     if (aSelectedIdx.value === null) return
     aCursorPos.value = actionSvgCoords(e)
     renderCanvas()
+  } else if (mode.value === 'unit') {
+    const [x, y] = unitCoordsFromMouse(e)
+    if (unitDraggingLayerIdx.value !== null) {
+      dragSelectedUnitLayer(x, y)
+    } else {
+      unitHoverLayerIdx.value = findUnitLayerAt(x, y)
+    }
+    renderCanvas()
   }
 }
 
 function onMouseUp() {
   isPainting.value = false
   isErasing.value  = false
+  endUnitLayerDrag()
 }
 
 function onMouseLeave() {
   hoveredTri.value = null
   isPainting.value = false
   isErasing.value  = false
+  unitHoverLayerIdx.value = null
+  endUnitLayerDrag()
   if (mode.value === 'action') {
     aCursorPos.value = null
   }
@@ -791,6 +1126,17 @@ function onMouseLeave() {
 }
 
 function onDblClick(e: MouseEvent) {
+  if (mode.value === 'unit' && showAddShape.value && pendingKind.value === 'poly') {
+    e.preventDefault()
+    const pts = pendingPolyPoints.value.length > 1
+      ? pendingPolyPoints.value.slice(0, -1)
+      : pendingPolyPoints.value
+    setPendingPolyPoints(pts)
+    if (pts.length >= 2) commitShape()
+    else renderCanvas()
+    return
+  }
+
   if (mode.value !== 'action' || aSelectedIdx.value === null) return
   e.preventDefault()
   // dblclick fires after the second single click already added a point — remove it
@@ -922,7 +1268,8 @@ function renderCanvas() {
     ctx.beginPath(); ctx.moveTo(cx, 0);  ctx.lineTo(cx, H); ctx.stroke()
     ctx.beginPath(); ctx.moveTo(0,  cy); ctx.lineTo(W, cy); ctx.stroke()
 
-    for (const layer of uLayers.value) {
+    for (let layerIdx = 0; layerIdx < uLayers.value.length; layerIdx++) {
+      const layer = uLayers.value[layerIdx]
       ctx.fillStyle = layer.color === 'player' ? '#3b82f6' : layer.color
       if (layer.kind === 'circle') {
         ctx.beginPath()
@@ -937,6 +1284,51 @@ function renderCanvas() {
         ctx.closePath()
         ctx.fill()
       }
+
+      if (selectedLayerIdx.value === layerIdx || unitHoverLayerIdx.value === layerIdx) {
+        ctx.save()
+        ctx.strokeStyle = selectedLayerIdx.value === layerIdx ? '#f8fafc' : '#93c5fd'
+        ctx.lineWidth = selectedLayerIdx.value === layerIdx ? 2 : 1
+        ctx.setLineDash(selectedLayerIdx.value === layerIdx ? [6, 4] : [3, 3])
+        if (layer.kind === 'circle') {
+          ctx.beginPath()
+          ctx.arc(cx + layer.cx, cy + layer.cy, layer.r + 3, 0, Math.PI * 2)
+          ctx.stroke()
+        } else if (layer.points.length >= 2) {
+          ctx.beginPath()
+          ctx.moveTo(cx + layer.points[0][0], cy + layer.points[0][1])
+          for (let pointIdx = 1; pointIdx < layer.points.length; pointIdx++) {
+            ctx.lineTo(cx + layer.points[pointIdx][0], cy + layer.points[pointIdx][1])
+          }
+          ctx.closePath()
+          ctx.stroke()
+        }
+        ctx.restore()
+      }
+    }
+
+    if (showAddShape.value && pendingKind.value === 'poly' && pendingPolyPoints.value.length > 0) {
+      const previewColor = pendingColorMode.value === 'player' ? '#3b82f6' : pendingCustomColor.value
+      ctx.save()
+      ctx.strokeStyle = previewColor
+      ctx.fillStyle = previewColor
+      ctx.lineWidth = 2
+      ctx.setLineDash([6, 4])
+      if (pendingPolyPoints.value.length >= 2) {
+        ctx.beginPath()
+        ctx.moveTo(cx + pendingPolyPoints.value[0][0], cy + pendingPolyPoints.value[0][1])
+        for (let pointIdx = 1; pointIdx < pendingPolyPoints.value.length; pointIdx++) {
+          ctx.lineTo(cx + pendingPolyPoints.value[pointIdx][0], cy + pendingPolyPoints.value[pointIdx][1])
+        }
+        ctx.stroke()
+      }
+      ctx.setLineDash([])
+      for (const [px, py] of pendingPolyPoints.value) {
+        ctx.beginPath()
+        ctx.arc(cx + px, cy + py, 3, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.restore()
     }
 
   } else {
@@ -1101,6 +1493,7 @@ function applyBuildingDef(data: BuildingDef) {
   bInset.value          = data.render?.inset ?? 0.18
   bCapabilities.value   = [...(data.capabilities   ?? [])]
   bSpawnUnitTypes.value = [...(data.spawnUnitTypes  ?? [])]
+  bMetadataText.value   = stringifyMetadata(data.metadata)
   bTriangles.value      = data.render?.layers
     ? layersToTriangles(data.render.layers as any[], data.width, data.height)
     : {}
@@ -1125,7 +1518,10 @@ function applyUnitDef(data: UnitDef) {
   uSpawnSeconds.value = data.spawnSeconds
   uTrainLabel.value   = data.trainLabel   ?? ''
   uCapabilities.value = [...(data.capabilities ?? [])]
+  uMetadataText.value = stringifyMetadata(data.metadata)
   uLayers.value       = [...(data.render?.layers ?? [])] as typeof uLayers.value
+  selectedLayerIdx.value = null
+  selectedLayerError.value = ''
   mode.value = 'unit'
 
   const usedColors = [...new Set(uLayers.value.map(l => l.color).filter(c => c !== 'player'))]
@@ -1333,6 +1729,45 @@ function aDeleteEntry(i: number) {
 type RectLayer = { kind: 'rect'; x: number; y: number; w: number; h: number; color: string }
 type TriLayer  = { kind: 'tri';  cx: number; cy: number; sc: number; sr: number; h: 0 | 1; color: string }
 type ExportLayer = RectLayer | TriLayer
+type DefMetadataValue = string | number | boolean | null
+type DefMetadata = Record<string, DefMetadataValue>
+
+function stringifyMetadata(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return '{}'
+  }
+  return JSON.stringify(value, null, 2)
+}
+
+function parseMetadata(text: string): { value: DefMetadata; error: string } {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    return { value: {}, error: '' }
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { value: {}, error: 'Metadata must be a JSON object.' }
+    }
+
+    const metadataEntries = Object.entries(parsed as Record<string, unknown>)
+    for (const [, value] of metadataEntries) {
+      if (value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+        return { value: {}, error: 'Metadata values must be string, number, boolean, or null.' }
+      }
+    }
+
+    return { value: Object.fromEntries(metadataEntries) as DefMetadata, error: '' }
+  } catch {
+    return { value: {}, error: 'Metadata must be valid JSON.' }
+  }
+}
+
+const buildingMetadataState = computed(() => parseMetadata(bMetadataText.value))
+const bMetadataError = computed(() => buildingMetadataState.value.error)
+const unitMetadataState = computed(() => parseMetadata(uMetadataText.value))
+const uMetadataError = computed(() => unitMetadataState.value.error)
 
 /**
  * Converts the raw triangle map into an optimized list of rect + tri layers.
@@ -1472,7 +1907,7 @@ const exportJson = computed(() => {
       resourceCost,
       capabilities: bCapabilities.value,
       spawnUnitTypes: bSpawnUnitTypes.value,
-      metadata: {},
+      metadata: buildingMetadataState.value.value,
       color: bColor.value,
       label: bLabel.value,
       hotkey: bHotkey.value,
@@ -1499,6 +1934,7 @@ const exportJson = computed(() => {
     spawnSeconds: uSpawnSeconds.value,
     capabilities: uCapabilities.value,
     trainLabel: uTrainLabel.value,
+    metadata: unitMetadataState.value.value,
     render: {
       layers: uLayers.value,
     },

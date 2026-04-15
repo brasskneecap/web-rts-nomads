@@ -47,7 +47,7 @@ export type BuildingDef = {
   resourceCost: Record<string, number>
   capabilities: BuildingCapability[]
   spawnUnitTypes: string[]
-  metadata: Record<string, string | number | boolean>
+  metadata: Record<string, string | number | boolean | null>
   color: string
   label: string
   hotkey: string
