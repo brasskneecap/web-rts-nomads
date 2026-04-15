@@ -1,16 +1,31 @@
 import type { BuildingCapability } from '../network/protocol'
 
-// A single paint layer in a building's sprite.
-// Coordinates are in cell units (1.0 = one grid cell) relative to the
-// building's top-left origin, so a 2×2 building occupies a 2×2 space.
+// A rectangular accent layer (legacy format).
+// Coordinates are in cell units relative to the building's top-left origin.
 // color: 'player' means "substitute owner/player color at render time".
-export type BuildingRenderLayer = {
+export type BuildingRectLayer = {
   x: number
   y: number
   w: number
   h: number
   color: string
 }
+
+// A triangle from the 6×6 sub-cell grid.
+// cx/cy: cell index within the building footprint.
+// sc/sr: sub-column/sub-row within that cell (0–5).
+// h: 0 = upper-left triangle (above the / diagonal), 1 = lower-right.
+export type BuildingTriLayer = {
+  kind: 'tri'
+  cx: number
+  cy: number
+  sc: number
+  sr: number
+  h: 0 | 1
+  color: string
+}
+
+export type BuildingRenderLayer = BuildingRectLayer | BuildingTriLayer
 
 // Describes how to visually paint a building.
 // inset: padding from the building edge in cell units (default 0.18).

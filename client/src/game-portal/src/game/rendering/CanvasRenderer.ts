@@ -201,22 +201,42 @@ export class CanvasRenderer {
       const renderDef = buildingDef?.render
       const inset = renderDef ? renderDef.inset * cellSize : cellSize * 0.18
 
+      // Fill full cell footprint with player/building color as base
+      ctx.fillStyle = ownerColor ?? buildingDef?.color ?? getBuildingColor(building.buildingType, building.occupied, ownerColor)
+      ctx.fillRect(worldX, worldY, width, height)
+
+      // Draw accent layers on top; skip 'player' layers since the base is already that color
       if (renderDef) {
         for (const layer of renderDef.layers) {
-          ctx.fillStyle =
-            layer.color === 'player'
-              ? (ownerColor ?? buildingDef!.color)
-              : layer.color
-          ctx.fillRect(
-            worldX + layer.x * cellSize,
-            worldY + layer.y * cellSize,
-            layer.w * cellSize,
-            layer.h * cellSize,
-          )
+          if (layer.color === 'player') continue
+          ctx.fillStyle = layer.color
+          if (!('kind' in layer)) {
+            ctx.fillRect(
+              worldX + layer.x * cellSize,
+              worldY + layer.y * cellSize,
+              layer.w * cellSize,
+              layer.h * cellSize,
+            )
+          } else if (layer.kind === 'tri') {
+            const s = cellSize / 6
+            const tlX = worldX + layer.cx * cellSize + layer.sc * s
+            const tlY = worldY + layer.cy * cellSize + layer.sr * s
+            const bslash = (layer.sc + layer.sr) % 2 === 1
+            ctx.beginPath()
+            if (!bslash) {
+              if (layer.h === 0) { ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX + s, tlY); ctx.lineTo(tlX,     tlY + s) }
+              else               { ctx.moveTo(tlX + s, tlY); ctx.lineTo(tlX + s, tlY + s); ctx.lineTo(tlX, tlY + s) }
+            } else {
+              if (layer.h === 0) { ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX + s, tlY); ctx.lineTo(tlX + s, tlY + s) }
+              else               { ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX,     tlY + s); ctx.lineTo(tlX + s, tlY + s) }
+            }
+            ctx.closePath()
+            ctx.fill()
+            ctx.strokeStyle = ctx.fillStyle as string
+            ctx.lineWidth = 1
+            ctx.stroke()
+          }
         }
-      } else {
-        ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied, ownerColor)
-        ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
       }
 
       const isUnderConstruction = building.metadata?.['underConstruction'] === true
@@ -259,7 +279,7 @@ export class CanvasRenderer {
       } else {
         ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
         ctx.lineWidth = 2 / this.camera.zoom
-        ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+        ctx.strokeRect(worldX, worldY, width, height)
 
         const hp = building.metadata?.['hp'] as number | undefined
         const maxHp = building.metadata?.['maxHp'] as number | undefined
@@ -589,34 +609,50 @@ export class CanvasRenderer {
     const worldY = cursorGridY * cellSize
     const buildingDef = BUILDING_DEF_MAP.get(placement.buildingType)
     const renderDef = buildingDef?.render
-    const inset = renderDef ? renderDef.inset * cellSize : cellSize * 0.18
 
     ctx.save()
     ctx.globalAlpha = 0.6
 
+    // Fill full cell footprint with valid/invalid color as base
+    ctx.fillStyle = valid ? (buildingDef?.color ?? '#1e40af') : '#dc2626'
+    ctx.fillRect(worldX, worldY, gridW * cellSize, gridH * cellSize)
+
+    // Draw accent layers on top; skip 'player' layers since the base is already that color
     if (renderDef) {
       for (const layer of renderDef.layers) {
-        ctx.fillStyle =
-          layer.color === 'player'
-            ? (valid ? (buildingDef!.color) : '#dc2626')
-            : layer.color
-        ctx.fillRect(
-          worldX + layer.x * cellSize,
-          worldY + layer.y * cellSize,
-          layer.w * cellSize,
-          layer.h * cellSize,
-        )
+        if (layer.color === 'player') continue
+        ctx.fillStyle = layer.color
+        if (!('kind' in layer)) {
+          ctx.fillRect(
+            worldX + layer.x * cellSize,
+            worldY + layer.y * cellSize,
+            layer.w * cellSize,
+            layer.h * cellSize,
+          )
+        } else if (layer.kind === 'tri') {
+          const s = cellSize / 6
+          const tlX = worldX + layer.cx * cellSize + layer.sc * s
+          const tlY = worldY + layer.cy * cellSize + layer.sr * s
+          ctx.beginPath()
+          if (layer.h === 0) {
+            ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX + s, tlY); ctx.lineTo(tlX,     tlY + s)
+          } else {
+            ctx.moveTo(tlX + s, tlY); ctx.lineTo(tlX + s, tlY + s); ctx.lineTo(tlX, tlY + s)
+          }
+          ctx.closePath()
+          ctx.fill()
+          ctx.strokeStyle = ctx.fillStyle as string
+          ctx.lineWidth = 1
+          ctx.stroke()
+        }
       }
-    } else {
-      ctx.fillStyle = valid ? '#1e40af' : '#dc2626'
-      ctx.fillRect(worldX + inset, worldY + inset, gridW * cellSize - inset * 2, gridH * cellSize - inset * 2)
     }
 
     ctx.globalAlpha = 0.9
     ctx.strokeStyle = valid ? '#93c5fd' : '#fca5a5'
     ctx.lineWidth = 2 / this.camera.zoom
     ctx.setLineDash([8 / this.camera.zoom, 4 / this.camera.zoom])
-    ctx.strokeRect(worldX + inset, worldY + inset, gridW * cellSize - inset * 2, gridH * cellSize - inset * 2)
+    ctx.strokeRect(worldX, worldY, gridW * cellSize, gridH * cellSize)
     ctx.restore()
   }
 
@@ -683,12 +719,16 @@ export class CanvasRenderer {
     for (const building of this.state.mapConfig.buildings) {
       if (!building.visible) continue
 
+      const isLocalPlayerBuilding =
+        building.occupied && building.ownerId === this.state.localPlayerId
       const ownerColor =
         building.occupied && building.ownerId
           ? this.state.getPlayerColor(building.ownerId)
           : null
 
-      ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied, ownerColor)
+      ctx.fillStyle = isLocalPlayerBuilding
+        ? '#f8fafc'
+        : getBuildingColor(building.buildingType, building.occupied, ownerColor)
       ctx.fillRect(
         x + (building.x / this.state.mapConfig.gridCols) * minimapWidth,
         y + (building.y / this.state.mapConfig.gridRows) * minimapHeight,

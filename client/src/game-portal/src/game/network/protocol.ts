@@ -8,7 +8,7 @@ export type MapId = string
 export type TerrainType = 'dirt' | 'water' | 'forest'
 
 export type ObstacleType = 'rock' | 'wall' | 'tree'
-export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks' | 'farm' | 'enemy-spawnpoint'
+export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks' | 'farm' | 'enemy-spawnpoint' | (string & {})
 export type BuildingCapability =
   | 'resource-source'
   | 'unit-spawner'

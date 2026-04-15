@@ -13,15 +13,6 @@ import { BUILDING_DEF_MAP } from './buildingDefs'
 export const DEFAULT_CELL_SIZE = 64
 export const DEFAULT_GRASS_COLOR = '#365b2c'
 
-const BUILDING_CAPABILITY_SETS: Record<BuildingType, BuildingCapability[]> = {
-  goldmine: ['resource-source'],
-  townhall: ['unit-spawner', 'occupiable', 'deposit-point'],
-  tree: ['resource-source'],
-  barracks: ['unit-spawner'],
-  farm: [],
-  'enemy-spawnpoint': ['enemy-spawner'],
-}
-
 export const MAP_EDITOR_PRESETS = [
   { label: 'Small', cols: 48, rows: 32 },
   { label: 'Medium', cols: 64, rows: 48 },
@@ -280,12 +271,10 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
       occupied: true,
       visible: true,
       ownerId: null,
-      capabilities: [...BUILDING_CAPABILITY_SETS[buildingType]],
+      capabilities: ['resource-source'],
       resourceType: 'gold',
       resourceAmount: 15000,
-      metadata: {
-        gatherRate: 10,
-      },
+      metadata: { gatherRate: 10 },
     }
   }
 
@@ -300,29 +289,10 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
       occupied: true,
       visible: true,
       ownerId: null,
-      capabilities: [...BUILDING_CAPABILITY_SETS[buildingType]],
+      capabilities: ['resource-source'],
       resourceType: 'wood',
       resourceAmount: 1000,
       metadata: {},
-    }
-  }
-
-  if (buildingType === 'barracks') {
-    return {
-      id: `barracks-${x}-${y}`,
-      buildingType,
-      x,
-      y,
-      width: 2,
-      height: 2,
-      occupied: false,
-      visible: false,
-      ownerId: null,
-      capabilities: [...BUILDING_CAPABILITY_SETS[buildingType]],
-      spawnUnitTypes: ['soldier'],
-      metadata: {
-        spawnTimeSoldier: 10,
-      },
     }
   }
 
@@ -337,31 +307,33 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
       occupied: true,
       visible: true,
       ownerId: null,
-      capabilities: [...BUILDING_CAPABILITY_SETS[buildingType]],
-      metadata: {
-        spawnDelaySeconds: 60,
-        spawnIntervalSeconds: 10,
-      },
+      capabilities: ['enemy-spawner'],
+      metadata: { spawnDelaySeconds: 60, spawnIntervalSeconds: 10 },
     }
   }
 
+  // Player-buildable buildings: derive dimensions, capabilities, and spawn
+  // types from the live building def so new buildings work without code changes.
+  const def = BUILDING_DEF_MAP.get(buildingType)
+  const capabilities = def ? [...def.capabilities] : []
+  const width = def?.width ?? 1
+  const height = def?.height ?? 1
+  const spawnUnitTypes = def?.spawnUnitTypes?.length ? [...def.spawnUnitTypes] : undefined
+  const metadata = def ? { ...def.metadata } : {}
+
   return {
-    id: `townhall-${x}-${y}`,
+    id: `${buildingType}-${x}-${y}`,
     buildingType,
     x,
     y,
-    width: 3,
-    height: 3,
+    width,
+    height,
     occupied: false,
     visible: false,
     ownerId: null,
-    capabilities: [...BUILDING_CAPABILITY_SETS[buildingType]],
-    spawnUnitTypes: ['worker'],
-    metadata: {
-      occupiedLabel: 'occupied',
-      unoccupiedLabel: 'unoccupied',
-      spawnTimeWorker: 5,
-    },
+    capabilities,
+    ...(spawnUnitTypes ? { spawnUnitTypes } : {}),
+    metadata,
   }
 }
 

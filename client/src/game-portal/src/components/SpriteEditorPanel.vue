@@ -68,7 +68,7 @@
             </div>
           </div>
           <div class="spe__field">
-            <label>Inset <span class="spe__hint">(cell units)</span></label>
+            <label>Inset <span class="spe__hint">(cell units — for HP bar / overlay anchor)</span></label>
             <input type="number" v-model.number="bInset" min="0" max="0.49" step="0.01" />
           </div>
 
@@ -181,6 +181,7 @@
               :style="{ background: paintMode === 'player' ? '#3b82f6' : paintCustomColor }"
               :title="paintMode === 'player' ? 'player color' : paintCustomColor"
             />
+            <span class="spe__toolbar-hint">Left-click paint · Right-click erase</span>
           </template>
           <template v-else>
             <span class="spe__toolbar-label">Add Layer</span>
@@ -200,6 +201,7 @@
             @mousemove="onMouseMove"
             @mouseup="onMouseUp"
             @mouseleave="onMouseLeave"
+            @contextmenu.prevent
           />
         </div>
 
@@ -257,33 +259,65 @@
       <!-- ── Right: layer list + export ── -->
       <div class="spe__layers-panel">
 
-        <div class="spe__section-title">Layers</div>
-        <div class="spe__layer-list">
-          <div
-            v-for="(layer, i) in displayLayers"
-            :key="i"
-            class="spe__layer-item"
-            :class="{ 'spe__layer-item--selected': selectedLayerIdx === i }"
-            @click="selectedLayerIdx = i"
-          >
+        <template v-if="mode === 'building'">
+          <div class="spe__section-title">Colors Used</div>
+          <div class="spe__layer-list">
             <div
-              class="spe__layer-swatch"
-              :style="{
-                background: layer.color === 'player' ? '#3b82f6' : layer.color,
-                border: layer.color === 'player' ? '2px dashed #93c5fd' : '2px solid transparent'
-              }"
-            />
-            <span class="spe__layer-label">{{ layerLabel(layer, i) }}</span>
-            <div class="spe__layer-actions">
-              <button class="spe__icon-btn" :disabled="i === 0" @click.stop="moveLayer(i, -1)">↑</button>
-              <button class="spe__icon-btn" :disabled="i === displayLayers.length - 1" @click.stop="moveLayer(i, 1)">↓</button>
-              <button class="spe__icon-btn spe__icon-btn--del" @click.stop="deleteLayer(i)">×</button>
+              v-for="group in triColorGroups"
+              :key="group.color"
+              class="spe__layer-item"
+            >
+              <div
+                class="spe__layer-swatch"
+                :style="{
+                  background: group.color === 'player' ? '#3b82f6' : group.color,
+                  border: group.color === 'player' ? '2px dashed #93c5fd' : '2px solid transparent'
+                }"
+              />
+              <span class="spe__layer-label">{{ group.count }} tri · {{ group.color === 'player' ? 'player' : group.color }}</span>
+              <button class="spe__icon-btn spe__icon-btn--del" @click="clearTriColor(group.color)" title="Clear this color">×</button>
+            </div>
+            <div v-if="triColorGroups.length === 0" class="spe__layer-empty">
+              No triangles yet. Left-click to paint.
             </div>
           </div>
-          <div v-if="displayLayers.length === 0" class="spe__layer-empty">
-            No layers yet. {{ mode === 'building' ? 'Drag on the canvas to add one.' : 'Use + Circle or + Poly.' }}
+          <button
+            v-if="triColorGroups.length > 0"
+            class="spe__btn spe__btn--ghost spe__btn--full"
+            style="margin-top: 4px"
+            @click="clearAllTri"
+          >Clear All</button>
+        </template>
+
+        <template v-else>
+          <div class="spe__section-title">Layers</div>
+          <div class="spe__layer-list">
+            <div
+              v-for="(layer, i) in displayLayers"
+              :key="i"
+              class="spe__layer-item"
+              :class="{ 'spe__layer-item--selected': selectedLayerIdx === i }"
+              @click="selectedLayerIdx = i"
+            >
+              <div
+                class="spe__layer-swatch"
+                :style="{
+                  background: layer.color === 'player' ? '#3b82f6' : layer.color,
+                  border: layer.color === 'player' ? '2px dashed #93c5fd' : '2px solid transparent'
+                }"
+              />
+              <span class="spe__layer-label">{{ layerLabel(layer, i) }}</span>
+              <div class="spe__layer-actions">
+                <button class="spe__icon-btn" :disabled="i === 0" @click.stop="moveLayer(i, -1)">↑</button>
+                <button class="spe__icon-btn" :disabled="i === displayLayers.length - 1" @click.stop="moveLayer(i, 1)">↓</button>
+                <button class="spe__icon-btn spe__icon-btn--del" @click.stop="deleteLayer(i)">×</button>
+              </div>
+            </div>
+            <div v-if="displayLayers.length === 0" class="spe__layer-empty">
+              No layers yet. Use + Circle or + Poly.
+            </div>
           </div>
-        </div>
+        </template>
 
         <div class="spe__section-title" style="margin-top: 16px">Export JSON</div>
         <button class="spe__btn spe__btn--full" @click="copyExport">{{ copyLabel }}</button>
@@ -300,8 +334,10 @@ import { ref, computed, watch, nextTick, onMounted } from 'vue'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CELL_PX = 100        // pixels per cell in the editor canvas
-const UNIT_CANVAS = 240    // fixed canvas size for units
+const CELL_PX   = 100   // pixels per cell in the editor canvas
+const SUB       = 6     // subdivisions per cell (6×6 triangle grid)
+const SUB_PX    = CELL_PX / SUB  // pixels per sub-cell
+const UNIT_CANVAS = 240
 const UNIT_CENTER = UNIT_CANVAS / 2
 
 const ALL_BUILDING_CAPS = ['unit-spawner', 'occupiable', 'deposit-point', 'resource-source', 'enemy-spawner']
@@ -310,10 +346,10 @@ const ALL_UNIT_CAPS     = ['move', 'attack', 'gather', 'build']
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type BuildingLayer = { x: number; y: number; w: number; h: number; color: string }
-type UnitCircle    = { kind: 'circle'; cx: number; cy: number; r: number; color: string }
-type UnitPoly      = { kind: 'poly'; points: [number, number][]; color: string }
-type UnitLayer     = UnitCircle | UnitPoly
+type TriId     = { cx: number; cy: number; sc: number; sr: number; h: 0 | 1 }
+type UnitCircle = { kind: 'circle'; cx: number; cy: number; r: number; color: string }
+type UnitPoly   = { kind: 'poly'; points: [number, number][]; color: string }
+type UnitLayer  = UnitCircle | UnitPoly
 
 // ─── Mode ─────────────────────────────────────────────────────────────────────
 
@@ -339,7 +375,9 @@ const bColor        = ref('#1e40af')
 const bInset        = ref(0.18)
 const bCapabilities    = ref<string[]>([])
 const bSpawnUnitTypes  = ref<string[]>([])
-const bLayers          = ref<BuildingLayer[]>([])
+
+// Triangle fill grid: key = "cx,cy,sc,sr,h", value = color string ('player' or hex)
+const bTriangles = ref<Record<string, string>>({})
 
 // ─── Unit def state ───────────────────────────────────────────────────────────
 
@@ -363,11 +401,11 @@ const paintMode        = ref<'player' | 'custom'>('player')
 const paintCustomColor = ref('#94a3b8')
 const paintColor       = computed(() => paintMode.value === 'player' ? 'player' : paintCustomColor.value)
 
-// ─── Drawing state (building mode) ───────────────────────────────────────────
+// ─── Interaction state (building mode) ───────────────────────────────────────
 
-const isDrawing    = ref(false)
-const drawStart    = ref<{ x: number; y: number } | null>(null)
-const drawCurrent  = ref<{ x: number; y: number } | null>(null)
+const isPainting  = ref(false)
+const isErasing   = ref(false)
+const hoveredTri  = ref<TriId | null>(null)
 
 // ─── Add-shape form (unit mode) ───────────────────────────────────────────────
 
@@ -382,9 +420,9 @@ const pendingCustomColor = ref('#94a3b8')
 const addShapeError     = ref('')
 
 function openAddShape(kind: 'circle' | 'poly') {
-  pendingKind.value  = kind
+  pendingKind.value   = kind
   addShapeError.value = ''
-  showAddShape.value = true
+  showAddShape.value  = true
 }
 
 function commitShape() {
@@ -407,33 +445,53 @@ function commitShape() {
   }
 }
 
-// ─── Layer panel ─────────────────────────────────────────────────────────────
+// ─── Layer panel (unit mode) ──────────────────────────────────────────────────
 
 const selectedLayerIdx = ref<number | null>(null)
 
-const displayLayers = computed<(BuildingLayer | UnitLayer)[]>(() =>
-  mode.value === 'building' ? bLayers.value : uLayers.value,
-)
+const displayLayers = computed<UnitLayer[]>(() => uLayers.value)
 
-function layerLabel(layer: BuildingLayer | UnitLayer, i: number): string {
-  if ('kind' in layer) {
-    if (layer.kind === 'circle') return `Circle r=${layer.r} @ (${layer.cx}, ${layer.cy})`
-    return `Poly (${layer.points.length} pts)`
-  }
-  return `Rect ${i + 1}  x=${layer.x} y=${layer.y}  ${layer.w}×${layer.h}`
+function layerLabel(layer: UnitLayer, i: number): string {
+  if (layer.kind === 'circle') return `Circle r=${layer.r} @ (${layer.cx}, ${layer.cy})`
+  return `Poly (${layer.points.length} pts)`
 }
 
 function deleteLayer(i: number) {
-  if (mode.value === 'building') bLayers.value.splice(i, 1)
-  else uLayers.value.splice(i, 1)
+  uLayers.value.splice(i, 1)
   if (selectedLayerIdx.value === i) selectedLayerIdx.value = null
 }
 
 function moveLayer(i: number, dir: -1 | 1) {
-  const arr: (BuildingLayer | UnitLayer)[] = mode.value === 'building' ? bLayers.value : uLayers.value
+  const arr = uLayers.value
   const j = i + dir
   if (j < 0 || j >= arr.length) return
   ;[arr[i], arr[j]] = [arr[j], arr[i]]
+}
+
+// ─── Triangle color groups (building mode right panel) ────────────────────────
+
+const triColorGroups = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const color of Object.values(bTriangles.value)) {
+    counts[color] = (counts[color] ?? 0) + 1
+  }
+  return Object.entries(counts)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([color, count]) => ({ color, count }))
+})
+
+function clearTriColor(color: string) {
+  const next: Record<string, string> = {}
+  for (const [k, v] of Object.entries(bTriangles.value)) {
+    if (v !== color) next[k] = v
+  }
+  bTriangles.value = next
+  renderCanvas()
+}
+
+function clearAllTri() {
+  bTriangles.value = {}
+  renderCanvas()
 }
 
 // ─── Canvas ───────────────────────────────────────────────────────────────────
@@ -443,64 +501,108 @@ const drawCanvas = ref<HTMLCanvasElement | null>(null)
 const canvasWidth  = computed(() => mode.value === 'building' ? bWidth.value  * CELL_PX : UNIT_CANVAS)
 const canvasHeight = computed(() => mode.value === 'building' ? bHeight.value * CELL_PX : UNIT_CANVAS)
 
-function snap(v: number): number {
-  return Math.round(v / 0.01) * 0.01
-}
-
-function canvasPos(e: MouseEvent): { x: number; y: number } {
+// Returns raw canvas pixel coordinates
+function canvasPx(e: MouseEvent): { px: number; py: number } {
   const rect = drawCanvas.value!.getBoundingClientRect()
   const scaleX = canvasWidth.value  / rect.width
   const scaleY = canvasHeight.value / rect.height
-  const px = (e.clientX - rect.left) * scaleX
-  const py = (e.clientY - rect.top)  * scaleY
-  return { x: snap(px / CELL_PX), y: snap(py / CELL_PX) }
+  return {
+    px: (e.clientX - rect.left) * scaleX,
+    py: (e.clientY - rect.top)  * scaleY,
+  }
+}
+
+// Returns true when this sub-cell uses a backslash \, false for forward slash /
+// Alternates in a checkerboard based on sub-cell position.
+function isBackslash(sc: number, sr: number): boolean {
+  return (sc + sr) % 2 === 1
+}
+
+// Maps pixel coords to the triangle under the cursor
+function triAtPos(px: number, py: number): TriId | null {
+  const stx = Math.floor(px / SUB_PX)
+  const sty = Math.floor(py / SUB_PX)
+  if (stx < 0 || stx >= bWidth.value * SUB || sty < 0 || sty >= bHeight.value * SUB) return null
+  const cx = Math.floor(stx / SUB)
+  const cy = Math.floor(sty / SUB)
+  const sc = stx % SUB
+  const sr = sty % SUB
+  const lx = px - stx * SUB_PX
+  const ly = py - sty * SUB_PX
+  // \ diagonal: h=0 is upper-right (lx > ly), h=1 is lower-left
+  // / diagonal: h=0 is upper-left  (lx + ly < s), h=1 is lower-right
+  const h: 0 | 1 = isBackslash(sc, sr) ? (lx > ly ? 0 : 1) : (lx + ly < SUB_PX ? 0 : 1)
+  return { cx, cy, sc, sr, h }
+}
+
+function triKey({ cx, cy, sc, sr, h }: TriId): string {
+  return `${cx},${cy},${sc},${sr},${h}`
+}
+
+function applyPaint(e: MouseEvent) {
+  const { px, py } = canvasPx(e)
+  const tri = triAtPos(px, py)
+  if (!tri) return
+  const key = triKey(tri)
+  if (isErasing.value) {
+    const next = { ...bTriangles.value }
+    delete next[key]
+    bTriangles.value = next
+  } else {
+    bTriangles.value = { ...bTriangles.value, [key]: paintColor.value }
+  }
+  renderCanvas()
 }
 
 function onMouseDown(e: MouseEvent) {
   if (mode.value !== 'building') return
-  const pos = canvasPos(e)
-  isDrawing.value   = true
-  drawStart.value   = pos
-  drawCurrent.value = pos
+  e.preventDefault()
+  if (e.button === 2) isErasing.value = true
+  else isPainting.value = true
+  applyPaint(e)
 }
 
 function onMouseMove(e: MouseEvent) {
-  if (!isDrawing.value) return
-  drawCurrent.value = canvasPos(e)
-  renderCanvas()
+  if (mode.value !== 'building') return
+  const { px, py } = canvasPx(e)
+  hoveredTri.value = triAtPos(px, py)
+  if (isPainting.value || isErasing.value) {
+    applyPaint(e)
+  } else {
+    renderCanvas()
+  }
 }
 
-function onMouseUp(e: MouseEvent) {
-  if (!isDrawing.value) return
-  const end = canvasPos(e)
-  if (drawStart.value) {
-    const x = Math.min(drawStart.value.x, end.x)
-    const y = Math.min(drawStart.value.y, end.y)
-    const w = Math.abs(end.x - drawStart.value.x)
-    const h = Math.abs(end.y - drawStart.value.y)
-    if (w >= 0.01 && h >= 0.01) {
-      bLayers.value.push({
-        x: parseFloat(x.toFixed(2)),
-        y: parseFloat(y.toFixed(2)),
-        w: parseFloat(w.toFixed(2)),
-        h: parseFloat(h.toFixed(2)),
-        color: paintColor.value,
-      })
-    }
-  }
-  isDrawing.value   = false
-  drawStart.value   = null
-  drawCurrent.value = null
-  renderCanvas()
+function onMouseUp() {
+  isPainting.value = false
+  isErasing.value  = false
 }
 
 function onMouseLeave() {
-  if (isDrawing.value) {
-    isDrawing.value   = false
-    drawStart.value   = null
-    drawCurrent.value = null
-    renderCanvas()
+  hoveredTri.value = null
+  isPainting.value = false
+  isErasing.value  = false
+  renderCanvas()
+}
+
+// Fills one triangle in a sub-cell.
+// For / cells: h=0 = upper-left, h=1 = lower-right
+// For \ cells: h=0 = upper-right, h=1 = lower-left
+function fillTriangle(ctx: CanvasRenderingContext2D, tlX: number, tlY: number, s: number, sc: number, sr: number, h: 0 | 1, color: string) {
+  ctx.fillStyle = color
+  ctx.beginPath()
+  if (!isBackslash(sc, sr)) {
+    if (h === 0) { ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX + s, tlY); ctx.lineTo(tlX,     tlY + s) }
+    else         { ctx.moveTo(tlX + s, tlY); ctx.lineTo(tlX + s, tlY + s); ctx.lineTo(tlX, tlY + s) }
+  } else {
+    if (h === 0) { ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX + s, tlY); ctx.lineTo(tlX + s, tlY + s) }
+    else         { ctx.moveTo(tlX,     tlY); ctx.lineTo(tlX,     tlY + s); ctx.lineTo(tlX + s, tlY + s) }
   }
+  ctx.closePath()
+  ctx.fill()
+  ctx.strokeStyle = color
+  ctx.lineWidth = 1
+  ctx.stroke()
 }
 
 function renderCanvas() {
@@ -517,60 +619,90 @@ function renderCanvas() {
   ctx.fillRect(0, 0, W, H)
 
   if (mode.value === 'building') {
-    // Cell grid
+
+    // 1. Draw filled triangles first
+    for (const [key, color] of Object.entries(bTriangles.value)) {
+      const [kCx, kCy, kSc, kSr, kH] = key.split(',').map(Number)
+      const tlX = kCx * CELL_PX + kSc * SUB_PX
+      const tlY = kCy * CELL_PX + kSr * SUB_PX
+      fillTriangle(ctx, tlX, tlY, SUB_PX, kSc, kSr, kH as 0 | 1, color === 'player' ? '#3b82f6' : color)
+    }
+
+    // 2. Hover preview
+    if (hoveredTri.value && !isPainting.value && !isErasing.value) {
+      const { cx, cy, sc, sr, h } = hoveredTri.value
+      const tlX = cx * CELL_PX + sc * SUB_PX
+      const tlY = cy * CELL_PX + sr * SUB_PX
+      ctx.save()
+      ctx.globalAlpha = 0.4
+      fillTriangle(ctx, tlX, tlY, SUB_PX, sc, sr, h, paintColor.value === 'player' ? '#3b82f6' : paintColor.value)
+      ctx.restore()
+    }
+
+    // 3. Guides drawn on top — but only for sub-cells that still have an empty half,
+    //    so fully-painted sub-cells never have a guide line drawn through them.
     ctx.strokeStyle = '#1e293b'
-    ctx.lineWidth = 1
-    for (let cx = 0; cx <= bWidth.value; cx++) {
-      ctx.beginPath(); ctx.moveTo(cx * CELL_PX, 0); ctx.lineTo(cx * CELL_PX, H); ctx.stroke()
+    ctx.lineWidth = 0.5
+    for (let stx = 0; stx < bWidth.value * SUB; stx++) {
+      for (let sty = 0; sty < bHeight.value * SUB; sty++) {
+        const cx = Math.floor(stx / SUB)
+        const cy = Math.floor(sty / SUB)
+        const sc = stx % SUB
+        const sr = sty % SUB
+        const h0 = bTriangles.value[`${cx},${cy},${sc},${sr},0`]
+        const h1 = bTriangles.value[`${cx},${cy},${sc},${sr},1`]
+        if (h0 !== undefined && h1 !== undefined) continue  // both filled — no guide needed
+        const tlX = stx * SUB_PX
+        const tlY = sty * SUB_PX
+        ctx.beginPath()
+        if (isBackslash(sc, sr)) {
+          ctx.moveTo(tlX,          tlY)
+          ctx.lineTo(tlX + SUB_PX, tlY + SUB_PX)
+        } else {
+          ctx.moveTo(tlX,          tlY + SUB_PX)
+          ctx.lineTo(tlX + SUB_PX, tlY)
+        }
+        ctx.stroke()
+      }
     }
-    for (let cy = 0; cy <= bHeight.value; cy++) {
-      ctx.beginPath(); ctx.moveTo(0, cy * CELL_PX); ctx.lineTo(W, cy * CELL_PX); ctx.stroke()
+    for (let i = 0; i <= bWidth.value * SUB; i++) {
+      if (i % SUB === 0) continue
+      ctx.beginPath(); ctx.moveTo(i * SUB_PX, 0); ctx.lineTo(i * SUB_PX, H); ctx.stroke()
+    }
+    for (let j = 0; j <= bHeight.value * SUB; j++) {
+      if (j % SUB === 0) continue
+      ctx.beginPath(); ctx.moveTo(0, j * SUB_PX); ctx.lineTo(W, j * SUB_PX); ctx.stroke()
     }
 
-    // Layers
-    for (const layer of bLayers.value) {
-      ctx.fillStyle = layer.color === 'player' ? '#3b82f6' : layer.color
-      ctx.fillRect(layer.x * CELL_PX, layer.y * CELL_PX, layer.w * CELL_PX, layer.h * CELL_PX)
+    // 4. Major cell boundary lines
+    ctx.strokeStyle = '#334155'
+    ctx.lineWidth = 1.5
+    for (let i = 0; i <= bWidth.value; i++) {
+      ctx.beginPath(); ctx.moveTo(i * CELL_PX, 0); ctx.lineTo(i * CELL_PX, H); ctx.stroke()
+    }
+    for (let j = 0; j <= bHeight.value; j++) {
+      ctx.beginPath(); ctx.moveTo(0, j * CELL_PX); ctx.lineTo(W, j * CELL_PX); ctx.stroke()
     }
 
-    // Inset guide
+    // 6. Inset guide (dashed — shows where HP bar / overlay will anchor)
     const insetPx = bInset.value * CELL_PX
     ctx.save()
-    ctx.strokeStyle = 'rgba(148,163,184,0.25)'
+    ctx.strokeStyle = 'rgba(148,163,184,0.2)'
     ctx.lineWidth   = 1
     ctx.setLineDash([4, 4])
     ctx.strokeRect(insetPx, insetPx, W - insetPx * 2, H - insetPx * 2)
     ctx.restore()
-
-    // Draw preview rect while dragging
-    if (isDrawing.value && drawStart.value && drawCurrent.value) {
-      const x = Math.min(drawStart.value.x, drawCurrent.value.x)
-      const y = Math.min(drawStart.value.y, drawCurrent.value.y)
-      const w = Math.abs(drawCurrent.value.x - drawStart.value.x)
-      const h = Math.abs(drawCurrent.value.y - drawStart.value.y)
-      ctx.save()
-      ctx.globalAlpha = 0.45
-      ctx.fillStyle   = paintColor.value === 'player' ? '#3b82f6' : paintColor.value
-      ctx.fillRect(x * CELL_PX, y * CELL_PX, w * CELL_PX, h * CELL_PX)
-      ctx.globalAlpha = 1
-      ctx.strokeStyle = '#93c5fd'
-      ctx.lineWidth   = 1
-      ctx.strokeRect(x * CELL_PX, y * CELL_PX, w * CELL_PX, h * CELL_PX)
-      ctx.restore()
-    }
 
   } else {
     // Unit canvas
     const cx = UNIT_CENTER
     const cy = UNIT_CENTER
 
-    // Crosshair
     ctx.strokeStyle = '#1e293b'
     ctx.lineWidth   = 1
     ctx.beginPath(); ctx.moveTo(cx, 0);  ctx.lineTo(cx, H); ctx.stroke()
     ctx.beginPath(); ctx.moveTo(0,  cy); ctx.lineTo(W, cy); ctx.stroke()
 
-    // Unit layers
     for (const layer of uLayers.value) {
       ctx.fillStyle = layer.color === 'player' ? '#3b82f6' : layer.color
       if (layer.kind === 'circle') {
@@ -590,9 +722,8 @@ function renderCanvas() {
   }
 }
 
-// Re-render whenever anything visual changes
 watch(
-  [mode, bLayers, uLayers, bWidth, bHeight, bInset, drawStart, drawCurrent],
+  [mode, bTriangles, uLayers, bWidth, bHeight, bInset],
   () => nextTick(() => renderCanvas()),
   { deep: true },
 )
@@ -606,6 +737,14 @@ const exportJson = computed(() => {
     const resourceCost: Record<string, number> = {}
     if (bGold.value > 0) resourceCost.gold = bGold.value
     if (bWood.value > 0) resourceCost.wood = bWood.value
+
+    // Export filled triangles sorted for deterministic output
+    const layers = Object.entries(bTriangles.value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, color]) => {
+        const [cx, cy, sc, sr, h] = key.split(',').map(Number)
+        return { kind: 'tri' as const, cx, cy, sc, sr, h: h as 0 | 1, color }
+      })
 
     return JSON.stringify({
       type: bType.value,
@@ -622,7 +761,7 @@ const exportJson = computed(() => {
       hotkey: bHotkey.value,
       render: {
         inset: bInset.value,
-        layers: bLayers.value,
+        layers,
       },
     }, null, 2)
   }
@@ -800,6 +939,11 @@ async function copyExport() {
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+.spe__toolbar-hint {
+  font-size: 10px;
+  color: #475569;
+  margin-left: 4px;
 }
 
 .spe__player-btn {
