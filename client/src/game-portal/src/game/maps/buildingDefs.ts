@@ -1,5 +1,4 @@
 import type { BuildingCapability } from '../network/protocol'
-import rawDefs from './building-defs.json'
 
 // A single paint layer in a building's sprite.
 // Coordinates are in cell units (1.0 = one grid cell) relative to the
@@ -38,8 +37,11 @@ export type BuildingDef = {
   render: BuildingRenderDef
 }
 
-export const BUILDABLE_BUILDING_DEFS: BuildingDef[] = rawDefs.buildings as BuildingDef[]
+export let BUILDABLE_BUILDING_DEFS: BuildingDef[] = []
 
-export const BUILDING_DEF_MAP = new Map<string, BuildingDef>(
-  BUILDABLE_BUILDING_DEFS.map((def) => [def.type, def]),
-)
+export let BUILDING_DEF_MAP = new Map<string, BuildingDef>()
+
+export function initBuildingDefs(defs: BuildingDef[]): void {
+  BUILDABLE_BUILDING_DEFS = defs
+  BUILDING_DEF_MAP = new Map(defs.map((def) => [def.type, def]))
+}

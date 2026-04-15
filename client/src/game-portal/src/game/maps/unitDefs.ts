@@ -1,5 +1,4 @@
 import type { UnitCapability } from '../network/protocol'
-import rawDefs from './unit-defs.json'
 
 // A single paint layer in a unit's sprite.
 // Coordinates are in canvas pixels relative to the unit's center point.
@@ -27,8 +26,11 @@ export type UnitDef = {
   render: UnitRenderDef
 }
 
-export const UNIT_DEFS: UnitDef[] = rawDefs.units as UnitDef[]
+export let UNIT_DEFS: UnitDef[] = []
 
-export const UNIT_DEF_MAP = new Map<string, UnitDef>(
-  UNIT_DEFS.map((def) => [def.type, def]),
-)
+export let UNIT_DEF_MAP = new Map<string, UnitDef>()
+
+export function initUnitDefs(defs: UnitDef[]): void {
+  UNIT_DEFS = defs
+  UNIT_DEF_MAP = new Map(defs.map((def) => [def.type, def]))
+}

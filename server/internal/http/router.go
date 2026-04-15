@@ -20,6 +20,20 @@ func NewRouter(hub *ws.Hub) http.Handler {
 		})
 	})
 
+	mux.HandleFunc("/catalog/buildings", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"buildings": game.ListBuildingDefs(),
+		})
+	})
+
+	mux.HandleFunc("/catalog/units", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"units": game.ListUnitDefs(),
+		})
+	})
+
 	mux.HandleFunc("/maps", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(game.ListMapCatalogSummaries())

@@ -6,8 +6,9 @@ import { Camera } from '../rendering/Camera'
 import { NetworkClient } from '../network/NetworkClient'
 import type { MapId } from '../network/protocol'
 import type { PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
-import { BUILDING_DEF_MAP } from '../maps/buildingDefs'
-import { UNIT_DEF_MAP } from '../maps/unitDefs'
+import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
+import { UNIT_DEF_MAP, initUnitDefs } from '../maps/unitDefs'
+import { fetchBuildingDefs, fetchUnitDefs } from '../maps/catalog'
 
 export type GameUiSnapshot = {
   player: PlayerSummary
@@ -45,6 +46,9 @@ export class GameClient {
   }
 
   async start(options: { resume?: boolean } = {}) {
+    const [buildingDefs, unitDefs] = await Promise.all([fetchBuildingDefs(), fetchUnitDefs()])
+    initBuildingDefs(buildingDefs)
+    initUnitDefs(unitDefs)
     await this.network.connect(options)
     this.loop.start()
   }

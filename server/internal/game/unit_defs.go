@@ -3,23 +3,28 @@ package game
 import (
 	_ "embed"
 	"encoding/json"
+	"sort"
 )
 
 //go:embed catalog/unit-defs.json
 var unitDefsJSON []byte
 
 // UnitDef holds the configuration for a trainable unit type.
+// Client-only fields (TrainLabel, Render) are passed through to the API
+// as-is; the server game logic never reads them.
 type UnitDef struct {
-	Type         string         `json:"type"`
-	Name         string         `json:"name"`
-	HP           int            `json:"hp"`
-	Damage       int            `json:"damage"`
-	AttackRange  float64        `json:"attackRange"`
-	AttackSpeed  float64        `json:"attackSpeed"`
-	ResourceCost map[string]int `json:"resourceCost"`
-	MeatCost     int            `json:"meatCost"`
-	SpawnSeconds float64        `json:"spawnSeconds"`
-	Capabilities []string       `json:"capabilities"`
+	Type         string          `json:"type"`
+	Name         string          `json:"name"`
+	HP           int             `json:"hp"`
+	Damage       int             `json:"damage"`
+	AttackRange  float64         `json:"attackRange"`
+	AttackSpeed  float64         `json:"attackSpeed"`
+	ResourceCost map[string]int  `json:"resourceCost"`
+	MeatCost     int             `json:"meatCost"`
+	SpawnSeconds float64         `json:"spawnSeconds"`
+	Capabilities []string        `json:"capabilities"`
+	TrainLabel   string          `json:"trainLabel,omitempty"`
+	Render       json.RawMessage `json:"render,omitempty"`
 }
 
 var unitDefsByType map[string]UnitDef
@@ -40,4 +45,13 @@ func init() {
 func getUnitDef(unitType string) (UnitDef, bool) {
 	def, ok := unitDefsByType[unitType]
 	return def, ok
+}
+
+func ListUnitDefs() []UnitDef {
+	defs := make([]UnitDef, 0, len(unitDefsByType))
+	for _, def := range unitDefsByType {
+		defs = append(defs, def)
+	}
+	sort.Slice(defs, func(i, j int) bool { return defs[i].Type < defs[j].Type })
+	return defs
 }

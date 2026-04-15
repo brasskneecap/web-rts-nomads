@@ -25,7 +25,7 @@ type MapCatalogSummary struct {
 	GridRows    int    `json:"gridRows"`
 }
 
-//go:embed catalog/*.json
+//go:embed catalog/maps/*.json
 var mapCatalogFS embed.FS
 
 var (
@@ -75,7 +75,7 @@ func GetMapCatalogEntryByID(mapID string) (MapCatalogEntry, bool) {
 }
 
 func mustLoadMapCatalog() []MapCatalogEntry {
-	files, err := mapCatalogFS.ReadDir("catalog")
+	files, err := mapCatalogFS.ReadDir("catalog/maps")
 	if err != nil {
 		panic(err)
 	}
@@ -87,7 +87,7 @@ func mustLoadMapCatalog() []MapCatalogEntry {
 			continue
 		}
 
-		raw, err := mapCatalogFS.ReadFile("catalog/" + file.Name())
+		raw, err := mapCatalogFS.ReadFile("catalog/maps/" + file.Name())
 		if err != nil {
 			panic(err)
 		}
