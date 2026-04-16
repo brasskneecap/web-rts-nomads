@@ -6,8 +6,8 @@ import {
   getObstacleColor,
   getTerrainColor,
 } from '../maps/mapConfig'
-import { BUILDING_DEF_MAP } from '../maps/buildingDefs'
-import { getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
+import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual } from '../maps/buildingDefs'
+import { getResolvedUnitAttackVisual, getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { BuildingTile } from '../network/protocol'
 import { Camera } from './Camera'
 
@@ -515,11 +515,7 @@ export class CanvasRenderer {
       this.drawSelectedUnitHealthBar(unit, unitDef, isEnemy)
 
       if (unit.status === 'Attacking') {
-        if (unit.unitType && this.isRangedUnit(unit.unitType)) {
-          this.drawRangedAttackEffect(unit)
-        } else {
-          this.drawAttackEffect(unit)
-        }
+        this.drawConfiguredUnitAttackEffect(unit)
       } else if (unit.status === 'Chopping Wood') {
         this.drawChoppingEffect(unit.x, unit.y)
       }
@@ -553,7 +549,39 @@ export class CanvasRenderer {
     }
   }
 
-  private drawAttackEffect(unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string }) {
+  private drawConfiguredUnitAttackEffect(unit: {
+    id: number
+    x: number
+    y: number
+    unitType?: string
+    ownerId?: string
+  }) {
+    const unitDef = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType) : undefined
+    const attackVisual = getResolvedUnitAttackVisual(unitDef)
+    if (attackVisual.kind === 'projectile') {
+      this.drawProjectileAttackEffect(unit, attackVisual)
+      return
+    }
+    this.drawMeleeAttackEffect(unit, attackVisual)
+  }
+
+  private scaleBuildingAttackVisual(
+    attackVisual: { originX: number; originY: number; effectLength: number },
+  ) {
+    const designPixelsPerCell = 100
+    const scale = this.state.mapConfig.cellSize / designPixelsPerCell
+
+    return {
+      originX: attackVisual.originX * scale,
+      originY: attackVisual.originY * scale,
+      effectLength: attackVisual.effectLength * scale,
+    }
+  }
+
+  private drawMeleeAttackEffect(
+    unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string },
+    attackVisual: { originX: number; originY: number; effectLength: number },
+  ) {
     const ctx = this.ctx
     const direction = this.getAttackDirection(unit) ?? { x: 1, y: 0 }
     const isEnemy = !!unit.ownerId && unit.ownerId !== this.state.localPlayerId
@@ -567,10 +595,12 @@ export class CanvasRenderer {
     const cycleMs = 1000 / attackSpeed
     const t = (this.renderTime % cycleMs) / cycleMs
     const alpha = 1 - t
-    const centerX = unit.x + direction.x * (8 + t * 4)
-    const centerY = unit.y + direction.y * (8 + t * 4)
+    const originX = unit.x + attackVisual.originX
+    const originY = unit.y + attackVisual.originY
+    const centerX = originX + direction.x * (attackVisual.effectLength + t * 4)
+    const centerY = originY + direction.y * (attackVisual.effectLength + t * 4)
     const majorAngle = Math.atan2(direction.y, direction.x)
-    const arcRadius = 9 + t * 5
+    const arcRadius = attackVisual.effectLength + t * 5
     const arcWidth = 0.95
 
     ctx.save()
@@ -592,9 +622,12 @@ export class CanvasRenderer {
     ctx.restore()
   }
 
-  private drawRangedAttackEffect(unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string }) {
+  private drawProjectileAttackEffect(
+    unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string },
+    attackVisual: { originX: number; originY: number; effectLength: number },
+  ) {
     const ctx = this.ctx
-    const direction = this.getRangedAttackDirection(unit)
+    const direction = this.getAttackDirection(unit)
     if (!direction) return
 
     const unitDef = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType) : undefined
@@ -603,13 +636,11 @@ export class CanvasRenderer {
     const blinkOn = (this.renderTime % cycleMs) < cycleMs * 0.4
     if (!blinkOn) return
 
-    const unitBounds = getUnitRenderBounds(unitDef)
-    const startOffset = Math.max(10, (unitBounds?.maxY ?? 10) * 0.55)
-    const lineLength = 24
+    const lineLength = attackVisual.effectLength
     const beamColor = unit.ownerId ? (this.state.getPlayerColor(unit.ownerId) ?? '#ffffff') : '#ffffff'
 
-    const startX = unit.x + direction.x * startOffset
-    const startY = unit.y + direction.y * startOffset
+    const startX = unit.x + attackVisual.originX
+    const startY = unit.y + attackVisual.originY
     const endX = startX + direction.x * lineLength
     const endY = startY + direction.y * lineLength
 
@@ -646,57 +677,72 @@ export class CanvasRenderer {
     const progress = 1 - Math.max(0, Math.min(cooldown / cycleSeconds, 1))
     if (progress > 0.4) return
 
-    const direction = this.getBuildingAttackDirection(building, attackRange)
-    if (!direction) return
+      const attackVisual = getResolvedBuildingAttackVisual(buildingDef)
+      const scaledAttackVisual = this.scaleBuildingAttackVisual(attackVisual)
+      const direction = this.getBuildingAttackDirection(building, attackRange, attackVisual)
+      if (!direction) return
 
-    const cellSize = this.state.mapConfig.cellSize
-    const worldX = building.x * cellSize
-    const worldY = building.y * cellSize
-    const width = building.width * cellSize
-    const height = building.height * cellSize
-    const startX = worldX + width * 0.5 + direction.x * 10
-    const startY = worldY + height * 0.28 + direction.y * 10
-    const endX = startX + direction.x * 24
-    const endY = startY + direction.y * 24
-    const beamColor = this.state.getPlayerColor(building.ownerId) ?? '#ffffff'
-    const alpha = 1 - progress / 0.4
+      const cellSize = this.state.mapConfig.cellSize
+      const worldX = building.x * cellSize
+      const worldY = building.y * cellSize
+      const startX = worldX + scaledAttackVisual.originX
+      const startY = worldY + scaledAttackVisual.originY
+      const endX = startX + direction.x * scaledAttackVisual.effectLength
+      const endY = startY + direction.y * scaledAttackVisual.effectLength
+      const beamColor = this.state.getPlayerColor(building.ownerId) ?? '#ffffff'
+      const alpha = 1 - progress / 0.4
 
-    const ctx = this.ctx
-    ctx.save()
-    ctx.strokeStyle = this.withAlpha(beamColor, 0.28 * alpha)
-    ctx.lineWidth = 6 / this.camera.zoom
-    ctx.lineCap = 'round'
-    ctx.beginPath()
-    ctx.moveTo(startX, startY)
-    ctx.lineTo(endX, endY)
-    ctx.stroke()
+      const ctx = this.ctx
+      if (attackVisual.kind === 'projectile') {
+        ctx.save()
+        ctx.strokeStyle = this.withAlpha(beamColor, 0.28 * alpha)
+        ctx.lineWidth = 6 / this.camera.zoom
+        ctx.lineCap = 'round'
+        ctx.beginPath()
+        ctx.moveTo(startX, startY)
+        ctx.lineTo(endX, endY)
+        ctx.stroke()
 
-    ctx.strokeStyle = this.withAlpha(beamColor, 0.95 * alpha)
-    ctx.lineWidth = 2.5 / this.camera.zoom
-    ctx.beginPath()
-    ctx.moveTo(startX, startY)
-    ctx.lineTo(endX, endY)
-    ctx.stroke()
-    ctx.restore()
-  }
+        ctx.strokeStyle = this.withAlpha(beamColor, 0.95 * alpha)
+        ctx.lineWidth = 2.5 / this.camera.zoom
+        ctx.beginPath()
+        ctx.moveTo(startX, startY)
+        ctx.lineTo(endX, endY)
+        ctx.stroke()
+        ctx.restore()
+        return
+      }
 
-  private isRangedUnit(unitType: string) {
-    const attackRange = UNIT_DEF_MAP.get(unitType)?.attackRange ?? 0
-    return attackRange > 80
-  }
+      const majorAngle = Math.atan2(direction.y, direction.x)
+      ctx.save()
+      ctx.strokeStyle = this.withAlpha(beamColor, 0.95 * alpha)
+      ctx.lineWidth = 3.5 / this.camera.zoom
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.arc(startX, startY, scaledAttackVisual.effectLength, majorAngle - 0.95, majorAngle + 0.95)
+      ctx.stroke()
+      ctx.restore()
+    }
 
-  private getRangedAttackDirection(unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string }) {
-    const attackRange = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType)?.attackRange ?? 0 : 0
-    if (attackRange <= 0) return null
-    return this.getAttackDirection(unit, attackRange)
-  }
+  private getBuildingAttackDirection(
+    building: BuildingTile,
+    attackRange: number,
+    attackVisual?: { originX: number; originY: number },
+  ) {
+      if (!building.ownerId) return null
 
-  private getBuildingAttackDirection(building: BuildingTile, attackRange: number) {
-    if (!building.ownerId) return null
-
-    const cellSize = this.state.mapConfig.cellSize
-    const originX = building.x * cellSize + (building.width * cellSize) / 2
-    const originY = building.y * cellSize + (building.height * cellSize) * 0.28
+      const cellSize = this.state.mapConfig.cellSize
+      const scaledAttackVisual = attackVisual
+        ? this.scaleBuildingAttackVisual({
+            originX: attackVisual.originX,
+            originY: attackVisual.originY,
+            effectLength: 0,
+          })
+        : null
+      const fallbackOriginX = (building.width * cellSize) / 2
+      const fallbackOriginY = (building.height * cellSize) * 0.28
+      const originX = building.x * cellSize + (scaledAttackVisual?.originX ?? fallbackOriginX)
+      const originY = building.y * cellSize + (scaledAttackVisual?.originY ?? fallbackOriginY)
 
     let bestDirection: { x: number; y: number } | null = null
     let bestDistanceSq = attackRange * attackRange

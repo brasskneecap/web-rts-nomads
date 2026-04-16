@@ -11,6 +11,20 @@ export type UnitRenderDef = {
   layers: UnitRenderLayer[]
 }
 
+export type UnitAttackVisual = {
+  kind?: 'melee' | 'projectile'
+  originX?: number
+  originY?: number
+  effectLength?: number
+}
+
+export type ResolvedUnitAttackVisual = {
+  kind: 'melee' | 'projectile'
+  originX: number
+  originY: number
+  effectLength: number
+}
+
 export type UnitDef = {
   type: string
   name: string
@@ -26,6 +40,7 @@ export type UnitDef = {
   capabilities: UnitCapability[]
   trainLabel: string
   metadata?: JsonObject
+  attackVisual?: UnitAttackVisual
   render: UnitRenderDef
 }
 
@@ -74,4 +89,27 @@ export function getUnitRenderBounds(def: UnitDef | undefined | null): {
   }
 
   return { minX, minY, maxX, maxY }
+}
+
+export function getResolvedUnitAttackVisual(
+  def: UnitDef | undefined | null,
+): ResolvedUnitAttackVisual {
+  const bounds = getUnitRenderBounds(def)
+  const inferredKind = (def?.attackRange ?? 0) > 80 ? 'projectile' : 'melee'
+  const kind = def?.attackVisual?.kind ?? inferredKind
+
+  return {
+    kind,
+    originX: Math.round(def?.attackVisual?.originX ?? 0),
+    originY: Math.round(def?.attackVisual?.originY ?? 0),
+    effectLength: Math.max(
+      4,
+      Math.round(
+        def?.attackVisual?.effectLength
+          ?? (kind === 'projectile'
+            ? Math.max(18, Math.round((bounds?.maxY ?? 12) * 1.2))
+            : 10),
+      ),
+    ),
+  }
 }

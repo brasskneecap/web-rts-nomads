@@ -70,6 +70,29 @@
             <label>Attack Speed</label>
             <input type="number" v-model.number="bAttackSpeed" step="0.1" min="0" />
           </div>
+          <div class="spe__section-title" style="margin-top: 12px">Attack Visual</div>
+          <div class="spe__field">
+            <label>Animation</label>
+            <select v-model="bAttackVisualKind" class="spe__catalog-select">
+              <option value="melee">Melee Arc</option>
+              <option value="projectile">Projectile</option>
+            </select>
+          </div>
+          <div class="spe__field-row">
+            <div class="spe__field">
+              <label>Spawn X <span class="spe__hint">(px)</span></label>
+              <input type="number" v-model.number="bAttackOriginX" step="1" />
+            </div>
+            <div class="spe__field">
+              <label>Spawn Y <span class="spe__hint">(px)</span></label>
+              <input type="number" v-model.number="bAttackOriginY" step="1" />
+            </div>
+          </div>
+          <div class="spe__field">
+            <label>{{ bAttackVisualKind === 'projectile' ? 'Projectile Length' : 'Arc Radius' }}</label>
+            <input type="number" v-model.number="bAttackEffectLength" min="4" step="1" />
+          </div>
+          <div class="spe__hint">The cyan marker in the preview shows where the building attack animation spawns from.</div>
           <div class="spe__field">
             <label>Label</label>
             <input v-model="bLabel" />
@@ -176,6 +199,30 @@
             <label>Train Label</label>
             <input v-model="uTrainLabel" />
           </div>
+
+          <div class="spe__section-title" style="margin-top: 12px">Attack Visual</div>
+          <div class="spe__field">
+            <label>Animation</label>
+            <select v-model="uAttackVisualKind" class="spe__catalog-select">
+              <option value="melee">Melee Arc</option>
+              <option value="projectile">Projectile</option>
+            </select>
+          </div>
+          <div class="spe__field-row">
+            <div class="spe__field">
+              <label>Spawn X</label>
+              <input type="number" v-model.number="uAttackOriginX" step="1" />
+            </div>
+            <div class="spe__field">
+              <label>Spawn Y</label>
+              <input type="number" v-model.number="uAttackOriginY" step="1" />
+            </div>
+          </div>
+          <div class="spe__field">
+            <label>{{ uAttackVisualKind === 'projectile' ? 'Projectile Length' : 'Arc Radius' }}</label>
+            <input type="number" v-model.number="uAttackEffectLength" min="4" step="1" />
+          </div>
+          <div class="spe__hint">The cyan marker in the preview shows where the attack animation spawns from.</div>
 
           <div class="spe__section-title" style="margin-top: 12px">Capabilities</div>
           <div class="spe__checklist">
@@ -560,8 +607,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { fetchBuildingDefs, fetchUnitDefs, fetchActionIcons } from '../game/maps/catalog'
-import type { BuildingDef } from '../game/maps/buildingDefs'
-import type { UnitDef } from '../game/maps/unitDefs'
+import { getResolvedBuildingAttackVisual, type BuildingDef } from '../game/maps/buildingDefs'
+  import { getResolvedUnitAttackVisual, type UnitDef } from '../game/maps/unitDefs'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -611,6 +658,10 @@ const bWood         = ref(0)
 const bDamage       = ref(0)
 const bAttackRange  = ref(0)
 const bAttackSpeed  = ref(0)
+const bAttackVisualKind = ref<'melee' | 'projectile'>('projectile')
+const bAttackOriginX = ref(50)
+const bAttackOriginY = ref(28)
+const bAttackEffectLength = ref(24)
 const bLabel        = ref('')
 const bHotkey       = ref('')
 const bColor        = ref('#1e40af')
@@ -635,11 +686,15 @@ const uWood         = ref(0)
 const uMeatCost     = ref(1)
 const uSpawnSeconds = ref(5)
 const uGoldGatherAmount = ref(20)
-const uWoodGatherAmount = ref(15)
-const uTrainLabel   = ref('')
-const uCapabilities = ref<string[]>(['move', 'attack'])
-const uMetadataText = ref('{}')
-const uLayers       = ref<UnitLayer[]>([])
+  const uWoodGatherAmount = ref(15)
+  const uTrainLabel   = ref('')
+  const uCapabilities = ref<string[]>(['move', 'attack'])
+  const uMetadataText = ref('{}')
+  const uAttackVisualKind = ref<'melee' | 'projectile'>('melee')
+  const uAttackOriginX = ref(0)
+  const uAttackOriginY = ref(0)
+  const uAttackEffectLength = ref(10)
+  const uLayers       = ref<UnitLayer[]>([])
 
 // ─── Paint state (building mode) ─────────────────────────────────────────────
 
@@ -1200,6 +1255,98 @@ function fillTriangle(ctx: CanvasRenderingContext2D, tlX: number, tlY: number, s
   ctx.stroke()
 }
 
+function drawUnitAttackVisualPreview(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  const originX = cx + uAttackOriginX.value
+  const originY = cy + uAttackOriginY.value
+
+  ctx.save()
+  ctx.strokeStyle = 'rgba(34, 211, 238, 0.95)'
+  ctx.fillStyle = 'rgba(34, 211, 238, 0.2)'
+  ctx.lineWidth = 2
+  ctx.setLineDash([4, 4])
+  ctx.beginPath()
+  ctx.moveTo(cx, cy)
+  ctx.lineTo(originX, originY)
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.beginPath()
+  ctx.arc(originX, originY, 5, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(originX - 8, originY)
+  ctx.lineTo(originX + 8, originY)
+  ctx.moveTo(originX, originY - 8)
+  ctx.lineTo(originX, originY + 8)
+  ctx.stroke()
+
+  if (uAttackVisualKind.value === 'projectile') {
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.9)'
+    ctx.lineWidth = 5
+    ctx.beginPath()
+    ctx.moveTo(originX, originY)
+    ctx.lineTo(originX + uAttackEffectLength.value, originY)
+    ctx.stroke()
+
+    ctx.strokeStyle = 'rgba(241, 245, 249, 0.95)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(originX, originY)
+    ctx.lineTo(originX + uAttackEffectLength.value, originY)
+    ctx.stroke()
+  } else {
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.9)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(originX, originY, uAttackEffectLength.value, -0.95, 0.95)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function drawBuildingAttackVisualPreview(ctx: CanvasRenderingContext2D) {
+  const originX = bAttackOriginX.value
+  const originY = bAttackOriginY.value
+
+  ctx.save()
+  ctx.strokeStyle = 'rgba(34, 211, 238, 0.95)'
+  ctx.fillStyle = 'rgba(34, 211, 238, 0.2)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(originX, originY, 5, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(originX - 8, originY)
+  ctx.lineTo(originX + 8, originY)
+  ctx.moveTo(originX, originY - 8)
+  ctx.lineTo(originX, originY + 8)
+  ctx.stroke()
+
+  if (bAttackVisualKind.value === 'projectile') {
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.9)'
+    ctx.lineWidth = 5
+    ctx.beginPath()
+    ctx.moveTo(originX, originY)
+    ctx.lineTo(originX + bAttackEffectLength.value, originY)
+    ctx.stroke()
+
+    ctx.strokeStyle = 'rgba(241, 245, 249, 0.95)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(originX, originY)
+    ctx.lineTo(originX + bAttackEffectLength.value, originY)
+    ctx.stroke()
+  } else {
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.9)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(originX, originY, bAttackEffectLength.value, -0.95, 0.95)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 function renderCanvas() {
   const canvas = drawCanvas.value
   if (!canvas) return
@@ -1283,13 +1430,17 @@ function renderCanvas() {
     ctx.strokeStyle = 'rgba(148,163,184,0.2)'
     ctx.lineWidth   = 1
     ctx.setLineDash([4, 4])
-    ctx.strokeRect(insetPx, insetPx, W - insetPx * 2, H - insetPx * 2)
-    ctx.restore()
+      ctx.strokeRect(insetPx, insetPx, W - insetPx * 2, H - insetPx * 2)
+      ctx.restore()
 
-  } else if (mode.value === 'unit') {
-    // Unit canvas
-    const cx = UNIT_CENTER
-    const cy = UNIT_CENTER
+      if (bDamage.value > 0 && bAttackRange.value > 0 && bAttackSpeed.value > 0) {
+        drawBuildingAttackVisualPreview(ctx)
+      }
+
+    } else if (mode.value === 'unit') {
+      // Unit canvas
+      const cx = UNIT_CENTER
+      const cy = UNIT_CENTER
 
     ctx.strokeStyle = '#1e293b'
     ctx.lineWidth   = 1
@@ -1331,13 +1482,15 @@ function renderCanvas() {
           ctx.closePath()
           ctx.stroke()
         }
-        ctx.restore()
+          ctx.restore()
+        }
       }
-    }
 
-    if (showAddShape.value && pendingKind.value === 'poly' && pendingPolyPoints.value.length > 0) {
-      const previewColor = pendingColorMode.value === 'player' ? '#3b82f6' : pendingCustomColor.value
-      ctx.save()
+      drawUnitAttackVisualPreview(ctx, cx, cy)
+
+      if (showAddShape.value && pendingKind.value === 'poly' && pendingPolyPoints.value.length > 0) {
+        const previewColor = pendingColorMode.value === 'player' ? '#3b82f6' : pendingCustomColor.value
+        ctx.save()
       ctx.strokeStyle = previewColor
       ctx.fillStyle = previewColor
       ctx.lineWidth = 2
@@ -1439,7 +1592,7 @@ function renderCanvas() {
 }
 
 watch(
-  [mode, bTriangles, uLayers, bWidth, bHeight, bInset],
+  [mode, bTriangles, uLayers, bWidth, bHeight, bInset, bAttackVisualKind, bAttackOriginX, bAttackOriginY, bAttackEffectLength, uAttackVisualKind, uAttackOriginX, uAttackOriginY, uAttackEffectLength],
   () => nextTick(() => renderCanvas()),
   { deep: true },
 )
@@ -1509,6 +1662,7 @@ function layersToTriangles(layers: any[], cellW: number, cellH: number): Record<
 }
 
 function applyBuildingDef(data: BuildingDef) {
+  const attackVisual = getResolvedBuildingAttackVisual(data)
   bType.value           = data.type
   bWidth.value          = data.width
   bHeight.value         = data.height
@@ -1519,6 +1673,10 @@ function applyBuildingDef(data: BuildingDef) {
   bDamage.value         = data.damage ?? 0
   bAttackRange.value    = data.attackRange ?? 0
   bAttackSpeed.value    = data.attackSpeed ?? 0
+  bAttackVisualKind.value = attackVisual.kind
+  bAttackOriginX.value = attackVisual.originX
+  bAttackOriginY.value = attackVisual.originY
+  bAttackEffectLength.value = attackVisual.effectLength
   bLabel.value          = data.label        ?? ''
   bHotkey.value         = data.hotkey       ?? ''
   bColor.value          = data.color        ?? '#1e40af'
@@ -1538,6 +1696,7 @@ function applyBuildingDef(data: BuildingDef) {
 }
 
 function applyUnitDef(data: UnitDef) {
+  const attackVisual = getResolvedUnitAttackVisual(data)
   uType.value         = data.type
   uName.value         = data.name
   uHp.value           = data.hp
@@ -1553,6 +1712,10 @@ function applyUnitDef(data: UnitDef) {
   uTrainLabel.value   = data.trainLabel   ?? ''
   uCapabilities.value = [...(data.capabilities ?? [])]
   uMetadataText.value = stringifyMetadata(data.metadata)
+  uAttackVisualKind.value = attackVisual.kind
+  uAttackOriginX.value = attackVisual.originX
+  uAttackOriginY.value = attackVisual.originY
+  uAttackEffectLength.value = attackVisual.effectLength
   uLayers.value       = [...(data.render?.layers ?? [])] as typeof uLayers.value
   selectedLayerIdx.value = null
   selectedLayerError.value = ''
@@ -1941,6 +2104,12 @@ const exportJson = computed(() => {
         damage: bDamage.value,
         attackRange: bAttackRange.value,
         attackSpeed: bAttackSpeed.value,
+        attackVisual: {
+          kind: bAttackVisualKind.value,
+          originX: bAttackOriginX.value,
+          originY: bAttackOriginY.value,
+          effectLength: bAttackEffectLength.value,
+        },
         resourceCost,
         capabilities: bCapabilities.value,
         spawnUnitTypes: bSpawnUnitTypes.value,
@@ -1974,6 +2143,12 @@ const exportJson = computed(() => {
     capabilities: uCapabilities.value,
     trainLabel: uTrainLabel.value,
     metadata: unitMetadataState.value.value,
+    attackVisual: {
+      kind: uAttackVisualKind.value,
+      originX: uAttackOriginX.value,
+      originY: uAttackOriginY.value,
+      effectLength: uAttackEffectLength.value,
+    },
     render: {
       layers: uLayers.value,
     },

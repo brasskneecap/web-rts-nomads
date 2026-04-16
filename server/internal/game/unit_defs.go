@@ -26,6 +26,7 @@ type UnitDef struct {
 	SpawnSeconds     float64         `json:"spawnSeconds"`
 	Capabilities     []string        `json:"capabilities"`
 	TrainLabel       string          `json:"trainLabel,omitempty"`
+	AttackVisual     json.RawMessage `json:"attackVisual,omitempty"`
 	Render           json.RawMessage `json:"render,omitempty"`
 }
 

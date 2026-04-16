@@ -38,6 +38,20 @@ export type BuildingRenderDef = {
   layers: BuildingRenderLayer[]
 }
 
+export type BuildingAttackVisual = {
+  kind?: 'melee' | 'projectile'
+  originX?: number
+  originY?: number
+  effectLength?: number
+}
+
+export type ResolvedBuildingAttackVisual = {
+  kind: 'melee' | 'projectile'
+  originX: number
+  originY: number
+  effectLength: number
+}
+
 export type BuildingDef = {
   type: string
   buildable?: boolean
@@ -48,6 +62,7 @@ export type BuildingDef = {
   damage?: number
   attackRange?: number
   attackSpeed?: number
+  attackVisual?: BuildingAttackVisual
   resourceCost: Record<string, number>
   capabilities: BuildingCapability[]
   spawnUnitTypes: string[]
@@ -70,4 +85,23 @@ export function initBuildingDefs(defs: BuildingDef[]): void {
   }))
   BUILDABLE_BUILDING_DEFS = BUILDING_DEFS.filter((def) => def.buildable !== false)
   BUILDING_DEF_MAP = new Map(BUILDING_DEFS.map((def) => [def.type, def]))
+}
+
+export function getResolvedBuildingAttackVisual(
+  def: BuildingDef | undefined | null,
+): ResolvedBuildingAttackVisual {
+  const inferredKind = (def?.attackRange ?? 0) > 80 ? 'projectile' : 'melee'
+  const kind = def?.attackVisual?.kind ?? inferredKind
+  const width = def?.width ?? 1
+  const height = def?.height ?? 1
+
+  return {
+    kind,
+    originX: Number((def?.attackVisual?.originX ?? width * 50).toFixed(2)),
+    originY: Number((def?.attackVisual?.originY ?? height * 28).toFixed(2)),
+    effectLength: Math.max(
+      4,
+      Math.round(def?.attackVisual?.effectLength ?? (kind === 'projectile' ? 24 : 10)),
+    ),
+  }
 }
