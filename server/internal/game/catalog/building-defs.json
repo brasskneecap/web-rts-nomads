@@ -14,7 +14,8 @@
         "unit-spawner"
       ],
       "spawnUnitTypes": [
-        "soldier"
+        "soldier",
+        "archer"
       ],
       "metadata": {},
       "color": "#1e40af",

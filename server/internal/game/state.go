@@ -632,7 +632,7 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 
 	for _, unitID := range unitIDs {
 		unit := s.getUnitByIDLocked(unitID)
-		if unit == nil || unit.OwnerID != playerID || unit.UnitType != "soldier" {
+		if unit == nil || unit.OwnerID != playerID || !unitHasCapability(unit.UnitType, "attack") {
 			continue
 		}
 

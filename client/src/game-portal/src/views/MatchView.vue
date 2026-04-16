@@ -289,7 +289,7 @@ onBeforeUnmount(() => {
 }
 
 .match-stage--editor {
-  padding: 72px 12px 12px;
+  padding: 0 12px 12px;
   box-sizing: border-box;
 }
 
@@ -302,7 +302,8 @@ onBeforeUnmount(() => {
 
 .editor-stage {
   position: relative;
-  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   min-width: 0;
   display: flex;

@@ -85,7 +85,7 @@
 
           <div class="spe__section-title" style="margin-top: 12px">Spawn Unit Types</div>
           <div class="spe__checklist">
-            <label v-for="ut in ALL_UNIT_TYPES" :key="ut">
+            <label v-for="ut in allUnitTypes" :key="ut">
               <input type="checkbox" :value="ut" v-model="bSpawnUnitTypes" />
               <span>{{ ut }}</span>
             </label>
@@ -558,7 +558,6 @@ const UNIT_CANVAS = 240
 const UNIT_CENTER = UNIT_CANVAS / 2
 
 const ALL_BUILDING_CAPS = ['unit-spawner', 'occupiable', 'deposit-point', 'resource-source', 'enemy-spawner']
-const ALL_UNIT_TYPES    = ['worker', 'soldier']
 const ALL_UNIT_CAPS     = ['move', 'attack', 'gather', 'build']
 
 const ACTION_SVG_SIZE = 24  // SVG viewBox units (24×24)
@@ -1446,6 +1445,7 @@ onMounted(() => {
 
 const catalogBuildings = ref<BuildingDef[]>([])
 const catalogUnits     = ref<UnitDef[]>([])
+const allUnitTypes     = computed(() => catalogUnits.value.map((unit) => unit.type))
 
 const showLoadPanel = ref(false)
 const loadJsonText  = ref('')
@@ -2009,6 +2009,7 @@ async function copyExport() {
 .spe__body {
   display: flex;
   flex: 1;
+  height: 0;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -2019,10 +2020,13 @@ async function copyExport() {
   flex: 0 0 240px;
   width: 240px;
   min-width: 240px;
-  padding: 14px 12px;
+  min-height: 0;
+  padding: 14px 12px 24px;
   background: #1e293b;
   border-right: 1px solid #334155;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2253,13 +2257,16 @@ async function copyExport() {
   flex: 0 0 240px;
   width: 240px;
   min-width: 240px;
-  padding: 14px 12px;
+  min-height: 0;
+  padding: 14px 12px 24px;
   background: #1e293b;
   border-left: 1px solid #334155;
   display: flex;
   flex-direction: column;
   gap: 6px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .spe__layer-list {
@@ -2435,7 +2442,7 @@ async function copyExport() {
   padding: 24px;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 960px) {
   .spe__body {
     flex-direction: column;
     overflow-y: auto;

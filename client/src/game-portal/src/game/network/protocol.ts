@@ -16,7 +16,7 @@ export type BuildingCapability =
   | 'deposit-point'
   | 'enemy-spawner'
 export type ResourceType = 'gold' | 'wood'
-export type UnitType = 'worker' | 'soldier'
+export type UnitType = 'worker' | 'soldier' | (string & {})
 export type UnitCapability = 'move' | 'gather' | 'build' | 'attack'
 export type JsonValue = string | number | boolean | null | JsonObject | JsonValue[]
 export type JsonObject = { [key: string]: JsonValue }

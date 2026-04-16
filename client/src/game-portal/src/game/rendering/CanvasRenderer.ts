@@ -510,7 +510,11 @@ export class CanvasRenderer {
       this.drawSelectedUnitHealthBar(unit, unitDef, isEnemy)
 
       if (unit.status === 'Attacking') {
-        this.drawAttackEffect(unit.x, unit.y)
+        if (unit.unitType && this.isRangedUnit(unit.unitType)) {
+          this.drawRangedAttackEffect(unit)
+        } else {
+          this.drawAttackEffect(unit.x, unit.y)
+        }
       } else if (unit.status === 'Chopping Wood') {
         this.drawChoppingEffect(unit.x, unit.y)
       }
@@ -578,6 +582,109 @@ export class CanvasRenderer {
     }
 
     ctx.restore()
+  }
+
+  private drawRangedAttackEffect(unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string }) {
+    const ctx = this.ctx
+    const direction = this.getRangedAttackDirection(unit)
+    if (!direction) return
+
+    const unitDef = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType) : undefined
+    const attackSpeed = Math.max(unitDef?.attackSpeed ?? 1, 0.1)
+    const cycleMs = 1000 / attackSpeed
+    const blinkOn = (this.renderTime % cycleMs) < cycleMs * 0.4
+    if (!blinkOn) return
+
+    const unitBounds = getUnitRenderBounds(unitDef)
+    const startOffset = Math.max(10, (unitBounds?.maxY ?? 10) * 0.55)
+    const lineLength = 24
+    const beamColor = unit.ownerId ? (this.state.getPlayerColor(unit.ownerId) ?? '#ffffff') : '#ffffff'
+
+    const startX = unit.x + direction.x * startOffset
+    const startY = unit.y + direction.y * startOffset
+    const endX = startX + direction.x * lineLength
+    const endY = startY + direction.y * lineLength
+
+    ctx.save()
+    ctx.strokeStyle = this.withAlpha(beamColor, 0.28)
+    ctx.lineWidth = 6 / this.camera.zoom
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(startX, startY)
+    ctx.lineTo(endX, endY)
+    ctx.stroke()
+
+    ctx.strokeStyle = this.withAlpha(beamColor, 0.95)
+    ctx.lineWidth = 2.5 / this.camera.zoom
+    ctx.beginPath()
+    ctx.moveTo(startX, startY)
+    ctx.lineTo(endX, endY)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  private isRangedUnit(unitType: string) {
+    const attackRange = UNIT_DEF_MAP.get(unitType)?.attackRange ?? 0
+    return attackRange > 80
+  }
+
+  private getRangedAttackDirection(unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string }) {
+    const attackRange = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType)?.attackRange ?? 0 : 0
+    if (attackRange <= 0) return null
+
+    let bestDirection: { x: number; y: number } | null = null
+    let bestDistanceSq = Infinity
+
+    for (const target of this.state.units) {
+      if (!target.visible) continue
+      if (target.id === unit.id) continue
+      if (!unit.ownerId || !target.ownerId || target.ownerId === unit.ownerId) continue
+
+      const dx = target.x - unit.x
+      const dy = target.y - unit.y
+      const distanceSq = dx * dx + dy * dy
+      if (distanceSq > attackRange * attackRange || distanceSq >= bestDistanceSq || distanceSq === 0) continue
+
+      const distance = Math.sqrt(distanceSq)
+      bestDistanceSq = distanceSq
+      bestDirection = { x: dx / distance, y: dy / distance }
+    }
+
+    for (const building of this.state.mapConfig.buildings) {
+      if (!building.visible) continue
+      if (!unit.ownerId || !building.ownerId || building.ownerId === unit.ownerId) continue
+
+      const cellSize = this.state.mapConfig.cellSize
+      const centerX = building.x * cellSize + (building.width * cellSize) / 2
+      const centerY = building.y * cellSize + (building.height * cellSize) / 2
+      const dx = centerX - unit.x
+      const dy = centerY - unit.y
+      const distanceSq = dx * dx + dy * dy
+      if (distanceSq > attackRange * attackRange || distanceSq >= bestDistanceSq || distanceSq === 0) continue
+
+      const distance = Math.sqrt(distanceSq)
+      bestDistanceSq = distanceSq
+      bestDirection = { x: dx / distance, y: dy / distance }
+    }
+
+    return bestDirection
+  }
+
+  private withAlpha(color: string, alpha: number) {
+    const normalized = color.trim()
+    if (normalized.startsWith('#')) {
+      let hex = normalized.slice(1)
+      if (hex.length === 3) {
+        hex = hex.split('').map((char) => char + char).join('')
+      }
+      if (hex.length === 6) {
+        const r = Number.parseInt(hex.slice(0, 2), 16)
+        const g = Number.parseInt(hex.slice(2, 4), 16)
+        const b = Number.parseInt(hex.slice(4, 6), 16)
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`
+      }
+    }
+    return color
   }
 
   private drawChoppingEffect(x: number, y: number) {
