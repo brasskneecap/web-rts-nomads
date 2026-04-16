@@ -1299,6 +1299,28 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
   if (building.capabilities.includes('occupiable')) {
     details.push({ id: 'occupiable', label: 'Occupiable' })
   }
+  const buildingDef = BUILDING_DEF_MAP.get(building.buildingType)
+  if ((buildingDef?.damage ?? 0) > 0) {
+    details.push({
+      id: 'damage',
+      label: 'Damage',
+      value: String(buildingDef?.damage ?? 0),
+    })
+  }
+  if ((buildingDef?.attackRange ?? 0) > 0) {
+    details.push({
+      id: 'attack-range',
+      label: 'Range',
+      value: String(Math.round(buildingDef?.attackRange ?? 0)),
+    })
+  }
+  if ((buildingDef?.attackSpeed ?? 0) > 0) {
+    details.push({
+      id: 'attack-speed',
+      label: 'Attack Speed',
+      value: `${buildingDef?.attackSpeed ?? 0}/s`,
+    })
+  }
   if (building.capabilities.includes('unit-spawner') && building.spawnUnitTypes?.length) {
     details.push({
       id: 'trains-units',

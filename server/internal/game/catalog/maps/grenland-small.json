@@ -1429,12 +1429,12 @@
           "fillOrder": 2,
           "spawnUnits": [
             {
-              "unitType": "worker",
-              "count": 3
+              "count": 3,
+              "unitType": "worker"
             },
             {
-              "unitType": "soldier",
-              "count": 1
+              "count": 1,
+              "unitType": "soldier"
             }
           ]
         }
@@ -1825,7 +1825,28 @@
         "metadata": {
           "spawnDelaySeconds": 60,
           "spawnIntervalSeconds": 10,
-          "spawnCount": 2
+          "spawnCount": 1,
+          "unitType": "raider"
+        }
+      },
+      {
+        "id": "enemy-spawnpoint-21-26",
+        "buildingType": "enemy-spawnpoint",
+        "x": 21,
+        "y": 26,
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnDelaySeconds": 90,
+          "spawnIntervalSeconds": 10,
+          "spawnCount": 2,
+          "unitType": "raider"
         }
       }
     ]

@@ -19,6 +19,9 @@ type BuildingDef struct {
 	Height         int             `json:"height"`
 	MaxHp          float64         `json:"maxHp"`
 	BuildSeconds   float64         `json:"buildSeconds"`
+	Damage         int             `json:"damage,omitempty"`
+	AttackRange    float64         `json:"attackRange,omitempty"`
+	AttackSpeed    float64         `json:"attackSpeed,omitempty"`
 	ResourceCost   map[string]int  `json:"resourceCost"`
 	Capabilities   []string        `json:"capabilities"`
 	SpawnUnitTypes []string        `json:"spawnUnitTypes"`

@@ -8,6 +8,7 @@ import {
 } from '../maps/mapConfig'
 import { BUILDING_DEF_MAP } from '../maps/buildingDefs'
 import { getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
+import type { BuildingTile } from '../network/protocol'
 import { Camera } from './Camera'
 
 export type MinimapBounds = {
@@ -318,6 +319,10 @@ export class CanvasRenderer {
         }
       }
 
+      if (!isUnderConstruction) {
+        this.drawBuildingAttackEffect(building)
+      }
+
       if (this.state.selectedBuildingId === building.id) {
         ctx.strokeStyle = '#fde68a'
         ctx.lineWidth = 3 / this.camera.zoom
@@ -626,6 +631,55 @@ export class CanvasRenderer {
     ctx.restore()
   }
 
+  private drawBuildingAttackEffect(building: BuildingTile) {
+    const buildingDef = BUILDING_DEF_MAP.get(building.buildingType)
+    const attackSpeed = Math.max(buildingDef?.attackSpeed ?? 0, 0)
+    const attackRange = Math.max(buildingDef?.attackRange ?? 0, 0)
+    if (attackSpeed <= 0 || attackRange <= 0 || !building.ownerId) return
+
+    const cooldown = typeof building.metadata?.['attackCooldown'] === 'number'
+      ? building.metadata['attackCooldown']
+      : undefined
+    if (cooldown === undefined || cooldown <= 0) return
+
+    const cycleSeconds = 1 / attackSpeed
+    const progress = 1 - Math.max(0, Math.min(cooldown / cycleSeconds, 1))
+    if (progress > 0.4) return
+
+    const direction = this.getBuildingAttackDirection(building, attackRange)
+    if (!direction) return
+
+    const cellSize = this.state.mapConfig.cellSize
+    const worldX = building.x * cellSize
+    const worldY = building.y * cellSize
+    const width = building.width * cellSize
+    const height = building.height * cellSize
+    const startX = worldX + width * 0.5 + direction.x * 10
+    const startY = worldY + height * 0.28 + direction.y * 10
+    const endX = startX + direction.x * 24
+    const endY = startY + direction.y * 24
+    const beamColor = this.state.getPlayerColor(building.ownerId) ?? '#ffffff'
+    const alpha = 1 - progress / 0.4
+
+    const ctx = this.ctx
+    ctx.save()
+    ctx.strokeStyle = this.withAlpha(beamColor, 0.28 * alpha)
+    ctx.lineWidth = 6 / this.camera.zoom
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(startX, startY)
+    ctx.lineTo(endX, endY)
+    ctx.stroke()
+
+    ctx.strokeStyle = this.withAlpha(beamColor, 0.95 * alpha)
+    ctx.lineWidth = 2.5 / this.camera.zoom
+    ctx.beginPath()
+    ctx.moveTo(startX, startY)
+    ctx.lineTo(endX, endY)
+    ctx.stroke()
+    ctx.restore()
+  }
+
   private isRangedUnit(unitType: string) {
     const attackRange = UNIT_DEF_MAP.get(unitType)?.attackRange ?? 0
     return attackRange > 80
@@ -635,6 +689,32 @@ export class CanvasRenderer {
     const attackRange = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType)?.attackRange ?? 0 : 0
     if (attackRange <= 0) return null
     return this.getAttackDirection(unit, attackRange)
+  }
+
+  private getBuildingAttackDirection(building: BuildingTile, attackRange: number) {
+    if (!building.ownerId) return null
+
+    const cellSize = this.state.mapConfig.cellSize
+    const originX = building.x * cellSize + (building.width * cellSize) / 2
+    const originY = building.y * cellSize + (building.height * cellSize) * 0.28
+
+    let bestDirection: { x: number; y: number } | null = null
+    let bestDistanceSq = attackRange * attackRange
+
+    for (const target of this.state.units) {
+      if (!target.visible || !target.ownerId || target.ownerId === building.ownerId) continue
+
+      const dx = target.x - originX
+      const dy = target.y - originY
+      const distanceSq = dx * dx + dy * dy
+      if (distanceSq === 0 || distanceSq > bestDistanceSq) continue
+
+      const distance = Math.sqrt(distanceSq)
+      bestDistanceSq = distanceSq
+      bestDirection = { x: dx / distance, y: dy / distance }
+    }
+
+    return bestDirection
   }
 
   private getAttackDirection(

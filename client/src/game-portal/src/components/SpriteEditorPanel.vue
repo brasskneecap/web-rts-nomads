@@ -56,6 +56,20 @@
               <input type="number" v-model.number="bWood" min="0" />
             </div>
           </div>
+          <div class="spe__field-row">
+            <div class="spe__field">
+              <label>Damage</label>
+              <input type="number" v-model.number="bDamage" min="0" />
+            </div>
+            <div class="spe__field">
+              <label>Attack Range</label>
+              <input type="number" v-model.number="bAttackRange" min="0" />
+            </div>
+          </div>
+          <div class="spe__field">
+            <label>Attack Speed</label>
+            <input type="number" v-model.number="bAttackSpeed" step="0.1" min="0" />
+          </div>
           <div class="spe__field">
             <label>Label</label>
             <input v-model="bLabel" />
@@ -594,6 +608,9 @@ const bMaxHp        = ref(500)
 const bBuildSeconds = ref(15)
 const bGold         = ref(200)
 const bWood         = ref(0)
+const bDamage       = ref(0)
+const bAttackRange  = ref(0)
+const bAttackSpeed  = ref(0)
 const bLabel        = ref('')
 const bHotkey       = ref('')
 const bColor        = ref('#1e40af')
@@ -1499,6 +1516,9 @@ function applyBuildingDef(data: BuildingDef) {
   bBuildSeconds.value   = data.buildSeconds
   bGold.value           = data.resourceCost?.gold ?? 0
   bWood.value           = data.resourceCost?.wood ?? 0
+  bDamage.value         = data.damage ?? 0
+  bAttackRange.value    = data.attackRange ?? 0
+  bAttackSpeed.value    = data.attackSpeed ?? 0
   bLabel.value          = data.label        ?? ''
   bHotkey.value         = data.hotkey       ?? ''
   bColor.value          = data.color        ?? '#1e40af'
@@ -1912,16 +1932,19 @@ const exportJson = computed(() => {
 
     const layers = buildOptimizedLayers(bTriangles.value, bWidth.value, bHeight.value)
 
-    return JSON.stringify({
-      type: bType.value,
-      width: bWidth.value,
-      height: bHeight.value,
-      maxHp: bMaxHp.value,
-      buildSeconds: bBuildSeconds.value,
-      resourceCost,
-      capabilities: bCapabilities.value,
-      spawnUnitTypes: bSpawnUnitTypes.value,
-      metadata: buildingMetadataState.value.value,
+      return JSON.stringify({
+        type: bType.value,
+        width: bWidth.value,
+        height: bHeight.value,
+        maxHp: bMaxHp.value,
+        buildSeconds: bBuildSeconds.value,
+        damage: bDamage.value,
+        attackRange: bAttackRange.value,
+        attackSpeed: bAttackSpeed.value,
+        resourceCost,
+        capabilities: bCapabilities.value,
+        spawnUnitTypes: bSpawnUnitTypes.value,
+        metadata: buildingMetadataState.value.value,
       color: bColor.value,
       label: bLabel.value,
       hotkey: bHotkey.value,

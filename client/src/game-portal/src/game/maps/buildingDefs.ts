@@ -45,6 +45,9 @@ export type BuildingDef = {
   height: number
   maxHp: number
   buildSeconds: number
+  damage?: number
+  attackRange?: number
+  attackSpeed?: number
   resourceCost: Record<string, number>
   capabilities: BuildingCapability[]
   spawnUnitTypes: string[]

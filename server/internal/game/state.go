@@ -236,6 +236,7 @@ func (s *GameState) Update(dt float64) {
 	s.updateUnitProductionsLocked(dt)
 	s.tickBuildingRepairsLocked(dt)
 	blocked := s.buildBlockedCells()
+	s.tickBuildingCombatLocked(dt)
 	s.tickUnitCombatLocked(dt, blocked)
 	s.tickEnemySpawnpointsLocked(dt, blocked)
 	s.tickEnemyAILocked(blocked)
@@ -1715,6 +1716,51 @@ func (s *GameState) tickBuildingRepairsLocked(dt float64) {
 	}
 }
 
+func (s *GameState) tickBuildingCombatLocked(dt float64) {
+	var deadUnitIDs []int
+
+	for i := range s.MapConfig.Buildings {
+		building := &s.MapConfig.Buildings[i]
+		if !building.Visible || building.OwnerID == nil {
+			continue
+		}
+		if building.Metadata != nil && building.Metadata["underConstruction"] == true {
+			continue
+		}
+
+		def, ok := getBuildingDef(building.BuildingType)
+		if !ok || def.Damage <= 0 || def.AttackRange <= 0 || def.AttackSpeed <= 0 {
+			continue
+		}
+
+		if building.Metadata == nil {
+			building.Metadata = map[string]interface{}{}
+		}
+
+		cooldown, _ := getMetadataFloat(building.Metadata, "attackCooldown")
+		if cooldown > 0 {
+			cooldown = math.Max(0, cooldown-dt)
+			building.Metadata["attackCooldown"] = cooldown
+		}
+
+		target := s.findNearestHostileUnitForBuildingLocked(building, *building.OwnerID, def.AttackRange)
+		if target == nil || cooldown > 0 {
+			continue
+		}
+
+		target.HP -= def.Damage
+		building.Metadata["attackCooldown"] = 1.0 / def.AttackSpeed
+		if target.HP <= 0 {
+			target.HP = 0
+			deadUnitIDs = append(deadUnitIDs, target.ID)
+		}
+	}
+
+	for _, id := range deadUnitIDs {
+		s.removeUnitLocked(id)
+	}
+}
+
 func (s *GameState) RepairBuilding(playerID string, unitIDs []int, buildingID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2020,6 +2066,28 @@ func defaultGatherAmountForResource(resourceType string) int {
 func unitHasCapability(unitType, capability string) bool {
 	def, ok := getUnitDef(unitType)
 	return ok && containsString(def.Capabilities, capability)
+}
+
+func (s *GameState) findNearestHostileUnitForBuildingLocked(building *protocol.BuildingTile, ownerID string, attackRange float64) *Unit {
+	var best *Unit
+	bestDistSq := attackRange * attackRange
+
+	for _, unit := range s.Units {
+		if !unit.Visible || unit.HP <= 0 || unit.OwnerID == ownerID {
+			continue
+		}
+
+		dist := s.distanceToBuilding(unit.X, unit.Y, building)
+		distSq := dist * dist
+		if distSq > bestDistSq {
+			continue
+		}
+
+		best = unit
+		bestDistSq = distSq
+	}
+
+	return best
 }
 
 func (s *GameState) findOwnedTownhallLocked(ownerID string) *protocol.BuildingTile {
