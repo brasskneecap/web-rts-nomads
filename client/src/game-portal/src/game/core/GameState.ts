@@ -733,6 +733,12 @@ export class GameState {
     return clampBuildingSpawnPoint(this.mapConfig, building, { x: worldX, y: worldY })
   }
 
+  getSelectedBuildingSpawnPointTarget(worldX: number, worldY: number): Vec2 | null {
+    const building = this.getSelectedBuilding()
+    if (!building) return null
+    return clampBuildingSpawnPoint(this.mapConfig, building, { x: worldX, y: worldY })
+  }
+
   getBuildingSpawnPoint(building: BuildingTile): Vec2 | null {
     const x = getBuildingMetadataNumber(building, 'spawnPointX')
     const y = getBuildingMetadataNumber(building, 'spawnPointY')
@@ -835,13 +841,13 @@ export class GameState {
         : selectedBuilding.occupied
           ? 'Occupied'
           : 'Neutral'
-      const subtitle = isUnderConstruction
-        ? 'Under Construction'
-        : this.buildingTargetingMode === 'set-spawn-point'
-          ? 'Click anywhere on the map to set the spawn point target.'
-          : activeProduction
-            ? `Training ${formatSpawnUnitType(activeProduction.unitType)}`
-            : defaultSubtitle
+        const subtitle = isUnderConstruction
+          ? 'Under Construction'
+          : this.buildingTargetingMode === 'set-spawn-point'
+            ? 'Click anywhere on the map to set the rally point target.'
+            : activeProduction
+              ? `Training ${formatSpawnUnitType(activeProduction.unitType)}`
+              : defaultSubtitle
 
       return {
         kind: 'building',
@@ -1084,7 +1090,7 @@ function formatBuildingName(buildingType: BuildingTile['buildingType']): string 
     case 'enemy-spawnpoint':
       return 'Enemy Spawnpoint'
     case 'spawn-point':
-      return 'Spawn Point'
+      return 'Rally Point'
     default:
       return buildingType
   }
@@ -1202,7 +1208,7 @@ function getBuildingActions(building: BuildingTile): ActionItem[] {
       }
     }
     if (hasTrainable) {
-      actions.push({ id: 'set-spawn-point', label: 'Set Spawn Point' })
+      actions.push({ id: 'set-spawn-point', label: 'Set Rally Point' })
     }
   }
 
@@ -1331,11 +1337,11 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
 
   const spawnPointLabel = getBuildingSpawnPointLabel(building)
   if (spawnPointLabel) {
-    details.push({
-      id: 'spawn-point',
-      label: 'Spawn Point',
-      value: spawnPointLabel,
-    })
+      details.push({
+        id: 'spawn-point',
+        label: 'Rally Point',
+        value: spawnPointLabel,
+      })
   }
 
   return details

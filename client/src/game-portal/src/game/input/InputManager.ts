@@ -252,15 +252,26 @@ export class InputManager {
 
   private onRightClick = (e: MouseEvent) => {
     e.preventDefault()
+    const screen = this.getScreenPosition(e)
+    if (this.isInsideMinimap(screen.x, screen.y)) return
+
     if (this.state.isAnyTargetingActive()) {
       this.client.cancelTargeting()
       this.updateHoverCursor(this.lastMouseX, this.lastMouseY)
       return
     }
-    const screen = this.getScreenPosition(e)
-    if (this.isInsideMinimap(screen.x, screen.y)) return
 
     const world = this.getWorldPosition(e)
+    const selectedBuilding = this.state.getSelectedBuilding()
+    if (selectedBuilding && this.hasVisibleAction('set-spawn-point')) {
+      const spawnPoint = this.state.getSelectedBuildingSpawnPointTarget(world.x, world.y)
+      if (spawnPoint) {
+        this.network.sendSetBuildingSpawnPointCommand(selectedBuilding.id, spawnPoint.x, spawnPoint.y)
+        this.state.addMoveMarker(spawnPoint.x, spawnPoint.y, 800)
+      }
+      return
+    }
+
     const unitIds = this.state.getOrderedSelectedUnitIds()
     const clickedBuilding = this.state.getBuildingAtPosition(world.x, world.y, 16)
 
