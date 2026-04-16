@@ -138,9 +138,67 @@
             <select id="building-type" v-model="selectedBuilding" :disabled="!paintModeEnabled">
               <option value="goldmine">Goldmine</option>
               <option value="townhall">Townhall</option>
+              <option value="spawn-point">Spawn Point</option>
               <option value="tree">Tree (Harvestable)</option>
               <option value="enemy-spawnpoint">Enemy Spawnpoint</option>
             </select>
+          </div>
+
+          <div v-if="brushMode === 'building' && selectedBuilding === 'spawn-point'" class="control-group spawn-point-config">
+            <label for="spawn-point-townhall">Townhall</label>
+            <select
+              id="spawn-point-townhall"
+              v-model="selectedSpawnTownhallId"
+              :disabled="!paintModeEnabled || townhallOptions.length === 0"
+            >
+              <option value="">Nearest / Unassigned</option>
+              <option v-for="townhall in townhallOptions" :key="townhall.id" :value="townhall.id">
+                {{ townhall.label }}
+              </option>
+            </select>
+            <label for="spawn-point-fill-order">Fill Order</label>
+            <input
+              id="spawn-point-fill-order"
+              v-model.number="spawnPointFillOrder"
+              type="number"
+              min="0"
+              :disabled="!paintModeEnabled"
+            />
+            <label>Starting Units</label>
+            <div
+              v-for="entry in spawnPointLoadout"
+              :key="entry.id"
+              class="spawn-point-loadout-row"
+            >
+              <select v-model="entry.unitType" :disabled="!paintModeEnabled">
+                <option v-for="unit in playerSpawnUnits" :key="unit.type" :value="unit.type">
+                  {{ unit.label }}
+                </option>
+              </select>
+              <input
+                v-model.number="entry.count"
+                type="number"
+                min="1"
+                max="20"
+                :disabled="!paintModeEnabled"
+              />
+              <button
+                type="button"
+                class="spawn-point-row-button"
+                @click="removeSpawnPointLoadoutEntry(entry.id)"
+                :disabled="!paintModeEnabled || spawnPointLoadout.length <= 1"
+              >
+                Remove
+              </button>
+            </div>
+            <button
+              type="button"
+              class="spawn-point-row-button"
+              @click="addSpawnPointLoadoutEntry()"
+              :disabled="!paintModeEnabled"
+            >
+              Add Unit Group
+            </button>
           </div>
 
           <div v-if="brushMode === 'building' && selectedBuilding === 'enemy-spawnpoint'" class="control-group enemy-spawn-config">
@@ -228,14 +286,16 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchMapCatalog, fetchMapCatalogFile } from '@/game/maps/catalog'
+import { fetchMapCatalog, fetchMapCatalogFile, fetchUnitDefs } from '@/game/maps/catalog'
 import type {
   BuildingType,
+  JsonObject,
   MapCatalogEntry,
   MapCatalogFile,
   MapConfig,
   ObstacleType,
   TerrainType,
+  UnitType,
 } from '@/game/network/protocol'
 import { Camera } from '@/game/rendering/Camera'
 import {
@@ -252,12 +312,20 @@ import {
 } from '@/game/maps/mapConfig'
 
 const model = defineModel<MapConfig>({ required: true })
+type SpawnLoadoutEntry = { id: number; unitType: UnitType; count: number }
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 const brushMode = ref<'terrain' | 'obstacle' | 'building' | 'erase'>('terrain')
 const selectedTerrain = ref<TerrainType>('dirt')
 const selectedObstacle = ref<ObstacleType>('rock')
 const selectedBuilding = ref<BuildingType>('goldmine')
+const selectedSpawnTownhallId = ref('')
+const playerSpawnUnits = ref<Array<{ type: UnitType; label: string }>>([
+  { type: 'worker', label: 'Worker' },
+  { type: 'soldier', label: 'Soldier' },
+])
+const spawnPointLoadout = ref<SpawnLoadoutEntry[]>([{ id: 1, unitType: 'worker', count: 3 }])
+const spawnPointFillOrder = ref(0)
 const enemySpawnDelay = ref(60)
 const enemySpawnInterval = ref(10)
 const enemySpawnCount = ref(1)
@@ -286,6 +354,7 @@ let isPainting = false
 let lastMouseX = 0
 let lastMouseY = 0
 let lastPaintKey = ''
+let nextSpawnLoadoutId = 2
 
 watch(
   model,
@@ -308,6 +377,14 @@ const exportedCatalogFile = computed<MapCatalogFile>(() => ({
 const serializedMap = computed(() => JSON.stringify(exportedCatalogFile.value, null, 2))
 const activeBrushMode = computed(() =>
   isControlHeld.value ? 'erase' : brushMode.value,
+)
+const townhallOptions = computed(() =>
+  model.value.buildings
+    .filter((building) => building.buildingType === 'townhall')
+    .map((building) => ({
+      id: building.id,
+      label: `${building.id} (${building.x}, ${building.y})`,
+    })),
 )
 
 const eraseCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg stroke='%23f8fafc' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M6 6 L18 18'/%3E%3Cpath d='M18 6 L6 18'/%3E%3C/g%3E%3Cg stroke='%230f172a' stroke-width='1.2' stroke-linecap='round'%3E%3Cpath d='M6 6 L18 18'/%3E%3Cpath d='M18 6 L6 18'/%3E%3C/g%3E%3C/svg%3E") 12 12, crosshair`
@@ -336,6 +413,19 @@ function applyPreset(cols: number, rows: number) {
 
 function clearMap() {
   model.value = createEditorMapConfig(model.value.gridCols, model.value.gridRows)
+}
+
+function addSpawnPointLoadoutEntry() {
+  const defaultUnitType = playerSpawnUnits.value[0]?.type ?? 'worker'
+  spawnPointLoadout.value = [
+    ...spawnPointLoadout.value,
+    { id: nextSpawnLoadoutId++, unitType: defaultUnitType, count: 1 },
+  ]
+}
+
+function removeSpawnPointLoadoutEntry(entryId: number) {
+  if (spawnPointLoadout.value.length <= 1) return
+  spawnPointLoadout.value = spawnPointLoadout.value.filter((entry) => entry.id !== entryId)
 }
 
 async function loadAvailableMaps() {
@@ -494,10 +584,26 @@ function paintAtScreen(screenX: number, screenY: number) {
   }
 
   if (activeBrushMode.value === 'building') {
-    const metadata =
-      selectedBuilding.value === 'enemy-spawnpoint'
-        ? { spawnDelaySeconds: enemySpawnDelay.value, spawnIntervalSeconds: enemySpawnInterval.value, spawnCount: enemySpawnCount.value, unitType: enemyUnitType.value }
-        : undefined
+    let metadata: JsonObject | undefined
+
+    if (selectedBuilding.value === 'spawn-point') {
+      metadata = {
+        townhallId: selectedSpawnTownhallId.value || null,
+        fillOrder: Math.round(spawnPointFillOrder.value || 0),
+        spawnUnits: spawnPointLoadout.value.map((entry) => ({
+          unitType: entry.unitType,
+          count: Math.max(1, Math.round(entry.count || 1)),
+        })),
+      }
+    } else if (selectedBuilding.value === 'enemy-spawnpoint') {
+      metadata = {
+        spawnDelaySeconds: enemySpawnDelay.value,
+        spawnIntervalSeconds: enemySpawnInterval.value,
+        spawnCount: enemySpawnCount.value,
+        unitType: enemyUnitType.value,
+      }
+    }
+
     model.value = setBuildingTile(model.value, cell.x, cell.y, selectedBuilding.value, metadata)
     return
   }
@@ -770,6 +876,23 @@ onMounted(() => {
   recenterCamera()
   targetCanvas.style.cursor = getCanvasCursor()
   void loadAvailableMaps()
+  void fetchUnitDefs()
+    .then((defs) => {
+      playerSpawnUnits.value = defs
+        .filter((def) => def.trainLabel)
+        .map((def) => ({ type: def.type as UnitType, label: def.name }))
+      const defaultUnitType = playerSpawnUnits.value[0]?.type ?? 'worker'
+      spawnPointLoadout.value = spawnPointLoadout.value.map((entry) => ({
+        ...entry,
+        unitType: playerSpawnUnits.value.some((unit) => unit.type === entry.unitType)
+          ? entry.unitType
+          : defaultUnitType,
+      }))
+      if (spawnPointLoadout.value.length === 0) {
+        spawnPointLoadout.value = [{ id: nextSpawnLoadoutId++, unitType: defaultUnitType, count: 3 }]
+      }
+    })
+    .catch(() => {})
 
   targetCanvas.addEventListener('mousedown', onMouseDown)
   targetCanvas.addEventListener('mousemove', onMouseMove)
@@ -796,6 +919,17 @@ watch(paintModeEnabled, () => {
   if (!canvas.value || isSpacePanning) return
   canvas.value.style.cursor = getCanvasCursor()
 })
+
+watch(
+  townhallOptions,
+  (options) => {
+    if (selectedSpawnTownhallId.value && options.some((option) => option.id === selectedSpawnTownhallId.value)) {
+      return
+    }
+    selectedSpawnTownhallId.value = ''
+  },
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
   if (canvas.value) {
@@ -979,10 +1113,35 @@ onBeforeUnmount(() => {
   resize: vertical;
 }
 
+.spawn-point-config,
 .enemy-spawn-config {
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 8px;
   padding: 8px;
+}
+
+.spawn-point-config {
+  background: rgba(8, 145, 178, 0.18);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.spawn-point-loadout-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.spawn-point-row-button {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  padding: 7px 9px;
+  font-size: 0.72rem;
+}
+
+.enemy-spawn-config {
   background: rgba(127, 29, 29, 0.18);
 }
 

@@ -1,4 +1,4 @@
-import type { UnitCapability } from '../network/protocol'
+import type { JsonObject, UnitCapability } from '../network/protocol'
 
 // A single paint layer in a unit's sprite.
 // Coordinates are in canvas pixels relative to the unit's center point.
@@ -23,7 +23,7 @@ export type UnitDef = {
   spawnSeconds: number
   capabilities: UnitCapability[]
   trainLabel: string
-  metadata?: Record<string, string | number | boolean | null>
+  metadata?: JsonObject
   render: UnitRenderDef
 }
 

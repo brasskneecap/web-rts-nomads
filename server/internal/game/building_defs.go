@@ -14,6 +14,7 @@ var buildingDefsJSON []byte
 // API as-is; the server game logic never reads them.
 type BuildingDef struct {
 	Type           string          `json:"type"`
+	Buildable      *bool           `json:"buildable,omitempty"`
 	Width          int             `json:"width"`
 	Height         int             `json:"height"`
 	MaxHp          float64         `json:"maxHp"`
@@ -54,6 +55,10 @@ func init() {
 func getBuildingDef(buildingType string) (BuildingDef, bool) {
 	def, ok := buildingDefsByType[buildingType]
 	return def, ok
+}
+
+func (d BuildingDef) IsBuildable() bool {
+	return d.Buildable == nil || *d.Buildable
 }
 
 func ListBuildingDefs() []BuildingDef {

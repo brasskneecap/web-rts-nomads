@@ -1083,6 +1083,8 @@ function formatBuildingName(buildingType: BuildingTile['buildingType']): string 
       return 'Farm'
     case 'enemy-spawnpoint':
       return 'Enemy Spawnpoint'
+    case 'spawn-point':
+      return 'Spawn Point'
     default:
       return buildingType
   }

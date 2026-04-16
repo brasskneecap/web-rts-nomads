@@ -77,6 +77,16 @@
         "obstacle": "rock"
       },
       {
+        "x": 18,
+        "y": 10,
+        "obstacle": "rock"
+      },
+      {
+        "x": 19,
+        "y": 10,
+        "obstacle": "rock"
+      },
+      {
         "x": 14,
         "y": 11,
         "obstacle": "rock"
@@ -92,8 +102,33 @@
         "obstacle": "rock"
       },
       {
+        "x": 19,
+        "y": 11,
+        "obstacle": "rock"
+      },
+      {
         "x": 14,
         "y": 12,
+        "obstacle": "rock"
+      },
+      {
+        "x": 19,
+        "y": 12,
+        "obstacle": "rock"
+      },
+      {
+        "x": 20,
+        "y": 12,
+        "obstacle": "rock"
+      },
+      {
+        "x": 20,
+        "y": 13,
+        "obstacle": "rock"
+      },
+      {
+        "x": 21,
+        "y": 13,
         "obstacle": "rock"
       },
       {
@@ -400,6 +435,244 @@
         "metadata": {}
       },
       {
+        "id": "tree-19-0",
+        "buildingType": "tree",
+        "x": 19,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-20-0",
+        "buildingType": "tree",
+        "x": 20,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-21-0",
+        "buildingType": "tree",
+        "x": 21,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-22-0",
+        "buildingType": "tree",
+        "x": 22,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-23-0",
+        "buildingType": "tree",
+        "x": 23,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-24-0",
+        "buildingType": "tree",
+        "x": 24,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-25-0",
+        "buildingType": "tree",
+        "x": 25,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-26-0",
+        "buildingType": "tree",
+        "x": 26,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-27-0",
+        "buildingType": "tree",
+        "x": 27,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-28-0",
+        "buildingType": "tree",
+        "x": 28,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-29-0",
+        "buildingType": "tree",
+        "x": 29,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-30-0",
+        "buildingType": "tree",
+        "x": 30,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-31-0",
+        "buildingType": "tree",
+        "x": 31,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-32-0",
+        "buildingType": "tree",
+        "x": 32,
+        "y": 0,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
         "id": "tree-0-1",
         "buildingType": "tree",
         "x": 0,
@@ -519,6 +792,244 @@
         "metadata": {}
       },
       {
+        "id": "tree-19-1",
+        "buildingType": "tree",
+        "x": 19,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-20-1",
+        "buildingType": "tree",
+        "x": 20,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-21-1",
+        "buildingType": "tree",
+        "x": 21,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-22-1",
+        "buildingType": "tree",
+        "x": 22,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-23-1",
+        "buildingType": "tree",
+        "x": 23,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-24-1",
+        "buildingType": "tree",
+        "x": 24,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-25-1",
+        "buildingType": "tree",
+        "x": 25,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-26-1",
+        "buildingType": "tree",
+        "x": 26,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-27-1",
+        "buildingType": "tree",
+        "x": 27,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-28-1",
+        "buildingType": "tree",
+        "x": 28,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-29-1",
+        "buildingType": "tree",
+        "x": 29,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-30-1",
+        "buildingType": "tree",
+        "x": 30,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-31-1",
+        "buildingType": "tree",
+        "x": 31,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-32-1",
+        "buildingType": "tree",
+        "x": 32,
+        "y": 1,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
         "id": "tree-0-2",
         "buildingType": "tree",
         "x": 0,
@@ -587,9 +1098,9 @@
         "metadata": {}
       },
       {
-        "id": "townhall-6-2",
+        "id": "townhall-7-2",
         "buildingType": "townhall",
-        "x": 6,
+        "x": 7,
         "y": 2,
         "width": 3,
         "height": 3,
@@ -602,13 +1113,101 @@
           "deposit-point"
         ],
         "spawnUnitTypes": [
-          "worker",
-          "soldier"
+          "worker"
         ],
         "metadata": {
-          "occupiedLabel": "occupied",
-          "unoccupiedLabel": "unoccupied"
+          "foodSupply": 15
         }
+      },
+      {
+        "id": "tree-19-2",
+        "buildingType": "tree",
+        "x": 19,
+        "y": 2,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-20-2",
+        "buildingType": "tree",
+        "x": 20,
+        "y": 2,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "townhall-28-2",
+        "buildingType": "townhall",
+        "x": 28,
+        "y": 2,
+        "width": 3,
+        "height": 3,
+        "occupied": false,
+        "visible": false,
+        "ownerId": null,
+        "capabilities": [
+          "unit-spawner",
+          "occupiable",
+          "deposit-point"
+        ],
+        "spawnUnitTypes": [
+          "worker"
+        ],
+        "metadata": {
+          "foodSupply": 15
+        }
+      },
+      {
+        "id": "tree-31-2",
+        "buildingType": "tree",
+        "x": 31,
+        "y": 2,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-32-2",
+        "buildingType": "tree",
+        "x": 32,
+        "y": 2,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
       },
       {
         "id": "tree-0-3",
@@ -662,6 +1261,91 @@
         "metadata": {}
       },
       {
+        "id": "tree-19-3",
+        "buildingType": "tree",
+        "x": 19,
+        "y": 3,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-20-3",
+        "buildingType": "tree",
+        "x": 20,
+        "y": 3,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-31-3",
+        "buildingType": "tree",
+        "x": 31,
+        "y": 3,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-32-3",
+        "buildingType": "tree",
+        "x": 32,
+        "y": 3,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-33-3",
+        "buildingType": "tree",
+        "x": 33,
+        "y": 3,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
         "id": "tree-0-4",
         "buildingType": "tree",
         "x": 0,
@@ -696,6 +1380,100 @@
         "metadata": {}
       },
       {
+        "id": "tree-19-4",
+        "buildingType": "tree",
+        "x": 19,
+        "y": 4,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-20-4",
+        "buildingType": "tree",
+        "x": 20,
+        "y": 4,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "spawn-point-26-4",
+        "buildingType": "spawn-point",
+        "x": 26,
+        "y": 4,
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "ownerId": null,
+        "capabilities": [],
+        "metadata": {
+          "townhallId": null,
+          "fillOrder": 2,
+          "spawnUnits": [
+            {
+              "unitType": "worker",
+              "count": 3
+            },
+            {
+              "unitType": "soldier",
+              "count": 1
+            }
+          ]
+        }
+      },
+      {
+        "id": "tree-32-4",
+        "buildingType": "tree",
+        "x": 32,
+        "y": 4,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-33-4",
+        "buildingType": "tree",
+        "x": 33,
+        "y": 4,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
         "id": "tree-0-5",
         "buildingType": "tree",
         "x": 0,
@@ -716,6 +1494,100 @@
         "id": "tree-1-5",
         "buildingType": "tree",
         "x": 1,
+        "y": 5,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "spawn-point-7-5",
+        "buildingType": "spawn-point",
+        "x": 7,
+        "y": 5,
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "ownerId": null,
+        "capabilities": [],
+        "metadata": {
+          "townhallId": null,
+          "fillOrder": 1,
+          "spawnUnits": [
+            {
+              "count": 3,
+              "unitType": "worker"
+            },
+            {
+              "count": 1,
+              "unitType": "soldier"
+            }
+          ]
+        }
+      },
+      {
+        "id": "tree-19-5",
+        "buildingType": "tree",
+        "x": 19,
+        "y": 5,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-20-5",
+        "buildingType": "tree",
+        "x": 20,
+        "y": 5,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-32-5",
+        "buildingType": "tree",
+        "x": 32,
+        "y": 5,
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 1000,
+        "metadata": {}
+      },
+      {
+        "id": "tree-33-5",
+        "buildingType": "tree",
+        "x": 33,
         "y": 5,
         "width": 1,
         "height": 1,
@@ -767,6 +1639,25 @@
         "id": "goldmine-3-7",
         "buildingType": "goldmine",
         "x": 3,
+        "y": 7,
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "gold",
+        "resourceAmount": 15000,
+        "metadata": {
+          "gatherRate": 10
+        }
+      },
+      {
+        "id": "goldmine-31-7",
+        "buildingType": "goldmine",
+        "x": 31,
         "y": 7,
         "width": 2,
         "height": 2,

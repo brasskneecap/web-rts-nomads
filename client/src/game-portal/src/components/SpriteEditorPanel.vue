@@ -1954,8 +1954,11 @@ async function copyExport() {
 .spe {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   background: #0f172a;
   color: #f1f5f9;
   font-family: monospace;
@@ -1990,11 +1993,14 @@ async function copyExport() {
 .spe__body {
   display: flex;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
 /* ── Sidebar ── */
 .spe__sidebar {
+  flex: 0 0 240px;
   width: 240px;
   min-width: 240px;
   padding: 14px 12px;
@@ -2075,6 +2081,8 @@ async function copyExport() {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -2226,6 +2234,7 @@ async function copyExport() {
 
 /* ── Layers panel ── */
 .spe__layers-panel {
+  flex: 0 0 240px;
   width: 240px;
   min-width: 240px;
   padding: 14px 12px;
@@ -2408,5 +2417,35 @@ async function copyExport() {
   font-style: italic;
   text-align: center;
   padding: 24px;
+}
+
+@media (max-width: 1280px) {
+  .spe__body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .spe__sidebar,
+  .spe__layers-panel {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .spe__sidebar {
+    border-right: none;
+    border-bottom: 1px solid #334155;
+  }
+
+  .spe__layers-panel {
+    border-left: none;
+    border-top: 1px solid #334155;
+  }
+
+  .spe__main {
+    flex: 0 0 auto;
+    min-height: 420px;
+  }
 }
 </style>

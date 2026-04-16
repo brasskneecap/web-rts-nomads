@@ -8,7 +8,7 @@ export type MapId = string
 export type TerrainType = 'dirt' | 'water' | 'forest'
 
 export type ObstacleType = 'rock' | 'wall' | 'tree'
-export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks' | 'farm' | 'enemy-spawnpoint' | (string & {})
+export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks' | 'farm' | 'enemy-spawnpoint' | 'spawn-point' | (string & {})
 export type BuildingCapability =
   | 'resource-source'
   | 'unit-spawner'
@@ -18,6 +18,8 @@ export type BuildingCapability =
 export type ResourceType = 'gold' | 'wood'
 export type UnitType = 'worker' | 'soldier'
 export type UnitCapability = 'move' | 'gather' | 'build' | 'attack'
+export type JsonValue = string | number | boolean | null | JsonObject | JsonValue[]
+export type JsonObject = { [key: string]: JsonValue }
 
 export type GridCoord = {
   x: number
@@ -44,7 +46,7 @@ export type BuildingTile = GridCoord & {
   resourceType?: ResourceType
   resourceAmount?: number
   spawnUnitTypes?: string[]
-  metadata?: Record<string, string | number | boolean | null>
+  metadata?: JsonObject
 }
 
 export type MapConfig = {

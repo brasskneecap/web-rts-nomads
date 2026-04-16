@@ -1,4 +1,4 @@
-import type { BuildingCapability } from '../network/protocol'
+import type { BuildingCapability, JsonObject } from '../network/protocol'
 
 // A rectangular accent layer.
 // Coordinates are in cell units relative to the building's top-left origin.
@@ -40,6 +40,7 @@ export type BuildingRenderDef = {
 
 export type BuildingDef = {
   type: string
+  buildable?: boolean
   width: number
   height: number
   maxHp: number
@@ -47,21 +48,23 @@ export type BuildingDef = {
   resourceCost: Record<string, number>
   capabilities: BuildingCapability[]
   spawnUnitTypes: string[]
-  metadata: Record<string, string | number | boolean | null>
+  metadata: JsonObject
   color: string
   label: string
   hotkey: string
   render: BuildingRenderDef
 }
 
+export let BUILDING_DEFS: BuildingDef[] = []
 export let BUILDABLE_BUILDING_DEFS: BuildingDef[] = []
 
 export let BUILDING_DEF_MAP = new Map<string, BuildingDef>()
 
 export function initBuildingDefs(defs: BuildingDef[]): void {
-  BUILDABLE_BUILDING_DEFS = defs.map((def) => ({
+  BUILDING_DEFS = defs.map((def) => ({
     ...def,
-    hotkey: def.hotkey.toLowerCase(),
+    hotkey: (def.hotkey ?? '').toLowerCase(),
   }))
-  BUILDING_DEF_MAP = new Map(BUILDABLE_BUILDING_DEFS.map((def) => [def.type, def]))
+  BUILDABLE_BUILDING_DEFS = BUILDING_DEFS.filter((def) => def.buildable !== false)
+  BUILDING_DEF_MAP = new Map(BUILDING_DEFS.map((def) => [def.type, def]))
 }

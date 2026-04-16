@@ -83,6 +83,11 @@ type EnemySpawnTimer struct {
 	TotalInterval     float64
 }
 
+type PlayerStartUnit struct {
+	UnitType string
+	Count    int
+}
+
 const enemyPlayerID = "__enemy__"
 const enemyPlayerColor = "#e74c3c"
 
@@ -436,8 +441,8 @@ func (s *GameState) EnsurePlayer(playerID string) {
 		UnitSpawnTimeMultipliers:      map[string]float64{},
 	}
 
-	home := s.claimTownhallForPlayerLocked(playerID)
-	s.spawnUnitsForPlayerLocked(playerID, color, 3, home)
+	home, spawnPoint := s.claimPlayerStartLocked(playerID)
+	s.spawnUnitsForPlayerLocked(playerID, color, home, s.getPlayerStartLoadoutLocked(spawnPoint))
 }
 
 func (s *GameState) RemovePlayer(playerID string) {
@@ -457,29 +462,42 @@ func (s *GameState) RemovePlayer(playerID string) {
 	s.releaseTownhallForPlayerLocked(playerID)
 }
 
-func (s *GameState) spawnUnitsForPlayerLocked(playerID, color string, count int, home *protocol.BuildingTile) {
-	if count <= 0 {
+func (s *GameState) spawnUnitsForPlayerLocked(playerID, color string, home *protocol.BuildingTile, loadout []PlayerStartUnit) {
+	totalCount := 0
+	for _, entry := range loadout {
+		if entry.Count > 0 {
+			totalCount += entry.Count
+		}
+	}
+	if totalCount <= 0 {
 		return
 	}
 
 	playerIndex := len(s.Players) - 1
 	blocked := s.buildBlockedCells()
-	spawnPositions := make([]protocol.Vec2, 0, count)
+	spawnPositions := make([]protocol.Vec2, 0, totalCount)
 
 	if home != nil {
-		spawnPositions = s.getTownhallSpawnPositionsLocked(*home, count, blocked)
+		spawnPositions = s.getTownhallSpawnPositionsLocked(*home, totalCount, blocked)
 	}
 
-	if len(spawnPositions) < count {
-		spawnPositions = append(spawnPositions, s.getFallbackSpawnPositionsLocked(playerIndex, count-len(spawnPositions), blocked)...)
+	if len(spawnPositions) < totalCount {
+		spawnPositions = append(spawnPositions, s.getFallbackSpawnPositionsLocked(playerIndex, totalCount-len(spawnPositions), blocked)...)
 	}
 	if len(spawnPositions) == 0 {
 		return
 	}
 
-	for i := 0; i < count; i++ {
-		spawn := spawnPositions[minInt(i, len(spawnPositions)-1)]
-		s.spawnPlayerUnitLocked("worker", playerID, color, spawn)
+	spawnIndex := 0
+	for _, entry := range loadout {
+		if entry.Count <= 0 {
+			continue
+		}
+		for i := 0; i < entry.Count; i++ {
+			spawn := spawnPositions[minInt(spawnIndex, len(spawnPositions)-1)]
+			s.spawnPlayerUnitLocked(entry.UnitType, playerID, color, spawn)
+			spawnIndex++
+		}
 	}
 }
 
@@ -890,6 +908,9 @@ func (s *GameState) BuildBuilding(playerID, buildingType string, unitIDs []int, 
 	if !ok {
 		return
 	}
+	if !def.IsBuildable() {
+		return
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1014,6 +1035,21 @@ func (s *GameState) claimTownhallForPlayerLocked(playerID string) *protocol.Buil
 		if building.BuildingType != "townhall" || building.Occupied {
 			continue
 		}
+		return s.claimSpecificTownhallForPlayerLocked(playerID, building.ID)
+	}
+
+	return nil
+}
+
+func (s *GameState) claimSpecificTownhallForPlayerLocked(playerID, buildingID string) *protocol.BuildingTile {
+	for i := range s.MapConfig.Buildings {
+		building := &s.MapConfig.Buildings[i]
+		if building.BuildingType != "townhall" || building.ID != buildingID {
+			continue
+		}
+		if building.Occupied && (building.OwnerID == nil || *building.OwnerID != playerID) {
+			return nil
+		}
 
 		ownerID := playerID
 		building.OwnerID = &ownerID
@@ -1044,6 +1080,183 @@ func (s *GameState) releaseTownhallForPlayerLocked(playerID string) {
 		building.Visible = false
 		delete(s.Productions, building.ID)
 	}
+}
+
+func (s *GameState) claimPlayerStartLocked(playerID string) (*protocol.BuildingTile, *protocol.BuildingTile) {
+	for i := range s.MapConfig.Buildings {
+		building := &s.MapConfig.Buildings[i]
+		if building.BuildingType == "townhall" && building.OwnerID != nil && *building.OwnerID == playerID {
+			return building, s.getLinkedSpawnPointForTownhallLocked(*building)
+		}
+	}
+
+	spawnPoints := make([]*protocol.BuildingTile, 0)
+	for i := range s.MapConfig.Buildings {
+		if s.MapConfig.Buildings[i].BuildingType == "spawn-point" {
+			spawnPoints = append(spawnPoints, &s.MapConfig.Buildings[i])
+		}
+	}
+	sort.Slice(spawnPoints, func(i, j int) bool {
+		return getSpawnFillOrder(spawnPoints[i]) < getSpawnFillOrder(spawnPoints[j])
+	})
+	for _, spawnPoint := range spawnPoints {
+		townhall := s.resolveSpawnPointTownhallLocked(*spawnPoint, false)
+		if townhall == nil {
+			continue
+		}
+
+		claimed := s.claimSpecificTownhallForPlayerLocked(playerID, townhall.ID)
+		if claimed != nil {
+			return claimed, spawnPoint
+		}
+	}
+
+	home := s.claimTownhallForPlayerLocked(playerID)
+	if home == nil {
+		return nil, nil
+	}
+	return home, s.getLinkedSpawnPointForTownhallLocked(*home)
+}
+
+func getSpawnFillOrder(spawnPoint *protocol.BuildingTile) float64 {
+	if spawnPoint.Metadata == nil {
+		return 0
+	}
+	if v, ok := getMetadataFloat(spawnPoint.Metadata, "fillOrder"); ok {
+		return v
+	}
+	return 0
+}
+
+func (s *GameState) getPlayerStartLoadoutLocked(spawnPoint *protocol.BuildingTile) []PlayerStartUnit {
+	defaultLoadout := []PlayerStartUnit{{UnitType: "worker", Count: 3}}
+	if spawnPoint == nil || spawnPoint.Metadata == nil {
+		return defaultLoadout
+	}
+
+	loadout := make([]PlayerStartUnit, 0)
+	if rawEntries, ok := spawnPoint.Metadata["spawnUnits"].([]interface{}); ok {
+		for _, rawEntry := range rawEntries {
+			entryMap, ok := rawEntry.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			unitType, ok := getMetadataString(entryMap, "unitType")
+			if !ok {
+				continue
+			}
+			if _, exists := getUnitDef(unitType); !exists {
+				continue
+			}
+
+			count := 1
+			if configuredCount, ok := getMetadataFloat(entryMap, "count"); ok && configuredCount >= 1 {
+				count = int(configuredCount)
+			}
+
+			loadout = append(loadout, PlayerStartUnit{
+				UnitType: unitType,
+				Count:    count,
+			})
+		}
+	}
+
+	if len(loadout) > 0 {
+		return loadout
+	}
+
+	// Backwards compatibility for older maps using unitType/spawnCount.
+	unitType := "worker"
+	count := 3
+	if configuredType, ok := getMetadataString(spawnPoint.Metadata, "unitType"); ok {
+		if _, exists := getUnitDef(configuredType); exists {
+			unitType = configuredType
+		}
+	}
+	if configuredCount, ok := getMetadataFloat(spawnPoint.Metadata, "spawnCount"); ok && configuredCount >= 1 {
+		count = int(configuredCount)
+	}
+
+	return []PlayerStartUnit{{UnitType: unitType, Count: count}}
+}
+
+func (s *GameState) getLinkedSpawnPointForTownhallLocked(home protocol.BuildingTile) *protocol.BuildingTile {
+	homeCenter := protocol.Vec2{
+		X: (float64(home.X) + float64(home.Width)/2) * s.MapConfig.CellSize,
+		Y: (float64(home.Y) + float64(home.Height)/2) * s.MapConfig.CellSize,
+	}
+
+	var nearestUnassigned *protocol.BuildingTile
+	bestDistance := math.Inf(1)
+
+	for i := range s.MapConfig.Buildings {
+		building := &s.MapConfig.Buildings[i]
+		if building.BuildingType != "spawn-point" {
+			continue
+		}
+
+		if linkedTownhallID, ok := getMetadataString(building.Metadata, "townhallId"); ok && linkedTownhallID != "" {
+			if linkedTownhallID == home.ID {
+				return building
+			}
+			continue
+		}
+
+		center := protocol.Vec2{
+			X: (float64(building.X) + float64(building.Width)/2) * s.MapConfig.CellSize,
+			Y: (float64(building.Y) + float64(building.Height)/2) * s.MapConfig.CellSize,
+		}
+		dist := distanceSquared(center.X, center.Y, homeCenter.X, homeCenter.Y)
+		if dist < bestDistance {
+			bestDistance = dist
+			nearestUnassigned = building
+		}
+	}
+
+	return nearestUnassigned
+}
+
+func (s *GameState) resolveSpawnPointTownhallLocked(spawnPoint protocol.BuildingTile, allowOccupied bool) *protocol.BuildingTile {
+	if linkedTownhallID, ok := getMetadataString(spawnPoint.Metadata, "townhallId"); ok && linkedTownhallID != "" {
+		building := s.getBuildingByIDLocked(linkedTownhallID)
+		if building == nil || building.BuildingType != "townhall" {
+			return nil
+		}
+		if !allowOccupied && building.Occupied {
+			return nil
+		}
+		return building
+	}
+
+	spawnCenter := protocol.Vec2{
+		X: (float64(spawnPoint.X) + float64(spawnPoint.Width)/2) * s.MapConfig.CellSize,
+		Y: (float64(spawnPoint.Y) + float64(spawnPoint.Height)/2) * s.MapConfig.CellSize,
+	}
+
+	var nearest *protocol.BuildingTile
+	bestDistance := math.Inf(1)
+	for i := range s.MapConfig.Buildings {
+		building := &s.MapConfig.Buildings[i]
+		if building.BuildingType != "townhall" {
+			continue
+		}
+		if !allowOccupied && building.Occupied {
+			continue
+		}
+
+		center := protocol.Vec2{
+			X: (float64(building.X) + float64(building.Width)/2) * s.MapConfig.CellSize,
+			Y: (float64(building.Y) + float64(building.Height)/2) * s.MapConfig.CellSize,
+		}
+		dist := distanceSquared(center.X, center.Y, spawnCenter.X, spawnCenter.Y)
+		if dist < bestDistance {
+			bestDistance = dist
+			nearest = building
+		}
+	}
+
+	return nearest
 }
 
 func (s *GameState) getTownhallSpawnPositionsLocked(home protocol.BuildingTile, count int, blocked map[gridPoint]bool) []protocol.Vec2 {
@@ -2256,6 +2469,10 @@ func formatMetadataUnitTypeSuffix(unitType string) string {
 }
 
 func getMetadataFloat(metadata map[string]interface{}, key string) (float64, bool) {
+	if metadata == nil {
+		return 0, false
+	}
+
 	value, ok := metadata[key]
 	if !ok {
 		return 0, false
@@ -2275,6 +2492,24 @@ func getMetadataFloat(metadata map[string]interface{}, key string) (float64, boo
 	default:
 		return 0, false
 	}
+}
+
+func getMetadataString(metadata map[string]interface{}, key string) (string, bool) {
+	if metadata == nil {
+		return "", false
+	}
+
+	value, ok := metadata[key]
+	if !ok {
+		return "", false
+	}
+
+	typed, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+
+	return typed, true
 }
 
 func buildFormationTargets(units []*Unit, anchor protocol.Vec2, spacing float64) []protocol.Vec2 {

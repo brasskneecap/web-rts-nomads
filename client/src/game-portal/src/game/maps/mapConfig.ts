@@ -1,6 +1,7 @@
 import type {
   BuildingTile,
   BuildingType,
+  JsonObject,
   MapConfig,
   ObstacleTile,
   ObstacleType,
@@ -111,7 +112,7 @@ export function setBuildingTile(
   x: number,
   y: number,
   buildingType: BuildingType | null,
-  metadata?: Record<string, string | number | boolean | null>,
+  metadata?: JsonObject,
 ): MapConfig {
   const nextBuildings = map.buildings.filter(
     (building) => !doesBuildingCoverCell(building, x, y),
@@ -147,6 +148,8 @@ export function getBuildingColor(
       return '#2d6a4f'
     case 'enemy-spawnpoint':
       return '#991b1b'
+    case 'spawn-point':
+      return '#0ea5e9'
     default:
       return occupied ? (ownerColor ?? '#64748b') : '#64748b'
   }
@@ -310,6 +313,26 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
       ownerId: null,
       capabilities: ['enemy-spawner'],
       metadata: { spawnDelaySeconds: 60, spawnIntervalSeconds: 10 },
+    }
+  }
+
+  if (buildingType === 'spawn-point') {
+    return {
+      id: `spawn-point-${x}-${y}`,
+      buildingType,
+      x,
+      y,
+      width: 1,
+      height: 1,
+      occupied: false,
+      visible: false,
+      ownerId: null,
+      capabilities: [],
+      metadata: {
+        townhallId: null,
+        fillOrder: 0,
+        spawnUnits: [{ unitType: 'worker', count: 3 }],
+      },
     }
   }
 
