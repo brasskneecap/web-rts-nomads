@@ -28,6 +28,7 @@ export type ResolvedUnitAttackVisual = {
 export type UnitDef = {
   type: string
   name: string
+  archetype?: string
   hp: number
   damage: number
   attackRange: number

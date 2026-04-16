@@ -1508,32 +1508,6 @@
         "metadata": {}
       },
       {
-        "id": "spawn-point-7-5",
-        "buildingType": "spawn-point",
-        "x": 7,
-        "y": 5,
-        "width": 1,
-        "height": 1,
-        "occupied": false,
-        "visible": false,
-        "ownerId": null,
-        "capabilities": [],
-        "metadata": {
-          "townhallId": null,
-          "fillOrder": 1,
-          "spawnUnits": [
-            {
-              "count": 3,
-              "unitType": "worker"
-            },
-            {
-              "count": 1,
-              "unitType": "soldier"
-            }
-          ]
-        }
-      },
-      {
         "id": "tree-19-5",
         "buildingType": "tree",
         "x": 19,
@@ -1617,6 +1591,32 @@
         "resourceType": "wood",
         "resourceAmount": 250,
         "metadata": {}
+      },
+      {
+        "id": "spawn-point-7-6",
+        "buildingType": "spawn-point",
+        "x": 7,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "ownerId": null,
+        "capabilities": [],
+        "metadata": {
+          "townhallId": null,
+          "fillOrder": 0,
+          "spawnUnits": [
+            {
+              "unitType": "worker",
+              "count": 3
+            },
+            {
+              "unitType": "soldier",
+              "count": 1
+            }
+          ]
+        }
       },
       {
         "id": "tree-0-7",
@@ -1830,9 +1830,9 @@
         }
       },
       {
-        "id": "enemy-spawnpoint-21-26",
+        "id": "enemy-spawnpoint-18-26",
         "buildingType": "enemy-spawnpoint",
-        "x": 21,
+        "x": 18,
         "y": 26,
         "width": 2,
         "height": 2,
@@ -1843,7 +1843,7 @@
           "enemy-spawner"
         ],
         "metadata": {
-          "spawnDelaySeconds": 90,
+          "spawnDelaySeconds": 60,
           "spawnIntervalSeconds": 10,
           "spawnCount": 2,
           "unitType": "raider"

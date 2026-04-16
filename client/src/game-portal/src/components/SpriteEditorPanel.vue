@@ -145,6 +145,14 @@
             <label>Name</label>
             <input v-model="uName" />
           </div>
+          <div class="spe__field">
+            <label>Archetype</label>
+            <select v-model="uArchetype" class="spe__catalog-select">
+              <option v-for="archetype in allUnitArchetypes" :key="archetype" :value="archetype">
+                {{ archetype }}
+              </option>
+            </select>
+          </div>
           <div class="spe__field-row">
             <div class="spe__field">
               <label>HP</label>
@@ -620,6 +628,20 @@ const UNIT_CENTER = UNIT_CANVAS / 2
 
 const ALL_BUILDING_CAPS = ['unit-spawner', 'occupiable', 'deposit-point', 'resource-source', 'enemy-spawner']
 const ALL_UNIT_CAPS     = ['move', 'attack', 'gather', 'build']
+const AVAILABLE_UNIT_ARCHETYPES = [
+  'soldier',
+  'archer',
+  'mage',
+  'cavalry',
+  'catapult',
+  'raider',
+  'bruiser',
+  'skirmisher',
+  'enemy_archer',
+  'enemy_siege',
+  'support',
+  'boss',
+]
 
 const ACTION_SVG_SIZE = 24  // SVG viewBox units (24×24)
 
@@ -677,6 +699,7 @@ const bTriangles = ref<Record<string, string>>({})
 
 const uType         = ref('new-unit')
 const uName         = ref('New Unit')
+const uArchetype    = ref('soldier')
 const uHp           = ref(100)
 const uDamage       = ref(5)
 const uAttackRange  = ref(60)
@@ -686,15 +709,15 @@ const uWood         = ref(0)
 const uMeatCost     = ref(1)
 const uSpawnSeconds = ref(5)
 const uGoldGatherAmount = ref(20)
-  const uWoodGatherAmount = ref(15)
-  const uTrainLabel   = ref('')
-  const uCapabilities = ref<string[]>(['move', 'attack'])
-  const uMetadataText = ref('{}')
-  const uAttackVisualKind = ref<'melee' | 'projectile'>('melee')
-  const uAttackOriginX = ref(0)
-  const uAttackOriginY = ref(0)
-  const uAttackEffectLength = ref(10)
-  const uLayers       = ref<UnitLayer[]>([])
+const uWoodGatherAmount = ref(15)
+const uTrainLabel   = ref('')
+const uCapabilities = ref<string[]>(['move', 'attack'])
+const uMetadataText = ref('{}')
+const uAttackVisualKind = ref<'melee' | 'projectile'>('melee')
+const uAttackOriginX = ref(0)
+const uAttackOriginY = ref(0)
+const uAttackEffectLength = ref(10)
+const uLayers       = ref<UnitLayer[]>([])
 
 // ─── Paint state (building mode) ─────────────────────────────────────────────
 
@@ -1616,6 +1639,13 @@ onMounted(() => {
 const catalogBuildings = ref<BuildingDef[]>([])
 const catalogUnits     = ref<UnitDef[]>([])
 const allUnitTypes     = computed(() => catalogUnits.value.map((unit) => unit.type))
+const allUnitArchetypes = computed(() => {
+  const names = new Set<string>(AVAILABLE_UNIT_ARCHETYPES)
+  for (const unit of catalogUnits.value) {
+    if (unit.archetype?.trim()) names.add(unit.archetype.trim())
+  }
+  return [...names].sort((a, b) => a.localeCompare(b))
+})
 
 const showLoadPanel = ref(false)
 const loadJsonText  = ref('')
@@ -1699,6 +1729,7 @@ function applyUnitDef(data: UnitDef) {
   const attackVisual = getResolvedUnitAttackVisual(data)
   uType.value         = data.type
   uName.value         = data.name
+  uArchetype.value    = data.archetype ?? data.type
   uHp.value           = data.hp
   uDamage.value       = data.damage
   uAttackRange.value  = data.attackRange
@@ -2131,6 +2162,7 @@ const exportJson = computed(() => {
   return JSON.stringify({
     type: uType.value,
     name: uName.value,
+    archetype: uArchetype.value.trim(),
     hp: uHp.value,
     damage: uDamage.value,
     attackRange: uAttackRange.value,

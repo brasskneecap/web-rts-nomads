@@ -17,6 +17,7 @@ type Unit struct {
 	OwnerID      string
 	Color        string
 	UnitType     string
+	Archetype    string
 	Name         string
 	Capabilities []string
 	Visible      bool
@@ -51,6 +52,14 @@ type Unit struct {
 	AttackBuildingTargetID string
 	Attacking              bool
 	ManualMove             bool
+
+	CombatAnchorX      float64
+	CombatAnchorY      float64
+	LastTargetEvalTick int
+	CurrentTargetScore float64
+	TauntedByUnitID    int
+	TauntRemaining     float64
+	ThreatTable        map[int]*ThreatEntry
 }
 
 const (
@@ -237,10 +246,9 @@ func (s *GameState) Update(dt float64) {
 	s.tickBuildingRepairsLocked(dt)
 	blocked := s.buildBlockedCells()
 	s.tickBuildingCombatLocked(dt)
+	s.tickCombatAILocked(dt, blocked)
 	s.tickUnitCombatLocked(dt, blocked)
 	s.tickEnemySpawnpointsLocked(dt, blocked)
-	s.tickEnemyAILocked(blocked)
-	s.tickPlayerAutoAttackLocked(blocked)
 
 	for _, unit := range s.Units {
 		s.updateWorkerTaskLocked(unit, dt, blocked)
@@ -333,6 +341,8 @@ func (s *GameState) MoveUnits(playerID string, unitIDs []int, dest protocol.Vec2
 		orderID := s.nextMovementOrderIDLocked()
 		s.resetUnitMovementLocked(unit, orderID)
 		unit.ManualMove = true
+		unit.CombatAnchorX = dest.X
+		unit.CombatAnchorY = dest.Y
 		s.assignUnitPath(unit, dest, blocked, nil)
 		return
 	}
@@ -355,6 +365,8 @@ func (s *GameState) MoveUnits(playerID string, unitIDs []int, dest protocol.Vec2
 		target := targets[i]
 		s.resetUnitMovementLocked(unit, orderID)
 		unit.ManualMove = true
+		unit.CombatAnchorX = target.X
+		unit.CombatAnchorY = target.Y
 
 		s.assignUnitPath(unit, protocol.Vec2{
 			X: clampFloat(target.X, 0, s.MapWidth),
@@ -394,6 +406,8 @@ func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protoco
 		unit := validUnits[0]
 		orderID := s.nextMovementOrderIDLocked()
 		s.resetUnitMovementLocked(unit, orderID)
+		unit.CombatAnchorX = dest.X
+		unit.CombatAnchorY = dest.Y
 		s.assignUnitPath(unit, dest, blocked, nil)
 		return
 	}
@@ -415,6 +429,8 @@ func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protoco
 	for i, unit := range validUnits {
 		target := targets[i]
 		s.resetUnitMovementLocked(unit, orderID)
+		unit.CombatAnchorX = target.X
+		unit.CombatAnchorY = target.Y
 
 		s.assignUnitPath(unit, protocol.Vec2{
 			X: clampFloat(target.X, 0, s.MapWidth),
@@ -508,60 +524,84 @@ func (s *GameState) spawnPlayerUnitLocked(unitType, playerID, color string, spaw
 	if !ok {
 		return nil
 	}
+	return s.spawnUnitFromDefLocked(def, unitType, playerID, color, spawn)
+}
+
+func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, color string, spawn protocol.Vec2) *Unit {
 	unit := &Unit{
-		ID:           s.nextUnitID,
-		OwnerID:      playerID,
-		Color:        color,
-		UnitType:     unitType,
-		Name:         def.Name,
-		Capabilities: append([]string{}, def.Capabilities...),
-		Visible:      true,
-		Status:       "Idle",
-		X:            spawn.X,
-		Y:            spawn.Y,
-		HP:           def.HP,
-		MaxHP:        def.HP,
-		Damage:       def.Damage,
-		AttackRange:  def.AttackRange,
-		AttackSpeed:  def.AttackSpeed,
+		ID:            s.nextUnitID,
+		OwnerID:       playerID,
+		Color:         color,
+		UnitType:      unitType,
+		Archetype:     resolveUnitArchetype(def, unitType),
+		Name:          def.Name,
+		Capabilities:  append([]string{}, def.Capabilities...),
+		Visible:       true,
+		Status:        "Idle",
+		X:             spawn.X,
+		Y:             spawn.Y,
+		HP:            def.HP,
+		MaxHP:         def.HP,
+		Damage:        def.Damage,
+		AttackRange:   def.AttackRange,
+		AttackSpeed:   def.AttackSpeed,
+		CombatAnchorX: spawn.X,
+		CombatAnchorY: spawn.Y,
+		ThreatTable:   map[int]*ThreatEntry{},
 	}
 
 	s.nextUnitID++
 	s.Units = append(s.Units, unit)
+	s.initializeCombatUnitLocked(unit)
 	return unit
 }
 
 func (s *GameState) spawnRaiderUnitLocked(playerID, color string, spawn protocol.Vec2) *Unit {
 	unit := &Unit{
-		ID:           s.nextUnitID,
-		OwnerID:      playerID,
-		Color:        color,
-		UnitType:     "raider",
-		Name:         "Raider",
-		Capabilities: []string{"move", "attack"},
-		Visible:      true,
-		Status:       "Idle",
-		X:            spawn.X,
-		Y:            spawn.Y,
-		HP:           raiderHP,
-		MaxHP:        raiderMaxHP,
-		Damage:       raiderDamage,
-		AttackRange:  raiderAttackRange,
-		AttackSpeed:  raiderAttackSpeed,
+		ID:            s.nextUnitID,
+		OwnerID:       playerID,
+		Color:         color,
+		UnitType:      "raider",
+		Archetype:     "raider",
+		Name:          "Raider",
+		Capabilities:  []string{"move", "attack"},
+		Visible:       true,
+		Status:        "Idle",
+		X:             spawn.X,
+		Y:             spawn.Y,
+		HP:            raiderHP,
+		MaxHP:         raiderMaxHP,
+		Damage:        raiderDamage,
+		AttackRange:   raiderAttackRange,
+		AttackSpeed:   raiderAttackSpeed,
+		CombatAnchorX: spawn.X,
+		CombatAnchorY: spawn.Y,
+		ThreatTable:   map[int]*ThreatEntry{},
 	}
 
 	s.nextUnitID++
 	s.Units = append(s.Units, unit)
+	s.initializeCombatUnitLocked(unit)
 	return unit
 }
 
 func (s *GameState) spawnEnemyUnitLocked(unitType string, spawn protocol.Vec2) *Unit {
+	if def, ok := getUnitDef(unitType); ok {
+		return s.spawnUnitFromDefLocked(def, unitType, enemyPlayerID, enemyPlayerColor, spawn)
+	}
 	switch unitType {
 	case "raider":
 		return s.spawnRaiderUnitLocked(enemyPlayerID, enemyPlayerColor, spawn)
 	default:
 		return s.spawnRaiderUnitLocked(enemyPlayerID, enemyPlayerColor, spawn)
 	}
+}
+
+func resolveUnitArchetype(def UnitDef, unitType string) string {
+	if def.Archetype != "" {
+		return def.Archetype
+	}
+	return unitType
 }
 
 func (s *GameState) removeUnitLocked(unitID int) {
@@ -579,6 +619,11 @@ func (s *GameState) removeUnitLocked(unitID int) {
 			u.AttackTargetID = 0
 			u.Attacking = false
 			u.Status = "Idle"
+		}
+		delete(u.ThreatTable, unitID)
+		if u.TauntedByUnitID == unitID {
+			u.TauntedByUnitID = 0
+			u.TauntRemaining = 0
 		}
 	}
 }
@@ -641,6 +686,8 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 		unit.AttackTargetID = targetUnitID
 		unit.Attacking = false
 		unit.Status = "Moving To Attack"
+		unit.CombatAnchorX = unit.X
+		unit.CombatAnchorY = unit.Y
 
 		dx := target.X - unit.X
 		dy := target.Y - unit.Y
@@ -675,7 +722,9 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Status = "Attacking"
 
 					if unit.AttackCooldown <= 0 {
-						target.HP -= unit.Damage
+						damage := unit.Damage
+						target.HP -= damage
+						s.onUnitDamagedLocked(unit, target, damage)
 						unit.AttackCooldown = 1.0 / unit.AttackSpeed
 						if target.HP <= 0 {
 							target.HP = 0
@@ -687,8 +736,11 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 				} else {
 					unit.Attacking = false
 					unit.Status = "Moving To Attack"
+					profile := resolveCombatProfile(unit)
 					if !unit.Moving {
-						s.assignUnitPath(unit, protocol.Vec2{X: target.X, Y: target.Y}, blocked, nil)
+						s.refreshUnitAttackApproachLocked(unit, target, profile, blocked, true)
+					} else {
+						s.refreshUnitAttackApproachLocked(unit, target, profile, blocked, false)
 					}
 				}
 			}
@@ -719,8 +771,10 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Status = "Attacking"
 
 					if unit.AttackCooldown <= 0 {
-						newHP := hp - float64(unit.Damage)
+						damage := unit.Damage
+						newHP := hp - float64(damage)
 						building.Metadata["hp"] = newHP
+						s.onBuildingDamagedLocked(unit, building, damage)
 						unit.AttackCooldown = 1.0 / unit.AttackSpeed
 						if newHP <= 0 {
 							building.Metadata["hp"] = 0.0
@@ -1441,6 +1495,9 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.ManualMove = false
 	unit.Visible = true
 	unit.Status = "Idle"
+	unit.CurrentTargetScore = 0
+	unit.TauntedByUnitID = 0
+	unit.TauntRemaining = 0
 }
 
 func (s *GameState) clearUnitGatherStateLocked(unit *Unit) {
@@ -2439,6 +2496,8 @@ func (s *GameState) applyUnitSeparationLocked(blocked map[gridPoint]bool) {
 				continue
 			}
 
+			engagedMelee := s.unitsAreInMutualMeleeLocked(a, b)
+
 			dist := math.Sqrt(distSq)
 			if dist < 0.001 {
 				angle := float64((a.ID+b.ID)%16) * (math.Pi / 8)
@@ -2450,6 +2509,12 @@ func (s *GameState) applyUnitSeparationLocked(blocked map[gridPoint]bool) {
 			overlapScale := 0.5
 			if a.Moving || b.Moving {
 				overlapScale = 0.18
+			}
+			if engagedMelee {
+				// Let melee units stay in contact once they've committed to each other.
+				// Strong separation here creates the visible "staggering" loop where
+				// combatants are pushed out of range and then immediately step back in.
+				overlapScale = 0.05
 			}
 
 			overlap := (minDistance - dist) * overlapScale
@@ -2471,6 +2536,27 @@ func (s *GameState) tryMoveUnitByOffsetLocked(unit *Unit, offsetX, offsetY float
 
 	unit.X = nextX
 	unit.Y = nextY
+}
+
+func (s *GameState) unitsAreInMutualMeleeLocked(a, b *Unit) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	if a.OwnerID == b.OwnerID {
+		return false
+	}
+	aProfile := resolveCombatProfile(a)
+	bProfile := resolveCombatProfile(b)
+	if !aProfile.Melee || !bProfile.Melee {
+		return false
+	}
+	if a.AttackTargetID != b.ID && b.AttackTargetID != a.ID {
+		return false
+	}
+	const meleeContactPadding = 8.0
+	aRange := math.Max(a.AttackRange, unitRadius+meleeContactPadding)
+	bRange := math.Max(b.AttackRange, unitRadius+meleeContactPadding)
+	return distanceSquared(a.X, a.Y, b.X, b.Y) <= aRange*aRange || distanceSquared(a.X, a.Y, b.X, b.Y) <= bRange*bRange
 }
 
 func (s *GameState) randomColor() string {
@@ -2780,6 +2866,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			continue
 		}
 		timer.RemainingInterval += timer.TotalInterval
+		orderID := s.nextMovementOrderIDLocked()
 
 		spawnCount := 1
 		unitType := "raider"
@@ -2815,6 +2902,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			if unit == nil {
 				continue
 			}
+			unit.OrderID = orderID
 			unit.Status = "Advancing"
 
 			target := s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)

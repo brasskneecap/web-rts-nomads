@@ -15,6 +15,7 @@ var unitDefsJSON []byte
 type UnitDef struct {
 	Type             string          `json:"type"`
 	Name             string          `json:"name"`
+	Archetype        string          `json:"archetype,omitempty"`
 	HP               int             `json:"hp"`
 	Damage           int             `json:"damage"`
 	AttackRange      float64         `json:"attackRange"`
