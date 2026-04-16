@@ -40,6 +40,7 @@ export function createEditorMapConfig(
     terrain: existing?.terrain ?? [],
     obstacles: existing?.obstacles ?? [],
     buildings: existing?.buildings ?? [],
+    waveConfig: existing?.waveConfig,
   })
 }
 
@@ -60,6 +61,7 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
     terrain: dedupeTerrainTiles(map.terrain ?? [], gridCols, gridRows),
     obstacles: dedupeObstacleTiles(map.obstacles ?? [], gridCols, gridRows),
     buildings: dedupeBuildings(map.buildings ?? [], gridCols, gridRows),
+    waveConfig: map.waveConfig,
   }
 }
 

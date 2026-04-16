@@ -31,12 +31,12 @@
       </div>
     </div>
 
-    <section class="hud-command">
-      <div class="hud-kicker">Orders</div>
-      <div class="hud-copy">
-        Selected units show their health above the battlefield. Drag-select, then
-        right-click to move.
+    <!-- Wave indicator — only rendered when the server has wave mode enabled -->
+    <section v-if="ui.wave.enabled" class="wave-panel" aria-label="Wave status">
+      <div class="wave-label">
+        {{ waveLabel }}
       </div>
+      <div class="wave-timer">{{ waveTimerText }}</div>
     </section>
 
     <section class="resource-tray" aria-label="Resources">
@@ -67,18 +67,46 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 
 const emit = defineEmits<{
   exit: []
 }>()
 
-defineProps<{
+const props = defineProps<{
   ui: GameUiSnapshot
 }>()
 
 const settingsOpen = ref(false)
+
+function formatSeconds(s: number): string {
+  const total = Math.max(0, Math.ceil(s))
+  const m = Math.floor(total / 60)
+  const sec = total % 60
+  return `${m}:${sec.toString().padStart(2, '0')}`
+}
+
+const waveLabel = computed(() => {
+  const w = props.ui.wave
+  if (w.state === 'complete') return 'Victory'
+  if (w.state === 'prep') {
+    const next = w.currentWave + 1
+    return `Wave ${next}`
+  }
+  return `Wave ${w.currentWave}`
+})
+
+const waveTimerText = computed(() => {
+  const w = props.ui.wave
+  if (w.state === 'prep') return `Next Wave In: ${formatSeconds(w.timer)}`
+  if (w.state === 'active') {
+    const timerExpired = w.waveDuration > 0 && w.timer >= w.waveDuration
+    if (timerExpired) return 'Finish them!'
+    return `Wave Time: ${formatSeconds(w.waveDuration - w.timer)}`
+  }
+  return ''
+})
 
 function toggleSettings() {
   settingsOpen.value = !settingsOpen.value
@@ -280,6 +308,32 @@ function exitGame() {
   font-size: 18px;
   font-weight: 700;
   color: #fff2d6;
+}
+
+.wave-panel {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.wave-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #d7bb84;
+  white-space: nowrap;
+}
+
+.wave-timer {
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbb893;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 
 .hud-command {

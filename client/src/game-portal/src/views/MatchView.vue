@@ -45,6 +45,14 @@
 
     <MatchHud v-if="hasStarted" :ui="ui" @exit="exitGame" />
 
+    <div v-if="hasStarted && ui.wave.enabled && ui.wave.state === 'complete'" class="victory-overlay">
+      <div class="victory-card">
+        <div class="victory-title">Victory</div>
+        <div class="victory-subtitle">All waves defeated</div>
+        <button class="victory-button" type="button" @click="exitGame">Return to Menu</button>
+      </div>
+    </div>
+
     <div class="match-stage" :class="{ 'match-stage--editor': showEditor || showUnitEditor }">
       <canvas v-show="hasStarted && !showEditor" ref="canvas" class="game-canvas"></canvas>
       <div v-if="showEditor" class="editor-stage">
@@ -328,5 +336,66 @@ onBeforeUnmount(() => {
   color: white;
   backdrop-filter: blur(10px);
   cursor: pointer;
+}
+
+.victory-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 13, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.victory-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 48px 56px;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top, rgba(196, 158, 62, 0.22), transparent 52%),
+    linear-gradient(180deg, rgba(62, 39, 20, 0.98), rgba(22, 13, 7, 0.98));
+  border: 1px solid rgba(220, 180, 100, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 200, 0.14),
+    0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+.victory-title {
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #f7d88e;
+  text-transform: uppercase;
+}
+
+.victory-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #cbb893;
+}
+
+.victory-button {
+  margin-top: 10px;
+  padding: 12px 32px;
+  border-radius: 12px;
+  border: 1px solid rgba(220, 180, 100, 0.35);
+  background: linear-gradient(180deg, rgba(145, 96, 48, 0.95), rgba(83, 53, 28, 0.98));
+  color: #f5ead2;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.victory-button:hover {
+  background: linear-gradient(180deg, rgba(175, 118, 58, 1), rgba(105, 67, 35, 1));
+  border-color: rgba(240, 200, 120, 0.55);
 }
 </style>

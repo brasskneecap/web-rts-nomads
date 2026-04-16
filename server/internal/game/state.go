@@ -92,6 +92,31 @@ type EnemySpawnTimer struct {
 	TotalInterval     float64
 }
 
+// WaveManager drives the prep → active → prep cycle for wave-based maps.
+// It is only enabled when at least one enemy-spawnpoint has "waveNumber" > 0
+// in its metadata. Maps without wave numbers use the legacy always-on behaviour.
+//
+// Tuning:
+//   wavePrepDuration  — seconds of prep between waves (default 60)
+//   waveActiveDuration — max seconds a wave stays active (default 120; 0 = never time out)
+type WaveManager struct {
+	Enabled      bool
+	CurrentWave  int
+	TotalWaves   int    // derived from max waveNumber across all spawnpoints (0 = infinite)
+	State        string // "prep" | "active" | "complete"
+	// Timer meaning differs by state:
+	//   "prep"   → seconds remaining until wave starts
+	//   "active" → seconds elapsed since wave started
+	Timer        float64
+	PrepDuration float64
+	WaveDuration float64 // 0 means no automatic timeout; wave must be ended externally
+}
+
+const (
+	wavePrepDuration   = 60.0
+	waveActiveDuration = 120.0
+)
+
 type PlayerStartUnit struct {
 	UnitType string
 	Count    int
@@ -115,6 +140,7 @@ type GameState struct {
 
 	Productions      map[string][]*UnitProduction
 	EnemySpawnTimers map[string]*EnemySpawnTimer
+	WaveManager      WaveManager
 
 	nextUnitID     int
 	nextBuildingID int
@@ -168,7 +194,134 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 	s.MapHeight = s.MapConfig.Height
 	s.Productions = map[string][]*UnitProduction{}
 	s.EnemySpawnTimers = map[string]*EnemySpawnTimer{}
+	s.initWaveManagerLocked()
 }
+
+// initWaveManagerLocked scans all enemy-spawnpoint buildings for "waveNumber"
+// or "startingWave" metadata. If any have a value > 0 the wave system is
+// enabled and the manager is initialised in the "prep" phase for wave 1.
+func (s *GameState) initWaveManagerLocked() {
+	hasWavePoints := false
+	maxWave := 0
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "enemy-spawnpoint" {
+			continue
+		}
+		if wn, ok := getMetadataFloat(b.Metadata, "waveNumber"); ok && int(wn) > 0 {
+			hasWavePoints = true
+			if int(wn) > maxWave {
+				maxWave = int(wn)
+			}
+		}
+		if _, ok := getMetadataFloat(b.Metadata, "startingWave"); ok {
+			hasWavePoints = true
+		}
+	}
+
+	if !hasWavePoints {
+		// No wave-controlled spawn points — use legacy always-on mode.
+		s.WaveManager = WaveManager{}
+		return
+	}
+
+	prepDuration := wavePrepDuration
+	waveDuration := waveActiveDuration
+	totalWaves := maxWave
+
+	if cfg := s.MapConfig.WaveConfig; cfg != nil {
+		if cfg.PrepDuration > 0 {
+			prepDuration = cfg.PrepDuration
+		}
+		if cfg.WaveDuration > 0 {
+			waveDuration = cfg.WaveDuration
+		}
+		if cfg.TotalWaves > 0 {
+			totalWaves = cfg.TotalWaves
+		}
+	}
+
+	s.WaveManager = WaveManager{
+		Enabled:      true,
+		CurrentWave:  0, // 0 means "prep before wave 1"
+		TotalWaves:   totalWaves,
+		State:        "prep",
+		Timer:        prepDuration,
+		PrepDuration: prepDuration,
+		WaveDuration: waveDuration,
+	}
+}
+
+// tickWaveLocked advances the wave state machine each server tick.
+func (s *GameState) tickWaveLocked(dt float64) {
+	wm := &s.WaveManager
+	if !wm.Enabled {
+		return
+	}
+
+	switch wm.State {
+	case "prep":
+		wm.Timer -= dt
+		if wm.Timer <= 0 {
+			// Advance to the next wave's active phase.
+			wm.CurrentWave++
+			wm.State = "active"
+			wm.Timer = 0
+			// Reset spawn timers so this wave's points re-arm from the wave start.
+			s.resetWaveSpawnTimersLocked(wm.CurrentWave)
+		}
+
+	case "active":
+		wm.Timer += dt
+		// The wave only ends once the active timer has expired AND all spawned
+		// enemies have been killed. Spawners stop firing when the timer expires
+		// (wave-gating skips them), so this just waits for cleanup.
+		timerExpired := wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration
+		if timerExpired && s.countEnemyUnitsLocked() == 0 {
+			if wm.TotalWaves > 0 && wm.CurrentWave >= wm.TotalWaves {
+				wm.State = "complete"
+			} else {
+				wm.State = "prep"
+				wm.Timer = wm.PrepDuration
+			}
+		}
+
+	// "complete" is terminal — nothing more to tick.
+	}
+}
+
+// countEnemyUnitsLocked returns the number of living enemy units on the field.
+func (s *GameState) countEnemyUnitsLocked() int {
+	count := 0
+	for _, u := range s.Units {
+		if u.OwnerID == enemyPlayerID && u.HP > 0 && u.Visible {
+			count++
+		}
+	}
+	return count
+}
+
+// resetWaveSpawnTimersLocked removes the cached EnemySpawnTimer entries for
+// all spawnpoints that belong to the given wave. They will be re-created with
+// fresh timers the next time tickEnemySpawnpointsLocked processes them.
+func (s *GameState) resetWaveSpawnTimersLocked(waveNumber int) {
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "enemy-spawnpoint" {
+			continue
+		}
+		// Reset specific-wave spawners assigned to this wave.
+		if wn, ok := getMetadataFloat(b.Metadata, "waveNumber"); ok && int(wn) == waveNumber {
+			delete(s.EnemySpawnTimers, b.ID)
+			continue
+		}
+		// Reset repeating spawners that are active at this wave number.
+		if sw, ok := getMetadataFloat(b.Metadata, "startingWave"); ok && waveNumber >= int(sw) {
+			delete(s.EnemySpawnTimers, b.ID)
+		}
+	}
+}
+
 
 func (s *GameState) GetMapConfig() protocol.MapConfig {
 	s.mu.RLock()
@@ -222,6 +375,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		})
 	}
 
+	wm := s.WaveManager
 	return protocol.MatchSnapshotMessage{
 		Type:      "match_snapshot",
 		Tick:      s.Tick,
@@ -229,6 +383,14 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Map:       s.MapConfig,
 		Players:   players,
 		Units:     units,
+		Wave: protocol.WaveSnapshot{
+			Enabled:      wm.Enabled,
+			CurrentWave:  wm.CurrentWave,
+			TotalWaves:   wm.TotalWaves,
+			State:        wm.State,
+			Timer:        wm.Timer,
+			WaveDuration: wm.WaveDuration,
+		},
 	}
 }
 
@@ -246,6 +408,7 @@ func (s *GameState) Update(dt float64) {
 	s.tickBuildingRepairsLocked(dt)
 	blocked := s.buildBlockedCells()
 	s.tickBuildingCombatLocked(dt)
+	s.tickWaveLocked(dt)
 	s.tickCombatAILocked(dt, blocked)
 	s.tickUnitCombatLocked(dt, blocked)
 	s.tickEnemySpawnpointsLocked(dt, blocked)
@@ -2833,6 +2996,26 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			continue
 		}
 
+		// Wave-gating: when wave mode is enabled, check waveNumber (specific wave)
+		// and startingWave (every wave from N onwards). Points with neither field
+		// (or waveNumber == 0) are legacy points that always fire regardless.
+		if s.WaveManager.Enabled {
+			wm := &s.WaveManager
+			waveTimerExpired := wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration
+
+			if sw, hasSW := getMetadataFloat(building.Metadata, "startingWave"); hasSW && int(sw) > 0 {
+				// Repeating spawn: active every wave >= startingWave while timer is running.
+				if wm.State != "active" || wm.CurrentWave < int(sw) || waveTimerExpired {
+					continue
+				}
+			} else if wn, hasWN := getMetadataFloat(building.Metadata, "waveNumber"); hasWN && int(wn) > 0 {
+				// Single-wave spawn: active only during its assigned wave.
+				if wm.State != "active" || int(wn) != wm.CurrentWave || waveTimerExpired {
+					continue
+				}
+			}
+		}
+
 		s.ensureEnemyPlayerLocked()
 
 		timer, exists := s.EnemySpawnTimers[building.ID]
@@ -2913,55 +3096,6 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 	}
 }
 
-func (s *GameState) tickEnemyAILocked(blocked map[gridPoint]bool) {
-	const aggroRadius = 200.0
-
-	for _, unit := range s.Units {
-		if unit.OwnerID != enemyPlayerID {
-			continue
-		}
-		if unit.AttackTargetID != 0 {
-			continue
-		}
-
-		nearest := s.findNearestPlayerUnitWithinLocked(unit, aggroRadius)
-		if nearest != nil {
-			unit.AttackTargetID = nearest.ID
-			unit.AttackBuildingTargetID = ""
-			unit.Attacking = false
-			unit.Status = "Moving To Attack"
-			if distanceSquared(unit.X, unit.Y, nearest.X, nearest.Y) > unit.AttackRange*unit.AttackRange {
-				s.assignUnitPath(unit, protocol.Vec2{X: nearest.X, Y: nearest.Y}, blocked, nil)
-			}
-			continue
-		}
-
-		if unit.AttackBuildingTargetID != "" {
-			continue
-		}
-
-		building := s.findNearestAttackablePlayerBuildingLocked(unit)
-		if building != nil {
-			unit.AttackBuildingTargetID = building.ID
-			unit.Attacking = false
-			unit.Status = "Moving To Attack"
-			if s.distanceToBuilding(unit.X, unit.Y, building) > unit.AttackRange {
-				if pos := s.findBestBuildingAttackPositionLocked(unit, building, blocked); pos != nil {
-					s.assignUnitPath(unit, *pos, blocked, nil)
-				}
-			}
-			continue
-		}
-
-		if !unit.Moving {
-			target := s.getNearestPlayerTownhallCenterLocked(unit.X, unit.Y)
-			if target != nil {
-				unit.Status = "Advancing"
-				s.assignUnitPath(unit, *target, blocked, nil)
-			}
-		}
-	}
-}
 
 func (s *GameState) buildingCenterLocked(building *protocol.BuildingTile) protocol.Vec2 {
 	return protocol.Vec2{
@@ -3086,93 +3220,6 @@ func (s *GameState) destroyBuildingLocked(buildingID string) {
 	s.MapConfig.Buildings = filtered
 }
 
-func (s *GameState) findNearestPlayerUnitWithinLocked(enemy *Unit, radius float64) *Unit {
-	radiusSq := radius * radius
-	var best *Unit
-	bestDistSq := radiusSq
-
-	for _, unit := range s.Units {
-		if unit.OwnerID == enemyPlayerID {
-			continue
-		}
-		if !unit.Visible {
-			continue
-		}
-		distSq := distanceSquared(enemy.X, enemy.Y, unit.X, unit.Y)
-		if distSq <= bestDistSq {
-			bestDistSq = distSq
-			best = unit
-		}
-	}
-
-	return best
-}
-
-func (s *GameState) tickPlayerAutoAttackLocked(blocked map[gridPoint]bool) {
-	const aggroRadius = 200.0
-
-	for _, unit := range s.Units {
-		if unit.OwnerID == enemyPlayerID {
-			continue
-		}
-		if unit.Damage <= 0 {
-			continue
-		}
-		if unit.ManualMove {
-			continue
-		}
-
-		nearest := s.findNearestEnemySoldierWithinLocked(unit, aggroRadius)
-		if nearest == nil {
-			continue
-		}
-
-		// If already targeting this unit, no change needed
-		if unit.AttackTargetID == nearest.ID {
-			continue
-		}
-
-		// If already targeting someone, only switch if the new target is closer
-		if unit.AttackTargetID != 0 {
-			current := s.getUnitByIDLocked(unit.AttackTargetID)
-			if current != nil && current.Visible {
-				if distanceSquared(unit.X, unit.Y, nearest.X, nearest.Y) >= distanceSquared(unit.X, unit.Y, current.X, current.Y) {
-					continue
-				}
-			}
-		}
-
-		unit.AttackTargetID = nearest.ID
-		unit.AttackBuildingTargetID = ""
-		unit.Attacking = false
-		unit.Status = "Moving To Attack"
-		if distanceSquared(unit.X, unit.Y, nearest.X, nearest.Y) > unit.AttackRange*unit.AttackRange {
-			s.assignUnitPath(unit, protocol.Vec2{X: nearest.X, Y: nearest.Y}, blocked, nil)
-		}
-	}
-}
-
-func (s *GameState) findNearestEnemySoldierWithinLocked(playerUnit *Unit, radius float64) *Unit {
-	radiusSq := radius * radius
-	var best *Unit
-	bestDistSq := radiusSq
-
-	for _, unit := range s.Units {
-		if unit.OwnerID != enemyPlayerID {
-			continue
-		}
-		if !unit.Visible {
-			continue
-		}
-		distSq := distanceSquared(playerUnit.X, playerUnit.Y, unit.X, unit.Y)
-		if distSq <= bestDistSq {
-			bestDistSq = distSq
-			best = unit
-		}
-	}
-
-	return best
-}
 
 func (s *GameState) getNearestPlayerTownhallCenterLocked(x, y float64) *protocol.Vec2 {
 	var best *protocol.Vec2

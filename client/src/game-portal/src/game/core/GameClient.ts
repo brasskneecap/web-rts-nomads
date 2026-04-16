@@ -4,7 +4,7 @@ import { CanvasRenderer } from '../rendering/CanvasRenderer'
 import { InputManager } from '../input/InputManager'
 import { Camera } from '../rendering/Camera'
 import { NetworkClient } from '../network/NetworkClient'
-import type { MapId } from '../network/protocol'
+import type { MapId, WaveSnapshot } from '../network/protocol'
 import type { PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP, initUnitDefs } from '../maps/unitDefs'
@@ -16,6 +16,7 @@ export type GameUiSnapshot = {
   selectedUnits: Unit[]
   selection: SelectionSummary
   notifications: Notification[]
+  wave: WaveSnapshot
 }
 
 export class GameClient {
@@ -72,6 +73,7 @@ export class GameClient {
       selectedUnits: this.state.getSelectedUnits(),
       selection: this.state.getSelectionSummary(),
       notifications: [...this.state.notifications],
+      wave: this.state.getWaveSnapshot(),
     }
   }
 

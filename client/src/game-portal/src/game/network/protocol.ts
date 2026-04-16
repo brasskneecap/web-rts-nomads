@@ -49,6 +49,12 @@ export type BuildingTile = GridCoord & {
   metadata?: JsonObject
 }
 
+export type WaveConfig = {
+  totalWaves?: number
+  prepDuration?: number
+  waveDuration?: number
+}
+
 export type MapConfig = {
   id: MapId
   name: string
@@ -61,6 +67,7 @@ export type MapConfig = {
   terrain: TerrainTile[]
   obstacles: ObstacleTile[]
   buildings: BuildingTile[]
+  waveConfig?: WaveConfig
 }
 
 export type MapCatalogEntry = {
@@ -205,6 +212,22 @@ export type WelcomeMessage = {
   map: MapConfig
 }
 
+/**
+ * Wave state snapshot sent with every MatchSnapshotMessage.
+ * - enabled: false means the map uses legacy always-on spawn behaviour.
+ * - state "prep"     → timer = seconds remaining until wave starts
+ * - state "active"   → timer = seconds elapsed since wave started
+ * - state "complete" → all waves finished; timer is irrelevant
+ */
+export type WaveSnapshot = {
+  enabled: boolean
+  currentWave: number
+  totalWaves: number    // 0 = infinite waves
+  state: 'prep' | 'active' | 'complete' | ''
+  timer: number
+  waveDuration: number
+}
+
 export type MatchSnapshotMessage = {
   type: 'match_snapshot'
   tick: number
@@ -213,6 +236,7 @@ export type MatchSnapshotMessage = {
   map: MapConfig
   players: PlayerSnapshot[]
   units: UnitSnapshot[]
+  wave: WaveSnapshot
 }
 
 export type PingMessage = {

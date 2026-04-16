@@ -5,6 +5,15 @@ type Vec2 struct {
 	Y float64 `json:"y"`
 }
 
+// WaveConfig holds per-map tuning for wave mode. Omitted or zero values fall
+// back to server defaults (60 s prep, 120 s active, totalWaves derived from
+// the highest waveNumber found on spawn points).
+type WaveConfig struct {
+	TotalWaves   int     `json:"totalWaves,omitempty"`
+	PrepDuration float64 `json:"prepDuration,omitempty"`
+	WaveDuration float64 `json:"waveDuration,omitempty"`
+}
+
 type MapConfig struct {
 	ID          string         `json:"id"`
 	Name        string         `json:"name"`
@@ -18,6 +27,7 @@ type MapConfig struct {
 	Terrain     []TerrainTile  `json:"terrain"`
 	Obstacles   []ObstacleTile `json:"obstacles"`
 	Buildings   []BuildingTile `json:"buildings"`
+	WaveConfig  *WaveConfig    `json:"waveConfig,omitempty"`
 }
 
 type GridCoord struct {
@@ -165,6 +175,19 @@ type WelcomeMessage struct {
 	Map      MapConfig `json:"map"`
 }
 
+// WaveSnapshot carries the current wave phase and timer to the client each tick.
+// State is "prep" (counting down to wave start) or "active" (wave in progress)
+// or "complete" (all waves finished). Timer is seconds-remaining in prep and
+// seconds-elapsed in active, so the client can display both styles cheaply.
+type WaveSnapshot struct {
+	Enabled      bool    `json:"enabled"`
+	CurrentWave  int     `json:"currentWave"`
+	TotalWaves   int     `json:"totalWaves"`
+	State        string  `json:"state"`
+	Timer        float64 `json:"timer"`
+	WaveDuration float64 `json:"waveDuration"`
+}
+
 type MatchSnapshotMessage struct {
 	Type      string           `json:"type"`
 	Tick      int              `json:"tick"`
@@ -173,6 +196,7 @@ type MatchSnapshotMessage struct {
 	Map       MapConfig        `json:"map"`
 	Players   []PlayerSnapshot `json:"players"`
 	Units     []UnitSnapshot   `json:"units"`
+	Wave      WaveSnapshot     `json:"wave"`
 }
 
 type PingMessage struct {

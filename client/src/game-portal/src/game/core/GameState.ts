@@ -6,6 +6,7 @@ import type {
   ResourceType,
   UnitCapability,
   UnitType,
+  WaveSnapshot,
 } from '../network/protocol'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
@@ -178,6 +179,16 @@ export class GameState {
   maxBufferedSnapshots = 20
 
   localPlayerId: string | null = null
+
+  // Current wave state, mirrored from the server snapshot every tick.
+  waveSnapshot: WaveSnapshot = {
+    enabled: false,
+    currentWave: 0,
+    totalWaves: 0,
+    state: '',
+    timer: 0,
+  }
+
   mapWidth = 6144
   mapHeight = 4096
   mapConfig: MapConfig = createEditorMapConfig(96, 64, {
@@ -289,6 +300,9 @@ export class GameState {
 
     this.units = frame.units.map((unit) => ({ ...unit }))
     this.applyPlayerSnapshots(message.players)
+    if (message.wave) {
+      this.waveSnapshot = message.wave
+    }
 
     const validIds = new Set(this.units.map((u) => u.id))
 
@@ -947,6 +961,10 @@ export class GameState {
       totalHp: localUnits.reduce((sum, unit) => sum + (unit.hp ?? 0), 0),
       resources: this.resourceStocks.map((resource) => ({ ...resource })),
     }
+  }
+
+  getWaveSnapshot(): WaveSnapshot {
+    return this.waveSnapshot
   }
 
   getPlayerColor(playerId: string | null | undefined): string | null {

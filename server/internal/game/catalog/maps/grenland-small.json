@@ -1608,12 +1608,12 @@
           "fillOrder": 0,
           "spawnUnits": [
             {
-              "unitType": "worker",
-              "count": 3
+              "count": 3,
+              "unitType": "worker"
             },
             {
-              "unitType": "soldier",
-              "count": 1
+              "count": 1,
+              "unitType": "soldier"
             }
           ]
         }
@@ -1810,9 +1810,9 @@
         "metadata": {}
       },
       {
-        "id": "enemy-spawnpoint-16-16",
+        "id": "enemy-spawnpoint-15-16",
         "buildingType": "enemy-spawnpoint",
-        "x": 16,
+        "x": 15,
         "y": 16,
         "width": 2,
         "height": 2,
@@ -1823,17 +1823,18 @@
           "enemy-spawner"
         ],
         "metadata": {
-          "spawnDelaySeconds": 60,
+          "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
           "spawnCount": 1,
+          "startingWave": 1,
           "unitType": "raider"
         }
       },
       {
-        "id": "enemy-spawnpoint-18-26",
+        "id": "enemy-spawnpoint-21-18",
         "buildingType": "enemy-spawnpoint",
-        "x": 18,
-        "y": 26,
+        "x": 21,
+        "y": 18,
         "width": 2,
         "height": 2,
         "occupied": true,
@@ -1843,12 +1844,39 @@
           "enemy-spawner"
         ],
         "metadata": {
-          "spawnDelaySeconds": 60,
+          "spawnDelaySeconds": 80,
           "spawnIntervalSeconds": 10,
+          "startingWave": 1,
           "spawnCount": 2,
           "unitType": "raider"
         }
+      },
+      {
+        "id": "enemy-spawnpoint-18-22",
+        "buildingType": "enemy-spawnpoint",
+        "x": 18,
+        "y": 22,
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnDelaySeconds": 30,
+          "spawnIntervalSeconds": 10,
+          "spawnCount": 2,
+          "startingWave": 1,
+          "unitType": "raider"
+        }
       }
-    ]
+    ],
+    "waveConfig": {
+      "totalWaves": 10,
+      "prepDuration": 60,
+      "waveDuration": 120
+    }
   }
 }

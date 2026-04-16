@@ -32,6 +32,41 @@
             ></textarea>
           </div>
 
+          <div class="wave-config-block">
+            <div class="wave-config-title">Wave Config</div>
+            <div class="control-group">
+              <label for="wave-total">Total Waves <span class="field-hint">(0 = disabled)</span></label>
+              <input
+                id="wave-total"
+                :value="model.waveConfig?.totalWaves ?? 0"
+                @input="setWaveConfig('totalWaves', +($event.target as HTMLInputElement).value)"
+                type="number"
+                min="0"
+                max="999"
+              />
+            </div>
+            <div class="control-group">
+              <label for="wave-prep">Prep Duration <span class="field-hint">(sec, 0 = default 60)</span></label>
+              <input
+                id="wave-prep"
+                :value="model.waveConfig?.prepDuration ?? 0"
+                @input="setWaveConfig('prepDuration', +($event.target as HTMLInputElement).value)"
+                type="number"
+                min="0"
+              />
+            </div>
+            <div class="control-group">
+              <label for="wave-active">Wave Duration <span class="field-hint">(sec, 0 = default 120)</span></label>
+              <input
+                id="wave-active"
+                :value="model.waveConfig?.waveDuration ?? 0"
+                @input="setWaveConfig('waveDuration', +($event.target as HTMLInputElement).value)"
+                type="number"
+                min="0"
+              />
+            </div>
+          </div>
+
           <div class="control-group">
             <label for="editor-load-map">Load Existing Map</label>
             <select
@@ -210,6 +245,23 @@
             >
               <option value="raider">Raider</option>
             </select>
+            <label for="enemy-wave-mode">Spawn Timing</label>
+            <select id="enemy-wave-mode" v-model="enemyWaveMode" :disabled="!paintModeEnabled">
+              <option value="always">Always (legacy)</option>
+              <option value="specific">Specific Wave</option>
+              <option value="repeating">Every Wave From</option>
+            </select>
+            <template v-if="enemyWaveMode !== 'always'">
+              <label for="enemy-wave-number">{{ enemyWaveMode === 'specific' ? 'Wave Number' : 'Starting Wave' }}</label>
+              <input
+                id="enemy-wave-number"
+                v-model.number="enemyWaveNumber"
+                type="number"
+                min="1"
+                max="999"
+                :disabled="!paintModeEnabled"
+              />
+            </template>
             <label for="enemy-spawn-delay">Spawn Delay (sec)</label>
             <input
               id="enemy-spawn-delay"
@@ -326,10 +378,12 @@ const playerSpawnUnits = ref<Array<{ type: UnitType; label: string }>>([
 ])
 const spawnPointLoadout = ref<SpawnLoadoutEntry[]>([{ id: 1, unitType: 'worker', count: 3 }])
 const spawnPointFillOrder = ref(0)
-const enemySpawnDelay = ref(60)
+const enemySpawnDelay = ref(0)
 const enemySpawnInterval = ref(10)
 const enemySpawnCount = ref(1)
 const enemyUnitType = ref('raider')
+const enemyWaveMode = ref<'always' | 'specific' | 'repeating'>('always')
+const enemyWaveNumber = ref(1)
 const draftCols = ref(model.value.gridCols)
 const draftRows = ref(model.value.gridRows)
 const copiedLabel = ref('Copy Export')
@@ -398,6 +452,14 @@ function getCanvasCursor() {
 
 function toggleSection(section: 'setup' | 'paint' | 'export') {
   openSection.value = openSection.value === section ? null : section
+}
+
+function setWaveConfig(field: 'totalWaves' | 'prepDuration' | 'waveDuration', value: number) {
+  const current = model.value.waveConfig ?? {}
+  const updated = { ...current, [field]: value }
+  // Drop waveConfig entirely if all fields are zero/absent — keeps the export clean
+  const hasAny = (updated.totalWaves ?? 0) > 0 || (updated.prepDuration ?? 0) > 0 || (updated.waveDuration ?? 0) > 0
+  model.value = { ...model.value, waveConfig: hasAny ? updated : undefined }
 }
 
 function applyGridSize() {
@@ -597,6 +659,8 @@ function paintAtScreen(screenX: number, screenY: number) {
       }
     } else if (selectedBuilding.value === 'enemy-spawnpoint') {
       metadata = {
+        ...(enemyWaveMode.value === 'specific' ? { waveNumber: enemyWaveNumber.value } : {}),
+        ...(enemyWaveMode.value === 'repeating' ? { startingWave: enemyWaveNumber.value } : {}),
         spawnDelaySeconds: enemySpawnDelay.value,
         spawnIntervalSeconds: enemySpawnInterval.value,
         spawnCount: enemySpawnCount.value,
@@ -1143,6 +1207,30 @@ onBeforeUnmount(() => {
 
 .enemy-spawn-config {
   background: rgba(127, 29, 29, 0.18);
+}
+
+.wave-config-block {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(215, 187, 132, 0.25);
+  background: rgba(58, 35, 18, 0.35);
+}
+
+.wave-config-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #d7bb84;
+}
+
+.field-hint {
+  font-weight: 400;
+  opacity: 0.65;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .editor-preview {
