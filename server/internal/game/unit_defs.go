@@ -13,18 +13,20 @@ var unitDefsJSON []byte
 // Client-only fields (TrainLabel, Render) are passed through to the API
 // as-is; the server game logic never reads them.
 type UnitDef struct {
-	Type         string          `json:"type"`
-	Name         string          `json:"name"`
-	HP           int             `json:"hp"`
-	Damage       int             `json:"damage"`
-	AttackRange  float64         `json:"attackRange"`
-	AttackSpeed  float64         `json:"attackSpeed"`
-	ResourceCost map[string]int  `json:"resourceCost"`
-	MeatCost     int             `json:"meatCost"`
-	SpawnSeconds float64         `json:"spawnSeconds"`
-	Capabilities []string        `json:"capabilities"`
-	TrainLabel   string          `json:"trainLabel,omitempty"`
-	Render       json.RawMessage `json:"render,omitempty"`
+	Type             string          `json:"type"`
+	Name             string          `json:"name"`
+	HP               int             `json:"hp"`
+	Damage           int             `json:"damage"`
+	AttackRange      float64         `json:"attackRange"`
+	AttackSpeed      float64         `json:"attackSpeed"`
+	GoldGatherAmount int             `json:"goldGatherAmount,omitempty"`
+	WoodGatherAmount int             `json:"woodGatherAmount,omitempty"`
+	ResourceCost     map[string]int  `json:"resourceCost"`
+	MeatCost         int             `json:"meatCost"`
+	SpawnSeconds     float64         `json:"spawnSeconds"`
+	Capabilities     []string        `json:"capabilities"`
+	TrainLabel       string          `json:"trainLabel,omitempty"`
+	Render           json.RawMessage `json:"render,omitempty"`
 }
 
 var unitDefsByType map[string]UnitDef

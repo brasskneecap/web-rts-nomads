@@ -114,12 +114,13 @@ type GameState struct {
 }
 
 const (
-	workerCarryCapacity   = 25
-	goldmineWorkerCap     = 3
-	goldmineMiningSeconds = 5.0
-	treeWorkerCap         = 1
-	treeChoppingSeconds   = 3.0
-	minUnitSpawnSeconds   = 0.25
+	defaultGoldGatherAmount = 20
+	defaultWoodGatherAmount = 15
+	goldmineWorkerCap       = 3
+	goldmineMiningSeconds   = 5.0
+	treeWorkerCap           = 1
+	treeChoppingSeconds     = 3.0
+	minUnitSpawnSeconds     = 0.25
 )
 
 const (
@@ -827,7 +828,7 @@ func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, buildingID s
 
 	for _, unitID := range unitIDs {
 		unit := s.getUnitByIDLocked(unitID)
-		if unit == nil || unit.OwnerID != playerID || unit.UnitType != "worker" {
+		if unit == nil || unit.OwnerID != playerID || !unitHasCapability(unit.UnitType, "gather") {
 			continue
 		}
 
@@ -846,7 +847,6 @@ func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, buildingID s
 		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
 	}
 }
-
 
 func (s *GameState) CancelCurrentTraining(playerID, buildingID string) {
 	s.mu.Lock()
@@ -1769,7 +1769,7 @@ func (s *GameState) RepairBuilding(playerID string, unitIDs []int, buildingID st
 }
 
 func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[gridPoint]bool) {
-	if unit.UnitType != "worker" {
+	if !unitHasCapability(unit.UnitType, "gather") {
 		return
 	}
 
@@ -1819,7 +1819,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		unit.MiningInside = false
 		unit.Gathering = false
 		unit.Visible = true
-		gathered := minInt(workerCarryCapacity, resourceNode.ResourceAmount)
+		gathered := minInt(gatherAmountForUnitResource(unit.UnitType, resourceNode.ResourceType), resourceNode.ResourceAmount)
 		if gathered > 0 {
 			unit.CarriedResourceType = resourceNode.ResourceType
 			unit.CarriedAmount = gathered
@@ -1984,6 +1984,42 @@ func (s *GameState) sendWorkerToDepositLocked(unit *Unit, blocked map[gridPoint]
 	if len(approachPoints) > 0 {
 		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
 	}
+}
+
+func gatherAmountForUnitResource(unitType, resourceType string) int {
+	def, ok := getUnitDef(unitType)
+	if !ok {
+		return defaultGatherAmountForResource(resourceType)
+	}
+
+	switch resourceType {
+	case "gold":
+		if def.GoldGatherAmount > 0 {
+			return def.GoldGatherAmount
+		}
+	case "wood":
+		if def.WoodGatherAmount > 0 {
+			return def.WoodGatherAmount
+		}
+	}
+
+	return defaultGatherAmountForResource(resourceType)
+}
+
+func defaultGatherAmountForResource(resourceType string) int {
+	switch resourceType {
+	case "gold":
+		return defaultGoldGatherAmount
+	case "wood":
+		return defaultWoodGatherAmount
+	default:
+		return defaultWoodGatherAmount
+	}
+}
+
+func unitHasCapability(unitType, capability string) bool {
+	def, ok := getUnitDef(unitType)
+	return ok && containsString(def.Capabilities, capability)
 }
 
 func (s *GameState) findOwnedTownhallLocked(ownerID string) *protocol.BuildingTile {
@@ -2628,9 +2664,9 @@ func (s *GameState) ensureEnemyPlayerLocked() {
 		return
 	}
 	s.Players[enemyPlayerID] = &Player{
-		ID:                           enemyPlayerID,
-		Color:                        enemyPlayerColor,
-		Resources:                    map[string]int{},
+		ID:                            enemyPlayerID,
+		Color:                         enemyPlayerColor,
+		Resources:                     map[string]int{},
 		GlobalUnitSpawnTimeMultiplier: 1,
 		UnitSpawnTimeMultipliers:      map[string]float64{},
 	}

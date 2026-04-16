@@ -7,6 +7,8 @@
       "damage": 3,
       "attackRange": 60,
       "attackSpeed": 1.0,
+      "goldGatherAmount": 20,
+      "woodGatherAmount": 15,
       "resourceCost": { "gold": 150 },
       "meatCost": 1,
       "spawnSeconds": 5,

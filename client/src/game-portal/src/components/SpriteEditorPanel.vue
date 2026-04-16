@@ -148,6 +148,16 @@
               <input type="number" v-model.number="uSpawnSeconds" step="0.5" min="0" />
             </div>
           </div>
+          <div class="spe__field-row">
+            <div class="spe__field">
+              <label>Gold Gather</label>
+              <input type="number" v-model.number="uGoldGatherAmount" min="0" />
+            </div>
+            <div class="spe__field">
+              <label>Wood Gather</label>
+              <input type="number" v-model.number="uWoodGatherAmount" min="0" />
+            </div>
+          </div>
           <div class="spe__field">
             <label>Train Label</label>
             <input v-model="uTrainLabel" />
@@ -608,6 +618,8 @@ const uGold         = ref(100)
 const uWood         = ref(0)
 const uMeatCost     = ref(1)
 const uSpawnSeconds = ref(5)
+const uGoldGatherAmount = ref(20)
+const uWoodGatherAmount = ref(15)
 const uTrainLabel   = ref('')
 const uCapabilities = ref<string[]>(['move', 'attack'])
 const uMetadataText = ref('{}')
@@ -1516,6 +1528,8 @@ function applyUnitDef(data: UnitDef) {
   uWood.value         = data.resourceCost?.wood ?? 0
   uMeatCost.value     = data.meatCost
   uSpawnSeconds.value = data.spawnSeconds
+  uGoldGatherAmount.value = data.goldGatherAmount ?? 20
+  uWoodGatherAmount.value = data.woodGatherAmount ?? 15
   uTrainLabel.value   = data.trainLabel   ?? ''
   uCapabilities.value = [...(data.capabilities ?? [])]
   uMetadataText.value = stringifyMetadata(data.metadata)
@@ -1929,6 +1943,8 @@ const exportJson = computed(() => {
     damage: uDamage.value,
     attackRange: uAttackRange.value,
     attackSpeed: uAttackSpeed.value,
+    goldGatherAmount: uGoldGatherAmount.value,
+    woodGatherAmount: uWoodGatherAmount.value,
     resourceCost,
     meatCost: uMeatCost.value,
     spawnSeconds: uSpawnSeconds.value,

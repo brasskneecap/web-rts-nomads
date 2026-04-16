@@ -18,6 +18,8 @@ export type UnitDef = {
   damage: number
   attackRange: number
   attackSpeed: number
+  goldGatherAmount?: number
+  woodGatherAmount?: number
   resourceCost: Record<string, number>
   meatCost: number
   spawnSeconds: number

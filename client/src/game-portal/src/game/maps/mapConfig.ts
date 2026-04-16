@@ -295,7 +295,7 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
       ownerId: null,
       capabilities: ['resource-source'],
       resourceType: 'wood',
-      resourceAmount: 1000,
+      resourceAmount: 250,
       metadata: {},
     }
   }
