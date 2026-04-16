@@ -513,7 +513,7 @@ export class CanvasRenderer {
         if (unit.unitType && this.isRangedUnit(unit.unitType)) {
           this.drawRangedAttackEffect(unit)
         } else {
-          this.drawAttackEffect(unit.x, unit.y)
+          this.drawAttackEffect(unit)
         }
       } else if (unit.status === 'Chopping Wood') {
         this.drawChoppingEffect(unit.x, unit.y)
@@ -548,36 +548,39 @@ export class CanvasRenderer {
     }
   }
 
-  private drawAttackEffect(x: number, y: number) {
+  private drawAttackEffect(unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string }) {
     const ctx = this.ctx
-    // Sharp impact burst: 4 slash lines that shoot outward and fade, cycling at ~4Hz
-    const t = (this.renderTime % 250) / 250
+    const direction = this.getAttackDirection(unit) ?? { x: 1, y: 0 }
+    const isEnemy = !!unit.ownerId && unit.ownerId !== this.state.localPlayerId
+    const beamColor = isEnemy
+      ? '#ef4444'
+      : unit.ownerId
+        ? (this.state.getPlayerColor(unit.ownerId) ?? '#ffffff')
+        : '#ffffff'
+    const unitDef = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType) : undefined
+    const attackSpeed = Math.max(unitDef?.attackSpeed ?? 1, 0.1)
+    const cycleMs = 1000 / attackSpeed
+    const t = (this.renderTime % cycleMs) / cycleMs
     const alpha = 1 - t
-    const inner = 6 + t * 4
-    const outer = 14 + t * 10
+    const centerX = unit.x + direction.x * (8 + t * 4)
+    const centerY = unit.y + direction.y * (8 + t * 4)
+    const majorAngle = Math.atan2(direction.y, direction.x)
+    const arcRadius = 9 + t * 5
+    const arcWidth = 0.95
 
     ctx.save()
-    ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`
-    ctx.lineWidth = 2 / this.camera.zoom
+    ctx.strokeStyle = this.withAlpha(beamColor, 0.95 * alpha)
+    ctx.lineWidth = 3.5 / this.camera.zoom
     ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, arcRadius, majorAngle - arcWidth, majorAngle + arcWidth)
+    ctx.stroke()
 
-    // 4 diagonal slash lines at 45° increments
-    const angles = [Math.PI / 4, -Math.PI / 4, (3 * Math.PI) / 4, -(3 * Math.PI) / 4]
-    for (const angle of angles) {
-      const cos = Math.cos(angle)
-      const sin = Math.sin(angle)
-      ctx.beginPath()
-      ctx.moveTo(x + cos * inner, y + sin * inner)
-      ctx.lineTo(x + cos * outer, y + sin * outer)
-      ctx.stroke()
-    }
-
-    // Bright center flash on impact start
     if (t < 0.25) {
       const flashAlpha = (1 - t / 0.25) * 0.8
-      ctx.fillStyle = `rgba(255, 200, 100, ${flashAlpha})`
+      ctx.fillStyle = this.withAlpha(beamColor, flashAlpha)
       ctx.beginPath()
-      ctx.arc(x, y, 4 + t * 6, 0, Math.PI * 2)
+      ctx.arc(centerX, centerY, 3 + t * 5, 0, Math.PI * 2)
       ctx.fill()
     }
 
@@ -630,6 +633,15 @@ export class CanvasRenderer {
 
   private getRangedAttackDirection(unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string }) {
     const attackRange = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType)?.attackRange ?? 0 : 0
+    if (attackRange <= 0) return null
+    return this.getAttackDirection(unit, attackRange)
+  }
+
+  private getAttackDirection(
+    unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string },
+    maxRange?: number,
+  ) {
+    const attackRange = maxRange ?? (unit.unitType ? UNIT_DEF_MAP.get(unit.unitType)?.attackRange ?? 0 : 0)
     if (attackRange <= 0) return null
 
     let bestDirection: { x: number; y: number } | null = null
