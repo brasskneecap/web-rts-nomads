@@ -11,6 +11,7 @@ import { getResolvedUnitAttackVisual, getUnitRenderBounds, UNIT_DEF_MAP } from '
 import type { UnitDef, UnitRenderDef } from '../maps/unitDefs'
 import type { BuildingTile } from '../network/protocol'
 import { Camera } from './Camera'
+import { getRankToneColor } from './rankColors'
 
 export type MinimapBounds = {
   x: number
@@ -535,6 +536,8 @@ export class CanvasRenderer {
           ctx.fillStyle =
             layer.color === 'player' ? unitColor :
             layer.color === 'rank'   ? unitRankColor :
+            layer.color === 'rankLight' ? this.getRankColor(unit.rank, 'light') :
+            layer.color === 'rankDark' ? this.getRankColor(unit.rank, 'dark') :
             layer.color
           if (layer.kind === 'circle') {
             ctx.beginPath()
@@ -620,17 +623,8 @@ export class CanvasRenderer {
     }
   }
 
-  private getRankColor(rank?: string) {
-    switch (rank) {
-      case 'bronze':
-        return '#d97706'
-      case 'silver':
-        return '#cbd5e1'
-      case 'gold':
-        return '#facc15'
-      default:
-        return '#f8fafc'
-    }
+  private getRankColor(rank?: string, tone: 'base' | 'light' | 'dark' = 'base') {
+    return getRankToneColor(rank, tone)
   }
 
   private scaleBuildingAttackVisual(

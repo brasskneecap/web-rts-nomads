@@ -390,6 +390,18 @@
               @click="pendingColorMode = 'rank'"
               title="Color changes with unit rank (Base/Bronze/Silver/Gold)"
             >Rank</button>
+            <button
+              class="spe__rank-btn"
+              :class="{ 'spe__rank-btn--active': pendingColorMode === 'rankLight' }"
+              @click="pendingColorMode = 'rankLight'"
+              title="Uses the highlight tone of the unit's current rank color"
+            >Rank Light</button>
+            <button
+              class="spe__rank-btn"
+              :class="{ 'spe__rank-btn--active': pendingColorMode === 'rankDark' }"
+              @click="pendingColorMode = 'rankDark'"
+              title="Uses the shadow tone of the unit's current rank color"
+            >Rank Dark</button>
             <input
               type="color"
               v-model="pendingCustomColor"
@@ -450,6 +462,18 @@
               @click="setSelectedLayerColor('rank')"
               title="Color changes with unit rank (Base/Bronze/Silver/Gold)"
             >Rank</button>
+            <button
+              class="spe__rank-btn"
+              :class="{ 'spe__rank-btn--active': selectedLayer.color === 'rankLight' }"
+              @click="setSelectedLayerColor('rankLight')"
+              title="Uses the highlight tone of the unit's current rank color"
+            >Rank Light</button>
+            <button
+              class="spe__rank-btn"
+              :class="{ 'spe__rank-btn--active': selectedLayer.color === 'rankDark' }"
+              @click="setSelectedLayerColor('rankDark')"
+              title="Uses the shadow tone of the unit's current rank color"
+            >Rank Dark</button>
             <input
               type="color"
               :value="selectedLayerColorValue"
@@ -585,8 +609,8 @@
               <div
                 class="spe__layer-swatch"
                 :style="{
-                  background: layer.color === 'player' ? '#3b82f6' : layer.color === 'rank' ? `linear-gradient(135deg, #d97706, #facc15)` : layer.color,
-                  border: layer.color === 'player' ? '2px dashed #93c5fd' : layer.color === 'rank' ? '2px dashed #d97706' : '2px solid transparent'
+                  background: getEditorSwatchBackground(layer.color),
+                  border: getEditorSwatchBorder(layer.color)
                 }"
               />
               <span class="spe__layer-label">{{ layerLabel(layer) }}</span>
@@ -624,7 +648,7 @@
             <textarea
               v-model="loadJsonText"
               class="spe__load-textarea"
-              placeholder="Paste building or unit JSON here..."
+              :placeholder="loadPanelPlaceholder"
               spellcheck="false"
             />
             <button class="spe__btn spe__btn--full" @click="loadFromJson">Apply</button>
@@ -646,7 +670,8 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { fetchBuildingDefs, fetchUnitDefs, fetchActionIcons } from '../game/maps/catalog'
 import { getResolvedBuildingAttackVisual, type BuildingDef } from '../game/maps/buildingDefs'
-  import { getResolvedUnitAttackVisual, type UnitDef } from '../game/maps/unitDefs'
+import { getResolvedUnitAttackVisual, type UnitDef } from '../game/maps/unitDefs'
+import { getRankToneColor } from '../game/rendering/rankColors'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -677,7 +702,6 @@ const ACTION_SVG_SIZE = 24  // SVG viewBox units (24×24)
 
 // Preview color used when a layer has color:'rank' in the sprite editor.
 // Shown as bronze since that's the first rank color a unit can reach.
-const RANK_PREVIEW_COLOR = '#d97706'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -776,6 +800,11 @@ const uCurrentStorage = computed((): Record<string, UnitLayer[]> => ({
   [uRenderVariantKey.value]: uLayers.value,
 }))
 
+const loadPanelPlaceholder = computed(() => {
+  if (mode.value === 'building') return 'Paste building JSON here...'
+  return 'Paste a unit layers object here, e.g. {"layers":[...]}'
+})
+
 // ─── Paint state (building mode) ─────────────────────────────────────────────
 
 const paintMode        = ref<'player' | 'custom'>('player')
@@ -810,7 +839,7 @@ const pendingCx         = ref(0)
 const pendingCy         = ref(0)
 const pendingR          = ref(10)
 const pendingPoints     = ref('[-9,0],[9,0],[0,10]')
-const pendingColorMode  = ref<'player' | 'rank' | 'custom'>('player')
+const pendingColorMode  = ref<'player' | 'rank' | 'rankLight' | 'rankDark' | 'custom'>('player')
 const pendingCustomColor = ref('#94a3b8')
 const addShapeError     = ref('')
 const pendingPolyPoints = computed<[number, number][]>(() => {
@@ -852,7 +881,7 @@ function popPendingPolyPoint() {
 
 function commitShape() {
   addShapeError.value = ''
-  const color = pendingColorMode.value === 'player' ? 'player' : pendingColorMode.value === 'rank' ? 'rank' : pendingCustomColor.value
+  const color = pendingColorMode.value === 'custom' ? pendingCustomColor.value : pendingColorMode.value
 
   if (pendingKind.value === 'circle') {
     uLayers.value.push({ kind: 'circle', cx: pendingCx.value, cy: pendingCy.value, r: pendingR.value, color })
@@ -937,11 +966,110 @@ const MAX_UNDO = 50
 const undoStack = ref<UnitLayer[][]>([])
 
 function cloneLayersSnapshot(): UnitLayer[] {
-  return uLayers.value.map(l =>
-    l.kind === 'circle'
-      ? { ...l }
-      : { ...l, points: l.points.map(p => [p[0], p[1]] as [number, number]) },
-  )
+  return cloneUnitLayers(uLayers.value)
+}
+
+function cloneUnitLayer(layer: UnitLayer): UnitLayer {
+  return layer.kind === 'circle'
+    ? { ...layer }
+    : { ...layer, points: layer.points.map(([x, y]) => [x, y] as [number, number]) }
+}
+
+function cloneUnitLayers(layers: readonly UnitLayer[]): UnitLayer[] {
+  return layers.map(cloneUnitLayer)
+}
+
+function getEditorRankPreviewColor(token: string): string {
+  switch (token) {
+    case 'rankLight':
+      return getRankToneColor('bronze', 'light')
+    case 'rankDark':
+      return getRankToneColor('bronze', 'dark')
+    case 'rank':
+      return getRankToneColor('bronze', 'base')
+    default:
+      return token
+  }
+}
+
+function getEditorSwatchBackground(color: string): string {
+  if (color === 'player') return '#3b82f6'
+  if (color === 'rank') {
+    return `linear-gradient(135deg, ${getRankToneColor('bronze', 'dark')}, ${getRankToneColor('bronze', 'base')}, ${getRankToneColor('bronze', 'light')})`
+  }
+  if (color === 'rankLight' || color === 'rankDark') return getEditorRankPreviewColor(color)
+  return color
+}
+
+function getEditorSwatchBorder(color: string): string {
+  if (color === 'player') return '2px dashed #93c5fd'
+  if (color === 'rank') return `2px dashed ${getRankToneColor('bronze', 'base')}`
+  if (color === 'rankLight') return `2px dashed ${getRankToneColor('bronze', 'light')}`
+  if (color === 'rankDark') return `2px dashed ${getRankToneColor('bronze', 'dark')}`
+  return '2px solid transparent'
+}
+
+function normalizeUnitLayer(raw: unknown): UnitLayer | null {
+  if (!raw || typeof raw !== 'object') return null
+
+  const layer = raw as Record<string, unknown>
+  const color = typeof layer.color === 'string' ? layer.color : null
+  if (!color) return null
+
+  if (layer.kind === 'circle') {
+    const cx = Math.round(Number(layer.cx))
+    const cy = Math.round(Number(layer.cy))
+    const r = Math.round(Number(layer.r))
+    if (Number.isNaN(cx) || Number.isNaN(cy) || Number.isNaN(r) || r < 1) return null
+    return { kind: 'circle', cx, cy, r, color }
+  }
+
+  if (layer.kind === 'poly') {
+    if (!Array.isArray(layer.points) || layer.points.length < 2) return null
+    const points = layer.points.map(point => {
+      if (!Array.isArray(point) || point.length < 2) return null
+      const x = Math.round(Number(point[0]))
+      const y = Math.round(Number(point[1]))
+      if (Number.isNaN(x) || Number.isNaN(y)) return null
+      return [x, y] as [number, number]
+    })
+    if (points.some(point => point === null)) return null
+    return { kind: 'poly', points: points as [number, number][], color }
+  }
+
+  return null
+}
+
+function parseImportedUnitLayers(data: unknown): { layers: UnitLayer[]; error: string } {
+  const payload = data && typeof data === 'object' && !Array.isArray(data)
+    ? data as { layers?: unknown }
+    : null
+
+  const candidate = Array.isArray(payload?.layers) ? payload.layers : null
+
+  if (!candidate) {
+    return { layers: [], error: 'Expected a JSON object with a layers array, e.g. { "layers": [...] }.' }
+  }
+
+  const layers = candidate.map(normalizeUnitLayer)
+  if (layers.some(layer => layer === null)) {
+    return { layers: [], error: 'Invalid unit layers JSON. Each layer must be a circle or poly with numeric coordinates and a color.' }
+  }
+
+  return { layers: layers as UnitLayer[], error: '' }
+}
+
+function applyImportedUnitLayers(layers: UnitLayer[]) {
+  uLayers.value = cloneUnitLayers(layers)
+  selectedLayerIdx.value = null
+  selectedLayerError.value = ''
+  selectedPointIdx.value = null
+  undoStack.value = []
+
+  const usedColors = [...new Set(uLayers.value.map(l => l.color).filter(c => !['player', 'rank', 'rankLight', 'rankDark'].includes(c)))]
+  for (const c of usedColors.reverse()) pushColorHistory(c)
+
+  nextTick(() => renderCanvas())
 }
 
 function pushUndo() {
@@ -968,7 +1096,7 @@ const selectedLayerPointsText = computed(() =>
 )
 const selectedLayerColorValue = computed(() => {
   const c = selectedLayer.value?.color
-  if (!c || c === 'player' || c === 'rank') return '#3b82f6'
+  if (!c || c === 'player' || c === 'rank' || c === 'rankLight' || c === 'rankDark') return '#3b82f6'
   return c
 })
 
@@ -1654,7 +1782,7 @@ function renderCanvas() {
 
     for (let layerIdx = 0; layerIdx < uLayers.value.length; layerIdx++) {
       const layer = uLayers.value[layerIdx]
-      ctx.fillStyle = layer.color === 'player' ? '#3b82f6' : layer.color === 'rank' ? RANK_PREVIEW_COLOR : layer.color
+      ctx.fillStyle = layer.color === 'player' ? '#3b82f6' : getEditorRankPreviewColor(layer.color)
       if (layer.kind === 'circle') {
         ctx.beginPath()
         ctx.arc(cx + layer.cx, cy + layer.cy, layer.r, 0, Math.PI * 2)
@@ -1714,7 +1842,11 @@ function renderCanvas() {
       drawUnitAttackVisualPreview(ctx, cx, cy)
 
       if (showAddShape.value && pendingKind.value === 'poly' && pendingPolyPoints.value.length > 0) {
-        const previewColor = pendingColorMode.value === 'player' ? '#3b82f6' : pendingColorMode.value === 'rank' ? RANK_PREVIEW_COLOR : pendingCustomColor.value
+        const previewColor = pendingColorMode.value === 'player'
+          ? '#3b82f6'
+          : pendingColorMode.value === 'custom'
+            ? pendingCustomColor.value
+            : getEditorRankPreviewColor(pendingColorMode.value)
         ctx.save()
       ctx.strokeStyle = previewColor
       ctx.fillStyle = previewColor
@@ -1964,7 +2096,7 @@ function applyUnitDef(data: UnitDef) {
   uAttackOriginX.value = attackVisual.originX
   uAttackOriginY.value = attackVisual.originY
   uAttackEffectLength.value = attackVisual.effectLength
-  const baseLayers = [...(data.render?.layers ?? [])] as UnitLayer[]
+  const baseLayers = cloneUnitLayers((data.render?.layers ?? []) as UnitLayer[])
   uLayers.value       = baseLayers
   selectedLayerIdx.value = null
   selectedLayerError.value = ''
@@ -1972,12 +2104,12 @@ function applyUnitDef(data: UnitDef) {
   uRenderVariantKey.value = ''
   const storage: Record<string, UnitLayer[]> = { '': baseLayers }
   for (const [key, variant] of Object.entries(data.renderVariants ?? {})) {
-    storage[key] = [...(variant.layers ?? [])] as UnitLayer[]
+    storage[key] = cloneUnitLayers((variant.layers ?? []) as UnitLayer[])
   }
   uVariantStorage.value = storage
   mode.value = 'unit'
 
-  const usedColors = [...new Set(uLayers.value.map(l => l.color).filter(c => c !== 'player' && c !== 'rank'))]
+  const usedColors = [...new Set(uLayers.value.map(l => l.color).filter(c => !['player', 'rank', 'rankLight', 'rankDark'].includes(c)))]
   for (const c of usedColors.reverse()) pushColorHistory(c)
 
   nextTick(() => renderCanvas())
@@ -2012,6 +2144,16 @@ function loadFromJson() {
 
   if ('width' in data && 'height' in data) {
     applyBuildingDef(data as BuildingDef)
+  } else if (mode.value === 'unit') {
+    const imported = parseImportedUnitLayers(data)
+    if (!imported.error) {
+      applyImportedUnitLayers(imported.layers)
+    } else if ('hp' in data || 'damage' in data) {
+      applyUnitDef(data as UnitDef)
+    } else {
+      loadError.value = imported.error
+      return
+    }
   } else if ('hp' in data || 'damage' in data) {
     applyUnitDef(data as UnitDef)
   } else {
