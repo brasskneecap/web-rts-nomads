@@ -152,6 +152,7 @@ type UnitSnapshot struct {
 	OwnerID             string   `json:"ownerId"`
 	Color               string   `json:"color"`
 	UnitType            string   `json:"unitType"`
+	Archetype           string   `json:"archetype,omitempty"`
 	Name                string   `json:"name"`
 	Capabilities        []string `json:"capabilities,omitempty"`
 	Visible             bool     `json:"visible"`
@@ -161,6 +162,12 @@ type UnitSnapshot struct {
 	HP                  int      `json:"hp"`
 	MaxHP               int      `json:"maxHp"`
 	Damage              int      `json:"damage,omitempty"`
+	AttackSpeed         float64  `json:"attackSpeed,omitempty"`
+	XP                  int      `json:"xp,omitempty"`
+	Rank                string   `json:"rank,omitempty"`
+	XPToNextRank        int      `json:"xpToNextRank,omitempty"`
+	XPIntoCurrentRank   int      `json:"xpIntoCurrentRank,omitempty"`
+	RecentRankUpSeconds float64  `json:"recentRankUpSeconds,omitempty"`
 	CarriedResourceType string   `json:"carriedResourceType,omitempty"`
 	CarriedAmount       int      `json:"carriedAmount,omitempty"`
 	TargetX             float64  `json:"targetX,omitempty"`

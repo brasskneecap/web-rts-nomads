@@ -189,6 +189,7 @@ export type UnitSnapshot = {
   ownerId: string
   color: string
   unitType: UnitType
+  archetype?: string
   name: string
   capabilities?: UnitCapability[]
   visible: boolean
@@ -198,6 +199,12 @@ export type UnitSnapshot = {
   hp: number
   maxHp: number
   damage?: number
+  attackSpeed?: number
+  xp?: number
+  rank?: string
+  xpToNextRank?: number
+  xpIntoCurrentRank?: number
+  recentRankUpSeconds?: number
   carriedResourceType?: ResourceType
   carriedAmount?: number
   targetX?: number

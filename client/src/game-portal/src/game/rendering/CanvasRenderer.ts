@@ -450,6 +450,8 @@ export class CanvasRenderer {
     units: Array<{
       id: number
       unitType?: string
+      rank?: string
+      recentRankUpSeconds?: number
       status?: string
       x: number
       y: number
@@ -520,6 +522,8 @@ export class CanvasRenderer {
         this.drawChoppingEffect(unit.x, unit.y)
       }
 
+      this.drawUnitRankDebug(unit, bottomOffset)
+
       const unitColor = unit.color || 'lime'
       const unitRenderDef = unitDef?.render
 
@@ -563,6 +567,64 @@ export class CanvasRenderer {
       return
     }
     this.drawMeleeAttackEffect(unit, attackVisual)
+  }
+
+  private drawUnitRankDebug(
+    unit: { x: number; y: number; rank?: string; recentRankUpSeconds?: number },
+    bottomOffset: number,
+  ) {
+    const rankLabel = this.getRankLabel(unit.rank)
+    if (!rankLabel && !(unit.recentRankUpSeconds && unit.recentRankUpSeconds > 0)) {
+      return
+    }
+
+    const ctx = this.ctx
+    ctx.save()
+    ctx.font = `${Math.max(10, 12 / this.camera.zoom)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.lineWidth = 3 / this.camera.zoom
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
+
+    if (rankLabel) {
+      ctx.fillStyle = this.getRankColor(unit.rank)
+      ctx.strokeText(rankLabel, unit.x, unit.y - bottomOffset - 16 / this.camera.zoom)
+      ctx.fillText(rankLabel, unit.x, unit.y - bottomOffset - 16 / this.camera.zoom)
+    }
+
+    if (unit.recentRankUpSeconds && unit.recentRankUpSeconds > 0) {
+      const alpha = Math.max(0, Math.min(unit.recentRankUpSeconds / 1.4, 1))
+      ctx.fillStyle = `rgba(250, 204, 21, ${alpha})`
+      ctx.strokeText('RANK UP!', unit.x, unit.y - bottomOffset - 28 / this.camera.zoom)
+      ctx.fillText('RANK UP!', unit.x, unit.y - bottomOffset - 28 / this.camera.zoom)
+    }
+
+    ctx.restore()
+  }
+
+  private getRankLabel(rank?: string) {
+    switch (rank) {
+      case 'bronze':
+        return 'Bronze'
+      case 'silver':
+        return 'Silver'
+      case 'gold':
+        return 'Gold'
+      default:
+        return ''
+    }
+  }
+
+  private getRankColor(rank?: string) {
+    switch (rank) {
+      case 'bronze':
+        return '#d97706'
+      case 'silver':
+        return '#cbd5e1'
+      case 'gold':
+        return '#facc15'
+      default:
+        return '#f8fafc'
+    }
   }
 
   private scaleBuildingAttackVisual(

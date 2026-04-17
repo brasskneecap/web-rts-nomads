@@ -1112,12 +1112,12 @@
           "occupiable",
           "deposit-point"
         ],
-        "spawnUnitTypes": [
-          "worker"
-        ],
         "metadata": {
           "foodSupply": 15
-        }
+        },
+        "spawnUnitTypes": [
+          "worker"
+        ]
       },
       {
         "id": "tree-19-2",
@@ -1168,12 +1168,12 @@
           "occupiable",
           "deposit-point"
         ],
-        "spawnUnitTypes": [
-          "worker"
-        ],
         "metadata": {
           "foodSupply": 15
-        }
+        },
+        "spawnUnitTypes": [
+          "worker"
+        ]
       },
       {
         "id": "tree-31-2",
@@ -1844,9 +1844,9 @@
           "enemy-spawner"
         ],
         "metadata": {
-          "spawnDelaySeconds": 80,
+          "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
-          "startingWave": 1,
+          "startingWave": 2,
           "spawnCount": 2,
           "unitType": "raider"
         }

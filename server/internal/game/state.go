@@ -13,19 +13,26 @@ import (
 )
 
 type Unit struct {
-	ID           int
-	OwnerID      string
-	Color        string
-	UnitType     string
-	Archetype    string
-	Name         string
-	Capabilities []string
-	Visible      bool
-	Status       string
-	X            float64
-	Y            float64
-	HP           int
-	MaxHP        int
+	ID                  int
+	OwnerID             string
+	Color               string
+	UnitType            string
+	Archetype           string
+	Name                string
+	Capabilities        []string
+	Visible             bool
+	Status              string
+	X                   float64
+	Y                   float64
+	HP                  int
+	MaxHP               int
+	BaseMaxHP           int
+	BaseDamage          int
+	BaseAttackSpeed     float64
+	XP                  int
+	XPProgressRemainder float64
+	Rank                string
+	RankUpFxRemaining   float64
 
 	CarriedResourceType string
 	CarriedAmount       int
@@ -60,6 +67,7 @@ type Unit struct {
 	TauntedByUnitID    int
 	TauntRemaining     float64
 	ThreatTable        map[int]*ThreatEntry
+	TankedDamageByUnit map[int]float64
 }
 
 const (
@@ -97,13 +105,14 @@ type EnemySpawnTimer struct {
 // in its metadata. Maps without wave numbers use the legacy always-on behaviour.
 //
 // Tuning:
-//   wavePrepDuration  — seconds of prep between waves (default 60)
-//   waveActiveDuration — max seconds a wave stays active (default 120; 0 = never time out)
+//
+//	wavePrepDuration  — seconds of prep between waves (default 60)
+//	waveActiveDuration — max seconds a wave stays active (default 120; 0 = never time out)
 type WaveManager struct {
-	Enabled      bool
-	CurrentWave  int
-	TotalWaves   int    // derived from max waveNumber across all spawnpoints (0 = infinite)
-	State        string // "prep" | "active" | "complete"
+	Enabled     bool
+	CurrentWave int
+	TotalWaves  int    // derived from max waveNumber across all spawnpoints (0 = infinite)
+	State       string // "prep" | "active" | "complete"
 	// Timer meaning differs by state:
 	//   "prep"   → seconds remaining until wave starts
 	//   "active" → seconds elapsed since wave started
@@ -286,7 +295,7 @@ func (s *GameState) tickWaveLocked(dt float64) {
 			}
 		}
 
-	// "complete" is terminal — nothing more to tick.
+		// "complete" is terminal — nothing more to tick.
 	}
 }
 
@@ -322,7 +331,6 @@ func (s *GameState) resetWaveSpawnTimersLocked(waveNumber int) {
 	}
 }
 
-
 func (s *GameState) GetMapConfig() protocol.MapConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -341,6 +349,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			OwnerID:             unit.OwnerID,
 			Color:               unit.Color,
 			UnitType:            unit.UnitType,
+			Archetype:           unit.Archetype,
 			Name:                unit.Name,
 			Capabilities:        append([]string(nil), unit.Capabilities...),
 			Visible:             unit.Visible,
@@ -350,6 +359,12 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			HP:                  unit.HP,
 			MaxHP:               unit.MaxHP,
 			Damage:              unit.Damage,
+			AttackSpeed:         unit.AttackSpeed,
+			XP:                  unit.XP,
+			Rank:                unit.Rank,
+			XPToNextRank:        s.unitXPToNextRankLocked(unit),
+			XPIntoCurrentRank:   s.unitXPIntoCurrentRankLocked(unit),
+			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -414,6 +429,9 @@ func (s *GameState) Update(dt float64) {
 	s.tickEnemySpawnpointsLocked(dt, blocked)
 
 	for _, unit := range s.Units {
+		if unit.RankUpFxRemaining > 0 {
+			unit.RankUpFxRemaining = math.Max(0, unit.RankUpFxRemaining-dt)
+		}
 		s.updateWorkerTaskLocked(unit, dt, blocked)
 
 		if unit.MiningInside {
@@ -692,59 +710,71 @@ func (s *GameState) spawnPlayerUnitLocked(unitType, playerID, color string, spaw
 
 func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, color string, spawn protocol.Vec2) *Unit {
 	unit := &Unit{
-		ID:            s.nextUnitID,
-		OwnerID:       playerID,
-		Color:         color,
-		UnitType:      unitType,
-		Archetype:     resolveUnitArchetype(def, unitType),
-		Name:          def.Name,
-		Capabilities:  append([]string{}, def.Capabilities...),
-		Visible:       true,
-		Status:        "Idle",
-		X:             spawn.X,
-		Y:             spawn.Y,
-		HP:            def.HP,
-		MaxHP:         def.HP,
-		Damage:        def.Damage,
-		AttackRange:   def.AttackRange,
-		AttackSpeed:   def.AttackSpeed,
-		CombatAnchorX: spawn.X,
-		CombatAnchorY: spawn.Y,
-		ThreatTable:   map[int]*ThreatEntry{},
+		ID:                 s.nextUnitID,
+		OwnerID:            playerID,
+		Color:              color,
+		UnitType:           unitType,
+		Archetype:          resolveUnitArchetype(def, unitType),
+		Name:               def.Name,
+		Capabilities:       append([]string{}, def.Capabilities...),
+		Visible:            true,
+		Status:             "Idle",
+		X:                  spawn.X,
+		Y:                  spawn.Y,
+		HP:                 def.HP,
+		MaxHP:              def.HP,
+		BaseMaxHP:          def.HP,
+		BaseDamage:         def.Damage,
+		BaseAttackSpeed:    def.AttackSpeed,
+		Damage:             def.Damage,
+		AttackRange:        def.AttackRange,
+		AttackSpeed:        def.AttackSpeed,
+		Rank:               unitRankBase,
+		CombatAnchorX:      spawn.X,
+		CombatAnchorY:      spawn.Y,
+		ThreatTable:        map[int]*ThreatEntry{},
+		TankedDamageByUnit: map[int]float64{},
 	}
 
 	s.nextUnitID++
 	s.Units = append(s.Units, unit)
 	s.initializeCombatUnitLocked(unit)
+	s.applyRankModifiersLocked(unit, false)
 	return unit
 }
 
 func (s *GameState) spawnRaiderUnitLocked(playerID, color string, spawn protocol.Vec2) *Unit {
 	unit := &Unit{
-		ID:            s.nextUnitID,
-		OwnerID:       playerID,
-		Color:         color,
-		UnitType:      "raider",
-		Archetype:     "raider",
-		Name:          "Raider",
-		Capabilities:  []string{"move", "attack"},
-		Visible:       true,
-		Status:        "Idle",
-		X:             spawn.X,
-		Y:             spawn.Y,
-		HP:            raiderHP,
-		MaxHP:         raiderMaxHP,
-		Damage:        raiderDamage,
-		AttackRange:   raiderAttackRange,
-		AttackSpeed:   raiderAttackSpeed,
-		CombatAnchorX: spawn.X,
-		CombatAnchorY: spawn.Y,
-		ThreatTable:   map[int]*ThreatEntry{},
+		ID:                 s.nextUnitID,
+		OwnerID:            playerID,
+		Color:              color,
+		UnitType:           "raider",
+		Archetype:          "raider",
+		Name:               "Raider",
+		Capabilities:       []string{"move", "attack"},
+		Visible:            true,
+		Status:             "Idle",
+		X:                  spawn.X,
+		Y:                  spawn.Y,
+		HP:                 raiderHP,
+		MaxHP:              raiderMaxHP,
+		BaseMaxHP:          raiderMaxHP,
+		BaseDamage:         raiderDamage,
+		BaseAttackSpeed:    raiderAttackSpeed,
+		Damage:             raiderDamage,
+		AttackRange:        raiderAttackRange,
+		AttackSpeed:        raiderAttackSpeed,
+		Rank:               unitRankBase,
+		CombatAnchorX:      spawn.X,
+		CombatAnchorY:      spawn.Y,
+		ThreatTable:        map[int]*ThreatEntry{},
+		TankedDamageByUnit: map[int]float64{},
 	}
 
 	s.nextUnitID++
 	s.Units = append(s.Units, unit)
 	s.initializeCombatUnitLocked(unit)
+	s.applyRankModifiersLocked(unit, false)
 	return unit
 }
 
@@ -784,6 +814,7 @@ func (s *GameState) removeUnitLocked(unitID int) {
 			u.Status = "Idle"
 		}
 		delete(u.ThreatTable, unitID)
+		delete(u.TankedDamageByUnit, unitID)
 		if u.TauntedByUnitID == unitID {
 			u.TauntedByUnitID = 0
 			u.TauntRemaining = 0
@@ -888,9 +919,13 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						damage := unit.Damage
 						target.HP -= damage
 						s.onUnitDamagedLocked(unit, target, damage)
+						s.recordSoldierTankContributionLocked(unit, target, damage)
+						s.awardDamageXPLocked(unit, damage)
 						unit.AttackCooldown = 1.0 / unit.AttackSpeed
 						if target.HP <= 0 {
 							target.HP = 0
+							s.awardKillXPLocked(unit)
+							s.awardSoldierTankKillXPLocked(target.ID)
 							deadUnitIDs = append(deadUnitIDs, target.ID)
 						}
 					} else {
@@ -938,6 +973,7 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						newHP := hp - float64(damage)
 						building.Metadata["hp"] = newHP
 						s.onBuildingDamagedLocked(unit, building, damage)
+						s.awardDamageXPLocked(unit, damage)
 						unit.AttackCooldown = 1.0 / unit.AttackSpeed
 						if newHP <= 0 {
 							building.Metadata["hp"] = 0.0
@@ -3096,7 +3132,6 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 	}
 }
 
-
 func (s *GameState) buildingCenterLocked(building *protocol.BuildingTile) protocol.Vec2 {
 	return protocol.Vec2{
 		X: (float64(building.X) + float64(building.Width)/2) * s.MapConfig.CellSize,
@@ -3219,7 +3254,6 @@ func (s *GameState) destroyBuildingLocked(buildingID string) {
 	}
 	s.MapConfig.Buildings = filtered
 }
-
 
 func (s *GameState) getNearestPlayerTownhallCenterLocked(x, y float64) *protocol.Vec2 {
 	var best *protocol.Vec2

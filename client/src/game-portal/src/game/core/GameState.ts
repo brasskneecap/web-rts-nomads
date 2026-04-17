@@ -15,6 +15,7 @@ import { UNIT_DEF_MAP } from '../maps/unitDefs'
 export type Unit = {
   id: number
   unitType: UnitType
+  archetype?: string
   name: string
   capabilities: UnitCapability[]
   visible: boolean
@@ -24,6 +25,12 @@ export type Unit = {
   hp?: number
   maxHp?: number
   damage?: number
+  attackSpeed?: number
+  xp?: number
+  rank?: string
+  xpToNextRank?: number
+  xpIntoCurrentRank?: number
+  recentRankUpSeconds?: number
   ownerId?: string
   color?: string
   carriedResourceType?: ResourceType
@@ -187,6 +194,7 @@ export class GameState {
     totalWaves: 0,
     state: '',
     timer: 0,
+    waveDuration: 0,
   }
 
   mapWidth = 6144
@@ -273,6 +281,7 @@ export class GameState {
       units: message.units.map((unit) => ({
         id: unit.id,
         unitType: unit.unitType,
+        archetype: unit.archetype,
         name: unit.name,
         capabilities: unit.capabilities ?? [],
         visible: unit.visible,
@@ -282,6 +291,12 @@ export class GameState {
         hp: unit.hp,
         maxHp: unit.maxHp,
         damage: unit.damage,
+        attackSpeed: unit.attackSpeed,
+        xp: unit.xp,
+        rank: unit.rank,
+        xpToNextRank: unit.xpToNextRank,
+        xpIntoCurrentRank: unit.xpIntoCurrentRank,
+        recentRankUpSeconds: unit.recentRankUpSeconds,
         ownerId: unit.ownerId,
         color: unit.color,
         carriedResourceType: unit.carriedResourceType,
@@ -1374,6 +1389,20 @@ function getUnitDetails(unit: Unit): DetailItem[] {
     },
   ]
 
+  details.push({
+    id: 'rank',
+    label: 'Rank',
+    value: formatUnitRank(unit.rank),
+  })
+
+  details.push({
+    id: 'xp',
+    label: 'XP',
+    value: unit.xpToNextRank && unit.xpToNextRank > 0
+      ? `${unit.xp ?? 0} (${unit.xpToNextRank} to next)`
+      : `${unit.xp ?? 0} (max)`,
+  })
+
   if (unit.damage !== undefined && unit.damage > 0) {
     details.push({
       id: 'damage',
@@ -1402,6 +1431,19 @@ function getGroupDetails(units: Unit[], totalHp: number, totalMaxHp: number): De
     },
   ]
 
+  const ranks = new Map<string, number>()
+  for (const unit of units) {
+    const rank = formatUnitRank(unit.rank)
+    ranks.set(rank, (ranks.get(rank) ?? 0) + 1)
+  }
+  if (ranks.size > 0) {
+    details.push({
+      id: 'group-ranks',
+      label: 'Ranks',
+      value: [...ranks.entries()].map(([rank, count]) => `${rank} x${count}`).join(', '),
+    })
+  }
+
   const carryingGold = units.reduce(
     (sum, unit) => sum + (unit.carriedResourceType === 'gold' ? unit.carriedAmount ?? 0 : 0),
     0,
@@ -1419,6 +1461,19 @@ function getGroupDetails(units: Unit[], totalHp: number, totalMaxHp: number): De
   }
 
   return details
+}
+
+function formatUnitRank(rank?: string) {
+  switch (rank) {
+    case 'bronze':
+      return 'Bronze'
+    case 'silver':
+      return 'Silver'
+    case 'gold':
+      return 'Gold'
+    default:
+      return 'Base'
+  }
 }
 
 function summarizeWorkerGroupStatus(units: Unit[]) {

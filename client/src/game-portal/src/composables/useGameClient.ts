@@ -21,6 +21,14 @@ const emptyUiSnapshot: GameUiSnapshot = {
     actions: [],
   },
   notifications: [],
+  wave: {
+    enabled: false,
+    currentWave: 0,
+    totalWaves: 0,
+    state: '',
+    timer: 0,
+    waveDuration: 0,
+  },
 }
 
 export function useGameClient() {
