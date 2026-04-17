@@ -9,7 +9,8 @@ import type { PlayerSummary, SelectionSummary, Unit, Notification } from './Game
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
-import { fetchBuildingDefs, fetchUnitDefs, fetchActionIcons } from '../maps/catalog'
+import { initPerkDefs } from '../maps/perkDefs'
+import { fetchBuildingDefs, fetchUnitDefs, fetchActionIcons, fetchPerkDefs } from '../maps/catalog'
 
 export type GameUiSnapshot = {
   player: PlayerSummary
@@ -48,10 +49,16 @@ export class GameClient {
   }
 
   async start(options: { resume?: boolean } = {}) {
-    const [buildingDefs, unitDefs, actionIcons] = await Promise.all([fetchBuildingDefs(), fetchUnitDefs(), fetchActionIcons()])
+    const [buildingDefs, unitDefs, actionIcons, perkDefs] = await Promise.all([
+      fetchBuildingDefs(),
+      fetchUnitDefs(),
+      fetchActionIcons(),
+      fetchPerkDefs(),
+    ])
     initBuildingDefs(buildingDefs)
     initUnitDefs(unitDefs)
     initActionIcons(actionIcons)
+    initPerkDefs(perkDefs)
     await this.network.connect(options)
     this.loop.start()
   }

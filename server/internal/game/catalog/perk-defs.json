@@ -1,0 +1,68 @@
+{
+  "units": {
+    "soldier": {
+      "paths": {
+        "berserker": {
+          "bronze": [
+            {
+              "id": "bloodlust",
+              "displayName": "Bloodlust",
+              "icon": "perk-bloodlust",
+              "description": "Gain attack speed while continuously attacking. Resets if the unit idles too long.",
+              "config": {
+                "bonusPerAttack":    0.10,
+                "maxBonus":          0.50,
+                "resetAfterSeconds": 3.0
+              }
+            },
+            {
+              "id": "savage_strikes",
+              "displayName": "Savage Strikes",
+              "icon": "perk-savage-strikes",
+              "description": "Every Nth attack deals a bonus hit for increased damage.",
+              "config": {
+                "everyNthAttack":  4,
+                "bonusMultiplier": 1.5
+              }
+            },
+            {
+              "id": "frenzy_core",
+              "displayName": "Frenzy Core",
+              "icon": "perk-frenzy-core",
+              "description": "Attack speed increases as HP decreases. Full bonus at near-death.",
+              "config": {
+                "maxBonus": 0.60
+              }
+            },
+            {
+              "id": "cleaving_rage",
+              "displayName": "Cleaving Rage",
+              "icon": "perk-cleaving-rage",
+              "description": "Each attack also hits the nearest additional enemy within the cleave radius.",
+              "config": {
+                "splashRadius": 60.0
+              }
+            },
+            {
+              "id": "relentless",
+              "displayName": "Relentless",
+              "icon": "perk-relentless",
+              "description": "Killing an enemy grants a short attack speed burst.",
+              "config": {
+                "bonus":           0.40,
+                "durationSeconds": 4.0
+              }
+            }
+          ],
+          "silver": [],
+          "gold": []
+        },
+        "vanguard": {
+          "bronze": [],
+          "silver": [],
+          "gold": []
+        }
+      }
+    }
+  }
+}

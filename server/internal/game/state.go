@@ -35,6 +35,8 @@ type Unit struct {
 	RankUpFxRemaining   float64
 	ProgressionPath     string
 	Armor               int
+	PerkID              string    // assigned perk id, "" = none
+	PerkState           UnitPerkState // runtime state for the assigned perk
 
 	CarriedResourceType string
 	CarriedAmount       int
@@ -368,6 +370,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			XPIntoCurrentRank:   s.unitXPIntoCurrentRankLocked(unit),
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
+			PerkID:              unit.PerkID,
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -435,6 +438,8 @@ func (s *GameState) Update(dt float64) {
 		if unit.RankUpFxRemaining > 0 {
 			unit.RankUpFxRemaining = math.Max(0, unit.RankUpFxRemaining-dt)
 		}
+		// Advance time-based perk state (idle timers, buff durations).
+		s.tickUnitPerkStateLocked(unit, dt)
 		s.updateWorkerTaskLocked(unit, dt, blocked)
 
 		if unit.MiningInside {
@@ -926,11 +931,17 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						s.onUnitDamagedLocked(unit, target, damage)
 						s.recordSoldierTankContributionLocked(unit, target, damage)
 						s.awardDamageXPLocked(unit, damage)
-						unit.AttackCooldown = 1.0 / unit.AttackSpeed
+						// Perk on-attack effects (bloodlust accumulation,
+						// savage_strikes bonus hit, cleaving_rage extra target).
+						s.onPerkAttackFiredLocked(unit, target, damage, &deadUnitIDs)
+						// Use effective attack speed (base + perk bonus) for the cooldown.
+						effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+						unit.AttackCooldown = 1.0 / effectiveSpeed
 						if target.HP <= 0 {
 							target.HP = 0
 							s.awardKillXPLocked(unit)
 							s.awardSoldierTankKillXPLocked(target.ID)
+							s.onPerkKillLocked(unit) // perk on-kill effects (relentless boost)
 							deadUnitIDs = append(deadUnitIDs, target.ID)
 						}
 					} else {

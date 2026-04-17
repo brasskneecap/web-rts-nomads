@@ -2,6 +2,7 @@ import type { MapCatalogEntry, MapCatalogFile } from '../network/protocol'
 import type { BuildingDef } from './buildingDefs'
 import type { UnitDef } from './unitDefs'
 import type { ActionIconDef } from './actionIconDefs'
+import type { PerkDef } from './perkDefs'
 
 export async function fetchMapCatalog(): Promise<MapCatalogEntry[]> {
   const response = await fetch('http://localhost:8080/maps')
@@ -44,6 +45,17 @@ export async function fetchUnitDefs(): Promise<UnitDef[]> {
 
   const data = (await response.json()) as { units: UnitDef[] }
   return data.units
+}
+
+export async function fetchPerkDefs(): Promise<PerkDef[]> {
+  const response = await fetch('http://localhost:8080/catalog/perks')
+
+  if (!response.ok) {
+    throw new Error(`Failed to load perk defs: ${response.status}`)
+  }
+
+  const data = (await response.json()) as { perks: PerkDef[] }
+  return data.perks
 }
 
 export async function fetchActionIcons(): Promise<ActionIconDef[]> {

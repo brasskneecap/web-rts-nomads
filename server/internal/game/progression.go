@@ -22,7 +22,7 @@ const (
 const (
 	// Tuning points for first-pass progression. These are intentionally simple
 	// and deterministic so rank gain is easy to debug before perks/branching exist.
-	xpGainMultiplier               = 0.20
+	xpGainMultiplier               = 10
 	xpPerDamageDealt               = 1.0
 	xpPerKillBonus                 = 25.0
 	xpPerSoldierDamageTankedOnKill = 0.5
@@ -148,6 +148,10 @@ func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
 	// Assign path before applying modifiers so the first applyRankModifiersLocked
 	// call already uses the correct path multipliers.
 	s.assignUnitPathOnRankUpLocked(unit)
+	// Assign perk after path so eligibility filtering can match against the
+	// correct ProgressionPath. Must run before applyRankModifiersLocked in case
+	// a future perk modifies base stats at assignment time.
+	s.assignUnitPerkLocked(unit)
 	s.applyRankModifiersLocked(unit, true)
 	s.onUnitRankUpLocked(unit)
 }

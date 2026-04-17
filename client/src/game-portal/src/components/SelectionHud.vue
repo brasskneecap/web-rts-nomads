@@ -52,17 +52,34 @@
     <section class="selection-panel selection-panel--actions">
       <div class="action-grid">
         <template v-for="i in GRID_SIZE" :key="i">
-          <button
-            v-if="ui.selection.actions[i - 1]"
-            class="action-cell"
-            :class="{ 'action-cell--active': ui.selection.actions[i - 1].active }"
-            :disabled="ui.selection.actions[i - 1].disabled"
-            :title="ui.selection.actions[i - 1].label"
-            type="button"
-            @click="$emit('action', ui.selection.actions[i - 1].id)"
-          >
-            <ActionIcon :action="ui.selection.actions[i - 1]" />
-          </button>
+          <template v-if="ui.selection.actions[i - 1]">
+            <!-- Perk display cell (bottom row: bronze → silver → gold) -->
+            <div
+              v-if="ui.selection.actions[i - 1].kind === 'perk'"
+              class="action-cell action-cell--perk"
+              :class="`action-cell--perk-${ui.selection.actions[i - 1].perkRank}`"
+              :title="ui.selection.actions[i - 1].label"
+            >
+              <ActionIcon :action="ui.selection.actions[i - 1]" />
+            </div>
+            <!-- Invisible padding cell that holds the slot between regular actions and perks -->
+            <div
+              v-else-if="ui.selection.actions[i - 1].id === ''"
+              class="action-cell action-cell--empty"
+            />
+            <!-- Regular interactive action button -->
+            <button
+              v-else
+              class="action-cell"
+              :class="{ 'action-cell--active': ui.selection.actions[i - 1].active }"
+              :disabled="ui.selection.actions[i - 1].disabled"
+              :title="ui.selection.actions[i - 1].label"
+              type="button"
+              @click="$emit('action', ui.selection.actions[i - 1].id)"
+            >
+              <ActionIcon :action="ui.selection.actions[i - 1]" />
+            </button>
+          </template>
           <div v-else class="action-cell action-cell--empty" />
         </template>
       </div>
@@ -350,6 +367,42 @@ const GRID_SIZE = 9
   background: rgba(50, 30, 10, 0.25);
   cursor: default;
   pointer-events: none;
+}
+
+/* ── Perk display cells ───────────────────────────────────────────────────── */
+/* Shared base: display-only, not interactive, slightly darker background.    */
+.action-cell--perk {
+  cursor: default;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(30, 18, 8, 0.92), rgba(20, 12, 4, 0.96));
+  color: #d4b87a;
+}
+
+/* Rank-tinted borders. Update these when adding new rank tiers. */
+.action-cell--perk-bronze {
+  border-color: rgba(160, 100, 30, 0.75);
+  box-shadow: inset 0 0 0 1px rgba(200, 140, 60, 0.18);
+}
+
+.action-cell--perk-silver {
+  border-color: rgba(140, 155, 170, 0.65);
+  box-shadow: inset 0 0 0 1px rgba(180, 195, 210, 0.15);
+}
+
+.action-cell--perk-gold {
+  border-color: rgba(200, 165, 40, 0.80);
+  box-shadow:
+    inset 0 0 0 1px rgba(240, 210, 80, 0.22),
+    0 0 4px rgba(200, 165, 40, 0.18);
+}
+
+/* Locked / empty rank slot: dim the icon and border further. */
+.action-cell--perk:has(.action-icon) .action-icon {
+  opacity: 0.9;
+}
+.action-cell--perk-silver .action-icon,
+.action-cell--perk-gold .action-icon {
+  opacity: 0.35;
 }
 
 @media (max-width: 1000px) {

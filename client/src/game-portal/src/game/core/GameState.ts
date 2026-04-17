@@ -11,6 +11,7 @@ import type {
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
+import { PERK_DEF_MAP } from '../maps/perkDefs'
 
 export type Unit = {
   id: number
@@ -32,6 +33,7 @@ export type Unit = {
   xpIntoCurrentRank?: number
   recentRankUpSeconds?: number
   path?: string
+  perkId?: string
   ownerId?: string
   color?: string
   carriedResourceType?: ResourceType
@@ -44,6 +46,13 @@ export type Unit = {
 export type ActionItem = {
   id: string
   label: string
+  /**
+   * 'perk' marks a display-only perk slot in the bottom row of the action grid.
+   * Absent means a regular interactive action button.
+   */
+  kind?: 'perk'
+  /** Rank tier for perk slots — drives the rank-colored border in SelectionHud. */
+  perkRank?: 'bronze' | 'silver' | 'gold'
   disabled?: boolean
   active?: boolean
   iconDef?: { kind: 'building'; type: string } | { kind: 'unit'; type: string }
@@ -299,6 +308,7 @@ export class GameState {
         xpIntoCurrentRank: unit.xpIntoCurrentRank,
         recentRankUpSeconds: unit.recentRankUpSeconds,
         path: unit.progressionPath,
+        perkId: unit.perkId,
         ownerId: unit.ownerId,
         color: unit.color,
         carriedResourceType: unit.carriedResourceType,
@@ -908,6 +918,26 @@ export class GameState {
       const unit = selectedUnits[0]
       const buildMenuOpen = this.workerBuildMenuOpen && unit.capabilities.includes('build')
       const placementActive = this.buildPlacement !== null
+
+      // Regular actions occupy slots 1–6 (top two rows of the 3×3 grid).
+      // Perk items always occupy slots 7–9 (bottom row): bronze, silver, gold.
+      // When the build menu is open the full 9 slots are used for building
+      // choices, so we skip the perk row in that state.
+      const regularActions = getUnitActions(unit, this.unitTargetingMode, buildMenuOpen)
+      const actions = buildMenuOpen
+        ? regularActions
+        : [
+            ...regularActions,
+            // Pad to 6 so perks always land in the bottom row regardless of
+            // how many regular action slots are filled.
+            ...Array<ActionItem>(Math.max(0, 6 - regularActions.length)).fill({
+              id: '',
+              label: '',
+              disabled: true,
+            }),
+            ...getPerkActionItems(unit),
+          ]
+
       return {
         kind: 'unit',
         title: unit.name,
@@ -920,7 +950,7 @@ export class GameState {
                 this.unitTargetingMode,
               ),
         details: getUnitDetails(unit),
-        actions: getUnitActions(unit, this.unitTargetingMode, buildMenuOpen),
+        actions,
       }
     }
 
@@ -1157,6 +1187,49 @@ function getBuildingConstructionSummary(building: BuildingTile): RepairSummary |
     timeLabel: remainingSeconds !== undefined ? formatRemainingSeconds(remainingSeconds) : 'Paused',
     builderCount,
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Perk action items
+//
+// Returns exactly 3 ActionItems — one per rank tier (bronze / silver / gold) —
+// that always occupy the bottom row of the 3×3 action grid.
+//
+// Each slot shows the assigned perk icon for that rank, or a generic locked
+// icon if no perk has been assigned yet. Slots are display-only (kind: 'perk');
+// the SelectionHud renders them with rank-tinted borders and no click handler.
+//
+// TO ADD A NEW RANK TIER: append its name to the `ranks` array below and add
+// a matching CSS class in SelectionHud.vue.
+// ─────────────────────────────────────────────────────────────────────────────
+const PERK_RANKS: Array<'bronze' | 'silver' | 'gold'> = ['bronze', 'silver', 'gold']
+
+function getPerkActionItems(unit: Unit): ActionItem[] {
+  return PERK_RANKS.map((rank) => {
+    // Find the unit's assigned perk and check if it belongs to this rank tier.
+    const def = unit.perkId ? PERK_DEF_MAP.get(unit.perkId) : undefined
+    const isThisRank = def?.rank === rank
+
+    if (isThisRank && def) {
+      return {
+        id: def.icon ?? 'perk-locked',
+        label: def.displayName + (def.description ? `\n${def.description}` : ''),
+        kind: 'perk' as const,
+        perkRank: rank,
+        disabled: true,
+      }
+    }
+
+    // Locked / empty slot for ranks the unit hasn't reached yet.
+    const rankLabel = rank.charAt(0).toUpperCase() + rank.slice(1)
+    return {
+      id: 'perk-locked',
+      label: `${rankLabel} Perk (locked)`,
+      kind: 'perk' as const,
+      perkRank: rank,
+      disabled: true,
+    }
+  })
 }
 
 function getUnitActions(
@@ -1405,6 +1478,14 @@ function getUnitDetails(unit: Unit): DetailItem[] {
     })
   }
 
+  if (unit.perkId) {
+    details.push({
+      id: 'perk',
+      label: 'Perk',
+      value: formatPerkId(unit.perkId),
+    })
+  }
+
   details.push({
     id: 'xp',
     label: 'XP',
@@ -1471,6 +1552,17 @@ function getGroupDetails(units: Unit[], totalHp: number, totalMaxHp: number): De
   }
 
   return details
+}
+
+function formatPerkId(perkId?: string) {
+  switch (perkId) {
+    case 'bloodlust':      return 'Bloodlust'
+    case 'savage_strikes': return 'Savage Strikes'
+    case 'frenzy_core':    return 'Frenzy Core'
+    case 'cleaving_rage':  return 'Cleaving Rage'
+    case 'relentless':     return 'Relentless'
+    default:               return perkId ?? ''
+  }
 }
 
 function formatUnitPath(path?: string) {
