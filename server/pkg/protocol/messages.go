@@ -163,13 +163,14 @@ type UnitSnapshot struct {
 	MaxHP               int      `json:"maxHp"`
 	Damage              int      `json:"damage,omitempty"`
 	AttackSpeed         float64  `json:"attackSpeed,omitempty"`
+	Armor               int      `json:"armor,omitempty"`
 	XP                  int      `json:"xp,omitempty"`
 	Rank                string   `json:"rank,omitempty"`
 	XPToNextRank        int      `json:"xpToNextRank,omitempty"`
 	XPIntoCurrentRank   int      `json:"xpIntoCurrentRank,omitempty"`
 	RecentRankUpSeconds float64  `json:"recentRankUpSeconds,omitempty"`
 	ProgressionPath     string   `json:"progressionPath,omitempty"`
-	PerkID              string   `json:"perkId,omitempty"`
+	PerkIDs             []string `json:"perkIds,omitempty"`
 	CarriedResourceType string   `json:"carriedResourceType,omitempty"`
 	CarriedAmount       int      `json:"carriedAmount,omitempty"`
 	TargetX             float64  `json:"targetX,omitempty"`

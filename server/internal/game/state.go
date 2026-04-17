@@ -35,8 +35,8 @@ type Unit struct {
 	RankUpFxRemaining   float64
 	ProgressionPath     string
 	Armor               int
-	PerkID              string    // assigned perk id, "" = none
-	PerkState           UnitPerkState // runtime state for the assigned perk
+	PerkIDs             []string  // assigned perk ids, in rank-up order (index 0 = Bronze, 1 = Silver, 2 = Gold)
+	PerkState           UnitPerkState // runtime state shared across the unit's perks
 
 	CarriedResourceType string
 	CarriedAmount       int
@@ -72,6 +72,10 @@ type Unit struct {
 	TauntRemaining     float64
 	ThreatTable        map[int]*ThreatEntry
 	TankedDamageByUnit map[int]float64
+	// DamageDealtByUnit accumulates damage this unit has taken from each
+	// attacker, keyed by attacker ID. On death the map is paid out so
+	// contributors earn damage XP only when the target actually dies.
+	DamageDealtByUnit map[int]int
 }
 
 const (
@@ -159,6 +163,10 @@ type GameState struct {
 	nextBuildingID int
 	nextOrderID    int64
 	rng            *rand.Rand
+
+	// buildingDamageDealt mirrors Unit.DamageDealtByUnit for buildings.
+	// buildingID → attackerID → accumulated damage. Paid out on destruction.
+	buildingDamageDealt map[string]map[int]int
 }
 
 const (
@@ -181,12 +189,13 @@ const (
 
 func NewGameState(mapConfig protocol.MapConfig) *GameState {
 	state := &GameState{
-		Units:            []*Unit{},
-		Players:          map[string]*Player{},
-		Productions:      map[string][]*UnitProduction{},
-		EnemySpawnTimers: map[string]*EnemySpawnTimer{},
-		nextUnitID:       1,
-		rng:              rand.New(rand.NewSource(time.Now().UnixNano())),
+		Units:               []*Unit{},
+		Players:             map[string]*Player{},
+		Productions:         map[string][]*UnitProduction{},
+		EnemySpawnTimers:    map[string]*EnemySpawnTimer{},
+		nextUnitID:          1,
+		rng:                 rand.New(rand.NewSource(time.Now().UnixNano())),
+		buildingDamageDealt: map[string]map[int]int{},
 	}
 
 	state.SetMapConfig(mapConfig)
@@ -364,13 +373,14 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			MaxHP:               unit.MaxHP,
 			Damage:              unit.Damage,
 			AttackSpeed:         unit.AttackSpeed,
+			Armor:               unit.Armor,
 			XP:                  unit.XP,
 			Rank:                unit.Rank,
 			XPToNextRank:        s.unitXPToNextRankLocked(unit),
 			XPIntoCurrentRank:   s.unitXPIntoCurrentRankLocked(unit),
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
-			PerkID:              unit.PerkID,
+			PerkIDs:             unit.PerkIDs,
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -743,6 +753,7 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		CombatAnchorY:      spawn.Y,
 		ThreatTable:        map[int]*ThreatEntry{},
 		TankedDamageByUnit: map[int]float64{},
+		DamageDealtByUnit:  map[int]int{},
 	}
 
 	s.nextUnitID++
@@ -779,6 +790,7 @@ func (s *GameState) spawnRaiderUnitLocked(playerID, color string, spawn protocol
 		CombatAnchorY:      spawn.Y,
 		ThreatTable:        map[int]*ThreatEntry{},
 		TankedDamageByUnit: map[int]float64{},
+		DamageDealtByUnit:  map[int]int{},
 	}
 
 	s.nextUnitID++
@@ -825,9 +837,18 @@ func (s *GameState) removeUnitLocked(unitID int) {
 		}
 		delete(u.ThreatTable, unitID)
 		delete(u.TankedDamageByUnit, unitID)
+		delete(u.DamageDealtByUnit, unitID)
 		if u.TauntedByUnitID == unitID {
 			u.TauntedByUnitID = 0
 			u.TauntRemaining = 0
+		}
+	}
+	// Forfeit banked damage-dealt XP on any building: if this unit is dead it
+	// can no longer earn XP, so strip its entries from every building's map.
+	for buildingID, m := range s.buildingDamageDealt {
+		delete(m, unitID)
+		if len(m) == 0 {
+			delete(s.buildingDamageDealt, buildingID)
 		}
 	}
 }
@@ -930,7 +951,7 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						target.HP -= damage
 						s.onUnitDamagedLocked(unit, target, damage)
 						s.recordSoldierTankContributionLocked(unit, target, damage)
-						s.awardDamageXPLocked(unit, damage)
+						s.recordDamageDealtLocked(unit, target, damage)
 						// Perk on-attack effects (bloodlust accumulation,
 						// savage_strikes bonus hit, cleaving_rage extra target).
 						s.onPerkAttackFiredLocked(unit, target, damage, &deadUnitIDs)
@@ -940,6 +961,7 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						if target.HP <= 0 {
 							target.HP = 0
 							s.awardKillXPLocked(unit)
+							s.payoutDamageDealtXPLocked(target)
 							s.awardSoldierTankKillXPLocked(target.ID)
 							s.onPerkKillLocked(unit) // perk on-kill effects (relentless boost)
 							deadUnitIDs = append(deadUnitIDs, target.ID)
@@ -989,10 +1011,11 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						newHP := hp - float64(damage)
 						building.Metadata["hp"] = newHP
 						s.onBuildingDamagedLocked(unit, building, damage)
-						s.awardDamageXPLocked(unit, damage)
+						s.recordDamageDealtBuildingLocked(unit, building.ID, damage)
 						unit.AttackCooldown = 1.0 / unit.AttackSpeed
 						if newHP <= 0 {
 							building.Metadata["hp"] = 0.0
+							s.payoutBuildingDamageDealtXPLocked(building.ID)
 							destroyedBuildingIDs = append(destroyedBuildingIDs, building.ID)
 						}
 					} else {
@@ -3085,7 +3108,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			timer = &EnemySpawnTimer{
 				RemainingDelay:    delay,
 				TotalDelay:        delay,
-				RemainingInterval: interval,
+				RemainingInterval: 0,
 				TotalInterval:     interval,
 			}
 			s.EnemySpawnTimers[building.ID] = timer
@@ -3260,6 +3283,9 @@ func (s *GameState) destroyBuildingLocked(buildingID string) {
 			unit.Status = "Idle"
 		}
 	}
+	// Drop any lingering banked damage-XP entry. The combat path pays out
+	// before queuing destruction, so this is only defensive.
+	delete(s.buildingDamageDealt, buildingID)
 
 	// Remove the building from the map
 	filtered := make([]protocol.BuildingTile, 0, len(s.MapConfig.Buildings))

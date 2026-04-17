@@ -2,8 +2,23 @@
   <footer class="selection-hud">
     <div class="selection-main">
       <section class="selection-panel selection-panel--primary">
-        <div class="selection-title">{{ ui.selection.title }}</div>
+        <div class="selection-title">
+          {{ ui.selection.title }}<span
+            v-if="ui.selection.kind === 'unit' && ui.selection.pathLabel"
+            class="selection-title__path"
+          > ({{ ui.selection.pathLabel }})</span>
+        </div>
         <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
+        <div
+          v-if="ui.selection.kind === 'unit' && (ui.selection.rankLabel || ui.selection.xpLabel)"
+          class="selection-progression"
+        >
+          <div v-if="ui.selection.rankLabel" class="selection-progression__rank-group">
+            <div class="selection-progression__label">Rank</div>
+            <div class="selection-progression__rank">{{ ui.selection.rankLabel }}</div>
+          </div>
+          <span v-if="ui.selection.xpLabel" class="selection-progression__xp">{{ ui.selection.xpLabel }}</span>
+        </div>
       </section>
 
       <section class="selection-panel selection-panel--details">
@@ -58,9 +73,18 @@
               v-if="ui.selection.actions[i - 1].kind === 'perk'"
               class="action-cell action-cell--perk"
               :class="`action-cell--perk-${ui.selection.actions[i - 1].perkRank}`"
-              :title="ui.selection.actions[i - 1].label"
             >
               <ActionIcon :action="ui.selection.actions[i - 1]" />
+              <div
+                v-if="ui.selection.actions[i - 1].tooltipTitle"
+                class="perk-tooltip"
+              >
+                <div class="perk-tooltip__title">{{ ui.selection.actions[i - 1].tooltipTitle }}</div>
+                <div
+                  v-if="ui.selection.actions[i - 1].tooltipBody"
+                  class="perk-tooltip__body"
+                >{{ ui.selection.actions[i - 1].tooltipBody }}</div>
+              </div>
             </div>
             <!-- Invisible padding cell that holds the slot between regular actions and perks -->
             <div
@@ -140,6 +164,8 @@ const GRID_SIZE = 9
 }
 
 .selection-panel--primary {
+  display: flex;
+  flex-direction: column;
   flex: 0 0 var(--selection-panel-width);
   border-radius: 14px 0 0 14px;
 }
@@ -164,7 +190,8 @@ const GRID_SIZE = 9
   flex-direction: column;
   flex: 0 0 var(--actions-panel-width);
   height: var(--hud-height);
-  overflow: hidden;
+  /* overflow: visible so perk hover tooltips can extend above the panel. */
+  overflow: visible;
   border-radius: 14px;
   pointer-events: auto;
 }
@@ -182,6 +209,49 @@ const GRID_SIZE = 9
   font-size: 12px;
   line-height: 1.35;
   overflow-wrap: anywhere;
+  color: #cbb893;
+}
+
+.selection-title__path {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e9c77a;
+}
+
+.selection-progression {
+  margin-top: auto;
+  padding-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  font-size: 12px;
+  color: #e7d7b6;
+}
+
+.selection-progression__rank-group {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.selection-progression__label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #a8946e;
+}
+
+.selection-progression__rank {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff2d6;
+}
+
+.selection-progression__xp {
   color: #cbb893;
 }
 
@@ -370,10 +440,12 @@ const GRID_SIZE = 9
 }
 
 /* ── Perk display cells ───────────────────────────────────────────────────── */
-/* Shared base: display-only, not interactive, slightly darker background.    */
+/* Shared base: display-only, not clickable, slightly darker background.      */
+/* pointer-events: auto so the custom hover tooltip can trigger.              */
 .action-cell--perk {
+  position: relative;
   cursor: default;
-  pointer-events: none;
+  pointer-events: auto;
   background: linear-gradient(180deg, rgba(30, 18, 8, 0.92), rgba(20, 12, 4, 0.96));
   color: #d4b87a;
 }
@@ -403,6 +475,46 @@ const GRID_SIZE = 9
 .action-cell--perk-silver .action-icon,
 .action-cell--perk-gold .action-icon {
   opacity: 0.35;
+}
+
+/* ── Perk hover tooltip ──────────────────────────────────────────────────── */
+.perk-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 180px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(34, 22, 10, 0.98), rgba(20, 12, 4, 0.98));
+  border: 1px solid rgba(200, 164, 106, 0.45);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  color: #f5ead2;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease-out;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.action-cell--perk:hover .perk-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.perk-tooltip__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff2d6;
+  margin-bottom: 3px;
+}
+
+.perk-tooltip__body {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #d4b87a;
 }
 
 @media (max-width: 1000px) {

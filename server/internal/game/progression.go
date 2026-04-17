@@ -22,7 +22,7 @@ const (
 const (
 	// Tuning points for first-pass progression. These are intentionally simple
 	// and deterministic so rank gain is easy to debug before perks/branching exist.
-	xpGainMultiplier               = 10
+	xpGainMultiplier               = .2
 	xpPerDamageDealt               = 1.0
 	xpPerKillBonus                 = 25.0
 	xpPerSoldierDamageTankedOnKill = 0.5
@@ -44,8 +44,8 @@ type rankProgressionDef struct {
 var rankProgressionTable = []rankProgressionDef{
 	{Rank: unitRankBase, XPThreshold: 0, MaxHPMultiplier: 1.00, DamageMultiplier: 1.00, AttackSpeedMultiplier: 1.00},
 	{Rank: unitRankBronze, XPThreshold: 100, MaxHPMultiplier: 1.10, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00},
-	{Rank: unitRankSilver, XPThreshold: 250, MaxHPMultiplier: 1.20, DamageMultiplier: 1.25, AttackSpeedMultiplier: 1.10},
-	{Rank: unitRankGold, XPThreshold: 500, MaxHPMultiplier: 1.35, DamageMultiplier: 1.50, AttackSpeedMultiplier: 1.25},
+	{Rank: unitRankSilver, XPThreshold: 350, MaxHPMultiplier: 1.20, DamageMultiplier: 1.25, AttackSpeedMultiplier: 1.10},
+	{Rank: unitRankGold, XPThreshold: 750, MaxHPMultiplier: 1.35, DamageMultiplier: 1.50, AttackSpeedMultiplier: 1.25},
 }
 
 // pathModifierDef describes per-rank stat multipliers and flat armor bonus for a
@@ -140,20 +140,26 @@ func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
 		return
 	}
 	unit.XP += amount
+	// Advance one rank at a time so every crossed tier gets its own path /
+	// perk / modifier application. Matters when a single XP gain jumps the
+	// unit past multiple thresholds (e.g. debug-boosted XP rates).
 	finalRank := rankDefForXP(unit.XP)
-	if unit.Rank == finalRank.Rank {
-		return
+	for unit.Rank != finalRank.Rank {
+		next, ok := nextRankDef(unit.Rank)
+		if !ok {
+			break
+		}
+		unit.Rank = next.Rank
+		// Assign path before applying modifiers so the first applyRankModifiersLocked
+		// call already uses the correct path multipliers.
+		s.assignUnitPathOnRankUpLocked(unit)
+		// Assign perk after path so eligibility filtering can match against the
+		// correct ProgressionPath. Must run before applyRankModifiersLocked in case
+		// a future perk modifies base stats at assignment time.
+		s.assignUnitPerkLocked(unit)
+		s.applyRankModifiersLocked(unit, true)
+		s.onUnitRankUpLocked(unit)
 	}
-	unit.Rank = finalRank.Rank
-	// Assign path before applying modifiers so the first applyRankModifiersLocked
-	// call already uses the correct path multipliers.
-	s.assignUnitPathOnRankUpLocked(unit)
-	// Assign perk after path so eligibility filtering can match against the
-	// correct ProgressionPath. Must run before applyRankModifiersLocked in case
-	// a future perk modifies base stats at assignment time.
-	s.assignUnitPerkLocked(unit)
-	s.applyRankModifiersLocked(unit, true)
-	s.onUnitRankUpLocked(unit)
 }
 
 func (s *GameState) addUnitXPFloatLocked(unit *Unit, amount float64) {
@@ -219,11 +225,74 @@ func (s *GameState) onUnitRankUpLocked(unit *Unit) {
 	unit.RankUpFxRemaining = rankUpFxDurationSecs
 }
 
-func (s *GameState) awardDamageXPLocked(attacker *Unit, damage int) {
-	if damage <= 0 {
+// recordDamageDealtLocked banks damage an attacker has dealt to a unit. The XP
+// is not awarded until the target dies (via payoutDamageDealtXPLocked), so
+// damage contributed to enemies that never die earns no XP. If the attacker
+// dies first, removeUnitLocked strips their entry — forfeiting the banked XP.
+func (s *GameState) recordDamageDealtLocked(attacker, target *Unit, damage int) {
+	if attacker == nil || target == nil || damage <= 0 {
 		return
 	}
-	s.addUnitXPFloatLocked(attacker, float64(damage)*xpPerDamageDealt)
+	if !s.unitCanGainXPLocked(attacker) {
+		return
+	}
+	if target.DamageDealtByUnit == nil {
+		target.DamageDealtByUnit = map[int]int{}
+	}
+	target.DamageDealtByUnit[attacker.ID] += damage
+}
+
+// payoutDamageDealtXPLocked pays banked damage XP to each surviving attacker
+// when the target dies. Called alongside awardKillXPLocked.
+func (s *GameState) payoutDamageDealtXPLocked(target *Unit) {
+	if target == nil || len(target.DamageDealtByUnit) == 0 {
+		return
+	}
+	for attackerID, damage := range target.DamageDealtByUnit {
+		attacker := s.getUnitByIDLocked(attackerID)
+		if attacker == nil || damage <= 0 {
+			continue
+		}
+		s.addUnitXPFloatLocked(attacker, float64(damage)*xpPerDamageDealt)
+	}
+	target.DamageDealtByUnit = map[int]int{}
+}
+
+// recordDamageDealtBuildingLocked mirrors recordDamageDealtLocked for buildings.
+// Banked XP is paid out on destruction.
+func (s *GameState) recordDamageDealtBuildingLocked(attacker *Unit, buildingID string, damage int) {
+	if attacker == nil || buildingID == "" || damage <= 0 {
+		return
+	}
+	if !s.unitCanGainXPLocked(attacker) {
+		return
+	}
+	if s.buildingDamageDealt == nil {
+		s.buildingDamageDealt = map[string]map[int]int{}
+	}
+	m, ok := s.buildingDamageDealt[buildingID]
+	if !ok {
+		m = map[int]int{}
+		s.buildingDamageDealt[buildingID] = m
+	}
+	m[attacker.ID] += damage
+}
+
+// payoutBuildingDamageDealtXPLocked pays banked damage XP to each surviving
+// contributor when a building is destroyed.
+func (s *GameState) payoutBuildingDamageDealtXPLocked(buildingID string) {
+	m, ok := s.buildingDamageDealt[buildingID]
+	if !ok {
+		return
+	}
+	for attackerID, damage := range m {
+		attacker := s.getUnitByIDLocked(attackerID)
+		if attacker == nil || damage <= 0 {
+			continue
+		}
+		s.addUnitXPFloatLocked(attacker, float64(damage)*xpPerDamageDealt)
+	}
+	delete(s.buildingDamageDealt, buildingID)
 }
 
 func (s *GameState) recordSoldierTankContributionLocked(attacker, target *Unit, damage int) {

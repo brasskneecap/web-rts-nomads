@@ -38,8 +38,11 @@ import (
 // Add a new field here if a new perk needs persistent per-unit state that
 // cannot be derived on-the-fly from the unit's other fields.
 //
-// Only the fields relevant to the unit's assigned perk are used at any time;
-// all others stay at their zero values and cost nothing.
+// A single state struct is shared across every perk the unit owns — the
+// fields below are disjoint per perk, and shared fields (e.g. TimeSinceLastAttack)
+// are fine as long as every reader treats them as a common resource rather than
+// owning them. Fields unused by the unit's current perks stay at their zero
+// values and cost nothing.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type UnitPerkState struct {
@@ -72,29 +75,43 @@ type UnitPerkState struct {
 // Perk assignment
 // ─────────────────────────────────────────────────────────────────────────────
 
-// assignUnitPerkLocked randomly assigns one eligible perk to a unit that just
-// ranked up. Eligibility is determined by eligiblePerksForUnit() in perk_defs.go.
+// assignUnitPerkLocked grants one new perk to a unit that just ranked up and
+// appends it to unit.PerkIDs. The slice is ordered by rank-up order so index 0
+// corresponds to the Bronze grant, index 1 to Silver, and index 2 to Gold.
 //
 // Call AFTER assignUnitPathOnRankUpLocked so ProgressionPath is already set.
 //
-// Design: rank-agnostic — future Silver/Gold perks work automatically once
-// added to perk-defs.json. To allow multiple perks per unit at higher ranks,
-// relax the `unit.PerkID != ""` guard and replace with per-slot logic.
+// Current behaviour: Silver and Gold rank-ups draw from the Bronze pool for now
+// (until rank-specific perks exist) but filter out any perk already on the unit
+// so no perk is received twice.
 func (s *GameState) assignUnitPerkLocked(unit *Unit) {
-	if unit == nil || unit.PerkID != "" {
-		return // already has a perk; one slot for now
-	}
-	eligible := eligiblePerksForUnit(unit)
-	if len(eligible) == 0 {
+	if unit == nil || unit.Rank == unitRankBase {
 		return
 	}
-	unit.PerkID = eligible[rand.Intn(len(eligible))].ID
+	// Until Silver/Gold perk pools are authored, draw every rank-up perk from
+	// the Bronze pool.
+	pool := eligiblePerksForUnitAtRank(unit, unitRankBronze)
+	owned := make(map[string]struct{}, len(unit.PerkIDs))
+	for _, id := range unit.PerkIDs {
+		owned[id] = struct{}{}
+	}
+	filtered := pool[:0]
+	for _, def := range pool {
+		if _, has := owned[def.ID]; has {
+			continue
+		}
+		filtered = append(filtered, def)
+	}
+	if len(filtered) == 0 {
+		return
+	}
+	unit.PerkIDs = append(unit.PerkIDs, filtered[rand.Intn(len(filtered))].ID)
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
 // EXTENSION POINT — PERK RUNTIME HANDLERS
 //
-// Each function below contains a switch on unit.PerkID.
+// Each function below iterates the unit's PerkIDs and switches on each id.
 // To add a new perk's behaviour, add a `case "your_perk_id":` in whichever
 // of the four hooks the effect needs, then document any new UnitPerkState
 // fields above.
@@ -115,36 +132,40 @@ func (s *GameState) assignUnitPerkLocked(unit *Unit) {
 //
 // ADD NEW PERK TIMER / DECAY LOGIC HERE.
 func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
-	if unit.PerkID == "" {
-		return
-	}
-	def := perkDefByID(unit.PerkID)
-	if def == nil {
+	if len(unit.PerkIDs) == 0 {
 		return
 	}
 
-	// Advance idle timer — every perk that tracks TimeSinceLastAttack benefits.
+	// Advance idle timer once per tick — every perk that tracks
+	// TimeSinceLastAttack reads this shared field.
 	unit.PerkState.TimeSinceLastAttack += dt
 
-	switch unit.PerkID {
-
-	case "bloodlust":
-		// Reset accumulated stack once the unit has been idle long enough.
-		if unit.PerkState.BloodlustBonus > 0 &&
-			unit.PerkState.TimeSinceLastAttack >= def.Config["resetAfterSeconds"] {
-			unit.PerkState.BloodlustBonus = 0
+	for _, perkID := range unit.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
 		}
 
-	case "relentless":
-		// Decay the post-kill attack-speed boost.
-		if unit.PerkState.RelentlessRemaining > 0 {
-			unit.PerkState.RelentlessRemaining = math.Max(0, unit.PerkState.RelentlessRemaining-dt)
-			if unit.PerkState.RelentlessRemaining == 0 {
-				unit.PerkState.RelentlessBonus = 0
+		switch perkID {
+
+		case "bloodlust":
+			// Reset accumulated stack once the unit has been idle long enough.
+			if unit.PerkState.BloodlustBonus > 0 &&
+				unit.PerkState.TimeSinceLastAttack >= def.Config["resetAfterSeconds"] {
+				unit.PerkState.BloodlustBonus = 0
 			}
-		}
 
-	// ── add cases for new perks with timer/decay needs below this line ──────
+		case "relentless":
+			// Decay the post-kill attack-speed boost.
+			if unit.PerkState.RelentlessRemaining > 0 {
+				unit.PerkState.RelentlessRemaining = math.Max(0, unit.PerkState.RelentlessRemaining-dt)
+				if unit.PerkState.RelentlessRemaining == 0 {
+					unit.PerkState.RelentlessBonus = 0
+				}
+			}
+
+		// ── add cases for new perks with timer/decay needs below this line ──
+		}
 	}
 }
 
@@ -163,35 +184,38 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 //
 // ADD NEW ATTACK-SPEED-MODIFYING PERKS HERE.
 func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
-	if unit.PerkID == "" {
-		return 0
-	}
-	def := perkDefByID(unit.PerkID)
-	if def == nil {
+	if len(unit.PerkIDs) == 0 {
 		return 0
 	}
 
-	switch unit.PerkID {
-
-	case "bloodlust":
-		return unit.PerkState.BloodlustBonus
-
-	case "frenzy_core":
-		// Bonus scales linearly from 0 at full HP to maxBonus at 0 HP.
-		if unit.MaxHP <= 0 {
-			return 0
+	total := 0.0
+	for _, perkID := range unit.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
 		}
-		hpFraction := clampFloat(float64(unit.HP)/float64(unit.MaxHP), 0, 1)
-		return (1.0 - hpFraction) * def.Config["maxBonus"]
 
-	case "relentless":
-		return unit.PerkState.RelentlessBonus
+		switch perkID {
 
-	// ── add cases for new attack-speed perks below this line ────────────────
+		case "bloodlust":
+			total += unit.PerkState.BloodlustBonus
+
+		case "frenzy_core":
+			// Bonus scales linearly from 0 at full HP to maxBonus at 0 HP.
+			if unit.MaxHP > 0 {
+				hpFraction := clampFloat(float64(unit.HP)/float64(unit.MaxHP), 0, 1)
+				total += (1.0 - hpFraction) * def.Config["maxBonus"]
+			}
+
+		case "relentless":
+			total += unit.PerkState.RelentlessBonus
+
+		// ── add cases for new attack-speed perks below this line ────────────
+		}
+
+		// savage_strikes and cleaving_rage do not modify attack speed.
 	}
-
-	// savage_strikes and cleaving_rage do not modify attack speed.
-	return 0
+	return total
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -214,48 +238,51 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 // by current Bronze Berserker perks, but rename from _ when a future perk
 // needs to scale off or react to the hit value.
 func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int, deadUnitIDs *[]int) {
-	if attacker == nil || attacker.PerkID == "" {
-		return
-	}
-	def := perkDefByID(attacker.PerkID)
-	if def == nil {
+	if attacker == nil || len(attacker.PerkIDs) == 0 {
 		return
 	}
 
-	// Reset idle timer for every perk.
+	// Reset idle timer once per attack — shared across all the attacker's perks.
 	attacker.PerkState.TimeSinceLastAttack = 0
 
-	switch attacker.PerkID {
-
-	case "bloodlust":
-		// Accumulate attack-speed bonus, capped at maxBonus.
-		attacker.PerkState.BloodlustBonus = math.Min(
-			attacker.PerkState.BloodlustBonus+def.Config["bonusPerAttack"],
-			def.Config["maxBonus"],
-		)
-
-	case "savage_strikes":
-		attacker.PerkState.AttackCounter++
-		n := int(def.Config["everyNthAttack"])
-		if n > 0 && attacker.PerkState.AttackCounter >= n {
-			attacker.PerkState.AttackCounter = 0
-			// Fire the bonus hit only if the primary target survived the normal hit.
-			if primaryTarget != nil && primaryTarget.HP > 0 {
-				bonusDmg := maxInt(0, int(math.Round(float64(attacker.Damage)*def.Config["bonusMultiplier"])))
-				actualDmg := maxInt(0, bonusDmg-primaryTarget.Armor)
-				if actualDmg > 0 {
-					primaryTarget.HP -= actualDmg
-					s.onUnitDamagedLocked(attacker, primaryTarget, actualDmg)
-					s.awardDamageXPLocked(attacker, actualDmg)
-					// Primary target death is handled by the caller — do NOT append here.
-				}
-			}
+	for _, perkID := range attacker.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
 		}
 
-	case "cleaving_rage":
-		s.applyCleaveHitLocked(attacker, primaryTarget, def.Config["splashRadius"], deadUnitIDs)
+		switch perkID {
 
-	// ── add cases for new on-attack perks below this line ───────────────────
+		case "bloodlust":
+			// Accumulate attack-speed bonus, capped at maxBonus.
+			attacker.PerkState.BloodlustBonus = math.Min(
+				attacker.PerkState.BloodlustBonus+def.Config["bonusPerAttack"],
+				def.Config["maxBonus"],
+			)
+
+		case "savage_strikes":
+			attacker.PerkState.AttackCounter++
+			n := int(def.Config["everyNthAttack"])
+			if n > 0 && attacker.PerkState.AttackCounter >= n {
+				attacker.PerkState.AttackCounter = 0
+				// Fire the bonus hit only if the primary target survived the normal hit.
+				if primaryTarget != nil && primaryTarget.HP > 0 {
+					bonusDmg := maxInt(0, int(math.Round(float64(attacker.Damage)*def.Config["bonusMultiplier"])))
+					actualDmg := maxInt(0, bonusDmg-primaryTarget.Armor)
+					if actualDmg > 0 {
+						primaryTarget.HP -= actualDmg
+						s.onUnitDamagedLocked(attacker, primaryTarget, actualDmg)
+						s.recordDamageDealtLocked(attacker, primaryTarget, actualDmg)
+						// Primary target death is handled by the caller — do NOT append here.
+					}
+				}
+			}
+
+		case "cleaving_rage":
+			s.applyCleaveHitLocked(attacker, primaryTarget, def.Config["splashRadius"], deadUnitIDs)
+
+		// ── add cases for new on-attack perks below this line ───────────────
+		}
 	}
 }
 
@@ -298,10 +325,11 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 	}
 	secondary.HP -= damage
 	s.onUnitDamagedLocked(attacker, secondary, damage)
-	s.awardDamageXPLocked(attacker, damage)
+	s.recordDamageDealtLocked(attacker, secondary, damage)
 	if secondary.HP <= 0 {
 		secondary.HP = 0
 		s.awardKillXPLocked(attacker)
+		s.payoutDamageDealtXPLocked(secondary)
 		s.awardSoldierTankKillXPLocked(secondary.ID)
 		*deadUnitIDs = append(*deadUnitIDs, secondary.ID)
 	}
@@ -316,21 +344,24 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 //
 // ADD NEW ON-KILL PERKS HERE.
 func (s *GameState) onPerkKillLocked(attacker *Unit) {
-	if attacker == nil || attacker.PerkID == "" {
-		return
-	}
-	def := perkDefByID(attacker.PerkID)
-	if def == nil {
+	if attacker == nil || len(attacker.PerkIDs) == 0 {
 		return
 	}
 
-	switch attacker.PerkID {
+	for _, perkID := range attacker.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
 
-	case "relentless":
-		// Grant the post-kill attack-speed burst; overwrites any remaining duration.
-		attacker.PerkState.RelentlessBonus = def.Config["bonus"]
-		attacker.PerkState.RelentlessRemaining = def.Config["durationSeconds"]
+		switch perkID {
 
-	// ── add cases for new on-kill perks below this line ─────────────────────
+		case "relentless":
+			// Grant the post-kill attack-speed burst; overwrites any remaining duration.
+			attacker.PerkState.RelentlessBonus = def.Config["bonus"]
+			attacker.PerkState.RelentlessRemaining = def.Config["durationSeconds"]
+
+		// ── add cases for new on-kill perks below this line ─────────────────
+		}
 	}
 }

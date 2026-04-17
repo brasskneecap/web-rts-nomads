@@ -1,0 +1,90 @@
+{
+  "id": "battletest",
+  "name": "battletest(small)",
+  "description": "A compact battleground for fast openings and early pressure.",
+  "sortOrder": 1000,
+  "map": {
+    "cellSize": 64,
+    "gridCols": 24,
+    "gridRows": 18,
+    "width": 1536,
+    "height": 1152,
+    "terrain": [],
+    "obstacles": [],
+    "buildings": [
+      {
+        "id": "townhall-0-0",
+        "buildingType": "townhall",
+        "x": 0,
+        "y": 0,
+        "width": 3,
+        "height": 3,
+        "occupied": false,
+        "visible": false,
+        "ownerId": null,
+        "capabilities": [
+          "unit-spawner",
+          "occupiable",
+          "deposit-point"
+        ],
+        "spawnUnitTypes": [
+          "worker"
+        ],
+        "metadata": {
+          "foodSupply": 15
+        }
+      },
+      {
+        "id": "spawn-point-2-4",
+        "buildingType": "spawn-point",
+        "x": 2,
+        "y": 4,
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "ownerId": null,
+        "capabilities": [],
+        "metadata": {
+          "townhallId": null,
+          "fillOrder": 0,
+          "spawnUnits": [
+            {
+              "unitType": "archer",
+              "count": 3
+            },
+            {
+              "unitType": "soldier",
+              "count": 3
+            }
+          ]
+        }
+      },
+      {
+        "id": "enemy-spawnpoint-17-10",
+        "buildingType": "enemy-spawnpoint",
+        "x": 17,
+        "y": 10,
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "ownerId": null,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "spawnCount": 1,
+          "unitType": "raider"
+        }
+      }
+    ],
+    "waveConfig": {
+      "totalWaves": 10,
+      "prepDuration": 60,
+      "waveDuration": 120
+    }
+  }
+}

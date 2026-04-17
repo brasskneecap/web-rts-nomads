@@ -200,13 +200,14 @@ export type UnitSnapshot = {
   maxHp: number
   damage?: number
   attackSpeed?: number
+  armor?: number
   xp?: number
   rank?: string
   xpToNextRank?: number
   xpIntoCurrentRank?: number
   recentRankUpSeconds?: number
   progressionPath?: string
-  perkId?: string
+  perkIds?: string[]
   carriedResourceType?: ResourceType
   carriedAmount?: number
   targetX?: number

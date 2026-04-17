@@ -129,6 +129,14 @@ func perkDefByID(id string) *PerkDef {
 // eligibility — but keep it as the single place that defines "what qualifies".
 // ─────────────────────────────────────────────────────────────────────────────
 func eligiblePerksForUnit(unit *Unit) []*PerkDef {
+	return eligiblePerksForUnitAtRank(unit, unit.Rank)
+}
+
+// eligiblePerksForUnitAtRank is the same filter as eligiblePerksForUnit except
+// the caller supplies the rank to match against. Used when a higher-rank unit
+// should draw from a lower-rank perk pool (e.g. Silver/Gold drawing from Bronze
+// while rank-specific perks are still being authored).
+func eligiblePerksForUnitAtRank(unit *Unit, rank string) []*PerkDef {
 	var eligible []*PerkDef
 	for _, def := range perkDefsByID {
 		if def.UnitType != "" && def.UnitType != unit.UnitType {
@@ -137,7 +145,7 @@ func eligiblePerksForUnit(unit *Unit) []*PerkDef {
 		if def.Path != "" && def.Path != unit.ProgressionPath {
 			continue
 		}
-		if def.Rank != "" && def.Rank != unit.Rank {
+		if def.Rank != "" && def.Rank != rank {
 			continue
 		}
 		eligible = append(eligible, def)

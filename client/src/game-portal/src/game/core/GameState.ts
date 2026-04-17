@@ -27,13 +27,14 @@ export type Unit = {
   maxHp?: number
   damage?: number
   attackSpeed?: number
+  armor?: number
   xp?: number
   rank?: string
   xpToNextRank?: number
   xpIntoCurrentRank?: number
   recentRankUpSeconds?: number
   path?: string
-  perkId?: string
+  perkIds?: string[]
   ownerId?: string
   color?: string
   carriedResourceType?: ResourceType
@@ -53,6 +54,10 @@ export type ActionItem = {
   kind?: 'perk'
   /** Rank tier for perk slots — drives the rank-colored border in SelectionHud. */
   perkRank?: 'bronze' | 'silver' | 'gold'
+  /** Tooltip header shown on hover for perk slots. */
+  tooltipTitle?: string
+  /** Tooltip body shown on hover for perk slots. */
+  tooltipBody?: string
   disabled?: boolean
   active?: boolean
   iconDef?: { kind: 'building'; type: string } | { kind: 'unit'; type: string }
@@ -96,6 +101,12 @@ export type SelectionSummary =
       details: DetailItem[]
       actions: ActionItem[]
       production?: undefined
+      /** Promotion-path label shown under the unit name (e.g. "Vanguard"). */
+      pathLabel?: string
+      /** Rank tier label shown in the primary panel (e.g. "Bronze"). */
+      rankLabel?: string
+      /** XP progress string shown in the primary panel (e.g. "120 / 250 XP"). */
+      xpLabel?: string
     }
   | {
       kind: 'building'
@@ -302,13 +313,14 @@ export class GameState {
         maxHp: unit.maxHp,
         damage: unit.damage,
         attackSpeed: unit.attackSpeed,
+        armor: unit.armor,
         xp: unit.xp,
         rank: unit.rank,
         xpToNextRank: unit.xpToNextRank,
         xpIntoCurrentRank: unit.xpIntoCurrentRank,
         recentRankUpSeconds: unit.recentRankUpSeconds,
         path: unit.progressionPath,
-        perkId: unit.perkId,
+        perkIds: unit.perkIds,
         ownerId: unit.ownerId,
         color: unit.color,
         carriedResourceType: unit.carriedResourceType,
@@ -867,6 +879,9 @@ export class GameState {
           subtitle: unit.status ?? 'Hostile',
           details: getUnitDetails(unit),
           actions: [],
+          pathLabel: unit.path && unit.path !== 'none' ? formatUnitPath(unit.path) : undefined,
+          rankLabel: formatUnitRank(unit.rank),
+          xpLabel: getUnitXpLabel(unit),
         }
       }
       this.inspectedEnemyUnitId = null
@@ -951,6 +966,9 @@ export class GameState {
               ),
         details: getUnitDetails(unit),
         actions,
+        pathLabel: unit.path && unit.path !== 'none' ? formatUnitPath(unit.path) : undefined,
+        rankLabel: formatUnitRank(unit.rank),
+        xpLabel: getUnitXpLabel(unit),
       }
     }
 
@@ -1205,28 +1223,33 @@ function getBuildingConstructionSummary(building: BuildingTile): RepairSummary |
 const PERK_RANKS: Array<'bronze' | 'silver' | 'gold'> = ['bronze', 'silver', 'gold']
 
 function getPerkActionItems(unit: Unit): ActionItem[] {
-  return PERK_RANKS.map((rank) => {
-    // Find the unit's assigned perk and check if it belongs to this rank tier.
-    const def = unit.perkId ? PERK_DEF_MAP.get(unit.perkId) : undefined
-    const isThisRank = def?.rank === rank
+  // Perks are appended in rank-up order — index 0 = Bronze grant, 1 = Silver, 2 = Gold.
+  return PERK_RANKS.map((rank, i) => {
+    const perkId = unit.perkIds?.[i]
+    const def = perkId ? PERK_DEF_MAP.get(perkId) : undefined
 
-    if (isThisRank && def) {
+    const rankLabel = rank.charAt(0).toUpperCase() + rank.slice(1)
+
+    if (def) {
       return {
         id: def.icon ?? 'perk-locked',
-        label: def.displayName + (def.description ? `\n${def.description}` : ''),
+        label: def.displayName,
         kind: 'perk' as const,
         perkRank: rank,
+        tooltipTitle: `${def.displayName} (${rankLabel})`,
+        tooltipBody: def.description,
         disabled: true,
       }
     }
 
     // Locked / empty slot for ranks the unit hasn't reached yet.
-    const rankLabel = rank.charAt(0).toUpperCase() + rank.slice(1)
     return {
       id: 'perk-locked',
       label: `${rankLabel} Perk (locked)`,
       kind: 'perk' as const,
       perkRank: rank,
+      tooltipTitle: `${rankLabel} Perk`,
+      tooltipBody: 'Locked — earn this rank to unlock.',
       disabled: true,
     }
   })
@@ -1464,41 +1487,27 @@ function getUnitDetails(unit: Unit): DetailItem[] {
     },
   ]
 
-  details.push({
-    id: 'rank',
-    label: 'Rank',
-    value: formatUnitRank(unit.rank),
-  })
-
-  if (unit.path && unit.path !== 'none') {
-    details.push({
-      id: 'path',
-      label: 'Path',
-      value: formatUnitPath(unit.path),
-    })
-  }
-
-  if (unit.perkId) {
-    details.push({
-      id: 'perk',
-      label: 'Perk',
-      value: formatPerkId(unit.perkId),
-    })
-  }
-
-  details.push({
-    id: 'xp',
-    label: 'XP',
-    value: unit.xpToNextRank && unit.xpToNextRank > 0
-      ? `${unit.xp ?? 0} (${unit.xpToNextRank} to next)`
-      : `${unit.xp ?? 0} (max)`,
-  })
-
   if (unit.damage !== undefined && unit.damage > 0) {
     details.push({
       id: 'damage',
       label: 'Damage',
       value: String(unit.damage),
+    })
+  }
+
+  if (unit.attackSpeed !== undefined && unit.attackSpeed > 0) {
+    details.push({
+      id: 'attack-speed',
+      label: 'Attack Speed',
+      value: `${unit.attackSpeed.toFixed(2)}/s`,
+    })
+  }
+
+  if (unit.armor !== undefined && unit.armor > 0) {
+    details.push({
+      id: 'armor',
+      label: 'Armor',
+      value: String(unit.armor),
     })
   }
 
@@ -1511,6 +1520,16 @@ function getUnitDetails(unit: Unit): DetailItem[] {
   }
 
   return details
+}
+
+function getUnitXpLabel(unit: Unit): string {
+  const xp = unit.xp ?? 0
+  if (unit.xpToNextRank && unit.xpToNextRank > 0) {
+    const intoCurrent = unit.xpIntoCurrentRank ?? 0
+    const rankTotal = intoCurrent + unit.xpToNextRank
+    return `${intoCurrent} / ${rankTotal} XP`
+  }
+  return `${xp} XP (max)`
 }
 
 function getGroupDetails(units: Unit[], totalHp: number, totalMaxHp: number): DetailItem[] {
@@ -1552,17 +1571,6 @@ function getGroupDetails(units: Unit[], totalHp: number, totalMaxHp: number): De
   }
 
   return details
-}
-
-function formatPerkId(perkId?: string) {
-  switch (perkId) {
-    case 'bloodlust':      return 'Bloodlust'
-    case 'savage_strikes': return 'Savage Strikes'
-    case 'frenzy_core':    return 'Frenzy Core'
-    case 'cleaving_rage':  return 'Cleaving Rage'
-    case 'relentless':     return 'Relentless'
-    default:               return perkId ?? ''
-  }
 }
 
 function formatUnitPath(path?: string) {
