@@ -384,6 +384,12 @@
               :class="{ 'spe__player-btn--active': pendingColorMode === 'player' }"
               @click="pendingColorMode = 'player'"
             >Player</button>
+            <button
+              class="spe__rank-btn"
+              :class="{ 'spe__rank-btn--active': pendingColorMode === 'rank' }"
+              @click="pendingColorMode = 'rank'"
+              title="Color changes with unit rank (Base/Bronze/Silver/Gold)"
+            >Rank</button>
             <input
               type="color"
               v-model="pendingCustomColor"
@@ -438,6 +444,12 @@
               :class="{ 'spe__player-btn--active': selectedLayer.color === 'player' }"
               @click="setSelectedLayerColor('player')"
             >Player</button>
+            <button
+              class="spe__rank-btn"
+              :class="{ 'spe__rank-btn--active': selectedLayer.color === 'rank' }"
+              @click="setSelectedLayerColor('rank')"
+              title="Color changes with unit rank (Base/Bronze/Silver/Gold)"
+            >Rank</button>
             <input
               type="color"
               :value="selectedLayerColorValue"
@@ -573,8 +585,8 @@
               <div
                 class="spe__layer-swatch"
                 :style="{
-                  background: layer.color === 'player' ? '#3b82f6' : layer.color,
-                  border: layer.color === 'player' ? '2px dashed #93c5fd' : '2px solid transparent'
+                  background: layer.color === 'player' ? '#3b82f6' : layer.color === 'rank' ? `linear-gradient(135deg, #d97706, #facc15)` : layer.color,
+                  border: layer.color === 'player' ? '2px dashed #93c5fd' : layer.color === 'rank' ? '2px dashed #d97706' : '2px solid transparent'
                 }"
               />
               <span class="spe__layer-label">{{ layerLabel(layer) }}</span>
@@ -631,7 +643,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { fetchBuildingDefs, fetchUnitDefs, fetchActionIcons } from '../game/maps/catalog'
 import { getResolvedBuildingAttackVisual, type BuildingDef } from '../game/maps/buildingDefs'
   import { getResolvedUnitAttackVisual, type UnitDef } from '../game/maps/unitDefs'
@@ -663,6 +675,10 @@ const AVAILABLE_UNIT_ARCHETYPES = [
 
 const ACTION_SVG_SIZE = 24  // SVG viewBox units (24×24)
 
+// Preview color used when a layer has color:'rank' in the sprite editor.
+// Shown as bronze since that's the first rank color a unit can reach.
+const RANK_PREVIEW_COLOR = '#d97706'
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type TriId      = { cx: number; cy: number; sc: number; sr: number; h: 0 | 1 }
@@ -679,9 +695,12 @@ function setMode(m: 'building' | 'unit' | 'action') {
   mode.value = m
   if (m !== 'unit') {
     selectedLayerIdx.value = null
+    selectedPointIdx.value = null
     unitHoverLayerIdx.value = null
     selectedLayerError.value = ''
     endUnitLayerDrag()
+    endPointDrag()
+    undoStack.value = []
     uRenderVariantKey.value = ''
     uVariantStorage.value = {}
   }
@@ -791,7 +810,7 @@ const pendingCx         = ref(0)
 const pendingCy         = ref(0)
 const pendingR          = ref(10)
 const pendingPoints     = ref('[-9,0],[9,0],[0,10]')
-const pendingColorMode  = ref<'player' | 'custom'>('player')
+const pendingColorMode  = ref<'player' | 'rank' | 'custom'>('player')
 const pendingCustomColor = ref('#94a3b8')
 const addShapeError     = ref('')
 const pendingPolyPoints = computed<[number, number][]>(() => {
@@ -833,7 +852,7 @@ function popPendingPolyPoint() {
 
 function commitShape() {
   addShapeError.value = ''
-  const color = pendingColorMode.value === 'player' ? 'player' : pendingCustomColor.value
+  const color = pendingColorMode.value === 'player' ? 'player' : pendingColorMode.value === 'rank' ? 'rank' : pendingCustomColor.value
 
   if (pendingKind.value === 'circle') {
     uLayers.value.push({ kind: 'circle', cx: pendingCx.value, cy: pendingCy.value, r: pendingR.value, color })
@@ -863,6 +882,81 @@ const unitDragStart = ref<[number, number] | null>(null)
 const unitDragOriginCircle = ref<{ cx: number; cy: number } | null>(null)
 const unitDragOriginPoly = ref<[number, number][] | null>(null)
 
+// Point-level selection/drag within a selected poly layer.
+const selectedPointIdx    = ref<number | null>(null)
+const draggingPointIdx    = ref<number | null>(null)
+const pointDragStart      = ref<[number, number] | null>(null)
+const pointDragOrigin     = ref<[number, number] | null>(null)
+
+const POINT_HIT_RADIUS = 7
+
+function findPolyPointAt(layer: UnitPoly, x: number, y: number): number | null {
+  // Iterate in reverse so topmost (last-drawn) points get priority
+  for (let i = layer.points.length - 1; i >= 0; i--) {
+    const [px, py] = layer.points[i]
+    if (Math.hypot(x - px, y - py) <= POINT_HIT_RADIUS) return i
+  }
+  return null
+}
+
+function beginPointDrag(ptIdx: number, x: number, y: number, layer: UnitPoly) {
+  pushUndo()
+  draggingPointIdx.value = ptIdx
+  pointDragStart.value   = [x, y]
+  pointDragOrigin.value  = [...layer.points[ptIdx]]
+}
+
+function dragSelectedPoint(x: number, y: number) {
+  const ptIdx  = draggingPointIdx.value
+  const start  = pointDragStart.value
+  const origin = pointDragOrigin.value
+  if (ptIdx === null || !start || !origin) return
+  const layerIdx = selectedLayerIdx.value
+  if (layerIdx === null) return
+  const layer = uLayers.value[layerIdx]
+  if (!layer || layer.kind !== 'poly') return
+  const dx = Math.round(x - start[0])
+  const dy = Math.round(y - start[1])
+  replaceUnitLayerAt(layerIdx, {
+    ...layer,
+    points: layer.points.map((pt, i) =>
+      i === ptIdx ? [origin[0] + dx, origin[1] + dy] as [number, number] : pt,
+    ),
+  })
+}
+
+function endPointDrag() {
+  draggingPointIdx.value = null
+  pointDragStart.value   = null
+  pointDragOrigin.value  = null
+}
+
+// ─── Undo stack (unit mode, drag operations) ──────────────────────────────────
+
+const MAX_UNDO = 50
+const undoStack = ref<UnitLayer[][]>([])
+
+function cloneLayersSnapshot(): UnitLayer[] {
+  return uLayers.value.map(l =>
+    l.kind === 'circle'
+      ? { ...l }
+      : { ...l, points: l.points.map(p => [p[0], p[1]] as [number, number]) },
+  )
+}
+
+function pushUndo() {
+  undoStack.value = [...undoStack.value.slice(-MAX_UNDO + 1), cloneLayersSnapshot()]
+}
+
+function undo() {
+  const snap = undoStack.value[undoStack.value.length - 1]
+  if (!snap) return
+  undoStack.value = undoStack.value.slice(0, -1)
+  uLayers.value = snap
+  selectedPointIdx.value = null
+  renderCanvas()
+}
+
 const displayLayers = computed<UnitLayer[]>(() => uLayers.value)
 const selectedLayer = computed<UnitLayer | null>(() =>
   selectedLayerIdx.value === null ? null : uLayers.value[selectedLayerIdx.value] ?? null,
@@ -872,11 +966,11 @@ const selectedLayerPointsText = computed(() =>
     ? selectedLayer.value.points.map(([x, y]) => `[${x},${y}]`).join(',')
     : '',
 )
-const selectedLayerColorValue = computed(() =>
-  selectedLayer.value?.color && selectedLayer.value.color !== 'player'
-    ? selectedLayer.value.color
-    : '#3b82f6',
-)
+const selectedLayerColorValue = computed(() => {
+  const c = selectedLayer.value?.color
+  if (!c || c === 'player' || c === 'rank') return '#3b82f6'
+  return c
+})
 
 function layerLabel(layer: UnitLayer): string {
   if (layer.kind === 'circle') return `Circle r=${layer.r} @ (${layer.cx}, ${layer.cy})`
@@ -886,12 +980,17 @@ function layerLabel(layer: UnitLayer): string {
 function selectUnitLayer(index: number | null) {
   selectedLayerIdx.value = index
   selectedLayerError.value = ''
+  selectedPointIdx.value = null
 }
 
 function deleteLayer(i: number) {
   uLayers.value.splice(i, 1)
-  if (selectedLayerIdx.value === i) selectedLayerIdx.value = null
-  else if (selectedLayerIdx.value !== null && selectedLayerIdx.value > i) selectedLayerIdx.value--
+  if (selectedLayerIdx.value === i) {
+    selectedLayerIdx.value = null
+    selectedPointIdx.value = null
+  } else if (selectedLayerIdx.value !== null && selectedLayerIdx.value > i) {
+    selectedLayerIdx.value--
+  }
 }
 
 function moveLayer(i: number, dir: -1 | 1) {
@@ -1048,6 +1147,7 @@ function findUnitLayerAt(x: number, y: number): number | null {
 }
 
 function beginUnitLayerDrag(index: number, x: number, y: number) {
+  pushUndo()
   const layer = uLayers.value[index]
   unitDraggingLayerIdx.value = index
   unitDragStart.value = [x, y]
@@ -1243,10 +1343,25 @@ function onMouseDown(e: MouseEvent) {
     }
     if (e.button !== 0) return
     const [x, y] = unitCoordsFromMouse(e)
+
+    // Check for a point hit on the currently selected poly before falling
+    // through to whole-layer selection.
+    const currentLayer = selectedLayerIdx.value !== null ? uLayers.value[selectedLayerIdx.value] : null
+    if (currentLayer?.kind === 'poly') {
+      const ptIdx = findPolyPointAt(currentLayer, x, y)
+      if (ptIdx !== null) {
+        selectedPointIdx.value = ptIdx
+        beginPointDrag(ptIdx, x, y, currentLayer)
+        renderCanvas()
+        return
+      }
+    }
+
     const hit = findUnitLayerAt(x, y)
     unitHoverLayerIdx.value = hit
     selectedLayerIdx.value = hit
     selectedLayerError.value = ''
+    selectedPointIdx.value = null
     if (hit !== null) beginUnitLayerDrag(hit, x, y)
     renderCanvas()
   }
@@ -1267,7 +1382,9 @@ function onMouseMove(e: MouseEvent) {
     renderCanvas()
   } else if (mode.value === 'unit') {
     const [x, y] = unitCoordsFromMouse(e)
-    if (unitDraggingLayerIdx.value !== null) {
+    if (draggingPointIdx.value !== null) {
+      dragSelectedPoint(x, y)
+    } else if (unitDraggingLayerIdx.value !== null) {
       dragSelectedUnitLayer(x, y)
     } else {
       unitHoverLayerIdx.value = findUnitLayerAt(x, y)
@@ -1280,6 +1397,7 @@ function onMouseUp() {
   isPainting.value = false
   isErasing.value  = false
   endUnitLayerDrag()
+  endPointDrag()
 }
 
 function onMouseLeave() {
@@ -1288,6 +1406,7 @@ function onMouseLeave() {
   isErasing.value  = false
   unitHoverLayerIdx.value = null
   endUnitLayerDrag()
+  endPointDrag()
   if (mode.value === 'action') {
     aCursorPos.value = null
   }
@@ -1535,7 +1654,7 @@ function renderCanvas() {
 
     for (let layerIdx = 0; layerIdx < uLayers.value.length; layerIdx++) {
       const layer = uLayers.value[layerIdx]
-      ctx.fillStyle = layer.color === 'player' ? '#3b82f6' : layer.color
+      ctx.fillStyle = layer.color === 'player' ? '#3b82f6' : layer.color === 'rank' ? RANK_PREVIEW_COLOR : layer.color
       if (layer.kind === 'circle') {
         ctx.beginPath()
         ctx.arc(cx + layer.cx, cy + layer.cy, layer.r, 0, Math.PI * 2)
@@ -1570,12 +1689,32 @@ function renderCanvas() {
         }
           ctx.restore()
         }
+
+        // Vertex handles — only on the actively selected poly layer
+        if (selectedLayerIdx.value === layerIdx && layer.kind === 'poly') {
+          ctx.save()
+          ctx.setLineDash([])
+          for (let pi = 0; pi < layer.points.length; pi++) {
+            const [px, py] = layer.points[pi]
+            const isSelectedPt = selectedPointIdx.value === pi
+            ctx.beginPath()
+            ctx.arc(cx + px, cy + py, isSelectedPt ? 5 : 3, 0, Math.PI * 2)
+            ctx.fillStyle = isSelectedPt ? '#facc15' : '#f8fafc'
+            ctx.fill()
+            if (isSelectedPt) {
+              ctx.strokeStyle = '#1e293b'
+              ctx.lineWidth = 1.5
+              ctx.stroke()
+            }
+          }
+          ctx.restore()
+        }
       }
 
       drawUnitAttackVisualPreview(ctx, cx, cy)
 
       if (showAddShape.value && pendingKind.value === 'poly' && pendingPolyPoints.value.length > 0) {
-        const previewColor = pendingColorMode.value === 'player' ? '#3b82f6' : pendingCustomColor.value
+        const previewColor = pendingColorMode.value === 'player' ? '#3b82f6' : pendingColorMode.value === 'rank' ? RANK_PREVIEW_COLOR : pendingCustomColor.value
         ctx.save()
       ctx.strokeStyle = previewColor
       ctx.fillStyle = previewColor
@@ -1688,13 +1827,28 @@ watch(canvasZoom, value => {
   if (clamped !== value) canvasZoom.value = clamped
 })
 
+function onKeyDown(e: KeyboardEvent) {
+  if (mode.value !== 'unit') return
+  const tag = (e.target as HTMLElement).tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+    e.preventDefault()
+    undo()
+  }
+}
+
 onMounted(() => {
   renderCanvas()
+  window.addEventListener('keydown', onKeyDown)
   fetchBuildingDefs().then(defs => { catalogBuildings.value = defs }).catch(() => {})
   fetchUnitDefs().then(defs => { catalogUnits.value = defs }).catch(() => {})
   fetchActionIcons().then(defs => {
     if (defs.length > 0) aEntries.value = defs.map(d => ({ id: d.id, path: d.path }))
   }).catch(() => {})
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown)
 })
 
 // ─── Load / Catalog ───────────────────────────────────────────────────────────
@@ -1814,6 +1968,7 @@ function applyUnitDef(data: UnitDef) {
   uLayers.value       = baseLayers
   selectedLayerIdx.value = null
   selectedLayerError.value = ''
+  undoStack.value = []
   uRenderVariantKey.value = ''
   const storage: Record<string, UnitLayer[]> = { '': baseLayers }
   for (const [key, variant] of Object.entries(data.renderVariants ?? {})) {
@@ -1822,7 +1977,7 @@ function applyUnitDef(data: UnitDef) {
   uVariantStorage.value = storage
   mode.value = 'unit'
 
-  const usedColors = [...new Set(uLayers.value.map(l => l.color).filter(c => c !== 'player'))]
+  const usedColors = [...new Set(uLayers.value.map(l => l.color).filter(c => c !== 'player' && c !== 'rank'))]
   for (const c of usedColors.reverse()) pushColorHistory(c)
 
   nextTick(() => renderCanvas())
@@ -2466,6 +2621,23 @@ async function copyExport() {
   color: #fff;
 }
 .spe__player-btn:hover { background: #1e40af; }
+
+.spe__rank-btn {
+  padding: 3px 10px;
+  background: #431407;
+  border: 1px solid #d97706;
+  border-radius: 3px;
+  color: #fbbf24;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 12px;
+}
+.spe__rank-btn--active {
+  background: linear-gradient(135deg, #92400e, #78350f);
+  color: #fde68a;
+  border-color: #facc15;
+}
+.spe__rank-btn:hover { background: #7c2d12; }
 
 .spe__color-input {
   width: 34px;

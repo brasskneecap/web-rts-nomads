@@ -527,11 +527,15 @@ export class CanvasRenderer {
       this.drawUnitRankDebug(unit, bottomOffset)
 
       const unitColor = unit.color || 'lime'
+      const unitRankColor = this.getRankColor(unit.rank)
       const unitRenderDef = resolveUnitRenderDef(unitDef, unit.path)
 
       if (unitRenderDef) {
         for (const layer of unitRenderDef.layers) {
-          ctx.fillStyle = layer.color === 'player' ? unitColor : layer.color
+          ctx.fillStyle =
+            layer.color === 'player' ? unitColor :
+            layer.color === 'rank'   ? unitRankColor :
+            layer.color
           if (layer.kind === 'circle') {
             ctx.beginPath()
             ctx.arc(unit.x + layer.cx, unit.y + layer.cy, layer.r, 0, Math.PI * 2)
