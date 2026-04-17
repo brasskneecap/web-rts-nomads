@@ -200,6 +200,7 @@ export type UnitSnapshot = {
   maxHp: number
   damage?: number
   attackSpeed?: number
+  moveSpeed?: number
   armor?: number
   xp?: number
   rank?: string
@@ -208,6 +209,12 @@ export type UnitSnapshot = {
   recentRankUpSeconds?: number
   progressionPath?: string
   perkIds?: string[]
+  /** Temporary HP pool (from blood_engine). 0/undefined when absent. */
+  shield?: number
+  /** Max shield pool advertised by the unit's perks. */
+  maxShield?: number
+  /** Perk IDs whose timed or conditional buff is currently active. */
+  activeBuffs?: string[]
   carriedResourceType?: ResourceType
   carriedAmount?: number
   targetX?: number

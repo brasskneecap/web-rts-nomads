@@ -163,6 +163,7 @@ type UnitSnapshot struct {
 	MaxHP               int      `json:"maxHp"`
 	Damage              int      `json:"damage,omitempty"`
 	AttackSpeed         float64  `json:"attackSpeed,omitempty"`
+	MoveSpeed           float64  `json:"moveSpeed,omitempty"`
 	Armor               int      `json:"armor,omitempty"`
 	XP                  int      `json:"xp,omitempty"`
 	Rank                string   `json:"rank,omitempty"`
@@ -171,6 +172,12 @@ type UnitSnapshot struct {
 	RecentRankUpSeconds float64  `json:"recentRankUpSeconds,omitempty"`
 	ProgressionPath     string   `json:"progressionPath,omitempty"`
 	PerkIDs             []string `json:"perkIds,omitempty"`
+	// Shield / MaxShield: temporary HP pool (from blood_engine). 0 when absent.
+	Shield    int `json:"shield,omitempty"`
+	MaxShield int `json:"maxShield,omitempty"`
+	// ActiveBuffs: perk-id list for buffs currently active on this unit. Used
+	// by the client to render floating indicator icons near the sprite.
+	ActiveBuffs         []string `json:"activeBuffs,omitempty"`
 	CarriedResourceType string   `json:"carriedResourceType,omitempty"`
 	CarriedAmount       int      `json:"carriedAmount,omitempty"`
 	TargetX             float64  `json:"targetX,omitempty"`

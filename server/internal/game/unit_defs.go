@@ -20,6 +20,9 @@ type UnitDef struct {
 	Damage           int             `json:"damage"`
 	AttackRange      float64         `json:"attackRange"`
 	AttackSpeed      float64         `json:"attackSpeed"`
+	// MoveSpeed: base pixels-per-second pathing speed. Path multipliers
+	// (pathModifierTable) and perk multipliers (momentum) stack on top of it.
+	MoveSpeed float64 `json:"moveSpeed"`
 	GoldGatherAmount int             `json:"goldGatherAmount,omitempty"`
 	WoodGatherAmount int             `json:"woodGatherAmount,omitempty"`
 	ResourceCost     map[string]int  `json:"resourceCost"`

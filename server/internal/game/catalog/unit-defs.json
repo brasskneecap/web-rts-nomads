@@ -8,6 +8,7 @@
       "damage": 3,
       "attackRange": 60,
       "attackSpeed": 1,
+      "moveSpeed": 100,
       "goldGatherAmount": 20,
       "woodGatherAmount": 15,
       "resourceCost": {
@@ -71,6 +72,7 @@
       "damage": 10,
       "attackRange": 60,
       "attackSpeed": 1,
+      "moveSpeed": 100,
       "goldGatherAmount": 20,
       "woodGatherAmount": 15,
       "resourceCost": {
@@ -469,6 +471,7 @@
       "damage": 8,
       "attackRange": 220,
       "attackSpeed": 1.5,
+      "moveSpeed": 100,
       "goldGatherAmount": 20,
       "woodGatherAmount": 15,
       "resourceCost": {
@@ -637,6 +640,7 @@
       "damage": 5,
       "attackRange": 60,
       "attackSpeed": 1.0,
+      "moveSpeed": 100,
       "resourceCost": {},
       "meatCost": 0,
       "spawnSeconds": 0,

@@ -29,6 +29,7 @@ type Unit struct {
 	BaseMaxHP           int
 	BaseDamage          int
 	BaseAttackSpeed     float64
+	BaseMoveSpeed       float64
 	XP                  int
 	XPProgressRemainder float64
 	Rank                string
@@ -37,6 +38,12 @@ type Unit struct {
 	Armor               int
 	PerkIDs             []string  // assigned perk ids, in rank-up order (index 0 = Bronze, 1 = Silver, 2 = Gold)
 	PerkState           UnitPerkState // runtime state shared across the unit's perks
+
+	// Shield is a temporary HP pool consumed before HP by applyUnitDamageLocked.
+	// First-pass implementation: only granted by blood_engine (gold berserker)
+	// via overheal conversion; no decay — persists until consumed. Extend here
+	// if future perks need shield decay or alternate gain mechanics.
+	Shield int
 
 	CarriedResourceType string
 	CarriedAmount       int
@@ -58,6 +65,9 @@ type Unit struct {
 	Damage                 int
 	AttackRange            float64
 	AttackSpeed            float64
+	// MoveSpeed is the effective pixels-per-second for pathing movement, after
+	// rank/path/perk modifiers are applied. Populated by applyRankModifiersLocked.
+	MoveSpeed              float64
 	AttackCooldown         float64
 	AttackTargetID         int
 	AttackBuildingTargetID string
@@ -79,7 +89,9 @@ type Unit struct {
 }
 
 const (
-	unitMoveSpeed          = 100.0
+	// Unit move speed is now authored per-type in catalog/unit-defs.json
+	// (UnitDef.MoveSpeed). Path multipliers (pathModifierTable) and perk
+	// multipliers (momentum) stack on top of the per-unit BaseMoveSpeed.
 	unitRadius             = 10.0
 	unitFormationSpacing   = 28.0
 	unitSeparationDistance = 22.0
@@ -185,6 +197,9 @@ const (
 	raiderAttackSpeed = 1.0
 	raiderHP          = 75
 	raiderMaxHP       = 75
+	// Mirror of catalog/unit-defs.json "raider".moveSpeed — kept here because
+	// spawnRaiderUnitLocked doesn't do a def lookup like the soldier-type path.
+	raiderMoveSpeed = 100.0
 )
 
 func NewGameState(mapConfig protocol.MapConfig) *GameState {
@@ -357,6 +372,15 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 
 	units := make([]protocol.UnitSnapshot, 0, len(s.Units))
 	for _, unit := range s.Units {
+		// Effective stats for the HUD: base × rank × path (already in
+		// unit.Damage/AttackSpeed/MoveSpeed) × live perk multipliers. Kept
+		// target-agnostic (target=nil) so only self-based perk bonuses apply
+		// here — per-hit situational bonuses like executioner still live in
+		// the combat-resolution path.
+		effectiveDamage := int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil))))
+		effectiveAttackSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+		effectiveMoveSpeed := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
+
 		snapshot := protocol.UnitSnapshot{
 			ID:                  unit.ID,
 			OwnerID:             unit.OwnerID,
@@ -371,8 +395,9 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Y:                   unit.Y,
 			HP:                  unit.HP,
 			MaxHP:               unit.MaxHP,
-			Damage:              unit.Damage,
-			AttackSpeed:         unit.AttackSpeed,
+			Damage:              effectiveDamage,
+			AttackSpeed:         effectiveAttackSpeed,
+			MoveSpeed:           effectiveMoveSpeed,
 			Armor:               unit.Armor,
 			XP:                  unit.XP,
 			Rank:                unit.Rank,
@@ -381,6 +406,9 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
 			PerkIDs:             unit.PerkIDs,
+			Shield:              unit.Shield,
+			MaxShield:           s.unitMaxShieldLocked(unit),
+			ActiveBuffs:         s.activeBuffIconsLocked(unit),
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -480,7 +508,10 @@ func (s *GameState) Update(dt float64) {
 			continue
 		}
 
-		step := unitMoveSpeed * dt
+		// Effective move speed: per-unit stat (base × rank × path, already baked
+		// into unit.MoveSpeed by applyRankModifiersLocked) × perk multiplier
+		// (momentum, future speed perks).
+		step := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit) * dt
 		if step >= dist {
 			unit.X = nextWaypoint.X
 			unit.Y = nextWaypoint.Y
@@ -744,9 +775,11 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		BaseMaxHP:          def.HP,
 		BaseDamage:         def.Damage,
 		BaseAttackSpeed:    def.AttackSpeed,
+		BaseMoveSpeed:      def.MoveSpeed,
 		Damage:             def.Damage,
 		AttackRange:        def.AttackRange,
 		AttackSpeed:        def.AttackSpeed,
+		MoveSpeed:          def.MoveSpeed,
 		Rank:               unitRankBase,
 		ProgressionPath:    unitPathNone,
 		CombatAnchorX:      spawn.X,
@@ -781,6 +814,8 @@ func (s *GameState) spawnRaiderUnitLocked(playerID, color string, spawn protocol
 		BaseMaxHP:          raiderMaxHP,
 		BaseDamage:         raiderDamage,
 		BaseAttackSpeed:    raiderAttackSpeed,
+		BaseMoveSpeed:      raiderMoveSpeed,
+		MoveSpeed:          raiderMoveSpeed,
 		Damage:             raiderDamage,
 		AttackRange:        raiderAttackRange,
 		AttackSpeed:        raiderAttackSpeed,
@@ -947,14 +982,22 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Status = "Attacking"
 
 					if unit.AttackCooldown <= 0 {
-						damage := maxInt(0, unit.Damage-target.Armor)
-						target.HP -= damage
+						// Outgoing damage: base × (1 + perk bonus), then armor.
+						// perk bonus comes from executioner (silver berserker) and any
+						// future outgoing-damage-multiplier perks.
+						rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
+						damage := maxInt(0, int(math.Round(rawDamage))-target.Armor)
+						// Route through the shared helper so shield (blood_engine) absorbs first.
+						s.applyUnitDamageLocked(target, damage)
 						s.onUnitDamagedLocked(unit, target, damage)
 						s.recordSoldierTankContributionLocked(unit, target, damage)
 						s.recordDamageDealtLocked(unit, target, damage)
 						// Perk on-attack effects (bloodlust accumulation,
-						// savage_strikes bonus hit, cleaving_rage extra target).
+						// savage_strikes bonus hit, cleaving_rage extra target,
+						// momentum move-speed refresh).
 						s.onPerkAttackFiredLocked(unit, target, damage, &deadUnitIDs)
+						// Perk on-hit reactions (blood_sustain lifesteal, future on-hit procs).
+						s.onPerkAttackDamageAppliedLocked(unit, target, damage)
 						// Use effective attack speed (base + perk bonus) for the cooldown.
 						effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
 						unit.AttackCooldown = 1.0 / effectiveSpeed
@@ -2043,7 +2086,8 @@ func (s *GameState) tickBuildingCombatLocked(dt float64) {
 			continue
 		}
 
-		target.HP -= def.Damage
+		// Route through the shared helper so shield (blood_engine) absorbs first.
+		s.applyUnitDamageLocked(target, def.Damage)
 		building.Metadata["attackCooldown"] = 1.0 / def.AttackSpeed
 		if target.HP <= 0 {
 			target.HP = 0

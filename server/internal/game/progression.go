@@ -22,7 +22,7 @@ const (
 const (
 	// Tuning points for first-pass progression. These are intentionally simple
 	// and deterministic so rank gain is easy to debug before perks/branching exist.
-	xpGainMultiplier               = .2
+	xpGainMultiplier               = 10
 	xpPerDamageDealt               = 1.0
 	xpPerKillBonus                 = 25.0
 	xpPerSoldierDamageTankedOnKill = 0.5
@@ -54,34 +54,36 @@ var rankProgressionTable = []rankProgressionDef{
 //	effectiveStat = baseStat × rankMult × pathMult
 //
 // Armor is a flat value subtracted from incoming damage (min 0).
+// MoveSpeedMultiplier is path-only (no rank scaling) — mirrors Armor.
 type pathModifierDef struct {
 	Path                  string
 	Rank                  string
 	MaxHPMultiplier       float64
 	DamageMultiplier      float64
 	AttackSpeedMultiplier float64
+	MoveSpeedMultiplier   float64
 	Armor                 int
 }
 
 // identityPathModifier is returned for units with no path or unknown path/rank combos.
 var identityPathModifier = pathModifierDef{
-	MaxHPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, Armor: 0,
+	MaxHPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, Armor: 0,
 }
 
 // pathModifierTable defines how each path modifies stats at each rank.
 // All multipliers are applied ON TOP of the existing rank multipliers.
 //
 // Vanguard — sturdier frontliner: more HP and armor, slight attack speed cost early.
-// Berserker — aggressive damage dealer: more damage and attack speed, less HP.
+// Berserker — aggressive damage dealer: more damage, attack speed, and move speed; less HP.
 var pathModifierTable = []pathModifierDef{
 	// vanguard
-	{Path: unitPathVanguard, Rank: unitRankBronze, MaxHPMultiplier: 1.10, DamageMultiplier: 1.00, AttackSpeedMultiplier: 0.95, Armor: 5},
-	{Path: unitPathVanguard, Rank: unitRankSilver, MaxHPMultiplier: 1.20, DamageMultiplier: 1.00, AttackSpeedMultiplier: 1.00, Armor: 10},
-	{Path: unitPathVanguard, Rank: unitRankGold, MaxHPMultiplier: 1.30, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, Armor: 15},
-	// berserker
-	{Path: unitPathBerserker, Rank: unitRankBronze, MaxHPMultiplier: 0.90, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.10, Armor: 0},
-	{Path: unitPathBerserker, Rank: unitRankSilver, MaxHPMultiplier: 0.95, DamageMultiplier: 1.20, AttackSpeedMultiplier: 1.15, Armor: 0},
-	{Path: unitPathBerserker, Rank: unitRankGold, MaxHPMultiplier: 1.00, DamageMultiplier: 1.30, AttackSpeedMultiplier: 1.25, Armor: 0},
+	{Path: unitPathVanguard, Rank: unitRankBronze, MaxHPMultiplier: 1.10, DamageMultiplier: 1.00, AttackSpeedMultiplier: 0.95, MoveSpeedMultiplier: 1.00, Armor: 5},
+	{Path: unitPathVanguard, Rank: unitRankSilver, MaxHPMultiplier: 1.20, DamageMultiplier: 1.00, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, Armor: 10},
+	{Path: unitPathVanguard, Rank: unitRankGold, MaxHPMultiplier: 1.30, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, Armor: 15},
+	// berserker — flat +15% move speed at every rank.
+	{Path: unitPathBerserker, Rank: unitRankBronze, MaxHPMultiplier: 0.90, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.10, MoveSpeedMultiplier: 1.15, Armor: 0},
+	{Path: unitPathBerserker, Rank: unitRankSilver, MaxHPMultiplier: 0.95, DamageMultiplier: 1.20, AttackSpeedMultiplier: 1.15, MoveSpeedMultiplier: 1.15, Armor: 0},
+	{Path: unitPathBerserker, Rank: unitRankGold, MaxHPMultiplier: 1.00, DamageMultiplier: 1.30, AttackSpeedMultiplier: 1.25, MoveSpeedMultiplier: 1.15, Armor: 0},
 }
 
 // pathModifierFor returns the path modifier for the given path and rank.
@@ -156,6 +158,9 @@ func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
 		// Assign perk after path so eligibility filtering can match against the
 		// correct ProgressionPath. Must run before applyRankModifiersLocked in case
 		// a future perk modifies base stats at assignment time.
+		//
+		// Perk definitions: catalog/perk-defs.json
+		// Perk runtime/handlers + assignment rules: perks.go
 		s.assignUnitPerkLocked(unit)
 		s.applyRankModifiersLocked(unit, true)
 		s.onUnitRankUpLocked(unit)
@@ -209,6 +214,8 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	unit.MaxHP = maxInt(1, int(math.Round(float64(unit.BaseMaxHP)*rankDef.MaxHPMultiplier*pathDef.MaxHPMultiplier)))
 	unit.Damage = maxInt(0, int(math.Round(float64(unit.BaseDamage)*rankDef.DamageMultiplier*pathDef.DamageMultiplier)))
 	unit.AttackSpeed = math.Max(0.1, unit.BaseAttackSpeed*rankDef.AttackSpeedMultiplier*pathDef.AttackSpeedMultiplier)
+	// Move speed: path-only scaling for now (rank doesn't affect move speed yet).
+	unit.MoveSpeed = math.Max(1.0, unit.BaseMoveSpeed*pathDef.MoveSpeedMultiplier)
 	unit.Armor = pathDef.Armor
 
 	if preserveHealthPercent {

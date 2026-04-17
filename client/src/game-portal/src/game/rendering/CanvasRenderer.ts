@@ -12,6 +12,8 @@ import type { UnitDef, UnitRenderDef } from '../maps/unitDefs'
 import type { BuildingTile } from '../network/protocol'
 import { Camera } from './Camera'
 import { getRankToneColor } from './rankColors'
+import { ACTION_ICON_MAP } from '../maps/actionIconDefs'
+import { PERK_DEF_MAP } from '../maps/perkDefs'
 
 export type MinimapBounds = {
   x: number
@@ -460,6 +462,9 @@ export class CanvasRenderer {
       y: number
       hp?: number
       maxHp?: number
+      shield?: number
+      maxShield?: number
+      activeBuffs?: string[]
       color?: string
       visible?: boolean
       ownerId?: string
@@ -518,6 +523,7 @@ export class CanvasRenderer {
       // Health bar always visible for all units
       const isEnemy = unit.ownerId !== this.state.localPlayerId
       this.drawSelectedUnitHealthBar(unit, unitDef, isEnemy)
+      this.drawUnitRankChevrons(unit, unitDef)
 
       if (unit.status === 'Attacking') {
         this.drawConfiguredUnitAttackEffect(unit)
@@ -525,7 +531,13 @@ export class CanvasRenderer {
         this.drawChoppingEffect(unit.x, unit.y)
       }
 
-      this.drawUnitRankDebug(unit, bottomOffset)
+      this.drawUnitRankUpBurst(unit, bottomOffset)
+
+      // Active-buff indicators (momentum, relentless, whirlwind, berserk_state, …).
+      // Populated by server activeBuffIconsLocked(); icons come from action-icons.json.
+      if (unit.activeBuffs && unit.activeBuffs.length > 0) {
+        this.drawUnitActiveBuffs(unit.x, unit.y, bottomOffset, unit.activeBuffs)
+      }
 
       const unitColor = unit.color || 'lime'
       const unitRankColor = this.getRankColor(unit.rank)
@@ -578,12 +590,11 @@ export class CanvasRenderer {
     this.drawMeleeAttackEffect(unit, attackVisual)
   }
 
-  private drawUnitRankDebug(
-    unit: { x: number; y: number; rank?: string; recentRankUpSeconds?: number },
+  private drawUnitRankUpBurst(
+    unit: { x: number; y: number; recentRankUpSeconds?: number },
     bottomOffset: number,
   ) {
-    const rankLabel = this.getRankLabel(unit.rank)
-    if (!rankLabel && !(unit.recentRankUpSeconds && unit.recentRankUpSeconds > 0)) {
+    if (!(unit.recentRankUpSeconds && unit.recentRankUpSeconds > 0)) {
       return
     }
 
@@ -594,33 +605,57 @@ export class CanvasRenderer {
     ctx.lineWidth = 3 / this.camera.zoom
     ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
 
-    if (rankLabel) {
-      ctx.fillStyle = this.getRankColor(unit.rank)
-      ctx.strokeText(rankLabel, unit.x, unit.y - bottomOffset - 16 / this.camera.zoom)
-      ctx.fillText(rankLabel, unit.x, unit.y - bottomOffset - 16 / this.camera.zoom)
-    }
-
-    if (unit.recentRankUpSeconds && unit.recentRankUpSeconds > 0) {
-      const alpha = Math.max(0, Math.min(unit.recentRankUpSeconds / 1.4, 1))
-      ctx.fillStyle = `rgba(250, 204, 21, ${alpha})`
-      ctx.strokeText('RANK UP!', unit.x, unit.y - bottomOffset - 28 / this.camera.zoom)
-      ctx.fillText('RANK UP!', unit.x, unit.y - bottomOffset - 28 / this.camera.zoom)
-    }
+    const alpha = Math.max(0, Math.min(unit.recentRankUpSeconds / 1.4, 1))
+    ctx.fillStyle = `rgba(250, 204, 21, ${alpha})`
+    ctx.strokeText('RANK UP!', unit.x, unit.y - bottomOffset - 16 / this.camera.zoom)
+    ctx.fillText('RANK UP!', unit.x, unit.y - bottomOffset - 16 / this.camera.zoom)
 
     ctx.restore()
   }
 
-  private getRankLabel(rank?: string) {
-    switch (rank) {
-      case 'bronze':
-        return 'Bronze'
-      case 'silver':
-        return 'Silver'
-      case 'gold':
-        return 'Gold'
-      default:
-        return ''
+  private drawUnitRankChevrons(
+    unit: { x: number; y: number; rank?: string },
+    unitDef: ReturnType<typeof UNIT_DEF_MAP.get>,
+  ) {
+    const count = unit.rank === 'bronze' ? 1 : unit.rank === 'silver' ? 2 : unit.rank === 'gold' ? 3 : 0
+    if (count === 0) return
+
+    const ctx = this.ctx
+    const barWidth = 26
+    const barHeight = 4
+    const barX = unit.x - barWidth / 2
+    const bounds = getUnitRenderBounds(unitDef)
+    const barY = unit.y - (bounds ? Math.abs(bounds.minY) + 8 : 22)
+
+    const halfWidth = 3.5
+    const height = 2.5
+    const spacing = 3
+    const stackHeight = height + (count - 1) * spacing
+    const cx = barX - 2 - halfWidth
+    const topPeakY = barY + barHeight / 2 - stackHeight / 2
+    const color = this.getRankColor(unit.rank)
+
+    ctx.save()
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+
+    for (let i = 0; i < count; i++) {
+      const peakY = topPeakY + i * spacing
+      const baseY = peakY + height
+
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.95)'
+      ctx.lineWidth = 2.5 / this.camera.zoom
+      ctx.beginPath()
+      ctx.moveTo(cx - halfWidth, baseY)
+      ctx.lineTo(cx, peakY)
+      ctx.lineTo(cx + halfWidth, baseY)
+      ctx.stroke()
+
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1.25 / this.camera.zoom
+      ctx.stroke()
     }
+    ctx.restore()
   }
 
   private getRankColor(rank?: string, tone: 'base' | 'light' | 'dark' = 'base') {
@@ -915,6 +950,8 @@ export class CanvasRenderer {
     y: number
     hp?: number
     maxHp?: number
+    shield?: number
+    maxShield?: number
   }, unitDef: ReturnType<typeof UNIT_DEF_MAP.get>, isEnemy = false) {
     const ctx = this.ctx
     const maxHp = Math.max(unit.maxHp ?? unit.hp ?? 100, 1)
@@ -945,10 +982,81 @@ export class CanvasRenderer {
     ctx.fillStyle = fillColor
     ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight)
 
+    // Shield overlay: a cyan bar stacked directly above the HP bar, scaled
+    // against max-shield. Only drawn when the unit actually carries shield.
+    const shield = Math.max(0, unit.shield ?? 0)
+    const maxShield = Math.max(0, unit.maxShield ?? 0)
+    if (maxShield > 0 && shield > 0) {
+      const shieldY = barY - barHeight - 1
+      ctx.fillStyle = '#0f172a'
+      ctx.fillRect(barX, shieldY, barWidth, barHeight)
+      ctx.fillStyle = '#38bdf8'
+      ctx.fillRect(barX, shieldY, barWidth * Math.min(1, shield / maxShield), barHeight)
+      ctx.strokeStyle = 'rgba(248, 250, 252, 0.6)'
+      ctx.lineWidth = 1 / this.camera.zoom
+      ctx.strokeRect(barX, shieldY, barWidth, barHeight)
+    }
+
     ctx.strokeStyle = 'rgba(248, 250, 252, 0.8)'
     ctx.lineWidth = 1 / this.camera.zoom
     ctx.strokeRect(barX, barY, barWidth, barHeight)
     ctx.restore()
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Active-buff indicator icons.
+  //
+  // Server-authoritative: UnitSnapshot.activeBuffs is a list of perk ids
+  // whose timed or conditional buff is currently active (populated by
+  // activeBuffIconsLocked in perks.go). Each id is looked up in PERK_DEF_MAP
+  // to find its icon id, which is then rendered as an SVG path from
+  // ACTION_ICON_MAP.
+  //
+  // EXTENSION POINT: to show a new buff icon, add the perk id to the
+  // activeBuffIconsLocked switch on the server. The client needs no changes
+  // as long as the perk's icon exists in action-icons.json.
+  // ──────────────────────────────────────────────────────────────────────────
+  private drawUnitActiveBuffs(x: number, y: number, bottomOffset: number, buffIds: string[]) {
+    const ctx = this.ctx
+    const iconSize = 12
+    const gap = 2
+    const totalWidth = buffIds.length * iconSize + Math.max(0, buffIds.length - 1) * gap
+    // Stack icons to the right of the HP bar area, above the unit's center.
+    const baseY = y - bottomOffset - 26
+    let cursorX = x - totalWidth / 2
+
+    for (const id of buffIds) {
+      const def = PERK_DEF_MAP.get(id)
+      const iconId = def?.icon
+      const iconPath = iconId ? ACTION_ICON_MAP.get(iconId) : undefined
+      if (!iconPath) {
+        cursorX += iconSize + gap
+        continue
+      }
+
+      ctx.save()
+      // Background pill so the icon is readable over any terrain/sprite.
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.8)'
+      ctx.beginPath()
+      ctx.arc(cursorX + iconSize / 2, baseY + iconSize / 2, iconSize / 2 + 1, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.9)'
+      ctx.lineWidth = 1 / this.camera.zoom
+      ctx.stroke()
+
+      // SVG paths in action-icons.json are authored in a 0..24 viewBox.
+      // Map that into our icon-size square centered at (cursorX, baseY).
+      ctx.translate(cursorX, baseY)
+      ctx.scale(iconSize / 24, iconSize / 24)
+      ctx.strokeStyle = '#fde68a'
+      ctx.lineWidth = 2
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.stroke(new Path2D(iconPath))
+      ctx.restore()
+
+      cursorX += iconSize + gap
+    }
   }
 
 

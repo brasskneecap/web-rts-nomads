@@ -27,6 +27,7 @@ export type Unit = {
   maxHp?: number
   damage?: number
   attackSpeed?: number
+  moveSpeed?: number
   armor?: number
   xp?: number
   rank?: string
@@ -35,6 +36,10 @@ export type Unit = {
   recentRankUpSeconds?: number
   path?: string
   perkIds?: string[]
+  shield?: number
+  maxShield?: number
+  /** Perk IDs whose timed or conditional buff is currently active. */
+  activeBuffs?: string[]
   ownerId?: string
   color?: string
   carriedResourceType?: ResourceType
@@ -313,6 +318,7 @@ export class GameState {
         maxHp: unit.maxHp,
         damage: unit.damage,
         attackSpeed: unit.attackSpeed,
+        moveSpeed: unit.moveSpeed,
         armor: unit.armor,
         xp: unit.xp,
         rank: unit.rank,
@@ -321,6 +327,9 @@ export class GameState {
         recentRankUpSeconds: unit.recentRankUpSeconds,
         path: unit.progressionPath,
         perkIds: unit.perkIds,
+        shield: unit.shield,
+        maxShield: unit.maxShield,
+        activeBuffs: unit.activeBuffs,
         ownerId: unit.ownerId,
         color: unit.color,
         carriedResourceType: unit.carriedResourceType,
@@ -1487,6 +1496,16 @@ function getUnitDetails(unit: Unit): DetailItem[] {
     },
   ]
 
+  // Shield (currently only granted by blood_engine). Only show when the unit
+  // can actually carry shield, so stateless units never show an "Shield 0/0".
+  if ((unit.maxShield ?? 0) > 0) {
+    details.push({
+      id: 'shield',
+      label: 'Shield',
+      value: `${unit.shield ?? 0} / ${unit.maxShield ?? 0}`,
+    })
+  }
+
   if (unit.damage !== undefined && unit.damage > 0) {
     details.push({
       id: 'damage',
@@ -1500,6 +1519,14 @@ function getUnitDetails(unit: Unit): DetailItem[] {
       id: 'attack-speed',
       label: 'Attack Speed',
       value: `${unit.attackSpeed.toFixed(2)}/s`,
+    })
+  }
+
+  if (unit.moveSpeed !== undefined && unit.moveSpeed > 0) {
+    details.push({
+      id: 'move-speed',
+      label: 'Move Speed',
+      value: String(Math.round(unit.moveSpeed)),
     })
   }
 

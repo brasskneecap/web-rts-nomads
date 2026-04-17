@@ -8,21 +8,52 @@ package game
 // perk definition data.
 //
 // ┌─────────────────────────────────────────────────────────────────────────┐
-// │  TO ADD A NEW PERK:                                                     │
-// │    1. Add the definition to  catalog/perk-defs.json  (data layer).     │
-// │    2. Add a case in whichever hook(s) below the effect needs:           │
-// │         • tickUnitPerkStateLocked     — timers, decay, passive ticks   │
-// │         • perkAttackSpeedBonusLocked  — if it modifies attack speed     │
-// │         • onPerkAttackFiredLocked     — fires on every attack           │
-// │         • onPerkKillLocked            — fires on every kill             │
+// │  WHERE THINGS LIVE                                                      │
+// │                                                                         │
+// │    PERK DEFINITIONS (data, tuning, eligibility)                         │
+// │      → catalog/perk-defs.json                                           │
+// │        Hierarchy is  units → <unitType> → paths → <path> → <rank> → [] │
+// │        Adding a perk means appending an entry under the correct keys;   │
+// │        UnitType / Path / Rank are inferred from the position.           │
+// │                                                                         │
+// │    PERK RUNTIME BEHAVIOUR (effects, hooks, state)                       │
+// │      → this file (perks.go) — assignment + all seven hook functions     │
+// │                                                                         │
+// │    PERK ICONS (HUD artwork)                                             │
+// │      → catalog/action-icons.json  (id: "perk-<name>")                   │
+// └─────────────────────────────────────────────────────────────────────────┘
+//
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │  TO ADD A NEW PERK (any path/rank)                                      │
+// │    1. Add the definition to  catalog/perk-defs.json.                   │
+// │    2. Add an icon to         catalog/action-icons.json.                │
+// │    3. Add a case to whichever of the hooks below the effect needs:      │
+// │         tickUnitPerkStateLocked              timers, decay, passive    │
+// │         perkAttackSpeedBonusLocked           attack-speed bonus        │
+// │         perkMoveSpeedMultiplierLocked        move-speed bonus          │
+// │         perkBonusDamageMultiplierLocked      outgoing damage scaler    │
+// │         onPerkAttackFiredLocked              on every attack           │
+// │         onPerkAttackDamageAppliedLocked      on-hit / lifesteal        │
+// │         onPerkKillLocked                     on every kill             │
+// │         unitMaxShieldLocked                  shield pool contributor   │
+// │         healUnitLocked                       overheal routing          │
+// │         activeBuffIconsLocked                add buff icon to the HUD  │
+// │    4. If the perk needs persistent per-unit state, add a field to      │
+// │       UnitPerkState below.                                             │
 // │                                                                         │
 // │  No other files need to change for a new perk.                         │
 // └─────────────────────────────────────────────────────────────────────────┘
 //
 // CALL SITES (where these hooks are wired into the game loop):
 //   • state.go  Update()               — tickUnitPerkStateLocked (per-unit)
-//   • state.go  tickUnitCombatLocked() — onPerkAttackFiredLocked, onPerkKillLocked,
+//                                        perkMoveSpeedMultiplierLocked (movement)
+//   • state.go  tickUnitCombatLocked() — perkBonusDamageMultiplierLocked,
+//                                        onPerkAttackFiredLocked,
+//                                        onPerkAttackDamageAppliedLocked,
+//                                        onPerkKillLocked,
 //                                        perkAttackSpeedBonusLocked
+//   • perks.go  (savage_strikes, cleave secondary) —
+//                                        onPerkAttackDamageAppliedLocked
 //   • progression.go addUnitXPLocked() — assignUnitPerkLocked (on rank-up)
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -67,8 +98,28 @@ type UnitPerkState struct {
 	RelentlessBonus     float64
 	RelentlessRemaining float64
 
+	// ── momentum (silver berserker) ───────────────────────────────────────────
+	// Temporary post-attack move-speed bonus expressed as a multiplier
+	// (0.25 = +25% speed). Refreshed on every attack and decays to 0 when
+	// MomentumRemaining reaches 0.
+	MomentumBonus     float64
+	MomentumRemaining float64
+
+	// ── whirlwind_core (gold berserker) ───────────────────────────────────────
+	// Two-phase timer: ActiveRemaining > 0 means the whirlwind window is ON
+	// (attacks trigger AoE); otherwise CooldownRemaining counts down to the
+	// next activation. Seeded to cooldown on first tick so the very first
+	// proc happens `cooldownSeconds` after the perk is granted rather than
+	// on the exact rank-up tick.
+	WhirlwindActiveRemaining   float64
+	WhirlwindCooldownRemaining float64
+
 	// frenzy_core   — no stored state; bonus derived from current HP% on demand.
 	// cleaving_rage — no stored state; triggers unconditionally on every attack.
+	// blood_sustain — no stored state; heals from damage dealt on demand.
+	// executioner   — no stored state; bonus derived from target HP% on demand.
+	// blood_engine  — no stored state; shield pool lives on Unit.Shield.
+	// berserk_state — no stored state; bonus derived from current HP% on demand.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,16 +132,49 @@ type UnitPerkState struct {
 //
 // Call AFTER assignUnitPathOnRankUpLocked so ProgressionPath is already set.
 //
-// Current behaviour: Silver and Gold rank-ups draw from the Bronze pool for now
-// (until rank-specific perks exist) but filter out any perk already on the unit
-// so no perk is received twice.
+// The pool is drawn from the perk catalog filtered by (unitType, path, rank)
+// where rank matches the unit's *current* rank. If the exact rank pool is empty
+// (e.g. Gold is not yet authored) we fall back to the Bronze pool so the unit
+// still receives a perk. Perks already on the unit are filtered out so no perk
+// can be received twice.
+//
+// ── FUTURE EXPANSION — where to add more perks ─────────────────────────────
+//
+//	Soldier → Berserker → Bronze    catalog/perk-defs.json  units.soldier.paths.berserker.bronze
+//	Soldier → Berserker → Silver    catalog/perk-defs.json  units.soldier.paths.berserker.silver
+//	Soldier → Berserker → Gold      catalog/perk-defs.json  units.soldier.paths.berserker.gold
+//	Soldier → Vanguard  → Bronze    catalog/perk-defs.json  units.soldier.paths.vanguard.bronze
+//	Soldier → Vanguard  → Silver    catalog/perk-defs.json  units.soldier.paths.vanguard.silver
+//	Soldier → Vanguard  → Gold      catalog/perk-defs.json  units.soldier.paths.vanguard.gold
+//	<other unit> → <path> → <rank>  catalog/perk-defs.json  units.<unit>.paths.<path>.<rank>
+//
+// No code changes needed in this file for adding perks at any existing slot —
+// the assignment, pool filter, and eligibility check all key off the hierarchy
+// in the JSON. You only touch this file to author RUNTIME EFFECT logic (the
+// hook cases further down).
 func (s *GameState) assignUnitPerkLocked(unit *Unit) {
 	if unit == nil || unit.Rank == unitRankBase {
 		return
 	}
-	// Until Silver/Gold perk pools are authored, draw every rank-up perk from
-	// the Bronze pool.
-	pool := eligiblePerksForUnitAtRank(unit, unitRankBronze)
+	pool := s.perkPoolForRankLocked(unit, unit.Rank)
+	if len(pool) == 0 {
+		return
+	}
+	unit.PerkIDs = append(unit.PerkIDs, pool[rand.Intn(len(pool))].ID)
+}
+
+// perkPoolForRankLocked returns the list of perk defs a unit is eligible to be
+// granted at the given rank, excluding any perk the unit already owns. If the
+// rank-specific pool is empty, falls back to the Bronze pool so rank-ups still
+// produce a grant while higher-tier perks are still being authored.
+func (s *GameState) perkPoolForRankLocked(unit *Unit, rank string) []*PerkDef {
+	pool := eligiblePerksForUnitAtRank(unit, rank)
+	if len(pool) == 0 && rank != unitRankBronze {
+		pool = eligiblePerksForUnitAtRank(unit, unitRankBronze)
+	}
+	if len(pool) == 0 {
+		return nil
+	}
 	owned := make(map[string]struct{}, len(unit.PerkIDs))
 	for _, id := range unit.PerkIDs {
 		owned[id] = struct{}{}
@@ -102,10 +186,7 @@ func (s *GameState) assignUnitPerkLocked(unit *Unit) {
 		}
 		filtered = append(filtered, def)
 	}
-	if len(filtered) == 0 {
-		return
-	}
-	unit.PerkIDs = append(unit.PerkIDs, filtered[rand.Intn(len(filtered))].ID)
+	return filtered
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -164,6 +245,33 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 				}
 			}
 
+		case "momentum":
+			// Decay the post-attack move-speed buff.
+			if unit.PerkState.MomentumRemaining > 0 {
+				unit.PerkState.MomentumRemaining = math.Max(0, unit.PerkState.MomentumRemaining-dt)
+				if unit.PerkState.MomentumRemaining == 0 {
+					unit.PerkState.MomentumBonus = 0
+				}
+			}
+
+		case "whirlwind_core":
+			// Two-phase cycle: active window → cooldown → active window → …
+			// When state is fresh (both zero) seed the cooldown so the first
+			// proc fires after cooldownSeconds rather than instantly.
+			if unit.PerkState.WhirlwindActiveRemaining > 0 {
+				unit.PerkState.WhirlwindActiveRemaining = math.Max(0, unit.PerkState.WhirlwindActiveRemaining-dt)
+				if unit.PerkState.WhirlwindActiveRemaining == 0 {
+					unit.PerkState.WhirlwindCooldownRemaining = def.Config["cooldownSeconds"]
+				}
+			} else if unit.PerkState.WhirlwindCooldownRemaining > 0 {
+				unit.PerkState.WhirlwindCooldownRemaining = math.Max(0, unit.PerkState.WhirlwindCooldownRemaining-dt)
+				if unit.PerkState.WhirlwindCooldownRemaining == 0 {
+					unit.PerkState.WhirlwindActiveRemaining = def.Config["activeSeconds"]
+				}
+			} else {
+				unit.PerkState.WhirlwindCooldownRemaining = def.Config["cooldownSeconds"]
+			}
+
 		// ── add cases for new perks with timer/decay needs below this line ──
 		}
 	}
@@ -209,6 +317,16 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 
 		case "relentless":
 			total += unit.PerkState.RelentlessBonus
+
+		case "berserk_state":
+			// Passive: bonus active only while the unit's own HP is below the
+			// threshold. Mirrors the damage multiplier above.
+			if unit.MaxHP > 0 {
+				hpFraction := float64(unit.HP) / float64(unit.MaxHP)
+				if hpFraction <= def.Config["hpThresholdPercent"] {
+					total += def.Config["attackSpeedBonus"]
+				}
+			}
 
 		// ── add cases for new attack-speed perks below this line ────────────
 		}
@@ -270,9 +388,11 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 					bonusDmg := maxInt(0, int(math.Round(float64(attacker.Damage)*def.Config["bonusMultiplier"])))
 					actualDmg := maxInt(0, bonusDmg-primaryTarget.Armor)
 					if actualDmg > 0 {
-						primaryTarget.HP -= actualDmg
+						s.applyUnitDamageLocked(primaryTarget, actualDmg)
 						s.onUnitDamagedLocked(attacker, primaryTarget, actualDmg)
 						s.recordDamageDealtLocked(attacker, primaryTarget, actualDmg)
+						// Let on-damage perks (blood_sustain) react to the extra hit.
+						s.onPerkAttackDamageAppliedLocked(attacker, primaryTarget, actualDmg)
 						// Primary target death is handled by the caller — do NOT append here.
 					}
 				}
@@ -281,7 +401,67 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 		case "cleaving_rage":
 			s.applyCleaveHitLocked(attacker, primaryTarget, def.Config["splashRadius"], deadUnitIDs)
 
+		case "momentum":
+			// Refresh the post-attack move-speed buff. Overwrites any remaining
+			// duration so consecutive attacks keep the buff at full value.
+			attacker.PerkState.MomentumBonus = def.Config["moveSpeedBonus"]
+			attacker.PerkState.MomentumRemaining = def.Config["durationSeconds"]
+
+		case "whirlwind_core":
+			// While the whirlwind window is active, every attack also hits all
+			// other enemies within the configured radius of the attacker.
+			if attacker.PerkState.WhirlwindActiveRemaining > 0 {
+				s.applyWhirlwindHitLocked(attacker, primaryTarget, def.Config["radius"], deadUnitIDs)
+			}
+
 		// ── add cases for new on-attack perks below this line ───────────────
+		}
+	}
+}
+
+// applyWhirlwindHitLocked deals full attacker damage to every visible enemy
+// (other than primaryTarget) within radius of the attacker. Routes through the
+// same shield/on-hit/XP pipeline as a normal attack so lifesteal, damage XP,
+// and kill XP all work transparently.
+func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radius float64, deadUnitIDs *[]int) {
+	if attacker == nil || radius <= 0 {
+		return
+	}
+	radiusSq := radius * radius
+	primaryID := 0
+	if primaryTarget != nil {
+		primaryID = primaryTarget.ID
+	}
+	for _, candidate := range s.Units {
+		if candidate == nil || candidate.ID == primaryID {
+			continue
+		}
+		if candidate.OwnerID == attacker.OwnerID {
+			continue
+		}
+		if candidate.HP <= 0 || !candidate.Visible {
+			continue
+		}
+		dx := candidate.X - attacker.X
+		dy := candidate.Y - attacker.Y
+		if dx*dx+dy*dy > radiusSq {
+			continue
+		}
+		damage := maxInt(0, attacker.Damage-candidate.Armor)
+		if damage == 0 {
+			continue
+		}
+		s.applyUnitDamageLocked(candidate, damage)
+		s.onUnitDamagedLocked(attacker, candidate, damage)
+		s.recordDamageDealtLocked(attacker, candidate, damage)
+		s.onPerkAttackDamageAppliedLocked(attacker, candidate, damage)
+		if candidate.HP <= 0 {
+			candidate.HP = 0
+			s.awardKillXPLocked(attacker)
+			s.payoutDamageDealtXPLocked(candidate)
+			s.awardSoldierTankKillXPLocked(candidate.ID)
+			s.onPerkKillLocked(attacker)
+			*deadUnitIDs = append(*deadUnitIDs, candidate.ID)
 		}
 	}
 }
@@ -323,9 +503,11 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 	if damage == 0 {
 		return
 	}
-	secondary.HP -= damage
+	s.applyUnitDamageLocked(secondary, damage)
 	s.onUnitDamagedLocked(attacker, secondary, damage)
 	s.recordDamageDealtLocked(attacker, secondary, damage)
+	// Let on-damage perks (blood_sustain) react to cleave hits.
+	s.onPerkAttackDamageAppliedLocked(attacker, secondary, damage)
 	if secondary.HP <= 0 {
 		secondary.HP = 0
 		s.awardKillXPLocked(attacker)
@@ -364,4 +546,302 @@ func (s *GameState) onPerkKillLocked(attacker *Unit) {
 		// ── add cases for new on-kill perks below this line ─────────────────
 		}
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook 5 — outgoing damage multiplier (pre-armor)
+//
+// perkBonusDamageMultiplierLocked returns an additive multiplier applied to
+// the attacker's raw damage BEFORE armor is subtracted, for attacks against
+// the given target. 0 means "no bonus" (final damage = base damage).
+//
+// Used in state.go tickUnitCombatLocked() primary-attack damage calc:
+//
+//	raw := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
+//	damage := maxInt(0, int(math.Round(raw)) - target.Armor)
+//
+// Scoped to the PRIMARY attack only — secondary perk hits (savage_strikes
+// bonus, cleave) deliberately do not stack this bonus.
+//
+// ADD NEW OUTGOING-DAMAGE-MODIFYING PERKS HERE.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Safe to call with a nil target (e.g. from Snapshot() when computing the
+// effective damage to show in the HUD): target-dependent cases like
+// executioner no-op, self-based cases like berserk_state still apply.
+func (s *GameState) perkBonusDamageMultiplierLocked(attacker, target *Unit) float64 {
+	if attacker == nil || len(attacker.PerkIDs) == 0 {
+		return 0
+	}
+
+	total := 0.0
+	for _, perkID := range attacker.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+
+		switch perkID {
+
+		case "executioner":
+			// Bonus applies only when the target is below the HP threshold
+			// at the time damage is dealt. No-op when called without a target.
+			if target != nil && target.MaxHP > 0 {
+				hpFraction := float64(target.HP) / float64(target.MaxHP)
+				if hpFraction <= def.Config["hpThresholdPercent"] {
+					total += def.Config["bonusMultiplier"]
+				}
+			}
+
+		case "berserk_state":
+			// Passive: bonus active only while the attacker's own HP is below
+			// the threshold. Recomputed live, so the bonus appears/disappears
+			// cleanly as HP changes without requiring state updates.
+			if attacker.MaxHP > 0 {
+				hpFraction := float64(attacker.HP) / float64(attacker.MaxHP)
+				if hpFraction <= def.Config["hpThresholdPercent"] {
+					total += def.Config["damageMultiplier"]
+				}
+			}
+
+		// ── add cases for new damage-multiplier perks below this line ───────
+		}
+	}
+	return total
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook 6 — after damage applied (on-hit reactions)
+//
+// onPerkAttackDamageAppliedLocked is called whenever a perk-capable attack
+// actually deals damage to a target, for every damage source that comes from
+// the attacker's attack resolution:
+//   - primary attack (state.go)
+//   - savage_strikes bonus hit (perks.go onPerkAttackFiredLocked)
+//   - cleaving_rage secondary (perks.go applyCleaveHitLocked)
+//
+// `damage` is the post-armor damage actually applied. Safe to call with 0 or
+// negative damage — the hook early-outs in that case.
+//
+// ADD NEW ON-HIT REACTION PERKS (lifesteal, on-hit procs) HERE.
+// ─────────────────────────────────────────────────────────────────────────────
+func (s *GameState) onPerkAttackDamageAppliedLocked(attacker, target *Unit, damage int) {
+	if attacker == nil || target == nil || damage <= 0 || len(attacker.PerkIDs) == 0 {
+		return
+	}
+	// Dead attackers don't heal (blood_sustain) — guards against weird edges
+	// where a perk hits after the attacker has already died this tick.
+	if attacker.HP <= 0 {
+		return
+	}
+
+	for _, perkID := range attacker.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+
+		switch perkID {
+
+		case "blood_sustain":
+			// Heal for a percentage of damage dealt. Routed through
+			// healUnitLocked so blood_engine (gold) can convert overheal into
+			// shield. No recursion risk — healing never triggers damage events.
+			heal := int(math.Round(float64(damage) * def.Config["lifestealPercent"]))
+			if heal > 0 {
+				s.healUnitLocked(attacker, heal)
+			}
+
+		// ── add cases for new on-hit reaction perks below this line ─────────
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook 7 — move-speed multiplier
+//
+// perkMoveSpeedMultiplierLocked returns the effective move-speed multiplier
+// contributed by the unit's perks. Always returns ≥ 1.0 (no perk = 1.0).
+//
+// Used in state.go Update() movement step:
+//
+//	step := unitMoveSpeed * s.perkMoveSpeedMultiplierLocked(unit) * dt
+//
+// ADD NEW MOVE-SPEED-MODIFYING PERKS HERE.
+// ─────────────────────────────────────────────────────────────────────────────
+func (s *GameState) perkMoveSpeedMultiplierLocked(unit *Unit) float64 {
+	if unit == nil || len(unit.PerkIDs) == 0 {
+		return 1.0
+	}
+
+	bonus := 0.0
+	for _, perkID := range unit.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+
+		switch perkID {
+
+		case "momentum":
+			// State-driven: the post-attack buff is refreshed/decayed in
+			// onPerkAttackFiredLocked / tickUnitPerkStateLocked.
+			bonus += unit.PerkState.MomentumBonus
+
+		// ── add cases for new move-speed perks below this line ──────────────
+		}
+	}
+	return 1.0 + bonus
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SHIELD / HEAL / BUFF HELPERS
+//
+// These helpers centralize the unit-side state transitions that perks drive.
+// Damage intake, heal application, and the list of "active buffs" advertised
+// to the client all live here so the integration points from state.go and
+// perks.go are one-liners.
+//
+// EXTENSION POINTS:
+//   • applyUnitDamageLocked    — add new damage-intake reducers (armor-
+//                                 like, reflective, etc.) before or after
+//                                 the shield pool.
+//   • healUnitLocked           — add new overheal routings (e.g. future
+//                                 gold perks that convert overheal into
+//                                 something other than shield).
+//   • unitMaxShieldLocked      — aggregate max-shield from multiple perks
+//                                 here if future perks also contribute.
+//   • activeBuffIconsLocked    — return extra buff icon ids when new timed
+//                                 or conditional states are added. Each id
+//                                 must match an entry in action-icons.json.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// applyUnitDamageLocked applies post-armor damage to a unit, routing through
+// the unit's shield pool first. Returns the portion that actually reduced HP
+// (shield-absorbed amount is NOT included). Callers should keep using their
+// original `damage` value for XP banking, threat, on-hit reactions, etc. so
+// shield absorption doesn't retroactively penalize attackers.
+//
+// Called from every unit-damage intake site:
+//   - state.go primary attack
+//   - state.go building-on-unit attack
+//   - perks.go savage_strikes bonus hit
+//   - perks.go applyCleaveHitLocked
+//   - perks.go applyWhirlwindHitLocked
+//
+// A damage intake that bypasses this helper will bypass shield — avoid it.
+func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
+	if target == nil || damage <= 0 {
+		return 0
+	}
+	if target.Shield > 0 {
+		if target.Shield >= damage {
+			target.Shield -= damage
+			return 0
+		}
+		damage -= target.Shield
+		target.Shield = 0
+	}
+	target.HP -= damage
+	return damage
+}
+
+// healUnitLocked adds `amount` HP to a unit, clamped to MaxHP. If the unit has
+// blood_engine (gold berserker), any excess beyond MaxHP becomes shield up to
+// the perk's configured cap. Safe to call with non-positive amounts.
+//
+// ADD NEW OVERHEAL ROUTINGS HERE (e.g. future perks that convert overheal
+// into something other than shield).
+func (s *GameState) healUnitLocked(unit *Unit, amount int) {
+	if unit == nil || amount <= 0 || unit.HP <= 0 {
+		return
+	}
+	missing := unit.MaxHP - unit.HP
+	if amount <= missing {
+		unit.HP += amount
+		return
+	}
+	unit.HP = unit.MaxHP
+	overheal := amount - missing
+	maxShield := s.unitMaxShieldLocked(unit)
+	if maxShield <= 0 || overheal <= 0 {
+		return
+	}
+	unit.Shield = minInt(maxShield, unit.Shield+overheal)
+}
+
+// unitMaxShieldLocked returns the unit's current shield capacity, aggregated
+// from all perks that contribute a shield pool. 0 for units with no such perk.
+// ADD NEW SHIELD-GRANTING PERKS HERE.
+func (s *GameState) unitMaxShieldLocked(unit *Unit) int {
+	if unit == nil || len(unit.PerkIDs) == 0 {
+		return 0
+	}
+	total := 0
+	for _, perkID := range unit.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+		switch perkID {
+		case "blood_engine":
+			total += int(def.Config["maxShield"])
+		// ── add cases for new shield-granting perks below this line ─────────
+		}
+	}
+	return total
+}
+
+// activeBuffIconsLocked returns the perk ids whose timed or conditional buff
+// is currently active on the unit, in a stable order. The client uses this
+// list to render floating indicator icons near the sprite (see CanvasRenderer
+// drawUnitActiveBuffs). Returns nil when nothing is active so the slice is
+// omitted from the JSON snapshot.
+//
+// Kept as a single switch so adding a new active-buff perk only requires one
+// case here plus the matching runtime hook case elsewhere in this file.
+//
+// ADD NEW VISUALLY-INDICATED BUFFS HERE.
+func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
+	if unit == nil || len(unit.PerkIDs) == 0 {
+		return nil
+	}
+	var active []string
+	for _, perkID := range unit.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+		switch perkID {
+
+		case "bloodlust":
+			if unit.PerkState.BloodlustBonus > 0 {
+				active = append(active, perkID)
+			}
+		case "relentless":
+			if unit.PerkState.RelentlessRemaining > 0 {
+				active = append(active, perkID)
+			}
+		case "momentum":
+			if unit.PerkState.MomentumRemaining > 0 {
+				active = append(active, perkID)
+			}
+		case "whirlwind_core":
+			if unit.PerkState.WhirlwindActiveRemaining > 0 {
+				active = append(active, perkID)
+			}
+		case "berserk_state":
+			// Conditional passive: show while below HP threshold so the
+			// player can see the buff kick in and fall off as HP changes.
+			if unit.MaxHP > 0 {
+				hpFraction := float64(unit.HP) / float64(unit.MaxHP)
+				if hpFraction <= def.Config["hpThresholdPercent"] {
+					active = append(active, perkID)
+				}
+			}
+
+		// ── add cases for new visually-indicated buffs below this line ──────
+		}
+	}
+	return active
 }

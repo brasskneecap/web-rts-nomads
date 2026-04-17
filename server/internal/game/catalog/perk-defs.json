@@ -54,8 +54,70 @@
               }
             }
           ],
-          "silver": [],
-          "gold": []
+          "silver": [
+            {
+              "id": "blood_sustain",
+              "displayName": "Blood Sustain",
+              "icon": "perk-blood-sustain",
+              "description": "Heal for a percentage of damage dealt on every attack.",
+              "config": {
+                "lifestealPercent": 0.20
+              }
+            },
+            {
+              "id": "executioner",
+              "displayName": "Executioner",
+              "icon": "perk-executioner",
+              "description": "Deal bonus damage to enemies below a low-HP threshold.",
+              "config": {
+                "hpThresholdPercent": 0.30,
+                "bonusMultiplier":    0.50
+              }
+            },
+            {
+              "id": "momentum",
+              "displayName": "Momentum",
+              "icon": "perk-momentum",
+              "description": "Gain a short burst of movement speed after attacking.",
+              "config": {
+                "moveSpeedBonus":  0.25,
+                "durationSeconds": 2.0
+              }
+            }
+          ],
+          "gold": [
+            {
+              "id": "blood_engine",
+              "displayName": "Blood Engine",
+              "icon": "perk-blood-engine",
+              "description": "Lifesteal overheals become a temporary shield that absorbs damage before HP.",
+              "config": {
+                "maxShield": 50
+              }
+            },
+            {
+              "id": "whirlwind_core",
+              "displayName": "Whirlwind Core",
+              "icon": "perk-whirlwind-core",
+              "description": "Every few seconds, attacks briefly become a whirlwind hitting all nearby enemies.",
+              "config": {
+                "activeSeconds":   3.0,
+                "cooldownSeconds": 10.0,
+                "radius":          70.0
+              }
+            },
+            {
+              "id": "berserk_state",
+              "displayName": "Berserk State",
+              "icon": "perk-berserk-state",
+              "description": "Below a low-HP threshold, gain a surge of damage and attack speed.",
+              "config": {
+                "hpThresholdPercent": 0.40,
+                "damageMultiplier":   0.25,
+                "attackSpeedBonus":   0.40
+              }
+            }
+          ]
         },
         "vanguard": {
           "bronze": [],

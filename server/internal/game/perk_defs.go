@@ -8,17 +8,26 @@ package game
 // same shape as unit_defs.go and building_defs.go.
 //
 // ┌─────────────────────────────────────────────────────────────────────────┐
-// │  TO ADD / EDIT / REMOVE A PERK DEFINITION:                             │
-// │      edit  catalog/perk-defs.json                                      │
+// │  WHERE THINGS LIVE                                                      │
 // │                                                                         │
-// │  TO ADD A PERK'S RUNTIME BEHAVIOUR:                                    │
-// │      edit  perks.go  (the runtime handler file)                        │
+// │    PERK DEFINITIONS (data, tuning, eligibility)                         │
+// │      → catalog/perk-defs.json                                           │
+// │        Hierarchy is  units → <unitType> → paths → <path> → <rank> → [] │
+// │        Adding a perk means appending an entry under the correct keys;   │
+// │        UnitType / Path / Rank are inferred from the position.           │
+// │                                                                         │
+// │    PERK RUNTIME BEHAVIOUR (effects, hooks, state)                       │
+// │      → perks.go   (assignment + all seven hook functions)               │
+// │                                                                         │
+// │    PERK ICONS (HUD artwork)                                             │
+// │      → catalog/action-icons.json  (id: "perk-<name>")                   │
 // └─────────────────────────────────────────────────────────────────────────┘
 //
 // Eligibility fields (UnitType, Path, Rank) accept "" as a wildcard — a perk
 // with an empty Path applies to every path, etc. The assignment system in
-// perks.go uses eligiblePerksForUnit() to build the pool automatically, so no
-// assignment-side code needs to change when new perks are added to the JSON.
+// perks.go calls eligiblePerksForUnitAtRank() (via perkPoolForRankLocked) to
+// build the pool automatically, so no assignment-side code needs to change
+// when new perks are added to the JSON.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import (
@@ -115,27 +124,20 @@ func perkDefByID(id string) *PerkDef {
 // ─────────────────────────────────────────────────────────────────────────────
 // EXTENSION POINT — PERK POOL FILTER
 //
-// eligiblePerksForUnit returns every perk in the catalog whose eligibility
-// fields match the unit's current UnitType, ProgressionPath, and Rank.
-// An empty field in the definition matches any value (wildcard).
+// eligiblePerksForUnitAtRank returns every perk in the catalog whose
+// eligibility fields match the unit's UnitType, ProgressionPath and the
+// given rank. An empty field in the definition matches any value (wildcard).
 //
-// This is the sole filter used by assignUnitPerkLocked. Adding a new perk to
-// perk-defs.json with the correct UnitType/Path/Rank is sufficient to include
-// it in the eligible pool — no code changes needed here or in the assignment
+// This is the sole filter used by the assignment pipeline (via
+// perkPoolForRankLocked in perks.go). Adding a new perk to perk-defs.json
+// under the correct unitType/path/rank keys is sufficient to include it in
+// the eligible pool — no code changes needed here or in the assignment
 // function.
 //
-// To restrict a perk to multiple paths or ranks you would add multiple PerkDef
-// entries sharing the same ID prefix, or extend this function with set-based
-// eligibility — but keep it as the single place that defines "what qualifies".
+// To restrict a perk to multiple paths or ranks, add multiple PerkDef entries
+// sharing the same ID — or extend this function with set-based eligibility —
+// but keep it as the single place that defines "what qualifies".
 // ─────────────────────────────────────────────────────────────────────────────
-func eligiblePerksForUnit(unit *Unit) []*PerkDef {
-	return eligiblePerksForUnitAtRank(unit, unit.Rank)
-}
-
-// eligiblePerksForUnitAtRank is the same filter as eligiblePerksForUnit except
-// the caller supplies the rank to match against. Used when a higher-rank unit
-// should draw from a lower-rank perk pool (e.g. Silver/Gold drawing from Bronze
-// while rank-specific perks are still being authored).
 func eligiblePerksForUnitAtRank(unit *Unit, rank string) []*PerkDef {
 	var eligible []*PerkDef
 	for _, def := range perkDefsByID {

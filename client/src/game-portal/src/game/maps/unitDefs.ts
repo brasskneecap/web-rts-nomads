@@ -33,6 +33,8 @@ export type UnitDef = {
   damage: number
   attackRange: number
   attackSpeed: number
+  /** Base pixels-per-second pathing speed (pre-rank/path/perk modifiers). */
+  moveSpeed: number
   goldGatherAmount?: number
   woodGatherAmount?: number
   resourceCost: Record<string, number>

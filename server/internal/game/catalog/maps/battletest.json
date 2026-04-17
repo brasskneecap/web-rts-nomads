@@ -76,7 +76,7 @@
         "metadata": {
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
-          "spawnCount": 1,
+          "spawnCount": 3,
           "unitType": "raider"
         }
       }
