@@ -31,6 +31,7 @@ export type Unit = {
   xpToNextRank?: number
   xpIntoCurrentRank?: number
   recentRankUpSeconds?: number
+  path?: string
   ownerId?: string
   color?: string
   carriedResourceType?: ResourceType
@@ -297,6 +298,7 @@ export class GameState {
         xpToNextRank: unit.xpToNextRank,
         xpIntoCurrentRank: unit.xpIntoCurrentRank,
         recentRankUpSeconds: unit.recentRankUpSeconds,
+        path: unit.progressionPath,
         ownerId: unit.ownerId,
         color: unit.color,
         carriedResourceType: unit.carriedResourceType,
@@ -1395,6 +1397,14 @@ function getUnitDetails(unit: Unit): DetailItem[] {
     value: formatUnitRank(unit.rank),
   })
 
+  if (unit.path && unit.path !== 'none') {
+    details.push({
+      id: 'path',
+      label: 'Path',
+      value: formatUnitPath(unit.path),
+    })
+  }
+
   details.push({
     id: 'xp',
     label: 'XP',
@@ -1461,6 +1471,17 @@ function getGroupDetails(units: Unit[], totalHp: number, totalMaxHp: number): De
   }
 
   return details
+}
+
+function formatUnitPath(path?: string) {
+  switch (path) {
+    case 'vanguard':
+      return 'Vanguard'
+    case 'berserker':
+      return 'Berserker'
+    default:
+      return ''
+  }
 }
 
 function formatUnitRank(rank?: string) {

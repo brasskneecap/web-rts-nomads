@@ -29,6 +29,10 @@ type UnitDef struct {
 	TrainLabel       string          `json:"trainLabel,omitempty"`
 	AttackVisual     json.RawMessage `json:"attackVisual,omitempty"`
 	Render           json.RawMessage `json:"render,omitempty"`
+	// RenderVariants holds optional alternate render definitions keyed by
+	// unit path (e.g. "vanguard", "berserker"). Passed through to the client
+	// as-is; the server game logic never reads it.
+	RenderVariants json.RawMessage `json:"renderVariants,omitempty"`
 }
 
 var unitDefsByType map[string]UnitDef

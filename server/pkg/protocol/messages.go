@@ -168,6 +168,7 @@ type UnitSnapshot struct {
 	XPToNextRank        int      `json:"xpToNextRank,omitempty"`
 	XPIntoCurrentRank   int      `json:"xpIntoCurrentRank,omitempty"`
 	RecentRankUpSeconds float64  `json:"recentRankUpSeconds,omitempty"`
+	ProgressionPath     string   `json:"progressionPath,omitempty"`
 	CarriedResourceType string   `json:"carriedResourceType,omitempty"`
 	CarriedAmount       int      `json:"carriedAmount,omitempty"`
 	TargetX             float64  `json:"targetX,omitempty"`

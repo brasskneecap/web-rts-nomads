@@ -8,6 +8,7 @@ import {
 } from '../maps/mapConfig'
 import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual } from '../maps/buildingDefs'
 import { getResolvedUnitAttackVisual, getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
+import type { UnitDef, UnitRenderDef } from '../maps/unitDefs'
 import type { BuildingTile } from '../network/protocol'
 import { Camera } from './Camera'
 
@@ -452,6 +453,7 @@ export class CanvasRenderer {
       unitType?: string
       rank?: string
       recentRankUpSeconds?: number
+      path?: string
       status?: string
       x: number
       y: number
@@ -525,7 +527,7 @@ export class CanvasRenderer {
       this.drawUnitRankDebug(unit, bottomOffset)
 
       const unitColor = unit.color || 'lime'
-      const unitRenderDef = unitDef?.render
+      const unitRenderDef = resolveUnitRenderDef(unitDef, unit.path)
 
       if (unitRenderDef) {
         for (const layer of unitRenderDef.layers) {
@@ -1129,4 +1131,18 @@ export class CanvasRenderer {
 
     ctx.restore()
   }
+}
+
+// Returns the render definition to use for a unit, preferring a path-specific
+// variant when one exists and has layers. Falls back to the base render.
+function resolveUnitRenderDef(
+  unitDef: UnitDef | undefined | null,
+  path?: string,
+): UnitRenderDef | undefined {
+  if (!unitDef) return undefined
+  if (path && path !== 'none') {
+    const variant = unitDef.renderVariants?.[path]
+    if (variant?.layers?.length) return variant
+  }
+  return unitDef.render
 }

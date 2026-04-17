@@ -543,6 +543,24 @@
         </template>
 
         <template v-else-if="mode === 'unit'">
+          <template v-if="uVariantKeys.length > 0">
+            <div class="spe__section-title">Render Variant</div>
+            <div class="spe__variant-tabs">
+              <button
+                class="spe__variant-tab"
+                :class="{ 'spe__variant-tab--active': uRenderVariantKey === '' }"
+                @click="switchVariant('')"
+              >Base</button>
+              <button
+                v-for="key in uVariantKeys"
+                :key="key"
+                class="spe__variant-tab"
+                :class="{ 'spe__variant-tab--active': uRenderVariantKey === key }"
+                @click="switchVariant(key)"
+              >{{ key.charAt(0).toUpperCase() + key.slice(1) }}</button>
+            </div>
+          </template>
+
           <div class="spe__section-title">Layers</div>
           <div class="spe__layer-list">
             <div
@@ -664,6 +682,8 @@ function setMode(m: 'building' | 'unit' | 'action') {
     unitHoverLayerIdx.value = null
     selectedLayerError.value = ''
     endUnitLayerDrag()
+    uRenderVariantKey.value = ''
+    uVariantStorage.value = {}
   }
   nextTick(() => renderCanvas())
 }
@@ -718,6 +738,24 @@ const uAttackOriginX = ref(0)
 const uAttackOriginY = ref(0)
 const uAttackEffectLength = ref(10)
 const uLayers       = ref<UnitLayer[]>([])
+
+// Render-variant editor state (unit mode).
+// uRenderVariantKey: '' = base render; any other value = named variant.
+// uVariantStorage:   persists layers for all slots, keyed by variant name ('' = base).
+const uRenderVariantKey = ref('')
+const uVariantStorage   = ref<Record<string, UnitLayer[]>>({})
+
+// Keys for named variants (excludes the '' base slot), sorted for stable display.
+const uVariantKeys = computed(() =>
+  Object.keys(uVariantStorage.value).filter(k => k !== '').sort()
+)
+
+// Live snapshot of all variant layers including the actively-edited slot,
+// used by the export without requiring a mutation inside a computed.
+const uCurrentStorage = computed((): Record<string, UnitLayer[]> => ({
+  ...uVariantStorage.value,
+  [uRenderVariantKey.value]: uLayers.value,
+}))
 
 // ─── Paint state (building mode) ─────────────────────────────────────────────
 
@@ -863,6 +901,31 @@ function moveLayer(i: number, dir: -1 | 1) {
   ;[arr[i], arr[j]] = [arr[j], arr[i]]
   if (selectedLayerIdx.value === i) selectedLayerIdx.value = j
   else if (selectedLayerIdx.value === j) selectedLayerIdx.value = i
+}
+
+// Switches the active render variant being edited.
+// Flushes the current uLayers back to storage, then loads the target slot.
+// If the target slot is empty and is a named variant, it is seeded from the base layers.
+function switchVariant(key: string) {
+  if (key === uRenderVariantKey.value) return
+  // Persist current layers before leaving
+  uVariantStorage.value = {
+    ...uVariantStorage.value,
+    [uRenderVariantKey.value]: [...uLayers.value],
+  }
+  // Seed empty named variants from the current base so there's something to edit
+  const target = uVariantStorage.value[key]
+  if (key !== '' && (!target || target.length === 0)) {
+    uVariantStorage.value = {
+      ...uVariantStorage.value,
+      [key]: [...(uVariantStorage.value[''] ?? [])],
+    }
+  }
+  uRenderVariantKey.value = key
+  uLayers.value = [...(uVariantStorage.value[key] ?? [])]
+  selectedLayerIdx.value = null
+  selectedLayerError.value = ''
+  nextTick(() => renderCanvas())
 }
 
 // ─── Triangle color groups (building mode right panel) ────────────────────────
@@ -1747,9 +1810,16 @@ function applyUnitDef(data: UnitDef) {
   uAttackOriginX.value = attackVisual.originX
   uAttackOriginY.value = attackVisual.originY
   uAttackEffectLength.value = attackVisual.effectLength
-  uLayers.value       = [...(data.render?.layers ?? [])] as typeof uLayers.value
+  const baseLayers = [...(data.render?.layers ?? [])] as UnitLayer[]
+  uLayers.value       = baseLayers
   selectedLayerIdx.value = null
   selectedLayerError.value = ''
+  uRenderVariantKey.value = ''
+  const storage: Record<string, UnitLayer[]> = { '': baseLayers }
+  for (const [key, variant] of Object.entries(data.renderVariants ?? {})) {
+    storage[key] = [...(variant.layers ?? [])] as UnitLayer[]
+  }
+  uVariantStorage.value = storage
   mode.value = 'unit'
 
   const usedColors = [...new Set(uLayers.value.map(l => l.color).filter(c => c !== 'player'))]
@@ -2159,6 +2229,13 @@ const exportJson = computed(() => {
   if (uGold.value > 0) resourceCost.gold = uGold.value
   if (uWood.value > 0) resourceCost.wood = uWood.value
 
+  // uCurrentStorage merges uVariantStorage with the live uLayers for the active slot.
+  const storage = uCurrentStorage.value
+  const variantKeys = Object.keys(storage).filter(k => k !== '').sort()
+  const renderVariants = variantKeys.length > 0
+    ? Object.fromEntries(variantKeys.map(k => [k, { layers: storage[k] }]))
+    : undefined
+
   return JSON.stringify({
     type: uType.value,
     name: uName.value,
@@ -2182,8 +2259,9 @@ const exportJson = computed(() => {
       effectLength: uAttackEffectLength.value,
     },
     render: {
-      layers: uLayers.value,
+      layers: storage[''] ?? [],
     },
+    ...(renderVariants ? { renderVariants } : {}),
   }, null, 2)
 })
 
@@ -2497,6 +2575,36 @@ async function copyExport() {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.spe__variant-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.spe__variant-tab {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid #334155;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.spe__variant-tab:hover {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+.spe__variant-tab--active {
+  background: #1d4ed8;
+  color: #f8fafc;
+  border-color: #3b82f6;
 }
 
 .spe__layer-list {

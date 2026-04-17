@@ -43,6 +43,9 @@ export type UnitDef = {
   metadata?: JsonObject
   attackVisual?: UnitAttackVisual
   render: UnitRenderDef
+  // Optional alternate renders keyed by promotion path (e.g. "vanguard", "berserker").
+  // Falls back to `render` when the key is absent or the variant has no layers.
+  renderVariants?: Record<string, UnitRenderDef>
 }
 
 export let UNIT_DEFS: UnitDef[] = []

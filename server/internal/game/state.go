@@ -33,6 +33,8 @@ type Unit struct {
 	XPProgressRemainder float64
 	Rank                string
 	RankUpFxRemaining   float64
+	ProgressionPath     string
+	Armor               int
 
 	CarriedResourceType string
 	CarriedAmount       int
@@ -365,6 +367,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			XPToNextRank:        s.unitXPToNextRankLocked(unit),
 			XPIntoCurrentRank:   s.unitXPIntoCurrentRankLocked(unit),
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
+			ProgressionPath:     unit.ProgressionPath,
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -730,6 +733,7 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		AttackRange:        def.AttackRange,
 		AttackSpeed:        def.AttackSpeed,
 		Rank:               unitRankBase,
+		ProgressionPath:    unitPathNone,
 		CombatAnchorX:      spawn.X,
 		CombatAnchorY:      spawn.Y,
 		ThreatTable:        map[int]*ThreatEntry{},
@@ -765,6 +769,7 @@ func (s *GameState) spawnRaiderUnitLocked(playerID, color string, spawn protocol
 		AttackRange:        raiderAttackRange,
 		AttackSpeed:        raiderAttackSpeed,
 		Rank:               unitRankBase,
+		ProgressionPath:    unitPathNone,
 		CombatAnchorX:      spawn.X,
 		CombatAnchorY:      spawn.Y,
 		ThreatTable:        map[int]*ThreatEntry{},
@@ -916,7 +921,7 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Status = "Attacking"
 
 					if unit.AttackCooldown <= 0 {
-						damage := unit.Damage
+						damage := maxInt(0, unit.Damage-target.Armor)
 						target.HP -= damage
 						s.onUnitDamagedLocked(unit, target, damage)
 						s.recordSoldierTankContributionLocked(unit, target, damage)

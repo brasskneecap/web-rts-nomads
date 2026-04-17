@@ -205,6 +205,7 @@ export type UnitSnapshot = {
   xpToNextRank?: number
   xpIntoCurrentRank?: number
   recentRankUpSeconds?: number
+  progressionPath?: string
   carriedResourceType?: ResourceType
   carriedAmount?: number
   targetX?: number

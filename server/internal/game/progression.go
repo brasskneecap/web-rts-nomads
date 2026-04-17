@@ -1,12 +1,22 @@
 package game
 
-import "math"
+import (
+	"math"
+	"math/rand"
+)
 
 const (
 	unitRankBase   = "base"
 	unitRankBronze = "bronze"
 	unitRankSilver = "silver"
 	unitRankGold   = "gold"
+)
+
+// Soldier promotion paths. Assigned randomly at Bronze and fixed for the unit's lifetime.
+const (
+	unitPathNone      = "none"
+	unitPathVanguard  = "vanguard"
+	unitPathBerserker = "berserker"
 )
 
 const (
@@ -30,11 +40,63 @@ type rankProgressionDef struct {
 	AttackSpeedMultiplier float64
 }
 
+// rankProgressionTable MUST be sorted by XPThreshold ascending — rankDefForXP relies on it.
 var rankProgressionTable = []rankProgressionDef{
 	{Rank: unitRankBase, XPThreshold: 0, MaxHPMultiplier: 1.00, DamageMultiplier: 1.00, AttackSpeedMultiplier: 1.00},
 	{Rank: unitRankBronze, XPThreshold: 100, MaxHPMultiplier: 1.10, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00},
 	{Rank: unitRankSilver, XPThreshold: 250, MaxHPMultiplier: 1.20, DamageMultiplier: 1.25, AttackSpeedMultiplier: 1.10},
 	{Rank: unitRankGold, XPThreshold: 500, MaxHPMultiplier: 1.35, DamageMultiplier: 1.50, AttackSpeedMultiplier: 1.25},
+}
+
+// pathModifierDef describes per-rank stat multipliers and flat armor bonus for a
+// promotion path. Multipliers stack multiplicatively on top of rank multipliers:
+//
+//	effectiveStat = baseStat × rankMult × pathMult
+//
+// Armor is a flat value subtracted from incoming damage (min 0).
+type pathModifierDef struct {
+	Path                  string
+	Rank                  string
+	MaxHPMultiplier       float64
+	DamageMultiplier      float64
+	AttackSpeedMultiplier float64
+	Armor                 int
+}
+
+// identityPathModifier is returned for units with no path or unknown path/rank combos.
+var identityPathModifier = pathModifierDef{
+	MaxHPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, Armor: 0,
+}
+
+// pathModifierTable defines how each path modifies stats at each rank.
+// All multipliers are applied ON TOP of the existing rank multipliers.
+//
+// Vanguard — sturdier frontliner: more HP and armor, slight attack speed cost early.
+// Berserker — aggressive damage dealer: more damage and attack speed, less HP.
+var pathModifierTable = []pathModifierDef{
+	// vanguard
+	{Path: unitPathVanguard, Rank: unitRankBronze, MaxHPMultiplier: 1.10, DamageMultiplier: 1.00, AttackSpeedMultiplier: 0.95, Armor: 5},
+	{Path: unitPathVanguard, Rank: unitRankSilver, MaxHPMultiplier: 1.20, DamageMultiplier: 1.00, AttackSpeedMultiplier: 1.00, Armor: 10},
+	{Path: unitPathVanguard, Rank: unitRankGold, MaxHPMultiplier: 1.30, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, Armor: 15},
+	// berserker
+	{Path: unitPathBerserker, Rank: unitRankBronze, MaxHPMultiplier: 0.90, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.10, Armor: 0},
+	{Path: unitPathBerserker, Rank: unitRankSilver, MaxHPMultiplier: 0.95, DamageMultiplier: 1.20, AttackSpeedMultiplier: 1.15, Armor: 0},
+	{Path: unitPathBerserker, Rank: unitRankGold, MaxHPMultiplier: 1.00, DamageMultiplier: 1.30, AttackSpeedMultiplier: 1.25, Armor: 0},
+}
+
+// pathModifierFor returns the path modifier for the given path and rank.
+// Returns identityPathModifier for base rank or unrecognised combinations so
+// that units without a path are unaffected.
+func pathModifierFor(path, rank string) pathModifierDef {
+	if path == unitPathNone || rank == unitRankBase {
+		return identityPathModifier
+	}
+	for _, def := range pathModifierTable {
+		if def.Path == path && def.Rank == rank {
+			return def
+		}
+	}
+	return identityPathModifier
 }
 
 func rankDefForXP(xp int) rankProgressionDef {
@@ -83,6 +145,9 @@ func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
 		return
 	}
 	unit.Rank = finalRank.Rank
+	// Assign path before applying modifiers so the first applyRankModifiersLocked
+	// call already uses the correct path multipliers.
+	s.assignUnitPathOnRankUpLocked(unit)
 	s.applyRankModifiersLocked(unit, true)
 	s.onUnitRankUpLocked(unit)
 }
@@ -103,19 +168,38 @@ func (s *GameState) addUnitXPFloatLocked(unit *Unit, amount float64) {
 	s.addUnitXPLocked(unit, wholeXP)
 }
 
+// assignUnitPathOnRankUpLocked randomly assigns a promotion path to a Soldier the
+// first time it reaches Bronze rank. Path is fixed for the unit's lifetime.
+func (s *GameState) assignUnitPathOnRankUpLocked(unit *Unit) {
+	if unit.ProgressionPath != unitPathNone {
+		return // already assigned
+	}
+	if unit.UnitType != "soldier" {
+		return // only soldiers get paths for now
+	}
+	if unit.Rank == unitRankBase {
+		return // shouldn't happen here, but guard anyway
+	}
+	paths := [2]string{unitPathVanguard, unitPathBerserker}
+	unit.ProgressionPath = paths[rand.Intn(2)]
+}
+
 func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent bool) {
 	if unit == nil {
 		return
 	}
-	def := rankDefByName(unit.Rank)
+	rankDef := rankDefByName(unit.Rank)
+	pathDef := pathModifierFor(unit.ProgressionPath, unit.Rank)
+
 	currentHPFraction := 1.0
 	if preserveHealthPercent && unit.MaxHP > 0 {
 		currentHPFraction = clampFloat(float64(unit.HP)/float64(unit.MaxHP), 0, 1)
 	}
 
-	unit.MaxHP = maxInt(1, int(math.Round(float64(unit.BaseMaxHP)*def.MaxHPMultiplier)))
-	unit.Damage = maxInt(0, int(math.Round(float64(unit.BaseDamage)*def.DamageMultiplier)))
-	unit.AttackSpeed = math.Max(0.1, unit.BaseAttackSpeed*def.AttackSpeedMultiplier)
+	unit.MaxHP = maxInt(1, int(math.Round(float64(unit.BaseMaxHP)*rankDef.MaxHPMultiplier*pathDef.MaxHPMultiplier)))
+	unit.Damage = maxInt(0, int(math.Round(float64(unit.BaseDamage)*rankDef.DamageMultiplier*pathDef.DamageMultiplier)))
+	unit.AttackSpeed = math.Max(0.1, unit.BaseAttackSpeed*rankDef.AttackSpeedMultiplier*pathDef.AttackSpeedMultiplier)
+	unit.Armor = pathDef.Armor
 
 	if preserveHealthPercent {
 		unit.HP = maxInt(1, int(math.Round(float64(unit.MaxHP)*currentHPFraction)))
