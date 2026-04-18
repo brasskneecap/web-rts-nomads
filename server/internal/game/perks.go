@@ -171,8 +171,12 @@ type UnitPerkState struct {
 	// ── bulwark (silver vanguard) ─────────────────────────────────────────────
 	// StationarySeconds accumulates each tick the unit has not moved. Reset to 0
 	// on any tick where the unit moves. When it reaches stationaryThresholdSeconds
-	// the perk begins topping up the unit's shield to maxShield.
-	StationarySeconds float64
+	// the perk grants the unit a one-time shield up to maxShield.
+	// BulwarkShieldGranted gates the grant so the shield is set exactly once per
+	// stationary period — once granted, damage chips it down and it does NOT
+	// regenerate until the unit moves (clearing the flag) and re-plants.
+	StationarySeconds    float64
+	BulwarkShieldGranted bool
 
 	// ── challengers_mark (silver vanguard) ────────────────────────────────────
 	// MarkedRemaining is the seconds left on this unit's incoming-damage
@@ -372,10 +376,12 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 
 		case "bulwark":
 			// Track how long the unit has been stationary. When the threshold is
-			// reached while stationary, top up the shield each tick up to
-			// maxShield. When the unit moves, reset the counter AND drop any
-			// existing shield — Bulwark is a planted-play reward, so breaking
-			// formation forfeits the protection.
+			// reached, grant the shield ONCE up to maxShield — subsequent damage
+			// chips it down and it does not regenerate until the unit moves and
+			// re-plants. When the unit moves, reset the counter, drop any
+			// existing shield, and clear the granted flag so the next stationary
+			// period can re-arm. Bulwark is a planted-play reward — breaking
+			// formation forfeits the protection AND any partial shield is lost.
 			//
 			// Assumption: no other perk grants shield to a Vanguard today
 			// (blood_engine is Berserker-only). If a future Vanguard perk adds
@@ -383,14 +389,14 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			// subtract only Bulwark's portion.
 			if unit.Moving {
 				unit.PerkState.StationarySeconds = 0
+				unit.PerkState.BulwarkShieldGranted = false
 				unit.Shield = 0
 			} else {
 				unit.PerkState.StationarySeconds += dt
-				if unit.PerkState.StationarySeconds >= def.Config["stationaryThresholdSeconds"] {
-					maxShield := int(def.Config["maxShield"])
-					if unit.Shield < maxShield {
-						unit.Shield = maxShield
-					}
+				if !unit.PerkState.BulwarkShieldGranted &&
+					unit.PerkState.StationarySeconds >= def.Config["stationaryThresholdSeconds"] {
+					unit.Shield = int(def.Config["maxShield"])
+					unit.PerkState.BulwarkShieldGranted = true
 				}
 			}
 

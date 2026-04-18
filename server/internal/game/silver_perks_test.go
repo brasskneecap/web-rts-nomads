@@ -490,6 +490,82 @@ func TestBulwark_ShieldClears_OnMove(t *testing.T) {
 	}
 }
 
+// TestBulwark_ShieldDoesNotRefill_AfterDamage verifies that once the shield
+// has been granted, damage chips it down and it stays reduced — it does not
+// auto-regenerate every tick while the unit remains stationary. The shield
+// only re-arms after the unit moves and re-plants for the full threshold.
+func TestBulwark_ShieldDoesNotRefill_AfterDamage(t *testing.T) {
+	s, vanguard, _ := newSilverPerkState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	grantPerk(vanguard, "bulwark")
+	def := perkDefByID("bulwark")
+	maxShield := int(def.Config["maxShield"])
+
+	// Plant and accumulate enough stationary time to be granted the shield.
+	vanguard.Moving = false
+	vanguard.PerkState.StationarySeconds = def.Config["stationaryThresholdSeconds"]
+	s.tickUnitPerkStateLocked(vanguard, 0.05)
+	if vanguard.Shield != maxShield {
+		t.Fatalf("expected shield=%d after grant, got %d", maxShield, vanguard.Shield)
+	}
+
+	// Damage the shield — simulate a 10-damage hit absorbed by the shield.
+	vanguard.Shield -= 10
+	expected := maxShield - 10
+
+	// Tick repeatedly while still stationary. Shield must NOT refill.
+	for i := 0; i < 100; i++ {
+		s.tickUnitPerkStateLocked(vanguard, 0.05)
+		if vanguard.Shield != expected {
+			t.Fatalf("shield auto-refilled while stationary: tick %d, got %d, want %d",
+				i, vanguard.Shield, expected)
+		}
+	}
+}
+
+// TestBulwark_ShieldReArms_AfterMoveAndReplant verifies that after the unit
+// moves (clearing the shield and granted flag) and then plants again for the
+// full threshold, the shield is granted a second time.
+func TestBulwark_ShieldReArms_AfterMoveAndReplant(t *testing.T) {
+	s, vanguard, _ := newSilverPerkState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	grantPerk(vanguard, "bulwark")
+	def := perkDefByID("bulwark")
+	maxShield := int(def.Config["maxShield"])
+	threshold := def.Config["stationaryThresholdSeconds"]
+
+	// First grant.
+	vanguard.Moving = false
+	vanguard.PerkState.StationarySeconds = threshold
+	s.tickUnitPerkStateLocked(vanguard, 0.05)
+	if vanguard.Shield != maxShield {
+		t.Fatalf("expected first shield grant, got %d", vanguard.Shield)
+	}
+
+	// Move — shield drops, flag clears.
+	vanguard.Moving = true
+	s.tickUnitPerkStateLocked(vanguard, 0.05)
+	if vanguard.Shield != 0 || vanguard.PerkState.BulwarkShieldGranted {
+		t.Fatalf("after move: shield=%d granted=%v", vanguard.Shield, vanguard.PerkState.BulwarkShieldGranted)
+	}
+
+	// Re-plant and accumulate the threshold again.
+	vanguard.Moving = false
+	elapsed := 0.0
+	dt := 0.05
+	for elapsed < threshold {
+		s.tickUnitPerkStateLocked(vanguard, dt)
+		elapsed += dt
+	}
+	if vanguard.Shield != maxShield {
+		t.Errorf("expected shield to re-arm to %d after replant, got %d", maxShield, vanguard.Shield)
+	}
+}
+
 // TestBulwark_ContributesToUnitMaxShield verifies bulwark is counted by
 // unitMaxShieldLocked so healUnitLocked can route overheal into shield.
 func TestBulwark_ContributesToUnitMaxShield(t *testing.T) {
