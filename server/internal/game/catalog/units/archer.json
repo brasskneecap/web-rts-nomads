@@ -1,0 +1,169 @@
+{
+  "type": "archer",
+  "name": "Archer",
+  "archetype": "archer",
+  "hp": 75,
+  "damage": 8,
+  "attackRange": 220,
+  "attackSpeed": 1.5,
+  "moveSpeed": 100,
+  "goldGatherAmount": 20,
+  "woodGatherAmount": 15,
+  "resourceCost": {
+    "gold": 175,
+    "wood": 75
+  },
+  "meatCost": 2,
+  "spawnSeconds": 10,
+  "capabilities": [
+    "move",
+    "attack"
+  ],
+  "trainLabel": "Train Archer",
+  "metadata": {},
+  "attackVisual": {
+    "kind": "projectile",
+    "originX": 24,
+    "originY": 5,
+    "effectLength": 22
+  },
+  "render": {
+    "layers": [
+      {
+        "kind": "poly",
+        "points": [
+          [
+            -12,
+            10
+          ],
+          [
+            0,
+            -1
+          ],
+          [
+            12,
+            10
+          ],
+          [
+            0,
+            25
+          ]
+        ],
+        "color": "player"
+      },
+      {
+        "kind": "circle",
+        "cx": 0,
+        "cy": -13,
+        "r": 10,
+        "color": "player"
+      },
+      {
+        "kind": "poly",
+        "points": [
+          [
+            17,
+            -8
+          ],
+          [
+            16,
+            30
+          ]
+        ],
+        "color": "player"
+      },
+      {
+        "kind": "poly",
+        "points": [
+          [
+            21,
+            -12
+          ],
+          [
+            20,
+            26
+          ]
+        ],
+        "color": "player"
+      },
+      {
+        "kind": "poly",
+        "points": [
+          [
+            20,
+            -8
+          ],
+          [
+            20,
+            19
+          ]
+        ],
+        "color": "player"
+      },
+      {
+        "kind": "poly",
+        "points": [
+          [
+            16,
+            -13
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            18,
+            27
+          ],
+          [
+            18,
+            -13
+          ]
+        ],
+        "color": "player"
+      },
+      {
+        "kind": "poly",
+        "points": [
+          [
+            12,
+            -17
+          ],
+          [
+            23,
+            -11
+          ],
+          [
+            28,
+            0
+          ],
+          [
+            26,
+            12
+          ],
+          [
+            17,
+            23
+          ],
+          [
+            23,
+            9
+          ],
+          [
+            24,
+            0
+          ],
+          [
+            21,
+            -9
+          ],
+          [
+            13,
+            -15
+          ]
+        ],
+        "color": "player"
+      }
+    ]
+  }
+}

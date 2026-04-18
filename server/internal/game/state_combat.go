@@ -1,0 +1,276 @@
+package game
+
+import (
+	"math"
+	"webrts/server/pkg/protocol"
+)
+
+func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	target := s.getUnitByIDLocked(targetUnitID)
+	if target == nil || !target.Visible || target.OwnerID == playerID {
+		return
+	}
+
+	blocked := s.getBlockedCellsLocked()
+	orderID := s.nextMovementOrderIDLocked()
+
+	for _, unitID := range unitIDs {
+		unit := s.getUnitByIDLocked(unitID)
+		if unit == nil || unit.OwnerID != playerID || !unitHasCapability(unit.UnitType, "attack") {
+			continue
+		}
+
+		s.resetUnitMovementLocked(unit, orderID)
+		unit.AttackTargetID = targetUnitID
+		unit.Attacking = false
+		unit.Status = "Moving To Attack"
+		unit.CombatAnchorX = unit.X
+		unit.CombatAnchorY = unit.Y
+
+		dx := target.X - unit.X
+		dy := target.Y - unit.Y
+		dist := math.Sqrt(dx*dx + dy*dy)
+		if dist > unit.AttackRange {
+			s.assignUnitPath(unit, protocol.Vec2{X: target.X, Y: target.Y}, blocked, nil)
+		}
+	}
+}
+
+func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool) {
+	var deadUnitIDs []int
+	var destroyedBuildingIDs []string
+
+	for _, unit := range s.Units {
+		// Handle unit-vs-unit combat
+		if unit.AttackTargetID != 0 {
+			target := s.getUnitByIDLocked(unit.AttackTargetID)
+			if target == nil || !target.Visible {
+				unit.AttackTargetID = 0
+				unit.Attacking = false
+				unit.Status = "Idle"
+			} else {
+				dx := target.X - unit.X
+				dy := target.Y - unit.Y
+				dist := math.Sqrt(dx*dx + dy*dy)
+
+				if dist <= unit.AttackRange {
+					unit.Moving = false
+					unit.Path = nil
+					unit.Attacking = true
+					unit.Status = "Attacking"
+
+					if unit.AttackCooldown <= 0 {
+						// Outgoing damage: base × (1 + perk bonus) × (1 - debuff), then armor.
+						// perk bonus comes from executioner (silver berserker) and any future
+						// outgoing-damage-multiplier perks.
+						// debuff comes from Punishing Guard's weakened effect on the attacker.
+						rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
+						rawDamage *= (1.0 - s.perkOutgoingDamageDebuffMultiplierLocked(unit))
+						damage := applyArmorMitigation(int(math.Round(rawDamage)), s.effectiveArmorLocked(target))
+						// Route through the shared helper so flat reduction and shield absorb first.
+						s.applyUnitDamageLocked(target, damage)
+						s.onUnitDamagedLocked(unit, target, damage)
+						// Defender-side perk reactions (e.g. retaliation reflects damage back).
+						s.onPerkDamageTakenLocked(target, unit, damage)
+						// If the attacker was killed by reflected damage (retaliation), handle
+						// their death now. The normal death check below only covers the target.
+						if unit.HP <= 0 {
+							s.awardKillXPLocked(target)
+							s.payoutDamageDealtXPLocked(unit)
+							s.awardSoldierTankKillXPLocked(unit.ID)
+							s.onPerkKillLocked(target)
+							deadUnitIDs = append(deadUnitIDs, unit.ID)
+							unit.AttackCooldown = 1.0 / math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+							continue
+						}
+						s.recordSoldierTankContributionLocked(unit, target, damage)
+						s.recordDamageDealtLocked(unit, target, damage)
+						// Perk on-attack effects (bloodlust accumulation,
+						// savage_strikes bonus hit, cleaving_rage extra target,
+						// momentum move-speed refresh).
+						s.onPerkAttackFiredLocked(unit, target, damage, &deadUnitIDs)
+						// Perk on-hit reactions (blood_sustain lifesteal, future on-hit procs).
+						s.onPerkAttackDamageAppliedLocked(unit, target, damage)
+						// Use effective attack speed (base + perk bonus) for the cooldown.
+						effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+						unit.AttackCooldown = 1.0 / effectiveSpeed
+						if target.HP <= 0 {
+							target.HP = 0
+							s.awardKillXPLocked(unit)
+							s.payoutDamageDealtXPLocked(target)
+							s.awardSoldierTankKillXPLocked(target.ID)
+							s.onPerkKillLocked(unit) // perk on-kill effects (relentless boost)
+							deadUnitIDs = append(deadUnitIDs, target.ID)
+						}
+					} else {
+						unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+					}
+				} else {
+					unit.Attacking = false
+					unit.Status = "Moving To Attack"
+					profile := resolveCombatProfile(unit)
+					if !unit.Moving {
+						s.refreshUnitAttackApproachLocked(unit, target, profile, blocked, true)
+					} else {
+						s.refreshUnitAttackApproachLocked(unit, target, profile, blocked, false)
+					}
+				}
+			}
+			continue
+		}
+
+		// Handle unit-vs-building combat
+		if unit.AttackBuildingTargetID != "" {
+			building := s.getBuildingByIDLocked(unit.AttackBuildingTargetID)
+			if building == nil {
+				unit.AttackBuildingTargetID = ""
+				unit.Attacking = false
+				unit.Status = "Idle"
+				continue
+			}
+			hp, _, hpOk := getBuildingHP(building)
+			if !hpOk || hp <= 0 {
+				unit.AttackBuildingTargetID = ""
+				unit.Attacking = false
+				unit.Status = "Idle"
+			} else {
+				dist := s.distanceToBuilding(unit.X, unit.Y, building)
+
+				if dist <= unit.AttackRange {
+					unit.Moving = false
+					unit.Path = nil
+					unit.Attacking = true
+					unit.Status = "Attacking"
+
+					if unit.AttackCooldown <= 0 {
+						damage := unit.Damage
+						newHP := hp - float64(damage)
+						building.Metadata["hp"] = newHP
+						s.onBuildingDamagedLocked(unit, building, damage)
+						s.recordDamageDealtBuildingLocked(unit, building.ID, damage)
+						unit.AttackCooldown = 1.0 / unit.AttackSpeed
+						if newHP <= 0 {
+							building.Metadata["hp"] = 0.0
+							s.payoutBuildingDamageDealtXPLocked(building.ID)
+							destroyedBuildingIDs = append(destroyedBuildingIDs, building.ID)
+						}
+					} else {
+						unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+					}
+				} else {
+					unit.Attacking = false
+					unit.Status = "Moving To Attack"
+					if !unit.Moving {
+						// Re-path to the same claimed position rather than recalculating,
+						// so enemies don't all converge on the same closest cell.
+						s.assignUnitPath(unit, protocol.Vec2{X: unit.TargetX, Y: unit.TargetY}, blocked, nil)
+					}
+				}
+			}
+			continue
+		}
+
+		if unit.AttackCooldown > 0 {
+			unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+		}
+	}
+
+	for _, id := range deadUnitIDs {
+		s.removeUnitLocked(id)
+	}
+	for _, id := range destroyedBuildingIDs {
+		s.destroyBuildingLocked(id)
+	}
+}
+
+func (s *GameState) tickBuildingCombatLocked(dt float64) {
+	var deadUnitIDs []int
+
+	for i := range s.MapConfig.Buildings {
+		building := &s.MapConfig.Buildings[i]
+		if !building.Visible || building.OwnerID == nil {
+			continue
+		}
+		if building.Metadata != nil && building.Metadata["underConstruction"] == true {
+			continue
+		}
+
+		def, ok := getBuildingDef(building.BuildingType)
+		if !ok || def.Damage <= 0 || def.AttackRange <= 0 || def.AttackSpeed <= 0 {
+			continue
+		}
+
+		if building.Metadata == nil {
+			building.Metadata = map[string]interface{}{}
+		}
+
+		cooldown, _ := getMetadataFloat(building.Metadata, "attackCooldown")
+		if cooldown > 0 {
+			cooldown = math.Max(0, cooldown-dt)
+			building.Metadata["attackCooldown"] = cooldown
+		}
+
+		target := s.findNearestHostileUnitForBuildingLocked(building, *building.OwnerID, def.AttackRange)
+		if target == nil || cooldown > 0 {
+			continue
+		}
+
+		// Route through the shared helper so shield (blood_engine) absorbs first.
+		s.applyUnitDamageLocked(target, def.Damage)
+		building.Metadata["attackCooldown"] = 1.0 / def.AttackSpeed
+		if target.HP <= 0 {
+			target.HP = 0
+			deadUnitIDs = append(deadUnitIDs, target.ID)
+		}
+	}
+
+	for _, id := range deadUnitIDs {
+		s.removeUnitLocked(id)
+	}
+}
+
+func (s *GameState) findNearestHostileUnitForBuildingLocked(building *protocol.BuildingTile, ownerID string, attackRange float64) *Unit {
+	var best *Unit
+	bestDistSq := attackRange * attackRange
+
+	for _, unit := range s.Units {
+		if !unit.Visible || unit.HP <= 0 || unit.OwnerID == ownerID {
+			continue
+		}
+
+		dist := s.distanceToBuilding(unit.X, unit.Y, building)
+		distSq := dist * dist
+		if distSq > bestDistSq {
+			continue
+		}
+
+		best = unit
+		bestDistSq = distSq
+	}
+
+	return best
+}
+
+func (s *GameState) unitsAreInMutualMeleeLocked(a, b *Unit) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	if a.OwnerID == b.OwnerID {
+		return false
+	}
+	aProfile := resolveCombatProfile(a)
+	bProfile := resolveCombatProfile(b)
+	if !aProfile.Melee || !bProfile.Melee {
+		return false
+	}
+	if a.AttackTargetID != b.ID && b.AttackTargetID != a.ID {
+		return false
+	}
+	const meleeContactPadding = 8.0
+	aRange := math.Max(a.AttackRange, unitRadius+meleeContactPadding)
+	bRange := math.Max(b.AttackRange, unitRadius+meleeContactPadding)
+	return distanceSquared(a.X, a.Y, b.X, b.Y) <= aRange*aRange || distanceSquared(a.X, a.Y, b.X, b.Y) <= bRange*bRange
+}

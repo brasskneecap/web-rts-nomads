@@ -1,0 +1,33 @@
+[
+  {
+    "id": "blood_engine",
+    "displayName": "Blood Engine",
+    "icon": "perk-blood-engine",
+    "description": "Lifesteal overheals become a temporary shield that absorbs damage before HP.",
+    "config": {
+      "maxShield": 50
+    }
+  },
+  {
+    "id": "whirlwind_core",
+    "displayName": "Whirlwind Core",
+    "icon": "perk-whirlwind-core",
+    "description": "Every few seconds, attacks briefly become a whirlwind hitting all nearby enemies.",
+    "config": {
+      "activeSeconds": 3,
+      "cooldownSeconds": 10,
+      "radius": 70
+    }
+  },
+  {
+    "id": "berserk_state",
+    "displayName": "Berserk State",
+    "icon": "perk-berserk-state",
+    "description": "Below a low-HP threshold, gain a surge of damage and attack speed.",
+    "config": {
+      "hpThresholdPercent": 0.4,
+      "damageMultiplier": 0.25,
+      "attackSpeedBonus": 0.4
+    }
+  }
+]

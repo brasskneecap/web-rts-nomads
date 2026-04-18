@@ -11,10 +11,10 @@ package game
 // │  WHERE THINGS LIVE                                                      │
 // │                                                                         │
 // │    PERK DEFINITIONS (data, tuning, eligibility)                         │
-// │      → catalog/perk-defs.json                                           │
-// │        Hierarchy is  units → <unitType> → paths → <path> → <rank> → [] │
-// │        Adding a perk means appending an entry under the correct keys;   │
-// │        UnitType / Path / Rank are inferred from the position.           │
+// │      → catalog/perks/<unitType>/<path>/<rank>.json                      │
+// │        Each file holds the array of perk entries for that slot.         │
+// │        Adding a perk means appending to the right file;                 │
+// │        UnitType / Path / Rank are inferred from the file path.          │
 // │                                                                         │
 // │    PERK RUNTIME BEHAVIOUR (effects, hooks, state)                       │
 // │      → perks.go   (assignment + all seven hook functions)               │
@@ -31,15 +31,18 @@ package game
 // ═════════════════════════════════════════════════════════════════════════════
 
 import (
-	_ "embed"
+	"embed"
 	"encoding/json"
+	"io/fs"
+	"path"
 	"sort"
+	"strings"
 )
 
-//go:embed catalog/perk-defs.json
-var perkDefsJSON []byte
+//go:embed all:catalog/perks
+var perkDefsFS embed.FS
 
-// PerkDef is the static definition of a perk loaded from catalog/perk-defs.json.
+// PerkDef is the static definition of a perk loaded from the catalog.
 //
 // Fields:
 //   - ID          — unique string key; used by runtime handlers to dispatch behaviour
@@ -51,9 +54,9 @@ var perkDefsJSON []byte
 //   - Config      — perk-specific tuning values. Keys and their meanings are
 //                   documented in the JSON file alongside each perk entry.
 type PerkDef struct {
-	ID          string             `json:"id"`
-	DisplayName string             `json:"displayName"`
-	Description string             `json:"description,omitempty"`
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Description string `json:"description,omitempty"`
 	// Icon is the action-icon ID used to render this perk in the HUD.
 	// Matches an entry in catalog/action-icons.json ("perk-<name>").
 	Icon     string             `json:"icon,omitempty"`
@@ -63,13 +66,14 @@ type PerkDef struct {
 	Config   map[string]float64 `json:"config"`
 }
 
-// perkDefsByID is the in-memory index populated from perk-defs.json at startup.
-// The hierarchy is flattened here so all callers work against a simple id→def map.
+// perkDefsByID is the in-memory index populated from the perk catalog at startup.
+// The hierarchy on disk is flattened here so all callers work against a
+// simple id→def map.
 var perkDefsByID map[string]*PerkDef
 
-// perkEntryJSON is the shape of a single perk entry inside the catalog JSON.
+// perkEntryJSON is the shape of a single perk entry in a per-rank JSON file.
 // It carries only the perk-specific fields; UnitType, Path, and Rank are
-// injected from the entry's position in the hierarchy during parsing.
+// injected from the file path during parsing.
 type perkEntryJSON struct {
 	ID          string             `json:"id"`
 	DisplayName string             `json:"displayName"`
@@ -79,39 +83,55 @@ type perkEntryJSON struct {
 }
 
 func init() {
-	// JSON shape:
-	//   { "units": { "<unitType>": { "paths": { "<path>": { "<rank>": [...] } } } } }
+	// On-disk layout:
+	//   catalog/perks/<unitType>/<path>/<rank>.json  →  [perkEntry, perkEntry, ...]
 	//
-	// unitType, path, and rank are derived from position in the hierarchy and
-	// written into each PerkDef — no redundancy in the source JSON.
-	var catalog struct {
-		Units map[string]struct {
-			Paths map[string]map[string][]perkEntryJSON `json:"paths"`
-		} `json:"units"`
-	}
-	if err := json.Unmarshal(perkDefsJSON, &catalog); err != nil {
-		panic("perk-defs.json: " + err.Error())
-	}
-
+	// unitType, path, and rank are derived from the file path and written
+	// into each PerkDef — no redundancy in the source JSON.
 	perkDefsByID = make(map[string]*PerkDef)
-	for unitType, unitBlock := range catalog.Units {
-		for path, rankMap := range unitBlock.Paths {
-			for rank, entries := range rankMap {
-				for _, entry := range entries {
-					def := &PerkDef{
-						ID:          entry.ID,
-						DisplayName: entry.DisplayName,
-						Description: entry.Description,
-						Icon:        entry.Icon,
-						UnitType:    unitType,
-						Path:        path,
-						Rank:        rank,
-						Config:      entry.Config,
-					}
-					perkDefsByID[def.ID] = def
-				}
-			}
+
+	err := fs.WalkDir(perkDefsFS, "catalog/perks", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
+		if d.IsDir() || !strings.HasSuffix(p, ".json") {
+			return nil
+		}
+
+		rel := strings.TrimPrefix(p, "catalog/perks/")
+		parts := strings.Split(rel, "/")
+		if len(parts) != 3 {
+			panic("catalog/perks: expected <unit>/<path>/<rank>.json, got " + rel)
+		}
+		unitType := parts[0]
+		pathName := parts[1]
+		rank := strings.TrimSuffix(parts[2], path.Ext(parts[2]))
+
+		data, err := perkDefsFS.ReadFile(p)
+		if err != nil {
+			panic(p + ": " + err.Error())
+		}
+		var entries []perkEntryJSON
+		if err := json.Unmarshal(data, &entries); err != nil {
+			panic(p + ": " + err.Error())
+		}
+		for _, entry := range entries {
+			def := &PerkDef{
+				ID:          entry.ID,
+				DisplayName: entry.DisplayName,
+				Description: entry.Description,
+				Icon:        entry.Icon,
+				UnitType:    unitType,
+				Path:        pathName,
+				Rank:        rank,
+				Config:      entry.Config,
+			}
+			perkDefsByID[def.ID] = def
+		}
+		return nil
+	})
+	if err != nil {
+		panic("catalog/perks: " + err.Error())
 	}
 }
 
@@ -129,9 +149,9 @@ func perkDefByID(id string) *PerkDef {
 // given rank. An empty field in the definition matches any value (wildcard).
 //
 // This is the sole filter used by the assignment pipeline (via
-// perkPoolForRankLocked in perks.go). Adding a new perk to perk-defs.json
-// under the correct unitType/path/rank keys is sufficient to include it in
-// the eligible pool — no code changes needed here or in the assignment
+// perkPoolForRankLocked in perks.go). Adding a new perk to the correct
+// catalog/perks/<unit>/<path>/<rank>.json file is sufficient to include it
+// in the eligible pool — no code changes needed here or in the assignment
 // function.
 //
 // To restrict a perk to multiple paths or ranks, add multiple PerkDef entries

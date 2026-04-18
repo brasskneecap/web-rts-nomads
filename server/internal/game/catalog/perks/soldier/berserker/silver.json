@@ -1,0 +1,31 @@
+[
+  {
+    "id": "blood_sustain",
+    "displayName": "Blood Sustain",
+    "icon": "perk-blood-sustain",
+    "description": "Heal for a percentage of damage dealt on every attack.",
+    "config": {
+      "lifestealPercent": 0.2
+    }
+  },
+  {
+    "id": "executioner",
+    "displayName": "Executioner",
+    "icon": "perk-executioner",
+    "description": "Deal bonus damage to enemies below a low-HP threshold.",
+    "config": {
+      "hpThresholdPercent": 0.3,
+      "bonusMultiplier": 0.5
+    }
+  },
+  {
+    "id": "momentum",
+    "displayName": "Momentum",
+    "icon": "perk-momentum",
+    "description": "Gain a short burst of movement speed after attacking.",
+    "config": {
+      "moveSpeedBonus": 0.25,
+      "durationSeconds": 2
+    }
+  }
+]

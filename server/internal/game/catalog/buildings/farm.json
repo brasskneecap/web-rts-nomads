@@ -1,0 +1,779 @@
+{
+  "type": "farm",
+  "width": 2,
+  "height": 2,
+  "maxHp": 300,
+  "buildSeconds": 10,
+  "resourceCost": {
+    "gold": 100,
+    "wood": 50
+  },
+  "capabilities": [],
+  "spawnUnitTypes": [],
+  "metadata": {
+    "foodSupply": 10
+  },
+  "color": "#4a7c3f",
+  "label": "(F)arm",
+  "hotkey": "f",
+  "render": {
+    "inset": 0.18,
+    "layers": [
+      {
+        "kind": "rect",
+        "x": 0.3333333333333333,
+        "y": 0.3333333333333333,
+        "w": 0.6666666666666666,
+        "h": 0.16666666666666666,
+        "color": "#53af31"
+      },
+      {
+        "kind": "rect",
+        "x": 0.3333333333333333,
+        "y": 0.5,
+        "w": 0.5,
+        "h": 1.1666666666666667,
+        "color": "#53af31"
+      },
+      {
+        "kind": "rect",
+        "x": 0.8333333333333334,
+        "y": 0.8333333333333334,
+        "w": 0.16666666666666666,
+        "h": 0.8333333333333334,
+        "color": "#53af31"
+      },
+      {
+        "kind": "rect",
+        "x": 1,
+        "y": 1,
+        "w": 0.6666666666666666,
+        "h": 0.6666666666666666,
+        "color": "#53af31"
+      },
+      {
+        "kind": "rect",
+        "x": 1,
+        "y": 0.16666666666666666,
+        "w": 0.16666666666666666,
+        "h": 0.8333333333333334,
+        "color": "player"
+      },
+      {
+        "kind": "rect",
+        "x": 1.1666666666666667,
+        "y": 0.8333333333333334,
+        "w": 0.6666666666666666,
+        "h": 0.16666666666666666,
+        "color": "player"
+      },
+      {
+        "kind": "rect",
+        "x": 1.1666666666666667,
+        "y": 0.16666666666666666,
+        "w": 0.16666666666666666,
+        "h": 0.16666666666666666,
+        "color": "#87622c"
+      },
+      {
+        "kind": "rect",
+        "x": 1.3333333333333333,
+        "y": 0.3333333333333333,
+        "w": 0.3333333333333333,
+        "h": 0.3333333333333333,
+        "color": "#87622c"
+      },
+      {
+        "kind": "rect",
+        "x": 1.1666666666666667,
+        "y": 0.6666666666666666,
+        "w": 0.16666666666666666,
+        "h": 0.16666666666666666,
+        "color": "#87622c"
+      },
+      {
+        "kind": "rect",
+        "x": 1.6666666666666667,
+        "y": 0.6666666666666666,
+        "w": 0.16666666666666666,
+        "h": 0.16666666666666666,
+        "color": "#87622c"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 1,
+        "sr": 1,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 1,
+        "sr": 2,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 1,
+        "sr": 3,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 1,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 1,
+        "sr": 5,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 2,
+        "sr": 1,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 3,
+        "sr": 1,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 4,
+        "sr": 1,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 5,
+        "sr": 1,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 5,
+        "sr": 3,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 5,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 1,
+        "sr": 0,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 1,
+        "sr": 1,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 1,
+        "sr": 2,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 1,
+        "sr": 3,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 1,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 2,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 3,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 4,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 5,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 1,
+        "sr": 2,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 1,
+        "sr": 3,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 2,
+        "sr": 1,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 2,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 3,
+        "sr": 1,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 3,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 4,
+        "sr": 2,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 4,
+        "sr": 3,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 0,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 1,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 2,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 3,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 4,
+        "sr": 0,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 4,
+        "sr": 1,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 4,
+        "sr": 2,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 4,
+        "sr": 3,
+        "h": 1,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 4,
+        "sr": 4,
+        "h": 0,
+        "color": "player"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 1,
+        "sr": 2,
+        "h": 1,
+        "color": "#87622c"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 1,
+        "sr": 3,
+        "h": 0,
+        "color": "#87622c"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 2,
+        "sr": 1,
+        "h": 0,
+        "color": "#87622c"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 2,
+        "sr": 4,
+        "h": 1,
+        "color": "#87622c"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 3,
+        "sr": 1,
+        "h": 0,
+        "color": "#87622c"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 3,
+        "sr": 4,
+        "h": 1,
+        "color": "#87622c"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 4,
+        "sr": 1,
+        "h": 1,
+        "color": "#87622c"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 4,
+        "sr": 2,
+        "h": 1,
+        "color": "#87622c"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 0,
+        "sc": 4,
+        "sr": 3,
+        "h": 0,
+        "color": "#87622c"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 1,
+        "sr": 1,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 1,
+        "sr": 2,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 1,
+        "sr": 3,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 1,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 1,
+        "sr": 5,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 2,
+        "sr": 1,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 3,
+        "sr": 1,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 4,
+        "sr": 1,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 5,
+        "sr": 1,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 1,
+        "sr": 0,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 1,
+        "sr": 1,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 1,
+        "sr": 2,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 1,
+        "sr": 3,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 1,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 2,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 3,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 4,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 1,
+        "sc": 5,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 0,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 1,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 2,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 3,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 4,
+        "sr": 0,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 4,
+        "sr": 1,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 4,
+        "sr": 2,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 4,
+        "sr": 3,
+        "h": 0,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 1,
+        "cy": 1,
+        "sc": 4,
+        "sr": 4,
+        "h": 1,
+        "color": "#ca8a04"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 5,
+        "sr": 3,
+        "h": 0,
+        "color": "#53af31"
+      },
+      {
+        "kind": "tri",
+        "cx": 0,
+        "cy": 0,
+        "sc": 5,
+        "sr": 4,
+        "h": 1,
+        "color": "#53af31"
+      }
+    ]
+  }
+}

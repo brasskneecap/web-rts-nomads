@@ -1,0 +1,60 @@
+{
+  "type": "spawn-point",
+  "buildable": false,
+  "width": 1,
+  "height": 1,
+  "maxHp": 1,
+  "buildSeconds": 0,
+  "resourceCost": {},
+  "capabilities": [],
+  "spawnUnitTypes": [],
+  "metadata": {
+    "townhallId": null,
+    "spawnUnits": [
+      {
+        "unitType": "worker",
+        "count": 3
+      }
+    ]
+  },
+  "color": "#0ea5e9",
+  "label": "Spawn Point",
+  "hotkey": "",
+  "render": {
+    "inset": 0.24,
+    "layers": [
+      {
+        "kind": "rect",
+        "x": 0.35,
+        "y": 0.08,
+        "w": 0.3,
+        "h": 0.84,
+        "color": "#38bdf8"
+      },
+      {
+        "kind": "rect",
+        "x": 0.08,
+        "y": 0.35,
+        "w": 0.84,
+        "h": 0.3,
+        "color": "#38bdf8"
+      },
+      {
+        "kind": "rect",
+        "x": 0.41,
+        "y": 0.14,
+        "w": 0.18,
+        "h": 0.72,
+        "color": "#e0f2fe"
+      },
+      {
+        "kind": "rect",
+        "x": 0.14,
+        "y": 0.41,
+        "w": 0.72,
+        "h": 0.18,
+        "color": "#e0f2fe"
+      }
+    ]
+  }
+}

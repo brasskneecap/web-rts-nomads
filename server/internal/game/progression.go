@@ -201,7 +201,7 @@ func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
 		// correct ProgressionPath. Must run before applyRankModifiersLocked in case
 		// a future perk modifies base stats at assignment time.
 		//
-		// Perk definitions: catalog/perk-defs.json
+		// Perk definitions: catalog/perks/<unit>/<path>/<rank>.json
 		// Perk runtime/handlers + assignment rules: perks.go
 		s.assignUnitPerkLocked(unit)
 		s.applyRankModifiersLocked(unit, true)

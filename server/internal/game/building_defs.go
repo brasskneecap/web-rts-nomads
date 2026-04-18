@@ -1,13 +1,14 @@
 package game
 
 import (
-	_ "embed"
+	"embed"
 	"encoding/json"
+	"io/fs"
 	"sort"
 )
 
-//go:embed catalog/building-defs.json
-var buildingDefsJSON []byte
+//go:embed catalog/buildings/*.json
+var buildingDefsFS embed.FS
 
 // BuildingDef holds the configuration for a buildable building type.
 // Client-only fields (Color, Label, Hotkey, Render) are passed through to the
@@ -44,14 +45,24 @@ func (d BuildingDef) HpPerSecond() float64 {
 var buildingDefsByType map[string]BuildingDef
 
 func init() {
-	var catalog struct {
-		Buildings []BuildingDef `json:"buildings"`
+	// Each file under catalog/buildings/ is a single BuildingDef object.
+	entries, err := fs.ReadDir(buildingDefsFS, "catalog/buildings")
+	if err != nil {
+		panic("catalog/buildings: " + err.Error())
 	}
-	if err := json.Unmarshal(buildingDefsJSON, &catalog); err != nil {
-		panic("building-defs.json: " + err.Error())
-	}
-	buildingDefsByType = make(map[string]BuildingDef, len(catalog.Buildings))
-	for _, def := range catalog.Buildings {
+	buildingDefsByType = make(map[string]BuildingDef, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		data, err := buildingDefsFS.ReadFile("catalog/buildings/" + entry.Name())
+		if err != nil {
+			panic("catalog/buildings/" + entry.Name() + ": " + err.Error())
+		}
+		var def BuildingDef
+		if err := json.Unmarshal(data, &def); err != nil {
+			panic("catalog/buildings/" + entry.Name() + ": " + err.Error())
+		}
 		buildingDefsByType[def.Type] = def
 	}
 }
