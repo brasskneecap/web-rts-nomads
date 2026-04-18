@@ -16,7 +16,6 @@ You are the verification gate. The `game-architect` defines acceptance criteria 
 **For RTS features, always verify:**
 - **Determinism across runs.** Run the same command sequence with the same seed on the same tick rate twice. Serialized simulation state must match byte-for-byte (or a defined canonical hash matches) at matching ticks.
 - **Cross-client consistency.** Run two simulated clients against the same command stream. States must match at every tick. Any drift is a desync bug and must be treated as critical.
-- **Replay fidelity.** Record a match, replay it, verify end state matches. A broken replay is a sign of hidden non-determinism.
 - **Command-drop and reconnection.** What happens when a command doesn't arrive? When a client reconnects mid-match? When the slowest client stalls the lockstep?
 - **Scale.** Pathfinding and simulation at target unit counts. Spec might say 200 units per side; test at 200, 400, and whatever causes the tick budget to exceed its target.
 - **Tick budget.** The simulation must complete a tick within its budget (e.g., 33ms at 30Hz). Measure it under load.
