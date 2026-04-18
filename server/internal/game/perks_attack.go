@@ -58,6 +58,11 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 
 		// savage_strikes and cleaving_rage do not modify attack speed.
 	}
+
+	// Banner contribution — rallying_banner auras are placed by other units
+	// (not necessarily by this unit), so they are not in the perk loop above.
+	total += s.perkAttackSpeedBonusFromBannersLocked(unit)
+
 	return total
 }
 
@@ -397,6 +402,21 @@ func (s *GameState) onPerkAttackDamageAppliedLocked(attacker, target *Unit, dama
 			heal := int(math.Round(float64(damage) * def.Config["lifestealPercent"]))
 			if heal > 0 {
 				s.healUnitLocked(attacker, heal)
+			}
+
+		case "shield_bash":
+			// RNG-proc stun + slow on the target. onPerkAttackDamageAppliedLocked
+			// is only reached from the unit-vs-unit combat path (not building
+			// targets) so no type-guard is needed here.
+			// Slow starts immediately — duration = stunSeconds + slowSeconds —
+			// so the slow is active from the moment of the proc even while the
+			// stun is also running. This ensures the slow lands even if the
+			// target later becomes stun-immune.
+			if target.HP > 0 && s.rngPerks.Float64() < def.Config["procChance"] {
+				stunSec := def.Config["stunSeconds"]
+				slowSec := def.Config["slowSeconds"]
+				s.ApplyStunLocked(target.ID, stunSec)
+				s.ApplySlowLocked(target.ID, def.Config["slowMultiplier"], stunSec+slowSec)
 			}
 
 		// ── add cases for new on-hit reaction perks below this line ─────────

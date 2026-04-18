@@ -54,6 +54,16 @@
 
     { "id": "debuff-taunted",  "path": "M12 2a7 7 0 0 1 7 7c0 3-1.5 5.5-4 7l-3 1-3-1C6.5 14.5 5 12 5 9a7 7 0 0 1 7-7z M12 6v5 M12 13h.01" },
     { "id": "debuff-weakened", "path": "M12 4v10 M8 10l4 6 4-6 M5 18h14 M7 21h10" },
-    { "id": "debuff-marked",   "path": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z M12 2v3 M12 19v3 M2 12h3 M19 12h3" }
+    { "id": "debuff-marked",   "path": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z M12 2v3 M12 19v3 M2 12h3 M19 12h3" },
+    { "id": "debuff-stunned",  "path": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 8v4 M12 16h.01 M8 3l-2-2 M16 3l2-2 M6 7l-3-3 M18 7l3-3" },
+    { "id": "debuff-slowed",   "path": "M5 12h14 M5 12l4-4 M5 12l4 4 M19 8v8 M15 10l4-2 M15 14l4 2" },
+
+    { "id": "perk-shield-bash",    "path": "M12 3l8 5v5l-8 8-8-8V8z M9 10l2 2 M11 12l4-3 M8 15l2-2" },
+    { "id": "perk-steady-advance", "path": "M5 12h14 M14 7l5 5-5 5 M3 7l3 3-3 3 M3 10h5" },
+    { "id": "perk-interlock",      "path": "M12 3l8 5v5l-8 8-8-8V8z M7 10h10 M7 14h10 M12 8v8" },
+
+    { "id": "perk-guardian-aura",   "path": "M12 3l8 5v5l-8 8-8-8V8z M12 8a4 4 0 0 1 0 8 4 4 0 0 1 0-8z M3 9l-2 3 2 3 M21 9l2 3-2 3" },
+    { "id": "perk-pain-share",      "path": "M12 2C9 5 7 8 7 12a5 5 0 0 0 10 0c0-4-2-7-5-10z M9 12h6 M12 9v6 M6 18l-3 3 M18 18l3 3" },
+    { "id": "perk-rallying-banner", "path": "M12 2v14 M8 5l4-3 4 3 M8 5h8 M12 16l-4 6h8z M5 22h14 M7 12h10" }
   ]
 }

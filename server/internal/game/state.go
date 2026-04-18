@@ -78,6 +78,18 @@ type Unit struct {
 	CurrentTargetScore float64
 	TauntedByUnitID    int
 	TauntRemaining     float64
+	// StunnedRemaining is seconds left on the stun CC applied to this unit by
+	// ApplyStunLocked. Decays in state.go Update() alongside WeakenedRemaining.
+	// While > 0 the unit cannot attack or move along its path, but
+	// AttackTargetID and Path are preserved so it resumes cleanly when it expires.
+	StunnedRemaining float64
+	// SlowedRemaining is seconds left on the slow CC applied to this unit by
+	// ApplySlowLocked. Decays in state.go Update(); when it reaches 0,
+	// SlowedMultiplier is also cleared.
+	SlowedRemaining float64
+	// SlowedMultiplier is the movement speed fraction while slowed (e.g. 0.7 =
+	// 70% speed). Set by ApplySlowLocked; 0 when no slow is active.
+	SlowedMultiplier float64
 	ThreatTable        map[int]*ThreatEntry
 	TankedDamageByUnit map[int]float64
 	// DamageDealtByUnit accumulates damage this unit has taken from each
@@ -155,6 +167,17 @@ type GameState struct {
 	// since the last build. Guarded by s.mu.
 	blockedCellsCache map[gridPoint]bool
 	blockedCellsValid bool
+
+	// Banners is the set of active rallying banners. Persisted as match state.
+	// Ticked in tickBannersLocked after combat resolution.
+	Banners      []*Banner
+	nextBannerID int
+
+	// guardianAuraCache maps recipient unit ID to the DR multiplier they
+	// receive from the strongest guardian_aura covering them this tick.
+	// Rebuilt once per tick in rebuildGuardianAuraCacheLocked. Zero value
+	// (absent key) = no aura.
+	guardianAuraCache map[int]float64
 }
 
 const (
@@ -212,6 +235,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		Productions:         map[string][]*UnitProduction{},
 		EnemySpawnTimers:    map[string]*EnemySpawnTimer{},
 		nextUnitID:          1,
+		nextBannerID:        1,
 		matchSeed:           seed,
 		rngPerks:            mrand.New(mrand.NewSource(seed ^ saltPerks)),
 		rngCosmetic:         mrand.New(mrand.NewSource(seed ^ saltCosmetic)),
@@ -219,6 +243,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		buildingDamageDealt: map[string]map[int]int{},
 		unitsByID:           map[int]*Unit{},
 		buildingsByID:       map[string]*protocol.BuildingTile{},
+		guardianAuraCache:   map[int]float64{},
 	}
 
 	state.SetMapConfig(mapConfig)
@@ -358,6 +383,9 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			MaxShield:           s.unitMaxShieldLocked(unit),
 			ActiveBuffs:         s.activeBuffIconsLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
+			StunnedRemaining:    unit.StunnedRemaining,
+			SlowedRemaining:     unit.SlowedRemaining,
+			SlowedMultiplier:    unit.SlowedMultiplier,
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -387,6 +415,18 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	buildings := make([]protocol.BuildingTile, len(s.MapConfig.Buildings))
 	copy(buildings, s.MapConfig.Buildings)
 
+	var banners []protocol.BannerSnapshot
+	for _, b := range s.Banners {
+		banners = append(banners, protocol.BannerSnapshot{
+			ID:               b.ID,
+			OwnerID:          b.OwnerPlayerID,
+			X:                b.X,
+			Y:                b.Y,
+			Radius:           b.Radius,
+			RemainingSeconds: b.RemainingSeconds,
+		})
+	}
+
 	return protocol.MatchSnapshotMessage{
 		Type:      "match_snapshot",
 		Tick:      s.Tick,
@@ -394,6 +434,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Buildings: buildings,
 		Players:   players,
 		Units:     units,
+		Banners:   banners,
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -420,9 +461,11 @@ func (s *GameState) Update(dt float64) {
 	blocked := s.getBlockedCellsLocked()
 	s.tickBuildingCombatLocked(dt)
 	s.tickWaveLocked(dt)
+	s.rebuildGuardianAuraCacheLocked()
 	s.tickCombatAILocked(dt, blocked)
 	s.tickUnitCombatLocked(dt, blocked)
 	s.tickEnemySpawnpointsLocked(dt, blocked)
+	s.tickBannersLocked(dt)
 
 	for _, unit := range s.Units {
 		if unit.RankUpFxRemaining > 0 {
@@ -444,11 +487,29 @@ func (s *GameState) Update(dt float64) {
 				unit.PerkState.MarkedMultiplier = 0
 			}
 		}
+		// Generic CC decay — Stun and Slow are general primitives that any perk or
+		// ability can stamp onto any unit, so they decay here alongside the other
+		// cross-unit debuffs rather than in tickUnitPerkStateLocked.
+		if unit.StunnedRemaining > 0 {
+			unit.StunnedRemaining = math.Max(0, unit.StunnedRemaining-dt)
+		}
+		if unit.SlowedRemaining > 0 {
+			unit.SlowedRemaining = math.Max(0, unit.SlowedRemaining-dt)
+			if unit.SlowedRemaining == 0 {
+				unit.SlowedMultiplier = 0
+			}
+		}
 		// Advance time-based perk state (idle timers, buff durations).
 		s.tickUnitPerkStateLocked(unit, dt)
 		s.updateWorkerTaskLocked(unit, dt, blocked)
 
 		if unit.MiningInside {
+			continue
+		}
+
+		// Stun gates all pathing. Leave Moving and Path intact so the unit
+		// resumes exactly where it was once the stun expires.
+		if unit.StunnedRemaining > 0 {
 			continue
 		}
 
@@ -478,8 +539,8 @@ func (s *GameState) Update(dt float64) {
 
 		// Effective move speed: per-unit stat (base × rank × path, already baked
 		// into unit.MoveSpeed by applyRankModifiersLocked) × perk multiplier
-		// (momentum, future speed perks).
-		step := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit) * dt
+		// (momentum, future speed perks) × slow multiplier (CC primitive).
+		step := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit) * slowFactorLocked(unit) * dt
 		if step >= dist {
 			unit.X = nextWaypoint.X
 			unit.Y = nextWaypoint.Y

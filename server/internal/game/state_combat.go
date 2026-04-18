@@ -62,7 +62,14 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Attacking = true
 					unit.Status = "Attacking"
 
-					if unit.AttackCooldown <= 0 {
+					// Stun: cooldown still decays so the unit doesn't bank a free
+					// attack on un-stun, but the unit must not fire. AttackTargetID
+					// is intentionally left intact so combat resumes immediately.
+					if unit.StunnedRemaining > 0 {
+						if unit.AttackCooldown > 0 {
+							unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+						}
+					} else if unit.AttackCooldown <= 0 {
 						// Outgoing damage: base × (1 + perk bonus) × (1 - debuff), then armor.
 						// perk bonus comes from executioner (silver berserker) and any future
 						// outgoing-damage-multiplier perks.
@@ -145,7 +152,13 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Attacking = true
 					unit.Status = "Attacking"
 
-					if unit.AttackCooldown <= 0 {
+					// Stun: cooldown still decays, but the unit must not fire.
+					// AttackBuildingTargetID is left intact so combat resumes on un-stun.
+					if unit.StunnedRemaining > 0 {
+						if unit.AttackCooldown > 0 {
+							unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+						}
+					} else if unit.AttackCooldown <= 0 {
 						damage := unit.Damage
 						newHP := hp - float64(damage)
 						building.Metadata["hp"] = newHP

@@ -183,6 +183,12 @@ type UnitSnapshot struct {
 	// ActiveBuffs these are raw icon ids (not perk ids), since debuffs can land
 	// on units that don't own the causing perk.
 	ActiveDebuffs []string `json:"activeDebuffs,omitempty"`
+	// StunnedRemaining / SlowedRemaining / SlowedMultiplier carry the current CC
+	// state to the client each tick so it can render stun/slow indicator icons.
+	// All three use omitempty so they are absent from the JSON when not active.
+	StunnedRemaining float64 `json:"stunnedRemaining,omitempty"`
+	SlowedRemaining  float64 `json:"slowedRemaining,omitempty"`
+	SlowedMultiplier float64 `json:"slowedMultiplier,omitempty"`
 	CarriedResourceType string   `json:"carriedResourceType,omitempty"`
 	CarriedAmount       int      `json:"carriedAmount,omitempty"`
 	TargetX             float64  `json:"targetX,omitempty"`
@@ -210,6 +216,18 @@ type WaveSnapshot struct {
 	WaveDuration float64 `json:"waveDuration"`
 }
 
+// BannerSnapshot carries a rallying_banner entity to the client each tick.
+// The client renders the banner at the given world position for its remaining
+// duration. OwnerID is the player who planted it (used for team-colour tinting).
+type BannerSnapshot struct {
+	ID               int     `json:"id"`
+	OwnerID          string  `json:"ownerId"`
+	X                float64 `json:"x"`
+	Y                float64 `json:"y"`
+	Radius           float64 `json:"radius"`
+	RemainingSeconds float64 `json:"remainingSeconds"`
+}
+
 type MatchSnapshotMessage struct {
 	Type      string           `json:"type"`
 	Tick      int              `json:"tick"`
@@ -219,6 +237,7 @@ type MatchSnapshotMessage struct {
 	Players   []PlayerSnapshot `json:"players"`
 	Units     []UnitSnapshot   `json:"units"`
 	Wave      WaveSnapshot     `json:"wave"`
+	Banners   []BannerSnapshot `json:"banners,omitempty"`
 }
 
 type PingMessage struct {

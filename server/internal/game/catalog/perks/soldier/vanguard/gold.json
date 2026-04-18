@@ -1,1 +1,37 @@
-[]
+[
+  {
+    "id": "guardian_aura",
+    "displayName": "Guardian Aura",
+    "icon": "perk-guardian-aura",
+    "description": "Allies within radius take reduced damage. Nearby Vanguards with this perk form a formation, amplifying each other's auras.",
+    "config": {
+      "radius": 100,
+      "damageReduction": 0.15,
+      "synergyRadiusBonus": 30,
+      "synergyDRBonus": 0.05
+    }
+  },
+  {
+    "id": "pain_share",
+    "displayName": "Pain Share",
+    "icon": "perk-pain-share",
+    "description": "When an ally nearby takes damage, a portion is redirected to this Vanguard first.",
+    "config": {
+      "radius": 100,
+      "redirectPercent": 0.3
+    }
+  },
+  {
+    "id": "rallying_banner",
+    "displayName": "Rallying Banner",
+    "icon": "perk-rallying-banner",
+    "description": "After holding position, plant a banner that grants allies bonus armor and attack speed. The banner persists after you move or fall.",
+    "config": {
+      "stationaryThresholdSeconds": 3,
+      "bannerDurationSeconds": 8,
+      "bannerRadius": 120,
+      "bannerArmorBonus": 4,
+      "bannerAttackSpeedBonus": 0.15
+    }
+  }
+]

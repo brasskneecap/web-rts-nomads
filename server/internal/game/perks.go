@@ -184,8 +184,20 @@ type UnitPerkState struct {
 	// main Update loop (cross-unit state, same pattern as TauntRemaining).
 	// MarkedMultiplier is the fractional bonus (e.g. 0.15 = 15% more damage taken)
 	// set when the mark is applied and cleared when MarkedRemaining reaches 0.
-	MarkedRemaining float64
+	MarkedRemaining  float64
 	MarkedMultiplier float64
+
+	// ── rallying_banner (gold vanguard) ───────────────────────────────────────
+	// RallyingBannerPlanted gates the one-shot plant to once per stationary
+	// period. Reset in the bulwark tick case's unit.Moving branch alongside
+	// BulwarkShieldGranted so both perks re-arm on subsequent stationary periods.
+	RallyingBannerPlanted bool
+
+	// ── pain_share (gold vanguard) ────────────────────────────────────────────
+	// PainShareActive is a recursion guard: set true before applying redirected
+	// damage so a Vanguard currently absorbing a redirect is not an eligible
+	// redirect target. Pattern mirrors RetaliationActive.
+	PainShareActive bool
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -383,6 +395,10 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			// period can re-arm. Bulwark is a planted-play reward — breaking
 			// formation forfeits the protection AND any partial shield is lost.
 			//
+			// The Moving branch also clears RallyingBannerPlanted so that perk can
+			// re-arm on the next stationary period. StationarySeconds is shared
+			// between bulwark and rallying_banner — both read the same counter.
+			//
 			// Assumption: no other perk grants shield to a Vanguard today
 			// (blood_engine is Berserker-only). If a future Vanguard perk adds
 			// shield from another source, this zero-on-move will need to
@@ -390,6 +406,7 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			if unit.Moving {
 				unit.PerkState.StationarySeconds = 0
 				unit.PerkState.BulwarkShieldGranted = false
+				unit.PerkState.RallyingBannerPlanted = false
 				unit.Shield = 0
 			} else {
 				unit.PerkState.StationarySeconds += dt
@@ -397,6 +414,57 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 					unit.PerkState.StationarySeconds >= def.Config["stationaryThresholdSeconds"] {
 					unit.Shield = int(def.Config["maxShield"])
 					unit.PerkState.BulwarkShieldGranted = true
+				}
+			}
+
+		case "rallying_banner":
+			// Plant a banner at the unit's current position once per stationary
+			// period. The banner persists for bannerDurationSeconds even if the
+			// Vanguard moves or dies afterward.
+			//
+			// StationarySeconds is maintained by the bulwark case above when both
+			// perks are owned. When rallying_banner is owned alone (without bulwark),
+			// we manage StationarySeconds here directly. The Moving reset in the
+			// bulwark case covers the shared flag; if bulwark is NOT present, we
+			// still need to reset StationarySeconds and RallyingBannerPlanted on
+			// movement here.
+			bannerDef := perkDefByID("rallying_banner")
+			if bannerDef == nil {
+				continue
+			}
+			if unit.Moving {
+				// Only reset if bulwark isn't already handling the shared state.
+				// Bulwark's Moving branch runs first (perks are iterated in PerkIDs
+				// order, which is rank-up order; rallying_banner is gold so it may
+				// come after bulwark). Resetting here is safe because assigning 0
+				// to an already-0 field is a no-op.
+				unit.PerkState.StationarySeconds = 0
+				unit.PerkState.RallyingBannerPlanted = false
+			} else {
+				// Only increment if bulwark hasn't already done so this tick.
+				// Since both perks share StationarySeconds, check whether bulwark
+				// is also present so we don't double-count.
+				hasBulwark := containsString(unit.PerkIDs, "bulwark")
+				if !hasBulwark {
+					unit.PerkState.StationarySeconds += dt
+				}
+				threshold := bannerDef.Config["stationaryThresholdSeconds"]
+				if !unit.PerkState.RallyingBannerPlanted &&
+					unit.PerkState.StationarySeconds >= threshold {
+					banner := &Banner{
+						ID:               s.nextBannerID,
+						OwnerUnitID:      unit.ID,
+						OwnerPlayerID:    unit.OwnerID,
+						X:                unit.X,
+						Y:                unit.Y,
+						Radius:           bannerDef.Config["bannerRadius"],
+						RemainingSeconds: bannerDef.Config["bannerDurationSeconds"],
+						ArmorBonus:       int(bannerDef.Config["bannerArmorBonus"]),
+						AttackSpeedBonus: bannerDef.Config["bannerAttackSpeedBonus"],
+					}
+					s.nextBannerID++
+					s.Banners = append(s.Banners, banner)
+					unit.PerkState.RallyingBannerPlanted = true
 				}
 			}
 

@@ -35,5 +35,37 @@
     "config": {
       "flatReduction": 5
     }
+  },
+  {
+    "id": "shield_bash",
+    "displayName": "Shield Bash",
+    "icon": "perk-shield-bash",
+    "description": "Attacks have a chance to stun the target briefly, then slow them for a short time afterward.",
+    "config": {
+      "procChance": 0.25,
+      "stunSeconds": 1.0,
+      "slowSeconds": 1.5,
+      "slowMultiplier": 0.7
+    }
+  },
+  {
+    "id": "steady_advance",
+    "displayName": "Steady Advance",
+    "icon": "perk-steady-advance",
+    "description": "While advancing toward the nearest enemy, take reduced damage.",
+    "config": {
+      "damageReduction": 0.1,
+      "alignmentCosMin": 0.5
+    }
+  },
+  {
+    "id": "interlock",
+    "displayName": "Interlock",
+    "icon": "perk-interlock",
+    "description": "Gain bonus armor while standing near any allied unit.",
+    "config": {
+      "radius": 80,
+      "bonusArmor": 3
+    }
   }
 ]

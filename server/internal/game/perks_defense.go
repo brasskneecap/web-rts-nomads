@@ -52,6 +52,13 @@ func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
 	if target == nil || damage <= 0 {
 		return 0
 	}
+	// Step 0: pain_share redirect — a nearby allied Vanguard with pain_share
+	// absorbs redirectPercent of the incoming damage through its own mitigation
+	// stack. Runs before mark amplification so the redirect acts on raw damage.
+	damage = s.perkRedirectIncomingDamageLocked(target, damage)
+	if damage == 0 {
+		return 0
+	}
 	// Step 1: Challenger's Mark — amplify incoming damage before any reduction.
 	// Applied first so the mark's bonus is maximised and all subsequent reduction
 	// perks (flat reduction, shield) work against the amplified value.
@@ -159,7 +166,7 @@ func (s *GameState) unitMaxShieldLocked(unit *Unit) int {
 // ADD NEW PERCENTAGE-REDUCTION PERKS HERE.
 // ─────────────────────────────────────────────────────────────────────────────
 func (s *GameState) perkIncomingDamageMultiplierLocked(target *Unit) float64 {
-	if target == nil || len(target.PerkIDs) == 0 {
+	if target == nil {
 		return 0
 	}
 	total := 0.0
@@ -171,37 +178,36 @@ func (s *GameState) perkIncomingDamageMultiplierLocked(target *Unit) float64 {
 		switch perkID {
 
 		case "brace":
-			// Count visible enemies within the configured radius.
+			// Count visible enemies within the configured radius. Early-exit once
+			// threshold is reached via countEnemiesInRangeLocked (shared with the
+			// buff-icon scan in activeBuffIconsLocked).
 			enemyThreshold := int(def.Config["enemyThreshold"])
-			radius := def.Config["radius"]
-			radiusSq := radius * radius
-			enemyCount := 0
-			for _, candidate := range s.Units {
-				if candidate == nil || candidate.ID == target.ID {
-					continue
-				}
-				if candidate.OwnerID == target.OwnerID {
-					continue
-				}
-				if candidate.HP <= 0 || !candidate.Visible {
-					continue
-				}
-				dx := candidate.X - target.X
-				dy := candidate.Y - target.Y
-				if dx*dx+dy*dy <= radiusSq {
-					enemyCount++
-					if enemyCount >= enemyThreshold {
-						break
-					}
-				}
+			if s.countEnemiesInRangeLocked(target, def.Config["radius"], enemyThreshold) >= enemyThreshold {
+				total += def.Config["damageReduction"]
 			}
-			if enemyCount >= enemyThreshold {
+
+		case "steady_advance":
+			// Active while the unit is Moving AND has a visible enemy whose
+			// direction is within the configured alignment cone in front of the unit.
+			// isAdvancingTowardEnemyLocked evaluates the dot-product of the unit's
+			// velocity vector (toward next waypoint) with the vector to the nearest
+			// visible enemy. Shared with activeBuffIconsLocked to avoid duplicating math.
+			if target.Moving && s.isAdvancingTowardEnemyLocked(target) {
 				total += def.Config["damageReduction"]
 			}
 
 		// ── add cases for new percentage-reduction perks below this line ─────
 		}
 	}
+
+	// guardian_aura contribution — not in the perk loop above because the aura
+	// is applied by OTHER units (the Vanguard owners), not by the target's own
+	// perk list. The pre-built cache from rebuildGuardianAuraCacheLocked holds
+	// the strongest aura DR for this unit as of the start of this tick.
+	if aura, ok := s.guardianAuraCache[target.ID]; ok {
+		total += aura
+	}
+
 	// Clamp to 0.75 — prevents any combination of stacked perks from making
 	// the unit functionally invulnerable. Both Last Stand (0.30) and Brace
 	// (0.20) together reach 0.50, well below the cap with room for a Gold perk.
@@ -395,6 +401,16 @@ func (s *GameState) perkBonusArmorLocked(unit *Unit) int {
 					total += int(def.Config["bonusArmor"])
 				}
 			}
+
+		case "interlock":
+			// Flat armor bonus while any allied (same OwnerID), visible, alive unit
+			// is within the configured radius. O(N) per call — same cost as brace.
+			// hasAllyInRangeLocked is shared with activeBuffIconsLocked to avoid
+			// duplicating the scan loop.
+			if s.hasAllyInRangeLocked(unit, def.Config["radius"]) {
+				total += int(def.Config["bonusArmor"])
+			}
+
 		// ── add cases for new flat-armor perks below this line ───────────────
 		}
 	}
@@ -408,7 +424,7 @@ func (s *GameState) effectiveArmorLocked(unit *Unit) int {
 	if unit == nil {
 		return 0
 	}
-	return unit.Armor + s.perkBonusArmorLocked(unit)
+	return unit.Armor + s.perkBonusArmorLocked(unit) + s.perkBonusArmorFromBannersLocked(unit)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
