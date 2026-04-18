@@ -32,9 +32,12 @@ package game
 // │         perkAttackSpeedBonusLocked           attack-speed bonus        │
 // │         perkMoveSpeedMultiplierLocked        move-speed bonus          │
 // │         perkBonusDamageMultiplierLocked      outgoing damage scaler    │
-// │         onPerkAttackFiredLocked              on every attack           │
+// │         onPerkAttackFiredLocked              on every attack (attacker)│
 // │         onPerkAttackDamageAppliedLocked      on-hit / lifesteal        │
+// │         onPerkDamageTakenLocked              on damage received (def.) │
 // │         onPerkKillLocked                     on every kill             │
+// │         perkFlatDamageReductionLocked        flat per-hit reduction    │
+// │         perkFlatMaxHPBonusLocked             flat max HP bonus         │
 // │         unitMaxShieldLocked                  shield pool contributor   │
 // │         healUnitLocked                       overheal routing          │
 // │         activeBuffIconsLocked                add buff icon to the HUD  │
@@ -50,11 +53,15 @@ package game
 //   • state.go  tickUnitCombatLocked() — perkBonusDamageMultiplierLocked,
 //                                        onPerkAttackFiredLocked,
 //                                        onPerkAttackDamageAppliedLocked,
+//                                        onPerkDamageTakenLocked,
 //                                        onPerkKillLocked,
 //                                        perkAttackSpeedBonusLocked
-//   • perks.go  (savage_strikes, cleave secondary) —
-//                                        onPerkAttackDamageAppliedLocked
+//   • perks.go  (savage_strikes, cleave, whirlwind secondary hits) —
+//                                        onPerkAttackDamageAppliedLocked,
+//                                        onPerkDamageTakenLocked
+//   • perks.go  applyUnitDamageLocked  — perkFlatDamageReductionLocked
 //   • progression.go addUnitXPLocked() — assignUnitPerkLocked (on rank-up)
+//   • progression.go applyRankModifiersLocked() — perkFlatMaxHPBonusLocked
 // ═════════════════════════════════════════════════════════════════════════════
 
 import (
@@ -120,6 +127,12 @@ type UnitPerkState struct {
 	// executioner   — no stored state; bonus derived from target HP% on demand.
 	// blood_engine  — no stored state; shield pool lives on Unit.Shield.
 	// berserk_state — no stored state; bonus derived from current HP% on demand.
+
+	// ── retaliation (bronze vanguard) ─────────────────────────────────────────
+	// RetaliationActive is a recursion guard: set true before applying reflected
+	// damage so the reflected hit does not trigger another reflection loop.
+	// Reset to false immediately after the reflected damage call returns.
+	RetaliationActive bool
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -390,6 +403,7 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 					if actualDmg > 0 {
 						s.applyUnitDamageLocked(primaryTarget, actualDmg)
 						s.onUnitDamagedLocked(attacker, primaryTarget, actualDmg)
+						s.onPerkDamageTakenLocked(primaryTarget, attacker, actualDmg)
 						s.recordDamageDealtLocked(attacker, primaryTarget, actualDmg)
 						// Let on-damage perks (blood_sustain) react to the extra hit.
 						s.onPerkAttackDamageAppliedLocked(attacker, primaryTarget, actualDmg)
@@ -412,6 +426,15 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 			// other enemies within the configured radius of the attacker.
 			if attacker.PerkState.WhirlwindActiveRemaining > 0 {
 				s.applyWhirlwindHitLocked(attacker, primaryTarget, def.Config["radius"], deadUnitIDs)
+			}
+
+		case "taunting_strike":
+			// On proc, apply a taunt to the primary target for a short duration.
+			// The taunted enemy strongly prefers targeting this Vanguard while the
+			// taunt is active. Falls off naturally via decayThreatLocked in combat_ai.go.
+			// Proc chance and duration are tunable in perk-defs.json (tauntChance, tauntDurationSeconds).
+			if primaryTarget != nil && rand.Float64() < def.Config["tauntChance"] {
+				s.ApplyTauntLocked(primaryTarget.ID, attacker.ID, def.Config["tauntDurationSeconds"])
 			}
 
 		// ── add cases for new on-attack perks below this line ───────────────
@@ -453,6 +476,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		}
 		s.applyUnitDamageLocked(candidate, damage)
 		s.onUnitDamagedLocked(attacker, candidate, damage)
+		s.onPerkDamageTakenLocked(candidate, attacker, damage)
 		s.recordDamageDealtLocked(attacker, candidate, damage)
 		s.onPerkAttackDamageAppliedLocked(attacker, candidate, damage)
 		if candidate.HP <= 0 {
@@ -505,6 +529,7 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 	}
 	s.applyUnitDamageLocked(secondary, damage)
 	s.onUnitDamagedLocked(attacker, secondary, damage)
+	s.onPerkDamageTakenLocked(secondary, attacker, damage)
 	s.recordDamageDealtLocked(attacker, secondary, damage)
 	// Let on-damage perks (blood_sustain) react to cleave hits.
 	s.onPerkAttackDamageAppliedLocked(attacker, secondary, damage)
@@ -717,10 +742,17 @@ func (s *GameState) perkMoveSpeedMultiplierLocked(unit *Unit) float64 {
 // ═════════════════════════════════════════════════════════════════════════════
 
 // applyUnitDamageLocked applies post-armor damage to a unit, routing through
-// the unit's shield pool first. Returns the portion that actually reduced HP
-// (shield-absorbed amount is NOT included). Callers should keep using their
-// original `damage` value for XP banking, threat, on-hit reactions, etc. so
-// shield absorption doesn't retroactively penalize attackers.
+// flat perk reduction and then the shield pool. Returns the portion that
+// actually reduced HP (flat-reduction and shield-absorbed amounts are NOT
+// included). Callers should keep using their original `damage` value for XP
+// banking, threat, on-hit reactions, etc. so internal reductions don't
+// retroactively penalize attackers.
+//
+// Damage intake order:
+//   1. Caller computes post-armor damage (applyArmorMitigation).
+//   2. perkFlatDamageReductionLocked reduces it further (reinforced_armor).
+//   3. Shield pool absorbs what remains.
+//   4. HP takes what the shield didn't absorb.
 //
 // Called from every unit-damage intake site:
 //   - state.go primary attack
@@ -729,10 +761,20 @@ func (s *GameState) perkMoveSpeedMultiplierLocked(unit *Unit) float64 {
 //   - perks.go applyCleaveHitLocked
 //   - perks.go applyWhirlwindHitLocked
 //
-// A damage intake that bypasses this helper will bypass shield — avoid it.
+// A damage intake that bypasses this helper will bypass flat reduction and
+// shield — avoid it.
 func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
 	if target == nil || damage <= 0 {
 		return 0
+	}
+	// Flat per-hit reduction from reinforced_armor (and future flat reducers).
+	// Applied after caller's armor mitigation, before the shield pool.
+	// Tuning point: flatReduction in catalog/perk-defs.json → reinforced_armor.config.
+	if reduction := s.perkFlatDamageReductionLocked(target); reduction > 0 {
+		damage = maxInt(0, damage-reduction)
+		if damage == 0 {
+			return 0
+		}
 	}
 	if target.Shield > 0 {
 		if target.Shield >= damage {
@@ -743,6 +785,11 @@ func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
 		target.Shield = 0
 	}
 	target.HP -= damage
+	// Clamp to 0 so HP is never stored as negative. Death detection in callers
+	// uses HP <= 0, so 0 is the correct sentinel — not an arbitrary negative.
+	if target.HP < 0 {
+		target.HP = 0
+	}
 	return damage
 }
 
@@ -844,4 +891,149 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 		}
 	}
 	return active
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// VANGUARD PERK HOOKS
+//
+// These three functions implement the defender-side perk effects introduced
+// for the Vanguard path. They are called from the damage pipeline and the
+// rank-modifier application path.
+//
+// EXTENSION POINTS — adding more perks later:
+//   • More Bronze Vanguard perks  → add entries to perk-defs.json under
+//                                   units.soldier.paths.vanguard.bronze
+//                                   and add cases to the relevant hook(s) below.
+//   • Silver/Gold Vanguard perks  → add entries under vanguard.silver / .gold
+//                                   in perk-defs.json, then add cases here as
+//                                   needed. Same hooks apply.
+//   • Perks for other unit types  → add the unit type under units.<type>.paths
+//                                   in perk-defs.json and add cases here.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook 8 — on damage received (defender-side reactions)
+//
+// onPerkDamageTakenLocked is called after a unit takes damage from an attacker.
+// `damage` is the post-armor value that was passed into the damage pipeline
+// (i.e. what the attacker intended after armor, before flat reduction or shield).
+//
+// Called from:
+//   - state.go tickUnitCombatLocked     — primary attack
+//   - perks.go savage_strikes bonus hit — secondary hit
+//   - perks.go applyCleaveHitLocked     — cleave secondary
+//   - perks.go applyWhirlwindHitLocked  — whirlwind AoE
+//
+// ADD NEW DEFENDER-SIDE PERK REACTIONS HERE.
+// ─────────────────────────────────────────────────────────────────────────────
+func (s *GameState) onPerkDamageTakenLocked(target, attacker *Unit, damage int) {
+	if target == nil || attacker == nil || damage <= 0 || len(target.PerkIDs) == 0 {
+		return
+	}
+	// Skip reactions if the unit is already dead this tick.
+	if target.HP <= 0 {
+		return
+	}
+
+	for _, perkID := range target.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+
+		switch perkID {
+
+		case "retaliation":
+			// Reflect damage equal to (armorPercent × this unit's armor) back to the
+			// attacker on each hit. Higher-armor Vanguards punish attackers more.
+			//
+			// Guard: RetaliationActive prevents recursive reflection if the attacker
+			// also has retaliation. The reflected hit goes through applyUnitDamageLocked
+			// only — no XP, threat, or further perk hooks — keeping the chain flat.
+			//
+			// Tuning point: armorPercent in perk-defs.json → retaliation.config.
+			if target.PerkState.RetaliationActive {
+				continue // already inside a reflection; do not chain
+			}
+			if attacker.HP <= 0 || attacker.OwnerID == target.OwnerID {
+				continue
+			}
+			reflected := maxInt(0, int(math.Round(float64(target.Armor)*def.Config["armorPercent"])))
+			if reflected <= 0 {
+				continue
+			}
+			// Set guard before the call so any path that re-enters this function
+			// for this unit is a no-op.
+			target.PerkState.RetaliationActive = true
+			// Bypass the full damage pipeline — no XP, no threat, no further hooks.
+			// This keeps reflected damage simple and prevents infinite chains.
+			s.applyUnitDamageLocked(attacker, reflected)
+			target.PerkState.RetaliationActive = false
+
+		// ── add cases for new defender-side reactions below this line ────────
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook 9 — flat per-hit damage reduction query (defender-side)
+//
+// perkFlatDamageReductionLocked returns the total flat damage reduction the
+// target gets from its perks, applied per hit after armor mitigation and before
+// the shield pool. Returns 0 for units with no relevant perk.
+//
+// Called from applyUnitDamageLocked — covers all damage sources automatically.
+//
+// ADD NEW FLAT-DAMAGE-REDUCTION PERKS HERE.
+// ─────────────────────────────────────────────────────────────────────────────
+func (s *GameState) perkFlatDamageReductionLocked(target *Unit) int {
+	if target == nil || len(target.PerkIDs) == 0 {
+		return 0
+	}
+	total := 0
+	for _, perkID := range target.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+		switch perkID {
+		case "reinforced_armor":
+			// Tuning point: flatReduction in perk-defs.json → reinforced_armor.config.
+			total += int(def.Config["flatReduction"])
+		// ── add cases for new flat-reduction perks below this line ───────────
+		}
+	}
+	return total
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook 10 — flat max HP bonus query (passive stat modifier)
+//
+// perkFlatMaxHPBonusLocked returns the total flat max HP bonus granted by the
+// unit's perks. Applied additively on top of rank × path multipliers inside
+// applyRankModifiersLocked (progression.go) so it is always included when stats
+// are recalculated. Returns 0 for units with no relevant perk.
+//
+// Called from progression.go applyRankModifiersLocked.
+//
+// ADD NEW FLAT-MAX-HP PERKS HERE.
+// ─────────────────────────────────────────────────────────────────────────────
+func (s *GameState) perkFlatMaxHPBonusLocked(unit *Unit) int {
+	if unit == nil || len(unit.PerkIDs) == 0 {
+		return 0
+	}
+	total := 0
+	for _, perkID := range unit.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+		switch perkID {
+		case "hold_the_line":
+			// Tuning point: bonusMaxHP in perk-defs.json → hold_the_line.config.
+			total += int(def.Config["bonusMaxHP"])
+		// ── add cases for new flat max HP perks below this line ──────────────
+		}
+	}
+	return total
 }

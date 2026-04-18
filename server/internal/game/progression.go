@@ -255,6 +255,12 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	}
 
 	unit.MaxHP = maxInt(1, int(math.Round(float64(unit.BaseMaxHP)*rankDef.MaxHPMultiplier*pathDef.MaxHPMultiplier)))
+	// Apply flat max HP bonus from hold_the_line (and any future flat-HP perks).
+	// Called after rank/path multipliers so the bonus is always the authored value.
+	// Tuning point: bonusMaxHP in perk-defs.json → hold_the_line.config.
+	if bonus := s.perkFlatMaxHPBonusLocked(unit); bonus > 0 {
+		unit.MaxHP += bonus
+	}
 	unit.Damage = maxInt(0, int(math.Round(float64(unit.BaseDamage)*rankDef.DamageMultiplier*pathDef.DamageMultiplier)))
 	unit.AttackSpeed = math.Max(0.1, unit.BaseAttackSpeed*rankDef.AttackSpeedMultiplier*pathDef.AttackSpeedMultiplier)
 	// Move speed: path-only scaling for now (rank doesn't affect move speed yet).

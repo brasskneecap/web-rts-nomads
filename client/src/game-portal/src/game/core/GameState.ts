@@ -73,6 +73,8 @@ export type DetailItem = {
   label: string
   value?: string
   tooltip?: string
+  tooltipTitle?: string
+  tooltipBody?: string
   // SVG path (24×24 viewBox, stroke-style). When set, SelectionHud renders this
   // entry as an icon+value row instead of inline "Label: Value" text.
   icon?: string
@@ -1472,10 +1474,15 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
     })
   }
   if ((buildingDef?.attackSpeed ?? 0) > 0) {
+    const speedTooltipLines: string[] = []
+    if ((buildingDef?.damage ?? 0) > 0) speedTooltipLines.push(`Damage: ${buildingDef!.damage}`)
+    speedTooltipLines.push(`Attack speed: ${buildingDef!.attackSpeed!.toFixed(2)}/s`)
     details.push({
       id: 'attack-speed',
       label: 'Attack Speed',
-      value: `${buildingDef?.attackSpeed ?? 0}/s`,
+      value: attackSpeedLabel(buildingDef!.attackSpeed!),
+      tooltipTitle: attackSpeedLabel(buildingDef!.attackSpeed!),
+      tooltipBody: speedTooltipLines.join('\n'),
     })
   }
   if (building.capabilities.includes('unit-spawner') && building.spawnUnitTypes?.length) {
@@ -1496,6 +1503,14 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
   }
 
   return details
+}
+
+// Slow < 1/s, Normal 1–1.25/s, Fast 1.25–1.75/s, Very Fast > 1.75/s
+function attackSpeedLabel(attacksPerSecond: number): string {
+  if (attacksPerSecond < 1) return 'Slow'
+  if (attacksPerSecond < 1.25) return 'Normal'
+  if (attacksPerSecond <= 1.75) return 'Fast'
+  return 'Very Fast'
 }
 
 // Mirrors server/internal/game/progression.go armorDamageReduction — keep in sync.
@@ -1523,12 +1538,31 @@ function getUnitDetails(unit: Unit): DetailItem[] {
   if (hasDamage || hasAttackSpeed) {
     const parts: string[] = []
     if (hasDamage) parts.push(String(unit.damage))
-    if (hasAttackSpeed) parts.push(`${unit.attackSpeed!.toFixed(2)}/s`)
+    if (hasAttackSpeed) parts.push(attackSpeedLabel(unit.attackSpeed!))
+
+    // Build hover tooltip with base vs bonus breakdown.
+    const unitDef = UNIT_DEF_MAP.get(unit.unitType)
+    const tooltipLines: string[] = []
+    if (hasDamage) {
+      const baseDmg = unitDef?.damage ?? unit.damage!
+      const bonusDmg = (unit.damage ?? 0) - baseDmg
+      tooltipLines.push(`Base damage: ${baseDmg}`)
+      if (bonusDmg > 0) tooltipLines.push(`Bonus damage: +${bonusDmg}`)
+    }
+    if (hasAttackSpeed) {
+      const baseSpeed = unitDef?.attackSpeed ?? unit.attackSpeed!
+      const bonusSpeed = Math.round(((unit.attackSpeed ?? 0) - baseSpeed) * 100) / 100
+      tooltipLines.push(`Attack speed: ${unit.attackSpeed!.toFixed(2)}/s`)
+      if (bonusSpeed > 0) tooltipLines.push(`Bonus speed: +${bonusSpeed.toFixed(2)}/s`)
+    }
+
     details.push({
       id: 'attack',
       label: 'Damage / Attack Speed',
       value: parts.join(' · '),
       icon: STAT_ICON_SWORD,
+      tooltipTitle: parts.join(' · '),
+      tooltipBody: tooltipLines.join('\n'),
     })
   }
 
@@ -1547,8 +1581,9 @@ function getUnitDetails(unit: Unit): DetailItem[] {
       id: 'armor',
       label: 'Armor',
       value: String(unit.armor),
-      tooltip: `${reductionPct}% damage reduction`,
       icon: STAT_ICON_SHIELD,
+      tooltipTitle: `Armor: ${unit.armor}`,
+      tooltipBody: `${reductionPct}% damage reduction`,
     })
   }
 

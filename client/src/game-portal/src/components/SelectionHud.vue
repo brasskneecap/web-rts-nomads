@@ -26,6 +26,7 @@
             v-for="detail in iconDetails"
             :key="detail.id"
             class="stat-row"
+            :class="{ 'stat-row--has-tooltip': !!detail.tooltipTitle }"
             :title="detail.tooltip"
             :aria-label="detail.value ? `${detail.label} ${detail.value}` : detail.label"
           >
@@ -42,6 +43,10 @@
               <path :d="detail.icon" />
             </svg>
             <strong v-if="detail.value" class="stat-row__value">{{ detail.value }}</strong>
+            <div v-if="detail.tooltipTitle" class="stat-tooltip">
+              <div class="stat-tooltip__title">{{ detail.tooltipTitle }}</div>
+              <div v-if="detail.tooltipBody" class="stat-tooltip__body">{{ detail.tooltipBody }}</div>
+            </div>
           </div>
         </div>
       </section>
@@ -332,6 +337,49 @@ const inlineDetails = computed(() => props.ui.selection.details.filter((d) => !d
   color: #fff2d6;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.stat-row--has-tooltip {
+  position: relative;
+  cursor: default;
+}
+
+.stat-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 160px;
+  max-width: 240px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(34, 22, 10, 0.98), rgba(20, 12, 4, 0.98));
+  border: 1px solid rgba(200, 164, 106, 0.45);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  color: #f5ead2;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease-out;
+  pointer-events: none;
+  z-index: 10;
+  white-space: pre-line;
+}
+
+.stat-row--has-tooltip:hover .stat-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.stat-tooltip__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff2d6;
+  margin-bottom: 4px;
+}
+
+.stat-tooltip__body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #d4b87a;
 }
 
 .detail-inline {

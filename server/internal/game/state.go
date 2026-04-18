@@ -987,9 +987,22 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						// future outgoing-damage-multiplier perks.
 						rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
 						damage := applyArmorMitigation(int(math.Round(rawDamage)), target.Armor)
-						// Route through the shared helper so shield (blood_engine) absorbs first.
+						// Route through the shared helper so flat reduction and shield absorb first.
 						s.applyUnitDamageLocked(target, damage)
 						s.onUnitDamagedLocked(unit, target, damage)
+						// Defender-side perk reactions (e.g. retaliation reflects damage back).
+						s.onPerkDamageTakenLocked(target, unit, damage)
+						// If the attacker was killed by reflected damage (retaliation), handle
+						// their death now. The normal death check below only covers the target.
+						if unit.HP <= 0 {
+							s.awardKillXPLocked(target)
+							s.payoutDamageDealtXPLocked(unit)
+							s.awardSoldierTankKillXPLocked(unit.ID)
+							s.onPerkKillLocked(target)
+							deadUnitIDs = append(deadUnitIDs, unit.ID)
+							unit.AttackCooldown = 1.0 / math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+							continue
+						}
 						s.recordSoldierTankContributionLocked(unit, target, damage)
 						s.recordDamageDealtLocked(unit, target, damage)
 						// Perk on-attack effects (bloodlust accumulation,

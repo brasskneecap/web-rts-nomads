@@ -120,7 +120,45 @@
           ]
         },
         "vanguard": {
-          "bronze": [],
+          "bronze": [
+            {
+              "id": "retaliation",
+              "displayName": "Retaliation",
+              "icon": "perk-retaliation",
+              "description": "Reflect damage equal to a percentage of this unit's armor back to the attacker on each hit.",
+              "config": {
+                "armorPercent": 0.10
+              }
+            },
+            {
+              "id": "taunting_strike",
+              "displayName": "Taunting Strike",
+              "icon": "perk-taunting-strike",
+              "description": "Attacks have a chance to taunt the target, forcing it to focus on this Vanguard briefly.",
+              "config": {
+                "tauntChance":           0.30,
+                "tauntDurationSeconds":  2.5
+              }
+            },
+            {
+              "id": "hold_the_line",
+              "displayName": "Hold the Line",
+              "icon": "perk-hold-the-line",
+              "description": "Permanently increases maximum HP.",
+              "config": {
+                "bonusMaxHP": 30
+              }
+            },
+            {
+              "id": "reinforced_armor",
+              "displayName": "Reinforced Armor",
+              "icon": "perk-reinforced-armor",
+              "description": "Reduce incoming damage by a flat amount per hit.",
+              "config": {
+                "flatReduction": 5
+              }
+            }
+          ],
           "silver": [],
           "gold": []
         }
