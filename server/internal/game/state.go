@@ -1,9 +1,11 @@
 package game
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"math"
-	"math/rand"
+	mrand "math/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -174,11 +176,32 @@ type GameState struct {
 	nextUnitID     int
 	nextBuildingID int
 	nextOrderID    int64
-	rng            *rand.Rand
+
+	// matchSeed is the root seed for all per-match RNG streams. Log it on match
+	// creation so a bug report with the seed can be reproduced offline.
+	matchSeed   int64
+	rngPerks    *mrand.Rand // perk selection, path assignment, taunt procs
+	rngCosmetic *mrand.Rand // unit colour assignment and other visual randomness
+	rngSpawn    *mrand.Rand // reserved for future wave/spawn randomness
 
 	// buildingDamageDealt mirrors Unit.DamageDealtByUnit for buildings.
 	// buildingID → attackerID → accumulated damage. Paid out on destruction.
 	buildingDamageDealt map[string]map[int]int
+
+	// unitsByID is an O(1) index into s.Units, maintained in lockstep.
+	// Use addUnitLocked / removeUnitByIDLocked to mutate — do NOT write to
+	// s.Units or unitsByID directly outside those helpers.
+	unitsByID map[int]*Unit
+
+	// buildingsByID is an O(1) index into s.MapConfig.Buildings, maintained in
+	// lockstep. Use addBuildingLocked / removeBuildingLocked to mutate.
+	buildingsByID map[string]*protocol.BuildingTile
+
+	// blockedCellsCache holds the last computed blocked-cell set.
+	// blockedCellsValid is false when any building has been added or removed
+	// since the last build. Guarded by s.mu.
+	blockedCellsCache map[gridPoint]bool
+	blockedCellsValid bool
 }
 
 const (
@@ -202,19 +225,57 @@ const (
 	raiderMoveSpeed = 100.0
 )
 
+// newMatchSeed generates a cryptographically-random int64 seed so concurrent
+// match creations never collide on the same nanosecond.
+func newMatchSeed() int64 {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// Fallback: time-based seed. Collision risk is low in practice but
+		// possible under rapid match creation; crypto/rand should never fail.
+		return time.Now().UnixNano()
+	}
+	return int64(binary.LittleEndian.Uint64(b[:]))
+}
+
+// NewGameState creates a GameState with a freshly generated per-match seed.
+// Call-sites that need a reproducible seed (tests, offline replay) should use
+// NewGameStateWithSeed instead.
 func NewGameState(mapConfig protocol.MapConfig) *GameState {
+	return NewGameStateWithSeed(mapConfig, newMatchSeed())
+}
+
+// NewGameStateWithSeed creates a GameState whose RNG streams are derived from
+// seed. Use seed == 0 only in tests where you intentionally want the zero seed.
+// Each stream gets a distinct salt so they advance independently.
+func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
+	const (
+		saltPerks    int64 = 0x1
+		saltCosmetic int64 = 0x2
+		saltSpawn    int64 = 0x3
+	)
 	state := &GameState{
 		Units:               []*Unit{},
 		Players:             map[string]*Player{},
 		Productions:         map[string][]*UnitProduction{},
 		EnemySpawnTimers:    map[string]*EnemySpawnTimer{},
 		nextUnitID:          1,
-		rng:                 rand.New(rand.NewSource(time.Now().UnixNano())),
+		matchSeed:           seed,
+		rngPerks:            mrand.New(mrand.NewSource(seed ^ saltPerks)),
+		rngCosmetic:         mrand.New(mrand.NewSource(seed ^ saltCosmetic)),
+		rngSpawn:            mrand.New(mrand.NewSource(seed ^ saltSpawn)),
 		buildingDamageDealt: map[string]map[int]int{},
+		unitsByID:           map[int]*Unit{},
+		buildingsByID:       map[string]*protocol.BuildingTile{},
 	}
 
 	state.SetMapConfig(mapConfig)
 	return state
+}
+
+// MatchSeed returns the root seed used to initialise this match's RNG streams.
+// Log this value when creating a match so bug reports can reference it.
+func (s *GameState) MatchSeed() int64 {
+	return s.matchSeed
 }
 
 func (s *GameState) SetMapConfig(mapConfig protocol.MapConfig) {
@@ -232,7 +293,107 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 	s.Productions = map[string][]*UnitProduction{}
 	s.EnemySpawnTimers = map[string]*EnemySpawnTimer{}
 	s.initWaveManagerLocked()
+
+	// Rebuild buildingsByID index from the freshly-cloned Buildings slice.
+	s.buildingsByID = make(map[string]*protocol.BuildingTile, len(s.MapConfig.Buildings))
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		s.buildingsByID[b.ID] = b
+	}
+	// Blocked cells derived from this new map config are not yet computed.
+	s.invalidateBlockedCellsLocked()
 }
+
+// ---- Index helpers -------------------------------------------------------
+
+// invalidateBlockedCellsLocked marks the blocked-cells cache as stale.
+// Must be called under s.mu write lock whenever a building is added or
+// removed, or when obstacles change.
+func (s *GameState) invalidateBlockedCellsLocked() {
+	s.blockedCellsValid = false
+}
+
+// getBlockedCellsLocked returns the cached blocked-cells map, rebuilding it
+// if the cache is stale. The returned map is read-only; callers must NOT
+// mutate it. If a call site needs a mutable copy (e.g. to add reserved
+// cells for a single pathing pass), copy the map locally.
+// Must be called under s.mu lock (read or write).
+func (s *GameState) getBlockedCellsLocked() map[gridPoint]bool {
+	if !s.blockedCellsValid {
+		s.blockedCellsCache = s.buildBlockedCells()
+		s.blockedCellsValid = true
+	}
+	return s.blockedCellsCache
+}
+
+// addUnitLocked appends unit to s.Units and registers it in s.unitsByID.
+// Must be called under s.mu write lock.
+func (s *GameState) addUnitLocked(u *Unit) {
+	s.Units = append(s.Units, u)
+	if s.unitsByID == nil {
+		s.unitsByID = make(map[int]*Unit)
+	}
+	s.unitsByID[u.ID] = u
+}
+
+// removeUnitByIDLocked removes the unit with the given ID from both s.Units
+// and s.unitsByID. Returns true if the unit was found.
+// Must be called under s.mu write lock.
+func (s *GameState) removeUnitByIDLocked(id int) bool {
+	delete(s.unitsByID, id)
+	filtered := make([]*Unit, 0, len(s.Units))
+	found := false
+	for _, u := range s.Units {
+		if u.ID == id {
+			found = true
+			continue
+		}
+		filtered = append(filtered, u)
+	}
+	s.Units = filtered
+	return found
+}
+
+// addBuildingLocked appends the building to s.MapConfig.Buildings, registers
+// it in s.buildingsByID, and invalidates the blocked-cells cache.
+// Must be called under s.mu write lock.
+func (s *GameState) addBuildingLocked(b protocol.BuildingTile) {
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, b)
+	// append may reallocate the backing array, invalidating all existing
+	// pointers stored in buildingsByID. Re-index the entire slice.
+	if s.buildingsByID == nil {
+		s.buildingsByID = make(map[string]*protocol.BuildingTile, len(s.MapConfig.Buildings))
+	}
+	for i := range s.MapConfig.Buildings {
+		s.buildingsByID[s.MapConfig.Buildings[i].ID] = &s.MapConfig.Buildings[i]
+	}
+	s.invalidateBlockedCellsLocked()
+}
+
+// removeBuildingLocked removes the building with the given ID from
+// s.MapConfig.Buildings, unregisters it from s.buildingsByID, and
+// invalidates the blocked-cells cache. It also clears the production queue
+// for that building.
+// Must be called under s.mu write lock.
+func (s *GameState) removeBuildingLocked(id string) {
+	delete(s.Productions, id)
+	delete(s.buildingsByID, id)
+	filtered := make([]protocol.BuildingTile, 0, len(s.MapConfig.Buildings)-1)
+	for _, b := range s.MapConfig.Buildings {
+		if b.ID != id {
+			filtered = append(filtered, b)
+		}
+	}
+	s.MapConfig.Buildings = filtered
+	// Re-index the surviving buildings because the slice backing array
+	// changed; existing pointers in buildingsByID are now stale.
+	for i := range s.MapConfig.Buildings {
+		s.buildingsByID[s.MapConfig.Buildings[i].ID] = &s.MapConfig.Buildings[i]
+	}
+	s.invalidateBlockedCellsLocked()
+}
+
+// -------------------------------------------------------------------------
 
 // initWaveManagerLocked scans all enemy-spawnpoint buildings for "waveNumber"
 // or "startingWave" metadata. If any have a value > 0 the wave system is
@@ -435,11 +596,14 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	}
 
 	wm := s.WaveManager
+	buildings := make([]protocol.BuildingTile, len(s.MapConfig.Buildings))
+	copy(buildings, s.MapConfig.Buildings)
+
 	return protocol.MatchSnapshotMessage{
 		Type:      "match_snapshot",
 		Tick:      s.Tick,
 		ServerNow: time.Now().UnixMilli(),
-		Map:       s.MapConfig,
+		Buildings: buildings,
 		Players:   players,
 		Units:     units,
 		Wave: protocol.WaveSnapshot{
@@ -465,7 +629,7 @@ func (s *GameState) Update(dt float64) {
 
 	s.updateUnitProductionsLocked(dt)
 	s.tickBuildingRepairsLocked(dt)
-	blocked := s.buildBlockedCells()
+	blocked := s.getBlockedCellsLocked()
 	s.tickBuildingCombatLocked(dt)
 	s.tickWaveLocked(dt)
 	s.tickCombatAILocked(dt, blocked)
@@ -544,15 +708,10 @@ func (s *GameState) MoveUnits(playerID string, unitIDs []int, dest protocol.Vec2
 	defer s.mu.Unlock()
 
 	validUnits := make([]*Unit, 0, len(unitIDs))
-	unitMap := make(map[int]*Unit, len(s.Units))
-	blocked := s.buildBlockedCells()
-
-	for _, unit := range s.Units {
-		unitMap[unit.ID] = unit
-	}
+	blocked := s.getBlockedCellsLocked()
 
 	for _, unitID := range unitIDs {
-		unit, ok := unitMap[unitID]
+		unit, ok := s.unitsByID[unitID]
 		if !ok {
 			continue
 		}
@@ -610,15 +769,10 @@ func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protoco
 	defer s.mu.Unlock()
 
 	validUnits := make([]*Unit, 0, len(unitIDs))
-	unitMap := make(map[int]*Unit, len(s.Units))
-	blocked := s.buildBlockedCells()
-
-	for _, unit := range s.Units {
-		unitMap[unit.ID] = unit
-	}
+	blocked := s.getBlockedCellsLocked()
 
 	for _, unitID := range unitIDs {
-		unit, ok := unitMap[unitID]
+		unit, ok := s.unitsByID[unitID]
 		if !ok {
 			continue
 		}
@@ -699,14 +853,24 @@ func (s *GameState) RemovePlayer(playerID string) {
 
 	delete(s.Players, playerID)
 
-	filtered := make([]*Unit, 0, len(s.Units))
+	// Collect IDs first, then remove via the helper to keep the index in sync.
+	var toRemove []int
+	for _, unit := range s.Units {
+		if unit.OwnerID == playerID {
+			toRemove = append(toRemove, unit.ID)
+		}
+	}
+	for _, id := range toRemove {
+		delete(s.unitsByID, id)
+	}
+	filtered := make([]*Unit, 0, len(s.Units)-len(toRemove))
 	for _, unit := range s.Units {
 		if unit.OwnerID != playerID {
 			filtered = append(filtered, unit)
 		}
 	}
-
 	s.Units = filtered
+
 	s.releaseTownhallForPlayerLocked(playerID)
 }
 
@@ -722,7 +886,7 @@ func (s *GameState) spawnUnitsForPlayerLocked(playerID, color string, home *prot
 	}
 
 	playerIndex := len(s.Players) - 1
-	blocked := s.buildBlockedCells()
+	blocked := s.getBlockedCellsLocked()
 	spawnPositions := make([]protocol.Vec2, 0, totalCount)
 
 	if home != nil {
@@ -790,7 +954,7 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 	}
 
 	s.nextUnitID++
-	s.Units = append(s.Units, unit)
+	s.addUnitLocked(unit)
 	s.initializeCombatUnitLocked(unit)
 	s.applyRankModifiersLocked(unit, false)
 	return unit
@@ -829,7 +993,7 @@ func (s *GameState) spawnRaiderUnitLocked(playerID, color string, spawn protocol
 	}
 
 	s.nextUnitID++
-	s.Units = append(s.Units, unit)
+	s.addUnitLocked(unit)
 	s.initializeCombatUnitLocked(unit)
 	s.applyRankModifiersLocked(unit, false)
 	return unit
@@ -855,13 +1019,7 @@ func resolveUnitArchetype(def UnitDef, unitType string) string {
 }
 
 func (s *GameState) removeUnitLocked(unitID int) {
-	filtered := make([]*Unit, 0, len(s.Units))
-	for _, u := range s.Units {
-		if u.ID != unitID {
-			filtered = append(filtered, u)
-		}
-	}
-	s.Units = filtered
+	s.removeUnitByIDLocked(unitID)
 
 	// Clear attack targets pointing to removed unit
 	for _, u := range s.Units {
@@ -933,7 +1091,7 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 		return
 	}
 
-	blocked := s.buildBlockedCells()
+	blocked := s.getBlockedCellsLocked()
 	orderID := s.nextMovementOrderIDLocked()
 
 	for _, unitID := range unitIDs {
@@ -1168,7 +1326,7 @@ func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, buildingID s
 		return
 	}
 
-	blocked := s.buildBlockedCells()
+	blocked := s.getBlockedCellsLocked()
 	if len(s.getBuildingApproachPositionsLocked(*building, 1, blocked, nil)) == 0 {
 		return
 	}
@@ -1281,7 +1439,7 @@ func (s *GameState) BuildBuilding(playerID, buildingType string, unitIDs []int, 
 		return
 	}
 
-	blocked := s.buildBlockedCells()
+	blocked := s.getBlockedCellsLocked()
 	for dy := 0; dy < gridH; dy++ {
 		for dx := 0; dx < gridW; dx++ {
 			if blocked[gridPoint{X: gridX + dx, Y: gridY + dy}] {
@@ -1330,10 +1488,13 @@ func (s *GameState) BuildBuilding(playerID, buildingType string, unitIDs []int, 
 		Metadata:       metadata,
 	}
 
-	s.MapConfig.Buildings = append(s.MapConfig.Buildings, building)
+	// addBuildingLocked appends the building and invalidates the blocked-cell
+	// cache so the second getBlockedCellsLocked call below reflects the new
+	// building's footprint.
+	s.addBuildingLocked(building)
 	buildingID := building.ID
 
-	blocked = s.buildBlockedCells()
+	blocked = s.getBlockedCellsLocked()
 	orderID := s.nextMovementOrderIDLocked()
 
 	assigned := 0
@@ -1411,6 +1572,8 @@ func (s *GameState) claimSpecificTownhallForPlayerLocked(playerID, buildingID st
 		building.Metadata["hp"] = def.MaxHp
 		building.Metadata["maxHp"] = def.MaxHp
 		building.SpawnUnitTypes = append([]string{}, def.SpawnUnitTypes...)
+		// Visibility changed: blocked-cells derived from Visible buildings may differ.
+		s.invalidateBlockedCellsLocked()
 		return building
 	}
 
@@ -1428,6 +1591,8 @@ func (s *GameState) releaseTownhallForPlayerLocked(playerID string) {
 		building.Occupied = false
 		building.Visible = false
 		delete(s.Productions, building.ID)
+		// Visibility changed: blocked-cells cache is now stale.
+		s.invalidateBlockedCellsLocked()
 	}
 }
 
@@ -1807,14 +1972,7 @@ func (s *GameState) clearUnitGatherStateLocked(unit *Unit) {
 }
 
 func (s *GameState) removeBuildingByIDLocked(buildingID string) {
-	delete(s.Productions, buildingID)
-	filtered := make([]protocol.BuildingTile, 0, len(s.MapConfig.Buildings)-1)
-	for _, b := range s.MapConfig.Buildings {
-		if b.ID != buildingID {
-			filtered = append(filtered, b)
-		}
-	}
-	s.MapConfig.Buildings = filtered
+	s.removeBuildingLocked(buildingID)
 }
 
 // completeReturnDepositLocked handles a worker who is returning to deposit but the
@@ -1859,21 +2017,11 @@ func (s *GameState) completeReturnDepositLocked(unit *Unit, blocked map[gridPoin
 }
 
 func (s *GameState) getUnitByIDLocked(unitID int) *Unit {
-	for _, unit := range s.Units {
-		if unit.ID == unitID {
-			return unit
-		}
-	}
-	return nil
+	return s.unitsByID[unitID]
 }
 
 func (s *GameState) getBuildingByIDLocked(buildingID string) *protocol.BuildingTile {
-	for i := range s.MapConfig.Buildings {
-		if s.MapConfig.Buildings[i].ID == buildingID {
-			return &s.MapConfig.Buildings[i]
-		}
-	}
-	return nil
+	return s.buildingsByID[buildingID]
 }
 
 func (s *GameState) getUsedMeatForPlayerLocked(playerID string) int {
@@ -2139,7 +2287,7 @@ func (s *GameState) RepairBuilding(playerID string, unitIDs []int, buildingID st
 		}
 	}
 
-	blocked := s.buildBlockedCells()
+	blocked := s.getBlockedCellsLocked()
 	orderID := s.nextMovementOrderIDLocked()
 
 	added := 0
@@ -2512,7 +2660,7 @@ func (s *GameState) getBuildingApproachPositionsLocked(building protocol.Buildin
 
 func (s *GameState) getUnitExitPositionForBuildingLocked(building protocol.BuildingTile, unit *Unit) *protocol.Vec2 {
 	unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
-	positions := s.getBuildingApproachPositionsLocked(building, 1, s.buildBlockedCells(), unitPos)
+	positions := s.getBuildingApproachPositionsLocked(building, 1, s.getBlockedCellsLocked(), unitPos)
 	if len(positions) == 0 {
 		return nil
 	}
@@ -2642,7 +2790,7 @@ func (s *GameState) completeUnitProductionLocked(buildingID string) {
 		rallyPoint := s.getTownhallSpawnOriginLocked(*building)
 		if distanceSquared(unit.X, unit.Y, rallyPoint.X, rallyPoint.Y) > unitRadius*unitRadius {
 			unit.Status = "Moving To Spawn Point"
-			s.assignUnitPath(unit, rallyPoint, s.buildBlockedCells(), nil)
+			s.assignUnitPath(unit, rallyPoint, s.getBlockedCellsLocked(), nil)
 		}
 	}
 
@@ -2650,7 +2798,7 @@ func (s *GameState) completeUnitProductionLocked(buildingID string) {
 }
 
 func (s *GameState) getProductionSpawnPositionLocked(building protocol.BuildingTile) (protocol.Vec2, bool) {
-	blocked := s.buildBlockedCells()
+	blocked := s.getBlockedCellsLocked()
 	spawnPositions := s.getTownhallSpawnPositionsLocked(building, 1, blocked)
 	if len(spawnPositions) > 0 {
 		return spawnPositions[0], true
@@ -2878,10 +3026,10 @@ func (s *GameState) randomColor() string {
 	}
 
 	if len(available) > 0 {
-		return available[s.rng.Intn(len(available))]
+		return available[s.rngCosmetic.Intn(len(available))]
 	}
 
-	return palette[s.rng.Intn(len(palette))]
+	return palette[s.rngCosmetic.Intn(len(palette))]
 }
 
 func clampFloat(v, min, max float64) float64 {
@@ -3344,14 +3492,8 @@ func (s *GameState) destroyBuildingLocked(buildingID string) {
 	// before queuing destruction, so this is only defensive.
 	delete(s.buildingDamageDealt, buildingID)
 
-	// Remove the building from the map
-	filtered := make([]protocol.BuildingTile, 0, len(s.MapConfig.Buildings))
-	for _, b := range s.MapConfig.Buildings {
-		if b.ID != buildingID {
-			filtered = append(filtered, b)
-		}
-	}
-	s.MapConfig.Buildings = filtered
+	// Remove the building from the map and invalidate blocked-cells cache.
+	s.removeBuildingLocked(buildingID)
 }
 
 func (s *GameState) getNearestPlayerTownhallCenterLocked(x, y float64) *protocol.Vec2 {

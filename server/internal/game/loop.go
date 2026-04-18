@@ -1,6 +1,9 @@
 package game
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 type Broadcaster interface {
 	BroadcastSnapshot()
@@ -11,6 +14,7 @@ type Loop struct {
 	broadcaster Broadcaster
 	ticker      *time.Ticker
 	quit        chan struct{}
+	stopOnce    sync.Once
 }
 
 func NewLoop(state *GameState, broadcaster Broadcaster) *Loop {
@@ -41,6 +45,9 @@ func (l *Loop) Start() {
 	}()
 }
 
+// Stop signals the tick loop to exit. Safe to call multiple times.
 func (l *Loop) Stop() {
-	close(l.quit)
+	l.stopOnce.Do(func() {
+		close(l.quit)
+	})
 }

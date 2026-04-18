@@ -10,7 +10,7 @@ import (
 	"webrts/server/internal/ws"
 )
 
-func NewRouter(hub *ws.Hub) http.Handler {
+func NewRouter(hub *ws.Hub, corsOrigin string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -72,12 +72,12 @@ func NewRouter(hub *ws.Hub) http.Handler {
 
 	mux.HandleFunc("/ws", hub.HandleWS)
 
-	return withCORS(mux)
+	return withCORS(mux, corsOrigin)
 }
 
-func withCORS(next http.Handler) http.Handler {
+func withCORS(next http.Handler, allowedOrigin string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 

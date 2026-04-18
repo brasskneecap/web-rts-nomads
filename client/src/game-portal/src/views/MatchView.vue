@@ -53,6 +53,44 @@
       </div>
     </div>
 
+    <!-- Disconnect overlay: shown while reconnecting or after reconnect failure -->
+    <div
+      v-if="hasStarted && (connectionState === 'reconnecting' || connectionState === 'failed')"
+      class="disconnect-overlay"
+      role="dialog"
+      aria-modal="true"
+      :aria-labelledby="connectionState === 'reconnecting' ? 'disconnect-title-reconnecting' : 'disconnect-title-failed'"
+      :aria-describedby="connectionState === 'reconnecting' ? 'disconnect-desc-reconnecting' : 'disconnect-desc-failed'"
+    >
+      <div class="disconnect-card">
+        <template v-if="connectionState === 'reconnecting'">
+          <div id="disconnect-title-reconnecting" class="disconnect-title">Connection Lost</div>
+          <div id="disconnect-desc-reconnecting" class="disconnect-desc">
+            Reconnecting...
+            <span v-if="reconnectAttempt > 0">(attempt {{ reconnectAttempt }} of {{ maxReconnectAttempts }})</span>
+          </div>
+          <div class="disconnect-spinner" aria-hidden="true"></div>
+        </template>
+
+        <template v-else>
+          <div id="disconnect-title-failed" class="disconnect-title disconnect-title--failed">
+            Unable to Reconnect
+          </div>
+          <div id="disconnect-desc-failed" class="disconnect-desc">
+            Could not reach the server after {{ maxReconnectAttempts }} attempts.
+          </div>
+          <div class="disconnect-actions">
+            <button type="button" class="disconnect-button disconnect-button--retry" @click="retryReconnect">
+              Retry
+            </button>
+            <button type="button" class="disconnect-button disconnect-button--exit" @click="exitGame">
+              Return to Menu
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <div class="match-stage" :class="{ 'match-stage--editor': showEditor || showUnitEditor }">
       <canvas v-show="hasStarted && !showEditor" ref="canvas" class="game-canvas"></canvas>
       <div v-if="showEditor" class="editor-stage">
@@ -169,7 +207,17 @@ const selectedMapDescription = computed(
   () => selectedMap.value?.description ?? '',
 )
 
-const { init, destroy, leaveStoredMatch, performSelectionAction, ui } = useGameClient()
+const {
+  init,
+  destroy,
+  leaveStoredMatch,
+  performSelectionAction,
+  retryReconnect,
+  ui,
+  connectionState,
+  reconnectAttempt,
+  maxReconnectAttempts,
+} = useGameClient()
 
 async function startGame(mapId: MapId, options: { resume?: boolean } = {}) {
   if (!canvas.value) return
@@ -397,5 +445,109 @@ onBeforeUnmount(() => {
 .victory-button:hover {
   background: linear-gradient(180deg, rgba(175, 118, 58, 1), rgba(105, 67, 35, 1));
   border-color: rgba(240, 200, 120, 0.55);
+}
+
+/* ------------------------------------------------------------------ */
+/* Disconnect overlay                                                   */
+/* ------------------------------------------------------------------ */
+
+.disconnect-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 13, 0.78);
+  backdrop-filter: blur(4px);
+  /* Pointer events deliberately kept ON — blocks game input while disconnected */
+}
+
+.disconnect-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 44px 52px;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top, rgba(80, 120, 200, 0.16), transparent 52%),
+    linear-gradient(180deg, rgba(16, 22, 38, 0.98), rgba(8, 11, 20, 0.98));
+  border: 1px solid rgba(100, 140, 220, 0.25);
+  box-shadow:
+    inset 0 1px 0 rgba(160, 190, 255, 0.1),
+    0 24px 60px rgba(0, 0, 0, 0.65);
+  min-width: 320px;
+  text-align: center;
+}
+
+.disconnect-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #a8c4f0;
+  text-transform: uppercase;
+}
+
+.disconnect-title--failed {
+  color: #f0a0a0;
+}
+
+.disconnect-desc {
+  font-size: 14px;
+  color: #8899bb;
+  line-height: 1.5;
+}
+
+/* Simple CSS spinner */
+.disconnect-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(100, 140, 220, 0.25);
+  border-top-color: #7aabee;
+  border-radius: 50%;
+  animation: disconnect-spin 0.8s linear infinite;
+}
+
+@keyframes disconnect-spin {
+  to { transform: rotate(360deg); }
+}
+
+.disconnect-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.disconnect-button {
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.disconnect-button--retry {
+  background: linear-gradient(180deg, rgba(60, 100, 180, 0.9), rgba(35, 65, 130, 0.95));
+  border: 1px solid rgba(100, 150, 240, 0.4);
+  color: #ccdeff;
+}
+
+.disconnect-button--retry:hover {
+  background: linear-gradient(180deg, rgba(80, 120, 200, 1), rgba(50, 85, 155, 1));
+  border-color: rgba(130, 175, 255, 0.6);
+}
+
+.disconnect-button--exit {
+  background: linear-gradient(180deg, rgba(50, 30, 30, 0.9), rgba(30, 18, 18, 0.95));
+  border: 1px solid rgba(160, 80, 80, 0.35);
+  color: #e0b8b8;
+}
+
+.disconnect-button--exit:hover {
+  background: linear-gradient(180deg, rgba(80, 40, 40, 1), rgba(50, 28, 28, 1));
+  border-color: rgba(200, 100, 100, 0.55);
 }
 </style>

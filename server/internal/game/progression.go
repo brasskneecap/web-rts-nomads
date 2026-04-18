@@ -2,7 +2,6 @@ package game
 
 import (
 	"math"
-	"math/rand"
 )
 
 const (
@@ -239,7 +238,7 @@ func (s *GameState) assignUnitPathOnRankUpLocked(unit *Unit) {
 		return // shouldn't happen here, but guard anyway
 	}
 	paths := [2]string{unitPathVanguard, unitPathBerserker}
-	unit.ProgressionPath = paths[rand.Intn(2)]
+	unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
 }
 
 func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent bool) {

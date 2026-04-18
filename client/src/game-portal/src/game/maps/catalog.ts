@@ -4,8 +4,10 @@ import type { UnitDef } from './unitDefs'
 import type { ActionIconDef } from './actionIconDefs'
 import type { PerkDef } from './perkDefs'
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL
+
 export async function fetchMapCatalog(): Promise<MapCatalogEntry[]> {
-  const response = await fetch('http://localhost:8080/maps')
+  const response = await fetch(`${API_BASE}/maps`)
 
   if (!response.ok) {
     throw new Error(`Failed to load maps: ${response.status}`)
@@ -16,7 +18,7 @@ export async function fetchMapCatalog(): Promise<MapCatalogEntry[]> {
 }
 
 export async function fetchMapCatalogFile(mapId: string): Promise<MapCatalogFile> {
-  const response = await fetch(`http://localhost:8080/maps/${encodeURIComponent(mapId)}`)
+  const response = await fetch(`${API_BASE}/maps/${encodeURIComponent(mapId)}`)
 
   if (!response.ok) {
     throw new Error(`Failed to load map ${mapId}: ${response.status}`)
@@ -26,7 +28,7 @@ export async function fetchMapCatalogFile(mapId: string): Promise<MapCatalogFile
 }
 
 export async function fetchBuildingDefs(): Promise<BuildingDef[]> {
-  const response = await fetch('http://localhost:8080/catalog/buildings')
+  const response = await fetch(`${API_BASE}/catalog/buildings`)
 
   if (!response.ok) {
     throw new Error(`Failed to load building defs: ${response.status}`)
@@ -37,7 +39,7 @@ export async function fetchBuildingDefs(): Promise<BuildingDef[]> {
 }
 
 export async function fetchUnitDefs(): Promise<UnitDef[]> {
-  const response = await fetch('http://localhost:8080/catalog/units')
+  const response = await fetch(`${API_BASE}/catalog/units`)
 
   if (!response.ok) {
     throw new Error(`Failed to load unit defs: ${response.status}`)
@@ -48,7 +50,7 @@ export async function fetchUnitDefs(): Promise<UnitDef[]> {
 }
 
 export async function fetchPerkDefs(): Promise<PerkDef[]> {
-  const response = await fetch('http://localhost:8080/catalog/perks')
+  const response = await fetch(`${API_BASE}/catalog/perks`)
 
   if (!response.ok) {
     throw new Error(`Failed to load perk defs: ${response.status}`)
@@ -59,7 +61,7 @@ export async function fetchPerkDefs(): Promise<PerkDef[]> {
 }
 
 export async function fetchActionIcons(): Promise<ActionIconDef[]> {
-  const response = await fetch('http://localhost:8080/catalog/action-icons')
+  const response = await fetch(`${API_BASE}/catalog/action-icons`)
 
   if (!response.ok) {
     throw new Error(`Failed to load action icons: ${response.status}`)

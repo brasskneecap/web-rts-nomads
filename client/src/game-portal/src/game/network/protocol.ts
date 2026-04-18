@@ -3,6 +3,9 @@ export type Vec2 = {
   y: number
 }
 
+/** Connection lifecycle state surfaced to the Vue layer. */
+export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed'
+
 export type MapId = string
 
 export type TerrainType = 'dirt' | 'water' | 'forest'
@@ -250,7 +253,7 @@ export type MatchSnapshotMessage = {
   tick: number
   serverNow: number
   matchId: string
-  map: MapConfig
+  buildings: BuildingTile[]
   players: PlayerSnapshot[]
   units: UnitSnapshot[]
   wave: WaveSnapshot

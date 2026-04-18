@@ -210,7 +210,7 @@ type MatchSnapshotMessage struct {
 	Tick      int              `json:"tick"`
 	ServerNow int64            `json:"serverNow"`
 	MatchID   string           `json:"matchId"`
-	Map       MapConfig        `json:"map"`
+	Buildings []BuildingTile   `json:"buildings"`
 	Players   []PlayerSnapshot `json:"players"`
 	Units     []UnitSnapshot   `json:"units"`
 	Wave      WaveSnapshot     `json:"wave"`

@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"log"
 	"sync"
 )
 
@@ -33,6 +34,7 @@ func (m *MatchManager) FindOrCreateMatch(mapID string) *Match {
 
 	match := NewMatch(matchID, mapID)
 	m.matches[matchID] = match
+	log.Printf("match created: id=%s mapID=%s seed=%d\n", matchID, mapID, match.State.MatchSeed())
 
 	return match
 }

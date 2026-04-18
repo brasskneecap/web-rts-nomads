@@ -20,6 +20,7 @@ const (
 type Hub struct {
 	upgrader websocket.Upgrader
 	manager  *game.MatchManager
+	quit     chan struct{}
 }
 
 func NewHub(manager *game.MatchManager) *Hub {
@@ -28,11 +29,17 @@ func NewHub(manager *game.MatchManager) *Hub {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
+		quit: make(chan struct{}),
 	}
 
 	go h.heartbeatLoop()
 
 	return h
+}
+
+// Close signals the heartbeat goroutine to stop. Call during graceful shutdown.
+func (h *Hub) Close() {
+	close(h.quit)
 }
 
 func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -85,14 +92,19 @@ func (h *Hub) readLoop(client *Client) {
 			if msg.MatchID != "" {
 				if existing, ok := h.manager.GetMatch(msg.MatchID); ok {
 					match = existing
+					// Cancel any pending removal — this is a reconnect.
+					reconnect := match.CancelPlayerRemoval(msg.PlayerID)
+					if reconnect {
+						log.Printf("reconnect: player=%s match=%s\n", msg.PlayerID, match.ID)
+					}
 				}
 			}
 			if match == nil {
 				match = h.manager.FindOrCreateMatch(mapID)
 			}
 
-			client.PlayerID = msg.PlayerID
-			client.MatchID = match.ID
+			client.SetPlayerID(msg.PlayerID)
+			client.SetMatchID(match.ID)
 			client.TouchPong()
 
 			match.AddClient(client)
@@ -139,15 +151,15 @@ func (h *Hub) readLoop(client *Client) {
 				match.BroadcastSnapshot()
 			}
 
-			if client.MatchID == msg.MatchID {
-				client.MatchID = ""
+			if client.MatchID() == msg.MatchID {
+				client.SetMatchID("")
 			}
-			if client.PlayerID == msg.PlayerID {
-				client.PlayerID = ""
+			if client.PlayerID() == msg.PlayerID {
+				client.SetPlayerID("")
 			}
 
 		case "move_command":
-			if client.MatchID == "" {
+			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
 					Message: "must join a match before sending commands",
@@ -155,7 +167,7 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match, ok := h.manager.GetMatch(client.MatchID)
+			match, ok := h.manager.GetMatch(client.MatchID())
 			if !ok {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
@@ -173,11 +185,12 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match.State.MoveUnits(client.PlayerID, msg.UnitIDs, msg.Destination)
-			match.BroadcastSnapshot()
+			// The 20 Hz tick loop is the sole broadcast path; per-command
+			// broadcasts are redundant and amplify bandwidth.
+			match.State.MoveUnits(client.PlayerID(), msg.UnitIDs, msg.Destination)
 
 		case "gather_command":
-			if client.MatchID == "" {
+			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
 					Message: "must join a match before sending commands",
@@ -185,7 +198,7 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match, ok := h.manager.GetMatch(client.MatchID)
+			match, ok := h.manager.GetMatch(client.MatchID())
 			if !ok {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
@@ -203,16 +216,15 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match.State.GatherWithUnits(client.PlayerID, msg.UnitIDs, msg.BuildingID)
-			match.BroadcastSnapshot()
+			match.State.GatherWithUnits(client.PlayerID(), msg.UnitIDs, msg.BuildingID)
 
 		case "train_unit_command":
-			if client.MatchID == "" {
+			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
 				continue
 			}
 
-			match, ok := h.manager.GetMatch(client.MatchID)
+			match, ok := h.manager.GetMatch(client.MatchID())
 			if !ok {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
 				continue
@@ -224,15 +236,14 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			if !match.State.CanAffordUnit(client.PlayerID, msg.UnitType) {
+			if !match.State.CanAffordUnit(client.PlayerID(), msg.UnitType) {
 				_ = client.WriteJSON(protocol.NotificationMessage{Type: "notification", Message: "Not enough resources"})
 				continue
 			}
-			match.State.TrainUnit(client.PlayerID, msg.BuildingID, msg.UnitType)
-			match.BroadcastSnapshot()
+			match.State.TrainUnit(client.PlayerID(), msg.BuildingID, msg.UnitType)
 
 		case "cancel_training_command":
-			if client.MatchID == "" {
+			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
 					Message: "must join a match before sending commands",
@@ -240,7 +251,7 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match, ok := h.manager.GetMatch(client.MatchID)
+			match, ok := h.manager.GetMatch(client.MatchID())
 			if !ok {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
@@ -258,11 +269,10 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match.State.CancelCurrentTraining(client.PlayerID, msg.BuildingID)
-			match.BroadcastSnapshot()
+			match.State.CancelCurrentTraining(client.PlayerID(), msg.BuildingID)
 
 		case "set_building_spawn_point_command":
-			if client.MatchID == "" {
+			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
 					Message: "must join a match before sending commands",
@@ -270,7 +280,7 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match, ok := h.manager.GetMatch(client.MatchID)
+			match, ok := h.manager.GetMatch(client.MatchID())
 			if !ok {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
@@ -288,16 +298,15 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match.State.SetBuildingSpawnPoint(client.PlayerID, msg.BuildingID, msg.Point)
-			match.BroadcastSnapshot()
+			match.State.SetBuildingSpawnPoint(client.PlayerID(), msg.BuildingID, msg.Point)
 
 		case "build_building_command":
-			if client.MatchID == "" {
+			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
 				continue
 			}
 
-			match, ok := h.manager.GetMatch(client.MatchID)
+			match, ok := h.manager.GetMatch(client.MatchID())
 			if !ok {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
 				continue
@@ -309,15 +318,14 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			if !match.State.CanAffordBuilding(client.PlayerID, msg.BuildingType) {
+			if !match.State.CanAffordBuilding(client.PlayerID(), msg.BuildingType) {
 				_ = client.WriteJSON(protocol.NotificationMessage{Type: "notification", Message: "Not enough resources"})
 				continue
 			}
-			match.State.BuildBuilding(client.PlayerID, msg.BuildingType, msg.UnitIDs, msg.GridX, msg.GridY)
-			match.BroadcastSnapshot()
+			match.State.BuildBuilding(client.PlayerID(), msg.BuildingType, msg.UnitIDs, msg.GridX, msg.GridY)
 
 		case "attack_command":
-			if client.MatchID == "" {
+			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
 					Message: "must join a match before sending commands",
@@ -325,7 +333,7 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match, ok := h.manager.GetMatch(client.MatchID)
+			match, ok := h.manager.GetMatch(client.MatchID())
 			if !ok {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
@@ -343,11 +351,10 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match.State.AttackWithUnits(client.PlayerID, msg.UnitIDs, msg.TargetUnitID)
-			match.BroadcastSnapshot()
+			match.State.AttackWithUnits(client.PlayerID(), msg.UnitIDs, msg.TargetUnitID)
 
 		case "attack_move_command":
-			if client.MatchID == "" {
+			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
 					Message: "must join a match before sending commands",
@@ -355,7 +362,7 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match, ok := h.manager.GetMatch(client.MatchID)
+			match, ok := h.manager.GetMatch(client.MatchID())
 			if !ok {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
@@ -373,11 +380,10 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match.State.AttackMoveUnits(client.PlayerID, msg.UnitIDs, msg.Destination)
-			match.BroadcastSnapshot()
+			match.State.AttackMoveUnits(client.PlayerID(), msg.UnitIDs, msg.Destination)
 
 		case "repair_command":
-			if client.MatchID == "" {
+			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
 					Message: "must join a match before sending commands",
@@ -385,7 +391,7 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match, ok := h.manager.GetMatch(client.MatchID)
+			match, ok := h.manager.GetMatch(client.MatchID())
 			if !ok {
 				_ = client.WriteJSON(protocol.ErrorMessage{
 					Type:    "error",
@@ -403,8 +409,7 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match.State.RepairBuilding(client.PlayerID, msg.UnitIDs, msg.BuildingID)
-			match.BroadcastSnapshot()
+			match.State.RepairBuilding(client.PlayerID(), msg.UnitIDs, msg.BuildingID)
 
 		case "pong":
 			client.TouchPong()
@@ -422,27 +427,35 @@ func (h *Hub) heartbeatLoop() {
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		matches := h.manager.ListMatches()
+	for {
+		select {
+		case <-h.quit:
+			return
 
-		for _, match := range matches {
-			clients := match.ListClients()
+		case <-ticker.C:
+			matches := h.manager.ListMatches()
 
-			for _, rawClient := range clients {
-				client, ok := rawClient.(*Client)
-				if !ok {
-					continue
-				}
+			for _, match := range matches {
+				clients := match.ListClients()
 
-				if time.Since(client.LastPong()) > heartbeatTimeout {
-					log.Printf("heartbeat timeout for player=%s match=%s\n", client.PlayerID, client.MatchID)
-					h.cleanupClient(client, false)
-					continue
-				}
+				for _, rawClient := range clients {
+					client, ok := rawClient.(*Client)
+					if !ok {
+						continue
+					}
 
-				if err := client.WriteJSON(protocol.PingMessage{Type: "ping"}); err != nil {
-					log.Printf("ping failed for player=%s match=%s: %v\n", client.PlayerID, client.MatchID, err)
-					h.cleanupClient(client, false)
+					if time.Since(client.LastPong()) > heartbeatTimeout {
+						log.Printf("heartbeat timeout for player=%s match=%s\n", client.PlayerID(), client.MatchID())
+						h.cleanupClient(client, false)
+						continue
+					}
+
+					// Send a WebSocket-level ping frame. The client's pong handler
+					// will call TouchPong and extend the read deadline.
+					if err := client.WritePing(); err != nil {
+						log.Printf("ping failed for player=%s match=%s: %v\n", client.PlayerID(), client.MatchID(), err)
+						h.cleanupClient(client, false)
+					}
 				}
 			}
 		}
@@ -450,13 +463,21 @@ func (h *Hub) heartbeatLoop() {
 }
 
 func (h *Hub) cleanupClient(client *Client, closeConn bool) {
-	if client.MatchID != "" {
-		if match, ok := h.manager.GetMatch(client.MatchID); ok {
-			if client.PlayerID != "" {
-				match.RemovePlayer(client.PlayerID)
+	matchID := client.MatchID()
+	playerID := client.PlayerID()
+
+	if matchID != "" {
+		if match, ok := h.manager.GetMatch(matchID); ok {
+			if playerID != "" {
+				// Schedule removal after a grace window so transient drops
+				// (tab sleep, flaky radio, etc.) don't destroy the player's
+				// in-match state. The timer calls RemovePlayer and then
+				// triggers a match-deletion check if the match is empty.
+				match.SchedulePlayerRemoval(playerID, game.PlayerRemovalGrace, h.manager)
 			}
 			match.RemoveClient(client)
-			if match.ClientCount() == 0 {
+			// Delete only when no active clients AND no pending removals remain.
+			if match.ClientCount() == 0 && match.PendingCleanupCount() == 0 {
 				h.manager.DeleteMatch(match.ID)
 			} else {
 				match.BroadcastSnapshot()
@@ -464,8 +485,8 @@ func (h *Hub) cleanupClient(client *Client, closeConn bool) {
 		}
 	}
 
-	client.MatchID = ""
-	client.PlayerID = ""
+	client.SetMatchID("")
+	client.SetPlayerID("")
 
 	if closeConn {
 		client.Close()

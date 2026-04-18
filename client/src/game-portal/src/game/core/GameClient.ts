@@ -4,7 +4,7 @@ import { CanvasRenderer } from '../rendering/CanvasRenderer'
 import { InputManager } from '../input/InputManager'
 import { Camera } from '../rendering/Camera'
 import { NetworkClient } from '../network/NetworkClient'
-import type { MapId, WaveSnapshot } from '../network/protocol'
+import type { ConnectionState, MapId, WaveSnapshot } from '../network/protocol'
 import type { PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP, initUnitDefs } from '../maps/unitDefs'
@@ -30,12 +30,25 @@ export class GameClient {
   private canvas: HTMLCanvasElement
   private hasCenteredCameraOnSpawn = false
 
+  /** Wired by useGameClient to propagate connection state into Vue refs. */
+  onConnectionStateChange: ((state: ConnectionState) => void) | null = null
+
   constructor(canvas: HTMLCanvasElement, mapId: MapId = '') {
     this.canvas = canvas
     this.state = new GameState()
     this.camera = new Camera()
     this.network = new NetworkClient(this.state)
     this.network.setPreferredMapId(mapId)
+
+    this.network.onConnectionStateChange = (s) => {
+      this.onConnectionStateChange?.(s)
+    }
+
+    this.network.onReconnectSuccess = () => {
+      // Buffer already cleared inside NetworkClient.handleMessage for welcome.
+      // Nothing extra needed here right now, but the hook is available.
+    }
+
     this.renderer = new CanvasRenderer(canvas, this.state, this.camera)
     this.input = new InputManager(canvas, this.state, this, this.camera, this.network)
 
@@ -65,6 +78,18 @@ export class GameClient {
 
   async leaveStoredMatch() {
     await this.network.leaveStoredMatch()
+  }
+
+  retryReconnect() {
+    this.network.retryReconnect()
+  }
+
+  get reconnectAttempt(): number {
+    return this.network.currentReconnectAttempt
+  }
+
+  get maxReconnectAttempts(): number {
+    return this.network.maxReconnectAttempts
   }
 
   stop() {

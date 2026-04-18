@@ -1,5 +1,6 @@
 import { onBeforeUnmount, ref } from 'vue'
 import { GameClient, type GameUiSnapshot } from '@/game/core/GameClient'
+import type { ConnectionState } from '@/game/network/protocol'
 
 let client: GameClient | null = null
 
@@ -34,6 +35,12 @@ const emptyUiSnapshot: GameUiSnapshot = {
 export function useGameClient() {
   const isRunning = ref(false)
   const ui = ref<GameUiSnapshot>(emptyUiSnapshot)
+  const connectionState = ref<ConnectionState>('idle')
+  // Attempt counters are polled from the client each time the state changes so
+  // the overlay can display "attempt N of M" without needing a separate channel.
+  const reconnectAttempt = ref(0)
+  const maxReconnectAttempts = ref(0)
+
   let rafId = 0
 
   function syncUi() {
@@ -59,6 +66,15 @@ export function useGameClient() {
     client?.stop()
     stopUiSync()
     client = new GameClient(canvas, mapId)
+
+    // Wire the connection state callback. This runs outside the RAF loop so
+    // connection state changes are never masked by the snapshot polling rhythm.
+    client.onConnectionStateChange = (state) => {
+      connectionState.value = state
+      reconnectAttempt.value = client?.reconnectAttempt ?? 0
+      maxReconnectAttempts.value = client?.maxReconnectAttempts ?? 0
+    }
+
     await client.start(options)
     syncUi()
     isRunning.value = true
@@ -78,10 +94,15 @@ export function useGameClient() {
     client = null
     ui.value = emptyUiSnapshot
     isRunning.value = false
+    connectionState.value = 'idle'
   }
 
   function performSelectionAction(actionId: string) {
     client?.performSelectionAction(actionId)
+  }
+
+  function retryReconnect() {
+    client?.retryReconnect()
   }
 
   onBeforeUnmount(() => {
@@ -94,6 +115,10 @@ export function useGameClient() {
     isRunning,
     leaveStoredMatch,
     performSelectionAction,
+    retryReconnect,
     ui,
+    connectionState,
+    reconnectAttempt,
+    maxReconnectAttempts,
   }
 }

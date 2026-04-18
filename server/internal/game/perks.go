@@ -66,7 +66,6 @@ package game
 
 import (
 	"math"
-	"math/rand"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,7 +172,7 @@ func (s *GameState) assignUnitPerkLocked(unit *Unit) {
 	if len(pool) == 0 {
 		return
 	}
-	unit.PerkIDs = append(unit.PerkIDs, pool[rand.Intn(len(pool))].ID)
+	unit.PerkIDs = append(unit.PerkIDs, pool[s.rngPerks.Intn(len(pool))].ID)
 }
 
 // perkPoolForRankLocked returns the list of perk defs a unit is eligible to be
@@ -433,7 +432,7 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 			// The taunted enemy strongly prefers targeting this Vanguard while the
 			// taunt is active. Falls off naturally via decayThreatLocked in combat_ai.go.
 			// Proc chance and duration are tunable in perk-defs.json (tauntChance, tauntDurationSeconds).
-			if primaryTarget != nil && rand.Float64() < def.Config["tauntChance"] {
+			if primaryTarget != nil && s.rngPerks.Float64() < def.Config["tauntChance"] {
 				s.ApplyTauntLocked(primaryTarget.ID, attacker.ID, def.Config["tauntDurationSeconds"])
 			}
 

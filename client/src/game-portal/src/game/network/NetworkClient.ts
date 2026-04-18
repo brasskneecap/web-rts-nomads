@@ -4,6 +4,7 @@ import type {
   BuildBuildingCommandMessage,
   CancelTrainingCommandMessage,
   ClientMessage,
+  ConnectionState,
   GatherCommandMessage,
   LeaveMatchMessage,
   MapId,
@@ -15,9 +16,23 @@ import type {
 } from './protocol'
 import { GameState } from '../core/GameState'
 
+/** Derive the WebSocket base URL from the HTTP base URL env var.
+ *  http -> ws, https -> wss so both schemes work in prod and dev. */
+function getWsBaseUrl(): string {
+  const http = import.meta.env.VITE_API_BASE_URL
+  return http.replace(/^http/, 'ws')
+}
+
+const WS_URL = `${getWsBaseUrl()}/ws`
+
 const PLAYER_ID_STORAGE_KEY = 'webrts.playerId'
 const MAP_ID_STORAGE_KEY = 'webrts.mapId'
 const MATCH_ID_STORAGE_KEY = 'webrts.matchId'
+
+// Backoff schedule: 1s, 2s, 4s, 8s — total ~15s across 4 retries, well within the 30s server grace.
+// After 4 attempts without success the state moves to 'failed'.
+const BACKOFF_DELAYS_MS = [1000, 2000, 4000, 8000]
+const MAX_RECONNECT_ATTEMPTS = BACKOFF_DELAYS_MS.length
 
 function getOrCreatePlayerId(): string {
   const existing = localStorage.getItem(PLAYER_ID_STORAGE_KEY)
@@ -43,6 +58,20 @@ export class NetworkClient {
   private matchId: string | null = getStoredMatchId()
   private mapId: MapId = getPreferredMapId()
 
+  /** Set to false before calling close() for an intentional disconnect so the
+   *  reconnect loop does not fire. */
+  private shouldReconnect = true
+
+  private reconnectAttempt = 0
+  private reconnectTimerId: ReturnType<typeof setTimeout> | null = null
+
+  /** Called whenever the connection state changes. GameClient wires this up. */
+  onConnectionStateChange: ((state: ConnectionState) => void) | null = null
+
+  /** Callback that lets GameClient clear the interpolation buffer before the
+   *  first fresh snapshot arrives after a successful reconnect. */
+  onReconnectSuccess: (() => void) | null = null
+
   constructor(state: GameState) {
     this.state = state
     this.state.setLocalPlayerId(this.playerId)
@@ -53,52 +82,159 @@ export class NetworkClient {
     localStorage.setItem(MAP_ID_STORAGE_KEY, mapId)
   }
 
-  connect({ resume = true }: { resume?: boolean } = {}) {
-    return new Promise<void>((resolve, reject) => {
-      this.socket = new WebSocket('ws://localhost:8080/ws')
+  // -------------------------------------------------------------------------
+  // Public connect / disconnect
+  // -------------------------------------------------------------------------
 
-      this.socket.onopen = () => {
+  connect({ resume = true }: { resume?: boolean } = {}) {
+    this.shouldReconnect = true
+    this.reconnectAttempt = 0
+    this.notifyState('connecting')
+    return this.openSocket({ resume, isReconnect: false })
+  }
+
+  disconnect() {
+    this.shouldReconnect = false
+    this.clearReconnectTimer()
+    this.closeSocket()
+  }
+
+  // -------------------------------------------------------------------------
+  // Internal socket helpers
+  // -------------------------------------------------------------------------
+
+  private openSocket({
+    resume,
+    isReconnect,
+  }: {
+    resume: boolean
+    isReconnect: boolean
+  }): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const ws = new WebSocket(WS_URL)
+      this.socket = ws
+
+      ws.onopen = () => {
         const joinMessage: ClientMessage = {
           type: 'join_match',
           playerId: this.playerId,
           mapId: this.mapId,
           matchId: resume ? (this.matchId ?? undefined) : undefined,
         }
-
         this.send(joinMessage)
-        resolve()
+
+        if (!isReconnect) {
+          resolve()
+        }
       }
 
-      this.socket.onerror = (err) => {
-        reject(err)
+      ws.onerror = (err) => {
+        if (!isReconnect) {
+          reject(err)
+        }
+        // For reconnect attempts, onerror is followed by onclose — handle there.
       }
 
-      this.socket.onmessage = (event) => {
+      ws.onmessage = (event) => {
         const message = JSON.parse(event.data) as ServerMessage
-        this.handleMessage(message)
+        this.handleMessage(message, isReconnect)
       }
 
-      this.socket.onclose = () => {
-        console.log('socket closed')
+      ws.onclose = () => {
+        // If the socket we just closed is no longer the active one (e.g. we
+        // already opened a replacement), ignore the stale close event.
+        if (this.socket !== ws) return
+
+        if (this.shouldReconnect) {
+          this.scheduleReconnect()
+        }
       }
     })
   }
 
-  disconnect() {
-    this.socket?.close()
-    this.socket = null
+  private closeSocket() {
+    if (this.socket) {
+      this.socket.onclose = null // suppress reconnect handler
+      this.socket.close()
+      this.socket = null
+    }
   }
+
+  // -------------------------------------------------------------------------
+  // Reconnect logic
+  // -------------------------------------------------------------------------
+
+  private scheduleReconnect() {
+    if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      this.notifyState('failed')
+      return
+    }
+
+    this.notifyState('reconnecting')
+
+    const delay = BACKOFF_DELAYS_MS[this.reconnectAttempt]
+    this.reconnectAttempt++
+
+    this.reconnectTimerId = setTimeout(() => {
+      this.reconnectTimerId = null
+      // Guard: user may have intentionally disconnected while timer was ticking.
+      if (!this.shouldReconnect) return
+
+      void this.openSocket({ resume: true, isReconnect: true })
+    }, delay)
+  }
+
+  /** Called by the UI's "Retry" button after 'failed'. */
+  retryReconnect() {
+    this.shouldReconnect = true
+    this.reconnectAttempt = 0
+    this.clearReconnectTimer()
+    this.closeSocket()
+    this.scheduleReconnect()
+  }
+
+  private clearReconnectTimer() {
+    if (this.reconnectTimerId !== null) {
+      clearTimeout(this.reconnectTimerId)
+      this.reconnectTimerId = null
+    }
+  }
+
+  private notifyState(state: ConnectionState) {
+    this.onConnectionStateChange?.(state)
+  }
+
+  get currentReconnectAttempt(): number {
+    return this.reconnectAttempt
+  }
+
+  get maxReconnectAttempts(): number {
+    return MAX_RECONNECT_ATTEMPTS
+  }
+
+  // -------------------------------------------------------------------------
+  // Send helpers
+  // -------------------------------------------------------------------------
 
   send(message: ClientMessage) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
     this.socket.send(JSON.stringify(message))
   }
 
+  // -------------------------------------------------------------------------
+  // Leave stored match (intentional)
+  // -------------------------------------------------------------------------
+
   async leaveStoredMatch() {
     const matchId = this.matchId ?? getStoredMatchId()
     if (!matchId) return
 
-    const socket = new WebSocket('ws://localhost:8080/ws')
+    // Intentional disconnect — stop any in-flight reconnect before opening the
+    // leave socket so the close event on the main socket does not re-trigger.
+    this.shouldReconnect = false
+    this.clearReconnectTimer()
+
+    const socket = new WebSocket(WS_URL)
 
     await new Promise<void>((resolve, reject) => {
       socket.onopen = () => {
@@ -118,8 +254,13 @@ export class NetworkClient {
 
     socket.close()
     this.matchId = null
-    localStorage.removeItem(MATCH_ID_STORAGE_KEY)
+    // localStorage cleared by the caller (MatchView / startNewGame / exitGame)
+    // so that the reconnect path can still read matchId if needed before intentional leave.
   }
+
+  // -------------------------------------------------------------------------
+  // Command senders
+  // -------------------------------------------------------------------------
 
   sendMoveCommand(unitIds: number[], x: number, y: number) {
     const message: MoveCommandMessage = {
@@ -205,7 +346,11 @@ export class NetworkClient {
     this.send(message)
   }
 
-  private handleMessage(message: ServerMessage) {
+  // -------------------------------------------------------------------------
+  // Message handling
+  // -------------------------------------------------------------------------
+
+  private handleMessage(message: ServerMessage, isReconnect: boolean) {
     switch (message.type) {
       case 'welcome':
         this.matchId = message.matchId
@@ -215,6 +360,16 @@ export class NetworkClient {
         localStorage.setItem(MAP_ID_STORAGE_KEY, message.map.id)
         localStorage.setItem(MATCH_ID_STORAGE_KEY, message.matchId)
         console.log('connected as', message.playerId, 'in', message.matchId)
+
+        if (isReconnect) {
+          // Clear stale interpolation frames before the fresh snapshot arrives
+          // to avoid a visual glitch from interpolating across the gap.
+          this.state.clearSnapshotBuffer()
+          this.onReconnectSuccess?.()
+        }
+
+        this.reconnectAttempt = 0
+        this.notifyState('connected')
         break
 
       case 'match_snapshot':
@@ -224,9 +379,9 @@ export class NetworkClient {
         break
 
       case 'ping':
-      this.send({ type: 'pong' })
-      break
-      
+        this.send({ type: 'pong' })
+        break
+
       case 'notification':
         this.state.addNotification(message.message)
         break

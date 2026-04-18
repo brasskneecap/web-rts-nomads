@@ -270,6 +270,10 @@ export class GameState {
     this.localPlayerId = playerId
   }
 
+  clearSnapshotBuffer() {
+    this.snapshotBuffer = []
+  }
+
   update(dt: number) {
     const now = performance.now()
     this.moveMarkers = this.moveMarkers.filter(
@@ -311,8 +315,8 @@ export class GameState {
   applySnapshot(message: MatchSnapshotMessage) {
     const now = performance.now()
 
-    this.setMapConfig(message.map)
-    
+    this.mergeSnapshotBuildings(message.buildings)
+
     const frame: InterpolationFrame = {
       tick: message.tick,
       serverNow: message.serverNow,
@@ -848,18 +852,41 @@ export class GameState {
     return units.length > 0 && units.some((unit) => unit.capabilities.includes('attack'))
   }
 
-  setMapConfig(map: MapConfig) {
-    this.mapConfig = sanitizeMapConfig(map)
-    this.mapWidth = this.mapConfig.width
-    this.mapHeight = this.mapConfig.height
+  /**
+   * Called on every match_snapshot. Replaces the buildings array in the stored
+   * mapConfig with the incoming one, then invalidates any selection that refers
+   * to a building that is no longer present or is no longer visible.
+   * Terrain, obstacles, and map dimensions are static after welcome and are not
+   * touched here.
+   */
+  private mergeSnapshotBuildings(buildings: BuildingTile[]) {
+    this.mapConfig = { ...this.mapConfig, buildings }
+    this.invalidateBuildingSelection()
+  }
 
+  /**
+   * Clears selectedBuildingId (and the dependent targeting mode) when the
+   * selected building has been removed or hidden in the latest snapshot.
+   * Extracted so it can be called after either a full setMapConfig or a
+   * lightweight mergeSnapshotBuildings.
+   */
+  private invalidateBuildingSelection() {
     if (
       this.selectedBuildingId &&
-      !this.mapConfig.buildings.some((building) => building.id === this.selectedBuildingId && building.visible)
+      !this.mapConfig.buildings.some(
+        (building) => building.id === this.selectedBuildingId && building.visible,
+      )
     ) {
       this.selectedBuildingId = null
       this.buildingTargetingMode = null
     }
+  }
+
+  setMapConfig(map: MapConfig) {
+    this.mapConfig = sanitizeMapConfig(map)
+    this.mapWidth = this.mapConfig.width
+    this.mapHeight = this.mapConfig.height
+    this.invalidateBuildingSelection()
   }
 
   getLocalPlayerUnits(): Unit[] {
