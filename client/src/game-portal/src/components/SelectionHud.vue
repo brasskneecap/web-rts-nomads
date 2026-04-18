@@ -2,22 +2,47 @@
   <footer class="selection-hud">
     <div class="selection-main">
       <section class="selection-panel selection-panel--primary">
-        <div class="selection-title">
-          {{ ui.selection.title }}<span
-            v-if="ui.selection.kind === 'unit' && ui.selection.pathLabel"
-            class="selection-title__path"
-          > ({{ ui.selection.pathLabel }})</span>
-        </div>
-        <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
-        <div
-          v-if="ui.selection.kind === 'unit' && (ui.selection.rankLabel || ui.selection.xpLabel)"
-          class="selection-progression"
-        >
-          <div v-if="ui.selection.rankLabel" class="selection-progression__rank-group">
-            <div class="selection-progression__label">Rank</div>
-            <div class="selection-progression__rank">{{ ui.selection.rankLabel }}</div>
+        <div class="selection-primary__info">
+          <div class="selection-title">
+            {{ ui.selection.title }}<span
+              v-if="ui.selection.kind === 'unit' && ui.selection.pathLabel"
+              class="selection-title__path"
+            > ({{ ui.selection.pathLabel }})</span>
           </div>
-          <span v-if="ui.selection.xpLabel" class="selection-progression__xp">{{ ui.selection.xpLabel }}</span>
+          <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
+          <div
+            v-if="ui.selection.kind === 'unit' && (ui.selection.rankLabel || ui.selection.xpLabel)"
+            class="selection-progression"
+          >
+            <div v-if="ui.selection.rankLabel" class="selection-progression__rank-group">
+              <div class="selection-progression__label">Rank</div>
+              <div class="selection-progression__rank">{{ ui.selection.rankLabel }}</div>
+            </div>
+            <span v-if="ui.selection.xpLabel" class="selection-progression__xp">{{ ui.selection.xpLabel }}</span>
+          </div>
+        </div>
+        <div v-if="iconDetails.length > 0" class="detail-stats">
+          <div
+            v-for="detail in iconDetails"
+            :key="detail.id"
+            class="stat-row"
+            :title="detail.tooltip"
+            :aria-label="detail.value ? `${detail.label} ${detail.value}` : detail.label"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              class="stat-row__icon"
+            >
+              <path :d="detail.icon" />
+            </svg>
+            <strong v-if="detail.value" class="stat-row__value">{{ detail.value }}</strong>
+          </div>
         </div>
       </section>
 
@@ -51,15 +76,15 @@
             </button>
           </div>
         </div>
-        <div class="detail-inline">
-          <template v-for="(detail, index) in ui.selection.details" :key="detail.id">
-            <span class="detail-entry">
+        <div v-if="inlineDetails.length > 0 || iconDetails.length === 0" class="detail-inline">
+          <template v-for="(detail, index) in inlineDetails" :key="detail.id">
+            <span class="detail-entry" :title="detail.tooltip">
               <span>{{ detail.label }}</span>
               <strong v-if="detail.value">{{ detail.value }}</strong>
             </span>
-            <span v-if="index < ui.selection.details.length - 1" class="detail-separator">,</span>
+            <span v-if="index < inlineDetails.length - 1" class="detail-separator">,</span>
           </template>
-          <span v-if="ui.selection.details.length === 0" class="detail-empty">No details available</span>
+          <span v-if="iconDetails.length === 0 && inlineDetails.length === 0" class="detail-empty">No details available</span>
         </div>
       </section>
     </div>
@@ -112,6 +137,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 import ActionIcon from '@/components/ActionIcon.vue'
 
@@ -119,11 +145,16 @@ defineEmits<{
   action: [actionId: string]
 }>()
 
-defineProps<{
+const props = defineProps<{
   ui: GameUiSnapshot
 }>()
 
 const GRID_SIZE = 9
+
+// Details are split by whether they have a stat icon: icon entries render as
+// a vertical icon+value grid, everything else falls through to the inline row.
+const iconDetails = computed(() => props.ui.selection.details.filter((d) => !!d.icon))
+const inlineDetails = computed(() => props.ui.selection.details.filter((d) => !d.icon))
 </script>
 
 <style scoped>
@@ -136,7 +167,7 @@ const GRID_SIZE = 9
   display: flex;
   align-items: flex-end;
   gap: 6px;
-  --selection-panel-width: clamp(180px, 20vw, 240px);
+  --selection-panel-width: clamp(280px, 30vw, 360px);
   --actions-panel-width: clamp(170px, 18vw, 210px);
   --main-panel-height: clamp(100px, 14vh, 140px);
   --hud-height: clamp(180px, 28vh, 240px);
@@ -165,9 +196,18 @@ const GRID_SIZE = 9
 
 .selection-panel--primary {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 14px;
   flex: 0 0 var(--selection-panel-width);
   border-radius: 14px 0 0 14px;
+}
+
+.selection-primary__info {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .selection-panel--details {
@@ -261,6 +301,37 @@ const GRID_SIZE = 9
   grid-template-rows: repeat(3, 1fr);
   gap: 4px;
   flex: 1 1 auto;
+}
+
+.detail-stats {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 90px;
+}
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e7d7b6;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.stat-row__icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: #d2b376;
+}
+
+.stat-row__value {
+  color: #fff2d6;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .detail-inline {
@@ -522,7 +593,7 @@ const GRID_SIZE = 9
     left: 14px;
     right: 14px;
     bottom: 14px;
-    --selection-panel-width: 210px;
+    --selection-panel-width: 310px;
     --actions-panel-width: 180px;
     --main-panel-height: 110px;
     --hud-height: 200px;
@@ -538,7 +609,7 @@ const GRID_SIZE = 9
     left: 10px;
     right: 10px;
     bottom: 10px;
-    --selection-panel-width: 170px;
+    --selection-panel-width: 260px;
     --actions-panel-width: 152px;
     --main-panel-height: 90px;
     --hud-height: 176px;

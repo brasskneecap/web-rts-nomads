@@ -72,7 +72,18 @@ export type DetailItem = {
   id: string
   label: string
   value?: string
+  tooltip?: string
+  // SVG path (24×24 viewBox, stroke-style). When set, SelectionHud renders this
+  // entry as an icon+value row instead of inline "Label: Value" text.
+  icon?: string
 }
+
+// Stat icons used by unit detail rows. Stroke-style paths on a 24×24 viewBox,
+// matching the existing action-icons.json conventions.
+const STAT_ICON_HEART = 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'
+const STAT_ICON_SWORD = 'M14.5 17.5 L3 6 L3 3 L6 3 L17.5 14.5 M20 12 L12 20.5 M16.5 17.5 L20.5 21.5 L21.5 20.5 L17.5 16.5'
+const STAT_ICON_BOOT = 'M6 3v11 M6 13h9v5 M3 18h18 M6 7h2 M6 10h2'
+const STAT_ICON_SHIELD = 'M12 2L4 5v6c0 5.5 3.5 10 8 11 4.5-1 8-5.5 8-11V5z'
 
 export type ProductionSummary = {
   unitType: string
@@ -1487,38 +1498,37 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
   return details
 }
 
+// Mirrors server/internal/game/progression.go armorDamageReduction — keep in sync.
+// reduction = armor / (armor + K) where K = 100.
+const ARMOR_MITIGATION_K = 100
+
+function armorDamageReductionFraction(armor: number): number {
+  if (armor <= 0) return 0
+  return armor / (armor + ARMOR_MITIGATION_K)
+}
+
 function getUnitDetails(unit: Unit): DetailItem[] {
   const details: DetailItem[] = [
     {
       id: 'durability',
       label: 'Durability',
       value: `${unit.hp ?? 0} / ${unit.maxHp ?? unit.hp ?? 0}`,
+      icon: STAT_ICON_HEART,
     },
   ]
 
-  // Shield (currently only granted by blood_engine). Only show when the unit
-  // can actually carry shield, so stateless units never show an "Shield 0/0".
-  if ((unit.maxShield ?? 0) > 0) {
+  // Damage and attack speed share one row — the sword icon covers both.
+  const hasDamage = (unit.damage ?? 0) > 0
+  const hasAttackSpeed = (unit.attackSpeed ?? 0) > 0
+  if (hasDamage || hasAttackSpeed) {
+    const parts: string[] = []
+    if (hasDamage) parts.push(String(unit.damage))
+    if (hasAttackSpeed) parts.push(`${unit.attackSpeed!.toFixed(2)}/s`)
     details.push({
-      id: 'shield',
-      label: 'Shield',
-      value: `${unit.shield ?? 0} / ${unit.maxShield ?? 0}`,
-    })
-  }
-
-  if (unit.damage !== undefined && unit.damage > 0) {
-    details.push({
-      id: 'damage',
-      label: 'Damage',
-      value: String(unit.damage),
-    })
-  }
-
-  if (unit.attackSpeed !== undefined && unit.attackSpeed > 0) {
-    details.push({
-      id: 'attack-speed',
-      label: 'Attack Speed',
-      value: `${unit.attackSpeed.toFixed(2)}/s`,
+      id: 'attack',
+      label: 'Damage / Attack Speed',
+      value: parts.join(' · '),
+      icon: STAT_ICON_SWORD,
     })
   }
 
@@ -1527,14 +1537,29 @@ function getUnitDetails(unit: Unit): DetailItem[] {
       id: 'move-speed',
       label: 'Move Speed',
       value: String(Math.round(unit.moveSpeed)),
+      icon: STAT_ICON_BOOT,
     })
   }
 
   if (unit.armor !== undefined && unit.armor > 0) {
+    const reductionPct = Math.round(armorDamageReductionFraction(unit.armor) * 100)
     details.push({
       id: 'armor',
       label: 'Armor',
       value: String(unit.armor),
+      tooltip: `${reductionPct}% damage reduction`,
+      icon: STAT_ICON_SHIELD,
+    })
+  }
+
+  // Non-stat details without icons — rendered inline below the stat grid.
+  // Shield is only granted by blood_engine; only show when the unit can
+  // actually carry shield so stateless units never show "Shield 0/0".
+  if ((unit.maxShield ?? 0) > 0) {
+    details.push({
+      id: 'shield',
+      label: 'Shield',
+      value: `${unit.shield ?? 0} / ${unit.maxShield ?? 0}`,
     })
   }
 

@@ -386,7 +386,7 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 				// Fire the bonus hit only if the primary target survived the normal hit.
 				if primaryTarget != nil && primaryTarget.HP > 0 {
 					bonusDmg := maxInt(0, int(math.Round(float64(attacker.Damage)*def.Config["bonusMultiplier"])))
-					actualDmg := maxInt(0, bonusDmg-primaryTarget.Armor)
+					actualDmg := applyArmorMitigation(bonusDmg, primaryTarget.Armor)
 					if actualDmg > 0 {
 						s.applyUnitDamageLocked(primaryTarget, actualDmg)
 						s.onUnitDamagedLocked(attacker, primaryTarget, actualDmg)
@@ -447,7 +447,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		if dx*dx+dy*dy > radiusSq {
 			continue
 		}
-		damage := maxInt(0, attacker.Damage-candidate.Armor)
+		damage := applyArmorMitigation(attacker.Damage, candidate.Armor)
 		if damage == 0 {
 			continue
 		}
@@ -499,7 +499,7 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 	if secondary == nil {
 		return
 	}
-	damage := maxInt(0, attacker.Damage-secondary.Armor)
+	damage := applyArmorMitigation(attacker.Damage, secondary.Armor)
 	if damage == 0 {
 		return
 	}
@@ -552,13 +552,13 @@ func (s *GameState) onPerkKillLocked(attacker *Unit) {
 // Hook 5 — outgoing damage multiplier (pre-armor)
 //
 // perkBonusDamageMultiplierLocked returns an additive multiplier applied to
-// the attacker's raw damage BEFORE armor is subtracted, for attacks against
-// the given target. 0 means "no bonus" (final damage = base damage).
+// the attacker's raw damage BEFORE armor mitigation, for attacks against the
+// given target. 0 means "no bonus" (final damage = base damage).
 //
 // Used in state.go tickUnitCombatLocked() primary-attack damage calc:
 //
 //	raw := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
-//	damage := maxInt(0, int(math.Round(raw)) - target.Armor)
+//	damage := applyArmorMitigation(int(math.Round(raw)), target.Armor)
 //
 // Scoped to the PRIMARY attack only — secondary perk hits (savage_strikes
 // bonus, cleave) deliberately do not stack this bonus.

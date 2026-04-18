@@ -986,7 +986,7 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						// perk bonus comes from executioner (silver berserker) and any
 						// future outgoing-damage-multiplier perks.
 						rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
-						damage := maxInt(0, int(math.Round(rawDamage))-target.Armor)
+						damage := applyArmorMitigation(int(math.Round(rawDamage)), target.Armor)
 						// Route through the shared helper so shield (blood_engine) absorbs first.
 						s.applyUnitDamageLocked(target, damage)
 						s.onUnitDamagedLocked(unit, target, damage)

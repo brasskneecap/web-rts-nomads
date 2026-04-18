@@ -53,7 +53,8 @@ var rankProgressionTable = []rankProgressionDef{
 //
 //	effectiveStat = baseStat × rankMult × pathMult
 //
-// Armor is a flat value subtracted from incoming damage (min 0).
+// Armor is a defense rating producing percentage damage reduction via
+// applyArmorMitigation (diminishing returns — see armorMitigationK).
 // MoveSpeedMultiplier is path-only (no rank scaling) — mirrors Armor.
 type pathModifierDef struct {
 	Path                  string
@@ -65,6 +66,24 @@ type pathModifierDef struct {
 	Armor                 int
 }
 
+// Armor tuning. Damage reduction follows reduction = armor / (armor + armorMitigationK).
+//
+//	armor   reduction
+//	   18       15.3%   (berserker baseline)
+//	   33       24.8%   (soldier pre-promotion)
+//	   54       35.1%   (vanguard baseline)
+//	  100       50.0%
+//	  200       66.7%
+//	  300       75.0%
+//
+// soldierBaseArmor is applied to soldiers that have not yet been assigned a
+// promotion path (rank below Bronze). Once pathed, pathModifierDef.Armor takes
+// over and this value is no longer used.
+const (
+	armorMitigationK = 100
+	soldierBaseArmor = 33
+)
+
 // identityPathModifier is returned for units with no path or unknown path/rank combos.
 var identityPathModifier = pathModifierDef{
 	MaxHPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, Armor: 0,
@@ -75,15 +94,39 @@ var identityPathModifier = pathModifierDef{
 //
 // Vanguard — sturdier frontliner: more HP and armor, slight attack speed cost early.
 // Berserker — aggressive damage dealer: more damage, attack speed, and move speed; less HP.
+//
+// Armor values produce ~35% reduction for Vanguard and ~15% for Berserker
+// (vs. the soldier pre-promotion baseline of ~25%). Further armor scaling
+// across ranks is intentionally left to perks so flat-reduction perks (future
+// vanguard tier) can stack predictably on top of the diminishing-returns curve.
 var pathModifierTable = []pathModifierDef{
 	// vanguard
-	{Path: unitPathVanguard, Rank: unitRankBronze, MaxHPMultiplier: 1.10, DamageMultiplier: 1.00, AttackSpeedMultiplier: 0.95, MoveSpeedMultiplier: 1.00, Armor: 5},
-	{Path: unitPathVanguard, Rank: unitRankSilver, MaxHPMultiplier: 1.20, DamageMultiplier: 1.00, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, Armor: 10},
-	{Path: unitPathVanguard, Rank: unitRankGold, MaxHPMultiplier: 1.30, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, Armor: 15},
+	{Path: unitPathVanguard, Rank: unitRankBronze, MaxHPMultiplier: 1.10, DamageMultiplier: 1.00, AttackSpeedMultiplier: 0.95, MoveSpeedMultiplier: 1.00, Armor: 54},
+	{Path: unitPathVanguard, Rank: unitRankSilver, MaxHPMultiplier: 1.20, DamageMultiplier: 1.00, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, Armor: 54},
+	{Path: unitPathVanguard, Rank: unitRankGold, MaxHPMultiplier: 1.30, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, Armor: 54},
 	// berserker — flat +15% move speed at every rank.
-	{Path: unitPathBerserker, Rank: unitRankBronze, MaxHPMultiplier: 0.90, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.10, MoveSpeedMultiplier: 1.15, Armor: 0},
-	{Path: unitPathBerserker, Rank: unitRankSilver, MaxHPMultiplier: 0.95, DamageMultiplier: 1.20, AttackSpeedMultiplier: 1.15, MoveSpeedMultiplier: 1.15, Armor: 0},
-	{Path: unitPathBerserker, Rank: unitRankGold, MaxHPMultiplier: 1.00, DamageMultiplier: 1.30, AttackSpeedMultiplier: 1.25, MoveSpeedMultiplier: 1.15, Armor: 0},
+	{Path: unitPathBerserker, Rank: unitRankBronze, MaxHPMultiplier: 0.90, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.10, MoveSpeedMultiplier: 1.15, Armor: 18},
+	{Path: unitPathBerserker, Rank: unitRankSilver, MaxHPMultiplier: 0.95, DamageMultiplier: 1.20, AttackSpeedMultiplier: 1.15, MoveSpeedMultiplier: 1.15, Armor: 18},
+	{Path: unitPathBerserker, Rank: unitRankGold, MaxHPMultiplier: 1.00, DamageMultiplier: 1.30, AttackSpeedMultiplier: 1.25, MoveSpeedMultiplier: 1.15, Armor: 18},
+}
+
+// armorDamageReduction returns the fractional damage reduction produced by the
+// given armor rating, using a diminishing-returns curve anchored on armorMitigationK.
+func armorDamageReduction(armor int) float64 {
+	if armor <= 0 {
+		return 0
+	}
+	a := float64(armor)
+	return a / (a + float64(armorMitigationK))
+}
+
+// applyArmorMitigation reduces `damage` by the target's armor rating and returns
+// the post-mitigation integer damage (never negative).
+func applyArmorMitigation(damage, armor int) int {
+	if damage <= 0 {
+		return 0
+	}
+	return maxInt(0, int(math.Round(float64(damage)*(1.0-armorDamageReduction(armor)))))
 }
 
 // pathModifierFor returns the path modifier for the given path and rank.
@@ -217,6 +260,9 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	// Move speed: path-only scaling for now (rank doesn't affect move speed yet).
 	unit.MoveSpeed = math.Max(1.0, unit.BaseMoveSpeed*pathDef.MoveSpeedMultiplier)
 	unit.Armor = pathDef.Armor
+	if unit.UnitType == "soldier" && unit.ProgressionPath == unitPathNone {
+		unit.Armor = soldierBaseArmor
+	}
 
 	if preserveHealthPercent {
 		unit.HP = maxInt(1, int(math.Round(float64(unit.MaxHP)*currentHPFraction)))
