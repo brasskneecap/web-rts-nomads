@@ -32,17 +32,25 @@ package game
 // │         perkAttackSpeedBonusLocked           attack-speed bonus        │
 // │         perkMoveSpeedMultiplierLocked        move-speed bonus          │
 // │         perkBonusDamageMultiplierLocked      outgoing damage scaler    │
+// │         perkIncomingDamageMultiplierLocked   incoming dmg reduction    │
+// │         perkOutgoingDamageDebuffMultiplierLocked  attacker debuff      │
 // │         onPerkAttackFiredLocked              on every attack (attacker)│
 // │         onPerkAttackDamageAppliedLocked      on-hit / lifesteal        │
 // │         onPerkDamageTakenLocked              on damage received (def.) │
 // │         onPerkKillLocked                     on every kill             │
 // │         perkFlatDamageReductionLocked        flat per-hit reduction    │
+// │         perkBonusArmorLocked                 conditional armor bonus   │
 // │         perkFlatMaxHPBonusLocked             flat max HP bonus         │
 // │         unitMaxShieldLocked                  shield pool contributor   │
 // │         healUnitLocked                       overheal routing          │
 // │         activeBuffIconsLocked                add buff icon to the HUD  │
+// │         activeDebuffIconsLocked             add debuff icon to the HUD │
 // │    4. If the perk needs persistent per-unit state, add a field to      │
 // │       UnitPerkState below.                                             │
+// │    5. Cross-unit debuffs (WeakenedRemaining, MarkedRemaining) decay in │
+// │       state.go Update() alongside TauntRemaining — not in this file's  │
+// │       tickUnitPerkStateLocked — because they live on units that may     │
+// │       not own the perk themselves.                                      │
 // │                                                                         │
 // │  No other files need to change for a new perk.                         │
 // └─────────────────────────────────────────────────────────────────────────┘
@@ -50,7 +58,10 @@ package game
 // CALL SITES (where these hooks are wired into the game loop):
 //   • state.go  Update()               — tickUnitPerkStateLocked (per-unit)
 //                                        perkMoveSpeedMultiplierLocked (movement)
+//                                        WeakenedRemaining decay (cross-unit, all units)
+//                                        MarkedRemaining decay (cross-unit, all units)
 //   • state.go  tickUnitCombatLocked() — perkBonusDamageMultiplierLocked,
+//                                        perkOutgoingDamageDebuffMultiplierLocked,
 //                                        onPerkAttackFiredLocked,
 //                                        onPerkAttackDamageAppliedLocked,
 //                                        onPerkDamageTakenLocked,
@@ -59,7 +70,9 @@ package game
 //   • perks.go  (savage_strikes, cleave, whirlwind secondary hits) —
 //                                        onPerkAttackDamageAppliedLocked,
 //                                        onPerkDamageTakenLocked
-//   • perks.go  applyUnitDamageLocked  — perkFlatDamageReductionLocked
+//   • perks.go  applyUnitDamageLocked  — perkIncomingDamageMultiplierLocked,
+//                                        MarkedRemaining amplification,
+//                                        perkFlatDamageReductionLocked
 //   • progression.go addUnitXPLocked() — assignUnitPerkLocked (on rank-up)
 //   • progression.go applyRankModifiersLocked() — perkFlatMaxHPBonusLocked
 // ═════════════════════════════════════════════════════════════════════════════
@@ -132,6 +145,37 @@ type UnitPerkState struct {
 	// damage so the reflected hit does not trigger another reflection loop.
 	// Reset to false immediately after the reflected damage call returns.
 	RetaliationActive bool
+
+	// ── last_stand (silver vanguard) ──────────────────────────────────────────
+	// LastStandTriggered tracks whether the one-shot taunt-on-threshold-entry has
+	// already fired during the current below-threshold period. Reset to false when
+	// the unit heals back above the threshold so the taunt can re-fire if the unit
+	// dips below again later.
+	LastStandTriggered bool
+
+	// ── punishing_guard (silver vanguard) ─────────────────────────────────────
+	// WeakenedRemaining is the seconds left on this unit's outgoing-damage debuff,
+	// stamped onto attackers by Punishing Guard. Decays in the main Update loop
+	// (cross-unit debuff, same pattern as TauntRemaining). WeakenedMultiplier is
+	// the fractional damage reduction (e.g. 0.30 = 30% less outgoing damage) set
+	// at the same time and cleared when WeakenedRemaining reaches 0.
+	WeakenedRemaining float64
+	WeakenedMultiplier float64
+
+	// ── bulwark (silver vanguard) ─────────────────────────────────────────────
+	// StationarySeconds accumulates each tick the unit has not moved. Reset to 0
+	// on any tick where the unit moves. When it reaches stationaryThresholdSeconds
+	// the perk begins topping up the unit's shield to maxShield.
+	StationarySeconds float64
+
+	// ── challengers_mark (silver vanguard) ────────────────────────────────────
+	// MarkedRemaining is the seconds left on this unit's incoming-damage
+	// amplification mark, stamped onto targets by Challenger's Mark. Decays in the
+	// main Update loop (cross-unit state, same pattern as TauntRemaining).
+	// MarkedMultiplier is the fractional bonus (e.g. 0.15 = 15% more damage taken)
+	// set when the mark is applied and cleared when MarkedRemaining reaches 0.
+	MarkedRemaining float64
+	MarkedMultiplier float64
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -284,6 +328,66 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 				unit.PerkState.WhirlwindCooldownRemaining = def.Config["cooldownSeconds"]
 			}
 
+		case "last_stand":
+			// Detect HP threshold crossings to fire the one-shot taunt.
+			// The taunt fires once per below-threshold entry; the flag resets
+			// when the unit heals back above the threshold so it can re-trigger.
+			if unit.MaxHP <= 0 {
+				continue
+			}
+			hpFrac := float64(unit.HP) / float64(unit.MaxHP)
+			threshold := def.Config["hpThresholdPercent"]
+			if hpFrac > threshold {
+				// Above threshold — reset so next dip can trigger again.
+				unit.PerkState.LastStandTriggered = false
+			} else if !unit.PerkState.LastStandTriggered {
+				// Just crossed below — fire the one-shot AoE taunt.
+				unit.PerkState.LastStandTriggered = true
+				radius := def.Config["tauntRadius"]
+				radiusSq := radius * radius
+				duration := def.Config["tauntDurationSeconds"]
+				for _, candidate := range s.Units {
+					if candidate == nil || candidate.ID == unit.ID {
+						continue
+					}
+					if candidate.OwnerID == unit.OwnerID {
+						continue
+					}
+					if candidate.HP <= 0 || !candidate.Visible {
+						continue
+					}
+					dx := candidate.X - unit.X
+					dy := candidate.Y - unit.Y
+					if dx*dx+dy*dy <= radiusSq {
+						s.ApplyTauntLocked(candidate.ID, unit.ID, duration)
+					}
+				}
+			}
+
+		case "bulwark":
+			// Track how long the unit has been stationary. When the threshold is
+			// reached while stationary, top up the shield each tick up to
+			// maxShield. When the unit moves, reset the counter AND drop any
+			// existing shield — Bulwark is a planted-play reward, so breaking
+			// formation forfeits the protection.
+			//
+			// Assumption: no other perk grants shield to a Vanguard today
+			// (blood_engine is Berserker-only). If a future Vanguard perk adds
+			// shield from another source, this zero-on-move will need to
+			// subtract only Bulwark's portion.
+			if unit.Moving {
+				unit.PerkState.StationarySeconds = 0
+				unit.Shield = 0
+			} else {
+				unit.PerkState.StationarySeconds += dt
+				if unit.PerkState.StationarySeconds >= def.Config["stationaryThresholdSeconds"] {
+					maxShield := int(def.Config["maxShield"])
+					if unit.Shield < maxShield {
+						unit.Shield = maxShield
+					}
+				}
+			}
+
 		// ── add cases for new perks with timer/decay needs below this line ──
 		}
 	}
@@ -398,7 +502,7 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 				// Fire the bonus hit only if the primary target survived the normal hit.
 				if primaryTarget != nil && primaryTarget.HP > 0 {
 					bonusDmg := maxInt(0, int(math.Round(float64(attacker.Damage)*def.Config["bonusMultiplier"])))
-					actualDmg := applyArmorMitigation(bonusDmg, primaryTarget.Armor)
+					actualDmg := applyArmorMitigation(bonusDmg, s.effectiveArmorLocked(primaryTarget))
 					if actualDmg > 0 {
 						s.applyUnitDamageLocked(primaryTarget, actualDmg)
 						s.onUnitDamagedLocked(attacker, primaryTarget, actualDmg)
@@ -436,6 +540,16 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 				s.ApplyTauntLocked(primaryTarget.ID, attacker.ID, def.Config["tauntDurationSeconds"])
 			}
 
+		case "challengers_mark":
+			// Stamp a damage-amplification mark on the target. The mark increases
+			// ALL incoming damage (from any source) by bonusMultiplier for
+			// durationSeconds. Refreshed on every Vanguard attack.
+			// The mark lives on the target's PerkState and decays in Update().
+			if primaryTarget != nil && primaryTarget.HP > 0 {
+				primaryTarget.PerkState.MarkedMultiplier = def.Config["bonusMultiplier"]
+				primaryTarget.PerkState.MarkedRemaining = def.Config["durationSeconds"]
+			}
+
 		// ── add cases for new on-attack perks below this line ───────────────
 		}
 	}
@@ -469,7 +583,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		if dx*dx+dy*dy > radiusSq {
 			continue
 		}
-		damage := applyArmorMitigation(attacker.Damage, candidate.Armor)
+		damage := applyArmorMitigation(attacker.Damage, s.effectiveArmorLocked(candidate))
 		if damage == 0 {
 			continue
 		}
@@ -522,7 +636,7 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 	if secondary == nil {
 		return
 	}
-	damage := applyArmorMitigation(attacker.Damage, secondary.Armor)
+	damage := applyArmorMitigation(attacker.Damage, s.effectiveArmorLocked(secondary))
 	if damage == 0 {
 		return
 	}
@@ -738,6 +852,8 @@ func (s *GameState) perkMoveSpeedMultiplierLocked(unit *Unit) float64 {
 //   • activeBuffIconsLocked    — return extra buff icon ids when new timed
 //                                 or conditional states are added. Each id
 //                                 must match an entry in action-icons.json.
+//   • activeDebuffIconsLocked  — return extra debuff icon ids (raw icon ids,
+//                                 not perk ids) for new negative status effects.
 // ═════════════════════════════════════════════════════════════════════════════
 
 // applyUnitDamageLocked applies post-armor damage to a unit, routing through
@@ -766,8 +882,22 @@ func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
 	if target == nil || damage <= 0 {
 		return 0
 	}
-	// Flat per-hit reduction from reinforced_armor (and future flat reducers).
-	// Applied after caller's armor mitigation, before the shield pool.
+	// Step 1: Challenger's Mark — amplify incoming damage before any reduction.
+	// Applied first so the mark's bonus is maximised and all subsequent reduction
+	// perks (flat reduction, shield) work against the amplified value.
+	if target.PerkState.MarkedRemaining > 0 && target.PerkState.MarkedMultiplier > 0 {
+		damage = maxInt(damage, int(math.Round(float64(damage)*(1.0+target.PerkState.MarkedMultiplier))))
+	}
+	// Step 2: Percentage damage reduction from Last Stand and Brace.
+	// Applied after mark amplification, before flat reduction and shield.
+	if mult := s.perkIncomingDamageMultiplierLocked(target); mult > 0 {
+		damage = maxInt(0, int(math.Round(float64(damage)*(1.0-mult))))
+		if damage == 0 {
+			return 0
+		}
+	}
+	// Step 3: Flat per-hit reduction from reinforced_armor (and future flat reducers).
+	// Applied after caller's armor mitigation and percentage reduction, before the shield pool.
 	// Tuning point: flatReduction in catalog/perk-defs.json → reinforced_armor.config.
 	if reduction := s.perkFlatDamageReductionLocked(target); reduction > 0 {
 		damage = maxInt(0, damage-reduction)
@@ -832,6 +962,8 @@ func (s *GameState) unitMaxShieldLocked(unit *Unit) int {
 		switch perkID {
 		case "blood_engine":
 			total += int(def.Config["maxShield"])
+		case "bulwark":
+			total += int(def.Config["maxShield"])
 		// ── add cases for new shield-granting perks below this line ─────────
 		}
 	}
@@ -886,10 +1018,173 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 				}
 			}
 
+		case "last_stand":
+			// Show while the unit is below the HP threshold — indicates both
+			// the damage reduction and that the one-shot taunt is (or was) live.
+			if unit.MaxHP > 0 {
+				hpFraction := float64(unit.HP) / float64(unit.MaxHP)
+				if hpFraction <= def.Config["hpThresholdPercent"] {
+					active = append(active, perkID)
+				}
+			}
+
+		case "brace":
+			// Show while the unit is surrounded by enough enemies to trigger
+			// the damage reduction. Evaluated fresh each call.
+			enemyThreshold := int(def.Config["enemyThreshold"])
+			radius := def.Config["radius"]
+			radiusSq := radius * radius
+			enemyCount := 0
+			for _, candidate := range s.Units {
+				if candidate == nil || candidate.ID == unit.ID {
+					continue
+				}
+				if candidate.OwnerID == unit.OwnerID {
+					continue
+				}
+				if candidate.HP <= 0 || !candidate.Visible {
+					continue
+				}
+				dx := candidate.X - unit.X
+				dy := candidate.Y - unit.Y
+				if dx*dx+dy*dy <= radiusSq {
+					enemyCount++
+					if enemyCount >= enemyThreshold {
+						break
+					}
+				}
+			}
+			if enemyCount >= enemyThreshold {
+				active = append(active, perkID)
+			}
+
+		case "bulwark":
+			// Show while the unit has been stationary long enough for the
+			// shield regen to be active.
+			if unit.PerkState.StationarySeconds >= def.Config["stationaryThresholdSeconds"] {
+				active = append(active, perkID)
+			}
+
 		// ── add cases for new visually-indicated buffs below this line ──────
 		}
 	}
 	return active
+}
+
+// activeDebuffIconsLocked returns the icon ids for debuffs currently on the
+// unit, in a stable order. The client renders these as a separate row from
+// ActiveBuffs so buffs and debuffs stay visually distinct.
+//
+// Unlike buffs, debuff ids are raw icon ids (not perk ids). This is because
+// debuffs can land on units that don't own the causing perk — Taunted and
+// Marked are applied to arbitrary targets by another unit's perk.
+//
+// ADD NEW DEBUFF ICONS HERE as new debuff mechanics are added. Keep the
+// order stable so icon positions don't flicker on the client.
+func (s *GameState) activeDebuffIconsLocked(unit *Unit) []string {
+	if unit == nil {
+		return nil
+	}
+	var active []string
+	if unit.TauntedByUnitID != 0 && unit.TauntRemaining > 0 {
+		active = append(active, "debuff-taunted")
+	}
+	if unit.PerkState.WeakenedRemaining > 0 {
+		active = append(active, "debuff-weakened")
+	}
+	if unit.PerkState.MarkedRemaining > 0 {
+		active = append(active, "debuff-marked")
+	}
+	return active
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook 11 — incoming damage multiplier (percentage reduction)
+//
+// perkIncomingDamageMultiplierLocked returns the total fractional damage
+// reduction (0 = no reduction, 0.5 = take 50% less) granted by the target's
+// perks. Applied in applyUnitDamageLocked BEFORE flat reduction and before
+// the shield pool so all reduction stacks in a predictable order.
+//
+// Multiple reducers stack additively, clamped to 0.75 max to prevent
+// invulnerability. Capping at 0.75 (not 1.0) is intentional: even a fully
+// stacked defensive Vanguard should still be killable without requiring
+// coordinated CC. Last Stand's defensive contribution is not here — it
+// grants flat armor via perkBonusArmorLocked, which pre-mitigates damage
+// before this hook runs.
+//
+// Handles: brace.
+// ADD NEW PERCENTAGE-REDUCTION PERKS HERE.
+// ─────────────────────────────────────────────────────────────────────────────
+func (s *GameState) perkIncomingDamageMultiplierLocked(target *Unit) float64 {
+	if target == nil || len(target.PerkIDs) == 0 {
+		return 0
+	}
+	total := 0.0
+	for _, perkID := range target.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+		switch perkID {
+
+		case "brace":
+			// Count visible enemies within the configured radius.
+			enemyThreshold := int(def.Config["enemyThreshold"])
+			radius := def.Config["radius"]
+			radiusSq := radius * radius
+			enemyCount := 0
+			for _, candidate := range s.Units {
+				if candidate == nil || candidate.ID == target.ID {
+					continue
+				}
+				if candidate.OwnerID == target.OwnerID {
+					continue
+				}
+				if candidate.HP <= 0 || !candidate.Visible {
+					continue
+				}
+				dx := candidate.X - target.X
+				dy := candidate.Y - target.Y
+				if dx*dx+dy*dy <= radiusSq {
+					enemyCount++
+					if enemyCount >= enemyThreshold {
+						break
+					}
+				}
+			}
+			if enemyCount >= enemyThreshold {
+				total += def.Config["damageReduction"]
+			}
+
+		// ── add cases for new percentage-reduction perks below this line ─────
+		}
+	}
+	// Clamp to 0.75 — prevents any combination of stacked perks from making
+	// the unit functionally invulnerable. Both Last Stand (0.30) and Brace
+	// (0.20) together reach 0.50, well below the cap with room for a Gold perk.
+	return clampFloat(total, 0, 0.75)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook 12 — outgoing damage debuff multiplier (attacker-side penalty)
+//
+// perkOutgoingDamageDebuffMultiplierLocked returns the fractional outgoing
+// damage penalty currently on the unit (e.g. 0.30 = deal 30% less damage).
+// Applied in tickUnitCombatLocked to the raw damage before armor mitigation.
+//
+// The debuff (WeakenedRemaining / WeakenedMultiplier) is stamped onto the
+// attacker by Punishing Guard when the Vanguard takes a hit. It decays in the
+// main Update loop (cross-unit, same pattern as TauntRemaining) regardless of
+// whether the weakened unit itself owns any perks.
+//
+// Returns 0 when no debuff is active.
+// ─────────────────────────────────────────────────────────────────────────────
+func (s *GameState) perkOutgoingDamageDebuffMultiplierLocked(unit *Unit) float64 {
+	if unit == nil || unit.PerkState.WeakenedRemaining <= 0 {
+		return 0
+	}
+	return unit.PerkState.WeakenedMultiplier
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -957,7 +1252,10 @@ func (s *GameState) onPerkDamageTakenLocked(target, attacker *Unit, damage int) 
 			if attacker.HP <= 0 || attacker.OwnerID == target.OwnerID {
 				continue
 			}
-			reflected := maxInt(0, int(math.Round(float64(target.Armor)*def.Config["armorPercent"])))
+			// Use effective armor so conditional armor perks (last_stand) boost
+			// reflected damage — a low-HP Vanguard with Retaliation punishes
+			// attackers harder, which is the intended synergy.
+			reflected := maxInt(0, int(math.Round(float64(s.effectiveArmorLocked(target))*def.Config["armorPercent"])))
 			if reflected <= 0 {
 				continue
 			}
@@ -968,6 +1266,16 @@ func (s *GameState) onPerkDamageTakenLocked(target, attacker *Unit, damage int) 
 			// This keeps reflected damage simple and prevents infinite chains.
 			s.applyUnitDamageLocked(attacker, reflected)
 			target.PerkState.RetaliationActive = false
+
+		case "punishing_guard":
+			// Stamp a weakened debuff on the attacker: they deal reduced outgoing
+			// damage for durationSeconds. Refreshes on every hit so persistent
+			// attackers remain debuffed.
+			// The debuff lives on the attacker's PerkState and decays in Update().
+			if attacker.HP > 0 {
+				attacker.PerkState.WeakenedMultiplier = def.Config["weakenedMultiplier"]
+				attacker.PerkState.WeakenedRemaining = def.Config["durationSeconds"]
+			}
 
 		// ── add cases for new defender-side reactions below this line ────────
 		}
@@ -1003,6 +1311,62 @@ func (s *GameState) perkFlatDamageReductionLocked(target *Unit) int {
 		}
 	}
 	return total
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook 10b — bonus armor (defender-side stat modifier, conditional or passive)
+//
+// perkBonusArmorLocked returns the total flat armor bonus the unit currently
+// has from its perks. Stacked additively on top of unit.Armor via
+// effectiveArmorLocked.
+//
+// Unlike perkFlatMaxHPBonusLocked this is NOT baked into unit.Armor via
+// applyRankModifiersLocked — the bonus can be conditional (last_stand fires
+// only below an HP threshold) and needs to react live. Reading effective armor
+// through the helper means the bonus automatically flows into:
+//   - every applyArmorMitigation call (primary combat, savage_strikes,
+//     cleave, whirlwind)
+//   - retaliation reflection (synergy: more armor → more reflected damage)
+//   - UnitSnapshot.Armor for HUD display
+//
+// Handles: last_stand (active only below hpThresholdPercent).
+// ADD NEW FLAT-ARMOR PERKS HERE.
+// ─────────────────────────────────────────────────────────────────────────────
+func (s *GameState) perkBonusArmorLocked(unit *Unit) int {
+	if unit == nil || len(unit.PerkIDs) == 0 {
+		return 0
+	}
+	total := 0
+	for _, perkID := range unit.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+		switch perkID {
+		case "last_stand":
+			// Bonus active only while HP is below the configured threshold.
+			// Recomputed live so the bonus appears/disappears cleanly as HP
+			// changes without requiring state updates.
+			if unit.MaxHP > 0 {
+				hpFrac := float64(unit.HP) / float64(unit.MaxHP)
+				if hpFrac <= def.Config["hpThresholdPercent"] {
+					total += int(def.Config["bonusArmor"])
+				}
+			}
+		// ── add cases for new flat-armor perks below this line ───────────────
+		}
+	}
+	return total
+}
+
+// effectiveArmorLocked returns unit.Armor plus any live perk bonus. Use this
+// everywhere armor is read for damage mitigation, damage reflection, and HUD
+// display so conditional armor perks (last_stand) propagate consistently.
+func (s *GameState) effectiveArmorLocked(unit *Unit) int {
+	if unit == nil {
+		return 0
+	}
+	return unit.Armor + s.perkBonusArmorLocked(unit)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

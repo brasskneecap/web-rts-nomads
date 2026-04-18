@@ -38,8 +38,10 @@ export type Unit = {
   perkIds?: string[]
   shield?: number
   maxShield?: number
-  /** Perk IDs whose timed or conditional buff is currently active. */
+  /** Perk-id list for buffs currently active on this unit. */
   activeBuffs?: string[]
+  /** Icon-id list for negative status effects currently active on this unit. */
+  activeDebuffs?: string[]
   ownerId?: string
   color?: string
   carriedResourceType?: ResourceType
@@ -347,6 +349,7 @@ export class GameState {
         shield: unit.shield,
         maxShield: unit.maxShield,
         activeBuffs: unit.activeBuffs,
+        activeDebuffs: unit.activeDebuffs,
         ownerId: unit.ownerId,
         color: unit.color,
         carriedResourceType: unit.carriedResourceType,

@@ -159,7 +159,61 @@
               }
             }
           ],
-          "silver": [],
+          "silver": [
+            {
+              "id": "last_stand",
+              "displayName": "Last Stand",
+              "icon": "perk-last-stand",
+              "description": "When dropping below a health threshold, gain a large armor bonus and taunt nearby enemies once.",
+              "config": {
+                "hpThresholdPercent":   0.35,
+                "bonusArmor":           50,
+                "tauntRadius":          120,
+                "tauntDurationSeconds": 3.0
+              }
+            },
+            {
+              "id": "punishing_guard",
+              "displayName": "Punishing Guard",
+              "icon": "perk-punishing-guard",
+              "description": "Whenever this unit is struck, the attacker briefly deals reduced damage.",
+              "config": {
+                "weakenedMultiplier": 0.30,
+                "durationSeconds":    2.5
+              }
+            },
+            {
+              "id": "brace",
+              "displayName": "Brace",
+              "icon": "perk-brace",
+              "description": "Gain damage reduction when surrounded by two or more enemies.",
+              "config": {
+                "enemyThreshold":  2,
+                "radius":          100,
+                "damageReduction": 0.20
+              }
+            },
+            {
+              "id": "bulwark",
+              "displayName": "Bulwark",
+              "icon": "perk-bulwark",
+              "description": "After holding position for a short time, gain a bonus shield. The shield is lost the moment this unit moves.",
+              "config": {
+                "stationaryThresholdSeconds": 3.0,
+                "maxShield": 40
+              }
+            },
+            {
+              "id": "challengers_mark",
+              "displayName": "Challenger's Mark",
+              "icon": "perk-challengers-mark",
+              "description": "Vanguard's attacks mark the target, causing them to take bonus damage from all sources.",
+              "config": {
+                "bonusMultiplier": 0.15,
+                "durationSeconds": 4.0
+              }
+            }
+          ],
           "gold": []
         }
       }

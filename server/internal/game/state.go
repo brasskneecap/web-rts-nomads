@@ -559,7 +559,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Damage:              effectiveDamage,
 			AttackSpeed:         effectiveAttackSpeed,
 			MoveSpeed:           effectiveMoveSpeed,
-			Armor:               unit.Armor,
+			Armor:               s.effectiveArmorLocked(unit),
 			XP:                  unit.XP,
 			Rank:                unit.Rank,
 			XPToNextRank:        s.unitXPToNextRankLocked(unit),
@@ -570,6 +570,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Shield:              unit.Shield,
 			MaxShield:           s.unitMaxShieldLocked(unit),
 			ActiveBuffs:         s.activeBuffIconsLocked(unit),
+			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -639,6 +640,22 @@ func (s *GameState) Update(dt float64) {
 	for _, unit := range s.Units {
 		if unit.RankUpFxRemaining > 0 {
 			unit.RankUpFxRemaining = math.Max(0, unit.RankUpFxRemaining-dt)
+		}
+		// Cross-unit debuff decay — these states are stamped onto ANY unit by
+		// perks on OTHER units (Punishing Guard, Challenger's Mark), so they must
+		// tick for every unit regardless of that unit's own perk ownership.
+		// Mirrors the TauntRemaining pattern in decayThreatLocked (combat_ai.go).
+		if unit.PerkState.WeakenedRemaining > 0 {
+			unit.PerkState.WeakenedRemaining = math.Max(0, unit.PerkState.WeakenedRemaining-dt)
+			if unit.PerkState.WeakenedRemaining == 0 {
+				unit.PerkState.WeakenedMultiplier = 0
+			}
+		}
+		if unit.PerkState.MarkedRemaining > 0 {
+			unit.PerkState.MarkedRemaining = math.Max(0, unit.PerkState.MarkedRemaining-dt)
+			if unit.PerkState.MarkedRemaining == 0 {
+				unit.PerkState.MarkedMultiplier = 0
+			}
 		}
 		// Advance time-based perk state (idle timers, buff durations).
 		s.tickUnitPerkStateLocked(unit, dt)
@@ -1140,11 +1157,13 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Status = "Attacking"
 
 					if unit.AttackCooldown <= 0 {
-						// Outgoing damage: base × (1 + perk bonus), then armor.
-						// perk bonus comes from executioner (silver berserker) and any
-						// future outgoing-damage-multiplier perks.
+						// Outgoing damage: base × (1 + perk bonus) × (1 - debuff), then armor.
+						// perk bonus comes from executioner (silver berserker) and any future
+						// outgoing-damage-multiplier perks.
+						// debuff comes from Punishing Guard's weakened effect on the attacker.
 						rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
-						damage := applyArmorMitigation(int(math.Round(rawDamage)), target.Armor)
+						rawDamage *= (1.0 - s.perkOutgoingDamageDebuffMultiplierLocked(unit))
+						damage := applyArmorMitigation(int(math.Round(rawDamage)), s.effectiveArmorLocked(target))
 						// Route through the shared helper so flat reduction and shield absorb first.
 						s.applyUnitDamageLocked(target, damage)
 						s.onUnitDamagedLocked(unit, target, damage)

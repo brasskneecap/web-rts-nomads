@@ -465,6 +465,7 @@ export class CanvasRenderer {
       shield?: number
       maxShield?: number
       activeBuffs?: string[]
+      activeDebuffs?: string[]
       color?: string
       visible?: boolean
       ownerId?: string
@@ -537,6 +538,9 @@ export class CanvasRenderer {
       // Populated by server activeBuffIconsLocked(); icons come from action-icons.json.
       if (unit.activeBuffs && unit.activeBuffs.length > 0) {
         this.drawUnitActiveBuffs(unit.x, unit.y, bottomOffset, unit.activeBuffs)
+      }
+      if (unit.activeDebuffs && unit.activeDebuffs.length > 0) {
+        this.drawUnitActiveDebuffs(unit.x, unit.y, bottomOffset, unit.activeDebuffs)
       }
 
       const unitColor = unit.color || 'lime'
@@ -1004,17 +1008,21 @@ export class CanvasRenderer {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Active-buff indicator icons.
+  // Active-buff and active-debuff indicator icons.
   //
-  // Server-authoritative: UnitSnapshot.activeBuffs is a list of perk ids
-  // whose timed or conditional buff is currently active (populated by
-  // activeBuffIconsLocked in perks.go). Each id is looked up in PERK_DEF_MAP
-  // to find its icon id, which is then rendered as an SVG path from
-  // ACTION_ICON_MAP.
+  // Buffs (drawUnitActiveBuffs):
+  //   UnitSnapshot.activeBuffs is a list of perk ids whose timed or
+  //   conditional buff is currently active (populated by activeBuffIconsLocked
+  //   in perks.go). Each id is looked up in PERK_DEF_MAP to find its icon id,
+  //   which is then rendered as an SVG path from ACTION_ICON_MAP.
+  //   EXTENSION POINT: add the perk id to activeBuffIconsLocked on the server.
   //
-  // EXTENSION POINT: to show a new buff icon, add the perk id to the
-  // activeBuffIconsLocked switch on the server. The client needs no changes
-  // as long as the perk's icon exists in action-icons.json.
+  // Debuffs (drawUnitActiveDebuffs):
+  //   UnitSnapshot.activeDebuffs is a list of raw icon ids (not perk ids) —
+  //   debuffs can land on units that don't own the causing perk, so there is
+  //   no PERK_DEF_MAP indirection. Icons are looked up directly in
+  //   ACTION_ICON_MAP. Currently exposed: debuff-taunted, debuff-weakened,
+  //   debuff-marked. Rendered in a separate row above buffs with red tinting.
   // ──────────────────────────────────────────────────────────────────────────
   private drawUnitActiveBuffs(x: number, y: number, bottomOffset: number, buffIds: string[]) {
     const ctx = this.ctx
@@ -1049,6 +1057,56 @@ export class CanvasRenderer {
       ctx.translate(cursorX, baseY)
       ctx.scale(iconSize / 24, iconSize / 24)
       ctx.strokeStyle = '#fde68a'
+      ctx.lineWidth = 2
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.stroke(new Path2D(iconPath))
+      ctx.restore()
+
+      cursorX += iconSize + gap
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Debuff icons — Option A: separate row placed 12 px above the buff row so
+  // the two rows never crowd each other horizontally when a unit carries both.
+  // baseY offset is -38 vs -26 for buffs (12 px row height + 0 px gap).
+  // ──────────────────────────────────────────────────────────────────────────
+  private drawUnitActiveDebuffs(x: number, y: number, bottomOffset: number, debuffIds: string[]) {
+    const ctx = this.ctx
+    const iconSize = 12
+    const gap = 2
+    const totalWidth = debuffIds.length * iconSize + Math.max(0, debuffIds.length - 1) * gap
+    // Debuffs sit one row higher than buffs: buffs at -26, debuffs at -38.
+    const baseY = y - bottomOffset - 38
+    let cursorX = x - totalWidth / 2
+
+    for (const id of debuffIds) {
+      // Debuff ids are raw icon ids — look up directly in ACTION_ICON_MAP,
+      // no PERK_DEF_MAP indirection needed.
+      const iconPath = ACTION_ICON_MAP.get(id)
+      if (!iconPath) {
+        cursorX += iconSize + gap
+        continue
+      }
+
+      ctx.save()
+      // Background pill — same dark navy as buffs for visual consistency.
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.8)'
+      ctx.beginPath()
+      ctx.arc(cursorX + iconSize / 2, baseY + iconSize / 2, iconSize / 2 + 1, 0, Math.PI * 2)
+      ctx.fill()
+      // Red-400 border distinguishes debuffs from the amber buff border.
+      ctx.strokeStyle = 'rgba(248, 113, 113, 0.9)'
+      ctx.lineWidth = 1 / this.camera.zoom
+      ctx.stroke()
+
+      // SVG paths in action-icons.json are authored in a 0..24 viewBox.
+      // Map that into our icon-size square centered at (cursorX, baseY).
+      ctx.translate(cursorX, baseY)
+      ctx.scale(iconSize / 24, iconSize / 24)
+      // Red-200 icon stroke — clearly red, not amber.
+      ctx.strokeStyle = '#fecaca'
       ctx.lineWidth = 2
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'

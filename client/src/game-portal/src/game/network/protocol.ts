@@ -216,8 +216,12 @@ export type UnitSnapshot = {
   shield?: number
   /** Max shield pool advertised by the unit's perks. */
   maxShield?: number
-  /** Perk IDs whose timed or conditional buff is currently active. */
+  /** Perk-id list for buffs currently active on this unit. */
   activeBuffs?: string[]
+  /** Icon-id list for negative status effects currently active on this unit.
+   *  Unlike activeBuffs, these are raw icon ids (not perk ids) because debuffs
+   *  can land on units that don't own the causing perk. */
+  activeDebuffs?: string[]
   carriedResourceType?: ResourceType
   carriedAmount?: number
   targetX?: number

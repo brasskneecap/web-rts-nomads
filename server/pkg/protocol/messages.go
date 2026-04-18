@@ -177,7 +177,12 @@ type UnitSnapshot struct {
 	MaxShield int `json:"maxShield,omitempty"`
 	// ActiveBuffs: perk-id list for buffs currently active on this unit. Used
 	// by the client to render floating indicator icons near the sprite.
-	ActiveBuffs         []string `json:"activeBuffs,omitempty"`
+	ActiveBuffs []string `json:"activeBuffs,omitempty"`
+	// ActiveDebuffs: icon-id list for negative status effects currently active
+	// on this unit. Populated by activeDebuffIconsLocked in perks.go. Unlike
+	// ActiveBuffs these are raw icon ids (not perk ids), since debuffs can land
+	// on units that don't own the causing perk.
+	ActiveDebuffs []string `json:"activeDebuffs,omitempty"`
 	CarriedResourceType string   `json:"carriedResourceType,omitempty"`
 	CarriedAmount       int      `json:"carriedAmount,omitempty"`
 	TargetX             float64  `json:"targetX,omitempty"`
