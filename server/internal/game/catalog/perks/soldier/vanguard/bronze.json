@@ -49,16 +49,6 @@
     }
   },
   {
-    "id": "steady_advance",
-    "displayName": "Steady Advance",
-    "icon": "perk-steady-advance",
-    "description": "While advancing toward the nearest enemy, take reduced damage.",
-    "config": {
-      "damageReduction": 0.1,
-      "alignmentCosMin": 0.5
-    }
-  },
-  {
     "id": "interlock",
     "displayName": "Interlock",
     "icon": "perk-interlock",

@@ -64,6 +64,12 @@
 
     { "id": "perk-guardian-aura",   "path": "M12 3l8 5v5l-8 8-8-8V8z M12 8a4 4 0 0 1 0 8 4 4 0 0 1 0-8z M3 9l-2 3 2 3 M21 9l2 3-2 3" },
     { "id": "perk-pain-share",      "path": "M12 2C9 5 7 8 7 12a5 5 0 0 0 10 0c0-4-2-7-5-10z M9 12h6 M12 9v6 M6 18l-3 3 M18 18l3 3" },
-    { "id": "perk-rallying-banner", "path": "M12 2v14 M8 5l4-3 4 3 M8 5h8 M12 16l-4 6h8z M5 22h14 M7 12h10" }
+    { "id": "perk-rallying-banner", "path": "M12 2v14 M8 5l4-3 4 3 M8 5h8 M12 16l-4 6h8z M5 22h14 M7 12h10" },
+
+    { "id": "perk-caltrops",        "path": "M12 2l2 4h4l-3 3 1 4-4-2-4 2 1-4-3-3h4z M6 18l12-12 M8 16l8-8" },
+    { "id": "perk-fire-pit",        "path": "M12 2C9 6 7 9 7 13a5 5 0 0 0 10 0c0-4-2-7-5-11z M9 13a3 3 0 0 0 6 0c0-2-1.5-4-3-6-1.5 2-3 4-3 6z M5 21h14" },
+    { "id": "perk-explosive-trap",  "path": "M12 2l1.5 4.5L18 5l-3 3.5L17 12l-4.5-1.5L11 15l-1.5-4.5L5 12l3-3.5L6 5l4.5 1.5z M4 20h16 M8 20v-3 M12 20v-5 M16 20v-3" },
+    { "id": "perk-marker-trap",     "path": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 7v5l3 3 M2 12h3 M19 12h3 M12 2v3 M12 19v3" },
+    { "id": "perk-explosive-chain", "path": "M5 5l4 4-3 3 4 4 3-3 4 4 M8 8l8 8 M3 12h2 M19 12h2 M7 3l2 2 M15 3l2 2 M7 19l2-2 M15 19l2-2" }
   ]
 }

@@ -11,11 +11,13 @@ const (
 	unitRankGold   = "gold"
 )
 
-// Soldier promotion paths. Assigned randomly at Bronze and fixed for the unit's lifetime.
+// Promotion path constants. Assigned at Bronze rank and fixed for the unit's lifetime.
+// Soldiers randomly receive Vanguard or Berserker. Archers always receive Trapper.
 const (
 	unitPathNone      = "none"
 	unitPathVanguard  = "vanguard"
 	unitPathBerserker = "berserker"
+	unitPathTrapper   = "trapper"
 )
 
 const (
@@ -107,6 +109,10 @@ var pathModifierTable = []pathModifierDef{
 	{Path: unitPathBerserker, Rank: unitRankBronze, MaxHPMultiplier: 0.90, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.10, MoveSpeedMultiplier: 1.15, Armor: 18},
 	{Path: unitPathBerserker, Rank: unitRankSilver, MaxHPMultiplier: 0.95, DamageMultiplier: 1.20, AttackSpeedMultiplier: 1.15, MoveSpeedMultiplier: 1.15, Armor: 18},
 	{Path: unitPathBerserker, Rank: unitRankGold, MaxHPMultiplier: 1.00, DamageMultiplier: 1.30, AttackSpeedMultiplier: 1.25, MoveSpeedMultiplier: 1.15, Armor: 18},
+	// trapper — identity row for Bronze. Silver and Gold tuning deferred until those tiers ship.
+	// All multipliers are 1.0 and Armor is 0 so the path modifier has no stat impact at Bronze,
+	// matching the design intent that trap utility (not raw stats) is the Trapper's value.
+	{Path: unitPathTrapper, Rank: unitRankBronze, MaxHPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, Armor: 0},
 }
 
 // armorDamageReduction returns the fractional damage reduction produced by the
@@ -225,20 +231,28 @@ func (s *GameState) addUnitXPFloatLocked(unit *Unit, amount float64) {
 	s.addUnitXPLocked(unit, wholeXP)
 }
 
-// assignUnitPathOnRankUpLocked randomly assigns a promotion path to a Soldier the
-// first time it reaches Bronze rank. Path is fixed for the unit's lifetime.
+// assignUnitPathOnRankUpLocked assigns a promotion path to a unit the first
+// time it reaches Bronze rank. The path is fixed for the unit's lifetime.
+//
+//   - Soldiers: randomly choose Vanguard or Berserker (50/50 via rngPerks).
+//   - Archers: always assigned the Trapper path.
+//   - Other unit types: no path assignment (return early).
 func (s *GameState) assignUnitPathOnRankUpLocked(unit *Unit) {
 	if unit.ProgressionPath != unitPathNone {
 		return // already assigned
 	}
-	if unit.UnitType != "soldier" {
-		return // only soldiers get paths for now
-	}
 	if unit.Rank == unitRankBase {
 		return // shouldn't happen here, but guard anyway
 	}
-	paths := [2]string{unitPathVanguard, unitPathBerserker}
-	unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
+	switch unit.UnitType {
+	case "soldier":
+		paths := [2]string{unitPathVanguard, unitPathBerserker}
+		unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
+	case "archer":
+		unit.ProgressionPath = unitPathTrapper
+	default:
+		return
+	}
 }
 
 func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent bool) {

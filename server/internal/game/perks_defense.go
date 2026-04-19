@@ -34,10 +34,20 @@ import "math"
 // retroactively penalize attackers.
 //
 // Damage intake order:
-//   1. Caller computes post-armor damage (applyArmorMitigation).
-//   2. perkFlatDamageReductionLocked reduces it further (reinforced_armor).
-//   3. Shield pool absorbs what remains.
-//   4. HP takes what the shield didn't absorb.
+//   1. Caller computes post-armor damage (applyArmorMitigation). Armor
+//      mitigation accounts for all flat and percent armor bonuses from perks
+//      (last_stand, interlock, brace, steady_advance, guardian_aura, banners)
+//      via effectiveArmorLocked. This means armor already reduces damage before
+//      we enter this function.
+//   2. pain_share redirect — nearby allied Vanguard absorbs a portion of raw damage.
+//   3. Challenger's Mark amplification — amplifies after armor reduction and
+//      after the redirect, so the mark bonus applies to whatever survives both
+//      of those stages. NOTE: mark is therefore relatively stronger against
+//      already-armored targets than it was under the old percentage-DR system.
+//      This is intentional — see design approval in commit history.
+//   4. perkFlatDamageReductionLocked (reinforced_armor) — per-hit flat reduction.
+//   5. Shield pool absorbs what remains.
+//   6. HP takes what the shield didn't absorb.
 //
 // Called from every unit-damage intake site:
 //   - state.go primary attack
@@ -52,29 +62,24 @@ func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
 	if target == nil || damage <= 0 {
 		return 0
 	}
-	// Step 0: pain_share redirect — a nearby allied Vanguard with pain_share
+	// Step 1 (in pipeline above): armor mitigation already handled by caller.
+	//
+	// Step 2: pain_share redirect — a nearby allied Vanguard with pain_share
 	// absorbs redirectPercent of the incoming damage through its own mitigation
-	// stack. Runs before mark amplification so the redirect acts on raw damage.
+	// stack. Runs before mark amplification so the redirect acts on pre-mark damage.
 	damage = s.perkRedirectIncomingDamageLocked(target, damage)
 	if damage == 0 {
 		return 0
 	}
-	// Step 1: Challenger's Mark — amplify incoming damage before any reduction.
-	// Applied first so the mark's bonus is maximised and all subsequent reduction
-	// perks (flat reduction, shield) work against the amplified value.
+	// Step 3: Challenger's Mark — amplify incoming damage after armor reduction
+	// and after the pain_share redirect. Mark now amplifies the post-armor,
+	// post-redirect value. This makes the mark relatively stronger against
+	// high-armor targets (intentional design decision; approved 2026-04-18).
 	if target.PerkState.MarkedRemaining > 0 && target.PerkState.MarkedMultiplier > 0 {
 		damage = maxInt(damage, int(math.Round(float64(damage)*(1.0+target.PerkState.MarkedMultiplier))))
 	}
-	// Step 2: Percentage damage reduction from Last Stand and Brace.
-	// Applied after mark amplification, before flat reduction and shield.
-	if mult := s.perkIncomingDamageMultiplierLocked(target); mult > 0 {
-		damage = maxInt(0, int(math.Round(float64(damage)*(1.0-mult))))
-		if damage == 0 {
-			return 0
-		}
-	}
-	// Step 3: Flat per-hit reduction from reinforced_armor (and future flat reducers).
-	// Applied after caller's armor mitigation and percentage reduction, before the shield pool.
+	// Step 4: Flat per-hit reduction from reinforced_armor (and future flat reducers).
+	// Applied after armor mitigation and mark amplification, before the shield pool.
 	// Tuning point: flatReduction in the reinforced_armor perk entry (catalog/perks/...).
 	if reduction := s.perkFlatDamageReductionLocked(target); reduction > 0 {
 		damage = maxInt(0, damage-reduction)
@@ -82,6 +87,7 @@ func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
 			return 0
 		}
 	}
+	// Step 5 & 6: Shield pool then HP.
 	if target.Shield > 0 {
 		if target.Shield >= damage {
 			target.Shield -= damage
@@ -148,70 +154,27 @@ func (s *GameState) unitMaxShieldLocked(unit *Unit) int {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hook 11 — incoming damage multiplier (percentage reduction)
+// Hook 11 — percent armor bonus (self-perk, fractional)
 //
-// perkIncomingDamageMultiplierLocked returns the total fractional damage
-// reduction (0 = no reduction, 0.5 = take 50% less) granted by the target's
-// perks. Applied in applyUnitDamageLocked BEFORE flat reduction and before
-// the shield pool so all reduction stacks in a predictable order.
+// perkArmorPercentBonusLocked returns the total fractional armor bonus from
+// this unit's own perks (e.g. 0.20 = +20% of base armor). Used in
+// effectiveArmorLocked. Percents stack additively.
 //
-// Multiple reducers stack additively, clamped to 0.75 max to prevent
-// invulnerability. Capping at 0.75 (not 1.0) is intentional: even a fully
-// stacked defensive Vanguard should still be killable without requiring
-// coordinated CC. Last Stand's defensive contribution is not here — it
-// grants flat armor via perkBonusArmorLocked, which pre-mitigates damage
-// before this hook runs.
+// Currently empty — guardian_aura's percent bonus flows through the aura cache
+// via perkArmorPercentBonusFromAurasLocked. This hook exists for symmetry and
+// as the future home for any self-perk percent-armor sources.
 //
-// Handles: brace.
-// ADD NEW PERCENTAGE-REDUCTION PERKS HERE.
+// ADD NEW SELF-PERK PERCENT-ARMOR SOURCES HERE.
 // ─────────────────────────────────────────────────────────────────────────────
-func (s *GameState) perkIncomingDamageMultiplierLocked(target *Unit) float64 {
-	if target == nil {
+func (s *GameState) perkArmorPercentBonusLocked(unit *Unit) float64 {
+	if unit == nil {
 		return 0
 	}
 	total := 0.0
-	for _, perkID := range target.PerkIDs {
-		def := perkDefByID(perkID)
-		if def == nil {
-			continue
-		}
-		switch perkID {
-
-		case "brace":
-			// Count visible enemies within the configured radius. Early-exit once
-			// threshold is reached via countEnemiesInRangeLocked (shared with the
-			// buff-icon scan in activeBuffIconsLocked).
-			enemyThreshold := int(def.Config["enemyThreshold"])
-			if s.countEnemiesInRangeLocked(target, def.Config["radius"], enemyThreshold) >= enemyThreshold {
-				total += def.Config["damageReduction"]
-			}
-
-		case "steady_advance":
-			// Active while the unit is Moving AND has a visible enemy whose
-			// direction is within the configured alignment cone in front of the unit.
-			// isAdvancingTowardEnemyLocked evaluates the dot-product of the unit's
-			// velocity vector (toward next waypoint) with the vector to the nearest
-			// visible enemy. Shared with activeBuffIconsLocked to avoid duplicating math.
-			if target.Moving && s.isAdvancingTowardEnemyLocked(target) {
-				total += def.Config["damageReduction"]
-			}
-
-		// ── add cases for new percentage-reduction perks below this line ─────
-		}
-	}
-
-	// guardian_aura contribution — not in the perk loop above because the aura
-	// is applied by OTHER units (the Vanguard owners), not by the target's own
-	// perk list. The pre-built cache from rebuildGuardianAuraCacheLocked holds
-	// the strongest aura DR for this unit as of the start of this tick.
-	if aura, ok := s.guardianAuraCache[target.ID]; ok {
-		total += aura
-	}
-
-	// Clamp to 0.75 — prevents any combination of stacked perks from making
-	// the unit functionally invulnerable. Both Last Stand (0.30) and Brace
-	// (0.20) together reach 0.50, well below the cap with room for a Gold perk.
-	return clampFloat(total, 0, 0.75)
+	// No self-perk percent-armor sources yet.
+	// ── add cases for new self-perk percent-armor perks below this line ──────
+	_ = total
+	return 0
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -411,20 +374,56 @@ func (s *GameState) perkBonusArmorLocked(unit *Unit) int {
 				total += int(def.Config["bonusArmor"])
 			}
 
+		case "brace":
+			// Flat armor bonus when surrounded by at least enemyThreshold visible
+			// enemies within the configured radius. Moved from the old percentage-
+			// DR hook — now contributes pre-mitigation armor instead.
+			enemyThreshold := int(def.Config["enemyThreshold"])
+			if s.countEnemiesInRangeLocked(unit, def.Config["radius"], enemyThreshold) >= enemyThreshold {
+				total += int(def.Config["bonusArmor"])
+			}
+
+		case "steady_advance":
+			// Flat armor bonus while advancing toward the nearest visible enemy.
+			// isAdvancingTowardEnemyLocked evaluates the alignment cone; shared
+			// with activeBuffIconsLocked to avoid duplicating the math.
+			if unit.Moving && s.isAdvancingTowardEnemyLocked(unit) {
+				total += int(def.Config["bonusArmor"])
+			}
+
 		// ── add cases for new flat-armor perks below this line ───────────────
 		}
 	}
 	return total
 }
 
-// effectiveArmorLocked returns unit.Armor plus any live perk bonus. Use this
-// everywhere armor is read for damage mitigation, damage reflection, and HUD
-// display so conditional armor perks (last_stand) propagate consistently.
+// effectiveArmorLocked returns the unit's total effective armor including all
+// flat and percent bonuses from perks and banners. Use this everywhere armor is
+// read for damage mitigation, damage reflection, and HUD display so conditional
+// armor perks (last_stand, brace, steady_advance, guardian_aura) propagate
+// consistently.
+//
+// Formula:
+//
+//	effectiveArmor = floor(unit.Armor × (1 + percentBonus)) + flatBonus
+//
+// Where:
+//   - flatBonus    = perkBonusArmorLocked + perkBonusArmorFromBannersLocked + perkBonusArmorFromAurasLocked
+//   - percentBonus = perkArmorPercentBonusLocked + perkArmorPercentBonusFromAurasLocked
+//
+// Percent bonuses stack additively: two sources of +20% = +40% of base armor.
+// This means high-armor units benefit more from percent bonuses, which is the
+// intended design (guardian_aura scales with the unit's invested armor stat).
 func (s *GameState) effectiveArmorLocked(unit *Unit) int {
 	if unit == nil {
 		return 0
 	}
-	return unit.Armor + s.perkBonusArmorLocked(unit) + s.perkBonusArmorFromBannersLocked(unit)
+	flatBonus := s.perkBonusArmorLocked(unit) +
+		s.perkBonusArmorFromBannersLocked(unit) +
+		s.perkBonusArmorFromAurasLocked(unit)
+	percentBonus := s.perkArmorPercentBonusLocked(unit) +
+		s.perkArmorPercentBonusFromAurasLocked(unit)
+	return int(math.Floor(float64(unit.Armor)*(1.0+percentBonus))) + flatBonus
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

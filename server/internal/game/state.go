@@ -173,11 +173,18 @@ type GameState struct {
 	Banners      []*Banner
 	nextBannerID int
 
-	// guardianAuraCache maps recipient unit ID to the DR multiplier they
+	// Traps is the set of active Trapper traps. Ticked each Update:
+	//   tickTrapEffectsLocked(dt)  — zone effects, before tickBannersLocked
+	//   tickTrapsLocked(dt)        — lifetime decay + triggered cull, after tickBannersLocked
+	Traps      []*Trap
+	nextTrapID int
+
+	// guardianAuraCache maps recipient unit ID to the combined armor bonus they
 	// receive from the strongest guardian_aura covering them this tick.
-	// Rebuilt once per tick in rebuildGuardianAuraCacheLocked. Zero value
-	// (absent key) = no aura.
-	guardianAuraCache map[int]float64
+	// FlatArmor and PercentArmor are taken as max independently across all
+	// covering auras. Rebuilt once per tick in rebuildGuardianAuraCacheLocked.
+	// Zero value (absent key) = no aura.
+	guardianAuraCache map[int]guardianAuraValue
 }
 
 const (
@@ -236,6 +243,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		EnemySpawnTimers:    map[string]*EnemySpawnTimer{},
 		nextUnitID:          1,
 		nextBannerID:        1,
+		nextTrapID:          1,
 		matchSeed:           seed,
 		rngPerks:            mrand.New(mrand.NewSource(seed ^ saltPerks)),
 		rngCosmetic:         mrand.New(mrand.NewSource(seed ^ saltCosmetic)),
@@ -243,7 +251,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		buildingDamageDealt: map[string]map[int]int{},
 		unitsByID:           map[int]*Unit{},
 		buildingsByID:       map[string]*protocol.BuildingTile{},
-		guardianAuraCache:   map[int]float64{},
+		guardianAuraCache:   map[int]guardianAuraValue{},
 	}
 
 	state.SetMapConfig(mapConfig)
@@ -427,6 +435,20 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		})
 	}
 
+	var traps []protocol.TrapSnapshot
+	for _, trap := range s.Traps {
+		traps = append(traps, protocol.TrapSnapshot{
+			ID:               trap.ID,
+			OwnerID:          trap.OwnerPlayerID,
+			X:                trap.X,
+			Y:                trap.Y,
+			Radius:           trap.Radius,
+			Type:             trap.TrapType,
+			RemainingSeconds: trap.RemainingSeconds,
+			Triggered:        trap.Triggered,
+		})
+	}
+
 	return protocol.MatchSnapshotMessage{
 		Type:      "match_snapshot",
 		Tick:      s.Tick,
@@ -435,6 +457,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Players:   players,
 		Units:     units,
 		Banners:   banners,
+		Traps:     traps,
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -465,7 +488,9 @@ func (s *GameState) Update(dt float64) {
 	s.tickCombatAILocked(dt, blocked)
 	s.tickUnitCombatLocked(dt, blocked)
 	s.tickEnemySpawnpointsLocked(dt, blocked)
+	s.tickTrapEffectsLocked(dt) // zone effects + trigger detection
 	s.tickBannersLocked(dt)
+	s.tickTrapsLocked(dt) // lifetime decay + triggered cull
 
 	for _, unit := range s.Units {
 		if unit.RankUpFxRemaining > 0 {
@@ -499,6 +524,13 @@ func (s *GameState) Update(dt float64) {
 				unit.SlowedMultiplier = 0
 			}
 		}
+		// Trapper combat tail-window: decay toward 0 each tick regardless of
+		// unit type. Only archers set this to 1.5s (in tickUnitCombatLocked),
+		// so it is always 0 for non-archers and the check is cheap.
+		if unit.PerkState.LastCombatSeconds > 0 {
+			unit.PerkState.LastCombatSeconds = math.Max(0, unit.PerkState.LastCombatSeconds-dt)
+		}
+
 		// Advance time-based perk state (idle timers, buff durations).
 		s.tickUnitPerkStateLocked(unit, dt)
 		s.updateWorkerTaskLocked(unit, dt, blocked)
@@ -617,6 +649,17 @@ func (s *GameState) RemovePlayer(playerID string) {
 	s.Units = filtered
 
 	s.releaseTownhallForPlayerLocked(playerID)
+
+	// Drop any traps planted by the leaving player — mirrors banner cleanup.
+	if len(s.Traps) > 0 {
+		kept := s.Traps[:0]
+		for _, trap := range s.Traps {
+			if trap.OwnerPlayerID != playerID {
+				kept = append(kept, trap)
+			}
+		}
+		s.Traps = kept
+	}
 }
 
 func (s *GameState) removeUnitLocked(unitID int) {

@@ -1,9 +1,11 @@
 import type {
+  BannerSnapshot,
   BuildingTile,
   MapConfig,
   MatchSnapshotMessage,
   PlayerSnapshot,
   ResourceType,
+  TrapSnapshot,
   UnitCapability,
   UnitType,
   WaveSnapshot,
@@ -221,6 +223,8 @@ export class GameState {
   notifications: Notification[] = []
 
   units: Unit[] = []
+  banners: BannerSnapshot[] = []
+  traps: TrapSnapshot[] = []
 
   snapshotBuffer: InterpolationFrame[] = []
   interpolationDelayMs = 100
@@ -367,6 +371,8 @@ export class GameState {
     }
 
     this.units = frame.units.map((unit) => ({ ...unit }))
+    this.banners = message.banners ?? []
+    this.traps = message.traps ?? []
     this.applyPlayerSnapshots(message.players)
     if (message.wave) {
       this.waveSnapshot = message.wave

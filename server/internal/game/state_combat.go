@@ -104,6 +104,12 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						// Use effective attack speed (base + perk bonus) for the cooldown.
 						effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
 						unit.AttackCooldown = 1.0 / effectiveSpeed
+						// Trapper combat gate: stamp the tail window whenever an Archer fires.
+						// Decays in state.go Update() per-unit loop. Non-archers always have
+						// this at 0 and the perk cases are never reached for them.
+						if unit.UnitType == "archer" {
+							unit.PerkState.LastCombatSeconds = 1.5
+						}
 						if target.HP <= 0 {
 							target.HP = 0
 							s.awardKillXPLocked(unit)

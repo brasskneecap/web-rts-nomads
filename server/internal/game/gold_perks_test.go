@@ -51,9 +51,9 @@ func spawnEnemy(t *testing.T, s *GameState, x, y float64) *Unit {
 // guardian_aura — baseline
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestGuardianAura_ReducesAllyDamage verifies that an allied unit within the
-// Vanguard's aura radius takes reduced damage.
-func TestGuardianAura_ReducesAllyDamage(t *testing.T) {
+// TestGuardianAura_BoostsAllyArmor verifies that an allied unit within the
+// Vanguard's aura radius receives flat and percent armor bonuses.
+func TestGuardianAura_BoostsAllyArmor(t *testing.T) {
 	s, vanguard := newGoldPerkState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -68,24 +68,22 @@ func TestGuardianAura_ReducesAllyDamage(t *testing.T) {
 
 	s.rebuildGuardianAuraCacheLocked()
 
-	// Verify cache contains the ally.
-	auraDR, ok := s.guardianAuraCache[ally.ID]
-	if !ok {
-		t.Fatal("ally should be in guardianAuraCache")
+	// Verify cache contains the ally with expected flat and percent bonuses.
+	aura := s.guardianAuraCache[ally.ID]
+	wantFlat := int(def.Config["bonusArmor"])
+	wantPct := def.Config["armorPercent"]
+	if aura.FlatArmor != wantFlat {
+		t.Errorf("ally aura FlatArmor: got %d, want %d", aura.FlatArmor, wantFlat)
 	}
-	if math.Abs(auraDR-def.Config["damageReduction"]) > 0.001 {
-		t.Errorf("ally aura DR: got %.3f, want %.3f", auraDR, def.Config["damageReduction"])
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("ally aura PercentArmor: got %.3f, want %.3f", aura.PercentArmor, wantPct)
 	}
 
-	// Verify the DR actually reduces incoming damage.
-	const rawDamage = 100
-	ally.HP = ally.MaxHP
-	hpBefore := ally.HP
-	s.applyUnitDamageLocked(ally, rawDamage)
-	got := hpBefore - ally.HP
-	want := int(math.Round(float64(rawDamage) * (1.0 - def.Config["damageReduction"])))
-	if diff := got - want; diff > 1 || diff < -1 {
-		t.Errorf("ally damage with aura: got %d, want ~%d", got, want)
+	// Verify effectiveArmorLocked uses both bonuses.
+	wantEffective := int(math.Floor(float64(ally.Armor)*(1.0+wantPct))) + wantFlat
+	gotEffective := s.effectiveArmorLocked(ally)
+	if gotEffective != wantEffective {
+		t.Errorf("ally effectiveArmor with aura: got %d, want %d", gotEffective, wantEffective)
 	}
 }
 
@@ -169,8 +167,8 @@ func TestGuardianAura_DeadVanguardDropsAura(t *testing.T) {
 
 // TestGuardianAura_TwoVanguardsFormation verifies the two-Vanguard formation:
 // V1 and V2 same owner, distance 80 (< base 100). Each has companions=1,
-// effR=130, effDR=0.20. An ally at distance 120 from V1 (outside base 100,
-// inside effective 130) receives DR=0.20.
+// effR=130, effFlat=20, effPercent=0.25. An ally at distance 120 from V1
+// (outside base 100, inside effective 130) receives the synergy bonuses.
 func TestGuardianAura_TwoVanguardsFormation(t *testing.T) {
 	s, v1 := newGoldPerkState(t)
 	s.mu.Lock()
@@ -194,9 +192,14 @@ func TestGuardianAura_TwoVanguardsFormation(t *testing.T) {
 	if !ok {
 		t.Fatal("ally at distance 120 should be in cache due to synergy boost (effR=130)")
 	}
-	wantDR := def.Config["damageReduction"] + def.Config["synergyDRBonus"] // 0.15 + 0.05 = 0.20
-	if math.Abs(aura-wantDR) > 0.001 {
-		t.Errorf("synergy DR: got %.3f, want %.3f", aura, wantDR)
+	// companions=1: effFlat = 15 + 1*5 = 20, effPercent = 0.20 + 1*0.05 = 0.25
+	wantFlat := int(def.Config["bonusArmor"]) + int(def.Config["synergyArmorBonus"])     // 20
+	wantPct := def.Config["armorPercent"] + def.Config["synergyArmorPercentBonus"]       // 0.25
+	if aura.FlatArmor != wantFlat {
+		t.Errorf("synergy FlatArmor: got %d, want %d", aura.FlatArmor, wantFlat)
+	}
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("synergy PercentArmor: got %.3f, want %.3f", aura.PercentArmor, wantPct)
 	}
 }
 
@@ -222,9 +225,14 @@ func TestGuardianAura_OutOfRangeNoFormation(t *testing.T) {
 	if !ok {
 		t.Fatal("ally within base radius of V1 should still be in cache")
 	}
-	// No companions — should be base DR only.
-	if math.Abs(aura-def.Config["damageReduction"]) > 0.001 {
-		t.Errorf("no synergy: expected base DR %.3f, got %.3f", def.Config["damageReduction"], aura)
+	// No companions — should be base values only.
+	wantFlat := int(def.Config["bonusArmor"])
+	wantPct := def.Config["armorPercent"]
+	if aura.FlatArmor != wantFlat {
+		t.Errorf("no synergy: expected base FlatArmor %d, got %d", wantFlat, aura.FlatArmor)
+	}
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("no synergy: expected base PercentArmor %.3f, got %.3f", wantPct, aura.PercentArmor)
 	}
 }
 
@@ -253,9 +261,14 @@ func TestGuardianAura_ThreeVanguardCluster(t *testing.T) {
 	if !ok {
 		t.Fatal("ally within base radius of V1 should be in cache")
 	}
-	wantDR := def.Config["damageReduction"] + 2*def.Config["synergyDRBonus"] // 0.15 + 0.10 = 0.25
-	if math.Abs(aura-wantDR) > 0.001 {
-		t.Errorf("3-vanguard cluster DR: got %.3f, want %.3f", aura, wantDR)
+	// companions=2: effFlat = 15 + 2*5 = 25, effPercent = 0.20 + 2*0.05 = 0.30
+	wantFlat := int(def.Config["bonusArmor"]) + 2*int(def.Config["synergyArmorBonus"])
+	wantPct := def.Config["armorPercent"] + 2*def.Config["synergyArmorPercentBonus"]
+	if aura.FlatArmor != wantFlat {
+		t.Errorf("3-vanguard cluster FlatArmor: got %d, want %d", aura.FlatArmor, wantFlat)
+	}
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("3-vanguard cluster PercentArmor: got %.3f, want %.3f", aura.PercentArmor, wantPct)
 	}
 }
 
@@ -296,52 +309,58 @@ func TestGuardianAura_PartialLineFormation(t *testing.T) {
 
 	s.rebuildGuardianAuraCacheLocked()
 
-	// Verify companion counts by checking a unit very close to each Vanguard
-	// — it should receive at least the DR of that Vanguard's effective value
-	// (possibly higher if another Vanguard's boosted aura also reaches it, which
-	// is correct max-not-sum behaviour).
+	// Verify companion counts by checking a unit very close to each Vanguard.
+	// companions=2 for V2 (sees V1 and V3), companions=1 for V1 and V3.
+	// effFlat: 1 companion = 15+5=20, 2 companions = 15+10=25
+	// effPercent: 1 companion = 0.20+0.05=0.25, 2 companions = 0.20+0.10=0.30
+	flatV2 := int(def.Config["bonusArmor"]) + 2*int(def.Config["synergyArmorBonus"])
+	pctV2 := def.Config["armorPercent"] + 2*def.Config["synergyArmorPercentBonus"]
 
-	// drV1 (1 companion) = 0.20, drV2 (2 companions) = 0.25, drV3 (1 companion) = 0.20.
-	drV2 := def.Config["damageReduction"] + 2*def.Config["synergyDRBonus"] // 0.25
-
-	// An ally directly beside V2 should see V2's DR (0.25) — V2 has 2 companions.
+	// An ally directly beside V2 should see V2's synergy values (2 companions).
 	allyNearV2 := spawnAlly(t, s, "p1", 291, 400)
 	s.rebuildGuardianAuraCacheLocked()
 	aura, ok := s.guardianAuraCache[allyNearV2.ID]
 	if !ok {
 		t.Fatal("allyNearV2 should be in cache")
 	}
-	if math.Abs(aura-drV2) > 0.001 {
-		t.Errorf("allyNearV2 DR: got %.3f, want %.3f (V2 has 2 companions)", aura, drV2)
+	if aura.FlatArmor != flatV2 {
+		t.Errorf("allyNearV2 FlatArmor: got %d, want %d (V2 has 2 companions)", aura.FlatArmor, flatV2)
+	}
+	if math.Abs(aura.PercentArmor-pctV2) > 0.001 {
+		t.Errorf("allyNearV2 PercentArmor: got %.3f, want %.3f (V2 has 2 companions)", aura.PercentArmor, pctV2)
 	}
 
 	// V1 companion count: 1 (V2 at distance 90 within base 100). Not V3 (distance 180 > 100).
-	// Verify by placing an ally VERY far left of V1, outside V2/V3's reach:
-	// V1 effR = 130. Ally at x=100 (distance 100 from V1 = AT edge, inside).
+	// effR of V1 = 100 + 1*30 = 130. Ally at x=100 (distance 100 from V1 = AT edge, inside).
 	// V2 at x=290 — distance to x=100 is 190 > V2's effR=160. V3 even farther. Good.
-	allyFarLeft := spawnAlly(t, s, "p1", 100, 400) // dist 100 from V1 (just inside base 100)
+	flatV1 := int(def.Config["bonusArmor"]) + 1*int(def.Config["synergyArmorBonus"])
+	pctV1 := def.Config["armorPercent"] + 1*def.Config["synergyArmorPercentBonus"]
+	allyFarLeft := spawnAlly(t, s, "p1", 100, 400)
 	s.rebuildGuardianAuraCacheLocked()
 	auraLeft, okLeft := s.guardianAuraCache[allyFarLeft.ID]
 	if !okLeft {
 		t.Fatal("allyFarLeft should be in cache (distance 100 = AT base radius boundary)")
 	}
-	drV1 := def.Config["damageReduction"] + 1*def.Config["synergyDRBonus"] // 0.20
-	if math.Abs(auraLeft-drV1) > 0.001 {
-		t.Errorf("allyFarLeft DR: got %.3f, want %.3f (only V1 with 1 companion covers it)", auraLeft, drV1)
+	if auraLeft.FlatArmor != flatV1 {
+		t.Errorf("allyFarLeft FlatArmor: got %d, want %d (V1 with 1 companion)", auraLeft.FlatArmor, flatV1)
+	}
+	if math.Abs(auraLeft.PercentArmor-pctV1) > 0.001 {
+		t.Errorf("allyFarLeft PercentArmor: got %.3f, want %.3f (V1 with 1 companion)", auraLeft.PercentArmor, pctV1)
 	}
 
-	// Symmetrically verify V3 (1 companion, effDR=0.20) covers an ally to its right.
+	// Symmetrically verify V3 (1 companion) covers an ally to its right.
 	// V3 at x=380, ally at x=480 (dist 100, AT boundary).
-	// V2 at x=290 — distance to x=480 is 190 > V2's effR=160. V1 even farther. Good.
 	allyFarRight := spawnAlly(t, s, "p1", 480, 400)
 	s.rebuildGuardianAuraCacheLocked()
 	auraRight, okRight := s.guardianAuraCache[allyFarRight.ID]
 	if !okRight {
 		t.Fatal("allyFarRight should be in cache (distance 100 from V3)")
 	}
-	drV3 := def.Config["damageReduction"] + 1*def.Config["synergyDRBonus"] // 0.20
-	if math.Abs(auraRight-drV3) > 0.001 {
-		t.Errorf("allyFarRight DR: got %.3f, want %.3f (only V3 with 1 companion covers it)", auraRight, drV3)
+	if auraRight.FlatArmor != flatV1 { // same as V1 (1 companion)
+		t.Errorf("allyFarRight FlatArmor: got %d, want %d (V3 with 1 companion)", auraRight.FlatArmor, flatV1)
+	}
+	if math.Abs(auraRight.PercentArmor-pctV1) > 0.001 {
+		t.Errorf("allyFarRight PercentArmor: got %.3f, want %.3f (V3 with 1 companion)", auraRight.PercentArmor, pctV1)
 	}
 }
 
@@ -369,28 +388,31 @@ func TestGuardianAura_AsymmetricCoverage(t *testing.T) {
 
 	s.rebuildGuardianAuraCacheLocked()
 
-	// allyA should be under V2's boosted aura.
+	// allyA should be under V2's boosted aura (V2 has 1 companion).
 	aura, ok := s.guardianAuraCache[allyA.ID]
 	if !ok {
 		t.Fatal("allyA at distance 115 from V2 should be in cache (V2 effR=130)")
 	}
-	wantDR := def.Config["damageReduction"] + def.Config["synergyDRBonus"]
-	if math.Abs(aura-wantDR) > 0.001 {
-		t.Errorf("allyA aura DR: got %.3f, want %.3f (V2 effDR with 1 companion)", aura, wantDR)
+	wantFlat := int(def.Config["bonusArmor"]) + int(def.Config["synergyArmorBonus"])
+	wantPct := def.Config["armorPercent"] + def.Config["synergyArmorPercentBonus"]
+	if aura.FlatArmor != wantFlat {
+		t.Errorf("allyA FlatArmor: got %d, want %d (V2 with 1 companion)", aura.FlatArmor, wantFlat)
+	}
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("allyA PercentArmor: got %.3f, want %.3f (V2 with 1 companion)", aura.PercentArmor, wantPct)
 	}
 
 	// V2's companion count: only V1 is within V2's BASE radius (80 < 100).
 	// allyA is NOT a guardian_aura source, so it doesn't count regardless.
-	// Verify by checking V2's own aura isn't inflated beyond 1-companion levels.
-	// Ally near V2 (within base 100) should see drV2 = baseDR + 1*drBonus.
+	// Verify an ally near V2 sees the same 1-companion values (not inflated by allyA).
 	allyNearV2 := spawnAlly(t, s, "p1", 281, 400)
 	s.rebuildGuardianAuraCacheLocked()
 	auraNearV2, ok2 := s.guardianAuraCache[allyNearV2.ID]
 	if !ok2 {
 		t.Fatal("allyNearV2 should be in cache")
 	}
-	if math.Abs(auraNearV2-wantDR) > 0.001 {
-		t.Errorf("allyNearV2 DR: got %.3f, want %.3f (not inflated by allyA)", auraNearV2, wantDR)
+	if auraNearV2.FlatArmor != wantFlat {
+		t.Errorf("allyNearV2 FlatArmor: got %d, want %d (not inflated by allyA)", auraNearV2.FlatArmor, wantFlat)
 	}
 }
 
@@ -420,10 +442,16 @@ func TestGuardianAura_EnemyVanguardsDoNotFormation(t *testing.T) {
 	if !ok {
 		t.Fatal("ally within base radius should still be in cache")
 	}
-	// V1 has 0 companions (V2 is enemy), so ally should see base DR only.
-	if math.Abs(aura-def.Config["damageReduction"]) > 0.001 {
-		t.Errorf("enemy Vanguard should not boost synergy: got DR=%.3f, want %.3f",
-			aura, def.Config["damageReduction"])
+	// V1 has 0 companions (V2 is enemy), so ally should see base values only.
+	wantFlat := int(def.Config["bonusArmor"])
+	wantPct := def.Config["armorPercent"]
+	if aura.FlatArmor != wantFlat {
+		t.Errorf("enemy Vanguard should not boost synergy FlatArmor: got %d, want %d",
+			aura.FlatArmor, wantFlat)
+	}
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("enemy Vanguard should not boost synergy PercentArmor: got %.3f, want %.3f",
+			aura.PercentArmor, wantPct)
 	}
 }
 
@@ -446,39 +474,46 @@ func TestGuardianAura_MaxNotSum(t *testing.T) {
 
 	s.rebuildGuardianAuraCacheLocked()
 
-	// Both V1 and V2 have companions=1, effDR=0.20. Max of two equal values = 0.20.
-	// If the cache were summing, we'd get 0.40 — which would be caught here.
+	// Both V1 and V2 have companions=1. Max per dimension of two equal values = the value.
+	// If the cache were summing, FlatArmor would be 40 (2×20) — which would be caught here.
 	aura, ok := s.guardianAuraCache[ally.ID]
 	if !ok {
 		t.Fatal("ally should be in cache")
 	}
-	wantDR := def.Config["damageReduction"] + def.Config["synergyDRBonus"] // 0.20
-	if math.Abs(aura-wantDR) > 0.001 {
-		t.Errorf("max not sum: got DR=%.3f, want max=%.3f (not sum=%.3f)",
-			aura, wantDR, 2*wantDR)
+	// companions=1: effFlat = 15+5 = 20, effPercent = 0.20+0.05 = 0.25
+	wantFlat := int(def.Config["bonusArmor"]) + int(def.Config["synergyArmorBonus"])
+	wantPct := def.Config["armorPercent"] + def.Config["synergyArmorPercentBonus"]
+	if aura.FlatArmor != wantFlat {
+		t.Errorf("max not sum FlatArmor: got %d, want max=%d (not sum=%d)",
+			aura.FlatArmor, wantFlat, 2*wantFlat)
+	}
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("max not sum PercentArmor: got %.3f, want max=%.3f (not sum=%.3f)",
+			aura.PercentArmor, wantPct, 2*wantPct)
 	}
 	// Explicit sum-guard.
-	if aura > wantDR+0.001 {
-		t.Errorf("cache is summing DR instead of taking max: got %.3f", aura)
+	if aura.FlatArmor > wantFlat+1 {
+		t.Errorf("cache is summing FlatArmor instead of taking max: got %d", aura.FlatArmor)
 	}
 }
 
-// TestGuardianAura_ClampInteraction verifies that stacking guardian_aura +
-// brace + steady_advance can exceed 0.75 but perkIncomingDamageMultiplierLocked
-// clamps the output.
-func TestGuardianAura_ClampInteraction(t *testing.T) {
+// TestGuardianAura_StacksWithBraceAndSteadyAdvance verifies that stacking
+// guardian_aura + brace + steady_advance each contribute to effectiveArmorLocked
+// additively. All three bonuses add to the recipient's flat armor simultaneously.
+func TestGuardianAura_StacksWithBraceAndSteadyAdvance(t *testing.T) {
 	s, vanguard := newGoldPerkState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	grantPerk(vanguard, "brace")
-	grantPerk(vanguard, "steady_advance")
-
+	def := perkDefByID("guardian_aura")
 	braceDef := perkDefByID("brace")
 	steadyDef := perkDefByID("steady_advance")
-	if braceDef == nil || steadyDef == nil {
+	if def == nil || braceDef == nil || steadyDef == nil {
 		t.Fatal("perk defs not found")
 	}
+
+	grantPerk(vanguard, "brace")
+	grantPerk(vanguard, "steady_advance")
 
 	// Place 2+ enemies within brace radius.
 	threshold := int(braceDef.Config["enemyThreshold"])
@@ -487,19 +522,27 @@ func TestGuardianAura_ClampInteraction(t *testing.T) {
 		_ = e
 	}
 
-	// Point the unit toward an enemy to activate steady_advance.
+	// Point the unit toward the enemy to activate steady_advance.
 	vanguard.Moving = true
 	vanguard.Path = []protocol.Vec2{{X: vanguard.X + 100, Y: vanguard.Y}}
 
-	// Inject a large guardian_aura value directly — simulates a synergy-boosted aura.
-	s.guardianAuraCache[vanguard.ID] = 0.60 // contrived; total would be 0.60+0.20+0.10=0.90
-
-	got := s.perkIncomingDamageMultiplierLocked(vanguard)
-	if got > 0.75+0.001 {
-		t.Errorf("perkIncomingDamageMultiplierLocked should be clamped to 0.75, got %.3f", got)
+	// Inject a guardian_aura value directly for this unit (simulates being under an aura).
+	s.guardianAuraCache[vanguard.ID] = guardianAuraValue{
+		FlatArmor:    int(def.Config["bonusArmor"]),
+		PercentArmor: def.Config["armorPercent"],
 	}
-	if got < 0.75-0.001 {
-		t.Errorf("expected clamp to trigger (0.75), got %.3f (may need higher injected aura)", got)
+
+	// Expected: base + brace + steady_advance flat bonuses, plus percent of base from aura.
+	wantFlat := int(braceDef.Config["bonusArmor"]) + int(steadyDef.Config["bonusArmor"]) + int(def.Config["bonusArmor"])
+	wantPercent := def.Config["armorPercent"]
+	wantEffective := int(math.Floor(float64(vanguard.Armor)*(1.0+wantPercent))) + vanguard.Armor/vanguard.Armor*0 + wantFlat
+	// Recalculate cleanly:
+	wantEffective = int(math.Floor(float64(vanguard.Armor)*(1.0+wantPercent))) + wantFlat
+
+	got := s.effectiveArmorLocked(vanguard)
+	if got != wantEffective {
+		t.Errorf("stacked armor: got %d, want %d (base=%d, flat=%d, percent=%.2f)",
+			got, wantEffective, vanguard.Armor, wantFlat, wantPercent)
 	}
 }
 
@@ -526,7 +569,7 @@ func TestGuardianAura_DeterminismReplay(t *testing.T) {
 	for tick := 0; tick < 5; tick++ {
 		s1.mu.Lock()
 		s1.rebuildGuardianAuraCacheLocked()
-		cache1 := make(map[int]float64, len(s1.guardianAuraCache))
+		cache1 := make(map[int]guardianAuraValue, len(s1.guardianAuraCache))
 		for k, v := range s1.guardianAuraCache {
 			cache1[k] = v
 		}
@@ -534,7 +577,7 @@ func TestGuardianAura_DeterminismReplay(t *testing.T) {
 
 		s2.mu.Lock()
 		s2.rebuildGuardianAuraCacheLocked()
-		cache2 := make(map[int]float64, len(s2.guardianAuraCache))
+		cache2 := make(map[int]guardianAuraValue, len(s2.guardianAuraCache))
 		for k, v := range s2.guardianAuraCache {
 			cache2[k] = v
 		}
@@ -543,13 +586,16 @@ func TestGuardianAura_DeterminismReplay(t *testing.T) {
 		if len(cache1) != len(cache2) {
 			t.Fatalf("tick %d: cache length mismatch: s1=%d s2=%d", tick, len(cache1), len(cache2))
 		}
-		for id, dr1 := range cache1 {
-			dr2, ok := cache2[id]
+		for id, v1 := range cache1 {
+			v2, ok := cache2[id]
 			if !ok {
 				t.Fatalf("tick %d: unitID %d in s1 cache but not s2", tick, id)
 			}
-			if math.Abs(dr1-dr2) > 1e-12 {
-				t.Fatalf("tick %d: unitID %d DR mismatch: s1=%.15f s2=%.15f", tick, id, dr1, dr2)
+			if v1.FlatArmor != v2.FlatArmor {
+				t.Fatalf("tick %d: unitID %d FlatArmor mismatch: s1=%d s2=%d", tick, id, v1.FlatArmor, v2.FlatArmor)
+			}
+			if math.Abs(v1.PercentArmor-v2.PercentArmor) > 1e-12 {
+				t.Fatalf("tick %d: unitID %d PercentArmor mismatch: s1=%.15f s2=%.15f", tick, id, v1.PercentArmor, v2.PercentArmor)
 			}
 		}
 	}
@@ -1145,9 +1191,11 @@ func TestRallyingBanner_OwnerPlayerLeaves(t *testing.T) {
 	}
 }
 
-// TestRallyingBanner_OneShotPerStationaryPeriod verifies that only one banner
-// is planted per stationary period, and a second plants after a move+re-plant.
-func TestRallyingBanner_OneShotPerStationaryPeriod(t *testing.T) {
+// TestRallyingBanner_CooldownPreventsImmediateReplant verifies that after planting
+// a banner, moving and standing stationary again does NOT plant a second banner
+// until the 12s cooldown has elapsed. Replaces the old one-shot-per-stationary-
+// period test now that cooldown is the gate rather than a boolean flag.
+func TestRallyingBanner_CooldownPreventsImmediateReplant(t *testing.T) {
 	s, vanguard := newGoldPerkState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1156,38 +1204,37 @@ func TestRallyingBanner_OneShotPerStationaryPeriod(t *testing.T) {
 
 	grantPerk(vanguard, "rallying_banner")
 	def := perkDefByID("rallying_banner")
+	cooldown := def.Config["cooldownSeconds"] // 12s
+
+	// Plant the first banner.
 	vanguard.Moving = false
 	tickUntilStationary(s, vanguard, def.Config["stationaryThresholdSeconds"], 0.05)
-
 	if len(s.Banners) != 1 {
-		t.Fatalf("expected exactly 1 banner after first plant, got %d", len(s.Banners))
+		t.Fatalf("expected 1 banner after first plant, got %d", len(s.Banners))
 	}
 
-	// Continue ticking stationary — no second banner.
-	for i := 0; i < 20; i++ {
-		s.tickUnitPerkStateLocked(vanguard, 0.05)
-	}
-	if len(s.Banners) != 1 {
-		t.Errorf("should still be exactly 1 banner (one-shot), got %d", len(s.Banners))
-	}
-
-	// Move and re-plant.
+	// Move, then immediately stand stationary again (cooldown not yet elapsed).
 	vanguard.Moving = true
 	s.tickUnitPerkStateLocked(vanguard, 0.05)
-	if vanguard.PerkState.RallyingBannerPlanted {
-		t.Error("RallyingBannerPlanted should reset on movement")
+	vanguard.Moving = false
+
+	// Tick stationary for threshold — cooldown still > 0, no second banner.
+	tickUntilStationary(s, vanguard, def.Config["stationaryThresholdSeconds"], 0.05)
+	if len(s.Banners) != 1 {
+		t.Errorf("second banner should NOT plant before cooldown expires, got %d banners", len(s.Banners))
 	}
 
-	vanguard.Moving = false
-	tickUntilStationary(s, vanguard, def.Config["stationaryThresholdSeconds"], 0.05)
-	if len(s.Banners) != 2 {
-		t.Errorf("expected 2 banners after second plant, got %d", len(s.Banners))
+	// Verify cooldown is decaying (not reset by movement).
+	if vanguard.PerkState.BannerCooldownRemaining >= cooldown {
+		t.Errorf("cooldown should have decayed from max, got %.2f", vanguard.PerkState.BannerCooldownRemaining)
 	}
 }
 
 // TestRallyingBanner_SharedStationaryCounter_WithBulwark verifies that when a
-// unit has both bulwark and rallying_banner, both proc at threshold simultaneously,
-// and after moving both BulwarkShieldGranted and RallyingBannerPlanted reset.
+// unit has both bulwark and rallying_banner, both proc at threshold simultaneously.
+// After moving, BulwarkShieldGranted resets (bulwark re-arms) while the banner
+// cooldown continues decaying — movement does NOT reset the banner cooldown.
+// A second banner cannot plant until the 12s cooldown has elapsed.
 func TestRallyingBanner_SharedStationaryCounter_WithBulwark(t *testing.T) {
 	s, vanguard := newGoldPerkState(t)
 	s.mu.Lock()
@@ -1215,29 +1262,64 @@ func TestRallyingBanner_SharedStationaryCounter_WithBulwark(t *testing.T) {
 	if len(s.Banners) == 0 {
 		t.Error("rallying_banner should have planted a banner")
 	}
+	// Cooldown should be set after first plant.
+	if vanguard.PerkState.BannerCooldownRemaining <= 0 {
+		t.Errorf("BannerCooldownRemaining should be > 0 after first plant, got %.2f",
+			vanguard.PerkState.BannerCooldownRemaining)
+	}
 
-	// Move — both flags should clear.
+	// Move — BulwarkShieldGranted resets; StationarySeconds resets; cooldown keeps decaying.
+	cooldownBeforeMove := vanguard.PerkState.BannerCooldownRemaining
 	vanguard.Moving = true
 	s.tickUnitPerkStateLocked(vanguard, 0.05)
 
 	if vanguard.PerkState.BulwarkShieldGranted {
 		t.Error("BulwarkShieldGranted should reset on movement")
 	}
-	if vanguard.PerkState.RallyingBannerPlanted {
-		t.Error("RallyingBannerPlanted should reset on movement")
-	}
 	if vanguard.PerkState.StationarySeconds != 0 {
 		t.Errorf("StationarySeconds should reset to 0 on movement, got %.2f", vanguard.PerkState.StationarySeconds)
 	}
+	// Cooldown decayed by dt=0.05 during the moving tick (not reset).
+	wantCooldown := cooldownBeforeMove - 0.05
+	if wantCooldown < 0 {
+		wantCooldown = 0
+	}
+	if math.Abs(vanguard.PerkState.BannerCooldownRemaining-wantCooldown) > 0.001 {
+		t.Errorf("BannerCooldownRemaining should decay by dt when moving: got %.3f, want %.3f",
+			vanguard.PerkState.BannerCooldownRemaining, wantCooldown)
+	}
 
-	// Re-plant.
+	// Stand stationary again — cooldown still > 0, no second banner.
 	vanguard.Moving = false
 	tickUntilStationary(s, vanguard, threshold, 0.05)
-	if vanguard.Shield != int(bulwarkDef.Config["maxShield"]) {
-		t.Error("bulwark should re-arm after re-plant")
+	if len(s.Banners) != 1 {
+		t.Errorf("second banner should NOT plant before cooldown expires, got %d banners", len(s.Banners))
 	}
+	// Bulwark re-arms regardless (independent of banner cooldown).
+	if vanguard.Shield != int(bulwarkDef.Config["maxShield"]) {
+		t.Error("bulwark should re-arm after reaching stationary threshold again")
+	}
+
+	// Move to reset StationarySeconds, then drain the remaining cooldown while
+	// moving so the plant condition (StationarySeconds >= threshold) cannot fire
+	// during the drain and immediately re-set the cooldown.
+	vanguard.Moving = true
+	s.tickUnitPerkStateLocked(vanguard, 0.05) // resets StationarySeconds to 0
+	remaining := vanguard.PerkState.BannerCooldownRemaining
+	steps := int(math.Ceil(remaining/0.05)) + 2
+	for i := 0; i < steps; i++ {
+		vanguard.Moving = true
+		s.tickUnitPerkStateLocked(vanguard, 0.05)
+	}
+	if vanguard.PerkState.BannerCooldownRemaining > 0.001 {
+		t.Fatalf("cooldown should have drained to 0, got %.3f", vanguard.PerkState.BannerCooldownRemaining)
+	}
+
+	// Now stand stationary once more — second banner should plant.
+	vanguard.Moving = false
+	tickUntilStationary(s, vanguard, bannerDef.Config["stationaryThresholdSeconds"], 0.05)
 	if len(s.Banners) < 2 {
-		t.Errorf("expected 2nd banner after re-plant, got %d banners", len(s.Banners))
+		t.Errorf("expected 2nd banner after cooldown expires and stationary threshold met, got %d banners", len(s.Banners))
 	}
 }
 
@@ -1428,7 +1510,7 @@ func TestGuardianAura_PhaseSeparation_Asymmetric(t *testing.T) {
 	if def == nil {
 		t.Fatal("guardian_aura perk def not found")
 	}
-	// base radius = 100, synergyRadiusBonus = 30, synergyDRBonus = 0.05
+	// base radius = 100, synergyRadiusBonus = 30, synergyArmorBonus = 5, synergyArmorPercentBonus = 0.05
 
 	// V1 at x=200.
 	v1 := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 200, Y: 400})
@@ -1454,14 +1536,11 @@ func TestGuardianAura_PhaseSeparation_Asymmetric(t *testing.T) {
 
 	// Ally at x=320: dist 120 from V1 — OUTSIDE base radius (100), INSIDE V1's effR (130).
 	// dist 180 from V2 — OUTSIDE V2's effR (100).
-	// Should receive ONLY V1's aura: effDR = 0.15 + 1*0.05 = 0.20.
+	// Should receive ONLY V1's aura: effFlat = 15+1*5=20, effPercent = 0.20+1*0.05=0.25.
 	// If companion detection used effR instead of baseR, V1 would count V2 as a
 	// companion (V2 at x=500 is within V1's effR of 130? No: dist 300 > 130. Safe.)
-	// The real test: if the algorithm scanned effR for companions, it might use
-	// compC's effR=130 to pull in V2 (at 250px from compC — still outside 130). Also safe.
-	//
-	// Structural assertion: ally at x=320 should be in cache with DR=0.20.
-	// If we ever see DR=0.25, it means V1 computed companions=2 somehow.
+	// Structural assertion: ally at x=320 should see 1-companion values only.
+	// If we see 2-companion values it means V1 computed companions=2 somehow.
 	ally := s.spawnPlayerUnitLocked("soldier", "p1", "#e74c3c", protocol.Vec2{X: 320, Y: 400})
 	ally.MaxHP = 200
 	ally.HP = 200
@@ -1473,15 +1552,20 @@ func TestGuardianAura_PhaseSeparation_Asymmetric(t *testing.T) {
 	if !ok {
 		t.Fatal("ally at dist 120 from V1 should be in cache (V1 effR=130)")
 	}
-	// V1 has exactly 1 companion (compC). effDR = 0.15 + 1*0.05 = 0.20.
-	wantDR := def.Config["damageReduction"] + 1*def.Config["synergyDRBonus"] // 0.20
-	if math.Abs(aura-wantDR) > 0.001 {
-		t.Errorf("phase-separation: ally DR=%.3f, want %.3f (V1 has 1 companion via baseR only)",
-			aura, wantDR)
+	// V1 has exactly 1 companion (compC). effFlat = 15+5=20, effPercent = 0.20+0.05=0.25.
+	wantFlat := int(def.Config["bonusArmor"]) + 1*int(def.Config["synergyArmorBonus"]) // 20
+	wantPct := def.Config["armorPercent"] + 1*def.Config["synergyArmorPercentBonus"]   // 0.25
+	if aura.FlatArmor != wantFlat {
+		t.Errorf("phase-separation: ally FlatArmor=%d, want %d (V1 has 1 companion via baseR only)",
+			aura.FlatArmor, wantFlat)
+	}
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("phase-separation: ally PercentArmor=%.3f, want %.3f (V1 has 1 companion via baseR only)",
+			aura.PercentArmor, wantPct)
 	}
 
 	// Secondary: V2 is isolated (companions=0, effR=100). An ally 95px from V2
-	// should receive base DR only (0.15).
+	// should receive base values only.
 	allyNearV2 := s.spawnPlayerUnitLocked("soldier", "p1", "#1abc9c", protocol.Vec2{X: 595, Y: 400})
 	allyNearV2.MaxHP = 200
 	allyNearV2.HP = 200
@@ -1492,8 +1576,13 @@ func TestGuardianAura_PhaseSeparation_Asymmetric(t *testing.T) {
 	if !okV2 {
 		t.Fatal("allyNearV2 should be in cache (95px from V2, within V2's base effR=100)")
 	}
-	if math.Abs(auraV2-def.Config["damageReduction"]) > 0.001 {
-		t.Errorf("isolated V2 DR: got %.3f, want base DR %.3f (0 companions)", auraV2, def.Config["damageReduction"])
+	wantBaseFlat := int(def.Config["bonusArmor"])
+	wantBasePct := def.Config["armorPercent"]
+	if auraV2.FlatArmor != wantBaseFlat {
+		t.Errorf("isolated V2 FlatArmor: got %d, want base %d (0 companions)", auraV2.FlatArmor, wantBaseFlat)
+	}
+	if math.Abs(auraV2.PercentArmor-wantBasePct) > 0.001 {
+		t.Errorf("isolated V2 PercentArmor: got %.3f, want base %.3f (0 companions)", auraV2.PercentArmor, wantBasePct)
 	}
 }
 
@@ -1505,7 +1594,7 @@ func TestGuardianAura_PhaseSeparation_Asymmetric(t *testing.T) {
 // in two different slice orders produces identical guardianAuraCache content.
 // The algorithm must be commutative across s.Units slice order.
 func TestGuardianAura_MapOrderIndependence(t *testing.T) {
-	buildState := func(orderAFirst bool) map[int]float64 {
+	buildState := func(orderAFirst bool) map[int]guardianAuraValue {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 77)
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -1536,12 +1625,12 @@ func TestGuardianAura_MapOrderIndependence(t *testing.T) {
 			}
 		}
 		s.rebuildGuardianAuraCacheLocked()
-		result := make(map[int]float64)
+		result := make(map[int]guardianAuraValue)
 		// Capture by relative identity (ally's cache entry), not unit ID (which
-		// changes with spawn order). We return the DR the ally received.
+		// changes with spawn order). We return the aura value the ally received.
 		if ally != nil {
-			if dr, ok := s.guardianAuraCache[ally.ID]; ok {
-				result[0] = dr // key 0 = "the ally"
+			if av, ok := s.guardianAuraCache[ally.ID]; ok {
+				result[0] = av // key 0 = "the ally"
 			}
 		}
 		return result
@@ -1550,13 +1639,19 @@ func TestGuardianAura_MapOrderIndependence(t *testing.T) {
 	cacheOrderA := buildState(true)
 	cacheOrderB := buildState(false)
 
-	drA, okA := cacheOrderA[0]
-	drB, okB := cacheOrderB[0]
+	avA, okA := cacheOrderA[0]
+	avB, okB := cacheOrderB[0]
 	if okA != okB {
 		t.Fatalf("ally presence in cache differs by spawn order: orderA=%v orderB=%v", okA, okB)
 	}
-	if okA && math.Abs(drA-drB) > 1e-12 {
-		t.Errorf("aura DR differs by spawn order: orderA=%.15f orderB=%.15f", drA, drB)
+	if okA {
+		if avA.FlatArmor != avB.FlatArmor {
+			t.Errorf("aura FlatArmor differs by spawn order: orderA=%d orderB=%d", avA.FlatArmor, avB.FlatArmor)
+		}
+		if math.Abs(avA.PercentArmor-avB.PercentArmor) > 1e-12 {
+			t.Errorf("aura PercentArmor differs by spawn order: orderA=%.15f orderB=%.15f",
+				avA.PercentArmor, avB.PercentArmor)
+		}
 	}
 }
 
@@ -1704,12 +1799,19 @@ func TestBanner_PlayerLeaveCleanup(t *testing.T) {
 // Integration: pain_share + guardian_aura double-cover ordering
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestPainShare_PlusGuardianAura_OrderCorrect verifies that when an ally has
-// both a pain_share Vanguard AND a guardian_aura Vanguard nearby:
-//   - redirect runs at step 0 (on raw damage, before aura DR)
-//   - aura DR applies to the REMAINING damage (70%) on the ally, not the full 100
+// TestPainShare_PlusGuardianAura_OrderCorrect verifies pipeline ordering when
+// both pain_share and guardian_aura cover an ally:
+//   - guardian_aura increases ally's effective armor (applied by the combat
+//     caller via applyArmorMitigation BEFORE applyUnitDamageLocked)
+//   - pain_share redirect runs at step 2 INSIDE applyUnitDamageLocked
+//     (on whatever post-armor damage the caller passed in)
 //
-// The ally should take: round(70 * (1 - 0.15)) = 60 HP, not round(100 * (1 - 0.15)) = 85.
+// Test: caller passes post-armor rawDamage=100, then pain_share redirects 30%.
+// The ally takes 70 (after redirect). The Vanguard takes the redirected 30.
+// Guardian_aura's contribution to this test is at the armor layer only — the
+// aura increases effective armor which reduces raw damage before this function.
+// Here we test that pain_share redirect order is correct: redirect on the
+// value passed to applyUnitDamageLocked (already post-armor).
 func TestPainShare_PlusGuardianAura_OrderCorrect(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 91)
 	s.mu.Lock()
@@ -1747,25 +1849,36 @@ func TestPainShare_PlusGuardianAura_OrderCorrect(t *testing.T) {
 	// Build the aura cache.
 	s.rebuildGuardianAuraCacheLocked()
 
-	// Confirm ally is in the aura cache.
-	if _, ok := s.guardianAuraCache[ally.ID]; !ok {
-		t.Fatal("ally should be in guardian_aura cache before damage test")
+	// Confirm ally is in the aura cache with expected bonuses.
+	auraEntry := s.guardianAuraCache[ally.ID]
+	wantFlat := int(auraDef.Config["bonusArmor"])
+	if auraEntry.FlatArmor != wantFlat {
+		t.Fatalf("ally aura FlatArmor: got %d, want %d", auraEntry.FlatArmor, wantFlat)
 	}
 
-	const rawDamage = 100
-	redirectPct := def.Config["redirectPercent"]                                    // 0.30
-	redirected := maxInt(1, int(math.Round(float64(rawDamage)*redirectPct)))        // 30
-	remaining := rawDamage - redirected                                             // 70
-	auraDR := auraDef.Config["damageReduction"]                                     // 0.15
-	wantAllyDamage := int(math.Round(float64(remaining) * (1.0 - auraDR)))          // round(70*0.85)=60
+	// Simulate what the combat caller does: armor mitigation first, then applyUnitDamageLocked.
+	// With aura, ally's effective armor is higher, reducing the post-armor damage.
+	const attackerRawDamage = 100
+	effectiveAllylArmor := s.effectiveArmorLocked(ally)
+	postArmorDamage := applyArmorMitigation(attackerRawDamage, effectiveAllylArmor)
 
+	// Inside applyUnitDamageLocked, pain_share redirects 30% of the post-armor value.
+	redirectPct := def.Config["redirectPercent"]
+	redirected := maxInt(1, int(math.Round(float64(postArmorDamage)*redirectPct)))
+	wantAllyDamage := postArmorDamage - redirected
+
+	psVHPBefore := psV.HP
 	allyHPBefore := ally.HP
-	s.applyUnitDamageLocked(ally, rawDamage)
+	s.applyUnitDamageLocked(ally, postArmorDamage)
 	gotAllyDamage := allyHPBefore - ally.HP
+	psVDamage := psVHPBefore - psV.HP
 
 	if diff := gotAllyDamage - wantAllyDamage; diff > 1 || diff < -1 {
-		t.Errorf("pain_share+guardian_aura ordering: ally took %d HP, want ~%d (redirect first, then aura on remainder)",
-			gotAllyDamage, wantAllyDamage)
+		t.Errorf("pain_share+guardian_aura: ally took %d HP, want ~%d (post-armor=%d, redirect=%d)",
+			gotAllyDamage, wantAllyDamage, postArmorDamage, redirected)
+	}
+	if psVDamage <= 0 {
+		t.Errorf("pain_share Vanguard should have absorbed redirected damage, got %d", psVDamage)
 	}
 }
 
@@ -1831,9 +1944,9 @@ func TestInterlock_StacksWithRallyingBanner(t *testing.T) {
 
 // TestGuardianAura_FourVanguardCluster_GodRun verifies that 4 allied Vanguards
 // all clustered (within base 100px of each other) each compute companions=3,
-// effDR=0.30. An ally in the cluster receives 0.30 DR. Stacked with brace
-// (0.20) and steady_advance (0.10) the theoretical total is 0.60, clamped to
-// 0.75 max. Tests the "god run" synergy path the design explicitly allows.
+// effFlat=15+3*5=30, effPercent=0.20+3*0.05=0.35. An ally in the cluster
+// receives these bonuses, stacking with brace and steady_advance for a powerful
+// god-run. Tests the "god run" synergy path the design explicitly allows.
 func TestGuardianAura_FourVanguardCluster_GodRun(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 7)
 	s.mu.Lock()
@@ -1872,20 +1985,419 @@ func TestGuardianAura_FourVanguardCluster_GodRun(t *testing.T) {
 	if !ok {
 		t.Fatal("ally should be in aura cache (inside all 4 Vanguard auras)")
 	}
-	// Each Vanguard has companions=3 → effDR = 0.15 + 3*0.05 = 0.30
-	wantDR := def.Config["damageReduction"] + 3*def.Config["synergyDRBonus"] // 0.30
-	if math.Abs(aura-wantDR) > 0.001 {
-		t.Errorf("4-Vanguard god-run DR: got %.3f, want %.3f", aura, wantDR)
+	// companions=3: effFlat = 15+3*5=30, effPercent = 0.20+3*0.05=0.35
+	wantFlat := int(def.Config["bonusArmor"]) + 3*int(def.Config["synergyArmorBonus"])
+	wantPct := def.Config["armorPercent"] + 3*def.Config["synergyArmorPercentBonus"]
+	if aura.FlatArmor != wantFlat {
+		t.Errorf("4-Vanguard god-run FlatArmor: got %d, want %d", aura.FlatArmor, wantFlat)
+	}
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("4-Vanguard god-run PercentArmor: got %.3f, want %.3f", aura.PercentArmor, wantPct)
 	}
 
-	// Verify raw damage reduction: deal 100 damage, expect round(100 * (1 - 0.30)) = 70.
-	const rawDamage = 100
-	ally.HP = ally.MaxHP
-	hpBefore := ally.HP
-	s.applyUnitDamageLocked(ally, rawDamage)
-	got := hpBefore - ally.HP
-	want := int(math.Round(float64(rawDamage) * (1.0 - wantDR)))
-	if diff := got - want; diff > 1 || diff < -1 {
-		t.Errorf("4-Vanguard god-run damage: got %d HP lost, want ~%d", got, want)
+	// Verify effectiveArmorLocked includes both bonuses.
+	// effectiveArmor = floor(ally.Armor * (1 + 0.35)) + 30
+	wantEffective := int(math.Floor(float64(ally.Armor)*(1.0+wantPct))) + wantFlat
+	gotEffective := s.effectiveArmorLocked(ally)
+	if gotEffective != wantEffective {
+		t.Errorf("4-Vanguard god-run effectiveArmor: got %d, want %d (base=%d, flat=%d, pct=%.2f)",
+			gotEffective, wantEffective, ally.Armor, wantFlat, wantPct)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// guardian_aura: percent armor scaling and additive stacking
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestGuardianAura_PercentArmorScales verifies the percent bonus scales
+// proportionally with the recipient's base armor: effectiveArmor =
+// floor(base × (1 + armorPercent)) + bonusArmor (no companions → base values).
+func TestGuardianAura_PercentArmorScales(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 55)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	def := perkDefByID("guardian_aura")
+	if def == nil {
+		t.Fatal("guardian_aura perk def not found")
+	}
+	flatBonus := int(def.Config["bonusArmor"])     // 15
+	pctBonus := def.Config["armorPercent"]          // 0.20
+
+	// Single Vanguard at origin; no companions.
+	v := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	v.MaxHP = 500
+	v.HP = 500
+	v.Visible = true
+	grantPerk(v, "guardian_aura")
+
+	// Three recipients with distinct base armor values.
+	cases := []struct {
+		baseArmor int
+		label     string
+	}{
+		{18, "light (18)"},
+		{54, "medium (54)"},
+		{150, "heavy (150)"},
+	}
+
+	for _, tc := range cases {
+		u := s.spawnPlayerUnitLocked("soldier", "p1", "#2ecc71", protocol.Vec2{X: 420, Y: 400})
+		u.Armor = tc.baseArmor
+		u.MaxHP = 500
+		u.HP = 500
+		u.Visible = true
+
+		s.rebuildGuardianAuraCacheLocked()
+
+		aura, ok := s.guardianAuraCache[u.ID]
+		if !ok {
+			t.Fatalf("recipient (%s) should be in aura cache", tc.label)
+		}
+		if aura.FlatArmor != flatBonus {
+			t.Errorf("recipient (%s) FlatArmor: got %d, want %d", tc.label, aura.FlatArmor, flatBonus)
+		}
+		if math.Abs(aura.PercentArmor-pctBonus) > 0.001 {
+			t.Errorf("recipient (%s) PercentArmor: got %.3f, want %.3f", tc.label, aura.PercentArmor, pctBonus)
+		}
+
+		wantEffective := int(math.Floor(float64(tc.baseArmor)*(1.0+pctBonus))) + flatBonus
+		gotEffective := s.effectiveArmorLocked(u)
+		if gotEffective != wantEffective {
+			t.Errorf("recipient (%s) effectiveArmor: got %d, want %d (floor(%d×%.2f)+%d)",
+				tc.label, gotEffective, wantEffective, tc.baseArmor, 1.0+pctBonus, flatBonus)
+		}
+
+		// Remove for next iteration.
+		s.removeUnitByIDLocked(u.ID)
+		delete(s.guardianAuraCache, u.ID)
+	}
+}
+
+// TestGuardianAura_PercentSynergy_4Vanguards verifies the expected effective
+// armor for a recipient with base armor 54 inside a 4-Vanguard cluster:
+// companions=3 → effFlat=30, effPercent=0.35 →
+// effectiveArmor = floor(54 × 1.35) + 30 = floor(72.9) + 30 = 72 + 30 = 102.
+func TestGuardianAura_PercentSynergy_4Vanguards(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 56)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	def := perkDefByID("guardian_aura")
+	if def == nil {
+		t.Fatal("guardian_aura perk def not found")
+	}
+
+	center := protocol.Vec2{X: 400, Y: 400}
+	offsets := [][2]float64{{-15, 0}, {15, 0}, {0, -15}, {0, 15}}
+	for _, off := range offsets {
+		v := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{
+			X: center.X + off[0], Y: center.Y + off[1],
+		})
+		v.MaxHP = 500
+		v.HP = 500
+		v.Visible = true
+		grantPerk(v, "guardian_aura")
+	}
+
+	recipient := s.spawnPlayerUnitLocked("soldier", "p1", "#2ecc71", center)
+	recipient.Armor = 54
+	recipient.MaxHP = 500
+	recipient.HP = 500
+	recipient.Visible = true
+
+	s.rebuildGuardianAuraCacheLocked()
+
+	aura, ok := s.guardianAuraCache[recipient.ID]
+	if !ok {
+		t.Fatal("recipient should be in aura cache")
+	}
+
+	// companions=3 for every Vanguard → max flat = 30, max pct = 0.35.
+	wantFlat := int(def.Config["bonusArmor"]) + 3*int(def.Config["synergyArmorBonus"]) // 30
+	wantPct := def.Config["armorPercent"] + 3*def.Config["synergyArmorPercentBonus"]   // 0.35
+	if aura.FlatArmor != wantFlat {
+		t.Errorf("4-Vanguard synergy FlatArmor: got %d, want %d", aura.FlatArmor, wantFlat)
+	}
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("4-Vanguard synergy PercentArmor: got %.3f, want %.3f", aura.PercentArmor, wantPct)
+	}
+
+	// floor(54 × 1.35) + 30 = floor(72.9) + 30 = 72 + 30 = 102
+	wantEffective := int(math.Floor(float64(54)*(1.0+wantPct))) + wantFlat
+	gotEffective := s.effectiveArmorLocked(recipient)
+	if gotEffective != wantEffective {
+		t.Errorf("4-Vanguard synergy effectiveArmor: got %d, want %d", gotEffective, wantEffective)
+	}
+}
+
+// TestGuardianAura_FlatAndPercentMaxIndependently verifies that when a recipient
+// is covered by two auras simultaneously, the cache stores the maximum of each
+// dimension independently — not the sum.
+//
+// Geometry: V1 and V2 are placed 200px apart (outside each other's base radius
+// of 100px) so they don't count as companions. Both cover the recipient via their
+// base radii. Each aura provides base values (companions=0): flat=15, pct=0.20.
+//
+// Crucially: the result must be flat=15 (max of 15,15), NOT flat=30 (sum).
+// Similarly pct=0.20 (max), NOT pct=0.40 (sum).
+func TestGuardianAura_FlatAndPercentMaxIndependently(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 57)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	def := perkDefByID("guardian_aura")
+	if def == nil {
+		t.Fatal("guardian_aura perk def not found")
+	}
+	baseFlat := int(def.Config["bonusArmor"]) // 15
+	basePct := def.Config["armorPercent"]      // 0.20
+
+	// V1 at x=200 and V2 at x=400 — 200px apart, outside each other's base radius (100).
+	// Neither counts the other as a companion → companions=0, effFlat=15, effPct=0.20, effR=100.
+	v1 := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 200, Y: 400})
+	v1.MaxHP = 500
+	v1.HP = 500
+	v1.Visible = true
+	grantPerk(v1, "guardian_aura")
+
+	v2 := s.spawnPlayerUnitLocked("soldier", "p1", "#9b59b6", protocol.Vec2{X: 400, Y: 400})
+	v2.MaxHP = 500
+	v2.HP = 500
+	v2.Visible = true
+	grantPerk(v2, "guardian_aura")
+
+	// Recipient at x=300: exactly 100px from both V1 and V2 — within both base radii.
+	recipient := s.spawnPlayerUnitLocked("soldier", "p1", "#e74c3c", protocol.Vec2{X: 300, Y: 400})
+	recipient.MaxHP = 300
+	recipient.HP = 300
+	recipient.Visible = true
+
+	s.rebuildGuardianAuraCacheLocked()
+
+	aura, ok := s.guardianAuraCache[recipient.ID]
+	if !ok {
+		t.Fatal("recipient should be in aura cache (within 100px of both V1 and V2)")
+	}
+
+	// Both auras provide base values; max per dimension = base values (not doubled).
+	if aura.FlatArmor != baseFlat {
+		t.Errorf("max-not-sum FlatArmor: got %d, want %d (NOT sum=%d)",
+			aura.FlatArmor, baseFlat, 2*baseFlat)
+	}
+	if math.Abs(aura.PercentArmor-basePct) > 0.001 {
+		t.Errorf("max-not-sum PercentArmor: got %.3f, want %.3f (NOT sum=%.3f)",
+			aura.PercentArmor, basePct, 2*basePct)
+	}
+	// Explicit sum check: result must not be the doubled value.
+	if aura.FlatArmor == 2*baseFlat {
+		t.Errorf("FlatArmor is doubled (%d) — appears to be sum instead of max", aura.FlatArmor)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Armor percent: additive stacking
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestArmorPercent_StackingAdditive verifies that two percent-armor sources
+// stack additively, not multiplicatively. A unit covered by two guardian_aura
+// Vanguards (each contributing armorPercent=0.20) gets +40% not +44%.
+// Effective armor = floor(base × 1.40) + 2*flatBonus.
+//
+// Note: two separate auras fan-out independently; the cache stores max per
+// dimension, so for additive stacking to be visible we need a single aura
+// source whose companions compound (each companion adds to the same aura's
+// pct via synergyArmorPercentBonus). We verify two companions produce
+// pct=0.20+0.05+0.05=0.30 (additive), NOT 0.20*1.05*1.05≈0.2205 (multiplicative).
+func TestArmorPercent_StackingAdditive(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 58)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	def := perkDefByID("guardian_aura")
+	if def == nil {
+		t.Fatal("guardian_aura perk def not found")
+	}
+
+	// V1 with 2 companions (all within base radius of each other).
+	v1 := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 200, Y: 400})
+	v1.MaxHP = 500
+	v1.HP = 500
+	v1.Visible = true
+	grantPerk(v1, "guardian_aura")
+
+	comp1 := s.spawnPlayerUnitLocked("soldier", "p1", "#2980b9", protocol.Vec2{X: 240, Y: 400})
+	comp1.MaxHP = 500
+	comp1.HP = 500
+	comp1.Visible = true
+	grantPerk(comp1, "guardian_aura")
+
+	comp2 := s.spawnPlayerUnitLocked("soldier", "p1", "#1a5276", protocol.Vec2{X: 220, Y: 430})
+	comp2.MaxHP = 500
+	comp2.HP = 500
+	comp2.Visible = true
+	grantPerk(comp2, "guardian_aura")
+
+	// Recipient close to V1.
+	recipient := s.spawnPlayerUnitLocked("soldier", "p1", "#e74c3c", protocol.Vec2{X: 210, Y: 400})
+	recipient.Armor = 100
+	recipient.MaxHP = 500
+	recipient.HP = 500
+	recipient.Visible = true
+
+	s.rebuildGuardianAuraCacheLocked()
+
+	aura, ok := s.guardianAuraCache[recipient.ID]
+	if !ok {
+		t.Fatal("recipient should be in aura cache")
+	}
+
+	// V1 has 2 companions → pct = 0.20 + 2*0.05 = 0.30 (additive).
+	// Multiplicative would be 0.20 * (1.05)^2 ≈ 0.2205.
+	wantPct := def.Config["armorPercent"] + 2*def.Config["synergyArmorPercentBonus"] // 0.30
+	multiplicativePct := def.Config["armorPercent"] *
+		(1 + def.Config["synergyArmorPercentBonus"]) *
+		(1 + def.Config["synergyArmorPercentBonus"]) // ≈ 0.2205
+	if math.Abs(aura.PercentArmor-wantPct) > 0.001 {
+		t.Errorf("additive stacking: PercentArmor=%.4f, want %.4f (additive), multiplicative would be %.4f",
+			aura.PercentArmor, wantPct, multiplicativePct)
+	}
+	// Verify effective armor uses additive formula.
+	wantEffective := int(math.Floor(float64(100)*(1.0+wantPct))) + int(def.Config["bonusArmor"])+2*int(def.Config["synergyArmorBonus"])
+	gotEffective := s.effectiveArmorLocked(recipient)
+	if gotEffective != wantEffective {
+		t.Errorf("additive stacking effectiveArmor: got %d, want %d", gotEffective, wantEffective)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// rallying_banner: cooldown mechanics
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestRallyingBanner_CooldownDecaysContinuously verifies that BannerCooldownRemaining
+// decreases by exactly dt per tick regardless of movement state.
+func TestRallyingBanner_CooldownDecaysContinuously(t *testing.T) {
+	s, vanguard := newGoldPerkState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	grantPerk(vanguard, "rallying_banner")
+	def := perkDefByID("rallying_banner")
+
+	// Plant first banner.
+	vanguard.Moving = false
+	tickUntilStationary(s, vanguard, def.Config["stationaryThresholdSeconds"], 0.05)
+	if len(s.Banners) == 0 {
+		t.Fatal("banner should be planted")
+	}
+	if vanguard.PerkState.BannerCooldownRemaining <= 0 {
+		t.Fatal("BannerCooldownRemaining should be set after plant")
+	}
+
+	startCooldown := vanguard.PerkState.BannerCooldownRemaining
+
+	// 3 stationary ticks.
+	for i := 0; i < 3; i++ {
+		vanguard.Moving = false
+		s.tickUnitPerkStateLocked(vanguard, 0.05)
+	}
+	wantAfterStationary := startCooldown - 3*0.05
+	if math.Abs(vanguard.PerkState.BannerCooldownRemaining-wantAfterStationary) > 0.001 {
+		t.Errorf("cooldown after 3 stationary ticks: got %.3f, want %.3f",
+			vanguard.PerkState.BannerCooldownRemaining, wantAfterStationary)
+	}
+
+	// 3 moving ticks — should keep decaying at same rate.
+	for i := 0; i < 3; i++ {
+		vanguard.Moving = true
+		s.tickUnitPerkStateLocked(vanguard, 0.05)
+	}
+	wantAfterMoving := wantAfterStationary - 3*0.05
+	if math.Abs(vanguard.PerkState.BannerCooldownRemaining-wantAfterMoving) > 0.001 {
+		t.Errorf("cooldown after 3 moving ticks: got %.3f, want %.3f",
+			vanguard.PerkState.BannerCooldownRemaining, wantAfterMoving)
+	}
+}
+
+// TestRallyingBanner_CanReplantAfterCooldown verifies that once BannerCooldownRemaining
+// reaches 0 and the unit stands stationary again, a new banner plants correctly.
+func TestRallyingBanner_CanReplantAfterCooldown(t *testing.T) {
+	s, vanguard := newGoldPerkState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	grantPerk(vanguard, "rallying_banner")
+	def := perkDefByID("rallying_banner")
+
+	// Plant first banner.
+	vanguard.Moving = false
+	tickUntilStationary(s, vanguard, def.Config["stationaryThresholdSeconds"], 0.05)
+	if len(s.Banners) == 0 {
+		t.Fatal("first banner should be planted")
+	}
+
+	// Drain cooldown.
+	vanguard.Moving = true
+	remaining := vanguard.PerkState.BannerCooldownRemaining
+	steps := int(math.Ceil(remaining/0.05)) + 2
+	for i := 0; i < steps; i++ {
+		s.tickUnitPerkStateLocked(vanguard, 0.05)
+	}
+	if vanguard.PerkState.BannerCooldownRemaining > 0.001 {
+		t.Fatalf("cooldown should have drained; got %.3f", vanguard.PerkState.BannerCooldownRemaining)
+	}
+
+	// Now stand stationary — should plant a second banner.
+	vanguard.Moving = false
+	tickUntilStationary(s, vanguard, def.Config["stationaryThresholdSeconds"], 0.05)
+	if len(s.Banners) < 2 {
+		t.Errorf("second banner should plant after cooldown expires; got %d banners", len(s.Banners))
+	}
+}
+
+// TestRallyingBanner_RecipientGetsIcon verifies that an ally standing inside
+// an active banner's radius receives "rallying_banner" in their activeBuffIcons.
+func TestRallyingBanner_RecipientGetsIcon(t *testing.T) {
+	s, vanguard := newGoldPerkState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	grantPerk(vanguard, "rallying_banner")
+	def := perkDefByID("rallying_banner")
+
+	// Plant a banner.
+	vanguard.Moving = false
+	tickUntilStationary(s, vanguard, def.Config["stationaryThresholdSeconds"], 0.05)
+	if len(s.Banners) == 0 {
+		t.Fatal("banner should be planted")
+	}
+
+	bannerRadius := s.Banners[0].Radius
+
+	// Ally inside banner radius.
+	ally := spawnAlly(t, s, "p1", vanguard.X+bannerRadius*0.4, vanguard.Y)
+	icons := s.activeBuffIconsLocked(ally)
+	found := false
+	for _, icon := range icons {
+		if icon == "rallying_banner" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("ally inside banner radius should have 'rallying_banner' buff icon; got %v", icons)
+	}
+
+	// Ally outside banner radius should NOT have the icon.
+	allyOutside := spawnAlly(t, s, "p1", vanguard.X+bannerRadius*1.5, vanguard.Y)
+	iconsOut := s.activeBuffIconsLocked(allyOutside)
+	for _, icon := range iconsOut {
+		if icon == "rallying_banner" {
+			t.Errorf("ally outside banner radius should NOT have 'rallying_banner' buff icon")
+			break
+		}
 	}
 }

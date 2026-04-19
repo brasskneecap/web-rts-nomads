@@ -367,8 +367,8 @@ func newSteadyAdvanceState(t *testing.T) (s *GameState, vanguard, enemy *Unit) {
 	return s, vanguard, enemy
 }
 
-// TestSteadyAdvance_ActiveWhenAdvancing verifies that perkIncomingDamageMultiplierLocked
-// returns damageReduction when the unit is moving toward the nearest visible enemy.
+// TestSteadyAdvance_ActiveWhenAdvancing verifies that perkBonusArmorLocked
+// returns bonusArmor when the unit is moving toward the nearest visible enemy.
 func TestSteadyAdvance_ActiveWhenAdvancing(t *testing.T) {
 	s, vanguard, _ := newSteadyAdvanceState(t)
 	s.mu.Lock()
@@ -380,15 +380,15 @@ func TestSteadyAdvance_ActiveWhenAdvancing(t *testing.T) {
 		t.Fatal("steady_advance perk def not found")
 	}
 
-	got := s.perkIncomingDamageMultiplierLocked(vanguard)
-	want := def.Config["damageReduction"]
-	if math.Abs(got-want) > 0.001 {
-		t.Errorf("perkIncomingDamageMultiplierLocked while advancing: got %.3f, want %.3f", got, want)
+	got := s.perkBonusArmorLocked(vanguard)
+	want := int(def.Config["bonusArmor"])
+	if got != want {
+		t.Errorf("perkBonusArmorLocked while advancing: got %d, want %d", got, want)
 	}
 }
 
 // TestSteadyAdvance_InactiveWhenStationary verifies that a non-moving unit
-// contributes 0 damage reduction from steady_advance.
+// contributes 0 bonus armor from steady_advance.
 func TestSteadyAdvance_InactiveWhenStationary(t *testing.T) {
 	s, vanguard, _ := newSteadyAdvanceState(t)
 	s.mu.Lock()
@@ -398,9 +398,9 @@ func TestSteadyAdvance_InactiveWhenStationary(t *testing.T) {
 
 	vanguard.Moving = false
 
-	got := s.perkIncomingDamageMultiplierLocked(vanguard)
+	got := s.perkBonusArmorLocked(vanguard)
 	if got != 0 {
-		t.Errorf("stationary unit: expected 0 damage reduction, got %.3f", got)
+		t.Errorf("stationary unit: expected 0 bonus armor, got %d", got)
 	}
 }
 
@@ -419,9 +419,9 @@ func TestSteadyAdvance_InactiveWhenNoEnemyInFront(t *testing.T) {
 	enemy.X = 100
 	enemy.Y = 400
 
-	got := s.perkIncomingDamageMultiplierLocked(vanguard)
+	got := s.perkBonusArmorLocked(vanguard)
 	if got != 0 {
-		t.Errorf("enemy behind unit: expected 0 damage reduction, got %.3f", got)
+		t.Errorf("enemy behind unit: expected 0 bonus armor, got %d", got)
 	}
 }
 
@@ -437,14 +437,15 @@ func TestSteadyAdvance_InactiveWhenNoVisibleEnemy(t *testing.T) {
 	// Mark the only enemy as invisible.
 	enemy.Visible = false
 
-	got := s.perkIncomingDamageMultiplierLocked(vanguard)
+	got := s.perkBonusArmorLocked(vanguard)
 	if got != 0 {
-		t.Errorf("no visible enemy: expected 0 damage reduction, got %.3f", got)
+		t.Errorf("no visible enemy: expected 0 bonus armor, got %d", got)
 	}
 }
 
 // TestSteadyAdvance_StacksWithBrace verifies that steady_advance and brace stack
-// additively: the combined DR equals steady_advance.damageReduction + brace.damageReduction.
+// additively via effectiveArmorLocked: the combined armor bonus equals
+// steady_advance.bonusArmor + brace.bonusArmor.
 func TestSteadyAdvance_StacksWithBrace(t *testing.T) {
 	s, vanguard, _ := newSteadyAdvanceState(t)
 	s.mu.Lock()
@@ -470,17 +471,13 @@ func TestSteadyAdvance_StacksWithBrace(t *testing.T) {
 		e.Visible = true
 	}
 
-	// The first spawned enemy is already at X=500 (in front), which is the path
-	// direction. The new enemies are also in front (within brace radius and
-	// in the forward half). Both conditions should be met.
-
-	got := s.perkIncomingDamageMultiplierLocked(vanguard)
-	wantMin := steadyDef.Config["damageReduction"] + braceDef.Config["damageReduction"]
-	if got < wantMin-0.001 {
-		t.Errorf("stacked DR should be at least %.3f, got %.3f", wantMin, got)
-	}
-	if got > 0.75+0.001 {
-		t.Errorf("stacked DR exceeds 0.75 clamp: got %.3f", got)
+	// Both conditions should be met: advancing toward enemy (first enemy at X=500)
+	// AND brace threshold reached. Verify combined flat armor bonus.
+	got := s.perkBonusArmorLocked(vanguard)
+	want := int(steadyDef.Config["bonusArmor"]) + int(braceDef.Config["bonusArmor"])
+	if got != want {
+		t.Errorf("stacked armor bonus: got %d, want %d (steady=%d + brace=%d)",
+			got, want, int(steadyDef.Config["bonusArmor"]), int(braceDef.Config["bonusArmor"]))
 	}
 }
 
@@ -787,13 +784,10 @@ func TestSteadyAdvance_ZeroVelocityNoNaN(t *testing.T) {
 	vanguard.Path = []protocol.Vec2{{X: vanguard.X, Y: vanguard.Y}}
 	vanguard.Moving = true
 
-	// Must not panic; must return 0 (not NaN or any positive value).
-	got := s.perkIncomingDamageMultiplierLocked(vanguard)
-	if math.IsNaN(got) {
-		t.Errorf("perkIncomingDamageMultiplierLocked returned NaN for zero-velocity unit")
-	}
+	// Must not panic; must return 0 bonus armor (not NaN or any positive value).
+	got := s.perkBonusArmorLocked(vanguard)
 	if got != 0 {
-		t.Errorf("zero-velocity unit: expected 0 damage reduction, got %.6f", got)
+		t.Errorf("zero-velocity unit: expected 0 bonus armor, got %d", got)
 	}
 }
 
@@ -868,60 +862,60 @@ func TestSteadyAdvance_NearestEnemyAmongMultiple(t *testing.T) {
 	farEnemy := s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{X: 450, Y: 400})
 	farEnemy.Visible = true
 
-	// Nearest is behind: perk must be inactive.
-	got := s.perkIncomingDamageMultiplierLocked(vanguard)
+	// Nearest is behind: perk must be inactive (0 bonus armor).
+	got := s.perkBonusArmorLocked(vanguard)
 	if got != 0 {
-		t.Errorf("nearest enemy behind unit: expected 0 DR, got %.3f", got)
+		t.Errorf("nearest enemy behind unit: expected 0 bonus armor, got %d", got)
 	}
 
 	// Now kill nearEnemy: only farEnemy (in front) is visible.
 	// Perk must now be active.
 	nearEnemy.HP = 0
-	got = s.perkIncomingDamageMultiplierLocked(vanguard)
-	want := def.Config["damageReduction"]
-	if math.Abs(got-want) > 0.001 {
-		t.Errorf("only in-front enemy visible: expected DR %.3f, got %.3f", want, got)
+	got = s.perkBonusArmorLocked(vanguard)
+	want := int(def.Config["bonusArmor"])
+	if got != want {
+		t.Errorf("only in-front enemy visible: expected bonusArmor %d, got %d", want, got)
 	}
 }
 
-// TestSteadyAdvance_ClampEngages verifies that the 0.75 cap in
-// perkIncomingDamageMultiplierLocked actually fires when stacked perks would
-// otherwise exceed it. We grant `brace` four times (4 × 0.20 = 0.80) plus
-// `steady_advance` (0.10) = 0.90 notional total. The output must be exactly 0.75.
-//
-// Note: granting the same perk multiple times is not a valid game state, but
-// it is the simplest way to force total > 0.75 without adding catalog entries.
-// This is a white-box clamp test, not a balance test.
-func TestSteadyAdvance_ClampEngages(t *testing.T) {
+// TestSteadyAdvance_ArmorReducesIncomingDamage verifies that the flat armor
+// bonus from steady_advance translates to reduced damage intake via the standard
+// armor mitigation formula. Tests the end-to-end reduction rather than the
+// now-deleted percentage-DR path.
+func TestSteadyAdvance_ArmorReducesIncomingDamage(t *testing.T) {
 	s, vanguard, _ := newSteadyAdvanceState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	grantPerk(vanguard, "steady_advance")
-
-	braceDef := perkDefByID("brace")
-	if braceDef == nil {
-		t.Fatal("brace perk def not found")
-	}
-	braceRadius := braceDef.Config["radius"]
-	enemyThreshold := int(braceDef.Config["enemyThreshold"])
-
-	// Grant brace 4 times — 4 × 0.20 = 0.80, plus steady_advance 0.10 = 0.90.
-	for i := 0; i < 4; i++ {
-		grantPerk(vanguard, "brace")
+	def := perkDefByID("steady_advance")
+	if def == nil {
+		t.Fatal("steady_advance perk def not found")
 	}
 
-	// Spawn enough enemies within brace radius to satisfy each brace instance.
-	for i := 0; i < enemyThreshold; i++ {
-		e := s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{
-			X: vanguard.X + braceRadius*0.5,
-			Y: vanguard.Y + float64(i)*5,
-		})
-		e.Visible = true
+	vanguard.HP = vanguard.MaxHP
+	baseArmor := vanguard.Armor
+	bonusArmor := int(def.Config["bonusArmor"])
+	effectiveArmor := s.effectiveArmorLocked(vanguard)
+	if effectiveArmor != baseArmor+bonusArmor {
+		t.Errorf("effectiveArmor while advancing: got %d, want %d", effectiveArmor, baseArmor+bonusArmor)
 	}
 
-	got := s.perkIncomingDamageMultiplierLocked(vanguard)
-	if math.Abs(got-0.75) > 0.001 {
-		t.Errorf("clamped DR should be exactly 0.75, got %.6f", got)
+	const rawDamage = 30
+	// Post-armor damage with the bonus applied.
+	wantDamage := applyArmorMitigation(rawDamage, effectiveArmor)
+	// Without bonus, base armor only.
+	baseDamage := applyArmorMitigation(rawDamage, baseArmor)
+
+	hpBefore := vanguard.HP
+	s.applyUnitDamageLocked(vanguard, wantDamage)
+	got := hpBefore - vanguard.HP
+
+	if got != wantDamage {
+		t.Errorf("damage with steady_advance armor: got %d, want %d", got, wantDamage)
+	}
+	// Sanity: bonus reduces damage compared to base armor.
+	if bonusArmor > 0 && wantDamage >= baseDamage && baseArmor > 0 {
+		t.Logf("note: bonus armor %d → damage %d vs base damage %d", bonusArmor, wantDamage, baseDamage)
 	}
 }

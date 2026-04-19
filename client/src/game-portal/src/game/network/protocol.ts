@@ -252,6 +252,27 @@ export type WaveSnapshot = {
   waveDuration: number
 }
 
+export type BannerSnapshot = {
+  id: number
+  ownerId: string
+  x: number
+  y: number
+  radius: number
+  remainingSeconds: number
+}
+
+export type TrapSnapshot = {
+  id: number
+  ownerId: string
+  x: number
+  y: number
+  radius: number
+  type: 'caltrops' | 'fire_pit' | 'explosive_trap' | 'marker_trap'
+  remainingSeconds: number
+  /** True only on the tick a single-shot trap fires. Absent otherwise. */
+  triggered?: boolean
+}
+
 export type MatchSnapshotMessage = {
   type: 'match_snapshot'
   tick: number
@@ -261,6 +282,8 @@ export type MatchSnapshotMessage = {
   players: PlayerSnapshot[]
   units: UnitSnapshot[]
   wave: WaveSnapshot
+  banners?: BannerSnapshot[]
+  traps?: TrapSnapshot[]
 }
 
 export type PingMessage = {

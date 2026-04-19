@@ -40,7 +40,7 @@ package game
 // │         perkAttackSpeedBonusLocked           attack-speed bonus         │
 // │         perkMoveSpeedMultiplierLocked        move-speed bonus           │
 // │         perkBonusDamageMultiplierLocked      outgoing damage scaler     │
-// │         perkIncomingDamageMultiplierLocked   incoming dmg reduction     │
+// │         perkArmorPercentBonusLocked          %armor bonus (self perks)  │
 // │         perkOutgoingDamageDebuffMultiplierLocked  attacker debuff       │
 // │         onPerkAttackFiredLocked              on every attack (attacker) │
 // │         onPerkAttackDamageAppliedLocked      on-hit / lifesteal         │
@@ -55,7 +55,11 @@ package game
 // │         activeDebuffIconsLocked              add debuff icon to the HUD │
 // │    4. If the perk needs persistent per-unit state, add a field to       │
 // │       UnitPerkState below.                                              │
-// │    5. Cross-unit debuffs (WeakenedRemaining, MarkedRemaining) decay in  │
+// │    5. (Optional) Set `requiresPerk` in the JSON entry to gate this perk │
+// │       on a previously-owned perk ID. The prereq filter runs in          │
+// │       perkPoolForRankLocked and silently excludes the perk from the     │
+// │       pool until the unit owns the named perk.                          │
+// │    6. Cross-unit debuffs (WeakenedRemaining, MarkedRemaining) decay in  │
 // │       state.go Update() alongside TauntRemaining — not in                │
 // │       tickUnitPerkStateLocked — because they live on units that may     │
 // │       not own the perk themselves.                                      │
@@ -78,9 +82,14 @@ package game
 //   • perks_attack.go    savage_strikes/cleave/whirlwind secondary hits —
 //                                                 onPerkAttackDamageAppliedLocked,
 //                                                 onPerkDamageTakenLocked
-//   • perks_defense.go   applyUnitDamageLocked  — perkIncomingDamageMultiplierLocked,
+//   • perks_defense.go   applyUnitDamageLocked  — perkRedirectIncomingDamageLocked (pain_share),
 //                                                 MarkedRemaining amplification,
 //                                                 perkFlatDamageReductionLocked
+//   • perks_defense.go   effectiveArmorLocked    — perkBonusArmorLocked,
+//                                                 perkArmorPercentBonusLocked,
+//                                                 perkBonusArmorFromBannersLocked,
+//                                                 perkBonusArmorFromAurasLocked,
+//                                                 perkArmorPercentBonusFromAurasLocked
 //   • progression.go     addUnitXPLocked()      — assignUnitPerkLocked (on rank-up)
 //   • progression.go     applyRankModifiersLocked() — perkFlatMaxHPBonusLocked
 // ═════════════════════════════════════════════════════════════════════════════
@@ -188,16 +197,40 @@ type UnitPerkState struct {
 	MarkedMultiplier float64
 
 	// ── rallying_banner (gold vanguard) ───────────────────────────────────────
-	// RallyingBannerPlanted gates the one-shot plant to once per stationary
-	// period. Reset in the bulwark tick case's unit.Moving branch alongside
-	// BulwarkShieldGranted so both perks re-arm on subsequent stationary periods.
-	RallyingBannerPlanted bool
+	// BannerCooldownRemaining is the seconds left on the replant cooldown. Set
+	// to cooldownSeconds (12s) when a banner is planted; decays every tick
+	// regardless of whether the unit is moving or stationary. A banner can only
+	// be planted when this value is 0. The cooldown persists across movement —
+	// moving does NOT reset it, unlike StationarySeconds.
+	BannerCooldownRemaining float64
 
 	// ── pain_share (gold vanguard) ────────────────────────────────────────────
 	// PainShareActive is a recursion guard: set true before applying redirected
 	// damage so a Vanguard currently absorbing a redirect is not an eligible
 	// redirect target. Pattern mirrors RetaliationActive.
 	PainShareActive bool
+
+	// ── trapper (archer bronze) ───────────────────────────────────────────────
+	// TrapPlaceCooldownRemaining is the seconds remaining before the Trapper may
+	// plant the next trap. Set to placeIntervalSeconds when a trap is planted;
+	// decays each tick in tickTrapPlacementLocked. Shared across all four Bronze
+	// trap types — a unit can own at most one trap perk, so no collision.
+	TrapPlaceCooldownRemaining float64
+
+	// LastCombatSeconds is the tail-window tracking whether the Archer has
+	// recently fired an attack. Set to 1.5s in tickUnitCombatLocked each time
+	// the Archer fires; decayed in state.go Update() per-unit loop. Trap
+	// placement is gated on this being > 0. Non-archers always have this at 0.
+	LastCombatSeconds float64
+
+	// TrapDoTAccumulator banks fractional damage per tick from any trap DoT
+	// (caltrops, fire_pit). Per-tick damage = damagePerSecond × dt is typically
+	// fractional (e.g. 3 × 0.05 = 0.15). Without accumulation, integer rounding
+	// drops it to zero every tick. The accumulator persists across ticks; when it
+	// reaches ≥ 1, the integer portion is applied via applyUnitDamageLocked and
+	// the fractional remainder stays banked. Multiple traps on the same unit
+	// accumulate together, which correctly stacks DoT rate.
+	TrapDoTAccumulator float64
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -242,14 +275,43 @@ func (s *GameState) assignUnitPerkLocked(unit *Unit) {
 }
 
 // perkPoolForRankLocked returns the list of perk defs a unit is eligible to be
-// granted at the given rank, excluding any perk the unit already owns. If the
-// rank-specific pool is empty, falls back to the Bronze pool so rank-ups still
-// produce a grant while higher-tier perks are still being authored.
+// granted at the given rank. Filters out perks the unit already owns and perks
+// whose RequiresPerk prerequisite isn't satisfied.
+//
+// Cascading fallback: if the requested rank yields an empty post-filter pool,
+// drop to the next lower rank and try again. Gold → Silver → Bronze; Silver →
+// Bronze. This keeps rank-ups productive while higher tiers are sparsely
+// authored OR while the unit's earlier picks gate them out of every higher-tier
+// perk. Returns nil only when even Bronze is empty.
 func (s *GameState) perkPoolForRankLocked(unit *Unit, rank string) []*PerkDef {
-	pool := eligiblePerksForUnitAtRank(unit, rank)
-	if len(pool) == 0 && rank != unitRankBronze {
-		pool = eligiblePerksForUnitAtRank(unit, unitRankBronze)
+	for _, tryRank := range perkRankCascade(rank) {
+		if pool := s.eligiblePerksAfterFiltersLocked(unit, tryRank); len(pool) > 0 {
+			return pool
+		}
 	}
+	return nil
+}
+
+// perkRankCascade returns the rank fallback order for a starting rank. Higher
+// tiers cascade down through every lower tier so a unit always has a chance at
+// a perk grant during development when higher tiers are sparse or fully gated.
+func perkRankCascade(rank string) []string {
+	switch rank {
+	case unitRankGold:
+		return []string{unitRankGold, unitRankSilver, unitRankBronze}
+	case unitRankSilver:
+		return []string{unitRankSilver, unitRankBronze}
+	default:
+		return []string{unitRankBronze}
+	}
+}
+
+// eligiblePerksAfterFiltersLocked loads the perk pool for one specific rank
+// and applies both the "already owned" and RequiresPerk filters. Returns nil
+// when no perks survive — the caller (perkPoolForRankLocked) decides whether
+// to cascade down to a lower rank.
+func (s *GameState) eligiblePerksAfterFiltersLocked(unit *Unit, rank string) []*PerkDef {
+	pool := eligiblePerksForUnitAtRank(unit, rank)
 	if len(pool) == 0 {
 		return nil
 	}
@@ -257,9 +319,12 @@ func (s *GameState) perkPoolForRankLocked(unit *Unit, rank string) []*PerkDef {
 	for _, id := range unit.PerkIDs {
 		owned[id] = struct{}{}
 	}
-	filtered := pool[:0]
+	filtered := make([]*PerkDef, 0, len(pool))
 	for _, def := range pool {
 		if _, has := owned[def.ID]; has {
+			continue
+		}
+		if def.RequiresPerk != "" && !containsString(unit.PerkIDs, def.RequiresPerk) {
 			continue
 		}
 		filtered = append(filtered, def)
@@ -395,9 +460,10 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			// period can re-arm. Bulwark is a planted-play reward — breaking
 			// formation forfeits the protection AND any partial shield is lost.
 			//
-			// The Moving branch also clears RallyingBannerPlanted so that perk can
-			// re-arm on the next stationary period. StationarySeconds is shared
-			// between bulwark and rallying_banner — both read the same counter.
+			// StationarySeconds is shared with rallying_banner — both read the
+			// same counter. The Moving branch no longer clears RallyingBannerPlanted
+			// (that field was replaced by BannerCooldownRemaining which persists
+			// across movement independently).
 			//
 			// Assumption: no other perk grants shield to a Vanguard today
 			// (blood_engine is Berserker-only). If a future Vanguard perk adds
@@ -406,7 +472,6 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			if unit.Moving {
 				unit.PerkState.StationarySeconds = 0
 				unit.PerkState.BulwarkShieldGranted = false
-				unit.PerkState.RallyingBannerPlanted = false
 				unit.Shield = 0
 			} else {
 				unit.PerkState.StationarySeconds += dt
@@ -418,39 +483,41 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			}
 
 		case "rallying_banner":
-			// Plant a banner at the unit's current position once per stationary
-			// period. The banner persists for bannerDurationSeconds even if the
+			// Plant a banner at the unit's current position once per cooldown
+			// window. The banner persists for bannerDurationSeconds even if the
 			// Vanguard moves or dies afterward.
+			//
+			// Cooldown (BannerCooldownRemaining) decays every tick regardless of
+			// movement — it persists across moves. StationarySeconds is still used
+			// as the plant gate (unit must be stationary long enough), but the
+			// cooldown prevents replanting immediately after moving back into
+			// position within the same 12s window.
 			//
 			// StationarySeconds is maintained by the bulwark case above when both
 			// perks are owned. When rallying_banner is owned alone (without bulwark),
-			// we manage StationarySeconds here directly. The Moving reset in the
-			// bulwark case covers the shared flag; if bulwark is NOT present, we
-			// still need to reset StationarySeconds and RallyingBannerPlanted on
-			// movement here.
+			// we manage StationarySeconds here directly.
 			bannerDef := perkDefByID("rallying_banner")
 			if bannerDef == nil {
 				continue
 			}
+
+			// Cooldown decays every tick regardless of movement.
+			unit.PerkState.BannerCooldownRemaining = math.Max(0, unit.PerkState.BannerCooldownRemaining-dt)
+
 			if unit.Moving {
-				// Only reset if bulwark isn't already handling the shared state.
-				// Bulwark's Moving branch runs first (perks are iterated in PerkIDs
-				// order, which is rank-up order; rallying_banner is gold so it may
-				// come after bulwark). Resetting here is safe because assigning 0
-				// to an already-0 field is a no-op.
+				// Only reset StationarySeconds if bulwark isn't already handling it.
+				// Bulwark's Moving branch runs first (PerkIDs are rank-up order).
+				// Resetting here is safe — assigning 0 to an already-0 field is a no-op.
 				unit.PerkState.StationarySeconds = 0
-				unit.PerkState.RallyingBannerPlanted = false
 			} else {
-				// Only increment if bulwark hasn't already done so this tick.
-				// Since both perks share StationarySeconds, check whether bulwark
-				// is also present so we don't double-count.
+				// Only increment StationarySeconds if bulwark hasn't already done so.
 				hasBulwark := containsString(unit.PerkIDs, "bulwark")
 				if !hasBulwark {
 					unit.PerkState.StationarySeconds += dt
 				}
 				threshold := bannerDef.Config["stationaryThresholdSeconds"]
-				if !unit.PerkState.RallyingBannerPlanted &&
-					unit.PerkState.StationarySeconds >= threshold {
+				if unit.PerkState.StationarySeconds >= threshold &&
+					unit.PerkState.BannerCooldownRemaining <= 0 {
 					banner := &Banner{
 						ID:               s.nextBannerID,
 						OwnerUnitID:      unit.ID,
@@ -464,9 +531,18 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 					}
 					s.nextBannerID++
 					s.Banners = append(s.Banners, banner)
-					unit.PerkState.RallyingBannerPlanted = true
+					unit.PerkState.BannerCooldownRemaining = bannerDef.Config["cooldownSeconds"]
 				}
 			}
+
+		// ── trapper (archer bronze) ──────────────────────────────────────────
+		// All four Bronze trap perks share the same placement timer logic.
+		// A unit can own at most one Bronze trap perk, so the shared
+		// TrapPlaceCooldownRemaining field has no collision risk.
+		// Note: LastCombatSeconds decay is handled in state.go Update() per-unit
+		// loop (cross-unit pattern, same as WeakenedRemaining).
+		case "caltrops", "fire_pit", "explosive_trap", "marker_trap":
+			s.tickTrapPlacementLocked(unit, def, dt)
 
 		// ── add cases for new perks with timer/decay needs below this line ──
 		}

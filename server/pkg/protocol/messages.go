@@ -228,6 +228,21 @@ type BannerSnapshot struct {
 	RemainingSeconds float64 `json:"remainingSeconds"`
 }
 
+// TrapSnapshot carries a Trapper trap entity to the client each tick.
+// The client renders the trap zone at the given world position for its remaining
+// duration. OwnerID is the player who placed it (team-colour tinting).
+// Triggered is omitted from JSON when false (omitempty).
+type TrapSnapshot struct {
+	ID               string  `json:"id"`
+	OwnerID          string  `json:"ownerId"`
+	X                float64 `json:"x"`
+	Y                float64 `json:"y"`
+	Radius           float64 `json:"radius"`
+	Type             string  `json:"type"`
+	RemainingSeconds float64 `json:"remainingSeconds"`
+	Triggered        bool    `json:"triggered,omitempty"`
+}
+
 type MatchSnapshotMessage struct {
 	Type      string           `json:"type"`
 	Tick      int              `json:"tick"`
@@ -238,6 +253,7 @@ type MatchSnapshotMessage struct {
 	Units     []UnitSnapshot   `json:"units"`
 	Wave      WaveSnapshot     `json:"wave"`
 	Banners   []BannerSnapshot `json:"banners,omitempty"`
+	Traps     []TrapSnapshot   `json:"traps,omitempty"`
 }
 
 type PingMessage struct {

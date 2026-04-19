@@ -9,7 +9,7 @@ import {
 import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual } from '../maps/buildingDefs'
 import { getResolvedUnitAttackVisual, getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef, UnitRenderDef } from '../maps/unitDefs'
-import type { BuildingTile } from '../network/protocol'
+import type { BannerSnapshot, BuildingTile, TrapSnapshot } from '../network/protocol'
 import { Camera } from './Camera'
 import { getRankToneColor } from './rankColors'
 import { ACTION_ICON_MAP } from '../maps/actionIconDefs'
@@ -49,6 +49,8 @@ export class CanvasRenderer {
   private camera: Camera
   private resizeObserver: ResizeObserver | null = null
   private renderTime = 0
+  private bannerInitialDurations = new Map<number, number>()
+  private trapInitialDurations = new Map<number, number>()
 
   constructor(canvas: HTMLCanvasElement, state: GameState, camera: Camera) {
     const ctx = canvas.getContext('2d')
@@ -103,6 +105,8 @@ export class CanvasRenderer {
     this.drawMapBounds()
     this.drawMoveMarkers()
     this.drawBuildingSpawnMarkers()
+    this.drawTraps(this.state.traps)
+    this.drawBanners(this.state.banners)
     this.drawUnits(units)
     this.drawBuildPlacementGhost()
     this.drawSelectionBox()
@@ -448,6 +452,347 @@ export class CanvasRenderer {
     ctx.lineTo(x, y + 13)
     ctx.stroke()
     ctx.restore()
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Trap rendering
+  //
+  // Each trap type renders a distinctive ground marker at its world position:
+  //   - caltrops:       scattered dot cluster, grey/iron tint, dashed radius ring
+  //   - fire_pit:       radial gradient fill (orange→red), pulsing outer ring
+  //   - explosive_trap: dashed red ring + center pip; triggered=true draws a
+  //                     one-frame burst flash at the explosion radius
+  //   - marker_trap:    purple dashed ring + crossed-line sigil at center
+  //
+  // Alpha fades linearly from 1 → 0.15 as remainingSeconds → 0, using the
+  // same per-id initial-duration cache pattern as drawBanners.
+  // ──────────────────────────────────────────────────────────────────────────
+  private drawTraps(traps: TrapSnapshot[]) {
+    if (traps.length === 0) {
+      if (this.trapInitialDurations.size > 0) this.trapInitialDurations.clear()
+      return
+    }
+
+    const ctx = this.ctx
+    const seen = new Set<number>()
+
+    for (const trap of traps) {
+      seen.add(trap.id)
+
+      // Cache largest-seen remainingSeconds as the initial duration denominator.
+      const recorded = this.trapInitialDurations.get(trap.id) ?? 0
+      if (trap.remainingSeconds > recorded) {
+        this.trapInitialDurations.set(trap.id, trap.remainingSeconds)
+      }
+      const initial = this.trapInitialDurations.get(trap.id) ?? trap.remainingSeconds
+      const alpha = Math.max(0.15, Math.min(1, trap.remainingSeconds / (initial || 1)))
+
+      const ownerColor = this.state.getPlayerColor(trap.ownerId) ?? '#94a3b8'
+      const r = trap.radius
+      const { x, y } = trap
+
+      ctx.save()
+      ctx.globalAlpha = alpha
+
+      switch (trap.type) {
+        case 'caltrops':
+          this.drawTrapCaltrops(ctx, x, y, r, ownerColor)
+          break
+        case 'fire_pit':
+          this.drawTrapFirePit(ctx, x, y, r, ownerColor)
+          break
+        case 'explosive_trap':
+          this.drawTrapExplosive(ctx, x, y, r, ownerColor, trap.triggered ?? false)
+          break
+        case 'marker_trap':
+          this.drawTrapMarker(ctx, x, y, r, ownerColor)
+          break
+      }
+
+      ctx.restore()
+    }
+
+    // Evict stale entries so the map doesn't grow unbounded.
+    for (const id of this.trapInitialDurations.keys()) {
+      if (!seen.has(id)) this.trapInitialDurations.delete(id)
+    }
+  }
+
+  // ── caltrops ─────────────────────────────────────────────────────────────
+  // Subtle cluster of iron-grey dots inside a dashed radius ring, with the
+  // owner color blended into the ring stroke.
+  private drawTrapCaltrops(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    r: number,
+    ownerColor: string,
+  ) {
+    // Dashed radius ring
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.strokeStyle = this.withAlpha(ownerColor, 0.45)
+    ctx.lineWidth = 1.2 / this.camera.zoom
+    ctx.setLineDash([5 / this.camera.zoom, 5 / this.camera.zoom])
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // Scattered dot cluster — a fixed pseudo-random pattern seeded by trap id
+    // (just use a static offset list so there's zero runtime randomness).
+    const dots: [number, number][] = [
+      [0, 0], [-14, -8], [12, -10], [-8, 12], [16, 6],
+      [-18, 4], [6, 18], [-10, -20], [20, -4], [0, -16],
+    ]
+    ctx.fillStyle = this.withAlpha(ownerColor, 0.55)
+    const dotR = Math.max(1.5, 2.5 / this.camera.zoom)
+    for (const [dx, dy] of dots) {
+      const px = x + dx * (r / 60)
+      const py = y + dy * (r / 60)
+      ctx.beginPath()
+      ctx.arc(px, py, dotR, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  // ── fire_pit ──────────────────────────────────────────────────────────────
+  // Radial gradient (orange core → red edge → transparent) with an
+  // owner-colored outer ring stroke.
+  private drawTrapFirePit(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    r: number,
+    ownerColor: string,
+  ) {
+    // Radial fill
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r)
+    grad.addColorStop(0, 'rgba(255, 180, 60, 0.35)')
+    grad.addColorStop(0.55, 'rgba(220, 60, 10, 0.22)')
+    grad.addColorStop(1, 'rgba(200, 30, 0, 0)')
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fillStyle = grad
+    ctx.fill()
+
+    // Owner-tinted outer ring
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.strokeStyle = this.withAlpha(ownerColor, 0.5)
+    ctx.lineWidth = 1.5 / this.camera.zoom
+    ctx.setLineDash([8 / this.camera.zoom, 4 / this.camera.zoom])
+    ctx.stroke()
+    ctx.setLineDash([])
+  }
+
+  // ── explosive_trap ────────────────────────────────────────────────────────
+  // Armed state: red dashed ring + small center pip.
+  // Triggered state: one-frame burst — bright radial flash at explosion radius.
+  private drawTrapExplosive(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    r: number,
+    ownerColor: string,
+    triggered: boolean,
+  ) {
+    if (triggered) {
+      // One-frame detonation burst: radial gradient from bright yellow/white
+      // core to transparent edge, drawn at full explosion radius.
+      const burst = ctx.createRadialGradient(x, y, 0, x, y, r)
+      burst.addColorStop(0, 'rgba(255, 255, 200, 0.9)')
+      burst.addColorStop(0.3, 'rgba(255, 160, 0, 0.75)')
+      burst.addColorStop(0.7, 'rgba(220, 40, 0, 0.45)')
+      burst.addColorStop(1, 'rgba(180, 20, 0, 0)')
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI * 2)
+      ctx.fillStyle = burst
+      ctx.globalAlpha = 0.85 // Override the faded alpha — burst should punch through
+      ctx.fill()
+      return
+    }
+
+    // Armed: dashed red ring
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.75)'
+    ctx.lineWidth = 1.5 / this.camera.zoom
+    ctx.setLineDash([6 / this.camera.zoom, 3 / this.camera.zoom])
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // Owner-color fill hint (very subtle)
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.05)'
+    ctx.fill()
+
+    // Center pip — a small filled circle indicating placement point
+    const pipR = Math.max(3, 5 / this.camera.zoom)
+    ctx.beginPath()
+    ctx.arc(x, y, pipR, 0, Math.PI * 2)
+    ctx.fillStyle = this.withAlpha(ownerColor, 0.8)
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)'
+    ctx.lineWidth = 1 / this.camera.zoom
+    ctx.stroke()
+  }
+
+  // ── marker_trap ───────────────────────────────────────────────────────────
+  // Purple dashed ring + a small diamond/cross sigil at center — looks like a
+  // debuff marker, not a weapon.
+  private drawTrapMarker(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    r: number,
+    ownerColor: string,
+  ) {
+    // Subtle purple fill
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(139, 92, 246, 0.07)'
+    ctx.fill()
+
+    // Dashed ring in owner color blended toward purple
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.strokeStyle = this.withAlpha(ownerColor, 0.5)
+    ctx.lineWidth = 1.2 / this.camera.zoom
+    ctx.setLineDash([7 / this.camera.zoom, 4 / this.camera.zoom])
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // Center sigil: two crossed lines + small diamond outline
+    const sigilSize = Math.max(5, 8 / this.camera.zoom)
+    ctx.strokeStyle = 'rgba(167, 139, 250, 0.85)'
+    ctx.lineWidth = 1 / this.camera.zoom
+
+    // Horizontal + vertical cross
+    ctx.beginPath()
+    ctx.moveTo(x - sigilSize, y)
+    ctx.lineTo(x + sigilSize, y)
+    ctx.moveTo(x, y - sigilSize)
+    ctx.lineTo(x, y + sigilSize)
+    ctx.stroke()
+
+    // Diamond (45° square)
+    const d = sigilSize * 0.65
+    ctx.beginPath()
+    ctx.moveTo(x, y - d)
+    ctx.lineTo(x + d, y)
+    ctx.lineTo(x, y + d)
+    ctx.lineTo(x - d, y)
+    ctx.closePath()
+    ctx.stroke()
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Rallying banner rendering
+  //
+  // Banners render BELOW units so they never occlude gameplay.  Each banner:
+  //   1. Radius circle — soft fill + owner-colored outline, distinguishable
+  //      from selection ellipses (which are yellow) and attack ranges.
+  //   2. Flag sprite  — a small pole + triangular flag drawn in world space
+  //      at the plant position; the flag face is filled with the owner color.
+  //   3. Alpha fade   — globalAlpha scales linearly from 1 → 0 as
+  //      remainingSeconds → 0, providing a smooth decay indicator with no
+  //      extra UI clutter.
+  //
+  // The maximum banner lifetime is read from the first snapshot that carries
+  // the banner; we clamp alpha between 0.15 and 1.0 so the banner is still
+  // visually present until it actually expires rather than fading to nothing
+  // while a few seconds remain.
+  // ──────────────────────────────────────────────────────────────────────────
+  private drawBanners(banners: BannerSnapshot[]) {
+    if (banners.length === 0) {
+      if (this.bannerInitialDurations.size > 0) this.bannerInitialDurations.clear()
+      return
+    }
+
+    const ctx = this.ctx
+    const seen = new Set<number>()
+
+    for (const banner of banners) {
+      seen.add(banner.id)
+      const ownerColor = this.state.getPlayerColor(banner.ownerId) ?? '#a78bfa'
+      // Server doesn't ship the original duration, so cache the largest
+      // remainingSeconds we've ever seen for this banner id and use that as
+      // the fade denominator. Auto-adapts to any server-side tuning of
+      // bannerDurationSeconds without a client-side constant.
+      const recorded = this.bannerInitialDurations.get(banner.id) ?? 0
+      if (banner.remainingSeconds > recorded) {
+        this.bannerInitialDurations.set(banner.id, banner.remainingSeconds)
+      }
+      const initial = this.bannerInitialDurations.get(banner.id) ?? banner.remainingSeconds
+      const alpha = Math.max(0.15, Math.min(1, banner.remainingSeconds / initial))
+
+      ctx.save()
+      ctx.globalAlpha = alpha
+
+      // ── 1. Radius fill + outline ──────────────────────────────────────────
+      ctx.beginPath()
+      ctx.arc(banner.x, banner.y, banner.radius, 0, Math.PI * 2)
+      ctx.fillStyle = this.withAlpha(ownerColor, 0.08)
+      ctx.fill()
+
+      ctx.strokeStyle = this.withAlpha(ownerColor, 0.55)
+      ctx.lineWidth = 1.5 / this.camera.zoom
+      ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom])
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      // ── 2. Flag sprite ────────────────────────────────────────────────────
+      // All measurements in world pixels; scale with camera zoom via lineWidth
+      // conventions already used in this file.
+      const poleH = 18   // pole height in world px
+      const poleW = 1.5 / this.camera.zoom
+      const flagW = 10   // flag width (horizontal)
+      const flagH = 7    // flag height (vertical)
+      const poleX = banner.x
+      const poleTopY = banner.y - poleH
+      const poleBotY = banner.y
+
+      // Dark outline pass so the sprite reads over any terrain color.
+      ctx.save()
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
+      ctx.lineWidth = poleW + 2 / this.camera.zoom
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(poleX, poleBotY)
+      ctx.lineTo(poleX, poleTopY)
+      ctx.stroke()
+      ctx.restore()
+
+      // Pole
+      ctx.strokeStyle = '#cbd5e1'
+      ctx.lineWidth = poleW
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(poleX, poleBotY)
+      ctx.lineTo(poleX, poleTopY)
+      ctx.stroke()
+
+      // Flag face — filled triangle pointing right
+      ctx.fillStyle = ownerColor
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.7)'
+      ctx.lineWidth = 1 / this.camera.zoom
+      ctx.lineJoin = 'round'
+      ctx.beginPath()
+      ctx.moveTo(poleX,          poleTopY)           // top-left (at pole)
+      ctx.lineTo(poleX + flagW,  poleTopY + flagH / 2) // right tip
+      ctx.lineTo(poleX,          poleTopY + flagH)   // bottom-left (at pole)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+
+      ctx.restore()
+    }
+
+    // Drop cached durations for banners no longer in the snapshot so the
+    // map doesn't grow unbounded across many planted-then-expired banners.
+    for (const id of this.bannerInitialDurations.keys()) {
+      if (!seen.has(id)) this.bannerInitialDurations.delete(id)
+    }
   }
 
   private drawUnits(

@@ -3,12 +3,14 @@
     "id": "guardian_aura",
     "displayName": "Guardian Aura",
     "icon": "perk-guardian-aura",
-    "description": "Allies within radius take reduced damage. Nearby Vanguards with this perk form a formation, amplifying each other's auras.",
+    "description": "Allies within radius gain bonus armor and percent armor. Nearby Vanguards with this perk form a formation, amplifying each other's auras.",
     "config": {
       "radius": 100,
-      "damageReduction": 0.15,
+      "bonusArmor": 15,
+      "armorPercent": 0.20,
       "synergyRadiusBonus": 30,
-      "synergyDRBonus": 0.05
+      "synergyArmorBonus": 5,
+      "synergyArmorPercentBonus": 0.05
     }
   },
   {
@@ -25,13 +27,14 @@
     "id": "rallying_banner",
     "displayName": "Rallying Banner",
     "icon": "perk-rallying-banner",
-    "description": "After holding position, plant a banner that grants allies bonus armor and attack speed. The banner persists after you move or fall.",
+    "description": "After holding position, plant a banner that grants allies bonus armor and attack speed. The banner persists after you move or fall. Replanting requires a cooldown.",
     "config": {
       "stationaryThresholdSeconds": 3,
       "bannerDurationSeconds": 8,
       "bannerRadius": 120,
-      "bannerArmorBonus": 4,
-      "bannerAttackSpeedBonus": 0.15
+      "bannerArmorBonus": 24,
+      "bannerAttackSpeedBonus": 0.25,
+      "cooldownSeconds": 12
     }
   }
 ]

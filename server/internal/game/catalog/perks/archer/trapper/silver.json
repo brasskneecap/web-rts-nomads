@@ -1,0 +1,10 @@
+[
+  {
+    "id": "explosive_chain",
+    "displayName": "Chain Reaction",
+    "icon": "perk-explosive-chain",
+    "description": "Explosive traps trigger nearby unexploded explosive traps in a chain.",
+    "requiresPerk": "explosive_trap",
+    "config": { "chainRadius": 140 }
+  }
+]

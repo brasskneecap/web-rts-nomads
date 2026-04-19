@@ -45,25 +45,31 @@ var perkDefsFS embed.FS
 // PerkDef is the static definition of a perk loaded from the catalog.
 //
 // Fields:
-//   - ID          — unique string key; used by runtime handlers to dispatch behaviour
-//   - DisplayName — human-readable name shown in UI
-//   - Description — one-line flavour/tooltip text
-//   - UnitType    — eligible unit type, e.g. "soldier". Empty = any.
-//   - Path        — eligible promotion path, e.g. "berserker". Empty = any.
-//   - Rank        — eligible rank tier, e.g. "bronze". Empty = any.
-//   - Config      — perk-specific tuning values. Keys and their meanings are
-//                   documented in the JSON file alongside each perk entry.
+//   - ID           — unique string key; used by runtime handlers to dispatch behaviour
+//   - DisplayName  — human-readable name shown in UI
+//   - Description  — one-line flavour/tooltip text
+//   - UnitType     — eligible unit type, e.g. "soldier". Empty = any.
+//   - Path         — eligible promotion path, e.g. "berserker". Empty = any.
+//   - Rank         — eligible rank tier, e.g. "bronze". Empty = any.
+//   - RequiresPerk — (optional) gate: this perk only appears in the pool when
+//                    the unit already owns the named perk. Empty = no gate.
+//                    Useful for Silver/Gold perks that only make sense alongside
+//                    a specific Bronze perk (e.g. explosive_chain requires
+//                    explosive_trap). Set in the JSON as "requiresPerk".
+//   - Config       — perk-specific tuning values. Keys and their meanings are
+//                    documented in the JSON file alongside each perk entry.
 type PerkDef struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
 	Description string `json:"description,omitempty"`
 	// Icon is the action-icon ID used to render this perk in the HUD.
 	// Matches an entry in catalog/action-icons.json ("perk-<name>").
-	Icon     string             `json:"icon,omitempty"`
-	UnitType string             `json:"unitType,omitempty"`
-	Path     string             `json:"path,omitempty"`
-	Rank     string             `json:"rank,omitempty"`
-	Config   map[string]float64 `json:"config"`
+	Icon         string             `json:"icon,omitempty"`
+	UnitType     string             `json:"unitType,omitempty"`
+	Path         string             `json:"path,omitempty"`
+	Rank         string             `json:"rank,omitempty"`
+	RequiresPerk string             `json:"requiresPerk,omitempty"`
+	Config       map[string]float64 `json:"config"`
 }
 
 // perkDefsByID is the in-memory index populated from the perk catalog at startup.
@@ -75,11 +81,12 @@ var perkDefsByID map[string]*PerkDef
 // It carries only the perk-specific fields; UnitType, Path, and Rank are
 // injected from the file path during parsing.
 type perkEntryJSON struct {
-	ID          string             `json:"id"`
-	DisplayName string             `json:"displayName"`
-	Description string             `json:"description,omitempty"`
-	Icon        string             `json:"icon,omitempty"`
-	Config      map[string]float64 `json:"config"`
+	ID           string             `json:"id"`
+	DisplayName  string             `json:"displayName"`
+	Description  string             `json:"description,omitempty"`
+	Icon         string             `json:"icon,omitempty"`
+	RequiresPerk string             `json:"requiresPerk,omitempty"`
+	Config       map[string]float64 `json:"config"`
 }
 
 func init() {
@@ -117,14 +124,15 @@ func init() {
 		}
 		for _, entry := range entries {
 			def := &PerkDef{
-				ID:          entry.ID,
-				DisplayName: entry.DisplayName,
-				Description: entry.Description,
-				Icon:        entry.Icon,
-				UnitType:    unitType,
-				Path:        pathName,
-				Rank:        rank,
-				Config:      entry.Config,
+				ID:           entry.ID,
+				DisplayName:  entry.DisplayName,
+				Description:  entry.Description,
+				Icon:         entry.Icon,
+				UnitType:     unitType,
+				Path:         pathName,
+				Rank:         rank,
+				RequiresPerk: entry.RequiresPerk,
+				Config:       entry.Config,
 			}
 			perkDefsByID[def.ID] = def
 		}

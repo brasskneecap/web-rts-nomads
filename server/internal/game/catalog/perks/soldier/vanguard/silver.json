@@ -25,11 +25,11 @@
     "id": "brace",
     "displayName": "Brace",
     "icon": "perk-brace",
-    "description": "Gain damage reduction when surrounded by two or more enemies.",
+    "description": "Gain bonus armor when surrounded by two or more enemies.",
     "config": {
       "enemyThreshold": 2,
       "radius": 100,
-      "damageReduction": 0.2
+      "bonusArmor": 30
     }
   },
   {

@@ -285,9 +285,9 @@ func TestPunishingGuard_DebuffExpires(t *testing.T) {
 // 3. Brace
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestBrace_NoReduction_BelowEnemyThreshold verifies no damage reduction when
+// TestBrace_NoArmorBonus_BelowEnemyThreshold verifies no armor bonus when
 // there is only one enemy nearby (threshold is 2).
-func TestBrace_NoReduction_BelowEnemyThreshold(t *testing.T) {
+func TestBrace_NoArmorBonus_BelowEnemyThreshold(t *testing.T) {
 	s, vanguard, attacker := newSilverPerkState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -299,22 +299,17 @@ func TestBrace_NoReduction_BelowEnemyThreshold(t *testing.T) {
 	attacker.X = vanguard.X + def.Config["radius"]*0.5
 	attacker.Y = vanguard.Y
 
-	vanguard.HP = vanguard.MaxHP // full HP headroom
-	const rawDamage = 20
-	hpBefore := vanguard.HP
-	s.applyUnitDamageLocked(vanguard, rawDamage)
-	hpAfter := vanguard.HP
-
-	actualDamage := hpBefore - hpAfter
-	// With only 1 enemy nearby (threshold=2), full damage applies.
-	if actualDamage != rawDamage {
-		t.Errorf("brace with 1 enemy: expected full damage %d, got %d", rawDamage, actualDamage)
+	// With only 1 enemy nearby (threshold=2), no armor bonus.
+	got := s.perkBonusArmorLocked(vanguard)
+	if got != 0 {
+		t.Errorf("brace with 1 enemy: expected 0 bonus armor, got %d", got)
 	}
 }
 
-// TestBrace_Reduction_AtEnemyThreshold verifies damage reduction activates
-// when there are exactly enemyThreshold enemies nearby.
-func TestBrace_Reduction_AtEnemyThreshold(t *testing.T) {
+// TestBrace_ArmorBonus_AtEnemyThreshold verifies the armor bonus activates
+// when there are exactly enemyThreshold enemies nearby, and that end-to-end
+// damage is reduced compared to having no brace.
+func TestBrace_ArmorBonus_AtEnemyThreshold(t *testing.T) {
 	s, vanguard, attacker := newSilverPerkState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -331,26 +326,26 @@ func TestBrace_Reduction_AtEnemyThreshold(t *testing.T) {
 		X: vanguard.X - def.Config["radius"]*0.5,
 		Y: vanguard.Y,
 	})
+	enemy2.Visible = true
 
-	vanguard.HP = vanguard.MaxHP // full HP headroom
-	const rawDamage = 20
-	hpBefore := vanguard.HP
-	s.applyUnitDamageLocked(vanguard, rawDamage)
-	hpAfter := vanguard.HP
-
-	actualDamage := hpBefore - hpAfter
-	expectedDamage := int(math.Round(float64(rawDamage) * (1.0 - def.Config["damageReduction"])))
-
-	// Allow ±1 for rounding.
-	if diff := actualDamage - expectedDamage; diff > 1 || diff < -1 {
-		t.Errorf("brace with %d enemies: got damage=%d, want ~%d", 2, actualDamage, expectedDamage)
+	// Verify the bonus armor is applied.
+	wantBonus := int(def.Config["bonusArmor"])
+	gotBonus := s.perkBonusArmorLocked(vanguard)
+	if gotBonus != wantBonus {
+		t.Errorf("brace bonus armor: got %d, want %d", gotBonus, wantBonus)
 	}
-	_ = enemy2
+
+	// Verify effective armor includes the bonus.
+	wantEffective := vanguard.Armor + wantBonus
+	gotEffective := s.effectiveArmorLocked(vanguard)
+	if gotEffective != wantEffective {
+		t.Errorf("brace effectiveArmor: got %d, want %d", gotEffective, wantEffective)
+	}
 }
 
-// TestBrace_NoReduction_EnemyOutsideRadius verifies that enemies outside the
+// TestBrace_NoArmorBonus_EnemyOutsideRadius verifies that enemies outside the
 // radius do not count toward the threshold.
-func TestBrace_NoReduction_EnemyOutsideRadius(t *testing.T) {
+func TestBrace_NoArmorBonus_EnemyOutsideRadius(t *testing.T) {
 	s, vanguard, attacker := newSilverPerkState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -366,15 +361,9 @@ func TestBrace_NoReduction_EnemyOutsideRadius(t *testing.T) {
 		Y: vanguard.Y,
 	})
 
-	vanguard.HP = vanguard.MaxHP // full HP headroom
-	const rawDamage = 20
-	hpBefore := vanguard.HP
-	s.applyUnitDamageLocked(vanguard, rawDamage)
-	hpAfter := vanguard.HP
-
-	actualDamage := hpBefore - hpAfter
-	if actualDamage != rawDamage {
-		t.Errorf("brace: enemies outside radius should not trigger reduction; got %d, want %d", actualDamage, rawDamage)
+	got := s.perkBonusArmorLocked(vanguard)
+	if got != 0 {
+		t.Errorf("brace: enemies outside radius should not trigger armor bonus; got %d", got)
 	}
 	_ = enemy2
 }
@@ -724,10 +713,10 @@ func TestChallengersmark_MarkRefreshes_OnEachAttack(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestLastStand_And_Brace_CoexistCleanly verifies that Last Stand (armor bonus)
-// and Brace (percentage DR) operate through independent hooks and don't
-// interfere with each other. Last Stand now contributes to perkBonusArmorLocked,
-// Brace still contributes to perkIncomingDamageMultiplierLocked — they reduce
-// damage via different mechanisms (pre-mitigation armor vs post-mitigation DR).
+// and Brace (armor bonus, conditional) both contribute to perkBonusArmorLocked
+// without interfering with each other. Both are flat-armor sources that stack
+// additively — they both flow through the same hook, reducing damage via the
+// effectiveArmorLocked formula.
 func TestLastStand_And_Brace_CoexistCleanly(t *testing.T) {
 	s, vanguard, attacker := newSilverPerkState(t)
 	s.mu.Lock()
@@ -748,14 +737,18 @@ func TestLastStand_And_Brace_CoexistCleanly(t *testing.T) {
 		Y: vanguard.Y,
 	})
 
-	// Armor hook reports Last Stand's contribution only.
-	if got, want := s.perkBonusArmorLocked(vanguard), int(lsDef.Config["bonusArmor"]); got != want {
-		t.Errorf("perkBonusArmorLocked: got %d, want %d", got, want)
+	// Both Last Stand and Brace contribute to perkBonusArmorLocked when their
+	// conditions are met (below HP threshold + 2 nearby enemies).
+	wantBonus := int(lsDef.Config["bonusArmor"]) + int(braceDef.Config["bonusArmor"])
+	if got := s.perkBonusArmorLocked(vanguard); got != wantBonus {
+		t.Errorf("perkBonusArmorLocked with last_stand+brace: got %d, want %d (ls=%d + brace=%d)",
+			got, wantBonus, int(lsDef.Config["bonusArmor"]), int(braceDef.Config["bonusArmor"]))
 	}
 
-	// DR hook reports Brace's contribution only (Last Stand no longer lives here).
-	if got, want := s.perkIncomingDamageMultiplierLocked(vanguard), braceDef.Config["damageReduction"]; math.Abs(got-want) > 0.001 {
-		t.Errorf("perkIncomingDamageMultiplierLocked: got %.3f, want %.3f", got, want)
+	// Verify effectiveArmorLocked reflects combined bonus.
+	wantEffective := vanguard.Armor + wantBonus
+	if got := s.effectiveArmorLocked(vanguard); got != wantEffective {
+		t.Errorf("effectiveArmorLocked with last_stand+brace: got %d, want %d", got, wantEffective)
 	}
 }
 

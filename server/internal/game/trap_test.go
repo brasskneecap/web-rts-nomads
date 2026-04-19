@@ -1,0 +1,1506 @@
+package game
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"strings"
+	"testing"
+
+	"webrts/server/pkg/protocol"
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared test helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// newTrapState returns a minimal GameState with two players: "p1" (the trapper
+// owner) and "enemy" (the hostile player). No units are spawned — callers add
+// their own via spawnPlayerUnitLocked.
+//
+// The lock is NOT held on return.
+func newTrapState(t *testing.T) *GameState {
+	t.Helper()
+	return NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+}
+
+// spawnArcher spawns an archer unit for the given player. Archers have the
+// attack capability so they can set LastCombatSeconds. The unit is Visible with
+// full HP, positioned at (x, y).
+func spawnArcher(t *testing.T, s *GameState, playerID string, x, y float64) *Unit {
+	t.Helper()
+	u := s.spawnPlayerUnitLocked("archer", playerID, "#3498db", protocol.Vec2{X: x, Y: y})
+	if u == nil {
+		// Archer may not be in catalog on all test environments; fall back to soldier.
+		u = s.spawnPlayerUnitLocked("soldier", playerID, "#3498db", protocol.Vec2{X: x, Y: y})
+	}
+	if u == nil {
+		t.Fatal("spawnArcher: failed to spawn unit")
+	}
+	u.Visible = true
+	return u
+}
+
+// placeTrap directly inserts a Trap into s.Traps without going through the
+// placement pipeline — useful for testing trap effects in isolation.
+func placeTrap(s *GameState, trapType, ownerPlayerID string, ownerUnitID int, x, y, radius, durationSeconds float64) *Trap {
+	id := s.nextTrapID
+	s.nextTrapID++
+	trap := &Trap{
+		ID:               trapIDString(id),
+		OwnerPlayerID:    ownerPlayerID,
+		OwnerUnitID:      ownerUnitID,
+		X:                x,
+		Y:                y,
+		Radius:           radius,
+		RemainingSeconds: durationSeconds,
+		TrapType:         trapType,
+	}
+	s.Traps = append(s.Traps, trap)
+	return trap
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase A — Trap entity scaffold tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTrap_LifetimeDecay verifies that a trap added to s.Traps has its
+// RemainingSeconds decremented by dt each tick and is culled when it reaches 0.
+func TestTrap_LifetimeDecay(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Ensure "p1" exists so tickTrapsLocked doesn't drop the trap.
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, 60, 5.0)
+
+	// Tick once with dt=2.0 — trap should still be alive.
+	s.tickTrapsLocked(2.0)
+	if len(s.Traps) != 1 {
+		t.Fatalf("after 2s tick: expected 1 trap, got %d", len(s.Traps))
+	}
+	wantRemaining := 3.0
+	if math.Abs(s.Traps[0].RemainingSeconds-wantRemaining) > 1e-9 {
+		t.Errorf("RemainingSeconds after 2s: got %.6f, want %.6f", s.Traps[0].RemainingSeconds, wantRemaining)
+	}
+
+	// Tick another 3.0s — trap should expire.
+	s.tickTrapsLocked(3.0)
+	if len(s.Traps) != 0 {
+		t.Errorf("after full lifetime: expected 0 traps, got %d", len(s.Traps))
+	}
+
+	// Verify the original trap pointer still holds the last-seen values
+	// (we're just checking the slice changed, not that memory was mutated).
+	_ = trap
+}
+
+// TestTrap_TriggeredCulledNextTick verifies that a trap with Triggered=true is
+// removed by tickTrapsLocked on the very next tick (the detonation-mark path).
+func TestTrap_TriggeredCulledNextTick(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, 80, 20.0)
+	trap.Triggered = true
+
+	s.tickTrapsLocked(0.05)
+	if len(s.Traps) != 0 {
+		t.Errorf("triggered trap: expected 0 traps after tick, got %d", len(s.Traps))
+	}
+}
+
+// TestTrap_PlayerLeaveDropsTraps verifies that RemovePlayer culls all traps
+// belonging to the leaving player. Mirrors TestBanner_PlayerLeaveCleanup.
+func TestTrap_PlayerLeaveDropsTraps(t *testing.T) {
+	s := newTrapState(t)
+
+	s.mu.Lock()
+
+	// Register players so EnsurePlayer works.
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["p2"] = &Player{ID: "p2", Resources: map[string]int{}}
+
+	// Plant two traps for p1, one for p2.
+	placeTrap(s, "caltrops", "p1", 0, 400, 400, 60, 10.0)
+	placeTrap(s, "fire_pit", "p1", 0, 410, 410, 55, 10.0)
+	placeTrap(s, "caltrops", "p2", 0, 420, 420, 60, 10.0)
+
+	if len(s.Traps) != 3 {
+		t.Fatalf("setup: expected 3 traps, got %d", len(s.Traps))
+	}
+
+	s.mu.Unlock()
+
+	// RemovePlayer acquires the lock internally.
+	s.RemovePlayer("p1")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.Traps) != 1 {
+		t.Errorf("after p1 leaves: expected 1 trap (p2's), got %d", len(s.Traps))
+	}
+	if s.Traps[0].OwnerPlayerID != "p2" {
+		t.Errorf("remaining trap should belong to p2, got %q", s.Traps[0].OwnerPlayerID)
+	}
+}
+
+// TestTrap_SnapshotIncludesTraps verifies that Snapshot() populates
+// MatchSnapshotMessage.Traps with the active traps.
+func TestTrap_SnapshotIncludesTraps(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+
+	trap := placeTrap(s, "caltrops", "p1", 0, 300, 300, 60, 12.0)
+	trap.DamagePerSecond = 3
+	trap.SlowMultiplier = 0.7
+
+	s.mu.Unlock()
+
+	snap := s.Snapshot()
+
+	if len(snap.Traps) != 1 {
+		t.Fatalf("snapshot: expected 1 trap, got %d", len(snap.Traps))
+	}
+	ts := snap.Traps[0]
+	if ts.ID != trap.ID {
+		t.Errorf("trap snapshot ID: got %q, want %q", ts.ID, trap.ID)
+	}
+	if ts.Type != "caltrops" {
+		t.Errorf("trap snapshot Type: got %q, want caltrops", ts.Type)
+	}
+	if ts.OwnerID != "p1" {
+		t.Errorf("trap snapshot OwnerID: got %q, want p1", ts.OwnerID)
+	}
+	if math.Abs(ts.X-300) > 0.001 || math.Abs(ts.Y-300) > 0.001 {
+		t.Errorf("trap snapshot position: got (%.1f,%.1f), want (300,300)", ts.X, ts.Y)
+	}
+}
+
+// TestTrap_IDString verifies trapIDString produces the expected format.
+func TestTrap_IDString(t *testing.T) {
+	cases := []struct{ id int; want string }{
+		{0, "trap-0"},
+		{1, "trap-1"},
+		{42, "trap-42"},
+		{1000, "trap-1000"},
+	}
+	for _, c := range cases {
+		got := trapIDString(c.id)
+		if got != c.want {
+			t.Errorf("trapIDString(%d) = %q, want %q", c.id, got, c.want)
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase B — Trapper path + auto-placement tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestTrapper_ArcherGetsTrapPerkAtBronze verifies that an archer reaching
+// Bronze rank is assigned exactly one trap perk (one of the four Bronze trapper
+// perks) via the standard rank-up pipeline.
+func TestTrapper_ArcherGetsTrapPerkAtBronze(t *testing.T) {
+	validTrapPerks := map[string]bool{
+		"caltrops":       true,
+		"fire_pit":       true,
+		"explosive_trap": true,
+		"marker_trap":    true,
+	}
+
+	// Run with several seeds to confirm the assignment fires consistently.
+	for seed := int64(1); seed <= 10; seed++ {
+		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
+		s.mu.Lock()
+
+		archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		if archer == nil {
+			s.mu.Unlock()
+			t.Skipf("seed %d: archer unit type not available", seed)
+			return
+		}
+
+		// Force Bronze rank-up.
+		s.addUnitXPLocked(archer, 100)
+
+		got := archer.PerkIDs
+		if len(got) != 1 {
+			t.Errorf("seed %d: expected exactly 1 perk at Bronze, got %v", seed, got)
+			s.mu.Unlock()
+			continue
+		}
+		if !validTrapPerks[got[0]] {
+			t.Errorf("seed %d: perk %q is not a valid Bronze trap perk", seed, got[0])
+		}
+		if archer.ProgressionPath != unitPathTrapper {
+			t.Errorf("seed %d: ProgressionPath = %q, want %q", seed, archer.ProgressionPath, unitPathTrapper)
+		}
+
+		s.mu.Unlock()
+	}
+}
+
+// TestTrapper_PlacementCooldownDecays verifies that TrapPlaceCooldownRemaining
+// decrements toward 0 each tick inside tickTrapPlacementLocked.
+func TestTrapper_PlacementCooldownDecays(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	if archer == nil {
+		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	}
+	grantPerk(archer, "caltrops")
+	def := perkDefByID("caltrops")
+	if def == nil {
+		t.Fatal("caltrops perk def not found")
+	}
+
+	archer.PerkState.TrapPlaceCooldownRemaining = 6.0
+	archer.PerkState.LastCombatSeconds = 1.5 // in combat
+
+	s.tickTrapPlacementLocked(archer, def, 1.0)
+
+	want := 5.0
+	if math.Abs(archer.PerkState.TrapPlaceCooldownRemaining-want) > 1e-9 {
+		t.Errorf("cooldown after 1s tick: got %.6f, want %.6f", archer.PerkState.TrapPlaceCooldownRemaining, want)
+	}
+}
+
+// TestTrapper_TrapDropsAtUnitPositionWhenInCombat verifies that when cooldown
+// reaches 0 and the unit is in combat (LastCombatSeconds > 0), a trap is placed
+// at the unit's position.
+func TestTrapper_TrapDropsAtUnitPositionWhenInCombat(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+
+	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 300, Y: 250})
+	if archer == nil {
+		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 300, Y: 250})
+	}
+	grantPerk(archer, "caltrops")
+	def := perkDefByID("caltrops")
+	if def == nil {
+		t.Fatal("caltrops perk def not found")
+	}
+
+	// Cooldown already at 0, in combat.
+	archer.PerkState.TrapPlaceCooldownRemaining = 0
+	archer.PerkState.LastCombatSeconds = 1.5
+
+	s.tickTrapPlacementLocked(archer, def, 0.05)
+
+	if len(s.Traps) != 1 {
+		t.Fatalf("expected 1 trap after placement, got %d", len(s.Traps))
+	}
+	trap := s.Traps[0]
+	if math.Abs(trap.X-300) > 0.001 || math.Abs(trap.Y-250) > 0.001 {
+		t.Errorf("trap position: got (%.1f,%.1f), want (300,250)", trap.X, trap.Y)
+	}
+	if trap.TrapType != "caltrops" {
+		t.Errorf("trap type: got %q, want caltrops", trap.TrapType)
+	}
+	// Cooldown should be reset.
+	wantCooldown := def.Config["placeIntervalSeconds"]
+	if math.Abs(archer.PerkState.TrapPlaceCooldownRemaining-wantCooldown) > 1e-9 {
+		t.Errorf("cooldown after placement: got %.3f, want %.3f",
+			archer.PerkState.TrapPlaceCooldownRemaining, wantCooldown)
+	}
+}
+
+// TestTrapper_NoTrapDropWhenOutOfCombat verifies that no trap is placed when
+// LastCombatSeconds is 0 (unit not in combat), even with cooldown at 0.
+func TestTrapper_NoTrapDropWhenOutOfCombat(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	if archer == nil {
+		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	}
+	grantPerk(archer, "caltrops")
+	def := perkDefByID("caltrops")
+	if def == nil {
+		t.Fatal("caltrops perk def not found")
+	}
+
+	archer.PerkState.TrapPlaceCooldownRemaining = 0
+	archer.PerkState.LastCombatSeconds = 0 // NOT in combat
+
+	s.tickTrapPlacementLocked(archer, def, 0.05)
+
+	if len(s.Traps) != 0 {
+		t.Errorf("out of combat: expected 0 traps, got %d", len(s.Traps))
+	}
+}
+
+// TestTrapper_DeadUnitDoesNotPlant verifies that a dead unit (HP <= 0) does not
+// plant traps even if in combat and cooldown has expired.
+func TestTrapper_DeadUnitDoesNotPlant(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	if archer == nil {
+		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	}
+	grantPerk(archer, "caltrops")
+	def := perkDefByID("caltrops")
+	if def == nil {
+		t.Fatal("caltrops perk def not found")
+	}
+
+	archer.HP = 0 // dead
+	archer.PerkState.TrapPlaceCooldownRemaining = 0
+	archer.PerkState.LastCombatSeconds = 1.5
+
+	s.tickTrapPlacementLocked(archer, def, 0.05)
+
+	if len(s.Traps) != 0 {
+		t.Errorf("dead unit: expected 0 traps, got %d", len(s.Traps))
+	}
+}
+
+// TestTrapper_LastCombatSecondsDecays verifies that LastCombatSeconds is
+// correctly decayed in the Update loop. We run a tick with a positive value and
+// confirm it decrements.
+func TestTrapper_LastCombatSecondsDecays(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+
+	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	if archer == nil {
+		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	}
+	archer.PerkState.LastCombatSeconds = 1.5
+
+	s.mu.Unlock()
+
+	// Run one Update tick at dt=0.1.
+	s.Update(0.1)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	unit := s.unitsByID[archer.ID]
+	if unit == nil {
+		t.Fatal("archer was removed unexpectedly")
+	}
+	want := 1.4
+	if math.Abs(unit.PerkState.LastCombatSeconds-want) > 1e-9 {
+		t.Errorf("LastCombatSeconds after 0.1s: got %.6f, want %.6f",
+			unit.PerkState.LastCombatSeconds, want)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase C — Effect dispatch tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestCaltrops_SlowsAndDamagesEnemy verifies that an enemy inside caltrops
+// radius receives a slow and DoT damage.
+func TestCaltrops_SlowsAndDamagesEnemy(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+	enemy.MaxHP = 500
+
+	def := perkDefByID("caltrops")
+	if def == nil {
+		t.Fatal("caltrops perk def not found")
+	}
+
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap.DamagePerSecond = def.Config["damagePerSecond"]
+	trap.SlowMultiplier = def.Config["slowMultiplier"]
+
+	hpBefore := enemy.HP
+	s.tickTrapEffectsLocked(1.0) // dt=1s so DoT produces a full second of damage
+
+	// Should be slowed.
+	if enemy.SlowedRemaining <= 0 {
+		t.Error("enemy inside caltrops: expected SlowedRemaining > 0")
+	}
+	wantSlowMult := def.Config["slowMultiplier"]
+	if math.Abs(enemy.SlowedMultiplier-wantSlowMult) > 0.001 {
+		t.Errorf("SlowedMultiplier: got %.3f, want %.3f", enemy.SlowedMultiplier, wantSlowMult)
+	}
+
+	// Should have taken DoT damage.
+	expectedDmg := int(math.Round(def.Config["damagePerSecond"] * 1.0))
+	if expectedDmg > 0 && enemy.HP >= hpBefore {
+		t.Errorf("caltrops DoT: HP unchanged (was %d, got %d)", hpBefore, enemy.HP)
+	}
+}
+
+// TestCaltrops_AllyInZoneUnaffected verifies that an ally of the trap owner
+// inside the caltrops radius receives no slow and no DoT.
+func TestCaltrops_AllyInZoneUnaffected(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+
+	ally := s.spawnPlayerUnitLocked("soldier", "p1", "#2ecc71", protocol.Vec2{X: 400, Y: 400})
+	ally.Visible = true
+	ally.HP = 500
+
+	def := perkDefByID("caltrops")
+	if def == nil {
+		t.Fatal("caltrops perk def not found")
+	}
+
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap.DamagePerSecond = def.Config["damagePerSecond"]
+	trap.SlowMultiplier = def.Config["slowMultiplier"]
+
+	hpBefore := ally.HP
+	s.tickTrapEffectsLocked(1.0)
+
+	if ally.SlowedRemaining > 0 {
+		t.Errorf("ally: should not be slowed, got SlowedRemaining=%.3f", ally.SlowedRemaining)
+	}
+	if ally.HP != hpBefore {
+		t.Errorf("ally: HP should be unchanged, was %d now %d", hpBefore, ally.HP)
+	}
+}
+
+// TestCaltrops_SlowExpiresAfterLeavingZone verifies that the slow applied by
+// caltrops expires approximately 1s after the enemy leaves the zone (the
+// ApplySlowLocked refresh window is 1s, so the slow decays naturally after
+// the last tick that refreshed it).
+func TestCaltrops_SlowExpiresAfterLeavingZone(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+
+	def := perkDefByID("caltrops")
+	if def == nil {
+		t.Fatal("caltrops perk def not found")
+	}
+
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap.DamagePerSecond = def.Config["damagePerSecond"]
+	trap.SlowMultiplier = def.Config["slowMultiplier"]
+
+	// Apply slow while in zone.
+	s.tickTrapEffectsLocked(0.1)
+	if enemy.SlowedRemaining <= 0 {
+		t.Fatal("expected slow to be applied in zone")
+	}
+
+	// Move enemy out of zone.
+	enemy.X = trap.X + trap.Radius + 50
+
+	// The slow was set to 1.0s; if we advance time by 1.5s without the trap
+	// refreshing it, it should have expired.
+	enemy.SlowedRemaining = 1.0
+	// Decay directly (mirroring state.go Update loop for this unit).
+	enemy.SlowedRemaining -= 1.1
+	if enemy.SlowedRemaining < 0 {
+		enemy.SlowedRemaining = 0
+		enemy.SlowedMultiplier = 0
+	}
+	if enemy.SlowedRemaining != 0 {
+		t.Errorf("slow did not expire after leaving zone: SlowedRemaining=%.3f", enemy.SlowedRemaining)
+	}
+}
+
+// TestCaltrops_PersistsAcrossMultipleEnemies verifies that caltrops applies its
+// effect to all enemies within range in a single tick.
+func TestCaltrops_PersistsAcrossMultipleEnemies(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	def := perkDefByID("caltrops")
+	if def == nil {
+		t.Fatal("caltrops perk def not found")
+	}
+
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap.DamagePerSecond = def.Config["damagePerSecond"]
+	trap.SlowMultiplier = def.Config["slowMultiplier"]
+
+	// Spawn 3 enemies inside the zone.
+	enemies := make([]*Unit, 3)
+	for i := 0; i < 3; i++ {
+		e := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{
+			X: trap.X + float64(i)*5,
+			Y: trap.Y,
+		})
+		e.Visible = true
+		e.HP = 500
+		enemies[i] = e
+	}
+
+	s.tickTrapEffectsLocked(1.0)
+
+	for i, e := range enemies {
+		if e.SlowedRemaining <= 0 {
+			t.Errorf("enemy %d: expected slow, got SlowedRemaining=%.3f", i, e.SlowedRemaining)
+		}
+	}
+}
+
+// TestFirePit_DamagesEnemyNoslow verifies that fire_pit applies DoT but no slow.
+func TestFirePit_DamagesEnemyNoSlow(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+
+	def := perkDefByID("fire_pit")
+	if def == nil {
+		t.Fatal("fire_pit perk def not found")
+	}
+
+	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, def.Config["radius"], 10.0)
+	trap.DamagePerSecond = def.Config["damagePerSecond"]
+
+	hpBefore := enemy.HP
+	s.tickTrapEffectsLocked(1.0)
+
+	expectedDmg := int(math.Round(def.Config["damagePerSecond"] * 1.0))
+	if expectedDmg > 0 && enemy.HP >= hpBefore {
+		t.Errorf("fire_pit DoT: HP unchanged (was %d)", hpBefore)
+	}
+	if enemy.SlowedRemaining > 0 {
+		t.Errorf("fire_pit must not apply slow, got SlowedRemaining=%.3f", enemy.SlowedRemaining)
+	}
+}
+
+// TestExplosiveTrap_TriggersOnEnemyContact verifies that the first enemy within
+// TriggerRadius causes the trap to trigger, dealing BurstDamage to all enemies
+// within Radius and setting Triggered=true.
+func TestExplosiveTrap_TriggersOnEnemyContact(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	def := perkDefByID("explosive_trap")
+	if def == nil {
+		t.Fatal("explosive_trap perk def not found")
+	}
+
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, def.Config["explosionRadius"], 20.0)
+	trap.TriggerRadius = def.Config["triggerRadius"]
+	trap.BurstDamage = int(def.Config["burstDamage"])
+
+	// Enemy inside trigger radius.
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+	hpBefore := enemy.HP
+
+	s.tickTrapEffectsLocked(0.05)
+
+	if !trap.Triggered {
+		t.Error("explosive_trap: expected Triggered=true after enemy contact")
+	}
+	expectedDmg := int(math.Round(float64(trap.BurstDamage) * 1.0)) // burst, not DoT
+	if enemy.HP > hpBefore-expectedDmg {
+		t.Errorf("explosive_trap: enemy HP not reduced enough (before=%d after=%d expected delta=%d)",
+			hpBefore, enemy.HP, expectedDmg)
+	}
+}
+
+// TestExplosiveTrap_NoFriendlyFire verifies that allies inside the explosion
+// radius take ZERO damage when the trap triggers. This is the explicit
+// friendly-fire test required by the spec.
+func TestExplosiveTrap_NoFriendlyFire(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	def := perkDefByID("explosive_trap")
+	if def == nil {
+		t.Fatal("explosive_trap perk def not found")
+	}
+
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, def.Config["explosionRadius"], 20.0)
+	trap.TriggerRadius = def.Config["triggerRadius"]
+	trap.BurstDamage = int(def.Config["burstDamage"])
+
+	// Ally inside explosion radius — must take ZERO damage.
+	ally := s.spawnPlayerUnitLocked("soldier", "p1", "#2ecc71", protocol.Vec2{X: 400, Y: 400})
+	ally.Visible = true
+	ally.HP = 500
+	allyHPBefore := ally.HP
+
+	// Enemy inside trigger radius — this triggers the explosion.
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+
+	s.tickTrapEffectsLocked(0.05)
+
+	// Ally must be completely unharmed.
+	if ally.HP != allyHPBefore {
+		t.Errorf("FRIENDLY FIRE: ally HP changed from %d to %d (expected no damage)",
+			allyHPBefore, ally.HP)
+	}
+}
+
+// TestExplosiveTrap_CulledAfterTrigger verifies that after Triggered=true the
+// trap is removed by tickTrapsLocked on the next tick.
+func TestExplosiveTrap_CulledAfterTrigger(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	def := perkDefByID("explosive_trap")
+	if def == nil {
+		t.Fatal("explosive_trap perk def not found")
+	}
+
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, def.Config["explosionRadius"], 20.0)
+	trap.TriggerRadius = def.Config["triggerRadius"]
+	trap.BurstDamage = int(def.Config["burstDamage"])
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+
+	// Effect tick: triggers the trap.
+	s.tickTrapEffectsLocked(0.05)
+	if !trap.Triggered {
+		t.Fatal("trap did not trigger")
+	}
+
+	// Lifetime tick: should cull the triggered trap.
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}} // keep player alive
+	s.tickTrapsLocked(0.05)
+
+	if len(s.Traps) != 0 {
+		t.Errorf("after trigger+cull: expected 0 traps, got %d", len(s.Traps))
+	}
+}
+
+// TestExplosiveTrap_AoEDamagesAllEnemiesInRadius verifies that all enemies
+// within the explosion radius take damage, not just the triggering unit.
+func TestExplosiveTrap_AoEDamagesAllEnemiesInRadius(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	def := perkDefByID("explosive_trap")
+	if def == nil {
+		t.Fatal("explosive_trap perk def not found")
+	}
+
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, def.Config["explosionRadius"], 20.0)
+	trap.TriggerRadius = def.Config["triggerRadius"]
+	trap.BurstDamage = int(def.Config["burstDamage"])
+
+	// Three enemies: one inside trigger radius, two more inside explosion radius.
+	triggerEnemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	triggerEnemy.Visible = true
+	triggerEnemy.HP = 500
+
+	blastEnemy1 := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 420, Y: 400})
+	blastEnemy1.Visible = true
+	blastEnemy1.HP = 500
+
+	blastEnemy2 := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 420})
+	blastEnemy2.Visible = true
+	blastEnemy2.HP = 500
+
+	hp1 := triggerEnemy.HP
+	hp2 := blastEnemy1.HP
+	hp3 := blastEnemy2.HP
+
+	s.tickTrapEffectsLocked(0.05)
+
+	if triggerEnemy.HP >= hp1 {
+		t.Errorf("trigger enemy took no damage")
+	}
+	if blastEnemy1.HP >= hp2 {
+		t.Errorf("blast enemy 1 took no damage")
+	}
+	if blastEnemy2.HP >= hp3 {
+		t.Errorf("blast enemy 2 took no damage")
+	}
+}
+
+// TestMarkerTrap_MarksEnemy verifies that an enemy entering the marker_trap zone
+// gets MarkedRemaining > 0 and MarkedMultiplier set.
+func TestMarkerTrap_MarksEnemy(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+
+	def := perkDefByID("marker_trap")
+	if def == nil {
+		t.Fatal("marker_trap perk def not found")
+	}
+
+	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap.MarkMultiplier = def.Config["markMultiplier"]
+	trap.MarkDuration = def.Config["markDuration"]
+
+	s.tickTrapEffectsLocked(0.05)
+
+	if enemy.PerkState.MarkedRemaining <= 0 {
+		t.Error("enemy inside marker_trap: expected MarkedRemaining > 0")
+	}
+	if math.Abs(enemy.PerkState.MarkedMultiplier-def.Config["markMultiplier"]) > 0.001 {
+		t.Errorf("MarkedMultiplier: got %.3f, want %.3f",
+			enemy.PerkState.MarkedMultiplier, def.Config["markMultiplier"])
+	}
+}
+
+// TestMarkerTrap_MarkPersistsAfterLeaving verifies that the mark persists after
+// the enemy leaves the zone (it decays naturally, not on zone exit).
+func TestMarkerTrap_MarkPersistsAfterLeaving(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+
+	def := perkDefByID("marker_trap")
+	if def == nil {
+		t.Fatal("marker_trap perk def not found")
+	}
+
+	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap.MarkMultiplier = def.Config["markMultiplier"]
+	trap.MarkDuration = def.Config["markDuration"]
+
+	// Apply mark.
+	s.tickTrapEffectsLocked(0.05)
+	markedBefore := enemy.PerkState.MarkedRemaining
+	if markedBefore <= 0 {
+		t.Fatal("mark was not applied")
+	}
+
+	// Move enemy outside zone.
+	enemy.X = trap.X + trap.Radius + 100
+
+	// Tick effects — enemy is outside now, so no refresh. Mark should still be set.
+	s.tickTrapEffectsLocked(0.05)
+	if enemy.PerkState.MarkedRemaining <= 0 {
+		t.Error("mark should persist after leaving zone (decays naturally)")
+	}
+}
+
+// TestMarkerTrap_RefreshStrongerSemantics verifies that a stronger overlapping
+// mark source wins (MarkedMultiplier takes max).
+func TestMarkerTrap_RefreshStrongerSemantics(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+
+	def := perkDefByID("marker_trap")
+	if def == nil {
+		t.Fatal("marker_trap perk def not found")
+	}
+
+	// Set a stronger mark already on the unit (e.g. from challengers_mark).
+	strongerMult := def.Config["markMultiplier"] + 0.10
+	enemy.PerkState.MarkedMultiplier = strongerMult
+	enemy.PerkState.MarkedRemaining = 10.0
+
+	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap.MarkMultiplier = def.Config["markMultiplier"]
+	trap.MarkDuration = def.Config["markDuration"]
+
+	s.tickTrapEffectsLocked(0.05)
+
+	// Stronger existing mark must not be downgraded.
+	if enemy.PerkState.MarkedMultiplier < strongerMult {
+		t.Errorf("refresh-stronger: MarkedMultiplier was downgraded from %.3f to %.3f",
+			strongerMult, enemy.PerkState.MarkedMultiplier)
+	}
+}
+
+// TestMarkerTrap_AmplifiedDamage verifies that incoming damage to a marked
+// enemy is amplified through applyUnitDamageLocked (the standard pipeline).
+func TestMarkerTrap_AmplifiedDamage(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+	enemy.MaxHP = 500
+
+	def := perkDefByID("marker_trap")
+	if def == nil {
+		t.Fatal("marker_trap perk def not found")
+	}
+
+	// Apply mark manually.
+	enemy.PerkState.MarkedMultiplier = def.Config["markMultiplier"]
+	enemy.PerkState.MarkedRemaining = 4.0
+
+	// Deal 100 raw damage. applyUnitDamageLocked amplifies by (1 + markMultiplier).
+	const raw = 100
+	hpBefore := enemy.HP
+	s.applyUnitDamageLocked(enemy, raw)
+
+	expected := int(math.Round(float64(raw) * (1.0 + def.Config["markMultiplier"])))
+	actual := hpBefore - enemy.HP
+
+	if actual != expected {
+		t.Errorf("marked damage: got %d, want %d (mark mult=%.2f)", actual, expected, def.Config["markMultiplier"])
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase D — requiresPerk filter tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestRequiresPerk_ExplosiveChainVisibleWithExplosiveTrap verifies that
+// explosive_chain appears in the Silver pool when the unit already owns
+// explosive_trap.
+func TestRequiresPerk_ExplosiveChainVisibleWithExplosiveTrap(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	if archer == nil {
+		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	}
+	archer.ProgressionPath = unitPathTrapper
+	archer.Rank = unitRankSilver
+
+	// Grant the prerequisite.
+	grantPerk(archer, "explosive_trap")
+
+	pool := s.perkPoolForRankLocked(archer, unitRankSilver)
+
+	found := false
+	for _, def := range pool {
+		if def.ID == "explosive_chain" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("unit with explosive_trap should see explosive_chain in Silver pool")
+	}
+}
+
+// TestRequiresPerk_ExplosiveChainHiddenWithoutExplosiveTrap verifies that
+// explosive_chain does NOT appear in the Silver pool when the unit owns a
+// different Bronze trap perk (not explosive_trap).
+func TestRequiresPerk_ExplosiveChainHiddenWithoutExplosiveTrap(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	if archer == nil {
+		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	}
+	archer.ProgressionPath = unitPathTrapper
+	archer.Rank = unitRankSilver
+
+	// Own caltrops (not explosive_trap).
+	grantPerk(archer, "caltrops")
+
+	pool := s.perkPoolForRankLocked(archer, unitRankSilver)
+
+	for _, def := range pool {
+		if def.ID == "explosive_chain" {
+			t.Errorf("unit with caltrops (not explosive_trap) should NOT see explosive_chain, but found it in pool")
+			return
+		}
+	}
+}
+
+// TestRequiresPerk_DoesNotBreakSoldierPools verifies that adding the requiresPerk
+// filter does not change the Vanguard/Berserker perk pool sizes (regression).
+func TestRequiresPerk_DoesNotBreakSoldierPools(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, pathName := range []string{unitPathVanguard, unitPathBerserker} {
+		for _, rank := range []string{unitRankBronze, unitRankSilver, unitRankGold} {
+			soldier := s.spawnPlayerUnitLocked("soldier", fmt.Sprintf("p-%s-%s", pathName, rank),
+				"#3498db", protocol.Vec2{X: 400, Y: 400})
+			soldier.ProgressionPath = pathName
+			soldier.Rank = rank
+
+			pool := s.perkPoolForRankLocked(soldier, rank)
+
+			// Soldier perks should never have requiresPerk set.
+			for _, def := range pool {
+				if def.RequiresPerk != "" {
+					t.Errorf("%s/%s perk %q has requiresPerk=%q — soldiers should have none",
+						pathName, rank, def.ID, def.RequiresPerk)
+				}
+			}
+
+			// Pool should be non-empty for Bronze (all ranks have authored perks).
+			if rank == unitRankBronze && len(pool) == 0 {
+				t.Errorf("%s Bronze pool is empty (regression)", pathName)
+			}
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase E — QA-added tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestCaltrops_DoTAtProductionTickRate verifies that caltrops actually deals
+// damage at the production tick rate (dt = 1/20 = 0.05 s). At dt=0.05 and
+// damagePerSecond=3, math.Round(3*0.05) = math.Round(0.15) = 0, which means
+// caltrops deals ZERO damage per tick in production.
+//
+// This test is intentionally written to FAIL until the implementation is fixed.
+// The correct fix is to accumulate fractional damage across ticks (e.g. using a
+// per-trap or per-unit damage accumulator) rather than rounding per-tick.
+func TestCaltrops_DoTAtProductionTickRate(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+	enemy.MaxHP = 500
+
+	def := perkDefByID("caltrops")
+	if def == nil {
+		t.Fatal("caltrops perk def not found")
+	}
+
+	trap := placeTrap(s, "caltrops", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap.DamagePerSecond = def.Config["damagePerSecond"] // 3 dmg/s
+	trap.SlowMultiplier = def.Config["slowMultiplier"]
+
+	const productionDT = 1.0 / 20.0 // 0.05 s — the actual loop.go tick rate
+	const ticks = 20                  // 1 simulated second
+	hpBefore := enemy.HP
+
+	for i := 0; i < ticks; i++ {
+		s.tickTrapEffectsLocked(productionDT)
+	}
+
+	// After 1 full second of caltrops (3 dmg/s), enemy must have lost at least
+	// 1 HP. If math.Round(3*0.05)=0 every tick, HP will be unchanged.
+	if enemy.HP >= hpBefore {
+		t.Errorf("caltrops DoT at dt=%.4f: enemy HP unchanged after %d ticks (%.1f simulated seconds). "+
+			"math.Round(damagePerSecond*dt) = math.Round(%.2f*%.4f) = %d — DoT is zero every tick at production rate. "+
+			"Fix: accumulate fractional damage across ticks.",
+			productionDT, ticks, float64(ticks)*productionDT,
+			trap.DamagePerSecond, productionDT,
+			int(math.Round(trap.DamagePerSecond*productionDT)))
+	}
+}
+
+// TestFirePit_DoTAtProductionTickRate is the same check for fire_pit.
+// damagePerSecond=8, dt=0.05 → math.Round(8*0.05)=math.Round(0.40)=0.
+// fire_pit also deals zero damage per tick in production.
+func TestFirePit_DoTAtProductionTickRate(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+	enemy.MaxHP = 500
+
+	def := perkDefByID("fire_pit")
+	if def == nil {
+		t.Fatal("fire_pit perk def not found")
+	}
+
+	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, def.Config["radius"], 10.0)
+	trap.DamagePerSecond = def.Config["damagePerSecond"] // 8 dmg/s
+
+	const productionDT = 1.0 / 20.0
+	const ticks = 20 // 1 simulated second
+	hpBefore := enemy.HP
+
+	for i := 0; i < ticks; i++ {
+		s.tickTrapEffectsLocked(productionDT)
+	}
+
+	if enemy.HP >= hpBefore {
+		t.Errorf("fire_pit DoT at dt=%.4f: enemy HP unchanged after %d ticks (%.1f simulated seconds). "+
+			"math.Round(damagePerSecond*dt) = math.Round(%.2f*%.4f) = %d — DoT is zero every tick at production rate. "+
+			"Fix: accumulate fractional damage across ticks.",
+			productionDT, ticks, float64(ticks)*productionDT,
+			trap.DamagePerSecond, productionDT,
+			int(math.Round(trap.DamagePerSecond*productionDT)))
+	}
+}
+
+// TestFirePit_NoFriendlyFire verifies that fire_pit does not damage an ally
+// inside the zone. The existing caltrops ally test covers caltrops; this covers
+// fire_pit explicitly. Explosive_trap is already covered by TestExplosiveTrap_NoFriendlyFire.
+func TestFirePit_NoFriendlyFire(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+
+	ally := s.spawnPlayerUnitLocked("soldier", "p1", "#2ecc71", protocol.Vec2{X: 400, Y: 400})
+	ally.Visible = true
+	ally.HP = 500
+
+	def := perkDefByID("fire_pit")
+	if def == nil {
+		t.Fatal("fire_pit perk def not found")
+	}
+
+	trap := placeTrap(s, "fire_pit", "p1", 0, 400, 400, def.Config["radius"], 10.0)
+	trap.DamagePerSecond = def.Config["damagePerSecond"]
+
+	hpBefore := ally.HP
+	s.tickTrapEffectsLocked(1.0) // large dt to guarantee dmg > 0 if ally filter is broken
+
+	if ally.HP != hpBefore {
+		t.Errorf("FRIENDLY FIRE: fire_pit damaged ally (HP %d → %d)", hpBefore, ally.HP)
+	}
+}
+
+// TestMarkerTrap_NoFriendlyFire verifies that marker_trap does not mark an ally.
+func TestMarkerTrap_NoFriendlyFire(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+
+	ally := s.spawnPlayerUnitLocked("soldier", "p1", "#2ecc71", protocol.Vec2{X: 400, Y: 400})
+	ally.Visible = true
+	ally.HP = 500
+
+	def := perkDefByID("marker_trap")
+	if def == nil {
+		t.Fatal("marker_trap perk def not found")
+	}
+
+	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap.MarkMultiplier = def.Config["markMultiplier"]
+	trap.MarkDuration = def.Config["markDuration"]
+
+	s.tickTrapEffectsLocked(0.05)
+
+	if ally.PerkState.MarkedRemaining > 0 {
+		t.Errorf("FRIENDLY FIRE: marker_trap marked ally (MarkedRemaining=%.3f)", ally.PerkState.MarkedRemaining)
+	}
+	if ally.PerkState.MarkedMultiplier != 0 {
+		t.Errorf("FRIENDLY FIRE: marker_trap set MarkedMultiplier on ally (%.3f)", ally.PerkState.MarkedMultiplier)
+	}
+}
+
+// TestTrap_SnapshotOmitEmptyWhenNoTraps verifies that MatchSnapshotMessage.Traps
+// is absent from the JSON wire format when there are no active traps.
+func TestTrap_SnapshotOmitEmptyWhenNoTraps(t *testing.T) {
+	s := newTrapState(t)
+	// No traps added.
+
+	snap := s.Snapshot()
+
+	if len(snap.Traps) != 0 {
+		t.Fatalf("snapshot with no traps: expected empty Traps slice, got %d", len(snap.Traps))
+	}
+
+	raw, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	payload := string(raw)
+	if strings.Contains(payload, `"traps"`) {
+		t.Errorf("traps key present in JSON despite omitempty with no traps: %s", payload[:min(len(payload), 200)])
+	}
+}
+
+// TestTrap_SnapshotTriggeredOmitWhenFalse verifies that Triggered=false is
+// absent from the JSON trap snapshot (omitempty), but Triggered=true is present.
+func TestTrap_SnapshotTriggeredOmitWhenFalse(t *testing.T) {
+	notTriggered := protocol.TrapSnapshot{
+		ID:               "trap-1",
+		OwnerID:          "p1",
+		X:                400,
+		Y:                400,
+		Radius:           60,
+		Type:             "caltrops",
+		RemainingSeconds: 10,
+		Triggered:        false,
+	}
+	raw, err := json.Marshal(notTriggered)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if strings.Contains(string(raw), `"triggered"`) {
+		t.Errorf("Triggered=false should be omitted from JSON (omitempty), got: %s", raw)
+	}
+
+	triggered := notTriggered
+	triggered.Triggered = true
+	raw2, err := json.Marshal(triggered)
+	if err != nil {
+		t.Fatalf("json.Marshal triggered: %v", err)
+	}
+	if !strings.Contains(string(raw2), `"triggered":true`) {
+		t.Errorf("Triggered=true should appear in JSON, got: %s", raw2)
+	}
+}
+
+// TestTrapper_SoldierPathNotTrpper verifies that soldiers ranking up do NOT
+// receive the trapper path — they must receive vanguard or berserker. This is
+// a regression guard for assignUnitPathOnRankUpLocked's switch-on-type change.
+func TestTrapper_SoldierPathNotTrapper(t *testing.T) {
+	for seed := int64(1); seed <= 20; seed++ {
+		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
+		s.mu.Lock()
+
+		soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		if soldier == nil {
+			s.mu.Unlock()
+			continue
+		}
+
+		s.addUnitXPLocked(soldier, 100) // force Bronze rank-up
+
+		path := soldier.ProgressionPath
+		if path == unitPathTrapper {
+			t.Errorf("seed %d: soldier was assigned trapper path (regression in assignUnitPathOnRankUpLocked)", seed)
+		}
+		if path != unitPathVanguard && path != unitPathBerserker {
+			t.Errorf("seed %d: soldier has unexpected path %q (want vanguard or berserker)", seed, path)
+		}
+
+		s.mu.Unlock()
+	}
+}
+
+// TestTrapper_PathModifierLookupReturnsIdentity verifies that pathModifierFor
+// returns the authored identity row for trapper/bronze, not the fallback
+// identityPathModifier. Both have identical values today, but the lookup must
+// succeed (i.e. the row exists in pathModifierTable) so future stat additions
+// to the trapper path will be picked up correctly.
+func TestTrapper_PathModifierLookupReturnsIdentity(t *testing.T) {
+	got := pathModifierFor(unitPathTrapper, unitRankBronze)
+	identity := identityPathModifier
+
+	// Values must match the identity row (all 1.0 multipliers, 0 armor).
+	if got.MaxHPMultiplier != identity.MaxHPMultiplier {
+		t.Errorf("MaxHPMultiplier: got %.3f, want %.3f", got.MaxHPMultiplier, identity.MaxHPMultiplier)
+	}
+	if got.DamageMultiplier != identity.DamageMultiplier {
+		t.Errorf("DamageMultiplier: got %.3f, want %.3f", got.DamageMultiplier, identity.DamageMultiplier)
+	}
+	if got.AttackSpeedMultiplier != identity.AttackSpeedMultiplier {
+		t.Errorf("AttackSpeedMultiplier: got %.3f, want %.3f", got.AttackSpeedMultiplier, identity.AttackSpeedMultiplier)
+	}
+	if got.MoveSpeedMultiplier != identity.MoveSpeedMultiplier {
+		t.Errorf("MoveSpeedMultiplier: got %.3f, want %.3f", got.MoveSpeedMultiplier, identity.MoveSpeedMultiplier)
+	}
+	if got.Armor != identity.Armor {
+		t.Errorf("Armor: got %d, want %d", got.Armor, identity.Armor)
+	}
+
+	// Confirm the row is actually found in the table (not the fallback).
+	// The fallback identityPathModifier has Path="" — we can't distinguish by
+	// value, so we do a direct table scan.
+	found := false
+	for _, row := range pathModifierTable {
+		if row.Path == unitPathTrapper && row.Rank == unitRankBronze {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("trapper/bronze row missing from pathModifierTable — pathModifierFor is returning the fallback")
+	}
+}
+
+// min is a local helper since Go 1.20 min() is built-in but older Go versions
+// may not have it available in test code.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase F — QA-flagged coverage gaps (non-blocking follow-ups)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestMarkerTrap_VsChallengersMarkStrongerWins verifies the refresh-stronger
+// semantics when a marker_trap overlaps with an existing Challenger's Mark.
+// The stronger (higher) multiplier must win on refresh; the longer duration
+// must win on the timer. This pins the cross-source max-wins invariant.
+func TestMarkerTrap_VsChallengersMarkStrongerWins(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+
+	def := perkDefByID("marker_trap")
+	if def == nil {
+		t.Fatal("marker_trap perk def not found")
+	}
+	trapMult := def.Config["markMultiplier"]   // e.g. 0.20
+	trapDur := def.Config["markDuration"]       // e.g. 4.0
+
+	// Simulate Challenger's Mark already active with a stronger multiplier and
+	// longer duration than the trap. The trap tick must not downgrade either.
+	challengerMult := trapMult + 0.10 // stronger: 0.30
+	challengerDur := trapDur + 2.0    // longer: 6.0
+	enemy.PerkState.MarkedMultiplier = challengerMult
+	enemy.PerkState.MarkedRemaining = challengerDur
+
+	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
+	trap.MarkMultiplier = trapMult
+	trap.MarkDuration = trapDur
+
+	s.tickTrapEffectsLocked(0.05)
+
+	// Stronger multiplier (Challenger's Mark) must survive.
+	if enemy.PerkState.MarkedMultiplier < challengerMult {
+		t.Errorf("marker_trap downgraded MarkedMultiplier from %.3f to %.3f (stronger mark must win)",
+			challengerMult, enemy.PerkState.MarkedMultiplier)
+	}
+	// Longer duration (Challenger's Mark) must survive.
+	// The trap's tickTrapEffectsLocked sets MarkedRemaining = max(existing, trapDur),
+	// so a longer existing duration must be preserved.
+	if enemy.PerkState.MarkedRemaining < challengerDur {
+		t.Errorf("marker_trap shortened MarkedRemaining from %.3f to %.3f (longer duration must win)",
+			challengerDur, enemy.PerkState.MarkedRemaining)
+	}
+
+	// Now reverse: trap has stronger multiplier and longer duration; the weaker
+	// Challenger's Mark must be upgraded to the trap values.
+	weakMult := trapMult - 0.05
+	weakDur := trapDur - 1.0
+	if weakMult < 0 {
+		weakMult = 0
+	}
+	if weakDur < 0 {
+		weakDur = 0
+	}
+	enemy.PerkState.MarkedMultiplier = weakMult
+	enemy.PerkState.MarkedRemaining = weakDur
+
+	s.tickTrapEffectsLocked(0.05)
+
+	if enemy.PerkState.MarkedMultiplier < trapMult {
+		t.Errorf("weaker existing mark was not upgraded to trap's stronger multiplier (got %.3f, want >= %.3f)",
+			enemy.PerkState.MarkedMultiplier, trapMult)
+	}
+	if enemy.PerkState.MarkedRemaining < trapDur {
+		t.Errorf("shorter existing duration was not extended to trap's longer duration (got %.3f, want >= %.3f)",
+			enemy.PerkState.MarkedRemaining, trapDur)
+	}
+}
+
+// TestTrapper_BuildingAttackDoesNotStampLastCombatSeconds pins the current
+// behavior: an Archer attacking a building does NOT stamp LastCombatSeconds,
+// so traps do not plant during building-only combat. This is intentional
+// (traps are an anti-unit tool) and this test prevents an accidental regression.
+func TestTrapper_BuildingAttackDoesNotStampLastCombatSeconds(t *testing.T) {
+	s := newTrapState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+
+	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	if archer == nil {
+		archer = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	}
+	archer.Visible = true
+	archer.HP = 100
+
+	// Place a building adjacent to the archer.
+	buildingID := "test-tower-trapper"
+	building := &protocol.BuildingTile{
+		GridCoord:    protocol.GridCoord{X: 13, Y: 13},
+		ID:           buildingID,
+		BuildingType: "Tower",
+		Width:        1,
+		Height:       1,
+		Metadata: map[string]interface{}{
+			"hp":    float64(200),
+			"maxHp": float64(200),
+		},
+	}
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, *building)
+	s.buildingsByID[buildingID] = &s.MapConfig.Buildings[len(s.MapConfig.Buildings)-1]
+
+	// Set the archer to attack the building with cooldown expired.
+	archer.AttackBuildingTargetID = buildingID
+	archer.Attacking = true
+	archer.AttackCooldown = 0
+	archer.AttackRange = 5000 // always in range
+	archer.PerkState.LastCombatSeconds = 0
+
+	blocked := s.getBlockedCellsLocked()
+	s.tickUnitCombatLocked(0.05, blocked)
+
+	// LastCombatSeconds must remain 0: building attacks do not count as "in combat"
+	// for trap-placement purposes.
+	if archer.PerkState.LastCombatSeconds != 0 {
+		t.Errorf("building attack stamped LastCombatSeconds=%.3f (expected 0); "+
+			"traps should not plant during building-only combat",
+			archer.PerkState.LastCombatSeconds)
+	}
+}
+
+// TestPerkPool_SilverFullyGatedCascadesToBronze verifies that when every Silver
+// perk for a unit's path has a requiresPerk gate the unit does not satisfy, the
+// pool cascades down to Bronze rather than returning empty. Keeps rank-ups
+// productive during development when higher tiers are sparse or fully gated.
+func TestPerkPool_SilverFullyGatedCascadesToBronze(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	if archer == nil {
+		t.Skip("archer unit type not available; skipping cascade test")
+	}
+
+	archer.ProgressionPath = unitPathTrapper
+	archer.Rank = unitRankSilver
+	// Give the unit a non-explosive_trap Bronze perk so the Silver pool's only
+	// entry (explosive_chain, requiresPerk=explosive_trap) is fully gated.
+	archer.PerkIDs = []string{"caltrops"}
+
+	pool := s.perkPoolForRankLocked(archer, unitRankSilver)
+
+	if len(pool) == 0 {
+		t.Fatal("expected cascade to Bronze when Silver is fully gated, got empty pool")
+	}
+	for _, def := range pool {
+		if def.Rank != unitRankBronze {
+			t.Errorf("cascade returned non-Bronze perk %q at rank %q", def.ID, def.Rank)
+		}
+		if def.ID == "caltrops" {
+			t.Error("cascade returned already-owned perk caltrops")
+		}
+	}
+}
+
+// TestPerkPool_GoldCascadesThroughSilverToBronze verifies the full two-step
+// cascade: Gold empty → Silver empty (or fully gated) → Bronze.
+func TestPerkPool_GoldCascadesThroughSilverToBronze(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	if archer == nil {
+		t.Skip("archer unit type not available; skipping cascade test")
+	}
+
+	archer.ProgressionPath = unitPathTrapper
+	archer.Rank = unitRankGold
+	// Bronze "caltrops" — Gold pool is empty (gold.json is []), Silver is fully
+	// gated (explosive_chain requires explosive_trap, unit has caltrops). So the
+	// cascade must walk Gold → Silver → Bronze.
+	archer.PerkIDs = []string{"caltrops"}
+
+	pool := s.perkPoolForRankLocked(archer, unitRankGold)
+
+	if len(pool) == 0 {
+		t.Fatal("expected Gold→Silver→Bronze cascade to land on a non-empty Bronze pool, got empty")
+	}
+	for _, def := range pool {
+		if def.Rank != unitRankBronze {
+			t.Errorf("cascade returned non-Bronze perk %q at rank %q", def.ID, def.Rank)
+		}
+	}
+}

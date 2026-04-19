@@ -12,6 +12,14 @@ import "math"
 // All functions must be called under s.mu (read or write) lock.
 // ═════════════════════════════════════════════════════════════════════════════
 
+// guardianAuraValue holds the two independent armor bonus dimensions that
+// guardian_aura contributes to a recipient unit. Both are taken as max
+// independently across all covering auras (see rebuildGuardianAuraCacheLocked).
+type guardianAuraValue struct {
+	FlatArmor    int     // total flat armor bonus from the strongest aura (per dimension)
+	PercentArmor float64 // total percent armor bonus (e.g. 0.20 = +20% of base armor)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // guardian_aura — per-tick cache rebuild
 //
@@ -21,25 +29,25 @@ import "math"
 // Phase 1 — Snapshot:
 //
 //	Iterate s.Units in slice order; collect each alive, visible unit that owns
-//	guardian_aura as an aura source. Record base radius, base DR, and bonus
-//	config values. No writes to guardianAuraCache in this phase.
+//	guardian_aura as an aura source. Record base radius, base flat/percent armor,
+//	and synergy config values. No writes to guardianAuraCache in this phase.
 //
 // Phase 2 — Companion counting:
 //
 //	For each source, count OTHER sources with the same OwnerID whose position
 //	is within THIS source's BASE radius (dist² ≤ baseR²). This is the critical
 //	rule: companion detection always uses baseR, never the effective radius,
-//	to prevent recursive radius inflation. Compute effR and effDR from the
-//	count and store on the snapshot entry. Phase 2 reads only from Phase 1
-//	snapshot data — never from other sources' in-progress effR/effDR.
+//	to prevent recursive radius inflation. Compute effR, effFlat, and effPercent
+//	from the count and store on the snapshot entry. Phase 2 reads only from
+//	Phase 1 snapshot data — never from other sources' in-progress values.
 //
 // Phase 3 — Fan-out:
 //
 //	Iterate sources again (slice order). For each source, iterate s.Units and
-//	set cache[allyID] = max(cache[allyID], effDR) for every allied, alive,
-//	visible unit (excluding the owner) within effR². Using max ensures a unit
-//	covered by multiple allied auras benefits from the strongest one, not the
-//	sum (summation happens via the additive total in perkIncomingDamageMultiplierLocked).
+//	update cache[allyID] by taking max independently for each dimension for
+//	every allied, alive, visible unit (excluding the owner) within effR².
+//	Using max-per-dimension ensures a unit covered by multiple auras benefits
+//	from the best flat AND the best percent, not just the best overall bundle.
 //
 // Determinism guarantee: slice-order iteration + max() are both stable and
 // commutative. The cache produces bitwise-identical output for identical
@@ -48,15 +56,18 @@ import "math"
 // Must be called under s.mu write lock. Called from Update(dt) before combat.
 // ─────────────────────────────────────────────────────────────────────────────
 type auraSource struct {
-	unitID  int
-	ownerID string
-	x, y    float64
-	baseR   float64
-	baseDR  float64
-	rBonus  float64
-	drBonus float64
-	effR    float64
-	effDR   float64
+	unitID     int
+	ownerID    string
+	x, y       float64
+	baseR      float64
+	baseFlat   float64
+	basePct    float64
+	rBonus     float64
+	flatBonus  float64
+	pctBonus   float64
+	effR       float64
+	effFlat    float64
+	effPercent float64
 }
 
 func (s *GameState) rebuildGuardianAuraCacheLocked() {
@@ -80,14 +91,16 @@ func (s *GameState) rebuildGuardianAuraCacheLocked() {
 			continue
 		}
 		sources = append(sources, auraSource{
-			unitID:  u.ID,
-			ownerID: u.OwnerID,
-			x:       u.X,
-			y:       u.Y,
-			baseR:   def.Config["radius"],
-			baseDR:  def.Config["damageReduction"],
-			rBonus:  def.Config["synergyRadiusBonus"],
-			drBonus: def.Config["synergyDRBonus"],
+			unitID:    u.ID,
+			ownerID:   u.OwnerID,
+			x:         u.X,
+			y:         u.Y,
+			baseR:     def.Config["radius"],
+			baseFlat:  def.Config["bonusArmor"],
+			basePct:   def.Config["armorPercent"],
+			rBonus:    def.Config["synergyRadiusBonus"],
+			flatBonus: def.Config["synergyArmorBonus"],
+			pctBonus:  def.Config["synergyArmorPercentBonus"],
 		})
 	}
 
@@ -95,7 +108,7 @@ func (s *GameState) rebuildGuardianAuraCacheLocked() {
 		return
 	}
 
-	// Phase 2 — Count companions within BASE radius; compute effR and effDR.
+	// Phase 2 — Count companions within BASE radius; compute effR, effFlat, effPercent.
 	// A companion is another source with the SAME ownerID within baseR² of
 	// THIS source's position. We read only from the Phase 1 snapshot (baseR,
 	// not any effR computed earlier in this loop) to prevent recursive feedback.
@@ -116,11 +129,16 @@ func (s *GameState) rebuildGuardianAuraCacheLocked() {
 			}
 		}
 		sources[i].effR = sources[i].baseR + float64(companions)*sources[i].rBonus
-		sources[i].effDR = sources[i].baseDR + float64(companions)*sources[i].drBonus
+		sources[i].effFlat = sources[i].baseFlat + float64(companions)*sources[i].flatBonus
+		sources[i].effPercent = sources[i].basePct + float64(companions)*sources[i].pctBonus
 	}
 
 	// Phase 3 — Fan-out: for each source, mark allied units within effR².
 	// Owner is excluded (owner does NOT benefit from their own aura).
+	// Max is taken per dimension independently: an ally covered by two auras
+	// gets the best flat from whichever source has the highest flat, AND the
+	// best percent from whichever source has the highest percent — even if
+	// they are different sources.
 	for i := range sources {
 		effRSq := sources[i].effR * sources[i].effR
 		for _, u := range s.Units {
@@ -138,12 +156,40 @@ func (s *GameState) rebuildGuardianAuraCacheLocked() {
 			if dx*dx+dy*dy > effRSq {
 				continue
 			}
-			// max: ally covered by multiple auras gets the strongest single DR.
-			if existing, ok := s.guardianAuraCache[u.ID]; !ok || sources[i].effDR > existing {
-				s.guardianAuraCache[u.ID] = sources[i].effDR
+			// max per dimension independently.
+			existing := s.guardianAuraCache[u.ID]
+			flat := int(sources[i].effFlat)
+			if flat > existing.FlatArmor {
+				existing.FlatArmor = flat
 			}
+			if sources[i].effPercent > existing.PercentArmor {
+				existing.PercentArmor = sources[i].effPercent
+			}
+			s.guardianAuraCache[u.ID] = existing
 		}
 	}
+}
+
+// perkBonusArmorFromAurasLocked returns the total flat armor bonus the unit
+// receives from any guardian_aura covering it this tick. Reads from the
+// pre-built guardianAuraCache. Called from effectiveArmorLocked.
+// Must be called under s.mu (read or write) lock.
+func (s *GameState) perkBonusArmorFromAurasLocked(unit *Unit) int {
+	if unit == nil {
+		return 0
+	}
+	return s.guardianAuraCache[unit.ID].FlatArmor
+}
+
+// perkArmorPercentBonusFromAurasLocked returns the total fractional armor
+// bonus (e.g. 0.20 = +20% of base armor) the unit receives from any
+// guardian_aura covering it this tick. Called from effectiveArmorLocked.
+// Must be called under s.mu (read or write) lock.
+func (s *GameState) perkArmorPercentBonusFromAurasLocked(unit *Unit) float64 {
+	if unit == nil {
+		return 0
+	}
+	return s.guardianAuraCache[unit.ID].PercentArmor
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

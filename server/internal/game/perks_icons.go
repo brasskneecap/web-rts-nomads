@@ -71,7 +71,7 @@ func (s *GameState) isAdvancingTowardEnemyLocked(unit *Unit) bool {
 // (different OwnerID) within radius of unit, up to a maximum of limit. If limit
 // is <= 0 all enemies are counted. O(N) per call; early-exit once limit is hit.
 //
-// Used by both perkIncomingDamageMultiplierLocked (brace condition) and
+// Used by both perkBonusArmorLocked (brace condition) and
 // activeBuffIconsLocked (brace buff-icon) to avoid duplicating the scan loop.
 //
 // Must be called under s.mu (read or write) lock.
@@ -142,7 +142,7 @@ func (s *GameState) hasAllyInRangeLocked(unit *Unit, radius float64) bool {
 //
 // ADD NEW VISUALLY-INDICATED BUFFS HERE.
 func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
-	if unit == nil || len(unit.PerkIDs) == 0 {
+	if unit == nil {
 		return nil
 	}
 	var active []string
@@ -191,9 +191,9 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 
 		case "brace":
 			// Show while the unit is surrounded by enough enemies to trigger
-			// the damage reduction. Uses countEnemiesInRangeLocked, which is
-			// also used by perkIncomingDamageMultiplierLocked, so the icon
-			// appears exactly when the damage reduction is live.
+			// the armor bonus. Uses countEnemiesInRangeLocked, which is also
+			// used by perkBonusArmorLocked, so the icon appears exactly when
+			// the armor bonus is live.
 			enemyThreshold := int(def.Config["enemyThreshold"])
 			if s.countEnemiesInRangeLocked(unit, def.Config["radius"], enemyThreshold) >= enemyThreshold {
 				active = append(active, perkID)
@@ -209,8 +209,8 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 		case "steady_advance":
 			// Show the buff icon while the unit is actively advancing toward
 			// the nearest visible enemy within the alignment cone. Re-uses the
-			// same helper as perkIncomingDamageMultiplierLocked so the icon
-			// appears exactly when the damage reduction is live.
+			// same helper as perkBonusArmorLocked so the icon appears exactly
+			// when the armor bonus is live.
 			if unit.Moving && s.isAdvancingTowardEnemyLocked(unit) {
 				active = append(active, perkID)
 			}
@@ -232,14 +232,9 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 			// Always emit for the owner — passive ever-present redirect.
 			active = append(active, perkID)
 
-		case "rallying_banner":
-			// Show while at least one banner planted by this unit is still active.
-			for _, b := range s.Banners {
-				if b.OwnerUnitID == unit.ID && b.RemainingSeconds > 0 {
-					active = append(active, perkID)
-					break
-				}
-			}
+		// rallying_banner intentionally has no buff icon on the owner — the
+		// banner renders as a placed entity on the ground (sprite + radius
+		// circle), making an additional icon-on-Vanguard redundant.
 
 		// ── add cases for new visually-indicated buffs below this line ──────
 		}
@@ -248,8 +243,27 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 	// guardian_aura recipient buff: show the aura icon on allies that are
 	// currently under a guardian_aura. This is separate from the owner's buff
 	// icon above because recipients don't own the perk themselves.
-	if aura, ok := s.guardianAuraCache[unit.ID]; ok && aura > 0 {
+	if aura := s.guardianAuraCache[unit.ID]; aura.FlatArmor > 0 || aura.PercentArmor > 0 {
 		active = append(active, "guardian_aura")
+	}
+
+	// rallying_banner recipient buff: show the icon on allied units inside any
+	// active friendly banner radius. Mirrors the guardian_aura recipient pattern.
+	// The banner owner will also get this icon when standing in their own banner
+	// radius, which is correct — they ARE benefiting from it.
+	for _, b := range s.Banners {
+		if b.OwnerPlayerID != unit.OwnerID {
+			continue
+		}
+		if b.RemainingSeconds <= 0 {
+			continue
+		}
+		dx := unit.X - b.X
+		dy := unit.Y - b.Y
+		if dx*dx+dy*dy <= b.Radius*b.Radius {
+			active = append(active, "rallying_banner")
+			break
+		}
 	}
 
 	return active
