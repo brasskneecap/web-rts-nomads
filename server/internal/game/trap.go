@@ -45,7 +45,19 @@ type Trap struct {
 	// Lifetime
 	RemainingSeconds float64
 	TrapType         string
-	Triggered        bool // set to true when explosive_trap fires; causes cull next tick
+
+	// Triggered is set true for EXACTLY ONE TICK when the trap detonates
+	// (initial blast or aftershock). Serialized into TrapSnapshot.triggered so
+	// the client renders a one-frame radial burst. Reset at the start of every
+	// tickTrapEffectsLocked pass so it never persists across ticks.
+	Triggered bool
+
+	// PendingCull marks the trap for removal on the NEXT tickTrapsLocked pass.
+	// Set when the trap's final blast fires (non-aftershock trap's only blast,
+	// or aftershock trap's second blast). The one-tick delay between setting
+	// this and actual removal ensures the Triggered=true flag is serialized
+	// into the end-of-tick snapshot before the trap disappears.
+	PendingCull bool
 
 	// Per-type config (snapshot at plant time)
 	DamagePerSecond float64 // caltrops, fire_pit
@@ -53,6 +65,20 @@ type Trap struct {
 	BurstDamage     int     // explosive_trap
 	MarkMultiplier  float64 // marker_trap: bonus damage multiplier (e.g. 0.20 = +20%)
 	MarkDuration    float64 // marker_trap: seconds applied per tick
+
+	// Aftershock (explosive_trap + explosive_chain perk):
+	// AftershockDelaySeconds is the snapshotted delay before a second blast.
+	// Zero means no aftershock. Non-zero means the trap will re-blast that many
+	// seconds after the initial trigger.
+	AftershockDelaySeconds float64
+	// AftershockPending is set true between the first blast and the aftershock.
+	// While true, the trap is NOT culled (even if RemainingSeconds would expire)
+	// and its Triggered flag is still false.
+	AftershockPending bool
+	// AftershockRemaining counts down from AftershockDelaySeconds once the
+	// initial blast fires. When it reaches 0, the second blast fires and
+	// Triggered is set to true.
+	AftershockRemaining float64
 }
 
 // tickTrapsLocked advances all active trap lifetimes by dt seconds, removing
@@ -68,13 +94,28 @@ func (s *GameState) tickTrapsLocked(dt float64) {
 	}
 	kept := s.Traps[:0]
 	for _, trap := range s.Traps {
-		// Drop traps that have triggered (explosive_trap detonated this tick).
-		if trap.Triggered {
+		// Two-phase cull: on the blast tick tickTrapEffectsLocked sets both
+		// Triggered=true AND PendingCull=true in the same Update call. Because
+		// tickTrapsLocked runs AFTER tickTrapEffectsLocked (and before the
+		// end-of-tick Snapshot), we must NOT cull while Triggered is still true —
+		// the snapshot needs to see triggered=true to deliver the VFX frame to the
+		// client.
+		//
+		// Next tick, tickTrapEffectsLocked resets Triggered=false at its top, so
+		// the condition below fires and the trap is finally removed. The client
+		// sees: blast-tick snapshot (triggered=true, trap present) → next-tick
+		// snapshot (trap gone).
+		if trap.PendingCull && !trap.Triggered {
 			continue
 		}
-		trap.RemainingSeconds -= dt
-		if trap.RemainingSeconds <= 1e-9 {
-			continue
+		if !trap.AftershockPending {
+			// Only decay lifetime while waiting for the initial trigger.
+			// AftershockPending traps hold their position until the scheduled blast
+			// fires — decaying lifetime here would race against the 2s aftershock window.
+			trap.RemainingSeconds -= dt
+			if trap.RemainingSeconds <= 1e-9 {
+				continue
+			}
 		}
 		// Drop if owner's player has left the match.
 		if _, ok := s.Players[trap.OwnerPlayerID]; !ok {
@@ -95,11 +136,18 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 		return
 	}
 
+	// Reset per-tick transient VFX flags. Triggered is a one-tick signal that
+	// must be cleared here so a trap that blasted last tick doesn't serialize
+	// triggered=true in THIS tick's snapshot.
+	for _, trap := range s.Traps {
+		trap.Triggered = false
+	}
+
 	var deadUnitIDs []int
 
 	for _, trap := range s.Traps {
-		if trap.Triggered {
-			continue
+		if trap.PendingCull {
+			continue // blasted last tick; PendingCull awaits removal in tickTrapsLocked
 		}
 
 		// Look up the owner unit for XP credit (nil when dead — handled below).
@@ -179,6 +227,17 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 			}
 
 		case "explosive_trap":
+			if trap.AftershockPending {
+				// Countdown to the aftershock blast.
+				trap.AftershockRemaining -= dt
+				if trap.AftershockRemaining <= 0 {
+					// Aftershock = final blast. Fire unconditionally at original position.
+					deadUnitIDs = s.detonateExplosiveTrapLocked(trap, ownerUnit, deadUnitIDs)
+					trap.AftershockPending = false
+					trap.PendingCull = true // cull after this tick's Snapshot
+				}
+				break
+			}
 			// Phase 1: detect the first enemy in TriggerRadius.
 			triggerRadSq := trap.TriggerRadius * trap.TriggerRadius
 			triggered := false
@@ -199,36 +258,16 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 			if !triggered {
 				break
 			}
-			// Phase 2: deal burst damage to ALL enemies within explosion radius.
-			// Allies are filtered at the top of this loop — the explosion never
-			// harms the owner's team. This invariant is tested explicitly.
-			explosionRadSq := trap.Radius * trap.Radius
-			for _, unit := range s.Units {
-				if unit == nil || unit.OwnerID == trap.OwnerPlayerID {
-					continue // no friendly fire
-				}
-				if unit.HP <= 0 || !unit.Visible {
-					continue
-				}
-				dx := unit.X - trap.X
-				dy := unit.Y - trap.Y
-				if dx*dx+dy*dy > explosionRadSq {
-					continue
-				}
-				s.applyUnitDamageLocked(unit, trap.BurstDamage)
-				if ownerUnit != nil {
-					s.recordDamageDealtLocked(ownerUnit, unit, trap.BurstDamage)
-				}
-				if unit.HP <= 0 {
-					if ownerUnit != nil {
-						s.awardKillXPLocked(ownerUnit)
-						s.payoutDamageDealtXPLocked(unit)
-					}
-					deadUnitIDs = append(deadUnitIDs, unit.ID)
-				}
+			// Phase 2: first blast.
+			deadUnitIDs = s.detonateExplosiveTrapLocked(trap, ownerUnit, deadUnitIDs)
+			if trap.AftershockDelaySeconds > 0 {
+				// Initial blast only; aftershock scheduled. Do NOT set PendingCull.
+				trap.AftershockPending = true
+				trap.AftershockRemaining = trap.AftershockDelaySeconds
+			} else {
+				// Initial blast is also the final blast.
+				trap.PendingCull = true
 			}
-			trap.Triggered = true
-			// tickTrapsLocked culls this trap next tick.
 
 		case "marker_trap":
 			for _, unit := range s.Units {
@@ -276,39 +315,95 @@ func (s *GameState) plantTrapLocked(unit *Unit, def *PerkDef) {
 
 	trapType := def.ID // perk ID == trap type string ("caltrops", "fire_pit", etc.)
 
+	// Resolve effective modifiers from this unit's perks. Identity (all 1.0)
+	// if the unit owns no Silver/Gold trap-modifying perks.
+	// EXTENSION POINT: when trap-specific upgrades ship, resolve a second
+	// modifier bundle keyed on trapType and compose it after this line.
+	mods := s.trapModifiersForUnitLocked(unit)
+
 	trap := &Trap{
 		ID:               trapIDString(id),
 		OwnerUnitID:      unit.ID,
 		OwnerPlayerID:    unit.OwnerID,
 		X:                unit.X,
 		Y:                unit.Y,
-		RemainingSeconds: def.Config["durationSeconds"],
+		RemainingSeconds: def.Config["durationSeconds"] * mods.DurationMultiplier,
 		TrapType:         trapType,
 	}
 
 	switch trapType {
 	case "caltrops":
-		trap.Radius = def.Config["radius"]
-		trap.DamagePerSecond = def.Config["damagePerSecond"]
-		trap.SlowMultiplier = def.Config["slowMultiplier"]
+		trap.Radius = def.Config["radius"] * mods.RadiusMultiplier
+		trap.DamagePerSecond = def.Config["damagePerSecond"] * mods.EffectMultiplier
+		trap.SlowMultiplier = amplifySlow(def.Config["slowMultiplier"], mods.EffectMultiplier)
 
 	case "fire_pit":
-		trap.Radius = def.Config["radius"]
-		trap.DamagePerSecond = def.Config["damagePerSecond"]
+		trap.Radius = def.Config["radius"] * mods.RadiusMultiplier
+		trap.DamagePerSecond = def.Config["damagePerSecond"] * mods.EffectMultiplier
 
 	case "explosive_trap":
 		// explosionRadius (AoE) → Radius; triggerRadius (inner) → TriggerRadius.
-		trap.Radius = def.Config["explosionRadius"]
-		trap.TriggerRadius = def.Config["triggerRadius"]
-		trap.BurstDamage = int(def.Config["burstDamage"])
+		trap.Radius = def.Config["explosionRadius"] * mods.RadiusMultiplier
+		trap.TriggerRadius = def.Config["triggerRadius"] * mods.RadiusMultiplier
+		base := int(def.Config["burstDamage"])
+		trap.BurstDamage = int(float64(base)*mods.EffectMultiplier + 0.5)
+		// Trap-specific upgrade: explosive_chain schedules an aftershock blast.
+		specific := s.trapSpecificModifiersForUnitLocked(unit, trapType)
+		trap.AftershockDelaySeconds = specific.AftershockDelaySeconds
 
 	case "marker_trap":
-		trap.Radius = def.Config["radius"]
-		trap.MarkMultiplier = def.Config["markMultiplier"]
-		trap.MarkDuration = def.Config["markDuration"]
+		trap.Radius = def.Config["radius"] * mods.RadiusMultiplier
+		// MarkMultiplier and MarkDuration both scale with effect strength.
+		// DurationMultiplier is about trap-entity lifetime, not the post-effect
+		// debuff — EffectMultiplier governs both the strength and the window of
+		// the mark applied to enemies.
+		trap.MarkMultiplier = def.Config["markMultiplier"] * mods.EffectMultiplier
+		trap.MarkDuration = def.Config["markDuration"] * mods.EffectMultiplier
 	}
 
 	s.Traps = append(s.Traps, trap)
+}
+
+// detonateExplosiveTrapLocked applies the burst-damage phase of an explosive_trap
+// blast (initial or aftershock). It deals BurstDamage to all visible enemy units
+// within Radius, credits ownerUnit for kills and damage dealt, and appends newly
+// killed unit IDs to deadUnitIDs. Returns the updated deadUnitIDs slice.
+//
+// Called from the phase-2 path (initial trigger) and from the aftershock path in
+// tickTrapEffectsLocked so both blasts share identical logic without duplication.
+//
+// Must be called under s.mu write lock.
+func (s *GameState) detonateExplosiveTrapLocked(trap *Trap, ownerUnit *Unit, deadUnitIDs []int) []int {
+	// Signal the one-tick VFX flash. This is the single write site for both
+	// the initial blast and the aftershock blast so both detonations surface
+	// triggered=true in the tick's Snapshot.
+	trap.Triggered = true
+	explosionRadSq := trap.Radius * trap.Radius
+	for _, unit := range s.Units {
+		if unit == nil || unit.OwnerID == trap.OwnerPlayerID {
+			continue // no friendly fire
+		}
+		if unit.HP <= 0 || !unit.Visible {
+			continue
+		}
+		dx := unit.X - trap.X
+		dy := unit.Y - trap.Y
+		if dx*dx+dy*dy > explosionRadSq {
+			continue
+		}
+		s.applyUnitDamageLocked(unit, trap.BurstDamage)
+		if ownerUnit != nil {
+			s.recordDamageDealtLocked(ownerUnit, unit, trap.BurstDamage)
+		}
+		if unit.HP <= 0 {
+			if ownerUnit != nil {
+				s.awardKillXPLocked(ownerUnit)
+				s.payoutDamageDealtXPLocked(unit)
+			}
+			deadUnitIDs = append(deadUnitIDs, unit.ID)
+		}
+	}
+	return deadUnitIDs
 }
 
 // trapIDString formats a trap sequence number as a human-readable trap ID.
@@ -365,5 +460,6 @@ func (s *GameState) tickTrapPlacementLocked(unit *Unit, def *PerkDef, dt float64
 
 	// Plant the trap and reset the cooldown.
 	s.plantTrapLocked(unit, def)
-	unit.PerkState.TrapPlaceCooldownRemaining = def.Config["placeIntervalSeconds"]
+	mods := s.trapModifiersForUnitLocked(unit)
+	unit.PerkState.TrapPlaceCooldownRemaining = def.Config["placeIntervalSeconds"] * mods.CooldownMultiplier
 }

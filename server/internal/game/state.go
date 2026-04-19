@@ -445,7 +445,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Radius:           trap.Radius,
 			Type:             trap.TrapType,
 			RemainingSeconds: trap.RemainingSeconds,
-			Triggered:        trap.Triggered,
+			Triggered:        trap.Triggered, // one-tick VFX flash flag (fires on every detonation)
 		})
 	}
 

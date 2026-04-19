@@ -97,8 +97,10 @@ func TestTrap_LifetimeDecay(t *testing.T) {
 	_ = trap
 }
 
-// TestTrap_TriggeredCulledNextTick verifies that a trap with Triggered=true is
-// removed by tickTrapsLocked on the very next tick (the detonation-mark path).
+// TestTrap_TriggeredCulledNextTick verifies the two-phase cull semantics:
+// a trap with PendingCull=true is kept alive on the blast tick (Triggered=true)
+// so the end-of-tick Snapshot can deliver the VFX frame, then culled on the
+// FOLLOWING tick once tickTrapEffectsLocked has reset Triggered=false.
 func TestTrap_TriggeredCulledNextTick(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
@@ -107,11 +109,20 @@ func TestTrap_TriggeredCulledNextTick(t *testing.T) {
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 
 	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, 80, 20.0)
-	trap.Triggered = true
+	trap.PendingCull = true
+	trap.Triggered = true // blast tick: Triggered still hot → must NOT cull yet
 
 	s.tickTrapsLocked(0.05)
+	if len(s.Traps) != 1 {
+		t.Errorf("blast tick (Triggered=true): expected trap still present, got %d traps", len(s.Traps))
+	}
+
+	// Simulate next tick: tickTrapEffectsLocked would reset Triggered=false.
+	// tickTrapsLocked now sees PendingCull=true && Triggered=false → cull.
+	trap.Triggered = false
+	s.tickTrapsLocked(0.05)
 	if len(s.Traps) != 0 {
-		t.Errorf("triggered trap: expected 0 traps after tick, got %d", len(s.Traps))
+		t.Errorf("tick after reset (Triggered=false): expected trap culled, got %d traps", len(s.Traps))
 	}
 }
 
@@ -688,8 +699,10 @@ func TestExplosiveTrap_NoFriendlyFire(t *testing.T) {
 	}
 }
 
-// TestExplosiveTrap_CulledAfterTrigger verifies that after Triggered=true the
-// trap is removed by tickTrapsLocked on the next tick.
+// TestExplosiveTrap_CulledAfterTrigger verifies the two-phase cull: the trap
+// survives the first tickTrapsLocked call (blast tick, Triggered=true) so the
+// end-of-tick Snapshot can deliver the VFX frame, then is removed on the second
+// tickTrapsLocked call once Triggered has been reset to false.
 func TestExplosiveTrap_CulledAfterTrigger(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
@@ -711,18 +724,30 @@ func TestExplosiveTrap_CulledAfterTrigger(t *testing.T) {
 	enemy.Visible = true
 	enemy.HP = 500
 
-	// Effect tick: triggers the trap.
+	// Blast tick: effects fire the explosion, setting Triggered=true, PendingCull=true.
 	s.tickTrapEffectsLocked(0.05)
 	if !trap.Triggered {
 		t.Fatal("trap did not trigger")
 	}
+	if !trap.PendingCull {
+		t.Fatal("trap should have PendingCull=true after non-aftershock blast")
+	}
 
-	// Lifetime tick: should cull the triggered trap.
-	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}} // keep player alive
+	// Blast tick cull pass: Triggered=true → two-phase gate keeps the trap so the
+	// end-of-tick Snapshot can serialize triggered=true for the client VFX frame.
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 	s.tickTrapsLocked(0.05)
+	if len(s.Traps) != 1 {
+		t.Errorf("blast tick: expected trap still alive for VFX frame, got %d traps", len(s.Traps))
+	}
 
+	// Next tick: tickTrapEffectsLocked resets Triggered=false (trap has PendingCull,
+	// so the effects body is skipped). Then tickTrapsLocked sees PendingCull&&!Triggered
+	// and culls the trap.
+	s.tickTrapEffectsLocked(0.05)
+	s.tickTrapsLocked(0.05)
 	if len(s.Traps) != 0 {
-		t.Errorf("after trigger+cull: expected 0 traps, got %d", len(s.Traps))
+		t.Errorf("tick after VFX frame: expected trap culled, got %d traps", len(s.Traps))
 	}
 }
 
@@ -1455,9 +1480,13 @@ func TestPerkPool_SilverFullyGatedCascadesToBronze(t *testing.T) {
 
 	archer.ProgressionPath = unitPathTrapper
 	archer.Rank = unitRankSilver
-	// Give the unit a non-explosive_trap Bronze perk so the Silver pool's only
-	// entry (explosive_chain, requiresPerk=explosive_trap) is fully gated.
-	archer.PerkIDs = []string{"caltrops"}
+	// Give the unit a non-explosive_trap Bronze perk plus all four ungated Silver
+	// perks so the only remaining Silver entry (explosive_chain, requiresPerk=
+	// explosive_trap) is gated and the pool cascades to Bronze.
+	archer.PerkIDs = []string{
+		"caltrops",
+		"extended_setup", "wider_nets", "rapid_deployment", "amplified_effects",
+	}
 
 	pool := s.perkPoolForRankLocked(archer, unitRankSilver)
 
@@ -1470,6 +1499,152 @@ func TestPerkPool_SilverFullyGatedCascadesToBronze(t *testing.T) {
 		}
 		if def.ID == "caltrops" {
 			t.Error("cascade returned already-owned perk caltrops")
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase G — VFX pipeline correctness tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestExplosiveTrap_TriggeredFlagVisibleInSnapshot verifies the one-tick VFX
+// pipeline for a non-aftershock explosive_trap driven through the PRODUCTION
+// Update path (tickTrapEffectsLocked → tickBannersLocked → tickTrapsLocked in
+// sequence, with Snapshot called AFTER Update returns — exactly as loop.go does).
+//
+//  1. Tick 1 (s.Update): enemy in trigger zone → blast fires, Triggered=true,
+//     PendingCull=true. tickTrapsLocked sees PendingCull&&Triggered → keeps trap.
+//  2. Snapshot after tick 1: trap present with triggered=true in snapshot.
+//  3. Tick 2 (s.Update): tickTrapEffectsLocked resets Triggered=false; then
+//     tickTrapsLocked sees PendingCull&&!Triggered → culls.
+//  4. Snapshot after tick 2: trap gone.
+func TestExplosiveTrap_TriggeredFlagVisibleInSnapshot(t *testing.T) {
+	const dt = 0.05
+
+	s := newTrapState(t)
+	s.mu.Lock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	def := perkDefByID("explosive_trap")
+	if def == nil {
+		s.mu.Unlock()
+		t.Fatal("explosive_trap perk def not found")
+	}
+
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 400, 400, def.Config["explosionRadius"], 20.0)
+	trap.TriggerRadius = def.Config["triggerRadius"]
+	trap.BurstDamage = int(def.Config["burstDamage"])
+	trapID := trap.ID
+
+	// Spawn enemy at the trap centre — well inside both trigger and explosion radii.
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy.Visible = true
+	enemy.HP = 500
+	enemy.MaxHP = 500
+
+	s.mu.Unlock()
+
+	// ── Tick 1: enemy in range → blast fires ────────────────────────────────
+	// Update runs all three tick functions, THEN we call Snapshot — exactly as
+	// loop.go does. tickTrapsLocked must NOT cull the trap this tick because
+	// Triggered=true (the two-phase gate).
+	s.Update(dt)
+
+	snap := s.Snapshot()
+	var foundSnap *protocol.TrapSnapshot
+	for i := range snap.Traps {
+		if snap.Traps[i].ID == trapID {
+			foundSnap = &snap.Traps[i]
+			break
+		}
+	}
+	if foundSnap == nil {
+		t.Fatal("tick 1 snapshot: trap must still be present so the client receives the VFX frame")
+	}
+	if !foundSnap.Triggered {
+		t.Error("tick 1 snapshot: triggered must be true so the client renders the blast")
+	}
+
+	// ── Tick 2: effects reset Triggered=false, then cull fires ─────────────
+	s.Update(dt)
+
+	snap2 := s.Snapshot()
+	for _, ts := range snap2.Traps {
+		if ts.ID == trapID {
+			t.Error("tick 2 snapshot: trap should be gone after the two-phase cull")
+		}
+	}
+}
+
+// TestExplosiveTrap_TriggeredVisibleAfterUpdate is the regression-guard
+// integration test for the production VFX bug: triggered=true was never reaching
+// the client because tickTrapsLocked culled the trap on the SAME Update tick that
+// the blast fired, before BroadcastSnapshot (and thus Snapshot) could serialize it.
+//
+// This test drives the scenario exactly as loop.go does:
+//   s.Update(dt)           // runs effects → banners → traps in sequence
+//   snap := s.Snapshot()   // called AFTER Update returns
+//
+// It must catch any regression where triggered=true is absent from the first
+// post-Update snapshot.
+func TestExplosiveTrap_TriggeredVisibleAfterUpdate(t *testing.T) {
+	const dt = 0.05 // production 20 Hz tick
+
+	s := newTrapState(t)
+	s.mu.Lock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+
+	def := perkDefByID("explosive_trap")
+	if def == nil {
+		s.mu.Unlock()
+		t.Fatal("explosive_trap perk def not found")
+	}
+
+	// Place trap at a neutral position with known radii.
+	trap := placeTrap(s, "explosive_trap", "p1", 0, 500, 500, def.Config["explosionRadius"], 30.0)
+	trap.TriggerRadius = def.Config["triggerRadius"]
+	trap.BurstDamage = int(def.Config["burstDamage"])
+	trapID := trap.ID
+
+	// Enemy at the exact trap centre — unambiguously inside trigger radius.
+	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 500, Y: 500})
+	enemy.Visible = true
+	enemy.HP = 1000
+	enemy.MaxHP = 1000
+
+	s.mu.Unlock()
+
+	// Production sequence: Update then Snapshot (mirrors loop.go exactly).
+	s.Update(dt)
+	snap := s.Snapshot()
+
+	// The trap must be in the snapshot with triggered=true. If it is absent or
+	// triggered=false, the client never renders the blast VFX — this is the bug.
+	var blastSnap *protocol.TrapSnapshot
+	for i := range snap.Traps {
+		if snap.Traps[i].ID == trapID {
+			blastSnap = &snap.Traps[i]
+			break
+		}
+	}
+	if blastSnap == nil {
+		t.Fatal("blast-tick snapshot: trap is absent — client would see no explosion at all (VFX bug)")
+	}
+	if !blastSnap.Triggered {
+		t.Error("blast-tick snapshot: triggered=false — client would not render the blast VFX (VFX bug)")
+	}
+
+	// Second Update+Snapshot: trap must be gone (culled on the second tick).
+	s.Update(dt)
+	snap2 := s.Snapshot()
+	for _, ts := range snap2.Traps {
+		if ts.ID == trapID {
+			t.Error("post-blast snapshot: trap still present — should have been culled after VFX tick")
+			break
 		}
 	}
 }
@@ -1488,10 +1663,14 @@ func TestPerkPool_GoldCascadesThroughSilverToBronze(t *testing.T) {
 
 	archer.ProgressionPath = unitPathTrapper
 	archer.Rank = unitRankGold
-	// Bronze "caltrops" — Gold pool is empty (gold.json is []), Silver is fully
-	// gated (explosive_chain requires explosive_trap, unit has caltrops). So the
-	// cascade must walk Gold → Silver → Bronze.
-	archer.PerkIDs = []string{"caltrops"}
+	// Bronze "caltrops" plus all four ungated Silver perks — Gold pool is empty
+	// (gold.json is []), and Silver is now fully gated (the only remaining Silver
+	// entry is explosive_chain, which requires explosive_trap; unit has caltrops).
+	// So the cascade must walk Gold → Silver → Bronze.
+	archer.PerkIDs = []string{
+		"caltrops",
+		"extended_setup", "wider_nets", "rapid_deployment", "amplified_effects",
+	}
 
 	pool := s.perkPoolForRankLocked(archer, unitRankGold)
 

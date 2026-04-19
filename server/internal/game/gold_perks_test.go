@@ -497,23 +497,21 @@ func TestGuardianAura_MaxNotSum(t *testing.T) {
 	}
 }
 
-// TestGuardianAura_StacksWithBraceAndSteadyAdvance verifies that stacking
-// guardian_aura + brace + steady_advance each contribute to effectiveArmorLocked
-// additively. All three bonuses add to the recipient's flat armor simultaneously.
-func TestGuardianAura_StacksWithBraceAndSteadyAdvance(t *testing.T) {
+// TestGuardianAura_StacksWithBrace verifies that stacking guardian_aura + brace
+// each contribute to effectiveArmorLocked additively. Both bonuses add to the
+// recipient's flat armor simultaneously.
+func TestGuardianAura_StacksWithBrace(t *testing.T) {
 	s, vanguard := newGoldPerkState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	def := perkDefByID("guardian_aura")
 	braceDef := perkDefByID("brace")
-	steadyDef := perkDefByID("steady_advance")
-	if def == nil || braceDef == nil || steadyDef == nil {
+	if def == nil || braceDef == nil {
 		t.Fatal("perk defs not found")
 	}
 
 	grantPerk(vanguard, "brace")
-	grantPerk(vanguard, "steady_advance")
 
 	// Place 2+ enemies within brace radius.
 	threshold := int(braceDef.Config["enemyThreshold"])
@@ -522,22 +520,16 @@ func TestGuardianAura_StacksWithBraceAndSteadyAdvance(t *testing.T) {
 		_ = e
 	}
 
-	// Point the unit toward the enemy to activate steady_advance.
-	vanguard.Moving = true
-	vanguard.Path = []protocol.Vec2{{X: vanguard.X + 100, Y: vanguard.Y}}
-
 	// Inject a guardian_aura value directly for this unit (simulates being under an aura).
 	s.guardianAuraCache[vanguard.ID] = guardianAuraValue{
 		FlatArmor:    int(def.Config["bonusArmor"]),
 		PercentArmor: def.Config["armorPercent"],
 	}
 
-	// Expected: base + brace + steady_advance flat bonuses, plus percent of base from aura.
-	wantFlat := int(braceDef.Config["bonusArmor"]) + int(steadyDef.Config["bonusArmor"]) + int(def.Config["bonusArmor"])
+	// Expected: base + brace flat bonus, plus percent of base from aura.
+	wantFlat := int(braceDef.Config["bonusArmor"]) + int(def.Config["bonusArmor"])
 	wantPercent := def.Config["armorPercent"]
-	wantEffective := int(math.Floor(float64(vanguard.Armor)*(1.0+wantPercent))) + vanguard.Armor/vanguard.Armor*0 + wantFlat
-	// Recalculate cleanly:
-	wantEffective = int(math.Floor(float64(vanguard.Armor)*(1.0+wantPercent))) + wantFlat
+	wantEffective := int(math.Floor(float64(vanguard.Armor)*(1.0+wantPercent))) + wantFlat
 
 	got := s.effectiveArmorLocked(vanguard)
 	if got != wantEffective {
@@ -1945,8 +1937,8 @@ func TestInterlock_StacksWithRallyingBanner(t *testing.T) {
 // TestGuardianAura_FourVanguardCluster_GodRun verifies that 4 allied Vanguards
 // all clustered (within base 100px of each other) each compute companions=3,
 // effFlat=15+3*5=30, effPercent=0.20+3*0.05=0.35. An ally in the cluster
-// receives these bonuses, stacking with brace and steady_advance for a powerful
-// god-run. Tests the "god run" synergy path the design explicitly allows.
+// receives these bonuses, stacking with brace for a powerful god-run.
+// Tests the "god run" synergy path the design explicitly allows.
 func TestGuardianAura_FourVanguardCluster_GodRun(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 7)
 	s.mu.Lock()

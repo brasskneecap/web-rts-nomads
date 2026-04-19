@@ -36,7 +36,7 @@ import "math"
 // Damage intake order:
 //   1. Caller computes post-armor damage (applyArmorMitigation). Armor
 //      mitigation accounts for all flat and percent armor bonuses from perks
-//      (last_stand, interlock, brace, steady_advance, guardian_aura, banners)
+//      (last_stand, interlock, brace, guardian_aura, banners)
 //      via effectiveArmorLocked. This means armor already reduces damage before
 //      we enter this function.
 //   2. pain_share redirect — nearby allied Vanguard absorbs a portion of raw damage.
@@ -383,14 +383,6 @@ func (s *GameState) perkBonusArmorLocked(unit *Unit) int {
 				total += int(def.Config["bonusArmor"])
 			}
 
-		case "steady_advance":
-			// Flat armor bonus while advancing toward the nearest visible enemy.
-			// isAdvancingTowardEnemyLocked evaluates the alignment cone; shared
-			// with activeBuffIconsLocked to avoid duplicating the math.
-			if unit.Moving && s.isAdvancingTowardEnemyLocked(unit) {
-				total += int(def.Config["bonusArmor"])
-			}
-
 		// ── add cases for new flat-armor perks below this line ───────────────
 		}
 	}
@@ -400,8 +392,7 @@ func (s *GameState) perkBonusArmorLocked(unit *Unit) int {
 // effectiveArmorLocked returns the unit's total effective armor including all
 // flat and percent bonuses from perks and banners. Use this everywhere armor is
 // read for damage mitigation, damage reflection, and HUD display so conditional
-// armor perks (last_stand, brace, steady_advance, guardian_aura) propagate
-// consistently.
+// armor perks (last_stand, brace, guardian_aura) propagate consistently.
 //
 // Formula:
 //

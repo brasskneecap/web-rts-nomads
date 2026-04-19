@@ -269,7 +269,11 @@ export type TrapSnapshot = {
   radius: number
   type: 'caltrops' | 'fire_pit' | 'explosive_trap' | 'marker_trap'
   remainingSeconds: number
-  /** True only on the tick a single-shot trap fires. Absent otherwise. */
+  /**
+   * True for exactly one snapshot tick when the trap detonates. Set for both
+   * the initial blast and any follow-up blast (e.g., explosive_chain
+   * aftershock). Absent on all other ticks. Client renders a one-frame burst.
+   */
   triggered?: boolean
 }
 
