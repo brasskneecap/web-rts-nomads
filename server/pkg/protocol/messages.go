@@ -25,6 +25,8 @@ type MapConfig struct {
 	GridRows    int            `json:"gridRows"`
 	CellSize    float64        `json:"cellSize"`
 	Terrain     []TerrainTile  `json:"terrain"`
+	Tiles       []TileInstance `json:"tiles,omitempty"`
+	DefaultTile *TileCoord     `json:"defaultTile,omitempty"`
 	Obstacles   []ObstacleTile `json:"obstacles"`
 	Buildings   []BuildingTile `json:"buildings"`
 	WaveConfig  *WaveConfig    `json:"waveConfig,omitempty"`
@@ -38,6 +40,17 @@ type GridCoord struct {
 type TerrainTile struct {
 	GridCoord
 	Terrain string `json:"terrain"`
+}
+
+type TileCoord struct {
+	Sheet string `json:"sheet"`
+	SX    int    `json:"sx"`
+	SY    int    `json:"sy"`
+}
+
+type TileInstance struct {
+	GridCoord
+	TileCoord
 }
 
 type ObstacleTile struct {

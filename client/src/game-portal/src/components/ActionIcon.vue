@@ -11,6 +11,7 @@ import type { ActionItem } from '@/game/core/GameState'
 import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
 import { UNIT_DEF_MAP } from '@/game/maps/unitDefs'
 import { ACTION_ICON_MAP } from '@/game/maps/actionIconDefs'
+import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
 
 const props = defineProps<{
   action: ActionItem
@@ -24,7 +25,29 @@ const DRAW_SIZE = CANVAS_SIZE - PADDING * 2
 // Default color used for 'player'-tinted layers in icons
 const ICON_PLAYER_COLOR = '#3b82f6'
 
+function drawBuildingSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
+  ctx.imageSmoothingEnabled = false
+  const spritePadding = 1
+  const boxSize = CANVAS_SIZE - spritePadding * 2
+  const scale = boxSize / Math.max(img.naturalWidth, img.naturalHeight)
+  const w = img.naturalWidth * scale
+  const h = img.naturalHeight * scale
+  const x = spritePadding + (boxSize - w) / 2
+  const y = spritePadding + (boxSize - h) / 2
+  ctx.drawImage(img, x, y, w, h)
+}
+
 function drawBuilding(ctx: CanvasRenderingContext2D, type: string) {
+  const sprite = getBuildingSpriteImage(type)
+  if (sprite) {
+    if (sprite.complete && sprite.naturalWidth > 0) {
+      drawBuildingSprite(ctx, sprite)
+      return
+    }
+    sprite.addEventListener('load', () => draw(), { once: true })
+    // Fall through to procedural while the image loads.
+  }
+
   const def = BUILDING_DEF_MAP.get(type)
   if (!def?.render) return
 
@@ -141,7 +164,7 @@ function getActionIcon(id: string): string {
 
 <style scoped>
 .action-icon {
-  width: 58%;
-  height: 58%;
+  width: 90%;
+  height: 90%;
 }
 </style>

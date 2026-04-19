@@ -10,6 +10,7 @@
     "width": 1536,
     "height": 1152,
     "terrain": [],
+    "defaultTile": { "sheet": "tileset", "sx": 64, "sy": 32 },
     "obstacles": [],
     "buildings": [
       {

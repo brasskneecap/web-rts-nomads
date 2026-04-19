@@ -8,7 +8,7 @@ export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnectin
 
 export type MapId = string
 
-export type TerrainType = 'dirt' | 'water' | 'forest'
+export type TerrainType = 'dirt' | 'grass'
 
 export type ObstacleType = 'rock' | 'wall' | 'tree'
 export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks' | 'farm' | 'enemy-spawnpoint' | 'spawn-point' | (string & {})
@@ -32,6 +32,16 @@ export type GridCoord = {
 export type TerrainTile = GridCoord & {
   terrain: TerrainType
 }
+
+export type TileSheet = 'floors' | 'water' | 'tileset'
+
+export type TileCoord = {
+  sheet: TileSheet
+  sx: number
+  sy: number
+}
+
+export type TileInstance = GridCoord & TileCoord
 
 export type ObstacleTile = GridCoord & {
   obstacle: ObstacleType
@@ -68,6 +78,8 @@ export type MapConfig = {
   gridRows: number
   cellSize: number
   terrain: TerrainTile[]
+  tiles?: TileInstance[]
+  defaultTile?: TileCoord
   obstacles: ObstacleTile[]
   buildings: BuildingTile[]
   waveConfig?: WaveConfig

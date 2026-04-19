@@ -7,6 +7,7 @@ import type {
   ObstacleType,
   TerrainTile,
   TerrainType,
+  TileInstance,
 } from '../network/protocol'
 import { BUILDING_DEF_MAP } from './buildingDefs'
 
@@ -38,6 +39,8 @@ export function createEditorMapConfig(
     gridRows: safeRows,
     cellSize,
     terrain: existing?.terrain ?? [],
+    tiles: existing?.tiles ?? [],
+    defaultTile: existing?.defaultTile,
     obstacles: existing?.obstacles ?? [],
     buildings: existing?.buildings ?? [],
     waveConfig: existing?.waveConfig,
@@ -59,10 +62,30 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
     width: gridCols * cellSize,
     height: gridRows * cellSize,
     terrain: dedupeTerrainTiles(map.terrain ?? [], gridCols, gridRows),
+    tiles: dedupeTiles(map.tiles ?? [], gridCols, gridRows),
+    defaultTile: map.defaultTile,
     obstacles: dedupeObstacleTiles(map.obstacles ?? [], gridCols, gridRows),
     buildings: dedupeBuildings(map.buildings ?? [], gridCols, gridRows),
     waveConfig: map.waveConfig,
   }
+}
+
+export function setTilePaint(
+  map: MapConfig,
+  x: number,
+  y: number,
+  tile: Omit<TileInstance, 'x' | 'y'> | null,
+): MapConfig {
+  const nextTiles = (map.tiles ?? []).filter((t) => t.x !== x || t.y !== y)
+
+  if (tile) {
+    nextTiles.push({ x, y, ...tile })
+  }
+
+  return sanitizeMapConfig({
+    ...map,
+    tiles: nextTiles,
+  })
 }
 
 export function resizeMapConfig(map: MapConfig, cols: number, rows: number): MapConfig {
@@ -161,10 +184,8 @@ export function getTerrainColor(terrain: TerrainType): string {
   switch (terrain) {
     case 'dirt':
       return '#6b4f34'
-    case 'water':
-      return '#1f4f78'
-    case 'forest':
-      return '#1d5a34'
+    case 'grass':
+      return '#3e7d2a'
   }
 }
 
@@ -192,6 +213,27 @@ function dedupeTerrainTiles(
       x: tile.x,
       y: tile.y,
       terrain: tile.terrain,
+    })
+  }
+
+  return Array.from(unique.values()).sort(sortTiles)
+}
+
+function dedupeTiles(
+  tiles: TileInstance[],
+  gridCols: number,
+  gridRows: number,
+): TileInstance[] {
+  const unique = new Map<string, TileInstance>()
+
+  for (const tile of tiles) {
+    if (!isWithinGrid(tile.x, tile.y, gridCols, gridRows)) continue
+    unique.set(`${tile.x}:${tile.y}`, {
+      x: tile.x,
+      y: tile.y,
+      sheet: tile.sheet,
+      sx: tile.sx,
+      sy: tile.sy,
     })
   }
 

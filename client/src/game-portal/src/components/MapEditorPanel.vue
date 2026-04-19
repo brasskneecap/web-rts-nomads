@@ -67,7 +67,7 @@
             </div>
           </div>
 
-          <div class="control-group">
+          <div class="control-group load-map-group">
             <label for="editor-load-map">Load Existing Map</label>
             <select
               id="editor-load-map"
@@ -78,13 +78,11 @@
                 {{ map.name }}
               </option>
             </select>
-          </div>
 
-          <div class="menu-text" v-if="mapLoadError">
-            {{ mapLoadError }}
-          </div>
+            <div class="menu-text" v-if="mapLoadError">
+              {{ mapLoadError }}
+            </div>
 
-          <div class="menu-actions">
             <button
               type="button"
               @click="loadSelectedMapIntoEditor"
@@ -144,19 +142,56 @@
             <label for="brush-mode">Brush</label>
             <select id="brush-mode" v-model="brushMode" :disabled="!paintModeEnabled">
               <option value="terrain">Terrain</option>
+              <option value="tile">Tile</option>
               <option value="obstacle">Obstacle</option>
               <option value="building">Building</option>
               <option value="erase">Erase</option>
             </select>
           </div>
 
+          <div v-if="brushMode !== 'building'" class="control-group">
+            <label for="brush-size">Brush Size</label>
+            <select id="brush-size" v-model.number="brushSize" :disabled="!paintModeEnabled">
+              <option :value="1">1 × 1</option>
+              <option :value="3">3 × 3</option>
+              <option :value="5">5 × 5</option>
+              <option :value="7">7 × 7</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="default-ground">Default Ground</label>
+            <select id="default-ground" :value="defaultGroundName" @change="onDefaultGroundChange">
+              <option value="grass">Grass</option>
+              <option value="dirt">Dirt</option>
+            </select>
+          </div>
+
           <div v-if="brushMode === 'terrain'" class="control-group">
             <label for="terrain-type">Terrain Type</label>
             <select id="terrain-type" v-model="selectedTerrain" :disabled="!paintModeEnabled">
+              <option value="grass">Grass</option>
               <option value="dirt">Dirt</option>
-              <option value="water">Water</option>
-              <option value="forest">Forest</option>
             </select>
+          </div>
+
+          <div v-if="brushMode === 'tile'" class="control-group">
+            <label for="tile-sheet">Tile Sheet</label>
+            <select id="tile-sheet" v-model="selectedTileSheet" :disabled="!paintModeEnabled">
+              <option v-for="sheet in TILE_SHEET_NAMES" :key="sheet" :value="sheet">
+                {{ sheet }}
+              </option>
+            </select>
+            <div class="tile-picker-hint">
+              {{ selectedTileCoord
+                ? `Selected: (${selectedTileCoord.sx}, ${selectedTileCoord.sy}) — right-click a cell to erase`
+                : 'Click a tile below to select it' }}
+            </div>
+            <canvas
+              ref="tilePickerCanvas"
+              class="tile-picker"
+              @click="onTilePickerClick"
+            />
           </div>
 
           <div v-if="brushMode === 'obstacle'" class="control-group">
@@ -347,6 +382,7 @@ import type {
   MapConfig,
   ObstacleType,
   TerrainType,
+  TileSheet,
   UnitType,
 } from '@/game/network/protocol'
 import { Camera } from '@/game/rendering/Camera'
@@ -361,16 +397,36 @@ import {
   setBuildingTile,
   setObstacleTile,
   setTerrainTile,
+  setTilePaint,
 } from '@/game/maps/mapConfig'
+import {
+  DEFAULT_TILE_PRESETS,
+  drawTerrainTile,
+  GROUND_TILE_COORDS,
+  TERRAIN_TILE_COORDS,
+  TILE_SHEET_NAMES,
+  getSheetImage,
+  getSheetTileSize,
+  isTerrainTilesetReady,
+  onSheetReady,
+} from '@/game/rendering/terrainTileset'
+import { getBuildingSprite } from '@/game/rendering/buildingSprites'
+import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
 
 const model = defineModel<MapConfig>({ required: true })
 type SpawnLoadoutEntry = { id: number; unitType: UnitType; count: number }
 
 const canvas = ref<HTMLCanvasElement | null>(null)
-const brushMode = ref<'terrain' | 'obstacle' | 'building' | 'erase'>('terrain')
-const selectedTerrain = ref<TerrainType>('dirt')
+const tilePickerCanvas = ref<HTMLCanvasElement | null>(null)
+
+const TILE_PICKER_SCALE = 2
+const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'erase'>('terrain')
+const brushSize = ref<1 | 3 | 5 | 7>(1)
+const selectedTerrain = ref<TerrainType>('grass')
 const selectedObstacle = ref<ObstacleType>('rock')
 const selectedBuilding = ref<BuildingType>('goldmine')
+const selectedTileSheet = ref<TileSheet>('floors')
+const selectedTileCoord = ref<{ sx: number; sy: number } | null>(null)
 const selectedSpawnTownhallId = ref('')
 const playerSpawnUnits = ref<Array<{ type: UnitType; label: string }>>([
   { type: 'worker', label: 'Worker' },
@@ -440,6 +496,27 @@ const townhallOptions = computed(() =>
       label: `${building.id} (${building.x}, ${building.y})`,
     })),
 )
+
+const defaultGroundName = computed<'grass' | 'dirt'>(() => {
+  const current = model.value.defaultTile
+  if (!current) return 'grass'
+  for (const name of ['grass', 'dirt'] as const) {
+    const preset = DEFAULT_TILE_PRESETS[name]
+    if (
+      current.sheet === preset.sheet &&
+      current.sx === preset.sx &&
+      current.sy === preset.sy
+    ) {
+      return name
+    }
+  }
+  return 'grass'
+})
+
+function onDefaultGroundChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value as 'grass' | 'dirt'
+  model.value = { ...model.value, defaultTile: { ...DEFAULT_TILE_PRESETS[value] } }
+}
 
 const eraseCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg stroke='%23f8fafc' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M6 6 L18 18'/%3E%3Cpath d='M18 6 L6 18'/%3E%3C/g%3E%3Cg stroke='%230f172a' stroke-width='1.2' stroke-linecap='round'%3E%3Cpath d='M6 6 L18 18'/%3E%3Cpath d='M18 6 L6 18'/%3E%3C/g%3E%3C/svg%3E") 12 12, crosshair`
 
@@ -622,57 +699,111 @@ function getGridCellAtScreen(screenX: number, screenY: number) {
   return { x, y }
 }
 
+function getBrushCells(cx: number, cy: number, size: number): Array<{ x: number; y: number }> {
+  const half = Math.floor(size / 2)
+  const { gridCols, gridRows } = model.value
+  const cells: Array<{ x: number; y: number }> = []
+  for (let dy = -half; dy <= half; dy++) {
+    for (let dx = -half; dx <= half; dx++) {
+      const x = cx + dx
+      const y = cy + dy
+      if (x < 0 || y < 0 || x >= gridCols || y >= gridRows) continue
+      cells.push({ x, y })
+    }
+  }
+  return cells
+}
+
 function paintAtScreen(screenX: number, screenY: number) {
   const cell = getGridCellAtScreen(screenX, screenY)
   if (!cell) return
 
-  const paintKey = `${cell.x}:${cell.y}:${activeBrushMode.value}`
+  const paintKey = `${cell.x}:${cell.y}:${activeBrushMode.value}:${brushSize.value}`
   if (paintKey === lastPaintKey) return
   lastPaintKey = paintKey
 
+  // Buildings ignore brush size — placement is driven by the building footprint.
+  if (activeBrushMode.value === 'building') {
+    paintBuildingAt(cell.x, cell.y)
+    return
+  }
+
+  const cells = getBrushCells(cell.x, cell.y, brushSize.value)
+
   if (activeBrushMode.value === 'erase') {
-    model.value = setBuildingTile(
-      setObstacleTile(setTerrainTile(model.value, cell.x, cell.y, null), cell.x, cell.y, null),
-      cell.x,
-      cell.y,
-      null,
-    )
+    let next = model.value
+    for (const c of cells) {
+      next = setTilePaint(
+        setBuildingTile(
+          setObstacleTile(setTerrainTile(next, c.x, c.y, null), c.x, c.y, null),
+          c.x,
+          c.y,
+          null,
+        ),
+        c.x,
+        c.y,
+        null,
+      )
+    }
+    model.value = next
     return
   }
 
   if (activeBrushMode.value === 'terrain') {
-    model.value = setTerrainTile(model.value, cell.x, cell.y, selectedTerrain.value)
-    return
-  }
-
-  if (activeBrushMode.value === 'building') {
-    let metadata: JsonObject | undefined
-
-    if (selectedBuilding.value === 'spawn-point') {
-      metadata = {
-        townhallId: selectedSpawnTownhallId.value || null,
-        fillOrder: Math.round(spawnPointFillOrder.value || 0),
-        spawnUnits: spawnPointLoadout.value.map((entry) => ({
-          unitType: entry.unitType,
-          count: Math.max(1, Math.round(entry.count || 1)),
-        })),
-      }
-    } else if (selectedBuilding.value === 'enemy-spawnpoint') {
-      metadata = {
-        ...(enemyWaveMode.value === 'specific' ? { waveNumber: enemyWaveNumber.value } : {}),
-        ...(enemyWaveMode.value === 'repeating' ? { startingWave: enemyWaveNumber.value } : {}),
-        spawnDelaySeconds: enemySpawnDelay.value,
-        spawnIntervalSeconds: enemySpawnInterval.value,
-        spawnCount: enemySpawnCount.value,
-        unitType: enemyUnitType.value,
-      }
+    let next = model.value
+    for (const c of cells) {
+      next = setTerrainTile(next, c.x, c.y, selectedTerrain.value)
     }
-
-    model.value = setBuildingTile(model.value, cell.x, cell.y, selectedBuilding.value, metadata)
+    model.value = next
     return
   }
 
-  model.value = setObstacleTile(model.value, cell.x, cell.y, selectedObstacle.value)
+  if (activeBrushMode.value === 'tile') {
+    if (!selectedTileCoord.value) return
+    let next = model.value
+    for (const c of cells) {
+      next = setTilePaint(next, c.x, c.y, {
+        sheet: selectedTileSheet.value,
+        sx: selectedTileCoord.value.sx,
+        sy: selectedTileCoord.value.sy,
+      })
+    }
+    model.value = next
+    return
+  }
+
+  // Obstacle brush (default fall-through).
+  let next = model.value
+  for (const c of cells) {
+    next = setObstacleTile(next, c.x, c.y, selectedObstacle.value)
+  }
+  model.value = next
+}
+
+function paintBuildingAt(cx: number, cy: number) {
+  let metadata: JsonObject | undefined
+
+  if (selectedBuilding.value === 'spawn-point') {
+    metadata = {
+      townhallId: selectedSpawnTownhallId.value || null,
+      fillOrder: Math.round(spawnPointFillOrder.value || 0),
+      spawnUnits: spawnPointLoadout.value.map((entry) => ({
+        unitType: entry.unitType,
+        count: Math.max(1, Math.round(entry.count || 1)),
+      })),
+    }
+  } else if (selectedBuilding.value === 'enemy-spawnpoint') {
+    metadata = {
+      ...(enemyWaveMode.value === 'specific' ? { waveNumber: enemyWaveNumber.value } : {}),
+      ...(enemyWaveMode.value === 'repeating' ? { startingWave: enemyWaveNumber.value } : {}),
+      spawnDelaySeconds: enemySpawnDelay.value,
+      spawnIntervalSeconds: enemySpawnInterval.value,
+      spawnCount: enemySpawnCount.value,
+      unitType: enemyUnitType.value,
+    }
+  }
+
+  model.value = setBuildingTile(model.value, cx, cy, selectedBuilding.value, metadata)
 }
 
 function getTerrainAt(x: number, y: number) {
@@ -705,6 +836,20 @@ function onMouseDown(event: MouseEvent) {
   if (event.button === 1) {
     event.preventDefault()
     isMiddleMouseDown = true
+    return
+  }
+
+  // Right-click in Tile brush mode: erase only painted tiles under the brush.
+  if (event.button === 2 && paintModeEnabled.value && brushMode.value === 'tile') {
+    event.preventDefault()
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) {
+      let next = model.value
+      for (const c of getBrushCells(cell.x, cell.y, brushSize.value)) {
+        next = setTilePaint(next, c.x, c.y, null)
+      }
+      model.value = next
+    }
     return
   }
 
@@ -839,13 +984,42 @@ function render() {
 
 function drawMapBackground(ctx: CanvasRenderingContext2D) {
   const cellSize = model.value.cellSize
+  const { gridCols, gridRows } = model.value
+  const tilesetReady = isTerrainTilesetReady()
+  const groundCoord = model.value.defaultTile ?? GROUND_TILE_COORDS
 
-  ctx.fillStyle = DEFAULT_GRASS_COLOR
-  ctx.fillRect(0, 0, model.value.width, model.value.height)
+  if (tilesetReady) {
+    ctx.imageSmoothingEnabled = false
+    for (let gy = 0; gy < gridRows; gy++) {
+      for (let gx = 0; gx < gridCols; gx++) {
+        drawTerrainTile(ctx, groundCoord, gx * cellSize, gy * cellSize, cellSize)
+      }
+    }
+  } else {
+    ctx.fillStyle = DEFAULT_GRASS_COLOR
+    ctx.fillRect(0, 0, model.value.width, model.value.height)
+  }
+
+  if (tilesetReady && model.value.tiles) {
+    for (const tile of model.value.tiles) {
+      drawTerrainTile(
+        ctx,
+        { sheet: tile.sheet, sx: tile.sx, sy: tile.sy },
+        tile.x * cellSize,
+        tile.y * cellSize,
+        cellSize,
+      )
+    }
+  }
 
   for (const tile of model.value.terrain) {
-    ctx.fillStyle = getTerrainColor(tile.terrain)
-    ctx.fillRect(tile.x * cellSize, tile.y * cellSize, cellSize, cellSize)
+    const coords = TERRAIN_TILE_COORDS[tile.terrain]
+    if (tilesetReady && coords) {
+      drawTerrainTile(ctx, coords, tile.x * cellSize, tile.y * cellSize, cellSize)
+    } else {
+      ctx.fillStyle = getTerrainColor(tile.terrain)
+      ctx.fillRect(tile.x * cellSize, tile.y * cellSize, cellSize, cellSize)
+    }
   }
 
   for (const tile of model.value.obstacles) {
@@ -872,23 +1046,88 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
   }
 
   for (const building of model.value.buildings) {
+    if (building.buildingType === 'enemy-spawnpoint') {
+      drawEditorEnemySpawnpoint(ctx, building, cellSize)
+      continue
+    }
+
     const worldX = building.x * cellSize
     const worldY = building.y * cellSize
     const width = building.width * cellSize
     const height = building.height * cellSize
-    const inset = cellSize * 0.18
+    const def = BUILDING_DEF_MAP.get(building.buildingType)
+    const renderDef = def?.render
+    const sprite = getBuildingSprite(building.buildingType)
 
     ctx.save()
-    ctx.globalAlpha = building.visible ? 1 : 0.45
-    ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied)
-    ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+    ctx.globalAlpha = building.visible ? 1 : 0.6
 
-    ctx.strokeStyle = building.visible ? 'rgba(15, 23, 42, 0.85)' : 'rgba(226, 232, 240, 0.85)'
-    ctx.lineWidth = 2 / camera.zoom
-    ctx.setLineDash(building.visible ? [] : [10 / camera.zoom, 6 / camera.zoom])
-    ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+    if (sprite) {
+      ctx.imageSmoothingEnabled = false
+      ctx.drawImage(sprite, worldX, worldY, width, height)
+    } else if (renderDef) {
+      const fill = def?.color ?? getBuildingColor(building.buildingType, building.occupied)
+      for (const layer of renderDef.layers) {
+        ctx.fillStyle = layer.color === 'player' ? fill : layer.color
+        if (!('kind' in layer) || layer.kind === 'rect') {
+          ctx.fillRect(
+            worldX + layer.x * cellSize,
+            worldY + layer.y * cellSize,
+            layer.w * cellSize,
+            layer.h * cellSize,
+          )
+        } else if (layer.kind === 'tri') {
+          const s = cellSize / 6
+          const tlX = worldX + layer.cx * cellSize + layer.sc * s
+          const tlY = worldY + layer.cy * cellSize + layer.sr * s
+          const bslash = (layer.sc + layer.sr) % 2 === 1
+          ctx.beginPath()
+          if (!bslash) {
+            if (layer.h === 0) { ctx.moveTo(tlX, tlY); ctx.lineTo(tlX + s, tlY); ctx.lineTo(tlX, tlY + s) }
+            else { ctx.moveTo(tlX + s, tlY); ctx.lineTo(tlX + s, tlY + s); ctx.lineTo(tlX, tlY + s) }
+          } else {
+            if (layer.h === 0) { ctx.moveTo(tlX, tlY); ctx.lineTo(tlX + s, tlY); ctx.lineTo(tlX + s, tlY + s) }
+            else { ctx.moveTo(tlX, tlY); ctx.lineTo(tlX, tlY + s); ctx.lineTo(tlX + s, tlY + s) }
+          }
+          ctx.closePath()
+          ctx.fill()
+        }
+      }
+    } else {
+      const inset = cellSize * 0.18
+      ctx.fillStyle = getBuildingColor(building.buildingType, building.occupied)
+      ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+    }
+
+    if (!building.visible) {
+      ctx.strokeStyle = 'rgba(226, 232, 240, 0.85)'
+      ctx.lineWidth = 2 / camera.zoom
+      ctx.setLineDash([10 / camera.zoom, 6 / camera.zoom])
+      ctx.strokeRect(worldX, worldY, width, height)
+    }
+
     ctx.restore()
   }
+}
+
+function drawEditorEnemySpawnpoint(
+  ctx: CanvasRenderingContext2D,
+  building: { x: number; y: number; width: number; height: number },
+  cellSize: number,
+) {
+  const worldX = building.x * cellSize
+  const worldY = building.y * cellSize
+  const width = building.width * cellSize
+  const height = building.height * cellSize
+
+  ctx.save()
+  ctx.fillStyle = 'rgba(153, 27, 27, 0.45)'
+  ctx.fillRect(worldX, worldY, width, height)
+  ctx.strokeStyle = '#fca5a5'
+  ctx.lineWidth = 2 / camera.zoom
+  ctx.setLineDash([8 / camera.zoom, 4 / camera.zoom])
+  ctx.strokeRect(worldX, worldY, width, height)
+  ctx.restore()
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D) {
@@ -926,11 +1165,75 @@ function drawGrid(ctx: CanvasRenderingContext2D) {
   }
 }
 
+function renderTilePicker() {
+  const canvasEl = tilePickerCanvas.value
+  if (!canvasEl) return
+  const img = getSheetImage(selectedTileSheet.value)
+  if (!img) {
+    onSheetReady(selectedTileSheet.value, renderTilePicker)
+    return
+  }
+
+  const scale = TILE_PICKER_SCALE
+  canvasEl.width = img.naturalWidth * scale
+  canvasEl.height = img.naturalHeight * scale
+
+  const ctx = canvasEl.getContext('2d')
+  if (!ctx) return
+
+  ctx.imageSmoothingEnabled = false
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height)
+  ctx.drawImage(img, 0, 0, canvasEl.width, canvasEl.height)
+
+  // Highlight the selected tile, if any.
+  if (selectedTileCoord.value) {
+    const { sx, sy } = selectedTileCoord.value
+    const tileSize = getSheetTileSize(selectedTileSheet.value)
+    ctx.strokeStyle = '#facc15'
+    ctx.lineWidth = 2
+    ctx.strokeRect(sx * scale, sy * scale, tileSize * scale, tileSize * scale)
+  }
+}
+
+function onTilePickerClick(event: MouseEvent) {
+  const canvasEl = tilePickerCanvas.value
+  if (!canvasEl) return
+  const rect = canvasEl.getBoundingClientRect()
+  // CSS size may differ from canvas pixel size; convert through the ratio.
+  const cssToPx = canvasEl.width / rect.width
+  const px = (event.clientX - rect.left) * cssToPx
+  const py = (event.clientY - rect.top) * cssToPx
+  const scale = TILE_PICKER_SCALE
+  const tileSize = getSheetTileSize(selectedTileSheet.value)
+  const sx = Math.floor(px / (tileSize * scale)) * tileSize
+  const sy = Math.floor(py / (tileSize * scale)) * tileSize
+  selectedTileCoord.value = { sx, sy }
+  renderTilePicker()
+}
+
 function drawMapBounds(ctx: CanvasRenderingContext2D) {
   ctx.strokeStyle = '#444'
   ctx.lineWidth = 2 / camera.zoom
   ctx.strokeRect(0, 0, model.value.width, model.value.height)
 }
+
+// Re-render the tile picker whenever it becomes visible or the sheet changes.
+// Wait a tick so the v-if'd canvas is mounted before we try to draw.
+watch(
+  [brushMode, selectedTileSheet],
+  async () => {
+    if (brushMode.value !== 'tile') return
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    renderTilePicker()
+  },
+  { immediate: true },
+)
+
+// Clear the selected tile coord when switching sheets — coords aren't portable
+// across sheets (different tile sizes, different content).
+watch(selectedTileSheet, () => {
+  selectedTileCoord.value = null
+})
 
 onMounted(() => {
   const targetCanvas = canvas.value
@@ -1019,6 +1322,7 @@ onBeforeUnmount(() => {
 .editor-shell {
   display: grid;
   grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
   width: 100%;
@@ -1040,21 +1344,36 @@ onBeforeUnmount(() => {
   max-height: 100%;
   overflow-y: auto;
   padding: 12px;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-content: start;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
 }
 
 .editor-controls::-webkit-scrollbar {
-  display: none;
+  width: 8px;
+}
+
+.editor-controls::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 4px;
+}
+
+.editor-controls::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+}
+
+.editor-controls::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .editor-section {
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 12px;
   background: rgba(8, 14, 24, 0.55);
-  overflow: hidden;
+  overflow: clip;
+  flex: 0 0 auto;
 }
 
 .editor-section--open {
@@ -1107,6 +1426,22 @@ onBeforeUnmount(() => {
 .control-group {
   display: grid;
   gap: 4px;
+}
+
+.tile-picker-hint {
+  font-size: 0.7rem;
+  color: rgba(226, 232, 240, 0.72);
+  padding: 2px 0;
+}
+
+.tile-picker {
+  display: block;
+  max-width: 100%;
+  image-rendering: pixelated;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 4px;
+  cursor: crosshair;
+  background: #0a0a0a;
 }
 
 .control-group label,
@@ -1279,11 +1614,6 @@ onBeforeUnmount(() => {
 @media (max-width: 820px) {
   .editor-shell {
     grid-template-columns: 1fr;
-  }
-
-  .editor-controls {
-    max-height: none;
-    overflow: visible;
   }
 
   .editor-preview {

@@ -8,6 +8,12 @@ import {
 } from '../maps/mapConfig'
 import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual } from '../maps/buildingDefs'
 import { getBuildingSprite, getTintedBuildingSprite } from './buildingSprites'
+import {
+  drawTerrainTile,
+  GROUND_TILE_COORDS,
+  TERRAIN_TILE_COORDS,
+  isTerrainTilesetReady,
+} from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef, UnitRenderDef } from '../maps/unitDefs'
 import type { BannerSnapshot, BuildingTile, TrapSnapshot } from '../network/protocol'
@@ -102,7 +108,6 @@ export class CanvasRenderer {
     ctx.translate(-this.camera.x, -this.camera.y)
 
     this.drawMapBackground()
-    this.drawGrid()
     this.drawMapBounds()
     this.drawMoveMarkers()
     this.drawBuildingSpawnMarkers()
@@ -160,16 +165,45 @@ export class CanvasRenderer {
 
   private drawMapBackground() {
     const ctx = this.ctx
+    const { cellSize, terrain, tiles, defaultTile, obstacles, buildings, gridCols, gridRows } = this.state.mapConfig
+    const tilesetReady = isTerrainTilesetReady()
+    const groundCoord = defaultTile ?? GROUND_TILE_COORDS
 
-    ctx.fillStyle = DEFAULT_GRASS_COLOR
-    ctx.fillRect(0, 0, this.state.mapWidth, this.state.mapHeight)
+    if (tilesetReady) {
+      ctx.imageSmoothingEnabled = false
+      for (let gy = 0; gy < gridRows; gy++) {
+        for (let gx = 0; gx < gridCols; gx++) {
+          drawTerrainTile(ctx, groundCoord, gx * cellSize, gy * cellSize, cellSize)
+        }
+      }
+    } else {
+      ctx.fillStyle = DEFAULT_GRASS_COLOR
+      ctx.fillRect(0, 0, this.state.mapWidth, this.state.mapHeight)
+    }
 
-    const { cellSize, terrain, obstacles, buildings } = this.state.mapConfig
+    if (tilesetReady && tiles) {
+      for (const tile of tiles) {
+        drawTerrainTile(
+          ctx,
+          { sheet: tile.sheet, sx: tile.sx, sy: tile.sy },
+          tile.x * cellSize,
+          tile.y * cellSize,
+          cellSize,
+        )
+      }
+    }
 
     for (const tile of terrain) {
-      ctx.fillStyle = getTerrainColor(tile.terrain)
-      ctx.fillRect(tile.x * cellSize, tile.y * cellSize, cellSize, cellSize)
+      const coords = TERRAIN_TILE_COORDS[tile.terrain]
+      if (tilesetReady && coords) {
+        drawTerrainTile(ctx, coords, tile.x * cellSize, tile.y * cellSize, cellSize)
+      } else {
+        ctx.fillStyle = getTerrainColor(tile.terrain)
+        ctx.fillRect(tile.x * cellSize, tile.y * cellSize, cellSize, cellSize)
+      }
     }
+
+    this.drawGrid()
 
     for (const tile of obstacles) {
       const worldX = tile.x * cellSize
@@ -1484,16 +1518,27 @@ export class CanvasRenderer {
     const worldY = cursorGridY * cellSize
     const buildingDef = BUILDING_DEF_MAP.get(placement.buildingType)
     const renderDef = buildingDef?.render
+    const sprite = getBuildingSprite(placement.buildingType)
+    const footW = gridW * cellSize
+    const footH = gridH * cellSize
 
     ctx.save()
     ctx.globalAlpha = 0.6
 
     const playerFill = valid ? (buildingDef?.color ?? '#1e40af') : '#dc2626'
 
-    if (!renderDef) {
+    if (sprite) {
+      ctx.imageSmoothingEnabled = false
+      ctx.drawImage(sprite, worldX, worldY, footW, footH)
+      if (!valid) {
+        ctx.globalAlpha = 0.35
+        ctx.fillStyle = '#dc2626'
+        ctx.fillRect(worldX, worldY, footW, footH)
+      }
+    } else if (!renderDef) {
       // No render def — solid fill fallback
       ctx.fillStyle = playerFill
-      ctx.fillRect(worldX, worldY, gridW * cellSize, gridH * cellSize)
+      ctx.fillRect(worldX, worldY, footW, footH)
     } else {
       // Draw every layer explicitly, substituting 'player' with the valid/invalid tint color.
       for (const layer of renderDef.layers) {

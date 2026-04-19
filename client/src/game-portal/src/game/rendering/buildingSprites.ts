@@ -27,6 +27,14 @@ export function getBuildingSprite(buildingType: string): HTMLImageElement | null
   return img
 }
 
+// Returns the raw Image element for the given building type regardless of
+// load state, or null if no sprite is registered. Use this when you need to
+// attach a load listener — callers should check .complete / .naturalWidth
+// before drawing.
+export function getBuildingSpriteImage(buildingType: string): HTMLImageElement | null {
+  return images.get(buildingType.toLowerCase()) ?? null
+}
+
 const TINT_ALPHA = 0.05
 const tintCache = new Map<string, HTMLCanvasElement>()
 
