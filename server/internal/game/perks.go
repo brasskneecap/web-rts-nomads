@@ -231,6 +231,49 @@ type UnitPerkState struct {
 	// the fractional remainder stays banked. Multiple traps on the same unit
 	// accumulate together, which correctly stacks DoT rate.
 	TrapDoTAccumulator float64
+
+	// ── barbed_field (silver trapper) ─────────────────────────────────────────
+	// BarbedFieldStaySeconds accumulates the elapsed time the victim has been
+	// inside ANY barbed-field caltrops zone without a break. Ramping bonus DPS
+	// is computed from this accumulator by the caltrops onStay effect. Resets
+	// to 0 in tickTrapperSilverDebuffsLocked on any tick the victim is NOT in
+	// a barbed caltrops this tick (one-tick exit window).
+	//
+	// BarbedFieldInZoneThisTick is a per-tick scratch flag set true by caltrops
+	// onStay when the trap has barbed_field armed. Consumed and cleared in
+	// tickTrapperSilverDebuffsLocked each tick. Shared across all barbed
+	// caltrops hitting the same victim in one tick so the accumulator only
+	// advances once per tick regardless of how many overlapping zones hit.
+	BarbedFieldStaySeconds    float64
+	BarbedFieldInZoneThisTick bool
+
+	// ── lasting_flames (silver trapper) ───────────────────────────────────────
+	// Three-stage state: in-zone → just-exited → burning.
+	//   FirePitInLastingZoneThisTick: scratch flag set true by fire_pit onStay
+	//     when the trap has lasting_flames armed. Cleared each tick in
+	//     tickTrapperSilverDebuffsLocked.
+	//   FirePitInLastingZonePrev: snapshotted value of ThisTick from the PREVIOUS
+	//     tick. Transition (prev=true AND curr=false) detects "just exited" and
+	//     stamps the burn debuff. Shifted forward each tick after the transition
+	//     check.
+	//   FirePitArmedBurn{DPS,Duration,OwnerID}: strongest burn params seen across
+	//     all lasting fire pits the victim is currently standing in; snapshotted
+	//     onto the burn debuff at the moment of exit. Refresh-stronger per field
+	//     so multiple overlapping lasting fire pits pick the strongest.
+	//   Burn{Remaining,DamagePerSecond,OwnerUnitID,DoTAccumulator}: the active
+	//     burn debuff that ticks in tickTrapperSilverDebuffsLocked. BurnRemaining
+	//     decays to 0; DoT accumulator banks fractional damage the same way
+	//     TrapDoTAccumulator does. Refresh semantics on re-arming: max per
+	//     dimension (strongest/longest wins), same as mark/slow refresh.
+	FirePitInLastingZoneThisTick bool
+	FirePitInLastingZonePrev     bool
+	FirePitArmedBurnDPS          float64
+	FirePitArmedBurnDuration     float64
+	FirePitArmedBurnOwnerID      int
+	BurnRemaining                float64
+	BurnDamagePerSecond          float64
+	BurnOwnerUnitID              int
+	BurnDoTAccumulator           float64
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

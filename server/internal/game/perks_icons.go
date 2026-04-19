@@ -223,5 +223,8 @@ func (s *GameState) activeDebuffIconsLocked(unit *Unit) []string {
 	if unit.SlowedRemaining > 0 {
 		active = append(active, "debuff-slowed")
 	}
+	if unit.PerkState.BurnRemaining > 0 {
+		active = append(active, "debuff-burning")
+	}
 	return active
 }

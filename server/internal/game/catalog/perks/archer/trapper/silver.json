@@ -34,5 +34,37 @@
     "description": "Your explosive traps detonate a second time 2 seconds after the initial blast.",
     "requiresPerk": "explosive_trap",
     "config": { "aftershockDelaySeconds": 1 }
+  },
+  {
+    "id": "barbed_field",
+    "displayName": "Barbed Field",
+    "icon": "perk-barbed-field",
+    "description": "Caltrops: enemies take ramping bonus damage the longer they stay in the zone (+2 DPS per second, up to +12 DPS). Resets when they leave.",
+    "requiresPerk": "caltrops",
+    "config": {
+      "rampPerSecond": 2,
+      "maxBonusDamagePerSecond": 12
+    }
+  },
+  {
+    "id": "exposed_weakness",
+    "displayName": "Exposed Weakness",
+    "icon": "perk-exposed-weakness",
+    "description": "Marker Trap: marked enemies also deal 20% less damage for the duration of the mark.",
+    "requiresPerk": "marker_trap",
+    "config": {
+      "weakenedMultiplier": 0.2
+    }
+  },
+  {
+    "id": "lasting_flames",
+    "displayName": "Lasting Flames",
+    "icon": "perk-lasting-flames",
+    "description": "Fire Pit: enemies that leave the fire pit continue to burn for 4 seconds, taking 6 damage per second.",
+    "requiresPerk": "fire_pit",
+    "config": {
+      "burnDurationSeconds": 4,
+      "burnDamagePerSecond": 6
+    }
   }
 ]

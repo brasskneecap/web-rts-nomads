@@ -488,7 +488,8 @@ func (s *GameState) Update(dt float64) {
 	s.tickCombatAILocked(dt, blocked)
 	s.tickUnitCombatLocked(dt, blocked)
 	s.tickEnemySpawnpointsLocked(dt, blocked)
-	s.tickTrapEffectsLocked(dt) // zone effects + trigger detection
+	s.tickTrapEffectsLocked(dt)            // zone effects + trigger detection
+	s.tickTrapperSilverDebuffsLocked(dt)   // barbed ramp, lasting_flames exit, burn DoT
 	s.tickBannersLocked(dt)
 	s.tickTrapsLocked(dt) // lifetime decay + triggered cull
 

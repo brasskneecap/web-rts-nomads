@@ -115,6 +115,27 @@ type TrapSpecificModifiers struct {
 	// after this delay. Currently set by explosive_chain (applies only to
 	// explosive_trap).
 	AftershockDelaySeconds float64
+
+	// barbed_field (silver): caltrops-only ramping bonus DPS. RampPerSecond
+	// is added to the victim-specific damage-per-second for every second the
+	// victim has been in a barbed zone (BarbedFieldStaySeconds). MaxBonusDPS
+	// caps the bonus so ramp cannot spiral unbounded.
+	BarbedFieldRampPerSec  float64
+	BarbedFieldMaxBonusDPS float64
+
+	// exposed_weakness (silver): marker_trap-only. Fraction of outgoing damage
+	// reduction stamped onto marked victims (e.g. 0.20 = deal 20% less damage).
+	// Piggybacks the shared WeakenedRemaining/WeakenedMultiplier state used by
+	// Vanguard's punishing_guard — the outgoing-damage debuff plumbing is
+	// already live in perkOutgoingDamageDebuffMultiplierLocked.
+	ExposedWeakenedMultiplier float64
+
+	// lasting_flames (silver): fire_pit-only. Burn DoT stamped on victims when
+	// they LEAVE a lasting fire pit. The trap records the burn params it would
+	// apply at exit; tickTrapperSilverDebuffsLocked detects the exit transition
+	// and moves the armed params onto the victim's Burn* fields.
+	LastingFlamesBurnDPS      float64
+	LastingFlamesBurnDuration float64
 }
 
 // trapSpecificModifiersForUnitLocked resolves trap-type-specific modifiers.
@@ -141,6 +162,26 @@ func (s *GameState) trapSpecificModifiersForUnitLocked(unit *Unit, trapType stri
 			if trapType == "explosive_trap" {
 				m.AftershockDelaySeconds = def.Config["aftershockDelaySeconds"]
 			}
+		case "barbed_field":
+			if trapType == "caltrops" {
+				m.BarbedFieldRampPerSec = def.Config["rampPerSecond"]
+				m.BarbedFieldMaxBonusDPS = def.Config["maxBonusDamagePerSecond"]
+			}
+		case "exposed_weakness":
+			if trapType == "marker_trap" {
+				m.ExposedWeakenedMultiplier = def.Config["weakenedMultiplier"]
+			}
+		case "lasting_flames":
+			if trapType == "fire_pit" {
+				m.LastingFlamesBurnDPS = def.Config["burnDamagePerSecond"]
+				m.LastingFlamesBurnDuration = def.Config["burnDurationSeconds"]
+			}
+
+		// ── EXTENSION POINT: trap-specific Silver/Gold upgrades plug in here.
+		//    Gate each case on the matching trapType string so the perk stays
+		//    silent on the wrong trap type. Config keys live in the perk's
+		//    JSON entry; snapshot them onto TrapSpecificModifiers so the
+		//    plant site can bake them into Trap fields.
 		}
 	}
 	return m
@@ -178,6 +219,14 @@ type EffectiveTrapStats struct {
 	SlowMultiplier  float64 // caltrops
 	MarkMultiplier  float64 // marker_trap
 	MarkDuration    float64 // marker_trap
+
+	// ── Silver trap-specific upgrade stats (zero when the gating perk is absent) ──
+	BarbedFieldRampPerSec     float64 // caltrops + barbed_field
+	BarbedFieldMaxBonusDPS    float64 // caltrops + barbed_field
+	ExposedWeakenedMultiplier float64 // marker_trap + exposed_weakness
+	LastingFlamesBurnDPS      float64 // fire_pit + lasting_flames
+	LastingFlamesBurnDuration float64 // fire_pit + lasting_flames
+	AftershockDelaySeconds    float64 // explosive_trap + explosive_chain
 }
 
 // DebugEffectiveTrapStats computes the effective planted-trap stats for the
@@ -203,6 +252,7 @@ func (s *GameState) DebugEffectiveTrapStats(unit *Unit) (EffectiveTrapStats, boo
 		return EffectiveTrapStats{}, false
 	}
 	m := s.trapModifiersForUnitLocked(unit)
+	specific := s.trapSpecificModifiersForUnitLocked(unit, def.ID)
 	out := EffectiveTrapStats{
 		PerkID:          def.ID,
 		DurationSeconds: def.Config["durationSeconds"] * m.DurationMultiplier,
@@ -213,18 +263,24 @@ func (s *GameState) DebugEffectiveTrapStats(unit *Unit) (EffectiveTrapStats, boo
 		out.Radius = def.Config["radius"] * m.RadiusMultiplier
 		out.DamagePerSecond = def.Config["damagePerSecond"] * m.EffectMultiplier
 		out.SlowMultiplier = amplifySlow(def.Config["slowMultiplier"], m.EffectMultiplier)
+		out.BarbedFieldRampPerSec = specific.BarbedFieldRampPerSec * m.EffectMultiplier
+		out.BarbedFieldMaxBonusDPS = specific.BarbedFieldMaxBonusDPS * m.EffectMultiplier
 	case "fire_pit":
 		out.Radius = def.Config["radius"] * m.RadiusMultiplier
 		out.DamagePerSecond = def.Config["damagePerSecond"] * m.EffectMultiplier
+		out.LastingFlamesBurnDPS = specific.LastingFlamesBurnDPS * m.EffectMultiplier
+		out.LastingFlamesBurnDuration = specific.LastingFlamesBurnDuration * m.EffectMultiplier
 	case "explosive_trap":
 		out.Radius = def.Config["explosionRadius"] * m.RadiusMultiplier
 		out.TriggerRadius = def.Config["triggerRadius"] * m.RadiusMultiplier
 		base := int(def.Config["burstDamage"])
 		out.BurstDamage = int(float64(base)*m.EffectMultiplier + 0.5)
+		out.AftershockDelaySeconds = specific.AftershockDelaySeconds
 	case "marker_trap":
 		out.Radius = def.Config["radius"] * m.RadiusMultiplier
 		out.MarkMultiplier = def.Config["markMultiplier"] * m.EffectMultiplier
 		out.MarkDuration = def.Config["markDuration"] * m.EffectMultiplier
+		out.ExposedWeakenedMultiplier = specific.ExposedWeakenedMultiplier * m.EffectMultiplier
 	}
 	return out, true
 }

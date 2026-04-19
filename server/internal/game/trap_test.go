@@ -1480,12 +1480,15 @@ func TestPerkPool_SilverFullyGatedCascadesToBronze(t *testing.T) {
 
 	archer.ProgressionPath = unitPathTrapper
 	archer.Rank = unitRankSilver
-	// Give the unit a non-explosive_trap Bronze perk plus all four ungated Silver
-	// perks so the only remaining Silver entry (explosive_chain, requiresPerk=
-	// explosive_trap) is gated and the pool cascades to Bronze.
+	// Give the unit caltrops + every Silver perk that does NOT require a
+	// different Bronze trap. The remaining trap-specific Silvers (explosive_chain,
+	// exposed_weakness, lasting_flames) are gated by other Bronzes the unit does
+	// not own; barbed_field is already owned so it is filtered by ownership.
+	// Result: Silver pool is empty → cascade to Bronze.
 	archer.PerkIDs = []string{
 		"caltrops",
 		"extended_setup", "wider_nets", "rapid_deployment", "amplified_effects",
+		"barbed_field",
 	}
 
 	pool := s.perkPoolForRankLocked(archer, unitRankSilver)
@@ -1663,13 +1666,14 @@ func TestPerkPool_GoldCascadesThroughSilverToBronze(t *testing.T) {
 
 	archer.ProgressionPath = unitPathTrapper
 	archer.Rank = unitRankGold
-	// Bronze "caltrops" plus all four ungated Silver perks — Gold pool is empty
-	// (gold.json is []), and Silver is now fully gated (the only remaining Silver
-	// entry is explosive_chain, which requires explosive_trap; unit has caltrops).
-	// So the cascade must walk Gold → Silver → Bronze.
+	// Bronze "caltrops" plus all Silver perks compatible with caltrops — Gold pool
+	// is empty (gold.json is []), and Silver is fully gated (remaining Silvers
+	// require explosive_trap / marker_trap / fire_pit, none of which this unit
+	// owns). So the cascade must walk Gold → Silver → Bronze.
 	archer.PerkIDs = []string{
 		"caltrops",
 		"extended_setup", "wider_nets", "rapid_deployment", "amplified_effects",
+		"barbed_field",
 	}
 
 	pool := s.perkPoolForRankLocked(archer, unitRankGold)
