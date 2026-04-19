@@ -1,5 +1,6 @@
 {
   "type": "farm",
+  "class": "player",
   "width": 2,
   "height": 2,
   "maxHp": 300,

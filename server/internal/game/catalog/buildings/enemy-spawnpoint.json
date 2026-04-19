@@ -1,0 +1,21 @@
+{
+  "type": "enemy-spawnpoint",
+  "class": "enemy",
+  "buildable": false,
+  "width": 2,
+  "height": 2,
+  "maxHp": 0,
+  "buildSeconds": 0,
+  "resourceCost": {},
+  "capabilities": [
+    "enemy-spawner"
+  ],
+  "spawnUnitTypes": [],
+  "metadata": {
+    "spawnDelaySeconds": 60,
+    "spawnIntervalSeconds": 10
+  },
+  "color": "#991b1b",
+  "label": "Enemy Spawnpoint",
+  "hotkey": ""
+}

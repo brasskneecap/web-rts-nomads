@@ -1,0 +1,22 @@
+{
+  "type": "goldmine",
+  "class": "neutral",
+  "buildable": false,
+  "width": 2,
+  "height": 2,
+  "maxHp": 0,
+  "buildSeconds": 0,
+  "resourceType": "gold",
+  "resourceAmount": 15000,
+  "resourceCost": {},
+  "capabilities": [
+    "resource-source"
+  ],
+  "spawnUnitTypes": [],
+  "metadata": {
+    "gatherRate": 10
+  },
+  "color": "#ca8a04",
+  "label": "Goldmine",
+  "hotkey": ""
+}

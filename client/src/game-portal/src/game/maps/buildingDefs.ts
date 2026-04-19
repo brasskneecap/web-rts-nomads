@@ -52,8 +52,11 @@ export type ResolvedBuildingAttackVisual = {
   effectLength: number
 }
 
+export type BuildingClass = 'player' | 'neutral' | 'enemy'
+
 export type BuildingDef = {
   type: string
+  class?: BuildingClass
   buildable?: boolean
   width: number
   height: number
@@ -63,6 +66,8 @@ export type BuildingDef = {
   attackRange?: number
   attackSpeed?: number
   attackVisual?: BuildingAttackVisual
+  resourceType?: 'gold' | 'wood'
+  resourceAmount?: number
   resourceCost: Record<string, number>
   capabilities: BuildingCapability[]
   spawnUnitTypes: string[]
@@ -70,7 +75,11 @@ export type BuildingDef = {
   color: string
   label: string
   hotkey: string
-  render: BuildingRenderDef
+  render?: BuildingRenderDef
+}
+
+export function getBuildingClass(def: BuildingDef | undefined | null): BuildingClass {
+  return def?.class ?? 'player'
 }
 
 export let BUILDING_DEFS: BuildingDef[] = []

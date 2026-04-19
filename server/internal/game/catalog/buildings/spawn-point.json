@@ -1,5 +1,6 @@
 {
   "type": "spawn-point",
+  "class": "player",
   "buildable": false,
   "width": 1,
   "height": 1,

@@ -1,5 +1,6 @@
 {
   "type": "townhall",
+  "class": "player",
   "width": 3,
   "height": 3,
   "maxHp": 1000,

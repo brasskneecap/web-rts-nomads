@@ -7,6 +7,7 @@ import {
   getTerrainColor,
 } from '../maps/mapConfig'
 import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual } from '../maps/buildingDefs'
+import { getBuildingSprite, getTintedBuildingSprite } from './buildingSprites'
 import { getResolvedUnitAttackVisual, getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef, UnitRenderDef } from '../maps/unitDefs'
 import type { BannerSnapshot, BuildingTile, TrapSnapshot } from '../network/protocol'
@@ -213,7 +214,15 @@ export class CanvasRenderer {
 
       const playerFill = ownerColor ?? buildingDef?.color ?? getBuildingColor(building.buildingType, building.occupied, ownerColor)
 
-      if (!renderDef) {
+      const sprite = getBuildingSprite(building.buildingType)
+
+      if (sprite) {
+        ctx.imageSmoothingEnabled = false
+        const tinted = ownerColor
+          ? getTintedBuildingSprite(building.buildingType, ownerColor)
+          : null
+        ctx.drawImage(tinted ?? sprite, worldX, worldY, width, height)
+      } else if (!renderDef) {
         if (isInsetFallback) {
           this.drawInsetTile(worldX, worldY, width, height, inset, playerFill)
         } else {
@@ -295,7 +304,7 @@ export class CanvasRenderer {
       } else {
         ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
         ctx.lineWidth = 2 / this.camera.zoom
-        if (!isInsetFallback) {
+        if (!isInsetFallback && !sprite) {
           ctx.strokeRect(worldX, worldY, width, height)
         }
 

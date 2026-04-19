@@ -1,0 +1,20 @@
+{
+  "type": "tree",
+  "class": "neutral",
+  "buildable": false,
+  "width": 1,
+  "height": 1,
+  "maxHp": 0,
+  "buildSeconds": 0,
+  "resourceType": "wood",
+  "resourceAmount": 250,
+  "resourceCost": {},
+  "capabilities": [
+    "resource-source"
+  ],
+  "spawnUnitTypes": [],
+  "metadata": {},
+  "color": "#2d6a4f",
+  "label": "Tree",
+  "hotkey": ""
+}

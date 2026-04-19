@@ -266,58 +266,6 @@ function clampCellSize(value: number) {
 }
 
 function createBuildingTile(buildingType: BuildingType, x: number, y: number): BuildingTile {
-  if (buildingType === 'goldmine') {
-    return {
-      id: `goldmine-${x}-${y}`,
-      buildingType,
-      x,
-      y,
-      width: 2,
-      height: 2,
-      occupied: true,
-      visible: true,
-      ownerId: null,
-      capabilities: ['resource-source'],
-      resourceType: 'gold',
-      resourceAmount: 15000,
-      metadata: { gatherRate: 10 },
-    }
-  }
-
-  if (buildingType === 'tree') {
-    return {
-      id: `tree-${x}-${y}`,
-      buildingType,
-      x,
-      y,
-      width: 1,
-      height: 1,
-      occupied: true,
-      visible: true,
-      ownerId: null,
-      capabilities: ['resource-source'],
-      resourceType: 'wood',
-      resourceAmount: 250,
-      metadata: {},
-    }
-  }
-
-  if (buildingType === 'enemy-spawnpoint') {
-    return {
-      id: `enemy-spawnpoint-${x}-${y}`,
-      buildingType,
-      x,
-      y,
-      width: 2,
-      height: 2,
-      occupied: true,
-      visible: true,
-      ownerId: null,
-      capabilities: ['enemy-spawner'],
-      metadata: { spawnDelaySeconds: 60, spawnIntervalSeconds: 10 },
-    }
-  }
-
   if (buildingType === 'spawn-point') {
     return {
       id: `spawn-point-${x}-${y}`,
@@ -338,14 +286,21 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
     }
   }
 
-  // Player-buildable buildings: derive dimensions, capabilities, and spawn
-  // types from the live building def so new buildings work without code changes.
+  // Catalog-driven path: derive dimensions, capabilities, spawn types, and
+  // resource fields from the live building def. Neutral/enemy defs default to
+  // existing+visible on the map (they're not player-constructed).
   const def = BUILDING_DEF_MAP.get(buildingType)
+  const buildingClass = def?.class ?? 'player'
+  const isWorldPlaced = buildingClass !== 'player'
   const capabilities = def ? [...def.capabilities] : []
   const width = def?.width ?? 1
   const height = def?.height ?? 1
   const spawnUnitTypes = def?.spawnUnitTypes?.length ? [...def.spawnUnitTypes] : undefined
   const metadata = def ? { ...def.metadata } : {}
+  const resourceFields =
+    def?.resourceType && def.resourceAmount !== undefined
+      ? { resourceType: def.resourceType, resourceAmount: def.resourceAmount }
+      : {}
 
   return {
     id: `${buildingType}-${x}-${y}`,
@@ -354,11 +309,12 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
     y,
     width,
     height,
-    occupied: false,
-    visible: false,
+    occupied: isWorldPlaced,
+    visible: isWorldPlaced,
     ownerId: null,
     capabilities,
     ...(spawnUnitTypes ? { spawnUnitTypes } : {}),
+    ...resourceFields,
     metadata,
   }
 }

@@ -15,6 +15,7 @@ var buildingDefsFS embed.FS
 // API as-is; the server game logic never reads them.
 type BuildingDef struct {
 	Type           string          `json:"type"`
+	Class          string          `json:"class,omitempty"`
 	Buildable      *bool           `json:"buildable,omitempty"`
 	Width          int             `json:"width"`
 	Height         int             `json:"height"`
@@ -24,6 +25,8 @@ type BuildingDef struct {
 	AttackRange    float64         `json:"attackRange,omitempty"`
 	AttackSpeed    float64         `json:"attackSpeed,omitempty"`
 	AttackVisual   json.RawMessage `json:"attackVisual,omitempty"`
+	ResourceType   string          `json:"resourceType,omitempty"`
+	ResourceAmount int             `json:"resourceAmount,omitempty"`
 	ResourceCost   map[string]int  `json:"resourceCost"`
 	Capabilities   []string        `json:"capabilities"`
 	SpawnUnitTypes []string        `json:"spawnUnitTypes"`
@@ -32,6 +35,14 @@ type BuildingDef struct {
 	Label          string          `json:"label,omitempty"`
 	Hotkey         string          `json:"hotkey,omitempty"`
 	Render         json.RawMessage `json:"render,omitempty"`
+}
+
+// Class returns the building's class, defaulting to "player" when unspecified.
+func (d BuildingDef) ClassOrDefault() string {
+	if d.Class == "" {
+		return "player"
+	}
+	return d.Class
 }
 
 // HpPerSecond returns the build/repair rate for this building type.

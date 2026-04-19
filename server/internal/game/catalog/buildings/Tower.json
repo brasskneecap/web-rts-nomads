@@ -1,5 +1,6 @@
 {
   "type": "Tower",
+  "class": "player",
   "width": 1,
   "height": 2,
   "maxHp": 500,
