@@ -209,7 +209,6 @@
               <option value="goldmine">Goldmine</option>
               <option value="townhall">Townhall</option>
               <option value="spawn-point">Spawn Point</option>
-              <option value="tree">Tree (Harvestable)</option>
               <option value="enemy-spawnpoint">Enemy Spawnpoint</option>
             </select>
           </div>

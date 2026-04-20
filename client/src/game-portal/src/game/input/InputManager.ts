@@ -226,6 +226,9 @@ export class InputManager {
     } else {
       const clickedUnit = this.state.getUnitAtPosition(world.x, world.y)
       const clickedBuilding = this.state.getBuildingAtPosition(world.x, world.y)
+      const clickedObstacle = clickedBuilding
+        ? undefined
+        : this.state.getObstacleAtPosition(world.x, world.y)
 
       if (clickedUnit) {
         if (isShiftHeld) {
@@ -239,6 +242,8 @@ export class InputManager {
           this.state.inspectEnemyUnit(clickedEnemy.id)
         } else if (clickedBuilding && !isShiftHeld) {
           this.state.selectBuilding(clickedBuilding.id)
+        } else if (clickedObstacle && clickedObstacle.id && !isShiftHeld) {
+          this.state.selectObstacle(clickedObstacle.id)
         } else if (!isShiftHeld) {
           this.state.clearSelection()
         }
@@ -309,12 +314,23 @@ export class InputManager {
       return
     }
 
+    const clickedObstacle = this.state.getGatherableObstacleAtPosition(world.x, world.y, 16)
+    if (clickedObstacle && clickedObstacle.id && this.state.selectedUnitsCanGather()) {
+      const cellSize = this.state.mapConfig.cellSize
+      const obstacleCenterX = (clickedObstacle.x + (clickedObstacle.width ?? 1) / 2) * cellSize
+      const obstacleCenterY = (clickedObstacle.y + (clickedObstacle.height ?? 1) / 2) * cellSize
+      this.state.addMoveMarker(obstacleCenterX, obstacleCenterY, 700)
+      this.network.sendGatherCommand(unitIds, clickedObstacle.id)
+      return
+    }
+
     this.state.addFormationMoveMarkers(world.x, world.y)
     this.network.sendMoveCommand(unitIds, world.x, world.y)
   }
 
   private onMouseLeave = () => {
     this.state.setHoveredInteractableBuilding(null)
+    this.state.setHoveredInteractableObstacle(null)
     this.state.setHoveredEnemyUnit(null)
     if (!this.isSpaceHeld && !this.isSpacePanning && !this.isMiddleMouseDown) {
       this.canvas.style.cursor = 'default'
@@ -405,30 +421,38 @@ export class InputManager {
     if (this.isSpaceHeld || this.isSpacePanning) {
       this.canvas.style.cursor = this.isSpacePanning ? 'grabbing' : 'grab'
       this.state.setHoveredInteractableBuilding(null)
+      this.state.setHoveredInteractableObstacle(null)
       return
     }
 
     if (this.isMiddleMouseDown || this.isMinimapNavigating) {
       this.canvas.style.cursor = 'default'
       this.state.setHoveredInteractableBuilding(null)
+      this.state.setHoveredInteractableObstacle(null)
       return
     }
 
     if (this.state.isBuildPlacementActive()) {
       this.state.setHoveredInteractableBuilding(null)
+      this.state.setHoveredInteractableObstacle(null)
       this.canvas.style.cursor = 'crosshair'
       return
     }
 
     const world = this.camera.screenToWorld(screenX, screenY)
     const hoveredBuilding = this.state.getBuildingAtPosition(world.x, world.y, 16)
+    const hoveredObstacle = hoveredBuilding
+      ? undefined
+      : this.state.getGatherableObstacleAtPosition(world.x, world.y, 16)
     const isGatherableBuilding =
       !!hoveredBuilding &&
       hoveredBuilding.capabilities.includes('resource-source')
+    const isGatherableObstacle = !!hoveredObstacle
     const isRepairableBuilding = this.isRepairableBuilding(hoveredBuilding)
 
     if (this.state.isUnitTargetingActive('move')) {
       this.state.setHoveredInteractableBuilding(null)
+      this.state.setHoveredInteractableObstacle(null)
       this.state.setHoveredEnemyUnit(null)
       this.canvas.style.cursor = this.moveCursor
       return
@@ -436,6 +460,9 @@ export class InputManager {
 
     if (this.state.isUnitTargetingActive('gather')) {
       this.state.setHoveredInteractableBuilding(isGatherableBuilding ? hoveredBuilding.id : null)
+      this.state.setHoveredInteractableObstacle(
+        isGatherableObstacle && hoveredObstacle?.id ? hoveredObstacle.id : null,
+      )
       this.state.setHoveredEnemyUnit(null)
       this.canvas.style.cursor = this.gatherCursor
       return
@@ -443,6 +470,7 @@ export class InputManager {
 
     if (this.state.isUnitTargetingActive('repair')) {
       this.state.setHoveredInteractableBuilding(isRepairableBuilding ? hoveredBuilding!.id : null)
+      this.state.setHoveredInteractableObstacle(null)
       this.state.setHoveredEnemyUnit(null)
       this.canvas.style.cursor = this.repairCursor
       return
@@ -453,25 +481,32 @@ export class InputManager {
     if (hoveredEnemy && this.state.selectedUnitsCanAttack()) {
       this.state.setHoveredEnemyUnit(hoveredEnemy.id)
       this.state.setHoveredInteractableBuilding(null)
+      this.state.setHoveredInteractableObstacle(null)
       this.canvas.style.cursor = this.attackCursor
       return
     }
 
     this.state.setHoveredEnemyUnit(hoveredEnemy?.id ?? null)
 
-    const canGather =
+    const canGatherBuilding =
       isGatherableBuilding &&
+      this.state.selectedUnitsCanGather()
+    const canGatherObstacle =
+      isGatherableObstacle &&
       this.state.selectedUnitsCanGather()
     const canRepair =
       isRepairableBuilding &&
       this.state.selectedUnitsCanBuild()
 
     this.state.setHoveredInteractableBuilding(
-      canRepair || canGather ? hoveredBuilding!.id : null,
+      canRepair || canGatherBuilding ? hoveredBuilding!.id : null,
+    )
+    this.state.setHoveredInteractableObstacle(
+      canGatherObstacle && hoveredObstacle?.id ? hoveredObstacle.id : null,
     )
     this.canvas.style.cursor = canRepair
       ? this.repairCursor
-      : canGather
+      : canGatherBuilding || canGatherObstacle
         ? this.gatherCursor
         : 'default'
   }

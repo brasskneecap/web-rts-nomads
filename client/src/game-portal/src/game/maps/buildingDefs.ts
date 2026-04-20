@@ -38,6 +38,18 @@ export type BuildingRenderDef = {
   layers: BuildingRenderLayer[]
 }
 
+// BuildingSpriteRenderDef overrides where and how large a building sprite
+// is drawn relative to its grid footprint. Mirrors the obstacle overflow
+// system (cell units; omitted fields fall back to the footprint). Grid
+// footprint used by pathing, placement, and selection hit-testing is
+// unchanged — this only affects the drawn sprite bounding box.
+export type BuildingSpriteRenderDef = {
+  offsetX?: number
+  offsetY?: number
+  width?: number
+  height?: number
+}
+
 export type BuildingAttackVisual = {
   kind?: 'melee' | 'projectile'
   originX?: number
@@ -76,6 +88,7 @@ export type BuildingDef = {
   label: string
   hotkey: string
   render?: BuildingRenderDef
+  spriteRender?: BuildingSpriteRenderDef
 }
 
 export function getBuildingClass(def: BuildingDef | undefined | null): BuildingClass {

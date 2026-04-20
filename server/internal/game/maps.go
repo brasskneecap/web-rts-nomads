@@ -3,11 +3,57 @@ package game
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 
 	"webrts/server/pkg/protocol"
 )
+
+// hydrateObstacles fills in per-obstacle fields from the matching obstacle def
+// loaded from catalog/obstacles. Obstacles on disk typically carry only
+// position and type; this expands each tile with its id, capabilities,
+// resource pool, and HP so the runtime can treat obstacles as first-class
+// selectable/harvestable/destructible entities.
+func hydrateObstacles(obstacles []protocol.ObstacleTile) {
+	for i := range obstacles {
+		o := &obstacles[i]
+		def, ok := getObstacleDef(o.Obstacle)
+		if !ok {
+			continue
+		}
+		if o.ID == "" {
+			o.ID = fmt.Sprintf("%s-%d-%d", o.Obstacle, o.X, o.Y)
+		}
+		if o.Width == 0 {
+			o.Width = def.Width
+			if o.Width == 0 {
+				o.Width = 1
+			}
+		}
+		if o.Height == 0 {
+			o.Height = def.Height
+			if o.Height == 0 {
+				o.Height = 1
+			}
+		}
+		if len(o.Capabilities) == 0 && len(def.Capabilities) > 0 {
+			o.Capabilities = append([]string(nil), def.Capabilities...)
+		}
+		if o.ResourceType == "" && def.ResourceType != "" {
+			o.ResourceType = def.ResourceType
+		}
+		if o.ResourceAmount == 0 && def.ResourceAmount > 0 {
+			o.ResourceAmount = def.ResourceAmount
+		}
+		if o.MaxHp == 0 && def.MaxHp > 0 {
+			o.MaxHp = def.MaxHp
+		}
+		if o.Hp == 0 {
+			o.Hp = o.MaxHp
+		}
+	}
+}
 
 type MapCatalogEntry struct {
 	ID          string             `json:"id"`
@@ -119,6 +165,8 @@ func mustLoadMapCatalog() []MapCatalogEntry {
 			entry.Map.Buildings = []protocol.BuildingTile{}
 		}
 
+		hydrateObstacles(entry.Map.Obstacles)
+
 		entries = append(entries, entry)
 	}
 
@@ -191,7 +239,18 @@ func indexMapCatalog(entries []MapCatalogEntry) map[string]MapCatalogEntry {
 func cloneMapConfig(mapConfig protocol.MapConfig) protocol.MapConfig {
 	cloned := mapConfig
 	cloned.Terrain = append([]protocol.TerrainTile(nil), mapConfig.Terrain...)
-	cloned.Obstacles = append([]protocol.ObstacleTile(nil), mapConfig.Obstacles...)
+	cloned.Obstacles = make([]protocol.ObstacleTile, len(mapConfig.Obstacles))
+	for i, obstacle := range mapConfig.Obstacles {
+		clonedObstacle := obstacle
+		clonedObstacle.Capabilities = append([]string(nil), obstacle.Capabilities...)
+		if obstacle.Metadata != nil {
+			clonedObstacle.Metadata = make(map[string]interface{}, len(obstacle.Metadata))
+			for key, value := range obstacle.Metadata {
+				clonedObstacle.Metadata[key] = value
+			}
+		}
+		cloned.Obstacles[i] = clonedObstacle
+	}
 	cloned.Buildings = make([]protocol.BuildingTile, len(mapConfig.Buildings))
 
 	for i, building := range mapConfig.Buildings {

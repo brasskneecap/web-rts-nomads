@@ -272,11 +272,11 @@ export class NetworkClient {
     this.send(message)
   }
 
-  sendGatherCommand(unitIds: number[], buildingId: string) {
+  sendGatherCommand(unitIds: number[], targetId: string) {
     const message: GatherCommandMessage = {
       type: 'gather_command',
       unitIds,
-      buildingId,
+      targetId,
     }
 
     this.send(message)

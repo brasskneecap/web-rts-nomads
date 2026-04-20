@@ -162,6 +162,11 @@ type GameState struct {
 	// lockstep. Use addBuildingLocked / removeBuildingLocked to mutate.
 	buildingsByID map[string]*protocol.BuildingTile
 
+	// obstaclesByID is an O(1) index into s.MapConfig.Obstacles. Populated by
+	// setMapConfigLocked and maintained by addObstacleLocked /
+	// removeObstacleLocked. Obstacles with no id (walls) are not indexed.
+	obstaclesByID map[string]*protocol.ObstacleTile
+
 	// blockedCellsCache holds the last computed blocked-cell set.
 	// blockedCellsValid is false when any building has been added or removed
 	// since the last build. Guarded by s.mu.
@@ -251,6 +256,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		buildingDamageDealt: map[string]map[int]int{},
 		unitsByID:           map[int]*Unit{},
 		buildingsByID:       map[string]*protocol.BuildingTile{},
+		obstaclesByID:       map[string]*protocol.ObstacleTile{},
 		guardianAuraCache:   map[int]guardianAuraValue{},
 	}
 
@@ -285,6 +291,14 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
 		s.buildingsByID[b.ID] = b
+	}
+	s.obstaclesByID = make(map[string]*protocol.ObstacleTile, len(s.MapConfig.Obstacles))
+	for i := range s.MapConfig.Obstacles {
+		o := &s.MapConfig.Obstacles[i]
+		if o.ID == "" {
+			continue
+		}
+		s.obstaclesByID[o.ID] = o
 	}
 	// Blocked cells derived from this new map config are not yet computed.
 	s.invalidateBlockedCellsLocked()
@@ -422,6 +436,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	wm := s.WaveManager
 	buildings := make([]protocol.BuildingTile, len(s.MapConfig.Buildings))
 	copy(buildings, s.MapConfig.Buildings)
+	obstacles := make([]protocol.ObstacleTile, len(s.MapConfig.Obstacles))
+	copy(obstacles, s.MapConfig.Obstacles)
 
 	var banners []protocol.BannerSnapshot
 	for _, b := range s.Banners {
@@ -454,6 +470,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Tick:      s.Tick,
 		ServerNow: time.Now().UnixMilli(),
 		Buildings: buildings,
+		Obstacles: obstacles,
 		Players:   players,
 		Units:     units,
 		Banners:   banners,
@@ -599,6 +616,7 @@ func (s *GameState) Update(dt float64) {
 
 	s.applyUnitSeparationLocked(blocked)
 	s.refreshBuildingRuntimeMetadataLocked()
+	s.refreshObstacleRuntimeMetadataLocked()
 }
 
 func (s *GameState) EnsurePlayer(playerID string) {

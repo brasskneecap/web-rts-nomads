@@ -1,0 +1,28 @@
+{
+  "type": "tree",
+  "width": 1,
+  "height": 1,
+  "maxHp": 0,
+  "selectable": true,
+  "blocksPathing": true,
+  "resourceType": "wood",
+  "resourceAmount": 250,
+  "capabilities": [
+    "resource-source",
+    "selectable"
+  ],
+  "color": "#27543c",
+  "label": "Tree",
+  "selectionRing": {
+    "offsetX": 0.5,
+    "offsetY": 0.7,
+    "radiusX": 0.45,
+    "radiusY": 0.16
+  },
+  "render": {
+    "offsetX": -0.5,
+    "offsetY": -1.6,
+    "width": 2,
+    "height": 3
+  }
+}

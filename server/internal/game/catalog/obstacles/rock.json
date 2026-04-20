@@ -1,0 +1,13 @@
+{
+  "type": "rock",
+  "width": 1,
+  "height": 1,
+  "maxHp": 150,
+  "selectable": true,
+  "blocksPathing": true,
+  "capabilities": [
+    "selectable"
+  ],
+  "color": "#7c4a2f",
+  "label": "Rock"
+}

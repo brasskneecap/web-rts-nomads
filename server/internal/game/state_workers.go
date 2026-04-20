@@ -5,20 +5,24 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
-func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, buildingID string) {
+func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, targetID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	building := s.getBuildingByIDLocked(buildingID)
-	if building == nil || !building.Visible || building.ResourceAmount <= 0 {
+	node := s.getResourceNodeByIDLocked(targetID)
+	if node == nil || node.ResourceAmount <= 0 {
 		return
 	}
-	if building.BuildingType != "goldmine" && building.BuildingType != "tree" {
+	if !containsString(node.Capabilities, "resource-source") {
+		return
+	}
+	if !node.IsTree() && !node.IsGoldmine() {
 		return
 	}
 
 	blocked := s.getBlockedCellsLocked()
-	if len(s.getBuildingApproachPositionsLocked(*building, 1, blocked, nil)) == 0 {
+	nodeTile := node.asBuildingTile()
+	if len(s.getBuildingApproachPositionsLocked(nodeTile, 1, blocked, nil)) == 0 {
 		return
 	}
 
@@ -31,19 +35,35 @@ func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, buildingID s
 		}
 
 		unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
-		approachPoints := s.getBuildingApproachPositionsLocked(*building, 1, blocked, unitPos)
+		approachPoints := s.getBuildingApproachPositionsLocked(nodeTile, 1, blocked, unitPos)
 		if len(approachPoints) == 0 {
 			continue
 		}
 
 		s.resetUnitMovementLocked(unit, orderID)
-		unit.GatherTargetID = buildingID
-		unit.GatherBuildingType = building.BuildingType
+		unit.GatherTargetID = node.ID
+		unit.GatherBuildingType = resourceNodeKindTag(node)
 		unit.ReturnTargetID = ""
 		unit.Gathering = false
 		unit.Returning = false
 		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
 	}
+}
+
+// resourceNodeKindTag returns the legacy string tag used in Unit.GatherBuildingType.
+// Kept compatible with existing "tree" / "goldmine" string comparisons; the
+// pipeline can still read it back without another lookup.
+func resourceNodeKindTag(n *resourceNode) string {
+	if n == nil {
+		return ""
+	}
+	if n.IsTree() {
+		return "tree"
+	}
+	if n.IsGoldmine() {
+		return "goldmine"
+	}
+	return ""
 }
 
 func (s *GameState) clearUnitGatherStateLocked(unit *Unit) {
@@ -99,30 +119,43 @@ func (s *GameState) completeReturnDepositLocked(unit *Unit, blocked map[gridPoin
 	}
 }
 
-func (s *GameState) findNearestAvailableTreeLocked(excludeID string, unitX, unitY float64, blocked map[gridPoint]bool) *protocol.BuildingTile {
-	var best *protocol.BuildingTile
+// findNearestAvailableTreeLocked returns the closest tree obstacle that still
+// has wood, has an available worker slot, and has a reachable approach cell.
+// Returns a resourceNode view backed by the underlying obstacle pointer.
+func (s *GameState) findNearestAvailableTreeLocked(excludeID string, unitX, unitY float64, blocked map[gridPoint]bool) *resourceNode {
+	var best *resourceNode
 	bestDist := math.MaxFloat64
 
-	for i := range s.MapConfig.Buildings {
-		b := &s.MapConfig.Buildings[i]
-		if b.BuildingType != "tree" || b.ID == excludeID {
+	for i := range s.MapConfig.Obstacles {
+		o := &s.MapConfig.Obstacles[i]
+		if o.Obstacle != "tree" || o.ID == excludeID {
 			continue
 		}
-		if b.ResourceAmount <= 0 {
+		if o.ResourceAmount <= 0 {
 			continue
 		}
-		if s.countWorkersInsideBuildingLocked(b.ID) >= treeWorkerCap {
+		if s.countWorkersInsideResourceNodeLocked(o.ID) >= treeWorkerCap {
 			continue
 		}
-		if len(s.getBuildingApproachPositionsLocked(*b, 1, blocked, nil)) == 0 {
+		node := resourceNodeFromObstacle(o)
+		nodeTile := node.asBuildingTile()
+		if len(s.getBuildingApproachPositionsLocked(nodeTile, 1, blocked, nil)) == 0 {
 			continue
 		}
-		centerX := (float64(b.X) + float64(b.Width)/2) * s.MapConfig.CellSize
-		centerY := (float64(b.Y) + float64(b.Height)/2) * s.MapConfig.CellSize
+		w := float64(node.Width)
+		if w <= 0 {
+			w = 1
+		}
+		h := float64(node.Height)
+		if h <= 0 {
+			h = 1
+		}
+		centerX := (float64(o.X) + w/2) * s.MapConfig.CellSize
+		centerY := (float64(o.Y) + h/2) * s.MapConfig.CellSize
 		dist := distanceSquared(unitX, unitY, centerX, centerY)
 		if dist < bestDist {
 			bestDist = dist
-			best = b
+			best = node
 		}
 	}
 
@@ -146,7 +179,8 @@ func (s *GameState) redirectUnitToTreeLocked(unit *Unit, blocked map[gridPoint]b
 	unit.Status = "Heading To Tree"
 
 	unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
-	approachPoints := s.getBuildingApproachPositionsLocked(*next, 1, blocked, unitPos)
+	nodeTile := next.asBuildingTile()
+	approachPoints := s.getBuildingApproachPositionsLocked(nodeTile, 1, blocked, unitPos)
 	if len(approachPoints) > 0 {
 		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
 	}
@@ -170,7 +204,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		return
 	}
 
-	resourceNode := s.getBuildingByIDLocked(unit.GatherTargetID)
+	resourceNode := s.getResourceNodeByIDLocked(unit.GatherTargetID)
 	nodeAlive := resourceNode != nil && resourceNode.ResourceAmount > 0
 
 	if !nodeAlive {
@@ -187,7 +221,8 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		return
 	}
 
-	isTree := resourceNode.BuildingType == "tree"
+	isTree := resourceNode.IsTree()
+	nodeTile := resourceNode.asBuildingTile()
 
 	if unit.MiningInside {
 		if isTree {
@@ -203,15 +238,15 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		unit.MiningInside = false
 		unit.Gathering = false
 		unit.Visible = true
-		gathered := minInt(gatherAmountForUnitResource(unit.UnitType, resourceNode.ResourceType), resourceNode.ResourceAmount)
+		desired := gatherAmountForUnitResource(unit.UnitType, resourceNode.ResourceType)
+		gathered := resourceNode.consumeResource(desired)
 		if gathered > 0 {
 			unit.CarriedResourceType = resourceNode.ResourceType
 			unit.CarriedAmount = gathered
-			resourceNode.ResourceAmount -= gathered
 		}
 
 		if !isTree {
-			if exitPoint := s.getUnitExitPositionForBuildingLocked(*resourceNode, unit); exitPoint != nil {
+			if exitPoint := s.getUnitExitPositionForBuildingLocked(nodeTile, unit); exitPoint != nil {
 				unit.X = exitPoint.X
 				unit.Y = exitPoint.Y
 				unit.TargetX = exitPoint.X
@@ -219,9 +254,9 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 			}
 		}
 
-		// Remove the building once its resource pool is empty.
+		// Remove the entity once its resource pool is empty.
 		if resourceNode.ResourceAmount <= 0 {
-			s.removeBuildingByIDLocked(resourceNode.ID)
+			s.removeResourceNodeLocked(resourceNode)
 		}
 
 		s.sendWorkerToDepositLocked(unit, blocked)
@@ -256,7 +291,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 			unit.Gathering = false
 
 			// Re-check the node; another worker may have depleted it this tick.
-			liveNode := s.getBuildingByIDLocked(unit.GatherTargetID)
+			liveNode := s.getResourceNodeByIDLocked(unit.GatherTargetID)
 			if liveNode == nil || liveNode.ResourceAmount <= 0 {
 				if isTree {
 					s.redirectUnitToTreeLocked(unit, blocked)
@@ -273,7 +308,8 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 			}
 
 			unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
-			approachPoints := s.getBuildingApproachPositionsLocked(*liveNode, 1, blocked, unitPos)
+			liveTile := liveNode.asBuildingTile()
+			approachPoints := s.getBuildingApproachPositionsLocked(liveTile, 1, blocked, unitPos)
 			if len(approachPoints) > 0 {
 				s.assignUnitPath(unit, approachPoints[0], blocked, nil)
 			}
@@ -290,7 +326,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		return
 	}
 
-	if !s.isUnitNearBuildingLocked(unit, *resourceNode, s.MapConfig.CellSize*1.5) {
+	if !s.isUnitNearBuildingLocked(unit, nodeTile, s.MapConfig.CellSize*1.5) {
 		if isTree {
 			unit.Status = "Heading To Tree"
 		} else {
@@ -298,7 +334,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		}
 		if !unit.Moving {
 			unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
-			approachPoints := s.getBuildingApproachPositionsLocked(*resourceNode, 1, blocked, unitPos)
+			approachPoints := s.getBuildingApproachPositionsLocked(nodeTile, 1, blocked, unitPos)
 			if len(approachPoints) > 0 {
 				s.assignUnitPath(unit, approachPoints[0], blocked, nil)
 			}
@@ -319,7 +355,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 	if isTree {
 		workerCap = treeWorkerCap
 	}
-	if s.countWorkersInsideBuildingLocked(resourceNode.ID) >= workerCap {
+	if s.countWorkersInsideResourceNodeLocked(resourceNode.ID) >= workerCap {
 		if isTree {
 			s.redirectUnitToTreeLocked(unit, blocked)
 		} else {

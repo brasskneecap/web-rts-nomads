@@ -3,6 +3,7 @@ import type {
   BuildingTile,
   MapConfig,
   MatchSnapshotMessage,
+  ObstacleTile,
   PlayerSnapshot,
   ResourceType,
   TrapSnapshot,
@@ -253,9 +254,11 @@ export class GameState {
   selectedUnitIds = new Set<number>()
   selectedUnitOrder: number[] = []
   selectedBuildingId: string | null = null
+  selectedObstacleId: string | null = null
   inspectedEnemyUnitId: number | null = null
   hoveredEnemyUnitId: number | null = null
   hoveredInteractableBuildingId: string | null = null
+  hoveredInteractableObstacleId: string | null = null
   buildingTargetingMode: BuildingTargetingMode | null = null
   unitTargetingMode: UnitTargetingMode | null = null
   workerBuildMenuOpen = false
@@ -322,6 +325,7 @@ export class GameState {
     const now = performance.now()
 
     this.mergeSnapshotBuildings(message.buildings)
+    this.mergeSnapshotObstacles(message.obstacles ?? [])
 
     const frame: InterpolationFrame = {
       tick: message.tick,
@@ -470,6 +474,7 @@ export class GameState {
     this.selectedUnitIds.clear()
     this.selectedUnitOrder = []
     this.selectedBuildingId = null
+    this.selectedObstacleId = null
     this.inspectedEnemyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
@@ -485,6 +490,7 @@ export class GameState {
     this.selectedUnitIds.add(unitId)
     this.selectedUnitOrder = [unitId]
     this.selectedBuildingId = null
+    this.selectedObstacleId = null
     this.inspectedEnemyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
@@ -500,6 +506,7 @@ export class GameState {
 
     this.selectedUnitIds.clear()
     this.selectedBuildingId = null
+    this.selectedObstacleId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -680,6 +687,19 @@ export class GameState {
     this.selectedUnitIds.clear()
     this.selectedUnitOrder = []
     this.selectedBuildingId = buildingId
+    this.selectedObstacleId = null
+    this.inspectedEnemyUnitId = null
+    this.buildingTargetingMode = null
+    this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
+  }
+
+  selectObstacle(obstacleId: string) {
+    this.selectedUnitIds.clear()
+    this.selectedUnitOrder = []
+    this.selectedBuildingId = null
+    this.selectedObstacleId = obstacleId
     this.inspectedEnemyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
@@ -690,6 +710,44 @@ export class GameState {
   getSelectedBuilding(): BuildingTile | null {
     if (!this.selectedBuildingId) return null
     return this.mapConfig.buildings.find((building) => building.id === this.selectedBuildingId) ?? null
+  }
+
+  getSelectedObstacle(): ObstacleTile | null {
+    if (!this.selectedObstacleId) return null
+    return this.mapConfig.obstacles.find((obstacle) => obstacle.id === this.selectedObstacleId) ?? null
+  }
+
+  // Returns the obstacle covering the given world point, or undefined. Only
+  // obstacles whose def marks them as selectable (capability `selectable` or
+  // `resource-source`) are considered — walls return undefined here.
+  getObstacleAtPosition(x: number, y: number, padding = 0): ObstacleTile | undefined {
+    const { cellSize, obstacles } = this.mapConfig
+    return obstacles.find((o) => {
+      if (!o.id) return false
+      const caps = o.capabilities ?? []
+      if (!caps.includes('selectable') && !caps.includes('resource-source')) return false
+      const w = (o.width ?? 1) * cellSize
+      const h = (o.height ?? 1) * cellSize
+      const left = o.x * cellSize - padding
+      const top = o.y * cellSize - padding
+      const right = left + w + padding * 2
+      const bottom = top + h + padding * 2
+      return x >= left && x <= right && y >= top && y <= bottom
+    })
+  }
+
+  // Returns the obstacle that would be targeted by a gather order at the given
+  // world point, if any. Matches obstacles with the `resource-source`
+  // capability (trees); rocks/walls are excluded.
+  getGatherableObstacleAtPosition(x: number, y: number, padding = 0): ObstacleTile | undefined {
+    const obstacle = this.getObstacleAtPosition(x, y, padding)
+    if (!obstacle) return undefined
+    if (!(obstacle.capabilities ?? []).includes('resource-source')) return undefined
+    return obstacle
+  }
+
+  setHoveredInteractableObstacle(obstacleId: string | null) {
+    this.hoveredInteractableObstacleId = obstacleId
   }
 
   beginBuildingTargeting(mode: BuildingTargetingMode) {
@@ -849,6 +907,7 @@ export class GameState {
     this.selectedUnitIds.clear()
     this.selectedUnitOrder = []
     this.selectedBuildingId = null
+    this.selectedObstacleId = null
     this.inspectedEnemyUnitId = unitId
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
@@ -874,6 +933,17 @@ export class GameState {
   }
 
   /**
+   * Called on every match_snapshot. Replaces the obstacles array in the
+   * stored mapConfig, then invalidates any obstacle selection that refers to
+   * an obstacle that is no longer present (e.g. a depleted tree). Rock/wall
+   * HP updates flow through the same path once damage is wired up.
+   */
+  private mergeSnapshotObstacles(obstacles: ObstacleTile[]) {
+    this.mapConfig = { ...this.mapConfig, obstacles }
+    this.invalidateObstacleSelection()
+  }
+
+  /**
    * Clears selectedBuildingId (and the dependent targeting mode) when the
    * selected building has been removed or hidden in the latest snapshot.
    * Extracted so it can be called after either a full setMapConfig or a
@@ -888,6 +958,18 @@ export class GameState {
     ) {
       this.selectedBuildingId = null
       this.buildingTargetingMode = null
+    }
+  }
+
+  // Mirrors invalidateBuildingSelection for obstacles: clears the selection
+  // when the selected obstacle (e.g. a tree that just got depleted) no longer
+  // exists on the map.
+  private invalidateObstacleSelection() {
+    if (
+      this.selectedObstacleId &&
+      !this.mapConfig.obstacles.some((obstacle) => obstacle.id === this.selectedObstacleId)
+    ) {
+      this.selectedObstacleId = null
     }
   }
 
@@ -943,6 +1025,17 @@ export class GameState {
         }
       }
       this.inspectedEnemyUnitId = null
+    }
+
+    const selectedObstacle = this.getSelectedObstacle()
+    if (selectedObstacle) {
+      return {
+        kind: 'building',
+        title: formatObstacleName(selectedObstacle.obstacle),
+        subtitle: getObstacleSubtitle(selectedObstacle),
+        details: getObstacleDetails(selectedObstacle),
+        actions: [],
+      }
     }
 
     const selectedBuilding = this.getSelectedBuilding()
@@ -1222,8 +1315,6 @@ function formatBuildingName(buildingType: BuildingTile['buildingType']): string 
       return 'Goldmine'
     case 'townhall':
       return 'Townhall'
-    case 'tree':
-      return 'Tree'
     case 'barracks':
       return 'Barracks'
     case 'farm':
@@ -1741,8 +1832,7 @@ function getBuildingResourceLabel(building: BuildingTile) {
   const currentWorkers = getBuildingMetadataNumber(building, 'currentWorkers')
   const maxWorkers = getBuildingMetadataNumber(building, 'maxWorkers')
   if (currentWorkers !== undefined && maxWorkers !== undefined) {
-    const workerLabel = building.buildingType === 'tree' ? 'Chopping' : 'Workers Inside'
-    return `${workerLabel} / ${maxWorkers} Max`
+    return `Workers Inside / ${maxWorkers} Max`
   }
 
   return building.resourceType ? formatResourceLabel(building.resourceType) : undefined
@@ -1832,6 +1922,62 @@ function formatRemainingSeconds(seconds: number) {
 
 function formatDurability(current: number, max: number) {
   return `${Math.round(current)} / ${Math.round(max)}`
+}
+
+function formatObstacleName(obstacleType: ObstacleTile['obstacle']): string {
+  switch (obstacleType) {
+    case 'tree':
+      return 'Tree'
+    case 'rock':
+      return 'Rock'
+    case 'wall':
+      return 'Wall'
+    default:
+      return obstacleType
+  }
+}
+
+function getObstacleSubtitle(obstacle: ObstacleTile): string {
+  if (obstacle.obstacle === 'tree') return 'Harvestable Resource'
+  if (obstacle.obstacle === 'rock') return 'Destructible Obstacle'
+  return 'Neutral'
+}
+
+function getObstacleDetails(obstacle: ObstacleTile): DetailItem[] {
+  const details: DetailItem[] = []
+
+  if (obstacle.maxHp !== undefined && obstacle.maxHp > 0) {
+    const hp = obstacle.hp ?? obstacle.maxHp
+    details.push({
+      id: 'durability',
+      label: 'Durability',
+      value: formatDurability(hp, obstacle.maxHp),
+    })
+  }
+
+  if (obstacle.resourceType && obstacle.resourceAmount !== undefined) {
+    details.push({
+      id: 'resource-stock',
+      label: `${formatResourceLabel(obstacle.resourceType)} Remaining`,
+      value: String(obstacle.resourceAmount),
+    })
+  }
+
+  const currentWorkers = typeof obstacle.metadata?.['currentWorkers'] === 'number'
+    ? (obstacle.metadata['currentWorkers'] as number)
+    : undefined
+  const maxWorkers = typeof obstacle.metadata?.['maxWorkers'] === 'number'
+    ? (obstacle.metadata['maxWorkers'] as number)
+    : undefined
+  if (currentWorkers !== undefined && maxWorkers !== undefined) {
+    details.push({
+      id: 'workers-inside',
+      label: `Chopping / ${maxWorkers} Max`,
+      value: String(currentWorkers),
+    })
+  }
+
+  return details
 }
 
 function getSelectionUnitSubtitle(baseSubtitle: string, unitTargetingMode: UnitTargetingMode | null) {

@@ -216,7 +216,7 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match.State.GatherWithUnits(client.PlayerID(), msg.UnitIDs, msg.BuildingID)
+			match.State.GatherWithUnits(client.PlayerID(), msg.UnitIDs, msg.TargetID)
 
 		case "train_unit_command":
 			if client.MatchID() == "" {

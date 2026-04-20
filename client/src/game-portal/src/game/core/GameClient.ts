@@ -7,10 +7,17 @@ import { NetworkClient } from '../network/NetworkClient'
 import type { ConnectionState, MapId, WaveSnapshot } from '../network/protocol'
 import type { PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
+import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs } from '../maps/perkDefs'
-import { fetchBuildingDefs, fetchUnitDefs, fetchActionIcons, fetchPerkDefs } from '../maps/catalog'
+import {
+  fetchBuildingDefs,
+  fetchObstacleDefs,
+  fetchUnitDefs,
+  fetchActionIcons,
+  fetchPerkDefs,
+} from '../maps/catalog'
 
 export type GameUiSnapshot = {
   player: PlayerSummary
@@ -62,13 +69,15 @@ export class GameClient {
   }
 
   async start(options: { resume?: boolean } = {}) {
-    const [buildingDefs, unitDefs, actionIcons, perkDefs] = await Promise.all([
+    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs] = await Promise.all([
       fetchBuildingDefs(),
+      fetchObstacleDefs(),
       fetchUnitDefs(),
       fetchActionIcons(),
       fetchPerkDefs(),
     ])
     initBuildingDefs(buildingDefs)
+    initObstacleDefs(obstacleDefs)
     initUnitDefs(unitDefs)
     initActionIcons(actionIcons)
     initPerkDefs(perkDefs)
@@ -205,6 +214,15 @@ export class GameClient {
           const buildingCenterY = (clickedBuilding.y + clickedBuilding.height / 2) * cellSize
           this.state.addMoveMarker(buildingCenterX, buildingCenterY, 700)
           this.network.sendGatherCommand(unitIds, clickedBuilding.id)
+        } else {
+          const clickedObstacle = this.state.getGatherableObstacleAtPosition(x, y, 16)
+          if (clickedObstacle && clickedObstacle.id && this.state.selectedUnitsCanGather()) {
+            const cellSize = this.state.mapConfig.cellSize
+            const obstacleCenterX = (clickedObstacle.x + (clickedObstacle.width ?? 1) / 2) * cellSize
+            const obstacleCenterY = (clickedObstacle.y + (clickedObstacle.height ?? 1) / 2) * cellSize
+            this.state.addMoveMarker(obstacleCenterX, obstacleCenterY, 700)
+            this.network.sendGatherCommand(unitIds, clickedObstacle.id)
+          }
         }
 
         this.state.cancelUnitTargeting()

@@ -344,16 +344,6 @@ func (s *GameState) getUnitExitPositionForBuildingLocked(building protocol.Build
 	return &position
 }
 
-func (s *GameState) countWorkersInsideBuildingLocked(buildingID string) int {
-	count := 0
-	for _, unit := range s.Units {
-		if unit.MiningInside && unit.GatherTargetID == buildingID {
-			count++
-		}
-	}
-	return count
-}
-
 func (s *GameState) refreshBuildingRuntimeMetadataLocked() {
 	for i := range s.MapConfig.Buildings {
 		building := &s.MapConfig.Buildings[i]
@@ -362,12 +352,8 @@ func (s *GameState) refreshBuildingRuntimeMetadataLocked() {
 		}
 
 		if building.BuildingType == "goldmine" {
-			building.Metadata["currentWorkers"] = s.countWorkersInsideBuildingLocked(building.ID)
+			building.Metadata["currentWorkers"] = s.countWorkersInsideResourceNodeLocked(building.ID)
 			building.Metadata["maxWorkers"] = goldmineWorkerCap
-		}
-		if building.BuildingType == "tree" {
-			building.Metadata["currentWorkers"] = s.countWorkersInsideBuildingLocked(building.ID)
-			building.Metadata["maxWorkers"] = treeWorkerCap
 		}
 
 		if queue := s.Productions[building.ID]; len(queue) > 0 {

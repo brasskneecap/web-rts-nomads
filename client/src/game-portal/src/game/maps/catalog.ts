@@ -1,5 +1,6 @@
 import type { MapCatalogEntry, MapCatalogFile } from '../network/protocol'
 import type { BuildingDef } from './buildingDefs'
+import type { ObstacleDef } from './obstacleDefs'
 import type { UnitDef } from './unitDefs'
 import type { ActionIconDef } from './actionIconDefs'
 import type { PerkDef } from './perkDefs'
@@ -36,6 +37,17 @@ export async function fetchBuildingDefs(): Promise<BuildingDef[]> {
 
   const data = (await response.json()) as { buildings: BuildingDef[] }
   return data.buildings
+}
+
+export async function fetchObstacleDefs(): Promise<ObstacleDef[]> {
+  const response = await fetch(`${API_BASE}/catalog/obstacles`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to load obstacle defs: ${response.status}`)
+  }
+
+  const data = (await response.json()) as { obstacles: ObstacleDef[] }
+  return data.obstacles
 }
 
 export async function fetchUnitDefs(): Promise<UnitDef[]> {

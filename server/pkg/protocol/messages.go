@@ -55,7 +55,16 @@ type TileInstance struct {
 
 type ObstacleTile struct {
 	GridCoord
-	Obstacle string `json:"obstacle"`
+	ID             string                 `json:"id,omitempty"`
+	Obstacle       string                 `json:"obstacle"`
+	Width          int                    `json:"width,omitempty"`
+	Height         int                    `json:"height,omitempty"`
+	Capabilities   []string               `json:"capabilities,omitempty"`
+	ResourceType   string                 `json:"resourceType,omitempty"`
+	ResourceAmount int                    `json:"resourceAmount,omitempty"`
+	Hp             float64                `json:"hp,omitempty"`
+	MaxHp          float64                `json:"maxHp,omitempty"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type BuildingTile struct {
@@ -94,9 +103,9 @@ type MoveCommandMessage struct {
 }
 
 type GatherCommandMessage struct {
-	Type       string `json:"type"`
-	UnitIDs    []int  `json:"unitIds"`
-	BuildingID string `json:"buildingId"`
+	Type     string `json:"type"`
+	UnitIDs  []int  `json:"unitIds"`
+	TargetID string `json:"targetId"`
 }
 
 type TrainUnitCommandMessage struct {
@@ -262,6 +271,7 @@ type MatchSnapshotMessage struct {
 	ServerNow int64            `json:"serverNow"`
 	MatchID   string           `json:"matchId"`
 	Buildings []BuildingTile   `json:"buildings"`
+	Obstacles []ObstacleTile   `json:"obstacles"`
 	Players   []PlayerSnapshot `json:"players"`
 	Units     []UnitSnapshot   `json:"units"`
 	Wave      WaveSnapshot     `json:"wave"`

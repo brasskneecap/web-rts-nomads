@@ -1,0 +1,11 @@
+{
+  "type": "wall",
+  "width": 1,
+  "height": 1,
+  "maxHp": 0,
+  "selectable": false,
+  "blocksPathing": true,
+  "capabilities": [],
+  "color": "#9ca3af",
+  "label": "Wall"
+}

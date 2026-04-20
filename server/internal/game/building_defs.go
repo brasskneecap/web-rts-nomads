@@ -35,6 +35,23 @@ type BuildingDef struct {
 	Label          string          `json:"label,omitempty"`
 	Hotkey         string          `json:"hotkey,omitempty"`
 	Render         json.RawMessage `json:"render,omitempty"`
+	// SpriteRender lets a building's sprite extend beyond its grid footprint
+	// without affecting pathing, selection hit-testing, or the grid cells
+	// the building occupies. Mirrors ObstacleRenderDef semantics (cell units,
+	// omitted fields use footprint defaults). Used for e.g. a barracks with
+	// a flag pole taller than its footprint, or a wider sprite that spills
+	// half a cell over each side.
+	SpriteRender *BuildingSpriteRenderDef `json:"spriteRender,omitempty"`
+}
+
+// BuildingSpriteRenderDef is the sprite-overflow config for a building.
+// Shape parallels ObstacleRenderDef. All fields are in cell units; zero
+// means "use default" (offset=0, width/height = footprint).
+type BuildingSpriteRenderDef struct {
+	OffsetX float64 `json:"offsetX,omitempty"`
+	OffsetY float64 `json:"offsetY,omitempty"`
+	Width   float64 `json:"width,omitempty"`
+	Height  float64 `json:"height,omitempty"`
 }
 
 // Class returns the building's class, defaulting to "player" when unspecified.

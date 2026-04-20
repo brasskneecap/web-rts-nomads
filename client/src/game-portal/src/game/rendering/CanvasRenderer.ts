@@ -8,6 +8,8 @@ import {
 } from '../maps/mapConfig'
 import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual } from '../maps/buildingDefs'
 import { getBuildingSprite, getTintedBuildingSprite } from './buildingSprites'
+import { getObstacleSprite } from './obstacleSprites'
+import { OBSTACLE_DEF_MAP } from '../maps/obstacleDefs'
 import {
   drawTerrainTile,
   GROUND_TILE_COORDS,
@@ -107,8 +109,8 @@ export class CanvasRenderer {
     ctx.scale(this.camera.zoom, this.camera.zoom)
     ctx.translate(-this.camera.x, -this.camera.y)
 
-    this.drawMapBackground()
     this.drawMapBounds()
+    this.drawMapBackground()
     this.drawMoveMarkers()
     this.drawBuildingSpawnMarkers()
     this.drawTraps(this.state.traps)
@@ -206,32 +208,73 @@ export class CanvasRenderer {
     this.drawGrid()
 
     for (const tile of obstacles) {
-      const worldX = tile.x * cellSize
-      const worldY = tile.y * cellSize
-      const inset = cellSize * 0.14
+      // Grid footprint: the cells the obstacle physically occupies. Used
+      // for the selection/hover ring so players see what they actually
+      // clicked, even when the sprite spills into neighbouring cells.
+      const gridW = tile.width ?? 1
+      const gridH = tile.height ?? 1
+      const footprintX = tile.x * cellSize
+      const footprintY = tile.y * cellSize
+      const footprintW = gridW * cellSize
+      const footprintH = gridH * cellSize
 
-      ctx.fillStyle = getObstacleColor(tile.obstacle)
-      ctx.fillRect(
-        worldX + inset,
-        worldY + inset,
-        cellSize - inset * 2,
-        cellSize - inset * 2,
-      )
+      // Render bounds: may extend beyond the footprint (e.g. tree canopies
+      // reaching up into the row above). Falls back to the footprint when
+      // no render override is defined for this obstacle type.
+      const renderDef = OBSTACLE_DEF_MAP.get(tile.obstacle)?.render
+      const renderX = footprintX + (renderDef?.offsetX ?? 0) * cellSize
+      const renderY = footprintY + (renderDef?.offsetY ?? 0) * cellSize
+      const renderW = (renderDef?.width ?? gridW) * cellSize
+      const renderH = (renderDef?.height ?? gridH) * cellSize
 
-      ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)'
-      ctx.lineWidth = 2 / this.camera.zoom
-      ctx.strokeRect(
-        worldX + inset,
-        worldY + inset,
-        cellSize - inset * 2,
-        cellSize - inset * 2,
-      )
+      // Selection ring is drawn *before* the sprite so the sprite body
+      // covers the top half of the ellipse — mimicking the unit ring,
+      // which looks like it's wrapping around the base of the entity.
+      const isSelected = tile.id && tile.id === this.state.selectedObstacleId
+      const isHovered = tile.id && tile.id === this.state.hoveredInteractableObstacleId
+      if (isSelected || isHovered) {
+        const ringDef = OBSTACLE_DEF_MAP.get(tile.obstacle)?.selectionRing
+        const override = ringDef ? { ...ringDef, cellSize } : undefined
+        this.drawFootprintSelectionEllipse(
+          footprintX, footprintY, footprintW, footprintH,
+          isSelected ? 'selected' : 'hover',
+          'bottom',
+          override,
+        )
+      }
+
+      const sprite = getObstacleSprite(tile.obstacle)
+
+      if (sprite) {
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(sprite, renderX, renderY, renderW, renderH)
+      } else {
+        const inset = cellSize * 0.14
+        ctx.fillStyle = getObstacleColor(tile.obstacle)
+        ctx.fillRect(
+          renderX + inset,
+          renderY + inset,
+          renderW - inset * 2,
+          renderH - inset * 2,
+        )
+
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)'
+        ctx.lineWidth = 2 / this.camera.zoom
+        ctx.strokeRect(
+          renderX + inset,
+          renderY + inset,
+          renderW - inset * 2,
+          renderH - inset * 2,
+        )
+      }
     }
 
     for (const building of buildings) {
       if (!building.visible) continue
       if (building.buildingType === 'enemy-spawnpoint') continue
 
+      // Footprint — the grid cells the building physically occupies. Used
+      // for HP bars, construction overlays, and selection hit-testing.
       const worldX = building.x * cellSize
       const worldY = building.y * cellSize
       const width = building.width * cellSize
@@ -243,27 +286,38 @@ export class CanvasRenderer {
 
       const buildingDef = BUILDING_DEF_MAP.get(building.buildingType)
       const renderDef = buildingDef?.render
+      const spriteRenderDef = buildingDef?.spriteRender
       const inset = renderDef ? renderDef.inset * cellSize : cellSize * 0.18
-      const isInsetFallback = building.buildingType === 'tree' && !renderDef
+
+      // Sprite bounds may extend beyond the footprint when spriteRender
+      // overrides are configured (e.g. a barracks with a roof taller than
+      // its footprint). Falls back to the footprint when no overrides are set.
+      const spriteX = worldX + (spriteRenderDef?.offsetX ?? 0) * cellSize
+      const spriteY = worldY + (spriteRenderDef?.offsetY ?? 0) * cellSize
+      const spriteW = (spriteRenderDef?.width ?? building.width) * cellSize
+      const spriteH = (spriteRenderDef?.height ?? building.height) * cellSize
 
       const playerFill = ownerColor ?? buildingDef?.color ?? getBuildingColor(building.buildingType, building.occupied, ownerColor)
 
       const sprite = getBuildingSprite(building.buildingType)
+
+      // Selection / hover ring drawn *before* the sprite so the sprite
+      // covers the top half, mimicking the wrap-around look of the unit ring.
+      if (this.state.selectedBuildingId === building.id) {
+        this.drawFootprintSelectionEllipse(worldX, worldY, width, height, 'selected', 'center')
+      } else if (this.state.hoveredInteractableBuildingId === building.id) {
+        this.drawFootprintSelectionEllipse(worldX, worldY, width, height, 'hover', 'center')
+      }
 
       if (sprite) {
         ctx.imageSmoothingEnabled = false
         const tinted = ownerColor
           ? getTintedBuildingSprite(building.buildingType, ownerColor)
           : null
-        ctx.drawImage(tinted ?? sprite, worldX, worldY, width, height)
+        ctx.drawImage(tinted ?? sprite, spriteX, spriteY, spriteW, spriteH)
       } else if (!renderDef) {
-        if (isInsetFallback) {
-          this.drawInsetTile(worldX, worldY, width, height, inset, playerFill)
-        } else {
-          // No render def — solid fill fallback
-          ctx.fillStyle = playerFill
-          ctx.fillRect(worldX, worldY, width, height)
-        }
+        ctx.fillStyle = playerFill
+        ctx.fillRect(worldX, worldY, width, height)
       } else {
         // Draw every layer explicitly; 'player' color is substituted with the owner color.
         // No base fill: unpainted areas are transparent so terrain shows through.
@@ -338,7 +392,7 @@ export class CanvasRenderer {
       } else {
         ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
         ctx.lineWidth = 2 / this.camera.zoom
-        if (!isInsetFallback && !sprite) {
+        if (!sprite) {
           ctx.strokeRect(worldX, worldY, width, height)
         }
 
@@ -373,60 +427,75 @@ export class CanvasRenderer {
       if (!isUnderConstruction) {
         this.drawBuildingAttackEffect(building)
       }
-
-      if (this.state.selectedBuildingId === building.id) {
-        ctx.strokeStyle = '#fde68a'
-        ctx.lineWidth = 3 / this.camera.zoom
-        ctx.strokeRect(
-          worldX + inset - 4 / this.camera.zoom,
-          worldY + inset - 4 / this.camera.zoom,
-          width - inset * 2 + 8 / this.camera.zoom,
-          height - inset * 2 + 8 / this.camera.zoom,
-        )
-      }
-
-      if (this.state.hoveredInteractableBuildingId === building.id) {
-        ctx.save()
-        ctx.strokeStyle = 'rgba(250, 204, 21, 0.95)'
-        ctx.lineWidth = 4 / this.camera.zoom
-        ctx.setLineDash([10 / this.camera.zoom, 6 / this.camera.zoom])
-        ctx.strokeRect(
-          worldX + inset - 8 / this.camera.zoom,
-          worldY + inset - 8 / this.camera.zoom,
-          width - inset * 2 + 16 / this.camera.zoom,
-          height - inset * 2 + 16 / this.camera.zoom,
-        )
-        ctx.restore()
-      }
     }
   }
 
-  private drawInsetTile(
+  // Draws a flat ground-ring at the base of a rectangular footprint, matching
+  // the yellow ellipse rendered under selected units. `mode` controls the
+  // stroke style: 'selected' is a solid yellow ring; 'hover' is a softer
+  // dashed ring used for interactable (gatherable / repairable) hover.
+  // `anchor` controls vertical placement within the footprint:
+  //   'bottom' sits the ring at the base of the footprint (units, trees).
+  //   'center' lifts it toward the vertical middle (multi-cell buildings).
+  // `override` lets per-def configs (e.g. ObstacleSelectionRingDef) nudge
+  // the center / radii in cell units without changing this default logic.
+  //
+  // Ring position is driven by the grid footprint, not the sprite render
+  // box — this keeps the ring on the physical tile even when sprite
+  // overflow pushes the visible art outside the footprint.
+  private drawFootprintSelectionEllipse(
     worldX: number,
     worldY: number,
-    width: number,
-    height: number,
-    inset: number,
-    fillStyle: string,
+    footprintW: number,
+    footprintH: number,
+    mode: 'selected' | 'hover',
+    anchor: 'bottom' | 'center' = 'bottom',
+    override?: {
+      offsetX?: number
+      offsetY?: number
+      radiusX?: number
+      radiusY?: number
+      cellSize?: number
+    },
   ) {
     const ctx = this.ctx
+    const cellSize = override?.cellSize ?? 0
 
-    ctx.fillStyle = fillStyle
-    ctx.fillRect(
-      worldX + inset,
-      worldY + inset,
-      width - inset * 2,
-      height - inset * 2,
-    )
+    const defaultRadiusX = Math.max(12, footprintW * 0.55)
+    const defaultRadiusY = Math.max(6, defaultRadiusX * 0.34)
 
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)'
-    ctx.lineWidth = 2 / this.camera.zoom
-    ctx.strokeRect(
-      worldX + inset,
-      worldY + inset,
-      width - inset * 2,
-      height - inset * 2,
-    )
+    const radiusX = override?.radiusX !== undefined && cellSize > 0
+      ? override.radiusX * cellSize
+      : defaultRadiusX
+    const radiusY = override?.radiusY !== undefined && cellSize > 0
+      ? override.radiusY * cellSize
+      : defaultRadiusY
+
+    const defaultCenterX = worldX + footprintW / 2
+    const defaultCenterY = anchor === 'center'
+      ? worldY + footprintH * 0.78
+      : worldY + footprintH - radiusY * 0.35
+
+    const centerX = override?.offsetX !== undefined && cellSize > 0
+      ? worldX + override.offsetX * cellSize
+      : defaultCenterX
+    const centerY = override?.offsetY !== undefined && cellSize > 0
+      ? worldY + override.offsetY * cellSize
+      : defaultCenterY
+
+    ctx.save()
+    if (mode === 'selected') {
+      ctx.strokeStyle = 'yellow'
+      ctx.lineWidth = 3 / this.camera.zoom
+    } else {
+      ctx.strokeStyle = 'rgba(253, 224, 71, 0.9)'
+      ctx.lineWidth = 2 / this.camera.zoom
+      ctx.setLineDash([5 / this.camera.zoom, 4 / this.camera.zoom])
+    }
+    ctx.beginPath()
+    ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
   }
 
   private drawMapBounds() {
@@ -1632,11 +1701,13 @@ export class CanvasRenderer {
 
     for (const tile of this.state.mapConfig.obstacles) {
       ctx.fillStyle = getObstacleColor(tile.obstacle)
+      const tileW = tile.width ?? 1
+      const tileH = tile.height ?? 1
       ctx.fillRect(
         x + (tile.x / this.state.mapConfig.gridCols) * minimapWidth,
         y + (tile.y / this.state.mapConfig.gridRows) * minimapHeight,
-        minimapWidth / this.state.mapConfig.gridCols,
-        minimapHeight / this.state.mapConfig.gridRows,
+        (tileW / this.state.mapConfig.gridCols) * minimapWidth,
+        (tileH / this.state.mapConfig.gridRows) * minimapHeight,
       )
     }
 

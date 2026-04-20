@@ -11,13 +11,15 @@ export type MapId = string
 export type TerrainType = 'dirt' | 'grass'
 
 export type ObstacleType = 'rock' | 'wall' | 'tree'
-export type BuildingType = 'goldmine' | 'townhall' | 'tree' | 'barracks' | 'farm' | 'enemy-spawnpoint' | 'spawn-point' | (string & {})
+export type BuildingType = 'goldmine' | 'townhall' | 'barracks' | 'farm' | 'enemy-spawnpoint' | 'spawn-point' | (string & {})
 export type BuildingCapability =
   | 'resource-source'
   | 'unit-spawner'
   | 'occupiable'
   | 'deposit-point'
   | 'enemy-spawner'
+  | 'selectable'
+export type ObstacleCapability = 'resource-source' | 'selectable'
 export type ResourceType = 'gold' | 'wood'
 export type UnitType = 'worker' | 'soldier' | (string & {})
 export type UnitCapability = 'move' | 'gather' | 'build' | 'attack'
@@ -45,6 +47,15 @@ export type TileInstance = GridCoord & TileCoord
 
 export type ObstacleTile = GridCoord & {
   obstacle: ObstacleType
+  id?: string
+  width?: number
+  height?: number
+  capabilities?: ObstacleCapability[]
+  resourceType?: ResourceType
+  resourceAmount?: number
+  hp?: number
+  maxHp?: number
+  metadata?: JsonObject
 }
 
 export type BuildingTile = GridCoord & {
@@ -125,7 +136,7 @@ export type MoveCommandMessage = {
 export type GatherCommandMessage = {
   type: 'gather_command'
   unitIds: number[]
-  buildingId: string
+  targetId: string
 }
 
 export type TrainUnitCommandMessage = {
@@ -295,6 +306,7 @@ export type MatchSnapshotMessage = {
   serverNow: number
   matchId: string
   buildings: BuildingTile[]
+  obstacles: ObstacleTile[]
   players: PlayerSnapshot[]
   units: UnitSnapshot[]
   wave: WaveSnapshot

@@ -169,8 +169,6 @@ export function getBuildingColor(
   switch (buildingType) {
     case 'goldmine':
       return '#ca8a04'
-    case 'tree':
-      return '#2d6a4f'
     case 'enemy-spawnpoint':
       return '#991b1b'
     case 'spawn-point':
@@ -249,11 +247,21 @@ function dedupeObstacleTiles(
 
   for (const tile of tiles) {
     if (!isWithinGrid(tile.x, tile.y, gridCols, gridRows)) continue
-    unique.set(`${tile.x}:${tile.y}`, {
+    const normalized: ObstacleTile = {
       x: tile.x,
       y: tile.y,
       obstacle: tile.obstacle,
-    })
+    }
+    if (tile.id) normalized.id = tile.id
+    if (tile.width) normalized.width = tile.width
+    if (tile.height) normalized.height = tile.height
+    if (tile.capabilities?.length) normalized.capabilities = [...tile.capabilities]
+    if (tile.resourceType) normalized.resourceType = tile.resourceType
+    if (tile.resourceAmount !== undefined) normalized.resourceAmount = tile.resourceAmount
+    if (tile.hp !== undefined) normalized.hp = tile.hp
+    if (tile.maxHp !== undefined) normalized.maxHp = tile.maxHp
+    if (tile.metadata) normalized.metadata = { ...tile.metadata }
+    unique.set(`${tile.x}:${tile.y}`, normalized)
   }
 
   return Array.from(unique.values()).sort(sortTiles)
