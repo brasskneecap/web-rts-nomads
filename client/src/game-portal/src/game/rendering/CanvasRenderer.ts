@@ -431,7 +431,7 @@ export class CanvasRenderer {
   }
 
   // Draws a flat ground-ring at the base of a rectangular footprint, matching
-  // the yellow ellipse rendered under selected units. `mode` controls the
+  // the green ellipse rendered under selected units. `mode` controls the
   // stroke style: 'selected' is a solid yellow ring; 'hover' is a softer
   // dashed ring used for interactable (gatherable / repairable) hover.
   // `anchor` controls vertical placement within the footprint:
@@ -485,7 +485,7 @@ export class CanvasRenderer {
 
     ctx.save()
     if (mode === 'selected') {
-      ctx.strokeStyle = 'yellow'
+      ctx.strokeStyle = '#22c55e'
       ctx.lineWidth = 3 / this.camera.zoom
     } else {
       ctx.strokeStyle = 'rgba(253, 224, 71, 0.9)'
@@ -803,7 +803,7 @@ export class CanvasRenderer {
   //
   // Banners render BELOW units so they never occlude gameplay.  Each banner:
   //   1. Radius circle — soft fill + owner-colored outline, distinguishable
-  //      from selection ellipses (which are yellow) and attack ranges.
+  //      from selection ellipses (which are green) and attack ranges.
   //   2. Flag sprite  — a small pole + triangular flag drawn in world space
   //      at the plant position; the flag face is filled with the owner color.
   //   3. Alpha fade   — globalAlpha scales linearly from 1 → 0 as
@@ -950,7 +950,7 @@ export class CanvasRenderer {
       const selectionCenterY = unit.y + bottomOffset - selectionRadiusY * 0.35
 
       if (selected) {
-        ctx.strokeStyle = 'yellow'
+        ctx.strokeStyle = '#22c55e'
         ctx.lineWidth = 3 / this.camera.zoom
         ctx.beginPath()
         ctx.ellipse(unit.x, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
