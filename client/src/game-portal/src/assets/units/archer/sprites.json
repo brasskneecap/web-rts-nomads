@@ -1,5 +1,5 @@
 {
-  "key": "vanguard",
+  "key": "archer",
   "size": {
     "width": 68,
     "height": 68
@@ -17,9 +17,9 @@
       "frameHeight": 68,
       "strips": {
         "south": "packed/walking-south.png",
-        "north": "packed/walking-north.png",
         "east": "packed/walking-east.png",
-        "west": "packed/walking-west.png"
+        "west": "packed/walking-west.png",
+        "north": "packed/walking-north.png"
       }
     },
     "attacking": {
@@ -27,12 +27,12 @@
       "frameWidth": 68,
       "frameHeight": 68,
       "strips": {
+        "west": "packed/attacking-west.png",
         "north": "packed/attacking-north.png",
         "east": "packed/attacking-east.png",
-        "south": "packed/attacking-south.png",
-        "west": "packed/attacking-west.png"
+        "south": "packed/attacking-south.png"
       }
     }
   },
-  "packedAt": "2026-04-20T20:15:38.267Z"
+  "packedAt": "2026-04-20T20:15:38.235Z"
 }

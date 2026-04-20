@@ -511,7 +511,7 @@ func TestShieldBash_IconNotEmittedWithoutProc(t *testing.T) {
 	seedRNGForNoProc(s, def.Config["procChance"])
 	fireAttack(s, attacker, target)
 
-	icons := s.activeDebuffIconsLocked(target)
+	icons := iconIDs(s.activeDebuffIconsLocked(target))
 	if containsString(icons, "debuff-stunned") {
 		t.Errorf("no-proc: debuff-stunned should not appear, got %v", icons)
 	}
@@ -530,7 +530,7 @@ func TestShieldBash_IconNotEmittedWithoutProc(t *testing.T) {
 	}
 	fireAttack(s, attacker, target)
 
-	icons = s.activeDebuffIconsLocked(target)
+	icons = iconIDs(s.activeDebuffIconsLocked(target))
 	if !containsString(icons, "debuff-stunned") {
 		t.Errorf("proc: debuff-stunned should appear, got %v", icons)
 	}
@@ -553,14 +553,14 @@ func TestInterlock_BuffIconAppearsAndDisappears(t *testing.T) {
 	}
 
 	// Ally in range: icon should be present.
-	icons := s.activeBuffIconsLocked(vanguard)
+	icons := iconIDs(s.activeBuffIconsLocked(vanguard))
 	if !containsString(icons, "interlock") {
 		t.Errorf("ally in range: interlock buff icon should appear, got %v", icons)
 	}
 
 	// Move ally outside radius: icon should disappear.
 	ally.X = vanguard.X + def.Config["radius"] + 100
-	icons = s.activeBuffIconsLocked(vanguard)
+	icons = iconIDs(s.activeBuffIconsLocked(vanguard))
 	if containsString(icons, "interlock") {
 		t.Errorf("no ally in range: interlock buff icon should not appear, got %v", icons)
 	}

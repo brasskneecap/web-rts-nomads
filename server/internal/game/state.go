@@ -190,6 +190,12 @@ type GameState struct {
 	// covering auras. Rebuilt once per tick in rebuildGuardianAuraCacheLocked.
 	// Zero value (absent key) = no aura.
 	guardianAuraCache map[int]guardianAuraValue
+
+	// battleTracker is the debug/telemetry damage-and-kill accumulator. Armed
+	// only when MapConfig.Debug.BattleTracker is true; otherwise the tracker
+	// is allocated but disabled and every track* call is a no-op. Serialized
+	// into MatchSnapshotMessage.BattleTracker (omitted when disabled).
+	battleTracker *BattleTracker
 }
 
 const (
@@ -259,6 +265,11 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		obstaclesByID:       map[string]*protocol.ObstacleTile{},
 		guardianAuraCache:   map[int]guardianAuraValue{},
 	}
+
+	// Arm the battle tracker iff the map opts in via debug.battleTracker. The
+	// tracker is still allocated when disabled so call sites can invoke its
+	// methods unconditionally (a nil check + flag check short-circuits cheaply).
+	state.battleTracker = newBattleTracker(mapConfig.Debug != nil && mapConfig.Debug.BattleTracker)
 
 	state.SetMapConfig(mapConfig)
 	return state
@@ -483,6 +494,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Timer:        wm.Timer,
 			WaveDuration: wm.WaveDuration,
 		},
+		// Nil when debug tracker is disabled — `omitempty` drops it from JSON.
+		BattleTracker: s.battleTrackerSnapshotLocked(),
 	}
 }
 
@@ -496,6 +509,7 @@ func (s *GameState) Update(dt float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.battleTracker.tickLocked(dt)
 	s.updateUnitProductionsLocked(dt)
 	s.tickBuildingRepairsLocked(dt)
 	blocked := s.getBlockedCellsLocked()
@@ -524,11 +538,29 @@ func (s *GameState) Update(dt float64) {
 				unit.PerkState.WeakenedMultiplier = 0
 			}
 		}
-		if unit.PerkState.MarkedRemaining > 0 {
-			unit.PerkState.MarkedRemaining = math.Max(0, unit.PerkState.MarkedRemaining-dt)
-			if unit.PerkState.MarkedRemaining == 0 {
-				unit.PerkState.MarkedMultiplier = 0
+		// Mark stacks decay independently (each source ticks down its own
+		// Remaining). lastExpired is true only when the final active stack
+		// hits 0 this tick — that's when mark-gone effects (Final Exposure,
+		// Shared Pain disarm) fire.
+		if unit.PerkState.decayMarkStacks(dt) {
+			// overload_protocol → Final Exposure: when the last mark stack
+			// expires, fire burst damage to this victim and an optional
+			// small AoE to nearby enemies. The armed fields are consumed
+			// immediately after so re-arming via a fresh mark works again.
+			if unit.PerkState.FinalExposureDamage > 0 && unit.HP > 0 {
+				s.fireFinalExposureLocked(unit)
 			}
+			unit.PerkState.FinalExposureDamage = 0
+			unit.PerkState.FinalExposureAoeRadius = 0
+			unit.PerkState.FinalExposureOwnerUnitID = 0
+			// ascendant_infusion → Shared Pain disarms with the mark.
+			unit.PerkState.SharedPainFraction = 0
+		}
+		// ascendant_infusion → Electrified Caltrops per-victim stun cooldown.
+		// Cross-unit state (lives on any enemy hit by Electrified), same decay
+		// pattern as SlowedRemaining / MarkedRemaining.
+		if unit.PerkState.ElectrifiedStunCooldownRemaining > 0 {
+			unit.PerkState.ElectrifiedStunCooldownRemaining = math.Max(0, unit.PerkState.ElectrifiedStunCooldownRemaining-dt)
 		}
 		// Generic CC decay — Stun and Slow are general primitives that any perk or
 		// ability can stamp onto any unit, so they decay here alongside the other

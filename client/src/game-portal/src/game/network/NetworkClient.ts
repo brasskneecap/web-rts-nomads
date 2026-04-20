@@ -336,6 +336,33 @@ export class NetworkClient {
     this.send({ type: 'repair_command', unitIds, buildingId })
   }
 
+  // Dev-only: spawn a unit with a custom perk loadout at (x, y). Only
+  // succeeds when the active map has debug.debugSpawn enabled; the server
+  // silently ignores the command on production maps. team defaults to "mine"
+  // (caller-owned) server-side if omitted.
+  sendDebugSpawnUnitCommand(payload: {
+    unitType: string
+    team?: 'mine' | 'enemy'
+    path?: string
+    rank?: string
+    perkIds?: string[]
+    x: number
+    y: number
+    customHp?: number
+  }) {
+    this.send({
+      type: 'debug_spawn_unit',
+      unitType: payload.unitType,
+      team: payload.team,
+      path: payload.path,
+      rank: payload.rank,
+      perkIds: payload.perkIds,
+      x: payload.x,
+      y: payload.y,
+      customHp: payload.customHp,
+    })
+  }
+
   sendSetBuildingSpawnPointCommand(buildingId: string, x: number, y: number) {
     const message: SetBuildingSpawnPointCommandMessage = {
       type: 'set_building_spawn_point_command',

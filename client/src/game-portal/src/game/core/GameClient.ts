@@ -4,8 +4,13 @@ import { CanvasRenderer } from '../rendering/CanvasRenderer'
 import { InputManager } from '../input/InputManager'
 import { Camera } from '../rendering/Camera'
 import { NetworkClient } from '../network/NetworkClient'
-import type { ConnectionState, MapId, WaveSnapshot } from '../network/protocol'
-import type { PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
+import type {
+  BattleTrackerSnapshot,
+  ConnectionState,
+  MapId,
+  WaveSnapshot,
+} from '../network/protocol'
+import type { DebugSpawnConfig, PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initUnitDefs } from '../maps/unitDefs'
@@ -25,6 +30,19 @@ export type GameUiSnapshot = {
   selection: SelectionSummary
   notifications: Notification[]
   wave: WaveSnapshot
+  // Battle tracker (debug). Null when the active map does not opt in via
+  // debug.battleTracker. HUD consumers render the panel only when non-null.
+  battleTracker: BattleTrackerSnapshot | null
+  // Individual debug opt-ins surfaced to the HUD so each debug panel can
+  // show/hide itself from config without touching this file. False on any
+  // non-debug map.
+  debugBattleTracker: boolean
+  debugSpawn: boolean
+  // True iff the client is currently armed to spawn a unit on the next
+  // world click (via DebugSpawnPanel's "Place on Map").
+  debugSpawnTargetingActive: boolean
+  mapName: string
+  mapId: string
 }
 
 export class GameClient {
@@ -115,7 +133,25 @@ export class GameClient {
       selection: this.state.getSelectionSummary(),
       notifications: [...this.state.notifications],
       wave: this.state.getWaveSnapshot(),
+      battleTracker: this.state.battleTracker,
+      debugBattleTracker: this.state.mapConfig.debug?.battleTracker === true,
+      debugSpawn: this.state.mapConfig.debug?.debugSpawn === true,
+      debugSpawnTargetingActive: this.state.isBuildingTargetingActive('debug-spawn-unit'),
+      mapName: this.state.mapConfig.name,
+      mapId: this.state.mapConfig.id,
     }
+  }
+
+  // Arms the 'debug-spawn-unit' targeting mode. Exposed for the Debug Spawn
+  // panel so it can just call this rather than reaching into GameState.
+  beginDebugSpawn(config: DebugSpawnConfig) {
+    this.state.beginDebugSpawnTargeting(config)
+    this.input.refreshCursor()
+  }
+
+  cancelDebugSpawn() {
+    this.state.cancelBuildingTargeting()
+    this.input.refreshCursor()
   }
 
   performSelectionAction(actionId: string) {
@@ -187,6 +223,24 @@ export class GameClient {
       } else {
         this.state.addNotification('Cannot place building here')
       }
+      return true
+    }
+
+    // Debug spawn: fire a debug_spawn_unit command with the pending loadout.
+    // Mode stays active so the user can drop multiple copies in a row; right-
+    // click cancels via the existing cancelTargeting() path.
+    if (this.state.isBuildingTargetingActive('debug-spawn-unit') && this.state.debugSpawnConfig) {
+      const cfg = this.state.debugSpawnConfig
+      this.network.sendDebugSpawnUnitCommand({
+        unitType: cfg.unitType,
+        team: cfg.team,
+        path: cfg.path,
+        rank: cfg.rank,
+        perkIds: cfg.perkIds,
+        customHp: cfg.customHp,
+        x,
+        y,
+      })
       return true
     }
 

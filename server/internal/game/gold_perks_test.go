@@ -2371,7 +2371,7 @@ func TestRallyingBanner_RecipientGetsIcon(t *testing.T) {
 
 	// Ally inside banner radius.
 	ally := spawnAlly(t, s, "p1", vanguard.X+bannerRadius*0.4, vanguard.Y)
-	icons := s.activeBuffIconsLocked(ally)
+	icons := iconIDs(s.activeBuffIconsLocked(ally))
 	found := false
 	for _, icon := range icons {
 		if icon == "rallying_banner" {
@@ -2385,7 +2385,7 @@ func TestRallyingBanner_RecipientGetsIcon(t *testing.T) {
 
 	// Ally outside banner radius should NOT have the icon.
 	allyOutside := spawnAlly(t, s, "p1", vanguard.X+bannerRadius*1.5, vanguard.Y)
-	iconsOut := s.activeBuffIconsLocked(allyOutside)
+	iconsOut := iconIDs(s.activeBuffIconsLocked(allyOutside))
 	for _, icon := range iconsOut {
 		if icon == "rallying_banner" {
 			t.Errorf("ally outside banner radius should NOT have 'rallying_banner' buff icon")

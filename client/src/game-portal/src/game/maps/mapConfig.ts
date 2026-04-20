@@ -67,6 +67,7 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
     obstacles: dedupeObstacleTiles(map.obstacles ?? [], gridCols, gridRows),
     buildings: dedupeBuildings(map.buildings ?? [], gridCols, gridRows),
     waveConfig: map.waveConfig,
+    debug: map.debug,
   }
 }
 

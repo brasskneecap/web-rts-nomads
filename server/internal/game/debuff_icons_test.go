@@ -6,6 +6,17 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
+// iconIDs extracts the id strings from a list of ActiveEffectIcon, discarding
+// stack counts. Tests that only care about icon presence can read IDs via this
+// helper while ignoring the stacks field.
+func iconIDs(icons []protocol.ActiveEffectIcon) []string {
+	out := make([]string, 0, len(icons))
+	for _, ic := range icons {
+		out = append(out, ic.ID)
+	}
+	return out
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // activeDebuffIconsLocked tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,7 +52,7 @@ func TestActiveDebuffIcons_Taunted(t *testing.T) {
 	unit.TauntedByUnitID = 99
 	unit.TauntRemaining = 2.0
 
-	got := s.activeDebuffIconsLocked(unit)
+	got := iconIDs(s.activeDebuffIconsLocked(unit))
 	if len(got) != 1 || got[0] != "debuff-taunted" {
 		t.Errorf("expected [debuff-taunted], got %v", got)
 	}
@@ -71,7 +82,7 @@ func TestActiveDebuffIcons_Weakened(t *testing.T) {
 
 	unit.PerkState.WeakenedRemaining = 3.0
 
-	got := s.activeDebuffIconsLocked(unit)
+	got := iconIDs(s.activeDebuffIconsLocked(unit))
 	if len(got) != 1 || got[0] != "debuff-weakened" {
 		t.Errorf("expected [debuff-weakened], got %v", got)
 	}
@@ -83,9 +94,9 @@ func TestActiveDebuffIcons_Marked(t *testing.T) {
 	s, unit := newDebuffIconState(t)
 	defer s.mu.Unlock()
 
-	unit.PerkState.MarkedRemaining = 4.0
+	unit.PerkState.applyMarkStack("unit-1", 1, 0.2, 4.0)
 
-	got := s.activeDebuffIconsLocked(unit)
+	got := iconIDs(s.activeDebuffIconsLocked(unit))
 	if len(got) != 1 || got[0] != "debuff-marked" {
 		t.Errorf("expected [debuff-marked], got %v", got)
 	}
@@ -99,12 +110,12 @@ func TestActiveDebuffIcons_Multiple(t *testing.T) {
 	defer s.mu.Unlock()
 
 	// Set in reverse declaration order to confirm output order is fixed.
-	unit.PerkState.MarkedRemaining = 1.0
+	unit.PerkState.applyMarkStack("unit-1", 1, 0.2, 1.0)
 	unit.PerkState.WeakenedRemaining = 1.0
 	unit.TauntedByUnitID = 99
 	unit.TauntRemaining = 1.0
 
-	got := s.activeDebuffIconsLocked(unit)
+	got := iconIDs(s.activeDebuffIconsLocked(unit))
 
 	want := []string{"debuff-taunted", "debuff-weakened", "debuff-marked"}
 	if len(got) != len(want) {

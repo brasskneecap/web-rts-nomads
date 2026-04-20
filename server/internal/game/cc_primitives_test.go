@@ -654,7 +654,7 @@ func TestDebuffIcons_StunAndSlow(t *testing.T) {
 	defer s.mu.Unlock()
 
 	// No CC active — neither icon should be present.
-	icons := s.activeDebuffIconsLocked(unit)
+	icons := iconIDs(s.activeDebuffIconsLocked(unit))
 	for _, icon := range icons {
 		if icon == "debuff-stunned" || icon == "debuff-slowed" {
 			t.Errorf("no CC active but icon %q appeared in debuff list", icon)
@@ -663,7 +663,7 @@ func TestDebuffIcons_StunAndSlow(t *testing.T) {
 
 	// Apply stun only.
 	s.ApplyStunLocked(unit.ID, 1.0)
-	icons = s.activeDebuffIconsLocked(unit)
+	icons = iconIDs(s.activeDebuffIconsLocked(unit))
 	if !containsString(icons, "debuff-stunned") {
 		t.Errorf("stunned unit missing debuff-stunned icon; got %v", icons)
 	}
@@ -673,7 +673,7 @@ func TestDebuffIcons_StunAndSlow(t *testing.T) {
 
 	// Apply slow as well.
 	s.ApplySlowLocked(unit.ID, 0.7, 2.0)
-	icons = s.activeDebuffIconsLocked(unit)
+	icons = iconIDs(s.activeDebuffIconsLocked(unit))
 	if !containsString(icons, "debuff-stunned") {
 		t.Errorf("stun+slow: missing debuff-stunned; got %v", icons)
 	}
@@ -685,7 +685,7 @@ func TestDebuffIcons_StunAndSlow(t *testing.T) {
 	unit.StunnedRemaining = 0
 	unit.SlowedRemaining = 0
 	unit.SlowedMultiplier = 0
-	icons = s.activeDebuffIconsLocked(unit)
+	icons = iconIDs(s.activeDebuffIconsLocked(unit))
 	for _, icon := range icons {
 		if icon == "debuff-stunned" || icon == "debuff-slowed" {
 			t.Errorf("CC expired but icon %q still in debuff list", icon)

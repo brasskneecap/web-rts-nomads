@@ -94,7 +94,69 @@ package game
 //   • progression.go     applyRankModifiersLocked() — perkFlatMaxHPBonusLocked
 // ═════════════════════════════════════════════════════════════════════════════
 
-import "math"
+import (
+	"math"
+	"strconv"
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Debuff stacking
+//
+// Certain debuffs (mark, burn) stack when the incoming source differs from
+// every source currently stacked on the victim. Same-source re-application
+// refreshes the existing stack (stronger multiplier wins, longer duration
+// wins — legacy "refresh-stronger / refresh-longer" semantics). A new source
+// only adds a stack when we're below maxDebuffStacks; beyond the cap the
+// new application is dropped.
+//
+// maxDebuffStacks is the ceiling used today (2). It is a package-level const
+// so future tuning can bump it — or swap to a per-debuff cap — without
+// touching the stack data types.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const maxDebuffStacks = 2
+
+// unitMarkSourceID namespaces unit-originated stack sources (e.g. a Vanguard
+// attacking with challengers_mark) so they can't collide with trap ids. Trap
+// ids are strings like "trap-5"; unit sources are "unit-<id>".
+func unitMarkSourceID(unitID int) string {
+	return "unit-" + strconv.Itoa(unitID)
+}
+
+// markStack is one stack of the mark debuff (challengers_mark / marker_trap).
+//
+// SourceID keys the stack — same-source re-application refreshes, a new
+// source adds a slot. For trap-applied marks, SourceID is the Trap.ID
+// (so two marker_traps from one Trapper each count as separate sources
+// and both stacks land if an enemy stands in their overlap). For unit-
+// applied marks (e.g. challengers_mark), SourceID is "unit-<id>" of the
+// attacking unit — same attacker refreshes, different attackers stack.
+//
+// OwnerUnitID is carried separately for XP/telemetry credit on kill.
+// Traps keep their owner ID even after the trapper dies; attacks record
+// the current attacker. Not used as the stack key.
+type markStack struct {
+	SourceID    string
+	OwnerUnitID int
+	Remaining   float64
+	Multiplier  float64
+}
+
+// burnStack is one stack of the burn debuff (lasting_flames, Flame Collapse).
+// Each stack holds its own DPS + accumulator so multi-source burns deal
+// cumulative damage. Keying rules mirror markStack.SourceID (trap-id for
+// trap burns, unit-id for any hypothetical future on-attack burn).
+// ReactiveRadius / ReactiveDamage piggyback the Reactive Flames gold effect
+// per-stack so every ticking source fires its own AoE.
+type burnStack struct {
+	SourceID       string
+	OwnerUnitID    int
+	Remaining      float64
+	DPS            float64
+	Accumulator    float64
+	ReactiveRadius float64
+	ReactiveDamage int
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Unit perk state
@@ -187,14 +249,17 @@ type UnitPerkState struct {
 	StationarySeconds    float64
 	BulwarkShieldGranted bool
 
-	// ── challengers_mark (silver vanguard) ────────────────────────────────────
-	// MarkedRemaining is the seconds left on this unit's incoming-damage
-	// amplification mark, stamped onto targets by Challenger's Mark. Decays in the
-	// main Update loop (cross-unit state, same pattern as TauntRemaining).
-	// MarkedMultiplier is the fractional bonus (e.g. 0.15 = 15% more damage taken)
-	// set when the mark is applied and cleared when MarkedRemaining reaches 0.
-	MarkedRemaining  float64
-	MarkedMultiplier float64
+	// ── mark debuff (challengers_mark + marker_trap) ─────────────────────────
+	// Marks stack per source (up to maxDebuffStacks concurrent stacks). Each
+	// stack carries its own OwnerUnitID, Remaining duration, and Multiplier.
+	// Refresh semantics:
+	//   - Same-source re-application refreshes that stack (stronger multiplier
+	//     wins, longer duration wins — same as before).
+	//   - New-source application adds a stack if we're below the cap.
+	//   - Over-cap applications are dropped (existing stacks run to expiry
+	//     and free a slot; common "stack cap" convention).
+	// Damage amplification sums across active stacks — two 20% marks = +40%.
+	MarkStacks []markStack
 
 	// ── rallying_banner (gold vanguard) ───────────────────────────────────────
 	// BannerCooldownRemaining is the seconds left on the replant cooldown. Set
@@ -247,33 +312,197 @@ type UnitPerkState struct {
 	BarbedFieldStaySeconds    float64
 	BarbedFieldInZoneThisTick bool
 
-	// ── lasting_flames (silver trapper) ───────────────────────────────────────
-	// Three-stage state: in-zone → just-exited → burning.
-	//   FirePitInLastingZoneThisTick: scratch flag set true by fire_pit onStay
-	//     when the trap has lasting_flames armed. Cleared each tick in
-	//     tickTrapperSilverDebuffsLocked.
-	//   FirePitInLastingZonePrev: snapshotted value of ThisTick from the PREVIOUS
-	//     tick. Transition (prev=true AND curr=false) detects "just exited" and
-	//     stamps the burn debuff. Shifted forward each tick after the transition
-	//     check.
-	//   FirePitArmedBurn{DPS,Duration,OwnerID}: strongest burn params seen across
-	//     all lasting fire pits the victim is currently standing in; snapshotted
-	//     onto the burn debuff at the moment of exit. Refresh-stronger per field
-	//     so multiple overlapping lasting fire pits pick the strongest.
-	//   Burn{Remaining,DamagePerSecond,OwnerUnitID,DoTAccumulator}: the active
-	//     burn debuff that ticks in tickTrapperSilverDebuffsLocked. BurnRemaining
-	//     decays to 0; DoT accumulator banks fractional damage the same way
-	//     TrapDoTAccumulator does. Refresh semantics on re-arming: max per
-	//     dimension (strongest/longest wins), same as mark/slow refresh.
-	FirePitInLastingZoneThisTick bool
-	FirePitInLastingZonePrev     bool
-	FirePitArmedBurnDPS          float64
-	FirePitArmedBurnDuration     float64
-	FirePitArmedBurnOwnerID      int
-	BurnRemaining                float64
-	BurnDamagePerSecond          float64
-	BurnOwnerUnitID              int
-	BurnDoTAccumulator           float64
+	// ── burn debuff (lasting_flames + Flame Collapse) ────────────────────────
+	// Burn stacks per source (up to maxDebuffStacks). Each stack runs its own
+	// DPS/accumulator and credits its own owner for XP on death, so damage
+	// from multiple trappers on the same victim is additive.
+	//
+	// While the victim stands in a lasting_flames fire_pit, the fire_pit
+	// branch of tickTrapEffectsLocked refreshes the matching stack's
+	// Remaining to the full duration every tick — the countdown only makes
+	// progress once the victim leaves the zone. Flame Collapse (overload
+	// protocol on fire_pit) stamps via the same helper so its DoT integrates
+	// seamlessly.
+	//
+	// Reactive Flames piggybacks per-stack: each ticking source fires its
+	// own secondary AoE, so a victim burning from two trappers with Infusion
+	// gets two Reactive Flames explosions per burn-tick-cycle.
+	BurnStacks []burnStack
+
+	// ── ascendant_infusion (gold trapper) ────────────────────────────────────
+	// Per-target cooldown gating Electrified Caltrops micro-stuns. Set on the
+	// victim whenever an Electrified tick stuns them; decayed every tick in
+	// state.go Update() alongside the other cross-unit CC decays. A stun can
+	// only fire when this is 0 — prevents stun-lock from multiple ticks.
+	ElectrifiedStunCooldownRemaining float64
+
+	// Shared Pain recursion guard. Set true while a marked victim's damage is
+	// being redistributed to other marked enemies so the redistributed damage
+	// cannot itself trigger Shared Pain again. Pattern mirrors PainShareActive.
+	SharedPainActive bool
+
+	// Shared Pain activation data stamped on the victim when a marker_trap
+	// with ascendant_infusion stamps a mark. SharedPainFraction > 0 means the
+	// victim participates in Shared Pain while any mark stack is active;
+	// cleared when the last mark stack expires (see state.go decay loop).
+	// Not stacked itself — the strongest fraction from any active marker_trap
+	// wins (refresh-stronger) to keep Shared Pain redistribution predictable.
+	SharedPainFraction float64
+
+	// ── overload_protocol (gold trapper) — Final Exposure ───────────────────
+	// Armed when a marker_trap with overload_protocol stamps a mark. When the
+	// victim's MarkedRemaining decays to 0 (state.go Update loop), the burst
+	// damage + AoE is detonated once via fireFinalExposureLocked.
+	FinalExposureDamage      int
+	FinalExposureAoeRadius   float64
+	FinalExposureOwnerUnitID int
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Debuff-stack helpers
+//
+// The apply* methods encapsulate the stack rules so call sites stay terse:
+//   1. If an existing stack matches the incoming source (OwnerUnitID), refresh
+//      it (stronger multiplier/DPS wins, longer duration wins).
+//   2. Otherwise, if we're under maxDebuffStacks, append a new stack.
+//   3. Otherwise drop the incoming application (existing stacks run to expiry
+//      before new sources can land — classic stack-cap behavior).
+//
+// applyMarkStack returns true when the stack landed (refreshed or new slot),
+// false when rejected by the cap — callers don't currently read the return
+// value but it's exposed so future UI can flash a "debuff rejected" tell.
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (ps *UnitPerkState) applyMarkStack(sourceID string, ownerUnitID int, multiplier, duration float64) bool {
+	if multiplier <= 0 || duration <= 0 || sourceID == "" {
+		return false
+	}
+	for i := range ps.MarkStacks {
+		if ps.MarkStacks[i].SourceID == sourceID {
+			if multiplier > ps.MarkStacks[i].Multiplier {
+				ps.MarkStacks[i].Multiplier = multiplier
+			}
+			if duration > ps.MarkStacks[i].Remaining {
+				ps.MarkStacks[i].Remaining = duration
+			}
+			// Refresh the owner ID too so XP credit reflects the latest
+			// source — important when an attacker respawns / is replaced
+			// by a different unit with the same trap lineage.
+			ps.MarkStacks[i].OwnerUnitID = ownerUnitID
+			return true
+		}
+	}
+	if len(ps.MarkStacks) >= maxDebuffStacks {
+		return false
+	}
+	ps.MarkStacks = append(ps.MarkStacks, markStack{
+		SourceID:    sourceID,
+		OwnerUnitID: ownerUnitID,
+		Remaining:   duration,
+		Multiplier:  multiplier,
+	})
+	return true
+}
+
+// applyBurnStack applies or refreshes a burn stack. reactiveRadius and
+// reactiveDamage piggyback the Reactive Flames gold effect — pass zeros when
+// the applying trap does not have Infusion. sourceID must be unique per
+// source-entity (trap ID for trap burns) so two traps from the same Trapper
+// land as separate stacks when their zones overlap.
+func (ps *UnitPerkState) applyBurnStack(sourceID string, ownerUnitID int, dps, duration, reactiveRadius float64, reactiveDamage int) bool {
+	if dps <= 0 || duration <= 0 || sourceID == "" {
+		return false
+	}
+	for i := range ps.BurnStacks {
+		if ps.BurnStacks[i].SourceID == sourceID {
+			if dps > ps.BurnStacks[i].DPS {
+				ps.BurnStacks[i].DPS = dps
+			}
+			if duration > ps.BurnStacks[i].Remaining {
+				ps.BurnStacks[i].Remaining = duration
+			}
+			if reactiveRadius > ps.BurnStacks[i].ReactiveRadius {
+				ps.BurnStacks[i].ReactiveRadius = reactiveRadius
+			}
+			if reactiveDamage > ps.BurnStacks[i].ReactiveDamage {
+				ps.BurnStacks[i].ReactiveDamage = reactiveDamage
+			}
+			ps.BurnStacks[i].OwnerUnitID = ownerUnitID
+			return true
+		}
+	}
+	if len(ps.BurnStacks) >= maxDebuffStacks {
+		return false
+	}
+	ps.BurnStacks = append(ps.BurnStacks, burnStack{
+		SourceID:       sourceID,
+		OwnerUnitID:    ownerUnitID,
+		Remaining:      duration,
+		DPS:            dps,
+		ReactiveRadius: reactiveRadius,
+		ReactiveDamage: reactiveDamage,
+	})
+	return true
+}
+
+// totalMarkMultiplier is the sum of every active mark stack's multiplier —
+// consumed by applyUnitDamageLocked. Two 20% marks become +40% damage taken.
+func (ps *UnitPerkState) totalMarkMultiplier() float64 {
+	total := 0.0
+	for _, s := range ps.MarkStacks {
+		total += s.Multiplier
+	}
+	return total
+}
+
+// anyMarkActive reports whether any mark stack remains. Cheap replacement for
+// the old `MarkedRemaining > 0` checks scattered across the codebase.
+func (ps *UnitPerkState) anyMarkActive() bool {
+	return len(ps.MarkStacks) > 0
+}
+
+// maxMarkRemaining is the greatest remaining duration across active mark
+// stacks — used by HUD icon rendering so the shown duration reflects the
+// longest-lasting stack rather than any single one.
+func (ps *UnitPerkState) maxMarkRemaining() float64 {
+	best := 0.0
+	for _, s := range ps.MarkStacks {
+		if s.Remaining > best {
+			best = s.Remaining
+		}
+	}
+	return best
+}
+
+// maxBurnRemaining mirrors maxMarkRemaining for the burn debuff.
+func (ps *UnitPerkState) maxBurnRemaining() float64 {
+	best := 0.0
+	for _, s := range ps.BurnStacks {
+		if s.Remaining > best {
+			best = s.Remaining
+		}
+	}
+	return best
+}
+
+// decayMarkStacks reduces every stack's Remaining by dt and drops expired
+// stacks in-place (filter-into-front-of-slice, no allocation). Returns true
+// iff the final stack expired this tick — callers use that signal to fire
+// once-on-expiry effects like Final Exposure.
+func (ps *UnitPerkState) decayMarkStacks(dt float64) (lastExpired bool) {
+	hadAny := len(ps.MarkStacks) > 0
+	if !hadAny {
+		return false
+	}
+	kept := ps.MarkStacks[:0]
+	for _, s := range ps.MarkStacks {
+		s.Remaining = math.Max(0, s.Remaining-dt)
+		if s.Remaining > 0 {
+			kept = append(kept, s)
+		}
+	}
+	ps.MarkStacks = kept
+	return hadAny && len(ps.MarkStacks) == 0
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

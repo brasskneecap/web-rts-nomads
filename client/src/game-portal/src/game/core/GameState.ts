@@ -1,5 +1,7 @@
 import type {
+  ActiveEffectIcon,
   BannerSnapshot,
+  BattleTrackerSnapshot,
   BuildingTile,
   MapConfig,
   MatchSnapshotMessage,
@@ -41,10 +43,10 @@ export type Unit = {
   perkIds?: string[]
   shield?: number
   maxShield?: number
-  /** Perk-id list for buffs currently active on this unit. */
-  activeBuffs?: string[]
-  /** Icon-id list for negative status effects currently active on this unit. */
-  activeDebuffs?: string[]
+  /** Buffs currently active — each entry carries a perk id + optional stacks. */
+  activeBuffs?: ActiveEffectIcon[]
+  /** Debuffs currently active — each entry carries a raw icon id + optional stacks. */
+  activeDebuffs?: ActiveEffectIcon[]
   ownerId?: string
   color?: string
   carriedResourceType?: ResourceType
@@ -87,6 +89,12 @@ export type DetailItem = {
 
 // Stat icons used by unit detail rows. Stroke-style paths on a 24×24 viewBox,
 // matching the existing action-icons.json conventions.
+// World-units radius around a trap's center that counts as a "click hit".
+// Matches the unit click radius (14) so the feel is consistent — and small
+// enough that large trap zones like explosive_trap (80 radius) don't swallow
+// clicks intended for ground orders or units inside the zone.
+const TRAP_CENTER_HIT_RADIUS = 14
+
 const STAT_ICON_HEART = 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'
 const STAT_ICON_SWORD = 'M14.5 17.5 L3 6 L3 3 L6 3 L17.5 14.5 M20 12 L12 20.5 M16.5 17.5 L20.5 21.5 L21.5 20.5 L17.5 16.5'
 const STAT_ICON_BOOT = 'M6 3v11 M6 13h9v5 M3 18h18 M6 7h2 M6 10h2'
@@ -177,7 +185,23 @@ export type Vec2 = {
   y: number
 }
 
-export type BuildingTargetingMode = 'set-spawn-point'
+export type BuildingTargetingMode = 'set-spawn-point' | 'debug-spawn-unit'
+
+// Loadout carried while the "debug-spawn-unit" targeting mode is active.
+// Populated by BeginDebugSpawnTargeting from the DebugSpawnPanel's current
+// selection; consumed by tryHandleWorldClick which sends the loadout +
+// click coords as a debug_spawn_unit command.
+export type DebugSpawnConfig = {
+  unitType: string
+  // Ownership: "mine" (default) spawns the unit on the caller's team so it
+  // accepts commands and contributes to army count; "enemy" spawns as a
+  // hostile NPC-owned unit for testing combat matchups.
+  team?: 'mine' | 'enemy'
+  path?: string
+  rank?: string
+  perkIds?: string[]
+  customHp?: number
+}
 export type UnitTargetingMode = 'move' | 'gather' | 'repair' | 'attack'
 
 export type BuildPlacement = {
@@ -226,6 +250,9 @@ export class GameState {
   units: Unit[] = []
   banners: BannerSnapshot[] = []
   traps: TrapSnapshot[] = []
+  // Battle tracker snapshot (debug). Null when the active map does not have
+  // debug.battleTracker enabled. Consumed by BattleTrackerPanel.vue.
+  battleTracker: BattleTrackerSnapshot | null = null
 
   snapshotBuffer: InterpolationFrame[] = []
   interpolationDelayMs = 100
@@ -255,12 +282,18 @@ export class GameState {
   selectedUnitOrder: number[] = []
   selectedBuildingId: string | null = null
   selectedObstacleId: string | null = null
+  selectedTrapId: string | null = null
   inspectedEnemyUnitId: number | null = null
   hoveredEnemyUnitId: number | null = null
   hoveredInteractableBuildingId: string | null = null
   hoveredInteractableObstacleId: string | null = null
   buildingTargetingMode: BuildingTargetingMode | null = null
   unitTargetingMode: UnitTargetingMode | null = null
+  // Loadout carried with the 'debug-spawn-unit' buildingTargetingMode. Null
+  // whenever debug-spawn targeting is inactive. Persisted across clicks so
+  // the user can drop multiple test subjects with the same configuration
+  // in rapid succession until they right-click to cancel.
+  debugSpawnConfig: DebugSpawnConfig | null = null
   workerBuildMenuOpen = false
   buildPlacement: BuildPlacement | null = null
 
@@ -377,6 +410,13 @@ export class GameState {
     this.units = frame.units.map((unit) => ({ ...unit }))
     this.banners = message.banners ?? []
     this.traps = message.traps ?? []
+    if (this.selectedTrapId && !this.traps.some((t) => t.id === this.selectedTrapId)) {
+      this.selectedTrapId = null
+    }
+    // Battle tracker (debug) — only populated when the active map has
+    // debug.battleTracker=true. Null when disabled so reactive watchers can
+    // key off a single "is the debug panel visible?" check.
+    this.battleTracker = message.battleTracker ?? null
     this.applyPlayerSnapshots(message.players)
     if (message.wave) {
       this.waveSnapshot = message.wave
@@ -475,6 +515,7 @@ export class GameState {
     this.selectedUnitOrder = []
     this.selectedBuildingId = null
     this.selectedObstacleId = null
+    this.selectedTrapId = null
     this.inspectedEnemyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
@@ -491,6 +532,7 @@ export class GameState {
     this.selectedUnitOrder = [unitId]
     this.selectedBuildingId = null
     this.selectedObstacleId = null
+    this.selectedTrapId = null
     this.inspectedEnemyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
@@ -507,6 +549,7 @@ export class GameState {
     this.selectedUnitIds.clear()
     this.selectedBuildingId = null
     this.selectedObstacleId = null
+    this.selectedTrapId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -700,6 +743,22 @@ export class GameState {
     this.selectedUnitOrder = []
     this.selectedBuildingId = null
     this.selectedObstacleId = obstacleId
+    this.selectedTrapId = null
+    this.inspectedEnemyUnitId = null
+    this.buildingTargetingMode = null
+    this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
+  }
+
+  // Selects a trap by ID, clearing any other selection. Mirrors selectBuilding
+  // / selectObstacle. No ownership filter — any visible trap can be inspected.
+  selectTrap(trapId: string) {
+    this.selectedUnitIds.clear()
+    this.selectedUnitOrder = []
+    this.selectedBuildingId = null
+    this.selectedObstacleId = null
+    this.selectedTrapId = trapId
     this.inspectedEnemyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
@@ -715,6 +774,33 @@ export class GameState {
   getSelectedObstacle(): ObstacleTile | null {
     if (!this.selectedObstacleId) return null
     return this.mapConfig.obstacles.find((obstacle) => obstacle.id === this.selectedObstacleId) ?? null
+  }
+
+  getSelectedTrap(): TrapSnapshot | null {
+    if (!this.selectedTrapId) return null
+    return this.traps.find((trap) => trap.id === this.selectedTrapId) ?? null
+  }
+
+  // Returns the trap under (x, y). Trap selection requires clicking near the
+  // CENTER of the trap (within TRAP_CENTER_HIT_RADIUS world units) rather than
+  // anywhere inside the zone — this keeps trap selection deliberate and avoids
+  // stealing clicks from ground/movement orders inside large trap radii. When
+  // multiple centers are within range, the closest wins.
+  getTrapAtPosition(x: number, y: number): TrapSnapshot | undefined {
+    const hitRadiusSq = TRAP_CENTER_HIT_RADIUS * TRAP_CENTER_HIT_RADIUS
+    let best: TrapSnapshot | undefined
+    let bestDistSq = Infinity
+    for (const trap of this.traps) {
+      const dx = trap.x - x
+      const dy = trap.y - y
+      const distSq = dx * dx + dy * dy
+      if (distSq > hitRadiusSq) continue
+      if (distSq < bestDistSq) {
+        best = trap
+        bestDistSq = distSq
+      }
+    }
+    return best
   }
 
   // Returns the obstacle covering the given world point, or undefined. Only
@@ -758,6 +844,26 @@ export class GameState {
 
   cancelBuildingTargeting() {
     this.buildingTargetingMode = null
+    this.debugSpawnConfig = null
+  }
+
+  // Arms the 'debug-spawn-unit' building-targeting mode so the next world
+  // click sends a debug_spawn_unit command with the supplied loadout. The
+  // mode persists across clicks until cancelBuildingTargeting (right-click
+  // or ESC) so the user can place multiple identical test subjects in a row.
+  beginDebugSpawnTargeting(config: DebugSpawnConfig) {
+    if (!config.unitType) return
+    this.selectedUnitIds.clear()
+    this.selectedUnitOrder = []
+    this.selectedBuildingId = null
+    this.selectedObstacleId = null
+    this.selectedTrapId = null
+    this.inspectedEnemyUnitId = null
+    this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
+    this.buildingTargetingMode = 'debug-spawn-unit'
+    this.debugSpawnConfig = { ...config }
   }
 
   beginUnitTargeting(mode: UnitTargetingMode) {
@@ -1034,6 +1140,21 @@ export class GameState {
         title: formatObstacleName(selectedObstacle.obstacle),
         subtitle: getObstacleSubtitle(selectedObstacle),
         details: getObstacleDetails(selectedObstacle),
+        actions: [],
+      }
+    }
+
+    const selectedTrap = this.getSelectedTrap()
+    if (selectedTrap) {
+      return {
+        kind: 'building',
+        title: formatTrapName(selectedTrap.type),
+        subtitle: selectedTrap.ownerId
+          ? selectedTrap.ownerId === this.localPlayerId
+            ? 'Your Trap'
+            : `Enemy Trap (${selectedTrap.ownerId})`
+          : 'Trap',
+        details: getTrapDetails(selectedTrap),
         actions: [],
       }
     }
@@ -1941,6 +2062,39 @@ function getObstacleSubtitle(obstacle: ObstacleTile): string {
   if (obstacle.obstacle === 'tree') return 'Harvestable Resource'
   if (obstacle.obstacle === 'rock') return 'Destructible Obstacle'
   return 'Neutral'
+}
+
+function formatTrapName(trapType: TrapSnapshot['type']): string {
+  switch (trapType) {
+    case 'caltrops':
+      return 'Caltrops'
+    case 'fire_pit':
+      return 'Fire Pit'
+    case 'explosive_trap':
+      return 'Explosive Trap'
+    case 'marker_trap':
+      return 'Marker Trap'
+    default:
+      return trapType
+  }
+}
+
+function getTrapDetails(trap: TrapSnapshot): DetailItem[] {
+  const details: DetailItem[] = []
+  // Remaining duration — rounded to one decimal for readability. Updates
+  // live because getSelectionSummary is recomputed on each tick while the
+  // trap's snapshot is present.
+  details.push({
+    id: 'trap-remaining',
+    label: 'Remaining',
+    value: `${Math.max(0, trap.remainingSeconds).toFixed(1)}s`,
+  })
+  details.push({
+    id: 'trap-radius',
+    label: 'Radius',
+    value: `${Math.round(trap.radius)}`,
+  })
+  return details
 }
 
 function getObstacleDetails(obstacle: ObstacleTile): DetailItem[] {

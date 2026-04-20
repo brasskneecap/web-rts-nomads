@@ -1,5 +1,7 @@
 package game
 
+import "webrts/server/pkg/protocol"
+
 // countEnemiesInRangeLocked returns the number of visible, alive enemy units
 // (different OwnerID) within radius of unit, up to a maximum of limit. If limit
 // is <= 0 all enemies are counted. O(N) per call; early-exit once limit is hit.
@@ -64,21 +66,25 @@ func (s *GameState) hasAllyInRangeLocked(unit *Unit, radius float64) bool {
 	return false
 }
 
-// activeBuffIconsLocked returns the perk ids whose timed or conditional buff
+// activeBuffIconsLocked returns the entries whose timed or conditional buff
 // is currently active on the unit, in a stable order. The client uses this
 // list to render floating indicator icons near the sprite (see CanvasRenderer
 // drawUnitActiveBuffs). Returns nil when nothing is active so the slice is
-// omitted from the JSON snapshot.
+// omitted from the JSON snapshot. Every entry has Stacks=1 currently; future
+// stacking buffs populate Stacks > 1 to trigger the count badge client-side.
 //
 // Kept as a single switch so adding a new active-buff perk only requires one
 // case here plus the matching runtime hook case elsewhere in this file.
 //
 // ADD NEW VISUALLY-INDICATED BUFFS HERE.
-func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
+func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIcon {
 	if unit == nil {
 		return nil
 	}
-	var active []string
+	var active []protocol.ActiveEffectIcon
+	addIcon := func(id string, stacks int) {
+		active = append(active, protocol.ActiveEffectIcon{ID: id, Stacks: stacks})
+	}
 	for _, perkID := range unit.PerkIDs {
 		def := perkDefByID(perkID)
 		if def == nil {
@@ -88,19 +94,19 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 
 		case "bloodlust":
 			if unit.PerkState.BloodlustBonus > 0 {
-				active = append(active, perkID)
+				addIcon(perkID, 1)
 			}
 		case "relentless":
 			if unit.PerkState.RelentlessRemaining > 0 {
-				active = append(active, perkID)
+				addIcon(perkID, 1)
 			}
 		case "momentum":
 			if unit.PerkState.MomentumRemaining > 0 {
-				active = append(active, perkID)
+				addIcon(perkID, 1)
 			}
 		case "whirlwind_core":
 			if unit.PerkState.WhirlwindActiveRemaining > 0 {
-				active = append(active, perkID)
+				addIcon(perkID, 1)
 			}
 		case "berserk_state":
 			// Conditional passive: show while below HP threshold so the
@@ -108,7 +114,7 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 			if unit.MaxHP > 0 {
 				hpFraction := float64(unit.HP) / float64(unit.MaxHP)
 				if hpFraction <= def.Config["hpThresholdPercent"] {
-					active = append(active, perkID)
+					addIcon(perkID, 1)
 				}
 			}
 
@@ -118,7 +124,7 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 			if unit.MaxHP > 0 {
 				hpFraction := float64(unit.HP) / float64(unit.MaxHP)
 				if hpFraction <= def.Config["hpThresholdPercent"] {
-					active = append(active, perkID)
+					addIcon(perkID, 1)
 				}
 			}
 
@@ -129,14 +135,14 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 			// the armor bonus is live.
 			enemyThreshold := int(def.Config["enemyThreshold"])
 			if s.countEnemiesInRangeLocked(unit, def.Config["radius"], enemyThreshold) >= enemyThreshold {
-				active = append(active, perkID)
+				addIcon(perkID, 1)
 			}
 
 		case "bulwark":
 			// Show while the unit has been stationary long enough for the
 			// shield regen to be active.
 			if unit.PerkState.StationarySeconds >= def.Config["stationaryThresholdSeconds"] {
-				active = append(active, perkID)
+				addIcon(perkID, 1)
 			}
 
 		case "interlock":
@@ -144,17 +150,17 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 			// helper as perkBonusArmorLocked so the icon appears exactly when
 			// the armor bonus is live.
 			if def != nil && s.hasAllyInRangeLocked(unit, def.Config["radius"]) {
-				active = append(active, perkID)
+				addIcon(perkID, 1)
 			}
 
 		case "guardian_aura":
 			// Always emit for the owner — the aura is passive and ever-present
 			// as long as the unit is alive and has the perk.
-			active = append(active, perkID)
+			addIcon(perkID, 1)
 
 		case "pain_share":
 			// Always emit for the owner — passive ever-present redirect.
-			active = append(active, perkID)
+			addIcon(perkID, 1)
 
 		// rallying_banner intentionally has no buff icon on the owner — the
 		// banner renders as a placed entity on the ground (sprite + radius
@@ -168,7 +174,7 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 	// currently under a guardian_aura. This is separate from the owner's buff
 	// icon above because recipients don't own the perk themselves.
 	if aura := s.guardianAuraCache[unit.ID]; aura.FlatArmor > 0 || aura.PercentArmor > 0 {
-		active = append(active, "guardian_aura")
+		addIcon("guardian_aura", 1)
 	}
 
 	// rallying_banner recipient buff: show the icon on allied units inside any
@@ -185,7 +191,7 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 		dx := unit.X - b.X
 		dy := unit.Y - b.Y
 		if dx*dx+dy*dy <= b.Radius*b.Radius {
-			active = append(active, "rallying_banner")
+			addIcon("rallying_banner", 1)
 			break
 		}
 	}
@@ -193,38 +199,44 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []string {
 	return active
 }
 
-// activeDebuffIconsLocked returns the icon ids for debuffs currently on the
-// unit, in a stable order. The client renders these as a separate row from
-// ActiveBuffs so buffs and debuffs stay visually distinct.
+// activeDebuffIconsLocked returns the debuff entries currently on the unit,
+// in a stable order. The client renders these as a separate row from
+// ActiveBuffs so buffs and debuffs stay visually distinct. Each entry's
+// Stacks field reflects how many simultaneous sources are contributing the
+// debuff (currently only mark and burn stack per source — other debuffs
+// always report 1). The client shows a small count badge when Stacks >= 2.
 //
-// Unlike buffs, debuff ids are raw icon ids (not perk ids). This is because
-// debuffs can land on units that don't own the causing perk — Taunted and
-// Marked are applied to arbitrary targets by another unit's perk.
+// Unlike buffs, debuff ids are raw icon ids (not perk ids) because debuffs
+// can land on units that don't own the causing perk — Taunted and Marked are
+// applied to arbitrary targets by another unit's perk.
 //
 // ADD NEW DEBUFF ICONS HERE as new debuff mechanics are added. Keep the
 // order stable so icon positions don't flicker on the client.
-func (s *GameState) activeDebuffIconsLocked(unit *Unit) []string {
+func (s *GameState) activeDebuffIconsLocked(unit *Unit) []protocol.ActiveEffectIcon {
 	if unit == nil {
 		return nil
 	}
-	var active []string
+	var active []protocol.ActiveEffectIcon
+	addIcon := func(id string, stacks int) {
+		active = append(active, protocol.ActiveEffectIcon{ID: id, Stacks: stacks})
+	}
 	if unit.TauntedByUnitID != 0 && unit.TauntRemaining > 0 {
-		active = append(active, "debuff-taunted")
+		addIcon("debuff-taunted", 1)
 	}
 	if unit.PerkState.WeakenedRemaining > 0 {
-		active = append(active, "debuff-weakened")
+		addIcon("debuff-weakened", 1)
 	}
-	if unit.PerkState.MarkedRemaining > 0 {
-		active = append(active, "debuff-marked")
+	if unit.PerkState.anyMarkActive() {
+		addIcon("debuff-marked", len(unit.PerkState.MarkStacks))
 	}
 	if unit.StunnedRemaining > 0 {
-		active = append(active, "debuff-stunned")
+		addIcon("debuff-stunned", 1)
 	}
 	if unit.SlowedRemaining > 0 {
-		active = append(active, "debuff-slowed")
+		addIcon("debuff-slowed", 1)
 	}
-	if unit.PerkState.BurnRemaining > 0 {
-		active = append(active, "debuff-burning")
+	if len(unit.PerkState.BurnStacks) > 0 {
+		addIcon("debuff-burning", len(unit.PerkState.BurnStacks))
 	}
 	return active
 }

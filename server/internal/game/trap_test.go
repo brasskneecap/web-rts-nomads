@@ -825,12 +825,12 @@ func TestMarkerTrap_MarksEnemy(t *testing.T) {
 
 	s.tickTrapEffectsLocked(0.05)
 
-	if enemy.PerkState.MarkedRemaining <= 0 {
-		t.Error("enemy inside marker_trap: expected MarkedRemaining > 0")
+	if !enemy.PerkState.anyMarkActive() {
+		t.Error("enemy inside marker_trap: expected a mark stack")
 	}
-	if math.Abs(enemy.PerkState.MarkedMultiplier-def.Config["markMultiplier"]) > 0.001 {
-		t.Errorf("MarkedMultiplier: got %.3f, want %.3f",
-			enemy.PerkState.MarkedMultiplier, def.Config["markMultiplier"])
+	if math.Abs(enemy.PerkState.totalMarkMultiplier()-def.Config["markMultiplier"]) > 0.001 {
+		t.Errorf("total mark multiplier: got %.3f, want %.3f",
+			enemy.PerkState.totalMarkMultiplier(), def.Config["markMultiplier"])
 	}
 }
 
@@ -859,8 +859,7 @@ func TestMarkerTrap_MarkPersistsAfterLeaving(t *testing.T) {
 
 	// Apply mark.
 	s.tickTrapEffectsLocked(0.05)
-	markedBefore := enemy.PerkState.MarkedRemaining
-	if markedBefore <= 0 {
+	if !enemy.PerkState.anyMarkActive() {
 		t.Fatal("mark was not applied")
 	}
 
@@ -869,7 +868,7 @@ func TestMarkerTrap_MarkPersistsAfterLeaving(t *testing.T) {
 
 	// Tick effects — enemy is outside now, so no refresh. Mark should still be set.
 	s.tickTrapEffectsLocked(0.05)
-	if enemy.PerkState.MarkedRemaining <= 0 {
+	if !enemy.PerkState.anyMarkActive() {
 		t.Error("mark should persist after leaving zone (decays naturally)")
 	}
 }
@@ -893,10 +892,14 @@ func TestMarkerTrap_RefreshStrongerSemantics(t *testing.T) {
 		t.Fatal("marker_trap perk def not found")
 	}
 
-	// Set a stronger mark already on the unit (e.g. from challengers_mark).
+	// Set a stronger mark already on the unit from a DIFFERENT source
+	// (e.g. challengers_mark from a Vanguard, ownerUnitID=999). Under the
+	// per-source stack model this becomes its own stack; a marker_trap
+	// from a different owner (ownerUnit=0 in placeTrap) adds a second
+	// stack rather than overwriting. Verify the pre-existing stack's
+	// multiplier is preserved.
 	strongerMult := def.Config["markMultiplier"] + 0.10
-	enemy.PerkState.MarkedMultiplier = strongerMult
-	enemy.PerkState.MarkedRemaining = 10.0
+	enemy.PerkState.applyMarkStack("unit-999", 999, strongerMult, 10.0)
 
 	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
 	trap.MarkMultiplier = def.Config["markMultiplier"]
@@ -904,10 +907,21 @@ func TestMarkerTrap_RefreshStrongerSemantics(t *testing.T) {
 
 	s.tickTrapEffectsLocked(0.05)
 
-	// Stronger existing mark must not be downgraded.
-	if enemy.PerkState.MarkedMultiplier < strongerMult {
-		t.Errorf("refresh-stronger: MarkedMultiplier was downgraded from %.3f to %.3f",
-			strongerMult, enemy.PerkState.MarkedMultiplier)
+	// The challengers_mark stack (sourceID "unit-999") must still be at
+	// its original stronger multiplier — no downgrade.
+	var preExisting *markStack
+	for i := range enemy.PerkState.MarkStacks {
+		if enemy.PerkState.MarkStacks[i].SourceID == "unit-999" {
+			preExisting = &enemy.PerkState.MarkStacks[i]
+			break
+		}
+	}
+	if preExisting == nil {
+		t.Fatal("pre-existing challengers_mark stack was removed")
+	}
+	if preExisting.Multiplier < strongerMult {
+		t.Errorf("refresh-stronger: pre-existing stack multiplier was downgraded from %.3f to %.3f",
+			strongerMult, preExisting.Multiplier)
 	}
 }
 
@@ -931,9 +945,8 @@ func TestMarkerTrap_AmplifiedDamage(t *testing.T) {
 		t.Fatal("marker_trap perk def not found")
 	}
 
-	// Apply mark manually.
-	enemy.PerkState.MarkedMultiplier = def.Config["markMultiplier"]
-	enemy.PerkState.MarkedRemaining = 4.0
+	// Apply mark manually via the stack helper.
+	enemy.PerkState.applyMarkStack("unit-1", 1, def.Config["markMultiplier"], 4.0)
 
 	// Deal 100 raw damage. applyUnitDamageLocked amplifies by (1 + markMultiplier).
 	const raw = 100
@@ -1193,11 +1206,8 @@ func TestMarkerTrap_NoFriendlyFire(t *testing.T) {
 
 	s.tickTrapEffectsLocked(0.05)
 
-	if ally.PerkState.MarkedRemaining > 0 {
-		t.Errorf("FRIENDLY FIRE: marker_trap marked ally (MarkedRemaining=%.3f)", ally.PerkState.MarkedRemaining)
-	}
-	if ally.PerkState.MarkedMultiplier != 0 {
-		t.Errorf("FRIENDLY FIRE: marker_trap set MarkedMultiplier on ally (%.3f)", ally.PerkState.MarkedMultiplier)
+	if ally.PerkState.anyMarkActive() {
+		t.Errorf("FRIENDLY FIRE: marker_trap marked ally (%d stacks)", len(ally.PerkState.MarkStacks))
 	}
 }
 
@@ -1337,11 +1347,13 @@ func min(a, b int) int {
 // Phase F — QA-flagged coverage gaps (non-blocking follow-ups)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestMarkerTrap_VsChallengersMarkStrongerWins verifies the refresh-stronger
-// semantics when a marker_trap overlaps with an existing Challenger's Mark.
-// The stronger (higher) multiplier must win on refresh; the longer duration
-// must win on the timer. This pins the cross-source max-wins invariant.
-func TestMarkerTrap_VsChallengersMarkStrongerWins(t *testing.T) {
+// TestMarkerTrap_VsChallengersMarkCoexistAsStacks verifies the per-source
+// stacking semantics when a marker_trap overlaps with an existing Challenger's
+// Mark on the same target. Each source occupies its own stack (up to
+// maxDebuffStacks), and neither downgrades the other. Same-source
+// re-application still uses refresh-stronger / refresh-longer rules on that
+// source's own stack.
+func TestMarkerTrap_VsChallengersMarkCoexistAsStacks(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1357,57 +1369,49 @@ func TestMarkerTrap_VsChallengersMarkStrongerWins(t *testing.T) {
 	if def == nil {
 		t.Fatal("marker_trap perk def not found")
 	}
-	trapMult := def.Config["markMultiplier"]   // e.g. 0.20
-	trapDur := def.Config["markDuration"]       // e.g. 4.0
+	trapMult := def.Config["markMultiplier"] // e.g. 0.20
+	trapDur := def.Config["markDuration"]    // e.g. 4.0
 
-	// Simulate Challenger's Mark already active with a stronger multiplier and
-	// longer duration than the trap. The trap tick must not downgrade either.
-	challengerMult := trapMult + 0.10 // stronger: 0.30
-	challengerDur := trapDur + 2.0    // longer: 6.0
-	enemy.PerkState.MarkedMultiplier = challengerMult
-	enemy.PerkState.MarkedRemaining = challengerDur
+	// Simulate Challenger's Mark already active from a Vanguard (owner 42)
+	// with a stronger multiplier and longer duration than the trap.
+	const vanguardOwnerID = 42
+	challengerMult := trapMult + 0.10 // 0.30
+	challengerDur := trapDur + 2.0    // 6.0
+	enemy.PerkState.applyMarkStack(unitMarkSourceID(vanguardOwnerID), vanguardOwnerID, challengerMult, challengerDur)
 
+	// marker_trap (placed with ownerUnitID=0 via placeTrap) adds a SECOND
+	// stack rather than overwriting.
 	trap := placeTrap(s, "marker_trap", "p1", 0, 400, 400, def.Config["radius"], 12.0)
 	trap.MarkMultiplier = trapMult
 	trap.MarkDuration = trapDur
-
 	s.tickTrapEffectsLocked(0.05)
 
-	// Stronger multiplier (Challenger's Mark) must survive.
-	if enemy.PerkState.MarkedMultiplier < challengerMult {
-		t.Errorf("marker_trap downgraded MarkedMultiplier from %.3f to %.3f (stronger mark must win)",
-			challengerMult, enemy.PerkState.MarkedMultiplier)
+	if len(enemy.PerkState.MarkStacks) != 2 {
+		t.Fatalf("expected 2 stacks after different-source marker_trap, got %d", len(enemy.PerkState.MarkStacks))
 	}
-	// Longer duration (Challenger's Mark) must survive.
-	// The trap's tickTrapEffectsLocked sets MarkedRemaining = max(existing, trapDur),
-	// so a longer existing duration must be preserved.
-	if enemy.PerkState.MarkedRemaining < challengerDur {
-		t.Errorf("marker_trap shortened MarkedRemaining from %.3f to %.3f (longer duration must win)",
-			challengerDur, enemy.PerkState.MarkedRemaining)
+	// The Vanguard stack must still be at its original stronger/longer values.
+	var vStack *markStack
+	for i := range enemy.PerkState.MarkStacks {
+		if enemy.PerkState.MarkStacks[i].SourceID == unitMarkSourceID(vanguardOwnerID) {
+			vStack = &enemy.PerkState.MarkStacks[i]
+		}
+	}
+	if vStack == nil {
+		t.Fatal("challengers_mark stack was removed when marker_trap applied")
+	}
+	if vStack.Multiplier != challengerMult || vStack.Remaining != challengerDur {
+		t.Errorf("challengers_mark stack was mutated: got mult=%.3f dur=%.3f; want mult=%.3f dur=%.3f",
+			vStack.Multiplier, vStack.Remaining, challengerMult, challengerDur)
 	}
 
-	// Now reverse: trap has stronger multiplier and longer duration; the weaker
-	// Challenger's Mark must be upgraded to the trap values.
-	weakMult := trapMult - 0.05
-	weakDur := trapDur - 1.0
-	if weakMult < 0 {
-		weakMult = 0
-	}
-	if weakDur < 0 {
-		weakDur = 0
-	}
-	enemy.PerkState.MarkedMultiplier = weakMult
-	enemy.PerkState.MarkedRemaining = weakDur
-
+	// Same-source marker_trap tick refreshes the marker_trap stack's own
+	// duration to max(existing, trapDur) — legacy refresh rules on that
+	// stack, without creating a 3rd stack or touching the Vanguard stack.
+	stacksBeforeTick := len(enemy.PerkState.MarkStacks)
 	s.tickTrapEffectsLocked(0.05)
-
-	if enemy.PerkState.MarkedMultiplier < trapMult {
-		t.Errorf("weaker existing mark was not upgraded to trap's stronger multiplier (got %.3f, want >= %.3f)",
-			enemy.PerkState.MarkedMultiplier, trapMult)
-	}
-	if enemy.PerkState.MarkedRemaining < trapDur {
-		t.Errorf("shorter existing duration was not extended to trap's longer duration (got %.3f, want >= %.3f)",
-			enemy.PerkState.MarkedRemaining, trapDur)
+	if len(enemy.PerkState.MarkStacks) != stacksBeforeTick {
+		t.Errorf("same-source re-tick must not add a stack: got %d, want %d",
+			len(enemy.PerkState.MarkStacks), stacksBeforeTick)
 	}
 }
 
@@ -1652,24 +1656,24 @@ func TestExplosiveTrap_TriggeredVisibleAfterUpdate(t *testing.T) {
 	}
 }
 
-// TestPerkPool_GoldCascadesThroughSilverToBronze verifies the full two-step
-// cascade: Gold empty → Silver empty (or fully gated) → Bronze.
-func TestPerkPool_GoldCascadesThroughSilverToBronze(t *testing.T) {
+// TestPerkPool_GoldReturnsGoldPerks verifies that when a Trapper reaches Gold
+// rank and has consumed the Bronze/Silver tiers, the Gold pool is populated
+// with adaptive Gold perks (ascendant_infusion, ascendant_deployment,
+// overload_protocol). The cascade only falls through to Silver/Bronze when the
+// Gold pool is empty — that fallback is still valid runtime behavior, but with
+// the three Gold perks authored it no longer triggers for Trapper.
+func TestPerkPool_GoldReturnsGoldPerks(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	if archer == nil {
-		t.Skip("archer unit type not available; skipping cascade test")
+		t.Skip("archer unit type not available; skipping Gold pool test")
 	}
 
 	archer.ProgressionPath = unitPathTrapper
 	archer.Rank = unitRankGold
-	// Bronze "caltrops" plus all Silver perks compatible with caltrops — Gold pool
-	// is empty (gold.json is []), and Silver is fully gated (remaining Silvers
-	// require explosive_trap / marker_trap / fire_pit, none of which this unit
-	// owns). So the cascade must walk Gold → Silver → Bronze.
 	archer.PerkIDs = []string{
 		"caltrops",
 		"extended_setup", "wider_nets", "rapid_deployment", "amplified_effects",
@@ -1679,11 +1683,11 @@ func TestPerkPool_GoldCascadesThroughSilverToBronze(t *testing.T) {
 	pool := s.perkPoolForRankLocked(archer, unitRankGold)
 
 	if len(pool) == 0 {
-		t.Fatal("expected Gold→Silver→Bronze cascade to land on a non-empty Bronze pool, got empty")
+		t.Fatal("expected non-empty Gold pool for Trapper")
 	}
 	for _, def := range pool {
-		if def.Rank != unitRankBronze {
-			t.Errorf("cascade returned non-Bronze perk %q at rank %q", def.ID, def.Rank)
+		if def.Rank != unitRankGold {
+			t.Errorf("Gold pool returned non-Gold perk %q at rank %q", def.ID, def.Rank)
 		}
 	}
 }

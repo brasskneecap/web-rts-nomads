@@ -72,7 +72,14 @@ export class CanvasRenderer {
   private resizeObserver: ResizeObserver | null = null
   private renderTime = 0
   private bannerInitialDurations = new Map<number, number>()
-  private trapInitialDurations = new Map<number, number>()
+  // Post-expiry fade-out queue. Traps render at full opacity during their
+  // lifetime; when they vanish from the snapshot (expired, detonated, or
+  // culled), we retain the last-known TrapSnapshot and render it with linear
+  // alpha fade for TRAP_FADE_MS, then drop it. Fading traps are NOT selectable
+  // — they are gone from state.traps, which getTrapAtPosition iterates.
+  private lastSeenTraps = new Map<string, TrapSnapshot>()
+  private fadingOutTraps = new Map<string, { snapshot: TrapSnapshot; startedAt: number }>()
+  private readonly TRAP_FADE_MS = 450
   private unitAnim = new UnitAnimationController()
   private terrainCache: HTMLCanvasElement | null = null
   private terrainCacheKey: unknown[] = []
@@ -632,54 +639,85 @@ export class CanvasRenderer {
   // same per-id initial-duration cache pattern as drawBanners.
   // ──────────────────────────────────────────────────────────────────────────
   private drawTraps(traps: TrapSnapshot[]) {
-    if (traps.length === 0) {
-      if (this.trapInitialDurations.size > 0) this.trapInitialDurations.clear()
-      return
-    }
-
     const ctx = this.ctx
-    const seen = new Set<number>()
+    const now = performance.now()
+    const currentIds = new Set<string>()
+    for (const t of traps) currentIds.add(t.id)
 
+    // Diff current vs last-seen: any trap that existed last frame but isn't in
+    // this frame's snapshot has been removed by the server (expired, detonated,
+    // or culled). Enqueue a fade-out using its last-known snapshot so we can
+    // animate the disappearance for TRAP_FADE_MS.
+    for (const [id, snap] of this.lastSeenTraps) {
+      if (!currentIds.has(id) && !this.fadingOutTraps.has(id)) {
+        this.fadingOutTraps.set(id, { snapshot: snap, startedAt: now })
+      }
+    }
+    // Refresh the last-seen cache for the next-frame diff.
+    this.lastSeenTraps.clear()
+    for (const t of traps) this.lastSeenTraps.set(t.id, t)
+
+    // ── Render live traps at full opacity ───────────────────────────────────
     for (const trap of traps) {
-      seen.add(trap.id)
-
-      // Cache largest-seen remainingSeconds as the initial duration denominator.
-      const recorded = this.trapInitialDurations.get(trap.id) ?? 0
-      if (trap.remainingSeconds > recorded) {
-        this.trapInitialDurations.set(trap.id, trap.remainingSeconds)
-      }
-      const initial = this.trapInitialDurations.get(trap.id) ?? trap.remainingSeconds
-      const alpha = Math.max(0.15, Math.min(1, trap.remainingSeconds / (initial || 1)))
-
-      const ownerColor = this.state.getPlayerColor(trap.ownerId) ?? '#94a3b8'
-      const r = trap.radius
-      const { x, y } = trap
-
       ctx.save()
-      ctx.globalAlpha = alpha
-
-      switch (trap.type) {
-        case 'caltrops':
-          this.drawTrapCaltrops(ctx, x, y, r, ownerColor)
-          break
-        case 'fire_pit':
-          this.drawTrapFirePit(ctx, x, y, r, ownerColor)
-          break
-        case 'explosive_trap':
-          this.drawTrapExplosive(ctx, x, y, r, ownerColor, trap.triggered ?? false)
-          break
-        case 'marker_trap':
-          this.drawTrapMarker(ctx, x, y, r, ownerColor)
-          break
+      ctx.globalAlpha = 1
+      this.renderTrapBody(ctx, trap)
+      if (this.state.selectedTrapId === trap.id) {
+        this.renderTrapSelectionRing(ctx, trap)
       }
-
       ctx.restore()
     }
 
-    // Evict stale entries so the map doesn't grow unbounded.
-    for (const id of this.trapInitialDurations.keys()) {
-      if (!seen.has(id)) this.trapInitialDurations.delete(id)
+    // ── Render fading-out traps with linear alpha fade ──────────────────────
+    // Iterate via snapshot of keys so we can delete entries mid-iteration.
+    for (const id of Array.from(this.fadingOutTraps.keys())) {
+      const entry = this.fadingOutTraps.get(id)!
+      const t = (now - entry.startedAt) / this.TRAP_FADE_MS
+      if (t >= 1) {
+        this.fadingOutTraps.delete(id)
+        continue
+      }
+      ctx.save()
+      ctx.globalAlpha = 1 - t
+      this.renderTrapBody(ctx, entry.snapshot)
+      ctx.restore()
     }
+  }
+
+  // Trap body rendering — shared between live and fading-out paths. Caller
+  // owns ctx.save/restore and globalAlpha so the same snapshot can be drawn
+  // at different opacities without per-type duplication.
+  private renderTrapBody(ctx: CanvasRenderingContext2D, trap: TrapSnapshot) {
+    const ownerColor = this.state.getPlayerColor(trap.ownerId) ?? '#94a3b8'
+    const { x, y } = trap
+    const r = trap.radius
+    switch (trap.type) {
+      case 'caltrops':
+        this.drawTrapCaltrops(ctx, x, y, r, ownerColor)
+        break
+      case 'fire_pit':
+        this.drawTrapFirePit(ctx, x, y, r, ownerColor)
+        break
+      case 'explosive_trap':
+        this.drawTrapExplosive(ctx, x, y, r, ownerColor, trap.triggered ?? false)
+        break
+      case 'marker_trap':
+        this.drawTrapMarker(ctx, x, y, r, ownerColor)
+        break
+    }
+  }
+
+  // Selection highlight: bright white ring just outside the trap radius, at
+  // full alpha. Only drawn for live (selectable) traps — fading-out traps
+  // have already been cleared from selection.
+  private renderTrapSelectionRing(ctx: CanvasRenderingContext2D, trap: TrapSnapshot) {
+    ctx.globalAlpha = 1
+    ctx.beginPath()
+    ctx.arc(trap.x, trap.y, trap.radius + 3, 0, Math.PI * 2)
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 2 / this.camera.zoom
+    ctx.setLineDash([])
+    ctx.stroke()
   }
 
   // ── caltrops ─────────────────────────────────────────────────────────────
@@ -977,8 +1015,8 @@ export class CanvasRenderer {
       shield?: number
       maxShield?: number
       attackSpeed?: number
-      activeBuffs?: string[]
-      activeDebuffs?: string[]
+      activeBuffs?: { id: string; stacks?: number }[]
+      activeDebuffs?: { id: string; stacks?: number }[]
       color?: string
       visible?: boolean
       ownerId?: string
@@ -1604,17 +1642,21 @@ export class CanvasRenderer {
   //   ACTION_ICON_MAP. Currently exposed: debuff-taunted, debuff-weakened,
   //   debuff-marked. Rendered in a separate row above buffs with red tinting.
   // ──────────────────────────────────────────────────────────────────────────
-  private drawUnitActiveBuffs(x: number, headTopY: number, buffIds: string[]) {
+  private drawUnitActiveBuffs(
+    x: number,
+    headTopY: number,
+    buffs: { id: string; stacks?: number }[],
+  ) {
     const ctx = this.ctx
     const iconSize = 12
     const gap = 2
-    const totalWidth = buffIds.length * iconSize + Math.max(0, buffIds.length - 1) * gap
+    const totalWidth = buffs.length * iconSize + Math.max(0, buffs.length - 1) * gap
     // Sits one row above the health bar (bar at headTopY - 8, buffs at -24).
     const baseY = headTopY - 24
     let cursorX = x - totalWidth / 2
 
-    for (const id of buffIds) {
-      const def = PERK_DEF_MAP.get(id)
+    for (const buff of buffs) {
+      const def = PERK_DEF_MAP.get(buff.id)
       const iconId = def?.icon
       const iconPath = iconId ? ACTION_ICON_MAP.get(iconId) : undefined
       if (!iconPath) {
@@ -1643,6 +1685,12 @@ export class CanvasRenderer {
       ctx.stroke(new Path2D(iconPath))
       ctx.restore()
 
+      // Stack count badge — only drawn when stacks >= 2 so single-instance
+      // effects stay uncluttered. Amber fill to echo the buff-row border.
+      if ((buff.stacks ?? 1) >= 2) {
+        this.drawStackBadge(cursorX + iconSize, baseY, buff.stacks!, 'rgba(251, 191, 36, 0.95)')
+      }
+
       cursorX += iconSize + gap
     }
   }
@@ -1652,19 +1700,23 @@ export class CanvasRenderer {
   // the two rows never crowd each other horizontally when a unit carries both.
   // baseY offset is -38 vs -26 for buffs (12 px row height + 0 px gap).
   // ──────────────────────────────────────────────────────────────────────────
-  private drawUnitActiveDebuffs(x: number, headTopY: number, debuffIds: string[]) {
+  private drawUnitActiveDebuffs(
+    x: number,
+    headTopY: number,
+    debuffs: { id: string; stacks?: number }[],
+  ) {
     const ctx = this.ctx
     const iconSize = 12
     const gap = 2
-    const totalWidth = debuffIds.length * iconSize + Math.max(0, debuffIds.length - 1) * gap
+    const totalWidth = debuffs.length * iconSize + Math.max(0, debuffs.length - 1) * gap
     // Debuffs sit one row above buffs (buffs at -24, debuffs at -36).
     const baseY = headTopY - 36
     let cursorX = x - totalWidth / 2
 
-    for (const id of debuffIds) {
+    for (const debuff of debuffs) {
       // Debuff ids are raw icon ids — look up directly in ACTION_ICON_MAP,
       // no PERK_DEF_MAP indirection needed.
-      const iconPath = ACTION_ICON_MAP.get(id)
+      const iconPath = ACTION_ICON_MAP.get(debuff.id)
       if (!iconPath) {
         cursorX += iconSize + gap
         continue
@@ -1693,8 +1745,43 @@ export class CanvasRenderer {
       ctx.stroke(new Path2D(iconPath))
       ctx.restore()
 
+      if ((debuff.stacks ?? 1) >= 2) {
+        this.drawStackBadge(cursorX + iconSize, baseY, debuff.stacks!, 'rgba(248, 113, 113, 0.95)')
+      }
+
       cursorX += iconSize + gap
     }
+  }
+
+  // drawStackBadge renders a small circular number tag at the top-right of
+  // an icon at (iconRightX, iconTopY). Shared between buff and debuff rows so
+  // both use identical geometry; only the fill color differs (amber for
+  // buffs, red for debuffs).
+  private drawStackBadge(iconRightX: number, iconTopY: number, stacks: number, fill: string) {
+    const ctx = this.ctx
+    const r = 4
+    // Anchor the badge centered on the icon's top-right corner so it clearly
+    // reads as an overlay rather than a sibling icon.
+    const cx = iconRightX
+    const cy = iconTopY
+
+    ctx.save()
+    ctx.fillStyle = fill
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
+    ctx.lineWidth = 0.75
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+
+    ctx.fillStyle = '#0f172a'
+    ctx.font = 'bold 6px system-ui, -apple-system, Segoe UI, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    // Render "N" for 2..9 and cap at "9+" for future higher stack caps so
+    // the badge stays single-glyph even if maxDebuffStacks grows.
+    ctx.fillText(stacks > 9 ? '9+' : String(stacks), cx, cy + 0.5)
+    ctx.restore()
   }
 
 

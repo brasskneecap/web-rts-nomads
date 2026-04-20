@@ -585,20 +585,27 @@ func TestChallengersmark_MarkApplied_OnAttack(t *testing.T) {
 	grantPerk(vanguard, "challengers_mark")
 	def := perkDefByID("challengers_mark")
 
-	if target.PerkState.MarkedRemaining > 0 {
+	if target.PerkState.anyMarkActive() {
 		t.Fatal("target should not be marked before any attack")
 	}
 
 	var dead []int
 	s.onPerkAttackFiredLocked(vanguard, target, 10, &dead)
 
-	if target.PerkState.MarkedRemaining != def.Config["durationSeconds"] {
-		t.Errorf("MarkedRemaining: expected %.1f, got %.1f",
-			def.Config["durationSeconds"], target.PerkState.MarkedRemaining)
+	if len(target.PerkState.MarkStacks) != 1 {
+		t.Fatalf("expected exactly one mark stack after attack, got %d", len(target.PerkState.MarkStacks))
 	}
-	if target.PerkState.MarkedMultiplier != def.Config["bonusMultiplier"] {
-		t.Errorf("MarkedMultiplier: expected %.2f, got %.2f",
-			def.Config["bonusMultiplier"], target.PerkState.MarkedMultiplier)
+	stack := target.PerkState.MarkStacks[0]
+	if stack.Remaining != def.Config["durationSeconds"] {
+		t.Errorf("stack Remaining: expected %.1f, got %.1f",
+			def.Config["durationSeconds"], stack.Remaining)
+	}
+	if stack.Multiplier != def.Config["bonusMultiplier"] {
+		t.Errorf("stack Multiplier: expected %.2f, got %.2f",
+			def.Config["bonusMultiplier"], stack.Multiplier)
+	}
+	if stack.OwnerUnitID != vanguard.ID {
+		t.Errorf("stack OwnerUnitID: expected %d (vanguard), got %d", vanguard.ID, stack.OwnerUnitID)
 	}
 }
 
@@ -650,26 +657,21 @@ func TestChallengersmark_NoBonusDamage_WhenExpired(t *testing.T) {
 	var dead []int
 	s.onPerkAttackFiredLocked(vanguard, target, 10, &dead)
 
-	if target.PerkState.MarkedRemaining <= 0 {
-		t.Fatal("expected MarkedRemaining > 0 after attack")
+	if !target.PerkState.anyMarkActive() {
+		t.Fatal("expected an active mark stack after attack")
 	}
 
-	// Manually run the cross-unit decay the same way Update() does it.
+	// Manually run the cross-unit stack decay the same way Update() does it.
 	duration := def.Config["durationSeconds"]
 	dt := 0.05
 	elapsed := 0.0
 	for elapsed < duration+dt {
-		if target.PerkState.MarkedRemaining > 0 {
-			target.PerkState.MarkedRemaining = math.Max(0, target.PerkState.MarkedRemaining-dt)
-			if target.PerkState.MarkedRemaining == 0 {
-				target.PerkState.MarkedMultiplier = 0
-			}
-		}
+		target.PerkState.decayMarkStacks(dt)
 		elapsed += dt
 	}
 
-	if target.PerkState.MarkedRemaining != 0 {
-		t.Errorf("MarkedRemaining should be 0 after duration, got %.3f", target.PerkState.MarkedRemaining)
+	if target.PerkState.anyMarkActive() {
+		t.Errorf("mark stacks should be empty after duration, got %d stacks", len(target.PerkState.MarkStacks))
 	}
 
 	// Apply 20 raw damage — should take exactly 20 (no mark amplification).
@@ -698,13 +700,19 @@ func TestChallengersmark_MarkRefreshes_OnEachAttack(t *testing.T) {
 	var dead []int
 	s.onPerkAttackFiredLocked(vanguard, target, 10, &dead)
 	// Partially drain the mark duration to simulate time passing.
-	target.PerkState.MarkedRemaining = 1.0
+	if len(target.PerkState.MarkStacks) != 1 {
+		t.Fatalf("expected 1 mark stack, got %d", len(target.PerkState.MarkStacks))
+	}
+	target.PerkState.MarkStacks[0].Remaining = 1.0
 
-	// Attack again — duration should be reset to full.
+	// Attack again — duration should be reset to full on the same stack.
 	s.onPerkAttackFiredLocked(vanguard, target, 10, &dead)
-	if target.PerkState.MarkedRemaining != def.Config["durationSeconds"] {
+	if len(target.PerkState.MarkStacks) != 1 {
+		t.Fatalf("same-source attack must refresh, not add a stack: got %d stacks", len(target.PerkState.MarkStacks))
+	}
+	if target.PerkState.MarkStacks[0].Remaining != def.Config["durationSeconds"] {
 		t.Errorf("mark should refresh to full duration on each attack: got %.1f, want %.1f",
-			target.PerkState.MarkedRemaining, def.Config["durationSeconds"])
+			target.PerkState.MarkStacks[0].Remaining, def.Config["durationSeconds"])
 	}
 }
 

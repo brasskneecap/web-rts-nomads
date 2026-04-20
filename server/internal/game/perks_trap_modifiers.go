@@ -130,12 +130,46 @@ type TrapSpecificModifiers struct {
 	// already live in perkOutgoingDamageDebuffMultiplierLocked.
 	ExposedWeakenedMultiplier float64
 
-	// lasting_flames (silver): fire_pit-only. Burn DoT stamped on victims when
-	// they LEAVE a lasting fire pit. The trap records the burn params it would
-	// apply at exit; tickTrapperSilverDebuffsLocked detects the exit transition
-	// and moves the armed params onto the victim's Burn* fields.
-	LastingFlamesBurnDPS      float64
+	// lasting_flames (silver): fire_pit-only. Switches the fire pit into
+	// "damage-as-debuff" mode by snapshotting the burn-debuff duration onto
+	// the trap. The burn's DPS is derived from the fire pit's own
+	// DamagePerSecond at tick time, so this resolver doesn't carry a DPS.
 	LastingFlamesBurnDuration float64
+
+	// ── Gold: ascendant_infusion (adaptive per Bronze trap) ──────────────────
+	// Electrified Caltrops (caltrops)
+	InfusionElectrifiedBonusDamage     int
+	InfusionElectrifiedStunChance      float64
+	InfusionElectrifiedStunDuration    float64
+	InfusionElectrifiedStunCooldownSec float64
+	// Reactive Flames (fire_pit)
+	InfusionReactiveFlamesRadius float64
+	InfusionReactiveFlamesDamage int
+	// Scatter Bomb (explosive_trap)
+	InfusionScatterBombCount        int
+	InfusionScatterBombSpawnRadius  float64
+	InfusionScatterBombChildSeconds float64
+	// Shared Pain (marker_trap)
+	InfusionSharedPainFraction float64
+
+	// ── Gold: overload_protocol (adaptive per Bronze trap) ───────────────────
+	// Spike Surge (caltrops)
+	OverloadSpikeSurgeBurstDamage  int
+	OverloadSpikeSurgeSlowMult     float64
+	OverloadSpikeSurgeSlowDuration float64
+	// Flame Collapse (fire_pit). RadiusMult is applied to the trap's already-
+	// multiplied zone radius at plant time to derive the absolute explosion
+	// radius snapshotted onto the Trap struct.
+	OverloadFlameCollapseRadiusMult  float64
+	OverloadFlameCollapseDamage      int
+	OverloadFlameCollapseBurnDPS     float64
+	OverloadFlameCollapseBurnSeconds float64
+	// Cataclysm Blast (explosive_trap)
+	OverloadCataclysmRadiusMult    float64
+	OverloadCataclysmDelaySeconds  float64
+	// Final Exposure (marker_trap)
+	OverloadFinalExposureDamage    int
+	OverloadFinalExposureAoeRadius float64
 }
 
 // trapSpecificModifiersForUnitLocked resolves trap-type-specific modifiers.
@@ -173,8 +207,49 @@ func (s *GameState) trapSpecificModifiersForUnitLocked(unit *Unit, trapType stri
 			}
 		case "lasting_flames":
 			if trapType == "fire_pit" {
-				m.LastingFlamesBurnDPS = def.Config["burnDamagePerSecond"]
+				// "Damage-as-debuff" mode: duration is the only tunable. The
+				// burn DPS is the fire pit's own EffectMultiplier-scaled
+				// DamagePerSecond at tick time (see trap.go fire_pit branch).
 				m.LastingFlamesBurnDuration = def.Config["burnDurationSeconds"]
+			}
+
+		// ── Gold: ascendant_infusion — adaptive, one payload per trap type ───
+		case "ascendant_infusion":
+			switch trapType {
+			case "caltrops":
+				m.InfusionElectrifiedBonusDamage = int(def.Config["electrifiedBonusDamagePerTick"])
+				m.InfusionElectrifiedStunChance = def.Config["electrifiedStunChance"]
+				m.InfusionElectrifiedStunDuration = def.Config["electrifiedStunDuration"]
+				m.InfusionElectrifiedStunCooldownSec = def.Config["electrifiedStunCooldownSeconds"]
+			case "fire_pit":
+				m.InfusionReactiveFlamesRadius = def.Config["reactiveFlamesRadius"]
+				m.InfusionReactiveFlamesDamage = int(def.Config["reactiveFlamesDamage"])
+			case "explosive_trap":
+				m.InfusionScatterBombCount = int(def.Config["scatterBombCount"])
+				m.InfusionScatterBombSpawnRadius = def.Config["scatterBombSpawnRadius"]
+				m.InfusionScatterBombChildSeconds = def.Config["scatterBombChildDurationSeconds"]
+			case "marker_trap":
+				m.InfusionSharedPainFraction = def.Config["sharedPainFraction"]
+			}
+
+		// ── Gold: overload_protocol — adaptive, one payload per trap type ────
+		case "overload_protocol":
+			switch trapType {
+			case "caltrops":
+				m.OverloadSpikeSurgeBurstDamage = int(def.Config["spikeSurgeBurstDamage"])
+				m.OverloadSpikeSurgeSlowMult = def.Config["spikeSurgeSlowMultiplier"]
+				m.OverloadSpikeSurgeSlowDuration = def.Config["spikeSurgeSlowDurationSeconds"]
+			case "fire_pit":
+				m.OverloadFlameCollapseRadiusMult = def.Config["flameCollapseRadiusMultiplier"]
+				m.OverloadFlameCollapseDamage = int(def.Config["flameCollapseDamage"])
+				m.OverloadFlameCollapseBurnDPS = def.Config["flameCollapseBurnDamagePerSecond"]
+				m.OverloadFlameCollapseBurnSeconds = def.Config["flameCollapseBurnDurationSeconds"]
+			case "explosive_trap":
+				m.OverloadCataclysmRadiusMult = def.Config["cataclysmRadiusMultiplier"]
+				m.OverloadCataclysmDelaySeconds = def.Config["cataclysmSecondaryDelaySeconds"]
+			case "marker_trap":
+				m.OverloadFinalExposureDamage = int(def.Config["finalExposureBurstDamage"])
+				m.OverloadFinalExposureAoeRadius = def.Config["finalExposureAoeRadius"]
 			}
 
 		// ── EXTENSION POINT: trap-specific Silver/Gold upgrades plug in here.
@@ -224,8 +299,7 @@ type EffectiveTrapStats struct {
 	BarbedFieldRampPerSec     float64 // caltrops + barbed_field
 	BarbedFieldMaxBonusDPS    float64 // caltrops + barbed_field
 	ExposedWeakenedMultiplier float64 // marker_trap + exposed_weakness
-	LastingFlamesBurnDPS      float64 // fire_pit + lasting_flames
-	LastingFlamesBurnDuration float64 // fire_pit + lasting_flames
+	LastingFlamesBurnDuration float64 // fire_pit + lasting_flames (burn DPS == fire_pit DamagePerSecond)
 	AftershockDelaySeconds    float64 // explosive_trap + explosive_chain
 }
 
@@ -268,8 +342,10 @@ func (s *GameState) DebugEffectiveTrapStats(unit *Unit) (EffectiveTrapStats, boo
 	case "fire_pit":
 		out.Radius = def.Config["radius"] * m.RadiusMultiplier
 		out.DamagePerSecond = def.Config["damagePerSecond"] * m.EffectMultiplier
-		out.LastingFlamesBurnDPS = specific.LastingFlamesBurnDPS * m.EffectMultiplier
-		out.LastingFlamesBurnDuration = specific.LastingFlamesBurnDuration * m.EffectMultiplier
+		// Burn DPS in lasting_flames mode == fire pit's DamagePerSecond, so
+		// it's already reflected in out.DamagePerSecond. Only the duration
+		// needs its own debug field.
+		out.LastingFlamesBurnDuration = specific.LastingFlamesBurnDuration * m.DurationMultiplier
 	case "explosive_trap":
 		out.Radius = def.Config["explosionRadius"] * m.RadiusMultiplier
 		out.TriggerRadius = def.Config["triggerRadius"] * m.RadiusMultiplier

@@ -94,6 +94,22 @@ export type MapConfig = {
   obstacles: ObstacleTile[]
   buildings: BuildingTile[]
   waveConfig?: WaveConfig
+  debug?: MapDebugConfig
+}
+
+// Per-map debug/telemetry opt-ins. Only set on development maps — production
+// maps should omit this field so the debug UI is completely hidden.
+export type MapDebugConfig = {
+  // Enables the in-game Battle Tracker HUD. When true, the server streams
+  // per-player damage/kill totals with every snapshot and the client renders
+  // a collapsible debug panel with a save-to-localStorage button.
+  battleTracker?: boolean
+
+  // Enables the "spawn enemy with perks" dev tool. When true, the client
+  // renders a debug panel for configuring unit type / path / rank / perks /
+  // custom HP and placing that unit with a click on the map. The server
+  // honors `debug_spawn_unit` commands from any joined client on this map.
+  debugSpawn?: boolean
 }
 
 export type MapCatalogEntry = {
@@ -182,6 +198,22 @@ export type RepairCommandMessage = {
   buildingId: string
 }
 
+// Dev-only command issued by the DebugSpawnPanel. See MapDebugConfig.debugSpawn —
+// the server hard-gates this to maps with that flag on. perkIds are applied
+// verbatim (no eligibility filtering) so any combo can be tested. team="mine"
+// (default) gives the unit to the caller; team="enemy" spawns it as hostile.
+export type DebugSpawnUnitCommandMessage = {
+  type: 'debug_spawn_unit'
+  unitType: string
+  team?: 'mine' | 'enemy'
+  path?: string
+  rank?: string
+  perkIds?: string[]
+  x: number
+  y: number
+  customHp?: number
+}
+
 export type ResourceStockSnapshot = {
   id: string
   label: string
@@ -208,7 +240,18 @@ export type ClientMessage =
   | SetBuildingSpawnPointCommandMessage
   | BuildBuildingCommandMessage
   | RepairCommandMessage
+  | DebugSpawnUnitCommandMessage
   | PongMessage
+
+// One entry in a unit's activeBuffs / activeDebuffs list. `id` is the perk
+// id (buffs) or raw icon id (debuffs). `stacks` is the number of concurrent
+// sources contributing the effect — absent when 1 so single-instance
+// effects stay compact on the wire. The renderer overlays a small count
+// badge whenever stacks >= 2.
+export type ActiveEffectIcon = {
+  id: string
+  stacks?: number
+}
 
 export type UnitSnapshot = {
   id: number
@@ -239,12 +282,14 @@ export type UnitSnapshot = {
   shield?: number
   /** Max shield pool advertised by the unit's perks. */
   maxShield?: number
-  /** Perk-id list for buffs currently active on this unit. */
-  activeBuffs?: string[]
-  /** Icon-id list for negative status effects currently active on this unit.
-   *  Unlike activeBuffs, these are raw icon ids (not perk ids) because debuffs
-   *  can land on units that don't own the causing perk. */
-  activeDebuffs?: string[]
+  /** Buffs currently active on this unit — each entry carries a perk id and
+   *  optional stack count (omitted when 1). Stacks >= 2 render a count
+   *  badge over the icon on-screen. */
+  activeBuffs?: ActiveEffectIcon[]
+  /** Debuffs currently active on this unit. Same shape as activeBuffs, but
+   *  ids are raw icon ids (not perk ids) because debuffs can land on units
+   *  that don't own the causing perk. */
+  activeDebuffs?: ActiveEffectIcon[]
   carriedResourceType?: ResourceType
   carriedAmount?: number
   targetX?: number
@@ -285,7 +330,7 @@ export type BannerSnapshot = {
 }
 
 export type TrapSnapshot = {
-  id: number
+  id: string
   ownerId: string
   x: number
   y: number
@@ -312,6 +357,39 @@ export type MatchSnapshotMessage = {
   wave: WaveSnapshot
   banners?: BannerSnapshot[]
   traps?: TrapSnapshot[]
+  // Present only when the active map has debug.battleTracker=true. Absent
+  // otherwise — the client treats absence as "debug tracker disabled".
+  battleTracker?: BattleTrackerSnapshot
+}
+
+// ─── Battle Tracker (debug) ──────────────────────────────────────────────────
+
+export type BattleStats = {
+  damageDealt: number
+  kills: number
+}
+
+export type BattleBucket = {
+  // "unit" | "trap" | "building" — damage source category
+  kind: 'unit' | 'trap' | 'building'
+  // Unit type / trap type / building type — concrete identifier inside kind
+  subtype: string
+  stats: BattleStats
+}
+
+export type BattlePlayerStats = {
+  // Player ID that owns the damage-dealing source. "__enemy__" is the sentinel
+  // used by the server for wave / NPC enemies.
+  playerId: string
+  buckets: BattleBucket[]
+  total: BattleStats
+}
+
+export type BattleTrackerSnapshot = {
+  // Match-elapsed seconds since the tracker was armed. Shown as the "duration"
+  // header in the debug panel.
+  elapsedSeconds: number
+  players: BattlePlayerStats[]
 }
 
 export type PingMessage = {

@@ -4,6 +4,7 @@
   "description": "A compact battleground for fast openings and early pressure.",
   "sortOrder": 1000,
   "map": {
+    "debug": { "battleTracker": true, "debugSpawn": true },
     "cellSize": 64,
     "gridCols": 24,
     "gridRows": 18,

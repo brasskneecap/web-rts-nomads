@@ -95,6 +95,9 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						}
 						s.recordSoldierTankContributionLocked(unit, target, damage)
 						s.recordDamageDealtLocked(unit, target, damage)
+						// Debug: bucket this damage under the attacker's (player, unit type).
+						// No-op when the map's debug tracker flag is off.
+						s.trackBattleDamageLocked(battleSourceFromUnit(unit), target, damage)
 						// Perk on-attack effects (bloodlust accumulation,
 						// savage_strikes bonus hit, cleaving_rage extra target,
 						// momentum move-speed refresh).
@@ -116,6 +119,7 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 							s.payoutDamageDealtXPLocked(target)
 							s.awardSoldierTankKillXPLocked(target.ID)
 							s.onPerkKillLocked(unit) // perk on-kill effects (relentless boost)
+							s.trackBattleKillLocked(battleSourceFromUnit(unit), target)
 							deadUnitIDs = append(deadUnitIDs, target.ID)
 						}
 					} else {
@@ -239,9 +243,13 @@ func (s *GameState) tickBuildingCombatLocked(dt float64) {
 
 		// Route through the shared helper so shield (blood_engine) absorbs first.
 		s.applyUnitDamageLocked(target, def.Damage)
+		// Debug: bucket this damage under (building.OwnerID, building.BuildingType).
+		// Defensive structures like towers accumulate here.
+		s.trackBattleDamageLocked(battleSourceFromBuilding(building), target, def.Damage)
 		building.Metadata["attackCooldown"] = 1.0 / def.AttackSpeed
 		if target.HP <= 0 {
 			target.HP = 0
+			s.trackBattleKillLocked(battleSourceFromBuilding(building), target)
 			deadUnitIDs = append(deadUnitIDs, target.ID)
 		}
 	}

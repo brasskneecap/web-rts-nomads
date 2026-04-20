@@ -1,5 +1,6 @@
 import { onBeforeUnmount, ref } from 'vue'
 import { GameClient, type GameUiSnapshot } from '@/game/core/GameClient'
+import type { DebugSpawnConfig } from '@/game/core/GameState'
 import type { ConnectionState } from '@/game/network/protocol'
 
 let client: GameClient | null = null
@@ -30,6 +31,12 @@ const emptyUiSnapshot: GameUiSnapshot = {
     timer: 0,
     waveDuration: 0,
   },
+  battleTracker: null,
+  debugBattleTracker: false,
+  debugSpawn: false,
+  debugSpawnTargetingActive: false,
+  mapName: '',
+  mapId: '',
 }
 
 export function useGameClient() {
@@ -105,6 +112,16 @@ export function useGameClient() {
     client?.retryReconnect()
   }
 
+  // Forwarders for the Debug Spawn panel. Wrapped so the panel doesn't need
+  // a handle to `client` — composable keeps the encapsulation clean.
+  function beginDebugSpawn(config: DebugSpawnConfig) {
+    client?.beginDebugSpawn(config)
+  }
+
+  function cancelDebugSpawn() {
+    client?.cancelDebugSpawn()
+  }
+
   onBeforeUnmount(() => {
     destroy()
   })
@@ -116,6 +133,8 @@ export function useGameClient() {
     leaveStoredMatch,
     performSelectionAction,
     retryReconnect,
+    beginDebugSpawn,
+    cancelDebugSpawn,
     ui,
     connectionState,
     reconnectAttempt,

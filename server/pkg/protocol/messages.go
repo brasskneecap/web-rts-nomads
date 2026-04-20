@@ -15,26 +15,59 @@ type WaveConfig struct {
 }
 
 type MapConfig struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Size        string         `json:"size"`
-	Width       float64        `json:"width"`
-	Height      float64        `json:"height"`
-	GridCols    int            `json:"gridCols"`
-	GridRows    int            `json:"gridRows"`
-	CellSize    float64        `json:"cellSize"`
-	Terrain     []TerrainTile  `json:"terrain"`
-	Tiles       []TileInstance `json:"tiles,omitempty"`
-	DefaultTile *TileCoord     `json:"defaultTile,omitempty"`
-	Obstacles   []ObstacleTile `json:"obstacles"`
-	Buildings   []BuildingTile `json:"buildings"`
-	WaveConfig  *WaveConfig    `json:"waveConfig,omitempty"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Size        string          `json:"size"`
+	Width       float64         `json:"width"`
+	Height      float64         `json:"height"`
+	GridCols    int             `json:"gridCols"`
+	GridRows    int             `json:"gridRows"`
+	CellSize    float64         `json:"cellSize"`
+	Terrain     []TerrainTile   `json:"terrain"`
+	Tiles       []TileInstance  `json:"tiles,omitempty"`
+	DefaultTile *TileCoord      `json:"defaultTile,omitempty"`
+	Obstacles   []ObstacleTile  `json:"obstacles"`
+	Buildings   []BuildingTile  `json:"buildings"`
+	WaveConfig  *WaveConfig     `json:"waveConfig,omitempty"`
+	Debug       *MapDebugConfig `json:"debug,omitempty"`
+}
+
+// MapDebugConfig is the container for per-map debug/telemetry opt-ins. It
+// lives on the map JSON so non-debug maps pay no cost and production maps can
+// stay untouched. New debug features plug in here as additional bool fields.
+type MapDebugConfig struct {
+	// BattleTracker, when true, enables server-side aggregation of per-player
+	// damage + kills bucketed by source kind (unit / trap / building) and
+	// subtype (unit type, trap type, building type). Tracker data is included
+	// in every match snapshot under BattleTracker and rendered by the client
+	// in a collapsible debug panel. Use for balance tuning and regression
+	// spotting when new units / traps / enemies are added.
+	BattleTracker bool `json:"battleTracker,omitempty"`
+
+	// DebugSpawn, when true, enables the in-game "spawn enemy with perks" dev
+	// tool. The server will honor `debug_spawn_unit` commands from any client
+	// joined to this map and place a fully-configured enemy unit at the
+	// requested world coordinates. Hard-gated server-side: the command is a
+	// no-op and logs a warning when this flag is false, so production maps
+	// can't be exploited.
+	DebugSpawn bool `json:"debugSpawn,omitempty"`
 }
 
 type GridCoord struct {
 	X int `json:"x"`
 	Y int `json:"y"`
+}
+
+// ActiveEffectIcon is one entry in a unit's ActiveBuffs / ActiveDebuffs list.
+// ID is the perk id (for buffs) or raw icon id (for debuffs) that identifies
+// which icon artwork to render. Stacks is the number of simultaneous sources
+// contributing the effect — omitted from JSON when 1 so single-instance
+// effects stay compact on the wire. The client renders a small count badge
+// over the icon whenever Stacks >= 2.
+type ActiveEffectIcon struct {
+	ID     string `json:"id"`
+	Stacks int    `json:"stacks,omitempty"`
 }
 
 type TerrainTile struct {
@@ -197,14 +230,15 @@ type UnitSnapshot struct {
 	// Shield / MaxShield: temporary HP pool (from blood_engine). 0 when absent.
 	Shield    int `json:"shield,omitempty"`
 	MaxShield int `json:"maxShield,omitempty"`
-	// ActiveBuffs: perk-id list for buffs currently active on this unit. Used
-	// by the client to render floating indicator icons near the sprite.
-	ActiveBuffs []string `json:"activeBuffs,omitempty"`
-	// ActiveDebuffs: icon-id list for negative status effects currently active
-	// on this unit. Populated by activeDebuffIconsLocked in perks.go. Unlike
-	// ActiveBuffs these are raw icon ids (not perk ids), since debuffs can land
-	// on units that don't own the causing perk.
-	ActiveDebuffs []string `json:"activeDebuffs,omitempty"`
+	// ActiveBuffs: entries for buffs currently active on this unit. `id` is
+	// a perk id (resolved to an icon via the PerkDef catalog). See
+	// ActiveEffectIcon for the stacks semantics.
+	ActiveBuffs []ActiveEffectIcon `json:"activeBuffs,omitempty"`
+	// ActiveDebuffs: entries for negative status effects currently active on
+	// the unit. `id` is a raw icon id (not a perk id), because debuffs can
+	// land on units that don't own the causing perk. Same stacks semantics
+	// as ActiveBuffs.
+	ActiveDebuffs []ActiveEffectIcon `json:"activeDebuffs,omitempty"`
 	// StunnedRemaining / SlowedRemaining / SlowedMultiplier carry the current CC
 	// state to the client each tick so it can render stun/slow indicator icons.
 	// All three use omitempty so they are absent from the JSON when not active.
@@ -266,17 +300,56 @@ type TrapSnapshot struct {
 }
 
 type MatchSnapshotMessage struct {
-	Type      string           `json:"type"`
-	Tick      int              `json:"tick"`
-	ServerNow int64            `json:"serverNow"`
-	MatchID   string           `json:"matchId"`
-	Buildings []BuildingTile   `json:"buildings"`
-	Obstacles []ObstacleTile   `json:"obstacles"`
-	Players   []PlayerSnapshot `json:"players"`
-	Units     []UnitSnapshot   `json:"units"`
-	Wave      WaveSnapshot     `json:"wave"`
-	Banners   []BannerSnapshot `json:"banners,omitempty"`
-	Traps     []TrapSnapshot   `json:"traps,omitempty"`
+	Type          string                  `json:"type"`
+	Tick          int                     `json:"tick"`
+	ServerNow     int64                   `json:"serverNow"`
+	MatchID       string                  `json:"matchId"`
+	Buildings     []BuildingTile          `json:"buildings"`
+	Obstacles     []ObstacleTile          `json:"obstacles"`
+	Players       []PlayerSnapshot        `json:"players"`
+	Units         []UnitSnapshot          `json:"units"`
+	Wave          WaveSnapshot            `json:"wave"`
+	Banners       []BannerSnapshot        `json:"banners,omitempty"`
+	Traps         []TrapSnapshot          `json:"traps,omitempty"`
+	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
+}
+
+// ─── Battle Tracker (debug) ──────────────────────────────────────────────────
+// Only populated when MapConfig.Debug.BattleTracker is true. Rendered by the
+// client's debug panel for balance tuning. Represents running totals across
+// the whole match; saved/reviewed snapshots on the client capture this struct
+// verbatim.
+
+// BattleStats is the per-bucket accumulator. Always paired with a source kind
+// + subtype identifying the attacker lane (see BattleBucket).
+type BattleStats struct {
+	DamageDealt int `json:"damageDealt"`
+	Kills       int `json:"kills"`
+}
+
+// BattleBucket is one (kind, subtype) lane — e.g. ("unit","archer") or
+// ("trap","caltrops") — with its accumulated stats. Buckets are grouped under
+// a player in BattlePlayerStats.
+type BattleBucket struct {
+	Kind    string      `json:"kind"`    // "unit" | "trap" | "building"
+	Subtype string      `json:"subtype"` // unit type / trap type / building type
+	Stats   BattleStats `json:"stats"`
+}
+
+// BattlePlayerStats collects all buckets under a single player ID.
+// PlayerID == "__enemy__" represents wave / NPC enemies.
+type BattlePlayerStats struct {
+	PlayerID string         `json:"playerId"`
+	Buckets  []BattleBucket `json:"buckets"`
+	Total    BattleStats    `json:"total"`
+}
+
+// BattleTrackerSnapshot is the wire format for live debug data. ElapsedSeconds
+// is the simulation time since the tracker was armed (match start when the
+// map flag is set).
+type BattleTrackerSnapshot struct {
+	ElapsedSeconds float64             `json:"elapsedSeconds"`
+	Players        []BattlePlayerStats `json:"players"`
 }
 
 type PingMessage struct {
@@ -295,4 +368,38 @@ type ErrorMessage struct {
 type NotificationMessage struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
+}
+
+// DebugSpawnUnitMessage is a dev-only command that spawns a fully configured
+// unit at the requested world position. Only honored on maps with
+// Debug.DebugSpawn == true; silently ignored otherwise (the server logs a
+// warning but does not send an error so a client accidentally sending this
+// on a production map doesn't surface noise in the HUD).
+//
+// Semantics:
+//   - Team chooses ownership. "mine" (the default when empty) assigns the
+//     unit to the caller — convenient for testing your own perk loadouts
+//     in live matches. "enemy" assigns to the NPC/wave owner so the unit
+//     behaves as a test dummy hostile to everyone.
+//   - PerkIDs are appended verbatim to the spawned unit's PerkIDs slice in
+//     the order given (typically Bronze, Silver, Gold). They are NOT
+//     validated against the eligibility filter — the debug tool must be
+//     able to produce any perk combo, including ones the rank-up pool
+//     would normally exclude.
+//   - Rank (base / bronze / silver / gold) determines stat scaling via
+//     applyRankModifiersLocked. Empty string is treated as "base".
+//   - Path (trapper / vanguard / berserker / none) is set directly, bypassing
+//     assignUnitPathOnRankUpLocked. Empty string means "none".
+//   - CustomHP > 0 overrides both MaxHP and HP after rank scaling. Use 0
+//     (or omit) to keep the default max HP.
+type DebugSpawnUnitMessage struct {
+	Type     string   `json:"type"`
+	UnitType string   `json:"unitType"`
+	Team     string   `json:"team,omitempty"` // "mine" | "enemy"; empty = "mine"
+	Path     string   `json:"path,omitempty"`
+	Rank     string   `json:"rank,omitempty"`
+	PerkIDs  []string `json:"perkIds,omitempty"`
+	X        float64  `json:"x"`
+	Y        float64  `json:"y"`
+	CustomHP int      `json:"customHp,omitempty"`
 }

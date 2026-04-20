@@ -122,6 +122,7 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 						s.onUnitDamagedLocked(attacker, primaryTarget, actualDmg)
 						s.onPerkDamageTakenLocked(primaryTarget, attacker, actualDmg)
 						s.recordDamageDealtLocked(attacker, primaryTarget, actualDmg)
+						s.trackBattleDamageLocked(battleSourceFromUnit(attacker), primaryTarget, actualDmg)
 						// Let on-damage perks (blood_sustain) react to the extra hit.
 						s.onPerkAttackDamageAppliedLocked(attacker, primaryTarget, actualDmg)
 						// Primary target death is handled by the caller — do NOT append here.
@@ -155,13 +156,18 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 			}
 
 		case "challengers_mark":
-			// Stamp a damage-amplification mark on the target. The mark increases
-			// ALL incoming damage (from any source) by bonusMultiplier for
-			// durationSeconds. Refreshed on every Vanguard attack.
-			// The mark lives on the target's PerkState and decays in Update().
+			// Stamp a damage-amplification mark on the target. Keyed by the
+			// attacker's unit id (prefixed "unit-" to keep trap ids and unit
+			// ids in separate namespaces) so multiple Vanguards each land
+			// their own stack; same-Vanguard re-attacks refresh in place.
+			// Decays in state.go per-tick stack decay.
 			if primaryTarget != nil && primaryTarget.HP > 0 {
-				primaryTarget.PerkState.MarkedMultiplier = def.Config["bonusMultiplier"]
-				primaryTarget.PerkState.MarkedRemaining = def.Config["durationSeconds"]
+				primaryTarget.PerkState.applyMarkStack(
+					unitMarkSourceID(attacker.ID),
+					attacker.ID,
+					def.Config["bonusMultiplier"],
+					def.Config["durationSeconds"],
+				)
 			}
 
 		// ── add cases for new on-attack perks below this line ───────────────
@@ -205,6 +211,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		s.onUnitDamagedLocked(attacker, candidate, damage)
 		s.onPerkDamageTakenLocked(candidate, attacker, damage)
 		s.recordDamageDealtLocked(attacker, candidate, damage)
+		s.trackBattleDamageLocked(battleSourceFromUnit(attacker), candidate, damage)
 		s.onPerkAttackDamageAppliedLocked(attacker, candidate, damage)
 		if candidate.HP <= 0 {
 			candidate.HP = 0
@@ -212,6 +219,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 			s.payoutDamageDealtXPLocked(candidate)
 			s.awardSoldierTankKillXPLocked(candidate.ID)
 			s.onPerkKillLocked(attacker)
+			s.trackBattleKillLocked(battleSourceFromUnit(attacker), candidate)
 			*deadUnitIDs = append(*deadUnitIDs, candidate.ID)
 		}
 	}
@@ -258,6 +266,7 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 	s.onUnitDamagedLocked(attacker, secondary, damage)
 	s.onPerkDamageTakenLocked(secondary, attacker, damage)
 	s.recordDamageDealtLocked(attacker, secondary, damage)
+	s.trackBattleDamageLocked(battleSourceFromUnit(attacker), secondary, damage)
 	// Let on-damage perks (blood_sustain) react to cleave hits.
 	s.onPerkAttackDamageAppliedLocked(attacker, secondary, damage)
 	if secondary.HP <= 0 {
@@ -265,6 +274,7 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 		s.awardKillXPLocked(attacker)
 		s.payoutDamageDealtXPLocked(secondary)
 		s.awardSoldierTankKillXPLocked(secondary.ID)
+		s.trackBattleKillLocked(battleSourceFromUnit(attacker), secondary)
 		*deadUnitIDs = append(*deadUnitIDs, secondary.ID)
 	}
 }

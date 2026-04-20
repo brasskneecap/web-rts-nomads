@@ -62,6 +62,10 @@ func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
 	if target == nil || damage <= 0 {
 		return 0
 	}
+	// Preserve the pre-mitigation input for Shared Pain redistribution at the
+	// end of the pipeline — the redistributed damage is a fraction of what the
+	// attacker intended, not what actually landed on HP.
+	origDamage := damage
 	// Step 1 (in pipeline above): armor mitigation already handled by caller.
 	//
 	// Step 2: pain_share redirect — a nearby allied Vanguard with pain_share
@@ -69,14 +73,21 @@ func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
 	// stack. Runs before mark amplification so the redirect acts on pre-mark damage.
 	damage = s.perkRedirectIncomingDamageLocked(target, damage)
 	if damage == 0 {
+		// Even at 0 landed damage, the intended hit should still fan out via
+		// Shared Pain — the attack "hit" the marked enemy, it just got fully
+		// redirected. Keep the semantic consistent with the other early-exit
+		// path below.
+		s.perkShareDamageToMarkedLocked(target, origDamage)
 		return 0
 	}
-	// Step 3: Challenger's Mark — amplify incoming damage after armor reduction
-	// and after the pain_share redirect. Mark now amplifies the post-armor,
-	// post-redirect value. This makes the mark relatively stronger against
-	// high-armor targets (intentional design decision; approved 2026-04-18).
-	if target.PerkState.MarkedRemaining > 0 && target.PerkState.MarkedMultiplier > 0 {
-		damage = maxInt(damage, int(math.Round(float64(damage)*(1.0+target.PerkState.MarkedMultiplier))))
+	// Step 3: Mark amplification — active mark stacks sum their multipliers
+	// so two different sources (e.g. Challenger's Mark + marker_trap) deal
+	// additive bonus damage. Amplifies after armor reduction and after the
+	// pain_share redirect, so a +20% + +15% mark on a 100-damage hit
+	// becomes ~135. Intentionally applied after armor so high-armor targets
+	// see a relatively stronger mark.
+	if totalMult := target.PerkState.totalMarkMultiplier(); totalMult > 0 {
+		damage = maxInt(damage, int(math.Round(float64(damage)*(1.0+totalMult))))
 	}
 	// Step 4: Flat per-hit reduction from reinforced_armor (and future flat reducers).
 	// Applied after armor mitigation and mark amplification, before the shield pool.
@@ -91,6 +102,10 @@ func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
 	if target.Shield > 0 {
 		if target.Shield >= damage {
 			target.Shield -= damage
+			// Shared Pain fires on any damage intake, even when the shield
+			// fully absorbed the hit — the attack still "hit" the marked
+			// victim. See perkShareDamageToMarkedLocked for recursion guard.
+			s.perkShareDamageToMarkedLocked(target, origDamage)
 			return 0
 		}
 		damage -= target.Shield
@@ -102,6 +117,11 @@ func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
 	if target.HP < 0 {
 		target.HP = 0
 	}
+	// Shared Pain (ascendant_infusion + marker_trap): redistribute a fraction
+	// of the pre-mitigation damage to other marked enemies. Guarded by
+	// SharedPainActive so the redistributed damage cannot trigger further
+	// redistribution. No-op when the target has no SharedPain armed.
+	s.perkShareDamageToMarkedLocked(target, origDamage)
 	return damage
 }
 
@@ -277,6 +297,11 @@ func (s *GameState) onPerkDamageTakenLocked(target, attacker *Unit, damage int) 
 			// This keeps reflected damage simple and prevents infinite chains.
 			s.applyUnitDamageLocked(attacker, reflected)
 			target.PerkState.RetaliationActive = false
+			// Debug: reflected damage counts under the defender's unit bucket.
+			s.trackBattleDamageLocked(battleSourceFromUnit(target), attacker, reflected)
+			if attacker.HP <= 0 {
+				s.trackBattleKillLocked(battleSourceFromUnit(target), attacker)
+			}
 
 		case "punishing_guard":
 			// Stamp a weakened debuff on the attacker: they deal reduced outgoing

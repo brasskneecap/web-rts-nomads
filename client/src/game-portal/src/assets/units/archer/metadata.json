@@ -1,0 +1,79 @@
+{
+  "character": {
+    "id": "8af81b21-64e0-42d9-9dcd-14dba2bb41a1",
+    "name": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, ranger archer, forest green hooded cloak, leather jerkin, longbow drawn and ready, quiver of arrows on back, leather boots, agile light-footed stance, earthy greens and browns palette",
+    "prompt": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, ranger archer, forest green hooded cloak, leather jerkin, longbow drawn and ready, quiver of arrows on back, leather boots, agile light-footed stance, earthy greens and browns palette",
+    "size": {
+      "width": 68,
+      "height": 68
+    },
+    "template_id": "mannequin",
+    "directions": 4,
+    "view": "low top-down",
+    "created_at": "2026-04-20T19:49:15.950408+00:00"
+  },
+  "frames": {
+    "rotations": {
+      "south": "rotations/south.png",
+      "west": "rotations/west.png",
+      "east": "rotations/east.png",
+      "north": "rotations/north.png"
+    },
+    "animations": {
+      "Walking-87a36642": {
+        "south": [
+          "animations/Walking-87a36642/south/frame_000.png",
+          "animations/Walking-87a36642/south/frame_001.png",
+          "animations/Walking-87a36642/south/frame_002.png",
+          "animations/Walking-87a36642/south/frame_003.png"
+        ],
+        "east": [
+          "animations/Walking-87a36642/east/frame_000.png",
+          "animations/Walking-87a36642/east/frame_001.png",
+          "animations/Walking-87a36642/east/frame_002.png",
+          "animations/Walking-87a36642/east/frame_003.png"
+        ],
+        "west": [
+          "animations/Walking-87a36642/west/frame_000.png",
+          "animations/Walking-87a36642/west/frame_001.png",
+          "animations/Walking-87a36642/west/frame_002.png",
+          "animations/Walking-87a36642/west/frame_003.png"
+        ],
+        "north": [
+          "animations/Walking-87a36642/north/frame_000.png",
+          "animations/Walking-87a36642/north/frame_001.png",
+          "animations/Walking-87a36642/north/frame_002.png",
+          "animations/Walking-87a36642/north/frame_003.png"
+        ]
+      },
+      "Attacking-9574b4d0": {
+        "west": [
+          "animations/Attacking-9574b4d0/west/frame_000.png",
+          "animations/Attacking-9574b4d0/west/frame_001.png",
+          "animations/Attacking-9574b4d0/west/frame_002.png",
+          "animations/Attacking-9574b4d0/west/frame_003.png"
+        ],
+        "north": [
+          "animations/Attacking-9574b4d0/north/frame_000.png",
+          "animations/Attacking-9574b4d0/north/frame_001.png",
+          "animations/Attacking-9574b4d0/north/frame_002.png",
+          "animations/Attacking-9574b4d0/north/frame_003.png"
+        ],
+        "east": [
+          "animations/Attacking-9574b4d0/east/frame_000.png",
+          "animations/Attacking-9574b4d0/east/frame_001.png",
+          "animations/Attacking-9574b4d0/east/frame_002.png",
+          "animations/Attacking-9574b4d0/east/frame_003.png"
+        ],
+        "south": [
+          "animations/Attacking-9574b4d0/south/frame_000.png",
+          "animations/Attacking-9574b4d0/south/frame_001.png",
+          "animations/Attacking-9574b4d0/south/frame_002.png",
+          "animations/Attacking-9574b4d0/south/frame_003.png"
+        ]
+      }
+    }
+  },
+  "export_version": "2.0",
+  "export_date": "2026-04-20T20:14:16.325669"
+}

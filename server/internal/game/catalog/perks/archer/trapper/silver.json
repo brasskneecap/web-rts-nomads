@@ -60,11 +60,10 @@
     "id": "lasting_flames",
     "displayName": "Lasting Flames",
     "icon": "perk-lasting-flames",
-    "description": "Fire Pit: enemies that leave the fire pit continue to burn for 4 seconds, taking 6 damage per second.",
+    "description": "Fire Pit: applies its damage as a burn debuff. Duration refreshes while enemies stand in the pit, and the burn continues for 4 seconds after they leave.",
     "requiresPerk": "fire_pit",
     "config": {
-      "burnDurationSeconds": 4,
-      "burnDamagePerSecond": 6
+      "burnDurationSeconds": 4
     }
   }
 ]

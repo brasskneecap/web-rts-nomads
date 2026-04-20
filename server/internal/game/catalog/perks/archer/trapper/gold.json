@@ -1,1 +1,54 @@
-[]
+[
+  {
+    "id": "ascendant_infusion",
+    "displayName": "Ascendant Infusion",
+    "icon": "perk-ascendant-infusion",
+    "description": "Your trap gains a secondary enhanced effect based on its type (Electrified Caltrops, Reactive Flames, Scatter Bomb, or Shared Pain).",
+    "config": {
+      "electrifiedBonusDamagePerTick": 1,
+      "electrifiedStunChance": 0.15,
+      "electrifiedStunDuration": 0.25,
+      "electrifiedStunCooldownSeconds": 2.0,
+
+      "reactiveFlamesRadius": 35,
+      "reactiveFlamesDamage": 4,
+
+      "scatterBombCount": 3,
+      "scatterBombSpawnRadius": 55,
+      "scatterBombChildDurationSeconds": 6,
+
+      "sharedPainFraction": 0.25
+    }
+  },
+  {
+    "id": "ascendant_deployment",
+    "displayName": "Ascendant Deployment",
+    "icon": "perk-ascendant-deployment",
+    "description": "Each trap placement deploys an additional trap at a short offset from the original.",
+    "config": {
+      "bonusOffsetDistance": 50
+    }
+  },
+  {
+    "id": "overload_protocol",
+    "displayName": "Overload Protocol",
+    "icon": "perk-overload-protocol",
+    "description": "Your traps gain a powerful final effect (Spike Surge, Flame Collapse, Cataclysm Blast, or Final Exposure).",
+    "config": {
+      "spikeSurgeBurstDamage": 25,
+      "spikeSurgeSlowMultiplier": 0.5,
+      "spikeSurgeSlowDurationSeconds": 2.5,
+
+      "flameCollapseRadiusMultiplier": 1.25,
+      "flameCollapseDamage": 20,
+      "flameCollapseBurnDamagePerSecond": 6,
+      "flameCollapseBurnDurationSeconds": 3,
+
+      "cataclysmRadiusMultiplier": 1.5,
+      "cataclysmSecondaryDelaySeconds": 1.5,
+
+      "finalExposureBurstDamage": 30,
+      "finalExposureAoeRadius": 40
+    }
+  }
+]

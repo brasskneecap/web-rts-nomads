@@ -411,6 +411,38 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.State.RepairBuilding(client.PlayerID(), msg.UnitIDs, msg.BuildingID)
 
+		case "debug_spawn_unit":
+			// Dev-only: spawn an arbitrary enemy unit with a chosen perk
+			// loadout. Gated on the map's debug.debugSpawn flag; on
+			// production maps the command is silently ignored (logged only)
+			// so a malicious client cannot exploit this on live gameplay.
+			if client.MatchID() == "" {
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				continue
+			}
+			var msg protocol.DebugSpawnUnitMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid debug_spawn_unit payload",
+				})
+				continue
+			}
+			if !match.State.DebugSpawnEnabled() {
+				log.Printf("debug_spawn_unit rejected: map does not have debug.debugSpawn enabled (match=%s player=%s)",
+					match.ID, client.PlayerID())
+				continue
+			}
+			if !match.State.DebugSpawnUnit(msg, client.PlayerID()) {
+				_ = client.WriteJSON(protocol.NotificationMessage{
+					Type:    "notification",
+					Message: "Debug spawn failed (unknown unit type?)",
+				})
+			}
+
 		case "pong":
 			client.TouchPong()
 

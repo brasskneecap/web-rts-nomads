@@ -45,6 +45,21 @@
 
     <MatchHud v-if="hasStarted" :ui="ui" @exit="exitGame" />
 
+    <!-- Debug panel — only rendered when the active map has debug.battleTracker.
+         Floats top-right on top of the canvas and handles its own save/review. -->
+    <BattleTrackerPanel v-if="hasStarted" :ui="ui" />
+
+    <!-- Debug panel — only rendered when the active map has debug.debugSpawn.
+         Lets the user spawn an enemy unit with a chosen perk loadout at a
+         click location for perk/unit testing. -->
+    <DebugSpawnPanel
+      v-if="hasStarted"
+      :ui="ui"
+      :targeting-active="debugSpawnTargetingActive"
+      :begin-debug-spawn="beginDebugSpawn"
+      :cancel-debug-spawn="cancelDebugSpawn"
+    />
+
     <div v-if="hasStarted && ui.wave.enabled && ui.wave.state === 'complete'" class="victory-overlay">
       <div class="victory-card">
         <div class="victory-title">Victory</div>
@@ -120,6 +135,8 @@ import MapEditorPanel from '@/components/MapEditorPanel.vue'
 import SpriteEditorPanel from '@/components/SpriteEditorPanel.vue'
 import MatchHud from '@/components/MatchHud.vue'
 import SelectionHud from '@/components/SelectionHud.vue'
+import BattleTrackerPanel from '@/components/BattleTrackerPanel.vue'
+import DebugSpawnPanel from '@/components/DebugSpawnPanel.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { fetchMapCatalog } from '@/game/maps/catalog'
 import type { MapCatalogEntry, MapId } from '@/game/network/protocol'
@@ -213,11 +230,15 @@ const {
   leaveStoredMatch,
   performSelectionAction,
   retryReconnect,
+  beginDebugSpawn,
+  cancelDebugSpawn,
   ui,
   connectionState,
   reconnectAttempt,
   maxReconnectAttempts,
 } = useGameClient()
+
+const debugSpawnTargetingActive = computed(() => ui.value.debugSpawnTargetingActive)
 
 async function startGame(mapId: MapId, options: { resume?: boolean } = {}) {
   if (!canvas.value) return
