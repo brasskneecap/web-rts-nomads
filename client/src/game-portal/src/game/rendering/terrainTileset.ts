@@ -1,5 +1,3 @@
-import floorsUrl from '../../assets/terrain/Floors_Tiles.png?url'
-import waterUrl from '../../assets/terrain/Water_tiles.png?url'
 import tilesetUrl from '../../assets/terrain/tileset.png?url'
 import type { TerrainType, TileCoord, TileSheet } from '../network/protocol'
 
@@ -10,8 +8,6 @@ export type { TileCoord }
 export const TILE_SIZE = 16
 
 const sheetUrls: Record<TileSheet, string> = {
-  floors: floorsUrl,
-  water: waterUrl,
   tileset: tilesetUrl,
 }
 
@@ -24,7 +20,7 @@ export function getSheetTileSize(name: TileSheet): number {
   return SHEET_TILE_SIZE[name] ?? TILE_SIZE
 }
 
-export const TILE_SHEET_NAMES: TileSheet[] = ['floors', 'water', 'tileset']
+export const TILE_SHEET_NAMES: TileSheet[] = ['tileset']
 
 const images = {} as Record<TileSheet, HTMLImageElement>
 for (const name of TILE_SHEET_NAMES) {
@@ -67,10 +63,8 @@ function getSheet(name: TileSheet): HTMLImageElement | null {
   return getSheetImage(name)
 }
 
-// True when the base floors sheet is ready. Water is drawn only where needed
-// and degrades gracefully if its sheet hasn't loaded yet.
 export function isTerrainTilesetReady(): boolean {
-  return getSheet('floors') !== null
+  return getSheet('tileset') !== null
 }
 
 export function drawTerrainTile(

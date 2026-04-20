@@ -74,6 +74,8 @@ export class CanvasRenderer {
   private bannerInitialDurations = new Map<number, number>()
   private trapInitialDurations = new Map<number, number>()
   private unitAnim = new UnitAnimationController()
+  private terrainCache: HTMLCanvasElement | null = null
+  private terrainCacheKey: unknown[] = []
 
   constructor(canvas: HTMLCanvasElement, state: GameState, camera: Camera) {
     const ctx = canvas.getContext('2d')
@@ -144,6 +146,70 @@ export class CanvasRenderer {
     this.resizeObserver = null
   }
 
+  // Rebuilds the offscreen terrain canvas when any input that feeds it has
+  // changed. Terrain is static after a map load, so baking it once and
+  // blitting avoids the per-tile drawImage seams that appear at non-integer
+  // zoom/camera positions.
+  private ensureTerrainCache() {
+    const { cellSize, terrain, tiles, defaultTile, gridCols, gridRows } = this.state.mapConfig
+    const tilesetReady = isTerrainTilesetReady()
+    const mapWidth = this.state.mapWidth
+    const mapHeight = this.state.mapHeight
+    const key: unknown[] = [tilesetReady, cellSize, gridCols, gridRows, mapWidth, mapHeight, defaultTile, tiles, terrain]
+
+    if (this.terrainCache && this.terrainCacheKey.length === key.length && key.every((v, i) => v === this.terrainCacheKey[i])) {
+      return
+    }
+
+    const cache = this.terrainCache ?? document.createElement('canvas')
+    if (cache.width !== mapWidth || cache.height !== mapHeight) {
+      cache.width = mapWidth
+      cache.height = mapHeight
+    }
+    const cctx = cache.getContext('2d')
+    if (!cctx) return
+
+    cctx.imageSmoothingEnabled = false
+    cctx.clearRect(0, 0, mapWidth, mapHeight)
+
+    const groundCoord = defaultTile ?? GROUND_TILE_COORDS
+    if (tilesetReady) {
+      for (let gy = 0; gy < gridRows; gy++) {
+        for (let gx = 0; gx < gridCols; gx++) {
+          drawTerrainTile(cctx, groundCoord, gx * cellSize, gy * cellSize, cellSize)
+        }
+      }
+    } else {
+      cctx.fillStyle = DEFAULT_GRASS_COLOR
+      cctx.fillRect(0, 0, mapWidth, mapHeight)
+    }
+
+    if (tilesetReady && tiles) {
+      for (const tile of tiles) {
+        drawTerrainTile(
+          cctx,
+          { sheet: tile.sheet, sx: tile.sx, sy: tile.sy },
+          tile.x * cellSize,
+          tile.y * cellSize,
+          cellSize,
+        )
+      }
+    }
+
+    for (const tile of terrain) {
+      const coords = TERRAIN_TILE_COORDS[tile.terrain]
+      if (tilesetReady && coords) {
+        drawTerrainTile(cctx, coords, tile.x * cellSize, tile.y * cellSize, cellSize)
+      } else {
+        cctx.fillStyle = getTerrainColor(tile.terrain)
+        cctx.fillRect(tile.x * cellSize, tile.y * cellSize, cellSize, cellSize)
+      }
+    }
+
+    this.terrainCache = cache
+    this.terrainCacheKey = key
+  }
+
   private drawGrid() {
     const ctx = this.ctx
     const gridSize = this.state.mapConfig.cellSize
@@ -181,42 +247,12 @@ export class CanvasRenderer {
 
   private drawMapBackground() {
     const ctx = this.ctx
-    const { cellSize, terrain, tiles, defaultTile, obstacles, buildings, gridCols, gridRows } = this.state.mapConfig
-    const tilesetReady = isTerrainTilesetReady()
-    const groundCoord = defaultTile ?? GROUND_TILE_COORDS
+    const { cellSize, obstacles, buildings } = this.state.mapConfig
 
-    if (tilesetReady) {
+    this.ensureTerrainCache()
+    if (this.terrainCache) {
       ctx.imageSmoothingEnabled = false
-      for (let gy = 0; gy < gridRows; gy++) {
-        for (let gx = 0; gx < gridCols; gx++) {
-          drawTerrainTile(ctx, groundCoord, gx * cellSize, gy * cellSize, cellSize)
-        }
-      }
-    } else {
-      ctx.fillStyle = DEFAULT_GRASS_COLOR
-      ctx.fillRect(0, 0, this.state.mapWidth, this.state.mapHeight)
-    }
-
-    if (tilesetReady && tiles) {
-      for (const tile of tiles) {
-        drawTerrainTile(
-          ctx,
-          { sheet: tile.sheet, sx: tile.sx, sy: tile.sy },
-          tile.x * cellSize,
-          tile.y * cellSize,
-          cellSize,
-        )
-      }
-    }
-
-    for (const tile of terrain) {
-      const coords = TERRAIN_TILE_COORDS[tile.terrain]
-      if (tilesetReady && coords) {
-        drawTerrainTile(ctx, coords, tile.x * cellSize, tile.y * cellSize, cellSize)
-      } else {
-        ctx.fillStyle = getTerrainColor(tile.terrain)
-        ctx.fillRect(tile.x * cellSize, tile.y * cellSize, cellSize, cellSize)
-      }
+      ctx.drawImage(this.terrainCache, 0, 0)
     }
 
     if (this.state.isBuildPlacementActive()) {
