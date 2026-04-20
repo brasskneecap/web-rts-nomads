@@ -219,7 +219,9 @@ export class CanvasRenderer {
       }
     }
 
-    this.drawGrid()
+    if (this.state.isBuildPlacementActive()) {
+      this.drawGrid()
+    }
 
     for (const tile of obstacles) {
       // Grid footprint: the cells the obstacle physically occupies. Used

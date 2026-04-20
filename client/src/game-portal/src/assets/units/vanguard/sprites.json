@@ -1,0 +1,38 @@
+{
+  "key": "vanguard",
+  "size": {
+    "width": 68,
+    "height": 68
+  },
+  "rotations": {
+    "south": "rotations/south.png",
+    "west": "rotations/west.png",
+    "east": "rotations/east.png",
+    "north": "rotations/north.png"
+  },
+  "animations": {
+    "walking": {
+      "frameCount": 4,
+      "frameWidth": 68,
+      "frameHeight": 68,
+      "strips": {
+        "south": "packed/walking-south.png",
+        "north": "packed/walking-north.png",
+        "east": "packed/walking-east.png",
+        "west": "packed/walking-west.png"
+      }
+    },
+    "attacking": {
+      "frameCount": 4,
+      "frameWidth": 68,
+      "frameHeight": 68,
+      "strips": {
+        "north": "packed/attacking-north.png",
+        "east": "packed/attacking-east.png",
+        "south": "packed/attacking-south.png",
+        "west": "packed/attacking-west.png"
+      }
+    }
+  },
+  "packedAt": "2026-04-20T16:06:31.972Z"
+}

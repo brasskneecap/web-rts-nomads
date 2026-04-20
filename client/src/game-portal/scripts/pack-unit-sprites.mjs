@@ -80,6 +80,20 @@ async function packUnit(unitDir) {
   }
 
   const unitKey = path.basename(unitDir)
+
+  // Raw PixelLab frames may have been pruned after a prior pack (see header
+  // comment — they're optional on disk). If the first referenced frame is
+  // gone, assume this unit is already packed and leave its sprites.json alone.
+  const firstFrame = Object.values(meta?.frames?.animations ?? {})
+    .flatMap((byDir) => Object.values(byDir ?? {}))
+    .find((rels) => Array.isArray(rels) && rels.length > 0)?.[0]
+  if (firstFrame) {
+    try {
+      await fs.access(path.join(unitDir, firstFrame))
+    } catch {
+      return { alreadyPacked: true, unitKey }
+    }
+  }
   const size = {
     width: meta?.character?.size?.width ?? 64,
     height: meta?.character?.size?.height ?? 64,
@@ -156,6 +170,10 @@ async function main() {
     const result = await packUnit(unitDir)
     if (result.skipped) {
       console.log(`[pack:sprites] ${entry.name}: no metadata.json — skipped`)
+      continue
+    }
+    if (result.alreadyPacked) {
+      console.log(`[pack:sprites] ${result.unitKey}: raw frames pruned — leaving existing sprites.json`)
       continue
     }
     packed += 1
