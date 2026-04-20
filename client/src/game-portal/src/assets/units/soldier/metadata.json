@@ -45,9 +45,35 @@
           "animations/Walking-49a65a9f/north/frame_002.png",
           "animations/Walking-49a65a9f/north/frame_003.png"
         ]
+      },
+      "Attacking-4e49ace2": {
+        "east": [
+          "animations/Attacking-4e49ace2/east/frame_000.png",
+          "animations/Attacking-4e49ace2/east/frame_001.png",
+          "animations/Attacking-4e49ace2/east/frame_002.png",
+          "animations/Attacking-4e49ace2/east/frame_003.png"
+        ],
+        "south": [
+          "animations/Attacking-4e49ace2/south/frame_000.png",
+          "animations/Attacking-4e49ace2/south/frame_001.png",
+          "animations/Attacking-4e49ace2/south/frame_002.png",
+          "animations/Attacking-4e49ace2/south/frame_003.png"
+        ],
+        "west": [
+          "animations/Attacking-4e49ace2/west/frame_000.png",
+          "animations/Attacking-4e49ace2/west/frame_001.png",
+          "animations/Attacking-4e49ace2/west/frame_002.png",
+          "animations/Attacking-4e49ace2/west/frame_003.png"
+        ],
+        "north": [
+          "animations/Attacking-4e49ace2/north/frame_000.png",
+          "animations/Attacking-4e49ace2/north/frame_001.png",
+          "animations/Attacking-4e49ace2/north/frame_002.png",
+          "animations/Attacking-4e49ace2/north/frame_003.png"
+        ]
       }
     }
   },
   "export_version": "2.0",
-  "export_date": "2026-04-20T03:58:28.370739"
+  "export_date": "2026-04-20T04:58:54.282138"
 }

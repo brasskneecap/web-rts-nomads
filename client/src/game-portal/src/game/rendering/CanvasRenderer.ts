@@ -26,6 +26,17 @@ import { PERK_DEF_MAP } from '../maps/perkDefs'
 import { getUnitFrame, getUnitSpriteSet } from './unitSprites'
 import { UnitAnimationController } from './unitAnimation'
 
+// Multiplier applied to each unit sprite's native size at draw time. Bump
+// until sprites read clearly at common zoom-outs without swamping the UI.
+const UNIT_SPRITE_SCALE = 1.25
+// PixelLab exports center a ~48px character in a ~68px canvas, so roughly
+// 15% of the sprite height on each side is transparent padding. Used to
+// anchor overhead UI (health bar, chevrons, buffs) to the visible head and
+// to sit the selection ring under the visible feet instead of the canvas
+// bottom.
+const UNIT_SPRITE_TOP_PADDING = 0.15
+const UNIT_SPRITE_BOTTOM_PADDING = 0.15
+
 export type MinimapBounds = {
   x: number
   y: number
@@ -922,10 +933,12 @@ export class CanvasRenderer {
       y: number
       targetX?: number
       targetY?: number
+      moving?: boolean
       hp?: number
       maxHp?: number
       shield?: number
       maxShield?: number
+      attackSpeed?: number
       activeBuffs?: string[]
       activeDebuffs?: string[]
       color?: string
@@ -951,10 +964,16 @@ export class CanvasRenderer {
         ? Math.max(Math.abs(unitBounds.minX), Math.abs(unitBounds.maxX))
         : 13
       const bottomOffset = unitBounds?.maxY ?? 12
+      const spriteSet = getUnitSpriteSet(unit.path, unit.unitType)
+      // PixelLab canvas has transparent padding below the feet — shift the
+      // ring up by that amount so it sits under the visible feet, not the
+      // canvas edge. No-op for units rendering procedurally.
+      const ringLift = spriteSet
+        ? spriteSet.size.height * UNIT_SPRITE_SCALE * UNIT_SPRITE_BOTTOM_PADDING
+        : 0
       const selectionRadiusX = Math.max(15, halfWidth + 2)
       const selectionRadiusY = Math.max(8, Math.min(12, selectionRadiusX * 0.52))
-      // Anchor the ring to the sprite's lowest point so taller/larger units still sit on it naturally.
-      const selectionCenterY = unit.y + bottomOffset - selectionRadiusY * 0.35
+      const selectionCenterY = unit.y + bottomOffset - selectionRadiusY * 0.35 - ringLift
 
       if (selected) {
         ctx.strokeStyle = '#22c55e'
@@ -985,10 +1004,17 @@ export class CanvasRenderer {
         ctx.stroke()
       }
 
+      // Visible head-top Y — anchor for all overhead UI (health bar,
+      // chevrons, buffs, debuffs, rank-up text). Sprite-aware so big sprites
+      // push the UI clear of the head instead of floating over the chest.
+      const headTopY = spriteSet
+        ? unit.y + bottomOffset - spriteSet.size.height * UNIT_SPRITE_SCALE * (1 - UNIT_SPRITE_TOP_PADDING)
+        : unit.y - (unitBounds ? Math.abs(unitBounds.minY) : 14)
+
       // Health bar always visible for all units
       const isEnemy = unit.ownerId !== this.state.localPlayerId
-      this.drawSelectedUnitHealthBar(unit, unitDef, isEnemy)
-      this.drawUnitRankChevrons(unit, unitDef)
+      this.drawSelectedUnitHealthBar(unit, isEnemy, headTopY)
+      this.drawUnitRankChevrons(unit, headTopY)
 
       if (unit.status === 'Attacking') {
         this.drawConfiguredUnitAttackEffect(unit)
@@ -996,36 +1022,54 @@ export class CanvasRenderer {
         this.drawChoppingEffect(unit.x, unit.y)
       }
 
-      this.drawUnitRankUpBurst(unit, bottomOffset)
+      this.drawUnitRankUpBurst(unit, headTopY)
 
       // Active-buff indicators (momentum, relentless, whirlwind, berserk_state, …).
       // Populated by server activeBuffIconsLocked(); icons come from action-icons.json.
       if (unit.activeBuffs && unit.activeBuffs.length > 0) {
-        this.drawUnitActiveBuffs(unit.x, unit.y, bottomOffset, unit.activeBuffs)
+        this.drawUnitActiveBuffs(unit.x, headTopY, unit.activeBuffs)
       }
       if (unit.activeDebuffs && unit.activeDebuffs.length > 0) {
-        this.drawUnitActiveDebuffs(unit.x, unit.y, bottomOffset, unit.activeDebuffs)
+        this.drawUnitActiveDebuffs(unit.x, headTopY, unit.activeDebuffs)
       }
 
       const unitColor = unit.color || 'lime'
       const unitRankColor = this.getRankColor(unit.rank)
       const unitRenderDef = resolveUnitRenderDef(unitDef, unit.path)
-
-      const spriteSet = getUnitSpriteSet(unit.path, unit.unitType)
       if (spriteSet) {
+        const attackFacing =
+          unit.status === 'Attacking'
+            ? findAttackFacing(
+                unit,
+                unitDef,
+                units,
+                this.state.mapConfig.buildings,
+                this.state.mapConfig.cellSize,
+              )
+            : null
+        // Sync attack-animation speed to the unit's effective attackSpeed
+        // (attacks/sec, includes rank/perk bonuses from the server). One
+        // full animation cycle = one attack cooldown.
+        let attackFrameDurationMs: number | undefined
+        const attackingAnim = spriteSet.animations.get('attacking')
+        const effectiveAttackSpeed = unit.attackSpeed ?? unitDef?.attackSpeed
+        if (attackingAnim && effectiveAttackSpeed && effectiveAttackSpeed > 0) {
+          attackFrameDurationMs = 1000 / effectiveAttackSpeed / attackingAnim.frameCount
+        }
         const anim = this.unitAnim.sample(
           unit.id,
           unit.x,
           unit.y,
           unit.status,
-          unit.targetX,
-          unit.targetY,
+          unit.moving,
+          attackFacing,
+          attackFrameDurationMs,
           this.renderTime,
         )
         const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
         if (frame) {
-          const w = spriteSet.size.width
-          const h = spriteSet.size.height
+          const w = spriteSet.size.width * UNIT_SPRITE_SCALE
+          const h = spriteSet.size.height * UNIT_SPRITE_SCALE
           const dx = unit.x - w / 2
           const dy = unit.y + bottomOffset - h
           const prevSmoothing = ctx.imageSmoothingEnabled
@@ -1091,7 +1135,7 @@ export class CanvasRenderer {
 
   private drawUnitRankUpBurst(
     unit: { x: number; y: number; recentRankUpSeconds?: number },
-    bottomOffset: number,
+    headTopY: number,
   ) {
     if (!(unit.recentRankUpSeconds && unit.recentRankUpSeconds > 0)) {
       return
@@ -1106,15 +1150,16 @@ export class CanvasRenderer {
 
     const alpha = Math.max(0, Math.min(unit.recentRankUpSeconds / 1.4, 1))
     ctx.fillStyle = `rgba(250, 204, 21, ${alpha})`
-    ctx.strokeText('RANK UP!', unit.x, unit.y - bottomOffset - 16 / this.camera.zoom)
-    ctx.fillText('RANK UP!', unit.x, unit.y - bottomOffset - 16 / this.camera.zoom)
+    const textY = headTopY - 18 - 8 / this.camera.zoom
+    ctx.strokeText('RANK UP!', unit.x, textY)
+    ctx.fillText('RANK UP!', unit.x, textY)
 
     ctx.restore()
   }
 
   private drawUnitRankChevrons(
     unit: { x: number; y: number; rank?: string },
-    unitDef: ReturnType<typeof UNIT_DEF_MAP.get>,
+    headTopY: number,
   ) {
     const count = unit.rank === 'bronze' ? 1 : unit.rank === 'silver' ? 2 : unit.rank === 'gold' ? 3 : 0
     if (count === 0) return
@@ -1123,8 +1168,7 @@ export class CanvasRenderer {
     const barWidth = 26
     const barHeight = 4
     const barX = unit.x - barWidth / 2
-    const bounds = getUnitRenderBounds(unitDef)
-    const barY = unit.y - (bounds ? Math.abs(bounds.minY) + 8 : 22)
+    const barY = headTopY - 8
 
     const halfWidth = 3.5
     const height = 2.5
@@ -1444,14 +1488,18 @@ export class CanvasRenderer {
     ctx.restore()
   }
 
-  private drawSelectedUnitHealthBar(unit: {
-    x: number
-    y: number
-    hp?: number
-    maxHp?: number
-    shield?: number
-    maxShield?: number
-  }, unitDef: ReturnType<typeof UNIT_DEF_MAP.get>, isEnemy = false) {
+  private drawSelectedUnitHealthBar(
+    unit: {
+      x: number
+      y: number
+      hp?: number
+      maxHp?: number
+      shield?: number
+      maxShield?: number
+    },
+    isEnemy: boolean,
+    headTopY: number,
+  ) {
     const ctx = this.ctx
     const maxHp = Math.max(unit.maxHp ?? unit.hp ?? 100, 1)
     const hp = Math.max(0, Math.min(unit.hp ?? maxHp, maxHp))
@@ -1459,8 +1507,7 @@ export class CanvasRenderer {
     const barWidth = 26
     const barHeight = 4
     const barX = unit.x - barWidth / 2
-    const bounds = getUnitRenderBounds(unitDef)
-    const barY = unit.y - (bounds ? Math.abs(bounds.minY) + 8 : 22)
+    const barY = headTopY - 8
 
     let fillColor = '#22c55e'
     if (isEnemy) {
@@ -1519,13 +1566,13 @@ export class CanvasRenderer {
   //   ACTION_ICON_MAP. Currently exposed: debuff-taunted, debuff-weakened,
   //   debuff-marked. Rendered in a separate row above buffs with red tinting.
   // ──────────────────────────────────────────────────────────────────────────
-  private drawUnitActiveBuffs(x: number, y: number, bottomOffset: number, buffIds: string[]) {
+  private drawUnitActiveBuffs(x: number, headTopY: number, buffIds: string[]) {
     const ctx = this.ctx
     const iconSize = 12
     const gap = 2
     const totalWidth = buffIds.length * iconSize + Math.max(0, buffIds.length - 1) * gap
-    // Stack icons to the right of the HP bar area, above the unit's center.
-    const baseY = y - bottomOffset - 26
+    // Sits one row above the health bar (bar at headTopY - 8, buffs at -24).
+    const baseY = headTopY - 24
     let cursorX = x - totalWidth / 2
 
     for (const id of buffIds) {
@@ -1567,13 +1614,13 @@ export class CanvasRenderer {
   // the two rows never crowd each other horizontally when a unit carries both.
   // baseY offset is -38 vs -26 for buffs (12 px row height + 0 px gap).
   // ──────────────────────────────────────────────────────────────────────────
-  private drawUnitActiveDebuffs(x: number, y: number, bottomOffset: number, debuffIds: string[]) {
+  private drawUnitActiveDebuffs(x: number, headTopY: number, debuffIds: string[]) {
     const ctx = this.ctx
     const iconSize = 12
     const gap = 2
     const totalWidth = debuffIds.length * iconSize + Math.max(0, debuffIds.length - 1) * gap
-    // Debuffs sit one row higher than buffs: buffs at -26, debuffs at -38.
-    const baseY = y - bottomOffset - 38
+    // Debuffs sit one row above buffs (buffs at -24, debuffs at -36).
+    const baseY = headTopY - 36
     let cursorX = x - totalWidth / 2
 
     for (const id of debuffIds) {
@@ -1817,4 +1864,65 @@ function resolveUnitRenderDef(
     if (variant?.layers?.length) return variant
   }
   return unitDef.render
+}
+
+// Scans units and enemy buildings for the nearest target within (a slightly
+// padded) attack range. Used to give attacking sprites the right facing when
+// the server hasn't sent an explicit attack-target id.
+function findAttackFacing(
+  attacker: {
+    x: number
+    y: number
+    ownerId?: string
+  },
+  attackerDef: UnitDef | undefined,
+  units: Array<{
+    id: number
+    x: number
+    y: number
+    visible?: boolean
+    ownerId?: string
+    hp?: number
+  }>,
+  buildings: BuildingTile[],
+  cellSize: number,
+): { dx: number; dy: number } | null {
+  const baseRange = attackerDef?.attackRange ?? 40
+  const searchRange = baseRange + 16
+  const rangeSq = searchRange * searchRange
+
+  let bestSq = Infinity
+  let bestDx = 0
+  let bestDy = 0
+
+  for (const other of units) {
+    if (other.ownerId === attacker.ownerId) continue
+    if (other.visible === false) continue
+    if (other.hp !== undefined && other.hp <= 0) continue
+    const dx = other.x - attacker.x
+    const dy = other.y - attacker.y
+    const d2 = dx * dx + dy * dy
+    if (d2 < bestSq && d2 <= rangeSq) {
+      bestSq = d2
+      bestDx = dx
+      bestDy = dy
+    }
+  }
+
+  for (const building of buildings) {
+    if (building.ownerId === attacker.ownerId) continue
+    if (building.visible === false) continue
+    const cx = building.x * cellSize + (building.width * cellSize) / 2
+    const cy = building.y * cellSize + (building.height * cellSize) / 2
+    const dx = cx - attacker.x
+    const dy = cy - attacker.y
+    const d2 = dx * dx + dy * dy
+    if (d2 < bestSq && d2 <= rangeSq) {
+      bestSq = d2
+      bestDx = dx
+      bestDy = dy
+    }
+  }
+
+  return bestSq === Infinity ? null : { dx: bestDx, dy: bestDy }
 }

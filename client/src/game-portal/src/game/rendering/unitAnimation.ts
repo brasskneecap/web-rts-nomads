@@ -1,6 +1,6 @@
 import type { UnitDirection } from './unitSprites'
 
-export type UnitAnimationName = 'idle' | 'walking' | 'attack' | 'chop'
+export type UnitAnimationName = 'idle' | 'walking' | 'attacking' | 'chopping'
 
 export interface UnitAnimationSample {
   direction: UnitDirection
@@ -19,9 +19,11 @@ interface UnitAnimState {
 
 const DEFAULT_FRAME_MS = 125
 // px/ms of interpolated movement below which we treat the unit as standing still.
-// Low enough that slow walkers still read as walking, high enough to ignore
-// sub-pixel jitter between interpolation frames.
 const MOVING_THRESHOLD_PX_PER_MS = 0.005
+// How strongly the non-dominant axis must exceed the dominant one to flip
+// facing. 0 = no hysteresis (flips on any tie), 0.4 = the new axis must be
+// >40% larger than the current one. Prevents diagonal jitter.
+const FACING_HYSTERESIS = 0.4
 
 export class UnitAnimationController {
   private states = new Map<number, UnitAnimState>()
@@ -36,8 +38,9 @@ export class UnitAnimationController {
     x: number,
     y: number,
     status: string | undefined,
-    targetX: number | undefined,
-    targetY: number | undefined,
+    serverMoving: boolean | undefined,
+    attackFacing: { dx: number; dy: number } | null,
+    attackFrameDurationMs: number | undefined,
     renderTime: number,
   ): UnitAnimationSample {
     let state = this.states.get(unitId)
@@ -56,21 +59,21 @@ export class UnitAnimationController {
     const dt = Math.max(1, renderTime - state.lastSampleAt)
     const dx = x - state.lastX
     const dy = y - state.lastY
-    const speed = Math.hypot(dx, dy) / dt
-    const moving = speed > MOVING_THRESHOLD_PX_PER_MS
+    const interpSpeed = Math.hypot(dx, dy) / dt
+    const interpolatedMoving = interpSpeed > MOVING_THRESHOLD_PX_PER_MS
 
+    // Facing — priority: attack target, then movement, then sticky last value.
     let direction = state.direction
-    if (moving) {
-      direction = classifyDirection(dx, dy)
-    } else if (
-      status === 'Attacking' &&
-      targetX !== undefined &&
-      targetY !== undefined
-    ) {
-      direction = classifyDirection(targetX - x, targetY - y)
+    if (status === 'Attacking' && attackFacing) {
+      direction = classifyDirection(attackFacing.dx, attackFacing.dy, state.direction)
+    } else if (interpolatedMoving) {
+      direction = classifyDirection(dx, dy, state.direction)
     }
 
-    const animation = pickAnimation(status, moving)
+    // Animation — attacking/chopping stay sticky even if the server ticks
+    // `moving` briefly; walking requires either the server flag or visible
+    // interpolation movement so we don't freeze mid-stride between snapshots.
+    const animation = pickAnimation(status, serverMoving === true || interpolatedMoving)
 
     if (animation !== state.animation) {
       state.animation = animation
@@ -81,9 +84,11 @@ export class UnitAnimationController {
     state.lastY = y
     state.lastSampleAt = renderTime
 
-    const frameIndex = Math.floor(
-      (renderTime - state.animStartedAt) / this.frameDurationMs,
-    )
+    const frameMs =
+      animation === 'attacking' && attackFrameDurationMs && attackFrameDurationMs > 0
+        ? attackFrameDurationMs
+        : this.frameDurationMs
+    const frameIndex = Math.floor((renderTime - state.animStartedAt) / frameMs)
 
     return { direction, animation, frameIndex }
   }
@@ -95,8 +100,27 @@ export class UnitAnimationController {
   }
 }
 
-function classifyDirection(dx: number, dy: number): UnitDirection {
-  if (Math.abs(dx) >= Math.abs(dy)) {
+// Picks a cardinal direction from a vector, biased toward `current` so small
+// diagonal wobble doesn't flip facing. To switch axes (e.g. east → north),
+// the new axis must exceed the old one by FACING_HYSTERESIS. Same-axis flips
+// (east → west when dx goes negative) happen naturally.
+function classifyDirection(
+  dx: number,
+  dy: number,
+  current: UnitDirection,
+): UnitDirection {
+  const ax = Math.abs(dx)
+  const ay = Math.abs(dy)
+  if (ax === 0 && ay === 0) return current
+
+  const currentOnX = current === 'east' || current === 'west'
+  if (currentOnX) {
+    if (ay > ax * (1 + FACING_HYSTERESIS)) {
+      return dy >= 0 ? 'south' : 'north'
+    }
+    return dx >= 0 ? 'east' : 'west'
+  }
+  if (ax > ay * (1 + FACING_HYSTERESIS)) {
     return dx >= 0 ? 'east' : 'west'
   }
   return dy >= 0 ? 'south' : 'north'
@@ -106,8 +130,8 @@ function pickAnimation(
   status: string | undefined,
   moving: boolean,
 ): UnitAnimationName {
-  if (status === 'Attacking') return 'attack'
-  if (status === 'Chopping Wood') return 'chop'
+  if (status === 'Attacking') return 'attacking'
+  if (status === 'Chopping Wood') return 'chopping'
   if (moving) return 'walking'
   return 'idle'
 }

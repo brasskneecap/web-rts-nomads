@@ -21,7 +21,18 @@
         "south": "packed/walking-south.png",
         "north": "packed/walking-north.png"
       }
+    },
+    "attacking": {
+      "frameCount": 4,
+      "frameWidth": 68,
+      "frameHeight": 68,
+      "strips": {
+        "east": "packed/attacking-east.png",
+        "south": "packed/attacking-south.png",
+        "west": "packed/attacking-west.png",
+        "north": "packed/attacking-north.png"
+      }
     }
   },
-  "packedAt": "2026-04-20T04:07:48.661Z"
+  "packedAt": "2026-04-20T05:23:04.953Z"
 }
