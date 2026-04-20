@@ -23,6 +23,8 @@ import { Camera } from './Camera'
 import { getRankToneColor } from './rankColors'
 import { ACTION_ICON_MAP } from '../maps/actionIconDefs'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
+import { getUnitFrame, getUnitSpriteSet } from './unitSprites'
+import { UnitAnimationController } from './unitAnimation'
 
 export type MinimapBounds = {
   x: number
@@ -60,6 +62,7 @@ export class CanvasRenderer {
   private renderTime = 0
   private bannerInitialDurations = new Map<number, number>()
   private trapInitialDurations = new Map<number, number>()
+  private unitAnim = new UnitAnimationController()
 
   constructor(canvas: HTMLCanvasElement, state: GameState, camera: Camera) {
     const ctx = canvas.getContext('2d')
@@ -917,6 +920,8 @@ export class CanvasRenderer {
       status?: string
       x: number
       y: number
+      targetX?: number
+      targetY?: number
       hp?: number
       maxHp?: number
       shield?: number
@@ -929,11 +934,13 @@ export class CanvasRenderer {
     }>,
   ) {
     const ctx = this.ctx
+    const activeUnitIds = new Set<number>()
 
     for (const unit of units) {
       if (unit.visible === false) {
         continue
       }
+      activeUnitIds.add(unit.id)
 
       const selected = this.state.selectedUnitIds.has(unit.id)
       const isInspected = this.state.inspectedEnemyUnitId === unit.id
@@ -1004,6 +1011,35 @@ export class CanvasRenderer {
       const unitRankColor = this.getRankColor(unit.rank)
       const unitRenderDef = resolveUnitRenderDef(unitDef, unit.path)
 
+      const spriteSet = getUnitSpriteSet(unit.path, unit.unitType)
+      if (spriteSet) {
+        const anim = this.unitAnim.sample(
+          unit.id,
+          unit.x,
+          unit.y,
+          unit.status,
+          unit.targetX,
+          unit.targetY,
+          this.renderTime,
+        )
+        const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
+        if (frame) {
+          const w = spriteSet.size.width
+          const h = spriteSet.size.height
+          const dx = unit.x - w / 2
+          const dy = unit.y + bottomOffset - h
+          const prevSmoothing = ctx.imageSmoothingEnabled
+          ctx.imageSmoothingEnabled = false
+          ctx.drawImage(
+            frame.image,
+            frame.srcX, frame.srcY, frame.srcW, frame.srcH,
+            dx, dy, w, h,
+          )
+          ctx.imageSmoothingEnabled = prevSmoothing
+          continue
+        }
+      }
+
       if (unitRenderDef) {
         for (const layer of unitRenderDef.layers) {
           ctx.fillStyle =
@@ -1033,6 +1069,8 @@ export class CanvasRenderer {
         ctx.fill()
       }
     }
+
+    this.unitAnim.prune(activeUnitIds)
   }
 
   private drawConfiguredUnitAttackEffect(unit: {

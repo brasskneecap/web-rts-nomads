@@ -1,0 +1,27 @@
+{
+  "key": "berserker",
+  "size": {
+    "width": 68,
+    "height": 68
+  },
+  "rotations": {
+    "south": "rotations/south.png",
+    "west": "rotations/west.png",
+    "east": "rotations/east.png",
+    "north": "rotations/north.png"
+  },
+  "animations": {
+    "walking": {
+      "frameCount": 4,
+      "frameWidth": 68,
+      "frameHeight": 68,
+      "strips": {
+        "east": "packed/walking-east.png",
+        "west": "packed/walking-west.png",
+        "north": "packed/walking-north.png",
+        "south": "packed/walking-south.png"
+      }
+    }
+  },
+  "packedAt": "2026-04-20T04:07:48.648Z"
+}
