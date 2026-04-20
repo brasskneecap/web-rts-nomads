@@ -9,5 +9,15 @@
     "selectable"
   ],
   "color": "#7c4a2f",
-  "label": "Rock"
+  "label": "Rock",
+  "selectionRing": {
+    "offsetX": 0.5, 
+    "offsetY": 0.7
+  },
+  "render": {
+    "offsetX": -0.4,
+    "offsetY": -0.4,
+    "width": 1.8,
+    "height": 1.8
+  }
 }
