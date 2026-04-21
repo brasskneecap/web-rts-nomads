@@ -15,6 +15,7 @@ type Loop struct {
 	ticker      *time.Ticker
 	quit        chan struct{}
 	stopOnce    sync.Once
+	OnGameOver  func() // called once when the game state transitions to game-over
 }
 
 func NewLoop(state *GameState, broadcaster Broadcaster) *Loop {
@@ -36,6 +37,15 @@ func (l *Loop) Start() {
 				l.state.IncrementTick()
 				l.state.Update(dt)
 				l.broadcaster.BroadcastSnapshot()
+
+				if l.state.IsGameOver() {
+					l.ticker.Stop()
+					l.stopOnce.Do(func() { close(l.quit) })
+					if l.OnGameOver != nil {
+						l.OnGameOver()
+					}
+					return
+				}
 
 			case <-l.quit:
 				l.ticker.Stop()

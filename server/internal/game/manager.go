@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 )
 
 type MatchManager struct {
@@ -24,7 +25,7 @@ func (m *MatchManager) FindOrCreateMatch(mapID string) *Match {
 	defer m.mu.Unlock()
 
 	for _, match := range m.matches {
-		if match.MapID == mapID && match.PlayerCount() < 4 {
+		if match.MapID == mapID && match.PlayerCount() < 4 && !match.State.IsGameOver() {
 			return match
 		}
 	}
@@ -35,6 +36,16 @@ func (m *MatchManager) FindOrCreateMatch(mapID string) *Match {
 	match := NewMatch(matchID, mapID)
 	m.matches[matchID] = match
 	log.Printf("match created: id=%s mapID=%s seed=%d\n", matchID, mapID, match.State.MatchSeed())
+
+	// When the game loop detects game-over it stops itself and schedules
+	// match deletion after a short grace window so clients can display the
+	// defeat screen before the match disappears.
+	match.loop.OnGameOver = func() {
+		log.Printf("game over: scheduling match deletion id=%s\n", matchID)
+		time.AfterFunc(15*time.Second, func() {
+			m.DeleteMatch(matchID)
+		})
+	}
 
 	return match
 }

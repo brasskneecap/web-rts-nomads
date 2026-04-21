@@ -1894,7 +1894,7 @@
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
           "spawnCount": 1,
-          "startingWave": 1,
+          "startingWave": 0,
           "unitType": "raider"
         }
       },
@@ -1915,7 +1915,7 @@
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
           "spawnCount": 2,
-          "startingWave": 2,
+          "startingWave": 0,
           "unitType": "raider"
         }
       },
@@ -1978,7 +1978,7 @@
           "spawnDelaySeconds": 30,
           "spawnIntervalSeconds": 10,
           "spawnCount": 2,
-          "startingWave": 1,
+          "startingWave": 0,
           "unitType": "raider"
         }
       }

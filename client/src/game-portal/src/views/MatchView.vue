@@ -593,6 +593,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   background: rgba(5, 8, 13, 0.72);
   backdrop-filter: blur(4px);
+  pointer-events: all;
 }
 
 .defeat-card {

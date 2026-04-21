@@ -702,6 +702,13 @@ func (s *GameState) checkPlayerLossLocked() {
 	}
 }
 
+// IsGameOver returns true once any human player has lost all their townhalls.
+func (s *GameState) IsGameOver() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.lostPlayerIDs) > 0
+}
+
 func (s *GameState) EnsurePlayer(playerID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

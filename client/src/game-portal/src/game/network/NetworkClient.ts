@@ -229,33 +229,37 @@ export class NetworkClient {
     const matchId = this.matchId ?? getStoredMatchId()
     if (!matchId) return
 
-    // Intentional disconnect — stop any in-flight reconnect before opening the
-    // leave socket so the close event on the main socket does not re-trigger.
     this.shouldReconnect = false
     this.clearReconnectTimer()
 
-    const socket = new WebSocket(WS_URL)
+    const message: LeaveMatchMessage = {
+      type: 'leave_match',
+      playerId: this.playerId,
+      matchId,
+    }
 
-    await new Promise<void>((resolve, reject) => {
-      socket.onopen = () => {
-        const message: LeaveMatchMessage = {
-          type: 'leave_match',
-          playerId: this.playerId,
-          matchId,
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      // Send on the live socket so the server removes THIS client from the
+      // match — allowing it to see ClientCount == 0 and delete the match.
+      this.socket.send(JSON.stringify(message))
+      // Give the server one event-loop tick to process before we close.
+      await new Promise<void>((resolve) => setTimeout(resolve, 50))
+      this.closeSocket()
+    } else {
+      // No live socket (page reload, tab restore) — open a temp one.
+      const socket = new WebSocket(WS_URL)
+      await new Promise<void>((resolve, reject) => {
+        socket.onopen = () => {
+          socket.send(JSON.stringify(message))
+          resolve()
         }
-        socket.send(JSON.stringify(message))
-        resolve()
-      }
+        socket.onerror = (err) => { reject(err) }
+      })
+      socket.close()
+    }
 
-      socket.onerror = (err) => {
-        reject(err)
-      }
-    })
-
-    socket.close()
     this.matchId = null
-    // localStorage cleared by the caller (MatchView / startNewGame / exitGame)
-    // so that the reconnect path can still read matchId if needed before intentional leave.
+    // localStorage cleared by the caller (MatchView / startNewGame / exitGame).
   }
 
   // -------------------------------------------------------------------------
