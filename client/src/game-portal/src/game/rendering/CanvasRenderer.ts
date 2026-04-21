@@ -677,10 +677,15 @@ export class CanvasRenderer {
     for (const trap of traps) {
       const spriteKey = this.spriteKeyForTrapType(trap.type)
       if (!spriteKey) continue
+      // Only switch to 'exploding' when the sprite set actually defines that
+      // animation. Simple object sheets (marker_trap, etc.) only have idle —
+      // without this guard a stray `triggered` tick would wipe the state.
+      const canExplode = !!getObjectSpriteSet(spriteKey)?.animations.has('exploding')
+      const shouldExplode = trap.triggered && canExplode
       const state = this.trapAnimStates.get(trap.id)
       if (!state) {
         this.trapAnimStates.set(trap.id, {
-          animation: trap.triggered ? 'exploding' : 'idle',
+          animation: shouldExplode ? 'exploding' : 'idle',
           startedAt: now,
           x: trap.x,
           y: trap.y,
@@ -693,7 +698,7 @@ export class CanvasRenderer {
         state.y = trap.y
         state.radius = trap.radius
         state.triggerRadius = trap.triggerRadius
-        if (trap.triggered && state.animation !== 'exploding') {
+        if (shouldExplode && state.animation !== 'exploding') {
           state.animation = 'exploding'
           state.startedAt = now
         }
@@ -760,6 +765,13 @@ export class CanvasRenderer {
     const spriteSet = getObjectSpriteSet(state.spriteKey)
     if (!spriteSet) return !stillInSnapshot
 
+    const scale = spriteSet.scale ?? this.OBJECT_SPRITE_SCALE
+    // Positional nudge, authored in native sprite pixels. Scaled by the
+    // effective render scale so the shift stays proportional when an object
+    // also sets a `scale` override.
+    const offX = (spriteSet.offsetX ?? 0) * scale
+    const offY = (spriteSet.offsetY ?? 0) * scale
+
     if (state.animation === 'exploding') {
       const anim = spriteSet.animations.get('exploding')
       if (!anim) return true
@@ -767,7 +779,7 @@ export class CanvasRenderer {
       const frameMs = anim.frameDurationMs ?? this.TRAP_EXPLODING_FRAME_MS
       const frameIndex = Math.floor(elapsed / frameMs)
       if (frameIndex >= anim.frameCount) return true
-      this.drawObjectFrame(anim, frameIndex, state.x, state.y, this.OBJECT_SPRITE_SCALE)
+      this.drawObjectFrame(anim, frameIndex, state.x + offX, state.y + offY, scale)
       return false
     }
 
@@ -791,7 +803,7 @@ export class CanvasRenderer {
       this.drawTrapRadiusRing(state.x, state.y, state.radius, 'rgba(251, 146, 60, 0.75)')
     }
 
-    this.drawObjectFrame(anim, frameIndex, state.x, state.y, this.OBJECT_SPRITE_SCALE)
+    this.drawObjectFrame(anim, frameIndex, state.x + offX, state.y + offY, scale)
 
     if (this.state.selectedTrapId === id) {
       const ctx = this.ctx
@@ -851,6 +863,10 @@ export class CanvasRenderer {
     switch (type) {
       case 'explosive_trap':
         return getObjectSpriteSet('explosive_trap') ? 'explosive_trap' : ''
+      case 'marker_trap':
+        return getObjectSpriteSet('marker_trap') ? 'marker_trap' : ''
+      case 'fire_pit':
+        return getObjectSpriteSet('fire_pit') ? 'fire_pit' : ''
       default:
         return ''
     }

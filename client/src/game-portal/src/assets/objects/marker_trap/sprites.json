@@ -1,0 +1,18 @@
+{
+  "key": "marker_trap",
+  "size": {
+    "width": 64,
+    "height": 64
+  },
+  "animations": {
+    "idle": {
+      "frameCount": 13,
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "sheet": "packed/idle.png",
+      "loop": true
+    }
+  },
+  "scale": 1,
+  "packedAt": "2026-04-21T22:18:00.180Z"
+}

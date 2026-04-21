@@ -53,7 +53,7 @@
     "config": {
       "placeIntervalSeconds": 7,
       "durationSeconds": 12,
-      "radius": 65,
+      "radius": 115,
       "markMultiplier": 0.20,
       "markDuration": 4
     }

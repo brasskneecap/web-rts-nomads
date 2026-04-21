@@ -22,6 +22,18 @@ interface ObjectManifest {
   key?: string
   size?: { width?: number; height?: number }
   animations?: Record<string, ObjectAnimationManifest>
+  /** Per-object render scale override. Replaces the renderer's default
+   *  OBJECT_SPRITE_SCALE when present. Use to shrink an oversized asset
+   *  (e.g. a 64px source that should draw at 32px → scale: 0.5). */
+  scale?: number
+  /** Per-object positional nudges, in NATIVE sprite pixels (pre-scale).
+   *  Positive X = right, positive Y = down. Scaled at render time by the
+   *  effective object scale so the nudge stays proportional across zooms
+   *  and scale overrides. Use when the authored art isn't centered on the
+   *  intended anchor point (e.g. a barrel whose base sits 3px above the
+   *  bottom of its frame → offsetY: 3 to drop it onto the ground). */
+  offsetX?: number
+  offsetY?: number
 }
 
 export interface ObjectAnimation {
@@ -37,6 +49,12 @@ export interface ObjectSpriteSet {
   key: string
   size: { width: number; height: number }
   animations: Map<string, ObjectAnimation>
+  /** Optional render-scale override — when set, the renderer uses this
+   *  instead of its OBJECT_SPRITE_SCALE default. */
+  scale?: number
+  /** Optional positional nudge, native sprite pixels. Scaled at render time. */
+  offsetX?: number
+  offsetY?: number
 }
 
 const manifestGlob = import.meta.glob<ObjectManifest>(
@@ -84,7 +102,14 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
   }
 
   if (animations.size === 0) continue
-  sprites.set(key, { key, size, animations })
+  sprites.set(key, {
+    key,
+    size,
+    animations,
+    scale: typeof manifest.scale === 'number' && manifest.scale > 0 ? manifest.scale : undefined,
+    offsetX: typeof manifest.offsetX === 'number' ? manifest.offsetX : undefined,
+    offsetY: typeof manifest.offsetY === 'number' ? manifest.offsetY : undefined,
+  })
 }
 
 export function getObjectSpriteSet(key: string): ObjectSpriteSet | null {

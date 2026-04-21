@@ -43,6 +43,24 @@ async function readPng(file) {
   return PNG.sync.read(buf)
 }
 
+// Reads hand-editable override fields from a previously-generated sprites.json.
+// Returns only the fields present in the prior file; callers spread the result
+// into the new manifest so user overrides (scale / offsets / future tweaks)
+// survive a re-pack without needing a separate config file.
+async function readPreservedOverrides(dir) {
+  const out = {}
+  try {
+    const raw = await fs.readFile(path.join(dir, 'sprites.json'), 'utf8')
+    const parsed = JSON.parse(raw)
+    if (typeof parsed.scale === 'number' && parsed.scale > 0) out.scale = parsed.scale
+    if (typeof parsed.offsetX === 'number') out.offsetX = parsed.offsetX
+    if (typeof parsed.offsetY === 'number') out.offsetY = parsed.offsetY
+  } catch {
+    /* no prior manifest or invalid JSON — nothing to preserve */
+  }
+  return out
+}
+
 const DIRECTION_ORDER = ['north', 'south', 'east', 'west']
 
 // Packs all directions of a single animation into one 2D sheet — columns are
@@ -241,21 +259,86 @@ async function packFrameStrip(objectDir, outName, framePaths) {
   }
 }
 
+// Packs a single pre-made horizontal strip (sprite.png at the object root)
+// into the same layout a PixelLab export would produce after packing. Used
+// for simple objects that don't need the full rotations/animations tree —
+// just a looping idle strip.
+//
+// Convention: sprite.png is N × H pixels, where H is the frame height AND
+// frame width (square frames), giving floor(N/H) frames. The first frame's
+// height defines the frame size.
+async function packSimpleObject(objectDir) {
+  const spritePath = path.join(objectDir, 'sprite.png')
+  try {
+    await fs.access(spritePath)
+  } catch {
+    return null
+  }
+
+  const png = await readPng(spritePath)
+  const frameHeight = png.height
+  const frameWidth = frameHeight
+  const frameCount = Math.max(1, Math.floor(png.width / frameHeight))
+
+  // Copy the source strip into packed/idle.png so the runtime loader's
+  // packed/*.png glob picks it up with no special-casing. Regenerated on
+  // every pack run — safe to edit sprite.png and re-pack.
+  const outDir = path.join(objectDir, 'packed')
+  await fs.mkdir(outDir, { recursive: true })
+  const outPath = path.join(outDir, 'idle.png')
+  await fs.copyFile(spritePath, outPath)
+
+  return {
+    size: { width: frameWidth, height: frameHeight },
+    animations: {
+      idle: {
+        frameCount,
+        frameWidth,
+        frameHeight,
+        sheet: 'packed/idle.png',
+        loop: true,
+      },
+    },
+  }
+}
+
 // Packs a PixelLab object export. Unlike units, objects don't have per-direction
 // strips — PixelLab's `rotations` entries are treated as ordered idle-animation
 // frames (barrel rotating in place, lantern flickering, etc.), and each named
 // animation is expected to have a single 'south' direction since objects face a
 // single canonical pose.
+//
+// Falls through to packSimpleObject when there's no metadata.json but a
+// sprite.png strip exists — covers the "single sheet, single looping
+// animation" case for lightweight placeables.
 async function packObject(objectDir) {
+  const objectKey = path.basename(objectDir)
   const metaPath = path.join(objectDir, 'metadata.json')
+  // Preserve hand-edited override fields (scale, offsetX, offsetY) from a
+  // prior sprites.json so re-packing doesn't wipe intentional tweaks.
+  const preserved = await readPreservedOverrides(objectDir)
   let meta
   try {
     meta = JSON.parse(await fs.readFile(metaPath, 'utf8'))
   } catch {
-    return { skipped: true }
+    const simple = await packSimpleObject(objectDir)
+    if (!simple) return { skipped: true }
+    const manifest = {
+      key: objectKey,
+      size: simple.size,
+      animations: simple.animations,
+      ...preserved,
+      packedAt: new Date().toISOString(),
+    }
+    await fs.writeFile(
+      path.join(objectDir, 'sprites.json'),
+      JSON.stringify(manifest, null, 2) + '\n',
+    )
+    return {
+      objectKey,
+      animations: Object.keys(simple.animations).length,
+    }
   }
-
-  const objectKey = path.basename(objectDir)
 
   const firstFrame = meta?.frames?.rotations?.south
     ?? Object.values(meta?.frames?.rotations ?? {})[0]
@@ -315,6 +398,7 @@ async function packObject(objectDir) {
     key: objectKey,
     size,
     animations,
+    ...preserved,
     packedAt: new Date().toISOString(),
   }
 
