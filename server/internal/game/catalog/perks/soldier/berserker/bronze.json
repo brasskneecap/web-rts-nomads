@@ -14,9 +14,9 @@
     "id": "savage_strikes",
     "displayName": "Savage Strikes",
     "icon": "perk-savage-strikes",
-    "description": "Every Nth attack deals a bonus hit for increased damage.",
+    "description": "Every 3rd attack deals a bonus hit for increased damage.",
     "config": {
-      "everyNthAttack": 4,
+      "everyNthAttack": 3,
       "bonusMultiplier": 1.5
     }
   },

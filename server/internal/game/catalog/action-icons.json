@@ -81,7 +81,7 @@
     { "id": "perk-lasting-flames",    "path": "M12 2C9 6 7 9 7 13a5 5 0 0 0 10 0c0-4-2-7-5-11z M5 21h14 M15 17l3 3 M9 17l-3 3 M19 14l3 1 M5 14l-3 1" },
 
     { "id": "perk-ascendant-infusion",   "path": "M12 2l3 7h7l-5.5 4 2 7-6.5-4.5-6.5 4.5 2-7-5.5-4h7z M12 6v12 M7 12h10" },
-    { "id": "perk-ascendant-deployment", "path": "M8 6l-4 4 4 4 M16 10h-8 M16 14l4-4-4-4 M16 18h-8 M12 2v3 M12 19v3" },
+    { "id": "perk-increased-deployment", "path": "M8 6l-4 4 4 4 M16 10h-8 M16 14l4-4-4-4 M16 18h-8 M12 2v3 M12 19v3" },
     { "id": "perk-overload-protocol",    "path": "M12 2l2 6h6l-5 4 2 6-5-3.5-5 3.5 2-6-5-4h6z M12 10v4 M10 12h4 M4 20l4-4 M20 20l-4-4" },
 
     { "id": "debuff-burning",         "path": "M12 2C9 6 7 9 7 13a5 5 0 0 0 10 0c0-4-2-7-5-11z M10 14a2 2 0 0 0 4 0c0-1.5-1.2-2.5-2-4-.8 1.5-2 2.5-2 4z M12 22v-3" }

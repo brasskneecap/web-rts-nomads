@@ -416,6 +416,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			MaxShield:           s.unitMaxShieldLocked(unit),
 			ActiveBuffs:         s.activeBuffIconsLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
+			PerkCooldowns:       s.perkCooldownsLocked(unit),
 			StunnedRemaining:    unit.StunnedRemaining,
 			SlowedRemaining:     unit.SlowedRemaining,
 			SlowedMultiplier:    unit.SlowedMultiplier,

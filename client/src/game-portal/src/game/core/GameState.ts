@@ -6,6 +6,7 @@ import type {
   MapConfig,
   MatchSnapshotMessage,
   ObstacleTile,
+  PerkCooldownSnapshot,
   PlayerSnapshot,
   ResourceType,
   TrapSnapshot,
@@ -47,6 +48,8 @@ export type Unit = {
   activeBuffs?: ActiveEffectIcon[]
   /** Debuffs currently active — each entry carries a raw icon id + optional stacks. */
   activeDebuffs?: ActiveEffectIcon[]
+  /** Per-perk cooldown timers (only perks currently gated by a ticking timer). */
+  perkCooldowns?: PerkCooldownSnapshot[]
   ownerId?: string
   color?: string
   carriedResourceType?: ResourceType
@@ -73,6 +76,11 @@ export type ActionItem = {
   disabled?: boolean
   active?: boolean
   iconDef?: { kind: 'building'; type: string } | { kind: 'unit'; type: string }
+  /** Seconds remaining on this perk's next activation. 0/undefined = ready. */
+  cooldownRemaining?: number
+  /** Full cooldown duration corresponding to cooldownRemaining. Drives the
+   *  clock-wipe fraction (remaining / total). */
+  cooldownTotal?: number
 }
 
 export type DetailItem = {
@@ -391,6 +399,7 @@ export class GameState {
         maxShield: unit.maxShield,
         activeBuffs: unit.activeBuffs,
         activeDebuffs: unit.activeDebuffs,
+        perkCooldowns: unit.perkCooldowns,
         ownerId: unit.ownerId,
         color: unit.color,
         carriedResourceType: unit.carriedResourceType,
@@ -1501,6 +1510,9 @@ function getPerkActionItems(unit: Unit): ActionItem[] {
     const rankLabel = rank.charAt(0).toUpperCase() + rank.slice(1)
 
     if (def) {
+      const cd = perkId
+        ? unit.perkCooldowns?.find((c) => c.perkId === perkId)
+        : undefined
       return {
         id: def.icon ?? 'perk-locked',
         label: def.displayName,
@@ -1509,6 +1521,8 @@ function getPerkActionItems(unit: Unit): ActionItem[] {
         tooltipTitle: `${def.displayName} (${rankLabel})`,
         tooltipBody: def.description,
         disabled: true,
+        cooldownRemaining: cd?.remaining,
+        cooldownTotal: cd?.total,
       }
     }
 

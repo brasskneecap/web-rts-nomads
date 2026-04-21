@@ -1,17 +1,19 @@
 #!/usr/bin/env node
-// Packs PixelLab per-frame unit sprites into horizontal strips and emits a
-// derived sprites.json manifest. Run after dropping a new unit export into
-// `src/assets/units/{unit}/`.
+// Packs PixelLab per-frame unit sprites into a single 2D sheet per animation
+// (columns = frames, rows = directions) and emits a derived sprites.json
+// manifest. Run after dropping a new unit export into `src/assets/units/{unit}/`.
 //
 // Usage:  npm run pack:sprites
 //
 // Input  : src/assets/units/*/metadata.json  (PixelLab export, unmodified)
-// Output : src/assets/units/*/packed/{animation}-{direction}.png  (strips)
-//          src/assets/units/*/sprites.json                         (loader input)
+// Output : src/assets/units/*/packed/{animation}.png  (one sheet per animation)
+//          src/assets/units/*/sprites.json            (loader input)
 //
-// The runtime loader consumes sprites.json and the packed strips only; the
+// The runtime loader consumes sprites.json and the packed sheets only; the
 // raw animations/ frames can stay on disk (they aren't imported by Vite
 // because nothing globs them) or be gitignored if you want the repo leaner.
+// The loader still understands the legacy per-direction strip layout, so
+// older packed units keep working without re-baking.
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
@@ -26,43 +28,81 @@ async function readPng(file) {
   return PNG.sync.read(buf)
 }
 
-async function packAnimationDirection(unitDir, animSlug, direction, framePaths) {
-  if (framePaths.length === 0) return null
+const DIRECTION_ORDER = ['north', 'south', 'east', 'west']
 
-  const frames = []
-  for (const rel of framePaths) {
-    frames.push(await readPng(path.join(unitDir, rel)))
-  }
+// Packs all directions of a single animation into one 2D sheet — columns are
+// animation frames, rows are directions (order recorded in rowOrder). Returns
+// null when no direction has any frames.
+async function packAnimation(unitDir, animSlug, byDir) {
+  const dirs = DIRECTION_ORDER.filter((d) => Array.isArray(byDir[d]) && byDir[d].length > 0)
+  if (dirs.length === 0) return null
 
-  const { width: frameWidth, height: frameHeight } = frames[0]
-  for (const f of frames) {
-    if (f.width !== frameWidth || f.height !== frameHeight) {
-      throw new Error(
-        `frame size mismatch in ${unitDir}/${animSlug}/${direction}: expected ${frameWidth}x${frameHeight}, got ${f.width}x${f.height}`,
-      )
+  const framesByDir = {}
+  let frameWidth = 0
+  let frameHeight = 0
+  let frameCount = 0
+
+  for (const dir of dirs) {
+    const pngs = []
+    for (const rel of byDir[dir]) {
+      pngs.push(await readPng(path.join(unitDir, rel)))
+    }
+    framesByDir[dir] = pngs
+    frameCount = Math.max(frameCount, pngs.length)
+    if (!frameWidth) {
+      frameWidth = pngs[0].width
+      frameHeight = pngs[0].height
     }
   }
 
-  const strip = new PNG({ width: frameWidth * frames.length, height: frameHeight })
-  for (let i = 0; i < frames.length; i++) {
-    const src = frames[i]
-    for (let y = 0; y < frameHeight; y++) {
-      const srcStart = y * src.width * 4
-      const dstStart = y * strip.width * 4 + i * frameWidth * 4
-      src.data.copy(strip.data, dstStart, srcStart, srcStart + frameWidth * 4)
+  for (const dir of dirs) {
+    for (const f of framesByDir[dir]) {
+      if (f.width !== frameWidth || f.height !== frameHeight) {
+        throw new Error(
+          `frame size mismatch in ${unitDir}/${animSlug}/${dir}: expected ${frameWidth}x${frameHeight}, got ${f.width}x${f.height}`,
+        )
+      }
+    }
+  }
+
+  const sheetW = frameWidth * frameCount
+  const sheetH = frameHeight * dirs.length
+  const sheet = new PNG({ width: sheetW, height: sheetH })
+
+  for (let r = 0; r < dirs.length; r++) {
+    const pngs = framesByDir[dirs[r]]
+    for (let f = 0; f < pngs.length; f++) {
+      const src = pngs[f]
+      for (let y = 0; y < frameHeight; y++) {
+        const srcStart = y * src.width * 4
+        const dstStart = (r * frameHeight + y) * sheetW * 4 + f * frameWidth * 4
+        src.data.copy(sheet.data, dstStart, srcStart, srcStart + frameWidth * 4)
+      }
     }
   }
 
   const outDir = path.join(unitDir, 'packed')
   await fs.mkdir(outDir, { recursive: true })
-  const outName = `${animSlug}-${direction}.png`
-  await fs.writeFile(path.join(outDir, outName), PNG.sync.write(strip))
+  const outName = `${animSlug}.png`
+  await fs.writeFile(path.join(outDir, outName), PNG.sync.write(sheet))
+
+  // Remove legacy per-direction strips for this animation — they've been
+  // superseded by the 2D sheet and would otherwise clutter the repo.
+  for (const dir of DIRECTION_ORDER) {
+    const legacy = path.join(outDir, `${animSlug}-${dir}.png`)
+    try {
+      await fs.unlink(legacy)
+    } catch {
+      /* not present — nothing to clean up */
+    }
+  }
 
   return {
     relPath: `packed/${outName}`,
     frameWidth,
     frameHeight,
-    frameCount: frames.length,
+    frameCount,
+    rowOrder: dirs,
   }
 }
 
@@ -114,23 +154,14 @@ async function packUnit(unitDir) {
   const animations = {}
   for (const [hashedName, byDir] of Object.entries(meta?.frames?.animations ?? {})) {
     const slug = animSlugFromHashedName(hashedName)
-    const strips = {}
-    let frameCount = 0
-    let frameWidth = 0
-    let frameHeight = 0
-
-    for (const [dir, rels] of Object.entries(byDir ?? {})) {
-      if (!Array.isArray(rels) || rels.length === 0) continue
-      const result = await packAnimationDirection(unitDir, slug, dir, rels)
-      if (!result) continue
-      strips[dir] = result.relPath
-      frameCount = Math.max(frameCount, result.frameCount)
-      frameWidth = result.frameWidth
-      frameHeight = result.frameHeight
-    }
-
-    if (Object.keys(strips).length > 0) {
-      animations[slug] = { frameCount, frameWidth, frameHeight, strips }
+    const result = await packAnimation(unitDir, slug, byDir ?? {})
+    if (!result) continue
+    animations[slug] = {
+      frameCount: result.frameCount,
+      frameWidth: result.frameWidth,
+      frameHeight: result.frameHeight,
+      sheet: result.relPath,
+      rowOrder: result.rowOrder,
     }
   }
 

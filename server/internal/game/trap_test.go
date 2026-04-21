@@ -1658,7 +1658,7 @@ func TestExplosiveTrap_TriggeredVisibleAfterUpdate(t *testing.T) {
 
 // TestPerkPool_GoldReturnsGoldPerks verifies that when a Trapper reaches Gold
 // rank and has consumed the Bronze/Silver tiers, the Gold pool is populated
-// with adaptive Gold perks (ascendant_infusion, ascendant_deployment,
+// with adaptive Gold perks (ascendant_infusion, increased_deployment,
 // overload_protocol). The cascade only falls through to Silver/Bronze when the
 // Gold pool is empty — that fallback is still valid runtime behavior, but with
 // the three Gold perks authored it no longer triggers for Trapper.

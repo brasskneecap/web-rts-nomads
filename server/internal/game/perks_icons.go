@@ -240,3 +240,57 @@ func (s *GameState) activeDebuffIconsLocked(unit *Unit) []protocol.ActiveEffectI
 	}
 	return active
 }
+
+// perkCooldownsLocked returns one entry per owned perk whose activation is
+// currently gated by a ticking cooldown timer. Ready perks (Remaining == 0)
+// are omitted so the client only draws the clock-wipe overlay while it is
+// meaningful. Total is the rank/modifier-adjusted cooldown length that would
+// be written back to the state field on the next reset — used by the client
+// to compute the wipe fraction (remaining / total).
+//
+// ADD NEW COOLDOWN-INDICATED PERKS HERE.
+//
+// Must be called under s.mu (read or write) lock.
+func (s *GameState) perkCooldownsLocked(unit *Unit) []protocol.PerkCooldownSnapshot {
+	if unit == nil {
+		return nil
+	}
+	var cds []protocol.PerkCooldownSnapshot
+	add := func(id string, remaining, total float64) {
+		if remaining <= 0 || total <= 0 {
+			return
+		}
+		cds = append(cds, protocol.PerkCooldownSnapshot{
+			PerkID:    id,
+			Remaining: remaining,
+			Total:     total,
+		})
+	}
+	for _, perkID := range unit.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+		cfg := def.ConfigForRank(unit.Rank)
+		switch perkID {
+		case "whirlwind_core":
+			// Suppress the overlay while the whirlwind is actively spinning —
+			// the unit is mid-ability, not waiting. The cooldown-phase timer
+			// is what should be surfaced to the HUD.
+			if unit.PerkState.WhirlwindActiveRemaining > 0 {
+				continue
+			}
+			add(perkID, unit.PerkState.WhirlwindCooldownRemaining, cfg["cooldownSeconds"])
+		case "rallying_banner":
+			add(perkID, unit.PerkState.BannerCooldownRemaining, cfg["cooldownSeconds"])
+		case "caltrops", "fire_pit", "explosive_trap", "marker_trap":
+			// Trap perks share a single TrapPlaceCooldownRemaining field on
+			// the unit because an archer only owns one bronze trap perk at a
+			// time. Total factors in rapid_deployment's CooldownMultiplier so
+			// the wipe matches the actual wait.
+			mods := s.trapModifiersForUnitLocked(unit)
+			add(perkID, unit.PerkState.TrapPlaceCooldownRemaining, cfg["placeIntervalSeconds"]*mods.CooldownMultiplier)
+		}
+	}
+	return cds
+}

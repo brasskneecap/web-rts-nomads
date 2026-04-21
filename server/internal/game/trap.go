@@ -176,7 +176,7 @@ type Trap struct {
 	// children, and do NOT apply any gold-tier effects.
 	IsScatterBombChild bool
 
-	// IsBonusDeployment is true for the extra trap planted by Ascendant
+	// IsBonusDeployment is true for each extra trap planted by Increased
 	// Deployment. Exclusively a debug/telemetry marker — no runtime branching
 	// keys off this field. Recursion is blocked at the plant site instead.
 	IsBonusDeployment bool
@@ -369,7 +369,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 					// max(currentRemaining, burnDuration) == burnDuration while
 					// the victim sits in the pit.
 					// Keyed by trap.ID so two fire_pit traps from the SAME
-					// trapper (e.g. ascendant_deployment's bonus trap
+					// trapper (e.g. increased_deployment's bonus traps
 					// overlapping the primary) each land their own burn
 					// stack on an enemy standing in both.
 					unit.PerkState.applyBurnStack(
@@ -479,7 +479,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 				}
 				// Apply a mark stack keyed by this trap's ID (not the owner
 				// unit) so two marker_traps from the same trapper — e.g.
-				// the primary + ascendant_deployment bonus — each land
+				// the primary + increased_deployment bonus — each land
 				// their own stack when their zones overlap. Same-trap
 				// re-ticks refresh that stack in place.
 				unit.PerkState.applyMarkStack(trap.ID, trap.OwnerUnitID, trap.MarkMultiplier, trap.MarkDuration)
@@ -648,28 +648,40 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 
 // plantTrapLocked constructs a new Trap at the unit's current position from the
 // perk's config snapshot and appends it to s.Traps. When the unit owns
-// ascendant_deployment (gold), a bonus trap is planted at a perpendicular
-// offset using the same snapshotted stats. The bonus plant is NOT recursive —
-// only the outer plant call checks for ascendant_deployment.
+// increased_deployment (gold), additional bonus traps are planted at
+// perpendicular offsets using the same snapshotted stats — count is driven by
+// that perk's bonusTrapCount config key. The bonus plants are NOT recursive —
+// only the outer plant call reads increased_deployment.
 //
 // Must be called under s.mu write lock.
 func (s *GameState) plantTrapLocked(unit *Unit, def *PerkDef) {
 	if unit == nil || def == nil {
 		return
 	}
-	s.plantOneTrapLocked(unit, def, false)
-	if containsString(unit.PerkIDs, "ascendant_deployment") {
-		s.plantOneTrapLocked(unit, def, true)
+	s.plantOneTrapLocked(unit, def, 0)
+	if !containsString(unit.PerkIDs, "increased_deployment") {
+		return
+	}
+	bonusCount := 1
+	if bd := perkDefByID("increased_deployment"); bd != nil {
+		if v, ok := bd.ConfigForRank(unit.Rank)["bonusTrapCount"]; ok && v > 0 {
+			bonusCount = int(v)
+		}
+	}
+	for i := 1; i <= bonusCount; i++ {
+		s.plantOneTrapLocked(unit, def, i)
 	}
 }
 
 // plantOneTrapLocked is the single-trap plant primitive used by plantTrapLocked
-// for both the primary trap and the ascendant_deployment bonus trap. When
-// isBonus is true, the trap position uses a perpendicular offset and the trap
-// is flagged IsBonusDeployment for debug visibility.
+// for both the primary trap and each increased_deployment bonus trap.
+// bonusIndex == 0 means the primary trap (centered on the throw target);
+// bonusIndex >= 1 marks a bonus trap and determines its offset direction and
+// magnitude so multiple bonuses fan out to alternating sides of the primary.
 //
 // Must be called under s.mu write lock.
-func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, isBonus bool) {
+func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int) {
+	isBonus := bonusIndex > 0
 	id := s.nextTrapID
 	s.nextTrapID++
 
@@ -682,13 +694,18 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, isBonus bool) {
 	// trapSpecificModifiersForUnitLocked.
 	mods := s.trapModifiersForUnitLocked(unit)
 
+	// Rank-scoped tuning: bronze trap perks persist through silver/gold, so
+	// base values in the JSON are overridden by the matching rank block when
+	// present. See PerkDef.ConfigForRank.
+	cfg := def.ConfigForRank(unit.Rank)
+
 	// Position is assigned AFTER the switch so the trap's final Radius is
 	// available for the "edge-touching-archer" offset in trapPlacementOffsetLocked.
 	trap := &Trap{
 		ID:                trapIDString(id),
 		OwnerUnitID:       unit.ID,
 		OwnerPlayerID:     unit.OwnerID,
-		RemainingSeconds:  def.Config["durationSeconds"] * mods.DurationMultiplier,
+		RemainingSeconds:  cfg["durationSeconds"] * mods.DurationMultiplier,
 		TrapType:          trapType,
 		IsBonusDeployment: isBonus,
 	}
@@ -701,9 +718,9 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, isBonus bool) {
 
 	switch trapType {
 	case "caltrops":
-		trap.Radius = def.Config["radius"] * mods.RadiusMultiplier
-		trap.DamagePerSecond = def.Config["damagePerSecond"] * mods.EffectMultiplier
-		trap.SlowMultiplier = amplifySlow(def.Config["slowMultiplier"], mods.EffectMultiplier)
+		trap.Radius = cfg["radius"] * mods.RadiusMultiplier
+		trap.DamagePerSecond = cfg["damagePerSecond"] * mods.EffectMultiplier
+		trap.SlowMultiplier = amplifySlow(cfg["slowMultiplier"], mods.EffectMultiplier)
 		// barbed_field: ramp values scale with EffectMultiplier so amplified_effects
 		// stacks the way the player expects (more ramp, harder cap).
 		trap.BarbedFieldRampPerSec = specific.BarbedFieldRampPerSec * mods.EffectMultiplier
@@ -722,8 +739,8 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, isBonus bool) {
 		trap.OverloadSpikeSurgeSlowDuration = specific.OverloadSpikeSurgeSlowDuration * mods.DurationMultiplier
 
 	case "fire_pit":
-		trap.Radius = def.Config["radius"] * mods.RadiusMultiplier
-		trap.DamagePerSecond = def.Config["damagePerSecond"] * mods.EffectMultiplier
+		trap.Radius = cfg["radius"] * mods.RadiusMultiplier
+		trap.DamagePerSecond = cfg["damagePerSecond"] * mods.EffectMultiplier
 		// lasting_flames: set the burn duration so fire_pit switches into
 		// "damage-as-debuff" mode. The burn's DPS derives from the pit's own
 		// DamagePerSecond at tick time, so amplified_effects continues to
@@ -752,9 +769,9 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, isBonus bool) {
 		if specific.OverloadCataclysmRadiusMult > 0 {
 			cataclysmMult = specific.OverloadCataclysmRadiusMult
 		}
-		trap.Radius = def.Config["explosionRadius"] * mods.RadiusMultiplier * cataclysmMult
-		trap.TriggerRadius = def.Config["triggerRadius"] * mods.RadiusMultiplier
-		base := int(def.Config["burstDamage"])
+		trap.Radius = cfg["explosionRadius"] * mods.RadiusMultiplier * cataclysmMult
+		trap.TriggerRadius = cfg["triggerRadius"] * mods.RadiusMultiplier
+		base := int(cfg["burstDamage"])
 		trap.BurstDamage = int(float64(base)*mods.EffectMultiplier + 0.5)
 		// Aftershock slot is single — if explosive_chain AND overload_protocol
 		// are both owned, use the longer delay so both perks contribute (the
@@ -770,13 +787,13 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, isBonus bool) {
 		trap.InfusionScatterBombChildSeconds = specific.InfusionScatterBombChildSeconds * mods.DurationMultiplier
 
 	case "marker_trap":
-		trap.Radius = def.Config["radius"] * mods.RadiusMultiplier
+		trap.Radius = cfg["radius"] * mods.RadiusMultiplier
 		// MarkMultiplier and MarkDuration both scale with effect strength.
 		// DurationMultiplier is about trap-entity lifetime, not the post-effect
 		// debuff — EffectMultiplier governs both the strength and the window of
 		// the mark applied to enemies.
-		trap.MarkMultiplier = def.Config["markMultiplier"] * mods.EffectMultiplier
-		trap.MarkDuration = def.Config["markDuration"] * mods.EffectMultiplier
+		trap.MarkMultiplier = cfg["markMultiplier"] * mods.EffectMultiplier
+		trap.MarkDuration = cfg["markDuration"] * mods.EffectMultiplier
 		// exposed_weakness: damage-reduction strength scales with EffectMultiplier
 		// so amplified_effects makes the debuff harsher. Duration aligns with
 		// MarkDuration (stamped together in tickTrapEffectsLocked).
@@ -795,27 +812,37 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, isBonus bool) {
 	// isolated-unit test scenarios stay deterministic.
 	offsetX, offsetY := s.trapPlacementOffsetLocked(unit, trap.Radius)
 	if isBonus {
-		// Ascendant Deployment bonus: nudge the primary offset sideways by
+		// Increased Deployment bonus: nudge the primary offset sideways by
 		// bonusOffsetDistance so the bonus trap lands NEXT TO the primary
 		// (which is now on the enemy) rather than off to the side of the
 		// archer. Fall back to a purely horizontal offset when the primary
 		// offset is (0, 0) — i.e. no enemy in range — so the bonus is still
 		// visibly separated for isolation tests.
+		//
+		// For multiple bonuses, alternate perpendicular direction by index
+		// (odd → +perp, even → -perp) and scale the stride so pairs beyond
+		// the first land further out, preventing overlap.
 		bonusDist := 50.0
-		if bd := perkDefByID("ascendant_deployment"); bd != nil {
-			if v, ok := bd.Config["bonusOffsetDistance"]; ok {
+		if bd := perkDefByID("increased_deployment"); bd != nil {
+			if v, ok := bd.ConfigForRank(unit.Rank)["bonusOffsetDistance"]; ok {
 				bonusDist = v
 			}
 		}
+		sign := 1.0
+		if bonusIndex%2 == 0 {
+			sign = -1.0
+		}
+		stride := float64((bonusIndex + 1) / 2)
+		signedDist := bonusDist * sign * stride
 		if offsetX == 0 && offsetY == 0 {
-			offsetX, offsetY = bonusDist, 0
+			offsetX, offsetY = signedDist, 0
 		} else {
 			mag := math.Sqrt(offsetX*offsetX + offsetY*offsetY)
-			// Perpendicular unit vector × bonusDist, added to the primary
-			// offset so the bonus trap is a short hop to the side of the
+			// Perpendicular unit vector × signedDist, added to the primary
+			// offset so each bonus trap is a short hop to the side of the
 			// primary target rather than replacing the throw direction.
-			perpX := -offsetY / mag * bonusDist
-			perpY := offsetX / mag * bonusDist
+			perpX := -offsetY / mag * signedDist
+			perpY := offsetX / mag * signedDist
 			offsetX += perpX
 			offsetY += perpY
 		}
@@ -1249,7 +1276,7 @@ func (s *GameState) fireTrapExpiryEffectsLocked(trap *Trap) {
 			// Reapply burn via the stack helper so Flame Collapse integrates
 			// with the same per-source stacking rules as lasting_flames.
 			// Keyed by trap.ID so two overlapping Flame Collapse blasts
-			// (e.g. primary + ascendant_deployment bonus) land separate
+			// (e.g. primary + increased_deployment bonus) land separate
 			// stacks. Reactive Flames is NOT piggy-backed here — Flame
 			// Collapse is an Overload effect, not an Infusion effect.
 			if trap.OverloadFlameCollapseBurnDPS > 0 && trap.OverloadFlameCollapseBurnSeconds > 0 {
@@ -1379,5 +1406,6 @@ func (s *GameState) tickTrapPlacementLocked(unit *Unit, def *PerkDef, dt float64
 	// Plant the trap and reset the cooldown.
 	s.plantTrapLocked(unit, def)
 	mods := s.trapModifiersForUnitLocked(unit)
-	unit.PerkState.TrapPlaceCooldownRemaining = def.Config["placeIntervalSeconds"] * mods.CooldownMultiplier
+	cfg := def.ConfigForRank(unit.Rank)
+	unit.PerkState.TrapPlaceCooldownRemaining = cfg["placeIntervalSeconds"] * mods.CooldownMultiplier
 }

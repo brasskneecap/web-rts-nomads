@@ -70,6 +70,16 @@ type ActiveEffectIcon struct {
 	Stacks int    `json:"stacks,omitempty"`
 }
 
+// PerkCooldownSnapshot advertises how long until a perk's next activation.
+// PerkID matches an entry in the unit's PerkIDs list. Remaining is the
+// live countdown in seconds; Total is the full cooldown duration (rank- and
+// modifier-adjusted) so the client can render the correct wipe fraction.
+type PerkCooldownSnapshot struct {
+	PerkID    string  `json:"perkId"`
+	Remaining float64 `json:"remaining"`
+	Total     float64 `json:"total"`
+}
+
 type TerrainTile struct {
 	GridCoord
 	Terrain string `json:"terrain"`
@@ -239,6 +249,12 @@ type UnitSnapshot struct {
 	// land on units that don't own the causing perk. Same stacks semantics
 	// as ActiveBuffs.
 	ActiveDebuffs []ActiveEffectIcon `json:"activeDebuffs,omitempty"`
+	// PerkCooldowns: entries for perks currently on cooldown. The HUD renders
+	// a clock-wipe overlay + countdown number on the perk icon when an entry
+	// is present. Only perks with a ticking cooldown (whirlwind_core,
+	// rallying_banner, trap-placement perks) ever appear here, and only while
+	// Remaining > 0 — ready-to-fire perks are omitted entirely.
+	PerkCooldowns []PerkCooldownSnapshot `json:"perkCooldowns,omitempty"`
 	// StunnedRemaining / SlowedRemaining / SlowedMultiplier carry the current CC
 	// state to the client each tick so it can render stun/slow indicator icons.
 	// All three use omitempty so they are absent from the JSON when not active.

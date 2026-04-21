@@ -21,7 +21,15 @@
       "placeIntervalSeconds": 8,
       "durationSeconds": 10,
       "radius": 55,
-      "damagePerSecond": 8
+      "damagePerSecond": 8,
+      "silver": { 
+        "damagePerSecond": 16,
+        "radius": 75 
+      },
+      "gold": { 
+        "damagePerSecond": 24,
+        "radius": 95 
+      }
     }
   },
   {

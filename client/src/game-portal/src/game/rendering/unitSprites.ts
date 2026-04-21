@@ -1,7 +1,13 @@
 // Loader for packed unit sprites. Consumes `sprites.json` (produced by
-// `npm run pack:sprites`) and its sibling rotations/ + packed/ strips.
-// Raw PixelLab per-frame PNGs are NOT referenced here — they're packed into
-// horizontal strips and loaded as a single image per (animation, direction).
+// `npm run pack:sprites`) and its sibling rotations/ + packed/ sheets.
+// Raw PixelLab per-frame PNGs are NOT referenced here.
+//
+// Supports two packed layouts:
+//   - New: one PNG per animation with columns = frames, rows = directions.
+//     Manifest carries `sheet` + `rowOrder`.
+//   - Legacy: one PNG per (animation, direction) strip, all at row 0.
+//     Manifest carries `strips: { north, south, east, west }`.
+// Both normalize to the same in-memory shape, so the renderer doesn't care.
 
 export type UnitDirection = 'north' | 'south' | 'east' | 'west'
 
@@ -17,15 +23,24 @@ interface SpriteManifest {
     frameCount?: number
     frameWidth?: number
     frameHeight?: number
+    // New layout: single 2D sheet, rowOrder[i] is the direction at row i.
+    sheet?: string
+    rowOrder?: UnitDirection[]
+    // Legacy layout: per-direction horizontal strip (row always 0).
     strips?: DirectionMap<string>
   }>
+}
+
+export interface DirectionSource {
+  image: HTMLImageElement
+  row: number
 }
 
 export interface StripAnimation {
   frameCount: number
   frameWidth: number
   frameHeight: number
-  strips: DirectionMap<HTMLImageElement>
+  directions: DirectionMap<DirectionSource>
 }
 
 export interface UnitSpriteSet {
@@ -87,19 +102,33 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
 
   const animations = new Map<string, StripAnimation>()
   for (const [animKey, anim] of Object.entries(manifest.animations ?? {})) {
-    const strips: DirectionMap<HTMLImageElement> = {}
-    for (const [dir, rel] of Object.entries(anim.strips ?? {})) {
-      if (!rel) continue
-      const url = stripGlob[`${unitFolder}/${rel}`]
-      if (!url) continue
-      strips[dir as UnitDirection] = loadImage(url)
+    const directions: DirectionMap<DirectionSource> = {}
+
+    if (anim.sheet && anim.rowOrder) {
+      const url = stripGlob[`${unitFolder}/${anim.sheet}`]
+      if (url) {
+        const image = loadImage(url)
+        for (let row = 0; row < anim.rowOrder.length; row++) {
+          const dir = anim.rowOrder[row]
+          if (!dir) continue
+          directions[dir] = { image, row }
+        }
+      }
+    } else if (anim.strips) {
+      for (const [dir, rel] of Object.entries(anim.strips)) {
+        if (!rel) continue
+        const url = stripGlob[`${unitFolder}/${rel}`]
+        if (!url) continue
+        directions[dir as UnitDirection] = { image: loadImage(url), row: 0 }
+      }
     }
-    if (Object.keys(strips).length === 0) continue
+
+    if (Object.keys(directions).length === 0) continue
     animations.set(animKey.toLowerCase(), {
       frameCount: anim.frameCount ?? 1,
       frameWidth: anim.frameWidth ?? size.width,
       frameHeight: anim.frameHeight ?? size.height,
-      strips,
+      directions,
     })
   }
 
@@ -142,13 +171,13 @@ export function getUnitFrame(
 ): DrawableFrame | null {
   const anim = set.animations.get(animation)
   if (anim) {
-    const strip = pickDirection(anim.strips, direction)
-    if (imageReady(strip) && anim.frameCount > 0) {
+    const source = pickDirection(anim.directions, direction)
+    if (source && imageReady(source.image) && anim.frameCount > 0) {
       const i = ((frameIndex % anim.frameCount) + anim.frameCount) % anim.frameCount
       return {
-        image: strip,
+        image: source.image,
         srcX: i * anim.frameWidth,
-        srcY: 0,
+        srcY: source.row * anim.frameHeight,
         srcW: anim.frameWidth,
         srcH: anim.frameHeight,
       }

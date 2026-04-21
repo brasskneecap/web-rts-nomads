@@ -21,11 +21,12 @@
     }
   },
   {
-    "id": "ascendant_deployment",
-    "displayName": "Ascendant Deployment",
-    "icon": "perk-ascendant-deployment",
-    "description": "Each trap placement deploys an additional trap at a short offset from the original.",
+    "id": "increased_deployment",
+    "displayName": "Increased Deployment",
+    "icon": "perk-increased-deployment",
+    "description": "Each trap placement deploys additional traps at a short offset from the original.",
     "config": {
+      "bonusTrapCount": 2,
       "bonusOffsetDistance": 50
     }
   },

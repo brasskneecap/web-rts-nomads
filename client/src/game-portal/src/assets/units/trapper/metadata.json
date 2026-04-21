@@ -1,0 +1,79 @@
+{
+  "character": {
+    "id": "0d799edc-21de-476e-afb4-7629271bc0ec",
+    "name": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, wilderness trapper hunter, reinforced dark green hooded cloak with fur trim at shoulders, rugged leather armor over cloth tunic, crossbow held ready in left hand at chest height, quiver of bolts on back, coiled rope and small iron trap hanging from belt, leather boots with fur lining, small hunting knife sheathed at hip, weathered and experienced stance, dark forest green and rugged brown palette with worn leather tones",
+    "prompt": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, wilderness trapper hunter, reinforced dark green hooded cloak with fur trim at shoulders, rugged leather armor over cloth tunic, crossbow held ready in left hand at chest height, quiver of bolts on back, coiled rope and small iron trap hanging from belt, leather boots with fur lining, small hunting knife sheathed at hip, weathered and experienced stance, dark forest green and rugged brown palette with worn leather tones",
+    "size": {
+      "width": 68,
+      "height": 68
+    },
+    "template_id": "mannequin",
+    "directions": 4,
+    "view": "low top-down",
+    "created_at": "2026-04-20T21:02:32.424267+00:00"
+  },
+  "frames": {
+    "rotations": {
+      "south": "rotations/south.png",
+      "west": "rotations/west.png",
+      "east": "rotations/east.png",
+      "north": "rotations/north.png"
+    },
+    "animations": {
+      "Walking-06666e1b": {
+        "south": [
+          "animations/Walking-06666e1b/south/frame_000.png",
+          "animations/Walking-06666e1b/south/frame_001.png",
+          "animations/Walking-06666e1b/south/frame_002.png",
+          "animations/Walking-06666e1b/south/frame_003.png"
+        ],
+        "north": [
+          "animations/Walking-06666e1b/north/frame_000.png",
+          "animations/Walking-06666e1b/north/frame_001.png",
+          "animations/Walking-06666e1b/north/frame_002.png",
+          "animations/Walking-06666e1b/north/frame_003.png"
+        ],
+        "west": [
+          "animations/Walking-06666e1b/west/frame_000.png",
+          "animations/Walking-06666e1b/west/frame_001.png",
+          "animations/Walking-06666e1b/west/frame_002.png",
+          "animations/Walking-06666e1b/west/frame_003.png"
+        ],
+        "east": [
+          "animations/Walking-06666e1b/east/frame_000.png",
+          "animations/Walking-06666e1b/east/frame_001.png",
+          "animations/Walking-06666e1b/east/frame_002.png",
+          "animations/Walking-06666e1b/east/frame_003.png"
+        ]
+      },
+      "Attacking-42d074f7": {
+        "south": [
+          "animations/Attacking-42d074f7/south/frame_000.png",
+          "animations/Attacking-42d074f7/south/frame_001.png",
+          "animations/Attacking-42d074f7/south/frame_002.png",
+          "animations/Attacking-42d074f7/south/frame_003.png"
+        ],
+        "east": [
+          "animations/Attacking-42d074f7/east/frame_000.png",
+          "animations/Attacking-42d074f7/east/frame_001.png",
+          "animations/Attacking-42d074f7/east/frame_002.png",
+          "animations/Attacking-42d074f7/east/frame_003.png"
+        ],
+        "north": [
+          "animations/Attacking-42d074f7/north/frame_000.png",
+          "animations/Attacking-42d074f7/north/frame_001.png",
+          "animations/Attacking-42d074f7/north/frame_002.png",
+          "animations/Attacking-42d074f7/north/frame_003.png"
+        ],
+        "west": [
+          "animations/Attacking-42d074f7/west/frame_000.png",
+          "animations/Attacking-42d074f7/west/frame_001.png",
+          "animations/Attacking-42d074f7/west/frame_002.png",
+          "animations/Attacking-42d074f7/west/frame_003.png"
+        ]
+      }
+    }
+  },
+  "export_version": "2.0",
+  "export_date": "2026-04-21T00:59:49.005156"
+}

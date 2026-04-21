@@ -253,6 +253,15 @@ export type ActiveEffectIcon = {
   stacks?: number
 }
 
+/** PerkCooldownSnapshot advertises a ticking cooldown on one of a unit's
+ *  owned perks. The HUD renders a clock-wipe overlay covering fraction
+ *  remaining / total of the icon, plus `ceil(remaining)` as a label. */
+export type PerkCooldownSnapshot = {
+  perkId: string
+  remaining: number
+  total: number
+}
+
 export type UnitSnapshot = {
   id: number
   ownerId: string
@@ -290,6 +299,10 @@ export type UnitSnapshot = {
    *  ids are raw icon ids (not perk ids) because debuffs can land on units
    *  that don't own the causing perk. */
   activeDebuffs?: ActiveEffectIcon[]
+  /** Per-perk cooldown timers for perks owned by this unit. Only perks whose
+   *  next activation is currently gated by a ticking timer appear here.
+   *  Drives the clock-wipe overlay + seconds label on the perk HUD icon. */
+  perkCooldowns?: PerkCooldownSnapshot[]
   carriedResourceType?: ResourceType
   carriedAmount?: number
   targetX?: number

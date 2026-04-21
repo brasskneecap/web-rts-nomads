@@ -12,6 +12,7 @@ import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
 import { UNIT_DEF_MAP } from '@/game/maps/unitDefs'
 import { ACTION_ICON_MAP } from '@/game/maps/actionIconDefs'
 import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
+import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 
 const props = defineProps<{
   action: ActionItem
@@ -87,7 +88,33 @@ function drawBuilding(ctx: CanvasRenderingContext2D, type: string) {
   }
 }
 
+function drawUnitSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
+  ctx.imageSmoothingEnabled = false
+  const spritePadding = 1
+  const boxSize = CANVAS_SIZE - spritePadding * 2
+  const scale = boxSize / Math.max(img.naturalWidth, img.naturalHeight)
+  const w = img.naturalWidth * scale
+  const h = img.naturalHeight * scale
+  const x = spritePadding + (boxSize - w) / 2
+  const y = spritePadding + (boxSize - h) / 2
+  ctx.drawImage(img, x, y, w, h)
+}
+
 function drawUnit(ctx: CanvasRenderingContext2D, type: string) {
+  // Prefer the packed south-facing rotation if we have sprites for this unit.
+  // Falls through to the procedural layers when no sprite set is registered
+  // or the image hasn't decoded yet.
+  const spriteSet = getUnitSpriteSet(type)
+  const portrait = spriteSet?.rotations.south ?? spriteSet?.rotations.north
+    ?? spriteSet?.rotations.east ?? spriteSet?.rotations.west
+  if (portrait) {
+    if (portrait.complete && portrait.naturalWidth > 0) {
+      drawUnitSprite(ctx, portrait)
+      return
+    }
+    portrait.addEventListener('load', () => draw(), { once: true })
+  }
+
   const def = UNIT_DEF_MAP.get(type)
   if (!def?.render) return
 

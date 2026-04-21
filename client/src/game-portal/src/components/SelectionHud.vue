@@ -102,9 +102,26 @@
             <div
               v-if="ui.selection.actions[i - 1].kind === 'perk'"
               class="action-cell action-cell--perk"
-              :class="`action-cell--perk-${ui.selection.actions[i - 1].perkRank}`"
+              :class="[
+                `action-cell--perk-${ui.selection.actions[i - 1].perkRank}`,
+                { 'action-cell--perk-cooldown': perkCooldownFraction(ui.selection.actions[i - 1]) > 0 },
+              ]"
             >
               <ActionIcon :action="ui.selection.actions[i - 1]" />
+              <!-- Clock-wipe cooldown overlay: a conic gradient covers the
+                   fraction of the icon equal to remaining/total, with a
+                   seconds-remaining label in the center. The overlay and
+                   label are absent when the perk is ready. -->
+              <div
+                v-if="perkCooldownFraction(ui.selection.actions[i - 1]) > 0"
+                class="perk-cooldown-overlay"
+                :style="{ '--perk-cooldown-cleared': `${(1 - perkCooldownFraction(ui.selection.actions[i - 1])) * 360}deg` }"
+                aria-hidden="true"
+              >
+                <span class="perk-cooldown-number">
+                  {{ Math.max(1, Math.ceil(ui.selection.actions[i - 1].cooldownRemaining ?? 0)) }}
+                </span>
+              </div>
               <div
                 v-if="ui.selection.actions[i - 1].tooltipTitle"
                 class="perk-tooltip"
@@ -143,6 +160,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { ActionItem } from '@/game/core/GameState'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 import ActionIcon from '@/components/ActionIcon.vue'
 
@@ -160,6 +178,16 @@ const GRID_SIZE = 9
 // a vertical icon+value grid, everything else falls through to the inline row.
 const iconDetails = computed(() => props.ui.selection.details.filter((d) => !!d.icon))
 const inlineDetails = computed(() => props.ui.selection.details.filter((d) => !d.icon))
+
+// perkCooldownFraction returns the remaining/total ratio for a perk action,
+// clamped to [0, 1]. 0 means the perk is ready (no overlay rendered); >0
+// means the clock-wipe overlay should cover that fraction of the icon.
+function perkCooldownFraction(action: ActionItem): number {
+  const remaining = action.cooldownRemaining ?? 0
+  const total = action.cooldownTotal ?? 0
+  if (remaining <= 0 || total <= 0) return 0
+  return Math.min(1, remaining / total)
+}
 </script>
 
 <style scoped>
@@ -594,6 +622,44 @@ const inlineDetails = computed(() => props.ui.selection.details.filter((d) => !d
 .action-cell--perk-silver .action-icon,
 .action-cell--perk-gold .action-icon {
   opacity: 0.35;
+}
+
+/* ── Perk cooldown overlay ───────────────────────────────────────────────── */
+/* Conic gradient covers the "remaining" wedge of the icon and clears as time   */
+/* elapses. --perk-cooldown-cleared is the already-elapsed angle (0deg at the   */
+/* start of the cooldown, 360deg at the end); set per-element via :style.      */
+/* The overlay is pointer-events: none so the hover tooltip still fires.       */
+.perk-cooldown-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg var(--perk-cooldown-cleared, 0deg),
+    rgba(0, 0, 0, 0.68) var(--perk-cooldown-cleared, 0deg) 360deg
+  );
+}
+
+.perk-cooldown-number {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fef4d3;
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.85);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Drop the icon's saturation/brightness while on cooldown for a "disabled"   */
+/* readability cue beyond the dark overlay alone.                             */
+.action-cell--perk-cooldown .action-icon {
+  opacity: 0.45;
+  filter: grayscale(0.6);
 }
 
 /* ── Perk hover tooltip ──────────────────────────────────────────────────── */

@@ -121,7 +121,11 @@ function exitGame() {
 <style scoped>
 .hud {
   position: relative;
-  z-index: 5;
+  /* Above DebugSpawnPanel (z-index: 10) so the settings dropdown — which is
+     clipped to this stacking context — pops in front of the debug panel when
+     both are open. The HUD itself is along the top edge and doesn't overlap
+     other UI, so elevating the whole bar is harmless. */
+  z-index: 20;
   display: flex;
   justify-content: space-between;
   align-items: center;

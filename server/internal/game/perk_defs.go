@@ -70,6 +70,37 @@ type PerkDef struct {
 	Rank         string             `json:"rank,omitempty"`
 	RequiresPerk string             `json:"requiresPerk,omitempty"`
 	Config       map[string]float64 `json:"config"`
+	// ConfigByRank holds optional per-rank overrides keyed by the owning
+	// unit's CURRENT rank ("bronze" / "silver" / "gold"). When a unit reads
+	// this perk's config, values in ConfigByRank[unit.Rank] shadow the
+	// matching keys in Config — everything else falls through to the base.
+	// Callers must go through ConfigForRank to get a merged view.
+	ConfigByRank map[string]map[string]float64 `json:"configByRank,omitempty"`
+}
+
+// ConfigForRank returns the effective config map for a perk at a given rank.
+// Base Config is used as the default; any keys present in ConfigByRank[rank]
+// overwrite the base. Missing rank (or empty override) returns base verbatim,
+// avoiding allocation in the common path.
+//
+// Safe to call on a nil PerkDef (returns nil). Safe with an empty rank string
+// (returns the base Config unchanged).
+func (def *PerkDef) ConfigForRank(rank string) map[string]float64 {
+	if def == nil {
+		return nil
+	}
+	override, ok := def.ConfigByRank[rank]
+	if !ok || len(override) == 0 {
+		return def.Config
+	}
+	merged := make(map[string]float64, len(def.Config)+len(override))
+	for k, v := range def.Config {
+		merged[k] = v
+	}
+	for k, v := range override {
+		merged[k] = v
+	}
+	return merged
 }
 
 // perkDefsByID is the in-memory index populated from the perk catalog at startup.
@@ -80,13 +111,61 @@ var perkDefsByID map[string]*PerkDef
 // perkEntryJSON is the shape of a single perk entry in a per-rank JSON file.
 // It carries only the perk-specific fields; UnitType, Path, and Rank are
 // injected from the file path during parsing.
+//
+// Config is decoded lazily as RawMessage so the loader can distinguish
+// scalar tuning keys (e.g. "radius": 60) from per-rank override blocks
+// (e.g. "silver": { "radius": 80 }). See splitRankConfig.
 type perkEntryJSON struct {
-	ID           string             `json:"id"`
-	DisplayName  string             `json:"displayName"`
-	Description  string             `json:"description,omitempty"`
-	Icon         string             `json:"icon,omitempty"`
-	RequiresPerk string             `json:"requiresPerk,omitempty"`
-	Config       map[string]float64 `json:"config"`
+	ID           string                     `json:"id"`
+	DisplayName  string                     `json:"displayName"`
+	Description  string                     `json:"description,omitempty"`
+	Icon         string                     `json:"icon,omitempty"`
+	RequiresPerk string                     `json:"requiresPerk,omitempty"`
+	Config       map[string]json.RawMessage `json:"config"`
+}
+
+// perkRankOverrideKeys enumerates the JSON keys inside `config` that are
+// treated as per-rank override blocks rather than tuning scalars. Matches the
+// rank constants in progression.go.
+var perkRankOverrideKeys = map[string]struct{}{
+	unitRankBronze: {},
+	unitRankSilver: {},
+	unitRankGold:   {},
+}
+
+// splitRankConfig partitions the raw config map into (baseConfig, rankOverrides).
+// Scalar number keys go into baseConfig. Keys matching a known rank are decoded
+// as nested {string: float64} maps. Any other shape is a JSON error and is
+// surfaced by the caller (which panics — catalog data is embedded, so malformed
+// JSON is a build-time bug).
+func splitRankConfig(raw map[string]json.RawMessage) (map[string]float64, map[string]map[string]float64, error) {
+	if len(raw) == 0 {
+		return nil, nil, nil
+	}
+	base := make(map[string]float64, len(raw))
+	var overrides map[string]map[string]float64
+	for k, v := range raw {
+		if _, isRank := perkRankOverrideKeys[k]; isRank {
+			var nested map[string]float64
+			if err := json.Unmarshal(v, &nested); err != nil {
+				return nil, nil, err
+			}
+			if len(nested) == 0 {
+				continue
+			}
+			if overrides == nil {
+				overrides = make(map[string]map[string]float64, 3)
+			}
+			overrides[k] = nested
+			continue
+		}
+		var f float64
+		if err := json.Unmarshal(v, &f); err != nil {
+			return nil, nil, err
+		}
+		base[k] = f
+	}
+	return base, overrides, nil
 }
 
 func init() {
@@ -123,6 +202,10 @@ func init() {
 			panic(p + ": " + err.Error())
 		}
 		for _, entry := range entries {
+			base, overrides, err := splitRankConfig(entry.Config)
+			if err != nil {
+				panic(p + " [" + entry.ID + "].config: " + err.Error())
+			}
 			def := &PerkDef{
 				ID:           entry.ID,
 				DisplayName:  entry.DisplayName,
@@ -132,7 +215,8 @@ func init() {
 				Path:         pathName,
 				Rank:         rank,
 				RequiresPerk: entry.RequiresPerk,
-				Config:       entry.Config,
+				Config:       base,
+				ConfigByRank: overrides,
 			}
 			perkDefsByID[def.ID] = def
 		}
