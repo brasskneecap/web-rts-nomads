@@ -22,7 +22,7 @@ import type { BannerSnapshot, BuildingTile, TrapSnapshot } from '../network/prot
 import { Camera } from './Camera'
 import { getRankToneColor } from './rankColors'
 import { ACTION_ICON_MAP } from '../maps/actionIconDefs'
-import { PERK_DEF_MAP } from '../maps/perkDefs'
+import { getPerkAuraRadius, PERK_DEF_MAP } from '../maps/perkDefs'
 import { getUnitFrame, getUnitSpriteSet } from './unitSprites'
 import { UnitAnimationController } from './unitAnimation'
 
@@ -565,6 +565,22 @@ export class CanvasRenderer {
     ctx.strokeRect(0, 0, this.state.mapWidth, this.state.mapHeight)
   }
 
+  // Dashed ring drawn around unit-centered aura perks (Guardian Aura, etc.).
+  // Color is the unit's player color so allies and enemies read at a glance;
+  // alpha is intentionally low so stacks of aura units don't overwhelm.
+  private drawAuraRing(centerX: number, centerY: number, radius: number, color: string) {
+    const ctx = this.ctx
+    ctx.save()
+    ctx.strokeStyle = color
+    ctx.globalAlpha = 0.55
+    ctx.lineWidth = 1.5 / this.camera.zoom
+    ctx.setLineDash([6 / this.camera.zoom, 5 / this.camera.zoom])
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  }
+
   private drawMoveMarkers() {
     const ctx = this.ctx
     const now = performance.now()
@@ -1021,6 +1037,7 @@ export class CanvasRenderer {
       visible?: boolean
       ownerId?: string
       carriedResourceType?: string
+      perkIds?: string[]
     }>,
   ) {
     const ctx = this.ctx
@@ -1051,6 +1068,21 @@ export class CanvasRenderer {
       const selectionRadiusX = Math.max(15, halfWidth + 2)
       const selectionRadiusY = Math.max(8, Math.min(12, selectionRadiusX * 0.52))
       const selectionCenterY = unit.y + bottomOffset - selectionRadiusY * 0.35 - ringLift
+
+      // Perk aura rings — dashed circle around the unit for each unit-centered
+      // aura perk it carries (e.g. Guardian Aura). Triggered perks (Last Stand)
+      // only render while their id is present in activeBuffs. Drawn before the
+      // selection ellipse so the sprite can sit cleanly on top.
+      if (unit.perkIds && unit.perkIds.length > 0) {
+        const activeBuffIds = unit.activeBuffs && unit.activeBuffs.length > 0
+          ? new Set(unit.activeBuffs.map((b) => b.id))
+          : undefined
+        for (const perkId of unit.perkIds) {
+          const radius = getPerkAuraRadius(perkId, activeBuffIds)
+          if (radius == null) continue
+          this.drawAuraRing(unit.x, selectionCenterY, radius, unit.color || '#fef08a')
+        }
+      }
 
       if (selected) {
         ctx.strokeStyle = '#22c55e'

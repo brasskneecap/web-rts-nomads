@@ -5,7 +5,7 @@
     "icon": "perk-guardian-aura",
     "description": "Allies within radius gain bonus armor and percent armor. Nearby Vanguards with this perk form a formation, amplifying each other's auras.",
     "config": {
-      "radius": 100,
+      "radius": 150,
       "bonusArmor": 15,
       "armorPercent": 0.20,
       "synergyRadiusBonus": 30,
@@ -19,7 +19,7 @@
     "icon": "perk-pain-share",
     "description": "When an ally nearby takes damage, a portion is redirected to this Vanguard first.",
     "config": {
-      "radius": 100,
+      "radius": 150,
       "redirectPercent": 0.3
     }
   },
