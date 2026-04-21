@@ -2,12 +2,13 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -o ./tmp/api.exe ./cmd/api"
+  cmd = "C:\\Users\\Chad Anderson\\web-rts-nomads\\server\\build.bat"
   entrypoint = "./tmp/api.exe"
   include_ext = ["go", "json"]
   include_dir = ["cmd", "internal", "pkg"]
   exclude_dir = ["tmp"]
   delay = 500
+  shell = ["cmd", "/c"]
 
 [log]
   time = false
