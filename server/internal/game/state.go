@@ -196,6 +196,13 @@ type GameState struct {
 	// is allocated but disabled and every track* call is a no-op. Serialized
 	// into MatchSnapshotMessage.BattleTracker (omitted when disabled).
 	battleTracker *BattleTracker
+
+	// playersWithTownhall tracks which player IDs have ever owned a townhall,
+	// so we can distinguish "never had one yet" from "just lost the last one".
+	playersWithTownhall map[string]bool
+	// lostPlayerIDs is the set of players whose last townhall has been destroyed.
+	// Once set, it is never cleared for the duration of the match.
+	lostPlayerIDs map[string]bool
 }
 
 const (
@@ -477,6 +484,15 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		})
 	}
 
+	var gameOver *protocol.GameOverSnapshot
+	if len(s.lostPlayerIDs) > 0 {
+		ids := make([]string, 0, len(s.lostPlayerIDs))
+		for id := range s.lostPlayerIDs {
+			ids = append(ids, id)
+		}
+		gameOver = &protocol.GameOverSnapshot{LostPlayerIDs: ids}
+	}
+
 	return protocol.MatchSnapshotMessage{
 		Type:      "match_snapshot",
 		Tick:      s.Tick,
@@ -497,6 +513,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		},
 		// Nil when debug tracker is disabled — `omitempty` drops it from JSON.
 		BattleTracker: s.battleTrackerSnapshotLocked(),
+		GameOver:      gameOver,
 	}
 }
 
@@ -650,6 +667,39 @@ func (s *GameState) Update(dt float64) {
 	s.applyUnitSeparationLocked(blocked)
 	s.refreshBuildingRuntimeMetadataLocked()
 	s.refreshObstacleRuntimeMetadataLocked()
+	s.checkPlayerLossLocked()
+}
+
+// checkPlayerLossLocked scans all townhalls each tick to detect players who
+// have lost all of theirs. A player can only lose once they have owned at
+// least one townhall — this prevents marking players as "lost" before they
+// have even claimed a starting position.
+func (s *GameState) checkPlayerLossLocked() {
+	if s.playersWithTownhall == nil {
+		s.playersWithTownhall = map[string]bool{}
+	}
+	if s.lostPlayerIDs == nil {
+		s.lostPlayerIDs = map[string]bool{}
+	}
+
+	townhallCounts := map[string]int{}
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "townhall" || !b.Visible || b.OwnerID == nil || *b.OwnerID == enemyPlayerID {
+			continue
+		}
+		s.playersWithTownhall[*b.OwnerID] = true
+		townhallCounts[*b.OwnerID]++
+	}
+
+	for playerID := range s.playersWithTownhall {
+		if s.lostPlayerIDs[playerID] {
+			continue
+		}
+		if townhallCounts[playerID] == 0 {
+			s.lostPlayerIDs[playerID] = true
+		}
+	}
 }
 
 func (s *GameState) EnsurePlayer(playerID string) {

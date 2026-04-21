@@ -932,7 +932,7 @@
     "tiles": [],
     "waveConfig": {
       "prepDuration": 60,
-      "totalWaves": 10,
+      "totalWaves": 0,
       "waveDuration": 120
     },
     "width": 4096

@@ -37,6 +37,7 @@ const emptyUiSnapshot: GameUiSnapshot = {
   debugSpawnTargetingActive: false,
   mapName: '',
   mapId: '',
+  isDefeated: false,
 }
 
 export function useGameClient() {

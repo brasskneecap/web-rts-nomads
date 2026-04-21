@@ -315,6 +315,13 @@ type TrapSnapshot struct {
 	Triggered        bool    `json:"triggered,omitempty"`
 }
 
+// GameOverSnapshot is included in every snapshot once one or more players have
+// lost all their townhalls. LostPlayerIDs lists the player IDs that have lost;
+// each client checks whether its own ID is present.
+type GameOverSnapshot struct {
+	LostPlayerIDs []string `json:"lostPlayerIds"`
+}
+
 type MatchSnapshotMessage struct {
 	Type          string                  `json:"type"`
 	Tick          int                     `json:"tick"`
@@ -328,6 +335,7 @@ type MatchSnapshotMessage struct {
 	Banners       []BannerSnapshot        `json:"banners,omitempty"`
 	Traps         []TrapSnapshot          `json:"traps,omitempty"`
 	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
+	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────

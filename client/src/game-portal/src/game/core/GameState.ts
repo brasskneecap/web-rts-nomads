@@ -3,6 +3,7 @@ import type {
   BannerSnapshot,
   BattleTrackerSnapshot,
   BuildingTile,
+  GameOverSnapshot,
   MapConfig,
   MatchSnapshotMessage,
   ObstacleTile,
@@ -278,6 +279,9 @@ export class GameState {
     waveDuration: 0,
   }
 
+  // Game over state — non-null once any player has lost all townhalls.
+  gameOverSnapshot: GameOverSnapshot | null = null
+
   mapWidth = 6144
   mapHeight = 4096
   mapConfig: MapConfig = createEditorMapConfig(96, 64, {
@@ -429,6 +433,9 @@ export class GameState {
     this.applyPlayerSnapshots(message.players)
     if (message.wave) {
       this.waveSnapshot = message.wave
+    }
+    if (message.gameOver) {
+      this.gameOverSnapshot = message.gameOver
     }
 
     const validIds = new Set(this.units.map((u) => u.id))
@@ -1311,6 +1318,11 @@ export class GameState {
 
   getWaveSnapshot(): WaveSnapshot {
     return this.waveSnapshot
+  }
+
+  isLocalPlayerDefeated(): boolean {
+    if (!this.localPlayerId || !this.gameOverSnapshot) return false
+    return this.gameOverSnapshot.lostPlayerIds.includes(this.localPlayerId)
   }
 
   getPlayerColor(playerId: string | null | undefined): string | null {
