@@ -84,7 +84,7 @@ func (s *GameState) clearUnitGatherStateLocked(unit *Unit) {
 func (s *GameState) completeReturnDepositLocked(unit *Unit, blocked map[gridPoint]bool) {
 	townhall := s.getBuildingByIDLocked(unit.ReturnTargetID)
 	if townhall == nil {
-		townhall = s.findOwnedTownhallLocked(unit.OwnerID)
+		townhall = s.findNearestDepositPointLocked(unit.OwnerID, unit.X, unit.Y)
 		if townhall != nil {
 			unit.ReturnTargetID = townhall.ID
 		}
@@ -271,7 +271,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		}
 		townhall := s.getBuildingByIDLocked(unit.ReturnTargetID)
 		if townhall == nil {
-			townhall = s.findOwnedTownhallLocked(unit.OwnerID)
+			townhall = s.findNearestDepositPointLocked(unit.OwnerID, unit.X, unit.Y)
 			if townhall != nil {
 				unit.ReturnTargetID = townhall.ID
 			}
@@ -384,7 +384,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 }
 
 func (s *GameState) sendWorkerToDepositLocked(unit *Unit, blocked map[gridPoint]bool) {
-	townhall := s.findOwnedTownhallLocked(unit.OwnerID)
+	townhall := s.findNearestDepositPointLocked(unit.OwnerID, unit.X, unit.Y)
 	if townhall == nil {
 		unit.Status = "Idle"
 		return

@@ -251,6 +251,15 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			}
 		}
 
+		// Scale spawn count exponentially: wave N spawns 2^(N-1) × base count.
+		if s.WaveManager.Enabled && s.WaveManager.CurrentWave > 1 {
+			multiplier := 1 << uint(s.WaveManager.CurrentWave-1)
+			if multiplier > 512 {
+				multiplier = 512
+			}
+			spawnCount *= multiplier
+		}
+
 		spawnPositions := s.getTownhallSpawnPositionsLocked(*building, spawnCount, blocked)
 
 		center := protocol.Vec2{

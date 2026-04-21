@@ -358,6 +358,10 @@ export type TrapSnapshot = {
   triggered?: boolean
 }
 
+export type GameOverSnapshot = {
+  lostPlayerIds: string[]
+}
+
 export type MatchSnapshotMessage = {
   type: 'match_snapshot'
   tick: number
@@ -373,6 +377,7 @@ export type MatchSnapshotMessage = {
   // Present only when the active map has debug.battleTracker=true. Absent
   // otherwise — the client treats absence as "debug tracker disabled".
   battleTracker?: BattleTrackerSnapshot
+  gameOver?: GameOverSnapshot
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────

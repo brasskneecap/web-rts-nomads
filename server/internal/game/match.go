@@ -69,7 +69,13 @@ func (m *Match) ListClients() []MatchClient {
 func (m *Match) PlayerCount() int {
 	m.State.mu.RLock()
 	defer m.State.mu.RUnlock()
-	return len(m.State.Players)
+	count := 0
+	for id := range m.State.Players {
+		if id != enemyPlayerID {
+			count++
+		}
+	}
+	return count
 }
 
 func (m *Match) BroadcastSnapshot() {

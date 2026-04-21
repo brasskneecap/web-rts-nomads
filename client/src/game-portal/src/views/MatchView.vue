@@ -68,6 +68,14 @@
       </div>
     </div>
 
+    <div v-if="hasStarted && ui.isDefeated" class="defeat-overlay">
+      <div class="defeat-card">
+        <div class="defeat-title">Defeated</div>
+        <div class="defeat-subtitle">All townhalls have been destroyed</div>
+        <button class="defeat-button" type="button" @click="exitGame">Return to Menu</button>
+      </div>
+    </div>
+
     <!-- Disconnect overlay: shown while reconnecting or after reconnect failure -->
     <div
       v-if="hasStarted && (connectionState === 'reconnecting' || connectionState === 'failed')"
@@ -570,5 +578,71 @@ onBeforeUnmount(() => {
 .disconnect-button--exit:hover {
   background: linear-gradient(180deg, rgba(80, 40, 40, 1), rgba(50, 28, 28, 1));
   border-color: rgba(200, 100, 100, 0.55);
+}
+
+/* ------------------------------------------------------------------ */
+/* Defeat overlay                                                       */
+/* ------------------------------------------------------------------ */
+
+.defeat-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 13, 0.72);
+  backdrop-filter: blur(4px);
+  pointer-events: all;
+}
+
+.defeat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 48px 56px;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top, rgba(160, 30, 30, 0.22), transparent 52%),
+    linear-gradient(180deg, rgba(40, 12, 12, 0.98), rgba(16, 6, 6, 0.98));
+  border: 1px solid rgba(200, 60, 60, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 180, 180, 0.1),
+    0 24px 60px rgba(0, 0, 0, 0.65);
+}
+
+.defeat-title {
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #f07070;
+  text-transform: uppercase;
+}
+
+.defeat-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #b88888;
+}
+
+.defeat-button {
+  margin-top: 10px;
+  padding: 12px 32px;
+  border-radius: 12px;
+  border: 1px solid rgba(200, 60, 60, 0.35);
+  background: linear-gradient(180deg, rgba(120, 30, 30, 0.95), rgba(70, 16, 16, 0.98));
+  color: #f5d8d8;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.defeat-button:hover {
+  background: linear-gradient(180deg, rgba(150, 40, 40, 1), rgba(90, 22, 22, 1));
+  border-color: rgba(230, 80, 80, 0.55);
 }
 </style>

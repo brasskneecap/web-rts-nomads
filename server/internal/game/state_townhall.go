@@ -382,6 +382,32 @@ func (s *GameState) findOwnedTownhallLocked(ownerID string) *protocol.BuildingTi
 	return nil
 }
 
+// findNearestDepositPointLocked returns the closest owned deposit-point building
+// to the given world position, so workers always return to the nearest townhall.
+func (s *GameState) findNearestDepositPointLocked(ownerID string, x, y float64) *protocol.BuildingTile {
+	var best *protocol.BuildingTile
+	bestDistSq := math.MaxFloat64
+
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if !b.Visible || b.OwnerID == nil || *b.OwnerID != ownerID {
+			continue
+		}
+		if !containsString(b.Capabilities, "deposit-point") {
+			continue
+		}
+		centerX := (float64(b.X) + float64(b.Width)/2) * s.MapConfig.CellSize
+		centerY := (float64(b.Y) + float64(b.Height)/2) * s.MapConfig.CellSize
+		d := distanceSquared(x, y, centerX, centerY)
+		if d < bestDistSq {
+			bestDistSq = d
+			best = b
+		}
+	}
+
+	return best
+}
+
 func (s *GameState) getNearestPlayerTownhallCenterLocked(x, y float64) *protocol.Vec2 {
 	var best *protocol.Vec2
 	bestDistSq := math.MaxFloat64

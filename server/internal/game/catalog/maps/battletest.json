@@ -84,7 +84,7 @@
       }
     ],
     "waveConfig": {
-      "totalWaves": 10,
+      "totalWaves": 0,
       "prepDuration": 60,
       "waveDuration": 120
     }

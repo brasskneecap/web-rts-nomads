@@ -43,6 +43,8 @@ export type GameUiSnapshot = {
   debugSpawnTargetingActive: boolean
   mapName: string
   mapId: string
+  // True when the local player has lost all their townhalls.
+  isDefeated: boolean
 }
 
 export class GameClient {
@@ -139,6 +141,7 @@ export class GameClient {
       debugSpawnTargetingActive: this.state.isBuildingTargetingActive('debug-spawn-unit'),
       mapName: this.state.mapConfig.name,
       mapId: this.state.mapConfig.id,
+      isDefeated: this.state.isLocalPlayerDefeated(),
     }
   }
 
