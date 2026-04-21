@@ -1,6 +1,6 @@
 import type { UnitDirection } from './unitSprites'
 
-export type UnitAnimationName = 'idle' | 'walking' | 'attacking' | 'chopping'
+export type UnitAnimationName = 'idle' | 'walking' | 'attacking' | 'chopping' | 'carrying_gold'
 
 export interface UnitAnimationSample {
   direction: UnitDirection
@@ -42,6 +42,7 @@ export class UnitAnimationController {
     attackFacing: { dx: number; dy: number } | null,
     attackFrameDurationMs: number | undefined,
     renderTime: number,
+    carriedResource: string | undefined,
   ): UnitAnimationSample {
     let state = this.states.get(unitId)
     if (!state) {
@@ -73,7 +74,11 @@ export class UnitAnimationController {
     // Animation — attacking/chopping stay sticky even if the server ticks
     // `moving` briefly; walking requires either the server flag or visible
     // interpolation movement so we don't freeze mid-stride between snapshots.
-    const animation = pickAnimation(status, serverMoving === true || interpolatedMoving)
+    const animation = pickAnimation(
+      status,
+      serverMoving === true || interpolatedMoving,
+      carriedResource,
+    )
 
     if (animation !== state.animation) {
       state.animation = animation
@@ -129,9 +134,13 @@ function classifyDirection(
 function pickAnimation(
   status: string | undefined,
   moving: boolean,
+  carriedResource: string | undefined,
 ): UnitAnimationName {
   if (status === 'Attacking') return 'attacking'
   if (status === 'Chopping Wood') return 'chopping'
-  if (moving) return 'walking'
+  if (moving) {
+    if (carriedResource === 'gold') return 'carrying_gold'
+    return 'walking'
+  }
   return 'idle'
 }

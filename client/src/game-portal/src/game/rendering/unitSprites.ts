@@ -73,6 +73,13 @@ const stripGlob = import.meta.glob<string>(
   { eager: true, query: '?url', import: 'default' },
 )
 
+// If a requested animation isn't defined for a given unit, try this alternate.
+// Keeps carrying_gold workers walking normally when only some units have the
+// dedicated carrying pose, instead of freezing on the idle rotation.
+const ANIMATION_FALLBACK: Record<string, string> = {
+  carrying_gold: 'walking',
+}
+
 const sprites = new Map<string, UnitSpriteSet>()
 
 function loadImage(url: string): HTMLImageElement {
@@ -169,7 +176,7 @@ export function getUnitFrame(
   direction: UnitDirection,
   frameIndex: number,
 ): DrawableFrame | null {
-  const anim = set.animations.get(animation)
+  const anim = set.animations.get(animation) ?? set.animations.get(ANIMATION_FALLBACK[animation] ?? '')
   if (anim) {
     const source = pickDirection(anim.directions, direction)
     if (source && imageReady(source.image) && anim.frameCount > 0) {

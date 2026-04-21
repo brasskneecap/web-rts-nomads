@@ -1,0 +1,105 @@
+{
+  "character": {
+    "id": "bad2c6a2-6ab8-48df-a730-eba928c07f47",
+    "name": "pixel art character sprite, medieval fantasy warrior, detailed hand-pixeled shading with gradient depth, painterly pixel art style, muted palette with cream, slate blue, warm brown, and sage green tones, selective dark outlines, clean pixel edges, matching style of detailed medieval fantasy game, high top-down 3/4 view facing southeast, small soft shadow at feet, centered on transparent background, 48x48 sprite, peasant laborer, rough warm brown tunic, simple leather belt, cream-colored cloth hood, carrying a wooden pickaxe resting on shoulder, humble hunched posture, dirt-stained earthy clothing, no armor, warm brown and tan palette matching building stone tones, cooperative blue-grey cloth accent on belt or sleeve to subtly tie to faction",
+    "prompt": "pixel art character sprite, medieval fantasy warrior, detailed hand-pixeled shading with gradient depth, painterly pixel art style, muted palette with cream, slate blue, warm brown, and sage green tones, selective dark outlines, clean pixel edges, matching style of detailed medieval fantasy game, high top-down 3/4 view facing southeast, small soft shadow at feet, centered on transparent background, 48x48 sprite, peasant laborer, rough warm brown tunic, simple leather belt, cream-colored cloth hood, carrying a wooden pickaxe resting on shoulder, humble hunched posture, dirt-stained earthy clothing, no armor, warm brown and tan palette matching building stone tones, cooperative blue-grey cloth accent on belt or sleeve to subtly tie to faction",
+    "size": {
+      "width": 68,
+      "height": 68
+    },
+    "template_id": "mannequin",
+    "directions": 4,
+    "view": "low top-down",
+    "created_at": "2026-04-20T01:49:58.979811+00:00"
+  },
+  "frames": {
+    "rotations": {
+      "south": "rotations/south.png",
+      "west": "rotations/west.png",
+      "east": "rotations/east.png",
+      "north": "rotations/north.png"
+    },
+    "animations": {
+      "Carrying_Gold-fceb0553": {
+        "east": [
+          "animations/Carrying_Gold-fceb0553/east/frame_000.png",
+          "animations/Carrying_Gold-fceb0553/east/frame_001.png",
+          "animations/Carrying_Gold-fceb0553/east/frame_002.png",
+          "animations/Carrying_Gold-fceb0553/east/frame_003.png"
+        ],
+        "north": [
+          "animations/Carrying_Gold-fceb0553/north/frame_000.png",
+          "animations/Carrying_Gold-fceb0553/north/frame_001.png",
+          "animations/Carrying_Gold-fceb0553/north/frame_002.png",
+          "animations/Carrying_Gold-fceb0553/north/frame_003.png"
+        ],
+        "south": [
+          "animations/Carrying_Gold-fceb0553/south/frame_000.png",
+          "animations/Carrying_Gold-fceb0553/south/frame_001.png",
+          "animations/Carrying_Gold-fceb0553/south/frame_002.png",
+          "animations/Carrying_Gold-fceb0553/south/frame_003.png"
+        ],
+        "west": [
+          "animations/Carrying_Gold-fceb0553/west/frame_000.png",
+          "animations/Carrying_Gold-fceb0553/west/frame_001.png",
+          "animations/Carrying_Gold-fceb0553/west/frame_002.png",
+          "animations/Carrying_Gold-fceb0553/west/frame_003.png"
+        ]
+      },
+      "Walking-a416f4db": {
+        "east": [
+          "animations/Walking-a416f4db/east/frame_000.png",
+          "animations/Walking-a416f4db/east/frame_001.png",
+          "animations/Walking-a416f4db/east/frame_002.png",
+          "animations/Walking-a416f4db/east/frame_003.png"
+        ],
+        "south": [
+          "animations/Walking-a416f4db/south/frame_000.png",
+          "animations/Walking-a416f4db/south/frame_001.png",
+          "animations/Walking-a416f4db/south/frame_002.png",
+          "animations/Walking-a416f4db/south/frame_003.png"
+        ],
+        "north": [
+          "animations/Walking-a416f4db/north/frame_000.png",
+          "animations/Walking-a416f4db/north/frame_001.png",
+          "animations/Walking-a416f4db/north/frame_002.png",
+          "animations/Walking-a416f4db/north/frame_003.png"
+        ],
+        "west": [
+          "animations/Walking-a416f4db/west/frame_000.png",
+          "animations/Walking-a416f4db/west/frame_001.png",
+          "animations/Walking-a416f4db/west/frame_002.png",
+          "animations/Walking-a416f4db/west/frame_003.png"
+        ]
+      },
+      "Chopping-4ba5a419": {
+        "north": [
+          "animations/Chopping-4ba5a419/north/frame_000.png",
+          "animations/Chopping-4ba5a419/north/frame_001.png",
+          "animations/Chopping-4ba5a419/north/frame_002.png",
+          "animations/Chopping-4ba5a419/north/frame_003.png"
+        ],
+        "east": [
+          "animations/Chopping-4ba5a419/east/frame_000.png",
+          "animations/Chopping-4ba5a419/east/frame_001.png",
+          "animations/Chopping-4ba5a419/east/frame_002.png",
+          "animations/Chopping-4ba5a419/east/frame_003.png"
+        ],
+        "west": [
+          "animations/Chopping-4ba5a419/west/frame_000.png",
+          "animations/Chopping-4ba5a419/west/frame_001.png",
+          "animations/Chopping-4ba5a419/west/frame_002.png",
+          "animations/Chopping-4ba5a419/west/frame_003.png"
+        ],
+        "south": [
+          "animations/Chopping-4ba5a419/south/frame_000.png",
+          "animations/Chopping-4ba5a419/south/frame_001.png",
+          "animations/Chopping-4ba5a419/south/frame_002.png",
+          "animations/Chopping-4ba5a419/south/frame_003.png"
+        ]
+      }
+    }
+  },
+  "export_version": "2.0",
+  "export_date": "2026-04-21T03:11:10.810229"
+}

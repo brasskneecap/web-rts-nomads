@@ -1,5 +1,5 @@
 {
-  "key": "trapper",
+  "key": "worker",
   "size": {
     "width": 68,
     "height": 68
@@ -11,6 +11,18 @@
     "north": "rotations/north.png"
   },
   "animations": {
+    "carrying_gold": {
+      "frameCount": 4,
+      "frameWidth": 68,
+      "frameHeight": 68,
+      "sheet": "packed/carrying_gold.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west"
+      ]
+    },
     "walking": {
       "frameCount": 4,
       "frameWidth": 68,
@@ -23,11 +35,11 @@
         "west"
       ]
     },
-    "attacking": {
+    "chopping": {
       "frameCount": 4,
       "frameWidth": 68,
       "frameHeight": 68,
-      "sheet": "packed/attacking.png",
+      "sheet": "packed/chopping.png",
       "rowOrder": [
         "north",
         "south",
@@ -36,5 +48,5 @@
       ]
     }
   },
-  "packedAt": "2026-04-21T03:12:56.447Z"
+  "packedAt": "2026-04-21T03:12:56.501Z"
 }

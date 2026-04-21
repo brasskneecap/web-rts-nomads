@@ -1020,6 +1020,7 @@ export class CanvasRenderer {
       color?: string
       visible?: boolean
       ownerId?: string
+      carriedResourceType?: string
     }>,
   ) {
     const ctx = this.ctx
@@ -1094,8 +1095,6 @@ export class CanvasRenderer {
 
       if (unit.status === 'Attacking') {
         this.drawConfiguredUnitAttackEffect(unit)
-      } else if (unit.status === 'Chopping Wood') {
-        this.drawChoppingEffect(unit.x, unit.y)
       }
 
       this.drawUnitRankUpBurst(unit, headTopY)
@@ -1141,6 +1140,7 @@ export class CanvasRenderer {
           attackFacing,
           attackFrameDurationMs,
           this.renderTime,
+          unit.carriedResourceType,
         )
         const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
         if (frame) {
@@ -1539,29 +1539,6 @@ export class CanvasRenderer {
       }
     }
     return color
-  }
-
-  private drawChoppingEffect(x: number, y: number) {
-    const ctx = this.ctx
-    // Axe-swing arc that oscillates left and right above the unit
-    const swing = Math.sin(this.renderTime * 0.005) // ±1, ~1Hz
-    const angle = swing * (Math.PI / 3)
-
-    ctx.save()
-    ctx.translate(x, y - 16)
-    ctx.rotate(angle)
-    ctx.strokeStyle = '#92400e'
-    ctx.lineWidth = 3 / this.camera.zoom
-    ctx.lineCap = 'round'
-    ctx.beginPath()
-    ctx.arc(0, 0, 7, -Math.PI / 3, Math.PI / 3)
-    ctx.stroke()
-    // Axe head dot at the tip
-    ctx.fillStyle = '#d97706'
-    ctx.beginPath()
-    ctx.arc(0, -7, 3, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.restore()
   }
 
   private drawSelectedUnitHealthBar(
