@@ -1,0 +1,51 @@
+{
+  "character": {
+    "id": "0a3b0601-95c2-482c-80f8-c32b81dc27c0",
+    "name": "Barrel with explosive symbol\n",
+    "prompt": "Barrel with explosive symbol\n",
+    "size": {
+      "width": 32,
+      "height": 32
+    },
+    "template_id": "mannequin",
+    "directions": 8,
+    "view": "low top-down",
+    "created_at": "2026-04-21T06:04:40.266264+00:00"
+  },
+  "frames": {
+    "rotations": {
+      "south": "rotations/south.png",
+      "south-east": "rotations/south-east.png",
+      "east": "rotations/east.png",
+      "north-east": "rotations/north-east.png",
+      "north": "rotations/north.png",
+      "north-west": "rotations/north-west.png",
+      "west": "rotations/west.png",
+      "south-west": "rotations/south-west.png"
+    },
+    "animations": {
+      "exploding-3a6c0834": {
+        "south": [
+          "animations/exploding-3a6c0834/south/frame_000.png",
+          "animations/exploding-3a6c0834/south/frame_001.png",
+          "animations/exploding-3a6c0834/south/frame_002.png",
+          "animations/exploding-3a6c0834/south/frame_003.png",
+          "animations/exploding-3a6c0834/south/frame_004.png",
+          "animations/exploding-3a6c0834/south/frame_005.png",
+          "animations/exploding-3a6c0834/south/frame_006.png",
+          "animations/exploding-3a6c0834/south/frame_007.png",
+          "animations/exploding-3a6c0834/south/frame_008.png",
+          "animations/exploding-3a6c0834/south/frame_009.png",
+          "animations/exploding-3a6c0834/south/frame_010.png",
+          "animations/exploding-3a6c0834/south/frame_011.png",
+          "animations/exploding-3a6c0834/south/frame_012.png",
+          "animations/exploding-3a6c0834/south/frame_013.png",
+          "animations/exploding-3a6c0834/south/frame_014.png",
+          "animations/exploding-3a6c0834/south/frame_015.png"
+        ]
+      }
+    }
+  },
+  "export_version": "2.0",
+  "export_date": "2026-04-21T15:30:29.393758"
+}

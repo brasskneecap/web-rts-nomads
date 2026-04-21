@@ -1371,10 +1371,15 @@ func trapIDString(id int) string {
 }
 
 // tickTrapPlacementLocked is the per-tick auto-placement driver for Trapper
-// perks. It decays TrapPlaceCooldownRemaining (and LastCombatSeconds is decayed
-// in state.go's per-unit loop alongside other cross-unit debuffs), gates
-// placement on the unit being alive and in combat, and plants a new trap when
-// the cooldown expires.
+// perks. It decays TrapPlaceCooldownRemaining and plants a new trap whenever
+// the cooldown reaches 0 on a living unit.
+//
+// Placement policy: traps drop as often as their cooldown allows. If the
+// Trapper is actively attacking, placement still runs — the trap is
+// prioritized over "just another shot", which keeps zone control flowing
+// even during sustained engagements. Friendly units are never hit by
+// traps (trap.go's damage paths all filter on OwnerID), so there's no
+// risk of self-inflicted damage mid-fight.
 //
 // Called from tickUnitPerkStateLocked for each trap perk case.
 // Must be called under s.mu write lock.
@@ -1390,11 +1395,6 @@ func (s *GameState) tickTrapPlacementLocked(unit *Unit, def *PerkDef, dt float64
 
 	// Dead unit: no placement.
 	if unit.HP <= 0 {
-		return
-	}
-
-	// Out-of-combat gate: no placement unless archer has recently attacked.
-	if unit.PerkState.LastCombatSeconds <= 0 {
 		return
 	}
 

@@ -347,7 +347,13 @@ export type TrapSnapshot = {
   ownerId: string
   x: number
   y: number
+  /** Damage/effect area. For explosive_trap this is the outer explosion AoE;
+   *  for other types it's the single active zone. */
   radius: number
+  /** Inner zone that causes detonation. Only set for trap types with a
+   *  separate trigger/effect radius (currently just explosive_trap); absent
+   *  for the others, where `radius` alone is the full active area. */
+  triggerRadius?: number
   type: 'caltrops' | 'fire_pit' | 'explosive_trap' | 'marker_trap'
   remainingSeconds: number
   /**

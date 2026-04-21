@@ -22,6 +22,21 @@ import { PNG } from 'pngjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const unitsRoot = path.resolve(here, '..', 'src', 'assets', 'units')
+const objectsRoot = path.resolve(here, '..', 'src', 'assets', 'objects')
+
+// Canonical compass order for object idle frames. PixelLab exports an 8-way
+// "rotations" set; treating them as a clockwise cycle gives a smooth in-place
+// rotation/animation loop for static placeables like traps and barrels.
+const OBJECT_IDLE_ORDER = [
+  'north',
+  'north-east',
+  'east',
+  'south-east',
+  'south',
+  'south-west',
+  'west',
+  'north-west',
+]
 
 async function readPng(file) {
   const buf = await fs.readFile(file)
@@ -185,6 +200,135 @@ async function packUnit(unitDir) {
   }
 }
 
+// Packs a single horizontal strip from an ordered list of frame PNGs.
+// Used by object packing (idle rotation strip + per-animation strips).
+async function packFrameStrip(objectDir, outName, framePaths) {
+  if (framePaths.length === 0) return null
+
+  const frames = []
+  for (const rel of framePaths) {
+    frames.push(await readPng(path.join(objectDir, rel)))
+  }
+
+  const { width: frameWidth, height: frameHeight } = frames[0]
+  for (const f of frames) {
+    if (f.width !== frameWidth || f.height !== frameHeight) {
+      throw new Error(
+        `frame size mismatch in ${objectDir}/${outName}: expected ${frameWidth}x${frameHeight}, got ${f.width}x${f.height}`,
+      )
+    }
+  }
+
+  const strip = new PNG({ width: frameWidth * frames.length, height: frameHeight })
+  for (let i = 0; i < frames.length; i++) {
+    const src = frames[i]
+    for (let y = 0; y < frameHeight; y++) {
+      const srcStart = y * src.width * 4
+      const dstStart = y * strip.width * 4 + i * frameWidth * 4
+      src.data.copy(strip.data, dstStart, srcStart, srcStart + frameWidth * 4)
+    }
+  }
+
+  const outDir = path.join(objectDir, 'packed')
+  await fs.mkdir(outDir, { recursive: true })
+  await fs.writeFile(path.join(outDir, outName), PNG.sync.write(strip))
+
+  return {
+    relPath: `packed/${outName}`,
+    frameWidth,
+    frameHeight,
+    frameCount: frames.length,
+  }
+}
+
+// Packs a PixelLab object export. Unlike units, objects don't have per-direction
+// strips — PixelLab's `rotations` entries are treated as ordered idle-animation
+// frames (barrel rotating in place, lantern flickering, etc.), and each named
+// animation is expected to have a single 'south' direction since objects face a
+// single canonical pose.
+async function packObject(objectDir) {
+  const metaPath = path.join(objectDir, 'metadata.json')
+  let meta
+  try {
+    meta = JSON.parse(await fs.readFile(metaPath, 'utf8'))
+  } catch {
+    return { skipped: true }
+  }
+
+  const objectKey = path.basename(objectDir)
+
+  const firstFrame = meta?.frames?.rotations?.south
+    ?? Object.values(meta?.frames?.rotations ?? {})[0]
+    ?? Object.values(meta?.frames?.animations ?? {})
+      .flatMap((byDir) => byDir?.south ?? [])[0]
+  if (firstFrame) {
+    try {
+      await fs.access(path.join(objectDir, firstFrame))
+    } catch {
+      return { alreadyPacked: true, objectKey }
+    }
+  }
+
+  const size = {
+    width: meta?.character?.size?.width ?? 32,
+    height: meta?.character?.size?.height ?? 32,
+  }
+
+  const animations = {}
+
+  // Idle — one strip made from the 8 rotation images, in canonical compass
+  // order, skipping any direction the export omitted.
+  const rotations = meta?.frames?.rotations ?? {}
+  const idleFrames = OBJECT_IDLE_ORDER
+    .map((d) => (typeof rotations[d] === 'string' ? rotations[d] : null))
+    .filter((rel) => rel != null)
+  if (idleFrames.length > 0) {
+    const idle = await packFrameStrip(objectDir, 'idle.png', idleFrames)
+    if (idle) {
+      animations.idle = {
+        frameCount: idle.frameCount,
+        frameWidth: idle.frameWidth,
+        frameHeight: idle.frameHeight,
+        sheet: idle.relPath,
+        loop: true,
+      }
+    }
+  }
+
+  // Named animations — each animation has a single 'south' direction.
+  for (const [hashedName, byDir] of Object.entries(meta?.frames?.animations ?? {})) {
+    const slug = animSlugFromHashedName(hashedName)
+    const frames = Array.isArray(byDir?.south) ? byDir.south : null
+    if (!frames || frames.length === 0) continue
+    const strip = await packFrameStrip(objectDir, `${slug}.png`, frames)
+    if (!strip) continue
+    animations[slug] = {
+      frameCount: strip.frameCount,
+      frameWidth: strip.frameWidth,
+      frameHeight: strip.frameHeight,
+      sheet: strip.relPath,
+      loop: false,
+    }
+  }
+
+  const manifest = {
+    key: objectKey,
+    size,
+    animations,
+    packedAt: new Date().toISOString(),
+  }
+
+  await fs.writeFile(
+    path.join(objectDir, 'sprites.json'),
+    JSON.stringify(manifest, null, 2) + '\n',
+  )
+
+  return {
+    objectKey,
+    animations: Object.keys(animations).length,
+  }
+}
+
 async function main() {
   let entries
   try {
@@ -213,7 +357,32 @@ async function main() {
     )
   }
 
-  console.log(`[pack:sprites] done — packed ${packed} unit(s)`)
+  // ── Objects (explosive_trap, future placeables) ────────────────────────────
+  let objectEntries = []
+  try {
+    objectEntries = await fs.readdir(objectsRoot, { withFileTypes: true })
+  } catch {
+    /* objects root missing — no objects to pack yet */
+  }
+
+  let packedObjects = 0
+  for (const entry of objectEntries) {
+    if (!entry.isDirectory()) continue
+    const objectDir = path.join(objectsRoot, entry.name)
+    const result = await packObject(objectDir)
+    if (result.skipped) {
+      console.log(`[pack:sprites] object ${entry.name}: no metadata.json — skipped`)
+      continue
+    }
+    if (result.alreadyPacked) {
+      console.log(`[pack:sprites] object ${result.objectKey}: raw frames pruned — leaving existing sprites.json`)
+      continue
+    }
+    packedObjects += 1
+    console.log(`[pack:sprites] object ${result.objectKey}: ${result.animations} animations`)
+  }
+
+  console.log(`[pack:sprites] done — packed ${packed} unit(s), ${packedObjects} object(s)`)
 }
 
 main().catch((err) => {

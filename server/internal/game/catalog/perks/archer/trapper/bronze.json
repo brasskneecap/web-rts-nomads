@@ -40,7 +40,7 @@
     "config": {
       "placeIntervalSeconds": 10,
       "durationSeconds": 20,
-      "triggerRadius": 30,
+      "triggerRadius": 50,
       "explosionRadius": 80,
       "burstDamage": 35
     }

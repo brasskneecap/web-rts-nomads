@@ -13,7 +13,7 @@
       "reactiveFlamesRadius": 35,
       "reactiveFlamesDamage": 4,
 
-      "scatterBombCount": 3,
+      "scatterBombCount": 5,
       "scatterBombSpawnRadius": 55,
       "scatterBombChildDurationSeconds": 6,
 

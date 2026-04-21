@@ -1,0 +1,24 @@
+{
+  "key": "explosive_trap",
+  "size": {
+    "width": 32,
+    "height": 32
+  },
+  "animations": {
+    "idle": {
+      "frameCount": 8,
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "sheet": "packed/idle.png",
+      "loop": true
+    },
+    "exploding": {
+      "frameCount": 16,
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "sheet": "packed/exploding.png",
+      "loop": false
+    }
+  },
+  "packedAt": "2026-04-21T15:37:59.635Z"
+}

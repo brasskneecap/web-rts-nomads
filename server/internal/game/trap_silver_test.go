@@ -157,7 +157,7 @@ func TestTrapModifiers_WiderNets_ExplosiveBothRadii(t *testing.T) {
 	}
 
 	assertFloatEq(t, "Radius (explosion)", stats.Radius, 104.0)       // 80 * 1.3
-	assertFloatEq(t, "TriggerRadius", stats.TriggerRadius, 39.0)       // 30 * 1.3
+	assertFloatEq(t, "TriggerRadius", stats.TriggerRadius, 65.0)       // 50 * 1.3
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
