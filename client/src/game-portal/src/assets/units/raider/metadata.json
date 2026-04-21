@@ -1,0 +1,85 @@
+{
+  "character": {
+    "id": "57e85aa6-9ee9-424b-b8b7-c19443826a3f",
+    "name": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single creature centered on transparent background, idle pose facing southeast, small hunched kobold creature, rat-like rodent humanoid with pointed snout and large ears, dingy gray-brown fur, small beady black eyes, ragged tattered brown cloth loincloth, lit candle mounted on head held by leather strap, small wooden mining pickaxe gripped in both hands, stooped cowardly posture, slightly smaller than a human unit, earthy brown and dirty gray palette with small warm yellow candle flame accent",
+    "prompt": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single creature centered on transparent background, idle pose facing southeast, small hunched kobold creature, rat-like rodent humanoid with pointed snout and large ears, dingy gray-brown fur, small beady black eyes, ragged tattered brown cloth loincloth, lit candle mounted on head held by leather strap, small wooden mining pickaxe gripped in both hands, stooped cowardly posture, slightly smaller than a human unit, earthy brown and dirty gray palette with small warm yellow candle flame accent",
+    "size": {
+      "width": 68,
+      "height": 68
+    },
+    "template_id": "mannequin",
+    "directions": 4,
+    "view": "low top-down",
+    "created_at": "2026-04-21T04:26:14.361974+00:00"
+  },
+  "frames": {
+    "rotations": {
+      "south": "rotations/south.png",
+      "west": "rotations/west.png",
+      "east": "rotations/east.png",
+      "north": "rotations/north.png"
+    },
+    "animations": {
+      "Walking-37586a79": {
+        "north": [
+          "animations/Walking-37586a79/north/frame_000.png",
+          "animations/Walking-37586a79/north/frame_001.png",
+          "animations/Walking-37586a79/north/frame_002.png",
+          "animations/Walking-37586a79/north/frame_003.png"
+        ],
+        "east": [
+          "animations/Walking-37586a79/east/frame_000.png",
+          "animations/Walking-37586a79/east/frame_001.png",
+          "animations/Walking-37586a79/east/frame_002.png",
+          "animations/Walking-37586a79/east/frame_003.png"
+        ],
+        "south": [
+          "animations/Walking-37586a79/south/frame_000.png",
+          "animations/Walking-37586a79/south/frame_001.png",
+          "animations/Walking-37586a79/south/frame_002.png",
+          "animations/Walking-37586a79/south/frame_003.png"
+        ],
+        "west": [
+          "animations/Walking-37586a79/west/frame_000.png",
+          "animations/Walking-37586a79/west/frame_001.png",
+          "animations/Walking-37586a79/west/frame_002.png",
+          "animations/Walking-37586a79/west/frame_003.png"
+        ]
+      },
+      "Attacking-9b272253": {
+        "south": [
+          "animations/Attacking-9b272253/south/frame_000.png",
+          "animations/Attacking-9b272253/south/frame_001.png",
+          "animations/Attacking-9b272253/south/frame_002.png",
+          "animations/Attacking-9b272253/south/frame_003.png"
+        ],
+        "east": [
+          "animations/Attacking-9b272253/east/frame_000.png",
+          "animations/Attacking-9b272253/east/frame_001.png",
+          "animations/Attacking-9b272253/east/frame_002.png",
+          "animations/Attacking-9b272253/east/frame_003.png"
+        ],
+        "north-dfacc2f0": [
+          "animations/Attacking-9b272253/north-dfacc2f0/frame_000.png",
+          "animations/Attacking-9b272253/north-dfacc2f0/frame_001.png",
+          "animations/Attacking-9b272253/north-dfacc2f0/frame_002.png",
+          "animations/Attacking-9b272253/north-dfacc2f0/frame_003.png"
+        ],
+        "west": [
+          "animations/Attacking-9b272253/west/frame_000.png",
+          "animations/Attacking-9b272253/west/frame_001.png",
+          "animations/Attacking-9b272253/west/frame_002.png",
+          "animations/Attacking-9b272253/west/frame_003.png"
+        ],
+        "north-ef340659": [
+          "animations/Attacking-9b272253/north-ef340659/frame_000.png",
+          "animations/Attacking-9b272253/north-ef340659/frame_001.png",
+          "animations/Attacking-9b272253/north-ef340659/frame_002.png",
+          "animations/Attacking-9b272253/north-ef340659/frame_003.png"
+        ]
+      }
+    }
+  },
+  "export_version": "2.0",
+  "export_date": "2026-04-21T04:59:38.256834"
+}

@@ -82,7 +82,19 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 		return nil
 	}
 	var active []protocol.ActiveEffectIcon
+	// addIcon dedupes by ID — if the same icon id is added more than once
+	// (e.g. guardian_aura from owning the perk AND from being inside
+	// another ally's aura, or rallying_banner from two overlapping
+	// friendly banners) the stacks field accumulates rather than producing
+	// side-by-side duplicate icons. The client renders a count badge
+	// whenever stacks >= 2.
 	addIcon := func(id string, stacks int) {
+		for i := range active {
+			if active[i].ID == id {
+				active[i].Stacks += stacks
+				return
+			}
+		}
 		active = append(active, protocol.ActiveEffectIcon{ID: id, Stacks: stacks})
 	}
 	for _, perkID := range unit.PerkIDs {
@@ -170,17 +182,22 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 		}
 	}
 
-	// guardian_aura recipient buff: show the aura icon on allies that are
-	// currently under a guardian_aura. This is separate from the owner's buff
-	// icon above because recipients don't own the perk themselves.
-	if aura := s.guardianAuraCache[unit.ID]; aura.FlatArmor > 0 || aura.PercentArmor > 0 {
-		addIcon("guardian_aura", 1)
+	// guardian_aura recipient buff: show the aura icon on allies currently
+	// under any guardian_aura. Stack count == number of distinct emitters
+	// covering this unit (from the aura cache's Sources counter). addIcon
+	// dedupes with the owner-case above, so a Vanguard who owns the perk
+	// AND stands in a teammate's aura sees 1 icon with "2" stacks, not two
+	// side-by-side icons.
+	if aura := s.guardianAuraCache[unit.ID]; aura.Sources > 0 {
+		addIcon("guardian_aura", aura.Sources)
 	}
 
 	// rallying_banner recipient buff: show the icon on allied units inside any
 	// active friendly banner radius. Mirrors the guardian_aura recipient pattern.
 	// The banner owner will also get this icon when standing in their own banner
-	// radius, which is correct — they ARE benefiting from it.
+	// radius, which is correct — they ARE benefiting from it. Each overlapping
+	// banner contributes a stack (addIcon dedupes IDs and sums stacks), so two
+	// overlapping banners render as one icon with a "2" count badge.
 	for _, b := range s.Banners {
 		if b.OwnerPlayerID != unit.OwnerID {
 			continue
@@ -192,7 +209,6 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 		dy := unit.Y - b.Y
 		if dx*dx+dy*dy <= b.Radius*b.Radius {
 			addIcon("rallying_banner", 1)
-			break
 		}
 	}
 
@@ -217,7 +233,16 @@ func (s *GameState) activeDebuffIconsLocked(unit *Unit) []protocol.ActiveEffectI
 		return nil
 	}
 	var active []protocol.ActiveEffectIcon
+	// Same dedupe-and-sum semantics as activeBuffIconsLocked so any future
+	// debuff that can be added from multiple entry points merges into a
+	// single icon with a stack count rather than producing visual dupes.
 	addIcon := func(id string, stacks int) {
+		for i := range active {
+			if active[i].ID == id {
+				active[i].Stacks += stacks
+				return
+			}
+		}
 		active = append(active, protocol.ActiveEffectIcon{ID: id, Stacks: stacks})
 	}
 	if unit.TauntedByUnitID != 0 && unit.TauntRemaining > 0 {

@@ -1,5 +1,5 @@
 {
-  "key": "vanguard",
+  "key": "raider",
   "size": {
     "width": 68,
     "height": 68
@@ -29,12 +29,11 @@
       "frameHeight": 68,
       "sheet": "packed/attacking.png",
       "rowOrder": [
-        "north",
         "south",
         "east",
         "west"
       ]
     }
   },
-  "packedAt": "2026-04-21T05:04:25.360Z"
+  "packedAt": "2026-04-21T05:04:25.203Z"
 }
