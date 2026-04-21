@@ -20,4 +20,4 @@ settings.local.json
 
 # PixelLab per-frame unit exports — packed into sprites.json + packed/ strips
 # by `npm run pack:sprites`. The raw frames aren't imported by the runtime.
-client/src/game-portal/src/assets/units/*/animations/
+client/src/game-portal/src/assets/*/*/animations/

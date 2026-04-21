@@ -1370,11 +1370,37 @@ func trapIDString(id int) string {
 	return "trap-" + string(digits[pos:])
 }
 
+// trapVisualVariant returns the visual-variant tag sent to the client for
+// this trap, or "" when the default animation should be used. Variants let
+// the client swap to a perk-specific animation (e.g. electrified caltrops
+// under ascendant_infusion) without hard-coding trap-perk knowledge into
+// the renderer — the server says which variant applies, the client maps
+// that tag to a named animation in the object's sprites.json.
+//
+// Extend the switch as more trap/perk variants gain dedicated visuals.
+func trapVisualVariant(trap *Trap) string {
+	if trap == nil {
+		return ""
+	}
+	switch trap.TrapType {
+	case "caltrops":
+		if trap.InfusionElectrifiedBonusDamage > 0 {
+			return "electrified"
+		}
+	}
+	return ""
+}
+
 // tickTrapPlacementLocked is the per-tick auto-placement driver for Trapper
-// perks. It decays TrapPlaceCooldownRemaining (and LastCombatSeconds is decayed
-// in state.go's per-unit loop alongside other cross-unit debuffs), gates
-// placement on the unit being alive and in combat, and plants a new trap when
-// the cooldown expires.
+// perks. It decays TrapPlaceCooldownRemaining and plants a new trap whenever
+// the cooldown reaches 0 on a living unit.
+//
+// Placement policy: traps drop as often as their cooldown allows. If the
+// Trapper is actively attacking, placement still runs — the trap is
+// prioritized over "just another shot", which keeps zone control flowing
+// even during sustained engagements. Friendly units are never hit by
+// traps (trap.go's damage paths all filter on OwnerID), so there's no
+// risk of self-inflicted damage mid-fight.
 //
 // Called from tickUnitPerkStateLocked for each trap perk case.
 // Must be called under s.mu write lock.
@@ -1390,11 +1416,6 @@ func (s *GameState) tickTrapPlacementLocked(unit *Unit, def *PerkDef, dt float64
 
 	// Dead unit: no placement.
 	if unit.HP <= 0 {
-		return
-	}
-
-	// Out-of-combat gate: no placement unless archer has recently attacked.
-	if unit.PerkState.LastCombatSeconds <= 0 {
 		return
 	}
 

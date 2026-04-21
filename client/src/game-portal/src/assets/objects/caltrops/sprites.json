@@ -1,0 +1,24 @@
+{
+  "key": "caltrops",
+  "size": {
+    "width": 64,
+    "height": 64
+  },
+  "animations": {
+    "electrified": {
+      "frameCount": 16,
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "sheet": "packed/electrified.png",
+      "loop": true
+    },
+    "idle": {
+      "frameCount": 1,
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "sheet": "packed/idle.png",
+      "loop": true
+    }
+  },
+  "packedAt": "2026-04-21T22:51:40.825Z"
+}

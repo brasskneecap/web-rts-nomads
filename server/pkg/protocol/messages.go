@@ -305,11 +305,22 @@ type BannerSnapshot struct {
 // duration. OwnerID is the player who placed it (team-colour tinting).
 // Triggered is omitted from JSON when false (omitempty).
 type TrapSnapshot struct {
-	ID               string  `json:"id"`
-	OwnerID          string  `json:"ownerId"`
-	X                float64 `json:"x"`
-	Y                float64 `json:"y"`
-	Radius           float64 `json:"radius"`
+	ID      string  `json:"id"`
+	OwnerID string  `json:"ownerId"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	// Radius is the damage/effect area. For explosive_trap this is the outer
+	// explosion (AoE) radius; for all other types it's the single active zone.
+	Radius float64 `json:"radius"`
+	// TriggerRadius is the inner zone that causes detonation. Only populated
+	// for trap types with a separate trigger/effect radius (currently just
+	// explosive_trap); 0/omitted for the others, where Radius alone suffices.
+	TriggerRadius float64 `json:"triggerRadius,omitempty"`
+	// Variant is an optional visual tag the client uses to pick a
+	// non-default animation for this trap (e.g. "electrified" caltrops under
+	// ascendant_infusion). Empty/omitted means "use the trap's default
+	// animation". Values are coordinated between server and client assets.
+	Variant          string  `json:"variant,omitempty"`
 	Type             string  `json:"type"`
 	RemainingSeconds float64 `json:"remainingSeconds"`
 	Triggered        bool    `json:"triggered,omitempty"`

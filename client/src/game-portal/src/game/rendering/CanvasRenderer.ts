@@ -24,6 +24,7 @@ import { getRankToneColor } from './rankColors'
 import { ACTION_ICON_MAP } from '../maps/actionIconDefs'
 import { getPerkAuraRadius, PERK_DEF_MAP } from '../maps/perkDefs'
 import { getUnitFrame, getUnitSpriteSet } from './unitSprites'
+import { getObjectSpriteSet } from './objectSprites'
 import { UnitAnimationController } from './unitAnimation'
 
 // Multiplier applied to each unit sprite's native size at draw time. Bump
@@ -80,6 +81,35 @@ export class CanvasRenderer {
   private lastSeenTraps = new Map<string, TrapSnapshot>()
   private fadingOutTraps = new Map<string, { snapshot: TrapSnapshot; startedAt: number }>()
   private readonly TRAP_FADE_MS = 450
+
+  // Per-trap sprite animation state. Only sprite-backed trap types use this;
+  // others continue to run through the procedural render path. An entry is
+  // removed once an exploding animation finishes or an idle-state trap leaves
+  // the snapshot.
+  private trapAnimStates = new Map<string, {
+    animation: 'idle' | 'exploding'
+    startedAt: number
+    x: number
+    y: number
+    radius: number
+    /** Inner trigger radius (explosive_trap). Falls back to `radius` when
+     *  absent — for trap types whose single radius is the active zone. */
+    triggerRadius: number | undefined
+    /** Visual-variant tag from the server (e.g. "electrified"). When set and
+     *  the sprite set defines a matching animation, it's played instead of
+     *  idle. Used for perk-driven visual swaps like ascendant_infusion. */
+    variant: string | undefined
+    spriteKey: string
+  }>()
+  // Per-trap-type frame timings.
+  private readonly TRAP_IDLE_FRAME_MS = 150
+  private readonly TRAP_EXPLODING_FRAME_MS = 55
+  // Base render scale for object sprites (native 32px * 2 = 64px ≈ one cell).
+  // The authored explosion art already depicts the full blast visually, so we
+  // deliberately don't scale it to match the server's damage radius — that
+  // made the explosion read as ~5× the barrel. Both animations draw at the
+  // same scale; bump this if objects read too small on screen.
+  private readonly OBJECT_SPRITE_SCALE = 2
   private unitAnim = new UnitAnimationController()
   private terrainCache: HTMLCanvasElement | null = null
   private terrainCacheKey: unknown[] = []
@@ -660,11 +690,50 @@ export class CanvasRenderer {
     const currentIds = new Set<string>()
     for (const t of traps) currentIds.add(t.id)
 
+    // ── Sprite-backed trap animation states ──────────────────────────────────
+    // Kept separate from the procedural fade-out path so the animation can
+    // outlive the snapshot (exploding continues for its full duration even
+    // after the server drops the trap).
+    for (const trap of traps) {
+      const spriteKey = this.spriteKeyForTrapType(trap.type)
+      if (!spriteKey) continue
+      // Only switch to 'exploding' when the sprite set actually defines that
+      // animation. Simple object sheets (marker_trap, etc.) only have idle —
+      // without this guard a stray `triggered` tick would wipe the state.
+      const canExplode = !!getObjectSpriteSet(spriteKey)?.animations.has('exploding')
+      const shouldExplode = trap.triggered && canExplode
+      const state = this.trapAnimStates.get(trap.id)
+      if (!state) {
+        this.trapAnimStates.set(trap.id, {
+          animation: shouldExplode ? 'exploding' : 'idle',
+          startedAt: now,
+          x: trap.x,
+          y: trap.y,
+          radius: trap.radius,
+          triggerRadius: trap.triggerRadius,
+          variant: trap.variant,
+          spriteKey,
+        })
+      } else {
+        state.x = trap.x
+        state.y = trap.y
+        state.radius = trap.radius
+        state.triggerRadius = trap.triggerRadius
+        state.variant = trap.variant
+        if (shouldExplode && state.animation !== 'exploding') {
+          state.animation = 'exploding'
+          state.startedAt = now
+        }
+      }
+    }
+
     // Diff current vs last-seen: any trap that existed last frame but isn't in
     // this frame's snapshot has been removed by the server (expired, detonated,
     // or culled). Enqueue a fade-out using its last-known snapshot so we can
-    // animate the disappearance for TRAP_FADE_MS.
+    // animate the disappearance for TRAP_FADE_MS. Sprite-backed types skip
+    // this — their anim-state map handles disappearance directly.
     for (const [id, snap] of this.lastSeenTraps) {
+      if (this.hasTrapSprites(snap.type)) continue
       if (!currentIds.has(id) && !this.fadingOutTraps.has(id)) {
         this.fadingOutTraps.set(id, { snapshot: snap, startedAt: now })
       }
@@ -673,8 +742,9 @@ export class CanvasRenderer {
     this.lastSeenTraps.clear()
     for (const t of traps) this.lastSeenTraps.set(t.id, t)
 
-    // ── Render live traps at full opacity ───────────────────────────────────
+    // ── Render live traps (procedural path) ──────────────────────────────────
     for (const trap of traps) {
+      if (this.hasTrapSprites(trap.type)) continue
       ctx.save()
       ctx.globalAlpha = 1
       this.renderTrapBody(ctx, trap)
@@ -685,7 +755,6 @@ export class CanvasRenderer {
     }
 
     // ── Render fading-out traps with linear alpha fade ──────────────────────
-    // Iterate via snapshot of keys so we can delete entries mid-iteration.
     for (const id of Array.from(this.fadingOutTraps.keys())) {
       const entry = this.fadingOutTraps.get(id)!
       const t = (now - entry.startedAt) / this.TRAP_FADE_MS
@@ -698,6 +767,141 @@ export class CanvasRenderer {
       this.renderTrapBody(ctx, entry.snapshot)
       ctx.restore()
     }
+
+    // ── Render sprite-backed traps via animation states ─────────────────────
+    for (const id of Array.from(this.trapAnimStates.keys())) {
+      const state = this.trapAnimStates.get(id)!
+      const done = this.renderTrapSpriteState(id, state, currentIds.has(id), now)
+      if (done) this.trapAnimStates.delete(id)
+    }
+  }
+
+  // Returns true when the state has ended and should be removed (idle-state
+  // trap left the snapshot, or exploding animation finished).
+  private renderTrapSpriteState(
+    id: string,
+    state: { animation: 'idle' | 'exploding'; startedAt: number; x: number; y: number; radius: number; triggerRadius: number | undefined; variant: string | undefined; spriteKey: string },
+    stillInSnapshot: boolean,
+    now: number,
+  ): boolean {
+    const spriteSet = getObjectSpriteSet(state.spriteKey)
+    if (!spriteSet) return !stillInSnapshot
+
+    const scale = spriteSet.scale ?? this.OBJECT_SPRITE_SCALE
+    // Positional nudge, authored in native sprite pixels. Scaled by the
+    // effective render scale so the shift stays proportional when an object
+    // also sets a `scale` override.
+    const offX = (spriteSet.offsetX ?? 0) * scale
+    const offY = (spriteSet.offsetY ?? 0) * scale
+
+    if (state.animation === 'exploding') {
+      const anim = spriteSet.animations.get('exploding')
+      if (!anim) return true
+      const elapsed = now - state.startedAt
+      const frameMs = anim.frameDurationMs ?? this.TRAP_EXPLODING_FRAME_MS
+      const frameIndex = Math.floor(elapsed / frameMs)
+      if (frameIndex >= anim.frameCount) return true
+      this.drawObjectFrame(anim, frameIndex, state.x + offX, state.y + offY, scale)
+      return false
+    }
+
+    if (!stillInSnapshot) return true
+    // Variant wins over idle when present and defined for this sprite set —
+    // lets perk-driven visuals (electrified caltrops, etc.) swap in without
+    // renderer-side branching on perk ids.
+    const variantAnim = state.variant ? spriteSet.animations.get(state.variant) : undefined
+    const anim = variantAnim ?? spriteSet.animations.get('idle')
+    if (!anim) return true
+    const elapsed = now - state.startedAt
+    const frameMs = anim.frameDurationMs ?? this.TRAP_IDLE_FRAME_MS
+    const frameIndex = anim.loop
+      ? Math.floor(elapsed / frameMs) % anim.frameCount
+      : Math.min(Math.floor(elapsed / frameMs), anim.frameCount - 1)
+
+    // Dotted radius indicators — drawn BEFORE the barrel so the sprite sits
+    // on top. Outer ring = blast/effect radius (orange), inner ring = trigger
+    // radius (red). For trap types without a distinct trigger zone only the
+    // single outer ring renders.
+    if (state.triggerRadius && state.triggerRadius !== state.radius) {
+      this.drawTrapRadiusRing(state.x, state.y, state.radius, 'rgba(251, 146, 60, 0.75)')
+      this.drawTrapRadiusRing(state.x, state.y, state.triggerRadius, 'rgba(239, 68, 68, 0.75)')
+    } else {
+      this.drawTrapRadiusRing(state.x, state.y, state.radius, 'rgba(251, 146, 60, 0.75)')
+    }
+
+    this.drawObjectFrame(anim, frameIndex, state.x + offX, state.y + offY, scale)
+
+    if (this.state.selectedTrapId === id) {
+      const ctx = this.ctx
+      ctx.save()
+      ctx.globalAlpha = 1
+      ctx.beginPath()
+      ctx.arc(state.x, state.y, state.radius + 3, 0, Math.PI * 2)
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 2 / this.camera.zoom
+      ctx.setLineDash([])
+      ctx.stroke()
+      ctx.restore()
+    }
+    return false
+  }
+
+  private drawTrapRadiusRing(x: number, y: number, radius: number, color: string) {
+    const ctx = this.ctx
+    ctx.save()
+    ctx.strokeStyle = color
+    ctx.lineWidth = 2 / this.camera.zoom
+    // Tiny dash pattern reads as dots rather than dashes. Length scales with
+    // zoom so the rhythm stays consistent whether zoomed in or out.
+    ctx.setLineDash([1 / this.camera.zoom, 4 / this.camera.zoom])
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.arc(x, y, radius, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  private drawObjectFrame(
+    anim: { sheet: HTMLImageElement; frameWidth: number; frameHeight: number },
+    frameIndex: number,
+    centerX: number,
+    centerY: number,
+    scale: number,
+  ) {
+    if (!anim.sheet.complete || anim.sheet.naturalWidth === 0) return
+    const ctx = this.ctx
+    ctx.imageSmoothingEnabled = false
+    const destW = anim.frameWidth * scale
+    const destH = anim.frameHeight * scale
+    ctx.drawImage(
+      anim.sheet,
+      frameIndex * anim.frameWidth, 0,
+      anim.frameWidth, anim.frameHeight,
+      centerX - destW / 2, centerY - destH / 2,
+      destW, destH,
+    )
+  }
+
+  // Maps a trap type to the asset key under assets/objects/. Returns '' when
+  // the type has no sprite set registered (falls through to procedural).
+  // Extend the switch as more trap types gain sprite treatment.
+  private spriteKeyForTrapType(type: TrapSnapshot['type']): string {
+    switch (type) {
+      case 'explosive_trap':
+        return getObjectSpriteSet('explosive_trap') ? 'explosive_trap' : ''
+      case 'marker_trap':
+        return getObjectSpriteSet('marker_trap') ? 'marker_trap' : ''
+      case 'fire_pit':
+        return getObjectSpriteSet('fire_pit') ? 'fire_pit' : ''
+      case 'caltrops':
+        return getObjectSpriteSet('caltrops') ? 'caltrops' : ''
+      default:
+        return ''
+    }
+  }
+
+  private hasTrapSprites(type: TrapSnapshot['type']): boolean {
+    return this.spriteKeyForTrapType(type) !== ''
   }
 
   // Trap body rendering — shared between live and fading-out paths. Caller

@@ -287,10 +287,10 @@ func TestTrapper_PlacementCooldownDecays(t *testing.T) {
 	}
 }
 
-// TestTrapper_TrapDropsAtUnitPositionWhenInCombat verifies that when cooldown
-// reaches 0 and the unit is in combat (LastCombatSeconds > 0), a trap is placed
+// TestTrapper_TrapDropsAtUnitPosition_NoEnemiesInRange verifies that when
+// cooldown reaches 0 and no enemies are within attack range, a trap is placed
 // at the unit's position.
-func TestTrapper_TrapDropsAtUnitPositionWhenInCombat(t *testing.T) {
+func TestTrapper_TrapDropsAtUnitPosition_NoEnemiesInRange(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -307,9 +307,8 @@ func TestTrapper_TrapDropsAtUnitPositionWhenInCombat(t *testing.T) {
 		t.Fatal("caltrops perk def not found")
 	}
 
-	// Cooldown already at 0, in combat.
+	// Cooldown already at 0, no enemies nearby.
 	archer.PerkState.TrapPlaceCooldownRemaining = 0
-	archer.PerkState.LastCombatSeconds = 1.5
 
 	s.tickTrapPlacementLocked(archer, def, 0.05)
 
@@ -331,12 +330,16 @@ func TestTrapper_TrapDropsAtUnitPositionWhenInCombat(t *testing.T) {
 	}
 }
 
-// TestTrapper_NoTrapDropWhenOutOfCombat verifies that no trap is placed when
-// LastCombatSeconds is 0 (unit not in combat), even with cooldown at 0.
-func TestTrapper_NoTrapDropWhenOutOfCombat(t *testing.T) {
+// TestTrapper_TrapDropsWhileEnemyInRange verifies that the Trapper places a
+// trap even when an enemy is inside attack range — zone control is prioritized
+// over "just another shot", and friendlies can't be hit by traps anyway.
+func TestTrapper_TrapDropsWhileEnemyInRange(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+	s.Players["p2"] = &Player{ID: "p2", Resources: map[string]int{}}
 
 	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	if archer == nil {
@@ -348,18 +351,32 @@ func TestTrapper_NoTrapDropWhenOutOfCombat(t *testing.T) {
 		t.Fatal("caltrops perk def not found")
 	}
 
+	// Enemy well inside the archer's attack range.
+	enemy := s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{
+		X: archer.X + archer.AttackRange*0.5, Y: archer.Y,
+	})
+	if enemy == nil {
+		t.Fatal("failed to spawn enemy unit")
+	}
+	enemy.Visible = true
+
 	archer.PerkState.TrapPlaceCooldownRemaining = 0
-	archer.PerkState.LastCombatSeconds = 0 // NOT in combat
 
 	s.tickTrapPlacementLocked(archer, def, 0.05)
 
-	if len(s.Traps) != 0 {
-		t.Errorf("out of combat: expected 0 traps, got %d", len(s.Traps))
+	if len(s.Traps) != 1 {
+		t.Errorf("enemy in range: expected 1 trap placed, got %d", len(s.Traps))
+	}
+	// Cooldown should have been consumed on placement.
+	wantCooldown := def.Config["placeIntervalSeconds"]
+	if math.Abs(archer.PerkState.TrapPlaceCooldownRemaining-wantCooldown) > 1e-9 {
+		t.Errorf("cooldown after placement: got %.3f, want %.3f",
+			archer.PerkState.TrapPlaceCooldownRemaining, wantCooldown)
 	}
 }
 
 // TestTrapper_DeadUnitDoesNotPlant verifies that a dead unit (HP <= 0) does not
-// plant traps even if in combat and cooldown has expired.
+// plant traps even with cooldown at 0 and no enemies nearby.
 func TestTrapper_DeadUnitDoesNotPlant(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()

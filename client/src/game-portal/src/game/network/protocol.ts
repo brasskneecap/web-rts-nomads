@@ -347,7 +347,17 @@ export type TrapSnapshot = {
   ownerId: string
   x: number
   y: number
+  /** Damage/effect area. For explosive_trap this is the outer explosion AoE;
+   *  for other types it's the single active zone. */
   radius: number
+  /** Inner zone that causes detonation. Only set for trap types with a
+   *  separate trigger/effect radius (currently just explosive_trap); absent
+   *  for the others, where `radius` alone is the full active area. */
+  triggerRadius?: number
+  /** Optional visual-variant tag — renderer prefers an animation with this
+   *  name over `idle` when present (e.g. "electrified" for ascendant-infused
+   *  caltrops). Absent = render the trap's default animation. */
+  variant?: string
   type: 'caltrops' | 'fire_pit' | 'explosive_trap' | 'marker_trap'
   remainingSeconds: number
   /**

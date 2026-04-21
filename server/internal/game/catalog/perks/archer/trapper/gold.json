@@ -5,15 +5,15 @@
     "icon": "perk-ascendant-infusion",
     "description": "Your trap gains a secondary enhanced effect based on its type (Electrified Caltrops, Reactive Flames, Scatter Bomb, or Shared Pain).",
     "config": {
-      "electrifiedBonusDamagePerTick": 1,
-      "electrifiedStunChance": 0.15,
+      "electrifiedBonusDamagePerTick": 5,
+      "electrifiedStunChance": 0.25,
       "electrifiedStunDuration": 0.25,
-      "electrifiedStunCooldownSeconds": 2.0,
+      "electrifiedStunCooldownSeconds": 0.4,
 
       "reactiveFlamesRadius": 35,
       "reactiveFlamesDamage": 4,
 
-      "scatterBombCount": 3,
+      "scatterBombCount": 5,
       "scatterBombSpawnRadius": 55,
       "scatterBombChildDurationSeconds": 6,
 

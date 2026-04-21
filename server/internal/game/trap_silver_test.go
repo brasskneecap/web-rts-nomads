@@ -115,7 +115,7 @@ func TestTrapModifiers_ExtendedSetup_DurationCaltrops(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. wider_nets — radius scales by 1.3×; explosive also scales triggerRadius
+// 3. wider_nets — radius scales by 1.5×; explosive also scales triggerRadius
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestTrapModifiers_WiderNets_RadiusCaltrops verifies caltrops radius 60 → 78.
@@ -135,7 +135,7 @@ func TestTrapModifiers_WiderNets_RadiusCaltrops(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	assertFloatEq(t, "Radius", stats.Radius, 78.0) // 60 * 1.3
+	assertFloatEq(t, "Radius", stats.Radius, 90.0) // 60 * 1.5
 }
 
 // TestTrapModifiers_WiderNets_ExplosiveBothRadii verifies that for
@@ -156,8 +156,8 @@ func TestTrapModifiers_WiderNets_ExplosiveBothRadii(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	assertFloatEq(t, "Radius (explosion)", stats.Radius, 104.0)       // 80 * 1.3
-	assertFloatEq(t, "TriggerRadius", stats.TriggerRadius, 39.0)       // 30 * 1.3
+	assertFloatEq(t, "Radius (explosion)", stats.Radius, 120.0)       // 80 * 1.5
+	assertFloatEq(t, "TriggerRadius", stats.TriggerRadius, 75.0)       // 50 * 1.5
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -305,8 +305,8 @@ func TestTrapModifiers_AllSilverStack_Caltrops(t *testing.T) {
 
 	// DurationSeconds: 12 * 1.5 = 18
 	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, 18.0)
-	// Radius: 60 * 1.3 = 78
-	assertFloatEq(t, "Radius", stats.Radius, 78.0)
+	// Radius: 60 * 1.5 = 90
+	assertFloatEq(t, "Radius", stats.Radius, 90.0)
 	// PlaceInterval: 6 * 0.7 = 4.2
 	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, 4.2)
 	// DamagePerSecond: 3 * 1.35 = 4.05
@@ -355,8 +355,8 @@ func TestTrapModifiers_PlantEndToEnd_SnapshotScaled(t *testing.T) {
 
 	// RemainingSeconds: 12 * 1.5 = 18
 	assertFloatEq(t, "planted.RemainingSeconds", planted.RemainingSeconds, 18.0)
-	// Radius: 60 * 1.3 = 78
-	assertFloatEq(t, "planted.Radius", planted.Radius, 78.0)
+	// Radius: 60 * 1.5 = 90
+	assertFloatEq(t, "planted.Radius", planted.Radius, 90.0)
 	// DamagePerSecond: 3 * 1.35 = 4.05
 	assertFloatEq(t, "planted.DamagePerSecond", planted.DamagePerSecond, 4.05)
 	// SlowMultiplier: 1 - (0.30 * 1.35) = 0.595
@@ -409,7 +409,7 @@ func TestSilverTrapPerkDefs_AllLoaded(t *testing.T) {
 		wantValue float64
 	}{
 		{"extended_setup", "durationMultiplier", 1.5},
-		{"wider_nets", "radiusMultiplier", 1.3},
+		{"wider_nets", "radiusMultiplier", 1.5},
 		{"rapid_deployment", "cooldownMultiplier", 0.7},
 		{"amplified_effects", "effectMultiplier", 1.35},
 	}

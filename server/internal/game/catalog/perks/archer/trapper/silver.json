@@ -10,8 +10,8 @@
     "id": "wider_nets",
     "displayName": "Wider Nets",
     "icon": "perk-wider-nets",
-    "description": "Your traps cover 30% more ground — larger zones, bigger explosions, wider triggers.",
-    "config": { "radiusMultiplier": 1.3 }
+    "description": "Your traps cover 50% more ground — larger zones, bigger explosions, wider triggers.",
+    "config": { "radiusMultiplier": 1.5 }
   },
   {
     "id": "rapid_deployment",
@@ -42,8 +42,8 @@
     "description": "Caltrops: enemies take ramping bonus damage the longer they stay in the zone (+2 DPS per second, up to +12 DPS). Resets when they leave.",
     "requiresPerk": "caltrops",
     "config": {
-      "rampPerSecond": 2,
-      "maxBonusDamagePerSecond": 12
+      "rampPerSecond": 4,
+      "maxBonusDamagePerSecond": 24
     }
   },
   {
