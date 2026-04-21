@@ -2,8 +2,8 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "cmd /c build.bat"
-  entrypoint = "./tmp/api.exe"
+  cmd = "go build -o ./tmp/api.exe ./cmd/api"
+  bin = "tmp\\api.exe"
   include_ext = ["go", "json"]
   include_dir = ["cmd", "internal", "pkg"]
   exclude_dir = ["tmp"]
