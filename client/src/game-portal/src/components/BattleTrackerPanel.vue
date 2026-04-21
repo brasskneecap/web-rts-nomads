@@ -18,8 +18,9 @@
   amber palette.
 -->
 <template>
-  <div v-if="ui.debugBattleTracker" class="battle-tracker" :class="{ collapsed }">
-    <header class="bt-head">
+  <div v-if="ui.debugBattleTracker" class="battle-tracker" :class="{ collapsed, dragging: drag.dragging.value }" :style="drag.style.value">
+    <header class="bt-head" :class="{ 'bt-head--dragging': drag.dragging.value }" v-bind="drag.handleBindings" aria-label="Drag to move">
+      <span class="bt-grip" aria-hidden="true">⋮⋮</span>
       <button
         class="bt-toggle"
         type="button"
@@ -132,12 +133,14 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 import type { BattleTrackerSnapshot } from '@/game/network/protocol'
+import { useDraggablePanel } from '@/composables/useDraggablePanel'
 
 const props = defineProps<{
   ui: GameUiSnapshot
 }>()
 
 const collapsed = ref(false)
+const drag = useDraggablePanel('battle-tracker')
 const reviewOpen = ref(false)
 const expandedIds = ref<Set<string>>(new Set())
 
@@ -303,6 +306,30 @@ const elapsedText = computed(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.bt-head--dragging {
+  cursor: grabbing;
+}
+
+.bt-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 18px;
+  color: rgba(200, 164, 106, 0.6);
+  font-size: 12px;
+  letter-spacing: -2px;
+  line-height: 1;
+  transform: rotate(90deg);
+}
+
+.battle-tracker.dragging {
+  opacity: 0.92;
 }
 
 .bt-toggle {

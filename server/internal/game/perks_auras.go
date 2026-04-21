@@ -18,6 +18,12 @@ import "math"
 type guardianAuraValue struct {
 	FlatArmor    int     // total flat armor bonus from the strongest aura (per dimension)
 	PercentArmor float64 // total percent armor bonus (e.g. 0.20 = +20% of base armor)
+	// Sources is the count of distinct guardian_aura emitters covering this
+	// recipient — used by activeBuffIconsLocked to render a stack-count
+	// badge when multiple overlapping auras stack on the same ally. The
+	// mechanical armor bonus still uses max-per-dimension (not a sum), so
+	// this count is purely a HUD signal.
+	Sources int
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,7 +162,7 @@ func (s *GameState) rebuildGuardianAuraCacheLocked() {
 			if dx*dx+dy*dy > effRSq {
 				continue
 			}
-			// max per dimension independently.
+			// max per dimension independently; count sources for the HUD.
 			existing := s.guardianAuraCache[u.ID]
 			flat := int(sources[i].effFlat)
 			if flat > existing.FlatArmor {
@@ -165,6 +171,7 @@ func (s *GameState) rebuildGuardianAuraCacheLocked() {
 			if sources[i].effPercent > existing.PercentArmor {
 				existing.PercentArmor = sources[i].effPercent
 			}
+			existing.Sources++
 			s.guardianAuraCache[u.ID] = existing
 		}
 	}

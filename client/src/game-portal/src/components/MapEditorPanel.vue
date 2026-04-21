@@ -121,6 +121,15 @@
             <span>{{ model.obstacles.length }} obstacles</span>
             <span>{{ model.buildings.length }} buildings</span>
           </div>
+
+          <button
+            type="button"
+            class="clear-everything"
+            :disabled="!hasPaintedContent"
+            @click="clearEverything"
+          >
+            Clear Everything
+          </button>
         </div>
       </section>
 
@@ -410,6 +419,8 @@ import {
   onSheetReady,
 } from '@/game/rendering/terrainTileset'
 import { getBuildingSprite } from '@/game/rendering/buildingSprites'
+import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
+import { OBSTACLE_DEF_MAP } from '@/game/maps/obstacleDefs'
 import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
 
 const model = defineModel<MapConfig>({ required: true })
@@ -484,6 +495,12 @@ const exportedCatalogFile = computed<MapCatalogFile>(() => ({
 }))
 
 const serializedMap = computed(() => JSON.stringify(exportedCatalogFile.value, null, 2))
+const hasPaintedContent = computed(() =>
+  model.value.terrain.length > 0 ||
+  (model.value.tiles?.length ?? 0) > 0 ||
+  model.value.obstacles.length > 0 ||
+  model.value.buildings.length > 0,
+)
 const activeBrushMode = computed(() =>
   isControlHeld.value ? 'erase' : brushMode.value,
 )
@@ -551,6 +568,23 @@ function applyPreset(cols: number, rows: number) {
 
 function clearMap() {
   model.value = createEditorMapConfig(model.value.gridCols, model.value.gridRows)
+}
+
+// Wipes all painted content (terrain, custom tiles, obstacles, buildings)
+// while preserving setup metadata (id / name / description / grid size /
+// default ground / wave config). Confirms before acting because the change
+// isn't undoable.
+function clearEverything() {
+  if (!window.confirm('Clear all terrain, tiles, obstacles, and buildings? This cannot be undone.')) return
+  model.value = createEditorMapConfig(model.value.gridCols, model.value.gridRows, {
+    id: model.value.id,
+    name: model.value.name,
+    description: model.value.description,
+    cellSize: model.value.cellSize,
+    defaultTile: model.value.defaultTile,
+    waveConfig: model.value.waveConfig,
+  })
+  selectedSpawnTownhallId.value = ''
 }
 
 function addSpawnPointLoadoutEntry() {
@@ -1022,26 +1056,43 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
   }
 
   for (const tile of model.value.obstacles) {
-    const worldX = tile.x * cellSize
-    const worldY = tile.y * cellSize
-    const inset = cellSize * 0.14
+    const gridW = tile.width ?? 1
+    const gridH = tile.height ?? 1
+    const footprintX = tile.x * cellSize
+    const footprintY = tile.y * cellSize
 
-    ctx.fillStyle = getObstacleColor(tile.obstacle)
-    ctx.fillRect(
-      worldX + inset,
-      worldY + inset,
-      cellSize - inset * 2,
-      cellSize - inset * 2,
-    )
+    // Render bounds can extend beyond the footprint (e.g. tree canopies
+    // reaching into the row above). Falls back to footprint when the
+    // obstacle def has no render override.
+    const renderDef = OBSTACLE_DEF_MAP.get(tile.obstacle)?.render
+    const renderX = footprintX + (renderDef?.offsetX ?? 0) * cellSize
+    const renderY = footprintY + (renderDef?.offsetY ?? 0) * cellSize
+    const renderW = (renderDef?.width ?? gridW) * cellSize
+    const renderH = (renderDef?.height ?? gridH) * cellSize
 
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)'
-    ctx.lineWidth = 2 / camera.zoom
-    ctx.strokeRect(
-      worldX + inset,
-      worldY + inset,
-      cellSize - inset * 2,
-      cellSize - inset * 2,
-    )
+    const sprite = getObstacleSprite(tile.obstacle)
+    if (sprite) {
+      ctx.imageSmoothingEnabled = false
+      ctx.drawImage(sprite, renderX, renderY, renderW, renderH)
+    } else {
+      const inset = cellSize * 0.14
+      ctx.fillStyle = getObstacleColor(tile.obstacle)
+      ctx.fillRect(
+        renderX + inset,
+        renderY + inset,
+        renderW - inset * 2,
+        renderH - inset * 2,
+      )
+
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)'
+      ctx.lineWidth = 2 / camera.zoom
+      ctx.strokeRect(
+        renderX + inset,
+        renderY + inset,
+        renderW - inset * 2,
+        renderH - inset * 2,
+      )
+    }
   }
 
   for (const building of model.value.buildings) {
@@ -1487,6 +1538,29 @@ onBeforeUnmount(() => {
   padding: 4px 8px;
   border-radius: 999px;
   background: rgba(30, 41, 59, 0.72);
+}
+
+.clear-everything {
+  margin-top: 4px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.55);
+  color: #fecaca;
+  padding: 7px 9px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.clear-everything:hover:not(:disabled) {
+  background: rgba(153, 27, 27, 0.75);
+  border-color: rgba(252, 165, 165, 0.55);
+  color: #fff1f2;
+}
+
+.clear-everything:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .hint-list {

@@ -9,8 +9,9 @@
   on production gameplay.
 -->
 <template>
-  <div v-if="debugEnabled" class="debug-spawn" :class="{ collapsed }">
-    <header class="ds-head">
+  <div v-if="debugEnabled" class="debug-spawn" :class="{ collapsed, dragging: drag.dragging.value }" :style="drag.style.value">
+    <header class="ds-head" :class="{ 'ds-head--dragging': drag.dragging.value }" v-bind="drag.handleBindings" aria-label="Drag to move">
+      <span class="ds-grip" aria-hidden="true">⋮⋮</span>
       <button
         class="ds-toggle"
         type="button"
@@ -105,6 +106,9 @@ import type { GameUiSnapshot } from '@/game/core/GameClient'
 import type { DebugSpawnConfig } from '@/game/core/GameState'
 import { UNIT_DEFS } from '@/game/maps/unitDefs'
 import { PERK_DEFS, type PerkDef } from '@/game/maps/perkDefs'
+import { useDraggablePanel } from '@/composables/useDraggablePanel'
+
+const drag = useDraggablePanel('debug-spawn')
 
 const props = defineProps<{
   ui: GameUiSnapshot
@@ -255,6 +259,30 @@ function cancelPlacement() {
   gap: 6px;
   padding: 8px 10px;
   border-bottom: 1px solid rgba(200, 164, 106, 0.2);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.ds-head--dragging {
+  cursor: grabbing;
+}
+
+.ds-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 18px;
+  color: rgba(200, 164, 106, 0.6);
+  font-size: 12px;
+  letter-spacing: -2px;
+  line-height: 1;
+  transform: rotate(90deg);
+}
+
+.debug-spawn.dragging {
+  opacity: 0.92;
 }
 
 .ds-toggle {

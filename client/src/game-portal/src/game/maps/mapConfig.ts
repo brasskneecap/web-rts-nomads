@@ -10,6 +10,8 @@ import type {
   TileInstance,
 } from '../network/protocol'
 import { BUILDING_DEF_MAP } from './buildingDefs'
+import { OBSTACLE_DEF_MAP } from './obstacleDefs'
+import type { ObstacleCapability, ResourceType } from '../network/protocol'
 
 export const DEFAULT_CELL_SIZE = 64
 export const DEFAULT_GRASS_COLOR = '#365b2c'
@@ -124,13 +126,44 @@ export function setObstacleTile(
   const nextObstacles = map.obstacles.filter((tile) => tile.x !== x || tile.y !== y)
 
   if (obstacle) {
-    nextObstacles.push({ x, y, obstacle })
+    nextObstacles.push(createObstacleTile(obstacle, x, y))
   }
 
   return sanitizeMapConfig({
     ...map,
     obstacles: nextObstacles,
   })
+}
+
+// Catalog-driven obstacle construction: pulls footprint, capabilities, and
+// resource values from the active obstacle def so the editor's output matches
+// what the server would apply at runtime. Mirrors createBuildingTile.
+function createObstacleTile(obstacle: ObstacleType, x: number, y: number): ObstacleTile {
+  const def = OBSTACLE_DEF_MAP.get(obstacle)
+  const width = def?.width ?? 1
+  const height = def?.height ?? 1
+  const maxHp = def?.maxHp ?? 0
+  const capabilities = def?.capabilities
+    ? ([...def.capabilities] as ObstacleCapability[])
+    : undefined
+  const resourceFields =
+    def?.resourceType && def.resourceAmount !== undefined
+      ? {
+          resourceType: def.resourceType as ResourceType,
+          resourceAmount: def.resourceAmount,
+        }
+      : {}
+
+  return {
+    x,
+    y,
+    obstacle,
+    width,
+    height,
+    ...(capabilities && capabilities.length > 0 ? { capabilities } : {}),
+    ...resourceFields,
+    ...(maxHp > 0 ? { maxHp, hp: maxHp } : {}),
+  }
 }
 
 export function setBuildingTile(
