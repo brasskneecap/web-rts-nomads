@@ -315,7 +315,12 @@ type TrapSnapshot struct {
 	// TriggerRadius is the inner zone that causes detonation. Only populated
 	// for trap types with a separate trigger/effect radius (currently just
 	// explosive_trap); 0/omitted for the others, where Radius alone suffices.
-	TriggerRadius    float64 `json:"triggerRadius,omitempty"`
+	TriggerRadius float64 `json:"triggerRadius,omitempty"`
+	// Variant is an optional visual tag the client uses to pick a
+	// non-default animation for this trap (e.g. "electrified" caltrops under
+	// ascendant_infusion). Empty/omitted means "use the trap's default
+	// animation". Values are coordinated between server and client assets.
+	Variant          string  `json:"variant,omitempty"`
 	Type             string  `json:"type"`
 	RemainingSeconds float64 `json:"remainingSeconds"`
 	Triggered        bool    `json:"triggered,omitempty"`

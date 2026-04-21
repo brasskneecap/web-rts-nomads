@@ -1370,6 +1370,27 @@ func trapIDString(id int) string {
 	return "trap-" + string(digits[pos:])
 }
 
+// trapVisualVariant returns the visual-variant tag sent to the client for
+// this trap, or "" when the default animation should be used. Variants let
+// the client swap to a perk-specific animation (e.g. electrified caltrops
+// under ascendant_infusion) without hard-coding trap-perk knowledge into
+// the renderer — the server says which variant applies, the client maps
+// that tag to a named animation in the object's sprites.json.
+//
+// Extend the switch as more trap/perk variants gain dedicated visuals.
+func trapVisualVariant(trap *Trap) string {
+	if trap == nil {
+		return ""
+	}
+	switch trap.TrapType {
+	case "caltrops":
+		if trap.InfusionElectrifiedBonusDamage > 0 {
+			return "electrified"
+		}
+	}
+	return ""
+}
+
 // tickTrapPlacementLocked is the per-tick auto-placement driver for Trapper
 // perks. It decays TrapPlaceCooldownRemaining and plants a new trap whenever
 // the cooldown reaches 0 on a living unit.

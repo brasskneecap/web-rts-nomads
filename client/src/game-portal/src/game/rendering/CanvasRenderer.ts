@@ -95,6 +95,10 @@ export class CanvasRenderer {
     /** Inner trigger radius (explosive_trap). Falls back to `radius` when
      *  absent — for trap types whose single radius is the active zone. */
     triggerRadius: number | undefined
+    /** Visual-variant tag from the server (e.g. "electrified"). When set and
+     *  the sprite set defines a matching animation, it's played instead of
+     *  idle. Used for perk-driven visual swaps like ascendant_infusion. */
+    variant: string | undefined
     spriteKey: string
   }>()
   // Per-trap-type frame timings.
@@ -691,6 +695,7 @@ export class CanvasRenderer {
           y: trap.y,
           radius: trap.radius,
           triggerRadius: trap.triggerRadius,
+          variant: trap.variant,
           spriteKey,
         })
       } else {
@@ -698,6 +703,7 @@ export class CanvasRenderer {
         state.y = trap.y
         state.radius = trap.radius
         state.triggerRadius = trap.triggerRadius
+        state.variant = trap.variant
         if (shouldExplode && state.animation !== 'exploding') {
           state.animation = 'exploding'
           state.startedAt = now
@@ -758,7 +764,7 @@ export class CanvasRenderer {
   // trap left the snapshot, or exploding animation finished).
   private renderTrapSpriteState(
     id: string,
-    state: { animation: 'idle' | 'exploding'; startedAt: number; x: number; y: number; radius: number; triggerRadius: number | undefined; spriteKey: string },
+    state: { animation: 'idle' | 'exploding'; startedAt: number; x: number; y: number; radius: number; triggerRadius: number | undefined; variant: string | undefined; spriteKey: string },
     stillInSnapshot: boolean,
     now: number,
   ): boolean {
@@ -784,7 +790,11 @@ export class CanvasRenderer {
     }
 
     if (!stillInSnapshot) return true
-    const anim = spriteSet.animations.get('idle')
+    // Variant wins over idle when present and defined for this sprite set —
+    // lets perk-driven visuals (electrified caltrops, etc.) swap in without
+    // renderer-side branching on perk ids.
+    const variantAnim = state.variant ? spriteSet.animations.get(state.variant) : undefined
+    const anim = variantAnim ?? spriteSet.animations.get('idle')
     if (!anim) return true
     const elapsed = now - state.startedAt
     const frameMs = anim.frameDurationMs ?? this.TRAP_IDLE_FRAME_MS
@@ -867,6 +877,8 @@ export class CanvasRenderer {
         return getObjectSpriteSet('marker_trap') ? 'marker_trap' : ''
       case 'fire_pit':
         return getObjectSpriteSet('fire_pit') ? 'fire_pit' : ''
+      case 'caltrops':
+        return getObjectSpriteSet('caltrops') ? 'caltrops' : ''
       default:
         return ''
     }

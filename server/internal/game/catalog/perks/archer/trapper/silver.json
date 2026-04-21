@@ -42,8 +42,8 @@
     "description": "Caltrops: enemies take ramping bonus damage the longer they stay in the zone (+2 DPS per second, up to +12 DPS). Resets when they leave.",
     "requiresPerk": "caltrops",
     "config": {
-      "rampPerSecond": 2,
-      "maxBonusDamagePerSecond": 12
+      "rampPerSecond": 4,
+      "maxBonusDamagePerSecond": 24
     }
   },
   {

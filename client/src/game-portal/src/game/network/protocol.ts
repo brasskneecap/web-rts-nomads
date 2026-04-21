@@ -354,6 +354,10 @@ export type TrapSnapshot = {
    *  separate trigger/effect radius (currently just explosive_trap); absent
    *  for the others, where `radius` alone is the full active area. */
   triggerRadius?: number
+  /** Optional visual-variant tag — renderer prefers an animation with this
+   *  name over `idle` when present (e.g. "electrified" for ascendant-infused
+   *  caltrops). Absent = render the trap's default animation. */
+  variant?: string
   type: 'caltrops' | 'fire_pit' | 'explosive_trap' | 'marker_trap'
   remainingSeconds: number
   /**

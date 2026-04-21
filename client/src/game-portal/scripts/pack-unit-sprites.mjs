@@ -259,15 +259,48 @@ async function packFrameStrip(objectDir, outName, framePaths) {
   }
 }
 
-// Packs a single pre-made horizontal strip (sprite.png at the object root)
-// into the same layout a PixelLab export would produce after packing. Used
-// for simple objects that don't need the full rotations/animations tree —
-// just a looping idle strip.
+// Reassembles a 2D grid of frames into a single horizontal strip — the format
+// the runtime loader expects. Used by packSimpleObject when a source PNG has
+// more than one row of frames (common for tools that export 4×4 grids).
+function unrollGridToStrip(grid, frameW, frameH, cols, rows) {
+  const totalFrames = cols * rows
+  const strip = new PNG({ width: frameW * totalFrames, height: frameH })
+  for (let i = 0; i < totalFrames; i++) {
+    const gridRow = Math.floor(i / cols)
+    const gridCol = i % cols
+    for (let y = 0; y < frameH; y++) {
+      const srcY = gridRow * frameH + y
+      const srcStart = (srcY * grid.width + gridCol * frameW) * 4
+      const dstStart = (y * strip.width + i * frameW) * 4
+      grid.data.copy(strip.data, dstStart, srcStart, srcStart + frameW * 4)
+    }
+  }
+  return strip
+}
+
+// Strips an object-key prefix from a filename stem so animation keys stay
+// short: "caltrops-electrified" in the caltrops/ folder becomes "electrified".
+function deriveAnimKey(stem, objectKey) {
+  const prefix = objectKey + '-'
+  if (stem.startsWith(prefix)) return stem.slice(prefix.length)
+  return stem
+}
+
+// Packs the pre-made sheets at an object root into per-animation horizontal
+// strips. Used for simple objects that don't need the full PixelLab
+// rotations/animations tree.
 //
-// Convention: sprite.png is N × H pixels, where H is the frame height AND
-// frame width (square frames), giving floor(N/H) frames. The first frame's
-// height defines the frame size.
+// Convention:
+//   - sprite.png (required) — idle animation; its height defines the frame
+//     size used for every other sheet in the folder. Typically a horizontal
+//     strip (N × H), but a single H × H frame is fine (frameCount=1).
+//   - <name>.png            — additional animation keyed by <name>; stripped
+//     of the "<objectKey>-" prefix when present. Can be a horizontal strip
+//     OR a 2D grid (any cols × rows of the canonical frame size); grids are
+//     unrolled at pack time to a uniform horizontal strip so the runtime
+//     loader never has to know the difference.
 async function packSimpleObject(objectDir) {
+  const objectKey = path.basename(objectDir)
   const spritePath = path.join(objectDir, 'sprite.png')
   try {
     await fs.access(spritePath)
@@ -275,30 +308,64 @@ async function packSimpleObject(objectDir) {
     return null
   }
 
-  const png = await readPng(spritePath)
-  const frameHeight = png.height
-  const frameWidth = frameHeight
-  const frameCount = Math.max(1, Math.floor(png.width / frameHeight))
+  // sprite.png's height is the canonical frame size. All other sheets in
+  // this folder must be an integer multiple of it on both axes.
+  const spritePng = await readPng(spritePath)
+  const frameSize = spritePng.height
 
-  // Copy the source strip into packed/idle.png so the runtime loader's
-  // packed/*.png glob picks it up with no special-casing. Regenerated on
-  // every pack run — safe to edit sprite.png and re-pack.
   const outDir = path.join(objectDir, 'packed')
   await fs.mkdir(outDir, { recursive: true })
-  const outPath = path.join(outDir, 'idle.png')
-  await fs.copyFile(spritePath, outPath)
+
+  // Clear out stale packed outputs so renamed/removed source PNGs don't
+  // leave orphans behind.
+  try {
+    for (const entry of await fs.readdir(outDir)) {
+      if (entry.endsWith('.png')) {
+        await fs.unlink(path.join(outDir, entry))
+      }
+    }
+  } catch { /* outDir just created — nothing to clean */ }
+
+  const animations = {}
+
+  const entries = await fs.readdir(objectDir, { withFileTypes: true })
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.png')) continue
+
+    const stem = entry.name.slice(0, -4)
+    const animKey = entry.name === 'sprite.png'
+      ? 'idle'
+      : deriveAnimKey(stem, objectKey)
+
+    const png = entry.name === 'sprite.png'
+      ? spritePng
+      : await readPng(path.join(objectDir, entry.name))
+
+    const cols = Math.max(1, Math.floor(png.width / frameSize))
+    const rows = Math.max(1, Math.floor(png.height / frameSize))
+    const frameCount = cols * rows
+
+    const strip = rows > 1
+      ? unrollGridToStrip(png, frameSize, frameSize, cols, rows)
+      : png
+
+    const outName = `${animKey}.png`
+    await fs.writeFile(path.join(outDir, outName), PNG.sync.write(strip))
+
+    animations[animKey] = {
+      frameCount,
+      frameWidth: frameSize,
+      frameHeight: frameSize,
+      sheet: `packed/${outName}`,
+      loop: true,
+    }
+  }
+
+  if (!animations.idle) return null
 
   return {
-    size: { width: frameWidth, height: frameHeight },
-    animations: {
-      idle: {
-        frameCount,
-        frameWidth,
-        frameHeight,
-        sheet: 'packed/idle.png',
-        loop: true,
-      },
-    },
+    size: { width: frameSize, height: frameSize },
+    animations,
   }
 }
 
