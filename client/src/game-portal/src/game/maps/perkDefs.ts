@@ -14,6 +14,28 @@ export type PerkDef = {
   displayName: string
   description?: string
   /**
+   * Client-interpolated tooltip template. Tokens in curly braces are replaced
+   * with live values from the perk's config (or the unit's effectiveTrap payload
+   * for trapper bronze perks). Supported token forms:
+   *   {key}       — raw number; integer if whole, else 1 decimal
+   *   {key%}      — value×100 as integer percent (0.2 → "20%")
+   *   {key+%}     — delta percent: (value−1)×100, signed (1.25 → "+25%")
+   *   {key:N}     — force N decimal places
+   *   {trap.key}  — read from unit.effectiveTrap (trapper bronze only)
+   * When absent, the formatter falls back to description.
+   */
+  tooltipTemplate?: string
+  /**
+   * Per-trap-type templates for trapper perks whose effect depends on which
+   * Bronze trap perk the unit owns (e.g. ascendant_infusion, overload_protocol).
+   * Keys are Bronze trap perk ids ("caltrops", "fire_pit", "explosive_trap",
+   * "marker_trap"); the formatter picks the entry matching
+   * unit.effectiveTrap?.perkId. When present it takes precedence over
+   * tooltipTemplate for the matching trap; falls back to tooltipTemplate (or
+   * description) when no match.
+   */
+  tooltipTemplateByTrap?: Record<string, string>
+  /**
    * Action-icon ID used to render this perk's icon in the HUD.
    * Matches an entry in action-icons.json (e.g. "perk-bloodlust").
    * Edit the SVG path for this ID in the action-icon editor to customise the artwork.
@@ -27,6 +49,12 @@ export type PerkDef = {
   rank?: string
   /** Perk-specific tuning values. Keys are documented in perk-defs.json. */
   config: Record<string, number>
+  /**
+   * Per-rank config overrides keyed by rank name ("bronze" / "silver" / "gold").
+   * Values shadow the matching key in config; all other keys fall through to base.
+   * Mirrors PerkDef.ConfigByRank on the server.
+   */
+  configByRank?: Record<string, Record<string, number>>
 }
 
 export let PERK_DEFS: PerkDef[] = []

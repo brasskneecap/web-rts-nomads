@@ -308,6 +308,28 @@ export type UnitSnapshot = {
   targetX?: number
   targetY?: number
   moving: boolean
+  /**
+   * Live-compounded trap stats for archer/trapper units. Only present when the
+   * unit is a trapper archetype that owns at least one trap bronze perk.
+   * Mirrors EffectiveTrapSnapshot on the server.
+   */
+  effectiveTrap?: {
+    perkId: string
+    durationSeconds?: number
+    radius?: number
+    triggerRadius?: number
+    placeInterval?: number
+    damagePerSecond?: number
+    burstDamage?: number
+    slowMultiplier?: number
+    markMultiplier?: number
+    markDuration?: number
+    barbedFieldRampPerSec?: number
+    barbedFieldMaxBonusDPS?: number
+    exposedWeakenedMultiplier?: number
+    lastingFlamesBurnDuration?: number
+    aftershockDelaySeconds?: number
+  }
 }
 
 export type WelcomeMessage = {

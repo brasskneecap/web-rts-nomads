@@ -62,6 +62,23 @@ type PerkDef struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
 	Description string `json:"description,omitempty"`
+	// TooltipTemplate is a client-interpolated string for the tooltip. Keys in
+	// curly braces are replaced with live values from the perk's config (or
+	// effectiveTrap payload for trapper bronze perks). Supported token forms:
+	//   {key}      — raw number; integer if whole, else 1 decimal
+	//   {key%}     — value×100 as integer percent (0.2 → "20%")
+	//   {key+%}    — delta percent: (value−1)×100, signed (1.25 → "+25%")
+	//   {key:N}    — force N decimal places
+	//   {trap.key} — read from effectiveTrap payload (trapper bronze only)
+	// Omitted for perks where description alone is sufficient.
+	TooltipTemplate string `json:"tooltipTemplate,omitempty"`
+	// TooltipTemplateByTrap lets trapper perks that describe multiple trap
+	// variants (e.g. ascendant_infusion, overload_protocol) show only the branch
+	// matching the unit's owned Bronze trap perk. Keys are bronze trap perk ids
+	// ("caltrops", "fire_pit", "explosive_trap", "marker_trap"); the client
+	// picks the entry matching unit.effectiveTrap.perkId. Takes precedence over
+	// TooltipTemplate when both are present and the unit has an effective trap.
+	TooltipTemplateByTrap map[string]string `json:"tooltipTemplateByTrap,omitempty"`
 	// Icon is the action-icon ID used to render this perk in the HUD.
 	// Matches an entry in catalog/action-icons.json ("perk-<name>").
 	Icon         string             `json:"icon,omitempty"`
@@ -116,12 +133,14 @@ var perkDefsByID map[string]*PerkDef
 // scalar tuning keys (e.g. "radius": 60) from per-rank override blocks
 // (e.g. "silver": { "radius": 80 }). See splitRankConfig.
 type perkEntryJSON struct {
-	ID           string                     `json:"id"`
-	DisplayName  string                     `json:"displayName"`
-	Description  string                     `json:"description,omitempty"`
-	Icon         string                     `json:"icon,omitempty"`
-	RequiresPerk string                     `json:"requiresPerk,omitempty"`
-	Config       map[string]json.RawMessage `json:"config"`
+	ID                    string                     `json:"id"`
+	DisplayName           string                     `json:"displayName"`
+	Description           string                     `json:"description,omitempty"`
+	TooltipTemplate       string                     `json:"tooltipTemplate,omitempty"`
+	TooltipTemplateByTrap map[string]string          `json:"tooltipTemplateByTrap,omitempty"`
+	Icon                  string                     `json:"icon,omitempty"`
+	RequiresPerk          string                     `json:"requiresPerk,omitempty"`
+	Config                map[string]json.RawMessage `json:"config"`
 }
 
 // perkRankOverrideKeys enumerates the JSON keys inside `config` that are
@@ -207,16 +226,18 @@ func init() {
 				panic(p + " [" + entry.ID + "].config: " + err.Error())
 			}
 			def := &PerkDef{
-				ID:           entry.ID,
-				DisplayName:  entry.DisplayName,
-				Description:  entry.Description,
-				Icon:         entry.Icon,
-				UnitType:     unitType,
-				Path:         pathName,
-				Rank:         rank,
-				RequiresPerk: entry.RequiresPerk,
-				Config:       base,
-				ConfigByRank: overrides,
+				ID:                    entry.ID,
+				DisplayName:           entry.DisplayName,
+				Description:           entry.Description,
+				TooltipTemplate:       entry.TooltipTemplate,
+				TooltipTemplateByTrap: entry.TooltipTemplateByTrap,
+				Icon:                  entry.Icon,
+				UnitType:              unitType,
+				Path:                  pathName,
+				Rank:                  rank,
+				RequiresPerk:          entry.RequiresPerk,
+				Config:                base,
+				ConfigByRank:          overrides,
 			}
 			perkDefsByID[def.ID] = def
 		}

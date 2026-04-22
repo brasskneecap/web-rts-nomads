@@ -1,5 +1,7 @@
 package game
 
+import "webrts/server/pkg/protocol"
+
 // ═════════════════════════════════════════════════════════════════════════════
 // TRAP MODIFIER PIPELINE
 //
@@ -303,6 +305,41 @@ type EffectiveTrapStats struct {
 	AftershockDelaySeconds    float64 // explosive_trap + explosive_chain
 }
 
+// EffectiveTrapSnapshotLocked computes the live compounded trap stats for a
+// unit's bronze trap perk and returns them as a protocol.EffectiveTrapSnapshot
+// ready to embed in the unit's tick snapshot. Returns nil if the unit owns no
+// bronze trap perk.
+//
+// The computation mirrors DebugEffectiveTrapStats exactly; the only difference
+// is that it returns a *protocol.EffectiveTrapSnapshot (wire type) rather than
+// the internal EffectiveTrapStats (test type), and BurstDamage is rounded to int.
+//
+// Must be called under s.mu read or write lock.
+func (s *GameState) EffectiveTrapSnapshotLocked(unit *Unit) *protocol.EffectiveTrapSnapshot {
+	stats, ok := s.DebugEffectiveTrapStats(unit)
+	if !ok {
+		return nil
+	}
+	snap := &protocol.EffectiveTrapSnapshot{
+		PerkID:                    stats.PerkID,
+		DurationSeconds:           stats.DurationSeconds,
+		Radius:                    stats.Radius,
+		TriggerRadius:             stats.TriggerRadius,
+		PlaceInterval:             stats.PlaceInterval,
+		DamagePerSecond:           stats.DamagePerSecond,
+		BurstDamage:               stats.BurstDamage,
+		SlowMultiplier:            stats.SlowMultiplier,
+		MarkMultiplier:            stats.MarkMultiplier,
+		MarkDuration:              stats.MarkDuration,
+		BarbedFieldRampPerSec:     stats.BarbedFieldRampPerSec,
+		BarbedFieldMaxBonusDPS:    stats.BarbedFieldMaxBonusDPS,
+		ExposedWeakenedMultiplier: stats.ExposedWeakenedMultiplier,
+		LastingFlamesBurnDuration: stats.LastingFlamesBurnDuration,
+		AftershockDelaySeconds:    stats.AftershockDelaySeconds,
+	}
+	return snap
+}
+
 // DebugEffectiveTrapStats computes the effective planted-trap stats for the
 // unit's currently owned Bronze trap perk (if any). Returns zero-value and
 // false if the unit owns no trap perk.
@@ -327,35 +364,39 @@ func (s *GameState) DebugEffectiveTrapStats(unit *Unit) (EffectiveTrapStats, boo
 	}
 	m := s.trapModifiersForUnitLocked(unit)
 	specific := s.trapSpecificModifiersForUnitLocked(unit, def.ID)
+	// Read rank-merged config so tooltip numbers match what the trap code
+	// (trap.go) actually uses at plant time — fire_pit's silver/gold overrides
+	// bump damagePerSecond and radius, and those must surface here too.
+	cfg := def.ConfigForRank(unit.Rank)
 	out := EffectiveTrapStats{
 		PerkID:          def.ID,
-		DurationSeconds: def.Config["durationSeconds"] * m.DurationMultiplier,
-		PlaceInterval:   def.Config["placeIntervalSeconds"] * m.CooldownMultiplier,
+		DurationSeconds: cfg["durationSeconds"] * m.DurationMultiplier,
+		PlaceInterval:   cfg["placeIntervalSeconds"] * m.CooldownMultiplier,
 	}
 	switch def.ID {
 	case "caltrops":
-		out.Radius = def.Config["radius"] * m.RadiusMultiplier
-		out.DamagePerSecond = def.Config["damagePerSecond"] * m.EffectMultiplier
-		out.SlowMultiplier = amplifySlow(def.Config["slowMultiplier"], m.EffectMultiplier)
+		out.Radius = cfg["radius"] * m.RadiusMultiplier
+		out.DamagePerSecond = cfg["damagePerSecond"] * m.EffectMultiplier
+		out.SlowMultiplier = amplifySlow(cfg["slowMultiplier"], m.EffectMultiplier)
 		out.BarbedFieldRampPerSec = specific.BarbedFieldRampPerSec * m.EffectMultiplier
 		out.BarbedFieldMaxBonusDPS = specific.BarbedFieldMaxBonusDPS * m.EffectMultiplier
 	case "fire_pit":
-		out.Radius = def.Config["radius"] * m.RadiusMultiplier
-		out.DamagePerSecond = def.Config["damagePerSecond"] * m.EffectMultiplier
+		out.Radius = cfg["radius"] * m.RadiusMultiplier
+		out.DamagePerSecond = cfg["damagePerSecond"] * m.EffectMultiplier
 		// Burn DPS in lasting_flames mode == fire pit's DamagePerSecond, so
 		// it's already reflected in out.DamagePerSecond. Only the duration
 		// needs its own debug field.
 		out.LastingFlamesBurnDuration = specific.LastingFlamesBurnDuration * m.DurationMultiplier
 	case "explosive_trap":
-		out.Radius = def.Config["explosionRadius"] * m.RadiusMultiplier
-		out.TriggerRadius = def.Config["triggerRadius"] * m.RadiusMultiplier
-		base := int(def.Config["burstDamage"])
+		out.Radius = cfg["explosionRadius"] * m.RadiusMultiplier
+		out.TriggerRadius = cfg["triggerRadius"] * m.RadiusMultiplier
+		base := int(cfg["burstDamage"])
 		out.BurstDamage = int(float64(base)*m.EffectMultiplier + 0.5)
 		out.AftershockDelaySeconds = specific.AftershockDelaySeconds
 	case "marker_trap":
-		out.Radius = def.Config["radius"] * m.RadiusMultiplier
-		out.MarkMultiplier = def.Config["markMultiplier"] * m.EffectMultiplier
-		out.MarkDuration = def.Config["markDuration"] * m.EffectMultiplier
+		out.Radius = cfg["radius"] * m.RadiusMultiplier
+		out.MarkMultiplier = cfg["markMultiplier"] * m.EffectMultiplier
+		out.MarkDuration = cfg["markDuration"] * m.EffectMultiplier
 		out.ExposedWeakenedMultiplier = specific.ExposedWeakenedMultiplier * m.EffectMultiplier
 	}
 	return out, true

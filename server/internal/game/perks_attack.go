@@ -414,6 +414,14 @@ func (s *GameState) onPerkAttackDamageAppliedLocked(attacker, target *Unit, dama
 				s.healUnitLocked(attacker, heal)
 			}
 
+		case "blood_engine":
+			// Gold blood_engine now carries its own lifesteal so it's useful
+			// without blood_sustain. Stacks additively when both are taken.
+			heal := int(math.Round(float64(damage) * def.Config["lifestealPercent"]))
+			if heal > 0 {
+				s.healUnitLocked(attacker, heal)
+			}
+
 		case "shield_bash":
 			// RNG-proc stun + slow on the target. onPerkAttackDamageAppliedLocked
 			// is only reached from the unit-vs-unit combat path (not building

@@ -4,6 +4,7 @@
     "displayName": "Guardian Aura",
     "icon": "perk-guardian-aura",
     "description": "Allies within radius gain bonus armor and percent armor. Nearby Vanguards with this perk form a formation, amplifying each other's auras.",
+    "tooltipTemplate": "Allies within {radius} units gain +{bonusArmor} armor and +{armorPercent%} percent armor. Each nearby Vanguard with this perk adds +{synergyRadiusBonus} radius, +{synergyArmorBonus} armor, and +{synergyArmorPercentBonus%} percent armor to your aura.",
     "config": {
       "radius": 150,
       "bonusArmor": 15,
@@ -18,6 +19,7 @@
     "displayName": "Pain Share",
     "icon": "perk-pain-share",
     "description": "When an ally nearby takes damage, a portion is redirected to this Vanguard first.",
+    "tooltipTemplate": "When an ally within {radius} units is hit, you absorb {redirectPercent%} of the incoming damage.",
     "config": {
       "radius": 150,
       "redirectPercent": 0.3
@@ -28,6 +30,7 @@
     "displayName": "Rallying Banner",
     "icon": "perk-rallying-banner",
     "description": "After holding position, plant a banner that grants allies bonus armor and attack speed. The banner persists after you move or fall. Replanting requires a cooldown.",
+    "tooltipTemplate": "After standing still for {stationaryThresholdSeconds:1}s, plant a banner ({bannerRadius} radius, lasts {bannerDurationSeconds:1}s) that grants nearby allies +{bannerArmorBonus} armor and +{bannerAttackSpeedBonus%} attack speed. Replant cooldown: {cooldownSeconds:1}s.",
     "config": {
       "stationaryThresholdSeconds": 3,
       "bannerDurationSeconds": 8,

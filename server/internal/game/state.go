@@ -437,6 +437,10 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			snapshot.TargetY = unit.TargetY
 		}
 
+		if unit.UnitType == "archer" && unit.ProgressionPath == "trapper" {
+			snapshot.EffectiveTrap = s.EffectiveTrapSnapshotLocked(unit)
+		}
+
 		units = append(units, snapshot)
 	}
 

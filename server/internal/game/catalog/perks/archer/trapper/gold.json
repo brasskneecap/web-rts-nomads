@@ -4,6 +4,13 @@
     "displayName": "Ascendant Infusion",
     "icon": "perk-ascendant-infusion",
     "description": "Your trap gains a secondary enhanced effect based on its type (Electrified Caltrops, Reactive Flames, Scatter Bomb, or Shared Pain).",
+    "tooltipTemplate": "Gains a trap-specific enhanced effect. Own a Bronze trap perk to see the specific bonus.",
+    "tooltipTemplateByTrap": {
+      "caltrops": "Electrified Caltrops: each tick deals +{electrifiedBonusDamagePerTick} bonus damage with a {electrifiedStunChance%} chance to stun for {electrifiedStunDuration:2}s (cooldown {electrifiedStunCooldownSeconds:1}s).",
+      "fire_pit": "Reactive Flames: expels a reactive burst ({reactiveFlamesRadius} radius, {reactiveFlamesDamage} damage) when triggered.",
+      "explosive_trap": "Scatter Bomb: spawns {scatterBombCount} child bombs within {scatterBombSpawnRadius} radius lasting {scatterBombChildDurationSeconds:1}s.",
+      "marker_trap": "Shared Pain: {sharedPainFraction%} of damage dealt to the marked enemy is also dealt to other marked enemies."
+    },
     "config": {
       "electrifiedBonusDamagePerTick": 5,
       "electrifiedStunChance": 0.25,
@@ -25,6 +32,7 @@
     "displayName": "Increased Deployment",
     "icon": "perk-increased-deployment",
     "description": "Each trap placement deploys additional traps at a short offset from the original.",
+    "tooltipTemplate": "Each placement also deploys {bonusTrapCount} additional traps offset by {bonusOffsetDistance} units.",
     "config": {
       "bonusTrapCount": 2,
       "bonusOffsetDistance": 50
@@ -35,6 +43,13 @@
     "displayName": "Overload Protocol",
     "icon": "perk-overload-protocol",
     "description": "Your traps gain a powerful final effect (Spike Surge, Flame Collapse, Cataclysm Blast, or Final Exposure).",
+    "tooltipTemplate": "Traps gain a powerful final effect on expiry. Own a Bronze trap perk to see the specific payoff.",
+    "tooltipTemplateByTrap": {
+      "caltrops": "Spike Surge: on expiry, bursts for {spikeSurgeBurstDamage} damage and slows to {spikeSurgeSlowMultiplier%} of base speed for {spikeSurgeSlowDurationSeconds:1}s.",
+      "fire_pit": "Flame Collapse: on expiry, collapses ({flameCollapseRadiusMultiplier+%} radius) for {flameCollapseDamage} damage and {flameCollapseBurnDamagePerSecond:1} burn DPS for {flameCollapseBurnDurationSeconds:1}s.",
+      "explosive_trap": "Cataclysm: second detonation at {cataclysmRadiusMultiplier+%} radius after {cataclysmSecondaryDelaySeconds:1}s.",
+      "marker_trap": "Final Exposure: on mark expiry, bursts for {finalExposureBurstDamage} damage in {finalExposureAoeRadius} radius."
+    },
     "config": {
       "spikeSurgeBurstDamage": 25,
       "spikeSurgeSlowMultiplier": 0.5,

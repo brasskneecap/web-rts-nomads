@@ -70,6 +70,39 @@ type ActiveEffectIcon struct {
 	Stacks int    `json:"stacks,omitempty"`
 }
 
+// EffectiveTrapSnapshot carries the live compounded trap stats for an
+// archer/trapper unit to the client on every tick. All multiplier effects
+// (extended_setup, wider_nets, amplified_effects, rapid_deployment, and the
+// trap-specific silver upgrades) are already baked in — clients can render
+// these numbers directly in the tooltip without any further math.
+//
+// Only populated for archer units on the trapper path that own a bronze trap
+// perk. Nil / absent for all other units.
+//
+// BurstDamage is an int on the wire (rounded server-side); all other numeric
+// fields are float64. Fields that are 0 for the current trap type are omitted
+// from JSON (omitempty) so the payload stays compact.
+type EffectiveTrapSnapshot struct {
+	// PerkID is the bronze trap perk id (e.g. "caltrops", "fire_pit").
+	PerkID string `json:"perkId"`
+	// Global modifiers (always present for the trap's own type):
+	DurationSeconds float64 `json:"durationSeconds,omitempty"`
+	Radius          float64 `json:"radius,omitempty"`
+	TriggerRadius   float64 `json:"triggerRadius,omitempty"`  // explosive_trap only
+	PlaceInterval   float64 `json:"placeInterval,omitempty"`
+	DamagePerSecond float64 `json:"damagePerSecond,omitempty"` // caltrops, fire_pit
+	BurstDamage     int     `json:"burstDamage,omitempty"`     // explosive_trap
+	SlowMultiplier  float64 `json:"slowMultiplier,omitempty"`  // caltrops
+	MarkMultiplier  float64 `json:"markMultiplier,omitempty"`  // marker_trap
+	MarkDuration    float64 `json:"markDuration,omitempty"`    // marker_trap
+	// Silver trap-specific upgrade stats (zero/omitted when the gating perk is absent):
+	BarbedFieldRampPerSec     float64 `json:"barbedFieldRampPerSec,omitempty"`     // caltrops + barbed_field
+	BarbedFieldMaxBonusDPS    float64 `json:"barbedFieldMaxBonusDPS,omitempty"`    // caltrops + barbed_field
+	ExposedWeakenedMultiplier float64 `json:"exposedWeakenedMultiplier,omitempty"` // marker_trap + exposed_weakness
+	LastingFlamesBurnDuration float64 `json:"lastingFlamesBurnDuration,omitempty"` // fire_pit + lasting_flames
+	AftershockDelaySeconds    float64 `json:"aftershockDelaySeconds,omitempty"`    // explosive_trap + explosive_chain
+}
+
 // PerkCooldownSnapshot advertises how long until a perk's next activation.
 // PerkID matches an entry in the unit's PerkIDs list. Remaining is the
 // live countdown in seconds; Total is the full cooldown duration (rank- and
@@ -266,6 +299,10 @@ type UnitSnapshot struct {
 	TargetX             float64  `json:"targetX,omitempty"`
 	TargetY             float64  `json:"targetY,omitempty"`
 	Moving              bool     `json:"moving"`
+	// EffectiveTrap carries the live compounded trap stats for the unit's current
+	// bronze trap perk. Only present for archer units on the trapper path that own
+	// a bronze trap perk; nil/omitted for all other units.
+	EffectiveTrap *EffectiveTrapSnapshot `json:"effectiveTrap,omitempty"`
 }
 
 type WelcomeMessage struct {

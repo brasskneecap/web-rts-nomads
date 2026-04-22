@@ -4,6 +4,7 @@
     "displayName": "Caltrops",
     "icon": "perk-caltrops",
     "description": "Periodically scatter caltrops at your feet during combat. Enemies in the zone are slowed and take light damage over time.",
+    "tooltipTemplate": "Scatter caltrops every {trap.placeInterval:1}s. Enemies in the zone ({trap.radius} radius) are slowed to {trap.slowMultiplier%} of their speed and take {trap.damagePerSecond:1} DPS for {trap.durationSeconds:1}s.",
     "config": {
       "placeIntervalSeconds": 6,
       "durationSeconds": 12,
@@ -17,18 +18,19 @@
     "displayName": "Fire Pit",
     "icon": "perk-fire-pit",
     "description": "Periodically drop a burning pit at your feet during combat. Enemies in the pit take damage over time.",
+    "tooltipTemplate": "Drop a fire pit every {trap.placeInterval:1}s. Enemies in the zone ({trap.radius} radius) take {trap.damagePerSecond:1} DPS for {trap.durationSeconds:1}s.",
     "config": {
       "placeIntervalSeconds": 8,
       "durationSeconds": 10,
       "radius": 55,
       "damagePerSecond": 8,
-      "silver": { 
+      "silver": {
         "damagePerSecond": 16,
-        "radius": 75 
+        "radius": 75
       },
-      "gold": { 
+      "gold": {
         "damagePerSecond": 24,
-        "radius": 95 
+        "radius": 95
       }
     }
   },
@@ -37,6 +39,7 @@
     "displayName": "Explosive Trap",
     "icon": "perk-explosive-trap",
     "description": "Periodically arm an explosive trap at your feet. The first enemy to step on it detonates a damaging blast.",
+    "tooltipTemplate": "Arm an explosive trap every {trap.placeInterval:1}s (lasts {trap.durationSeconds:1}s). Trigger radius {trap.triggerRadius}, blast radius {trap.radius}. Deals {trap.burstDamage} burst damage.",
     "config": {
       "placeIntervalSeconds": 10,
       "durationSeconds": 20,
@@ -50,6 +53,7 @@
     "displayName": "Marker Trap",
     "icon": "perk-marker-trap",
     "description": "Periodically place a marker zone at your feet. Enemies entering the zone are marked, taking bonus damage from all sources for several seconds.",
+    "tooltipTemplate": "Place a marker zone every {trap.placeInterval:1}s ({trap.radius} radius, lasts {trap.durationSeconds:1}s). Marked enemies take {trap.markMultiplier%} bonus damage from all sources for {trap.markDuration:1}s.",
     "config": {
       "placeIntervalSeconds": 7,
       "durationSeconds": 12,

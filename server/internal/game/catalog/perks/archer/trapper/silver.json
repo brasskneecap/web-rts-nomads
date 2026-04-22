@@ -4,6 +4,7 @@
     "displayName": "Extended Setup",
     "icon": "perk-extended-setup",
     "description": "Your traps persist 50% longer, covering more of the battlefield for longer.",
+    "tooltipTemplate": "All traps last {durationMultiplier+%} longer.",
     "config": { "durationMultiplier": 1.5 }
   },
   {
@@ -11,6 +12,7 @@
     "displayName": "Wider Nets",
     "icon": "perk-wider-nets",
     "description": "Your traps cover 50% more ground — larger zones, bigger explosions, wider triggers.",
+    "tooltipTemplate": "All trap radii increased by {radiusMultiplier+%}.",
     "config": { "radiusMultiplier": 1.5 }
   },
   {
@@ -18,6 +20,7 @@
     "displayName": "Rapid Deployment",
     "icon": "perk-rapid-deployment",
     "description": "Place traps 30% more often. Keep the battlefield saturated.",
+    "tooltipTemplate": "Trap placement interval cut to {cooldownMultiplier%} of base.",
     "config": { "cooldownMultiplier": 0.7 }
   },
   {
@@ -25,6 +28,7 @@
     "displayName": "Amplified Effects",
     "icon": "perk-amplified-effects",
     "description": "Your traps hit 35% harder — more damage, stronger slows, stronger marks.",
+    "tooltipTemplate": "Trap damage, slow strength, and mark bonus all increased by {effectMultiplier+%}.",
     "config": { "effectMultiplier": 1.35 }
   },
   {
@@ -32,6 +36,7 @@
     "displayName": "Aftershock",
     "icon": "perk-explosive-chain",
     "description": "Your explosive traps detonate a second time 2 seconds after the initial blast.",
+    "tooltipTemplate": "Explosive Trap detonates a second time {aftershockDelaySeconds:1}s after the initial blast.",
     "requiresPerk": "explosive_trap",
     "config": { "aftershockDelaySeconds": 1 }
   },
@@ -40,6 +45,7 @@
     "displayName": "Barbed Field",
     "icon": "perk-barbed-field",
     "description": "Caltrops: enemies take ramping bonus damage the longer they stay in the zone (+2 DPS per second, up to +12 DPS). Resets when they leave.",
+    "tooltipTemplate": "Caltrops: enemies gain +{rampPerSecond} DPS per second in the zone (max +{maxBonusDamagePerSecond} DPS). Resets on exit.",
     "requiresPerk": "caltrops",
     "config": {
       "rampPerSecond": 4,
@@ -51,6 +57,7 @@
     "displayName": "Exposed Weakness",
     "icon": "perk-exposed-weakness",
     "description": "Marker Trap: marked enemies also deal 20% less damage for the duration of the mark.",
+    "tooltipTemplate": "Marker Trap: marked enemies deal {weakenedMultiplier%} less damage for the mark's duration.",
     "requiresPerk": "marker_trap",
     "config": {
       "weakenedMultiplier": 0.2
@@ -61,6 +68,7 @@
     "displayName": "Lasting Flames",
     "icon": "perk-lasting-flames",
     "description": "Fire Pit: applies its damage as a burn debuff. Duration refreshes while enemies stand in the pit, and the burn continues for 4 seconds after they leave.",
+    "tooltipTemplate": "Fire Pit: damage is applied as a burn debuff that continues for {burnDurationSeconds:1}s after leaving the zone.",
     "requiresPerk": "fire_pit",
     "config": {
       "burnDurationSeconds": 4

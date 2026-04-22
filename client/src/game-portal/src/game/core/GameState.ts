@@ -19,6 +19,31 @@ import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
+import { formatPerkTooltip } from './perkTooltip'
+
+/**
+ * Live-compounded trap stats for archer/trapper units, reflecting the full
+ * Bronze+Silver stack. Sent by the server on unit snapshots; used by the
+ * tooltip formatter to display concrete numbers for trap perks.
+ * Mirrors the EffectiveTrapSnapshot struct on the server.
+ */
+export type EffectiveTrapSnapshot = {
+  perkId: string
+  durationSeconds?: number
+  radius?: number
+  triggerRadius?: number
+  placeInterval?: number
+  damagePerSecond?: number
+  burstDamage?: number
+  slowMultiplier?: number
+  markMultiplier?: number
+  markDuration?: number
+  barbedFieldRampPerSec?: number
+  barbedFieldMaxBonusDPS?: number
+  exposedWeakenedMultiplier?: number
+  lastingFlamesBurnDuration?: number
+  aftershockDelaySeconds?: number
+}
 
 export type Unit = {
   id: number
@@ -58,6 +83,12 @@ export type Unit = {
   targetX?: number
   targetY?: number
   moving?: boolean
+  /**
+   * Live-compounded trap stats for archer/trapper units. Only set when the
+   * unit is a trapper archetype that owns at least one trap bronze perk.
+   * Absent for all other unit types.
+   */
+  effectiveTrap?: EffectiveTrapSnapshot
 }
 
 export type ActionItem = {
@@ -411,6 +442,7 @@ export class GameState {
         targetX: unit.targetX,
         targetY: unit.targetY,
         moving: unit.moving,
+        effectiveTrap: unit.effectiveTrap,
       })),
     }
 
@@ -1531,7 +1563,7 @@ function getPerkActionItems(unit: Unit): ActionItem[] {
         kind: 'perk' as const,
         perkRank: rank,
         tooltipTitle: `${def.displayName} (${rankLabel})`,
-        tooltipBody: def.description,
+        tooltipBody: formatPerkTooltip(def, unit),
         disabled: true,
         cooldownRemaining: cd?.remaining,
         cooldownTotal: cd?.total,

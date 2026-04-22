@@ -4,6 +4,7 @@
     "displayName": "Bloodlust",
     "icon": "perk-bloodlust",
     "description": "Gain attack speed while continuously attacking. Resets if the unit idles too long.",
+    "tooltipTemplate": "Each consecutive attack grants +{bonusPerAttack%} attack speed (max +{maxBonus%}). Resets after {resetAfterSeconds:1}s without attacking.",
     "config": {
       "bonusPerAttack": 0.1,
       "maxBonus": 0.5,
@@ -15,6 +16,7 @@
     "displayName": "Savage Strikes",
     "icon": "perk-savage-strikes",
     "description": "Every 3rd attack deals a bonus hit for increased damage.",
+    "tooltipTemplate": "Every {everyNthAttack}rd attack fires a bonus hit dealing {bonusMultiplier+%} damage.",
     "config": {
       "everyNthAttack": 3,
       "bonusMultiplier": 1.5
@@ -25,6 +27,7 @@
     "displayName": "Frenzy Core",
     "icon": "perk-frenzy-core",
     "description": "Attack speed increases as HP decreases. Full bonus at near-death.",
+    "tooltipTemplate": "Attack speed scales from 0 to +{maxBonus%} as HP drops from full to 0.",
     "config": {
       "maxBonus": 0.6
     }
@@ -34,6 +37,7 @@
     "displayName": "Cleaving Rage",
     "icon": "perk-cleaving-rage",
     "description": "Each attack also hits the nearest additional enemy within the cleave radius.",
+    "tooltipTemplate": "Each attack also strikes the nearest enemy within {splashRadius} units.",
     "config": {
       "splashRadius": 60
     }
@@ -43,6 +47,7 @@
     "displayName": "Relentless",
     "icon": "perk-relentless",
     "description": "Killing an enemy grants a short attack speed burst.",
+    "tooltipTemplate": "On kill: +{bonus%} attack speed for {durationSeconds:1}s.",
     "config": {
       "bonus": 0.4,
       "durationSeconds": 4
