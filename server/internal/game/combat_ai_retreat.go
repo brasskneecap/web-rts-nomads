@@ -50,6 +50,9 @@ func (s *GameState) refreshUnitAttackApproachLocked(unit, target *Unit, profile 
 }
 
 func (s *GameState) shouldRetreatLocked(unit *Unit, profile CombatProfile, ctx combatEvalContext) bool {
+	if unit.ObjectiveID != "" {
+		return false
+	}
 	if profile.RetreatDistance <= 0 || profile.RetreatTriggerMeleeRange <= 0 {
 		return false
 	}

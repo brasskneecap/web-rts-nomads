@@ -109,7 +109,7 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 	// centred on where they are now, so player units they encounter along the
 	// way are within leash range and can be scored normally.
 	for _, unit := range s.Units {
-		if unit.OwnerID == enemyPlayerID && unit.Visible && unit.HP > 0 && unit.AttackTargetID == 0 {
+		if unit.OwnerID == enemyPlayerID && unit.Visible && unit.HP > 0 && unit.AttackTargetID == 0 && unit.ObjectiveID == "" {
 			unit.CombatAnchorX = unit.X
 			unit.CombatAnchorY = unit.Y
 		}
@@ -163,7 +163,7 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 
 	best := s.selectBestTargetLocked(unit, profile, ctx)
 	if best.Kind == combatTargetNone {
-		if unit.OwnerID == enemyPlayerID && unit.AttackBuildingTargetID == "" && unit.AttackTargetID == 0 {
+		if unit.OwnerID == enemyPlayerID && unit.AttackBuildingTargetID == "" && unit.AttackTargetID == 0 && unit.ObjectiveID == "" {
 			s.assignEnemyObjectiveLocked(unit, ctx.blocked)
 		}
 		return

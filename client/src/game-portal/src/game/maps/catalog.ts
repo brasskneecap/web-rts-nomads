@@ -28,6 +28,18 @@ export async function fetchMapCatalogFile(mapId: string): Promise<MapCatalogFile
   return (await response.json()) as MapCatalogFile
 }
 
+export async function saveMapCatalogFile(entry: MapCatalogFile): Promise<void> {
+  const response = await fetch(`${API_BASE}/maps`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => response.statusText)
+    throw new Error(text || `Server error ${response.status}`)
+  }
+}
+
 export async function fetchBuildingDefs(): Promise<BuildingDef[]> {
   const response = await fetch(`${API_BASE}/catalog/buildings`)
 

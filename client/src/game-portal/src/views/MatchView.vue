@@ -17,11 +17,20 @@
       <div class="menu-title">Choose Map</div>
 
       <label for="map-id">Map:</label>
-      <select id="map-id" v-model="selectedMapId" :disabled="isLoadingMaps || mapCatalog.length === 0">
-        <option v-for="map in mapCatalog" :key="map.id" :value="map.id">
-          {{ map.name }}
-        </option>
-      </select>
+      <div class="map-select-row">
+        <select id="map-id" v-model="selectedMapId" :disabled="isLoadingMaps || mapCatalog.length === 0">
+          <option v-for="map in mapCatalog" :key="map.id" :value="map.id">
+            {{ map.name }}
+          </option>
+        </select>
+        <button
+          type="button"
+          class="map-refresh-button"
+          :disabled="isLoadingMaps"
+          :title="isLoadingMaps ? 'Loading...' : 'Refresh map list'"
+          @click="loadMapCatalog"
+        >↺</button>
+      </div>
 
       <div class="menu-text" v-if="selectedMapDescription">
         {{ selectedMapDescription }}
@@ -60,10 +69,10 @@
       :cancel-debug-spawn="cancelDebugSpawn"
     />
 
-    <div v-if="hasStarted && ui.wave.enabled && ui.wave.state === 'complete'" class="victory-overlay">
+    <div v-if="hasStarted && ((ui.wave.enabled && ui.wave.state === 'complete' && !ui.objectives.length) || ui.isVictory)" class="victory-overlay">
       <div class="victory-card">
         <div class="victory-title">Victory</div>
-        <div class="victory-subtitle">All waves defeated</div>
+        <div class="victory-subtitle">{{ ui.objectives.length ? 'All objectives completed' : 'All waves defeated' }}</div>
         <button class="victory-button" type="button" @click="exitGame">Return to Menu</button>
       </div>
     </div>
@@ -365,6 +374,39 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
   margin-top: 10px;
+}
+
+.map-select-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.map-select-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.map-refresh-button {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-refresh-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.map-refresh-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .match-stage {

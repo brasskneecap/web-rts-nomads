@@ -4,8 +4,11 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"webrts/server/pkg/protocol"
 )
@@ -78,12 +81,25 @@ var (
 	mapCatalog       = mustLoadMapCatalog()
 	mapCatalogByID   = indexMapCatalog(mapCatalog)
 	defaultCatalogID = mapCatalog[0].ID
+
+	runtimeMapsMu sync.RWMutex
+	runtimeMaps   = map[string]MapCatalogEntry{}
 )
 
 func ListMapCatalogSummaries() []MapCatalogSummary {
-	summaries := make([]MapCatalogSummary, 0, len(mapCatalog))
-
+	merged := make(map[string]MapCatalogEntry, len(mapCatalog))
 	for _, entry := range mapCatalog {
+		merged[entry.ID] = entry
+	}
+
+	runtimeMapsMu.RLock()
+	for id, entry := range runtimeMaps {
+		merged[id] = entry
+	}
+	runtimeMapsMu.RUnlock()
+
+	summaries := make([]MapCatalogSummary, 0, len(merged))
+	for _, entry := range merged {
 		summaries = append(summaries, MapCatalogSummary{
 			ID:          entry.ID,
 			Name:        entry.Name,
@@ -93,6 +109,10 @@ func ListMapCatalogSummaries() []MapCatalogSummary {
 		})
 	}
 
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].Name < summaries[j].Name
+	})
+
 	return summaries
 }
 
@@ -101,23 +121,87 @@ func DefaultMapID() string {
 }
 
 func GetMapConfigByID(mapID string) protocol.MapConfig {
-	entry, ok := mapCatalogByID[mapID]
+	runtimeMapsMu.RLock()
+	entry, ok := runtimeMaps[mapID]
+	runtimeMapsMu.RUnlock()
+	if !ok {
+		entry, ok = mapCatalogByID[mapID]
+	}
 	if !ok {
 		entry = mapCatalogByID[defaultCatalogID]
 	}
-
 	return cloneMapConfig(entry.Map)
 }
 
 func GetMapCatalogEntryByID(mapID string) (MapCatalogEntry, bool) {
-	entry, ok := mapCatalogByID[mapID]
+	runtimeMapsMu.RLock()
+	entry, ok := runtimeMaps[mapID]
+	runtimeMapsMu.RUnlock()
+	if !ok {
+		entry, ok = mapCatalogByID[mapID]
+	}
 	if !ok {
 		return MapCatalogEntry{}, false
 	}
-
 	cloned := entry
 	cloned.Map = cloneMapConfig(entry.Map)
 	return cloned, true
+}
+
+// SaveMapCatalogEntry writes a map catalog entry to disk and immediately
+// registers it in the runtime overlay so it is available without a restart.
+func SaveMapCatalogEntry(entry MapCatalogEntry) error {
+	dir, err := resolveMapsDir()
+	if err != nil {
+		return err
+	}
+
+	safeID := sanitizeMapFilename(entry.ID)
+	if safeID == "" {
+		return fmt.Errorf("map id %q is not a valid filename", entry.ID)
+	}
+
+	raw, err := json.MarshalIndent(entry, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, safeID+".json"), raw, 0644); err != nil {
+		return err
+	}
+
+	hydrateObstacles(entry.Map.Obstacles)
+
+	runtimeMapsMu.Lock()
+	runtimeMaps[entry.ID] = entry
+	runtimeMapsMu.Unlock()
+
+	return nil
+}
+
+func resolveMapsDir() (string, error) {
+	if dir := os.Getenv("MAP_CATALOG_DIR"); dir != "" {
+		return dir, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(cwd, "internal", "game", "catalog", "maps")
+	if _, err := os.Stat(dir); err == nil {
+		return dir, nil
+	}
+	return "", fmt.Errorf("maps directory not found at %s; set MAP_CATALOG_DIR env var to override", dir)
+}
+
+func sanitizeMapFilename(id string) string {
+	var b strings.Builder
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func mustLoadMapCatalog() []MapCatalogEntry {

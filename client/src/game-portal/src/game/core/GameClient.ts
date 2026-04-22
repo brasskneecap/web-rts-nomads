@@ -45,6 +45,9 @@ export type GameUiSnapshot = {
   mapId: string
   // True when the local player has lost all their townhalls.
   isDefeated: boolean
+  // True when all victory objectives have been completed.
+  isVictory: boolean
+  objectives: import('../network/protocol').ObjectiveSnapshot[]
 }
 
 export class GameClient {
@@ -142,6 +145,8 @@ export class GameClient {
       mapName: this.state.mapConfig.name,
       mapId: this.state.mapConfig.id,
       isDefeated: this.state.isLocalPlayerDefeated(),
+      isVictory: this.state.isVictoryAchieved(),
+      objectives: this.state.getObjectives(),
     }
   }
 

@@ -400,6 +400,10 @@ func (s *GameState) destroyBuildingLocked(buildingID string) {
 	// before queuing destruction, so this is only defensive.
 	delete(s.buildingDamageDealt, buildingID)
 
+	// Check for a linked "destroyBuilding" victory objective before removal
+	// (the building pointer becomes invalid after removeBuildingLocked).
+	s.markBuildingObjectiveCompleteLocked(buildingID)
+
 	// Remove the building from the map and invalidate blocked-cells cache.
 	s.removeBuildingLocked(buildingID)
 }

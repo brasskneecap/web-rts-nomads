@@ -14,23 +14,40 @@ type WaveConfig struct {
 	WaveDuration float64 `json:"waveDuration,omitempty"`
 }
 
+// VictoryCondition defines a single win objective for a map. All conditions
+// in the slice must be completed simultaneously for victory to be declared.
+// Type is one of: "killUnit" | "destroyBuilding" | "surviveWaves".
+// Buildings and enemy-spawnpoints link to a condition via metadata["objectiveId"].
+type VictoryCondition struct {
+	ID    string `json:"id"`
+	Type  string `json:"type"`
+	Label string `json:"label,omitempty"`
+	// Count is the number of kills required for a "killUnit" objective (default 1).
+	// Unused by "destroyBuilding" and "surviveWaves".
+	Count int `json:"count,omitempty"`
+}
+
 type MapConfig struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Size        string          `json:"size"`
-	Width       float64         `json:"width"`
-	Height      float64         `json:"height"`
-	GridCols    int             `json:"gridCols"`
-	GridRows    int             `json:"gridRows"`
-	CellSize    float64         `json:"cellSize"`
-	Terrain     []TerrainTile   `json:"terrain"`
-	Tiles       []TileInstance  `json:"tiles,omitempty"`
-	DefaultTile *TileCoord      `json:"defaultTile,omitempty"`
-	Obstacles   []ObstacleTile  `json:"obstacles"`
-	Buildings   []BuildingTile  `json:"buildings"`
-	WaveConfig  *WaveConfig     `json:"waveConfig,omitempty"`
-	Debug       *MapDebugConfig `json:"debug,omitempty"`
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Size        string             `json:"size"`
+	Width       float64            `json:"width"`
+	Height      float64            `json:"height"`
+	GridCols    int                `json:"gridCols"`
+	GridRows    int                `json:"gridRows"`
+	CellSize    float64            `json:"cellSize"`
+	Terrain     []TerrainTile      `json:"terrain"`
+	Tiles       []TileInstance     `json:"tiles,omitempty"`
+	DefaultTile *TileCoord         `json:"defaultTile,omitempty"`
+	Obstacles   []ObstacleTile     `json:"obstacles"`
+	Buildings   []BuildingTile     `json:"buildings"`
+	WaveConfig  *WaveConfig        `json:"waveConfig,omitempty"`
+	// VictoryConditions lists the objectives that must ALL be completed for the
+	// player to win. Omitted or empty means no server-managed win condition
+	// (the legacy wave-complete client check still works for wave maps).
+	VictoryConditions []VictoryCondition `json:"victoryConditions,omitempty"`
+	Debug             *MapDebugConfig    `json:"debug,omitempty"`
 }
 
 // MapDebugConfig is the container for per-map debug/telemetry opt-ins. It
@@ -288,6 +305,9 @@ type UnitSnapshot struct {
 	// rallying_banner, trap-placement perks) ever appear here, and only while
 	// Remaining > 0 — ready-to-fire perks are omitted entirely.
 	PerkCooldowns []PerkCooldownSnapshot `json:"perkCooldowns,omitempty"`
+	// ObjectiveID is non-empty when this unit is linked to a victory condition.
+	// Matches a VictoryCondition.ID in MapConfig.VictoryConditions.
+	ObjectiveID string `json:"objectiveId,omitempty"`
 	// StunnedRemaining / SlowedRemaining / SlowedMultiplier carry the current CC
 	// state to the client each tick so it can render stun/slow indicator icons.
 	// All three use omitempty so they are absent from the JSON when not active.
@@ -375,6 +395,27 @@ type GameOverSnapshot struct {
 	LostPlayerIDs []string `json:"lostPlayerIds"`
 }
 
+// ObjectiveSnapshot carries the current state of one victory condition to the
+// client every tick (once the map has VictoryConditions defined). Clients use
+// this to render an objective tracker HUD and detect when all are complete.
+type ObjectiveSnapshot struct {
+	ID        string `json:"id"`
+	Type      string `json:"type"`
+	Label     string `json:"label,omitempty"`
+	Completed bool   `json:"completed"`
+	// Progress / Count are only meaningful for "killUnit" objectives.
+	Progress int `json:"progress,omitempty"`
+	Count    int `json:"count,omitempty"`
+}
+
+// VictorySnapshot is included in every snapshot when the map has
+// VictoryConditions defined. Achieved becomes true once ALL objectives are
+// complete — that is the client's cue to show the victory screen.
+type VictorySnapshot struct {
+	Achieved   bool               `json:"achieved"`
+	Objectives []ObjectiveSnapshot `json:"objectives"`
+}
+
 // ProjectileSnapshot carries an in-flight ranged attack to the client each tick.
 // The client renders a shape (or sprite, by Variant) traveling along the arc
 // from (OriginX, OriginY) toward the homing target position (TargetX, TargetY),
@@ -413,6 +454,7 @@ type MatchSnapshotMessage struct {
 	Projectiles   []ProjectileSnapshot    `json:"projectiles,omitempty"`
 	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
 	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
+	Victory       *VictorySnapshot        `json:"victory,omitempty"`
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────

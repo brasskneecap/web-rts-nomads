@@ -56,6 +56,26 @@ func NewRouter(hub *ws.Hub, corsOrigin string) http.Handler {
 	})
 
 	mux.HandleFunc("/maps", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var entry game.MapCatalogEntry
+			if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
+				http.Error(w, "invalid JSON body", http.StatusBadRequest)
+				return
+			}
+			if entry.ID == "" {
+				http.Error(w, "map id is required", http.StatusBadRequest)
+				return
+			}
+			if err := game.SaveMapCatalogEntry(entry); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": entry.ID, "status": "saved"})
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(game.ListMapCatalogSummaries())
 	})

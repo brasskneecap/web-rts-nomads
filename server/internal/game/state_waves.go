@@ -123,6 +123,7 @@ func (s *GameState) tickWaveLocked(dt float64) {
 		if timerExpired && s.countEnemyUnitsLocked() == 0 {
 			if wm.TotalWaves > 0 && wm.CurrentWave >= wm.TotalWaves {
 				wm.State = "complete"
+				s.markWaveObjectivesCompleteLocked()
 			} else {
 				wm.State = "prep"
 				wm.Timer = wm.PrepDuration
@@ -242,12 +243,16 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 
 		spawnCount := 1
 		unitType := "raider"
+		objectiveId := ""
 		if building.Metadata != nil {
 			if v, ok := getMetadataFloat(building.Metadata, "spawnCount"); ok && v >= 1 {
 				spawnCount = int(v)
 			}
 			if v, ok := building.Metadata["unitType"].(string); ok && v != "" {
 				unitType = v
+			}
+			if v, ok := building.Metadata["objectiveId"].(string); ok && v != "" {
+				objectiveId = v
 			}
 		}
 
@@ -284,11 +289,15 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 				continue
 			}
 			unit.OrderID = orderID
-			unit.Status = "Advancing"
-
-			target := s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
-			if target != nil {
-				s.assignUnitPath(unit, *target, blocked, nil)
+			if objectiveId != "" {
+				unit.ObjectiveID = objectiveId
+				unit.Status = "Idle"
+			} else {
+				unit.Status = "Advancing"
+				target := s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
+				if target != nil {
+					s.assignUnitPath(unit, *target, blocked, nil)
+				}
 			}
 		}
 	}

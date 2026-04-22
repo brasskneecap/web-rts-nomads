@@ -74,6 +74,9 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 		s.onPerkKillLocked(attacker)
 		s.trackBattleKillLocked(battleSourceFromUnit(attacker), target)
 		*deadUnitIDs = append(*deadUnitIDs, target.ID)
+		if target.ObjectiveID != "" {
+			s.markObjectiveKillLocked(target.ObjectiveID)
+		}
 	}
 	return false
 }

@@ -67,6 +67,42 @@
             </div>
           </div>
 
+          <div class="wave-config-block">
+            <div class="wave-config-title">Victory Conditions <span class="field-hint">(all must be met)</span></div>
+            <div
+              v-for="(vc, i) in model.victoryConditions ?? []"
+              :key="vc.id"
+              class="victory-condition-row"
+            >
+              <select
+                :value="vc.type"
+                @change="updateVictoryCondition(i, 'type', ($event.target as HTMLSelectElement).value)"
+              >
+                <option value="killUnit">Kill Unit</option>
+                <option value="destroyBuilding">Destroy Building</option>
+                <option value="surviveWaves">Survive Waves</option>
+              </select>
+              <input
+                :value="vc.label ?? ''"
+                @input="updateVictoryCondition(i, 'label', ($event.target as HTMLInputElement).value)"
+                type="text"
+                placeholder="Label (shown in HUD)"
+              />
+              <input
+                v-if="vc.type === 'killUnit'"
+                :value="vc.count ?? 1"
+                @input="updateVictoryCondition(i, 'count', +($event.target as HTMLInputElement).value)"
+                type="number"
+                min="1"
+                title="Kills required"
+                style="width: 56px"
+              />
+              <span class="vc-id-badge" :title="`Objective ID: ${vc.id}`">{{ vc.id }}</span>
+              <button type="button" @click="removeVictoryCondition(i)">✕</button>
+            </div>
+            <button type="button" @click="addVictoryCondition()">+ Add Condition</button>
+          </div>
+
           <div class="control-group load-map-group">
             <label for="editor-load-map">Load Existing Map</label>
             <select
@@ -332,6 +368,25 @@
               max="20"
               :disabled="!paintModeEnabled"
             />
+            <template v-if="killUnitObjectives.length">
+              <label for="enemy-objective-id">Kill Objective <span class="field-hint">(optional)</span></label>
+              <select id="enemy-objective-id" v-model="enemyObjectiveId" :disabled="!paintModeEnabled">
+                <option value="">None</option>
+                <option v-for="vc in killUnitObjectives" :key="vc.id" :value="vc.id">
+                  {{ vc.label || vc.id }}
+                </option>
+              </select>
+            </template>
+          </div>
+
+          <div v-if="brushMode === 'building' && selectedBuilding !== 'enemy-spawnpoint' && destroyBuildingObjectives.length" class="control-group">
+            <label for="building-objective-id">Destroy Objective <span class="field-hint">(optional)</span></label>
+            <select id="building-objective-id" v-model="buildingObjectiveId" :disabled="!paintModeEnabled">
+              <option value="">None</option>
+              <option v-for="vc in destroyBuildingObjectives" :key="vc.id" :value="vc.id">
+                {{ vc.label || vc.id }}
+              </option>
+            </select>
           </div>
 
           <div class="hint-list">
@@ -354,7 +409,16 @@
             <button type="button" @click="recenterCamera">Recenter</button>
             <button type="button" @click="clearMap">Clear Map</button>
             <button type="button" @click="copyExport">{{ copiedLabel }}</button>
+            <button
+              type="button"
+              class="save-to-server"
+              :class="{ 'save-to-server--saved': saveLabel === 'Saved!' }"
+              @click="saveToServer"
+              :disabled="saveLabel === 'Saving...'"
+            >{{ saveLabel }}</button>
           </div>
+
+          <div v-if="saveError" class="save-error">{{ saveError }}</div>
 
           <textarea
             class="export-box"
@@ -381,7 +445,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchMapCatalog, fetchMapCatalogFile, fetchUnitDefs } from '@/game/maps/catalog'
+import { fetchMapCatalog, fetchMapCatalogFile, fetchUnitDefs, saveMapCatalogFile } from '@/game/maps/catalog'
 import type {
   BuildingType,
   JsonObject,
@@ -392,6 +456,7 @@ import type {
   TerrainType,
   TileSheet,
   UnitType,
+  VictoryCondition,
 } from '@/game/network/protocol'
 import { Camera } from '@/game/rendering/Camera'
 import {
@@ -453,6 +518,8 @@ const enemyWaveNumber = ref(1)
 const draftCols = ref(model.value.gridCols)
 const draftRows = ref(model.value.gridRows)
 const copiedLabel = ref('Copy Export')
+const saveLabel = ref('Save to Server')
+const saveError = ref('')
 const hoverLabel = ref('Hover a tile')
 const paintModeEnabled = ref(false)
 const openSection = ref<'setup' | 'paint' | 'export' | null>('paint')
@@ -462,6 +529,9 @@ const selectedLoadMapId = ref('')
 const isLoadingMapCatalog = ref(false)
 const isLoadingSelectedMap = ref(false)
 const mapLoadError = ref('')
+const enemyObjectiveId = ref('')
+const buildingObjectiveId = ref('')
+let nextVictoryConditionId = 1
 
 const camera = new Camera()
 let resizeObserver: ResizeObserver | null = null
@@ -513,6 +583,14 @@ const townhallOptions = computed(() =>
     })),
 )
 
+const killUnitObjectives = computed(() =>
+  (model.value.victoryConditions ?? []).filter((vc) => vc.type === 'killUnit'),
+)
+
+const destroyBuildingObjectives = computed(() =>
+  (model.value.victoryConditions ?? []).filter((vc) => vc.type === 'destroyBuilding'),
+)
+
 const defaultGroundName = computed<'grass' | 'dirt'>(() => {
   const current = model.value.defaultTile
   if (!current) return 'grass'
@@ -545,6 +623,27 @@ function getCanvasCursor() {
 
 function toggleSection(section: 'setup' | 'paint' | 'export') {
   openSection.value = openSection.value === section ? null : section
+}
+
+function addVictoryCondition() {
+  const id = `obj-${nextVictoryConditionId++}`
+  const conditions: VictoryCondition[] = [
+    ...(model.value.victoryConditions ?? []),
+    { id, type: 'killUnit', label: '', count: 1 },
+  ]
+  model.value = { ...model.value, victoryConditions: conditions }
+}
+
+function removeVictoryCondition(index: number) {
+  const conditions = (model.value.victoryConditions ?? []).filter((_, i) => i !== index)
+  model.value = { ...model.value, victoryConditions: conditions.length ? conditions : undefined }
+}
+
+function updateVictoryCondition(index: number, field: string, value: string | number) {
+  const conditions = (model.value.victoryConditions ?? []).map((vc, i) =>
+    i === index ? { ...vc, [field]: value } : vc,
+  )
+  model.value = { ...model.value, victoryConditions: conditions }
 }
 
 function setWaveConfig(field: 'totalWaves' | 'prepDuration' | 'waveDuration', value: number) {
@@ -655,6 +754,23 @@ function recenterCamera() {
     model.value.width,
     model.value.height,
   )
+}
+
+async function saveToServer() {
+  if (saveLabel.value === 'Saving...') return
+  saveError.value = ''
+  saveLabel.value = 'Saving...'
+  try {
+    await saveMapCatalogFile(exportedCatalogFile.value)
+    saveLabel.value = 'Saved!'
+    await loadAvailableMaps()
+    window.setTimeout(() => {
+      saveLabel.value = 'Save to Server'
+    }, 2000)
+  } catch (err) {
+    saveError.value = err instanceof Error ? err.message : 'Save failed'
+    saveLabel.value = 'Save to Server'
+  }
 }
 
 async function copyExport() {
@@ -833,7 +949,10 @@ function paintBuildingAt(cx: number, cy: number) {
       spawnIntervalSeconds: enemySpawnInterval.value,
       spawnCount: enemySpawnCount.value,
       unitType: enemyUnitType.value,
+      ...(enemyObjectiveId.value ? { objectiveId: enemyObjectiveId.value } : {}),
     }
+  } else if (buildingObjectiveId.value) {
+    metadata = { objectiveId: buildingObjectiveId.value }
   }
 
   model.value = setBuildingTile(model.value, cx, cy, selectedBuilding.value, metadata)
@@ -1348,6 +1467,11 @@ watch(
   { immediate: true },
 )
 
+watch(selectedBuilding, () => {
+  enemyObjectiveId.value = ''
+  buildingObjectiveId.value = ''
+})
+
 onBeforeUnmount(() => {
   if (canvas.value) {
     canvas.value.removeEventListener('mousedown', onMouseDown)
@@ -1568,6 +1692,37 @@ onBeforeUnmount(() => {
   gap: 2px;
 }
 
+.save-to-server {
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 10px;
+  background: rgba(8, 145, 178, 0.28);
+  color: #bae6fd;
+  padding: 7px 9px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.save-to-server:hover:not(:disabled) {
+  background: rgba(8, 145, 178, 0.48);
+}
+
+.save-to-server:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.save-to-server--saved {
+  background: rgba(22, 101, 52, 0.75);
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #bbf7d0;
+}
+
+.save-error {
+  font-size: 0.72rem;
+  color: #fca5a5;
+  padding: 4px 2px;
+}
+
 .export-box {
   min-height: 104px;
   resize: vertical;
@@ -1639,6 +1794,48 @@ onBeforeUnmount(() => {
   opacity: 0.65;
   text-transform: none;
   letter-spacing: 0;
+}
+
+.victory-condition-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.victory-condition-row select,
+.victory-condition-row input[type='text'],
+.victory-condition-row input[type='number'] {
+  min-width: 0;
+}
+
+.victory-condition-row button {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 6px;
+  background: rgba(127, 29, 29, 0.45);
+  color: #fca5a5;
+  padding: 4px 7px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.victory-condition-row button:hover {
+  background: rgba(153, 27, 27, 0.65);
+}
+
+.vc-id-badge {
+  font-size: 0.65rem;
+  font-family: Consolas, 'Courier New', monospace;
+  color: #d7bb84;
+  background: rgba(58, 35, 18, 0.55);
+  border: 1px solid rgba(215, 187, 132, 0.25);
+  border-radius: 4px;
+  padding: 2px 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 72px;
 }
 
 .editor-preview {

@@ -94,6 +94,8 @@ export type MapConfig = {
   obstacles: ObstacleTile[]
   buildings: BuildingTile[]
   waveConfig?: WaveConfig
+  /** All conditions must be completed simultaneously for victory. */
+  victoryConditions?: VictoryCondition[]
   debug?: MapDebugConfig
 }
 
@@ -303,6 +305,8 @@ export type UnitSnapshot = {
    *  next activation is currently gated by a ticking timer appear here.
    *  Drives the clock-wipe overlay + seconds label on the perk HUD icon. */
   perkCooldowns?: PerkCooldownSnapshot[]
+  /** Non-empty when this unit is linked to a VictoryCondition by objectiveId. */
+  objectiveId?: string
   carriedResourceType?: ResourceType
   carriedAmount?: number
   targetX?: number
@@ -398,6 +402,30 @@ export type GameOverSnapshot = {
   lostPlayerIds: string[]
 }
 
+export type ObjectiveSnapshot = {
+  id: string
+  type: 'killUnit' | 'destroyBuilding' | 'surviveWaves'
+  label?: string
+  completed: boolean
+  /** Current kills toward a killUnit objective. */
+  progress?: number
+  /** Required kills for a killUnit objective (default 1). */
+  count?: number
+}
+
+export type VictorySnapshot = {
+  achieved: boolean
+  objectives: ObjectiveSnapshot[]
+}
+
+export type VictoryCondition = {
+  id: string
+  type: 'killUnit' | 'destroyBuilding' | 'surviveWaves'
+  label?: string
+  /** Required kills for killUnit (default 1). */
+  count?: number
+}
+
 /**
  * ProjectileSnapshot carries an in-flight ranged attack to the client each tick.
  * The renderer draws a shape (or sprite, picked by `variant`) traveling along
@@ -441,6 +469,7 @@ export type MatchSnapshotMessage = {
   // otherwise — the client treats absence as "debug tracker disabled".
   battleTracker?: BattleTrackerSnapshot
   gameOver?: GameOverSnapshot
+  victory?: VictorySnapshot
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────

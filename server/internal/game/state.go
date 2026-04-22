@@ -43,6 +43,10 @@ type Unit struct {
 	// if future perks need shield decay or alternate gain mechanics.
 	Shield int
 
+	// ObjectiveID links this unit to a VictoryCondition. Non-empty when spawned
+	// from an enemy-spawnpoint whose metadata["objectiveId"] matches a condition.
+	ObjectiveID string
+
 	CarriedResourceType string
 	CarriedAmount       int
 	GatherTargetID      string
@@ -210,6 +214,13 @@ type GameState struct {
 	// lostPlayerIDs is the set of players whose last townhall has been destroyed.
 	// Once set, it is never cleared for the duration of the match.
 	lostPlayerIDs map[string]bool
+
+	// objectiveCompleted tracks which VictoryCondition IDs have been fulfilled.
+	objectiveCompleted map[string]bool
+	// objectiveKillCounts tracks progress toward "killUnit" objectives.
+	objectiveKillCounts map[string]int
+	// victoryAchieved is true once every VictoryCondition is complete.
+	victoryAchieved bool
 }
 
 const (
@@ -403,6 +414,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		effectiveMoveSpeed := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
 
 		snapshot := protocol.UnitSnapshot{
+			ObjectiveID:         unit.ObjectiveID,
 			ID:                  unit.ID,
 			OwnerID:             unit.OwnerID,
 			Color:               unit.Color,
@@ -533,6 +545,30 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		gameOver = &protocol.GameOverSnapshot{LostPlayerIDs: ids}
 	}
 
+	var victory *protocol.VictorySnapshot
+	if len(s.MapConfig.VictoryConditions) > 0 {
+		objectives := make([]protocol.ObjectiveSnapshot, 0, len(s.MapConfig.VictoryConditions))
+		for _, vc := range s.MapConfig.VictoryConditions {
+			progress := 0
+			if vc.Type == "killUnit" && s.objectiveKillCounts != nil {
+				progress = s.objectiveKillCounts[vc.ID]
+			}
+			completed := s.objectiveCompleted != nil && s.objectiveCompleted[vc.ID]
+			objectives = append(objectives, protocol.ObjectiveSnapshot{
+				ID:        vc.ID,
+				Type:      vc.Type,
+				Label:     vc.Label,
+				Completed: completed,
+				Progress:  progress,
+				Count:     vc.Count,
+			})
+		}
+		victory = &protocol.VictorySnapshot{
+			Achieved:   s.victoryAchieved,
+			Objectives: objectives,
+		}
+	}
+
 	return protocol.MatchSnapshotMessage{
 		Type:      "match_snapshot",
 		Tick:      s.Tick,
@@ -555,6 +591,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		// Nil when debug tracker is disabled — `omitempty` drops it from JSON.
 		BattleTracker: s.battleTrackerSnapshotLocked(),
 		GameOver:      gameOver,
+		Victory:       victory,
 	}
 }
 
@@ -712,6 +749,84 @@ func (s *GameState) Update(dt float64) {
 	s.refreshBuildingRuntimeMetadataLocked()
 	s.refreshObstacleRuntimeMetadataLocked()
 	s.checkPlayerLossLocked()
+	s.checkVictoryLocked()
+}
+
+// markObjectiveKillLocked records a kill toward a "killUnit" victory condition
+// and marks it complete once the required kill count is reached.
+func (s *GameState) markObjectiveKillLocked(objectiveID string) {
+	if objectiveID == "" {
+		return
+	}
+	if s.objectiveCompleted == nil {
+		s.objectiveCompleted = map[string]bool{}
+	}
+	if s.objectiveKillCounts == nil {
+		s.objectiveKillCounts = map[string]int{}
+	}
+	for _, vc := range s.MapConfig.VictoryConditions {
+		if vc.ID != objectiveID || vc.Type != "killUnit" {
+			continue
+		}
+		s.objectiveKillCounts[objectiveID]++
+		needed := vc.Count
+		if needed <= 0 {
+			needed = 1
+		}
+		if s.objectiveKillCounts[objectiveID] >= needed {
+			s.objectiveCompleted[objectiveID] = true
+		}
+		return
+	}
+}
+
+// markBuildingObjectiveCompleteLocked checks if the destroyed building is
+// linked to a "destroyBuilding" victory condition and marks it complete.
+func (s *GameState) markBuildingObjectiveCompleteLocked(buildingID string) {
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil {
+		return
+	}
+	objectiveID, ok := getMetadataString(building.Metadata, "objectiveId")
+	if !ok || objectiveID == "" {
+		return
+	}
+	if s.objectiveCompleted == nil {
+		s.objectiveCompleted = map[string]bool{}
+	}
+	for _, vc := range s.MapConfig.VictoryConditions {
+		if vc.ID == objectiveID && vc.Type == "destroyBuilding" {
+			s.objectiveCompleted[objectiveID] = true
+			return
+		}
+	}
+}
+
+// markWaveObjectivesCompleteLocked marks all "surviveWaves" victory conditions
+// as complete. Called when the wave manager reaches state "complete".
+func (s *GameState) markWaveObjectivesCompleteLocked() {
+	if s.objectiveCompleted == nil {
+		s.objectiveCompleted = map[string]bool{}
+	}
+	for _, vc := range s.MapConfig.VictoryConditions {
+		if vc.Type == "surviveWaves" {
+			s.objectiveCompleted[vc.ID] = true
+		}
+	}
+}
+
+// checkVictoryLocked checks whether all VictoryConditions are complete and
+// sets victoryAchieved. No-op when the map has no victory conditions.
+func (s *GameState) checkVictoryLocked() {
+	if len(s.MapConfig.VictoryConditions) == 0 || s.victoryAchieved {
+		return
+	}
+	for _, vc := range s.MapConfig.VictoryConditions {
+		if s.objectiveCompleted == nil || !s.objectiveCompleted[vc.ID] {
+			return
+		}
+	}
+	s.victoryAchieved = true
 }
 
 // checkPlayerLossLocked scans all townhalls each tick to detect players who
@@ -746,11 +861,12 @@ func (s *GameState) checkPlayerLossLocked() {
 	}
 }
 
-// IsGameOver returns true once any human player has lost all their townhalls.
+// IsGameOver returns true once the match has ended — either a player has lost
+// all their townhalls, or all victory objectives have been completed.
 func (s *GameState) IsGameOver() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.lostPlayerIDs) > 0
+	return len(s.lostPlayerIDs) > 0 || s.victoryAchieved
 }
 
 func (s *GameState) EnsurePlayer(playerID string) {

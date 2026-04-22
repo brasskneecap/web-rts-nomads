@@ -4,6 +4,8 @@ import type {
   BattleTrackerSnapshot,
   BuildingTile,
   GameOverSnapshot,
+  ObjectiveSnapshot,
+  VictorySnapshot,
   MapConfig,
   MatchSnapshotMessage,
   ObstacleTile,
@@ -314,6 +316,8 @@ export class GameState {
 
   // Game over state — non-null once any player has lost all townhalls.
   gameOverSnapshot: GameOverSnapshot | null = null
+  // Victory state — non-null once the designated boss unit has been killed.
+  victorySnapshot: VictorySnapshot | null = null
 
   mapWidth = 6144
   mapHeight = 4096
@@ -471,6 +475,9 @@ export class GameState {
     }
     if (message.gameOver) {
       this.gameOverSnapshot = message.gameOver
+    }
+    if (message.victory) {
+      this.victorySnapshot = message.victory
     }
 
     const validIds = new Set(this.units.map((u) => u.id))
@@ -1358,6 +1365,14 @@ export class GameState {
   isLocalPlayerDefeated(): boolean {
     if (!this.localPlayerId || !this.gameOverSnapshot) return false
     return this.gameOverSnapshot.lostPlayerIds.includes(this.localPlayerId)
+  }
+
+  isVictoryAchieved(): boolean {
+    return this.victorySnapshot?.achieved === true
+  }
+
+  getObjectives(): ObjectiveSnapshot[] {
+    return this.victorySnapshot?.objectives ?? []
   }
 
   getPlayerColor(playerId: string | null | undefined): string | null {
