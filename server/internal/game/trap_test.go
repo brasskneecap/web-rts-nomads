@@ -1310,44 +1310,42 @@ func TestTrapper_SoldierPathNotTrapper(t *testing.T) {
 	}
 }
 
-// TestTrapper_PathModifierLookupReturnsIdentity verifies that pathModifierFor
-// returns the authored identity row for trapper/bronze, not the fallback
-// identityPathModifier. Both have identical values today, but the lookup must
-// succeed (i.e. the row exists in pathModifierTable) so future stat additions
-// to the trapper path will be picked up correctly.
-func TestTrapper_PathModifierLookupReturnsIdentity(t *testing.T) {
-	got := pathModifierFor(unitPathTrapper, unitRankBronze)
-	identity := identityPathModifier
+// TestTrapper_PathModifierRowsExistForAllRanks pins two properties:
+//  1. Every Trapper rank (Bronze/Silver/Gold) has a row in pathModifierTable
+//     so pathModifierFor returns authored values instead of identity fallback.
+//  2. Until the Trapper gets a path-specific stat tuning pass, those rows
+//     mirror the default unpathed rank curve (unitPathNone) — promotions
+//     still grant the baseline HP/damage/AS bumps.
+// If/when the Trapper gets its own tuning, update the expected values here
+// alongside the pathModifierTable rows.
+func TestTrapper_PathModifierRowsExistForAllRanks(t *testing.T) {
+	ranks := []string{unitRankBronze, unitRankSilver, unitRankGold}
+	for _, rank := range ranks {
+		got := pathModifierFor(unitPathTrapper, rank)
+		want := pathModifierFor(unitPathNone, rank)
 
-	// Values must match the identity row (all 1.0 multipliers, 0 armor).
-	if got.MaxHPMultiplier != identity.MaxHPMultiplier {
-		t.Errorf("MaxHPMultiplier: got %.3f, want %.3f", got.MaxHPMultiplier, identity.MaxHPMultiplier)
-	}
-	if got.DamageMultiplier != identity.DamageMultiplier {
-		t.Errorf("DamageMultiplier: got %.3f, want %.3f", got.DamageMultiplier, identity.DamageMultiplier)
-	}
-	if got.AttackSpeedMultiplier != identity.AttackSpeedMultiplier {
-		t.Errorf("AttackSpeedMultiplier: got %.3f, want %.3f", got.AttackSpeedMultiplier, identity.AttackSpeedMultiplier)
-	}
-	if got.MoveSpeedMultiplier != identity.MoveSpeedMultiplier {
-		t.Errorf("MoveSpeedMultiplier: got %.3f, want %.3f", got.MoveSpeedMultiplier, identity.MoveSpeedMultiplier)
-	}
-	if got.Armor != identity.Armor {
-		t.Errorf("Armor: got %d, want %d", got.Armor, identity.Armor)
-	}
-
-	// Confirm the row is actually found in the table (not the fallback).
-	// The fallback identityPathModifier has Path="" — we can't distinguish by
-	// value, so we do a direct table scan.
-	found := false
-	for _, row := range pathModifierTable {
-		if row.Path == unitPathTrapper && row.Rank == unitRankBronze {
-			found = true
-			break
+		if got.MaxHPMultiplier != want.MaxHPMultiplier {
+			t.Errorf("%s MaxHPMultiplier: got %.3f, want %.3f (default rank curve)", rank, got.MaxHPMultiplier, want.MaxHPMultiplier)
 		}
-	}
-	if !found {
-		t.Error("trapper/bronze row missing from pathModifierTable — pathModifierFor is returning the fallback")
+		if got.DamageMultiplier != want.DamageMultiplier {
+			t.Errorf("%s DamageMultiplier: got %.3f, want %.3f", rank, got.DamageMultiplier, want.DamageMultiplier)
+		}
+		if got.AttackSpeedMultiplier != want.AttackSpeedMultiplier {
+			t.Errorf("%s AttackSpeedMultiplier: got %.3f, want %.3f", rank, got.AttackSpeedMultiplier, want.AttackSpeedMultiplier)
+		}
+		if got.MoveSpeedMultiplier != want.MoveSpeedMultiplier {
+			t.Errorf("%s MoveSpeedMultiplier: got %.3f, want %.3f", rank, got.MoveSpeedMultiplier, want.MoveSpeedMultiplier)
+		}
+		if got.Armor != want.Armor {
+			t.Errorf("%s Armor: got %d, want %d", rank, got.Armor, want.Armor)
+		}
+
+		// Confirm the row is actually loaded from the catalog (not the fallback).
+		// pathModifiersByKey is populated at init from catalog/paths/<path>.json;
+		// a missing entry means the JSON is missing the rank or the file didn't load.
+		if _, ok := pathModifiersByKey[pathModifierKey(unitPathTrapper, rank)]; !ok {
+			t.Errorf("trapper/%s missing from pathModifiersByKey — JSON catalog not loaded correctly", rank)
+		}
 	}
 }
 

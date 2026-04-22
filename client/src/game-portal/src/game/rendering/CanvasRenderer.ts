@@ -1380,6 +1380,7 @@ export class CanvasRenderer {
         if (attackingAnim && effectiveAttackSpeed && effectiveAttackSpeed > 0) {
           attackFrameDurationMs = 1000 / effectiveAttackSpeed / attackingAnim.frameCount
         }
+        const whirlwindActive = !!unit.activeBuffs?.some((b) => b.id === 'whirlwind_core')
         const anim = this.unitAnim.sample(
           unit.id,
           unit.x,
@@ -1391,6 +1392,7 @@ export class CanvasRenderer {
           this.renderTime,
           unit.carriedResourceType,
           unit.unitType,
+          whirlwindActive,
         )
         const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
         if (frame) {

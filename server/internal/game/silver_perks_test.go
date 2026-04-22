@@ -803,3 +803,98 @@ func TestLastStand_BoostsRetaliation(t *testing.T) {
 			reflectedWithLastStand, baseReflected)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Momentum — post-attack move + attack speed burst
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestMomentum_AttackGrantsMoveAndAttackSpeedBonus verifies that a single
+// attack arms the shared MomentumRemaining timer and that BOTH
+// perkMoveSpeedMultiplierLocked and perkAttackSpeedBonusLocked read it.
+// Without an attack, neither hook should contribute a bonus.
+func TestMomentum_AttackGrantsMoveAndAttackSpeedBonus(t *testing.T) {
+	s, vanguard, target := newSilverPerkState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	grantPerk(vanguard, "momentum")
+	def := perkDefByID("momentum")
+	if def == nil {
+		t.Fatal("momentum perk def not found")
+	}
+
+	// Baseline before any attack: no bonus on either hook.
+	if got := s.perkMoveSpeedMultiplierLocked(vanguard); got != 1.0 {
+		t.Errorf("move multiplier before attack: got %.3f, want 1.0", got)
+	}
+	if got := s.perkAttackSpeedBonusLocked(vanguard); got != 0 {
+		t.Errorf("AS bonus before attack: got %.3f, want 0", got)
+	}
+
+	var dead []int
+	s.onPerkAttackFiredLocked(vanguard, target, 10, &dead)
+
+	if vanguard.PerkState.MomentumRemaining != def.Config["durationSeconds"] {
+		t.Errorf("MomentumRemaining after attack: got %.3f, want %.3f",
+			vanguard.PerkState.MomentumRemaining, def.Config["durationSeconds"])
+	}
+
+	wantMove := 1.0 + def.Config["moveSpeedBonus"]
+	if got := s.perkMoveSpeedMultiplierLocked(vanguard); math.Abs(got-wantMove) > 0.001 {
+		t.Errorf("move multiplier after attack: got %.3f, want %.3f", got, wantMove)
+	}
+
+	wantAS := def.Config["attackSpeedBonus"]
+	if got := s.perkAttackSpeedBonusLocked(vanguard); math.Abs(got-wantAS) > 0.001 {
+		t.Errorf("AS bonus after attack: got %.3f, want %.3f", got, wantAS)
+	}
+}
+
+// TestMomentum_BothBonusesDropWhenTimerExpires drives the per-tick decay past
+// durationSeconds and asserts that both hooks return to their zero baselines
+// together — the single MomentumRemaining timer owns both buffs, so they
+// MUST drop in lockstep. Uses tickUnitPerkStateLocked directly (matching the
+// convention of every other perk test in this file) because running s.Update
+// would let the vanguard attack each tick and re-arm MomentumRemaining.
+func TestMomentum_BothBonusesDropWhenTimerExpires(t *testing.T) {
+	s, vanguard, target := newSilverPerkState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	grantPerk(vanguard, "momentum")
+	def := perkDefByID("momentum")
+	var dead []int
+	s.onPerkAttackFiredLocked(vanguard, target, 10, &dead)
+
+	// Tick past durationSeconds. 20 Hz × (duration + 0.25s margin).
+	totalTicks := int((def.Config["durationSeconds"] + 0.25) / 0.05)
+	for i := 0; i < totalTicks; i++ {
+		s.tickUnitPerkStateLocked(vanguard, 0.05)
+	}
+
+	if vanguard.PerkState.MomentumRemaining != 0 {
+		t.Errorf("MomentumRemaining after decay: got %.3f, want 0", vanguard.PerkState.MomentumRemaining)
+	}
+	if got := s.perkMoveSpeedMultiplierLocked(vanguard); got != 1.0 {
+		t.Errorf("move multiplier after decay: got %.3f, want 1.0", got)
+	}
+	if got := s.perkAttackSpeedBonusLocked(vanguard); got != 0 {
+		t.Errorf("AS bonus after decay: got %.3f, want 0", got)
+	}
+}
+
+// TestMomentum_ConfigDurationIsFiveSeconds is a pinning test — the user asked
+// to bump duration to 5s and this guards that the JSON catalog value stays at
+// 5s across future edits unless explicitly changed again.
+func TestMomentum_ConfigDurationIsFiveSeconds(t *testing.T) {
+	def := perkDefByID("momentum")
+	if def == nil {
+		t.Fatal("momentum perk def not found")
+	}
+	if got := def.Config["durationSeconds"]; got != 5 {
+		t.Errorf("momentum durationSeconds: got %.1f, want 5.0", got)
+	}
+	if got := def.Config["attackSpeedBonus"]; got <= 0 {
+		t.Errorf("momentum attackSpeedBonus must be > 0; got %.3f", got)
+	}
+}

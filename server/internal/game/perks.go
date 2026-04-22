@@ -202,13 +202,13 @@ type UnitPerkState struct {
 	MomentumRemaining float64
 
 	// ── whirlwind_core (gold berserker) ───────────────────────────────────────
-	// Two-phase timer: ActiveRemaining > 0 means the whirlwind window is ON
-	// (attacks trigger AoE); otherwise CooldownRemaining counts down to the
-	// next activation. Seeded to cooldown on first tick so the very first
-	// proc happens `cooldownSeconds` after the perk is granted rather than
-	// on the exact rank-up tick.
-	WhirlwindActiveRemaining   float64
-	WhirlwindCooldownRemaining float64
+	// RNG-proc model: each normal attack rolls against procChance. On proc,
+	// a bonus AoE hit fires at that instant AND this timer is set to
+	// animationSeconds so the client can overlay the spin animation for the
+	// configured duration. The regular attack flow is not interrupted —
+	// attacks keep firing on their normal cooldown while the animation plays.
+	// Multiple procs during the window simply refresh the timer.
+	WhirlwindAnimRemaining float64
 
 	// frenzy_core   — no stored state; bonus derived from current HP% on demand.
 	// cleaving_rage — no stored state; triggers unconditionally on every attack.
@@ -670,21 +670,12 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			}
 
 		case "whirlwind_core":
-			// Two-phase cycle: active window → cooldown → active window → …
-			// When state is fresh (both zero) seed the cooldown so the first
-			// proc fires after cooldownSeconds rather than instantly.
-			if unit.PerkState.WhirlwindActiveRemaining > 0 {
-				unit.PerkState.WhirlwindActiveRemaining = math.Max(0, unit.PerkState.WhirlwindActiveRemaining-dt)
-				if unit.PerkState.WhirlwindActiveRemaining == 0 {
-					unit.PerkState.WhirlwindCooldownRemaining = def.Config["cooldownSeconds"]
-				}
-			} else if unit.PerkState.WhirlwindCooldownRemaining > 0 {
-				unit.PerkState.WhirlwindCooldownRemaining = math.Max(0, unit.PerkState.WhirlwindCooldownRemaining-dt)
-				if unit.PerkState.WhirlwindCooldownRemaining == 0 {
-					unit.PerkState.WhirlwindActiveRemaining = def.Config["activeSeconds"]
-				}
-			} else {
-				unit.PerkState.WhirlwindCooldownRemaining = def.Config["cooldownSeconds"]
+			// Decay the animation-overlay timer. The bonus AoE hit itself fires
+			// instantly in onPerkAttackFiredLocked on a procChance roll; this
+			// timer only controls how long the client plays the spin animation
+			// over the unit's normal attack animation.
+			if unit.PerkState.WhirlwindAnimRemaining > 0 {
+				unit.PerkState.WhirlwindAnimRemaining = math.Max(0, unit.PerkState.WhirlwindAnimRemaining-dt)
 			}
 
 		case "last_stand":

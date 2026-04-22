@@ -7,7 +7,17 @@ import (
 	"sort"
 )
 
-//go:embed catalog/units/*.json
+// Embeds the entire per-unit catalog tree. Layout:
+//
+//	catalog/units/<unit>/<unit>.json   — UnitDef for that unit (loaded here)
+//	catalog/units/<unit>/paths/*.json  — per-path stat modifiers for that unit
+//	                                     (loaded by path_defs.go from the same tree)
+//
+// Adding a new unit: create catalog/units/<newunit>/<newunit>.json. Adding a
+// promotion path to an existing unit: drop a file under that unit's paths/
+// subfolder.
+//
+//go:embed catalog/units
 var unitDefsFS embed.FS
 
 // UnitDef holds the configuration for a trainable unit type.
@@ -47,25 +57,38 @@ type UnitDef struct {
 var unitDefsByType map[string]UnitDef
 
 func init() {
-	// Each file under catalog/units/ is a single UnitDef object. The filename
-	// (minus ".json") is expected to match def.Type; the file content is the
-	// authoritative source.
+	// Per-unit directory layout: each catalog/units/<dir>/ holds that unit's
+	// JSON at <dir>/<dir>.json. Walk top-level directories only; path JSONs
+	// live under <dir>/paths/ and are loaded by path_defs.go.
 	entries, err := fs.ReadDir(unitDefsFS, "catalog/units")
 	if err != nil {
 		panic("catalog/units: " + err.Error())
 	}
 	unitDefsByType = make(map[string]UnitDef, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+		if !entry.IsDir() {
+			// Loose files at the catalog root are a structural mistake — every
+			// unit now lives inside its own subdirectory. Panic so the mistake
+			// is caught at startup rather than producing a silent mis-load.
+			panic("catalog/units: unexpected file at root " + entry.Name() + " — unit JSONs must live at catalog/units/<unit>/<unit>.json")
 		}
-		data, err := unitDefsFS.ReadFile("catalog/units/" + entry.Name())
+		unitKey := entry.Name()
+		rel := "catalog/units/" + unitKey + "/" + unitKey + ".json"
+		data, err := unitDefsFS.ReadFile(rel)
 		if err != nil {
-			panic("catalog/units/" + entry.Name() + ": " + err.Error())
+			panic(rel + ": " + err.Error())
 		}
 		var def UnitDef
 		if err := json.Unmarshal(data, &def); err != nil {
-			panic("catalog/units/" + entry.Name() + ": " + err.Error())
+			panic(rel + ": " + err.Error())
+		}
+		if def.Type == "" {
+			panic(rel + `: missing "type" field`)
+		}
+		if def.Type != unitKey {
+			// Directory name is the canonical id. Mismatch means someone edited
+			// one without the other; fail loud so the catalog stays coherent.
+			panic(rel + ": def.Type " + def.Type + " does not match directory name " + unitKey)
 		}
 		unitDefsByType[def.Type] = def
 	}

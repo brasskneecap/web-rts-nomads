@@ -2391,3 +2391,115 @@ func TestRallyingBanner_RecipientGetsIcon(t *testing.T) {
 		}
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// whirlwind_core — RNG-proc bonus AoE on attack
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestWhirlwindCore_ProcAppliesAoEAndArmsAnimTimer exercises the proc path:
+// onPerkAttackFiredLocked rolls procChance each call, and on a proc it both
+// applies applyWhirlwindHitLocked (full damage to every hostile in radius,
+// excluding the primary target) and arms PerkState.WhirlwindAnimRemaining to
+// animationSeconds so the client can overlay the spin animation.
+//
+// 50 attacks at the default 20% proc rate (seeded rngPerks) give effectively
+// 1 - 0.8^50 ≈ 100% chance of at least one proc, making the test deterministic
+// for any reasonable seed.
+func TestWhirlwindCore_ProcAppliesAoEAndArmsAnimTimer(t *testing.T) {
+	s, vanguard := newGoldPerkState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	grantPerk(vanguard, "whirlwind_core")
+	def := perkDefByID("whirlwind_core")
+	if def == nil {
+		t.Fatal("whirlwind_core perk def not found")
+	}
+	radius := def.Config["radius"]
+
+	// Two enemies inside the whirlwind radius, one far-away primary target
+	// that should not be counted in the AoE (applyWhirlwindHitLocked excludes it).
+	nearA := spawnEnemy(t, s, vanguard.X+radius*0.5, vanguard.Y)
+	nearB := spawnEnemy(t, s, vanguard.X-radius*0.5, vanguard.Y)
+	farPrimary := spawnEnemy(t, s, vanguard.X+radius*3, vanguard.Y)
+	hpA := nearA.HP
+	hpB := nearB.HP
+
+	procCount := 0
+	var dead []int
+	for i := 0; i < 50; i++ {
+		before := vanguard.PerkState.WhirlwindAnimRemaining
+		s.onPerkAttackFiredLocked(vanguard, farPrimary, 10, &dead)
+		if vanguard.PerkState.WhirlwindAnimRemaining > before {
+			procCount++
+		}
+	}
+
+	if procCount == 0 {
+		t.Fatalf("whirlwind_core did not proc in 50 attacks at procChance=%.2f; RNG or gate broken",
+			def.Config["procChance"])
+	}
+	if nearA.HP >= hpA {
+		t.Errorf("nearA HP did not drop after proc: %d → %d", hpA, nearA.HP)
+	}
+	if nearB.HP >= hpB {
+		t.Errorf("nearB HP did not drop after proc: %d → %d", hpB, nearB.HP)
+	}
+	// No decay ran (we never called Update), so the timer equals
+	// animationSeconds from the most recent proc.
+	if vanguard.PerkState.WhirlwindAnimRemaining != def.Config["animationSeconds"] {
+		t.Errorf("WhirlwindAnimRemaining after last proc: got %.3f, want %.3f",
+			vanguard.PerkState.WhirlwindAnimRemaining, def.Config["animationSeconds"])
+	}
+}
+
+// TestWhirlwindCore_AnimTimerDecaysWithTicks verifies the per-tick decay in
+// perks.go advances WhirlwindAnimRemaining down to zero. Uses the public
+// tickUnitPerksLocked path by calling Update with a known dt.
+func TestWhirlwindCore_AnimTimerDecaysWithTicks(t *testing.T) {
+	s, vanguard := newGoldPerkState(t)
+
+	s.mu.Lock()
+	grantPerk(vanguard, "whirlwind_core")
+	vanguard.PerkState.WhirlwindAnimRemaining = 1.0
+	s.mu.Unlock()
+
+	// 30 ticks at dt=0.05 = 1.5s, well past animationSeconds=1.0.
+	for i := 0; i < 30; i++ {
+		s.Update(0.05)
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if vanguard.PerkState.WhirlwindAnimRemaining != 0 {
+		t.Errorf("WhirlwindAnimRemaining should decay to 0 after 1.5s of ticks; got %.3f",
+			vanguard.PerkState.WhirlwindAnimRemaining)
+	}
+}
+
+// TestWhirlwindCore_NoProcDoesNotArmTimer is a sanity check that when no proc
+// fires (procChance=0 via direct state manipulation of the rngPerks path is
+// awkward, so we instead call the AoE applier directly and verify it does
+// NOT arm the animation timer on its own — only onPerkAttackFiredLocked does).
+func TestWhirlwindCore_NoProcDoesNotArmTimer(t *testing.T) {
+	s, vanguard := newGoldPerkState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	grantPerk(vanguard, "whirlwind_core")
+	def := perkDefByID("whirlwind_core")
+	enemy := spawnEnemy(t, s, vanguard.X+def.Config["radius"]*0.5, vanguard.Y)
+	hpBefore := enemy.HP
+
+	// Call the applier without going through the proc gate.
+	var dead []int
+	s.applyWhirlwindHitLocked(vanguard, nil, def.Config["radius"], &dead)
+
+	if enemy.HP >= hpBefore {
+		t.Errorf("applyWhirlwindHitLocked did not damage enemy inside radius")
+	}
+	if vanguard.PerkState.WhirlwindAnimRemaining != 0 {
+		t.Errorf("animation timer should only be armed by onPerkAttackFiredLocked, not the applier; got %.3f",
+			vanguard.PerkState.WhirlwindAnimRemaining)
+	}
+}

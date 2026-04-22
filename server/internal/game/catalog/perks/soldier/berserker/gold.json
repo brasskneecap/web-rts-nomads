@@ -14,12 +14,12 @@
     "id": "whirlwind_core",
     "displayName": "Whirlwind Core",
     "icon": "perk-whirlwind-core",
-    "description": "Every few seconds, attacks briefly become a whirlwind hitting all nearby enemies.",
-    "tooltipTemplate": "Every {cooldownSeconds:1}s, attacks hit all enemies within {radius} units for {activeSeconds:1}s.",
+    "description": "Attacks have a chance to trigger a bonus spin that hits all nearby enemies.",
+    "tooltipTemplate": "{procChance%} chance on attack to spin, dealing full damage to all enemies within {radius} units.",
     "config": {
-      "activeSeconds": 3,
-      "cooldownSeconds": 10,
-      "radius": 70
+      "procChance": 0.2,
+      "radius": 70,
+      "animationSeconds": 1
     }
   },
   {
