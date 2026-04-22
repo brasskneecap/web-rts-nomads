@@ -71,6 +71,13 @@ type Unit struct {
 	AttackBuildingTargetID string
 	Attacking              bool
 	ManualMove             bool
+	// Set by AttackWithUnits when the player explicitly right-clicks an enemy.
+	// While true the combat AI must not drop the target via the leash check
+	// and must not retarget to a closer alternative — the player's pick wins
+	// until the target dies, becomes invisible, or another command supersedes.
+	// Cleared by resetUnitMovementLocked (all subsequent commands) and by the
+	// combat tick when the target becomes invalid.
+	ManualAttackTarget bool
 
 	CombatAnchorX      float64
 	CombatAnchorY      float64

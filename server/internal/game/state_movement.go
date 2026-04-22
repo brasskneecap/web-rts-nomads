@@ -248,6 +248,7 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.AttackBuildingTargetID = ""
 	unit.Attacking = false
 	unit.ManualMove = false
+	unit.ManualAttackTarget = false
 	unit.Visible = true
 	unit.Status = "Idle"
 	unit.CurrentTargetScore = 0

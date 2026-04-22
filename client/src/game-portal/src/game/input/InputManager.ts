@@ -5,6 +5,7 @@ import { Camera } from '../rendering/Camera'
 import { getMinimapBounds } from '../rendering/CanvasRenderer'
 import { NetworkClient } from '../network/NetworkClient'
 import { BUILDABLE_BUILDING_DEFS } from '../maps/buildingDefs'
+import { resolveCursor } from '../rendering/cursors'
 
 export class InputManager {
   private canvas: HTMLCanvasElement
@@ -69,7 +70,7 @@ export class InputManager {
   private onKeyDown = (e: KeyboardEvent) => {
     if (e.code === 'Space') {
       this.isSpaceHeld = true
-      this.canvas.style.cursor = 'grab'
+      this.canvas.style.cursor = resolveCursor('grab', 'grab')
       e.preventDefault()
       return
     }
@@ -129,7 +130,7 @@ export class InputManager {
 
       if (this.isSpaceHeld) {
         this.isSpacePanning = true
-        this.canvas.style.cursor = 'grabbing'
+        this.canvas.style.cursor = resolveCursor('grabbing', 'grabbing')
         return
       }
 
@@ -208,7 +209,9 @@ export class InputManager {
     if (this.isSpacePanning) {
       this.isLeftMouseDown = false
       this.isSpacePanning = false
-      this.canvas.style.cursor = this.isSpaceHeld ? 'grab' : 'default'
+      this.canvas.style.cursor = this.isSpaceHeld
+        ? resolveCursor('grab', 'grab')
+        : resolveCursor('default', 'default')
       return
     }
 
@@ -340,7 +343,7 @@ export class InputManager {
     this.state.setHoveredInteractableObstacle(null)
     this.state.setHoveredEnemyUnit(null)
     if (!this.isSpaceHeld && !this.isSpacePanning && !this.isMiddleMouseDown) {
-      this.canvas.style.cursor = 'default'
+      this.canvas.style.cursor = resolveCursor('default', 'default')
     }
   }
 
@@ -426,14 +429,16 @@ export class InputManager {
 
   private updateHoverCursor(screenX: number, screenY: number) {
     if (this.isSpaceHeld || this.isSpacePanning) {
-      this.canvas.style.cursor = this.isSpacePanning ? 'grabbing' : 'grab'
+      this.canvas.style.cursor = this.isSpacePanning
+        ? resolveCursor('grabbing', 'grabbing')
+        : resolveCursor('grab', 'grab')
       this.state.setHoveredInteractableBuilding(null)
       this.state.setHoveredInteractableObstacle(null)
       return
     }
 
     if (this.isMiddleMouseDown || this.isMinimapNavigating) {
-      this.canvas.style.cursor = 'default'
+      this.canvas.style.cursor = resolveCursor('default', 'default')
       this.state.setHoveredInteractableBuilding(null)
       this.state.setHoveredInteractableObstacle(null)
       return
@@ -442,7 +447,7 @@ export class InputManager {
     if (this.state.isBuildPlacementActive()) {
       this.state.setHoveredInteractableBuilding(null)
       this.state.setHoveredInteractableObstacle(null)
-      this.canvas.style.cursor = 'crosshair'
+      this.canvas.style.cursor = resolveCursor('crosshair', 'crosshair')
       return
     }
 
@@ -457,11 +462,24 @@ export class InputManager {
     const isGatherableObstacle = !!hoveredObstacle
     const isRepairableBuilding = this.isRepairableBuilding(hoveredBuilding)
 
+    // Resource kind decides chopwood vs minegold. Buildings and obstacles
+    // both carry an optional `resourceType`; fall back to the generic gather
+    // SVG when the source doesn't declare one.
+    const gatherResource = isGatherableBuilding
+      ? hoveredBuilding!.resourceType
+      : isGatherableObstacle
+        ? hoveredObstacle!.resourceType
+        : undefined
+    const gatherCursorKey =
+      gatherResource === 'wood' ? 'chopwood'
+      : gatherResource === 'gold' ? 'minegold'
+      : 'gather'
+
     if (this.state.isUnitTargetingActive('move')) {
       this.state.setHoveredInteractableBuilding(null)
       this.state.setHoveredInteractableObstacle(null)
       this.state.setHoveredEnemyUnit(null)
-      this.canvas.style.cursor = this.moveCursor
+      this.canvas.style.cursor = resolveCursor('move', this.moveCursor)
       return
     }
 
@@ -471,7 +489,7 @@ export class InputManager {
         isGatherableObstacle && hoveredObstacle?.id ? hoveredObstacle.id : null,
       )
       this.state.setHoveredEnemyUnit(null)
-      this.canvas.style.cursor = this.gatherCursor
+      this.canvas.style.cursor = resolveCursor(gatherCursorKey, this.gatherCursor)
       return
     }
 
@@ -479,7 +497,7 @@ export class InputManager {
       this.state.setHoveredInteractableBuilding(isRepairableBuilding ? hoveredBuilding!.id : null)
       this.state.setHoveredInteractableObstacle(null)
       this.state.setHoveredEnemyUnit(null)
-      this.canvas.style.cursor = this.repairCursor
+      this.canvas.style.cursor = resolveCursor('repair', this.repairCursor)
       return
     }
 
@@ -489,7 +507,7 @@ export class InputManager {
       this.state.setHoveredEnemyUnit(hoveredEnemy.id)
       this.state.setHoveredInteractableBuilding(null)
       this.state.setHoveredInteractableObstacle(null)
-      this.canvas.style.cursor = this.attackCursor
+      this.canvas.style.cursor = resolveCursor('attack', this.attackCursor)
       return
     }
 
@@ -512,10 +530,10 @@ export class InputManager {
       canGatherObstacle && hoveredObstacle?.id ? hoveredObstacle.id : null,
     )
     this.canvas.style.cursor = canRepair
-      ? this.repairCursor
+      ? resolveCursor('repair', this.repairCursor)
       : canGatherBuilding || canGatherObstacle
-        ? this.gatherCursor
-        : 'default'
+        ? resolveCursor(gatherCursorKey, this.gatherCursor)
+        : resolveCursor('default', 'default')
   }
 
   private isInsideMinimap(screenX: number, screenY: number) {

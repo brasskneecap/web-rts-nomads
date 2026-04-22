@@ -143,6 +143,14 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 		s.clearCombatTargetLocked(unit)
 	}
 
+	// Player-issued attack targets are sticky. The AI must not retarget off
+	// them in favor of a closer/higher-scored alternative, and must not
+	// retreat — the player explicitly chose this fight. Dropping (target
+	// dead/invalid) already cleared the flag in shouldDropCurrentTargetLocked.
+	if unit.ManualAttackTarget && unit.AttackTargetID != 0 {
+		return
+	}
+
 	if s.shouldRetreatLocked(unit, profile, ctx) {
 		s.clearCombatTargetLocked(unit)
 		s.issueRetreatLocked(unit, profile, ctx.blocked)
@@ -209,6 +217,7 @@ func (s *GameState) clearCombatTargetLocked(unit *Unit) {
 	unit.AttackTargetID = 0
 	unit.AttackBuildingTargetID = ""
 	unit.Attacking = false
+	unit.ManualAttackTarget = false
 	unit.CurrentTargetScore = 0
 	if !unit.Moving {
 		unit.Status = "Idle"

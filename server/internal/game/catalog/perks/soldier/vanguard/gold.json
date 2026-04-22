@@ -33,8 +33,8 @@
     "tooltipTemplate": "After standing still for {stationaryThresholdSeconds:1}s, plant a banner ({bannerRadius} radius, lasts {bannerDurationSeconds:1}s) that grants nearby allies +{bannerArmorBonus} armor and +{bannerAttackSpeedBonus%} attack speed. Replant cooldown: {cooldownSeconds:1}s.",
     "config": {
       "stationaryThresholdSeconds": 3,
-      "bannerDurationSeconds": 8,
-      "bannerRadius": 120,
+      "bannerDurationSeconds": 15,
+      "bannerRadius": 160,
       "bannerArmorBonus": 24,
       "bannerAttackSpeedBonus": 0.25,
       "cooldownSeconds": 12

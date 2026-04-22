@@ -21,6 +21,7 @@ import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
 import { formatPerkTooltip } from './perkTooltip'
+import { isPointInUnitBody } from '../rendering/unitSprites'
 
 /**
  * Live-compounded trap stats for archer/trapper units, reflecting the full
@@ -719,23 +720,21 @@ export class GameState {
     }
   }
 
-  getUnitAtPosition(x: number, y: number, radius = 14): Unit | undefined {
+  // Hit-tests against the unit's visible body (sprite or procedural bounds),
+  // not a circle at the feet anchor. `padding` grows the hit rect outward on
+  // all sides; the default is tuned to feel forgiving without overlapping
+  // adjacent units.
+  getUnitAtPosition(x: number, y: number, padding?: number): Unit | undefined {
     return this.getInteractionUnits().find((unit) => {
       if (!this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
-
-      const dx = unit.x - x
-      const dy = unit.y - y
-      return Math.sqrt(dx * dx + dy * dy) <= radius
+      return isPointInUnitBody(x, y, unit, padding)
     })
   }
 
-  getEnemyUnitAtPosition(x: number, y: number, radius = 14): Unit | undefined {
+  getEnemyUnitAtPosition(x: number, y: number, padding?: number): Unit | undefined {
     return this.getInteractionUnits().find((unit) => {
       if (this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
-
-      const dx = unit.x - x
-      const dy = unit.y - y
-      return Math.sqrt(dx * dx + dy * dy) <= radius
+      return isPointInUnitBody(x, y, unit, padding)
     })
   }
 

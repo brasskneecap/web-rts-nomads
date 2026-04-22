@@ -27,14 +27,25 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 		unit.AttackTargetID = targetUnitID
 		unit.Attacking = false
 		unit.Status = "Moving To Attack"
-		unit.CombatAnchorX = unit.X
-		unit.CombatAnchorY = unit.Y
+		unit.ManualAttackTarget = true
+		// Anchor on the target, not the unit's current position. The leash
+		// check is centered on the anchor; using unit.X/Y would fail for any
+		// long-distance attack command and the AI would drop the target on
+		// the next tick. Target-centered anchor mirrors MoveUnits/AttackMoveUnits.
+		unit.CombatAnchorX = target.X
+		unit.CombatAnchorY = target.Y
 
 		dx := target.X - unit.X
 		dy := target.Y - unit.Y
 		dist := math.Sqrt(dx*dx + dy*dy)
 		if dist > unit.AttackRange {
-			s.assignUnitPath(unit, protocol.Vec2{X: target.X, Y: target.Y}, blocked, nil)
+			// Path to the approach point (just inside AttackRange) rather than
+			// the target's center. Pathing to dead-center made units overshoot
+			// the enemy — they'd walk past the attack ring to the exact click
+			// position and only re-engage after reaching it.
+			profile := resolveCombatProfile(unit)
+			dest := s.computeApproachPointLocked(unit, target.X, target.Y, profile)
+			s.assignUnitPath(unit, dest, blocked, nil)
 		}
 	}
 }
@@ -88,6 +99,7 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 			target := s.getUnitByIDLocked(unit.AttackTargetID)
 			if target == nil || !target.Visible {
 				unit.AttackTargetID = 0
+				unit.ManualAttackTarget = false
 				unit.Attacking = false
 				unit.Status = "Idle"
 			} else {

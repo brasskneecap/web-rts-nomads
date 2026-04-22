@@ -1,0 +1,18 @@
+{
+  "key": "rallying_banner",
+  "size": {
+    "width": 64,
+    "height": 64
+  },
+  "animations": {
+    "idle": {
+      "frameCount": 11,
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "sheet": "packed/idle.png",
+      "loop": true
+    }
+  },
+  "scale": 1,
+  "offsetY": -16
+}

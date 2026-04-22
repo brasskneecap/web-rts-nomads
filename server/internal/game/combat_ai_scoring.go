@@ -11,6 +11,12 @@ func (s *GameState) shouldDropCurrentTargetLocked(unit *Unit, profile CombatProf
 		if target == nil || !target.Visible || target.HP <= 0 || target.OwnerID == unit.OwnerID {
 			return true
 		}
+		// Player-issued targets bypass the leash — the whole point of
+		// right-clicking a distant enemy is to chase that enemy, not to stay
+		// anchored wherever the unit was when the order was given.
+		if unit.ManualAttackTarget {
+			return false
+		}
 		return !s.targetInsideLeashLocked(unit, target.X, target.Y, profile)
 	}
 	if unit.AttackBuildingTargetID != "" {
