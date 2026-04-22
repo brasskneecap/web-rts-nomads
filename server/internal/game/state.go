@@ -109,6 +109,12 @@ type Unit struct {
 	Path                []protocol.Vec2
 	OrderID             int64
 
+	// NonCombat marks the unit as passive: combat AI never auto-acquires
+	// targets for it. The unit only engages when the player issues an
+	// explicit OrderAttackTarget (sticky attack). Workers are the canonical
+	// non-combat unit; see catalog/units/worker.json.
+	NonCombat bool
+
 	Damage                 int
 	AttackRange            float64
 	AttackSpeed            float64
@@ -895,6 +901,13 @@ func (s *GameState) removeUnitLocked(unitID int) {
 			u.AttackTargetID = 0
 			u.Attacking = false
 			u.Status = "Idle"
+			// If the player's explicit attack order was on this unit, demote
+			// it back to Idle so non-combat attackers (workers) return to
+			// passive state and combat attackers resume default AI targeting.
+			// Mirrors the demotion in clearCombatTargetLocked.
+			if u.Order.Type == OrderAttackTarget {
+				u.Order = OrderState{Type: OrderIdle}
+			}
 		}
 		delete(u.ThreatTable, unitID)
 		delete(u.TankedDamageByUnit, unitID)

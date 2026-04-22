@@ -63,6 +63,7 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		Archetype:          resolveUnitArchetype(def, unitType),
 		Name:               def.Name,
 		Capabilities:       append([]string{}, def.Capabilities...),
+		NonCombat:          def.NonCombat,
 		Visible:            true,
 		Status:             "Idle",
 		X:                  spawn.X,

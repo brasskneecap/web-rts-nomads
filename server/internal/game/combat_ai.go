@@ -145,6 +145,15 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 		if unit.Order.Type == OrderMove && unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == "" {
 			continue
 		}
+		// Non-combat units (workers) never auto-acquire. They only engage when
+		// the player explicitly issues OrderAttackTarget via AttackWithUnits —
+		// once that order is set, combat evaluation runs normally (the sticky-
+		// attack short-circuit inside evaluateCombatLocked handles the rest).
+		// When the target is cleared, clearCombatTargetLocked demotes the
+		// order back to OrderIdle and this gate skips them again on the next tick.
+		if unit.NonCombat && unit.Order.Type != OrderAttackTarget {
+			continue
+		}
 		s.evaluateCombatLocked(unit, ctx)
 	}
 }

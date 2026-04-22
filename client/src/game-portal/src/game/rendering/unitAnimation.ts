@@ -43,6 +43,7 @@ export class UnitAnimationController {
     attackFrameDurationMs: number | undefined,
     renderTime: number,
     carriedResource: string | undefined,
+    unitType: string | undefined,
   ): UnitAnimationSample {
     let state = this.states.get(unitId)
     if (!state) {
@@ -78,6 +79,7 @@ export class UnitAnimationController {
       status,
       serverMoving === true || interpolatedMoving,
       carriedResource,
+      unitType,
     )
 
     if (animation !== state.animation) {
@@ -135,8 +137,14 @@ function pickAnimation(
   status: string | undefined,
   moving: boolean,
   carriedResource: string | undefined,
+  unitType: string | undefined,
 ): UnitAnimationName {
-  if (status === 'Attacking') return 'attacking'
+  if (status === 'Attacking') {
+    // Workers have no dedicated attack sprite — reuse the chopping animation
+    // so their melee swing reads correctly (same axe arc they use on trees).
+    if (unitType === 'worker') return 'chopping'
+    return 'attacking'
+  }
   if (status === 'Chopping Wood') return 'chopping'
   if (moving) {
     if (carriedResource === 'gold') return 'carrying_gold'

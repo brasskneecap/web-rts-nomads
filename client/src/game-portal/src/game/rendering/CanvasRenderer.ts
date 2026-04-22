@@ -1390,6 +1390,7 @@ export class CanvasRenderer {
           attackFrameDurationMs,
           this.renderTime,
           unit.carriedResourceType,
+          unit.unitType,
         )
         const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
         if (frame) {

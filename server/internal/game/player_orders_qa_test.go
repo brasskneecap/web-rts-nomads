@@ -19,6 +19,120 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
+// NonCombat flag — workers never auto-aggro
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestNonCombatWorker_DoesNotAutoAcquire verifies that a worker (NonCombat=true
+// from worker.json) standing idle next to an enemy will not acquire it. The
+// worker has `"attack"` capability and non-zero Damage so it passes
+// unitUsesCombatAI, but the NonCombat gate in tickCombatAILocked must skip
+// evaluateCombatLocked for any unit whose Order.Type is not OrderAttackTarget.
+func TestNonCombatWorker_DoesNotAutoAcquire(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+
+	s.mu.Lock()
+	worker := s.spawnPlayerUnitLocked("worker", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	worker.Visible = true
+	if !worker.NonCombat {
+		s.mu.Unlock()
+		t.Fatalf("worker.NonCombat should be true from catalog; got false")
+	}
+	workerID := worker.ID
+
+	// Spawn a stationary enemy well within the worker's AttackRange.
+	enemy := spawnOrderEnemy(t, s, worker.X+30, worker.Y)
+	enemy.MoveSpeed = 0
+	enemy.Capabilities = nil
+	enemyID := enemy.ID
+	s.mu.Unlock()
+
+	tickN(s, 60)
+
+	s.mu.RLock()
+	w := s.unitsByID[workerID]
+	e := s.unitsByID[enemyID]
+	if w == nil {
+		s.mu.RUnlock()
+		t.Fatal("worker was removed unexpectedly")
+	}
+	if w.AttackTargetID != 0 {
+		t.Errorf("NonCombat worker auto-acquired target %d; AttackTargetID must be 0", w.AttackTargetID)
+	}
+	if w.Attacking {
+		t.Errorf("NonCombat worker is Attacking; expected no auto-engagement")
+	}
+	if e == nil {
+		t.Error("enemy was destroyed by worker; worker should not have engaged")
+	}
+	s.mu.RUnlock()
+}
+
+// TestNonCombatWorker_AttacksWhenExplicitlyOrdered verifies that AttackWithUnits
+// still works on a NonCombat worker — the player's explicit order must be the
+// one path that bypasses the auto-aggro gate.
+func TestNonCombatWorker_AttacksWhenExplicitlyOrdered(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+
+	s.mu.Lock()
+	worker := s.spawnPlayerUnitLocked("worker", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	worker.Visible = true
+	workerID := worker.ID
+
+	enemy := spawnOrderEnemy(t, s, worker.X+30, worker.Y)
+	enemy.HP = 10
+	enemy.MaxHP = 10
+	enemy.MoveSpeed = 0
+	enemy.Capabilities = nil
+	enemyID := enemy.ID
+	s.mu.Unlock()
+
+	s.AttackWithUnits("p1", []int{workerID}, enemyID)
+
+	s.mu.RLock()
+	w := s.unitsByID[workerID]
+	if w == nil {
+		s.mu.RUnlock()
+		t.Fatal("worker was removed after AttackWithUnits")
+	}
+	if w.Order.Type != OrderAttackTarget {
+		t.Errorf("Order.Type = %v after AttackWithUnits; want OrderAttackTarget", w.Order.Type)
+	}
+	if w.AttackTargetID != enemyID {
+		t.Errorf("AttackTargetID = %d; want %d", w.AttackTargetID, enemyID)
+	}
+	s.mu.RUnlock()
+
+	// Tick until the enemy dies.
+	const maxTicks = 200
+	died := false
+	for i := 0; i < maxTicks; i++ {
+		s.Update(0.05)
+		s.mu.RLock()
+		if s.unitsByID[enemyID] == nil {
+			died = true
+			s.mu.RUnlock()
+			break
+		}
+		s.mu.RUnlock()
+	}
+	if !died {
+		t.Fatalf("worker did not kill 10-HP enemy within %d ticks despite explicit attack order", maxTicks)
+	}
+
+	// After the kill, the worker must demote to OrderIdle and stop engaging.
+	tickN(s, 3)
+	s.mu.RLock()
+	w = s.unitsByID[workerID]
+	if w.Order.Type != OrderIdle {
+		t.Errorf("Order.Type after kill = %v; want OrderIdle (worker should go passive again)", w.Order.Type)
+	}
+	if w.AttackTargetID != 0 {
+		t.Errorf("AttackTargetID after kill = %d; want 0", w.AttackTargetID)
+	}
+	s.mu.RUnlock()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC2 – Retarget
 // ─────────────────────────────────────────────────────────────────────────────
 

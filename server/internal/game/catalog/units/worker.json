@@ -2,6 +2,7 @@
   "type": "worker",
   "name": "Worker",
   "archetype": "soldier",
+  "nonCombat": true,
   "hp": 100,
   "damage": 3,
   "attackRange": 60,
