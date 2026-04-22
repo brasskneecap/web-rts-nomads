@@ -184,6 +184,20 @@ export class GameClient {
       return
     }
 
+    if (actionId === 'hold') {
+      const unitIds = this.state.getOrderedSelectedUnitIds()
+      if (unitIds.length > 0) {
+        this.network.sendStanceCommand(unitIds, 'hold')
+      }
+      return
+    }
+
+    if (actionId === 'patrol') {
+      this.state.beginUnitTargeting('patrol')
+      this.input.refreshCursor()
+      return
+    }
+
     if (actionId === 'build') {
       this.state.openWorkerBuildMenu()
       return
@@ -296,6 +310,13 @@ export class GameClient {
           this.network.sendAttackMoveCommand(unitIds, x, y)
         }
 
+        this.state.cancelUnitTargeting()
+        return true
+      }
+
+      if (this.state.isUnitTargetingActive('patrol') && unitIds.length > 0) {
+        this.state.addFormationMoveMarkers(x, y)
+        this.network.sendPatrolCommand(unitIds, x, y)
         this.state.cancelUnitTargeting()
         return true
       }

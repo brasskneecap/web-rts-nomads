@@ -407,6 +407,8 @@ export class InputManager {
       r: 'repair',
       g: 'gather',
       a: 'attack',
+      h: 'hold',
+      p: 'patrol',
     }
 
     for (const def of BUILDABLE_BUILDING_DEFS) {
@@ -475,7 +477,7 @@ export class InputManager {
       : gatherResource === 'gold' ? 'minegold'
       : 'gather'
 
-    if (this.state.isUnitTargetingActive('move')) {
+    if (this.state.isUnitTargetingActive('move') || this.state.isUnitTargetingActive('patrol')) {
       this.state.setHoveredInteractableBuilding(null)
       this.state.setHoveredInteractableObstacle(null)
       this.state.setHoveredEnemyUnit(null)

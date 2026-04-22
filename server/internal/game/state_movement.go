@@ -32,7 +32,7 @@ func (s *GameState) MoveUnits(playerID string, unitIDs []int, dest protocol.Vec2
 		unit := validUnits[0]
 		orderID := s.nextMovementOrderIDLocked()
 		s.resetUnitMovementLocked(unit, orderID)
-		unit.ManualMove = true
+		unit.Order = OrderState{Type: OrderMove, DestX: dest.X, DestY: dest.Y}
 		unit.CombatAnchorX = dest.X
 		unit.CombatAnchorY = dest.Y
 		s.assignUnitPath(unit, dest, blocked, nil)
@@ -56,7 +56,7 @@ func (s *GameState) MoveUnits(playerID string, unitIDs []int, dest protocol.Vec2
 	for i, unit := range validUnits {
 		target := targets[i]
 		s.resetUnitMovementLocked(unit, orderID)
-		unit.ManualMove = true
+		unit.Order = OrderState{Type: OrderMove, DestX: target.X, DestY: target.Y}
 		unit.CombatAnchorX = target.X
 		unit.CombatAnchorY = target.Y
 
@@ -93,6 +93,7 @@ func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protoco
 		unit := validUnits[0]
 		orderID := s.nextMovementOrderIDLocked()
 		s.resetUnitMovementLocked(unit, orderID)
+		unit.Order = OrderState{Type: OrderAttackMove, DestX: dest.X, DestY: dest.Y}
 		unit.CombatAnchorX = dest.X
 		unit.CombatAnchorY = dest.Y
 		s.assignUnitPath(unit, dest, blocked, nil)
@@ -116,6 +117,7 @@ func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protoco
 	for i, unit := range validUnits {
 		target := targets[i]
 		s.resetUnitMovementLocked(unit, orderID)
+		unit.Order = OrderState{Type: OrderAttackMove, DestX: target.X, DestY: target.Y}
 		unit.CombatAnchorX = target.X
 		unit.CombatAnchorY = target.Y
 
@@ -247,8 +249,7 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.AttackTargetID = 0
 	unit.AttackBuildingTargetID = ""
 	unit.Attacking = false
-	unit.ManualMove = false
-	unit.ManualAttackTarget = false
+	unit.Order = OrderState{Type: OrderIdle}
 	unit.Visible = true
 	unit.Status = "Idle"
 	unit.CurrentTargetScore = 0

@@ -1,5 +1,17 @@
 package protocol
 
+// Order string constants used in UnitSnapshot.Order and mirrored in the
+// TypeScript client. Defined once here so both the server and the frontend
+// share a single source of truth for the wire values.
+const (
+	OrderStringIdle         = "idle"
+	OrderStringMove         = "move"
+	OrderStringAttackMove   = "attack_move"
+	OrderStringAttackTarget = "attack_target"
+	OrderStringHold         = "hold"
+	OrderStringPatrol       = "patrol"
+)
+
 type Vec2 struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
@@ -202,6 +214,21 @@ type AttackMoveCommandMessage struct {
 	Destination Vec2   `json:"destination"`
 }
 
+// SetStanceCommandMessage instructs the server to change the standing order for
+// the given units to a non-movement stance. Stance must be "hold" or "idle".
+type SetStanceCommandMessage struct {
+	UnitIDs []int  `json:"unitIds"`
+	Stance  string `json:"stance"` // "hold" | "idle"
+}
+
+// PatrolCommandMessage issues a patrol order to the given units. The unit's
+// current position becomes one waypoint; Destination becomes the other.
+// Units with the "attack" capability only (mirrors AttackMoveCommandMessage).
+type PatrolCommandMessage struct {
+	UnitIDs     []int `json:"unitIds"`
+	Destination Vec2  `json:"destination"`
+}
+
 type CancelTrainingCommandMessage struct {
 	Type       string `json:"type"`
 	BuildingID string `json:"buildingId"`
@@ -255,6 +282,10 @@ type UnitSnapshot struct {
 	Capabilities        []string `json:"capabilities,omitempty"`
 	Visible             bool     `json:"visible"`
 	Status              string   `json:"status,omitempty"`
+	// Order is the unit's current standing order (see OrderString* constants).
+	// omitempty so old clients receiving snapshots from new servers still parse
+	// cleanly — an absent field is treated as "idle" by clients.
+	Order               string   `json:"order,omitempty"`
 	X                   float64  `json:"x"`
 	Y                   float64  `json:"y"`
 	HP                  int      `json:"hp"`

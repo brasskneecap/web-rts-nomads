@@ -10,6 +10,55 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
+// OrderType is the player's standing order for a unit. It is the single source
+// of truth for "what is this unit doing from the player's intent perspective".
+// The zero value is OrderIdle so freshly-allocated Units are always valid.
+//
+// queue-ready: this becomes []OrderState for shift-queue in a future design.
+type OrderType int
+
+const (
+	OrderIdle        OrderType = iota // no standing order; default acquisition
+	OrderMove                         // force-move: ignore enemies en route
+	OrderAttackMove                   // a-move: break off to engage acquired enemies
+	OrderAttackTarget                 // sticky attack on AttackTargetID/AttackBuildingTargetID
+	OrderHold                         // do not move; engage in-range enemies only
+	OrderPatrol                       // cycle waypoints; engage acquired enemies; resume
+)
+
+// orderTypeString returns the wire-format string for OrderType, matching the
+// constants defined in protocol/messages.go. Used by Snapshot.
+func orderTypeString(t OrderType) string {
+	switch t {
+	case OrderMove:
+		return protocol.OrderStringMove
+	case OrderAttackMove:
+		return protocol.OrderStringAttackMove
+	case OrderAttackTarget:
+		return protocol.OrderStringAttackTarget
+	case OrderHold:
+		return protocol.OrderStringHold
+	case OrderPatrol:
+		return protocol.OrderStringPatrol
+	default:
+		return protocol.OrderStringIdle
+	}
+}
+
+// OrderState holds the player's standing order for a unit.
+// queue-ready: this becomes []OrderState for shift-queue.
+type OrderState struct {
+	Type OrderType
+	// Destination for Move / AttackMove. Re-used as patrol "current waypoint".
+	DestX, DestY float64
+	// Patrol-only: the OTHER endpoint of the patrol leg.
+	// PatrolWaypoints can grow to a []Vec2 later if N-point patrol is wanted.
+	PatrolReturnX, PatrolReturnY float64
+	// For Hold: the position where the unit was ordered to hold.
+	// For AttackMove/Patrol: the anchor returned to when combat ends.
+	HoldX, HoldY float64
+}
+
 type Unit struct {
 	ID                  int
 	OwnerID             string
@@ -70,14 +119,12 @@ type Unit struct {
 	AttackTargetID         int
 	AttackBuildingTargetID string
 	Attacking              bool
-	ManualMove             bool
-	// Set by AttackWithUnits when the player explicitly right-clicks an enemy.
-	// While true the combat AI must not drop the target via the leash check
-	// and must not retarget to a closer alternative — the player's pick wins
-	// until the target dies, becomes invisible, or another command supersedes.
-	// Cleared by resetUnitMovementLocked (all subsequent commands) and by the
-	// combat tick when the target becomes invalid.
-	ManualAttackTarget bool
+	// Order is the player's current standing order for this unit. It is the
+	// single source of truth for intent — replacing the old ManualMove /
+	// ManualAttackTarget bool pair. All combat-AI gates, retreat suppression,
+	// and resume-after-combat logic key off Order.Type.
+	// queue-ready: becomes []OrderState for shift-queue in a future design.
+	Order OrderState
 
 	CombatAnchorX      float64
 	CombatAnchorY      float64
@@ -419,6 +466,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Capabilities:        append([]string(nil), unit.Capabilities...),
 			Visible:             unit.Visible,
 			Status:              unit.Status,
+			Order:               orderTypeString(unit.Order.Type),
 			X:                   unit.X,
 			Y:                   unit.Y,
 			HP:                  unit.HP,
@@ -665,13 +713,19 @@ func (s *GameState) Update(dt float64) {
 		}
 
 		if !unit.Moving {
-			unit.ManualMove = false
+			// Force-move order is complete when the unit stops moving.
+			if unit.Order.Type == OrderMove {
+				unit.Order = OrderState{Type: OrderIdle}
+			}
 			continue
 		}
 
 		if len(unit.Path) == 0 {
 			unit.Moving = false
-			unit.ManualMove = false
+			// Force-move order is complete when the path is exhausted.
+			if unit.Order.Type == OrderMove {
+				unit.Order = OrderState{Type: OrderIdle}
+			}
 			continue
 		}
 

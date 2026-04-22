@@ -13,9 +13,11 @@ import type {
   ResourceType,
   TrapSnapshot,
   UnitCapability,
+  UnitOrder,
   UnitType,
   WaveSnapshot,
 } from '../network/protocol'
+import { UNIT_ORDER_LABELS } from '../network/protocol'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
@@ -91,6 +93,8 @@ export type Unit = {
    * Absent for all other unit types.
    */
   effectiveTrap?: EffectiveTrapSnapshot
+  /** Current order — mirrors UnitSnapshot.order. Absent on old-server snapshots; treat as 'idle'. */
+  order?: string
 }
 
 export type ActionItem = {
@@ -244,7 +248,7 @@ export type DebugSpawnConfig = {
   perkIds?: string[]
   customHp?: number
 }
-export type UnitTargetingMode = 'move' | 'gather' | 'repair' | 'attack'
+export type UnitTargetingMode = 'move' | 'gather' | 'repair' | 'attack' | 'patrol'
 
 export type BuildPlacement = {
   buildingType: string
@@ -446,6 +450,7 @@ export class GameState {
         targetY: unit.targetY,
         moving: unit.moving,
         effectiveTrap: unit.effectiveTrap,
+        order: unit.order,
       })),
     }
 
@@ -1485,6 +1490,10 @@ function formatUnitType(unitType: UnitType): string {
   return def ? `${def.name} Unit` : unitType
 }
 
+function formatUnitOrder(order: string): string {
+  return UNIT_ORDER_LABELS[order as UnitOrder] ?? order
+}
+
 function formatBuildingName(buildingType: BuildingTile['buildingType']): string {
   switch (buildingType) {
     case 'goldmine':
@@ -1613,6 +1622,10 @@ function getUnitActions(
   if (unit.capabilities.includes('build')) {
     actions.push({ id: 'repair', label: '(R)epair', active: activeMode === 'repair' })
   }
+  if (unit.capabilities.includes('attack')) {
+    actions.push({ id: 'hold', label: '(H)old' })
+    actions.push({ id: 'patrol', label: '(P)atrol', active: activeMode === 'patrol' })
+  }
   return actions
 }
 
@@ -1652,6 +1665,10 @@ function getGroupActions(
   })
   if (capabilities.has('build')) {
     actions.push({ id: 'repair', label: '(R)epair', active: activeMode === 'repair' })
+  }
+  if (capabilities.has('attack')) {
+    actions.push({ id: 'hold', label: '(H)old' })
+    actions.push({ id: 'patrol', label: '(P)atrol', active: activeMode === 'patrol' })
   }
   return actions
 }
@@ -1911,6 +1928,14 @@ function getUnitDetails(unit: Unit): DetailItem[] {
       id: 'carried-resource',
       label: `${formatResourceLabel(unit.carriedResourceType)} Carried`,
       value: String(unit.carriedAmount),
+    })
+  }
+
+  if (unit.order) {
+    details.push({
+      id: 'order',
+      label: 'Order',
+      value: formatUnitOrder(unit.order),
     })
   }
 
@@ -2202,6 +2227,8 @@ function getSelectionUnitSubtitle(baseSubtitle: string, unitTargetingMode: UnitT
       return 'Gather order ready. Left-click a goldmine or tree.'
     case 'repair':
       return 'Repair/build ready. Left-click a building under construction.'
+    case 'patrol':
+      return 'Patrol order ready. Left-click a destination.'
     default:
       return baseSubtitle
   }

@@ -5,6 +5,14 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
+// combatTargetIsValidLocked is the single source of truth for "is this unit
+// still a valid attack target?". Called from both tickUnitCombatLocked and
+// shouldDropCurrentTargetLocked so the two paths agree on the predicate set.
+// target may be nil (unit was removed).
+func (s *GameState) combatTargetIsValidLocked(unit, target *Unit) bool {
+	return target != nil && target.Visible && target.HP > 0 && target.OwnerID != unit.OwnerID
+}
+
 func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -27,7 +35,7 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 		unit.AttackTargetID = targetUnitID
 		unit.Attacking = false
 		unit.Status = "Moving To Attack"
-		unit.ManualAttackTarget = true
+		unit.Order = OrderState{Type: OrderAttackTarget, DestX: target.X, DestY: target.Y}
 		// Anchor on the target, not the unit's current position. The leash
 		// check is centered on the anchor; using unit.X/Y would fail for any
 		// long-distance attack command and the AI would drop the target on
@@ -97,10 +105,12 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 		// Handle unit-vs-unit combat
 		if unit.AttackTargetID != 0 {
 			target := s.getUnitByIDLocked(unit.AttackTargetID)
-			if target == nil || !target.Visible {
+			if !s.combatTargetIsValidLocked(unit, target) {
 				unit.AttackTargetID = 0
-				unit.ManualAttackTarget = false
 				unit.Attacking = false
+				if unit.Order.Type == OrderAttackTarget {
+					unit.Order = OrderState{Type: OrderIdle}
+				}
 				unit.Status = "Idle"
 			} else {
 				dx := target.X - unit.X
@@ -152,6 +162,12 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					}
 				} else {
 					unit.Attacking = false
+					// Hold units never move to engage. If the target walked out of
+					// attack range, drop it and stay put rather than giving chase.
+					if unit.Order.Type == OrderHold {
+						s.clearCombatTargetLocked(unit)
+						continue
+					}
 					unit.Status = "Moving To Attack"
 					profile := resolveCombatProfile(unit)
 					if !unit.Moving {
@@ -210,6 +226,12 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					}
 				} else {
 					unit.Attacking = false
+					// Hold units never move to engage buildings either.
+					if unit.Order.Type == OrderHold {
+						unit.AttackBuildingTargetID = ""
+						unit.Status = "Idle"
+						continue
+					}
 					unit.Status = "Moving To Attack"
 					if !unit.Moving {
 						// Re-path to the same claimed position rather than recalculating,

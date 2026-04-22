@@ -198,6 +198,36 @@ export type RepairCommandMessage = {
   buildingId: string
 }
 
+// ─── Player Orders ────────────────────────────────────────────────────────────
+
+/** Compile-time-safe union of every order string the server can put on a unit.
+ *  If the server renames a value, the client breaks here at typecheck time. */
+export type UnitOrder = 'idle' | 'move' | 'attack_move' | 'attack_target' | 'hold' | 'patrol'
+
+/** Exhaustive map so a human-readable label is always available without
+ *  scattered switch statements across the codebase. */
+export const UNIT_ORDER_LABELS: Record<UnitOrder, string> = {
+  idle: 'Idle',
+  move: 'Moving',
+  attack_move: 'Attack Move',
+  attack_target: 'Attacking',
+  hold: 'Hold',
+  patrol: 'Patrol',
+}
+
+export type SetStanceCommandMessage = {
+  type: 'set_stance_command'
+  unitIds: number[]
+  /** 'hold' | 'idle' — any other value is rejected server-side. */
+  stance: 'hold' | 'idle'
+}
+
+export type PatrolCommandMessage = {
+  type: 'patrol_command'
+  unitIds: number[]
+  destination: Vec2
+}
+
 // Dev-only command issued by the DebugSpawnPanel. See MapDebugConfig.debugSpawn —
 // the server hard-gates this to maps with that flag on. perkIds are applied
 // verbatim (no eligibility filtering) so any combo can be tested. team="mine"
@@ -241,6 +271,8 @@ export type ClientMessage =
   | BuildBuildingCommandMessage
   | RepairCommandMessage
   | DebugSpawnUnitCommandMessage
+  | SetStanceCommandMessage
+  | PatrolCommandMessage
   | PongMessage
 
 // One entry in a unit's activeBuffs / activeDebuffs list. `id` is the perk
@@ -308,6 +340,8 @@ export type UnitSnapshot = {
   targetX?: number
   targetY?: number
   moving: boolean
+  /** Current order type — one of the UnitOrder values. Omitted by old servers; treat absence as 'idle'. */
+  order?: UnitOrder
   /**
    * Live-compounded trap stats for archer/trapper units. Only present when the
    * unit is a trapper archetype that owns at least one trap bronze perk.
