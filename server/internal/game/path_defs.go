@@ -15,10 +15,12 @@ import (
 var pathDefsFS embed.FS
 
 // pathCatalogFile is the on-disk shape of a single
-// catalog/units/<unit>/paths/<path>.json. One file per promotion path for
-// that unit; the file carries per-rank stat multipliers in a ranks map so
-// editing a single (path, rank) cell is a one-number change with no risk
-// of contaminating another path.
+// catalog/units/<unit>/paths/<path>/<path>.json. Each promotion path owns
+// its own directory under its unit; the JSON inside carries the per-rank
+// stat multipliers in a ranks map so editing a single (path, rank) cell is
+// a one-number change with no risk of contaminating another path. Perks
+// for the same path live alongside it at .../<path>/perks/*.json and are
+// loaded by perk_defs.go.
 type pathCatalogFile struct {
 	Path        string                       `json:"path"`
 	Description string                       `json:"description,omitempty"`
@@ -72,8 +74,14 @@ var validRankName = map[string]struct{}{
 }
 
 func init() {
-	// Walk each unit directory looking for a paths/ subfolder. Units without
-	// promotion paths (worker, raider) simply have no paths/ dir — no error.
+	// Layout:
+	//   catalog/units/<unit>/paths/<path>/<path>.json  — per-path stat curve
+	//   catalog/units/<unit>/paths/<path>/perks/*.json — per-rank perk pool
+	//                                                    (loaded in perk_defs.go)
+	//
+	// Walk each unit's paths/ subfolder; each entry is a path directory
+	// containing the JSON at <path>/<path>.json. Units without promotion
+	// paths (worker, raider) simply have no paths/ dir — no error.
 	unitEntries, err := fs.ReadDir(pathDefsFS, "catalog/units")
 	if err != nil {
 		panic("catalog/units: " + err.Error())
@@ -89,16 +97,19 @@ func init() {
 
 		pathEntries, err := fs.ReadDir(pathDefsFS, pathsDir)
 		if err != nil {
-			// No paths/ subfolder for this unit — the unit simply doesn't
-			// have promotion paths (e.g. worker, raider). Not an error.
-			continue
+			continue // no paths/ — this unit has no promotion paths
 		}
 
 		for _, pathEntry := range pathEntries {
-			if pathEntry.IsDir() {
-				continue
+			if !pathEntry.IsDir() {
+				// Each entry under paths/ is now a directory (<path>/). A
+				// loose file here is a structural mistake — panic so the
+				// mismatch is caught at startup.
+				panic(fmt.Sprintf("%s: unexpected file %q — paths/ must contain path directories, not loose files",
+					pathsDir, pathEntry.Name()))
 			}
-			rel := pathsDir + "/" + pathEntry.Name()
+			pathKey := pathEntry.Name()
+			rel := pathsDir + "/" + pathKey + "/" + pathKey + ".json"
 			data, err := pathDefsFS.ReadFile(rel)
 			if err != nil {
 				panic(rel + ": " + err.Error())
@@ -110,6 +121,12 @@ func init() {
 			if file.Path == "" {
 				panic(rel + `: missing "path" field`)
 			}
+			if file.Path != pathKey {
+				// Directory name is the canonical path id. A mismatch means
+				// someone edited one without the other; fail loud so the
+				// catalog stays coherent.
+				panic(fmt.Sprintf("%s: path %q does not match directory name %q", rel, file.Path, pathKey))
+			}
 			for rankName, stats := range file.Ranks {
 				if _, ok := validRankName[rankName]; !ok {
 					panic(fmt.Sprintf("%s: unknown rank %q (want bronze/silver/gold)", rel, rankName))
@@ -117,9 +134,8 @@ func init() {
 				key := pathModifierKey(file.Path, rankName)
 				if _, exists := pathModifiersByKey[key]; exists {
 					// Two files define the same (path, rank) — e.g. if
-					// vanguard.json appeared under both soldier/paths and
-					// archer/paths. Path ids are globally unique, so this is
-					// always a mistake; fail loud at startup.
+					// berserker appeared under both soldier/paths and
+					// archer/paths. Path ids are globally unique; fail loud.
 					panic(fmt.Sprintf("%s: duplicate definition for %s", rel, key))
 				}
 				pathModifiersByKey[key] = pathModifierDef{
