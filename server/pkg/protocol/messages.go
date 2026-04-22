@@ -357,7 +357,12 @@ type TrapSnapshot struct {
 	// non-default animation for this trap (e.g. "electrified" caltrops under
 	// ascendant_infusion). Empty/omitted means "use the trap's default
 	// animation". Values are coordinated between server and client assets.
-	Variant          string  `json:"variant,omitempty"`
+	Variant string `json:"variant,omitempty"`
+	// ScaleMultiplier is an extra render-scale factor applied on top of the
+	// sprite set's base scale. Populated for perks that visually inflate the
+	// trap (e.g. overload_protocol → explosive_trap → 2×). 0/omitted on the
+	// wire means "no multiplier"; the client treats that as 1×.
+	ScaleMultiplier  float64 `json:"scaleMultiplier,omitempty"`
 	Type             string  `json:"type"`
 	RemainingSeconds float64 `json:"remainingSeconds"`
 	Triggered        bool    `json:"triggered,omitempty"`
@@ -368,6 +373,29 @@ type TrapSnapshot struct {
 // each client checks whether its own ID is present.
 type GameOverSnapshot struct {
 	LostPlayerIDs []string `json:"lostPlayerIds"`
+}
+
+// ProjectileSnapshot carries an in-flight ranged attack to the client each tick.
+// The client renders a shape (or sprite, by Variant) traveling along the arc
+// from (OriginX, OriginY) toward the homing target position (TargetX, TargetY),
+// positioned by Progress (0 = just fired, 1 = landing). OwnerID is used for
+// team-color tinting. TargetUnitID is informational — the server owns the
+// homing update, so Target fields already reflect the current tracked position.
+type ProjectileSnapshot struct {
+	ID           string  `json:"id"`
+	OwnerUnitID  int     `json:"ownerUnitId"`
+	OwnerID      string  `json:"ownerId"`
+	TargetUnitID int     `json:"targetUnitId,omitempty"`
+	OriginX      float64 `json:"originX"`
+	OriginY      float64 `json:"originY"`
+	TargetX      float64 `json:"targetX"`
+	TargetY      float64 `json:"targetY"`
+	// Progress is the fraction of the flight completed, 0..1.
+	Progress float64 `json:"progress"`
+	// Variant is the sprite key used by the client to pick a visual. Defaults
+	// to the attacker's unit type; perks may override it at fire time for
+	// alternate shot visuals (e.g. "fire_arrow").
+	Variant string `json:"variant,omitempty"`
 }
 
 type MatchSnapshotMessage struct {
@@ -382,6 +410,7 @@ type MatchSnapshotMessage struct {
 	Wave          WaveSnapshot            `json:"wave"`
 	Banners       []BannerSnapshot        `json:"banners,omitempty"`
 	Traps         []TrapSnapshot          `json:"traps,omitempty"`
+	Projectiles   []ProjectileSnapshot    `json:"projectiles,omitempty"`
 	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
 	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
 }

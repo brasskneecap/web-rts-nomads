@@ -9,6 +9,7 @@ import type {
   ObstacleTile,
   PerkCooldownSnapshot,
   PlayerSnapshot,
+  ProjectileSnapshot,
   ResourceType,
   TrapSnapshot,
   UnitCapability,
@@ -290,6 +291,7 @@ export class GameState {
   units: Unit[] = []
   banners: BannerSnapshot[] = []
   traps: TrapSnapshot[] = []
+  projectiles: ProjectileSnapshot[] = []
   // Battle tracker snapshot (debug). Null when the active map does not have
   // debug.battleTracker enabled. Consumed by BattleTrackerPanel.vue.
   battleTracker: BattleTrackerSnapshot | null = null
@@ -455,6 +457,7 @@ export class GameState {
     this.units = frame.units.map((unit) => ({ ...unit }))
     this.banners = message.banners ?? []
     this.traps = message.traps ?? []
+    this.projectiles = message.projectiles ?? []
     if (this.selectedTrapId && !this.traps.some((t) => t.id === this.selectedTrapId)) {
       this.selectedTrapId = null
     }

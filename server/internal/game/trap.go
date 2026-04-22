@@ -163,6 +163,10 @@ type Trap struct {
 	// wins (the effects stack additively on the final blast, not as two
 	// separate blasts — the aftershock slot is single).
 	OverloadCataclysmDelaySeconds float64
+	// Client-side sprite inflate for this trap while overload_protocol is
+	// active. Snapshotted at plant time from gold.json's cataclysmSpriteScale
+	// so tuning lives next to the other Cataclysm knobs. 0 = no inflate.
+	OverloadCataclysmSpriteScale float64
 
 	// overload_protocol → Final Exposure (marker_trap).
 	// When the MARK expires (not the trap), marked enemies take burst damage
@@ -779,6 +783,7 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 		// same trap, so the stronger upgrade wins naturally).
 		trap.AftershockDelaySeconds = math.Max(specific.AftershockDelaySeconds, specific.OverloadCataclysmDelaySeconds)
 		trap.OverloadCataclysmDelaySeconds = specific.OverloadCataclysmDelaySeconds
+		trap.OverloadCataclysmSpriteScale = specific.OverloadCataclysmSpriteScale
 		// ascendant_infusion → Scatter Bomb. Snapshot child count, spawn
 		// radius, and child lifetime — mini traps inherit base/silver damage
 		// from this trap but NOT gold (IsScatterBombChild prevents recursion).
@@ -1389,6 +1394,25 @@ func trapVisualVariant(trap *Trap) string {
 		}
 	}
 	return ""
+}
+
+// trapVisualScaleMultiplier returns an extra render-scale factor the client
+// applies on top of the object's base sprite scale. Use for perks that
+// visually inflate a trap beyond its normal footprint. Returns 0 when no
+// multiplier applies (client treats 0/absent as 1×).
+//
+// Extend the switch as more perks need dedicated scale bumps.
+func trapVisualScaleMultiplier(trap *Trap) float64 {
+	if trap == nil {
+		return 0
+	}
+	switch trap.TrapType {
+	case "explosive_trap":
+		// overload_protocol → Cataclysm. Value is authored in gold.json
+		// (cataclysmSpriteScale) and snapshotted onto the trap at plant time.
+		return trap.OverloadCataclysmSpriteScale
+	}
+	return 0
 }
 
 // tickTrapPlacementLocked is the per-tick auto-placement driver for Trapper

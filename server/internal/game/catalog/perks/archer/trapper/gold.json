@@ -62,6 +62,7 @@
 
       "cataclysmRadiusMultiplier": 1.5,
       "cataclysmSecondaryDelaySeconds": 1.5,
+      "cataclysmSpriteScale": 1.5,
 
       "finalExposureBurstDamage": 30,
       "finalExposureAoeRadius": 40

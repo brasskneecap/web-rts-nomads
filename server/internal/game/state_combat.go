@@ -39,6 +39,45 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 	}
 }
 
+// resolveAttackHitLocked applies damage to target and runs every on-hit
+// reaction (perk procs, XP payouts, kill tracking, retaliation). Returns true
+// when attacker died from reflected damage — callers should skip any further
+// per-attacker work and move on.
+//
+// Does NOT touch attacker.AttackCooldown: cooldown is committed at fire time
+// for both instant-hit and ranged paths so it can't be re-applied here.
+func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, deadUnitIDs *[]int) bool {
+	s.applyUnitDamageLocked(target, damage)
+	s.onUnitDamagedLocked(attacker, target, damage)
+	s.onPerkDamageTakenLocked(target, attacker, damage)
+
+	if attacker.HP <= 0 {
+		s.awardKillXPLocked(target)
+		s.payoutDamageDealtXPLocked(attacker)
+		s.awardSoldierTankKillXPLocked(attacker.ID)
+		s.onPerkKillLocked(target)
+		*deadUnitIDs = append(*deadUnitIDs, attacker.ID)
+		return true
+	}
+
+	s.recordSoldierTankContributionLocked(attacker, target, damage)
+	s.recordDamageDealtLocked(attacker, target, damage)
+	s.trackBattleDamageLocked(battleSourceFromUnit(attacker), target, damage)
+	s.onPerkAttackFiredLocked(attacker, target, damage, deadUnitIDs)
+	s.onPerkAttackDamageAppliedLocked(attacker, target, damage)
+
+	if target.HP <= 0 {
+		target.HP = 0
+		s.awardKillXPLocked(attacker)
+		s.payoutDamageDealtXPLocked(target)
+		s.awardSoldierTankKillXPLocked(target.ID)
+		s.onPerkKillLocked(attacker)
+		s.trackBattleKillLocked(battleSourceFromUnit(attacker), target)
+		*deadUnitIDs = append(*deadUnitIDs, target.ID)
+	}
+	return false
+}
+
 func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool) {
 	var deadUnitIDs []int
 	var destroyedBuildingIDs []string
@@ -62,6 +101,10 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Attacking = true
 					unit.Status = "Attacking"
 
+					// Combat profile gates the ranged-vs-melee branch below. Resolved once
+					// per firing attempt so fireProjectileLocked / instant-hit share it.
+					profile := resolveCombatProfile(unit)
+
 					// Stun: cooldown still decays so the unit doesn't bank a free
 					// attack on un-stun, but the unit must not fire. AttackTargetID
 					// is intentionally left intact so combat resumes immediately.
@@ -70,57 +113,27 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 							unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
 						}
 					} else if unit.AttackCooldown <= 0 {
-						// Outgoing damage: base × (1 + perk bonus) × (1 - debuff), then armor.
-						// perk bonus comes from executioner (silver berserker) and any future
-						// outgoing-damage-multiplier perks.
-						// debuff comes from Punishing Guard's weakened effect on the attacker.
+						// Outgoing damage: base × (1 + perk bonus) × (1 - debuff), then
+						// armor. perk bonus: executioner (silver berserker) and any future
+						// outgoing-damage-multiplier perks. debuff: Punishing Guard's
+						// weakened effect on the attacker.
 						rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
 						rawDamage *= (1.0 - s.perkOutgoingDamageDebuffMultiplierLocked(unit))
 						damage := applyArmorMitigation(int(math.Round(rawDamage)), s.effectiveArmorLocked(target))
-						// Route through the shared helper so flat reduction and shield absorb first.
-						s.applyUnitDamageLocked(target, damage)
-						s.onUnitDamagedLocked(unit, target, damage)
-						// Defender-side perk reactions (e.g. retaliation reflects damage back).
-						s.onPerkDamageTakenLocked(target, unit, damage)
-						// If the attacker was killed by reflected damage (retaliation), handle
-						// their death now. The normal death check below only covers the target.
-						if unit.HP <= 0 {
-							s.awardKillXPLocked(target)
-							s.payoutDamageDealtXPLocked(unit)
-							s.awardSoldierTankKillXPLocked(unit.ID)
-							s.onPerkKillLocked(target)
-							deadUnitIDs = append(deadUnitIDs, unit.ID)
-							unit.AttackCooldown = 1.0 / math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
-							continue
-						}
-						s.recordSoldierTankContributionLocked(unit, target, damage)
-						s.recordDamageDealtLocked(unit, target, damage)
-						// Debug: bucket this damage under the attacker's (player, unit type).
-						// No-op when the map's debug tracker flag is off.
-						s.trackBattleDamageLocked(battleSourceFromUnit(unit), target, damage)
-						// Perk on-attack effects (bloodlust accumulation,
-						// savage_strikes bonus hit, cleaving_rage extra target,
-						// momentum move-speed refresh).
-						s.onPerkAttackFiredLocked(unit, target, damage, &deadUnitIDs)
-						// Perk on-hit reactions (blood_sustain lifesteal, future on-hit procs).
-						s.onPerkAttackDamageAppliedLocked(unit, target, damage)
-						// Use effective attack speed (base + perk bonus) for the cooldown.
+
+						// Cooldown + archer trapper-gate commit at fire time for both
+						// branches so rate-of-fire and trap-gating feel responsive even
+						// while a projectile is still in flight.
 						effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
 						unit.AttackCooldown = 1.0 / effectiveSpeed
-						// Trapper combat gate: stamp the tail window whenever an Archer fires.
-						// Decays in state.go Update() per-unit loop. Non-archers always have
-						// this at 0 and the perk cases are never reached for them.
 						if unit.UnitType == "archer" {
 							unit.PerkState.LastCombatSeconds = 1.5
 						}
-						if target.HP <= 0 {
-							target.HP = 0
-							s.awardKillXPLocked(unit)
-							s.payoutDamageDealtXPLocked(target)
-							s.awardSoldierTankKillXPLocked(target.ID)
-							s.onPerkKillLocked(unit) // perk on-kill effects (relentless boost)
-							s.trackBattleKillLocked(battleSourceFromUnit(unit), target)
-							deadUnitIDs = append(deadUnitIDs, target.ID)
+
+						if !profile.Melee {
+							s.fireProjectileLocked(unit, target, damage)
+						} else if s.resolveAttackHitLocked(unit, target, damage, &deadUnitIDs) {
+							continue
 						}
 					} else {
 						unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)

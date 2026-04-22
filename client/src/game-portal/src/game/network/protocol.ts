@@ -380,6 +380,10 @@ export type TrapSnapshot = {
    *  name over `idle` when present (e.g. "electrified" for ascendant-infused
    *  caltrops). Absent = render the trap's default animation. */
   variant?: string
+  /** Extra render-scale factor applied on top of the sprite set's base scale.
+   *  Populated for perks that visually inflate a trap (e.g. overload_protocol
+   *  on explosive_trap → 2×). Absent = 1× (no change). */
+  scaleMultiplier?: number
   type: 'caltrops' | 'fire_pit' | 'explosive_trap' | 'marker_trap'
   remainingSeconds: number
   /**
@@ -394,6 +398,32 @@ export type GameOverSnapshot = {
   lostPlayerIds: string[]
 }
 
+/**
+ * ProjectileSnapshot carries an in-flight ranged attack to the client each tick.
+ * The renderer draws a shape (or sprite, picked by `variant`) traveling along
+ * the arc from (originX, originY) toward (targetX, targetY), positioned by
+ * `progress` (0 = just fired, 1 = landing). `targetX`/`targetY` are the
+ * server's homing target position, refreshed each tick from the target unit,
+ * so moving targets don't outrun their incoming arrow.
+ */
+export type ProjectileSnapshot = {
+  id: string
+  ownerUnitId: number
+  ownerId: string
+  /** Target unit id — informational. The server owns homing updates; `targetX`/`targetY`
+   *  already reflect the current tracked position. Absent when unknown. */
+  targetUnitId?: number
+  originX: number
+  originY: number
+  targetX: number
+  targetY: number
+  /** Fraction of flight completed, 0..1. */
+  progress: number
+  /** Sprite key — defaults to the attacker's unit type. Perks may override it
+   *  at fire time for alternate shot visuals (e.g. "fire_arrow"). */
+  variant?: string
+}
+
 export type MatchSnapshotMessage = {
   type: 'match_snapshot'
   tick: number
@@ -406,6 +436,7 @@ export type MatchSnapshotMessage = {
   wave: WaveSnapshot
   banners?: BannerSnapshot[]
   traps?: TrapSnapshot[]
+  projectiles?: ProjectileSnapshot[]
   // Present only when the active map has debug.battleTracker=true. Absent
   // otherwise — the client treats absence as "debug tracker disabled".
   battleTracker?: BattleTrackerSnapshot

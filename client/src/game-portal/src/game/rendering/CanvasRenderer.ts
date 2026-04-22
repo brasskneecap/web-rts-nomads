@@ -1,5 +1,6 @@
 // src/game/rendering/CanvasRenderer.ts
 import { GameState } from '../core/GameState'
+import type { Unit } from '../core/GameState'
 import {
   DEFAULT_GRASS_COLOR,
   getBuildingColor,
@@ -18,7 +19,8 @@ import {
 } from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef, UnitRenderDef } from '../maps/unitDefs'
-import type { BannerSnapshot, BuildingTile, TrapSnapshot } from '../network/protocol'
+import type { BannerSnapshot, BuildingTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
+import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
 import { getRankToneColor } from './rankColors'
 import { ACTION_ICON_MAP } from '../maps/actionIconDefs'
@@ -99,6 +101,9 @@ export class CanvasRenderer {
      *  the sprite set defines a matching animation, it's played instead of
      *  idle. Used for perk-driven visual swaps like ascendant_infusion. */
     variant: string | undefined
+    /** Extra render-scale factor from the server (perk-driven visual inflate).
+     *  undefined / 0 → 1×. Multiplied onto the sprite set's base scale. */
+    scaleMultiplier: number | undefined
     spriteKey: string
   }>()
   // Per-trap-type frame timings.
@@ -169,6 +174,8 @@ export class CanvasRenderer {
     this.drawTraps(this.state.traps)
     this.drawBanners(this.state.banners)
     this.drawUnits(units)
+    // Drawn after units so arrows render on top of the firing unit's body.
+    this.drawProjectiles(this.state.projectiles)
     this.drawBuildPlacementGhost()
     this.drawSelectionBox()
 
@@ -712,6 +719,7 @@ export class CanvasRenderer {
           radius: trap.radius,
           triggerRadius: trap.triggerRadius,
           variant: trap.variant,
+          scaleMultiplier: trap.scaleMultiplier,
           spriteKey,
         })
       } else {
@@ -720,6 +728,7 @@ export class CanvasRenderer {
         state.radius = trap.radius
         state.triggerRadius = trap.triggerRadius
         state.variant = trap.variant
+        state.scaleMultiplier = trap.scaleMultiplier
         if (shouldExplode && state.animation !== 'exploding') {
           state.animation = 'exploding'
           state.startedAt = now
@@ -780,17 +789,22 @@ export class CanvasRenderer {
   // trap left the snapshot, or exploding animation finished).
   private renderTrapSpriteState(
     id: string,
-    state: { animation: 'idle' | 'exploding'; startedAt: number; x: number; y: number; radius: number; triggerRadius: number | undefined; variant: string | undefined; spriteKey: string },
+    state: { animation: 'idle' | 'exploding'; startedAt: number; x: number; y: number; radius: number; triggerRadius: number | undefined; variant: string | undefined; scaleMultiplier: number | undefined; spriteKey: string },
     stillInSnapshot: boolean,
     now: number,
   ): boolean {
     const spriteSet = getObjectSpriteSet(state.spriteKey)
     if (!spriteSet) return !stillInSnapshot
 
-    const scale = spriteSet.scale ?? this.OBJECT_SPRITE_SCALE
+    // Base scale from the sprite manifest (or the renderer default), then
+    // multiplied by any server-driven inflate (e.g. overload_protocol → 2×
+    // for explosive_trap). scaleMultiplier is treated as 1 when absent or 0.
+    const baseScale = spriteSet.scale ?? this.OBJECT_SPRITE_SCALE
+    const mult = state.scaleMultiplier && state.scaleMultiplier > 0 ? state.scaleMultiplier : 1
+    const scale = baseScale * mult
     // Positional nudge, authored in native sprite pixels. Scaled by the
     // effective render scale so the shift stays proportional when an object
-    // also sets a `scale` override.
+    // also sets a `scale` override or a perk inflates it.
     const offX = (spriteSet.offsetX ?? 0) * scale
     const offY = (spriteSet.offsetY ?? 0) * scale
 
@@ -1438,11 +1452,128 @@ export class CanvasRenderer {
   }) {
     const unitDef = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType) : undefined
     const attackVisual = getResolvedUnitAttackVisual(unitDef)
+    // Ranged shots are rendered by drawProjectiles.
     if (attackVisual.kind === 'projectile') {
-      this.drawProjectileAttackEffect(unit, attackVisual)
       return
     }
     this.drawMeleeAttackEffect(unit, attackVisual)
+  }
+
+  // Aim 30% down from the visible top of a unit — lands at chest/upper-torso
+  // for all current humanoid sprites. Tune here if sprite proportions change.
+  private static readonly TARGET_BODY_CENTER_FRACTION = 0.3
+  // Fallback body-center lift when the referenced unit is not in client state.
+  private static readonly DEFAULT_BODY_CENTER_OFFSET_Y = -16
+
+  private drawProjectiles(projectiles: ProjectileSnapshot[]) {
+    if (projectiles.length === 0) return
+
+    // Build a per-frame id→unit index so origin/target lift lookups are O(1)
+    // instead of O(N) linear scans per projectile.
+    const unitsById = new Map<number, Unit>()
+    for (const u of this.state.units) unitsById.set(u.id, u)
+
+    // Memoize lift results by (unitType, path) within the frame so repeated
+    // shots from the same unit type don't redo sprite/bounds resolution.
+    const originLiftCache = new Map<string, { x: number; y: number }>()
+    const targetLiftCache = new Map<string, { x: number; y: number }>()
+
+    const ctx = this.ctx
+    for (const proj of projectiles) {
+      const originLift = this.getProjectileOriginLift(unitsById.get(proj.ownerUnitId), originLiftCache)
+      const targetLift = this.getProjectileTargetLift(
+        proj.targetUnitId ? unitsById.get(proj.targetUnitId) : undefined,
+        targetLiftCache,
+      )
+
+      const originX = proj.originX + originLift.x
+      const originY = proj.originY + originLift.y
+      const targetX = proj.targetX + targetLift.x
+      const targetY = proj.targetY + targetLift.y
+
+      const t = Math.max(0, Math.min(1, proj.progress))
+      const x = originX + (targetX - originX) * t
+      const y = originY + (targetY - originY) * t
+
+      const dx = targetX - originX
+      const dy = targetY - originY
+      const angle = dx === 0 && dy === 0 ? 0 : Math.atan2(dy, dx)
+
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate(angle)
+      drawProjectileForVariant(ctx, {
+        zoom: this.camera.zoom,
+        projectile: proj,
+      })
+      ctx.restore()
+    }
+  }
+
+  // spriteBodyCenterLift back-computes the visible body from the sprite draw
+  // math (see sprite blit at drawImage call above): the sprite's bottom edge
+  // sits at unit.y + bottomOffset, with transparent pads trimming both ends.
+  // Returns null for procedural-only units so callers can fall back.
+  private spriteBodyCenterLift(unitType: string, path: string | undefined): { x: number; y: number } | null {
+    const spriteSet = getUnitSpriteSet(path, unitType)
+    if (!spriteSet) return null
+    const bounds = getUnitRenderBounds(UNIT_DEF_MAP.get(unitType))
+    const bottomOffset = bounds?.maxY ?? 12
+    const h = spriteSet.size.height * UNIT_SPRITE_SCALE
+    const visibleBottom = bottomOffset - h * UNIT_SPRITE_BOTTOM_PADDING
+    const visibleTop = bottomOffset - h * (1 - UNIT_SPRITE_TOP_PADDING)
+    return {
+      x: 0,
+      y: visibleTop + (visibleBottom - visibleTop) * CanvasRenderer.TARGET_BODY_CENTER_FRACTION,
+    }
+  }
+
+  // Origin lift: bow position for sprite-rendered units (same chest anchor as
+  // targets), attackVisual offsets for procedural units.
+  private getProjectileOriginLift(
+    unit: Unit | undefined,
+    cache: Map<string, { x: number; y: number }>,
+  ): { x: number; y: number } {
+    if (!unit?.unitType) return { x: 0, y: CanvasRenderer.DEFAULT_BODY_CENTER_OFFSET_Y }
+    const key = `${unit.unitType}|${unit.path ?? ''}`
+    const cached = cache.get(key)
+    if (cached) return cached
+
+    const sprite = this.spriteBodyCenterLift(unit.unitType, unit.path)
+    const lift = sprite ?? (() => {
+      const attackVisual = getResolvedUnitAttackVisual(UNIT_DEF_MAP.get(unit.unitType))
+      return { x: attackVisual.originX, y: attackVisual.originY }
+    })()
+    cache.set(key, lift)
+    return lift
+  }
+
+  // Target lift: chest for sprite-rendered units, 30%-from-top of procedural
+  // bounds for everyone else.
+  private getProjectileTargetLift(
+    unit: Unit | undefined,
+    cache: Map<string, { x: number; y: number }>,
+  ): { x: number; y: number } {
+    if (!unit?.unitType) return { x: 0, y: CanvasRenderer.DEFAULT_BODY_CENTER_OFFSET_Y }
+    const key = `${unit.unitType}|${unit.path ?? ''}`
+    const cached = cache.get(key)
+    if (cached) return cached
+
+    const sprite = this.spriteBodyCenterLift(unit.unitType, unit.path)
+    let lift: { x: number; y: number }
+    if (sprite) {
+      lift = sprite
+    } else {
+      const bounds = getUnitRenderBounds(UNIT_DEF_MAP.get(unit.unitType))
+      lift = bounds
+        ? {
+            x: (bounds.minX + bounds.maxX) / 2,
+            y: bounds.minY + (bounds.maxY - bounds.minY) * CanvasRenderer.TARGET_BODY_CENTER_FRACTION,
+          }
+        : { x: 0, y: CanvasRenderer.DEFAULT_BODY_CENTER_OFFSET_Y }
+    }
+    cache.set(key, lift)
+    return lift
   }
 
   private drawUnitRankUpBurst(
@@ -1571,46 +1702,6 @@ export class CanvasRenderer {
       ctx.fill()
     }
 
-    ctx.restore()
-  }
-
-  private drawProjectileAttackEffect(
-    unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string },
-    attackVisual: { originX: number; originY: number; effectLength: number },
-  ) {
-    const ctx = this.ctx
-    const direction = this.getAttackDirection(unit)
-    if (!direction) return
-
-    const unitDef = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType) : undefined
-    const attackSpeed = Math.max(unitDef?.attackSpeed ?? 1, 0.1)
-    const cycleMs = 1000 / attackSpeed
-    const blinkOn = (this.renderTime % cycleMs) < cycleMs * 0.4
-    if (!blinkOn) return
-
-    const lineLength = attackVisual.effectLength
-    const beamColor = unit.ownerId ? (this.state.getPlayerColor(unit.ownerId) ?? '#ffffff') : '#ffffff'
-
-    const startX = unit.x + attackVisual.originX
-    const startY = unit.y + attackVisual.originY
-    const endX = startX + direction.x * lineLength
-    const endY = startY + direction.y * lineLength
-
-    ctx.save()
-    ctx.strokeStyle = this.withAlpha(beamColor, 0.28)
-    ctx.lineWidth = 6 / this.camera.zoom
-    ctx.lineCap = 'round'
-    ctx.beginPath()
-    ctx.moveTo(startX, startY)
-    ctx.lineTo(endX, endY)
-    ctx.stroke()
-
-    ctx.strokeStyle = this.withAlpha(beamColor, 0.95)
-    ctx.lineWidth = 2.5 / this.camera.zoom
-    ctx.beginPath()
-    ctx.moveTo(startX, startY)
-    ctx.lineTo(endX, endY)
-    ctx.stroke()
     ctx.restore()
   }
 

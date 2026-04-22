@@ -169,6 +169,9 @@ type TrapSpecificModifiers struct {
 	// Cataclysm Blast (explosive_trap)
 	OverloadCataclysmRadiusMult    float64
 	OverloadCataclysmDelaySeconds  float64
+	// Client-side visual inflate applied to the trap's sprite while this
+	// perk is active. 0 = no change (client treats as 1×). Purely cosmetic.
+	OverloadCataclysmSpriteScale   float64
 	// Final Exposure (marker_trap)
 	OverloadFinalExposureDamage    int
 	OverloadFinalExposureAoeRadius float64
@@ -249,6 +252,7 @@ func (s *GameState) trapSpecificModifiersForUnitLocked(unit *Unit, trapType stri
 			case "explosive_trap":
 				m.OverloadCataclysmRadiusMult = def.Config["cataclysmRadiusMultiplier"]
 				m.OverloadCataclysmDelaySeconds = def.Config["cataclysmSecondaryDelaySeconds"]
+				m.OverloadCataclysmSpriteScale = def.Config["cataclysmSpriteScale"]
 			case "marker_trap":
 				m.OverloadFinalExposureDamage = int(def.Config["finalExposureBurstDamage"])
 				m.OverloadFinalExposureAoeRadius = def.Config["finalExposureAoeRadius"]

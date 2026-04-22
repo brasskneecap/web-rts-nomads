@@ -184,6 +184,13 @@ type GameState struct {
 	Traps      []*Trap
 	nextTrapID int
 
+	// Projectiles is the set of in-flight ranged attacks. Ticked once per
+	// Update() after tickUnitCombatLocked so freshly-fired shots decay on the
+	// next tick, not their birth tick. Damage and all on-hit perk triggers
+	// fire when a projectile lands; see projectile.go.
+	Projectiles      []*Projectile
+	nextProjectileID int
+
 	// guardianAuraCache maps recipient unit ID to the combined armor bonus they
 	// receive from the strongest guardian_aura covering them this tick.
 	// FlatArmor and PercentArmor are taken as max independently across all
@@ -262,6 +269,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		nextUnitID:          1,
 		nextBannerID:        1,
 		nextTrapID:          1,
+		nextProjectileID:    1,
 		matchSeed:           seed,
 		rngPerks:            mrand.New(mrand.NewSource(seed ^ saltPerks)),
 		rngCosmetic:         mrand.New(mrand.NewSource(seed ^ saltCosmetic)),
@@ -474,6 +482,31 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		})
 	}
 
+	var projectiles []protocol.ProjectileSnapshot
+	for _, proj := range s.Projectiles {
+		progress := 0.0
+		if proj.TotalSeconds > 0 {
+			progress = 1.0 - (proj.RemainingSeconds / proj.TotalSeconds)
+			if progress < 0 {
+				progress = 0
+			} else if progress > 1 {
+				progress = 1
+			}
+		}
+		projectiles = append(projectiles, protocol.ProjectileSnapshot{
+			ID:           proj.ID,
+			OwnerUnitID:  proj.OwnerUnitID,
+			OwnerID:      proj.OwnerPlayerID,
+			TargetUnitID: proj.TargetUnitID,
+			OriginX:      proj.OriginX,
+			OriginY:      proj.OriginY,
+			TargetX:      proj.TargetX,
+			TargetY:      proj.TargetY,
+			Progress:     progress,
+			Variant:      proj.Variant,
+		})
+	}
+
 	var traps []protocol.TrapSnapshot
 	for _, trap := range s.Traps {
 		traps = append(traps, protocol.TrapSnapshot{
@@ -484,6 +517,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Radius:           trap.Radius,
 			TriggerRadius:    trap.TriggerRadius, // explosive_trap only; 0 for others (omitted over the wire)
 			Variant:          trapVisualVariant(trap),
+			ScaleMultiplier:  trapVisualScaleMultiplier(trap),
 			Type:             trap.TrapType,
 			RemainingSeconds: trap.RemainingSeconds,
 			Triggered:        trap.Triggered, // one-tick VFX flash flag (fires on every detonation)
@@ -507,8 +541,9 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Obstacles: obstacles,
 		Players:   players,
 		Units:     units,
-		Banners:   banners,
-		Traps:     traps,
+		Banners:     banners,
+		Traps:       traps,
+		Projectiles: projectiles,
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -542,6 +577,9 @@ func (s *GameState) Update(dt float64) {
 	s.rebuildGuardianAuraCacheLocked()
 	s.tickCombatAILocked(dt, blocked)
 	s.tickUnitCombatLocked(dt, blocked)
+	// Projectiles tick after combat resolution so shots fired this tick wait
+	// a full dt before decaying on the next Update pass.
+	s.tickProjectilesLocked(dt)
 	s.tickEnemySpawnpointsLocked(dt, blocked)
 	s.tickTrapEffectsLocked(dt)            // zone effects + trigger detection
 	s.tickTrapperSilverDebuffsLocked(dt)   // barbed ramp, lasting_flames exit, burn DoT
@@ -775,10 +813,20 @@ func (s *GameState) RemovePlayer(playerID string) {
 		}
 		s.Traps = kept
 	}
+
+	// Drop any in-flight projectiles fired by the leaving player.
+	s.cullProjectilesLocked(func(p *Projectile) bool {
+		return p.OwnerPlayerID == playerID
+	})
 }
 
 func (s *GameState) removeUnitLocked(unitID int) {
 	s.removeUnitByIDLocked(unitID)
+
+	// Drop in-flight projectiles involving this unit so stale IDs don't linger.
+	s.cullProjectilesLocked(func(p *Projectile) bool {
+		return p.OwnerUnitID == unitID || p.TargetUnitID == unitID
+	})
 
 	// Clear attack targets pointing to removed unit
 	for _, u := range s.Units {
