@@ -1,0 +1,8 @@
+{
+  "default":  { "file": "default.png",  "hotspot": [0, 0], "size": 32,  "fallback": "default" },
+  "move":     { "file": "move.png",     "hotspot": [14, 14], "size": 32, "fallback": "pointer" },
+  "attack":   { "file": "attack.png",   "hotspot": [14, 14], "size": 48, "fallback": "crosshair" },
+  "repair":   { "file": "repair.png",   "hotspot": [14, 14], "fallback": "pointer" },
+  "chopwood": { "file": "chopwood.png", "hotspot": [14, 14], "fallback": "pointer" },
+  "minegold": { "file": "minegold.png", "hotspot": [14, 14], "fallback": "pointer" }
+}

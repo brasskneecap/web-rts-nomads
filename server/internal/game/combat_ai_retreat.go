@@ -35,13 +35,16 @@ func (s *GameState) refreshUnitAttackApproachLocked(unit, target *Unit, profile 
 
 	dest := s.computeApproachPointLocked(unit, target.X, target.Y, profile)
 	if !force {
+		// Melee uses a larger threshold than ranged so two melee units chasing
+		// each other don't keep re-pathing and visibly wobble, but meaningful
+		// target movement still re-paths instead of committing the unit to a
+		// stale destination (which led to units walking past the enemy to the
+		// original click position before turning around).
+		threshold := 18.0
 		if profile.Melee {
-			// Melee units should commit to the current chase line longer; otherwise
-			// two moving units can keep re-pathing around each other and visibly wobble.
-			return
+			threshold = 30.0
 		}
-		const retargetMoveThreshold = 18.0
-		if distanceSquared(unit.TargetX, unit.TargetY, dest.X, dest.Y) < retargetMoveThreshold*retargetMoveThreshold {
+		if distanceSquared(unit.TargetX, unit.TargetY, dest.X, dest.Y) < threshold*threshold {
 			return
 		}
 	}

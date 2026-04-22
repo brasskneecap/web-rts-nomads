@@ -382,6 +382,64 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.State.AttackMoveUnits(client.PlayerID(), msg.UnitIDs, msg.Destination)
 
+		case "set_stance_command":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.SetStanceCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid set_stance_command payload",
+				})
+				continue
+			}
+
+			match.State.SetUnitStance(client.PlayerID(), msg.UnitIDs, msg.Stance)
+
+		case "patrol_command":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.PatrolCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid patrol_command payload",
+				})
+				continue
+			}
+
+			match.State.PatrolUnits(client.PlayerID(), msg.UnitIDs, msg.Destination)
+
 		case "repair_command":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{

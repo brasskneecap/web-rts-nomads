@@ -204,7 +204,7 @@ func TestGuardianAura_TwoVanguardsFormation(t *testing.T) {
 }
 
 // TestGuardianAura_OutOfRangeNoFormation verifies that V1 and V2 too far apart
-// (distance 150 > base 100) each operate independently with base values.
+// (distance 200 > base 150) each operate independently with base values.
 func TestGuardianAura_OutOfRangeNoFormation(t *testing.T) {
 	s, v1 := newGoldPerkState(t)
 	s.mu.Lock()
@@ -213,7 +213,7 @@ func TestGuardianAura_OutOfRangeNoFormation(t *testing.T) {
 	def := perkDefByID("guardian_aura")
 	grantPerk(v1, "guardian_aura")
 
-	v2 := spawnAlly(t, s, "p1", v1.X+150, v1.Y) // distance 150 > base 100
+	v2 := spawnAlly(t, s, "p1", v1.X+200, v1.Y) // distance 200 > base 150
 	grantPerk(v2, "guardian_aura")
 
 	// Ally close to V1, within base radius.
@@ -272,24 +272,19 @@ func TestGuardianAura_ThreeVanguardCluster(t *testing.T) {
 	}
 }
 
-// TestGuardianAura_PartialLineFormation places V1 at x=0, V2 at x=90, V3 at
-// x=180. V1 sees only V2 (companions=1), V2 sees both V1 and V3 (companions=2),
-// V3 sees only V2 (companions=1). Verifies asymmetric effDRs by placing each
-// test ally in a position where ONLY the intended Vanguard's aura reaches it
-// (i.e. outside all other Vanguards' effective radii).
+// TestGuardianAura_PartialLineFormation places V1 at x=200, V2 at x=290, V3 at
+// x=380 (spacing 90, base radius 150). V1 sees only V2 (companions=1), V2 sees
+// both V1 and V3 (companions=2), V3 sees only V2 (companions=1).
 //
-// Configuration (base radius=100, effR at 1 companion=130, at 2 companions=160):
-//   V1 at x=0, effR=130  (1 companion)
-//   V2 at x=90, effR=160 (2 companions)
-//   V3 at x=180, effR=130 (1 companion)
+// Configuration (base radius=150, effR at 1 companion=180, at 2 companions=210):
+//   V1 at x=200, effR=180 (1 companion)
+//   V2 at x=290, effR=210 (2 companions)
+//   V3 at x=380, effR=180 (1 companion)
 //
-// allyNearV1 at x=-20: distance 20 from V1, distance 110 from V2.
-//   V1 covers it (130 effR). V2 does NOT (160 effR would cover it! 110 < 160).
-//   So this geometry doesn't work cleanly for "only V1 covers it".
-//
-// Instead we test the companion COUNTS directly by placing allies at known
-// positions and asserting the DR they receive from at least one Vanguard,
-// rather than trying to isolate a single source.
+// To read V1's 1-companion aura in isolation we place allyFarLeft at x=30:
+//   V1 dist=170 ≤ 180 ✓  V2 dist=260 > 210 ✓  V3 dist=350 > 180 ✓
+// Symmetrically, allyFarRight at x=550 is covered only by V3:
+//   V3 dist=170 ≤ 180 ✓  V2 dist=260 > 210 ✓  V1 dist=350 > 180 ✓
 func TestGuardianAura_PartialLineFormation(t *testing.T) {
 	s, v1 := newGoldPerkState(t)
 	s.mu.Lock()
@@ -330,16 +325,16 @@ func TestGuardianAura_PartialLineFormation(t *testing.T) {
 		t.Errorf("allyNearV2 PercentArmor: got %.3f, want %.3f (V2 has 2 companions)", aura.PercentArmor, pctV2)
 	}
 
-	// V1 companion count: 1 (V2 at distance 90 within base 100). Not V3 (distance 180 > 100).
-	// effR of V1 = 100 + 1*30 = 130. Ally at x=100 (distance 100 from V1 = AT edge, inside).
-	// V2 at x=290 — distance to x=100 is 190 > V2's effR=160. V3 even farther. Good.
+	// V1 companion count: 1 (V2 at distance 90 within base 150). Not V3 (distance 180 > 150).
+	// effR of V1 = 150 + 1*30 = 180. Ally at x=30 (distance 170 from V1, inside 180).
+	// V2 at x=290 — distance 260 > V2's effR=210. V3 at x=380 — distance 350 > V3's effR=180.
 	flatV1 := int(def.Config["bonusArmor"]) + 1*int(def.Config["synergyArmorBonus"])
 	pctV1 := def.Config["armorPercent"] + 1*def.Config["synergyArmorPercentBonus"]
-	allyFarLeft := spawnAlly(t, s, "p1", 100, 400)
+	allyFarLeft := spawnAlly(t, s, "p1", 30, 400)
 	s.rebuildGuardianAuraCacheLocked()
 	auraLeft, okLeft := s.guardianAuraCache[allyFarLeft.ID]
 	if !okLeft {
-		t.Fatal("allyFarLeft should be in cache (distance 100 = AT base radius boundary)")
+		t.Fatal("allyFarLeft should be in cache (distance 170 from V1, inside effR 180)")
 	}
 	if auraLeft.FlatArmor != flatV1 {
 		t.Errorf("allyFarLeft FlatArmor: got %d, want %d (V1 with 1 companion)", auraLeft.FlatArmor, flatV1)
@@ -349,12 +344,12 @@ func TestGuardianAura_PartialLineFormation(t *testing.T) {
 	}
 
 	// Symmetrically verify V3 (1 companion) covers an ally to its right.
-	// V3 at x=380, ally at x=480 (dist 100, AT boundary).
-	allyFarRight := spawnAlly(t, s, "p1", 480, 400)
+	// V3 at x=380, ally at x=550 (distance 170, inside effR 180).
+	allyFarRight := spawnAlly(t, s, "p1", 550, 400)
 	s.rebuildGuardianAuraCacheLocked()
 	auraRight, okRight := s.guardianAuraCache[allyFarRight.ID]
 	if !okRight {
-		t.Fatal("allyFarRight should be in cache (distance 100 from V3)")
+		t.Fatal("allyFarRight should be in cache (distance 170 from V3, inside effR 180)")
 	}
 	if auraRight.FlatArmor != flatV1 { // same as V1 (1 companion)
 		t.Errorf("allyFarRight FlatArmor: got %d, want %d (V3 with 1 companion)", auraRight.FlatArmor, flatV1)
@@ -1720,10 +1715,12 @@ func TestPainShare_ChainTerminates(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestBanner_FloatingPointAccuracy verifies banner expiry is robust to float64
-// accumulation drift. Repeated subtraction of dt=0.05 across 160 ticks leaves
-// RemainingSeconds at ~2e-14 instead of exactly 0; the epsilon guard in
-// tickBannersLocked treats sub-nanosecond residual as expired so the banner
-// drops at the expected tick rather than one tick late.
+// accumulation drift. Repeated subtraction of dt=0.05 leaves RemainingSeconds
+// at ~2e-14 instead of exactly 0 after the duration's worth of ticks; the
+// epsilon guard in tickBannersLocked treats sub-nanosecond residual as expired
+// so the banner drops at the expected tick rather than one tick late. Tick
+// count is derived from the perk's configured duration so the test tracks any
+// future balance tuning.
 func TestBanner_FloatingPointAccuracy(t *testing.T) {
 	s, vanguard := newGoldPerkState(t)
 	s.mu.Lock()
@@ -1744,13 +1741,14 @@ func TestBanner_FloatingPointAccuracy(t *testing.T) {
 	}
 
 	const dt = 0.05
-	const exactTicks = 160 // 160 * 0.05 = 8.0 s — should expire exactly here
+	durationSec := def.Config["bannerDurationSeconds"]
+	exactTicks := int(math.Round(durationSec / dt))
 	for i := 0; i < exactTicks; i++ {
 		s.tickBannersLocked(dt)
 	}
 
 	if len(s.Banners) != 0 {
-		t.Errorf("banner should have expired at tick 160 (8.0s duration); got %d banners remaining", len(s.Banners))
+		t.Errorf("banner should have expired at tick %d (%.1fs duration); got %d banners remaining", exactTicks, durationSec, len(s.Banners))
 	}
 }
 

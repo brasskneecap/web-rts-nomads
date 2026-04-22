@@ -10,7 +10,9 @@ import type {
   MapId,
   MatchSnapshotMessage,
   MoveCommandMessage,
+  PatrolCommandMessage,
   SetBuildingSpawnPointCommandMessage,
+  SetStanceCommandMessage,
   ServerMessage,
   TrainUnitCommandMessage,
 } from './protocol'
@@ -338,6 +340,24 @@ export class NetworkClient {
 
   sendRepairCommand(unitIds: number[], buildingId: string) {
     this.send({ type: 'repair_command', unitIds, buildingId })
+  }
+
+  sendStanceCommand(unitIds: number[], stance: 'hold' | 'idle') {
+    const message: SetStanceCommandMessage = {
+      type: 'set_stance_command',
+      unitIds,
+      stance,
+    }
+    this.send(message)
+  }
+
+  sendPatrolCommand(unitIds: number[], x: number, y: number) {
+    const message: PatrolCommandMessage = {
+      type: 'patrol_command',
+      unitIds,
+      destination: { x, y },
+    }
+    this.send(message)
   }
 
   // Dev-only: spawn a unit with a custom perk loadout at (x, y). Only

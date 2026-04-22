@@ -8,8 +8,14 @@ import (
 func (s *GameState) shouldDropCurrentTargetLocked(unit *Unit, profile CombatProfile, ctx combatEvalContext) bool {
 	if unit.AttackTargetID != 0 {
 		target := s.getUnitByIDLocked(unit.AttackTargetID)
-		if target == nil || !target.Visible || target.HP <= 0 || target.OwnerID == unit.OwnerID {
+		if !s.combatTargetIsValidLocked(unit, target) {
 			return true
+		}
+		// Player-issued targets bypass the leash — the whole point of
+		// right-clicking a distant enemy is to chase that enemy, not to stay
+		// anchored wherever the unit was when the order was given.
+		if unit.Order.Type == OrderAttackTarget {
+			return false
 		}
 		return !s.targetInsideLeashLocked(unit, target.X, target.Y, profile)
 	}
@@ -41,7 +47,16 @@ func (s *GameState) shouldDropCurrentTargetLocked(unit *Unit, profile CombatProf
 func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ctx combatEvalContext) combatTarget {
 	best := combatTarget{Kind: combatTargetNone, Score: -math.MaxFloat64}
 
-	for _, hostile := range ctx.index.query(unit.X, unit.Y, profile.DetectionRange) {
+	// Gate B: Hold units never move, so restrict acquisition to weapons range.
+	// This prevents a Hold unit from "pre-acquiring" a target it can't shoot
+	// until the enemy closes to AttackRange, which would cause the unit to
+	// sit Attacking with 0 damage dealt until the enemy finally steps in range.
+	detectionRange := profile.DetectionRange
+	if unit.Order.Type == OrderHold {
+		detectionRange = unit.AttackRange
+	}
+
+	for _, hostile := range ctx.index.query(unit.X, unit.Y, detectionRange) {
 		if hostile == unit || hostile.OwnerID == unit.OwnerID || hostile.HP <= 0 || !hostile.Visible {
 			continue
 		}
@@ -61,7 +76,7 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 				continue
 			}
 			center := s.buildingCenterLocked(building)
-			if distanceSquared(unit.X, unit.Y, center.X, center.Y) > profile.DetectionRange*profile.DetectionRange {
+			if distanceSquared(unit.X, unit.Y, center.X, center.Y) > detectionRange*detectionRange {
 				continue
 			}
 			if !s.targetInsideLeashLocked(unit, center.X, center.Y, profile) {

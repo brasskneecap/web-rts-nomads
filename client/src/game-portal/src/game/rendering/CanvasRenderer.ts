@@ -25,20 +25,15 @@ import { Camera } from './Camera'
 import { getRankToneColor } from './rankColors'
 import { ACTION_ICON_MAP } from '../maps/actionIconDefs'
 import { getPerkAuraRadius, PERK_DEF_MAP } from '../maps/perkDefs'
-import { getUnitFrame, getUnitSpriteSet } from './unitSprites'
+import {
+  getUnitFrame,
+  getUnitSpriteSet,
+  UNIT_SPRITE_SCALE,
+  UNIT_SPRITE_TOP_PADDING,
+  UNIT_SPRITE_BOTTOM_PADDING,
+} from './unitSprites'
 import { getObjectSpriteSet } from './objectSprites'
 import { UnitAnimationController } from './unitAnimation'
-
-// Multiplier applied to each unit sprite's native size at draw time. Bump
-// until sprites read clearly at common zoom-outs without swamping the UI.
-const UNIT_SPRITE_SCALE = 1.25
-// PixelLab exports center a ~48px character in a ~68px canvas, so roughly
-// 15% of the sprite height on each side is transparent padding. Used to
-// anchor overhead UI (health bar, chevrons, buffs) to the visible head and
-// to sit the selection ring under the visible feet instead of the canvas
-// bottom.
-const UNIT_SPRITE_TOP_PADDING = 0.15
-const UNIT_SPRITE_BOTTOM_PADDING = 0.15
 
 export type MinimapBounds = {
   x: number
@@ -74,7 +69,11 @@ export class CanvasRenderer {
   private camera: Camera
   private resizeObserver: ResizeObserver | null = null
   private renderTime = 0
-  private bannerInitialDurations = new Map<number, number>()
+  // Per-banner animation start timestamps (performance.now ms). Lets each
+  // banner's idle loop hold its own phase instead of every banner on screen
+  // strobing in lockstep.
+  private bannerAnimStartedAt = new Map<number, number>()
+  private readonly BANNER_IDLE_FRAME_MS = 120
   // Post-expiry fade-out queue. Traps render at full opacity during their
   // lifetime; when they vanish from the snapshot (expired, detonated, or
   // culled), we retain the last-known TrapSnapshot and render it with linear
@@ -1125,45 +1124,32 @@ export class CanvasRenderer {
   // ──────────────────────────────────────────────────────────────────────────
   // Rallying banner rendering
   //
-  // Banners render BELOW units so they never occlude gameplay.  Each banner:
+  // Banners render BELOW units so they never occlude gameplay. Each banner:
   //   1. Radius circle — soft fill + owner-colored outline, distinguishable
   //      from selection ellipses (which are green) and attack ranges.
-  //   2. Flag sprite  — a small pole + triangular flag drawn in world space
-  //      at the plant position; the flag face is filled with the owner color.
-  //   3. Alpha fade   — globalAlpha scales linearly from 1 → 0 as
-  //      remainingSeconds → 0, providing a smooth decay indicator with no
-  //      extra UI clutter.
+  //   2. Flag sprite  — animated idle sprite (or procedural fallback) drawn
+  //      in world space at the plant position.
   //
-  // The maximum banner lifetime is read from the first snapshot that carries
-  // the banner; we clamp alpha between 0.15 and 1.0 so the banner is still
-  // visually present until it actually expires rather than fading to nothing
-  // while a few seconds remain.
+  // No alpha fade: the banner reads at full opacity for its entire lifetime
+  // and disappears when the server drops it from the snapshot.
   // ──────────────────────────────────────────────────────────────────────────
   private drawBanners(banners: BannerSnapshot[]) {
     if (banners.length === 0) {
-      if (this.bannerInitialDurations.size > 0) this.bannerInitialDurations.clear()
+      if (this.bannerAnimStartedAt.size > 0) this.bannerAnimStartedAt.clear()
       return
     }
 
     const ctx = this.ctx
     const seen = new Set<number>()
+    const spriteSet = getObjectSpriteSet('rallying_banner')
+    const idleAnim = spriteSet?.animations.get('idle')
+    const now = performance.now()
 
     for (const banner of banners) {
       seen.add(banner.id)
       const ownerColor = this.state.getPlayerColor(banner.ownerId) ?? '#a78bfa'
-      // Server doesn't ship the original duration, so cache the largest
-      // remainingSeconds we've ever seen for this banner id and use that as
-      // the fade denominator. Auto-adapts to any server-side tuning of
-      // bannerDurationSeconds without a client-side constant.
-      const recorded = this.bannerInitialDurations.get(banner.id) ?? 0
-      if (banner.remainingSeconds > recorded) {
-        this.bannerInitialDurations.set(banner.id, banner.remainingSeconds)
-      }
-      const initial = this.bannerInitialDurations.get(banner.id) ?? banner.remainingSeconds
-      const alpha = Math.max(0.15, Math.min(1, banner.remainingSeconds / initial))
 
       ctx.save()
-      ctx.globalAlpha = alpha
 
       // ── 1. Radius fill + outline ──────────────────────────────────────────
       ctx.beginPath()
@@ -1177,57 +1163,70 @@ export class CanvasRenderer {
       ctx.stroke()
       ctx.setLineDash([])
 
-      // ── 2. Flag sprite ────────────────────────────────────────────────────
-      // All measurements in world pixels; scale with camera zoom via lineWidth
-      // conventions already used in this file.
-      const poleH = 18   // pole height in world px
-      const poleW = 1.5 / this.camera.zoom
-      const flagW = 10   // flag width (horizontal)
-      const flagH = 7    // flag height (vertical)
-      const poleX = banner.x
-      const poleTopY = banner.y - poleH
-      const poleBotY = banner.y
+      // ── 2. Banner visual ──────────────────────────────────────────────────
+      if (spriteSet && idleAnim) {
+        let startedAt = this.bannerAnimStartedAt.get(banner.id)
+        if (startedAt === undefined) {
+          startedAt = now
+          this.bannerAnimStartedAt.set(banner.id, startedAt)
+        }
+        const frameMs = idleAnim.frameDurationMs ?? this.BANNER_IDLE_FRAME_MS
+        const elapsed = now - startedAt
+        const frameIndex = idleAnim.loop
+          ? Math.floor(elapsed / frameMs) % idleAnim.frameCount
+          : Math.min(Math.floor(elapsed / frameMs), idleAnim.frameCount - 1)
+        const scale = spriteSet.scale ?? this.OBJECT_SPRITE_SCALE
+        const offX = (spriteSet.offsetX ?? 0) * scale
+        const offY = (spriteSet.offsetY ?? 0) * scale
+        this.drawObjectFrame(idleAnim, frameIndex, banner.x + offX, banner.y + offY, scale)
+      } else {
+        // Procedural fallback: simple pole + triangular flag face.
+        const poleH = 18
+        const poleW = 1.5 / this.camera.zoom
+        const flagW = 10
+        const flagH = 7
+        const poleX = banner.x
+        const poleTopY = banner.y - poleH
+        const poleBotY = banner.y
 
-      // Dark outline pass so the sprite reads over any terrain color.
-      ctx.save()
-      ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
-      ctx.lineWidth = poleW + 2 / this.camera.zoom
-      ctx.lineCap = 'round'
-      ctx.beginPath()
-      ctx.moveTo(poleX, poleBotY)
-      ctx.lineTo(poleX, poleTopY)
-      ctx.stroke()
-      ctx.restore()
+        ctx.save()
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
+        ctx.lineWidth = poleW + 2 / this.camera.zoom
+        ctx.lineCap = 'round'
+        ctx.beginPath()
+        ctx.moveTo(poleX, poleBotY)
+        ctx.lineTo(poleX, poleTopY)
+        ctx.stroke()
+        ctx.restore()
 
-      // Pole
-      ctx.strokeStyle = '#cbd5e1'
-      ctx.lineWidth = poleW
-      ctx.lineCap = 'round'
-      ctx.beginPath()
-      ctx.moveTo(poleX, poleBotY)
-      ctx.lineTo(poleX, poleTopY)
-      ctx.stroke()
+        ctx.strokeStyle = '#cbd5e1'
+        ctx.lineWidth = poleW
+        ctx.lineCap = 'round'
+        ctx.beginPath()
+        ctx.moveTo(poleX, poleBotY)
+        ctx.lineTo(poleX, poleTopY)
+        ctx.stroke()
 
-      // Flag face — filled triangle pointing right
-      ctx.fillStyle = ownerColor
-      ctx.strokeStyle = 'rgba(15, 23, 42, 0.7)'
-      ctx.lineWidth = 1 / this.camera.zoom
-      ctx.lineJoin = 'round'
-      ctx.beginPath()
-      ctx.moveTo(poleX,          poleTopY)           // top-left (at pole)
-      ctx.lineTo(poleX + flagW,  poleTopY + flagH / 2) // right tip
-      ctx.lineTo(poleX,          poleTopY + flagH)   // bottom-left (at pole)
-      ctx.closePath()
-      ctx.fill()
-      ctx.stroke()
+        ctx.fillStyle = ownerColor
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.7)'
+        ctx.lineWidth = 1 / this.camera.zoom
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        ctx.moveTo(poleX,          poleTopY)
+        ctx.lineTo(poleX + flagW,  poleTopY + flagH / 2)
+        ctx.lineTo(poleX,          poleTopY + flagH)
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+      }
 
       ctx.restore()
     }
 
-    // Drop cached durations for banners no longer in the snapshot so the
+    // Drop animation phases for banners no longer in the snapshot so the
     // map doesn't grow unbounded across many planted-then-expired banners.
-    for (const id of this.bannerInitialDurations.keys()) {
-      if (!seen.has(id)) this.bannerInitialDurations.delete(id)
+    for (const id of this.bannerAnimStartedAt.keys()) {
+      if (!seen.has(id)) this.bannerAnimStartedAt.delete(id)
     }
   }
 
@@ -1391,6 +1390,7 @@ export class CanvasRenderer {
           attackFrameDurationMs,
           this.renderTime,
           unit.carriedResourceType,
+          unit.unitType,
         )
         const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
         if (frame) {

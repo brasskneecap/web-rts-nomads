@@ -14,9 +14,14 @@ var unitDefsFS embed.FS
 // Client-only fields (TrainLabel, Render) are passed through to the API
 // as-is; the server game logic never reads them.
 type UnitDef struct {
-	Type        string  `json:"type"`
-	Name        string  `json:"name"`
-	Archetype   string  `json:"archetype,omitempty"`
+	Type      string `json:"type"`
+	Name      string `json:"name"`
+	Archetype string `json:"archetype,omitempty"`
+	// NonCombat marks the unit as passive: it will not auto-acquire targets in
+	// the combat AI, and only engages when the player issues an explicit
+	// OrderAttackTarget (via AttackWithUnits). The unit still carries the
+	// `"attack"` capability so the player's attack command is accepted.
+	NonCombat   bool    `json:"nonCombat,omitempty"`
 	HP          int     `json:"hp"`
 	Damage      int     `json:"damage"`
 	AttackRange float64 `json:"attackRange"`

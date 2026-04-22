@@ -5,6 +5,14 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
+// combatTargetIsValidLocked is the single source of truth for "is this unit
+// still a valid attack target?". Called from both tickUnitCombatLocked and
+// shouldDropCurrentTargetLocked so the two paths agree on the predicate set.
+// target may be nil (unit was removed).
+func (s *GameState) combatTargetIsValidLocked(unit, target *Unit) bool {
+	return target != nil && target.Visible && target.HP > 0 && target.OwnerID != unit.OwnerID
+}
+
 func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -27,14 +35,25 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 		unit.AttackTargetID = targetUnitID
 		unit.Attacking = false
 		unit.Status = "Moving To Attack"
-		unit.CombatAnchorX = unit.X
-		unit.CombatAnchorY = unit.Y
+		unit.Order = OrderState{Type: OrderAttackTarget, DestX: target.X, DestY: target.Y}
+		// Anchor on the target, not the unit's current position. The leash
+		// check is centered on the anchor; using unit.X/Y would fail for any
+		// long-distance attack command and the AI would drop the target on
+		// the next tick. Target-centered anchor mirrors MoveUnits/AttackMoveUnits.
+		unit.CombatAnchorX = target.X
+		unit.CombatAnchorY = target.Y
 
 		dx := target.X - unit.X
 		dy := target.Y - unit.Y
 		dist := math.Sqrt(dx*dx + dy*dy)
 		if dist > unit.AttackRange {
-			s.assignUnitPath(unit, protocol.Vec2{X: target.X, Y: target.Y}, blocked, nil)
+			// Path to the approach point (just inside AttackRange) rather than
+			// the target's center. Pathing to dead-center made units overshoot
+			// the enemy — they'd walk past the attack ring to the exact click
+			// position and only re-engage after reaching it.
+			profile := resolveCombatProfile(unit)
+			dest := s.computeApproachPointLocked(unit, target.X, target.Y, profile)
+			s.assignUnitPath(unit, dest, blocked, nil)
 		}
 	}
 }
@@ -89,9 +108,12 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 		// Handle unit-vs-unit combat
 		if unit.AttackTargetID != 0 {
 			target := s.getUnitByIDLocked(unit.AttackTargetID)
-			if target == nil || !target.Visible {
+			if !s.combatTargetIsValidLocked(unit, target) {
 				unit.AttackTargetID = 0
 				unit.Attacking = false
+				if unit.Order.Type == OrderAttackTarget {
+					unit.Order = OrderState{Type: OrderIdle}
+				}
 				unit.Status = "Idle"
 			} else {
 				dx := target.X - unit.X
@@ -143,6 +165,12 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					}
 				} else {
 					unit.Attacking = false
+					// Hold units never move to engage. If the target walked out of
+					// attack range, drop it and stay put rather than giving chase.
+					if unit.Order.Type == OrderHold {
+						s.clearCombatTargetLocked(unit)
+						continue
+					}
 					unit.Status = "Moving To Attack"
 					profile := resolveCombatProfile(unit)
 					if !unit.Moving {
@@ -201,6 +229,12 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					}
 				} else {
 					unit.Attacking = false
+					// Hold units never move to engage buildings either.
+					if unit.Order.Type == OrderHold {
+						unit.AttackBuildingTargetID = ""
+						unit.Status = "Idle"
+						continue
+					}
 					unit.Status = "Moving To Attack"
 					if !unit.Moving {
 						// Re-path to the same claimed position rather than recalculating,
