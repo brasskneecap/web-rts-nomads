@@ -4,26 +4,32 @@
   "description": "A compact battleground for fast openings and early pressure.",
   "sortOrder": 1000,
   "map": {
-    "debug": { "battleTracker": true, "debugSpawn": true },
-    "cellSize": 64,
-    "gridCols": 24,
-    "gridRows": 18,
+    "id": "",
+    "name": "",
+    "description": "",
+    "size": "",
     "width": 1536,
     "height": 1152,
+    "gridCols": 24,
+    "gridRows": 18,
+    "cellSize": 64,
     "terrain": [],
-    "defaultTile": { "sheet": "tileset", "sx": 64, "sy": 32 },
+    "defaultTile": {
+      "sheet": "tileset",
+      "sx": 64,
+      "sy": 32
+    },
     "obstacles": [],
     "buildings": [
       {
-        "id": "townhall-0-0",
-        "buildingType": "townhall",
         "x": 0,
         "y": 0,
+        "id": "townhall-0-0",
+        "buildingType": "townhall",
         "width": 3,
         "height": 3,
         "occupied": false,
         "visible": false,
-        "ownerId": null,
         "capabilities": [
           "unit-spawner",
           "occupiable",
@@ -37,54 +43,87 @@
         }
       },
       {
-        "id": "spawn-point-2-4",
-        "buildingType": "spawn-point",
         "x": 2,
         "y": 4,
+        "id": "spawn-point-2-4",
+        "buildingType": "spawn-point",
         "width": 1,
         "height": 1,
         "occupied": false,
         "visible": false,
-        "ownerId": null,
         "capabilities": [],
         "metadata": {
-          "townhallId": null,
           "fillOrder": 0,
           "spawnUnits": [
             {
-              "unitType": "archer",
-              "count": 3
+              "count": 3,
+              "unitType": "archer"
             },
             {
-              "unitType": "soldier",
-              "count": 3
+              "count": 3,
+              "unitType": "soldier"
             }
-          ]
+          ],
+          "townhallId": null
         }
       },
       {
-        "id": "enemy-spawnpoint-17-10",
-        "buildingType": "enemy-spawnpoint",
         "x": 17,
         "y": 10,
+        "id": "enemy-spawnpoint-17-10",
+        "buildingType": "enemy-spawnpoint",
         "width": 2,
         "height": 2,
         "occupied": true,
         "visible": true,
-        "ownerId": null,
         "capabilities": [
           "enemy-spawner"
         ],
         "metadata": {
+          "spawnCount": 3,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 21,
+        "y": 10,
+        "id": "enemy-spawnpoint-21-10",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "unitType": "ranged_raider"
+        }
+      },
+      {
+        "x": 21,
+        "y": 14,
+        "id": "enemy-spawnpoint-21-14",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
           "spawnCount": 3,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
           "unitType": "raider"
         }
       }
     ],
     "waveConfig": {
-      "totalWaves": 0,
       "prepDuration": 60,
       "waveDuration": 120
     }

@@ -117,7 +117,11 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 				addIcon(perkID, 1)
 			}
 		case "whirlwind_core":
-			if unit.PerkState.WhirlwindActiveRemaining > 0 {
+			// Surface a buff icon while the spin animation is playing. This
+			// also doubles as the client-side signal that the overlay
+			// animation should play (see AURA_RADIUS_SOURCES.onlyWhenActive
+			// in perkDefs.ts).
+			if unit.PerkState.WhirlwindAnimRemaining > 0 {
 				addIcon(perkID, 1)
 			}
 		case "berserk_state":
@@ -298,14 +302,8 @@ func (s *GameState) perkCooldownsLocked(unit *Unit) []protocol.PerkCooldownSnaps
 		}
 		cfg := def.ConfigForRank(unit.Rank)
 		switch perkID {
-		case "whirlwind_core":
-			// Suppress the overlay while the whirlwind is actively spinning —
-			// the unit is mid-ability, not waiting. The cooldown-phase timer
-			// is what should be surfaced to the HUD.
-			if unit.PerkState.WhirlwindActiveRemaining > 0 {
-				continue
-			}
-			add(perkID, unit.PerkState.WhirlwindCooldownRemaining, cfg["cooldownSeconds"])
+		// whirlwind_core no longer has a cooldown — it's an RNG proc on every
+		// attack, so there's nothing to countdown-overlay on the perk icon.
 		case "rallying_banner":
 			add(perkID, unit.PerkState.BannerCooldownRemaining, cfg["cooldownSeconds"])
 		case "caltrops", "fire_pit", "explosive_trap", "marker_trap":

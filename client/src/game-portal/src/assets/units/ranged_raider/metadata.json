@@ -1,0 +1,79 @@
+{
+  "character": {
+    "id": "2f69e927-bdd0-4404-beec-83ae962d2f9b",
+    "name": "rat-like kobold creature, small hunched humanoid, pointed snout, large ears, dingy gray-brown fur, tattered brown loincloth, lit candle on head held by leather strap, small warm green candle flame, drawing a wooden shortbow, quiver of arrows on back, stooped cowardly posture, beady black eyes, earthy brown and dirty gray palette, chunky dark outlines, limited earthy palette with muted greens and browns, hand-pixeled look, no anti-aliasing, Warcraft 2 inspired pixel art style",
+    "prompt": "rat-like kobold creature, small hunched humanoid, pointed snout, large ears, dingy gray-brown fur, tattered brown loincloth, lit candle on head held by leather strap, small warm green candle flame, drawing a wooden shortbow, quiver of arrows on back, stooped cowardly posture, beady black eyes, earthy brown and dirty gray palette, chunky dark outlines, limited earthy palette with muted greens and browns, hand-pixeled look, no anti-aliasing, Warcraft 2 inspired pixel art style",
+    "size": {
+      "width": 68,
+      "height": 68
+    },
+    "template_id": "mannequin",
+    "directions": 4,
+    "view": "low top-down",
+    "created_at": "2026-04-23T05:14:21.978055+00:00"
+  },
+  "frames": {
+    "rotations": {
+      "south": "rotations/south.png",
+      "west": "rotations/west.png",
+      "east": "rotations/east.png",
+      "north": "rotations/north.png"
+    },
+    "animations": {
+      "Attacking-1682bea3": {
+        "south": [
+          "animations/Attacking-1682bea3/south/frame_000.png",
+          "animations/Attacking-1682bea3/south/frame_001.png",
+          "animations/Attacking-1682bea3/south/frame_002.png",
+          "animations/Attacking-1682bea3/south/frame_003.png"
+        ],
+        "north": [
+          "animations/Attacking-1682bea3/north/frame_000.png",
+          "animations/Attacking-1682bea3/north/frame_001.png",
+          "animations/Attacking-1682bea3/north/frame_002.png",
+          "animations/Attacking-1682bea3/north/frame_003.png"
+        ],
+        "west": [
+          "animations/Attacking-1682bea3/west/frame_000.png",
+          "animations/Attacking-1682bea3/west/frame_001.png",
+          "animations/Attacking-1682bea3/west/frame_002.png",
+          "animations/Attacking-1682bea3/west/frame_003.png"
+        ],
+        "east": [
+          "animations/Attacking-1682bea3/east/frame_000.png",
+          "animations/Attacking-1682bea3/east/frame_001.png",
+          "animations/Attacking-1682bea3/east/frame_002.png",
+          "animations/Attacking-1682bea3/east/frame_003.png"
+        ]
+      },
+      "Walking-b13ebd84": {
+        "south": [
+          "animations/Walking-b13ebd84/south/frame_000.png",
+          "animations/Walking-b13ebd84/south/frame_001.png",
+          "animations/Walking-b13ebd84/south/frame_002.png",
+          "animations/Walking-b13ebd84/south/frame_003.png"
+        ],
+        "west": [
+          "animations/Walking-b13ebd84/west/frame_000.png",
+          "animations/Walking-b13ebd84/west/frame_001.png",
+          "animations/Walking-b13ebd84/west/frame_002.png",
+          "animations/Walking-b13ebd84/west/frame_003.png"
+        ],
+        "east": [
+          "animations/Walking-b13ebd84/east/frame_000.png",
+          "animations/Walking-b13ebd84/east/frame_001.png",
+          "animations/Walking-b13ebd84/east/frame_002.png",
+          "animations/Walking-b13ebd84/east/frame_003.png"
+        ],
+        "north": [
+          "animations/Walking-b13ebd84/north/frame_000.png",
+          "animations/Walking-b13ebd84/north/frame_001.png",
+          "animations/Walking-b13ebd84/north/frame_002.png",
+          "animations/Walking-b13ebd84/north/frame_003.png"
+        ]
+      }
+    }
+  },
+  "export_version": "2.0",
+  "export_date": "2026-04-23T06:35:14.648137"
+}

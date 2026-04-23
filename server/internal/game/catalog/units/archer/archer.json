@@ -1,0 +1,35 @@
+{
+  "type": "archer",
+  "name": "Archer",
+  "archetype": "archer",
+  "hp": 75,
+  "damage": 8,
+  "attackRange": 220,
+  "attackSpeed": 1.5,
+  "moveSpeed": 100,
+  "goldGatherAmount": 20,
+  "woodGatherAmount": 15,
+  "resourceCost": {
+    "gold": 175,
+    "wood": 75
+  },
+  "meatCost": 2,
+  "spawnSeconds": 10,
+  "capabilities": [
+    "move",
+    "attack"
+  ],
+  "trainLabel": "Train Archer",
+  "metadata": {},
+  "attackVisual": {
+    "kind": "projectile",
+    "originX": 24,
+    "originY": 5,
+    "effectLength": 22
+  },
+  "bounds": {
+    "halfWidth": 28,
+    "top": -23,
+    "bottom": 30
+  }
+}

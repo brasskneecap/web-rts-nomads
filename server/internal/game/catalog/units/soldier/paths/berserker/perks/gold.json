@@ -1,0 +1,37 @@
+[
+  {
+    "id": "blood_engine",
+    "displayName": "Blood Engine",
+    "icon": "perk-blood-engine",
+    "description": "Heal for a share of damage dealt; any overheal is stored as a temporary shield that absorbs damage before HP.",
+    "tooltipTemplate": "Heal for {lifestealPercent%} of damage dealt. Overhealing fills a temporary shield (max {maxShield} HP) that absorbs hits before your HP.",
+    "config": {
+      "maxShield": 50,
+      "lifestealPercent": 0.2
+    }
+  },
+  {
+    "id": "whirlwind_core",
+    "displayName": "Whirlwind Core",
+    "icon": "perk-whirlwind-core",
+    "description": "Attacks have a chance to trigger a bonus spin that hits all nearby enemies.",
+    "tooltipTemplate": "{procChance%} chance on attack to spin, dealing full damage to all enemies within {radius} units.",
+    "config": {
+      "procChance": 0.2,
+      "radius": 70,
+      "animationSeconds": 1
+    }
+  },
+  {
+    "id": "berserk_state",
+    "displayName": "Berserk State",
+    "icon": "perk-berserk-state",
+    "description": "Below a low-HP threshold, gain a surge of damage and attack speed.",
+    "tooltipTemplate": "Below {hpThresholdPercent%} HP: deal +{damageMultiplier%} damage and gain +{attackSpeedBonus%} attack speed.",
+    "config": {
+      "hpThresholdPercent": 0.4,
+      "damageMultiplier": 0.25,
+      "attackSpeedBonus": 0.4
+    }
+  }
+]

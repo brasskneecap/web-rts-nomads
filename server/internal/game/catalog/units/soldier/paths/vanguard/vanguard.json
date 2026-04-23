@@ -1,0 +1,27 @@
+{
+  "path": "vanguard",
+  "description": "Sturdy frontliner: more HP, high armor, slight attack-speed cost early. Armor 54 produces ~35% damage reduction via the diminishing-returns curve in armorDamageReduction.",
+  "ranks": {
+    "bronze": {
+      "maxHPMultiplier": 1.210,
+      "damageMultiplier": 1.10,
+      "attackSpeedMultiplier": 0.950,
+      "moveSpeedMultiplier": 1.00,
+      "armor": 54
+    },
+    "silver": {
+      "maxHPMultiplier": 1.440,
+      "damageMultiplier": 1.25,
+      "attackSpeedMultiplier": 1.100,
+      "moveSpeedMultiplier": 1.00,
+      "armor": 80
+    },
+    "gold": {
+      "maxHPMultiplier": 1.755,
+      "damageMultiplier": 1.65,
+      "attackSpeedMultiplier": 1.250,
+      "moveSpeedMultiplier": 1.00,
+      "armor": 110
+    }
+  }
+}

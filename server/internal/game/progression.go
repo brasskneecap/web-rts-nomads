@@ -33,20 +33,21 @@ const (
 	// (e.g. loot, bounties) will cover this instead.
 )
 
+// rankProgressionDef is the XP-threshold record for a rank. Stat multipliers
+// are NOT here — they live per-path in pathModifierTable so Vanguard tuning
+// can't accidentally contaminate Berserker (or vice-versa). This table
+// answers only "when does a unit promote?" and "what's the next rank?".
 type rankProgressionDef struct {
-	Rank                  string
-	XPThreshold           int
-	MaxHPMultiplier       float64
-	DamageMultiplier      float64
-	AttackSpeedMultiplier float64
+	Rank        string
+	XPThreshold int
 }
 
 // rankProgressionTable MUST be sorted by XPThreshold ascending — rankDefForXP relies on it.
 var rankProgressionTable = []rankProgressionDef{
-	{Rank: unitRankBase, XPThreshold: 0, MaxHPMultiplier: 1.00, DamageMultiplier: 1.00, AttackSpeedMultiplier: 1.00},
-	{Rank: unitRankBronze, XPThreshold: 100, MaxHPMultiplier: 1.10, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00},
-	{Rank: unitRankSilver, XPThreshold: 350, MaxHPMultiplier: 1.20, DamageMultiplier: 1.25, AttackSpeedMultiplier: 1.10},
-	{Rank: unitRankGold, XPThreshold: 750, MaxHPMultiplier: 1.35, DamageMultiplier: 1.50, AttackSpeedMultiplier: 1.25},
+	{Rank: unitRankBase, XPThreshold: 0},
+	{Rank: unitRankBronze, XPThreshold: 100},
+	{Rank: unitRankSilver, XPThreshold: 350},
+	{Rank: unitRankGold, XPThreshold: 750},
 }
 
 // pathModifierDef describes per-rank stat multipliers and flat armor bonus for a
@@ -90,30 +91,33 @@ var identityPathModifier = pathModifierDef{
 	MaxHPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, Armor: 0,
 }
 
-// pathModifierTable defines how each path modifies stats at each rank.
-// All multipliers are applied ON TOP of the existing rank multipliers.
+// Per-path stat multipliers live in JSON — one file per path under
+// catalog/paths/<path>.json. Loaded at init time into pathModifiersByKey (see
+// path_defs.go). Rebalancing is a JSON edit followed by a server restart; no
+// Go rebuild required.
 //
-// Vanguard — sturdier frontliner: more HP and armor, slight attack speed cost early.
-// Berserker — aggressive damage dealer: more damage, attack speed, and move speed; less HP.
+// Paths shipped today:
 //
-// Armor values produce ~35% reduction for Vanguard and ~15% for Berserker
-// (vs. the soldier pre-promotion baseline of ~25%). Further armor scaling
-// across ranks is intentionally left to perks so flat-reduction perks (future
-// vanguard tier) can stack predictably on top of the diminishing-returns curve.
-var pathModifierTable = []pathModifierDef{
-	// vanguard
-	{Path: unitPathVanguard, Rank: unitRankBronze, MaxHPMultiplier: 1.10, DamageMultiplier: 1.00, AttackSpeedMultiplier: 0.95, MoveSpeedMultiplier: 1.00, Armor: 54},
-	{Path: unitPathVanguard, Rank: unitRankSilver, MaxHPMultiplier: 1.20, DamageMultiplier: 1.00, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, Armor: 54},
-	{Path: unitPathVanguard, Rank: unitRankGold, MaxHPMultiplier: 1.30, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, Armor: 54},
-	// berserker — flat +15% move speed at every rank.
-	{Path: unitPathBerserker, Rank: unitRankBronze, MaxHPMultiplier: 0.90, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.10, MoveSpeedMultiplier: 1.15, Armor: 18},
-	{Path: unitPathBerserker, Rank: unitRankSilver, MaxHPMultiplier: 0.95, DamageMultiplier: 1.20, AttackSpeedMultiplier: 1.15, MoveSpeedMultiplier: 1.15, Armor: 18},
-	{Path: unitPathBerserker, Rank: unitRankGold, MaxHPMultiplier: 1.00, DamageMultiplier: 1.30, AttackSpeedMultiplier: 1.25, MoveSpeedMultiplier: 1.15, Armor: 18},
-	// trapper — identity row for Bronze. Silver and Gold tuning deferred until those tiers ship.
-	// All multipliers are 1.0 and Armor is 0 so the path modifier has no stat impact at Bronze,
-	// matching the design intent that trap utility (not raw stats) is the Trapper's value.
-	{Path: unitPathTrapper, Rank: unitRankBronze, MaxHPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, Armor: 0},
-}
+//	vanguard  — sturdy frontliner: more HP, high armor (~35% reduction),
+//	            small AS cost early.
+//	berserker — aggressive: more damage / AS, +15% move speed, less HP,
+//	            light armor (~15% reduction).
+//	trapper   — utility through traps; stat tuning deferred, rows currently
+//	            mirror the default rank curve so promotions still grant
+//	            baseline HP/damage/AS bumps.
+//	none      — default rank curve for units that earn XP without ever being
+//	            assigned a path (workers, future utility units).
+//
+// Armor values feed the diminishing-returns curve in armorDamageReduction
+// (reduction = armor / (armor + 100)). Further armor scaling across ranks is
+// intentionally left to perks so flat-reduction perks (e.g. Vanguard gold)
+// can stack predictably on top.
+//
+// The values currently in the JSON files preserve the exact in-game behavior
+// of the pre-JSON `rankProgression × pathModifier` stacking scheme. Those
+// products aren't pretty (e.g. 1.755, 1.5625) — round them when the balance
+// team does a formal tuning pass. Because rows are per-path, rounding one
+// path cannot silently perturb another.
 
 // armorDamageReduction returns the fractional damage reduction produced by the
 // given armor rating, using a diminishing-returns curve anchored on armorMitigationK.
@@ -134,17 +138,31 @@ func applyArmorMitigation(damage, armor int) int {
 	return maxInt(0, int(math.Round(float64(damage)*(1.0-armorDamageReduction(armor)))))
 }
 
-// pathModifierFor returns the path modifier for the given path and rank.
-// Returns identityPathModifier for base rank or unrecognised combinations so
-// that units without a path are unaffected.
+// pathModifierFor returns the stat multipliers for the given (path, rank).
+//
+// Resolution order:
+//  1. Base rank → identityPathModifier. Pre-promotion units are on their raw
+//     base stats regardless of path.
+//  2. unitPathNone → defaultRankCurve (see path_defs.go). Covers utility
+//     units (workers etc.) that earn XP without ever being assigned a path.
+//     Lives in code because "none" is a system fallback, not a tunable path.
+//  3. Bronze/Silver/Gold with a known path → the JSON catalog at
+//     catalog/units/<unit>/paths/<path>.json, loaded into pathModifiersByKey.
+//  4. Anything else (unknown path id, missing rank row) → identity, so a typo
+//     fails loud in-game (unit shows unmodified base stats) rather than
+//     silently matching an unintended row.
 func pathModifierFor(path, rank string) pathModifierDef {
-	if path == unitPathNone || rank == unitRankBase {
+	if rank == unitRankBase {
 		return identityPathModifier
 	}
-	for _, def := range pathModifierTable {
-		if def.Path == path && def.Rank == rank {
+	if path == unitPathNone {
+		if def, ok := defaultRankCurve[rank]; ok {
 			return def
 		}
+		return identityPathModifier
+	}
+	if def, ok := pathModifiersByKey[pathModifierKey(path, rank)]; ok {
+		return def
 	}
 	return identityPathModifier
 }
@@ -259,7 +277,10 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	if unit == nil {
 		return
 	}
-	rankDef := rankDefByName(unit.Rank)
+	// One lookup — pathDef now carries the FULL rank multiplier (no stacking
+	// with a separate rankProgressionTable). Edit the matching row in
+	// pathModifierTable to rebalance a single (path, rank) cell with no risk
+	// of contaminating another path.
 	pathDef := pathModifierFor(unit.ProgressionPath, unit.Rank)
 
 	currentHPFraction := 1.0
@@ -267,16 +288,15 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 		currentHPFraction = clampFloat(float64(unit.HP)/float64(unit.MaxHP), 0, 1)
 	}
 
-	unit.MaxHP = maxInt(1, int(math.Round(float64(unit.BaseMaxHP)*rankDef.MaxHPMultiplier*pathDef.MaxHPMultiplier)))
+	unit.MaxHP = maxInt(1, int(math.Round(float64(unit.BaseMaxHP)*pathDef.MaxHPMultiplier)))
 	// Apply flat max HP bonus from hold_the_line (and any future flat-HP perks).
-	// Called after rank/path multipliers so the bonus is always the authored value.
+	// Called after path multipliers so the bonus is always the authored value.
 	// Tuning point: bonusMaxHP in perk-defs.json → hold_the_line.config.
 	if bonus := s.perkFlatMaxHPBonusLocked(unit); bonus > 0 {
 		unit.MaxHP += bonus
 	}
-	unit.Damage = maxInt(0, int(math.Round(float64(unit.BaseDamage)*rankDef.DamageMultiplier*pathDef.DamageMultiplier)))
-	unit.AttackSpeed = math.Max(0.1, unit.BaseAttackSpeed*rankDef.AttackSpeedMultiplier*pathDef.AttackSpeedMultiplier)
-	// Move speed: path-only scaling for now (rank doesn't affect move speed yet).
+	unit.Damage = maxInt(0, int(math.Round(float64(unit.BaseDamage)*pathDef.DamageMultiplier)))
+	unit.AttackSpeed = math.Max(0.1, unit.BaseAttackSpeed*pathDef.AttackSpeedMultiplier)
 	unit.MoveSpeed = math.Max(1.0, unit.BaseMoveSpeed*pathDef.MoveSpeedMultiplier)
 	unit.Armor = pathDef.Armor
 	if unit.UnitType == "soldier" && unit.ProgressionPath == unitPathNone {

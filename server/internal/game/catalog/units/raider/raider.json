@@ -1,0 +1,23 @@
+{
+  "type": "raider",
+  "name": "Raider",
+  "archetype": "raider",
+  "hp": 75,
+  "damage": 5,
+  "attackRange": 60,
+  "attackSpeed": 1,
+  "moveSpeed": 100,
+  "resourceCost": {},
+  "meatCost": 0,
+  "spawnSeconds": 0,
+  "capabilities": [
+    "move",
+    "attack"
+  ],
+  "trainLabel": "",
+  "bounds": {
+    "halfWidth": 9,
+    "top": -16,
+    "bottom": 10
+  }
+}

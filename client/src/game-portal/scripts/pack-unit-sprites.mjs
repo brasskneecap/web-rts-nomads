@@ -21,8 +21,19 @@ import { fileURLToPath } from 'node:url'
 import { PNG } from 'pngjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
+const scriptPath = fileURLToPath(import.meta.url)
 const unitsRoot = path.resolve(here, '..', 'src', 'assets', 'units')
 const objectsRoot = path.resolve(here, '..', 'src', 'assets', 'objects')
+
+// --force bypasses the incremental change-detection and re-packs every folder.
+// Use it after editing this script's output format or when re-packing an
+// external toolchain's output that shares mtimes.
+const FORCE = process.argv.slice(2).some((a) => a === '--force' || a === '-f')
+
+// When this script itself is newer than a folder's packed manifest, re-pack —
+// a change here (output format, new fields, bug fix) must flow through to
+// every manifest, not just folders with touched source files.
+let scriptMtimeMs = 0
 
 // Canonical compass order for object idle frames. PixelLab exports an 8-way
 // "rotations" set; treating them as a clockwise cycle gives a smooth in-place
@@ -61,14 +72,71 @@ async function readPreservedOverrides(dir) {
   return out
 }
 
+// Reads the packedAt ISO timestamp from a folder's existing sprites.json.
+// Returns 0 when the manifest is missing or unreadable, which forces a re-pack.
+// Using packedAt (vs. sprites.json's fs mtime) is stable across `git checkout`
+// — cloning the repo or switching branches resets file mtimes, but the
+// embedded ISO string survives, so CI and fresh clones don't redundantly
+// re-pack every folder on the first run.
+async function readPackedAt(dir) {
+  try {
+    const raw = await fs.readFile(path.join(dir, 'sprites.json'), 'utf8')
+    const parsed = JSON.parse(raw)
+    const t = Date.parse(parsed?.packedAt ?? '')
+    return Number.isFinite(t) ? t : 0
+  } catch {
+    return 0
+  }
+}
+
+// Newest mtime (ms) across a list of candidate input files. Missing files are
+// silently ignored — the existing pack flow already tolerates pruned frames.
+async function newestMtimeMs(files) {
+  let newest = 0
+  for (const f of files) {
+    try {
+      const stat = await fs.stat(f)
+      if (stat.mtimeMs > newest) newest = stat.mtimeMs
+    } catch {
+      /* missing — skip */
+    }
+  }
+  return newest
+}
+
+// Decide whether a folder's sprites.json is current given a list of input
+// files. Returns true when every input is older than (or equal to) the last
+// packedAt timestamp AND the pack script itself hasn't changed since.
+async function isUpToDate(dir, inputFiles) {
+  if (FORCE) return false
+  const packedAt = await readPackedAt(dir)
+  if (packedAt === 0) return false
+  if (scriptMtimeMs > packedAt) return false
+  const newest = await newestMtimeMs(inputFiles)
+  return newest <= packedAt
+}
+
 const DIRECTION_ORDER = ['north', 'south', 'east', 'west']
 
 // Packs all directions of a single animation into one 2D sheet — columns are
 // animation frames, rows are directions (order recorded in rowOrder). Returns
-// null when no direction has any frames.
+// null when no direction has any frames, or `{ pruned: true }` when the
+// animation's raw frames have been deleted since the last pack (caller is
+// expected to carry the prior sprites.json entry over in that case).
 async function packAnimation(unitDir, animSlug, byDir) {
   const dirs = DIRECTION_ORDER.filter((d) => Array.isArray(byDir[d]) && byDir[d].length > 0)
   if (dirs.length === 0) return null
+
+  // Per-animation prune detection: if the first referenced frame of the first
+  // direction is missing on disk, treat the whole animation as pruned. Avoids
+  // bringing the whole run down when only some animations of a unit have had
+  // their raw frames cleaned up.
+  const probe = path.join(unitDir, byDir[dirs[0]][0])
+  try {
+    await fs.access(probe)
+  } catch {
+    return { pruned: true }
+  }
 
   const framesByDir = {}
   let frameWidth = 0
@@ -167,6 +235,26 @@ async function packUnit(unitDir) {
       return { alreadyPacked: true, unitKey }
     }
   }
+
+  // Skip folders whose inputs haven't changed since the last pack. Includes
+  // metadata.json, every rotation PNG, and every animation frame PNG — any of
+  // them being touched (new animation, edited frame, PixelLab re-export)
+  // invalidates the cached output. The script's own mtime is factored in so
+  // a change to pack logic re-packs everything.
+  const inputs = [metaPath]
+  for (const rel of Object.values(meta?.frames?.rotations ?? {})) {
+    if (typeof rel === 'string') inputs.push(path.join(unitDir, rel))
+  }
+  for (const byDir of Object.values(meta?.frames?.animations ?? {})) {
+    for (const rels of Object.values(byDir ?? {})) {
+      if (Array.isArray(rels)) {
+        for (const rel of rels) inputs.push(path.join(unitDir, rel))
+      }
+    }
+  }
+  if (await isUpToDate(unitDir, inputs)) {
+    return { upToDate: true, unitKey }
+  }
   const size = {
     width: meta?.character?.size?.width ?? 64,
     height: meta?.character?.size?.height ?? 64,
@@ -184,11 +272,31 @@ async function packUnit(unitDir) {
     }
   }
 
+  // Prior manifest — used to carry forward animation entries for animations
+  // whose raw frames have been pruned since the last pack.
+  let priorAnimations = {}
+  try {
+    const prior = JSON.parse(await fs.readFile(path.join(unitDir, 'sprites.json'), 'utf8'))
+    if (prior && typeof prior.animations === 'object' && prior.animations) {
+      priorAnimations = prior.animations
+    }
+  } catch {
+    /* no prior manifest — nothing to carry forward */
+  }
+
   const animations = {}
   for (const [hashedName, byDir] of Object.entries(meta?.frames?.animations ?? {})) {
     const slug = animSlugFromHashedName(hashedName)
     const result = await packAnimation(unitDir, slug, byDir ?? {})
     if (!result) continue
+    if (result.pruned) {
+      if (priorAnimations[slug]) {
+        animations[slug] = priorAnimations[slug]
+      } else {
+        console.warn(`[pack:sprites] ${unitKey}: animation '${slug}' frames pruned and no prior manifest entry — dropping`)
+      }
+      continue
+    }
     animations[slug] = {
       frameCount: result.frameCount,
       frameWidth: result.frameWidth,
@@ -308,6 +416,19 @@ async function packSimpleObject(objectDir) {
     return null
   }
 
+  // Skip when every PNG at the object root is older than the last pack.
+  // Includes sprite.png plus any sibling animation sheets — renaming or
+  // adding a new sheet bumps the directory entry mtime, but we stat the
+  // individual files directly so orphaned packed/ PNGs from a prior run
+  // don't get counted as inputs.
+  const rootEntries = await fs.readdir(objectDir, { withFileTypes: true })
+  const inputPngs = rootEntries
+    .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.png'))
+    .map((e) => path.join(objectDir, e.name))
+  if (await isUpToDate(objectDir, inputPngs)) {
+    return { upToDate: true }
+  }
+
   // sprite.png's height is the canonical frame size. All other sheets in
   // this folder must be an integer multiple of it on both axes.
   const spritePng = await readPng(spritePath)
@@ -390,6 +511,7 @@ async function packObject(objectDir) {
   } catch {
     const simple = await packSimpleObject(objectDir)
     if (!simple) return { skipped: true }
+    if (simple.upToDate) return { upToDate: true, objectKey }
     const manifest = {
       key: objectKey,
       size: simple.size,
@@ -419,9 +541,37 @@ async function packObject(objectDir) {
     }
   }
 
+  // Same incremental check as packUnit — metadata + every referenced raw frame.
+  const objInputs = [metaPath]
+  for (const rel of Object.values(meta?.frames?.rotations ?? {})) {
+    if (typeof rel === 'string') objInputs.push(path.join(objectDir, rel))
+  }
+  for (const byDir of Object.values(meta?.frames?.animations ?? {})) {
+    for (const rels of Object.values(byDir ?? {})) {
+      if (Array.isArray(rels)) {
+        for (const rel of rels) objInputs.push(path.join(objectDir, rel))
+      }
+    }
+  }
+  if (await isUpToDate(objectDir, objInputs)) {
+    return { upToDate: true, objectKey }
+  }
+
   const size = {
     width: meta?.character?.size?.width ?? 32,
     height: meta?.character?.size?.height ?? 32,
+  }
+
+  // Prior manifest — used to carry forward animation entries for animations
+  // whose raw frames have been pruned since the last pack.
+  let priorAnimations = {}
+  try {
+    const prior = JSON.parse(await fs.readFile(path.join(objectDir, 'sprites.json'), 'utf8'))
+    if (prior && typeof prior.animations === 'object' && prior.animations) {
+      priorAnimations = prior.animations
+    }
+  } catch {
+    /* no prior manifest — nothing to carry forward */
   }
 
   const animations = {}
@@ -445,11 +595,23 @@ async function packObject(objectDir) {
     }
   }
 
-  // Named animations — each animation has a single 'south' direction.
+  // Named animations — each animation has a single 'south' direction. When an
+  // animation's raw frames have been pruned since the last pack, carry the
+  // prior manifest entry forward instead of erroring out.
   for (const [hashedName, byDir] of Object.entries(meta?.frames?.animations ?? {})) {
     const slug = animSlugFromHashedName(hashedName)
     const frames = Array.isArray(byDir?.south) ? byDir.south : null
     if (!frames || frames.length === 0) continue
+    try {
+      await fs.access(path.join(objectDir, frames[0]))
+    } catch {
+      if (priorAnimations[slug]) {
+        animations[slug] = priorAnimations[slug]
+      } else {
+        console.warn(`[pack:sprites] object ${objectKey}: animation '${slug}' frames pruned and no prior manifest entry — dropping`)
+      }
+      continue
+    }
     const strip = await packFrameStrip(objectDir, `${slug}.png`, frames)
     if (!strip) continue
     animations[slug] = {
@@ -481,6 +643,12 @@ async function packObject(objectDir) {
 }
 
 async function main() {
+  try {
+    scriptMtimeMs = (await fs.stat(scriptPath)).mtimeMs
+  } catch {
+    scriptMtimeMs = 0
+  }
+
   let entries
   try {
     entries = await fs.readdir(unitsRoot, { withFileTypes: true })
@@ -490,6 +658,7 @@ async function main() {
   }
 
   let packed = 0
+  let upToDate = 0
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const unitDir = path.join(unitsRoot, entry.name)
@@ -500,6 +669,10 @@ async function main() {
     }
     if (result.alreadyPacked) {
       console.log(`[pack:sprites] ${result.unitKey}: raw frames pruned — leaving existing sprites.json`)
+      continue
+    }
+    if (result.upToDate) {
+      upToDate += 1
       continue
     }
     packed += 1
@@ -517,6 +690,7 @@ async function main() {
   }
 
   let packedObjects = 0
+  let upToDateObjects = 0
   for (const entry of objectEntries) {
     if (!entry.isDirectory()) continue
     const objectDir = path.join(objectsRoot, entry.name)
@@ -529,11 +703,20 @@ async function main() {
       console.log(`[pack:sprites] object ${result.objectKey}: raw frames pruned — leaving existing sprites.json`)
       continue
     }
+    if (result.upToDate) {
+      upToDateObjects += 1
+      continue
+    }
     packedObjects += 1
     console.log(`[pack:sprites] object ${result.objectKey}: ${result.animations} animations`)
   }
 
-  console.log(`[pack:sprites] done — packed ${packed} unit(s), ${packedObjects} object(s)`)
+  const cacheSummary = upToDate + upToDateObjects > 0
+    ? ` (${upToDate} unit(s), ${upToDateObjects} object(s) up-to-date — pass --force to re-pack)`
+    : ''
+  console.log(
+    `[pack:sprites] done — packed ${packed} unit(s), ${packedObjects} object(s)${cacheSummary}`,
+  )
 }
 
 main().catch((err) => {

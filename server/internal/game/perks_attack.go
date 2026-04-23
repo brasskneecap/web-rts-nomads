@@ -53,6 +53,14 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 				}
 			}
 
+		case "momentum":
+			// Post-attack burst. Shares MomentumRemaining with the move-speed
+			// buff in perks_movement.go — both apply while the timer is live
+			// and drop together when it decays to 0 in tickUnitPerkStateLocked.
+			if unit.PerkState.MomentumRemaining > 0 {
+				total += def.Config["attackSpeedBonus"]
+			}
+
 		// ── add cases for new attack-speed perks below this line ────────────
 		}
 
@@ -140,10 +148,16 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 			attacker.PerkState.MomentumRemaining = def.Config["durationSeconds"]
 
 		case "whirlwind_core":
-			// While the whirlwind window is active, every attack also hits all
-			// other enemies within the configured radius of the attacker.
-			if attacker.PerkState.WhirlwindActiveRemaining > 0 {
+			// Each normal attack rolls against procChance. On proc, fire a bonus
+			// AoE hit (full damage to every visible enemy within radius) and
+			// arm the animation timer so the client can overlay the spin
+			// animation. The regular attack flow is NOT interrupted — this is
+			// strictly additive; the primary target already took its hit
+			// before this hook ran, and the unit's attack cooldown continues
+			// on its normal cadence.
+			if s.rngPerks.Float64() < def.Config["procChance"] {
 				s.applyWhirlwindHitLocked(attacker, primaryTarget, def.Config["radius"], deadUnitIDs)
+				attacker.PerkState.WhirlwindAnimRemaining = def.Config["animationSeconds"]
 			}
 
 		case "taunting_strike":

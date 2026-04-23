@@ -1310,44 +1310,18 @@ func TestTrapper_SoldierPathNotTrapper(t *testing.T) {
 	}
 }
 
-// TestTrapper_PathModifierLookupReturnsIdentity verifies that pathModifierFor
-// returns the authored identity row for trapper/bronze, not the fallback
-// identityPathModifier. Both have identical values today, but the lookup must
-// succeed (i.e. the row exists in pathModifierTable) so future stat additions
-// to the trapper path will be picked up correctly.
-func TestTrapper_PathModifierLookupReturnsIdentity(t *testing.T) {
-	got := pathModifierFor(unitPathTrapper, unitRankBronze)
-	identity := identityPathModifier
-
-	// Values must match the identity row (all 1.0 multipliers, 0 armor).
-	if got.MaxHPMultiplier != identity.MaxHPMultiplier {
-		t.Errorf("MaxHPMultiplier: got %.3f, want %.3f", got.MaxHPMultiplier, identity.MaxHPMultiplier)
-	}
-	if got.DamageMultiplier != identity.DamageMultiplier {
-		t.Errorf("DamageMultiplier: got %.3f, want %.3f", got.DamageMultiplier, identity.DamageMultiplier)
-	}
-	if got.AttackSpeedMultiplier != identity.AttackSpeedMultiplier {
-		t.Errorf("AttackSpeedMultiplier: got %.3f, want %.3f", got.AttackSpeedMultiplier, identity.AttackSpeedMultiplier)
-	}
-	if got.MoveSpeedMultiplier != identity.MoveSpeedMultiplier {
-		t.Errorf("MoveSpeedMultiplier: got %.3f, want %.3f", got.MoveSpeedMultiplier, identity.MoveSpeedMultiplier)
-	}
-	if got.Armor != identity.Armor {
-		t.Errorf("Armor: got %d, want %d", got.Armor, identity.Armor)
-	}
-
-	// Confirm the row is actually found in the table (not the fallback).
-	// The fallback identityPathModifier has Path="" — we can't distinguish by
-	// value, so we do a direct table scan.
-	found := false
-	for _, row := range pathModifierTable {
-		if row.Path == unitPathTrapper && row.Rank == unitRankBronze {
-			found = true
-			break
+// TestTrapper_CatalogLoadedForAllRanks confirms the Trapper path has a
+// loaded entry for every rank. The actual multiplier values live in
+// catalog/units/archer/paths/trapper/trapper.json and are expected to evolve
+// with balance tuning — this test deliberately does NOT pin them, only
+// that the JSON loaded successfully for each rank. Other path invariants
+// (positive multipliers, correct Path/Rank tagging) are covered by
+// TestPathCatalog_ShippedPathsHaveAllRanks in path_defs_test.go.
+func TestTrapper_CatalogLoadedForAllRanks(t *testing.T) {
+	for _, rank := range []string{unitRankBronze, unitRankSilver, unitRankGold} {
+		if _, ok := pathModifiersByKey[pathModifierKey(unitPathTrapper, rank)]; !ok {
+			t.Errorf("trapper/%s missing from pathModifiersByKey — JSON catalog not loaded correctly", rank)
 		}
-	}
-	if !found {
-		t.Error("trapper/bronze row missing from pathModifierTable — pathModifierFor is returning the fallback")
 	}
 }
 

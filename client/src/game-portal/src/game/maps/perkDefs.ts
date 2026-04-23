@@ -93,9 +93,10 @@ const AURA_RADIUS_SOURCES: Record<string, AuraRadiusSource> = {
   pain_share: { key: 'radius' },
   interlock: { key: 'radius' },
   brace: { key: 'radius' },
-  // Berserker — whirlwind AoE that pulses on/off; ring shows the area it
-  // will hit while pulsing so the player can position accordingly.
-  whirlwind_core: { key: 'radius' },
+  // Berserker — whirlwind is now an RNG proc per attack. Ring flashes only
+  // while the spin animation is live (activeBuffs contains whirlwind_core),
+  // mirroring the proc moment rather than implying an always-on aura.
+  whirlwind_core: { key: 'radius', onlyWhenActive: true },
   // Vanguard — triggers once when HP drops below threshold, runs for
   // tauntDurationSeconds. Gated on activeBuffs so the ring only appears
   // while the taunt is actually live.

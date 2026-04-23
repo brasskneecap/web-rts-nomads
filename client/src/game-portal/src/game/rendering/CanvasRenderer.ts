@@ -17,8 +17,8 @@ import {
   TERRAIN_TILE_COORDS,
   isTerrainTilesetReady,
 } from './terrainTileset'
-import { getResolvedUnitAttackVisual, getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
-import type { UnitDef, UnitRenderDef } from '../maps/unitDefs'
+import { getResolvedUnitAttackVisual, getUnitBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
+import type { UnitDef } from '../maps/unitDefs'
 import type { BannerSnapshot, BuildingTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
@@ -1270,15 +1270,13 @@ export class CanvasRenderer {
       const isInspected = this.state.inspectedEnemyUnitId === unit.id
       const isHoveredEnemy = this.state.hoveredEnemyUnitId === unit.id
       const unitDef = UNIT_DEF_MAP.get(unit.unitType ?? '')
-      const unitBounds = getUnitRenderBounds(unitDef)
-      const halfWidth = unitBounds
-        ? Math.max(Math.abs(unitBounds.minX), Math.abs(unitBounds.maxX))
-        : 13
-      const bottomOffset = unitBounds?.maxY ?? 12
+      const unitBounds = getUnitBounds(unitDef)
+      const halfWidth = unitBounds.halfWidth
+      const bottomOffset = unitBounds.bottom
       const spriteSet = getUnitSpriteSet(unit.path, unit.unitType)
       // PixelLab canvas has transparent padding below the feet — shift the
       // ring up by that amount so it sits under the visible feet, not the
-      // canvas edge. No-op for units rendering procedurally.
+      // canvas edge.
       const ringLift = spriteSet
         ? spriteSet.size.height * UNIT_SPRITE_SCALE * UNIT_SPRITE_BOTTOM_PADDING
         : 0
@@ -1358,8 +1356,6 @@ export class CanvasRenderer {
       }
 
       const unitColor = unit.color || 'lime'
-      const unitRankColor = this.getRankColor(unit.rank)
-      const unitRenderDef = resolveUnitRenderDef(unitDef, unit.path)
       if (spriteSet) {
         const attackFacing =
           unit.status === 'Attacking'
@@ -1380,6 +1376,7 @@ export class CanvasRenderer {
         if (attackingAnim && effectiveAttackSpeed && effectiveAttackSpeed > 0) {
           attackFrameDurationMs = 1000 / effectiveAttackSpeed / attackingAnim.frameCount
         }
+        const whirlwindActive = !!unit.activeBuffs?.some((b) => b.id === 'whirlwind_core')
         const anim = this.unitAnim.sample(
           unit.id,
           unit.x,
@@ -1391,6 +1388,7 @@ export class CanvasRenderer {
           this.renderTime,
           unit.carriedResourceType,
           unit.unitType,
+          whirlwindActive,
         )
         const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
         if (frame) {
@@ -1410,34 +1408,19 @@ export class CanvasRenderer {
         }
       }
 
-      if (unitRenderDef) {
-        for (const layer of unitRenderDef.layers) {
-          ctx.fillStyle =
-            layer.color === 'player' ? unitColor :
-            layer.color === 'rank'   ? unitRankColor :
-            layer.color === 'rankLight' ? this.getRankColor(unit.rank, 'light') :
-            layer.color === 'rankDark' ? this.getRankColor(unit.rank, 'dark') :
-            layer.color
-          if (layer.kind === 'circle') {
-            ctx.beginPath()
-            ctx.arc(unit.x + layer.cx, unit.y + layer.cy, layer.r, 0, Math.PI * 2)
-            ctx.fill()
-          } else if (layer.kind === 'poly') {
-            ctx.beginPath()
-            ctx.moveTo(unit.x + layer.points[0][0], unit.y + layer.points[0][1])
-            for (let i = 1; i < layer.points.length; i++) {
-              ctx.lineTo(unit.x + layer.points[i][0], unit.y + layer.points[i][1])
-            }
-            ctx.closePath()
-            ctx.fill()
-          }
-        }
-      } else {
-        ctx.fillStyle = unitColor
-        ctx.beginPath()
-        ctx.arc(unit.x, unit.y, 10, 0, Math.PI * 2)
-        ctx.fill()
-      }
+      // Placeholder while a sprite is still decoding, or for units without a
+      // registered sprite set. Sized from unitBounds so it matches the body
+      // footprint roughly.
+      ctx.fillStyle = unitColor
+      ctx.beginPath()
+      ctx.ellipse(
+        unit.x,
+        unit.y + (unitBounds.top + unitBounds.bottom) / 2,
+        halfWidth,
+        (unitBounds.bottom - unitBounds.top) / 2,
+        0, 0, Math.PI * 2,
+      )
+      ctx.fill()
     }
 
     this.unitAnim.prune(activeUnitIds)
@@ -1517,8 +1500,8 @@ export class CanvasRenderer {
   private spriteBodyCenterLift(unitType: string, path: string | undefined): { x: number; y: number } | null {
     const spriteSet = getUnitSpriteSet(path, unitType)
     if (!spriteSet) return null
-    const bounds = getUnitRenderBounds(UNIT_DEF_MAP.get(unitType))
-    const bottomOffset = bounds?.maxY ?? 12
+    const bounds = getUnitBounds(UNIT_DEF_MAP.get(unitType))
+    const bottomOffset = bounds.bottom
     const h = spriteSet.size.height * UNIT_SPRITE_SCALE
     const visibleBottom = bottomOffset - h * UNIT_SPRITE_BOTTOM_PADDING
     const visibleTop = bottomOffset - h * (1 - UNIT_SPRITE_TOP_PADDING)
@@ -1564,13 +1547,11 @@ export class CanvasRenderer {
     if (sprite) {
       lift = sprite
     } else {
-      const bounds = getUnitRenderBounds(UNIT_DEF_MAP.get(unit.unitType))
-      lift = bounds
-        ? {
-            x: (bounds.minX + bounds.maxX) / 2,
-            y: bounds.minY + (bounds.maxY - bounds.minY) * CanvasRenderer.TARGET_BODY_CENTER_FRACTION,
-          }
-        : { x: 0, y: CanvasRenderer.DEFAULT_BODY_CENTER_OFFSET_Y }
+      const bounds = getUnitBounds(UNIT_DEF_MAP.get(unit.unitType))
+      lift = {
+        x: 0,
+        y: bounds.top + (bounds.bottom - bounds.top) * CanvasRenderer.TARGET_BODY_CENTER_FRACTION,
+      }
     }
     cache.set(key, lift)
     return lift
@@ -2279,20 +2260,6 @@ export class CanvasRenderer {
 
     ctx.restore()
   }
-}
-
-// Returns the render definition to use for a unit, preferring a path-specific
-// variant when one exists and has layers. Falls back to the base render.
-function resolveUnitRenderDef(
-  unitDef: UnitDef | undefined | null,
-  path?: string,
-): UnitRenderDef | undefined {
-  if (!unitDef) return undefined
-  if (path && path !== 'none') {
-    const variant = unitDef.renderVariants?.[path]
-    if (variant?.layers?.length) return variant
-  }
-  return unitDef.render
 }
 
 // Scans units and enemy buildings for the nearest target within (a slightly

@@ -11,10 +11,17 @@ package game
 // │  WHERE THINGS LIVE                                                      │
 // │                                                                         │
 // │    PERK DEFINITIONS (data, tuning, eligibility)                         │
-// │      → catalog/perks/<unitType>/<path>/<rank>.json                      │
+// │      → catalog/units/<unit>/paths/<path>/perks/<rank>.json              │
 // │        Each file holds the array of perk entries for that slot.         │
 // │        Adding a perk means appending to the right file;                 │
 // │        UnitType / Path / Rank are inferred from the file path.          │
+// │                                                                         │
+// │    PATH STAT MULTIPLIERS (per rank)                                     │
+// │      → catalog/units/<unit>/paths/<path>/<path>.json                    │
+// │        Sibling of perks/; loaded by path_defs.go.                       │
+// │                                                                         │
+// │    UNIT BASE STATS                                                      │
+// │      → catalog/units/<unit>/<unit>.json                                 │
 // │                                                                         │
 // │    PERK RUNTIME BEHAVIOUR (effects, hooks, state)                       │
 // │      → perks.go   (assignment + all seven hook functions)               │
@@ -39,7 +46,11 @@ import (
 	"strings"
 )
 
-//go:embed all:catalog/perks
+// Embeds the per-unit catalog tree so this file can load perk JSONs from
+// catalog/units/<unit>/paths/<path>/perks/*.json. unit_defs.go and
+// path_defs.go embed the same tree; each init() filters independently.
+//
+//go:embed all:catalog/units
 var perkDefsFS embed.FS
 
 // PerkDef is the static definition of a perk loaded from the catalog.
@@ -189,13 +200,16 @@ func splitRankConfig(raw map[string]json.RawMessage) (map[string]float64, map[st
 
 func init() {
 	// On-disk layout:
-	//   catalog/perks/<unitType>/<path>/<rank>.json  →  [perkEntry, perkEntry, ...]
+	//   catalog/units/<unit>/paths/<path>/perks/<rank>.json
+	//     → [perkEntry, perkEntry, ...]
 	//
+	// The walker accepts only files matching this shape exactly; anything
+	// else is a structural mistake and panics so it fails loud at startup.
 	// unitType, path, and rank are derived from the file path and written
 	// into each PerkDef — no redundancy in the source JSON.
 	perkDefsByID = make(map[string]*PerkDef)
 
-	err := fs.WalkDir(perkDefsFS, "catalog/perks", func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(perkDefsFS, "catalog/units", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -203,14 +217,17 @@ func init() {
 			return nil
 		}
 
-		rel := strings.TrimPrefix(p, "catalog/perks/")
+		rel := strings.TrimPrefix(p, "catalog/units/")
 		parts := strings.Split(rel, "/")
-		if len(parts) != 3 {
-			panic("catalog/perks: expected <unit>/<path>/<rank>.json, got " + rel)
+		// Only files matching <unit>/paths/<path>/perks/<rank>.json are perk
+		// definitions. Everything else under catalog/units/ belongs to
+		// unit_defs.go or path_defs.go — ignore it here.
+		if len(parts) != 5 || parts[1] != "paths" || parts[3] != "perks" {
+			return nil
 		}
 		unitType := parts[0]
-		pathName := parts[1]
-		rank := strings.TrimSuffix(parts[2], path.Ext(parts[2]))
+		pathName := parts[2]
+		rank := strings.TrimSuffix(parts[4], path.Ext(parts[4]))
 
 		data, err := perkDefsFS.ReadFile(p)
 		if err != nil {
@@ -244,7 +261,7 @@ func init() {
 		return nil
 	})
 	if err != nil {
-		panic("catalog/perks: " + err.Error())
+		panic("catalog/units: " + err.Error())
 	}
 }
 

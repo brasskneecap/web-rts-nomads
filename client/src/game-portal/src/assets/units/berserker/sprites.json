@@ -15,24 +15,38 @@
       "frameCount": 4,
       "frameWidth": 68,
       "frameHeight": 68,
-      "strips": {
-        "east": "packed/walking-east.png",
-        "west": "packed/walking-west.png",
-        "north": "packed/walking-north.png",
-        "south": "packed/walking-south.png"
-      }
+      "sheet": "packed/walking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west"
+      ]
     },
     "attacking": {
       "frameCount": 4,
       "frameWidth": 68,
       "frameHeight": 68,
-      "strips": {
-        "south": "packed/attacking-south.png",
-        "north": "packed/attacking-north.png",
-        "east": "packed/attacking-east.png",
-        "west": "packed/attacking-west.png"
-      }
+      "sheet": "packed/attacking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west"
+      ]
+    },
+    "whirlwind": {
+      "frameCount": 4,
+      "frameWidth": 68,
+      "frameHeight": 68,
+      "sheet": "packed/whirlwind.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west"
+      ]
     }
   },
-  "packedAt": "2026-04-20T05:23:04.925Z"
+  "packedAt": "2026-04-23T06:36:43.738Z"
 }

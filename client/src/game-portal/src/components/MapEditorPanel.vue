@@ -68,6 +68,26 @@
           </div>
 
           <div class="wave-config-block">
+            <div class="wave-config-title">Debug <span class="field-hint">(omit for production maps)</span></div>
+            <label class="debug-flag-row">
+              <input
+                type="checkbox"
+                :checked="model.debug?.battleTracker ?? false"
+                @change="setDebugFlag('battleTracker', ($event.target as HTMLInputElement).checked)"
+              />
+              <span>Battle Tracker <span class="field-hint">(per-player damage / kill HUD)</span></span>
+            </label>
+            <label class="debug-flag-row">
+              <input
+                type="checkbox"
+                :checked="model.debug?.debugSpawn ?? false"
+                @change="setDebugFlag('debugSpawn', ($event.target as HTMLInputElement).checked)"
+              />
+              <span>Debug Spawn <span class="field-hint">(enemy-with-perks placement tool)</span></span>
+            </label>
+          </div>
+
+          <div class="wave-config-block">
             <div class="wave-config-title">Victory Conditions <span class="field-hint">(all must be met)</span></div>
             <div
               v-for="(vc, i) in model.victoryConditions ?? []"
@@ -323,6 +343,7 @@
               :disabled="!paintModeEnabled"
             >
               <option value="raider">Raider</option>
+              <option value="ranged_raider">Ranged Raider</option>
             </select>
             <label for="enemy-wave-mode">Spawn Timing</label>
             <select id="enemy-wave-mode" v-model="enemyWaveMode" :disabled="!paintModeEnabled">
@@ -771,6 +792,16 @@ function setWaveConfig(field: 'totalWaves' | 'prepDuration' | 'waveDuration', va
   // Drop waveConfig entirely if all fields are zero/absent — keeps the export clean
   const hasAny = (updated.totalWaves ?? 0) > 0 || (updated.prepDuration ?? 0) > 0 || (updated.waveDuration ?? 0) > 0
   model.value = { ...model.value, waveConfig: hasAny ? updated : undefined }
+}
+
+// Mirrors setWaveConfig: drops the debug block entirely when every flag is
+// false so production maps stay clean of a `"debug": {}` artifact in their
+// exported JSON. Server-side readers already treat a missing block as all-off.
+function setDebugFlag(field: 'battleTracker' | 'debugSpawn', value: boolean) {
+  const current = model.value.debug ?? {}
+  const updated = { ...current, [field]: value }
+  const hasAny = !!updated.battleTracker || !!updated.debugSpawn
+  model.value = { ...model.value, debug: hasAny ? updated : undefined }
 }
 
 function applyGridSize() {
@@ -2029,6 +2060,18 @@ onBeforeUnmount(() => {
   opacity: 0.65;
   text-transform: none;
   letter-spacing: 0;
+}
+
+.debug-flag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.debug-flag-row input[type='checkbox'] {
+  margin: 0;
 }
 
 .victory-condition-row {
