@@ -15,33 +15,9 @@
     "attack"
   ],
   "trainLabel": "",
-  "render": {
-    "layers": [
-      {
-        "kind": "circle",
-        "cx": 0,
-        "cy": -8,
-        "r": 8,
-        "color": "player"
-      },
-      {
-        "kind": "poly",
-        "points": [
-          [
-            -9,
-            0
-          ],
-          [
-            9,
-            0
-          ],
-          [
-            0,
-            10
-          ]
-        ],
-        "color": "player"
-      }
-    ]
+  "bounds": {
+    "halfWidth": 9,
+    "top": -16,
+    "bottom": 10
   }
 }

@@ -21,7 +21,7 @@ import (
 var unitDefsFS embed.FS
 
 // UnitDef holds the configuration for a trainable unit type.
-// Client-only fields (TrainLabel, Render) are passed through to the API
+// Client-only fields (TrainLabel, Bounds) are passed through to the API
 // as-is; the server game logic never reads them.
 type UnitDef struct {
 	Type      string `json:"type"`
@@ -47,11 +47,11 @@ type UnitDef struct {
 	Capabilities     []string        `json:"capabilities"`
 	TrainLabel       string          `json:"trainLabel,omitempty"`
 	AttackVisual     json.RawMessage `json:"attackVisual,omitempty"`
-	Render           json.RawMessage `json:"render,omitempty"`
-	// RenderVariants holds optional alternate render definitions keyed by
-	// unit path (e.g. "vanguard", "berserker"). Passed through to the client
-	// as-is; the server game logic never reads it.
-	RenderVariants json.RawMessage `json:"renderVariants,omitempty"`
+	// Bounds describes the unit's visual footprint (halfWidth, top, bottom
+	// offsets from unit.x/unit.y). Client uses it to anchor the sprite's
+	// feet, size the selection ring, and compute hit-test rects. Passed
+	// through as-is; the server game logic never reads it.
+	Bounds json.RawMessage `json:"bounds,omitempty"`
 }
 
 var unitDefsByType map[string]UnitDef

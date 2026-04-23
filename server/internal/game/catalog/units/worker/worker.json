@@ -29,37 +29,9 @@
     "originY": 0,
     "effectLength": 10
   },
-  "render": {
-    "layers": [
-      {
-        "kind": "circle",
-        "cx": 0,
-        "cy": 0,
-        "r": 5,
-        "color": "player"
-      },
-      {
-        "kind": "poly",
-        "points": [
-          [
-            0,
-            1
-          ],
-          [
-            -7,
-            7
-          ],
-          [
-            0,
-            15
-          ],
-          [
-            7,
-            7
-          ]
-        ],
-        "color": "player"
-      }
-    ]
+  "bounds": {
+    "halfWidth": 7,
+    "top": -5,
+    "bottom": 15
   }
 }

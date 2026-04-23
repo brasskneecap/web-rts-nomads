@@ -9,7 +9,7 @@
 //     Manifest carries `strips: { north, south, east, west }`.
 // Both normalize to the same in-memory shape, so the renderer doesn't care.
 
-import { getUnitRenderBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
+import { getUnitBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
 
 // Multiplier applied to each unit sprite's native size at draw time. Bump
 // until sprites read clearly at common zoom-outs without swamping the UI.
@@ -183,10 +183,8 @@ function imageReady(img: HTMLImageElement | undefined): img is HTMLImageElement 
 // Resolution order:
 //   1. Sprite-backed unit → use the sprite's scaled canvas with horizontal
 //      and vertical padding fractions applied to trim transparent margins.
-//   2. Procedural unit with render bounds → use those bounds relative to
-//      (unit.x, unit.y).
-//   3. No info available → fall back to a small default rect that matches
-//      the legacy 14-px feet radius.
+//   2. No sprite (placeholder path) → use the def's bounds relative to
+//      (unit.x, unit.y), falling back to DEFAULT_UNIT_BOUNDS when absent.
 export function getUnitBodyRect(args: {
   x: number
   y: number
@@ -196,15 +194,14 @@ export function getUnitBodyRect(args: {
 }): { minX: number; minY: number; maxX: number; maxY: number } {
   const padding = args.padding ?? 3
   const unitDef = UNIT_DEF_MAP.get(args.unitType ?? '')
-  const renderBounds = getUnitRenderBounds(unitDef)
+  const bounds = getUnitBounds(unitDef)
   const spriteSet = getUnitSpriteSet(args.path, args.unitType)
 
   if (spriteSet) {
-    const bottomOffset = renderBounds?.maxY ?? 12
     const spriteH = spriteSet.size.height * UNIT_SPRITE_SCALE
     const spriteW = spriteSet.size.width * UNIT_SPRITE_SCALE
-    const visibleBottomY = args.y + bottomOffset - spriteH * UNIT_SPRITE_BOTTOM_PADDING
-    const visibleTopY = args.y + bottomOffset - spriteH * (1 - UNIT_SPRITE_TOP_PADDING)
+    const visibleBottomY = args.y + bounds.bottom - spriteH * UNIT_SPRITE_BOTTOM_PADDING
+    const visibleTopY = args.y + bounds.bottom - spriteH * (1 - UNIT_SPRITE_TOP_PADDING)
     const halfW = spriteW * (1 - 2 * UNIT_SPRITE_SIDE_PADDING) / 2
     return {
       minX: args.x - halfW - padding,
@@ -214,23 +211,11 @@ export function getUnitBodyRect(args: {
     }
   }
 
-  if (renderBounds) {
-    return {
-      minX: args.x + renderBounds.minX - padding,
-      maxX: args.x + renderBounds.maxX + padding,
-      minY: args.y + renderBounds.minY - padding,
-      maxY: args.y + renderBounds.maxY + padding,
-    }
-  }
-
-  // Last-resort fallback: roughly a 28×28 box sitting above the feet anchor,
-  // matching the pre-refactor 14-px feet-radius behavior closely enough that
-  // callers without sprite or layer data still get sensible hit-testing.
   return {
-    minX: args.x - 14 - padding,
-    maxX: args.x + 14 + padding,
-    minY: args.y - 26 - padding,
-    maxY: args.y + 2 + padding,
+    minX: args.x - bounds.halfWidth - padding,
+    maxX: args.x + bounds.halfWidth + padding,
+    minY: args.y + bounds.top - padding,
+    maxY: args.y + bounds.bottom + padding,
   }
 }
 
