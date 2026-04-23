@@ -438,6 +438,98 @@
 
       <div class="canvas-frame">
         <canvas ref="canvas" class="editor-canvas"></canvas>
+        <div v-if="selectedEditBuilding && editPanelPos" class="edit-panel" :style="editPanelStyle">
+          <div class="edit-panel__header">
+            <span class="edit-panel__title">{{ selectedEditBuilding.buildingType }}</span>
+            <button type="button" class="edit-panel__close" @click="selectedEditBuildingId = null">✕</button>
+          </div>
+
+          <!-- enemy-spawnpoint fields -->
+          <template v-if="selectedEditBuilding.buildingType === 'enemy-spawnpoint'">
+            <div class="edit-field">
+              <label>Unit Type</label>
+              <select :value="selectedEditBuilding.metadata?.['unitType'] ?? 'raider'" @change="updateEditMeta('unitType', ($event.target as HTMLSelectElement).value)">
+                <option value="raider">Raider</option>
+                <option v-for="u in playerSpawnUnits" :key="u.type" :value="u.type">{{ u.label }}</option>
+              </select>
+            </div>
+            <div class="edit-field">
+              <label>Spawn Timing</label>
+              <select :value="editWaveMode" @change="updateEditWaveMode(($event.target as HTMLSelectElement).value as 'always'|'specific'|'repeating', editWaveNumber)">
+                <option value="always">Always</option>
+                <option value="specific">Specific Wave</option>
+                <option value="repeating">Every Wave From</option>
+              </select>
+            </div>
+            <div v-if="editWaveMode !== 'always'" class="edit-field">
+              <label>{{ editWaveMode === 'specific' ? 'Wave Number' : 'Starting Wave' }}</label>
+              <input type="number" min="1" max="999" :value="editWaveNumber" @change="updateEditWaveMode(editWaveMode, +($event.target as HTMLInputElement).value)" />
+            </div>
+            <div class="edit-field">
+              <label>Spawn Delay (sec)</label>
+              <input type="number" min="0" :value="selectedEditBuilding.metadata?.['spawnDelaySeconds'] ?? 60" @change="updateEditMeta('spawnDelaySeconds', +($event.target as HTMLInputElement).value)" />
+            </div>
+            <div class="edit-field">
+              <label>Spawn Interval (sec)</label>
+              <input type="number" min="1" :value="selectedEditBuilding.metadata?.['spawnIntervalSeconds'] ?? 10" @change="updateEditMeta('spawnIntervalSeconds', +($event.target as HTMLInputElement).value)" />
+            </div>
+            <div class="edit-field">
+              <label>Spawn Count</label>
+              <input type="number" min="1" max="20" :value="selectedEditBuilding.metadata?.['spawnCount'] ?? 1" @change="updateEditMeta('spawnCount', +($event.target as HTMLInputElement).value)" />
+            </div>
+            <div v-if="killUnitObjectives.length" class="edit-field">
+              <label>Kill Objective</label>
+              <select :value="selectedEditBuilding.metadata?.['objectiveId'] ?? ''" @change="updateEditMeta('objectiveId', ($event.target as HTMLSelectElement).value || undefined)">
+                <option value="">None</option>
+                <option v-for="vc in killUnitObjectives" :key="vc.id" :value="vc.id">{{ vc.label || vc.id }}</option>
+              </select>
+            </div>
+          </template>
+
+          <!-- spawn-point fields -->
+          <template v-else-if="selectedEditBuilding.buildingType === 'spawn-point'">
+            <div class="edit-field">
+              <label>Townhall</label>
+              <select :value="selectedEditBuilding.metadata?.['townhallId'] ?? ''" @change="updateEditMeta('townhallId', ($event.target as HTMLSelectElement).value || null)">
+                <option value="">Nearest / Unassigned</option>
+                <option v-for="th in townhallOptions" :key="th.id" :value="th.id">{{ th.label }}</option>
+              </select>
+            </div>
+            <div class="edit-field">
+              <label>Fill Order</label>
+              <input type="number" min="0" :value="selectedEditBuilding.metadata?.['fillOrder'] ?? 0" @change="updateEditMeta('fillOrder', +($event.target as HTMLInputElement).value)" />
+            </div>
+            <div class="edit-field">
+              <label>Starting Units</label>
+              <div
+                v-for="(entry, idx) in (selectedEditBuilding.metadata?.['spawnUnits'] as Array<{unitType:string,count:number}> ?? [])"
+                :key="idx"
+                class="edit-loadout-row"
+              >
+                <select :value="entry.unitType" @change="updateEditLoadoutEntry(idx, 'unitType', ($event.target as HTMLSelectElement).value)">
+                  <option v-for="u in playerSpawnUnits" :key="u.type" :value="u.type">{{ u.label }}</option>
+                </select>
+                <input type="number" min="1" max="20" :value="entry.count" @change="updateEditLoadoutEntry(idx, 'count', +($event.target as HTMLInputElement).value)" style="width:48px" />
+                <button type="button" @click="removeEditLoadoutEntry(idx)" :disabled="(selectedEditBuilding.metadata?.['spawnUnits'] as Array<unknown> ?? []).length <= 1">✕</button>
+              </div>
+              <button type="button" class="edit-add-btn" @click="addEditLoadoutEntry">+ Add</button>
+            </div>
+          </template>
+
+          <!-- generic building: objective -->
+          <template v-else>
+            <div v-if="destroyBuildingObjectives.length" class="edit-field">
+              <label>Destroy Objective</label>
+              <select :value="selectedEditBuilding.metadata?.['objectiveId'] ?? ''" @change="updateEditMeta('objectiveId', ($event.target as HTMLSelectElement).value || undefined)">
+                <option value="">None</option>
+                <option v-for="vc in destroyBuildingObjectives" :key="vc.id" :value="vc.id">{{ vc.label || vc.id }}</option>
+              </select>
+            </div>
+            <div v-else class="edit-panel__empty">No editable fields for this building type.</div>
+          </template>
+
+          <button type="button" class="edit-delete-btn" @click="deleteSelectedBuilding">Delete Building</button>
+        </div>
       </div>
     </div>
   </div>
@@ -531,6 +623,8 @@ const isLoadingSelectedMap = ref(false)
 const mapLoadError = ref('')
 const enemyObjectiveId = ref('')
 const buildingObjectiveId = ref('')
+const selectedEditBuildingId = ref<string | null>(null)
+const editPanelPos = ref<{ x: number; y: number } | null>(null)
 let nextVictoryConditionId = 1
 
 const camera = new Camera()
@@ -590,6 +684,31 @@ const killUnitObjectives = computed(() =>
 const destroyBuildingObjectives = computed(() =>
   (model.value.victoryConditions ?? []).filter((vc) => vc.type === 'destroyBuilding'),
 )
+
+const selectedEditBuilding = computed(() =>
+  selectedEditBuildingId.value
+    ? model.value.buildings.find((b) => b.id === selectedEditBuildingId.value) ?? null
+    : null
+)
+
+const editPanelStyle = computed(() => {
+  if (!editPanelPos.value) return {}
+  return { left: `${editPanelPos.value.x}px`, top: `${editPanelPos.value.y}px` }
+})
+
+const editWaveMode = computed<'always' | 'specific' | 'repeating'>(() => {
+  const meta = selectedEditBuilding.value?.metadata
+  if (!meta) return 'always'
+  if ('waveNumber' in meta) return 'specific'
+  if ('startingWave' in meta) return 'repeating'
+  return 'always'
+})
+
+const editWaveNumber = computed(() => {
+  const meta = selectedEditBuilding.value?.metadata
+  if (!meta) return 1
+  return (meta['waveNumber'] as number) ?? (meta['startingWave'] as number) ?? 1
+})
 
 const defaultGroundName = computed<'grass' | 'dirt'>(() => {
   const current = model.value.defaultTile
@@ -697,6 +816,69 @@ function addSpawnPointLoadoutEntry() {
 function removeSpawnPointLoadoutEntry(entryId: number) {
   if (spawnPointLoadout.value.length <= 1) return
   spawnPointLoadout.value = spawnPointLoadout.value.filter((entry) => entry.id !== entryId)
+}
+
+function updateEditMeta(key: string, value: unknown) {
+  if (!selectedEditBuildingId.value) return
+  model.value = {
+    ...model.value,
+    buildings: model.value.buildings.map((b) =>
+      b.id === selectedEditBuildingId.value
+        ? { ...b, metadata: { ...(b.metadata ?? {}), [key]: value } }
+        : b,
+    ),
+  }
+}
+
+function updateEditWaveMode(mode: 'always' | 'specific' | 'repeating', waveNum: number) {
+  if (!selectedEditBuildingId.value) return
+  model.value = {
+    ...model.value,
+    buildings: model.value.buildings.map((b) => {
+      if (b.id !== selectedEditBuildingId.value) return b
+      const meta = { ...(b.metadata ?? {}) }
+      delete meta['waveNumber']
+      delete meta['startingWave']
+      if (mode === 'specific') meta['waveNumber'] = waveNum
+      if (mode === 'repeating') meta['startingWave'] = waveNum
+      return { ...b, metadata: meta }
+    }),
+  }
+}
+
+function addEditLoadoutEntry() {
+  if (!selectedEditBuildingId.value) return
+  const b = selectedEditBuilding.value
+  if (!b) return
+  const current = (b.metadata?.['spawnUnits'] as Array<{ unitType: string; count: number }>) ?? []
+  const defaultType = playerSpawnUnits.value[0]?.type ?? 'worker'
+  updateEditMeta('spawnUnits', [...current, { unitType: defaultType, count: 1 }])
+}
+
+function removeEditLoadoutEntry(index: number) {
+  if (!selectedEditBuildingId.value) return
+  const b = selectedEditBuilding.value
+  if (!b) return
+  const current = (b.metadata?.['spawnUnits'] as Array<{ unitType: string; count: number }>) ?? []
+  if (current.length <= 1) return
+  updateEditMeta('spawnUnits', current.filter((_, i) => i !== index))
+}
+
+function updateEditLoadoutEntry(index: number, field: 'unitType' | 'count', value: string | number) {
+  if (!selectedEditBuildingId.value) return
+  const b = selectedEditBuilding.value
+  if (!b) return
+  const current = (b.metadata?.['spawnUnits'] as Array<{ unitType: string; count: number }>) ?? []
+  updateEditMeta('spawnUnits', current.map((entry, i) => i === index ? { ...entry, [field]: value } : entry))
+}
+
+function deleteSelectedBuilding() {
+  if (!selectedEditBuildingId.value) return
+  const b = selectedEditBuilding.value
+  if (!b) return
+  model.value = setBuildingTile(model.value, b.x, b.y, null)
+  selectedEditBuildingId.value = null
+  editPanelPos.value = null
 }
 
 async function loadAvailableMaps() {
@@ -864,6 +1046,7 @@ function getBrushCells(cx: number, cy: number, size: number): Array<{ x: number;
 }
 
 function paintAtScreen(screenX: number, screenY: number) {
+  selectedEditBuildingId.value = null
   const cell = getGridCellAtScreen(screenX, screenY)
   if (!cell) return
 
@@ -1015,7 +1198,14 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
-  if (!paintModeEnabled.value) return
+  if (!paintModeEnabled.value) {
+    if (event.button === 0 && !isSpaceHeld) {
+      const cell = getGridCellAtScreen(screen.x, screen.y)
+      const hit = cell ? getBuildingAt(cell.x, cell.y) : null
+      selectedEditBuildingId.value = hit?.id ?? null
+    }
+    return
+  }
 
   isPainting = true
   lastPaintKey = ''
@@ -1079,6 +1269,10 @@ function onMouseLeave() {
 }
 
 function onKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    selectedEditBuildingId.value = null
+  }
+
   if (event.key === 'Control') {
     isControlHeld.value = true
     if (canvas.value && !isSpacePanning) {
@@ -1127,11 +1321,43 @@ function render() {
     drawMapBackground(ctx)
     drawGrid(ctx)
     drawMapBounds(ctx)
+    drawSelectionHighlight(ctx)
 
     ctx.restore()
+
+    updateEditPanelPos()
   }
 
   animationFrameId = requestAnimationFrame(render)
+}
+
+function updateEditPanelPos() {
+  const b = selectedEditBuilding.value
+  const targetCanvas = canvas.value
+  if (!b || !targetCanvas) {
+    editPanelPos.value = null
+    return
+  }
+  const cellSize = model.value.cellSize
+  const worldRight = (b.x + b.width) * cellSize
+  const worldTop = b.y * cellSize
+  const screenX = (worldRight - camera.x) * camera.zoom + 10
+  const screenY = (worldTop - camera.y) * camera.zoom
+  const clampedX = Math.min(screenX, targetCanvas.width - 250)
+  const clampedY = Math.max(0, Math.min(screenY, targetCanvas.height - 100))
+  editPanelPos.value = { x: clampedX, y: clampedY }
+}
+
+function drawSelectionHighlight(ctx: CanvasRenderingContext2D) {
+  const b = selectedEditBuilding.value
+  if (!b) return
+  const cellSize = model.value.cellSize
+  ctx.save()
+  ctx.strokeStyle = '#60a5fa'
+  ctx.lineWidth = 2 / camera.zoom
+  ctx.setLineDash([])
+  ctx.strokeRect(b.x * cellSize, b.y * cellSize, b.width * cellSize, b.height * cellSize)
+  ctx.restore()
 }
 
 function drawMapBackground(ctx: CanvasRenderingContext2D) {
@@ -1471,6 +1697,15 @@ watch(selectedBuilding, () => {
   enemyObjectiveId.value = ''
   buildingObjectiveId.value = ''
 })
+
+watch(
+  () => model.value.buildings,
+  (buildings) => {
+    if (selectedEditBuildingId.value && !buildings.find((b) => b.id === selectedEditBuildingId.value)) {
+      selectedEditBuildingId.value = null
+    }
+  },
+)
 
 onBeforeUnmount(() => {
   if (canvas.value) {
@@ -1862,6 +2097,144 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   border: 1px solid rgba(68, 68, 68, 0.9);
   background: #0a0a0a;
+  position: relative;
+}
+
+.edit-panel {
+  position: absolute;
+  z-index: 20;
+  min-width: 210px;
+  max-width: 250px;
+  max-height: 75vh;
+  overflow-y: auto;
+  background: rgba(3, 8, 18, 0.95);
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  font-size: 12px;
+  color: #e2e8f0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148,163,184,0.3) transparent;
+}
+
+.edit-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.edit-panel__title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.edit-panel__close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.edit-panel__close:hover { color: #f1f5f9; }
+
+.edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.edit-field label {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.edit-field input,
+.edit-field select {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 5px;
+  color: #e2e8f0;
+  font-size: 12px;
+  padding: 3px 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.edit-field input:focus,
+.edit-field select:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+.edit-loadout-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 3px;
+}
+
+.edit-loadout-row select { flex: 1; }
+
+.edit-loadout-row button {
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  color: #fca5a5;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 5px;
+}
+
+.edit-loadout-row button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.edit-add-btn {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 5px;
+  color: #93c5fd;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 8px;
+  margin-top: 2px;
+  text-align: left;
+}
+
+.edit-add-btn:hover { background: rgba(59, 130, 246, 0.25); }
+
+.edit-delete-btn {
+  margin-top: 4px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: #fca5a5;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 5px 8px;
+  text-align: center;
+}
+
+.edit-delete-btn:hover { background: rgba(239, 68, 68, 0.28); }
+
+.edit-panel__empty {
+  color: #64748b;
+  font-size: 11px;
+  font-style: italic;
 }
 
 .editor-canvas {

@@ -203,6 +203,11 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 				if wm.State != "active" || int(wn) != wm.CurrentWave || waveTimerExpired {
 					continue
 				}
+			} else {
+				// No wave tag — when wave mode is on, hold until any wave is active.
+				if wm.State != "active" || waveTimerExpired {
+					continue
+				}
 			}
 		}
 

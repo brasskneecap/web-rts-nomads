@@ -149,6 +149,19 @@
               @click="$emit('action', ui.selection.actions[i - 1].id)"
             >
               <ActionIcon :action="ui.selection.actions[i - 1]" />
+              <div v-if="ui.selection.actions[i - 1].cost?.length" class="action-cost">
+                <span
+                  v-for="c in ui.selection.actions[i - 1].cost"
+                  :key="c.resourceId"
+                  class="action-cost__entry"
+                >
+                  <span
+                    class="action-cost__gem"
+                    :style="{ background: `linear-gradient(180deg, ${c.accent}, rgba(0,0,0,0.55))` }"
+                  />
+                  <span class="action-cost__amount">{{ c.amount }}</span>
+                </span>
+              </div>
             </button>
           </template>
           <div v-else class="action-cell action-cell--empty" />
@@ -549,6 +562,7 @@ function perkCooldownFraction(action: ActionItem): number {
 }
 
 .action-cell {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -558,6 +572,46 @@ function perkCooldownFraction(action: ActionItem): number {
   color: #f5ead2;
   padding: 0;
   cursor: pointer;
+}
+
+.action-cost {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 2px;
+  background: linear-gradient(0deg, rgba(20, 10, 4, 0.82) 0%, transparent 100%);
+  border-radius: 0 0 7px 7px;
+  pointer-events: none;
+}
+
+.action-cost__entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.action-cost__gem {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 7px;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+}
+
+.action-cost__amount {
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffe9a0;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 1);
 }
 
 .action-cell:not(:disabled):hover {

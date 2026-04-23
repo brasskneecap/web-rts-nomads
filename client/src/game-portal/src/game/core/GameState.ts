@@ -99,9 +99,17 @@ export type Unit = {
   order?: string
 }
 
+export type ActionCost = {
+  resourceId: string
+  amount: number
+  accent: string
+}
+
 export type ActionItem = {
   id: string
   label: string
+  /** Resource costs shown on the action button (e.g. train actions). */
+  cost?: ActionCost[]
   /**
    * 'perk' marks a display-only perk slot in the bottom row of the action grid.
    * Absent means a regular interactive action button.
@@ -142,6 +150,14 @@ export type DetailItem = {
 // enough that large trap zones like explosive_trap (80 radius) don't swallow
 // clicks intended for ground orders or units inside the zone.
 const TRAP_CENTER_HIT_RADIUS = 14
+
+// Matches the accent colors used by ResourceStock in the HUD resource tray.
+// Add new resource types here as they are introduced on the server.
+const RESOURCE_ACCENT: Record<string, string> = {
+  gold: '#d4a84f',
+  wood: '#7a9a52',
+  food: '#c96e43',
+}
 
 const STAT_ICON_HEART = 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'
 const STAT_ICON_SWORD = 'M14.5 17.5 L3 6 L3 3 L6 3 L17.5 14.5 M20 12 L12 20.5 M16.5 17.5 L20.5 21.5 L21.5 20.5 L17.5 16.5'
@@ -1617,7 +1633,14 @@ function getUnitActions(
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
     BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
-      actions[i] = { id: `build-${def.type}`, label: def.label, iconDef: { kind: 'building', type: def.type } }
+      actions[i] = {
+        id: `build-${def.type}`,
+        label: def.label,
+        iconDef: { kind: 'building', type: def.type },
+        cost: Object.entries(def.resourceCost ?? {})
+          .filter(([, amount]) => amount > 0)
+          .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' })),
+      }
     })
     actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
     return actions
@@ -1652,7 +1675,14 @@ function getGroupActions(
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
     BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
-      actions[i] = { id: `build-${def.type}`, label: def.label, iconDef: { kind: 'building', type: def.type } }
+      actions[i] = {
+        id: `build-${def.type}`,
+        label: def.label,
+        iconDef: { kind: 'building', type: def.type },
+        cost: Object.entries(def.resourceCost ?? {})
+          .filter(([, amount]) => amount > 0)
+          .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' })),
+      }
     })
     actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
     return actions
@@ -1696,7 +1726,15 @@ function getBuildingActions(building: BuildingTile): ActionItem[] {
     for (const unitType of building.spawnUnitTypes ?? []) {
       const def = UNIT_DEF_MAP.get(unitType)
       if (def) {
-        actions.push({ id: `train-${unitType}`, label: def.trainLabel, iconDef: { kind: 'unit', type: unitType } })
+        const cost = Object.entries(def.resourceCost ?? {})
+          .filter(([, amount]) => amount > 0)
+          .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' }))
+        actions.push({
+          id: `train-${unitType}`,
+          label: def.trainLabel,
+          iconDef: { kind: 'unit', type: unitType },
+          cost,
+        })
         hasTrainable = true
       }
     }

@@ -23,7 +23,7 @@ const (
 const (
 	// Tuning points for first-pass progression. These are intentionally simple
 	// and deterministic so rank gain is easy to debug before perks/branching exist.
-	xpGainMultiplier               = 10
+	xpGainMultiplier               = 0.2
 	xpPerDamageDealt               = 1.0
 	xpPerKillBonus                 = 25.0
 	xpPerSoldierDamageTankedOnKill = 0.5
