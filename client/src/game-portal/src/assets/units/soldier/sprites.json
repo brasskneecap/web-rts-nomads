@@ -15,24 +15,26 @@
       "frameCount": 4,
       "frameWidth": 68,
       "frameHeight": 68,
-      "strips": {
-        "east": "packed/walking-east.png",
-        "west": "packed/walking-west.png",
-        "south": "packed/walking-south.png",
-        "north": "packed/walking-north.png"
-      }
+      "sheet": "packed/walking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west"
+      ]
     },
     "attacking": {
       "frameCount": 4,
       "frameWidth": 68,
       "frameHeight": 68,
-      "strips": {
-        "east": "packed/attacking-east.png",
-        "south": "packed/attacking-south.png",
-        "west": "packed/attacking-west.png",
-        "north": "packed/attacking-north.png"
-      }
+      "sheet": "packed/attacking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west"
+      ]
     }
   },
-  "packedAt": "2026-04-20T05:23:04.953Z"
+  "packedAt": "2026-04-23T06:36:43.781Z"
 }

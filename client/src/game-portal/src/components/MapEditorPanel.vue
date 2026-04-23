@@ -343,6 +343,7 @@
               :disabled="!paintModeEnabled"
             >
               <option value="raider">Raider</option>
+              <option value="ranged_raider">Ranged Raider</option>
             </select>
             <label for="enemy-wave-mode">Spawn Timing</label>
             <select id="enemy-wave-mode" v-model="enemyWaveMode" :disabled="!paintModeEnabled">

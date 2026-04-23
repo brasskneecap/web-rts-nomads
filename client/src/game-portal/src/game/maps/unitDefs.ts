@@ -42,6 +42,8 @@ export type UnitDef = {
   capabilities: UnitCapability[]
   trainLabel: string
   metadata?: JsonObject
+  /** Server-only: name of the AI combat profile to use. Ignored by the client. */
+  combatProfile?: string
   attackVisual?: UnitAttackVisual
   bounds?: UnitBounds
 }

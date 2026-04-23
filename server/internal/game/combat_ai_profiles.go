@@ -381,6 +381,13 @@ var combatProfiles = map[string]CombatProfile{
 }
 
 func resolveCombatProfile(unit *Unit) CombatProfile {
+	// Data-driven override: UnitDef.CombatProfile picks the profile directly.
+	// Validated at catalog load (unit_defs.go init), so the lookup is safe.
+	if def, ok := getUnitDef(unit.UnitType); ok && def.CombatProfile != "" {
+		if profile, ok := combatProfiles[def.CombatProfile]; ok {
+			return profile
+		}
+	}
 	key := unit.Archetype
 	if key == "" {
 		key = inferCombatArchetype(unit)

@@ -68,25 +68,6 @@
         }
       },
       {
-        "x": 21,
-        "y": 7,
-        "id": "enemy-spawnpoint-21-7",
-        "buildingType": "enemy-spawnpoint",
-        "width": 2,
-        "height": 2,
-        "occupied": true,
-        "visible": true,
-        "capabilities": [
-          "enemy-spawner"
-        ],
-        "metadata": {
-          "spawnCount": 3,
-          "spawnDelaySeconds": 0,
-          "spawnIntervalSeconds": 10,
-          "unitType": "raider"
-        }
-      },
-      {
         "x": 17,
         "y": 10,
         "id": "enemy-spawnpoint-17-10",
@@ -103,6 +84,23 @@
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
           "unitType": "raider"
+        }
+      },
+      {
+        "x": 21,
+        "y": 10,
+        "id": "enemy-spawnpoint-21-10",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "unitType": "ranged_raider"
         }
       },
       {
@@ -128,10 +126,6 @@
     "waveConfig": {
       "prepDuration": 60,
       "waveDuration": 120
-    },
-    "debug": {
-      "battleTracker": true,
-      "debugSpawn": true
     }
   }
 }

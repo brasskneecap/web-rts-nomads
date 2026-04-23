@@ -1,5 +1,5 @@
 {
-  "key": "berserker",
+  "key": "ranged_raider",
   "size": {
     "width": 68,
     "height": 68
@@ -11,18 +11,6 @@
     "north": "rotations/north.png"
   },
   "animations": {
-    "walking": {
-      "frameCount": 4,
-      "frameWidth": 68,
-      "frameHeight": 68,
-      "sheet": "packed/walking.png",
-      "rowOrder": [
-        "north",
-        "south",
-        "east",
-        "west"
-      ]
-    },
     "attacking": {
       "frameCount": 4,
       "frameWidth": 68,
@@ -35,11 +23,11 @@
         "west"
       ]
     },
-    "whirlwind": {
+    "walking": {
       "frameCount": 4,
       "frameWidth": 68,
       "frameHeight": 68,
-      "sheet": "packed/whirlwind.png",
+      "sheet": "packed/walking.png",
       "rowOrder": [
         "north",
         "south",
@@ -48,5 +36,5 @@
       ]
     }
   },
-  "packedAt": "2026-04-23T06:36:43.738Z"
+  "packedAt": "2026-04-23T06:36:43.759Z"
 }

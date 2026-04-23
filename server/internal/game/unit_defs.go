@@ -46,6 +46,11 @@ type UnitDef struct {
 	SpawnSeconds     float64         `json:"spawnSeconds"`
 	Capabilities     []string        `json:"capabilities"`
 	TrainLabel       string          `json:"trainLabel,omitempty"`
+	// CombatProfile picks the AI behavior profile (target scoring, detection
+	// range, ranged-vs-melee, etc.) from combatProfiles in combat_ai_profiles.go.
+	// When empty, the server falls back to inferCombatArchetype's hardcoded
+	// mapping. Validated against combatProfiles at init; unknown names panic.
+	CombatProfile    string          `json:"combatProfile,omitempty"`
 	AttackVisual     json.RawMessage `json:"attackVisual,omitempty"`
 	// Bounds describes the unit's visual footprint (halfWidth, top, bottom
 	// offsets from unit.x/unit.y). Client uses it to anchor the sprite's
@@ -89,6 +94,11 @@ func init() {
 			// Directory name is the canonical id. Mismatch means someone edited
 			// one without the other; fail loud so the catalog stays coherent.
 			panic(rel + ": def.Type " + def.Type + " does not match directory name " + unitKey)
+		}
+		if def.CombatProfile != "" {
+			if _, ok := combatProfiles[def.CombatProfile]; !ok {
+				panic(rel + `: combatProfile "` + def.CombatProfile + `" is not a known profile (see combat_ai_profiles.go)`)
+			}
 		}
 		unitDefsByType[def.Type] = def
 	}

@@ -120,10 +120,23 @@ const DIRECTION_ORDER = ['north', 'south', 'east', 'west']
 
 // Packs all directions of a single animation into one 2D sheet — columns are
 // animation frames, rows are directions (order recorded in rowOrder). Returns
-// null when no direction has any frames.
+// null when no direction has any frames, or `{ pruned: true }` when the
+// animation's raw frames have been deleted since the last pack (caller is
+// expected to carry the prior sprites.json entry over in that case).
 async function packAnimation(unitDir, animSlug, byDir) {
   const dirs = DIRECTION_ORDER.filter((d) => Array.isArray(byDir[d]) && byDir[d].length > 0)
   if (dirs.length === 0) return null
+
+  // Per-animation prune detection: if the first referenced frame of the first
+  // direction is missing on disk, treat the whole animation as pruned. Avoids
+  // bringing the whole run down when only some animations of a unit have had
+  // their raw frames cleaned up.
+  const probe = path.join(unitDir, byDir[dirs[0]][0])
+  try {
+    await fs.access(probe)
+  } catch {
+    return { pruned: true }
+  }
 
   const framesByDir = {}
   let frameWidth = 0
@@ -259,11 +272,31 @@ async function packUnit(unitDir) {
     }
   }
 
+  // Prior manifest — used to carry forward animation entries for animations
+  // whose raw frames have been pruned since the last pack.
+  let priorAnimations = {}
+  try {
+    const prior = JSON.parse(await fs.readFile(path.join(unitDir, 'sprites.json'), 'utf8'))
+    if (prior && typeof prior.animations === 'object' && prior.animations) {
+      priorAnimations = prior.animations
+    }
+  } catch {
+    /* no prior manifest — nothing to carry forward */
+  }
+
   const animations = {}
   for (const [hashedName, byDir] of Object.entries(meta?.frames?.animations ?? {})) {
     const slug = animSlugFromHashedName(hashedName)
     const result = await packAnimation(unitDir, slug, byDir ?? {})
     if (!result) continue
+    if (result.pruned) {
+      if (priorAnimations[slug]) {
+        animations[slug] = priorAnimations[slug]
+      } else {
+        console.warn(`[pack:sprites] ${unitKey}: animation '${slug}' frames pruned and no prior manifest entry — dropping`)
+      }
+      continue
+    }
     animations[slug] = {
       frameCount: result.frameCount,
       frameWidth: result.frameWidth,
@@ -529,6 +562,18 @@ async function packObject(objectDir) {
     height: meta?.character?.size?.height ?? 32,
   }
 
+  // Prior manifest — used to carry forward animation entries for animations
+  // whose raw frames have been pruned since the last pack.
+  let priorAnimations = {}
+  try {
+    const prior = JSON.parse(await fs.readFile(path.join(objectDir, 'sprites.json'), 'utf8'))
+    if (prior && typeof prior.animations === 'object' && prior.animations) {
+      priorAnimations = prior.animations
+    }
+  } catch {
+    /* no prior manifest — nothing to carry forward */
+  }
+
   const animations = {}
 
   // Idle — one strip made from the 8 rotation images, in canonical compass
@@ -550,11 +595,23 @@ async function packObject(objectDir) {
     }
   }
 
-  // Named animations — each animation has a single 'south' direction.
+  // Named animations — each animation has a single 'south' direction. When an
+  // animation's raw frames have been pruned since the last pack, carry the
+  // prior manifest entry forward instead of erroring out.
   for (const [hashedName, byDir] of Object.entries(meta?.frames?.animations ?? {})) {
     const slug = animSlugFromHashedName(hashedName)
     const frames = Array.isArray(byDir?.south) ? byDir.south : null
     if (!frames || frames.length === 0) continue
+    try {
+      await fs.access(path.join(objectDir, frames[0]))
+    } catch {
+      if (priorAnimations[slug]) {
+        animations[slug] = priorAnimations[slug]
+      } else {
+        console.warn(`[pack:sprites] object ${objectKey}: animation '${slug}' frames pruned and no prior manifest entry — dropping`)
+      }
+      continue
+    }
     const strip = await packFrameStrip(objectDir, `${slug}.png`, frames)
     if (!strip) continue
     animations[slug] = {
