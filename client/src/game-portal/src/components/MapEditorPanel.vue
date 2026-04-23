@@ -347,11 +347,12 @@
             </select>
             <label for="enemy-wave-mode">Spawn Timing</label>
             <select id="enemy-wave-mode" v-model="enemyWaveMode" :disabled="!paintModeEnabled">
+              <option value="gameStart">Game Start</option>
               <option value="always">Always (legacy)</option>
               <option value="specific">Specific Wave</option>
               <option value="repeating">Every Wave From</option>
             </select>
-            <template v-if="enemyWaveMode !== 'always'">
+            <template v-if="enemyWaveMode !== 'always' && enemyWaveMode !== 'gameStart'">
               <label for="enemy-wave-number">{{ enemyWaveMode === 'specific' ? 'Wave Number' : 'Starting Wave' }}</label>
               <input
                 id="enemy-wave-number"
@@ -362,24 +363,35 @@
                 :disabled="!paintModeEnabled"
               />
             </template>
-            <label for="enemy-spawn-delay">Spawn Delay (sec)</label>
-            <input
-              id="enemy-spawn-delay"
-              v-model.number="enemySpawnDelay"
-              type="number"
-              min="0"
-              max="3600"
-              :disabled="!paintModeEnabled"
-            />
-            <label for="enemy-spawn-interval">Spawn Interval (sec)</label>
-            <input
-              id="enemy-spawn-interval"
-              v-model.number="enemySpawnInterval"
-              type="number"
-              min="1"
-              max="3600"
-              :disabled="!paintModeEnabled"
-            />
+            <template v-if="enemyWaveMode !== 'gameStart'">
+              <label for="enemy-spawn-once" class="checkbox-label">
+                <input
+                  id="enemy-spawn-once"
+                  type="checkbox"
+                  v-model="enemySpawnOnce"
+                  :disabled="!paintModeEnabled"
+                />
+                Spawn Once
+              </label>
+              <label for="enemy-spawn-delay">Spawn Delay (sec)</label>
+              <input
+                id="enemy-spawn-delay"
+                v-model.number="enemySpawnDelay"
+                type="number"
+                min="0"
+                max="3600"
+                :disabled="!paintModeEnabled || enemySpawnOnce"
+              />
+              <label for="enemy-spawn-interval">Spawn Interval (sec)</label>
+              <input
+                id="enemy-spawn-interval"
+                v-model.number="enemySpawnInterval"
+                type="number"
+                min="1"
+                max="3600"
+                :disabled="!paintModeEnabled || enemySpawnOnce"
+              />
+            </template>
             <label for="enemy-spawn-count">Spawn Count</label>
             <input
               id="enemy-spawn-count"
@@ -476,27 +488,40 @@
             </div>
             <div class="edit-field">
               <label>Spawn Timing</label>
-              <select :value="editWaveMode" @change="updateEditWaveMode(($event.target as HTMLSelectElement).value as 'always'|'specific'|'repeating', editWaveNumber)">
+              <select :value="editWaveMode" @change="updateEditWaveMode(($event.target as HTMLSelectElement).value as 'gameStart'|'always'|'specific'|'repeating', editWaveNumber)">
+                <option value="gameStart">Game Start</option>
                 <option value="always">Always</option>
                 <option value="specific">Specific Wave</option>
                 <option value="repeating">Every Wave From</option>
               </select>
             </div>
-            <div v-if="editWaveMode !== 'always'" class="edit-field">
+            <div v-if="editWaveMode !== 'always' && editWaveMode !== 'gameStart'" class="edit-field">
               <label>{{ editWaveMode === 'specific' ? 'Wave Number' : 'Starting Wave' }}</label>
-              <input type="number" min="1" max="999" :value="editWaveNumber" @change="updateEditWaveMode(editWaveMode, +($event.target as HTMLInputElement).value)" />
+              <input type="number" min="1" max="999" :value="editWaveNumber" @input="updateEditWaveMode(editWaveMode, +($event.target as HTMLInputElement).value)" />
+            </div>
+            <template v-if="editWaveMode !== 'gameStart'">
+            <div class="edit-field">
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  :checked="selectedEditBuilding.metadata?.['spawnOnce'] === true"
+                  @change="updateEditMeta('spawnOnce', ($event.target as HTMLInputElement).checked || undefined)"
+                />
+                Spawn Once
+              </label>
             </div>
             <div class="edit-field">
               <label>Spawn Delay (sec)</label>
-              <input type="number" min="0" :value="selectedEditBuilding.metadata?.['spawnDelaySeconds'] ?? 60" @change="updateEditMeta('spawnDelaySeconds', +($event.target as HTMLInputElement).value)" />
+              <input type="number" min="0" :value="selectedEditBuilding.metadata?.['spawnDelaySeconds'] ?? 60" @input="updateEditMeta('spawnDelaySeconds', +($event.target as HTMLInputElement).value)" :disabled="selectedEditBuilding.metadata?.['spawnOnce'] === true" />
             </div>
             <div class="edit-field">
               <label>Spawn Interval (sec)</label>
-              <input type="number" min="1" :value="selectedEditBuilding.metadata?.['spawnIntervalSeconds'] ?? 10" @change="updateEditMeta('spawnIntervalSeconds', +($event.target as HTMLInputElement).value)" />
+              <input type="number" min="1" :value="selectedEditBuilding.metadata?.['spawnIntervalSeconds'] ?? 10" @input="updateEditMeta('spawnIntervalSeconds', +($event.target as HTMLInputElement).value)" :disabled="selectedEditBuilding.metadata?.['spawnOnce'] === true" />
             </div>
+            </template>
             <div class="edit-field">
               <label>Spawn Count</label>
-              <input type="number" min="1" max="20" :value="selectedEditBuilding.metadata?.['spawnCount'] ?? 1" @change="updateEditMeta('spawnCount', +($event.target as HTMLInputElement).value)" />
+              <input type="number" min="1" max="20" :value="selectedEditBuilding.metadata?.['spawnCount'] ?? 1" @input="updateEditMeta('spawnCount', +($event.target as HTMLInputElement).value)" />
             </div>
             <div v-if="killUnitObjectives.length" class="edit-field">
               <label>Kill Objective</label>
@@ -518,7 +543,7 @@
             </div>
             <div class="edit-field">
               <label>Fill Order</label>
-              <input type="number" min="0" :value="selectedEditBuilding.metadata?.['fillOrder'] ?? 0" @change="updateEditMeta('fillOrder', +($event.target as HTMLInputElement).value)" />
+              <input type="number" min="0" :value="selectedEditBuilding.metadata?.['fillOrder'] ?? 0" @input="updateEditMeta('fillOrder', +($event.target as HTMLInputElement).value)" />
             </div>
             <div class="edit-field">
               <label>Starting Units</label>
@@ -530,7 +555,7 @@
                 <select :value="entry.unitType" @change="updateEditLoadoutEntry(idx, 'unitType', ($event.target as HTMLSelectElement).value)">
                   <option v-for="u in playerSpawnUnits" :key="u.type" :value="u.type">{{ u.label }}</option>
                 </select>
-                <input type="number" min="1" max="20" :value="entry.count" @change="updateEditLoadoutEntry(idx, 'count', +($event.target as HTMLInputElement).value)" style="width:48px" />
+                <input type="number" min="1" max="20" :value="entry.count" @input="updateEditLoadoutEntry(idx, 'count', +($event.target as HTMLInputElement).value)" style="width:48px" />
                 <button type="button" @click="removeEditLoadoutEntry(idx)" :disabled="(selectedEditBuilding.metadata?.['spawnUnits'] as Array<unknown> ?? []).length <= 1">✕</button>
               </div>
               <button type="button" class="edit-add-btn" @click="addEditLoadoutEntry">+ Add</button>
@@ -625,8 +650,9 @@ const spawnPointFillOrder = ref(0)
 const enemySpawnDelay = ref(0)
 const enemySpawnInterval = ref(10)
 const enemySpawnCount = ref(1)
+const enemySpawnOnce = ref(false)
 const enemyUnitType = ref('raider')
-const enemyWaveMode = ref<'always' | 'specific' | 'repeating'>('always')
+const enemyWaveMode = ref<'gameStart' | 'always' | 'specific' | 'repeating'>('always')
 const enemyWaveNumber = ref(1)
 const draftCols = ref(model.value.gridCols)
 const draftRows = ref(model.value.gridRows)
@@ -717,9 +743,10 @@ const editPanelStyle = computed(() => {
   return { left: `${editPanelPos.value.x}px`, top: `${editPanelPos.value.y}px` }
 })
 
-const editWaveMode = computed<'always' | 'specific' | 'repeating'>(() => {
+const editWaveMode = computed<'gameStart' | 'always' | 'specific' | 'repeating'>(() => {
   const meta = selectedEditBuilding.value?.metadata
   if (!meta) return 'always'
+  if (meta['gameStart'] === true) return 'gameStart'
   if ('waveNumber' in meta) return 'specific'
   if ('startingWave' in meta) return 'repeating'
   return 'always'
@@ -861,15 +888,17 @@ function updateEditMeta(key: string, value: unknown) {
   }
 }
 
-function updateEditWaveMode(mode: 'always' | 'specific' | 'repeating', waveNum: number) {
+function updateEditWaveMode(mode: 'gameStart' | 'always' | 'specific' | 'repeating', waveNum: number) {
   if (!selectedEditBuildingId.value) return
   model.value = {
     ...model.value,
     buildings: model.value.buildings.map((b) => {
       if (b.id !== selectedEditBuildingId.value) return b
       const meta = { ...(b.metadata ?? {}) }
+      delete meta['gameStart']
       delete meta['waveNumber']
       delete meta['startingWave']
+      if (mode === 'gameStart') meta['gameStart'] = true
       if (mode === 'specific') meta['waveNumber'] = waveNum
       if (mode === 'repeating') meta['startingWave'] = waveNum
       return { ...b, metadata: meta }
@@ -1157,10 +1186,11 @@ function paintBuildingAt(cx: number, cy: number) {
     }
   } else if (selectedBuilding.value === 'enemy-spawnpoint') {
     metadata = {
+      ...(enemyWaveMode.value === 'gameStart' ? { gameStart: true } : {}),
       ...(enemyWaveMode.value === 'specific' ? { waveNumber: enemyWaveNumber.value } : {}),
       ...(enemyWaveMode.value === 'repeating' ? { startingWave: enemyWaveNumber.value } : {}),
-      spawnDelaySeconds: enemySpawnDelay.value,
-      spawnIntervalSeconds: enemySpawnInterval.value,
+      ...(enemyWaveMode.value !== 'gameStart' ? { spawnDelaySeconds: enemySpawnDelay.value, spawnIntervalSeconds: enemySpawnInterval.value } : {}),
+      ...(enemyWaveMode.value !== 'gameStart' && enemySpawnOnce.value ? { spawnOnce: true } : {}),
       spawnCount: enemySpawnCount.value,
       unitType: enemyUnitType.value,
       ...(enemyObjectiveId.value ? { objectiveId: enemyObjectiveId.value } : {}),
@@ -2223,6 +2253,29 @@ onBeforeUnmount(() => {
 .edit-field select:focus {
   outline: none;
   border-color: rgba(96, 165, 250, 0.6);
+}
+
+.edit-field input:disabled,
+.edit-field select:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-label input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  accent-color: #60a5fa;
+  cursor: pointer;
 }
 
 .edit-loadout-row {

@@ -125,6 +125,18 @@ func getMetadataFloat(metadata map[string]interface{}, key string) (float64, boo
 	}
 }
 
+func getMetadataBool(metadata map[string]interface{}, key string) bool {
+	if metadata == nil {
+		return false
+	}
+	v, ok := metadata[key]
+	if !ok {
+		return false
+	}
+	b, ok := v.(bool)
+	return ok && b
+}
+
 func getMetadataString(metadata map[string]interface{}, key string) (string, bool) {
 	if metadata == nil {
 		return "", false

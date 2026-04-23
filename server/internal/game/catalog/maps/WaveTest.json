@@ -50,18 +50,8 @@
         "terrain": "grass"
       },
       {
-        "x": 16,
-        "y": 17,
-        "terrain": "grass"
-      },
-      {
         "x": 17,
         "y": 17,
-        "terrain": "grass"
-      },
-      {
-        "x": 14,
-        "y": 18,
         "terrain": "grass"
       },
       {
@@ -72,11 +62,6 @@
       {
         "x": 16,
         "y": 18,
-        "terrain": "grass"
-      },
-      {
-        "x": 14,
-        "y": 19,
         "terrain": "grass"
       },
       {
@@ -1995,21 +1980,38 @@
       },
       {
         "x": 13,
-        "y": 18,
-        "id": "enemy-spawnpoint-13-18",
+        "y": 17,
+        "id": "enemy-spawnpoint-13-17",
         "buildingType": "enemy-spawnpoint",
-        "width": 2,
-        "height": 2,
-        "occupied": true,
-        "visible": true,
-        "capabilities": [
-          "enemy-spawner"
-        ],
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
         "metadata": {
+          "gameStart": true,
           "spawnCount": 1,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
           "unitType": "raider"
+        }
+      },
+      {
+        "x": 13,
+        "y": 18,
+        "id": "enemy-spawnpoint-13-18",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "gameStart": true,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "unitType": "ranged_raider"
         }
       },
       {
@@ -2028,8 +2030,27 @@
           "spawnCount": 5,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 30,
+          "spawnOnce": true,
           "unitType": "raider",
           "waveNumber": 5
+        }
+      },
+      {
+        "x": 12,
+        "y": 20,
+        "id": "enemy-spawnpoint-12-20",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 3,
+          "unitType": "raider"
         }
       },
       {

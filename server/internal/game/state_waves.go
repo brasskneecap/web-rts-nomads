@@ -11,6 +11,8 @@ type EnemySpawnTimer struct {
 	TotalDelay        float64
 	RemainingInterval float64
 	TotalInterval     float64
+	SpawnOnce         bool
+	HasFired          bool
 }
 
 // WaveManager drives the prep → active → prep cycle for wave-based maps.
@@ -186,27 +188,31 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			continue
 		}
 
-		// Wave-gating: when wave mode is enabled, check waveNumber (specific wave)
-		// and startingWave (every wave from N onwards). Points with neither field
-		// (or waveNumber == 0) are legacy points that always fire regardless.
-		if s.WaveManager.Enabled {
-			wm := &s.WaveManager
-			waveTimerExpired := wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration
+		// gameStart spawnpoints fire exactly once at match start, bypassing wave gating.
+		isGameStart := getMetadataBool(building.Metadata, "gameStart")
+		if !isGameStart {
+			// Wave-gating: when wave mode is enabled, check waveNumber (specific wave)
+			// and startingWave (every wave from N onwards). Points with neither field
+			// (or waveNumber == 0) are legacy points that always fire regardless.
+			if s.WaveManager.Enabled {
+				wm := &s.WaveManager
+				waveTimerExpired := wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration
 
-			if sw, hasSW := getMetadataFloat(building.Metadata, "startingWave"); hasSW && int(sw) > 0 {
-				// Repeating spawn: active every wave >= startingWave while timer is running.
-				if wm.State != "active" || wm.CurrentWave < int(sw) || waveTimerExpired {
-					continue
-				}
-			} else if wn, hasWN := getMetadataFloat(building.Metadata, "waveNumber"); hasWN && int(wn) > 0 {
-				// Single-wave spawn: active only during its assigned wave.
-				if wm.State != "active" || int(wn) != wm.CurrentWave || waveTimerExpired {
-					continue
-				}
-			} else {
-				// No wave tag — when wave mode is on, hold until any wave is active.
-				if wm.State != "active" || waveTimerExpired {
-					continue
+				if sw, hasSW := getMetadataFloat(building.Metadata, "startingWave"); hasSW && int(sw) > 0 {
+					// Repeating spawn: active every wave >= startingWave while timer is running.
+					if wm.State != "active" || wm.CurrentWave < int(sw) || waveTimerExpired {
+						continue
+					}
+				} else if wn, hasWN := getMetadataFloat(building.Metadata, "waveNumber"); hasWN && int(wn) > 0 {
+					// Single-wave spawn: active only during its assigned wave.
+					if wm.State != "active" || int(wn) != wm.CurrentWave || waveTimerExpired {
+						continue
+					}
+				} else {
+					// No wave tag — when wave mode is on, hold until any wave is active.
+					if wm.State != "active" || waveTimerExpired {
+						continue
+					}
 				}
 			}
 		}
@@ -217,7 +223,9 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 		if !exists {
 			delay := 60.0
 			interval := 10.0
-			if building.Metadata != nil {
+			if isGameStart {
+				delay = 0
+			} else if building.Metadata != nil {
 				if v, ok := getMetadataFloat(building.Metadata, "spawnDelaySeconds"); ok && v >= 0 {
 					delay = v
 				}
@@ -225,13 +233,19 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 					interval = v
 				}
 			}
+			spawnOnce := isGameStart || getMetadataBool(building.Metadata, "spawnOnce")
 			timer = &EnemySpawnTimer{
 				RemainingDelay:    delay,
 				TotalDelay:        delay,
 				RemainingInterval: 0,
 				TotalInterval:     interval,
+				SpawnOnce:         spawnOnce,
 			}
 			s.EnemySpawnTimers[building.ID] = timer
+		}
+
+		if timer.SpawnOnce && timer.HasFired {
+			continue
 		}
 
 		if timer.RemainingDelay > 0 {
@@ -304,6 +318,10 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 					s.assignUnitPath(unit, *target, blocked, nil)
 				}
 			}
+		}
+
+		if timer.SpawnOnce {
+			timer.HasFired = true
 		}
 	}
 }
