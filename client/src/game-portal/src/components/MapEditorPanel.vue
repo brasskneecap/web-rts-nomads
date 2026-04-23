@@ -545,6 +545,22 @@
               <label>Spawn Count</label>
               <input type="number" min="1" max="20" :value="selectedEditBuilding.metadata?.['spawnCount'] ?? 1" @input="updateEditMeta('spawnCount', +($event.target as HTMLInputElement).value)" />
             </div>
+            <div class="edit-field">
+              <label>Health Multiplier (Wave 1)</label>
+              <input type="number" min="0" step="0.1" :value="selectedEditBuilding.metadata?.['healthMultiplier'] ?? 1" @input="updateEditMeta('healthMultiplier', +($event.target as HTMLInputElement).value || undefined)" />
+            </div>
+            <div class="edit-field">
+              <label>Health +Per Wave</label>
+              <input type="number" min="0" step="0.1" :value="selectedEditBuilding.metadata?.['healthMultiplierPerWave'] ?? 0" @input="updateEditMeta('healthMultiplierPerWave', +($event.target as HTMLInputElement).value || undefined)" />
+            </div>
+            <div class="edit-field">
+              <label>Damage Multiplier (Wave 1)</label>
+              <input type="number" min="0" step="0.1" :value="selectedEditBuilding.metadata?.['damageMultiplier'] ?? 1" @input="updateEditMeta('damageMultiplier', +($event.target as HTMLInputElement).value || undefined)" />
+            </div>
+            <div class="edit-field">
+              <label>Damage +Per Wave</label>
+              <input type="number" min="0" step="0.1" :value="selectedEditBuilding.metadata?.['damageMultiplierPerWave'] ?? 0" @input="updateEditMeta('damageMultiplierPerWave', +($event.target as HTMLInputElement).value || undefined)" />
+            </div>
             <div v-if="killUnitObjectives.length" class="edit-field">
               <label>Kill Objective</label>
               <select :value="selectedEditBuilding.metadata?.['objectiveId'] ?? ''" @change="updateEditMeta('objectiveId', ($event.target as HTMLSelectElement).value || undefined)">

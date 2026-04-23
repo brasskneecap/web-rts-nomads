@@ -295,6 +295,8 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			spawnCount *= multiplier
 		}
 
+		hpMult, dmgMult := s.computeWaveStatScalingLocked(building)
+
 		spawnPositions := s.getTownhallSpawnPositionsLocked(*building, spawnCount, blocked)
 
 		center := protocol.Vec2{
@@ -318,6 +320,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			if unit == nil {
 				continue
 			}
+			s.applyWaveStatScalingLocked(unit, hpMult, dmgMult)
 			unit.OrderID = orderID
 			if objectiveId != "" {
 				// Existing objective mechanic: keep unit stationary at an objective.
@@ -482,4 +485,59 @@ func (s *GameState) getPlayerTownhallCenterLocked(playerID string) *protocol.Vec
 		return &pos
 	}
 	return nil
+}
+
+// computeWaveStatScalingLocked returns (hpMultiplier, damageMultiplier) for a
+// spawnpoint at the current global wave. Each multiplier is
+// `base + perWave * max(0, CurrentWave - 1)` so wave 1 yields the configured
+// base. When wave mode is disabled, only the base multipliers apply.
+// Defaults: base=1.0, perWave=0.
+func (s *GameState) computeWaveStatScalingLocked(building *protocol.BuildingTile) (float64, float64) {
+	hpBase, hpPerWave := 1.0, 0.0
+	dmgBase, dmgPerWave := 1.0, 0.0
+	if building.Metadata != nil {
+		if v, ok := getMetadataFloat(building.Metadata, "healthMultiplier"); ok && v > 0 {
+			hpBase = v
+		}
+		if v, ok := getMetadataFloat(building.Metadata, "healthMultiplierPerWave"); ok {
+			hpPerWave = v
+		}
+		if v, ok := getMetadataFloat(building.Metadata, "damageMultiplier"); ok && v > 0 {
+			dmgBase = v
+		}
+		if v, ok := getMetadataFloat(building.Metadata, "damageMultiplierPerWave"); ok {
+			dmgPerWave = v
+		}
+	}
+	wavesElapsed := 0
+	if s.WaveManager.Enabled && s.WaveManager.CurrentWave > 1 {
+		wavesElapsed = s.WaveManager.CurrentWave - 1
+	}
+	return hpBase + hpPerWave*float64(wavesElapsed), dmgBase + dmgPerWave*float64(wavesElapsed)
+}
+
+// applyWaveStatScalingLocked scales a freshly-spawned enemy's base HP and
+// damage by the per-spawnpoint multipliers, then re-runs rank/path modifiers
+// so derived stats stay consistent. HP is set to the new MaxHP.
+func (s *GameState) applyWaveStatScalingLocked(unit *Unit, hpMult, dmgMult float64) {
+	if unit == nil {
+		return
+	}
+	if hpMult <= 0 {
+		hpMult = 1
+	}
+	if dmgMult <= 0 {
+		dmgMult = 1
+	}
+	if hpMult == 1 && dmgMult == 1 {
+		return
+	}
+	if hpMult != 1 {
+		unit.BaseMaxHP = maxInt(1, int(math.Round(float64(unit.BaseMaxHP)*hpMult)))
+	}
+	if dmgMult != 1 {
+		unit.BaseDamage = maxInt(0, int(math.Round(float64(unit.BaseDamage)*dmgMult)))
+	}
+	s.applyRankModifiersLocked(unit, false)
+	unit.HP = unit.MaxHP
 }
