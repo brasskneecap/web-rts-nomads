@@ -118,11 +118,10 @@ func (s *GameState) tickWaveLocked(dt float64) {
 
 	case "active":
 		wm.Timer += dt
-		// The wave only ends once the active timer has expired AND all spawned
-		// enemies have been killed. Spawners stop firing when the timer expires
-		// (wave-gating skips them), so this just waits for cleanup.
+		// The wave ends when the active timer expires. Surviving enemies remain
+		// on the field and continue fighting into the prep phase.
 		timerExpired := wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration
-		if timerExpired && s.countEnemyUnitsLocked() == 0 {
+		if timerExpired {
 			if wm.TotalWaves > 0 && wm.CurrentWave >= wm.TotalWaves {
 				wm.State = "complete"
 				s.markWaveObjectivesCompleteLocked()
@@ -219,6 +218,14 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 
 		s.ensureEnemyPlayerLocked()
 
+		// Inactive spawnpoint check: if targetPlayerLabel names a real label (not
+		// "__none__") but no matching player has joined yet, skip this spawnpoint.
+		if tpl, ok := getMetadataString(building.Metadata, "targetPlayerLabel"); ok && tpl != "" && tpl != "__none__" {
+			if s.findPlayerIDByLabelLocked(tpl) == "" {
+				continue
+			}
+		}
+
 		timer, exists := s.EnemySpawnTimers[building.ID]
 		if !exists {
 			delay := 60.0
@@ -263,6 +270,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 		spawnCount := 1
 		unitType := "raider"
 		objectiveId := ""
+		targetPlayerLabel := ""
 		if building.Metadata != nil {
 			if v, ok := getMetadataFloat(building.Metadata, "spawnCount"); ok && v >= 1 {
 				spawnCount = int(v)
@@ -272,6 +280,9 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			}
 			if v, ok := building.Metadata["objectiveId"].(string); ok && v != "" {
 				objectiveId = v
+			}
+			if v, ok := getMetadataString(building.Metadata, "targetPlayerLabel"); ok {
+				targetPlayerLabel = v
 			}
 		}
 
@@ -309,9 +320,28 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			}
 			unit.OrderID = orderID
 			if objectiveId != "" {
+				// Existing objective mechanic: keep unit stationary at an objective.
 				unit.ObjectiveID = objectiveId
 				unit.Status = "Idle"
+			} else if targetPlayerLabel == "__none__" {
+				// Explicit stay-at-spawn: no path assigned.
+				unit.Status = "Idle"
+			} else if targetPlayerLabel != "" {
+				// Route to a specific player's townhall, falling back to nearest.
+				unit.Status = "Advancing"
+				playerID := s.findPlayerIDByLabelLocked(targetPlayerLabel)
+				var target *protocol.Vec2
+				if playerID != "" {
+					target = s.getPlayerTownhallCenterLocked(playerID)
+				}
+				if target == nil {
+					target = s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
+				}
+				if target != nil {
+					s.assignUnitPath(unit, *target, blocked, nil)
+				}
 			} else {
+				// Default: route to nearest player townhall.
 				unit.Status = "Advancing"
 				target := s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
 				if target != nil {
@@ -404,4 +434,52 @@ func (s *GameState) findBestBuildingAttackPositionLocked(enemy *Unit, building *
 	// All cells claimed – still pick the closest so the unit keeps moving.
 	pos := s.gridToWorldCenter(candidates[0])
 	return &pos
+}
+
+// findPlayerIDByLabelLocked returns the player ID that occupies the townhall
+// linked to the first spawn-point whose "playerLabel" metadata matches label.
+// Returns "" if no such spawn-point exists or the linked townhall has no owner
+// (i.e. the player never joined).
+func (s *GameState) findPlayerIDByLabelLocked(label string) string {
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "spawn-point" {
+			continue
+		}
+		pl, ok := getMetadataString(b.Metadata, "playerLabel")
+		if !ok || pl != label {
+			continue
+		}
+		// Ownership is tracked on the townhall, not the spawn-point.
+		// Resolve the linked townhall and read its OwnerID.
+		townhall := s.resolveSpawnPointTownhallLocked(*b, true)
+		if townhall == nil || townhall.OwnerID == nil {
+			return ""
+		}
+		return *townhall.OwnerID
+	}
+	return ""
+}
+
+// getPlayerTownhallCenterLocked returns the center of the given player's live
+// townhall building (Occupied == true, hp > 0), or nil if they have none.
+func (s *GameState) getPlayerTownhallCenterLocked(playerID string) *protocol.Vec2 {
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "townhall" {
+			continue
+		}
+		if !b.Occupied || b.OwnerID == nil || *b.OwnerID != playerID {
+			continue
+		}
+		hp, _, ok := getBuildingHP(b)
+		if !ok || hp <= 0 {
+			continue
+		}
+		cx := (float64(b.X) + float64(b.Width)/2) * s.MapConfig.CellSize
+		cy := (float64(b.Y) + float64(b.Height)/2) * s.MapConfig.CellSize
+		pos := protocol.Vec2{X: cx, Y: cy}
+		return &pos
+	}
+	return nil
 }

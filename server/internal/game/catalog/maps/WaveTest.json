@@ -55,12 +55,22 @@
         "terrain": "grass"
       },
       {
+        "x": 22,
+        "y": 17,
+        "terrain": "grass"
+      },
+      {
         "x": 15,
         "y": 18,
         "terrain": "grass"
       },
       {
         "x": 16,
+        "y": 18,
+        "terrain": "grass"
+      },
+      {
+        "x": 23,
         "y": 18,
         "terrain": "grass"
       },
@@ -1866,6 +1876,7 @@
         "capabilities": [],
         "metadata": {
           "fillOrder": 2,
+          "playerLabel": "player2",
           "spawnUnits": [
             {
               "count": 3,
@@ -1891,14 +1902,19 @@
         "capabilities": [],
         "metadata": {
           "fillOrder": 0,
+          "playerLabel": "player1",
           "spawnUnits": [
             {
               "count": 3,
               "unitType": "worker"
             },
             {
-              "count": 1,
+              "count": 2,
               "unitType": "soldier"
+            },
+            {
+              "count": 1,
+              "unitType": "archer"
             }
           ],
           "townhallId": null
@@ -1959,14 +1975,14 @@
         }
       },
       {
-        "x": 17,
-        "y": 16,
-        "id": "enemy-spawnpoint-17-16",
+        "x": 28,
+        "y": 12,
+        "id": "enemy-spawnpoint-28-12",
         "buildingType": "enemy-spawnpoint",
-        "width": 2,
-        "height": 2,
-        "occupied": true,
-        "visible": true,
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
         "capabilities": [
           "enemy-spawner"
         ],
@@ -1975,6 +1991,134 @@
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
           "startingWave": 1,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 24,
+        "y": 13,
+        "id": "enemy-spawnpoint-24-13",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "gameStart": true,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 24,
+        "y": 14,
+        "id": "enemy-spawnpoint-24-14",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "gameStart": true,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 30,
+        "y": 14,
+        "id": "enemy-spawnpoint-30-14",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 5,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 30,
+          "spawnOnce": true,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider",
+          "waveNumber": 5
+        }
+      },
+      {
+        "x": 28,
+        "y": 15,
+        "id": "enemy-spawnpoint-28-15",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 1,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 17,
+        "y": 16,
+        "id": "enemy-spawnpoint-17-16",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 1,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 23,
+        "y": 16,
+        "id": "enemy-spawnpoint-23-16",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 3,
+          "targetPlayerLabel": "player2",
           "unitType": "raider"
         }
       },
@@ -1987,12 +2131,15 @@
         "height": 1,
         "occupied": false,
         "visible": false,
-        "capabilities": [],
+        "capabilities": [
+          "enemy-spawner"
+        ],
         "metadata": {
           "gameStart": true,
           "spawnCount": 1,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
+          "targetPlayerLabel": "player1",
           "unitType": "raider"
         }
       },
@@ -2005,24 +2152,27 @@
         "height": 1,
         "occupied": false,
         "visible": false,
-        "capabilities": [],
+        "capabilities": [
+          "enemy-spawner"
+        ],
         "metadata": {
           "gameStart": true,
           "spawnCount": 1,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
+          "targetPlayerLabel": "player1",
           "unitType": "ranged_raider"
         }
       },
       {
-        "x": 20,
+        "x": 19,
         "y": 19,
-        "id": "enemy-spawnpoint-20-19",
+        "id": "enemy-spawnpoint-19-19",
         "buildingType": "enemy-spawnpoint",
-        "width": 2,
-        "height": 2,
-        "occupied": true,
-        "visible": true,
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
         "capabilities": [
           "enemy-spawner"
         ],
@@ -2031,6 +2181,7 @@
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 30,
           "spawnOnce": true,
+          "targetPlayerLabel": "player1",
           "unitType": "raider",
           "waveNumber": 5
         }
@@ -2044,24 +2195,27 @@
         "height": 1,
         "occupied": false,
         "visible": false,
-        "capabilities": [],
+        "capabilities": [
+          "enemy-spawner"
+        ],
         "metadata": {
           "spawnCount": 1,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
           "startingWave": 3,
+          "targetPlayerLabel": "player1",
           "unitType": "raider"
         }
       },
       {
         "x": 17,
-        "y": 21,
-        "id": "enemy-spawnpoint-17-21",
+        "y": 20,
+        "id": "enemy-spawnpoint-17-20",
         "buildingType": "enemy-spawnpoint",
-        "width": 2,
-        "height": 2,
-        "occupied": true,
-        "visible": true,
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
         "capabilities": [
           "enemy-spawner"
         ],
@@ -2070,18 +2224,19 @@
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
           "startingWave": 1,
+          "targetPlayerLabel": "player1",
           "unitType": "raider"
         }
       },
       {
-        "x": 1,
-        "y": 31,
-        "id": "enemy-spawnpoint-1-31",
+        "x": 2,
+        "y": 34,
+        "id": "enemy-spawnpoint-2-34",
         "buildingType": "enemy-spawnpoint",
-        "width": 2,
-        "height": 2,
-        "occupied": true,
-        "visible": true,
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
         "capabilities": [
           "enemy-spawner"
         ],

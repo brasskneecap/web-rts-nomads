@@ -298,6 +298,14 @@
               min="0"
               :disabled="!paintModeEnabled"
             />
+            <label for="spawn-point-player-label">Player Label</label>
+            <input
+              id="spawn-point-player-label"
+              v-model="spawnPointPlayerLabel"
+              type="text"
+              placeholder="e.g. player1"
+              :disabled="!paintModeEnabled"
+            />
             <label>Starting Units</label>
             <div
               v-for="entry in spawnPointLoadout"
@@ -342,8 +350,7 @@
               v-model="enemyUnitType"
               :disabled="!paintModeEnabled"
             >
-              <option value="raider">Raider</option>
-              <option value="ranged_raider">Ranged Raider</option>
+              <option v-for="u in ENEMY_SPAWN_UNITS" :key="u.type" :value="u.type">{{ u.label }}</option>
             </select>
             <label for="enemy-wave-mode">Spawn Timing</label>
             <select id="enemy-wave-mode" v-model="enemyWaveMode" :disabled="!paintModeEnabled">
@@ -410,6 +417,12 @@
                 </option>
               </select>
             </template>
+            <label for="enemy-target-player">Target Player</label>
+            <select id="enemy-target-player" v-model="enemyTargetPlayerLabel" :disabled="!paintModeEnabled">
+              <option value="">Default (Nearest Player)</option>
+              <option value="__none__">None (Stay at Spawn)</option>
+              <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
+            </select>
           </div>
 
           <div v-if="brushMode === 'building' && selectedBuilding !== 'enemy-spawnpoint' && destroyBuildingObjectives.length" class="control-group">
@@ -465,7 +478,15 @@
 
     <div class="editor-preview">
       <div class="preview-header">
-        <span>{{ paintModeEnabled ? 'Paint mode armed' : 'Navigation mode' }}</span>
+        <span v-if="movingBuilding" class="preview-header__paste-mode">
+          Move mode — click to place {{ movingBuilding.buildingType }}
+          <button type="button" class="preview-header__cancel-paste" @click="cancelMoveBuilding">Cancel (Esc)</button>
+        </span>
+        <span v-else-if="isPasteMode" class="preview-header__paste-mode">
+          Paste mode — click to place {{ copiedBuilding?.buildingType }}
+          <button type="button" class="preview-header__cancel-paste" @click="isPasteMode = false">Cancel (Esc)</button>
+        </span>
+        <span v-else>{{ paintModeEnabled ? 'Paint mode armed' : 'Navigation mode' }}</span>
         <span>{{ hoverLabel }}</span>
       </div>
 
@@ -474,6 +495,8 @@
         <div v-if="selectedEditBuilding && editPanelPos" class="edit-panel" :style="editPanelStyle">
           <div class="edit-panel__header">
             <span class="edit-panel__title">{{ selectedEditBuilding.buildingType }}</span>
+            <button type="button" class="edit-panel__copy" @click="copySelectedBuilding" title="Copy — then click canvas to paste">Copy</button>
+            <button type="button" class="edit-panel__move" @click="startMoveBuilding" title="Move — then click canvas to place">Move</button>
             <button type="button" class="edit-panel__close" @click="selectedEditBuildingId = null">✕</button>
           </div>
 
@@ -482,8 +505,7 @@
             <div class="edit-field">
               <label>Unit Type</label>
               <select :value="selectedEditBuilding.metadata?.['unitType'] ?? 'raider'" @change="updateEditMeta('unitType', ($event.target as HTMLSelectElement).value)">
-                <option value="raider">Raider</option>
-                <option v-for="u in playerSpawnUnits" :key="u.type" :value="u.type">{{ u.label }}</option>
+                <option v-for="u in ENEMY_SPAWN_UNITS" :key="u.type" :value="u.type">{{ u.label }}</option>
               </select>
             </div>
             <div class="edit-field">
@@ -530,6 +552,14 @@
                 <option v-for="vc in killUnitObjectives" :key="vc.id" :value="vc.id">{{ vc.label || vc.id }}</option>
               </select>
             </div>
+            <div class="edit-field">
+              <label>Target Player</label>
+              <select :value="selectedEditBuilding.metadata?.['targetPlayerLabel'] ?? ''" @change="updateEditMeta('targetPlayerLabel', ($event.target as HTMLSelectElement).value || undefined)">
+                <option value="">Default (Nearest Player)</option>
+                <option value="__none__">None (Stay at Spawn)</option>
+                <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
+              </select>
+            </div>
           </template>
 
           <!-- spawn-point fields -->
@@ -544,6 +574,10 @@
             <div class="edit-field">
               <label>Fill Order</label>
               <input type="number" min="0" :value="selectedEditBuilding.metadata?.['fillOrder'] ?? 0" @input="updateEditMeta('fillOrder', +($event.target as HTMLInputElement).value)" />
+            </div>
+            <div class="edit-field">
+              <label>Player Label</label>
+              <input type="text" placeholder="e.g. player1" :value="selectedEditBuilding.metadata?.['playerLabel'] ?? ''" @input="updateEditMeta('playerLabel', ($event.target as HTMLInputElement).value || undefined)" />
             </div>
             <div class="edit-field">
               <label>Starting Units</label>
@@ -639,6 +673,11 @@ const selectedTerrain = ref<TerrainType>('grass')
 const selectedObstacle = ref<ObstacleType>('rock')
 const selectedBuilding = ref<BuildingType>('goldmine')
 const selectedTileSheet = ref<TileSheet>('tileset')
+const ENEMY_SPAWN_UNITS = [
+  { type: 'raider', label: 'Raider' },
+  { type: 'ranged_raider', label: 'Ranged Raider' },
+] as const
+
 const selectedTileCoord = ref<{ sx: number; sy: number } | null>(null)
 const selectedSpawnTownhallId = ref('')
 const playerSpawnUnits = ref<Array<{ type: UnitType; label: string }>>([
@@ -647,6 +686,8 @@ const playerSpawnUnits = ref<Array<{ type: UnitType; label: string }>>([
 ])
 const spawnPointLoadout = ref<SpawnLoadoutEntry[]>([{ id: 1, unitType: 'worker', count: 3 }])
 const spawnPointFillOrder = ref(0)
+const spawnPointPlayerLabel = ref('')
+const enemyTargetPlayerLabel = ref('')
 const enemySpawnDelay = ref(0)
 const enemySpawnInterval = ref(10)
 const enemySpawnCount = ref(1)
@@ -672,6 +713,9 @@ const enemyObjectiveId = ref('')
 const buildingObjectiveId = ref('')
 const selectedEditBuildingId = ref<string | null>(null)
 const editPanelPos = ref<{ x: number; y: number } | null>(null)
+const copiedBuilding = ref<{ buildingType: string; metadata: Record<string, unknown> | undefined } | null>(null)
+const isPasteMode = ref(false)
+const movingBuilding = ref<{ id: string; buildingType: string; metadata: Record<string, unknown> | undefined; x: number; y: number } | null>(null)
 let nextVictoryConditionId = 1
 
 const camera = new Camera()
@@ -732,6 +776,17 @@ const destroyBuildingObjectives = computed(() =>
   (model.value.victoryConditions ?? []).filter((vc) => vc.type === 'destroyBuilding'),
 )
 
+const availablePlayerLabels = computed(() => {
+  const labels = new Set<string>()
+  for (const b of model.value.buildings) {
+    if (b.buildingType === 'spawn-point') {
+      const lbl = b.metadata?.['playerLabel'] as string | undefined
+      if (lbl) labels.add(lbl)
+    }
+  }
+  return [...labels].sort()
+})
+
 const selectedEditBuilding = computed(() =>
   selectedEditBuildingId.value
     ? model.value.buildings.find((b) => b.id === selectedEditBuildingId.value) ?? null
@@ -783,6 +838,8 @@ const eraseCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 
 function getCanvasCursor() {
   if (isSpaceHeld) return 'grab'
+  if (movingBuilding.value) return 'move'
+  if (isPasteMode.value) return 'copy'
   if (!paintModeEnabled.value) return 'default'
   if (isControlHeld.value) return eraseCursor
   return 'crosshair'
@@ -930,6 +987,53 @@ function updateEditLoadoutEntry(index: number, field: 'unitType' | 'count', valu
   if (!b) return
   const current = (b.metadata?.['spawnUnits'] as Array<{ unitType: string; count: number }>) ?? []
   updateEditMeta('spawnUnits', current.map((entry, i) => i === index ? { ...entry, [field]: value } : entry))
+}
+
+function copySelectedBuilding() {
+  const b = selectedEditBuilding.value
+  if (!b) return
+  copiedBuilding.value = {
+    buildingType: b.buildingType,
+    metadata: b.metadata ? JSON.parse(JSON.stringify(b.metadata)) : undefined,
+  }
+  isPasteMode.value = true
+  selectedEditBuildingId.value = null
+}
+
+function pasteCopiedBuilding(cx: number, cy: number) {
+  const copy = copiedBuilding.value
+  if (!copy) return
+  model.value = setBuildingTile(model.value, cx, cy, copy.buildingType, copy.metadata as Record<string, unknown>)
+}
+
+function startMoveBuilding() {
+  const b = selectedEditBuilding.value
+  if (!b) return
+  movingBuilding.value = {
+    id: b.id,
+    buildingType: b.buildingType,
+    metadata: b.metadata ? JSON.parse(JSON.stringify(b.metadata)) : undefined,
+    x: b.x,
+    y: b.y,
+  }
+  selectedEditBuildingId.value = null
+}
+
+function commitMoveBuilding(cx: number, cy: number) {
+  const moving = movingBuilding.value
+  if (!moving) return
+  // Remove from old position then place at new position.
+  let next = setBuildingTile(model.value, moving.x, moving.y, null)
+  next = setBuildingTile(next, cx, cy, moving.buildingType, moving.metadata as Record<string, unknown>)
+  model.value = next
+  movingBuilding.value = null
+  // Re-select the building at its new position so the edit panel reopens.
+  const placed = model.value.buildings.find((b) => b.x === cx && b.y === cy && b.buildingType === moving.buildingType)
+  if (placed) selectedEditBuildingId.value = placed.id
+}
+
+function cancelMoveBuilding() {
+  movingBuilding.value = null
 }
 
 function deleteSelectedBuilding() {
@@ -1183,6 +1287,7 @@ function paintBuildingAt(cx: number, cy: number) {
         unitType: entry.unitType,
         count: Math.max(1, Math.round(entry.count || 1)),
       })),
+      ...(spawnPointPlayerLabel.value ? { playerLabel: spawnPointPlayerLabel.value } : {}),
     }
   } else if (selectedBuilding.value === 'enemy-spawnpoint') {
     metadata = {
@@ -1194,6 +1299,7 @@ function paintBuildingAt(cx: number, cy: number) {
       spawnCount: enemySpawnCount.value,
       unitType: enemyUnitType.value,
       ...(enemyObjectiveId.value ? { objectiveId: enemyObjectiveId.value } : {}),
+      ...(enemyTargetPlayerLabel.value ? { targetPlayerLabel: enemyTargetPlayerLabel.value } : {}),
     }
   } else if (buildingObjectiveId.value) {
     metadata = { objectiveId: buildingObjectiveId.value }
@@ -1256,6 +1362,18 @@ function onMouseDown(event: MouseEvent) {
   if (isSpaceHeld) {
     isSpacePanning = true
     targetCanvas.style.cursor = 'grabbing'
+    return
+  }
+
+  if (movingBuilding.value) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) commitMoveBuilding(cell.x, cell.y)
+    return
+  }
+
+  if (isPasteMode.value && copiedBuilding.value) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) pasteCopiedBuilding(cell.x, cell.y)
     return
   }
 
@@ -1332,6 +1450,8 @@ function onMouseLeave() {
 function onKeyDown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     selectedEditBuildingId.value = null
+    isPasteMode.value = false
+    cancelMoveBuilding()
   }
 
   if (event.key === 'Control') {
@@ -1743,6 +1863,16 @@ watch(paintModeEnabled, () => {
   canvas.value.style.cursor = getCanvasCursor()
 })
 
+watch(isPasteMode, () => {
+  if (!canvas.value || isSpacePanning) return
+  canvas.value.style.cursor = getCanvasCursor()
+})
+
+watch(movingBuilding, () => {
+  if (!canvas.value || isSpacePanning) return
+  canvas.value.style.cursor = getCanvasCursor()
+})
+
 watch(
   townhallOptions,
   (options) => {
@@ -1757,6 +1887,8 @@ watch(
 watch(selectedBuilding, () => {
   enemyObjectiveId.value = ''
   buildingObjectiveId.value = ''
+  spawnPointPlayerLabel.value = ''
+  enemyTargetPlayerLabel.value = ''
 })
 
 watch(
@@ -2198,8 +2330,7 @@ onBeforeUnmount(() => {
 .edit-panel__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 2px;
 }
 
@@ -2209,6 +2340,41 @@ onBeforeUnmount(() => {
   color: #93c5fd;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  flex: 1;
+}
+
+.edit-panel__copy {
+  background: rgba(96, 165, 250, 0.15);
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: 4px;
+  color: #93c5fd;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  line-height: 1.4;
+}
+
+.edit-panel__copy:hover {
+  background: rgba(96, 165, 250, 0.28);
+  color: #bfdbfe;
+}
+
+.edit-panel__move {
+  background: rgba(52, 211, 153, 0.15);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  border-radius: 4px;
+  color: #6ee7b7;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  line-height: 1.4;
+}
+
+.edit-panel__move:hover {
+  background: rgba(52, 211, 153, 0.28);
+  color: #a7f3d0;
 }
 
 .edit-panel__close {
@@ -2222,6 +2388,28 @@ onBeforeUnmount(() => {
 }
 
 .edit-panel__close:hover { color: #f1f5f9; }
+
+.preview-header__paste-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.preview-header__cancel-paste {
+  background: none;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 4px;
+  color: #fbbf24;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
+.preview-header__cancel-paste:hover {
+  background: rgba(251, 191, 36, 0.12);
+}
 
 .edit-field {
   display: flex;
