@@ -546,20 +546,20 @@
               <input type="number" min="1" max="20" :value="selectedEditBuilding.metadata?.['spawnCount'] ?? 1" @input="updateEditMeta('spawnCount', +($event.target as HTMLInputElement).value)" />
             </div>
             <div class="edit-field">
-              <label>Health Multiplier (Wave 1)</label>
-              <input type="number" min="0" step="0.1" :value="selectedEditBuilding.metadata?.['healthMultiplier'] ?? 1" @input="updateEditMeta('healthMultiplier', +($event.target as HTMLInputElement).value || undefined)" />
+              <label>Wave 1 Health (%)</label>
+              <input type="number" min="0" step="10" :value="Math.round(((selectedEditBuilding.metadata?.['healthMultiplier'] as number) ?? 1) * 100)" @input="updateEditMeta('healthMultiplier', (+($event.target as HTMLInputElement).value) / 100)" />
             </div>
             <div class="edit-field">
-              <label>Health +Per Wave</label>
-              <input type="number" min="0" step="0.1" :value="selectedEditBuilding.metadata?.['healthMultiplierPerWave'] ?? 0" @input="updateEditMeta('healthMultiplierPerWave', +($event.target as HTMLInputElement).value || undefined)" />
+              <label>Health Increase Per Wave (%)</label>
+              <input type="number" min="0" step="10" :value="Math.round(((selectedEditBuilding.metadata?.['healthMultiplierPerWave'] as number) ?? 0) * 100)" @input="updateEditMeta('healthMultiplierPerWave', (+($event.target as HTMLInputElement).value) / 100 || undefined)" />
             </div>
             <div class="edit-field">
-              <label>Damage Multiplier (Wave 1)</label>
-              <input type="number" min="0" step="0.1" :value="selectedEditBuilding.metadata?.['damageMultiplier'] ?? 1" @input="updateEditMeta('damageMultiplier', +($event.target as HTMLInputElement).value || undefined)" />
+              <label>Wave 1 Damage (%)</label>
+              <input type="number" min="0" step="10" :value="Math.round(((selectedEditBuilding.metadata?.['damageMultiplier'] as number) ?? 1) * 100)" @input="updateEditMeta('damageMultiplier', (+($event.target as HTMLInputElement).value) / 100)" />
             </div>
             <div class="edit-field">
-              <label>Damage +Per Wave</label>
-              <input type="number" min="0" step="0.1" :value="selectedEditBuilding.metadata?.['damageMultiplierPerWave'] ?? 0" @input="updateEditMeta('damageMultiplierPerWave', +($event.target as HTMLInputElement).value || undefined)" />
+              <label>Damage Increase Per Wave (%)</label>
+              <input type="number" min="0" step="10" :value="Math.round(((selectedEditBuilding.metadata?.['damageMultiplierPerWave'] as number) ?? 0) * 100)" @input="updateEditMeta('damageMultiplierPerWave', (+($event.target as HTMLInputElement).value) / 100 || undefined)" />
             </div>
             <div v-if="killUnitObjectives.length" class="edit-field">
               <label>Kill Objective</label>
