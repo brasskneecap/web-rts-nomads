@@ -142,25 +142,35 @@
             <button
               v-else
               class="action-cell"
-              :class="{ 'action-cell--active': ui.selection.actions[i - 1].active }"
+              :class="{
+                'action-cell--active': ui.selection.actions[i - 1].active,
+                'action-cell--has-cost': !!ui.selection.actions[i - 1].cost?.length,
+              }"
               :disabled="ui.selection.actions[i - 1].disabled"
-              :title="ui.selection.actions[i - 1].label"
+              :title="ui.selection.actions[i - 1].cost?.length ? undefined : ui.selection.actions[i - 1].label"
               type="button"
               @click="$emit('action', ui.selection.actions[i - 1].id)"
             >
               <ActionIcon :action="ui.selection.actions[i - 1]" />
-              <div v-if="ui.selection.actions[i - 1].cost?.length" class="action-cost">
-                <span
-                  v-for="c in ui.selection.actions[i - 1].cost"
-                  :key="c.resourceId"
-                  class="action-cost__entry"
-                >
-                  <span
-                    class="action-cost__gem"
-                    :style="{ background: `linear-gradient(180deg, ${c.accent}, rgba(0,0,0,0.55))` }"
-                  />
-                  <span class="action-cost__amount">{{ c.amount }}</span>
-                </span>
+              <div
+                v-if="ui.selection.actions[i - 1].cost?.length"
+                class="cost-tooltip"
+              >
+                <div class="cost-tooltip__title">{{ ui.selection.actions[i - 1].label }}</div>
+                <div class="cost-tooltip__body">
+                  <div
+                    v-for="c in ui.selection.actions[i - 1].cost"
+                    :key="c.resourceId"
+                    class="cost-tooltip__row"
+                  >
+                    <span
+                      class="cost-tooltip__gem"
+                      :style="{ background: `linear-gradient(180deg, ${c.accent}, rgba(0,0,0,0.55))` }"
+                    />
+                    <span class="cost-tooltip__name">{{ resourceDisplayName(c.resourceId) }}</span>
+                    <span class="cost-tooltip__amount">{{ c.amount }}</span>
+                  </div>
+                </div>
               </div>
             </button>
           </template>
@@ -200,6 +210,16 @@ function perkCooldownFraction(action: ActionItem): number {
   const total = action.cooldownTotal ?? 0
   if (remaining <= 0 || total <= 0) return 0
   return Math.min(1, remaining / total)
+}
+
+const RESOURCE_LABELS: Record<string, string> = {
+  gold: 'Gold',
+  wood: 'Wood',
+  food: 'Food',
+}
+
+function resourceDisplayName(resourceId: string): string {
+  return RESOURCE_LABELS[resourceId] ?? resourceId.charAt(0).toUpperCase() + resourceId.slice(1)
 }
 </script>
 
@@ -574,44 +594,76 @@ function perkCooldownFraction(action: ActionItem): number {
   cursor: pointer;
 }
 
-.action-cost {
+/* ── Cost hover tooltip (build/train actions) ────────────────────────────── */
+/* Mirrors the perk-tooltip visual language: appears above the cell on hover, */
+/* lists each resource cost with a gem, name, and amount. pointer-events:     */
+/* none so the tooltip doesn't swallow clicks on the button itself.           */
+.cost-tooltip {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 2;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 140px;
+  max-width: 220px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(34, 22, 10, 0.98), rgba(20, 12, 4, 0.98));
+  border: 1px solid rgba(200, 164, 106, 0.45);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  color: #f5ead2;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease-out;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.action-cell--has-cost:hover .cost-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.cost-tooltip__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff2d6;
+  margin-bottom: 4px;
+}
+
+.cost-tooltip__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cost-tooltip__row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 2px 2px;
-  background: linear-gradient(0deg, rgba(20, 10, 4, 0.82) 0%, transparent 100%);
-  border-radius: 0 0 7px 7px;
-  pointer-events: none;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #d4b87a;
 }
 
-.action-cost__entry {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.action-cost__gem {
+.cost-tooltip__gem {
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  flex: 0 0 7px;
+  flex: 0 0 9px;
   box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
 }
 
-.action-cost__amount {
-  font-size: 10px;
-  font-weight: 800;
+.cost-tooltip__name {
+  flex: 1 1 auto;
+}
+
+.cost-tooltip__amount {
+  font-weight: 700;
   color: #ffe9a0;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 1);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
 .action-cell:not(:disabled):hover {

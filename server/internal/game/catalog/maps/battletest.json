@@ -95,7 +95,9 @@
         "height": 1,
         "occupied": false,
         "visible": false,
-        "capabilities": [],
+        "capabilities": [
+          "enemy-spawner"
+        ],
         "metadata": {
           "spawnCount": 2,
           "spawnDelaySeconds": 0,
@@ -126,6 +128,10 @@
     "waveConfig": {
       "prepDuration": 60,
       "waveDuration": 120
+    },
+    "debug": {
+      "battleTracker": true,
+      "debugSpawn": true
     }
   }
 }
