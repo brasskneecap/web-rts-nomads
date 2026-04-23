@@ -160,15 +160,6 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 				attacker.PerkState.WhirlwindAnimRemaining = def.Config["animationSeconds"]
 			}
 
-		case "taunting_strike":
-			// On proc, apply a taunt to the primary target for a short duration.
-			// The taunted enemy strongly prefers targeting this Vanguard while the
-			// taunt is active. Falls off naturally via decayThreatLocked in combat_ai.go.
-			// Proc chance and duration are tunable in perk-defs.json (tauntChance, tauntDurationSeconds).
-			if primaryTarget != nil && s.rngPerks.Float64() < def.Config["tauntChance"] {
-				s.ApplyTauntLocked(primaryTarget.ID, attacker.ID, def.Config["tauntDurationSeconds"])
-			}
-
 		case "challengers_mark":
 			// Stamp a damage-amplification mark on the target. Keyed by the
 			// attacker's unit id (prefixed "unit-" to keep trap ids and unit
@@ -437,18 +428,22 @@ func (s *GameState) onPerkAttackDamageAppliedLocked(attacker, target *Unit, dama
 			}
 
 		case "shield_bash":
-			// RNG-proc stun + slow on the target. onPerkAttackDamageAppliedLocked
+			// RNG-proc stun + slow + taunt on the target. onPerkAttackDamageAppliedLocked
 			// is only reached from the unit-vs-unit combat path (not building
 			// targets) so no type-guard is needed here.
 			// Slow starts immediately — duration = stunSeconds + slowSeconds —
 			// so the slow is active from the moment of the proc even while the
 			// stun is also running. This ensures the slow lands even if the
 			// target later becomes stun-immune.
+			// Taunt is applied on the same single proc roll so all three
+			// effects land together (merged from the former taunting_strike
+			// bronze perk). Taunt falls off naturally via decayThreatLocked.
 			if target.HP > 0 && s.rngPerks.Float64() < def.Config["procChance"] {
 				stunSec := def.Config["stunSeconds"]
 				slowSec := def.Config["slowSeconds"]
 				s.ApplyStunLocked(target.ID, stunSec)
 				s.ApplySlowLocked(target.ID, def.Config["slowMultiplier"], stunSec+slowSec)
+				s.ApplyTauntLocked(target.ID, attacker.ID, def.Config["tauntDurationSeconds"])
 			}
 
 		// ── add cases for new on-hit reaction perks below this line ─────────

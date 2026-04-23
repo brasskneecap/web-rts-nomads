@@ -75,10 +75,11 @@ func (s *GameState) ApplySlowLocked(targetID int, multiplier, duration float64) 
 	}
 }
 
-// slowFactorLocked returns the effective movement-speed fraction for unit due
-// to an active slow. Returns the SlowedMultiplier while SlowedRemaining > 0,
-// otherwise returns 1.0 (no reduction). Composing this factor into the step
-// calculation in Update() is the only place it needs to appear — see state.go.
+// slowFactorLocked returns the effective speed fraction for unit due to an
+// active slow. Returns the SlowedMultiplier while SlowedRemaining > 0,
+// otherwise returns 1.0 (no reduction). Applied multiplicatively to both
+// movement step (state.go Update()) and attack cadence (state_combat.go) so
+// a single debuff scales both.
 //
 // This is a pure function of the unit pointer; no GameState receiver is needed.
 func slowFactorLocked(unit *Unit) float64 {

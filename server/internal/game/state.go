@@ -74,6 +74,13 @@ type Unit struct {
 	HP                  int
 	MaxHP               int
 	BaseMaxHP           int
+	// HealthRegenPerSecond is the baseline passive HP regeneration rate (HP per
+	// real-time second) applied in Update(). Defaults to defaultHealthRegenPerSecond
+	// on spawn; future perks / buffs can modify it. HealthRegenAccumulator carries
+	// fractional progress between ticks so a sub-1 HP/s rate still heals integer
+	// HP on the correct cadence.
+	HealthRegenPerSecond   float64
+	HealthRegenAccumulator float64
 	BaseDamage          int
 	BaseAttackSpeed     float64
 	BaseMoveSpeed       float64
@@ -169,6 +176,11 @@ const (
 	unitRadius             = 10.0
 	unitFormationSpacing   = 28.0
 	unitSeparationDistance = 22.0
+
+	// defaultHealthRegenPerSecond is the baseline passive regen applied to all
+	// units on spawn (1 HP every 5 seconds). Stored as HP-per-second so future
+	// perks / buffs can scale it with a multiplier.
+	defaultHealthRegenPerSecond = 0.2
 )
 
 type Player struct {
@@ -493,6 +505,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			AttackSpeed:         effectiveAttackSpeed,
 			MoveSpeed:           effectiveMoveSpeed,
 			Armor:               s.effectiveArmorLocked(unit),
+			HealthRegen:         unit.HealthRegenPerSecond,
 			XP:                  unit.XP,
 			Rank:                unit.Rank,
 			XPToNextRank:        s.unitXPToNextRankLocked(unit),
@@ -739,6 +752,23 @@ func (s *GameState) Update(dt float64) {
 		// so it is always 0 for non-archers and the check is cheap.
 		if unit.PerkState.LastCombatSeconds > 0 {
 			unit.PerkState.LastCombatSeconds = math.Max(0, unit.PerkState.LastCombatSeconds-dt)
+		}
+
+		// Passive health regen. Accumulator carries fractional HP between ticks
+		// so sub-1 rates (the default 0.2 HP/s) still heal integer HP on the
+		// correct cadence. Skipped for dead / full-HP units; accumulator resets
+		// at full HP so the next hit doesn't instantly trigger banked regen.
+		if unit.HP > 0 && unit.HealthRegenPerSecond > 0 {
+			if unit.HP >= unit.MaxHP {
+				unit.HealthRegenAccumulator = 0
+			} else {
+				unit.HealthRegenAccumulator += unit.HealthRegenPerSecond * dt
+				if unit.HealthRegenAccumulator >= 1 {
+					healAmt := int(unit.HealthRegenAccumulator)
+					unit.HealthRegenAccumulator -= float64(healAmt)
+					s.healUnitLocked(unit, healAmt)
+				}
+			}
 		}
 
 		// Advance time-based perk state (idle timers, buff durations).

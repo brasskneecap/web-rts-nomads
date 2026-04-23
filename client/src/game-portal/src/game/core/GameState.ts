@@ -67,6 +67,8 @@ export type Unit = {
   attackSpeed?: number
   moveSpeed?: number
   armor?: number
+  /** Passive HP regeneration rate in HP per second. Absent when 0. */
+  healthRegen?: number
   xp?: number
   rank?: string
   xpToNextRank?: number
@@ -450,6 +452,7 @@ export class GameState {
         attackSpeed: unit.attackSpeed,
         moveSpeed: unit.moveSpeed,
         armor: unit.armor,
+        healthRegen: unit.healthRegen,
         xp: unit.xp,
         rank: unit.rank,
         xpToNextRank: unit.xpToNextRank,
@@ -1891,6 +1894,18 @@ function attackSpeedLabel(attacksPerSecond: number): string {
   return 'Very Fast'
 }
 
+// Render HP regen as "1 HP / 5s" when the rate is sub-1 HP/s, otherwise as
+// "X HP / s" with one decimal. Matches the "1 every N" phrasing players expect
+// for trickle regen.
+function formatHealthRegen(hpPerSecond: number): string {
+  if (hpPerSecond <= 0) return '0 HP / s'
+  if (hpPerSecond < 1) {
+    const interval = Math.round(10 / hpPerSecond) / 10
+    return `1 HP / ${interval}s`
+  }
+  return `${hpPerSecond.toFixed(1)} HP / s`
+}
+
 // Mirrors server/internal/game/progression.go armorDamageReduction — keep in sync.
 // reduction = armor / (armor + K) where K = 100.
 const ARMOR_MITIGATION_K = 100
@@ -1901,12 +1916,19 @@ function armorDamageReductionFraction(armor: number): number {
 }
 
 function getUnitDetails(unit: Unit): DetailItem[] {
+  const healthRegen = unit.healthRegen ?? 0
+  const durabilityTooltipBody = healthRegen > 0
+    ? `Regenerates ${formatHealthRegen(healthRegen)}`
+    : 'No passive regeneration'
+
   const details: DetailItem[] = [
     {
       id: 'durability',
       label: 'Durability',
       value: `${unit.hp ?? 0} / ${unit.maxHp ?? unit.hp ?? 0}`,
       icon: STAT_ICON_HEART,
+      tooltipTitle: `HP ${unit.hp ?? 0} / ${unit.maxHp ?? unit.hp ?? 0}`,
+      tooltipBody: durabilityTooltipBody,
     },
   ]
 

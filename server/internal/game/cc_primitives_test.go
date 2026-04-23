@@ -236,6 +236,44 @@ func TestApplySlow_ReducesMoveSpeed(t *testing.T) {
 	}
 }
 
+// TestApplySlow_ReducesAttackCadence verifies that a slowed attacker commits a
+// longer AttackCooldown after firing — a 0.7× slow should stretch cooldown by
+// 1/0.7 relative to the same unit firing without a slow.
+func TestApplySlow_ReducesAttackCadence(t *testing.T) {
+	const multiplier = 0.7
+
+	// Baseline: no slow — capture the cooldown committed after firing.
+	sBase, unitBase, _ := newCCState(t)
+	unitBase.AttackSpeed = 1.0
+	blockedBase := sBase.getBlockedCellsLocked()
+	sBase.tickUnitCombatLocked(0.1, blockedBase)
+	cooldownBase := unitBase.AttackCooldown
+	sBase.mu.Unlock()
+	if cooldownBase <= 0 {
+		t.Fatalf("baseline attacker did not fire (AttackCooldown=%.3f)", cooldownBase)
+	}
+
+	// Slowed: same setup, attacker slowed before the tick.
+	sSlow, unitSlow, _ := newCCState(t)
+	unitSlow.AttackSpeed = 1.0
+	sSlow.ApplySlowLocked(unitSlow.ID, multiplier, 2.0)
+	blockedSlow := sSlow.getBlockedCellsLocked()
+	sSlow.tickUnitCombatLocked(0.1, blockedSlow)
+	cooldownSlow := unitSlow.AttackCooldown
+	sSlow.mu.Unlock()
+	if cooldownSlow <= 0 {
+		t.Fatalf("slowed attacker did not fire (AttackCooldown=%.3f)", cooldownSlow)
+	}
+
+	// Cooldown inverse of effective speed: slow → cooldown stretches by 1/mult.
+	wantRatio := 1.0 / multiplier
+	gotRatio := cooldownSlow / cooldownBase
+	if math.Abs(gotRatio-wantRatio) > 0.01 {
+		t.Errorf("slowed attack cadence: cooldown ratio got %.4f, want %.4f (base=%.4f, slow=%.4f)",
+			gotRatio, wantRatio, cooldownBase, cooldownSlow)
+	}
+}
+
 // TestApplySlow_RefreshStrongerMultiplier verifies that a stronger (lower)
 // multiplier overwrites a weaker (higher) one.
 func TestApplySlow_RefreshStrongerMultiplier(t *testing.T) {

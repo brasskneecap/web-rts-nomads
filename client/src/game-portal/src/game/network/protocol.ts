@@ -314,6 +314,8 @@ export type UnitSnapshot = {
   attackSpeed?: number
   moveSpeed?: number
   armor?: number
+  /** Passive HP regeneration rate in HP per second. Omitted when 0. */
+  healthRegen?: number
   xp?: number
   rank?: string
   xpToNextRank?: number

@@ -2261,6 +2261,9 @@
         "type": "killUnit",
         "count": 1
       }
-    ]
+    ],
+    "debug": {
+      "debugSpawn": true
+    }
   }
 }

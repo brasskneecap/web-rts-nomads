@@ -858,6 +858,12 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 	s.Traps = append(s.Traps, trap)
 }
 
+// trapPlacementThrowBuffer is how far past the unit's own AttackRange a
+// candidate target may sit and still be considered "throwable at". Beyond
+// reach+buffer, the helper returns (0, 0) so the trap drops at the unit's
+// feet instead of being flung across the map toward a distant enemy.
+const trapPlacementThrowBuffer = 150.0
+
 // trapPlacementOffsetLocked returns the (dx, dy) offset to add to the unit's
 // position so the trap is "thrown" toward the archer's current target and
 // lands on the enemy rather than between the archer and the enemy. Direction
@@ -868,16 +874,23 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 //  2. The nearest visible hostile unit — O(N) fallback for the rare case the
 //     attack target has died or been cleared the same tick placement fires.
 //
+// Regardless of which path resolves a target, the target must sit within
+// reach+trapPlacementThrowBuffer of the unit. Anything farther is treated as
+// "no enemy in range" and the helper returns (0, 0) so the trap drops at the
+// trapper's feet — prevents idle/out-of-combat trappers from flinging traps
+// toward distant enemies visible across the map.
+//
 // Throw distance = min(distance to target, unit.AttackRange). This means:
 //   - A target within the archer's firing range gets a trap dropped ON IT.
-//   - A target who has just stepped out of range gets a trap at the archer's
-//     max reach along the target direction (never beyond).
+//   - A target who has just stepped out of range (but still within buffer)
+//     gets a trap at the archer's max reach along the target direction.
 //   - A target inside the archer's minimum reach still gets the trap at its
 //     feet (dist < range → we place exactly on the target).
 //
 // `radius` is used only as the fallback throw distance when AttackRange is
 // zero or negative (e.g. test fixtures / future melee trappers) — the old
-// near-edge-touching behavior. Returns (0, 0) when no enemy is found.
+// near-edge-touching behavior. Returns (0, 0) when no enemy is found or
+// when the nearest enemy sits outside reach+trapPlacementThrowBuffer.
 //
 // Must be called under s.mu (read or write) lock.
 func (s *GameState) trapPlacementOffsetLocked(unit *Unit, radius float64) (float64, float64) {
@@ -939,6 +952,13 @@ func (s *GameState) trapPlacementOffsetLocked(unit *Unit, radius float64) (float
 	if reach <= 0 {
 		reach = radius
 	}
+
+	// Distance gate: if the chosen target sits beyond reach + buffer, treat
+	// this as "no enemy in range" and drop at the unit's feet.
+	if dist > reach+trapPlacementThrowBuffer {
+		return 0, 0
+	}
+
 	throwDist := math.Min(dist, reach)
 
 	return dx / dist * throwDist, dy / dist * throwDist

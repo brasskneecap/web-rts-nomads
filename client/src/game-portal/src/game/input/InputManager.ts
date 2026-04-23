@@ -16,11 +16,15 @@ export class InputManager {
 
   private isLeftMouseDown = false
   private isMiddleMouseDown = false
+  private isRightMouseDown = false
   private isSpaceHeld = false
 
   private dragThreshold = 6
   private dragStarted = false
   private isSpacePanning = false
+  private isRightPanning = false
+  private rightPanStartX = 0
+  private rightPanStartY = 0
   private isMinimapNavigating = false
 
   private lastMouseX = 0
@@ -141,6 +145,19 @@ export class InputManager {
     if (e.button === 1) {
       e.preventDefault()
       this.isMiddleMouseDown = true
+      return
+    }
+
+    if (e.button === 2) {
+      // Right-drag pans the camera when no units are selected. A quick
+      // right-click (no drag past threshold) still falls through to
+      // onRightClick so behaviors like spawn-point setting keep working.
+      if (this.state.getOrderedSelectedUnitIds().length === 0) {
+        this.isRightMouseDown = true
+        this.isRightPanning = false
+        this.rightPanStartX = screen.x
+        this.rightPanStartY = screen.y
+      }
     }
   }
 
@@ -177,6 +194,34 @@ export class InputManager {
       return
     }
 
+    if (this.isRightMouseDown) {
+      if (!this.isRightPanning) {
+        const totalDx = screen.x - this.rightPanStartX
+        const totalDy = screen.y - this.rightPanStartY
+        if (Math.abs(totalDx) > this.dragThreshold || Math.abs(totalDy) > this.dragThreshold) {
+          this.isRightPanning = true
+          this.canvas.style.cursor = resolveCursor('grabbing', 'grabbing')
+        }
+      }
+
+      if (this.isRightPanning) {
+        const dx = screen.x - this.lastMouseX
+        const dy = screen.y - this.lastMouseY
+
+        this.camera.pan(-dx / this.camera.zoom, -dy / this.camera.zoom)
+        this.camera.clamp(
+          this.canvas.width,
+          this.canvas.height,
+          this.state.mapWidth,
+          this.state.mapHeight,
+        )
+
+        this.lastMouseX = screen.x
+        this.lastMouseY = screen.y
+      }
+      return
+    }
+
     if (!this.isLeftMouseDown) return
 
     const world = this.getWorldPosition(e)
@@ -194,6 +239,16 @@ export class InputManager {
   private onMouseUp = (e: MouseEvent) => {
     if (e.button === 1) {
       this.isMiddleMouseDown = false
+      return
+    }
+
+    if (e.button === 2) {
+      this.isRightMouseDown = false
+      // Leave isRightPanning set so the contextmenu handler can suppress
+      // the right-click action that would otherwise fire after the drag.
+      if (this.isRightPanning) {
+        this.updateHoverCursor(this.lastMouseX, this.lastMouseY)
+      }
       return
     }
 
@@ -267,6 +322,12 @@ export class InputManager {
 
   private onRightClick = (e: MouseEvent) => {
     e.preventDefault()
+
+    if (this.isRightPanning) {
+      this.isRightPanning = false
+      return
+    }
+
     const screen = this.getScreenPosition(e)
     if (this.isInsideMinimap(screen.x, screen.y)) return
 
@@ -443,6 +504,14 @@ export class InputManager {
       this.canvas.style.cursor = resolveCursor('default', 'default')
       this.state.setHoveredInteractableBuilding(null)
       this.state.setHoveredInteractableObstacle(null)
+      return
+    }
+
+    if (this.isRightPanning) {
+      this.canvas.style.cursor = resolveCursor('grabbing', 'grabbing')
+      this.state.setHoveredInteractableBuilding(null)
+      this.state.setHoveredInteractableObstacle(null)
+      this.state.setHoveredEnemyUnit(null)
       return
     }
 

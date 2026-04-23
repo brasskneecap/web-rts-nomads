@@ -311,6 +311,9 @@ type UnitSnapshot struct {
 	AttackSpeed         float64  `json:"attackSpeed,omitempty"`
 	MoveSpeed           float64  `json:"moveSpeed,omitempty"`
 	Armor               int      `json:"armor,omitempty"`
+	// HealthRegen is the current HP-per-second passive regeneration rate.
+	// omitempty so units with no regen (0) are absent from the payload.
+	HealthRegen         float64  `json:"healthRegen,omitempty"`
 	XP                  int      `json:"xp,omitempty"`
 	Rank                string   `json:"rank,omitempty"`
 	XPToNextRank        int      `json:"xpToNextRank,omitempty"`

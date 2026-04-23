@@ -149,7 +149,11 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						// Cooldown + archer trapper-gate commit at fire time for both
 						// branches so rate-of-fire and trap-gating feel responsive even
 						// while a projectile is still in flight.
+						// Slow debuffs (shield_bash, caltrops, etc.) scale attack speed
+						// the same way they scale movement — a 0.7× slow attacks at 70%
+						// of its normal cadence.
 						effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+						effectiveSpeed = math.Max(0.1, effectiveSpeed*slowFactorLocked(unit))
 						unit.AttackCooldown = 1.0 / effectiveSpeed
 						if unit.UnitType == "archer" {
 							unit.PerkState.LastCombatSeconds = 1.5
@@ -218,7 +222,9 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						building.Metadata["hp"] = newHP
 						s.onBuildingDamagedLocked(unit, building, damage)
 						s.recordDamageDealtBuildingLocked(unit, building.ID, damage)
-						unit.AttackCooldown = 1.0 / unit.AttackSpeed
+						// Slow scales attack cadence against buildings too.
+						buildingAttackSpeed := math.Max(0.1, unit.AttackSpeed*slowFactorLocked(unit))
+						unit.AttackCooldown = 1.0 / buildingAttackSpeed
 						if newHP <= 0 {
 							building.Metadata["hp"] = 0.0
 							s.payoutBuildingDamageDealtXPLocked(building.ID)

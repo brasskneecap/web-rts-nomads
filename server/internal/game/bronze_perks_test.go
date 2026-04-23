@@ -82,10 +82,12 @@ func fireAttack(s *GameState, attacker, target *Unit) int {
 // 1. shield_bash
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestShieldBash_ProcStunsAndSlowsTarget seeds the RNG to produce a proc roll
-// < procChance. After the attack the target should have StunnedRemaining ==
-// stunSeconds and SlowedRemaining == stunSeconds + slowSeconds.
-func TestShieldBash_ProcStunsAndSlowsTarget(t *testing.T) {
+// TestShieldBash_ProcStunsSlowsAndTauntsTarget seeds the RNG to produce a proc
+// roll < procChance. After the attack the target should have StunnedRemaining ==
+// stunSeconds, SlowedRemaining == stunSeconds + slowSeconds, and TauntRemaining
+// == tauntDurationSeconds (all three effects land on a single proc after
+// taunting_strike was folded into shield_bash).
+func TestShieldBash_ProcStunsSlowsAndTauntsTarget(t *testing.T) {
 	s, attacker, target := newBronzePerkState(t, 42)
 
 	s.mu.Lock()
@@ -104,6 +106,7 @@ func TestShieldBash_ProcStunsAndSlowsTarget(t *testing.T) {
 	wantStun := def.Config["stunSeconds"]
 	wantSlowRemaining := def.Config["stunSeconds"] + def.Config["slowSeconds"]
 	wantSlowMult := def.Config["slowMultiplier"]
+	wantTaunt := def.Config["tauntDurationSeconds"]
 
 	if target.StunnedRemaining != wantStun {
 		t.Errorf("StunnedRemaining: got %.3f, want %.3f", target.StunnedRemaining, wantStun)
@@ -114,10 +117,16 @@ func TestShieldBash_ProcStunsAndSlowsTarget(t *testing.T) {
 	if math.Abs(target.SlowedMultiplier-wantSlowMult) > 0.001 {
 		t.Errorf("SlowedMultiplier: got %.3f, want %.3f", target.SlowedMultiplier, wantSlowMult)
 	}
+	if target.TauntRemaining != wantTaunt {
+		t.Errorf("TauntRemaining: got %.3f, want %.3f", target.TauntRemaining, wantTaunt)
+	}
+	if target.TauntedByUnitID != attacker.ID {
+		t.Errorf("TauntedByUnitID: got %d, want %d", target.TauntedByUnitID, attacker.ID)
+	}
 }
 
 // TestShieldBash_NonProcDoesNothing seeds the RNG to not proc. The target
-// should have no stun or slow after the attack.
+// should have no stun, slow, or taunt after the attack.
 func TestShieldBash_NonProcDoesNothing(t *testing.T) {
 	s, attacker, target := newBronzePerkState(t, 42)
 
@@ -139,6 +148,9 @@ func TestShieldBash_NonProcDoesNothing(t *testing.T) {
 	}
 	if target.SlowedRemaining != 0 {
 		t.Errorf("no-proc: SlowedRemaining should be 0, got %.3f", target.SlowedRemaining)
+	}
+	if target.TauntRemaining != 0 {
+		t.Errorf("no-proc: TauntRemaining should be 0, got %.3f", target.TauntRemaining)
 	}
 }
 

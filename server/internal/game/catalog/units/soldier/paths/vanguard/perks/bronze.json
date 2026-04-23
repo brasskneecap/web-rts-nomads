@@ -10,24 +10,13 @@
     }
   },
   {
-    "id": "taunting_strike",
-    "displayName": "Taunting Strike",
-    "icon": "perk-taunting-strike",
-    "description": "Attacks have a chance to taunt the target, forcing it to focus on this Vanguard briefly.",
-    "tooltipTemplate": "{tauntChance%} chance on each attack to taunt the target for {tauntDurationSeconds:1}s, forcing it to focus on you.",
-    "config": {
-      "tauntChance": 0.3,
-      "tauntDurationSeconds": 2.5
-    }
-  },
-  {
     "id": "hold_the_line",
     "displayName": "Hold the Line",
     "icon": "perk-hold-the-line",
     "description": "Permanently increases maximum HP.",
     "tooltipTemplate": "Permanently gain +{bonusMaxHP} maximum HP.",
     "config": {
-      "bonusMaxHP": 30
+      "bonusMaxHP": 90
     }
   },
   {
@@ -44,13 +33,14 @@
     "id": "shield_bash",
     "displayName": "Shield Bash",
     "icon": "perk-shield-bash",
-    "description": "Attacks have a chance to stun the target briefly, then slow them for a short time afterward.",
-    "tooltipTemplate": "{procChance%} chance on hit to stun for {stunSeconds:1}s, then slow to {slowMultiplier%} of their speed for {slowSeconds:1}s.",
+    "description": "Attacks have a chance to stun and slow the target, and taunt them into focusing on this Vanguard.",
+    "tooltipTemplate": "{procChance%} chance on hit to stun for {stunSeconds:1}s, slow to {slowMultiplier%} of their speed for {slowSeconds:1}s, and taunt the target for {tauntDurationSeconds:1}s.",
     "config": {
       "procChance": 0.25,
       "stunSeconds": 1.0,
       "slowSeconds": 1.5,
-      "slowMultiplier": 0.7
+      "slowMultiplier": 0.7,
+      "tauntDurationSeconds": 2.5
     }
   },
   {
@@ -61,7 +51,7 @@
     "tooltipTemplate": "Gain +{bonusArmor} armor while any ally is within {radius} units.",
     "config": {
       "radius": 80,
-      "bonusArmor": 3
+      "bonusArmor": 30
     }
   }
 ]
