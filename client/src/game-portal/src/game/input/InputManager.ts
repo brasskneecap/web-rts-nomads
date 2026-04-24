@@ -295,8 +295,13 @@ export class InputManager {
           this.state.selectUnit(clickedUnit.id)
         }
       } else {
-        const clickedEnemy = this.state.getEnemyUnitAtPosition(world.x, world.y)
-        if (clickedEnemy && !isShiftHeld) {
+        const clickedAlly = this.state.getAllyUnitAtPosition(world.x, world.y)
+        const clickedEnemy = clickedAlly
+          ? undefined
+          : this.state.getEnemyUnitAtPosition(world.x, world.y)
+        if (clickedAlly && !isShiftHeld) {
+          this.state.inspectAllyUnit(clickedAlly.id)
+        } else if (clickedEnemy && !isShiftHeld) {
           this.state.inspectEnemyUnit(clickedEnemy.id)
         } else if (clickedBuilding && !isShiftHeld) {
           this.state.selectBuilding(clickedBuilding.id)

@@ -26,12 +26,84 @@ import "math"
 //                                 not perk ids) for new negative status effects.
 // ═════════════════════════════════════════════════════════════════════════════
 
-// applyUnitDamageLocked applies post-armor damage to a unit, routing through
-// flat perk reduction and then the shield pool. Returns the portion that
-// actually reduced HP (flat-reduction and shield-absorbed amounts are NOT
-// included). Callers should keep using their original `damage` value for XP
-// banking, threat, on-hit reactions, etc. so internal reductions don't
-// retroactively penalize attackers.
+// applyUnitDamageWithSourceLocked is the canonical damage entry point.
+// It runs the full damage pipeline (redirect → mark amplification → flat
+// reduction → shield → HP) AND, if the target hits HP<=0, enqueues a
+// pendingDeath with full kill attribution. Drained at end of tick by
+// drainPendingDeathsLocked.
+//
+// Pass DamageSource{} (anonymous) only from legacy call sites that do their
+// own kill bookkeeping — the drain will then handle removal only, not XP
+// credit, and the existing manual bookkeeping at those call sites is preserved.
+//
+// Returns the damage that landed on HP (after all mitigation).
+//
+// Damage intake order:
+//  1. Caller computes post-armor damage (applyArmorMitigation).
+//  2. pain_share redirect — nearby Vanguard absorbs a portion; src propagated.
+//  3. Challenger's Mark amplification.
+//  4. perkFlatDamageReductionLocked (reinforced_armor).
+//  5. Shield pool.
+//  6. HP.
+//  7. enqueueDeathLocked if HP <= 0.
+func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, src DamageSource) int {
+	if target == nil || damage <= 0 {
+		return 0
+	}
+	// Preserve the pre-mitigation input for Shared Pain redistribution.
+	origDamage := damage
+	// Step 2: pain_share redirect — propagate attribution so if the absorbing
+	// Vanguard dies, the kill credits the original attacker.
+	damage = s.perkRedirectIncomingDamageLocked(target, damage, src)
+	if damage == 0 {
+		// Even at 0 landed damage, the intended hit should still fan out via
+		// Shared Pain — the attack "hit" the marked enemy, it just got fully
+		// redirected. Keep the semantic consistent with the other early-exit
+		// path below.
+		s.perkShareDamageToMarkedLocked(target, origDamage, src)
+		return 0
+	}
+	// Step 3: Mark amplification.
+	if totalMult := target.PerkState.totalMarkMultiplier(); totalMult > 0 {
+		damage = maxInt(damage, int(math.Round(float64(damage)*(1.0+totalMult))))
+	}
+	// Step 4: Flat per-hit reduction.
+	if reduction := s.perkFlatDamageReductionLocked(target); reduction > 0 {
+		damage = maxInt(0, damage-reduction)
+		if damage == 0 {
+			return 0
+		}
+	}
+	// Steps 5 & 6: Shield pool then HP.
+	if target.Shield > 0 {
+		if target.Shield >= damage {
+			target.Shield -= damage
+			// Shared Pain fires even when the shield fully absorbed the hit.
+			s.perkShareDamageToMarkedLocked(target, origDamage, src)
+			return 0
+		}
+		damage -= target.Shield
+		target.Shield = 0
+	}
+	target.HP -= damage
+	// Clamp to 0 so HP is never stored as negative.
+	if target.HP < 0 {
+		target.HP = 0
+	}
+	// Shared Pain: redistribute a fraction of the pre-mitigation damage to
+	// other marked enemies. Propagate attribution so indirect kills credit the
+	// original attacker.
+	s.perkShareDamageToMarkedLocked(target, origDamage, src)
+	// Step 7: Enqueue death so drainPendingDeathsLocked handles cleanup and XP.
+	s.enqueueDeathLocked(target, src)
+	return damage
+}
+
+// applyUnitDamageLocked is the legacy wrapper around applyUnitDamageWithSourceLocked
+// with an anonymous DamageSource. Call sites that have not been migrated to pass
+// attribution should use this; the drain still catches HP=0 units they miss
+// (defensive safety net) but does not award XP for them — those call sites
+// continue to do their own kill bookkeeping as before.
 //
 // Damage intake order:
 //   1. Caller computes post-armor damage (applyArmorMitigation). Armor
@@ -59,70 +131,7 @@ import "math"
 // A damage intake that bypasses this helper will bypass flat reduction and
 // shield — avoid it.
 func (s *GameState) applyUnitDamageLocked(target *Unit, damage int) int {
-	if target == nil || damage <= 0 {
-		return 0
-	}
-	// Preserve the pre-mitigation input for Shared Pain redistribution at the
-	// end of the pipeline — the redistributed damage is a fraction of what the
-	// attacker intended, not what actually landed on HP.
-	origDamage := damage
-	// Step 1 (in pipeline above): armor mitigation already handled by caller.
-	//
-	// Step 2: pain_share redirect — a nearby allied Vanguard with pain_share
-	// absorbs redirectPercent of the incoming damage through its own mitigation
-	// stack. Runs before mark amplification so the redirect acts on pre-mark damage.
-	damage = s.perkRedirectIncomingDamageLocked(target, damage)
-	if damage == 0 {
-		// Even at 0 landed damage, the intended hit should still fan out via
-		// Shared Pain — the attack "hit" the marked enemy, it just got fully
-		// redirected. Keep the semantic consistent with the other early-exit
-		// path below.
-		s.perkShareDamageToMarkedLocked(target, origDamage)
-		return 0
-	}
-	// Step 3: Mark amplification — active mark stacks sum their multipliers
-	// so two different sources (e.g. Challenger's Mark + marker_trap) deal
-	// additive bonus damage. Amplifies after armor reduction and after the
-	// pain_share redirect, so a +20% + +15% mark on a 100-damage hit
-	// becomes ~135. Intentionally applied after armor so high-armor targets
-	// see a relatively stronger mark.
-	if totalMult := target.PerkState.totalMarkMultiplier(); totalMult > 0 {
-		damage = maxInt(damage, int(math.Round(float64(damage)*(1.0+totalMult))))
-	}
-	// Step 4: Flat per-hit reduction from reinforced_armor (and future flat reducers).
-	// Applied after armor mitigation and mark amplification, before the shield pool.
-	// Tuning point: flatReduction in the reinforced_armor perk entry (catalog/perks/...).
-	if reduction := s.perkFlatDamageReductionLocked(target); reduction > 0 {
-		damage = maxInt(0, damage-reduction)
-		if damage == 0 {
-			return 0
-		}
-	}
-	// Step 5 & 6: Shield pool then HP.
-	if target.Shield > 0 {
-		if target.Shield >= damage {
-			target.Shield -= damage
-			// Shared Pain fires on any damage intake, even when the shield
-			// fully absorbed the hit — the attack still "hit" the marked
-			// victim. See perkShareDamageToMarkedLocked for recursion guard.
-			s.perkShareDamageToMarkedLocked(target, origDamage)
-			return 0
-		}
-		damage -= target.Shield
-		target.Shield = 0
-	}
-	target.HP -= damage
-	// Clamp to 0 so HP is never stored as negative. Death detection in callers
-	// uses HP <= 0, so 0 is the correct sentinel — not an arbitrary negative.
-	if target.HP < 0 {
-		target.HP = 0
-	}
-	// Shared Pain (ascendant_infusion + marker_trap): redistribute a fraction
-	// of the pre-mitigation damage to other marked enemies. Guarded by
-	// SharedPainActive so the redistributed damage cannot trigger further
-	// redistribution. No-op when the target has no SharedPain armed.
-	s.perkShareDamageToMarkedLocked(target, origDamage)
-	return damage
+	return s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{})
 }
 
 // healUnitLocked adds `amount` HP to a unit, clamped to MaxHP. If the unit has
@@ -278,7 +287,7 @@ func (s *GameState) onPerkDamageTakenLocked(target, attacker *Unit, damage int) 
 			if target.PerkState.RetaliationActive {
 				continue // already inside a reflection; do not chain
 			}
-			if attacker.HP <= 0 || attacker.OwnerID == target.OwnerID {
+			if attacker.HP <= 0 || !playersAreHostile(attacker.OwnerID, target.OwnerID) {
 				continue
 			}
 			// Use effective armor so conditional armor perks (last_stand) boost
@@ -291,15 +300,17 @@ func (s *GameState) onPerkDamageTakenLocked(target, attacker *Unit, damage int) 
 			// Set guard before the call so any path that re-enters this function
 			// for this unit is a no-op.
 			target.PerkState.RetaliationActive = true
-			// Bypass the full damage pipeline — no XP, no threat, no further hooks.
-			// This keeps reflected damage simple and prevents infinite chains.
-			s.applyUnitDamageLocked(attacker, reflected)
+			// Route through the attributed helper so if the attacker dies from
+			// reflected damage, the drain handles kill bookkeeping (XP to target,
+			// trackBattleKillLocked) and removeUnitLocked. The manual
+			// trackBattleKillLocked below is replaced by the drain.
+			s.applyUnitDamageWithSourceLocked(attacker, reflected, DamageSource{
+				AttackerUnitID: target.ID,
+				Kind:           "retaliation",
+			})
 			target.PerkState.RetaliationActive = false
 			// Debug: reflected damage counts under the defender's unit bucket.
 			s.trackBattleDamageLocked(battleSourceFromUnit(target), attacker, reflected)
-			if attacker.HP <= 0 {
-				s.trackBattleKillLocked(battleSourceFromUnit(target), attacker)
-			}
 
 		case "punishing_guard":
 			// Stamp a weakened debuff on the attacker: they deal reduced outgoing

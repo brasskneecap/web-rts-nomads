@@ -16,7 +16,7 @@ func (s *GameState) decayThreatLocked(unit *Unit, dt float64, index *combatSpati
 
 	for hostileID, entry := range unit.ThreatTable {
 		hostile := s.getUnitByIDLocked(hostileID)
-		if hostile == nil || !hostile.Visible || hostile.HP <= 0 || hostile.OwnerID == unit.OwnerID {
+		if hostile == nil || !hostile.Visible || hostile.HP <= 0 || !playersAreHostile(hostile.OwnerID, unit.OwnerID) {
 			delete(unit.ThreatTable, hostileID)
 			continue
 		}
@@ -39,7 +39,7 @@ func (s *GameState) decayThreatLocked(unit *Unit, dt float64, index *combatSpati
 		return
 	}
 	for _, hostile := range index.query(unit.X, unit.Y, combatMeleeProximityRadius) {
-		if hostile.OwnerID == unit.OwnerID || hostile.HP <= 0 {
+		if !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
 			continue
 		}
 		s.addThreatLocked(unit, hostile, profile.PassiveMeleeThreat*dt, false)
@@ -54,7 +54,7 @@ func (s *GameState) getThreatValueLocked(unit *Unit, hostileID int) float64 {
 }
 
 func (s *GameState) addThreatLocked(unit, hostile *Unit, amount float64, forceSeen bool) {
-	if unit == nil || hostile == nil || unit.OwnerID == hostile.OwnerID || amount <= 0 {
+	if unit == nil || hostile == nil || !playersAreHostile(unit.OwnerID, hostile.OwnerID) || amount <= 0 {
 		return
 	}
 	s.initializeCombatUnitLocked(unit)
@@ -116,7 +116,7 @@ func (s *GameState) AddSupportThreatLocked(source *Unit, center protocol.Vec2, r
 		return
 	}
 	for _, unit := range s.Units {
-		if unit.OwnerID == source.OwnerID || unit.HP <= 0 || !unit.Visible {
+		if !playersAreHostile(unit.OwnerID, source.OwnerID) || unit.HP <= 0 || !unit.Visible {
 			continue
 		}
 		if distanceSquared(unit.X, unit.Y, center.X, center.Y) > radius*radius {
@@ -129,7 +129,7 @@ func (s *GameState) AddSupportThreatLocked(source *Unit, center protocol.Vec2, r
 func (s *GameState) ApplyTauntLocked(targetUnitID, taunterUnitID int, duration float64) {
 	target := s.getUnitByIDLocked(targetUnitID)
 	taunter := s.getUnitByIDLocked(taunterUnitID)
-	if target == nil || taunter == nil || target.OwnerID == taunter.OwnerID || duration <= 0 {
+	if target == nil || taunter == nil || !playersAreHostile(target.OwnerID, taunter.OwnerID) || duration <= 0 {
 		return
 	}
 	target.TauntedByUnitID = taunterUnitID

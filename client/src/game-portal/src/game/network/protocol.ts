@@ -526,9 +526,13 @@ export type BattleBucket = {
   stats: BattleStats
 }
 
+// Sentinel owner ID for wave / NPC enemies. Real players are allied with each
+// other; only this ID is hostile to them. Mirrors enemyPlayerID on the server.
+export const ENEMY_PLAYER_ID = '__enemy__'
+
 export type BattlePlayerStats = {
-  // Player ID that owns the damage-dealing source. "__enemy__" is the sentinel
-  // used by the server for wave / NPC enemies.
+  // Player ID that owns the damage-dealing source. ENEMY_PLAYER_ID is the
+  // sentinel used by the server for wave / NPC enemies.
   playerId: string
   buckets: BattleBucket[]
   total: BattleStats

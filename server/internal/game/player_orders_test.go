@@ -34,9 +34,13 @@ func newOrderTestState(t *testing.T) (s *GameState, unit *Unit) {
 }
 
 // spawnOrderEnemy adds a live, visible enemy at (x,y).
+//
+// Spawned under the wave-enemy faction so the hostility predicate treats it as
+// a real enemy of "p1". (Two real player IDs would be allied — see
+// playersAreHostile.)
 func spawnOrderEnemy(t *testing.T, s *GameState, x, y float64) *Unit {
 	t.Helper()
-	e := s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{X: x, Y: y})
+	e := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: x, Y: y})
 	e.MaxHP = 500
 	e.HP = 500
 	e.Visible = true

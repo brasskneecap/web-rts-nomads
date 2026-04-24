@@ -435,7 +435,8 @@ func TestSilverTrapPerkDefs_AllLoaded(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // newExplosiveChainState returns a GameState with:
-//   - player "p1" and player "enemy" registered
+//   - player "p1" and the wave-enemy faction (enemyPlayerID) registered as the
+//     hostile party — two real players are allies under playersAreHostile
 //   - an archer for "p1" with explosive_trap + explosive_chain
 //   - a planted explosive_trap (via plantTrapLocked) at (400,400)
 //   - the returned trap pointer for introspection
@@ -446,7 +447,7 @@ func newExplosiveChainState(t *testing.T) (s *GameState, owner *Unit, trap *Trap
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
 	owner = s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	if owner == nil {
@@ -468,11 +469,11 @@ func newExplosiveChainState(t *testing.T) (s *GameState, owner *Unit, trap *Trap
 	return s, owner, trap
 }
 
-// spawnEnemyInRadius spawns a visible, alive enemy for "enemy" player at an
-// offset from (cx, cy) that is within the given radius.
+// spawnEnemyInRadius spawns a visible, alive enemy under the wave-enemy
+// faction (enemyPlayerID) at an offset from (cx, cy) within the given radius.
 func spawnEnemyInRadius(t *testing.T, s *GameState, cx, cy, radius float64) *Unit {
 	t.Helper()
-	u := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{
+	u := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: cx + radius*0.5,
 		Y: cy,
 	})
@@ -510,7 +511,7 @@ func TestExplosiveChain_AftershockFiresSecondBlast(t *testing.T) {
 	defer s.mu.Unlock()
 
 	// Place first enemy inside the trigger radius to fire initial blast.
-	triggerEnemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{
+	triggerEnemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: trap.X + trap.TriggerRadius*0.5,
 		Y: trap.Y,
 	})
@@ -536,7 +537,7 @@ func TestExplosiveChain_AftershockFiresSecondBlast(t *testing.T) {
 
 	// Now place a second enemy within blast radius but NOT trigger radius.
 	// This enemy should only be hit by the aftershock.
-	aftershockEnemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{
+	aftershockEnemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: trap.X + trap.TriggerRadius + 5, // outside trigger, inside explosion
 		Y: trap.Y,
 	})
@@ -577,7 +578,7 @@ func TestExplosiveChain_AftershockFiresEvenIfTriggerZoneEmpty(t *testing.T) {
 	defer s.mu.Unlock()
 
 	// Trigger the first blast with an enemy in range.
-	triggerEnemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{
+	triggerEnemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: trap.X + trap.TriggerRadius*0.5,
 		Y: trap.Y,
 	})
@@ -594,7 +595,7 @@ func TestExplosiveChain_AftershockFiresEvenIfTriggerZoneEmpty(t *testing.T) {
 	triggerEnemy.X = trap.X + trap.Radius + 100
 
 	// Place a NEW enemy inside the blast radius but not the trigger radius.
-	newEnemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{
+	newEnemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: trap.X + trap.TriggerRadius + 5,
 		Y: trap.Y,
 	})
@@ -649,7 +650,7 @@ func TestExplosiveChain_NoAftershockWithoutPerk(t *testing.T) {
 	}
 
 	// Place enemy in trigger radius.
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: trap.X + trap.TriggerRadius*0.5,
 		Y: trap.Y,
 	})
@@ -685,7 +686,7 @@ func TestExplosiveChain_TriggeredFlagVisibleOnBothBlasts(t *testing.T) {
 
 	// Spawn enemy inside trigger radius (lock is not held outside newExplosiveChainState).
 	s.mu.Lock()
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: trap.X + trap.TriggerRadius*0.5,
 		Y: trap.Y,
 	})
@@ -795,7 +796,7 @@ func TestExplosiveChain_LifetimeNotRaceCondition(t *testing.T) {
 	trap.RemainingSeconds = 0.05
 
 	// Place enemy in trigger radius to fire first blast.
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: trap.X + trap.TriggerRadius*0.5,
 		Y: trap.Y,
 	})

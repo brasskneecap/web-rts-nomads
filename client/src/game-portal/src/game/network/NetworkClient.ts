@@ -19,9 +19,11 @@ import type {
 import { GameState } from '../core/GameState'
 
 /** Derive the WebSocket base URL from the HTTP base URL env var.
- *  http -> ws, https -> wss so both schemes work in prod and dev. */
+ *  http -> ws, https -> wss so both schemes work in prod and dev.
+ *  When the env var is empty, fall back to the page origin so the same
+ *  build works behind a tunnel/proxy without a hardcoded host. */
 function getWsBaseUrl(): string {
-  const http = import.meta.env.VITE_API_BASE_URL
+  const http = import.meta.env.VITE_API_BASE_URL || window.location.origin
   return http.replace(/^http/, 'ws')
 }
 

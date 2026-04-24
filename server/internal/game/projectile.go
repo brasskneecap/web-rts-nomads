@@ -109,7 +109,9 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 	if attacker == nil {
 		// Attacker died between fire and land — damage still lands (the arrow
 		// was already in flight), but attacker-side perks are skipped.
-		s.applyUnitDamageLocked(target, proj.Damage)
+		// Use the owner unit ID from the projectile for attribution so the drain
+		// can attempt XP bookkeeping (it will no-op if the attacker is gone).
+		s.applyUnitDamageWithSourceLocked(target, proj.Damage, DamageSource{AttackerUnitID: proj.OwnerUnitID, Kind: "projectile"})
 		if target.HP <= 0 {
 			target.HP = 0
 			*deadUnitIDs = append(*deadUnitIDs, target.ID)

@@ -270,7 +270,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 
 		case "caltrops":
 			for _, unit := range s.Units {
-				if unit == nil || unit.OwnerID == trap.OwnerPlayerID {
+				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
 					continue // skip allies
 				}
 				if unit.HP <= 0 || !unit.Visible {
@@ -315,7 +315,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 						s.ApplyStunLocked(unit.ID, trap.InfusionElectrifiedStunDuration)
 						unit.PerkState.ElectrifiedStunCooldownRemaining = trap.InfusionElectrifiedStunCooldownSec
 					}
-					s.applyUnitDamageLocked(unit, dmg)
+					s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_dot"})
 					if ownerUnit != nil {
 						s.recordDamageDealtLocked(ownerUnit, unit, dmg)
 					}
@@ -335,7 +335,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 
 		case "fire_pit":
 			for _, unit := range s.Units {
-				if unit == nil || unit.OwnerID == trap.OwnerPlayerID {
+				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
 					continue
 				}
 				if unit.HP <= 0 || !unit.Visible {
@@ -395,7 +395,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 				if unit.PerkState.TrapDoTAccumulator >= 1.0 {
 					dmg := int(unit.PerkState.TrapDoTAccumulator)
 					unit.PerkState.TrapDoTAccumulator -= float64(dmg)
-					s.applyUnitDamageLocked(unit, dmg)
+					s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_dot"})
 					if ownerUnit != nil {
 						s.recordDamageDealtLocked(ownerUnit, unit, dmg)
 					}
@@ -411,7 +411,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 							unit.X, unit.Y,
 							trap.InfusionReactiveFlamesRadius,
 							trap.InfusionReactiveFlamesDamage,
-							trap.OwnerPlayerID, ownerUnit, deadUnitIDs,
+							trap.OwnerPlayerID, ownerUnit, trap.ID, deadUnitIDs,
 						)
 					}
 					if unit.HP <= 0 {
@@ -441,7 +441,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 			triggerRadSq := trap.TriggerRadius * trap.TriggerRadius
 			triggered := false
 			for _, unit := range s.Units {
-				if unit == nil || unit.OwnerID == trap.OwnerPlayerID {
+				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
 					continue
 				}
 				if unit.HP <= 0 || !unit.Visible {
@@ -470,7 +470,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 
 		case "marker_trap":
 			for _, unit := range s.Units {
-				if unit == nil || unit.OwnerID == trap.OwnerPlayerID {
+				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
 					continue
 				}
 				if unit.HP <= 0 || !unit.Visible {
@@ -518,6 +518,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 						unit.PerkState.FinalExposureAoeRadius = trap.OverloadFinalExposureAoeRadius
 					}
 					unit.PerkState.FinalExposureOwnerUnitID = trap.OwnerUnitID
+					unit.PerkState.FinalExposureTrapID = trap.ID
 				}
 			}
 		}
@@ -598,7 +599,7 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 				if owner != nil {
 					ownerPlayerID = owner.OwnerID
 				}
-				s.applyUnitDamageLocked(unit, dmg)
+				s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: stack.SourceID, Kind: "trap_silver_stack"})
 				if owner != nil {
 					s.recordDamageDealtLocked(owner, unit, dmg)
 				}
@@ -620,7 +621,7 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 						unit.X, unit.Y,
 						stack.ReactiveRadius,
 						stack.ReactiveDamage,
-						ownerPlayerID, owner, deadUnitIDs,
+						ownerPlayerID, owner, stack.SourceID, deadUnitIDs,
 					)
 				}
 				if unit.HP <= 0 {
@@ -903,7 +904,7 @@ func (s *GameState) trapPlacementOffsetLocked(unit *Unit, radius float64) (float
 
 	if unit.AttackTargetID != 0 {
 		if target := s.unitsByID[unit.AttackTargetID]; target != nil &&
-			target.HP > 0 && target.Visible && target.OwnerID != unit.OwnerID {
+			target.HP > 0 && target.Visible && playersAreHostile(target.OwnerID, unit.OwnerID) {
 			targetX, targetY = target.X, target.Y
 			haveTarget = true
 		}
@@ -915,7 +916,7 @@ func (s *GameState) trapPlacementOffsetLocked(unit *Unit, radius float64) (float
 			if candidate == nil || candidate.ID == unit.ID {
 				continue
 			}
-			if candidate.OwnerID == unit.OwnerID {
+			if !playersAreHostile(candidate.OwnerID, unit.OwnerID) {
 				continue
 			}
 			if candidate.HP <= 0 || !candidate.Visible {
@@ -980,7 +981,7 @@ func (s *GameState) detonateExplosiveTrapLocked(trap *Trap, ownerUnit *Unit, dea
 	trap.Triggered = true
 	explosionRadSq := trap.Radius * trap.Radius
 	for _, unit := range s.Units {
-		if unit == nil || unit.OwnerID == trap.OwnerPlayerID {
+		if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
 			continue // no friendly fire
 		}
 		if unit.HP <= 0 || !unit.Visible {
@@ -991,7 +992,7 @@ func (s *GameState) detonateExplosiveTrapLocked(trap *Trap, ownerUnit *Unit, dea
 		if dx*dx+dy*dy > explosionRadSq {
 			continue
 		}
-		s.applyUnitDamageLocked(unit, trap.BurstDamage)
+		s.applyUnitDamageWithSourceLocked(unit, trap.BurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "explosive_burst"})
 		if ownerUnit != nil {
 			s.recordDamageDealtLocked(ownerUnit, unit, trap.BurstDamage)
 		}
@@ -1031,13 +1032,13 @@ func (s *GameState) detonateExplosiveTrapLocked(trap *Trap, ownerUnit *Unit, dea
 // damage-dealt accounting. Returns the updated deadUnitIDs slice.
 //
 // Must be called under s.mu write lock.
-func (s *GameState) fireReactiveFlamesLocked(cx, cy, radius float64, damage int, ownerPlayerID string, ownerUnit *Unit, deadUnitIDs []int) []int {
+func (s *GameState) fireReactiveFlamesLocked(cx, cy, radius float64, damage int, ownerPlayerID string, ownerUnit *Unit, trapID string, deadUnitIDs []int) []int {
 	if radius <= 0 || damage <= 0 {
 		return deadUnitIDs
 	}
 	radSq := radius * radius
 	for _, u := range s.Units {
-		if u == nil || u.OwnerID == ownerPlayerID {
+		if u == nil || !playersAreHostile(u.OwnerID, ownerPlayerID) {
 			continue
 		}
 		if u.HP <= 0 || !u.Visible {
@@ -1048,7 +1049,7 @@ func (s *GameState) fireReactiveFlamesLocked(cx, cy, radius float64, damage int,
 		if dx*dx+dy*dy > radSq {
 			continue
 		}
-		s.applyUnitDamageLocked(u, damage)
+		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerTrapID: trapID, Kind: "trap_silver_tick"})
 		if ownerUnit != nil && ownerUnit.HP > 0 {
 			s.recordDamageDealtLocked(ownerUnit, u, damage)
 		}
@@ -1101,14 +1102,17 @@ func (s *GameState) fireFinalExposureLocked(victim *Unit) {
 	// Debug: Final Exposure fires from a marker_trap Overload Protocol effect —
 	// attribute to the owning player's marker_trap bucket. Requires a living
 	// owner so we have the PlayerID.
+	trapID := victim.PerkState.FinalExposureTrapID
 	var finalExposureSrc BattleSource
+	var finalExposureDmgSrc DamageSource
 	if owner != nil {
 		finalExposureSrc = BattleSource{PlayerID: owner.OwnerID, Kind: "trap", Subtype: "marker_trap"}
+		finalExposureDmgSrc = DamageSource{AttackerTrapID: trapID, Kind: "final_exposure"}
 	}
 
 	var dead []int
 	// Direct hit on the victim whose mark just expired.
-	s.applyUnitDamageLocked(victim, damage)
+	s.applyUnitDamageWithSourceLocked(victim, damage, finalExposureDmgSrc)
 	if owner != nil {
 		s.recordDamageDealtLocked(owner, victim, damage)
 	}
@@ -1140,7 +1144,7 @@ func (s *GameState) fireFinalExposureLocked(victim *Unit) {
 			if dx*dx+dy*dy > radSq {
 				continue
 			}
-			s.applyUnitDamageLocked(u, damage)
+			s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerTrapID: trapID, Kind: "final_exposure_aoe"})
 			if owner != nil {
 				s.recordDamageDealtLocked(owner, u, damage)
 			}
@@ -1175,7 +1179,7 @@ func (s *GameState) fireFinalExposureLocked(victim *Unit) {
 // "all marked enemies share the pain" regardless of which trapper marked them.
 //
 // Must be called under s.mu write lock.
-func (s *GameState) perkShareDamageToMarkedLocked(source *Unit, rawDamage int) {
+func (s *GameState) perkShareDamageToMarkedLocked(source *Unit, rawDamage int, src DamageSource) {
 	if source == nil || rawDamage <= 0 {
 		return
 	}
@@ -1189,6 +1193,15 @@ func (s *GameState) perkShareDamageToMarkedLocked(source *Unit, rawDamage int) {
 	shared := int(math.Round(float64(rawDamage) * frac))
 	if shared <= 0 {
 		return
+	}
+	// Kill credit for Shared Pain victims goes to the original attacker — the
+	// unit being damaged is not the killer, it's the conduit. Preserve attacker
+	// IDs from src and override Kind for telemetry.
+	sharedSrc := DamageSource{
+		AttackerUnitID:     src.AttackerUnitID,
+		AttackerBuildingID: src.AttackerBuildingID,
+		AttackerTrapID:     src.AttackerTrapID,
+		Kind:               "shared_pain",
 	}
 	for _, u := range s.Units {
 		if u == nil || u.ID == source.ID {
@@ -1204,7 +1217,7 @@ func (s *GameState) perkShareDamageToMarkedLocked(source *Unit, rawDamage int) {
 			continue
 		}
 		u.PerkState.SharedPainActive = true
-		s.applyUnitDamageLocked(u, shared)
+		s.applyUnitDamageWithSourceLocked(u, shared, sharedSrc)
 		u.PerkState.SharedPainActive = false
 	}
 }
@@ -1240,7 +1253,7 @@ func (s *GameState) fireTrapExpiryEffectsLocked(trap *Trap) {
 		var dead []int
 		radSq := trap.Radius * trap.Radius
 		for _, u := range s.Units {
-			if u == nil || u.OwnerID == trap.OwnerPlayerID {
+			if u == nil || !playersAreHostile(u.OwnerID, trap.OwnerPlayerID) {
 				continue
 			}
 			if u.HP <= 0 || !u.Visible {
@@ -1251,7 +1264,7 @@ func (s *GameState) fireTrapExpiryEffectsLocked(trap *Trap) {
 			if dx*dx+dy*dy > radSq {
 				continue
 			}
-			s.applyUnitDamageLocked(u, trap.OverloadSpikeSurgeBurstDamage)
+			s.applyUnitDamageWithSourceLocked(u, trap.OverloadSpikeSurgeBurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "overload_spike_surge"})
 			if ownerUnit != nil {
 				s.recordDamageDealtLocked(ownerUnit, u, trap.OverloadSpikeSurgeBurstDamage)
 			}
@@ -1281,7 +1294,7 @@ func (s *GameState) fireTrapExpiryEffectsLocked(trap *Trap) {
 		var dead []int
 		radSq := trap.OverloadFlameCollapseRadius * trap.OverloadFlameCollapseRadius
 		for _, u := range s.Units {
-			if u == nil || u.OwnerID == trap.OwnerPlayerID {
+			if u == nil || !playersAreHostile(u.OwnerID, trap.OwnerPlayerID) {
 				continue
 			}
 			if u.HP <= 0 || !u.Visible {
@@ -1292,7 +1305,7 @@ func (s *GameState) fireTrapExpiryEffectsLocked(trap *Trap) {
 			if dx*dx+dy*dy > radSq {
 				continue
 			}
-			s.applyUnitDamageLocked(u, trap.OverloadFlameCollapseDamage)
+			s.applyUnitDamageWithSourceLocked(u, trap.OverloadFlameCollapseDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "overload_flame_collapse"})
 			if ownerUnit != nil {
 				s.recordDamageDealtLocked(ownerUnit, u, trap.OverloadFlameCollapseDamage)
 			}

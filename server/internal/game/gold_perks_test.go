@@ -37,10 +37,14 @@ func spawnAlly(t *testing.T, s *GameState, playerID string, x, y float64) *Unit 
 	return u
 }
 
-// spawnEnemy adds an alive, visible enemy for playerID "enemy" at the given position.
+// spawnEnemy adds an alive, visible enemy at the given position.
+//
+// Spawned under the wave-enemy faction (enemyPlayerID) so the hostility
+// predicate treats it as a real enemy of the player units. Two real player
+// IDs would be allied — see playersAreHostile.
 func spawnEnemy(t *testing.T, s *GameState, x, y float64) *Unit {
 	t.Helper()
-	u := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: x, Y: y})
+	u := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: x, Y: y})
 	u.MaxHP = 500
 	u.HP = 500
 	u.Visible = true
@@ -422,7 +426,7 @@ func TestGuardianAura_EnemyVanguardsDoNotFormation(t *testing.T) {
 	grantPerk(v1, "guardian_aura")
 
 	// Enemy Vanguard with the same perk, within base radius.
-	v2 := s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{X: v1.X + 50, Y: v1.Y})
+	v2 := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: v1.X + 50, Y: v1.Y})
 	v2.MaxHP = 500
 	v2.HP = 500
 	v2.Visible = true

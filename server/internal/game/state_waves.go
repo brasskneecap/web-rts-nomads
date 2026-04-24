@@ -295,15 +295,6 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			}
 		}
 
-		// Scale spawn count exponentially: wave N spawns 2^(N-1) × base count.
-		if s.WaveManager.Enabled && s.WaveManager.CurrentWave > 1 {
-			multiplier := 1 << uint(s.WaveManager.CurrentWave-1)
-			if multiplier > 512 {
-				multiplier = 512
-			}
-			spawnCount *= multiplier
-		}
-
 		hpMult, dmgMult := s.computeWaveStatScalingLocked(building)
 
 		spawnPositions := s.getTownhallSpawnPositionsLocked(*building, spawnCount, blocked)
@@ -341,11 +332,16 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 				unit.Status = "Idle"
 			} else if targetPlayerLabel != "" {
 				// Route to a specific player's townhall, falling back to nearest.
+				// Persist the resolved player ID on the unit so the AI's
+				// "no target → nearest building" fallback in
+				// assignEnemyObjectiveLocked keeps preferring this player even
+				// after the unit re-evaluates mid-flight.
 				unit.Status = "Advancing"
 				playerID := s.findPlayerIDByLabelLocked(targetPlayerLabel)
 				var target *protocol.Vec2
 				if playerID != "" {
 					target = s.getPlayerTownhallCenterLocked(playerID)
+					unit.TargetPlayerID = playerID
 				}
 				if target == nil {
 					target = s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
@@ -389,6 +385,35 @@ func (s *GameState) findNearestAttackablePlayerBuildingLocked(enemy *Unit) *prot
 		}
 	}
 
+	return best
+}
+
+// findNearestAttackableBuildingForPlayerLocked is the player-filtered variant
+// of findNearestAttackablePlayerBuildingLocked. Returns the nearest live,
+// owner-matched building for the given player, or nil if that player has none.
+// Used by the AI's no-target fallback to honor an enemy's TargetPlayerID
+// instead of unconditionally picking the geographically nearest player base.
+func (s *GameState) findNearestAttackableBuildingForPlayerLocked(enemy *Unit, playerID string) *protocol.BuildingTile {
+	if playerID == "" {
+		return nil
+	}
+	var best *protocol.BuildingTile
+	bestDistSq := math.MaxFloat64
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.OwnerID == nil || *b.OwnerID != playerID {
+			continue
+		}
+		hp, _, ok := getBuildingHP(b)
+		if !ok || hp <= 0 {
+			continue
+		}
+		dist := s.distanceToBuilding(enemy.X, enemy.Y, b)
+		if dist < bestDistSq {
+			bestDistSq = dist
+			best = b
+		}
+	}
 	return best
 }
 

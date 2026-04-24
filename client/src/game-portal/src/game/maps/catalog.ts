@@ -5,7 +5,7 @@ import type { UnitDef } from './unitDefs'
 import type { ActionIconDef } from './actionIconDefs'
 import type { PerkDef } from './perkDefs'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export async function fetchMapCatalog(): Promise<MapCatalogEntry[]> {
   const response = await fetch(`${API_BASE}/maps`)

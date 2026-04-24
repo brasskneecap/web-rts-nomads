@@ -5,12 +5,30 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
+// playersAreHostile reports whether two owner IDs should treat each other as
+// enemies for combat / target acquisition purposes.
+//
+// Currently: real players are always allied with each other. Only the wave-enemy
+// owner ID (enemyPlayerID, "__enemy__") is hostile to real players, and real
+// players are hostile to it. Same owner is never hostile.
+//
+// Future work will allow per-match specification of player-vs-player hostility;
+// until then, joining players default to allied. Update this function (and
+// nothing else) when that spec lands — every hostility check in the codebase
+// routes through here.
+func playersAreHostile(a, b string) bool {
+	if a == b {
+		return false
+	}
+	return a == enemyPlayerID || b == enemyPlayerID
+}
+
 // combatTargetIsValidLocked is the single source of truth for "is this unit
 // still a valid attack target?". Called from both tickUnitCombatLocked and
 // shouldDropCurrentTargetLocked so the two paths agree on the predicate set.
 // target may be nil (unit was removed).
 func (s *GameState) combatTargetIsValidLocked(unit, target *Unit) bool {
-	return target != nil && target.Visible && target.HP > 0 && target.OwnerID != unit.OwnerID
+	return target != nil && target.Visible && target.HP > 0 && playersAreHostile(target.OwnerID, unit.OwnerID)
 }
 
 func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID int) {
@@ -18,7 +36,7 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 	defer s.mu.Unlock()
 
 	target := s.getUnitByIDLocked(targetUnitID)
-	if target == nil || !target.Visible || target.OwnerID == playerID {
+	if target == nil || !target.Visible || !playersAreHostile(target.OwnerID, playerID) {
 		return
 	}
 
@@ -66,7 +84,7 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 // Does NOT touch attacker.AttackCooldown: cooldown is committed at fire time
 // for both instant-hit and ranged paths so it can't be re-applied here.
 func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, deadUnitIDs *[]int) bool {
-	s.applyUnitDamageLocked(target, damage)
+	s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "melee"})
 	s.onUnitDamagedLocked(attacker, target, damage)
 	s.onPerkDamageTakenLocked(target, attacker, damage)
 
@@ -297,8 +315,10 @@ func (s *GameState) tickBuildingCombatLocked(dt float64) {
 			continue
 		}
 
-		// Route through the shared helper so shield (blood_engine) absorbs first.
-		s.applyUnitDamageLocked(target, def.Damage)
+		// Route through the attributed helper so shield (blood_engine) absorbs
+		// first, and indirect kills (Shared Pain, pain_share) get enqueued for
+		// cleanup. The manual HP<=0 block below handles the primary target kill.
+		s.applyUnitDamageWithSourceLocked(target, def.Damage, DamageSource{AttackerBuildingID: building.ID, Kind: "building"})
 		// Debug: bucket this damage under (building.OwnerID, building.BuildingType).
 		// Defensive structures like towers accumulate here.
 		s.trackBattleDamageLocked(battleSourceFromBuilding(building), target, def.Damage)
@@ -320,7 +340,7 @@ func (s *GameState) findNearestHostileUnitForBuildingLocked(building *protocol.B
 	bestDistSq := attackRange * attackRange
 
 	for _, unit := range s.Units {
-		if !unit.Visible || unit.HP <= 0 || unit.OwnerID == ownerID {
+		if !unit.Visible || unit.HP <= 0 || !playersAreHostile(unit.OwnerID, ownerID) {
 			continue
 		}
 
@@ -341,7 +361,7 @@ func (s *GameState) unitsAreInMutualMeleeLocked(a, b *Unit) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	if a.OwnerID == b.OwnerID {
+	if !playersAreHostile(a.OwnerID, b.OwnerID) {
 		return false
 	}
 	aProfile := resolveCombatProfile(a)

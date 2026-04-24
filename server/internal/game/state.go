@@ -109,6 +109,15 @@ type Unit struct {
 	// enemies that must not stall wave progression).
 	IgnoreWaveClear bool
 
+	// TargetPlayerID is the real player ID this enemy was spawned to attack.
+	// Set on wave/enemy-spawnpoint units when the spawn-point's
+	// metadata["targetPlayerLabel"] resolved to a joined player. The combat AI's
+	// "no current target → pick nearest building" fallback honors this so the
+	// enemy keeps heading toward the assigned player even when another player's
+	// base is geographically closer. Empty string = no preference, fall back to
+	// nearest player building (legacy behavior).
+	TargetPlayerID string
+
 	CarriedResourceType string
 	CarriedAmount       int
 	GatherTargetID      string
@@ -280,6 +289,18 @@ type GameState struct {
 	// Zero value (absent key) = no aura.
 	guardianAuraCache map[int]guardianAuraValue
 
+	// pendingDeaths is the per-tick queue of units that hit HP<=0 inside
+	// applyUnitDamageWithSourceLocked. Drained at end of each Update() tick by
+	// drainPendingDeathsLocked, which runs kill bookkeeping then calls
+	// removeUnitLocked. Deduped by UnitID — first-to-kill wins.
+	//
+	// Why a queue: indirect damage paths (Shared Pain, pain_share redirect,
+	// retaliation) kill units OTHER than the primary target. The outer caller
+	// doesn't know about those kills. Centralizing here ensures every HP=0 unit
+	// gets cleaned up and every attributed kill credits XP/stats correctly.
+	pendingDeaths    []pendingDeath
+	pendingDeathsSet map[int]bool
+
 	// battleTracker is the debug/telemetry damage-and-kill accumulator. Armed
 	// only when MapConfig.Debug.BattleTracker is true; otherwise the tracker
 	// is allocated but disabled and every track* call is a no-op. Serialized
@@ -368,6 +389,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		buildingsByID:       map[string]*protocol.BuildingTile{},
 		obstaclesByID:       map[string]*protocol.ObstacleTile{},
 		guardianAuraCache:   map[int]guardianAuraValue{},
+		pendingDeathsSet:    map[int]bool{},
 	}
 
 	// Arm the battle tracker iff the map opts in via debug.battleTracker. The
@@ -710,6 +732,11 @@ func (s *GameState) Update(dt float64) {
 	s.tickTrapperSilverDebuffsLocked(dt)   // barbed ramp, lasting_flames exit, burn DoT
 	s.tickBannersLocked(dt)
 	s.tickTrapsLocked(dt) // lifetime decay + triggered cull
+	// Drain the per-tick death queue. Must run AFTER all combat/trap/projectile
+	// ticks have finished so every HP=0 unit from indirect damage paths (Shared
+	// Pain, pain_share redirect, retaliation) is cleaned up before the per-unit
+	// loop below, which gates regen on HP>0.
+	s.drainPendingDeathsLocked()
 
 	for _, unit := range s.Units {
 		if unit.RankUpFxRemaining > 0 {
@@ -740,6 +767,7 @@ func (s *GameState) Update(dt float64) {
 			unit.PerkState.FinalExposureDamage = 0
 			unit.PerkState.FinalExposureAoeRadius = 0
 			unit.PerkState.FinalExposureOwnerUnitID = 0
+			unit.PerkState.FinalExposureTrapID = ""
 			// ascendant_infusion → Shared Pain disarms with the mark.
 			unit.PerkState.SharedPainFraction = 0
 		}

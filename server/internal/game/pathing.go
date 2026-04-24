@@ -59,6 +59,12 @@ func (s *GameState) buildBlockedCells() map[gridPoint]bool {
 		if !building.Visible {
 			continue
 		}
+		// enemy-spawnpoints are logical spawners, not real structures —
+		// units must be able to walk freely over them. Maps can leave
+		// Visible=true so the editor still renders the marker.
+		if building.BuildingType == "enemy-spawnpoint" {
+			continue
+		}
 
 		for y := building.Y; y < building.Y+building.Height; y++ {
 			for x := building.X; x < building.X+building.Width; x++ {

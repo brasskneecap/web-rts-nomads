@@ -126,7 +126,7 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int
 					bonusDmg := maxInt(0, int(math.Round(float64(attacker.Damage)*def.Config["bonusMultiplier"])))
 					actualDmg := applyArmorMitigation(bonusDmg, s.effectiveArmorLocked(primaryTarget))
 					if actualDmg > 0 {
-						s.applyUnitDamageLocked(primaryTarget, actualDmg)
+						s.applyUnitDamageWithSourceLocked(primaryTarget, actualDmg, DamageSource{AttackerUnitID: attacker.ID, Kind: "savage_strikes"})
 						s.onUnitDamagedLocked(attacker, primaryTarget, actualDmg)
 						s.onPerkDamageTakenLocked(primaryTarget, attacker, actualDmg)
 						s.recordDamageDealtLocked(attacker, primaryTarget, actualDmg)
@@ -197,7 +197,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		if candidate == nil || candidate.ID == primaryID {
 			continue
 		}
-		if candidate.OwnerID == attacker.OwnerID {
+		if !playersAreHostile(candidate.OwnerID, attacker.OwnerID) {
 			continue
 		}
 		if candidate.HP <= 0 || !candidate.Visible {
@@ -212,7 +212,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		if damage == 0 {
 			continue
 		}
-		s.applyUnitDamageLocked(candidate, damage)
+		s.applyUnitDamageWithSourceLocked(candidate, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "whirlwind"})
 		s.onUnitDamagedLocked(attacker, candidate, damage)
 		s.onPerkDamageTakenLocked(candidate, attacker, damage)
 		s.recordDamageDealtLocked(attacker, candidate, damage)
@@ -243,7 +243,7 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 		if candidate == nil || candidate.ID == primaryTarget.ID {
 			continue
 		}
-		if candidate.OwnerID == attacker.OwnerID {
+		if !playersAreHostile(candidate.OwnerID, attacker.OwnerID) {
 			continue // do not cleave friendlies
 		}
 		if candidate.HP <= 0 || !candidate.Visible {
@@ -267,7 +267,7 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 	if damage == 0 {
 		return
 	}
-	s.applyUnitDamageLocked(secondary, damage)
+	s.applyUnitDamageWithSourceLocked(secondary, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "cleave"})
 	s.onUnitDamagedLocked(attacker, secondary, damage)
 	s.onPerkDamageTakenLocked(secondary, attacker, damage)
 	s.recordDamageDealtLocked(attacker, secondary, damage)

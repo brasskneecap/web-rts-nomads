@@ -13,7 +13,9 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // newBronzePerkState returns a minimal GameState with two opposing soldiers.
-// attacker belongs to "p1", target belongs to "p2". Both are fully constructed
+// attacker belongs to "p1", target belongs to the wave-enemy faction so the
+// hostility predicate treats them as enemies. (Two real players are allies in
+// the current model — see playersAreHostile.) Both units are fully constructed
 // (Visible, HP > 0), positioned within attack range of each other, and ready
 // to fight (AttackCooldown = 0). The caller configures PerkIDs as needed.
 //
@@ -26,7 +28,7 @@ func newBronzePerkState(t *testing.T, seed int64) (s *GameState, attacker, targe
 	defer s.mu.Unlock()
 
 	attacker = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
-	target = s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{X: 420, Y: 400})
+	target = s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 420, Y: 400})
 
 	attacker.AttackTargetID = target.ID
 	attacker.Attacking = true
@@ -432,7 +434,7 @@ func TestInterlock_IgnoresEnemies(t *testing.T) {
 
 	// Move the ally far away; spawn an enemy nearby instead.
 	ally.X = vanguard.X + def.Config["radius"] + 100
-	enemy := s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: vanguard.X + 10, Y: vanguard.Y,
 	})
 	enemy.Visible = true

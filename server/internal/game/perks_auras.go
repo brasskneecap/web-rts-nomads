@@ -218,7 +218,7 @@ func (s *GameState) perkArmorPercentBonusFromAurasLocked(unit *Unit) float64 {
 // Call site: step 0 of applyUnitDamageLocked, before mark amplification.
 // Must be called under s.mu write lock.
 // ─────────────────────────────────────────────────────────────────────────────
-func (s *GameState) perkRedirectIncomingDamageLocked(target *Unit, damage int) int {
+func (s *GameState) perkRedirectIncomingDamageLocked(target *Unit, damage int, src DamageSource) int {
 	if damage <= 0 {
 		return damage
 	}
@@ -272,7 +272,17 @@ func (s *GameState) perkRedirectIncomingDamageLocked(target *Unit, damage int) i
 	// Guard prevents this Vanguard from being re-selected as a redirect target
 	// for any nested damage call triggered during the redirect absorption.
 	best.PerkState.PainShareActive = true
-	s.applyUnitDamageLocked(best, redirected)
+	// Propagate the original attacker IDs so if the absorbing Vanguard dies,
+	// the kill credits the unit/building/trap that triggered the hit — not the
+	// unit being protected. Kind is overridden to "pain_share_redirect" for
+	// telemetry clarity.
+	redirectSrc := DamageSource{
+		AttackerUnitID:     src.AttackerUnitID,
+		AttackerBuildingID: src.AttackerBuildingID,
+		AttackerTrapID:     src.AttackerTrapID,
+		Kind:               "pain_share_redirect",
+	}
+	s.applyUnitDamageWithSourceLocked(best, redirected, redirectSrc)
 	best.PerkState.PainShareActive = false
 
 	return damage - redirected

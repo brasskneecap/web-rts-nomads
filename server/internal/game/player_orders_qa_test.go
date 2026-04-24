@@ -522,7 +522,7 @@ func TestDeterminism_OrdersIntentStream(t *testing.T) {
 		friendly.MoveSpeed = 150
 		s.initializeCombatUnitLocked(friendly)
 
-		enemy := s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{X: 700, Y: 400})
+		enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 700, Y: 400})
 		enemy.MaxHP = 500
 		enemy.HP = 500
 		enemy.Visible = true

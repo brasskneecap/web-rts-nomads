@@ -12,7 +12,9 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // newSilverPerkState returns a minimal GameState with two opposing soldiers
-// already in place. vanguard belongs to "p1", attacker belongs to "p2".
+// already in place. vanguard belongs to "p1", attacker belongs to the
+// wave-enemy faction so the hostility predicate treats them as enemies.
+// (Two real players are allies in the current model — see playersAreHostile.)
 // Both are fully constructed (combat-capable, Visible, HP > 0).
 // The caller should configure PerkIDs and any state before running assertions.
 func newSilverPerkState(t *testing.T) (s *GameState, vanguard, attacker *Unit) {
@@ -22,7 +24,7 @@ func newSilverPerkState(t *testing.T) (s *GameState, vanguard, attacker *Unit) {
 	defer s.mu.Unlock()
 
 	vanguard = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
-	attacker = s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{X: 420, Y: 400})
+	attacker = s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 420, Y: 400})
 	return s, vanguard, attacker
 }
 
@@ -361,7 +363,7 @@ func TestBrace_ArmorBonus_AtEnemyThreshold(t *testing.T) {
 	attacker.Y = vanguard.Y
 
 	// Spawn a second enemy within radius.
-	enemy2 := s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{
+	enemy2 := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: vanguard.X - def.Config["radius"]*0.5,
 		Y: vanguard.Y,
 	})
@@ -395,7 +397,7 @@ func TestBrace_NoArmorBonus_EnemyOutsideRadius(t *testing.T) {
 	// Place both enemies outside the radius.
 	attacker.X = vanguard.X + def.Config["radius"]*2
 	attacker.Y = vanguard.Y
-	enemy2 := s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{
+	enemy2 := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: vanguard.X - def.Config["radius"]*2,
 		Y: vanguard.Y,
 	})
@@ -576,7 +578,7 @@ func TestLastStand_And_Brace_CoexistCleanly(t *testing.T) {
 	vanguard.HP = 150 // 30% of 500, below 35% threshold
 	attacker.X = vanguard.X + braceDef.Config["radius"]*0.5
 	attacker.Y = vanguard.Y
-	_ = s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{
+	_ = s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: vanguard.X - braceDef.Config["radius"]*0.5,
 		Y: vanguard.Y,
 	})

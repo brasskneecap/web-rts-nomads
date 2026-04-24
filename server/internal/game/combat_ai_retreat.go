@@ -71,7 +71,7 @@ func (s *GameState) shouldRetreatLocked(unit *Unit, profile CombatProfile, ctx c
 	}
 	meleeThreats := 0
 	for _, hostile := range ctx.index.query(unit.X, unit.Y, profile.RetreatTriggerMeleeRange) {
-		if hostile.OwnerID == unit.OwnerID || hostile.HP <= 0 {
+		if !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
 			continue
 		}
 		hostileProfile := resolveCombatProfile(hostile)
@@ -86,7 +86,7 @@ func (s *GameState) issueRetreatLocked(unit *Unit, profile CombatProfile, blocke
 	var awayX, awayY float64
 	count := 0.0
 	for _, hostile := range s.Units {
-		if hostile.OwnerID == unit.OwnerID || hostile.HP <= 0 || !hostile.Visible {
+		if !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 || !hostile.Visible {
 			continue
 		}
 		hostileProfile := resolveCombatProfile(hostile)
@@ -124,7 +124,19 @@ func (s *GameState) targetInsideLeashLocked(unit *Unit, targetX, targetY float64
 }
 
 func (s *GameState) assignEnemyObjectiveLocked(unit *Unit, blocked map[gridPoint]bool) {
-	building := s.findNearestAttackablePlayerBuildingLocked(unit)
+	// If this enemy was spawned to target a specific player, prefer that
+	// player's buildings. Falls through to the nearest-anywhere logic only when
+	// the targeted player has no live owned buildings (e.g. they've been
+	// eliminated). Without this, every wave enemy would unconditionally drift
+	// toward the geographically nearest base, defeating per-spawnpoint
+	// targetPlayerLabel routing in multi-player matches.
+	var building *protocol.BuildingTile
+	if unit.TargetPlayerID != "" {
+		building = s.findNearestAttackableBuildingForPlayerLocked(unit, unit.TargetPlayerID)
+	}
+	if building == nil {
+		building = s.findNearestAttackablePlayerBuildingLocked(unit)
+	}
 	if building != nil {
 		unit.AttackBuildingTargetID = building.ID
 		unit.AttackTargetID = 0

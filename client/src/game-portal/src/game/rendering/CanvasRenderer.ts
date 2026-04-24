@@ -20,6 +20,7 @@ import {
 import { getResolvedUnitAttackVisual, getUnitBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
 import type { BannerSnapshot, BuildingTile, ObstacleTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
+import { ENEMY_PLAYER_ID } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
 import { getRankToneColor } from './rankColors'
@@ -1383,9 +1384,16 @@ export class CanvasRenderer {
         ? unit.y + bottomOffset - spriteSet.size.height * UNIT_SPRITE_SCALE * (1 - UNIT_SPRITE_TOP_PADDING)
         : unit.y - (unitBounds ? Math.abs(unitBounds.minY) : 14)
 
-      // Health bar always visible for all units
-      const isEnemy = unit.ownerId !== this.state.localPlayerId
-      this.drawSelectedUnitHealthBar(unit, isEnemy, headTopY)
+      // Health bar always visible for all units. Color rules:
+      //   - Hostile (wave enemies): always red.
+      //   - Allied other player: that player's color, regardless of HP.
+      //     Bar width still conveys HP percentage.
+      //   - Own units: HP-based green→yellow→red (computed inside the helper).
+      const isEnemy = this.state.isHostileToLocalPlayer(unit.ownerId)
+      const isAlly =
+        !isEnemy && !!unit.ownerId && unit.ownerId !== this.state.localPlayerId
+      const allyColor = isAlly ? this.state.getPlayerColor(unit.ownerId) ?? null : null
+      this.drawSelectedUnitHealthBar(unit, isEnemy, allyColor, headTopY)
       this.drawUnitRankChevrons(unit, headTopY)
 
       if (unit.status === 'Attacking') {
@@ -1731,7 +1739,7 @@ export class CanvasRenderer {
   ) {
     const ctx = this.ctx
     const direction = this.getAttackDirection(unit) ?? { x: 1, y: 0 }
-    const isEnemy = !!unit.ownerId && unit.ownerId !== this.state.localPlayerId
+    const isEnemy = this.state.isHostileToLocalPlayer(unit.ownerId)
     const beamColor = isEnemy
       ? '#ef4444'
       : unit.ownerId
@@ -1855,7 +1863,7 @@ export class CanvasRenderer {
     let bestDistanceSq = attackRange * attackRange
 
     for (const target of this.state.units) {
-      if (!target.visible || !target.ownerId || target.ownerId === building.ownerId) continue
+      if (!target.visible || !this.state.ownersAreHostile(target.ownerId, building.ownerId)) continue
 
       const dx = target.x - originX
       const dy = target.y - originY
@@ -1883,7 +1891,7 @@ export class CanvasRenderer {
     for (const target of this.state.units) {
       if (!target.visible) continue
       if (target.id === unit.id) continue
-      if (!unit.ownerId || !target.ownerId || target.ownerId === unit.ownerId) continue
+      if (!this.state.ownersAreHostile(target.ownerId, unit.ownerId)) continue
 
       const dx = target.x - unit.x
       const dy = target.y - unit.y
@@ -1897,7 +1905,7 @@ export class CanvasRenderer {
 
     for (const building of this.state.mapConfig.buildings) {
       if (!building.visible) continue
-      if (!unit.ownerId || !building.ownerId || building.ownerId === unit.ownerId) continue
+      if (!this.state.ownersAreHostile(building.ownerId, unit.ownerId)) continue
 
       const cellSize = this.state.mapConfig.cellSize
       const centerX = building.x * cellSize + (building.width * cellSize) / 2
@@ -1942,6 +1950,7 @@ export class CanvasRenderer {
       maxShield?: number
     },
     isEnemy: boolean,
+    allyColor: string | null,
     headTopY: number,
   ) {
     const ctx = this.ctx
@@ -1956,6 +1965,10 @@ export class CanvasRenderer {
     let fillColor = '#22c55e'
     if (isEnemy) {
       fillColor = '#ef4444'
+    } else if (allyColor) {
+      // Allied other player: bar is colored by their player color regardless
+      // of HP. The bar width still conveys the HP percentage.
+      fillColor = allyColor
     } else if (healthPercent <= 0.35) {
       fillColor = '#ef4444'
     } else if (healthPercent <= 0.7) {
@@ -2291,6 +2304,9 @@ export class CanvasRenderer {
 
     for (const building of this.state.mapConfig.buildings) {
       if (!building.visible) continue
+      // Enemy spawn points are logical spawners and must not appear on the
+      // minimap. Mirrors the world-render skip in the main building loop.
+      if (building.buildingType === 'enemy-spawnpoint') continue
 
       const isLocalPlayerBuilding =
         building.occupied && building.ownerId === this.state.localPlayerId
@@ -2345,6 +2361,15 @@ export class CanvasRenderer {
   }
 }
 
+// Hostility predicate for free-function helpers below that don't have access to
+// GameState. Mirrors GameState.ownersAreHostile and the server's
+// playersAreHostile: real players are allied with each other; only the
+// wave-enemy faction is hostile to real players.
+function ownersAreHostile(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b || a === b) return false
+  return a === ENEMY_PLAYER_ID || b === ENEMY_PLAYER_ID
+}
+
 // Scans units and enemy buildings for the nearest target within (a slightly
 // padded) attack range. Used to give attacking sprites the right facing when
 // the server hasn't sent an explicit attack-target id.
@@ -2375,7 +2400,7 @@ function findAttackFacing(
   let bestDy = 0
 
   for (const other of units) {
-    if (other.ownerId === attacker.ownerId) continue
+    if (!ownersAreHostile(other.ownerId, attacker.ownerId)) continue
     if (other.visible === false) continue
     if (other.hp !== undefined && other.hp <= 0) continue
     const dx = other.x - attacker.x
@@ -2389,7 +2414,7 @@ function findAttackFacing(
   }
 
   for (const building of buildings) {
-    if (building.ownerId === attacker.ownerId) continue
+    if (!ownersAreHostile(building.ownerId, attacker.ownerId)) continue
     if (building.visible === false) continue
     const cx = building.x * cellSize + (building.width * cellSize) / 2
     const cy = building.y * cellSize + (building.height * cellSize) / 2

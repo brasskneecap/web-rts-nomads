@@ -19,7 +19,7 @@ import type {
   UnitType,
   WaveSnapshot,
 } from '../network/protocol'
-import { UNIT_ORDER_LABELS } from '../network/protocol'
+import { ENEMY_PLAYER_ID, UNIT_ORDER_LABELS } from '../network/protocol'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
@@ -373,6 +373,11 @@ export class GameState {
   selectedObstacleId: string | null = null
   selectedTrapId: string | null = null
   inspectedEnemyUnitId: number | null = null
+  // Read-only inspection of an allied (other-real-player) unit. Mirrors
+  // inspectedEnemyUnitId — the player can view perks/stats but cannot issue
+  // any orders. Mutually exclusive with selectedUnitIds and the other
+  // inspected-* / selected-* fields, same lifecycle pattern.
+  inspectedAllyUnitId: number | null = null
   hoveredEnemyUnitId: number | null = null
   hoveredInteractableBuildingId: string | null = null
   hoveredInteractableObstacleId: string | null = null
@@ -572,6 +577,10 @@ export class GameState {
     if (this.inspectedEnemyUnitId !== null && !validIds.has(this.inspectedEnemyUnitId)) {
       this.inspectedEnemyUnitId = null
     }
+
+    if (this.inspectedAllyUnitId !== null && !validIds.has(this.inspectedAllyUnitId)) {
+      this.inspectedAllyUnitId = null
+    }
   }
 
   getInterpolatedUnits(renderTime: number): Unit[] {
@@ -641,6 +650,30 @@ export class GameState {
     return !!this.localPlayerId && unit.ownerId === this.localPlayerId
   }
 
+  // Real players are allied with each other; only the wave-enemy faction is
+  // hostile to real players. Mirrors playersAreHostile on the server. Use this
+  // (not raw ownerId comparisons) for any "should the cursor / health bar /
+  // attack visual treat this as an enemy?" decision.
+  isHostileToLocalPlayer(ownerId: string | undefined): boolean {
+    if (!ownerId) return false
+    if (!this.localPlayerId) return ownerId === ENEMY_PLAYER_ID
+    if (ownerId === this.localPlayerId) return false
+    return ownerId === ENEMY_PLAYER_ID
+  }
+
+  ownersAreHostile(a: string | undefined, b: string | undefined): boolean {
+    if (!a || !b || a === b) return false
+    return a === ENEMY_PLAYER_ID || b === ENEMY_PLAYER_ID
+  }
+
+  // True when the unit belongs to a real allied player — i.e. neither
+  // owned-by-me nor hostile. Used to gate read-only inspection of allies.
+  private isAlliedOtherPlayerUnit(unit: Unit): boolean {
+    if (!unit.ownerId) return false
+    if (this.localPlayerId && unit.ownerId === this.localPlayerId) return false
+    return !this.isHostileToLocalPlayer(unit.ownerId)
+  }
+
   clearSelection() {
     this.selectedUnitIds.clear()
     this.selectedUnitOrder = []
@@ -648,6 +681,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = null
     this.inspectedEnemyUnitId = null
+    this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -665,6 +699,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = null
     this.inspectedEnemyUnitId = null
+    this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -823,7 +858,16 @@ export class GameState {
 
   getEnemyUnitAtPosition(x: number, y: number, padding?: number): Unit | undefined {
     return this.getInteractionUnits().find((unit) => {
-      if (this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
+      if (!unit.visible || !this.isHostileToLocalPlayer(unit.ownerId)) return false
+      return isPointInUnitBody(x, y, unit, padding)
+    })
+  }
+
+  // Allied other-player units. Used by left-click to open a read-only
+  // inspection panel — no orders can be issued against / for these units.
+  getAllyUnitAtPosition(x: number, y: number, padding?: number): Unit | undefined {
+    return this.getInteractionUnits().find((unit) => {
+      if (!unit.visible || !this.isAlliedOtherPlayerUnit(unit)) return false
       return isPointInUnitBody(x, y, unit, padding)
     })
   }
@@ -872,6 +916,7 @@ export class GameState {
     this.selectedBuildingId = buildingId
     this.selectedObstacleId = null
     this.inspectedEnemyUnitId = null
+    this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -885,6 +930,7 @@ export class GameState {
     this.selectedObstacleId = obstacleId
     this.selectedTrapId = null
     this.inspectedEnemyUnitId = null
+    this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -900,6 +946,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = trapId
     this.inspectedEnemyUnitId = null
+    this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -999,6 +1046,7 @@ export class GameState {
     this.selectedObstacleId = null
     this.selectedTrapId = null
     this.inspectedEnemyUnitId = null
+    this.inspectedAllyUnitId = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
     this.buildPlacement = null
@@ -1148,13 +1196,33 @@ export class GameState {
 
   inspectEnemyUnit(unitId: number) {
     const unit = this.units.find((u) => u.id === unitId)
-    if (!unit || this.isOwnedByLocalPlayer(unit)) return
+    if (!unit || !this.isHostileToLocalPlayer(unit.ownerId)) return
 
     this.selectedUnitIds.clear()
     this.selectedUnitOrder = []
     this.selectedBuildingId = null
     this.selectedObstacleId = null
     this.inspectedEnemyUnitId = unitId
+    this.inspectedAllyUnitId = null
+    this.buildingTargetingMode = null
+    this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
+  }
+
+  // Read-only inspection of an allied other-player unit. Mirrors
+  // inspectEnemyUnit; the UI surfaces stats/perks but no order buttons.
+  inspectAllyUnit(unitId: number) {
+    const unit = this.units.find((u) => u.id === unitId)
+    if (!unit || !this.isAlliedOtherPlayerUnit(unit)) return
+
+    this.selectedUnitIds.clear()
+    this.selectedUnitOrder = []
+    this.selectedBuildingId = null
+    this.selectedObstacleId = null
+    this.selectedTrapId = null
+    this.inspectedEnemyUnitId = null
+    this.inspectedAllyUnitId = unitId
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -1271,6 +1339,24 @@ export class GameState {
         }
       }
       this.inspectedEnemyUnitId = null
+    }
+
+    if (this.inspectedAllyUnitId !== null && this.selectedUnitIds.size === 0) {
+      const unit = this.units.find((u) => u.id === this.inspectedAllyUnitId)
+      if (unit) {
+        // Read-only: actions stays empty so no order buttons render.
+        return {
+          kind: 'unit',
+          title: `Ally ${unit.name}`,
+          subtitle: unit.status ?? 'Allied',
+          details: getUnitDetails(unit),
+          actions: [],
+          pathLabel: unit.path && unit.path !== 'none' ? formatUnitPath(unit.path) : undefined,
+          rankLabel: formatUnitRank(unit.rank),
+          xpLabel: getUnitXpLabel(unit),
+        }
+      }
+      this.inspectedAllyUnitId = null
     }
 
     const selectedObstacle = this.getSelectedObstacle()

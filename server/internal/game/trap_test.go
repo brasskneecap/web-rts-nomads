@@ -15,8 +15,10 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // newTrapState returns a minimal GameState with two players: "p1" (the trapper
-// owner) and "enemy" (the hostile player). No units are spawned — callers add
-// their own via spawnPlayerUnitLocked.
+// owner) and the wave-enemy faction (enemyPlayerID). The wave-enemy faction is
+// used as the hostile party because the current model treats two real players
+// as allies (see playersAreHostile). No units are spawned — callers add their
+// own via spawnPlayerUnitLocked.
 //
 // The lock is NOT held on return.
 func newTrapState(t *testing.T) *GameState {
@@ -339,7 +341,7 @@ func TestTrapper_TrapDropsWhileEnemyInRange(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["p2"] = &Player{ID: "p2", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
 	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	if archer == nil {
@@ -352,7 +354,7 @@ func TestTrapper_TrapDropsWhileEnemyInRange(t *testing.T) {
 	}
 
 	// Enemy well inside the archer's attack range.
-	enemy := s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 		X: archer.X + archer.AttackRange*0.5, Y: archer.Y,
 	})
 	if enemy == nil {
@@ -449,9 +451,9 @@ func TestCaltrops_SlowsAndDamagesEnemy(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 	enemy.MaxHP = 500
@@ -527,9 +529,9 @@ func TestCaltrops_SlowExpiresAfterLeavingZone(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 
@@ -573,7 +575,7 @@ func TestCaltrops_PersistsAcrossMultipleEnemies(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
 	def := perkDefByID("caltrops")
 	if def == nil {
@@ -587,7 +589,7 @@ func TestCaltrops_PersistsAcrossMultipleEnemies(t *testing.T) {
 	// Spawn 3 enemies inside the zone.
 	enemies := make([]*Unit, 3)
 	for i := 0; i < 3; i++ {
-		e := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{
+		e := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{
 			X: trap.X + float64(i)*5,
 			Y: trap.Y,
 		})
@@ -612,9 +614,9 @@ func TestFirePit_DamagesEnemyNoSlow(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 
@@ -647,7 +649,7 @@ func TestExplosiveTrap_TriggersOnEnemyContact(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
 	def := perkDefByID("explosive_trap")
 	if def == nil {
@@ -659,7 +661,7 @@ func TestExplosiveTrap_TriggersOnEnemyContact(t *testing.T) {
 	trap.BurstDamage = int(def.Config["burstDamage"])
 
 	// Enemy inside trigger radius.
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 	hpBefore := enemy.HP
@@ -685,7 +687,7 @@ func TestExplosiveTrap_NoFriendlyFire(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
 	def := perkDefByID("explosive_trap")
 	if def == nil {
@@ -703,7 +705,7 @@ func TestExplosiveTrap_NoFriendlyFire(t *testing.T) {
 	allyHPBefore := ally.HP
 
 	// Enemy inside trigger radius — this triggers the explosion.
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 
@@ -726,7 +728,7 @@ func TestExplosiveTrap_CulledAfterTrigger(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
 	def := perkDefByID("explosive_trap")
 	if def == nil {
@@ -737,7 +739,7 @@ func TestExplosiveTrap_CulledAfterTrigger(t *testing.T) {
 	trap.TriggerRadius = def.Config["triggerRadius"]
 	trap.BurstDamage = int(def.Config["burstDamage"])
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 
@@ -776,7 +778,7 @@ func TestExplosiveTrap_AoEDamagesAllEnemiesInRadius(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
 	def := perkDefByID("explosive_trap")
 	if def == nil {
@@ -788,15 +790,15 @@ func TestExplosiveTrap_AoEDamagesAllEnemiesInRadius(t *testing.T) {
 	trap.BurstDamage = int(def.Config["burstDamage"])
 
 	// Three enemies: one inside trigger radius, two more inside explosion radius.
-	triggerEnemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	triggerEnemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	triggerEnemy.Visible = true
 	triggerEnemy.HP = 500
 
-	blastEnemy1 := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 420, Y: 400})
+	blastEnemy1 := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 420, Y: 400})
 	blastEnemy1.Visible = true
 	blastEnemy1.HP = 500
 
-	blastEnemy2 := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 420})
+	blastEnemy2 := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 420})
 	blastEnemy2.Visible = true
 	blastEnemy2.HP = 500
 
@@ -825,9 +827,9 @@ func TestMarkerTrap_MarksEnemy(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 
@@ -859,9 +861,9 @@ func TestMarkerTrap_MarkPersistsAfterLeaving(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 
@@ -898,9 +900,9 @@ func TestMarkerTrap_RefreshStrongerSemantics(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 
@@ -950,9 +952,9 @@ func TestMarkerTrap_AmplifiedDamage(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 	enemy.MaxHP = 500
@@ -1092,9 +1094,9 @@ func TestCaltrops_DoTAtProductionTickRate(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 	enemy.MaxHP = 500
@@ -1137,9 +1139,9 @@ func TestFirePit_DoTAtProductionTickRate(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 	enemy.MaxHP = 500
@@ -1350,9 +1352,9 @@ func TestMarkerTrap_VsChallengersMarkCoexistAsStacks(t *testing.T) {
 	defer s.mu.Unlock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 
@@ -1523,7 +1525,7 @@ func TestExplosiveTrap_TriggeredFlagVisibleInSnapshot(t *testing.T) {
 	s.mu.Lock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
 	def := perkDefByID("explosive_trap")
 	if def == nil {
@@ -1537,7 +1539,7 @@ func TestExplosiveTrap_TriggeredFlagVisibleInSnapshot(t *testing.T) {
 	trapID := trap.ID
 
 	// Spawn enemy at the trap centre — well inside both trigger and explosion radii.
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 400, Y: 400})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 400, Y: 400})
 	enemy.Visible = true
 	enemy.HP = 500
 	enemy.MaxHP = 500
@@ -1594,7 +1596,7 @@ func TestExplosiveTrap_TriggeredVisibleAfterUpdate(t *testing.T) {
 	s.mu.Lock()
 
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
-	s.Players["enemy"] = &Player{ID: "enemy", Resources: map[string]int{}}
+	s.Players[enemyPlayerID] = &Player{ID: enemyPlayerID, Resources: map[string]int{}}
 
 	def := perkDefByID("explosive_trap")
 	if def == nil {
@@ -1609,7 +1611,7 @@ func TestExplosiveTrap_TriggeredVisibleAfterUpdate(t *testing.T) {
 	trapID := trap.ID
 
 	// Enemy at the exact trap centre — unambiguously inside trigger radius.
-	enemy := s.spawnPlayerUnitLocked("soldier", "enemy", "#e74c3c", protocol.Vec2{X: 500, Y: 500})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 500, Y: 500})
 	enemy.Visible = true
 	enemy.HP = 1000
 	enemy.MaxHP = 1000

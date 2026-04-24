@@ -359,6 +359,11 @@ type UnitPerkState struct {
 	FinalExposureDamage      int
 	FinalExposureAoeRadius   float64
 	FinalExposureOwnerUnitID int
+	// Trap that armed this Final Exposure. Read by fireFinalExposureLocked so
+	// kill credit and battle telemetry route through the trap bucket rather
+	// than the trapper-unit bucket. Cleared alongside the other Final Exposure
+	// fields when the mark expires.
+	FinalExposureTrapID string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

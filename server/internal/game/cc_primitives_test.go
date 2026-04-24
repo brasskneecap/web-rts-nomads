@@ -14,7 +14,9 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // newCCState returns a minimal GameState with two opposing soldiers.
-// unit belongs to "p1", enemy belongs to "p2". Both are visible, alive,
+// unit belongs to "p1", enemy belongs to the wave-enemy faction so the
+// hostility predicate treats them as enemies. (Two real players are allies
+// in the current model — see playersAreHostile.) Both are visible, alive,
 // and positioned within attack range of each other. The write lock is held
 // on return; the caller must defer s.mu.Unlock().
 func newCCState(t *testing.T) (s *GameState, unit, enemy *Unit) {
@@ -23,7 +25,7 @@ func newCCState(t *testing.T) (s *GameState, unit, enemy *Unit) {
 	s.mu.Lock()
 
 	unit = s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
-	enemy = s.spawnPlayerUnitLocked("soldier", "p2", "#e74c3c", protocol.Vec2{X: 420, Y: 400})
+	enemy = s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 420, Y: 400})
 
 	// Wire up combat: unit is attacking enemy and is in range.
 	unit.AttackTargetID = enemy.ID
