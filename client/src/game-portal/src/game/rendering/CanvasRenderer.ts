@@ -337,7 +337,6 @@ export class CanvasRenderer {
 
   private drawMapBackground() {
     const ctx = this.ctx
-    const { cellSize, obstacles, buildings } = this.state.mapConfig
 
     this.ensureTerrainCache()
     if (this.terrainCache) {
@@ -348,72 +347,87 @@ export class CanvasRenderer {
     if (this.state.isBuildPlacementActive()) {
       this.drawGrid()
     }
+  }
 
-    for (const tile of obstacles) {
-      // Grid footprint: the cells the obstacle physically occupies. Used
-      // for the selection/hover ring so players see what they actually
-      // clicked, even when the sprite spills into neighbouring cells.
-      const gridW = tile.width ?? 1
-      const gridH = tile.height ?? 1
-      const footprintX = tile.x * cellSize
-      const footprintY = tile.y * cellSize
-      const footprintW = gridW * cellSize
-      const footprintH = gridH * cellSize
+  // Renders a single obstacle (tree, rock, goldmine crate, etc). Extracted
+  // from drawMapBackground so the main render loop can Y-sort obstacles
+  // alongside buildings and units — e.g. a unit standing behind a tree
+  // canopy is correctly occluded by the tree sprite.
+  private drawSingleObstacle(tile: ObstacleTile) {
+    const ctx = this.ctx
+    const { cellSize } = this.state.mapConfig
 
-      // Render bounds: may extend beyond the footprint (e.g. tree canopies
-      // reaching up into the row above). Falls back to the footprint when
-      // no render override is defined for this obstacle type.
-      const renderDef = OBSTACLE_DEF_MAP.get(tile.obstacle)?.render
-      const renderX = footprintX + (renderDef?.offsetX ?? 0) * cellSize
-      const renderY = footprintY + (renderDef?.offsetY ?? 0) * cellSize
-      const renderW = (renderDef?.width ?? gridW) * cellSize
-      const renderH = (renderDef?.height ?? gridH) * cellSize
+    // Grid footprint: the cells the obstacle physically occupies. Used
+    // for the selection/hover ring so players see what they actually
+    // clicked, even when the sprite spills into neighbouring cells.
+    const gridW = tile.width ?? 1
+    const gridH = tile.height ?? 1
+    const footprintX = tile.x * cellSize
+    const footprintY = tile.y * cellSize
+    const footprintW = gridW * cellSize
+    const footprintH = gridH * cellSize
 
-      // Selection ring is drawn *before* the sprite so the sprite body
-      // covers the top half of the ellipse — mimicking the unit ring,
-      // which looks like it's wrapping around the base of the entity.
-      const isSelected = tile.id && tile.id === this.state.selectedObstacleId
-      const isHovered = tile.id && tile.id === this.state.hoveredInteractableObstacleId
-      if (isSelected || isHovered) {
-        const ringDef = OBSTACLE_DEF_MAP.get(tile.obstacle)?.selectionRing
-        const override = ringDef ? { ...ringDef, cellSize } : undefined
-        this.drawFootprintSelectionEllipse(
-          footprintX, footprintY, footprintW, footprintH,
-          isSelected ? 'selected' : 'hover',
-          'bottom',
-          override,
-        )
-      }
+    // Render bounds: may extend beyond the footprint (e.g. tree canopies
+    // reaching up into the row above). Falls back to the footprint when
+    // no render override is defined for this obstacle type.
+    const renderDef = OBSTACLE_DEF_MAP.get(tile.obstacle)?.render
+    const renderX = footprintX + (renderDef?.offsetX ?? 0) * cellSize
+    const renderY = footprintY + (renderDef?.offsetY ?? 0) * cellSize
+    const renderW = (renderDef?.width ?? gridW) * cellSize
+    const renderH = (renderDef?.height ?? gridH) * cellSize
 
-      const sprite = getObstacleSprite(tile.obstacle)
-
-      if (sprite) {
-        ctx.imageSmoothingEnabled = false
-        ctx.drawImage(sprite, renderX, renderY, renderW, renderH)
-      } else {
-        const inset = cellSize * 0.14
-        ctx.fillStyle = getObstacleColor(tile.obstacle)
-        ctx.fillRect(
-          renderX + inset,
-          renderY + inset,
-          renderW - inset * 2,
-          renderH - inset * 2,
-        )
-
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)'
-        ctx.lineWidth = 2 / this.camera.zoom
-        ctx.strokeRect(
-          renderX + inset,
-          renderY + inset,
-          renderW - inset * 2,
-          renderH - inset * 2,
-        )
-      }
+    // Selection ring is drawn *before* the sprite so the sprite body
+    // covers the top half of the ellipse — mimicking the unit ring,
+    // which looks like it's wrapping around the base of the entity.
+    const isSelected = tile.id && tile.id === this.state.selectedObstacleId
+    const isHovered = tile.id && tile.id === this.state.hoveredInteractableObstacleId
+    if (isSelected || isHovered) {
+      const ringDef = OBSTACLE_DEF_MAP.get(tile.obstacle)?.selectionRing
+      const override = ringDef ? { ...ringDef, cellSize } : undefined
+      this.drawFootprintSelectionEllipse(
+        footprintX, footprintY, footprintW, footprintH,
+        isSelected ? 'selected' : 'hover',
+        'bottom',
+        override,
+      )
     }
 
-    for (const building of buildings) {
-      if (!building.visible) continue
-      if (building.buildingType === 'enemy-spawnpoint') continue
+    const sprite = getObstacleSprite(tile.obstacle)
+
+    if (sprite) {
+      ctx.imageSmoothingEnabled = false
+      ctx.drawImage(sprite, renderX, renderY, renderW, renderH)
+    } else {
+      const inset = cellSize * 0.14
+      ctx.fillStyle = getObstacleColor(tile.obstacle)
+      ctx.fillRect(
+        renderX + inset,
+        renderY + inset,
+        renderW - inset * 2,
+        renderH - inset * 2,
+      )
+
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)'
+      ctx.lineWidth = 2 / this.camera.zoom
+      ctx.strokeRect(
+        renderX + inset,
+        renderY + inset,
+        renderW - inset * 2,
+        renderH - inset * 2,
+      )
+    }
+  }
+
+  // Renders a single building (sprite / construction preview / procedural
+  // fallback / overlays / health bar / attack effect). Extracted from
+  // drawMapBackground so the main render loop can Y-sort buildings with
+  // units and let units in front of a building occlude the building sprite.
+  private drawSingleBuilding(building: BuildingTile) {
+    if (!building.visible) return
+    if (building.buildingType === 'enemy-spawnpoint') return
+
+    const ctx = this.ctx
+    const { cellSize } = this.state.mapConfig
 
       // Footprint — the grid cells the building physically occupies. Used
       // for HP bars, construction overlays, and selection hit-testing.
@@ -528,23 +542,26 @@ export class CanvasRenderer {
         ctx.drawImage(tinted ?? sprite, spriteX, spriteY, spriteW, spriteH)
       } else if (!renderDef) {
         ctx.fillStyle = playerFill
-        ctx.fillRect(worldX, worldY, width, height)
+        ctx.fillRect(spriteX, spriteY, spriteW, spriteH)
       } else {
         // Draw every layer explicitly; 'player' color is substituted with the owner color.
         // No base fill: unpainted areas are transparent so terrain shows through.
+        // Layer coords are relative to the sprite-render box (so a townhall
+        // with a 3x2 footprint + 3x3 sprite draws its tower one cell above
+        // the footprint, matching the sprite.png).
         for (const layer of renderDef.layers) {
           ctx.fillStyle = layer.color === 'player' ? playerFill : layer.color
           if (!('kind' in layer) || layer.kind === 'rect') {
             ctx.fillRect(
-              worldX + layer.x * cellSize,
-              worldY + layer.y * cellSize,
+              spriteX + layer.x * cellSize,
+              spriteY + layer.y * cellSize,
               layer.w * cellSize,
               layer.h * cellSize,
             )
           } else if (layer.kind === 'tri') {
             const s = cellSize / 6
-            const tlX = worldX + layer.cx * cellSize + layer.sc * s
-            const tlY = worldY + layer.cy * cellSize + layer.sr * s
+            const tlX = spriteX + layer.cx * cellSize + layer.sc * s
+            const tlY = spriteY + layer.cy * cellSize + layer.sr * s
             const bslash = (layer.sc + layer.sr) % 2 === 1
             ctx.beginPath()
             if (!bslash) {
@@ -640,7 +657,6 @@ export class CanvasRenderer {
       if (!isUnderConstruction) {
         this.drawBuildingAttackEffect(building)
       }
-    }
   }
 
   // Draws a flat ground-ring at the base of a rectangular footprint, matching
@@ -1377,13 +1393,53 @@ export class CanvasRenderer {
     }>,
   ) {
     const ctx = this.ctx
+    const { cellSize } = this.state.mapConfig
     const activeUnitIds = new Set<number>()
 
+    // Y-sort obstacles, buildings, and units together so a unit standing
+    // behind a tree canopy / building (smaller feet-Y than the entity's
+    // bottom edge) renders first and gets visually occluded by that sprite.
+    // Anchor Y = bottom of the grid footprint for static entities; feet
+    // position for units.
+    type Entry = {
+      anchorY: number
+      obstacle?: ObstacleTile
+      building?: BuildingTile
+      unit?: (typeof units)[number]
+    }
+    const entries: Entry[] = []
+    for (const tile of this.state.mapConfig.obstacles) {
+      const gridH = tile.height ?? 1
+      entries.push({
+        anchorY: (tile.y + gridH) * cellSize,
+        obstacle: tile,
+      })
+    }
+    for (const building of this.state.mapConfig.buildings) {
+      if (!building.visible) continue
+      if (building.buildingType === 'enemy-spawnpoint') continue
+      entries.push({
+        anchorY: (building.y + building.height) * cellSize,
+        building,
+      })
+    }
     for (const unit of units) {
-      if (unit.visible === false) {
+      if (unit.visible === false) continue
+      activeUnitIds.add(unit.id)
+      entries.push({ anchorY: unit.y, unit })
+    }
+    entries.sort((a, b) => a.anchorY - b.anchorY)
+
+    for (const entry of entries) {
+      if (entry.obstacle) {
+        this.drawSingleObstacle(entry.obstacle)
         continue
       }
-      activeUnitIds.add(unit.id)
+      if (entry.building) {
+        this.drawSingleBuilding(entry.building)
+        continue
+      }
+      const unit = entry.unit!
 
       const selected = this.state.selectedUnitIds.has(unit.id)
       const isInspected = this.state.inspectedEnemyUnitId === unit.id
@@ -2262,9 +2318,17 @@ export class CanvasRenderer {
     const worldY = cursorGridY * cellSize
     const buildingDef = BUILDING_DEF_MAP.get(placement.buildingType)
     const renderDef = buildingDef?.render
+    const spriteRenderDef = buildingDef?.spriteRender
     const sprite = getBuildingSprite(placement.buildingType)
     const footW = gridW * cellSize
     const footH = gridH * cellSize
+    // Sprite box may extend beyond the footprint (townhall has a 3x2
+    // footprint + 3x3 sprite that pokes one cell up). Preview the full
+    // visual so players see what the finished building will look like.
+    const spriteX = worldX + (spriteRenderDef?.offsetX ?? 0) * cellSize
+    const spriteY = worldY + (spriteRenderDef?.offsetY ?? 0) * cellSize
+    const spriteW = (spriteRenderDef?.width ?? gridW) * cellSize
+    const spriteH = (spriteRenderDef?.height ?? gridH) * cellSize
 
     ctx.save()
     ctx.globalAlpha = 0.6
@@ -2273,7 +2337,7 @@ export class CanvasRenderer {
 
     if (sprite) {
       ctx.imageSmoothingEnabled = false
-      ctx.drawImage(sprite, worldX, worldY, footW, footH)
+      ctx.drawImage(sprite, spriteX, spriteY, spriteW, spriteH)
       if (!valid) {
         ctx.globalAlpha = 0.35
         ctx.fillStyle = '#dc2626'
@@ -2282,22 +2346,22 @@ export class CanvasRenderer {
     } else if (!renderDef) {
       // No render def — solid fill fallback
       ctx.fillStyle = playerFill
-      ctx.fillRect(worldX, worldY, footW, footH)
+      ctx.fillRect(spriteX, spriteY, spriteW, spriteH)
     } else {
       // Draw every layer explicitly, substituting 'player' with the valid/invalid tint color.
       for (const layer of renderDef.layers) {
         ctx.fillStyle = layer.color === 'player' ? playerFill : layer.color
         if (!('kind' in layer) || layer.kind === 'rect') {
           ctx.fillRect(
-            worldX + layer.x * cellSize,
-            worldY + layer.y * cellSize,
+            spriteX + layer.x * cellSize,
+            spriteY + layer.y * cellSize,
             layer.w * cellSize,
             layer.h * cellSize,
           )
         } else if (layer.kind === 'tri') {
           const s = cellSize / 6
-          const tlX = worldX + layer.cx * cellSize + layer.sc * s
-          const tlY = worldY + layer.cy * cellSize + layer.sr * s
+          const tlX = spriteX + layer.cx * cellSize + layer.sc * s
+          const tlY = spriteY + layer.cy * cellSize + layer.sr * s
           const bslash = (layer.sc + layer.sr) % 2 === 1
           ctx.beginPath()
           if (!bslash) {

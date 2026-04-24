@@ -17,6 +17,28 @@ import (
 // loaded from catalog/obstacles. Obstacles on disk typically carry only
 // position and type; this expands each tile with its id, capabilities,
 // resource pool, and HP so the runtime can treat obstacles as first-class
+// hydrateBuildings reconciles per-building footprint fields with the matching
+// building def. Map JSONs historically inlined width/height per entry, which
+// drifts when a def changes (e.g. the townhall collision box shrinking to a
+// 3x2 base with a 3x3 sprite). Existing map data is forced to match the def
+// so pathing, placement, and spawn logic stay consistent with the catalog.
+// Fields the def doesn't own (x, y, metadata, ids) are left alone.
+func hydrateBuildings(buildings []protocol.BuildingTile) {
+	for i := range buildings {
+		b := &buildings[i]
+		def, ok := getBuildingDef(b.BuildingType)
+		if !ok {
+			continue
+		}
+		if def.Width > 0 {
+			b.Width = def.Width
+		}
+		if def.Height > 0 {
+			b.Height = def.Height
+		}
+	}
+}
+
 // selectable/harvestable/destructible entities.
 func hydrateObstacles(obstacles []protocol.ObstacleTile) {
 	for i := range obstacles {
@@ -171,6 +193,7 @@ func SaveMapCatalogEntry(entry MapCatalogEntry) error {
 	}
 
 	hydrateObstacles(entry.Map.Obstacles)
+	hydrateBuildings(entry.Map.Buildings)
 
 	runtimeMapsMu.Lock()
 	runtimeMaps[entry.ID] = entry
@@ -250,6 +273,7 @@ func mustLoadMapCatalog() []MapCatalogEntry {
 		}
 
 		hydrateObstacles(entry.Map.Obstacles)
+		hydrateBuildings(entry.Map.Buildings)
 
 		entries = append(entries, entry)
 	}

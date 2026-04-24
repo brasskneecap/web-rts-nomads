@@ -1748,11 +1748,11 @@
     "buildings": [
       {
         "x": 7,
-        "y": 2,
+        "y": 3,
         "id": "townhall-7-2",
         "buildingType": "townhall",
         "width": 3,
-        "height": 3,
+        "height": 2,
         "occupied": false,
         "visible": false,
         "capabilities": [
@@ -1769,11 +1769,11 @@
       },
       {
         "x": 28,
-        "y": 2,
+        "y": 3,
         "id": "townhall-28-2",
         "buildingType": "townhall",
         "width": 3,
-        "height": 3,
+        "height": 2,
         "occupied": false,
         "visible": false,
         "capabilities": [

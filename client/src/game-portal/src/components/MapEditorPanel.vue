@@ -1670,29 +1670,37 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
     const height = building.height * cellSize
     const def = BUILDING_DEF_MAP.get(building.buildingType)
     const renderDef = def?.render
+    const spriteRenderDef = def?.spriteRender
     const sprite = getBuildingSprite(building.buildingType)
+    // Sprite box may extend beyond the grid footprint (e.g. townhall's 3x3
+    // sprite on a 3x2 footprint). Falls back to the footprint when no
+    // override is set so unchanged buildings render identically.
+    const spriteX = worldX + (spriteRenderDef?.offsetX ?? 0) * cellSize
+    const spriteY = worldY + (spriteRenderDef?.offsetY ?? 0) * cellSize
+    const spriteW = (spriteRenderDef?.width ?? building.width) * cellSize
+    const spriteH = (spriteRenderDef?.height ?? building.height) * cellSize
 
     ctx.save()
     ctx.globalAlpha = building.visible ? 1 : 0.6
 
     if (sprite) {
       ctx.imageSmoothingEnabled = false
-      ctx.drawImage(sprite, worldX, worldY, width, height)
+      ctx.drawImage(sprite, spriteX, spriteY, spriteW, spriteH)
     } else if (renderDef) {
       const fill = def?.color ?? getBuildingColor(building.buildingType, building.occupied)
       for (const layer of renderDef.layers) {
         ctx.fillStyle = layer.color === 'player' ? fill : layer.color
         if (!('kind' in layer) || layer.kind === 'rect') {
           ctx.fillRect(
-            worldX + layer.x * cellSize,
-            worldY + layer.y * cellSize,
+            spriteX + layer.x * cellSize,
+            spriteY + layer.y * cellSize,
             layer.w * cellSize,
             layer.h * cellSize,
           )
         } else if (layer.kind === 'tri') {
           const s = cellSize / 6
-          const tlX = worldX + layer.cx * cellSize + layer.sc * s
-          const tlY = worldY + layer.cy * cellSize + layer.sr * s
+          const tlX = spriteX + layer.cx * cellSize + layer.sc * s
+          const tlY = spriteY + layer.cy * cellSize + layer.sr * s
           const bslash = (layer.sc + layer.sr) % 2 === 1
           ctx.beginPath()
           if (!bslash) {

@@ -23,11 +23,11 @@
     "buildings": [
       {
         "x": 0,
-        "y": 0,
+        "y": 1,
         "id": "townhall-0-0",
         "buildingType": "townhall",
         "width": 3,
-        "height": 3,
+        "height": 2,
         "occupied": false,
         "visible": false,
         "capabilities": [

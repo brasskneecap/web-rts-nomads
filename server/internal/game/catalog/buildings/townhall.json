@@ -2,7 +2,11 @@
   "type": "townhall",
   "class": "player",
   "width": 3,
-  "height": 3,
+  "height": 2,
+  "spriteRender": {
+    "offsetY": -1,
+    "height": 3
+  },
   "maxHp": 1000,
   "buildSeconds": 30,
   "resourceCost": {

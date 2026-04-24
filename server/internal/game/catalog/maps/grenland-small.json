@@ -10,7 +10,7 @@
           "occupiable",
           "deposit-point"
         ],
-        "height": 3,
+        "height": 2,
         "id": "townhall-7-2",
         "metadata": {
           "foodSupply": 15
@@ -23,7 +23,7 @@
         "visible": false,
         "width": 3,
         "x": 7,
-        "y": 2
+        "y": 3
       },
       {
         "buildingType": "townhall",
@@ -32,7 +32,7 @@
           "occupiable",
           "deposit-point"
         ],
-        "height": 3,
+        "height": 2,
         "id": "townhall-28-2",
         "metadata": {
           "foodSupply": 15
@@ -45,7 +45,7 @@
         "visible": false,
         "width": 3,
         "x": 28,
-        "y": 2
+        "y": 3
       },
       {
         "buildingType": "spawn-point",
