@@ -485,9 +485,12 @@ func TestInterlock_StacksWithLastStand(t *testing.T) {
 		t.Fatal("perk defs not found")
 	}
 
-	// Drop HP below last_stand threshold.
+	// Drop HP below last_stand threshold, then tick so Last Stand's
+	// timed armor-bonus window opens. The bonus reads LastStandRemaining,
+	// so the tick is required — the HP dip alone is no longer sufficient.
 	vanguard.MaxHP = 500
 	vanguard.HP = int(float64(vanguard.MaxHP) * lastStandDef.Config["hpThresholdPercent"] * 0.5)
+	s.tickUnitPerkStateLocked(vanguard, 0.05)
 
 	baseArmor := vanguard.Armor
 	wantBonus := int(lastStandDef.Config["bonusArmor"]) + int(interlockDef.Config["bonusArmor"])

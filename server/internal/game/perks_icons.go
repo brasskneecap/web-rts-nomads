@@ -135,13 +135,11 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 			}
 
 		case "last_stand":
-			// Show while the unit is below the HP threshold — indicates both
-			// the damage reduction and that the one-shot taunt is (or was) live.
-			if unit.MaxHP > 0 {
-				hpFraction := float64(unit.HP) / float64(unit.MaxHP)
-				if hpFraction <= def.Config["hpThresholdPercent"] {
-					addIcon(perkID, 1)
-				}
+			// Show for the duration of the armor-bonus + taunt window so the
+			// icon tracks the live bonus rather than current HP (which can rise
+			// back above the threshold mid-window without ending the buff).
+			if unit.PerkState.LastStandRemaining > 0 {
+				addIcon(perkID, 1)
 			}
 
 		case "brace":
@@ -151,13 +149,6 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 			// the armor bonus is live.
 			enemyThreshold := int(def.Config["enemyThreshold"])
 			if s.countEnemiesInRangeLocked(unit, def.Config["radius"], enemyThreshold) >= enemyThreshold {
-				addIcon(perkID, 1)
-			}
-
-		case "bulwark":
-			// Show while the unit has been stationary long enough for the
-			// shield regen to be active.
-			if unit.PerkState.StationarySeconds >= def.Config["stationaryThresholdSeconds"] {
 				addIcon(perkID, 1)
 			}
 

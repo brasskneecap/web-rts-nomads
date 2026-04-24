@@ -37,11 +37,11 @@ func grantPerk(unit *Unit, perkID string) {
 // 1. Last Stand
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestLastStand_ArmorBonusBelowThreshold verifies that last_stand grants its
-// bonusArmor when the unit drops below the HP threshold. Effective armor
-// flows into every applyArmorMitigation call site and into Retaliation's
-// reflection math.
-func TestLastStand_ArmorBonusBelowThreshold(t *testing.T) {
+// TestLastStand_ArmorBonusWhileWindowActive verifies that last_stand grants
+// its bonusArmor for the duration of the window opened by an HP dip below
+// threshold. Effective armor flows into every applyArmorMitigation call site
+// and into Retaliation's reflection math.
+func TestLastStand_ArmorBonusWhileWindowActive(t *testing.T) {
 	s, vanguard, _ := newSilverPerkState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -55,19 +55,58 @@ func TestLastStand_ArmorBonusBelowThreshold(t *testing.T) {
 	baseArmor := vanguard.Armor
 	expectedBonus := int(def.Config["bonusArmor"])
 
-	// Drop to 30% — below the 35% threshold.
+	// Drop to 30% — below the 35% threshold — and tick once to open the
+	// window. Armor bonus reads LastStandRemaining, not the HP fraction.
 	vanguard.MaxHP = 500
 	vanguard.HP = 150
+	s.tickUnitPerkStateLocked(vanguard, 0.05)
+
+	if vanguard.PerkState.LastStandRemaining <= 0 {
+		t.Fatalf("expected LastStandRemaining>0 after dip+tick, got %.2f",
+			vanguard.PerkState.LastStandRemaining)
+	}
 
 	gotBonus := s.perkBonusArmorLocked(vanguard)
 	if gotBonus != expectedBonus {
-		t.Errorf("perkBonusArmorLocked below threshold: got %d, want %d", gotBonus, expectedBonus)
+		t.Errorf("perkBonusArmorLocked during window: got %d, want %d", gotBonus, expectedBonus)
 	}
 
 	gotEffective := s.effectiveArmorLocked(vanguard)
 	if gotEffective != baseArmor+expectedBonus {
-		t.Errorf("effectiveArmorLocked below threshold: got %d, want %d",
+		t.Errorf("effectiveArmorLocked during window: got %d, want %d",
 			gotEffective, baseArmor+expectedBonus)
+	}
+}
+
+// TestLastStand_ArmorBonusExpires_AfterDuration verifies the bonus drops off
+// once the window decays to zero, even if HP is still below the threshold.
+func TestLastStand_ArmorBonusExpires_AfterDuration(t *testing.T) {
+	s, vanguard, _ := newSilverPerkState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	grantPerk(vanguard, "last_stand")
+	def := perkDefByID("last_stand")
+	duration := def.Config["durationSeconds"]
+
+	vanguard.MaxHP = 500
+	vanguard.HP = 150
+	// First tick opens the window.
+	s.tickUnitPerkStateLocked(vanguard, 0.05)
+
+	// Tick past the full duration. HP stays low — the bonus must still end
+	// when the window decays, not when HP heals.
+	dt := 0.1
+	for elapsed := 0.0; elapsed < duration+0.5; elapsed += dt {
+		s.tickUnitPerkStateLocked(vanguard, dt)
+	}
+
+	if vanguard.PerkState.LastStandRemaining != 0 {
+		t.Errorf("expected LastStandRemaining=0 after duration, got %.2f",
+			vanguard.PerkState.LastStandRemaining)
+	}
+	if got := s.perkBonusArmorLocked(vanguard); got != 0 {
+		t.Errorf("perkBonusArmorLocked after window expiry: got %d, want 0", got)
 	}
 }
 
@@ -369,210 +408,7 @@ func TestBrace_NoArmorBonus_EnemyOutsideRadius(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. Bulwark
-// ─────────────────────────────────────────────────────────────────────────────
-
-// TestBulwark_ShieldGranted_AfterStationaryThreshold verifies the Vanguard
-// receives its shield once it has held position for the required duration.
-func TestBulwark_ShieldGranted_AfterStationaryThreshold(t *testing.T) {
-	s, vanguard, _ := newSilverPerkState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	grantPerk(vanguard, "bulwark")
-	def := perkDefByID("bulwark")
-
-	vanguard.Moving = false
-	vanguard.Shield = 0
-
-	threshold := def.Config["stationaryThresholdSeconds"]
-
-	// Tick for exactly the threshold — shield should be granted.
-	elapsed := 0.0
-	dt := 0.05
-	for elapsed < threshold {
-		s.tickUnitPerkStateLocked(vanguard, dt)
-		elapsed += dt
-	}
-
-	if vanguard.Shield != int(def.Config["maxShield"]) {
-		t.Errorf("expected shield=%d after stationary threshold, got %d",
-			int(def.Config["maxShield"]), vanguard.Shield)
-	}
-}
-
-// TestBulwark_ShieldNotGranted_WhileMoving verifies no shield while moving.
-func TestBulwark_ShieldNotGranted_WhileMoving(t *testing.T) {
-	s, vanguard, _ := newSilverPerkState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	grantPerk(vanguard, "bulwark")
-	def := perkDefByID("bulwark")
-
-	vanguard.Moving = true
-	vanguard.Shield = 0
-
-	threshold := def.Config["stationaryThresholdSeconds"]
-	elapsed := 0.0
-	for elapsed < threshold+0.5 {
-		s.tickUnitPerkStateLocked(vanguard, 0.05)
-		elapsed += 0.05
-	}
-
-	if vanguard.Shield != 0 {
-		t.Errorf("moving unit should not have bulwark shield, got %d", vanguard.Shield)
-	}
-}
-
-// TestBulwark_StationaryTimerResets_OnMove verifies that moving resets the
-// stationary timer so the shield regen restarts from zero on next stop.
-func TestBulwark_StationaryTimerResets_OnMove(t *testing.T) {
-	s, vanguard, _ := newSilverPerkState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	grantPerk(vanguard, "bulwark")
-	def := perkDefByID("bulwark")
-
-	vanguard.Moving = false
-	// Accumulate some stationary time but not enough to grant shield.
-	vanguard.PerkState.StationarySeconds = def.Config["stationaryThresholdSeconds"] - 0.5
-	s.tickUnitPerkStateLocked(vanguard, 0.05)
-
-	// Now the unit moves.
-	vanguard.Moving = true
-	s.tickUnitPerkStateLocked(vanguard, 0.05)
-
-	if vanguard.PerkState.StationarySeconds != 0 {
-		t.Errorf("StationarySeconds should reset to 0 on movement, got %.2f",
-			vanguard.PerkState.StationarySeconds)
-	}
-}
-
-// TestBulwark_ShieldClears_OnMove verifies that existing shield drops to zero
-// the moment the Vanguard breaks formation. Bulwark is a planted-play reward —
-// movement forfeits the protection.
-func TestBulwark_ShieldClears_OnMove(t *testing.T) {
-	s, vanguard, _ := newSilverPerkState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	grantPerk(vanguard, "bulwark")
-	def := perkDefByID("bulwark")
-
-	// Grant shield by crossing the stationary threshold.
-	vanguard.Moving = false
-	vanguard.PerkState.StationarySeconds = def.Config["stationaryThresholdSeconds"]
-	s.tickUnitPerkStateLocked(vanguard, 0.05)
-
-	if vanguard.Shield <= 0 {
-		t.Fatal("expected shield to be granted before movement test")
-	}
-
-	// Unit moves — shield should drop to zero immediately.
-	vanguard.Moving = true
-	s.tickUnitPerkStateLocked(vanguard, 0.05)
-
-	if vanguard.Shield != 0 {
-		t.Errorf("shield should clear on movement, got %d", vanguard.Shield)
-	}
-}
-
-// TestBulwark_ShieldDoesNotRefill_AfterDamage verifies that once the shield
-// has been granted, damage chips it down and it stays reduced — it does not
-// auto-regenerate every tick while the unit remains stationary. The shield
-// only re-arms after the unit moves and re-plants for the full threshold.
-func TestBulwark_ShieldDoesNotRefill_AfterDamage(t *testing.T) {
-	s, vanguard, _ := newSilverPerkState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	grantPerk(vanguard, "bulwark")
-	def := perkDefByID("bulwark")
-	maxShield := int(def.Config["maxShield"])
-
-	// Plant and accumulate enough stationary time to be granted the shield.
-	vanguard.Moving = false
-	vanguard.PerkState.StationarySeconds = def.Config["stationaryThresholdSeconds"]
-	s.tickUnitPerkStateLocked(vanguard, 0.05)
-	if vanguard.Shield != maxShield {
-		t.Fatalf("expected shield=%d after grant, got %d", maxShield, vanguard.Shield)
-	}
-
-	// Damage the shield — simulate a 10-damage hit absorbed by the shield.
-	vanguard.Shield -= 10
-	expected := maxShield - 10
-
-	// Tick repeatedly while still stationary. Shield must NOT refill.
-	for i := 0; i < 100; i++ {
-		s.tickUnitPerkStateLocked(vanguard, 0.05)
-		if vanguard.Shield != expected {
-			t.Fatalf("shield auto-refilled while stationary: tick %d, got %d, want %d",
-				i, vanguard.Shield, expected)
-		}
-	}
-}
-
-// TestBulwark_ShieldReArms_AfterMoveAndReplant verifies that after the unit
-// moves (clearing the shield and granted flag) and then plants again for the
-// full threshold, the shield is granted a second time.
-func TestBulwark_ShieldReArms_AfterMoveAndReplant(t *testing.T) {
-	s, vanguard, _ := newSilverPerkState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	grantPerk(vanguard, "bulwark")
-	def := perkDefByID("bulwark")
-	maxShield := int(def.Config["maxShield"])
-	threshold := def.Config["stationaryThresholdSeconds"]
-
-	// First grant.
-	vanguard.Moving = false
-	vanguard.PerkState.StationarySeconds = threshold
-	s.tickUnitPerkStateLocked(vanguard, 0.05)
-	if vanguard.Shield != maxShield {
-		t.Fatalf("expected first shield grant, got %d", vanguard.Shield)
-	}
-
-	// Move — shield drops, flag clears.
-	vanguard.Moving = true
-	s.tickUnitPerkStateLocked(vanguard, 0.05)
-	if vanguard.Shield != 0 || vanguard.PerkState.BulwarkShieldGranted {
-		t.Fatalf("after move: shield=%d granted=%v", vanguard.Shield, vanguard.PerkState.BulwarkShieldGranted)
-	}
-
-	// Re-plant and accumulate the threshold again.
-	vanguard.Moving = false
-	elapsed := 0.0
-	dt := 0.05
-	for elapsed < threshold {
-		s.tickUnitPerkStateLocked(vanguard, dt)
-		elapsed += dt
-	}
-	if vanguard.Shield != maxShield {
-		t.Errorf("expected shield to re-arm to %d after replant, got %d", maxShield, vanguard.Shield)
-	}
-}
-
-// TestBulwark_ContributesToUnitMaxShield verifies bulwark is counted by
-// unitMaxShieldLocked so healUnitLocked can route overheal into shield.
-func TestBulwark_ContributesToUnitMaxShield(t *testing.T) {
-	s, vanguard, _ := newSilverPerkState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	grantPerk(vanguard, "bulwark")
-	def := perkDefByID("bulwark")
-
-	maxShield := s.unitMaxShieldLocked(vanguard)
-	if maxShield != int(def.Config["maxShield"]) {
-		t.Errorf("unitMaxShieldLocked: expected %d, got %d", int(def.Config["maxShield"]), maxShield)
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 5. Challenger's Mark
+// 4. Challenger's Mark
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestChallengersmark_MarkApplied_OnAttack verifies that when a Vanguard with
@@ -745,8 +581,11 @@ func TestLastStand_And_Brace_CoexistCleanly(t *testing.T) {
 		Y: vanguard.Y,
 	})
 
+	// Tick once so Last Stand opens its armor-bonus window.
+	s.tickUnitPerkStateLocked(vanguard, 0.05)
+
 	// Both Last Stand and Brace contribute to perkBonusArmorLocked when their
-	// conditions are met (below HP threshold + 2 nearby enemies).
+	// conditions are met (Last Stand window active + 2 nearby enemies).
 	wantBonus := int(lsDef.Config["bonusArmor"]) + int(braceDef.Config["bonusArmor"])
 	if got := s.perkBonusArmorLocked(vanguard); got != wantBonus {
 		t.Errorf("perkBonusArmorLocked with last_stand+brace: got %d, want %d (ls=%d + brace=%d)",
@@ -780,6 +619,10 @@ func TestLastStand_BoostsRetaliation(t *testing.T) {
 	attacker.MaxHP = 500
 	attacker.HP = 500
 	attackerHPBefore := attacker.HP
+
+	// Tick once so Last Stand opens its armor-bonus window — Retaliation
+	// reflects off effective armor, which now includes the Last Stand bonus.
+	s.tickUnitPerkStateLocked(vanguard, 0.05)
 
 	// Trigger Retaliation by taking a hit. Damage value is irrelevant to the
 	// reflected amount — the reflection is a pure function of the target's

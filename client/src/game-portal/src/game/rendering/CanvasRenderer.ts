@@ -118,6 +118,20 @@ export class CanvasRenderer {
   private terrainCache: HTMLCanvasElement | null = null
   private terrainCacheKey: unknown[] = []
 
+  // Floating damage numbers — client-side transient overlays world-locked to
+  // the victim's position at damage-time. Populated by draining
+  // GameState.damageEvents at the start of render(); fade + drift upward over
+  // FLOATING_DAMAGE_DURATION_MS, then drop off the list.
+  private floatingDamageNumbers: Array<{
+    x: number
+    y: number
+    amount: number
+    isFriendly: boolean
+    startedAt: number
+  }> = []
+  private readonly FLOATING_DAMAGE_DURATION_MS = 900
+  private readonly FLOATING_DAMAGE_RISE_PX = 32
+
   constructor(canvas: HTMLCanvasElement, state: GameState, camera: Camera) {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas not supported')
@@ -157,6 +171,23 @@ export class CanvasRenderer {
     const units = this.state.getInterpolatedUnits(renderTime)
     const sortedUnits = units.slice().sort((a, b) => a.y - b.y)
 
+    // Drain new damage events (populated in GameState.applySnapshot) into
+    // the floating-number list. World-lock each at the victim's head-top so
+    // the number stays put even if the unit moves or dies mid-animation.
+    if (this.state.damageEvents.length > 0) {
+      for (const evt of this.state.damageEvents) {
+        const bounds = getUnitBounds(UNIT_DEF_MAP.get(evt.unitType))
+        this.floatingDamageNumbers.push({
+          x: evt.x,
+          y: evt.y + bounds.top,
+          amount: evt.amount,
+          isFriendly: evt.isFriendly,
+          startedAt: evt.createdAt,
+        })
+      }
+      this.state.damageEvents.length = 0
+    }
+
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
 
     // Background outside the map
@@ -178,6 +209,7 @@ export class CanvasRenderer {
     this.drawProjectiles(this.state.projectiles)
     this.drawBuildPlacementGhost()
     this.drawSelectionBox()
+    this.drawFloatingDamageNumbers(renderTime)
 
     ctx.restore()
 
@@ -1579,6 +1611,33 @@ export class CanvasRenderer {
     }
     cache.set(key, lift)
     return lift
+  }
+
+  private drawFloatingDamageNumbers(renderTime: number) {
+    if (this.floatingDamageNumbers.length === 0) return
+    const ctx = this.ctx
+    ctx.save()
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    ctx.lineWidth = 3 / this.camera.zoom
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
+    ctx.font = `bold ${Math.max(12, 14 / this.camera.zoom)}px sans-serif`
+
+    const kept: typeof this.floatingDamageNumbers = []
+    for (const num of this.floatingDamageNumbers) {
+      const elapsed = renderTime - num.startedAt
+      if (elapsed >= this.FLOATING_DAMAGE_DURATION_MS) continue
+      const t = elapsed / this.FLOATING_DAMAGE_DURATION_MS
+      const drawY = num.y - this.FLOATING_DAMAGE_RISE_PX * t
+      ctx.globalAlpha = Math.max(0, 1 - t)
+      const text = String(num.amount)
+      ctx.strokeText(text, num.x, drawY)
+      ctx.fillStyle = num.isFriendly ? '#ef4444' : '#ffffff'
+      ctx.fillText(text, num.x, drawY)
+      kept.push(num)
+    }
+    ctx.restore()
+    this.floatingDamageNumbers = kept
   }
 
   private drawUnitRankUpBurst(

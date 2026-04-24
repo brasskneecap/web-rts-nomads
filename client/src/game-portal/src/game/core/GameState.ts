@@ -247,6 +247,22 @@ export type MoveMarker = {
   durationMs: number
 }
 
+// Client-derived damage event: emitted by applySnapshot whenever a unit's
+// HP drops between consecutive snapshots. The server does not send discrete
+// damage events — we diff HP ourselves and drain this queue each render in
+// CanvasRenderer to spawn floating damage numbers.
+export type DamageEvent = {
+  unitId: number
+  unitType: string
+  x: number
+  y: number
+  amount: number
+  // True when the victim is owned by the local player (→ red number).
+  // False when the victim is an enemy or neutral unit (→ white number).
+  isFriendly: boolean
+  createdAt: number
+}
+
 export type Vec2 = {
   x: number
   y: number
@@ -381,6 +397,11 @@ export class GameState {
   moveMarkers: MoveMarker[] = []
   private nextMoveMarkerId = 1
 
+  // Drained each render by CanvasRenderer to spawn floating damage numbers.
+  // Populated by applySnapshot from HP deltas between snapshots.
+  damageEvents: DamageEvent[] = []
+  private prevUnitHp = new Map<number, number>()
+
   setLocalPlayerId(playerId: string) {
     this.localPlayerId = playerId
   }
@@ -483,6 +504,31 @@ export class GameState {
 
     if (this.snapshotBuffer.length > this.maxBufferedSnapshots) {
       this.snapshotBuffer.shift()
+    }
+
+    // Derive damage events by diffing HP against the previous snapshot. Any
+    // strict decrease becomes a floating damage number. Heals (HP up) and
+    // brand-new units (no prevHp) are skipped. Units absent from this
+    // snapshot drop off prevUnitHp below so their last state doesn't linger.
+    for (const unit of frame.units) {
+      const prevHp = this.prevUnitHp.get(unit.id)
+      if (prevHp !== undefined && unit.hp !== undefined && unit.hp < prevHp) {
+        this.damageEvents.push({
+          unitId: unit.id,
+          unitType: unit.unitType,
+          x: unit.x,
+          y: unit.y,
+          amount: prevHp - unit.hp,
+          isFriendly: !!this.localPlayerId && unit.ownerId === this.localPlayerId,
+          createdAt: now,
+        })
+      }
+    }
+    this.prevUnitHp.clear()
+    for (const unit of frame.units) {
+      if (unit.hp !== undefined) {
+        this.prevUnitHp.set(unit.id, unit.hp)
+      }
     }
 
     this.units = frame.units.map((unit) => ({ ...unit }))

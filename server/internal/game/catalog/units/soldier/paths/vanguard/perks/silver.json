@@ -3,13 +3,13 @@
     "id": "last_stand",
     "displayName": "Last Stand",
     "icon": "perk-last-stand",
-    "description": "When dropping below a health threshold, gain a large armor bonus and taunt nearby enemies once.",
-    "tooltipTemplate": "When HP drops below {hpThresholdPercent%}: gain +{bonusArmor} armor and taunt all enemies within {tauntRadius} for {tauntDurationSeconds:1}s.",
+    "description": "When dropping below a health threshold, gain a large armor bonus and taunt nearby enemies for a short window.",
+    "tooltipTemplate": "When HP drops below {hpThresholdPercent%}: gain +{bonusArmor} armor and taunt all enemies within {tauntRadius} for {durationSeconds:1}s.",
     "config": {
       "hpThresholdPercent": 0.35,
-      "bonusArmor": 50,
+      "bonusArmor": 500,
       "tauntRadius": 120,
-      "tauntDurationSeconds": 3
+      "durationSeconds": 10
     }
   },
   {
@@ -32,18 +32,7 @@
     "config": {
       "enemyThreshold": 2,
       "radius": 100,
-      "bonusArmor": 30
-    }
-  },
-  {
-    "id": "bulwark",
-    "displayName": "Bulwark",
-    "icon": "perk-bulwark",
-    "description": "After holding position for a short time, gain a bonus shield. The shield is lost the moment this unit moves.",
-    "tooltipTemplate": "After standing still for {stationaryThresholdSeconds:1}s, gain a shield up to {maxShield} HP. Lost immediately on moving.",
-    "config": {
-      "stationaryThresholdSeconds": 3,
-      "maxShield": 40
+      "bonusArmor": 100
     }
   },
   {

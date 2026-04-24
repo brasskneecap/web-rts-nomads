@@ -165,8 +165,6 @@ func (s *GameState) unitMaxShieldLocked(unit *Unit) int {
 		switch perkID {
 		case "blood_engine":
 			total += int(def.Config["maxShield"])
-		case "bulwark":
-			total += int(def.Config["maxShield"])
 		// ── add cases for new shield-granting perks below this line ─────────
 		}
 	}
@@ -380,14 +378,13 @@ func (s *GameState) perkBonusArmorLocked(unit *Unit) int {
 		}
 		switch perkID {
 		case "last_stand":
-			// Bonus active only while HP is below the configured threshold.
-			// Recomputed live so the bonus appears/disappears cleanly as HP
-			// changes without requiring state updates.
-			if unit.MaxHP > 0 {
-				hpFrac := float64(unit.HP) / float64(unit.MaxHP)
-				if hpFrac <= def.Config["hpThresholdPercent"] {
-					total += int(def.Config["bonusArmor"])
-				}
+			// Bonus active only during the timed window opened by an HP dip
+			// below threshold (see last_stand tick in perks.go). Reads the
+			// decaying LastStandRemaining timer directly so the bonus
+			// disappears cleanly when the window expires — independent of
+			// current HP, so heals during the window keep the armor up.
+			if unit.PerkState.LastStandRemaining > 0 {
+				total += int(def.Config["bonusArmor"])
 			}
 
 		case "interlock":

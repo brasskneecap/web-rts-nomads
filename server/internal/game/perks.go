@@ -224,11 +224,18 @@ type UnitPerkState struct {
 	RetaliationActive bool
 
 	// ── last_stand (silver vanguard) ──────────────────────────────────────────
-	// LastStandTriggered tracks whether the one-shot taunt-on-threshold-entry has
-	// already fired during the current below-threshold period. Reset to false when
-	// the unit heals back above the threshold so the taunt can re-fire if the unit
-	// dips below again later.
+	// LastStandTriggered latches to true when HP first crosses below threshold,
+	// preventing the perk from re-firing during a single dip. Reset to false when
+	// the unit heals back above the threshold so another dip can re-trigger.
+	//
+	// LastStandRemaining is the seconds left on the combined armor-bonus +
+	// taunt window. Set to durationSeconds on trigger, decayed each tick. Both
+	// the flat armor bonus (perkBonusArmorLocked) and the buff icon read this
+	// directly — HP fraction is no longer consulted once the window is running,
+	// so healing out of the threshold mid-window keeps the bonus until the
+	// timer expires.
 	LastStandTriggered bool
+	LastStandRemaining float64
 
 	// ── punishing_guard (silver vanguard) ─────────────────────────────────────
 	// WeakenedRemaining is the seconds left on this unit's outgoing-damage debuff,
@@ -239,15 +246,11 @@ type UnitPerkState struct {
 	WeakenedRemaining float64
 	WeakenedMultiplier float64
 
-	// ── bulwark (silver vanguard) ─────────────────────────────────────────────
+	// ── rallying_banner (gold vanguard) — stationary counter ─────────────────
 	// StationarySeconds accumulates each tick the unit has not moved. Reset to 0
-	// on any tick where the unit moves. When it reaches stationaryThresholdSeconds
-	// the perk grants the unit a one-time shield up to maxShield.
-	// BulwarkShieldGranted gates the grant so the shield is set exactly once per
-	// stationary period — once granted, damage chips it down and it does NOT
-	// regenerate until the unit moves (clearing the flag) and re-plants.
-	StationarySeconds    float64
-	BulwarkShieldGranted bool
+	// on any tick where the unit moves. Rallying_banner reads this to gate when
+	// the Vanguard has been planted long enough to drop a banner.
+	StationarySeconds float64
 
 	// ── mark debuff (challengers_mark + marker_trap) ─────────────────────────
 	// Marks stack per source (up to maxDebuffStacks concurrent stacks). Each
@@ -679,23 +682,33 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			}
 
 		case "last_stand":
-			// Detect HP threshold crossings to fire the one-shot taunt.
-			// The taunt fires once per below-threshold entry; the flag resets
-			// when the unit heals back above the threshold so it can re-trigger.
+			// Detect HP threshold crossings to fire the combined armor-bonus +
+			// AoE-taunt window. The window fires once per below-threshold entry;
+			// the Triggered flag resets when the unit heals back above threshold
+			// so the next dip can re-fire. The Remaining timer decays every
+			// tick regardless of HP — healing out of the threshold mid-window
+			// keeps both the armor bonus and the standing taunts until the
+			// timer naturally expires.
+			if unit.PerkState.LastStandRemaining > 0 {
+				unit.PerkState.LastStandRemaining = math.Max(0, unit.PerkState.LastStandRemaining-dt)
+			}
 			if unit.MaxHP <= 0 {
 				continue
 			}
 			hpFrac := float64(unit.HP) / float64(unit.MaxHP)
 			threshold := def.Config["hpThresholdPercent"]
 			if hpFrac > threshold {
-				// Above threshold — reset so next dip can trigger again.
+				// Above threshold — allow the next dip to re-trigger. The
+				// Remaining timer is NOT reset here; an in-flight window
+				// keeps running until it decays to 0.
 				unit.PerkState.LastStandTriggered = false
 			} else if !unit.PerkState.LastStandTriggered {
-				// Just crossed below — fire the one-shot AoE taunt.
+				// Just crossed below — start the window and fire the taunt.
+				duration := def.Config["durationSeconds"]
 				unit.PerkState.LastStandTriggered = true
+				unit.PerkState.LastStandRemaining = duration
 				radius := def.Config["tauntRadius"]
 				radiusSq := radius * radius
-				duration := def.Config["tauntDurationSeconds"]
 				for _, candidate := range s.Units {
 					if candidate == nil || candidate.ID == unit.ID {
 						continue
@@ -714,37 +727,6 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 				}
 			}
 
-		case "bulwark":
-			// Track how long the unit has been stationary. When the threshold is
-			// reached, grant the shield ONCE up to maxShield — subsequent damage
-			// chips it down and it does not regenerate until the unit moves and
-			// re-plants. When the unit moves, reset the counter, drop any
-			// existing shield, and clear the granted flag so the next stationary
-			// period can re-arm. Bulwark is a planted-play reward — breaking
-			// formation forfeits the protection AND any partial shield is lost.
-			//
-			// StationarySeconds is shared with rallying_banner — both read the
-			// same counter. The Moving branch no longer clears RallyingBannerPlanted
-			// (that field was replaced by BannerCooldownRemaining which persists
-			// across movement independently).
-			//
-			// Assumption: no other perk grants shield to a Vanguard today
-			// (blood_engine is Berserker-only). If a future Vanguard perk adds
-			// shield from another source, this zero-on-move will need to
-			// subtract only Bulwark's portion.
-			if unit.Moving {
-				unit.PerkState.StationarySeconds = 0
-				unit.PerkState.BulwarkShieldGranted = false
-				unit.Shield = 0
-			} else {
-				unit.PerkState.StationarySeconds += dt
-				if !unit.PerkState.BulwarkShieldGranted &&
-					unit.PerkState.StationarySeconds >= def.Config["stationaryThresholdSeconds"] {
-					unit.Shield = int(def.Config["maxShield"])
-					unit.PerkState.BulwarkShieldGranted = true
-				}
-			}
-
 		case "rallying_banner":
 			// Plant a banner at the unit's current position once per cooldown
 			// window. The banner persists for bannerDurationSeconds even if the
@@ -755,10 +737,6 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			// as the plant gate (unit must be stationary long enough), but the
 			// cooldown prevents replanting immediately after moving back into
 			// position within the same 12s window.
-			//
-			// StationarySeconds is maintained by the bulwark case above when both
-			// perks are owned. When rallying_banner is owned alone (without bulwark),
-			// we manage StationarySeconds here directly.
 			bannerDef := perkDefByID("rallying_banner")
 			if bannerDef == nil {
 				continue
@@ -768,16 +746,9 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			unit.PerkState.BannerCooldownRemaining = math.Max(0, unit.PerkState.BannerCooldownRemaining-dt)
 
 			if unit.Moving {
-				// Only reset StationarySeconds if bulwark isn't already handling it.
-				// Bulwark's Moving branch runs first (PerkIDs are rank-up order).
-				// Resetting here is safe — assigning 0 to an already-0 field is a no-op.
 				unit.PerkState.StationarySeconds = 0
 			} else {
-				// Only increment StationarySeconds if bulwark hasn't already done so.
-				hasBulwark := containsString(unit.PerkIDs, "bulwark")
-				if !hasBulwark {
-					unit.PerkState.StationarySeconds += dt
-				}
+				unit.PerkState.StationarySeconds += dt
 				threshold := bannerDef.Config["stationaryThresholdSeconds"]
 				if unit.PerkState.StationarySeconds >= threshold &&
 					unit.PerkState.BannerCooldownRemaining <= 0 {
