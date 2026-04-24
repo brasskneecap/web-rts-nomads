@@ -125,6 +125,10 @@ export function useGameClient() {
     client?.cancelDebugSpawn()
   }
 
+  function selectUnitOnly(unitId: number) {
+    client?.selectUnitOnly(unitId)
+  }
+
   onBeforeUnmount(() => {
     destroy()
   })
@@ -138,6 +142,7 @@ export function useGameClient() {
     retryReconnect,
     beginDebugSpawn,
     cancelDebugSpawn,
+    selectUnitOnly,
     ui,
     connectionState,
     reconnectAttempt,

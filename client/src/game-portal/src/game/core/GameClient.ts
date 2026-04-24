@@ -162,6 +162,10 @@ export class GameClient {
     this.input.refreshCursor()
   }
 
+  selectUnitOnly(unitId: number) {
+    this.state.selectUnit(unitId)
+  }
+
   performSelectionAction(actionId: string) {
     const selectedBuilding = this.state.getSelectedBuilding()
 

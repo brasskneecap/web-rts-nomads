@@ -130,7 +130,12 @@
         </div>
         <MapEditorPanel v-model="editorMap" />
       </div>
-      <SelectionHud v-if="hasStarted" :ui="ui" @action="performSelectionAction" />
+      <SelectionHud
+        v-if="hasStarted"
+        :ui="ui"
+        @action="performSelectionAction"
+        @select-unit="selectUnitOnly"
+      />
     </div>
   </div>
 </template>
@@ -232,6 +237,7 @@ const {
   retryReconnect,
   beginDebugSpawn,
   cancelDebugSpawn,
+  selectUnitOnly,
   ui,
   connectionState,
   reconnectAttempt,

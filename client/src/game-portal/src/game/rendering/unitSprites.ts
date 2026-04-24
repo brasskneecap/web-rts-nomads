@@ -169,6 +169,21 @@ export function getUnitSpriteSet(...keys: Array<string | undefined | null>): Uni
   return null
 }
 
+// Resolves a static portrait URL for use in DOM <img> tags (selection cards,
+// tooltips, etc.). Path wins over unitType so promoted variants show their own
+// art. Prefers the south-facing rotation (the most "portrait-like" pose) and
+// falls back through the other directions when south is missing.
+export function getUnitPortraitUrl(path?: string, unitType?: string): string | null {
+  const set = getUnitSpriteSet(path, unitType)
+  if (!set) return null
+  const img =
+    set.rotations.south ??
+    set.rotations.north ??
+    set.rotations.east ??
+    set.rotations.west
+  return img?.src ?? null
+}
+
 function imageReady(img: HTMLImageElement | undefined): img is HTMLImageElement {
   return !!img && img.complete && img.naturalWidth > 0
 }

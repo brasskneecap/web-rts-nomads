@@ -1470,8 +1470,6 @@ export class GameState {
       }
     }
 
-    const totalHp = selectedUnits.reduce((sum, unit) => sum + (unit.hp ?? 0), 0)
-    const totalMaxHp = selectedUnits.reduce((sum, unit) => sum + (unit.maxHp ?? unit.hp ?? 0), 0)
     const groupBuildMenuOpen =
       this.workerBuildMenuOpen && selectedUnits.every((u) => u.capabilities.includes('build'))
 
@@ -1486,7 +1484,7 @@ export class GameState {
               : 'Mixed Detachment',
             this.unitTargetingMode,
           ),
-      details: getGroupDetails(selectedUnits, totalHp, totalMaxHp),
+      details: getGroupDetails(selectedUnits),
       actions: getGroupActions(selectedUnits, this.unitTargetingMode, groupBuildMenuOpen),
     }
   }
@@ -2172,27 +2170,8 @@ function getUnitXpLabel(unit: Unit): string {
   return `${xp} XP (max)`
 }
 
-function getGroupDetails(units: Unit[], totalHp: number, totalMaxHp: number): DetailItem[] {
-  const details: DetailItem[] = [
-    {
-      id: 'durability',
-      label: 'Durability',
-      value: `${totalHp} / ${totalMaxHp}`,
-    },
-  ]
-
-  const ranks = new Map<string, number>()
-  for (const unit of units) {
-    const rank = formatUnitRank(unit.rank)
-    ranks.set(rank, (ranks.get(rank) ?? 0) + 1)
-  }
-  if (ranks.size > 0) {
-    details.push({
-      id: 'group-ranks',
-      label: 'Ranks',
-      value: [...ranks.entries()].map(([rank, count]) => `${rank} x${count}`).join(', '),
-    })
-  }
+function getGroupDetails(units: Unit[]): DetailItem[] {
+  const details: DetailItem[] = []
 
   const carryingGold = units.reduce(
     (sum, unit) => sum + (unit.carriedResourceType === 'gold' ? unit.carriedAmount ?? 0 : 0),

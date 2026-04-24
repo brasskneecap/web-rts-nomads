@@ -52,6 +52,37 @@
       </section>
 
       <section class="selection-panel selection-panel--details">
+        <div v-if="unitCards.length > 0" class="unit-cards">
+          <button
+            v-for="card in unitCards"
+            :key="card.id"
+            type="button"
+            class="unit-card"
+            :title="card.title"
+            @click="$emit('select-unit', card.id)"
+          >
+            <div class="unit-card__hp">
+              <div
+                class="unit-card__hp-fill"
+                :class="{
+                  'unit-card__hp-fill--low': card.hpFraction > 0 && card.hpFraction < 0.34,
+                  'unit-card__hp-fill--mid': card.hpFraction >= 0.34 && card.hpFraction < 0.67,
+                }"
+                :style="{ width: `${card.hpFraction * 100}%` }"
+              />
+            </div>
+            <div class="unit-card__portrait">
+              <img
+                v-if="card.portraitUrl"
+                :src="card.portraitUrl"
+                :alt="card.title"
+                draggable="false"
+              />
+              <span v-else class="unit-card__portrait-fallback">{{ card.initials }}</span>
+            </div>
+          </button>
+        </div>
+
         <div v-if="ui.selection.kind === 'building' && ui.selection.construction" class="construction-card">
           <div class="construction-bar">
             <div
@@ -81,7 +112,7 @@
             </button>
           </div>
         </div>
-        <div v-if="inlineDetails.length > 0 || iconDetails.length === 0" class="detail-inline">
+        <div v-if="inlineDetails.length > 0" class="detail-inline">
           <template v-for="(detail, index) in inlineDetails" :key="detail.id">
             <span class="detail-entry" :title="detail.tooltip">
               <span>{{ detail.label }}</span>
@@ -89,7 +120,6 @@
             </span>
             <span v-if="index < inlineDetails.length - 1" class="detail-separator">,</span>
           </template>
-          <span v-if="iconDetails.length === 0 && inlineDetails.length === 0" class="detail-empty">No details available</span>
         </div>
       </section>
     </div>
@@ -185,10 +215,12 @@
 import { computed } from 'vue'
 import type { ActionItem } from '@/game/core/GameState'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
+import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 import ActionIcon from '@/components/ActionIcon.vue'
 
 defineEmits<{
   action: [actionId: string]
+  'select-unit': [unitId: number]
 }>()
 
 const props = defineProps<{
@@ -201,6 +233,26 @@ const GRID_SIZE = 9
 // a vertical icon+value grid, everything else falls through to the inline row.
 const iconDetails = computed(() => props.ui.selection.details.filter((d) => !!d.icon))
 const inlineDetails = computed(() => props.ui.selection.details.filter((d) => !d.icon))
+
+// One card per selected unit. Portrait prefers the unit's promoted path (e.g.
+// a berserker-path soldier shows the berserker sprite) and falls back to the
+// base unit type when the path has no dedicated sprite set.
+const unitCards = computed(() => {
+  const units = props.ui.selectedUnits
+  if (units.length === 0) return []
+  return units.map((u) => {
+    const max = u.maxHp ?? u.hp ?? 0
+    const hp = u.hp ?? 0
+    const hpFraction = max > 0 ? Math.max(0, Math.min(1, hp / max)) : 0
+    return {
+      id: u.id,
+      title: `${u.name}  ${hp} / ${max}`,
+      portraitUrl: getUnitPortraitUrl(u.path, u.unitType),
+      initials: (u.name || u.unitType || '?').slice(0, 2).toUpperCase(),
+      hpFraction,
+    }
+  })
+})
 
 // perkCooldownFraction returns the remaining/total ratio for a perk action,
 // clamped to [0, 1]. 0 means the perk is ready (no overlay rendered); >0
@@ -235,7 +287,7 @@ function resourceDisplayName(resourceId: string): string {
   gap: 6px;
   --selection-panel-width: clamp(280px, 30vw, 360px);
   --actions-panel-width: clamp(170px, 18vw, 210px);
-  --main-panel-height: clamp(100px, 14vh, 140px);
+  --main-panel-height: clamp(110px, calc(14vh + 10px), 150px);
   --hud-height: clamp(180px, 28vh, 240px);
   pointer-events: none;
 }
@@ -451,6 +503,101 @@ function resourceDisplayName(resourceId: string): string {
   overflow-y: auto;
 }
 
+.unit-cards {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(210, 176, 113, 0.4) transparent;
+}
+
+.unit-cards::-webkit-scrollbar {
+  width: 6px;
+}
+
+.unit-cards::-webkit-scrollbar-thumb {
+  background: rgba(210, 176, 113, 0.4);
+  border-radius: 3px;
+}
+
+.unit-card {
+  display: flex;
+  flex-direction: column;
+  width: 52px;
+  padding: 0;
+  border: 1px solid rgba(210, 176, 113, 0.45);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(54, 34, 20, 0.9), rgba(36, 22, 12, 0.9));
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 235, 193, 0.08);
+  transition: border-color 0.12s ease-out, transform 0.08s ease-out;
+}
+
+.unit-card:hover {
+  border-color: rgba(251, 205, 120, 0.9);
+  transform: translateY(-1px);
+}
+
+.unit-card:active {
+  transform: translateY(0);
+}
+
+.unit-card__hp {
+  position: relative;
+  height: 5px;
+  background: rgba(20, 10, 4, 0.85);
+  border-bottom: 1px solid rgba(70, 47, 24, 0.6);
+  overflow: hidden;
+}
+
+.unit-card__hp-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, #4ade80, #22c55e);
+  transition: width 0.15s ease-out;
+}
+
+.unit-card__hp-fill--mid {
+  background: linear-gradient(90deg, #facc15, #eab308);
+}
+
+.unit-card__hp-fill--low {
+  background: linear-gradient(90deg, #f87171, #dc2626);
+}
+
+.unit-card__portrait {
+  position: relative;
+  width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at top, rgba(220, 165, 80, 0.18), transparent 65%),
+    linear-gradient(180deg, rgba(72, 48, 22, 0.6), rgba(40, 24, 10, 0.6));
+}
+
+.unit-card__portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.unit-card__portrait-fallback {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #f5ead2;
+}
+
 .production-card {
   margin-top: 2px;
 }
@@ -575,10 +722,6 @@ function resourceDisplayName(resourceId: string): string {
 
 .detail-separator {
   margin-right: 4px;
-}
-
-.detail-empty {
-  color: #cbb893;
 }
 
 .action-cell {
