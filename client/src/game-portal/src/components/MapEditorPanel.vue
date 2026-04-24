@@ -399,6 +399,15 @@
                 :disabled="!paintModeEnabled || enemySpawnOnce"
               />
             </template>
+            <label for="enemy-ignore-wave-clear" class="checkbox-label">
+              <input
+                id="enemy-ignore-wave-clear"
+                type="checkbox"
+                v-model="enemyIgnoreWaveClear"
+                :disabled="!paintModeEnabled"
+              />
+              Ignore Wave Clear
+            </label>
             <label for="enemy-spawn-count">Spawn Count</label>
             <input
               id="enemy-spawn-count"
@@ -541,6 +550,16 @@
               <input type="number" min="1" :value="selectedEditBuilding.metadata?.['spawnIntervalSeconds'] ?? 10" @input="updateEditMeta('spawnIntervalSeconds', +($event.target as HTMLInputElement).value)" :disabled="selectedEditBuilding.metadata?.['spawnOnce'] === true" />
             </div>
             </template>
+            <div class="edit-field">
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  :checked="selectedEditBuilding.metadata?.['ignoreWaveClear'] === true"
+                  @change="updateEditMeta('ignoreWaveClear', ($event.target as HTMLInputElement).checked || undefined)"
+                />
+                Ignore Wave Clear
+              </label>
+            </div>
             <div class="edit-field">
               <label>Spawn Count</label>
               <input type="number" min="1" max="20" :value="selectedEditBuilding.metadata?.['spawnCount'] ?? 1" @input="updateEditMeta('spawnCount', +($event.target as HTMLInputElement).value)" />
@@ -708,6 +727,7 @@ const enemySpawnDelay = ref(0)
 const enemySpawnInterval = ref(10)
 const enemySpawnCount = ref(1)
 const enemySpawnOnce = ref(false)
+const enemyIgnoreWaveClear = ref(false)
 const enemyUnitType = ref('raider')
 const enemyWaveMode = ref<'gameStart' | 'always' | 'specific' | 'repeating'>('always')
 const enemyWaveNumber = ref(1)
@@ -1312,6 +1332,7 @@ function paintBuildingAt(cx: number, cy: number) {
       ...(enemyWaveMode.value === 'repeating' ? { startingWave: enemyWaveNumber.value } : {}),
       ...(enemyWaveMode.value !== 'gameStart' ? { spawnDelaySeconds: enemySpawnDelay.value, spawnIntervalSeconds: enemySpawnInterval.value } : {}),
       ...(enemyWaveMode.value !== 'gameStart' && enemySpawnOnce.value ? { spawnOnce: true } : {}),
+      ...(enemyIgnoreWaveClear.value ? { ignoreWaveClear: true } : {}),
       spawnCount: enemySpawnCount.value,
       unitType: enemyUnitType.value,
       ...(enemyObjectiveId.value ? { objectiveId: enemyObjectiveId.value } : {}),

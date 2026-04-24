@@ -346,6 +346,9 @@ export type UnitSnapshot = {
   targetX?: number
   targetY?: number
   moving: boolean
+  /** Building ID the worker is gathering from / constructing / repairing. Used
+   * by the renderer to orient the sprite toward the exact target. */
+  workTargetId?: string
   /** Current order type — one of the UnitOrder values. Omitted by old servers; treat absence as 'idle'. */
   order?: UnitOrder
   /**

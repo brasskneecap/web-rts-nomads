@@ -103,6 +103,12 @@ type Unit struct {
 	// from an enemy-spawnpoint whose metadata["objectiveId"] matches a condition.
 	ObjectiveID string
 
+	// IgnoreWaveClear marks this unit as excluded from the wave-completion
+	// check in countEnemyUnitsLocked. Set when spawned from an enemy-spawnpoint
+	// whose metadata["ignoreWaveClear"] is true (e.g. ambient/background
+	// enemies that must not stall wave progression).
+	IgnoreWaveClear bool
+
 	CarriedResourceType string
 	CarriedAmount       int
 	GatherTargetID      string
@@ -529,6 +535,14 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		if unit.Moving {
 			snapshot.TargetX = unit.TargetX
 			snapshot.TargetY = unit.TargetY
+		}
+
+		// Expose the work target so the client can face the worker sprite
+		// toward the exact building it is interacting with.
+		if unit.Gathering && unit.GatherTargetID != "" {
+			snapshot.WorkTargetID = unit.GatherTargetID
+		} else if unit.Building && unit.BuildTargetID != "" {
+			snapshot.WorkTargetID = unit.BuildTargetID
 		}
 
 		if unit.UnitType == "archer" && unit.ProgressionPath == "trapper" {

@@ -19,7 +19,7 @@ import {
 } from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
-import type { BannerSnapshot, BuildingTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
+import type { BannerSnapshot, BuildingTile, ObstacleTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
 import { getRankToneColor } from './rankColors'
@@ -155,6 +155,7 @@ export class CanvasRenderer {
     const renderTime = performance.now()
     this.renderTime = renderTime
     const units = this.state.getInterpolatedUnits(renderTime)
+    const sortedUnits = units.slice().sort((a, b) => a.y - b.y)
 
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
 
@@ -172,7 +173,7 @@ export class CanvasRenderer {
     this.drawBuildingSpawnMarkers()
     this.drawTraps(this.state.traps)
     this.drawBanners(this.state.banners)
-    this.drawUnits(units)
+    this.drawUnits(sortedUnits)
     // Drawn after units so arrows render on top of the firing unit's body.
     this.drawProjectiles(this.state.projectiles)
     this.drawBuildPlacementGhost()
@@ -1255,6 +1256,7 @@ export class CanvasRenderer {
       ownerId?: string
       carriedResourceType?: string
       perkIds?: string[]
+      workTargetId?: string
     }>,
   ) {
     const ctx = this.ctx
@@ -1307,6 +1309,20 @@ export class CanvasRenderer {
         ctx.stroke()
       }
 
+      // Drag-select candidate ring — shown while the selection box is active
+      // for any friendly unit whose body is inside the box. Matches the
+      // selection box color so it reads as "will be selected on release".
+      if (this.state.selectionBox.active && !selected && this.state.isUnitInSelectionBox(unit)) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(80, 160, 255, 0.9)'
+        ctx.lineWidth = 2 / this.camera.zoom
+        ctx.setLineDash([5 / this.camera.zoom, 4 / this.camera.zoom])
+        ctx.beginPath()
+        ctx.ellipse(unit.x, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
+
       // Enemy hover ring (orange dashed)
       if (isHoveredEnemy && !isInspected) {
         ctx.save()
@@ -1357,16 +1373,24 @@ export class CanvasRenderer {
 
       const unitColor = unit.color || 'lime'
       if (spriteSet) {
-        const attackFacing =
-          unit.status === 'Attacking'
-            ? findAttackFacing(
-                unit,
-                unitDef,
-                units,
-                this.state.mapConfig.buildings,
-                this.state.mapConfig.cellSize,
-              )
-            : null
+        let actionFacing: { dx: number; dy: number } | null = null
+        if (unit.status === 'Attacking') {
+          actionFacing = findAttackFacing(
+            unit,
+            unitDef,
+            units,
+            this.state.mapConfig.buildings,
+            this.state.mapConfig.cellSize,
+          )
+        } else if (unit.workTargetId) {
+          actionFacing = findWorkFacing(
+            unit,
+            unit.workTargetId,
+            this.state.mapConfig.buildings,
+            this.state.mapConfig.obstacles,
+            this.state.mapConfig.cellSize,
+          )
+        }
         // Sync attack-animation speed to the unit's effective attackSpeed
         // (attacks/sec, includes rank/perk bonuses from the server). One
         // full animation cycle = one attack cooldown.
@@ -1383,7 +1407,7 @@ export class CanvasRenderer {
           unit.y,
           unit.status,
           unit.moving,
-          attackFacing,
+          actionFacing,
           attackFrameDurationMs,
           this.renderTime,
           unit.carriedResourceType,
@@ -2321,4 +2345,32 @@ function findAttackFacing(
   }
 
   return bestSq === Infinity ? null : { dx: bestDx, dy: bestDy }
+}
+
+// Orients a stationary worker toward the exact building or obstacle it is
+// gathering from, constructing, or repairing. The server publishes the target
+// id on the unit snapshot (WorkTargetID). Trees are obstacles, other work
+// targets are buildings, so both collections are searched.
+function findWorkFacing(
+  worker: { x: number; y: number },
+  workTargetId: string,
+  buildings: BuildingTile[],
+  obstacles: ObstacleTile[],
+  cellSize: number,
+): { dx: number; dy: number } | null {
+  for (const building of buildings) {
+    if (building.id !== workTargetId) continue
+    const cx = building.x * cellSize + (building.width * cellSize) / 2
+    const cy = building.y * cellSize + (building.height * cellSize) / 2
+    return { dx: cx - worker.x, dy: cy - worker.y }
+  }
+  for (const obstacle of obstacles) {
+    if (obstacle.id !== workTargetId) continue
+    const w = obstacle.width ?? 1
+    const h = obstacle.height ?? 1
+    const cx = obstacle.x * cellSize + (w * cellSize) / 2
+    const cy = obstacle.y * cellSize + (h * cellSize) / 2
+    return { dx: cx - worker.x, dy: cy - worker.y }
+  }
+  return null
 }

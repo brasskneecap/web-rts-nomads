@@ -2008,7 +2008,9 @@
           "enemy-spawner"
         ],
         "metadata": {
+          "damageMultiplierPerWave": 0.1,
           "gameStart": true,
+          "healthMultiplierPerWave": 0.1,
           "spawnCount": 1,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
@@ -2029,7 +2031,9 @@
           "enemy-spawner"
         ],
         "metadata": {
+          "damageMultiplierPerWave": 0.1,
           "gameStart": true,
+          "healthMultiplierPerWave": 0.1,
           "spawnCount": 1,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
@@ -2073,8 +2077,8 @@
         ],
         "metadata": {
           "spawnCount": 2,
-          "spawnDelaySeconds": 0,
-          "spawnIntervalSeconds": 10,
+          "spawnDelaySeconds": 5,
+          "spawnIntervalSeconds": 5,
           "startingWave": 1,
           "targetPlayerLabel": "player2",
           "unitType": "raider"
@@ -2093,8 +2097,10 @@
           "enemy-spawner"
         ],
         "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
           "spawnCount": 1,
-          "spawnDelaySeconds": 0,
+          "spawnDelaySeconds": 5,
           "spawnIntervalSeconds": 10,
           "startingWave": 1,
           "targetPlayerLabel": "player1",
@@ -2114,6 +2120,8 @@
           "enemy-spawner"
         ],
         "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
           "spawnCount": 1,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
@@ -2135,7 +2143,9 @@
           "enemy-spawner"
         ],
         "metadata": {
+          "damageMultiplierPerWave": 0.1,
           "gameStart": true,
+          "healthMultiplierPerWave": 0.1,
           "spawnCount": 1,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
@@ -2156,7 +2166,9 @@
           "enemy-spawner"
         ],
         "metadata": {
+          "damageMultiplierPerWave": 0.1,
           "gameStart": true,
+          "healthMultiplierPerWave": 0.1,
           "spawnCount": 1,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 10,
@@ -2177,6 +2189,8 @@
           "enemy-spawner"
         ],
         "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
           "spawnCount": 5,
           "spawnDelaySeconds": 0,
           "spawnIntervalSeconds": 30,
@@ -2199,12 +2213,14 @@
           "enemy-spawner"
         ],
         "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
           "spawnCount": 1,
-          "spawnDelaySeconds": 0,
-          "spawnIntervalSeconds": 10,
+          "spawnDelaySeconds": 10,
+          "spawnIntervalSeconds": 5,
           "startingWave": 3,
           "targetPlayerLabel": "player1",
-          "unitType": "raider"
+          "unitType": "ranged_raider"
         }
       },
       {
@@ -2220,12 +2236,37 @@
           "enemy-spawner"
         ],
         "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
           "spawnCount": 2,
           "spawnDelaySeconds": 0,
-          "spawnIntervalSeconds": 10,
+          "spawnIntervalSeconds": 5,
           "startingWave": 1,
           "targetPlayerLabel": "player1",
           "unitType": "raider"
+        }
+      },
+      {
+        "x": 14,
+        "y": 21,
+        "id": "enemy-spawnpoint-14-21",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 15,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player1",
+          "unitType": "ranged_raider"
         }
       },
       {
@@ -2241,6 +2282,7 @@
           "enemy-spawner"
         ],
         "metadata": {
+          "ignoreWaveClear": true,
           "objectiveId": "obj-1",
           "spawnCount": 5,
           "spawnDelaySeconds": 0,
@@ -2253,7 +2295,7 @@
     "waveConfig": {
       "totalWaves": 10,
       "prepDuration": 60,
-      "waveDuration": 120
+      "waveDuration": 88
     },
     "victoryConditions": [
       {
@@ -2261,9 +2303,6 @@
         "type": "killUnit",
         "count": 1
       }
-    ],
-    "debug": {
-      "debugSpawn": true
-    }
+    ]
   }
 }

@@ -315,6 +315,9 @@ func (s *GameState) onUnitRankUpLocked(unit *Unit) {
 		return
 	}
 	unit.RankUpFxRemaining = rankUpFxDurationSecs
+	if halfHP := unit.MaxHP / 2; unit.HP < halfHP {
+		unit.HP = halfHP
+	}
 }
 
 // recordDamageDealtLocked banks damage an attacker has dealt to a unit. The XP

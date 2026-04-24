@@ -25,7 +25,7 @@ import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
 import { formatPerkTooltip } from './perkTooltip'
-import { isPointInUnitBody } from '../rendering/unitSprites'
+import { getUnitBodyRect, isPointInUnitBody } from '../rendering/unitSprites'
 
 /**
  * Live-compounded trap stats for archer/trapper units, reflecting the full
@@ -91,6 +91,7 @@ export type Unit = {
   targetX?: number
   targetY?: number
   moving?: boolean
+  workTargetId?: string
   /**
    * Live-compounded trap stats for archer/trapper units. Only set when the
    * unit is a trapper archetype that owns at least one trap bronze perk.
@@ -472,6 +473,7 @@ export class GameState {
         targetX: unit.targetX,
         targetY: unit.targetY,
         moving: unit.moving,
+        workTargetId: unit.workTargetId,
         effectiveTrap: unit.effectiveTrap,
         order: unit.order,
       })),
@@ -713,19 +715,30 @@ export class GameState {
     }
   }
 
-  private getUnitsInSelectionBox(): Unit[] {
+  // True when the selection box covers the unit's upper-feet / lower-leg
+  // level — the test point sits 85% down the sprite-aware body rect, so a
+  // drag only needs to reach the ankles (not the mid-torso) to pick the
+  // unit up. Same body rect as single-click hit testing so drag-select and
+  // click-select agree on what "hits" a unit.
+  isUnitInSelectionBox(unit: Unit): boolean {
+    if (!this.selectionBox.active) return false
+    if (!this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
     const { left, right, top, bottom } = this.getSelectionBounds()
+    const rect = getUnitBodyRect({
+      x: unit.x,
+      y: unit.y,
+      unitType: unit.unitType,
+      path: unit.path,
+      padding: 0,
+    })
+    const cx = (rect.minX + rect.maxX) / 2
+    const cy = rect.minY + (rect.maxY - rect.minY) * 0.85
+    return cx >= left && cx <= right && cy >= top && cy <= bottom
+  }
 
+  private getUnitsInSelectionBox(): Unit[] {
     return this.getInteractionUnits()
-      .filter((unit) => {
-        return (
-          this.isOwnedByLocalPlayer(unit) &&
-          unit.x >= left &&
-          unit.x <= right &&
-          unit.y >= top &&
-          unit.y <= bottom
-        )
-      })
+      .filter((unit) => this.isUnitInSelectionBox(unit))
       .sort((a, b) => {
         const rowTolerance = 12
         const yDiff = a.y - b.y

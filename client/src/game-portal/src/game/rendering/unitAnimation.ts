@@ -39,7 +39,7 @@ export class UnitAnimationController {
     y: number,
     status: string | undefined,
     serverMoving: boolean | undefined,
-    attackFacing: { dx: number; dy: number } | null,
+    actionFacing: { dx: number; dy: number } | null,
     attackFrameDurationMs: number | undefined,
     renderTime: number,
     carriedResource: string | undefined,
@@ -65,10 +65,13 @@ export class UnitAnimationController {
     const interpSpeed = Math.hypot(dx, dy) / dt
     const interpolatedMoving = interpSpeed > MOVING_THRESHOLD_PX_PER_MS
 
-    // Facing — priority: attack target, then movement, then sticky last value.
+    // Facing — priority: action target (attack/work), then movement, then
+    // sticky last value. The action-target hint lets stationary units (chopping
+    // a tree, constructing a building, attacking from melee range) orient
+    // toward their target even though no interpolated movement is happening.
     let direction = state.direction
-    if (status === 'Attacking' && attackFacing) {
-      direction = classifyDirection(attackFacing.dx, attackFacing.dy, state.direction)
+    if (actionFacing) {
+      direction = classifyDirection(actionFacing.dx, actionFacing.dy, state.direction)
     } else if (interpolatedMoving) {
       direction = classifyDirection(dx, dy, state.direction)
     }

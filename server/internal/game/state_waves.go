@@ -118,16 +118,21 @@ func (s *GameState) tickWaveLocked(dt float64) {
 
 	case "active":
 		wm.Timer += dt
-		// The wave ends when the active timer expires. Surviving enemies remain
-		// on the field and continue fighting into the prep phase.
+		// Spawn phase ends when the active timer expires, but the wave itself
+		// does not end until every enemy spawned during it is dead. Hold the
+		// timer at WaveDuration so tickEnemySpawnpointsLocked keeps seeing the
+		// spawn phase as closed while we wait on the clear.
 		timerExpired := wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration
 		if timerExpired {
-			if wm.TotalWaves > 0 && wm.CurrentWave >= wm.TotalWaves {
-				wm.State = "complete"
-				s.markWaveObjectivesCompleteLocked()
-			} else {
-				wm.State = "prep"
-				wm.Timer = wm.PrepDuration
+			wm.Timer = wm.WaveDuration
+			if s.countEnemyUnitsLocked() == 0 {
+				if wm.TotalWaves > 0 && wm.CurrentWave >= wm.TotalWaves {
+					wm.State = "complete"
+					s.markWaveObjectivesCompleteLocked()
+				} else {
+					wm.State = "prep"
+					wm.Timer = wm.PrepDuration
+				}
 			}
 		}
 
@@ -135,11 +140,14 @@ func (s *GameState) tickWaveLocked(dt float64) {
 	}
 }
 
-// countEnemyUnitsLocked returns the number of living enemy units on the field.
+// countEnemyUnitsLocked returns the number of living enemy units on the field
+// that gate wave progression. Units spawned from spawnpoints flagged with
+// metadata["ignoreWaveClear"] are skipped so ambient/background enemies do
+// not stall the active → prep transition.
 func (s *GameState) countEnemyUnitsLocked() int {
 	count := 0
 	for _, u := range s.Units {
-		if u.OwnerID == enemyPlayerID && u.HP > 0 && u.Visible {
+		if u.OwnerID == enemyPlayerID && u.HP > 0 && u.Visible && !u.IgnoreWaveClear {
 			count++
 		}
 	}
@@ -271,6 +279,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 		unitType := "raider"
 		objectiveId := ""
 		targetPlayerLabel := ""
+		ignoreWaveClear := getMetadataBool(building.Metadata, "ignoreWaveClear")
 		if building.Metadata != nil {
 			if v, ok := getMetadataFloat(building.Metadata, "spawnCount"); ok && v >= 1 {
 				spawnCount = int(v)
@@ -322,6 +331,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			}
 			s.applyWaveStatScalingLocked(unit, hpMult, dmgMult)
 			unit.OrderID = orderID
+			unit.IgnoreWaveClear = ignoreWaveClear
 			if objectiveId != "" {
 				// Existing objective mechanic: keep unit stationary at an objective.
 				unit.ObjectiveID = objectiveId

@@ -353,6 +353,12 @@ type UnitSnapshot struct {
 	TargetX             float64  `json:"targetX,omitempty"`
 	TargetY             float64  `json:"targetY,omitempty"`
 	Moving              bool     `json:"moving"`
+	// WorkTargetID is the building this unit is currently gathering from,
+	// constructing, or repairing. The client uses it to orient the worker
+	// sprite toward the exact building it is interacting with (there may be
+	// more than one valid candidate within range, so "nearest" is not
+	// sufficient). Empty when the unit is not in a work state.
+	WorkTargetID        string   `json:"workTargetId,omitempty"`
 	// EffectiveTrap carries the live compounded trap stats for the unit's current
 	// bronze trap perk. Only present for archer units on the trapper path that own
 	// a bronze trap perk; nil/omitted for all other units.

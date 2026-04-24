@@ -3,7 +3,7 @@
   "name": "Soldier",
   "archetype": "soldier",
   "hp": 150,
-  "damage": 10,
+  "damage": 12,
   "attackRange": 60,
   "attackSpeed": 1,
   "moveSpeed": 100,
