@@ -100,6 +100,7 @@ func (s *GameState) BuildBuilding(playerID, buildingType string, unitIDs []int, 
 
 	metadata := map[string]interface{}{
 		"underConstruction": true,
+		"pendingStart":      true,
 		"hp":                1.0,
 		"maxHp":             def.MaxHp,
 		"hpPerSecond":       def.HpPerSecond(),
@@ -167,6 +168,10 @@ func (s *GameState) updateWorkerBuildStateLocked(unit *Unit) {
 		unit.Status = "Idle"
 		return
 	}
+	// First worker to arrive flips the building out of ghost/pending state so
+	// HP progress and the construction-animation sprite take over from the
+	// transparent final-sprite preview on the client.
+	delete(building.Metadata, "pendingStart")
 	unit.Building = true
 	unit.Status = "Building"
 }
@@ -183,6 +188,56 @@ func getBuildingHP(building *protocol.BuildingTile) (hp, maxHp float64, ok bool)
 		return 0, 0, false
 	}
 	return h, m, true
+}
+
+// cancelOrphanedPendingBuildingsLocked scans for pending-start buildings
+// (placed but no worker has arrived to begin construction) whose assigned
+// workers have all been reassigned / killed / lost their BuildTargetID.
+// These get torn back down and the placement cost is refunded to the owner.
+// Once construction actually starts (first worker arrives, pendingStart is
+// cleared), the building is committed and this check no-ops for it.
+func (s *GameState) cancelOrphanedPendingBuildingsLocked() {
+	// Collect IDs first so we don't mutate s.MapConfig.Buildings while
+	// scanning it via index — removeBuildingLocked rebuilds the slice.
+	var canceled []string
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.Metadata == nil {
+			continue
+		}
+		pending, _ := b.Metadata["pendingStart"].(bool)
+		if !pending {
+			continue
+		}
+		hasWorker := false
+		for _, unit := range s.Units {
+			if unit.BuildTargetID == b.ID {
+				hasWorker = true
+				break
+			}
+		}
+		if hasWorker {
+			continue
+		}
+		canceled = append(canceled, b.ID)
+	}
+
+	for _, id := range canceled {
+		b := s.getBuildingByIDLocked(id)
+		if b == nil {
+			continue
+		}
+		if b.OwnerID != nil {
+			if player, ok := s.Players[*b.OwnerID]; ok {
+				if def, ok := getBuildingDef(b.BuildingType); ok {
+					for resource, cost := range def.ResourceCost {
+						player.Resources[resource] += cost
+					}
+				}
+			}
+		}
+		s.removeBuildingLocked(id)
+	}
 }
 
 func (s *GameState) tickBuildingRepairsLocked(dt float64) {

@@ -8,7 +8,20 @@ import {
   getTerrainColor,
 } from '../maps/mapConfig'
 import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual } from '../maps/buildingDefs'
-import { getBuildingSprite, getTintedBuildingSprite } from './buildingSprites'
+import {
+  CONSTRUCTION_FRAME_COUNT,
+  DAMAGED_FRAMES_PER_TIER,
+  DAMAGED_TIER_COUNT,
+  getBuildingSprite,
+  getConstructionFrameIndex,
+  getConstructionSprite,
+  getDamagedFrameIndex,
+  getDamagedSprite,
+  getDamagedTier,
+  getTintedBuildingSprite,
+  getTintedConstructionSprite,
+  getTintedDamagedSprite,
+} from './buildingSprites'
 import { getObstacleSprite } from './obstacleSprites'
 import { OBSTACLE_DEF_MAP } from '../maps/obstacleDefs'
 import {
@@ -429,6 +442,27 @@ export class CanvasRenderer {
       const playerFill = ownerColor ?? buildingDef?.color ?? getBuildingColor(building.buildingType, building.occupied, ownerColor)
 
       const sprite = getBuildingSprite(building.buildingType)
+      const isUnderConstruction = building.metadata?.['underConstruction'] === true
+      // pendingStart: placed but no worker has arrived yet — render as a
+      // transparent preview of the finished building. The construction
+      // animation + progress bar only kick in once a worker arrives and the
+      // server clears this flag.
+      const isPendingStart = building.metadata?.['pendingStart'] === true
+      const hp = building.metadata?.['hp'] as number | undefined
+      const maxHp = building.metadata?.['maxHp'] as number | undefined
+      const constructionProgress =
+        hp !== undefined && maxHp !== undefined && maxHp > 0
+          ? Math.max(0, Math.min(1, hp / maxHp))
+          : 0
+      const constructionSprite =
+        isUnderConstruction && !isPendingStart ? getConstructionSprite(building.buildingType) : null
+      // Damage tier only applies to finished, non-preview buildings. Under
+      // 90% HP picks a row from damaged.png (tier 0..3); above that the
+      // normal sprite.png is used unchanged.
+      const damagedTier =
+        isUnderConstruction || isPendingStart ? -1 : getDamagedTier(constructionProgress)
+      const damagedSprite =
+        damagedTier >= 0 ? getDamagedSprite(building.buildingType) : null
 
       // Selection / hover ring drawn *before* the sprite so the sprite
       // covers the top half, mimicking the wrap-around look of the unit ring.
@@ -438,7 +472,55 @@ export class CanvasRenderer {
         this.drawFootprintSelectionEllipse(worldX, worldY, width, height, 'hover', 'center')
       }
 
-      if (sprite) {
+      if (isPendingStart) {
+        ctx.save()
+        ctx.globalAlpha = 0.4
+      }
+
+      if (constructionSprite) {
+        ctx.imageSmoothingEnabled = false
+        const tinted = ownerColor
+          ? getTintedConstructionSprite(building.buildingType, ownerColor)
+          : null
+        const source: CanvasImageSource = tinted ?? constructionSprite
+        const frameIndex = getConstructionFrameIndex(constructionProgress)
+        const sheetW = constructionSprite.naturalWidth
+        const sheetH = constructionSprite.naturalHeight
+        const frameW = sheetW / CONSTRUCTION_FRAME_COUNT
+        ctx.drawImage(
+          source,
+          frameIndex * frameW,
+          0,
+          frameW,
+          sheetH,
+          spriteX,
+          spriteY,
+          spriteW,
+          spriteH,
+        )
+      } else if (damagedSprite) {
+        ctx.imageSmoothingEnabled = false
+        const tinted = ownerColor
+          ? getTintedDamagedSprite(building.buildingType, ownerColor)
+          : null
+        const source: CanvasImageSource = tinted ?? damagedSprite
+        const sheetW = damagedSprite.naturalWidth
+        const sheetH = damagedSprite.naturalHeight
+        const frameW = sheetW / DAMAGED_FRAMES_PER_TIER
+        const tierH = sheetH / DAMAGED_TIER_COUNT
+        const frameCol = getDamagedFrameIndex(this.renderTime)
+        ctx.drawImage(
+          source,
+          frameCol * frameW,
+          damagedTier * tierH,
+          frameW,
+          tierH,
+          spriteX,
+          spriteY,
+          spriteW,
+          spriteH,
+        )
+      } else if (sprite) {
         ctx.imageSmoothingEnabled = false
         const tinted = ownerColor
           ? getTintedBuildingSprite(building.buildingType, ownerColor)
@@ -481,27 +563,31 @@ export class CanvasRenderer {
         }
       }
 
-      const isUnderConstruction = building.metadata?.['underConstruction'] === true
-
-      if (isUnderConstruction) {
-        ctx.save()
-        ctx.globalAlpha = 0.45
-        ctx.fillStyle = '#0f172a'
-        ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+      if (isPendingStart) {
         ctx.restore()
+      }
 
-        ctx.save()
-        ctx.strokeStyle = '#fbbf24'
-        ctx.lineWidth = 2 / this.camera.zoom
-        ctx.setLineDash([8 / this.camera.zoom, 5 / this.camera.zoom])
-        ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
-        ctx.restore()
+      if (isUnderConstruction && !isPendingStart) {
+        // No construction spritesheet yet for this building type → fall back
+        // to the procedural "dark overlay + dashed yellow border" treatment
+        // so the under-construction state is still legible.
+        if (!constructionSprite) {
+          ctx.save()
+          ctx.globalAlpha = 0.45
+          ctx.fillStyle = '#0f172a'
+          ctx.fillRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+          ctx.restore()
+
+          ctx.save()
+          ctx.strokeStyle = '#fbbf24'
+          ctx.lineWidth = 2 / this.camera.zoom
+          ctx.setLineDash([8 / this.camera.zoom, 5 / this.camera.zoom])
+          ctx.strokeRect(worldX + inset, worldY + inset, width - inset * 2, height - inset * 2)
+          ctx.restore()
+        }
 
         // Construction progress bar above the building
-        const hp = building.metadata?.['hp'] as number | undefined
-        const maxHp = building.metadata?.['maxHp'] as number | undefined
         if (hp !== undefined && maxHp !== undefined && maxHp > 0) {
-          const progress = Math.max(0, Math.min(1, hp / maxHp))
           const barH = 6 / this.camera.zoom
           const barX = worldX + inset
           const barY = worldY + inset - barH - 4 / this.camera.zoom
@@ -511,22 +597,20 @@ export class CanvasRenderer {
           ctx.fillStyle = '#1e293b'
           ctx.fillRect(barX, barY, barW, barH)
           ctx.fillStyle = '#fbbf24'
-          ctx.fillRect(barX, barY, barW * progress, barH)
+          ctx.fillRect(barX, barY, barW * constructionProgress, barH)
           ctx.strokeStyle = 'rgba(251,191,36,0.5)'
           ctx.lineWidth = 1 / this.camera.zoom
           ctx.setLineDash([])
           ctx.strokeRect(barX, barY, barW, barH)
           ctx.restore()
         }
-      } else {
+      } else if (!isPendingStart) {
         ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)'
         ctx.lineWidth = 2 / this.camera.zoom
         if (!sprite) {
           ctx.strokeRect(worldX, worldY, width, height)
         }
 
-        const hp = building.metadata?.['hp'] as number | undefined
-        const maxHp = building.metadata?.['maxHp'] as number | undefined
         if (hp !== undefined && maxHp !== undefined && maxHp > 0 && hp < maxHp) {
           const healthPercent = Math.max(0, Math.min(1, hp / maxHp))
           const barH = 6 / this.camera.zoom

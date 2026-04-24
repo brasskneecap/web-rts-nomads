@@ -717,6 +717,7 @@ func (s *GameState) Update(dt float64) {
 
 	s.battleTracker.tickLocked(dt)
 	s.updateUnitProductionsLocked(dt)
+	s.cancelOrphanedPendingBuildingsLocked()
 	s.tickBuildingRepairsLocked(dt)
 	blocked := s.getBlockedCellsLocked()
 	s.tickBuildingCombatLocked(dt)
