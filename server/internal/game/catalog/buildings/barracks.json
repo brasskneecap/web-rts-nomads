@@ -3,6 +3,12 @@
   "class": "player",
   "width": 2,
   "height": 2,
+  "spriteRender": {
+    "offsetX": -0.25,
+    "offsetY": -0.25,
+    "width": 2.5,
+    "height": 2.5
+  },
   "maxHp": 500,
   "buildSeconds": 15,
   "resourceCost": {
