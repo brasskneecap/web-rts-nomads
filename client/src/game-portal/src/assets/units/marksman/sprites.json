@@ -29,11 +29,12 @@
       "frameHeight": 68,
       "sheet": "packed/attacking.png",
       "rowOrder": [
+        "north",
         "south",
         "east",
         "west"
       ]
     }
   },
-  "packedAt": "2026-04-25T06:13:10.514Z"
+  "packedAt": "2026-04-25T14:30:40.265Z"
 }

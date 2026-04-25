@@ -47,17 +47,12 @@
         ]
       },
       "Attacking-9ae56a22": {
-        "north-54237ec4": [
-          "animations/Attacking-9ae56a22/north-54237ec4/frame_000.png",
-          "animations/Attacking-9ae56a22/north-54237ec4/frame_001.png",
-          "animations/Attacking-9ae56a22/north-54237ec4/frame_002.png",
-          "animations/Attacking-9ae56a22/north-54237ec4/frame_003.png"
-        ],
-        "north-c96c1ed4": [
-          "animations/Attacking-9ae56a22/north-c96c1ed4/frame_000.png",
-          "animations/Attacking-9ae56a22/north-c96c1ed4/frame_001.png",
-          "animations/Attacking-9ae56a22/north-c96c1ed4/frame_002.png",
-          "animations/Attacking-9ae56a22/north-c96c1ed4/frame_003.png"
+
+        "north": [
+          "animations/Attacking-9ae56a22/north/frame_000.png",
+          "animations/Attacking-9ae56a22/north/frame_001.png",
+          "animations/Attacking-9ae56a22/north/frame_002.png",
+          "animations/Attacking-9ae56a22/north/frame_003.png"
         ],
         "south": [
           "animations/Attacking-9ae56a22/south/frame_000.png",
