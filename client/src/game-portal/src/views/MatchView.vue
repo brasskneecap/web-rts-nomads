@@ -135,6 +135,7 @@
         :ui="ui"
         @action="performSelectionAction"
         @select-unit="selectUnitOnly"
+        @deselect-unit="deselectUnit"
       />
     </div>
   </div>
@@ -238,6 +239,7 @@ const {
   beginDebugSpawn,
   cancelDebugSpawn,
   selectUnitOnly,
+  deselectUnit,
   ui,
   connectionState,
   reconnectAttempt,

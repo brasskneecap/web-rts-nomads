@@ -46,6 +46,7 @@
         <select v-model="path" class="ds-select">
           <option value="none">(none)</option>
           <option value="trapper">Trapper</option>
+          <option value="marksman">Marksman</option>
           <option value="vanguard">Vanguard</option>
           <option value="berserker">Berserker</option>
         </select>

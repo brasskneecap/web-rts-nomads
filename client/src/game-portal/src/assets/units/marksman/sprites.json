@@ -1,0 +1,39 @@
+{
+  "key": "marksman",
+  "size": {
+    "width": 68,
+    "height": 68
+  },
+  "rotations": {
+    "south": "rotations/south.png",
+    "west": "rotations/west.png",
+    "east": "rotations/east.png",
+    "north": "rotations/north.png"
+  },
+  "animations": {
+    "walking": {
+      "frameCount": 4,
+      "frameWidth": 68,
+      "frameHeight": 68,
+      "sheet": "packed/walking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west"
+      ]
+    },
+    "attacking": {
+      "frameCount": 4,
+      "frameWidth": 68,
+      "frameHeight": 68,
+      "sheet": "packed/attacking.png",
+      "rowOrder": [
+        "south",
+        "east",
+        "west"
+      ]
+    }
+  },
+  "packedAt": "2026-04-25T06:13:10.514Z"
+}

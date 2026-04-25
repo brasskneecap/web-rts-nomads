@@ -12,6 +12,7 @@ import {
   CONSTRUCTION_FRAME_COUNT,
   DAMAGED_FRAMES_PER_TIER,
   DAMAGED_TIER_COUNT,
+  TRAINING_FRAME_COUNT,
   getBuildingSprite,
   getConstructionFrameIndex,
   getConstructionSprite,
@@ -21,6 +22,9 @@ import {
   getTintedBuildingSprite,
   getTintedConstructionSprite,
   getTintedDamagedSprite,
+  getTintedTrainingSprite,
+  getTrainingFrameIndex,
+  getTrainingSprite,
 } from './buildingSprites'
 import { getObstacleSprite } from './obstacleSprites'
 import { OBSTACLE_DEF_MAP } from '../maps/obstacleDefs'
@@ -470,13 +474,22 @@ export class CanvasRenderer {
           : 0
       const constructionSprite =
         isUnderConstruction && !isPendingStart ? getConstructionSprite(building.buildingType) : null
+      // Training animation plays only on finished, owned, non-preview buildings
+      // that are actively producing a unit. Server sets producingUnitType in
+      // metadata while the head of the production queue is in flight.
+      const isTraining =
+        !isUnderConstruction &&
+        !isPendingStart &&
+        typeof building.metadata?.['producingUnitType'] === 'string' &&
+        (building.metadata?.['producingUnitType'] as string).length > 0
+      const trainingSprite = isTraining ? getTrainingSprite(building.buildingType) : null
       // Damage tier only applies to finished, non-preview buildings. Under
       // 90% HP picks a row from damaged.png (tier 0..3); above that the
       // normal sprite.png is used unchanged.
       const damagedTier =
         isUnderConstruction || isPendingStart ? -1 : getDamagedTier(constructionProgress)
       const damagedSprite =
-        damagedTier >= 0 ? getDamagedSprite(building.buildingType) : null
+        damagedTier >= 0 && !trainingSprite ? getDamagedSprite(building.buildingType) : null
 
       // Selection / hover ring drawn *before* the sprite so the sprite
       // covers the top half, mimicking the wrap-around look of the unit ring.
@@ -501,6 +514,27 @@ export class CanvasRenderer {
         const sheetW = constructionSprite.naturalWidth
         const sheetH = constructionSprite.naturalHeight
         const frameW = sheetW / CONSTRUCTION_FRAME_COUNT
+        ctx.drawImage(
+          source,
+          frameIndex * frameW,
+          0,
+          frameW,
+          sheetH,
+          spriteX,
+          spriteY,
+          spriteW,
+          spriteH,
+        )
+      } else if (trainingSprite) {
+        ctx.imageSmoothingEnabled = false
+        const tinted = ownerColor
+          ? getTintedTrainingSprite(building.buildingType, ownerColor)
+          : null
+        const source: CanvasImageSource = tinted ?? trainingSprite
+        const sheetW = trainingSprite.naturalWidth
+        const sheetH = trainingSprite.naturalHeight
+        const frameW = sheetW / TRAINING_FRAME_COUNT
+        const frameIndex = getTrainingFrameIndex(this.renderTime)
         ctx.drawImage(
           source,
           frameIndex * frameW,

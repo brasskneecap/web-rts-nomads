@@ -12,12 +12,14 @@ const (
 )
 
 // Promotion path constants. Assigned at Bronze rank and fixed for the unit's lifetime.
-// Soldiers randomly receive Vanguard or Berserker. Archers always receive Trapper.
+// Soldiers randomly receive Vanguard or Berserker. Archers randomly receive
+// Trapper or Marksman.
 const (
 	unitPathNone      = "none"
 	unitPathVanguard  = "vanguard"
 	unitPathBerserker = "berserker"
 	unitPathTrapper   = "trapper"
+	unitPathMarksman  = "marksman"
 )
 
 const (
@@ -105,6 +107,8 @@ var identityPathModifier = pathModifierDef{
 //	trapper   — utility through traps; stat tuning deferred, rows currently
 //	            mirror the default rank curve so promotions still grant
 //	            baseline HP/damage/AS bumps.
+//	marksman  — precision-ranged archer; stat tuning deferred, rows currently
+//	            mirror the default rank curve.
 //	none      — default rank curve for units that earn XP without ever being
 //	            assigned a path (workers, future utility units).
 //
@@ -253,7 +257,7 @@ func (s *GameState) addUnitXPFloatLocked(unit *Unit, amount float64) {
 // time it reaches Bronze rank. The path is fixed for the unit's lifetime.
 //
 //   - Soldiers: randomly choose Vanguard or Berserker (50/50 via rngPerks).
-//   - Archers: always assigned the Trapper path.
+//   - Archers: randomly choose Trapper or Marksman (50/50 via rngPerks).
 //   - Other unit types: no path assignment (return early).
 func (s *GameState) assignUnitPathOnRankUpLocked(unit *Unit) {
 	if unit.ProgressionPath != unitPathNone {
@@ -267,7 +271,8 @@ func (s *GameState) assignUnitPathOnRankUpLocked(unit *Unit) {
 		paths := [2]string{unitPathVanguard, unitPathBerserker}
 		unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
 	case "archer":
-		unit.ProgressionPath = unitPathTrapper
+		paths := [2]string{unitPathTrapper, unitPathMarksman}
+		unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
 	default:
 		return
 	}

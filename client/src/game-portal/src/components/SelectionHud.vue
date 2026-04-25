@@ -52,14 +52,14 @@
       </section>
 
       <section class="selection-panel selection-panel--details">
-        <div v-if="unitCards.length > 0" class="unit-cards">
+        <div v-if="unitCards.length > 1" class="unit-cards">
           <button
             v-for="card in unitCards"
             :key="card.id"
             type="button"
             class="unit-card"
             :title="card.title"
-            @click="$emit('select-unit', card.id)"
+            @click="onUnitCardClick(card.id, $event)"
           >
             <div class="unit-card__hp">
               <div
@@ -79,6 +79,29 @@
                 draggable="false"
               />
               <span v-else class="unit-card__portrait-fallback">{{ card.initials }}</span>
+              <div
+                v-if="card.rankChevrons > 0"
+                class="unit-card__rank"
+                :style="{ color: card.rankColor }"
+                :aria-label="`Rank ${card.rank}`"
+              >
+                <svg
+                  v-for="n in card.rankChevrons"
+                  :key="n"
+                  viewBox="0 0 10 6"
+                  class="unit-card__rank-chevron"
+                  aria-hidden="true"
+                >
+                  <polyline
+                    points="1.2,5 5,1.2 8.8,5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
             </div>
           </button>
         </div>
@@ -216,16 +239,28 @@ import { computed } from 'vue'
 import type { ActionItem } from '@/game/core/GameState'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
+import { getRankToneColor } from '@/game/rendering/rankColors'
 import ActionIcon from '@/components/ActionIcon.vue'
 
-defineEmits<{
+const emit = defineEmits<{
   action: [actionId: string]
   'select-unit': [unitId: number]
+  'deselect-unit': [unitId: number]
 }>()
 
 const props = defineProps<{
   ui: GameUiSnapshot
 }>()
+
+// Shift-click on a unit card removes that unit from the group selection.
+// Plain click selects only that unit (matching the existing behavior).
+function onUnitCardClick(unitId: number, event: MouseEvent) {
+  if (event.shiftKey) {
+    emit('deselect-unit', unitId)
+  } else {
+    emit('select-unit', unitId)
+  }
+}
 
 const GRID_SIZE = 9
 
@@ -244,12 +279,19 @@ const unitCards = computed(() => {
     const max = u.maxHp ?? u.hp ?? 0
     const hp = u.hp ?? 0
     const hpFraction = max > 0 ? Math.max(0, Math.min(1, hp / max)) : 0
+    // Mirror the world rank visual: bronze=1, silver=2, gold=3 stacked chevrons,
+    // tinted by the same rank palette used on unit overlays.
+    const rankChevrons =
+      u.rank === 'bronze' ? 1 : u.rank === 'silver' ? 2 : u.rank === 'gold' ? 3 : 0
     return {
       id: u.id,
       title: `${u.name}  ${hp} / ${max}`,
       portraitUrl: getUnitPortraitUrl(u.path, u.unitType),
       initials: (u.name || u.unitType || '?').slice(0, 2).toUpperCase(),
       hpFraction,
+      rank: u.rank ?? '',
+      rankChevrons,
+      rankColor: getRankToneColor(u.rank, 'light'),
     }
   })
 })
@@ -596,6 +638,28 @@ function resourceDisplayName(resourceId: string): string {
   font-weight: 700;
   letter-spacing: 0.05em;
   color: #f5ead2;
+}
+
+/* Rank chevron stack: 1/2/3 stacked chevrons in the top-right of the
+   portrait, mirroring the world overlay. Color is set inline from the
+   shared rank palette. Drop shadow keeps the chevrons readable against
+   bright portraits. */
+.unit-card__rank {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.95));
+}
+
+.unit-card__rank-chevron {
+  width: 9px;
+  height: 5px;
+  display: block;
 }
 
 .production-card {

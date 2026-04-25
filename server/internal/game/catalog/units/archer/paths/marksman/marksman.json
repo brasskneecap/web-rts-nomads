@@ -1,0 +1,27 @@
+{
+  "path": "marksman",
+  "description": "Precision-ranged archer path. Stat tuning deferred; rows currently mirror the default rank curve (see none.json) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Marksman gets its formal pass.",
+  "ranks": {
+    "bronze": {
+      "maxHPMultiplier": 1.10,
+      "damageMultiplier": 1.10,
+      "attackSpeedMultiplier": 1.00,
+      "moveSpeedMultiplier": 1.00,
+      "armor": 10
+    },
+    "silver": {
+      "maxHPMultiplier": 1.20,
+      "damageMultiplier": 1.25,
+      "attackSpeedMultiplier": 1.10,
+      "moveSpeedMultiplier": 1.00,
+      "armor": 20
+    },
+    "gold": {
+      "maxHPMultiplier": 1.35,
+      "damageMultiplier": 1.50,
+      "attackSpeedMultiplier": 1.25,
+      "moveSpeedMultiplier": 1.00,
+      "armor": 30
+    }
+  }
+}

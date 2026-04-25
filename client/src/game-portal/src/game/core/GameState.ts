@@ -845,6 +845,30 @@ export class GameState {
     }
   }
 
+  // Selects every owned, visible unit of the given type whose position is
+  // inside the supplied world-space viewport rect. Used by the double-click
+  // "select all of type on screen" gesture.
+  selectVisibleSameTypeUnits(
+    unitType: string,
+    viewBounds: { left: number; top: number; right: number; bottom: number },
+  ) {
+    const matches = this.getInteractionUnits()
+      .filter((unit) => {
+        if (!this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
+        if (unit.unitType !== unitType) return false
+        return (
+          unit.x >= viewBounds.left &&
+          unit.x <= viewBounds.right &&
+          unit.y >= viewBounds.top &&
+          unit.y <= viewBounds.bottom
+        )
+      })
+      .map((unit) => unit.id)
+
+    if (matches.length === 0) return
+    this.setSelection(matches)
+  }
+
   // Hit-tests against the unit's visible body (sprite or procedural bounds),
   // not a circle at the feet anchor. `padding` grows the hit rect outward on
   // all sides; the default is tuned to feel forgiving without overlapping
@@ -2198,6 +2222,10 @@ function formatUnitPath(path?: string) {
       return 'Vanguard'
     case 'berserker':
       return 'Berserker'
+    case 'trapper':
+      return 'Trapper'
+    case 'marksman':
+      return 'Marksman'
     default:
       return ''
   }

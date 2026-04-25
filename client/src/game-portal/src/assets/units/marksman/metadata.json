@@ -1,0 +1,85 @@
+{
+  "character": {
+    "id": "23c545ce-1833-4932-8367-56a8a864b6d4",
+    "name": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast,human marksman ranger, elite wilderness archer in focused stance, hardened brown leather chest armor with white fur trim at collar and shoulders, white linen undershirt visible at sleeves, brown leather bracers and gloves, tall wooden longbow drawn back with arrow nocked at full draw, quiver of arrows on back, wide brimmed brown leather ranger hat with white feather, sturdy brown leather boots with fur lining at top, belt with arrow pouch and hunting knife, focused aiming posture one eye sighted down the arrow, bow held vertically at full draw, warm brown and off-white cream palette, no green tones, no blue tones, chunky dark outlines, limited earthy palette, hand-pixeled look",
+    "prompt": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast,human marksman ranger, elite wilderness archer in focused stance, hardened brown leather chest armor with white fur trim at collar and shoulders, white linen undershirt visible at sleeves, brown leather bracers and gloves, tall wooden longbow drawn back with arrow nocked at full draw, quiver of arrows on back, wide brimmed brown leather ranger hat with white feather, sturdy brown leather boots with fur lining at top, belt with arrow pouch and hunting knife, focused aiming posture one eye sighted down the arrow, bow held vertically at full draw, warm brown and off-white cream palette, no green tones, no blue tones, chunky dark outlines, limited earthy palette, hand-pixeled look",
+    "size": {
+      "width": 68,
+      "height": 68
+    },
+    "template_id": "mannequin",
+    "directions": 4,
+    "view": "low top-down",
+    "created_at": "2026-04-25T01:42:29.504723+00:00"
+  },
+  "frames": {
+    "rotations": {
+      "south": "rotations/south.png",
+      "west": "rotations/west.png",
+      "east": "rotations/east.png",
+      "north": "rotations/north.png"
+    },
+    "animations": {
+      "Walking-7a442c7d": {
+        "west": [
+          "animations/Walking-7a442c7d/west/frame_000.png",
+          "animations/Walking-7a442c7d/west/frame_001.png",
+          "animations/Walking-7a442c7d/west/frame_002.png",
+          "animations/Walking-7a442c7d/west/frame_003.png"
+        ],
+        "south": [
+          "animations/Walking-7a442c7d/south/frame_000.png",
+          "animations/Walking-7a442c7d/south/frame_001.png",
+          "animations/Walking-7a442c7d/south/frame_002.png",
+          "animations/Walking-7a442c7d/south/frame_003.png"
+        ],
+        "east": [
+          "animations/Walking-7a442c7d/east/frame_000.png",
+          "animations/Walking-7a442c7d/east/frame_001.png",
+          "animations/Walking-7a442c7d/east/frame_002.png",
+          "animations/Walking-7a442c7d/east/frame_003.png"
+        ],
+        "north": [
+          "animations/Walking-7a442c7d/north/frame_000.png",
+          "animations/Walking-7a442c7d/north/frame_001.png",
+          "animations/Walking-7a442c7d/north/frame_002.png",
+          "animations/Walking-7a442c7d/north/frame_003.png"
+        ]
+      },
+      "Attacking-9ae56a22": {
+        "north-54237ec4": [
+          "animations/Attacking-9ae56a22/north-54237ec4/frame_000.png",
+          "animations/Attacking-9ae56a22/north-54237ec4/frame_001.png",
+          "animations/Attacking-9ae56a22/north-54237ec4/frame_002.png",
+          "animations/Attacking-9ae56a22/north-54237ec4/frame_003.png"
+        ],
+        "north-c96c1ed4": [
+          "animations/Attacking-9ae56a22/north-c96c1ed4/frame_000.png",
+          "animations/Attacking-9ae56a22/north-c96c1ed4/frame_001.png",
+          "animations/Attacking-9ae56a22/north-c96c1ed4/frame_002.png",
+          "animations/Attacking-9ae56a22/north-c96c1ed4/frame_003.png"
+        ],
+        "south": [
+          "animations/Attacking-9ae56a22/south/frame_000.png",
+          "animations/Attacking-9ae56a22/south/frame_001.png",
+          "animations/Attacking-9ae56a22/south/frame_002.png",
+          "animations/Attacking-9ae56a22/south/frame_003.png"
+        ],
+        "east": [
+          "animations/Attacking-9ae56a22/east/frame_000.png",
+          "animations/Attacking-9ae56a22/east/frame_001.png",
+          "animations/Attacking-9ae56a22/east/frame_002.png",
+          "animations/Attacking-9ae56a22/east/frame_003.png"
+        ],
+        "west": [
+          "animations/Attacking-9ae56a22/west/frame_000.png",
+          "animations/Attacking-9ae56a22/west/frame_001.png",
+          "animations/Attacking-9ae56a22/west/frame_002.png",
+          "animations/Attacking-9ae56a22/west/frame_003.png"
+        ]
+      }
+    }
+  },
+  "export_version": "2.0",
+  "export_date": "2026-04-25T06:01:56.529345"
+}

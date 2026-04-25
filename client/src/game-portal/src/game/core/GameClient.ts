@@ -166,6 +166,10 @@ export class GameClient {
     this.state.selectUnit(unitId)
   }
 
+  deselectUnit(unitId: number) {
+    this.state.removeUnitFromSelection(unitId)
+  }
+
   performSelectionAction(actionId: string) {
     const selectedBuilding = this.state.getSelectedBuilding()
 

@@ -51,6 +51,7 @@ export class InputManager {
     canvas.addEventListener('mousedown', this.onMouseDown)
     canvas.addEventListener('mousemove', this.onMouseMove)
     canvas.addEventListener('mouseleave', this.onMouseLeave)
+    canvas.addEventListener('dblclick', this.onDoubleClick)
     canvas.addEventListener('wheel', this.onWheel, { passive: false })
 
     window.addEventListener('mouseup', this.onMouseUp)
@@ -325,6 +326,27 @@ export class InputManager {
     this.state.endSelectionBox()
   }
 
+  // Double-clicking an owned unit selects every visible same-type unit
+  // currently inside the on-screen viewport. Standard RTS gesture for
+  // "select all of these on screen".
+  private onDoubleClick = (e: MouseEvent) => {
+    if (e.button !== 0) return
+    const screen = this.getScreenPosition(e)
+    if (this.isInsideMinimap(screen.x, screen.y)) return
+
+    const world = this.getWorldPosition(e)
+    const clickedUnit = this.state.getUnitAtPosition(world.x, world.y)
+    if (!clickedUnit) return
+
+    const viewBounds = {
+      left: this.camera.x,
+      top: this.camera.y,
+      right: this.camera.x + this.canvas.width / this.camera.zoom,
+      bottom: this.camera.y + this.canvas.height / this.camera.zoom,
+    }
+    this.state.selectVisibleSameTypeUnits(clickedUnit.unitType, viewBounds)
+  }
+
   private onRightClick = (e: MouseEvent) => {
     e.preventDefault()
 
@@ -434,6 +456,7 @@ export class InputManager {
     this.canvas.removeEventListener('mousedown', this.onMouseDown)
     this.canvas.removeEventListener('mousemove', this.onMouseMove)
     this.canvas.removeEventListener('mouseleave', this.onMouseLeave)
+    this.canvas.removeEventListener('dblclick', this.onDoubleClick)
     this.canvas.removeEventListener('wheel', this.onWheel)
 
     window.removeEventListener('mouseup', this.onMouseUp)

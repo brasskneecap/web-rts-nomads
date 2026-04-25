@@ -571,8 +571,8 @@ type NotificationMessage struct {
 //     would normally exclude.
 //   - Rank (base / bronze / silver / gold) determines stat scaling via
 //     applyRankModifiersLocked. Empty string is treated as "base".
-//   - Path (trapper / vanguard / berserker / none) is set directly, bypassing
-//     assignUnitPathOnRankUpLocked. Empty string means "none".
+//   - Path (trapper / marksman / vanguard / berserker / none) is set directly,
+//     bypassing assignUnitPathOnRankUpLocked. Empty string means "none".
 //   - CustomHP > 0 overrides both MaxHP and HP after rank scaling. Use 0
 //     (or omit) to keep the default max HP.
 type DebugSpawnUnitMessage struct {

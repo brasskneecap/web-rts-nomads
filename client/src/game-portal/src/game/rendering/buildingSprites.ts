@@ -23,6 +23,14 @@ for (const [path, url] of Object.entries(spriteUrls)) {
 // Swapped to sprite.png on completion.
 export const CONSTRUCTION_FRAME_COUNT = 4
 
+// Training animation spritesheets. A training.png is a horizontal strip of
+// TRAINING_FRAME_COUNT equally-sized frames that loops while a building is
+// actively producing a unit (e.g. a barracks spawning a soldier). Looped on
+// wall-clock so all training buildings stay phase-aligned without per-building
+// state.
+export const TRAINING_FRAME_COUNT = 4
+const TRAINING_FPS = 6
+
 // Damaged animation spritesheets. A damaged.png is a DAMAGED_TIER_COUNT-row
 // × DAMAGED_FRAMES_PER_TIER-column grid. Each row is a damage tier that
 // animates through its 5 frames while HP is inside that tier's band.
@@ -47,6 +55,23 @@ for (const [path, url] of Object.entries(constructionUrls)) {
   const img = new Image()
   img.src = url
   constructionImages.set(key, img)
+}
+
+const trainingUrls = import.meta.glob('../../assets/buildings/*/training.png', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>
+
+const trainingImages = new Map<string, HTMLImageElement>()
+
+for (const [path, url] of Object.entries(trainingUrls)) {
+  const match = path.match(/\/buildings\/([^/]+)\/training\.png$/)
+  if (!match) continue
+  const key = match[1].toLowerCase()
+  const img = new Image()
+  img.src = url
+  trainingImages.set(key, img)
 }
 
 const damagedUrls = import.meta.glob('../../assets/buildings/*/damaged.png', {
@@ -226,5 +251,53 @@ export function getTintedDamagedSprite(
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   damagedTintCache.set(key, canvas)
+  return canvas
+}
+
+// Returns the loaded training spritesheet for the given building type, or
+// null if none is registered or the image hasn't finished decoding yet.
+export function getTrainingSprite(buildingType: string): HTMLImageElement | null {
+  const img = trainingImages.get(buildingType.toLowerCase())
+  if (!img) return null
+  if (!img.complete || img.naturalWidth === 0) return null
+  return img
+}
+
+// Returns the animated frame column [0, TRAINING_FRAME_COUNT) for the given
+// wall-clock time in ms. All training buildings share a single phase.
+export function getTrainingFrameIndex(timeMs: number): number {
+  const frame = Math.floor((timeMs / 1000) * TRAINING_FPS)
+  return ((frame % TRAINING_FRAME_COUNT) + TRAINING_FRAME_COUNT) % TRAINING_FRAME_COUNT
+}
+
+const trainingTintCache = new Map<string, HTMLCanvasElement>()
+
+// Returns an owner-tinted copy of the training spritesheet, cached per
+// (type, color). Returns null if the sheet isn't loaded yet.
+export function getTintedTrainingSprite(
+  buildingType: string,
+  ownerColor: string,
+): HTMLCanvasElement | null {
+  const sprite = getTrainingSprite(buildingType)
+  if (!sprite) return null
+
+  const key = `${buildingType.toLowerCase()}|${ownerColor}`
+  const cached = trainingTintCache.get(key)
+  if (cached) return cached
+
+  const canvas = document.createElement('canvas')
+  canvas.width = sprite.naturalWidth
+  canvas.height = sprite.naturalHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(sprite, 0, 0)
+  ctx.globalCompositeOperation = 'source-atop'
+  ctx.globalAlpha = TINT_ALPHA
+  ctx.fillStyle = ownerColor
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  trainingTintCache.set(key, canvas)
   return canvas
 }
