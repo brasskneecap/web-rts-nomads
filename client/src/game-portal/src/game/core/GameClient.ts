@@ -116,6 +116,29 @@ export class GameClient {
     this.network.retryReconnect()
   }
 
+  /** Anchors the canvas-rendered minimap (and minimap input handlers) to the
+   *  given viewport-space DOMRect. Pass null to fall back to the default
+   *  top-right corner placement. The rect is converted into canvas-pixel
+   *  space here so callers (HUD components) can pass raw DOMRects.
+   *
+   *  The rect is inset by MINIMAP_FRAME_INSET on each side so the minimap
+   *  draws inside the visible interior of the panel rather than being clipped
+   *  by the 9-slice frame border that overlays it. */
+  setMinimapPanelRect(rect: DOMRect | null) {
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      this.state.minimapPanelRect = null
+      return
+    }
+    const inset = 17
+    const canvasRect = this.canvas.getBoundingClientRect()
+    this.state.minimapPanelRect = {
+      x: rect.left - canvasRect.left + inset,
+      y: rect.top - canvasRect.top + inset,
+      width: Math.max(0, rect.width - inset * 2),
+      height: Math.max(0, rect.height - inset * 2),
+    }
+  }
+
   get reconnectAttempt(): number {
     return this.network.currentReconnectAttempt
   }

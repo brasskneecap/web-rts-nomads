@@ -402,6 +402,13 @@ export class GameState {
   moveMarkers: MoveMarker[] = []
   private nextMoveMarkerId = 1
 
+  // Screen-space rect of the HUD minimap panel, written by SelectionHud each
+  // time its layout changes. When set, the canvas-rendered minimap and the
+  // minimap input handlers anchor to this rect instead of the default
+  // top-right fallback. Coordinates are CSS pixels (== canvas pixels, since
+  // CanvasRenderer.resize sets canvas.width = clientWidth).
+  minimapPanelRect: { x: number; y: number; width: number; height: number } | null = null
+
   // Drained each render by CanvasRenderer to spawn floating damage numbers.
   // Populated by applySnapshot from HP deltas between snapshots.
   damageEvents: DamageEvent[] = []
@@ -1456,18 +1463,19 @@ export class GameState {
       const buildMenuOpen = this.workerBuildMenuOpen && unit.capabilities.includes('build')
       const placementActive = this.buildPlacement !== null
 
-      // Regular actions occupy slots 1–6 (top two rows of the 3×3 grid).
-      // Perk items always occupy slots 7–9 (bottom row): bronze, silver, gold.
-      // When the build menu is open the full 9 slots are used for building
+      // Regular actions occupy slots 1–8 (top two rows of the 4×3 grid).
+      // Perk items always land in slots 10–12 (bottom row, right side):
+      // bronze, silver, gold — slot 9 is left empty so perks anchor right.
+      // When the build menu is open the full 12 slots are used for building
       // choices, so we skip the perk row in that state.
       const regularActions = getUnitActions(unit, this.unitTargetingMode, buildMenuOpen)
       const actions = buildMenuOpen
         ? regularActions
         : [
             ...regularActions,
-            // Pad to 6 so perks always land in the bottom row regardless of
+            // Pad to 9 so perks always land in slots 10–12 regardless of
             // how many regular action slots are filled.
-            ...Array<ActionItem>(Math.max(0, 6 - regularActions.length)).fill({
+            ...Array<ActionItem>(Math.max(0, 9 - regularActions.length)).fill({
               id: '',
               label: '',
               disabled: true,

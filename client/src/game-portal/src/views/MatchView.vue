@@ -136,6 +136,7 @@
         @action="performSelectionAction"
         @select-unit="selectUnitOnly"
         @deselect-unit="deselectUnit"
+        @minimap-rect="setMinimapPanelRect"
       />
     </div>
   </div>
@@ -240,6 +241,7 @@ const {
   cancelDebugSpawn,
   selectUnitOnly,
   deselectUnit,
+  setMinimapPanelRect,
   ui,
   connectionState,
   reconnectAttempt,

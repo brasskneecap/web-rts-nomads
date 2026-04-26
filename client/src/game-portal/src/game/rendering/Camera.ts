@@ -60,21 +60,26 @@ export class Camera {
     const visibleWorldWidth = viewportWidth / this.zoom
     const visibleWorldHeight = viewportHeight / this.zoom
 
-    // Allow the camera to pan a bit outside the map.
-    const overscan = 80
+    // Allow the camera to pan past the map edges by these amounts. Vertical
+    // overscan is much larger than horizontal to compensate for the top HUD
+    // bar and the bottom selection HUD — without the extra headroom, the
+    // bottom row of the map is permanently hidden behind the footer.
+    const horizontalOverscan = 80
+    const topOverscan = 100
+    const bottomOverscan = 260
 
-    const minX = -overscan
-    const minY = -overscan
-    const maxX = mapWidth - visibleWorldWidth + overscan
-    const maxY = mapHeight - visibleWorldHeight + overscan
+    const minX = -horizontalOverscan
+    const minY = -topOverscan
+    const maxX = mapWidth - visibleWorldWidth + horizontalOverscan
+    const maxY = mapHeight - visibleWorldHeight + bottomOverscan
 
-    if (visibleWorldWidth >= mapWidth + overscan * 2) {
+    if (visibleWorldWidth >= mapWidth + horizontalOverscan * 2) {
       this.x = (mapWidth - visibleWorldWidth) / 2
     } else {
       this.x = Math.max(minX, Math.min(this.x, maxX))
     }
 
-    if (visibleWorldHeight >= mapHeight + overscan * 2) {
+    if (visibleWorldHeight >= mapHeight + topOverscan + bottomOverscan) {
       this.y = (mapHeight - visibleWorldHeight) / 2
     } else {
       this.y = Math.max(minY, Math.min(this.y, maxY))

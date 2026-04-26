@@ -1,0 +1,76 @@
+{
+  "id": "battletest2",
+  "name": "battletest2(small)",
+  "description": "A compact battleground for fast openings and early pressure.",
+  "sortOrder": 1000,
+  "map": {
+    "id": "",
+    "name": "",
+    "description": "",
+    "size": "",
+    "width": 1536,
+    "height": 1152,
+    "gridCols": 24,
+    "gridRows": 18,
+    "cellSize": 64,
+    "terrain": [],
+    "defaultTile": {
+      "sheet": "tileset",
+      "sx": 64,
+      "sy": 32
+    },
+    "obstacles": [],
+    "buildings": [
+      {
+        "x": 0,
+        "y": 1,
+        "id": "townhall-0-0",
+        "buildingType": "townhall",
+        "width": 3,
+        "height": 2,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "unit-spawner",
+          "occupiable",
+          "deposit-point"
+        ],
+        "spawnUnitTypes": [
+          "worker"
+        ],
+        "metadata": {
+          "foodSupply": 15
+        }
+      },
+      {
+        "x": 2,
+        "y": 4,
+        "id": "spawn-point-2-4",
+        "buildingType": "spawn-point",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "fillOrder": 0,
+          "spawnUnits": [
+            {
+              "count": 3,
+              "unitType": "archer"
+            },
+            {
+              "count": 3,
+              "unitType": "soldier"
+            }
+          ],
+          "townhallId": null
+        }
+      }
+    ],
+    "waveConfig": {
+      "prepDuration": 60,
+      "waveDuration": 120
+    }
+  }
+}

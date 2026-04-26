@@ -641,6 +641,7 @@ export class InputManager {
       this.canvas.height,
       this.state.mapWidth,
       this.state.mapHeight,
+      this.state.minimapPanelRect,
     )
 
     return (
@@ -657,6 +658,7 @@ export class InputManager {
       this.canvas.height,
       this.state.mapWidth,
       this.state.mapHeight,
+      this.state.minimapPanelRect,
     )
 
     const normalizedX = (screenX - bounds.x) / bounds.width

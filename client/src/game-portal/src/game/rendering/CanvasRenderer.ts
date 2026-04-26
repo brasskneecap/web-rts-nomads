@@ -65,10 +65,34 @@ export function getMinimapBounds(
   _canvasHeight: number,
   mapWidth: number,
   mapHeight: number,
+  targetRect?: { x: number; y: number; width: number; height: number } | null,
 ): MinimapBounds {
+  const aspectRatio = mapWidth / mapHeight
+
+  // When the HUD provides a panel rect, fit the minimap inside it preserving
+  // the map's aspect ratio (centered within the rect). Falls back to the
+  // top-right corner placement when no panel rect is supplied.
+  if (targetRect && targetRect.width > 0 && targetRect.height > 0) {
+    const targetAspect = targetRect.width / targetRect.height
+    let width: number
+    let height: number
+    if (targetAspect > aspectRatio) {
+      height = targetRect.height
+      width = height * aspectRatio
+    } else {
+      width = targetRect.width
+      height = width / aspectRatio
+    }
+    return {
+      x: targetRect.x + (targetRect.width - width) / 2,
+      y: targetRect.y + (targetRect.height - height) / 2,
+      width,
+      height,
+    }
+  }
+
   const padding = 18
   const maxWidth = 220
-  const aspectRatio = mapWidth / mapHeight
   const width = Math.min(maxWidth, canvasWidth * 0.2)
   const height = width / aspectRatio
 
@@ -2468,22 +2492,47 @@ export class CanvasRenderer {
       this.canvas.height,
       this.state.mapWidth,
       this.state.mapHeight,
+      this.state.minimapPanelRect,
     )
     const { x, y, width: minimapWidth, height: minimapHeight } = bounds
 
     ctx.save()
 
-    ctx.fillStyle = 'rgba(5, 10, 18, 0.82)'
-    ctx.fillRect(x, y, minimapWidth, minimapHeight)
+    // Fill the full panel interior black first so the letterbox area (the
+    // space inside the panel that the aspect-fit minimap doesn't cover) is
+    // opaque. Without this, the canvas world view shows through the gap
+    // between the minimap and the panel frame on the top/bottom (or sides).
+    const panelRect = this.state.minimapPanelRect
+    ctx.fillStyle = '#000'
+    if (panelRect) {
+      ctx.fillRect(panelRect.x, panelRect.y, panelRect.width, panelRect.height)
+    } else {
+      ctx.fillRect(x, y, minimapWidth, minimapHeight)
+    }
 
-    for (const tile of this.state.mapConfig.terrain) {
-      ctx.fillStyle = getTerrainColor(tile.terrain)
-      ctx.fillRect(
-        x + (tile.x / this.state.mapConfig.gridCols) * minimapWidth,
-        y + (tile.y / this.state.mapConfig.gridRows) * minimapHeight,
-        minimapWidth / this.state.mapConfig.gridCols,
-        minimapHeight / this.state.mapConfig.gridRows,
-      )
+    // Blit the offscreen terrain cache into the minimap area. The cache
+    // already contains the rendered sprite tiles, custom-per-tile sprites,
+    // and terrain overrides exactly as they appear in-world, so blitting it
+    // gives the most faithful color match possible. Smoothing is left on so
+    // the heavy downscale averages neighboring pixels into a clean color
+    // rather than aliasing into individual sprite pixels.
+    if (this.terrainCache) {
+      const prevSmoothing = ctx.imageSmoothingEnabled
+      ctx.imageSmoothingEnabled = true
+      ctx.drawImage(this.terrainCache, x, y, minimapWidth, minimapHeight)
+      ctx.imageSmoothingEnabled = prevSmoothing
+    } else {
+      // Fallback for the brief window before the terrain cache is built —
+      // paint the explicit terrain overrides at their per-tile color.
+      for (const tile of this.state.mapConfig.terrain) {
+        ctx.fillStyle = getTerrainColor(tile.terrain)
+        ctx.fillRect(
+          x + (tile.x / this.state.mapConfig.gridCols) * minimapWidth,
+          y + (tile.y / this.state.mapConfig.gridRows) * minimapHeight,
+          minimapWidth / this.state.mapConfig.gridCols,
+          minimapHeight / this.state.mapConfig.gridRows,
+        )
+      }
     }
 
     for (const tile of this.state.mapConfig.obstacles) {
@@ -2549,9 +2598,17 @@ export class CanvasRenderer {
     const viewWidth = (worldWidth / this.state.mapWidth) * minimapWidth
     const viewHeight = (worldHeight / this.state.mapHeight) * minimapHeight
 
+    // Clip the viewport rect to the minimap bounds so it can't extend past
+    // the panel frame when the camera is panned to an edge or the world is
+    // smaller than the on-screen viewport.
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(x, y, minimapWidth, minimapHeight)
+    ctx.clip()
     ctx.strokeStyle = 'rgba(125, 211, 252, 0.95)'
     ctx.lineWidth = 1.5
     ctx.strokeRect(viewX, viewY, viewWidth, viewHeight)
+    ctx.restore()
 
     ctx.restore()
   }

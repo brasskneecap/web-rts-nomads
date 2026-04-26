@@ -7,57 +7,71 @@
     }"
   >
     <div class="selection-main">
-      <section class="selection-panel selection-panel--primary">
-        <div class="selection-primary__info">
-          <div class="selection-title">
-            {{ ui.selection.title }}<span
-              v-if="ui.selection.kind === 'unit' && ui.selection.pathLabel"
-              class="selection-title__path"
-            > ({{ ui.selection.pathLabel }})</span>
-          </div>
-          <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
-          <div
-            v-if="ui.selection.kind === 'unit' && (ui.selection.rankLabel || ui.selection.xpLabel)"
-            class="selection-progression"
-          >
-            <div v-if="ui.selection.rankLabel" class="selection-progression__rank-group">
-              <div class="selection-progression__label">Rank</div>
-              <div class="selection-progression__rank">{{ ui.selection.rankLabel }}</div>
-            </div>
-            <span v-if="ui.selection.xpLabel" class="selection-progression__xp">{{ ui.selection.xpLabel }}</span>
-          </div>
-        </div>
-        <div v-if="iconDetails.length > 0" class="detail-stats">
-          <div
-            v-for="detail in iconDetails"
-            :key="detail.id"
-            class="stat-row"
-            :class="{ 'stat-row--has-tooltip': !!detail.tooltipTitle }"
-            :title="detail.tooltip"
-            :aria-label="detail.value ? `${detail.label} ${detail.value}` : detail.label"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-              class="stat-row__icon"
-            >
-              <path :d="detail.icon" />
-            </svg>
-            <strong v-if="detail.value" class="stat-row__value">{{ detail.value }}</strong>
-            <div v-if="detail.tooltipTitle" class="stat-tooltip">
-              <div class="stat-tooltip__title">{{ detail.tooltipTitle }}</div>
-              <div v-if="detail.tooltipBody" class="stat-tooltip__body">{{ detail.tooltipBody }}</div>
-            </div>
-          </div>
-        </div>
+      <section
+        ref="minimapPanelEl"
+        class="selection-panel selection-panel--minimap"
+        aria-label="Minimap"
+      >
+        <!-- The actual minimap is rendered onto the main game canvas; this
+             panel just provides the framed slot it draws into. -->
       </section>
-
+      <!-- Transparent spacer above the details panel so its frame sits lower
+           than the minimap/actions panels. Reserved for future content; for
+           now it just creates the visual offset. -->
+      <div class="selection-details-spacer" aria-hidden="true"></div>
       <section class="selection-panel selection-panel--details">
+        <!-- Header: title/subtitle/rank shown only for single-unit / building.
+              Multi-unit selection shows the cards instead. -->
+        <header v-if="unitCards.length <= 1" class="selection-header">
+          <div class="selection-header__copy">
+            <div class="selection-title">
+              {{ ui.selection.title }}<span
+                v-if="ui.selection.kind === 'unit' && ui.selection.pathLabel"
+                class="selection-title__path"
+              > ({{ ui.selection.pathLabel }})</span>
+            </div>
+            <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
+            <div
+              v-if="ui.selection.kind === 'unit' && (ui.selection.rankLabel || ui.selection.xpLabel)"
+              class="selection-progression"
+            >
+              <div v-if="ui.selection.rankLabel" class="selection-progression__rank-group">
+                <div class="selection-progression__label">Rank</div>
+                <div class="selection-progression__rank">{{ ui.selection.rankLabel }}</div>
+              </div>
+              <span v-if="ui.selection.xpLabel" class="selection-progression__xp">{{ ui.selection.xpLabel }}</span>
+            </div>
+          </div>
+          <div v-if="iconDetails.length > 0" class="detail-stats">
+            <div
+              v-for="detail in iconDetails"
+              :key="detail.id"
+              class="stat-row"
+              :class="{ 'stat-row--has-tooltip': !!detail.tooltipTitle }"
+              :title="detail.tooltip"
+              :aria-label="detail.value ? `${detail.label} ${detail.value}` : detail.label"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                class="stat-row__icon"
+              >
+                <path :d="detail.icon" />
+              </svg>
+              <strong v-if="detail.value" class="stat-row__value">{{ detail.value }}</strong>
+              <div v-if="detail.tooltipTitle" class="stat-tooltip">
+                <div class="stat-tooltip__title">{{ detail.tooltipTitle }}</div>
+                <div v-if="detail.tooltipBody" class="stat-tooltip__body">{{ detail.tooltipBody }}</div>
+              </div>
+            </div>
+          </div>
+        </header>
+
         <div v-if="unitCards.length > 1" class="unit-cards">
           <button
             v-for="card in unitCards"
@@ -151,10 +165,9 @@
           </template>
         </div>
       </section>
-    </div>
 
-    <section class="selection-panel selection-panel--actions">
-      <div class="action-grid">
+      <section class="selection-panel selection-panel--actions">
+        <div class="action-grid">
         <template v-for="i in GRID_SIZE" :key="i">
           <template v-if="ui.selection.actions[i - 1]">
             <!-- Perk display cell (bottom row: bronze → silver → gold) -->
@@ -236,12 +249,13 @@
           <div v-else class="action-cell action-cell--empty" />
         </template>
       </div>
-    </section>
+      </section>
+    </div>
   </footer>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import type { ActionItem } from '@/game/core/GameState'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
@@ -254,11 +268,57 @@ const emit = defineEmits<{
   action: [actionId: string]
   'select-unit': [unitId: number]
   'deselect-unit': [unitId: number]
+  'minimap-rect': [rect: DOMRect | null]
 }>()
 
 const props = defineProps<{
   ui: GameUiSnapshot
 }>()
+
+// ── Minimap panel rect tracking ────────────────────────────────────────────
+// The canvas-rendered minimap reads its bounds from GameState; we push the
+// panel's viewport rect up to MatchView (and through GameClient → state) any
+// time the layout shifts (resize, scroll, responsive breakpoint).
+const minimapPanelEl = ref<HTMLElement | null>(null)
+let rafId = 0
+let lastEmittedRect: { x: number; y: number; w: number; h: number } | null = null
+
+// Polled per-frame so position changes (CSS var tweaks, layout shifts, HMR)
+// propagate even though ResizeObserver only catches size changes. Only emits
+// when the rect actually changed, so the parent handler is a no-op most
+// frames. Cost: one getBoundingClientRect per frame.
+function pollMinimapRect() {
+  const el = minimapPanelEl.value
+  if (!el) {
+    if (lastEmittedRect !== null) {
+      lastEmittedRect = null
+      emit('minimap-rect', null)
+    }
+  } else {
+    const r = el.getBoundingClientRect()
+    if (
+      !lastEmittedRect ||
+      lastEmittedRect.x !== r.left ||
+      lastEmittedRect.y !== r.top ||
+      lastEmittedRect.w !== r.width ||
+      lastEmittedRect.h !== r.height
+    ) {
+      lastEmittedRect = { x: r.left, y: r.top, w: r.width, h: r.height }
+      emit('minimap-rect', r)
+    }
+  }
+  rafId = requestAnimationFrame(pollMinimapRect)
+}
+
+onMounted(() => {
+  rafId = requestAnimationFrame(pollMinimapRect)
+})
+
+onBeforeUnmount(() => {
+  if (rafId) cancelAnimationFrame(rafId)
+  rafId = 0
+  emit('minimap-rect', null)
+})
 
 // Shift-click on a unit card removes that unit from the group selection.
 // Plain click selects only that unit (matching the existing behavior).
@@ -270,7 +330,7 @@ function onUnitCardClick(unitId: number, event: MouseEvent) {
   }
 }
 
-const GRID_SIZE = 9
+const GRID_SIZE = 12
 
 // Details are split by whether they have a stat icon: icon entries render as
 // a vertical icon+value grid, everything else falls through to the inline row.
@@ -328,34 +388,55 @@ function resourceDisplayName(resourceId: string): string {
 <style scoped>
 .selection-hud {
   position: absolute;
-  left: 18px;
-  right: 18px;
+  left: 0;
+  right: 0;
   bottom: 18px;
   z-index: 5;
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  --selection-panel-width: clamp(280px, 30vw, 360px);
-  --actions-panel-width: clamp(170px, 18vw, 210px);
-  --main-panel-height: clamp(110px, calc(14vh + 10px), 150px);
-  --hud-height: clamp(180px, 28vh, 240px);
+  /* Standardized fixed sizes — no clamp(), no flex distribution. The HUD
+     stays a constant size regardless of viewport changes. text-align +
+     inline-block on children is the non-flex equivalent of justify-content
+     center; font-size: 0 here suppresses the inter-element whitespace and
+     each panel resets its own font-size. */
+  text-align: center;
+  font-size: 0;
+  --minimap-panel-width: 220px;
+  --details-panel-width: 600px;
+  --actions-panel-width: 260px;
+  /* All three panels share the same height so the frame reads as one
+     continuous footer rather than two adjacent panels at different sizes. */
+  --main-panel-height: 200px;
+  --hud-height: 200px;
+  /* The details panel is pushed down by this amount, leaving a transparent
+     gap above its frame while minimap/actions stay at full height. */
+  --details-top-spacer: 32px;
+  /* Horizontal breathing room between the details frame and the minimap /
+     actions panels on either side of it. */
+  --panel-side-gap: 12px;
   pointer-events: none;
 }
 
 .selection-main {
-  display: flex;
-  align-items: stretch;
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 1500px;
+  position: relative;
+  display: inline-block;
+  vertical-align: bottom;
+  width: calc(
+    var(--minimap-panel-width) + var(--details-panel-width) + var(--actions-panel-width)
+  );
   height: var(--main-panel-height);
-  pointer-events: auto;
+  /* Wrapper passes pointer events through; each panel re-enables them
+     individually. Without this, clicks that hit the minimap panel (which
+     itself is pointer-events: none so the canvas-rendered minimap can be
+     clicked) get caught here instead of reaching the canvas behind. */
+  pointer-events: none;
 }
 
 /* Shared 9-slice panel frame: 56×56 source with 16px corners. The corners
    stay pixel-perfect, edges + center tile (round) to fill any panel size.
-   --ui-panel-image is set on the .selection-hud root from the imported PNG. */
+   --ui-panel-image is set on the .selection-hud root from the imported PNG.
+   `box-sizing: border-box` is required so the 17px border doesn't add to the
+   declared width — without it, panels overflow each other by 34px. */
 .selection-panel {
+  box-sizing: border-box;
   min-width: 0;
   padding: 12px 14px;
   background: none;
@@ -368,39 +449,72 @@ function resourceDisplayName(resourceId: string): string {
   image-rendering: pixelated;
 }
 
-.selection-panel--primary {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 14px;
-  flex: 0 0 var(--selection-panel-width);
+.selection-panel--minimap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--minimap-panel-width);
+  height: var(--main-panel-height);
+  font-size: 13px;
+  /* No `fill` on the slice: the panel's interior must be transparent so the
+     canvas-rendered minimap (which sits behind the HUD) shows through. The
+     other panels keep `fill` because they have no canvas content underneath. */
+  border-image-slice: 17;
+  pointer-events: none;
 }
 
-.selection-primary__info {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-width: 0;
+.selection-details-spacer {
+  position: absolute;
+  top: 0;
+  left: var(--minimap-panel-width);
+  width: var(--details-panel-width);
+  height: var(--details-top-spacer);
+  background: transparent;
+  pointer-events: none;
 }
 
 .selection-panel--details {
+  position: absolute;
+  top: var(--details-top-spacer);
+  left: var(--minimap-panel-width);
+  width: var(--details-panel-width);
+  height: calc(var(--main-panel-height) - var(--details-top-spacer));
+  font-size: 13px;
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  min-width: 0;
+  gap: 8px;
   overflow-y: auto;
   scrollbar-width: none;
+  pointer-events: auto;
 }
 
 .selection-panel--details::-webkit-scrollbar {
   display: none;
 }
 
-.selection-panel--actions {
+.selection-header {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+
+.selection-header__copy {
   display: flex;
   flex-direction: column;
-  flex: 0 0 var(--actions-panel-width);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.selection-panel--actions {
+  position: absolute;
+  top: 0;
+  /* Pushed right so its left-edge frame doesn't crowd the details panel. */
+  right: calc(0px - var(--panel-side-gap));
+  width: var(--actions-panel-width);
   height: var(--hud-height);
+  font-size: 13px;
   /* overflow: visible so perk hover tooltips can extend above the panel. */
   overflow: visible;
   pointer-events: auto;
@@ -468,7 +582,7 @@ function resourceDisplayName(resourceId: string): string {
 
 .action-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   grid-auto-rows: auto;
   gap: 4px;
   flex: 0 0 auto;
@@ -1010,17 +1124,17 @@ function resourceDisplayName(resourceId: string): string {
 }
 
 /* Edge-anchor tooltips so they don't get clipped at screen edges. The
-   actions panel sits at the right of the HUD, so column 3 cells anchor the
+   actions panel sits at the right of the HUD, so column 4 cells anchor the
    tooltip to the cell's right edge; column 1 cells anchor to the left. */
-.action-grid > *:nth-child(3n) .perk-tooltip,
-.action-grid > *:nth-child(3n) .cost-tooltip {
+.action-grid > *:nth-child(4n) .perk-tooltip,
+.action-grid > *:nth-child(4n) .cost-tooltip {
   left: auto;
   right: 0;
   transform: none;
 }
 
-.action-grid > *:nth-child(3n + 1) .perk-tooltip,
-.action-grid > *:nth-child(3n + 1) .cost-tooltip {
+.action-grid > *:nth-child(4n + 1) .perk-tooltip,
+.action-grid > *:nth-child(4n + 1) .cost-tooltip {
   left: 0;
   right: auto;
   transform: none;
@@ -1039,77 +1153,4 @@ function resourceDisplayName(resourceId: string): string {
   color: #d4b87a;
 }
 
-@media (max-width: 1000px) {
-  .selection-hud {
-    left: 14px;
-    right: 14px;
-    bottom: 14px;
-    --selection-panel-width: 310px;
-    --actions-panel-width: 180px;
-    --main-panel-height: 110px;
-    --hud-height: 200px;
-  }
-
-  .selection-title {
-    font-size: 15px;
-  }
-}
-
-@media (max-width: 720px) {
-  .selection-hud {
-    left: 10px;
-    right: 10px;
-    bottom: 10px;
-    --selection-panel-width: 260px;
-    --actions-panel-width: 152px;
-    --main-panel-height: 90px;
-    --hud-height: 176px;
-  }
-
-  .selection-panel {
-    padding: 8px 10px;
-  }
-
-  .selection-title {
-    font-size: 13px;
-  }
-
-  .selection-subtitle {
-    font-size: 10px;
-    margin-top: 2px;
-  }
-
-  .action-grid {
-    gap: 5px;
-  }
-
-  .detail-inline {
-    margin-top: 4px;
-    font-size: 11px;
-  }
-
-  .production-card {
-    margin-top: 2px;
-  }
-
-  .production-bar {
-    height: 24px;
-  }
-
-  .detail-entry strong {
-    font-size: 11px;
-  }
-
-  .production-bar__time {
-    font-size: 11px;
-  }
-
-  .production-bar__cancel {
-    right: 4px;
-    width: 18px;
-    height: 18px;
-    font-size: 10px;
-  }
-
-}
 </style>

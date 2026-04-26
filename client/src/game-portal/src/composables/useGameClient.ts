@@ -133,6 +133,10 @@ export function useGameClient() {
     client?.deselectUnit(unitId)
   }
 
+  function setMinimapPanelRect(rect: DOMRect | null) {
+    client?.setMinimapPanelRect(rect)
+  }
+
   onBeforeUnmount(() => {
     destroy()
   })
@@ -148,6 +152,7 @@ export function useGameClient() {
     cancelDebugSpawn,
     selectUnitOnly,
     deselectUnit,
+    setMinimapPanelRect,
     ui,
     connectionState,
     reconnectAttempt,
