@@ -4,6 +4,8 @@ import type {
   BattleTrackerSnapshot,
   BuildingTile,
   GameOverSnapshot,
+  InventorySnapshot,
+  ItemSnapshot,
   ObjectiveSnapshot,
   VictorySnapshot,
   MapConfig,
@@ -100,7 +102,19 @@ export type Unit = {
   effectiveTrap?: EffectiveTrapSnapshot
   /** Current order — mirrors UnitSnapshot.order. Absent on old-server snapshots; treat as 'idle'. */
   order?: string
+  /** Inventory the unit is carrying. Absent for units that don't have an
+   *  inventory capability. See ItemDef / ITEM_DEF_MAP for item resolution. */
+  inventory?: Inventory
 }
+
+/** A held item — carries the item id and optional stack count. Look up
+ *  display name, icon, modifiers, and effects via ITEM_DEF_MAP[item.itemId]. */
+export type Item = ItemSnapshot
+
+/** Unit inventory — `size` slots are unlocked; `slots` is positionally indexed
+ *  (null = unlocked-but-empty). The UI may display additional locked slots
+ *  beyond `size` to communicate progression headroom. */
+export type Inventory = InventorySnapshot
 
 export type ActionCost = {
   resourceId: string
@@ -509,6 +523,7 @@ export class GameState {
         workTargetId: unit.workTargetId,
         effectiveTrap: unit.effectiveTrap,
         order: unit.order,
+        inventory: unit.inventory,
       })),
     }
 
@@ -1464,23 +1479,22 @@ export class GameState {
       const placementActive = this.buildPlacement !== null
 
       // Regular actions occupy slots 1–8 (top two rows of the 4×3 grid).
-      // Perk items always land in slots 10–12 (bottom row, right side):
-      // bronze, silver, gold — slot 9 is left empty so perks anchor right.
+      // Perk items always land in slots 9–11 (bottom row, left side):
+      // bronze, silver, gold — slot 12 is left empty for future use.
       // When the build menu is open the full 12 slots are used for building
       // choices, so we skip the perk row in that state.
       const regularActions = getUnitActions(unit, this.unitTargetingMode, buildMenuOpen)
+      const emptySlot: ActionItem = { id: '', label: '', disabled: true }
       const actions = buildMenuOpen
         ? regularActions
         : [
             ...regularActions,
-            // Pad to 9 so perks always land in slots 10–12 regardless of
-            // how many regular action slots are filled.
-            ...Array<ActionItem>(Math.max(0, 9 - regularActions.length)).fill({
-              id: '',
-              label: '',
-              disabled: true,
-            }),
+            // Pad to 8 so perks always land starting at slot 9 (bottom-left)
+            // regardless of how many regular action slots are filled.
+            ...Array<ActionItem>(Math.max(0, 8 - regularActions.length)).fill(emptySlot),
             ...getPerkActionItems(unit),
+            // Slot 12: reserved empty cell at bottom-right.
+            emptySlot,
           ]
 
       return {
@@ -1491,7 +1505,9 @@ export class GameState {
           : buildMenuOpen
             ? 'Choose a structure to build.'
             : getSelectionUnitSubtitle(
-                unit.status || formatUnitType(unit.unitType),
+                unit.order
+                  ? `Order: ${formatUnitOrder(unit.order)}`
+                  : unit.status || formatUnitType(unit.unitType),
                 this.unitTargetingMode,
               ),
         details: getUnitDetails(unit),
@@ -1792,7 +1808,7 @@ function getPerkActionItems(unit: Unit): ActionItem[] {
 
     // Locked / empty slot for ranks the unit hasn't reached yet.
     return {
-      id: 'perk-locked',
+      id: 'lock',
       label: `${rankLabel} Perk (locked)`,
       kind: 'perk' as const,
       perkRank: rank,
@@ -2142,22 +2158,32 @@ function getUnitDetails(unit: Unit): DetailItem[] {
   }
 
   if (unit.moveSpeed !== undefined && unit.moveSpeed > 0) {
+    const unitDef = UNIT_DEF_MAP.get(unit.unitType)
+    const baseSpeed = unitDef?.moveSpeed ?? unit.moveSpeed
+    const bonusSpeed = unit.moveSpeed - baseSpeed
+    const tooltipLines: string[] = [`Base move speed: ${Math.round(baseSpeed)}`]
+    if (bonusSpeed > 0) {
+      tooltipLines.push(`Bonus move speed: +${Math.round(bonusSpeed)}`)
+    }
     details.push({
       id: 'move-speed',
       label: 'Move Speed',
       value: String(Math.round(unit.moveSpeed)),
       icon: STAT_ICON_BOOT,
+      tooltipTitle: `Move Speed: ${Math.round(unit.moveSpeed)}`,
+      tooltipBody: tooltipLines.join('\n'),
     })
   }
 
-  if (unit.armor !== undefined && unit.armor > 0) {
-    const reductionPct = Math.round(armorDamageReductionFraction(unit.armor) * 100)
+  {
+    const armor = unit.armor ?? 0
+    const reductionPct = Math.round(armorDamageReductionFraction(armor) * 100)
     details.push({
       id: 'armor',
       label: 'Armor',
-      value: String(unit.armor),
+      value: String(armor),
       icon: STAT_ICON_SHIELD,
-      tooltipTitle: `Armor: ${unit.armor}`,
+      tooltipTitle: `Armor: ${armor}`,
       tooltipBody: `${reductionPct}% damage reduction`,
     })
   }
@@ -2178,14 +2204,6 @@ function getUnitDetails(unit: Unit): DetailItem[] {
       id: 'carried-resource',
       label: `${formatResourceLabel(unit.carriedResourceType)} Carried`,
       value: String(unit.carriedAmount),
-    })
-  }
-
-  if (unit.order) {
-    details.push({
-      id: 'order',
-      label: 'Order',
-      value: formatUnitOrder(unit.order),
     })
   }
 

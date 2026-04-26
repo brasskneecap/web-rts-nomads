@@ -296,6 +296,23 @@ export type PerkCooldownSnapshot = {
   total: number
 }
 
+/** A single item held in an inventory slot. */
+export type ItemSnapshot = {
+  /** Unique item id — matches an entry in the client's ITEM_DEF_MAP catalog
+   *  for display name, icon, and modifier/effect resolution. */
+  itemId: string
+  /** Optional stack count for stackable items (potions, charges). Omitted = 1. */
+  stacks?: number
+}
+
+/** Inventory carried by a unit. `size` is the number of slots the unit has
+ *  unlocked; the UI may display additional locked slots beyond that.
+ *  `slots` is positionally indexed — null entries are unlocked-but-empty. */
+export type InventorySnapshot = {
+  size: number
+  slots: (ItemSnapshot | null)[]
+}
+
 export type UnitSnapshot = {
   id: number
   ownerId: string
@@ -351,6 +368,9 @@ export type UnitSnapshot = {
   workTargetId?: string
   /** Current order type — one of the UnitOrder values. Omitted by old servers; treat absence as 'idle'. */
   order?: UnitOrder
+  /** Inventory the unit is carrying. Optional — units without inventory
+   *  capability omit it entirely. */
+  inventory?: InventorySnapshot
   /**
    * Live-compounded trap stats for archer/trapper units. Only present when the
    * unit is a trapper archetype that owns at least one trap bronze perk.

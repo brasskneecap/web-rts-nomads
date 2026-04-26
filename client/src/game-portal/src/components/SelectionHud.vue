@@ -20,17 +20,20 @@
            now it just creates the visual offset. -->
       <div class="selection-details-spacer" aria-hidden="true"></div>
       <section class="selection-panel selection-panel--details">
+        <div class="details-body">
         <!-- Header: title/subtitle/rank shown only for single-unit / building.
               Multi-unit selection shows the cards instead. -->
         <header v-if="unitCards.length <= 1" class="selection-header">
           <div class="selection-header__copy">
-            <div class="selection-title">
-              {{ ui.selection.title }}<span
-                v-if="ui.selection.kind === 'unit' && ui.selection.pathLabel"
-                class="selection-title__path"
-              > ({{ ui.selection.pathLabel }})</span>
+            <div class="selection-header__name">
+              <div class="selection-title">
+                {{ ui.selection.title }}<span
+                  v-if="ui.selection.kind === 'unit' && ui.selection.pathLabel"
+                  class="selection-title__path"
+                > ({{ ui.selection.pathLabel }})</span>
+              </div>
+              <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
             </div>
-            <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
             <div
               v-if="ui.selection.kind === 'unit' && (ui.selection.rankLabel || ui.selection.xpLabel)"
               class="selection-progression"
@@ -164,6 +167,37 @@
             <span v-if="index < inlineDetails.length - 1" class="detail-separator">,</span>
           </template>
         </div>
+        </div>
+
+        <!-- Right side: inventory slots for items the unit can hold. Only
+             rendered when exactly one unit is selected — multi-select and
+             building selections hide the panel entirely. Slot count is
+             fixed at INVENTORY_DISPLAY_SLOTS; the unit's inventory.size
+             determines how many of those are unlocked vs. locked. Locked
+             slots overlay the lock icon; held items render their own icon
+             over the container; empty unlocked slots show only the
+             icon-container art. -->
+        <div
+          v-if="ui.selectedUnits.length === 1"
+          class="details-inventory"
+          aria-label="Inventory"
+        >
+          <div
+            v-for="slot in inventorySlots"
+            :key="slot.index"
+            class="inventory-slot"
+            :class="{ 'inventory-slot--locked': slot.locked }"
+            :title="slot.title"
+          >
+            <img
+              v-if="slot.iconUrl"
+              :src="slot.iconUrl"
+              :alt="slot.title"
+              class="inventory-slot__icon"
+              draggable="false"
+            />
+          </div>
+        </div>
       </section>
 
       <section class="selection-panel selection-panel--actions">
@@ -263,6 +297,8 @@ import { getRankToneColor } from '@/game/rendering/rankColors'
 import ActionIcon from '@/components/ActionIcon.vue'
 import uiPanelUrl from '@/assets/ui/ui_panel_56x56_slice17.png'
 import iconContainerUrl from '@/assets/ui/icon-container.png'
+import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
+import { getActionIconImage } from '@/game/rendering/actionIconSprites'
 
 const emit = defineEmits<{
   action: [actionId: string]
@@ -360,6 +396,48 @@ const unitCards = computed(() => {
       rank: u.rank ?? '',
       rankChevrons,
       rankColor: getRankToneColor(u.rank, 'light'),
+    }
+  })
+})
+
+// Inventory display: always shows INVENTORY_DISPLAY_SLOTS slots so the panel
+// has a stable shape regardless of unit progression. The unit's
+// inventory.size determines how many of those are unlocked; the rest render
+// the lock icon. Held items render their icon over the container, looked up
+// via ITEM_DEF_MAP[itemId].iconKey through the action-icon sprite loader
+// (so item art lives in src/assets/actions/<iconKey>.png).
+const INVENTORY_DISPLAY_SLOTS = 2
+
+const inventorySlots = computed(() => {
+  // Inventory only shows for single-unit selections.
+  const unit = props.ui.selectedUnits.length === 1 ? props.ui.selectedUnits[0] : null
+  const inventory = unit?.inventory
+  const size = inventory?.size ?? 0
+  const slots = inventory?.slots ?? []
+
+  return Array.from({ length: INVENTORY_DISPLAY_SLOTS }, (_, index) => {
+    const locked = index >= size
+    if (locked) {
+      return {
+        index,
+        locked: true,
+        iconUrl: getActionIconImage('lock')?.src ?? null,
+        title: 'Locked slot',
+      }
+    }
+
+    const held = slots[index] ?? null
+    if (!held) {
+      return { index, locked: false, iconUrl: null, title: 'Empty slot' }
+    }
+
+    const def = ITEM_DEF_MAP.get(held.itemId)
+    const iconKey = def?.iconKey ?? held.itemId
+    return {
+      index,
+      locked: false,
+      iconUrl: getActionIconImage(iconKey)?.src ?? null,
+      title: def?.displayName ?? held.itemId,
     }
   })
 })
@@ -480,22 +558,84 @@ function resourceDisplayName(resourceId: string): string {
   width: var(--details-panel-width);
   height: calc(var(--main-panel-height) - var(--details-top-spacer));
   font-size: 13px;
+  /* Row layout: left-aligned details body + right-aligned inventory grid. */
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow-y: auto;
-  scrollbar-width: none;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 12px;
   pointer-events: auto;
 }
 
-.selection-panel--details::-webkit-scrollbar {
-  display: none;
+/* Left side of the details panel — owns all the existing details content
+   (title, subtitle, rank, stats, unit cards, production bars, etc). */
+.details-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* overflow: visible so stat hover tooltips can extend above the panel
+     frame. Sub-sections that legitimately need to scroll (unit-cards,
+     detail-inline) own their own overflow handling. */
+  overflow: visible;
+  background: #000;
+}
+
+/* Right side: vertical column of inventory slots, right-aligned. Each
+   slot uses the shared icon-container background. Display-only for now —
+   no pointer events, no hover effect. */
+.details-inventory {
+  flex: 0 0 auto;
+  align-self: stretch;
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.inventory-slot {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+/* Held-item / lock icon overlay sits centered inside the icon-container
+   frame. 70% of the slot leaves the container's outer edge visible so the
+   slot still reads as a slot rather than just an icon. */
+.inventory-slot__icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 70%;
+  height: 70%;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+/* Locked slots dim the container slightly so the lock icon reads as a
+   "you can't use this yet" affordance rather than a regular item. */
+.inventory-slot--locked {
+  opacity: 0.85;
+}
+
+.inventory-slot--locked .inventory-slot__icon {
+  opacity: 0.85;
 }
 
 .selection-header {
   display: flex;
   flex-direction: row;
-  align-items: stretch;
+  /* Top-aligned columns so name/rank don't drift down when the stats column
+     is taller, and stats don't drift down when the copy column is taller. */
+  align-items: flex-start;
   gap: 14px;
   flex: 0 0 auto;
 }
@@ -503,22 +643,38 @@ function resourceDisplayName(resourceId: string): string {
 .selection-header__copy {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  /* Don't grow — let the stats column sit immediately to the right of the
+     name/rank column instead of being pushed to the right edge of the body. */
+  flex: 0 1 auto;
   min-width: 0;
+  /* Stretch to the header's full height so space-between has room to push
+     the name group to the top and progression to the bottom. */
+  align-self: stretch;
+  justify-content: space-between;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.selection-header__name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
 }
 
 .selection-panel--actions {
   position: absolute;
   top: 0;
-  /* Pushed right so its left-edge frame doesn't crowd the details panel. */
-  right: calc(0px - var(--panel-side-gap));
+  right: 0;
   width: var(--actions-panel-width);
   height: var(--hud-height);
   font-size: 13px;
   /* overflow: visible so perk hover tooltips can extend above the panel. */
   overflow: visible;
   pointer-events: auto;
-  padding: 8px;
+  padding: 0;
 }
 
 .selection-title {
@@ -544,11 +700,10 @@ function resourceDisplayName(resourceId: string): string {
 }
 
 .selection-progression {
-  margin-top: auto;
-  padding-top: 8px;
+  margin-top: 4px;
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 10px;
   font-size: 12px;
   color: #e7d7b6;
@@ -583,22 +738,19 @@ function resourceDisplayName(resourceId: string): string {
 .action-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  grid-auto-rows: auto;
-  gap: 4px;
-  flex: 0 0 auto;
-}
-
-.action-grid > * {
-  aspect-ratio: 1 / 1;
+  grid-template-rows: repeat(3, 1fr);
+  gap: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .detail-stats {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 4px;
+  gap: 8px;
   flex: 0 0 auto;
-  min-width: 90px;
+  padding: 10px 4px;
+  background: rgba(0, 0, 0, 0.6);
 }
 
 .stat-row {
@@ -1016,11 +1168,11 @@ function resourceDisplayName(resourceId: string): string {
   cursor: not-allowed;
 }
 
+/* Empty slots keep the icon-container background visible but contain no
+   action icon. Acts as a disabled button: no hover effect, no click. */
 .action-cell--empty {
-  background: none;
   cursor: default;
   pointer-events: none;
-  opacity: 0.25;
 }
 
 /* ── Perk display cells ───────────────────────────────────────────────────── */

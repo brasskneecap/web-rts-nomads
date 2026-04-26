@@ -131,7 +131,7 @@ function exitGame() {
   justify-content: space-between;
   align-items: center;
   gap: 18px;
-  padding: 12px 18px;
+  padding: 4px 18px;
 
   /* 9-slice panel: shared 56×56 source, 16px corners. */
   background: none;
@@ -166,9 +166,9 @@ function exitGame() {
 }
 
 .crest-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background:
     radial-gradient(circle at 30% 30%, rgba(255, 225, 152, 0.8), transparent 35%),
     linear-gradient(180deg, #9a6937, #5f3c1d);
@@ -280,7 +280,7 @@ function exitGame() {
   align-items: center;
   gap: 10px;
   min-width: 120px;
-  padding: 8px 12px;
+  padding: 4px 12px;
   border-radius: 999px;
   background:
     linear-gradient(180deg, rgba(111, 76, 39, 0.78), rgba(63, 41, 23, 0.92));
