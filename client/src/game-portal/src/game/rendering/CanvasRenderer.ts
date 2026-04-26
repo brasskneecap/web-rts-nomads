@@ -824,8 +824,22 @@ export class CanvasRenderer {
   }
 
   private drawSpawnPointMarker(x: number, y: number, color: string) {
-    const ctx = this.ctx
+    const spriteSet = getObjectSpriteSet('rally_point')
+    const idleAnim = spriteSet?.animations.get('idle')
+    if (spriteSet && idleAnim) {
+      const frameMs = idleAnim.frameDurationMs ?? this.BANNER_IDLE_FRAME_MS
+      const elapsed = performance.now()
+      const frameIndex = idleAnim.loop
+        ? Math.floor(elapsed / frameMs) % idleAnim.frameCount
+        : Math.min(Math.floor(elapsed / frameMs), idleAnim.frameCount - 1)
+      const scale = spriteSet.scale ?? this.OBJECT_SPRITE_SCALE
+      const offX = (spriteSet.offsetX ?? 0) * scale
+      const offY = (spriteSet.offsetY ?? 0) * scale
+      this.drawObjectFrame(idleAnim, frameIndex, x + offX, y + offY, scale)
+      return
+    }
 
+    const ctx = this.ctx
     ctx.save()
     ctx.strokeStyle = color
     ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'

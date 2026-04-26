@@ -1,0 +1,17 @@
+{
+  "key": "rally_point",
+  "size": {
+    "width": 48,
+    "height": 48
+  },
+  "animations": {
+    "idle": {
+      "frameCount": 5,
+      "frameWidth": 48,
+      "frameHeight": 48,
+      "sheet": "packed/idle.png",
+      "loop": true
+    }
+  },
+  "packedAt": "2026-04-26T03:22:51.644Z"
+}

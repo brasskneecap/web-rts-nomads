@@ -1,5 +1,5 @@
 <template>
-  <header class="hud">
+  <header class="hud" :style="{ '--ui-panel-image': `url(${uiPanelUrl})` }">
     <div class="hud-crest">
       <button
         class="crest-button"
@@ -69,6 +69,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
+import uiPanelUrl from '@/assets/ui/ui_panel_56x56_slice17.png'
 
 const emit = defineEmits<{
   exit: []
@@ -131,13 +132,15 @@ function exitGame() {
   align-items: center;
   gap: 18px;
   padding: 12px 18px;
-  border-bottom: 1px solid rgba(123, 93, 48, 0.5);
-  background:
-    radial-gradient(circle at top, rgba(176, 124, 52, 0.18), transparent 42%),
-    linear-gradient(180deg, rgba(58, 35, 18, 0.98), rgba(27, 16, 10, 0.94));
-  box-shadow:
-    inset 0 1px 0 rgba(240, 220, 178, 0.14),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+
+  /* 9-slice panel: shared 56×56 source, 16px corners. */
+  background: none;
+  border: 17px solid transparent;
+  border-image-source: var(--ui-panel-image);
+  border-image-slice: 17 fill;
+  border-image-width: 17px;
+  border-image-repeat: round;
+  image-rendering: pixelated;
 }
 
 .hud-crest {
@@ -232,14 +235,16 @@ function exitGame() {
   left: 0;
   min-width: 180px;
   padding: 10px;
-  border-radius: 14px;
-  background:
-    radial-gradient(circle at top, rgba(196, 140, 62, 0.18), transparent 42%),
-    linear-gradient(180deg, rgba(62, 39, 20, 0.98), rgba(29, 18, 11, 0.98));
-  border: 1px solid rgba(200, 164, 106, 0.3);
-  box-shadow:
-    inset 0 1px 0 rgba(246, 225, 183, 0.12),
-    0 12px 26px rgba(0, 0, 0, 0.34);
+
+  /* 9-slice panel frame */
+  background: none;
+  border: 17px solid transparent;
+  border-image-source: var(--ui-panel-image);
+  border-image-slice: 17 fill;
+  border-image-width: 17px;
+  border-image-repeat: round;
+  image-rendering: pixelated;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.34);
 }
 
 .settings-title {

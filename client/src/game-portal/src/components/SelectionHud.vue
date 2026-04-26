@@ -1,5 +1,11 @@
 <template>
-  <footer class="selection-hud">
+  <footer
+    class="selection-hud"
+    :style="{
+      '--ui-panel-image': `url(${uiPanelUrl})`,
+      '--ui-icon-container-image': `url(${iconContainerUrl})`,
+    }"
+  >
     <div class="selection-main">
       <section class="selection-panel selection-panel--primary">
         <div class="selection-primary__info">
@@ -241,6 +247,8 @@ import type { GameUiSnapshot } from '@/game/core/GameClient'
 import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 import { getRankToneColor } from '@/game/rendering/rankColors'
 import ActionIcon from '@/components/ActionIcon.vue'
+import uiPanelUrl from '@/assets/ui/ui_panel_56x56_slice17.png'
+import iconContainerUrl from '@/assets/ui/icon-container.png'
 
 const emit = defineEmits<{
   action: [actionId: string]
@@ -344,14 +352,20 @@ function resourceDisplayName(resourceId: string): string {
   pointer-events: auto;
 }
 
+/* Shared 9-slice panel frame: 56×56 source with 16px corners. The corners
+   stay pixel-perfect, edges + center tile (round) to fill any panel size.
+   --ui-panel-image is set on the .selection-hud root from the imported PNG. */
 .selection-panel {
   min-width: 0;
   padding: 12px 14px;
+  background: none;
+  border: 17px solid transparent;
   border-radius: 0;
-  background:
-    radial-gradient(circle at top, rgba(220, 165, 80, 0.2), transparent 50%),
-    linear-gradient(180deg, rgb(96, 64, 30), rgb(68, 44, 18));
-  border: 1px solid rgba(180, 130, 60, 0.35);
+  border-image-source: var(--ui-panel-image);
+  border-image-slice: 17 fill;
+  border-image-width: 17px;
+  border-image-repeat: round;
+  image-rendering: pixelated;
 }
 
 .selection-panel--primary {
@@ -360,7 +374,6 @@ function resourceDisplayName(resourceId: string): string {
   align-items: stretch;
   gap: 14px;
   flex: 0 0 var(--selection-panel-width);
-  border-radius: 14px 0 0 14px;
 }
 
 .selection-primary__info {
@@ -375,8 +388,6 @@ function resourceDisplayName(resourceId: string): string {
   flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
-  border-left: 0;
-  border-radius: 0 14px 14px 0;
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -392,8 +403,8 @@ function resourceDisplayName(resourceId: string): string {
   height: var(--hud-height);
   /* overflow: visible so perk hover tooltips can extend above the panel. */
   overflow: visible;
-  border-radius: 14px;
   pointer-events: auto;
+  padding: 8px;
 }
 
 .selection-title {
@@ -458,9 +469,13 @@ function resourceDisplayName(resourceId: string): string {
 .action-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
+  grid-auto-rows: auto;
   gap: 4px;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+}
+
+.action-grid > * {
+  aspect-ratio: 1 / 1;
 }
 
 .detail-stats {
@@ -793,12 +808,13 @@ function resourceDisplayName(resourceId: string): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  border: 1px solid rgba(200, 164, 106, 0.28);
-  background: linear-gradient(180deg, rgba(114, 77, 39, 0.88), rgba(60, 39, 21, 0.94));
+  border: 0;
+  border-radius: 0;
+  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
   color: #f5ead2;
   padding: 0;
   cursor: pointer;
+  image-rendering: pixelated;
 }
 
 /* ── Cost hover tooltip (build/train actions) ────────────────────────────── */
@@ -874,17 +890,11 @@ function resourceDisplayName(resourceId: string): string {
 }
 
 .action-cell:not(:disabled):hover {
-  background: linear-gradient(180deg, rgba(148, 102, 50, 0.95), rgba(90, 58, 26, 0.98));
-  border-color: rgba(220, 180, 110, 0.5);
+  filter: brightness(1.15);
 }
 
 .action-cell--active {
-  background:
-    linear-gradient(180deg, rgba(201, 145, 65, 0.98), rgba(121, 80, 34, 1));
-  border-color: rgba(247, 216, 142, 0.82);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 241, 202, 0.24),
-    0 0 0 1px rgba(247, 216, 142, 0.2);
+  filter: brightness(1.25) saturate(1.15);
 }
 
 .action-cell:disabled {
@@ -893,10 +903,10 @@ function resourceDisplayName(resourceId: string): string {
 }
 
 .action-cell--empty {
-  border: 1px solid rgba(180, 130, 60, 0.1);
-  background: rgba(50, 30, 10, 0.25);
+  background: none;
   cursor: default;
   pointer-events: none;
+  opacity: 0.25;
 }
 
 /* ── Perk display cells ───────────────────────────────────────────────────── */
@@ -906,26 +916,23 @@ function resourceDisplayName(resourceId: string): string {
   position: relative;
   cursor: default;
   pointer-events: auto;
-  background: linear-gradient(180deg, rgba(30, 18, 8, 0.92), rgba(20, 12, 4, 0.96));
   color: #d4b87a;
 }
 
-/* Rank-tinted borders. Update these when adding new rank tiers. */
+/* Rank-tinted outlines. The icon-container art is the cell background, so
+   rank distinction is conveyed by an inset glow rather than a real border. */
 .action-cell--perk-bronze {
-  border-color: rgba(160, 100, 30, 0.75);
-  box-shadow: inset 0 0 0 1px rgba(200, 140, 60, 0.18);
+  box-shadow: inset 0 0 0 2px rgba(200, 140, 60, 0.55);
 }
 
 .action-cell--perk-silver {
-  border-color: rgba(140, 155, 170, 0.65);
-  box-shadow: inset 0 0 0 1px rgba(180, 195, 210, 0.15);
+  box-shadow: inset 0 0 0 2px rgba(180, 195, 210, 0.50);
 }
 
 .action-cell--perk-gold {
-  border-color: rgba(200, 165, 40, 0.80);
   box-shadow:
-    inset 0 0 0 1px rgba(240, 210, 80, 0.22),
-    0 0 4px rgba(200, 165, 40, 0.18);
+    inset 0 0 0 2px rgba(240, 210, 80, 0.65),
+    0 0 6px rgba(200, 165, 40, 0.30);
 }
 
 /* Locked / empty rank slot: dim the icon and border further. */
@@ -1000,6 +1007,23 @@ function resourceDisplayName(resourceId: string): string {
 .action-cell--perk:hover .perk-tooltip {
   opacity: 1;
   visibility: visible;
+}
+
+/* Edge-anchor tooltips so they don't get clipped at screen edges. The
+   actions panel sits at the right of the HUD, so column 3 cells anchor the
+   tooltip to the cell's right edge; column 1 cells anchor to the left. */
+.action-grid > *:nth-child(3n) .perk-tooltip,
+.action-grid > *:nth-child(3n) .cost-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.action-grid > *:nth-child(3n + 1) .perk-tooltip,
+.action-grid > *:nth-child(3n + 1) .cost-tooltip {
+  left: 0;
+  right: auto;
+  transform: none;
 }
 
 .perk-tooltip__title {

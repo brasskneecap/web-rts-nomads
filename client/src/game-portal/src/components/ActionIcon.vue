@@ -1,18 +1,19 @@
 <template>
-  <canvas v-if="action.iconDef" ref="canvasEl" width="64" height="64" class="action-icon" />
+  <canvas v-if="useCanvas" ref="canvasEl" width="64" height="64" class="action-icon" />
   <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="action-icon">
     <path :d="getActionIcon(action.id)" />
   </svg>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import type { ActionItem } from '@/game/core/GameState'
 import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
 import { UNIT_DEF_MAP } from '@/game/maps/unitDefs'
 import { ACTION_ICON_MAP } from '@/game/maps/actionIconDefs'
 import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
+import { getActionIconImage } from '@/game/rendering/actionIconSprites'
 
 const props = defineProps<{
   action: ActionItem
@@ -163,6 +164,22 @@ function drawUnit(ctx: CanvasRenderingContext2D, type: string) {
   }
 }
 
+function drawActionSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
+  ctx.imageSmoothingEnabled = false
+  const spritePadding = 1
+  const boxSize = CANVAS_SIZE - spritePadding * 2
+  const scale = boxSize / Math.max(img.naturalWidth, img.naturalHeight)
+  const w = img.naturalWidth * scale
+  const h = img.naturalHeight * scale
+  const x = spritePadding + (boxSize - w) / 2
+  const y = spritePadding + (boxSize - h) / 2
+  ctx.drawImage(img, x, y, w, h)
+}
+
+const useCanvas = computed(() => {
+  return !!props.action.iconDef || !!getActionIconImage(props.action.id)
+})
+
 function draw() {
   const canvas = canvasEl.value
   if (!canvas) return
@@ -170,6 +187,16 @@ function draw() {
   if (!ctx) return
 
   ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
+
+  const sprite = getActionIconImage(props.action.id)
+  if (sprite) {
+    if (sprite.complete && sprite.naturalWidth > 0) {
+      drawActionSprite(ctx, sprite)
+      return
+    }
+    sprite.addEventListener('load', () => draw(), { once: true })
+    return
+  }
 
   const { iconDef } = props.action
   if (!iconDef) return
