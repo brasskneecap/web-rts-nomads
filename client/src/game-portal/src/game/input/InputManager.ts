@@ -80,6 +80,26 @@ export class InputManager {
       return
     }
 
+    // Control groups: Ctrl+1..9/0 binds the current selection to a slot,
+    // 1..9/0 recalls it. Handled before the modifier-gate below so the
+    // Ctrl-held assign path actually fires. Skip when typing in an input,
+    // or when Alt/Meta are held (those are reserved for other shortcuts).
+    if (!e.repeat && !e.altKey && !e.metaKey && !this.isFocusInTextInput()) {
+      const groupKey = this.controlGroupKeyFromEvent(e)
+      if (groupKey !== null) {
+        if (e.ctrlKey) {
+          this.client.assignControlGroup(groupKey)
+          e.preventDefault()
+          return
+        }
+        if (!e.shiftKey) {
+          this.client.selectControlGroup(groupKey)
+          e.preventDefault()
+          return
+        }
+      }
+    }
+
     if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) {
       return
     }
@@ -674,5 +694,25 @@ export class InputManager {
       this.state.mapWidth,
       this.state.mapHeight,
     )
+  }
+
+  // Maps Digit1..Digit9 to control group keys 1..9 and Digit0 to 10
+  // (matching the standard RTS convention). Returns null for any other key.
+  // Uses event.code so the mapping survives non-US keyboard layouts.
+  private controlGroupKeyFromEvent(e: KeyboardEvent): number | null {
+    if (e.code === 'Digit0' || e.code === 'Numpad0') return 10
+    const m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code)
+    if (m) return Number(m[1])
+    return null
+  }
+
+  // Skip game keybinds when the user is typing into an input. Without this,
+  // pressing a digit in a chat box or text field would also recall a group.
+  private isFocusInTextInput(): boolean {
+    const el = document.activeElement as HTMLElement | null
+    if (!el) return false
+    if (el.isContentEditable) return true
+    const tag = el.tagName
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
   }
 }

@@ -8,6 +8,10 @@ bin/
 *.exe
 *.out
 
+# air live-reload build artifacts (api.exe, api.exe~ backup, build-errors.log).
+# Regenerated on every save; nothing here belongs in the repo.
+server/tmp/
+
 # OS
 .DS_Store
 

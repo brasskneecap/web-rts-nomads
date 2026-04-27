@@ -178,6 +178,10 @@ export type AttackMoveCommandMessage = {
 export type CancelTrainingCommandMessage = {
   type: 'cancel_training_command'
   buildingId: string
+  /** Index of the queue entry to cancel. 0 = currently-training unit
+   *  (the "X" cancel button); > 0 = a queued unit waiting behind the
+   *  leader. Omitted = 0 (legacy behavior). */
+  queueIndex?: number
 }
 
 export type SetBuildingSpawnPointCommandMessage = {

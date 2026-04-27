@@ -269,7 +269,7 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 
-			match.State.CancelCurrentTraining(client.PlayerID(), msg.BuildingID)
+			match.State.CancelTrainingAt(client.PlayerID(), msg.BuildingID, msg.QueueIndex)
 
 		case "set_building_spawn_point_command":
 			if client.MatchID() == "" {

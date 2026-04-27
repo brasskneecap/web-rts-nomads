@@ -22,7 +22,7 @@
   "spawnUnitTypes": [],
   "metadata": {},
   "color": "#1e40af",
-  "label": "To(W)er",
+  "label": "Tower",
   "hotkey": "w",
   "render": {
     "inset": 0.18,

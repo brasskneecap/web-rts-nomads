@@ -13,6 +13,12 @@ type UnitProduction struct {
 	TotalSeconds     float64
 }
 
+// unitProductionMaxQueue caps how many units a single building can have queued
+// at once (the in-progress unit + everything stacked behind it). Players that
+// hit the cap can't enqueue further units until one finishes or the front of
+// the queue is cancelled.
+const unitProductionMaxQueue = 8
+
 func (s *GameState) TrainUnit(playerID, buildingID, unitType string) {
 	if _, ok := getUnitDef(unitType); !ok {
 		return
@@ -34,6 +40,9 @@ func (s *GameState) TrainUnit(playerID, buildingID, unitType string) {
 	if !containsString(building.SpawnUnitTypes, unitType) {
 		return
 	}
+	if len(s.Productions[buildingID]) >= unitProductionMaxQueue {
+		return
+	}
 	player, ok := s.Players[playerID]
 	if !ok {
 		return
@@ -49,7 +58,11 @@ func (s *GameState) TrainUnit(playerID, buildingID, unitType string) {
 	s.beginUnitProductionLocked(player, *building, unitType)
 }
 
-func (s *GameState) CancelCurrentTraining(playerID, buildingID string) {
+// CancelTrainingAt removes a single production-queue entry by index and
+// refunds its cost to the player. Index 0 is the currently-training unit
+// (the "X" cancel button next to the progress bar); higher indices are the
+// queued units behind the leader. Out-of-range indices are ignored.
+func (s *GameState) CancelTrainingAt(playerID, buildingID string, queueIndex int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -65,7 +78,7 @@ func (s *GameState) CancelCurrentTraining(playerID, buildingID string) {
 	}
 
 	queue := s.Productions[building.ID]
-	if len(queue) == 0 {
+	if queueIndex < 0 || queueIndex >= len(queue) {
 		return
 	}
 
@@ -74,8 +87,24 @@ func (s *GameState) CancelCurrentTraining(playerID, buildingID string) {
 		return
 	}
 
-	s.refundUnitCostLocked(player, queue[0].UnitType)
-	s.consumeProductionQueueItemLocked(building.ID)
+	s.refundUnitCostLocked(player, queue[queueIndex].UnitType)
+	if queueIndex == 0 {
+		s.consumeProductionQueueItemLocked(building.ID)
+		return
+	}
+
+	// Mid-queue removal: splice the entry out, leaving the leading unit's
+	// in-progress timer untouched.
+	s.Productions[building.ID] = append(queue[:queueIndex], queue[queueIndex+1:]...)
+	if len(s.Productions[building.ID]) == 0 {
+		delete(s.Productions, building.ID)
+	}
+}
+
+// CancelCurrentTraining is the legacy entry point used by the "X" cancel
+// button. Equivalent to CancelTrainingAt with queueIndex = 0.
+func (s *GameState) CancelCurrentTraining(playerID, buildingID string) {
+	s.CancelTrainingAt(playerID, buildingID, 0)
 }
 
 func (s *GameState) SetBuildingSpawnPoint(playerID, buildingID string, point protocol.Vec2) {

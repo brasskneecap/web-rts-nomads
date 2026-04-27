@@ -30,7 +30,11 @@
                 {{ ui.selection.title }}<span
                   v-if="ui.selection.kind === 'unit' && ui.selection.pathLabel"
                   class="selection-title__path"
-                > ({{ ui.selection.pathLabel }})</span>
+                > ({{ ui.selection.pathLabel }})</span><span
+                  v-if="buildingDurability"
+                  class="selection-title__durability"
+                  :title="buildingDurability.label"
+                > {{ buildingDurability.value }}</span>
               </div>
               <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
             </div>
@@ -45,7 +49,40 @@
               <span v-if="ui.selection.xpLabel" class="selection-progression__xp">{{ ui.selection.xpLabel }}</span>
             </div>
           </div>
-          <div v-if="iconDetails.length > 0" class="detail-stats">
+          <!-- Top-right header slot: production leading-card + progress bar
+               for buildings that are training. Anchored here (instead of in
+               the production-card below) so the queue row gets the full
+               body width to render larger unit cards. -->
+          <div
+            v-if="ui.selection.production"
+            class="selection-header__production"
+          >
+            <div class="production-leading">
+              <img
+                v-if="getUnitPortraitUrl(undefined, ui.selection.production.queuedUnitTypes[0])"
+                :src="getUnitPortraitUrl(undefined, ui.selection.production.queuedUnitTypes[0])!"
+                :alt="ui.selection.production.queuedUnitTypes[0]"
+                draggable="false"
+              />
+            </div>
+            <div class="production-bar">
+              <div
+                class="production-bar__fill"
+                :style="{ width: `${Math.max(0, Math.min(ui.selection.production.progress * 100, 100))}%` }"
+              />
+              <div class="production-bar__time">{{ ui.selection.production.timeLabel }}</div>
+              <button
+                class="production-bar__cancel"
+                type="button"
+                aria-label="Cancel Training"
+                title="Cancel Training"
+                @click="$emit('action', 'cancel-training')"
+              >
+                x
+              </button>
+            </div>
+          </div>
+          <div v-if="iconDetails.length > 0 && ui.selection.kind !== 'building'" class="detail-stats">
             <div
               v-for="detail in iconDetails"
               :key="detail.id"
@@ -140,25 +177,35 @@
           </div>
         </div>
 
-        <div v-if="ui.selection.production" class="production-card">
-          <div class="production-bar">
-            <div
-              class="production-bar__fill"
-              :style="{ width: `${Math.max(0, Math.min(ui.selection.production.progress * 100, 100))}%` }"
+        <!-- Production queue. Always renders 7 slots whenever training is
+             active (matching the max queue depth of 8 = 1 leading + 7
+             queued). Empty slots show the icon-container frame so the
+             player can see at a glance how much queue capacity is left. -->
+        <div
+          v-if="ui.selection.production"
+          class="production-queue"
+        >
+          <button
+            v-for="i in 7"
+            :key="i"
+            type="button"
+            class="production-queue__slot"
+            :class="{ 'production-queue__slot--empty': !ui.selection.production.queuedUnitTypes[i] }"
+            :disabled="!ui.selection.production.queuedUnitTypes[i]"
+            :title="ui.selection.production.queuedUnitTypes[i]
+              ? `${ui.selection.production.queuedUnitTypes[i]} — click to remove from queue`
+              : 'Empty queue slot'"
+            @click="$emit('action', `cancel-queue-${i}`)"
+          >
+            <img
+              v-if="ui.selection.production.queuedUnitTypes[i] && getUnitPortraitUrl(undefined, ui.selection.production.queuedUnitTypes[i])"
+              :src="getUnitPortraitUrl(undefined, ui.selection.production.queuedUnitTypes[i])!"
+              :alt="ui.selection.production.queuedUnitTypes[i]"
+              draggable="false"
             />
-            <div class="production-bar__time">{{ ui.selection.production.timeLabel }}</div>
-            <button
-              class="production-bar__cancel"
-              type="button"
-              aria-label="Cancel Training"
-              title="Cancel Training"
-              @click="$emit('action', 'cancel-training')"
-            >
-              x
-            </button>
-          </div>
+          </button>
         </div>
-        <div v-if="inlineDetails.length > 0" class="detail-inline">
+        <div v-if="inlineDetails.length > 0 && ui.selection.kind !== 'building'" class="detail-inline">
           <template v-for="(detail, index) in inlineDetails" :key="detail.id">
             <span class="detail-entry" :title="detail.tooltip">
               <span>{{ detail.label }}</span>
@@ -250,31 +297,48 @@
               class="action-cell"
               :class="{
                 'action-cell--active': ui.selection.actions[i - 1].active,
-                'action-cell--has-cost': !!ui.selection.actions[i - 1].cost?.length,
               }"
               :disabled="ui.selection.actions[i - 1].disabled"
-              :title="ui.selection.actions[i - 1].cost?.length ? undefined : ui.selection.actions[i - 1].label"
               type="button"
               @click="$emit('action', ui.selection.actions[i - 1].id)"
             >
               <ActionIcon :action="ui.selection.actions[i - 1]" />
+              <!-- Styled action tooltip — shared frame with the stat /
+                   perk tooltips. Always shows the label; cost rows are
+                   only rendered for actions that have a cost (training,
+                   building). -->
               <div
-                v-if="ui.selection.actions[i - 1].cost?.length"
-                class="cost-tooltip"
+                v-if="ui.selection.actions[i - 1].label"
+                class="action-tooltip"
               >
-                <div class="cost-tooltip__title">{{ ui.selection.actions[i - 1].label }}</div>
-                <div class="cost-tooltip__body">
+                <div class="action-tooltip__title">{{ parseActionLabel(ui.selection.actions[i - 1].label).name }}</div>
+                <div
+                  v-if="parseActionLabel(ui.selection.actions[i - 1].label).hotkey"
+                  class="action-tooltip__hotkey"
+                >Hotkey: {{ parseActionLabel(ui.selection.actions[i - 1].label).hotkey }}</div>
+                <div
+                  v-if="ui.selection.actions[i - 1].cost?.length"
+                  class="action-tooltip__body"
+                >
                   <div
                     v-for="c in ui.selection.actions[i - 1].cost"
                     :key="c.resourceId"
-                    class="cost-tooltip__row"
+                    class="action-tooltip__row"
                   >
+                    <img
+                      v-if="getResourceIconUrl(c.resourceId)"
+                      :src="getResourceIconUrl(c.resourceId)!"
+                      :alt="resourceDisplayName(c.resourceId)"
+                      class="action-tooltip__icon"
+                      draggable="false"
+                    />
                     <span
-                      class="cost-tooltip__gem"
+                      v-else
+                      class="action-tooltip__gem"
                       :style="{ background: `linear-gradient(180deg, ${c.accent}, rgba(0,0,0,0.55))` }"
                     />
-                    <span class="cost-tooltip__name">{{ resourceDisplayName(c.resourceId) }}</span>
-                    <span class="cost-tooltip__amount">{{ c.amount }}</span>
+                    <span class="action-tooltip__name">{{ resourceDisplayName(c.resourceId) }}</span>
+                    <span class="action-tooltip__amount">{{ c.amount }}</span>
                   </div>
                 </div>
               </div>
@@ -299,6 +363,7 @@ import uiPanelUrl from '@/assets/ui/ui_panel_56x56_slice17.png'
 import iconContainerUrl from '@/assets/ui/icon-container.png'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
 import { getActionIconImage } from '@/game/rendering/actionIconSprites'
+import { getResourceIconUrl } from '@/game/rendering/resourceSprites'
 
 const emit = defineEmits<{
   action: [actionId: string]
@@ -372,6 +437,19 @@ const GRID_SIZE = 12
 // a vertical icon+value grid, everything else falls through to the inline row.
 const iconDetails = computed(() => props.ui.selection.details.filter((d) => !!d.icon))
 const inlineDetails = computed(() => props.ui.selection.details.filter((d) => !d.icon))
+
+// Building durability is hoisted next to the title (e.g. "Townhall 100/100")
+// so the rest of the building details can be hidden without losing HP info.
+// Returns null for non-building selections or when no durability detail
+// exists in the snapshot.
+const buildingDurability = computed(() => {
+  if (props.ui.selection.kind !== 'building') return null
+  const detail = props.ui.selection.details.find(
+    (d) => d.id === 'durability' || d.id === 'construction-health',
+  )
+  if (!detail || !detail.value) return null
+  return { label: detail.label, value: detail.value }
+})
 
 // One card per selected unit. Portrait prefers the unit's promoted path (e.g.
 // a berserker-path soldier shows the berserker sprite) and falls back to the
@@ -460,6 +538,19 @@ const RESOURCE_LABELS: Record<string, string> = {
 
 function resourceDisplayName(resourceId: string): string {
   return RESOURCE_LABELS[resourceId] ?? resourceId.charAt(0).toUpperCase() + resourceId.slice(1)
+}
+
+// Action labels embed the hotkey inline as parens around a letter — e.g.
+// "(M)ove", "E(x)it", "(B)uild". Split that into a clean display name and
+// the hotkey letter so the tooltip can render them on separate lines.
+// Returns the original label as the name when no hotkey markup is present.
+function parseActionLabel(label: string): { name: string; hotkey: string | null } {
+  const m = label.match(/\(([A-Za-z])\)/)
+  if (!m) return { name: label, hotkey: null }
+  return {
+    name: label.replace(/\(([A-Za-z])\)/, '$1'),
+    hotkey: m[1].toUpperCase(),
+  }
 }
 </script>
 
@@ -697,6 +788,16 @@ function resourceDisplayName(resourceId: string): string {
   font-size: 12px;
   font-weight: 600;
   color: #e9c77a;
+}
+
+/* Inline HP shown next to the building title (e.g. "Townhall 100/100").
+   Tan-colored to subordinate it to the title without disappearing. */
+.selection-title__durability {
+  margin-left: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #d4b87a;
+  font-variant-numeric: tabular-nums;
 }
 
 .selection-progression {
@@ -943,14 +1044,97 @@ function resourceDisplayName(resourceId: string): string {
   display: block;
 }
 
-.production-card {
-  margin-top: 2px;
+/* Production slot in the selection header — holds the leading-unit card +
+   progress bar when a building is training. Sits immediately after the
+   title column so the bar can stretch across the rest of the row and
+   become the dominant element instead of being tucked into the corner. */
+.selection-header__production {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Leading card — the unit currently being trained. Shares the icon-
+   container background used elsewhere in the HUD for consistency. */
+.production-leading {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+}
+
+.production-leading img {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* Queue row — exactly 7 slots, always rendered when training is active so
+   queue capacity is always visible at a glance. Smaller than the leading
+   portrait above to make the hierarchy obvious. */
+.production-queue {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  /* Shift the queue right so it visually aligns under the leading
+     portrait + start of the progress bar above, rather than starting at
+     the panel's hard-left edge. */
+  margin-left: 110px;
+}
+
+.production-queue__slot {
+  flex: 0 1 44px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  /* Reset native button chrome so the slot reads as a styled cell. */
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: filter 0.08s ease-out;
+}
+
+.production-queue__slot:not(:disabled):hover {
+  filter: brightness(1.15);
+}
+
+/* Empty slots stay rendered but dimmed so the panel always shows the full
+   7-slot capacity even when nothing's queued behind the leader. Disabled
+   reflects the fact that there's nothing to cancel here. */
+.production-queue__slot--empty {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.production-queue__slot img {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 
 .production-bar {
   position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
-  height: 30px;
+  height: 20px;
+  margin-right: 8px;
   border-radius: 999px;
   border: 1px solid rgba(210, 176, 113, 0.28);
   background:
@@ -970,12 +1154,12 @@ function resourceDisplayName(resourceId: string): string {
 
 .production-bar__time {
   position: absolute;
-  inset: 0 32px 0 0;
+  inset: 0 28px 0 0;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff4dc;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
@@ -985,9 +1169,9 @@ function resourceDisplayName(resourceId: string): string {
 .production-bar__cancel {
   position: absolute;
   top: 50%;
-  right: 5px;
-  width: 20px;
-  height: 20px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -996,7 +1180,7 @@ function resourceDisplayName(resourceId: string): string {
   border-radius: 999px;
   background: rgba(46, 20, 10, 0.72);
   color: #fff4dc;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   line-height: 1;
   cursor: pointer;
@@ -1083,18 +1267,18 @@ function resourceDisplayName(resourceId: string): string {
   image-rendering: pixelated;
 }
 
-/* ── Cost hover tooltip (build/train actions) ────────────────────────────── */
-/* Mirrors the perk-tooltip visual language: appears above the cell on hover, */
-/* lists each resource cost with a gem, name, and amount. pointer-events:     */
-/* none so the tooltip doesn't swallow clicks on the button itself.           */
-.cost-tooltip {
+/* ── Action hover tooltip (move/attack/patrol/build/train) ───────────────── */
+/* Shares the stat-tooltip visual language: appears above the cell on hover, */
+/* shows the action label as the title, optionally lists resource costs as a */
+/* body block. pointer-events: none so the tooltip doesn't swallow clicks.   */
+.action-tooltip {
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  min-width: 140px;
-  max-width: 220px;
-  padding: 8px 10px;
+  min-width: 160px;
+  max-width: 240px;
+  padding: 7px 10px;
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(34, 22, 10, 0.98), rgba(20, 12, 4, 0.98));
   border: 1px solid rgba(200, 164, 106, 0.45);
@@ -1108,34 +1292,45 @@ function resourceDisplayName(resourceId: string): string {
   z-index: 10;
 }
 
-.action-cell--has-cost:hover .cost-tooltip {
+.action-cell:hover .action-tooltip {
   opacity: 1;
   visibility: visible;
 }
 
-.cost-tooltip__title {
+.action-tooltip__title {
   font-size: 13px;
   font-weight: 700;
   color: #fff2d6;
   margin-bottom: 4px;
+  line-height: 1.5;
 }
 
-.cost-tooltip__body {
+/* Hotkey sub-line shown under the action name. Smaller, tan-colored to
+   subordinate it to the action name above. Same hue as the stat-tooltip
+   body so the tooltip family reads as one visual style. */
+.action-tooltip__hotkey {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #d4b87a;
+  letter-spacing: 0.04em;
+}
+
+.action-tooltip__body {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
-.cost-tooltip__row {
+.action-tooltip__row {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  line-height: 1.2;
+  line-height: 1.5;
   color: #d4b87a;
 }
 
-.cost-tooltip__gem {
+.action-tooltip__gem {
   display: inline-block;
   width: 9px;
   height: 9px;
@@ -1144,11 +1339,22 @@ function resourceDisplayName(resourceId: string): string {
   box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
 }
 
-.cost-tooltip__name {
+/* PNG-based resource icon for the action tooltip — used when
+   assets/resources/<id>.png is available. Sized larger than the gem
+   fallback because the art reads better at 14px. */
+.action-tooltip__icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.action-tooltip__name {
   flex: 1 1 auto;
 }
 
-.cost-tooltip__amount {
+.action-tooltip__amount {
   font-weight: 700;
   color: #ffe9a0;
   font-variant-numeric: tabular-nums;
@@ -1251,12 +1457,12 @@ function resourceDisplayName(resourceId: string): string {
 /* ── Perk hover tooltip ──────────────────────────────────────────────────── */
 .perk-tooltip {
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  min-width: 180px;
-  max-width: 260px;
-  padding: 8px 10px;
+  min-width: 160px;
+  max-width: 240px;
+  padding: 7px 10px;
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(34, 22, 10, 0.98), rgba(20, 12, 4, 0.98));
   border: 1px solid rgba(200, 164, 106, 0.45);
@@ -1279,14 +1485,14 @@ function resourceDisplayName(resourceId: string): string {
    actions panel sits at the right of the HUD, so column 4 cells anchor the
    tooltip to the cell's right edge; column 1 cells anchor to the left. */
 .action-grid > *:nth-child(4n) .perk-tooltip,
-.action-grid > *:nth-child(4n) .cost-tooltip {
+.action-grid > *:nth-child(4n) .action-tooltip {
   left: auto;
   right: 0;
   transform: none;
 }
 
 .action-grid > *:nth-child(4n + 1) .perk-tooltip,
-.action-grid > *:nth-child(4n + 1) .cost-tooltip {
+.action-grid > *:nth-child(4n + 1) .action-tooltip {
   left: 0;
   right: auto;
   transform: none;
@@ -1296,12 +1502,13 @@ function resourceDisplayName(resourceId: string): string {
   font-size: 13px;
   font-weight: 700;
   color: #fff2d6;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
+  line-height: 1.5;
 }
 
 .perk-tooltip__body {
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
   color: #d4b87a;
 }
 

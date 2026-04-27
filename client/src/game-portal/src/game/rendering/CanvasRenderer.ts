@@ -51,6 +51,7 @@ import {
   UNIT_SPRITE_BOTTOM_PADDING,
 } from './unitSprites'
 import { getObjectSpriteSet } from './objectSprites'
+import { getResourceIconImage } from './resourceSprites'
 import { UnitAnimationController } from './unitAnimation'
 
 export type MinimapBounds = {
@@ -174,6 +175,21 @@ export class CanvasRenderer {
   private readonly FLOATING_DAMAGE_DURATION_MS = 900
   private readonly FLOATING_DAMAGE_RISE_PX = 32
 
+  // Floating resource numbers — spawned when a worker deposits at the
+  // townhall (carriedAmount drops to 0). Mirrors the damage-number lifecycle
+  // but renders an icon + amount in green (full-credit) or yellow/red
+  // (reduced-credit) based on the event's capacityFraction.
+  private floatingResourceNumbers: Array<{
+    x: number
+    y: number
+    amount: number
+    resourceId: string
+    capacityFraction: number
+    startedAt: number
+  }> = []
+  private readonly FLOATING_RESOURCE_DURATION_MS = 1100
+  private readonly FLOATING_RESOURCE_RISE_PX = 36
+
   constructor(canvas: HTMLCanvasElement, state: GameState, camera: Camera) {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas not supported')
@@ -230,6 +246,23 @@ export class CanvasRenderer {
       this.state.damageEvents.length = 0
     }
 
+    // Drain resource deposit events into the floating-resource list. World-
+    // locked at the deposit position (the worker's xy when carriedAmount
+    // hit 0) so the number stays put even after the worker walks away.
+    if (this.state.resourceDepositEvents.length > 0) {
+      for (const evt of this.state.resourceDepositEvents) {
+        this.floatingResourceNumbers.push({
+          x: evt.x,
+          y: evt.y - 16,
+          amount: evt.amount,
+          resourceId: evt.resourceId,
+          capacityFraction: evt.capacityFraction,
+          startedAt: evt.createdAt,
+        })
+      }
+      this.state.resourceDepositEvents.length = 0
+    }
+
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
 
     // Background outside the map
@@ -252,6 +285,7 @@ export class CanvasRenderer {
     this.drawBuildPlacementGhost()
     this.drawSelectionBox()
     this.drawFloatingDamageNumbers(renderTime)
+    this.drawFloatingResourceNumbers(renderTime)
 
     ctx.restore()
 
@@ -760,7 +794,7 @@ export class CanvasRenderer {
 
     const defaultCenterX = worldX + footprintW / 2
     const defaultCenterY = anchor === 'center'
-      ? worldY + footprintH * 0.78
+      ? worldY + footprintH * 0.62
       : worldY + footprintH - radiusY * 0.35
 
     const centerX = override?.offsetX !== undefined && cellSize > 0
@@ -1858,6 +1892,64 @@ export class CanvasRenderer {
     }
     ctx.restore()
     this.floatingDamageNumbers = kept
+  }
+
+  // Floating resource deposit indicators — icon + "+amount" floating up over
+  // the deposit site, mirroring the damage number lifecycle. Color is keyed
+  // off capacityFraction: 1.0 = green (full credit), <1 = yellow/red (gain
+  // reduced by capacity caps or perks).
+  private drawFloatingResourceNumbers(renderTime: number) {
+    if (this.floatingResourceNumbers.length === 0) return
+    const ctx = this.ctx
+    ctx.save()
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.lineWidth = 3 / this.camera.zoom
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
+    ctx.font = `bold ${Math.max(12, 14 / this.camera.zoom)}px sans-serif`
+
+    const iconPx = Math.max(12, 16 / this.camera.zoom)
+    const gap = Math.max(2, 3 / this.camera.zoom)
+
+    const kept: typeof this.floatingResourceNumbers = []
+    for (const num of this.floatingResourceNumbers) {
+      const elapsed = renderTime - num.startedAt
+      if (elapsed >= this.FLOATING_RESOURCE_DURATION_MS) continue
+      const t = elapsed / this.FLOATING_RESOURCE_DURATION_MS
+      const drawY = num.y - this.FLOATING_RESOURCE_RISE_PX * t
+      ctx.globalAlpha = Math.max(0, 1 - t)
+
+      const text = `+${num.amount}`
+      const textWidth = ctx.measureText(text).width
+      const totalWidth = iconPx + gap + textWidth
+      const groupX = num.x - totalWidth / 2
+
+      // Color by capacity. Thresholds: ≥1 = full green, ≥0.66 = yellow,
+      // <0.66 = red. capacityFraction is currently always 1, so this just
+      // wires up the future yellow/red states.
+      const fillColor =
+        num.capacityFraction >= 1
+          ? '#15803d'
+          : num.capacityFraction >= 0.66
+            ? '#ca8a04'
+            : '#b91c1c'
+
+      const icon = getResourceIconImage(num.resourceId)
+      if (icon && icon.complete && icon.naturalWidth > 0) {
+        const prevSmoothing = ctx.imageSmoothingEnabled
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(icon, groupX, drawY - iconPx / 2, iconPx, iconPx)
+        ctx.imageSmoothingEnabled = prevSmoothing
+      }
+
+      const textX = groupX + iconPx + gap
+      ctx.strokeText(text, textX, drawY)
+      ctx.fillStyle = fillColor
+      ctx.fillText(text, textX, drawY)
+      kept.push(num)
+    }
+    ctx.restore()
+    this.floatingResourceNumbers = kept
   }
 
   private drawUnitRankUpBurst(

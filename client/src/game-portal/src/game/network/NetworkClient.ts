@@ -300,10 +300,11 @@ export class NetworkClient {
     this.send(message)
   }
 
-  sendCancelTrainingCommand(buildingId: string) {
+  sendCancelTrainingCommand(buildingId: string, queueIndex = 0) {
     const message: CancelTrainingCommandMessage = {
       type: 'cancel_training_command',
       buildingId,
+      ...(queueIndex > 0 ? { queueIndex } : {}),
     }
 
     this.send(message)

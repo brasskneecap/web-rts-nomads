@@ -193,6 +193,16 @@ export class GameClient {
     this.state.removeUnitFromSelection(unitId)
   }
 
+  /** Bind the current selection to control group N (1..10) — Ctrl+N. */
+  assignControlGroup(groupKey: number) {
+    this.state.assignControlGroup(groupKey)
+  }
+
+  /** Recall control group N (1..10), replacing the current selection — N. */
+  selectControlGroup(groupKey: number) {
+    this.state.selectControlGroup(groupKey)
+  }
+
   performSelectionAction(actionId: string) {
     const selectedBuilding = this.state.getSelectedBuilding()
 
@@ -258,6 +268,18 @@ export class GameClient {
 
     if (selectedBuilding && actionId === 'cancel-training') {
       this.network.sendCancelTrainingCommand(selectedBuilding.id)
+      return
+    }
+
+    // Queue-slot cancel — emitted by SelectionHud when a queued unit is
+    // left-clicked. Action id format: "cancel-queue-<index>" where index
+    // is the queue position (1..7, since 0 is the leading unit handled by
+    // the "X" cancel button above).
+    if (selectedBuilding && actionId.startsWith('cancel-queue-')) {
+      const index = Number(actionId.slice('cancel-queue-'.length))
+      if (Number.isInteger(index) && index > 0) {
+        this.network.sendCancelTrainingCommand(selectedBuilding.id, index)
+      }
       return
     }
 

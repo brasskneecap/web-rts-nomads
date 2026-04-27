@@ -265,6 +265,21 @@ export type MoveMarker = {
 // HP drops between consecutive snapshots. The server does not send discrete
 // damage events — we diff HP ourselves and drain this queue each render in
 // CanvasRenderer to spawn floating damage numbers.
+// Client-derived resource deposit event: emitted by applySnapshot whenever a
+// worker's carriedAmount drops to 0 (it just dumped its load at a townhall).
+// Drained each render in CanvasRenderer to spawn floating resource numbers.
+export type ResourceDepositEvent = {
+  unitId: number
+  x: number
+  y: number
+  resourceId: ResourceType
+  amount: number
+  /** 1.0 = full credit, < 1 = reduced gain (future: capacity-cap, over-cap
+   *  storage). Drives the float-text color: green = full, yellow/red = lossy. */
+  capacityFraction: number
+  createdAt: number
+}
+
 export type DamageEvent = {
   unitId: number
   unitType: string
@@ -383,6 +398,12 @@ export class GameState {
   
   selectedUnitIds = new Set<number>()
   selectedUnitOrder: number[] = []
+  // RTS-style control groups. Keyed 1..10 (0 maps to 10 by convention).
+  // Each entry is the unit IDs assigned via Ctrl+N at assignment time;
+  // recall via N replaces the current selection with those ids that are
+  // still alive and locally owned. Stale ids (dead/transferred units) are
+  // silently dropped on recall via setSelection's ownership filter.
+  controlGroups = new Map<number, number[]>()
   selectedBuildingId: string | null = null
   selectedObstacleId: string | null = null
   selectedTrapId: string | null = null
@@ -427,6 +448,11 @@ export class GameState {
   // Populated by applySnapshot from HP deltas between snapshots.
   damageEvents: DamageEvent[] = []
   private prevUnitHp = new Map<number, number>()
+
+  // Drained each render by CanvasRenderer to spawn floating resource numbers.
+  // Populated by applySnapshot from carriedAmount deltas (drop to 0 = deposit).
+  resourceDepositEvents: ResourceDepositEvent[] = []
+  private prevUnitCarried = new Map<number, { resourceType: ResourceType; amount: number }>()
 
   setLocalPlayerId(playerId: string) {
     this.localPlayerId = playerId
@@ -555,6 +581,41 @@ export class GameState {
     for (const unit of frame.units) {
       if (unit.hp !== undefined) {
         this.prevUnitHp.set(unit.id, unit.hp)
+      }
+    }
+
+    // Derive resource deposit events by diffing carriedAmount per unit.
+    // A worker that previously carried a non-zero amount and now carries 0
+    // has just deposited at a townhall — emit at the unit's current
+    // position so the float-text reads as if it spawned at the drop site.
+    for (const unit of frame.units) {
+      const prev = this.prevUnitCarried.get(unit.id)
+      const currentAmount = unit.carriedAmount ?? 0
+      if (prev && prev.amount > 0 && currentAmount === 0) {
+        this.resourceDepositEvents.push({
+          unitId: unit.id,
+          x: unit.x,
+          y: unit.y,
+          resourceId: prev.resourceType,
+          amount: prev.amount,
+          // Always full for now. Future: townhall capacity caps or perk
+          // penalties should set a fractional value to drive yellow/red text.
+          capacityFraction: 1,
+          createdAt: now,
+        })
+      }
+    }
+    this.prevUnitCarried.clear()
+    for (const unit of frame.units) {
+      if (
+        unit.carriedAmount !== undefined &&
+        unit.carriedAmount > 0 &&
+        unit.carriedResourceType
+      ) {
+        this.prevUnitCarried.set(unit.id, {
+          resourceType: unit.carriedResourceType,
+          amount: unit.carriedAmount,
+        })
       }
     }
 
@@ -748,6 +809,29 @@ export class GameState {
     }
 
     this.selectedUnitOrder = [...ownedIds]
+  }
+
+  /** Bind the current selection to a control group (1..10). Subsequent
+   *  presses of the same digit recall this exact roster (filtered to alive +
+   *  owned units at recall time). Empty selections clear the slot so a
+   *  later recall is a no-op rather than recalling stale ids. */
+  assignControlGroup(groupKey: number) {
+    if (!Number.isInteger(groupKey) || groupKey < 1 || groupKey > 10) return
+    const ids = [...this.selectedUnitOrder]
+    if (ids.length === 0) {
+      this.controlGroups.delete(groupKey)
+      return
+    }
+    this.controlGroups.set(groupKey, ids)
+  }
+
+  /** Recall a previously-assigned control group, replacing the current
+   *  selection. No-op when the slot is empty or holds only stale ids. */
+  selectControlGroup(groupKey: number) {
+    if (!Number.isInteger(groupKey) || groupKey < 1 || groupKey > 10) return
+    const ids = this.controlGroups.get(groupKey)
+    if (!ids || ids.length === 0) return
+    this.setSelection(ids)
   }
 
   openWorkerBuildMenu() {
@@ -1446,7 +1530,10 @@ export class GameState {
           : this.buildingTargetingMode === 'set-spawn-point'
             ? 'Click anywhere on the map to set the rally point target.'
             : activeProduction
-              ? `Training ${formatSpawnUnitType(activeProduction.unitType)}`
+              // While training, the visual production card (leading unit +
+              // queue cards) conveys what's happening; suppress the textual
+              // "Training X" subtitle so it doesn't duplicate the cards.
+              ? ''
               : defaultSubtitle
 
       return {

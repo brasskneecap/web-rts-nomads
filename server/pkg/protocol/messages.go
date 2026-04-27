@@ -249,6 +249,11 @@ type PatrolCommandMessage struct {
 type CancelTrainingCommandMessage struct {
 	Type       string `json:"type"`
 	BuildingID string `json:"buildingId"`
+	// Index of the queue entry to cancel. 0 = currently-training unit (the
+	// existing "X" cancel button); > 0 = a queued unit waiting behind the
+	// leader (player left-clicked a queue slot). Omitted on old clients;
+	// absence is treated as 0 to preserve the prior "cancel current" behavior.
+	QueueIndex int `json:"queueIndex,omitempty"`
 }
 
 type SetBuildingSpawnPointCommandMessage struct {

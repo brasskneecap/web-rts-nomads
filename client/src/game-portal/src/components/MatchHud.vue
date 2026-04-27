@@ -44,13 +44,22 @@
         v-for="resource in ui.player.resources"
         :key="resource.id"
         class="resource-card"
+        :title="resource.label"
+        :aria-label="`${resource.label}: ${resource.amount}`"
       >
+        <img
+          v-if="getResourceIconUrl(resource.id)"
+          :src="getResourceIconUrl(resource.id)!"
+          :alt="resource.label"
+          class="resource-icon"
+          draggable="false"
+        />
         <span
+          v-else
           class="resource-gem"
           :style="{ background: `linear-gradient(180deg, ${resource.accent}, rgba(0,0,0,0.65))` }"
         ></span>
         <div class="resource-copy">
-          <div class="resource-label">{{ resource.label }}</div>
           <div class="resource-amount">{{ resource.max != null ? `${resource.amount}/${resource.max}` : resource.amount }}</div>
         </div>
       </article>
@@ -70,6 +79,7 @@
 import { ref, computed } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 import uiPanelUrl from '@/assets/ui/ui_panel_56x56_slice17.png'
+import { getResourceIconUrl } from '@/game/rendering/resourceSprites'
 
 const emit = defineEmits<{
   exit: []
@@ -281,13 +291,10 @@ function exitGame() {
   gap: 10px;
   min-width: 120px;
   padding: 4px 12px;
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(111, 76, 39, 0.78), rgba(63, 41, 23, 0.92));
+  border-radius: 4px;
+  background: #000;
   border: 1px solid rgba(200, 164, 106, 0.28);
-  box-shadow:
-    inset 0 1px 0 rgba(246, 225, 183, 0.12),
-    0 5px 12px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.18);
 }
 
 .resource-gem {
@@ -299,10 +306,24 @@ function exitGame() {
     0 0 0 2px rgba(27, 16, 10, 0.35);
 }
 
+/* PNG-based resource icon used when assets/resources/<id>.png exists.
+   Sized slightly larger than the gem to read clearly. */
+.resource-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
 .resource-copy {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  /* Push the amount text to the right edge of the card while the icon
+     stays left-aligned via the card's flex flow. */
+  margin-left: auto;
+  text-align: right;
 }
 
 .resource-label {
