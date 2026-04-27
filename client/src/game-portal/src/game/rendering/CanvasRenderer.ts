@@ -29,9 +29,7 @@ import {
 import { getObstacleSprite } from './obstacleSprites'
 import { OBSTACLE_DEF_MAP } from '../maps/obstacleDefs'
 import {
-  drawTerrainTile,
-  GROUND_TILE_COORDS,
-  TERRAIN_TILE_COORDS,
+  drawAutoTiledTerrain,
   isTerrainTilesetReady,
 } from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
@@ -324,35 +322,19 @@ export class CanvasRenderer {
     cctx.imageSmoothingEnabled = false
     cctx.clearRect(0, 0, mapWidth, mapHeight)
 
-    const groundCoord = defaultTile ?? GROUND_TILE_COORDS
     if (tilesetReady) {
-      for (let gy = 0; gy < gridRows; gy++) {
-        for (let gx = 0; gx < gridCols; gx++) {
-          drawTerrainTile(cctx, groundCoord, gx * cellSize, gy * cellSize, cellSize)
-        }
-      }
+      drawAutoTiledTerrain(cctx, {
+        gridCols,
+        gridRows,
+        cellSize,
+        defaultTile,
+        terrain,
+        tiles,
+      })
     } else {
       cctx.fillStyle = DEFAULT_GRASS_COLOR
       cctx.fillRect(0, 0, mapWidth, mapHeight)
-    }
-
-    if (tilesetReady && tiles) {
-      for (const tile of tiles) {
-        drawTerrainTile(
-          cctx,
-          { sheet: tile.sheet, sx: tile.sx, sy: tile.sy },
-          tile.x * cellSize,
-          tile.y * cellSize,
-          cellSize,
-        )
-      }
-    }
-
-    for (const tile of terrain) {
-      const coords = TERRAIN_TILE_COORDS[tile.terrain]
-      if (tilesetReady && coords) {
-        drawTerrainTile(cctx, coords, tile.x * cellSize, tile.y * cellSize, cellSize)
-      } else {
+      for (const tile of terrain) {
         cctx.fillStyle = getTerrainColor(tile.terrain)
         cctx.fillRect(tile.x * cellSize, tile.y * cellSize, cellSize, cellSize)
       }

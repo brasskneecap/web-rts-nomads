@@ -35,7 +35,11 @@ export type TerrainTile = GridCoord & {
   terrain: TerrainType
 }
 
-export type TileSheet = 'tileset'
+export type TileSheet =
+  | 'tileset'
+  | 'grass-grass-25'
+  | 'dirt-dirt-25'
+  | 'grass-dirt-0'
 
 export type TileCoord = {
   sheet: TileSheet

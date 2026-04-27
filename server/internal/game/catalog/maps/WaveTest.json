@@ -15,9 +15,114 @@
     "cellSize": 64,
     "terrain": [
       {
+        "x": 15,
+        "y": 0,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 0,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 1,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 1,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 2,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 2,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 3,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 3,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 4,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 5,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 5,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 6,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 7,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 7,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 8,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 9,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 9,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 10,
+        "terrain": "dirt"
+      },
+      {
+        "x": 14,
+        "y": 11,
+        "terrain": "dirt"
+      },
+      {
         "x": 20,
         "y": 14,
         "terrain": "grass"
+      },
+      {
+        "x": 9,
+        "y": 15,
+        "terrain": "dirt"
+      },
+      {
+        "x": 10,
+        "y": 15,
+        "terrain": "dirt"
       },
       {
         "x": 18,
@@ -33,6 +138,21 @@
         "x": 20,
         "y": 15,
         "terrain": "grass"
+      },
+      {
+        "x": 7,
+        "y": 16,
+        "terrain": "dirt"
+      },
+      {
+        "x": 8,
+        "y": 16,
+        "terrain": "dirt"
+      },
+      {
+        "x": 9,
+        "y": 16,
+        "terrain": "dirt"
       },
       {
         "x": 17,
@@ -48,6 +168,21 @@
         "x": 19,
         "y": 16,
         "terrain": "grass"
+      },
+      {
+        "x": 5,
+        "y": 17,
+        "terrain": "dirt"
+      },
+      {
+        "x": 6,
+        "y": 17,
+        "terrain": "dirt"
+      },
+      {
+        "x": 7,
+        "y": 17,
+        "terrain": "dirt"
       },
       {
         "x": 17,
@@ -58,6 +193,26 @@
         "x": 22,
         "y": 17,
         "terrain": "grass"
+      },
+      {
+        "x": 3,
+        "y": 18,
+        "terrain": "dirt"
+      },
+      {
+        "x": 4,
+        "y": 18,
+        "terrain": "dirt"
+      },
+      {
+        "x": 5,
+        "y": 18,
+        "terrain": "dirt"
+      },
+      {
+        "x": 6,
+        "y": 18,
+        "terrain": "dirt"
       },
       {
         "x": 15,
@@ -75,9 +230,34 @@
         "terrain": "grass"
       },
       {
+        "x": 0,
+        "y": 19,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 19,
+        "terrain": "dirt"
+      },
+      {
+        "x": 2,
+        "y": 19,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 19,
+        "terrain": "dirt"
+      },
+      {
         "x": 15,
         "y": 19,
         "terrain": "grass"
+      },
+      {
+        "x": 0,
+        "y": 20,
+        "terrain": "dirt"
       },
       {
         "x": 13,
@@ -88,6 +268,171 @@
         "x": 14,
         "y": 20,
         "terrain": "grass"
+      },
+      {
+        "x": 0,
+        "y": 21,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 21,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 22,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 22,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 23,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 23,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 24,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 24,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 25,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 25,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 25,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 26,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 26,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 26,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 27,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 27,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 27,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 28,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 28,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 28,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 29,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 29,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 29,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 30,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 30,
+        "terrain": "dirt"
+      },
+      {
+        "x": 2,
+        "y": 30,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 30,
+        "terrain": "dirt"
+      }
+    ],
+    "tiles": [
+      {
+        "x": 4,
+        "y": 19,
+        "sheet": "tileset",
+        "sx": 32,
+        "sy": 96
+      },
+      {
+        "x": 5,
+        "y": 19,
+        "sheet": "tileset",
+        "sx": 0,
+        "sy": 0
+      },
+      {
+        "x": 6,
+        "y": 19,
+        "sheet": "tileset",
+        "sx": 0,
+        "sy": 96
+      },
+      {
+        "x": 7,
+        "y": 19,
+        "sheet": "tileset",
+        "sx": 32,
+        "sy": 0
       }
     ],
     "defaultTile": {
@@ -277,19 +622,6 @@
         ],
         "resourceType": "wood",
         "resourceAmount": 250
-      },
-      {
-        "x": 18,
-        "y": 0,
-        "id": "rock-18-0",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
       },
       {
         "x": 19,
@@ -586,19 +918,6 @@
         "resourceAmount": 250
       },
       {
-        "x": 18,
-        "y": 1,
-        "id": "rock-18-1",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
         "x": 19,
         "y": 1,
         "id": "tree-19-1",
@@ -851,19 +1170,6 @@
         "resourceAmount": 250
       },
       {
-        "x": 18,
-        "y": 2,
-        "id": "rock-18-2",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
         "x": 19,
         "y": 2,
         "id": "tree-19-2",
@@ -960,19 +1266,6 @@
         ],
         "resourceType": "wood",
         "resourceAmount": 250
-      },
-      {
-        "x": 18,
-        "y": 3,
-        "id": "rock-18-3",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
       },
       {
         "x": 19,
@@ -1073,19 +1366,6 @@
         "resourceAmount": 250
       },
       {
-        "x": 18,
-        "y": 4,
-        "id": "rock-18-4",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
         "x": 19,
         "y": 4,
         "id": "tree-19-4",
@@ -1170,19 +1450,6 @@
         "resourceAmount": 250
       },
       {
-        "x": 18,
-        "y": 5,
-        "id": "rock-18-5",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
         "x": 19,
         "y": 5,
         "id": "tree-19-5",
@@ -1253,32 +1520,6 @@
         "resourceAmount": 250
       },
       {
-        "x": 17,
-        "y": 6,
-        "id": "rock-17-6",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 18,
-        "y": 6,
-        "id": "rock-18-6",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
         "x": 0,
         "y": 7,
         "id": "tree-0-7",
@@ -1291,19 +1532,6 @@
         ],
         "resourceType": "wood",
         "resourceAmount": 250
-      },
-      {
-        "x": 17,
-        "y": 7,
-        "id": "rock-17-7",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
       },
       {
         "x": 0,
@@ -1320,19 +1548,6 @@
         "resourceAmount": 250
       },
       {
-        "x": 17,
-        "y": 8,
-        "id": "rock-17-8",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
         "x": 0,
         "y": 9,
         "id": "tree-0-9",
@@ -1345,19 +1560,6 @@
         ],
         "resourceType": "wood",
         "resourceAmount": 250
-      },
-      {
-        "x": 17,
-        "y": 9,
-        "id": "rock-17-9",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
       },
       {
         "x": 0,
@@ -1402,58 +1604,6 @@
         "resourceAmount": 250
       },
       {
-        "x": 16,
-        "y": 10,
-        "id": "rock-16-10",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 17,
-        "y": 10,
-        "id": "rock-17-10",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 18,
-        "y": 10,
-        "id": "rock-18-10",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 19,
-        "y": 10,
-        "id": "rock-19-10",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
         "x": 0,
         "y": 11,
         "id": "tree-0-11",
@@ -1494,331 +1644,6 @@
         ],
         "resourceType": "wood",
         "resourceAmount": 250
-      },
-      {
-        "x": 14,
-        "y": 11,
-        "id": "rock-14-11",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 15,
-        "y": 11,
-        "id": "rock-15-11",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 16,
-        "y": 11,
-        "id": "rock-16-11",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 19,
-        "y": 11,
-        "id": "rock-19-11",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 14,
-        "y": 12,
-        "id": "rock-14-12",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 19,
-        "y": 12,
-        "id": "rock-19-12",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 20,
-        "y": 12,
-        "id": "rock-20-12",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 20,
-        "y": 13,
-        "id": "rock-20-13",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 21,
-        "y": 13,
-        "id": "rock-21-13",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 11,
-        "y": 15,
-        "id": "rock-11-15",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 10,
-        "y": 16,
-        "id": "rock-10-16",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 11,
-        "y": 16,
-        "id": "rock-11-16",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 8,
-        "y": 17,
-        "id": "rock-8-17",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 9,
-        "y": 17,
-        "id": "rock-9-17",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 10,
-        "y": 17,
-        "id": "rock-10-17",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 5,
-        "y": 18,
-        "id": "rock-5-18",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 6,
-        "y": 18,
-        "id": "rock-6-18",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 7,
-        "y": 18,
-        "id": "rock-7-18",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 8,
-        "y": 18,
-        "id": "rock-8-18",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 0,
-        "y": 19,
-        "id": "rock-0-19",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 1,
-        "y": 19,
-        "id": "rock-1-19",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 2,
-        "y": 19,
-        "id": "rock-2-19",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 3,
-        "y": 19,
-        "id": "rock-3-19",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 4,
-        "y": 19,
-        "id": "rock-4-19",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
-      },
-      {
-        "x": 5,
-        "y": 19,
-        "id": "rock-5-19",
-        "obstacle": "rock",
-        "width": 1,
-        "height": 1,
-        "capabilities": [
-          "selectable"
-        ],
-        "hp": 150,
-        "maxHp": 150
       }
     ],
     "buildings": [
@@ -1942,24 +1767,6 @@
         "x": 31,
         "y": 7,
         "id": "goldmine-31-7",
-        "buildingType": "goldmine",
-        "width": 2,
-        "height": 2,
-        "occupied": true,
-        "visible": true,
-        "capabilities": [
-          "resource-source"
-        ],
-        "resourceType": "gold",
-        "resourceAmount": 15000,
-        "metadata": {
-          "gatherRate": 10
-        }
-      },
-      {
-        "x": 19,
-        "y": 8,
-        "id": "goldmine-19-8",
         "buildingType": "goldmine",
         "width": 2,
         "height": 2,
@@ -2544,28 +2351,6 @@
           "targetPlayerLabel": "player2",
           "unitType": "raider",
           "waveNumber": 5
-        }
-      },
-      {
-        "x": 2,
-        "y": 34,
-        "id": "enemy-spawnpoint-2-34",
-        "buildingType": "enemy-spawnpoint",
-        "width": 1,
-        "height": 1,
-        "occupied": false,
-        "visible": false,
-        "capabilities": [
-          "enemy-spawner"
-        ],
-        "metadata": {
-          "ignoreWaveClear": true,
-          "objectiveId": "obj-1",
-          "spawnCount": 5,
-          "spawnDelaySeconds": 0,
-          "spawnIntervalSeconds": 9999,
-          "unitType": "raider",
-          "waveNumber": 1
         }
       }
     ],

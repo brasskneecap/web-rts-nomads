@@ -65,13 +65,14 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 		dy := target.Y - unit.Y
 		dist := math.Sqrt(dx*dx + dy*dy)
 		if dist > unit.AttackRange {
-			// Path to the approach point (just inside AttackRange) rather than
-			// the target's center. Pathing to dead-center made units overshoot
-			// the enemy — they'd walk past the attack ring to the exact click
-			// position and only re-engage after reaching it.
-			profile := resolveCombatProfile(unit)
-			dest := s.computeApproachPointLocked(unit, target.X, target.Y, profile)
-			s.assignUnitPath(unit, dest, blocked, nil)
+			// Pathfind toward the target and stop at the first cell within
+			// attack range. assignAttackApproachPathLocked handles obstacles
+			// between unit and target (cliffs, terrain transitions) by
+			// routing around them — the older "project a single approach
+			// point on the unit→target line" flow would land that point on
+			// the obstacle and snap to the unit's side, leaving the unit
+			// unable to ever close the distance.
+			s.assignAttackApproachPathLocked(unit, target, blocked)
 		}
 	}
 }

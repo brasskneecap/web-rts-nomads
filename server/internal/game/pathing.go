@@ -51,6 +51,8 @@ func (pq *priorityQueue) Pop() any {
 func (s *GameState) buildBlockedCells() map[gridPoint]bool {
 	blocked := make(map[gridPoint]bool)
 
+	addTerrainBlocks(blocked, &s.MapConfig)
+
 	for _, obstacle := range s.MapConfig.Obstacles {
 		blocked[gridPoint{X: obstacle.X, Y: obstacle.Y}] = true
 	}
@@ -74,6 +76,141 @@ func (s *GameState) buildBlockedCells() map[gridPoint]bool {
 	}
 
 	return blocked
+}
+
+// addTerrainBlocks marks every cell whose visually-rendered tile is a Wang
+// transition (non-pure) tile as blocked.
+//
+// Per-cell visual = tiles[] raw override if one exists, otherwise the auto-
+// tiled coord computed from terrain[] + defaultTile. A cell is walkable iff
+// its visual coord is one of the two "pure interior" Wang slots:
+//   (sx=64, sy=32) — mask 15, all 4 corners the "1" state
+//   (sx=0,  sy=96) — mask 0,  all 4 corners the "0" state
+// These are the same slots in every Wang sheet (grass-dirt, grass-grass-25,
+// dirt-dirt-25), so a tiles[] override pointing to (0, 96) on
+// grass-dirt-elevation-25.png is a pure-dirt walkable surface even if the
+// auto-tile underneath would have rendered a cliff transition.
+//
+// Mirrors computeWangMask in client terrainTileset.ts; if the algorithm
+// changes there, update both. If MapConfig.DefaultTile isn't one of the two
+// recognized canonical coords (grass or dirt pure), no terrain blocks are
+// added — the map is treated as if everything is walkable, matching the
+// editor's "no auto-tile" fallback path.
+func addTerrainBlocks(blocked map[gridPoint]bool, cfg *protocol.MapConfig) {
+	defaultTerrain := inferDefaultTerrain(cfg.DefaultTile)
+	if defaultTerrain == "" {
+		return
+	}
+
+	gridCols := cfg.GridCols
+	gridRows := cfg.GridRows
+
+	overrides := make(map[gridPoint]string, len(cfg.Terrain))
+	for _, t := range cfg.Terrain {
+		if t.X < 0 || t.X >= gridCols || t.Y < 0 || t.Y >= gridRows {
+			continue
+		}
+		overrides[gridPoint{X: t.X, Y: t.Y}] = t.Terrain
+	}
+
+	terrainAt := func(x, y int) string {
+		if x < 0 || x >= gridCols || y < 0 || y >= gridRows {
+			return defaultTerrain
+		}
+		if t, ok := overrides[gridPoint{X: x, Y: y}]; ok {
+			return t
+		}
+		return defaultTerrain
+	}
+
+	tileOverrides := make(map[gridPoint]protocol.TileCoord, len(cfg.Tiles))
+	for _, t := range cfg.Tiles {
+		tileOverrides[gridPoint{X: t.X, Y: t.Y}] = t.TileCoord
+	}
+
+	for y := 0; y < gridRows; y++ {
+		for x := 0; x < gridCols; x++ {
+			cell := gridPoint{X: x, Y: y}
+			if override, ok := tileOverrides[cell]; ok {
+				if !isPureWangTileCoord(override) {
+					blocked[cell] = true
+				}
+				continue
+			}
+			mask := computeWangMask(x, y, defaultTerrain, terrainAt)
+			if mask != 0 && mask != 15 {
+				blocked[cell] = true
+			}
+		}
+	}
+}
+
+// isPureWangTileCoord returns true for the two interior cells in any Wang
+// 4×4 sheet: (64,32) is the "all-1-corners" tile (pure grass / pure high
+// terrain) and (0,96) is the "all-0-corners" tile (pure dirt / pure low
+// terrain). Both represent flat walkable surfaces regardless of which sheet
+// the override points at.
+func isPureWangTileCoord(c protocol.TileCoord) bool {
+	if c.SX == 64 && c.SY == 32 {
+		return true
+	}
+	if c.SX == 0 && c.SY == 96 {
+		return true
+	}
+	return false
+}
+
+// inferDefaultTerrain reverse-looks-up the canonical pure-tile coords from
+// the client's TERRAIN_TILE_COORDS. Returns "" if the default tile is
+// custom/unknown.
+func inferDefaultTerrain(coord *protocol.TileCoord) string {
+	if coord == nil {
+		return "grass"
+	}
+	if coord.Sheet != "tileset" && coord.Sheet != "grass-dirt-0" {
+		return ""
+	}
+	switch {
+	case coord.SX == 64 && coord.SY == 32:
+		return "grass"
+	case coord.SX == 0 && coord.SY == 96:
+		return "dirt"
+	}
+	return ""
+}
+
+// computeWangMask: bit 0=TL, 1=TR, 2=BL, 3=BR; bit set = corner is grass.
+// When grass is the default, a corner is grass iff all 4 surrounding cells
+// are grass (overlay dirt expands into corners). When dirt is the default,
+// a corner is grass iff any of the 4 is grass (overlay grass expands).
+func computeWangMask(cx, cy int, defaultTerrain string, terrainAt func(x, y int) string) int {
+	cornerIsGrass := func(ax, ay, bx, by, ccx, ccy, dx, dy int) bool {
+		if defaultTerrain == "grass" {
+			return terrainAt(ax, ay) == "grass" &&
+				terrainAt(bx, by) == "grass" &&
+				terrainAt(ccx, ccy) == "grass" &&
+				terrainAt(dx, dy) == "grass"
+		}
+		return terrainAt(ax, ay) == "grass" ||
+			terrainAt(bx, by) == "grass" ||
+			terrainAt(ccx, ccy) == "grass" ||
+			terrainAt(dx, dy) == "grass"
+	}
+
+	mask := 0
+	if cornerIsGrass(cx-1, cy-1, cx, cy-1, cx-1, cy, cx, cy) {
+		mask |= 1
+	}
+	if cornerIsGrass(cx, cy-1, cx+1, cy-1, cx, cy, cx+1, cy) {
+		mask |= 2
+	}
+	if cornerIsGrass(cx-1, cy, cx, cy, cx-1, cy+1, cx, cy+1) {
+		mask |= 4
+	}
+	if cornerIsGrass(cx, cy, cx+1, cy, cx, cy+1, cx+1, cy+1) {
+		mask |= 8
+	}
+	return mask
 }
 
 func (s *GameState) worldToGrid(x, y float64) gridPoint {

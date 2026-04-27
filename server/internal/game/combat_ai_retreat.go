@@ -33,23 +33,81 @@ func (s *GameState) refreshUnitAttackApproachLocked(unit, target *Unit, profile 
 		return
 	}
 
-	dest := s.computeApproachPointLocked(unit, target.X, target.Y, profile)
 	if !force {
-		// Melee uses a larger threshold than ranged so two melee units chasing
-		// each other don't keep re-pathing and visibly wobble, but meaningful
-		// target movement still re-paths instead of committing the unit to a
-		// stale destination (which led to units walking past the enemy to the
-		// original click position before turning around).
-		threshold := 18.0
-		if profile.Melee {
-			threshold = 30.0
-		}
-		if distanceSquared(unit.TargetX, unit.TargetY, dest.X, dest.Y) < threshold*threshold {
+		// Skip re-pathing while the current destination still puts us within
+		// attack range of where the target is now. This is more permissive
+		// than the old "approach-point shifted by < N pixels" check, but it's
+		// the right invariant: if we're already heading toward an in-range
+		// cell, we don't need a new plan just because the target wiggled.
+		if distanceSquared(unit.TargetX, unit.TargetY, target.X, target.Y) <= unit.AttackRange*unit.AttackRange {
 			return
 		}
 	}
 
-	s.assignUnitPath(unit, dest, blocked, nil)
+	_ = profile // kept on the signature for symmetry with other approach helpers; truncation does not depend on it
+	s.assignAttackApproachPathLocked(unit, target, blocked)
+}
+
+// assignAttackApproachPathLocked routes `unit` toward `target` using A* on
+// the full terrain graph and truncates the path at the first waypoint that
+// puts the unit within attack range. Replaces the older "project a single
+// approach point on the unit→target line and assignUnitPath to it" flow,
+// which wobbled when the projected point landed on the wrong side of a
+// blocked region (a melee unit trying to reach a ranged unit across a cliff
+// would snap to the cliff face on its own side, can't get any closer,
+// re-evaluates, picks a slightly different cliff-edge cell, and oscillates).
+//
+// With path truncation, A* finds a route around the obstacle and the unit
+// stops as soon as it can attack, regardless of which side of the obstacle
+// that turns out to be on.
+func (s *GameState) assignAttackApproachPathLocked(unit, target *Unit, blocked map[gridPoint]bool) {
+	if target == nil {
+		unit.Path = nil
+		unit.Moving = false
+		return
+	}
+
+	rangeSq := unit.AttackRange * unit.AttackRange
+	if distanceSquared(unit.X, unit.Y, target.X, target.Y) <= rangeSq {
+		unit.Path = nil
+		unit.Moving = false
+		return
+	}
+
+	startCell := s.worldToGrid(unit.X, unit.Y)
+	if rs, ok := s.findNearestWalkable(startCell, blocked); ok {
+		startCell = rs
+	}
+
+	targetCell := s.worldToGrid(target.X, target.Y)
+	goalCell, ok := s.findNearestWalkable(targetCell, blocked)
+	if !ok {
+		unit.Path = nil
+		unit.Moving = false
+		return
+	}
+
+	fullPath := s.findPath(startCell, goalCell, blocked)
+	if len(fullPath) == 0 {
+		unit.Path = nil
+		unit.Moving = false
+		return
+	}
+
+	// Pick the first waypoint already within attack range. The unit only
+	// needs to walk that far. If no waypoint is in range (target is in a
+	// pocket reachable only by walking onto a non-walkable cell), fall
+	// through to the full path so the unit at least makes best-effort
+	// progress — better than standing still.
+	stopWaypoint := fullPath[len(fullPath)-1]
+	for _, p := range fullPath {
+		if distanceSquared(p.X, p.Y, target.X, target.Y) <= rangeSq {
+			stopWaypoint = p
+			break
+		}
+	}
+
+	s.assignUnitPath(unit, stopWaypoint, blocked, nil)
 }
 
 func (s *GameState) shouldRetreatLocked(unit *Unit, profile CombatProfile, ctx combatEvalContext) bool {

@@ -681,9 +681,7 @@ import {
 } from '@/game/maps/mapConfig'
 import {
   DEFAULT_TILE_PRESETS,
-  drawTerrainTile,
-  GROUND_TILE_COORDS,
-  TERRAIN_TILE_COORDS,
+  drawAutoTiledTerrain,
   TILE_SHEET_NAMES,
   getSheetImage,
   getSheetTileSize,
@@ -1582,37 +1580,20 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
   const cellSize = model.value.cellSize
   const { gridCols, gridRows } = model.value
   const tilesetReady = isTerrainTilesetReady()
-  const groundCoord = model.value.defaultTile ?? GROUND_TILE_COORDS
 
   if (tilesetReady) {
-    ctx.imageSmoothingEnabled = false
-    for (let gy = 0; gy < gridRows; gy++) {
-      for (let gx = 0; gx < gridCols; gx++) {
-        drawTerrainTile(ctx, groundCoord, gx * cellSize, gy * cellSize, cellSize)
-      }
-    }
+    drawAutoTiledTerrain(ctx, {
+      gridCols,
+      gridRows,
+      cellSize,
+      defaultTile: model.value.defaultTile,
+      terrain: model.value.terrain,
+      tiles: model.value.tiles,
+    })
   } else {
     ctx.fillStyle = DEFAULT_GRASS_COLOR
     ctx.fillRect(0, 0, model.value.width, model.value.height)
-  }
-
-  if (tilesetReady && model.value.tiles) {
-    for (const tile of model.value.tiles) {
-      drawTerrainTile(
-        ctx,
-        { sheet: tile.sheet, sx: tile.sx, sy: tile.sy },
-        tile.x * cellSize,
-        tile.y * cellSize,
-        cellSize,
-      )
-    }
-  }
-
-  for (const tile of model.value.terrain) {
-    const coords = TERRAIN_TILE_COORDS[tile.terrain]
-    if (tilesetReady && coords) {
-      drawTerrainTile(ctx, coords, tile.x * cellSize, tile.y * cellSize, cellSize)
-    } else {
+    for (const tile of model.value.terrain) {
       ctx.fillStyle = getTerrainColor(tile.terrain)
       ctx.fillRect(tile.x * cellSize, tile.y * cellSize, cellSize, cellSize)
     }
