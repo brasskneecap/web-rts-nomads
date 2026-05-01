@@ -127,6 +127,20 @@ export type MapCatalogEntry = {
   spawnPointCount: number
 }
 
+export type LobbyStatus = 'open' | 'started' | 'closed'
+
+export type Lobby = {
+  id: string
+  mapId: string
+  mapName: string
+  hostPlayerId: string
+  players: string[]
+  maxPlayers: number
+  createdAt: number
+  status: LobbyStatus
+  matchId?: string
+}
+
 export type MapCatalogMapPayload = Omit<MapConfig, 'id' | 'name' | 'description'>
 
 export type MapCatalogFile = {

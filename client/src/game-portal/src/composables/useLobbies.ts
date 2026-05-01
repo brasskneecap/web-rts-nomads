@@ -1,61 +1,87 @@
 import { ref } from 'vue'
-import { usePlayer } from './usePlayer'
+import type { Lobby } from '@/game/network/protocol'
 
-export type Lobby = {
-  id: string
-  mapId: string
-  mapName: string
-  hostPlayerId: string
-  players: string[]
-  maxPlayers: number
-  createdAt: number
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
+
+const lobbies = ref<readonly Lobby[]>([])
+
+async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(text || `Server error ${res.status}`)
+  }
+  return res.json() as Promise<T>
 }
 
-function makeid(): string {
-  return Math.random().toString(36).slice(2, 9)
+async function refreshList(): Promise<void> {
+  const data = await apiRequest<{ lobbies: Lobby[] }>('/lobbies')
+  lobbies.value = data.lobbies
 }
 
-const _lobbies = ref<Lobby[]>([])
+async function fetchLobby(id: string): Promise<Lobby | null> {
+  const res = await fetch(`${API_BASE}/lobbies/${encodeURIComponent(id)}`, {
+    headers: { 'Content-Type': 'application/json' },
+  })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(text || `Server error ${res.status}`)
+  }
+  const data = (await res.json()) as { lobby: Lobby }
+  return data.lobby
+}
+
+async function createLobby(opts: { mapId: string; hostPlayerId: string }): Promise<Lobby> {
+  const data = await apiRequest<{ lobby: Lobby }>('/lobbies', {
+    method: 'POST',
+    body: JSON.stringify({ mapId: opts.mapId, hostPlayerId: opts.hostPlayerId }),
+  })
+  return data.lobby
+}
+
+async function joinLobby(opts: { id: string; playerId: string }): Promise<Lobby> {
+  const data = await apiRequest<{ lobby: Lobby }>(`/lobbies/${encodeURIComponent(opts.id)}/join`, {
+    method: 'POST',
+    body: JSON.stringify({ playerId: opts.playerId }),
+  })
+  return data.lobby
+}
+
+async function leaveLobby(opts: { id: string; playerId: string }): Promise<Lobby | null> {
+  const res = await fetch(`${API_BASE}/lobbies/${encodeURIComponent(opts.id)}/leave`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId: opts.playerId }),
+  })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(text || `Server error ${res.status}`)
+  }
+  const data = (await res.json()) as { lobby: Lobby }
+  return data.lobby
+}
+
+async function startLobby(opts: { id: string; playerId: string }): Promise<Lobby> {
+  const data = await apiRequest<{ lobby: Lobby }>(`/lobbies/${encodeURIComponent(opts.id)}/start`, {
+    method: 'POST',
+    body: JSON.stringify({ playerId: opts.playerId }),
+  })
+  return data.lobby
+}
 
 export function useLobbies() {
-  const { playerId } = usePlayer()
-
-  const lobbies = _lobbies as Readonly<typeof _lobbies>
-
-  function createLobby(opts: { mapId: string; mapName: string; hostPlayerId: string; maxPlayers?: number }): string {
-    const id = makeid()
-    _lobbies.value.unshift({
-      id,
-      mapId: opts.mapId,
-      mapName: opts.mapName,
-      hostPlayerId: opts.hostPlayerId,
-      players: [opts.hostPlayerId],
-      maxPlayers: opts.maxPlayers ?? 4,
-      createdAt: Date.now(),
-    })
-    return id
+  return {
+    lobbies,
+    refreshList,
+    fetchLobby,
+    createLobby,
+    joinLobby,
+    leaveLobby,
+    startLobby,
   }
-
-  function joinLobby(id: string): void {
-    const lobby = _lobbies.value.find((l) => l.id === id)
-    if (!lobby) return
-    if (!lobby.players.includes(playerId.value)) {
-      lobby.players.push(playerId.value)
-    }
-  }
-
-  function leaveLobby(id: string): void {
-    const lobby = _lobbies.value.find((l) => l.id === id)
-    if (!lobby) return
-    lobby.players = lobby.players.filter((p) => p !== playerId.value)
-    if (lobby.players.length === 0) {
-      _lobbies.value = _lobbies.value.filter((l) => l.id !== id)
-    }
-  }
-
-  function getLobby(id: string): Lobby | undefined {
-    return _lobbies.value.find((l) => l.id === id)
-  }
-
-  return { lobbies, createLobby, joinLobby, leaveLobby, getLobby }
 }

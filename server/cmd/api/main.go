@@ -21,7 +21,8 @@ func main() {
 	}
 
 	manager := game.NewMatchManager()
-	hub := ws.NewHub(manager)
+	lobbyManager := game.NewLobbyManager()
+	hub := ws.NewHub(manager, lobbyManager)
 	router := httpserver.NewRouter(hub, corsOrigin)
 
 	addr := ":8080"

@@ -171,7 +171,6 @@ async function returnToPreviousGame() {
 
 async function startNewGame() {
   await leaveStoredMatch()
-  localStorage.removeItem(PLAYER_ID_STORAGE_KEY)
   localStorage.removeItem(MAP_ID_STORAGE_KEY)
   localStorage.removeItem(MATCH_ID_STORAGE_KEY)
   localStorage.removeItem(HAS_ACTIVE_SESSION_KEY)
@@ -189,7 +188,6 @@ async function exitGame() {
   destroy()
   hasStarted.value = false
   hasPreviousSession.value = false
-  localStorage.removeItem(PLAYER_ID_STORAGE_KEY)
   localStorage.removeItem(MAP_ID_STORAGE_KEY)
   localStorage.removeItem(MATCH_ID_STORAGE_KEY)
   localStorage.removeItem(HAS_ACTIVE_SESSION_KEY)

@@ -18,14 +18,16 @@ const (
 )
 
 type Hub struct {
-	upgrader websocket.Upgrader
-	manager  *game.MatchManager
-	quit     chan struct{}
+	upgrader     websocket.Upgrader
+	manager      *game.MatchManager
+	lobbyManager *game.LobbyManager
+	quit         chan struct{}
 }
 
-func NewHub(manager *game.MatchManager) *Hub {
+func NewHub(manager *game.MatchManager, lobbyManager *game.LobbyManager) *Hub {
 	h := &Hub{
-		manager: manager,
+		manager:      manager,
+		lobbyManager: lobbyManager,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -44,6 +46,14 @@ func (h *Hub) Close() {
 
 func (h *Hub) GetMatch(matchID string) (*game.Match, bool) {
 	return h.manager.GetMatch(matchID)
+}
+
+func (h *Hub) GetLobbyManager() *game.LobbyManager {
+	return h.lobbyManager
+}
+
+func (h *Hub) GetMatchManager() *game.MatchManager {
+	return h.manager
 }
 
 func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {

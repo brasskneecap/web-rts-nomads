@@ -18,6 +18,7 @@
             :max-players="lobby.maxPlayers"
           />
         </UiPanel>
+        <div v-if="startError" class="lobby__error">{{ startError }}</div>
       </div>
 
       <div v-else class="lobby__not-found">
@@ -28,10 +29,10 @@
         <UiButton
           v-if="isHost"
           size="lg"
-          :disabled="!lobby"
+          :disabled="!lobby || isStarting"
           @click="startGame"
         >
-          Start Game
+          {{ isStarting ? 'Starting…' : 'Start Game' }}
         </UiButton>
         <UiButton size="md" @click="leaveAndGoBack">Leave</UiButton>
       </footer>
@@ -40,37 +41,96 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLobbies } from '@/composables/useLobbies'
 import { usePlayer } from '@/composables/usePlayer'
 import { useMapSelection } from '@/composables/useMapSelection'
+import type { Lobby } from '@/game/network/protocol'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import LobbyPlayerList from '@/components/menu/LobbyPlayerList.vue'
 
 const router = useRouter()
 const route = useRoute()
-const { getLobby, leaveLobby } = useLobbies()
+const { fetchLobby, leaveLobby, startLobby } = useLobbies()
 const { playerId } = usePlayer()
 const { setSelectedMapId } = useMapSelection()
 
 const lobbyId = computed(() => route.params.id as string)
-const lobby = computed(() => getLobby(lobbyId.value))
+const lobby = ref<Lobby | null>(null)
 const isHost = computed(() => lobby.value?.hostPlayerId === playerId.value)
+const isStarting = ref(false)
+const startError = ref('')
 
-function leaveAndGoBack() {
-  leaveLobby(lobbyId.value)
+let pollInterval: ReturnType<typeof setInterval> | null = null
+
+function stopPoller() {
+  if (pollInterval !== null) {
+    clearInterval(pollInterval)
+    pollInterval = null
+  }
+}
+
+function handleLobbyUpdate(updated: Lobby | null) {
+  if (updated === null) {
+    stopPoller()
+    void router.push('/find-game')
+    return
+  }
+
+  lobby.value = updated
+
+  if (updated.status === 'started' && updated.matchId) {
+    stopPoller()
+    setSelectedMapId(updated.mapId, updated.mapName)
+    void router.push(`/match/${updated.matchId}`)
+    return
+  }
+
+  if (updated.status === 'closed') {
+    stopPoller()
+    void router.push('/find-game')
+  }
+}
+
+async function poll() {
+  const updated = await fetchLobby(lobbyId.value)
+  handleLobbyUpdate(updated)
+}
+
+async function leaveAndGoBack() {
+  stopPoller()
+  try {
+    await leaveLobby({ id: lobbyId.value, playerId: playerId.value })
+  } catch {
+    // best-effort leave; navigate regardless
+  }
   void router.push('/custom')
 }
 
-function startGame() {
-  if (!lobby.value) return
-  localStorage.removeItem('webrts.hasActiveSession')
-  localStorage.removeItem('webrts.matchId')
-  setSelectedMapId(lobby.value.mapId, lobby.value.mapName)
-  void router.push('/starting')
+async function startGame() {
+  if (!lobby.value || !isHost.value) return
+  isStarting.value = true
+  startError.value = ''
+  try {
+    const updated = await startLobby({ id: lobbyId.value, playerId: playerId.value })
+    handleLobbyUpdate(updated)
+  } catch (e) {
+    startError.value = e instanceof Error ? e.message : 'Failed to start game.'
+  } finally {
+    isStarting.value = false
+  }
 }
+
+onMounted(async () => {
+  await poll()
+  pollInterval = setInterval(() => { void poll() }, 1000)
+})
+
+onUnmounted(() => {
+  stopPoller()
+})
 </script>
 
 <style scoped>
@@ -156,5 +216,10 @@ function startGame() {
   font-size: 14px;
   text-align: center;
   padding: 40px 0;
+}
+
+.lobby__error {
+  font-size: 13px;
+  color: #f07070;
 }
 </style>

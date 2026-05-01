@@ -41,7 +41,6 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchMapCatalog } from '@/game/maps/catalog'
 import type { MapCatalogEntry } from '@/game/network/protocol'
-import { useMapSelection } from '@/composables/useMapSelection'
 import { useLobbies } from '@/composables/useLobbies'
 import { usePlayer } from '@/composables/usePlayer'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -49,7 +48,6 @@ import MapList from '@/components/menu/MapList.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'
 
 const router = useRouter()
-const { setSelectedMapId } = useMapSelection()
 const { createLobby } = useLobbies()
 const { playerId } = usePlayer()
 
@@ -82,14 +80,14 @@ async function loadMapCatalog() {
   }
 }
 
-function createLobbyAndNavigate() {
+async function createLobbyAndNavigate() {
   if (!selectedMapId.value) return
-  const map = selectedMap.value
-  const mapName = map?.name ?? selectedMapId.value
-  const maxPlayers = map?.spawnPointCount ?? 4
-  setSelectedMapId(selectedMapId.value, mapName)
-  const id = createLobby({ mapId: selectedMapId.value, mapName, hostPlayerId: playerId.value, maxPlayers })
-  void router.push(`/lobby/${id}`)
+  try {
+    const created = await createLobby({ mapId: selectedMapId.value, hostPlayerId: playerId.value })
+    void router.push(`/lobby/${created.id}`)
+  } catch (err) {
+    mapsLoadError.value = err instanceof Error ? err.message : 'Failed to create lobby.'
+  }
 }
 
 onMounted(() => {
