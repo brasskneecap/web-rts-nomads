@@ -124,6 +124,7 @@ export type MapCatalogEntry = {
   description: string
   gridCols: number
   gridRows: number
+  spawnPointCount: number
 }
 
 export type MapCatalogMapPayload = Omit<MapConfig, 'id' | 'name' | 'description'>

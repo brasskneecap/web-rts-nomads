@@ -72,6 +72,9 @@ export class NetworkClient {
   /** Called whenever the connection state changes. GameClient wires this up. */
   onConnectionStateChange: ((state: ConnectionState) => void) | null = null
 
+  /** Called when a welcome message assigns a matchId. GameClient wires this up. */
+  onMatchIdChange: ((id: string) => void) | null = null
+
   /** Callback that lets GameClient clear the interpolation buffer before the
    *  first fresh snapshot arrives after a successful reconnect. */
   onReconnectSuccess: (() => void) | null = null
@@ -413,6 +416,7 @@ export class NetworkClient {
         localStorage.setItem(PLAYER_ID_STORAGE_KEY, message.playerId)
         localStorage.setItem(MAP_ID_STORAGE_KEY, message.map.id)
         localStorage.setItem(MATCH_ID_STORAGE_KEY, message.matchId)
+        this.onMatchIdChange?.(message.matchId)
         console.log('connected as', message.playerId, 'in', message.matchId)
 
         if (isReconnect) {

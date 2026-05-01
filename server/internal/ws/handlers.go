@@ -42,6 +42,10 @@ func (h *Hub) Close() {
 	close(h.quit)
 }
 
+func (h *Hub) GetMatch(matchID string) (*game.Match, bool) {
+	return h.manager.GetMatch(matchID)
+}
+
 func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {

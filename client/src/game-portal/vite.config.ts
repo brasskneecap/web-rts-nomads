@@ -19,6 +19,7 @@ export default defineConfig({
       '/health': { target: GO_SERVER, changeOrigin: true },
       '/catalog': { target: GO_SERVER, changeOrigin: true },
       '/maps': { target: GO_SERVER, changeOrigin: true },
+      '/matches': { target: GO_SERVER, changeOrigin: true },
     },
   },
 })

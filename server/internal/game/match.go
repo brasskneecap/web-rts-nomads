@@ -78,6 +78,13 @@ func (m *Match) PlayerCount() int {
 	return count
 }
 
+func (m *Match) HasPlayer(playerID string) bool {
+	m.State.mu.RLock()
+	defer m.State.mu.RUnlock()
+	_, ok := m.State.Players[playerID]
+	return ok
+}
+
 func (m *Match) BroadcastSnapshot() {
 	snapshot := m.State.Snapshot()
 	snapshot.MatchID = m.ID

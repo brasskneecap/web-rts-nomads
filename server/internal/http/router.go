@@ -97,6 +97,35 @@ func NewRouter(hub *ws.Hub, corsOrigin string) http.Handler {
 		_ = json.NewEncoder(w).Encode(entry)
 	})
 
+	mux.HandleFunc("/matches/", func(w http.ResponseWriter, r *http.Request) {
+		// Expect exactly: /matches/{matchID}/status
+		trimmed := strings.TrimPrefix(r.URL.Path, "/matches/")
+		matchID, suffix, ok := strings.Cut(trimmed, "/")
+		if !ok || matchID == "" || suffix != "status" {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		playerID := r.URL.Query().Get("playerId")
+		if playerID == "" {
+			http.Error(w, "playerId required", http.StatusBadRequest)
+			return
+		}
+
+		match, ok := hub.GetMatch(matchID)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"matchId":       match.ID,
+			"mapId":         match.MapID,
+			"isParticipant": match.HasPlayer(playerID),
+		})
+	})
+
 	mux.HandleFunc("/ws", hub.HandleWS)
 
 	return withCORS(mux, corsOrigin)

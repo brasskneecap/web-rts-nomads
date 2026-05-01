@@ -46,6 +46,7 @@ export function useGameClient() {
   const isRunning = ref(false)
   const ui = ref<GameUiSnapshot>(emptyUiSnapshot)
   const connectionState = ref<ConnectionState>('idle')
+  const currentMatchId = ref('')
   // Attempt counters are polled from the client each time the state changes so
   // the overlay can display "attempt N of M" without needing a separate channel.
   const reconnectAttempt = ref(0)
@@ -85,6 +86,10 @@ export function useGameClient() {
       maxReconnectAttempts.value = client?.maxReconnectAttempts ?? 0
     }
 
+    client.onMatchIdChange = (id) => {
+      currentMatchId.value = id
+    }
+
     await client.start(options)
     syncUi()
     isRunning.value = true
@@ -96,6 +101,7 @@ export function useGameClient() {
       client = new GameClient(tempCanvas)
     }
     await client.leaveStoredMatch()
+    currentMatchId.value = ''
   }
 
   function destroy() {
@@ -105,6 +111,7 @@ export function useGameClient() {
     ui.value = emptyUiSnapshot
     isRunning.value = false
     connectionState.value = 'idle'
+    currentMatchId.value = ''
   }
 
   function performSelectionAction(actionId: string) {
@@ -155,6 +162,7 @@ export function useGameClient() {
     setMinimapPanelRect,
     ui,
     connectionState,
+    currentMatchId,
     reconnectAttempt,
     maxReconnectAttempts,
   }

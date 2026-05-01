@@ -63,6 +63,9 @@ export class GameClient {
   /** Wired by useGameClient to propagate connection state into Vue refs. */
   onConnectionStateChange: ((state: ConnectionState) => void) | null = null
 
+  /** Wired by useGameClient to propagate the current matchId into a Vue ref. */
+  onMatchIdChange: ((id: string) => void) | null = null
+
   constructor(canvas: HTMLCanvasElement, mapId: MapId = '') {
     this.canvas = canvas
     this.state = new GameState()
@@ -72,6 +75,10 @@ export class GameClient {
 
     this.network.onConnectionStateChange = (s) => {
       this.onConnectionStateChange?.(s)
+    }
+
+    this.network.onMatchIdChange = (id) => {
+      this.onMatchIdChange?.(id)
     }
 
     this.network.onReconnectSuccess = () => {

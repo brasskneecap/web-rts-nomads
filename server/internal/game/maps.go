@@ -89,11 +89,12 @@ type MapCatalogEntry struct {
 }
 
 type MapCatalogSummary struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	GridCols    int    `json:"gridCols"`
-	GridRows    int    `json:"gridRows"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	GridCols        int    `json:"gridCols"`
+	GridRows        int    `json:"gridRows"`
+	SpawnPointCount int    `json:"spawnPointCount"`
 }
 
 //go:embed catalog/maps/*.json
@@ -122,12 +123,19 @@ func ListMapCatalogSummaries() []MapCatalogSummary {
 
 	summaries := make([]MapCatalogSummary, 0, len(merged))
 	for _, entry := range merged {
+		spawnCount := 0
+		for _, b := range entry.Map.Buildings {
+			if b.BuildingType == "spawn-point" {
+				spawnCount++
+			}
+		}
 		summaries = append(summaries, MapCatalogSummary{
-			ID:          entry.ID,
-			Name:        entry.Name,
-			Description: entry.Description,
-			GridCols:    entry.Map.GridCols,
-			GridRows:    entry.Map.GridRows,
+			ID:              entry.ID,
+			Name:            entry.Name,
+			Description:     entry.Description,
+			GridCols:        entry.Map.GridCols,
+			GridRows:        entry.Map.GridRows,
+			SpawnPointCount: spawnCount,
 		})
 	}
 
