@@ -25,9 +25,29 @@ export const UNIT_SPRITE_BOTTOM_PADDING = 0.15
 // nearby empty pixels doesn't register as a hit on the unit.
 export const UNIT_SPRITE_SIDE_PADDING = 0.15
 
-export type UnitDirection = 'north' | 'south' | 'east' | 'west'
+export type UnitDirection =
+  | 'north'
+  | 'north-east'
+  | 'east'
+  | 'south-east'
+  | 'south'
+  | 'south-west'
+  | 'west'
+  | 'north-west'
 
-export const UNIT_DIRECTIONS: readonly UnitDirection[] = ['north', 'south', 'east', 'west']
+// Clockwise from north. Order matters: pickDirection walks neighbors of the
+// requested direction outward through this list, so 8-way classifications
+// fall back to the nearest cardinal on units that only ship 4-way art.
+export const UNIT_DIRECTIONS: readonly UnitDirection[] = [
+  'north',
+  'north-east',
+  'east',
+  'south-east',
+  'south',
+  'south-west',
+  'west',
+  'north-west',
+]
 
 type DirectionMap<T> = Partial<Record<UnitDirection, T>>
 
@@ -250,11 +270,25 @@ export function isPointInUnitBody(
   return px >= r.minX && px <= r.maxX && py >= r.minY && py <= r.maxY
 }
 
+// Walks outward from `preferred` through clockwise/counter-clockwise neighbors
+// on the 8-way wheel, so a 4-direction unit asked for 'north-east' resolves to
+// 'north' or 'east' rather than something on the opposite side of the sprite.
 function pickDirection<T>(lookup: DirectionMap<T>, preferred: UnitDirection): T | undefined {
-  if (lookup[preferred]) return lookup[preferred]
-  for (const d of UNIT_DIRECTIONS) {
-    const v = lookup[d]
-    if (v) return v
+  const start = UNIT_DIRECTIONS.indexOf(preferred)
+  if (start < 0) {
+    for (const d of UNIT_DIRECTIONS) {
+      const v = lookup[d]
+      if (v) return v
+    }
+    return undefined
+  }
+  const n = UNIT_DIRECTIONS.length
+  for (let offset = 0; offset <= n / 2; offset++) {
+    const cw = lookup[UNIT_DIRECTIONS[(start + offset) % n]]
+    if (cw) return cw
+    if (offset === 0) continue
+    const ccw = lookup[UNIT_DIRECTIONS[(start - offset + n) % n]]
+    if (ccw) return ccw
   }
   return undefined
 }

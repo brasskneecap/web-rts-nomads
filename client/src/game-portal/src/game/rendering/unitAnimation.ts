@@ -20,10 +20,10 @@ interface UnitAnimState {
 const DEFAULT_FRAME_MS = 125
 // px/ms of interpolated movement below which we treat the unit as standing still.
 const MOVING_THRESHOLD_PX_PER_MS = 0.005
-// How strongly the non-dominant axis must exceed the dominant one to flip
-// facing. 0 = no hysteresis (flips on any tie), 0.4 = the new axis must be
-// >40% larger than the current one. Prevents diagonal jitter.
-const FACING_HYSTERESIS = 0.4
+// Each of the 8 facings owns a 45° arc; `current` gets this many extra
+// degrees of stickiness before a neighbor can take over, which suppresses
+// jitter at the boundaries between adjacent facings.
+const FACING_HYSTERESIS_DEG = 7.5
 
 export class UnitAnimationController {
   private states = new Map<number, UnitAnimState>()
@@ -112,30 +112,50 @@ export class UnitAnimationController {
   }
 }
 
-// Picks a cardinal direction from a vector, biased toward `current` so small
-// diagonal wobble doesn't flip facing. To switch axes (e.g. east → north),
-// the new axis must exceed the old one by FACING_HYSTERESIS. Same-axis flips
-// (east → west when dx goes negative) happen naturally.
+// Compass angles in screen space (x right, y down): east = 0°, increasing
+// clockwise toward south = 90°, etc. Used for 8-way snapping.
+const DIRECTION_ANGLE_DEG: Record<UnitDirection, number> = {
+  east: 0,
+  'south-east': 45,
+  south: 90,
+  'south-west': 135,
+  west: 180,
+  'north-west': 225,
+  north: 270,
+  'north-east': 315,
+}
+
+// Smallest angular distance (degrees) between two compass angles in [0,360).
+function angularDistanceDeg(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360
+  return d > 180 ? 360 - d : d
+}
+
+// Picks the closest of 8 compass directions for a movement/facing vector,
+// biased toward `current` so small wobble doesn't flip facing. Each
+// direction owns a 45° arc; `current` keeps an extra FACING_HYSTERESIS_DEG
+// of stickiness, which suppresses jitter at the boundaries (and between
+// adjacent diagonal/cardinal pairs). Units that only ship 4-way sprites
+// degrade to the nearest cardinal at draw time via `pickDirection`.
 function classifyDirection(
   dx: number,
   dy: number,
   current: UnitDirection,
 ): UnitDirection {
-  const ax = Math.abs(dx)
-  const ay = Math.abs(dy)
-  if (ax === 0 && ay === 0) return current
+  if (dx === 0 && dy === 0) return current
+  const angle = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360
 
-  const currentOnX = current === 'east' || current === 'west'
-  if (currentOnX) {
-    if (ay > ax * (1 + FACING_HYSTERESIS)) {
-      return dy >= 0 ? 'south' : 'north'
+  let best = current
+  let bestScore = Infinity
+  for (const dir of Object.keys(DIRECTION_ANGLE_DEG) as UnitDirection[]) {
+    const dist = angularDistanceDeg(angle, DIRECTION_ANGLE_DEG[dir])
+    const score = dir === current ? dist - FACING_HYSTERESIS_DEG : dist
+    if (score < bestScore) {
+      bestScore = score
+      best = dir
     }
-    return dx >= 0 ? 'east' : 'west'
   }
-  if (ax > ay * (1 + FACING_HYSTERESIS)) {
-    return dx >= 0 ? 'east' : 'west'
-  }
-  return dy >= 0 ? 'south' : 'north'
+  return best
 }
 
 function pickAnimation(

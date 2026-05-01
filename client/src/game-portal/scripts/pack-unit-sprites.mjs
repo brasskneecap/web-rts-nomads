@@ -116,7 +116,21 @@ async function isUpToDate(dir, inputFiles) {
   return newest <= packedAt
 }
 
-const DIRECTION_ORDER = ['north', 'south', 'east', 'west']
+// Cardinals listed first so 4-direction units pack to a row layout that's
+// bit-identical to the pre-8-way pipeline; diagonals (when present in the
+// PixelLab export) tack onto the bottom rows. The runtime reads rowOrder
+// from sprites.json, so the loader doesn't care about ordering — but
+// keeping cardinals first minimizes git churn for existing units.
+const DIRECTION_ORDER = [
+  'north',
+  'south',
+  'east',
+  'west',
+  'north-east',
+  'south-east',
+  'south-west',
+  'north-west',
+]
 
 // Packs all directions of a single animation into one 2D sheet — columns are
 // animation frames, rows are directions (order recorded in rowOrder). Returns
