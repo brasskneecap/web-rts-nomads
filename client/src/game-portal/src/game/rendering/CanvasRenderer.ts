@@ -34,7 +34,7 @@ import {
 } from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
-import type { BannerSnapshot, BuildingTile, ObstacleTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
+import type { BannerSnapshot, BuildingTile, ExplosionSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
 import { ENEMY_PLAYER_ID } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
@@ -169,6 +169,14 @@ export class CanvasRenderer {
     amount: number
     isFriendly: boolean
     startedAt: number
+    /**
+     * 'normal' renders white (enemy) / red (friendly) — the default. 'combined'
+     * is the Marksman Double Shot yellow sum, drawn larger and slightly higher
+     * than the normal numbers so it reads as the "totalled" hit on top of the
+     * two individual white numbers. 'crit' draws a red circle behind the
+     * number to mark a critical hit.
+     */
+    kind: 'normal' | 'combined' | 'crit'
   }> = []
   private readonly FLOATING_DAMAGE_DURATION_MS = 900
   private readonly FLOATING_DAMAGE_RISE_PX = 32
@@ -233,12 +241,16 @@ export class CanvasRenderer {
     if (this.state.damageEvents.length > 0) {
       for (const evt of this.state.damageEvents) {
         const bounds = getUnitBounds(UNIT_DEF_MAP.get(evt.unitType))
+        // Combined Double Shot numbers float higher than the individual
+        // shot numbers so they sit visually above them.
+        const yOffset = evt.kind === 'combined' ? bounds.top - 14 : bounds.top
         this.floatingDamageNumbers.push({
           x: evt.x,
-          y: evt.y + bounds.top,
+          y: evt.y + yOffset,
           amount: evt.amount,
           isFriendly: evt.isFriendly,
           startedAt: evt.createdAt,
+          kind: evt.kind ?? 'normal',
         })
       }
       this.state.damageEvents.length = 0
@@ -280,6 +292,9 @@ export class CanvasRenderer {
     this.drawUnits(sortedUnits)
     // Drawn after units so arrows render on top of the firing unit's body.
     this.drawProjectiles(this.state.projectiles)
+    // Explosions render on top of everything in the world layer so the boom
+    // is always visible — short-lived VFX (~0.35s lifetime).
+    this.drawExplosions(this.state.explosions)
     this.drawBuildPlacementGhost()
     this.drawSelectionBox()
     this.drawFloatingDamageNumbers(renderTime)
@@ -1740,6 +1755,64 @@ export class CanvasRenderer {
   // Fallback body-center lift when the referenced unit is not in client state.
   private static readonly DEFAULT_BODY_CENTER_OFFSET_Y = -16
 
+  /**
+   * Draw transient AoE explosion VFX from server snapshots. Marksman gold
+   * explosive_tips queues these on every primary hit; the renderer expands
+   * an orange-red ring (and a softer glow) over the lifetime, fading out
+   * as `progress` approaches 1. Placeholder visual — slated for replacement
+   * with a sprite-sheet animation later. Variant-keyed so future perks
+   * (frost, holy, etc.) can override colours without changing this loop.
+   */
+  private drawExplosions(explosions: ExplosionSnapshot[]) {
+    if (explosions.length === 0) return
+    const ctx = this.ctx
+    for (const expl of explosions) {
+      const t = Math.max(0, Math.min(1, expl.progress))
+      // Ease-out expansion so the boom feels punchy at the start and
+      // settles toward its full radius. Visual cap is the configured radius;
+      // we expand slightly beyond it (1.05×) so the ring outline doesn't
+      // sit exactly on the damage radius edge — matches FX expectation.
+      const radius = expl.radius * 1.05 * (1 - Math.pow(1 - t, 2))
+      const alphaCore = (1 - t) * 0.9
+      const alphaGlow = (1 - t) * 0.4
+
+      // Soft outer glow — large radial gradient, low alpha, fades fast.
+      const glowGradient = ctx.createRadialGradient(expl.x, expl.y, 0, expl.x, expl.y, expl.radius * 1.4)
+      glowGradient.addColorStop(0, `rgba(255, 138, 60, ${alphaGlow})`)
+      glowGradient.addColorStop(0.5, `rgba(220, 70, 30, ${alphaGlow * 0.6})`)
+      glowGradient.addColorStop(1, 'rgba(180, 40, 10, 0)')
+      ctx.save()
+      ctx.fillStyle = glowGradient
+      ctx.beginPath()
+      ctx.arc(expl.x, expl.y, expl.radius * 1.4, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+
+      // Bright inner disc — orange center, fading red rim.
+      const coreGradient = ctx.createRadialGradient(expl.x, expl.y, 0, expl.x, expl.y, radius)
+      coreGradient.addColorStop(0, `rgba(255, 220, 130, ${alphaCore})`)
+      coreGradient.addColorStop(0.4, `rgba(255, 140, 60, ${alphaCore})`)
+      coreGradient.addColorStop(0.85, `rgba(220, 60, 30, ${alphaCore * 0.6})`)
+      coreGradient.addColorStop(1, 'rgba(180, 30, 10, 0)')
+      ctx.save()
+      ctx.fillStyle = coreGradient
+      ctx.beginPath()
+      ctx.arc(expl.x, expl.y, radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+
+      // Outer ring outline — thin, expanding faster than the fill so it
+      // reads as a shockwave.
+      ctx.save()
+      ctx.lineWidth = Math.max(1.5, 2 / this.camera.zoom)
+      ctx.strokeStyle = `rgba(255, 200, 90, ${(1 - t) * 0.85})`
+      ctx.beginPath()
+      ctx.arc(expl.x, expl.y, radius, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+  }
+
   private drawProjectiles(projectiles: ProjectileSnapshot[]) {
     if (projectiles.length === 0) return
 
@@ -1763,10 +1836,22 @@ export class CanvasRenderer {
 
       const originX = proj.originX + originLift.x
       const originY = proj.originY + originLift.y
-      const targetX = proj.targetX + targetLift.x
-      const targetY = proj.targetY + targetLift.y
+      // Pierce shots fly to a fixed-line endpoint, not a homing target — skip
+      // the target-unit lift so the streak ends exactly where the server
+      // chose, even if the original target moved.
+      const targetX = proj.pierce ? proj.targetX : proj.targetX + targetLift.x
+      const targetY = proj.pierce ? proj.targetY : proj.targetY + targetLift.y
 
       const t = Math.max(0, Math.min(1, proj.progress))
+
+      // Marksman silver pierce — render as a quick green wind streak from
+      // origin out to the current head position rather than an arrow sprite.
+      // Bypasses drawProjectileForVariant entirely.
+      if (proj.pierce) {
+        this.drawPierceWindStreak(originX, originY, targetX, targetY, t)
+        continue
+      }
+
       const x = originX + (targetX - originX) * t
       const y = originY + (targetY - originY) * t
 
@@ -1781,6 +1866,123 @@ export class CanvasRenderer {
         zoom: this.camera.zoom,
         projectile: proj,
       })
+      ctx.restore()
+    }
+  }
+
+  /**
+   * Render a Marksman pierce shot as a fast green wind streak. Designed for
+   * high contrast against grass / green terrain (which would otherwise eat
+   * a pure-green effect): the core is bright white, surrounded by a vivid
+   * green-cyan glow, with a faint dim trail along the entire flight path so
+   * the trajectory reads even between snapshots.
+   *
+   * Layered passes (drawn back-to-front):
+   *   1. Faint full-path trail — origin → endpoint, very dim, shows the
+   *      whole shot line so the player sees the trajectory at a glance.
+   *   2. Outer green glow — wide, vivid, follows the active tail→head
+   *      segment so the streak reads as a moving blade of wind.
+   *   3. Bright white core — narrow, high-alpha, on top of the glow.
+   *   4. Bright leading head — radial gradient at the front of the streak.
+   *   5. Origin puff — small green burst at the bow when the shot fires
+   *      (early-progress only) for the "the marksman just released" tell.
+   */
+  private drawPierceWindStreak(originX: number, originY: number, endX: number, endY: number, progress: number) {
+    const ctx = this.ctx
+    // The tail trails 50% of the path behind the head — the visible streak
+    // is [headT - TAIL_FRACTION, headT] clamped to [0,1].
+    const TAIL_FRACTION = 0.50
+
+    const headT = progress
+    const tailT = Math.max(0, headT - TAIL_FRACTION)
+
+    const dx = endX - originX
+    const dy = endY - originY
+
+    const headX = originX + dx * headT
+    const headY = originY + dy * headT
+    const tailX = originX + dx * tailT
+    const tailY = originY + dy * tailT
+
+    // No alpha fade across the streak's lifetime — the projectile is removed
+    // by the server the same tick it lands, and a fading tail before that
+    // makes the actual reach hard to judge. Holding full alpha until the
+    // server drops the projectile keeps the maximum distance unambiguous.
+
+    // Width budget: total visible streak ≈ 6px wide. The glow sets the
+    // outer envelope at 6px, the white core sits at 2px inside it, and
+    // the head dot caps a similar diameter so the whole effect reads as a
+    // thin blade rather than a bar.
+    const glowWidth = Math.max(4, 6 / this.camera.zoom)
+    const coreWidth = Math.max(1.25, 2 / this.camera.zoom)
+    const headRadius = Math.max(2.5, 4 / this.camera.zoom)
+    const trailWidth = Math.max(0.75, 1.25 / this.camera.zoom)
+
+    // Pass 1 — faint full-path trail (origin → endpoint). Very low alpha;
+    // exists so the player sees the trajectory line during the whole flight,
+    // even when the moving streak segment isn't covering a given pixel.
+    ctx.save()
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = 'rgba(150, 255, 200, 0.18)'
+    ctx.lineWidth = trailWidth
+    ctx.beginPath()
+    ctx.moveTo(originX, originY)
+    ctx.lineTo(endX, endY)
+    ctx.stroke()
+    ctx.restore()
+
+    // Pass 2 — vivid green-cyan glow on the active streak segment. Sets
+    // the outer ~6px envelope of the blade.
+    ctx.save()
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = 'rgba(80, 255, 180, 0.6)'
+    ctx.lineWidth = glowWidth
+    ctx.beginPath()
+    ctx.moveTo(tailX, tailY)
+    ctx.lineTo(headX, headY)
+    ctx.stroke()
+    ctx.restore()
+
+    // Pass 3 — bright white core, ~2px wide. White rather than green so the
+    // streak pops against grass / green terrain.
+    ctx.save()
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
+    ctx.lineWidth = coreWidth
+    ctx.beginPath()
+    ctx.moveTo(tailX, tailY)
+    ctx.lineTo(headX, headY)
+    ctx.stroke()
+    ctx.restore()
+
+    // Pass 4 — leading head: small radial gradient that caps the front of
+    // the blade. Same diameter band as the glow so the whole effect reads
+    // as one consistent ~6px-wide thread.
+    const headGradient = ctx.createRadialGradient(headX, headY, 0, headX, headY, headRadius)
+    headGradient.addColorStop(0, 'rgba(255, 255, 255, 1)')
+    headGradient.addColorStop(0.5, 'rgba(160, 255, 200, 1)')
+    headGradient.addColorStop(1, 'rgba(0, 120, 60, 0)')
+    ctx.save()
+    ctx.fillStyle = headGradient
+    ctx.beginPath()
+    ctx.arc(headX, headY, headRadius, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+
+    // Pass 5 — small origin puff at the bow when the shot first fires.
+    // Sized to the same band so the firing tell doesn't dwarf the streak.
+    if (progress < 0.5) {
+      const puffAlpha = (1 - progress / 0.5) * 0.85
+      const puffRadius = Math.max(3, 5 / this.camera.zoom)
+      const puffGradient = ctx.createRadialGradient(originX, originY, 0, originX, originY, puffRadius)
+      puffGradient.addColorStop(0, `rgba(220, 255, 230, ${puffAlpha})`)
+      puffGradient.addColorStop(0.6, `rgba(80, 230, 160, ${0.55 * puffAlpha})`)
+      puffGradient.addColorStop(1, 'rgba(0, 120, 60, 0)')
+      ctx.save()
+      ctx.fillStyle = puffGradient
+      ctx.beginPath()
+      ctx.arc(originX, originY, puffRadius, 0, Math.PI * 2)
+      ctx.fill()
       ctx.restore()
     }
   }
@@ -1857,7 +2059,10 @@ export class CanvasRenderer {
     ctx.textBaseline = 'alphabetic'
     ctx.lineWidth = 3 / this.camera.zoom
     ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
-    ctx.font = `bold ${Math.max(12, 14 / this.camera.zoom)}px sans-serif`
+
+    const baseFontPx = Math.max(12, 14 / this.camera.zoom)
+    const combinedFontPx = Math.max(16, 19 / this.camera.zoom)
+    const critFontPx = Math.max(14, 17 / this.camera.zoom)
 
     const kept: typeof this.floatingDamageNumbers = []
     for (const num of this.floatingDamageNumbers) {
@@ -1867,9 +2072,54 @@ export class CanvasRenderer {
       const drawY = num.y - this.FLOATING_DAMAGE_RISE_PX * t
       ctx.globalAlpha = Math.max(0, 1 - t)
       const text = String(num.amount)
-      ctx.strokeText(text, num.x, drawY)
-      ctx.fillStyle = num.isFriendly ? '#ef4444' : '#ffffff'
-      ctx.fillText(text, num.x, drawY)
+
+      if (num.kind === 'combined') {
+        // Combined Double Shot total — drawn larger and yellow/gold.
+        ctx.font = `bold ${combinedFontPx}px sans-serif`
+        ctx.strokeText(text, num.x, drawY)
+        ctx.fillStyle = '#fde047' // tailwind yellow-300
+        ctx.fillText(text, num.x, drawY)
+      } else if (num.kind === 'crit') {
+        // Critical hit — red circle behind a slightly larger number. The
+        // circle radius scales with text width so multi-digit numbers don't
+        // poke past it; capped to keep small hits from drawing tiny dots.
+        ctx.font = `bold ${critFontPx}px sans-serif`
+        const measure = ctx.measureText(text)
+        const circleR = Math.max(critFontPx * 0.85, measure.width * 0.65 + 4 / this.camera.zoom)
+        // Center the circle vertically on the cap-height midline of the
+        // text rather than the baseline, so the number sits inside the disc.
+        const circleY = drawY - critFontPx * 0.35
+
+        // Outer dimmer red ring for a subtle glow against bright terrain.
+        ctx.save()
+        ctx.fillStyle = `rgba(120, 10, 10, ${ctx.globalAlpha * 0.55})`
+        ctx.beginPath()
+        ctx.arc(num.x, circleY, circleR * 1.18, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+
+        // Filled red disc.
+        ctx.save()
+        ctx.fillStyle = `rgba(220, 38, 38, ${ctx.globalAlpha * 0.92})`
+        ctx.beginPath()
+        ctx.arc(num.x, circleY, circleR, 0, Math.PI * 2)
+        ctx.fill()
+        // Crisp dark-red outline for definition against light terrain.
+        ctx.lineWidth = Math.max(1, 1.5 / this.camera.zoom)
+        ctx.strokeStyle = `rgba(80, 8, 8, ${ctx.globalAlpha * 0.95})`
+        ctx.stroke()
+        ctx.restore()
+
+        // Number on top — white text with a thin dark stroke for legibility.
+        ctx.strokeText(text, num.x, drawY)
+        ctx.fillStyle = '#ffffff'
+        ctx.fillText(text, num.x, drawY)
+      } else {
+        ctx.font = `bold ${baseFontPx}px sans-serif`
+        ctx.strokeText(text, num.x, drawY)
+        ctx.fillStyle = num.isFriendly ? '#ef4444' : '#ffffff'
+        ctx.fillText(text, num.x, drawY)
+      }
       kept.push(num)
     }
     ctx.restore()

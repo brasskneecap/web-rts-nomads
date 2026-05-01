@@ -380,6 +380,32 @@ var combatProfiles = map[string]CombatProfile{
 	},
 }
 
+// effectiveDetectionRange returns the unit's actual target-acquisition range,
+// expanded so a unit can always see targets at the edge of its own attack
+// range. Without this expansion, a Marksman with eagle_spirit / bullseye
+// (or any unit whose AttackRange has been pushed above the profile baseline)
+// would happily fire to 1200px but never *acquire* anything past the profile
+// DetectionRange (e.g. archer 320). Returns max(profile.DetectionRange,
+// unit.AttackRange) — if base detection already exceeds attack range
+// (melee with long sight), the base wins.
+func effectiveDetectionRange(unit *Unit, profile CombatProfile) float64 {
+	if unit == nil || unit.AttackRange <= profile.DetectionRange {
+		return profile.DetectionRange
+	}
+	return unit.AttackRange
+}
+
+// effectiveLeashDistance mirrors effectiveDetectionRange for the leash gate
+// in targetInsideLeashLocked. A unit's leash must be at least its own
+// AttackRange or the leash check rejects targets the unit could otherwise
+// shoot at — effectively re-imposing the old detection cap one tick later.
+func effectiveLeashDistance(unit *Unit, profile CombatProfile) float64 {
+	if unit == nil || unit.AttackRange <= profile.LeashDistance {
+		return profile.LeashDistance
+	}
+	return unit.AttackRange
+}
+
 func resolveCombatProfile(unit *Unit) CombatProfile {
 	// Data-driven override: UnitDef.CombatProfile picks the profile directly.
 	// Validated at catalog load (unit_defs.go init), so the lookup is safe.

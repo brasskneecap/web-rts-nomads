@@ -175,10 +175,11 @@ func (s *GameState) issueRetreatLocked(unit *Unit, profile CombatProfile, blocke
 }
 
 func (s *GameState) targetInsideLeashLocked(unit *Unit, targetX, targetY float64, profile CombatProfile) bool {
-	if profile.LeashDistance <= 0 {
+	leash := effectiveLeashDistance(unit, profile)
+	if leash <= 0 {
 		return true
 	}
-	return distanceSquared(unit.CombatAnchorX, unit.CombatAnchorY, targetX, targetY) <= profile.LeashDistance*profile.LeashDistance
+	return distanceSquared(unit.CombatAnchorX, unit.CombatAnchorY, targetX, targetY) <= leash*leash
 }
 
 func (s *GameState) assignEnemyObjectiveLocked(unit *Unit, blocked map[gridPoint]bool) {

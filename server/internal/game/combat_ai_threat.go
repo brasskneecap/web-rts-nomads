@@ -21,7 +21,8 @@ func (s *GameState) decayThreatLocked(unit *Unit, dt float64, index *combatSpati
 			continue
 		}
 
-		if distanceSquared(unit.X, unit.Y, hostile.X, hostile.Y) <= profile.DetectionRange*profile.DetectionRange {
+		detectRange := effectiveDetectionRange(unit, profile)
+		if distanceSquared(unit.X, unit.Y, hostile.X, hostile.Y) <= detectRange*detectRange {
 			entry.LastSeenTick = s.Tick
 		}
 
@@ -64,7 +65,8 @@ func (s *GameState) addThreatLocked(unit, hostile *Unit, amount float64, forceSe
 		unit.ThreatTable[hostile.ID] = entry
 	}
 	entry.Value += amount
-	if forceSeen || distanceSquared(unit.X, unit.Y, hostile.X, hostile.Y) <= resolveCombatProfile(unit).DetectionRange*resolveCombatProfile(unit).DetectionRange {
+	detectRange := effectiveDetectionRange(unit, resolveCombatProfile(unit))
+	if forceSeen || distanceSquared(unit.X, unit.Y, hostile.X, hostile.Y) <= detectRange*detectRange {
 		entry.LastSeenTick = s.Tick
 	}
 	entry.LastActiveTick = s.Tick

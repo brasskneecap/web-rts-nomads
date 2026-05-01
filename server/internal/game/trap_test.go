@@ -219,8 +219,12 @@ func TestTrap_IDString(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestTrapper_ArcherGetsTrapPerkAtBronze verifies that an archer reaching
-// Bronze rank is assigned exactly one trap perk (one of the four Bronze trapper
-// perks) via the standard rank-up pipeline.
+// Bronze rank on the Trapper path is assigned exactly one trap perk (one of
+// the four Bronze trapper perks) via the standard rank-up pipeline.
+//
+// Since archers now randomly receive Trapper or Marksman at Bronze, this
+// test loops seeds and only validates trapper-assigned archers — marksman-
+// assigned archers are exercised by Marksman's own test file.
 func TestTrapper_ArcherGetsTrapPerkAtBronze(t *testing.T) {
 	validTrapPerks := map[string]bool{
 		"caltrops":       true,
@@ -229,8 +233,8 @@ func TestTrapper_ArcherGetsTrapPerkAtBronze(t *testing.T) {
 		"marker_trap":    true,
 	}
 
-	// Run with several seeds to confirm the assignment fires consistently.
-	for seed := int64(1); seed <= 10; seed++ {
+	trapperSeeds := 0
+	for seed := int64(1); seed <= 20; seed++ {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
 		s.mu.Lock()
 
@@ -244,6 +248,13 @@ func TestTrapper_ArcherGetsTrapPerkAtBronze(t *testing.T) {
 		// Force Bronze rank-up.
 		s.addUnitXPLocked(archer, 100)
 
+		// Skip non-trapper seeds — Marksman path is covered by its own tests.
+		if archer.ProgressionPath != unitPathTrapper {
+			s.mu.Unlock()
+			continue
+		}
+		trapperSeeds++
+
 		got := archer.PerkIDs
 		if len(got) != 1 {
 			t.Errorf("seed %d: expected exactly 1 perk at Bronze, got %v", seed, got)
@@ -253,11 +264,11 @@ func TestTrapper_ArcherGetsTrapPerkAtBronze(t *testing.T) {
 		if !validTrapPerks[got[0]] {
 			t.Errorf("seed %d: perk %q is not a valid Bronze trap perk", seed, got[0])
 		}
-		if archer.ProgressionPath != unitPathTrapper {
-			t.Errorf("seed %d: ProgressionPath = %q, want %q", seed, archer.ProgressionPath, unitPathTrapper)
-		}
 
 		s.mu.Unlock()
+	}
+	if trapperSeeds == 0 {
+		t.Fatalf("no seed in [1,20] selected the Trapper path — RNG salt or path-assignment logic likely broken")
 	}
 }
 

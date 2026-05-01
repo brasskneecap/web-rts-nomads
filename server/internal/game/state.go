@@ -143,6 +143,12 @@ type Unit struct {
 
 	Damage                 int
 	AttackRange            float64
+	// BaseAttackRange is the catalog AttackRange before any perk-driven range
+	// modifiers (eagle_spirit, bullseye). Treated like BaseDamage / BaseAttackSpeed:
+	// recomputed into AttackRange by applyRankModifiersLocked so range-modifying
+	// perks (Marksman) flow through to combat acquisition, projectile flight,
+	// pierce length, and the HUD without scattered mutation sites.
+	BaseAttackRange        float64
 	AttackSpeed            float64
 	// MoveSpeed is the effective pixels-per-second for pathing movement, after
 	// rank/path/perk modifiers are applied. Populated by applyRankModifiersLocked.
@@ -282,6 +288,19 @@ type GameState struct {
 	Projectiles      []*Projectile
 	nextProjectileID int
 
+	// Explosions is the set of live AoE VFX (Marksman explosive_tips, future
+	// explosion-based perks). Purely visual — gameplay damage is applied by
+	// the perk that queued each entry. Ticked in tickExplosionsLocked, dropped
+	// when their lifetime hits 0. See explosion.go.
+	Explosions      []*Explosion
+	nextExplosionID int
+
+	// critEventsThisTick is the per-tick queue of (target, damage) entries
+	// for critical hits that landed this tick. Drained by Snapshot() and
+	// truncated immediately after so each tick's queue covers exactly the
+	// crits applied during that tick. See crit_events.go.
+	critEventsThisTick []critEvent
+
 	// guardianAuraCache maps recipient unit ID to the combined armor bonus they
 	// receive from the strongest guardian_aura covering them this tick.
 	// FlatArmor and PercentArmor are taken as max independently across all
@@ -380,6 +399,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		nextBannerID:        1,
 		nextTrapID:          1,
 		nextProjectileID:    1,
+		nextExplosionID:     1,
 		matchSeed:           seed,
 		rngPerks:            mrand.New(mrand.NewSource(seed ^ saltPerks)),
 		rngCosmetic:         mrand.New(mrand.NewSource(seed ^ saltCosmetic)),
@@ -513,6 +533,16 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		effectiveAttackSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
 		effectiveMoveSpeed := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
 
+		// Crit values are reported with the target left nil — the snapshot
+		// shows the unit's own crit chance against an unmarked target so the
+		// HUD value is stable. Hunter's Mark contribution shows up in combat,
+		// not in the static HUD readout. CritChance/CritMultiplier are 0 for
+		// units with no crit sources, which omitempty drops from the wire.
+		baseCritChance := s.unitCritChanceLocked(unit, nil)
+		critMultiplier := 0.0
+		if baseCritChance > 0 || s.perkCritMultiplierBonusLocked(unit) > 0 {
+			critMultiplier = s.unitCritMultiplierLocked(unit)
+		}
 		snapshot := protocol.UnitSnapshot{
 			ObjectiveID:         unit.ObjectiveID,
 			ID:                  unit.ID,
@@ -531,8 +561,11 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			MaxHP:               unit.MaxHP,
 			Damage:              effectiveDamage,
 			AttackSpeed:         effectiveAttackSpeed,
+			AttackRange:         unit.AttackRange,
 			MoveSpeed:           effectiveMoveSpeed,
 			Armor:               s.effectiveArmorLocked(unit),
+			CritChance:          baseCritChance,
+			CritMultiplier:      critMultiplier,
 			HealthRegen:         unit.HealthRegenPerSecond,
 			XP:                  unit.XP,
 			Rank:                unit.Rank,
@@ -616,16 +649,18 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			}
 		}
 		projectiles = append(projectiles, protocol.ProjectileSnapshot{
-			ID:           proj.ID,
-			OwnerUnitID:  proj.OwnerUnitID,
-			OwnerID:      proj.OwnerPlayerID,
-			TargetUnitID: proj.TargetUnitID,
-			OriginX:      proj.OriginX,
-			OriginY:      proj.OriginY,
-			TargetX:      proj.TargetX,
-			TargetY:      proj.TargetY,
-			Progress:     progress,
-			Variant:      proj.Variant,
+			ID:               proj.ID,
+			OwnerUnitID:      proj.OwnerUnitID,
+			OwnerID:          proj.OwnerPlayerID,
+			TargetUnitID:     proj.TargetUnitID,
+			OriginX:          proj.OriginX,
+			OriginY:          proj.OriginY,
+			TargetX:          proj.TargetX,
+			TargetY:          proj.TargetY,
+			Progress:         progress,
+			Variant:          proj.Variant,
+			DoubleShotSecond: proj.DoubleShotSecond,
+			Pierce:           proj.Pierce,
 		})
 	}
 
@@ -690,6 +725,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Banners:     banners,
 		Traps:       traps,
 		Projectiles: projectiles,
+		Explosions:  s.snapshotExplosionsLocked(),
+		CritEvents:  s.snapshotCritEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -715,6 +752,12 @@ func (s *GameState) Update(dt float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Drop the previous tick's crit events. Damage application this tick will
+	// repopulate the queue, and the next snapshot will drain it. Keeps the
+	// list scoped exactly to "crits that landed during this tick" so the
+	// client can match against its HP-diff damage events.
+	s.resetCritEventsThisTickLocked()
+
 	s.battleTracker.tickLocked(dt)
 	s.updateUnitProductionsLocked(dt)
 	s.cancelOrphanedPendingBuildingsLocked()
@@ -728,6 +771,7 @@ func (s *GameState) Update(dt float64) {
 	// Projectiles tick after combat resolution so shots fired this tick wait
 	// a full dt before decaying on the next Update pass.
 	s.tickProjectilesLocked(dt)
+	s.tickExplosionsLocked(dt)
 	s.tickEnemySpawnpointsLocked(dt, blocked)
 	s.tickTrapEffectsLocked(dt)            // zone effects + trigger detection
 	s.tickTrapperSilverDebuffsLocked(dt)   // barbed ramp, lasting_flames exit, burn DoT
@@ -753,6 +797,11 @@ func (s *GameState) Update(dt float64) {
 				unit.PerkState.WeakenedMultiplier = 0
 			}
 		}
+		// Hunter's Mark stacks (Marksman silver/gold) decay per-source in the
+		// cross-unit loop because the debuff lives on enemies that may not
+		// own any Marksman perk themselves — same pattern as MarkStacks /
+		// WeakenedRemaining.
+		unit.PerkState.decayHuntersMarkStacks(dt)
 		// Mark stacks decay independently (each source ticks down its own
 		// Remaining). lastExpired is true only when the final active stack
 		// hits 0 this tick — that's when mark-gone effects (Final Exposure,

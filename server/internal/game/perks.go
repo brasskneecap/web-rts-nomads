@@ -364,6 +364,40 @@ type UnitPerkState struct {
 	// than the trapper-unit bucket. Cleared alongside the other Final Exposure
 	// fields when the mark expires.
 	FinalExposureTrapID string
+
+	// ── Marksman: Hunter's Mark stacks (silver hunters_mark + gold explosive_tips)
+	// Stacks per source — same Marksman re-applying refreshes its stack;
+	// distinct attackers stack up to maxHuntersMarkStacks. Decay happens in
+	// state.go Update() per-unit loop because the debuff lives on enemies that
+	// don't own the perk themselves (cross-unit pattern, mirrors MarkStacks).
+	// Total crit-chance bonus has diminishing returns and is computed in
+	// huntersMarkCritBonus() — see perks_marksman.go.
+	HuntersMarkStacks []huntersMarkStack
+
+	// ── Marksman: Double Shot deferred-fire bookkeeping (gold double_shot)
+	// On every primary attack the attacker arms DoubleShotPendingSeconds with
+	// the configured delay and DoubleShotPendingTargetID with the target ID.
+	// tickUnitPerkStateLocked decrements the timer and, when it reaches 0,
+	// fires the deferred shot via fireDeferredDoubleShotLocked. The recursion
+	// guard prevents the second shot from arming a third — mirrors
+	// RetaliationActive / PainShareActive patterns.
+	DoubleShotPendingSeconds  float64
+	DoubleShotPendingTargetID int
+	DoubleShotInProgress      bool
+
+	// ── Marksman: Explosive Tips recursion guard (gold explosive_tips)
+	// Set true while the AoE damage is being applied so a victim with their
+	// own explosive_tips (or a future on-damage perk that re-enters this
+	// hook) cannot trigger a chain reaction. Cleared when the explosion call
+	// returns. Per-attacker — different attackers explode independently.
+	ExplosiveTipsActive bool
+
+	// ── Marksman: fire-time recursion guard (split shot / double shot)
+	// Set true while a unit is dispatching its fire-time Marksman effects so
+	// that secondary projectiles (split arrows, deferred double-shot fires)
+	// don't recurse into the same dispatch and chain into infinite shots.
+	// Per-attacker; different attackers' guards are independent.
+	MarksmanFireInProgress bool
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -782,6 +816,19 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 		// loop (cross-unit pattern, same as WeakenedRemaining).
 		case "caltrops", "fire_pit", "explosive_trap", "marker_trap":
 			s.tickTrapPlacementLocked(unit, def, dt)
+
+		case "double_shot":
+			// Marksman gold — defer-fire timer. The arming logic lives in
+			// onMarksmanAttackFiredLocked; this branch only decrements the
+			// timer and fires when it expires. Cleared whether the deferred
+			// shot succeeded or not so the next primary attack can re-arm.
+			if unit.PerkState.DoubleShotPendingSeconds > 0 {
+				unit.PerkState.DoubleShotPendingSeconds = math.Max(0, unit.PerkState.DoubleShotPendingSeconds-dt)
+				if unit.PerkState.DoubleShotPendingSeconds == 0 && unit.PerkState.DoubleShotPendingTargetID != 0 {
+					s.fireDeferredDoubleShotLocked(unit)
+					unit.PerkState.DoubleShotPendingTargetID = 0
+				}
+			}
 
 		// ── add cases for new perks with timer/decay needs below this line ──
 		}

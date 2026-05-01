@@ -61,6 +61,12 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 				total += def.Config["attackSpeedBonus"]
 			}
 
+		case "hawk_spirit":
+			// Marksman bronze passive — flat attack-speed bonus added to the
+			// unit's effective attack speed. Stacks additively with any other
+			// AS sources (banner auras, momentum, etc.).
+			total += def.Config["attackSpeedBonus"]
+
 		// ── add cases for new attack-speed perks below this line ────────────
 		}
 
@@ -90,16 +96,19 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 //     after this function returns and handles it there.
 //
 // ADD NEW ON-ATTACK PERKS HERE.
-// primaryDamage is the raw damage dealt by the triggering attack. Not consumed
-// by current Bronze Berserker perks, but rename from _ when a future perk
-// needs to scale off or react to the hit value.
-func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, _ int, deadUnitIDs *[]int) {
+// primaryDamage is the raw damage dealt by the triggering attack. Used by
+// Marksman split-shot to scale extra-shot damage proportionally; future
+// perks that scale off the hit value can read it the same way.
+func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, primaryDamage int, deadUnitIDs *[]int) {
 	if attacker == nil || len(attacker.PerkIDs) == 0 {
 		return
 	}
 
 	// Reset idle timer once per attack — shared across all the attacker's perks.
 	attacker.PerkState.TimeSinceLastAttack = 0
+	_ = primaryDamage // available for future hooks; Marksman fire-time effects
+	// have moved to fireProjectileLocked for visible-projectile correctness.
+	_ = deadUnitIDs
 
 	for _, perkID := range attacker.PerkIDs {
 		def := perkDefByID(perkID)
@@ -371,6 +380,11 @@ func (s *GameState) perkBonusDamageMultiplierLocked(attacker, target *Unit) floa
 				}
 			}
 
+		case "hawk_spirit", "vulture_spirit":
+			// Marksman bronze passives — flat outgoing damage bonus, target-
+			// agnostic so it shows in the HUD via Snapshot()'s nil-target call.
+			total += def.Config["damageMultiplier"]
+
 		// ── add cases for new damage-multiplier perks below this line ───────
 		}
 	}
@@ -449,4 +463,10 @@ func (s *GameState) onPerkAttackDamageAppliedLocked(attacker, target *Unit, dama
 		// ── add cases for new on-hit reaction perks below this line ─────────
 		}
 	}
+
+	// Marksman post-hit dispatch — explosive_tips fires its AoE here so it
+	// runs after the primary hit's damage has already landed (and after any
+	// other on-hit perk reactions like blood_sustain heal), keeping order
+	// predictable and preventing the explosion from short-circuiting them.
+	s.onMarksmanDamageAppliedLocked(attacker, target, damage)
 }

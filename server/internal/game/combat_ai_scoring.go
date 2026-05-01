@@ -33,7 +33,7 @@ func (s *GameState) shouldDropCurrentTargetLocked(unit *Unit, profile CombatProf
 		// to engage — the scoring system will then pick them up instead of the
 		// unit running straight past them to hit the building.
 		// This mirrors the old tickEnemyAILocked aggroRadius behaviour.
-		for _, hostile := range ctx.index.query(unit.X, unit.Y, profile.DetectionRange*0.75) {
+		for _, hostile := range ctx.index.query(unit.X, unit.Y, effectiveDetectionRange(unit, profile)*0.75) {
 			if !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
 				continue
 			}
@@ -51,7 +51,7 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 	// This prevents a Hold unit from "pre-acquiring" a target it can't shoot
 	// until the enemy closes to AttackRange, which would cause the unit to
 	// sit Attacking with 0 damage dealt until the enemy finally steps in range.
-	detectionRange := profile.DetectionRange
+	detectionRange := effectiveDetectionRange(unit, profile)
 	if unit.Order.Type == OrderHold {
 		detectionRange = unit.AttackRange
 	}
@@ -125,7 +125,7 @@ func (s *GameState) scoreUnitTargetLocked(unit, target *Unit, profile CombatProf
 		inRange = 1
 	}
 	moveNeed := math.Max(0, dist-unit.AttackRange)
-	distanceScore := 1 - clamp01(dist/profile.DetectionRange)
+	distanceScore := 1 - clamp01(dist/effectiveDetectionRange(unit, profile))
 	reachScore := 1 - clamp01(moveNeed/math.Max(profile.MaxChaseDistance, 1))
 	danger := s.estimateDangerScoreLocked(unit, target.X, target.Y, profile, ctx)
 	threatScore := clamp01(s.getThreatValueLocked(unit, target.ID) / 80)
@@ -173,7 +173,7 @@ func (s *GameState) scoreBuildingTargetLocked(unit *Unit, building *protocol.Bui
 	}
 	moveNeed := math.Max(0, dist-unit.AttackRange)
 	reachScore := 1 - clamp01(moveNeed/math.Max(profile.MaxChaseDistance, 1))
-	distanceScore := 1 - clamp01(dist/profile.DetectionRange)
+	distanceScore := 1 - clamp01(dist/effectiveDetectionRange(unit, profile))
 	importance := clamp01(s.buildingStrategicValue(building) / 12)
 	cluster := 0.0
 	if profile.AoERadius > 0 {

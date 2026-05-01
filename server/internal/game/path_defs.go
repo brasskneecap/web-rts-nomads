@@ -31,11 +31,19 @@ type pathCatalogFile struct {
 // in-memory struct) with json tags. A separate type keeps pathModifierDef
 // free of serialization concerns and lets the loader validate rank keys
 // before exposing them to the rest of the codebase.
+//
+// AttackRange (flat override, in world pixels) and AttackRangeMultiplier
+// (multiplier on top of unit.BaseAttackRange) are both optional. Omitted /
+// zero values are no-ops at load time so paths that don't tune attack range
+// can continue to omit them. When both are present in a rank row, the flat
+// override wins — see applyRankModifiersLocked for the resolution order.
 type pathRankStatsJSON struct {
 	MaxHPMultiplier       float64 `json:"maxHPMultiplier"`
 	DamageMultiplier      float64 `json:"damageMultiplier"`
 	AttackSpeedMultiplier float64 `json:"attackSpeedMultiplier"`
 	MoveSpeedMultiplier   float64 `json:"moveSpeedMultiplier"`
+	AttackRange           float64 `json:"attackRange"`
+	AttackRangeMultiplier float64 `json:"attackRangeMultiplier"`
 	Armor                 int     `json:"armor"`
 }
 
@@ -55,9 +63,9 @@ var pathModifiersByKey map[string]pathModifierDef
 // If you want the Vanguard or Berserker curve tuned instead, edit the file
 // under catalog/units/<unit>/paths/ — those ARE JSON-configurable.
 var defaultRankCurve = map[string]pathModifierDef{
-	unitRankBronze: {Path: unitPathNone, Rank: unitRankBronze, MaxHPMultiplier: 1.10, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, Armor: 0},
-	unitRankSilver: {Path: unitPathNone, Rank: unitRankSilver, MaxHPMultiplier: 1.20, DamageMultiplier: 1.25, AttackSpeedMultiplier: 1.10, MoveSpeedMultiplier: 1.00, Armor: 0},
-	unitRankGold:   {Path: unitPathNone, Rank: unitRankGold, MaxHPMultiplier: 1.35, DamageMultiplier: 1.50, AttackSpeedMultiplier: 1.25, MoveSpeedMultiplier: 1.00, Armor: 0},
+	unitRankBronze: {Path: unitPathNone, Rank: unitRankBronze, MaxHPMultiplier: 1.10, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},
+	unitRankSilver: {Path: unitPathNone, Rank: unitRankSilver, MaxHPMultiplier: 1.20, DamageMultiplier: 1.25, AttackSpeedMultiplier: 1.10, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},
+	unitRankGold:   {Path: unitPathNone, Rank: unitRankGold, MaxHPMultiplier: 1.35, DamageMultiplier: 1.50, AttackSpeedMultiplier: 1.25, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},
 }
 
 func pathModifierKey(path, rank string) string {
@@ -138,6 +146,15 @@ func init() {
 					// archer/paths. Path ids are globally unique; fail loud.
 					panic(fmt.Sprintf("%s: duplicate definition for %s", rel, key))
 				}
+				// Attack-range fields are optional in the JSON. AttackRange
+				// (flat override, in pixels) is preserved as-is; 0 means
+				// "no override". AttackRangeMultiplier defaults to 1.0 when
+				// missing / zero so paths that don't tune range continue to
+				// work without authoring the field.
+				attackRangeMult := stats.AttackRangeMultiplier
+				if attackRangeMult <= 0 {
+					attackRangeMult = 1.0
+				}
 				pathModifiersByKey[key] = pathModifierDef{
 					Path:                  file.Path,
 					Rank:                  rankName,
@@ -145,6 +162,8 @@ func init() {
 					DamageMultiplier:      stats.DamageMultiplier,
 					AttackSpeedMultiplier: stats.AttackSpeedMultiplier,
 					MoveSpeedMultiplier:   stats.MoveSpeedMultiplier,
+					AttackRange:           stats.AttackRange,
+					AttackRangeMultiplier: attackRangeMult,
 					Armor:                 stats.Armor,
 				}
 			}

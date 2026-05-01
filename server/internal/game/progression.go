@@ -60,6 +60,20 @@ var rankProgressionTable = []rankProgressionDef{
 // Armor is a defense rating producing percentage damage reduction via
 // applyArmorMitigation (diminishing returns — see armorMitigationK).
 // MoveSpeedMultiplier is path-only (no rank scaling) — mirrors Armor.
+//
+// Attack-range tuning has two knobs:
+//
+//	AttackRange           — flat override (in world pixels). When > 0, replaces
+//	                        unit.BaseAttackRange entirely. Use when you want
+//	                        an absolute reach regardless of the unit's catalog
+//	                        base (e.g. Marksman: "this path shoots 1520px").
+//	AttackRangeMultiplier — multiplier on top of unit.BaseAttackRange (or the
+//	                        flat override above when both are set). Defaults
+//	                        to 1.0 (no change). Use when you want range to
+//	                        scale with the catalog base across unit types.
+//
+// Perk-driven bonuses (eagle_spirit, bullseye, etc.) ALWAYS stack on top of
+// whatever the path resolves to, via perkAttackRangeMultiplierLocked.
 type pathModifierDef struct {
 	Path                  string
 	Rank                  string
@@ -67,6 +81,8 @@ type pathModifierDef struct {
 	DamageMultiplier      float64
 	AttackSpeedMultiplier float64
 	MoveSpeedMultiplier   float64
+	AttackRange           float64
+	AttackRangeMultiplier float64
 	Armor                 int
 }
 
@@ -90,7 +106,7 @@ const (
 
 // identityPathModifier is returned for units with no path or unknown path/rank combos.
 var identityPathModifier = pathModifierDef{
-	MaxHPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, Armor: 0,
+	MaxHPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, AttackRangeMultiplier: 1.0, Armor: 0,
 }
 
 // Per-path stat multipliers live in JSON — one file per path under
@@ -304,6 +320,31 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	unit.AttackSpeed = math.Max(0.1, unit.BaseAttackSpeed*pathDef.AttackSpeedMultiplier)
 	unit.MoveSpeed = math.Max(1.0, unit.BaseMoveSpeed*pathDef.MoveSpeedMultiplier)
 	unit.Armor = pathDef.Armor
+	// Bake path × perk attack-range adjustments back onto unit.AttackRange so
+	// every consumer (target acquisition, combat scoring, projectile flight,
+	// pierce length, snapshot HUD) reads the effective range without a getter.
+	// Mirrors the BaseDamage → Damage pattern above.
+	//
+	// Resolution order:
+	//   1. baseRange = pathDef.AttackRange when > 0 (flat override),
+	//                  else unit.BaseAttackRange × pathDef.AttackRangeMultiplier.
+	//   2. effective = baseRange × (1 + perkAttackRangeMultiplierLocked).
+	//
+	// Path tuning lives in catalog/units/<u>/paths/<p>/<p>.json. Perk bonus
+	// comes from eagle_spirit / bullseye / future range perks.
+	if unit.BaseAttackRange > 0 {
+		var baseRange float64
+		if pathDef.AttackRange > 0 {
+			baseRange = pathDef.AttackRange
+		} else {
+			pathRangeMult := pathDef.AttackRangeMultiplier
+			if pathRangeMult <= 0 {
+				pathRangeMult = 1.0
+			}
+			baseRange = unit.BaseAttackRange * pathRangeMult
+		}
+		unit.AttackRange = math.Max(0, baseRange*(1.0+s.perkAttackRangeMultiplierLocked(unit)))
+	}
 	if unit.UnitType == "soldier" && unit.ProgressionPath == unitPathNone {
 		unit.Armor = soldierBaseArmor
 	}

@@ -337,8 +337,18 @@ export type UnitSnapshot = {
   maxHp: number
   damage?: number
   attackSpeed?: number
+  /** Effective attack range in world pixels — base catalog range × any
+   *  perk range multipliers (eagle_spirit, bullseye). Omitted for melee. */
+  attackRange?: number
   moveSpeed?: number
   armor?: number
+  /** Effective crit probability against an unmarked target (0..1). Hunter's
+   *  Mark stacks add target-dependent crit at hit time and are NOT folded
+   *  into this snapshot value. Omitted when the unit has no crit sources. */
+  critChance?: number
+  /** Damage multiplier applied on a successful crit (default 2.0; bullseye
+   *  raises to 2.5). Omitted when the unit has no crit sources. */
+  critMultiplier?: number
   /** Passive HP regeneration rate in HP per second. Omitted when 0. */
   healthRegen?: number
   xp?: number
@@ -517,6 +527,45 @@ export type ProjectileSnapshot = {
   /** Sprite key — defaults to the attacker's unit type. Perks may override it
    *  at fire time for alternate shot visuals (e.g. "fire_arrow"). */
   variant?: string
+  /** True on the second arrow of a Double Shot pair (Marksman gold). The
+   *  client uses this to render a combined yellow damage number after both
+   *  arrows have landed. */
+  doubleShotSecond?: boolean
+  /** True for Marksman silver pierce arrows. The renderer uses it to extend
+   *  the arrow visual to TargetX/Y (which is the far endpoint of the pierce
+   *  line, not a homing target position). */
+  pierce?: boolean
+}
+
+/**
+ * CritEventSnapshot is a per-tick record that a critical hit landed on a
+ * unit. The client matches each entry to its HP-diff damage event by
+ * (unitId, damage) and renders the floating number with a red circle behind
+ * it. Empty when no crits land — the field is omitted from JSON entirely.
+ */
+export type CritEventSnapshot = {
+  unitId: number
+  damage: number
+}
+
+/**
+ * ExplosionSnapshot is a transient AoE VFX (Marksman explosive_tips, future
+ * explosion-based perks). The client renders an expanding orange-red ring
+ * that fades over its lifetime; `progress` (0 = just spawned, 1 = ending)
+ * drives the animation so renders stay in sync with the server's lifetime.
+ */
+export type ExplosionSnapshot = {
+  id: string
+  ownerUnitId?: number
+  ownerId?: string
+  x: number
+  y: number
+  radius: number
+  /** Variant — currently "explosive_tips". Future perks set their own
+   *  string; the renderer falls back to a generic orange-red glow when
+   *  the variant is unknown. */
+  variant?: string
+  progress: number
 }
 
 export type MatchSnapshotMessage = {
@@ -532,6 +581,8 @@ export type MatchSnapshotMessage = {
   banners?: BannerSnapshot[]
   traps?: TrapSnapshot[]
   projectiles?: ProjectileSnapshot[]
+  explosions?: ExplosionSnapshot[]
+  critEvents?: CritEventSnapshot[]
   // Present only when the active map has debug.battleTracker=true. Absent
   // otherwise — the client treats absence as "debug tracker disabled".
   battleTracker?: BattleTrackerSnapshot

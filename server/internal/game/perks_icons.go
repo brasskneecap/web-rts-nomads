@@ -258,6 +258,12 @@ func (s *GameState) activeDebuffIconsLocked(unit *Unit) []protocol.ActiveEffectI
 	if len(unit.PerkState.BurnStacks) > 0 {
 		addIcon("debuff-burning", len(unit.PerkState.BurnStacks))
 	}
+	// Hunter's Mark (Marksman) — distinct icon from challengers_mark/marker_trap
+	// because its mechanic is different (crit-chance bonus, not damage amp).
+	// Stack count reflects number of distinct sources currently marking.
+	if unit.PerkState.huntersMarkCount() > 0 {
+		addIcon("debuff-hunters-mark", unit.PerkState.huntersMarkCount())
+	}
 	return active
 }
 

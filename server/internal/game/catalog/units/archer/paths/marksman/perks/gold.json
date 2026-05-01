@@ -1,1 +1,36 @@
-[]
+[
+  {
+    "id": "double_shot",
+    "displayName": "Double Shot",
+    "icon": "perk-double-shot",
+    "description": "Each attack has a chance to fire a second arrow shortly after the first. The second shot rolls its own crit and benefits from Split Shot and Pierce when owned.",
+    "tooltipTemplate": "{procChance%} chance on each attack to fire a second shot {delaySeconds:2}s later. The second shot rerolls crit and triggers Split Shot / Pierce when owned.",
+    "config": {
+      "procChance": 0.25,
+      "delaySeconds": 0.20
+    }
+  },
+  {
+    "id": "explosive_tips",
+    "displayName": "Explosive Tips",
+    "icon": "perk-explosive-tips",
+    "description": "Each hit triggers a small explosion at the target. Enemies caught in the blast take damage. When paired with Hunter's Mark, blast victims also receive a mark stack. Explosions never chain.",
+    "tooltipTemplate": "Hits explode for {damageMultiplier%} damage in a {explosionRadius}px radius. Applies Hunter's Mark to blast victims if Hunter's Mark is owned. Explosions cannot trigger more explosions.",
+    "config": {
+      "explosionRadius": 70,
+      "damageMultiplier": 0.5
+    }
+  },
+  {
+    "id": "bullseye",
+    "displayName": "Bullseye",
+    "icon": "perk-bullseye",
+    "description": "Master archer: doubled range, increased crit chance, and devastating crit damage.",
+    "tooltipTemplate": "Attack range +{attackRangeBonus%}. Crit chance +{critChanceBonus%}. Crit damage {critMultiplier:1}×.",
+    "config": {
+      "attackRangeBonus": 1.00,
+      "critChanceBonus": 0.15,
+      "critMultiplier": 2.5
+    }
+  }
+]

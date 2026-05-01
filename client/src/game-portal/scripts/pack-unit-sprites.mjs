@@ -89,6 +89,32 @@ async function readPackedAt(dir) {
   }
 }
 
+// Writes sprites.json only when the manifest content (everything except packedAt)
+// differs from what's already on disk. Without this, a script-mtime bump that
+// invalidates every folder's `isUpToDate` check would rewrite every sprites.json
+// with a fresh timestamp even when the actual output is unchanged — pure git churn.
+// When the content matches, we leave the existing file untouched (and its old
+// packedAt with it), which is fine: the next run will re-do the (cheap) pack
+// work but again skip the write.
+async function writeManifestIfChanged(dir, manifest) {
+  const filePath = path.join(dir, 'sprites.json')
+  const { packedAt: _drop, ...newWithoutTs } = manifest
+
+  try {
+    const prior = JSON.parse(await fs.readFile(filePath, 'utf8'))
+    const { packedAt: _priorTs, ...priorWithoutTs } = prior
+    if (JSON.stringify(priorWithoutTs) === JSON.stringify(newWithoutTs)) {
+      return false
+    }
+  } catch {
+    /* missing or unparseable — fall through and write */
+  }
+
+  const out = { ...newWithoutTs, packedAt: new Date().toISOString() }
+  await fs.writeFile(filePath, JSON.stringify(out, null, 2) + '\n')
+  return true
+}
+
 // Newest mtime (ms) across a list of candidate input files. Missing files are
 // silently ignored — the existing pack flow already tolerates pruned frames.
 async function newestMtimeMs(files) {
@@ -328,15 +354,13 @@ async function packUnit(unitDir) {
     packedAt: new Date().toISOString(),
   }
 
-  await fs.writeFile(
-    path.join(unitDir, 'sprites.json'),
-    JSON.stringify(manifest, null, 2) + '\n',
-  )
+  const wroteManifest = await writeManifestIfChanged(unitDir, manifest)
 
   return {
     unitKey,
     rotations: Object.keys(rotations).length,
     animations: Object.keys(animations).length,
+    wroteManifest,
   }
 }
 
@@ -533,13 +557,11 @@ async function packObject(objectDir) {
       ...preserved,
       packedAt: new Date().toISOString(),
     }
-    await fs.writeFile(
-      path.join(objectDir, 'sprites.json'),
-      JSON.stringify(manifest, null, 2) + '\n',
-    )
+    const wroteManifest = await writeManifestIfChanged(objectDir, manifest)
     return {
       objectKey,
       animations: Object.keys(simple.animations).length,
+      wroteManifest,
     }
   }
 
@@ -645,14 +667,12 @@ async function packObject(objectDir) {
     packedAt: new Date().toISOString(),
   }
 
-  await fs.writeFile(
-    path.join(objectDir, 'sprites.json'),
-    JSON.stringify(manifest, null, 2) + '\n',
-  )
+  const wroteManifest = await writeManifestIfChanged(objectDir, manifest)
 
   return {
     objectKey,
     animations: Object.keys(animations).length,
+    wroteManifest,
   }
 }
 
@@ -690,8 +710,9 @@ async function main() {
       continue
     }
     packed += 1
+    const suffix = result.wroteManifest ? '' : ' — no manifest changes'
     console.log(
-      `[pack:sprites] ${result.unitKey}: ${result.rotations} rotations, ${result.animations} animations`,
+      `[pack:sprites] ${result.unitKey}: ${result.rotations} rotations, ${result.animations} animations${suffix}`,
     )
   }
 
@@ -722,7 +743,8 @@ async function main() {
       continue
     }
     packedObjects += 1
-    console.log(`[pack:sprites] object ${result.objectKey}: ${result.animations} animations`)
+    const suffix = result.wroteManifest ? '' : ' — no manifest changes'
+    console.log(`[pack:sprites] object ${result.objectKey}: ${result.animations} animations${suffix}`)
   }
 
   const cacheSummary = upToDate + upToDateObjects > 0

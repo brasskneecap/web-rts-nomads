@@ -1,40 +1,52 @@
 {
   "key": "vanguard",
   "size": {
-    "width": 68,
-    "height": 68
+    "width": 120,
+    "height": 120
   },
   "rotations": {
     "south": "rotations/south.png",
-    "west": "rotations/west.png",
+    "south-east": "rotations/south-east.png",
     "east": "rotations/east.png",
-    "north": "rotations/north.png"
+    "north-east": "rotations/north-east.png",
+    "north": "rotations/north.png",
+    "north-west": "rotations/north-west.png",
+    "west": "rotations/west.png",
+    "south-west": "rotations/south-west.png"
   },
   "animations": {
-    "walking": {
-      "frameCount": 4,
-      "frameWidth": 68,
-      "frameHeight": 68,
-      "sheet": "packed/walking.png",
-      "rowOrder": [
-        "north",
-        "south",
-        "east",
-        "west"
-      ]
-    },
     "attacking": {
-      "frameCount": 4,
-      "frameWidth": 68,
-      "frameHeight": 68,
+      "frameCount": 9,
+      "frameWidth": 120,
+      "frameHeight": 120,
       "sheet": "packed/attacking.png",
       "rowOrder": [
         "north",
         "south",
         "east",
-        "west"
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    },
+    "walking": {
+      "frameCount": 6,
+      "frameWidth": 120,
+      "frameHeight": 120,
+      "sheet": "packed/walking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
       ]
     }
   },
-  "packedAt": "2026-04-22T21:34:14.681Z"
+  "packedAt": "2026-05-01T06:29:23.659Z"
 }

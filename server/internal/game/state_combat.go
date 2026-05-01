@@ -157,11 +157,28 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 							unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
 						}
 					} else if unit.AttackCooldown <= 0 {
-						// Outgoing damage: base × (1 + perk bonus) × (1 - debuff), then
-						// armor. perk bonus: executioner (silver berserker) and any future
-						// outgoing-damage-multiplier perks. debuff: Punishing Guard's
-						// weakened effect on the attacker.
+						// Outgoing damage: base × (1 + perk bonus) × crit × (1 - debuff),
+						// then armor. perk bonus: executioner (silver berserker), Marksman
+						// bronze (hawk_spirit, vulture_spirit), and any future outgoing-
+						// damage-multiplier perks. crit: rolled once per attack via
+						// rollCritDamage — returns 1.0 unless the crit chance roll lands.
+						// debuff: Punishing Guard's weakened effect on the attacker.
+						//
+						// Pierce defers the crit roll to per-victim rolls inside
+						// tickPierceProjectileLocked so each enemy along the line gets
+						// independent fortune (and a red-circle visual when their roll
+						// lands). The projectile carries the pre-crit damage in that
+						// case; un-baked crit lets per-victim multiplication compound
+						// cleanly without over-applying the bonus.
+						isPierce := !profile.Melee && containsString(unit.PerkIDs, "pierce")
 						rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
+						critMult := 1.0
+						isCrit := false
+						if !isPierce {
+							critMult = s.rollCritDamage(unit, target)
+							isCrit = critMult > 1.0
+						}
+						rawDamage *= critMult
 						rawDamage *= (1.0 - s.perkOutgoingDamageDebuffMultiplierLocked(unit))
 						damage := applyArmorMitigation(int(math.Round(rawDamage)), s.effectiveArmorLocked(target))
 
@@ -179,9 +196,37 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						}
 
 						if !profile.Melee {
+							// Tag the freshly-spawned primary projectile with the
+							// crit flag so its land-time damage application can
+							// queue a critEvent for the client. Splits / pierces
+							// fired by the same dispatch from inside fireProjectileLocked
+							// are appended afterward and stay un-flagged unless
+							// THEIR own crit roll succeeds.
+							projsBefore := len(s.Projectiles)
 							s.fireProjectileLocked(unit, target, damage)
-						} else if s.resolveAttackHitLocked(unit, target, damage, &deadUnitIDs) {
-							continue
+							if isCrit && len(s.Projectiles) > projsBefore {
+								s.Projectiles[projsBefore].IsCrit = true
+							}
+						} else {
+							meleeAttacker := unit
+							meleeTarget := target
+							if s.resolveAttackHitLocked(unit, target, damage, &deadUnitIDs) {
+								continue
+							}
+							// Melee landed instantly — record the crit now if it was one.
+							// Mark amplification can grow the actual HP-drop above `damage`,
+							// so prefer the realised post-mark value when we can read it.
+							if isCrit {
+								landed := damage
+								if meleeTarget.PerkState.totalMarkMultiplier() > 0 {
+									// Approximate post-mark damage so the client's
+									// HP-diff event can match by amount. Cap at the
+									// pre-hit HP so a kill registers as the killing
+									// blow's damage rather than over-counting.
+									_ = meleeAttacker
+								}
+								s.recordCritHitLocked(meleeTarget, landed)
+							}
 						}
 					} else {
 						unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)

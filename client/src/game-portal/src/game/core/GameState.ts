@@ -14,6 +14,7 @@ import type {
   PerkCooldownSnapshot,
   PlayerSnapshot,
   ProjectileSnapshot,
+  ExplosionSnapshot,
   ResourceType,
   TrapSnapshot,
   UnitCapability,
@@ -67,8 +68,18 @@ export type Unit = {
   maxHp?: number
   damage?: number
   attackSpeed?: number
+  /** Effective attack range in world pixels. Reflects perk-driven range
+   *  multipliers (eagle_spirit, bullseye); absent for melee units. */
+  attackRange?: number
   moveSpeed?: number
   armor?: number
+  /** Effective crit probability against an unmarked target (0..1). 0 / absent
+   *  for units with no crit sources. Hunter's Mark contribution is target-
+   *  dependent and not folded into this snapshot value. */
+  critChance?: number
+  /** Damage multiplier on a successful crit. 0 / absent when the unit has
+   *  no crit sources at all. */
+  critMultiplier?: number
   /** Passive HP regeneration rate in HP per second. Absent when 0. */
   healthRegen?: number
   xp?: number
@@ -180,6 +191,10 @@ const STAT_ICON_HEART = 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5
 const STAT_ICON_SWORD = 'M14.5 17.5 L3 6 L3 3 L6 3 L17.5 14.5 M20 12 L12 20.5 M16.5 17.5 L20.5 21.5 L21.5 20.5 L17.5 16.5'
 const STAT_ICON_BOOT = 'M6 3v11 M6 13h9v5 M3 18h18 M6 7h2 M6 10h2'
 const STAT_ICON_SHIELD = 'M12 2L4 5v6c0 5.5 3.5 10 8 11 4.5-1 8-5.5 8-11V5z'
+// Bow / target — used for the Marksman attack-range row.
+const STAT_ICON_BOW = 'M3 21l8-8 M3 21l5 0 M3 21l0-5 M21 3a14 14 0 0 1-14 14 M21 3a14 14 0 0 0-14 14 M16 8l3-3 M19 5l1 1'
+// Crit (target/burst) — used for the Marksman crit row.
+const STAT_ICON_CRIT = 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z M12 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M2 12h3 M19 12h3 M12 2v3 M12 19v3'
 
 export type ProductionSummary = {
   unitType: string
@@ -290,6 +305,17 @@ export type DamageEvent = {
   // False when the victim is an enemy or neutral unit (→ white number).
   isFriendly: boolean
   createdAt: number
+  /**
+   * Visual flavour of the floating number:
+   *   - 'normal'   : default white / red (default).
+   *   - 'combined' : yellow combined number rendered when a Marksman's
+   *                  Double Shot pair lands; sum of both arrows' damage on
+   *                  the same target.
+   *   - 'crit'     : critical hit — renderer draws a red circle behind the
+   *                  number. Set by matching server CritEventSnapshot
+   *                  entries against HP-diff damage events.
+   */
+  kind?: 'normal' | 'combined' | 'crit'
 }
 
 export type Vec2 = {
@@ -363,6 +389,7 @@ export class GameState {
   banners: BannerSnapshot[] = []
   traps: TrapSnapshot[] = []
   projectiles: ProjectileSnapshot[] = []
+  explosions: ExplosionSnapshot[] = []
   // Battle tracker snapshot (debug). Null when the active map does not have
   // debug.battleTracker enabled. Consumed by BattleTrackerPanel.vue.
   battleTracker: BattleTrackerSnapshot | null = null
@@ -447,7 +474,24 @@ export class GameState {
   // Drained each render by CanvasRenderer to spawn floating damage numbers.
   // Populated by applySnapshot from HP deltas between snapshots.
   damageEvents: DamageEvent[] = []
-  private prevUnitHp = new Map<number, number>()
+  // Per-unit previous snapshot state used by the HP-diff and "unit
+  // disappeared = killing blow" detectors. Storing position + ownerId +
+  // unitType lets us still render a damage number for the killing blow,
+  // since the dead unit is removed from s.Units server-side before the
+  // snapshot reaches the client.
+  private prevUnitHp = new Map<
+    number,
+    { hp: number; x: number; y: number; unitType: string; ownerId?: string }
+  >()
+  // Tracks projectiles seen in the previous snapshot so we can detect which
+  // ones have just landed (present last tick, gone this tick). Used by the
+  // Marksman Double Shot combined-damage emitter to know when to sum.
+  private prevProjectiles = new Map<string, ProjectileSnapshot>()
+  // Per-target rolling damage history (last ~500ms) for the combined yellow
+  // Double Shot number. Populated alongside the regular damageEvents push;
+  // pruned each tick. Keyed by unit id.
+  private recentDamageByUnit = new Map<number, Array<{ amount: number; at: number }>>()
+  private readonly RECENT_DAMAGE_WINDOW_MS = 500
 
   // Drained each render by CanvasRenderer to spawn floating resource numbers.
   // Populated by applySnapshot from carriedAmount deltas (drop to 0 = deposit).
@@ -524,8 +568,11 @@ export class GameState {
         maxHp: unit.maxHp,
         damage: unit.damage,
         attackSpeed: unit.attackSpeed,
+        attackRange: unit.attackRange,
         moveSpeed: unit.moveSpeed,
         armor: unit.armor,
+        critChance: unit.critChance,
+        critMultiplier: unit.critMultiplier,
         healthRegen: unit.healthRegen,
         xp: unit.xp,
         rank: unit.rank,
@@ -559,29 +606,154 @@ export class GameState {
       this.snapshotBuffer.shift()
     }
 
+    // Build per-unit crit pools for this tick so the HP-diff loop below can
+    // tag matching damage events as crits. Server pushes (unitId, damage)
+    // entries every time a crit lands; we group by unit so multi-hit ticks
+    // can match by amount, with a fallback to "any crit on this target this
+    // tick" when amounts disagree (mark amplification, etc.).
+    const critPool = new Map<number, number[]>()
+    let critTargetsThisTick: Set<number> | null = null
+    for (const evt of message.critEvents ?? []) {
+      let pool = critPool.get(evt.unitId)
+      if (!pool) {
+        pool = []
+        critPool.set(evt.unitId, pool)
+      }
+      pool.push(evt.damage)
+      if (!critTargetsThisTick) critTargetsThisTick = new Set<number>()
+      critTargetsThisTick.add(evt.unitId)
+    }
+
+    // Helper: emit a damage event with crit-pool matching and rolling
+    // history mirror, shared by the surviving-unit HP-diff loop and the
+    // killing-blow synthesis below. Pass-through `amount`, `unit info`, etc.
+    const emitDamageEvent = (
+      unitId: number,
+      unitType: string,
+      x: number,
+      y: number,
+      amount: number,
+      ownerId: string | undefined,
+    ) => {
+      let kind: 'normal' | 'crit' = 'normal'
+      const pool = critPool.get(unitId)
+      if (pool && pool.length > 0) {
+        const exactIdx = pool.indexOf(amount)
+        if (exactIdx >= 0) {
+          pool.splice(exactIdx, 1)
+          kind = 'crit'
+        } else if (critTargetsThisTick && critTargetsThisTick.has(unitId)) {
+          // Consume the closest entry to avoid re-using it on a
+          // subsequent same-tick same-target damage event.
+          pool.shift()
+          kind = 'crit'
+        }
+      }
+      this.damageEvents.push({
+        unitId,
+        unitType,
+        x,
+        y,
+        amount,
+        isFriendly: !!this.localPlayerId && ownerId === this.localPlayerId,
+        createdAt: now,
+        kind,
+      })
+      let history = this.recentDamageByUnit.get(unitId)
+      if (!history) {
+        history = []
+        this.recentDamageByUnit.set(unitId, history)
+      }
+      history.push({ amount, at: now })
+    }
+
     // Derive damage events by diffing HP against the previous snapshot. Any
     // strict decrease becomes a floating damage number. Heals (HP up) and
-    // brand-new units (no prevHp) are skipped. Units absent from this
-    // snapshot drop off prevUnitHp below so their last state doesn't linger.
+    // brand-new units (no prev) are skipped.
+    const currentUnitIds = new Set<number>()
     for (const unit of frame.units) {
-      const prevHp = this.prevUnitHp.get(unit.id)
-      if (prevHp !== undefined && unit.hp !== undefined && unit.hp < prevHp) {
-        this.damageEvents.push({
-          unitId: unit.id,
-          unitType: unit.unitType,
-          x: unit.x,
-          y: unit.y,
-          amount: prevHp - unit.hp,
-          isFriendly: !!this.localPlayerId && unit.ownerId === this.localPlayerId,
-          createdAt: now,
-        })
+      currentUnitIds.add(unit.id)
+      const prev = this.prevUnitHp.get(unit.id)
+      if (prev !== undefined && unit.hp !== undefined && unit.hp < prev.hp) {
+        const amount = prev.hp - unit.hp
+        emitDamageEvent(unit.id, unit.unitType, unit.x, unit.y, amount, unit.ownerId)
       }
     }
+
+    // Killing-blow detection — the server's drainPendingDeathsLocked removes
+    // dead units from s.Units BEFORE the snapshot reaches the client, so the
+    // HP-diff loop above never sees the final hit. Walk the previous-tick
+    // state for any unit that disappeared this tick and synthesize a damage
+    // event using prev.hp as the amount (the visible HP that went away). Use
+    // the prev-tick position so the floating number lands at the body's last
+    // known location even though the unit no longer exists.
+    for (const [unitId, prev] of this.prevUnitHp) {
+      if (currentUnitIds.has(unitId)) continue
+      if (prev.hp <= 0) continue
+      emitDamageEvent(unitId, prev.unitType, prev.x, prev.y, prev.hp, prev.ownerId)
+    }
+
     this.prevUnitHp.clear()
     for (const unit of frame.units) {
       if (unit.hp !== undefined) {
-        this.prevUnitHp.set(unit.id, unit.hp)
+        this.prevUnitHp.set(unit.id, {
+          hp: unit.hp,
+          x: unit.x,
+          y: unit.y,
+          unitType: unit.unitType,
+          ownerId: unit.ownerId,
+        })
       }
+    }
+    // Prune the rolling damage history to the last RECENT_DAMAGE_WINDOW_MS
+    // so it doesn't accumulate forever.
+    const cutoff = now - this.RECENT_DAMAGE_WINDOW_MS
+    for (const [unitId, history] of this.recentDamageByUnit) {
+      const kept = history.filter((entry) => entry.at >= cutoff)
+      if (kept.length === 0) {
+        this.recentDamageByUnit.delete(unitId)
+      } else {
+        this.recentDamageByUnit.set(unitId, kept)
+      }
+    }
+
+    // Marksman Double Shot — combined yellow damage number.
+    // When a projectile flagged `doubleShotSecond` was in flight last tick
+    // but is gone this tick, the second arrow has just landed. Sum the
+    // recent damage on its target (which includes both arrows' hits within
+    // the rolling window) and emit a combined yellow event at the target's
+    // current position. The two underlying white numbers are still rendered
+    // — combined sits on top.
+    const currentProjectileIds = new Set<string>()
+    for (const proj of message.projectiles ?? []) {
+      currentProjectileIds.add(proj.id)
+    }
+    for (const [id, prev] of this.prevProjectiles) {
+      if (currentProjectileIds.has(id)) continue
+      if (!prev.doubleShotSecond) continue
+      const targetId = prev.targetUnitId
+      if (!targetId) continue
+      const history = this.recentDamageByUnit.get(targetId)
+      if (!history || history.length === 0) continue
+      const sum = history.reduce((s, e) => s + e.amount, 0)
+      const target = frame.units.find((u) => u.id === targetId)
+      const x = target?.x ?? prev.targetX
+      const y = target?.y ?? prev.targetY
+      this.damageEvents.push({
+        unitId: targetId,
+        unitType: target?.unitType ?? 'archer',
+        x,
+        y,
+        amount: sum,
+        isFriendly: !!target && !!this.localPlayerId && target.ownerId === this.localPlayerId,
+        createdAt: now,
+        kind: 'combined',
+      })
+    }
+    // Refresh prevProjectiles for next tick's diff.
+    this.prevProjectiles.clear()
+    for (const proj of message.projectiles ?? []) {
+      this.prevProjectiles.set(proj.id, proj)
     }
 
     // Derive resource deposit events by diffing carriedAmount per unit.
@@ -623,6 +795,7 @@ export class GameState {
     this.banners = message.banners ?? []
     this.traps = message.traps ?? []
     this.projectiles = message.projectiles ?? []
+    this.explosions = message.explosions ?? []
     if (this.selectedTrapId && !this.traps.some((t) => t.id === this.selectedTrapId)) {
       this.selectedTrapId = null
     }
@@ -2240,6 +2413,47 @@ function getUnitDetails(unit: Unit): DetailItem[] {
       value: parts.join(' · '),
       icon: STAT_ICON_SWORD,
       tooltipTitle: parts.join(' · '),
+      tooltipBody: tooltipLines.join('\n'),
+    })
+  }
+
+  // Attack range — only useful for ranged units. Surfaced so Marksman perks
+  // (eagle_spirit, bullseye) that extend range are visible on the HUD.
+  if (unit.attackRange !== undefined && unit.attackRange > 0) {
+    const unitDef = UNIT_DEF_MAP.get(unit.unitType)
+    const baseRange = unitDef?.attackRange ?? unit.attackRange
+    const bonusRange = unit.attackRange - baseRange
+    const tooltipLines: string[] = [`Base attack range: ${Math.round(baseRange)}`]
+    if (Math.abs(bonusRange) >= 1) {
+      tooltipLines.push(`Bonus range: ${bonusRange > 0 ? '+' : ''}${Math.round(bonusRange)}`)
+    }
+    details.push({
+      id: 'attack-range',
+      label: 'Attack Range',
+      value: String(Math.round(unit.attackRange)),
+      icon: STAT_ICON_BOW,
+      tooltipTitle: `Attack Range: ${Math.round(unit.attackRange)}`,
+      tooltipBody: tooltipLines.join('\n'),
+    })
+  }
+
+  // Crit row — combined chance + multiplier so the player sees both values
+  // in one place. Only rendered when the unit owns a crit source (server
+  // omits the fields otherwise).
+  if ((unit.critChance ?? 0) > 0 || (unit.critMultiplier ?? 0) > 0) {
+    const chancePct = Math.round((unit.critChance ?? 0) * 100)
+    const mult = unit.critMultiplier ?? 0
+    const tooltipLines: string[] = [
+      `Crit chance: ${chancePct}%`,
+      `Crit damage: ${mult.toFixed(1)}×`,
+      'Hunter’s Mark on the target adds extra chance per stack.',
+    ]
+    details.push({
+      id: 'crit',
+      label: 'Crit',
+      value: `${chancePct}% / ${mult.toFixed(1)}×`,
+      icon: STAT_ICON_CRIT,
+      tooltipTitle: `Critical Hit: ${chancePct}% chance, ${mult.toFixed(1)}× damage`,
       tooltipBody: tooltipLines.join('\n'),
     })
   }

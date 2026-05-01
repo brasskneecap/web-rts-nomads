@@ -314,8 +314,21 @@ type UnitSnapshot struct {
 	MaxHP               int      `json:"maxHp"`
 	Damage              int      `json:"damage,omitempty"`
 	AttackSpeed         float64  `json:"attackSpeed,omitempty"`
+	// AttackRange is the unit's effective attack range in world pixels — base
+	// catalog range × any perk range multipliers (eagle_spirit / bullseye).
+	// Surfaced so the HUD can display it and the renderer can show range rings
+	// for selected units. omitempty so melee units (range 0) drop the field.
+	AttackRange         float64  `json:"attackRange,omitempty"`
 	MoveSpeed           float64  `json:"moveSpeed,omitempty"`
 	Armor               int      `json:"armor,omitempty"`
+	// CritChance is the unit's effective crit probability against an unmarked
+	// target (0..1). Excludes Hunter's Mark since that is target-dependent.
+	// omitempty so non-Marksman units (no crit sources) drop the field.
+	CritChance          float64  `json:"critChance,omitempty"`
+	// CritMultiplier is the damage multiplier applied on a successful crit
+	// (e.g. 2.0 = double damage). Reported as 0 when the unit has no crit
+	// sources so the HUD can hide the row entirely.
+	CritMultiplier      float64  `json:"critMultiplier,omitempty"`
 	// HealthRegen is the current HP-per-second passive regeneration rate.
 	// omitempty so units with no regen (0) are absent from the payload.
 	HealthRegen         float64  `json:"healthRegen,omitempty"`
@@ -482,6 +495,46 @@ type ProjectileSnapshot struct {
 	// to the attacker's unit type; perks may override it at fire time for
 	// alternate shot visuals (e.g. "fire_arrow").
 	Variant string `json:"variant,omitempty"`
+	// DoubleShotSecond is set on the second arrow of a Double Shot pair
+	// (Marksman gold). The client tracks these projectiles so it can render
+	// a yellow combined damage number after the second arrow lands, summing
+	// both shots' damage on the same target.
+	DoubleShotSecond bool `json:"doubleShotSecond,omitempty"`
+	// Pierce is set on Marksman silver pierce arrows so the client renderer
+	// can extend the arrow visual past the primary target — pierce arrows
+	// fly all the way to TargetX/Y (the far endpoint of the line) rather
+	// than stopping at the target unit.
+	Pierce bool `json:"pierce,omitempty"`
+}
+
+// CritEventSnapshot is a per-tick record of a critical hit that landed.
+// Drained on the wire each tick alongside the rest of the snapshot; the
+// client matches each entry to its HP-diff damage event by (UnitID, Damage)
+// and renders the floating number with a red circle behind it. Empty when
+// no crits land — the field is omitted from JSON entirely in that case.
+type CritEventSnapshot struct {
+	UnitID int `json:"unitId"`
+	Damage int `json:"damage"`
+}
+
+// ExplosionSnapshot is a transient AoE visual effect (Marksman explosive_tips,
+// future explosion-based perks). Lives on the wire for ~durationSeconds and
+// then disappears — the client renders an expanding orange-red circle that
+// fades over its lifetime.
+type ExplosionSnapshot struct {
+	ID               string  `json:"id"`
+	OwnerUnitID      int     `json:"ownerUnitId,omitempty"`
+	OwnerID          string  `json:"ownerId,omitempty"`
+	X                float64 `json:"x"`
+	Y                float64 `json:"y"`
+	Radius           float64 `json:"radius"`
+	// Variant lets future perks use different explosion art (e.g. "fire",
+	// "frost"). Defaults to "explosive_tips" — the client can fall through to
+	// a generic orange-red render when an unknown variant arrives.
+	Variant string `json:"variant,omitempty"`
+	// Progress is the fraction of the visual elapsed (0 = just spawned, 1 =
+	// fading out). The client uses it to drive the expand + fade animation.
+	Progress float64 `json:"progress"`
 }
 
 type MatchSnapshotMessage struct {
@@ -497,6 +550,8 @@ type MatchSnapshotMessage struct {
 	Banners       []BannerSnapshot        `json:"banners,omitempty"`
 	Traps         []TrapSnapshot          `json:"traps,omitempty"`
 	Projectiles   []ProjectileSnapshot    `json:"projectiles,omitempty"`
+	Explosions    []ExplosionSnapshot     `json:"explosions,omitempty"`
+	CritEvents    []CritEventSnapshot     `json:"critEvents,omitempty"`
 	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
 	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
 	Victory       *VictorySnapshot        `json:"victory,omitempty"`
