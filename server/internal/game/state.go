@@ -157,6 +157,15 @@ type Unit struct {
 	AttackTargetID         int
 	AttackBuildingTargetID string
 	Attacking              bool
+	// ActionFacingDX/DY is the world-space delta from this unit to its current
+	// attack target, recomputed each tick the unit is in-range and firing.
+	// Cleared (0,0) when the unit is not actively attacking. Shipped via
+	// UnitSnapshot so the client can orient the sprite toward the exact target
+	// the server is shooting, instead of guessing via a local nearest-enemy
+	// search (which diverges when targets overlap, are off-screen, or the
+	// server's pick differs from the client's).
+	ActionFacingDX float64
+	ActionFacingDY float64
 	// Order is the player's current standing order for this unit. It is the
 	// single source of truth for intent — replacing the old ManualMove /
 	// ManualAttackTarget bool pair. All combat-AI gates, retreat suppression,
@@ -585,6 +594,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
+			ActionFacingDX:      unit.ActionFacingDX,
+			ActionFacingDY:      unit.ActionFacingDY,
 		}
 
 		if unit.Moving {

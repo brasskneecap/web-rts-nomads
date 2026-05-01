@@ -130,6 +130,8 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 			if !s.combatTargetIsValidLocked(unit, target) {
 				unit.AttackTargetID = 0
 				unit.Attacking = false
+				unit.ActionFacingDX = 0
+				unit.ActionFacingDY = 0
 				if unit.Order.Type == OrderAttackTarget {
 					unit.Order = OrderState{Type: OrderIdle}
 				}
@@ -144,6 +146,13 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Path = nil
 					unit.Attacking = true
 					unit.Status = "Attacking"
+					// Persist the unit→target delta so the snapshot can ship an
+					// authoritative facing direction. Recomputed every tick the
+					// unit is in-range and firing — the target it actually shoots
+					// is the source of truth, not the client's local "nearest
+					// enemy" guess.
+					unit.ActionFacingDX = dx
+					unit.ActionFacingDY = dy
 
 					// Combat profile gates the ranged-vs-melee branch below. Resolved once
 					// per firing attempt so fireProjectileLocked / instant-hit share it.
@@ -233,6 +242,11 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					}
 				} else {
 					unit.Attacking = false
+					// Out of range — clear the per-tick attack facing so the
+					// client falls back to movement-direction inference while
+					// the unit chases.
+					unit.ActionFacingDX = 0
+					unit.ActionFacingDY = 0
 					// Hold units never move to engage. If the target walked out of
 					// attack range, drop it and stay put rather than giving chase.
 					if unit.Order.Type == OrderHold {
@@ -257,6 +271,8 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 			if building == nil {
 				unit.AttackBuildingTargetID = ""
 				unit.Attacking = false
+				unit.ActionFacingDX = 0
+				unit.ActionFacingDY = 0
 				unit.Status = "Idle"
 				continue
 			}
@@ -264,6 +280,8 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 			if !hpOk || hp <= 0 {
 				unit.AttackBuildingTargetID = ""
 				unit.Attacking = false
+				unit.ActionFacingDX = 0
+				unit.ActionFacingDY = 0
 				unit.Status = "Idle"
 			} else {
 				dist := s.distanceToBuilding(unit.X, unit.Y, building)
@@ -273,6 +291,9 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Path = nil
 					unit.Attacking = true
 					unit.Status = "Attacking"
+					center := s.buildingCenterLocked(building)
+					unit.ActionFacingDX = center.X - unit.X
+					unit.ActionFacingDY = center.Y - unit.Y
 
 					// Stun: cooldown still decays, but the unit must not fire.
 					// AttackBuildingTargetID is left intact so combat resumes on un-stun.
@@ -299,6 +320,8 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					}
 				} else {
 					unit.Attacking = false
+					unit.ActionFacingDX = 0
+					unit.ActionFacingDY = 0
 					// Hold units never move to engage buildings either.
 					if unit.Order.Type == OrderHold {
 						unit.AttackBuildingTargetID = ""

@@ -381,6 +381,13 @@ export type UnitSnapshot = {
   targetX?: number
   targetY?: number
   moving: boolean
+  /** Server-authoritative attack facing — the unit→target world-space delta
+   *  the server is committing to this tick. Only set while the unit is in-range
+   *  and firing (status === 'Attacking'); zero/absent otherwise. The renderer
+   *  uses this to orient the sprite at the exact target being shot, instead of
+   *  guessing locally via a nearest-enemy search. */
+  actionFacingDx?: number
+  actionFacingDy?: number
   /** Building ID the worker is gathering from / constructing / repairing. Used
    * by the renderer to orient the sprite toward the exact target. */
   workTargetId?: string

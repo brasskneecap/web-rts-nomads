@@ -1493,6 +1493,8 @@ export class CanvasRenderer {
       carriedResourceType?: string
       perkIds?: string[]
       workTargetId?: string
+      actionFacingDx?: number
+      actionFacingDy?: number
     }>,
   ) {
     const ctx = this.ctx
@@ -1658,13 +1660,27 @@ export class CanvasRenderer {
       if (spriteSet) {
         let actionFacing: { dx: number; dy: number } | null = null
         if (unit.status === 'Attacking') {
-          actionFacing = findAttackFacing(
-            unit,
-            unitDef,
-            units,
-            this.state.mapConfig.buildings,
-            this.state.mapConfig.cellSize,
-          )
+          // Prefer the server-authoritative attack facing — it points at the
+          // exact target the server is firing at. Only fall back to a local
+          // nearest-enemy search when the server didn't supply one (old
+          // server, or a tick where the field is absent).
+          const sdx = unit.actionFacingDx
+          const sdy = unit.actionFacingDy
+          if (
+            sdx !== undefined &&
+            sdy !== undefined &&
+            (sdx !== 0 || sdy !== 0)
+          ) {
+            actionFacing = { dx: sdx, dy: sdy }
+          } else {
+            actionFacing = findAttackFacing(
+              unit,
+              unitDef,
+              units,
+              this.state.mapConfig.buildings,
+              this.state.mapConfig.cellSize,
+            )
+          }
         } else if (unit.workTargetId) {
           actionFacing = findWorkFacing(
             unit,

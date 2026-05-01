@@ -104,6 +104,10 @@ export type Unit = {
   targetX?: number
   targetY?: number
   moving?: boolean
+  /** Server-authoritative unit→target delta while attacking. Mirrors
+   *  UnitSnapshot.actionFacingDx/Dy. Absent when the unit isn't firing. */
+  actionFacingDx?: number
+  actionFacingDy?: number
   workTargetId?: string
   /**
    * Live-compounded trap stats for archer/trapper units. Only set when the
@@ -593,6 +597,8 @@ export class GameState {
         targetX: unit.targetX,
         targetY: unit.targetY,
         moving: unit.moving,
+        actionFacingDx: unit.actionFacingDx,
+        actionFacingDy: unit.actionFacingDy,
         workTargetId: unit.workTargetId,
         effectiveTrap: unit.effectiveTrap,
         order: unit.order,

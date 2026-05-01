@@ -369,6 +369,8 @@ func (s *GameState) clearCombatTargetLocked(unit *Unit) {
 	unit.AttackTargetID = 0
 	unit.AttackBuildingTargetID = ""
 	unit.Attacking = false
+	unit.ActionFacingDX = 0
+	unit.ActionFacingDY = 0
 	// Demote sticky-attack order to Idle when the target is cleared.
 	// AttackMove and Patrol keep their order so they can resume movement.
 	if unit.Order.Type == OrderAttackTarget {
