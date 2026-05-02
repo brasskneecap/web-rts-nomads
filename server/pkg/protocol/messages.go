@@ -288,10 +288,43 @@ type ResourceStock struct {
 	Accent string `json:"accent"`
 }
 
+// PurchaseUpgradeCommandMessage requests a permanent upgrade purchase for a
+// unit track. Track must match an UpgradeTrack constant ("soldier" or "archer").
+type PurchaseUpgradeCommandMessage struct {
+	Type  string `json:"type"`
+	Track string `json:"track"`
+}
+
+// UpgradeTownHallCommandMessage requests a tier-up on the specified town hall.
+// BuildingID must be the ID of a townhall the player owns.
+type UpgradeTownHallCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+}
+
+// PlayerUpgradeSnapshot describes the current state of one upgrade track for a
+// player. Emitted per-player in every MatchSnapshotMessage.Players entry.
+type PlayerUpgradeSnapshot struct {
+	Track               string  `json:"track"`
+	DisplayName         string  `json:"displayName"`
+	Level               int     `json:"level"`
+	Cap                 int     `json:"cap"`
+	NextCostGold        int     `json:"nextCostGold"`
+	CanAfford           bool    `json:"canAfford"`
+	HasUpgradeCenter    bool    `json:"hasUpgradeCenter"`
+	HPPerLevel          int     `json:"hpPerLevel"`
+	DamagePerLevel      int     `json:"damagePerLevel"`
+	ArmorPerLevel       int     `json:"armorPerLevel"`
+	AttackSpeedPerLevel float64 `json:"attackSpeedPerLevel"`
+	MoveSpeedPerLevel   float64 `json:"moveSpeedPerLevel"`
+}
+
 type PlayerSnapshot struct {
-	PlayerID  string          `json:"playerId"`
-	Color     string          `json:"color"`
-	Resources []ResourceStock `json:"resources"`
+	PlayerID     string                  `json:"playerId"`
+	Color        string                  `json:"color"`
+	Resources    []ResourceStock         `json:"resources"`
+	Upgrades     []PlayerUpgradeSnapshot `json:"upgrades,omitempty"`
+	TownHallTier int                     `json:"townHallTier,omitempty"`
 }
 
 type UnitSnapshot struct {

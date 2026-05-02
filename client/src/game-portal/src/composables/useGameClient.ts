@@ -40,6 +40,9 @@ const emptyUiSnapshot: GameUiSnapshot = {
   isDefeated: false,
   isVictory: false,
   objectives: [],
+  upgrades: [],
+  townHallTier: 0,
+  selectedBuildingType: null,
 }
 
 export function useGameClient() {
@@ -144,6 +147,14 @@ export function useGameClient() {
     client?.setMinimapPanelRect(rect)
   }
 
+  function purchaseUpgrade(track: string) {
+    client?.purchaseUpgrade(track)
+  }
+
+  function upgradeTownHall(buildingId: string) {
+    client?.upgradeTownHall(buildingId)
+  }
+
   onBeforeUnmount(() => {
     destroy()
   })
@@ -160,6 +171,8 @@ export function useGameClient() {
     selectUnitOnly,
     deselectUnit,
     setMinimapPanelRect,
+    purchaseUpgrade,
+    upgradeTownHall,
     ui,
     connectionState,
     currentMatchId,

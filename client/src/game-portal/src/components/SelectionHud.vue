@@ -177,6 +177,44 @@
           </div>
         </div>
 
+        <!-- Townhall tier badge + upgrade controls. Only shown when a townhall
+             is selected (owned by the local player). Tier badge always visible;
+             upgrade button shown when tier < 3 and no upgrade is in progress;
+             progress bar shown while an upgrade is underway. -->
+        <div
+          v-if="ui.selection.kind === 'building' && ui.selectedBuildingType === 'townhall'"
+          class="townhall-tier"
+        >
+          <div class="townhall-tier__badge">
+            {{ townhallTierLabel }}
+            <span class="townhall-tier__tier-num">Tier {{ ui.townHallTier || 1 }}</span>
+          </div>
+
+          <!-- Upgrade-in-progress bar -->
+          <div
+            v-if="townhallUpgradeInProgress"
+            class="townhall-upgrade-bar"
+          >
+            <div
+              class="townhall-upgrade-bar__fill"
+              :style="{ width: `${townhallUpgradeProgress * 100}%` }"
+            />
+            <div class="townhall-upgrade-bar__label">
+              {{ (ui.townHallTier || 1) === 1 ? 'Upgrading to Keep...' : 'Upgrading to Castle...' }}
+            </div>
+          </div>
+
+          <!-- Tier-up button — hidden while an upgrade is in progress or tier is maxed -->
+          <button
+            v-else-if="(ui.townHallTier || 1) < 3"
+            type="button"
+            class="townhall-upgrade-btn"
+            @click="$emit('action', 'upgrade-townhall')"
+          >
+            {{ townhallUpgradeLabel }}
+          </button>
+        </div>
+
         <!-- Production queue. Always renders 7 slots whenever training is
              active (matching the max queue depth of 8 = 1 leading + 7
              queued). Empty slots show the icon-container frame so the
@@ -341,6 +379,10 @@
                     <span class="action-tooltip__amount">{{ c.amount }}</span>
                   </div>
                 </div>
+                <div
+                  v-if="ui.selection.actions[i - 1].tooltipBody"
+                  class="action-tooltip__stat-preview"
+                >{{ ui.selection.actions[i - 1].tooltipBody }}</div>
               </div>
             </button>
           </template>
@@ -449,6 +491,44 @@ const buildingDurability = computed(() => {
   )
   if (!detail || !detail.value) return null
   return { label: detail.label, value: detail.value }
+})
+
+// ── Townhall tier helpers ───────────────────────────────────────────────────
+
+const TOWNHALL_TIER_NAMES = ['Town Hall', 'Keep', 'Castle']
+
+const townhallTierLabel = computed(() => {
+  const tier = props.ui.townHallTier || 1
+  return TOWNHALL_TIER_NAMES[tier - 1] ?? 'Town Hall'
+})
+
+const townhallUpgradeLabel = computed(() => {
+  const tier = props.ui.townHallTier || 1
+  if (tier === 1) return 'Upgrade to Keep — 400g / 250w'
+  if (tier === 2) return 'Upgrade to Castle — 800g / 500w'
+  return ''
+})
+
+// True when the server has set tierUpRemaining on the selected building's
+// metadata, indicating an upgrade is in progress.
+const townhallUpgradeInProgress = computed(() => {
+  if (props.ui.selection.kind !== 'building') return false
+  const detail = props.ui.selection.details.find((d) => d.id === 'tierup-remaining')
+  return !!detail
+})
+
+// Progress fraction (0..1) for the in-progress tier-up bar.
+// Drives the fill width. The detail value carries "remaining/total" or the
+// server may send a dedicated metadata field. We use the metadata approach:
+// tierUpRemaining and tierUpTotal are expected in the building metadata, which
+// SelectionHud doesn't currently receive directly. As a fallback, if the
+// detail carries a numeric value it is treated as the remaining fraction.
+const townhallUpgradeProgress = computed(() => {
+  if (props.ui.selection.kind !== 'building') return 0
+  const detail = props.ui.selection.details.find((d) => d.id === 'tierup-progress')
+  if (!detail?.value) return 0
+  const v = parseFloat(detail.value)
+  return Number.isNaN(v) ? 0 : Math.max(0, Math.min(1, v))
 })
 
 // One card per selected unit. Portrait prefers the unit's promoted path (e.g.
@@ -1321,6 +1401,16 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   gap: 2px;
 }
 
+.action-tooltip__stat-preview {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(200, 164, 106, 0.22);
+  font-size: 11px;
+  color: #d4b87a;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
 .action-tooltip__row {
   display: flex;
   align-items: center;
@@ -1510,6 +1600,91 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   font-size: 12px;
   line-height: 1.5;
   color: #d4b87a;
+}
+
+/* ── Townhall tier section ───────────────────────────────────────────────── */
+
+.townhall-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.townhall-tier__badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(54, 34, 20, 0.88), rgba(36, 22, 12, 0.88));
+  border: 1px solid rgba(210, 176, 113, 0.3);
+  font-size: 13px;
+  font-weight: 700;
+  color: #f5ead2;
+}
+
+.townhall-tier__tier-num {
+  font-size: 11px;
+  font-weight: 600;
+  color: #d4b87a;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.townhall-upgrade-btn {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(210, 176, 113, 0.4);
+  background: linear-gradient(180deg, rgba(100, 66, 30, 0.95), rgba(60, 38, 16, 0.98));
+  color: #f5ead2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  text-align: center;
+}
+
+.townhall-upgrade-btn:hover {
+  background: linear-gradient(180deg, rgba(140, 94, 44, 1), rgba(88, 54, 22, 1));
+  border-color: rgba(240, 200, 120, 0.6);
+}
+
+/* In-progress upgrade bar — same visual language as the construction bar */
+.townhall-upgrade-bar {
+  position: relative;
+  overflow: hidden;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: linear-gradient(180deg, rgba(54, 34, 20, 0.96), rgba(36, 22, 12, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 193, 0.08),
+    inset 0 0 0 1px rgba(70, 47, 24, 0.45);
+}
+
+.townhall-upgrade-bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, rgba(161, 105, 20, 0.9), rgba(251, 191, 36, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 243, 211, 0.22);
+  transition: width 0.3s ease-out;
+}
+
+.townhall-upgrade-bar__label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff4dc;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
 }
 
 </style>

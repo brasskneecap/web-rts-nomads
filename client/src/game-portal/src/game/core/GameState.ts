@@ -7,6 +7,7 @@ import type {
   InventorySnapshot,
   ItemSnapshot,
   ObjectiveSnapshot,
+  PlayerUpgradeSnapshot,
   VictorySnapshot,
   MapConfig,
   MatchSnapshotMessage,
@@ -397,6 +398,13 @@ export class GameState {
   // Battle tracker snapshot (debug). Null when the active map does not have
   // debug.battleTracker enabled. Consumed by BattleTrackerPanel.vue.
   battleTracker: BattleTrackerSnapshot | null = null
+
+  // Permanent per-player upgrade state. Populated from the local player's
+  // PlayerSnapshot every tick. Empty until the server sends upgrade data.
+  playerUpgrades: PlayerUpgradeSnapshot[] = []
+  // Current tier of the local player's town hall (1 = Town Hall, 2 = Keep,
+  // 3 = Castle). 0 until the server sends the first snapshot with this data.
+  townHallTier: number = 0
 
   snapshotBuffer: InterpolationFrame[] = []
   interpolationDelayMs = 100
@@ -1267,6 +1275,10 @@ export class GameState {
     return this.mapConfig.buildings.find((building) => building.id === this.selectedBuildingId) ?? null
   }
 
+  getSelectedBuildingType(): string | null {
+    return this.getSelectedBuilding()?.buildingType ?? null
+  }
+
   getSelectedObstacle(): ObstacleTile | null {
     if (!this.selectedObstacleId) return null
     return this.mapConfig.obstacles.find((obstacle) => obstacle.id === this.selectedObstacleId) ?? null
@@ -1720,7 +1732,7 @@ export class GameState {
         title,
         subtitle,
         details: getBuildingDetails(selectedBuilding),
-        actions: isUnderConstruction ? [] : getBuildingActions(selectedBuilding),
+        actions: isUnderConstruction ? [] : getBuildingActions(selectedBuilding, this.playerUpgrades),
         production: activeProduction ? toProductionSummary(activeProduction) : undefined,
         construction: isUnderConstruction
           ? getBuildingConstructionSummary(selectedBuilding)
@@ -1875,6 +1887,13 @@ export class GameState {
       max: resource.max,
       accent: resource.accent,
     }))
+
+    if (localPlayer.upgrades !== undefined) {
+      this.playerUpgrades = localPlayer.upgrades
+    }
+    if (localPlayer.townHallTier !== undefined) {
+      this.townHallTier = localPlayer.townHallTier
+    }
   }
 }
 
@@ -2178,7 +2197,7 @@ function getGroupActions(
   return actions
 }
 
-function getBuildingActions(building: BuildingTile): ActionItem[] {
+function getBuildingActions(building: BuildingTile, upgrades: PlayerUpgradeSnapshot[] = []): ActionItem[] {
   const actions: ActionItem[] = []
 
   if (building.capabilities.includes('unit-spawner')) {
@@ -2200,6 +2219,33 @@ function getBuildingActions(building: BuildingTile): ActionItem[] {
     }
     if (hasTrainable) {
       actions.push({ id: 'set-spawn-point', label: 'Set Rally Point' })
+    }
+  }
+
+  if (building.capabilities.includes('upgrade-purchase')) {
+    for (const upgrade of upgrades) {
+      const atCap = upgrade.level >= upgrade.cap
+      const disabled =
+        !upgrade.hasUpgradeCenter || upgrade.cap === 0 || atCap || !upgrade.canAfford
+      const statParts = [
+        `+${upgrade.hpPerLevel} HP`,
+        `+${upgrade.damagePerLevel} DMG`,
+        ...(upgrade.armorPerLevel ? [`+${upgrade.armorPerLevel} ARM`] : []),
+        `+${upgrade.attackSpeedPerLevel.toFixed(2)} AS`,
+        `+${upgrade.moveSpeedPerLevel} MS`,
+      ]
+      const levelLabel = atCap
+        ? `${upgrade.displayName} (Max)`
+        : `${upgrade.displayName} Lv ${upgrade.level} → ${upgrade.level + 1}`
+      actions.push({
+        id: `upgrade-${upgrade.track}`,
+        label: levelLabel,
+        iconDef: { kind: 'unit', type: upgrade.track },
+        cost: [{ resourceId: 'gold', amount: upgrade.nextCostGold, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' }],
+        disabled,
+        tooltipTitle: levelLabel,
+        tooltipBody: statParts.join('  '),
+      })
     }
   }
 
@@ -2244,7 +2290,7 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
   if (activeProduction) {
     const nextQueuedUnit = activeProduction.queuedUnitTypes[1]
     const hiddenQueueCount = Math.max(activeProduction.queueLength - 2, 0)
-    return [
+    const productionDetails: DetailItem[] = [
       {
         id: 'current-training-unit',
         label: 'Training',
@@ -2258,6 +2304,8 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
           : 'None',
       },
     ]
+    appendTierUpDetails(building, productionDetails)
+    return productionDetails
   }
 
   const details: DetailItem[] = []
@@ -2340,7 +2388,21 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
       })
   }
 
+  appendTierUpDetails(building, details)
+
   return details
+}
+
+function appendTierUpDetails(building: BuildingTile, details: DetailItem[]): void {
+  const tierUpRemaining = getBuildingMetadataNumber(building, 'tierUpRemaining')
+  const tierUpTotal = getBuildingMetadataNumber(building, 'tierUpTotal')
+  const tierTargetLevel = getBuildingMetadataNumber(building, 'tierTargetLevel')
+  if (tierUpRemaining === undefined || tierUpTotal === undefined || tierUpTotal <= 0) return
+  const tierNames = ['Town Hall', 'Keep', 'Castle']
+  const targetName = tierTargetLevel !== undefined ? (tierNames[Math.round(tierTargetLevel) - 1] ?? 'next tier') : 'next tier'
+  const progress = Math.max(0, Math.min(1, 1 - tierUpRemaining / tierUpTotal))
+  details.push({ id: 'tierup-remaining', label: 'Upgrading to', value: targetName })
+  details.push({ id: 'tierup-progress', label: 'Progress', value: String(progress) })
 }
 
 // Slow < 1/s, Normal 1–1.25/s, Fast 1.25–1.75/s, Very Fast > 1.75/s

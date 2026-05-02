@@ -255,6 +255,16 @@ export type DebugSpawnUnitCommandMessage = {
   customHp?: number
 }
 
+export type PurchaseUpgradeCommand = {
+  type: 'purchase_upgrade'
+  track: string
+}
+
+export type UpgradeTownHallCommand = {
+  type: 'upgrade_townhall'
+  buildingId: string
+}
+
 export type ResourceStockSnapshot = {
   id: string
   label: string
@@ -263,10 +273,27 @@ export type ResourceStockSnapshot = {
   accent: string
 }
 
+export type PlayerUpgradeSnapshot = {
+  track: string
+  displayName: string
+  level: number
+  cap: number              // 0/3/6/9
+  nextCostGold: number     // 0 if at cap
+  canAfford: boolean
+  hasUpgradeCenter: boolean
+  hpPerLevel: number
+  damagePerLevel: number
+  armorPerLevel: number
+  attackSpeedPerLevel: number
+  moveSpeedPerLevel: number
+}
+
 export type PlayerSnapshot = {
   playerId: string
   color: string
   resources: ResourceStockSnapshot[]
+  upgrades?: PlayerUpgradeSnapshot[]
+  townHallTier?: number
 }
 
 export type ClientMessage =
@@ -284,6 +311,8 @@ export type ClientMessage =
   | DebugSpawnUnitCommandMessage
   | SetStanceCommandMessage
   | PatrolCommandMessage
+  | PurchaseUpgradeCommand
+  | UpgradeTownHallCommand
   | PongMessage
 
 // One entry in a unit's activeBuffs / activeDebuffs list. `id` is the perk

@@ -348,6 +348,10 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	if unit.UnitType == "soldier" && unit.ProgressionPath == unitPathNone {
 		unit.Armor = soldierBaseArmor
 	}
+	// Stack upgrade-sourced armor (stored in BaseArmor) on top of path/rank
+	// armor without overwriting it. BaseArmor is 0 for units with no upgrades,
+	// so this is a no-op for the vast majority of units.
+	unit.Armor += unit.BaseArmor
 
 	if preserveHealthPercent {
 		unit.HP = maxInt(1, int(math.Round(float64(unit.MaxHP)*currentHPFraction)))

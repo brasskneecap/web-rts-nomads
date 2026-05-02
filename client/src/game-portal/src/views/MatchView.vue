@@ -66,6 +66,7 @@
       :cancel-debug-spawn="cancelDebugSpawn"
     />
 
+
     <div v-if="hasStarted && ((ui.wave.enabled && ui.wave.state === 'complete' && !ui.objectives.length) || ui.isVictory)" class="victory-overlay">
       <div class="victory-card">
         <div class="victory-title">Victory</div>

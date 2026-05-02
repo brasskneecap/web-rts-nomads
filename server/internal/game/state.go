@@ -82,6 +82,7 @@ type Unit struct {
 	HealthRegenPerSecond   float64
 	HealthRegenAccumulator float64
 	BaseDamage          int
+	BaseArmor           int
 	BaseAttackSpeed     float64
 	BaseMoveSpeed       float64
 	XP                  int
@@ -220,6 +221,11 @@ type Player struct {
 
 	GlobalUnitSpawnTimeMultiplier float64
 	UnitSpawnTimeMultipliers      map[string]float64
+
+	// Upgrades holds the current permanent upgrade level per track for this
+	// player. Keyed by UpgradeTrack (== UnitType string). Initialized to an
+	// empty map on player creation; zero value for missing keys means level 0.
+	Upgrades map[UpgradeTrack]int
 }
 
 const (
@@ -466,6 +472,20 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 		}
 		s.obstaclesByID[o.ID] = o
 	}
+	// Stamp tier=1 on any townhall that lacks the key so townhallTierForPlayerLocked
+	// always has a baseline to read.
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "townhall" {
+			continue
+		}
+		if b.Metadata == nil {
+			b.Metadata = map[string]interface{}{}
+		}
+		if _, hasTier := b.Metadata["tier"]; !hasTier {
+			b.Metadata["tier"] = float64(1)
+		}
+	}
 	// Blocked cells derived from this new map config are not yet computed.
 	s.invalidateBlockedCellsLocked()
 }
@@ -624,9 +644,11 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			continue
 		}
 		players = append(players, protocol.PlayerSnapshot{
-			PlayerID:  player.ID,
-			Color:     player.Color,
-			Resources: s.getPlayerResourceStocksLocked(player),
+			PlayerID:    player.ID,
+			Color:       player.Color,
+			Resources:   s.getPlayerResourceStocksLocked(player),
+			Upgrades:    s.playerUpgradeSnapshotsLocked(player.ID),
+			TownHallTier: s.townhallTierForPlayerLocked(player.ID),
 		})
 	}
 
@@ -772,6 +794,7 @@ func (s *GameState) Update(dt float64) {
 	s.battleTracker.tickLocked(dt)
 	s.updateUnitProductionsLocked(dt)
 	s.cancelOrphanedPendingBuildingsLocked()
+	s.tickTownHallTierUpsLocked(dt)
 	s.tickBuildingRepairsLocked(dt)
 	blocked := s.getBlockedCellsLocked()
 	s.tickBuildingCombatLocked(dt)
@@ -1087,6 +1110,7 @@ func (s *GameState) EnsurePlayer(playerID string) {
 		},
 		GlobalUnitSpawnTimeMultiplier: 1,
 		UnitSpawnTimeMultipliers:      map[string]float64{},
+		Upgrades:                      make(map[UpgradeTrack]int),
 	}
 
 	home, spawnPoint := s.claimPlayerStartLocked(playerID)
