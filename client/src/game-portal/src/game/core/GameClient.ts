@@ -8,6 +8,7 @@ import type {
   BattleTrackerSnapshot,
   ConnectionState,
   MapId,
+  PlayerUpgradeSnapshot,
   WaveSnapshot,
 } from '../network/protocol'
 import type { DebugSpawnConfig, PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
@@ -48,6 +49,14 @@ export type GameUiSnapshot = {
   // True when all victory objectives have been completed.
   isVictory: boolean
   objectives: import('../network/protocol').ObjectiveSnapshot[]
+  // Permanent per-player upgrades. Empty array until the server sends upgrade data.
+  upgrades: PlayerUpgradeSnapshot[]
+  // Current town hall tier for the local player (1/2/3). 0 until first snapshot.
+  townHallTier: number
+  // buildingType of the currently selected building, or null when nothing (or
+  // a non-building entity) is selected. Used to gate overlay panels such as
+  // UpgradeCenterPanel.
+  selectedBuildingType: string | null
 }
 
 export class GameClient {
@@ -177,7 +186,18 @@ export class GameClient {
       isDefeated: this.state.isLocalPlayerDefeated(),
       isVictory: this.state.isVictoryAchieved(),
       objectives: this.state.getObjectives(),
+      upgrades: this.state.playerUpgrades,
+      townHallTier: this.state.townHallTier,
+      selectedBuildingType: this.state.getSelectedBuildingType(),
     }
+  }
+
+  purchaseUpgrade(track: string): void {
+    this.network.sendPurchaseUpgrade(track)
+  }
+
+  upgradeTownHall(buildingId: string): void {
+    this.network.sendUpgradeTownHall(buildingId)
   }
 
   // Arms the 'debug-spawn-unit' targeting mode. Exposed for the Debug Spawn
@@ -292,6 +312,20 @@ export class GameClient {
 
     if (selectedBuilding && actionId === 'set-spawn-point') {
       this.state.beginBuildingTargeting('set-spawn-point')
+      return
+    }
+
+    if (selectedBuilding && actionId === 'upgrade-townhall') {
+      this.network.sendUpgradeTownHall(selectedBuilding.id)
+      return
+    }
+
+    if (selectedBuilding && actionId.startsWith('upgrade-')) {
+      const track = actionId.slice('upgrade-'.length)
+      if (track && track !== 'townhall') {
+        this.network.sendPurchaseUpgrade(track)
+        return
+      }
     }
   }
 

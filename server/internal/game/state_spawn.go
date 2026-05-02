@@ -92,6 +92,12 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 	s.nextUnitID++
 	s.addUnitLocked(unit)
 	s.initializeCombatUnitLocked(unit)
+	// Apply permanent player upgrades before rank modifiers so that the upgrade
+	// bonuses to Base* stats are included in the first applyRankModifiersLocked
+	// pass. Only applies to player-owned units (enemy player has no upgrades).
+	if playerID != enemyPlayerID {
+		s.applyPlayerUpgradesAtSpawnLocked(unit)
+	}
 	s.applyRankModifiersLocked(unit, false)
 	return unit
 }

@@ -483,6 +483,40 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.State.RepairBuilding(client.PlayerID(), msg.UnitIDs, msg.BuildingID)
 
+		case "purchase_upgrade":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.PurchaseUpgradeCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid purchase_upgrade payload"})
+				continue
+			}
+			match.State.PurchaseUpgrade(client.PlayerID(), msg.Track)
+
+		case "upgrade_townhall":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.UpgradeTownHallCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid upgrade_townhall payload"})
+				continue
+			}
+			match.State.UpgradeTownHall(client.PlayerID(), msg.BuildingID)
+
 		case "debug_spawn_unit":
 			// Dev-only: spawn an arbitrary enemy unit with a chosen perk
 			// loadout. Gated on the map's debug.debugSpawn flag; on

@@ -108,6 +108,13 @@ func (s *GameState) BuildBuilding(playerID, buildingType string, unitIDs []int, 
 	for k, v := range def.Metadata {
 		metadata[k] = v
 	}
+	// Stamp tier=1 on newly constructed townhalls so upgrade cap and tier-up
+	// logic always find a baseline value in metadata["tier"].
+	if buildingType == "townhall" {
+		if _, hasTier := metadata["tier"]; !hasTier {
+			metadata["tier"] = float64(1)
+		}
+	}
 
 	s.nextBuildingID++
 	ownerID := playerID
