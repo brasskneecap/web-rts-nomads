@@ -1,79 +1,187 @@
 {
   "character": {
-    "id": "92a82879-61c4-4d20-95b5-b3c9ffcf2b47",
-    "name": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, footman soldier, steel chainmail armor, blue tabard with simple heraldry, short sword pointed downwards, iron helmet, disciplined military stance, steel and blue palette accents",
-    "prompt": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, footman soldier, steel chainmail armor, blue tabard with simple heraldry, short sword pointed downwards, iron helmet, disciplined military stance, steel and blue palette accents",
+    "id": "b16a3d41-8f66-474c-8372-0908fc14df25",
+    "name": "pixel art character sprite, medieval fantasy warrior, detailed hand-pixeled shading with gradient depth, painterly pixel art style, muted palette with cream, slate blue, warm brown, and sage green tones, selective dark outlines, clean pixel edges, matching style of detailed medieval fantasy game, high top-down 3/4 view facing southeast, small soft shadow at feet, centered on transparent background, human footman soldier, polished steel chainmail armor with subtle gradient shading, deep slate blue tabard over armor matching the blue of faction building roofs, cream colored heraldic emblem on chest, short steel sword raised ready in right hand, iron helmet with slight plume, disciplined upright military stance, cool-toned steel and slate blue palette",
+    "prompt": "pixel art character sprite, medieval fantasy warrior, detailed hand-pixeled shading with gradient depth, painterly pixel art style, muted palette with cream, slate blue, warm brown, and sage green tones, selective dark outlines, clean pixel edges, matching style of detailed medieval fantasy game, high top-down 3/4 view facing southeast, small soft shadow at feet, centered on transparent background, human footman soldier, polished steel chainmail armor with subtle gradient shading, deep slate blue tabard over armor matching the blue of faction building roofs, cream colored heraldic emblem on chest, short steel sword raised ready in right hand, iron helmet with slight plume, disciplined upright military stance, cool-toned steel and slate blue palette",
     "size": {
-      "width": 68,
-      "height": 68
+      "width": 112,
+      "height": 112
     },
     "template_id": "mannequin",
-    "directions": 4,
+    "directions": 8,
     "view": "low top-down",
-    "created_at": "2026-04-20T03:38:37.455703+00:00"
+    "created_at": "2026-05-01T22:36:52.484753+00:00"
   },
   "frames": {
     "rotations": {
       "south": "rotations/south.png",
-      "west": "rotations/west.png",
+      "south-east": "rotations/south-east.png",
       "east": "rotations/east.png",
-      "north": "rotations/north.png"
+      "north-east": "rotations/north-east.png",
+      "north": "rotations/north.png",
+      "north-west": "rotations/north-west.png",
+      "west": "rotations/west.png",
+      "south-west": "rotations/south-west.png"
     },
     "animations": {
-      "Walking-49a65a9f": {
+      "Walking-34532e15": {
         "east": [
-          "animations/Walking-49a65a9f/east/frame_000.png",
-          "animations/Walking-49a65a9f/east/frame_001.png",
-          "animations/Walking-49a65a9f/east/frame_002.png",
-          "animations/Walking-49a65a9f/east/frame_003.png"
-        ],
-        "west": [
-          "animations/Walking-49a65a9f/west/frame_000.png",
-          "animations/Walking-49a65a9f/west/frame_001.png",
-          "animations/Walking-49a65a9f/west/frame_002.png",
-          "animations/Walking-49a65a9f/west/frame_003.png"
-        ],
-        "south": [
-          "animations/Walking-49a65a9f/south/frame_000.png",
-          "animations/Walking-49a65a9f/south/frame_001.png",
-          "animations/Walking-49a65a9f/south/frame_002.png",
-          "animations/Walking-49a65a9f/south/frame_003.png"
+          "animations/Walking-34532e15/east/frame_000.png",
+          "animations/Walking-34532e15/east/frame_001.png",
+          "animations/Walking-34532e15/east/frame_002.png",
+          "animations/Walking-34532e15/east/frame_003.png",
+          "animations/Walking-34532e15/east/frame_004.png",
+          "animations/Walking-34532e15/east/frame_005.png"
         ],
         "north": [
-          "animations/Walking-49a65a9f/north/frame_000.png",
-          "animations/Walking-49a65a9f/north/frame_001.png",
-          "animations/Walking-49a65a9f/north/frame_002.png",
-          "animations/Walking-49a65a9f/north/frame_003.png"
+          "animations/Walking-34532e15/north/frame_000.png",
+          "animations/Walking-34532e15/north/frame_001.png",
+          "animations/Walking-34532e15/north/frame_002.png",
+          "animations/Walking-34532e15/north/frame_003.png",
+          "animations/Walking-34532e15/north/frame_004.png",
+          "animations/Walking-34532e15/north/frame_005.png"
+        ],
+        "west": [
+          "animations/Walking-34532e15/west/frame_000.png",
+          "animations/Walking-34532e15/west/frame_001.png",
+          "animations/Walking-34532e15/west/frame_002.png",
+          "animations/Walking-34532e15/west/frame_003.png",
+          "animations/Walking-34532e15/west/frame_004.png",
+          "animations/Walking-34532e15/west/frame_005.png"
+        ],
+        "south-west": [
+          "animations/Walking-34532e15/south-west/frame_000.png",
+          "animations/Walking-34532e15/south-west/frame_001.png",
+          "animations/Walking-34532e15/south-west/frame_002.png",
+          "animations/Walking-34532e15/south-west/frame_003.png",
+          "animations/Walking-34532e15/south-west/frame_004.png",
+          "animations/Walking-34532e15/south-west/frame_005.png"
+        ],
+        "north-east": [
+          "animations/Walking-34532e15/north-east/frame_000.png",
+          "animations/Walking-34532e15/north-east/frame_001.png",
+          "animations/Walking-34532e15/north-east/frame_002.png",
+          "animations/Walking-34532e15/north-east/frame_003.png",
+          "animations/Walking-34532e15/north-east/frame_004.png",
+          "animations/Walking-34532e15/north-east/frame_005.png"
+        ],
+        "north-west": [
+          "animations/Walking-34532e15/north-west/frame_000.png",
+          "animations/Walking-34532e15/north-west/frame_001.png",
+          "animations/Walking-34532e15/north-west/frame_002.png",
+          "animations/Walking-34532e15/north-west/frame_003.png",
+          "animations/Walking-34532e15/north-west/frame_004.png",
+          "animations/Walking-34532e15/north-west/frame_005.png"
+        ],
+        "south": [
+          "animations/Walking-34532e15/south/frame_000.png",
+          "animations/Walking-34532e15/south/frame_001.png",
+          "animations/Walking-34532e15/south/frame_002.png",
+          "animations/Walking-34532e15/south/frame_003.png",
+          "animations/Walking-34532e15/south/frame_004.png",
+          "animations/Walking-34532e15/south/frame_005.png"
+        ],
+        "south-east": [
+          "animations/Walking-34532e15/south-east/frame_000.png",
+          "animations/Walking-34532e15/south-east/frame_001.png",
+          "animations/Walking-34532e15/south-east/frame_002.png",
+          "animations/Walking-34532e15/south-east/frame_003.png",
+          "animations/Walking-34532e15/south-east/frame_004.png",
+          "animations/Walking-34532e15/south-east/frame_005.png"
         ]
       },
-      "Attacking-4e49ace2": {
-        "west": [
-          "animations/Attacking-4e49ace2/west/frame_000.png",
-          "animations/Attacking-4e49ace2/west/frame_001.png",
-          "animations/Attacking-4e49ace2/west/frame_002.png",
-          "animations/Attacking-4e49ace2/west/frame_003.png"
+      "Attacking-5876af78": {
+        "north-east": [
+          "animations/Attacking-5876af78/north-east/frame_000.png",
+          "animations/Attacking-5876af78/north-east/frame_001.png",
+          "animations/Attacking-5876af78/north-east/frame_002.png",
+          "animations/Attacking-5876af78/north-east/frame_003.png",
+          "animations/Attacking-5876af78/north-east/frame_004.png",
+          "animations/Attacking-5876af78/north-east/frame_005.png",
+          "animations/Attacking-5876af78/north-east/frame_006.png",
+          "animations/Attacking-5876af78/north-east/frame_007.png",
+          "animations/Attacking-5876af78/north-east/frame_008.png"
         ],
-        "south": [
-          "animations/Attacking-4e49ace2/south/frame_000.png",
-          "animations/Attacking-4e49ace2/south/frame_001.png",
-          "animations/Attacking-4e49ace2/south/frame_002.png",
-          "animations/Attacking-4e49ace2/south/frame_003.png"
+        "south-west": [
+          "animations/Attacking-5876af78/south-west/frame_000.png",
+          "animations/Attacking-5876af78/south-west/frame_001.png",
+          "animations/Attacking-5876af78/south-west/frame_002.png",
+          "animations/Attacking-5876af78/south-west/frame_003.png",
+          "animations/Attacking-5876af78/south-west/frame_004.png",
+          "animations/Attacking-5876af78/south-west/frame_005.png",
+          "animations/Attacking-5876af78/south-west/frame_006.png",
+          "animations/Attacking-5876af78/south-west/frame_007.png",
+          "animations/Attacking-5876af78/south-west/frame_008.png"
         ],
         "east": [
-          "animations/Attacking-4e49ace2/east/frame_000.png",
-          "animations/Attacking-4e49ace2/east/frame_001.png",
-          "animations/Attacking-4e49ace2/east/frame_002.png",
-          "animations/Attacking-4e49ace2/east/frame_003.png"
+          "animations/Attacking-5876af78/east/frame_000.png",
+          "animations/Attacking-5876af78/east/frame_001.png",
+          "animations/Attacking-5876af78/east/frame_002.png",
+          "animations/Attacking-5876af78/east/frame_003.png",
+          "animations/Attacking-5876af78/east/frame_004.png",
+          "animations/Attacking-5876af78/east/frame_005.png",
+          "animations/Attacking-5876af78/east/frame_006.png",
+          "animations/Attacking-5876af78/east/frame_007.png",
+          "animations/Attacking-5876af78/east/frame_008.png"
         ],
         "north": [
-          "animations/Attacking-4e49ace2/north/frame_000.png",
-          "animations/Attacking-4e49ace2/north/frame_001.png",
-          "animations/Attacking-4e49ace2/north/frame_002.png",
-          "animations/Attacking-4e49ace2/north/frame_003.png"
+          "animations/Attacking-5876af78/north/frame_000.png",
+          "animations/Attacking-5876af78/north/frame_001.png",
+          "animations/Attacking-5876af78/north/frame_002.png",
+          "animations/Attacking-5876af78/north/frame_003.png",
+          "animations/Attacking-5876af78/north/frame_004.png",
+          "animations/Attacking-5876af78/north/frame_005.png",
+          "animations/Attacking-5876af78/north/frame_006.png",
+          "animations/Attacking-5876af78/north/frame_007.png",
+          "animations/Attacking-5876af78/north/frame_008.png"
+        ],
+        "south": [
+          "animations/Attacking-5876af78/south/frame_000.png",
+          "animations/Attacking-5876af78/south/frame_001.png",
+          "animations/Attacking-5876af78/south/frame_002.png",
+          "animations/Attacking-5876af78/south/frame_003.png",
+          "animations/Attacking-5876af78/south/frame_004.png",
+          "animations/Attacking-5876af78/south/frame_005.png",
+          "animations/Attacking-5876af78/south/frame_006.png",
+          "animations/Attacking-5876af78/south/frame_007.png",
+          "animations/Attacking-5876af78/south/frame_008.png"
+        ],
+        "north-west": [
+          "animations/Attacking-5876af78/north-west/frame_000.png",
+          "animations/Attacking-5876af78/north-west/frame_001.png",
+          "animations/Attacking-5876af78/north-west/frame_002.png",
+          "animations/Attacking-5876af78/north-west/frame_003.png",
+          "animations/Attacking-5876af78/north-west/frame_004.png",
+          "animations/Attacking-5876af78/north-west/frame_005.png",
+          "animations/Attacking-5876af78/north-west/frame_006.png",
+          "animations/Attacking-5876af78/north-west/frame_007.png",
+          "animations/Attacking-5876af78/north-west/frame_008.png"
+        ],
+        "south-east": [
+          "animations/Attacking-5876af78/south-east/frame_000.png",
+          "animations/Attacking-5876af78/south-east/frame_001.png",
+          "animations/Attacking-5876af78/south-east/frame_002.png",
+          "animations/Attacking-5876af78/south-east/frame_003.png",
+          "animations/Attacking-5876af78/south-east/frame_004.png",
+          "animations/Attacking-5876af78/south-east/frame_005.png",
+          "animations/Attacking-5876af78/south-east/frame_006.png",
+          "animations/Attacking-5876af78/south-east/frame_007.png",
+          "animations/Attacking-5876af78/south-east/frame_008.png"
+        ],
+        "west": [
+          "animations/Attacking-5876af78/west/frame_000.png",
+          "animations/Attacking-5876af78/west/frame_001.png",
+          "animations/Attacking-5876af78/west/frame_002.png",
+          "animations/Attacking-5876af78/west/frame_003.png",
+          "animations/Attacking-5876af78/west/frame_004.png",
+          "animations/Attacking-5876af78/west/frame_005.png",
+          "animations/Attacking-5876af78/west/frame_006.png",
+          "animations/Attacking-5876af78/west/frame_007.png",
+          "animations/Attacking-5876af78/west/frame_008.png"
         ]
       }
     }
   },
   "export_version": "2.0",
-  "export_date": "2026-04-27T15:26:23.658901"
+  "export_date": "2026-05-02T03:13:26.513976"
 }
