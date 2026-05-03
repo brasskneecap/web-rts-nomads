@@ -97,10 +97,10 @@ func (s *GameState) upgradeCapForPlayerLocked(playerID string) int {
 	}
 }
 
-// playerHasUpgradeCenterLocked returns true if the player owns at least one
+// playerHasBlacksmithLocked returns true if the player owns at least one
 // fully-built (not under-construction) building with the "upgrade-purchase"
 // capability. Must be called under s.mu.
-func (s *GameState) playerHasUpgradeCenterLocked(playerID string) bool {
+func (s *GameState) playerHasBlacksmithLocked(playerID string) bool {
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
 		if !b.Visible {
@@ -227,7 +227,7 @@ func (s *GameState) reapplyUpgradesToOwnedUnitsByTypeLocked(playerID string, tra
 
 // handlePurchaseUpgradeLocked validates and executes a single upgrade purchase.
 // Validation failures are silent no-ops.
-//  1. Player must own a fully-built upgrade center.
+//  1. Player must own a fully-built blacksmith.
 //  2. Current level must be below the cap (tier-gated).
 //  3. Player must have enough gold.
 //
@@ -242,7 +242,7 @@ func (s *GameState) handlePurchaseUpgradeLocked(playerID string, track UpgradeTr
 	if !ok {
 		return
 	}
-	if !s.playerHasUpgradeCenterLocked(playerID) {
+	if !s.playerHasBlacksmithLocked(playerID) {
 		return
 	}
 	cap := s.upgradeCapForPlayerLocked(playerID)
@@ -392,7 +392,7 @@ func (s *GameState) playerUpgradeSnapshotsLocked(playerID string) []protocol.Pla
 		return nil
 	}
 	cap := s.upgradeCapForPlayerLocked(playerID)
-	hasCenter := s.playerHasUpgradeCenterLocked(playerID)
+	hasBlacksmith := s.playerHasBlacksmithLocked(playerID)
 
 	snapshots := make([]protocol.PlayerUpgradeSnapshot, 0, len(upgradeTrackDefs))
 	for _, def := range upgradeTrackDefs {
@@ -405,7 +405,7 @@ func (s *GameState) playerUpgradeSnapshotsLocked(playerID string) []protocol.Pla
 		canAfford := false
 		if level < cap {
 			nextCost = upgradeCostForLevel(def, nextLevel)
-			canAfford = hasCenter && player.Resources["gold"] >= nextCost
+			canAfford = hasBlacksmith && player.Resources["gold"] >= nextCost
 		}
 		snapshots = append(snapshots, protocol.PlayerUpgradeSnapshot{
 			Track:               string(def.Track),
@@ -414,7 +414,7 @@ func (s *GameState) playerUpgradeSnapshotsLocked(playerID string) []protocol.Pla
 			Cap:                 cap,
 			NextCostGold:        nextCost,
 			CanAfford:           canAfford,
-			HasUpgradeCenter:    hasCenter,
+			HasBlacksmith:       hasBlacksmith,
 			HPPerLevel:          def.HPPerLevel,
 			DamagePerLevel:      def.DamagePerLevel,
 			ArmorPerLevel:       def.ArmorPerLevel,
