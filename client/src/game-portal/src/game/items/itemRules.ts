@@ -1,0 +1,56 @@
+import type { ItemTier, ItemDef } from '../maps/itemDefs'
+
+/** Consistent tier border/accent colors used in vault and inventory UIs. */
+export const TIER_COLORS: Record<ItemTier, string> = {
+  common:    '#9ca3af',
+  uncommon:  '#4ade80',
+  rare:      '#60a5fa',
+  epic:      '#c084fc',
+  legendary: '#fb923c',
+}
+
+/**
+ * Builds a short human-readable stat description for an item tooltip.
+ * E.g. "+5 Damage, +2 Armor" for equipment; "Heals 50 HP" for a potion.
+ */
+export function buildItemTooltipBody(def: ItemDef): string {
+  const parts: string[] = []
+
+  if (def.kind === 'consumable' && def.consumable) {
+    const c = def.consumable
+    if (c.type === 'heal' && c.amount !== undefined) {
+      parts.push(`Heals ${c.amount} HP`)
+    } else if (c.type === 'shield' && c.amount !== undefined) {
+      parts.push(`Grants ${c.amount} Shield`)
+    } else if (c.type === 'buff' && c.durationSeconds !== undefined) {
+      parts.push(`Buff for ${c.durationSeconds}s`)
+    } else {
+      parts.push(c.type.charAt(0).toUpperCase() + c.type.slice(1))
+    }
+  }
+
+  const m = def.modifiers
+  if (m) {
+    if (m.hp)          parts.push(`+${m.hp} HP`)
+    if (m.damage)      parts.push(`+${m.damage} Damage`)
+    if (m.armor)       parts.push(`+${m.armor} Armor`)
+    if (m.attackSpeed) parts.push(`+${m.attackSpeed.toFixed(2)} Attack Speed`)
+    if (m.moveSpeed)   parts.push(`+${m.moveSpeed} Move Speed`)
+    if (m.healthRegen) parts.push(`+${m.healthRegen} HP/s`)
+    if (m.maxShield)   parts.push(`+${m.maxShield} Max Shield`)
+  }
+
+  if (def.effects && def.effects.length > 0) {
+    for (const fx of def.effects) {
+      switch (fx) {
+        case 'lifesteal':    parts.push('Lifesteal'); break
+        case 'regenerate':   parts.push('Regenerate'); break
+        case 'aura-buff':    parts.push('Aura Buff'); break
+        case 'reveal-fog':   parts.push('Reveal Fog'); break
+        case 'damage-reflect': parts.push('Damage Reflect'); break
+      }
+    }
+  }
+
+  return parts.join(', ')
+}

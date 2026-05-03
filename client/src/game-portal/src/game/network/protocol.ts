@@ -20,6 +20,8 @@ export type BuildingCapability =
   | 'enemy-spawner'
   | 'selectable'
   | 'upgrade-purchase'
+  | 'item-purchase'
+  | 'vault-access'
 export type ObstacleCapability = 'resource-source' | 'selectable'
 export type ResourceType = 'gold' | 'wood'
 export type UnitType = 'worker' | 'soldier' | (string & {})
@@ -309,6 +311,41 @@ export type PlayerSnapshot = {
   resources: ResourceStockSnapshot[]
   upgrades?: PlayerUpgradeSnapshot[]
   townHallTier?: number
+  vault?: VaultItemSnapshot[]
+  vaultCapacity?: number
+}
+
+export type PurchaseItemCommand = {
+  type: 'purchase_item'
+  buildingId: string
+  itemId: string
+}
+
+export type EquipItemCommand = {
+  type: 'equip_item'
+  unitId: number
+  slotIndex: number
+  instanceId: number
+}
+
+export type UnequipItemCommand = {
+  type: 'unequip_item'
+  unitId: number
+  slotIndex: number
+}
+
+export type UseConsumableCommand = {
+  type: 'use_consumable'
+  unitId: number
+  slotIndex: number
+}
+
+export type TransferItemCommand = {
+  type: 'transfer_item'
+  fromUnitId: number
+  fromSlotIdx: number
+  toUnitId: number
+  toSlotIdx: number
 }
 
 export type ClientMessage =
@@ -328,6 +365,11 @@ export type ClientMessage =
   | PatrolCommandMessage
   | PurchaseUpgradeCommand
   | UpgradeTownHallCommand
+  | PurchaseItemCommand
+  | EquipItemCommand
+  | UnequipItemCommand
+  | UseConsumableCommand
+  | TransferItemCommand
   | PongMessage
 
 // One entry in a unit's activeBuffs / activeDebuffs list. `id` is the perk
@@ -351,6 +393,8 @@ export type PerkCooldownSnapshot = {
 
 /** A single item held in an inventory slot. */
 export type ItemSnapshot = {
+  /** Server-assigned unique instance id — used for equip/unequip commands. */
+  instanceId: number
   /** Unique item id — matches an entry in the client's ITEM_DEF_MAP catalog
    *  for display name, icon, and modifier/effect resolution. */
   itemId: string
@@ -364,6 +408,13 @@ export type ItemSnapshot = {
 export type InventorySnapshot = {
   size: number
   slots: (ItemSnapshot | null)[]
+}
+
+/** An item stored in the player's vault between matches / on the town hall. */
+export type VaultItemSnapshot = {
+  instanceId: number
+  itemId: string
+  stacks?: number
 }
 
 export type UnitSnapshot = {

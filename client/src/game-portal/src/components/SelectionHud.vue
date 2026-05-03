@@ -257,22 +257,28 @@
         <!-- Right side: inventory slots for items the unit can hold. Only
              rendered when exactly one unit is selected — multi-select and
              building selections hide the panel entirely. Slot count is
-             fixed at INVENTORY_DISPLAY_SLOTS; the unit's inventory.size
-             determines how many of those are unlocked vs. locked. Locked
-             slots overlay the lock icon; held items render their own icon
-             over the container; empty unlocked slots show only the
-             icon-container art. -->
+             data-driven from unit.inventory.size. Locked slots overlay the
+             lock icon; occupied slots are interactive (click to unequip or
+             use consumable); empty unlocked slots are interactive when a
+             vault item is selected (click to equip). -->
         <div
           v-if="ui.selectedUnits.length === 1"
           class="details-inventory"
           aria-label="Inventory"
         >
-          <div
+          <component
+            :is="slot.locked ? 'div' : 'button'"
             v-for="slot in inventorySlots"
             :key="slot.index"
             class="inventory-slot"
-            :class="{ 'inventory-slot--locked': slot.locked }"
+            :class="{
+              'inventory-slot--locked': slot.locked,
+              'inventory-slot--equip-target': !slot.locked && !slot.occupied && ui.vaultSelectedInstanceId !== null,
+            }"
             :title="slot.title"
+            :type="slot.locked ? undefined : 'button'"
+            :disabled="slot.locked || undefined"
+            @click="!slot.locked ? onInventorySlotClick(slot) : undefined"
           >
             <img
               v-if="slot.iconUrl"
@@ -281,7 +287,10 @@
               class="inventory-slot__icon"
               draggable="false"
             />
-          </div>
+            <div v-else-if="slot.occupied && slot.itemId" class="inventory-slot__item-icon">
+              <ActionIcon :action="{ id: slot.itemId, label: slot.title, iconDef: { kind: 'item', type: slot.itemId } }" />
+            </div>
+          </component>
         </div>
       </section>
 
@@ -412,6 +421,9 @@ const emit = defineEmits<{
   'select-unit': [unitId: number]
   'deselect-unit': [unitId: number]
   'minimap-rect': [rect: DOMRect | null]
+  'use-consumable': [payload: { unitId: number; slotIndex: number }]
+  'unequip-item': [payload: { unitId: number; slotIndex: number }]
+  'equip-item': [payload: { unitId: number; slotIndex: number; instanceId: number }]
 }>()
 
 const props = defineProps<{
@@ -558,12 +570,11 @@ const unitCards = computed(() => {
   })
 })
 
-// Inventory display: always shows INVENTORY_DISPLAY_SLOTS slots so the panel
-// has a stable shape regardless of unit progression. The unit's
-// inventory.size determines how many of those are unlocked; the rest render
-// the lock icon. Held items render their icon over the container, looked up
-// via ITEM_DEF_MAP[itemId].iconKey through the action-icon sprite loader
-// (so item art lives in src/assets/actions/<iconKey>.png).
+// Inventory display is fully data-driven from unit.inventory. `size` slots
+// are unlocked; any index >= size renders the lock icon. Held items render
+// their icon and are interactive — click to use (consumable) or unequip
+// (equipment). Empty unlocked slots glow as equip targets when a vault item
+// is selected.
 const INVENTORY_DISPLAY_SLOTS = 2
 
 const inventorySlots = computed(() => {
@@ -572,33 +583,86 @@ const inventorySlots = computed(() => {
   const inventory = unit?.inventory
   const size = inventory?.size ?? 0
   const slots = inventory?.slots ?? []
+  // Show at least INVENTORY_DISPLAY_SLOTS cells so the panel has a stable
+  // shape even before the server sends inventory data; show more if the
+  // unit has more unlocked slots.
+  const displayCount = Math.max(INVENTORY_DISPLAY_SLOTS, size)
 
-  return Array.from({ length: INVENTORY_DISPLAY_SLOTS }, (_, index) => {
+  return Array.from({ length: displayCount }, (_, index) => {
     const locked = index >= size
     if (locked) {
       return {
         index,
         locked: true,
+        occupied: false,
         iconUrl: getActionIconImage('lock')?.src ?? null,
+        itemId: null as string | null,
         title: 'Locked slot',
+        instanceId: null as number | null,
+        isConsumable: false,
       }
     }
 
     const held = slots[index] ?? null
     if (!held) {
-      return { index, locked: false, iconUrl: null, title: 'Empty slot' }
+      const vaultId = props.ui.vaultSelectedInstanceId
+      return {
+        index,
+        locked: false,
+        occupied: false,
+        iconUrl: null,
+        itemId: null as string | null,
+        title: vaultId !== null ? 'Click to equip selected item' : 'Empty slot',
+        instanceId: null as number | null,
+        isConsumable: false,
+      }
     }
 
     const def = ITEM_DEF_MAP.get(held.itemId)
-    const iconKey = def?.iconKey ?? held.itemId
+    const isConsumable = def?.kind === 'consumable'
+    const actionHint = isConsumable ? 'Click to use' : 'Click to unequip'
     return {
       index,
       locked: false,
-      iconUrl: getActionIconImage(iconKey)?.src ?? null,
-      title: def?.displayName ?? held.itemId,
+      occupied: true,
+      iconUrl: null,
+      itemId: held.itemId,
+      title: def ? `${def.displayName} — ${actionHint}` : held.itemId,
+      instanceId: held.instanceId,
+      isConsumable,
     }
   })
 })
+
+function onInventorySlotClick(slot: {
+  index: number
+  locked: boolean
+  occupied: boolean
+  instanceId: number | null
+  isConsumable: boolean
+}) {
+  const unit = props.ui.selectedUnits[0]
+  if (!unit) return
+
+  if (slot.occupied) {
+    // No vault item selected: use consumable or unequip equipment.
+    if (props.ui.vaultSelectedInstanceId === null) {
+      if (slot.isConsumable) {
+        emit('use-consumable', { unitId: unit.id, slotIndex: slot.index })
+      } else {
+        emit('unequip-item', { unitId: unit.id, slotIndex: slot.index })
+      }
+    }
+    // If vault item is selected and the slot is occupied, do nothing
+    // (prevent accidental overwrite — user should unequip first).
+  } else {
+    // Empty slot: equip the selected vault item if one is chosen.
+    const instanceId = props.ui.vaultSelectedInstanceId
+    if (instanceId !== null) {
+      emit('equip-item', { unitId: unit.id, slotIndex: slot.index, instanceId })
+    }
+  }
+}
 
 // perkCooldownFraction returns the remaining/total ratio for a perk action,
 // clamped to [0, 1]. 0 means the perk is ready (no overlay rendered); >0
@@ -752,9 +816,7 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   background: #000;
 }
 
-/* Right side: vertical column of inventory slots, right-aligned. Each
-   slot uses the shared icon-container background. Display-only for now —
-   no pointer events, no hover effect. */
+/* Right side: vertical column of inventory slots, right-aligned. */
 .details-inventory {
   flex: 0 0 auto;
   align-self: stretch;
@@ -773,7 +835,36 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   height: 48px;
   background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
   image-rendering: pixelated;
+  /* Default: interactive slots enable pointer events via button element */
   pointer-events: none;
+  border: 2px solid transparent;
+  box-sizing: border-box;
+  cursor: default;
+}
+
+button.inventory-slot {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+}
+
+button.inventory-slot:hover {
+  border-color: rgba(212, 168, 79, 0.5);
+}
+
+button.inventory-slot:focus-visible {
+  border-color: rgba(212, 168, 79, 0.9);
+}
+
+/* Empty slot with a vault item selected — pulses to indicate it's a valid equip target. */
+.inventory-slot--equip-target {
+  animation: inventory-equip-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes inventory-equip-pulse {
+  0%, 100% { border-color: rgba(96, 165, 250, 0.35); }
+  50%       { border-color: rgba(96, 165, 250, 0.9); }
 }
 
 /* Held-item / lock icon overlay sits centered inside the icon-container
@@ -788,6 +879,21 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   transform: translate(-50%, -50%);
   object-fit: contain;
   image-rendering: pixelated;
+  pointer-events: none;
+}
+
+/* Item icon rendered via ActionIcon (canvas). Centered in the slot at 70%
+   size to match the lock icon's visual weight. */
+.inventory-slot__item-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 70%;
+  height: 70%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
 }
 

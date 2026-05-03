@@ -1,0 +1,14 @@
+{
+  "id": "potion_rare_heal",
+  "displayName": "Greater Healing Potion",
+  "description": "Restores 250 HP.",
+  "iconKey": "potion_rare",
+  "kind": "consumable",
+  "tier": "rare",
+  "category": "Potion",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 25,
+  "maxStacks": 99,
+  "consumable": { "type": "heal", "amount": 250 }
+}

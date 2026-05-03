@@ -138,6 +138,22 @@
         @select-unit="selectUnitOnly"
         @deselect-unit="deselectUnit"
         @minimap-rect="setMinimapPanelRect"
+        @use-consumable="({ unitId, slotIndex }) => sendUseConsumable(unitId, slotIndex)"
+        @unequip-item="({ unitId, slotIndex }) => sendUnequipItem(unitId, slotIndex)"
+        @equip-item="({ unitId, slotIndex, instanceId }) => sendEquipItem(unitId, slotIndex, instanceId)"
+      />
+      <VaultPanel
+        v-if="hasStarted && ui.vaultPanelOpen"
+        :vault="ui.vault"
+        :vault-capacity="ui.vaultCapacity"
+        :vault-selected-instance-id="ui.vaultSelectedInstanceId"
+        :units="ui.allPlayerUnits"
+        :on-select-vault-item="setVaultSelectedInstanceId"
+        :on-equip-item="sendEquipItem"
+        :on-unequip-item="sendUnequipItem"
+        :on-use-consumable="sendUseConsumable"
+        :on-transfer-item="sendTransferItem"
+        :on-close="() => performSelectionAction('open-vault')"
       />
     </div>
   </div>
@@ -150,6 +166,7 @@ import MatchHud from '@/components/MatchHud.vue'
 import SelectionHud from '@/components/SelectionHud.vue'
 import BattleTrackerPanel from '@/components/BattleTrackerPanel.vue'
 import DebugSpawnPanel from '@/components/DebugSpawnPanel.vue'
+import VaultPanel from '@/components/VaultPanel.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { fetchMapCatalog } from '@/game/maps/catalog'
 import type { MapCatalogEntry, MapId } from '@/game/network/protocol'
@@ -243,6 +260,11 @@ const {
   selectUnitOnly,
   deselectUnit,
   setMinimapPanelRect,
+  sendEquipItem,
+  sendUnequipItem,
+  sendUseConsumable,
+  sendTransferItem,
+  setVaultSelectedInstanceId,
   ui,
   connectionState,
   reconnectAttempt,

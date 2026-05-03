@@ -33,7 +33,8 @@
         "capabilities": [
           "unit-spawner",
           "occupiable",
-          "deposit-point"
+          "deposit-point",
+          "vault-access"
         ],
         "spawnUnitTypes": [
           "worker"

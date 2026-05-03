@@ -4,6 +4,7 @@ import type { ObstacleDef } from './obstacleDefs'
 import type { UnitDef } from './unitDefs'
 import type { ActionIconDef } from './actionIconDefs'
 import type { PerkDef } from './perkDefs'
+import type { ItemDef } from './itemDefs'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -93,4 +94,15 @@ export async function fetchActionIcons(): Promise<ActionIconDef[]> {
 
   const data = (await response.json()) as { icons: ActionIconDef[] }
   return data.icons
+}
+
+export async function fetchItemDefs(): Promise<ItemDef[]> {
+  const response = await fetch(`${API_BASE}/catalog/items`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to load item defs: ${response.status}`)
+  }
+
+  const data = (await response.json()) as { items: ItemDef[] }
+  return data.items
 }

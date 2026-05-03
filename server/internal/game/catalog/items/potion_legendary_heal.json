@@ -1,0 +1,14 @@
+{
+  "id": "potion_legendary_heal",
+  "displayName": "Legendary Elixir",
+  "description": "Restores 10000 HP.",
+  "iconKey": "potion_legendary",
+  "kind": "consumable",
+  "tier": "legendary",
+  "category": "Potion",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 250,
+  "maxStacks": 99,
+  "consumable": { "type": "heal", "amount": 10000 }
+}

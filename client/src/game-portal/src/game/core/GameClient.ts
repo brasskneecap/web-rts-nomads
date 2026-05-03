@@ -9,6 +9,7 @@ import type {
   ConnectionState,
   MapId,
   PlayerUpgradeSnapshot,
+  VaultItemSnapshot,
   WaveSnapshot,
 } from '../network/protocol'
 import type { DebugSpawnConfig, PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
@@ -17,12 +18,14 @@ import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs } from '../maps/perkDefs'
+import { initItemDefs } from '../maps/itemDefs'
 import {
   fetchBuildingDefs,
   fetchObstacleDefs,
   fetchUnitDefs,
   fetchActionIcons,
   fetchPerkDefs,
+  fetchItemDefs,
 } from '../maps/catalog'
 
 export type GameUiSnapshot = {
@@ -57,6 +60,14 @@ export type GameUiSnapshot = {
   // a non-building entity) is selected. Used to gate overlay panels such as
   // UpgradeCenterPanel.
   selectedBuildingType: string | null
+  // Vault contents for the local player.
+  vault: VaultItemSnapshot[]
+  vaultCapacity: number
+  vaultPanelOpen: boolean
+  vaultSelectedInstanceId: number | null
+  // All local-player units (not just selected ones). Needed by VaultPanel to
+  // show all units that can receive equipped items.
+  allPlayerUnits: Unit[]
 }
 
 export class GameClient {
@@ -108,18 +119,20 @@ export class GameClient {
   }
 
   async start(options: { resume?: boolean } = {}) {
-    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs] = await Promise.all([
+    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs] = await Promise.all([
       fetchBuildingDefs(),
       fetchObstacleDefs(),
       fetchUnitDefs(),
       fetchActionIcons(),
       fetchPerkDefs(),
+      fetchItemDefs().catch(() => []),
     ])
     initBuildingDefs(buildingDefs)
     initObstacleDefs(obstacleDefs)
     initUnitDefs(unitDefs)
     initActionIcons(actionIcons)
     initPerkDefs(perkDefs)
+    initItemDefs(itemDefs)
     await this.network.connect(options)
     this.loop.start()
   }
@@ -189,6 +202,11 @@ export class GameClient {
       upgrades: this.state.playerUpgrades,
       townHallTier: this.state.townHallTier,
       selectedBuildingType: this.state.getSelectedBuildingType(),
+      vault: this.state.localPlayerVault,
+      vaultCapacity: this.state.localPlayerVaultCapacity,
+      vaultPanelOpen: this.state.vaultPanelOpen,
+      vaultSelectedInstanceId: this.state.vaultSelectedInstanceId,
+      allPlayerUnits: this.state.getLocalPlayerUnits(),
     }
   }
 
@@ -198,6 +216,30 @@ export class GameClient {
 
   upgradeTownHall(buildingId: string): void {
     this.network.sendUpgradeTownHall(buildingId)
+  }
+
+  sendPurchaseItem(buildingId: string, itemId: string): void {
+    this.network.send({ type: 'purchase_item', buildingId, itemId })
+  }
+
+  sendEquipItem(unitId: number, slotIndex: number, instanceId: number): void {
+    this.network.send({ type: 'equip_item', unitId, slotIndex, instanceId })
+  }
+
+  sendUnequipItem(unitId: number, slotIndex: number): void {
+    this.network.send({ type: 'unequip_item', unitId, slotIndex })
+  }
+
+  sendUseConsumable(unitId: number, slotIndex: number): void {
+    this.network.send({ type: 'use_consumable', unitId, slotIndex })
+  }
+
+  sendTransferItem(fromUnitId: number, fromSlotIdx: number, toUnitId: number, toSlotIdx: number): void {
+    this.network.send({ type: 'transfer_item', fromUnitId, fromSlotIdx, toUnitId, toSlotIdx })
+  }
+
+  setVaultSelectedInstanceId(instanceId: number | null): void {
+    this.state.vaultSelectedInstanceId = instanceId
   }
 
   // Arms the 'debug-spawn-unit' targeting mode. Exposed for the Debug Spawn
@@ -326,6 +368,19 @@ export class GameClient {
         this.network.sendPurchaseUpgrade(track)
         return
       }
+    }
+
+    if (actionId.startsWith('buy-item-')) {
+      const itemId = actionId.slice('buy-item-'.length)
+      if (selectedBuilding) {
+        this.sendPurchaseItem(selectedBuilding.id, itemId)
+      }
+      return
+    }
+
+    if (actionId === 'open-vault') {
+      this.state.vaultPanelOpen = !this.state.vaultPanelOpen
+      return
     }
   }
 

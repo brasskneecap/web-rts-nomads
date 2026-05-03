@@ -1,0 +1,14 @@
+{
+  "id": "weapon_uncommon_sword",
+  "displayName": "Steel Sword",
+  "description": "+10 damage.",
+  "iconKey": "sword_uncommon",
+  "kind": "equipment",
+  "tier": "uncommon",
+  "category": "Weapon",
+  "slotKind": "weapon",
+  "allowedUnitTypes": [],
+  "costGold": 250,
+  "modifiers": { "damage": 10 },
+  "effects": []
+}

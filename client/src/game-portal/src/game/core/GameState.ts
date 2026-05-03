@@ -8,6 +8,7 @@ import type {
   ItemSnapshot,
   ObjectiveSnapshot,
   PlayerUpgradeSnapshot,
+  VaultItemSnapshot,
   VictorySnapshot,
   MapConfig,
   MatchSnapshotMessage,
@@ -28,6 +29,8 @@ import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
+import { ITEM_DEF_MAP } from '../maps/itemDefs'
+import { buildItemTooltipBody } from '../items/itemRules'
 import { formatPerkTooltip } from './perkTooltip'
 import { getUnitBodyRect, isPointInUnitBody } from '../rendering/unitSprites'
 
@@ -156,7 +159,12 @@ export type ActionItem = {
   tooltipBody?: string
   disabled?: boolean
   active?: boolean
-  iconDef?: { kind: 'building'; type: string } | { kind: 'unit'; type: string }
+  /** Override the icon lookup key used by ActionIcon. When set, ActionIcon uses
+   *  this key for the PNG/SVG lookup instead of `id`. Useful when the action id
+   *  is a compound slug (e.g. "buy-item-weapon_common_sword") but the visual
+   *  should reuse an existing icon (e.g. "attack"). */
+  iconId?: string
+  iconDef?: { kind: 'building'; type: string } | { kind: 'unit'; type: string } | { kind: 'item'; type: string }
   /** Seconds remaining on this perk's next activation. 0/undefined = ready. */
   cooldownRemaining?: number
   /** Full cooldown duration corresponding to cooldownRemaining. Drives the
@@ -405,6 +413,16 @@ export class GameState {
   // Current tier of the local player's town hall (1 = Town Hall, 2 = Keep,
   // 3 = Castle). 0 until the server sends the first snapshot with this data.
   townHallTier: number = 0
+
+  // Vault state — populated from PlayerSnapshot each tick.
+  localPlayerVault: VaultItemSnapshot[] = []
+  localPlayerVaultCapacity = 0
+  // True when the vault panel overlay is visible (toggled by the "Open Vault"
+  // building action). Stored here so it persists across selection changes.
+  vaultPanelOpen = false
+  // Currently selected vault item (for click-to-equip flow). Set by
+  // VaultPanel; cleared when the user deselects or closes the panel.
+  vaultSelectedInstanceId: number | null = null
 
   snapshotBuffer: InterpolationFrame[] = []
   interpolationDelayMs = 100
@@ -1739,7 +1757,11 @@ export class GameState {
         title,
         subtitle,
         details: getBuildingDetails(selectedBuilding),
-        actions: isUnderConstruction ? [] : getBuildingActions(selectedBuilding, this.playerUpgrades),
+        actions: isUnderConstruction ? [] : getBuildingActions(selectedBuilding, this.playerUpgrades, {
+          vault: this.localPlayerVault,
+          vaultCapacity: this.localPlayerVaultCapacity,
+          vaultPanelOpen: this.vaultPanelOpen,
+        }),
         production: activeProduction ? toProductionSummary(activeProduction) : undefined,
         construction: isUnderConstruction
           ? getBuildingConstructionSummary(selectedBuilding)
@@ -1900,6 +1922,12 @@ export class GameState {
     }
     if (localPlayer.townHallTier !== undefined) {
       this.townHallTier = localPlayer.townHallTier
+    }
+    if (localPlayer.vault !== undefined) {
+      this.localPlayerVault = localPlayer.vault ?? []
+    }
+    if (localPlayer.vaultCapacity !== undefined) {
+      this.localPlayerVaultCapacity = localPlayer.vaultCapacity
     }
   }
 }
@@ -2204,8 +2232,45 @@ function getGroupActions(
   return actions
 }
 
-function getBuildingActions(building: BuildingTile, upgrades: PlayerUpgradeSnapshot[] = []): ActionItem[] {
+function getBuildingActions(building: BuildingTile, upgrades: PlayerUpgradeSnapshot[] = [], vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number; vaultPanelOpen: boolean }): ActionItem[] {
   const actions: ActionItem[] = []
+
+  if (building.capabilities.includes('item-purchase')) {
+    for (const itemDef of ITEM_DEF_MAP.values()) {
+      // Vault capacity check: if vault is full and the item can't stack onto
+      // an existing entry, disable the purchase button.
+      const capacity = vaultState?.vaultCapacity ?? 0
+      const vault = vaultState?.vault ?? []
+      let atCapacity = false
+      if (capacity > 0 && vault.length >= capacity) {
+        // Check if any existing entry can absorb a stack
+        const existingEntry = vault.find((v) => v.itemId === itemDef.id)
+        const maxStacks = itemDef.maxStacks ?? 1
+        const currentStacks = existingEntry?.stacks ?? (existingEntry ? 1 : 0)
+        if (!existingEntry || currentStacks >= maxStacks) {
+          atCapacity = true
+        }
+      }
+      actions.push({
+        id: `buy-item-${itemDef.id}`,
+        label: itemDef.displayName,
+        iconDef: { kind: 'item', type: itemDef.id },
+        cost: [{ resourceId: 'gold', amount: itemDef.costGold, accent: '#d4a84f' }],
+        tooltipTitle: itemDef.displayName,
+        tooltipBody: buildItemTooltipBody(itemDef),
+        disabled: atCapacity,
+      })
+    }
+  }
+
+  if (building.capabilities.includes('vault-access')) {
+    actions.push({
+      id: 'open-vault',
+      label: 'Vault',
+      iconId: 'set-spawn-point',
+      active: vaultState?.vaultPanelOpen ?? false,
+    })
+  }
 
   if (building.capabilities.includes('unit-spawner')) {
     let hasTrainable = false
