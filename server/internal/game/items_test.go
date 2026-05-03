@@ -75,8 +75,8 @@ func TestItemCatalog_AllTenItemsLoaded(t *testing.T) {
 	}
 
 	weapons := []string{
-		"weapon_common_sword", "weapon_uncommon_sword", "weapon_rare_sword",
-		"weapon_epic_sword", "weapon_legendary_sword",
+		"weapon_common_sword", "cimitar", "flame_sword",
+		"ice_sword", "shadow_blade",
 	}
 	for _, id := range weapons {
 		def, ok := byID[id]

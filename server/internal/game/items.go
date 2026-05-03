@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"io/fs"
 	"sort"
+	"strings"
 )
 
-//go:embed catalog/items/*.json
+//go:embed catalog/items
 var itemDefsFS embed.FS
 
 // ItemKind distinguishes equipment (persistent stat modifiers) from consumables
@@ -87,29 +88,56 @@ type ItemDef struct {
 // GameState.itemCatalog points at this map; it is never mutated after init.
 var itemCatalogSingleton map[string]*ItemDef
 
+// itemImagePaths maps item ID → embed path of the sibling image.png, if present.
+var itemImagePaths map[string]string
+
 func init() {
-	entries, err := fs.ReadDir(itemDefsFS, "catalog/items")
-	if err != nil {
-		panic("catalog/items: " + err.Error())
-	}
-	itemCatalogSingleton = make(map[string]*ItemDef, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		data, err := itemDefsFS.ReadFile("catalog/items/" + entry.Name())
+	itemCatalogSingleton = make(map[string]*ItemDef)
+	itemImagePaths = make(map[string]string)
+	err := fs.WalkDir(itemDefsFS, "catalog/items", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			panic("catalog/items/" + entry.Name() + ": " + err.Error())
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".json") {
+			return nil
+		}
+		data, err := itemDefsFS.ReadFile(path)
+		if err != nil {
+			panic(path + ": " + err.Error())
 		}
 		var def ItemDef
 		if err := json.Unmarshal(data, &def); err != nil {
-			panic("catalog/items/" + entry.Name() + ": " + err.Error())
+			panic(path + ": " + err.Error())
 		}
 		if def.ID == "" {
-			panic("catalog/items/" + entry.Name() + `: missing "id" field`)
+			panic(path + `: missing "id" field`)
 		}
 		itemCatalogSingleton[def.ID] = &def
+		// Check for a sibling image.png in the same directory.
+		dir := path[:len(path)-len(d.Name())]
+		imgPath := dir + "image.png"
+		if _, ferr := itemDefsFS.Open(imgPath); ferr == nil {
+			itemImagePaths[def.ID] = imgPath
+		}
+		return nil
+	})
+	if err != nil {
+		panic("catalog/items: " + err.Error())
 	}
+}
+
+// GetItemImageData returns the raw PNG bytes for the given item ID's image,
+// or (nil, false) if no image is registered for that item.
+func GetItemImageData(id string) ([]byte, bool) {
+	imgPath, ok := itemImagePaths[id]
+	if !ok {
+		return nil, false
+	}
+	data, err := itemDefsFS.ReadFile(imgPath)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
 }
 
 // ListItemDefs returns all item definitions as a deterministically sorted

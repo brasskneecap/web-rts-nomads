@@ -5,10 +5,10 @@
   "iconKey": "potion_legendary",
   "kind": "consumable",
   "tier": "legendary",
-  "category": "Potion",
+  "category": "Consumable",
   "slotKind": "any",
   "allowedUnitTypes": [],
-  "costGold": 250,
+  "costGold": 1,
   "maxStacks": 99,
   "consumable": { "type": "heal", "amount": 10000 }
 }

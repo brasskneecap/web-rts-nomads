@@ -15,6 +15,7 @@ import { ACTION_ICON_MAP } from '@/game/maps/actionIconDefs'
 import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { getActionIconImage } from '@/game/rendering/actionIconSprites'
+import { getItemCatalogImage } from '@/game/rendering/itemCatalogImages'
 
 const props = defineProps<{
   action: ActionItem
@@ -212,16 +213,24 @@ function draw() {
   } else if (iconDef.kind === 'item') {
     const def = ITEM_DEF_MAP.get(iconDef.type)
     const iconKey = def?.iconKey ?? iconDef.type
-    const img = getActionIconImage(iconKey)
-    if (img) {
-      if (img.complete && img.naturalWidth > 0) {
-        drawActionSprite(ctx, img)
+    // Try local bundled asset first (e.g. for future packed icons)
+    const localImg = getActionIconImage(iconKey)
+    if (localImg) {
+      if (localImg.complete && localImg.naturalWidth > 0) {
+        drawActionSprite(ctx, localImg)
         return
       }
-      img.addEventListener('load', () => draw(), { once: true })
+      localImg.addEventListener('load', () => draw(), { once: true })
       return
     }
-    // Fall back to a placeholder until the dedicated PNG exists
+    // Try the catalog HTTP endpoint (image.png embedded alongside stats.json).
+    // Returns null while loading; draw() is called again when the image is ready.
+    const catalogImg = getItemCatalogImage(iconDef.type, draw)
+    if (catalogImg) {
+      drawActionSprite(ctx, catalogImg)
+      return
+    }
+    // Show placeholder while catalog image is loading or unavailable.
     const fallbackKey = def?.kind === 'consumable' ? 'set-spawn-point' : 'attack'
     const fallback = getActionIconImage(fallbackKey)
     if (fallback) {

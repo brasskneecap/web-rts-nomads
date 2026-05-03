@@ -1,14 +1,14 @@
 {
-  "id": "weapon_legendary_sword",
-  "displayName": "Worldbreaker",
+  "id": "shadow_blade",
+  "displayName": "Shadow Blade",
   "description": "+100 damage.",
-  "iconKey": "sword_legendary",
+  "iconKey": "shadow_blade",
   "kind": "equipment",
   "tier": "legendary",
   "category": "Weapon",
   "slotKind": "weapon",
   "allowedUnitTypes": [],
-  "costGold": 10000,
+  "costGold": 1,
   "modifiers": { "damage": 100 },
   "effects": []
 }

@@ -8,7 +8,7 @@
   "category": "Weapon",
   "slotKind": "weapon",
   "allowedUnitTypes": [],
-  "costGold": 100,
+  "costGold": 1,
   "modifiers": { "damage": 5 },
   "effects": []
 }
