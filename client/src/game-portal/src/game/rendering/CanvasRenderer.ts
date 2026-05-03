@@ -1627,7 +1627,7 @@ export class CanvasRenderer {
       // push the UI clear of the head instead of floating over the chest.
       const headTopY = spriteSet
         ? unit.y + bottomOffset - spriteSet.size.height * UNIT_SPRITE_SCALE * (1 - UNIT_SPRITE_TOP_PADDING)
-        : unit.y - (unitBounds ? Math.abs(unitBounds.minY) : 14)
+        : unit.y + unitBounds.top
 
       // Health bar always visible for all units. Color rules:
       //   - Hostile (wave enemies): always red.
@@ -2958,7 +2958,7 @@ export class CanvasRenderer {
 // GameState. Mirrors GameState.ownersAreHostile and the server's
 // playersAreHostile: real players are allied with each other; only the
 // wave-enemy faction is hostile to real players.
-function ownersAreHostile(a: string | undefined, b: string | undefined): boolean {
+function ownersAreHostile(a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b || a === b) return false
   return a === ENEMY_PLAYER_ID || b === ENEMY_PLAYER_ID
 }

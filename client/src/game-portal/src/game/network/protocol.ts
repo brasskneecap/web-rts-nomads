@@ -19,6 +19,7 @@ export type BuildingCapability =
   | 'deposit-point'
   | 'enemy-spawner'
   | 'selectable'
+  | 'upgrade-purchase'
 export type ObstacleCapability = 'resource-source' | 'selectable'
 export type ResourceType = 'gold' | 'wood'
 export type UnitType = 'worker' | 'soldier' | (string & {})

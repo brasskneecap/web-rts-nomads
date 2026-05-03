@@ -656,6 +656,7 @@ import { fetchMapCatalog, fetchMapCatalogFile, fetchUnitDefs, saveMapCatalogFile
 import type {
   BuildingType,
   JsonObject,
+  JsonValue,
   MapCatalogEntry,
   MapCatalogFile,
   MapConfig,
@@ -747,9 +748,9 @@ const enemyObjectiveId = ref('')
 const buildingObjectiveId = ref('')
 const selectedEditBuildingId = ref<string | null>(null)
 const editPanelPos = ref<{ x: number; y: number } | null>(null)
-const copiedBuilding = ref<{ buildingType: string; metadata: Record<string, unknown> | undefined } | null>(null)
+const copiedBuilding = ref<{ buildingType: string; metadata: JsonObject | undefined } | null>(null)
 const isPasteMode = ref(false)
-const movingBuilding = ref<{ id: string; buildingType: string; metadata: Record<string, unknown> | undefined; x: number; y: number } | null>(null)
+const movingBuilding = ref<{ id: string; buildingType: string; metadata: JsonObject | undefined; x: number; y: number } | null>(null)
 let nextVictoryConditionId = 1
 
 const camera = new Camera()
@@ -967,15 +968,17 @@ function removeSpawnPointLoadoutEntry(entryId: number) {
   spawnPointLoadout.value = spawnPointLoadout.value.filter((entry) => entry.id !== entryId)
 }
 
-function updateEditMeta(key: string, value: unknown) {
+function updateEditMeta(key: string, value: JsonValue | undefined) {
   if (!selectedEditBuildingId.value) return
   model.value = {
     ...model.value,
-    buildings: model.value.buildings.map((b) =>
-      b.id === selectedEditBuildingId.value
-        ? { ...b, metadata: { ...(b.metadata ?? {}), [key]: value } }
-        : b,
-    ),
+    buildings: model.value.buildings.map((b) => {
+      if (b.id !== selectedEditBuildingId.value) return b
+      const meta: JsonObject = { ...(b.metadata ?? {}) }
+      if (value === undefined) delete meta[key]
+      else meta[key] = value
+      return { ...b, metadata: meta }
+    }),
   }
 }
 
@@ -1037,7 +1040,7 @@ function copySelectedBuilding() {
 function pasteCopiedBuilding(cx: number, cy: number) {
   const copy = copiedBuilding.value
   if (!copy) return
-  model.value = setBuildingTile(model.value, cx, cy, copy.buildingType, copy.metadata as Record<string, unknown>)
+  model.value = setBuildingTile(model.value, cx, cy, copy.buildingType, copy.metadata)
 }
 
 function startMoveBuilding() {
@@ -1058,7 +1061,7 @@ function commitMoveBuilding(cx: number, cy: number) {
   if (!moving) return
   // Remove from old position then place at new position.
   let next = setBuildingTile(model.value, moving.x, moving.y, null)
-  next = setBuildingTile(next, cx, cy, moving.buildingType, moving.metadata as Record<string, unknown>)
+  next = setBuildingTile(next, cx, cy, moving.buildingType, moving.metadata)
   model.value = next
   movingBuilding.value = null
   // Re-select the building at its new position so the edit panel reopens.

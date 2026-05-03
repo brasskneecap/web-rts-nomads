@@ -916,7 +916,7 @@ export class GameState {
     return this.getInterpolatedUnits(performance.now())
   }
 
-  private isOwnedByLocalPlayer(unit: Unit): boolean {
+  private isOwnedByLocalPlayer(unit: { ownerId?: string }): boolean {
     return !!this.localPlayerId && unit.ownerId === this.localPlayerId
   }
 
@@ -931,7 +931,7 @@ export class GameState {
     return ownerId === ENEMY_PLAYER_ID
   }
 
-  ownersAreHostile(a: string | undefined, b: string | undefined): boolean {
+  ownersAreHostile(a: string | null | undefined, b: string | null | undefined): boolean {
     if (!a || !b || a === b) return false
     return a === ENEMY_PLAYER_ID || b === ENEMY_PLAYER_ID
   }
@@ -1094,7 +1094,14 @@ export class GameState {
   // drag only needs to reach the ankles (not the mid-torso) to pick the
   // unit up. Same body rect as single-click hit testing so drag-select and
   // click-select agree on what "hits" a unit.
-  isUnitInSelectionBox(unit: Unit): boolean {
+  isUnitInSelectionBox(unit: {
+    ownerId?: string
+    visible?: boolean
+    x: number
+    y: number
+    unitType?: string
+    path?: string
+  }): boolean {
     if (!this.selectionBox.active) return false
     if (!this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
     const { left, right, top, bottom } = this.getSelectionBounds()
