@@ -9,7 +9,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import type { ActionItem } from '@/game/core/GameState'
 import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
-import { UNIT_DEF_MAP } from '@/game/maps/unitDefs'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
 import { ACTION_ICON_MAP } from '@/game/maps/actionIconDefs'
 import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
@@ -25,8 +24,6 @@ const canvasEl = ref<HTMLCanvasElement | null>(null)
 const CANVAS_SIZE = 64
 const PADDING = 5
 const DRAW_SIZE = CANVAS_SIZE - PADDING * 2
-// Default color used for 'player'-tinted layers in icons
-const ICON_PLAYER_COLOR = '#3b82f6'
 
 function drawBuildingSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
   ctx.imageSmoothingEnabled = false
@@ -103,66 +100,15 @@ function drawUnitSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
 }
 
 function drawUnit(ctx: CanvasRenderingContext2D, type: string) {
-  // Prefer the packed south-facing rotation if we have sprites for this unit.
-  // Falls through to the procedural layers when no sprite set is registered
-  // or the image hasn't decoded yet.
   const spriteSet = getUnitSpriteSet(type)
   const portrait = spriteSet?.rotations.south ?? spriteSet?.rotations.north
     ?? spriteSet?.rotations.east ?? spriteSet?.rotations.west
-  if (portrait) {
-    if (portrait.complete && portrait.naturalWidth > 0) {
-      drawUnitSprite(ctx, portrait)
-      return
-    }
-    portrait.addEventListener('load', () => draw(), { once: true })
+  if (!portrait) return
+  if (portrait.complete && portrait.naturalWidth > 0) {
+    drawUnitSprite(ctx, portrait)
+    return
   }
-
-  const def = UNIT_DEF_MAP.get(type)
-  if (!def?.render) return
-
-  const { render } = def
-
-  // Compute bounding box of the unit's pixel-space layers
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const layer of render.layers) {
-    if (layer.kind === 'circle') {
-      minX = Math.min(minX, layer.cx - layer.r)
-      minY = Math.min(minY, layer.cy - layer.r)
-      maxX = Math.max(maxX, layer.cx + layer.r)
-      maxY = Math.max(maxY, layer.cy + layer.r)
-    } else if (layer.kind === 'poly') {
-      for (const [px, py] of layer.points) {
-        minX = Math.min(minX, px)
-        minY = Math.min(minY, py)
-        maxX = Math.max(maxX, px)
-        maxY = Math.max(maxY, py)
-      }
-    }
-  }
-  if (!isFinite(minX)) return
-
-  const unitW = maxX - minX
-  const unitH = maxY - minY
-  const scale = DRAW_SIZE / Math.max(unitW, unitH, 1)
-  const cx = PADDING + DRAW_SIZE / 2 - ((minX + maxX) / 2) * scale
-  const cy = PADDING + DRAW_SIZE / 2 - ((minY + maxY) / 2) * scale
-
-  for (const layer of render.layers) {
-    ctx.fillStyle = layer.color === 'player' ? ICON_PLAYER_COLOR : layer.color
-    if (layer.kind === 'circle') {
-      ctx.beginPath()
-      ctx.arc(cx + layer.cx * scale, cy + layer.cy * scale, layer.r * scale, 0, Math.PI * 2)
-      ctx.fill()
-    } else if (layer.kind === 'poly') {
-      ctx.beginPath()
-      ctx.moveTo(cx + layer.points[0][0] * scale, cy + layer.points[0][1] * scale)
-      for (let i = 1; i < layer.points.length; i++) {
-        ctx.lineTo(cx + layer.points[i][0] * scale, cy + layer.points[i][1] * scale)
-      }
-      ctx.closePath()
-      ctx.fill()
-    }
-  }
+  portrait.addEventListener('load', () => draw(), { once: true })
 }
 
 function drawActionSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
