@@ -210,11 +210,12 @@
               <option value="tile">Tile</option>
               <option value="obstacle">Obstacle</option>
               <option value="building">Building</option>
+              <option value="unit">Unit</option>
               <option value="erase">Erase</option>
             </select>
           </div>
 
-          <div v-if="brushMode !== 'building'" class="control-group">
+          <div v-if="brushMode !== 'building' && brushMode !== 'unit'" class="control-group">
             <label for="brush-size">Brush Size</label>
             <select id="brush-size" v-model.number="brushSize" :disabled="!paintModeEnabled">
               <option :value="1">1 × 1</option>
@@ -306,41 +307,6 @@
               placeholder="e.g. player1"
               :disabled="!paintModeEnabled"
             />
-            <label>Starting Units</label>
-            <div
-              v-for="entry in spawnPointLoadout"
-              :key="entry.id"
-              class="spawn-point-loadout-row"
-            >
-              <select v-model="entry.unitType" :disabled="!paintModeEnabled">
-                <option v-for="unit in playerSpawnUnits" :key="unit.type" :value="unit.type">
-                  {{ unit.label }}
-                </option>
-              </select>
-              <input
-                v-model.number="entry.count"
-                type="number"
-                min="1"
-                max="20"
-                :disabled="!paintModeEnabled"
-              />
-              <button
-                type="button"
-                class="spawn-point-row-button"
-                @click="removeSpawnPointLoadoutEntry(entry.id)"
-                :disabled="!paintModeEnabled || spawnPointLoadout.length <= 1"
-              >
-                Remove
-              </button>
-            </div>
-            <button
-              type="button"
-              class="spawn-point-row-button"
-              @click="addSpawnPointLoadoutEntry()"
-              :disabled="!paintModeEnabled"
-            >
-              Add Unit Group
-            </button>
           </div>
 
           <div v-if="brushMode === 'building' && selectedBuilding === 'enemy-spawnpoint'" class="control-group enemy-spawn-config">
@@ -432,6 +398,50 @@
               <option value="__none__">None (Stay at Spawn)</option>
               <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
             </select>
+          </div>
+
+          <div v-if="brushMode === 'unit'" class="control-group unit-brush-config">
+            <label>Owner</label>
+            <select v-model="placedUnitOwner" :disabled="!paintModeEnabled">
+              <option value="enemy">Enemy</option>
+              <option value="player">Player</option>
+            </select>
+
+            <template v-if="placedUnitOwner === 'player'">
+              <label for="placed-unit-player-label">Player Slot</label>
+              <select id="placed-unit-player-label" v-model="placedUnitPlayerLabel" :disabled="!paintModeEnabled">
+                <option v-for="lbl in placedUnitPlayerSlots" :key="lbl" :value="lbl">{{ lbl }}</option>
+              </select>
+              <label for="placed-unit-type-player">Unit Type</label>
+              <select id="placed-unit-type-player" v-model="placedUnitType" :disabled="!paintModeEnabled">
+                <option v-for="u in playerSpawnUnits" :key="u.type" :value="u.type">{{ u.label }}</option>
+              </select>
+            </template>
+
+            <template v-if="placedUnitOwner === 'enemy'">
+              <label for="placed-unit-type-enemy">Unit Type</label>
+              <select id="placed-unit-type-enemy" v-model="placedUnitType" :disabled="!paintModeEnabled">
+                <option v-for="u in ENEMY_SPAWN_UNITS" :key="u.type" :value="u.type">{{ u.label }}</option>
+              </select>
+              <label for="placed-unit-aggro-range">Aggro Range</label>
+              <input
+                id="placed-unit-aggro-range"
+                v-model.number="placedUnitAggroRange"
+                type="number"
+                min="0"
+                max="1000"
+                :disabled="!paintModeEnabled"
+              />
+              <label for="placed-unit-leash-range">Leash Range</label>
+              <input
+                id="placed-unit-leash-range"
+                v-model.number="placedUnitLeashRange"
+                type="number"
+                min="0"
+                max="1000"
+                :disabled="!paintModeEnabled"
+              />
+            </template>
           </div>
 
           <div v-if="brushMode === 'building' && selectedBuilding !== 'enemy-spawnpoint' && destroyBuildingObjectives.length" class="control-group">
@@ -614,21 +624,6 @@
               <label>Player Label</label>
               <input type="text" placeholder="e.g. player1" :value="selectedEditBuilding.metadata?.['playerLabel'] ?? ''" @input="updateEditMeta('playerLabel', ($event.target as HTMLInputElement).value || undefined)" />
             </div>
-            <div class="edit-field">
-              <label>Starting Units</label>
-              <div
-                v-for="(entry, idx) in (selectedEditBuilding.metadata?.['spawnUnits'] as Array<{unitType:string,count:number}> ?? [])"
-                :key="idx"
-                class="edit-loadout-row"
-              >
-                <select :value="entry.unitType" @change="updateEditLoadoutEntry(idx, 'unitType', ($event.target as HTMLSelectElement).value)">
-                  <option v-for="u in playerSpawnUnits" :key="u.type" :value="u.type">{{ u.label }}</option>
-                </select>
-                <input type="number" min="1" max="20" :value="entry.count" @input="updateEditLoadoutEntry(idx, 'count', +($event.target as HTMLInputElement).value)" style="width:48px" />
-                <button type="button" @click="removeEditLoadoutEntry(idx)" :disabled="(selectedEditBuilding.metadata?.['spawnUnits'] as Array<unknown> ?? []).length <= 1">✕</button>
-              </div>
-              <button type="button" class="edit-add-btn" @click="addEditLoadoutEntry">+ Add</button>
-            </div>
           </template>
 
           <!-- generic building: objective -->
@@ -646,6 +641,78 @@
           <button type="button" class="edit-delete-btn" @click="deleteSelectedBuilding">Delete Building</button>
         </div>
       </div>
+
+      <!-- Placed unit edit panel -->
+      <div v-if="selectedEditPlacedUnit" class="edit-panel placed-unit-edit-panel" :style="placedUnitEditPanelStyle">
+        <div class="edit-panel__header">
+          <span class="edit-panel__title">
+            {{ selectedEditPlacedUnit.owner === 'enemy' ? 'Enemy Unit' : 'Player Unit' }}
+          </span>
+          <button type="button" class="edit-panel__close" @click="selectedEditPlacedUnitId = null">&#x2715;</button>
+        </div>
+        <div class="edit-panel__body">
+
+          <!-- Owner -->
+          <div class="edit-field">
+            <label>Owner</label>
+            <select
+              :value="selectedEditPlacedUnit.owner"
+              @change="updateSelectedPlacedUnit({ owner: ($event.target as HTMLSelectElement).value as 'player' | 'enemy', playerLabel: undefined })"
+            >
+              <option value="player">Player</option>
+              <option value="enemy">Enemy</option>
+            </select>
+          </div>
+
+          <!-- Player slot (only when owner = player) -->
+          <div v-if="selectedEditPlacedUnit.owner === 'player'" class="edit-field">
+            <label>Player Slot</label>
+            <select
+              :value="selectedEditPlacedUnit.playerLabel ?? placedUnitPlayerSlots[0]"
+              @change="updateSelectedPlacedUnit({ playerLabel: ($event.target as HTMLSelectElement).value })"
+            >
+              <option v-for="slot in placedUnitPlayerSlots" :key="slot" :value="slot">{{ slot }}</option>
+            </select>
+          </div>
+
+          <!-- Unit type -->
+          <div class="edit-field">
+            <label>Unit Type</label>
+            <select
+              :value="selectedEditPlacedUnit.unitType"
+              @change="updateSelectedPlacedUnit({ unitType: ($event.target as HTMLSelectElement).value })"
+            >
+              <option
+                v-for="u in (selectedEditPlacedUnit.owner === 'enemy' ? ENEMY_SPAWN_UNITS : playerSpawnUnits)"
+                :key="u.type"
+                :value="u.type"
+              >{{ u.label }}</option>
+            </select>
+          </div>
+
+          <!-- Enemy-only: aggro and leash range -->
+          <template v-if="selectedEditPlacedUnit.owner === 'enemy'">
+            <div class="edit-field">
+              <label>Aggro Range (px)</label>
+              <input
+                type="number" min="0" max="1000"
+                :value="selectedEditPlacedUnit.aggroRange ?? 150"
+                @input="updateSelectedPlacedUnit({ aggroRange: +($event.target as HTMLInputElement).value })"
+              />
+            </div>
+            <div class="edit-field">
+              <label>Leash Range (px)</label>
+              <input
+                type="number" min="0" max="1000"
+                :value="selectedEditPlacedUnit.leashRange ?? 200"
+                @input="updateSelectedPlacedUnit({ leashRange: +($event.target as HTMLInputElement).value })"
+              />
+            </div>
+          </template>
+
+          <button type="button" class="edit-delete-btn" @click="deleteSelectedPlacedUnit">Delete Unit</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -660,6 +727,8 @@ import type {
   MapCatalogFile,
   MapConfig,
   ObstacleType,
+  PlacedUnit,
+  PlacedUnitOwner,
   TerrainType,
   TileSheet,
   UnitType,
@@ -690,17 +759,17 @@ import {
 } from '@/game/rendering/terrainTileset'
 import { getBuildingSprite } from '@/game/rendering/buildingSprites'
 import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
+import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { OBSTACLE_DEF_MAP } from '@/game/maps/obstacleDefs'
 import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
 
 const model = defineModel<MapConfig>({ required: true })
-type SpawnLoadoutEntry = { id: number; unitType: UnitType; count: number }
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 const tilePickerCanvas = ref<HTMLCanvasElement | null>(null)
 
 const TILE_PICKER_SCALE = 2
-const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'erase'>('terrain')
+const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'unit' | 'erase'>('terrain')
 const brushSize = ref<1 | 3 | 5 | 7>(1)
 const selectedTerrain = ref<TerrainType>('grass')
 const selectedObstacle = ref<ObstacleType>('rock')
@@ -717,7 +786,6 @@ const playerSpawnUnits = ref<Array<{ type: UnitType; label: string }>>([
   { type: 'worker', label: 'Worker' },
   { type: 'soldier', label: 'Soldier' },
 ])
-const spawnPointLoadout = ref<SpawnLoadoutEntry[]>([{ id: 1, unitType: 'worker', count: 3 }])
 const spawnPointFillOrder = ref(0)
 const spawnPointPlayerLabel = ref('')
 const enemyTargetPlayerLabel = ref('')
@@ -729,6 +797,12 @@ const enemyIgnoreWaveClear = ref(false)
 const enemyUnitType = ref('raider')
 const enemyWaveMode = ref<'gameStart' | 'always' | 'specific' | 'repeating'>('always')
 const enemyWaveNumber = ref(1)
+const placedUnitOwner = ref<PlacedUnitOwner>('enemy')
+const placedUnitPlayerLabel = ref('player1')
+const placedUnitType = ref('raider')
+const placedUnitAggroRange = ref(150)
+const placedUnitLeashRange = ref(200)
+const placedUnits = ref<PlacedUnit[]>(model.value.placedUnits ?? [])
 const draftCols = ref(model.value.gridCols)
 const draftRows = ref(model.value.gridRows)
 const copiedLabel = ref('Copy Export')
@@ -746,7 +820,9 @@ const mapLoadError = ref('')
 const enemyObjectiveId = ref('')
 const buildingObjectiveId = ref('')
 const selectedEditBuildingId = ref<string | null>(null)
+const selectedEditPlacedUnitId = ref<string | null>(null)
 const editPanelPos = ref<{ x: number; y: number } | null>(null)
+const placedUnitEditPanelPos = ref<{ x: number; y: number } | null>(null)
 const copiedBuilding = ref<{ buildingType: string; metadata: Record<string, unknown> | undefined } | null>(null)
 const isPasteMode = ref(false)
 const movingBuilding = ref<{ id: string; buildingType: string; metadata: Record<string, unknown> | undefined; x: number; y: number } | null>(null)
@@ -763,25 +839,31 @@ let isPainting = false
 let lastMouseX = 0
 let lastMouseY = 0
 let lastPaintKey = ''
-let nextSpawnLoadoutId = 2
 
 watch(
   model,
   (nextMap) => {
     draftCols.value = nextMap.gridCols
     draftRows.value = nextMap.gridRows
+    placedUnits.value = nextMap.placedUnits ?? []
     clampCamera()
   },
   { deep: true },
 )
 
-const exportedCatalogFile = computed<MapCatalogFile>(() => ({
-  id: model.value.id,
-  name: model.value.name,
-  description: model.value.description,
-  sortOrder: 1000,
-  map: (({ id: _id, name: _name, description: _description, ...map }) => map)(model.value),
-}))
+const exportedCatalogFile = computed<MapCatalogFile>(() => {
+  const { id: _id, name: _name, description: _description, ...mapFields } = model.value
+  return {
+    id: model.value.id,
+    name: model.value.name,
+    description: model.value.description,
+    sortOrder: 1000,
+    map: {
+      ...mapFields,
+      placedUnits: placedUnits.value.length > 0 ? placedUnits.value : undefined,
+    },
+  }
+})
 
 const serializedMap = computed(() => JSON.stringify(exportedCatalogFile.value, null, 2))
 const hasPaintedContent = computed(() =>
@@ -821,15 +903,47 @@ const availablePlayerLabels = computed(() => {
   return [...labels].sort()
 })
 
+// All player slot labels available for placed-unit assignment: spawn-point
+// labels take precedence, with fallback defaults so the dropdown is never empty.
+const placedUnitPlayerSlots = computed(() => {
+  const fromSpawnPoints = availablePlayerLabels.value
+  if (fromSpawnPoints.length > 0) return fromSpawnPoints
+  return ['player1', 'player2', 'player3', 'player4']
+})
+
 const selectedEditBuilding = computed(() =>
   selectedEditBuildingId.value
     ? model.value.buildings.find((b) => b.id === selectedEditBuildingId.value) ?? null
     : null
 )
 
+const selectedEditPlacedUnit = computed(() =>
+  selectedEditPlacedUnitId.value
+    ? placedUnits.value.find((u) => u.id === selectedEditPlacedUnitId.value) ?? null
+    : null
+)
+
+function updateSelectedPlacedUnit(patch: Partial<PlacedUnit>) {
+  if (!selectedEditPlacedUnitId.value) return
+  placedUnits.value = placedUnits.value.map((u) =>
+    u.id === selectedEditPlacedUnitId.value ? { ...u, ...patch } : u
+  )
+}
+
+function deleteSelectedPlacedUnit() {
+  if (!selectedEditPlacedUnitId.value) return
+  placedUnits.value = placedUnits.value.filter((u) => u.id !== selectedEditPlacedUnitId.value)
+  selectedEditPlacedUnitId.value = null
+}
+
 const editPanelStyle = computed(() => {
   if (!editPanelPos.value) return {}
   return { left: `${editPanelPos.value.x}px`, top: `${editPanelPos.value.y}px` }
+})
+
+const placedUnitEditPanelStyle = computed(() => {
+  if (!placedUnitEditPanelPos.value) return {}
+  return { left: `${placedUnitEditPanelPos.value.x}px`, top: `${placedUnitEditPanelPos.value.y}px` }
 })
 
 const editWaveMode = computed<'gameStart' | 'always' | 'specific' | 'repeating'>(() => {
@@ -935,6 +1049,8 @@ function applyPreset(cols: number, rows: number) {
 
 function clearMap() {
   model.value = createEditorMapConfig(model.value.gridCols, model.value.gridRows)
+  placedUnits.value = []
+  selectedEditPlacedUnitId.value = null
 }
 
 // Wipes all painted content (terrain, custom tiles, obstacles, buildings)
@@ -951,21 +1067,11 @@ function clearEverything() {
     defaultTile: model.value.defaultTile,
     waveConfig: model.value.waveConfig,
   })
+  placedUnits.value = []
+  selectedEditPlacedUnitId.value = null
   selectedSpawnTownhallId.value = ''
 }
 
-function addSpawnPointLoadoutEntry() {
-  const defaultUnitType = playerSpawnUnits.value[0]?.type ?? 'worker'
-  spawnPointLoadout.value = [
-    ...spawnPointLoadout.value,
-    { id: nextSpawnLoadoutId++, unitType: defaultUnitType, count: 1 },
-  ]
-}
-
-function removeSpawnPointLoadoutEntry(entryId: number) {
-  if (spawnPointLoadout.value.length <= 1) return
-  spawnPointLoadout.value = spawnPointLoadout.value.filter((entry) => entry.id !== entryId)
-}
 
 function updateEditMeta(key: string, value: unknown) {
   if (!selectedEditBuildingId.value) return
@@ -997,31 +1103,6 @@ function updateEditWaveMode(mode: 'gameStart' | 'always' | 'specific' | 'repeati
   }
 }
 
-function addEditLoadoutEntry() {
-  if (!selectedEditBuildingId.value) return
-  const b = selectedEditBuilding.value
-  if (!b) return
-  const current = (b.metadata?.['spawnUnits'] as Array<{ unitType: string; count: number }>) ?? []
-  const defaultType = playerSpawnUnits.value[0]?.type ?? 'worker'
-  updateEditMeta('spawnUnits', [...current, { unitType: defaultType, count: 1 }])
-}
-
-function removeEditLoadoutEntry(index: number) {
-  if (!selectedEditBuildingId.value) return
-  const b = selectedEditBuilding.value
-  if (!b) return
-  const current = (b.metadata?.['spawnUnits'] as Array<{ unitType: string; count: number }>) ?? []
-  if (current.length <= 1) return
-  updateEditMeta('spawnUnits', current.filter((_, i) => i !== index))
-}
-
-function updateEditLoadoutEntry(index: number, field: 'unitType' | 'count', value: string | number) {
-  if (!selectedEditBuildingId.value) return
-  const b = selectedEditBuilding.value
-  if (!b) return
-  const current = (b.metadata?.['spawnUnits'] as Array<{ unitType: string; count: number }>) ?? []
-  updateEditMeta('spawnUnits', current.map((entry, i) => i === index ? { ...entry, [field]: value } : entry))
-}
 
 function copySelectedBuilding() {
   const b = selectedEditBuilding.value
@@ -1213,7 +1294,9 @@ function updateHoverLabel(screenX: number, screenY: number) {
   const obstacle = getObstacleAt(cell.x, cell.y) ?? 'none'
   const building = getBuildingAt(cell.x, cell.y)
   const buildingLabel = building ? building.buildingType : 'none'
-  hoverLabel.value = `(${cell.x}, ${cell.y}) terrain: ${terrain}, obstacle: ${obstacle}, building: ${buildingLabel}`
+  const pu = placedUnitAt(cell.x, cell.y)
+  const unitLabel = pu ? ` unit: ${pu.unitType}(${pu.owner})` : ''
+  hoverLabel.value = `(${cell.x}, ${cell.y}) terrain: ${terrain}, obstacle: ${obstacle}, building: ${buildingLabel}${unitLabel}`
 }
 
 function getGridCellAtScreen(screenX: number, screenY: number) {
@@ -1245,6 +1328,7 @@ function getBrushCells(cx: number, cy: number, size: number): Array<{ x: number;
 
 function paintAtScreen(screenX: number, screenY: number) {
   selectedEditBuildingId.value = null
+  selectedEditPlacedUnitId.value = null
   const cell = getGridCellAtScreen(screenX, screenY)
   if (!cell) return
 
@@ -1252,9 +1336,14 @@ function paintAtScreen(screenX: number, screenY: number) {
   if (paintKey === lastPaintKey) return
   lastPaintKey = paintKey
 
-  // Buildings ignore brush size — placement is driven by the building footprint.
+  // Buildings and units ignore brush size — placement is per-cell.
   if (activeBrushMode.value === 'building') {
     paintBuildingAt(cell.x, cell.y)
+    return
+  }
+
+  if (activeBrushMode.value === 'unit') {
+    paintUnitAt(cell.x, cell.y)
     return
   }
 
@@ -1274,6 +1363,7 @@ function paintAtScreen(screenX: number, screenY: number) {
         c.y,
         null,
       )
+      placedUnits.value = placedUnits.value.filter((u) => !(u.x === c.x && u.y === c.y))
     }
     model.value = next
     return
@@ -1317,10 +1407,6 @@ function paintBuildingAt(cx: number, cy: number) {
     metadata = {
       townhallId: selectedSpawnTownhallId.value || null,
       fillOrder: Math.round(spawnPointFillOrder.value || 0),
-      spawnUnits: spawnPointLoadout.value.map((entry) => ({
-        unitType: entry.unitType,
-        count: Math.max(1, Math.round(entry.count || 1)),
-      })),
       ...(spawnPointPlayerLabel.value ? { playerLabel: spawnPointPlayerLabel.value } : {}),
     }
   } else if (selectedBuilding.value === 'enemy-spawnpoint') {
@@ -1341,6 +1427,31 @@ function paintBuildingAt(cx: number, cy: number) {
   }
 
   model.value = setBuildingTile(model.value, cx, cy, selectedBuilding.value, metadata)
+}
+
+function placedUnitAt(x: number, y: number): PlacedUnit | undefined {
+  return placedUnits.value.find((u) => u.x === x && u.y === y)
+}
+
+function paintUnitAt(cx: number, cy: number) {
+  // Remove any existing placed unit at this cell (only one per cell)
+  placedUnits.value = placedUnits.value.filter((u) => !(u.x === cx && u.y === cy))
+  // Add new placement
+  const id = `placed-unit-${placedUnitOwner.value}-${cx}-${cy}`
+  const entry: PlacedUnit = {
+    id,
+    x: cx,
+    y: cy,
+    owner: placedUnitOwner.value,
+    unitType: placedUnitType.value,
+  }
+  if (placedUnitOwner.value === 'player') {
+    entry.playerLabel = placedUnitPlayerLabel.value
+  } else {
+    entry.aggroRange = placedUnitAggroRange.value
+    entry.leashRange = placedUnitLeashRange.value
+  }
+  placedUnits.value.push(entry)
 }
 
 function getTerrainAt(x: number, y: number) {
@@ -1415,8 +1526,15 @@ function onMouseDown(event: MouseEvent) {
   if (!paintModeEnabled.value) {
     if (event.button === 0 && !isSpaceHeld) {
       const cell = getGridCellAtScreen(screen.x, screen.y)
-      const hit = cell ? getBuildingAt(cell.x, cell.y) : null
-      selectedEditBuildingId.value = hit?.id ?? null
+      const hitUnit = cell ? placedUnitAt(cell.x, cell.y) : null
+      if (hitUnit) {
+        selectedEditPlacedUnitId.value = hitUnit.id
+        selectedEditBuildingId.value = null
+      } else {
+        const hit = cell ? getBuildingAt(cell.x, cell.y) : null
+        selectedEditBuildingId.value = hit?.id ?? null
+        selectedEditPlacedUnitId.value = null
+      }
     }
     return
   }
@@ -1485,6 +1603,7 @@ function onMouseLeave() {
 function onKeyDown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     selectedEditBuildingId.value = null
+    selectedEditPlacedUnitId.value = null
     isPasteMode.value = false
     cancelMoveBuilding()
   }
@@ -1537,6 +1656,7 @@ function render() {
     drawMapBackground(ctx)
     drawGrid(ctx)
     drawMapBounds(ctx)
+    drawPlacedUnits(ctx)
     drawSelectionHighlight(ctx)
 
     ctx.restore()
@@ -1548,20 +1668,34 @@ function render() {
 }
 
 function updateEditPanelPos() {
-  const b = selectedEditBuilding.value
   const targetCanvas = canvas.value
+  const b = selectedEditBuilding.value
   if (!b || !targetCanvas) {
     editPanelPos.value = null
-    return
+  } else {
+    const cellSize = model.value.cellSize
+    const worldRight = (b.x + b.width) * cellSize
+    const worldTop = b.y * cellSize
+    const screenX = (worldRight - camera.x) * camera.zoom + 10
+    const screenY = (worldTop - camera.y) * camera.zoom
+    const clampedX = Math.min(screenX, targetCanvas.width - 250)
+    const clampedY = Math.max(0, Math.min(screenY, targetCanvas.height - 100))
+    editPanelPos.value = { x: clampedX, y: clampedY }
   }
-  const cellSize = model.value.cellSize
-  const worldRight = (b.x + b.width) * cellSize
-  const worldTop = b.y * cellSize
-  const screenX = (worldRight - camera.x) * camera.zoom + 10
-  const screenY = (worldTop - camera.y) * camera.zoom
-  const clampedX = Math.min(screenX, targetCanvas.width - 250)
-  const clampedY = Math.max(0, Math.min(screenY, targetCanvas.height - 100))
-  editPanelPos.value = { x: clampedX, y: clampedY }
+
+  const pu = selectedEditPlacedUnit.value
+  if (!pu || !targetCanvas) {
+    placedUnitEditPanelPos.value = null
+  } else {
+    const cellSize = model.value.cellSize
+    const worldRight = (pu.x + 1) * cellSize
+    const worldTop = pu.y * cellSize
+    const screenX = (worldRight - camera.x) * camera.zoom + 10
+    const screenY = (worldTop - camera.y) * camera.zoom
+    const clampedX = Math.min(screenX, targetCanvas.width - 250)
+    const clampedY = Math.max(0, Math.min(screenY, targetCanvas.height - 100))
+    placedUnitEditPanelPos.value = { x: clampedX, y: clampedY }
+  }
 }
 
 function drawSelectionHighlight(ctx: CanvasRenderingContext2D) {
@@ -1819,6 +1953,69 @@ function drawMapBounds(ctx: CanvasRenderingContext2D) {
   ctx.strokeRect(0, 0, model.value.width, model.value.height)
 }
 
+function drawPlacedUnits(ctx: CanvasRenderingContext2D) {
+  const cellSize = model.value.cellSize
+  for (const pu of placedUnits.value) {
+    const wx = pu.x * cellSize
+    const wy = pu.y * cellSize
+    const cx = wx + cellSize / 2
+    const cy = wy + cellSize / 2
+    const isSelected = pu.id === selectedEditPlacedUnitId.value
+
+    const spriteSet = getUnitSpriteSet(pu.unitType)
+    const portrait = spriteSet?.rotations.south ?? spriteSet?.rotations.north
+      ?? spriteSet?.rotations.east ?? spriteSet?.rotations.west
+
+    if (portrait) {
+      if (!portrait.complete || portrait.naturalWidth === 0) {
+        // Re-render when loaded
+        portrait.addEventListener('load', () => render(), { once: true })
+      } else {
+        ctx.save()
+        ctx.imageSmoothingEnabled = false
+
+        // Tinted background
+        ctx.fillStyle = pu.owner === 'enemy' ? 'rgba(231,76,60,0.25)' : 'rgba(59,130,246,0.25)'
+        ctx.fillRect(wx, wy, cellSize, cellSize)
+
+        // Sprite centered in cell
+        const scale = cellSize / Math.max(portrait.naturalWidth, portrait.naturalHeight)
+        const w = portrait.naturalWidth * scale
+        const h = portrait.naturalHeight * scale
+        ctx.globalAlpha = 0.92
+        ctx.drawImage(portrait, cx - w / 2, cy - h / 2, w, h)
+        ctx.globalAlpha = 1
+
+        // Border: yellow when selected, owner-color otherwise
+        ctx.strokeStyle = isSelected ? '#facc15' : (pu.owner === 'enemy' ? '#e74c3c' : '#3b82f6')
+        ctx.lineWidth = isSelected ? 2 / camera.zoom : 1 / camera.zoom
+        ctx.strokeRect(wx, wy, cellSize, cellSize)
+        ctx.restore()
+        continue
+      }
+    }
+
+    // Fallback: circle with initial
+    const r = cellSize * 0.35
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fillStyle = pu.owner === 'enemy' ? '#e74c3c' : '#3b82f6'
+    ctx.globalAlpha = 0.85
+    ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = isSelected ? '#facc15' : '#fff'
+    ctx.lineWidth = isSelected ? 2 : 1
+    ctx.stroke()
+    ctx.fillStyle = '#fff'
+    ctx.font = `bold ${Math.max(8, cellSize * 0.3)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(pu.unitType.charAt(0).toUpperCase(), cx, cy)
+  }
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+}
+
 // Re-render the tile picker whenever it becomes visible or the sheet changes.
 // Wait a tick so the v-if'd canvas is mounted before we try to draw.
 watch(
@@ -1850,15 +2047,13 @@ onMounted(() => {
       playerSpawnUnits.value = defs
         .filter((def) => def.trainLabel)
         .map((def) => ({ type: def.type as UnitType, label: def.name }))
-      const defaultUnitType = playerSpawnUnits.value[0]?.type ?? 'worker'
-      spawnPointLoadout.value = spawnPointLoadout.value.map((entry) => ({
-        ...entry,
-        unitType: playerSpawnUnits.value.some((unit) => unit.type === entry.unitType)
-          ? entry.unitType
-          : defaultUnitType,
-      }))
-      if (spawnPointLoadout.value.length === 0) {
-        spawnPointLoadout.value = [{ id: nextSpawnLoadoutId++, unitType: defaultUnitType, count: 3 }]
+      // Reset placed-unit type if the current selection is no longer valid for
+      // the current owner after unit defs are loaded.
+      if (placedUnitOwner.value === 'player') {
+        const validTypes = playerSpawnUnits.value.map((u) => u.type as string)
+        if (!validTypes.includes(placedUnitType.value)) {
+          placedUnitType.value = playerSpawnUnits.value[0]?.type ?? 'worker'
+        }
       }
     })
     .catch(() => {})
@@ -1917,6 +2112,32 @@ watch(selectedBuilding, () => {
   enemyTargetPlayerLabel.value = ''
 })
 
+watch(placedUnitOwner, (owner) => {
+  if (owner === 'enemy') {
+    placedUnitType.value = ENEMY_SPAWN_UNITS[0].type
+  } else {
+    placedUnitType.value = playerSpawnUnits.value[0]?.type ?? 'worker'
+  }
+})
+
+// When the owner is changed via the edit panel, reset the unit type to the
+// first valid option for the new owner so the saved value stays coherent.
+watch(
+  () => selectedEditPlacedUnit.value?.owner,
+  (owner, prevOwner) => {
+    if (!owner || owner === prevOwner) return
+    const pu = selectedEditPlacedUnit.value
+    if (!pu) return
+    const validTypes =
+      owner === 'enemy'
+        ? (ENEMY_SPAWN_UNITS as ReadonlyArray<{ type: string; label: string }>).map((u) => u.type)
+        : playerSpawnUnits.value.map((u) => u.type as string)
+    if (!validTypes.includes(pu.unitType)) {
+      updateSelectedPlacedUnit({ unitType: validTypes[0] ?? '' })
+    }
+  },
+)
+
 watch(
   () => model.value.buildings,
   (buildings) => {
@@ -1925,6 +2146,12 @@ watch(
     }
   },
 )
+
+watch(placedUnits, (units) => {
+  if (selectedEditPlacedUnitId.value && !units.find((u) => u.id === selectedEditPlacedUnitId.value)) {
+    selectedEditPlacedUnitId.value = null
+  }
+})
 
 onBeforeUnmount(() => {
   if (canvas.value) {
@@ -2195,10 +2422,16 @@ onBeforeUnmount(() => {
 }
 
 .spawn-point-config,
-.enemy-spawn-config {
+.enemy-spawn-config,
+.unit-brush-config {
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 8px;
   padding: 8px;
+}
+
+.unit-brush-config {
+  background: rgba(30, 58, 138, 0.22);
+  border-color: rgba(96, 165, 250, 0.35);
 }
 
 .spawn-point-config {

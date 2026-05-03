@@ -1,6 +1,10 @@
 package game
 
-import "webrts/server/pkg/protocol"
+import (
+	"log/slog"
+
+	"webrts/server/pkg/protocol"
+)
 
 type PlayerStartUnit struct {
 	UnitType string
@@ -154,4 +158,120 @@ func resolveUnitArchetype(def UnitDef, unitType string) string {
 		return def.Archetype
 	}
 	return unitType
+}
+
+// findPlayerLabelLocked returns the playerLabel metadata value from the
+// spawn-point building whose linked townhall is owned by playerID. Returns ""
+// when no matching spawn-point exists (e.g. the player joined on a map that
+// has no labelled spawn-points, or the player was not matched to one).
+func (s *GameState) findPlayerLabelLocked(playerID string) string {
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "spawn-point" {
+			continue
+		}
+		pl, ok := getMetadataString(b.Metadata, "playerLabel")
+		if !ok || pl == "" {
+			continue
+		}
+		townhall := s.resolveSpawnPointTownhallLocked(*b, true)
+		if townhall == nil || townhall.OwnerID == nil || *townhall.OwnerID != playerID {
+			continue
+		}
+		return pl
+	}
+	return ""
+}
+
+// spawnPlacedUnitsForPlayerLocked spawns authored player-owned placed units
+// whose PlayerLabel matches the label of the townhall slot claimed by playerID.
+// Must be called under s.mu write lock.
+func (s *GameState) spawnPlacedUnitsForPlayerLocked(playerID, color string) {
+	if len(s.MapConfig.PlacedUnits) == 0 {
+		return
+	}
+	playerLabel := s.findPlayerLabelLocked(playerID)
+	if playerLabel == "" {
+		// Player has no labelled slot — no authored units to place.
+		return
+	}
+	blocked := s.getBlockedCellsLocked()
+	cellSize := s.MapConfig.CellSize
+	for _, entry := range s.MapConfig.PlacedUnits {
+		if entry.Owner != "player" || entry.PlayerLabel != playerLabel {
+			continue
+		}
+		worldX := float64(entry.X)*cellSize + cellSize/2
+		worldY := float64(entry.Y)*cellSize + cellSize/2
+		cell := s.worldToGrid(worldX, worldY)
+		spawnCell, ok := s.findNearestWalkable(cell, blocked)
+		if !ok {
+			slog.Warn("spawnPlacedUnitsForPlayerLocked: no walkable cell found for placed unit; skipping",
+				"playerID", playerID, "unitType", entry.UnitType, "gridX", entry.X, "gridY", entry.Y)
+			continue
+		}
+		spawnPos := s.gridToWorldCenter(spawnCell)
+		unit := s.spawnPlayerUnitLocked(entry.UnitType, playerID, color, spawnPos)
+		if unit == nil {
+			slog.Warn("spawnPlacedUnitsForPlayerLocked: spawnPlayerUnitLocked returned nil; skipping",
+				"playerID", playerID, "unitType", entry.UnitType)
+		}
+	}
+}
+
+// spawnPlacedEnemyUnitsLocked spawns authored enemy placed units as stationary
+// guards. Must be called under s.mu write lock.
+func (s *GameState) spawnPlacedEnemyUnitsLocked() {
+	if len(s.MapConfig.PlacedUnits) == 0 {
+		return
+	}
+	blocked := s.getBlockedCellsLocked()
+	cellSize := s.MapConfig.CellSize
+	for _, entry := range s.MapConfig.PlacedUnits {
+		if entry.Owner != "enemy" {
+			continue
+		}
+		worldX := float64(entry.X)*cellSize + cellSize/2
+		worldY := float64(entry.Y)*cellSize + cellSize/2
+		cell := s.worldToGrid(worldX, worldY)
+		spawnCell, ok := s.findNearestWalkable(cell, blocked)
+		if !ok {
+			slog.Warn("spawnPlacedEnemyUnitsLocked: no walkable cell found for placed enemy; skipping",
+				"unitType", entry.UnitType, "gridX", entry.X, "gridY", entry.Y)
+			continue
+		}
+		spawnPos := s.gridToWorldCenter(spawnCell)
+		unit := s.spawnEnemyUnitLocked(entry.UnitType, spawnPos)
+		if unit == nil {
+			slog.Warn("spawnPlacedEnemyUnitsLocked: spawnEnemyUnitLocked returned nil; skipping",
+				"unitType", entry.UnitType)
+			continue
+		}
+		unit.GuardMode = true
+		unit.GuardAnchorX = spawnPos.X
+		unit.GuardAnchorY = spawnPos.Y
+		unit.GuardAggroRange = entry.AggroRange
+		unit.GuardLeashRange = entry.LeashRange
+		unit.IgnoreWaveClear = true
+		unit.Order = OrderState{
+			Type:  OrderHold,
+			HoldX: spawnPos.X,
+			HoldY: spawnPos.Y,
+		}
+		unit.CombatAnchorX = spawnPos.X
+		unit.CombatAnchorY = spawnPos.Y
+		unit.Status = "Guarding"
+	}
+}
+
+// ensurePlacedEnemiesSpawnedLocked spawns authored enemy guard units exactly
+// once per match. Idempotent — returns immediately when already spawned.
+// Must be called under s.mu write lock.
+func (s *GameState) ensurePlacedEnemiesSpawnedLocked() {
+	if s.PlacedEnemiesSpawned {
+		return
+	}
+	s.ensureEnemyPlayerLocked()
+	s.spawnPlacedEnemyUnitsLocked()
+	s.PlacedEnemiesSpawned = true
 }

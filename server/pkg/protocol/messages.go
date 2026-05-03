@@ -39,6 +39,19 @@ type VictoryCondition struct {
 	Count int `json:"count,omitempty"`
 }
 
+// PlacedUnit is a statically authored unit in the map. Player-owned entries
+// spawn when their player slot joins. Enemy entries spawn at match start as
+// stationary guards.
+type PlacedUnit struct {
+	GridCoord
+	ID          string  `json:"id"`
+	Owner       string  `json:"owner"`           // "player" | "enemy"
+	PlayerLabel string  `json:"playerLabel,omitempty"`
+	UnitType    string  `json:"unitType"`
+	AggroRange  float64 `json:"aggroRange,omitempty"`
+	LeashRange  float64 `json:"leashRange,omitempty"`
+}
+
 type MapConfig struct {
 	ID          string             `json:"id"`
 	Name        string             `json:"name"`
@@ -54,6 +67,7 @@ type MapConfig struct {
 	DefaultTile *TileCoord         `json:"defaultTile,omitempty"`
 	Obstacles   []ObstacleTile     `json:"obstacles"`
 	Buildings   []BuildingTile     `json:"buildings"`
+	PlacedUnits []PlacedUnit       `json:"placedUnits,omitempty"`
 	WaveConfig  *WaveConfig        `json:"waveConfig,omitempty"`
 	// VictoryConditions lists the objectives that must ALL be completed for the
 	// player to win. Omitted or empty means no server-managed win condition

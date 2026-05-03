@@ -83,6 +83,19 @@ export type WaveConfig = {
   waveDuration?: number
 }
 
+export type PlacedUnitOwner = 'player' | 'enemy'
+
+export type PlacedUnit = {
+  id: string
+  x: number
+  y: number
+  owner: PlacedUnitOwner
+  playerLabel?: string
+  unitType: string
+  aggroRange?: number
+  leashRange?: number
+}
+
 export type MapConfig = {
   id: MapId
   name: string
@@ -101,6 +114,7 @@ export type MapConfig = {
   /** All conditions must be completed simultaneously for victory. */
   victoryConditions?: VictoryCondition[]
   debug?: MapDebugConfig
+  placedUnits?: PlacedUnit[]
 }
 
 // Per-map debug/telemetry opt-ins. Only set on development maps — production

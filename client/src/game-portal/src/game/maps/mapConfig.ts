@@ -5,6 +5,7 @@ import type {
   MapConfig,
   ObstacleTile,
   ObstacleType,
+  PlacedUnit,
   TerrainTile,
   TerrainType,
   TileInstance,
@@ -72,6 +73,7 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
     waveConfig: map.waveConfig,
     victoryConditions: map.victoryConditions?.length ? map.victoryConditions : undefined,
     debug: map.debug,
+    placedUnits: clampPlacedUnits(map.placedUnits ?? [], gridCols, gridRows),
   }
 }
 
@@ -423,6 +425,14 @@ function normalizeBuildingTile(building: BuildingTile): BuildingTile {
       ...(building.metadata ?? {}),
     },
   }
+}
+
+function clampPlacedUnits(
+  units: PlacedUnit[],
+  gridCols: number,
+  gridRows: number,
+): PlacedUnit[] {
+  return units.filter((u) => isWithinGrid(u.x, u.y, gridCols, gridRows))
 }
 
 function doesBuildingCoverCell(building: BuildingTile, x: number, y: number) {

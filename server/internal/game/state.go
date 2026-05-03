@@ -197,6 +197,17 @@ type Unit struct {
 	// attacker, keyed by attacker ID. On death the map is paid out so
 	// contributors earn damage XP only when the target actually dies.
 	DamageDealtByUnit map[int]int
+
+	// GuardMode pins the combat anchor at the authored spawn position and
+	// overrides aggro/leash ranges with GuardAggroRange/GuardLeashRange.
+	// Set on enemy placed units (PlacedUnit.Owner == "enemy") by
+	// spawnPlacedEnemyUnitsLocked. Player-owned placed units do NOT use guard
+	// mode — they are normal units that happen to spawn at an authored location.
+	GuardMode       bool
+	GuardAnchorX    float64
+	GuardAnchorY    float64
+	GuardAggroRange float64
+	GuardLeashRange float64
 }
 
 const (
@@ -348,6 +359,11 @@ type GameState struct {
 	objectiveKillCounts map[string]int
 	// victoryAchieved is true once every VictoryCondition is complete.
 	victoryAchieved bool
+
+	// PlacedEnemiesSpawned is set to true after spawnPlacedEnemyUnitsLocked
+	// runs for the first time, so guard units are spawned exactly once per
+	// match regardless of how many real players join.
+	PlacedEnemiesSpawned bool
 }
 
 const (
@@ -1091,6 +1107,8 @@ func (s *GameState) EnsurePlayer(playerID string) {
 
 	home, spawnPoint := s.claimPlayerStartLocked(playerID)
 	s.spawnUnitsForPlayerLocked(playerID, color, home, s.getPlayerStartLoadoutLocked(spawnPoint))
+	s.spawnPlacedUnitsForPlayerLocked(playerID, color)
+	s.ensurePlacedEnemiesSpawnedLocked()
 }
 
 func (s *GameState) RemovePlayer(playerID string) {

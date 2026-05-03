@@ -17,6 +17,13 @@ func (s *GameState) shouldDropCurrentTargetLocked(unit *Unit, profile CombatProf
 		if unit.Order.Type == OrderAttackTarget {
 			return false
 		}
+		// Guard units use their authored anchor as the leash origin and their
+		// GuardLeashRange as the leash radius, not the profile default.
+		if unit.GuardMode {
+			distSq := distanceSquared(unit.GuardAnchorX, unit.GuardAnchorY, target.X, target.Y)
+			leash := unit.GuardLeashRange
+			return distSq > leash*leash
+		}
 		return !s.targetInsideLeashLocked(unit, target.X, target.Y, profile)
 	}
 	if unit.AttackBuildingTargetID != "" {
@@ -52,7 +59,13 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 	// until the enemy closes to AttackRange, which would cause the unit to
 	// sit Attacking with 0 damage dealt until the enemy finally steps in range.
 	detectionRange := effectiveDetectionRange(unit, profile)
-	if unit.Order.Type == OrderHold {
+	if unit.GuardMode && unit.GuardAggroRange > 0 {
+		// Guard units use their authored aggro range instead of the profile
+		// default, measured from their current position (scan radius). The leash
+		// is checked separately in shouldDropCurrentTargetLocked using the
+		// anchor as origin.
+		detectionRange = unit.GuardAggroRange
+	} else if unit.Order.Type == OrderHold {
 		detectionRange = unit.AttackRange
 	}
 

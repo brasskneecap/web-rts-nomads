@@ -124,7 +124,9 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 			(unit.OwnerID == enemyPlayerID && unit.ObjectiveID != "") {
 			continue
 		}
-		if unit.OwnerID == enemyPlayerID ||
+		if unit.GuardMode {
+			// Guard anchor is pinned at the authored position — do not slide.
+		} else if unit.OwnerID == enemyPlayerID ||
 			unit.Order.Type == OrderAttackMove ||
 			unit.Order.Type == OrderPatrol {
 			unit.CombatAnchorX = unit.X
@@ -157,6 +159,8 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 		}
 		s.evaluateCombatLocked(unit, ctx)
 	}
+
+	s.tickGuardReturnLocked(blocked)
 }
 
 func (s *GameState) unitUsesCombatAI(unit *Unit) bool {
@@ -361,6 +365,42 @@ func (s *GameState) PatrolUnits(playerID string, unitIDs []int, dest protocol.Ve
 			unit.Status = "Patrolling"
 		} else {
 			unit.Status = "Patrol Blocked"
+		}
+	}
+}
+
+// tickGuardReturnLocked handles return-to-anchor movement for guard units that
+// currently have no attack target. Units with an active target are managed by
+// the normal combat system; this function only acts once the target is gone.
+// Must be called under s.mu write lock.
+func (s *GameState) tickGuardReturnLocked(blocked map[gridPoint]bool) {
+	const guardArrivalEpsilon = 12.0
+
+	for _, unit := range s.Units {
+		if !unit.GuardMode || unit.HP <= 0 || !unit.Visible {
+			continue
+		}
+		if unit.AttackTargetID != 0 || unit.AttackBuildingTargetID != "" {
+			// Combat system owns movement while a target is held.
+			continue
+		}
+		dx := unit.GuardAnchorX - unit.X
+		dy := unit.GuardAnchorY - unit.Y
+		distSq := dx*dx + dy*dy
+		if distSq <= guardArrivalEpsilon*guardArrivalEpsilon {
+			// At anchor: clear any stale movement, mark as Guarding.
+			if unit.Moving {
+				unit.Path = nil
+				unit.Moving = false
+			}
+			unit.Status = "Guarding"
+			continue
+		}
+		// Not at anchor: path home if not already moving there.
+		if !unit.Moving {
+			dest := protocol.Vec2{X: unit.GuardAnchorX, Y: unit.GuardAnchorY}
+			s.assignUnitPath(unit, dest, blocked, nil)
+			unit.Status = "Returning"
 		}
 	}
 }

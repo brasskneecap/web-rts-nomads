@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -78,6 +79,77 @@ func hydrateObstacles(obstacles []protocol.ObstacleTile) {
 			o.Hp = o.MaxHp
 		}
 	}
+}
+
+const (
+	placedUnitDefaultAggroRange = 150.0
+	placedUnitDefaultLeashRange = 200.0
+)
+
+// hydratePlacedUnits validates and normalises the PlacedUnits slice of a map
+// config. Invalid entries are silently dropped with a log warning so a bad
+// authored entry never crashes the server. Runtime defaults (AggroRange,
+// LeashRange) are applied in-place; they are NOT written back to disk.
+func hydratePlacedUnits(units []protocol.PlacedUnit, cfg protocol.MapConfig) []protocol.PlacedUnit {
+	if len(units) == 0 {
+		return []protocol.PlacedUnit{}
+	}
+	out := make([]protocol.PlacedUnit, 0, len(units))
+	for _, entry := range units {
+		switch entry.Owner {
+		case "player", "enemy":
+		default:
+			slog.Warn("hydratePlacedUnits: dropping entry with unknown owner",
+				"owner", entry.Owner, "unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
+			continue
+		}
+		if entry.Owner == "player" && entry.PlayerLabel == "" {
+			slog.Warn("hydratePlacedUnits: dropping player entry with missing playerLabel",
+				"unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
+			continue
+		}
+		def, ok := getUnitDef(entry.UnitType)
+		if !ok {
+			slog.Warn("hydratePlacedUnits: dropping entry with unknown unitType",
+				"owner", entry.Owner, "unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
+			continue
+		}
+		if entry.Owner == "player" && def.TrainLabel == "" {
+			slog.Warn("hydratePlacedUnits: dropping player entry for non-trainable unit (no trainLabel)",
+				"unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
+			continue
+		}
+		if entry.Owner == "enemy" && def.TrainLabel != "" {
+			slog.Warn("hydratePlacedUnits: dropping enemy entry for player-trainable unit (has trainLabel)",
+				"unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
+			continue
+		}
+		gridW := int(cfg.Width / cfg.CellSize)
+		gridH := int(cfg.Height / cfg.CellSize)
+		if cfg.GridCols > 0 {
+			gridW = cfg.GridCols
+		}
+		if cfg.GridRows > 0 {
+			gridH = cfg.GridRows
+		}
+		if entry.X < 0 || entry.X >= gridW || entry.Y < 0 || entry.Y >= gridH {
+			slog.Warn("hydratePlacedUnits: dropping out-of-bounds entry",
+				"owner", entry.Owner, "unitType", entry.UnitType, "x", entry.X, "y", entry.Y,
+				"gridW", gridW, "gridH", gridH)
+			continue
+		}
+		if entry.ID == "" {
+			entry.ID = fmt.Sprintf("placed-unit-%s-%d-%d", entry.Owner, entry.X, entry.Y)
+		}
+		if entry.AggroRange == 0 {
+			entry.AggroRange = placedUnitDefaultAggroRange
+		}
+		if entry.LeashRange == 0 {
+			entry.LeashRange = placedUnitDefaultLeashRange
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 type MapCatalogEntry struct {
@@ -202,6 +274,10 @@ func SaveMapCatalogEntry(entry MapCatalogEntry) error {
 
 	hydrateObstacles(entry.Map.Obstacles)
 	hydrateBuildings(entry.Map.Buildings)
+	if entry.Map.PlacedUnits == nil {
+		entry.Map.PlacedUnits = []protocol.PlacedUnit{}
+	}
+	entry.Map.PlacedUnits = hydratePlacedUnits(entry.Map.PlacedUnits, entry.Map)
 
 	runtimeMapsMu.Lock()
 	runtimeMaps[entry.ID] = entry
@@ -282,6 +358,7 @@ func mustLoadMapCatalog() []MapCatalogEntry {
 
 		hydrateObstacles(entry.Map.Obstacles)
 		hydrateBuildings(entry.Map.Buildings)
+		entry.Map.PlacedUnits = hydratePlacedUnits(entry.Map.PlacedUnits, entry.Map)
 
 		entries = append(entries, entry)
 	}
@@ -355,6 +432,7 @@ func indexMapCatalog(entries []MapCatalogEntry) map[string]MapCatalogEntry {
 func cloneMapConfig(mapConfig protocol.MapConfig) protocol.MapConfig {
 	cloned := mapConfig
 	cloned.Terrain = append([]protocol.TerrainTile(nil), mapConfig.Terrain...)
+	cloned.PlacedUnits = append([]protocol.PlacedUnit(nil), mapConfig.PlacedUnits...)
 	cloned.Obstacles = make([]protocol.ObstacleTile, len(mapConfig.Obstacles))
 	for i, obstacle := range mapConfig.Obstacles {
 		clonedObstacle := obstacle
