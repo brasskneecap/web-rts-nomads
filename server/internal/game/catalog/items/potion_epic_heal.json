@@ -1,0 +1,14 @@
+{
+  "id": "potion_epic_heal",
+  "displayName": "Superior Healing Potion",
+  "description": "Restores 1000 HP.",
+  "iconKey": "potion_epic",
+  "kind": "consumable",
+  "tier": "epic",
+  "category": "Potion",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 100,
+  "maxStacks": 99,
+  "consumable": { "type": "heal", "amount": 1000 }
+}

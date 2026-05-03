@@ -1,7 +1,7 @@
 <template>
   <canvas v-if="useCanvas" ref="canvasEl" width="64" height="64" class="action-icon" />
   <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="action-icon">
-    <path :d="getActionIcon(action.id)" />
+    <path :d="getActionIcon(action.iconId ?? action.id)" />
   </svg>
 </template>
 
@@ -10,6 +10,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import type { ActionItem } from '@/game/core/GameState'
 import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
 import { UNIT_DEF_MAP } from '@/game/maps/unitDefs'
+import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
 import { ACTION_ICON_MAP } from '@/game/maps/actionIconDefs'
 import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
@@ -177,7 +178,9 @@ function drawActionSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) 
 }
 
 const useCanvas = computed(() => {
-  return !!props.action.iconDef || !!getActionIconImage(props.action.id)
+  if (props.action.iconDef) return true
+  const lookupId = props.action.iconId ?? props.action.id
+  return !!getActionIconImage(lookupId)
 })
 
 function draw() {
@@ -188,7 +191,8 @@ function draw() {
 
   ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
 
-  const sprite = getActionIconImage(props.action.id)
+  const lookupId = props.action.iconId ?? props.action.id
+  const sprite = getActionIconImage(lookupId)
   if (sprite) {
     if (sprite.complete && sprite.naturalWidth > 0) {
       drawActionSprite(ctx, sprite)
@@ -205,6 +209,28 @@ function draw() {
     drawBuilding(ctx, iconDef.type)
   } else if (iconDef.kind === 'unit') {
     drawUnit(ctx, iconDef.type)
+  } else if (iconDef.kind === 'item') {
+    const def = ITEM_DEF_MAP.get(iconDef.type)
+    const iconKey = def?.iconKey ?? iconDef.type
+    const img = getActionIconImage(iconKey)
+    if (img) {
+      if (img.complete && img.naturalWidth > 0) {
+        drawActionSprite(ctx, img)
+        return
+      }
+      img.addEventListener('load', () => draw(), { once: true })
+      return
+    }
+    // Fall back to a placeholder until the dedicated PNG exists
+    const fallbackKey = def?.kind === 'consumable' ? 'set-spawn-point' : 'attack'
+    const fallback = getActionIconImage(fallbackKey)
+    if (fallback) {
+      if (fallback.complete && fallback.naturalWidth > 0) {
+        drawActionSprite(ctx, fallback)
+        return
+      }
+      fallback.addEventListener('load', () => draw(), { once: true })
+    }
   }
 }
 

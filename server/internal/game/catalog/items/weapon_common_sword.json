@@ -1,0 +1,14 @@
+{
+  "id": "weapon_common_sword",
+  "displayName": "Iron Sword",
+  "description": "+5 damage.",
+  "iconKey": "sword_common",
+  "kind": "equipment",
+  "tier": "common",
+  "category": "Weapon",
+  "slotKind": "weapon",
+  "allowedUnitTypes": [],
+  "costGold": 100,
+  "modifiers": { "damage": 5 },
+  "effects": []
+}

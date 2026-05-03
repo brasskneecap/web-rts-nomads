@@ -198,6 +198,19 @@ type Unit struct {
 	// attacker, keyed by attacker ID. On death the map is paid out so
 	// contributors earn damage XP only when the target actually dies.
 	DamageDealtByUnit map[int]int
+
+	// InventorySize is the number of item slots this unit has, determined by
+	// rank (0 = none, 1 = bronze, 2 = silver, 3 = gold). Updated by
+	// setInventorySizeForRankLocked on every rank-up.
+	InventorySize int
+	// Equipped holds the items currently in this unit's slots. len == InventorySize;
+	// nil entries are empty slots. Items are permanently lost when the unit dies
+	// (the slice is discarded with the unit struct during removeUnitLocked).
+	Equipped []*EquippedItem
+	// EquipmentBonus holds the accumulated flat stat bonuses from all equipped
+	// items. Recomputed by recomputeUnitEquipmentBonusLocked and folded into
+	// derived stats by applyRankModifiersLocked.
+	EquipmentBonus UnitEquipmentBonus
 }
 
 const (
@@ -226,6 +239,11 @@ type Player struct {
 	// player. Keyed by UpgradeTrack (== UnitType string). Initialized to an
 	// empty map on player creation; zero value for missing keys means level 0.
 	Upgrades map[UpgradeTrack]int
+
+	// Vault holds items the player has purchased but not yet equipped. One Vault
+	// per player (not per townhall). Capacity is tier-gated via
+	// vaultCapacityForPlayerLocked. Initialized to an empty (non-nil) slice.
+	Vault []*VaultItem
 }
 
 const (
@@ -250,9 +268,15 @@ type GameState struct {
 	EnemySpawnTimers map[string]*EnemySpawnTimer
 	WaveManager      WaveManager
 
-	nextUnitID     int
-	nextBuildingID int
-	nextOrderID    int64
+	nextUnitID         int
+	nextBuildingID     int
+	nextOrderID        int64
+	nextItemInstanceID int64
+
+	// itemCatalog is the per-match copy of the item definitions, pointing at
+	// the package-level itemCatalogSingleton loaded at init time. Never mutated
+	// after assignment in NewGameStateWithSeed.
+	itemCatalog map[string]*ItemDef
 
 	// matchSeed is the root seed for all per-match RNG streams. Log it on match
 	// creation so a bug report with the seed can be reproduced offline.
@@ -425,6 +449,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		obstaclesByID:       map[string]*protocol.ObstacleTile{},
 		guardianAuraCache:   map[int]guardianAuraValue{},
 		pendingDeathsSet:    map[int]bool{},
+		itemCatalog:         itemCatalogSingleton,
 	}
 
 	// Arm the battle tracker iff the map opts in via debug.battleTracker. The
@@ -635,6 +660,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			snapshot.EffectiveTrap = s.EffectiveTrapSnapshotLocked(unit)
 		}
 
+		snapshot.Inventory = s.unitInventorySnapshotLocked(unit)
+
 		units = append(units, snapshot)
 	}
 
@@ -644,11 +671,13 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			continue
 		}
 		players = append(players, protocol.PlayerSnapshot{
-			PlayerID:    player.ID,
-			Color:       player.Color,
-			Resources:   s.getPlayerResourceStocksLocked(player),
-			Upgrades:    s.playerUpgradeSnapshotsLocked(player.ID),
-			TownHallTier: s.townhallTierForPlayerLocked(player.ID),
+			PlayerID:      player.ID,
+			Color:         player.Color,
+			Resources:     s.getPlayerResourceStocksLocked(player),
+			Upgrades:      s.playerUpgradeSnapshotsLocked(player.ID),
+			TownHallTier:  s.townhallTierForPlayerLocked(player.ID),
+			Vault:         s.playerVaultSnapshotsLocked(player.ID),
+			VaultCapacity: s.vaultCapacityForPlayerLocked(player.ID),
 		})
 	}
 
@@ -1111,6 +1140,7 @@ func (s *GameState) EnsurePlayer(playerID string) {
 		GlobalUnitSpawnTimeMultiplier: 1,
 		UnitSpawnTimeMultipliers:      map[string]float64{},
 		Upgrades:                      make(map[UpgradeTrack]int),
+		Vault:                         []*VaultItem{},
 	}
 
 	home, spawnPoint := s.claimPlayerStartLocked(playerID)

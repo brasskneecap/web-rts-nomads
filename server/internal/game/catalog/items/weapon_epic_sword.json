@@ -1,0 +1,14 @@
+{
+  "id": "weapon_epic_sword",
+  "displayName": "Runic Claymore",
+  "description": "+50 damage.",
+  "iconKey": "sword_epic",
+  "kind": "equipment",
+  "tier": "epic",
+  "category": "Weapon",
+  "slotKind": "weapon",
+  "allowedUnitTypes": [],
+  "costGold": 5000,
+  "modifiers": { "damage": 50 },
+  "effects": []
+}

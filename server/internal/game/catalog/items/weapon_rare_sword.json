@@ -1,0 +1,14 @@
+{
+  "id": "weapon_rare_sword",
+  "displayName": "Enchanted Blade",
+  "description": "+25 damage.",
+  "iconKey": "sword_rare",
+  "kind": "equipment",
+  "tier": "rare",
+  "category": "Weapon",
+  "slotKind": "weapon",
+  "allowedUnitTypes": [],
+  "costGold": 1000,
+  "modifiers": { "damage": 25 },
+  "effects": []
+}

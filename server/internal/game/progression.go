@@ -353,6 +353,18 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	// so this is a no-op for the vast majority of units.
 	unit.Armor += unit.BaseArmor
 
+	// Fold in equipment bonuses after path/rank multipliers and upgrade armor.
+	// Equipment grants flat bonuses on top of everything else. No-op when
+	// EquipmentBonus is zero (no items equipped).
+	// NOTE: HealthRegen is intentionally excluded here because HealthRegenPerSecond
+	// has no Base* counterpart to recompute from — the delta is applied by
+	// recomputeUnitEquipmentBonusLocked to preserve perk-applied regen correctly.
+	unit.Damage += unit.EquipmentBonus.Damage
+	unit.MaxHP += unit.EquipmentBonus.HP
+	unit.Armor += unit.EquipmentBonus.Armor
+	unit.AttackSpeed += unit.EquipmentBonus.AttackSpeed
+	unit.MoveSpeed += unit.EquipmentBonus.MoveSpeed
+
 	if preserveHealthPercent {
 		unit.HP = maxInt(1, int(math.Round(float64(unit.MaxHP)*currentHPFraction)))
 	} else if unit.HP > unit.MaxHP {
@@ -368,6 +380,9 @@ func (s *GameState) onUnitRankUpLocked(unit *Unit) {
 	if halfHP := unit.MaxHP / 2; unit.HP < halfHP {
 		unit.HP = halfHP
 	}
+	// Grow the inventory to match the new rank. setInventorySizeForRankLocked
+	// only ever grows the slice — rank cannot decrease.
+	s.setInventorySizeForRankLocked(unit)
 }
 
 // recordDamageDealtLocked banks damage an attacker has dealt to a unit. The XP

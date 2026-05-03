@@ -43,6 +43,11 @@ const emptyUiSnapshot: GameUiSnapshot = {
   upgrades: [],
   townHallTier: 0,
   selectedBuildingType: null,
+  vault: [],
+  vaultCapacity: 0,
+  vaultPanelOpen: false,
+  vaultSelectedInstanceId: null,
+  allPlayerUnits: [],
 }
 
 export function useGameClient() {
@@ -155,6 +160,26 @@ export function useGameClient() {
     client?.upgradeTownHall(buildingId)
   }
 
+  function sendEquipItem(unitId: number, slotIndex: number, instanceId: number) {
+    client?.sendEquipItem(unitId, slotIndex, instanceId)
+  }
+
+  function sendUnequipItem(unitId: number, slotIndex: number) {
+    client?.sendUnequipItem(unitId, slotIndex)
+  }
+
+  function sendUseConsumable(unitId: number, slotIndex: number) {
+    client?.sendUseConsumable(unitId, slotIndex)
+  }
+
+  function sendTransferItem(fromUnitId: number, fromSlotIdx: number, toUnitId: number, toSlotIdx: number) {
+    client?.sendTransferItem(fromUnitId, fromSlotIdx, toUnitId, toSlotIdx)
+  }
+
+  function setVaultSelectedInstanceId(instanceId: number | null) {
+    client?.setVaultSelectedInstanceId(instanceId)
+  }
+
   onBeforeUnmount(() => {
     destroy()
   })
@@ -173,6 +198,11 @@ export function useGameClient() {
     setMinimapPanelRect,
     purchaseUpgrade,
     upgradeTownHall,
+    sendEquipItem,
+    sendUnequipItem,
+    sendUseConsumable,
+    sendTransferItem,
+    setVaultSelectedInstanceId,
     ui,
     connectionState,
     currentMatchId,

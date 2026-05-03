@@ -1,0 +1,14 @@
+{
+  "id": "weapon_legendary_sword",
+  "displayName": "Worldbreaker",
+  "description": "+100 damage.",
+  "iconKey": "sword_legendary",
+  "kind": "equipment",
+  "tier": "legendary",
+  "category": "Weapon",
+  "slotKind": "weapon",
+  "allowedUnitTypes": [],
+  "costGold": 10000,
+  "modifiers": { "damage": 100 },
+  "effects": []
+}

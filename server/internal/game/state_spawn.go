@@ -99,6 +99,13 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		s.applyPlayerUpgradesAtSpawnLocked(unit)
 	}
 	s.applyRankModifiersLocked(unit, false)
+	// Initialise inventory slots for player-owned units. At spawn the rank is
+	// always "base" (InventorySize = 0), but calling here ensures future code
+	// paths that spawn higher-rank units (e.g. debug_spawn) work correctly.
+	if playerID != enemyPlayerID {
+		s.setInventorySizeForRankLocked(unit)
+		unit.Equipped = make([]*EquippedItem, unit.InventorySize)
+	}
 	return unit
 }
 
