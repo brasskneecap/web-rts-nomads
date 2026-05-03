@@ -302,7 +302,7 @@ type UpgradeTownHallCommandMessage struct {
 	BuildingID string `json:"buildingId"`
 }
 
-// PurchaseItemCommandMessage requests buying an item from a blacksmith building.
+// PurchaseItemCommandMessage requests buying an item from a marketplace building.
 // BuildingID must be the ID of a building with the "item-purchase" capability.
 // ItemID must match an entry in the item catalog.
 type PurchaseItemCommandMessage struct {
@@ -358,7 +358,7 @@ type PlayerUpgradeSnapshot struct {
 	Cap                 int     `json:"cap"`
 	NextCostGold        int     `json:"nextCostGold"`
 	CanAfford           bool    `json:"canAfford"`
-	HasUpgradeCenter    bool    `json:"hasUpgradeCenter"`
+	HasBlacksmith       bool    `json:"hasBlacksmith"`
 	HPPerLevel          int     `json:"hpPerLevel"`
 	DamagePerLevel      int     `json:"damagePerLevel"`
 	ArmorPerLevel       int     `json:"armorPerLevel"`

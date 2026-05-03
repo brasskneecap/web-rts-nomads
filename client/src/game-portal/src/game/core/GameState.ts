@@ -2298,7 +2298,7 @@ function getBuildingActions(building: BuildingTile, upgrades: PlayerUpgradeSnaps
     for (const upgrade of upgrades) {
       const atCap = upgrade.level >= upgrade.cap
       const disabled =
-        !upgrade.hasUpgradeCenter || upgrade.cap === 0 || atCap || !upgrade.canAfford
+        !upgrade.hasBlacksmith || upgrade.cap === 0 || atCap || !upgrade.canAfford
       const statParts = [
         `+${upgrade.hpPerLevel} HP`,
         `+${upgrade.damagePerLevel} DMG`,

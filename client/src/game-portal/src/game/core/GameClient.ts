@@ -58,7 +58,7 @@ export type GameUiSnapshot = {
   townHallTier: number
   // buildingType of the currently selected building, or null when nothing (or
   // a non-building entity) is selected. Used to gate overlay panels such as
-  // UpgradeCenterPanel.
+  // BlacksmithPanel.
   selectedBuildingType: string | null
   // Vault contents for the local player.
   vault: VaultItemSnapshot[]

@@ -55,10 +55,10 @@ func (s *GameState) vaultCapacityForPlayerLocked(playerID string) int {
 	}
 }
 
-// playerHasBlacksmithLocked returns true if the player owns at least one
+// playerHasMarketplaceLocked returns true if the player owns at least one
 // fully-built (not under-construction) building with the "item-purchase"
 // capability. Must be called under s.mu.
-func (s *GameState) playerHasBlacksmithLocked(playerID string) bool {
+func (s *GameState) playerHasMarketplaceLocked(playerID string) bool {
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
 		if !b.Visible {
@@ -262,7 +262,7 @@ func (s *GameState) applyConsumableEffectLocked(unit *Unit, def *ItemDef) {
 // ─── Core action handlers ────────────────────────────────────────────────────
 
 // handlePurchaseItemLocked validates and executes a single item purchase from a
-// blacksmith. Validation failures are silent no-ops. On success: deduct gold,
+// marketplace. Validation failures are silent no-ops. On success: deduct gold,
 // add item to vault. Must be called under s.mu.
 func (s *GameState) handlePurchaseItemLocked(playerID, buildingID, itemID string) {
 	player, ok := s.Players[playerID]
@@ -506,7 +506,7 @@ func (s *GameState) handleUseConsumableLocked(playerID string, unitID int, slotI
 
 // ─── Public entry points ─────────────────────────────────────────────────────
 
-// PurchaseItem is the public entry point for item purchases from a blacksmith.
+// PurchaseItem is the public entry point for item purchases from a marketplace.
 // Acquires s.mu and delegates to handlePurchaseItemLocked.
 func (s *GameState) PurchaseItem(playerID, buildingID, itemID string) {
 	s.mu.Lock()

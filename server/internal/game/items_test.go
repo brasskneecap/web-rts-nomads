@@ -9,20 +9,20 @@ import (
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // newItemTestState creates a GameState with a single player "p1" already
-// ensured, and a blacksmith building owned by that player.
+// ensured, and a marketplace building owned by that player.
 func newItemTestState(t *testing.T) (*GameState, string) {
 	t.Helper()
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	const playerID = "p1"
 	s.EnsurePlayer(playerID)
 
-	// Inject a blacksmith building directly into the state.
+	// Inject a marketplace building directly into the state.
 	s.mu.Lock()
 	bid := "bs-1"
 	owner := playerID
 	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
 		ID:           bid,
-		BuildingType: "blacksmith",
+		BuildingType: "marketplace",
 		Width:        2,
 		Height:       2,
 		Visible:      true,
@@ -567,38 +567,38 @@ func TestUnitInventorySnapshot_SlotsMatchEquipped(t *testing.T) {
 	}
 }
 
-// ─── Blacksmith building detection ───────────────────────────────────────────
+// ─── Marketplace building detection ──────────────────────────────────────────
 
-// TestPlayerHasBlacksmith_TrueWhenBuilt verifies detection of an owned blacksmith.
-func TestPlayerHasBlacksmith_TrueWhenBuilt(t *testing.T) {
+// TestPlayerHasMarketplace_TrueWhenBuilt verifies detection of an owned marketplace.
+func TestPlayerHasMarketplace_TrueWhenBuilt(t *testing.T) {
 	s, playerID := newItemTestState(t)
 
 	s.mu.RLock()
-	has := s.playerHasBlacksmithLocked(playerID)
+	has := s.playerHasMarketplaceLocked(playerID)
 	s.mu.RUnlock()
 
 	if !has {
-		t.Error("expected playerHasBlacksmithLocked to return true")
+		t.Error("expected playerHasMarketplaceLocked to return true")
 	}
 }
 
-// TestPlayerHasBlacksmith_FalseWhenUnderConstruction verifies under-construction
+// TestPlayerHasMarketplace_FalseWhenUnderConstruction verifies under-construction
 // buildings are not counted.
-func TestPlayerHasBlacksmith_FalseWhenUnderConstruction(t *testing.T) {
+func TestPlayerHasMarketplace_FalseWhenUnderConstruction(t *testing.T) {
 	s, playerID := newItemTestState(t)
 
 	s.mu.Lock()
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
-		if b.BuildingType == "blacksmith" {
+		if b.BuildingType == "marketplace" {
 			b.Metadata["underConstruction"] = true
 		}
 	}
-	has := s.playerHasBlacksmithLocked(playerID)
+	has := s.playerHasMarketplaceLocked(playerID)
 	s.mu.Unlock()
 
 	if has {
-		t.Error("expected playerHasBlacksmithLocked to return false for under-construction building")
+		t.Error("expected playerHasMarketplaceLocked to return false for under-construction building")
 	}
 }
 

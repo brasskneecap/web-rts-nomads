@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="show"
-    class="upgrade-center"
+    class="blacksmith-panel"
     :class="{ collapsed, dragging: drag.dragging.value }"
     :style="drag.style.value"
   >
@@ -16,11 +16,11 @@
         class="uc-toggle"
         type="button"
         :aria-expanded="!collapsed"
-        :title="collapsed ? 'Expand Upgrade Center' : 'Collapse Upgrade Center'"
+        :title="collapsed ? 'Expand Blacksmith' : 'Collapse Blacksmith'"
         @click="collapsed = !collapsed"
       >
         <span class="uc-chevron" :class="{ open: !collapsed }">▾</span>
-        <span class="uc-title">Upgrade Center</span>
+        <span class="uc-title">Blacksmith</span>
       </button>
     </header>
 
@@ -92,11 +92,11 @@ const props = defineProps<{
 }>()
 
 const collapsed = ref(false)
-const drag = useDraggablePanel('upgrade-center')
+const drag = useDraggablePanel('blacksmith-panel')
 
 // Returns true when the upgrade button should be disabled.
 function isUpgradeDisabled(upgrade: PlayerUpgradeSnapshot): boolean {
-  if (!upgrade.hasUpgradeCenter) return true
+  if (!upgrade.hasBlacksmith) return true
   if (upgrade.cap === 0) return true
   if (upgrade.level >= upgrade.cap) return true
   if (!upgrade.canAfford) return true
@@ -106,7 +106,7 @@ function isUpgradeDisabled(upgrade: PlayerUpgradeSnapshot): boolean {
 // Returns a tooltip explaining why the button is disabled, or empty string
 // when the button is enabled.
 function upgradeDisabledReason(upgrade: PlayerUpgradeSnapshot): string {
-  if (!upgrade.hasUpgradeCenter) return 'Build an Upgrade Center first'
+  if (!upgrade.hasBlacksmith) return 'Build an Blacksmith first'
   if (upgrade.cap === 0) return 'Town Hall required'
   if (upgrade.level >= upgrade.cap) return 'Requires a higher tier Town Hall'
   if (!upgrade.canAfford) return 'Not enough gold'
@@ -115,7 +115,7 @@ function upgradeDisabledReason(upgrade: PlayerUpgradeSnapshot): string {
 </script>
 
 <style scoped>
-.upgrade-center {
+.blacksmith-panel {
   position: absolute;
   top: 80px;
   right: 16px;
@@ -137,7 +137,7 @@ function upgradeDisabledReason(upgrade: PlayerUpgradeSnapshot): string {
   color: #f5ead2;
 }
 
-.upgrade-center.collapsed {
+.blacksmith-panel.collapsed {
   max-height: none;
 }
 
@@ -156,7 +156,7 @@ function upgradeDisabledReason(upgrade: PlayerUpgradeSnapshot): string {
   cursor: grabbing;
 }
 
-.upgrade-center.dragging {
+.blacksmith-panel.dragging {
   opacity: 0.92;
 }
 

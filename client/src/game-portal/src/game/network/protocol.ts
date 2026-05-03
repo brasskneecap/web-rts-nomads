@@ -297,7 +297,7 @@ export type PlayerUpgradeSnapshot = {
   cap: number              // 0/3/6/9
   nextCostGold: number     // 0 if at cap
   canAfford: boolean
-  hasUpgradeCenter: boolean
+  hasBlacksmith: boolean
   hpPerLevel: number
   damagePerLevel: number
   armorPerLevel: number
