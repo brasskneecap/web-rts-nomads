@@ -2,7 +2,7 @@
   "id": "potion_common_heal",
   "displayName": "Minor Healing Potion",
   "description": "Restores 50 HP.",
-  "iconKey": "potion_common",
+  "iconKey": "potion_common_heal",
   "kind": "consumable",
   "tier": "common",
   "category": "Consumable",

@@ -2,7 +2,7 @@
   "id": "cimitar",
   "displayName": "Cimitar",
   "description": "+10 damage.",
-  "iconKey": "cimitar",
+  "iconKey": "scimitar",
   "kind": "equipment",
   "tier": "uncommon",
   "category": "Weapon",

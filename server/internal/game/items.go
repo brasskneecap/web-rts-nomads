@@ -113,9 +113,10 @@ func init() {
 			panic(path + `: missing "id" field`)
 		}
 		itemCatalogSingleton[def.ID] = &def
-		// Check for a sibling image.png in the same directory.
+		// Check for a sibling PNG named after this file (e.g. broad_sword.png
+		// alongside broad_sword.json).
 		dir := path[:len(path)-len(d.Name())]
-		imgPath := dir + "image.png"
+		imgPath := dir + strings.TrimSuffix(d.Name(), ".json") + ".png"
 		if _, ferr := itemDefsFS.Open(imgPath); ferr == nil {
 			itemImagePaths[def.ID] = imgPath
 		}

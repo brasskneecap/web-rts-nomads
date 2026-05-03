@@ -2,7 +2,7 @@
   "id": "potion_rare_heal",
   "displayName": "Greater Healing Potion",
   "description": "Restores 250 HP.",
-  "iconKey": "potion_rare",
+  "iconKey": "potion_rare_heal",
   "kind": "consumable",
   "tier": "rare",
   "category": "Consumable",

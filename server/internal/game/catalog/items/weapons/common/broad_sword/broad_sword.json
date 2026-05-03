@@ -2,7 +2,7 @@
   "id": "weapon_common_sword",
   "displayName": "Iron Sword",
   "description": "+5 damage.",
-  "iconKey": "sword_common",
+  "iconKey": "broad_sword",
   "kind": "equipment",
   "tier": "common",
   "category": "Weapon",

@@ -14,6 +14,7 @@ import { ACTION_ICON_MAP } from '@/game/maps/actionIconDefs'
 import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { getActionIconImage } from '@/game/rendering/actionIconSprites'
+import { getItemAssetImage } from '@/game/rendering/itemAssets'
 import { getItemCatalogImage } from '@/game/rendering/itemCatalogImages'
 
 const props = defineProps<{
@@ -159,7 +160,7 @@ function draw() {
   } else if (iconDef.kind === 'item') {
     const def = ITEM_DEF_MAP.get(iconDef.type)
     const iconKey = def?.iconKey ?? iconDef.type
-    // Try local bundled asset first (e.g. for future packed icons)
+    // 1. Bundled actions sprite (not currently used for items, reserved for future)
     const localImg = getActionIconImage(iconKey)
     if (localImg) {
       if (localImg.complete && localImg.naturalWidth > 0) {
@@ -169,7 +170,17 @@ function draw() {
       localImg.addEventListener('load', () => draw(), { once: true })
       return
     }
-    // Try the catalog HTTP endpoint (image.png embedded alongside stats.json).
+    // 2. Client-side bundled asset from assets/items/**/<iconKey>.png
+    const assetImg = getItemAssetImage(iconKey)
+    if (assetImg) {
+      if (assetImg.complete && assetImg.naturalWidth > 0) {
+        drawActionSprite(ctx, assetImg)
+        return
+      }
+      assetImg.addEventListener('load', () => draw(), { once: true })
+      return
+    }
+    // 3. Server catalog HTTP endpoint (embedded PNG next to the JSON).
     // Returns null while loading; draw() is called again when the image is ready.
     const catalogImg = getItemCatalogImage(iconDef.type, draw)
     if (catalogImg) {
