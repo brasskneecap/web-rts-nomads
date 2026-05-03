@@ -199,6 +199,17 @@ type Unit struct {
 	// contributors earn damage XP only when the target actually dies.
 	DamageDealtByUnit map[int]int
 
+	// GuardMode pins the combat anchor at the authored spawn position and
+	// overrides aggro/leash ranges with GuardAggroRange/GuardLeashRange.
+	// Set on enemy placed units (PlacedUnit.Owner == "enemy") by
+	// spawnPlacedEnemyUnitsLocked. Player-owned placed units do NOT use guard
+	// mode — they are normal units that happen to spawn at an authored location.
+	GuardMode       bool
+	GuardAnchorX    float64
+	GuardAnchorY    float64
+	GuardAggroRange float64
+	GuardLeashRange float64
+
 	// InventorySize is the number of item slots this unit has, determined by
 	// rank (0 = none, 1 = bronze, 2 = silver, 3 = gold). Updated by
 	// setInventorySizeForRankLocked on every rank-up.
