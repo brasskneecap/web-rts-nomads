@@ -1,14 +1,14 @@
 {
-  "id": "weapon_uncommon_sword",
-  "displayName": "Steel Sword",
+  "id": "cimitar",
+  "displayName": "Cimitar",
   "description": "+10 damage.",
-  "iconKey": "sword_uncommon",
+  "iconKey": "cimitar",
   "kind": "equipment",
   "tier": "uncommon",
   "category": "Weapon",
   "slotKind": "weapon",
   "allowedUnitTypes": [],
-  "costGold": 250,
+  "costGold": 1,
   "modifiers": { "damage": 10 },
   "effects": []
 }

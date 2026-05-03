@@ -23,6 +23,8 @@ export class InputManager {
   private dragStarted = false
   private isSpacePanning = false
   private isRightPanning = false
+  private rightPanEligible = false
+  private rightPanDelayTimer: ReturnType<typeof setTimeout> | null = null
   private rightPanStartX = 0
   private rightPanStartY = 0
   private isMinimapNavigating = false
@@ -73,6 +75,12 @@ export class InputManager {
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
+    if (e.code === 'Escape') {
+      this.state.clearSelection()
+      e.preventDefault()
+      return
+    }
+
     if (e.code === 'Space') {
       this.isSpaceHeld = true
       this.canvas.style.cursor = resolveCursor('grab', 'grab')
@@ -170,15 +178,20 @@ export class InputManager {
     }
 
     if (e.button === 2) {
-      // Right-drag pans the camera when no units are selected. A quick
-      // right-click (no drag past threshold) still falls through to
-      // onRightClick so behaviors like spawn-point setting keep working.
-      if (this.state.getOrderedSelectedUnitIds().length === 0) {
-        this.isRightMouseDown = true
-        this.isRightPanning = false
-        this.rightPanStartX = screen.x
-        this.rightPanStartY = screen.y
-      }
+      // Panning is gated behind a 100 ms hold so that quick right-clicks always
+      // issue unit commands without accidentally panning the map. Once the delay
+      // expires, dragging past the threshold activates pan mode and onRightClick
+      // suppresses any command that would otherwise fire.
+      this.isRightMouseDown = true
+      this.isRightPanning = false
+      this.rightPanEligible = false
+      this.rightPanStartX = screen.x
+      this.rightPanStartY = screen.y
+      if (this.rightPanDelayTimer !== null) clearTimeout(this.rightPanDelayTimer)
+      this.rightPanDelayTimer = setTimeout(() => {
+        this.rightPanDelayTimer = null
+        if (this.isRightMouseDown) this.rightPanEligible = true
+      }, 100)
     }
   }
 
@@ -216,7 +229,7 @@ export class InputManager {
     }
 
     if (this.isRightMouseDown) {
-      if (!this.isRightPanning) {
+      if (!this.isRightPanning && this.rightPanEligible) {
         const totalDx = screen.x - this.rightPanStartX
         const totalDy = screen.y - this.rightPanStartY
         if (Math.abs(totalDx) > this.dragThreshold || Math.abs(totalDy) > this.dragThreshold) {
@@ -265,6 +278,11 @@ export class InputManager {
 
     if (e.button === 2) {
       this.isRightMouseDown = false
+      if (this.rightPanDelayTimer !== null) {
+        clearTimeout(this.rightPanDelayTimer)
+        this.rightPanDelayTimer = null
+      }
+      this.rightPanEligible = false
       // Leave isRightPanning set so the contextmenu handler can suppress
       // the right-click action that would otherwise fire after the drag.
       if (this.isRightPanning) {
@@ -472,6 +490,10 @@ export class InputManager {
   }
 
   destroy() {
+    if (this.rightPanDelayTimer !== null) {
+      clearTimeout(this.rightPanDelayTimer)
+      this.rightPanDelayTimer = null
+    }
     this.canvas.removeEventListener('contextmenu', this.onRightClick)
     this.canvas.removeEventListener('mousedown', this.onMouseDown)
     this.canvas.removeEventListener('mousemove', this.onMouseMove)

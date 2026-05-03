@@ -5,10 +5,10 @@
   "iconKey": "potion_uncommon",
   "kind": "consumable",
   "tier": "uncommon",
-  "category": "Potion",
+  "category": "Consumable",
   "slotKind": "any",
   "allowedUnitTypes": [],
-  "costGold": 10,
+  "costGold": 1,
   "maxStacks": 99,
   "consumable": { "type": "heal", "amount": 100 }
 }

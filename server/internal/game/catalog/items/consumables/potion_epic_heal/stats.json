@@ -5,10 +5,10 @@
   "iconKey": "potion_epic",
   "kind": "consumable",
   "tier": "epic",
-  "category": "Potion",
+  "category": "Consumable",
   "slotKind": "any",
   "allowedUnitTypes": [],
-  "costGold": 100,
+  "costGold": 1,
   "maxStacks": 99,
   "consumable": { "type": "heal", "amount": 1000 }
 }
