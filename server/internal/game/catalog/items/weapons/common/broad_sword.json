@@ -1,6 +1,6 @@
 {
-  "id": "weapon_common_sword",
-  "displayName": "Iron Sword",
+  "id": "broad_sword",
+  "displayName": "Broad Sword",
   "description": "+5 damage.",
   "iconKey": "broad_sword",
   "kind": "equipment",
@@ -8,7 +8,7 @@
   "category": "Weapon",
   "slotKind": "weapon",
   "allowedUnitTypes": [],
-  "costGold": 1,
+  "costGold": 50,
   "modifiers": { "damage": 5 },
   "effects": []
 }

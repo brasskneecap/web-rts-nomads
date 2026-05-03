@@ -1,6 +1,6 @@
 {
-  "id": "cimitar",
-  "displayName": "Cimitar",
+  "id": "scimitar",
+  "displayName": "Scimitar",
   "description": "+10 damage.",
   "iconKey": "scimitar",
   "kind": "equipment",
@@ -8,7 +8,7 @@
   "category": "Weapon",
   "slotKind": "weapon",
   "allowedUnitTypes": [],
-  "costGold": 1,
+  "costGold": 100,
   "modifiers": { "damage": 10 },
   "effects": []
 }

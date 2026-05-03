@@ -56,23 +56,6 @@ func NewRouter(hub *ws.Hub, corsOrigin string) http.Handler {
 		})
 	})
 
-	mux.HandleFunc("/catalog/items/", func(w http.ResponseWriter, r *http.Request) {
-		// Expect: /catalog/items/{id}/image
-		trimmed := strings.TrimPrefix(r.URL.Path, "/catalog/items/")
-		itemID, suffix, ok := strings.Cut(trimmed, "/")
-		if !ok || itemID == "" || suffix != "image" {
-			http.NotFound(w, r)
-			return
-		}
-		data, ok := game.GetItemImageData(itemID)
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-		_, _ = w.Write(data)
-	})
 
 	mux.HandleFunc("/catalog/action-icons", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

@@ -15,7 +15,6 @@ import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { getActionIconImage } from '@/game/rendering/actionIconSprites'
 import { getItemAssetImage } from '@/game/rendering/itemAssets'
-import { getItemCatalogImage } from '@/game/rendering/itemCatalogImages'
 
 const props = defineProps<{
   action: ActionItem
@@ -180,14 +179,7 @@ function draw() {
       assetImg.addEventListener('load', () => draw(), { once: true })
       return
     }
-    // 3. Server catalog HTTP endpoint (embedded PNG next to the JSON).
-    // Returns null while loading; draw() is called again when the image is ready.
-    const catalogImg = getItemCatalogImage(iconDef.type, draw)
-    if (catalogImg) {
-      drawActionSprite(ctx, catalogImg)
-      return
-    }
-    // Show placeholder while catalog image is loading or unavailable.
+    // Show placeholder while asset image is loading or unavailable.
     const fallbackKey = def?.kind === 'consumable' ? 'set-spawn-point' : 'attack'
     const fallback = getActionIconImage(fallbackKey)
     if (fallback) {

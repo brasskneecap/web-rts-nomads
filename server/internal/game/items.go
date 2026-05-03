@@ -88,12 +88,8 @@ type ItemDef struct {
 // GameState.itemCatalog points at this map; it is never mutated after init.
 var itemCatalogSingleton map[string]*ItemDef
 
-// itemImagePaths maps item ID → embed path of the sibling image.png, if present.
-var itemImagePaths map[string]string
-
 func init() {
 	itemCatalogSingleton = make(map[string]*ItemDef)
-	itemImagePaths = make(map[string]string)
 	err := fs.WalkDir(itemDefsFS, "catalog/items", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -113,32 +109,11 @@ func init() {
 			panic(path + `: missing "id" field`)
 		}
 		itemCatalogSingleton[def.ID] = &def
-		// Check for a sibling PNG named after this file (e.g. broad_sword.png
-		// alongside broad_sword.json).
-		dir := path[:len(path)-len(d.Name())]
-		imgPath := dir + strings.TrimSuffix(d.Name(), ".json") + ".png"
-		if _, ferr := itemDefsFS.Open(imgPath); ferr == nil {
-			itemImagePaths[def.ID] = imgPath
-		}
 		return nil
 	})
 	if err != nil {
 		panic("catalog/items: " + err.Error())
 	}
-}
-
-// GetItemImageData returns the raw PNG bytes for the given item ID's image,
-// or (nil, false) if no image is registered for that item.
-func GetItemImageData(id string) ([]byte, bool) {
-	imgPath, ok := itemImagePaths[id]
-	if !ok {
-		return nil, false
-	}
-	data, err := itemDefsFS.ReadFile(imgPath)
-	if err != nil {
-		return nil, false
-	}
-	return data, true
 }
 
 // ListItemDefs returns all item definitions as a deterministically sorted
