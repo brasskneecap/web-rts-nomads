@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Item definitions — client-side type layer
 //
-// Mirrors the (eventual) ItemDef struct on the server. Each item carries:
+// Mirrors the ItemDef struct on the server. Each item carries:
 //   - identity (id + display copy)
 //   - an icon key matching a PNG in src/assets/actions/ (loaded by
 //     actionIconSprites — same loader the perk/action HUD uses)
@@ -13,14 +13,14 @@
 //   (this file's types update via fetchItemDefs — no manual sync needed)
 // ─────────────────────────────────────────────────────────────────────────────
 
+export type ItemTier = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
+export type ItemKind = 'equipment' | 'consumable'
+
 /**
  * Stat modifiers an item applies to its holder while equipped. All fields are
  * additive and optional — omit a key to leave that stat untouched. The server
  * is the source of truth for combat math; these values are used client-side
  * for tooltip previews ("+5 damage", "+2 armor") and UI affordances.
- *
- * Add new keys here as the item system grows; keep them aligned with the
- * matching field on Unit / UnitSnapshot so resolution stays trivial.
  */
 export type ItemModifiers = {
   hp?: number
@@ -36,8 +36,7 @@ export type ItemModifiers = {
 /**
  * Named effect tags an item can grant. These are referenced by the server's
  * effect system; the client only displays them in tooltips and routes them
- * to icon overlays where applicable. Use a string literal union as known
- * effects accumulate so authors get autocomplete + typo protection.
+ * to icon overlays where applicable.
  */
 export type ItemEffect =
   | 'regenerate'
@@ -56,14 +55,30 @@ export type ItemDef = {
    * Falls back to the SVG path map when no PNG is present.
    */
   iconKey: string
+  /** Whether this is permanent equipment or a single-use consumable. */
+  kind: ItemKind
+  /** Rarity tier — drives border color in the vault and inventory UIs. */
+  tier: ItemTier
+  /** Slot type the item occupies: 'weapon' | 'armor' | 'accessory' | 'any'. */
+  slotKind: string
+  /** Unit types allowed to equip this item. Absent = all unit types. */
+  allowedUnitTypes?: string[]
+  /** Gold cost to purchase from a shop building. */
+  costGold: number
+  /** Display-only category label ("Weapon", "Trinket", "Consumable"). */
+  category?: string
   /** Stat changes applied while held. Absent = no stat changes. */
   modifiers?: ItemModifiers
   /** Named effect tags granted while held. Absent = no effects. */
   effects?: ItemEffect[]
-  /** Display-only category label ("Weapon", "Trinket", "Consumable"). */
-  category?: string
   /** Stack ceiling — items above 1 are stackable. Defaults to 1 when absent. */
   maxStacks?: number
+  /** Consumable-specific config. Only set when kind === 'consumable'. */
+  consumable?: {
+    type: string
+    amount?: number
+    durationSeconds?: number
+  }
 }
 
 export let ITEM_DEFS: ItemDef[] = []

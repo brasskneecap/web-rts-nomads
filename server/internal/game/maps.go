@@ -37,6 +37,11 @@ func hydrateBuildings(buildings []protocol.BuildingTile) {
 		if def.Height > 0 {
 			b.Height = def.Height
 		}
+		// Capabilities are owned by the def; always use the def's list so map
+		// JSONs don't need to be updated when a capability is added to a def.
+		if len(def.Capabilities) > 0 {
+			b.Capabilities = append([]string(nil), def.Capabilities...)
+		}
 	}
 }
 

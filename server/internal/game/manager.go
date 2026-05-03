@@ -20,6 +20,30 @@ func NewMatchManager() *MatchManager {
 	}
 }
 
+func (m *MatchManager) NewMatch(mapID string) *Match {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.newMatchLocked(mapID)
+}
+
+func (m *MatchManager) newMatchLocked(mapID string) *Match {
+	matchID := fmt.Sprintf("match-%d", m.nextID)
+	m.nextID++
+
+	match := NewMatch(matchID, mapID)
+	m.matches[matchID] = match
+	log.Printf("match created: id=%s mapID=%s seed=%d\n", matchID, mapID, match.State.MatchSeed())
+
+	match.loop.OnGameOver = func() {
+		log.Printf("game over: scheduling match deletion id=%s\n", matchID)
+		time.AfterFunc(15*time.Second, func() {
+			m.DeleteMatch(matchID)
+		})
+	}
+
+	return match
+}
+
 func (m *MatchManager) FindOrCreateMatch(mapID string) *Match {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -30,24 +54,7 @@ func (m *MatchManager) FindOrCreateMatch(mapID string) *Match {
 		}
 	}
 
-	matchID := fmt.Sprintf("match-%d", m.nextID)
-	m.nextID++
-
-	match := NewMatch(matchID, mapID)
-	m.matches[matchID] = match
-	log.Printf("match created: id=%s mapID=%s seed=%d\n", matchID, mapID, match.State.MatchSeed())
-
-	// When the game loop detects game-over it stops itself and schedules
-	// match deletion after a short grace window so clients can display the
-	// defeat screen before the match disappears.
-	match.loop.OnGameOver = func() {
-		log.Printf("game over: scheduling match deletion id=%s\n", matchID)
-		time.AfterFunc(15*time.Second, func() {
-			m.DeleteMatch(matchID)
-		})
-	}
-
-	return match
+	return m.newMatchLocked(mapID)
 }
 
 func (m *MatchManager) GetMatch(matchID string) (*Match, bool) {

@@ -1,0 +1,14 @@
+{
+  "id": "shadow_blade",
+  "displayName": "Shadow Blade",
+  "description": "+100 damage.",
+  "iconKey": "shadow_blade",
+  "kind": "equipment",
+  "tier": "legendary",
+  "category": "Weapon",
+  "slotKind": "weapon",
+  "allowedUnitTypes": [],
+  "costGold": 1000,
+  "modifiers": { "damage": 100 },
+  "effects": []
+}

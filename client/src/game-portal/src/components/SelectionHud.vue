@@ -177,6 +177,44 @@
           </div>
         </div>
 
+        <!-- Townhall tier badge + upgrade controls. Only shown when a townhall
+             is selected (owned by the local player). Tier badge always visible;
+             upgrade button shown when tier < 3 and no upgrade is in progress;
+             progress bar shown while an upgrade is underway. -->
+        <div
+          v-if="ui.selection.kind === 'building' && ui.selectedBuildingType === 'townhall'"
+          class="townhall-tier"
+        >
+          <div class="townhall-tier__badge">
+            {{ townhallTierLabel }}
+            <span class="townhall-tier__tier-num">Tier {{ ui.townHallTier || 1 }}</span>
+          </div>
+
+          <!-- Upgrade-in-progress bar -->
+          <div
+            v-if="townhallUpgradeInProgress"
+            class="townhall-upgrade-bar"
+          >
+            <div
+              class="townhall-upgrade-bar__fill"
+              :style="{ width: `${townhallUpgradeProgress * 100}%` }"
+            />
+            <div class="townhall-upgrade-bar__label">
+              {{ (ui.townHallTier || 1) === 1 ? 'Upgrading to Keep...' : 'Upgrading to Castle...' }}
+            </div>
+          </div>
+
+          <!-- Tier-up button — hidden while an upgrade is in progress or tier is maxed -->
+          <button
+            v-else-if="(ui.townHallTier || 1) < 3"
+            type="button"
+            class="townhall-upgrade-btn"
+            @click="$emit('action', 'upgrade-townhall')"
+          >
+            {{ townhallUpgradeLabel }}
+          </button>
+        </div>
+
         <!-- Production queue. Always renders 7 slots whenever training is
              active (matching the max queue depth of 8 = 1 leading + 7
              queued). Empty slots show the icon-container frame so the
@@ -219,22 +257,28 @@
         <!-- Right side: inventory slots for items the unit can hold. Only
              rendered when exactly one unit is selected — multi-select and
              building selections hide the panel entirely. Slot count is
-             fixed at INVENTORY_DISPLAY_SLOTS; the unit's inventory.size
-             determines how many of those are unlocked vs. locked. Locked
-             slots overlay the lock icon; held items render their own icon
-             over the container; empty unlocked slots show only the
-             icon-container art. -->
+             data-driven from unit.inventory.size. Locked slots overlay the
+             lock icon; occupied slots are interactive (click to unequip or
+             use consumable); empty unlocked slots are interactive when a
+             vault item is selected (click to equip). -->
         <div
           v-if="ui.selectedUnits.length === 1"
           class="details-inventory"
           aria-label="Inventory"
         >
-          <div
+          <component
+            :is="slot.locked ? 'div' : 'button'"
             v-for="slot in inventorySlots"
             :key="slot.index"
             class="inventory-slot"
-            :class="{ 'inventory-slot--locked': slot.locked }"
+            :class="{
+              'inventory-slot--locked': slot.locked,
+              'inventory-slot--equip-target': !slot.locked && !slot.occupied && ui.vaultSelectedInstanceId !== null,
+            }"
             :title="slot.title"
+            :type="slot.locked ? undefined : 'button'"
+            :disabled="slot.locked || undefined"
+            @click="!slot.locked ? onInventorySlotClick(slot) : undefined"
           >
             <img
               v-if="slot.iconUrl"
@@ -243,7 +287,10 @@
               class="inventory-slot__icon"
               draggable="false"
             />
-          </div>
+            <div v-else-if="slot.occupied && slot.itemId" class="inventory-slot__item-icon">
+              <ActionIcon :action="{ id: slot.itemId, label: slot.title, iconDef: { kind: 'item', type: slot.itemId } }" />
+            </div>
+          </component>
         </div>
       </section>
 
@@ -341,6 +388,10 @@
                     <span class="action-tooltip__amount">{{ c.amount }}</span>
                   </div>
                 </div>
+                <div
+                  v-if="ui.selection.actions[i - 1].tooltipBody"
+                  class="action-tooltip__stat-preview"
+                >{{ ui.selection.actions[i - 1].tooltipBody }}</div>
               </div>
             </button>
           </template>
@@ -370,6 +421,9 @@ const emit = defineEmits<{
   'select-unit': [unitId: number]
   'deselect-unit': [unitId: number]
   'minimap-rect': [rect: DOMRect | null]
+  'use-consumable': [payload: { unitId: number; slotIndex: number }]
+  'unequip-item': [payload: { unitId: number; slotIndex: number }]
+  'equip-item': [payload: { unitId: number; slotIndex: number; instanceId: number }]
 }>()
 
 const props = defineProps<{
@@ -451,6 +505,44 @@ const buildingDurability = computed(() => {
   return { label: detail.label, value: detail.value }
 })
 
+// ── Townhall tier helpers ───────────────────────────────────────────────────
+
+const TOWNHALL_TIER_NAMES = ['Town Hall', 'Keep', 'Castle']
+
+const townhallTierLabel = computed(() => {
+  const tier = props.ui.townHallTier || 1
+  return TOWNHALL_TIER_NAMES[tier - 1] ?? 'Town Hall'
+})
+
+const townhallUpgradeLabel = computed(() => {
+  const tier = props.ui.townHallTier || 1
+  if (tier === 1) return 'Upgrade to Keep — 400g / 250w'
+  if (tier === 2) return 'Upgrade to Castle — 800g / 500w'
+  return ''
+})
+
+// True when the server has set tierUpRemaining on the selected building's
+// metadata, indicating an upgrade is in progress.
+const townhallUpgradeInProgress = computed(() => {
+  if (props.ui.selection.kind !== 'building') return false
+  const detail = props.ui.selection.details.find((d) => d.id === 'tierup-remaining')
+  return !!detail
+})
+
+// Progress fraction (0..1) for the in-progress tier-up bar.
+// Drives the fill width. The detail value carries "remaining/total" or the
+// server may send a dedicated metadata field. We use the metadata approach:
+// tierUpRemaining and tierUpTotal are expected in the building metadata, which
+// SelectionHud doesn't currently receive directly. As a fallback, if the
+// detail carries a numeric value it is treated as the remaining fraction.
+const townhallUpgradeProgress = computed(() => {
+  if (props.ui.selection.kind !== 'building') return 0
+  const detail = props.ui.selection.details.find((d) => d.id === 'tierup-progress')
+  if (!detail?.value) return 0
+  const v = parseFloat(detail.value)
+  return Number.isNaN(v) ? 0 : Math.max(0, Math.min(1, v))
+})
+
 // One card per selected unit. Portrait prefers the unit's promoted path (e.g.
 // a berserker-path soldier shows the berserker sprite) and falls back to the
 // base unit type when the path has no dedicated sprite set.
@@ -478,12 +570,11 @@ const unitCards = computed(() => {
   })
 })
 
-// Inventory display: always shows INVENTORY_DISPLAY_SLOTS slots so the panel
-// has a stable shape regardless of unit progression. The unit's
-// inventory.size determines how many of those are unlocked; the rest render
-// the lock icon. Held items render their icon over the container, looked up
-// via ITEM_DEF_MAP[itemId].iconKey through the action-icon sprite loader
-// (so item art lives in src/assets/actions/<iconKey>.png).
+// Inventory display is fully data-driven from unit.inventory. `size` slots
+// are unlocked; any index >= size renders the lock icon. Held items render
+// their icon and are interactive — click to use (consumable) or unequip
+// (equipment). Empty unlocked slots glow as equip targets when a vault item
+// is selected.
 const INVENTORY_DISPLAY_SLOTS = 2
 
 const inventorySlots = computed(() => {
@@ -492,33 +583,86 @@ const inventorySlots = computed(() => {
   const inventory = unit?.inventory
   const size = inventory?.size ?? 0
   const slots = inventory?.slots ?? []
+  // Show at least INVENTORY_DISPLAY_SLOTS cells so the panel has a stable
+  // shape even before the server sends inventory data; show more if the
+  // unit has more unlocked slots.
+  const displayCount = Math.max(INVENTORY_DISPLAY_SLOTS, size)
 
-  return Array.from({ length: INVENTORY_DISPLAY_SLOTS }, (_, index) => {
+  return Array.from({ length: displayCount }, (_, index) => {
     const locked = index >= size
     if (locked) {
       return {
         index,
         locked: true,
+        occupied: false,
         iconUrl: getActionIconImage('lock')?.src ?? null,
+        itemId: null as string | null,
         title: 'Locked slot',
+        instanceId: null as number | null,
+        isConsumable: false,
       }
     }
 
     const held = slots[index] ?? null
     if (!held) {
-      return { index, locked: false, iconUrl: null, title: 'Empty slot' }
+      const vaultId = props.ui.vaultSelectedInstanceId
+      return {
+        index,
+        locked: false,
+        occupied: false,
+        iconUrl: null,
+        itemId: null as string | null,
+        title: vaultId !== null ? 'Click to equip selected item' : 'Empty slot',
+        instanceId: null as number | null,
+        isConsumable: false,
+      }
     }
 
     const def = ITEM_DEF_MAP.get(held.itemId)
-    const iconKey = def?.iconKey ?? held.itemId
+    const isConsumable = def?.kind === 'consumable'
+    const actionHint = isConsumable ? 'Click to use' : 'Click to unequip'
     return {
       index,
       locked: false,
-      iconUrl: getActionIconImage(iconKey)?.src ?? null,
-      title: def?.displayName ?? held.itemId,
+      occupied: true,
+      iconUrl: null,
+      itemId: held.itemId,
+      title: def ? `${def.displayName} — ${actionHint}` : held.itemId,
+      instanceId: held.instanceId,
+      isConsumable,
     }
   })
 })
+
+function onInventorySlotClick(slot: {
+  index: number
+  locked: boolean
+  occupied: boolean
+  instanceId: number | null
+  isConsumable: boolean
+}) {
+  const unit = props.ui.selectedUnits[0]
+  if (!unit) return
+
+  if (slot.occupied) {
+    // No vault item selected: use consumable or unequip equipment.
+    if (props.ui.vaultSelectedInstanceId === null) {
+      if (slot.isConsumable) {
+        emit('use-consumable', { unitId: unit.id, slotIndex: slot.index })
+      } else {
+        emit('unequip-item', { unitId: unit.id, slotIndex: slot.index })
+      }
+    }
+    // If vault item is selected and the slot is occupied, do nothing
+    // (prevent accidental overwrite — user should unequip first).
+  } else {
+    // Empty slot: equip the selected vault item if one is chosen.
+    const instanceId = props.ui.vaultSelectedInstanceId
+    if (instanceId !== null) {
+      emit('equip-item', { unitId: unit.id, slotIndex: slot.index, instanceId })
+    }
+  }
+}
 
 // perkCooldownFraction returns the remaining/total ratio for a perk action,
 // clamped to [0, 1]. 0 means the perk is ready (no overlay rendered); >0
@@ -672,9 +816,7 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   background: #000;
 }
 
-/* Right side: vertical column of inventory slots, right-aligned. Each
-   slot uses the shared icon-container background. Display-only for now —
-   no pointer events, no hover effect. */
+/* Right side: vertical column of inventory slots, right-aligned. */
 .details-inventory {
   flex: 0 0 auto;
   align-self: stretch;
@@ -693,7 +835,36 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   height: 48px;
   background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
   image-rendering: pixelated;
+  /* Default: interactive slots enable pointer events via button element */
   pointer-events: none;
+  border: 2px solid transparent;
+  box-sizing: border-box;
+  cursor: default;
+}
+
+button.inventory-slot {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+}
+
+button.inventory-slot:hover {
+  border-color: rgba(212, 168, 79, 0.5);
+}
+
+button.inventory-slot:focus-visible {
+  border-color: rgba(212, 168, 79, 0.9);
+}
+
+/* Empty slot with a vault item selected — pulses to indicate it's a valid equip target. */
+.inventory-slot--equip-target {
+  animation: inventory-equip-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes inventory-equip-pulse {
+  0%, 100% { border-color: rgba(96, 165, 250, 0.35); }
+  50%       { border-color: rgba(96, 165, 250, 0.9); }
 }
 
 /* Held-item / lock icon overlay sits centered inside the icon-container
@@ -708,6 +879,21 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   transform: translate(-50%, -50%);
   object-fit: contain;
   image-rendering: pixelated;
+  pointer-events: none;
+}
+
+/* Item icon rendered via ActionIcon (canvas). Centered in the slot at 70%
+   size to match the lock icon's visual weight. */
+.inventory-slot__item-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 70%;
+  height: 70%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
 }
 
@@ -1321,6 +1507,16 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   gap: 2px;
 }
 
+.action-tooltip__stat-preview {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(200, 164, 106, 0.22);
+  font-size: 11px;
+  color: #d4b87a;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
 .action-tooltip__row {
   display: flex;
   align-items: center;
@@ -1510,6 +1706,91 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   font-size: 12px;
   line-height: 1.5;
   color: #d4b87a;
+}
+
+/* ── Townhall tier section ───────────────────────────────────────────────── */
+
+.townhall-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.townhall-tier__badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(54, 34, 20, 0.88), rgba(36, 22, 12, 0.88));
+  border: 1px solid rgba(210, 176, 113, 0.3);
+  font-size: 13px;
+  font-weight: 700;
+  color: #f5ead2;
+}
+
+.townhall-tier__tier-num {
+  font-size: 11px;
+  font-weight: 600;
+  color: #d4b87a;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.townhall-upgrade-btn {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(210, 176, 113, 0.4);
+  background: linear-gradient(180deg, rgba(100, 66, 30, 0.95), rgba(60, 38, 16, 0.98));
+  color: #f5ead2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  text-align: center;
+}
+
+.townhall-upgrade-btn:hover {
+  background: linear-gradient(180deg, rgba(140, 94, 44, 1), rgba(88, 54, 22, 1));
+  border-color: rgba(240, 200, 120, 0.6);
+}
+
+/* In-progress upgrade bar — same visual language as the construction bar */
+.townhall-upgrade-bar {
+  position: relative;
+  overflow: hidden;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: linear-gradient(180deg, rgba(54, 34, 20, 0.96), rgba(36, 22, 12, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 193, 0.08),
+    inset 0 0 0 1px rgba(70, 47, 24, 0.45);
+}
+
+.townhall-upgrade-bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, rgba(161, 105, 20, 0.9), rgba(251, 191, 36, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 243, 211, 0.22);
+  transition: width 0.3s ease-out;
+}
+
+.townhall-upgrade-bar__label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff4dc;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
 }
 
 </style>

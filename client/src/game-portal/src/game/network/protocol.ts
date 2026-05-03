@@ -19,6 +19,9 @@ export type BuildingCapability =
   | 'deposit-point'
   | 'enemy-spawner'
   | 'selectable'
+  | 'upgrade-purchase'
+  | 'item-purchase'
+  | 'vault-access'
 export type ObstacleCapability = 'resource-source' | 'selectable'
 export type ResourceType = 'gold' | 'wood'
 export type UnitType = 'worker' | 'soldier' | (string & {})
@@ -139,6 +142,20 @@ export type MapCatalogEntry = {
   gridCols: number
   gridRows: number
   spawnPointCount: number
+}
+
+export type LobbyStatus = 'open' | 'started' | 'closed'
+
+export type Lobby = {
+  id: string
+  mapId: string
+  mapName: string
+  hostPlayerId: string
+  players: string[]
+  maxPlayers: number
+  createdAt: number
+  status: LobbyStatus
+  matchId?: string
 }
 
 export type MapCatalogMapPayload = Omit<MapConfig, 'id' | 'name' | 'description'>
@@ -269,6 +286,16 @@ export type DebugSpawnUnitCommandMessage = {
   customHp?: number
 }
 
+export type PurchaseUpgradeCommand = {
+  type: 'purchase_upgrade'
+  track: string
+}
+
+export type UpgradeTownHallCommand = {
+  type: 'upgrade_townhall'
+  buildingId: string
+}
+
 export type ResourceStockSnapshot = {
   id: string
   label: string
@@ -277,10 +304,62 @@ export type ResourceStockSnapshot = {
   accent: string
 }
 
+export type PlayerUpgradeSnapshot = {
+  track: string
+  displayName: string
+  level: number
+  cap: number              // 0/3/6/9
+  nextCostGold: number     // 0 if at cap
+  canAfford: boolean
+  hasBlacksmith: boolean
+  hpPerLevel: number
+  damagePerLevel: number
+  armorPerLevel: number
+  attackSpeedPerLevel: number
+  moveSpeedPerLevel: number
+}
+
 export type PlayerSnapshot = {
   playerId: string
   color: string
   resources: ResourceStockSnapshot[]
+  upgrades?: PlayerUpgradeSnapshot[]
+  townHallTier?: number
+  vault?: VaultItemSnapshot[]
+  vaultCapacity?: number
+}
+
+export type PurchaseItemCommand = {
+  type: 'purchase_item'
+  buildingId: string
+  itemId: string
+}
+
+export type EquipItemCommand = {
+  type: 'equip_item'
+  unitId: number
+  slotIndex: number
+  instanceId: number
+}
+
+export type UnequipItemCommand = {
+  type: 'unequip_item'
+  unitId: number
+  slotIndex: number
+}
+
+export type UseConsumableCommand = {
+  type: 'use_consumable'
+  unitId: number
+  slotIndex: number
+}
+
+export type TransferItemCommand = {
+  type: 'transfer_item'
+  fromUnitId: number
+  fromSlotIdx: number
+  toUnitId: number
+  toSlotIdx: number
 }
 
 export type ClientMessage =
@@ -298,6 +377,13 @@ export type ClientMessage =
   | DebugSpawnUnitCommandMessage
   | SetStanceCommandMessage
   | PatrolCommandMessage
+  | PurchaseUpgradeCommand
+  | UpgradeTownHallCommand
+  | PurchaseItemCommand
+  | EquipItemCommand
+  | UnequipItemCommand
+  | UseConsumableCommand
+  | TransferItemCommand
   | PongMessage
 
 // One entry in a unit's activeBuffs / activeDebuffs list. `id` is the perk
@@ -321,6 +407,8 @@ export type PerkCooldownSnapshot = {
 
 /** A single item held in an inventory slot. */
 export type ItemSnapshot = {
+  /** Server-assigned unique instance id — used for equip/unequip commands. */
+  instanceId: number
   /** Unique item id — matches an entry in the client's ITEM_DEF_MAP catalog
    *  for display name, icon, and modifier/effect resolution. */
   itemId: string
@@ -334,6 +422,13 @@ export type ItemSnapshot = {
 export type InventorySnapshot = {
   size: number
   slots: (ItemSnapshot | null)[]
+}
+
+/** An item stored in the player's vault between matches / on the town hall. */
+export type VaultItemSnapshot = {
+  instanceId: number
+  itemId: string
+  stacks?: number
 }
 
 export type UnitSnapshot = {

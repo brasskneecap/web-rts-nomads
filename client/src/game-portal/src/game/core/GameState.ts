@@ -7,6 +7,8 @@ import type {
   InventorySnapshot,
   ItemSnapshot,
   ObjectiveSnapshot,
+  PlayerUpgradeSnapshot,
+  VaultItemSnapshot,
   VictorySnapshot,
   MapConfig,
   MatchSnapshotMessage,
@@ -27,6 +29,8 @@ import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
+import { ITEM_DEF_MAP } from '../maps/itemDefs'
+import { buildItemTooltipBody } from '../items/itemRules'
 import { formatPerkTooltip } from './perkTooltip'
 import { getUnitBodyRect, isPointInUnitBody } from '../rendering/unitSprites'
 
@@ -155,7 +159,12 @@ export type ActionItem = {
   tooltipBody?: string
   disabled?: boolean
   active?: boolean
-  iconDef?: { kind: 'building'; type: string } | { kind: 'unit'; type: string }
+  /** Override the icon lookup key used by ActionIcon. When set, ActionIcon uses
+   *  this key for the PNG/SVG lookup instead of `id`. Useful when the action id
+   *  is a compound slug (e.g. "buy-item-weapon_common_sword") but the visual
+   *  should reuse an existing icon (e.g. "attack"). */
+  iconId?: string
+  iconDef?: { kind: 'building'; type: string } | { kind: 'unit'; type: string } | { kind: 'item'; type: string }
   /** Seconds remaining on this perk's next activation. 0/undefined = ready. */
   cooldownRemaining?: number
   /** Full cooldown duration corresponding to cooldownRemaining. Drives the
@@ -397,6 +406,23 @@ export class GameState {
   // Battle tracker snapshot (debug). Null when the active map does not have
   // debug.battleTracker enabled. Consumed by BattleTrackerPanel.vue.
   battleTracker: BattleTrackerSnapshot | null = null
+
+  // Permanent per-player upgrade state. Populated from the local player's
+  // PlayerSnapshot every tick. Empty until the server sends upgrade data.
+  playerUpgrades: PlayerUpgradeSnapshot[] = []
+  // Current tier of the local player's town hall (1 = Town Hall, 2 = Keep,
+  // 3 = Castle). 0 until the server sends the first snapshot with this data.
+  townHallTier: number = 0
+
+  // Vault state — populated from PlayerSnapshot each tick.
+  localPlayerVault: VaultItemSnapshot[] = []
+  localPlayerVaultCapacity = 0
+  // True when the vault panel overlay is visible (toggled by the "Open Vault"
+  // building action). Stored here so it persists across selection changes.
+  vaultPanelOpen = false
+  // Currently selected vault item (for click-to-equip flow). Set by
+  // VaultPanel; cleared when the user deselects or closes the panel.
+  vaultSelectedInstanceId: number | null = null
 
   snapshotBuffer: InterpolationFrame[] = []
   interpolationDelayMs = 100
@@ -908,7 +934,7 @@ export class GameState {
     return this.getInterpolatedUnits(performance.now())
   }
 
-  private isOwnedByLocalPlayer(unit: Unit): boolean {
+  private isOwnedByLocalPlayer(unit: { ownerId?: string }): boolean {
     return !!this.localPlayerId && unit.ownerId === this.localPlayerId
   }
 
@@ -923,7 +949,7 @@ export class GameState {
     return ownerId === ENEMY_PLAYER_ID
   }
 
-  ownersAreHostile(a: string | undefined, b: string | undefined): boolean {
+  ownersAreHostile(a: string | null | undefined, b: string | null | undefined): boolean {
     if (!a || !b || a === b) return false
     return a === ENEMY_PLAYER_ID || b === ENEMY_PLAYER_ID
   }
@@ -1086,7 +1112,14 @@ export class GameState {
   // drag only needs to reach the ankles (not the mid-torso) to pick the
   // unit up. Same body rect as single-click hit testing so drag-select and
   // click-select agree on what "hits" a unit.
-  isUnitInSelectionBox(unit: Unit): boolean {
+  isUnitInSelectionBox(unit: {
+    ownerId?: string
+    visible?: boolean
+    x: number
+    y: number
+    unitType?: string
+    path?: string
+  }): boolean {
     if (!this.selectionBox.active) return false
     if (!this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
     const { left, right, top, bottom } = this.getSelectionBounds()
@@ -1265,6 +1298,10 @@ export class GameState {
   getSelectedBuilding(): BuildingTile | null {
     if (!this.selectedBuildingId) return null
     return this.mapConfig.buildings.find((building) => building.id === this.selectedBuildingId) ?? null
+  }
+
+  getSelectedBuildingType(): string | null {
+    return this.getSelectedBuilding()?.buildingType ?? null
   }
 
   getSelectedObstacle(): ObstacleTile | null {
@@ -1720,7 +1757,11 @@ export class GameState {
         title,
         subtitle,
         details: getBuildingDetails(selectedBuilding),
-        actions: isUnderConstruction ? [] : getBuildingActions(selectedBuilding),
+        actions: isUnderConstruction ? [] : getBuildingActions(selectedBuilding, this.playerUpgrades, {
+          vault: this.localPlayerVault,
+          vaultCapacity: this.localPlayerVaultCapacity,
+          vaultPanelOpen: this.vaultPanelOpen,
+        }),
         production: activeProduction ? toProductionSummary(activeProduction) : undefined,
         construction: isUnderConstruction
           ? getBuildingConstructionSummary(selectedBuilding)
@@ -1875,6 +1916,19 @@ export class GameState {
       max: resource.max,
       accent: resource.accent,
     }))
+
+    if (localPlayer.upgrades !== undefined) {
+      this.playerUpgrades = localPlayer.upgrades
+    }
+    if (localPlayer.townHallTier !== undefined) {
+      this.townHallTier = localPlayer.townHallTier
+    }
+    if (localPlayer.vault !== undefined) {
+      this.localPlayerVault = localPlayer.vault ?? []
+    }
+    if (localPlayer.vaultCapacity !== undefined) {
+      this.localPlayerVaultCapacity = localPlayer.vaultCapacity
+    }
   }
 }
 
@@ -2178,8 +2232,45 @@ function getGroupActions(
   return actions
 }
 
-function getBuildingActions(building: BuildingTile): ActionItem[] {
+function getBuildingActions(building: BuildingTile, upgrades: PlayerUpgradeSnapshot[] = [], vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number; vaultPanelOpen: boolean }): ActionItem[] {
   const actions: ActionItem[] = []
+
+  if (building.capabilities.includes('item-purchase')) {
+    for (const itemDef of ITEM_DEF_MAP.values()) {
+      // Vault capacity check: if vault is full and the item can't stack onto
+      // an existing entry, disable the purchase button.
+      const capacity = vaultState?.vaultCapacity ?? 0
+      const vault = vaultState?.vault ?? []
+      let atCapacity = false
+      if (capacity > 0 && vault.length >= capacity) {
+        // Check if any existing entry can absorb a stack
+        const existingEntry = vault.find((v) => v.itemId === itemDef.id)
+        const maxStacks = itemDef.maxStacks ?? 1
+        const currentStacks = existingEntry?.stacks ?? (existingEntry ? 1 : 0)
+        if (!existingEntry || currentStacks >= maxStacks) {
+          atCapacity = true
+        }
+      }
+      actions.push({
+        id: `buy-item-${itemDef.id}`,
+        label: itemDef.displayName,
+        iconDef: { kind: 'item', type: itemDef.id },
+        cost: [{ resourceId: 'gold', amount: itemDef.costGold, accent: '#d4a84f' }],
+        tooltipTitle: itemDef.displayName,
+        tooltipBody: buildItemTooltipBody(itemDef),
+        disabled: atCapacity,
+      })
+    }
+  }
+
+  if (building.capabilities.includes('vault-access')) {
+    actions.push({
+      id: 'open-vault',
+      label: 'Vault',
+      iconId: 'set-spawn-point',
+      active: vaultState?.vaultPanelOpen ?? false,
+    })
+  }
 
   if (building.capabilities.includes('unit-spawner')) {
     let hasTrainable = false
@@ -2200,6 +2291,33 @@ function getBuildingActions(building: BuildingTile): ActionItem[] {
     }
     if (hasTrainable) {
       actions.push({ id: 'set-spawn-point', label: 'Set Rally Point' })
+    }
+  }
+
+  if (building.capabilities.includes('upgrade-purchase')) {
+    for (const upgrade of upgrades) {
+      const atCap = upgrade.level >= upgrade.cap
+      const disabled =
+        !upgrade.hasBlacksmith || upgrade.cap === 0 || atCap || !upgrade.canAfford
+      const statParts = [
+        `+${upgrade.hpPerLevel} HP`,
+        `+${upgrade.damagePerLevel} DMG`,
+        ...(upgrade.armorPerLevel ? [`+${upgrade.armorPerLevel} ARM`] : []),
+        `+${upgrade.attackSpeedPerLevel.toFixed(2)} AS`,
+        `+${upgrade.moveSpeedPerLevel} MS`,
+      ]
+      const levelLabel = atCap
+        ? `${upgrade.displayName} (Max)`
+        : `${upgrade.displayName} Lv ${upgrade.level} → ${upgrade.level + 1}`
+      actions.push({
+        id: `upgrade-${upgrade.track}`,
+        label: levelLabel,
+        iconDef: { kind: 'unit', type: upgrade.track },
+        cost: [{ resourceId: 'gold', amount: upgrade.nextCostGold, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' }],
+        disabled,
+        tooltipTitle: levelLabel,
+        tooltipBody: statParts.join('  '),
+      })
     }
   }
 
@@ -2244,7 +2362,7 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
   if (activeProduction) {
     const nextQueuedUnit = activeProduction.queuedUnitTypes[1]
     const hiddenQueueCount = Math.max(activeProduction.queueLength - 2, 0)
-    return [
+    const productionDetails: DetailItem[] = [
       {
         id: 'current-training-unit',
         label: 'Training',
@@ -2258,6 +2376,8 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
           : 'None',
       },
     ]
+    appendTierUpDetails(building, productionDetails)
+    return productionDetails
   }
 
   const details: DetailItem[] = []
@@ -2340,7 +2460,21 @@ function getBuildingDetails(building: BuildingTile): DetailItem[] {
       })
   }
 
+  appendTierUpDetails(building, details)
+
   return details
+}
+
+function appendTierUpDetails(building: BuildingTile, details: DetailItem[]): void {
+  const tierUpRemaining = getBuildingMetadataNumber(building, 'tierUpRemaining')
+  const tierUpTotal = getBuildingMetadataNumber(building, 'tierUpTotal')
+  const tierTargetLevel = getBuildingMetadataNumber(building, 'tierTargetLevel')
+  if (tierUpRemaining === undefined || tierUpTotal === undefined || tierUpTotal <= 0) return
+  const tierNames = ['Town Hall', 'Keep', 'Castle']
+  const targetName = tierTargetLevel !== undefined ? (tierNames[Math.round(tierTargetLevel) - 1] ?? 'next tier') : 'next tier'
+  const progress = Math.max(0, Math.min(1, 1 - tierUpRemaining / tierUpTotal))
+  details.push({ id: 'tierup-remaining', label: 'Upgrading to', value: targetName })
+  details.push({ id: 'tierup-progress', label: 'Progress', value: String(progress) })
 }
 
 // Slow < 1/s, Normal 1–1.25/s, Fast 1.25–1.75/s, Very Fast > 1.75/s

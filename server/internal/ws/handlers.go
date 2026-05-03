@@ -18,14 +18,16 @@ const (
 )
 
 type Hub struct {
-	upgrader websocket.Upgrader
-	manager  *game.MatchManager
-	quit     chan struct{}
+	upgrader     websocket.Upgrader
+	manager      *game.MatchManager
+	lobbyManager *game.LobbyManager
+	quit         chan struct{}
 }
 
-func NewHub(manager *game.MatchManager) *Hub {
+func NewHub(manager *game.MatchManager, lobbyManager *game.LobbyManager) *Hub {
 	h := &Hub{
-		manager: manager,
+		manager:      manager,
+		lobbyManager: lobbyManager,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -44,6 +46,14 @@ func (h *Hub) Close() {
 
 func (h *Hub) GetMatch(matchID string) (*game.Match, bool) {
 	return h.manager.GetMatch(matchID)
+}
+
+func (h *Hub) GetLobbyManager() *game.LobbyManager {
+	return h.lobbyManager
+}
+
+func (h *Hub) GetMatchManager() *game.MatchManager {
+	return h.manager
 }
 
 func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -472,6 +482,125 @@ func (h *Hub) readLoop(client *Client) {
 			}
 
 			match.State.RepairBuilding(client.PlayerID(), msg.UnitIDs, msg.BuildingID)
+
+		case "purchase_upgrade":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.PurchaseUpgradeCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid purchase_upgrade payload"})
+				continue
+			}
+			match.State.PurchaseUpgrade(client.PlayerID(), msg.Track)
+
+		case "upgrade_townhall":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.UpgradeTownHallCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid upgrade_townhall payload"})
+				continue
+			}
+			match.State.UpgradeTownHall(client.PlayerID(), msg.BuildingID)
+
+		case "purchase_item":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.PurchaseItemCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid purchase_item payload"})
+				continue
+			}
+			match.State.PurchaseItem(client.PlayerID(), msg.BuildingID, msg.ItemID)
+
+		case "equip_item":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.EquipItemCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid equip_item payload"})
+				continue
+			}
+			match.State.EquipItem(client.PlayerID(), msg.UnitID, msg.SlotIndex, msg.InstanceID)
+
+		case "unequip_item":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.UnequipItemCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid unequip_item payload"})
+				continue
+			}
+			match.State.UnequipItem(client.PlayerID(), msg.UnitID, msg.SlotIndex)
+
+		case "use_consumable":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.UseConsumableCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid use_consumable payload"})
+				continue
+			}
+			match.State.UseConsumable(client.PlayerID(), msg.UnitID, msg.SlotIndex)
+
+		case "transfer_item":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.TransferItemCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid transfer_item payload"})
+				continue
+			}
+			match.State.TransferItem(client.PlayerID(), msg.FromUnitID, msg.FromSlotIdx, msg.ToUnitID, msg.ToSlotIdx)
 
 		case "debug_spawn_unit":
 			// Dev-only: spawn an arbitrary enemy unit with a chosen perk

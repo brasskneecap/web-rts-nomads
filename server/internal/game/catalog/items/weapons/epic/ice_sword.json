@@ -1,0 +1,14 @@
+{
+  "id": "ice_sword",
+  "displayName": "Ice Sword",
+  "description": "+50 damage.",
+  "iconKey": "ice_sword",
+  "kind": "equipment",
+  "tier": "epic",
+  "category": "Weapon",
+  "slotKind": "weapon",
+  "allowedUnitTypes": [],
+  "costGold": 500,
+  "modifiers": { "damage": 50 },
+  "effects": []
+}

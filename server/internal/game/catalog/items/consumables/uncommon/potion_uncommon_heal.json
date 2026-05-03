@@ -1,0 +1,14 @@
+{
+  "id": "potion_uncommon_heal",
+  "displayName": "Healing Potion",
+  "description": "Restores 100 HP.",
+  "iconKey": "potion_uncommon_heal",
+  "kind": "consumable",
+  "tier": "uncommon",
+  "category": "Consumable",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 1,
+  "maxStacks": 99,
+  "consumable": { "type": "heal", "amount": 100 }
+}

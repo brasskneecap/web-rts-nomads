@@ -302,10 +302,116 @@ type ResourceStock struct {
 	Accent string `json:"accent"`
 }
 
+// PurchaseUpgradeCommandMessage requests a permanent upgrade purchase for a
+// unit track. Track must match an UpgradeTrack constant ("soldier" or "archer").
+type PurchaseUpgradeCommandMessage struct {
+	Type  string `json:"type"`
+	Track string `json:"track"`
+}
+
+// UpgradeTownHallCommandMessage requests a tier-up on the specified town hall.
+// BuildingID must be the ID of a townhall the player owns.
+type UpgradeTownHallCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+}
+
+// PurchaseItemCommandMessage requests buying an item from a marketplace building.
+// BuildingID must be the ID of a building with the "item-purchase" capability.
+// ItemID must match an entry in the item catalog.
+type PurchaseItemCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+	ItemID     string `json:"itemId"`
+}
+
+// EquipItemCommandMessage moves an item from the player's vault into a unit
+// slot. InstanceID identifies the specific vault entry. SlotIndex is 0-based;
+// must be within the unit's InventorySize.
+type EquipItemCommandMessage struct {
+	Type       string `json:"type"`
+	UnitID     int    `json:"unitId"`
+	SlotIndex  int    `json:"slotIndex"`
+	InstanceID int64  `json:"instanceId"`
+}
+
+// UnequipItemCommandMessage returns an equipped item from a unit slot back to
+// the player's vault. SlotIndex is 0-based.
+type UnequipItemCommandMessage struct {
+	Type      string `json:"type"`
+	UnitID    int    `json:"unitId"`
+	SlotIndex int    `json:"slotIndex"`
+}
+
+// UseConsumableCommandMessage applies the effect of a consumable item in the
+// given unit slot and decrements its stack count. SlotIndex is 0-based.
+type UseConsumableCommandMessage struct {
+	Type      string `json:"type"`
+	UnitID    int    `json:"unitId"`
+	SlotIndex int    `json:"slotIndex"`
+}
+
+// TransferItemCommandMessage moves an equipped item from one unit's slot to
+// another unit's slot (or a different slot on the same unit). Both units must
+// be owned by the player. The destination slot must be empty — no implicit
+// swap. FromSlotIdx and ToSlotIdx are 0-based.
+type TransferItemCommandMessage struct {
+	Type        string `json:"type"`
+	FromUnitID  int    `json:"fromUnitId"`
+	FromSlotIdx int    `json:"fromSlotIdx"`
+	ToUnitID    int    `json:"toUnitId"`
+	ToSlotIdx   int    `json:"toSlotIdx"`
+}
+
+// PlayerUpgradeSnapshot describes the current state of one upgrade track for a
+// player. Emitted per-player in every MatchSnapshotMessage.Players entry.
+type PlayerUpgradeSnapshot struct {
+	Track               string  `json:"track"`
+	DisplayName         string  `json:"displayName"`
+	Level               int     `json:"level"`
+	Cap                 int     `json:"cap"`
+	NextCostGold        int     `json:"nextCostGold"`
+	CanAfford           bool    `json:"canAfford"`
+	HasBlacksmith       bool    `json:"hasBlacksmith"`
+	HPPerLevel          int     `json:"hpPerLevel"`
+	DamagePerLevel      int     `json:"damagePerLevel"`
+	ArmorPerLevel       int     `json:"armorPerLevel"`
+	AttackSpeedPerLevel float64 `json:"attackSpeedPerLevel"`
+	MoveSpeedPerLevel   float64 `json:"moveSpeedPerLevel"`
+}
+
+// VaultItemSnapshot carries one vault entry to the client each tick.
+// InstanceID is the unique handle used for equip/unequip commands.
+type VaultItemSnapshot struct {
+	InstanceID int64  `json:"instanceId"`
+	ItemID     string `json:"itemId"`
+	Stacks     int    `json:"stacks,omitempty"`
+}
+
+// ItemSnapshot describes one item in a unit's equipment slot. Nil slots are
+// represented as nil pointers in InventorySnapshot.Slots.
+type ItemSnapshot struct {
+	InstanceID int64  `json:"instanceId"`
+	ItemID     string `json:"itemId"`
+	Stacks     int    `json:"stacks,omitempty"`
+}
+
+// InventorySnapshot carries the full slot layout for a unit's item inventory.
+// Size is the number of slots the unit has (0 = no inventory; rank-gated).
+// Slots is positional and always len == Size; nil entries are empty slots.
+type InventorySnapshot struct {
+	Size  int             `json:"size"`
+	Slots []*ItemSnapshot `json:"slots"` // positional; nil = empty slot
+}
+
 type PlayerSnapshot struct {
-	PlayerID  string          `json:"playerId"`
-	Color     string          `json:"color"`
-	Resources []ResourceStock `json:"resources"`
+	PlayerID      string                  `json:"playerId"`
+	Color         string                  `json:"color"`
+	Resources     []ResourceStock         `json:"resources"`
+	Upgrades      []PlayerUpgradeSnapshot `json:"upgrades,omitempty"`
+	TownHallTier  int                     `json:"townHallTier,omitempty"`
+	Vault         []VaultItemSnapshot     `json:"vault"`
+	VaultCapacity int                     `json:"vaultCapacity,omitempty"`
 }
 
 type UnitSnapshot struct {
@@ -404,6 +510,9 @@ type UnitSnapshot struct {
 	// bronze trap perk. Only present for archer units on the trapper path that own
 	// a bronze trap perk; nil/omitted for all other units.
 	EffectiveTrap *EffectiveTrapSnapshot `json:"effectiveTrap,omitempty"`
+	// Inventory carries the unit's item slots. Nil/omitted for units with no
+	// inventory (rank below bronze). Size is the slot count; Slots is positional.
+	Inventory *InventorySnapshot `json:"inventory,omitempty"`
 }
 
 type WelcomeMessage struct {

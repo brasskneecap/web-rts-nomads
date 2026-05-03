@@ -4,40 +4,62 @@
       <header class="find-game__header">
         <UiButton size="sm" @click="router.push('/custom')">Back</UiButton>
         <h1 class="find-game__title">Find Game</h1>
+        <span v-if="refreshError" class="find-game__refresh-error">Couldn't refresh</span>
       </header>
 
       <UiPanel class="find-game__list-panel" :padding="16">
-        <LobbyList :lobbies="sortedLobbies" @join="onJoin" />
+        <LobbyList :lobbies="lobbies" @join="onJoin" />
       </UiPanel>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLobbies } from '@/composables/useLobbies'
-import { useMapSelection } from '@/composables/useMapSelection'
+import { usePlayer } from '@/composables/usePlayer'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import LobbyList from '@/components/menu/LobbyList.vue'
 
 const router = useRouter()
-const { lobbies, joinLobby, getLobby } = useLobbies()
-const { setSelectedMapId } = useMapSelection()
+const { lobbies, refreshList, joinLobby } = useLobbies()
+const { playerId } = usePlayer()
 
-const sortedLobbies = computed(() =>
-  [...lobbies.value].sort((a, b) => b.createdAt - a.createdAt),
-)
+const refreshError = ref(false)
+let pollInterval: ReturnType<typeof setInterval> | null = null
 
-function onJoin(id: string) {
-  joinLobby(id)
-  const lobby = getLobby(id)
-  if (lobby) {
-    setSelectedMapId(lobby.mapId, lobby.mapName)
+async function poll() {
+  try {
+    await refreshList()
+    refreshError.value = false
+  } catch {
+    refreshError.value = true
+  }
+}
+
+async function onJoin(id: string) {
+  try {
+    await joinLobby({ id, playerId: playerId.value })
+  } catch {
+    // If join fails (e.g. 409 already in lobby), still navigate — the lobby
+    // polling will surface the real state.
   }
   void router.push(`/lobby/${id}`)
 }
+
+onMounted(() => {
+  void poll()
+  pollInterval = setInterval(() => { void poll() }, 2000)
+})
+
+onUnmounted(() => {
+  if (pollInterval !== null) {
+    clearInterval(pollInterval)
+    pollInterval = null
+  }
+})
 </script>
 
 <style scoped>
@@ -76,6 +98,12 @@ function onJoin(id: string) {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   margin: 0;
+}
+
+.find-game__refresh-error {
+  font-size: 12px;
+  color: #f07070;
+  margin-left: auto;
 }
 
 .find-game__list-panel {

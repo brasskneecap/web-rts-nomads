@@ -1,0 +1,14 @@
+{
+  "id": "broad_sword",
+  "displayName": "Broad Sword",
+  "description": "+5 damage.",
+  "iconKey": "broad_sword",
+  "kind": "equipment",
+  "tier": "common",
+  "category": "Weapon",
+  "slotKind": "weapon",
+  "allowedUnitTypes": [],
+  "costGold": 50,
+  "modifiers": { "damage": 5 },
+  "effects": []
+}

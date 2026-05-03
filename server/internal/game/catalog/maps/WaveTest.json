@@ -1659,7 +1659,8 @@
         "capabilities": [
           "unit-spawner",
           "occupiable",
-          "deposit-point"
+          "deposit-point",
+          "vault-access"
         ],
         "spawnUnitTypes": [
           "worker"
@@ -1680,7 +1681,8 @@
         "capabilities": [
           "unit-spawner",
           "occupiable",
-          "deposit-point"
+          "deposit-point",
+          "vault-access"
         ],
         "spawnUnitTypes": [
           "worker"
@@ -1978,7 +1980,7 @@
         "metadata": {
           "spawnCount": 2,
           "spawnDelaySeconds": 12,
-          "spawnIntervalSeconds": 5,
+          "spawnIntervalSeconds": 10,
           "startingWave": 2,
           "targetPlayerLabel": "player1",
           "unitType": "raider"
@@ -1999,7 +2001,7 @@
         "metadata": {
           "spawnCount": 2,
           "spawnDelaySeconds": 5,
-          "spawnIntervalSeconds": 5,
+          "spawnIntervalSeconds": 10,
           "startingWave": 2,
           "targetPlayerLabel": "player1",
           "unitType": "raider"
@@ -2020,7 +2022,7 @@
         "metadata": {
           "spawnCount": 2,
           "spawnDelaySeconds": 8,
-          "spawnIntervalSeconds": 5,
+          "spawnIntervalSeconds": 10,
           "startingWave": 2,
           "targetPlayerLabel": "player1",
           "unitType": "raider"
@@ -2356,8 +2358,8 @@
     ],
     "waveConfig": {
       "totalWaves": 10,
-      "prepDuration": 60,
-      "waveDuration": 88
+      "prepDuration": 180,
+      "waveDuration": 60
     },
     "victoryConditions": [
       {

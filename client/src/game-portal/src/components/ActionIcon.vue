@@ -1,7 +1,7 @@
 <template>
   <canvas v-if="useCanvas" ref="canvasEl" width="64" height="64" class="action-icon" />
   <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="action-icon">
-    <path :d="getActionIcon(action.id)" />
+    <path :d="getActionIcon(action.iconId ?? action.id)" />
   </svg>
 </template>
 
@@ -9,11 +9,12 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import type { ActionItem } from '@/game/core/GameState'
 import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
-import { UNIT_DEF_MAP } from '@/game/maps/unitDefs'
+import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
 import { ACTION_ICON_MAP } from '@/game/maps/actionIconDefs'
 import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { getActionIconImage } from '@/game/rendering/actionIconSprites'
+import { getItemAssetImage } from '@/game/rendering/itemAssets'
 
 const props = defineProps<{
   action: ActionItem
@@ -24,8 +25,6 @@ const canvasEl = ref<HTMLCanvasElement | null>(null)
 const CANVAS_SIZE = 64
 const PADDING = 5
 const DRAW_SIZE = CANVAS_SIZE - PADDING * 2
-// Default color used for 'player'-tinted layers in icons
-const ICON_PLAYER_COLOR = '#3b82f6'
 
 function drawBuildingSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
   ctx.imageSmoothingEnabled = false
@@ -102,66 +101,15 @@ function drawUnitSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
 }
 
 function drawUnit(ctx: CanvasRenderingContext2D, type: string) {
-  // Prefer the packed south-facing rotation if we have sprites for this unit.
-  // Falls through to the procedural layers when no sprite set is registered
-  // or the image hasn't decoded yet.
   const spriteSet = getUnitSpriteSet(type)
   const portrait = spriteSet?.rotations.south ?? spriteSet?.rotations.north
     ?? spriteSet?.rotations.east ?? spriteSet?.rotations.west
-  if (portrait) {
-    if (portrait.complete && portrait.naturalWidth > 0) {
-      drawUnitSprite(ctx, portrait)
-      return
-    }
-    portrait.addEventListener('load', () => draw(), { once: true })
+  if (!portrait) return
+  if (portrait.complete && portrait.naturalWidth > 0) {
+    drawUnitSprite(ctx, portrait)
+    return
   }
-
-  const def = UNIT_DEF_MAP.get(type)
-  if (!def?.render) return
-
-  const { render } = def
-
-  // Compute bounding box of the unit's pixel-space layers
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const layer of render.layers) {
-    if (layer.kind === 'circle') {
-      minX = Math.min(minX, layer.cx - layer.r)
-      minY = Math.min(minY, layer.cy - layer.r)
-      maxX = Math.max(maxX, layer.cx + layer.r)
-      maxY = Math.max(maxY, layer.cy + layer.r)
-    } else if (layer.kind === 'poly') {
-      for (const [px, py] of layer.points) {
-        minX = Math.min(minX, px)
-        minY = Math.min(minY, py)
-        maxX = Math.max(maxX, px)
-        maxY = Math.max(maxY, py)
-      }
-    }
-  }
-  if (!isFinite(minX)) return
-
-  const unitW = maxX - minX
-  const unitH = maxY - minY
-  const scale = DRAW_SIZE / Math.max(unitW, unitH, 1)
-  const cx = PADDING + DRAW_SIZE / 2 - ((minX + maxX) / 2) * scale
-  const cy = PADDING + DRAW_SIZE / 2 - ((minY + maxY) / 2) * scale
-
-  for (const layer of render.layers) {
-    ctx.fillStyle = layer.color === 'player' ? ICON_PLAYER_COLOR : layer.color
-    if (layer.kind === 'circle') {
-      ctx.beginPath()
-      ctx.arc(cx + layer.cx * scale, cy + layer.cy * scale, layer.r * scale, 0, Math.PI * 2)
-      ctx.fill()
-    } else if (layer.kind === 'poly') {
-      ctx.beginPath()
-      ctx.moveTo(cx + layer.points[0][0] * scale, cy + layer.points[0][1] * scale)
-      for (let i = 1; i < layer.points.length; i++) {
-        ctx.lineTo(cx + layer.points[i][0] * scale, cy + layer.points[i][1] * scale)
-      }
-      ctx.closePath()
-      ctx.fill()
-    }
-  }
+  portrait.addEventListener('load', () => draw(), { once: true })
 }
 
 function drawActionSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
@@ -177,7 +125,9 @@ function drawActionSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) 
 }
 
 const useCanvas = computed(() => {
-  return !!props.action.iconDef || !!getActionIconImage(props.action.id)
+  if (props.action.iconDef) return true
+  const lookupId = props.action.iconId ?? props.action.id
+  return !!getActionIconImage(lookupId)
 })
 
 function draw() {
@@ -188,7 +138,8 @@ function draw() {
 
   ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
 
-  const sprite = getActionIconImage(props.action.id)
+  const lookupId = props.action.iconId ?? props.action.id
+  const sprite = getActionIconImage(lookupId)
   if (sprite) {
     if (sprite.complete && sprite.naturalWidth > 0) {
       drawActionSprite(ctx, sprite)
@@ -205,6 +156,39 @@ function draw() {
     drawBuilding(ctx, iconDef.type)
   } else if (iconDef.kind === 'unit') {
     drawUnit(ctx, iconDef.type)
+  } else if (iconDef.kind === 'item') {
+    const def = ITEM_DEF_MAP.get(iconDef.type)
+    const iconKey = def?.iconKey ?? iconDef.type
+    // 1. Bundled actions sprite (not currently used for items, reserved for future)
+    const localImg = getActionIconImage(iconKey)
+    if (localImg) {
+      if (localImg.complete && localImg.naturalWidth > 0) {
+        drawActionSprite(ctx, localImg)
+        return
+      }
+      localImg.addEventListener('load', () => draw(), { once: true })
+      return
+    }
+    // 2. Client-side bundled asset from assets/items/**/<iconKey>.png
+    const assetImg = getItemAssetImage(iconKey)
+    if (assetImg) {
+      if (assetImg.complete && assetImg.naturalWidth > 0) {
+        drawActionSprite(ctx, assetImg)
+        return
+      }
+      assetImg.addEventListener('load', () => draw(), { once: true })
+      return
+    }
+    // Show placeholder while asset image is loading or unavailable.
+    const fallbackKey = def?.kind === 'consumable' ? 'set-spawn-point' : 'attack'
+    const fallback = getActionIconImage(fallbackKey)
+    if (fallback) {
+      if (fallback.complete && fallback.naturalWidth > 0) {
+        drawActionSprite(ctx, fallback)
+        return
+      }
+      fallback.addEventListener('load', () => draw(), { once: true })
+    }
   }
 }
 

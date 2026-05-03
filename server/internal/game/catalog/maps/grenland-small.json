@@ -8,7 +8,8 @@
         "capabilities": [
           "unit-spawner",
           "occupiable",
-          "deposit-point"
+          "deposit-point",
+          "vault-access"
         ],
         "height": 2,
         "id": "townhall-7-2",
@@ -30,7 +31,8 @@
         "capabilities": [
           "unit-spawner",
           "occupiable",
-          "deposit-point"
+          "deposit-point",
+          "vault-access"
         ],
         "height": 2,
         "id": "townhall-28-2",

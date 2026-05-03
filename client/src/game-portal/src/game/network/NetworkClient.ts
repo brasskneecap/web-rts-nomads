@@ -11,10 +11,12 @@ import type {
   MatchSnapshotMessage,
   MoveCommandMessage,
   PatrolCommandMessage,
+  PurchaseUpgradeCommand,
   SetBuildingSpawnPointCommandMessage,
   SetStanceCommandMessage,
   ServerMessage,
   TrainUnitCommandMessage,
+  UpgradeTownHallCommand,
 } from './protocol'
 import { GameState } from '../core/GameState'
 
@@ -400,6 +402,22 @@ export class NetworkClient {
       point: { x, y },
     }
 
+    this.send(message)
+  }
+
+  sendPurchaseUpgrade(track: string) {
+    const message: PurchaseUpgradeCommand = {
+      type: 'purchase_upgrade',
+      track,
+    }
+    this.send(message)
+  }
+
+  sendUpgradeTownHall(buildingId: string) {
+    const message: UpgradeTownHallCommand = {
+      type: 'upgrade_townhall',
+      buildingId,
+    }
     this.send(message)
   }
 
