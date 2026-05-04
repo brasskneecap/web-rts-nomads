@@ -46,6 +46,7 @@ export function createEditorMapConfig(
     defaultTile: existing?.defaultTile,
     obstacles: existing?.obstacles ?? [],
     buildings: existing?.buildings ?? [],
+    placedUnits: existing?.placedUnits,
     waveConfig: existing?.waveConfig,
     victoryConditions: existing?.victoryConditions,
   })

@@ -926,14 +926,18 @@ const selectedEditPlacedUnit = computed(() =>
 
 function updateSelectedPlacedUnit(patch: Partial<PlacedUnit>) {
   if (!selectedEditPlacedUnitId.value) return
-  placedUnits.value = placedUnits.value.map((u) =>
+  const next = placedUnits.value.map((u) =>
     u.id === selectedEditPlacedUnitId.value ? { ...u, ...patch } : u
   )
+  placedUnits.value = next
+  model.value = { ...model.value, placedUnits: next }
 }
 
 function deleteSelectedPlacedUnit() {
   if (!selectedEditPlacedUnitId.value) return
-  placedUnits.value = placedUnits.value.filter((u) => u.id !== selectedEditPlacedUnitId.value)
+  const next = placedUnits.value.filter((u) => u.id !== selectedEditPlacedUnitId.value)
+  placedUnits.value = next
+  model.value = { ...model.value, placedUnits: next }
   selectedEditPlacedUnitId.value = null
 }
 
@@ -1368,7 +1372,7 @@ function paintAtScreen(screenX: number, screenY: number) {
       )
       placedUnits.value = placedUnits.value.filter((u) => !(u.x === c.x && u.y === c.y))
     }
-    model.value = next
+    model.value = { ...next, placedUnits: placedUnits.value }
     return
   }
 
@@ -1437,9 +1441,7 @@ function placedUnitAt(x: number, y: number): PlacedUnit | undefined {
 }
 
 function paintUnitAt(cx: number, cy: number) {
-  // Remove any existing placed unit at this cell (only one per cell)
-  placedUnits.value = placedUnits.value.filter((u) => !(u.x === cx && u.y === cy))
-  // Add new placement
+  const filtered = placedUnits.value.filter((u) => !(u.x === cx && u.y === cy))
   const id = `placed-unit-${placedUnitOwner.value}-${cx}-${cy}`
   const entry: PlacedUnit = {
     id,
@@ -1454,7 +1456,9 @@ function paintUnitAt(cx: number, cy: number) {
     entry.aggroRange = placedUnitAggroRange.value
     entry.leashRange = placedUnitLeashRange.value
   }
-  placedUnits.value.push(entry)
+  const next = [...filtered, entry]
+  placedUnits.value = next
+  model.value = { ...model.value, placedUnits: next }
 }
 
 function getTerrainAt(x: number, y: number) {
