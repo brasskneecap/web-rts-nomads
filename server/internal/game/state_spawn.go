@@ -157,12 +157,10 @@ func (s *GameState) findPlayerLabelLocked(playerID string) string {
 // whose PlayerLabel matches the label of the townhall slot claimed by playerID.
 // Must be called under s.mu write lock.
 func (s *GameState) spawnPlacedUnitsForPlayerLocked(playerID, color string) {
-	slog.Info("spawnPlacedUnitsForPlayerLocked", "playerID", playerID, "totalPlacedUnits", len(s.MapConfig.PlacedUnits))
 	if len(s.MapConfig.PlacedUnits) == 0 {
 		return
 	}
 	playerLabel := s.findPlayerLabelLocked(playerID)
-	slog.Info("spawnPlacedUnitsForPlayerLocked", "playerLabel", playerLabel)
 	if playerLabel == "" {
 		// Player has no labelled slot — no authored units to place.
 		return

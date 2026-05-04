@@ -1193,14 +1193,12 @@ async function loadSelectedMapIntoEditor() {
 
   try {
     const catalogFile = await fetchMapCatalogFile(selectedLoadMapId.value)
-    console.log('[editor] loaded map placedUnits from API:', catalogFile.map.placedUnits?.length ?? 0, catalogFile.map.placedUnits)
     model.value = createEditorMapConfig(
       catalogFile.map.gridCols,
       catalogFile.map.gridRows,
       catalogFile.map,
     )
     placedUnits.value = model.value.placedUnits ?? []
-    console.log('[editor] placedUnits.value after load:', placedUnits.value.length, placedUnits.value)
     draftCols.value = model.value.gridCols
     draftRows.value = model.value.gridRows
     recenterCamera()
