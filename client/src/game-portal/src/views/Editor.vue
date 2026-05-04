@@ -8,30 +8,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import MapEditorPanel from '@/components/MapEditorPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { createEditorMapConfig } from '@/game/maps/mapConfig'
 
-const MAP_EDITOR_STORAGE_KEY = 'webrts.mapEditorDraft'
 const router = useRouter()
 
-function getStoredEditorMap() {
-  const stored = localStorage.getItem(MAP_EDITOR_STORAGE_KEY)
-  if (!stored) return createEditorMapConfig()
-  try {
-    return createEditorMapConfig(undefined, undefined, JSON.parse(stored))
-  } catch {
-    return createEditorMapConfig()
-  }
-}
-
-const editorMap = ref(getStoredEditorMap())
-
-watch(editorMap, (val) => {
-  localStorage.setItem(MAP_EDITOR_STORAGE_KEY, JSON.stringify(val))
-}, { deep: true })
+const editorMap = ref(createEditorMapConfig())
 </script>
 
 <style scoped>
