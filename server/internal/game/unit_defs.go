@@ -59,9 +59,9 @@ type UnitDef struct {
 	Bounds json.RawMessage `json:"bounds,omitempty"`
 }
 
-var unitDefsByType map[string]UnitDef
+var unitDefsByType = loadUnitDefsByType()
 
-func init() {
+func loadUnitDefsByType() map[string]UnitDef {
 	// Per-unit directory layout: each catalog/units/<dir>/ holds that unit's
 	// JSON at <dir>/<dir>.json. Walk top-level directories only; path JSONs
 	// live under <dir>/paths/ and are loaded by path_defs.go.
@@ -69,7 +69,7 @@ func init() {
 	if err != nil {
 		panic("catalog/units: " + err.Error())
 	}
-	unitDefsByType = make(map[string]UnitDef, len(entries))
+	result := make(map[string]UnitDef, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			// Loose files at the catalog root are a structural mistake — every
@@ -100,8 +100,9 @@ func init() {
 				panic(rel + `: combatProfile "` + def.CombatProfile + `" is not a known profile (see combat_ai_profiles.go)`)
 			}
 		}
-		unitDefsByType[def.Type] = def
+		result[def.Type] = def
 	}
+	return result
 }
 
 func getUnitDef(unitType string) (UnitDef, bool) {

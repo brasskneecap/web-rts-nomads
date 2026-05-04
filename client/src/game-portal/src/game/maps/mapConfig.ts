@@ -370,7 +370,6 @@ function createBuildingTile(buildingType: BuildingType, x: number, y: number): B
       metadata: {
         townhallId: null,
         fillOrder: 0,
-        spawnUnits: [{ unitType: 'worker', count: 3 }],
       },
     }
   }

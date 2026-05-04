@@ -178,7 +178,7 @@ type MapCatalogSummary struct {
 var mapCatalogFS embed.FS
 
 var (
-	mapCatalog       = mustLoadMapCatalog()
+	mapCatalog       = func() []MapCatalogEntry { _ = unitDefsByType; return mustLoadMapCatalog() }()
 	mapCatalogByID   = indexMapCatalog(mapCatalog)
 	defaultCatalogID = mapCatalog[0].ID
 
@@ -237,7 +237,16 @@ func GetMapConfigByID(mapID string) protocol.MapConfig {
 	if !ok {
 		entry = mapCatalogByID[defaultCatalogID]
 	}
-	return cloneMapConfig(entry.Map)
+	cfg := cloneMapConfig(entry.Map)
+	// If the active entry lost its placed units (e.g. stale runtimeMaps from an
+	// editor save that didn't include them), restore from the embedded catalog so
+	// game matches always use the authored unit layout.
+	if len(cfg.PlacedUnits) == 0 {
+		if canonical, exists := mapCatalogByID[mapID]; exists && len(canonical.Map.PlacedUnits) > 0 {
+			cfg.PlacedUnits = append([]protocol.PlacedUnit(nil), canonical.Map.PlacedUnits...)
+		}
+	}
+	return cfg
 }
 
 func GetMapCatalogEntryByID(mapID string) (MapCatalogEntry, bool) {
@@ -252,6 +261,14 @@ func GetMapCatalogEntryByID(mapID string) (MapCatalogEntry, bool) {
 	}
 	cloned := entry
 	cloned.Map = cloneMapConfig(entry.Map)
+	// Restore placed units from the embedded catalog when the active entry has
+	// none — prevents a stale editor save from making the editor appear empty,
+	// which would then cause the next save to also omit placed units.
+	if len(cloned.Map.PlacedUnits) == 0 {
+		if canonical, exists := mapCatalogByID[cloned.ID]; exists && len(canonical.Map.PlacedUnits) > 0 {
+			cloned.Map.PlacedUnits = append([]protocol.PlacedUnit(nil), canonical.Map.PlacedUnits...)
+		}
+	}
 	return cloned, true
 }
 

@@ -1704,16 +1704,6 @@
         "metadata": {
           "fillOrder": 2,
           "playerLabel": "player2",
-          "spawnUnits": [
-            {
-              "count": 3,
-              "unitType": "worker"
-            },
-            {
-              "count": 1,
-              "unitType": "soldier"
-            }
-          ],
           "townhallId": null
         }
       },
@@ -1730,20 +1720,6 @@
         "metadata": {
           "fillOrder": 0,
           "playerLabel": "player1",
-          "spawnUnits": [
-            {
-              "count": 3,
-              "unitType": "worker"
-            },
-            {
-              "count": 2,
-              "unitType": "soldier"
-            },
-            {
-              "count": 1,
-              "unitType": "archer"
-            }
-          ],
           "townhallId": null
         }
       },
@@ -2359,48 +2335,56 @@
     "placedUnits": [
       {
         "x": 9,
-        "y": 10,
-        "id": "placed-unit-player-9-10",
+        "y": 9,
+        "id": "placed-unit-player-9-9",
         "owner": "player",
         "playerLabel": "player1",
         "unitType": "archer"
       },
       {
-        "x": 5,
+        "x": 10,
+        "y": 8,
+        "id": "placed-unit-player-10-8",
+        "owner": "player",
+        "playerLabel": "player1",
+        "unitType": "archer"
+      },
+      {
+        "x": 4,
+        "y": 3,
+        "id": "placed-unit-player-4-3",
+        "owner": "player",
+        "playerLabel": "player1",
+        "unitType": "worker"
+      },
+      {
+        "x": 4,
         "y": 4,
-        "id": "placed-unit-player-5-4",
+        "id": "placed-unit-player-4-4",
         "owner": "player",
         "playerLabel": "player1",
         "unitType": "worker"
       },
       {
-        "x": 5,
+        "x": 4,
         "y": 5,
-        "id": "placed-unit-player-5-5",
-        "owner": "player",
-        "playerLabel": "player1",
-        "unitType": "worker"
-      },
-      {
-        "x": 6,
-        "y": 5,
-        "id": "placed-unit-player-6-5",
+        "id": "placed-unit-player-4-5",
         "owner": "player",
         "playerLabel": "player1",
         "unitType": "worker"
       },
       {
         "x": 9,
-        "y": 11,
-        "id": "placed-unit-player-9-11",
+        "y": 10,
+        "id": "placed-unit-player-9-10",
         "owner": "player",
         "playerLabel": "player1",
         "unitType": "soldier"
       },
       {
         "x": 10,
-        "y": 10,
-        "id": "placed-unit-player-10-10",
+        "y": 9,
+        "id": "placed-unit-player-10-9",
         "owner": "player",
         "playerLabel": "player1",
         "unitType": "soldier"

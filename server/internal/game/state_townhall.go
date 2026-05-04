@@ -121,58 +121,6 @@ func getSpawnFillOrder(spawnPoint *protocol.BuildingTile) float64 {
 	return 0
 }
 
-func (s *GameState) getPlayerStartLoadoutLocked(spawnPoint *protocol.BuildingTile) []PlayerStartUnit {
-	defaultLoadout := []PlayerStartUnit{{UnitType: "worker", Count: 3}}
-	if spawnPoint == nil || spawnPoint.Metadata == nil {
-		return defaultLoadout
-	}
-
-	loadout := make([]PlayerStartUnit, 0)
-	if rawEntries, ok := spawnPoint.Metadata["spawnUnits"].([]interface{}); ok {
-		for _, rawEntry := range rawEntries {
-			entryMap, ok := rawEntry.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			unitType, ok := getMetadataString(entryMap, "unitType")
-			if !ok {
-				continue
-			}
-			if _, exists := getUnitDef(unitType); !exists {
-				continue
-			}
-
-			count := 1
-			if configuredCount, ok := getMetadataFloat(entryMap, "count"); ok && configuredCount >= 1 {
-				count = int(configuredCount)
-			}
-
-			loadout = append(loadout, PlayerStartUnit{
-				UnitType: unitType,
-				Count:    count,
-			})
-		}
-	}
-
-	if len(loadout) > 0 {
-		return loadout
-	}
-
-	// Backwards compatibility for older maps using unitType/spawnCount.
-	unitType := "worker"
-	count := 3
-	if configuredType, ok := getMetadataString(spawnPoint.Metadata, "unitType"); ok {
-		if _, exists := getUnitDef(configuredType); exists {
-			unitType = configuredType
-		}
-	}
-	if configuredCount, ok := getMetadataFloat(spawnPoint.Metadata, "spawnCount"); ok && configuredCount >= 1 {
-		count = int(configuredCount)
-	}
-
-	return []PlayerStartUnit{{UnitType: unitType, Count: count}}
-}
 
 func (s *GameState) getLinkedSpawnPointForTownhallLocked(home protocol.BuildingTile) *protocol.BuildingTile {
 	homeCenter := protocol.Vec2{

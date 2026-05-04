@@ -6,49 +6,6 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
-type PlayerStartUnit struct {
-	UnitType string
-	Count    int
-}
-
-func (s *GameState) spawnUnitsForPlayerLocked(playerID, color string, home *protocol.BuildingTile, loadout []PlayerStartUnit) {
-	totalCount := 0
-	for _, entry := range loadout {
-		if entry.Count > 0 {
-			totalCount += entry.Count
-		}
-	}
-	if totalCount <= 0 {
-		return
-	}
-
-	playerIndex := len(s.Players) - 1
-	blocked := s.getBlockedCellsLocked()
-	spawnPositions := make([]protocol.Vec2, 0, totalCount)
-
-	if home != nil {
-		spawnPositions = s.getTownhallSpawnPositionsLocked(*home, totalCount, blocked)
-	}
-
-	if len(spawnPositions) < totalCount {
-		spawnPositions = append(spawnPositions, s.getFallbackSpawnPositionsLocked(playerIndex, totalCount-len(spawnPositions), blocked)...)
-	}
-	if len(spawnPositions) == 0 {
-		return
-	}
-
-	spawnIndex := 0
-	for _, entry := range loadout {
-		if entry.Count <= 0 {
-			continue
-		}
-		for i := 0; i < entry.Count; i++ {
-			spawn := spawnPositions[minInt(spawnIndex, len(spawnPositions)-1)]
-			s.spawnPlayerUnitLocked(entry.UnitType, playerID, color, spawn)
-			spawnIndex++
-		}
-	}
-}
 
 func (s *GameState) spawnPlayerUnitLocked(unitType, playerID, color string, spawn protocol.Vec2) *Unit {
 	def, ok := getUnitDef(unitType)
@@ -173,23 +130,6 @@ func resolveUnitArchetype(def UnitDef, unitType string) string {
 	return unitType
 }
 
-// hasPlacedUnitsForPlayerLocked returns true when the map has at least one
-// player-owned PlacedUnit whose PlayerLabel matches the slot claimed by playerID.
-// When true the legacy spawnUnits metadata loadout should be skipped so that
-// placed units are the sole source of starting units for this player.
-func (s *GameState) hasPlacedUnitsForPlayerLocked(playerID string) bool {
-	label := s.findPlayerLabelLocked(playerID)
-	if label == "" {
-		return false
-	}
-	for _, entry := range s.MapConfig.PlacedUnits {
-		if entry.Owner == "player" && entry.PlayerLabel == label {
-			return true
-		}
-	}
-	return false
-}
-
 // findPlayerLabelLocked returns the playerLabel metadata value from the
 // spawn-point building whose linked townhall is owned by playerID. Returns ""
 // when no matching spawn-point exists (e.g. the player joined on a map that
@@ -217,10 +157,12 @@ func (s *GameState) findPlayerLabelLocked(playerID string) string {
 // whose PlayerLabel matches the label of the townhall slot claimed by playerID.
 // Must be called under s.mu write lock.
 func (s *GameState) spawnPlacedUnitsForPlayerLocked(playerID, color string) {
+	slog.Info("spawnPlacedUnitsForPlayerLocked", "playerID", playerID, "totalPlacedUnits", len(s.MapConfig.PlacedUnits))
 	if len(s.MapConfig.PlacedUnits) == 0 {
 		return
 	}
 	playerLabel := s.findPlayerLabelLocked(playerID)
+	slog.Info("spawnPlacedUnitsForPlayerLocked", "playerLabel", playerLabel)
 	if playerLabel == "" {
 		// Player has no labelled slot — no authored units to place.
 		return
