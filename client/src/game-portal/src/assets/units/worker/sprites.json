@@ -1,52 +1,84 @@
 {
   "key": "worker",
   "size": {
-    "width": 68,
-    "height": 68
+    "width": 116,
+    "height": 116
   },
   "rotations": {
     "south": "rotations/south.png",
-    "west": "rotations/west.png",
+    "south-east": "rotations/south-east.png",
     "east": "rotations/east.png",
-    "north": "rotations/north.png"
+    "north-east": "rotations/north-east.png",
+    "north": "rotations/north.png",
+    "north-west": "rotations/north-west.png",
+    "west": "rotations/west.png",
+    "south-west": "rotations/south-west.png"
   },
   "animations": {
-    "carrying_gold": {
-      "frameCount": 4,
-      "frameWidth": 68,
-      "frameHeight": 68,
-      "sheet": "packed/carrying_gold.png",
-      "rowOrder": [
-        "north",
-        "south",
-        "east",
-        "west"
-      ]
-    },
     "walking": {
-      "frameCount": 4,
-      "frameWidth": 68,
-      "frameHeight": 68,
+      "frameCount": 6,
+      "frameWidth": 116,
+      "frameHeight": 116,
       "sheet": "packed/walking.png",
       "rowOrder": [
         "north",
         "south",
         "east",
-        "west"
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
       ]
     },
     "chopping": {
       "frameCount": 4,
-      "frameWidth": 68,
-      "frameHeight": 68,
+      "frameWidth": 116,
+      "frameHeight": 116,
       "sheet": "packed/chopping.png",
       "rowOrder": [
         "north",
         "south",
         "east",
-        "west"
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    },
+    "repairing": {
+      "frameCount": 4,
+      "frameWidth": 116,
+      "frameHeight": 116,
+      "sheet": "packed/repairing.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    },
+    "carrying_gold": {
+      "frameCount": 4,
+      "frameWidth": 116,
+      "frameHeight": 116,
+      "sheet": "packed/carrying_gold.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
       ]
     }
   },
-  "packedAt": "2026-05-01T06:24:23.703Z"
+  "packedAt": "2026-05-04T16:02:25.222Z"
 }

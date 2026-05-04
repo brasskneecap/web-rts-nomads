@@ -1,6 +1,6 @@
 import type { UnitDirection } from './unitSprites'
 
-export type UnitAnimationName = 'idle' | 'walking' | 'attacking' | 'chopping' | 'carrying_gold' | 'whirlwind'
+export type UnitAnimationName = 'idle' | 'walking' | 'attacking' | 'chopping' | 'repairing' | 'carrying_gold' | 'whirlwind'
 
 export interface UnitAnimationSample {
   direction: UnitDirection
@@ -110,6 +110,21 @@ export class UnitAnimationController {
       if (!activeIds.has(id)) this.states.delete(id)
     }
   }
+
+  // Read-only view of a unit's persisted animation state for systems outside
+  // the unit render pass (e.g. trees that need to shake in time with a
+  // worker's chopping cycle). Returns null until the unit has been sampled
+  // at least once. The caller knows the frame count of the animation it
+  // cares about, so it computes phase itself.
+  peekAnimation(unitId: number): { animation: UnitAnimationName; animStartedAt: number; frameDurationMs: number } | null {
+    const state = this.states.get(unitId)
+    if (!state) return null
+    return {
+      animation: state.animation,
+      animStartedAt: state.animStartedAt,
+      frameDurationMs: this.frameDurationMs,
+    }
+  }
 }
 
 // Compass angles in screen space (x right, y down): east = 0°, increasing
@@ -179,6 +194,16 @@ function pickAnimation(
     return 'attacking'
   }
   if (status === 'Chopping Wood') return 'chopping'
+  // All construction/repair statuses — including paused variants emitted when
+  // no workers are assigned — map to the same hammer-swing animation.
+  // 'Building (Paused)' and 'Repairing (Paused)' are new server statuses
+  // introduced by the worker-construction rework.
+  if (
+    status === 'Building' ||
+    status === 'Building (Paused)' ||
+    status === 'Repairing' ||
+    status === 'Repairing (Paused)'
+  ) return 'repairing'
   if (moving) {
     if (carriedResource === 'gold') return 'carrying_gold'
     return 'walking'

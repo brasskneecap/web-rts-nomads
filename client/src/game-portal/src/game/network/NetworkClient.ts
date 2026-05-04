@@ -5,7 +5,9 @@ import type {
   CancelTrainingCommandMessage,
   ClientMessage,
   ConnectionState,
+  DemolishBuildingCommandMessage,
   GatherCommandMessage,
+  KickBuildersCommandMessage,
   LeaveMatchMessage,
   MapId,
   MatchSnapshotMessage,
@@ -348,6 +350,16 @@ export class NetworkClient {
 
   sendRepairCommand(unitIds: number[], buildingId: string) {
     this.send({ type: 'repair_command', unitIds, buildingId })
+  }
+
+  sendKickBuildersCommand(buildingId: string) {
+    const message: KickBuildersCommandMessage = { type: 'kick_builders_command', buildingId }
+    this.send(message)
+  }
+
+  sendDemolishBuildingCommand(buildingId: string) {
+    const message: DemolishBuildingCommandMessage = { type: 'demolish_building_command', buildingId }
+    this.send(message)
   }
 
   sendStanceCommand(unitIds: number[], stance: 'hold' | 'idle') {

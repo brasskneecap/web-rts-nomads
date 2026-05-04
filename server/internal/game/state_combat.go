@@ -43,13 +43,23 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 	blocked := s.getBlockedCellsLocked()
 	orderID := s.nextMovementOrderIDLocked()
 
+	// Two-pass: collect valid attackers and stamp the shared OrderID on all
+	// of them up front. buildPathingObstaclesLocked excludes same-OrderID
+	// peers, so without the pre-pass the first attacker's path would treat
+	// its later peers as obstacles and detour around them.
+	groupUnits := make([]*Unit, 0, len(unitIDs))
 	for _, unitID := range unitIDs {
 		unit := s.getUnitByIDLocked(unitID)
 		if unit == nil || unit.OwnerID != playerID || !unitHasCapability(unit.UnitType, "attack") {
 			continue
 		}
-
+		groupUnits = append(groupUnits, unit)
+	}
+	for _, unit := range groupUnits {
 		s.resetUnitMovementLocked(unit, orderID)
+	}
+
+	for _, unit := range groupUnits {
 		unit.AttackTargetID = targetUnitID
 		unit.Attacking = false
 		unit.Status = "Moving To Attack"

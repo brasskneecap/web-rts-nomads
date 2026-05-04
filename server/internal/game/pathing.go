@@ -286,7 +286,17 @@ func (s *GameState) findNearestWalkableAvailable(start gridPoint, blocked map[gr
 	return gridPoint{}, false
 }
 
-func (s *GameState) findPath(start, goal gridPoint, blocked map[gridPoint]bool) []protocol.Vec2 {
+// softBlockedPenalty is the extra A* cost charged for stepping into a cell
+// that is "soft-blocked" — currently used for cells occupied by other units.
+// The base cost of an orthogonal step is 1 and a diagonal step is √2 ≈ 1.41,
+// so a penalty of 2 means the path will route around a single soft-blocked
+// cell when a 1-2 cell detour exists, but happily walks through it when
+// going around would cost more (long walls of units, narrow corridors).
+// Tunable from one place — raise to make units more eager to detour, lower
+// to make them more eager to push through.
+const softBlockedPenalty = 2.0
+
+func (s *GameState) findPath(start, goal gridPoint, blocked map[gridPoint]bool, softBlocked map[gridPoint]bool) []protocol.Vec2 {
 	start = s.clampGridPoint(start)
 	goal = s.clampGridPoint(goal)
 
@@ -346,7 +356,12 @@ func (s *GameState) findPath(start, goal gridPoint, blocked map[gridPoint]bool) 
 				}
 			}
 
-			tentative := gScore[current] + direction.cost
+			stepCost := direction.cost
+			if softBlocked[next] {
+				stepCost += softBlockedPenalty
+			}
+
+			tentative := gScore[current] + stepCost
 			best, seen := gScore[next]
 			if seen && tentative >= best {
 				continue
@@ -388,6 +403,224 @@ func heuristicCost(a, b gridPoint) float64 {
 	dx := math.Abs(float64(a.X - b.X))
 	dy := math.Abs(float64(a.Y - b.Y))
 	return math.Hypot(dx, dy)
+}
+
+// unitPathSubCellSize is the cell size of the finer grid used for unit
+// pathfinding. Picked to divide MapConfig.CellSize (typically 64) evenly so
+// each terrain cell maps to an integer number of sub-cells. With 16, four
+// sub-cells per terrain side give enough resolution to find paths through
+// the gap between two adjacent unit obstacles whose separation circles
+// (radius 22) don't fully cover the 64-wide cell — the case the coarse A*
+// could not see.
+const unitPathSubCellSize = 16.0
+
+func (s *GameState) worldToUnitPathSubGrid(x, y float64) gridPoint {
+	return gridPoint{
+		X: int(math.Floor(x / unitPathSubCellSize)),
+		Y: int(math.Floor(y / unitPathSubCellSize)),
+	}
+}
+
+func (s *GameState) unitPathSubGridToWorldCenter(p gridPoint) protocol.Vec2 {
+	return protocol.Vec2{
+		X: (float64(p.X) + 0.5) * unitPathSubCellSize,
+		Y: (float64(p.Y) + 0.5) * unitPathSubCellSize,
+	}
+}
+
+func (s *GameState) unitPathSubGridDims() (cols, rows int) {
+	return int(math.Ceil(s.MapWidth / unitPathSubCellSize)),
+		int(math.Ceil(s.MapHeight / unitPathSubCellSize))
+}
+
+func (s *GameState) isUnitPathSubWalkable(p gridPoint, blocked map[gridPoint]bool, cols, rows int) bool {
+	if p.X < 0 || p.Y < 0 || p.X >= cols || p.Y >= rows {
+		return false
+	}
+	return !blocked[p]
+}
+
+// findNearestUnitPathSubWalkable BFS-finds the closest walkable sub-cell to
+// `start`. Used to recover when the mover's start sub-cell or its goal
+// sub-cell is blocked (e.g. spawned overlapping a unit obstacle, or asked
+// to move onto an occupied position).
+func (s *GameState) findNearestUnitPathSubWalkable(start gridPoint, blocked map[gridPoint]bool) (gridPoint, bool) {
+	cols, rows := s.unitPathSubGridDims()
+	if s.isUnitPathSubWalkable(start, blocked, cols, rows) {
+		return start, true
+	}
+
+	queue := []gridPoint{start}
+	visited := map[gridPoint]bool{start: true}
+	directions := []gridPoint{
+		{X: 1, Y: 0},
+		{X: -1, Y: 0},
+		{X: 0, Y: 1},
+		{X: 0, Y: -1},
+	}
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, d := range directions {
+			next := gridPoint{X: current.X + d.X, Y: current.Y + d.Y}
+			if visited[next] {
+				continue
+			}
+			if next.X < 0 || next.Y < 0 || next.X >= cols || next.Y >= rows {
+				continue
+			}
+			if !blocked[next] {
+				return next, true
+			}
+			visited[next] = true
+			queue = append(queue, next)
+		}
+	}
+	return gridPoint{}, false
+}
+
+// findUnitPath runs A* on the fine sub-cell grid used for unit movement.
+// The sub-grid resolution lets the path slip through gaps between unit
+// obstacles that are smaller than the coarse 64-cell terrain grid — e.g.
+// two units in adjacent terrain cells leaving a sub-cell-wide corridor
+// between their separation circles. Returns world-space waypoints; the
+// caller is expected to simplify (line-of-sight collapse) before assigning.
+func (s *GameState) findUnitPath(start, goal gridPoint, blocked map[gridPoint]bool) []protocol.Vec2 {
+	cols, rows := s.unitPathSubGridDims()
+
+	if start == goal {
+		return []protocol.Vec2{s.unitPathSubGridToWorldCenter(goal)}
+	}
+
+	open := &priorityQueue{}
+	heap.Init(open)
+	heap.Push(open, &pathNode{
+		point:    start,
+		priority: heuristicCost(start, goal),
+	})
+
+	cameFrom := map[gridPoint]gridPoint{}
+	gScore := map[gridPoint]float64{start: 0}
+	closed := make(map[gridPoint]bool)
+
+	directions := []struct {
+		dx   int
+		dy   int
+		cost float64
+	}{
+		{dx: 1, dy: 0, cost: 1},
+		{dx: -1, dy: 0, cost: 1},
+		{dx: 0, dy: 1, cost: 1},
+		{dx: 0, dy: -1, cost: 1},
+		{dx: 1, dy: 1, cost: math.Sqrt2},
+		{dx: 1, dy: -1, cost: math.Sqrt2},
+		{dx: -1, dy: 1, cost: math.Sqrt2},
+		{dx: -1, dy: -1, cost: math.Sqrt2},
+	}
+
+	for open.Len() > 0 {
+		current := heap.Pop(open).(*pathNode).point
+		if closed[current] {
+			continue
+		}
+		if current == goal {
+			points := []gridPoint{current}
+			for {
+				prev, ok := cameFrom[current]
+				if !ok {
+					break
+				}
+				points = append(points, prev)
+				current = prev
+			}
+			path := make([]protocol.Vec2, 0, len(points))
+			for i := len(points) - 1; i >= 0; i-- {
+				path = append(path, s.unitPathSubGridToWorldCenter(points[i]))
+			}
+			return path
+		}
+
+		closed[current] = true
+
+		for _, direction := range directions {
+			next := gridPoint{X: current.X + direction.dx, Y: current.Y + direction.dy}
+			if !s.isUnitPathSubWalkable(next, blocked, cols, rows) {
+				continue
+			}
+
+			if direction.dx != 0 && direction.dy != 0 {
+				sideA := gridPoint{X: current.X + direction.dx, Y: current.Y}
+				sideB := gridPoint{X: current.X, Y: current.Y + direction.dy}
+				if !s.isUnitPathSubWalkable(sideA, blocked, cols, rows) || !s.isUnitPathSubWalkable(sideB, blocked, cols, rows) {
+					continue
+				}
+			}
+
+			tentative := gScore[current] + direction.cost
+			if best, seen := gScore[next]; seen && tentative >= best {
+				continue
+			}
+
+			cameFrom[next] = current
+			gScore[next] = tentative
+			heap.Push(open, &pathNode{
+				point:    next,
+				priority: tentative + heuristicCost(next, goal),
+			})
+		}
+	}
+
+	return nil
+}
+
+// simplifyUnitPath collapses sequential waypoints whose endpoints have
+// direct line-of-sight on the sub-cell blocked map. Reduces an A* output
+// of dozens of 16-pixel hops to a handful of corner points so the wire
+// payload and the per-tick waypoint advancement stay cheap. Operates in
+// world-space directly — samples the segment at sub-cell resolution and
+// rejects any waypoint whose collapsed segment crosses a blocked sub-cell.
+func (s *GameState) simplifyUnitPath(path []protocol.Vec2, blocked map[gridPoint]bool) []protocol.Vec2 {
+	if len(path) < 3 {
+		return path
+	}
+
+	out := make([]protocol.Vec2, 0, len(path))
+	out = append(out, path[0])
+	cur := 0
+	for cur < len(path)-1 {
+		far := cur + 1
+		for j := cur + 2; j < len(path); j++ {
+			if !s.unitPathSegmentClear(path[cur], path[j], blocked) {
+				break
+			}
+			far = j
+		}
+		out = append(out, path[far])
+		cur = far
+	}
+	return out
+}
+
+func (s *GameState) unitPathSegmentClear(a, b protocol.Vec2, blocked map[gridPoint]bool) bool {
+	dx := b.X - a.X
+	dy := b.Y - a.Y
+	dist := math.Hypot(dx, dy)
+	if dist < 1 {
+		return true
+	}
+	// Half-sub-cell sampling guarantees we never skip over a blocked cell
+	// on the segment between two waypoints.
+	steps := int(math.Ceil(dist / (unitPathSubCellSize * 0.5)))
+	for i := 0; i <= steps; i++ {
+		t := float64(i) / float64(steps)
+		x := a.X + dx*t
+		y := a.Y + dy*t
+		if blocked[s.worldToUnitPathSubGrid(x, y)] {
+			return false
+		}
+	}
+	return true
 }
 
 func minInt(a, b int) int {

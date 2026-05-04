@@ -2,6 +2,7 @@ package game
 
 import (
 	"math"
+	"sort"
 	"webrts/server/pkg/protocol"
 )
 
@@ -23,6 +24,15 @@ func (s *GameState) shouldDropCurrentTargetLocked(unit *Unit, profile CombatProf
 			distSq := distanceSquared(unit.GuardAnchorX, unit.GuardAnchorY, target.X, target.Y)
 			leash := unit.GuardLeashRange
 			return distSq > leash*leash
+		}
+		// Retaliation: a hostile in the threat table has dealt damage to this
+		// unit recently. Bypass the leash so the unit can chase the attacker
+		// even if they're firing from beyond profile DetectionRange/LeashDistance.
+		// The threat decays naturally once attacks stop (decayThreatLocked), so
+		// the override stops applying within ~1-2s of disengagement and the
+		// regular leash returns the unit to its anchor.
+		if _, ok := unit.ThreatTable[target.ID]; ok {
+			return false
 		}
 		return !s.targetInsideLeashLocked(unit, target.X, target.Y, profile)
 	}
@@ -79,6 +89,39 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 		score := s.scoreUnitTargetLocked(unit, hostile, profile, ctx)
 		if score > best.Score {
 			best = combatTarget{Kind: combatTargetUnit, Unit: hostile, Score: score}
+		}
+	}
+
+	// Retaliation acquisition: any hostile in the threat table has dealt
+	// damage to this unit. They are eligible regardless of detection range or
+	// leash so a unit can fight back against ranged attackers shooting from
+	// beyond its sight (e.g. a perked archer firing at a soldier whose
+	// profile DetectionRange is only 240). Hold units skip this — their
+	// contract is "engage in-range only," already enforced by the
+	// AttackRange-capped detectionRange above. Guard units also skip:
+	// their leash is authored and intentional.
+	if unit.Order.Type != OrderHold && !unit.GuardMode && len(unit.ThreatTable) > 0 {
+		// Sort hostile IDs so tie-breaking on equal scores is deterministic.
+		// Map iteration order is unspecified in Go and would otherwise let
+		// identical inputs pick different targets across runs, breaking the
+		// seeded-simulation contract.
+		hostileIDs := make([]int, 0, len(unit.ThreatTable))
+		for id := range unit.ThreatTable {
+			hostileIDs = append(hostileIDs, id)
+		}
+		sort.Ints(hostileIDs)
+		for _, hostileID := range hostileIDs {
+			hostile := s.getUnitByIDLocked(hostileID)
+			if hostile == nil || hostile == unit || hostile.HP <= 0 || !hostile.Visible {
+				continue
+			}
+			if !playersAreHostile(hostile.OwnerID, unit.OwnerID) {
+				continue
+			}
+			score := s.scoreUnitTargetLocked(unit, hostile, profile, ctx)
+			if score > best.Score {
+				best = combatTarget{Kind: combatTargetUnit, Unit: hostile, Score: score}
+			}
 		}
 	}
 

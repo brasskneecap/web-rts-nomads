@@ -344,13 +344,21 @@ func (s *GameState) PatrolUnits(playerID string, unitIDs []int, dest protocol.Ve
 	blocked := s.getBlockedCellsLocked()
 	orderID := s.nextMovementOrderIDLocked()
 
+	// Two-pass shared-OrderID assignment so peers see each other as
+	// same-group during pathfinding. See MoveUnits for the rationale.
+	groupUnits := make([]*Unit, 0, len(unitIDs))
 	for _, unitID := range unitIDs {
 		unit := s.getUnitByIDLocked(unitID)
 		if unit == nil || unit.OwnerID != playerID || !unitHasCapability(unit.UnitType, "attack") {
 			continue
 		}
-
+		groupUnits = append(groupUnits, unit)
+	}
+	for _, unit := range groupUnits {
 		s.resetUnitMovementLocked(unit, orderID)
+	}
+
+	for _, unit := range groupUnits {
 		unit.Order = OrderState{
 			Type:          OrderPatrol,
 			DestX:         dest.X,

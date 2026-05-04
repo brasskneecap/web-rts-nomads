@@ -326,7 +326,12 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		return
 	}
 
-	if !s.isUnitNearBuildingLocked(unit, nodeTile, s.MapConfig.CellSize*1.5) {
+	// Workers must be within ~0.6 cells of the resource node's AABB to start
+	// chopping/mining. Cardinal-adjacent perimeter cells sit ~0.5 cells out
+	// and diagonal corners sit ~0.71 cells out — both still register, but
+	// anything farther forces the worker to keep approaching instead of
+	// chopping at an angle from a distance.
+	if !s.isUnitNearBuildingLocked(unit, nodeTile, s.MapConfig.CellSize*0.6) {
 		if isTree {
 			unit.Status = "Heading To Tree"
 		} else {

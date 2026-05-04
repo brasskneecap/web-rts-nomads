@@ -133,6 +133,110 @@ func TestNonCombatWorker_AttacksWhenExplicitlyOrdered(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Retaliation — idle unit fights back when shot from beyond detection range
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestIdleUnit_RetaliatesAgainstOutOfSightAttacker reproduces the bug where a
+// soldier (profile DetectionRange=240, AttackRange=60) standing idle was sat
+// still while a ranged attacker pelted it from 280px away — outside the
+// soldier's detection radius but well within the attacker's reach.
+//
+// With the threat-table acquisition path, any hostile that has dealt damage
+// is eligible regardless of detection / leash, so the soldier engages.
+func TestIdleUnit_RetaliatesAgainstOutOfSightAttacker(t *testing.T) {
+	s, unit := newOrderTestState(t)
+
+	s.mu.Lock()
+	unitID := unit.ID
+	// Use the real soldier profile so DetectionRange (240) and LeashDistance
+	// (230) come from combatProfiles. AttackRange stays at the test default
+	// of 80 for melee engagement once we close the gap.
+	unit.UnitType = "soldier"
+	unit.Archetype = "soldier"
+	unit.AttackRange = 80
+
+	// Stationary archer 280px away — outside the soldier's profile
+	// DetectionRange (240) so the spatial query never finds them. The archer
+	// has its attack range pushed to 320 so it can fire from there.
+	enemy := spawnOrderEnemy(t, s, unit.X+280, unit.Y)
+	enemy.UnitType = "archer"
+	enemy.Archetype = "archer"
+	enemy.AttackRange = 320
+	enemy.MoveSpeed = 0 // hold position so distance stays > soldier detection
+	enemy.AttackCooldown = 0
+	enemyID := enemy.ID
+	s.mu.Unlock()
+
+	// Tick long enough for the archer to land at least one shot and the
+	// soldier to react. Projectile travel + cooldown means we want at least
+	// ~30 ticks before asserting acquisition.
+	const ticksToFire = 60
+	acquired := false
+	for i := 0; i < ticksToFire; i++ {
+		s.Update(0.05)
+		s.mu.RLock()
+		u := s.unitsByID[unitID]
+		if u == nil {
+			s.mu.RUnlock()
+			t.Fatal("soldier removed before retaliating")
+		}
+		if u.AttackTargetID == enemyID {
+			acquired = true
+			s.mu.RUnlock()
+			break
+		}
+		s.mu.RUnlock()
+	}
+	if !acquired {
+		s.mu.RLock()
+		u := s.unitsByID[unitID]
+		t.Errorf("soldier did not acquire out-of-sight attacker within %d ticks; AttackTargetID=%d Status=%q",
+			ticksToFire, u.AttackTargetID, u.Status)
+		s.mu.RUnlock()
+	}
+}
+
+// TestHoldUnit_DoesNotChaseOutOfSightAttacker is the opposite-direction guard:
+// a Hold unit must not break formation to chase an attacker, even one that has
+// added itself to the threat table by dealing damage. Hold's contract is
+// "engage in-range only" and the threat-table path explicitly skips Hold.
+func TestHoldUnit_DoesNotChaseOutOfSightAttacker(t *testing.T) {
+	s, unit := newOrderTestState(t)
+
+	s.mu.Lock()
+	unitID := unit.ID
+	startX, startY := unit.X, unit.Y
+	unit.Order = OrderState{Type: OrderHold, HoldX: unit.X, HoldY: unit.Y}
+	unit.CombatAnchorX = unit.X
+	unit.CombatAnchorY = unit.Y
+
+	enemy := spawnOrderEnemy(t, s, unit.X+280, unit.Y)
+	enemy.UnitType = "archer"
+	enemy.Archetype = "archer"
+	enemy.AttackRange = 320
+	enemy.MoveSpeed = 0
+	enemy.AttackCooldown = 0
+	s.mu.Unlock()
+
+	for i := 0; i < 80; i++ {
+		s.Update(0.05)
+		s.mu.RLock()
+		u := s.unitsByID[unitID]
+		if u == nil {
+			s.mu.RUnlock()
+			break
+		}
+		dist := math.Sqrt(math.Pow(u.X-startX, 2) + math.Pow(u.Y-startY, 2))
+		if dist > 5.0 {
+			s.mu.RUnlock()
+			t.Errorf("tick %d: Hold unit moved %.1fpx from start; threat-table path must not override Hold", i+1, dist)
+			return
+		}
+		s.mu.RUnlock()
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC2 – Retarget
 // ─────────────────────────────────────────────────────────────────────────────
 

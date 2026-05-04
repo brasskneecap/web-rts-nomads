@@ -130,6 +130,16 @@ type Unit struct {
 	Returning           bool
 	BuildTargetID       string
 	Building            bool
+	// InsideBuilder marks the unit as the single occupant of an under-construction
+	// building footprint. Implies Visible=false and Status="Building" while true.
+	// Mirrors MiningInside for goldmine workers.
+	InsideBuilder bool
+	// RepairChargeAccumulator is the HP this worker has contributed to the
+	// current build/repair target since their last 1g+1w charge. Crosses 5 → deduct
+	// from owner and reset to 0. Cleared on resetUnitMovementLocked and on
+	// build-target completion. Inside builder during construction does not
+	// consume this — they build for free.
+	RepairChargeAccumulator float64
 	TargetX             float64
 	TargetY             float64
 	Moving              bool
@@ -228,8 +238,13 @@ const (
 	// Unit move speed is now authored per-type in catalog/units/<type>.json
 	// (UnitDef.MoveSpeed). Path multipliers (pathModifierTable) and perk
 	// multipliers (momentum) stack on top of the per-unit BaseMoveSpeed.
-	unitRadius             = 10.0
-	unitFormationSpacing   = 28.0
+	unitRadius = 10.0
+	// unitFormationSpacing is the centre-to-centre distance between
+	// formation slots when a multi-unit move command is issued. Set well
+	// above unitSeparationDistance (22) so neighbouring slots have
+	// breathing room rather than landing right at the separation
+	// boundary, which made groups look cramped on arrival.
+	unitFormationSpacing   = 40.0
 	unitSeparationDistance = 22.0
 
 	// defaultHealthRegenPerSecond is the baseline passive regen applied to all

@@ -483,6 +483,42 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.State.RepairBuilding(client.PlayerID(), msg.UnitIDs, msg.BuildingID)
 
+		case "kick_builders_command":
+			if client.MatchID() == "" {
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				continue
+			}
+			var msg protocol.KickBuildersCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid kick_builders_command payload",
+				})
+				continue
+			}
+			match.State.KickBuildersFromBuilding(client.PlayerID(), msg.BuildingID)
+
+		case "demolish_building_command":
+			if client.MatchID() == "" {
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				continue
+			}
+			var msg protocol.DemolishBuildingCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid demolish_building_command payload",
+				})
+				continue
+			}
+			match.State.DemolishBuilding(client.PlayerID(), msg.BuildingID)
+
 		case "purchase_upgrade":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})

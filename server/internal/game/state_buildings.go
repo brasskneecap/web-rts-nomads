@@ -165,6 +165,10 @@ func (s *GameState) removeBuildingByIDLocked(buildingID string) {
 	s.removeBuildingLocked(buildingID)
 }
 
+// updateWorkerBuildStateLocked is called each tick for a worker that has
+// BuildTargetID set but is not yet in Building state. When the worker has
+// arrived at the approach cell, it transitions into either inside-builder or
+// outside-helper mode.
 func (s *GameState) updateWorkerBuildStateLocked(unit *Unit) {
 	if unit.Moving || unit.Building {
 		return
@@ -179,8 +183,26 @@ func (s *GameState) updateWorkerBuildStateLocked(unit *Unit) {
 	// HP progress and the construction-animation sprite take over from the
 	// transparent final-sprite preview on the client.
 	delete(building.Metadata, "pendingStart")
-	unit.Building = true
-	unit.Status = "Building"
+
+	underConstruction := getMetadataBool(building.Metadata, "underConstruction")
+	existingInside := s.findInsideBuilderLocked(building.ID)
+
+	if underConstruction && existingInside == nil {
+		// This is the first worker on an under-construction building — become
+		// the inside builder.
+		unit.Building = true
+		unit.InsideBuilder = true
+		unit.Visible = false
+		unit.Status = "Building"
+		s.snapUnitToBuildingInteriorLocked(unit, building)
+	} else {
+		// Either the building is not under construction (repair case) or there
+		// is already an inside builder; this worker stays as an outside helper.
+		unit.Building = true
+		unit.InsideBuilder = false
+		unit.Visible = true
+		unit.Status = "Repairing"
+	}
 }
 
 const maxBuildersPerBuilding = 3
@@ -247,6 +269,95 @@ func (s *GameState) cancelOrphanedPendingBuildingsLocked() {
 	}
 }
 
+// findInsideBuilderLocked scans s.Units for the unit that is the inside
+// builder for buildingID. Returns nil if none exists.
+// Must be called under s.mu lock.
+func (s *GameState) findInsideBuilderLocked(buildingID string) *Unit {
+	for _, u := range s.Units {
+		if u.BuildTargetID == buildingID && u.InsideBuilder && u.HP > 0 {
+			return u
+		}
+	}
+	return nil
+}
+
+// promoteHelperToInsideBuilderLocked finds the outside helper with the
+// lowest unit ID assigned to buildingID and promotes them to inside builder.
+// Only considers workers that have arrived at the build site
+// (Building == true) — workers still walking toward the building are not
+// eligible, otherwise they would be teleported into the footprint mid-path.
+// Returns the promoted unit, or nil if there are no eligible helpers.
+// Must be called under s.mu write lock.
+func (s *GameState) promoteHelperToInsideBuilderLocked(buildingID string, building *protocol.BuildingTile) *Unit {
+	var best *Unit
+	for _, u := range s.Units {
+		if u.BuildTargetID != buildingID || u.InsideBuilder || u.HP <= 0 {
+			continue
+		}
+		if !u.Building {
+			continue
+		}
+		if best == nil || u.ID < best.ID {
+			best = u
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	best.InsideBuilder = true
+	best.Visible = false
+	best.Status = "Building"
+	s.snapUnitToBuildingInteriorLocked(best, building)
+	return best
+}
+
+// snapUnitToBuildingInteriorLocked places the unit at the building center.
+// Must be called under s.mu write lock.
+func (s *GameState) snapUnitToBuildingInteriorLocked(unit *Unit, building *protocol.BuildingTile) {
+	center := s.buildingCenterLocked(building)
+	unit.X = center.X
+	unit.Y = center.Y
+	unit.TargetX = center.X
+	unit.TargetY = center.Y
+}
+
+// clearUnitBuildStateLocked clears all build-related state on unit and sets
+// it to Visible and Idle. Does NOT set a path or position — callers must handle
+// that if the unit is InsideBuilder.
+// Must be called under s.mu write lock.
+func (s *GameState) clearUnitBuildStateLocked(unit *Unit) {
+	unit.BuildTargetID = ""
+	unit.Building = false
+	unit.InsideBuilder = false
+	unit.RepairChargeAccumulator = 0
+	unit.Visible = true
+	unit.Status = "Idle"
+}
+
+// kickWorkerOffBuildLocked evicts a single worker from a building. If the unit
+// was the inside builder it is snapped to a perimeter exit cell first.
+// blocked is the current blocked-cell set (caller's responsibility to obtain
+// it via getBlockedCellsLocked before the loop).
+// Must be called under s.mu write lock.
+func (s *GameState) kickWorkerOffBuildLocked(unit *Unit, building *protocol.BuildingTile, blocked map[gridPoint]bool) {
+	if unit.InsideBuilder {
+		// Move the unit out of the footprint before clearing state so it does
+		// not materialise inside a blocked cell.
+		unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
+		exits := s.getBuildingApproachPositionsLocked(*building, 1, blocked, unitPos)
+		if len(exits) > 0 {
+			unit.X = exits[0].X
+			unit.Y = exits[0].Y
+			unit.TargetX = exits[0].X
+			unit.TargetY = exits[0].Y
+		}
+	}
+	s.clearUnitBuildStateLocked(unit)
+}
+
+// tickBuildingRepairsLocked advances construction and repair for all buildings
+// that have HP < MaxHP, applying the resource-charge algorithm for paying workers.
+// Must be called under s.mu write lock.
 func (s *GameState) tickBuildingRepairsLocked(dt float64) {
 	for i := range s.MapConfig.Buildings {
 		building := &s.MapConfig.Buildings[i]
@@ -256,43 +367,153 @@ func (s *GameState) tickBuildingRepairsLocked(dt float64) {
 			continue
 		}
 
-		builderCount := 0
-		for _, unit := range s.Units {
-			if unit.BuildTargetID == building.ID && unit.Building {
-				builderCount++
+		underConstruction := getMetadataBool(building.Metadata, "underConstruction")
+
+		// Promotion: if no inside builder but we are under construction, pick
+		// the lowest-ID helper.
+		inside := s.findInsideBuilderLocked(building.ID)
+		if inside == nil && underConstruction {
+			inside = s.promoteHelperToInsideBuilderLocked(building.ID, building)
+		}
+
+		// Collect outside helpers (those with BuildTargetID but not InsideBuilder).
+		// Re-scan after promotion so the promoted unit is not double-counted.
+		// Workers en route to the build site (Building == false) are skipped —
+		// they neither contribute HP nor count toward builder presence until
+		// they arrive and updateWorkerBuildStateLocked transitions them.
+		var helpers []*Unit
+		for _, u := range s.Units {
+			if u.BuildTargetID == building.ID && !u.InsideBuilder && u.Building && u.HP > 0 {
+				helpers = append(helpers, u)
 			}
 		}
-		if builderCount == 0 {
+
+		if inside == nil && len(helpers) == 0 {
 			building.Metadata["builderCount"] = 0
 			continue
 		}
 
+		builderCount := len(helpers)
+		if inside != nil {
+			builderCount++
+		}
 		building.Metadata["builderCount"] = builderCount
 
 		hpPerSecond := maxHp / 15.0 // fallback: match original barracks rate
 		if v, ok := building.Metadata["hpPerSecond"]; ok {
-			if f, ok := v.(float64); ok && f > 0 {
+			if f, ok2 := v.(float64); ok2 && f > 0 {
 				hpPerSecond = f
 			}
 		}
-		newHp := math.Min(maxHp, hp+hpPerSecond*float64(builderCount)*dt)
-		building.Metadata["hp"] = newHp
 
-		if newHp >= maxHp {
-			// Building complete / fully repaired
+		// Apply HP from inside builder (free during construction).
+		if inside != nil {
+			hpThisTick := hpPerSecond * dt
+			if underConstruction {
+				// Free — apply directly.
+				hp = math.Min(maxHp, hp+hpThisTick)
+				building.Metadata["hp"] = hp
+				inside.Status = "Building"
+			} else {
+				// Building is complete but damaged — inside-builder pays too.
+				player := s.Players[inside.OwnerID]
+				hp = s.applyChargedHPLocked(inside, building, hp, maxHp, hpThisTick, player, "Building", "Building (Paused)")
+			}
+		}
+
+		// Apply HP from outside helpers — all pay.
+		for _, h := range helpers {
+			if hp >= maxHp {
+				break
+			}
+			hpThisTick := hpPerSecond * dt
+			player := s.Players[h.OwnerID]
+			hp = s.applyChargedHPLocked(h, building, hp, maxHp, hpThisTick, player, "Repairing", "Repairing (Paused)")
+		}
+
+		// Update the stored hp (applyChargedHPLocked also writes into building.Metadata["hp"]).
+		// If hp reached maxHp, complete the build/repair.
+		if hp >= maxHp {
 			delete(building.Metadata, "underConstruction")
 			delete(building.Metadata, "builderCount")
-			for _, unit := range s.Units {
-				if unit.BuildTargetID == building.ID {
-					unit.BuildTargetID = ""
-					unit.Building = false
-					unit.Status = "Idle"
+			// Defensive: pendingStart is normally cleared on first worker
+			// arrival (updateWorkerBuildStateLocked). If construction completes
+			// without that path firing for any reason, drop it here so the
+			// finished building never renders as the 40%-alpha ghost preview.
+			delete(building.Metadata, "pendingStart")
+			// Clear all assigned workers.
+			for _, u := range s.Units {
+				if u.BuildTargetID == building.ID {
+					// Inside builder exits the footprint.
+					if u.InsideBuilder {
+						blocked := s.getBlockedCellsLocked()
+						unitPos := &protocol.Vec2{X: u.X, Y: u.Y}
+						exits := s.getBuildingApproachPositionsLocked(*building, 1, blocked, unitPos)
+						if len(exits) > 0 {
+							u.X = exits[0].X
+							u.Y = exits[0].Y
+							u.TargetX = exits[0].X
+							u.TargetY = exits[0].Y
+						}
+					}
+					s.clearUnitBuildStateLocked(u)
 				}
 			}
 		}
 	}
 }
 
+// applyChargedHPLocked applies up to hpThisTick HP to the building for the
+// given worker, charging 1g+1w per 5 HP crossed. Returns the new building HP.
+// activeStatus is set when the worker contributes HP; pausedStatus when the
+// player cannot afford the charge and the worker is blocked.
+// Must be called under s.mu write lock.
+func (s *GameState) applyChargedHPLocked(
+	worker *Unit,
+	building *protocol.BuildingTile,
+	currentHP, maxHP float64,
+	hpThisTick float64,
+	player *Player,
+	activeStatus, pausedStatus string,
+) float64 {
+	hp := currentHP
+	remaining := hpThisTick
+
+	for remaining > 0 && hp < maxHP {
+		needed := 5.0 - worker.RepairChargeAccumulator
+		if remaining < needed {
+			// Accumulate partial progress; no charge yet.
+			worker.RepairChargeAccumulator += remaining
+			hp = math.Min(maxHP, hp+remaining)
+			building.Metadata["hp"] = hp
+			worker.Status = activeStatus
+			return hp
+		}
+		// We would cross the 5-HP threshold. Check if the player can afford it.
+		if player == nil || player.Resources["gold"] < 1 || player.Resources["wood"] < 1 {
+			// Paused — stop contributing entirely this tick.
+			worker.Status = pausedStatus
+			return hp
+		}
+		// Deduct resources, commit the HP that gets us exactly to the boundary.
+		player.Resources["gold"]--
+		player.Resources["wood"]--
+		hp = math.Min(maxHP, hp+needed)
+		building.Metadata["hp"] = hp
+		worker.RepairChargeAccumulator = 0
+		remaining -= needed
+	}
+
+	if remaining <= 0 || hp >= maxHP {
+		worker.Status = activeStatus
+	}
+	return hp
+}
+
+// RepairBuilding assigns workers to repair a damaged completed building.
+// Workers already assigned to the same building are left untouched; only the
+// new unitIDs are processed. This preserves InsideBuilder and
+// RepairChargeAccumulator on existing assignees.
 func (s *GameState) RepairBuilding(playerID string, unitIDs []int, buildingID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -307,7 +528,8 @@ func (s *GameState) RepairBuilding(playerID string, unitIDs []int, buildingID st
 		return // no HP pool or already at full health
 	}
 
-	// Count existing builders not in the incoming unit list
+	// Count existing workers for the capacity check. Only units NOT in the
+	// incoming list count toward the existing slots.
 	unitIDSet := make(map[int]bool, len(unitIDs))
 	for _, id := range unitIDs {
 		unitIDSet[id] = true
@@ -331,9 +553,19 @@ func (s *GameState) RepairBuilding(playerID string, unitIDs []int, buildingID st
 		if unit == nil || unit.OwnerID != playerID || unit.UnitType != "worker" {
 			continue
 		}
+
+		// If this unit is already assigned to this building, leave its state
+		// intact (InsideBuilder, RepairChargeAccumulator, Building) — idempotent.
+		if unit.BuildTargetID == buildingID {
+			added++
+			continue
+		}
+
 		unit.GatherTargetID = ""
 		unit.MiningInside = false
 		unit.Building = false
+		unit.InsideBuilder = false
+		unit.RepairChargeAccumulator = 0
 
 		approachPoints := s.getBuildingApproachPositionsLocked(*building, 1, blocked, &protocol.Vec2{X: unit.X, Y: unit.Y})
 		if len(approachPoints) == 0 {
@@ -344,6 +576,74 @@ func (s *GameState) RepairBuilding(playerID string, unitIDs []int, buildingID st
 		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
 		added++
 	}
+}
+
+// KickBuildersFromBuilding clears all workers assigned to buildingID. The
+// inside builder is snapped to a perimeter exit cell. The building remains
+// under construction at its current HP. pendingStart is NOT re-set (no refund).
+func (s *GameState) KickBuildersFromBuilding(playerID, buildingID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil {
+		return
+	}
+	if building.OwnerID == nil || *building.OwnerID != playerID {
+		return
+	}
+
+	blocked := s.getBlockedCellsLocked()
+	for _, u := range s.Units {
+		if u.BuildTargetID != buildingID {
+			continue
+		}
+		s.kickWorkerOffBuildLocked(u, building, blocked)
+	}
+
+	// Remove builderCount from metadata since no workers remain.
+	if building.Metadata != nil {
+		building.Metadata["builderCount"] = 0
+	}
+}
+
+// DemolishBuilding destroys an under-construction building, refunds the full
+// resource cost to the owner, and clears all assigned workers. Only valid on
+// buildings that are currently under construction.
+func (s *GameState) DemolishBuilding(playerID, buildingID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil {
+		return
+	}
+	if building.OwnerID == nil || *building.OwnerID != playerID {
+		return
+	}
+	if !getMetadataBool(building.Metadata, "underConstruction") {
+		return
+	}
+
+	// Refund full resource cost.
+	if player, ok := s.Players[playerID]; ok {
+		if def, ok := getBuildingDef(building.BuildingType); ok {
+			for resource, cost := range def.ResourceCost {
+				player.Resources[resource] += cost
+			}
+		}
+	}
+
+	// Clear all assigned workers — same cleanup as kick.
+	blocked := s.getBlockedCellsLocked()
+	for _, u := range s.Units {
+		if u.BuildTargetID != buildingID {
+			continue
+		}
+		s.kickWorkerOffBuildLocked(u, building, blocked)
+	}
+
+	s.removeBuildingLocked(buildingID)
 }
 
 func (s *GameState) getBuildingApproachPositionsLocked(building protocol.BuildingTile, count int, blocked map[gridPoint]bool, origin *protocol.Vec2) []protocol.Vec2 {
@@ -379,7 +679,23 @@ func (s *GameState) getBuildingApproachPositionsLocked(building protocol.Buildin
 		}
 	}
 
+	// Cardinal-perimeter cells (sharing the building's edge column or row)
+	// always sort before diagonal corner cells, with distance-to-origin
+	// breaking ties within each group. Workers chopping a tree or building
+	// against a barracks face the structure straight-on rather than at a
+	// 45° angle whenever a cardinal approach is reachable; corner cells
+	// still serve as the fallback when every cardinal is blocked.
+	isCardinalCell := func(c gridPoint) bool {
+		insideXSpan := c.X >= building.X && c.X < building.X+building.Width
+		insideYSpan := c.Y >= building.Y && c.Y < building.Y+building.Height
+		return insideXSpan || insideYSpan
+	}
 	sort.Slice(candidates, func(i, j int) bool {
+		ci := isCardinalCell(candidates[i])
+		cj := isCardinalCell(candidates[j])
+		if ci != cj {
+			return ci
+		}
 		a := s.gridToWorldCenter(candidates[i])
 		b := s.gridToWorldCenter(candidates[j])
 		return distanceSquared(a.X, a.Y, sortOrigin.X, sortOrigin.Y) < distanceSquared(b.X, b.Y, sortOrigin.X, sortOrigin.Y)

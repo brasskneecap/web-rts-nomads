@@ -340,6 +340,16 @@ export class GameClient {
       return
     }
 
+    if (selectedBuilding && actionId === 'kick-builders') {
+      this.network.sendKickBuildersCommand(selectedBuilding.id)
+      return
+    }
+
+    if (selectedBuilding && actionId === 'demolish-building') {
+      this.network.sendDemolishBuildingCommand(selectedBuilding.id)
+      return
+    }
+
     // Queue-slot cancel — emitted by SelectionHud when a queued unit is
     // left-clicked. Action id format: "cancel-queue-<index>" where index
     // is the queue position (1..7, since 0 is the leading unit handled by

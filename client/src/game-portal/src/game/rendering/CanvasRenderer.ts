@@ -26,7 +26,7 @@ import {
   getTrainingFrameIndex,
   getTrainingSprite,
 } from './buildingSprites'
-import { getObstacleSprite } from './obstacleSprites'
+import { getObstacleAnimationFrame, getObstacleSprite } from './obstacleSprites'
 import { OBSTACLE_DEF_MAP } from '../maps/obstacleDefs'
 import {
   drawAutoTiledTerrain,
@@ -452,8 +452,16 @@ export class CanvasRenderer {
     }
 
     const sprite = getObstacleSprite(tile.obstacle)
+    const shakeFrame = this.getTreeShakeFrame(tile)
 
-    if (sprite) {
+    if (shakeFrame) {
+      ctx.imageSmoothingEnabled = false
+      ctx.drawImage(
+        shakeFrame.image,
+        shakeFrame.srcX, shakeFrame.srcY, shakeFrame.srcW, shakeFrame.srcH,
+        renderX, renderY, renderW, renderH,
+      )
+    } else if (sprite) {
       ctx.imageSmoothingEnabled = false
       ctx.drawImage(sprite, renderX, renderY, renderW, renderH)
     } else {
@@ -475,6 +483,43 @@ export class CanvasRenderer {
         renderH - inset * 2,
       )
     }
+  }
+
+  // Returns the current shake frame for a tree being chopped, or null when
+  // the tree should render its static sprite. Slaved to the chopping worker's
+  // animation cycle so the shake's impact aligns with the axe swing — the
+  // shake plays during the trailing portion of each chop cycle and freezes
+  // on frame 0 outside that window.
+  private getTreeShakeFrame(tile: ObstacleTile) {
+    if (tile.obstacle !== 'tree' || !tile.id) return null
+
+    const CHOPPING_FRAMES = 4
+    // Shake occupies the back half of the chop cycle, lining the impact and
+    // recoil frames up with the axe-strike portion of the worker animation.
+    const SHAKE_WINDOW_START = 0.5
+
+    let chopper: number | null = null
+    for (const u of this.state.units) {
+      if (u.status === 'Chopping Wood' && u.workTargetId === tile.id) {
+        chopper = u.id
+        break
+      }
+    }
+    if (chopper === null) return null
+
+    const peek = this.unitAnim.peekAnimation(chopper)
+    if (!peek || peek.animation !== 'chopping') return null
+
+    const cycleMs = peek.frameDurationMs * CHOPPING_FRAMES
+    const elapsed = Math.max(0, this.renderTime - peek.animStartedAt)
+    const phase01 = (elapsed % cycleMs) / cycleMs
+    if (phase01 < SHAKE_WINDOW_START) return null
+
+    const shakeProgress = (phase01 - SHAKE_WINDOW_START) / (1 - SHAKE_WINDOW_START)
+    const probe = getObstacleAnimationFrame(tile.obstacle, 'shaking', 0)
+    if (!probe) return null
+    const frameIndex = Math.min(probe.frameCount - 1, Math.floor(shakeProgress * probe.frameCount))
+    return getObstacleAnimationFrame(tile.obstacle, 'shaking', frameIndex)
   }
 
   // Renders a single building (sprite / construction preview / procedural

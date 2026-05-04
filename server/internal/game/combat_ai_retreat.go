@@ -87,7 +87,7 @@ func (s *GameState) assignAttackApproachPathLocked(unit, target *Unit, blocked m
 		return
 	}
 
-	fullPath := s.findPath(startCell, goalCell, blocked)
+	fullPath := s.findPath(startCell, goalCell, blocked, nil)
 	if len(fullPath) == 0 {
 		unit.Path = nil
 		unit.Moving = false

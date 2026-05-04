@@ -1234,7 +1234,10 @@ export class GameState {
       return [{ x: destX, y: destY }]
     }
 
-    return buildFormationDestinations(selectedUnits, { x: destX, y: destY }, 28)
+    // Must match server unitFormationSpacing in state.go so the move-marker
+    // circles preview the actual landing positions. If the server constant
+    // changes, update this too.
+    return buildFormationDestinations(selectedUnits, { x: destX, y: destY }, 40)
   }
 
   getBuildingAtPosition(x: number, y: number, padding = 0): BuildingTile | undefined {
@@ -1757,11 +1760,15 @@ export class GameState {
         title,
         subtitle,
         details: getBuildingDetails(selectedBuilding),
-        actions: isUnderConstruction ? [] : getBuildingActions(selectedBuilding, this.playerUpgrades, {
-          vault: this.localPlayerVault,
-          vaultCapacity: this.localPlayerVaultCapacity,
-          vaultPanelOpen: this.vaultPanelOpen,
-        }),
+        actions: isUnderConstruction
+          ? (selectedBuilding.ownerId === this.localPlayerId
+              ? getUnderConstructionActions(selectedBuilding)
+              : [])
+          : getBuildingActions(selectedBuilding, this.playerUpgrades, {
+              vault: this.localPlayerVault,
+              vaultCapacity: this.localPlayerVaultCapacity,
+              vaultPanelOpen: this.vaultPanelOpen,
+            }),
         production: activeProduction ? toProductionSummary(activeProduction) : undefined,
         construction: isUnderConstruction
           ? getBuildingConstructionSummary(selectedBuilding)
@@ -2230,6 +2237,39 @@ function getGroupActions(
     actions.push({ id: 'patrol', label: '(P)atrol', active: activeMode === 'patrol' })
   }
   return actions
+}
+
+/**
+ * Returns the two action buttons shown when an owned building is under
+ * construction: Kick Builders and Demolish.
+ *
+ * Icon choice: both buttons reuse the existing 'repair' PNG icon (the hammer)
+ * as a placeholder because no dedicated construction-management icons exist yet.
+ * The asset pipeline owner can drop kick-builders.png / demolish-building.png
+ * into src/assets/actions/ and the renderer will pick them up automatically via
+ * actionIconSprites.ts — no code change needed.
+ */
+function getUnderConstructionActions(building: BuildingTile): ActionItem[] {
+  const builderCount = (building.metadata?.['builderCount'] as number | undefined) ?? 0
+  return [
+    {
+      id: 'kick-builders',
+      label: 'Kick Builders',
+      // TODO: replace with a dedicated 'kick-builders' icon asset
+      iconId: 'repair',
+      disabled: builderCount === 0,
+      tooltipTitle: 'Kick Builders',
+      tooltipBody: 'Remove all workers currently assigned to this construction site.',
+    },
+    {
+      id: 'demolish-building',
+      label: 'Demolish',
+      // TODO: replace with a dedicated 'demolish-building' icon asset
+      iconId: 'repair',
+      tooltipTitle: 'Demolish Building',
+      tooltipBody: 'Cancel construction and demolish the building foundation.',
+    },
+  ]
 }
 
 function getBuildingActions(building: BuildingTile, upgrades: PlayerUpgradeSnapshot[] = [], vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number; vaultPanelOpen: boolean }): ActionItem[] {

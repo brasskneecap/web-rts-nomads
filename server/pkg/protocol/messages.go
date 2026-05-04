@@ -290,6 +290,16 @@ type RepairCommandMessage struct {
 	BuildingID string `json:"buildingId"`
 }
 
+type KickBuildersCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+}
+
+type DemolishBuildingCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+}
+
 type ClientMessage struct {
 	Type string `json:"type"`
 }

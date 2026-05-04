@@ -53,9 +53,18 @@ func (s *GameState) MoveUnits(playerID string, unitIDs []int, dest protocol.Vec2
 	targets := buildFormationTargets(validUnits, anchor, unitFormationSpacing)
 	orderID := s.nextMovementOrderIDLocked()
 
+	// Stamp the shared OrderID on every group member up front, before any
+	// pathfinding runs. buildPathingObstaclesLocked excludes same-OrderID
+	// peers; without this pre-pass, the first unit in the loop would
+	// pathfind while later peers still carried their previous OrderID and
+	// got treated as out-of-group obstacles, producing detours through
+	// the formation.
+	for _, unit := range validUnits {
+		s.resetUnitMovementLocked(unit, orderID)
+	}
+
 	for i, unit := range validUnits {
 		target := targets[i]
-		s.resetUnitMovementLocked(unit, orderID)
 		unit.Order = OrderState{Type: OrderMove, DestX: target.X, DestY: target.Y}
 		unit.CombatAnchorX = target.X
 		unit.CombatAnchorY = target.Y
@@ -114,9 +123,15 @@ func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protoco
 	targets := buildFormationTargets(validUnits, anchor, unitFormationSpacing)
 	orderID := s.nextMovementOrderIDLocked()
 
+	// Two-pass shared-OrderID assignment so the first unit's pathfind sees
+	// later peers as same-group rather than as out-of-group obstacles.
+	// See MoveUnits for the full rationale.
+	for _, unit := range validUnits {
+		s.resetUnitMovementLocked(unit, orderID)
+	}
+
 	for i, unit := range validUnits {
 		target := targets[i]
-		s.resetUnitMovementLocked(unit, orderID)
 		unit.Order = OrderState{Type: OrderAttackMove, DestX: target.X, DestY: target.Y}
 		unit.CombatAnchorX = target.X
 		unit.CombatAnchorY = target.Y
@@ -134,45 +149,62 @@ func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[g
 		Y: clampFloat(dest.Y, unitRadius, s.MapHeight-unitRadius),
 	}
 
-	start := s.worldToGrid(unit.X, unit.Y)
-	resolvedStart, ok := s.findNearestWalkable(start, blocked)
-	if ok {
-		start = resolvedStart
-	}
-	goal := s.worldToGrid(clampedDest.X, clampedDest.Y)
+	// Pathfind on the fine sub-cell grid so the route can find gaps
+	// between unit obstacles that are smaller than a 64-cell wide. The
+	// blocked map combines terrain (each terrain cell expanded to its
+	// sub-cells) and unit-obstacle separation circles (sub-cells within
+	// unitSeparationDistance of any non-self, non-same-OrderID unit's
+	// centre). Same-OrderID peers are excluded so a formation can fan out
+	// without walling itself off.
+	subBlocked := s.buildUnitPathBlockedLocked(unit, blocked)
 
-	resolvedGoal, ok := s.findNearestWalkableAvailable(goal, blocked, reservedGoals)
+	subStart := s.worldToUnitPathSubGrid(unit.X, unit.Y)
+	if rs, ok := s.findNearestUnitPathSubWalkable(subStart, subBlocked); ok {
+		subStart = rs
+	}
+	subGoal := s.worldToUnitPathSubGrid(clampedDest.X, clampedDest.Y)
+	resolvedSubGoal, ok := s.findNearestUnitPathSubWalkable(subGoal, subBlocked)
 	if !ok {
 		unit.Path = nil
 		unit.Moving = false
 		return
 	}
 
-	path := s.findPath(start, resolvedGoal, blocked)
-	if len(path) == 0 {
+	subPath := s.findUnitPath(subStart, resolvedSubGoal, subBlocked)
+	if len(subPath) == 0 {
 		unit.Path = nil
 		unit.Moving = false
 		return
 	}
 
+	// Collapse the dense sub-cell waypoint list to its turn points so
+	// per-tick advancement and the snapshot payload stay cheap.
+	path := s.simplifyUnitPath(subPath, subBlocked)
+
+	// First waypoint sits at the start sub-cell centre — drop it when the
+	// unit is essentially already there to avoid a brief backwards tug.
 	if len(path) > 0 && distanceSquared(unit.X, unit.Y, path[0].X, path[0].Y) < 4 {
 		path = path[1:]
 	}
 
-	if firstStep := s.buildPathEntryPoint(unit, start); firstStep != nil {
-		path = append([]protocol.Vec2{*firstStep}, path...)
+	// The 64-cell goal cell lookup is still useful for clamping the final
+	// landing point inside the destination terrain cell (handles map-edge
+	// padding and non-walkable goal cells the same way the old A* did).
+	resolvedGoalCell, ok := s.findNearestWalkableAvailable(s.worldToGrid(clampedDest.X, clampedDest.Y), blocked, reservedGoals)
+	if !ok {
+		unit.Path = nil
+		unit.Moving = false
+		return
 	}
-
-	finalTarget := s.clampPointToCell(clampedDest, resolvedGoal)
+	finalTarget := s.clampPointToCell(clampedDest, resolvedGoalCell)
 	if len(path) == 0 {
 		path = []protocol.Vec2{finalTarget}
 	} else {
 		path[len(path)-1] = finalTarget
 	}
-	path = simplifyLeadingWaypoints(unit, path, finalTarget)
 
 	if reservedGoals != nil {
-		reservedGoals[resolvedGoal] = true
+		reservedGoals[resolvedGoalCell] = true
 	}
 
 	unit.TargetX = finalTarget.X
@@ -217,6 +249,67 @@ func (s *GameState) clampPointToCell(point protocol.Vec2, cell gridPoint) protoc
 	}
 }
 
+// buildUnitPathBlockedLocked builds a sub-cell blocked map for unit
+// pathfinding. Combines two sources:
+//
+//  1. Terrain blocked cells. Each 64×64 terrain block expands to a square
+//     of unitPathSubCellSize sub-cells (e.g. 4×4 = 16 sub-cells when
+//     CellSize=64 and unitPathSubCellSize=16) so the sub-cell A* honours
+//     all the same impassable terrain the coarse A* did.
+//  2. Unit obstacle circles. For every non-self, non-same-OrderID unit,
+//     mark each sub-cell whose centre falls within unitSeparationDistance
+//     of the unit's position. This reflects the actual unit hitbox at
+//     sub-cell resolution rather than blocking a whole 64-cell, which
+//     leaves usable corridors between two units in adjacent cells.
+//
+// Same-OrderID peers (the formation that was told to move together) are
+// excluded so a group can fan out into formation slots without walling
+// each other off.
+func (s *GameState) buildUnitPathBlockedLocked(self *Unit, terrainBlocked map[gridPoint]bool) map[gridPoint]bool {
+	sub := make(map[gridPoint]bool, len(terrainBlocked)*16+len(s.Units)*16)
+
+	cellSize := s.MapConfig.CellSize
+	if cellSize <= 0 {
+		return sub
+	}
+	perSide := int(cellSize / unitPathSubCellSize)
+	if perSide <= 0 {
+		perSide = 1
+	}
+	for terrainCell := range terrainBlocked {
+		baseX := terrainCell.X * perSide
+		baseY := terrainCell.Y * perSide
+		for dy := 0; dy < perSide; dy++ {
+			for dx := 0; dx < perSide; dx++ {
+				sub[gridPoint{X: baseX + dx, Y: baseY + dy}] = true
+			}
+		}
+	}
+
+	radiusSq := unitSeparationDistance * unitSeparationDistance
+	radiusInSub := int(math.Ceil(unitSeparationDistance/unitPathSubCellSize)) + 1
+	for _, other := range s.Units {
+		if other == self || other == nil || other.HP <= 0 || !other.Visible {
+			continue
+		}
+		if self != nil && self.OrderID != 0 && other.OrderID == self.OrderID {
+			continue
+		}
+		centre := s.worldToUnitPathSubGrid(other.X, other.Y)
+		for dy := -radiusInSub; dy <= radiusInSub; dy++ {
+			for dx := -radiusInSub; dx <= radiusInSub; dx++ {
+				p := gridPoint{X: centre.X + dx, Y: centre.Y + dy}
+				worldP := s.unitPathSubGridToWorldCenter(p)
+				if distanceSquared(worldP.X, worldP.Y, other.X, other.Y) <= radiusSq {
+					sub[p] = true
+				}
+			}
+		}
+	}
+
+	return sub
+}
+
 func (s *GameState) buildPathEntryPoint(unit *Unit, start gridPoint) *protocol.Vec2 {
 	entryPoint := s.clampPointToCell(protocol.Vec2{X: unit.X, Y: unit.Y}, start)
 	if distanceSquared(unit.X, unit.Y, entryPoint.X, entryPoint.Y) < 64 {
@@ -246,6 +339,8 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.Returning = false
 	unit.BuildTargetID = ""
 	unit.Building = false
+	unit.InsideBuilder = false
+	unit.RepairChargeAccumulator = 0
 	unit.AttackTargetID = 0
 	unit.AttackBuildingTargetID = ""
 	unit.Attacking = false
@@ -317,33 +412,6 @@ func (s *GameState) tryMoveUnitByOffsetLocked(unit *Unit, offsetX, offsetY float
 
 	unit.X = nextX
 	unit.Y = nextY
-}
-
-func simplifyLeadingWaypoints(unit *Unit, path []protocol.Vec2, finalTarget protocol.Vec2) []protocol.Vec2 {
-	for len(path) > 1 {
-		first := path[0]
-		second := path[1]
-		toFinalX := finalTarget.X - unit.X
-		toFinalY := finalTarget.Y - unit.Y
-		toFirstX := first.X - unit.X
-		toFirstY := first.Y - unit.Y
-		toSecondX := second.X - unit.X
-		toSecondY := second.Y - unit.Y
-
-		if dotProduct(toFirstX, toFirstY, toFinalX, toFinalY) < 0 && dotProduct(toSecondX, toSecondY, toFinalX, toFinalY) >= 0 {
-			path = path[1:]
-			continue
-		}
-
-		if distanceSquared(unit.X, unit.Y, first.X, first.Y) < 100 {
-			path = path[1:]
-			continue
-		}
-
-		break
-	}
-
-	return path
 }
 
 func buildFormationTargets(units []*Unit, anchor protocol.Vec2, spacing float64) []protocol.Vec2 {

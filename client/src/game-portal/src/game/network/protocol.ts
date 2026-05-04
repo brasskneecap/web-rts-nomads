@@ -240,6 +240,16 @@ export type RepairCommandMessage = {
   buildingId: string
 }
 
+export type KickBuildersCommandMessage = {
+  type: 'kick_builders_command'
+  buildingId: string
+}
+
+export type DemolishBuildingCommandMessage = {
+  type: 'demolish_building_command'
+  buildingId: string
+}
+
 // ─── Player Orders ────────────────────────────────────────────────────────────
 
 /** Compile-time-safe union of every order string the server can put on a unit.
@@ -374,6 +384,8 @@ export type ClientMessage =
   | SetBuildingSpawnPointCommandMessage
   | BuildBuildingCommandMessage
   | RepairCommandMessage
+  | KickBuildersCommandMessage
+  | DemolishBuildingCommandMessage
   | DebugSpawnUnitCommandMessage
   | SetStanceCommandMessage
   | PatrolCommandMessage
