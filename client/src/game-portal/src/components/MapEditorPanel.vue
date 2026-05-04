@@ -2045,8 +2045,11 @@ onMounted(() => {
   const targetCanvas = canvas.value
   if (!targetCanvas) return
 
-  resizeCanvas()
-  recenterCamera()
+  // Defer initial sizing to the next animation frame so the flex layout has
+  // resolved and canvas.clientWidth/clientHeight are non-zero.
+  requestAnimationFrame(() => {
+    recenterCamera()
+  })
   targetCanvas.style.cursor = getCanvasCursor()
   void loadAvailableMaps()
   void fetchUnitDefs()

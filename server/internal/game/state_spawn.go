@@ -173,6 +173,23 @@ func resolveUnitArchetype(def UnitDef, unitType string) string {
 	return unitType
 }
 
+// hasPlacedUnitsForPlayerLocked returns true when the map has at least one
+// player-owned PlacedUnit whose PlayerLabel matches the slot claimed by playerID.
+// When true the legacy spawnUnits metadata loadout should be skipped so that
+// placed units are the sole source of starting units for this player.
+func (s *GameState) hasPlacedUnitsForPlayerLocked(playerID string) bool {
+	label := s.findPlayerLabelLocked(playerID)
+	if label == "" {
+		return false
+	}
+	for _, entry := range s.MapConfig.PlacedUnits {
+		if entry.Owner == "player" && entry.PlayerLabel == label {
+			return true
+		}
+	}
+	return false
+}
+
 // findPlayerLabelLocked returns the playerLabel metadata value from the
 // spawn-point building whose linked townhall is owned by playerID. Returns ""
 // when no matching spawn-point exists (e.g. the player joined on a map that

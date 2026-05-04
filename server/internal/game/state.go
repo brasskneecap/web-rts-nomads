@@ -1160,7 +1160,9 @@ func (s *GameState) EnsurePlayer(playerID string) {
 	}
 
 	home, spawnPoint := s.claimPlayerStartLocked(playerID)
-	s.spawnUnitsForPlayerLocked(playerID, color, home, s.getPlayerStartLoadoutLocked(spawnPoint))
+	if !s.hasPlacedUnitsForPlayerLocked(playerID) {
+		s.spawnUnitsForPlayerLocked(playerID, color, home, s.getPlayerStartLoadoutLocked(spawnPoint))
+	}
 	s.spawnPlacedUnitsForPlayerLocked(playerID, color)
 	s.ensurePlacedEnemiesSpawnedLocked()
 }

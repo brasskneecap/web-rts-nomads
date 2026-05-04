@@ -1,0 +1,2422 @@
+{
+  "id": "WaveTest_2",
+  "name": "WaveTest2(small)",
+  "description": "A compact battleground for fast openings and early pressure.",
+  "sortOrder": 1000,
+  "map": {
+    "id": "",
+    "name": "",
+    "description": "",
+    "size": "",
+    "width": 4096,
+    "height": 4096,
+    "gridCols": 64,
+    "gridRows": 64,
+    "cellSize": 64,
+    "terrain": [
+      {
+        "x": 15,
+        "y": 0,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 0,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 1,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 1,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 2,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 2,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 3,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 3,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 4,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 5,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 5,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 6,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 7,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 7,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 8,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 9,
+        "terrain": "dirt"
+      },
+      {
+        "x": 16,
+        "y": 9,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 10,
+        "terrain": "dirt"
+      },
+      {
+        "x": 14,
+        "y": 11,
+        "terrain": "dirt"
+      },
+      {
+        "x": 20,
+        "y": 14,
+        "terrain": "grass"
+      },
+      {
+        "x": 9,
+        "y": 15,
+        "terrain": "dirt"
+      },
+      {
+        "x": 10,
+        "y": 15,
+        "terrain": "dirt"
+      },
+      {
+        "x": 18,
+        "y": 15,
+        "terrain": "grass"
+      },
+      {
+        "x": 19,
+        "y": 15,
+        "terrain": "grass"
+      },
+      {
+        "x": 20,
+        "y": 15,
+        "terrain": "grass"
+      },
+      {
+        "x": 7,
+        "y": 16,
+        "terrain": "dirt"
+      },
+      {
+        "x": 8,
+        "y": 16,
+        "terrain": "dirt"
+      },
+      {
+        "x": 9,
+        "y": 16,
+        "terrain": "dirt"
+      },
+      {
+        "x": 17,
+        "y": 16,
+        "terrain": "grass"
+      },
+      {
+        "x": 18,
+        "y": 16,
+        "terrain": "grass"
+      },
+      {
+        "x": 19,
+        "y": 16,
+        "terrain": "grass"
+      },
+      {
+        "x": 5,
+        "y": 17,
+        "terrain": "dirt"
+      },
+      {
+        "x": 6,
+        "y": 17,
+        "terrain": "dirt"
+      },
+      {
+        "x": 7,
+        "y": 17,
+        "terrain": "dirt"
+      },
+      {
+        "x": 17,
+        "y": 17,
+        "terrain": "grass"
+      },
+      {
+        "x": 22,
+        "y": 17,
+        "terrain": "grass"
+      },
+      {
+        "x": 3,
+        "y": 18,
+        "terrain": "dirt"
+      },
+      {
+        "x": 4,
+        "y": 18,
+        "terrain": "dirt"
+      },
+      {
+        "x": 5,
+        "y": 18,
+        "terrain": "dirt"
+      },
+      {
+        "x": 6,
+        "y": 18,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 18,
+        "terrain": "grass"
+      },
+      {
+        "x": 16,
+        "y": 18,
+        "terrain": "grass"
+      },
+      {
+        "x": 23,
+        "y": 18,
+        "terrain": "grass"
+      },
+      {
+        "x": 0,
+        "y": 19,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 19,
+        "terrain": "dirt"
+      },
+      {
+        "x": 2,
+        "y": 19,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 19,
+        "terrain": "dirt"
+      },
+      {
+        "x": 15,
+        "y": 19,
+        "terrain": "grass"
+      },
+      {
+        "x": 0,
+        "y": 20,
+        "terrain": "dirt"
+      },
+      {
+        "x": 13,
+        "y": 20,
+        "terrain": "grass"
+      },
+      {
+        "x": 14,
+        "y": 20,
+        "terrain": "grass"
+      },
+      {
+        "x": 0,
+        "y": 21,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 21,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 22,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 22,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 23,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 23,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 24,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 24,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 25,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 25,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 25,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 26,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 26,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 26,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 27,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 27,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 27,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 28,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 28,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 28,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 29,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 29,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 29,
+        "terrain": "dirt"
+      },
+      {
+        "x": 0,
+        "y": 30,
+        "terrain": "dirt"
+      },
+      {
+        "x": 1,
+        "y": 30,
+        "terrain": "dirt"
+      },
+      {
+        "x": 2,
+        "y": 30,
+        "terrain": "dirt"
+      },
+      {
+        "x": 3,
+        "y": 30,
+        "terrain": "dirt"
+      }
+    ],
+    "tiles": [
+      {
+        "x": 4,
+        "y": 19,
+        "sheet": "tileset",
+        "sx": 32,
+        "sy": 96
+      },
+      {
+        "x": 5,
+        "y": 19,
+        "sheet": "tileset",
+        "sx": 0,
+        "sy": 0
+      },
+      {
+        "x": 6,
+        "y": 19,
+        "sheet": "tileset",
+        "sx": 0,
+        "sy": 96
+      },
+      {
+        "x": 7,
+        "y": 19,
+        "sheet": "tileset",
+        "sx": 32,
+        "sy": 0
+      }
+    ],
+    "defaultTile": {
+      "sheet": "tileset",
+      "sx": 64,
+      "sy": 32
+    },
+    "obstacles": [
+      {
+        "x": 0,
+        "y": 0,
+        "id": "tree-0-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 1,
+        "y": 0,
+        "id": "tree-1-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 2,
+        "y": 0,
+        "id": "tree-2-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 3,
+        "y": 0,
+        "id": "tree-3-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 4,
+        "y": 0,
+        "id": "tree-4-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 5,
+        "y": 0,
+        "id": "tree-5-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 6,
+        "y": 0,
+        "id": "tree-6-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 7,
+        "y": 0,
+        "id": "tree-7-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 8,
+        "y": 0,
+        "id": "tree-8-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 9,
+        "y": 0,
+        "id": "tree-9-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 10,
+        "y": 0,
+        "id": "tree-10-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 11,
+        "y": 0,
+        "id": "tree-11-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 12,
+        "y": 0,
+        "id": "tree-12-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 19,
+        "y": 0,
+        "id": "tree-19-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 20,
+        "y": 0,
+        "id": "tree-20-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 21,
+        "y": 0,
+        "id": "tree-21-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 22,
+        "y": 0,
+        "id": "tree-22-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 23,
+        "y": 0,
+        "id": "tree-23-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 24,
+        "y": 0,
+        "id": "tree-24-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 25,
+        "y": 0,
+        "id": "tree-25-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 26,
+        "y": 0,
+        "id": "tree-26-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 27,
+        "y": 0,
+        "id": "tree-27-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 28,
+        "y": 0,
+        "id": "tree-28-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 29,
+        "y": 0,
+        "id": "tree-29-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 30,
+        "y": 0,
+        "id": "tree-30-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 31,
+        "y": 0,
+        "id": "tree-31-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 32,
+        "y": 0,
+        "id": "tree-32-0",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 1,
+        "id": "tree-0-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 1,
+        "y": 1,
+        "id": "tree-1-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 2,
+        "y": 1,
+        "id": "tree-2-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 3,
+        "y": 1,
+        "id": "tree-3-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 4,
+        "y": 1,
+        "id": "tree-4-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 11,
+        "y": 1,
+        "id": "tree-11-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 12,
+        "y": 1,
+        "id": "tree-12-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 19,
+        "y": 1,
+        "id": "tree-19-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 20,
+        "y": 1,
+        "id": "tree-20-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 21,
+        "y": 1,
+        "id": "tree-21-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 22,
+        "y": 1,
+        "id": "tree-22-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 23,
+        "y": 1,
+        "id": "tree-23-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 24,
+        "y": 1,
+        "id": "tree-24-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 25,
+        "y": 1,
+        "id": "tree-25-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 26,
+        "y": 1,
+        "id": "tree-26-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 27,
+        "y": 1,
+        "id": "tree-27-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 28,
+        "y": 1,
+        "id": "tree-28-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 29,
+        "y": 1,
+        "id": "tree-29-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 30,
+        "y": 1,
+        "id": "tree-30-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 31,
+        "y": 1,
+        "id": "tree-31-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 32,
+        "y": 1,
+        "id": "tree-32-1",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 2,
+        "id": "tree-0-2",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 1,
+        "y": 2,
+        "id": "tree-1-2",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 2,
+        "y": 2,
+        "id": "tree-2-2",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 3,
+        "y": 2,
+        "id": "tree-3-2",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 19,
+        "y": 2,
+        "id": "tree-19-2",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 20,
+        "y": 2,
+        "id": "tree-20-2",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 31,
+        "y": 2,
+        "id": "tree-31-2",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 32,
+        "y": 2,
+        "id": "tree-32-2",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 3,
+        "id": "tree-0-3",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 1,
+        "y": 3,
+        "id": "tree-1-3",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 2,
+        "y": 3,
+        "id": "tree-2-3",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 19,
+        "y": 3,
+        "id": "tree-19-3",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 20,
+        "y": 3,
+        "id": "tree-20-3",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 31,
+        "y": 3,
+        "id": "tree-31-3",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 32,
+        "y": 3,
+        "id": "tree-32-3",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 33,
+        "y": 3,
+        "id": "tree-33-3",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 4,
+        "id": "tree-0-4",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 1,
+        "y": 4,
+        "id": "tree-1-4",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 19,
+        "y": 4,
+        "id": "tree-19-4",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 20,
+        "y": 4,
+        "id": "tree-20-4",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 32,
+        "y": 4,
+        "id": "tree-32-4",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 33,
+        "y": 4,
+        "id": "tree-33-4",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 5,
+        "id": "tree-0-5",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 1,
+        "y": 5,
+        "id": "tree-1-5",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 19,
+        "y": 5,
+        "id": "tree-19-5",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 20,
+        "y": 5,
+        "id": "tree-20-5",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 32,
+        "y": 5,
+        "id": "tree-32-5",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 33,
+        "y": 5,
+        "id": "tree-33-5",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 6,
+        "id": "tree-0-6",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 7,
+        "id": "tree-0-7",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 8,
+        "id": "tree-0-8",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 9,
+        "id": "tree-0-9",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 10,
+        "id": "tree-0-10",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 1,
+        "y": 10,
+        "id": "tree-1-10",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 2,
+        "y": 10,
+        "id": "tree-2-10",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 0,
+        "y": 11,
+        "id": "tree-0-11",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 1,
+        "y": 11,
+        "id": "tree-1-11",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      },
+      {
+        "x": 2,
+        "y": 11,
+        "id": "tree-2-11",
+        "obstacle": "tree",
+        "width": 1,
+        "height": 1,
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "resourceType": "wood",
+        "resourceAmount": 250
+      }
+    ],
+    "buildings": [
+      {
+        "x": 7,
+        "y": 3,
+        "id": "townhall-7-2",
+        "buildingType": "townhall",
+        "width": 3,
+        "height": 2,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "unit-spawner",
+          "occupiable",
+          "deposit-point",
+          "vault-access"
+        ],
+        "spawnUnitTypes": [
+          "worker"
+        ],
+        "metadata": {
+          "foodSupply": 15
+        }
+      },
+      {
+        "x": 28,
+        "y": 3,
+        "id": "townhall-28-2",
+        "buildingType": "townhall",
+        "width": 3,
+        "height": 2,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "unit-spawner",
+          "occupiable",
+          "deposit-point",
+          "vault-access"
+        ],
+        "spawnUnitTypes": [
+          "worker"
+        ],
+        "metadata": {
+          "foodSupply": 15
+        }
+      },
+      {
+        "x": 26,
+        "y": 4,
+        "id": "spawn-point-26-4",
+        "buildingType": "spawn-point",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "fillOrder": 2,
+          "playerLabel": "player2",
+          "spawnUnits": [
+            {
+              "count": 3,
+              "unitType": "worker"
+            },
+            {
+              "count": 1,
+              "unitType": "soldier"
+            }
+          ],
+          "townhallId": null
+        }
+      },
+      {
+        "x": 7,
+        "y": 6,
+        "id": "spawn-point-7-6",
+        "buildingType": "spawn-point",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "fillOrder": 0,
+          "playerLabel": "player1",
+          "spawnUnits": [
+            {
+              "count": 3,
+              "unitType": "worker"
+            },
+            {
+              "count": 2,
+              "unitType": "soldier"
+            },
+            {
+              "count": 1,
+              "unitType": "archer"
+            }
+          ],
+          "townhallId": null
+        }
+      },
+      {
+        "x": 3,
+        "y": 7,
+        "id": "goldmine-3-7",
+        "buildingType": "goldmine",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "gold",
+        "resourceAmount": 15000,
+        "metadata": {
+          "gatherRate": 10
+        }
+      },
+      {
+        "x": 31,
+        "y": 7,
+        "id": "goldmine-31-7",
+        "buildingType": "goldmine",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "resource-source"
+        ],
+        "resourceType": "gold",
+        "resourceAmount": 15000,
+        "metadata": {
+          "gatherRate": 10
+        }
+      },
+      {
+        "x": 27,
+        "y": 15,
+        "id": "enemy-spawnpoint-27-15",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "gameStart": true,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 14,
+        "y": 16,
+        "id": "enemy-spawnpoint-14-16",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "gameStart": true,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 16,
+        "y": 16,
+        "id": "enemy-spawnpoint-16-16",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "gameStart": true,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "targetPlayerLabel": "player1",
+          "unitType": "ranged_raider"
+        }
+      },
+      {
+        "x": 29,
+        "y": 17,
+        "id": "enemy-spawnpoint-29-17",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "gameStart": true,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "targetPlayerLabel": "player2",
+          "unitType": "ranged_raider"
+        }
+      },
+      {
+        "x": 14,
+        "y": 21,
+        "id": "enemy-spawnpoint-14-21",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 5,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 1,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 17,
+        "y": 21,
+        "id": "enemy-spawnpoint-17-21",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 2,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 1,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 23,
+        "y": 21,
+        "id": "enemy-spawnpoint-23-21",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 5,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 1,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 26,
+        "y": 21,
+        "id": "enemy-spawnpoint-26-21",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 1,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 11,
+        "y": 24,
+        "id": "enemy-spawnpoint-11-24",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 12,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 2,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 14,
+        "y": 24,
+        "id": "enemy-spawnpoint-14-24",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 5,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 2,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 17,
+        "y": 24,
+        "id": "enemy-spawnpoint-17-24",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 8,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 2,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 23,
+        "y": 24,
+        "id": "enemy-spawnpoint-23-24",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 8,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 2,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 26,
+        "y": 24,
+        "id": "enemy-spawnpoint-26-24",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 5,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 2,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 29,
+        "y": 24,
+        "id": "enemy-spawnpoint-29-24",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 12,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 2,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 5,
+        "y": 27,
+        "id": "enemy-spawnpoint-5-27",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 8,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 8,
+        "y": 27,
+        "id": "enemy-spawnpoint-8-27",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 2,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 11,
+        "y": 27,
+        "id": "enemy-spawnpoint-11-27",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 12,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 14,
+        "y": 27,
+        "id": "enemy-spawnpoint-14-27",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 10,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player1",
+          "unitType": "ranged_raider"
+        }
+      },
+      {
+        "x": 17,
+        "y": 27,
+        "id": "enemy-spawnpoint-17-27",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 15,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player1",
+          "unitType": "ranged_raider"
+        }
+      },
+      {
+        "x": 23,
+        "y": 27,
+        "id": "enemy-spawnpoint-23-27",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 10,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 26,
+        "y": 27,
+        "id": "enemy-spawnpoint-26-27",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 15,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player2",
+          "unitType": "ranged_raider"
+        }
+      },
+      {
+        "x": 29,
+        "y": 27,
+        "id": "enemy-spawnpoint-29-27",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 12,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 32,
+        "y": 27,
+        "id": "enemy-spawnpoint-32-27",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 8,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 35,
+        "y": 27,
+        "id": "enemy-spawnpoint-35-27",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 2,
+          "spawnIntervalSeconds": 5,
+          "startingWave": 3,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 21,
+        "y": 33,
+        "id": "enemy-spawnpoint-21-33",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 50,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 30,
+          "spawnOnce": true,
+          "targetPlayerLabel": "player1",
+          "unitType": "raider",
+          "waveNumber": 5
+        }
+      },
+      {
+        "x": 25,
+        "y": 33,
+        "id": "enemy-spawnpoint-25-33",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 50,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 30,
+          "spawnOnce": true,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider",
+          "waveNumber": 5
+        }
+      }
+    ],
+    "placedUnits": [
+      {
+        "x": 9,
+        "y": 10,
+        "id": "placed-unit-player-9-10",
+        "owner": "player",
+        "playerLabel": "player1",
+        "unitType": "archer"
+      },
+      {
+        "x": 5,
+        "y": 4,
+        "id": "placed-unit-player-5-4",
+        "owner": "player",
+        "playerLabel": "player1",
+        "unitType": "worker"
+      },
+      {
+        "x": 5,
+        "y": 5,
+        "id": "placed-unit-player-5-5",
+        "owner": "player",
+        "playerLabel": "player1",
+        "unitType": "worker"
+      },
+      {
+        "x": 6,
+        "y": 5,
+        "id": "placed-unit-player-6-5",
+        "owner": "player",
+        "playerLabel": "player1",
+        "unitType": "worker"
+      },
+      {
+        "x": 9,
+        "y": 11,
+        "id": "placed-unit-player-9-11",
+        "owner": "player",
+        "playerLabel": "player1",
+        "unitType": "soldier"
+      },
+      {
+        "x": 10,
+        "y": 10,
+        "id": "placed-unit-player-10-10",
+        "owner": "player",
+        "playerLabel": "player1",
+        "unitType": "soldier"
+      }
+    ],
+    "waveConfig": {
+      "totalWaves": 10,
+      "prepDuration": 180,
+      "waveDuration": 60
+    },
+    "victoryConditions": [
+      {
+        "id": "obj-1",
+        "type": "killUnit",
+        "count": 1
+      }
+    ]
+  }
+}
