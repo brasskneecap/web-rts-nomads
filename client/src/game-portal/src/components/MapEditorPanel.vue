@@ -719,7 +719,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchMapCatalog, fetchMapCatalogFile, fetchUnitDefs, saveMapCatalogFile } from '@/game/maps/catalog'
+import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchObstacleDefs, fetchUnitDefs, saveMapCatalogFile } from '@/game/maps/catalog'
 import type {
   BuildingType,
   JsonObject,
@@ -761,8 +761,8 @@ import {
 import { getBuildingSprite } from '@/game/rendering/buildingSprites'
 import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
-import { OBSTACLE_DEF_MAP } from '@/game/maps/obstacleDefs'
-import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
+import { initObstacleDefs, OBSTACLE_DEF_MAP } from '@/game/maps/obstacleDefs'
+import { BUILDING_DEF_MAP, initBuildingDefs } from '@/game/maps/buildingDefs'
 
 const model = defineModel<MapConfig>({ required: true })
 
@@ -2053,6 +2053,8 @@ onMounted(() => {
   })
   targetCanvas.style.cursor = getCanvasCursor()
   void loadAvailableMaps()
+  void fetchBuildingDefs().then(initBuildingDefs).catch(() => {})
+  void fetchObstacleDefs().then(initObstacleDefs).catch(() => {})
   void fetchUnitDefs()
     .then((defs) => {
       playerSpawnUnits.value = defs
