@@ -177,24 +177,14 @@
           </div>
         </div>
 
-        <!-- Townhall tier badge + upgrade controls. Only shown when a townhall
-             is selected (owned by the local player). Tier badge always visible;
-             upgrade button shown when tier < 3 and no upgrade is in progress;
-             progress bar shown while an upgrade is underway. -->
+        <!-- Townhall in-progress bar. The upgrade button itself lives in the
+             action grid (bottom-left slot); this section only shows progress
+             while an upgrade is underway. -->
         <div
-          v-if="ui.selection.kind === 'building' && ui.selectedBuildingType === 'townhall'"
+          v-if="ui.selection.kind === 'building' && ui.selectedBuildingType === 'townhall' && townhallUpgradeInProgress"
           class="townhall-tier"
         >
-          <div class="townhall-tier__badge">
-            {{ townhallTierLabel }}
-            <span class="townhall-tier__tier-num">Tier {{ ui.townHallTier || 1 }}</span>
-          </div>
-
-          <!-- Upgrade-in-progress bar -->
-          <div
-            v-if="townhallUpgradeInProgress"
-            class="townhall-upgrade-bar"
-          >
+          <div class="townhall-upgrade-bar">
             <div
               class="townhall-upgrade-bar__fill"
               :style="{ width: `${townhallUpgradeProgress * 100}%` }"
@@ -203,16 +193,6 @@
               {{ (ui.townHallTier || 1) === 1 ? 'Upgrading to Keep...' : 'Upgrading to Castle...' }}
             </div>
           </div>
-
-          <!-- Tier-up button — hidden while an upgrade is in progress or tier is maxed -->
-          <button
-            v-else-if="(ui.townHallTier || 1) < 3"
-            type="button"
-            class="townhall-upgrade-btn"
-            @click="$emit('action', 'upgrade-townhall')"
-          >
-            {{ townhallUpgradeLabel }}
-          </button>
         </div>
 
         <!-- Production queue. Always renders 7 slots whenever training is
@@ -503,22 +483,6 @@ const buildingDurability = computed(() => {
   )
   if (!detail || !detail.value) return null
   return { label: detail.label, value: detail.value }
-})
-
-// ── Townhall tier helpers ───────────────────────────────────────────────────
-
-const TOWNHALL_TIER_NAMES = ['Town Hall', 'Keep', 'Castle']
-
-const townhallTierLabel = computed(() => {
-  const tier = props.ui.townHallTier || 1
-  return TOWNHALL_TIER_NAMES[tier - 1] ?? 'Town Hall'
-})
-
-const townhallUpgradeLabel = computed(() => {
-  const tier = props.ui.townHallTier || 1
-  if (tier === 1) return 'Upgrade to Keep — 400g / 250w'
-  if (tier === 2) return 'Upgrade to Castle — 800g / 500w'
-  return ''
 })
 
 // True when the server has set tierUpRemaining on the selected building's
@@ -1715,47 +1679,6 @@ button.inventory-slot:focus-visible {
   flex-direction: column;
   gap: 6px;
   margin-top: 2px;
-}
-
-.townhall-tier__badge {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 10px;
-  border-radius: 6px;
-  background: linear-gradient(180deg, rgba(54, 34, 20, 0.88), rgba(36, 22, 12, 0.88));
-  border: 1px solid rgba(210, 176, 113, 0.3);
-  font-size: 13px;
-  font-weight: 700;
-  color: #f5ead2;
-}
-
-.townhall-tier__tier-num {
-  font-size: 11px;
-  font-weight: 600;
-  color: #d4b87a;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.townhall-upgrade-btn {
-  width: 100%;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(210, 176, 113, 0.4);
-  background: linear-gradient(180deg, rgba(100, 66, 30, 0.95), rgba(60, 38, 16, 0.98));
-  color: #f5ead2;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
-  text-align: center;
-}
-
-.townhall-upgrade-btn:hover {
-  background: linear-gradient(180deg, rgba(140, 94, 44, 1), rgba(88, 54, 22, 1));
-  border-color: rgba(240, 200, 120, 0.6);
 }
 
 /* In-progress upgrade bar — same visual language as the construction bar */

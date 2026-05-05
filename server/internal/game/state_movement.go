@@ -211,6 +211,12 @@ func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[g
 	unit.TargetY = finalTarget.Y
 	unit.Path = path
 	unit.Moving = len(path) > 0
+
+	// Fresh path → restart the stuck-progress window from the unit's current
+	// position so the watchdog measures progress against the new route.
+	unit.StuckSampleX = unit.X
+	unit.StuckSampleY = unit.Y
+	unit.StuckSampleAccum = 0
 }
 
 func (s *GameState) repathUnitLocked(unit *Unit, blocked map[gridPoint]bool) bool {
@@ -330,6 +336,9 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.Moving = false
 	unit.TargetX = unit.X
 	unit.TargetY = unit.Y
+	unit.StuckSampleX = unit.X
+	unit.StuckSampleY = unit.Y
+	unit.StuckSampleAccum = 0
 	unit.GatherTargetID = ""
 	unit.GatherBuildingType = ""
 	unit.ReturnTargetID = ""

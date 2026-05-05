@@ -146,6 +146,17 @@ type Unit struct {
 	Path                []protocol.Vec2
 	OrderID             int64
 
+	// Stuck-progress sample. Position recorded at the start of the most
+	// recent watchdog window, plus elapsed seconds in that window. If the
+	// unit hasn't displaced at least sqrt(stuckProgressThresholdSq) pixels
+	// by the end of stuckSampleInterval seconds, the per-tick movement loop
+	// forces a repath to break oscillation loops (two units wedging each
+	// other, separation pushing a unit back into a blocked cell, etc.).
+	// Reset on every assignUnitPath / resetUnitMovementLocked.
+	StuckSampleX     float64
+	StuckSampleY     float64
+	StuckSampleAccum float64
+
 	// NonCombat marks the unit as passive: combat AI never auto-acquires
 	// targets for it. The unit only engages when the player issues an
 	// explicit OrderAttackTarget (sticky attack). Workers are the canonical
@@ -251,6 +262,14 @@ const (
 	// units on spawn (1 HP every 5 seconds). Stored as HP-per-second so future
 	// perks / buffs can scale it with a multiplier.
 	defaultHealthRegenPerSecond = 0.2
+
+	// Movement progress watchdog. If a moving unit hasn't displaced more than
+	// sqrt(stuckProgressThresholdSq) pixels over stuckSampleInterval seconds,
+	// the per-tick movement loop forces a repath. Catches the case where
+	// separation, an obstructing unit, or a stale path wedges a unit into a
+	// back-and-forth loop without any net progress toward its destination.
+	stuckSampleInterval      = 0.6
+	stuckProgressThresholdSq = 6.0 * 6.0
 )
 
 type Player struct {
@@ -986,6 +1005,28 @@ func (s *GameState) Update(dt float64) {
 				unit.Order = OrderState{Type: OrderIdle}
 			}
 			continue
+		}
+
+		// Stuck-progress watchdog. Accumulate dt; once a sample window has
+		// elapsed, repath if the unit hasn't displaced past the progress
+		// threshold. Catches separation-vs-path oscillation where the unit
+		// is technically Moving=true every tick but its net position barely
+		// changes. assignUnitPath resets the sample, so the watchdog gets a
+		// fresh window after every repath.
+		unit.StuckSampleAccum += dt
+		if unit.StuckSampleAccum >= stuckSampleInterval {
+			ddx := unit.X - unit.StuckSampleX
+			ddy := unit.Y - unit.StuckSampleY
+			if ddx*ddx+ddy*ddy < stuckProgressThresholdSq {
+				s.repathUnitLocked(unit, blocked)
+			} else {
+				unit.StuckSampleX = unit.X
+				unit.StuckSampleY = unit.Y
+				unit.StuckSampleAccum = 0
+			}
+			if !unit.Moving || len(unit.Path) == 0 {
+				continue
+			}
 		}
 
 		nextWaypoint := unit.Path[0]

@@ -33,6 +33,7 @@ import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { buildItemTooltipBody } from '../items/itemRules'
 import { formatPerkTooltip } from './perkTooltip'
 import { getUnitBodyRect, isPointInUnitBody } from '../rendering/unitSprites'
+import { isTerrainCellBlocked } from '../rendering/terrainTileset'
 
 /**
  * Live-compounded trap stats for archer/trapper units, reflecting the full
@@ -1495,6 +1496,17 @@ export class GameState {
       return false
     }
 
+    // Reject cells whose Wang-tile visual is a transition (cliff/slope) tile.
+    // Mirrors the server's addTerrainBlocks: those cells aren't walkable and
+    // the server would refuse to pathfind through the finished building.
+    for (let dy = 0; dy < gridH; dy++) {
+      for (let dx = 0; dx < gridW; dx++) {
+        if (isTerrainCellBlocked(this.mapConfig, gridX + dx, gridY + dy)) {
+          return false
+        }
+      }
+    }
+
     for (const obs of obstacles) {
       if (obs.x >= gridX && obs.x < gridX + gridW && obs.y >= gridY && obs.y < gridY + gridH) {
         return false
@@ -1779,11 +1791,16 @@ export class GameState {
           ? (selectedBuilding.ownerId === this.localPlayerId
               ? getUnderConstructionActions(selectedBuilding)
               : [])
-          : getBuildingActions(selectedBuilding, this.playerUpgrades, {
-              vault: this.localPlayerVault,
-              vaultCapacity: this.localPlayerVaultCapacity,
-              vaultPanelOpen: this.vaultPanelOpen,
-            }),
+          : getBuildingActions(
+              selectedBuilding,
+              this.playerUpgrades,
+              {
+                vault: this.localPlayerVault,
+                vaultCapacity: this.localPlayerVaultCapacity,
+                vaultPanelOpen: this.vaultPanelOpen,
+              },
+              this.townHallTier,
+            ),
         production: activeProduction ? toProductionSummary(activeProduction) : undefined,
         construction: isUnderConstruction
           ? getBuildingConstructionSummary(selectedBuilding)
@@ -2287,7 +2304,12 @@ function getUnderConstructionActions(building: BuildingTile): ActionItem[] {
   ]
 }
 
-function getBuildingActions(building: BuildingTile, upgrades: PlayerUpgradeSnapshot[] = [], vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number; vaultPanelOpen: boolean }): ActionItem[] {
+function getBuildingActions(
+  building: BuildingTile,
+  upgrades: PlayerUpgradeSnapshot[] = [],
+  vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number; vaultPanelOpen: boolean },
+  townHallTier: number = 0,
+): ActionItem[] {
   const actions: ActionItem[] = []
 
   if (building.capabilities.includes('item-purchase')) {
@@ -2374,6 +2396,49 @@ function getBuildingActions(building: BuildingTile, upgrades: PlayerUpgradeSnaps
         tooltipBody: statParts.join('  '),
       })
     }
+  }
+
+  // Town hall upgrade pinned to slot 9 (bottom-left of the 4×3 action grid)
+  // by padding regular actions out to length 8. Mirrors the unit-action
+  // layout where perks always start at slot 9.
+  if (building.buildingType === 'townhall') {
+    while (actions.length < 8) {
+      actions.push({ id: '', label: '', disabled: true })
+    }
+    const tier = townHallTier || 1
+    const tierUpRemaining = getBuildingMetadataNumber(building, 'tierUpRemaining')
+    const inProgress = tierUpRemaining !== undefined
+    const atMax = tier >= 3
+
+    let label = 'Town Hall (Max)'
+    let cost: ActionCost[] | undefined
+    if (tier === 1) {
+      label = 'Upgrade to Keep'
+      cost = [
+        { resourceId: 'gold', amount: 400, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' },
+        { resourceId: 'wood', amount: 250, accent: RESOURCE_ACCENT.wood ?? '#7a9a52' },
+      ]
+    } else if (tier === 2) {
+      label = 'Upgrade to Castle'
+      cost = [
+        { resourceId: 'gold', amount: 800, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' },
+        { resourceId: 'wood', amount: 500, accent: RESOURCE_ACCENT.wood ?? '#7a9a52' },
+      ]
+    }
+
+    actions.push({
+      id: 'upgrade-townhall',
+      label,
+      iconDef: { kind: 'building', type: 'townhall' },
+      cost,
+      disabled: atMax || inProgress,
+      tooltipTitle: label,
+      tooltipBody: inProgress
+        ? 'Upgrade in progress…'
+        : atMax
+          ? 'Town Hall is at max tier.'
+          : undefined,
+    })
   }
 
   return actions

@@ -267,3 +267,43 @@ function computeWangMask(
   if (cornerIsGrass(cx, cy, cx + 1, cy, cx, cy + 1, cx + 1, cy + 1)) mask |= 8
   return mask
 }
+
+// Mirrors the server's addTerrainBlocks (server/internal/game/pathing.go):
+// a cell renders as a Wang transition tile (cliff / slope) when its mask is
+// neither 0 (all-dirt) nor 15 (all-grass). Those transition tiles are not
+// walkable and the server rejects pathfinding through them, so the client
+// must reject build placement on them too. tiles[] overrides decide outright
+// — a raw pure-Wang coord (sx=64,sy=32 or sx=0,sy=96) on a non-pure cell
+// makes it walkable, and vice versa. Returns false when the map's
+// defaultTile isn't one of the two recognized canonical coords (custom
+// default → server treats everything as walkable, so we do too).
+export function isTerrainCellBlocked(
+  spec: AutoTiledTerrainSpec,
+  x: number,
+  y: number,
+): boolean {
+  const groundCoord = spec.defaultTile ?? GROUND_TILE_COORDS
+  const defaultTerrain = inferTerrainFromCoord(groundCoord)
+  if (!defaultTerrain) return false
+
+  if (spec.tiles) {
+    for (const t of spec.tiles) {
+      if (t.x === x && t.y === y) {
+        return !((t.sx === 64 && t.sy === 32) || (t.sx === 0 && t.sy === 96))
+      }
+    }
+  }
+
+  const terrainAt = (cx: number, cy: number): TerrainType => {
+    if (cx < 0 || cx >= spec.gridCols || cy < 0 || cy >= spec.gridRows) {
+      return defaultTerrain
+    }
+    for (const t of spec.terrain) {
+      if (t.x === cx && t.y === cy) return t.terrain
+    }
+    return defaultTerrain
+  }
+
+  const mask = computeWangMask(x, y, defaultTerrain, terrainAt)
+  return mask !== 0 && mask !== 15
+}
