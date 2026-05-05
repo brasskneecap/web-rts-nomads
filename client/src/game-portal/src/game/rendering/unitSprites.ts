@@ -20,10 +20,6 @@ export const UNIT_SPRITE_SCALE = 1.25
 // under the visible feet instead of the canvas bottom.
 export const UNIT_SPRITE_TOP_PADDING = 0.15
 export const UNIT_SPRITE_BOTTOM_PADDING = 0.15
-// Horizontal transparent margin fraction per side. Used by hit-testing to
-// tighten the body AABB inward from the sprite canvas edges so hovering
-// nearby empty pixels doesn't register as a hit on the unit.
-export const UNIT_SPRITE_SIDE_PADDING = 0.15
 
 export type UnitDirection =
   | 'north'
@@ -233,13 +229,11 @@ export function getUnitBodyRect(args: {
 
   if (spriteSet) {
     const spriteH = spriteSet.size.height * UNIT_SPRITE_SCALE
-    const spriteW = spriteSet.size.width * UNIT_SPRITE_SCALE
     const visibleBottomY = args.y + bounds.bottom - spriteH * UNIT_SPRITE_BOTTOM_PADDING
     const visibleTopY = args.y + bounds.bottom - spriteH * (1 - UNIT_SPRITE_TOP_PADDING)
-    const halfW = spriteW * (1 - 2 * UNIT_SPRITE_SIDE_PADDING) / 2
     return {
-      minX: args.x - halfW - padding,
-      maxX: args.x + halfW + padding,
+      minX: args.x - bounds.halfWidth - padding,
+      maxX: args.x + bounds.halfWidth + padding,
       minY: visibleTopY - padding,
       maxY: visibleBottomY + padding,
     }

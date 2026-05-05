@@ -1633,51 +1633,6 @@ export class CanvasRenderer {
         ctx.beginPath()
         ctx.ellipse(selectionCenterX, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
         ctx.stroke()
-
-        // Bounds debug overlay — draws the top/bottom/halfWidth box so the
-        // raw JSON values are visible while tuning. Top edge is cyan,
-        // bottom edge magenta so swapped values (top below bottom) are
-        // immediately obvious. Sides are thin cyan ticks.
-        const zoom = this.camera.zoom
-        const boundsTopY = unit.y + unitBounds.top
-        const boundsBottomY = unit.y + unitBounds.bottom
-        const boundsLeftX = unit.x - unitBounds.halfWidth
-        const boundsRightX = unit.x + unitBounds.halfWidth
-
-        ctx.save()
-        ctx.lineWidth = 1 / zoom
-        ctx.setLineDash([4 / zoom, 3 / zoom])
-
-        ctx.strokeStyle = '#22d3ee'
-        ctx.beginPath()
-        ctx.moveTo(boundsLeftX, boundsTopY)
-        ctx.lineTo(boundsRightX, boundsTopY)
-        ctx.stroke()
-
-        ctx.strokeStyle = '#e879f9'
-        ctx.beginPath()
-        ctx.moveTo(boundsLeftX, boundsBottomY)
-        ctx.lineTo(boundsRightX, boundsBottomY)
-        ctx.stroke()
-
-        ctx.strokeStyle = 'rgba(34, 211, 238, 0.6)'
-        ctx.beginPath()
-        ctx.moveTo(boundsLeftX, boundsTopY)
-        ctx.lineTo(boundsLeftX, boundsBottomY)
-        ctx.moveTo(boundsRightX, boundsTopY)
-        ctx.lineTo(boundsRightX, boundsBottomY)
-        ctx.stroke()
-
-        ctx.setLineDash([])
-        ctx.font = `${11 / zoom}px sans-serif`
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'bottom'
-        ctx.fillStyle = '#22d3ee'
-        ctx.fillText(`top ${unitBounds.top}`, boundsRightX + 3 / zoom, boundsTopY)
-        ctx.textBaseline = 'top'
-        ctx.fillStyle = '#e879f9'
-        ctx.fillText(`bottom ${unitBounds.bottom}`, boundsRightX + 3 / zoom, boundsBottomY)
-        ctx.restore()
       }
 
       // Drag-select candidate ring — shown while the selection box is active

@@ -1190,28 +1190,43 @@ export class GameState {
   // Hit-tests against the unit's visible body (sprite or procedural bounds),
   // not a circle at the feet anchor. `padding` grows the hit rect outward on
   // all sides; the default is tuned to feel forgiving without overlapping
-  // adjacent units.
+  // adjacent units. When multiple units' bodies contain the point, the unit
+  // with the largest y wins — this matches the renderer's Y-sort at
+  // CanvasRenderer.drawUnits, so the unit drawn on top (standing "in front")
+  // is the one that gets selected.
+  private pickFrontmostUnit(
+    x: number,
+    y: number,
+    padding: number | undefined,
+    accept: (unit: Unit) => boolean,
+  ): Unit | undefined {
+    let best: Unit | undefined
+    for (const unit of this.getInteractionUnits()) {
+      if (!accept(unit)) continue
+      if (!isPointInUnitBody(x, y, unit, padding)) continue
+      if (!best || unit.y > best.y) best = unit
+    }
+    return best
+  }
+
   getUnitAtPosition(x: number, y: number, padding?: number): Unit | undefined {
-    return this.getInteractionUnits().find((unit) => {
-      if (!this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
-      return isPointInUnitBody(x, y, unit, padding)
-    })
+    return this.pickFrontmostUnit(x, y, padding, (unit) =>
+      this.isOwnedByLocalPlayer(unit) && unit.visible,
+    )
   }
 
   getEnemyUnitAtPosition(x: number, y: number, padding?: number): Unit | undefined {
-    return this.getInteractionUnits().find((unit) => {
-      if (!unit.visible || !this.isHostileToLocalPlayer(unit.ownerId)) return false
-      return isPointInUnitBody(x, y, unit, padding)
-    })
+    return this.pickFrontmostUnit(x, y, padding, (unit) =>
+      unit.visible && this.isHostileToLocalPlayer(unit.ownerId),
+    )
   }
 
   // Allied other-player units. Used by left-click to open a read-only
   // inspection panel — no orders can be issued against / for these units.
   getAllyUnitAtPosition(x: number, y: number, padding?: number): Unit | undefined {
-    return this.getInteractionUnits().find((unit) => {
-      if (!unit.visible || !this.isAlliedOtherPlayerUnit(unit)) return false
-      return isPointInUnitBody(x, y, unit, padding)
-    })
+    return this.pickFrontmostUnit(x, y, padding, (unit) =>
+      unit.visible && this.isAlliedOtherPlayerUnit(unit),
+    )
   }
 
   getOrderedSelectedUnitIds(): number[] {
