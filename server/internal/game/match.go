@@ -3,6 +3,7 @@ package game
 import (
 	"sync"
 	"time"
+	"webrts/server/pkg/protocol"
 )
 
 // PlayerRemovalGrace is the delay between a WebSocket disconnect and the
@@ -15,9 +16,9 @@ type MatchClient interface {
 }
 
 type Match struct {
-	ID      string
-	MapID   string
-	State   *GameState
+	ID    string
+	MapID string
+	State *GameState
 
 	mu                    sync.RWMutex
 	Clients               map[MatchClient]struct{}
@@ -86,9 +87,12 @@ func (m *Match) HasPlayer(playerID string) bool {
 }
 
 func (m *Match) BroadcastSnapshot() {
-	snapshot := m.State.Snapshot()
-	snapshot.MatchID = m.ID
-	snapshot.ServerNow = time.Now().UnixMilli()
+	var snapshot protocol.MatchSnapshotMessage
+	profileSection("snapshotBuild", func() {
+		snapshot = m.State.Snapshot()
+		snapshot.MatchID = m.ID
+		snapshot.ServerNow = time.Now().UnixMilli()
+	})
 
 	// Snapshot the client set under the lock, then release before writing.
 	// Holding the lock across WriteJSON serialises writes and blocks
@@ -100,9 +104,11 @@ func (m *Match) BroadcastSnapshot() {
 	}
 	m.mu.RUnlock()
 
-	for _, client := range clients {
-		_ = client.WriteJSON(snapshot)
-	}
+	profileSection("snapshotBroadcast", func() {
+		for _, client := range clients {
+			_ = client.WriteJSON(snapshot)
+		}
+	})
 }
 
 func (m *Match) RemovePlayer(playerID string) {

@@ -220,8 +220,23 @@ func (s *GameState) spawnPlacedEnemyUnitsLocked() {
 		unit.GuardMode = true
 		unit.GuardAnchorX = spawnPos.X
 		unit.GuardAnchorY = spawnPos.Y
+		// Floor authored aggro at guardMinAggroRange so a player unit walking
+		// near a guard reliably triggers passive acquisition rather than
+		// having to either step into AttackRange or take a hit first. Authored
+		// values above the floor are respected.
 		unit.GuardAggroRange = entry.AggroRange
+		if unit.GuardAggroRange < guardMinAggroRange {
+			unit.GuardAggroRange = guardMinAggroRange
+		}
+		// Leash must cover at least the aggro radius — otherwise a target
+		// inside aggro but past leash is acquired (selectBestTargetLocked uses
+		// AggroRange) and immediately dropped (shouldDropCurrentTargetLocked
+		// uses LeashRange), the visible chase/drop juggling. Authored leash
+		// above the aggro floor is respected.
 		unit.GuardLeashRange = entry.LeashRange
+		if unit.GuardLeashRange < unit.GuardAggroRange {
+			unit.GuardLeashRange = unit.GuardAggroRange
+		}
 		unit.IgnoreWaveClear = true
 		unit.Order = OrderState{
 			Type:  OrderHold,

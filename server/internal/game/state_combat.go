@@ -259,7 +259,11 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.ActionFacingDY = 0
 					// Hold units never move to engage. If the target walked out of
 					// attack range, drop it and stay put rather than giving chase.
-					if unit.Order.Type == OrderHold {
+					// Guards are exempt: they actively chase intruders within
+					// GuardLeashRange of their anchor (see Gate C in
+					// applyCombatTargetLocked). shouldDropCurrentTargetLocked drops
+					// the target if it leaves the leash.
+					if unit.Order.Type == OrderHold && !unit.GuardMode {
 						s.clearCombatTargetLocked(unit)
 						continue
 					}

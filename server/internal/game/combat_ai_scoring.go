@@ -18,21 +18,31 @@ func (s *GameState) shouldDropCurrentTargetLocked(unit *Unit, profile CombatProf
 		if unit.Order.Type == OrderAttackTarget {
 			return false
 		}
+		// Retaliation: a hostile in the threat table has dealt damage to this
+		// unit recently. Bypass every leash (profile default AND guard leash)
+		// so the unit can chase the attacker even if they're firing from beyond
+		// the authored perimeter — guards in particular must not silently die
+		// at their post to a ranged attacker just out of leash.
+		//
+		// For non-guards the bypass holds as long as the entry exists; profile
+		// ThreatDecayPerSecond eventually deletes it. For guards the bypass is
+		// gated on guardRetaliationPersistTicks since the last hit so the chase
+		// has a deterministic 4-second window that each new attack refreshes —
+		// without this the guard could chase a long-disengaged attacker for
+		// many seconds while the threat amount decayed.
+		if entry, ok := unit.ThreatTable[target.ID]; ok {
+			if !unit.GuardMode || s.Tick-entry.LastActiveTick < guardRetaliationPersistTicks {
+				return false
+			}
+		}
 		// Guard units use their authored anchor as the leash origin and their
-		// GuardLeashRange as the leash radius, not the profile default.
+		// GuardLeashRange as the leash radius, not the profile default. Only
+		// reached when the target is NOT in the threat table (e.g. a passive
+		// proximity acquisition).
 		if unit.GuardMode {
 			distSq := distanceSquared(unit.GuardAnchorX, unit.GuardAnchorY, target.X, target.Y)
 			leash := unit.GuardLeashRange
 			return distSq > leash*leash
-		}
-		// Retaliation: a hostile in the threat table has dealt damage to this
-		// unit recently. Bypass the leash so the unit can chase the attacker
-		// even if they're firing from beyond profile DetectionRange/LeashDistance.
-		// The threat decays naturally once attacks stop (decayThreatLocked), so
-		// the override stops applying within ~1-2s of disengagement and the
-		// regular leash returns the unit to its anchor.
-		if _, ok := unit.ThreatTable[target.ID]; ok {
-			return false
 		}
 		return !s.targetInsideLeashLocked(unit, target.X, target.Y, profile)
 	}
@@ -96,11 +106,14 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 	// damage to this unit. They are eligible regardless of detection range or
 	// leash so a unit can fight back against ranged attackers shooting from
 	// beyond its sight (e.g. a perked archer firing at a soldier whose
-	// profile DetectionRange is only 240). Hold units skip this — their
-	// contract is "engage in-range only," already enforced by the
-	// AttackRange-capped detectionRange above. Guard units also skip:
-	// their leash is authored and intentional.
-	if unit.Order.Type != OrderHold && !unit.GuardMode && len(unit.ThreatTable) > 0 {
+	// profile DetectionRange is only 240). Pure Hold units (no GuardMode) skip
+	// this — their contract is "engage in-range only," already enforced by
+	// the AttackRange-capped detectionRange above. Guards DO retaliate without
+	// any range cap so a ranged attacker can never silently chip them down
+	// at the post; shouldDropCurrentTargetLocked grants the same threat-table
+	// bypass on the chase side.
+	allowRetaliation := unit.Order.Type != OrderHold || unit.GuardMode
+	if allowRetaliation && len(unit.ThreatTable) > 0 {
 		// Sort hostile IDs so tie-breaking on equal scores is deterministic.
 		// Map iteration order is unspecified in Go and would otherwise let
 		// identical inputs pick different targets across runs, breaking the
@@ -111,6 +124,14 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 		}
 		sort.Ints(hostileIDs)
 		for _, hostileID := range hostileIDs {
+			entry := unit.ThreatTable[hostileID]
+			// Guards: only retaliate against attackers that hit within the
+			// persistence window. Mirrors the chase-side gate in
+			// shouldDropCurrentTargetLocked so acquisition and persistence
+			// agree on what "actively attacking" means.
+			if entry == nil || (unit.GuardMode && s.Tick-entry.LastActiveTick >= guardRetaliationPersistTicks) {
+				continue
+			}
 			hostile := s.getUnitByIDLocked(hostileID)
 			if hostile == nil || hostile == unit || hostile.HP <= 0 || !hostile.Visible {
 				continue

@@ -77,6 +77,11 @@ const (
 	combatThreatStructureSplashRadius  = 240.0
 	combatDangerFrontlineSupportRadius = 180.0
 	combatTauntBonusScore              = 10000.0
+	// enemyObjectiveSearchCooldownTicks throttles assignEnemyObjectiveLocked
+	// after a fruitless search. 1 second at 20Hz — long enough to keep the
+	// per-tick cost under control, short enough that a freshly-built player
+	// building gets attacked promptly.
+	enemyObjectiveSearchCooldownTicks = 20
 )
 
 func (s *GameState) initializeCombatUnitLocked(unit *Unit) {
@@ -91,13 +96,15 @@ func (s *GameState) initializeCombatUnitLocked(unit *Unit) {
 
 func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 	index := newCombatSpatialIndex(combatSpatialBucketSize)
-	for _, unit := range s.Units {
-		if unit == nil || !unit.Visible || unit.HP <= 0 {
-			continue
+	profileSection("combatAI.indexBuild", func() {
+		for _, unit := range s.Units {
+			if unit == nil || !unit.Visible || unit.HP <= 0 {
+				continue
+			}
+			s.initializeCombatUnitLocked(unit)
+			index.add(unit)
 		}
-		s.initializeCombatUnitLocked(unit)
-		index.add(unit)
-	}
+	})
 
 	ctx := combatEvalContext{
 		index:   index,
@@ -119,48 +126,54 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 	//
 	// Once a target is acquired, the anchor freezes at that position so the
 	// standard leash check limits how far the chase can go.
-	for _, unit := range s.Units {
-		if unit == nil || !unit.Visible || unit.HP <= 0 || unit.AttackTargetID != 0 ||
-			(unit.OwnerID == enemyPlayerID && unit.ObjectiveID != "") {
-			continue
+	profileSection("combatAI.anchorSlide", func() {
+		for _, unit := range s.Units {
+			if unit == nil || !unit.Visible || unit.HP <= 0 || unit.AttackTargetID != 0 ||
+				(unit.OwnerID == enemyPlayerID && unit.ObjectiveID != "") {
+				continue
+			}
+			if unit.GuardMode {
+				// Guard anchor is pinned at the authored position — do not slide.
+			} else if unit.OwnerID == enemyPlayerID ||
+				unit.Order.Type == OrderAttackMove ||
+				unit.Order.Type == OrderPatrol {
+				unit.CombatAnchorX = unit.X
+				unit.CombatAnchorY = unit.Y
+			}
 		}
-		if unit.GuardMode {
-			// Guard anchor is pinned at the authored position — do not slide.
-		} else if unit.OwnerID == enemyPlayerID ||
-			unit.Order.Type == OrderAttackMove ||
-			unit.Order.Type == OrderPatrol {
-			unit.CombatAnchorX = unit.X
-			unit.CombatAnchorY = unit.Y
-		}
-	}
+	})
 
-	for _, unit := range s.Units {
-		if !s.unitUsesCombatAI(unit) {
-			continue
+	profileSection("combatAI.decayThreat", func() {
+		for _, unit := range s.Units {
+			if !s.unitUsesCombatAI(unit) {
+				continue
+			}
+			s.decayThreatLocked(unit, dt, index)
 		}
-		s.decayThreatLocked(unit, dt, index)
-	}
+	})
 
-	for _, unit := range s.Units {
-		if !s.unitUsesCombatAI(unit) {
-			continue
+	profileSection("combatAI.evaluate", func() {
+		for _, unit := range s.Units {
+			if !s.unitUsesCombatAI(unit) {
+				continue
+			}
+			if unit.Order.Type == OrderMove && unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == "" {
+				continue
+			}
+			// Non-combat units (workers) never auto-acquire. They only engage when
+			// the player explicitly issues OrderAttackTarget via AttackWithUnits —
+			// once that order is set, combat evaluation runs normally (the sticky-
+			// attack short-circuit inside evaluateCombatLocked handles the rest).
+			// When the target is cleared, clearCombatTargetLocked demotes the
+			// order back to OrderIdle and this gate skips them again on the next tick.
+			if unit.NonCombat && unit.Order.Type != OrderAttackTarget {
+				continue
+			}
+			s.evaluateCombatLocked(unit, ctx)
 		}
-		if unit.Order.Type == OrderMove && unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == "" {
-			continue
-		}
-		// Non-combat units (workers) never auto-acquire. They only engage when
-		// the player explicitly issues OrderAttackTarget via AttackWithUnits —
-		// once that order is set, combat evaluation runs normally (the sticky-
-		// attack short-circuit inside evaluateCombatLocked handles the rest).
-		// When the target is cleared, clearCombatTargetLocked demotes the
-		// order back to OrderIdle and this gate skips them again on the next tick.
-		if unit.NonCombat && unit.Order.Type != OrderAttackTarget {
-			continue
-		}
-		s.evaluateCombatLocked(unit, ctx)
-	}
+	})
 
-	s.tickGuardReturnLocked(blocked)
+	profileSection("combatAI.guardReturn", func() { s.tickGuardReturnLocked(blocked) })
 }
 
 func (s *GameState) unitUsesCombatAI(unit *Unit) bool {
@@ -207,7 +220,35 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 	best := s.selectBestTargetLocked(unit, profile, ctx)
 	if best.Kind == combatTargetNone {
 		if unit.OwnerID == enemyPlayerID && unit.AttackBuildingTargetID == "" && unit.AttackTargetID == 0 && unit.ObjectiveID == "" {
+			// Guards and Hold-order enemies have an authored post — they must
+			// not go objective-hunting. Without this gate every placed-enemy
+			// guard with no in-range target re-runs map-wide A* to the player
+			// townhall every tick, pulls itself off its anchor, then
+			// tickGuardReturnLocked tries to walk it back — burning the entire
+			// simulation budget on placed-enemy maps (e.g. exploration).
+			if unit.GuardMode || unit.Order.Type == OrderHold {
+				return
+			}
+			// Skip if the unit is already advancing on a path — assignEnemyObjectiveLocked
+			// would re-pick the same townhall and rerun A* from a position one step further
+			// along the same route, doing real work for zero behavioural difference.
+			// Also honour the per-unit cooldown so a fruitless previous search (no live
+			// player buildings, no townhall reachable) does not retry every single tick.
+			if unit.Moving {
+				return
+			}
+			if s.Tick < unit.NextObjectiveSearchTick {
+				return
+			}
 			s.assignEnemyObjectiveLocked(unit, ctx.blocked)
+			// Always back off after a search regardless of outcome. Without this,
+			// units that complete a townhall path drop back to Moving=false on the
+			// next tick and immediately re-enter the search — and A* on the
+			// 256x256 sub-grid plus a per-call rebuild of the unit-blocked map
+			// dominates the simulation budget. applyCombatTargetLocked clears the
+			// backoff when a real target is acquired so target loss is still
+			// re-evaluated promptly.
+			unit.NextObjectiveSearchTick = s.Tick + enemyObjectiveSearchCooldownTicks
 			return
 		}
 		// Gate D: resume standing order (AttackMove / Patrol) when no target.
@@ -226,11 +267,20 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 
 	s.applyCombatTargetLocked(unit, best, ctx.blocked)
 	unit.CurrentTargetScore = best.Score
+	// Acquired a real target — reset the no-objective backoff so the next loss
+	// re-evaluates immediately.
+	unit.NextObjectiveSearchTick = 0
 }
 
 func (s *GameState) applyCombatTargetLocked(unit *Unit, target combatTarget, blocked map[gridPoint]bool) {
 	// Gate C: Hold units fire from current position — never path toward a target.
-	holdUnit := unit.Order.Type == OrderHold
+	// Guards are an explicit exception: GuardMode enemies are spawned with
+	// OrderHold so they suppress retreat / retaliation / objective hunting, but
+	// the design contract is that they actively chase intruders within
+	// GuardLeashRange of their anchor. shouldDropCurrentTargetLocked enforces
+	// the leash from GuardAnchorX/Y, and tickGuardReturnLocked walks them home
+	// once a target is dropped.
+	holdUnit := unit.Order.Type == OrderHold && !unit.GuardMode
 
 	switch target.Kind {
 	case combatTargetUnit:

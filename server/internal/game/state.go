@@ -199,8 +199,14 @@ type Unit struct {
 	CombatAnchorY      float64
 	LastTargetEvalTick int
 	CurrentTargetScore float64
-	TauntedByUnitID    int
-	TauntRemaining     float64
+	// NextObjectiveSearchTick gates re-entry into assignEnemyObjectiveLocked
+	// for enemy units that found nothing attackable last call. Without this,
+	// every idle enemy reruns the building search + A* every tick and dominates
+	// the simulation budget. Set forward by enemyObjectiveSearchCooldownTicks
+	// after a search; cleared to 0 when the unit acquires any target.
+	NextObjectiveSearchTick int
+	TauntedByUnitID         int
+	TauntRemaining          float64
 	// StunnedRemaining is seconds left on the stun CC applied to this unit by
 	// ApplyStunLocked. Decays in state.go Update() alongside WeakenedRemaining.
 	// While > 0 the unit cannot attack or move along its path, but
@@ -257,6 +263,19 @@ const (
 	// boundary, which made groups look cramped on arrival.
 	unitFormationSpacing   = 40.0
 	unitSeparationDistance = 22.0
+
+	// guardMinAggroRange is the floor applied to GuardAggroRange at spawn for
+	// placed-enemy guard units. Authored values below this are raised so guards
+	// reliably notice approaching player units before they're already in melee.
+	guardMinAggroRange = 350.0
+
+	// guardRetaliationPersistTicks is how long a guard pursues an attacker
+	// after the last hit lands, regardless of leash. 4 seconds at 20 Hz. Each
+	// new hit refreshes the window via addThreatLocked → entry.LastActiveTick,
+	// so a sustained ranged barrage keeps the guard committed to the shooter.
+	// Once attacks stop and this window elapses the leash check resumes and
+	// the guard returns to its anchor.
+	guardRetaliationPersistTicks = 80
 
 	// defaultHealthRegenPerSecond is the baseline passive regen applied to all
 	// units on spawn (1 HP every 5 seconds). Stored as HP-per-second so future
@@ -870,32 +889,34 @@ func (s *GameState) Update(dt float64) {
 	// client can match against its HP-diff damage events.
 	s.resetCritEventsThisTickLocked()
 
-	s.battleTracker.tickLocked(dt)
-	s.updateUnitProductionsLocked(dt)
-	s.cancelOrphanedPendingBuildingsLocked()
-	s.tickTownHallTierUpsLocked(dt)
-	s.tickBuildingRepairsLocked(dt)
-	blocked := s.getBlockedCellsLocked()
-	s.tickBuildingCombatLocked(dt)
-	s.tickWaveLocked(dt)
-	s.rebuildGuardianAuraCacheLocked()
-	s.tickCombatAILocked(dt, blocked)
-	s.tickUnitCombatLocked(dt, blocked)
+	profileSection("battleTracker", func() { s.battleTracker.tickLocked(dt) })
+	profileSection("unitProductions", func() { s.updateUnitProductionsLocked(dt) })
+	profileSection("orphanedPendingBuildings", func() { s.cancelOrphanedPendingBuildingsLocked() })
+	profileSection("townhallTierUps", func() { s.tickTownHallTierUpsLocked(dt) })
+	profileSection("buildingRepairs", func() { s.tickBuildingRepairsLocked(dt) })
+	var blocked map[gridPoint]bool
+	profileSection("getBlockedCells", func() { blocked = s.getBlockedCellsLocked() })
+	profileSection("buildingCombat", func() { s.tickBuildingCombatLocked(dt) })
+	profileSection("wave", func() { s.tickWaveLocked(dt) })
+	profileSection("guardianAuraCache", func() { s.rebuildGuardianAuraCacheLocked() })
+	profileSection("combatAI", func() { s.tickCombatAILocked(dt, blocked) })
+	profileSection("unitCombat", func() { s.tickUnitCombatLocked(dt, blocked) })
 	// Projectiles tick after combat resolution so shots fired this tick wait
 	// a full dt before decaying on the next Update pass.
-	s.tickProjectilesLocked(dt)
-	s.tickExplosionsLocked(dt)
-	s.tickEnemySpawnpointsLocked(dt, blocked)
-	s.tickTrapEffectsLocked(dt)            // zone effects + trigger detection
-	s.tickTrapperSilverDebuffsLocked(dt)   // barbed ramp, lasting_flames exit, burn DoT
-	s.tickBannersLocked(dt)
-	s.tickTrapsLocked(dt) // lifetime decay + triggered cull
+	profileSection("projectiles", func() { s.tickProjectilesLocked(dt) })
+	profileSection("explosions", func() { s.tickExplosionsLocked(dt) })
+	profileSection("enemySpawnpoints", func() { s.tickEnemySpawnpointsLocked(dt, blocked) })
+	profileSection("trapEffects", func() { s.tickTrapEffectsLocked(dt) })           // zone effects + trigger detection
+	profileSection("trapperSilverDebuffs", func() { s.tickTrapperSilverDebuffsLocked(dt) }) // barbed ramp, lasting_flames exit, burn DoT
+	profileSection("banners", func() { s.tickBannersLocked(dt) })
+	profileSection("traps", func() { s.tickTrapsLocked(dt) }) // lifetime decay + triggered cull
 	// Drain the per-tick death queue. Must run AFTER all combat/trap/projectile
 	// ticks have finished so every HP=0 unit from indirect damage paths (Shared
 	// Pain, pain_share redirect, retaliation) is cleaned up before the per-unit
 	// loop below, which gates regen on HP>0.
-	s.drainPendingDeathsLocked()
+	profileSection("drainPendingDeaths", func() { s.drainPendingDeathsLocked() })
 
+	stopPerUnitTick := profileStart("perUnitTick")
 	for _, unit := range s.Units {
 		if unit.RankUpFxRemaining > 0 {
 			unit.RankUpFxRemaining = math.Max(0, unit.RankUpFxRemaining-dt)
@@ -1068,12 +1089,15 @@ func (s *GameState) Update(dt float64) {
 		unit.X = nextX
 		unit.Y = nextY
 	}
+	stopPerUnitTick()
 
-	s.applyUnitSeparationLocked(blocked)
-	s.refreshBuildingRuntimeMetadataLocked()
-	s.refreshObstacleRuntimeMetadataLocked()
-	s.checkPlayerLossLocked()
-	s.checkVictoryLocked()
+	profileSection("separation", func() { s.applyUnitSeparationLocked(blocked) })
+	profileSection("buildingMetadata", func() { s.refreshBuildingRuntimeMetadataLocked() })
+	profileSection("obstacleMetadata", func() { s.refreshObstacleRuntimeMetadataLocked() })
+	profileSection("playerLoss", func() { s.checkPlayerLossLocked() })
+	profileSection("victory", func() { s.checkVictoryLocked() })
+
+	profileTickComplete(len(s.Units))
 }
 
 // markObjectiveKillLocked records a kill toward a "killUnit" victory condition

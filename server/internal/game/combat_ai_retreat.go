@@ -176,6 +176,15 @@ func (s *GameState) issueRetreatLocked(unit *Unit, profile CombatProfile, blocke
 
 func (s *GameState) targetInsideLeashLocked(unit *Unit, targetX, targetY float64, profile CombatProfile) bool {
 	leash := effectiveLeashDistance(unit, profile)
+	// Guards override the profile leash with their authored GuardLeashRange so
+	// acquisition and chase-drop agree on the same radius. Without this, a
+	// player unit sitting in the band between GuardLeashRange and the profile
+	// leash gets acquired here, then immediately dropped by
+	// shouldDropCurrentTargetLocked which uses GuardLeashRange — producing the
+	// chase/drop juggling on melee guards.
+	if unit.GuardMode && unit.GuardLeashRange > 0 {
+		leash = unit.GuardLeashRange
+	}
 	if leash <= 0 {
 		return true
 	}

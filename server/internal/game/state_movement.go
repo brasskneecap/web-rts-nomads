@@ -363,12 +363,49 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 
 func (s *GameState) applyUnitSeparationLocked(blocked map[gridPoint]bool) {
 	minDistance := unitSeparationDistance
-	minDistanceSq := minDistance * minDistance
+	// Resolve only actual visual overlap (centers closer than the combined
+	// visual radius). The 22px separation distance leaves a 2px buffer that
+	// is useful as a target spacing for formations but causes a perpetual
+	// nudge band between unitRadius*2 (20px, the no-overlap threshold) and
+	// unitSeparationDistance (22px). For dense clusters (many units stacked
+	// at a single spawnpoint, packed waves arriving on an objective, etc.)
+	// every pair sits in that band, every pair pushes every tick, the chain
+	// reaction never reaches equilibrium, and the result is the visible
+	// position jitter / facing rotation jitter on the client.
+	visualOverlapDistSq := (unitRadius * 2) * (unitRadius * 2)
 
-	for i := 0; i < len(s.Units); i++ {
-		for j := i + 1; j < len(s.Units); j++ {
-			a := s.Units[i]
-			b := s.Units[j]
+	// Bucket units into a spatial index sized to the separation radius so
+	// each unit only inspects neighbours in ~9 cells instead of scanning the
+	// whole roster. Drops the pass from O(N²) to ~O(N) on average for sparse
+	// armies; dense clusters degrade to O(K²) over the local cluster size K
+	// rather than total population.
+	index := newCombatSpatialIndex(unitSeparationDistance)
+	for _, u := range s.Units {
+		if u == nil {
+			continue
+		}
+		index.add(u)
+	}
+
+	// Accumulate per-unit net push first, then apply once at the end. The
+	// previous in-place mutation made the result order-dependent: A pushed by
+	// B was then re-tested against C at its new position, C against D, etc.
+	// In a cluster the chain reaction never settles — exactly the visible
+	// rotation/jitter symptom. Net-force application converges symmetric
+	// clusters to a stable equilibrium in a handful of ticks.
+	pushX := make(map[int]float64, len(s.Units))
+	pushY := make(map[int]float64, len(s.Units))
+
+	for _, a := range s.Units {
+		if a == nil {
+			continue
+		}
+		for _, b := range index.query(a.X, a.Y, minDistance) {
+			// ID ordering processes each unordered pair exactly once and
+			// implicitly skips self (b.ID == a.ID).
+			if b == nil || b.ID <= a.ID {
+				continue
+			}
 			dx := b.X - a.X
 			dy := b.Y - a.Y
 			distSq := dx*dx + dy*dy
@@ -377,7 +414,11 @@ func (s *GameState) applyUnitSeparationLocked(blocked map[gridPoint]bool) {
 				continue
 			}
 
-			if distSq >= minDistanceSq {
+			// Universal deadband: only resolve actual visual overlap. The
+			// 2px formation buffer that was spent on the trigger threshold
+			// is what fed the jitter loop; dropping it is the difference
+			// between a stable cluster and a perpetually shimmering one.
+			if distSq >= visualOverlapDistSq {
 				continue
 			}
 
@@ -403,12 +444,25 @@ func (s *GameState) applyUnitSeparationLocked(blocked map[gridPoint]bool) {
 			}
 
 			overlap := (minDistance - dist) * overlapScale
-			pushX := (dx / dist) * overlap
-			pushY := (dy / dist) * overlap
+			px := (dx / dist) * overlap
+			py := (dy / dist) * overlap
 
-			s.tryMoveUnitByOffsetLocked(a, -pushX, -pushY, blocked)
-			s.tryMoveUnitByOffsetLocked(b, pushX, pushY, blocked)
+			pushX[a.ID] -= px
+			pushY[a.ID] -= py
+			pushX[b.ID] += px
+			pushY[b.ID] += py
 		}
+	}
+
+	for _, u := range s.Units {
+		if u == nil {
+			continue
+		}
+		ox, oy := pushX[u.ID], pushY[u.ID]
+		if ox == 0 && oy == 0 {
+			continue
+		}
+		s.tryMoveUnitByOffsetLocked(u, ox, oy, blocked)
 	}
 }
 
