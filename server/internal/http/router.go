@@ -39,6 +39,7 @@ func NewRouter(hub *ws.Hub, corsOrigin string) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"units": game.ListUnitDefs(),
+			"paths": game.ListPathBounds(),
 		})
 	})
 

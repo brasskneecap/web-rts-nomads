@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"sort"
 )
 
 // Embeds the per-unit catalog tree so this file can load path JSONs from
@@ -24,6 +25,13 @@ var pathDefsFS embed.FS
 type pathCatalogFile struct {
 	Path        string                       `json:"path"`
 	Description string                       `json:"description,omitempty"`
+	// Bounds is an optional per-path override of the unit's visual footprint
+	// (halfWidth/top/bottom/ringOffsetX/ringOffsetY). Path variants often ship
+	// their own sprites at different pixel sizes than the base unit, so the
+	// selection ring and hit-test rect need their own values. Passed through
+	// as-is; client uses path-keyed bounds before falling back to the base
+	// unit's bounds. Server game logic never reads it.
+	Bounds      json.RawMessage              `json:"bounds,omitempty"`
 	Ranks       map[string]pathRankStatsJSON `json:"ranks"`
 }
 
@@ -52,6 +60,31 @@ type pathRankStatsJSON struct {
 // pathModifierFor — a typo in a path id therefore fails loud in-game (stats
 // unchanged from base) rather than silently picking an unrelated row.
 var pathModifiersByKey map[string]pathModifierDef
+
+// pathBoundsByPath holds the optional per-path visual-bounds override, keyed
+// by path id (e.g. "marksman"). Empty when a path JSON omits the field. Used
+// by the /catalog/units endpoint so the client can render path-promoted units
+// with sprite-appropriate selection rings.
+var pathBoundsByPath = map[string]json.RawMessage{}
+
+// PathBoundsEntry is the shape served to the client: a path id plus its
+// raw bounds blob. Slice form (rather than map) gives stable ordering in
+// the JSON response.
+type PathBoundsEntry struct {
+	Path   string          `json:"path"`
+	Bounds json.RawMessage `json:"bounds"`
+}
+
+// ListPathBounds returns all paths that declared a bounds override, sorted
+// by path id. Mirrors ListUnitDefs / ListBuildingDefs.
+func ListPathBounds() []PathBoundsEntry {
+	out := make([]PathBoundsEntry, 0, len(pathBoundsByPath))
+	for path, bounds := range pathBoundsByPath {
+		out = append(out, PathBoundsEntry{Path: path, Bounds: bounds})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
+}
 
 // defaultRankCurve is the rank-progression multiplier for units that earn XP
 // without ever being assigned a promotion path — workers, raiders, and any
@@ -134,6 +167,9 @@ func init() {
 				// someone edited one without the other; fail loud so the
 				// catalog stays coherent.
 				panic(fmt.Sprintf("%s: path %q does not match directory name %q", rel, file.Path, pathKey))
+			}
+			if len(file.Bounds) > 0 {
+				pathBoundsByPath[file.Path] = file.Bounds
 			}
 			for rankName, stats := range file.Ranks {
 				if _, ok := validRankName[rankName]; !ok {

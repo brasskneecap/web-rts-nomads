@@ -4,7 +4,7 @@
   "archetype": "archer",
   "hp": 75,
   "damage": 8,
-  "attackRange": 220,
+  "attackRange":  220,
   "attackSpeed": 1.5,
   "moveSpeed": 100,
   "goldGatherAmount": 20,
@@ -28,8 +28,10 @@
     "effectLength": 22
   },
   "bounds": {
-    "halfWidth": 28,
-    "top": -23,
-    "bottom": 30
+    "halfWidth": 20,
+    "top": -72,
+    "bottom": 36,
+    "ringOffsetX": 0,
+    "ringOffsetY": -15
   }
 }

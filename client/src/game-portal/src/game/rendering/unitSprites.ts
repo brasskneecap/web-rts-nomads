@@ -9,7 +9,7 @@
 //     Manifest carries `strips: { north, south, east, west }`.
 // Both normalize to the same in-memory shape, so the renderer doesn't care.
 
-import { getUnitBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
+import { getUnitBoundsFor } from '../maps/unitDefs'
 
 // Multiplier applied to each unit sprite's native size at draw time. Bump
 // until sprites read clearly at common zoom-outs without swamping the UI.
@@ -228,8 +228,7 @@ export function getUnitBodyRect(args: {
   padding?: number
 }): { minX: number; minY: number; maxX: number; maxY: number } {
   const padding = args.padding ?? 3
-  const unitDef = UNIT_DEF_MAP.get(args.unitType ?? '')
-  const bounds = getUnitBounds(unitDef)
+  const bounds = getUnitBoundsFor({ path: args.path, unitType: args.unitType })
   const spriteSet = getUnitSpriteSet(args.path, args.unitType)
 
   if (spriteSet) {

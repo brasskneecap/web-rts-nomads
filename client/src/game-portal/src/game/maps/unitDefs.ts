@@ -8,6 +8,11 @@ export type UnitBounds = {
   halfWidth: number
   top: number
   bottom: number
+  // Per-unit nudge for the selection ring (and its hover/inspected/drag-select
+  // siblings + perk auras), independent of where the sprite is anchored.
+  // Positive Y pushes the ring down, negative Y pulls it up.
+  ringOffsetX?: number
+  ringOffsetY?: number
 }
 
 export type UnitAttackVisual = {
@@ -67,6 +72,31 @@ export const DEFAULT_UNIT_BOUNDS: UnitBounds = {
 
 export function getUnitBounds(def: UnitDef | undefined | null): UnitBounds {
   return def?.bounds ?? DEFAULT_UNIT_BOUNDS
+}
+
+// Per-path bounds override: path id (e.g. "marksman") → bounds. Populated
+// from the /catalog/units `paths` array. Path-promoted units use these
+// before falling back to the base UnitDef bounds — necessary because path
+// variants ship their own sprites with different pixel sizes.
+export let PATH_BOUNDS_MAP: Map<string, UnitBounds> = new Map()
+
+export function initPathBounds(entries: Array<{ path: string; bounds: UnitBounds }>): void {
+  PATH_BOUNDS_MAP = new Map(entries.map((e) => [e.path, e.bounds]))
+}
+
+// Resolves bounds for a unit instance, checking path before unitType. Mirrors
+// the path-then-type lookup in getUnitSpriteSet so a path-promoted unit's
+// selection ring tracks its own sprite, not the base unit's.
+export function getUnitBoundsFor(args: {
+  path?: string | null
+  unitType?: string | null
+}): UnitBounds {
+  if (args.path && args.path !== 'none') {
+    const pathBounds = PATH_BOUNDS_MAP.get(args.path)
+    if (pathBounds) return pathBounds
+  }
+  const def = args.unitType ? UNIT_DEF_MAP.get(args.unitType) : undefined
+  return getUnitBounds(def)
 }
 
 export function getResolvedUnitAttackVisual(

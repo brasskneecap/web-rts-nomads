@@ -1,6 +1,13 @@
 {
   "path": "berserker",
   "description": "Aggressive damage dealer: more damage, attack speed, and a flat +15% move speed at every rank; slightly less HP early. Armor 18 produces ~15% damage reduction via the diminishing-returns curve.",
+  "bounds": {
+    "halfWidth": 24,
+    "top": -80,
+    "bottom": 30,
+    "ringOffsetX": 0,
+    "ringOffsetY": 0
+  },
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 0.990,

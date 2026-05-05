@@ -1,6 +1,13 @@
 {
   "path": "marksman",
   "description": "Precision-ranged archer path. Stat tuning deferred; rows currently mirror the default rank curve (see none.json) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Marksman gets its formal pass.",
+  "bounds": {
+    "halfWidth": 20,
+    "top": -80,
+    "bottom": 35,
+    "ringOffsetX": 0,
+    "ringOffsetY": -12
+  },
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.10,

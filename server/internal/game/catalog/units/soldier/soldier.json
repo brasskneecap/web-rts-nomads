@@ -29,7 +29,9 @@
   },
   "bounds": {
     "halfWidth": 21,
-    "top": -23,
-    "bottom": 30
+    "top": -72,
+    "bottom": 30,
+    "ringOffsetX": 0,
+    "ringOffsetY": -16
   }
 }

@@ -15,7 +15,7 @@ import type {
 import type { DebugSpawnConfig, PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
-import { UNIT_DEF_MAP, initUnitDefs } from '../maps/unitDefs'
+import { UNIT_DEF_MAP, initPathBounds, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs } from '../maps/perkDefs'
 import { initItemDefs } from '../maps/itemDefs'
@@ -129,12 +129,29 @@ export class GameClient {
     ])
     initBuildingDefs(buildingDefs)
     initObstacleDefs(obstacleDefs)
-    initUnitDefs(unitDefs)
+    initUnitDefs(unitDefs.units)
+    initPathBounds(unitDefs.paths)
     initActionIcons(actionIcons)
     initPerkDefs(perkDefs)
     initItemDefs(itemDefs)
+    window.addEventListener('keydown', this.handleDevHotkey)
     await this.network.connect(options)
     this.loop.start()
+  }
+
+  // Dev hotkey: F9 re-fetches /catalog/units and reseeds UNIT_DEF_MAP +
+  // PATH_BOUNDS_MAP without a page reload. Lets bounds tuning iterate at
+  // air's rebuild speed instead of full browser refresh + websocket reconnect.
+  private handleDevHotkey = (e: KeyboardEvent) => {
+    if (e.key !== 'F9') return
+    e.preventDefault()
+    void fetchUnitDefs()
+      .then(({ units, paths }) => {
+        initUnitDefs(units)
+        initPathBounds(paths)
+        console.log('[dev] reloaded unit defs + path bounds')
+      })
+      .catch((err) => console.error('[dev] catalog reload failed:', err))
   }
 
   async leaveStoredMatch() {
@@ -181,6 +198,7 @@ export class GameClient {
     this.input.destroy()
     this.renderer.destroy()
     this.network.disconnect()
+    window.removeEventListener('keydown', this.handleDevHotkey)
   }
 
   getUiSnapshot(): GameUiSnapshot {

@@ -1,6 +1,13 @@
 {
   "path": "vanguard",
   "description": "Sturdy frontliner: more HP, high armor, slight attack-speed cost early. Armor 54 produces ~35% damage reduction via the diminishing-returns curve in armorDamageReduction.",
+  "bounds": {
+    "halfWidth": 24,
+    "top": -80,
+    "bottom": 38,
+    "ringOffsetX": 0,
+    "ringOffsetY": -18
+  },
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.210,

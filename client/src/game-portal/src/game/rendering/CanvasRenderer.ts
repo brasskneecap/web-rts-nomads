@@ -32,7 +32,7 @@ import {
   drawAutoTiledTerrain,
   isTerrainTilesetReady,
 } from './terrainTileset'
-import { getResolvedUnitAttackVisual, getUnitBounds, UNIT_DEF_MAP } from '../maps/unitDefs'
+import { getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
 import type { BannerSnapshot, BuildingTile, ExplosionSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
 import { ENEMY_PLAYER_ID } from '../network/protocol'
@@ -1595,7 +1595,7 @@ export class CanvasRenderer {
       const isInspected = this.state.inspectedEnemyUnitId === unit.id
       const isHoveredEnemy = this.state.hoveredEnemyUnitId === unit.id
       const unitDef = UNIT_DEF_MAP.get(unit.unitType ?? '')
-      const unitBounds = getUnitBounds(unitDef)
+      const unitBounds = getUnitBoundsFor({ path: unit.path, unitType: unit.unitType })
       const halfWidth = unitBounds.halfWidth
       const bottomOffset = unitBounds.bottom
       const spriteSet = getUnitSpriteSet(unit.path, unit.unitType)
@@ -1607,7 +1607,10 @@ export class CanvasRenderer {
         : 0
       const selectionRadiusX = Math.max(15, halfWidth + 2)
       const selectionRadiusY = Math.max(8, Math.min(12, selectionRadiusX * 0.52))
-      const selectionCenterY = unit.y + bottomOffset - selectionRadiusY * 0.35 - ringLift
+      const ringOffsetX = unitBounds.ringOffsetX ?? 0
+      const ringOffsetY = unitBounds.ringOffsetY ?? 0
+      const selectionCenterX = unit.x + ringOffsetX
+      const selectionCenterY = unit.y + bottomOffset - selectionRadiusY * 0.35 - ringLift + ringOffsetY
 
       // Perk aura rings — dashed circle around the unit for each unit-centered
       // aura perk it carries (e.g. Guardian Aura). Triggered perks (Last Stand)
@@ -1620,7 +1623,7 @@ export class CanvasRenderer {
         for (const perkId of unit.perkIds) {
           const radius = getPerkAuraRadius(perkId, activeBuffIds)
           if (radius == null) continue
-          this.drawAuraRing(unit.x, selectionCenterY, radius, unit.color || '#fef08a')
+          this.drawAuraRing(selectionCenterX, selectionCenterY, radius, unit.color || '#fef08a')
         }
       }
 
@@ -1628,8 +1631,53 @@ export class CanvasRenderer {
         ctx.strokeStyle = '#22c55e'
         ctx.lineWidth = 3 / this.camera.zoom
         ctx.beginPath()
-        ctx.ellipse(unit.x, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
+        ctx.ellipse(selectionCenterX, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
         ctx.stroke()
+
+        // Bounds debug overlay — draws the top/bottom/halfWidth box so the
+        // raw JSON values are visible while tuning. Top edge is cyan,
+        // bottom edge magenta so swapped values (top below bottom) are
+        // immediately obvious. Sides are thin cyan ticks.
+        const zoom = this.camera.zoom
+        const boundsTopY = unit.y + unitBounds.top
+        const boundsBottomY = unit.y + unitBounds.bottom
+        const boundsLeftX = unit.x - unitBounds.halfWidth
+        const boundsRightX = unit.x + unitBounds.halfWidth
+
+        ctx.save()
+        ctx.lineWidth = 1 / zoom
+        ctx.setLineDash([4 / zoom, 3 / zoom])
+
+        ctx.strokeStyle = '#22d3ee'
+        ctx.beginPath()
+        ctx.moveTo(boundsLeftX, boundsTopY)
+        ctx.lineTo(boundsRightX, boundsTopY)
+        ctx.stroke()
+
+        ctx.strokeStyle = '#e879f9'
+        ctx.beginPath()
+        ctx.moveTo(boundsLeftX, boundsBottomY)
+        ctx.lineTo(boundsRightX, boundsBottomY)
+        ctx.stroke()
+
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.6)'
+        ctx.beginPath()
+        ctx.moveTo(boundsLeftX, boundsTopY)
+        ctx.lineTo(boundsLeftX, boundsBottomY)
+        ctx.moveTo(boundsRightX, boundsTopY)
+        ctx.lineTo(boundsRightX, boundsBottomY)
+        ctx.stroke()
+
+        ctx.setLineDash([])
+        ctx.font = `${11 / zoom}px sans-serif`
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'bottom'
+        ctx.fillStyle = '#22d3ee'
+        ctx.fillText(`top ${unitBounds.top}`, boundsRightX + 3 / zoom, boundsTopY)
+        ctx.textBaseline = 'top'
+        ctx.fillStyle = '#e879f9'
+        ctx.fillText(`bottom ${unitBounds.bottom}`, boundsRightX + 3 / zoom, boundsBottomY)
+        ctx.restore()
       }
 
       // Drag-select candidate ring — shown while the selection box is active
@@ -1641,7 +1689,7 @@ export class CanvasRenderer {
         ctx.lineWidth = 2 / this.camera.zoom
         ctx.setLineDash([5 / this.camera.zoom, 4 / this.camera.zoom])
         ctx.beginPath()
-        ctx.ellipse(unit.x, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
+        ctx.ellipse(selectionCenterX, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
         ctx.stroke()
         ctx.restore()
       }
@@ -1653,7 +1701,7 @@ export class CanvasRenderer {
         ctx.lineWidth = 2 / this.camera.zoom
         ctx.setLineDash([5 / this.camera.zoom, 4 / this.camera.zoom])
         ctx.beginPath()
-        ctx.ellipse(unit.x, selectionCenterY, selectionRadiusX + 1, selectionRadiusY + 1, 0, 0, Math.PI * 2)
+        ctx.ellipse(selectionCenterX, selectionCenterY, selectionRadiusX + 1, selectionRadiusY + 1, 0, 0, Math.PI * 2)
         ctx.stroke()
         ctx.restore()
       }
@@ -1663,7 +1711,7 @@ export class CanvasRenderer {
         ctx.strokeStyle = '#ef4444'
         ctx.lineWidth = 3 / this.camera.zoom
         ctx.beginPath()
-        ctx.ellipse(unit.x, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
+        ctx.ellipse(selectionCenterX, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
         ctx.stroke()
       }
 
@@ -2055,7 +2103,7 @@ export class CanvasRenderer {
   private spriteBodyCenterLift(unitType: string, path: string | undefined): { x: number; y: number } | null {
     const spriteSet = getUnitSpriteSet(path, unitType)
     if (!spriteSet) return null
-    const bounds = getUnitBounds(UNIT_DEF_MAP.get(unitType))
+    const bounds = getUnitBoundsFor({ path, unitType })
     const bottomOffset = bounds.bottom
     const h = spriteSet.size.height * UNIT_SPRITE_SCALE
     const visibleBottom = bottomOffset - h * UNIT_SPRITE_BOTTOM_PADDING
@@ -2102,7 +2150,7 @@ export class CanvasRenderer {
     if (sprite) {
       lift = sprite
     } else {
-      const bounds = getUnitBounds(UNIT_DEF_MAP.get(unit.unitType))
+      const bounds = getUnitBoundsFor({ path: unit.path, unitType: unit.unitType })
       lift = {
         x: 0,
         y: bounds.top + (bounds.bottom - bounds.top) * CanvasRenderer.TARGET_BODY_CENTER_FRACTION,
