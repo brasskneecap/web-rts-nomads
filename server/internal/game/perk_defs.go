@@ -53,6 +53,23 @@ import (
 //go:embed all:catalog/units
 var perkDefsFS embed.FS
 
+// PerkEffect describes the generalized visual effect a perk triggers on proc.
+// It is embedded inside PerkDef.Effect and drives queueEffectLocked via
+// applyPerkEffectLocked in perks_attack.go.
+//
+//   - Name            — wire name matched by the client renderer (e.g. "whirlwind")
+//   - Target          — "self" (anchor to attacker) or "enemies" (anchor to primary target)
+//   - SizeScale       — visual scale multiplier; <= 0 defaults to 1.0
+//   - DurationSeconds — on-screen lifetime; <= 0 defaults to 1.0
+//   - Variant         — optional sub-variant for client art selection
+type PerkEffect struct {
+	Name            string  `json:"name"`
+	Target          string  `json:"target"`          // "self" or "enemies"
+	SizeScale       float64 `json:"sizeScale,omitempty"`
+	DurationSeconds float64 `json:"durationSeconds,omitempty"`
+	Variant         string  `json:"variant,omitempty"`
+}
+
 // PerkDef is the static definition of a perk loaded from the catalog.
 //
 // Fields:
@@ -69,6 +86,7 @@ var perkDefsFS embed.FS
 //                    explosive_trap). Set in the JSON as "requiresPerk".
 //   - Config       — perk-specific tuning values. Keys and their meanings are
 //                    documented in the JSON file alongside each perk entry.
+//   - Effect       — optional visual effect to queue on perk proc (see PerkEffect).
 type PerkDef struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
@@ -104,6 +122,10 @@ type PerkDef struct {
 	// matching keys in Config — everything else falls through to the base.
 	// Callers must go through ConfigForRank to get a merged view.
 	ConfigByRank map[string]map[string]float64 `json:"configByRank,omitempty"`
+	// Effect is the optional visual effect triggered on perk proc. Nil when
+	// the perk has no generalized visual effect (most perks). Populated from
+	// the "effect" key in the catalog JSON.
+	Effect *PerkEffect `json:"effect,omitempty"`
 }
 
 // ConfigForRank returns the effective config map for a perk at a given rank.
@@ -152,6 +174,7 @@ type perkEntryJSON struct {
 	Icon                  string                     `json:"icon,omitempty"`
 	RequiresPerk          string                     `json:"requiresPerk,omitempty"`
 	Config                map[string]json.RawMessage `json:"config"`
+	Effect                *PerkEffect                `json:"effect,omitempty"`
 }
 
 // perkRankOverrideKeys enumerates the JSON keys inside `config` that are
@@ -255,6 +278,7 @@ func init() {
 				RequiresPerk:          entry.RequiresPerk,
 				Config:                base,
 				ConfigByRank:          overrides,
+				Effect:                entry.Effect,
 			}
 			perkDefsByID[def.ID] = def
 		}

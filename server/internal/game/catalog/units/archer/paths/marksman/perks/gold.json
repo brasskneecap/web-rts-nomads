@@ -19,6 +19,12 @@
     "config": {
       "explosionRadius": 70,
       "damageMultiplier": 0.5
+    },
+    "effect": {
+      "name": "explosion",
+      "target": "enemies",
+      "durationSeconds": 0.5,
+      "sizeScale": 1.0
     }
   },
   {

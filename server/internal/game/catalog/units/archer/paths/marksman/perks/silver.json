@@ -20,7 +20,7 @@
     "config": {
       "secondaryDamageMultiplier": 1.5,
       "maxSecondaryTargets": 20,
-      "corridorWidth": 28
+      "corridorWidth": 36
     }
   },
   {

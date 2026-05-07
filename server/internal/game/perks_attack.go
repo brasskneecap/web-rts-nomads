@@ -159,14 +159,14 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, prima
 		case "whirlwind_core":
 			// Each normal attack rolls against procChance. On proc, fire a bonus
 			// AoE hit (full damage to every visible enemy within radius) and
-			// arm the animation timer so the client can overlay the spin
-			// animation. The regular attack flow is NOT interrupted — this is
-			// strictly additive; the primary target already took its hit
-			// before this hook ran, and the unit's attack cooldown continues
-			// on its normal cadence.
+			// queue the effect so the client overlays the spin animation.
+			// The regular attack flow is NOT interrupted — this is strictly
+			// additive; the primary target already took its hit before this
+			// hook ran, and the unit's attack cooldown continues on its normal
+			// cadence.
 			if s.rngPerks.Float64() < def.Config["procChance"] {
 				s.applyWhirlwindHitLocked(attacker, primaryTarget, def.Config["radius"], deadUnitIDs)
-				attacker.PerkState.WhirlwindAnimRemaining = def.Config["animationSeconds"]
+				s.applyPerkEffectLocked(def.Effect, attacker, primaryTarget)
 			}
 
 		case "challengers_mark":
@@ -237,6 +237,29 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 			*deadUnitIDs = append(*deadUnitIDs, candidate.ID)
 		}
 	}
+}
+
+// applyPerkEffectLocked queues a visual effect driven by a perk definition.
+// Anchors to the attacker for target="self" (or ""), to primaryTarget for
+// target="enemies". No-op when effect is nil, has no name, or the resolved
+// anchor is missing. Must be called under s.mu write lock.
+func (s *GameState) applyPerkEffectLocked(effect *PerkEffect, attacker, primaryTarget *Unit) {
+	if effect == nil || effect.Name == "" {
+		return
+	}
+	var anchor *Unit
+	switch effect.Target {
+	case "self", "":
+		anchor = attacker
+	case "enemies":
+		anchor = primaryTarget
+	default:
+		return
+	}
+	if anchor == nil {
+		return
+	}
+	s.queueEffectLocked(effect.Name, anchor.ID, anchor.X, anchor.Y, effect.SizeScale, effect.DurationSeconds, effect.Variant)
 }
 
 // applyCleaveHitLocked finds the nearest enemy within splashRadius of

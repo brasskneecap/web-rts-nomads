@@ -1449,15 +1449,17 @@ func trapVisualScaleMultiplier(trap *Trap) float64 {
 }
 
 // tickTrapPlacementLocked is the per-tick auto-placement driver for Trapper
-// perks. It decays TrapPlaceCooldownRemaining and plants a new trap whenever
-// the cooldown reaches 0 on a living unit.
+// perks. It decays TrapPlaceCooldownRemaining; once the cooldown is exhausted
+// the trap is "armed" and will drop the moment a hostile enters the trapper's
+// AttackRange. Placement at the trapper's feet only matters if an enemy is
+// actually approaching that position, so passive idle placement (every N
+// seconds regardless of the situation) was scrapped in favour of this gate.
 //
-// Placement policy: traps drop as often as their cooldown allows. If the
-// Trapper is actively attacking, placement still runs — the trap is
-// prioritized over "just another shot", which keeps zone control flowing
-// even during sustained engagements. Friendly units are never hit by
-// traps (trap.go's damage paths all filter on OwnerID), so there's no
-// risk of self-inflicted damage mid-fight.
+// The cooldown still ticks down while no hostile is in range, so the trap is
+// ready to drop the instant a fight starts — there is no additional delay
+// when an enemy finally walks in. Friendly units are never hit by traps
+// (trap.go damage paths filter on OwnerID), so there's no risk of self-harm
+// mid-fight.
 //
 // Called from tickUnitPerkStateLocked for each trap perk case.
 // Must be called under s.mu write lock.
@@ -1481,9 +1483,40 @@ func (s *GameState) tickTrapPlacementLocked(unit *Unit, def *PerkDef, dt float64
 		return
 	}
 
+	// Trap is armed but hold until a hostile is actually close enough that
+	// dropping at the trapper's feet will matter.
+	if !s.trapperHasHostileInRangeLocked(unit) {
+		return
+	}
+
 	// Plant the trap and reset the cooldown.
 	s.plantTrapLocked(unit, def)
 	mods := s.trapModifiersForUnitLocked(unit)
 	cfg := def.ConfigForRank(unit.Rank)
 	unit.PerkState.TrapPlaceCooldownRemaining = cfg["placeIntervalSeconds"] * mods.CooldownMultiplier
+}
+
+// trapperHasHostileInRangeLocked is the "is a fight brewing" check that gates
+// trap drops. Returns true when at least one alive, visible, hostile unit is
+// within the trapper's AttackRange. Uses AttackRange rather than a per-trap
+// radius so the gate is consistent across all four bronze trap perks and
+// doesn't need per-perk tuning — a trapper drops a trap when they would
+// otherwise start firing arrows.
+func (s *GameState) trapperHasHostileInRangeLocked(trapper *Unit) bool {
+	if trapper == nil || trapper.AttackRange <= 0 {
+		return false
+	}
+	rangeSq := trapper.AttackRange * trapper.AttackRange
+	for _, other := range s.Units {
+		if other == nil || other == trapper || other.HP <= 0 || !other.Visible {
+			continue
+		}
+		if !playersAreHostile(other.OwnerID, trapper.OwnerID) {
+			continue
+		}
+		if distanceSquared(trapper.X, trapper.Y, other.X, other.Y) <= rangeSq {
+			return true
+		}
+	}
+	return false
 }

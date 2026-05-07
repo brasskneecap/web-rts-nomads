@@ -1,6 +1,6 @@
 import type { UnitDirection } from './unitSprites'
 
-export type UnitAnimationName = 'idle' | 'walking' | 'attacking' | 'chopping' | 'repairing' | 'carrying_gold' | 'whirlwind'
+export type UnitAnimationName = 'idle' | 'walking' | 'attacking' | 'chopping' | 'repairing' | 'carrying_gold'
 
 export interface UnitAnimationSample {
   direction: UnitDirection
@@ -44,7 +44,6 @@ export class UnitAnimationController {
     renderTime: number,
     carriedResource: string | undefined,
     unitType: string | undefined,
-    whirlwindActive: boolean,
   ): UnitAnimationSample {
     let state = this.states.get(unitId)
     if (!state) {
@@ -84,7 +83,6 @@ export class UnitAnimationController {
       serverMoving === true || interpolatedMoving,
       carriedResource,
       unitType,
-      whirlwindActive,
     )
 
     if (animation !== state.animation) {
@@ -178,15 +176,7 @@ function pickAnimation(
   moving: boolean,
   carriedResource: string | undefined,
   unitType: string | undefined,
-  whirlwindActive: boolean,
 ): UnitAnimationName {
-  // Whirlwind is a bonus-attack VFX overlay: while the server's
-  // whirlwind_core buff is live (WhirlwindAnimRemaining > 0), the spin
-  // animation replaces whatever the unit would otherwise play. Regular
-  // attacks keep firing underneath on their normal cooldown — this only
-  // swaps the visual, not any game logic.
-  if (whirlwindActive) return 'whirlwind'
-
   if (status === 'Attacking') {
     // Workers have no dedicated attack sprite — reuse the chopping animation
     // so their melee swing reads correctly (same axe arc they use on trees).

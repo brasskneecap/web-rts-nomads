@@ -2307,16 +2307,16 @@ func TestRallyingBanner_RecipientGetsIcon(t *testing.T) {
 // whirlwind_core — RNG-proc bonus AoE on attack
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestWhirlwindCore_ProcAppliesAoEAndArmsAnimTimer exercises the proc path:
+// TestWhirlwindCore_ProcAppliesAoEAndQueuesEffect exercises the proc path:
 // onPerkAttackFiredLocked rolls procChance each call, and on a proc it both
 // applies applyWhirlwindHitLocked (full damage to every hostile in radius,
-// excluding the primary target) and arms PerkState.WhirlwindAnimRemaining to
-// animationSeconds so the client can overlay the spin animation.
+// excluding the primary target) and queues a "whirlwind" EffectSnapshot so
+// the client can overlay the spin animation.
 //
 // 50 attacks at the default 20% proc rate (seeded rngPerks) give effectively
 // 1 - 0.8^50 ≈ 100% chance of at least one proc, making the test deterministic
 // for any reasonable seed.
-func TestWhirlwindCore_ProcAppliesAoEAndArmsAnimTimer(t *testing.T) {
+func TestWhirlwindCore_ProcAppliesAoEAndQueuesEffect(t *testing.T) {
 	s, vanguard := newGoldPerkState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2339,9 +2339,9 @@ func TestWhirlwindCore_ProcAppliesAoEAndArmsAnimTimer(t *testing.T) {
 	procCount := 0
 	var dead []int
 	for i := 0; i < 50; i++ {
-		before := vanguard.PerkState.WhirlwindAnimRemaining
+		before := len(s.activeEffects)
 		s.onPerkAttackFiredLocked(vanguard, farPrimary, 10, &dead)
-		if vanguard.PerkState.WhirlwindAnimRemaining > before {
+		if len(s.activeEffects) > before {
 			procCount++
 		}
 	}
@@ -2356,43 +2356,75 @@ func TestWhirlwindCore_ProcAppliesAoEAndArmsAnimTimer(t *testing.T) {
 	if nearB.HP >= hpB {
 		t.Errorf("nearB HP did not drop after proc: %d → %d", hpB, nearB.HP)
 	}
-	// No decay ran (we never called Update), so the timer equals
-	// animationSeconds from the most recent proc.
-	if vanguard.PerkState.WhirlwindAnimRemaining != def.Config["animationSeconds"] {
-		t.Errorf("WhirlwindAnimRemaining after last proc: got %.3f, want %.3f",
-			vanguard.PerkState.WhirlwindAnimRemaining, def.Config["animationSeconds"])
+	// At least one "whirlwind" effect should be queued and anchored to the attacker.
+	found := false
+	for _, e := range s.activeEffects {
+		if e.Name == "whirlwind" && e.AnchorUnitID == vanguard.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected a queued 'whirlwind' effect anchored to vanguard (id=%d) after proc; activeEffects=%+v",
+			vanguard.ID, s.activeEffects)
 	}
 }
 
-// TestWhirlwindCore_AnimTimerDecaysWithTicks verifies the per-tick decay in
-// perks.go advances WhirlwindAnimRemaining down to zero. Uses the public
-// tickUnitPerksLocked path by calling Update with a known dt.
-func TestWhirlwindCore_AnimTimerDecaysWithTicks(t *testing.T) {
+// TestWhirlwindCore_EffectExpiresAfterDuration verifies that a queued whirlwind
+// effect drops out of activeEffects after its DurationTicks have elapsed.
+// durationSeconds=1.0 at 20 Hz = 20 ticks. After 20 IncrementTick+tickEffectsLocked
+// calls the entry must be gone; after 19 it must still be present.
+func TestWhirlwindCore_EffectExpiresAfterDuration(t *testing.T) {
 	s, vanguard := newGoldPerkState(t)
 
 	s.mu.Lock()
 	grantPerk(vanguard, "whirlwind_core")
-	vanguard.PerkState.WhirlwindAnimRemaining = 1.0
+	// Queue one effect directly so we don't depend on RNG.
+	s.queueEffectLocked("whirlwind", vanguard.ID, vanguard.X, vanguard.Y, 1.0, 1.0, "")
+	if len(s.activeEffects) != 1 {
+		s.mu.Unlock()
+		t.Fatal("effect not queued")
+	}
+	startTick := s.activeEffects[0].StartTick
+	wantDuration := s.activeEffects[0].DurationTicks // should be 20
 	s.mu.Unlock()
 
-	// 30 ticks at dt=0.05 = 1.5s, well past animationSeconds=1.0.
-	for i := 0; i < 30; i++ {
-		s.Update(0.05)
+	if wantDuration != 20 {
+		t.Errorf("DurationTicks: got %d, want 20 (1.0s × 20Hz)", wantDuration)
 	}
 
+	// Advance 19 ticks — effect must still be present.
+	for i := 0; i < 19; i++ {
+		s.IncrementTick()
+		s.mu.Lock()
+		s.tickEffectsLocked()
+		s.mu.Unlock()
+	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if vanguard.PerkState.WhirlwindAnimRemaining != 0 {
-		t.Errorf("WhirlwindAnimRemaining should decay to 0 after 1.5s of ticks; got %.3f",
-			vanguard.PerkState.WhirlwindAnimRemaining)
+	remaining := len(s.activeEffects)
+	s.mu.RUnlock()
+	if remaining != 1 {
+		t.Errorf("after 19 ticks effect should still be present; activeEffects len=%d (startTick=%d)", remaining, startTick)
+	}
+
+	// Advance 1 more tick — effect must now be expired and culled.
+	s.IncrementTick()
+	s.mu.Lock()
+	s.tickEffectsLocked()
+	s.mu.Unlock()
+
+	s.mu.RLock()
+	remaining = len(s.activeEffects)
+	s.mu.RUnlock()
+	if remaining != 0 {
+		t.Errorf("after 20 ticks effect should be expired; activeEffects len=%d", remaining)
 	}
 }
 
-// TestWhirlwindCore_NoProcDoesNotArmTimer is a sanity check that when no proc
-// fires (procChance=0 via direct state manipulation of the rngPerks path is
-// awkward, so we instead call the AoE applier directly and verify it does
-// NOT arm the animation timer on its own — only onPerkAttackFiredLocked does).
-func TestWhirlwindCore_NoProcDoesNotArmTimer(t *testing.T) {
+// TestWhirlwindCore_ApplierAloneDoesNotQueueEffect is a sanity check that
+// applyWhirlwindHitLocked (the AoE damage applier) does NOT queue a visual
+// effect on its own — only the proc gate in onPerkAttackFiredLocked does.
+func TestWhirlwindCore_ApplierAloneDoesNotQueueEffect(t *testing.T) {
 	s, vanguard := newGoldPerkState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2402,15 +2434,14 @@ func TestWhirlwindCore_NoProcDoesNotArmTimer(t *testing.T) {
 	enemy := spawnEnemy(t, s, vanguard.X+def.Config["radius"]*0.5, vanguard.Y)
 	hpBefore := enemy.HP
 
-	// Call the applier without going through the proc gate.
+	// Call the applier directly, bypassing the proc gate.
 	var dead []int
 	s.applyWhirlwindHitLocked(vanguard, nil, def.Config["radius"], &dead)
 
 	if enemy.HP >= hpBefore {
 		t.Errorf("applyWhirlwindHitLocked did not damage enemy inside radius")
 	}
-	if vanguard.PerkState.WhirlwindAnimRemaining != 0 {
-		t.Errorf("animation timer should only be armed by onPerkAttackFiredLocked, not the applier; got %.3f",
-			vanguard.PerkState.WhirlwindAnimRemaining)
+	if len(s.activeEffects) != 0 {
+		t.Errorf("applyWhirlwindHitLocked must not queue an effect; got %d effect(s)", len(s.activeEffects))
 	}
 }

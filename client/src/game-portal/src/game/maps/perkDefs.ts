@@ -79,12 +79,20 @@ type AuraRadiusSource = {
   /** Config key on the perk def that holds the radius (in world pixels). */
   key: string
   /**
-   * When true, the ring only renders while the perk id is present in the
-   * unit's `activeBuffs`. Use for triggered effects (e.g. Last Stand's taunt
-   * pulse) so the visualization appears only during the window it's real.
-   * Absent / false = always render while the unit owns the perk.
+   * When true, the ring only renders while the perk is "live" — present in
+   * the unit's `activeBuffs`, OR (if `activeEffectName` is set) present in
+   * the unit's anchored effects. Use for triggered effects so the
+   * visualization appears only during the window it's real. Absent / false =
+   * always render while the unit owns the perk.
    */
   onlyWhenActive?: boolean
+  /**
+   * When set, the perk is also considered "live" while an EffectSnapshot
+   * with this name is anchored to the unit. Required for perks like
+   * whirlwind_core that drive their visualization through the effect system
+   * rather than the buff/icon system.
+   */
+  activeEffectName?: string
 }
 
 const AURA_RADIUS_SOURCES: Record<string, AuraRadiusSource> = {
@@ -94,9 +102,10 @@ const AURA_RADIUS_SOURCES: Record<string, AuraRadiusSource> = {
   interlock: { key: 'radius' },
   brace: { key: 'radius' },
   // Berserker — whirlwind is now an RNG proc per attack. Ring flashes only
-  // while the spin animation is live (activeBuffs contains whirlwind_core),
-  // mirroring the proc moment rather than implying an always-on aura.
-  whirlwind_core: { key: 'radius', onlyWhenActive: true },
+  // while the spin effect is anchored to the unit (an EffectSnapshot with
+  // name "whirlwind"), mirroring the proc moment rather than implying an
+  // always-on aura.
+  whirlwind_core: { key: 'radius', onlyWhenActive: true, activeEffectName: 'whirlwind' },
   // Vanguard — triggers once when HP drops below threshold, runs for
   // tauntDurationSeconds. Gated on activeBuffs so the ring only appears
   // while the taunt is actually live.
@@ -110,10 +119,17 @@ const AURA_RADIUS_SOURCES: Record<string, AuraRadiusSource> = {
 export function getPerkAuraRadius(
   perkId: string,
   activeBuffIds?: Set<string>,
+  activeEffectNames?: Set<string>,
 ): number | null {
   const source = AURA_RADIUS_SOURCES[perkId]
   if (!source) return null
-  if (source.onlyWhenActive && !activeBuffIds?.has(perkId)) return null
+  if (source.onlyWhenActive) {
+    const buffActive = activeBuffIds?.has(perkId) ?? false
+    const effectActive = source.activeEffectName
+      ? (activeEffectNames?.has(source.activeEffectName) ?? false)
+      : false
+    if (!buffActive && !effectActive) return null
+  }
   const value = PERK_DEF_MAP.get(perkId)?.config?.[source.key]
   return typeof value === 'number' && value > 0 ? value : null
 }

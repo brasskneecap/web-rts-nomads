@@ -659,24 +659,26 @@ type CritEventSnapshot struct {
 	Damage int `json:"damage"`
 }
 
-// ExplosionSnapshot is a transient AoE visual effect (Marksman explosive_tips,
-// future explosion-based perks). Lives on the wire for ~durationSeconds and
-// then disappears — the client renders an expanding orange-red circle that
-// fades over its lifetime.
-type ExplosionSnapshot struct {
-	ID               string  `json:"id"`
-	OwnerUnitID      int     `json:"ownerUnitId,omitempty"`
-	OwnerID          string  `json:"ownerId,omitempty"`
-	X                float64 `json:"x"`
-	Y                float64 `json:"y"`
-	Radius           float64 `json:"radius"`
-	// Variant lets future perks use different explosion art (e.g. "fire",
-	// "frost"). Defaults to "explosive_tips" — the client can fall through to
-	// a generic orange-red render when an unknown variant arrives.
-	Variant string `json:"variant,omitempty"`
-	// Progress is the fraction of the visual elapsed (0 = just spawned, 1 =
-	// fading out). The client uses it to drive the expand + fade animation.
-	Progress float64 `json:"progress"`
+// EffectSnapshot is a generalized transient visual effect anchored to a unit
+// or a world position. It is emitted by the server (typically via perk hooks)
+// and drained per-tick to the client alongside ProjectileSnapshot and
+// ExplosionSnapshot. The client identifies the renderer by Name.
+//
+// AnchorUnitID: when non-zero the client should track the unit's current
+// position; X/Y hold the last known position as a fallback for when the unit
+// is not in the client's current view or has died mid-effect.
+//
+// Progress: 0 = just spawned, 1 = fully elapsed. The client drives its
+// animation timeline from this value.
+type EffectSnapshot struct {
+	ID           int     `json:"id"`
+	Name         string  `json:"name"`
+	AnchorUnitID int     `json:"anchorUnitId,omitempty"`
+	X            float64 `json:"x"`
+	Y            float64 `json:"y"`
+	Progress     float64 `json:"progress"`
+	SizeScale    float64 `json:"sizeScale,omitempty"`
+	Variant      string  `json:"variant,omitempty"`
 }
 
 type MatchSnapshotMessage struct {
@@ -692,7 +694,7 @@ type MatchSnapshotMessage struct {
 	Banners       []BannerSnapshot        `json:"banners,omitempty"`
 	Traps         []TrapSnapshot          `json:"traps,omitempty"`
 	Projectiles   []ProjectileSnapshot    `json:"projectiles,omitempty"`
-	Explosions    []ExplosionSnapshot     `json:"explosions,omitempty"`
+	Effects       []EffectSnapshot        `json:"effects,omitempty"`
 	CritEvents    []CritEventSnapshot     `json:"critEvents,omitempty"`
 	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
 	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`

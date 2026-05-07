@@ -18,8 +18,12 @@
     "tooltipTemplate": "{procChance%} chance on attack to spin, dealing full damage to all enemies within {radius} units.",
     "config": {
       "procChance": 0.2,
-      "radius": 70,
-      "animationSeconds": 1
+      "radius": 70
+    },
+    "effect": {
+      "name": "whirlwind",
+      "target": "self",
+      "durationSeconds": 1.0
     }
   },
   {

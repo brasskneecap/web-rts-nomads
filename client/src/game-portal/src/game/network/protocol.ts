@@ -678,23 +678,27 @@ export type CritEventSnapshot = {
 }
 
 /**
- * ExplosionSnapshot is a transient AoE VFX (Marksman explosive_tips, future
- * explosion-based perks). The client renders an expanding orange-red ring
- * that fades over its lifetime; `progress` (0 = just spawned, 1 = ending)
- * drives the animation so renders stay in sync with the server's lifetime.
+ * EffectSnapshot is a transient sprite-sheet VFX anchored to a unit or world
+ * position. The server owns the lifecycle; the client renders sprite frames
+ * driven by `progress` (0 = first frame, 1 = last frame). `anchorUnitId`
+ * (when present and non-zero) tells the renderer to track the unit's
+ * interpolated position rather than the static `x`/`y` fallback.
  */
-export type ExplosionSnapshot = {
-  id: string
-  ownerUnitId?: number
-  ownerId?: string
+export type EffectSnapshot = {
+  id: number
+  /** Effect name matches the directory under assets/effects/ (e.g. "whirlwind"). */
+  name: string
+  /** Unit the effect rides on. 0 or absent means world-anchored; use `x`/`y`. */
+  anchorUnitId?: number
+  /** World position resolved server-side each tick. Used as fallback when the
+   *  anchor unit is missing from the current interpolated frame. */
   x: number
   y: number
-  radius: number
-  /** Variant — currently "explosive_tips". Future perks set their own
-   *  string; the renderer falls back to a generic orange-red glow when
-   *  the variant is unknown. */
-  variant?: string
+  /** Lifetime fraction: 0 = just spawned, 1 = ending. */
   progress: number
+  /** Draw-time scale applied to the sprite's native frame dimensions. Default 1.0. */
+  sizeScale?: number
+  variant?: string
 }
 
 export type MatchSnapshotMessage = {
@@ -710,7 +714,7 @@ export type MatchSnapshotMessage = {
   banners?: BannerSnapshot[]
   traps?: TrapSnapshot[]
   projectiles?: ProjectileSnapshot[]
-  explosions?: ExplosionSnapshot[]
+  effects?: EffectSnapshot[]
   critEvents?: CritEventSnapshot[]
   // Present only when the active map has debug.battleTracker=true. Absent
   // otherwise — the client treats absence as "debug tracker disabled".

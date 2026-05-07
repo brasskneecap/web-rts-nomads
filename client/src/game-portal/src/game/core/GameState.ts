@@ -3,6 +3,7 @@ import type {
   BannerSnapshot,
   BattleTrackerSnapshot,
   BuildingTile,
+  EffectSnapshot,
   GameOverSnapshot,
   InventorySnapshot,
   ItemSnapshot,
@@ -16,7 +17,6 @@ import type {
   PerkCooldownSnapshot,
   PlayerSnapshot,
   ProjectileSnapshot,
-  ExplosionSnapshot,
   ResourceType,
   TrapSnapshot,
   UnitCapability,
@@ -403,7 +403,7 @@ export class GameState {
   banners: BannerSnapshot[] = []
   traps: TrapSnapshot[] = []
   projectiles: ProjectileSnapshot[] = []
-  explosions: ExplosionSnapshot[] = []
+  effects: EffectSnapshot[] = []
   // Battle tracker snapshot (debug). Null when the active map does not have
   // debug.battleTracker enabled. Consumed by BattleTrackerPanel.vue.
   battleTracker: BattleTrackerSnapshot | null = null
@@ -828,7 +828,7 @@ export class GameState {
     this.banners = message.banners ?? []
     this.traps = message.traps ?? []
     this.projectiles = message.projectiles ?? []
-    this.explosions = message.explosions ?? []
+    this.effects = message.effects ?? []
     if (this.selectedTrapId && !this.traps.some((t) => t.id === this.selectedTrapId)) {
       this.selectedTrapId = null
     }

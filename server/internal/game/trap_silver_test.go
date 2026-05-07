@@ -185,7 +185,14 @@ func TestTrapModifiers_RapidDeployment_PlaceIntervalCaltrops(t *testing.T) {
 	}
 	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, 4.2) // 6 * 0.7
 
-	// Also verify TrapPlaceCooldownRemaining after a plant cycle.
+	// Spawn a hostile inside the trapper's AttackRange so the placement gate
+	// fires (idle trappers no longer drop traps without an enemy nearby).
+	hostile := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: u.X + u.AttackRange*0.5, Y: u.Y})
+	if hostile == nil {
+		t.Fatal("hostile spawn failed")
+	}
+
+	// Verify TrapPlaceCooldownRemaining after a plant cycle.
 	// tickTrapPlacementLocked only decays when the cooldown is > 0 at entry.
 	// Starting at 0, the decay block is skipped, the trap plants, and the
 	// cooldown is reset to the full scaled interval (4.2). No partial decay
@@ -336,6 +343,13 @@ func TestTrapModifiers_PlantEndToEnd_SnapshotScaled(t *testing.T) {
 	// Arm for immediate placement.
 	u.PerkState.LastCombatSeconds = 1.5
 	u.PerkState.TrapPlaceCooldownRemaining = 0
+
+	// Spawn a hostile inside the trapper's AttackRange so the placement gate
+	// fires (idle trappers no longer drop traps without an enemy nearby).
+	hostile := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: u.X + u.AttackRange*0.5, Y: u.Y})
+	if hostile == nil {
+		t.Fatal("hostile spawn failed")
+	}
 
 	def := perkDefByID("caltrops")
 	if def == nil {

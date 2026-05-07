@@ -34,7 +34,7 @@ import {
 } from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
-import type { BannerSnapshot, BuildingTile, ExplosionSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
+import type { BannerSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
 import { ENEMY_PLAYER_ID } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
@@ -49,6 +49,7 @@ import {
   UNIT_SPRITE_BOTTOM_PADDING,
 } from './unitSprites'
 import { getObjectSpriteSet } from './objectSprites'
+import { getEffectSprite } from './effectSprites'
 import { getResourceIconImage } from './resourceSprites'
 import { UnitAnimationController } from './unitAnimation'
 
@@ -290,11 +291,11 @@ export class CanvasRenderer {
     this.drawTraps(this.state.traps)
     this.drawBanners(this.state.banners)
     this.drawUnits(sortedUnits)
+    // Effects sit on top of the caster body but underneath projectiles so
+    // arrows and bolts always read clearly over the VFX layer.
+    this.drawEffects(this.state.effects, units)
     // Drawn after units so arrows render on top of the firing unit's body.
     this.drawProjectiles(this.state.projectiles)
-    // Explosions render on top of everything in the world layer so the boom
-    // is always visible — short-lived VFX (~0.35s lifetime).
-    this.drawExplosions(this.state.explosions)
     this.drawBuildPlacementGhost()
     this.drawSelectionBox()
     this.drawFloatingDamageNumbers(renderTime)
@@ -1620,8 +1621,17 @@ export class CanvasRenderer {
         const activeBuffIds = unit.activeBuffs && unit.activeBuffs.length > 0
           ? new Set(unit.activeBuffs.map((b) => b.id))
           : undefined
+        // Effects anchored to this unit gate effect-driven aura rings (e.g.
+        // whirlwind_core's flash ring follows the EffectSnapshot, not buffs).
+        const activeEffectNames = this.state.effects.length > 0
+          ? new Set(
+              this.state.effects
+                .filter((e) => e.anchorUnitId === unit.id)
+                .map((e) => e.name),
+            )
+          : undefined
         for (const perkId of unit.perkIds) {
-          const radius = getPerkAuraRadius(perkId, activeBuffIds)
+          const radius = getPerkAuraRadius(perkId, activeBuffIds, activeEffectNames)
           if (radius == null) continue
           this.drawAuraRing(selectionCenterX, selectionCenterY, radius, unit.color || '#fef08a')
         }
@@ -1747,7 +1757,6 @@ export class CanvasRenderer {
         if (attackingAnim && effectiveAttackSpeed && effectiveAttackSpeed > 0) {
           attackFrameDurationMs = 1000 / effectiveAttackSpeed / attackingAnim.frameCount
         }
-        const whirlwindActive = !!unit.activeBuffs?.some((b) => b.id === 'whirlwind_core')
         const anim = this.unitAnim.sample(
           unit.id,
           unit.x,
@@ -1759,7 +1768,6 @@ export class CanvasRenderer {
           this.renderTime,
           unit.carriedResourceType,
           unit.unitType,
-          whirlwindActive,
         )
         const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
         if (frame) {
@@ -1827,53 +1835,55 @@ export class CanvasRenderer {
    * with a sprite-sheet animation later. Variant-keyed so future perks
    * (frost, holy, etc.) can override colours without changing this loop.
    */
-  private drawExplosions(explosions: ExplosionSnapshot[]) {
-    if (explosions.length === 0) return
+  private drawEffects(effects: EffectSnapshot[], interpolatedUnits: Unit[]) {
+    if (effects.length === 0) return
+
+    // Build a per-frame id→unit index so anchor lookups are O(1).
+    const unitsById = new Map<number, Unit>()
+    for (const u of interpolatedUnits) unitsById.set(u.id, u)
+
     const ctx = this.ctx
-    for (const expl of explosions) {
-      const t = Math.max(0, Math.min(1, expl.progress))
-      // Ease-out expansion so the boom feels punchy at the start and
-      // settles toward its full radius. Visual cap is the configured radius;
-      // we expand slightly beyond it (1.05×) so the ring outline doesn't
-      // sit exactly on the damage radius edge — matches FX expectation.
-      const radius = expl.radius * 1.05 * (1 - Math.pow(1 - t, 2))
-      const alphaCore = (1 - t) * 0.9
-      const alphaGlow = (1 - t) * 0.4
+    // Track names that had an unloaded/missing image this frame so we only
+    // warn once per missing effect name across all frames, not per-effect.
+    for (const effect of effects) {
+      const sprite = getEffectSprite(effect.name)
+      if (!sprite) continue // warn-once already handled inside getEffectSprite
 
-      // Soft outer glow — large radial gradient, low alpha, fades fast.
-      const glowGradient = ctx.createRadialGradient(expl.x, expl.y, 0, expl.x, expl.y, expl.radius * 1.4)
-      glowGradient.addColorStop(0, `rgba(255, 138, 60, ${alphaGlow})`)
-      glowGradient.addColorStop(0.5, `rgba(220, 70, 30, ${alphaGlow * 0.6})`)
-      glowGradient.addColorStop(1, 'rgba(180, 40, 10, 0)')
-      ctx.save()
-      ctx.fillStyle = glowGradient
-      ctx.beginPath()
-      ctx.arc(expl.x, expl.y, expl.radius * 1.4, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
+      const { image, frameWidth, frameHeight, frames } = sprite
+      if (!image || !image.complete || image.naturalWidth === 0) continue
 
-      // Bright inner disc — orange center, fading red rim.
-      const coreGradient = ctx.createRadialGradient(expl.x, expl.y, 0, expl.x, expl.y, radius)
-      coreGradient.addColorStop(0, `rgba(255, 220, 130, ${alphaCore})`)
-      coreGradient.addColorStop(0.4, `rgba(255, 140, 60, ${alphaCore})`)
-      coreGradient.addColorStop(0.85, `rgba(220, 60, 30, ${alphaCore * 0.6})`)
-      coreGradient.addColorStop(1, 'rgba(180, 30, 10, 0)')
-      ctx.save()
-      ctx.fillStyle = coreGradient
-      ctx.beginPath()
-      ctx.arc(expl.x, expl.y, radius, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
+      // Prefer the anchor unit's interpolated position so the VFX rides the
+      // unit smoothly. Fall back to the server-resolved x/y when the unit is
+      // absent from this interpolated frame (e.g. it died mid-effect).
+      let wx: number
+      let wy: number
+      if (effect.anchorUnitId) {
+        const anchor = unitsById.get(effect.anchorUnitId)
+        wx = anchor?.x ?? effect.x
+        wy = anchor?.y ?? effect.y
+      } else {
+        wx = effect.x
+        wy = effect.y
+      }
 
-      // Outer ring outline — thin, expanding faster than the fill so it
-      // reads as a shockwave.
-      ctx.save()
-      ctx.lineWidth = Math.max(1.5, 2 / this.camera.zoom)
-      ctx.strokeStyle = `rgba(255, 200, 90, ${(1 - t) * 0.85})`
-      ctx.beginPath()
-      ctx.arc(expl.x, expl.y, radius, 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.restore()
+      // Effects play once from frame 0 to frames-1 as progress goes 0→1.
+      const frameIndex = Math.min(frames - 1, Math.floor(effect.progress * frames))
+      const sx = frameIndex * frameWidth
+      const sy = 0
+
+      const scale = effect.sizeScale ?? 1.0
+      const dw = frameWidth * scale
+      const dh = frameHeight * scale
+      // Center the frame on the anchor world position, then nudge by the
+      // sprite-authored offset (scaled by sizeScale so the visual relationship
+      // holds when a perk over/undersizes the effect).
+      const dx = wx - dw / 2 + sprite.offsetX * scale
+      const dy = wy - dh / 2 + sprite.offsetY * scale
+
+      const prevSmoothing = ctx.imageSmoothingEnabled
+      ctx.imageSmoothingEnabled = false
+      ctx.drawImage(image, sx, sy, frameWidth, frameHeight, dx, dy, dw, dh)
+      ctx.imageSmoothingEnabled = prevSmoothing
     }
   }
 

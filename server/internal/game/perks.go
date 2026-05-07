@@ -201,15 +201,6 @@ type UnitPerkState struct {
 	MomentumBonus     float64
 	MomentumRemaining float64
 
-	// ── whirlwind_core (gold berserker) ───────────────────────────────────────
-	// RNG-proc model: each normal attack rolls against procChance. On proc,
-	// a bonus AoE hit fires at that instant AND this timer is set to
-	// animationSeconds so the client can overlay the spin animation for the
-	// configured duration. The regular attack flow is not interrupted —
-	// attacks keep firing on their normal cooldown while the animation plays.
-	// Multiple procs during the window simply refresh the timer.
-	WhirlwindAnimRemaining float64
-
 	// frenzy_core   — no stored state; bonus derived from current HP% on demand.
 	// cleaving_rage — no stored state; triggers unconditionally on every attack.
 	// blood_sustain — no stored state; heals from damage dealt on demand.
@@ -712,13 +703,8 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			}
 
 		case "whirlwind_core":
-			// Decay the animation-overlay timer. The bonus AoE hit itself fires
-			// instantly in onPerkAttackFiredLocked on a procChance roll; this
-			// timer only controls how long the client plays the spin animation
-			// over the unit's normal attack animation.
-			if unit.PerkState.WhirlwindAnimRemaining > 0 {
-				unit.PerkState.WhirlwindAnimRemaining = math.Max(0, unit.PerkState.WhirlwindAnimRemaining-dt)
-			}
+			// Visual effect is now driven by EffectSnapshot / queueEffectLocked.
+			// No per-tick perk state to decay here.
 
 		case "last_stand":
 			// Detect HP threshold crossings to fire the combined armor-bonus +

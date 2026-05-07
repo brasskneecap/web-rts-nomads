@@ -404,12 +404,12 @@ type GameState struct {
 	Projectiles      []*Projectile
 	nextProjectileID int
 
-	// Explosions is the set of live AoE VFX (Marksman explosive_tips, future
-	// explosion-based perks). Purely visual — gameplay damage is applied by
-	// the perk that queued each entry. Ticked in tickExplosionsLocked, dropped
-	// when their lifetime hits 0. See explosion.go.
-	Explosions      []*Explosion
-	nextExplosionID int
+	// activeEffects is the set of generalized transient visual effects (e.g.
+	// "whirlwind" spin overlay). Purely visual — gameplay logic is handled by
+	// the perk that queued each entry. Ticked in tickEffectsLocked, dropped
+	// when elapsed ticks reach DurationTicks. See state_effects.go.
+	activeEffects []effectInstance
+	nextEffectID  int
 
 	// critEventsThisTick is the per-tick queue of (target, damage) entries
 	// for critical hits that landed this tick. Drained by Snapshot() and
@@ -524,7 +524,6 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		nextBannerID:        1,
 		nextTrapID:          1,
 		nextProjectileID:    1,
-		nextExplosionID:     1,
 		matchSeed:           seed,
 		rngPerks:            mrand.New(mrand.NewSource(seed ^ saltPerks)),
 		rngCosmetic:         mrand.New(mrand.NewSource(seed ^ saltCosmetic)),
@@ -876,7 +875,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Banners:     banners,
 		Traps:       traps,
 		Projectiles: projectiles,
-		Explosions:  s.snapshotExplosionsLocked(),
+		Effects:     s.effectSnapshotsLocked(),
 		CritEvents:  s.snapshotCritEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
@@ -924,7 +923,7 @@ func (s *GameState) Update(dt float64) {
 	// Projectiles tick after combat resolution so shots fired this tick wait
 	// a full dt before decaying on the next Update pass.
 	profileSection("projectiles", func() { s.tickProjectilesLocked(dt) })
-	profileSection("explosions", func() { s.tickExplosionsLocked(dt) })
+	profileSection("effects", func() { s.tickEffectsLocked() })
 	profileSection("enemySpawnpoints", func() { s.tickEnemySpawnpointsLocked(dt, blocked) })
 	profileSection("trapEffects", func() { s.tickTrapEffectsLocked(dt) })           // zone effects + trigger detection
 	profileSection("trapperSilverDebuffs", func() { s.tickTrapperSilverDebuffsLocked(dt) }) // barbed ramp, lasting_flames exit, burn DoT

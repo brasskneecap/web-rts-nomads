@@ -117,13 +117,10 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 				addIcon(perkID, 1)
 			}
 		case "whirlwind_core":
-			// Surface a buff icon while the spin animation is playing. This
-			// also doubles as the client-side signal that the overlay
-			// animation should play (see AURA_RADIUS_SOURCES.onlyWhenActive
-			// in perkDefs.ts).
-			if unit.PerkState.WhirlwindAnimRemaining > 0 {
-				addIcon(perkID, 1)
-			}
+			// The spin animation is now driven by EffectSnapshot ("whirlwind"
+			// name) rather than a WhirlwindAnimRemaining timer on PerkState.
+			// No buff icon is surfaced here — the client reads the EffectSnapshot
+			// directly to drive the overlay animation.
 		case "berserk_state":
 			// Conditional passive: show while below HP threshold so the
 			// player can see the buff kick in and fall off as HP changes.

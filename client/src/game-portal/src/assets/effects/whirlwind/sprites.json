@@ -1,0 +1,7 @@
+{
+  "frameWidth": 64,
+  "frameHeight": 64,
+  "offsetY": -20,
+  "frames": 4,
+  "sheet": "sheet.png"
+}

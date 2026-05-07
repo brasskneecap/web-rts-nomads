@@ -300,10 +300,10 @@ func TestTrapper_PlacementCooldownDecays(t *testing.T) {
 	}
 }
 
-// TestTrapper_TrapDropsAtUnitPosition_NoEnemiesInRange verifies that when
-// cooldown reaches 0 and no enemies are within attack range, a trap is placed
-// at the unit's position.
-func TestTrapper_TrapDropsAtUnitPosition_NoEnemiesInRange(t *testing.T) {
+// TestTrapper_TrapHeldUntilEnemyInRange verifies the placement gate: an
+// armed trap (cooldown elapsed) is held while no hostile is within
+// AttackRange, and drops the moment a hostile walks in.
+func TestTrapper_TrapHeldUntilEnemyInRange(t *testing.T) {
 	s := newTrapState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -320,22 +320,39 @@ func TestTrapper_TrapDropsAtUnitPosition_NoEnemiesInRange(t *testing.T) {
 		t.Fatal("caltrops perk def not found")
 	}
 
-	// Cooldown already at 0, no enemies nearby.
+	// Cooldown already at 0 and no hostile near — trap stays armed, not placed.
 	archer.PerkState.TrapPlaceCooldownRemaining = 0
-
 	s.tickTrapPlacementLocked(archer, def, 0.05)
+	if len(s.Traps) != 0 {
+		t.Fatalf("trap dropped without an enemy in range, got %d traps", len(s.Traps))
+	}
+	if archer.PerkState.TrapPlaceCooldownRemaining != 0 {
+		t.Errorf("cooldown advanced while holding the trap: got %.3f, want 0",
+			archer.PerkState.TrapPlaceCooldownRemaining)
+	}
 
+	// Spawn a hostile inside the trapper's AttackRange — the next tick should
+	// fire the placement and reset the cooldown.
+	hostileX := archer.X + archer.AttackRange*0.5
+	hostile := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: hostileX, Y: archer.Y})
+	if hostile == nil {
+		t.Fatal("hostile spawn failed")
+	}
+	s.tickTrapPlacementLocked(archer, def, 0.05)
 	if len(s.Traps) != 1 {
-		t.Fatalf("expected 1 trap after placement, got %d", len(s.Traps))
+		t.Fatalf("expected 1 trap after enemy entered range, got %d", len(s.Traps))
 	}
 	trap := s.Traps[0]
-	if math.Abs(trap.X-300) > 0.001 || math.Abs(trap.Y-250) > 0.001 {
-		t.Errorf("trap position: got (%.1f,%.1f), want (300,250)", trap.X, trap.Y)
+	// Position is tuned by trapPlacementOffsetLocked (throw-toward-enemy when
+	// one is in range). This test only asserts the gate fires; position math
+	// is covered by the placement-offset suite. Sanity-check Y matches the
+	// archer's row so the trap landed in the right zone.
+	if math.Abs(trap.Y-250) > 1e-3 {
+		t.Errorf("trap Y: got %.1f, want 250 (archer row)", trap.Y)
 	}
 	if trap.TrapType != "caltrops" {
 		t.Errorf("trap type: got %q, want caltrops", trap.TrapType)
 	}
-	// Cooldown should be reset.
 	wantCooldown := def.Config["placeIntervalSeconds"]
 	if math.Abs(archer.PerkState.TrapPlaceCooldownRemaining-wantCooldown) > 1e-9 {
 		t.Errorf("cooldown after placement: got %.3f, want %.3f",

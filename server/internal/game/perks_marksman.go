@@ -546,8 +546,10 @@ func (s *GameState) fireExplosiveTipsLocked(attacker, primaryTarget *Unit, def *
 
 	// Queue the visual VFX up front so the client renders the boom even when
 	// no enemy is in radius (the arrow still hit something — the splash is
-	// just empty). Visual is independent of damage.
-	s.queueExplosionLocked(attacker, primaryTarget.X, primaryTarget.Y, radius, "explosive_tips")
+	// just empty). Visual is independent of damage. Sprite-based via the
+	// generic perk-effect path; tuning lives on the perk's "effect" block in
+	// gold.json (size, duration, sprite name).
+	s.applyPerkEffectLocked(def.Effect, attacker, primaryTarget)
 
 	// Recursion guard armed only while explosion damage is being applied.
 	attacker.PerkState.ExplosiveTipsActive = true

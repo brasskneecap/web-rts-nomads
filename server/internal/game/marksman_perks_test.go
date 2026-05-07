@@ -708,14 +708,14 @@ func TestMarksman_PierceAndExplosiveTips_CombineExplosionsPerHit(t *testing.T) {
 
 	// Two extra enemies in the corridor: one near the primary, one further
 	// down the line. All three should be hit by pierce; each should spawn
-	// its own explosion VFX entry on s.Explosions.
+	// its own "explosion" effect anchored to that victim.
 	behind1 := s.spawnPlayerUnitLocked("archer", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 640, Y: 400})
 	behind2 := s.spawnPlayerUnitLocked("archer", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 680, Y: 400})
 	if behind1 == nil || behind2 == nil {
 		t.Fatal("behind archer spawn failed")
 	}
 
-	startExplosions := len(s.Explosions)
+	startEffects := len(s.activeEffects)
 	s.fireProjectileLocked(attacker, primary, 20)
 	if len(s.Projectiles) == 0 || !s.Projectiles[0].Pierce {
 		t.Fatal("pierce projectile not spawned")
@@ -726,13 +726,19 @@ func TestMarksman_PierceAndExplosiveTips_CombineExplosionsPerHit(t *testing.T) {
 		s.tickProjectilesLocked(0.05)
 	}
 
-	// Expect 3 explosions queued — one per pierce victim — at distinct
-	// positions matching each victim's location.
-	gotExplosions := len(s.Explosions) - startExplosions
-	if gotExplosions != 3 {
-		t.Errorf("explosions queued = %d, want 3 (one per pierce victim)", gotExplosions)
-		for i, e := range s.Explosions[startExplosions:] {
-			t.Logf("  explosion[%d]: x=%.0f y=%.0f", i, e.X, e.Y)
+	// Expect 3 "explosion" effects queued — one per pierce victim — each
+	// anchored to a distinct victim unit ID.
+	anchors := make(map[int]bool)
+	for _, e := range s.activeEffects[startEffects:] {
+		if e.Name != "explosion" {
+			continue
+		}
+		anchors[e.AnchorUnitID] = true
+	}
+	if len(anchors) != 3 {
+		t.Errorf("explosion effects anchored to %d distinct victims, want 3", len(anchors))
+		for i, e := range s.activeEffects[startEffects:] {
+			t.Logf("  effect[%d]: name=%s anchor=%d x=%.0f y=%.0f", i, e.Name, e.AnchorUnitID, e.FallbackX, e.FallbackY)
 		}
 	}
 }
