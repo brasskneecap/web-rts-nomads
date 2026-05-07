@@ -39,6 +39,12 @@ type CombatProfile struct {
 	RetreatTriggerMeleeRange   float64
 	TargetBuildings            bool
 	PreferStructures           bool
+	// PreferClosestTarget collapses target scoring to "pick the geometrically
+	// closest valid candidate." Use for enemy combat profiles that should
+	// engage whatever is in front of them rather than walking past nearer
+	// targets to chase a higher-scored one further out. Validity, leash, and
+	// unreachable-memo filters still apply; only the score function changes.
+	PreferClosestTarget        bool
 	PreferMaxRange             bool
 	Melee                      bool
 	Frontline                  bool
@@ -86,6 +92,12 @@ const (
 	// A* path came back empty, preventing per-tick pathfinding storms when many
 	// units crowd around an inaccessible enemy (~2 seconds at 20Hz).
 	unreachableTargetCooldownTicks = 40
+	// guardReturnGraceTicks is the window after a guard loses its target during
+	// which tickGuardReturnLocked will not yank it back to its anchor. Lets the
+	// retarget cooldown (RetargetIntervalTicks) elapse and pick a replacement
+	// first — without it, a guard mid-fight whose target dies snaps home for one
+	// frame before reacquiring, producing visible jitter (~1 second at 20Hz).
+	guardReturnGraceTicks = 20
 )
 
 func (s *GameState) initializeCombatUnitLocked(unit *Unit) {
@@ -209,19 +221,28 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 		return
 	}
 
-	// Honor RetargetIntervalTicks regardless of whether we currently hold a
-	// target. Without the empty-target case obeying the cooldown, a unit that
-	// drops its target via shouldDropCurrentTargetLocked re-acquires next tick
-	// — and if the drop predicate is still true (a hostile lingering inside
-	// drop radius while the same building keeps scoring highest), that's a
-	// per-tick A* storm in applyCombatTargetLocked.
+	hasTarget := unit.AttackTargetID != 0 || unit.AttackBuildingTargetID != ""
+	isTaunted := unit.TauntedByUnitID != 0 && unit.TauntRemaining > 0
+
+	// Stickiness: while a unit holds a valid target, do not switch to a
+	// "preferred" alternative. Score-based mid-fight retargeting reads as
+	// indecision to the player ("why did my soldier stop hitting that orc to
+	// chase a different orc?") and produces drop-then-pick-same-target loops
+	// when the predicate that triggered the drop also makes the same target
+	// rank highest. The target is only released by shouldDropCurrentTargetLocked
+	// on validity grounds (death, leash, unreachable, building destroyed).
+	// Taunts are the one mid-fight override.
+	if hasTarget && !isTaunted {
+		return
+	}
+
 	shouldEvaluate := false
 	if profile.RetargetIntervalTicks <= 0 {
 		shouldEvaluate = true
 	} else {
 		shouldEvaluate = s.Tick-unit.LastTargetEvalTick >= profile.RetargetIntervalTicks
 	}
-	if unit.TauntedByUnitID != 0 && unit.TauntRemaining > 0 {
+	if isTaunted {
 		shouldEvaluate = true
 	}
 	if !shouldEvaluate {
@@ -268,13 +289,18 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 		return
 	}
 
-	current := s.currentTargetScoreLocked(unit, profile, ctx)
-	threshold := profile.SwitchThreshold
-	if unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == "" {
-		threshold = 0
-	}
-	if best.Score < current+threshold {
-		return
+	// Skip re-apply when the chosen target is the one we already hold (e.g.
+	// taunt re-evaluation that picks the current target again) — avoids a
+	// wasted assignUnitPath every cooldown cycle.
+	switch best.Kind {
+	case combatTargetUnit:
+		if best.Unit.ID == unit.AttackTargetID {
+			return
+		}
+	case combatTargetBuilding:
+		if best.Building.ID == unit.AttackBuildingTargetID {
+			return
+		}
 	}
 
 	s.applyCombatTargetLocked(unit, best, ctx.blocked)
@@ -458,6 +484,11 @@ func (s *GameState) tickGuardReturnLocked(blocked map[gridPoint]bool) {
 			// Combat system owns movement while a target is held.
 			continue
 		}
+		// Grace window after a target drop — let the retarget cooldown try to
+		// pick a replacement before yanking the guard back to its anchor.
+		if s.Tick < unit.NextGuardReturnTick {
+			continue
+		}
 		dx := unit.GuardAnchorX - unit.X
 		dy := unit.GuardAnchorY - unit.Y
 		distSq := dx*dx + dy*dy
@@ -495,6 +526,9 @@ func (s *GameState) clearCombatTargetLocked(unit *Unit) {
 	// can't fire on the very next tick — otherwise two unreachable enemies in
 	// range cause per-tick A* oscillation as the single-slot memo flips.
 	unit.LastTargetEvalTick = s.Tick
+	// Grace window for guards: don't snap home before the retarget cooldown
+	// has a chance to pick a replacement.
+	unit.NextGuardReturnTick = s.Tick + guardReturnGraceTicks
 	if !unit.Moving {
 		unit.Status = "Idle"
 	}

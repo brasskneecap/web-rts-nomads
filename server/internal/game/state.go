@@ -212,6 +212,12 @@ type Unit struct {
 	UnreachableTargetID         int
 	UnreachableBuildingTargetID string
 	UnreachableUntilTick        int
+	// NextGuardReturnTick holds tickGuardReturnLocked off for a brief grace
+	// window after a target is dropped. Without this, a guard that loses its
+	// target (e.g. target died) is yanked back to its anchor on the same tick
+	// before the retarget cooldown can pick a replacement, producing the
+	// visible "Moving To Attack ↔ Guarding" flicker at retarget cadence.
+	NextGuardReturnTick int
 	TauntedByUnitID         int
 	TauntRemaining          float64
 	// StunnedRemaining is seconds left on the stun CC applied to this unit by

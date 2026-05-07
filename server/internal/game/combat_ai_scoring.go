@@ -55,25 +55,12 @@ func (s *GameState) shouldDropCurrentTargetLocked(unit *Unit, profile CombatProf
 		if !ok || hp <= 0 {
 			return true
 		}
-		// Buildings are static so there is no leash-chase concern.
-		// However, drop the building target when hostile units are close enough
-		// to engage — the scoring system will then pick them up instead of the
-		// unit running straight past them to hit the building.
-		// This mirrors the old tickEnemyAILocked aggroRadius behaviour.
-		// For guards the drop radius must match the acquire radius
-		// (GuardAggroRange), otherwise hostiles in the gap trigger a drop the
-		// scorer can't replace — building target gets re-applied next tick and
-		// applyCombatTargetLocked spams A* on every tick.
-		dropRadius := effectiveDetectionRange(unit, profile) * 0.75
-		if unit.GuardMode && unit.GuardAggroRange > 0 {
-			dropRadius = unit.GuardAggroRange
-		}
-		for _, hostile := range ctx.index.query(unit.X, unit.Y, dropRadius) {
-			if !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
-				continue
-			}
-			return true
-		}
+		// Stickiness: a unit committed to a building stays on it until the
+		// building is destroyed. We do NOT drop because a hostile unit walked
+		// into aggro range — the player expectation is that aggro'd units
+		// commit to their target and don't cancel attacks to reconsider.
+		// Taunts are the only mid-fight override (handled in
+		// evaluateCombatLocked, not here).
 		return false
 	}
 	return false
@@ -214,6 +201,12 @@ func (s *GameState) currentTargetScoreLocked(unit *Unit, profile CombatProfile, 
 
 func (s *GameState) scoreUnitTargetLocked(unit, target *Unit, profile CombatProfile, ctx combatEvalContext) float64 {
 	dist := math.Sqrt(distanceSquared(unit.X, unit.Y, target.X, target.Y))
+	if profile.PreferClosestTarget {
+		// Closer = higher score. All other weights are ignored so the unit
+		// engages whatever is in front of it instead of walking past nearby
+		// hostiles to chase a more "valuable" pick further out.
+		return -dist
+	}
 	inRange := 0.0
 	if dist <= unit.AttackRange {
 		inRange = 1
@@ -261,6 +254,9 @@ func (s *GameState) scoreUnitTargetLocked(unit, target *Unit, profile CombatProf
 
 func (s *GameState) scoreBuildingTargetLocked(unit *Unit, building *protocol.BuildingTile, profile CombatProfile, ctx combatEvalContext) float64 {
 	dist := s.distanceToBuilding(unit.X, unit.Y, building)
+	if profile.PreferClosestTarget {
+		return -dist
+	}
 	inRange := 0.0
 	if dist <= unit.AttackRange {
 		inRange = 1
@@ -290,7 +286,13 @@ func (s *GameState) scoreBuildingTargetLocked(unit *Unit, building *protocol.Bui
 	score += cluster * w.AoECluster
 	score += stickiness * (w.Stickiness + profile.SwitchThreshold/2)
 	score -= danger * w.DangerPenalty
-	if profile.PreferStructures {
+	// PreferStructures is a siege/raider trait — raiders should beeline for
+	// buildings. Guards using the same profile shouldn't inherit it: their job
+	// is to engage intruders inside their leash, not raid structures. Without
+	// this gate a guard with a building target keeps reacquiring it after every
+	// drop because the +10 outranks any closer player unit, producing the
+	// "Guarding ↔ Moving To Attack" status flicker we see at retarget cadence.
+	if profile.PreferStructures && !unit.GuardMode {
 		score += 10
 	}
 	return score
