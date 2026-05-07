@@ -975,10 +975,24 @@ func (s *GameState) trapPlacementOffsetLocked(unit *Unit, radius float64) (float
 //
 // Must be called under s.mu write lock.
 func (s *GameState) detonateExplosiveTrapLocked(trap *Trap, ownerUnit *Unit, deadUnitIDs []int) []int {
-	// Signal the one-tick VFX flash. This is the single write site for both
-	// the initial blast and the aftershock blast so both detonations surface
-	// triggered=true in the tick's Snapshot.
-	trap.Triggered = true
+	// Visual: the initial blast still uses the trap's own one-tick "Triggered"
+	// flash so the planted-trap-sprite reads as detonating in place. The
+	// aftershock (explosive_chain / overload_protocol) instead emits the
+	// generalized sprite-based "explosion" effect — a re-flash of the trap's
+	// own visual reads as the same boom replaying on the same spot, while the
+	// dedicated explosion sprite makes the second eruption feel like a fresh
+	// secondary blast. AftershockPending is still true at this point — it gets
+	// cleared by the caller after detonate returns.
+	isAftershock := trap.AftershockPending
+	if isAftershock {
+		sizeScale := trapVisualScaleMultiplier(trap)
+		if sizeScale <= 0 {
+			sizeScale = 1.0
+		}
+		s.queueEffectLocked("explosion", 0, trap.X, trap.Y, sizeScale, 0.5, "")
+	} else {
+		trap.Triggered = true
+	}
 	explosionRadSq := trap.Radius * trap.Radius
 	for _, unit := range s.Units {
 		if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {

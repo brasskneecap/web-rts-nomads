@@ -816,6 +816,17 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 
 	var traps []protocol.TrapSnapshot
 	for _, trap := range s.Traps {
+		// Hide explosive traps from the client during the aftershock countdown
+		// (between initial blast and second blast). The initial-blast tick is
+		// kept visible — that frame has Triggered=true and plays the explode
+		// animation — but during the silent 2s wait the trap should be gone
+		// from view; the aftershock signals via a sprite-based "explosion"
+		// EffectSnapshot which lives independently. Without this filter the
+		// client sees an "intact" trap sprite for ~2 seconds after it already
+		// detonated, then suddenly an explosion appears.
+		if trap.AftershockPending && !trap.Triggered {
+			continue
+		}
 		traps = append(traps, protocol.TrapSnapshot{
 			ID:               trap.ID,
 			OwnerID:          trap.OwnerPlayerID,
