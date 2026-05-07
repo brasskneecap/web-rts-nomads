@@ -8,11 +8,14 @@ import (
 	"strings"
 
 	"webrts/server/internal/game"
+	"webrts/server/internal/profile"
 	"webrts/server/internal/ws"
 )
 
-func NewRouter(hub *ws.Hub, corsOrigin string) http.Handler {
+func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager) http.Handler {
 	mux := http.NewServeMux()
+
+	registerProfileRoutes(mux, profileManager)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -287,8 +290,8 @@ func lobbyHTTPError(w http.ResponseWriter, err error) {
 func withCORS(next http.Handler, allowedOrigin string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Player-ID")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

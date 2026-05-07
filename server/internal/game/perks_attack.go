@@ -17,10 +17,6 @@ import "math"
 //
 // ADD NEW ATTACK-SPEED-MODIFYING PERKS HERE.
 func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
-	if len(unit.PerkIDs) == 0 {
-		return 0
-	}
-
 	total := 0.0
 	for _, perkID := range unit.PerkIDs {
 		def := perkDefByID(perkID)
@@ -76,6 +72,9 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 	// Banner contribution — rallying_banner auras are placed by other units
 	// (not necessarily by this unit), so they are not in the perk loop above.
 	total += s.perkAttackSpeedBonusFromBannersLocked(unit)
+
+	// Player-buff contribution — equipped player buffs add a flat attack speed bonus.
+	total += s.playerBuffAggregateLocked(unit).AttackSpeedBonus
 
 	return total
 }
@@ -369,7 +368,7 @@ func (s *GameState) onPerkKillLocked(attacker *Unit) {
 // effective damage to show in the HUD): target-dependent cases like
 // executioner no-op, self-based cases like berserk_state still apply.
 func (s *GameState) perkBonusDamageMultiplierLocked(attacker, target *Unit) float64 {
-	if attacker == nil || len(attacker.PerkIDs) == 0 {
+	if attacker == nil {
 		return 0
 	}
 
@@ -411,6 +410,13 @@ func (s *GameState) perkBonusDamageMultiplierLocked(attacker, target *Unit) floa
 		// ── add cases for new damage-multiplier perks below this line ───────
 		}
 	}
+
+	// Player-buff contribution — own-unit buffs boost the attacker's damage.
+	total += s.playerBuffAggregateLocked(attacker).BonusDamageMult
+	// Enemy-facing debuffs — the defender's player may have equipped a buff
+	// that intentionally boosts enemy damage (e.g. a difficulty modifier).
+	total += s.playerEnemyDamageMultiplierLocked(attacker, target)
+
 	return total
 }
 

@@ -13,7 +13,7 @@ package game
 // ADD NEW MOVE-SPEED-MODIFYING PERKS HERE.
 // ─────────────────────────────────────────────────────────────────────────────
 func (s *GameState) perkMoveSpeedMultiplierLocked(unit *Unit) float64 {
-	if unit == nil || len(unit.PerkIDs) == 0 {
+	if unit == nil {
 		return 1.0
 	}
 
@@ -34,5 +34,9 @@ func (s *GameState) perkMoveSpeedMultiplierLocked(unit *Unit) float64 {
 		// ── add cases for new move-speed perks below this line ──────────────
 		}
 	}
+
+	// Player-buff contribution — equipped player buffs add a flat move-speed multiplier bonus.
+	bonus += s.playerBuffAggregateLocked(unit).MoveSpeedMultBonus
+
 	return 1.0 + bonus
 }

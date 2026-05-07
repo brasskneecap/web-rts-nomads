@@ -2,6 +2,7 @@ import { onBeforeUnmount, ref } from 'vue'
 import { GameClient, type GameUiSnapshot } from '@/game/core/GameClient'
 import type { DebugSpawnConfig } from '@/game/core/GameState'
 import type { ConnectionState } from '@/game/network/protocol'
+import { useProfile } from '@/composables/useProfile'
 
 let client: GameClient | null = null
 
@@ -84,7 +85,12 @@ export function useGameClient() {
   ) {
     client?.stop()
     stopUiSync()
+
+    const { initialize: initProfile, profile } = useProfile()
+    await initProfile()
+
     client = new GameClient(canvas, mapId)
+    client.setEquippedBuffIds(profile.value?.equippedBuffIds ?? [])
 
     // Wire the connection state callback. This runs outside the RAF loop so
     // connection state changes are never masked by the snapshot polling rhythm.

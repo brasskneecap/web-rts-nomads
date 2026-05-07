@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "legendPoints": {
+    "winBonus": 0,
+    "lossConsolation": 0,
+    "perObjective": 0,
+    "perKillBaseDropChance": 0.0,
+    "perKillBaseAmount": 0
+  },
+  "buffSlots": {
+    "maxActive": 3
+  },
+  "unitOverrides": {}
+}

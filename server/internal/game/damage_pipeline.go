@@ -107,6 +107,7 @@ func (s *GameState) drainPendingDeathsLocked() {
 					s.awardSoldierTankKillXPLocked(target.ID)
 					s.onPerkKillLocked(attackerUnit)
 					s.trackBattleKillLocked(battleSourceFromUnit(attackerUnit), target)
+					s.rollLegendPointDropLocked(attackerUnit.OwnerID, target)
 					if target.ObjectiveID != "" {
 						s.markObjectiveKillLocked(target.ObjectiveID)
 					}

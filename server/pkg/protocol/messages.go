@@ -203,10 +203,11 @@ type BuildingTile struct {
 }
 
 type JoinMatchMessage struct {
-	Type     string `json:"type"`
-	PlayerID string `json:"playerId"`
-	MapID    string `json:"mapId"`
-	MatchID  string `json:"matchId,omitempty"`
+	Type            string   `json:"type"`
+	PlayerID        string   `json:"playerId"`
+	MapID           string   `json:"mapId"`
+	MatchID         string   `json:"matchId,omitempty"`
+	EquippedBuffIDs []string `json:"equippedBuffIds,omitempty"`
 }
 
 type LeaveMatchMessage struct {
@@ -422,6 +423,7 @@ type PlayerSnapshot struct {
 	TownHallTier  int                     `json:"townHallTier,omitempty"`
 	Vault         []VaultItemSnapshot     `json:"vault"`
 	VaultCapacity int                     `json:"vaultCapacity,omitempty"`
+	ActiveBuffs   []ActiveEffectIcon      `json:"activeBuffs,omitempty"`
 }
 
 type UnitSnapshot struct {
@@ -593,6 +595,20 @@ type TrapSnapshot struct {
 // each client checks whether its own ID is present.
 type GameOverSnapshot struct {
 	LostPlayerIDs []string `json:"lostPlayerIds"`
+}
+
+// MatchSummary carries per-player match-end data alongside the game-over
+// snapshot. Populated once per match when the game ends. The HTTP layer
+// (profile handler) is responsible for persisting LegendPointsEarned to the
+// player profile via profileManager.WithLocked — the simulation only computes
+// the totals; it does not touch the profile store directly.
+//
+// TODO: the profile REST handler should call profileManager.WithLocked to add
+// LegendPointsEarned to profile.LegendPoints and profile.LifetimeLegendPoints.
+type MatchSummary struct {
+	PlayerID           string `json:"playerId"`
+	Won                bool   `json:"won"`
+	LegendPointsEarned int    `json:"legendPointsEarned,omitempty"`
 }
 
 // ObjectiveSnapshot carries the current state of one victory condition to the

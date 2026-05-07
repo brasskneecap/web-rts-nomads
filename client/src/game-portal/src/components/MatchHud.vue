@@ -39,6 +39,11 @@
       <div class="wave-timer">{{ waveTimerText }}</div>
     </section>
 
+    <section class="buff-tray" aria-label="Active player buffs">
+      <!-- TODO: pass PlayerSnapshot.activeBuffs here once the backend ships that field -->
+      <PlayerBuffStrip />
+    </section>
+
     <section class="resource-tray" aria-label="Resources">
       <article
         v-for="resource in ui.player.resources"
@@ -80,6 +85,7 @@ import { ref, computed } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 import uiPanelUrl from '@/assets/ui/ui_panel_56x56_slice17.png'
 import { getResourceIconUrl } from '@/game/rendering/resourceSprites'
+import PlayerBuffStrip from '@/components/profile/PlayerBuffStrip.vue'
 
 const emit = defineEmits<{
   exit: []
@@ -228,6 +234,12 @@ function exitGame() {
   border-radius: 999px;
   flex: 0 0 auto;
   box-shadow: 0 0 0 2px rgba(245, 234, 210, 0.16);
+}
+
+.buff-tray {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
 }
 
 .resource-tray {

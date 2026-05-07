@@ -122,7 +122,8 @@ func (h *Hub) readLoop(client *Client) {
 			client.TouchPong()
 
 			match.AddClient(client)
-			match.State.EnsurePlayer(msg.PlayerID)
+			log.Printf("join_match: player=%s equippedBuffIDs=%v\n", msg.PlayerID, msg.EquippedBuffIDs)
+			match.State.EnsurePlayer(msg.PlayerID, msg.EquippedBuffIDs...)
 
 			welcome := protocol.WelcomeMessage{
 				Type:     "welcome",

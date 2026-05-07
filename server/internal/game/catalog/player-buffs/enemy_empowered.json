@@ -1,0 +1,11 @@
+{
+  "id": "enemy_empowered",
+  "displayName": "Enemy Empowered",
+  "description": "Enemy units deal +100% damage. A self-imposed challenge.",
+  "iconKey": "buff_enemy_empowered",
+  "unlockLegendPointCost": 0,
+  "appliesTo": "enemyUnits",
+  "modifiers": {
+    "bonusDamageMult": 1.00
+  }
+}

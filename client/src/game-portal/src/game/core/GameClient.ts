@@ -154,6 +154,10 @@ export class GameClient {
       .catch((err) => console.error('[dev] catalog reload failed:', err))
   }
 
+  setEquippedBuffIds(ids: string[]) {
+    this.network.setEquippedBuffIds(ids)
+  }
+
   async leaveStoredMatch() {
     await this.network.leaveStoredMatch()
   }

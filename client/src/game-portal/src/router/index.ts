@@ -6,6 +6,7 @@ import Lobby from '@/views/Lobby.vue'
 import FindGame from '@/views/FindGame.vue'
 import Match from '@/views/Match.vue'
 import Editor from '@/views/Editor.vue'
+import ProfileView from '@/views/ProfileView.vue'
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -18,6 +19,7 @@ export const router = createRouter({
     { path: '/starting', component: Match },
     { path: '/match/:matchId', component: Match },
     { path: '/editor', component: Editor },
+    { path: '/profile', component: ProfileView },
     { path: '/:catchAll(.*)', redirect: '/' },
   ],
 })

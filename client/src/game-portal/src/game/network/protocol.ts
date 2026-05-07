@@ -173,6 +173,7 @@ export type JoinMatchMessage = {
   playerId: string
   mapId: MapId
   matchId?: string
+  equippedBuffIds?: string[]
 }
 
 export type LeaveMatchMessage = {
