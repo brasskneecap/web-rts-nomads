@@ -417,6 +417,11 @@ type GameState struct {
 	// crits applied during that tick. See crit_events.go.
 	critEventsThisTick []critEvent
 
+	// minorDamageEventsThisTick mirrors critEventsThisTick for ancillary
+	// damage hits that should render as a smaller orange floating number
+	// (Reactive Flames splash, etc.). See minor_damage_events.go.
+	minorDamageEventsThisTick []minorDamageEvent
+
 	// guardianAuraCache maps recipient unit ID to the combined armor bonus they
 	// receive from the strongest guardian_aura covering them this tick.
 	// FlatArmor and PercentArmor are taken as max independently across all
@@ -816,15 +821,15 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 
 	var traps []protocol.TrapSnapshot
 	for _, trap := range s.Traps {
-		// Hide explosive traps from the client during the aftershock countdown
-		// (between initial blast and second blast). The initial-blast tick is
-		// kept visible — that frame has Triggered=true and plays the explode
-		// animation — but during the silent 2s wait the trap should be gone
-		// from view; the aftershock signals via a sprite-based "explosion"
-		// EffectSnapshot which lives independently. Without this filter the
-		// client sees an "intact" trap sprite for ~2 seconds after it already
-		// detonated, then suddenly an explosion appears.
-		if trap.AftershockPending && !trap.Triggered {
+		// Hide explosive traps from the client once they've detonated but
+		// still have follow-up events queued: the silent window before a
+		// chain aftershock fires, and the window before any pending
+		// Cataclysm secondary explosions fire. The initial-blast tick is
+		// kept visible — that frame has Triggered=true and plays the
+		// trap's explode animation — but afterward the trap should be
+		// gone from view; chain/Cataclysm secondaries render via
+		// sprite-based "explosion" EffectSnapshots independently.
+		if !trap.Triggered && (trap.AftershockPending || len(trap.PendingCataclysms) > 0) {
 			continue
 		}
 		traps = append(traps, protocol.TrapSnapshot{
@@ -887,7 +892,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Traps:       traps,
 		Projectiles: projectiles,
 		Effects:     s.effectSnapshotsLocked(),
-		CritEvents:  s.snapshotCritEventsLocked(),
+		CritEvents:        s.snapshotCritEventsLocked(),
+		MinorDamageEvents: s.snapshotMinorDamageEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -918,6 +924,7 @@ func (s *GameState) Update(dt float64) {
 	// list scoped exactly to "crits that landed during this tick" so the
 	// client can match against its HP-diff damage events.
 	s.resetCritEventsThisTickLocked()
+	s.resetMinorDamageEventsThisTickLocked()
 
 	profileSection("battleTracker", func() { s.battleTracker.tickLocked(dt) })
 	profileSection("unitProductions", func() { s.updateUnitProductionsLocked(dt) })
@@ -971,18 +978,12 @@ func (s *GameState) Update(dt float64) {
 		// hits 0 this tick — that's when mark-gone effects (Final Exposure,
 		// Shared Pain disarm) fire.
 		if unit.PerkState.decayMarkStacks(dt) {
-			// overload_protocol → Final Exposure: when the last mark stack
-			// expires, fire burst damage to this victim and an optional
-			// small AoE to nearby enemies. The armed fields are consumed
-			// immediately after so re-arming via a fresh mark works again.
-			if unit.PerkState.FinalExposureDamage > 0 && unit.HP > 0 {
-				s.fireFinalExposureLocked(unit)
-			}
-			unit.PerkState.FinalExposureDamage = 0
-			unit.PerkState.FinalExposureAoeRadius = 0
-			unit.PerkState.FinalExposureOwnerUnitID = 0
-			unit.PerkState.FinalExposureTrapID = ""
-			// ascendant_infusion → Shared Pain disarms with the mark.
+			// Final Exposure now fires when the victim LEAVES the marker
+			// trap's zone (handled in tickTrapEffectsLocked → fireTrap-
+			// OverloadOnExitLocked) — not on mark expiry. The fields are
+			// cleared at firing time, so we don't reset them here. We DO
+			// still disarm Shared Pain when the mark fully expires since
+			// it has no zone-exit semantics of its own.
 			unit.PerkState.SharedPainFraction = 0
 		}
 		// ascendant_infusion → Electrified Caltrops per-victim stun cooldown.

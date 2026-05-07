@@ -116,6 +116,7 @@ type Trap struct {
 	InfusionElectrifiedStunChance      float64
 	InfusionElectrifiedStunDuration    float64
 	InfusionElectrifiedStunCooldownSec float64
+	InfusionElectrifiedStunDamage      int
 
 	// ascendant_infusion → Reactive Flames (fire_pit).
 	// Each fire_pit DoT integer tick and each lasting_flames burn integer tick
@@ -157,23 +158,36 @@ type Trap struct {
 	OverloadFlameCollapseBurnSeconds float64
 
 	// overload_protocol → Cataclysm Blast (explosive_trap).
-	// Larger-radius initial blast (Radius is pre-multiplied at plant time) and
-	// a delayed secondary explosion wired through the existing aftershock
-	// plumbing. If explosive_chain is also owned, the longer of the two delays
-	// wins (the effects stack additively on the final blast, not as two
-	// separate blasts — the aftershock slot is single).
+	// Larger-radius initial blast (Radius is pre-multiplied at plant time) +
+	// every detonation queues an additional secondary explosion via
+	// PendingCataclysms. With explosive_chain also owned: initial blast +
+	// chain aftershock = 2 detonations, each scheduling its own Cataclysm =
+	// 4 explosions total.
 	OverloadCataclysmDelaySeconds float64
 	// Client-side sprite inflate for this trap while overload_protocol is
 	// active. Snapshotted at plant time from gold.json's cataclysmSpriteScale
 	// so tuning lives next to the other Cataclysm knobs. 0 = no inflate.
 	OverloadCataclysmSpriteScale float64
+	// Sprite scale for the explosion EffectSnapshot fired by each Cataclysm
+	// secondary blast. Independent of OverloadCataclysmSpriteScale (which
+	// scales the trap's barrel) so the boom can be sized for spectacle
+	// without inflating the trap.
+	OverloadCataclysmExplosionSpriteScale float64
+	// PendingCataclysms is the list of secondary-explosion timers (seconds
+	// remaining) queued by overload_protocol. Each entry counts down each
+	// tick; on reaching 0, fireCataclysmLocked applies damage in trap.Radius
+	// and emits an "explosion" EffectSnapshot. Multiple entries can be live
+	// simultaneously (one per detonation: initial + each chain aftershock).
+	// The trap is held alive until this slice empties.
+	PendingCataclysms []float64
 
 	// overload_protocol → Final Exposure (marker_trap).
 	// When the MARK expires (not the trap), marked enemies take burst damage
-	// with an optional small AoE. Plumbed onto victims at mark-stamp time via
-	// PerkState.FinalExposure* fields; fired on mark-expiry in state.go.
-	OverloadFinalExposureDamage    int
-	OverloadFinalExposureAoeRadius float64
+	// Plumbed onto victims at mark-stamp time via PerkState.FinalExposure*
+	// fields; fired on zone exit in tickTrapEffectsLocked. Damages the
+	// exiting victim AND every other unit still carrying a mark from this
+	// same trap (matched via SourceID == trap.ID).
+	OverloadFinalExposureDamage int
 
 	// IsScatterBombChild is true for the mini explosive_traps spawned by
 	// Scatter Bomb. Blocks recursion: children cannot themselves spawn more
@@ -184,6 +198,14 @@ type Trap struct {
 	// Deployment. Exclusively a debug/telemetry marker — no runtime branching
 	// keys off this field. Recursion is blocked at the plant site instead.
 	IsBonusDeployment bool
+
+	// UnitsInZone tracks unit IDs that were inside the trap's zone last tick.
+	// Used by zone-effect traps (caltrops, fire_pit, marker_trap) to detect
+	// "unit just left the zone" and trigger overload_protocol's payload at
+	// that moment instead of waiting for trap expiry. Empty / nil for
+	// explosive_trap (which uses TriggerRadius-based one-shot detection,
+	// not continuous zone presence).
+	UnitsInZone map[int]bool
 }
 
 // tickTrapsLocked advances all active trap lifetimes by dt seconds, removing
@@ -210,7 +232,7 @@ func (s *GameState) tickTrapsLocked(dt float64) {
 		// the condition below fires and the trap is finally removed. The client
 		// sees: blast-tick snapshot (triggered=true, trap present) → next-tick
 		// snapshot (trap gone).
-		if trap.PendingCull && !trap.Triggered {
+		if trap.PendingCull && !trap.Triggered && len(trap.PendingCataclysms) == 0 {
 			continue
 		}
 		if !trap.AftershockPending {
@@ -256,9 +278,13 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 	var deadUnitIDs []int
 
 	for _, trap := range s.Traps {
-		if trap.PendingCull {
+		if trap.PendingCull && len(trap.PendingCataclysms) == 0 {
 			continue // blasted last tick; PendingCull awaits removal in tickTrapsLocked
 		}
+		// Note: explosive_trap traps with PendingCull AND queued Cataclysms
+		// fall through here so the explosive_trap case can advance the
+		// Cataclysm queue. The case-internal PendingCull break stops them
+		// from re-running trigger detection.
 
 		// Look up the owner unit for XP credit (nil when dead — handled below).
 		ownerUnit := s.unitsByID[trap.OwnerUnitID]
@@ -269,6 +295,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 		switch trap.TrapType {
 
 		case "caltrops":
+			currentInZone := make(map[int]bool, len(trap.UnitsInZone))
 			for _, unit := range s.Units {
 				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
 					continue // skip allies
@@ -281,6 +308,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 				if dx*dx+dy*dy > trap.Radius*trap.Radius {
 					continue
 				}
+				currentInZone[unit.ID] = true
 				// Apply slow with a 1s refresh window so it expires ~1s after leaving.
 				s.ApplySlowLocked(unit.ID, trap.SlowMultiplier, 1.0)
 				// barbed_field (silver): add ramping bonus DPS scaled by the
@@ -296,25 +324,20 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 					dps += bonus
 					unit.PerkState.BarbedFieldInZoneThisTick = true
 				}
-				// DoT — accumulate fractional damage across ticks so production
-				// tick rates (dt=0.05) don't round every tick to zero.
+				// DoT damage — gated at threshold = dps / trapDoTProcsPerSec
+				// so popups fire ~3× per second regardless of the authored
+				// caltrops DPS or amplified_effects scaling. Multiple traps
+				// on the same victim share this accumulator, so DPS stacks
+				// naturally. Total damage per second = dps; per-proc value
+				// floats to maintain that total.
 				unit.PerkState.TrapDoTAccumulator += dps * dt
-				if unit.PerkState.TrapDoTAccumulator >= 1.0 {
+				dotThreshold := dps / trapDoTProcsPerSec
+				if dotThreshold < 1.0 {
+					dotThreshold = 1.0
+				}
+				if unit.PerkState.TrapDoTAccumulator >= dotThreshold {
 					dmg := int(unit.PerkState.TrapDoTAccumulator)
 					unit.PerkState.TrapDoTAccumulator -= float64(dmg)
-					// ascendant_infusion → Electrified Caltrops: bonus damage on
-					// each integer tick, and a stun roll gated by a per-victim
-					// cooldown (ElectrifiedStunCooldownRemaining) to prevent
-					// stun-lock. Bonus damage applies even when no stun fires.
-					if trap.InfusionElectrifiedBonusDamage > 0 {
-						dmg += trap.InfusionElectrifiedBonusDamage
-					}
-					if trap.InfusionElectrifiedStunChance > 0 &&
-						unit.PerkState.ElectrifiedStunCooldownRemaining <= 0 &&
-						s.rngPerks.Float64() < trap.InfusionElectrifiedStunChance {
-						s.ApplyStunLocked(unit.ID, trap.InfusionElectrifiedStunDuration)
-						unit.PerkState.ElectrifiedStunCooldownRemaining = trap.InfusionElectrifiedStunCooldownSec
-					}
 					s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_dot"})
 					if ownerUnit != nil {
 						s.recordDamageDealtLocked(ownerUnit, unit, dmg)
@@ -329,11 +352,100 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 						}
 						s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
 						deadUnitIDs = append(deadUnitIDs, unit.ID)
+						continue
+					}
+				}
+
+				// ascendant_infusion → Electrified Caltrops bonus damage. Same
+				// pattern as Reactive Flames: per-zone-iter accumulator
+				// += electrifiedBonusDamage × dt; threshold = dps / procsPerSec
+				// gives a fixed ~minorInfusionProcsPerSec cadence regardless
+				// of the authored damage value. Total bonus DPS = the
+				// authored value (5 from gold.json), independent of host
+				// caltrops DPS or amplified_effects multiplier. Tagged
+				// "electric" so the client renders it as a small purple popup.
+				if trap.InfusionElectrifiedBonusDamage > 0 && unit.HP > 0 {
+					unit.PerkState.ElectrifiedBonusAccumulator += float64(trap.InfusionElectrifiedBonusDamage) * dt
+					threshold := float64(trap.InfusionElectrifiedBonusDamage) / minorInfusionProcsPerSec
+					if threshold < 1.0 {
+						threshold = 1.0
+					}
+					if unit.PerkState.ElectrifiedBonusAccumulator >= threshold {
+						bonus := int(unit.PerkState.ElectrifiedBonusAccumulator)
+						unit.PerkState.ElectrifiedBonusAccumulator -= float64(bonus)
+						s.applyUnitDamageWithSourceLocked(unit, bonus, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_infusion"})
+						s.recordMinorDamageHitLocked(unit, bonus, "electric")
+						if ownerUnit != nil {
+							s.recordDamageDealtLocked(ownerUnit, unit, bonus)
+						}
+						s.trackBattleDamageLocked(battleSourceFromTrap(trap), unit, bonus)
+						if unit.HP <= 0 {
+							if ownerUnit != nil {
+								s.awardKillXPLocked(ownerUnit)
+								s.payoutDamageDealtXPLocked(unit)
+							}
+							s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
+							deadUnitIDs = append(deadUnitIDs, unit.ID)
+							continue
+						}
+
+						// Stun roll piggybacks on the bonus-damage chunk so
+						// stuns fire at the same visible cadence as the
+						// purple popups (~3/sec). Cooldown still gates
+						// successful stuns to 1/cooldownSec — failed rolls
+						// don't advance the cooldown, so a low chance still
+						// gets multiple attempts before the cooldown can
+						// allow a fresh stun.
+						if trap.InfusionElectrifiedStunChance > 0 &&
+							unit.PerkState.ElectrifiedStunCooldownRemaining <= 0 &&
+							s.rngPerks.Float64() < trap.InfusionElectrifiedStunChance {
+							s.ApplyStunLocked(unit.ID, trap.InfusionElectrifiedStunDuration)
+							unit.PerkState.ElectrifiedStunCooldownRemaining = trap.InfusionElectrifiedStunCooldownSec
+							// Stun-tied burst damage. Same "electric" tag so
+							// it renders as a purple popup; the bigger flat
+							// value reads as the "ouch" moment versus the
+							// small bonus-damage stream.
+							if trap.InfusionElectrifiedStunDamage > 0 {
+								stunDmg := trap.InfusionElectrifiedStunDamage
+								s.applyUnitDamageWithSourceLocked(unit, stunDmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_infusion"})
+								s.recordMinorDamageHitLocked(unit, stunDmg, "electric")
+								if ownerUnit != nil {
+									s.recordDamageDealtLocked(ownerUnit, unit, stunDmg)
+								}
+								s.trackBattleDamageLocked(battleSourceFromTrap(trap), unit, stunDmg)
+								if unit.HP <= 0 {
+									if ownerUnit != nil {
+										s.awardKillXPLocked(ownerUnit)
+										s.payoutDamageDealtXPLocked(unit)
+									}
+									s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
+									deadUnitIDs = append(deadUnitIDs, unit.ID)
+									continue
+								}
+							}
+						}
 					}
 				}
 			}
+			// Detect units that left the caltrops zone this tick. Fires
+			// Spike Surge (overload_protocol) on each — replaces the
+			// expiry-time blast with a per-victim "you walked out" payload.
+			if trap.OverloadSpikeSurgeBurstDamage > 0 {
+				for unitID := range trap.UnitsInZone {
+					if currentInZone[unitID] {
+						continue
+					}
+					victim := s.unitsByID[unitID]
+					if victim == nil || victim.HP <= 0 || !victim.Visible {
+						continue
+					}
+					deadUnitIDs = s.fireTrapOverloadOnExitLocked(trap, ownerUnit, victim, deadUnitIDs)
+				}
+			}
+			trap.UnitsInZone = currentInZone
 
 		case "fire_pit":
+			currentInZone := make(map[int]bool, len(trap.UnitsInZone))
 			for _, unit := range s.Units {
 				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
 					continue
@@ -346,6 +458,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 				if dx*dx+dy*dy > trap.Radius*trap.Radius {
 					continue
 				}
+				currentInZone[unit.ID] = true
 				// lasting_flames (silver): the fire_pit applies its damage as a
 				// BURN DEBUFF instead of dealing direct DoT in the zone. The
 				// burn duration is refreshed every tick while the victim is in
@@ -378,6 +491,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 					// stack on an enemy standing in both.
 					unit.PerkState.applyBurnStack(
 						trap.ID,
+						trap.ID,
 						trap.OwnerUnitID,
 						trap.DamagePerSecond,
 						trap.LastingFlamesBurnDuration,
@@ -389,10 +503,16 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 					continue
 				}
 				// Base fire_pit (no lasting_flames): direct DoT applied in-zone.
-				// Accumulate fractional damage across ticks so production tick
-				// rates (dt=0.05) don't round every tick to zero.
+				// Same threshold = dps / trapDoTProcsPerSec gating as caltrops
+				// for a steady ~3 popups/sec regardless of bronze/silver/gold
+				// rank scaling. Multi-trap stacking falls out automatically
+				// via the shared accumulator.
 				unit.PerkState.TrapDoTAccumulator += trap.DamagePerSecond * dt
-				if unit.PerkState.TrapDoTAccumulator >= 1.0 {
+				dotThreshold := trap.DamagePerSecond / trapDoTProcsPerSec
+				if dotThreshold < 1.0 {
+					dotThreshold = 1.0
+				}
+				if unit.PerkState.TrapDoTAccumulator >= dotThreshold {
 					dmg := int(unit.PerkState.TrapDoTAccumulator)
 					unit.PerkState.TrapDoTAccumulator -= float64(dmg)
 					s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_dot"})
@@ -401,19 +521,6 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 					}
 					// Debug: fire_pit DoT attribution, survives dead owner.
 					s.trackBattleDamageLocked(battleSourceFromTrap(trap), unit, dmg)
-					// ascendant_infusion → Reactive Flames: each integer DoT
-					// tick triggers a small raw-damage AoE around the victim.
-					// The explosion is untagged on burns/explosions so it does
-					// not recursively trigger more Reactive Flames or apply
-					// burns (see fireReactiveFlamesLocked).
-					if trap.InfusionReactiveFlamesDamage > 0 && unit.HP > 0 {
-						deadUnitIDs = s.fireReactiveFlamesLocked(
-							unit.X, unit.Y,
-							trap.InfusionReactiveFlamesRadius,
-							trap.InfusionReactiveFlamesDamage,
-							trap.OwnerPlayerID, ownerUnit, trap.ID, deadUnitIDs,
-						)
-					}
 					if unit.HP <= 0 {
 						if ownerUnit != nil {
 							s.awardKillXPLocked(ownerUnit)
@@ -421,19 +528,86 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 						}
 						s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
 						deadUnitIDs = append(deadUnitIDs, unit.ID)
+						continue
+					}
+
+				}
+
+				// ascendant_infusion → Reactive Flames. Independent dt-timer
+				// gated at threshold = dps / minorInfusionProcsPerSec so the
+				// AoE fires ~3 times per second regardless of the authored
+				// damage value. Total reactive DPS = reactiveFlamesDamage
+				// (4), independent of host trap rank. Multi-zone scales
+				// linearly via more iterations. Hits are tagged via
+				// recordMinorDamageHitLocked so the client renders them as
+				// small orange popups.
+				if trap.InfusionReactiveFlamesDamage > 0 && unit.HP > 0 {
+					unit.PerkState.TrapInfusionAccumulator += float64(trap.InfusionReactiveFlamesDamage) * dt
+					threshold := float64(trap.InfusionReactiveFlamesDamage) / minorInfusionProcsPerSec
+					if threshold < 1.0 {
+						threshold = 1.0
+					}
+					if unit.PerkState.TrapInfusionAccumulator >= threshold {
+						reactiveDmg := int(unit.PerkState.TrapInfusionAccumulator)
+						unit.PerkState.TrapInfusionAccumulator -= float64(reactiveDmg)
+						deadUnitIDs = s.fireReactiveFlamesLocked(
+							unit.X, unit.Y,
+							trap.InfusionReactiveFlamesRadius,
+							reactiveDmg,
+							trap.OwnerPlayerID, ownerUnit, trap.ID, deadUnitIDs,
+						)
 					}
 				}
 			}
+			// Detect units that left the fire_pit zone this tick. Fires
+			// Flame Collapse (overload_protocol) on each.
+			if trap.OverloadFlameCollapseDamage > 0 {
+				for unitID := range trap.UnitsInZone {
+					if currentInZone[unitID] {
+						continue
+					}
+					victim := s.unitsByID[unitID]
+					if victim == nil || victim.HP <= 0 || !victim.Visible {
+						continue
+					}
+					deadUnitIDs = s.fireTrapOverloadOnExitLocked(trap, ownerUnit, victim, deadUnitIDs)
+				}
+			}
+			trap.UnitsInZone = currentInZone
 
 		case "explosive_trap":
+			// Cataclysm secondary explosions (overload_protocol). Tick first
+			// — they can fire concurrently with a pending chain aftershock and
+			// independently of trigger detection. Filter expired entries in
+			// place; entries that fire emit damage + an "explosion" effect.
+			if len(trap.PendingCataclysms) > 0 {
+				kept := trap.PendingCataclysms[:0]
+				for _, remaining := range trap.PendingCataclysms {
+					remaining -= dt
+					if remaining <= 0 {
+						deadUnitIDs = s.fireCataclysmLocked(trap, ownerUnit, deadUnitIDs)
+					} else {
+						kept = append(kept, remaining)
+					}
+				}
+				trap.PendingCataclysms = kept
+			}
+			// Trap has already detonated (PendingCull set); only the
+			// Cataclysm queue keeps it alive. Skip chain countdown and
+			// trigger detection so it can't re-detonate while it's
+			// invisible to the client.
+			if trap.PendingCull {
+				break
+			}
 			if trap.AftershockPending {
 				// Countdown to the aftershock blast.
 				trap.AftershockRemaining -= dt
 				if trap.AftershockRemaining <= 0 {
-					// Aftershock = final blast. Fire unconditionally at original position.
+					// Chain aftershock — second detonation of the trap itself.
+					// Schedules its own Cataclysm via detonateExplosiveTrapLocked.
 					deadUnitIDs = s.detonateExplosiveTrapLocked(trap, ownerUnit, deadUnitIDs)
 					trap.AftershockPending = false
-					trap.PendingCull = true // cull after this tick's Snapshot
+					trap.PendingCull = true // cull after Cataclysms finish
 				}
 				break
 			}
@@ -469,6 +643,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 			}
 
 		case "marker_trap":
+			currentInZone := make(map[int]bool, len(trap.UnitsInZone))
 			for _, unit := range s.Units {
 				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
 					continue
@@ -481,6 +656,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 				if dx*dx+dy*dy > trap.Radius*trap.Radius {
 					continue
 				}
+				currentInZone[unit.ID] = true
 				// Apply a mark stack keyed by this trap's ID (not the owner
 				// unit) so two marker_traps from the same trapper — e.g.
 				// the primary + increased_deployment bonus — each land
@@ -507,20 +683,34 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 				if trap.InfusionSharedPainFraction > unit.PerkState.SharedPainFraction {
 					unit.PerkState.SharedPainFraction = trap.InfusionSharedPainFraction
 				}
-				// overload_protocol → Final Exposure: arm the mark-expiry burst
-				// on the victim. Refresh-stronger per dimension, and always
-				// track the latest non-zero owner so XP credit can be awarded.
+				// overload_protocol → Final Exposure: arm the on-exit burst on
+				// the victim. Fields stay armed until they actually fire (when
+				// the unit leaves the zone or the trap expires) so a fresh
+				// trap re-arms cleanly. Refresh-stronger on damage.
 				if trap.OverloadFinalExposureDamage > 0 {
 					if trap.OverloadFinalExposureDamage > unit.PerkState.FinalExposureDamage {
 						unit.PerkState.FinalExposureDamage = trap.OverloadFinalExposureDamage
-					}
-					if trap.OverloadFinalExposureAoeRadius > unit.PerkState.FinalExposureAoeRadius {
-						unit.PerkState.FinalExposureAoeRadius = trap.OverloadFinalExposureAoeRadius
 					}
 					unit.PerkState.FinalExposureOwnerUnitID = trap.OwnerUnitID
 					unit.PerkState.FinalExposureTrapID = trap.ID
 				}
 			}
+			// Detect units that left the marker_trap zone this tick. Fires
+			// Final Exposure (overload_protocol) on each — the burst armed
+			// onto the victim's PerkState while they were in zone.
+			if trap.OverloadFinalExposureDamage > 0 {
+				for unitID := range trap.UnitsInZone {
+					if currentInZone[unitID] {
+						continue
+					}
+					victim := s.unitsByID[unitID]
+					if victim == nil || victim.HP <= 0 || !victim.Visible {
+						continue
+					}
+					deadUnitIDs = s.fireTrapOverloadOnExitLocked(trap, ownerUnit, victim, deadUnitIDs)
+				}
+			}
+			trap.UnitsInZone = currentInZone
 		}
 	}
 
@@ -582,8 +772,16 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 		kept := unit.PerkState.BurnStacks[:0]
 		for _, stack := range unit.PerkState.BurnStacks {
 			stack.Remaining = math.Max(0, stack.Remaining-dt)
+			// Burn DoT damage: same threshold = dps / trapDoTProcsPerSec
+			// gating as the in-zone trap branches for a uniform ~3 popups/
+			// sec cadence. Reactive Flames AoE is gated separately on
+			// stack.ReactiveAccumulator below using its own (matching) cadence.
 			stack.Accumulator += stack.DPS * dt
-			if stack.Accumulator >= 1.0 {
+			burnThreshold := stack.DPS / trapDoTProcsPerSec
+			if burnThreshold < 1.0 {
+				burnThreshold = 1.0
+			}
+			if stack.Accumulator >= burnThreshold {
 				dmg := int(stack.Accumulator)
 				stack.Accumulator -= float64(dmg)
 
@@ -591,15 +789,12 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 				if owner != nil && owner.HP <= 0 {
 					owner = nil
 				}
-				// Reactive Flames friendly-fire filter: prefer the live
-				// owner's PlayerID; fall back to the victim's own OwnerID
-				// (victim is hostile to the trapper's team, so any
-				// non-same-owner unit is a valid AoE target).
-				ownerPlayerID := unit.OwnerID
-				if owner != nil {
-					ownerPlayerID = owner.OwnerID
-				}
 				s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: stack.SourceID, Kind: "trap_silver_stack"})
+				// Tag the burn tick as "fire" minor damage so the client
+				// renders it as a small orange floating popup (matches
+				// Reactive Flames). lasting_flames + Flame Collapse both
+				// route through this stack, so both render the same way.
+				s.recordMinorDamageHitLocked(unit, dmg, "fire")
 				if owner != nil {
 					s.recordDamageDealtLocked(owner, unit, dmg)
 				}
@@ -610,18 +805,6 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 					s.trackBattleDamageLocked(
 						BattleSource{PlayerID: owner.OwnerID, Kind: "trap", Subtype: "fire_pit"},
 						unit, dmg,
-					)
-				}
-				// ascendant_infusion → Reactive Flames: each stack fires
-				// its own AoE on each integer tick. Two stacks with
-				// Infusion → two explosions per tick (independent
-				// sources, independent effects).
-				if stack.ReactiveDamage > 0 && unit.HP > 0 {
-					deadUnitIDs = s.fireReactiveFlamesLocked(
-						unit.X, unit.Y,
-						stack.ReactiveRadius,
-						stack.ReactiveDamage,
-						ownerPlayerID, owner, stack.SourceID, deadUnitIDs,
 					)
 				}
 				if unit.HP <= 0 {
@@ -639,6 +822,38 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 					break
 				}
 			}
+
+			// ascendant_infusion → Reactive Flames (lasting_flames branch).
+			// Same dt-timer pattern as the in-zone Reactive Flames, gated at
+			// threshold = ReactiveDamage / minorInfusionProcsPerSec for a
+			// consistent ~3-procs-per-second cadence. Total reactive DPS =
+			// ReactiveDamage regardless of host trap rank.
+			if stack.ReactiveDamage > 0 && stack.DPS > 0 && unit.HP > 0 {
+				stack.ReactiveAccumulator += float64(stack.ReactiveDamage) * dt
+				threshold := float64(stack.ReactiveDamage) / minorInfusionProcsPerSec
+				if threshold < 1.0 {
+					threshold = 1.0
+				}
+				if stack.ReactiveAccumulator >= threshold {
+					reactiveDmg := int(stack.ReactiveAccumulator)
+					stack.ReactiveAccumulator -= float64(reactiveDmg)
+					owner := s.unitsByID[stack.OwnerUnitID]
+					if owner != nil && owner.HP <= 0 {
+						owner = nil
+					}
+					ownerPlayerID := unit.OwnerID
+					if owner != nil {
+						ownerPlayerID = owner.OwnerID
+					}
+					deadUnitIDs = s.fireReactiveFlamesLocked(
+						unit.X, unit.Y,
+						stack.ReactiveRadius,
+						reactiveDmg,
+						ownerPlayerID, owner, stack.SourceID, deadUnitIDs,
+					)
+				}
+			}
+
 			if stack.Remaining > 0 {
 				kept = append(kept, stack)
 			}
@@ -738,6 +953,7 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 		trap.InfusionElectrifiedStunChance = specific.InfusionElectrifiedStunChance
 		trap.InfusionElectrifiedStunDuration = specific.InfusionElectrifiedStunDuration
 		trap.InfusionElectrifiedStunCooldownSec = specific.InfusionElectrifiedStunCooldownSec
+		trap.InfusionElectrifiedStunDamage = int(float64(specific.InfusionElectrifiedStunDamage)*mods.EffectMultiplier + 0.5)
 		// overload_protocol → Spike Surge (expiry burst + strong slow).
 		trap.OverloadSpikeSurgeBurstDamage = int(float64(specific.OverloadSpikeSurgeBurstDamage)*mods.EffectMultiplier + 0.5)
 		trap.OverloadSpikeSurgeSlowMult = amplifySlow(specific.OverloadSpikeSurgeSlowMult, mods.EffectMultiplier)
@@ -778,13 +994,15 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 		trap.TriggerRadius = cfg["triggerRadius"] * mods.RadiusMultiplier
 		base := int(cfg["burstDamage"])
 		trap.BurstDamage = int(float64(base)*mods.EffectMultiplier + 0.5)
-		// Aftershock slot is single — if explosive_chain AND overload_protocol
-		// are both owned, use the longer delay so both perks contribute (the
-		// aftershock blast itself is already a large-radius explosion on the
-		// same trap, so the stronger upgrade wins naturally).
-		trap.AftershockDelaySeconds = math.Max(specific.AftershockDelaySeconds, specific.OverloadCataclysmDelaySeconds)
+		// AftershockDelaySeconds drives explosive_chain's "second detonation
+		// of the trap" (a re-blast of the trap itself). Cataclysm's secondary
+		// fires INDEPENDENTLY via PendingCataclysms — each detonation (initial
+		// and chain aftershock) schedules its own Cataclysm follow-up, so
+		// owning both perks gives 4 total explosions instead of 2.
+		trap.AftershockDelaySeconds = specific.AftershockDelaySeconds
 		trap.OverloadCataclysmDelaySeconds = specific.OverloadCataclysmDelaySeconds
 		trap.OverloadCataclysmSpriteScale = specific.OverloadCataclysmSpriteScale
+		trap.OverloadCataclysmExplosionSpriteScale = specific.OverloadCataclysmExplosionSpriteScale
 		// ascendant_infusion → Scatter Bomb. Snapshot child count, spawn
 		// radius, and child lifetime — mini traps inherit base/silver damage
 		// from this trap but NOT gold (IsScatterBombChild prevents recursion).
@@ -807,9 +1025,9 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 		// ascendant_infusion → Shared Pain (fraction is not scaled — it's a
 		// direct percentage of incoming damage).
 		trap.InfusionSharedPainFraction = specific.InfusionSharedPainFraction
-		// overload_protocol → Final Exposure (burst + optional AoE on mark expiry).
+		// overload_protocol → Final Exposure (burst on zone exit, also damages
+		// every other unit still carrying a mark from this same trap).
 		trap.OverloadFinalExposureDamage = int(float64(specific.OverloadFinalExposureDamage)*mods.EffectMultiplier + 0.5)
-		trap.OverloadFinalExposureAoeRadius = specific.OverloadFinalExposureAoeRadius * mods.RadiusMultiplier
 	}
 
 	// Position the trap toward the nearest enemy at the archer's attack
@@ -864,6 +1082,22 @@ func (s *GameState) plantOneTrapLocked(unit *Unit, def *PerkDef, bonusIndex int)
 // reach+buffer, the helper returns (0, 0) so the trap drops at the unit's
 // feet instead of being flung across the map toward a distant enemy.
 const trapPlacementThrowBuffer = 150.0
+
+// minorInfusionProcsPerSec is the target cadence for ascendant_infusion's
+// minor-damage popups (Reactive Flames AoE, Electrified Caltrops bonus
+// damage). The dt-based accumulator is gated at threshold = dps / this value
+// so the popup fires this many times per second regardless of the authored
+// damage value — total damage = configured damage; per-proc value floats.
+// Bumping this gives smaller more frequent popups; lowering gives larger
+// less frequent ones.
+const minorInfusionProcsPerSec = 3.0
+
+// trapDoTProcsPerSec is the target cadence for the regular DoT damage
+// popups on caltrops, fire pit, and lasting_flames burns. Same threshold
+// trick as the Infusion minor cadence — gives a stable read regardless of
+// the authored DPS. Decoupled from minorInfusionProcsPerSec so the two
+// streams can be tuned independently later if desired.
+const trapDoTProcsPerSec = 3.0
 
 // trapPlacementOffsetLocked returns the (dx, dy) offset to add to the unit's
 // position so the trap is "thrown" toward the archer's current target and
@@ -972,26 +1206,42 @@ func (s *GameState) trapPlacementOffsetLocked(unit *Unit, radius float64) (float
 //
 // Called from the phase-2 path (initial trigger) and from the aftershock path in
 // tickTrapEffectsLocked so both blasts share identical logic without duplication.
+// Each detonation also queues a Cataclysm follow-up (overload_protocol) when
+// that perk is owned — so initial + chain aftershock both get their own
+// Cataclysm secondary, producing the "2 explosions without explosive_chain,
+// 4 with" sequence.
 //
 // Must be called under s.mu write lock.
 func (s *GameState) detonateExplosiveTrapLocked(trap *Trap, ownerUnit *Unit, deadUnitIDs []int) []int {
 	// Visual: the initial blast still uses the trap's own one-tick "Triggered"
 	// flash so the planted-trap-sprite reads as detonating in place. The
-	// aftershock (explosive_chain / overload_protocol) instead emits the
-	// generalized sprite-based "explosion" effect — a re-flash of the trap's
-	// own visual reads as the same boom replaying on the same spot, while the
-	// dedicated explosion sprite makes the second eruption feel like a fresh
-	// secondary blast. AftershockPending is still true at this point — it gets
-	// cleared by the caller after detonate returns.
+	// chain aftershock (explosive_chain) instead emits the generalized
+	// sprite-based "explosion" effect — a re-flash of the trap's own visual
+	// reads as the same boom replaying on the same spot, while the dedicated
+	// explosion sprite makes the second eruption feel like a fresh secondary
+	// blast. AftershockPending is still true at this point — it gets cleared
+	// by the caller after detonate returns.
 	isAftershock := trap.AftershockPending
 	if isAftershock {
-		sizeScale := trapVisualScaleMultiplier(trap)
+		// When overload_protocol is also owned, the chain aftershock uses
+		// the same explosion sprite scale as the Cataclysm secondaries — so
+		// authoring `cataclysmExplosionSpriteScale` once tunes BOTH the
+		// chain aftershock visual and the Cataclysm visuals together. Falls
+		// back to 1.0 when overload_protocol isn't owned (chain aftershock
+		// then renders at default explosion size).
+		sizeScale := trap.OverloadCataclysmExplosionSpriteScale
 		if sizeScale <= 0 {
 			sizeScale = 1.0
 		}
 		s.queueEffectLocked("explosion", 0, trap.X, trap.Y, sizeScale, 0.5, "")
 	} else {
 		trap.Triggered = true
+	}
+	// Queue a Cataclysm secondary for THIS detonation (when overload_protocol
+	// is owned). Each detonation schedules its own — chain aftershock's
+	// detonate call will queue another Cataclysm independently.
+	if trap.OverloadCataclysmDelaySeconds > 0 {
+		trap.PendingCataclysms = append(trap.PendingCataclysms, trap.OverloadCataclysmDelaySeconds)
 	}
 	explosionRadSq := trap.Radius * trap.Radius
 	for _, unit := range s.Units {
@@ -1035,6 +1285,53 @@ func (s *GameState) detonateExplosiveTrapLocked(trap *Trap, ownerUnit *Unit, dea
 	return deadUnitIDs
 }
 
+// fireCataclysmLocked is the per-detonation secondary explosion queued by
+// overload_protocol. Applies raw burst damage in trap.Radius (same area and
+// per-target damage as the trap's regular detonations) and emits a sprite-
+// based "explosion" EffectSnapshot at the trap position scaled by
+// OverloadCataclysmExplosionSpriteScale. Does NOT set trap.Triggered (the
+// trap visual is already gone by this point) and does NOT schedule another
+// Cataclysm (no recursion — each Cataclysm is a one-shot follow-up to the
+// detonation that scheduled it).
+//
+// Must be called under s.mu write lock.
+func (s *GameState) fireCataclysmLocked(trap *Trap, ownerUnit *Unit, deadUnitIDs []int) []int {
+	scale := trap.OverloadCataclysmExplosionSpriteScale
+	if scale <= 0 {
+		scale = 1.0
+	}
+	s.queueEffectLocked("explosion", 0, trap.X, trap.Y, scale, 0.5, "")
+
+	radSq := trap.Radius * trap.Radius
+	for _, unit := range s.Units {
+		if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
+			continue
+		}
+		if unit.HP <= 0 || !unit.Visible {
+			continue
+		}
+		dx := unit.X - trap.X
+		dy := unit.Y - trap.Y
+		if dx*dx+dy*dy > radSq {
+			continue
+		}
+		s.applyUnitDamageWithSourceLocked(unit, trap.BurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "explosive_cataclysm"})
+		if ownerUnit != nil {
+			s.recordDamageDealtLocked(ownerUnit, unit, trap.BurstDamage)
+		}
+		s.trackBattleDamageLocked(battleSourceFromTrap(trap), unit, trap.BurstDamage)
+		if unit.HP <= 0 {
+			if ownerUnit != nil {
+				s.awardKillXPLocked(ownerUnit)
+				s.payoutDamageDealtXPLocked(unit)
+			}
+			s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
+			deadUnitIDs = append(deadUnitIDs, unit.ID)
+		}
+	}
+	return deadUnitIDs
+}
+
 // fireReactiveFlamesLocked is the secondary-explosion primitive used by
 // ascendant_infusion → Reactive Flames. It deals raw burst damage to visible
 // hostile units within `radius` of (cx, cy) — NO burn application, NO further
@@ -1064,6 +1361,10 @@ func (s *GameState) fireReactiveFlamesLocked(cx, cy, radius float64, damage int,
 			continue
 		}
 		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerTrapID: trapID, Kind: "trap_silver_tick"})
+		// Tag this hit as ancillary so the client renders it as a smaller
+		// orange floating number (splash damage feel, not "the trap hit
+		// harder"). Splits cleanly off the HP-diff popup on the client.
+		s.recordMinorDamageHitLocked(u, damage, "fire")
 		if ownerUnit != nil && ownerUnit.HP > 0 {
 			s.recordDamageDealtLocked(ownerUnit, u, damage)
 		}
@@ -1094,12 +1395,14 @@ func (s *GameState) fireReactiveFlamesLocked(cx, cy, radius float64, damage int,
 }
 
 // fireFinalExposureLocked executes overload_protocol → Final Exposure when a
-// marker_trap-stamped mark expires on `victim`. Deals burst damage to the
-// victim (direct) plus an AoE hit to nearby visible enemies of the same owner
-// (so the effect still punishes an entire marked group).
+// marker-trap victim leaves the trap's zone. Deals burst damage to the
+// victim AND to every OTHER unit currently carrying a mark stack from the
+// same marker_trap (matched via SourceID == FinalExposureTrapID). This makes
+// Final Exposure a "punish the whole marked group" effect — geometry-
+// independent, unlike the old radius-based AoE.
 //
-// Called from state.go's mark-expiry branch. The victim's FinalExposure* fields
-// are consumed (cleared to 0) by the caller after this returns.
+// Called from fireTrapOverloadOnExitLocked. The victim's FinalExposure*
+// fields are consumed (cleared to 0) by the caller after this returns.
 //
 // Must be called under s.mu write lock.
 func (s *GameState) fireFinalExposureLocked(victim *Unit) {
@@ -1107,75 +1410,84 @@ func (s *GameState) fireFinalExposureLocked(victim *Unit) {
 		return
 	}
 	damage := victim.PerkState.FinalExposureDamage
-	radius := victim.PerkState.FinalExposureAoeRadius
+	if damage <= 0 {
+		return
+	}
 	owner := s.unitsByID[victim.PerkState.FinalExposureOwnerUnitID]
 	if owner != nil && owner.HP <= 0 {
 		owner = nil
 	}
 
-	// Debug: Final Exposure fires from a marker_trap Overload Protocol effect —
-	// attribute to the owning player's marker_trap bucket. Requires a living
-	// owner so we have the PlayerID.
+	// Final Exposure attributes to the owning player's marker_trap bucket.
 	trapID := victim.PerkState.FinalExposureTrapID
 	var finalExposureSrc BattleSource
-	var finalExposureDmgSrc DamageSource
+	directDmgSrc := DamageSource{AttackerTrapID: trapID, Kind: "final_exposure"}
+	siblingDmgSrc := DamageSource{AttackerTrapID: trapID, Kind: "final_exposure_share"}
 	if owner != nil {
 		finalExposureSrc = BattleSource{PlayerID: owner.OwnerID, Kind: "trap", Subtype: "marker_trap"}
-		finalExposureDmgSrc = DamageSource{AttackerTrapID: trapID, Kind: "final_exposure"}
 	}
 
 	var dead []int
-	// Direct hit on the victim whose mark just expired.
-	s.applyUnitDamageWithSourceLocked(victim, damage, finalExposureDmgSrc)
-	if owner != nil {
-		s.recordDamageDealtLocked(owner, victim, damage)
-	}
-	s.trackBattleDamageLocked(finalExposureSrc, victim, damage)
-	if victim.HP <= 0 {
+
+	applyOne := func(u *Unit, dmgSrc DamageSource) {
+		// Queue a shadowburst effect on the victim BEFORE applying damage,
+		// using the live unit's current position. This way the effect is
+		// guaranteed a valid anchor even if the damage kills the unit and
+		// it gets removed from s.Units the same tick.
+		s.queueEffectLocked("shadowburst", u.ID, u.X, u.Y, 1.0, 0.6, "")
+
+		s.applyUnitDamageWithSourceLocked(u, damage, dmgSrc)
 		if owner != nil {
-			s.awardKillXPLocked(owner)
-			s.payoutDamageDealtXPLocked(victim)
+			s.recordDamageDealtLocked(owner, u, damage)
 		}
-		s.trackBattleKillLocked(finalExposureSrc, victim)
-		dead = append(dead, victim.ID)
+		s.trackBattleDamageLocked(finalExposureSrc, u, damage)
+		if u.HP <= 0 {
+			if owner != nil {
+				s.awardKillXPLocked(owner)
+				s.payoutDamageDealtXPLocked(u)
+			}
+			s.trackBattleKillLocked(finalExposureSrc, u)
+			dead = append(dead, u.ID)
+		}
 	}
-	// Optional AoE to nearby enemies of the victim's owner (the trap's
-	// original targets). Skip if radius is zero (AoE disabled by tuning).
-	if radius > 0 {
-		radSq := radius * radius
+
+	// Direct hit on the exiting victim.
+	applyOne(victim, directDmgSrc)
+
+	// Damage every OTHER unit still carrying a mark stack from the SAME
+	// marker_trap. trapID gates this — without it we'd hit unrelated marks
+	// (challengers_mark from the soldier line, marks from a different
+	// marker_trap, etc.).
+	if trapID != "" {
 		for _, u := range s.Units {
 			if u == nil || u.ID == victim.ID {
 				continue
 			}
-			if u.OwnerID != victim.OwnerID {
-				continue // same-team-as-victim only; other teams aren't this trapper's concern
-			}
 			if u.HP <= 0 || !u.Visible {
 				continue
 			}
-			dx := u.X - victim.X
-			dy := u.Y - victim.Y
-			if dx*dx+dy*dy > radSq {
+			if !unitHasMarkFromSource(u, trapID) {
 				continue
 			}
-			s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerTrapID: trapID, Kind: "final_exposure_aoe"})
-			if owner != nil {
-				s.recordDamageDealtLocked(owner, u, damage)
-			}
-			s.trackBattleDamageLocked(finalExposureSrc, u, damage)
-			if u.HP <= 0 {
-				if owner != nil {
-					s.awardKillXPLocked(owner)
-					s.payoutDamageDealtXPLocked(u)
-				}
-				s.trackBattleKillLocked(finalExposureSrc, u)
-				dead = append(dead, u.ID)
-			}
+			applyOne(u, siblingDmgSrc)
 		}
 	}
+
 	for _, id := range dead {
 		s.removeUnitLocked(id)
 	}
+}
+
+// unitHasMarkFromSource reports whether the unit currently carries any mark
+// stack with the given SourceID (e.g. a marker_trap's ID). Used by Final
+// Exposure to find marked siblings without doing geometric AoE.
+func unitHasMarkFromSource(u *Unit, sourceID string) bool {
+	for i := range u.PerkState.MarkStacks {
+		if u.PerkState.MarkStacks[i].SourceID == sourceID {
+			return true
+		}
+	}
+	return false
 }
 
 // perkShareDamageToMarkedLocked redistributes a fraction of the source unit's
@@ -1259,100 +1571,117 @@ func (s *GameState) fireTrapExpiryEffectsLocked(trap *Trap) {
 		ownerUnit = nil
 	}
 
+	// Zone-effect traps (caltrops, fire_pit, marker_trap) deliver their
+	// Overload payload on per-victim zone EXIT (see fireTrapOverloadOnExitLocked).
+	// On trap expiry, every unit currently inside the zone effectively "leaves"
+	// at the same moment — fire the payload on each remaining tracked victim.
+	switch trap.TrapType {
+	case "caltrops", "fire_pit", "marker_trap":
+		if len(trap.UnitsInZone) == 0 {
+			return
+		}
+		var dead []int
+		for unitID := range trap.UnitsInZone {
+			victim := s.unitsByID[unitID]
+			if victim == nil || victim.HP <= 0 || !victim.Visible {
+				continue
+			}
+			dead = s.fireTrapOverloadOnExitLocked(trap, ownerUnit, victim, dead)
+		}
+		for _, id := range dead {
+			s.removeUnitLocked(id)
+		}
+		trap.UnitsInZone = nil
+		return
+	}
+
+	// Other trap types (e.g. explosive_trap) have no expiry-time Overload
+	// payload — explosive_trap's Cataclysm fires per-detonation via
+	// PendingCataclysms, not on lifetime expiry.
+}
+
+// fireTrapOverloadOnExitLocked dispatches the per-victim Overload payload for
+// zone-effect traps (caltrops/fire_pit/marker_trap) when a unit transitions
+// from "inside zone" to "outside zone". Called from the per-tick zone diff in
+// tickTrapEffectsLocked AND from fireTrapExpiryEffectsLocked when the trap's
+// own lifetime hits zero (treating the disappearing zone as "everyone left").
+//
+// Returns the updated deadUnitIDs slice. Must be called under s.mu write lock.
+func (s *GameState) fireTrapOverloadOnExitLocked(trap *Trap, ownerUnit, victim *Unit, deadUnitIDs []int) []int {
+	if trap == nil || victim == nil {
+		return deadUnitIDs
+	}
 	switch trap.TrapType {
 	case "caltrops":
 		if trap.OverloadSpikeSurgeBurstDamage <= 0 {
-			return
+			return deadUnitIDs
 		}
-		var dead []int
-		radSq := trap.Radius * trap.Radius
-		for _, u := range s.Units {
-			if u == nil || !playersAreHostile(u.OwnerID, trap.OwnerPlayerID) {
-				continue
-			}
-			if u.HP <= 0 || !u.Visible {
-				continue
-			}
-			dx := u.X - trap.X
-			dy := u.Y - trap.Y
-			if dx*dx+dy*dy > radSq {
-				continue
-			}
-			s.applyUnitDamageWithSourceLocked(u, trap.OverloadSpikeSurgeBurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "overload_spike_surge"})
+		s.applyUnitDamageWithSourceLocked(victim, trap.OverloadSpikeSurgeBurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "overload_spike_surge"})
+		if ownerUnit != nil {
+			s.recordDamageDealtLocked(ownerUnit, victim, trap.OverloadSpikeSurgeBurstDamage)
+		}
+		s.trackBattleDamageLocked(battleSourceFromTrap(trap), victim, trap.OverloadSpikeSurgeBurstDamage)
+		if trap.OverloadSpikeSurgeSlowMult > 0 && trap.OverloadSpikeSurgeSlowMult < 1.0 {
+			s.ApplySlowLocked(victim.ID, trap.OverloadSpikeSurgeSlowMult, trap.OverloadSpikeSurgeSlowDuration)
+		}
+		if victim.HP <= 0 {
 			if ownerUnit != nil {
-				s.recordDamageDealtLocked(ownerUnit, u, trap.OverloadSpikeSurgeBurstDamage)
+				s.awardKillXPLocked(ownerUnit)
+				s.payoutDamageDealtXPLocked(victim)
 			}
-			// Debug: Spike Surge rolls up under caltrops (consistent with the
-			// Bronze-trap bucket — Overload Protocol is a Gold upgrade to it).
-			s.trackBattleDamageLocked(battleSourceFromTrap(trap), u, trap.OverloadSpikeSurgeBurstDamage)
-			if trap.OverloadSpikeSurgeSlowMult > 0 && trap.OverloadSpikeSurgeSlowMult < 1.0 {
-				s.ApplySlowLocked(u.ID, trap.OverloadSpikeSurgeSlowMult, trap.OverloadSpikeSurgeSlowDuration)
-			}
-			if u.HP <= 0 {
-				if ownerUnit != nil {
-					s.awardKillXPLocked(ownerUnit)
-					s.payoutDamageDealtXPLocked(u)
-				}
-				s.trackBattleKillLocked(battleSourceFromTrap(trap), u)
-				dead = append(dead, u.ID)
-			}
-		}
-		for _, id := range dead {
-			s.removeUnitLocked(id)
+			s.trackBattleKillLocked(battleSourceFromTrap(trap), victim)
+			deadUnitIDs = append(deadUnitIDs, victim.ID)
 		}
 
 	case "fire_pit":
-		if trap.OverloadFlameCollapseRadius <= 0 || trap.OverloadFlameCollapseDamage <= 0 {
-			return
+		if trap.OverloadFlameCollapseDamage <= 0 {
+			return deadUnitIDs
 		}
-		var dead []int
-		radSq := trap.OverloadFlameCollapseRadius * trap.OverloadFlameCollapseRadius
-		for _, u := range s.Units {
-			if u == nil || !playersAreHostile(u.OwnerID, trap.OwnerPlayerID) {
-				continue
-			}
-			if u.HP <= 0 || !u.Visible {
-				continue
-			}
-			dx := u.X - trap.X
-			dy := u.Y - trap.Y
-			if dx*dx+dy*dy > radSq {
-				continue
-			}
-			s.applyUnitDamageWithSourceLocked(u, trap.OverloadFlameCollapseDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "overload_flame_collapse"})
+		s.applyUnitDamageWithSourceLocked(victim, trap.OverloadFlameCollapseDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "overload_flame_collapse"})
+		if ownerUnit != nil {
+			s.recordDamageDealtLocked(ownerUnit, victim, trap.OverloadFlameCollapseDamage)
+		}
+		s.trackBattleDamageLocked(battleSourceFromTrap(trap), victim, trap.OverloadFlameCollapseDamage)
+		if trap.OverloadFlameCollapseBurnDPS > 0 && trap.OverloadFlameCollapseBurnSeconds > 0 {
+			// Distinct SourceID from the in-zone lasting_flames stack so the
+			// Flame Collapse burn occupies its OWN BurnStacks slot. Both stacks
+			// then tick independently, summing DPS — this is what makes the
+			// gold perk feel like it adds to the silver perk instead of just
+			// "refresh-stronger overwriting" it.
+			victim.PerkState.applyBurnStack(
+				trap.ID+".collapse",
+				trap.ID, // same trapKey as lasting_flames so they share the per-trap cap
+				trap.OwnerUnitID,
+				trap.OverloadFlameCollapseBurnDPS,
+				trap.OverloadFlameCollapseBurnSeconds,
+				0, 0,
+			)
+		}
+		if victim.HP <= 0 {
 			if ownerUnit != nil {
-				s.recordDamageDealtLocked(ownerUnit, u, trap.OverloadFlameCollapseDamage)
+				s.awardKillXPLocked(ownerUnit)
+				s.payoutDamageDealtXPLocked(victim)
 			}
-			// Debug: Flame Collapse rolls up under fire_pit.
-			s.trackBattleDamageLocked(battleSourceFromTrap(trap), u, trap.OverloadFlameCollapseDamage)
-			// Reapply burn via the stack helper so Flame Collapse integrates
-			// with the same per-source stacking rules as lasting_flames.
-			// Keyed by trap.ID so two overlapping Flame Collapse blasts
-			// (e.g. primary + increased_deployment bonus) land separate
-			// stacks. Reactive Flames is NOT piggy-backed here — Flame
-			// Collapse is an Overload effect, not an Infusion effect.
-			if trap.OverloadFlameCollapseBurnDPS > 0 && trap.OverloadFlameCollapseBurnSeconds > 0 {
-				u.PerkState.applyBurnStack(
-					trap.ID,
-					trap.OwnerUnitID,
-					trap.OverloadFlameCollapseBurnDPS,
-					trap.OverloadFlameCollapseBurnSeconds,
-					0, 0,
-				)
-			}
-			if u.HP <= 0 {
-				if ownerUnit != nil {
-					s.awardKillXPLocked(ownerUnit)
-					s.payoutDamageDealtXPLocked(u)
-				}
-				s.trackBattleKillLocked(battleSourceFromTrap(trap), u)
-				dead = append(dead, u.ID)
-			}
+			s.trackBattleKillLocked(battleSourceFromTrap(trap), victim)
+			deadUnitIDs = append(deadUnitIDs, victim.ID)
 		}
-		for _, id := range dead {
-			s.removeUnitLocked(id)
+
+	case "marker_trap":
+		// Final Exposure: armed by the marker_trap zone-iter onto the victim's
+		// PerkState; fired here on zone exit. The fields stay armed until the
+		// effect actually fires so a fresh trap re-arms cleanly.
+		if victim.PerkState.FinalExposureDamage <= 0 {
+			return deadUnitIDs
+		}
+		s.fireFinalExposureLocked(victim)
+		victim.PerkState.FinalExposureDamage = 0
+		victim.PerkState.FinalExposureOwnerUnitID = 0
+		victim.PerkState.FinalExposureTrapID = ""
+		if victim.HP <= 0 {
+			deadUnitIDs = append(deadUnitIDs, victim.ID)
 		}
 	}
+	return deadUnitIDs
 }
 
 // spawnScatterBombChildrenLocked constructs N mini explosive_trap children at
@@ -1386,18 +1715,20 @@ func (s *GameState) spawnScatterBombChildrenLocked(parent *Trap) {
 		id := s.nextTrapID
 		s.nextTrapID++
 		child := &Trap{
-			ID:                 trapIDString(id),
-			OwnerUnitID:        parent.OwnerUnitID,
-			OwnerPlayerID:      parent.OwnerPlayerID,
-			X:                  childX,
-			Y:                  childY,
-			Radius:             parent.Radius,
-			TriggerRadius:      parent.TriggerRadius,
-			RemainingSeconds:   childDuration,
-			TrapType:           "explosive_trap",
-			BurstDamage:        parent.BurstDamage,
-			AftershockDelaySeconds: parent.AftershockDelaySeconds,
-			IsScatterBombChild: true,
+			ID:                                    trapIDString(id),
+			OwnerUnitID:                           parent.OwnerUnitID,
+			OwnerPlayerID:                         parent.OwnerPlayerID,
+			X:                                     childX,
+			Y:                                     childY,
+			Radius:                                parent.Radius,
+			TriggerRadius:                         parent.TriggerRadius,
+			RemainingSeconds:                      childDuration,
+			TrapType:                              "explosive_trap",
+			BurstDamage:                           parent.BurstDamage,
+			AftershockDelaySeconds:                parent.AftershockDelaySeconds,
+			OverloadCataclysmDelaySeconds:         parent.OverloadCataclysmDelaySeconds,
+			OverloadCataclysmExplosionSpriteScale: parent.OverloadCataclysmExplosionSpriteScale,
+			IsScatterBombChild:                    true,
 		}
 		s.Traps = append(s.Traps, child)
 	}

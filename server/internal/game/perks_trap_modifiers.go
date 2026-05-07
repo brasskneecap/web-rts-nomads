@@ -144,6 +144,7 @@ type TrapSpecificModifiers struct {
 	InfusionElectrifiedStunChance      float64
 	InfusionElectrifiedStunDuration    float64
 	InfusionElectrifiedStunCooldownSec float64
+	InfusionElectrifiedStunDamage      int
 	// Reactive Flames (fire_pit)
 	InfusionReactiveFlamesRadius float64
 	InfusionReactiveFlamesDamage int
@@ -167,14 +168,18 @@ type TrapSpecificModifiers struct {
 	OverloadFlameCollapseBurnDPS     float64
 	OverloadFlameCollapseBurnSeconds float64
 	// Cataclysm Blast (explosive_trap)
-	OverloadCataclysmRadiusMult    float64
-	OverloadCataclysmDelaySeconds  float64
+	OverloadCataclysmRadiusMult   float64
+	OverloadCataclysmDelaySeconds float64
 	// Client-side visual inflate applied to the trap's sprite while this
 	// perk is active. 0 = no change (client treats as 1×). Purely cosmetic.
-	OverloadCataclysmSpriteScale   float64
+	OverloadCataclysmSpriteScale float64
+	// Sprite scale applied to the "explosion" EffectSnapshot fired by each
+	// Cataclysm secondary blast — tunable separately from the trap's barrel
+	// sprite size so the explosion VFX can be sized for the spectacle without
+	// inflating the trap itself.
+	OverloadCataclysmExplosionSpriteScale float64
 	// Final Exposure (marker_trap)
-	OverloadFinalExposureDamage    int
-	OverloadFinalExposureAoeRadius float64
+	OverloadFinalExposureDamage int
 }
 
 // trapSpecificModifiersForUnitLocked resolves trap-type-specific modifiers.
@@ -226,6 +231,7 @@ func (s *GameState) trapSpecificModifiersForUnitLocked(unit *Unit, trapType stri
 				m.InfusionElectrifiedStunChance = def.Config["electrifiedStunChance"]
 				m.InfusionElectrifiedStunDuration = def.Config["electrifiedStunDuration"]
 				m.InfusionElectrifiedStunCooldownSec = def.Config["electrifiedStunCooldownSeconds"]
+				m.InfusionElectrifiedStunDamage = int(def.Config["electrifiedStunDamage"])
 			case "fire_pit":
 				m.InfusionReactiveFlamesRadius = def.Config["reactiveFlamesRadius"]
 				m.InfusionReactiveFlamesDamage = int(def.Config["reactiveFlamesDamage"])
@@ -253,9 +259,9 @@ func (s *GameState) trapSpecificModifiersForUnitLocked(unit *Unit, trapType stri
 				m.OverloadCataclysmRadiusMult = def.Config["cataclysmRadiusMultiplier"]
 				m.OverloadCataclysmDelaySeconds = def.Config["cataclysmSecondaryDelaySeconds"]
 				m.OverloadCataclysmSpriteScale = def.Config["cataclysmSpriteScale"]
+				m.OverloadCataclysmExplosionSpriteScale = def.Config["cataclysmExplosionSpriteScale"]
 			case "marker_trap":
 				m.OverloadFinalExposureDamage = int(def.Config["finalExposureBurstDamage"])
-				m.OverloadFinalExposureAoeRadius = def.Config["finalExposureAoeRadius"]
 			}
 
 		// ── EXTENSION POINT: trap-specific Silver/Gold upgrades plug in here.

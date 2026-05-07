@@ -71,7 +71,7 @@
     "tooltipTemplate": "Fire Pit: damage is applied as a burn debuff that continues for {burnDurationSeconds:1}s after leaving the zone.",
     "requiresPerk": "fire_pit",
     "config": {
-      "burnDurationSeconds": 4
+      "burnDurationSeconds": 8
     }
   }
 ]

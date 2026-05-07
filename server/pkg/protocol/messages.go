@@ -659,6 +659,19 @@ type CritEventSnapshot struct {
 	Damage int `json:"damage"`
 }
 
+// MinorDamageEventSnapshot tags a portion of a unit's HP-delta as ancillary
+// damage (e.g. ascendant_infusion's Reactive Flames AoE, Electrified Caltrops
+// bonus damage). The client renders the matching portion of its floating-
+// number popup in a smaller font with a distinct color so the player can
+// tell "the trap did X, the infusion added Y" at a glance. Drained per tick
+// like CritEventSnapshot. Variant maps to a renderer color (e.g. "fire" =
+// orange, "electric" = purple); empty defaults to fire/orange.
+type MinorDamageEventSnapshot struct {
+	UnitID  int    `json:"unitId"`
+	Damage  int    `json:"damage"`
+	Variant string `json:"variant,omitempty"`
+}
+
 // EffectSnapshot is a generalized transient visual effect anchored to a unit
 // or a world position. It is emitted by the server (typically via perk hooks)
 // and drained per-tick to the client alongside ProjectileSnapshot and
@@ -696,6 +709,7 @@ type MatchSnapshotMessage struct {
 	Projectiles   []ProjectileSnapshot    `json:"projectiles,omitempty"`
 	Effects       []EffectSnapshot        `json:"effects,omitempty"`
 	CritEvents    []CritEventSnapshot     `json:"critEvents,omitempty"`
+	MinorDamageEvents []MinorDamageEventSnapshot `json:"minorDamageEvents,omitempty"`
 	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
 	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
 	Victory       *VictorySnapshot        `json:"victory,omitempty"`

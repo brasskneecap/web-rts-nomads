@@ -59,7 +59,7 @@ func spawnUnitWithPerks(s *GameState, unitType string, rank string, perkIDs []st
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestEffectiveTrapSnapshot_FirePit_RankScaling_Bronze verifies that a Bronze-
-// rank trapper with fire_pit reads the base config (DPS=8, Radius=55).
+// rank trapper with fire_pit reads the base config (DPS=4, Radius=55).
 func TestEffectiveTrapSnapshot_FirePit_RankScaling_Bronze(t *testing.T) {
 	s := newTooltipState(t)
 	s.mu.Lock()
@@ -75,12 +75,12 @@ func TestEffectiveTrapSnapshot_FirePit_RankScaling_Bronze(t *testing.T) {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for unit with fire_pit at Bronze rank")
 	}
 
-	assertFloatEq(t, "Bronze DamagePerSecond", snap.DamagePerSecond, 8.0)
+	assertFloatEq(t, "Bronze DamagePerSecond", snap.DamagePerSecond, 4.0)
 	assertFloatEq(t, "Bronze Radius", snap.Radius, 55.0)
 }
 
 // TestEffectiveTrapSnapshot_FirePit_RankScaling_Silver verifies that a Silver-
-// rank trapper with fire_pit reads ConfigByRank["silver"] overrides (DPS=16, Radius=75).
+// rank trapper with fire_pit reads ConfigByRank["silver"] overrides (DPS=8, Radius=75).
 func TestEffectiveTrapSnapshot_FirePit_RankScaling_Silver(t *testing.T) {
 	s := newTooltipState(t)
 	s.mu.Lock()
@@ -96,12 +96,12 @@ func TestEffectiveTrapSnapshot_FirePit_RankScaling_Silver(t *testing.T) {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for unit with fire_pit at Silver rank")
 	}
 
-	assertFloatEq(t, "Silver DamagePerSecond", snap.DamagePerSecond, 16.0)
+	assertFloatEq(t, "Silver DamagePerSecond", snap.DamagePerSecond, 8.0)
 	assertFloatEq(t, "Silver Radius", snap.Radius, 75.0)
 }
 
 // TestEffectiveTrapSnapshot_FirePit_RankScaling_Gold verifies that a Gold-rank
-// trapper with fire_pit reads ConfigByRank["gold"] overrides (DPS=24, Radius=95).
+// trapper with fire_pit reads ConfigByRank["gold"] overrides (DPS=12, Radius=95).
 func TestEffectiveTrapSnapshot_FirePit_RankScaling_Gold(t *testing.T) {
 	s := newTooltipState(t)
 	s.mu.Lock()
@@ -117,7 +117,7 @@ func TestEffectiveTrapSnapshot_FirePit_RankScaling_Gold(t *testing.T) {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for unit with fire_pit at Gold rank")
 	}
 
-	assertFloatEq(t, "Gold DamagePerSecond", snap.DamagePerSecond, 24.0)
+	assertFloatEq(t, "Gold DamagePerSecond", snap.DamagePerSecond, 12.0)
 	assertFloatEq(t, "Gold Radius", snap.Radius, 95.0)
 }
 

@@ -231,7 +231,7 @@ func TestTrapModifiers_RapidDeployment_PlaceIntervalCaltrops(t *testing.T) {
 
 // TestTrapModifiers_AmplifiedEffects_Caltrops verifies:
 //   - DamagePerSecond 3 → 4.05 (3 * 1.35)
-//   - SlowMultiplier uses slow-amount math: 0.7 → 0.595
+//   - SlowMultiplier uses slow-amount math: 0.4 → 0.19
 func TestTrapModifiers_AmplifiedEffects_Caltrops(t *testing.T) {
 	s := newTrapSilverState(t)
 	s.mu.Lock()
@@ -248,8 +248,8 @@ func TestTrapModifiers_AmplifiedEffects_Caltrops(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, 4.05)  // 3 * 1.35
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, 0.595)   // 1 - (0.30 * 1.35)
+	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, 4.05) // 3 * 1.35
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, 0.0)    // 1 - clamp((0.80 * 1.35), 1) = 0
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -337,8 +337,8 @@ func TestTrapModifiers_AllSilverStack_Caltrops(t *testing.T) {
 	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, 4.2)
 	// DamagePerSecond: 3 * 1.35 = 4.05
 	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, 4.05)
-	// SlowMultiplier: 1 - (0.30 * 1.35) = 0.595
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, 0.595)
+	// SlowMultiplier: 1 - clamp((0.80 * 1.35), 1) = 0
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, 0.0)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -392,8 +392,8 @@ func TestTrapModifiers_PlantEndToEnd_SnapshotScaled(t *testing.T) {
 	assertFloatEq(t, "planted.Radius", planted.Radius, 90.0)
 	// DamagePerSecond: 3 * 1.35 = 4.05
 	assertFloatEq(t, "planted.DamagePerSecond", planted.DamagePerSecond, 4.05)
-	// SlowMultiplier: 1 - (0.30 * 1.35) = 0.595
-	assertFloatEq(t, "planted.SlowMultiplier", planted.SlowMultiplier, 0.595)
+	// SlowMultiplier: 1 - clamp((0.80 * 1.35), 1) = 0
+	assertFloatEq(t, "planted.SlowMultiplier", planted.SlowMultiplier, 0.0)
 	// Ownership
 	if planted.OwnerPlayerID != "p1" {
 		t.Errorf("planted.OwnerPlayerID: got %q, want p1", planted.OwnerPlayerID)
