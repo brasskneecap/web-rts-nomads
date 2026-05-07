@@ -84,6 +84,11 @@ func (s *GameState) assignAttackApproachPathLocked(unit, target *Unit, blocked m
 	if !ok {
 		unit.Path = nil
 		unit.Moving = false
+		unit.UnreachableTargetID = target.ID
+		unit.UnreachableUntilTick = s.Tick + unreachableTargetCooldownTicks
+		if unit.Order.Type != OrderAttackTarget {
+			s.clearCombatTargetLocked(unit)
+		}
 		return
 	}
 
@@ -91,6 +96,11 @@ func (s *GameState) assignAttackApproachPathLocked(unit, target *Unit, blocked m
 	if len(fullPath) == 0 {
 		unit.Path = nil
 		unit.Moving = false
+		unit.UnreachableTargetID = target.ID
+		unit.UnreachableUntilTick = s.Tick + unreachableTargetCooldownTicks
+		if unit.Order.Type != OrderAttackTarget {
+			s.clearCombatTargetLocked(unit)
+		}
 		return
 	}
 

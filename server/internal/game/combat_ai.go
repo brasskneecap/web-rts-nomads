@@ -82,6 +82,10 @@ const (
 	// per-tick cost under control, short enough that a freshly-built player
 	// building gets attacked promptly.
 	enemyObjectiveSearchCooldownTicks = 20
+	// unreachableTargetCooldownTicks is how long a unit ignores a target whose
+	// A* path came back empty, preventing per-tick pathfinding storms when many
+	// units crowd around an inaccessible enemy (~2 seconds at 20Hz).
+	unreachableTargetCooldownTicks = 40
 )
 
 func (s *GameState) initializeCombatUnitLocked(unit *Unit) {
@@ -205,8 +209,16 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 		return
 	}
 
-	shouldEvaluate := unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == ""
-	if !shouldEvaluate && profile.RetargetIntervalTicks > 0 {
+	// Honor RetargetIntervalTicks regardless of whether we currently hold a
+	// target. Without the empty-target case obeying the cooldown, a unit that
+	// drops its target via shouldDropCurrentTargetLocked re-acquires next tick
+	// — and if the drop predicate is still true (a hostile lingering inside
+	// drop radius while the same building keeps scoring highest), that's a
+	// per-tick A* storm in applyCombatTargetLocked.
+	shouldEvaluate := false
+	if profile.RetargetIntervalTicks <= 0 {
+		shouldEvaluate = true
+	} else {
 		shouldEvaluate = s.Tick-unit.LastTargetEvalTick >= profile.RetargetIntervalTicks
 	}
 	if unit.TauntedByUnitID != 0 && unit.TauntRemaining > 0 {
@@ -432,7 +444,11 @@ func (s *GameState) PatrolUnits(playerID string, unitIDs []int, dest protocol.Ve
 // the normal combat system; this function only acts once the target is gone.
 // Must be called under s.mu write lock.
 func (s *GameState) tickGuardReturnLocked(blocked map[gridPoint]bool) {
-	const guardArrivalEpsilon = 12.0
+	// Two sub-cells: covers the diagonal goal-snap distance (~22.6px) created
+	// by the static-obstacle inflation in buildUnitPathBlockedLocked, so guards
+	// painted next to buildings/trees don't loop forever trying to reach an
+	// anchor the pathfinder can't quite land on.
+	const guardArrivalEpsilon = unitPathSubCellSize * 2
 
 	for _, unit := range s.Units {
 		if !unit.GuardMode || unit.HP <= 0 || !unit.Visible {
@@ -475,6 +491,10 @@ func (s *GameState) clearCombatTargetLocked(unit *Unit) {
 		unit.Order = OrderState{Type: OrderIdle}
 	}
 	unit.CurrentTargetScore = 0
+	// Honor RetargetIntervalTicks after dropping a target so re-acquisition
+	// can't fire on the very next tick — otherwise two unreachable enemies in
+	// range cause per-tick A* oscillation as the single-slot memo flips.
+	unit.LastTargetEvalTick = s.Tick
 	if !unit.Moving {
 		unit.Status = "Idle"
 	}

@@ -197,6 +197,11 @@ func (s *GameState) spawnPlacedEnemyUnitsLocked() {
 	}
 	blocked := s.getBlockedCellsLocked()
 	cellSize := s.MapConfig.CellSize
+	// Shared OrderID across all painted enemies so they exclude each other from
+	// the fine pathmap (state_movement.go same-OrderID rule). Without this,
+	// dense painted clusters saturate the pathmap with 22px separation circles
+	// and tickGuardReturnLocked spams A* every tick on every unit.
+	placedOrderID := s.nextMovementOrderIDLocked()
 	for _, entry := range s.MapConfig.PlacedUnits {
 		if entry.Owner != "enemy" {
 			continue
@@ -217,6 +222,7 @@ func (s *GameState) spawnPlacedEnemyUnitsLocked() {
 				"unitType", entry.UnitType)
 			continue
 		}
+		unit.OrderID = placedOrderID
 		unit.GuardMode = true
 		unit.GuardAnchorX = spawnPos.X
 		unit.GuardAnchorY = spawnPos.Y

@@ -336,8 +336,11 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Attacking = false
 					unit.ActionFacingDX = 0
 					unit.ActionFacingDY = 0
-					// Hold units never move to engage buildings either.
-					if unit.Order.Type == OrderHold {
+					// Hold units never move to engage buildings either. Guards are
+					// exempt — same exception as the unit-vs-unit branch above and
+					// applyCombatTargetLocked: GuardMode painted enemies are spawned
+					// with OrderHold but are expected to chase within GuardLeashRange.
+					if unit.Order.Type == OrderHold && !unit.GuardMode {
 						unit.AttackBuildingTargetID = ""
 						unit.Status = "Idle"
 						continue

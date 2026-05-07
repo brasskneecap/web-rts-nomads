@@ -297,6 +297,7 @@ func (s *GameState) findNearestWalkableAvailable(start gridPoint, blocked map[gr
 const softBlockedPenalty = 2.0
 
 func (s *GameState) findPath(start, goal gridPoint, blocked map[gridPoint]bool, softBlocked map[gridPoint]bool) []protocol.Vec2 {
+	s.debugPathTracker.recordCoarsePath()
 	start = s.clampGridPoint(start)
 	goal = s.clampGridPoint(goal)
 
@@ -487,6 +488,7 @@ func (s *GameState) findNearestUnitPathSubWalkable(start gridPoint, blocked map[
 // between their separation circles. Returns world-space waypoints; the
 // caller is expected to simplify (line-of-sight collapse) before assigning.
 func (s *GameState) findUnitPath(start, goal gridPoint, blocked map[gridPoint]bool) []protocol.Vec2 {
+	s.debugPathTracker.recordFinePath()
 	cols, rows := s.unitPathSubGridDims()
 
 	if start == goal {

@@ -144,6 +144,7 @@ func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protoco
 }
 
 func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[gridPoint]bool, reservedGoals map[gridPoint]bool) {
+	s.debugPathTracker.recordRepath(unit.ID, unit.X, unit.Y, s.Tick)
 	clampedDest := protocol.Vec2{
 		X: clampFloat(dest.X, unitRadius, s.MapWidth-unitRadius),
 		Y: clampFloat(dest.Y, unitRadius, s.MapHeight-unitRadius),
@@ -272,7 +273,7 @@ func (s *GameState) clampPointToCell(point protocol.Vec2, cell gridPoint) protoc
 // excluded so a group can fan out into formation slots without walling
 // each other off.
 func (s *GameState) buildUnitPathBlockedLocked(self *Unit, terrainBlocked map[gridPoint]bool) map[gridPoint]bool {
-	sub := make(map[gridPoint]bool, len(terrainBlocked)*16+len(s.Units)*16)
+	sub := make(map[gridPoint]bool, len(terrainBlocked)*36+len(s.Units)*16)
 
 	cellSize := s.MapConfig.CellSize
 	if cellSize <= 0 {
@@ -282,11 +283,14 @@ func (s *GameState) buildUnitPathBlockedLocked(self *Unit, terrainBlocked map[gr
 	if perSide <= 0 {
 		perSide = 1
 	}
+	// Expand by one sub-cell on each side so paths keep at least unitPathSubCellSize
+	// of clearance from static obstacles — prevents units from grazing/clipping
+	// building corners and tree edges as they walk past.
 	for terrainCell := range terrainBlocked {
 		baseX := terrainCell.X * perSide
 		baseY := terrainCell.Y * perSide
-		for dy := 0; dy < perSide; dy++ {
-			for dx := 0; dx < perSide; dx++ {
+		for dy := -1; dy <= perSide; dy++ {
+			for dx := -1; dx <= perSide; dx++ {
 				sub[gridPoint{X: baseX + dx, Y: baseY + dy}] = true
 			}
 		}

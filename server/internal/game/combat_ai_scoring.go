@@ -60,7 +60,15 @@ func (s *GameState) shouldDropCurrentTargetLocked(unit *Unit, profile CombatProf
 		// to engage — the scoring system will then pick them up instead of the
 		// unit running straight past them to hit the building.
 		// This mirrors the old tickEnemyAILocked aggroRadius behaviour.
-		for _, hostile := range ctx.index.query(unit.X, unit.Y, effectiveDetectionRange(unit, profile)*0.75) {
+		// For guards the drop radius must match the acquire radius
+		// (GuardAggroRange), otherwise hostiles in the gap trigger a drop the
+		// scorer can't replace — building target gets re-applied next tick and
+		// applyCombatTargetLocked spams A* on every tick.
+		dropRadius := effectiveDetectionRange(unit, profile) * 0.75
+		if unit.GuardMode && unit.GuardAggroRange > 0 {
+			dropRadius = unit.GuardAggroRange
+		}
+		for _, hostile := range ctx.index.query(unit.X, unit.Y, dropRadius) {
 			if !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
 				continue
 			}
@@ -91,6 +99,9 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 
 	for _, hostile := range ctx.index.query(unit.X, unit.Y, detectionRange) {
 		if hostile == unit || !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 || !hostile.Visible {
+			continue
+		}
+		if s.Tick < unit.UnreachableUntilTick && hostile.ID == unit.UnreachableTargetID {
 			continue
 		}
 		if !s.targetInsideLeashLocked(unit, hostile.X, hostile.Y, profile) {
@@ -139,6 +150,9 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 			if !playersAreHostile(hostile.OwnerID, unit.OwnerID) {
 				continue
 			}
+			if s.Tick < unit.UnreachableUntilTick && hostile.ID == unit.UnreachableTargetID {
+				continue
+			}
 			score := s.scoreUnitTargetLocked(unit, hostile, profile, ctx)
 			if score > best.Score {
 				best = combatTarget{Kind: combatTargetUnit, Unit: hostile, Score: score}
@@ -150,6 +164,9 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 		for i := range s.MapConfig.Buildings {
 			building := &s.MapConfig.Buildings[i]
 			if !s.isValidHostileBuildingTarget(unit, building) {
+				continue
+			}
+			if s.Tick < unit.UnreachableUntilTick && building.ID == unit.UnreachableBuildingTargetID {
 				continue
 			}
 			center := s.buildingCenterLocked(building)

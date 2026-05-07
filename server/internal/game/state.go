@@ -205,6 +205,13 @@ type Unit struct {
 	// the simulation budget. Set forward by enemyObjectiveSearchCooldownTicks
 	// after a search; cleared to 0 when the unit acquires any target.
 	NextObjectiveSearchTick int
+	// UnreachableTargetID / UnreachableBuildingTargetID / UnreachableUntilTick
+	// memo the last target that failed A* so the scoring loop can skip it for
+	// unreachableTargetCooldownTicks, forcing selection of a different enemy
+	// instead of hammering pathfinding every tick against an inaccessible target.
+	UnreachableTargetID         int
+	UnreachableBuildingTargetID string
+	UnreachableUntilTick        int
 	TauntedByUnitID         int
 	TauntRemaining          float64
 	// StunnedRemaining is seconds left on the stun CC applied to this unit by
@@ -429,6 +436,10 @@ type GameState struct {
 	// into MatchSnapshotMessage.BattleTracker (omitted when disabled).
 	battleTracker *BattleTracker
 
+	// debugPathTracker is the env-var-gated path-debug analyzer. nil when
+	// WEBRTS_DEBUG_PATHING is unset — all methods are no-ops on a nil receiver.
+	debugPathTracker *debugPathTracker
+
 	// playersWithTownhall tracks which player IDs have ever owned a townhall,
 	// so we can distinguish "never had one yet" from "just lost the last one".
 	playersWithTownhall map[string]bool
@@ -525,6 +536,9 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 	// tracker is still allocated when disabled so call sites can invoke its
 	// methods unconditionally (a nil check + flag check short-circuits cheaply).
 	state.battleTracker = newBattleTracker(mapConfig.Debug != nil && mapConfig.Debug.BattleTracker)
+
+	// Path debug tracker — nil when WEBRTS_DEBUG_PATHING is unset (zero cost).
+	state.debugPathTracker = newDebugPathTracker()
 
 	state.SetMapConfig(mapConfig)
 	return state
@@ -1096,6 +1110,8 @@ func (s *GameState) Update(dt float64) {
 	profileSection("obstacleMetadata", func() { s.refreshObstacleRuntimeMetadataLocked() })
 	profileSection("playerLoss", func() { s.checkPlayerLossLocked() })
 	profileSection("victory", func() { s.checkVictoryLocked() })
+
+	s.reportPathDebugLocked()
 
 	profileTickComplete(len(s.Units))
 }
