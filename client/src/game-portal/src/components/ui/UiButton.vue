@@ -2,7 +2,10 @@
   <button
     class="ui-button"
     :class="[`ui-button--${size}`, { 'ui-button--selected': selected, 'ui-button--disabled': disabled }]"
-    :style="{ '--ui-panel-image': `url(${uiPanelUrl})` }"
+    :style="{
+      '--ui-panel-image': `url(${uiPanelUrl})`,
+      '--ui-panel-slice': String(theme.uiPanel.slice),
+    }"
     :disabled="disabled"
     :aria-pressed="selected"
     type="button"
@@ -14,7 +17,8 @@
 </template>
 
 <script setup lang="ts">
-import uiPanelUrl from '@/assets/ui/ui_panel_56x56_slice17.png'
+import uiPanelUrl from '@/assets/ui/themes/default/ui_panel.png'
+import theme from '@/assets/ui/themes/default/theme.json'
 import { useSoundHooks } from '@/composables/useSoundHooks'
 
 const props = withDefaults(defineProps<{
@@ -56,10 +60,10 @@ function onClick() {
   letter-spacing: 0.06em;
   color: #f5ead2;
   text-align: center;
-  border: 17px solid transparent;
+  border: calc(var(--ui-panel-slice) * 1px) solid transparent;
   border-image-source: var(--ui-panel-image);
-  border-image-slice: 17 fill;
-  border-image-width: 17px;
+  border-image-slice: var(--ui-panel-slice) fill;
+  border-image-width: calc(var(--ui-panel-slice) * 1px);
   border-image-repeat: round;
   image-rendering: pixelated;
   background: none;

@@ -1,5 +1,11 @@
 <template>
-  <header class="hud" :style="{ '--ui-panel-image': `url(${uiPanelUrl})` }">
+  <header
+    class="hud"
+    :style="{
+      '--ui-panel-image': `url(${uiPanelUrl})`,
+      '--ui-panel-slice': String(theme.uiPanel.slice),
+    }"
+  >
     <div class="hud-crest">
       <button
         class="crest-button"
@@ -78,7 +84,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
-import uiPanelUrl from '@/assets/ui/ui_panel_56x56_slice17.png'
+import uiPanelUrl from '@/assets/ui/themes/default/ui_panel.png'
+import theme from '@/assets/ui/themes/default/theme.json'
 import { getResourceIconUrl } from '@/game/rendering/resourceSprites'
 
 const emit = defineEmits<{
@@ -145,10 +152,10 @@ function exitGame() {
 
   /* 9-slice panel: shared 56×56 source, 16px corners. */
   background: none;
-  border: 17px solid transparent;
+  border: calc(var(--ui-panel-slice) * 1px) solid transparent;
   border-image-source: var(--ui-panel-image);
-  border-image-slice: 17 fill;
-  border-image-width: 17px;
+  border-image-slice: var(--ui-panel-slice) fill;
+  border-image-width: calc(var(--ui-panel-slice) * 1px);
   border-image-repeat: round;
   image-rendering: pixelated;
 }
@@ -248,10 +255,10 @@ function exitGame() {
 
   /* 9-slice panel frame */
   background: none;
-  border: 17px solid transparent;
+  border: calc(var(--ui-panel-slice) * 1px) solid transparent;
   border-image-source: var(--ui-panel-image);
-  border-image-slice: 17 fill;
-  border-image-width: 17px;
+  border-image-slice: var(--ui-panel-slice) fill;
+  border-image-width: calc(var(--ui-panel-slice) * 1px);
   border-image-repeat: round;
   image-rendering: pixelated;
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.34);

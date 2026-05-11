@@ -182,9 +182,28 @@ func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[g
 	// per-tick advancement and the snapshot payload stay cheap.
 	path := s.simplifyUnitPath(subPath, subBlocked)
 
-	// First waypoint sits at the start sub-cell centre — drop it when the
-	// unit is essentially already there to avoid a brief backwards tug.
-	if len(path) > 0 && distanceSquared(unit.X, unit.Y, path[0].X, path[0].Y) < 4 {
+	// Cull leading waypoints the unit has already passed. A fresh A* always
+	// begins at the centre of the unit's current sub-cell, so if the unit is
+	// moving and sits anywhere between two sub-cell centres, path[0] is
+	// behind it — walking to it before going forward reads as a jarring
+	// "step back," especially when re-issuing a move while already moving.
+	// simplifyUnitPath has already verified line-of-sight between each
+	// consecutive pair, so a waypoint the unit has projected past is safe to
+	// drop. Test: forward = path[0]→path[1]; if unit-from-path[0] dot
+	// forward > 0, the unit is past path[0] along the route.
+	for len(path) >= 2 {
+		fx := path[1].X - path[0].X
+		fy := path[1].Y - path[0].Y
+		ux := unit.X - path[0].X
+		uy := unit.Y - path[0].Y
+		if fx*ux+fy*uy <= 0 {
+			break
+		}
+		path = path[1:]
+	}
+	// Same idea for the singleton-remaining case — if the only waypoint left
+	// is essentially under the unit, drop it so the path ends here.
+	if len(path) == 1 && distanceSquared(unit.X, unit.Y, path[0].X, path[0].Y) < 4 {
 		path = path[1:]
 	}
 

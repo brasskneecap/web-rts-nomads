@@ -3,6 +3,7 @@
     class="selection-hud"
     :style="{
       '--ui-panel-image': `url(${uiPanelUrl})`,
+      '--ui-panel-slice': String(theme.footerPanel.slice),
       '--ui-icon-container-image': `url(${iconContainerUrl})`,
     }"
   >
@@ -390,8 +391,9 @@ import type { GameUiSnapshot } from '@/game/core/GameClient'
 import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 import { getRankToneColor } from '@/game/rendering/rankColors'
 import ActionIcon from '@/components/ActionIcon.vue'
-import uiPanelUrl from '@/assets/ui/ui_panel_56x56_slice17.png'
-import iconContainerUrl from '@/assets/ui/icon-container.png'
+import uiPanelUrl from '@/assets/ui/themes/default/footer_panel.png'
+import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
+import theme from '@/assets/ui/themes/default/theme.json'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
 import { getActionIconImage } from '@/game/rendering/actionIconSprites'
 import { getResourceIconUrl } from '@/game/rendering/resourceSprites'
@@ -667,7 +669,7 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 18px;
+  bottom: 0;
   z-index: 5;
   /* Standardized fixed sizes — no clamp(), no flex distribution. The HUD
      stays a constant size regardless of viewport changes. text-align +
@@ -717,11 +719,11 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   min-width: 0;
   padding: 12px 14px;
   background: none;
-  border: 17px solid transparent;
+  border: calc(var(--ui-panel-slice) * 1px) solid transparent;
   border-radius: 0;
   border-image-source: var(--ui-panel-image);
-  border-image-slice: 17 fill;
-  border-image-width: 17px;
+  border-image-slice: var(--ui-panel-slice) fill;
+  border-image-width: calc(var(--ui-panel-slice) * 1px);
   border-image-repeat: round;
   image-rendering: pixelated;
 }
@@ -736,7 +738,7 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
   /* No `fill` on the slice: the panel's interior must be transparent so the
      canvas-rendered minimap (which sits behind the HUD) shows through. The
      other panels keep `fill` because they have no canvas content underneath. */
-  border-image-slice: 17;
+  border-image-slice: var(--ui-panel-slice);
   pointer-events: none;
 }
 
