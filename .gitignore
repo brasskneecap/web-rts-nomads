@@ -24,4 +24,7 @@ settings.local.json
 
 # PixelLab per-frame unit exports — packed into sprites.json + packed/ strips
 # by `npm run pack:sprites`. The raw frames aren't imported by the runtime.
-client/src/game-portal/src/assets/*/*/animations/
+# `**` covers both base units (units/<faction>/<unit>/animations/) and
+# promotion variants (units/<faction>/<unit>/paths/<path>/animations/), plus
+# any other asset category that follows the same pack-from-frames pattern.
+client/src/game-portal/src/assets/**/animations/
