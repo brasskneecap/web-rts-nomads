@@ -1,0 +1,10 @@
+{
+  "id": "battle_hardened",
+  "displayName": "Battle Hardened",
+  "description": "All units spawn with bonus HP.",
+  "iconKey": "buff_battle_hardened",
+  "unlockLegendPointCost": 100,
+  "modifiers": {
+    "hpBonus": 10
+  }
+}

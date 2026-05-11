@@ -65,6 +65,7 @@ export class NetworkClient {
   private playerId = getOrCreatePlayerId()
   private matchId: string | null = getStoredMatchId()
   private mapId: MapId = getPreferredMapId()
+  private equippedBuffIds: string[] = []
 
   /** Set to false before calling close() for an intentional disconnect so the
    *  reconnect loop does not fire. */
@@ -86,6 +87,10 @@ export class NetworkClient {
   constructor(state: GameState) {
     this.state = state
     this.state.setLocalPlayerId(this.playerId)
+  }
+
+  setEquippedBuffIds(ids: string[]) {
+    this.equippedBuffIds = ids
   }
 
   setPreferredMapId(mapId: MapId) {
@@ -131,7 +136,9 @@ export class NetworkClient {
           playerId: this.playerId,
           mapId: this.mapId,
           matchId: resume ? (this.matchId ?? undefined) : undefined,
+          equippedBuffIds: this.equippedBuffIds.length > 0 ? this.equippedBuffIds : undefined,
         }
+        console.log('[join_match] equippedBuffIds:', this.equippedBuffIds)
         this.send(joinMessage)
 
         if (!isReconnect) {

@@ -57,6 +57,14 @@ type UnitDef struct {
 	// feet, size the selection ring, and compute hit-test rects. Passed
 	// through as-is; the server game logic never reads it.
 	Bounds json.RawMessage `json:"bounds,omitempty"`
+
+	// LegendPointDropChance is the per-kill probability that this unit type
+	// drops legend points when killed by a player. Must be in [0,1].
+	// Zero means no drop. Overrides the base tuning value from gameplay_tuning.json.
+	LegendPointDropChance float64 `json:"legendPointDropChance,omitempty"`
+	// LegendPointAmount is how many legend points drop when the drop chance
+	// triggers. Must be >= 0. Overrides the base tuning value.
+	LegendPointAmount int `json:"legendPointAmount,omitempty"`
 }
 
 var unitDefsByType = loadUnitDefsByType()
@@ -99,6 +107,12 @@ func loadUnitDefsByType() map[string]UnitDef {
 			if _, ok := combatProfiles[def.CombatProfile]; !ok {
 				panic(rel + `: combatProfile "` + def.CombatProfile + `" is not a known profile (see combat_ai_profiles.go)`)
 			}
+		}
+		if def.LegendPointDropChance < 0 || def.LegendPointDropChance > 1 {
+			panic(rel + `: unit "` + def.Type + `": legendPointDropChance must be in [0,1]`)
+		}
+		if def.LegendPointAmount < 0 {
+			panic(rel + `: unit "` + def.Type + `": legendPointAmount must be >= 0`)
 		}
 		result[def.Type] = def
 	}

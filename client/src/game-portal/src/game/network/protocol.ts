@@ -173,6 +173,7 @@ export type JoinMatchMessage = {
   playerId: string
   mapId: MapId
   matchId?: string
+  equippedBuffIds?: string[]
 }
 
 export type LeaveMatchMessage = {
@@ -678,6 +679,23 @@ export type CritEventSnapshot = {
 }
 
 /**
+ * MinorDamageEventSnapshot tags a portion of a unit's HP-delta as ancillary
+ * damage (Reactive Flames splash, Electrified Caltrops bonus damage, etc.).
+ * The client peels matching amounts off the floating-number popup and renders
+ * that portion in a smaller font with a distinct color so the player can
+ * read at a glance "this is the trap, this is the Infusion splash."
+ *
+ * `variant` selects the renderer color:
+ *   - "fire"     → orange (default when omitted)
+ *   - "electric" → purple
+ */
+export type MinorDamageEventSnapshot = {
+  unitId: number
+  damage: number
+  variant?: string
+}
+
+/**
  * EffectSnapshot is a transient sprite-sheet VFX anchored to a unit or world
  * position. The server owns the lifecycle; the client renders sprite frames
  * driven by `progress` (0 = first frame, 1 = last frame). `anchorUnitId`
@@ -716,6 +734,7 @@ export type MatchSnapshotMessage = {
   projectiles?: ProjectileSnapshot[]
   effects?: EffectSnapshot[]
   critEvents?: CritEventSnapshot[]
+  minorDamageEvents?: MinorDamageEventSnapshot[]
   // Present only when the active map has debug.battleTracker=true. Absent
   // otherwise — the client treats absence as "debug tracker disabled".
   battleTracker?: BattleTrackerSnapshot

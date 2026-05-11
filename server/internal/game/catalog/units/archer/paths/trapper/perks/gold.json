@@ -6,19 +6,20 @@
     "description": "Your trap gains a secondary enhanced effect based on its type (Electrified Caltrops, Reactive Flames, Scatter Bomb, or Shared Pain).",
     "tooltipTemplate": "Gains a trap-specific enhanced effect. Own a Bronze trap perk to see the specific bonus.",
     "tooltipTemplateByTrap": {
-      "caltrops": "Electrified Caltrops: each tick deals +{electrifiedBonusDamagePerTick} bonus damage with a {electrifiedStunChance%} chance to stun for {electrifiedStunDuration:2}s (cooldown {electrifiedStunCooldownSeconds:1}s).",
+      "caltrops": "Electrified Caltrops: each tick deals +{electrifiedBonusDamagePerTick} bonus damage with a {electrifiedStunChance%} chance to stun for {electrifiedStunDuration:2}s and deal {electrifiedStunDamage} electric damage on stun (cooldown {electrifiedStunCooldownSeconds:1}s).",
       "fire_pit": "Reactive Flames: expels a reactive burst ({reactiveFlamesRadius} radius, {reactiveFlamesDamage} damage) when triggered.",
       "explosive_trap": "Scatter Bomb: spawns {scatterBombCount} child bombs within {scatterBombSpawnRadius} radius lasting {scatterBombChildDurationSeconds:1}s.",
       "marker_trap": "Shared Pain: {sharedPainFraction%} of damage dealt to the marked enemy is also dealt to other marked enemies."
     },
     "config": {
-      "electrifiedBonusDamagePerTick": 5,
-      "electrifiedStunChance": 0.25,
-      "electrifiedStunDuration": 0.25,
-      "electrifiedStunCooldownSeconds": 0.4,
+      "electrifiedBonusDamagePerTick": 9,
+      "electrifiedStunChance": 0.5,
+      "electrifiedStunDuration": 0.3,
+      "electrifiedStunCooldownSeconds": 0.6,
+      "electrifiedStunDamage": 15,
 
-      "reactiveFlamesRadius": 35,
-      "reactiveFlamesDamage": 4,
+      "reactiveFlamesRadius": 85,
+      "reactiveFlamesDamage": 10,
 
       "scatterBombCount": 5,
       "scatterBombSpawnRadius": 55,
@@ -47,12 +48,12 @@
     "tooltipTemplateByTrap": {
       "caltrops": "Spike Surge: on expiry, bursts for {spikeSurgeBurstDamage} damage and slows to {spikeSurgeSlowMultiplier%} of base speed for {spikeSurgeSlowDurationSeconds:1}s.",
       "fire_pit": "Flame Collapse: on expiry, collapses ({flameCollapseRadiusMultiplier+%} radius) for {flameCollapseDamage} damage and {flameCollapseBurnDamagePerSecond:1} burn DPS for {flameCollapseBurnDurationSeconds:1}s.",
-      "explosive_trap": "Cataclysm: second detonation at {cataclysmRadiusMultiplier+%} radius after {cataclysmSecondaryDelaySeconds:1}s.",
-      "marker_trap": "Final Exposure: on mark expiry, bursts for {finalExposureBurstDamage} damage in {finalExposureAoeRadius} radius."
+      "explosive_trap": "Cataclysm: each detonation triggers a secondary explosion at {cataclysmRadiusMultiplier+%} radius after {cataclysmSecondaryDelaySeconds:1}s — pairs with Aftershock for 4 total blasts.",
+      "marker_trap": "Final Exposure: when a marked enemy leaves the zone, deal {finalExposureBurstDamage} damage to them and to every other enemy still carrying a mark from the same trap."
     },
     "config": {
       "spikeSurgeBurstDamage": 25,
-      "spikeSurgeSlowMultiplier": 0.5,
+      "spikeSurgeSlowMultiplier": 0.1,
       "spikeSurgeSlowDurationSeconds": 2.5,
 
       "flameCollapseRadiusMultiplier": 1.25,
@@ -60,12 +61,12 @@
       "flameCollapseBurnDamagePerSecond": 6,
       "flameCollapseBurnDurationSeconds": 3,
 
-      "cataclysmRadiusMultiplier": 1.5,
-      "cataclysmSecondaryDelaySeconds": 1.5,
-      "cataclysmSpriteScale": 1.5,
+      "cataclysmRadiusMultiplier": 3.5,
+      "cataclysmSecondaryDelaySeconds": 2,
+      "cataclysmSpriteScale": 2.5,
+      "cataclysmExplosionSpriteScale": 3.5,
 
-      "finalExposureBurstDamage": 30,
-      "finalExposureAoeRadius": 40
+      "finalExposureBurstDamage": 10
     }
   }
 ]

@@ -58,6 +58,7 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 	// pass. Only applies to player-owned units (enemy player has no upgrades).
 	if playerID != enemyPlayerID {
 		s.applyPlayerUpgradesAtSpawnLocked(unit)
+		s.applyPlayerBuffsAtSpawnLocked(unit)
 	}
 	s.applyRankModifiersLocked(unit, false)
 	// Initialise inventory slots for player-owned units. At spawn the rank is

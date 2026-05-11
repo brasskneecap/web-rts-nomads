@@ -29,6 +29,7 @@
       <div class="victory-card">
         <div class="victory-title">Victory</div>
         <div class="victory-subtitle">{{ ui.objectives.length ? 'All objectives completed' : 'All waves defeated' }}</div>
+        <!-- TODO: wire legendPointsEarned from MatchSummary — display as "You earned N legend points" -->
         <button class="victory-button" type="button" @click="exitGame">Return to Menu</button>
       </div>
     </div>
@@ -37,6 +38,7 @@
       <div class="defeat-card">
         <div class="defeat-title">Defeated</div>
         <div class="defeat-subtitle">All townhalls have been destroyed</div>
+        <!-- TODO: wire legendPointsEarned from MatchSummary — display as "You earned N legend points" -->
         <button class="defeat-button" type="button" @click="exitGame">Return to Menu</button>
       </div>
     </div>

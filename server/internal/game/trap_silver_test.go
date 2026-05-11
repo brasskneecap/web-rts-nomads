@@ -11,6 +11,25 @@ import (
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+// hasExplosionEffectAt reports whether an "explosion" EffectSnapshot exists
+// in the active set whose fallback position is within ~1px of (x, y). Used by
+// explosive_chain / overload_protocol aftershock tests to verify the new
+// sprite-based detonation visual landed at the expected coordinates.
+func hasExplosionEffectAt(s *GameState, x, y float64) bool {
+	const tolSq = 1.0
+	for _, e := range s.activeEffects {
+		if e.Name != "explosion" {
+			continue
+		}
+		dx := e.FallbackX - x
+		dy := e.FallbackY - y
+		if dx*dx+dy*dy <= tolSq {
+			return true
+		}
+	}
+	return false
+}
+
 // newTrapSilverState returns a minimal GameState with player "p1" registered.
 // No units are spawned — callers add via spawnArcher or spawnPlayerUnitLocked.
 func newTrapSilverState(t *testing.T) *GameState {
@@ -212,7 +231,7 @@ func TestTrapModifiers_RapidDeployment_PlaceIntervalCaltrops(t *testing.T) {
 
 // TestTrapModifiers_AmplifiedEffects_Caltrops verifies:
 //   - DamagePerSecond 3 → 4.05 (3 * 1.35)
-//   - SlowMultiplier uses slow-amount math: 0.7 → 0.595
+//   - SlowMultiplier uses slow-amount math: 0.4 → 0.19
 func TestTrapModifiers_AmplifiedEffects_Caltrops(t *testing.T) {
 	s := newTrapSilverState(t)
 	s.mu.Lock()
@@ -229,8 +248,8 @@ func TestTrapModifiers_AmplifiedEffects_Caltrops(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, 4.05)  // 3 * 1.35
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, 0.595)   // 1 - (0.30 * 1.35)
+	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, 4.05) // 3 * 1.35
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, 0.0)    // 1 - clamp((0.80 * 1.35), 1) = 0
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -318,8 +337,8 @@ func TestTrapModifiers_AllSilverStack_Caltrops(t *testing.T) {
 	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, 4.2)
 	// DamagePerSecond: 3 * 1.35 = 4.05
 	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, 4.05)
-	// SlowMultiplier: 1 - (0.30 * 1.35) = 0.595
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, 0.595)
+	// SlowMultiplier: 1 - clamp((0.80 * 1.35), 1) = 0
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, 0.0)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -373,8 +392,8 @@ func TestTrapModifiers_PlantEndToEnd_SnapshotScaled(t *testing.T) {
 	assertFloatEq(t, "planted.Radius", planted.Radius, 90.0)
 	// DamagePerSecond: 3 * 1.35 = 4.05
 	assertFloatEq(t, "planted.DamagePerSecond", planted.DamagePerSecond, 4.05)
-	// SlowMultiplier: 1 - (0.30 * 1.35) = 0.595
-	assertFloatEq(t, "planted.SlowMultiplier", planted.SlowMultiplier, 0.595)
+	// SlowMultiplier: 1 - clamp((0.80 * 1.35), 1) = 0
+	assertFloatEq(t, "planted.SlowMultiplier", planted.SlowMultiplier, 0.0)
 	// Ownership
 	if planted.OwnerPlayerID != "p1" {
 		t.Errorf("planted.OwnerPlayerID: got %q, want p1", planted.OwnerPlayerID)
@@ -575,8 +594,10 @@ func TestExplosiveChain_AftershockFiresSecondBlast(t *testing.T) {
 	if !trap.PendingCull {
 		t.Fatal("aftershock should have fired (PendingCull=true) within 2s")
 	}
-	if !trap.Triggered {
-		t.Fatal("trap should be Triggered (VFX flash) on the aftershock tick")
+	// Aftershock visual is now the generic sprite-based "explosion" effect
+	// instead of re-flashing the trap's own Triggered animation.
+	if !hasExplosionEffectAt(s, trap.X, trap.Y) {
+		t.Fatal("aftershock tick: expected an 'explosion' EffectSnapshot at the trap's position")
 	}
 	if aftershockEnemy.HP >= hpBefore2 {
 		t.Errorf("aftershock did not deal damage: HP unchanged at %d", aftershockEnemy.HP)
@@ -630,8 +651,8 @@ func TestExplosiveChain_AftershockFiresEvenIfTriggerZoneEmpty(t *testing.T) {
 	if !trap.PendingCull {
 		t.Fatal("aftershock did not fire (PendingCull not set after 2s)")
 	}
-	if !trap.Triggered {
-		t.Fatal("aftershock tick: Triggered must be true (VFX flash)")
+	if !hasExplosionEffectAt(s, trap.X, trap.Y) {
+		t.Fatal("aftershock tick: expected an 'explosion' EffectSnapshot at the trap's position")
 	}
 	if newEnemy.HP >= hpBefore {
 		t.Errorf("aftershock should have hit newEnemy inside blast radius: HP unchanged at %d", newEnemy.HP)
@@ -682,21 +703,24 @@ func TestExplosiveChain_NoAftershockWithoutPerk(t *testing.T) {
 	}
 }
 
-// TestExplosiveChain_TriggeredFlagVisibleOnBothBlasts verifies the two-tick VFX
-// pipeline for explosive_chain, driven via the PRODUCTION Update path so that
-// Snapshot is called after all three tick functions run (mirroring loop.go).
+// TestExplosiveChain_InitialBlastTriggeredAndAftershockEmitsEffect verifies
+// the two-blast VFX pipeline driven via the PRODUCTION Update path so that
+// Snapshot is called after all three tick functions run (mirroring loop.go):
 //
-//  1. Initial blast tick (Update): Triggered=true in post-Update snapshot.
-//  2. During aftershock countdown: Triggered=false in snapshots.
-//  3. Aftershock blast tick (Update): Triggered=true in post-Update snapshot.
+//  1. Initial blast tick: trap.Triggered=true in post-Update snapshot.
+//  2. During aftershock countdown: Triggered=false; no aftershock effect yet.
+//  3. Aftershock blast tick: trap.Triggered stays false; an "explosion"
+//     EffectSnapshot appears at the trap's position (sprite-based detonation
+//     replaces re-flashing the trap's own animation).
 //  4. One tick after aftershock: trap absent from snapshot.
 //
 // Uses dt=0.05 (20 Hz) and aftershockDelaySeconds=2.0 → ~40 ticks between blasts.
-func TestExplosiveChain_TriggeredFlagVisibleOnBothBlasts(t *testing.T) {
+func TestExplosiveChain_InitialBlastTriggeredAndAftershockEmitsEffect(t *testing.T) {
 	const dt = 0.05
 
 	s, _, trap := newExplosiveChainState(t)
 	trapID := trap.ID
+	trapX, trapY := trap.X, trap.Y
 
 	// Spawn enemy inside trigger radius (lock is not held outside newExplosiveChainState).
 	s.mu.Lock()
@@ -729,73 +753,48 @@ func TestExplosiveChain_TriggeredFlagVisibleOnBothBlasts(t *testing.T) {
 		t.Error("tick 1 snapshot: triggered=false — client would miss initial blast VFX")
 	}
 
-	// ── Mid-countdown ticks: Triggered must be false ─────────────────────────
-	// Run a few ticks without consuming the full delay to verify the flag resets.
+	// ── Mid-countdown ticks: trap is hidden during the aftershock wait so
+	// the client doesn't see an "intact" trap sprite for 2 seconds after it
+	// already detonated.
 	for i := 0; i < 3; i++ {
 		s.Update(dt)
 	}
 	snapMid := s.Snapshot()
-	var tsMid *protocol.TrapSnapshot
 	for i := range snapMid.Traps {
 		if snapMid.Traps[i].ID == trapID {
-			tsMid = &snapMid.Traps[i]
-			break
+			t.Errorf("mid-countdown snapshot: trap should be hidden during aftershock wait, got triggered=%v", snapMid.Traps[i].Triggered)
 		}
-	}
-	if tsMid == nil {
-		t.Fatal("mid-countdown snapshot: trap should still be present during aftershock wait")
-	}
-	if tsMid.Triggered {
-		t.Error("mid-countdown snapshot: triggered=true during countdown — VFX would fire spuriously")
 	}
 
 	// ── Run remaining ticks until aftershock fires ───────────────────────────
-	// We've already consumed 4 ticks (1 + 3) = 0.20s. aftershockDelaySeconds=2.0.
-	// Drive up to 50 more ticks (2.5s); break as soon as the trap is gone from
-	// the snapshot (which happens one tick AFTER the aftershock blast tick).
-	var aftershockBlastSnap *protocol.TrapSnapshot
+	// Aftershock signals via an "explosion" EffectSnapshot, NOT trap.Triggered.
+	// Trap is culled one tick after the aftershock blast.
 	aftershockFound := false
-	prevSnap := snapMid
 	for i := 0; i < 50; i++ {
 		s.Update(dt)
-		snap := s.Snapshot()
 
-		// Find the trap in this snapshot.
-		var cur *protocol.TrapSnapshot
-		for j := range snap.Traps {
-			if snap.Traps[j].ID == trapID {
-				cur = &snap.Traps[j]
-				break
-			}
-		}
+		s.mu.Lock()
+		hasEffect := hasExplosionEffectAt(s, trapX, trapY)
+		s.mu.Unlock()
 
-		if cur != nil && cur.Triggered {
-			// This is the aftershock blast tick.
-			aftershockBlastSnap = cur
+		if hasEffect {
 			aftershockFound = true
-			// Verify previous snapshot had Triggered=false (no spurious flash).
-			for j := range prevSnap.Traps {
-				if prevSnap.Traps[j].ID == trapID && prevSnap.Traps[j].Triggered {
-					t.Error("tick before aftershock blast: triggered=true prematurely")
-				}
-			}
-			// Run one more tick to confirm cull.
-			s.Update(dt)
-			snapFinal := s.Snapshot()
-			for _, ts := range snapFinal.Traps {
-				if ts.ID == trapID {
-					t.Error("tick after aftershock: trap still present — should be culled")
+
+			// Verify trap.Triggered did NOT flip on the aftershock — replacing
+			// the trap's own re-flash is the whole point of the migration.
+			snap := s.Snapshot()
+			for j := range snap.Traps {
+				if snap.Traps[j].ID == trapID && snap.Traps[j].Triggered {
+					t.Error("aftershock tick: trap.Triggered=true — should be replaced by 'explosion' effect")
 				}
 			}
 			break
 		}
-		prevSnap = snap
 	}
 
 	if !aftershockFound {
-		t.Fatal("aftershock blast tick not observed — Triggered=true never appeared in a post-Update snapshot")
+		t.Fatal("aftershock blast tick not observed — no 'explosion' EffectSnapshot appeared")
 	}
-	_ = aftershockBlastSnap
 }
 
 // TestExplosiveChain_LifetimeNotRaceCondition verifies that a trap with a very
@@ -837,16 +836,21 @@ func TestExplosiveChain_LifetimeNotRaceCondition(t *testing.T) {
 		t.Fatal("trap was culled while AftershockPending — lifetime should not decay during aftershock window")
 	}
 
-	// Tick the full 2s aftershock delay.
+	// Tick the full 2s aftershock delay. Aftershock no longer flips
+	// trap.Triggered — it emits an "explosion" EffectSnapshot — so break on
+	// PendingCull (set when the aftershock blast fires).
 	for i := 0; i < 40; i++ {
 		s.tickTrapEffectsLocked(0.05)
 		s.tickTrapsLocked(0.05)
-		if trap.Triggered {
+		if trap.PendingCull {
 			break
 		}
 	}
 
-	if !trap.Triggered {
-		t.Fatal("trap did not trigger after aftershock delay")
+	if !trap.PendingCull {
+		t.Fatal("trap did not detonate aftershock after delay (PendingCull not set)")
+	}
+	if !hasExplosionEffectAt(s, trap.X, trap.Y) {
+		t.Fatal("aftershock tick: expected an 'explosion' EffectSnapshot at the trap's position")
 	}
 }

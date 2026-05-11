@@ -175,12 +175,31 @@ export class CanvasRenderer {
      * is the Marksman Double Shot yellow sum, drawn larger and slightly higher
      * than the normal numbers so it reads as the "totalled" hit on top of the
      * two individual white numbers. 'crit' draws a red circle behind the
-     * number to mark a critical hit.
+     * number to mark a critical hit. 'minor' renders smaller and orange to
+     * communicate ancillary splash damage (Reactive Flames etc.) without
+     * dominating the main damage popup.
      */
-    kind: 'normal' | 'combined' | 'crit'
+    kind: 'normal' | 'combined' | 'crit' | 'minor'
+    /**
+     * Horizontal drift direction (±1) for 'minor' popups so they spray out
+     * sideways and fall, distinguishing them from the upward-drifting normal
+     * popups. Set at spawn time and held constant for the popup's lifetime.
+     * Unused by other kinds.
+     */
+    xDriftSign?: -1 | 1
+    /**
+     * Sub-flavour for 'minor' popups: "fire" → orange (default),
+     * "electric" → purple. Mirrors the server MinorDamageEventSnapshot.variant.
+     */
+    minorVariant?: string
   }> = []
   private readonly FLOATING_DAMAGE_DURATION_MS = 900
   private readonly FLOATING_DAMAGE_RISE_PX = 32
+  // Minor popups: horizontal drift in either direction + accelerating fall.
+  // Distinct trajectory so the eye picks them out as ancillary damage even
+  // when interleaved with regular popups.
+  private readonly FLOATING_DAMAGE_MINOR_X_PX = 28
+  private readonly FLOATING_DAMAGE_MINOR_FALL_PX = 26
 
   // Floating resource numbers — spawned when a worker deposits at the
   // townhall (carriedAmount drops to 0). Mirrors the damage-number lifecycle
@@ -245,13 +264,19 @@ export class CanvasRenderer {
         // Combined Double Shot numbers float higher than the individual
         // shot numbers so they sit visually above them.
         const yOffset = evt.kind === 'combined' ? bounds.top - 14 : bounds.top
+        const kind = evt.kind ?? 'normal'
+        // Minor popups spray left/right + fall. Random sign per popup so a
+        // burst of minor hits on the same unit fans out instead of stacking.
+        const xDriftSign = kind === 'minor' ? (Math.random() < 0.5 ? -1 : 1) : undefined
         this.floatingDamageNumbers.push({
           x: evt.x,
           y: evt.y + yOffset,
           amount: evt.amount,
           isFriendly: evt.isFriendly,
           startedAt: evt.createdAt,
-          kind: evt.kind ?? 'normal',
+          kind,
+          xDriftSign,
+          minorVariant: evt.minorVariant,
         })
       }
       this.state.damageEvents.length = 0
@@ -2137,22 +2162,37 @@ export class CanvasRenderer {
     const baseFontPx = Math.max(12, 14 / this.camera.zoom)
     const combinedFontPx = Math.max(16, 19 / this.camera.zoom)
     const critFontPx = Math.max(14, 17 / this.camera.zoom)
+    // Minor (Reactive Flames splash, etc.) — smaller than base, drawn in
+    // orange so it reads as ancillary damage without dominating the popup.
+    const minorFontPx = Math.max(9, 10 / this.camera.zoom)
 
     const kept: typeof this.floatingDamageNumbers = []
     for (const num of this.floatingDamageNumbers) {
       const elapsed = renderTime - num.startedAt
       if (elapsed >= this.FLOATING_DAMAGE_DURATION_MS) continue
       const t = elapsed / this.FLOATING_DAMAGE_DURATION_MS
-      const drawY = num.y - this.FLOATING_DAMAGE_RISE_PX * t
+
+      // Minor popups: horizontal drift (linear) + accelerating downward
+      // fall (t²) — reads like a spark scattering away from the impact.
+      // All other kinds drift straight up (the standard floating-number
+      // animation).
+      let drawX = num.x
+      let drawY: number
+      if (num.kind === 'minor') {
+        drawX = num.x + this.FLOATING_DAMAGE_MINOR_X_PX * t * (num.xDriftSign ?? 1)
+        drawY = num.y + this.FLOATING_DAMAGE_MINOR_FALL_PX * t * t
+      } else {
+        drawY = num.y - this.FLOATING_DAMAGE_RISE_PX * t
+      }
       ctx.globalAlpha = Math.max(0, 1 - t)
       const text = String(num.amount)
 
       if (num.kind === 'combined') {
         // Combined Double Shot total — drawn larger and yellow/gold.
         ctx.font = `bold ${combinedFontPx}px sans-serif`
-        ctx.strokeText(text, num.x, drawY)
+        ctx.strokeText(text, drawX, drawY)
         ctx.fillStyle = '#fde047' // tailwind yellow-300
-        ctx.fillText(text, num.x, drawY)
+        ctx.fillText(text, drawX, drawY)
       } else if (num.kind === 'crit') {
         // Critical hit — red circle behind a slightly larger number. The
         // circle radius scales with text width so multi-digit numbers don't
@@ -2185,14 +2225,25 @@ export class CanvasRenderer {
         ctx.restore()
 
         // Number on top — white text with a thin dark stroke for legibility.
-        ctx.strokeText(text, num.x, drawY)
+        ctx.strokeText(text, drawX, drawY)
         ctx.fillStyle = '#ffffff'
-        ctx.fillText(text, num.x, drawY)
+        ctx.fillText(text, drawX, drawY)
+      } else if (num.kind === 'minor') {
+        // Smaller popup so the splash reads as a side-effect, not a hit
+        // from the trap itself. Color derives from variant: "electric" =
+        // purple (Electrified Caltrops), default = orange (Reactive
+        // Flames / generic fire splash).
+        ctx.font = `bold ${minorFontPx}px sans-serif`
+        ctx.strokeText(text, drawX, drawY)
+        ctx.fillStyle = num.minorVariant === 'electric'
+          ? '#c084fc' // tailwind purple-400
+          : '#fb923c' // tailwind orange-400
+        ctx.fillText(text, drawX, drawY)
       } else {
         ctx.font = `bold ${baseFontPx}px sans-serif`
-        ctx.strokeText(text, num.x, drawY)
+        ctx.strokeText(text, drawX, drawY)
         ctx.fillStyle = num.isFriendly ? '#ef4444' : '#ffffff'
-        ctx.fillText(text, num.x, drawY)
+        ctx.fillText(text, drawX, drawY)
       }
       kept.push(num)
     }

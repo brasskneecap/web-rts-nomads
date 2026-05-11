@@ -328,8 +328,19 @@ export type DamageEvent = {
    *   - 'crit'     : critical hit — renderer draws a red circle behind the
    *                  number. Set by matching server CritEventSnapshot
    *                  entries against HP-diff damage events.
+   *   - 'minor'    : ancillary splash damage (Reactive Flames, Electrified
+   *                  Caltrops, etc.) — renderer draws smaller in a color
+   *                  picked from `minorVariant`. The portion is peeled off
+   *                  the HP-diff using server MinorDamageEventSnapshot
+   *                  entries so a victim hit by trap-DoT + Infusion shows
+   *                  two distinct numbers.
    */
-  kind?: 'normal' | 'combined' | 'crit'
+  kind?: 'normal' | 'combined' | 'crit' | 'minor'
+  /**
+   * Sub-flavour for kind='minor', mirroring MinorDamageEventSnapshot.variant.
+   * "fire" → orange, "electric" → purple, omitted defaults to fire/orange.
+   */
+  minorVariant?: string
 }
 
 export type Vec2 = {
@@ -657,6 +668,23 @@ export class GameState {
       critTargetsThisTick.add(evt.unitId)
     }
 
+    // Build per-unit minor-damage pools. Each entry is a portion of the
+    // unit's HP-delta this tick that should render as a smaller distinctly-
+    // colored popup (Reactive Flames splash, Electrified Caltrops bonus,
+    // etc.). variant selects the renderer color downstream. The HP-diff
+    // loop below peels matching amounts off before emitting the remainder
+    // as a normal popup, so a victim hit by 1 DoT + 1 Reactive shows "1"
+    // white + "1" orange.
+    const minorPool = new Map<number, Array<{ damage: number; variant?: string }>>()
+    for (const evt of message.minorDamageEvents ?? []) {
+      let pool = minorPool.get(evt.unitId)
+      if (!pool) {
+        pool = []
+        minorPool.set(evt.unitId, pool)
+      }
+      pool.push({ damage: evt.damage, variant: evt.variant })
+    }
+
     // Helper: emit a damage event with crit-pool matching and rolling
     // history mirror, shared by the surviving-unit HP-diff loop and the
     // killing-blow synthesis below. Pass-through `amount`, `unit info`, etc.
@@ -668,10 +696,43 @@ export class GameState {
       amount: number,
       ownerId: string | undefined,
     ) => {
+      const isFriendly = !!this.localPlayerId && ownerId === this.localPlayerId
+
+      // Peel any minor (ancillary) damage out of the HP-delta first. Each
+      // entry in the pool is a server-authored portion of this tick's HP
+      // loss that should render as a smaller popup colored by variant.
+      // Cap each peeled amount at the remaining damage so we never emit
+      // more than the actual HP delta.
+      const minorList = minorPool.get(unitId)
+      let remainder = amount
+      if (minorList && minorList.length > 0) {
+        for (const entry of minorList) {
+          if (remainder <= 0) break
+          const take = Math.min(entry.damage, remainder)
+          if (take <= 0) continue
+          this.damageEvents.push({
+            unitId,
+            unitType,
+            x,
+            y,
+            amount: take,
+            isFriendly,
+            createdAt: now,
+            kind: 'minor',
+            minorVariant: entry.variant,
+          })
+          remainder -= take
+        }
+        // Pool consumed for this unit — drop so a same-unit retry later in
+        // the tick (e.g. killing-blow synthesis) doesn't re-peel.
+        minorPool.delete(unitId)
+      }
+      if (remainder <= 0) return
+
       let kind: 'normal' | 'crit' = 'normal'
       const pool = critPool.get(unitId)
       if (pool && pool.length > 0) {
-        const exactIdx = pool.indexOf(amount)
+        const exactIdx = pool.indexOf(remainder)
         if (exactIdx >= 0) {
           pool.splice(exactIdx, 1)
           kind = 'crit'
@@ -687,8 +748,8 @@ export class GameState {
         unitType,
         x,
         y,
-        amount,
-        isFriendly: !!this.localPlayerId && ownerId === this.localPlayerId,
+        amount: remainder,
+        isFriendly,
         createdAt: now,
         kind,
       })
@@ -697,7 +758,7 @@ export class GameState {
         history = []
         this.recentDamageByUnit.set(unitId, history)
       }
-      history.push({ amount, at: now })
+      history.push({ amount: remainder, at: now })
     }
 
     // Derive damage events by diffing HP against the previous snapshot. Any

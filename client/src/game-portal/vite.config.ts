@@ -17,6 +17,7 @@ export default defineConfig({
     proxy: {
       '/ws': { target: GO_SERVER, ws: true, changeOrigin: true },
       '/health': { target: GO_SERVER, changeOrigin: true },
+      '/api': { target: GO_SERVER, changeOrigin: true },
       '/catalog': { target: GO_SERVER, changeOrigin: true },
       '/maps': { target: GO_SERVER, changeOrigin: true },
       '/matches': { target: GO_SERVER, changeOrigin: true },

@@ -149,13 +149,25 @@ type markStack struct {
 // ReactiveRadius / ReactiveDamage piggyback the Reactive Flames gold effect
 // per-stack so every ticking source fires its own AoE.
 type burnStack struct {
-	SourceID       string
-	OwnerUnitID    int
-	Remaining      float64
-	DPS            float64
-	Accumulator    float64
-	ReactiveRadius float64
-	ReactiveDamage int
+	SourceID    string
+	OwnerUnitID int
+	Remaining   float64
+	DPS         float64
+	Accumulator float64
+	// ReactiveAccumulator gates this stack's Reactive Flames AoE on a 1-second
+	// cadence, separate from the burn's per-chunk damage stream. Without it
+	// the AoE would compound with burn-DPS rank scaling — same hidden
+	// double-scaling issue the in-zone fire_pit Infusion has.
+	ReactiveAccumulator float64
+	ReactiveRadius      float64
+	ReactiveDamage      int
+	// TrapKey groups stacks that share a parent trap so the maxDebuffStacks
+	// cap is applied PER TRAP rather than globally per victim. lasting_flames
+	// and Flame Collapse from the same fire_pit share a TrapKey (the
+	// trap.ID); a second fire_pit's stacks have a different TrapKey and
+	// don't count toward the first trap's cap. Empty string = ungrouped
+	// (legacy / hypothetical non-trap sources).
+	TrapKey string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -291,6 +303,21 @@ type UnitPerkState struct {
 	// accumulate together, which correctly stacks DoT rate.
 	TrapDoTAccumulator float64
 
+	// TrapInfusionAccumulator drives Reactive Flames cadence (fire_pit zone).
+	// Per zone-iteration: accumulator += reactiveFlamesDamage × dt; on
+	// overflow we fire one AoE chunk and carry the fraction. Result: the
+	// authored reactiveFlamesDamage equals the total reactive DPS regardless
+	// of host trap rank — gold-only perks shouldn't compound with rank.
+	TrapInfusionAccumulator float64
+
+	// ElectrifiedBonusAccumulator drives Electrified Caltrops bonus-damage
+	// cadence (caltrops zone). Same dt-timer pattern as TrapInfusionAccumulator
+	// but keyed off electrifiedBonusDamagePerTick so total bonus DPS is the
+	// authored value regardless of host caltrops DPS or amplified_effects
+	// scaling. The stun roll piggybacks on this chunk firing — they share
+	// the same cadence so stuns happen "alongside the damage popup".
+	ElectrifiedBonusAccumulator float64
+
 	// ── barbed_field (silver trapper) ─────────────────────────────────────────
 	// BarbedFieldStaySeconds accumulates the elapsed time the victim has been
 	// inside ANY barbed-field caltrops zone without a break. Ramping bonus DPS
@@ -345,16 +372,13 @@ type UnitPerkState struct {
 
 	// ── overload_protocol (gold trapper) — Final Exposure ───────────────────
 	// Armed when a marker_trap with overload_protocol stamps a mark. When the
-	// victim's MarkedRemaining decays to 0 (state.go Update loop), the burst
-	// damage + AoE is detonated once via fireFinalExposureLocked.
+	// victim leaves the trap's zone (handled in tickTrapEffectsLocked), the
+	// burst is detonated via fireFinalExposureLocked which damages the victim
+	// AND every other unit currently carrying a mark stack from the same
+	// trap. FinalExposureTrapID is the key used to match marked siblings.
 	FinalExposureDamage      int
-	FinalExposureAoeRadius   float64
 	FinalExposureOwnerUnitID int
-	// Trap that armed this Final Exposure. Read by fireFinalExposureLocked so
-	// kill credit and battle telemetry route through the trap bucket rather
-	// than the trapper-unit bucket. Cleared alongside the other Final Exposure
-	// fields when the mark expires.
-	FinalExposureTrapID string
+	FinalExposureTrapID      string
 
 	// ── Marksman: Hunter's Mark stacks (silver hunters_mark + gold explosive_tips)
 	// Stacks per source — same Marksman re-applying refreshes its stack;
@@ -441,8 +465,12 @@ func (ps *UnitPerkState) applyMarkStack(sourceID string, ownerUnitID int, multip
 // reactiveDamage piggyback the Reactive Flames gold effect — pass zeros when
 // the applying trap does not have Infusion. sourceID must be unique per
 // source-entity (trap ID for trap burns) so two traps from the same Trapper
-// land as separate stacks when their zones overlap.
-func (ps *UnitPerkState) applyBurnStack(sourceID string, ownerUnitID int, dps, duration, reactiveRadius float64, reactiveDamage int) bool {
+// land as separate stacks when their zones overlap. trapKey groups stacks
+// for cap purposes — the maxDebuffStacks ceiling applies per-trapKey rather
+// than globally, so two different fire_pits each get their own pair of
+// stacks (lasting_flames + Flame Collapse) instead of fighting over the cap.
+// Pass "" for trapKey to keep legacy global cap semantics.
+func (ps *UnitPerkState) applyBurnStack(sourceID string, trapKey string, ownerUnitID int, dps, duration, reactiveRadius float64, reactiveDamage int) bool {
 	if dps <= 0 || duration <= 0 || sourceID == "" {
 		return false
 	}
@@ -461,10 +489,20 @@ func (ps *UnitPerkState) applyBurnStack(sourceID string, ownerUnitID int, dps, d
 				ps.BurnStacks[i].ReactiveDamage = reactiveDamage
 			}
 			ps.BurnStacks[i].OwnerUnitID = ownerUnitID
+			ps.BurnStacks[i].TrapKey = trapKey
 			return true
 		}
 	}
-	if len(ps.BurnStacks) >= maxDebuffStacks {
+	// Per-trapKey cap. Stacks with a different TrapKey (or empty key) don't
+	// count toward this group's ceiling, so a second trap can fully populate
+	// its own pair regardless of how full the victim's overall list is.
+	count := 0
+	for i := range ps.BurnStacks {
+		if ps.BurnStacks[i].TrapKey == trapKey {
+			count++
+		}
+	}
+	if count >= maxDebuffStacks {
 		return false
 	}
 	ps.BurnStacks = append(ps.BurnStacks, burnStack{
@@ -474,6 +512,7 @@ func (ps *UnitPerkState) applyBurnStack(sourceID string, ownerUnitID int, dps, d
 		DPS:            dps,
 		ReactiveRadius: reactiveRadius,
 		ReactiveDamage: reactiveDamage,
+		TrapKey:        trapKey,
 	})
 	return true
 }

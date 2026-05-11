@@ -321,6 +321,14 @@ type Player struct {
 	// per player (not per townhall). Capacity is tier-gated via
 	// vaultCapacityForPlayerLocked. Initialized to an empty (non-nil) slice.
 	Vault []*VaultItem
+
+	// ProfileBuffIDs holds the player's equipped buff IDs as validated at match
+	// start. Used by playerBuffAggregateLocked. Empty for AI/enemy players.
+	ProfileBuffIDs []string
+
+	// RunLegendPointDrops accumulates legend-point drops during the match.
+	// Committed to the profile file at match end.
+	RunLegendPointDrops int
 }
 
 const (
@@ -361,6 +369,7 @@ type GameState struct {
 	rngPerks    *mrand.Rand // perk selection, path assignment, taunt procs
 	rngCosmetic *mrand.Rand // unit colour assignment and other visual randomness
 	rngSpawn    *mrand.Rand // reserved for future wave/spawn randomness
+	rngLoot     *mrand.Rand // legend-point drop rolls; seeded with (seed ^ 0x4)
 
 	// buildingDamageDealt mirrors Unit.DamageDealtByUnit for buildings.
 	// buildingID → attackerID → accumulated damage. Paid out on destruction.
@@ -416,6 +425,11 @@ type GameState struct {
 	// truncated immediately after so each tick's queue covers exactly the
 	// crits applied during that tick. See crit_events.go.
 	critEventsThisTick []critEvent
+
+	// minorDamageEventsThisTick mirrors critEventsThisTick for ancillary
+	// damage hits that should render as a smaller orange floating number
+	// (Reactive Flames splash, etc.). See minor_damage_events.go.
+	minorDamageEventsThisTick []minorDamageEvent
 
 	// guardianAuraCache maps recipient unit ID to the combined armor bonus they
 	// receive from the strongest guardian_aura covering them this tick.
@@ -514,6 +528,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		saltPerks    int64 = 0x1
 		saltCosmetic int64 = 0x2
 		saltSpawn    int64 = 0x3
+		saltLoot     int64 = 0x4
 	)
 	state := &GameState{
 		Units:               []*Unit{},
@@ -528,6 +543,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		rngPerks:            mrand.New(mrand.NewSource(seed ^ saltPerks)),
 		rngCosmetic:         mrand.New(mrand.NewSource(seed ^ saltCosmetic)),
 		rngSpawn:            mrand.New(mrand.NewSource(seed ^ saltSpawn)),
+		rngLoot:             mrand.New(mrand.NewSource(seed ^ saltLoot)),
 		buildingDamageDealt: map[string]map[int]int{},
 		unitsByID:           map[int]*Unit{},
 		buildingsByID:       map[string]*protocol.BuildingTile{},
@@ -664,14 +680,24 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// Sum up the "enemyUnits" bonus damage multiplier from all real players
+	// so it can be applied to enemy unit snapshots. Computed once outside the
+	// loop; in a solo-vs-AI game this is just one player's contribution.
+	enemyFacingBonusMult := s.enemyFacingDamageMultLocked()
+
 	units := make([]protocol.UnitSnapshot, 0, len(s.Units))
 	for _, unit := range s.Units {
 		// Effective stats for the HUD: base × rank × path (already in
 		// unit.Damage/AttackSpeed/MoveSpeed) × live perk multipliers. Kept
 		// target-agnostic (target=nil) so only self-based perk bonuses apply
 		// here — per-hit situational bonuses like executioner still live in
-		// the combat-resolution path.
-		effectiveDamage := int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil))))
+		// the combat-resolution path. Enemy units also pick up the
+		// player-sourced "enemyUnits" buff bonus for an accurate HUD readout.
+		extraMult := 0.0
+		if unit.OwnerID == enemyPlayerID {
+			extraMult = enemyFacingBonusMult
+		}
+		effectiveDamage := int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)))
 		effectiveAttackSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
 		effectiveMoveSpeed := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
 
@@ -758,7 +784,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		if player.ID == enemyPlayerID {
 			continue
 		}
-		players = append(players, protocol.PlayerSnapshot{
+		playerSnap := protocol.PlayerSnapshot{
 			PlayerID:      player.ID,
 			Color:         player.Color,
 			Resources:     s.getPlayerResourceStocksLocked(player),
@@ -766,7 +792,9 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			TownHallTier:  s.townhallTierForPlayerLocked(player.ID),
 			Vault:         s.playerVaultSnapshotsLocked(player.ID),
 			VaultCapacity: s.vaultCapacityForPlayerLocked(player.ID),
-		})
+		}
+		playerSnap.ActiveBuffs = s.activePlayerBuffIconsLocked(player.ID)
+		players = append(players, playerSnap)
 	}
 
 	wm := s.WaveManager
@@ -816,6 +844,17 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 
 	var traps []protocol.TrapSnapshot
 	for _, trap := range s.Traps {
+		// Hide explosive traps from the client once they've detonated but
+		// still have follow-up events queued: the silent window before a
+		// chain aftershock fires, and the window before any pending
+		// Cataclysm secondary explosions fire. The initial-blast tick is
+		// kept visible — that frame has Triggered=true and plays the
+		// trap's explode animation — but afterward the trap should be
+		// gone from view; chain/Cataclysm secondaries render via
+		// sprite-based "explosion" EffectSnapshots independently.
+		if !trap.Triggered && (trap.AftershockPending || len(trap.PendingCataclysms) > 0) {
+			continue
+		}
 		traps = append(traps, protocol.TrapSnapshot{
 			ID:               trap.ID,
 			OwnerID:          trap.OwnerPlayerID,
@@ -876,7 +915,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Traps:       traps,
 		Projectiles: projectiles,
 		Effects:     s.effectSnapshotsLocked(),
-		CritEvents:  s.snapshotCritEventsLocked(),
+		CritEvents:        s.snapshotCritEventsLocked(),
+		MinorDamageEvents: s.snapshotMinorDamageEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -907,6 +947,7 @@ func (s *GameState) Update(dt float64) {
 	// list scoped exactly to "crits that landed during this tick" so the
 	// client can match against its HP-diff damage events.
 	s.resetCritEventsThisTickLocked()
+	s.resetMinorDamageEventsThisTickLocked()
 
 	profileSection("battleTracker", func() { s.battleTracker.tickLocked(dt) })
 	profileSection("unitProductions", func() { s.updateUnitProductionsLocked(dt) })
@@ -960,18 +1001,12 @@ func (s *GameState) Update(dt float64) {
 		// hits 0 this tick — that's when mark-gone effects (Final Exposure,
 		// Shared Pain disarm) fire.
 		if unit.PerkState.decayMarkStacks(dt) {
-			// overload_protocol → Final Exposure: when the last mark stack
-			// expires, fire burst damage to this victim and an optional
-			// small AoE to nearby enemies. The armed fields are consumed
-			// immediately after so re-arming via a fresh mark works again.
-			if unit.PerkState.FinalExposureDamage > 0 && unit.HP > 0 {
-				s.fireFinalExposureLocked(unit)
-			}
-			unit.PerkState.FinalExposureDamage = 0
-			unit.PerkState.FinalExposureAoeRadius = 0
-			unit.PerkState.FinalExposureOwnerUnitID = 0
-			unit.PerkState.FinalExposureTrapID = ""
-			// ascendant_infusion → Shared Pain disarms with the mark.
+			// Final Exposure now fires when the victim LEAVES the marker
+			// trap's zone (handled in tickTrapEffectsLocked → fireTrap-
+			// OverloadOnExitLocked) — not on mark expiry. The fields are
+			// cleared at firing time, so we don't reset them here. We DO
+			// still disarm Shared Pain when the mark fully expires since
+			// it has no zone-exit semantics of its own.
 			unit.PerkState.SharedPainFraction = 0
 		}
 		// ascendant_infusion → Electrified Caltrops per-victim stun cooldown.
@@ -1238,11 +1273,46 @@ func (s *GameState) IsGameOver() bool {
 	return len(s.lostPlayerIDs) > 0 || s.victoryAchieved
 }
 
-func (s *GameState) EnsurePlayer(playerID string) {
+// MatchSummaryForPlayer returns the end-of-match legend-point summary for
+// playerID. Won is true when the player is not in the lost set. The legend
+// points earned are: kill drops accumulated during the match plus the
+// win/loss bonus from tuning.
+//
+// TODO: the profile REST handler should call profileManager.WithLocked to
+// persist LegendPointsEarned into the player's profile.LegendPoints and
+// profile.LifetimeLegendPoints.
+func (s *GameState) MatchSummaryForPlayer(playerID string) protocol.MatchSummary {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	lost := s.lostPlayerIDs != nil && s.lostPlayerIDs[playerID]
+	tuning := gameplayTuning()
+
+	var runDrops int
+	if player, ok := s.Players[playerID]; ok {
+		runDrops = player.RunLegendPointDrops
+	}
+
+	bonus := tuning.LegendPoints.LossConsolation
+	if !lost {
+		bonus = tuning.LegendPoints.WinBonus
+	}
+
+	return protocol.MatchSummary{
+		PlayerID:           playerID,
+		Won:                !lost,
+		LegendPointsEarned: runDrops + bonus,
+	}
+}
+
+func (s *GameState) EnsurePlayer(playerID string, equippedBuffIDs ...string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, exists := s.Players[playerID]; exists {
+	if existing, exists := s.Players[playerID]; exists {
+		// Refresh ProfileBuffIDs so loadout changes applied in the profile
+		// menu take effect on reconnect without requiring a brand-new match.
+		existing.ProfileBuffIDs = append([]string(nil), equippedBuffIDs...)
 		return
 	}
 
@@ -1258,6 +1328,7 @@ func (s *GameState) EnsurePlayer(playerID string) {
 		UnitSpawnTimeMultipliers:      map[string]float64{},
 		Upgrades:                      make(map[UpgradeTrack]int),
 		Vault:                         []*VaultItem{},
+		ProfileBuffIDs:                append([]string(nil), equippedBuffIDs...),
 	}
 
 	s.claimPlayerStartLocked(playerID)

@@ -11,6 +11,7 @@ import (
 
 	"webrts/server/internal/game"
 	httpserver "webrts/server/internal/http"
+	"webrts/server/internal/profile"
 	"webrts/server/internal/ws"
 )
 
@@ -23,7 +24,8 @@ func main() {
 	manager := game.NewMatchManager()
 	lobbyManager := game.NewLobbyManager()
 	hub := ws.NewHub(manager, lobbyManager)
-	router := httpserver.NewRouter(hub, corsOrigin)
+	profileManager := profile.NewManager("")
+	router := httpserver.NewRouter(hub, corsOrigin, profileManager)
 
 	addr := ":8080"
 	server := &http.Server{
