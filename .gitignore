@@ -28,3 +28,4 @@ settings.local.json
 # promotion variants (units/<faction>/<unit>/paths/<path>/animations/), plus
 # any other asset category that follows the same pack-from-frames pattern.
 client/src/game-portal/src/assets/**/animations/
+*.bak
