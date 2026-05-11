@@ -172,6 +172,10 @@ type Unit struct {
 	// pierce length, and the HUD without scattered mutation sites.
 	BaseAttackRange        float64
 	AttackSpeed            float64
+	// SplashRadius: when > 0, every attack landing on a primary target also
+	// damages every other hostile within this radius of the target's position.
+	// Populated from UnitDef.SplashRadius at spawn time.
+	SplashRadius           float64
 	// MoveSpeed is the effective pixels-per-second for pathing movement, after
 	// rank/path/perk modifiers are applied. Populated by applyRankModifiersLocked.
 	MoveSpeed              float64
@@ -241,7 +245,7 @@ type Unit struct {
 
 	// GuardMode pins the combat anchor at the authored spawn position and
 	// overrides aggro/leash ranges with GuardAggroRange/GuardLeashRange.
-	// Set on enemy placed units (PlacedUnit.Owner == "enemy") by
+	// Set on enemy placed units (PlacedUnit.PlayerSlot == "enemy") by
 	// spawnPlacedEnemyUnitsLocked. Player-owned placed units do NOT use guard
 	// mode — they are normal units that happen to spawn at an authored location.
 	GuardMode       bool

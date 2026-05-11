@@ -223,7 +223,7 @@ func splitRankConfig(raw map[string]json.RawMessage) (map[string]float64, map[st
 
 func init() {
 	// On-disk layout:
-	//   catalog/units/<unit>/paths/<path>/perks/<rank>.json
+	//   catalog/units/<faction>/<unit>/paths/<path>/perks/<rank>.json
 	//     → [perkEntry, perkEntry, ...]
 	//
 	// The walker accepts only files matching this shape exactly; anything
@@ -242,15 +242,15 @@ func init() {
 
 		rel := strings.TrimPrefix(p, "catalog/units/")
 		parts := strings.Split(rel, "/")
-		// Only files matching <unit>/paths/<path>/perks/<rank>.json are perk
-		// definitions. Everything else under catalog/units/ belongs to
-		// unit_defs.go or path_defs.go — ignore it here.
-		if len(parts) != 5 || parts[1] != "paths" || parts[3] != "perks" {
+		// Only files matching <faction>/<unit>/paths/<path>/perks/<rank>.json
+		// are perk definitions. Everything else under catalog/units/ belongs
+		// to unit_defs.go or path_defs.go — ignore it here.
+		if len(parts) != 6 || parts[2] != "paths" || parts[4] != "perks" {
 			return nil
 		}
-		unitType := parts[0]
-		pathName := parts[2]
-		rank := strings.TrimSuffix(parts[4], path.Ext(parts[4]))
+		unitType := parts[1]
+		pathName := parts[3]
+		rank := strings.TrimSuffix(parts[5], path.Ext(parts[5]))
 
 		data, err := perkDefsFS.ReadFile(p)
 		if err != nil {

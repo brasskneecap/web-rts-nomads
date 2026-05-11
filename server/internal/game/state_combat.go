@@ -99,6 +99,14 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 	s.onUnitDamagedLocked(attacker, target, damage)
 	s.onPerkDamageTakenLocked(target, attacker, damage)
 
+	// Base-stat splash (raider_brute, etc.): damage every OTHER hostile
+	// within SplashRadius of the primary target. Direct damage call only —
+	// no on-attack perk hooks so it can't recurse (a splash hit shouldn't
+	// chain hunters_mark, savage_strikes, more splashes, etc.).
+	if attacker.SplashRadius > 0 && damage > 0 {
+		s.applySplashDamageLocked(attacker, target, damage, deadUnitIDs)
+	}
+
 	if attacker.HP <= 0 {
 		s.awardKillXPLocked(target)
 		s.payoutDamageDealtXPLocked(attacker)
@@ -127,6 +135,46 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 		}
 	}
 	return false
+}
+
+// applySplashDamageLocked is the base-stat splash payload for units with
+// SplashRadius > 0 (raider_brute, etc.). Hits every hostile within
+// attacker.SplashRadius of the primary target's position EXCEPT the primary
+// target itself (already hit). Uses applyUnitDamageWithSourceLocked
+// directly — bypassing the on-attack perk hooks — so it can't recurse and
+// doesn't accidentally trigger savage_strikes / hunters_mark / explosive_tips
+// chains on each splashed victim. Awards XP and tracks kills like any other
+// trap-style AoE.
+//
+// Must be called under s.mu write lock.
+func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damage int, deadUnitIDs *[]int) {
+	radSq := attacker.SplashRadius * attacker.SplashRadius
+	for _, u := range s.Units {
+		if u == nil || u == primaryTarget || u == attacker {
+			continue
+		}
+		if u.HP <= 0 || !u.Visible {
+			continue
+		}
+		if !playersAreHostile(u.OwnerID, attacker.OwnerID) {
+			continue
+		}
+		dx := u.X - primaryTarget.X
+		dy := u.Y - primaryTarget.Y
+		if dx*dx+dy*dy > radSq {
+			continue
+		}
+		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "splash"})
+		s.recordDamageDealtLocked(attacker, u, damage)
+		s.trackBattleDamageLocked(battleSourceFromUnit(attacker), u, damage)
+		if u.HP <= 0 {
+			s.awardKillXPLocked(attacker)
+			s.payoutDamageDealtXPLocked(u)
+			s.awardSoldierTankKillXPLocked(u.ID)
+			s.trackBattleKillLocked(battleSourceFromUnit(attacker), u)
+			*deadUnitIDs = append(*deadUnitIDs, u.ID)
+		}
+	}
 }
 
 func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool) {

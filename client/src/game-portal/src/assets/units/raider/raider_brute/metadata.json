@@ -1,0 +1,131 @@
+{
+  "character": {
+    "id": "9e795c04-25c2-4cd4-9629-bac18292c439",
+    "name": "pixel art, top-down 3/4 perspective, chunky dark outlines, 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, single character centered on transparent background, idle pose facing south, hulking ogre brute, muscular humanoid with warty dark red skin mottled with black patches, broad shoulders, jutting tusks and small beady eyes, blackened leather loincloth and dark hide harness, iron bands on wrists, massive dark wooden club studded with black iron spikes resting on right shoulder, hunched aggressive stance, dark burn scars across chest and arms, deep red and black palette with dark brown accents",
+    "prompt": "pixel art, top-down 3/4 perspective, chunky dark outlines, 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, single character centered on transparent background, idle pose facing south, hulking ogre brute, muscular humanoid with warty dark red skin mottled with black patches, broad shoulders, jutting tusks and small beady eyes, blackened leather loincloth and dark hide harness, iron bands on wrists, massive dark wooden club studded with black iron spikes resting on right shoulder, hunched aggressive stance, dark burn scars across chest and arms, deep red and black palette with dark brown accents",
+    "size": {
+      "width": 144,
+      "height": 144
+    },
+    "template_id": "mannequin",
+    "directions": 8,
+    "view": "low top-down",
+    "created_at": "2026-05-06T21:35:08.346881+00:00"
+  },
+  "frames": {
+    "rotations": {
+      "south": "rotations/south.png",
+      "south-east": "rotations/south-east.png",
+      "east": "rotations/east.png",
+      "north-east": "rotations/north-east.png",
+      "north": "rotations/north.png",
+      "north-west": "rotations/north-west.png",
+      "west": "rotations/west.png",
+      "south-west": "rotations/south-west.png"
+    },
+    "animations": {
+      "Walking-0bb008ec": {
+        "east": [
+          "animations/Walking-0bb008ec/east/frame_000.png",
+          "animations/Walking-0bb008ec/east/frame_001.png",
+          "animations/Walking-0bb008ec/east/frame_002.png",
+          "animations/Walking-0bb008ec/east/frame_003.png"
+        ],
+        "west": [
+          "animations/Walking-0bb008ec/west/frame_000.png",
+          "animations/Walking-0bb008ec/west/frame_001.png",
+          "animations/Walking-0bb008ec/west/frame_002.png",
+          "animations/Walking-0bb008ec/west/frame_003.png"
+        ],
+        "north": [
+          "animations/Walking-0bb008ec/north/frame_000.png",
+          "animations/Walking-0bb008ec/north/frame_001.png",
+          "animations/Walking-0bb008ec/north/frame_002.png",
+          "animations/Walking-0bb008ec/north/frame_003.png"
+        ],
+        "south": [
+          "animations/Walking-0bb008ec/south/frame_000.png",
+          "animations/Walking-0bb008ec/south/frame_001.png",
+          "animations/Walking-0bb008ec/south/frame_002.png",
+          "animations/Walking-0bb008ec/south/frame_003.png"
+        ],
+        "south-east": [
+          "animations/Walking-0bb008ec/south-east/frame_000.png",
+          "animations/Walking-0bb008ec/south-east/frame_001.png",
+          "animations/Walking-0bb008ec/south-east/frame_002.png",
+          "animations/Walking-0bb008ec/south-east/frame_003.png"
+        ],
+        "north-west": [
+          "animations/Walking-0bb008ec/north-west/frame_000.png",
+          "animations/Walking-0bb008ec/north-west/frame_001.png",
+          "animations/Walking-0bb008ec/north-west/frame_002.png",
+          "animations/Walking-0bb008ec/north-west/frame_003.png"
+        ],
+        "north-east": [
+          "animations/Walking-0bb008ec/north-east/frame_000.png",
+          "animations/Walking-0bb008ec/north-east/frame_001.png",
+          "animations/Walking-0bb008ec/north-east/frame_002.png",
+          "animations/Walking-0bb008ec/north-east/frame_003.png"
+        ],
+        "south-west": [
+          "animations/Walking-0bb008ec/south-west/frame_000.png",
+          "animations/Walking-0bb008ec/south-west/frame_001.png",
+          "animations/Walking-0bb008ec/south-west/frame_002.png",
+          "animations/Walking-0bb008ec/south-west/frame_003.png"
+        ]
+      },
+      "Attacking-322bca65": {
+        "east": [
+          "animations/Attacking-322bca65/east/frame_000.png",
+          "animations/Attacking-322bca65/east/frame_001.png",
+          "animations/Attacking-322bca65/east/frame_002.png",
+          "animations/Attacking-322bca65/east/frame_003.png"
+        ],
+        "south": [
+          "animations/Attacking-322bca65/south/frame_000.png",
+          "animations/Attacking-322bca65/south/frame_001.png",
+          "animations/Attacking-322bca65/south/frame_002.png",
+          "animations/Attacking-322bca65/south/frame_003.png"
+        ],
+        "west": [
+          "animations/Attacking-322bca65/west/frame_000.png",
+          "animations/Attacking-322bca65/west/frame_001.png",
+          "animations/Attacking-322bca65/west/frame_002.png",
+          "animations/Attacking-322bca65/west/frame_003.png"
+        ],
+        "south-west": [
+          "animations/Attacking-322bca65/south-west/frame_000.png",
+          "animations/Attacking-322bca65/south-west/frame_001.png",
+          "animations/Attacking-322bca65/south-west/frame_002.png",
+          "animations/Attacking-322bca65/south-west/frame_003.png"
+        ],
+        "south-east": [
+          "animations/Attacking-322bca65/south-east/frame_000.png",
+          "animations/Attacking-322bca65/south-east/frame_001.png",
+          "animations/Attacking-322bca65/south-east/frame_002.png",
+          "animations/Attacking-322bca65/south-east/frame_003.png"
+        ],
+        "north-west": [
+          "animations/Attacking-322bca65/north-west/frame_000.png",
+          "animations/Attacking-322bca65/north-west/frame_001.png",
+          "animations/Attacking-322bca65/north-west/frame_002.png",
+          "animations/Attacking-322bca65/north-west/frame_003.png"
+        ],
+        "north-east": [
+          "animations/Attacking-322bca65/north-east/frame_000.png",
+          "animations/Attacking-322bca65/north-east/frame_001.png",
+          "animations/Attacking-322bca65/north-east/frame_002.png",
+          "animations/Attacking-322bca65/north-east/frame_003.png"
+        ],
+        "north": [
+          "animations/Attacking-322bca65/north/frame_000.png",
+          "animations/Attacking-322bca65/north/frame_001.png",
+          "animations/Attacking-322bca65/north/frame_002.png",
+          "animations/Attacking-322bca65/north/frame_003.png"
+        ]
+      }
+    }
+  },
+  "export_version": "2.0",
+  "export_date": "2026-05-11T19:27:39.414617"
+}

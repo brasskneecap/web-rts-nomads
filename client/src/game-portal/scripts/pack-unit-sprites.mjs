@@ -5,9 +5,13 @@
 //
 // Usage:  npm run pack:sprites
 //
-// Input  : src/assets/units/*/metadata.json  (PixelLab export, unmodified)
-// Output : src/assets/units/*/packed/{animation}.png  (one sheet per animation)
-//          src/assets/units/*/sprites.json            (loader input)
+// Input  : src/assets/units/{faction}/{unit}/metadata.json                       (base)
+//          src/assets/units/{faction}/{unit}/paths/{path}/metadata.json          (promotion variants)
+// Output : packed/{animation}.png + sprites.json next to each metadata.json
+//
+// The walker descends faction → unit → optional paths/{path}, packing any
+// directory that has a metadata.json. Adding a new promotion variant: drop
+// its PixelLab export under the parent unit's paths/{path}/ and re-run.
 //
 // The runtime loader consumes sprites.json and the packed sheets only; the
 // raw animations/ frames can stay on disk (they aren't imported by Vite
@@ -683,9 +687,9 @@ async function main() {
     scriptMtimeMs = 0
   }
 
-  let entries
+  let factionEntries
   try {
-    entries = await fs.readdir(unitsRoot, { withFileTypes: true })
+    factionEntries = await fs.readdir(unitsRoot, { withFileTypes: true })
   } catch (err) {
     console.error(`[pack:sprites] cannot read ${unitsRoot}:`, err.message)
     process.exit(1)
@@ -693,27 +697,61 @@ async function main() {
 
   let packed = 0
   let upToDate = 0
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const unitDir = path.join(unitsRoot, entry.name)
-    const result = await packUnit(unitDir)
+
+  // Pack a single unit/path directory and report. Used for both base units
+  // (faction/unit) and promotion paths (faction/unit/paths/path).
+  const packDir = async (dir, label) => {
+    const result = await packUnit(dir)
     if (result.skipped) {
-      console.log(`[pack:sprites] ${entry.name}: no metadata.json — skipped`)
-      continue
+      console.log(`[pack:sprites] ${label}: no metadata.json — skipped`)
+      return
     }
     if (result.alreadyPacked) {
       console.log(`[pack:sprites] ${result.unitKey}: raw frames pruned — leaving existing sprites.json`)
-      continue
+      return
     }
     if (result.upToDate) {
       upToDate += 1
-      continue
+      return
     }
     packed += 1
     const suffix = result.wroteManifest ? '' : ' — no manifest changes'
     console.log(
       `[pack:sprites] ${result.unitKey}: ${result.rotations} rotations, ${result.animations} animations${suffix}`,
     )
+  }
+
+  for (const factionEntry of factionEntries) {
+    if (!factionEntry.isDirectory()) continue
+    const factionDir = path.join(unitsRoot, factionEntry.name)
+    let unitEntries
+    try {
+      unitEntries = await fs.readdir(factionDir, { withFileTypes: true })
+    } catch (err) {
+      console.error(`[pack:sprites] cannot read ${factionDir}:`, err.message)
+      continue
+    }
+    for (const entry of unitEntries) {
+      if (!entry.isDirectory()) continue
+      const unitDir = path.join(factionDir, entry.name)
+      await packDir(unitDir, `${factionEntry.name}/${entry.name}`)
+
+      // Promotion-variant sprites live under <unit>/paths/<path>/. Walk that
+      // subtree when present so a new path drop-in (e.g. archer/paths/marksman)
+      // is packed without any further config.
+      const pathsDir = path.join(unitDir, 'paths')
+      let pathEntries
+      try {
+        pathEntries = await fs.readdir(pathsDir, { withFileTypes: true })
+      } catch {
+        continue // no paths/ — base unit only
+      }
+      for (const pathEntry of pathEntries) {
+        if (!pathEntry.isDirectory()) continue
+        const pathDir = path.join(pathsDir, pathEntry.name)
+        await packDir(pathDir, `${factionEntry.name}/${entry.name}/paths/${pathEntry.name}`)
+      }
+    }
   }
 
   // ── Objects (explosive_trap, future placeables) ────────────────────────────

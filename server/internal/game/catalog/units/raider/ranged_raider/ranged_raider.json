@@ -1,0 +1,33 @@
+{
+  "type": "ranged_raider",
+  "name": "Ranged Raider",
+  "faction": "raider",
+  "archetype": "ranged_raider",
+  "hp": 75,
+  "damage": 8,
+  "attackRange": 220,
+  "attackSpeed": 1.5,
+  "moveSpeed": 100,
+  "resourceCost": {},
+  "meatCost": 0,
+  "spawnSeconds": 0,
+  "capabilities": [
+    "move",
+    "attack"
+  ],
+  "trainLabel": "",
+  "combatProfile": "enemy_archer",
+  "attackVisual": {
+    "kind": "projectile",
+    "originX": 24,
+    "originY": 5,
+    "effectLength": 22
+  },
+  "bounds": {
+    "halfWidth": 14,
+    "top": -60,
+    "bottom": 10,
+    "ringOffsetX": 0,
+    "ringOffsetY": -10
+  }
+}

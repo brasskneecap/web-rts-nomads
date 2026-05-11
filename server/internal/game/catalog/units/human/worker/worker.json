@@ -1,0 +1,40 @@
+{
+  "type": "worker",
+  "name": "Worker",
+  "faction": "human",
+  "archetype": "soldier",
+  "nonCombat": true,
+  "hp": 100,
+  "damage": 3,
+  "attackRange": 60,
+  "attackSpeed": 1,
+  "moveSpeed": 100,
+  "goldGatherAmount": 20,
+  "woodGatherAmount": 15,
+  "resourceCost": {
+    "gold": 150
+  },
+  "meatCost": 1,
+  "spawnSeconds": 5,
+  "capabilities": [
+    "move",
+    "gather",
+    "build",
+    "attack"
+  ],
+  "trainLabel": "Train Worker",
+  "metadata": {},
+  "attackVisual": {
+    "kind": "melee",
+    "originX": 0,
+    "originY": 0,
+    "effectLength": 10
+  },
+  "bounds": {
+    "halfWidth": 16,
+    "top": -80,
+    "bottom": 35,
+    "ringOffsetX": 0,
+    "ringOffsetY": -16
+  }
+}

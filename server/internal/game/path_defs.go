@@ -9,8 +9,8 @@ import (
 )
 
 // Embeds the per-unit catalog tree so this file can load path JSONs from
-// catalog/units/<unit>/paths/*.json. unit_defs.go embeds the same tree for
-// unit-def loading; both init functions filter the tree independently.
+// catalog/units/<faction>/<unit>/paths/*.json. unit_defs.go embeds the same
+// tree for unit-def loading; both init functions filter the tree independently.
 //
 //go:embed catalog/units
 var pathDefsFS embed.FS
@@ -23,16 +23,16 @@ var pathDefsFS embed.FS
 // for the same path live alongside it at .../<path>/perks/*.json and are
 // loaded by perk_defs.go.
 type pathCatalogFile struct {
-	Path        string                       `json:"path"`
-	Description string                       `json:"description,omitempty"`
+	Path        string `json:"path"`
+	Description string `json:"description,omitempty"`
 	// Bounds is an optional per-path override of the unit's visual footprint
 	// (halfWidth/top/bottom/ringOffsetX/ringOffsetY). Path variants often ship
 	// their own sprites at different pixel sizes than the base unit, so the
 	// selection ring and hit-test rect need their own values. Passed through
 	// as-is; client uses path-keyed bounds before falling back to the base
 	// unit's bounds. Server game logic never reads it.
-	Bounds      json.RawMessage              `json:"bounds,omitempty"`
-	Ranks       map[string]pathRankStatsJSON `json:"ranks"`
+	Bounds json.RawMessage              `json:"bounds,omitempty"`
+	Ranks  map[string]pathRankStatsJSON `json:"ranks"`
 }
 
 // pathRankStatsJSON mirrors the stat-modifier fields of pathModifierDef (the
@@ -116,91 +116,101 @@ var validRankName = map[string]struct{}{
 
 func init() {
 	// Layout:
-	//   catalog/units/<unit>/paths/<path>/<path>.json  — per-path stat curve
-	//   catalog/units/<unit>/paths/<path>/perks/*.json — per-rank perk pool
-	//                                                    (loaded in perk_defs.go)
+	//   catalog/units/<faction>/<unit>/paths/<path>/<path>.json  — per-path stat curve
+	//   catalog/units/<faction>/<unit>/paths/<path>/perks/*.json — per-rank perk pool
+	//                                                              (loaded in perk_defs.go)
 	//
-	// Walk each unit's paths/ subfolder; each entry is a path directory
-	// containing the JSON at <path>/<path>.json. Units without promotion
-	// paths (worker, raider) simply have no paths/ dir — no error.
-	unitEntries, err := fs.ReadDir(pathDefsFS, "catalog/units")
+	// Walk each unit's paths/ subfolder under each faction directory; each
+	// entry is a path directory containing the JSON at <path>/<path>.json.
+	// Units without promotion paths (worker, raider) simply have no paths/ dir.
+	factionEntries, err := fs.ReadDir(pathDefsFS, "catalog/units")
 	if err != nil {
 		panic("catalog/units: " + err.Error())
 	}
-	pathModifiersByKey = make(map[string]pathModifierDef, len(unitEntries)*3)
+	pathModifiersByKey = make(map[string]pathModifierDef, 16)
 
-	for _, unitEntry := range unitEntries {
-		if !unitEntry.IsDir() {
+	for _, factionEntry := range factionEntries {
+		if !factionEntry.IsDir() {
 			continue // unit_defs.go already panics on stray files
 		}
-		unitKey := unitEntry.Name()
-		pathsDir := "catalog/units/" + unitKey + "/paths"
-
-		pathEntries, err := fs.ReadDir(pathDefsFS, pathsDir)
+		factionKey := factionEntry.Name()
+		unitEntries, err := fs.ReadDir(pathDefsFS, "catalog/units/"+factionKey)
 		if err != nil {
-			continue // no paths/ — this unit has no promotion paths
+			continue
 		}
+		for _, unitEntry := range unitEntries {
+			if !unitEntry.IsDir() {
+				continue
+			}
+			unitKey := unitEntry.Name()
+			pathsDir := "catalog/units/" + factionKey + "/" + unitKey + "/paths"
 
-		for _, pathEntry := range pathEntries {
-			if !pathEntry.IsDir() {
-				// Each entry under paths/ is now a directory (<path>/). A
-				// loose file here is a structural mistake — panic so the
-				// mismatch is caught at startup.
-				panic(fmt.Sprintf("%s: unexpected file %q — paths/ must contain path directories, not loose files",
-					pathsDir, pathEntry.Name()))
-			}
-			pathKey := pathEntry.Name()
-			rel := pathsDir + "/" + pathKey + "/" + pathKey + ".json"
-			data, err := pathDefsFS.ReadFile(rel)
+			pathEntries, err := fs.ReadDir(pathDefsFS, pathsDir)
 			if err != nil {
-				panic(rel + ": " + err.Error())
+				continue // no paths/ — this unit has no promotion paths
 			}
-			var file pathCatalogFile
-			if err := json.Unmarshal(data, &file); err != nil {
-				panic(rel + ": " + err.Error())
-			}
-			if file.Path == "" {
-				panic(rel + `: missing "path" field`)
-			}
-			if file.Path != pathKey {
-				// Directory name is the canonical path id. A mismatch means
-				// someone edited one without the other; fail loud so the
-				// catalog stays coherent.
-				panic(fmt.Sprintf("%s: path %q does not match directory name %q", rel, file.Path, pathKey))
-			}
-			if len(file.Bounds) > 0 {
-				pathBoundsByPath[file.Path] = file.Bounds
-			}
-			for rankName, stats := range file.Ranks {
-				if _, ok := validRankName[rankName]; !ok {
-					panic(fmt.Sprintf("%s: unknown rank %q (want bronze/silver/gold)", rel, rankName))
+
+			for _, pathEntry := range pathEntries {
+				if !pathEntry.IsDir() {
+					// Each entry under paths/ is now a directory (<path>/). A
+					// loose file here is a structural mistake — panic so the
+					// mismatch is caught at startup.
+					panic(fmt.Sprintf("%s: unexpected file %q — paths/ must contain path directories, not loose files",
+						pathsDir, pathEntry.Name()))
 				}
-				key := pathModifierKey(file.Path, rankName)
-				if _, exists := pathModifiersByKey[key]; exists {
-					// Two files define the same (path, rank) — e.g. if
-					// berserker appeared under both soldier/paths and
-					// archer/paths. Path ids are globally unique; fail loud.
-					panic(fmt.Sprintf("%s: duplicate definition for %s", rel, key))
+				pathKey := pathEntry.Name()
+				rel := pathsDir + "/" + pathKey + "/" + pathKey + ".json"
+				data, err := pathDefsFS.ReadFile(rel)
+				if err != nil {
+					panic(rel + ": " + err.Error())
 				}
-				// Attack-range fields are optional in the JSON. AttackRange
-				// (flat override, in pixels) is preserved as-is; 0 means
-				// "no override". AttackRangeMultiplier defaults to 1.0 when
-				// missing / zero so paths that don't tune range continue to
-				// work without authoring the field.
-				attackRangeMult := stats.AttackRangeMultiplier
-				if attackRangeMult <= 0 {
-					attackRangeMult = 1.0
+				var file pathCatalogFile
+				if err := json.Unmarshal(data, &file); err != nil {
+					panic(rel + ": " + err.Error())
 				}
-				pathModifiersByKey[key] = pathModifierDef{
-					Path:                  file.Path,
-					Rank:                  rankName,
-					MaxHPMultiplier:       stats.MaxHPMultiplier,
-					DamageMultiplier:      stats.DamageMultiplier,
-					AttackSpeedMultiplier: stats.AttackSpeedMultiplier,
-					MoveSpeedMultiplier:   stats.MoveSpeedMultiplier,
-					AttackRange:           stats.AttackRange,
-					AttackRangeMultiplier: attackRangeMult,
-					Armor:                 stats.Armor,
+				if file.Path == "" {
+					panic(rel + `: missing "path" field`)
+				}
+				if file.Path != pathKey {
+					// Directory name is the canonical path id. A mismatch means
+					// someone edited one without the other; fail loud so the
+					// catalog stays coherent.
+					panic(fmt.Sprintf("%s: path %q does not match directory name %q", rel, file.Path, pathKey))
+				}
+				if len(file.Bounds) > 0 {
+					pathBoundsByPath[file.Path] = file.Bounds
+				}
+				for rankName, stats := range file.Ranks {
+					if _, ok := validRankName[rankName]; !ok {
+						panic(fmt.Sprintf("%s: unknown rank %q (want bronze/silver/gold)", rel, rankName))
+					}
+					key := pathModifierKey(file.Path, rankName)
+					if _, exists := pathModifiersByKey[key]; exists {
+						// Two files define the same (path, rank) — e.g. if
+						// berserker appeared under both soldier/paths and
+						// archer/paths. Path ids are globally unique; fail loud.
+						panic(fmt.Sprintf("%s: duplicate definition for %s", rel, key))
+					}
+					// Attack-range fields are optional in the JSON. AttackRange
+					// (flat override, in pixels) is preserved as-is; 0 means
+					// "no override". AttackRangeMultiplier defaults to 1.0 when
+					// missing / zero so paths that don't tune range continue to
+					// work without authoring the field.
+					attackRangeMult := stats.AttackRangeMultiplier
+					if attackRangeMult <= 0 {
+						attackRangeMult = 1.0
+					}
+					pathModifiersByKey[key] = pathModifierDef{
+						Path:                  file.Path,
+						Rank:                  rankName,
+						MaxHPMultiplier:       stats.MaxHPMultiplier,
+						DamageMultiplier:      stats.DamageMultiplier,
+						AttackSpeedMultiplier: stats.AttackSpeedMultiplier,
+						MoveSpeedMultiplier:   stats.MoveSpeedMultiplier,
+						AttackRange:           stats.AttackRange,
+						AttackRangeMultiplier: attackRangeMult,
+						Armor:                 stats.Armor,
+					}
 				}
 			}
 		}

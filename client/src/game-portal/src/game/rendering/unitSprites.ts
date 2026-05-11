@@ -90,18 +90,24 @@ export interface DrawableFrame {
   srcH: number
 }
 
+// Sprite directories live at assets/units/<faction>/<unit>/ for base units and
+// at assets/units/<faction>/<unit>/paths/<path>/ for promotion variants —
+// mirroring the server catalog tree. The recursive ** glob picks up both
+// layers without needing two separate patterns. The keyed unit/path id is
+// always the last directory segment before sprites.json, so a single regex
+// covers both.
 const manifestGlob = import.meta.glob<SpriteManifest>(
-  '../../assets/units/*/sprites.json',
+  '../../assets/units/**/sprites.json',
   { eager: true, import: 'default' },
 )
 
 const rotationGlob = import.meta.glob<string>(
-  '../../assets/units/*/rotations/*.png',
+  '../../assets/units/**/rotations/*.png',
   { eager: true, query: '?url', import: 'default' },
 )
 
 const stripGlob = import.meta.glob<string>(
-  '../../assets/units/*/packed/*.png',
+  '../../assets/units/**/packed/*.png',
   { eager: true, query: '?url', import: 'default' },
 )
 
@@ -121,7 +127,11 @@ function loadImage(url: string): HTMLImageElement {
 }
 
 for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
-  const match = manifestPath.match(/\/assets\/units\/([^/]+)\/sprites\.json$/)
+  // The directory immediately containing sprites.json is the sprite key —
+  // unit type for base units, path id for promotion variants. Both id
+  // namespaces are globally unique, so a single capture works for either
+  // layout.
+  const match = manifestPath.match(/\/([^/]+)\/sprites\.json$/)
   if (!match) continue
 
   const key = match[1].toLowerCase()

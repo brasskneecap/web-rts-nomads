@@ -1,0 +1,27 @@
+{
+  "type": "raider_brute",
+  "name": "Raider Brute",
+  "faction": "raider",
+  "archetype": "raider",
+  "hp": 500,
+  "damage": 25,
+  "attackRange": 60,
+  "attackSpeed": 2,
+  "moveSpeed": 80,
+  "splashRadius": 50,
+  "resourceCost": {},
+  "meatCost": 0,
+  "spawnSeconds": 0,
+  "capabilities": [
+    "move",
+    "attack"
+  ],
+  "trainLabel": "",
+  "bounds": {
+    "halfWidth": 14,
+    "top": -60,
+    "bottom": 10,
+    "ringOffsetX": 0,
+    "ringOffsetY": -8
+  }
+}

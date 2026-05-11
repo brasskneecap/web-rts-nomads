@@ -101,32 +101,15 @@ func hydratePlacedUnits(units []protocol.PlacedUnit, cfg protocol.MapConfig) []p
 	}
 	out := make([]protocol.PlacedUnit, 0, len(units))
 	for _, entry := range units {
-		switch entry.Owner {
-		case "player", "enemy":
-		default:
-			slog.Warn("hydratePlacedUnits: dropping entry with unknown owner",
-				"owner", entry.Owner, "unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
-			continue
-		}
-		if entry.Owner == "player" && entry.PlayerLabel == "" {
-			slog.Warn("hydratePlacedUnits: dropping player entry with missing playerLabel",
+		if entry.PlayerSlot == "" {
+			slog.Warn("hydratePlacedUnits: dropping entry with missing playerSlot",
 				"unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
 			continue
 		}
-		def, ok := getUnitDef(entry.UnitType)
+		_, ok := getUnitDef(entry.UnitType)
 		if !ok {
 			slog.Warn("hydratePlacedUnits: dropping entry with unknown unitType",
-				"owner", entry.Owner, "unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
-			continue
-		}
-		if entry.Owner == "player" && def.TrainLabel == "" {
-			slog.Warn("hydratePlacedUnits: dropping player entry for non-trainable unit (no trainLabel)",
-				"unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
-			continue
-		}
-		if entry.Owner == "enemy" && def.TrainLabel != "" {
-			slog.Warn("hydratePlacedUnits: dropping enemy entry for player-trainable unit (has trainLabel)",
-				"unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
+				"playerSlot", entry.PlayerSlot, "unitType", entry.UnitType, "x", entry.X, "y", entry.Y)
 			continue
 		}
 		gridW := int(cfg.Width / cfg.CellSize)
@@ -139,12 +122,12 @@ func hydratePlacedUnits(units []protocol.PlacedUnit, cfg protocol.MapConfig) []p
 		}
 		if entry.X < 0 || entry.X >= gridW || entry.Y < 0 || entry.Y >= gridH {
 			slog.Warn("hydratePlacedUnits: dropping out-of-bounds entry",
-				"owner", entry.Owner, "unitType", entry.UnitType, "x", entry.X, "y", entry.Y,
+				"playerSlot", entry.PlayerSlot, "unitType", entry.UnitType, "x", entry.X, "y", entry.Y,
 				"gridW", gridW, "gridH", gridH)
 			continue
 		}
 		if entry.ID == "" {
-			entry.ID = fmt.Sprintf("placed-unit-%s-%d-%d", entry.Owner, entry.X, entry.Y)
+			entry.ID = fmt.Sprintf("placed-unit-%s-%d-%d", entry.PlayerSlot, entry.X, entry.Y)
 		}
 		if entry.AggroRange == 0 {
 			entry.AggroRange = placedUnitDefaultAggroRange

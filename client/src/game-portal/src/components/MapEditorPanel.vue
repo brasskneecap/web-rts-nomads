@@ -401,28 +401,24 @@
           </div>
 
           <div v-if="brushMode === 'unit'" class="control-group unit-brush-config">
-            <label>Owner</label>
-            <select v-model="placedUnitOwner" :disabled="!paintModeEnabled">
-              <option value="enemy">Enemy</option>
-              <option value="player">Player</option>
+            <label>Faction</label>
+            <select v-model="placedUnitFaction" :disabled="!paintModeEnabled">
+              <option value="raider">Raider</option>
+              <option value="neutral">Neutral</option>
+              <option value="human">Human</option>
             </select>
 
-            <template v-if="placedUnitOwner === 'player'">
-              <label for="placed-unit-player-label">Player Slot</label>
-              <select id="placed-unit-player-label" v-model="placedUnitPlayerLabel" :disabled="!paintModeEnabled">
-                <option v-for="lbl in placedUnitPlayerSlots" :key="lbl" :value="lbl">{{ lbl }}</option>
-              </select>
-              <label for="placed-unit-type-player">Unit Type</label>
-              <select id="placed-unit-type-player" v-model="placedUnitType" :disabled="!paintModeEnabled">
-                <option v-for="u in playerSpawnUnits" :key="u.type" :value="u.type">{{ u.label }}</option>
-              </select>
-            </template>
+            <label for="placed-unit-player-slot">Player Slot</label>
+            <select id="placed-unit-player-slot" v-model="placedUnitPlayerSlot" :disabled="!paintModeEnabled">
+              <option v-for="lbl in placedUnitPlayerSlots" :key="lbl" :value="lbl">{{ lbl }}</option>
+            </select>
 
-            <template v-if="placedUnitOwner === 'enemy'">
-              <label for="placed-unit-type-enemy">Unit Type</label>
-              <select id="placed-unit-type-enemy" v-model="placedUnitType" :disabled="!paintModeEnabled">
-                <option v-for="u in ENEMY_SPAWN_UNITS" :key="u.type" :value="u.type">{{ u.label }}</option>
-              </select>
+            <label for="placed-unit-type">Unit Type</label>
+            <select id="placed-unit-type" v-model="placedUnitType" :disabled="!paintModeEnabled">
+              <option v-for="u in unitTypesForBrushFaction" :key="u.type" :value="u.type">{{ u.label }}</option>
+            </select>
+
+            <template v-if="placedUnitPlayerSlot === 'enemy'">
               <label for="placed-unit-aggro-range">Aggro Range</label>
               <input
                 id="placed-unit-aggro-range"
@@ -646,36 +642,38 @@
       <div v-if="selectedEditPlacedUnit" class="edit-panel placed-unit-edit-panel" :style="placedUnitEditPanelStyle">
         <div class="edit-panel__header">
           <span class="edit-panel__title">
-            {{ selectedEditPlacedUnit.owner === 'enemy' ? 'Enemy Unit' : 'Player Unit' }}
+            {{ selectedEditPlacedUnit.playerSlot === 'enemy' ? 'Enemy Unit' : 'Player Unit' }}
           </span>
           <button type="button" class="edit-panel__close" @click="selectedEditPlacedUnitId = null">&#x2715;</button>
         </div>
         <div class="edit-panel__body">
 
-          <!-- Owner -->
+          <!-- Faction (drives the unit-type dropdown below; derived from the
+               current unit's type, not stored on the placed instance). -->
           <div class="edit-field">
-            <label>Owner</label>
+            <label>Faction</label>
             <select
-              :value="selectedEditPlacedUnit.owner"
-              @change="updateSelectedPlacedUnit({ owner: ($event.target as HTMLSelectElement).value as 'player' | 'enemy', playerLabel: undefined })"
+              :value="factionForUnitType(selectedEditPlacedUnit.unitType)"
+              @change="onEditPanelFactionChange(($event.target as HTMLSelectElement).value as UnitFaction)"
             >
-              <option value="player">Player</option>
-              <option value="enemy">Enemy</option>
+              <option value="raider">Raider</option>
+              <option value="neutral">Neutral</option>
+              <option value="human">Human</option>
             </select>
           </div>
 
-          <!-- Player slot (only when owner = player) -->
-          <div v-if="selectedEditPlacedUnit.owner === 'player'" class="edit-field">
+          <!-- Player slot -->
+          <div class="edit-field">
             <label>Player Slot</label>
             <select
-              :value="selectedEditPlacedUnit.playerLabel ?? placedUnitPlayerSlots[0]"
-              @change="updateSelectedPlacedUnit({ playerLabel: ($event.target as HTMLSelectElement).value })"
+              :value="selectedEditPlacedUnit.playerSlot"
+              @change="updateSelectedPlacedUnit({ playerSlot: ($event.target as HTMLSelectElement).value })"
             >
               <option v-for="slot in placedUnitPlayerSlots" :key="slot" :value="slot">{{ slot }}</option>
             </select>
           </div>
 
-          <!-- Unit type -->
+          <!-- Unit type, filtered to current faction -->
           <div class="edit-field">
             <label>Unit Type</label>
             <select
@@ -683,15 +681,15 @@
               @change="updateSelectedPlacedUnit({ unitType: ($event.target as HTMLSelectElement).value })"
             >
               <option
-                v-for="u in (selectedEditPlacedUnit.owner === 'enemy' ? ENEMY_SPAWN_UNITS : playerSpawnUnits)"
+                v-for="u in unitDefsByFaction[factionForUnitType(selectedEditPlacedUnit.unitType)]"
                 :key="u.type"
                 :value="u.type"
               >{{ u.label }}</option>
             </select>
           </div>
 
-          <!-- Enemy-only: aggro and leash range -->
-          <template v-if="selectedEditPlacedUnit.owner === 'enemy'">
+          <!-- Enemy-slot only: aggro and leash range -->
+          <template v-if="selectedEditPlacedUnit.playerSlot === 'enemy'">
             <div class="edit-field">
               <label>Aggro Range (px)</label>
               <input
@@ -729,12 +727,12 @@ import type {
   MapConfig,
   ObstacleType,
   PlacedUnit,
-  PlacedUnitOwner,
   TerrainType,
   TileSheet,
   UnitType,
   VictoryCondition,
 } from '@/game/network/protocol'
+import type { UnitFaction } from '@/game/maps/unitDefs'
 import { Camera } from '@/game/rendering/Camera'
 import {
   DEFAULT_GRASS_COLOR,
@@ -777,17 +775,22 @@ const selectedTerrain = ref<TerrainType>('grass')
 const selectedObstacle = ref<ObstacleType>('rock')
 const selectedBuilding = ref<BuildingType>('goldmine')
 const selectedTileSheet = ref<TileSheet>('tileset')
-const ENEMY_SPAWN_UNITS = [
-  { type: 'raider', label: 'Raider' },
-  { type: 'ranged_raider', label: 'Ranged Raider' },
-] as const
+
+// All unit types known to the catalog, populated by fetchUnitDefs. Drives the
+// faction-filtered type pickers below — adding a unit JSON on the server (with
+// a valid faction) makes it immediately available in the editor on next load.
+const unitDefsByFaction = ref<Record<UnitFaction, Array<{ type: UnitType; label: string }>>>({
+  raider: [],
+  neutral: [],
+  human: [],
+})
+// playerSpawnUnits remains a subset filtered by trainLabel — it's what
+// barracks-style spawn-points reference for in-game training pools, not the
+// editor brushing flow.
+const playerSpawnUnits = ref<Array<{ type: UnitType; label: string }>>([])
 
 const selectedTileCoord = ref<{ sx: number; sy: number } | null>(null)
 const selectedSpawnTownhallId = ref('')
-const playerSpawnUnits = ref<Array<{ type: UnitType; label: string }>>([
-  { type: 'worker', label: 'Worker' },
-  { type: 'soldier', label: 'Soldier' },
-])
 const spawnPointFillOrder = ref(0)
 const spawnPointPlayerLabel = ref('')
 const enemyTargetPlayerLabel = ref('')
@@ -799,8 +802,8 @@ const enemyIgnoreWaveClear = ref(false)
 const enemyUnitType = ref('raider')
 const enemyWaveMode = ref<'gameStart' | 'always' | 'specific' | 'repeating'>('always')
 const enemyWaveNumber = ref(1)
-const placedUnitOwner = ref<PlacedUnitOwner>('enemy')
-const placedUnitPlayerLabel = ref('player1')
+const placedUnitFaction = ref<UnitFaction>('raider')
+const placedUnitPlayerSlot = ref<string>('enemy')
 const placedUnitType = ref('raider')
 const placedUnitAggroRange = ref(150)
 const placedUnitLeashRange = ref(200)
@@ -906,12 +909,42 @@ const availablePlayerLabels = computed(() => {
 })
 
 // All player slot labels available for placed-unit assignment: spawn-point
-// labels take precedence, with fallback defaults so the dropdown is never empty.
+// labels (derived from buildings in the current map) plus the "enemy" slot
+// for guards. Falls back to a default roster when no spawn points exist yet
+// so the dropdown is never empty during initial authoring.
 const placedUnitPlayerSlots = computed(() => {
   const fromSpawnPoints = availablePlayerLabels.value
-  if (fromSpawnPoints.length > 0) return fromSpawnPoints
-  return ['player1', 'player2', 'player3', 'player4']
+  const slots = fromSpawnPoints.length > 0
+    ? [...fromSpawnPoints]
+    : ['player1', 'player2', 'player3', 'player4']
+  slots.push('enemy')
+  return slots
 })
+
+// Unit types filtered to the currently selected faction. Drives the brush
+// type picker; the edit panel uses its own per-unit faction lookup so it can
+// switch the selected unit's type to one of a different faction.
+const unitTypesForBrushFaction = computed(() =>
+  unitDefsByFaction.value[placedUnitFaction.value] ?? [],
+)
+
+// All hostile-side units (raider + neutral) for the enemy-spawnpoint building's
+// "Unit Type" picker. Enemy spawnpoints emit hostiles by design, so this list
+// excludes the human faction — placing a barracks-style spawner that emits
+// soldiers belongs in a different building, not enemy-spawnpoint.
+const ENEMY_SPAWN_UNITS = computed(() => [
+  ...unitDefsByFaction.value.raider,
+  ...unitDefsByFaction.value.neutral,
+])
+
+function factionForUnitType(unitType: string): UnitFaction {
+  for (const faction of ['raider', 'neutral', 'human'] as const) {
+    if (unitDefsByFaction.value[faction].some((u) => u.type === unitType)) {
+      return faction
+    }
+  }
+  return 'raider'
+}
 
 const selectedEditBuilding = computed(() =>
   selectedEditBuildingId.value
@@ -932,6 +965,15 @@ function updateSelectedPlacedUnit(patch: Partial<PlacedUnit>) {
   )
   placedUnits.value = next
   model.value = { ...model.value, placedUnits: next }
+}
+
+// Edit-panel Faction dropdown handler. Faction isn't stored on the placed
+// unit — it's derived from the unit's type. So changing the faction picker
+// swaps the unit type to the first available type of the chosen faction.
+function onEditPanelFactionChange(faction: UnitFaction) {
+  const pool = unitDefsByFaction.value[faction] ?? []
+  const next = pool[0]?.type
+  if (next) updateSelectedPlacedUnit({ unitType: next })
 }
 
 function deleteSelectedPlacedUnit() {
@@ -1304,7 +1346,7 @@ function updateHoverLabel(screenX: number, screenY: number) {
   const building = getBuildingAt(cell.x, cell.y)
   const buildingLabel = building ? building.buildingType : 'none'
   const pu = placedUnitAt(cell.x, cell.y)
-  const unitLabel = pu ? ` unit: ${pu.unitType}(${pu.owner})` : ''
+  const unitLabel = pu ? ` unit: ${pu.unitType}(${pu.playerSlot})` : ''
   hoverLabel.value = `(${cell.x}, ${cell.y}) terrain: ${terrain}, obstacle: ${obstacle}, building: ${buildingLabel}${unitLabel}`
 }
 
@@ -1444,17 +1486,16 @@ function placedUnitAt(x: number, y: number): PlacedUnit | undefined {
 
 function paintUnitAt(cx: number, cy: number) {
   const filtered = placedUnits.value.filter((u) => !(u.x === cx && u.y === cy))
-  const id = `placed-unit-${placedUnitOwner.value}-${cx}-${cy}`
+  const slot = placedUnitPlayerSlot.value
+  const id = `placed-unit-${slot}-${cx}-${cy}`
   const entry: PlacedUnit = {
     id,
     x: cx,
     y: cy,
-    owner: placedUnitOwner.value,
+    playerSlot: slot,
     unitType: placedUnitType.value,
   }
-  if (placedUnitOwner.value === 'player') {
-    entry.playerLabel = placedUnitPlayerLabel.value
-  } else {
+  if (slot === 'enemy') {
     entry.aggroRange = placedUnitAggroRange.value
     entry.leashRange = placedUnitLeashRange.value
   }
@@ -1984,7 +2025,7 @@ function drawPlacedUnits(ctx: CanvasRenderingContext2D) {
         ctx.imageSmoothingEnabled = false
 
         // Tinted background
-        ctx.fillStyle = pu.owner === 'enemy' ? 'rgba(231,76,60,0.25)' : 'rgba(59,130,246,0.25)'
+        ctx.fillStyle = pu.playerSlot === 'enemy' ? 'rgba(231,76,60,0.25)' : 'rgba(59,130,246,0.25)'
         ctx.fillRect(wx, wy, cellSize, cellSize)
 
         // Sprite centered in cell
@@ -1995,8 +2036,8 @@ function drawPlacedUnits(ctx: CanvasRenderingContext2D) {
         ctx.drawImage(portrait, cx - w / 2, cy - h / 2, w, h)
         ctx.globalAlpha = 1
 
-        // Border: yellow when selected, owner-color otherwise
-        ctx.strokeStyle = isSelected ? '#facc15' : (pu.owner === 'enemy' ? '#e74c3c' : '#3b82f6')
+        // Border: yellow when selected, slot-color otherwise
+        ctx.strokeStyle = isSelected ? '#facc15' : (pu.playerSlot === 'enemy' ? '#e74c3c' : '#3b82f6')
         ctx.lineWidth = isSelected ? 2 / camera.zoom : 1 / camera.zoom
         ctx.strokeRect(wx, wy, cellSize, cellSize)
         ctx.restore()
@@ -2008,7 +2049,7 @@ function drawPlacedUnits(ctx: CanvasRenderingContext2D) {
     const r = cellSize * 0.35
     ctx.beginPath()
     ctx.arc(cx, cy, r, 0, Math.PI * 2)
-    ctx.fillStyle = pu.owner === 'enemy' ? '#e74c3c' : '#3b82f6'
+    ctx.fillStyle = pu.playerSlot === 'enemy' ? '#e74c3c' : '#3b82f6'
     ctx.globalAlpha = 0.85
     ctx.fill()
     ctx.globalAlpha = 1
@@ -2062,13 +2103,29 @@ onMounted(() => {
       playerSpawnUnits.value = units
         .filter((def) => def.trainLabel)
         .map((def) => ({ type: def.type as UnitType, label: def.name }))
-      // Reset placed-unit type if the current selection is no longer valid for
-      // the current owner after unit defs are loaded.
-      if (placedUnitOwner.value === 'player') {
-        const validTypes = playerSpawnUnits.value.map((u) => u.type as string)
-        if (!validTypes.includes(placedUnitType.value)) {
-          placedUnitType.value = playerSpawnUnits.value[0]?.type ?? 'worker'
-        }
+      // Bucket every catalog unit by its declared faction so the brush type
+      // picker reflects the catalog automatically — adding a new unit JSON
+      // (with a valid faction) makes it appear in the matching dropdown on
+      // next editor load with zero hand-wiring.
+      const grouped: Record<UnitFaction, Array<{ type: UnitType; label: string }>> = {
+        raider: [],
+        neutral: [],
+        human: [],
+      }
+      for (const def of units) {
+        const bucket = grouped[def.faction]
+        if (bucket) bucket.push({ type: def.type as UnitType, label: def.name })
+      }
+      unitDefsByFaction.value = grouped
+      // If the current type isn't in the current faction (e.g. catalog just
+      // loaded), snap to the first valid one. Same for enemyUnitType.
+      const factionTypes = grouped[placedUnitFaction.value].map((u) => u.type as string)
+      if (!factionTypes.includes(placedUnitType.value)) {
+        placedUnitType.value = grouped[placedUnitFaction.value][0]?.type ?? placedUnitType.value
+      }
+      const enemyPool = [...grouped.raider, ...grouped.neutral]
+      if (!enemyPool.some((u) => u.type === enemyUnitType.value)) {
+        enemyUnitType.value = enemyPool[0]?.type ?? enemyUnitType.value
       }
     })
     .catch(() => {})
@@ -2127,31 +2184,12 @@ watch(selectedBuilding, () => {
   enemyTargetPlayerLabel.value = ''
 })
 
-watch(placedUnitOwner, (owner) => {
-  if (owner === 'enemy') {
-    placedUnitType.value = ENEMY_SPAWN_UNITS[0].type
-  } else {
-    placedUnitType.value = playerSpawnUnits.value[0]?.type ?? 'worker'
-  }
+// When the brush faction changes, reset the placed-unit type to the first
+// valid type for that faction so the dropdown selection stays coherent.
+watch(placedUnitFaction, (faction) => {
+  const types = unitDefsByFaction.value[faction] ?? []
+  placedUnitType.value = types[0]?.type ?? placedUnitType.value
 })
-
-// When the owner is changed via the edit panel, reset the unit type to the
-// first valid option for the new owner so the saved value stays coherent.
-watch(
-  () => selectedEditPlacedUnit.value?.owner,
-  (owner, prevOwner) => {
-    if (!owner || owner === prevOwner) return
-    const pu = selectedEditPlacedUnit.value
-    if (!pu) return
-    const validTypes =
-      owner === 'enemy'
-        ? (ENEMY_SPAWN_UNITS as ReadonlyArray<{ type: string; label: string }>).map((u) => u.type)
-        : playerSpawnUnits.value.map((u) => u.type as string)
-    if (!validTypes.includes(pu.unitType)) {
-      updateSelectedPlacedUnit({ unitType: validTypes[0] ?? '' })
-    }
-  },
-)
 
 watch(
   () => model.value.buildings,

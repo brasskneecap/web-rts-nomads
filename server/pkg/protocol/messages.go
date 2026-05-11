@@ -1,5 +1,7 @@
 package protocol
 
+import "encoding/json"
+
 // Order string constants used in UnitSnapshot.Order and mirrored in the
 // TypeScript client. Defined once here so both the server and the frontend
 // share a single source of truth for the wire values.
@@ -39,17 +41,56 @@ type VictoryCondition struct {
 	Count int `json:"count,omitempty"`
 }
 
-// PlacedUnit is a statically authored unit in the map. Player-owned entries
-// spawn when their player slot joins. Enemy entries spawn at match start as
-// stationary guards.
+// PlacedUnit is a statically authored unit in the map. PlayerSlot determines
+// who controls the unit at runtime: "player1", "player2", ... spawn when that
+// player joins the matching slot; "enemy" spawns at match start as a
+// stationary guard. The unit type implies its faction (raider / neutral /
+// human) — faction is intrinsic to the UnitDef and is not stored per instance.
 type PlacedUnit struct {
 	GridCoord
-	ID          string  `json:"id"`
-	Owner       string  `json:"owner"`           // "player" | "enemy"
-	PlayerLabel string  `json:"playerLabel,omitempty"`
-	UnitType    string  `json:"unitType"`
-	AggroRange  float64 `json:"aggroRange,omitempty"`
-	LeashRange  float64 `json:"leashRange,omitempty"`
+	ID         string  `json:"id"`
+	PlayerSlot string  `json:"playerSlot"`
+	UnitType   string  `json:"unitType"`
+	AggroRange float64 `json:"aggroRange,omitempty"`
+	LeashRange float64 `json:"leashRange,omitempty"`
+}
+
+// UnmarshalJSON accepts both the current shape (`playerSlot`) and the legacy
+// shape (`owner` + `playerLabel`) so existing map JSONs continue to load
+// without a one-time rewrite. The legacy `owner` field maps as:
+//   - "enemy"  → playerSlot "enemy"
+//   - "player" → playerSlot = legacy `playerLabel` (e.g. "player1")
+//
+// Maps re-saved through the editor are written in the new shape.
+func (p *PlacedUnit) UnmarshalJSON(data []byte) error {
+	type rawShape struct {
+		GridCoord
+		ID          string  `json:"id"`
+		PlayerSlot  string  `json:"playerSlot"`
+		Owner       string  `json:"owner"`
+		PlayerLabel string  `json:"playerLabel"`
+		UnitType    string  `json:"unitType"`
+		AggroRange  float64 `json:"aggroRange"`
+		LeashRange  float64 `json:"leashRange"`
+	}
+	var raw rawShape
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	p.GridCoord = raw.GridCoord
+	p.ID = raw.ID
+	p.UnitType = raw.UnitType
+	p.AggroRange = raw.AggroRange
+	p.LeashRange = raw.LeashRange
+	switch {
+	case raw.PlayerSlot != "":
+		p.PlayerSlot = raw.PlayerSlot
+	case raw.Owner == "enemy":
+		p.PlayerSlot = "enemy"
+	case raw.Owner == "player":
+		p.PlayerSlot = raw.PlayerLabel
+	}
+	return nil
 }
 
 type MapConfig struct {

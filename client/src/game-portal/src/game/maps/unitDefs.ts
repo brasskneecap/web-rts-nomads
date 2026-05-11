@@ -29,9 +29,16 @@ export type ResolvedUnitAttackVisual = {
   effectLength: number
 }
 
+/** Default categorisation of a unit type for the map editor brushing flow.
+ *  Decoupled from runtime ownership — the placed-unit `playerSlot` decides who
+ *  controls the unit in-game; faction just filters which types appear under
+ *  each brush category. */
+export type UnitFaction = 'raider' | 'neutral' | 'human'
+
 export type UnitDef = {
   type: string
   name: string
+  faction: UnitFaction
   archetype?: string
   hp: number
   damage: number

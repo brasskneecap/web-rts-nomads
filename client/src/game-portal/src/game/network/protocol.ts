@@ -86,14 +86,17 @@ export type WaveConfig = {
   waveDuration?: number
 }
 
-export type PlacedUnitOwner = 'player' | 'enemy'
+/** Runtime control assignment for a statically placed unit. "playerN" spawns
+ *  the unit when that player joins the matching slot; "enemy" spawns at
+ *  match start as a stationary guard. Decoupled from the unit's faction,
+ *  which lives on the UnitDef (raider / neutral / human). */
+export type PlacedUnitSlot = string
 
 export type PlacedUnit = {
   id: string
   x: number
   y: number
-  owner: PlacedUnitOwner
-  playerLabel?: string
+  playerSlot: PlacedUnitSlot
   unitType: string
   aggroRange?: number
   leashRange?: number

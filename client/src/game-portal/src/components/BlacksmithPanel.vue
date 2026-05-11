@@ -76,12 +76,16 @@ import type { PlayerUpgradeSnapshot } from '@/game/network/protocol'
 import { useDraggablePanel } from '@/composables/useDraggablePanel'
 
 const unitPortraitModules = import.meta.glob(
-  '@/assets/units/*/rotations/south.png',
+  '@/assets/units/**/rotations/south.png',
   { eager: true, import: 'default' }
 ) as Record<string, string>
 
 function unitPortrait(track: string): string {
-  const key = Object.keys(unitPortraitModules).find(k => k.includes(`/units/${track}/`))
+  // Match by `/<track>/rotations/...` — the recursive glob picks up both base
+  // unit dirs and path-promoted dirs (e.g. archer/paths/marksman), and the
+  // unit/path id is always the last directory segment before /rotations/.
+  const suffix = `/${track}/rotations/south.png`
+  const key = Object.keys(unitPortraitModules).find(k => k.endsWith(suffix))
   return key ? unitPortraitModules[key] : ''
 }
 

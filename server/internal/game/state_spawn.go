@@ -40,6 +40,7 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		BaseAttackRange:    def.AttackRange,
 		AttackSpeed:        def.AttackSpeed,
 		MoveSpeed:          def.MoveSpeed,
+		SplashRadius:       def.SplashRadius,
 		HealthRegenPerSecond: defaultHealthRegenPerSecond,
 		Rank:               unitRankBase,
 		ProgressionPath:    unitPathNone,
@@ -169,7 +170,7 @@ func (s *GameState) spawnPlacedUnitsForPlayerLocked(playerID, color string) {
 	blocked := s.getBlockedCellsLocked()
 	cellSize := s.MapConfig.CellSize
 	for _, entry := range s.MapConfig.PlacedUnits {
-		if entry.Owner != "player" || entry.PlayerLabel != playerLabel {
+		if entry.PlayerSlot != playerLabel {
 			continue
 		}
 		worldX := float64(entry.X)*cellSize + cellSize/2
@@ -204,7 +205,7 @@ func (s *GameState) spawnPlacedEnemyUnitsLocked() {
 	// and tickGuardReturnLocked spams A* every tick on every unit.
 	placedOrderID := s.nextMovementOrderIDLocked()
 	for _, entry := range s.MapConfig.PlacedUnits {
-		if entry.Owner != "enemy" {
+		if entry.PlayerSlot != "enemy" {
 			continue
 		}
 		worldX := float64(entry.X)*cellSize + cellSize/2
