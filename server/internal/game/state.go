@@ -431,6 +431,12 @@ type GameState struct {
 	// (Reactive Flames splash, etc.). See minor_damage_events.go.
 	minorDamageEventsThisTick []minorDamageEvent
 
+	// lethalDamageEventsThisTick mirrors critEventsThisTick for overkill
+	// killing-blow amounts. The client uses these to override its synthesized
+	// killing-blow popup so overkill displays the real damage instead of the
+	// HP-capped value. See lethal_damage_events.go.
+	lethalDamageEventsThisTick []lethalDamageEvent
+
 	// guardianAuraCache maps recipient unit ID to the combined armor bonus they
 	// receive from the strongest guardian_aura covering them this tick.
 	// FlatArmor and PercentArmor are taken as max independently across all
@@ -915,8 +921,9 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Traps:       traps,
 		Projectiles: projectiles,
 		Effects:     s.effectSnapshotsLocked(),
-		CritEvents:        s.snapshotCritEventsLocked(),
-		MinorDamageEvents: s.snapshotMinorDamageEventsLocked(),
+		CritEvents:         s.snapshotCritEventsLocked(),
+		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -948,6 +955,7 @@ func (s *GameState) Update(dt float64) {
 	// client can match against its HP-diff damage events.
 	s.resetCritEventsThisTickLocked()
 	s.resetMinorDamageEventsThisTickLocked()
+	s.resetLethalDamageEventsThisTickLocked()
 
 	profileSection("battleTracker", func() { s.battleTracker.tickLocked(dt) })
 	profileSection("unitProductions", func() { s.updateUnitProductionsLocked(dt) })

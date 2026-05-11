@@ -696,6 +696,19 @@ export type MinorDamageEventSnapshot = {
 }
 
 /**
+ * LethalDamageEventSnapshot carries the pre-clamp damage value for an overkill
+ * killing blow. The client's killing-blow synthesis would otherwise show only
+ * the victim's remaining HP (capped) because dead units are stripped from the
+ * snapshot before HP-diff runs. When an entry is present for a disappearing
+ * unit, the synthesized popup uses `damage` instead of `prev.hp`. Only emitted
+ * for overkill — exact kills don't need an override.
+ */
+export type LethalDamageEventSnapshot = {
+  unitId: number
+  damage: number
+}
+
+/**
  * EffectSnapshot is a transient sprite-sheet VFX anchored to a unit or world
  * position. The server owns the lifecycle; the client renders sprite frames
  * driven by `progress` (0 = first frame, 1 = last frame). `anchorUnitId`
@@ -735,6 +748,7 @@ export type MatchSnapshotMessage = {
   effects?: EffectSnapshot[]
   critEvents?: CritEventSnapshot[]
   minorDamageEvents?: MinorDamageEventSnapshot[]
+  lethalDamageEvents?: LethalDamageEventSnapshot[]
   // Present only when the active map has debug.battleTracker=true. Absent
   // otherwise — the client treats absence as "debug tracker disabled".
   battleTracker?: BattleTrackerSnapshot

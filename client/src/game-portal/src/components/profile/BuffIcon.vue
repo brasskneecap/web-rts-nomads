@@ -2,7 +2,6 @@
   <div
     class="buff-icon"
     :class="{ 'buff-icon--locked': locked }"
-    :title="label"
     :aria-label="label"
     aria-hidden="false"
   >

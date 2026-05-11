@@ -688,6 +688,16 @@ type MinorDamageEventSnapshot struct {
 	Variant string `json:"variant,omitempty"`
 }
 
+// LethalDamageEventSnapshot carries the pre-clamp damage value for an overkill
+// killing blow. HP-deltas on the wire clamp to remaining HP, so the client's
+// HP-diff popup would otherwise show only the leftover HP. Each entry tells
+// the client "the synthesized killing-blow popup for this UnitID should use
+// Damage instead." Only emitted for overkill — exact kills don't need it.
+type LethalDamageEventSnapshot struct {
+	UnitID int `json:"unitId"`
+	Damage int `json:"damage"`
+}
+
 // EffectSnapshot is a generalized transient visual effect anchored to a unit
 // or a world position. It is emitted by the server (typically via perk hooks)
 // and drained per-tick to the client alongside ProjectileSnapshot and
@@ -724,8 +734,9 @@ type MatchSnapshotMessage struct {
 	Traps         []TrapSnapshot          `json:"traps,omitempty"`
 	Projectiles   []ProjectileSnapshot    `json:"projectiles,omitempty"`
 	Effects       []EffectSnapshot        `json:"effects,omitempty"`
-	CritEvents    []CritEventSnapshot     `json:"critEvents,omitempty"`
-	MinorDamageEvents []MinorDamageEventSnapshot `json:"minorDamageEvents,omitempty"`
+	CritEvents         []CritEventSnapshot         `json:"critEvents,omitempty"`
+	MinorDamageEvents  []MinorDamageEventSnapshot  `json:"minorDamageEvents,omitempty"`
+	LethalDamageEvents []LethalDamageEventSnapshot `json:"lethalDamageEvents,omitempty"`
 	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
 	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
 	Victory       *VictorySnapshot        `json:"victory,omitempty"`

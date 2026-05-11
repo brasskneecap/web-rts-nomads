@@ -781,10 +781,21 @@ export class GameState {
     // event using prev.hp as the amount (the visible HP that went away). Use
     // the prev-tick position so the floating number lands at the body's last
     // known location even though the unit no longer exists.
+    //
+    // Overkill override: when the server reports a lethalDamageEvent for the
+    // unit, the actual damage exceeded prev.hp. Use the server value so the
+    // popup reads "100" instead of "5 / 5". Falls back to prev.hp when no
+    // entry exists (exact kills, or kills via paths that don't go through
+    // applyUnitDamageWithSourceLocked).
+    const lethalOverride = new Map<number, number>()
+    for (const evt of message.lethalDamageEvents ?? []) {
+      lethalOverride.set(evt.unitId, evt.damage)
+    }
     for (const [unitId, prev] of this.prevUnitHp) {
       if (currentUnitIds.has(unitId)) continue
       if (prev.hp <= 0) continue
-      emitDamageEvent(unitId, prev.unitType, prev.x, prev.y, prev.hp, prev.ownerId)
+      const amount = lethalOverride.get(unitId) ?? prev.hp
+      emitDamageEvent(unitId, prev.unitType, prev.x, prev.y, amount, prev.ownerId)
     }
 
     this.prevUnitHp.clear()

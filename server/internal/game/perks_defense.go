@@ -85,10 +85,19 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 		damage -= target.Shield
 		target.Shield = 0
 	}
+	prevHP := target.HP
 	target.HP -= damage
 	// Clamp to 0 so HP is never stored as negative.
 	if target.HP < 0 {
 		target.HP = 0
+	}
+	// Overkill: damage exceeded what was on HP. The client derives its floating
+	// damage numbers from HP-diffs, which clamp to prevHP for the killing blow.
+	// Record the pre-clamp value so the client can show the real damage instead
+	// of the capped "5 / 5" amount. Exact kills (damage == prevHP) are skipped —
+	// the client's HP-delta is already correct in that case.
+	if prevHP > 0 && damage > prevHP {
+		s.recordLethalDamageLocked(target, damage)
 	}
 	// Shared Pain: redistribute a fraction of the pre-mitigation damage to
 	// other marked enemies. Propagate attribution so indirect kills credit the

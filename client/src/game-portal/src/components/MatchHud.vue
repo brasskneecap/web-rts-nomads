@@ -45,11 +45,6 @@
       <div class="wave-timer">{{ waveTimerText }}</div>
     </section>
 
-    <section class="buff-tray" aria-label="Active player buffs">
-      <!-- TODO: pass PlayerSnapshot.activeBuffs here once the backend ships that field -->
-      <PlayerBuffStrip />
-    </section>
-
     <section class="resource-tray" aria-label="Resources">
       <article
         v-for="resource in ui.player.resources"
@@ -74,6 +69,14 @@
           <div class="resource-amount">{{ resource.max != null ? `${resource.amount}/${resource.max}` : resource.amount }}</div>
         </div>
       </article>
+    </section>
+
+    <!-- Equipped buffs/debuffs anchored below the header on the right. Lives
+         inside <header> only to inherit its positioning context; visually
+         it sits outside the panel frame. -->
+    <section class="buff-tray" aria-label="Active player buffs">
+      <!-- TODO: pass PlayerSnapshot.activeBuffs here once the backend ships that field -->
+      <PlayerBuffStrip />
     </section>
   </header>
 
@@ -244,9 +247,16 @@ function exitGame() {
 }
 
 .buff-tray {
-  flex: 0 0 auto;
+  /* Anchored below the header's visible bottom edge on the right. `top: 100%`
+     references the header's padding-box bottom, so we add the 17px transparent
+     border (which the panel border-image paints into) plus a small gap to clear
+     the visible frame. */
+  position: absolute;
+  top: calc(100% + var(--ui-panel-slice) * 1px + 8px);
+  right: 0;
   display: flex;
   align-items: center;
+  pointer-events: auto;
 }
 
 .resource-tray {
