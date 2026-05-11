@@ -11,17 +11,17 @@ package game
 // │  WHERE THINGS LIVE                                                      │
 // │                                                                         │
 // │    PERK DEFINITIONS (data, tuning, eligibility)                         │
-// │      → catalog/units/<unit>/paths/<path>/perks/<rank>.json              │
+// │      → catalog/units/<faction>/<unit>/paths/<path>/perks/<rank>.json    │
 // │        Each file holds the array of perk entries for that slot.         │
 // │        Adding a perk means appending to the right file;                 │
 // │        UnitType / Path / Rank are inferred from the file path.          │
 // │                                                                         │
 // │    PATH STAT MULTIPLIERS (per rank)                                     │
-// │      → catalog/units/<unit>/paths/<path>/<path>.json                    │
+// │      → catalog/units/<faction>/<unit>/paths/<path>/<path>.json          │
 // │        Sibling of perks/; loaded by path_defs.go.                       │
 // │                                                                         │
 // │    UNIT BASE STATS                                                      │
-// │      → catalog/units/<unit>/<unit>.json                                 │
+// │      → catalog/units/<faction>/<unit>/<unit>.json                       │
 // │                                                                         │
 // │    PERK RUNTIME BEHAVIOUR (effects, hooks, state)                       │
 // │      → perks.go   (assignment + all seven hook functions)               │
@@ -47,7 +47,7 @@ import (
 )
 
 // Embeds the per-unit catalog tree so this file can load perk JSONs from
-// catalog/units/<unit>/paths/<path>/perks/*.json. unit_defs.go and
+// catalog/units/<faction>/<unit>/paths/<path>/perks/*.json. unit_defs.go and
 // path_defs.go embed the same tree; each init() filters independently.
 //
 //go:embed all:catalog/units

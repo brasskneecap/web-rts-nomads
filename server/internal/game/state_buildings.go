@@ -770,6 +770,13 @@ func (s *GameState) destroyBuildingLocked(buildingID string) {
 	for _, unit := range s.Units {
 		if unit.AttackBuildingTargetID == buildingID {
 			unit.AttackBuildingTargetID = ""
+			// Cancel any in-flight swing against the destroyed building so
+			// the attacker drops out of attack state cleanly. Reset
+			// AttackCooldown so the next engagement's animation aligns
+			// with damage — see the matching block in removeUnitLocked
+			// for the timing rationale.
+			unit.AttackWindupRemaining = 0
+			unit.AttackCooldown = 0
 			unit.Attacking = false
 			unit.Status = "Idle"
 		}

@@ -50,6 +50,21 @@ func manualDecayCC(unit *Unit, dt float64) {
 	}
 }
 
+// tickCombatUntilDamage ticks combat in `dt` increments until `target.HP`
+// drops below `hpBefore` or `maxTicks` elapse. Lets the attacker's windup
+// run to completion so the swing actually lands — useful for melee unit
+// tests that previously assumed instant-fire timing. Returns the number of
+// ticks taken; equal to maxTicks when no hit landed.
+func tickCombatUntilDamage(s *GameState, target *Unit, hpBefore int, dt float64, blocked map[gridPoint]bool, maxTicks int) int {
+	for i := 0; i < maxTicks; i++ {
+		s.tickUnitCombatLocked(dt, blocked)
+		if target.HP < hpBefore {
+			return i + 1
+		}
+	}
+	return maxTicks
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Stun tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,13 +87,14 @@ func TestApplyStun_GatesAttack(t *testing.T) {
 		t.Errorf("stunned unit fired an attack: enemy HP dropped from %d to %d", hpBefore, enemy.HP)
 	}
 
-	// Expire the stun manually, reset cooldown, verify attack fires.
+	// Expire the stun manually, reset cooldown, verify attack fires after the
+	// windup runs to completion (≤ 1s of ticks; soldier AttackSpeed=1 → 1s
+	// windup, so 11×0.1s comfortably covers the swing + damage application).
 	unit.StunnedRemaining = 0
 	unit.AttackCooldown = 0
 	hpBefore = enemy.HP
-	s.tickUnitCombatLocked(0.1, blocked)
-	if enemy.HP >= hpBefore {
-		t.Errorf("un-stunned unit should have attacked: enemy HP before=%d after=%d", hpBefore, enemy.HP)
+	if got := tickCombatUntilDamage(s, enemy, hpBefore, 0.1, blocked, 15); got >= 15 {
+		t.Errorf("un-stunned unit should have attacked after windup: enemy HP before=%d after=%d (ticks=%d)", hpBefore, enemy.HP, got)
 	}
 }
 
@@ -238,41 +254,58 @@ func TestApplySlow_ReducesMoveSpeed(t *testing.T) {
 	}
 }
 
-// TestApplySlow_ReducesAttackCadence verifies that a slowed attacker commits a
-// longer AttackCooldown after firing — a 0.7× slow should stretch cooldown by
-// 1/0.7 relative to the same unit firing without a slow.
+// TestApplySlow_ReducesAttackCadence verifies that a slowed attacker takes a
+// longer total swing cycle than an un-slowed one. Cycle = windup + post-swing
+// cooldown = 1/effectiveSpeed in either case, so the ratio of slowed-to-base
+// cycle is 1/multiplier. We use a deliberately slow baseline (AttackSpeed
+// 0.5) so both cycles are well above the 1s animation cap — the cap would
+// otherwise collapse the windup portion identically for both cases and the
+// ratio test would only see the cooldown tail.
 func TestApplySlow_ReducesAttackCadence(t *testing.T) {
-	const multiplier = 0.7
+	const (
+		multiplier = 0.7
+		baseSpeed  = 0.5
+	)
 
-	// Baseline: no slow — capture the cooldown committed after firing.
+	// Baseline: no slow — fire one swing, read the post-fire cooldown.
+	// Initial windup duration (capped at 1s) plus post-fire cooldown
+	// reconstructs the full cycle length.
 	sBase, unitBase, _ := newCCState(t)
-	unitBase.AttackSpeed = 1.0
+	unitBase.AttackSpeed = baseSpeed
 	blockedBase := sBase.getBlockedCellsLocked()
-	sBase.tickUnitCombatLocked(0.1, blockedBase)
-	cooldownBase := unitBase.AttackCooldown
+	sBase.tickUnitCombatLocked(0.1, blockedBase) // begins windup
+	windupBase := unitBase.AttackWindupRemaining
+	// Run windup to completion so AttackCooldown gets assigned at fire time.
+	for i := 0; i < 30 && unitBase.AttackWindupRemaining > 0; i++ {
+		sBase.tickUnitCombatLocked(0.1, blockedBase)
+	}
+	cycleBase := windupBase + unitBase.AttackCooldown
 	sBase.mu.Unlock()
-	if cooldownBase <= 0 {
-		t.Fatalf("baseline attacker did not fire (AttackCooldown=%.3f)", cooldownBase)
+	if unitBase.AttackWindupRemaining != 0 {
+		t.Fatalf("baseline windup did not complete: remaining=%.3f", unitBase.AttackWindupRemaining)
 	}
 
-	// Slowed: same setup, attacker slowed before the tick.
+	// Slowed: same setup, attacker slowed before the first tick.
 	sSlow, unitSlow, _ := newCCState(t)
-	unitSlow.AttackSpeed = 1.0
-	sSlow.ApplySlowLocked(unitSlow.ID, multiplier, 2.0)
+	unitSlow.AttackSpeed = baseSpeed
+	sSlow.ApplySlowLocked(unitSlow.ID, multiplier, 10.0)
 	blockedSlow := sSlow.getBlockedCellsLocked()
 	sSlow.tickUnitCombatLocked(0.1, blockedSlow)
-	cooldownSlow := unitSlow.AttackCooldown
+	windupSlow := unitSlow.AttackWindupRemaining
+	for i := 0; i < 50 && unitSlow.AttackWindupRemaining > 0; i++ {
+		sSlow.tickUnitCombatLocked(0.1, blockedSlow)
+	}
+	cycleSlow := windupSlow + unitSlow.AttackCooldown
 	sSlow.mu.Unlock()
-	if cooldownSlow <= 0 {
-		t.Fatalf("slowed attacker did not fire (AttackCooldown=%.3f)", cooldownSlow)
+	if unitSlow.AttackWindupRemaining != 0 {
+		t.Fatalf("slowed windup did not complete: remaining=%.3f", unitSlow.AttackWindupRemaining)
 	}
 
-	// Cooldown inverse of effective speed: slow → cooldown stretches by 1/mult.
 	wantRatio := 1.0 / multiplier
-	gotRatio := cooldownSlow / cooldownBase
+	gotRatio := cycleSlow / cycleBase
 	if math.Abs(gotRatio-wantRatio) > 0.01 {
-		t.Errorf("slowed attack cadence: cooldown ratio got %.4f, want %.4f (base=%.4f, slow=%.4f)",
-			gotRatio, wantRatio, cooldownBase, cooldownSlow)
+		t.Errorf("slowed attack cadence: cycle ratio got %.4f, want %.4f (base=%.4f, slow=%.4f)",
+			gotRatio, wantRatio, cycleBase, cycleSlow)
 	}
 }
 
@@ -407,11 +440,12 @@ func TestStunAndSlow_Stack(t *testing.T) {
 		t.Errorf("slow multiplier should be 0.7, got %.3f", unit.SlowedMultiplier)
 	}
 
-	// Attack should now fire.
+	// Attack should now fire after the windup completes. Slow stretches the
+	// effective speed (AttackSpeed 1.0 × 0.7 = 0.7/sec) so the windup is
+	// capped at 1s; we tick well past that to let the swing land.
 	hpBefore = enemy.HP
-	s.tickUnitCombatLocked(0.05, blocked)
-	if enemy.HP >= hpBefore {
-		t.Errorf("un-stunned unit should attack (even while slowed): enemy HP %d → %d", hpBefore, enemy.HP)
+	if got := tickCombatUntilDamage(s, enemy, hpBefore, 0.05, blocked, 30); got >= 30 {
+		t.Errorf("un-stunned unit should attack (even while slowed): enemy HP %d → %d (ticks=%d)", hpBefore, enemy.HP, got)
 	}
 
 	// Movement speed factor should reflect the slow.
@@ -535,37 +569,45 @@ func TestApplyStun_GatesMovement_ViaUpdate(t *testing.T) {
 }
 
 // TestApplyStun_MidTickStun_CurrentAttackStillFires verifies the documented
-// "stun applied mid-tick takes effect next tick" behavior. A stun stamped onto
-// a unit AFTER the combat check has already passed (simulated by calling
-// tickUnitCombatLocked then ApplyStunLocked in sequence within a single tick)
-// does not retroactively suppress the attack that already fired this tick.
-// This is consistent with WeakenedRemaining/MarkedRemaining behavior.
+// "stun applied mid-tick takes effect next tick" behavior. With the windup
+// attack model the unit doesn't fire on the same tick it begins swinging —
+// the swing takes the animation window (≤1s) to resolve. What we want to
+// confirm here is the same in-tick ordering guarantee as before: a stun
+// stamped on AFTER tickUnitCombatLocked has already advanced this unit's
+// windup does NOT retroactively undo the progress it just made, and the
+// committed swing eventually lands once the stun expires.
 func TestApplyStun_MidTickStun_CurrentAttackStillFires(t *testing.T) {
 	s, unit, enemy := newCCState(t)
 	defer s.mu.Unlock()
 
-	hpBefore := enemy.HP
 	blocked := s.getBlockedCellsLocked()
 
-	// Tick combat (attack fires because unit is not yet stunned).
+	// Tick combat: the unit begins winding up (not yet stunned).
 	s.tickUnitCombatLocked(0.1, blocked)
-	hpAfterAttack := enemy.HP
+	if unit.AttackWindupRemaining <= 0 {
+		t.Fatalf("expected windup to have begun: AttackWindupRemaining=%.3f", unit.AttackWindupRemaining)
+	}
+	windupAfterFirstTick := unit.AttackWindupRemaining
 
-	// Now apply a stun — simulating what a perk hook called from within
-	// tickUnitCombatLocked would do.
-	s.ApplyStunLocked(unit.ID, 1.0)
+	// Now apply a stun — simulating a perk hook called from within
+	// tickUnitCombatLocked. The windup tick that just happened is not
+	// rolled back; the unit is just paused mid-swing.
+	s.ApplyStunLocked(unit.ID, 0.3)
 
-	// The attack this tick should have landed.
-	if hpAfterAttack >= hpBefore {
-		t.Errorf("attack should have fired before stun was applied: HP before=%d after=%d", hpBefore, hpAfterAttack)
+	// Tick again while stunned — windup should NOT decay further.
+	s.tickUnitCombatLocked(0.1, blocked)
+	if unit.AttackWindupRemaining != windupAfterFirstTick {
+		t.Errorf("stunned windup should pause: got %.3f, want %.3f", unit.AttackWindupRemaining, windupAfterFirstTick)
+	}
+	if enemy.HP != enemy.MaxHP {
+		t.Errorf("stunned unit should not deal damage: enemy HP %d (max %d)", enemy.HP, enemy.MaxHP)
 	}
 
-	// Next tick: stun is active, attack must not fire.
-	unit.AttackCooldown = 0
-	hpBefore = enemy.HP
-	s.tickUnitCombatLocked(0.1, blocked)
-	if enemy.HP != hpBefore {
-		t.Errorf("stunned unit attacked on next tick: HP %d → %d", hpBefore, enemy.HP)
+	// Expire stun; the committed swing resumes and eventually lands.
+	unit.StunnedRemaining = 0
+	hpBefore := enemy.HP
+	if got := tickCombatUntilDamage(s, enemy, hpBefore, 0.1, blocked, 20); got >= 20 {
+		t.Errorf("swing should land after stun expires: enemy HP before=%d after=%d (ticks=%d)", hpBefore, enemy.HP, got)
 	}
 }
 
@@ -779,14 +821,22 @@ func TestApplyStun_GatesAttack_BuildingTarget(t *testing.T) {
 		t.Errorf("stunned unit damaged a building: HP %v → %v", hpBefore, hpAfter)
 	}
 
-	// Expire stun, reset cooldown — building should now take damage.
+	// Expire stun, reset cooldown — building should take damage once the
+	// windup completes (≤1s; tick well past to be safe).
 	attacker.StunnedRemaining = 0
 	attacker.AttackCooldown = 0
 	hpBefore = s.buildingsByID[buildingID].Metadata["hp"].(float64)
-	s.tickUnitCombatLocked(0.1, blocked)
-	hpAfter = s.buildingsByID[buildingID].Metadata["hp"].(float64)
+	const maxTicks = 15
+	hpAfter = hpBefore
+	for i := 0; i < maxTicks; i++ {
+		s.tickUnitCombatLocked(0.1, blocked)
+		hpAfter = s.buildingsByID[buildingID].Metadata["hp"].(float64)
+		if hpAfter < hpBefore {
+			break
+		}
+	}
 	if hpAfter >= hpBefore {
-		t.Errorf("un-stunned unit should have damaged building: HP before=%.0f after=%.0f", hpBefore, hpAfter)
+		t.Errorf("un-stunned unit should have damaged building after windup: HP before=%.0f after=%.0f", hpBefore, hpAfter)
 	}
 }
 

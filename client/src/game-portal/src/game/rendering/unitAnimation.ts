@@ -8,6 +8,17 @@ export interface UnitAnimationSample {
   frameIndex: number
 }
 
+/** Timing inputs for a unit's attack animation, derived from its effective
+ *  attackSpeed. `cycleMs` is the full server-side cooldown (= 1000/attackSpeed);
+ *  `animDurationMs` is how long the animation actually plays within that cycle
+ *  (capped at 1s — slow attackers play the swing briskly, then idle until the
+ *  next swing). `frameDurationMs` is `animDurationMs / frameCount`. */
+export interface AttackAnimationTiming {
+  frameDurationMs: number
+  animDurationMs: number
+  cycleMs: number
+}
+
 interface UnitAnimState {
   direction: UnitDirection
   animation: UnitAnimationName
@@ -15,6 +26,10 @@ interface UnitAnimState {
   lastX: number
   lastY: number
   lastSampleAt: number
+  // Debug-only: previous tick's cycleElapsed value, used by the cycle-wrap
+  // logger to detect modulo wraps. Reset to undefined on animation change so
+  // the new animation's first sample doesn't print a spurious wrap.
+  debugLastCycleElapsed?: number
 }
 
 const DEFAULT_FRAME_MS = 125
@@ -24,6 +39,12 @@ const MOVING_THRESHOLD_PX_PER_MS = 0.005
 // degrees of stickiness before a neighbor can take over, which suppresses
 // jitter at the boundaries between adjacent facings.
 const FACING_HYSTERESIS_DEG = 7.5
+// Mirrors the server's attackDamageDeliveryFraction. Used only by the debug
+// cycle-wrap log to predict when the server will apply damage relative to the
+// animation cycle. If you tune the server constant, mirror it here for the
+// prediction string to stay accurate; the runtime animation doesn't depend on
+// this value (frame timing is driven by attackTiming.frameDurationMs).
+const DEBUG_DAMAGE_DELIVERY_FRACTION = 0.7
 
 export class UnitAnimationController {
   private states = new Map<number, UnitAnimState>()
@@ -40,10 +61,12 @@ export class UnitAnimationController {
     status: string | undefined,
     serverMoving: boolean | undefined,
     actionFacing: { dx: number; dy: number } | null,
-    attackFrameDurationMs: number | undefined,
+    attackTiming: AttackAnimationTiming | undefined,
     renderTime: number,
     carriedResource: string | undefined,
     unitType: string | undefined,
+    ownerId: string | undefined,
+    localPlayerId: string | null | undefined,
   ): UnitAnimationSample {
     let state = this.states.get(unitId)
     if (!state) {
@@ -86,20 +109,62 @@ export class UnitAnimationController {
     )
 
     if (animation !== state.animation) {
+      // Debug: when the toggle is enabled in DevTools, log every time a unit
+      // enters the attacking pose so the timing can be correlated with the
+      // damage popup logs emitted by GameState.emitDamageEvent.
+      //
+      // Enable:        window.debugAttackTiming = true
+      // Filter to me:  window.debugAttackTimingMineOnly = true
+      // Filter type:   window.debugAttackTimingUnitType = 'raider_brute'
+      if (animation === 'attacking' && shouldLogAtkTiming(unitType, ownerId, localPlayerId)) {
+        const cyc = attackTiming?.cycleMs ?? 0
+        const anim = attackTiming?.animDurationMs ?? 0
+        // eslint-disable-next-line no-console
+        console.log(
+          `[atk-timing] anim-start unit=${unitId} type=${unitType} t=${renderTime.toFixed(0)}ms cycle=${cyc.toFixed(0)} animDur=${anim.toFixed(0)}`,
+        )
+      }
       state.animation = animation
       state.animStartedAt = renderTime
+      state.debugLastCycleElapsed = undefined
     }
     state.direction = direction
     state.lastX = x
     state.lastY = y
     state.lastSampleAt = renderTime
 
-    const frameMs =
-      animation === 'attacking' && attackFrameDurationMs && attackFrameDurationMs > 0
-        ? attackFrameDurationMs
-        : this.frameDurationMs
-    const frameIndex = Math.floor((renderTime - state.animStartedAt) / frameMs)
+    // Attacking has bespoke timing tied to the unit's cooldown. The animation
+    // window is capped at 1s; for cooldowns longer than that the unit goes
+    // idle for the remainder of each cycle. Modulo against `cycleMs` makes the
+    // animation re-fire on every server cooldown without the client needing a
+    // dedicated "attack started" event — the server keeps emitting status
+    // "Attacking" continuously, and animStartedAt only resets when the unit
+    // leaves the attacking state, so the modulo gives us per-swing phase.
+    if (animation === 'attacking' && attackTiming && attackTiming.cycleMs > 0) {
+      const cycleElapsed = (renderTime - state.animStartedAt) % attackTiming.cycleMs
+      // Debug: log the start of each animation cycle (modulo wrap) so cycles
+      // beyond the first are visible too. Detected by the cycleElapsed value
+      // landing in the first frame window after having been past it.
+      if (shouldLogAtkTiming(unitType, ownerId, localPlayerId)) {
+        const lastElapsed = state.debugLastCycleElapsed
+        if (lastElapsed !== undefined && lastElapsed > cycleElapsed) {
+          const cycleStart = state.animStartedAt + Math.floor((renderTime - state.animStartedAt) / attackTiming.cycleMs) * attackTiming.cycleMs
+          const predictedDamageAt = cycleStart + attackTiming.animDurationMs * DEBUG_DAMAGE_DELIVERY_FRACTION
+          // eslint-disable-next-line no-console
+          console.log(
+            `[atk-timing] cycle-wrap unit=${unitId} type=${unitType} t=${renderTime.toFixed(0)}ms cycle=${attackTiming.cycleMs.toFixed(0)} (server should fire damage ~${predictedDamageAt.toFixed(0)}ms)`,
+          )
+        }
+        state.debugLastCycleElapsed = cycleElapsed
+      }
+      if (cycleElapsed >= attackTiming.animDurationMs) {
+        return { direction, animation: 'idle', frameIndex: 0 }
+      }
+      const frameIndex = Math.floor(cycleElapsed / attackTiming.frameDurationMs)
+      return { direction, animation, frameIndex }
+    }
 
+    const frameIndex = Math.floor((renderTime - state.animStartedAt) / this.frameDurationMs)
     return { direction, animation, frameIndex }
   }
 
@@ -169,6 +234,39 @@ function classifyDirection(
     }
   }
   return best
+}
+
+// shouldLogAtkTiming reads the debug toggles set via the DevTools console and
+// decides whether to emit a debug-log line for the given unit. Toggles:
+//   window.debugAttackTiming         — master enable (truthy)
+//   window.debugAttackTimingMineOnly — true → drop logs for enemy-owned units
+//   window.debugAttackTimingUnitType — string → only log this unit type
+// Note: "mine only" treats the enemy sentinel ownerId ('__enemy__') as not
+// mine. In multiplayer this matches "real player" rather than the local
+// player specifically — pass localPlayerId if a strict "owned by me" filter
+// is needed (currently we just compare to the enemy sentinel).
+function shouldLogAtkTiming(
+  unitType: string | undefined,
+  ownerId: string | undefined,
+  localPlayerId: string | null | undefined,
+): boolean {
+  const win = globalThis as {
+    debugAttackTiming?: boolean
+    debugAttackTimingMineOnly?: boolean
+    debugAttackTimingUnitType?: string
+  }
+  if (!win.debugAttackTiming) return false
+  if (win.debugAttackTimingMineOnly) {
+    if (localPlayerId) {
+      if (ownerId !== localPlayerId) return false
+    } else if (ownerId === '__enemy__') {
+      return false
+    }
+  }
+  if (win.debugAttackTimingUnitType && unitType !== win.debugAttackTimingUnitType) {
+    return false
+  }
+  return true
 }
 
 function pickAnimation(

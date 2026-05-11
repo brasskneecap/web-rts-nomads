@@ -176,6 +176,19 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 			if unit.Order.Type == OrderMove && unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == "" {
 				continue
 			}
+			// Committed swing: once the windup begins the target is locked
+			// in until damage applies (see tickUnitCombatLocked + apply-
+			// DelayedAttackLocked). Skipping the AI re-evaluation here
+			// prevents shouldDropCurrentTargetLocked from clearing the
+			// target mid-windup — without this the AI clears AttackTargetID
+			// while the unit is animating its swing and the damage call
+			// then whiffs because the target is gone, producing the
+			// "swing-but-no-damage" symptom slow attackers (raider_brute,
+			// big melee) feel most strongly because their 1s windup gives
+			// the AI ~20 ticks to second-guess the commitment.
+			if unit.AttackWindupRemaining > 0 {
+				continue
+			}
 			// Non-combat units (workers) never auto-acquire. They only engage when
 			// the player explicitly issues OrderAttackTarget via AttackWithUnits —
 			// once that order is set, combat evaluation runs normally (the sticky-
@@ -513,6 +526,12 @@ func (s *GameState) tickGuardReturnLocked(blocked map[gridPoint]bool) {
 func (s *GameState) clearCombatTargetLocked(unit *Unit) {
 	unit.AttackTargetID = 0
 	unit.AttackBuildingTargetID = ""
+	// Abort any in-flight swing — the target is gone and a leftover windup
+	// would keep the unit stuck in Status="Attacking" via the windup-at-top
+	// block in tickUnitCombatLocked. The AI gate prevents this path from
+	// firing mid-windup today, but defending here keeps the invariant robust
+	// against future callers added outside the AI tick.
+	unit.AttackWindupRemaining = 0
 	unit.Attacking = false
 	unit.ActionFacingDX = 0
 	unit.ActionFacingDY = 0

@@ -753,6 +753,38 @@ export class GameState {
         createdAt: now,
         kind,
       })
+      // Debug: pair with the [atk-timing] anim-start logs from unitAnimation
+      // to verify swing-vs-damage alignment. The filter trio mirrors the
+      // one in unitAnimation so the same toggles apply on both ends:
+      //   window.debugAttackTiming         — master enable
+      //   window.debugAttackTimingMineOnly — skip enemy-owned victims
+      //   window.debugAttackTimingUnitType — only log victims of this type
+      // Note: damage events filter on the VICTIM's type/owner, not the
+      // attacker (the HP-diff derivation has no attacker attribution).
+      const dbg = globalThis as {
+        debugAttackTiming?: boolean
+        debugAttackTimingMineOnly?: boolean
+        debugAttackTimingUnitType?: string
+      }
+      if (dbg.debugAttackTiming) {
+        let allow = true
+        if (dbg.debugAttackTimingMineOnly) {
+          if (this.localPlayerId) {
+            allow = ownerId === this.localPlayerId
+          } else {
+            allow = ownerId !== '__enemy__'
+          }
+        }
+        if (allow && dbg.debugAttackTimingUnitType && unitType !== dbg.debugAttackTimingUnitType) {
+          allow = false
+        }
+        if (allow) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[atk-timing] damage  unit=${unitId} type=${unitType} amount=${remainder} kind=${kind} t=${now.toFixed(0)}ms`,
+          )
+        }
+      }
       let history = this.recentDamageByUnit.get(unitId)
       if (!history) {
         history = []

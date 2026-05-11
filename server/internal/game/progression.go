@@ -167,7 +167,7 @@ func applyArmorMitigation(damage, armor int) int {
 //     units (workers etc.) that earn XP without ever being assigned a path.
 //     Lives in code because "none" is a system fallback, not a tunable path.
 //  3. Bronze/Silver/Gold with a known path → the JSON catalog at
-//     catalog/units/<unit>/paths/<path>.json, loaded into pathModifiersByKey.
+//     catalog/units/<faction>/<unit>/paths/<path>/<path>.json, loaded into pathModifiersByKey.
 //  4. Anything else (unknown path id, missing rank row) → identity, so a typo
 //     fails loud in-game (unit shows unmodified base stats) rather than
 //     silently matching an unintended row.
@@ -330,7 +330,7 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	//                  else unit.BaseAttackRange × pathDef.AttackRangeMultiplier.
 	//   2. effective = baseRange × (1 + perkAttackRangeMultiplierLocked).
 	//
-	// Path tuning lives in catalog/units/<u>/paths/<p>/<p>.json. Perk bonus
+	// Path tuning lives in catalog/units/<faction>/<unit>/paths/<p>/<p>.json. Perk bonus
 	// comes from eagle_spirit / bullseye / future range perks.
 	if unit.BaseAttackRange > 0 {
 		var baseRange float64

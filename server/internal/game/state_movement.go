@@ -375,6 +375,7 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.RepairChargeAccumulator = 0
 	unit.AttackTargetID = 0
 	unit.AttackBuildingTargetID = ""
+	unit.AttackWindupRemaining = 0
 	unit.Attacking = false
 	unit.Order = OrderState{Type: OrderIdle}
 	unit.Visible = true

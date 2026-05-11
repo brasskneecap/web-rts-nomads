@@ -273,16 +273,21 @@ func TestRetarget_ProjectileLandsOnOriginalTarget(t *testing.T) {
 	// Issue attack on A.
 	s.AttackWithUnits("p1", []int{unitID}, enemyAID)
 
-	// Tick once — tickUnitCombatLocked fires the projectile; tickProjectilesLocked
-	// decrements by 0.05s (travel time 0.6s → still 0.55s remaining). Projectile
-	// must be visible in s.Projectiles after Update.
-	s.Update(0.05)
+	// Tick through the swing's windup. The unit was spawned via the order
+	// test harness with the soldier default AttackSpeed=1.0 (the test only
+	// reassigns UnitType, not AttackSpeed), so windup = min(1, 1/1.0) ×
+	// attackDamageDeliveryFraction = 0.7s = 14 decay ticks at 0.05s. Add
+	// a few ticks for the begin-windup tick and post-fire projectile
+	// inspection — travel time 0.6s keeps it in-flight here.
+	for i := 0; i < 17; i++ {
+		s.Update(0.05)
+	}
 
 	s.mu.RLock()
 	u := s.unitsByID[unitID]
 	if u == nil {
 		s.mu.RUnlock()
-		t.Fatal("unit removed unexpectedly after first tick")
+		t.Fatal("unit removed unexpectedly after windup completed")
 	}
 	projectileCount := 0
 	for _, proj := range s.Projectiles {
@@ -296,7 +301,7 @@ func TestRetarget_ProjectileLandsOnOriginalTarget(t *testing.T) {
 	s.mu.RUnlock()
 
 	if projectileCount == 0 {
-		t.Fatalf("no in-flight projectile found after first tick; archer profile or attack path is not working as expected")
+		t.Fatalf("no in-flight projectile found after windup completed; archer profile or attack path is not working as expected")
 	}
 
 	// Retarget to B while projectile is still in-flight.

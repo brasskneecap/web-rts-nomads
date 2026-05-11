@@ -1,9 +1,72 @@
 package game
 
 import (
+	"log/slog"
 	"math"
+	"os"
+	"strings"
+	"time"
 	"webrts/server/pkg/protocol"
 )
+
+// attackDamageDeliveryFraction is the fraction of the attack animation at
+// which damage actually lands — i.e. the "hit frame" of the swing. The
+// remainder of the animation plays out as follow-through during cooldown.
+// 0.7 puts impact roughly where weapons connect in a typical 4-frame
+// melee swing (windup → forward → impact → recover); the floating damage
+// number then pops at the visually-correct moment instead of at the end
+// of the animation.
+const attackDamageDeliveryFraction = 0.7
+
+// debugAttackTimingEnabled / debugAttackTimingFilter control the server-side
+// swing-trace log emitted from applyDelayedAttackLocked. Pair with the
+// client's `window.debugAttackTiming` flag to verify end-to-end swing-vs-
+// damage timing.
+//
+// Enable:    DEBUG_ATTACK_TIMING=1
+// Filter:    DEBUG_ATTACK_TIMING_TYPES=raider_brute,soldier (comma-separated
+//            unitType list; empty = log all)
+//
+// The filter applies to the attacker's UnitType so it pairs naturally with
+// the client's per-type filter on the same data slice.
+var debugAttackTimingEnabled = os.Getenv("DEBUG_ATTACK_TIMING") == "1"
+var debugAttackTimingFilter = func() map[string]bool {
+	raw := os.Getenv("DEBUG_ATTACK_TIMING_TYPES")
+	if raw == "" {
+		return nil
+	}
+	out := make(map[string]bool)
+	for _, name := range strings.Split(raw, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			out[name] = true
+		}
+	}
+	return out
+}()
+
+// logAttackTiming emits one structured slog line per swing landing so the
+// server's stdout can be diffed against the client's [atk-timing] logs. No-op
+// when DEBUG_ATTACK_TIMING isn't set.
+func (s *GameState) logAttackTiming(kind string, attacker *Unit, targetID int, targetType string, damage int) {
+	if !debugAttackTimingEnabled {
+		return
+	}
+	if debugAttackTimingFilter != nil && !debugAttackTimingFilter[attacker.UnitType] {
+		return
+	}
+	slog.Info("[atk-timing] swing-lands",
+		"kind", kind,
+		"attacker_id", attacker.ID,
+		"attacker_type", attacker.UnitType,
+		"attacker_owner", attacker.OwnerID,
+		"target_id", targetID,
+		"target_type", targetType,
+		"damage", damage,
+		"tick", s.Tick,
+		"t_ms", time.Now().UnixMilli(),
+	)
+}
 
 // playersAreHostile reports whether two owner IDs should treat each other as
 // enemies for combat / target acquisition purposes.
@@ -92,8 +155,11 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 // when attacker died from reflected damage — callers should skip any further
 // per-attacker work and move on.
 //
-// Does NOT touch attacker.AttackCooldown: cooldown is committed at fire time
-// for both instant-hit and ranged paths so it can't be re-applied here.
+// Does NOT touch attacker.AttackCooldown: that's already been committed by
+// applyDelayedAttackLocked at windup-end (the moment this function is called),
+// and the kill-reset path in removeUnitLocked can clear it later if the
+// target dies from this hit. Layering another cooldown write in here would
+// stomp those decisions.
 func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, deadUnitIDs *[]int) bool {
 	s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "melee"})
 	s.onUnitDamagedLocked(attacker, target, damage)
@@ -177,11 +243,143 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 	}
 }
 
+// applyDelayedAttackLocked resolves a unit's swing at the moment its windup
+// expires. Re-validates the target — if it became invalid during the windup
+// (HP<=0, invisible, or no longer hostile) the swing whiffs harmlessly,
+// which in practice is rare because the kill-on-target-death path in
+// removeUnitLocked / destroyBuildingLocked already cancels the windup
+// before this function runs. Distance is intentionally NOT re-checked
+// here: once a swing has committed it lands regardless of where the target
+// moved during the animation (matches the standard RTS "committed swing"
+// contract). Must be called under s.mu while AttackWindupRemaining has just
+// reached 0.
+func (s *GameState) applyDelayedAttackLocked(unit *Unit, deadUnitIDs *[]int, destroyedBuildingIDs *[]string) {
+	// Effective speed at fire time — slow / haste landing during the windup
+	// window is reflected in the post-swing idle gap, not in the already-
+	// committed animation length. Cooldown spans both the animation's
+	// follow-through (post-impact frames) and the idle gap, totalling
+	// (cycle − pre-impact windup) so the next swing fires at the right
+	// moment to keep the overall cadence at 1/effectiveSpeed.
+	effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+	effectiveSpeed = math.Max(0.1, effectiveSpeed*slowFactorLocked(unit))
+	cycleSeconds := 1.0 / effectiveSpeed
+	animDur := math.Min(1.0, cycleSeconds)
+	preImpact := animDur * attackDamageDeliveryFraction
+	unit.AttackCooldown = math.Max(0, cycleSeconds-preImpact)
+	if unit.UnitType == "archer" {
+		unit.PerkState.LastCombatSeconds = 1.5
+	}
+
+	// ── Unit-vs-unit ─────────────────────────────────────────────────────
+	if unit.AttackTargetID != 0 {
+		target := s.getUnitByIDLocked(unit.AttackTargetID)
+		if !s.combatTargetIsValidLocked(unit, target) {
+			return // target gone / dead / allied — whiff
+		}
+		// No distance check at fire time: once a swing is committed (windup
+		// began while target was in range), it lands. Re-checking distance
+		// here would whiff visibly-connecting melee swings whenever the
+		// target stepped just outside AttackRange during the 1s animation —
+		// see the parallel "committed swing" semantic that RTS players
+		// expect. Ranged units fire a projectile that homes onto the
+		// current target position regardless of distance at fire time.
+		profile := resolveCombatProfile(unit)
+		// Pierce defers the crit roll to per-victim rolls inside
+		// tickPierceProjectileLocked so each enemy along the line rolls
+		// independent fortune (and a red-circle visual on a hit). The
+		// projectile carries the pre-crit damage in that case.
+		isPierce := !profile.Melee && containsString(unit.PerkIDs, "pierce")
+		rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
+		critMult := 1.0
+		isCrit := false
+		if !isPierce {
+			critMult = s.rollCritDamage(unit, target)
+			isCrit = critMult > 1.0
+		}
+		rawDamage *= critMult
+		rawDamage *= (1.0 - s.perkOutgoingDamageDebuffMultiplierLocked(unit))
+		damage := applyArmorMitigation(int(math.Round(rawDamage)), s.effectiveArmorLocked(target))
+
+		if !profile.Melee {
+			// Tag the primary projectile with the crit flag so its land-time
+			// damage application queues a critEvent. Splits / pierces appended
+			// inside fireProjectileLocked stay un-flagged unless their own
+			// per-victim roll succeeds later.
+			projsBefore := len(s.Projectiles)
+			s.fireProjectileLocked(unit, target, damage)
+			if isCrit && len(s.Projectiles) > projsBefore {
+				s.Projectiles[projsBefore].IsCrit = true
+			}
+			s.logAttackTiming("projectile-fire", unit, target.ID, target.UnitType, damage)
+			return
+		}
+		s.logAttackTiming("melee-land", unit, target.ID, target.UnitType, damage)
+		if s.resolveAttackHitLocked(unit, target, damage, deadUnitIDs) {
+			return
+		}
+		// Melee landed — record the crit now if it was one.
+		if isCrit {
+			s.recordCritHitLocked(target, damage)
+		}
+		return
+	}
+
+	// ── Unit-vs-building ─────────────────────────────────────────────────
+	if unit.AttackBuildingTargetID != "" {
+		building := s.getBuildingByIDLocked(unit.AttackBuildingTargetID)
+		if building == nil {
+			return
+		}
+		hp, _, hpOk := getBuildingHP(building)
+		if !hpOk || hp <= 0 {
+			return
+		}
+		// No at-fire distance check (see unit-vs-unit rationale above) —
+		// a building can't dodge, so this only matters when the attacker
+		// itself was knocked back during the windup. Committing to the
+		// swing is the right behaviour either way.
+		damage := unit.Damage
+		newHP := hp - float64(damage)
+		building.Metadata["hp"] = newHP
+		s.onBuildingDamagedLocked(unit, building, damage)
+		s.recordDamageDealtBuildingLocked(unit, building.ID, damage)
+		s.logAttackTiming("melee-building-land", unit, 0, "building:"+building.BuildingType, damage)
+		if newHP <= 0 {
+			building.Metadata["hp"] = 0.0
+			s.payoutBuildingDamageDealtXPLocked(building.ID)
+			*destroyedBuildingIDs = append(*destroyedBuildingIDs, building.ID)
+		}
+		return
+	}
+}
+
 func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool) {
 	var deadUnitIDs []int
 	var destroyedBuildingIDs []string
 
 	for _, unit := range s.Units {
+		// Mid-swing windup: decay toward 0; on completion resolve damage.
+		// Runs ahead of target/branch dispatch so the swing is the single
+		// authoritative animation phase for the unit. Paused while stunned
+		// (the stun's CC effect freezes the wind-up alongside movement).
+		// Status / Attacking are pinned true here so the client keeps
+		// playing the attack animation across the whole windup, including
+		// the tick that fires damage. The cancel-on-death paths in
+		// removeUnitLocked / destroyBuildingLocked zero AttackWindupRemaining
+		// when the target dies, so this block simply doesn't fire on the
+		// next tick — no whiff visual, the unit drops cleanly to Idle.
+		if unit.AttackWindupRemaining > 0 {
+			if unit.StunnedRemaining == 0 {
+				unit.AttackWindupRemaining = math.Max(0, unit.AttackWindupRemaining-dt)
+				if unit.AttackWindupRemaining == 0 {
+					s.applyDelayedAttackLocked(unit, &deadUnitIDs, &destroyedBuildingIDs)
+				}
+			}
+			unit.Attacking = true
+			unit.Status = "Attacking"
+			continue
+		}
+
 		// Handle unit-vs-unit combat
 		if unit.AttackTargetID != 0 {
 			target := s.getUnitByIDLocked(unit.AttackTargetID)
@@ -212,10 +410,6 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.ActionFacingDX = dx
 					unit.ActionFacingDY = dy
 
-					// Combat profile gates the ranged-vs-melee branch below. Resolved once
-					// per firing attempt so fireProjectileLocked / instant-hit share it.
-					profile := resolveCombatProfile(unit)
-
 					// Stun: cooldown still decays so the unit doesn't bank a free
 					// attack on un-stun, but the unit must not fire. AttackTargetID
 					// is intentionally left intact so combat resumes immediately.
@@ -223,80 +417,28 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						if unit.AttackCooldown > 0 {
 							unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
 						}
-					} else if unit.AttackCooldown <= 0 {
-						// Outgoing damage: base × (1 + perk bonus) × crit × (1 - debuff),
-						// then armor. perk bonus: executioner (silver berserker), Marksman
-						// bronze (hawk_spirit, vulture_spirit), and any future outgoing-
-						// damage-multiplier perks. crit: rolled once per attack via
-						// rollCritDamage — returns 1.0 unless the crit chance roll lands.
-						// debuff: Punishing Guard's weakened effect on the attacker.
-						//
-						// Pierce defers the crit roll to per-victim rolls inside
-						// tickPierceProjectileLocked so each enemy along the line gets
-						// independent fortune (and a red-circle visual when their roll
-						// lands). The projectile carries the pre-crit damage in that
-						// case; un-baked crit lets per-victim multiplication compound
-						// cleanly without over-applying the bonus.
-						isPierce := !profile.Melee && containsString(unit.PerkIDs, "pierce")
-						rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
-						critMult := 1.0
-						isCrit := false
-						if !isPierce {
-							critMult = s.rollCritDamage(unit, target)
-							isCrit = critMult > 1.0
-						}
-						rawDamage *= critMult
-						rawDamage *= (1.0 - s.perkOutgoingDamageDebuffMultiplierLocked(unit))
-						damage := applyArmorMitigation(int(math.Round(rawDamage)), s.effectiveArmorLocked(target))
-
-						// Cooldown + archer trapper-gate commit at fire time for both
-						// branches so rate-of-fire and trap-gating feel responsive even
-						// while a projectile is still in flight.
-						// Slow debuffs (shield_bash, caltrops, etc.) scale attack speed
-						// the same way they scale movement — a 0.7× slow attacks at 70%
-						// of its normal cadence.
-						effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
-						effectiveSpeed = math.Max(0.1, effectiveSpeed*slowFactorLocked(unit))
-						unit.AttackCooldown = 1.0 / effectiveSpeed
-						if unit.UnitType == "archer" {
-							unit.PerkState.LastCombatSeconds = 1.5
-						}
-
-						if !profile.Melee {
-							// Tag the freshly-spawned primary projectile with the
-							// crit flag so its land-time damage application can
-							// queue a critEvent for the client. Splits / pierces
-							// fired by the same dispatch from inside fireProjectileLocked
-							// are appended afterward and stay un-flagged unless
-							// THEIR own crit roll succeeds.
-							projsBefore := len(s.Projectiles)
-							s.fireProjectileLocked(unit, target, damage)
-							if isCrit && len(s.Projectiles) > projsBefore {
-								s.Projectiles[projsBefore].IsCrit = true
-							}
-						} else {
-							meleeAttacker := unit
-							meleeTarget := target
-							if s.resolveAttackHitLocked(unit, target, damage, &deadUnitIDs) {
-								continue
-							}
-							// Melee landed instantly — record the crit now if it was one.
-							// Mark amplification can grow the actual HP-drop above `damage`,
-							// so prefer the realised post-mark value when we can read it.
-							if isCrit {
-								landed := damage
-								if meleeTarget.PerkState.totalMarkMultiplier() > 0 {
-									// Approximate post-mark damage so the client's
-									// HP-diff event can match by amount. Cap at the
-									// pre-hit HP so a kill registers as the killing
-									// blow's damage rather than over-counting.
-									_ = meleeAttacker
-								}
-								s.recordCritHitLocked(meleeTarget, landed)
-							}
-						}
 					} else {
-						unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+						// Decay cooldown FIRST, then check if ready to fire. The
+						// previous "check, then decay" order added a 1-tick (dt
+						// = 50ms) delay to every cycle because a cooldown that
+						// expired mid-tick had to wait until the next tick to
+						// trigger the next windup. Over many swings that drift
+						// accumulates and the damage popup falls progressively
+						// later than the animation's hit frame.
+						if unit.AttackCooldown > 0 {
+							unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+						}
+						if unit.AttackCooldown <= 0 {
+							// Begin windup. Damage / projectile lands when the windup
+							// reaches 0 (see applyDelayedAttackLocked). The windup is
+							// the *pre-impact* portion of the animation; damage sits
+							// at attackDamageDeliveryFraction of the swing so the
+							// floating number coincides with the visible hit frame.
+							effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+							effectiveSpeed = math.Max(0.1, effectiveSpeed*slowFactorLocked(unit))
+							animDur := math.Min(1.0, 1.0/effectiveSpeed)
+							unit.AttackWindupRemaining = animDur * attackDamageDeliveryFraction
+						}
 					}
 				} else {
 					unit.Attacking = false
@@ -363,22 +505,17 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 						if unit.AttackCooldown > 0 {
 							unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
 						}
-					} else if unit.AttackCooldown <= 0 {
-						damage := unit.Damage
-						newHP := hp - float64(damage)
-						building.Metadata["hp"] = newHP
-						s.onBuildingDamagedLocked(unit, building, damage)
-						s.recordDamageDealtBuildingLocked(unit, building.ID, damage)
-						// Slow scales attack cadence against buildings too.
-						buildingAttackSpeed := math.Max(0.1, unit.AttackSpeed*slowFactorLocked(unit))
-						unit.AttackCooldown = 1.0 / buildingAttackSpeed
-						if newHP <= 0 {
-							building.Metadata["hp"] = 0.0
-							s.payoutBuildingDamageDealtXPLocked(building.ID)
-							destroyedBuildingIDs = append(destroyedBuildingIDs, building.ID)
-						}
 					} else {
-						unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+						// Decay cooldown FIRST, then check if ready to fire — see
+						// the unit-vs-unit branch above for the drift rationale.
+						if unit.AttackCooldown > 0 {
+							unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
+						}
+						if unit.AttackCooldown <= 0 {
+							buildingAttackSpeed := math.Max(0.1, unit.AttackSpeed*slowFactorLocked(unit))
+							animDur := math.Min(1.0, 1.0/buildingAttackSpeed)
+							unit.AttackWindupRemaining = animDur * attackDamageDeliveryFraction
+						}
 					}
 				} else {
 					unit.Attacking = false
@@ -444,24 +581,45 @@ func (s *GameState) tickBuildingCombatLocked(dt float64) {
 			building.Metadata["attackCooldown"] = cooldown
 		}
 
+		// Mid-swing windup: tick down toward 0, fire on completion. The
+		// target is re-acquired at fire time (rather than locked at windup
+		// start) so a tower that loses its line-of-fire to one unit still
+		// hits whatever's in range when the swing lands. Whiffs only when
+		// the radius is empty.
+		windup, _ := getMetadataFloat(building.Metadata, "attackWindupRemaining")
+		if windup > 0 {
+			windup = math.Max(0, windup-dt)
+			building.Metadata["attackWindupRemaining"] = windup
+			if windup == 0 {
+				if hit := s.findNearestHostileUnitForBuildingLocked(building, *building.OwnerID, def.AttackRange); hit != nil {
+					s.applyUnitDamageWithSourceLocked(hit, def.Damage, DamageSource{AttackerBuildingID: building.ID, Kind: "building"})
+					s.trackBattleDamageLocked(battleSourceFromBuilding(building), hit, def.Damage)
+					if hit.HP <= 0 {
+						hit.HP = 0
+						s.trackBattleKillLocked(battleSourceFromBuilding(building), hit)
+						deadUnitIDs = append(deadUnitIDs, hit.ID)
+					}
+				}
+				// Cooldown begins now — total cycle minus the pre-impact
+				// windup just consumed. Follow-through frames play out
+				// during this cooldown, then the idle gap (if any).
+				cycleSeconds := 1.0 / def.AttackSpeed
+				animDur := math.Min(1.0, cycleSeconds)
+				preImpact := animDur * attackDamageDeliveryFraction
+				building.Metadata["attackCooldown"] = math.Max(0, cycleSeconds-preImpact)
+			}
+			continue
+		}
+
 		target := s.findNearestHostileUnitForBuildingLocked(building, *building.OwnerID, def.AttackRange)
 		if target == nil || cooldown > 0 {
 			continue
 		}
 
-		// Route through the attributed helper so shield (blood_engine) absorbs
-		// first, and indirect kills (Shared Pain, pain_share) get enqueued for
-		// cleanup. The manual HP<=0 block below handles the primary target kill.
-		s.applyUnitDamageWithSourceLocked(target, def.Damage, DamageSource{AttackerBuildingID: building.ID, Kind: "building"})
-		// Debug: bucket this damage under (building.OwnerID, building.BuildingType).
-		// Defensive structures like towers accumulate here.
-		s.trackBattleDamageLocked(battleSourceFromBuilding(building), target, def.Damage)
-		building.Metadata["attackCooldown"] = 1.0 / def.AttackSpeed
-		if target.HP <= 0 {
-			target.HP = 0
-			s.trackBattleKillLocked(battleSourceFromBuilding(building), target)
-			deadUnitIDs = append(deadUnitIDs, target.ID)
-		}
+		// Begin windup. Damage lands at attackDamageDeliveryFraction of the
+		// animation; follow-through frames play during the subsequent cooldown.
+		animDur := math.Min(1.0, 1.0/def.AttackSpeed)
+		building.Metadata["attackWindupRemaining"] = animDur * attackDamageDeliveryFraction
 	}
 
 	for _, id := range deadUnitIDs {

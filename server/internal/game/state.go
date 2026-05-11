@@ -160,7 +160,7 @@ type Unit struct {
 	// NonCombat marks the unit as passive: combat AI never auto-acquires
 	// targets for it. The unit only engages when the player issues an
 	// explicit OrderAttackTarget (sticky attack). Workers are the canonical
-	// non-combat unit; see catalog/units/worker.json.
+	// non-combat unit; see catalog/units/human/worker/worker.json.
 	NonCombat bool
 
 	Damage                 int
@@ -180,6 +180,16 @@ type Unit struct {
 	// rank/path/perk modifiers are applied. Populated by applyRankModifiersLocked.
 	MoveSpeed              float64
 	AttackCooldown         float64
+	// AttackWindupRemaining is the seconds left in the swing's animation
+	// window before damage actually lands. When > 0 the unit is mid-swing:
+	// it stays in status "Attacking" (so the client keeps playing the attack
+	// animation), but no damage / projectile is emitted yet. On reaching 0
+	// the swing resolves — damage applies if the target is still valid and
+	// in range; otherwise the swing whiffs but the cycle still advances.
+	// Paused while stunned. Decoupled from AttackCooldown: cooldown ticks the
+	// idle gap AFTER the swing lands; windup ticks the animation window
+	// BEFORE damage. Total cycle = windup + cooldown = 1/effectiveAttackSpeed.
+	AttackWindupRemaining  float64
 	AttackTargetID         int
 	AttackBuildingTargetID string
 	Attacking              bool
@@ -269,7 +279,7 @@ type Unit struct {
 }
 
 const (
-	// Unit move speed is now authored per-type in catalog/units/<type>.json
+	// Unit move speed is authored per-type in catalog/units/<faction>/<unit>/<unit>.json
 	// (UnitDef.MoveSpeed). Path multipliers (pathModifierTable) and perk
 	// multipliers (momentum) stack on top of the per-unit BaseMoveSpeed.
 	unitRadius = 10.0
@@ -506,7 +516,7 @@ const (
 	raiderAttackSpeed = 1.0
 	raiderHP          = 75
 	raiderMaxHP       = 75
-	// Mirror of catalog/units/raider.json moveSpeed — kept here because
+	// Mirror of catalog/units/raider/raider/raider.json moveSpeed — kept here because
 	// spawnRaiderUnitLocked doesn't do a def lookup like the soldier-type path.
 	raiderMoveSpeed = 100.0
 )
@@ -1403,6 +1413,27 @@ func (s *GameState) removeUnitLocked(unitID int) {
 	for _, u := range s.Units {
 		if u.AttackTargetID == unitID {
 			u.AttackTargetID = 0
+			// Cancel any in-flight swing aimed at the dying unit. Without
+			// this the attacker keeps a non-zero AttackWindupRemaining that
+			// the windup-at-top block in tickUnitCombatLocked keeps decaying
+			// and re-asserting Status="Attacking" on, even though the target
+			// is gone — producing a desync where the animation visibly
+			// continues to swing at nothing, then whiffs at damage time.
+			u.AttackWindupRemaining = 0
+			// Reset cooldown so the next swing-on-a-new-target's animation
+			// hit frame aligns with damage delivery. AttackCooldown does
+			// NOT decay while the unit is walking (out of range) with a
+			// target set, so without this reset the attacker arrives at
+			// the new target carrying the full post-swing cooldown from
+			// the previous engagement; the client animation anchors at
+			// "Status=Attacking became true" but damage waits for the
+			// stale cooldown to bleed off, producing the "popup appears
+			// a second after the visible hit" feel that grows with each
+			// kill in a chain. Conceptually: the swing that killed already
+			// consumed the cooldown, so the next engagement starts fresh.
+			// Gameplay note: this is a small DPS uplift for any unit that
+			// kills in one hit (chain-killing weak targets).
+			u.AttackCooldown = 0
 			u.Attacking = false
 			u.Status = "Idle"
 			// If the player's explicit attack order was on this unit, demote

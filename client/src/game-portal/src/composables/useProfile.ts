@@ -25,7 +25,12 @@ const maxBuffSlots = computed(() =>
 const equippedBuffs = computed<PlayerBuffDef[]>(() => {
   if (!profile.value) return []
   const catalog = new Map(buffCatalog.value.map((d) => [d.id, d]))
-  return profile.value.equippedBuffIds.flatMap((id) => {
+  // Profile JSON may serialise an empty list as `null` (Go's nil slice ↔ JSON
+  // null), so coerce before iterating — `.flatMap` on null throws and the
+  // resulting render exception cascades up through MatchHud and hides the
+  // entire in-game HUD.
+  const ids = profile.value.equippedBuffIds ?? []
+  return ids.flatMap((id) => {
     const def = catalog.get(id)
     return def ? [def] : []
   })
@@ -33,13 +38,13 @@ const equippedBuffs = computed<PlayerBuffDef[]>(() => {
 
 const unlockedBuffs = computed<PlayerBuffDef[]>(() => {
   if (!profile.value) return []
-  const unlockedSet = new Set(profile.value.unlockedBuffIds)
+  const unlockedSet = new Set(profile.value.unlockedBuffIds ?? [])
   return buffCatalog.value.filter((d) => unlockedSet.has(d.id))
 })
 
 const lockedBuffs = computed<PlayerBuffDef[]>(() => {
   if (!profile.value) return buffCatalog.value.slice().sort((a, b) => a.unlockLegendPointCost - b.unlockLegendPointCost)
-  const unlockedSet = new Set(profile.value.unlockedBuffIds)
+  const unlockedSet = new Set(profile.value.unlockedBuffIds ?? [])
   return buffCatalog.value
     .filter((d) => !unlockedSet.has(d.id))
     .sort((a, b) => a.unlockLegendPointCost - b.unlockLegendPointCost)

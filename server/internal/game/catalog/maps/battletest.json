@@ -69,6 +69,25 @@
         }
       },
       {
+        "x": 19,
+        "y": 8,
+        "id": "enemy-spawnpoint-19-8",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "unitType": "raider_brute"
+        }
+      },
+      {
         "x": 17,
         "y": 10,
         "id": "enemy-spawnpoint-17-10",

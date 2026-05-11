@@ -1773,14 +1773,24 @@ export class CanvasRenderer {
             this.state.mapConfig.cellSize,
           )
         }
-        // Sync attack-animation speed to the unit's effective attackSpeed
-        // (attacks/sec, includes rank/perk bonuses from the server). One
-        // full animation cycle = one attack cooldown.
-        let attackFrameDurationMs: number | undefined
+        // Sync attack-animation timing to the unit's effective attackSpeed
+        // (attacks/sec; includes rank/perk bonuses from the server). One
+        // full animation cycle = one attack cooldown. The animation window
+        // is capped at 1s: slow attackers (cooldown > 1s) play the swing
+        // briskly and idle until the next swing instead of stretching one
+        // animation grotesquely across multiple seconds. Faster than 1
+        // attack/sec → animation duration shrinks to fit the cooldown.
+        let attackTiming: { frameDurationMs: number; animDurationMs: number; cycleMs: number } | undefined
         const attackingAnim = spriteSet.animations.get('attacking')
         const effectiveAttackSpeed = unit.attackSpeed ?? unitDef?.attackSpeed
         if (attackingAnim && effectiveAttackSpeed && effectiveAttackSpeed > 0) {
-          attackFrameDurationMs = 1000 / effectiveAttackSpeed / attackingAnim.frameCount
+          const cycleMs = 1000 / effectiveAttackSpeed
+          const animDurationMs = Math.min(1000, cycleMs)
+          attackTiming = {
+            frameDurationMs: animDurationMs / attackingAnim.frameCount,
+            animDurationMs,
+            cycleMs,
+          }
         }
         const anim = this.unitAnim.sample(
           unit.id,
@@ -1789,10 +1799,12 @@ export class CanvasRenderer {
           unit.status,
           unit.moving,
           actionFacing,
-          attackFrameDurationMs,
+          attackTiming,
           this.renderTime,
           unit.carriedResourceType,
           unit.unitType,
+          unit.ownerId,
+          this.state.localPlayerId,
         )
         const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
         if (frame) {

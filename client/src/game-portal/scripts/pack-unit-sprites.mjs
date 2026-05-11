@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Packs PixelLab per-frame unit sprites into a single 2D sheet per animation
 // (columns = frames, rows = directions) and emits a derived sprites.json
-// manifest. Run after dropping a new unit export into `src/assets/units/{unit}/`.
+// manifest. Run after dropping a new unit export into
+// `src/assets/units/{faction}/{unit}/` or a promotion variant into
+// `src/assets/units/{faction}/{unit}/paths/{path}/`.
 //
 // Usage:  npm run pack:sprites
 //

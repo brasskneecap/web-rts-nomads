@@ -1342,7 +1342,7 @@ func TestTrapper_SoldierPathNotTrapper(t *testing.T) {
 
 // TestTrapper_CatalogLoadedForAllRanks confirms the Trapper path has a
 // loaded entry for every rank. The actual multiplier values live in
-// catalog/units/archer/paths/trapper/trapper.json and are expected to evolve
+// catalog/units/human/archer/paths/trapper/trapper.json and are expected to evolve
 // with balance tuning — this test deliberately does NOT pin them, only
 // that the JSON loaded successfully for each rank. Other path invariants
 // (positive multipliers, correct Path/Rank tagging) are covered by

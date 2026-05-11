@@ -225,7 +225,7 @@
             </select>
           </div>
 
-          <div class="control-group">
+          <div v-if="brushMode === 'terrain' || brushMode === 'tile'" class="control-group">
             <label for="default-ground">Default Ground</label>
             <select id="default-ground" :value="defaultGroundName" @change="onDefaultGroundChange">
               <option value="grass">Grass</option>
@@ -784,10 +784,6 @@ const unitDefsByFaction = ref<Record<UnitFaction, Array<{ type: UnitType; label:
   neutral: [],
   human: [],
 })
-// playerSpawnUnits remains a subset filtered by trainLabel — it's what
-// barracks-style spawn-points reference for in-game training pools, not the
-// editor brushing flow.
-const playerSpawnUnits = ref<Array<{ type: UnitType; label: string }>>([])
 
 const selectedTileCoord = ref<{ sx: number; sy: number } | null>(null)
 const selectedSpawnTownhallId = ref('')
@@ -2100,9 +2096,6 @@ onMounted(() => {
   void fetchUnitDefs()
     .then(({ units, paths }) => {
       initPathBounds(paths)
-      playerSpawnUnits.value = units
-        .filter((def) => def.trainLabel)
-        .map((def) => ({ type: def.type as UnitType, label: def.name }))
       // Bucket every catalog unit by its declared faction so the brush type
       // picker reflects the catalog automatically — adding a new unit JSON
       // (with a valid faction) makes it appear in the matching dropdown on

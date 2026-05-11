@@ -16,8 +16,8 @@ import (
 var pathDefsFS embed.FS
 
 // pathCatalogFile is the on-disk shape of a single
-// catalog/units/<unit>/paths/<path>/<path>.json. Each promotion path owns
-// its own directory under its unit; the JSON inside carries the per-rank
+// catalog/units/<faction>/<unit>/paths/<path>/<path>.json. Each promotion path
+// owns its own directory under its unit; the JSON inside carries the per-rank
 // stat multipliers in a ranks map so editing a single (path, rank) cell is
 // a one-number change with no risk of contaminating another path. Perks
 // for the same path live alongside it at .../<path>/perks/*.json and are
@@ -94,7 +94,7 @@ func ListPathBounds() []PathBoundsEntry {
 // a system fallback. Changing these numbers is a structural-progression
 // decision (affects every path-less unit uniformly) and belongs in code.
 // If you want the Vanguard or Berserker curve tuned instead, edit the file
-// under catalog/units/<unit>/paths/ — those ARE JSON-configurable.
+// under catalog/units/<faction>/<unit>/paths/ — those ARE JSON-configurable.
 var defaultRankCurve = map[string]pathModifierDef{
 	unitRankBronze: {Path: unitPathNone, Rank: unitRankBronze, MaxHPMultiplier: 1.10, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},
 	unitRankSilver: {Path: unitPathNone, Rank: unitRankSilver, MaxHPMultiplier: 1.20, DamageMultiplier: 1.25, AttackSpeedMultiplier: 1.10, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},

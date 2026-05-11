@@ -103,17 +103,20 @@ async function loadAndRender(mapId: string) {
   ctx.fillStyle = DEFAULT_GRASS_COLOR
   ctx.fillRect(0, 0, cols, rows)
 
-  for (const tile of mapData.terrain) {
+  // Go encodes empty slices as JSON `null`, which a sparse runtime-saved map
+  // (e.g. no painted terrain) round-trips back to the client. Coerce to []
+  // before iterating so the for…of doesn't throw on a missing field.
+  for (const tile of mapData.terrain ?? []) {
     ctx.fillStyle = getTerrainColor(tile.terrain)
     ctx.fillRect(tile.x, tile.y, 1, 1)
   }
 
-  for (const obstacle of mapData.obstacles) {
+  for (const obstacle of mapData.obstacles ?? []) {
     ctx.fillStyle = getObstacleColor(obstacle.obstacle)
     ctx.fillRect(obstacle.x, obstacle.y, obstacle.width ?? 1, obstacle.height ?? 1)
   }
 
-  for (const building of mapData.buildings) {
+  for (const building of mapData.buildings ?? []) {
     if (building.buildingType === 'enemy-spawnpoint') continue
     ctx.fillStyle = getBuildingColor(building.buildingType)
     ctx.fillRect(building.x, building.y, building.width, building.height)
