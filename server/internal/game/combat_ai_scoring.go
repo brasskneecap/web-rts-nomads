@@ -88,6 +88,9 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 		if hostile == unit || !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 || !hostile.Visible {
 			continue
 		}
+		if !unitCanTargetPlane(unit, hostile) {
+			continue
+		}
 		if s.Tick < unit.UnreachableUntilTick && hostile.ID == unit.UnreachableTargetID {
 			continue
 		}
@@ -137,6 +140,9 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 			if !playersAreHostile(hostile.OwnerID, unit.OwnerID) {
 				continue
 			}
+			if !unitCanTargetPlane(unit, hostile) {
+				continue
+			}
 			if s.Tick < unit.UnreachableUntilTick && hostile.ID == unit.UnreachableTargetID {
 				continue
 			}
@@ -172,7 +178,7 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 
 	if unit.TauntedByUnitID != 0 && unit.TauntRemaining > 0 {
 		taunter := s.getUnitByIDLocked(unit.TauntedByUnitID)
-		if taunter != nil && taunter.Visible && taunter.HP > 0 && playersAreHostile(taunter.OwnerID, unit.OwnerID) {
+		if taunter != nil && taunter.Visible && taunter.HP > 0 && playersAreHostile(taunter.OwnerID, unit.OwnerID) && unitCanTargetPlane(unit, taunter) {
 			score := s.scoreUnitTargetLocked(unit, taunter, profile, ctx) + combatTauntBonusScore
 			best = combatTarget{Kind: combatTargetUnit, Unit: taunter, Score: score}
 		}

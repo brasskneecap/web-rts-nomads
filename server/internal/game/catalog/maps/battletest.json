@@ -70,6 +70,25 @@
       },
       {
         "x": 19,
+        "y": 6,
+        "id": "enemy-spawnpoint-19-6",
+        "buildingType": "enemy-spawnpoint",
+        "width": 2,
+        "height": 2,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "unitType": "raider_roc"
+        }
+      },
+      {
+        "x": 19,
         "y": 8,
         "id": "enemy-spawnpoint-19-8",
         "buildingType": "enemy-spawnpoint",
@@ -143,6 +162,35 @@
           "spawnIntervalSeconds": 10,
           "unitType": "raider"
         }
+      }
+    ],
+    "placedUnits": [
+      {
+        "x": 16,
+        "y": 12,
+        "id": "placed-unit-enemy-16-12",
+        "playerSlot": "enemy",
+        "unitType": "raider_roc",
+        "aggroRange": 150,
+        "leashRange": 200
+      },
+      {
+        "x": 16,
+        "y": 9,
+        "id": "placed-unit-enemy-16-9",
+        "playerSlot": "enemy",
+        "unitType": "raider_roc",
+        "aggroRange": 150,
+        "leashRange": 200
+      },
+      {
+        "x": 16,
+        "y": 7,
+        "id": "placed-unit-enemy-16-7",
+        "playerSlot": "enemy",
+        "unitType": "raider_roc",
+        "aggroRange": 150,
+        "leashRange": 200
       }
     ],
     "waveConfig": {

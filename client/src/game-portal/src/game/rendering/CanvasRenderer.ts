@@ -1805,6 +1805,7 @@ export class CanvasRenderer {
           unit.unitType,
           unit.ownerId,
           this.state.localPlayerId,
+          unit.flyer,
         )
         const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
         if (frame) {

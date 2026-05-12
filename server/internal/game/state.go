@@ -163,6 +163,17 @@ type Unit struct {
 	// non-combat unit; see catalog/units/human/worker/worker.json.
 	NonCombat bool
 
+	// Flyer marks the unit as airborne. Flyers ignore terrain and ground-unit
+	// obstacles in pathing & separation; only other flyers and map bounds
+	// constrain them. Populated from UnitDef.Flyer at spawn.
+	Flyer bool
+
+	// TargetableTypes is the resolved set of target classes this unit can hit
+	// (subset of {"ground","flyer"}). Populated at spawn from UnitDef plus the
+	// projectile-attack default. Used by selectBestTargetLocked and
+	// combatTargetIsValidLocked to exclude invalid targets up front.
+	TargetableTypes []string
+
 	Damage                 int
 	AttackRange            float64
 	// BaseAttackRange is the catalog AttackRange before any perk-driven range
@@ -740,6 +751,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Archetype:           unit.Archetype,
 			Name:                unit.Name,
 			Capabilities:        append([]string(nil), unit.Capabilities...),
+			Flyer:               unit.Flyer,
 			Visible:             unit.Visible,
 			Status:              unit.Status,
 			Order:               orderTypeString(unit.Order.Type),
@@ -1153,13 +1165,19 @@ func (s *GameState) Update(dt float64) {
 
 		nextX := unit.X + (dx/dist)*step
 		nextY := unit.Y + (dy/dist)*step
-		nextCell := s.worldToGrid(nextX, nextY)
-		if !s.isWalkable(nextCell, blocked) {
-			if !s.repathUnitLocked(unit, blocked) {
-				unit.Path = nil
-				unit.Moving = false
+		// Flyers ignore terrain — only map bounds (already enforced by the
+		// per-tick X/Y clamp upstream of this loop) constrain them. Skipping
+		// the walkability check avoids repath thrashing when a flyer crosses
+		// over impassable terrain.
+		if !unit.Flyer {
+			nextCell := s.worldToGrid(nextX, nextY)
+			if !s.isWalkable(nextCell, blocked) {
+				if !s.repathUnitLocked(unit, blocked) {
+					unit.Path = nil
+					unit.Moving = false
+				}
+				continue
 			}
-			continue
 		}
 
 		unit.X = nextX

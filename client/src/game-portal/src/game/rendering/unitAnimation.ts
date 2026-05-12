@@ -67,6 +67,7 @@ export class UnitAnimationController {
     unitType: string | undefined,
     ownerId: string | undefined,
     localPlayerId: string | null | undefined,
+    flyer: boolean | undefined,
   ): UnitAnimationSample {
     let state = this.states.get(unitId)
     if (!state) {
@@ -106,6 +107,7 @@ export class UnitAnimationController {
       serverMoving === true || interpolatedMoving,
       carriedResource,
       unitType,
+      flyer === true,
     )
 
     if (animation !== state.animation) {
@@ -158,6 +160,14 @@ export class UnitAnimationController {
         state.debugLastCycleElapsed = cycleElapsed
       }
       if (cycleElapsed >= attackTiming.animDurationMs) {
+        // Flyers keep flapping during the rest portion of the attack cycle —
+        // a frozen idle pose mid-air reads as the unit suddenly hovering
+        // motionless. Free-running phase off renderTime so the wings beat
+        // continuously across attack/idle transitions.
+        if (flyer === true) {
+          const flapFrame = Math.floor(renderTime / this.frameDurationMs)
+          return { direction, animation: 'walking', frameIndex: flapFrame }
+        }
         return { direction, animation: 'idle', frameIndex: 0 }
       }
       const frameIndex = Math.floor(cycleElapsed / attackTiming.frameDurationMs)
@@ -274,6 +284,7 @@ function pickAnimation(
   moving: boolean,
   carriedResource: string | undefined,
   unitType: string | undefined,
+  flyer: boolean,
 ): UnitAnimationName {
   if (status === 'Attacking') {
     // Workers have no dedicated attack sprite — reuse the chopping animation
@@ -296,5 +307,8 @@ function pickAnimation(
     if (carriedResource === 'gold') return 'carrying_gold'
     return 'walking'
   }
+  // Flyers have no idle pose — a stationary flap reads as floating mid-air,
+  // so reuse the walking animation when the unit is otherwise idle.
+  if (flyer) return 'walking'
   return 'idle'
 }

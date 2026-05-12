@@ -35,6 +35,9 @@ export type ResolvedUnitAttackVisual = {
  *  each brush category. */
 export type UnitFaction = 'raider' | 'neutral' | 'human'
 
+/** Target classes a unit's attacks are valid against. Drives anti-air / ground-only filtering on both server and client. */
+export type UnitTargetClass = 'ground' | 'flyer'
+
 export type UnitDef = {
   type: string
   name: string
@@ -58,6 +61,10 @@ export type UnitDef = {
   combatProfile?: string
   attackVisual?: UnitAttackVisual
   bounds?: UnitBounds
+  /** Airborne unit. Renders above ground units (with shadow/elevation) and is only hit by attackers whose targetableTypes include "flyer". */
+  flyer?: boolean
+  /** Target classes this unit's attacks can hit. When absent the server derives a default at spawn (projectile attacks → ground+flyer, otherwise ground only). */
+  targetableTypes?: UnitTargetClass[]
 }
 
 export let UNIT_DEFS: UnitDef[] = []

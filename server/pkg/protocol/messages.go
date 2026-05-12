@@ -475,6 +475,9 @@ type UnitSnapshot struct {
 	Archetype           string   `json:"archetype,omitempty"`
 	Name                string   `json:"name"`
 	Capabilities        []string `json:"capabilities,omitempty"`
+	// Flyer marks the unit as airborne so the client can render an elevation
+	// shadow / altitude offset. omitempty so ground units drop the field.
+	Flyer               bool     `json:"flyer,omitempty"`
 	Visible             bool     `json:"visible"`
 	Status              string   `json:"status,omitempty"`
 	// Order is the unit's current standing order (see OrderString* constants).

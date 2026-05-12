@@ -157,7 +157,15 @@ func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[g
 	// unitSeparationDistance of any non-self, non-same-OrderID unit's
 	// centre). Same-OrderID peers are excluded so a formation can fan out
 	// without walling itself off.
-	subBlocked := s.buildUnitPathBlockedLocked(unit, blocked)
+	//
+	// Flyers ignore terrain entirely — only map bounds and other flyers
+	// can constrain their path. buildUnitPathBlockedLocked sees nil terrain
+	// and filters out ground-unit obstacles when self.Flyer is true.
+	terrainBlockedForPath := blocked
+	if unit != nil && unit.Flyer {
+		terrainBlockedForPath = nil
+	}
+	subBlocked := s.buildUnitPathBlockedLocked(unit, terrainBlockedForPath)
 
 	subStart := s.worldToUnitPathSubGrid(unit.X, unit.Y)
 	if rs, ok := s.findNearestUnitPathSubWalkable(subStart, subBlocked); ok {
@@ -210,7 +218,13 @@ func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[g
 	// The 64-cell goal cell lookup is still useful for clamping the final
 	// landing point inside the destination terrain cell (handles map-edge
 	// padding and non-walkable goal cells the same way the old A* did).
-	resolvedGoalCell, ok := s.findNearestWalkableAvailable(s.worldToGrid(clampedDest.X, clampedDest.Y), blocked, reservedGoals)
+	// Flyers ignore terrain — pass nil so every in-bounds cell is treated as
+	// walkable while reservedGoals (formation slot uniqueness) still applies.
+	goalCellBlocked := blocked
+	if unit != nil && unit.Flyer {
+		goalCellBlocked = nil
+	}
+	resolvedGoalCell, ok := s.findNearestWalkableAvailable(s.worldToGrid(clampedDest.X, clampedDest.Y), goalCellBlocked, reservedGoals)
 	if !ok {
 		unit.Path = nil
 		unit.Moving = false
@@ -282,15 +296,22 @@ func (s *GameState) clampPointToCell(point protocol.Vec2, cell gridPoint) protoc
 //     of unitPathSubCellSize sub-cells (e.g. 4×4 = 16 sub-cells when
 //     CellSize=64 and unitPathSubCellSize=16) so the sub-cell A* honours
 //     all the same impassable terrain the coarse A* did.
-//  2. Unit obstacle circles. For every non-self, non-same-OrderID unit,
-//     mark each sub-cell whose centre falls within unitSeparationDistance
-//     of the unit's position. This reflects the actual unit hitbox at
-//     sub-cell resolution rather than blocking a whole 64-cell, which
-//     leaves usable corridors between two units in adjacent cells.
+//  2. Unit obstacle circles. For every non-self, non-same-OrderID unit in
+//     the same plane (ground vs flyer), mark each sub-cell whose centre
+//     falls within unitSeparationDistance of the unit's position. This
+//     reflects the actual unit hitbox at sub-cell resolution rather than
+//     blocking a whole 64-cell, which leaves usable corridors between two
+//     units in adjacent cells.
 //
 // Same-OrderID peers (the formation that was told to move together) are
 // excluded so a group can fan out into formation slots without walling
 // each other off.
+//
+// Plane filter: flyers and ground units don't collide with each other.
+// callers pass nil terrainBlocked when self is a flyer (flyers ignore
+// terrain entirely); inside the loop we also drop any "other" whose plane
+// (Flyer flag) differs from self's, so ground paths route around ground
+// obstacles but pass straight under flyers and vice versa.
 func (s *GameState) buildUnitPathBlockedLocked(self *Unit, terrainBlocked map[gridPoint]bool) map[gridPoint]bool {
 	sub := make(map[gridPoint]bool, len(terrainBlocked)*36+len(s.Units)*16)
 
@@ -315,6 +336,7 @@ func (s *GameState) buildUnitPathBlockedLocked(self *Unit, terrainBlocked map[gr
 		}
 	}
 
+	selfFlyer := self != nil && self.Flyer
 	radiusSq := unitSeparationDistance * unitSeparationDistance
 	radiusInSub := int(math.Ceil(unitSeparationDistance/unitPathSubCellSize)) + 1
 	for _, other := range s.Units {
@@ -322,6 +344,10 @@ func (s *GameState) buildUnitPathBlockedLocked(self *Unit, terrainBlocked map[gr
 			continue
 		}
 		if self != nil && self.OrderID != 0 && other.OrderID == self.OrderID {
+			continue
+		}
+		// Different planes never collide in pathing (ground passes under flyers).
+		if other.Flyer != selfFlyer {
 			continue
 		}
 		centre := s.worldToUnitPathSubGrid(other.X, other.Y)
@@ -430,6 +456,12 @@ func (s *GameState) applyUnitSeparationLocked(blocked map[gridPoint]bool) {
 			if b == nil || b.ID <= a.ID {
 				continue
 			}
+			// Different planes never separate (ground passes under flyers).
+			// Flyers still resolve overlap against other flyers so two rocs
+			// don't visually fuse.
+			if a.Flyer != b.Flyer {
+				continue
+			}
 			dx := b.X - a.X
 			dy := b.Y - a.Y
 			distSq := dx*dx + dy*dy
@@ -493,7 +525,8 @@ func (s *GameState) applyUnitSeparationLocked(blocked map[gridPoint]bool) {
 func (s *GameState) tryMoveUnitByOffsetLocked(unit *Unit, offsetX, offsetY float64, blocked map[gridPoint]bool) {
 	nextX := clampFloat(unit.X+offsetX, unitRadius, s.MapWidth-unitRadius)
 	nextY := clampFloat(unit.Y+offsetY, unitRadius, s.MapHeight-unitRadius)
-	if !s.isWalkable(s.worldToGrid(nextX, nextY), blocked) {
+	// Flyers ignore terrain — only the map-bound clamp above gates the move.
+	if !unit.Flyer && !s.isWalkable(s.worldToGrid(nextX, nextY), blocked) {
 		return
 	}
 

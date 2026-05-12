@@ -1,10 +1,31 @@
 package game
 
 import (
+	"encoding/json"
 	"log/slog"
 
 	"webrts/server/pkg/protocol"
 )
+
+// resolveTargetableTypes returns the effective TargetableTypes for a unit
+// def. Explicit authored values win. When absent, projectile attacks default
+// to both ground and flyer (a ranged shot naturally arcs up); every other
+// attack — melee or otherwise — defaults to ground only and must explicitly
+// opt in to anti-air.
+func resolveTargetableTypes(def UnitDef) []string {
+	if len(def.TargetableTypes) > 0 {
+		return append([]string(nil), def.TargetableTypes...)
+	}
+	if len(def.AttackVisual) > 0 {
+		var visual struct {
+			Kind string `json:"kind"`
+		}
+		if err := json.Unmarshal(def.AttackVisual, &visual); err == nil && visual.Kind == "projectile" {
+			return []string{TargetClassGround, TargetClassFlyer}
+		}
+	}
+	return []string{TargetClassGround}
+}
 
 
 func (s *GameState) spawnPlayerUnitLocked(unitType, playerID, color string, spawn protocol.Vec2) *Unit {
@@ -25,6 +46,8 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		Name:               def.Name,
 		Capabilities:       append([]string{}, def.Capabilities...),
 		NonCombat:          def.NonCombat,
+		Flyer:              def.Flyer,
+		TargetableTypes:    resolveTargetableTypes(def),
 		Visible:            true,
 		Status:             "Idle",
 		X:                  spawn.X,
@@ -81,6 +104,7 @@ func (s *GameState) spawnRaiderUnitLocked(playerID, color string, spawn protocol
 		Archetype:          "raider",
 		Name:               "Raider",
 		Capabilities:       []string{"move", "attack"},
+		TargetableTypes:    []string{TargetClassGround},
 		Visible:            true,
 		Status:             "Idle",
 		X:                  spawn.X,

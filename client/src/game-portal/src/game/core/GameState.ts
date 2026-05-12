@@ -65,6 +65,8 @@ export type Unit = {
   archetype?: string
   name: string
   capabilities: UnitCapability[]
+  /** Airborne unit — renderer should use the walking animation when otherwise idle. Mirrors UnitSnapshot.flyer. */
+  flyer?: boolean
   visible: boolean
   status?: string
   x: number
@@ -602,6 +604,7 @@ export class GameState {
         archetype: unit.archetype,
         name: unit.name,
         capabilities: unit.capabilities ?? [],
+        flyer: unit.flyer,
         visible: unit.visible,
         status: unit.status,
         x: unit.x,

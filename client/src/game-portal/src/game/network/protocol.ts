@@ -455,6 +455,8 @@ export type UnitSnapshot = {
   archetype?: string
   name: string
   capabilities?: UnitCapability[]
+  /** Airborne unit. The renderer should lift the sprite and draw an elevation shadow; ground-only attackers cannot target it. Omitted (false) for ground units. */
+  flyer?: boolean
   visible: boolean
   status?: string
   x: number

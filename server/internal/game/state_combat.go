@@ -91,7 +91,31 @@ func playersAreHostile(a, b string) bool {
 // shouldDropCurrentTargetLocked so the two paths agree on the predicate set.
 // target may be nil (unit was removed).
 func (s *GameState) combatTargetIsValidLocked(unit, target *Unit) bool {
-	return target != nil && target.Visible && target.HP > 0 && playersAreHostile(target.OwnerID, unit.OwnerID)
+	if target == nil || !target.Visible || target.HP <= 0 || !playersAreHostile(target.OwnerID, unit.OwnerID) {
+		return false
+	}
+	return unitCanTargetPlane(unit, target)
+}
+
+// unitCanTargetPlane reports whether `unit`'s TargetableTypes include the
+// plane (ground/flyer) that `target` belongs to. Empty TargetableTypes is
+// treated as "ground only" defensively — spawnUnitFromDefLocked always
+// populates the slice, so a missing value indicates a malformed unit and we
+// fail closed rather than letting a melee soldier acquire a flyer.
+func unitCanTargetPlane(unit, target *Unit) bool {
+	if unit == nil || target == nil {
+		return false
+	}
+	requiredClass := TargetClassGround
+	if target.Flyer {
+		requiredClass = TargetClassFlyer
+	}
+	for _, t := range unit.TargetableTypes {
+		if t == requiredClass {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID int) {
@@ -114,6 +138,13 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 	for _, unitID := range unitIDs {
 		unit := s.getUnitByIDLocked(unitID)
 		if unit == nil || unit.OwnerID != playerID || !unitHasCapability(unit.UnitType, "attack") {
+			continue
+		}
+		// A melee ground unit cannot be ordered to attack a flyer (and vice
+		// versa). Filtering here means the order is silently dropped per
+		// unit, matching how the existing capability check already filters
+		// non-combatants out of a group attack.
+		if !unitCanTargetPlane(unit, target) {
 			continue
 		}
 		groupUnits = append(groupUnits, unit)
@@ -223,6 +254,10 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 			continue
 		}
 		if !playersAreHostile(u.OwnerID, attacker.OwnerID) {
+			continue
+		}
+		// Respect targetability — a ground-only splasher can't bleed into flyers.
+		if !unitCanTargetPlane(attacker, u) {
 			continue
 		}
 		dx := u.X - primaryTarget.X

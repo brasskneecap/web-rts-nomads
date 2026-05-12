@@ -84,7 +84,28 @@ type UnitDef struct {
 	// LegendPointAmount is how many legend points drop when the drop chance
 	// triggers. Must be >= 0. Overrides the base tuning value.
 	LegendPointAmount int `json:"legendPointAmount,omitempty"`
+
+	// Flyer marks the unit as airborne. Flyers ignore terrain and ground-unit
+	// obstacles when pathing — only map bounds and other flyers constrain
+	// them. They are also a distinct target class: a unit can only attack a
+	// flyer if "flyer" appears in its TargetableTypes.
+	Flyer bool `json:"flyer,omitempty"`
+
+	// TargetableTypes is the set of target classes this unit's attacks are
+	// valid against. Recognised entries: "ground", "flyer". When empty, the
+	// default is derived at spawn time from AttackVisual.kind: a projectile
+	// attack defaults to ["ground","flyer"], any other attack defaults to
+	// ["ground"]. Authoring an explicit value overrides the default — e.g.
+	// "anti-air only" units would author ["flyer"].
+	TargetableTypes []string `json:"targetableTypes,omitempty"`
 }
+
+// Target class strings recognised by TargetableTypes. Kept as a small closed
+// set so misspellings in JSON are caught at catalog load.
+const (
+	TargetClassGround = "ground"
+	TargetClassFlyer  = "flyer"
+)
 
 var unitDefsByType = loadUnitDefsByType()
 
@@ -144,6 +165,11 @@ func loadUnitDefsByType() map[string]UnitDef {
 			}
 			if def.LegendPointAmount < 0 {
 				panic(rel + `: unit "` + def.Type + `": legendPointAmount must be >= 0`)
+			}
+			for _, t := range def.TargetableTypes {
+				if t != TargetClassGround && t != TargetClassFlyer {
+					panic(rel + `: unit "` + def.Type + `": targetableTypes entry "` + t + `" must be one of "ground" | "flyer"`)
+				}
 			}
 			if _, dup := result[def.Type]; dup {
 				panic(rel + `: duplicate unit type "` + def.Type + `" — type ids must be globally unique across factions`)

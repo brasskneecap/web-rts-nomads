@@ -347,6 +347,40 @@ var combatProfiles = map[string]CombatProfile{
 			HealthFinish:     10,
 		},
 	},
+	"flyer_skirmisher": {
+		// Airborne ranged harasser. Behaves like an enemy_archer but with a
+		// longer leash so the unit can range freely over terrain its ground
+		// peers can't cross, and slightly faster retargeting so it stays
+		// responsive when picking new targets at altitude.
+		Name:                       "flyer_skirmisher",
+		DetectionRange:             280,
+		RetargetIntervalTicks:      4,
+		SwitchThreshold:            10,
+		ThreatDecayPerSecond:       16,
+		ThreatFromDamage:           0.9,
+		ThreatGenerationMultiplier: 0.85,
+		PassiveMeleeThreat:         2,
+		LeashDistance:              360,
+		MaxChaseDistance:           320,
+		PreferClosestTarget:        true,
+		PreferMaxRange:             true,
+		Backline:                   true,
+		DangerTolerance:            0.7,
+		Weights: TargetWeights{
+			Distance:         18,
+			InRange:          34,
+			Threat:           10,
+			TargetValue:      20,
+			TypePreference:   26,
+			Taunt:            1,
+			ProtectAllies:    6,
+			StructureDefense: 8,
+			Reachability:     16,
+			Stickiness:       10,
+			DangerPenalty:    28,
+			HealthFinish:     16,
+		},
+	},
 	"boss": {
 		Name:                       "boss",
 		DetectionRange:             380,
