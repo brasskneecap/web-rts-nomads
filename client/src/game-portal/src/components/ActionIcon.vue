@@ -12,7 +12,7 @@ import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
 import { ACTION_ICON_MAP } from '@/game/maps/actionIconDefs'
 import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
-import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
+import { getUnitSpriteSet, getUnitPortraitImage } from '@/game/rendering/unitSprites'
 import { getActionIconImage } from '@/game/rendering/actionIconSprites'
 import { getItemAssetImage } from '@/game/rendering/itemAssets'
 
@@ -101,9 +101,16 @@ function drawUnitSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
 }
 
 function drawUnit(ctx: CanvasRenderingContext2D, type: string) {
-  const spriteSet = getUnitSpriteSet(type)
-  const portrait = spriteSet?.rotations.south ?? spriteSet?.rotations.north
-    ?? spriteSet?.rotations.east ?? spriteSet?.rotations.west
+  // Prefer a dedicated portrait.png if one was authored next to the unit's
+  // sprites.json. Falls back to the south-facing rotation (then other
+  // directions) so units without a portrait still show their sprite.
+  const portrait =
+    getUnitPortraitImage(undefined, type) ??
+    (() => {
+      const spriteSet = getUnitSpriteSet(type)
+      return spriteSet?.rotations.south ?? spriteSet?.rotations.north
+        ?? spriteSet?.rotations.east ?? spriteSet?.rotations.west ?? null
+    })()
   if (!portrait) return
   if (portrait.complete && portrait.naturalWidth > 0) {
     drawUnitSprite(ctx, portrait)

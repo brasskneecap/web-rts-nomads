@@ -111,6 +111,29 @@ const stripGlob = import.meta.glob<string>(
   { eager: true, query: '?url', import: 'default' },
 )
 
+// Optional per-unit / per-path portrait used by UI surfaces (training queue,
+// build menu, multi-select cards). Drop a `portrait.png` next to the unit's
+// sprites.json (or next to a promotion variant's sprites.json) and the
+// keyed lookups below will prefer it. Units without a portrait fall back to
+// the south-facing rotation (see getUnitPortraitUrl / ActionIcon.drawUnit).
+const portraitGlob = import.meta.glob<string>(
+  '../../assets/units/**/portrait.png',
+  { eager: true, query: '?url', import: 'default' },
+)
+
+// Built once at module load: lowercased unit / path id → preloaded portrait
+// image. The captured id is the directory immediately containing the
+// portrait, matching the same key convention as the sprite manifest globs
+// (so .../human/archer/paths/marksman/portrait.png keys on 'marksman').
+// Images are loaded eagerly so the canvas-based ActionIcon can draw them
+// immediately when an action becomes visible.
+const portraitImagesByKey = new Map<string, HTMLImageElement>()
+for (const [filePath, url] of Object.entries(portraitGlob)) {
+  const match = filePath.match(/\/([^/]+)\/portrait\.png$/)
+  if (!match) continue
+  portraitImagesByKey.set(match[1].toLowerCase(), loadImage(url))
+}
+
 // If a requested animation isn't defined for a given unit, try this alternate.
 // Keeps carrying_gold workers walking normally when only some units have the
 // dedicated carrying pose, instead of freezing on the idle rotation.
@@ -195,11 +218,20 @@ export function getUnitSpriteSet(...keys: Array<string | undefined | null>): Uni
   return null
 }
 
-// Resolves a static portrait URL for use in DOM <img> tags (selection cards,
-// tooltips, etc.). Path wins over unitType so promoted variants show their own
-// art. Prefers the south-facing rotation (the most "portrait-like" pose) and
-// falls back through the other directions when south is missing.
+// Resolves a static portrait URL for use in DOM <img> tags (training queue,
+// build menu, multi-select cards). Path wins over unitType so promoted
+// variants show their own art.
+//
+// Lookup order:
+//   1. Dedicated portrait.png next to the unit's sprites.json (or next to a
+//      promotion variant's sprites.json). Drop one in to override the
+//      auto-fallback for that unit.
+//   2. South-facing rotation (the most "portrait-like" pose), then the
+//      other compass directions in turn. Keeps every unit showing
+//      *something* in the UI without forcing a portrait asset.
 export function getUnitPortraitUrl(path?: string, unitType?: string): string | null {
+  const portrait = getUnitPortraitImage(path, unitType)
+  if (portrait) return portrait.src
   const set = getUnitSpriteSet(path, unitType)
   if (!set) return null
   const img =
@@ -208,6 +240,19 @@ export function getUnitPortraitUrl(path?: string, unitType?: string): string | n
     set.rotations.east ??
     set.rotations.west
   return img?.src ?? null
+}
+
+// Companion to getUnitPortraitUrl that returns the preloaded HTMLImageElement
+// instead of a URL — needed by canvas-based UI (ActionIcon.drawUnit) that
+// can't use <img> directly. Returns null when no dedicated portrait exists
+// for the unit / path; callers should fall back to the sprite rotations.
+export function getUnitPortraitImage(path?: string, unitType?: string): HTMLImageElement | null {
+  for (const k of [path, unitType]) {
+    if (!k || k === 'none') continue
+    const img = portraitImagesByKey.get(k.toLowerCase())
+    if (img) return img
+  }
+  return null
 }
 
 function imageReady(img: HTMLImageElement | undefined): img is HTMLImageElement {
