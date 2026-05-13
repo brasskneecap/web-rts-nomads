@@ -14,8 +14,9 @@ import (
 //	                                                (loaded by path_defs.go)
 //
 // Adding a new unit: create catalog/units/<faction>/<newunit>/<newunit>.json
-// where <faction> is one of "raider" | "neutral" | "human". The directory
-// name must match the JSON's `faction` field; mismatch panics at startup.
+// where <faction> is one of "raider" | "neutral" | "human" | "wildborne". The
+// directory name must match the JSON's `faction` field; mismatch panics at
+// startup.
 //
 //go:embed catalog/units
 var unitDefsFS embed.FS
@@ -23,9 +24,10 @@ var unitDefsFS embed.FS
 // validFactions lists the faction directory names accepted under catalog/units.
 // Mirrors the runtime-validated values on UnitDef.Faction.
 var validFactions = map[string]struct{}{
-	"raider":  {},
-	"neutral": {},
-	"human":   {},
+	"raider":    {},
+	"neutral":   {},
+	"human":     {},
+	"wildborne": {},
 }
 
 // UnitDef holds the configuration for a trainable unit type.
@@ -126,7 +128,7 @@ func loadUnitDefsByType() map[string]UnitDef {
 		}
 		factionKey := factionEntry.Name()
 		if _, ok := validFactions[factionKey]; !ok {
-			panic("catalog/units: unknown faction directory " + factionKey + ` — must be one of "raider" | "neutral" | "human"`)
+			panic("catalog/units: unknown faction directory " + factionKey + ` — must be one of "raider" | "neutral" | "human" | "wildborne"`)
 		}
 		unitEntries, err := fs.ReadDir(unitDefsFS, "catalog/units/"+factionKey)
 		if err != nil {
