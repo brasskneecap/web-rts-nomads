@@ -34,7 +34,6 @@ func (l *Loop) Start() {
 		for {
 			select {
 			case <-l.ticker.C:
-				l.state.IncrementTick()
 				l.state.Update(dt)
 				l.broadcaster.BroadcastSnapshot()
 

@@ -975,6 +975,12 @@ func (s *GameState) Update(dt float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// One Update == one simulation frame; advance the tick counter here so
+	// callers can't forget. IncrementTick is still exposed for tests that
+	// drive isolated subsystems (e.g. tickEffectsLocked) without a full
+	// Update pass.
+	s.Tick++
+
 	// Drop the previous tick's crit events. Damage application this tick will
 	// repopulate the queue, and the next snapshot will drain it. Keeps the
 	// list scoped exactly to "crits that landed during this tick" so the

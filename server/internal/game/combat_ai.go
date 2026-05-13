@@ -249,13 +249,13 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 		return
 	}
 
-	// A unit with no target must always be able to acquire one; throttling
-	// it by RetargetIntervalTicks prevents first-acquisition when s.Tick
-	// has not advanced (tests call Update directly without IncrementTick).
-	// Only apply the interval for the taunt-override path (unit has a target
-	// AND is taunted); without-target acquisition is already throttled by
-	// the unreachable-target memo (unreachableTargetCooldownTicks) and by
-	// the stickiness early-return above for units that hold a valid target.
+	// A unit with no target must always be able to acquire one; the
+	// RetargetIntervalTicks throttle is for *re-evaluation while engaged*,
+	// not first-acquisition. Only apply the interval on the taunt-override
+	// path (unit has a target AND is taunted); without-target acquisition
+	// is already throttled by the unreachable-target memo
+	// (unreachableTargetCooldownTicks) and by the stickiness early-return
+	// above for units that hold a valid target.
 	shouldEvaluate := !hasTarget
 	if !shouldEvaluate {
 		// Reaches here only when hasTarget && isTaunted.
