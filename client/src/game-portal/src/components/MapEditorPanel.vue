@@ -406,6 +406,7 @@
               <option value="raider">Raider</option>
               <option value="neutral">Neutral</option>
               <option value="human">Human</option>
+              <option value="wildborne">Wildborne</option>
             </select>
 
             <label for="placed-unit-player-slot">Player Slot</label>
@@ -659,6 +660,7 @@
               <option value="raider">Raider</option>
               <option value="neutral">Neutral</option>
               <option value="human">Human</option>
+              <option value="wildborne">Wildborne</option>
             </select>
           </div>
 
@@ -783,6 +785,7 @@ const unitDefsByFaction = ref<Record<UnitFaction, Array<{ type: UnitType; label:
   raider: [],
   neutral: [],
   human: [],
+  wildborne: [],
 })
 
 const selectedTileCoord = ref<{ sx: number; sy: number } | null>(null)
@@ -924,17 +927,20 @@ const unitTypesForBrushFaction = computed(() =>
   unitDefsByFaction.value[placedUnitFaction.value] ?? [],
 )
 
-// All hostile-side units (raider + neutral) for the enemy-spawnpoint building's
-// "Unit Type" picker. Enemy spawnpoints emit hostiles by design, so this list
-// excludes the human faction — placing a barracks-style spawner that emits
-// soldiers belongs in a different building, not enemy-spawnpoint.
+// All hostile-side units (raider + neutral + wildborne) for the
+// enemy-spawnpoint building's "Unit Type" picker. Enemy spawnpoints emit
+// hostiles by design, so this list excludes the human faction — placing a
+// barracks-style spawner that emits soldiers belongs in a different building,
+// not enemy-spawnpoint. Wildborne is included because it can be used either
+// as a player faction or as a third-party / creep faction.
 const ENEMY_SPAWN_UNITS = computed(() => [
   ...unitDefsByFaction.value.raider,
   ...unitDefsByFaction.value.neutral,
+  ...unitDefsByFaction.value.wildborne,
 ])
 
 function factionForUnitType(unitType: string): UnitFaction {
-  for (const faction of ['raider', 'neutral', 'human'] as const) {
+  for (const faction of ['raider', 'neutral', 'human', 'wildborne'] as const) {
     if (unitDefsByFaction.value[faction].some((u) => u.type === unitType)) {
       return faction
     }
@@ -2104,6 +2110,7 @@ onMounted(() => {
         raider: [],
         neutral: [],
         human: [],
+        wildborne: [],
       }
       for (const def of units) {
         const bucket = grouped[def.faction]

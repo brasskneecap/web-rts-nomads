@@ -1,0 +1,52 @@
+{
+  "key": "druid_matriarch",
+  "size": {
+    "width": 100,
+    "height": 100
+  },
+  "rotations": {
+    "south": "states/3e28ded4/rotations/south.png",
+    "south-east": "states/3e28ded4/rotations/south-east.png",
+    "east": "states/3e28ded4/rotations/east.png",
+    "north-east": "states/3e28ded4/rotations/north-east.png",
+    "north": "states/3e28ded4/rotations/north.png",
+    "north-west": "states/3e28ded4/rotations/north-west.png",
+    "west": "states/3e28ded4/rotations/west.png",
+    "south-west": "states/3e28ded4/rotations/south-west.png"
+  },
+  "animations": {
+    "walking": {
+      "frameCount": 4,
+      "frameWidth": 100,
+      "frameHeight": 100,
+      "sheet": "packed/walking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    },
+    "attacking": {
+      "frameCount": 5,
+      "frameWidth": 100,
+      "frameHeight": 100,
+      "sheet": "packed/attacking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    }
+  },
+  "packedAt": "2026-05-13T22:10:14.349Z"
+}

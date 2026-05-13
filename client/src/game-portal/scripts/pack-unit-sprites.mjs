@@ -60,6 +60,22 @@ async function readPng(file) {
   return PNG.sync.read(buf)
 }
 
+// Normalizes the metadata.json shape across PixelLab export formats:
+//   - Old/flat format: { character, frames }                        at the root.
+//   - New "states" format: { states: [{ character, folder, frames }, ...] }.
+// In the new format we use states[0] (single-state characters). Paths inside
+// the inner `frames` already include the state-folder prefix (e.g.
+// "states/<folder>/rotations/south.png"), so the existing path.join(unitDir,
+// rel) resolution works unchanged for both formats. Multi-state characters
+// (e.g. shapeshifters with human + beast forms) would need an enhancement
+// here to pack each state separately.
+function normalizeExportShape(meta) {
+  if (meta && !meta.frames && Array.isArray(meta.states) && meta.states[0]) {
+    return meta.states[0]
+  }
+  return meta
+}
+
 // Reads hand-editable override fields from a previously-generated sprites.json.
 // Returns only the fields present in the prior file; callers spread the result
 // into the new manifest so user overrides (scale / offsets / future tweaks)
@@ -265,6 +281,7 @@ async function packUnit(unitDir) {
   } catch {
     return { skipped: true }
   }
+  meta = normalizeExportShape(meta)
 
   const unitKey = path.basename(unitDir)
 
@@ -570,6 +587,7 @@ async function packObject(objectDir) {
       wroteManifest,
     }
   }
+  meta = normalizeExportShape(meta)
 
   const firstFrame = meta?.frames?.rotations?.south
     ?? Object.values(meta?.frames?.rotations ?? {})[0]

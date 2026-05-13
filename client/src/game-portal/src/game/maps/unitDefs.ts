@@ -33,7 +33,7 @@ export type ResolvedUnitAttackVisual = {
  *  Decoupled from runtime ownership — the placed-unit `playerSlot` decides who
  *  controls the unit in-game; faction just filters which types appear under
  *  each brush category. */
-export type UnitFaction = 'raider' | 'neutral' | 'human'
+export type UnitFaction = 'raider' | 'neutral' | 'human' | 'wildborne'
 
 /** Target classes a unit's attacks are valid against. Drives anti-air / ground-only filtering on both server and client. */
 export type UnitTargetClass = 'ground' | 'flyer'
