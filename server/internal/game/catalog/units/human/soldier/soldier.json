@@ -3,7 +3,7 @@
   "name": "Soldier",
   "faction": "human",
   "archetype": "soldier",
-  "hp": 250,
+  "hp": 175,
   "damage": 12,
   "attackRange": 60,
   "attackSpeed": 1,
