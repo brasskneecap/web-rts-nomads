@@ -1,7 +1,5 @@
 <template>
   <div class="main-menu">
-    <div class="menu-background-layer" aria-hidden="true"></div>
-
     <ResumeSessionCard
       v-if="hasResumableSession"
       :map-name="resumeMapName"
@@ -75,21 +73,14 @@ function onDismiss() {
 
 <style scoped>
 .main-menu {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
-  position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background:
-    radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%),
-    #05080d;
-}
-
-.menu-background-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+  background: radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%);
 }
 
 .main-menu__layout {

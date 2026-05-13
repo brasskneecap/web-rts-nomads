@@ -75,7 +75,7 @@ func TestItemCatalog_AllTenItemsLoaded(t *testing.T) {
 	}
 
 	weapons := []string{
-		"weapon_common_sword", "cimitar", "flame_sword",
+		"broad_sword", "scimitar", "flame_sword",
 		"ice_sword", "shadow_blade",
 	}
 	for _, id := range weapons {
@@ -157,7 +157,7 @@ func TestPurchaseItem_EquipmentAddsToVault(t *testing.T) {
 	goldBefore := s.Players[playerID].Resources["gold"]
 	s.mu.RUnlock()
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -165,15 +165,15 @@ func TestPurchaseItem_EquipmentAddsToVault(t *testing.T) {
 	if len(player.Vault) != 1 {
 		t.Fatalf("expected 1 vault item, got %d", len(player.Vault))
 	}
-	if player.Vault[0].ItemID != "weapon_common_sword" {
+	if player.Vault[0].ItemID != "broad_sword" {
 		t.Errorf("expected weapon_common_sword, got %q", player.Vault[0].ItemID)
 	}
 	if player.Vault[0].Stacks != 1 {
 		t.Errorf("expected stacks=1, got %d", player.Vault[0].Stacks)
 	}
 	goldAfter := player.Resources["gold"]
-	if goldAfter != goldBefore-100 {
-		t.Errorf("expected gold deducted by 100, before=%d after=%d", goldBefore, goldAfter)
+	if goldAfter != goldBefore-50 {
+		t.Errorf("expected gold deducted by 50, before=%d after=%d", goldBefore, goldAfter)
 	}
 }
 
@@ -206,7 +206,7 @@ func TestPurchaseItem_InsufficientGold_NoOp(t *testing.T) {
 	s.Players[playerID].Resources["gold"] = 0
 	s.mu.Unlock()
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -227,14 +227,14 @@ func TestPurchaseItem_VaultAtCapacity_NoOp(t *testing.T) {
 		s.nextItemInstanceID++
 		player.Vault = append(player.Vault, &VaultItem{
 			InstanceID: s.nextItemInstanceID,
-			ItemID:     "weapon_common_sword",
+			ItemID:     "broad_sword",
 			Stacks:     1,
 		})
 	}
 	s.mu.Unlock()
 
 	goldBefore := player.Resources["gold"]
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -261,7 +261,7 @@ func TestPurchaseItem_TownhallDestroyed_NoOp(t *testing.T) {
 	}
 	s.mu.Unlock()
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -278,7 +278,7 @@ func TestEquipItem_EquipsSwordAndAppliesBonus(t *testing.T) {
 	s, playerID := newItemTestState(t)
 	unit := spawnBronzeUnit(t, s, playerID)
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 
 	s.mu.RLock()
 	player := s.Players[playerID]
@@ -300,7 +300,7 @@ func TestEquipItem_EquipsSwordAndAppliesBonus(t *testing.T) {
 	if unit.Equipped[0] == nil {
 		t.Fatal("expected slot 0 to be occupied")
 	}
-	if unit.Equipped[0].ItemID != "weapon_common_sword" {
+	if unit.Equipped[0].ItemID != "broad_sword" {
 		t.Errorf("expected weapon_common_sword in slot, got %q", unit.Equipped[0].ItemID)
 	}
 	if unit.Damage != damageBefore+5 {
@@ -314,14 +314,14 @@ func TestEquipItem_SlotOccupied_NoOp(t *testing.T) {
 	s, playerID := newItemTestState(t)
 	unit := spawnBronzeUnit(t, s, playerID)
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.mu.RLock()
 	iid1 := s.Players[playerID].Vault[0].InstanceID
 	s.mu.RUnlock()
 	s.EquipItem(playerID, unit.ID, 0, iid1)
 
 	// Buy a second sword and try to equip to same slot.
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.mu.RLock()
 	iid2 := s.Players[playerID].Vault[0].InstanceID
 	s.mu.RUnlock()
@@ -345,7 +345,7 @@ func TestUnequipItem_ReturnsItemToVault(t *testing.T) {
 	s, playerID := newItemTestState(t)
 	unit := spawnBronzeUnit(t, s, playerID)
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.mu.RLock()
 	iid := s.Players[playerID].Vault[0].InstanceID
 	s.mu.RUnlock()
@@ -500,7 +500,7 @@ func TestSetInventorySizeForRank_GrowsByRank(t *testing.T) {
 func TestPlayerVaultSnapshot_MatchesVaultContents(t *testing.T) {
 	s, playerID := newItemTestState(t)
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.PurchaseItem(playerID, "bs-1", "potion_common_heal")
 
 	s.mu.RLock()
@@ -513,7 +513,7 @@ func TestPlayerVaultSnapshot_MatchesVaultContents(t *testing.T) {
 	for _, sn := range snaps {
 		itemIDs[sn.ItemID] = true
 	}
-	if !itemIDs["weapon_common_sword"] || !itemIDs["potion_common_heal"] {
+	if !itemIDs["broad_sword"] || !itemIDs["potion_common_heal"] {
 		t.Errorf("snapshot items mismatch: %v", itemIDs)
 	}
 }
@@ -541,7 +541,7 @@ func TestUnitInventorySnapshot_SlotsMatchEquipped(t *testing.T) {
 	s, playerID := newItemTestState(t)
 	unit := spawnBronzeUnit(t, s, playerID)
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.mu.RLock()
 	iid := s.Players[playerID].Vault[0].InstanceID
 	s.mu.RUnlock()
@@ -562,7 +562,7 @@ func TestUnitInventorySnapshot_SlotsMatchEquipped(t *testing.T) {
 	if snap.Slots[0] == nil {
 		t.Fatal("expected slot 0 to be populated")
 	}
-	if snap.Slots[0].ItemID != "weapon_common_sword" {
+	if snap.Slots[0].ItemID != "broad_sword" {
 		t.Errorf("expected weapon_common_sword in slot snapshot, got %q", snap.Slots[0].ItemID)
 	}
 }
@@ -627,7 +627,7 @@ func TestTransferItem_HappyPath_MovesItemBetweenUnits(t *testing.T) {
 	unitA := spawnBronzeUnit(t, s, playerID)
 	unitB := spawnBronzeUnit(t, s, playerID)
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.mu.RLock()
 	iid := s.Players[playerID].Vault[0].InstanceID
 	s.mu.RUnlock()
@@ -648,7 +648,7 @@ func TestTransferItem_HappyPath_MovesItemBetweenUnits(t *testing.T) {
 	if unitB.Equipped[0] == nil {
 		t.Fatal("expected unitB slot 0 to be occupied after transfer")
 	}
-	if unitB.Equipped[0].ItemID != "weapon_common_sword" {
+	if unitB.Equipped[0].ItemID != "broad_sword" {
 		t.Errorf("expected weapon_common_sword in unitB slot 0, got %q", unitB.Equipped[0].ItemID)
 	}
 	// unitA loses the bonus; unitB gains it.
@@ -667,7 +667,7 @@ func TestTransferItem_SameUnit_DifferentSlot(t *testing.T) {
 	s, playerID := newItemTestState(t)
 	unit := spawnSilverUnit(t, s, playerID)
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.mu.RLock()
 	iid := s.Players[playerID].Vault[0].InstanceID
 	s.mu.RUnlock()
@@ -684,7 +684,7 @@ func TestTransferItem_SameUnit_DifferentSlot(t *testing.T) {
 	if unit.Equipped[1] == nil {
 		t.Fatal("expected slot 1 to be occupied after same-unit transfer")
 	}
-	if unit.Equipped[1].ItemID != "weapon_common_sword" {
+	if unit.Equipped[1].ItemID != "broad_sword" {
 		t.Errorf("expected weapon_common_sword in slot 1, got %q", unit.Equipped[1].ItemID)
 	}
 }
@@ -697,13 +697,13 @@ func TestTransferItem_DestOccupied_NoOp(t *testing.T) {
 	unitB := spawnBronzeUnit(t, s, playerID)
 
 	// Equip a sword on each unit.
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.mu.RLock()
 	iidA := s.Players[playerID].Vault[0].InstanceID
 	s.mu.RUnlock()
 	s.EquipItem(playerID, unitA.ID, 0, iidA)
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.mu.RLock()
 	iidB := s.Players[playerID].Vault[0].InstanceID
 	s.mu.RUnlock()
@@ -729,7 +729,7 @@ func TestTransferItem_WrongPlayer_NoOp(t *testing.T) {
 	s, playerID := newItemTestState(t)
 	unit := spawnBronzeUnit(t, s, playerID)
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.mu.RLock()
 	iid := s.Players[playerID].Vault[0].InstanceID
 	s.mu.RUnlock()
@@ -762,7 +762,7 @@ func TestTransferItem_DeadUnit_NoOp(t *testing.T) {
 	unitA := spawnBronzeUnit(t, s, playerID)
 	unitB := spawnBronzeUnit(t, s, playerID)
 
-	s.PurchaseItem(playerID, "bs-1", "weapon_common_sword")
+	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	s.mu.RLock()
 	iid := s.Players[playerID].Vault[0].InstanceID
 	s.mu.RUnlock()

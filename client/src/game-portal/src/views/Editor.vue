@@ -22,13 +22,13 @@ const editorMap = ref(createEditorMapConfig())
 <style scoped>
 .editor-view {
   position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   min-height: 0;
   min-width: 0;
   display: flex;
   overflow: hidden;
-  background: #05080d;
 }
 
 .editor-topbar {

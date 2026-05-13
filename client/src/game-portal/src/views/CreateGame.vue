@@ -7,7 +7,7 @@
       </header>
 
       <div class="create-game__body">
-        <div class="create-game__left">
+        <UiPanel class="create-game__left" :padding="16">
           <div class="create-game__section-label">Select Map</div>
           <MapList
             :maps="mapCatalog"
@@ -16,7 +16,7 @@
             @update:selected-map-id="onMapSelected"
           />
           <div v-if="mapsLoadError" class="create-game__error">{{ mapsLoadError }}</div>
-        </div>
+        </UiPanel>
 
         <div class="create-game__right">
           <MinimapPreview :map="selectedMap" />
@@ -44,6 +44,7 @@ import type { MapCatalogEntry } from '@/game/network/protocol'
 import { useLobbies } from '@/composables/useLobbies'
 import { usePlayer } from '@/composables/usePlayer'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
 import MapList from '@/components/menu/MapList.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'
 
@@ -97,15 +98,15 @@ onMounted(() => {
 
 <style scoped>
 .create-game {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%),
-    #05080d;
+  background: radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%);
   padding: 32px;
   box-sizing: border-box;
 }

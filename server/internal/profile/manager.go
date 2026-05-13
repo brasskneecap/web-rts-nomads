@@ -114,7 +114,7 @@ func newDefaultProfile(playerID, commanderID string, buffIDs []string) *PlayerPr
 		UpdatedAtUnix:       now,
 		OwnedCommanderIDs:   []string{commanderID},
 		SelectedCommanderID: commanderID,
-		EquippedBuffIDs:     append([]string(nil), buffIDs...),
+		EquippedBuffIDs:     []string{},
 		UnlockedBuffIDs:     append([]string(nil), buffIDs...),
 	}
 }

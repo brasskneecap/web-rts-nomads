@@ -96,15 +96,15 @@ const winRate = computed(() => {
 
 <style scoped>
 .profile-view {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  background:
-    radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%),
-    #05080d;
+  background: radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%);
   padding: 32px;
   box-sizing: border-box;
   overflow-y: auto;
