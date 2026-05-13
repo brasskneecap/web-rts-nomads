@@ -13,22 +13,14 @@ import (
 //	catalog/units/<faction>/<unit>/paths/*.json  — per-path stat modifiers
 //	                                                (loaded by path_defs.go)
 //
-// Adding a new unit: create catalog/units/<faction>/<newunit>/<newunit>.json
-// where <faction> is one of "raider" | "neutral" | "human" | "wildborne". The
-// directory name must match the JSON's `faction` field; mismatch panics at
-// startup.
+// Adding a new unit: create catalog/units/<faction>/<newunit>/<newunit>.json.
+// The faction directory name is taken as-is (no allowlist) and must match the
+// JSON's `faction` field; mismatch panics at startup. Adding a brand-new
+// faction is the same operation: just place the new <faction> directory in
+// catalog/units and drop a unit folder inside.
 //
 //go:embed catalog/units
 var unitDefsFS embed.FS
-
-// validFactions lists the faction directory names accepted under catalog/units.
-// Mirrors the runtime-validated values on UnitDef.Faction.
-var validFactions = map[string]struct{}{
-	"raider":    {},
-	"neutral":   {},
-	"human":     {},
-	"wildborne": {},
-}
 
 // UnitDef holds the configuration for a trainable unit type.
 // Client-only fields (TrainLabel, Bounds) are passed through to the API
@@ -113,10 +105,10 @@ var unitDefsByType = loadUnitDefsByType()
 
 func loadUnitDefsByType() map[string]UnitDef {
 	// Two-level directory layout: catalog/units/<faction>/<unit>/<unit>.json.
-	// The faction directory name must match one of validFactions; the unit
-	// directory name must match the JSON's "type" field; the JSON's "faction"
-	// field must match its parent directory. Any drift panics at startup so
-	// the catalog stays coherent.
+	// Faction directory names are accepted as-is; the unit directory name
+	// must match the JSON's "type" field; the JSON's "faction" field must
+	// match its parent directory. Any drift panics at startup so the catalog
+	// stays coherent.
 	factionEntries, err := fs.ReadDir(unitDefsFS, "catalog/units")
 	if err != nil {
 		panic("catalog/units: " + err.Error())
@@ -127,9 +119,6 @@ func loadUnitDefsByType() map[string]UnitDef {
 			panic("catalog/units: unexpected file at root " + factionEntry.Name() + " — top-level entries must be faction directories")
 		}
 		factionKey := factionEntry.Name()
-		if _, ok := validFactions[factionKey]; !ok {
-			panic("catalog/units: unknown faction directory " + factionKey + ` — must be one of "raider" | "neutral" | "human" | "wildborne"`)
-		}
 		unitEntries, err := fs.ReadDir(unitDefsFS, "catalog/units/"+factionKey)
 		if err != nil {
 			panic("catalog/units/" + factionKey + ": " + err.Error())

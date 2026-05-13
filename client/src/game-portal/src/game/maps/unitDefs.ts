@@ -32,8 +32,12 @@ export type ResolvedUnitAttackVisual = {
 /** Default categorisation of a unit type for the map editor brushing flow.
  *  Decoupled from runtime ownership — the placed-unit `playerSlot` decides who
  *  controls the unit in-game; faction just filters which types appear under
- *  each brush category. */
-export type UnitFaction = 'raider' | 'neutral' | 'human' | 'wildborne'
+ *  each brush category.
+ *
+ *  Open-ended string by design: factions are derived from the server catalog
+ *  at runtime (one bucket per `catalog/units/<faction>/` directory), so adding
+ *  a new faction folder + unit picks it up automatically without a type edit. */
+export type UnitFaction = string
 
 /** Target classes a unit's attacks are valid against. Drives anti-air / ground-only filtering on both server and client. */
 export type UnitTargetClass = 'ground' | 'flyer'

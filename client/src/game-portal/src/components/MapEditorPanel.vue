@@ -403,10 +403,7 @@
           <div v-if="brushMode === 'unit'" class="control-group unit-brush-config">
             <label>Faction</label>
             <select v-model="placedUnitFaction" :disabled="!paintModeEnabled">
-              <option value="raider">Raider</option>
-              <option value="neutral">Neutral</option>
-              <option value="human">Human</option>
-              <option value="wildborne">Wildborne</option>
+              <option v-for="f in availableFactions" :key="f" :value="f">{{ formatFactionLabel(f) }}</option>
             </select>
 
             <label for="placed-unit-player-slot">Player Slot</label>
@@ -657,10 +654,7 @@
               :value="factionForUnitType(selectedEditPlacedUnit.unitType)"
               @change="onEditPanelFactionChange(($event.target as HTMLSelectElement).value as UnitFaction)"
             >
-              <option value="raider">Raider</option>
-              <option value="neutral">Neutral</option>
-              <option value="human">Human</option>
-              <option value="wildborne">Wildborne</option>
+              <option v-for="f in availableFactions" :key="f" :value="f">{{ formatFactionLabel(f) }}</option>
             </select>
           </div>
 
@@ -778,15 +772,11 @@ const selectedObstacle = ref<ObstacleType>('rock')
 const selectedBuilding = ref<BuildingType>('goldmine')
 const selectedTileSheet = ref<TileSheet>('tileset')
 
-// All unit types known to the catalog, populated by fetchUnitDefs. Drives the
-// faction-filtered type pickers below — adding a unit JSON on the server (with
-// a valid faction) makes it immediately available in the editor on next load.
-const unitDefsByFaction = ref<Record<UnitFaction, Array<{ type: UnitType; label: string }>>>({
-  raider: [],
-  neutral: [],
-  human: [],
-  wildborne: [],
-})
+// All unit types known to the catalog, populated by fetchUnitDefs. Buckets are
+// keyed by the unit's `faction` string and built dynamically — adding a new
+// `catalog/units/<newfaction>/<unit>/...` folder on the server makes the
+// faction appear in the editor on next load with zero code changes here.
+const unitDefsByFaction = ref<Record<string, Array<{ type: UnitType; label: string }>>>({})
 
 const selectedTileCoord = ref<{ sx: number; sy: number } | null>(null)
 const selectedSpawnTownhallId = ref('')
@@ -920,6 +910,25 @@ const placedUnitPlayerSlots = computed(() => {
   return slots
 })
 
+// Sorted list of faction keys present in the catalog. Drives every faction
+// dropdown in the editor; new factions show up automatically as soon as their
+// directory exists under server/internal/game/catalog/units/.
+const availableFactions = computed(() =>
+  Object.keys(unitDefsByFaction.value).sort(),
+)
+
+// Human-readable label for a faction key. Converts "wildborne" → "Wildborne"
+// and "wave_enemy" → "Wave Enemy". Cheap heuristic — if you ever want curated
+// display names, surface a field on the server `faction` directory (e.g. a
+// faction.json) and read it here.
+function formatFactionLabel(key: string): string {
+  return key
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 // Unit types filtered to the currently selected faction. Drives the brush
 // type picker; the edit panel uses its own per-unit faction lookup so it can
 // switch the selected unit's type to one of a different faction.
@@ -927,25 +936,23 @@ const unitTypesForBrushFaction = computed(() =>
   unitDefsByFaction.value[placedUnitFaction.value] ?? [],
 )
 
-// All hostile-side units (raider + neutral + wildborne) for the
-// enemy-spawnpoint building's "Unit Type" picker. Enemy spawnpoints emit
-// hostiles by design, so this list excludes the human faction — placing a
-// barracks-style spawner that emits soldiers belongs in a different building,
-// not enemy-spawnpoint. Wildborne is included because it can be used either
-// as a player faction or as a third-party / creep faction.
-const ENEMY_SPAWN_UNITS = computed(() => [
-  ...unitDefsByFaction.value.raider,
-  ...unitDefsByFaction.value.neutral,
-  ...unitDefsByFaction.value.wildborne,
-])
+// All units across every faction for the enemy-spawnpoint building's "Unit
+// Type" picker. Enemy spawnpoints emit hostiles, but with dynamic factions
+// there's no static "this faction is player-only vs hostile" signal — so any
+// catalog unit can be wired as a wave spawn. If a faction should be excluded
+// later, gate it via a per-faction or per-unit metadata field rather than a
+// hardcoded list here.
+const ENEMY_SPAWN_UNITS = computed(() =>
+  availableFactions.value.flatMap((f) => unitDefsByFaction.value[f] ?? []),
+)
 
 function factionForUnitType(unitType: string): UnitFaction {
-  for (const faction of ['raider', 'neutral', 'human', 'wildborne'] as const) {
+  for (const faction of availableFactions.value) {
     if (unitDefsByFaction.value[faction].some((u) => u.type === unitType)) {
       return faction
     }
   }
-  return 'raider'
+  return availableFactions.value[0] ?? ''
 }
 
 const selectedEditBuilding = computed(() =>
@@ -2102,28 +2109,30 @@ onMounted(() => {
   void fetchUnitDefs()
     .then(({ units, paths }) => {
       initPathBounds(paths)
-      // Bucket every catalog unit by its declared faction so the brush type
-      // picker reflects the catalog automatically — adding a new unit JSON
-      // (with a valid faction) makes it appear in the matching dropdown on
-      // next editor load with zero hand-wiring.
-      const grouped: Record<UnitFaction, Array<{ type: UnitType; label: string }>> = {
-        raider: [],
-        neutral: [],
-        human: [],
-        wildborne: [],
-      }
+      // Bucket every catalog unit by its declared faction. Buckets are created
+      // on demand from `def.faction`, so a new faction directory on the server
+      // produces a new dropdown entry on next editor load with zero edits here.
+      const grouped: Record<string, Array<{ type: UnitType; label: string }>> = {}
       for (const def of units) {
-        const bucket = grouped[def.faction]
-        if (bucket) bucket.push({ type: def.type as UnitType, label: def.name })
+        const bucket = grouped[def.faction] ?? (grouped[def.faction] = [])
+        bucket.push({ type: def.type as UnitType, label: def.name })
       }
       unitDefsByFaction.value = grouped
-      // If the current type isn't in the current faction (e.g. catalog just
-      // loaded), snap to the first valid one. Same for enemyUnitType.
-      const factionTypes = grouped[placedUnitFaction.value].map((u) => u.type as string)
-      if (!factionTypes.includes(placedUnitType.value)) {
-        placedUnitType.value = grouped[placedUnitFaction.value][0]?.type ?? placedUnitType.value
+      const factionKeys = Object.keys(grouped).sort()
+      // If the previously-selected faction isn't in the catalog any more
+      // (renamed/removed), snap to the first available one so dropdowns stay
+      // coherent. Preserve the selection when it's still valid.
+      if (!grouped[placedUnitFaction.value]) {
+        placedUnitFaction.value = factionKeys[0] ?? ''
       }
-      const enemyPool = [...grouped.raider, ...grouped.neutral]
+      // Same for placedUnitType under the (possibly new) faction.
+      const factionTypes = (grouped[placedUnitFaction.value] ?? []).map((u) => u.type as string)
+      if (!factionTypes.includes(placedUnitType.value)) {
+        placedUnitType.value = grouped[placedUnitFaction.value]?.[0]?.type ?? placedUnitType.value
+      }
+      // Enemy-spawnpoint pool spans every faction now; snap enemyUnitType to
+      // any available unit when the previously-selected type has gone away.
+      const enemyPool = factionKeys.flatMap((f) => grouped[f] ?? [])
       if (!enemyPool.some((u) => u.type === enemyUnitType.value)) {
         enemyUnitType.value = enemyPool[0]?.type ?? enemyUnitType.value
       }
