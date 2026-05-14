@@ -1,13 +1,13 @@
 {
   "type": "barracks",
   "class": "player",
-  "width": 2,
-  "height": 2,
+  "width": 3,
+  "height": 3,
   "spriteRender": {
     "offsetX": -0.25,
     "offsetY": -0.25,
-    "width": 2.5,
-    "height": 2.5
+    "width": 3.5,
+    "height": 3.5
   },
   "maxHp": 500,
   "buildSeconds": 15,
