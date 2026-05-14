@@ -267,6 +267,8 @@ export class CanvasRenderer {
     // the number stays put even if the unit moves or dies mid-animation.
     if (this.state.damageEvents.length > 0) {
       for (const evt of this.state.damageEvents) {
+        const fow = this.state.fow
+        if (fow.cols > 0 && !fow.isClear(evt.x, evt.y, this.state.mapConfig.cellSize)) continue
         const bounds = getUnitBounds(UNIT_DEF_MAP.get(evt.unitType))
         // Combined Double Shot numbers float higher than the individual
         // shot numbers so they sit visually above them.
