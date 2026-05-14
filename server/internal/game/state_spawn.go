@@ -37,6 +37,10 @@ func (s *GameState) spawnPlayerUnitLocked(unitType, playerID, color string, spaw
 }
 
 func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, color string, spawn protocol.Vec2) *Unit {
+	baseVision := def.VisionRange
+	if baseVision == 0 {
+		baseVision = defaultVisionRange
+	}
 	unit := &Unit{
 		ID:                 s.nextUnitID,
 		OwnerID:            playerID,
@@ -64,6 +68,8 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		AttackSpeed:        def.AttackSpeed,
 		MoveSpeed:          def.MoveSpeed,
 		SplashRadius:       def.SplashRadius,
+		BaseVisionRange:    baseVision,
+		VisionRange:        baseVision,
 		HealthRegenPerSecond: defaultHealthRegenPerSecond,
 		Rank:               unitRankBase,
 		ProgressionPath:    unitPathNone,
@@ -120,6 +126,8 @@ func (s *GameState) spawnRaiderUnitLocked(playerID, color string, spawn protocol
 		AttackRange:        raiderAttackRange,
 		BaseAttackRange:    raiderAttackRange,
 		AttackSpeed:        raiderAttackSpeed,
+		BaseVisionRange:    defaultVisionRange,
+		VisionRange:        defaultVisionRange,
 		HealthRegenPerSecond: defaultHealthRegenPerSecond,
 		Rank:               unitRankBase,
 		ProgressionPath:    unitPathNone,

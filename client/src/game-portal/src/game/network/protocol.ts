@@ -78,6 +78,15 @@ export type BuildingTile = GridCoord & {
   resourceAmount?: number
   spawnUnitTypes?: string[]
   metadata?: JsonObject
+  ghost?: boolean
+  lastSeenTick?: number
+}
+
+export type FogOfWarSnapshot = {
+  cols: number
+  rows: number
+  runs: number[]
+  revTick: number
 }
 
 export type WaveConfig = {
@@ -759,6 +768,7 @@ export type MatchSnapshotMessage = {
   battleTracker?: BattleTrackerSnapshot
   gameOver?: GameOverSnapshot
   victory?: VictorySnapshot
+  fow?: FogOfWarSnapshot
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────

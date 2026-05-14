@@ -13,6 +13,9 @@ const PlayerRemovalGrace = 30 * time.Second
 
 type MatchClient interface {
 	WriteJSON(v any) error
+	// PlayerID returns the player ID associated with this connection. Used by
+	// BroadcastSnapshot to build a per-player FOW-filtered snapshot.
+	PlayerID() string
 }
 
 type Match struct {
@@ -87,13 +90,6 @@ func (m *Match) HasPlayer(playerID string) bool {
 }
 
 func (m *Match) BroadcastSnapshot() {
-	var snapshot protocol.MatchSnapshotMessage
-	profileSection("snapshotBuild", func() {
-		snapshot = m.State.Snapshot()
-		snapshot.MatchID = m.ID
-		snapshot.ServerNow = time.Now().UnixMilli()
-	})
-
 	// Snapshot the client set under the lock, then release before writing.
 	// Holding the lock across WriteJSON serialises writes and blocks
 	// AddClient/RemoveClient behind a slow or stuck client's write deadline.
@@ -106,7 +102,13 @@ func (m *Match) BroadcastSnapshot() {
 
 	profileSection("snapshotBroadcast", func() {
 		for _, client := range clients {
-			_ = client.WriteJSON(snapshot)
+			var snap protocol.MatchSnapshotMessage
+			profileSection("snapshotBuild", func() {
+				snap = m.State.SnapshotForPlayer(client.PlayerID())
+				snap.MatchID = m.ID
+				snap.ServerNow = time.Now().UnixMilli()
+			})
+			_ = client.WriteJSON(snap)
 		}
 	})
 }

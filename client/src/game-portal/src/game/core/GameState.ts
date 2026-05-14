@@ -34,6 +34,7 @@ import { buildItemTooltipBody } from '../items/itemRules'
 import { formatPerkTooltip } from './perkTooltip'
 import { getUnitBodyRect, isPointInUnitBody } from '../rendering/unitSprites'
 import { isTerrainCellBlocked } from '../rendering/terrainTileset'
+import { FogOfWar } from './FogOfWar'
 
 /**
  * Live-compounded trap stats for archer/trapper units, reflecting the full
@@ -437,6 +438,8 @@ export class GameState {
   // Currently selected vault item (for click-to-equip flow). Set by
   // VaultPanel; cleared when the user deselects or closes the panel.
   vaultSelectedInstanceId: number | null = null
+
+  fow: FogOfWar = new FogOfWar()
 
   snapshotBuffer: InterpolationFrame[] = []
   interpolationDelayMs = 100
@@ -954,6 +957,10 @@ export class GameState {
       this.victorySnapshot = message.victory
     }
 
+    if (message.fow) {
+      this.fow.applySnapshot(message.fow)
+    }
+
     const validIds = new Set(this.units.map((u) => u.id))
 
     for (const id of Array.from(this.selectedUnitIds)) {
@@ -1368,6 +1375,7 @@ export class GameState {
 
     return buildings.find((building) => {
       if (!building.visible) return false
+      if (building.ghost) return false
 
       const left = building.x * cellSize - padding
       const top = building.y * cellSize - padding
@@ -1750,7 +1758,7 @@ export class GameState {
     if (
       this.selectedBuildingId &&
       !this.mapConfig.buildings.some(
-        (building) => building.id === this.selectedBuildingId && building.visible,
+        (building) => building.id === this.selectedBuildingId && building.visible && !building.ghost,
       )
     ) {
       this.selectedBuildingId = null

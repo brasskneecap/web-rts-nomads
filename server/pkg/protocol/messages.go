@@ -241,6 +241,11 @@ type BuildingTile struct {
 	ResourceAmount int                    `json:"resourceAmount,omitempty"`
 	SpawnUnitTypes []string               `json:"spawnUnitTypes,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	// Ghost is set on buildings that are included in a FOW-filtered snapshot
+	// because the viewer has seen the cell before but it is currently in shroud.
+	// The client should render the last-known appearance without live state.
+	Ghost        bool `json:"ghost,omitempty"`
+	LastSeenTick int  `json:"lastSeenTick,omitempty"`
 }
 
 type JoinMatchMessage struct {
@@ -764,6 +769,17 @@ type EffectSnapshot struct {
 	Variant      string  `json:"variant,omitempty"`
 }
 
+// FogOfWarSnapshot carries the per-player FOW grid to the client each tick.
+// Runs is an RLE-encoded sequence of [state, count, state, count, ...] pairs
+// where state is 0 (dark), 1 (shroud/ever-seen), or 3 (clear).
+// RevTick is the server tick at which this FOW was last recomputed.
+type FogOfWarSnapshot struct {
+	Cols    int   `json:"cols"`
+	Rows    int   `json:"rows"`
+	Runs    []int `json:"runs"`
+	RevTick int   `json:"revTick"`
+}
+
 type MatchSnapshotMessage struct {
 	Type          string                  `json:"type"`
 	Tick          int                     `json:"tick"`
@@ -784,6 +800,7 @@ type MatchSnapshotMessage struct {
 	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
 	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
 	Victory       *VictorySnapshot        `json:"victory,omitempty"`
+	Fow           *FogOfWarSnapshot       `json:"fow,omitempty"`
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────

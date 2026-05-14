@@ -79,6 +79,10 @@ type UnitDef struct {
 	// triggers. Must be >= 0. Overrides the base tuning value.
 	LegendPointAmount int `json:"legendPointAmount,omitempty"`
 
+	// VisionRange is the base vision radius in world pixels. When 0 or absent,
+	// the spawn path falls back to defaultVisionRange.
+	VisionRange float64 `json:"visionRange,omitempty"`
+
 	// Flyer marks the unit as airborne. Flyers ignore terrain and ground-unit
 	// obstacles when pathing — only map bounds and other flyers constrain
 	// them. They are also a distinct target class: a unit can only attack a

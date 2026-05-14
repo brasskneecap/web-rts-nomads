@@ -24,6 +24,7 @@ type BuildingDef struct {
 	Damage         int             `json:"damage,omitempty"`
 	AttackRange    float64         `json:"attackRange,omitempty"`
 	AttackSpeed    float64         `json:"attackSpeed,omitempty"`
+	VisionRange    float64         `json:"visionRange,omitempty"`
 	AttackVisual   json.RawMessage `json:"attackVisual,omitempty"`
 	ResourceType   string          `json:"resourceType,omitempty"`
 	ResourceAmount int             `json:"resourceAmount,omitempty"`

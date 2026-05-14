@@ -3,6 +3,7 @@
   "name": "Ranged Raider",
   "faction": "raider",
   "archetype": "ranged_raider",
+  "visionRange": 352,
   "hp": 75,
   "damage": 8,
   "attackRange": 220,

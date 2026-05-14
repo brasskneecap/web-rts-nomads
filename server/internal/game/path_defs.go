@@ -31,8 +31,11 @@ type pathCatalogFile struct {
 	// selection ring and hit-test rect need their own values. Passed through
 	// as-is; client uses path-keyed bounds before falling back to the base
 	// unit's bounds. Server game logic never reads it.
-	Bounds json.RawMessage              `json:"bounds,omitempty"`
-	Ranks  map[string]pathRankStatsJSON `json:"ranks"`
+	Bounds json.RawMessage `json:"bounds,omitempty"`
+	// VisionRange overrides BaseVisionRange for units on this path, in world pixels.
+	// When 0 or absent, the unit's BaseVisionRange (from its unit def) is used.
+	VisionRange float64              `json:"visionRange,omitempty"`
+	Ranks       map[string]pathRankStatsJSON `json:"ranks"`
 }
 
 // pathRankStatsJSON mirrors the stat-modifier fields of pathModifierDef (the
@@ -66,6 +69,11 @@ var pathModifiersByKey map[string]pathModifierDef
 // by the /catalog/units endpoint so the client can render path-promoted units
 // with sprite-appropriate selection rings.
 var pathBoundsByPath = map[string]json.RawMessage{}
+
+// pathVisionRangeByPath stores the optional per-path base vision range in world
+// pixels, keyed by path id (e.g. "marksman": 448). Zero means "use the unit
+// def's visionRange". Applied in applyRankModifiersLocked.
+var pathVisionRangeByPath = map[string]float64{}
 
 // PathBoundsEntry is the shape served to the client: a path id plus its
 // raw bounds blob. Slice form (rather than map) gives stable ordering in
@@ -179,6 +187,9 @@ func init() {
 				}
 				if len(file.Bounds) > 0 {
 					pathBoundsByPath[file.Path] = file.Bounds
+				}
+				if file.VisionRange > 0 {
+					pathVisionRangeByPath[file.Path] = file.VisionRange
 				}
 				for rankName, stats := range file.Ranks {
 					if _, ok := validRankName[rankName]; !ok {

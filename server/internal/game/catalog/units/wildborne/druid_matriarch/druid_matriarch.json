@@ -2,6 +2,7 @@
   "type": "druid_matriarch",
   "name": "Druid Matriarch",
   "faction": "wildborne",
+  "visionRange": 320,
   "hp": 250,
   "damage": 35,
   "attackRange": 60,

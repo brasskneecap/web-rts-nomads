@@ -4,6 +4,7 @@
   "faction": "human",
   "archetype": "soldier",
   "nonCombat": true,
+  "visionRange": 256,
   "hp": 100,
   "damage": 3,
   "attackRange": 60,

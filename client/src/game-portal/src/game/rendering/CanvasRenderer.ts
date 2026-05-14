@@ -1,6 +1,7 @@
 // src/game/rendering/CanvasRenderer.ts
 import { GameState } from '../core/GameState'
 import type { Unit } from '../core/GameState'
+import type { FogOfWar } from '../core/FogOfWar'
 import {
   DEFAULT_GRASS_COLOR,
   getBuildingColor,
@@ -159,6 +160,9 @@ export class CanvasRenderer {
   private unitAnim = new UnitAnimationController()
   private terrainCache: HTMLCanvasElement | null = null
   private terrainCacheKey: unknown[] = []
+  private fogCanvas: HTMLCanvasElement
+  private fogCtx: CanvasRenderingContext2D
+  private lastFogRevTick: number = -1
 
   // Floating damage numbers — client-side transient overlays world-locked to
   // the victim's position at damage-time. Populated by draining
@@ -224,6 +228,9 @@ export class CanvasRenderer {
     this.ctx = ctx
     this.state = state
     this.camera = camera
+
+    this.fogCanvas = document.createElement('canvas')
+    this.fogCtx = this.fogCanvas.getContext('2d')!
 
     this.resize()
     window.addEventListener('resize', this.resize)
@@ -311,7 +318,6 @@ export class CanvasRenderer {
 
     this.drawMapBounds()
     this.drawMapBackground()
-    this.drawMoveMarkers()
     this.drawBuildingSpawnMarkers()
     this.drawTraps(this.state.traps)
     this.drawBanners(this.state.banners)
@@ -321,6 +327,19 @@ export class CanvasRenderer {
     this.drawEffects(this.state.effects, units)
     // Drawn after units so arrows render on top of the firing unit's body.
     this.drawProjectiles(this.state.projectiles)
+
+    if (this.state.fow.cols > 0) {
+      const cs = this.state.mapConfig.cellSize
+      this.updateFogCanvas(this.state.fow, cs)
+      const marginPx = CanvasRenderer.FOG_MARGIN * cs
+      ctx.filter = `blur(${CanvasRenderer.FOG_BLUR_PX}px)`
+      ctx.drawImage(this.fogCanvas, -marginPx, -marginPx)
+      ctx.filter = 'none'
+    }
+
+    // Move markers render above the fog so players always see where they
+    // commanded their units to go, even into unexplored territory.
+    this.drawMoveMarkers()
     this.drawBuildPlacementGhost()
     this.drawSelectionBox()
     this.drawFloatingDamageNumbers(renderTime)
@@ -335,6 +354,54 @@ export class CanvasRenderer {
     window.removeEventListener('resize', this.resize)
     this.resizeObserver?.disconnect()
     this.resizeObserver = null
+  }
+
+  // Cells of fully-dark fog added outside the playable map on every side.
+  // Large enough to cover sprite overflow and absorb the blur kernel so the
+  // edge of the blur never hits the fog canvas boundary.
+  private static readonly FOG_MARGIN = 4
+  // Gaussian blur radius applied when compositing the fog onto the main
+  // canvas. Softens hard cell edges into a smooth circular reveal shape.
+  private static readonly FOG_BLUR_PX = 24
+
+  private updateFogCanvas(fow: FogOfWar, cellSize: number): void {
+    if (fow.revTick === this.lastFogRevTick) return
+    this.lastFogRevTick = fow.revTick
+
+    const margin = CanvasRenderer.FOG_MARGIN
+    const cs = cellSize
+    const canvasW = (fow.cols + 2 * margin) * cs
+    const canvasH = (fow.rows + 2 * margin) * cs
+    if (this.fogCanvas.width !== canvasW || this.fogCanvas.height !== canvasH) {
+      this.fogCanvas.width = canvasW
+      this.fogCanvas.height = canvasH
+    }
+
+    const ctx = this.fogCtx
+    const mx = margin * cs
+    const pw = fow.cols * cs
+    const ph = fow.rows * cs
+
+    ctx.clearRect(0, 0, canvasW, canvasH)
+
+    // Dark borders outside the playable area — always fully opaque.
+    ctx.fillStyle = 'rgba(0, 0, 0, 1.0)'
+    ctx.fillRect(0, 0, canvasW, mx)           // top
+    ctx.fillRect(0, canvasH - mx, canvasW, mx) // bottom
+    ctx.fillRect(0, mx, mx, ph)               // left
+    ctx.fillRect(canvasW - mx, mx, mx, ph)    // right
+
+    // Playable cells — shifted inward by the margin.
+    for (let gy = 0; gy < fow.rows; gy++) {
+      for (let gx = 0; gx < fow.cols; gx++) {
+        const state = fow.cellAt(gx, gy)
+        if (state === 3) continue  // clear — leave transparent
+        ctx.fillStyle = state === 0
+          ? 'rgba(0, 0, 0, 1.0)'
+          : 'rgba(0, 0, 0, 0.55)'
+        ctx.fillRect((gx + margin) * cs, (gy + margin) * cs, cs, cs)
+      }
+    }
   }
 
   // Rebuilds the offscreen terrain canvas when any input that feeds it has
@@ -616,6 +683,37 @@ export class CanvasRenderer {
         isUnderConstruction || isPendingStart ? -1 : getDamagedTier(constructionProgress)
       const damagedSprite =
         damagedTier >= 0 && !trainingSprite ? getDamagedSprite(building.buildingType) : null
+
+      if (building.ghost) {
+        ctx.save()
+        ctx.globalAlpha = 0.5
+        if (constructionSprite) {
+          const tinted = ownerColor
+            ? getTintedConstructionSprite(building.buildingType, ownerColor)
+            : null
+          const source: CanvasImageSource = tinted ?? constructionSprite
+          const frameIndex = getConstructionFrameIndex(constructionProgress)
+          const sheetW = constructionSprite.naturalWidth
+          const sheetH = constructionSprite.naturalHeight
+          const frameW = sheetW / CONSTRUCTION_FRAME_COUNT
+          ctx.imageSmoothingEnabled = false
+          ctx.drawImage(source, frameIndex * frameW, 0, frameW, sheetH, spriteX, spriteY, spriteW, spriteH)
+        } else if (sprite) {
+          const tinted = ownerColor
+            ? getTintedBuildingSprite(building.buildingType, ownerColor)
+            : null
+          ctx.imageSmoothingEnabled = false
+          ctx.drawImage(tinted ?? sprite, spriteX, spriteY, spriteW, spriteH)
+        } else {
+          ctx.fillStyle = playerFill
+          ctx.fillRect(spriteX, spriteY, spriteW, spriteH)
+        }
+        ctx.globalCompositeOperation = 'saturation'
+        ctx.fillStyle = 'rgba(128, 128, 128, 1)'
+        ctx.fillRect(spriteX, spriteY, spriteW, spriteH)
+        ctx.restore()
+        return
+      }
 
       // Selection / hover ring drawn *before* the sprite so the sprite
       // covers the top half, mimicking the wrap-around look of the unit ring.
@@ -3014,6 +3112,7 @@ export class CanvasRenderer {
       // Enemy spawn points are logical spawners and must not appear on the
       // minimap. Mirrors the world-render skip in the main building loop.
       if (building.buildingType === 'enemy-spawnpoint') continue
+      if (building.ghost) continue
 
       const isLocalPlayerBuilding =
         building.occupied && building.ownerId === this.state.localPlayerId
@@ -3051,6 +3150,28 @@ export class CanvasRenderer {
       ctx.beginPath()
       ctx.arc(dotX, dotY, isLocalPlayerUnit ? 2.8 : 2.2, 0, Math.PI * 2)
       ctx.fill()
+    }
+
+    const fow = this.state.fow
+    if (fow.cols > 0) {
+      const { cellSize } = this.state.mapConfig
+      const scaleX = minimapWidth / (fow.cols * cellSize)
+      const scaleY = minimapHeight / (fow.rows * cellSize)
+      for (let gy = 0; gy < fow.rows; gy++) {
+        for (let gx = 0; gx < fow.cols; gx++) {
+          const state = fow.cellAt(gx, gy)
+          if (state === 3) continue
+          ctx.fillStyle = state === 0
+            ? 'rgba(0,0,0,1.0)'
+            : 'rgba(0,0,0,0.6)'
+          ctx.fillRect(
+            x + gx * cellSize * scaleX,
+            y + gy * cellSize * scaleY,
+            Math.ceil(cellSize * scaleX),
+            Math.ceil(cellSize * scaleY),
+          )
+        }
+      }
     }
 
     const worldWidth = this.canvas.width / this.camera.zoom

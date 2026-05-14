@@ -3,6 +3,7 @@
   "class": "player",
   "width": 1,
   "height": 2,
+  "visionRange": 512,
   "maxHp": 500,
   "buildSeconds": 15,
   "damage": 35,

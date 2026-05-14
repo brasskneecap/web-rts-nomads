@@ -3,6 +3,7 @@
   "name": "Raider Brute",
   "faction": "raider",
   "archetype": "raider",
+  "visionRange": 224,
   "hp": 500,
   "damage": 50,
   "attackRange": 100,

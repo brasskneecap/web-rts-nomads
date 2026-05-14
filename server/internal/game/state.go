@@ -275,6 +275,15 @@ type Unit struct {
 	GuardAggroRange float64
 	GuardLeashRange float64
 
+	// BaseVisionRange is the authored vision radius in world pixels. Set at
+	// spawn from UnitDef.VisionRange (defaulting to defaultVisionRange when
+	// the def omits it). Never modified after spawn — VisionRange is the
+	// live value that perk multipliers write into.
+	BaseVisionRange float64
+	// VisionRange is the effective vision radius after perk multipliers.
+	// Recomputed by applyRankModifiersLocked each tick similar to MoveSpeed.
+	VisionRange float64
+
 	// InventorySize is the number of item slots this unit has, determined by
 	// rank (0 = none, 1 = bronze, 2 = silver, 3 = gold). Updated by
 	// setInventorySizeForRankLocked on every rank-up.
@@ -420,6 +429,12 @@ type GameState struct {
 	blockedCellsCache map[gridPoint]bool
 	blockedCellsValid bool
 
+	// visionBlockingCache holds cells that block line-of-sight: obstacles
+	// (trees, rocks, walls) and terrain cliff transitions. Unlike
+	// blockedCellsCache it does NOT include buildings — buildings don't
+	// occlude vision. Rebuilt alongside blockedCellsCache. Guarded by s.mu.
+	visionBlockingCache map[gridPoint]bool
+
 	// Banners is the set of active rallying banners. Persisted as match state.
 	// Ticked in tickBannersLocked after combat resolution.
 	Banners      []*Banner
@@ -509,6 +524,11 @@ type GameState struct {
 	// runs for the first time, so guard units are spawned exactly once per
 	// match regardless of how many real players join.
 	PlacedEnemiesSpawned bool
+
+	// FOW holds the per-player fog-of-war grid. Keyed by real player ID
+	// (never by enemyPlayerID). Initialized in EnsurePlayer and rebuilt
+	// each tick by recomputeFOWLocked.
+	FOW map[string]*PlayerFOW
 }
 
 const (
@@ -519,6 +539,11 @@ const (
 	treeWorkerCap           = 1
 	treeChoppingSeconds     = 3.0
 	minUnitSpawnSeconds     = 0.25
+
+	// defaultVisionRange is the vision radius (in world pixels) granted to
+	// every unit that does not have an explicit visionRange in its UnitDef.
+	// Phase 1 value — tuned for the current map scale.
+	defaultVisionRange = 400.0
 )
 
 const (
@@ -582,6 +607,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		guardianAuraCache:   map[int]guardianAuraValue{},
 		pendingDeathsSet:    map[int]bool{},
 		itemCatalog:         itemCatalogSingleton,
+		FOW:                 map[string]*PlayerFOW{},
 	}
 
 	// Arm the battle tracker iff the map opts in via debug.battleTracker. The
@@ -657,6 +683,7 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 // removed, or when obstacles change.
 func (s *GameState) invalidateBlockedCellsLocked() {
 	s.blockedCellsValid = false
+	s.visionBlockingCache = nil
 }
 
 // getBlockedCellsLocked returns the cached blocked-cells map, rebuilding it
@@ -670,6 +697,28 @@ func (s *GameState) getBlockedCellsLocked() map[gridPoint]bool {
 		s.blockedCellsValid = true
 	}
 	return s.blockedCellsCache
+}
+
+// getVisionBlockingCellsLocked returns the cached vision-blocking map,
+// rebuilding it if stale. Obstacles + terrain transitions block LOS; buildings
+// do not. The returned map is read-only. Must be called under s.mu lock.
+func (s *GameState) getVisionBlockingCellsLocked() map[gridPoint]bool {
+	if s.visionBlockingCache == nil {
+		s.visionBlockingCache = s.buildVisionBlockingCells()
+	}
+	return s.visionBlockingCache
+}
+
+// buildVisionBlockingCells constructs the set of cells that occlude
+// line-of-sight. Includes terrain cliff transitions and all obstacles; does
+// NOT include buildings (units can see past buildings).
+func (s *GameState) buildVisionBlockingCells() map[gridPoint]bool {
+	blocking := make(map[gridPoint]bool)
+	addTerrainBlocks(blocking, &s.MapConfig)
+	for _, o := range s.MapConfig.Obstacles {
+		blocking[gridPoint{X: o.X, Y: o.Y}] = true
+	}
+	return blocking
 }
 
 // addUnitLocked appends unit to s.Units and registers it in s.unitsByID.
@@ -965,6 +1014,520 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	}
 }
 
+// SnapshotForPlayer builds a match snapshot filtered through the FOW grid for
+// viewerID. Units, buildings, projectiles, traps, effects, and banners outside
+// the viewer's vision are excluded or replaced with ghost entries. Returns the
+// unfiltered Snapshot() result when the viewer has no FOW entry (e.g. spectator).
+func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	fow := s.FOW[viewerID]
+
+	if fow == nil {
+		// No FOW for this viewer — return the full unfiltered snapshot.
+		// We cannot call s.Snapshot() here because it acquires RLock again;
+		// build inline using the same lock we already hold.
+		return s.snapshotUnfilteredLocked()
+	}
+
+	cellSize := s.MapConfig.CellSize
+
+	enemyFacingBonusMult := s.enemyFacingDamageMultLocked()
+
+	units := make([]protocol.UnitSnapshot, 0, len(s.Units))
+	for _, unit := range s.Units {
+		isOwn := unit.OwnerID == viewerID
+		if !isOwn && !fow.isClearAtWorld(unit.X, unit.Y, cellSize) {
+			continue
+		}
+
+		extraMult := 0.0
+		if unit.OwnerID == enemyPlayerID {
+			extraMult = enemyFacingBonusMult
+		}
+		effectiveDamage := int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)))
+		effectiveAttackSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+		effectiveMoveSpeed := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
+
+		baseCritChance := s.unitCritChanceLocked(unit, nil)
+		critMultiplier := 0.0
+		if baseCritChance > 0 || s.perkCritMultiplierBonusLocked(unit) > 0 {
+			critMultiplier = s.unitCritMultiplierLocked(unit)
+		}
+		snapshot := protocol.UnitSnapshot{
+			ObjectiveID:         unit.ObjectiveID,
+			ID:                  unit.ID,
+			OwnerID:             unit.OwnerID,
+			Color:               unit.Color,
+			UnitType:            unit.UnitType,
+			Archetype:           unit.Archetype,
+			Name:                unit.Name,
+			Capabilities:        append([]string(nil), unit.Capabilities...),
+			Flyer:               unit.Flyer,
+			Visible:             unit.Visible,
+			Status:              unit.Status,
+			Order:               orderTypeString(unit.Order.Type),
+			X:                   unit.X,
+			Y:                   unit.Y,
+			HP:                  unit.HP,
+			MaxHP:               unit.MaxHP,
+			Damage:              effectiveDamage,
+			AttackSpeed:         effectiveAttackSpeed,
+			AttackRange:         unit.AttackRange,
+			MoveSpeed:           effectiveMoveSpeed,
+			Armor:               s.effectiveArmorLocked(unit),
+			CritChance:          baseCritChance,
+			CritMultiplier:      critMultiplier,
+			HealthRegen:         unit.HealthRegenPerSecond,
+			XP:                  unit.XP,
+			Rank:                unit.Rank,
+			XPToNextRank:        s.unitXPToNextRankLocked(unit),
+			XPIntoCurrentRank:   s.unitXPIntoCurrentRankLocked(unit),
+			RecentRankUpSeconds: unit.RankUpFxRemaining,
+			ProgressionPath:     unit.ProgressionPath,
+			PerkIDs:             unit.PerkIDs,
+			Shield:              unit.Shield,
+			MaxShield:           s.unitMaxShieldLocked(unit),
+			ActiveBuffs:         s.activeBuffIconsLocked(unit),
+			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
+			PerkCooldowns:       s.perkCooldownsLocked(unit),
+			StunnedRemaining:    unit.StunnedRemaining,
+			SlowedRemaining:     unit.SlowedRemaining,
+			SlowedMultiplier:    unit.SlowedMultiplier,
+			CarriedResourceType: unit.CarriedResourceType,
+			CarriedAmount:       unit.CarriedAmount,
+			Moving:              unit.Moving,
+			ActionFacingDX:      unit.ActionFacingDX,
+			ActionFacingDY:      unit.ActionFacingDY,
+		}
+		if unit.Moving {
+			snapshot.TargetX = unit.TargetX
+			snapshot.TargetY = unit.TargetY
+		}
+		if unit.Gathering && unit.GatherTargetID != "" {
+			snapshot.WorkTargetID = unit.GatherTargetID
+		} else if unit.Building && unit.BuildTargetID != "" {
+			snapshot.WorkTargetID = unit.BuildTargetID
+		}
+		if unit.UnitType == "archer" && unit.ProgressionPath == "trapper" {
+			snapshot.EffectiveTrap = s.EffectiveTrapSnapshotLocked(unit)
+		}
+		snapshot.Inventory = s.unitInventorySnapshotLocked(unit)
+		units = append(units, snapshot)
+	}
+
+	players := make([]protocol.PlayerSnapshot, 0, len(s.Players))
+	for _, player := range s.Players {
+		if player.ID == enemyPlayerID {
+			continue
+		}
+		playerSnap := protocol.PlayerSnapshot{
+			PlayerID:      player.ID,
+			Color:         player.Color,
+			Resources:     s.getPlayerResourceStocksLocked(player),
+			Upgrades:      s.playerUpgradeSnapshotsLocked(player.ID),
+			TownHallTier:  s.townhallTierForPlayerLocked(player.ID),
+			Vault:         s.playerVaultSnapshotsLocked(player.ID),
+			VaultCapacity: s.vaultCapacityForPlayerLocked(player.ID),
+		}
+		playerSnap.ActiveBuffs = s.activePlayerBuffIconsLocked(player.ID)
+		players = append(players, playerSnap)
+	}
+
+	wm := s.WaveManager
+	obstacles := make([]protocol.ObstacleTile, len(s.MapConfig.Obstacles))
+	copy(obstacles, s.MapConfig.Obstacles)
+
+	// Filter buildings: own→always, clear→as-is, known→ghost, else drop.
+	buildings := make([]protocol.BuildingTile, 0, len(s.MapConfig.Buildings))
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		isOwn := b.OwnerID != nil && *b.OwnerID == viewerID
+		if isOwn {
+			buildings = append(buildings, *b)
+			continue
+		}
+		if fow.anyFootprintClear(b) {
+			buildings = append(buildings, *b)
+			continue
+		}
+		if known, ok := fow.KnownBuildings[b.ID]; ok {
+			ghost := *known
+			ghost.Ghost = true
+			ghost.LastSeenTick = s.Tick
+			buildings = append(buildings, ghost)
+		}
+	}
+
+	var banners []protocol.BannerSnapshot
+	for _, b := range s.Banners {
+		if b.OwnerPlayerID == viewerID || fow.isClearAtWorld(b.X, b.Y, cellSize) {
+			banners = append(banners, protocol.BannerSnapshot{
+				ID:               b.ID,
+				OwnerID:          b.OwnerPlayerID,
+				X:                b.X,
+				Y:                b.Y,
+				Radius:           b.Radius,
+				RemainingSeconds: b.RemainingSeconds,
+			})
+		}
+	}
+
+	var projectiles []protocol.ProjectileSnapshot
+	for _, proj := range s.Projectiles {
+		if !fow.isClearAtWorld(proj.OriginX, proj.OriginY, cellSize) &&
+			!fow.isClearAtWorld(proj.TargetX, proj.TargetY, cellSize) {
+			continue
+		}
+		progress := 0.0
+		if proj.TotalSeconds > 0 {
+			progress = 1.0 - (proj.RemainingSeconds / proj.TotalSeconds)
+			if progress < 0 {
+				progress = 0
+			} else if progress > 1 {
+				progress = 1
+			}
+		}
+		projectiles = append(projectiles, protocol.ProjectileSnapshot{
+			ID:               proj.ID,
+			OwnerUnitID:      proj.OwnerUnitID,
+			OwnerID:          proj.OwnerPlayerID,
+			TargetUnitID:     proj.TargetUnitID,
+			OriginX:          proj.OriginX,
+			OriginY:          proj.OriginY,
+			TargetX:          proj.TargetX,
+			TargetY:          proj.TargetY,
+			Progress:         progress,
+			Variant:          proj.Variant,
+			DoubleShotSecond: proj.DoubleShotSecond,
+			Pierce:           proj.Pierce,
+		})
+	}
+
+	var traps []protocol.TrapSnapshot
+	for _, trap := range s.Traps {
+		if !trap.Triggered && (trap.AftershockPending || len(trap.PendingCataclysms) > 0) {
+			continue
+		}
+		isOwn := trap.OwnerPlayerID == viewerID
+		if !isOwn && !fow.isClearAtWorld(trap.X, trap.Y, cellSize) {
+			continue
+		}
+		traps = append(traps, protocol.TrapSnapshot{
+			ID:               trap.ID,
+			OwnerID:          trap.OwnerPlayerID,
+			X:                trap.X,
+			Y:                trap.Y,
+			Radius:           trap.Radius,
+			TriggerRadius:    trap.TriggerRadius,
+			Variant:          trapVisualVariant(trap),
+			ScaleMultiplier:  trapVisualScaleMultiplier(trap),
+			Type:             trap.TrapType,
+			RemainingSeconds: trap.RemainingSeconds,
+			Triggered:        trap.Triggered,
+		})
+	}
+
+	var effects []protocol.EffectSnapshot
+	for _, e := range s.effectSnapshotsLocked() {
+		if fow.isClearAtWorld(e.X, e.Y, cellSize) {
+			effects = append(effects, e)
+		}
+	}
+
+	var gameOver *protocol.GameOverSnapshot
+	if len(s.lostPlayerIDs) > 0 {
+		ids := make([]string, 0, len(s.lostPlayerIDs))
+		for id := range s.lostPlayerIDs {
+			ids = append(ids, id)
+		}
+		gameOver = &protocol.GameOverSnapshot{LostPlayerIDs: ids}
+	}
+
+	var victory *protocol.VictorySnapshot
+	if len(s.MapConfig.VictoryConditions) > 0 {
+		objectives := make([]protocol.ObjectiveSnapshot, 0, len(s.MapConfig.VictoryConditions))
+		for _, vc := range s.MapConfig.VictoryConditions {
+			progress := 0
+			if vc.Type == "killUnit" && s.objectiveKillCounts != nil {
+				progress = s.objectiveKillCounts[vc.ID]
+			}
+			completed := s.objectiveCompleted != nil && s.objectiveCompleted[vc.ID]
+			objectives = append(objectives, protocol.ObjectiveSnapshot{
+				ID:        vc.ID,
+				Type:      vc.Type,
+				Label:     vc.Label,
+				Completed: completed,
+				Progress:  progress,
+				Count:     vc.Count,
+			})
+		}
+		victory = &protocol.VictorySnapshot{
+			Achieved:   s.victoryAchieved,
+			Objectives: objectives,
+		}
+	}
+
+	return protocol.MatchSnapshotMessage{
+		Type:      "match_snapshot",
+		Tick:      s.Tick,
+		ServerNow: time.Now().UnixMilli(),
+		Buildings: buildings,
+		Obstacles: obstacles,
+		Players:   players,
+		Units:     units,
+		Banners:     banners,
+		Traps:       traps,
+		Projectiles: projectiles,
+		Effects:     effects,
+		CritEvents:         s.snapshotCritEventsLocked(),
+		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
+		Wave: protocol.WaveSnapshot{
+			Enabled:      wm.Enabled,
+			CurrentWave:  wm.CurrentWave,
+			TotalWaves:   wm.TotalWaves,
+			State:        wm.State,
+			Timer:        wm.Timer,
+			WaveDuration: wm.WaveDuration,
+		},
+		BattleTracker: s.battleTrackerSnapshotLocked(),
+		GameOver:      gameOver,
+		Victory:       victory,
+		Fow:           packFOW(fow, s.Tick),
+	}
+}
+
+// snapshotUnfilteredLocked builds the full unfiltered snapshot. Caller must hold
+// s.mu in at least read mode. This is the internal version of Snapshot() that
+// does not acquire the lock itself, used by SnapshotForPlayer when the viewer
+// has no FOW entry.
+func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
+	enemyFacingBonusMult := s.enemyFacingDamageMultLocked()
+
+	units := make([]protocol.UnitSnapshot, 0, len(s.Units))
+	for _, unit := range s.Units {
+		extraMult := 0.0
+		if unit.OwnerID == enemyPlayerID {
+			extraMult = enemyFacingBonusMult
+		}
+		effectiveDamage := int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)))
+		effectiveAttackSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+		effectiveMoveSpeed := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
+
+		baseCritChance := s.unitCritChanceLocked(unit, nil)
+		critMultiplier := 0.0
+		if baseCritChance > 0 || s.perkCritMultiplierBonusLocked(unit) > 0 {
+			critMultiplier = s.unitCritMultiplierLocked(unit)
+		}
+		snapshot := protocol.UnitSnapshot{
+			ObjectiveID:         unit.ObjectiveID,
+			ID:                  unit.ID,
+			OwnerID:             unit.OwnerID,
+			Color:               unit.Color,
+			UnitType:            unit.UnitType,
+			Archetype:           unit.Archetype,
+			Name:                unit.Name,
+			Capabilities:        append([]string(nil), unit.Capabilities...),
+			Flyer:               unit.Flyer,
+			Visible:             unit.Visible,
+			Status:              unit.Status,
+			Order:               orderTypeString(unit.Order.Type),
+			X:                   unit.X,
+			Y:                   unit.Y,
+			HP:                  unit.HP,
+			MaxHP:               unit.MaxHP,
+			Damage:              effectiveDamage,
+			AttackSpeed:         effectiveAttackSpeed,
+			AttackRange:         unit.AttackRange,
+			MoveSpeed:           effectiveMoveSpeed,
+			Armor:               s.effectiveArmorLocked(unit),
+			CritChance:          baseCritChance,
+			CritMultiplier:      critMultiplier,
+			HealthRegen:         unit.HealthRegenPerSecond,
+			XP:                  unit.XP,
+			Rank:                unit.Rank,
+			XPToNextRank:        s.unitXPToNextRankLocked(unit),
+			XPIntoCurrentRank:   s.unitXPIntoCurrentRankLocked(unit),
+			RecentRankUpSeconds: unit.RankUpFxRemaining,
+			ProgressionPath:     unit.ProgressionPath,
+			PerkIDs:             unit.PerkIDs,
+			Shield:              unit.Shield,
+			MaxShield:           s.unitMaxShieldLocked(unit),
+			ActiveBuffs:         s.activeBuffIconsLocked(unit),
+			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
+			PerkCooldowns:       s.perkCooldownsLocked(unit),
+			StunnedRemaining:    unit.StunnedRemaining,
+			SlowedRemaining:     unit.SlowedRemaining,
+			SlowedMultiplier:    unit.SlowedMultiplier,
+			CarriedResourceType: unit.CarriedResourceType,
+			CarriedAmount:       unit.CarriedAmount,
+			Moving:              unit.Moving,
+			ActionFacingDX:      unit.ActionFacingDX,
+			ActionFacingDY:      unit.ActionFacingDY,
+		}
+		if unit.Moving {
+			snapshot.TargetX = unit.TargetX
+			snapshot.TargetY = unit.TargetY
+		}
+		if unit.Gathering && unit.GatherTargetID != "" {
+			snapshot.WorkTargetID = unit.GatherTargetID
+		} else if unit.Building && unit.BuildTargetID != "" {
+			snapshot.WorkTargetID = unit.BuildTargetID
+		}
+		if unit.UnitType == "archer" && unit.ProgressionPath == "trapper" {
+			snapshot.EffectiveTrap = s.EffectiveTrapSnapshotLocked(unit)
+		}
+		snapshot.Inventory = s.unitInventorySnapshotLocked(unit)
+		units = append(units, snapshot)
+	}
+
+	players := make([]protocol.PlayerSnapshot, 0, len(s.Players))
+	for _, player := range s.Players {
+		if player.ID == enemyPlayerID {
+			continue
+		}
+		playerSnap := protocol.PlayerSnapshot{
+			PlayerID:      player.ID,
+			Color:         player.Color,
+			Resources:     s.getPlayerResourceStocksLocked(player),
+			Upgrades:      s.playerUpgradeSnapshotsLocked(player.ID),
+			TownHallTier:  s.townhallTierForPlayerLocked(player.ID),
+			Vault:         s.playerVaultSnapshotsLocked(player.ID),
+			VaultCapacity: s.vaultCapacityForPlayerLocked(player.ID),
+		}
+		playerSnap.ActiveBuffs = s.activePlayerBuffIconsLocked(player.ID)
+		players = append(players, playerSnap)
+	}
+
+	wm := s.WaveManager
+	buildings := make([]protocol.BuildingTile, len(s.MapConfig.Buildings))
+	copy(buildings, s.MapConfig.Buildings)
+	obstacles := make([]protocol.ObstacleTile, len(s.MapConfig.Obstacles))
+	copy(obstacles, s.MapConfig.Obstacles)
+
+	var banners []protocol.BannerSnapshot
+	for _, b := range s.Banners {
+		banners = append(banners, protocol.BannerSnapshot{
+			ID:               b.ID,
+			OwnerID:          b.OwnerPlayerID,
+			X:                b.X,
+			Y:                b.Y,
+			Radius:           b.Radius,
+			RemainingSeconds: b.RemainingSeconds,
+		})
+	}
+
+	var projectiles []protocol.ProjectileSnapshot
+	for _, proj := range s.Projectiles {
+		progress := 0.0
+		if proj.TotalSeconds > 0 {
+			progress = 1.0 - (proj.RemainingSeconds / proj.TotalSeconds)
+			if progress < 0 {
+				progress = 0
+			} else if progress > 1 {
+				progress = 1
+			}
+		}
+		projectiles = append(projectiles, protocol.ProjectileSnapshot{
+			ID:               proj.ID,
+			OwnerUnitID:      proj.OwnerUnitID,
+			OwnerID:          proj.OwnerPlayerID,
+			TargetUnitID:     proj.TargetUnitID,
+			OriginX:          proj.OriginX,
+			OriginY:          proj.OriginY,
+			TargetX:          proj.TargetX,
+			TargetY:          proj.TargetY,
+			Progress:         progress,
+			Variant:          proj.Variant,
+			DoubleShotSecond: proj.DoubleShotSecond,
+			Pierce:           proj.Pierce,
+		})
+	}
+
+	var traps []protocol.TrapSnapshot
+	for _, trap := range s.Traps {
+		if !trap.Triggered && (trap.AftershockPending || len(trap.PendingCataclysms) > 0) {
+			continue
+		}
+		traps = append(traps, protocol.TrapSnapshot{
+			ID:               trap.ID,
+			OwnerID:          trap.OwnerPlayerID,
+			X:                trap.X,
+			Y:                trap.Y,
+			Radius:           trap.Radius,
+			TriggerRadius:    trap.TriggerRadius,
+			Variant:          trapVisualVariant(trap),
+			ScaleMultiplier:  trapVisualScaleMultiplier(trap),
+			Type:             trap.TrapType,
+			RemainingSeconds: trap.RemainingSeconds,
+			Triggered:        trap.Triggered,
+		})
+	}
+
+	var gameOver *protocol.GameOverSnapshot
+	if len(s.lostPlayerIDs) > 0 {
+		ids := make([]string, 0, len(s.lostPlayerIDs))
+		for id := range s.lostPlayerIDs {
+			ids = append(ids, id)
+		}
+		gameOver = &protocol.GameOverSnapshot{LostPlayerIDs: ids}
+	}
+
+	var victory *protocol.VictorySnapshot
+	if len(s.MapConfig.VictoryConditions) > 0 {
+		objectives := make([]protocol.ObjectiveSnapshot, 0, len(s.MapConfig.VictoryConditions))
+		for _, vc := range s.MapConfig.VictoryConditions {
+			progress := 0
+			if vc.Type == "killUnit" && s.objectiveKillCounts != nil {
+				progress = s.objectiveKillCounts[vc.ID]
+			}
+			completed := s.objectiveCompleted != nil && s.objectiveCompleted[vc.ID]
+			objectives = append(objectives, protocol.ObjectiveSnapshot{
+				ID:        vc.ID,
+				Type:      vc.Type,
+				Label:     vc.Label,
+				Completed: completed,
+				Progress:  progress,
+				Count:     vc.Count,
+			})
+		}
+		victory = &protocol.VictorySnapshot{
+			Achieved:   s.victoryAchieved,
+			Objectives: objectives,
+		}
+	}
+
+	return protocol.MatchSnapshotMessage{
+		Type:      "match_snapshot",
+		Tick:      s.Tick,
+		ServerNow: time.Now().UnixMilli(),
+		Buildings: buildings,
+		Obstacles: obstacles,
+		Players:   players,
+		Units:     units,
+		Banners:     banners,
+		Traps:       traps,
+		Projectiles: projectiles,
+		Effects:     s.effectSnapshotsLocked(),
+		CritEvents:         s.snapshotCritEventsLocked(),
+		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
+		Wave: protocol.WaveSnapshot{
+			Enabled:      wm.Enabled,
+			CurrentWave:  wm.CurrentWave,
+			TotalWaves:   wm.TotalWaves,
+			State:        wm.State,
+			Timer:        wm.Timer,
+			WaveDuration: wm.WaveDuration,
+		},
+		BattleTracker: s.battleTrackerSnapshotLocked(),
+		GameOver:      gameOver,
+		Victory:       victory,
+	}
+}
+
 func (s *GameState) IncrementTick() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1196,6 +1759,7 @@ func (s *GameState) Update(dt float64) {
 	profileSection("obstacleMetadata", func() { s.refreshObstacleRuntimeMetadataLocked() })
 	profileSection("playerLoss", func() { s.checkPlayerLossLocked() })
 	profileSection("victory", func() { s.checkVictoryLocked() })
+	profileSection("fow", func() { s.recomputeFOWLocked() })
 
 	s.reportPathDebugLocked()
 
@@ -1380,6 +1944,11 @@ func (s *GameState) EnsurePlayer(playerID string, equippedBuffIDs ...string) {
 	s.claimPlayerStartLocked(playerID)
 	s.spawnPlacedUnitsForPlayerLocked(playerID, color)
 	s.ensurePlacedEnemiesSpawnedLocked()
+
+	if s.FOW == nil {
+		s.FOW = map[string]*PlayerFOW{}
+	}
+	s.FOW[playerID] = newPlayerFOW(s.MapConfig.GridCols, s.MapConfig.GridRows)
 }
 
 func (s *GameState) RemovePlayer(playerID string) {

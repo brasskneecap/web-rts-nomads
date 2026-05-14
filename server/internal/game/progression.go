@@ -345,6 +345,12 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 		}
 		unit.AttackRange = math.Max(0, baseRange*(1.0+s.perkAttackRangeMultiplierLocked(unit)))
 	}
+	baseVision := unit.BaseVisionRange
+	if pathVision, ok := pathVisionRangeByPath[unit.ProgressionPath]; ok {
+		baseVision = pathVision
+	}
+	unit.VisionRange = baseVision * s.perkVisionRangeMultiplierLocked(unit)
+
 	if unit.UnitType == "soldier" && unit.ProgressionPath == unitPathNone {
 		unit.Armor = soldierBaseArmor
 	}

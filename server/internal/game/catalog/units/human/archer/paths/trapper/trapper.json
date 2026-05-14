@@ -1,5 +1,6 @@
 {
   "path": "trapper",
+  "visionRange": 352,
   "description": "Utility-through-traps archer path. Stat tuning deferred; rows currently mirror the default rank curve (see none.json) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Trapper gets its formal pass.",
   "bounds": {
     "halfWidth": 20,
