@@ -1,0 +1,11 @@
+{
+  "id": "iron_warlord_common",
+  "group": "iron_warlord",
+  "name": "Iron Warlord",
+  "description": "+10% damage to Melee units",
+  "rarity": "common",
+  "scope": "archetype",
+  "archetype": "melee",
+  "effect": { "stat": "damage", "multiplier": 1.10 },
+  "maxStacks": 3
+}

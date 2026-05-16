@@ -1,0 +1,11 @@
+{
+  "id": "swift_strikes_common",
+  "group": "swift_strikes",
+  "name": "Swift Strikes",
+  "description": "+8% attack speed to Ranged units",
+  "rarity": "common",
+  "scope": "archetype",
+  "archetype": "ranged",
+  "effect": { "stat": "attackSpeed", "multiplier": 1.08 },
+  "maxStacks": 3
+}
