@@ -643,6 +643,35 @@ func (h *Hub) readLoop(client *Client) {
 			}
 			match.State.UnequipItem(client.PlayerID(), msg.UnitID, msg.SlotIndex)
 
+		case "wave_upgrade_choice":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.WaveUpgradeChoiceMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid wave_upgrade_choice payload"})
+				continue
+			}
+			match.State.HandleWaveUpgradeChoice(client.PlayerID(), msg.UpgradeID, msg.TargetUnitID)
+
+		case "wave_upgrade_reroll":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			match.State.HandleWaveUpgradeReroll(client.PlayerID())
+
 		case "use_consumable":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
