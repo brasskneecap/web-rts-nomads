@@ -90,6 +90,15 @@ func init() {
 			panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: unitOverrides[%q].legendPointAmount must be >= 0, got %d", unitType, override.LegendPointAmount))
 		}
 	}
+	if t.WaveUpgrade.TimerSeconds <= 0 {
+		panic("catalog/tuning/gameplay_tuning.json: waveUpgrade.timerSeconds must be > 0")
+	}
+	if len(t.WaveUpgrade.BaseWeights) == 0 {
+		panic("catalog/tuning/gameplay_tuning.json: waveUpgrade.baseWeights must not be empty")
+	}
+	if _, ok := upgradeRarityOrder[t.WaveUpgrade.MilestoneMinRarity]; !ok {
+		panic("catalog/tuning/gameplay_tuning.json: waveUpgrade.milestoneMinRarity: unknown rarity " + t.WaveUpgrade.MilestoneMinRarity)
+	}
 	gameplayTuningSingleton = t
 }
 

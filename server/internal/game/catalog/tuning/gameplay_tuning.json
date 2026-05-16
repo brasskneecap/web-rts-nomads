@@ -11,7 +11,7 @@
     "maxActive": 3
   },
   "waveUpgrade": {
-    "timerSeconds": 25,
+    "timerSeconds": 25.0,
     "baseWeights": {
       "common": 60,
       "rare": 25,
