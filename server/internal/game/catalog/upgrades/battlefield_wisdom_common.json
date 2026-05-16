@@ -1,0 +1,10 @@
+{
+  "id": "battlefield_wisdom_common",
+  "group": "battlefield_wisdom",
+  "name": "Battlefield Wisdom",
+  "description": "Grant 75 XP to a unit of your choice",
+  "rarity": "common",
+  "scope": "xp",
+  "effect": { "type": "xp", "amount": 75 },
+  "unlimited": true
+}

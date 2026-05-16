@@ -285,6 +285,14 @@ type Unit struct {
 	UnreachableTargetID         int
 	UnreachableBuildingTargetID string
 	UnreachableUntilTick        int
+	// NextApproachRepathTick throttles the forced repath that tickUnitCombatLocked
+	// issues every tick a unit is out of attack range and not moving. Without this,
+	// a unit surrounded by a dense crowd runs the full sub-cell A* (up to 65k
+	// node explorations) every single tick even though no path exists, locking
+	// the tick budget. Mirrors NextObjectiveSearchTick — set forward by
+	// approachRepathCooldownTicks when assignUnitPath fails; cleared when the
+	// unit starts moving or switches targets.
+	NextApproachRepathTick int
 	// NextGuardReturnTick holds tickGuardReturnLocked off for a brief grace
 	// window after a target is dropped. Without this, a guard that loses its
 	// target (e.g. target died) is yanked back to its anchor on the same tick
@@ -417,6 +425,9 @@ type Player struct {
 	// RunLegendPointDrops accumulates legend-point drops during the match.
 	// Committed to the profile file at match end.
 	RunLegendPointDrops int
+
+	// UpgradeState tracks wave upgrade picks and per-wave offer state.
+	UpgradeState PlayerUpgradeState
 }
 
 const (
@@ -1082,6 +1093,48 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	}
 }
 
+// buildWaveUpgradeSnapshotLocked returns the per-player upgrade offer snapshot
+// for viewerID, or nil when there is no pending offer for that player.
+// Caller must hold s.mu (read lock is sufficient).
+func (s *GameState) buildWaveUpgradeSnapshotLocked(viewerID string) *protocol.WaveUpgradeOfferSnapshot {
+	if s.WaveManager.State != "upgrade" {
+		return nil
+	}
+	player := s.Players[viewerID]
+	if player == nil || player.UpgradeState.Resolved {
+		return nil
+	}
+	offers := make([]protocol.UpgradeOffer, 0, len(player.UpgradeState.CurrentOffers))
+	for _, def := range player.UpgradeState.CurrentOffers {
+		stackCurrent := 0
+		stackMax := 0
+		if !def.Unlimited {
+			stackMax = def.MaxStacks
+			if player.UpgradeState.MaxUpgradeStacks > stackMax {
+				stackMax = player.UpgradeState.MaxUpgradeStacks
+			}
+			stackCurrent = player.UpgradeState.UpgradeStacks[def.Group]
+		}
+		offers = append(offers, protocol.UpgradeOffer{
+			ID:                 def.ID,
+			Group:              def.Group,
+			Name:               def.Name,
+			Description:        def.Description,
+			Rarity:             def.Rarity,
+			Scope:              def.Scope,
+			StackCurrent:       stackCurrent,
+			StackMax:           stackMax,
+			RequiresTargetUnit: def.RequiresTargetUnit(),
+		})
+	}
+	return &protocol.WaveUpgradeOfferSnapshot{
+		Wave:        s.WaveManager.CurrentWave,
+		Offers:      offers,
+		RerollsLeft: player.UpgradeState.RerollsRemaining,
+		DeadlineMs:  player.UpgradeState.OfferDeadlineMs,
+	}
+}
+
 // SnapshotForPlayer builds a match snapshot filtered through the FOW grid for
 // viewerID. Units, buildings, projectiles, traps, effects, and banners outside
 // the viewer's vision are excluded or replaced with ghost entries. Returns the
@@ -1096,7 +1149,9 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		// No FOW for this viewer — return the full unfiltered snapshot.
 		// We cannot call s.Snapshot() here because it acquires RLock again;
 		// build inline using the same lock we already hold.
-		return s.snapshotUnfilteredLocked()
+		snap := s.snapshotUnfilteredLocked()
+		snap.WaveUpgrade = s.buildWaveUpgradeSnapshotLocked(viewerID)
+		return snap
 	}
 
 	cellSize := s.MapConfig.CellSize
@@ -1369,6 +1424,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		GameOver:      gameOver,
 		Victory:       victory,
 		Fow:           packFOW(fow, s.Tick),
+		WaveUpgrade:   s.buildWaveUpgradeSnapshotLocked(viewerID),
 	}
 }
 
@@ -2056,6 +2112,7 @@ func (s *GameState) EnsurePlayer(playerID string, equippedBuffIDs ...string) {
 		Upgrades:                      make(map[UpgradeTrack]int),
 		Vault:                         []*VaultItem{},
 		ProfileBuffIDs:                append([]string(nil), equippedBuffIDs...),
+		UpgradeState:                  newPlayerUpgradeState(1, 3),
 	}
 
 	s.claimPlayerStartLocked(playerID)

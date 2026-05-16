@@ -22,6 +22,11 @@ type PlayerProfile struct {
 	EquippedBuffIDs      []string     `json:"equippedBuffIds"`
 	UnlockedBuffIDs      []string     `json:"unlockedBuffIds"`
 	Stats                ProfileStats `json:"stats"`
+
+	// Wave upgrade legend-incrementable caps. Zero values fall back to defaults
+	// (MaxRerolls=1, MaxUpgradeStacks=3) applied at match start.
+	MaxRerolls       int `json:"maxRerolls"`
+	MaxUpgradeStacks int `json:"maxUpgradeStacks"`
 }
 
 // ProfileStats tracks lifetime match and combat statistics for a player.

@@ -404,6 +404,16 @@ export type TransferItemCommand = {
   toSlotIdx: number
 }
 
+export type WaveUpgradeChoiceCommand = {
+  type: 'wave_upgrade_choice'
+  upgradeId: string
+  targetUnitId: number
+}
+
+export type WaveUpgradeRerollCommand = {
+  type: 'wave_upgrade_reroll'
+}
+
 export type ClientMessage =
   | JoinMatchMessage
   | LeaveMatchMessage
@@ -430,6 +440,8 @@ export type ClientMessage =
   | UnequipItemCommand
   | UseConsumableCommand
   | TransferItemCommand
+  | WaveUpgradeChoiceCommand
+  | WaveUpgradeRerollCommand
   | PongMessage
 
 // One entry in a unit's activeBuffs / activeDebuffs list. `id` is the perk
@@ -623,6 +635,25 @@ export type WaveSnapshot = {
   state: 'prep' | 'active' | 'complete' | ''
   timer: number
   waveDuration: number
+}
+
+export interface UpgradeOffer {
+  id: string
+  group: string
+  name: string
+  description: string
+  rarity: 'common' | 'rare' | 'epic' | 'legendary'
+  scope: string
+  stackCurrent: number
+  stackMax: number
+  requiresTargetUnit?: boolean
+}
+
+export interface WaveUpgradeOfferSnapshot {
+  wave: number
+  offers: UpgradeOffer[]
+  rerollsLeft: number
+  deadlineMs: number
 }
 
 export type BannerSnapshot = {
@@ -832,6 +863,7 @@ export type MatchSnapshotMessage = {
   gameOver?: GameOverSnapshot
   victory?: VictorySnapshot
   fow?: FogOfWarSnapshot
+  waveUpgrade?: WaveUpgradeOfferSnapshot
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────

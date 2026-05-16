@@ -15,6 +15,14 @@
 
     <MatchHud v-if="hasStarted" :ui="ui" @exit="exitGame" />
 
+    <WaveUpgradeModal
+      v-if="hasStarted && ui.waveUpgrade"
+      :upgrade="ui.waveUpgrade!"
+      :units="ui.allPlayerUnits.filter(u => u.unitType !== 'worker')"
+      :send-choice="sendWaveUpgradeChoice"
+      :send-reroll="sendWaveUpgradeReroll"
+    />
+
     <BattleTrackerPanel v-if="hasStarted" :ui="ui" />
 
     <DebugSpawnPanel
@@ -118,6 +126,7 @@ import SelectionHud from '@/components/SelectionHud.vue'
 import VaultPanel from '@/components/VaultPanel.vue'
 import BattleTrackerPanel from '@/components/BattleTrackerPanel.vue'
 import DebugSpawnPanel from '@/components/DebugSpawnPanel.vue'
+import WaveUpgradeModal from '@/components/WaveUpgradeModal.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { useMapSelection } from '@/composables/useMapSelection'
 
@@ -165,6 +174,8 @@ const {
   sendUseConsumable,
   sendTransferItem,
   setVaultSelectedInstanceId,
+  sendWaveUpgradeChoice,
+  sendWaveUpgradeReroll,
   ui,
   connectionState,
   currentMatchId,

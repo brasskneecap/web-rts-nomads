@@ -602,14 +602,15 @@ type UnitSnapshot struct {
 	TargetY             float64  `json:"targetY,omitempty"`
 	Moving              bool     `json:"moving"`
 	// ActionFacingDX/DY is the unit→target world-space delta the server is
-	// committing to for the current tick's attack. Only populated while the
-	// unit is in-range and firing (Status == "Attacking"); zero/absent
-	// otherwise. The client uses this to face the sprite at the exact target
-	// the server is shooting, instead of doing its own nearest-enemy search
-	// (which can pick a different target than the server when multiple are
-	// in range or the server's target is off-screen).
-	ActionFacingDX float64 `json:"actionFacingDx,omitempty"`
-	ActionFacingDY float64 `json:"actionFacingDy,omitempty"`
+	// committing to for the current tick's attack. Non-zero while the unit is
+	// actively firing; both zero when the unit is not in-swing. Always sent
+	// (no omitempty) so the client can distinguish "server sent zero" (not
+	// firing) from "field absent" (old server). Without this, a purely
+	// vertical or horizontal attack direction (one component = 0) would be
+	// omitted and the client would fall back to the expensive findAttackFacing
+	// scan for every affected unit every frame.
+	ActionFacingDX float64 `json:"actionFacingDx"`
+	ActionFacingDY float64 `json:"actionFacingDy"`
 	// WorkTargetID is the building this unit is currently gathering from,
 	// constructing, or repairing. The client uses it to orient the worker
 	// sprite toward the exact building it is interacting with (there may be
@@ -643,6 +644,29 @@ type WaveSnapshot struct {
 	State        string  `json:"state"`
 	Timer        float64 `json:"timer"`
 	WaveDuration float64 `json:"waveDuration"`
+}
+
+// WaveUpgradeOfferSnapshot is the per-player upgrade offer sent during the
+// "upgrade" wave phase. Nil/absent means the player has no pending offer
+// (not in upgrade phase, or already resolved).
+type WaveUpgradeOfferSnapshot struct {
+	Wave        int            `json:"wave"`
+	Offers      []UpgradeOffer `json:"offers"`
+	RerollsLeft int            `json:"rerollsLeft"`
+	DeadlineMs  int64          `json:"deadlineMs"` // unix ms when auto-pick fires
+}
+
+// UpgradeOffer is one card in the wave upgrade offer set.
+type UpgradeOffer struct {
+	ID                 string `json:"id"`
+	Group              string `json:"group"`
+	Name               string `json:"name"`
+	Description        string `json:"description"`
+	Rarity             string `json:"rarity"`
+	Scope              string `json:"scope"`
+	StackCurrent       int    `json:"stackCurrent"`
+	StackMax           int    `json:"stackMax"`
+	RequiresTargetUnit bool   `json:"requiresTargetUnit,omitempty"`
 }
 
 // BannerSnapshot carries a rallying_banner entity to the client each tick.
@@ -866,6 +890,7 @@ type MatchSnapshotMessage struct {
 	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
 	Victory       *VictorySnapshot        `json:"victory,omitempty"`
 	Fow           *FogOfWarSnapshot       `json:"fow,omitempty"`
+	WaveUpgrade   *WaveUpgradeOfferSnapshot `json:"waveUpgrade,omitempty"`
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────
@@ -956,4 +981,16 @@ type DebugSpawnUnitMessage struct {
 	X        float64  `json:"x"`
 	Y        float64  `json:"y"`
 	CustomHP int      `json:"customHp,omitempty"`
+}
+
+// WaveUpgradeChoiceMessage is sent by the client when the player picks an upgrade.
+type WaveUpgradeChoiceMessage struct {
+	Type         string `json:"type"`
+	UpgradeID    string `json:"upgradeId"`
+	TargetUnitID int    `json:"targetUnitId,omitempty"` // set only when RequiresTargetUnit = true
+}
+
+// WaveUpgradeRerollMessage is sent by the client when the player uses a reroll.
+type WaveUpgradeRerollMessage struct {
+	Type string `json:"type"`
 }

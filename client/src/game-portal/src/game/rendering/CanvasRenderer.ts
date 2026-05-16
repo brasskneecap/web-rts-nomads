@@ -105,6 +105,19 @@ export function getMinimapBounds(
   }
 }
 
+// Path2D objects require SVG string parsing on construction. Since all icon
+// paths come from ACTION_ICON_MAP (loaded once at startup, never mutated),
+// we cache them at module level so each unique path is only parsed once.
+const path2DCache = new Map<string, Path2D>()
+function getCachedPath2D(svgPath: string): Path2D {
+  let p = path2DCache.get(svgPath)
+  if (!p) {
+    p = new Path2D(svgPath)
+    path2DCache.set(svgPath, p)
+  }
+  return p
+}
+
 export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D
   private canvas: HTMLCanvasElement
@@ -158,6 +171,11 @@ export class CanvasRenderer {
   // same scale; bump this if objects read too small on screen.
   private readonly OBJECT_SPRITE_SCALE = 2
   private unitAnim = new UnitAnimationController()
+  // Cached last non-zero attack facing per unit id. Prevents findAttackFacing
+  // (O(N) scan) from running every frame when the server sends 0,0 (not
+  // mid-swing). Updated each frame the server sends a non-zero facing;
+  // re-used on frames where the server sends 0,0.
+  private unitAttackFacingCache = new Map<number, { dx: number; dy: number }>()
   private terrainCache: HTMLCanvasElement | null = null
   private terrainCacheKey: unknown[] = []
   private fogCanvas: HTMLCanvasElement
@@ -261,7 +279,6 @@ export class CanvasRenderer {
     const renderTime = performance.now()
     this.renderTime = renderTime
     const units = this.state.getInterpolatedUnits(renderTime)
-    const sortedUnits = units.slice().sort((a, b) => a.y - b.y)
 
     // Drain new damage events (populated in GameState.applySnapshot) into
     // the floating-number list. World-lock each at the victim's head-top so
@@ -324,7 +341,7 @@ export class CanvasRenderer {
     this.drawBuildingSpawnMarkers()
     this.drawTraps(this.state.traps)
     this.drawBanners(this.state.banners)
-    this.drawUnits(sortedUnits)
+    this.drawUnits(units)
     // Effects sit on top of the caster body but underneath projectiles so
     // arrows and bolts always read clearly over the VFX layer.
     this.drawEffects(this.state.effects, units)
@@ -1684,6 +1701,19 @@ export class CanvasRenderer {
     const { cellSize } = this.state.mapConfig
     const activeUnitIds = new Set<number>()
 
+    // Pre-index effect names by anchor unit so the per-unit perk-aura check
+    // below is O(1) instead of O(effects) for every unit with perk ids.
+    const effectNamesByUnit = new Map<number, Set<string>>()
+    for (const e of this.state.effects) {
+      if (e.anchorUnitId == null) continue
+      let names = effectNamesByUnit.get(e.anchorUnitId)
+      if (!names) {
+        names = new Set<string>()
+        effectNamesByUnit.set(e.anchorUnitId, names)
+      }
+      names.add(e.name)
+    }
+
     // Y-sort obstacles, buildings, and units together so a unit standing
     // behind a tree canopy / building (smaller feet-Y than the entity's
     // bottom edge) renders first and gets visually occluded by that sprite.
@@ -1760,13 +1790,7 @@ export class CanvasRenderer {
           : undefined
         // Effects anchored to this unit gate effect-driven aura rings (e.g.
         // whirlwind_core's flash ring follows the EffectSnapshot, not buffs).
-        const activeEffectNames = this.state.effects.length > 0
-          ? new Set(
-              this.state.effects
-                .filter((e) => e.anchorUnitId === unit.id)
-                .map((e) => e.name),
-            )
-          : undefined
+        const activeEffectNames = effectNamesByUnit.get(unit.id)
         for (const perkId of unit.perkIds) {
           const radius = getPerkAuraRadius(perkId, activeBuffIds, activeEffectNames)
           if (radius == null) continue
@@ -1855,26 +1879,39 @@ export class CanvasRenderer {
       if (spriteSet) {
         let actionFacing: { dx: number; dy: number } | null = null
         if (unit.status === 'Attacking') {
-          // Prefer the server-authoritative attack facing — it points at the
-          // exact target the server is firing at. Only fall back to a local
-          // nearest-enemy search when the server didn't supply one (old
-          // server, or a tick where the field is absent).
-          const sdx = unit.actionFacingDx
-          const sdy = unit.actionFacingDy
-          if (
-            sdx !== undefined &&
-            sdy !== undefined &&
-            (sdx !== 0 || sdy !== 0)
-          ) {
-            actionFacing = { dx: sdx, dy: sdy }
+          // Protocol now always sends actionFacingDx/Dy (no omitempty), so
+          // 0,0 explicitly means "not mid-swing this tick" and non-zero means
+          // "server is firing in this direction."
+          //
+          // Strategy: use the server value when non-zero (update cache);
+          // when zero (windup / cooldown tick), re-use the cached facing from
+          // the last firing tick so the sprite stays oriented at the target
+          // instead of snapping away. Only run the expensive findAttackFacing
+          // scan for units that have never had a server-supplied facing.
+          const sdx = unit.actionFacingDx ?? 0
+          const sdy = unit.actionFacingDy ?? 0
+          if (sdx !== 0 || sdy !== 0) {
+            const facing = { dx: sdx, dy: sdy }
+            this.unitAttackFacingCache.set(unit.id, facing)
+            actionFacing = facing
           } else {
-            actionFacing = findAttackFacing(
-              unit,
-              unitDef,
-              units,
-              this.state.mapConfig.buildings,
-              this.state.mapConfig.cellSize,
-            )
+            const cached = this.unitAttackFacingCache.get(unit.id)
+            if (cached) {
+              actionFacing = cached
+            } else {
+              // No cached facing yet — run the search once and cache it.
+              const found = findAttackFacing(
+                unit,
+                unitDef,
+                units,
+                this.state.mapConfig.buildings,
+                this.state.mapConfig.cellSize,
+              )
+              if (found) {
+                this.unitAttackFacingCache.set(unit.id, found)
+                actionFacing = found
+              }
+            }
           }
         } else if (unit.workTargetId) {
           actionFacing = findWorkFacing(
@@ -1953,6 +1990,9 @@ export class CanvasRenderer {
     }
 
     this.unitAnim.prune(activeUnitIds)
+    for (const id of this.unitAttackFacingCache.keys()) {
+      if (!activeUnitIds.has(id)) this.unitAttackFacingCache.delete(id)
+    }
   }
 
   private drawConfiguredUnitAttackEffect(unit: {
@@ -2883,7 +2923,7 @@ export class CanvasRenderer {
       ctx.lineWidth = 2
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
-      ctx.stroke(new Path2D(iconPath))
+      ctx.stroke(getCachedPath2D(iconPath))
       ctx.restore()
 
       // Stack count badge — only drawn when stacks >= 2 so single-instance
@@ -2943,7 +2983,7 @@ export class CanvasRenderer {
       ctx.lineWidth = 2
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
-      ctx.stroke(new Path2D(iconPath))
+      ctx.stroke(getCachedPath2D(iconPath))
       ctx.restore()
 
       if ((debuff.stacks ?? 1) >= 2) {

@@ -1,0 +1,10 @@
+{
+  "id": "fortify_common",
+  "group": "fortify",
+  "name": "Fortify",
+  "description": "+12% max HP to all units",
+  "rarity": "common",
+  "scope": "army",
+  "effect": { "stat": "hp", "multiplier": 1.12 },
+  "maxStacks": 3
+}

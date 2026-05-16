@@ -11,6 +11,7 @@ import type {
   PlayerUpgradeSnapshot,
   VaultItemSnapshot,
   WaveSnapshot,
+  WaveUpgradeOfferSnapshot,
 } from '../network/protocol'
 import type { DebugSpawnConfig, PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
@@ -68,6 +69,8 @@ export type GameUiSnapshot = {
   // All local-player units (not just selected ones). Needed by VaultPanel to
   // show all units that can receive equipped items.
   allPlayerUnits: Unit[]
+  // Wave upgrade offer. Null when no offer is active.
+  waveUpgrade: WaveUpgradeOfferSnapshot | null
 }
 
 export class GameClient {
@@ -232,6 +235,7 @@ export class GameClient {
       vaultPanelOpen: this.state.vaultPanelOpen,
       vaultSelectedInstanceId: this.state.vaultSelectedInstanceId,
       allPlayerUnits: this.state.getLocalPlayerUnits(),
+      waveUpgrade: this.state.waveUpgrade,
     }
   }
 
@@ -261,6 +265,14 @@ export class GameClient {
 
   sendTransferItem(fromUnitId: number, fromSlotIdx: number, toUnitId: number, toSlotIdx: number): void {
     this.network.send({ type: 'transfer_item', fromUnitId, fromSlotIdx, toUnitId, toSlotIdx })
+  }
+
+  sendWaveUpgradeChoice(upgradeID: string, targetUnitID?: number): void {
+    this.network.send({ type: 'wave_upgrade_choice', upgradeId: upgradeID, targetUnitId: targetUnitID ?? 0 })
+  }
+
+  sendWaveUpgradeReroll(): void {
+    this.network.send({ type: 'wave_upgrade_reroll' })
   }
 
   setVaultSelectedInstanceId(instanceId: number | null): void {

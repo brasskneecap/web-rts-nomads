@@ -92,6 +92,13 @@ const (
 	// A* path came back empty, preventing per-tick pathfinding storms when many
 	// units crowd around an inaccessible enemy (~2 seconds at 20Hz).
 	unreachableTargetCooldownTicks = 40
+	// approachRepathCooldownTicks throttles the forced repath in tickUnitCombatLocked
+	// when the sub-cell A* fails (unit surrounded by a crowd). 3 ticks = 0.15s —
+	// short enough that the unit retries almost immediately as the crowd shifts,
+	// long enough to prevent running full sub-cell A* every tick on a permanently
+	// blocked unit. The separation system (applyUnitSeparationLocked) nudges
+	// units apart between retries, so paths typically clear within 1-2 windows.
+	approachRepathCooldownTicks = 3
 	// guardReturnGraceTicks is the window after a guard loses its target during
 	// which tickGuardReturnLocked will not yank it back to its anchor. Lets the
 	// retarget cooldown (RetargetIntervalTicks) elapse and pick a replacement
@@ -331,6 +338,10 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 }
 
 func (s *GameState) applyCombatTargetLocked(unit *Unit, target combatTarget, blocked map[gridPoint]bool) {
+	// New target — clear the approach-repath cooldown so the first attempt
+	// runs immediately instead of waiting out a previous backoff.
+	unit.NextApproachRepathTick = 0
+
 	// Gate C: Hold units fire from current position — never path toward a target.
 	// Guards are an explicit exception: GuardMode enemies are spawned with
 	// OrderHold so they suppress retreat / retaliation / objective hunting, but

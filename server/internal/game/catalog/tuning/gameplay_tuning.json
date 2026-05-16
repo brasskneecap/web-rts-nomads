@@ -10,5 +10,22 @@
   "buffSlots": {
     "maxActive": 3
   },
+  "waveUpgrade": {
+    "timerSeconds": 25.0,
+    "baseWeights": {
+      "common": 60,
+      "rare": 25,
+      "epic": 12,
+      "legendary": 3
+    },
+    "rarityScalePerWave": {
+      "common": -1.5,
+      "rare": 0.5,
+      "epic": 0.7,
+      "legendary": 0.3
+    },
+    "milestoneWaves": [5, 10, 15, 20],
+    "milestoneMinRarity": "epic"
+  },
   "unitOverrides": {}
 }

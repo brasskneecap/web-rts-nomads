@@ -24,6 +24,7 @@ import type {
   UnitOrder,
   UnitType,
   WaveSnapshot,
+  WaveUpgradeOfferSnapshot,
 } from '../network/protocol'
 import { ENEMY_PLAYER_ID, UNIT_ORDER_LABELS } from '../network/protocol'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
@@ -446,6 +447,10 @@ export class GameState {
   // Current tier of the local player's town hall (1 = Town Hall, 2 = Keep,
   // 3 = Castle). 0 until the server sends the first snapshot with this data.
   townHallTier: number = 0
+
+  // Wave upgrade offer — populated from MatchSnapshotMessage each tick. Null
+  // when no offer is active (between waves or before the first wave).
+  waveUpgrade: WaveUpgradeOfferSnapshot | null = null
 
   // Vault state — populated from PlayerSnapshot each tick.
   localPlayerVault: VaultItemSnapshot[] = []
@@ -1010,6 +1015,8 @@ export class GameState {
       this.fow.applySnapshot(message.fow)
     }
 
+    this.waveUpgrade = message.waveUpgrade ?? null
+
     const validIds = new Set(this.units.map((u) => u.id))
 
     for (const id of Array.from(this.selectedUnitIds)) {
@@ -1073,7 +1080,8 @@ export class GameState {
     const alphaRaw = (targetTime - fromFrame.receivedAt) / duration
     const alpha = Math.max(0, Math.min(alphaRaw, 1))
 
-    const fromMap = new Map(fromFrame.units.map((u) => [u.id, u]))
+    const fromMap = new Map<number, (typeof fromFrame.units)[0]>()
+    for (const u of fromFrame.units) fromMap.set(u.id, u)
     const interpolated: Unit[] = []
 
     for (const toUnit of toFrame.units) {

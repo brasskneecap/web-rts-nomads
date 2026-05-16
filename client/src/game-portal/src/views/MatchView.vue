@@ -51,6 +51,14 @@
 
     <MatchHud v-if="hasStarted" :ui="ui" @exit="exitGame" />
 
+    <WaveUpgradeModal
+      v-if="hasStarted && ui.waveUpgrade"
+      :upgrade="ui.waveUpgrade!"
+      :units="ui.allPlayerUnits"
+      :send-choice="sendWaveUpgradeChoice"
+      :send-reroll="sendWaveUpgradeReroll"
+    />
+
     <!-- Debug panel — only rendered when the active map has debug.battleTracker.
          Floats top-right on top of the canvas and handles its own save/review. -->
     <BattleTrackerPanel v-if="hasStarted" :ui="ui" />
@@ -163,6 +171,7 @@
 import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
 import MapEditorPanel from '@/components/MapEditorPanel.vue'
 import MatchHud from '@/components/MatchHud.vue'
+import WaveUpgradeModal from '@/components/WaveUpgradeModal.vue'
 import SelectionHud from '@/components/SelectionHud.vue'
 import BattleTrackerPanel from '@/components/BattleTrackerPanel.vue'
 import DebugSpawnPanel from '@/components/DebugSpawnPanel.vue'
@@ -265,11 +274,17 @@ const {
   sendUseConsumable,
   sendTransferItem,
   setVaultSelectedInstanceId,
+  sendWaveUpgradeChoice,
+  sendWaveUpgradeReroll,
   ui,
   connectionState,
   reconnectAttempt,
   maxReconnectAttempts,
 } = useGameClient()
+
+watchEffect(() => {
+  console.log('[UPGRADE-TEST] MatchView watchEffect: hasStarted=', hasStarted.value, 'waveUpgrade=', ui.value.waveUpgrade)
+})
 
 const debugSpawnTargetingActive = computed(() => ui.value.debugSpawnTargetingActive)
 

@@ -1,0 +1,10 @@
+{
+  "id": "war_chest_rare",
+  "group": "war_chest",
+  "name": "War Chest",
+  "description": "Gain 300 gold and 150 wood",
+  "rarity": "rare",
+  "scope": "resources",
+  "effect": { "type": "resources", "gold": 300, "wood": 150 },
+  "unlimited": true
+}
