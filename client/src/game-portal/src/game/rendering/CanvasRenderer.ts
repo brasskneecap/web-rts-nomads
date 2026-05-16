@@ -181,9 +181,10 @@ export class CanvasRenderer {
      * two individual white numbers. 'crit' draws a red circle behind the
      * number to mark a critical hit. 'minor' renders smaller and orange to
      * communicate ancillary splash damage (Reactive Flames etc.) without
-     * dominating the main damage popup.
+     * dominating the main damage popup. 'heal' renders a light-green "+N"
+     * floating up (intentional healing, e.g. the heal ability).
      */
-    kind: 'normal' | 'combined' | 'crit' | 'minor'
+    kind: 'normal' | 'combined' | 'crit' | 'minor' | 'heal'
     /**
      * Horizontal drift direction (±1) for 'minor' popups so they spray out
      * sideways and fall, distinguishing them from the upward-drifting normal
@@ -1664,6 +1665,8 @@ export class CanvasRenderer {
       maxHp?: number
       shield?: number
       maxShield?: number
+      mana?: number
+      maxMana?: number
       attackSpeed?: number
       activeBuffs?: { id: string; stacks?: number }[]
       activeDebuffs?: { id: string; stacks?: number }[]
@@ -2368,6 +2371,14 @@ export class CanvasRenderer {
           ? '#c084fc' // tailwind purple-400
           : '#fb923c' // tailwind orange-400
         ctx.fillText(text, drawX, drawY)
+      } else if (num.kind === 'heal') {
+        // Intentional healing — light-green "+N" floating up, distinct from
+        // the (red/white) damage numbers and the green HP bar.
+        const healText = `+${text}`
+        ctx.font = `bold ${baseFontPx}px sans-serif`
+        ctx.strokeText(healText, drawX, drawY)
+        ctx.fillStyle = '#4ade80' // tailwind green-400
+        ctx.fillText(healText, drawX, drawY)
       } else {
         ctx.font = `bold ${baseFontPx}px sans-serif`
         ctx.strokeText(text, drawX, drawY)
@@ -2738,6 +2749,8 @@ export class CanvasRenderer {
       maxHp?: number
       shield?: number
       maxShield?: number
+      mana?: number
+      maxMana?: number
     },
     isEnemy: boolean,
     allyColor: string | null,
@@ -2775,19 +2788,36 @@ export class CanvasRenderer {
     ctx.fillStyle = fillColor
     ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight)
 
-    // Shield overlay: a cyan bar stacked directly above the HP bar, scaled
+    // Shield overlay: an orange bar stacked directly above the HP bar, scaled
     // against max-shield. Only drawn when the unit actually carries shield.
+    // Orange (not blue) so it can't be confused with the blue mana bar below.
     const shield = Math.max(0, unit.shield ?? 0)
     const maxShield = Math.max(0, unit.maxShield ?? 0)
     if (maxShield > 0 && shield > 0) {
       const shieldY = barY - barHeight - 1
       ctx.fillStyle = '#0f172a'
       ctx.fillRect(barX, shieldY, barWidth, barHeight)
-      ctx.fillStyle = '#38bdf8'
+      ctx.fillStyle = '#f97316'
       ctx.fillRect(barX, shieldY, barWidth * Math.min(1, shield / maxShield), barHeight)
       ctx.strokeStyle = 'rgba(248, 250, 252, 0.6)'
       ctx.lineWidth = 1 / this.camera.zoom
       ctx.strokeRect(barX, shieldY, barWidth, barHeight)
+    }
+
+    // Mana bar: a blue bar stacked directly below the HP bar, scaled against
+    // max-mana. Drawn for any spellcaster (maxMana > 0) even when the pool is
+    // empty, so the depleted state stays visible (e.g. apprentice).
+    const maxMana = Math.max(0, unit.maxMana ?? 0)
+    if (maxMana > 0) {
+      const mana = Math.max(0, Math.min(unit.mana ?? 0, maxMana))
+      const manaY = barY + barHeight + 1
+      ctx.fillStyle = '#0f172a'
+      ctx.fillRect(barX, manaY, barWidth, barHeight)
+      ctx.fillStyle = '#3b82f6'
+      ctx.fillRect(barX, manaY, barWidth * (mana / maxMana), barHeight)
+      ctx.strokeStyle = 'rgba(248, 250, 252, 0.6)'
+      ctx.lineWidth = 1 / this.camera.zoom
+      ctx.strokeRect(barX, manaY, barWidth, barHeight)
     }
 
     ctx.strokeStyle = 'rgba(248, 250, 252, 0.8)'

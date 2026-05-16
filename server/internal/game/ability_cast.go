@@ -158,10 +158,14 @@ func (s *GameState) resolveAbilityCastLocked(caster *Unit, def AbilityDef, targe
 	}
 
 	if def.HealAmount > 0 && target.HP > 0 {
+		before := target.HP
 		target.HP += def.HealAmount
 		if target.HP > target.MaxHP {
 			target.HP = target.MaxHP // no overheal
 		}
+		// Record the effective gain (clamped), not def.HealAmount, so the
+		// floating "+N" reflects real HP restored on a near-full target.
+		s.recordHealEventLocked(target, target.HP-before)
 	}
 
 	if def.EffectOnTarget != "" {

@@ -616,6 +616,21 @@ export class InputManager {
       : gatherResource === 'gold' ? 'minegold'
       : 'gather'
 
+    // Target-selection modes: show the reticle cursor while waiting for the
+    // player to click a target, regardless of what's under the pointer. This
+    // covers an armed ability (heal, etc.) and the attack command (clicking
+    // Attack or pressing A → attack-move targeting).
+    if (
+      this.state.isUnitTargetingActive('cast-ability') ||
+      this.state.isUnitTargetingActive('attack')
+    ) {
+      this.state.setHoveredInteractableBuilding(null)
+      this.state.setHoveredInteractableObstacle(null)
+      this.state.setHoveredEnemyUnit(null)
+      this.canvas.style.cursor = resolveCursor('target', 'crosshair')
+      return
+    }
+
     if (this.state.isUnitTargetingActive('move') || this.state.isUnitTargetingActive('patrol')) {
       this.state.setHoveredInteractableBuilding(null)
       this.state.setHoveredInteractableObstacle(null)

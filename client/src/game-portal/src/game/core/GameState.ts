@@ -100,6 +100,10 @@ export type Unit = {
   perkIds?: string[]
   shield?: number
   maxShield?: number
+  /** Current mana for spellcaster units (apprentice). Absent for non-casters. */
+  mana?: number
+  /** Max mana pool. Absent/0 for units with no mana. Drives the mana bar. */
+  maxMana?: number
   /** Buffs currently active — each entry carries a perk id + optional stacks. */
   activeBuffs?: ActiveEffectIcon[]
   /** Debuffs currently active — each entry carries a raw icon id + optional stacks. */
@@ -344,8 +348,12 @@ export type DamageEvent = {
    *                  the HP-diff using server MinorDamageEventSnapshot
    *                  entries so a victim hit by trap-DoT + Infusion shows
    *                  two distinct numbers.
+   *   - 'heal'     : intentional healing (heal ability). Renderer draws a
+   *                  light-green "+N" floating up. Sourced from server
+   *                  HealEventSnapshot, not from HP-diff (HP going up is
+   *                  not tracked as a damage event).
    */
-  kind?: 'normal' | 'combined' | 'crit' | 'minor'
+  kind?: 'normal' | 'combined' | 'crit' | 'minor' | 'heal'
   /**
    * Sub-flavour for kind='minor', mirroring MinorDamageEventSnapshot.variant.
    * "fire" → orange, "electric" → purple, omitted defaults to fire/orange.
@@ -645,6 +653,8 @@ export class GameState {
         perkIds: unit.perkIds,
         shield: unit.shield,
         maxShield: unit.maxShield,
+        mana: unit.mana,
+        maxMana: unit.maxMana,
         activeBuffs: unit.activeBuffs,
         activeDebuffs: unit.activeDebuffs,
         perkCooldowns: unit.perkCooldowns,
@@ -849,6 +859,30 @@ export class GameState {
       if (prev.hp <= 0) continue
       const amount = lethalOverride.get(unitId) ?? prev.hp
       emitDamageEvent(unitId, prev.unitType, prev.x, prev.y, amount, prev.ownerId)
+    }
+
+    // Heal events — intentional healing (heal ability). HP going up is not a
+    // damage event, so the server reports each heal explicitly. Resolve the
+    // unit's live position from this frame and spawn a light-green "+N" that
+    // floats up like a normal damage number. A unit healed and then killed in
+    // the same tick is dropped (no current position to anchor to).
+    if (message.healEvents && message.healEvents.length > 0) {
+      const unitById = new Map(frame.units.map((u) => [u.id, u]))
+      for (const evt of message.healEvents) {
+        if (evt.amount <= 0) continue
+        const u = unitById.get(evt.unitId)
+        if (!u) continue
+        this.damageEvents.push({
+          unitId: u.id,
+          unitType: u.unitType,
+          x: u.x,
+          y: u.y,
+          amount: evt.amount,
+          isFriendly: !!this.localPlayerId && u.ownerId === this.localPlayerId,
+          createdAt: now,
+          kind: 'heal',
+        })
+      }
     }
 
     this.prevUnitHp.clear()
