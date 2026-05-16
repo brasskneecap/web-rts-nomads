@@ -619,6 +619,25 @@ export type WaveSnapshot = {
   waveDuration: number
 }
 
+export interface UpgradeOffer {
+  id: string
+  group: string
+  name: string
+  description: string
+  rarity: 'common' | 'rare' | 'epic' | 'legendary'
+  scope: string
+  stackCurrent: number
+  stackMax: number
+  requiresTargetUnit?: boolean
+}
+
+export interface WaveUpgradeOfferSnapshot {
+  wave: number
+  offers: UpgradeOffer[]
+  rerollsLeft: number
+  deadlineMs: number
+}
+
 export type BannerSnapshot = {
   id: number
   ownerId: string
@@ -813,6 +832,7 @@ export type MatchSnapshotMessage = {
   gameOver?: GameOverSnapshot
   victory?: VictorySnapshot
   fow?: FogOfWarSnapshot
+  waveUpgrade?: WaveUpgradeOfferSnapshot
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────

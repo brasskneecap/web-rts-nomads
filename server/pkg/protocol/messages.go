@@ -640,6 +640,29 @@ type WaveSnapshot struct {
 	WaveDuration float64 `json:"waveDuration"`
 }
 
+// WaveUpgradeOfferSnapshot is the per-player upgrade offer sent during the
+// "upgrade" wave phase. Nil/absent means the player has no pending offer
+// (not in upgrade phase, or already resolved).
+type WaveUpgradeOfferSnapshot struct {
+	Wave        int            `json:"wave"`
+	Offers      []UpgradeOffer `json:"offers"`
+	RerollsLeft int            `json:"rerollsLeft"`
+	DeadlineMs  int64          `json:"deadlineMs"` // unix ms when auto-pick fires
+}
+
+// UpgradeOffer is one card in the wave upgrade offer set.
+type UpgradeOffer struct {
+	ID                 string `json:"id"`
+	Group              string `json:"group"`
+	Name               string `json:"name"`
+	Description        string `json:"description"`
+	Rarity             string `json:"rarity"`
+	Scope              string `json:"scope"`
+	StackCurrent       int    `json:"stackCurrent"`
+	StackMax           int    `json:"stackMax"`
+	RequiresTargetUnit bool   `json:"requiresTargetUnit,omitempty"`
+}
+
 // BannerSnapshot carries a rallying_banner entity to the client each tick.
 // The client renders the banner at the given world position for its remaining
 // duration. OwnerID is the player who planted it (used for team-colour tinting).
@@ -849,6 +872,7 @@ type MatchSnapshotMessage struct {
 	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
 	Victory       *VictorySnapshot        `json:"victory,omitempty"`
 	Fow           *FogOfWarSnapshot       `json:"fow,omitempty"`
+	WaveUpgrade   *WaveUpgradeOfferSnapshot `json:"waveUpgrade,omitempty"`
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────
@@ -939,4 +963,16 @@ type DebugSpawnUnitMessage struct {
 	X        float64  `json:"x"`
 	Y        float64  `json:"y"`
 	CustomHP int      `json:"customHp,omitempty"`
+}
+
+// WaveUpgradeChoiceMessage is sent by the client when the player picks an upgrade.
+type WaveUpgradeChoiceMessage struct {
+	Type         string `json:"type"`
+	UpgradeID    string `json:"upgradeId"`
+	TargetUnitID int    `json:"targetUnitId,omitempty"` // set only when RequiresTargetUnit = true
+}
+
+// WaveUpgradeRerollMessage is sent by the client when the player uses a reroll.
+type WaveUpgradeRerollMessage struct {
+	Type string `json:"type"`
 }
