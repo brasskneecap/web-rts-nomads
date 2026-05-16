@@ -49,6 +49,7 @@ const emptyUiSnapshot: GameUiSnapshot = {
   vaultPanelOpen: false,
   vaultSelectedInstanceId: null,
   allPlayerUnits: [],
+  waveUpgrade: null,
 }
 
 export function useGameClient() {
@@ -186,6 +187,14 @@ export function useGameClient() {
     client?.setVaultSelectedInstanceId(instanceId)
   }
 
+  function sendWaveUpgradeChoice(upgradeID: string, targetUnitID?: number) {
+    client?.sendWaveUpgradeChoice(upgradeID, targetUnitID)
+  }
+
+  function sendWaveUpgradeReroll() {
+    client?.sendWaveUpgradeReroll()
+  }
+
   onBeforeUnmount(() => {
     destroy()
   })
@@ -209,6 +218,8 @@ export function useGameClient() {
     sendUseConsumable,
     sendTransferItem,
     setVaultSelectedInstanceId,
+    sendWaveUpgradeChoice,
+    sendWaveUpgradeReroll,
     ui,
     connectionState,
     currentMatchId,

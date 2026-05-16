@@ -404,6 +404,16 @@ export type TransferItemCommand = {
   toSlotIdx: number
 }
 
+export type WaveUpgradeChoiceCommand = {
+  type: 'wave_upgrade_choice'
+  upgradeId: string
+  targetUnitId: number
+}
+
+export type WaveUpgradeRerollCommand = {
+  type: 'wave_upgrade_reroll'
+}
+
 export type ClientMessage =
   | JoinMatchMessage
   | LeaveMatchMessage
@@ -430,6 +440,8 @@ export type ClientMessage =
   | UnequipItemCommand
   | UseConsumableCommand
   | TransferItemCommand
+  | WaveUpgradeChoiceCommand
+  | WaveUpgradeRerollCommand
   | PongMessage
 
 // One entry in a unit's activeBuffs / activeDebuffs list. `id` is the perk
