@@ -50,6 +50,18 @@ export type BuildingSpriteRenderDef = {
   height?: number
 }
 
+// BuildingSelectionRingDef sizes/places the selection & hover ring relative
+// to the building's grid footprint. All fields are in cell units. Omitted
+// fields fall back to the footprint-derived default ring. Setting just
+// radiusX/radiusY enlarges the ring while keeping the default centering.
+// Mirrors the Go-side BuildingSelectionRingDef struct.
+export type BuildingSelectionRingDef = {
+  offsetX?: number
+  offsetY?: number
+  radiusX?: number
+  radiusY?: number
+}
+
 export type BuildingAttackVisual = {
   kind?: 'melee' | 'projectile'
   originX?: number
@@ -89,6 +101,7 @@ export type BuildingDef = {
   hotkey: string
   render?: BuildingRenderDef
   spriteRender?: BuildingSpriteRenderDef
+  selectionRing?: BuildingSelectionRingDef
 }
 
 export function getBuildingClass(def: BuildingDef | undefined | null): BuildingClass {

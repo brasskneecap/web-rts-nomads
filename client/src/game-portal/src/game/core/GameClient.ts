@@ -139,17 +139,20 @@ export class GameClient {
     this.loop.start()
   }
 
-  // Dev hotkey: F9 re-fetches /catalog/units and reseeds UNIT_DEF_MAP +
-  // PATH_BOUNDS_MAP without a page reload. Lets bounds tuning iterate at
-  // air's rebuild speed instead of full browser refresh + websocket reconnect.
+  // Dev hotkey: F9 re-fetches /catalog/units + /catalog/buildings and reseeds
+  // UNIT_DEF_MAP + PATH_BOUNDS_MAP + BUILDING_DEF_MAP without a page reload.
+  // Lets unit-bounds and building-def tuning (selection rings, sprite
+  // overflow, etc.) iterate at air's rebuild speed instead of a full browser
+  // refresh + websocket reconnect.
   private handleDevHotkey = (e: KeyboardEvent) => {
     if (e.key !== 'F9') return
     e.preventDefault()
-    void fetchUnitDefs()
-      .then(({ units, paths }) => {
+    void Promise.all([fetchUnitDefs(), fetchBuildingDefs()])
+      .then(([{ units, paths }, buildingDefs]) => {
         initUnitDefs(units)
         initPathBounds(paths)
-        console.log('[dev] reloaded unit defs + path bounds')
+        initBuildingDefs(buildingDefs)
+        console.log('[dev] reloaded unit defs + path bounds + building defs')
       })
       .catch((err) => console.error('[dev] catalog reload failed:', err))
   }

@@ -9,6 +9,10 @@
     "width": 3.5,
     "height": 3.5
   },
+  "selectionRing": {
+    "radiusX": 2,
+    "radiusY": 1.2
+  },
   "maxHp": 500,
   "buildSeconds": 15,
   "resourceCost": {

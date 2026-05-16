@@ -43,6 +43,29 @@ type BuildingDef struct {
 	// a flag pole taller than its footprint, or a wider sprite that spills
 	// half a cell over each side.
 	SpriteRender *BuildingSpriteRenderDef `json:"spriteRender,omitempty"`
+	// SelectionRing nudges the size/placement of the selection & hover ring
+	// drawn around the building. Client-only (the server never reads it).
+	// Mirrors ObstacleSelectionRingDef semantics. Omit the block to keep the
+	// default ring derived from the footprint width.
+	SelectionRing *BuildingSelectionRingDef `json:"selectionRing,omitempty"`
+}
+
+// BuildingSelectionRingDef sizes/places the selection & hover ellipse for a
+// building. All fields are in *cell units*. Defaults (when a field is zero /
+// omitted) reproduce the legacy footprint-derived ring:
+//
+//	radiusX = footprintWidth * 0.55
+//	radiusY = radiusX * 0.34
+//	center  = horizontally centered, ~0.62 down the footprint
+//
+// offsetX/offsetY (when set) are measured from the footprint's top-left
+// corner. Setting only radiusX/radiusY enlarges the ring while keeping the
+// default centering.
+type BuildingSelectionRingDef struct {
+	OffsetX float64 `json:"offsetX,omitempty"`
+	OffsetY float64 `json:"offsetY,omitempty"`
+	RadiusX float64 `json:"radiusX,omitempty"`
+	RadiusY float64 `json:"radiusY,omitempty"`
 }
 
 // BuildingSpriteRenderDef is the sprite-overflow config for a building.

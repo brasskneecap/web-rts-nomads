@@ -719,10 +719,19 @@ export class CanvasRenderer {
 
       // Selection / hover ring drawn *before* the sprite so the sprite
       // covers the top half, mimicking the wrap-around look of the unit ring.
-      if (this.state.selectedBuildingId === building.id) {
-        this.drawFootprintSelectionEllipse(worldX, worldY, width, height, 'selected', 'center')
-      } else if (this.state.hoveredInteractableBuildingId === building.id) {
-        this.drawFootprintSelectionEllipse(worldX, worldY, width, height, 'hover', 'center')
+      if (
+        this.state.selectedBuildingId === building.id ||
+        this.state.hoveredInteractableBuildingId === building.id
+      ) {
+        const isSelected = this.state.selectedBuildingId === building.id
+        const ringDef = buildingDef?.selectionRing
+        const ringOverride = ringDef ? { ...ringDef, cellSize } : undefined
+        this.drawFootprintSelectionEllipse(
+          worldX, worldY, width, height,
+          isSelected ? 'selected' : 'hover',
+          'center',
+          ringOverride,
+        )
       }
 
       if (isPendingStart) {
