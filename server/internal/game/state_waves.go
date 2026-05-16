@@ -130,11 +130,14 @@ func (s *GameState) tickWaveLocked(dt float64) {
 					wm.State = "complete"
 					s.markWaveObjectivesCompleteLocked()
 				} else {
-					wm.State = "prep"
-					wm.Timer = wm.PrepDuration
+					wm.State = "upgrade"
+					s.enterWaveUpgradePhaseLocked()
 				}
 			}
 		}
+
+	case "upgrade":
+		s.tickUpgradePhaseLocked()
 
 		// "complete" is terminal — nothing more to tick.
 	}

@@ -1076,6 +1076,43 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	}
 }
 
+// buildWaveUpgradeSnapshotLocked returns the per-player upgrade offer snapshot
+// for viewerID, or nil when there is no pending offer for that player.
+// Caller must hold s.mu (read lock is sufficient).
+func (s *GameState) buildWaveUpgradeSnapshotLocked(viewerID string) *protocol.WaveUpgradeOfferSnapshot {
+	if s.WaveManager.State != "upgrade" {
+		return nil
+	}
+	player := s.Players[viewerID]
+	if player == nil || player.UpgradeState.Resolved {
+		return nil
+	}
+	offers := make([]protocol.UpgradeOffer, 0, len(player.UpgradeState.CurrentOffers))
+	for _, def := range player.UpgradeState.CurrentOffers {
+		effectiveCap := def.MaxStacks
+		if player.UpgradeState.MaxUpgradeStacks > effectiveCap {
+			effectiveCap = player.UpgradeState.MaxUpgradeStacks
+		}
+		offers = append(offers, protocol.UpgradeOffer{
+			ID:                 def.ID,
+			Group:              def.Group,
+			Name:               def.Name,
+			Description:        def.Description,
+			Rarity:             def.Rarity,
+			Scope:              def.Scope,
+			StackCurrent:       player.UpgradeState.UpgradeStacks[def.Group],
+			StackMax:           effectiveCap,
+			RequiresTargetUnit: def.Effect.Type == "xp",
+		})
+	}
+	return &protocol.WaveUpgradeOfferSnapshot{
+		Wave:        s.WaveManager.CurrentWave,
+		Offers:      offers,
+		RerollsLeft: player.UpgradeState.RerollsRemaining,
+		DeadlineMs:  player.UpgradeState.OfferDeadlineMs,
+	}
+}
+
 // SnapshotForPlayer builds a match snapshot filtered through the FOW grid for
 // viewerID. Units, buildings, projectiles, traps, effects, and banners outside
 // the viewer's vision are excluded or replaced with ghost entries. Returns the
@@ -1360,6 +1397,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		GameOver:      gameOver,
 		Victory:       victory,
 		Fow:           packFOW(fow, s.Tick),
+		WaveUpgrade:   s.buildWaveUpgradeSnapshotLocked(viewerID),
 	}
 }
 
