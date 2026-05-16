@@ -29,3 +29,35 @@ func TestUpgradeCatalog_RarityOrder(t *testing.T) {
 		t.Error("legendary must rank higher than epic")
 	}
 }
+
+func TestUpgradeCatalog_GetUnknownID(t *testing.T) {
+	_, ok := getUpgradeDef("does_not_exist")
+	if ok {
+		t.Fatal("expected ok=false for unknown upgrade id")
+	}
+}
+
+func TestUpgradeCatalog_ListDefsCountAndOrder(t *testing.T) {
+	defs := listUpgradeDefs()
+	if len(defs) != 6 {
+		t.Fatalf("expected 6 upgrade defs, got %d", len(defs))
+	}
+	for i := 1; i < len(defs); i++ {
+		if defs[i].ID <= defs[i-1].ID {
+			t.Errorf("listUpgradeDefs not sorted: %q >= %q at index %d", defs[i].ID, defs[i-1].ID, i)
+		}
+	}
+}
+
+func TestUpgradeCatalog_FortifyCommonEffect(t *testing.T) {
+	def, ok := getUpgradeDef("fortify_common")
+	if !ok {
+		t.Fatal("expected fortify_common to exist")
+	}
+	if def.Effect.Stat != "hp" {
+		t.Errorf("effect.stat: got %q, want %q", def.Effect.Stat, "hp")
+	}
+	if def.Effect.Multiplier != 1.12 {
+		t.Errorf("effect.multiplier: got %v, want 1.12", def.Effect.Multiplier)
+	}
+}
