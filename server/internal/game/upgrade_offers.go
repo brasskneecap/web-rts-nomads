@@ -176,5 +176,3 @@ func (s *GameState) HandleWaveUpgradeReroll(playerID string) {
 	player.UpgradeState.CurrentOffers = s.generateUpgradeOffersLocked(playerID)
 }
 
-// applyUpgradeLocked is a stub replaced by upgrade_apply.go in Task 6.
-func (s *GameState) applyUpgradeLocked(playerID, upgradeID string, targetUnitID int) {}
