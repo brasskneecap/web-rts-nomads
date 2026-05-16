@@ -15,6 +15,7 @@ type GameplayTuning struct {
 	Version       int                                `json:"version"`
 	LegendPoints  LegendPointsTuning                 `json:"legendPoints"`
 	BuffSlots     BuffSlotsTuning                    `json:"buffSlots"`
+	WaveUpgrade   WaveUpgradeTuning                  `json:"waveUpgrade"`
 	UnitOverrides map[string]UnitLegendPointOverride `json:"unitOverrides"`
 }
 
@@ -30,6 +31,20 @@ type LegendPointsTuning struct {
 // BuffSlotsTuning controls how many player buffs can be active simultaneously.
 type BuffSlotsTuning struct {
 	MaxActive int `json:"maxActive"`
+}
+
+// WaveUpgradeTuning controls offer generation for the wave upgrade phase.
+type WaveUpgradeTuning struct {
+	// TimerSeconds is how long players have to pick before auto-select fires.
+	TimerSeconds float64 `json:"timerSeconds"`
+	// BaseWeights is the rarity probability weight at wave 1.
+	BaseWeights map[string]float64 `json:"baseWeights"`
+	// RarityScalePerWave is added to each rarity's weight each wave (can be negative).
+	RarityScalePerWave map[string]float64 `json:"rarityScalePerWave"`
+	// MilestoneWaves are wave numbers that guarantee at least one card of MilestoneMinRarity or better.
+	MilestoneWaves []int `json:"milestoneWaves"`
+	// MilestoneMinRarity is the minimum rarity guaranteed on a milestone wave.
+	MilestoneMinRarity string `json:"milestoneMinRarity"`
 }
 
 // UnitLegendPointOverride lets specific unit types earn different legend-point
