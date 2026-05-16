@@ -417,6 +417,9 @@ type Player struct {
 	// RunLegendPointDrops accumulates legend-point drops during the match.
 	// Committed to the profile file at match end.
 	RunLegendPointDrops int
+
+	// UpgradeState tracks wave upgrade picks and per-wave offer state.
+	UpgradeState PlayerUpgradeState
 }
 
 const (
@@ -2040,6 +2043,7 @@ func (s *GameState) EnsurePlayer(playerID string, equippedBuffIDs ...string) {
 		Upgrades:                      make(map[UpgradeTrack]int),
 		Vault:                         []*VaultItem{},
 		ProfileBuffIDs:                append([]string(nil), equippedBuffIDs...),
+		UpgradeState:                  newPlayerUpgradeState(1, 3),
 	}
 
 	s.claimPlayerStartLocked(playerID)
