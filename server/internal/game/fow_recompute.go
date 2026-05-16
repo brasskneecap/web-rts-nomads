@@ -8,13 +8,38 @@ func (s *GameState) effectiveVisionRangeLocked(u *Unit) float64 {
 	return u.VisionRange * s.perkVisionRangeMultiplierLocked(u)
 }
 
+// fowOwnerSharesVisionLocked reports whether vision from ownerID's units /
+// buildings should be stamped into viewerID's FOW. ownerID must be a real,
+// vision-having player (it has an s.FOW entry — this excludes the __enemy__
+// AI and neutral/unowned "" owners, which never grant players sight) AND be
+// allied with the viewer (same team; self included).
+//
+// At the default single team this reduces, for a lone player, to
+// "ownerID == viewerID" — byte-identical to the pre-team behavior. For
+// allied co-op players on the same team it yields shared vision (the
+// approved P2 feature). Cross-team players never share sight.
+//
+// Caller must hold s.mu.
+func (s *GameState) fowOwnerSharesVisionLocked(ownerID, viewerID string) bool {
+	if ownerID == "" {
+		return false
+	}
+	if _, real := s.FOW[ownerID]; !real {
+		return false
+	}
+	return s.playersAreFriendlyLocked(ownerID, viewerID)
+}
+
 // recomputeFOWLocked rebuilds every player's FOW grid from scratch each tick:
 //  1. Clear the Clear bits (preserve EverSeen).
-//  2. Stamp vision circles from each living, visible player unit.
-//  3. Stamp vision from player-owned buildings (Q2).
+//  2. Stamp vision circles from each living, visible unit owned by the
+//     player OR an allied (same-team) player — shared team vision.
+//  3. Stamp vision from player-/ally-owned buildings.
 //  4. Snapshot any building now in a Clear cell into KnownBuildings.
 //
-// Caller must hold s.mu write lock.
+// Determinism: each player's grid is computed independently and vision union
+// is commutative, so the s.FOW / s.Units iteration order never drives the
+// result. Caller must hold s.mu write lock.
 func (s *GameState) recomputeFOWLocked() {
 	blocking := s.getVisionBlockingCellsLocked()
 
@@ -22,7 +47,7 @@ func (s *GameState) recomputeFOWLocked() {
 		fow.clearClearBits()
 
 		for _, u := range s.Units {
-			if u.OwnerID != playerID {
+			if !s.fowOwnerSharesVisionLocked(u.OwnerID, playerID) {
 				continue
 			}
 			if u.HP <= 0 || !u.Visible {
@@ -38,7 +63,7 @@ func (s *GameState) recomputeFOWLocked() {
 
 		for i := range s.MapConfig.Buildings {
 			b := &s.MapConfig.Buildings[i]
-			if b.OwnerID == nil || *b.OwnerID != playerID {
+			if b.OwnerID == nil || !s.fowOwnerSharesVisionLocked(*b.OwnerID, playerID) {
 				continue
 			}
 			cx := (float64(b.GridCoord.X) + float64(b.Width)/2.0) * s.MapConfig.CellSize

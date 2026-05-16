@@ -15,6 +15,7 @@ import type {
   MatchSnapshotMessage,
   ObstacleTile,
   PerkCooldownSnapshot,
+  AbilitySnapshot,
   PlayerSnapshot,
   ProjectileSnapshot,
   ResourceType,
@@ -105,6 +106,7 @@ export type Unit = {
   activeDebuffs?: ActiveEffectIcon[]
   /** Per-perk cooldown timers (only perks currently gated by a ticking timer). */
   perkCooldowns?: PerkCooldownSnapshot[]
+  abilities?: AbilitySnapshot[]
   ownerId?: string
   color?: string
   carriedResourceType?: ResourceType
@@ -152,9 +154,14 @@ export type ActionItem = {
   cost?: ActionCost[]
   /**
    * 'perk' marks a display-only perk slot in the bottom row of the action grid.
-   * Absent means a regular interactive action button.
+   * 'ability' marks an interactive ability button (left-click cast,
+   * right-click toggles auto-cast). Absent means a regular action button.
    */
-  kind?: 'perk'
+  kind?: 'perk' | 'ability'
+  /** Ability auto-cast currently enabled — drives the action-cell glow. */
+  autoCast?: boolean
+  /** Ability supports auto-cast (right-click toggles it). */
+  supportsAutoCast?: boolean
   /** Rank tier for perk slots — drives the rank-colored border in SelectionHud. */
   perkRank?: 'bronze' | 'silver' | 'gold'
   /** Tooltip header shown on hover for perk slots. */
@@ -368,7 +375,7 @@ export type DebugSpawnConfig = {
   perkIds?: string[]
   customHp?: number
 }
-export type UnitTargetingMode = 'move' | 'gather' | 'repair' | 'attack' | 'patrol'
+export type UnitTargetingMode = 'move' | 'gather' | 'repair' | 'attack' | 'patrol' | 'cast-ability'
 
 export type BuildPlacement = {
   buildingType: string
@@ -410,6 +417,9 @@ export class GameState {
     { id: 'food', label: 'Food', amount: 0, max: 0, accent: '#c96e43' },
   ]
   private playerColors = new Map<string, string>()
+  // ownerId → TeamID, mirrored from PlayerSnapshot each tick. Drives the
+  // alliance predicates so the client matches the server chokepoint.
+  private playerTeams = new Map<string, number>()
   private nextNotificationId = 0
   notifications: Notification[] = []
 
@@ -492,6 +502,10 @@ export class GameState {
   hoveredInteractableObstacleId: string | null = null
   buildingTargetingMode: BuildingTargetingMode | null = null
   unitTargetingMode: UnitTargetingMode | null = null
+  // Ability whose cast target is being picked. Only meaningful while
+  // unitTargetingMode === 'cast-ability'; a stale value is inert because
+  // every reader gates on that mode first.
+  castAbilityId: string | null = null
   // Loadout carried with the 'debug-spawn-unit' buildingTargetingMode. Null
   // whenever debug-spawn targeting is inactive. Persisted across clicks so
   // the user can drop multiple test subjects with the same configuration
@@ -634,6 +648,7 @@ export class GameState {
         activeBuffs: unit.activeBuffs,
         activeDebuffs: unit.activeDebuffs,
         perkCooldowns: unit.perkCooldowns,
+        abilities: unit.abilities,
         ownerId: unit.ownerId,
         color: unit.color,
         carriedResourceType: unit.carriedResourceType,
@@ -1053,28 +1068,38 @@ export class GameState {
     return !!this.localPlayerId && unit.ownerId === this.localPlayerId
   }
 
-  // Real players are allied with each other; only the wave-enemy faction is
-  // hostile to real players. Mirrors playersAreHostile on the server. Use this
-  // (not raw ownerId comparisons) for any "should the cursor / health bar /
-  // attack visual treat this as an enemy?" decision.
+  // ownerId → TeamID; absent ⇒ 0 (default shared team). Mirrors the server's
+  // playerTeamLocked (unknown owner ⇒ default team).
+  private teamOf(ownerId: string): number {
+    return this.playerTeams.get(ownerId) ?? 0
+  }
+
+  // Alliance is now team-based (PlayerSnapshot.teamId), mirroring the server
+  // chokepoint. Same owner ⇒ never hostile; the __enemy__ AI ⇒ hostile to
+  // every team; otherwise hostile iff different team. At the default (all
+  // team 0) this is exactly the old "only __enemy__ is hostile" behavior.
+  // Use this (not raw ownerId comparisons) for any "should the cursor /
+  // health bar / attack visual treat this as an enemy?" decision.
   isHostileToLocalPlayer(ownerId: string | undefined): boolean {
     if (!ownerId) return false
     if (!this.localPlayerId) return ownerId === ENEMY_PLAYER_ID
-    if (ownerId === this.localPlayerId) return false
-    return ownerId === ENEMY_PLAYER_ID
+    return this.ownersAreHostile(ownerId, this.localPlayerId)
   }
 
   ownersAreHostile(a: string | null | undefined, b: string | null | undefined): boolean {
     if (!a || !b || a === b) return false
-    return a === ENEMY_PLAYER_ID || b === ENEMY_PLAYER_ID
+    if (a === ENEMY_PLAYER_ID || b === ENEMY_PLAYER_ID) return true
+    return this.teamOf(a) !== this.teamOf(b)
   }
 
-  // True when the unit belongs to a real allied player — i.e. neither
-  // owned-by-me nor hostile. Used to gate read-only inspection of allies.
+  // True when the unit belongs to a real allied player — same team, not me,
+  // not the __enemy__ AI. Used to gate read-only inspection of allies.
+  // Mirrors the server playersAreFriendly (which is NOT just !hostile).
   private isAlliedOtherPlayerUnit(unit: Unit): boolean {
-    if (!unit.ownerId) return false
-    if (this.localPlayerId && unit.ownerId === this.localPlayerId) return false
-    return !this.isHostileToLocalPlayer(unit.ownerId)
+    const ownerId = unit.ownerId
+    if (!ownerId || ownerId === ENEMY_PLAYER_ID) return false
+    if (!this.localPlayerId || ownerId === this.localPlayerId) return false
+    return this.teamOf(ownerId) === this.teamOf(this.localPlayerId)
   }
 
   clearSelection() {
@@ -1544,8 +1569,20 @@ export class GameState {
     this.unitTargetingMode = mode
   }
 
+  // Enter ability-cast targeting: the next friendly-unit click casts
+  // abilityId. Mirrors beginUnitTargeting; selection is preserved (the
+  // selected unit is the caster).
+  beginAbilityTargeting(abilityId: string) {
+    if (this.getSelectedUnits().length === 0) return
+    this.selectedBuildingId = null
+    this.buildingTargetingMode = null
+    this.castAbilityId = abilityId
+    this.unitTargetingMode = 'cast-ability'
+  }
+
   cancelUnitTargeting() {
     this.unitTargetingMode = null
+    this.castAbilityId = null
   }
 
   isUnitTargetingActive(mode?: UnitTargetingMode) {
@@ -1945,14 +1982,20 @@ export class GameState {
       // When the build menu is open the full 12 slots are used for building
       // choices, so we skip the perk row in that state.
       const regularActions = getUnitActions(unit, this.unitTargetingMode, buildMenuOpen)
+      // Interactive ability buttons follow the standard actions, sharing the
+      // top-8 slots. Empty for non-caster units / when the build menu is open.
+      const abilityActions = buildMenuOpen
+        ? []
+        : getAbilityActionItems(unit, this.unitTargetingMode, this.castAbilityId)
+      const topActions = [...regularActions, ...abilityActions]
       const emptySlot: ActionItem = { id: '', label: '', disabled: true }
       const actions = buildMenuOpen
         ? regularActions
         : [
-            ...regularActions,
+            ...topActions,
             // Pad to 8 so perks always land starting at slot 9 (bottom-left)
-            // regardless of how many regular action slots are filled.
-            ...Array<ActionItem>(Math.max(0, 8 - regularActions.length)).fill(emptySlot),
+            // regardless of how many action/ability slots are filled.
+            ...Array<ActionItem>(Math.max(0, 8 - topActions.length)).fill(emptySlot),
             ...getPerkActionItems(unit),
             // Slot 12: reserved empty cell at bottom-right.
             emptySlot,
@@ -2057,6 +2100,7 @@ export class GameState {
 
   private applyPlayerSnapshots(players: PlayerSnapshot[]) {
     this.playerColors = new Map(players.map((player) => [player.playerId, player.color]))
+    this.playerTeams = new Map(players.map((player) => [player.playerId, player.teamId ?? 0]))
 
     if (!this.localPlayerId) return
 
@@ -2254,6 +2298,36 @@ function getBuildingConstructionSummary(building: BuildingTile): RepairSummary |
 // a matching CSS class in SelectionHud.vue.
 // ─────────────────────────────────────────────────────────────────────────────
 const PERK_RANKS: Array<'bronze' | 'silver' | 'gold'> = ['bronze', 'silver', 'gold']
+
+// getAbilityActionItems builds interactive ability buttons from the unit's
+// snapshot abilities. id `cast-ability-<id>` drives left-click (cast →
+// targeting) and, via the `autocast-toggle-` prefix, right-click. `active`
+// highlights the ability whose cast target is currently being picked;
+// `autoCast` drives the action-cell glow.
+function getAbilityActionItems(
+  unit: Unit,
+  activeMode: UnitTargetingMode | null,
+  castAbilityId: string | null,
+): ActionItem[] {
+  if (!unit.abilities || unit.abilities.length === 0) return []
+  return unit.abilities.map((a) => {
+    const name = a.displayName ?? a.id
+    return {
+      id: `cast-ability-${a.id}`,
+      label: name,
+      kind: 'ability' as const,
+      active: activeMode === 'cast-ability' && castAbilityId === a.id,
+      autoCast: !!a.autoCast,
+      supportsAutoCast: !!a.supportsAutoCast,
+      cooldownRemaining: a.cooldownRemaining,
+      cooldownTotal: a.cooldownTotal,
+      tooltipTitle: name,
+      tooltipBody: a.supportsAutoCast
+        ? 'Left-click: cast. Right-click: toggle auto-cast.'
+        : 'Left-click: cast.',
+    }
+  })
+}
 
 function getPerkActionItems(unit: Unit): ActionItem[] {
   // Perks are appended in rank-up order — index 0 = Bronze grant, 1 = Silver, 2 = Gold.

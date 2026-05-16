@@ -1,0 +1,4 @@
+Placeholder so catalog/abilities embeds cleanly while empty.
+The first ability (heal) is authored in a later part as
+catalog/abilities/heal/heal.json. The ability loader skips
+non-directory entries, so this file is ignored at load time.

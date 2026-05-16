@@ -1,6 +1,6 @@
 import type { UnitDirection } from './unitSprites'
 
-export type UnitAnimationName = 'idle' | 'walking' | 'attacking' | 'chopping' | 'repairing' | 'carrying_gold'
+export type UnitAnimationName = 'idle' | 'walking' | 'attacking' | 'casting' | 'chopping' | 'repairing' | 'carrying_gold'
 
 export interface UnitAnimationSample {
   direction: UnitDirection
@@ -292,6 +292,12 @@ function pickAnimation(
     if (unitType === 'worker') return 'chopping'
     return 'attacking'
   }
+  // Spell-cast slot, distinct from 'Attacking' (basic attack). Checked before
+  // moving/idle so a cast always reads clearly and "interrupts" the idle pose.
+  // Deliberately NOT added to ANIMATION_FALLBACK → 'attacking': a unit with no
+  // dedicated casting sheet degrades to its neutral rotation pose, never the
+  // attack swing, keeping cast and attack visually distinct (spec requirement).
+  if (status === 'Casting') return 'casting'
   if (status === 'Chopping Wood') return 'chopping'
   // All construction/repair statuses — including paused variants emitted when
   // no workers are assigned — map to the same hammer-swing animation.

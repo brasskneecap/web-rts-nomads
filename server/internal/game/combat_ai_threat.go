@@ -16,7 +16,7 @@ func (s *GameState) decayThreatLocked(unit *Unit, dt float64, index *combatSpati
 
 	for hostileID, entry := range unit.ThreatTable {
 		hostile := s.getUnitByIDLocked(hostileID)
-		if hostile == nil || !hostile.Visible || hostile.HP <= 0 || !playersAreHostile(hostile.OwnerID, unit.OwnerID) {
+		if hostile == nil || !hostile.Visible || hostile.HP <= 0 || !s.playersAreHostileLocked(hostile.OwnerID, unit.OwnerID) {
 			delete(unit.ThreatTable, hostileID)
 			continue
 		}
@@ -40,7 +40,7 @@ func (s *GameState) decayThreatLocked(unit *Unit, dt float64, index *combatSpati
 		return
 	}
 	for _, hostile := range index.query(unit.X, unit.Y, combatMeleeProximityRadius) {
-		if !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
+		if !s.playersAreHostileLocked(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
 			continue
 		}
 		s.addThreatLocked(unit, hostile, profile.PassiveMeleeThreat*dt, false)
@@ -55,7 +55,7 @@ func (s *GameState) getThreatValueLocked(unit *Unit, hostileID int) float64 {
 }
 
 func (s *GameState) addThreatLocked(unit, hostile *Unit, amount float64, forceSeen bool) {
-	if unit == nil || hostile == nil || !playersAreHostile(unit.OwnerID, hostile.OwnerID) || amount <= 0 {
+	if unit == nil || hostile == nil || !s.playersAreHostileLocked(unit.OwnerID, hostile.OwnerID) || amount <= 0 {
 		return
 	}
 	s.initializeCombatUnitLocked(unit)
@@ -80,7 +80,7 @@ func (s *GameState) onUnitDamagedLocked(attacker, target *Unit, damage int) {
 	s.addThreatLocked(target, attacker, amount, true)
 
 	for _, ally := range s.Units {
-		if ally.OwnerID != target.OwnerID || ally.ID == target.ID || ally.HP <= 0 || !ally.Visible {
+		if !s.unitsFriendlyLocked(ally, target) || ally.ID == target.ID || ally.HP <= 0 || !ally.Visible {
 			continue
 		}
 		if distanceSquared(ally.X, ally.Y, target.X, target.Y) > combatBacklineDefenseRadius*combatBacklineDefenseRadius {
@@ -99,7 +99,7 @@ func (s *GameState) onBuildingDamagedLocked(attacker *Unit, building *protocol.B
 		return
 	}
 	for _, ally := range s.Units {
-		if ally.OwnerID != *building.OwnerID || ally.HP <= 0 || !ally.Visible {
+		if !s.playersAreFriendlyLocked(ally.OwnerID, *building.OwnerID) || ally.HP <= 0 || !ally.Visible {
 			continue
 		}
 		if distanceSquared(ally.X, ally.Y, attacker.X, attacker.Y) > combatThreatStructureSplashRadius*combatThreatStructureSplashRadius {
@@ -118,7 +118,7 @@ func (s *GameState) AddSupportThreatLocked(source *Unit, center protocol.Vec2, r
 		return
 	}
 	for _, unit := range s.Units {
-		if !playersAreHostile(unit.OwnerID, source.OwnerID) || unit.HP <= 0 || !unit.Visible {
+		if !s.playersAreHostileLocked(unit.OwnerID, source.OwnerID) || unit.HP <= 0 || !unit.Visible {
 			continue
 		}
 		if distanceSquared(unit.X, unit.Y, center.X, center.Y) > radius*radius {
@@ -131,7 +131,7 @@ func (s *GameState) AddSupportThreatLocked(source *Unit, center protocol.Vec2, r
 func (s *GameState) ApplyTauntLocked(targetUnitID, taunterUnitID int, duration float64) {
 	target := s.getUnitByIDLocked(targetUnitID)
 	taunter := s.getUnitByIDLocked(taunterUnitID)
-	if target == nil || taunter == nil || !playersAreHostile(target.OwnerID, taunter.OwnerID) || duration <= 0 {
+	if target == nil || taunter == nil || !s.playersAreHostileLocked(target.OwnerID, taunter.OwnerID) || duration <= 0 {
 		return
 	}
 	target.TauntedByUnitID = taunterUnitID

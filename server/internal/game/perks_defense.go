@@ -296,7 +296,7 @@ func (s *GameState) onPerkDamageTakenLocked(target, attacker *Unit, damage int) 
 			if target.PerkState.RetaliationActive {
 				continue // already inside a reflection; do not chain
 			}
-			if attacker.HP <= 0 || !playersAreHostile(attacker.OwnerID, target.OwnerID) {
+			if attacker.HP <= 0 || !s.playersAreHostileLocked(attacker.OwnerID, target.OwnerID) {
 				continue
 			}
 			// Use effective armor so conditional armor perks (last_stand) boost

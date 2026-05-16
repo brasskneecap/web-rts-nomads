@@ -15,7 +15,7 @@ type combatSpatialIndex struct {
 func (s *GameState) countNearbyHostilesLocked(target *Unit, radius float64, index *combatSpatialIndex) int {
 	count := 0
 	for _, hostile := range index.query(target.X, target.Y, radius) {
-		if !playersAreHostile(hostile.OwnerID, target.OwnerID) || hostile.HP <= 0 {
+		if !s.playersAreHostileLocked(hostile.OwnerID, target.OwnerID) || hostile.HP <= 0 {
 			continue
 		}
 		count++
@@ -26,7 +26,7 @@ func (s *GameState) countNearbyHostilesLocked(target *Unit, radius float64, inde
 func (s *GameState) countHostilesAroundPointLocked(ownerID string, x, y, radius float64, index *combatSpatialIndex) int {
 	count := 0
 	for _, hostile := range index.query(x, y, radius) {
-		if !playersAreHostile(hostile.OwnerID, ownerID) || hostile.HP <= 0 {
+		if !s.playersAreHostileLocked(hostile.OwnerID, ownerID) || hostile.HP <= 0 {
 			continue
 		}
 		count++

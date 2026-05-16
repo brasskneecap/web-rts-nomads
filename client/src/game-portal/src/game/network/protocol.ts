@@ -218,6 +218,21 @@ export type AttackCommandMessage = {
   targetUnitId: number
 }
 
+/** Action-bar standard cast (left-click → click target). */
+export type CastAbilityCommandMessage = {
+  type: 'cast_ability_command'
+  casterUnitId: number
+  abilityId: string
+  targetUnitId: number
+}
+
+/** Action-bar auto-cast toggle (right-click an ability). */
+export type ToggleAutoCastCommandMessage = {
+  type: 'toggle_autocast_command'
+  unitId: number
+  abilityId: string
+}
+
 export type AttackMoveCommandMessage = {
   type: 'attack_move_command'
   unitIds: number[]
@@ -345,6 +360,10 @@ export type PlayerUpgradeSnapshot = {
 export type PlayerSnapshot = {
   playerId: string
   color: string
+  /** Alliance group. 0 = the default shared team (all players allied —
+   *  current behavior). Same teamId ⇒ allies. The client mirrors the server
+   *  hostility predicate from this; absent (older servers) ⇒ treat as 0. */
+  teamId: number
   resources: ResourceStockSnapshot[]
   upgrades?: PlayerUpgradeSnapshot[]
   townHallTier?: number
@@ -392,6 +411,8 @@ export type ClientMessage =
   | GatherCommandMessage
   | TrainUnitCommandMessage
   | AttackCommandMessage
+  | CastAbilityCommandMessage
+  | ToggleAutoCastCommandMessage
   | AttackMoveCommandMessage
   | CancelTrainingCommandMessage
   | SetBuildingSpawnPointCommandMessage
@@ -428,6 +449,22 @@ export type PerkCooldownSnapshot = {
   perkId: string
   remaining: number
   total: number
+}
+
+/** AbilitySnapshot is one of a unit's activatable abilities, with live
+ *  auto-cast + cooldown state. Sent only for the owning player's units; the
+ *  action bar renders a button per entry (left-click cast, right-click
+ *  toggles auto-cast when supportsAutoCast). */
+export type AbilitySnapshot = {
+  id: string
+  displayName?: string
+  icon?: string
+  manaCost?: number
+  supportsAutoCast?: boolean
+  /** Auto-cast currently enabled for this ability on this unit instance. */
+  autoCast?: boolean
+  cooldownRemaining?: number
+  cooldownTotal?: number
 }
 
 /** A single item held in an inventory slot. */
@@ -511,6 +548,8 @@ export type UnitSnapshot = {
    *  next activation is currently gated by a ticking timer appear here.
    *  Drives the clock-wipe overlay + seconds label on the perk HUD icon. */
   perkCooldowns?: PerkCooldownSnapshot[]
+  /** Activatable abilities (owned units only) for the action bar. */
+  abilities?: AbilitySnapshot[]
   /** Non-empty when this unit is linked to a VictoryCondition by objectiveId. */
   objectiveId?: string
   carriedResourceType?: ResourceType
@@ -744,6 +783,11 @@ export type EffectSnapshot = {
   /** Draw-time scale applied to the sprite's native frame dimensions. Default 1.0. */
   sizeScale?: number
   variant?: string
+  /** Where the effect renders relative to its anchor unit: "center"
+   *  (default / absent), "feet", or "head". Absent/"center" preserves the
+   *  historical origin placement (so existing perk effects are unchanged);
+   *  "feet"/"head" shift vertically using the unit's bounds. */
+  anchor?: 'center' | 'feet' | 'head' | ''
 }
 
 export type MatchSnapshotMessage = {

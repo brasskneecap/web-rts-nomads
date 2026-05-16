@@ -89,6 +89,23 @@ type UnitDef struct {
 	// flyer if "flyer" appears in its TargetableTypes.
 	Flyer bool `json:"flyer,omitempty"`
 
+	// ── Spellcaster kit (optional; zero values = a non-caster unit) ─────────
+	// MaxMana / ManaRegenRate seed the unit's mana pool at spawn (Part 3
+	// mechanics). CurrentMana starts at MaxMana. Absent ⇒ 0 ⇒ no mana.
+	MaxMana       int     `json:"maxMana,omitempty"`
+	ManaRegenRate float64 `json:"manaRegenRate,omitempty"`
+	// Projectile is the id of a ProjectileDef (Part 1) this unit's basic
+	// ranged attack fires (e.g. "fire_bolt"). Empty ⇒ the default procedural
+	// shot (Variant = unit type), unchanged from before. Validated at load.
+	Projectile string `json:"projectile,omitempty"`
+	// DamageType tags this unit's basic attack damage (Part 2). Optional
+	// flavor/metadata; empty ⇒ physical. Validated at load when non-empty.
+	DamageType DamageType `json:"damageType,omitempty"`
+	// Abilities is the unit's ability id list (AbilityDef ids, Part 6), slot
+	// order. Not validated at load — an ability may be authored in a later
+	// part; resolution is fail-safe at use (getAbilityDef).
+	Abilities []string `json:"abilities,omitempty"`
+
 	// TargetableTypes is the set of target classes this unit's attacks are
 	// valid against. Recognised entries: "ground", "flyer". When empty, the
 	// default is derived at spawn time from AttackVisual.kind: a projectile
@@ -165,6 +182,17 @@ func loadUnitDefsByType() map[string]UnitDef {
 				if t != TargetClassGround && t != TargetClassFlyer {
 					panic(rel + `: unit "` + def.Type + `": targetableTypes entry "` + t + `" must be one of "ground" | "flyer"`)
 				}
+			}
+			if def.DamageType != "" && !IsValidDamageType(def.DamageType) {
+				panic(rel + `: damageType "` + string(def.DamageType) + `" is not a registered damage type`)
+			}
+			if def.Projectile != "" {
+				if _, ok := getProjectileDef(def.Projectile); !ok {
+					panic(rel + `: projectile "` + def.Projectile + `" is not a registered projectile def`)
+				}
+			}
+			if def.MaxMana < 0 || def.ManaRegenRate < 0 {
+				panic(rel + `: maxMana and manaRegenRate must be >= 0`)
 			}
 			if _, dup := result[def.Type]; dup {
 				panic(rel + `: duplicate unit type "` + def.Type + `" — type ids must be globally unique across factions`)

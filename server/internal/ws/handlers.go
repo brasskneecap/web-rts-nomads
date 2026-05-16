@@ -368,6 +368,44 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.State.AttackWithUnits(client.PlayerID(), msg.UnitIDs, msg.TargetUnitID)
 
+		case "cast_ability_command":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.CastAbilityCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid cast_ability_command payload"})
+				continue
+			}
+			if ok, reason := match.State.RequestAbilityCast(client.PlayerID(), msg.CasterUnitID, msg.AbilityID, msg.TargetUnitID); !ok {
+				_ = client.WriteJSON(protocol.NotificationMessage{Type: "notification", Message: reason})
+			}
+
+		case "toggle_autocast_command":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.ToggleAutoCastCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid toggle_autocast_command payload"})
+				continue
+			}
+			// Silent no-op when invalid (not owned / not an auto-cast ability)
+			// per spec — no notification.
+			match.State.ToggleAutoCast(client.PlayerID(), msg.UnitID, msg.AbilityID)
+
 		case "attack_move_command":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{

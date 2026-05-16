@@ -54,6 +54,27 @@ type Projectile struct {
 	// Perks may override it at fire time for alternate shot visuals.
 	Variant string
 
+	// FollowEffect is the optional effect id (see effect_defs.go) that plays
+	// continuously on the projectile while it travels. Empty = none (the
+	// projectile sprite is the only visual). Set from
+	// ProjectileDef.FollowEffect via followEffectForProjectileDef when
+	// projectiles are spawned from a ProjectileDef (Part 7); existing
+	// procedurally-fired projectiles leave it "" and are unaffected.
+	FollowEffect string
+
+	// ImpactEffect is the optional effect id played on the target unit when
+	// this projectile reaches it (see landProjectileLocked). Set from
+	// ProjectileDef.ImpactEffect via impactEffectForProjectileDef when
+	// projectiles are spawned from a def (Part 7); existing procedurally-fired
+	// projectiles leave it "" and are unaffected.
+	ImpactEffect string
+
+	// DamageType is the element/school of this shot (Part 2), copied from the
+	// attacker's AttackDamageType at fire time. Flavor/metadata only today —
+	// it rides on the projectile as the seam future resistance logic / client
+	// tinting will read. Empty ⇒ physical (DamageType.OrPhysical()).
+	DamageType DamageType
+
 	// ── Pierce (Marksman silver) ───────────────────────────────────────────
 	// When true the arrow flies in a fixed straight line and damages enemies
 	// as it passes through them rather than homing on a single target. All
@@ -113,9 +134,29 @@ func (s *GameState) fireProjectileLocked(attacker, target *Unit, damage int) {
 // the on-the-wire variant string when non-empty (used to mark double-shot's
 // second arrow so the client can render a combined damage number).
 func (s *GameState) fireHomingProjectileLocked(attacker, target *Unit, damage int, variant string) {
+	// A unit may declare a projectile asset (UnitDef.projectile → ProjectileID,
+	// e.g. the Apprentice's "fire_bolt"). When set and resolvable, the shot
+	// uses that def's speed and carries its follow/impact effects, and the
+	// wire Variant defaults to the projectile id so the client renders that
+	// sprite. Unset (the archer / default case) is unchanged: defaultProjectile
+	// Speed, no follow/impact effect, Variant = UnitType. The explicit
+	// `variant` arg (double-shot marker) still wins when non-empty.
+	speed := defaultProjectileSpeed
+	var followEffect, impactEffect string
+	if attacker.ProjectileID != "" {
+		if def, ok := getProjectileDef(attacker.ProjectileID); ok {
+			speed = def.Speed
+			followEffect = followEffectForProjectileDef(def)
+			impactEffect = impactEffectForProjectileDef(def)
+			if variant == "" {
+				variant = attacker.ProjectileID
+			}
+		}
+	}
+
 	dx := target.X - attacker.X
 	dy := target.Y - attacker.Y
-	travelTime := math.Sqrt(dx*dx+dy*dy) / defaultProjectileSpeed
+	travelTime := math.Sqrt(dx*dx+dy*dy) / speed
 	if travelTime < minProjectileFlightSeconds {
 		travelTime = minProjectileFlightSeconds
 	}
@@ -139,6 +180,9 @@ func (s *GameState) fireHomingProjectileLocked(attacker, target *Unit, damage in
 		RemainingSeconds: travelTime,
 		Damage:           damage,
 		Variant:          variant,
+		FollowEffect:     followEffect,
+		ImpactEffect:     impactEffect,
+		DamageType:       attacker.AttackDamageType,
 	})
 }
 
@@ -374,11 +418,11 @@ func (s *GameState) tickPierceProjectileLocked(proj *Projectile, dt float64, dea
 			continue
 		}
 		if attacker != nil {
-			if !playersAreHostile(candidate.OwnerID, attacker.OwnerID) {
+			if !s.playersAreHostileLocked(candidate.OwnerID, attacker.OwnerID) {
 				continue
 			}
-		} else if candidate.OwnerID == proj.OwnerPlayerID {
-			// Attacker died; skip same-faction units to avoid friendly fire.
+		} else if s.playersAreFriendlyLocked(candidate.OwnerID, proj.OwnerPlayerID) {
+			// Attacker died; skip allied (same-team) units to avoid friendly fire.
 			continue
 		}
 		ox := candidate.X - proj.OriginX
@@ -427,6 +471,12 @@ func (s *GameState) tickPierceProjectileLocked(proj *Projectile, dt float64, dea
 }
 
 func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUnitIDs *[]int) {
+	// The projectile has reached its target — play its impact effect on the
+	// unit it hit (e.g. fire_bolt → "fizzle"). Done up-front so it fires
+	// regardless of whether the attacker survived the flight. No-op when the
+	// projectile carries no impact effect.
+	s.playProjectileImpactLocked(proj, target)
+
 	attacker := s.getUnitByIDLocked(proj.OwnerUnitID)
 	if attacker == nil {
 		// Attacker died between fire and land — damage still lands (the arrow

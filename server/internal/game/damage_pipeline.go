@@ -29,6 +29,20 @@ type DamageSource struct {
 	// Examples: "melee", "projectile", "building", "savage_strikes",
 	// "whirlwind", "cleave", "shared_pain", "pain_share_redirect", "retaliation".
 	Kind string
+	// DamageType is the element / school of this damage event, set from the
+	// attacker's attack or the ability definition (NOT the projectile). The
+	// zero value means "unspecified"; ResolvedDamageType() maps it to
+	// DamagePhysical so the many existing DamageSource{} call sites keep
+	// behaving as physical with no edits. Flavor/metadata only today —
+	// see damage_type.go.
+	DamageType DamageType
+}
+
+// ResolvedDamageType returns the damage event's element, defaulting an unset
+// DamageType to DamagePhysical. Read damage type through this rather than the
+// raw field so "unspecified" is always explicit.
+func (d DamageSource) ResolvedDamageType() DamageType {
+	return d.DamageType.OrPhysical()
 }
 
 // IsAnonymous returns true when the source carries no attacker attribution.

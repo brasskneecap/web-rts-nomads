@@ -69,7 +69,7 @@ func (s *GameState) playerEnemyDamageMultiplierLocked(attacker, defender *Unit) 
 	if attacker == nil || defender == nil {
 		return 0
 	}
-	if !playersAreHostile(attacker.OwnerID, defender.OwnerID) {
+	if !s.playersAreHostileLocked(attacker.OwnerID, defender.OwnerID) {
 		return 0
 	}
 	if defender.OwnerID == enemyPlayerID {

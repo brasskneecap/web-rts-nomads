@@ -81,6 +81,18 @@ type Unit struct {
 	// HP on the correct cadence.
 	HealthRegenPerSecond   float64
 	HealthRegenAccumulator float64
+	// Mana is an optional resource (spellcasters). All four fields default to
+	// 0, which means "this unit has no mana" — MaxMana == 0 makes the regen
+	// loop skip the unit entirely (see tickUnitManaRegenLocked in mana.go).
+	// MaxMana/CurrentMana are integer (like HP); ManaRegenAccumulator carries
+	// fractional regen between ticks so sub-1 mana/s rates still restore
+	// integer mana on the right cadence (mirrors the HealthRegen pair above).
+	// Named *PerSecond for consistency with HealthRegenPerSecond (the JSON /
+	// UnitDef field this is loaded from is "manaRegenRate", wired in Part 7).
+	MaxMana              int
+	CurrentMana          int
+	ManaRegenPerSecond   float64
+	ManaRegenAccumulator float64
 	BaseDamage          int
 	BaseArmor           int
 	BaseAttackSpeed     float64
@@ -204,6 +216,42 @@ type Unit struct {
 	AttackTargetID         int
 	AttackBuildingTargetID string
 	Attacking              bool
+	// Casting mirrors Attacking for the spell-cast animation slot: true while
+	// the unit is mid-cast so the client plays the "Casting" animation
+	// (distinct from "Attacking") and the combat tick skips the unit (it can't
+	// attack while casting). Set/cleared via begin/endUnitCastingLocked. The
+	// timed cast lifecycle (cast time, mana, interrupt) is layered on this in
+	// the ability system; this field is just the animation/-busy primitive.
+	Casting bool
+	// ProjectileID is the ProjectileDef id this unit's basic ranged attack
+	// fires (from UnitDef.Projectile, e.g. "fire_bolt"). Empty ⇒ the default
+	// procedural shot. AttackDamageType tags that attack's damage (Part 2
+	// flavor/metadata; empty ⇒ physical). Set at spawn from the unit def.
+	ProjectileID     string
+	AttackDamageType DamageType
+	// Abilities are the ability ids this unit has (AbilityDef ids, slot order;
+	// from UnitDef.Abilities). Per-instance auto-cast / cooldown state is
+	// layered on in the action-bar part. Nil for non-caster units.
+	Abilities []string
+	// Active ability cast (mirrors the AttackWindup* timed-state pattern).
+	// CastAbilityID == "" ⇒ not casting. CastTimeRemaining counts down in
+	// tickUnitCastLocked; on reaching 0 the ability resolves. Target is held
+	// by ID and re-resolved/validated every tick. LastCastFailure records the
+	// most recent failure reason for player feedback (surfaced by the action
+	// bar / WS layer via the existing NotificationMessage pattern).
+	CastAbilityID     string
+	CastTargetID      int
+	CastTimeRemaining float64
+	LastCastFailure   string
+	// Auto-cast state (Part 10), per unit instance — lazily allocated, GC'd
+	// with the unit on death (no shared/global state, nothing to clean up).
+	// AutoCastEnabled[abilityID] == true ⇒ the unit auto-casts that ability
+	// when conditions are met. AbilityCooldowns[abilityID] is seconds of
+	// cooldown remaining (decayed each tick). Maps are keyed by ability id;
+	// the auto-cast loop iterates the ordered Abilities slice, never these
+	// maps, so iteration order never drives outcomes (determinism).
+	AutoCastEnabled  map[string]bool
+	AbilityCooldowns map[string]float64
 	// ActionFacingDX/DY is the world-space delta from this unit to its current
 	// attack target, recomputed each tick the unit is in-range and firing.
 	// Cleared (0,0) when the unit is not actively attacking. Shipped via
@@ -341,6 +389,12 @@ const (
 type Player struct {
 	ID        string
 	Color     string
+	// TeamID is the alliance group. 0 = the default shared team, so every
+	// existing/zero-value Player is allied (current behavior preserved).
+	// Same TeamID ⇒ allies; different ⇒ hostile. __enemy__ is hostile to all
+	// teams regardless of this field (the team predicates short-circuit on
+	// it). Assign non-zero per-match to enable PvP/FFA — no call-site changes.
+	TeamID    int
 	Resources map[string]int
 
 	GlobalUnitSpawnTimeMultiplier float64
@@ -404,6 +458,7 @@ type GameState struct {
 	rngCosmetic *mrand.Rand // unit colour assignment and other visual randomness
 	rngSpawn    *mrand.Rand // reserved for future wave/spawn randomness
 	rngLoot     *mrand.Rand // legend-point drop rolls; seeded with (seed ^ 0x4)
+	rngCombat   *mrand.Rand // combat hit-resolution rolls (dodge/block); seeded with (seed ^ 0x5)
 
 	// buildingDamageDealt mirrors Unit.DamageDealtByUnit for buildings.
 	// buildingID → attackerID → accumulated damage. Paid out on destruction.
@@ -585,6 +640,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		saltCosmetic int64 = 0x2
 		saltSpawn    int64 = 0x3
 		saltLoot     int64 = 0x4
+		saltCombat   int64 = 0x5
 	)
 	state := &GameState{
 		Units:               []*Unit{},
@@ -600,6 +656,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		rngCosmetic:         mrand.New(mrand.NewSource(seed ^ saltCosmetic)),
 		rngSpawn:            mrand.New(mrand.NewSource(seed ^ saltSpawn)),
 		rngLoot:             mrand.New(mrand.NewSource(seed ^ saltLoot)),
+		rngCombat:           mrand.New(mrand.NewSource(seed ^ saltCombat)),
 		buildingDamageDealt: map[string]map[int]int{},
 		unitsByID:           map[int]*Unit{},
 		buildingsByID:       map[string]*protocol.BuildingTile{},
@@ -828,6 +885,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			ActiveBuffs:         s.activeBuffIconsLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
 			PerkCooldowns:       s.perkCooldownsLocked(unit),
+			Abilities:           s.abilityStatesLocked(unit),
 			StunnedRemaining:    unit.StunnedRemaining,
 			SlowedRemaining:     unit.SlowedRemaining,
 			SlowedMultiplier:    unit.SlowedMultiplier,
@@ -868,6 +926,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		playerSnap := protocol.PlayerSnapshot{
 			PlayerID:      player.ID,
 			Color:         player.Color,
+			TeamID:        player.TeamID,
 			Resources:     s.getPlayerResourceStocksLocked(player),
 			Upgrades:      s.playerUpgradeSnapshotsLocked(player.ID),
 			TownHallTier:  s.townhallTierForPlayerLocked(player.ID),
@@ -1092,6 +1151,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			ActiveBuffs:         s.activeBuffIconsLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
 			PerkCooldowns:       s.perkCooldownsLocked(unit),
+			Abilities:           s.abilityStatesLocked(unit),
 			StunnedRemaining:    unit.StunnedRemaining,
 			SlowedRemaining:     unit.SlowedRemaining,
 			SlowedMultiplier:    unit.SlowedMultiplier,
@@ -1125,6 +1185,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		playerSnap := protocol.PlayerSnapshot{
 			PlayerID:      player.ID,
 			Color:         player.Color,
+			TeamID:        player.TeamID,
 			Resources:     s.getPlayerResourceStocksLocked(player),
 			Upgrades:      s.playerUpgradeSnapshotsLocked(player.ID),
 			TownHallTier:  s.townhallTierForPlayerLocked(player.ID),
@@ -1358,6 +1419,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			ActiveBuffs:         s.activeBuffIconsLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
 			PerkCooldowns:       s.perkCooldownsLocked(unit),
+			Abilities:           s.abilityStatesLocked(unit),
 			StunnedRemaining:    unit.StunnedRemaining,
 			SlowedRemaining:     unit.SlowedRemaining,
 			SlowedMultiplier:    unit.SlowedMultiplier,
@@ -1391,6 +1453,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		playerSnap := protocol.PlayerSnapshot{
 			PlayerID:      player.ID,
 			Color:         player.Color,
+			TeamID:        player.TeamID,
 			Resources:     s.getPlayerResourceStocksLocked(player),
 			Upgrades:      s.playerUpgradeSnapshotsLocked(player.ID),
 			TownHallTier:  s.townhallTierForPlayerLocked(player.ID),
@@ -1654,11 +1717,33 @@ func (s *GameState) Update(dt float64) {
 			}
 		}
 
+		// Passive mana regen for spellcasters. No-op for units with no mana
+		// pool (MaxMana == 0), so non-caster units are unaffected.
+		s.tickUnitManaRegenLocked(unit, dt)
+
+		// Advance an in-progress ability cast (count down, resolve, or cancel
+		// if the target became invalid). No-op when not casting.
+		s.tickUnitCastLocked(unit, dt)
+
+		// Decay ability cooldowns, then run the auto-cast loop (may initiate
+		// a new cast if an auto-cast-enabled ability is ready). No-op for
+		// units with no cooldowns / no auto-cast toggles.
+		s.tickUnitAbilityCooldownsLocked(unit, dt)
+		s.tickUnitAutoCastLocked(unit)
+
 		// Advance time-based perk state (idle timers, buff durations).
 		s.tickUnitPerkStateLocked(unit, dt)
 		s.updateWorkerTaskLocked(unit, dt, blocked)
 
 		if unit.MiningInside {
+			continue
+		}
+
+		// Cast lock gates all pathing for the cast duration (the caster also
+		// cannot attack — see the tickUnitCombatLocked cast guard). Runs after
+		// tickUnitCastLocked so the tick a cast completes (Casting cleared)
+		// movement resumes immediately. Mirrors the stun pathing gate below.
+		if unit.Casting {
 			continue
 		}
 
@@ -1865,11 +1950,27 @@ func (s *GameState) checkPlayerLossLocked() {
 		townhallCounts[*b.OwnerID]++
 	}
 
+	// Team-aggregated defeat: a TEAM is eliminated only when every member's
+	// townhalls are gone (teammates can carry a downed ally). When that
+	// happens, mark all of the team's players lost together, so the existing
+	// GameOverSnapshot.LostPlayerIDs wire contract / IsGameOver are unchanged.
+	// Map iteration here only sums/sets — order never drives the outcome
+	// (sums are commutative; the lost-set is a set). Default single team for
+	// a lone player reduces exactly to "this player lost their last townhall".
+	teamTownhalls := map[int]int{}
+	teamEverHad := map[int]bool{}
+	for playerID := range s.playersWithTownhall {
+		team := s.playerTeamLocked(playerID)
+		teamEverHad[team] = true
+		teamTownhalls[team] += townhallCounts[playerID]
+	}
+
 	for playerID := range s.playersWithTownhall {
 		if s.lostPlayerIDs[playerID] {
 			continue
 		}
-		if townhallCounts[playerID] == 0 {
+		team := s.playerTeamLocked(playerID)
+		if teamEverHad[team] && teamTownhalls[team] == 0 {
 			s.lostPlayerIDs[playerID] = true
 		}
 	}

@@ -85,7 +85,7 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 	}
 
 	for _, hostile := range ctx.index.query(unit.X, unit.Y, detectionRange) {
-		if hostile == unit || !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 || !hostile.Visible {
+		if hostile == unit || !s.playersAreHostileLocked(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 || !hostile.Visible {
 			continue
 		}
 		if !unitCanTargetPlane(unit, hostile) {
@@ -137,7 +137,7 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 			if hostile == nil || hostile == unit || hostile.HP <= 0 || !hostile.Visible {
 				continue
 			}
-			if !playersAreHostile(hostile.OwnerID, unit.OwnerID) {
+			if !s.playersAreHostileLocked(hostile.OwnerID, unit.OwnerID) {
 				continue
 			}
 			if !unitCanTargetPlane(unit, hostile) {
@@ -178,7 +178,7 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 
 	if unit.TauntedByUnitID != 0 && unit.TauntRemaining > 0 {
 		taunter := s.getUnitByIDLocked(unit.TauntedByUnitID)
-		if taunter != nil && taunter.Visible && taunter.HP > 0 && playersAreHostile(taunter.OwnerID, unit.OwnerID) && unitCanTargetPlane(unit, taunter) {
+		if taunter != nil && taunter.Visible && taunter.HP > 0 && s.playersAreHostileLocked(taunter.OwnerID, unit.OwnerID) && unitCanTargetPlane(unit, taunter) {
 			score := s.scoreUnitTargetLocked(unit, taunter, profile, ctx) + combatTauntBonusScore
 			best = combatTarget{Kind: combatTargetUnit, Unit: taunter, Score: score}
 		}
@@ -412,7 +412,7 @@ func (s *GameState) backlineProtectionScoreLocked(ownerID string, target *Unit) 
 		return 0
 	}
 	ally := s.getUnitByIDLocked(target.AttackTargetID)
-	if ally == nil || ally.OwnerID != ownerID {
+	if ally == nil || !s.playersAreFriendlyLocked(ally.OwnerID, ownerID) {
 		return 0
 	}
 	profile := resolveCombatProfile(ally)
@@ -429,7 +429,7 @@ func (s *GameState) structureDefenseScoreLocked(unit, target *Unit) float64 {
 	best := 0.0
 	for i := range s.MapConfig.Buildings {
 		building := &s.MapConfig.Buildings[i]
-		if building.OwnerID == nil || *building.OwnerID != unit.OwnerID {
+		if building.OwnerID == nil || !s.playersAreFriendlyLocked(*building.OwnerID, unit.OwnerID) {
 			continue
 		}
 		center := s.buildingCenterLocked(building)
@@ -452,7 +452,7 @@ func (s *GameState) targetThreatensBacklineLocked(ownerID string, target *Unit) 
 		return false
 	}
 	ally := s.getUnitByIDLocked(target.AttackTargetID)
-	if ally == nil || ally.OwnerID != ownerID {
+	if ally == nil || !s.playersAreFriendlyLocked(ally.OwnerID, ownerID) {
 		return false
 	}
 	return resolveCombatProfile(ally).Backline
@@ -460,7 +460,7 @@ func (s *GameState) targetThreatensBacklineLocked(ownerID string, target *Unit) 
 
 func (s *GameState) isEngagedByFriendlyFrontlineLocked(ownerID string, target *Unit) bool {
 	for _, ally := range s.Units {
-		if ally.OwnerID != ownerID || ally.HP <= 0 || !ally.Visible {
+		if !s.playersAreFriendlyLocked(ally.OwnerID, ownerID) || ally.HP <= 0 || !ally.Visible {
 			continue
 		}
 		if !resolveCombatProfile(ally).Frontline {
@@ -478,7 +478,7 @@ func (s *GameState) estimateDangerScoreLocked(unit *Unit, targetX, targetY float
 	meleeThreats := 0.0
 	rangedThreats := 0.0
 	for _, hostile := range ctx.index.query(attackPoint.X, attackPoint.Y, 180) {
-		if !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
+		if !s.playersAreHostileLocked(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
 			continue
 		}
 		hostileProfile := resolveCombatProfile(hostile)
@@ -496,7 +496,7 @@ func (s *GameState) estimateDangerScoreLocked(unit *Unit, targetX, targetY float
 
 	frontlineSupportDist := math.MaxFloat64
 	for _, ally := range ctx.index.query(attackPoint.X, attackPoint.Y, combatDangerFrontlineSupportRadius) {
-		if ally.OwnerID != unit.OwnerID || ally.HP <= 0 {
+		if !s.unitsFriendlyLocked(ally, unit) || ally.HP <= 0 {
 			continue
 		}
 		if !resolveCombatProfile(ally).Frontline {
@@ -518,7 +518,7 @@ func (s *GameState) estimateDangerScoreLocked(unit *Unit, targetX, targetY float
 }
 
 func (s *GameState) isValidHostileBuildingTarget(unit *Unit, building *protocol.BuildingTile) bool {
-	if building == nil || !building.Visible || building.OwnerID == nil || !playersAreHostile(*building.OwnerID, unit.OwnerID) {
+	if building == nil || !building.Visible || building.OwnerID == nil || !s.playersAreHostileLocked(*building.OwnerID, unit.OwnerID) {
 		return false
 	}
 	hp, _, ok := getBuildingHP(building)

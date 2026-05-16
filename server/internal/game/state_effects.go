@@ -37,6 +37,11 @@ type effectInstance struct {
 	DurationTicks int
 	SizeScale    float64
 	Variant      string
+	// Anchor is where the effect renders relative to its bound unit
+	// (center/feet/head). Empty for perk-queued effects (queueEffectLocked
+	// never sets it) ⇒ the client treats empty as center, preserving prior
+	// behavior. playEffectOnUnitLocked sets it from the EffectDef.
+	Anchor EffectAnchor
 }
 
 // queueEffectLocked spawns a transient visual effect anchored to a unit or
@@ -137,6 +142,7 @@ func (s *GameState) effectSnapshotsLocked() []protocol.EffectSnapshot {
 			Progress:     progress,
 			SizeScale:    e.SizeScale,
 			Variant:      e.Variant,
+			Anchor:       string(e.Anchor),
 		})
 	}
 	return out

@@ -205,7 +205,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		if candidate == nil || candidate.ID == primaryID {
 			continue
 		}
-		if !playersAreHostile(candidate.OwnerID, attacker.OwnerID) {
+		if !s.playersAreHostileLocked(candidate.OwnerID, attacker.OwnerID) {
 			continue
 		}
 		if candidate.HP <= 0 || !candidate.Visible {
@@ -274,7 +274,7 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 		if candidate == nil || candidate.ID == primaryTarget.ID {
 			continue
 		}
-		if !playersAreHostile(candidate.OwnerID, attacker.OwnerID) {
+		if !s.playersAreHostileLocked(candidate.OwnerID, attacker.OwnerID) {
 			continue // do not cleave friendlies
 		}
 		if candidate.HP <= 0 || !candidate.Visible {

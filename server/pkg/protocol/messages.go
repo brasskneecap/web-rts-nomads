@@ -197,6 +197,22 @@ type PerkCooldownSnapshot struct {
 	Total     float64 `json:"total"`
 }
 
+// AbilitySnapshot carries one of a unit's abilities to the client so the
+// action bar can render its button, auto-cast glow, and cooldown overlay.
+// Sent only for the owning player's units (the action bar is only shown for
+// your own selection). CooldownRemaining/Total drive the same clock-wipe
+// overlay the perk cooldowns use.
+type AbilitySnapshot struct {
+	ID                string  `json:"id"`
+	DisplayName       string  `json:"displayName,omitempty"`
+	Icon              string  `json:"icon,omitempty"`
+	ManaCost          int     `json:"manaCost,omitempty"`
+	SupportsAutoCast  bool    `json:"supportsAutoCast,omitempty"`
+	AutoCast          bool    `json:"autoCast,omitempty"` // auto-cast currently enabled
+	CooldownRemaining float64 `json:"cooldownRemaining,omitempty"`
+	CooldownTotal     float64 `json:"cooldownTotal,omitempty"`
+}
+
 type TerrainTile struct {
 	GridCoord
 	Terrain string `json:"terrain"`
@@ -284,6 +300,26 @@ type AttackCommandMessage struct {
 	Type         string `json:"type"`
 	UnitIDs      []int  `json:"unitIds"`
 	TargetUnitID int    `json:"targetUnitId"`
+}
+
+// CastAbilityCommandMessage is the action-bar standard-cast (left-click):
+// caster casts AbilityID at TargetUnitID. The server validates ownership,
+// targeting, range, and mana; on failure it replies with a
+// NotificationMessage (same pattern as train_unit_command).
+type CastAbilityCommandMessage struct {
+	Type         string `json:"type"`
+	CasterUnitID int    `json:"casterUnitId"`
+	AbilityID    string `json:"abilityId"`
+	TargetUnitID int    `json:"targetUnitId"`
+}
+
+// ToggleAutoCastCommandMessage is the action-bar auto-cast toggle
+// (right-click) for UnitID's AbilityID. Silent no-op when the ability does
+// not support auto-cast or the unit is not owned by the sender.
+type ToggleAutoCastCommandMessage struct {
+	Type      string `json:"type"`
+	UnitID    int    `json:"unitId"`
+	AbilityID string `json:"abilityId"`
 }
 
 type AttackMoveCommandMessage struct {
@@ -464,6 +500,10 @@ type InventorySnapshot struct {
 type PlayerSnapshot struct {
 	PlayerID      string                  `json:"playerId"`
 	Color         string                  `json:"color"`
+	// TeamID is the player's alliance group. 0 = the default shared team
+	// (all players allied — current behavior). Same TeamID ⇒ allies. The
+	// client mirrors the server hostility predicate from this value.
+	TeamID        int                     `json:"teamId"`
 	Resources     []ResourceStock         `json:"resources"`
 	Upgrades      []PlayerUpgradeSnapshot `json:"upgrades,omitempty"`
 	TownHallTier  int                     `json:"townHallTier,omitempty"`
@@ -538,6 +578,10 @@ type UnitSnapshot struct {
 	// rallying_banner, trap-placement perks) ever appear here, and only while
 	// Remaining > 0 — ready-to-fire perks are omitted entirely.
 	PerkCooldowns []PerkCooldownSnapshot `json:"perkCooldowns,omitempty"`
+	// Abilities: the unit's activatable abilities (Part 6/8) with live
+	// auto-cast + cooldown state, for the action bar. Owned units only;
+	// absent for units with no abilities.
+	Abilities []AbilitySnapshot `json:"abilities,omitempty"`
 	// ObjectiveID is non-empty when this unit is linked to a victory condition.
 	// Matches a VictoryCondition.ID in MapConfig.VictoryConditions.
 	ObjectiveID string `json:"objectiveId,omitempty"`
@@ -767,6 +811,10 @@ type EffectSnapshot struct {
 	Progress     float64 `json:"progress"`
 	SizeScale    float64 `json:"sizeScale,omitempty"`
 	Variant      string  `json:"variant,omitempty"`
+	// Anchor is where the effect renders relative to its anchor unit:
+	// "center" (default / empty), "feet", or "head". Empty is treated as
+	// center by the client (preserves prior perk-effect behavior).
+	Anchor string `json:"anchor,omitempty"`
 }
 
 // FogOfWarSnapshot carries the per-player FOW grid to the client each tick.

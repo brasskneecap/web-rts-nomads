@@ -325,10 +325,12 @@
               class="action-cell"
               :class="{
                 'action-cell--active': ui.selection.actions[i - 1].active,
+                'action-cell--autocast': ui.selection.actions[i - 1].autoCast,
               }"
               :disabled="ui.selection.actions[i - 1].disabled"
               type="button"
               @click="$emit('action', ui.selection.actions[i - 1].id)"
+              @contextmenu.prevent="$emit('action', 'autocast-toggle-' + ui.selection.actions[i - 1].id)"
             >
               <ActionIcon :action="ui.selection.actions[i - 1]" />
               <!-- Styled action tooltip — shared frame with the stat /
@@ -1529,6 +1531,15 @@ button.inventory-slot:focus-visible {
 
 .action-cell--active {
   filter: brightness(1.25) saturate(1.15);
+}
+
+/* Auto-cast enabled: glowing border around the ability icon. Placeholder
+   styling — TODO: dedicated visual asset / shader / animation for the glow
+   border (per spec). Mirrors the perk-rank box-shadow idiom. */
+.action-cell--autocast {
+  box-shadow:
+    inset 0 0 0 2px rgba(90, 190, 255, 0.7),
+    0 0 7px rgba(90, 190, 255, 0.45);
 }
 
 .action-cell:disabled {

@@ -1999,6 +1999,13 @@ export class CanvasRenderer {
         const anchor = unitsById.get(effect.anchorUnitId)
         wx = anchor?.x ?? effect.x
         wy = anchor?.y ?? effect.y
+        // Anchor placement relative to the unit's bounds. Empty/"center"
+        // keeps the historical origin placement (so existing perk-queued
+        // effects are pixel-unchanged); only "feet"/"head" shift vertically.
+        if (anchor && (effect.anchor === 'feet' || effect.anchor === 'head')) {
+          const b = getUnitBoundsFor({ path: anchor.path, unitType: anchor.unitType })
+          wy = anchor.y + (effect.anchor === 'head' ? b.top : b.bottom)
+        }
       } else {
         wx = effect.x
         wy = effect.y

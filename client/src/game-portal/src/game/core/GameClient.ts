@@ -321,6 +321,28 @@ export class GameClient {
       return
     }
 
+    // Ability standard cast (action-bar left-click): enter targeting mode;
+    // the next friendly-unit click sends the cast command.
+    if (actionId.startsWith('cast-ability-')) {
+      this.state.beginAbilityTargeting(actionId.slice('cast-ability-'.length))
+      this.input.refreshCursor()
+      return
+    }
+
+    // Auto-cast toggle (action-bar right-click → emits 'autocast-toggle-' +
+    // the ability's action id). No-op for non-ability cells.
+    if (actionId.startsWith('autocast-toggle-')) {
+      const rest = actionId.slice('autocast-toggle-'.length)
+      if (rest.startsWith('cast-ability-')) {
+        const abilityId = rest.slice('cast-ability-'.length)
+        const ids = this.state.getOrderedSelectedUnitIds()
+        if (ids.length > 0) {
+          this.network.sendToggleAutocastCommand(ids[0], abilityId)
+        }
+      }
+      return
+    }
+
     if (actionId === 'hold') {
       const unitIds = this.state.getOrderedSelectedUnitIds()
       if (unitIds.length > 0) {
@@ -482,6 +504,19 @@ export class GameClient {
           }
         }
 
+        this.state.cancelUnitTargeting()
+        return true
+      }
+
+      if (this.state.isUnitTargetingActive('cast-ability') && unitIds.length > 0) {
+        // The selected unit is the caster; the click resolves the target
+        // (own/visible unit — covers self & allies). The server validates
+        // ownership, targeting rules, range, and mana.
+        const target = this.state.getUnitAtPosition(x, y)
+        const abilityId = this.state.castAbilityId
+        if (target && abilityId) {
+          this.network.sendCastAbilityCommand(unitIds[0], abilityId, target.id)
+        }
         this.state.cancelUnitTargeting()
         return true
       }

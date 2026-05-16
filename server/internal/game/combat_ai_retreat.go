@@ -139,7 +139,7 @@ func (s *GameState) shouldRetreatLocked(unit *Unit, profile CombatProfile, ctx c
 	}
 	meleeThreats := 0
 	for _, hostile := range ctx.index.query(unit.X, unit.Y, profile.RetreatTriggerMeleeRange) {
-		if !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
+		if !s.playersAreHostileLocked(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 {
 			continue
 		}
 		hostileProfile := resolveCombatProfile(hostile)
@@ -154,7 +154,7 @@ func (s *GameState) issueRetreatLocked(unit *Unit, profile CombatProfile, blocke
 	var awayX, awayY float64
 	count := 0.0
 	for _, hostile := range s.Units {
-		if !playersAreHostile(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 || !hostile.Visible {
+		if !s.playersAreHostileLocked(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 || !hostile.Visible {
 			continue
 		}
 		hostileProfile := resolveCombatProfile(hostile)

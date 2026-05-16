@@ -75,15 +75,65 @@ func (s *GameState) logAttackTiming(kind string, attacker *Unit, targetID int, t
 // owner ID (enemyPlayerID, "__enemy__") is hostile to real players, and real
 // players are hostile to it. Same owner is never hostile.
 //
-// Future work will allow per-match specification of player-vs-player hostility;
-// until then, joining players default to allied. Update this function (and
-// nothing else) when that spec lands — every hostility check in the codebase
-// routes through here.
-func playersAreHostile(a, b string) bool {
+// ── Team / alliance chokepoint ───────────────────────────────────────────────
+//
+// Alliance is data: Player.TeamID. Same team ⇒ allied; different ⇒ hostile.
+// Everyone defaults to team 0, so with no per-match team assignment this is
+// bit-for-bit the old behavior (all real players allied; only the __enemy__
+// PvE AI hostile). PvP/FFA later = assign different TeamIDs at match setup;
+// no call site changes. Every hostility/friendship decision must route
+// through these four predicates (never raw OwnerID comparisons).
+
+// playerTeamLocked returns ownerID's TeamID, or 0 (default shared team) when
+// the player is absent (defensive: a unit can briefly outlive its Player
+// entry during removal — default-team for one tick is harmless). __enemy__
+// is never routed here; the predicates short-circuit on it first.
+func (s *GameState) playerTeamLocked(ownerID string) int {
+	if p := s.Players[ownerID]; p != nil {
+		return p.TeamID
+	}
+	return 0
+}
+
+// playersAreHostileLocked: same owner ⇒ never hostile; __enemy__ ⇒ hostile to
+// every player team (and vice-versa); otherwise hostile iff different team.
+// At the default (all team 0) this collapses exactly onto the pre-team logic.
+func (s *GameState) playersAreHostileLocked(a, b string) bool {
 	if a == b {
 		return false
 	}
-	return a == enemyPlayerID || b == enemyPlayerID
+	if a == enemyPlayerID || b == enemyPlayerID {
+		return true
+	}
+	return s.playerTeamLocked(a) != s.playerTeamLocked(b)
+}
+
+// playersAreFriendlyLocked reports allies (same team, self included). This is
+// NOT !hostile: the __enemy__ AI is never an ally — not even to itself — so
+// heals / ally-scoring / friendly-fire skips never treat enemy units as
+// friendly.
+func (s *GameState) playersAreFriendlyLocked(a, b string) bool {
+	if a == enemyPlayerID || b == enemyPlayerID {
+		return false
+	}
+	return s.playerTeamLocked(a) == s.playerTeamLocked(b)
+}
+
+// unitsHostileLocked / unitsFriendlyLocked are the unit-level forms for
+// within-tick call sites holding resolved *Unit working values. They encode
+// only the alliance relation — callers keep their own nil/HP/Visible guards.
+func (s *GameState) unitsHostileLocked(a, b *Unit) bool {
+	if a == nil || b == nil || a.ID == b.ID {
+		return false
+	}
+	return s.playersAreHostileLocked(a.OwnerID, b.OwnerID)
+}
+
+func (s *GameState) unitsFriendlyLocked(a, b *Unit) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return s.playersAreFriendlyLocked(a.OwnerID, b.OwnerID)
 }
 
 // combatTargetIsValidLocked is the single source of truth for "is this unit
@@ -91,7 +141,7 @@ func playersAreHostile(a, b string) bool {
 // shouldDropCurrentTargetLocked so the two paths agree on the predicate set.
 // target may be nil (unit was removed).
 func (s *GameState) combatTargetIsValidLocked(unit, target *Unit) bool {
-	if target == nil || !target.Visible || target.HP <= 0 || !playersAreHostile(target.OwnerID, unit.OwnerID) {
+	if target == nil || !target.Visible || target.HP <= 0 || !s.playersAreHostileLocked(target.OwnerID, unit.OwnerID) {
 		return false
 	}
 	return unitCanTargetPlane(unit, target)
@@ -123,7 +173,7 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 	defer s.mu.Unlock()
 
 	target := s.getUnitByIDLocked(targetUnitID)
-	if target == nil || !target.Visible || !playersAreHostile(target.OwnerID, playerID) {
+	if target == nil || !target.Visible || !s.playersAreHostileLocked(target.OwnerID, playerID) {
 		return
 	}
 
@@ -253,7 +303,7 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 		if u.HP <= 0 || !u.Visible {
 			continue
 		}
-		if !playersAreHostile(u.OwnerID, attacker.OwnerID) {
+		if !s.playersAreHostileLocked(u.OwnerID, attacker.OwnerID) {
 			continue
 		}
 		// Respect targetability — a ground-only splasher can't bleed into flyers.
@@ -393,6 +443,17 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 	var destroyedBuildingIDs []string
 
 	for _, unit := range s.Units {
+		// Cast lock: a unit mid-cast is animation-locked. Pin "Casting" and
+		// skip combat dispatch so the per-tick status writer below can never
+		// clobber it with "Attacking"/"Idle", and the unit cannot attack while
+		// casting. Mirrors the AttackWindup early-continue just below. The
+		// timed cast lifecycle (duration, mana, interrupt) is layered on this
+		// by the ability system.
+		if unit.Casting {
+			unit.Status = unitStatusCasting
+			continue
+		}
+
 		// Mid-swing windup: decay toward 0; on completion resolve damage.
 		// Runs ahead of target/branch dispatch so the swing is the single
 		// authoritative animation phase for the unit. Paused while stunned
@@ -667,7 +728,7 @@ func (s *GameState) findNearestHostileUnitForBuildingLocked(building *protocol.B
 	bestDistSq := attackRange * attackRange
 
 	for _, unit := range s.Units {
-		if !unit.Visible || unit.HP <= 0 || !playersAreHostile(unit.OwnerID, ownerID) {
+		if !unit.Visible || unit.HP <= 0 || !s.playersAreHostileLocked(unit.OwnerID, ownerID) {
 			continue
 		}
 
@@ -688,7 +749,7 @@ func (s *GameState) unitsAreInMutualMeleeLocked(a, b *Unit) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	if !playersAreHostile(a.OwnerID, b.OwnerID) {
+	if !s.playersAreHostileLocked(a.OwnerID, b.OwnerID) {
 		return false
 	}
 	aProfile := resolveCombatProfile(a)

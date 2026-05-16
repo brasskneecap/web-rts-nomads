@@ -297,7 +297,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 		case "caltrops":
 			currentInZone := make(map[int]bool, len(trap.UnitsInZone))
 			for _, unit := range s.Units {
-				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
+				if unit == nil || !s.playersAreHostileLocked(unit.OwnerID, trap.OwnerPlayerID) {
 					continue // skip allies
 				}
 				if unit.HP <= 0 || !unit.Visible {
@@ -447,7 +447,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 		case "fire_pit":
 			currentInZone := make(map[int]bool, len(trap.UnitsInZone))
 			for _, unit := range s.Units {
-				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
+				if unit == nil || !s.playersAreHostileLocked(unit.OwnerID, trap.OwnerPlayerID) {
 					continue
 				}
 				if unit.HP <= 0 || !unit.Visible {
@@ -615,7 +615,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 			triggerRadSq := trap.TriggerRadius * trap.TriggerRadius
 			triggered := false
 			for _, unit := range s.Units {
-				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
+				if unit == nil || !s.playersAreHostileLocked(unit.OwnerID, trap.OwnerPlayerID) {
 					continue
 				}
 				if unit.HP <= 0 || !unit.Visible {
@@ -645,7 +645,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 		case "marker_trap":
 			currentInZone := make(map[int]bool, len(trap.UnitsInZone))
 			for _, unit := range s.Units {
-				if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
+				if unit == nil || !s.playersAreHostileLocked(unit.OwnerID, trap.OwnerPlayerID) {
 					continue
 				}
 				if unit.HP <= 0 || !unit.Visible {
@@ -1138,7 +1138,7 @@ func (s *GameState) trapPlacementOffsetLocked(unit *Unit, radius float64) (float
 
 	if unit.AttackTargetID != 0 {
 		if target := s.unitsByID[unit.AttackTargetID]; target != nil &&
-			target.HP > 0 && target.Visible && playersAreHostile(target.OwnerID, unit.OwnerID) {
+			target.HP > 0 && target.Visible && s.playersAreHostileLocked(target.OwnerID, unit.OwnerID) {
 			targetX, targetY = target.X, target.Y
 			haveTarget = true
 		}
@@ -1150,7 +1150,7 @@ func (s *GameState) trapPlacementOffsetLocked(unit *Unit, radius float64) (float
 			if candidate == nil || candidate.ID == unit.ID {
 				continue
 			}
-			if !playersAreHostile(candidate.OwnerID, unit.OwnerID) {
+			if !s.playersAreHostileLocked(candidate.OwnerID, unit.OwnerID) {
 				continue
 			}
 			if candidate.HP <= 0 || !candidate.Visible {
@@ -1245,7 +1245,7 @@ func (s *GameState) detonateExplosiveTrapLocked(trap *Trap, ownerUnit *Unit, dea
 	}
 	explosionRadSq := trap.Radius * trap.Radius
 	for _, unit := range s.Units {
-		if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
+		if unit == nil || !s.playersAreHostileLocked(unit.OwnerID, trap.OwnerPlayerID) {
 			continue // no friendly fire
 		}
 		if unit.HP <= 0 || !unit.Visible {
@@ -1304,7 +1304,7 @@ func (s *GameState) fireCataclysmLocked(trap *Trap, ownerUnit *Unit, deadUnitIDs
 
 	radSq := trap.Radius * trap.Radius
 	for _, unit := range s.Units {
-		if unit == nil || !playersAreHostile(unit.OwnerID, trap.OwnerPlayerID) {
+		if unit == nil || !s.playersAreHostileLocked(unit.OwnerID, trap.OwnerPlayerID) {
 			continue
 		}
 		if unit.HP <= 0 || !unit.Visible {
@@ -1349,7 +1349,7 @@ func (s *GameState) fireReactiveFlamesLocked(cx, cy, radius float64, damage int,
 	}
 	radSq := radius * radius
 	for _, u := range s.Units {
-		if u == nil || !playersAreHostile(u.OwnerID, ownerPlayerID) {
+		if u == nil || !s.playersAreHostileLocked(u.OwnerID, ownerPlayerID) {
 			continue
 		}
 		if u.HP <= 0 || !u.Visible {
@@ -1856,7 +1856,7 @@ func (s *GameState) trapperHasHostileInRangeLocked(trapper *Unit) bool {
 		if other == nil || other == trapper || other.HP <= 0 || !other.Visible {
 			continue
 		}
-		if !playersAreHostile(other.OwnerID, trapper.OwnerID) {
+		if !s.playersAreHostileLocked(other.OwnerID, trapper.OwnerID) {
 			continue
 		}
 		if distanceSquared(trapper.X, trapper.Y, other.X, other.Y) <= rangeSq {

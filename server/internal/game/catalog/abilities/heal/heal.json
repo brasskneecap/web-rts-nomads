@@ -1,0 +1,19 @@
+{
+  "id": "heal",
+  "displayName": "Heal",
+  "type": "spell",
+  "manaCost": 5,
+  "healAmount": 5,
+  "castRange": "match_attack_range",
+  "castTime": 1.0,
+  "cooldown": 0,
+  "damageType": "holy",
+  "canTargetSelf": true,
+  "canTargetAllies": true,
+  "canTargetEnemies": false,
+  "casterAnimation": "Casting",
+  "effectOnTarget": "healing_glow",
+  "icon": "TODO/abilities/heal.png",
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "lowest_hp_percentage_ally_in_range"
+}

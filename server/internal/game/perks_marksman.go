@@ -363,7 +363,7 @@ func (s *GameState) fireSplitShotsLocked(attacker, primaryTarget *Unit, primaryR
 		if candidate.HP <= 0 || !candidate.Visible {
 			continue
 		}
-		if !playersAreHostile(candidate.OwnerID, attacker.OwnerID) {
+		if !s.playersAreHostileLocked(candidate.OwnerID, attacker.OwnerID) {
 			continue
 		}
 		dx := candidate.X - attacker.X
@@ -453,7 +453,7 @@ func (s *GameState) fireDeferredDoubleShotLocked(attacker *Unit) {
 	}
 	target := s.getUnitByIDLocked(attacker.PerkState.DoubleShotPendingTargetID)
 	// Standard target validation — same predicate set as combatTargetIsValidLocked.
-	if target == nil || target.HP <= 0 || !target.Visible || !playersAreHostile(target.OwnerID, attacker.OwnerID) {
+	if target == nil || target.HP <= 0 || !target.Visible || !s.playersAreHostileLocked(target.OwnerID, attacker.OwnerID) {
 		return
 	}
 	// Range gate: out-of-range targets just drop the second shot rather than
@@ -563,7 +563,7 @@ func (s *GameState) fireExplosiveTipsLocked(attacker, primaryTarget *Unit, def *
 		if candidate.HP <= 0 || !candidate.Visible {
 			continue
 		}
-		if !playersAreHostile(candidate.OwnerID, attacker.OwnerID) {
+		if !s.playersAreHostileLocked(candidate.OwnerID, attacker.OwnerID) {
 			continue
 		}
 		dx := candidate.X - primaryTarget.X
