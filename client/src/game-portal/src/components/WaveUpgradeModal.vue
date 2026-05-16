@@ -50,7 +50,7 @@
           <span class="card-rarity">{{ offer.rarity }}</span>
           <span class="card-name">{{ offer.name }}</span>
           <span class="card-desc">{{ offer.description }}</span>
-          <span class="card-stack">Stack {{ offer.stackCurrent }} / {{ offer.stackMax }}</span>
+          <span v-if="offer.stackMax > 0" class="card-stack">Stack {{ offer.stackCurrent }} / {{ offer.stackMax }}</span>
         </button>
       </div>
 

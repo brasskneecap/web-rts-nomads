@@ -285,6 +285,14 @@ type Unit struct {
 	UnreachableTargetID         int
 	UnreachableBuildingTargetID string
 	UnreachableUntilTick        int
+	// NextApproachRepathTick throttles the forced repath that tickUnitCombatLocked
+	// issues every tick a unit is out of attack range and not moving. Without this,
+	// a unit surrounded by a dense crowd runs the full sub-cell A* (up to 65k
+	// node explorations) every single tick even though no path exists, locking
+	// the tick budget. Mirrors NextObjectiveSearchTick — set forward by
+	// approachRepathCooldownTicks when assignUnitPath fails; cleared when the
+	// unit starts moving or switches targets.
+	NextApproachRepathTick int
 	// NextGuardReturnTick holds tickGuardReturnLocked off for a brief grace
 	// window after a target is dropped. Without this, a guard that loses its
 	// target (e.g. target died) is yanked back to its anchor on the same tick
@@ -1089,9 +1097,14 @@ func (s *GameState) buildWaveUpgradeSnapshotLocked(viewerID string) *protocol.Wa
 	}
 	offers := make([]protocol.UpgradeOffer, 0, len(player.UpgradeState.CurrentOffers))
 	for _, def := range player.UpgradeState.CurrentOffers {
-		effectiveCap := def.MaxStacks
-		if player.UpgradeState.MaxUpgradeStacks > effectiveCap {
-			effectiveCap = player.UpgradeState.MaxUpgradeStacks
+		stackCurrent := 0
+		stackMax := 0
+		if !def.Unlimited {
+			stackMax = def.MaxStacks
+			if player.UpgradeState.MaxUpgradeStacks > stackMax {
+				stackMax = player.UpgradeState.MaxUpgradeStacks
+			}
+			stackCurrent = player.UpgradeState.UpgradeStacks[def.Group]
 		}
 		offers = append(offers, protocol.UpgradeOffer{
 			ID:                 def.ID,
@@ -1100,9 +1113,9 @@ func (s *GameState) buildWaveUpgradeSnapshotLocked(viewerID string) *protocol.Wa
 			Description:        def.Description,
 			Rarity:             def.Rarity,
 			Scope:              def.Scope,
-			StackCurrent:       player.UpgradeState.UpgradeStacks[def.Group],
-			StackMax:           effectiveCap,
-			RequiresTargetUnit: def.Effect.Type == "xp",
+			StackCurrent:       stackCurrent,
+			StackMax:           stackMax,
+			RequiresTargetUnit: def.RequiresTargetUnit(),
 		})
 	}
 	return &protocol.WaveUpgradeOfferSnapshot{
@@ -1127,7 +1140,9 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		// No FOW for this viewer — return the full unfiltered snapshot.
 		// We cannot call s.Snapshot() here because it acquires RLock again;
 		// build inline using the same lock we already hold.
-		return s.snapshotUnfilteredLocked()
+		snap := s.snapshotUnfilteredLocked()
+		snap.WaveUpgrade = s.buildWaveUpgradeSnapshotLocked(viewerID)
+		return snap
 	}
 
 	cellSize := s.MapConfig.CellSize

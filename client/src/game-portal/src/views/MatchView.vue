@@ -53,7 +53,7 @@
 
     <WaveUpgradeModal
       v-if="hasStarted && ui.waveUpgrade"
-      :upgrade="ui.waveUpgrade"
+      :upgrade="ui.waveUpgrade!"
       :units="ui.allPlayerUnits"
       :send-choice="sendWaveUpgradeChoice"
       :send-reroll="sendWaveUpgradeReroll"
@@ -281,6 +281,10 @@ const {
   reconnectAttempt,
   maxReconnectAttempts,
 } = useGameClient()
+
+watchEffect(() => {
+  console.log('[UPGRADE-TEST] MatchView watchEffect: hasStarted=', hasStarted.value, 'waveUpgrade=', ui.value.waveUpgrade)
+})
 
 const debugSpawnTargetingActive = computed(() => ui.value.debugSpawnTargetingActive)
 

@@ -69,6 +69,54 @@ func TestApplyUpgrade_XPGrantReachesTargetUnit(t *testing.T) {
 	}
 }
 
+// TestWaveStatBuffs_SpawnedUnitReceivesStackedMultipliers verifies that a unit
+// spawned after multiple wave damage upgrades receives the full stacked
+// multiplier, not just the most recent one.
+func TestWaveStatBuffs_SpawnedUnitReceivesStackedMultipliers(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.Players["p1"] = &Player{
+		ID:           "p1",
+		Resources:    map[string]int{},
+		Upgrades:     map[UpgradeTrack]int{},
+		UpgradeState: newPlayerUpgradeState(1, 99),
+	}
+
+	// Spawn a soldier so we know its catalog BaseDamage.
+	ref := s.spawnPlayerUnitLocked("soldier", "p1", "#fff", s.gridToWorldCenter(s.worldToGrid(200, 200)))
+	if ref == nil {
+		t.Skip("soldier unit type not available in test map")
+	}
+	catalogBase := ref.BaseDamage
+
+	// Simulate three wave damage upgrades (matching the user scenario: 18%, 18%, 10%).
+	// iron_warlord_rare targets archetype=soldier (+18%); iron_warlord_common is +10%.
+	if ref.Archetype != "soldier" {
+		t.Skipf("soldier archetype=%q, not soldier; adjust upgrade ID in test", ref.Archetype)
+	}
+	s.applyUpgradeLocked("p1", "iron_warlord_rare", 0)   // +18%
+	s.applyUpgradeLocked("p1", "iron_warlord_rare", 0)   // +18%
+	s.applyUpgradeLocked("p1", "iron_warlord_common", 0) // +10%
+
+	// Spawn a second soldier AFTER the upgrades.
+	pos := s.gridToWorldCenter(s.worldToGrid(220, 200))
+	newUnit := s.spawnPlayerUnitLocked("soldier", "p1", "#fff", pos)
+	if newUnit == nil {
+		t.Fatal("could not spawn second soldier")
+	}
+
+	// The accumulated multiplier on the first unit and the new spawn must match.
+	if ref.BaseDamage != newUnit.BaseDamage {
+		t.Errorf("stacked upgrade mismatch: existing soldier BaseDamage=%d, newly spawned BaseDamage=%d (catalog=%d)",
+			ref.BaseDamage, newUnit.BaseDamage, catalogBase)
+	}
+
+	// Both must be greater than catalog base (upgrades actually applied).
+	if newUnit.BaseDamage <= catalogBase {
+		t.Errorf("new unit BaseDamage %d not above catalog %d — wave buffs not applied at spawn",
+			newUnit.BaseDamage, catalogBase)
+	}
+}
+
 func TestApplyUpgrade_UnknownIDIsNoOp(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	s.Players["p1"] = &Player{

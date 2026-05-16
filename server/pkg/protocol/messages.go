@@ -597,14 +597,15 @@ type UnitSnapshot struct {
 	TargetY             float64  `json:"targetY,omitempty"`
 	Moving              bool     `json:"moving"`
 	// ActionFacingDX/DY is the unit→target world-space delta the server is
-	// committing to for the current tick's attack. Only populated while the
-	// unit is in-range and firing (Status == "Attacking"); zero/absent
-	// otherwise. The client uses this to face the sprite at the exact target
-	// the server is shooting, instead of doing its own nearest-enemy search
-	// (which can pick a different target than the server when multiple are
-	// in range or the server's target is off-screen).
-	ActionFacingDX float64 `json:"actionFacingDx,omitempty"`
-	ActionFacingDY float64 `json:"actionFacingDy,omitempty"`
+	// committing to for the current tick's attack. Non-zero while the unit is
+	// actively firing; both zero when the unit is not in-swing. Always sent
+	// (no omitempty) so the client can distinguish "server sent zero" (not
+	// firing) from "field absent" (old server). Without this, a purely
+	// vertical or horizontal attack direction (one component = 0) would be
+	// omitted and the client would fall back to the expensive findAttackFacing
+	// scan for every affected unit every frame.
+	ActionFacingDX float64 `json:"actionFacingDx"`
+	ActionFacingDY float64 `json:"actionFacingDy"`
 	// WorkTargetID is the building this unit is currently gathering from,
 	// constructing, or repairing. The client uses it to orient the worker
 	// sprite toward the exact building it is interacting with (there may be

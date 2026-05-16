@@ -39,8 +39,8 @@ func TestUpgradeCatalog_GetUnknownID(t *testing.T) {
 
 func TestUpgradeCatalog_ListDefsCountAndOrder(t *testing.T) {
 	defs := listUpgradeDefs()
-	if len(defs) != 6 {
-		t.Fatalf("expected 6 upgrade defs, got %d", len(defs))
+	if len(defs) != 8 {
+		t.Fatalf("expected 8 upgrade defs, got %d", len(defs))
 	}
 	for i := 1; i < len(defs); i++ {
 		if defs[i].ID <= defs[i-1].ID {
@@ -54,8 +54,8 @@ func TestUpgradeCatalog_FortifyCommonEffect(t *testing.T) {
 	if !ok {
 		t.Fatal("expected fortify_common to exist")
 	}
-	if def.Effect.Stat != "hp" {
-		t.Errorf("effect.stat: got %q, want %q", def.Effect.Stat, "hp")
+	if def.Effect.Stat != upgradeEffectStatHP {
+		t.Errorf("effect.stat: got %q, want %q", def.Effect.Stat, upgradeEffectStatHP)
 	}
 	if def.Effect.Multiplier != 1.12 {
 		t.Errorf("effect.multiplier: got %v, want 1.12", def.Effect.Multiplier)

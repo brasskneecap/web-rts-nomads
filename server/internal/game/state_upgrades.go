@@ -163,19 +163,28 @@ func (s *GameState) applyPlayerUpgradesAtSpawnLocked(unit *Unit) {
 		return
 	}
 	track := UpgradeTrack(unit.UnitType)
-	def, hasDef := upgradeTrackDefByID(track)
-	if !hasDef {
-		return
+	trackDef, hasDef := upgradeTrackDefByID(track)
+	if hasDef {
+		level := player.Upgrades[track]
+		if level > 0 {
+			unit.BaseMaxHP += trackDef.HPPerLevel * level
+			unit.BaseDamage += trackDef.DamagePerLevel * level
+			unit.BaseArmor += trackDef.ArmorPerLevel * level
+			unit.BaseAttackSpeed += trackDef.AttackSpeedPerLevel * float64(level)
+			unit.BaseMoveSpeed += trackDef.MoveSpeedPerLevel * float64(level)
+		}
 	}
-	level := player.Upgrades[track]
-	if level <= 0 {
-		return
+
+	// Apply cumulative wave upgrade multipliers so units spawned mid-run
+	// receive the same stat bonuses as units alive when the upgrade was chosen.
+	for _, buff := range player.UpgradeState.WaveStatBuffs {
+		if !unitMatchesWaveStatBuff(buff, unit) {
+			continue
+		}
+		applyStatMultiplierToUnit(UpgradeDef{
+			Effect: UpgradeEffect{Stat: buff.Stat, Multiplier: buff.Multiplier},
+		}, unit)
 	}
-	unit.BaseMaxHP += def.HPPerLevel * level
-	unit.BaseDamage += def.DamagePerLevel * level
-	unit.BaseArmor += def.ArmorPerLevel * level
-	unit.BaseAttackSpeed += def.AttackSpeedPerLevel * float64(level)
-	unit.BaseMoveSpeed += def.MoveSpeedPerLevel * float64(level)
 }
 
 // reapplyUpgradesToOwnedUnitsByTypeLocked retroactively applies ONE additional

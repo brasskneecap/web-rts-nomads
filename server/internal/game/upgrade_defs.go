@@ -19,37 +19,66 @@ type UpgradeDef struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
 	Rarity      string        `json:"rarity"`
-	Scope       string        `json:"scope"`              // "army"|"archetype"|"unitType"|"xp"|"equipment"
+	Scope       string        `json:"scope"`
 	Archetype   string        `json:"archetype,omitempty"`
 	UnitType    string        `json:"unitType,omitempty"`
 	Effect      UpgradeEffect `json:"effect"`
 	MaxStacks   int           `json:"maxStacks"`
+	Unlimited   bool          `json:"unlimited,omitempty"` // if true, never capped — always eligible, stacks not tracked
 }
 
-// UpgradeEffect describes what an UpgradeDef does when applied. Only one mode
-// is active per def: stat multiplier (Stat+Multiplier), XP grant (Type="xp",
-// Amount), or equipment drop (Type="equipment", ItemID).
+// RequiresTargetUnit reports whether applying this upgrade requires the player
+// to select a specific unit as the target.
+func (d UpgradeDef) RequiresTargetUnit() bool {
+	return d.Effect.Type == upgradeEffectTypeXP
+}
+
+// UpgradeEffect describes what an UpgradeDef does when applied. Exactly one
+// mode is active per def, determined by Effect.Type.
 type UpgradeEffect struct {
-	Type       string  `json:"type,omitempty"`       // "xp"|"equipment"; absent = stat multiplier
-	Stat       string  `json:"stat,omitempty"`       // "attackSpeed"|"damage"|"hp"|"moveSpeed"|"attackRange"
+	Type       string  `json:"type,omitempty"`
+	Stat       string  `json:"stat,omitempty"`
 	Multiplier float64 `json:"multiplier,omitempty"`
-	Amount     int     `json:"amount,omitempty"` // xp grant amount
-	ItemID     string  `json:"itemID,omitempty"` // equipment drop item id
+	Amount     int     `json:"amount,omitempty"`
+	ItemID     string  `json:"itemID,omitempty"`
+	Gold       int     `json:"gold,omitempty"`
+	Wood       int     `json:"wood,omitempty"`
 }
 
-const (
-	upgradeRarityCommon    = "common"
-	upgradeRarityRare      = "rare"
-	upgradeRarityEpic      = "epic"
-	upgradeRarityLegendary = "legendary"
-)
-
+// Upgrade scope constants — controls which units an upgrade targets.
 const (
 	upgradeScopeArmy      = "army"
 	upgradeScopeArchetype = "archetype"
 	upgradeScopeUnitType  = "unitType"
 	upgradeScopeXP        = "xp"
 	upgradeScopeEquipment = "equipment"
+	upgradeScopeResources = "resources"
+)
+
+// Upgrade effect type constants — discriminates the mode of UpgradeEffect.
+// upgradeEffectTypeStat is the zero value (absent in JSON) and means stat multiplier mode.
+const (
+	upgradeEffectTypeStat      = ""
+	upgradeEffectTypeXP        = "xp"
+	upgradeEffectTypeEquipment = "equipment"
+	upgradeEffectTypeResources = "resources"
+)
+
+// Upgrade stat constants — valid values for UpgradeEffect.Stat in stat-multiplier mode.
+const (
+	upgradeEffectStatAttackSpeed = "attackSpeed"
+	upgradeEffectStatDamage      = "damage"
+	upgradeEffectStatHP          = "hp"
+	upgradeEffectStatMoveSpeed   = "moveSpeed"
+	upgradeEffectStatAttackRange = "attackRange"
+)
+
+// Rarity constants.
+const (
+	upgradeRarityCommon    = "common"
+	upgradeRarityRare      = "rare"
+	upgradeRarityEpic      = "epic"
+	upgradeRarityLegendary = "legendary"
 )
 
 // upgradeRarityOrder maps rarity names to a comparable integer so callers can
@@ -93,7 +122,8 @@ func loadUpgradeDefs() map[string]UpgradeDef {
 			panic("catalog/upgrades/" + entry.Name() + `: invalid rarity "` + def.Rarity + `"`)
 		}
 		switch def.Scope {
-		case upgradeScopeArmy, upgradeScopeArchetype, upgradeScopeUnitType, upgradeScopeXP, upgradeScopeEquipment:
+		case upgradeScopeArmy, upgradeScopeArchetype, upgradeScopeUnitType,
+			upgradeScopeXP, upgradeScopeEquipment, upgradeScopeResources:
 			// valid
 		default:
 			panic("catalog/upgrades/" + entry.Name() + `: invalid scope "` + def.Scope + `"`)
@@ -105,26 +135,30 @@ func loadUpgradeDefs() map[string]UpgradeDef {
 			panic("catalog/upgrades/" + entry.Name() + `: scope "unitType" requires non-empty unitType field`)
 		}
 		switch def.Effect.Type {
-		case "":
-			// stat-multiplier mode: Stat must be one of the known values
+		case upgradeEffectTypeStat:
 			switch def.Effect.Stat {
-			case "attackSpeed", "damage", "hp", "moveSpeed", "attackRange":
+			case upgradeEffectStatAttackSpeed, upgradeEffectStatDamage, upgradeEffectStatHP,
+				upgradeEffectStatMoveSpeed, upgradeEffectStatAttackRange:
 				// valid
 			default:
 				panic("catalog/upgrades/" + entry.Name() + `: stat-mode effect has invalid stat "` + def.Effect.Stat + `"`)
 			}
-		case "xp":
+		case upgradeEffectTypeXP:
 			if def.Effect.Amount <= 0 {
 				panic("catalog/upgrades/" + entry.Name() + `: effect type "xp" requires amount > 0`)
 			}
-		case "equipment":
+		case upgradeEffectTypeEquipment:
 			if def.Effect.ItemID == "" {
 				panic("catalog/upgrades/" + entry.Name() + `: effect type "equipment" requires non-empty itemID`)
+			}
+		case upgradeEffectTypeResources:
+			if def.Effect.Gold <= 0 && def.Effect.Wood <= 0 {
+				panic("catalog/upgrades/" + entry.Name() + `: effect type "resources" requires gold > 0 or wood > 0`)
 			}
 		default:
 			panic("catalog/upgrades/" + entry.Name() + `: unknown effect type "` + def.Effect.Type + `"`)
 		}
-		if def.MaxStacks <= 0 {
+		if def.MaxStacks <= 0 && !def.Unlimited {
 			def.MaxStacks = 3
 		}
 		if _, dup := result[def.ID]; dup {

@@ -1046,7 +1046,8 @@ export class GameState {
     const alphaRaw = (targetTime - fromFrame.receivedAt) / duration
     const alpha = Math.max(0, Math.min(alphaRaw, 1))
 
-    const fromMap = new Map(fromFrame.units.map((u) => [u.id, u]))
+    const fromMap = new Map<number, (typeof fromFrame.units)[0]>()
+    for (const u of fromFrame.units) fromMap.set(u.id, u)
     const interpolated: Unit[] = []
 
     for (const toUnit of toFrame.units) {

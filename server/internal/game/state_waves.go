@@ -34,6 +34,9 @@ type WaveManager struct {
 	Timer        float64
 	PrepDuration float64
 	WaveDuration float64 // 0 means no automatic timeout; wave must be ended externally
+	// TEMP TEST: guards the pre-wave-1 upgrade hook so it fires exactly once.
+	// Remove when the test hook in tickWaveLocked is removed.
+	testUpgradeFired bool
 }
 
 const enemyPlayerID = "__enemy__"
@@ -106,6 +109,14 @@ func (s *GameState) tickWaveLocked(dt float64) {
 
 	switch wm.State {
 	case "prep":
+		// TEMP TEST: show upgrade modal before wave 1 so the UI can be verified.
+		// Remove this block when done testing.
+		if wm.CurrentWave == 0 && len(s.Players) > 0 && !wm.testUpgradeFired {
+			wm.testUpgradeFired = true
+			wm.State = "upgrade"
+			s.enterWaveUpgradePhaseLocked()
+			return
+		}
 		wm.Timer -= dt
 		if wm.Timer <= 0 {
 			// Advance to the next wave's active phase.
@@ -118,21 +129,24 @@ func (s *GameState) tickWaveLocked(dt float64) {
 
 	case "active":
 		wm.Timer += dt
-		// Spawn phase ends when the active timer expires, but the wave itself
-		// does not end until every enemy spawned during it is dead. Hold the
-		// timer at WaveDuration so tickEnemySpawnpointsLocked keeps seeing the
-		// spawn phase as closed while we wait on the clear.
-		timerExpired := wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration
-		if timerExpired {
+		// Cap the timer at WaveDuration so tickEnemySpawnpointsLocked sees the
+		// spawn phase as closed once it expires. The wave itself ends as soon as
+		// all enemies are dead — we don't require the timer to have expired first.
+		if wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration {
 			wm.Timer = wm.WaveDuration
-			if s.countEnemyUnitsLocked() == 0 {
-				if wm.TotalWaves > 0 && wm.CurrentWave >= wm.TotalWaves {
-					wm.State = "complete"
-					s.markWaveObjectivesCompleteLocked()
-				} else {
-					wm.State = "upgrade"
-					s.enterWaveUpgradePhaseLocked()
-				}
+		}
+		// Allow clear once the wave has been active for at least 5 seconds so
+		// spawners with 0-delay have had a chance to place enemies on the field.
+		// After that, transition as soon as all enemies are dead — no need to
+		// wait for the full WaveDuration timer.
+		const minActiveSeconds = 5.0
+		if wm.Timer >= minActiveSeconds && s.countEnemyUnitsLocked() == 0 {
+			if wm.TotalWaves > 0 && wm.CurrentWave >= wm.TotalWaves {
+				wm.State = "complete"
+				s.markWaveObjectivesCompleteLocked()
+			} else {
+				wm.State = "upgrade"
+				s.enterWaveUpgradePhaseLocked()
 			}
 		}
 
@@ -147,10 +161,17 @@ func (s *GameState) tickWaveLocked(dt float64) {
 // that gate wave progression. Units spawned from spawnpoints flagged with
 // metadata["ignoreWaveClear"] are skipped so ambient/background enemies do
 // not stall the active → prep transition.
+//
+// Note: server-side Visible is NOT checked here. Enemy units are always
+// Visible=true on the server; the client's fog-of-war only controls rendering
+// on the client side. Filtering by Visible would leave units outside the
+// player's vision range alive but undetectable, stalling the wave clear.
+// MiningInside is excluded because a unit inside a building is not on the
+// active field.
 func (s *GameState) countEnemyUnitsLocked() int {
 	count := 0
 	for _, u := range s.Units {
-		if u.OwnerID == enemyPlayerID && u.HP > 0 && u.Visible && !u.IgnoreWaveClear {
+		if u.OwnerID == enemyPlayerID && u.HP > 0 && !u.MiningInside && !u.IgnoreWaveClear {
 			count++
 		}
 	}

@@ -6,5 +6,5 @@
   "rarity": "common",
   "scope": "xp",
   "effect": { "type": "xp", "amount": 75 },
-  "maxStacks": 3
+  "unlimited": true
 }

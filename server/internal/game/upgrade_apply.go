@@ -3,7 +3,7 @@ package game
 import "math"
 
 // applyUpgradeLocked applies the chosen upgrade to playerID's army.
-// targetUnitID is only used when the upgrade scope is "xp" — it identifies
+// targetUnitID is only used for upgradeEffectTypeXP upgrades — it identifies
 // which unit receives the XP grant. Caller must hold s.mu.
 func (s *GameState) applyUpgradeLocked(playerID, upgradeID string, targetUnitID int) {
 	def, ok := getUpgradeDef(upgradeID)
@@ -14,20 +14,24 @@ func (s *GameState) applyUpgradeLocked(playerID, upgradeID string, targetUnitID 
 	if player == nil {
 		return
 	}
-	player.UpgradeState.UpgradeStacks[def.Group]++
+	if !def.Unlimited {
+		player.UpgradeState.UpgradeStacks[def.Group]++
+	}
 
 	switch def.Effect.Type {
-	case upgradeScopeXP:
+	case upgradeEffectTypeXP:
 		unit := s.getUnitByIDLocked(targetUnitID)
 		if unit != nil && unit.OwnerID == playerID && unit.HP > 0 {
 			s.addUnitXPLocked(unit, def.Effect.Amount)
 		}
-	case upgradeScopeEquipment:
+	case upgradeEffectTypeEquipment:
 		if itemDef, ok := itemCatalogSingleton[def.Effect.ItemID]; ok {
 			s.addItemToVaultLocked(player, itemDef)
 		}
-	default:
-		// Stat multiplier: walk all living player-owned units matching the scope.
+	case upgradeEffectTypeResources:
+		player.Resources["gold"] += def.Effect.Gold
+		player.Resources["wood"] += def.Effect.Wood
+	default: // upgradeEffectTypeStat
 		for _, unit := range s.Units {
 			if unit.OwnerID != playerID || unit.HP <= 0 {
 				continue
@@ -38,6 +42,8 @@ func (s *GameState) applyUpgradeLocked(playerID, upgradeID string, targetUnitID 
 			applyStatMultiplierToUnit(def, unit)
 			s.applyRankModifiersLocked(unit, true)
 		}
+		// Persist the multiplier so units spawned after this choice also benefit.
+		accumulateWaveStatBuff(&player.UpgradeState, def)
 	}
 }
 
@@ -61,16 +67,43 @@ func matchesUpgradeScope(def UpgradeDef, unit *Unit) bool {
 func applyStatMultiplierToUnit(def UpgradeDef, unit *Unit) {
 	m := def.Effect.Multiplier
 	switch def.Effect.Stat {
-	case "attackSpeed":
+	case upgradeEffectStatAttackSpeed:
 		unit.BaseAttackSpeed *= m
-	case "damage":
+	case upgradeEffectStatDamage:
 		unit.BaseDamage = int(math.Round(float64(unit.BaseDamage) * m))
-	case "hp":
+	case upgradeEffectStatHP:
 		unit.BaseMaxHP = int(math.Round(float64(unit.BaseMaxHP) * m))
-	case "moveSpeed":
+	case upgradeEffectStatMoveSpeed:
 		unit.BaseMoveSpeed *= m
-	case "attackRange":
+	case upgradeEffectStatAttackRange:
 		unit.BaseAttackRange *= m
+	}
+}
+
+// accumulateWaveStatBuff appends one entry per upgrade application so that
+// units spawned later receive each multiplier applied sequentially, producing
+// the same rounded result as units that were alive when the upgrade was chosen.
+func accumulateWaveStatBuff(state *PlayerUpgradeState, def UpgradeDef) {
+	state.WaveStatBuffs = append(state.WaveStatBuffs, WaveStatBuff{
+		Scope:      def.Scope,
+		Archetype:  def.Archetype,
+		UnitType:   def.UnitType,
+		Stat:       def.Effect.Stat,
+		Multiplier: def.Effect.Multiplier,
+	})
+}
+
+// unitMatchesWaveStatBuff reports whether buff's scope includes unit.
+func unitMatchesWaveStatBuff(buff WaveStatBuff, unit *Unit) bool {
+	switch buff.Scope {
+	case upgradeScopeArmy:
+		return true
+	case upgradeScopeArchetype:
+		return unit.Archetype == buff.Archetype
+	case upgradeScopeUnitType:
+		return unit.UnitType == buff.UnitType
+	default:
+		return false
 	}
 }
 

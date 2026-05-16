@@ -556,8 +556,21 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					unit.Status = "Moving To Attack"
 					profile := resolveCombatProfile(unit)
 					if !unit.Moving {
-						s.refreshUnitAttackApproachLocked(unit, target, profile, blocked, true)
+						// Throttle forced repathing: if the last attempt failed
+						// (unit still not moving after the call), back off before
+						// retrying. Without this, a unit surrounded by a dense crowd
+						// runs full sub-cell A* (~65k cells) every tick even though
+						// no path exists, locking the tick budget.
+						if s.Tick >= unit.NextApproachRepathTick {
+							movingBefore := unit.Moving
+							s.refreshUnitAttackApproachLocked(unit, target, profile, blocked, true)
+							if !movingBefore && !unit.Moving {
+								// Path still failed — impose cooldown.
+								unit.NextApproachRepathTick = s.Tick + approachRepathCooldownTicks
+							}
+						}
 					} else {
+						unit.NextApproachRepathTick = 0 // reset when moving normally
 						s.refreshUnitAttackApproachLocked(unit, target, profile, blocked, false)
 					}
 				}

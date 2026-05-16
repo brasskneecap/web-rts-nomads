@@ -44,7 +44,7 @@ func TestGenerateUpgradeOffers_NoDuplicateIDs(t *testing.T) {
 
 func TestGenerateUpgradeOffers_FiltersMaxedGroup(t *testing.T) {
 	s := newTestStateForUpgrades(t)
-	// Max out every group except fortify so that fortify must appear.
+	// Max out every non-unlimited group except fortify so that fortify must appear.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, def := range listUpgradeDefs() {
@@ -54,6 +54,11 @@ func TestGenerateUpgradeOffers_FiltersMaxedGroup(t *testing.T) {
 	}
 	offers := s.generateUpgradeOffersLocked("p1")
 	for _, o := range offers {
+		def, ok := getUpgradeDef(o.ID)
+		// Unlimited upgrades bypass the stack cap and may always appear.
+		if ok && def.Unlimited {
+			continue
+		}
 		if o.Group != "fortify" {
 			t.Errorf("maxed group %q appeared in offers", o.Group)
 		}

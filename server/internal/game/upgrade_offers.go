@@ -1,6 +1,7 @@
 package game
 
 import (
+	"log"
 	mrand "math/rand"
 	"time"
 )
@@ -25,12 +26,14 @@ func (s *GameState) generateUpgradeOffersLocked(playerID string) []UpgradeDef {
 	// Build weighted pool — exclude groups at/above the effective stack cap.
 	var pool []upgradeWeight
 	for _, def := range listUpgradeDefs() {
-		effectiveCap := def.MaxStacks
-		if player.UpgradeState.MaxUpgradeStacks > effectiveCap {
-			effectiveCap = player.UpgradeState.MaxUpgradeStacks
-		}
-		if player.UpgradeState.UpgradeStacks[def.Group] >= effectiveCap {
-			continue
+		if !def.Unlimited {
+			effectiveCap := def.MaxStacks
+			if player.UpgradeState.MaxUpgradeStacks > effectiveCap {
+				effectiveCap = player.UpgradeState.MaxUpgradeStacks
+			}
+			if player.UpgradeState.UpgradeStacks[def.Group] >= effectiveCap {
+				continue
+			}
 		}
 		base := tuning.BaseWeights[def.Rarity]
 		scale := tuning.RarityScalePerWave[def.Rarity]
@@ -114,14 +117,20 @@ func weightedSampleUpgrade(rng *mrand.Rand, pool []upgradeWeight) UpgradeDef {
 func (s *GameState) enterWaveUpgradePhaseLocked() {
 	tuning := gameplayTuning().WaveUpgrade
 	deadlineMs := time.Now().UnixMilli() + int64(tuning.TimerSeconds*1000)
+	humanCount := 0
 	for playerID, player := range s.Players {
 		if playerID == enemyPlayerID {
 			continue
 		}
+		humanCount++
 		player.UpgradeState.RerollsRemaining = player.UpgradeState.MaxRerolls
 		player.UpgradeState.CurrentOffers = s.generateUpgradeOffersLocked(playerID)
 		player.UpgradeState.OfferDeadlineMs = deadlineMs
 		player.UpgradeState.Resolved = false
+		log.Printf("[UPGRADE] player=%s offers=%d timerSeconds=%.0f", playerID, len(player.UpgradeState.CurrentOffers), tuning.TimerSeconds)
+	}
+	if humanCount == 0 {
+		log.Printf("[UPGRADE] WARNING: no human players found")
 	}
 }
 
@@ -134,6 +143,7 @@ func (s *GameState) tickUpgradePhaseLocked() {
 			continue
 		}
 		if now >= player.UpgradeState.OfferDeadlineMs {
+			log.Printf("[UPGRADE] auto-pick fired: player=%s now=%d deadline=%d", playerID, now, player.UpgradeState.OfferDeadlineMs)
 			if len(player.UpgradeState.CurrentOffers) > 0 {
 				s.applyUpgradeLocked(playerID, player.UpgradeState.CurrentOffers[0].ID, 0)
 			}
@@ -141,6 +151,7 @@ func (s *GameState) tickUpgradePhaseLocked() {
 		}
 	}
 	if s.waveUpgradeAllResolvedLocked() {
+		log.Printf("[UPGRADE] all resolved → prep")
 		s.WaveManager.State = "prep"
 		s.WaveManager.Timer = s.WaveManager.PrepDuration
 	}

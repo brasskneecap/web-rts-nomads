@@ -2,10 +2,10 @@
   "id": "swift_strikes_rare",
   "group": "swift_strikes",
   "name": "Swift Strikes",
-  "description": "+14% attack speed to Ranged units",
+  "description": "+14% attack speed to Archer units",
   "rarity": "rare",
   "scope": "archetype",
-  "archetype": "ranged",
+  "archetype": "archer",
   "effect": { "stat": "attackSpeed", "multiplier": 1.14 },
   "maxStacks": 3
 }
