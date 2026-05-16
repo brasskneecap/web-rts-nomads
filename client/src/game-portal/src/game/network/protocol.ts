@@ -536,6 +536,12 @@ export type UnitSnapshot = {
   shield?: number
   /** Max shield pool advertised by the unit's perks. */
   maxShield?: number
+  /** Current mana for spellcaster units (e.g. apprentice). Omitted (0) for
+   *  non-casters. */
+  mana?: number
+  /** Max mana pool. 0/undefined for units that have no mana. Drives the
+   *  blue mana bar under the HP bar. */
+  maxMana?: number
   /** Buffs currently active on this unit — each entry carries a perk id and
    *  optional stack count (omitted when 1). Stacks >= 2 render a count
    *  badge over the icon on-screen. */
@@ -762,6 +768,18 @@ export type LethalDamageEventSnapshot = {
 }
 
 /**
+ * HealEventSnapshot is a per-tick record of intentional healing landing on a
+ * unit (the heal ability). The client resolves the unit's live position by
+ * `unitId` and spawns a light-green "+amount" floating number over it. Passive
+ * HP regen is intentionally not reported. Drained per tick like
+ * CritEventSnapshot; absent when no heals land.
+ */
+export type HealEventSnapshot = {
+  unitId: number
+  amount: number
+}
+
+/**
  * EffectSnapshot is a transient sprite-sheet VFX anchored to a unit or world
  * position. The server owns the lifecycle; the client renders sprite frames
  * driven by `progress` (0 = first frame, 1 = last frame). `anchorUnitId`
@@ -807,6 +825,7 @@ export type MatchSnapshotMessage = {
   critEvents?: CritEventSnapshot[]
   minorDamageEvents?: MinorDamageEventSnapshot[]
   lethalDamageEvents?: LethalDamageEventSnapshot[]
+  healEvents?: HealEventSnapshot[]
   // Present only when the active map has debug.battleTracker=true. Absent
   // otherwise — the client treats absence as "debug tracker disabled".
   battleTracker?: BattleTrackerSnapshot

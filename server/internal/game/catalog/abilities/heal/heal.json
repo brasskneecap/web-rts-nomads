@@ -3,7 +3,7 @@
   "displayName": "Heal",
   "type": "spell",
   "manaCost": 5,
-  "healAmount": 5,
+  "healAmount": 10,
   "castRange": "match_attack_range",
   "castTime": 1.0,
   "cooldown": 0,

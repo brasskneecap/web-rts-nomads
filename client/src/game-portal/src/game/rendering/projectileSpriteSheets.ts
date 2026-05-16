@@ -1,106 +1,42 @@
-// Loader for baked projectile rotation sprites.
+// Loader for projectile sprites.
 //
-// Each projectile lives under assets/projectiles/<id>/ with a sprites.json
-// manifest (mirrors the unit `rotations` shape) and the rotation PNGs it
-// points at. The server tags a projectile with `variant` = the projectile id
-// (e.g. "fire_bolt", see ProjectileDef / Part 7); projectileSprites.ts looks
-// the loaded set up by that id and draws it.
+// Each projectile lives under assets/projectiles/<id>/sprite.png — a single
+// flat frame that points along +x ("east") in its art. The server tags a
+// projectile with `variant` = the projectile id (e.g. "fire_bolt", see
+// ProjectileDef / Part 7); projectileSprites.ts looks the loaded image up by
+// that id and draws it, letting the renderer's existing canvas rotation orient
+// it to the flight direction. Drop a sprite.png into a new <id>/ folder and it
+// "just works" — no manifest, no per-direction art.
 //
-// Loading is fire-and-forget (like effectSprites.ts): Images are created
-// immediately and the draw path skips any whose pixels haven't decoded yet
+// Loading is fire-and-forget (like effectSprites.ts): the Image is created
+// immediately and the draw path skips it until its pixels have decoded
 // (falling back to the procedural arrow), so there is never a blank frame.
-//
-// All 8 rotations are loaded even though the current draw model uses only the
-// forward (+x / "east") frame and lets the renderer's existing canvas
-// rotation orient it. Keeping every rotation resident makes switching to a
-// baked 8-way draw a one-line change in projectileSprites.ts if the single
-// rotated frame ever looks wrong at some angles.
-
-export type ProjectileDirection =
-  | 'north'
-  | 'north-east'
-  | 'east'
-  | 'south-east'
-  | 'south'
-  | 'south-west'
-  | 'west'
-  | 'north-west'
-
-export const PROJECTILE_DIRECTIONS: ProjectileDirection[] = [
-  'north', 'north-east', 'east', 'south-east',
-  'south', 'south-west', 'west', 'north-west',
-]
-
-interface ProjectileManifest {
-  key?: string
-  size?: { width: number; height: number }
-  rotations?: Partial<Record<ProjectileDirection, string>>
-}
 
 export interface ProjectileSpriteSet {
-  /** Native frame size from the manifest (px). Falls back to 48×48. */
-  width: number
-  height: number
-  /** Decoded (or decoding) image per direction. */
-  rotations: Partial<Record<ProjectileDirection, HTMLImageElement>>
-  /** The +x ("east") frame — the one drawn under the single-sprite model.
-   *  Falls back to any available rotation so a partial set still renders. */
-  forward: HTMLImageElement | null
+  /** The single sprite frame (decoded or still decoding). */
+  image: HTMLImageElement
 }
 
-const manifestGlob = import.meta.glob<ProjectileManifest>(
-  '../../assets/projectiles/*/sprites.json',
-  { eager: true, import: 'default' },
-)
-
-const pngGlob = import.meta.glob<string>(
-  '../../assets/projectiles/**/*.png',
+const spriteGlob = import.meta.glob<string>(
+  '../../assets/projectiles/*/sprite.png',
   { eager: true, query: '?url', import: 'default' },
 )
 
 const registry = new Map<string, ProjectileSpriteSet>()
 
-function loadImage(url: string): HTMLImageElement {
+for (const [path, url] of Object.entries(spriteGlob)) {
+  const match = path.match(/\/assets\/projectiles\/([^/]+)\/sprite\.png$/)
+  if (!match || !url) continue
   const img = new Image()
   img.src = url
-  return img
-}
-
-for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
-  const match = manifestPath.match(/\/assets\/projectiles\/([^/]+)\/sprites\.json$/)
-  if (!match) continue
-  const id = match[1]
-  const folder = manifestPath.slice(0, manifestPath.lastIndexOf('/'))
-
-  const rotations: Partial<Record<ProjectileDirection, HTMLImageElement>> = {}
-  for (const [dir, rel] of Object.entries(manifest.rotations ?? {})) {
-    if (!rel) continue
-    // Manifest paths are relative to the manifest folder, like
-    // "states/<state>/rotations/east.png" — resolve against the png glob key.
-    const url = pngGlob[`${folder}/${rel}`]
-    if (url) rotations[dir as ProjectileDirection] = loadImage(url)
-  }
-
-  const forward =
-    rotations.east ??
-    rotations['south-east'] ??
-    rotations['north-east'] ??
-    Object.values(rotations)[0] ??
-    null
-
-  registry.set(id, {
-    width: manifest.size?.width ?? 48,
-    height: manifest.size?.height ?? 48,
-    rotations,
-    forward,
-  })
+  registry.set(match[1], { image: img })
 }
 
 // Warn-once so a missing/typo'd projectile id doesn't spam the console.
 const warnedMissing = new Set<string>()
 
 /** Returns the loaded sprite set for a projectile id, or undefined when no
- *  manifest is registered (caller falls back to the procedural arrow). */
+ *  sprite.png is registered (caller falls back to the procedural arrow). */
 export function getProjectileSpriteSet(id: string): ProjectileSpriteSet | undefined {
   const entry = registry.get(id)
   if (!entry) {
@@ -108,15 +44,15 @@ export function getProjectileSpriteSet(id: string): ProjectileSpriteSet | undefi
       warnedMissing.add(id)
       // Not necessarily an error: most projectiles are procedural by design.
       // Only worth a debug note when a server `variant` has no art.
-      console.debug(`[projectileSpriteSheets] no sprite manifest for "${id}" — using procedural draw`)
+      console.debug(`[projectileSpriteSheets] no sprite for "${id}" — using procedural draw`)
     }
     return undefined
   }
   return entry
 }
 
-/** Every projectile id that has a loaded sprite manifest. Used to
- *  auto-register sprite draw fns so new projectile art "just works". */
+/** Every projectile id that ships a sprite.png. Used to auto-register sprite
+ *  draw fns so new projectile art "just works". */
 export function registeredProjectileSpriteIds(): string[] {
   return [...registry.keys()]
 }

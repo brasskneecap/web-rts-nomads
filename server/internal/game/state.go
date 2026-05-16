@@ -532,6 +532,12 @@ type GameState struct {
 	// HP-capped value. See lethal_damage_events.go.
 	lethalDamageEventsThisTick []lethalDamageEvent
 
+	// healEventsThisTick mirrors critEventsThisTick for intentional heals
+	// (heal ability / AbilityDef.HealAmount). Drives the light-green "+N"
+	// floating number. Passive regen is intentionally excluded. See
+	// heal_events.go.
+	healEventsThisTick []healEvent
+
 	// guardianAuraCache maps recipient unit ID to the combined armor bonus they
 	// receive from the strongest guardian_aura covering them this tick.
 	// FlatArmor and PercentArmor are taken as max independently across all
@@ -882,6 +888,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			PerkIDs:             unit.PerkIDs,
 			Shield:              unit.Shield,
 			MaxShield:           s.unitMaxShieldLocked(unit),
+			Mana:                unit.CurrentMana,
+			MaxMana:             unit.MaxMana,
 			ActiveBuffs:         s.activeBuffIconsLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
 			PerkCooldowns:       s.perkCooldownsLocked(unit),
@@ -1058,6 +1066,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
+		HealEvents:         s.snapshotHealEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -1148,6 +1157,8 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			PerkIDs:             unit.PerkIDs,
 			Shield:              unit.Shield,
 			MaxShield:           s.unitMaxShieldLocked(unit),
+			Mana:                unit.CurrentMana,
+			MaxMana:             unit.MaxMana,
 			ActiveBuffs:         s.activeBuffIconsLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
 			PerkCooldowns:       s.perkCooldownsLocked(unit),
@@ -1345,6 +1356,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
+		HealEvents:         s.snapshotHealEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -1416,6 +1428,8 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			PerkIDs:             unit.PerkIDs,
 			Shield:              unit.Shield,
 			MaxShield:           s.unitMaxShieldLocked(unit),
+			Mana:                unit.CurrentMana,
+			MaxMana:             unit.MaxMana,
 			ActiveBuffs:         s.activeBuffIconsLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
 			PerkCooldowns:       s.perkCooldownsLocked(unit),
@@ -1577,6 +1591,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
+		HealEvents:         s.snapshotHealEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -1614,6 +1629,7 @@ func (s *GameState) Update(dt float64) {
 	s.resetCritEventsThisTickLocked()
 	s.resetMinorDamageEventsThisTickLocked()
 	s.resetLethalDamageEventsThisTickLocked()
+	s.resetHealEventsThisTickLocked()
 
 	profileSection("battleTracker", func() { s.battleTracker.tickLocked(dt) })
 	profileSection("unitProductions", func() { s.updateUnitProductionsLocked(dt) })

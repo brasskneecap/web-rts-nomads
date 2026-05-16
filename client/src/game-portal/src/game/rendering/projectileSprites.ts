@@ -124,11 +124,9 @@ export const PROJECTILE_DRAW_REGISTRY: Record<string, ProjectileDrawFn> = {}
 //
 // The renderer has already applied translate(x,y) + rotate(headingAngle)
 // before calling the draw fn, so a sprite that points along +x in its art is
-// oriented to the flight direction "for free". We therefore use the single
-// forward ("east") rotation frame and let that existing rotation do the work;
-// all 8 baked rotations are still loaded (projectileSpriteSheets.ts) so a
-// switch to a baked 8-way draw is a localized change here if the single
-// rotated frame ever looks wrong.
+// oriented to the flight direction "for free". Each projectile is a single
+// flat sprite.png (authored pointing +x / "east"); we just blit it centered
+// and let that existing rotation do the work.
 
 // TODO(tune, visual-only — no client test runner): world-pixel scale applied
 // to a projectile sprite's native frame size. fire_bolt art is 48×48; 0.5 ≈
@@ -136,30 +134,36 @@ export const PROJECTILE_DRAW_REGISTRY: Record<string, ProjectileDrawFn> = {}
 const PROJECTILE_SPRITE_SCALE = 0.5
 
 // TODO(tune, visual-only): extra rotation (radians) applied if a sprite's
-// authored "forward" is not +x (screen-right). The fire_bolt "east" frame is
-// expected to point +x already, so 0 should be correct — bump by ±Math.PI/2
-// etc. only if it visually points the wrong way in-game.
+// authored "forward" is not +x (screen-right). sprite.png art is expected to
+// point +x already, so 0 should be correct — bump by ±Math.PI/2 etc. only if
+// it visually points the wrong way in-game.
 const PROJECTILE_SPRITE_ANGLE_OFFSET = 0
 
-// Builds a ProjectileDrawFn that blits a loaded projectile sprite's forward
-// frame centered at the origin. Falls back to the procedural arrow until the
-// image has decoded (or if the set/forward frame is missing) so there is no
-// blank/flicker frame.
+// Fallback native frame size used until the image has decoded (naturalWidth
+// reads 0 before then). Matches the historical fire_bolt art dimensions.
+const PROJECTILE_SPRITE_FALLBACK_SIZE = 48
+
+// Builds a ProjectileDrawFn that blits a loaded projectile sprite centered at
+// the origin. Falls back to the procedural arrow until the image has decoded
+// (or if the sprite is missing) so there is no blank/flicker frame. The draw
+// size derives from the image's own pixel dimensions, so a new sprite.png of
+// any size renders correctly without per-projectile config.
 function makeSpriteProjectileDraw(spriteId: string): ProjectileDrawFn {
   return (ctx, drawCtx) => {
     const set = getProjectileSpriteSet(spriteId)
-    if (!set || !projectileImageReady(set.forward)) {
+    if (!set || !projectileImageReady(set.image)) {
       drawDefaultProjectile(ctx, drawCtx)
       return
     }
-    const w = set.width * PROJECTILE_SPRITE_SCALE
-    const h = set.height * PROJECTILE_SPRITE_SCALE
+    const img = set.image
+    const w = (img.naturalWidth || PROJECTILE_SPRITE_FALLBACK_SIZE) * PROJECTILE_SPRITE_SCALE
+    const h = (img.naturalHeight || PROJECTILE_SPRITE_FALLBACK_SIZE) * PROJECTILE_SPRITE_SCALE
     const prevSmoothing = ctx.imageSmoothingEnabled
     ctx.imageSmoothingEnabled = false // pixel art — keep crisp
     if (PROJECTILE_SPRITE_ANGLE_OFFSET !== 0) {
       ctx.rotate(PROJECTILE_SPRITE_ANGLE_OFFSET)
     }
-    ctx.drawImage(set.forward, -w / 2, -h / 2, w, h)
+    ctx.drawImage(img, -w / 2, -h / 2, w, h)
     ctx.imageSmoothingEnabled = prevSmoothing
   }
 }
