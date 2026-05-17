@@ -120,6 +120,13 @@ type AbilityDef struct {
 	// Empty = unspecified (resolves to physical via DamageType.OrPhysical()).
 	DamageType DamageType `json:"damageType,omitempty"`
 
+	// Category classifies what the ability is for (heal / buff_ally / summon /
+	// offensive). Optional; empty = unspecified. INERT in Phase 1 — populated
+	// from JSON and validated at load (see init below) but read by no runtime
+	// code yet; Phase 2 ability-priority scoring will branch on it. Mirrors the
+	// DamageType extensible-enum pattern (see ability_category.go).
+	Category AbilityCategory `json:"category,omitempty"`
+
 	// HealAmount is the HP an effect-ability restores to its target on
 	// resolve (Heal). NOTE: not in the Part 6 attribute list — added with the
 	// Heal ability as the ability-specific effect magnitude. 0 ⇒ the ability
@@ -231,6 +238,9 @@ func loadAbilityDefs() map[string]AbilityDef {
 		}
 		if def.DamageType != "" && !IsValidDamageType(def.DamageType) {
 			panic(rel + `: damageType "` + string(def.DamageType) + `" is not a registered damage type`)
+		}
+		if def.Category != "" && !IsValidAbilityCategory(def.Category) {
+			panic(rel + `: category "` + string(def.Category) + `" is not a registered ability category`)
 		}
 		if _, dup := result[def.ID]; dup {
 			panic(rel + `: duplicate ability id "` + def.ID + `"`)

@@ -108,13 +108,15 @@ func TestMarksman_EagleSpirit_BoostsRangeAndCrit(t *testing.T) {
 	grantPerk(attacker, "eagle_spirit")
 	s.applyRankModifiersLocked(attacker, false)
 
-	// Range = path-resolved base × (1 + eagle_spirit 0.20).
-	wantRange := pathBaseAttackRange(attacker, unitPathMarksman, unitRankBronze) * 1.20
+	eagleCfg := perkDefByID("eagle_spirit").Config
+
+	// Range = path-resolved base × (1 + eagle_spirit attackRangeBonus).
+	wantRange := pathBaseAttackRange(attacker, unitPathMarksman, unitRankBronze) * (1.0 + eagleCfg["attackRangeBonus"])
 	if math.Abs(attacker.AttackRange-wantRange) > 0.5 {
 		t.Errorf("AttackRange = %.1f, want %.1f", attacker.AttackRange, wantRange)
 	}
-	// Crit chance = baseline 10% + eagle_spirit 10% = 20%.
-	wantCrit := defaultCritChance + 0.10
+	// Crit chance = baseline + eagle_spirit critChanceBonus.
+	wantCrit := defaultCritChance + eagleCfg["critChanceBonus"]
 	if got := s.unitCritChanceLocked(attacker, nil); math.Abs(got-wantCrit) > 1e-6 {
 		t.Errorf("CritChance = %.3f, want %.3f", got, wantCrit)
 	}
@@ -128,13 +130,15 @@ func TestMarksman_HawkSpirit_BoostsAttackSpeedAndDamage(t *testing.T) {
 	baseAS := attacker.AttackSpeed
 	grantPerk(attacker, "hawk_spirit")
 
+	hawkCfg := perkDefByID("hawk_spirit").Config
+
 	// Attack-speed bonus shows in perkAttackSpeedBonusLocked.
-	if got := s.perkAttackSpeedBonusLocked(attacker); math.Abs(got-0.30) > 1e-6 {
-		t.Errorf("AS bonus = %.3f, want 0.300", got)
+	if got, want := s.perkAttackSpeedBonusLocked(attacker), hawkCfg["attackSpeedBonus"]; math.Abs(got-want) > 1e-6 {
+		t.Errorf("AS bonus = %.3f, want %.3f", got, want)
 	}
 	// Damage multiplier folds in via perkBonusDamageMultiplierLocked.
-	if got := s.perkBonusDamageMultiplierLocked(attacker, target); math.Abs(got-0.15) > 1e-6 {
-		t.Errorf("damage bonus = %.3f, want 0.150", got)
+	if got, want := s.perkBonusDamageMultiplierLocked(attacker, target), hawkCfg["damageMultiplier"]; math.Abs(got-want) > 1e-6 {
+		t.Errorf("damage bonus = %.3f, want %.3f", got, want)
 	}
 	if attacker.AttackSpeed != baseAS {
 		t.Errorf("attack speed mutated unexpectedly: %.3f vs base %.3f", attacker.AttackSpeed, baseAS)
@@ -148,12 +152,14 @@ func TestMarksman_VultureSpirit_BoostsCritAndDamage(t *testing.T) {
 
 	grantPerk(attacker, "vulture_spirit")
 
-	wantCrit := defaultCritChance + 0.10
+	vultureCfg := perkDefByID("vulture_spirit").Config
+
+	wantCrit := defaultCritChance + vultureCfg["critChanceBonus"]
 	if got := s.unitCritChanceLocked(attacker, nil); math.Abs(got-wantCrit) > 1e-6 {
 		t.Errorf("CritChance = %.3f, want %.3f", got, wantCrit)
 	}
-	if got := s.perkBonusDamageMultiplierLocked(attacker, target); math.Abs(got-0.10) > 1e-6 {
-		t.Errorf("damage bonus = %.3f, want 0.100", got)
+	if got, want := s.perkBonusDamageMultiplierLocked(attacker, target), vultureCfg["damageMultiplier"]; math.Abs(got-want) > 1e-6 {
+		t.Errorf("damage bonus = %.3f, want %.3f", got, want)
 	}
 }
 
@@ -261,8 +267,9 @@ func TestCrit_BullseyeOverridesMultiplier(t *testing.T) {
 	defer s.mu.Unlock()
 
 	grantPerk(attacker, "bullseye")
-	if got := s.unitCritMultiplierLocked(attacker); math.Abs(got-2.5) > 1e-6 {
-		t.Errorf("bullseye crit mult = %.2f, want 2.50", got)
+	wantMult := perkDefByID("bullseye").Config["critMultiplier"]
+	if got := s.unitCritMultiplierLocked(attacker); math.Abs(got-wantMult) > 1e-6 {
+		t.Errorf("bullseye crit mult = %.2f, want %.2f", got, wantMult)
 	}
 }
 
@@ -294,17 +301,20 @@ func TestMarksman_Bullseye_DoublesRangeAndBoostsCrit(t *testing.T) {
 	grantPerk(attacker, "bullseye")
 	s.applyRankModifiersLocked(attacker, false)
 
-	// path-resolved base × (1 + bullseye 1.00) = path × 2.0
-	wantRange := pathBaseAttackRange(attacker, unitPathMarksman, unitRankBronze) * 2.0
+	bullseyeCfg := perkDefByID("bullseye").Config
+
+	// path-resolved base × (1 + bullseye attackRangeBonus)
+	wantRange := pathBaseAttackRange(attacker, unitPathMarksman, unitRankBronze) * (1.0 + bullseyeCfg["attackRangeBonus"])
 	if math.Abs(attacker.AttackRange-wantRange) > 0.5 {
 		t.Errorf("Bullseye range = %.1f, want %.1f", attacker.AttackRange, wantRange)
 	}
-	wantCrit := defaultCritChance + 0.15
+	wantCrit := defaultCritChance + bullseyeCfg["critChanceBonus"]
 	if got := s.unitCritChanceLocked(attacker, nil); math.Abs(got-wantCrit) > 1e-6 {
 		t.Errorf("Bullseye crit chance = %.3f, want %.3f", got, wantCrit)
 	}
-	if got := s.unitCritMultiplierLocked(attacker); math.Abs(got-2.5) > 1e-6 {
-		t.Errorf("Bullseye crit mult = %.2f, want 2.50", got)
+	wantMult := bullseyeCfg["critMultiplier"]
+	if got := s.unitCritMultiplierLocked(attacker); math.Abs(got-wantMult) > 1e-6 {
+		t.Errorf("Bullseye crit mult = %.2f, want %.2f", got, wantMult)
 	}
 }
 
@@ -313,11 +323,13 @@ func TestMarksman_BullseyeStacksWithEagleSpiritOnRange(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	grantPerk(attacker, "eagle_spirit") // +20%
-	grantPerk(attacker, "bullseye")     // +100%
+	grantPerk(attacker, "eagle_spirit")
+	grantPerk(attacker, "bullseye")
 	s.applyRankModifiersLocked(attacker, false)
 
-	want := pathBaseAttackRange(attacker, unitPathMarksman, unitRankBronze) * (1.0 + 0.20 + 1.00)
+	eagleBonus := perkDefByID("eagle_spirit").Config["attackRangeBonus"]
+	bullseyeBonus := perkDefByID("bullseye").Config["attackRangeBonus"]
+	want := pathBaseAttackRange(attacker, unitPathMarksman, unitRankBronze) * (1.0 + eagleBonus + bullseyeBonus)
 	if math.Abs(attacker.AttackRange-want) > 0.5 {
 		t.Errorf("range = %.1f, want %.1f", attacker.AttackRange, want)
 	}

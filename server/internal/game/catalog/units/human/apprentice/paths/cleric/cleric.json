@@ -1,0 +1,30 @@
+{
+  "path": "cleric",
+  "description": "Support caster path for the Apprentice — intended fantasy is healing/protection over raw damage. Stat tuning deferred: rows currently mirror the default rank curve (see defaultRankCurve in path_defs.go) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Cleric gets its formal pass; add a per-path bounds/visionRange override here once dedicated sprites land.",
+  "ranks": {
+    "bronze": {
+      "maxHPMultiplier": 1.10,
+      "damageMultiplier": 1.10,
+      "attackSpeedMultiplier": 1.00,
+      "moveSpeedMultiplier": 1.00,
+      "attackRangeMultiplier": 1.00,
+      "armor": 0
+    },
+    "silver": {
+      "maxHPMultiplier": 1.20,
+      "damageMultiplier": 1.25,
+      "attackSpeedMultiplier": 1.10,
+      "moveSpeedMultiplier": 1.00,
+      "attackRangeMultiplier": 1.00,
+      "armor": 0
+    },
+    "gold": {
+      "maxHPMultiplier": 1.35,
+      "damageMultiplier": 1.50,
+      "attackSpeedMultiplier": 1.25,
+      "moveSpeedMultiplier": 1.00,
+      "attackRangeMultiplier": 1.00,
+      "armor": 0
+    }
+  }
+}

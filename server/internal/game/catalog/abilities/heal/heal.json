@@ -2,6 +2,7 @@
   "id": "heal",
   "displayName": "Heal",
   "type": "spell",
+  "category": "heal",
   "manaCost": 5,
   "healAmount": 10,
   "castRange": "match_attack_range",

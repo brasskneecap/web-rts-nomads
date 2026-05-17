@@ -6,6 +6,18 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
+// apprenticeMaxMana returns the apprentice's catalog-authored mana pool size
+// (catalog/units/human/apprentice/apprentice.json → maxMana). Auto-cast tests
+// derive expected post-cast mana from this rather than hardcoding 50.
+func apprenticeMaxMana(t *testing.T) int {
+	t.Helper()
+	def, ok := getUnitDef("apprentice")
+	if !ok {
+		t.Fatal(`getUnitDef("apprentice") = _, false; want the catalog-authored apprentice`)
+	}
+	return def.MaxMana
+}
+
 // autoCastSetup: an apprentice (p1, has the auto-cast-capable "heal") and a
 // friendly soldier damaged by `missing` HP, within the apprentice's cast
 // range. Lock NOT held on return.
@@ -75,9 +87,14 @@ func TestAutoCast_ToggleOwnershipAndNoEffectCases(t *testing.T) {
 // ── Triggers when ready; honors mana / cooldown / target / cast_time ─────────
 
 func TestAutoCast_TriggersWhenReady(t *testing.T) {
-	s, app, ally := autoCastSetup(t, 5) // exactly one heal restores it fully
+	def := healDef(t)
+	// Missing exactly one heal's worth → a single auto-cast restores it fully,
+	// regardless of how healAmount is tuned in the catalog.
+	s, app, ally := autoCastSetup(t, def.HealAmount)
 	s.mu.Lock()
 	allyID := ally.ID
+	startMana := app.CurrentMana
+	wantMana := startMana - def.ManaCost
 	s.toggleAutoCastLocked(app, "heal")
 	s.mu.Unlock()
 
@@ -89,16 +106,17 @@ func TestAutoCast_TriggersWhenReady(t *testing.T) {
 	if a.HP != a.MaxHP {
 		t.Errorf("auto-cast should have healed the ally to full; HP=%d/%d", a.HP, a.MaxHP)
 	}
-	if app.CurrentMana != 45 {
-		t.Errorf("exactly one heal should have been auto-cast (mana 50→45); got %d", app.CurrentMana)
+	if app.CurrentMana != wantMana {
+		t.Errorf("exactly one heal should have been auto-cast (mana %d→%d, -%d manaCost from catalog); got %d", startMana, wantMana, def.ManaCost, app.CurrentMana)
 	}
 }
 
 func TestAutoCast_NoTriggerInsufficientMana(t *testing.T) {
+	def := healDef(t)
 	s, app, ally := autoCastSetup(t, 20)
 	s.mu.Lock()
-	app.CurrentMana = 4        // < heal manaCost 5
-	app.ManaRegenPerSecond = 0 // isolate the mana gate (no regen lifting it over 5)
+	app.CurrentMana = def.ManaCost - 1 // one short of the catalog manaCost
+	app.ManaRegenPerSecond = 0         // isolate the mana gate (no regen lifting it over the cost)
 	allyID := ally.ID
 	startHP := ally.HP
 	s.toggleAutoCastLocked(app, "heal")
@@ -146,7 +164,10 @@ func TestAutoCast_NoTriggerNoValidTarget(t *testing.T) {
 	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	full := spawnProjTestUnit(t, s, "p1", 460, 400) // ally at FULL HP → not a target
 	enemy := spawnProjTestUnit(t, s, enemyPlayerID, 470, 400)
-	enemy.HP = 1 // hurt but hostile (enemy team) → heal can't target it
+	enemy.HP = 1        // hurt but hostile (enemy team) → heal can't target it
+	enemy.AttackSpeed = 0 // disarm: caster now kites instead of killing it, so
+	enemy.Damage = 0      // prevent it from damaging the ally and creating a target
+	startMana := app.CurrentMana // spawned full from catalog maxMana
 	s.toggleAutoCastLocked(app, "heal")
 	s.mu.Unlock()
 	_ = full
@@ -154,8 +175,8 @@ func TestAutoCast_NoTriggerNoValidTarget(t *testing.T) {
 	advance(s, 30)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if app.CastAbilityID != "" || app.CurrentMana != 50 {
-		t.Errorf("no valid heal target → no cast; CastAbilityID=%q mana=%d", app.CastAbilityID, app.CurrentMana)
+	if app.CastAbilityID != "" || app.CurrentMana != startMana {
+		t.Errorf("no valid heal target → no cast; CastAbilityID=%q mana=%d want %d", app.CastAbilityID, app.CurrentMana, startMana)
 	}
 }
 
@@ -183,8 +204,12 @@ func TestAutoCast_PicksCorrectAlly(t *testing.T) {
 }
 
 func TestAutoCast_RespectsCastTimeNoStacking(t *testing.T) {
-	s, app, _ := autoCastSetup(t, 5) // one heal fully restores → only one cast needed
+	def := healDef(t)
+	// One heal fully restores → only one cast needed (missing == one heal's worth).
+	s, app, _ := autoCastSetup(t, def.HealAmount)
 	s.mu.Lock()
+	startMana := app.CurrentMana
+	wantMana := startMana - def.ManaCost
 	s.toggleAutoCastLocked(app, "heal")
 	s.mu.Unlock()
 
@@ -204,8 +229,8 @@ func TestAutoCast_RespectsCastTimeNoStacking(t *testing.T) {
 	if !sawCasting {
 		t.Fatal("expected the auto-cast to start a heal cast")
 	}
-	if app.CurrentMana != 45 {
-		t.Errorf("cast_time must be respected (no stacked re-cast): exactly one heal, mana want 45 got %d", app.CurrentMana)
+	if app.CurrentMana != wantMana {
+		t.Errorf("cast_time must be respected (no stacked re-cast): exactly one heal, mana want %d (%d - %d manaCost from catalog) got %d", wantMana, startMana, def.ManaCost, app.CurrentMana)
 	}
 }
 
@@ -268,8 +293,9 @@ func TestAutoCast_SnapshotAndRequestCast(t *testing.T) {
 	if len(states) != 1 || states[0].ID != "heal" {
 		t.Fatalf("expected one ability snapshot for heal; got %+v", states)
 	}
-	if !states[0].SupportsAutoCast || !states[0].AutoCast || states[0].ManaCost != 5 {
-		t.Errorf("ability snapshot wrong: %+v", states[0])
+	wantManaCost := healDef(t).ManaCost // snapshot must mirror catalog heal.manaCost
+	if !states[0].SupportsAutoCast || !states[0].AutoCast || states[0].ManaCost != wantManaCost {
+		t.Errorf("ability snapshot wrong (ManaCost want %d from catalog): %+v", wantManaCost, states[0])
 	}
 
 	// Public standard-cast entrypoint: ownership enforced, then delegates to

@@ -26,9 +26,13 @@ func TestApplyUpgrade_StatMultiplierAffectsMatchingUnits(t *testing.T) {
 	}
 
 	// Applying a fortify (army-wide HP) must affect the archer.
+	fortifyDef, ok := getUpgradeDef("fortify_common")
+	if !ok {
+		t.Fatal("expected fortify_common to exist in catalog")
+	}
 	baseHP := unit.BaseMaxHP
 	s.applyUpgradeLocked("p1", "fortify_common", 0)
-	expectedHP := int(math.Round(float64(baseHP) * 1.12))
+	expectedHP := int(math.Round(float64(baseHP) * fortifyDef.Effect.Multiplier))
 	if unit.BaseMaxHP != expectedHP {
 		t.Errorf("fortify_common: BaseMaxHP want %d, got %d", expectedHP, unit.BaseMaxHP)
 	}

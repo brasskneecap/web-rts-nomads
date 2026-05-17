@@ -71,9 +71,12 @@ func TestTeam_HealCastResolvesOnCrossOwnerTeammate(t *testing.T) {
 	s.mu.Lock()
 	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	app.Visible = true
+	def := healDef(t)
 	mate := spawnProjTestUnit(t, s, "p2", 450, 400) // different owner, same team
-	mate.HP = mate.MaxHP - 5
-	want := mate.HP + 5
+	// Missing strictly more than one heal so +HealAmount never clips MaxHP,
+	// regardless of how catalog/abilities/heal/heal.json is tuned.
+	mate.HP = mate.MaxHP - def.HealAmount - 20
+	want := mate.HP + def.HealAmount
 	setTeam(s, "p1", 0)
 	setTeam(s, "p2", 0)
 	mateID := mate.ID

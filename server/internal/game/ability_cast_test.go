@@ -6,16 +6,33 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
+// healDef returns the catalog-authored Heal ability. Tests derive expected
+// HP / mana deltas from this rather than hardcoding numbers, so tuning
+// catalog/abilities/heal/heal.json never breaks a behavioral test — only a
+// genuine regression in the cast logic does.
+func healDef(t *testing.T) AbilityDef {
+	t.Helper()
+	def, ok := getAbilityDef("heal")
+	if !ok {
+		t.Fatal(`getAbilityDef("heal") = _, false; want the catalog-authored Heal`)
+	}
+	return def
+}
+
 // healSetup spawns an apprentice (p1) and a damaged friendly soldier within
-// the apprentice's cast range. Lock is NOT held on return.
+// the apprentice's cast range. The ally is left missing strictly more HP than
+// a single heal restores (derived from the catalog), so exact-heal assertions
+// never collide with the no-overheal clamp regardless of how healAmount is
+// tuned in JSON. Lock is NOT held on return.
 func healSetup(t *testing.T) (s *GameState, app, ally *Unit) {
 	t.Helper()
 	s = newProjectileTestState(t)
+	def := healDef(t)
 	s.mu.Lock()
 	app = s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	app.Visible = true
-	ally = spawnProjTestUnit(t, s, "p1", 450, 400) // 50px away, within 220 range
-	ally.HP = ally.MaxHP - 20                      // missing 20 HP
+	ally = spawnProjTestUnit(t, s, "p1", 450, 400)  // 50px away, within 220 range
+	ally.HP = ally.MaxHP - def.HealAmount - 20       // missing > one heal, so +HealAmount never clips MaxHP
 	s.mu.Unlock()
 	return s, app, ally
 }
@@ -30,26 +47,29 @@ func advance(s *GameState, ticks int) {
 
 func TestHeal_RestoresHPAndDeductsMana(t *testing.T) {
 	s, app, ally := healSetup(t)
+	def := healDef(t)
 
 	s.mu.Lock()
 	allyID := ally.ID
-	wantHP := ally.HP + 5 // heal_amount 5
+	wantHP := ally.HP + def.HealAmount
+	startMana := app.CurrentMana
+	wantMana := startMana - def.ManaCost
 	ok, reason := s.beginAbilityCastLocked(app, "heal", ally)
 	s.mu.Unlock()
 	if !ok {
 		t.Fatalf("beginAbilityCastLocked failed: %q", reason)
 	}
 
-	advance(s, 25) // > 1.0s cast time
+	advance(s, 25) // past the full cast time
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	a := s.unitsByID[allyID]
 	if a.HP != wantHP {
-		t.Errorf("ally HP = %d; want %d (healed +5)", a.HP, wantHP)
+		t.Errorf("ally HP = %d; want %d (healed +%d from catalog)", a.HP, wantHP, def.HealAmount)
 	}
-	if app.CurrentMana != 45 {
-		t.Errorf("caster mana = %d; want 45 (50 - manaCost 5, deducted on completion)", app.CurrentMana)
+	if app.CurrentMana != wantMana {
+		t.Errorf("caster mana = %d; want %d (%d start - %d manaCost, deducted on completion)", app.CurrentMana, wantMana, startMana, def.ManaCost)
 	}
 	if app.CastAbilityID != "" || app.Casting {
 		t.Errorf("cast should be cleared after completion: CastAbilityID=%q Casting=%v", app.CastAbilityID, app.Casting)
@@ -62,7 +82,7 @@ func TestHeal_RestoresHPAndDeductsMana(t *testing.T) {
 func TestHeal_CannotOverheal(t *testing.T) {
 	s, app, ally := healSetup(t)
 	s.mu.Lock()
-	ally.HP = ally.MaxHP - 2 // only 2 missing; heal is 5
+	ally.HP = ally.MaxHP - 1 // missing < any positive heal, so the heal must clamp at MaxHP
 	allyID := ally.ID
 	ok, _ := s.beginAbilityCastLocked(app, "heal", ally)
 	s.mu.Unlock()
@@ -81,9 +101,10 @@ func TestHeal_CannotOverheal(t *testing.T) {
 
 func TestHeal_InsufficientManaFailsGracefully(t *testing.T) {
 	s, app, ally := healSetup(t)
+	def := healDef(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	app.CurrentMana = 4 // < manaCost 5
+	app.CurrentMana = def.ManaCost - 1 // one short of the catalog mana cost
 	ok, reason := s.beginAbilityCastLocked(app, "heal", ally)
 	if ok || reason != castFailNotEnoughMana {
 		t.Errorf("expected (false, %q); got (%v, %q)", castFailNotEnoughMana, ok, reason)
@@ -91,8 +112,8 @@ func TestHeal_InsufficientManaFailsGracefully(t *testing.T) {
 	if app.CastAbilityID != "" || app.Casting {
 		t.Error("no cast should have started on insufficient mana")
 	}
-	if app.CurrentMana != 4 {
-		t.Errorf("mana must be untouched on failed initiation, got %d", app.CurrentMana)
+	if app.CurrentMana != def.ManaCost-1 {
+		t.Errorf("mana must be untouched on failed initiation, got %d want %d", app.CurrentMana, def.ManaCost-1)
 	}
 	if app.LastCastFailure != castFailNotEnoughMana {
 		t.Errorf("LastCastFailure = %q; want %q", app.LastCastFailure, castFailNotEnoughMana)
@@ -124,7 +145,7 @@ func TestHeal_CannotTargetEnemy(t *testing.T) {
 func TestHeal_CanTargetSelf(t *testing.T) {
 	s, app, _ := healSetup(t)
 	s.mu.Lock()
-	app.HP = app.MaxHP - 3
+	app.HP = app.MaxHP - 1 // missing < any positive heal, so self-heal clamps to MaxHP
 	appID := app.ID
 	ok, reason := s.beginAbilityCastLocked(app, "heal", app)
 	s.mu.Unlock()
@@ -135,7 +156,7 @@ func TestHeal_CanTargetSelf(t *testing.T) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if a := s.unitsByID[appID]; a.HP != a.MaxHP {
-		t.Errorf("self-heal: HP = %d; want MaxHP %d (was -3, +5 clamped)", a.HP, a.MaxHP)
+		t.Errorf("self-heal: HP = %d; want MaxHP %d (was MaxHP-1, heal clamps to max)", a.HP, a.MaxHP)
 	}
 }
 
@@ -206,6 +227,7 @@ func TestHeal_TargetDiesMidCastCancelsGracefully(t *testing.T) {
 	s, app, ally := healSetup(t)
 	s.mu.Lock()
 	allyID := ally.ID
+	startMana := app.CurrentMana
 	ok, _ := s.beginAbilityCastLocked(app, "heal", ally)
 	s.mu.Unlock()
 	if !ok {
@@ -226,8 +248,8 @@ func TestHeal_TargetDiesMidCastCancelsGracefully(t *testing.T) {
 	if app.LastCastFailure != castFailTargetLost {
 		t.Errorf("LastCastFailure = %q; want %q", app.LastCastFailure, castFailTargetLost)
 	}
-	if app.CurrentMana != 50 {
-		t.Errorf("a cancelled cast must not spend mana; mana = %d, want 50", app.CurrentMana)
+	if app.CurrentMana != startMana {
+		t.Errorf("a cancelled cast must not spend mana; mana = %d, want %d (unchanged)", app.CurrentMana, startMana)
 	}
 }
 
@@ -235,9 +257,12 @@ func TestHeal_TargetDiesMidCastCancelsGracefully(t *testing.T) {
 
 func TestHeal_UninterruptibleByDamage(t *testing.T) {
 	s, app, ally := healSetup(t)
+	def := healDef(t)
 	s.mu.Lock()
 	allyID := ally.ID
-	wantHP := ally.HP + 5
+	wantHP := ally.HP + def.HealAmount
+	startMana := app.CurrentMana
+	wantMana := startMana - def.ManaCost
 	ok, _ := s.beginAbilityCastLocked(app, "heal", ally)
 	s.mu.Unlock()
 	if !ok {
@@ -260,7 +285,7 @@ func TestHeal_UninterruptibleByDamage(t *testing.T) {
 	if a := s.unitsByID[allyID]; a.HP != wantHP {
 		t.Errorf("cast should have completed despite damage: ally HP = %d, want %d", a.HP, wantHP)
 	}
-	if app.CurrentMana != 45 {
-		t.Errorf("completed cast should spend mana: mana = %d, want 45", app.CurrentMana)
+	if app.CurrentMana != wantMana {
+		t.Errorf("completed cast should spend mana: mana = %d, want %d (%d - %d manaCost)", app.CurrentMana, wantMana, startMana, def.ManaCost)
 	}
 }

@@ -40,7 +40,14 @@ func newConstructionTestState(t *testing.T) (s *GameState, w1, w2 *Unit, buildin
 	w1 = s.spawnPlayerUnitLocked("worker", "p1", "#fff", protocol.Vec2{X: 100, Y: 100})
 	w2 = s.spawnPlayerUnitLocked("worker", "p1", "#fff", protocol.Vec2{X: 200, Y: 100})
 
-	// Manually place an under-construction barracks at grid (5,5).
+	// Manually place an under-construction barracks at grid (5,5). maxHp and
+	// hpPerSecond are catalog-driven (barracks.json: maxHp / buildSeconds), so
+	// derive them from the building def — this keeps the fixture faithful to
+	// "what BuildBuilding would produce" and immune to balance tweaks.
+	barracksDef, ok := getBuildingDef("barracks")
+	if !ok {
+		t.Fatal("barracks building def not registered")
+	}
 	ownerID := "p1"
 	s.nextBuildingID++
 	bid := fmt.Sprintf("barracks-%d", s.nextBuildingID)
@@ -58,8 +65,8 @@ func newConstructionTestState(t *testing.T) (s *GameState, w1, w2 *Unit, buildin
 			"underConstruction": true,
 			// pendingStart intentionally absent — construction started
 			"hp":          1.0,
-			"maxHp":       float64(500),
-			"hpPerSecond": float64(500) / 15.0, // ~33.3 HP/s
+			"maxHp":       barracksDef.MaxHp,
+			"hpPerSecond": barracksDef.HpPerSecond(),
 		},
 	}
 	s.addBuildingLocked(building)

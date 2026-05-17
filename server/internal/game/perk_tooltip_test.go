@@ -75,8 +75,9 @@ func TestEffectiveTrapSnapshot_FirePit_RankScaling_Bronze(t *testing.T) {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for unit with fire_pit at Bronze rank")
 	}
 
-	assertFloatEq(t, "Bronze DamagePerSecond", snap.DamagePerSecond, 4.0)
-	assertFloatEq(t, "Bronze Radius", snap.Radius, 55.0)
+	cfg := perkDefByID("fire_pit").ConfigForRank(unitRankBronze)
+	assertFloatEq(t, "Bronze DamagePerSecond", snap.DamagePerSecond, cfg["damagePerSecond"])
+	assertFloatEq(t, "Bronze Radius", snap.Radius, cfg["radius"])
 }
 
 // TestEffectiveTrapSnapshot_FirePit_RankScaling_Silver verifies that a Silver-
@@ -96,8 +97,9 @@ func TestEffectiveTrapSnapshot_FirePit_RankScaling_Silver(t *testing.T) {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for unit with fire_pit at Silver rank")
 	}
 
-	assertFloatEq(t, "Silver DamagePerSecond", snap.DamagePerSecond, 8.0)
-	assertFloatEq(t, "Silver Radius", snap.Radius, 75.0)
+	cfg := perkDefByID("fire_pit").ConfigForRank(unitRankSilver)
+	assertFloatEq(t, "Silver DamagePerSecond", snap.DamagePerSecond, cfg["damagePerSecond"])
+	assertFloatEq(t, "Silver Radius", snap.Radius, cfg["radius"])
 }
 
 // TestEffectiveTrapSnapshot_FirePit_RankScaling_Gold verifies that a Gold-rank
@@ -117,8 +119,9 @@ func TestEffectiveTrapSnapshot_FirePit_RankScaling_Gold(t *testing.T) {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for unit with fire_pit at Gold rank")
 	}
 
-	assertFloatEq(t, "Gold DamagePerSecond", snap.DamagePerSecond, 12.0)
-	assertFloatEq(t, "Gold Radius", snap.Radius, 95.0)
+	cfg := perkDefByID("fire_pit").ConfigForRank(unitRankGold)
+	assertFloatEq(t, "Gold DamagePerSecond", snap.DamagePerSecond, cfg["damagePerSecond"])
+	assertFloatEq(t, "Gold Radius", snap.Radius, cfg["radius"])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,7 +145,9 @@ func TestEffectiveTrapSnapshot_Caltrops_WiderNets_Radius(t *testing.T) {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for caltrops + wider_nets unit")
 	}
 
-	assertFloatEq(t, "Radius (caltrops + wider_nets)", snap.Radius, 90.0) // 60 * 1.5
+	caltropsRadius := perkDefByID("caltrops").Config["radius"]
+	widerNets := perkDefByID("wider_nets").Config["radiusMultiplier"]
+	assertFloatEq(t, "Radius (caltrops + wider_nets)", snap.Radius, caltropsRadius*widerNets)
 }
 
 // TestEffectiveTrapSnapshot_Caltrops_NoModifier_Radius verifies caltrops without
@@ -162,7 +167,8 @@ func TestEffectiveTrapSnapshot_Caltrops_NoModifier_Radius(t *testing.T) {
 		t.Fatal("EffectiveTrapSnapshotLocked returned nil for caltrops-only unit")
 	}
 
-	assertFloatEq(t, "Radius (caltrops, no modifier)", snap.Radius, 60.0)
+	caltropsRadius := perkDefByID("caltrops").Config["radius"]
+	assertFloatEq(t, "Radius (caltrops, no modifier)", snap.Radius, caltropsRadius)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -310,7 +310,7 @@ func (s *GameState) unitStrategicValue(unit *Unit) float64 {
 	if profile.Name == "catapult" || profile.Name == "enemy_siege" {
 		value += 3
 	}
-	if profile.Name == "support" || profile.Name == "mage" {
+	if profile.Name == "support" || profile.Name == "mage" || profile.Name == "caster" {
 		value += 2.5
 	}
 	if profile.Name == "boss" {
@@ -354,15 +354,15 @@ func (s *GameState) unitTypePreference(unit, target *Unit) float64 {
 		if s.isEngagedByFriendlyFrontlineLocked(unit.OwnerID, target) {
 			return 4
 		}
-		if targetProfile.Name == "support" || targetProfile.Name == "mage" || targetProfile.Name == "catapult" || targetProfile.Name == "enemy_siege" {
+		if targetProfile.Name == "support" || targetProfile.Name == "caster" || targetProfile.Name == "mage" || targetProfile.Name == "catapult" || targetProfile.Name == "enemy_siege" {
 			return 5
 		}
 	case "mage":
-		if targetProfile.Name == "support" || targetProfile.Name == "enemy_archer" || targetProfile.Name == "archer" {
+		if targetProfile.Name == "support" || targetProfile.Name == "caster" || targetProfile.Name == "enemy_archer" || targetProfile.Name == "archer" {
 			return 3
 		}
 	case "cavalry", "skirmisher":
-		if targetProfile.Backline || targetProfile.Name == "support" || targetProfile.Name == "catapult" || targetProfile.Name == "enemy_siege" || targetProfile.Name == "enemy_archer" || targetProfile.Name == "archer" {
+		if targetProfile.Backline || targetProfile.Name == "support" || targetProfile.Name == "caster" || targetProfile.Name == "catapult" || targetProfile.Name == "enemy_siege" || targetProfile.Name == "enemy_archer" || targetProfile.Name == "archer" {
 			return 6
 		}
 		if targetProfile.Frontline {
@@ -379,7 +379,7 @@ func (s *GameState) unitTypePreference(unit, target *Unit) float64 {
 		if targetProfile.Backline {
 			return 1
 		}
-	case "enemy_archer", "support":
+	case "enemy_archer", "support", "caster":
 		if targetProfile.Name == "mage" || targetProfile.Name == "archer" || targetProfile.Name == "catapult" {
 			return 5
 		}

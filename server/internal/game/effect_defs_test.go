@@ -76,9 +76,15 @@ func TestEffect_PlaysOnUnitViaTransientPipeline(t *testing.T) {
 	if eff == nil {
 		t.Fatal("no healing_glow effect queued anchored to the unit (should render via EffectSnapshot pipeline)")
 	}
-	// healing_glow duration 1.0s → 20 ticks at 20Hz.
-	if eff.DurationTicks != int(1.0*gameTicksPerSecond) {
-		t.Errorf("queued effect DurationTicks = %d; want %d (from def duration 1.0s)", eff.DurationTicks, int(1.0*gameTicksPerSecond))
+	// DurationTicks must derive from the catalog-authored duration (so tuning
+	// catalog/effects/healing_glow/healing_glow.json never breaks this test).
+	glowDef, ok := getEffectDef("healing_glow")
+	if !ok {
+		t.Fatal(`getEffectDef("healing_glow") = _, false; want the registered def`)
+	}
+	wantTicks := int(glowDef.Duration * gameTicksPerSecond)
+	if eff.DurationTicks != wantTicks {
+		t.Errorf("queued effect DurationTicks = %d; want %d (from catalog duration %.3gs)", eff.DurationTicks, wantTicks, glowDef.Duration)
 	}
 
 	// Unknown effect id → false, nothing queued.

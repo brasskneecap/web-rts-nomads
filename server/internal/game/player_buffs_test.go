@@ -71,8 +71,13 @@ func TestPlayerBuffAggregateLocked_IronDiscipline(t *testing.T) {
 	mods := s.playerBuffAggregateLocked(unit)
 	s.mu.RUnlock()
 
-	if mods.AttackSpeedBonus != 0.05 {
-		t.Errorf("expected AttackSpeedBonus=0.05 from iron_discipline, got %v", mods.AttackSpeedBonus)
+	def := playerBuffDefByID("iron_discipline")
+	if def == nil {
+		t.Fatal("expected iron_discipline buff in catalog")
+	}
+	want := def.Modifiers.AttackSpeedBonus
+	if mods.AttackSpeedBonus != want {
+		t.Errorf("expected AttackSpeedBonus=%v from iron_discipline, got %v", want, mods.AttackSpeedBonus)
 	}
 }
 

@@ -126,11 +126,14 @@ func TestTrapModifiers_ExtendedSetup_DurationCaltrops(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	// Bronze: durationSeconds=12, multiplier=1.5 → 18.
-	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, 18.0)
+	caltrops := perkDefByID("caltrops").Config
+	durMult := perkDefByID("extended_setup").Config["durationMultiplier"]
+
+	// extended_setup scales durationSeconds by durationMultiplier.
+	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, caltrops["durationSeconds"]*durMult)
 	// Other fields must remain at base values.
-	assertFloatEq(t, "Radius", stats.Radius, 60.0)
-	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, 6.0)
+	assertFloatEq(t, "Radius", stats.Radius, caltrops["radius"])
+	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, caltrops["placeIntervalSeconds"])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -154,7 +157,9 @@ func TestTrapModifiers_WiderNets_RadiusCaltrops(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	assertFloatEq(t, "Radius", stats.Radius, 90.0) // 60 * 1.5
+	caltropsRadius := perkDefByID("caltrops").Config["radius"]
+	widerNets := perkDefByID("wider_nets").Config["radiusMultiplier"]
+	assertFloatEq(t, "Radius", stats.Radius, caltropsRadius*widerNets)
 }
 
 // TestTrapModifiers_WiderNets_ExplosiveBothRadii verifies that for
@@ -175,8 +180,10 @@ func TestTrapModifiers_WiderNets_ExplosiveBothRadii(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	assertFloatEq(t, "Radius (explosion)", stats.Radius, 120.0)       // 80 * 1.5
-	assertFloatEq(t, "TriggerRadius", stats.TriggerRadius, 75.0)       // 50 * 1.5
+	explosive := perkDefByID("explosive_trap").Config
+	widerNets := perkDefByID("wider_nets").Config["radiusMultiplier"]
+	assertFloatEq(t, "Radius (explosion)", stats.Radius, explosive["explosionRadius"]*widerNets)
+	assertFloatEq(t, "TriggerRadius", stats.TriggerRadius, explosive["triggerRadius"]*widerNets)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,7 +209,11 @@ func TestTrapModifiers_RapidDeployment_PlaceIntervalCaltrops(t *testing.T) {
 	if !ok {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
-	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, 4.2) // 6 * 0.7
+
+	caltropsInterval := perkDefByID("caltrops").Config["placeIntervalSeconds"]
+	cooldownMult := perkDefByID("rapid_deployment").Config["cooldownMultiplier"]
+	wantInterval := caltropsInterval * cooldownMult
+	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, wantInterval)
 
 	// Spawn a hostile inside the trapper's AttackRange so the placement gate
 	// fires (idle trappers no longer drop traps without an enemy nearby).
@@ -214,7 +225,7 @@ func TestTrapModifiers_RapidDeployment_PlaceIntervalCaltrops(t *testing.T) {
 	// Verify TrapPlaceCooldownRemaining after a plant cycle.
 	// tickTrapPlacementLocked only decays when the cooldown is > 0 at entry.
 	// Starting at 0, the decay block is skipped, the trap plants, and the
-	// cooldown is reset to the full scaled interval (4.2). No partial decay
+	// cooldown is reset to the full scaled interval. No partial decay
 	// is subtracted in the same tick.
 	def := perkDefByID("caltrops")
 	if def == nil {
@@ -222,7 +233,7 @@ func TestTrapModifiers_RapidDeployment_PlaceIntervalCaltrops(t *testing.T) {
 	}
 	s.tickTrapPlacementLocked(u, def, 0.05)
 
-	assertFloatEq(t, "CooldownRemaining after plant", u.PerkState.TrapPlaceCooldownRemaining, 4.2)
+	assertFloatEq(t, "CooldownRemaining after plant", u.PerkState.TrapPlaceCooldownRemaining, wantInterval)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -248,8 +259,12 @@ func TestTrapModifiers_AmplifiedEffects_Caltrops(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, 4.05)   // 3 * 1.35
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, 0.1225)   // 1 - (1-0.35)*1.35 = 0.1225
+	caltrops := perkDefByID("caltrops").Config
+	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
+
+	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, caltrops["damagePerSecond"]*effectMult)
+	// SlowMultiplier composes through the slow-amount helper, not a flat scale.
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, amplifySlow(caltrops["slowMultiplier"], effectMult))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -274,9 +289,11 @@ func TestTrapModifiers_AmplifiedEffects_ExplosiveTrap(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	// 35 * 1.35 = 47.25 → int(47.25 + 0.5) = 47
-	if stats.BurstDamage != 47 {
-		t.Errorf("BurstDamage: got %d, want 47", stats.BurstDamage)
+	burst := perkDefByID("explosive_trap").Config["burstDamage"]
+	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
+	wantBurst := int(burst*effectMult + 0.5)
+	if stats.BurstDamage != wantBurst {
+		t.Errorf("BurstDamage: got %d, want %d", stats.BurstDamage, wantBurst)
 	}
 }
 
@@ -303,8 +320,11 @@ func TestTrapModifiers_AmplifiedEffects_MarkerTrap(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	assertFloatEq(t, "MarkMultiplier", stats.MarkMultiplier, 0.27) // 0.20 * 1.35
-	assertFloatEq(t, "MarkDuration", stats.MarkDuration, 5.4)      // 4 * 1.35
+	marker := perkDefByID("marker_trap").Config
+	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
+
+	assertFloatEq(t, "MarkMultiplier", stats.MarkMultiplier, marker["markMultiplier"]*effectMult)
+	assertFloatEq(t, "MarkDuration", stats.MarkDuration, marker["markDuration"]*effectMult)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -329,16 +349,17 @@ func TestTrapModifiers_AllSilverStack_Caltrops(t *testing.T) {
 		t.Fatal("DebugEffectiveTrapStats returned false")
 	}
 
-	// DurationSeconds: 12 * 1.5 = 18
-	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, 18.0)
-	// Radius: 60 * 1.5 = 90
-	assertFloatEq(t, "Radius", stats.Radius, 90.0)
-	// PlaceInterval: 6 * 0.7 = 4.2
-	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, 4.2)
-	// DamagePerSecond: 3 * 1.35 = 4.05
-	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, 4.05)
-	// SlowMultiplier: 1 - (1-0.35)*1.35 = 0.1225
-	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, 0.1225)
+	caltrops := perkDefByID("caltrops").Config
+	durMult := perkDefByID("extended_setup").Config["durationMultiplier"]
+	radiusMult := perkDefByID("wider_nets").Config["radiusMultiplier"]
+	cooldownMult := perkDefByID("rapid_deployment").Config["cooldownMultiplier"]
+	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
+
+	assertFloatEq(t, "DurationSeconds", stats.DurationSeconds, caltrops["durationSeconds"]*durMult)
+	assertFloatEq(t, "Radius", stats.Radius, caltrops["radius"]*radiusMult)
+	assertFloatEq(t, "PlaceInterval", stats.PlaceInterval, caltrops["placeIntervalSeconds"]*cooldownMult)
+	assertFloatEq(t, "DamagePerSecond", stats.DamagePerSecond, caltrops["damagePerSecond"]*effectMult)
+	assertFloatEq(t, "SlowMultiplier", stats.SlowMultiplier, amplifySlow(caltrops["slowMultiplier"], effectMult))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -386,14 +407,15 @@ func TestTrapModifiers_PlantEndToEnd_SnapshotScaled(t *testing.T) {
 
 	planted := s.Traps[len(s.Traps)-1]
 
-	// RemainingSeconds: 12 * 1.5 = 18
-	assertFloatEq(t, "planted.RemainingSeconds", planted.RemainingSeconds, 18.0)
-	// Radius: 60 * 1.5 = 90
-	assertFloatEq(t, "planted.Radius", planted.Radius, 90.0)
-	// DamagePerSecond: 3 * 1.35 = 4.05
-	assertFloatEq(t, "planted.DamagePerSecond", planted.DamagePerSecond, 4.05)
-	// SlowMultiplier: 1 - (1-0.35)*1.35 = 0.1225
-	assertFloatEq(t, "planted.SlowMultiplier", planted.SlowMultiplier, 0.1225)
+	caltrops := perkDefByID("caltrops").Config
+	durMult := perkDefByID("extended_setup").Config["durationMultiplier"]
+	radiusMult := perkDefByID("wider_nets").Config["radiusMultiplier"]
+	effectMult := perkDefByID("amplified_effects").Config["effectMultiplier"]
+
+	assertFloatEq(t, "planted.RemainingSeconds", planted.RemainingSeconds, caltrops["durationSeconds"]*durMult)
+	assertFloatEq(t, "planted.Radius", planted.Radius, caltrops["radius"]*radiusMult)
+	assertFloatEq(t, "planted.DamagePerSecond", planted.DamagePerSecond, caltrops["damagePerSecond"]*effectMult)
+	assertFloatEq(t, "planted.SlowMultiplier", planted.SlowMultiplier, amplifySlow(caltrops["slowMultiplier"], effectMult))
 	// Ownership
 	if planted.OwnerPlayerID != "p1" {
 		t.Errorf("planted.OwnerPlayerID: got %q, want p1", planted.OwnerPlayerID)
@@ -434,17 +456,23 @@ func TestAmplifySlow_SlowAmountMath(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestSilverTrapPerkDefs_AllLoaded verifies all four new Silver perk IDs are
-// present in the loaded catalog with the expected config keys.
+// present in the loaded catalog with their expected config keys. The exact
+// tuning magnitudes live in the catalog JSON and are free to change with
+// balance passes, so this asserts the design-level invariant for each
+// multiplier (amplifiers stay > 1; the cooldown reducer stays in (0, 1))
+// rather than pinning a magic number that would break on every tweak.
 func TestSilverTrapPerkDefs_AllLoaded(t *testing.T) {
 	perks := []struct {
 		id        string
 		configKey string
-		wantValue float64
+		// amplify=true → value must be > 1 (extends/grows the effect).
+		// amplify=false → value must be in (0, 1) (shrinks the cooldown).
+		amplify bool
 	}{
-		{"extended_setup", "durationMultiplier", 1.5},
-		{"wider_nets", "radiusMultiplier", 1.5},
-		{"rapid_deployment", "cooldownMultiplier", 0.7},
-		{"amplified_effects", "effectMultiplier", 1.35},
+		{"extended_setup", "durationMultiplier", true},
+		{"wider_nets", "radiusMultiplier", true},
+		{"rapid_deployment", "cooldownMultiplier", false},
+		{"amplified_effects", "effectMultiplier", true},
 	}
 	for _, p := range perks {
 		def := perkDefByID(p.id)
@@ -457,8 +485,14 @@ func TestSilverTrapPerkDefs_AllLoaded(t *testing.T) {
 			t.Errorf("perk %q: config key %q missing", p.id, p.configKey)
 			continue
 		}
-		if math.Abs(got-p.wantValue) > 1e-9 {
-			t.Errorf("perk %q config[%q]: got %v, want %v", p.id, p.configKey, got, p.wantValue)
+		if p.amplify {
+			if got <= 1.0 {
+				t.Errorf("perk %q config[%q] = %v; an amplifying multiplier must be > 1", p.id, p.configKey, got)
+			}
+		} else {
+			if got <= 0.0 || got >= 1.0 {
+				t.Errorf("perk %q config[%q] = %v; a cooldown-reducing multiplier must be in (0, 1)", p.id, p.configKey, got)
+			}
 		}
 	}
 }

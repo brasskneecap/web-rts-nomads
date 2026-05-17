@@ -8,6 +8,18 @@ import (
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// itemDef fetches the catalog ItemDef for id so tests derive magnitudes
+// (cost, stat modifiers, heal amount) from the JSON instead of hardcoding
+// numbers that the user is free to tune.
+func itemDef(t *testing.T, id string) *ItemDef {
+	t.Helper()
+	def := itemCatalogSingleton[id]
+	if def == nil {
+		t.Fatalf("item def %q not found in catalog", id)
+	}
+	return def
+}
+
 // newItemTestState creates a GameState with a single player "p1" already
 // ensured, and a marketplace building owned by that player.
 func newItemTestState(t *testing.T) (*GameState, string) {
@@ -108,8 +120,10 @@ func TestItemCatalog_AllTenItemsLoaded(t *testing.T) {
 		if def.Consumable == nil || def.Consumable.Type != "heal" {
 			t.Errorf("%s: expected heal consumable", id)
 		}
-		if def.MaxStacks != 99 {
-			t.Errorf("%s: expected MaxStacks=99, got %d", id, def.MaxStacks)
+		// Heal potions are stackable; the exact cap is a tunable catalog
+		// value (maxStacks), so assert the invariant, not the literal.
+		if def.MaxStacks <= 1 {
+			t.Errorf("%s: expected stackable consumable (MaxStacks > 1), got %d", id, def.MaxStacks)
 		}
 	}
 }
@@ -157,6 +171,8 @@ func TestPurchaseItem_EquipmentAddsToVault(t *testing.T) {
 	goldBefore := s.Players[playerID].Resources["gold"]
 	s.mu.RUnlock()
 
+	cost := itemDef(t, "broad_sword").CostGold
+
 	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 
 	s.mu.RLock()
@@ -172,8 +188,8 @@ func TestPurchaseItem_EquipmentAddsToVault(t *testing.T) {
 		t.Errorf("expected stacks=1, got %d", player.Vault[0].Stacks)
 	}
 	goldAfter := player.Resources["gold"]
-	if goldAfter != goldBefore-50 {
-		t.Errorf("expected gold deducted by 50, before=%d after=%d", goldBefore, goldAfter)
+	if goldAfter != goldBefore-cost {
+		t.Errorf("expected gold deducted by %d, before=%d after=%d", cost, goldBefore, goldAfter)
 	}
 }
 
@@ -303,8 +319,9 @@ func TestEquipItem_EquipsSwordAndAppliesBonus(t *testing.T) {
 	if unit.Equipped[0].ItemID != "broad_sword" {
 		t.Errorf("expected weapon_common_sword in slot, got %q", unit.Equipped[0].ItemID)
 	}
-	if unit.Damage != damageBefore+5 {
-		t.Errorf("expected damage +5, before=%d after=%d", damageBefore, unit.Damage)
+	dmgBonus := itemDef(t, "broad_sword").Modifiers.Damage
+	if unit.Damage != damageBefore+dmgBonus {
+		t.Errorf("expected damage +%d, before=%d after=%d", dmgBonus, damageBefore, unit.Damage)
 	}
 }
 
@@ -365,8 +382,9 @@ func TestUnequipItem_ReturnsItemToVault(t *testing.T) {
 	if len(s.Players[playerID].Vault) != 1 {
 		t.Errorf("expected item back in vault, got %d entries", len(s.Players[playerID].Vault))
 	}
-	if unit.Damage != damageBonused-5 {
-		t.Errorf("expected damage -5 after unequip, bonused=%d after=%d", damageBonused, unit.Damage)
+	dmgBonus := itemDef(t, "broad_sword").Modifiers.Damage
+	if unit.Damage != damageBonused-dmgBonus {
+		t.Errorf("expected damage -%d after unequip, bonused=%d after=%d", dmgBonus, damageBonused, unit.Damage)
 	}
 }
 
@@ -391,11 +409,13 @@ func TestUseConsumable_HealRestoresHP(t *testing.T) {
 	hpBefore := unit.HP
 	s.mu.RUnlock()
 
+	healAmount := itemDef(t, "potion_common_heal").Consumable.Amount
+
 	s.UseConsumable(playerID, unit.ID, 0)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	expected := hpBefore + 50
+	expected := hpBefore + healAmount
 	if expected > unit.MaxHP {
 		expected = unit.MaxHP
 	}
@@ -652,8 +672,9 @@ func TestTransferItem_HappyPath_MovesItemBetweenUnits(t *testing.T) {
 		t.Errorf("expected weapon_common_sword in unitB slot 0, got %q", unitB.Equipped[0].ItemID)
 	}
 	// unitA loses the bonus; unitB gains it.
-	if unitA.Damage != damageBefore-5 {
-		t.Errorf("unitA: expected damage restored (-%d), got damage=%d", 5, unitA.Damage)
+	dmgBonus := itemDef(t, "broad_sword").Modifiers.Damage
+	if unitA.Damage != damageBefore-dmgBonus {
+		t.Errorf("unitA: expected damage restored (-%d), got damage=%d", dmgBonus, unitA.Damage)
 	}
 	if unitB.Damage != damageBefore {
 		// unitB started with the same base damage as unitA (same type/rank).

@@ -212,8 +212,23 @@ func TestAbility_HealLoadsFromCatalog(t *testing.T) {
 	if def.ID != "heal" || def.DisplayName != "Heal" || def.Type != AbilitySpell {
 		t.Errorf("identity: id=%q name=%q type=%q", def.ID, def.DisplayName, def.Type)
 	}
-	if def.ManaCost != 5 || def.HealAmount != 5 || def.CastTime != 1.0 || def.Cooldown != 0 {
-		t.Errorf("cost/timing: mana=%d heal=%d castTime=%v cd=%v", def.ManaCost, def.HealAmount, def.CastTime, def.Cooldown)
+	// Cost/timing are balance knobs that live in heal.json and are meant to be
+	// tuned freely — assert they loaded as sane values, NOT specific numbers.
+	// A specific-number assertion here would break on every balance tweak,
+	// which defeats the purpose of catalog JSON. Pinning exact numbers belongs
+	// in TestAbility_AllAttributesLoadFromJSON, which uses its own inline
+	// fixture and is decoupled from the live catalog.
+	if def.ManaCost <= 0 {
+		t.Errorf("ManaCost = %d; want > 0 (loaded from catalog)", def.ManaCost)
+	}
+	if def.HealAmount <= 0 {
+		t.Errorf("HealAmount = %d; want > 0 (heal ability must restore HP)", def.HealAmount)
+	}
+	if def.CastTime < 0 {
+		t.Errorf("CastTime = %v; want >= 0", def.CastTime)
+	}
+	if def.Cooldown < 0 {
+		t.Errorf("Cooldown = %v; want >= 0", def.Cooldown)
 	}
 	if !def.CastRange.MatchesAttackRange() {
 		t.Error("heal castRange should be match_attack_range")
@@ -231,7 +246,17 @@ func TestAbility_HealLoadsFromCatalog(t *testing.T) {
 		t.Errorf("anim=%q effectOnTarget=%q", def.CasterAnimationOrCasting(), def.EffectOnTarget)
 	}
 
-	if defs := ListAbilityDefs(); len(defs) != 1 || defs[0].ID != "heal" {
-		t.Errorf("ListAbilityDefs() = %+v; want exactly [heal]", defs)
+	// Heal must appear in the registry listing. Deliberately does NOT pin the
+	// total count — adding future abilities to the catalog is expected and
+	// must not break this test.
+	found := false
+	for _, d := range ListAbilityDefs() {
+		if d.ID == "heal" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("ListAbilityDefs() does not contain heal; got %+v", ListAbilityDefs())
 	}
 }

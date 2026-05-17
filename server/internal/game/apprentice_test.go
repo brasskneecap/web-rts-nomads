@@ -33,6 +33,15 @@ func TestApprentice_BaseStatsCopiedFromArcher(t *testing.T) {
 // ── Mana kit + attack configuration ──────────────────────────────────────────
 
 func TestApprentice_ManaAndAttackKit(t *testing.T) {
+	// The mana pool, regen, projectile, damage type, and ability list are all
+	// catalog-driven (apprentice.json). Derive expectations from the def so
+	// balance tweaks to the JSON do not break this test — it verifies the
+	// spawn path faithfully copies the def, not specific tuned numbers.
+	def, ok := getUnitDef("apprentice")
+	if !ok {
+		t.Fatal("apprentice unit def not registered")
+	}
+
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -42,20 +51,32 @@ func TestApprentice_ManaAndAttackKit(t *testing.T) {
 		t.Fatal("failed to spawn apprentice")
 	}
 
-	if u.MaxMana != 50 || u.CurrentMana != 50 {
-		t.Errorf("mana pool: MaxMana=%d CurrentMana=%d; want 50/50 (starts full)", u.MaxMana, u.CurrentMana)
+	// A spellcaster must actually have a mana pool (invariant), and the spawn
+	// path must seed it from the def: CurrentMana starts full at MaxMana.
+	if def.MaxMana <= 0 {
+		t.Errorf("apprentice def MaxMana=%d; a spellcaster must have a positive mana pool", def.MaxMana)
 	}
-	if u.ManaRegenPerSecond != 1.0 {
-		t.Errorf("ManaRegenPerSecond=%v; want 1.0", u.ManaRegenPerSecond)
+	if u.MaxMana != def.MaxMana || u.CurrentMana != def.MaxMana {
+		t.Errorf("mana pool: MaxMana=%d CurrentMana=%d; want %d/%d (def.MaxMana, starts full)",
+			u.MaxMana, u.CurrentMana, def.MaxMana, def.MaxMana)
 	}
-	if u.ProjectileID != "fire_bolt" {
-		t.Errorf("ProjectileID=%q; want fire_bolt", u.ProjectileID)
+	if u.ManaRegenPerSecond != def.ManaRegenRate {
+		t.Errorf("ManaRegenPerSecond=%v; want %v (def.ManaRegenRate)", u.ManaRegenPerSecond, def.ManaRegenRate)
 	}
-	if u.AttackDamageType != DamageFire {
-		t.Errorf("AttackDamageType=%q; want fire", u.AttackDamageType)
+	if u.ProjectileID != def.Projectile {
+		t.Errorf("ProjectileID=%q; want %q (def.Projectile)", u.ProjectileID, def.Projectile)
 	}
-	if len(u.Abilities) != 1 || u.Abilities[0] != "heal" {
-		t.Errorf("Abilities=%v; want [heal]", u.Abilities)
+	if u.AttackDamageType != def.DamageType {
+		t.Errorf("AttackDamageType=%q; want %q (def.DamageType)", u.AttackDamageType, def.DamageType)
+	}
+	if len(u.Abilities) != len(def.Abilities) {
+		t.Errorf("Abilities=%v; want %v (def.Abilities)", u.Abilities, def.Abilities)
+	} else {
+		for i, ab := range def.Abilities {
+			if u.Abilities[i] != ab {
+				t.Errorf("Abilities[%d]=%q; want %q (def.Abilities)", i, u.Abilities[i], ab)
+			}
+		}
 	}
 }
 
@@ -82,11 +103,28 @@ func TestApprentice_IsRangedLikeArcher(t *testing.T) {
 // ── Apprentice fires a fire_bolt projectile (Fire, fizzle on impact) ──────────
 
 func TestApprentice_FiresFireBoltWithFireDamageAndFizzle(t *testing.T) {
+	// The projectile id, its impact/follow effects, and the damage type are all
+	// catalog-driven (apprentice.json → fire_bolt projectile def). Derive the
+	// expected wire values from the defs so balance/asset tweaks don't break
+	// this test; it verifies the firing path threads the catalog data through.
+	appDef, ok := getUnitDef("apprentice")
+	if !ok {
+		t.Fatal("apprentice unit def not registered")
+	}
+	projDef, ok := getProjectileDef(appDef.Projectile)
+	if !ok {
+		t.Fatalf("apprentice projectile def %q not registered", appDef.Projectile)
+	}
+	wantVariant := appDef.Projectile
+	wantImpact := impactEffectForProjectileDef(projDef)
+	wantFollow := followEffectForProjectileDef(projDef)
+	wantDamageType := appDef.DamageType
+
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	app.Visible = true
-	// Stationary hostile inside the apprentice's 220 range.
+	// Stationary hostile inside the apprentice's attack range.
 	enemy := spawnProjTestUnit(t, s, "enemy", 400+150, 400)
 	enemy.MoveSpeed = 0
 	enemyID := enemy.ID
@@ -102,17 +140,17 @@ func TestApprentice_FiresFireBoltWithFireDamageAndFizzle(t *testing.T) {
 	}
 	proj := s.Projectiles[before]
 
-	if proj.Variant != "fire_bolt" {
-		t.Errorf("projectile Variant=%q; want fire_bolt (client renders the fire bolt sprite)", proj.Variant)
+	if proj.Variant != wantVariant {
+		t.Errorf("projectile Variant=%q; want %q (def.Projectile — client renders that sprite)", proj.Variant, wantVariant)
 	}
-	if proj.ImpactEffect != "fizzle" {
-		t.Errorf("projectile ImpactEffect=%q; want fizzle", proj.ImpactEffect)
+	if proj.ImpactEffect != wantImpact {
+		t.Errorf("projectile ImpactEffect=%q; want %q (fire_bolt def impactEffect)", proj.ImpactEffect, wantImpact)
 	}
-	if proj.FollowEffect != "" {
-		t.Errorf("projectile FollowEffect=%q; want \"\" (the bolt itself is the in-flight visual)", proj.FollowEffect)
+	if proj.FollowEffect != wantFollow {
+		t.Errorf("projectile FollowEffect=%q; want %q (fire_bolt def followEffect)", proj.FollowEffect, wantFollow)
 	}
-	if proj.DamageType != DamageFire {
-		t.Errorf("projectile DamageType=%q; want fire", proj.DamageType)
+	if proj.DamageType != wantDamageType {
+		t.Errorf("projectile DamageType=%q; want %q (def.DamageType)", proj.DamageType, wantDamageType)
 	}
 	s.mu.Unlock()
 
@@ -136,8 +174,11 @@ func TestApprentice_FiresFireBoltWithFireDamageAndFizzle(t *testing.T) {
 	if e != nil && e.HP >= enemyStartHP {
 		t.Errorf("enemy should have taken fire_bolt damage; HP %d -> %d", enemyStartHP, e.HP)
 	}
-	if queuedEffectFor(s, "fizzle", enemyID) == nil {
-		t.Error("a 'fizzle' effect should have played on the enemy when a fire_bolt landed")
+	// The impact effect played on landing is whatever the projectile def
+	// configures (wantImpact, derived above). Only assert it when the catalog
+	// actually configures an impact effect for this projectile.
+	if wantImpact != "" && queuedEffectFor(s, wantImpact, enemyID) == nil {
+		t.Errorf("a %q effect should have played on the enemy when a %s landed", wantImpact, wantVariant)
 	}
 }
 

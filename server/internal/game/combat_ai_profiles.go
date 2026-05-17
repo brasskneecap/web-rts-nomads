@@ -347,6 +347,53 @@ var combatProfiles = map[string]CombatProfile{
 			HealthFinish:     10,
 		},
 	},
+	"caster": {
+		// Phase 1 caster profile: a faithful clone of "support" (backline +
+		// retreat, which the Apprentice's old "archer" profile lacked) with
+		// three intentional deltas, written inline:
+		//   1. Name: "caster" — distinct, independently-tunable identity.
+		//   2. MaxChaseDistance: 180 (the "archer" envelope) instead of
+		//      support's 110. Leash self-clamps up to AttackRange via
+		//      effectiveLeashDistance, but MaxChaseDistance has no such clamp,
+		//      so inheriting support's 110 would silently shrink the
+		//      Apprentice's (AttackRange 220) pursuit range.
+		//   3. AoERadius / Weights.AoECluster zeroed — the Apprentice's
+		//      current kit is single-target (basic attack = fire_bolt
+		//      projectile; only ability = heal). A future AoE caster ability
+		//      would warrant re-tuning this profile then.
+		// Do not "fix" these toward support's values; they are the design.
+		Name:                       "caster",
+		DetectionRange:             300,
+		RetargetIntervalTicks:      5,
+		SwitchThreshold:            10,
+		ThreatDecayPerSecond:       16,
+		ThreatFromDamage:           0.8,
+		ThreatGenerationMultiplier: 0.95,
+		PassiveMeleeThreat:         4,
+		LeashDistance:              160,
+		MaxChaseDistance:           180,
+		RetreatDistance:            120,
+		RetreatTriggerMeleeRange:   90,
+		PreferMaxRange:             true,
+		Backline:                   true,
+		DangerTolerance:            0.55,
+		AoERadius:                  0,
+		Weights: TargetWeights{
+			Distance:         16,
+			InRange:          30,
+			Threat:           12,
+			TargetValue:      22,
+			TypePreference:   26,
+			Taunt:            1,
+			ProtectAllies:    8,
+			StructureDefense: 8,
+			Reachability:     14,
+			Stickiness:       10,
+			DangerPenalty:    34,
+			AoECluster:       0,
+			HealthFinish:     10,
+		},
+	},
 	"flyer_skirmisher": {
 		// Airborne ranged harasser. Behaves like an enemy_archer but with a
 		// longer leash so the unit can range freely over terrain its ground

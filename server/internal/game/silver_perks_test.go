@@ -667,6 +667,13 @@ func TestMomentum_AttackGrantsMoveAndAttackSpeedBonus(t *testing.T) {
 	if def == nil {
 		t.Fatal("momentum perk def not found")
 	}
+	// Invariant (not a value pin): the AS burst must be a real positive bonus.
+	// Without this, the assertions below still pass if attackSpeedBonus were
+	// misconfigured to 0 (before == after == 0). Duration is intentionally NOT
+	// pinned here — it's a freely tunable catalog value.
+	if got := def.Config["attackSpeedBonus"]; got <= 0 {
+		t.Errorf("momentum attackSpeedBonus must be > 0; got %.3f", got)
+	}
 
 	// Baseline before any attack: no bonus on either hook.
 	if got := s.perkMoveSpeedMultiplierLocked(vanguard); got != 1.0 {
@@ -725,21 +732,5 @@ func TestMomentum_BothBonusesDropWhenTimerExpires(t *testing.T) {
 	}
 	if got := s.perkAttackSpeedBonusLocked(vanguard); got != 0 {
 		t.Errorf("AS bonus after decay: got %.3f, want 0", got)
-	}
-}
-
-// TestMomentum_ConfigDurationIsFiveSeconds is a pinning test — the user asked
-// to bump duration to 5s and this guards that the JSON catalog value stays at
-// 5s across future edits unless explicitly changed again.
-func TestMomentum_ConfigDurationIsFiveSeconds(t *testing.T) {
-	def := perkDefByID("momentum")
-	if def == nil {
-		t.Fatal("momentum perk def not found")
-	}
-	if got := def.Config["durationSeconds"]; got != 5 {
-		t.Errorf("momentum durationSeconds: got %.1f, want 5.0", got)
-	}
-	if got := def.Config["attackSpeedBonus"]; got <= 0 {
-		t.Errorf("momentum attackSpeedBonus must be > 0; got %.3f", got)
 	}
 }
