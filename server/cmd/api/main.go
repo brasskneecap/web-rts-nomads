@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,10 +16,28 @@ import (
 	"webrts/server/internal/game"
 	httpserver "webrts/server/internal/http"
 	"webrts/server/internal/profile"
+	"webrts/server/internal/steam"
 	"webrts/server/internal/ws"
 )
 
+// version is overridden at build time via `-ldflags "-X main.version=..."`.
+// The Tauri shell's ready-line parser reads it to detect SPA/server build
+// mismatches; the SPA's first WS hello includes the same value.
+var version = "dev"
+
 func main() {
+	var portFlag string
+	flag.StringVar(&portFlag, "port", "", "port to bind (0 = kernel-assigned). Overrides WEBRTS_PORT.")
+	flag.Parse()
+
+	port := portFlag
+	if port == "" {
+		port = os.Getenv("WEBRTS_PORT")
+	}
+	if port == "" {
+		port = "8080"
+	}
+
 	corsOrigin := os.Getenv("CORS_ALLOWED_ORIGIN")
 	if corsOrigin == "" {
 		corsOrigin = "http://localhost:5173"
@@ -24,25 +46,59 @@ func main() {
 	manager := game.NewMatchManager()
 	lobbyManager := game.NewLobbyManager()
 	hub := ws.NewHub(manager, lobbyManager)
+	hub.SetVersion(version) // §17.1 build-mismatch handshake
 	profileManager := profile.NewManager("")
-	router := httpserver.NewRouter(hub, corsOrigin, profileManager)
 
-	addr := ":8080"
+	spaHandler, err := newSPAHandler()
+	if err != nil {
+		log.Fatalf("embedded SPA init: %v", err)
+	}
+
+	// SteamBridge selection: when the Tauri shell launches the server it sets
+	// NOMADS_IPC_PATH to the shell-owned named-pipe / Unix-socket path. In
+	// Phase 1 we only have NoopBridge; IPCBridge construction lands with
+	// §4 task 4.4 in Phase 2. We log when the env is set so a future P2
+	// launch where IPCBridge construction was skipped is obvious.
+	var bridge steam.SteamBridge = steam.NewNoopBridge()
+	if path := os.Getenv("NOMADS_IPC_PATH"); path != "" {
+		log.Printf("NOMADS_IPC_PATH=%q set but IPCBridge is Phase 2 — using NoopBridge", path)
+	}
+	_ = bridge // wired into subsystems when achievement / lobby callers land (§16, §17)
+
+	router := httpserver.NewRouter(hub, corsOrigin, profileManager, spaHandler)
+
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatalf("listen on port %q: %v", port, err)
+	}
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		log.Fatalf("unexpected listener address type %T", listener.Addr())
+	}
+	actualPort := tcpAddr.Port
+
 	server := &http.Server{
-		Addr:    addr,
 		Handler: router,
 	}
 
-	// Shut down cleanly on SIGINT / SIGTERM.
+	// Shut down cleanly on SIGINT / SIGTERM or on stdin EOF (the latter is how
+	// the Tauri shell tells the Go child "parent is closing, please exit").
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go watchStdin(stop)
 
 	go func() {
-		log.Printf("server listening on %s", addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("server listening on %s", listener.Addr())
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}
 	}()
+
+	// NOMADS_READY is the single line the Tauri shell scrapes from stdout to
+	// learn (a) the actual port (when port=0) and (b) the server's compiled
+	// version for SPA/server build-mismatch detection. It is printed exactly
+	// once, after the listener is bound and Serve is dispatched.
+	fmt.Printf("NOMADS_READY url=http://127.0.0.1:%d version=%s\n", actualPort, version)
 
 	<-ctx.Done()
 	log.Println("shutting down...")
@@ -56,4 +112,24 @@ func main() {
 
 	hub.Close()
 	log.Println("server stopped")
+}
+
+// watchStdin reads and discards stdin until EOF or another read error, then
+// triggers shutdown. The Tauri shell closes the Go child's stdin to request a
+// graceful exit (design D7: "pipes already give us a cross-platform 'parent
+// died, child should die' semantic with no protocol overhead").
+func watchStdin(stop context.CancelFunc) {
+	buf := make([]byte, 256)
+	for {
+		_, err := os.Stdin.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				log.Println("stdin closed; initiating shutdown")
+			} else {
+				log.Printf("stdin read error: %v; initiating shutdown", err)
+			}
+			stop()
+			return
+		}
+	}
 }

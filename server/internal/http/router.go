@@ -12,7 +12,12 @@ import (
 	"webrts/server/internal/ws"
 )
 
-func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager) http.Handler {
+// NewRouter wires the server's HTTP and WebSocket handlers. When spaHandler is
+// non-nil, it is mounted at "/" as a catch-all so the embedded SPA is served
+// for any path that no other route matches; routes registered above keep their
+// existing precedence by virtue of http.ServeMux's longest-prefix matching.
+// The no-tag build passes nil here and the server stays API-only.
+func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, spaHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 
 	registerProfileRoutes(mux, profileManager)
@@ -270,6 +275,33 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager) 
 	})
 
 	mux.HandleFunc("/ws", hub.HandleWS)
+
+	// §13 task 13.1: Direct connect toggle. POST {allow:bool} to flip;
+	// GET to read. Lives under /api/ to keep top-level uncluttered.
+	mux.HandleFunc("/api/direct-connect", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"allow": hub.AllowNonLoopback()})
+		case http.MethodPost:
+			var body struct {
+				Allow bool `json:"allow"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid JSON body", http.StatusBadRequest)
+				return
+			}
+			hub.SetAllowNonLoopback(body.Allow)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"allow": hub.AllowNonLoopback()})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	if spaHandler != nil {
+		mux.Handle("/", spaHandler)
+	}
 
 	return withCORS(mux, corsOrigin)
 }

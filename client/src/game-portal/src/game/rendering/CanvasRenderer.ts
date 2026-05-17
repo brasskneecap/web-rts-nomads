@@ -399,7 +399,6 @@ export class CanvasRenderer {
 
     const ctx = this.fogCtx
     const mx = margin * cs
-    const pw = fow.cols * cs
     const ph = fow.rows * cs
 
     ctx.clearRect(0, 0, canvasW, canvasH)
@@ -1695,6 +1694,7 @@ export class CanvasRenderer {
       workTargetId?: string
       actionFacingDx?: number
       actionFacingDy?: number
+      flyer?: boolean
     }>,
   ) {
     const ctx = this.ctx

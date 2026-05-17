@@ -168,7 +168,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, watch, watchEffect, onBeforeUnmount, onMounted } from 'vue'
 import MapEditorPanel from '@/components/MapEditorPanel.vue'
 import MatchHud from '@/components/MatchHud.vue'
 import WaveUpgradeModal from '@/components/WaveUpgradeModal.vue'

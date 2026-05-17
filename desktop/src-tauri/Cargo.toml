@@ -1,0 +1,47 @@
+# Pinned exact versions per §18 task 18.4 and the desktop-shell spec
+# "Tauri and steamworks-rs versions are pinned". Update intentionally: bump the
+# specific number and document the reason in the PR.
+
+[package]
+name = "nomads-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Tauri shell for the Nomads desktop build"
+authors = ["Nomads"]
+publish = false
+
+[lib]
+name = "nomads_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+# Pinned exact versions per §18 task 18.4 and the desktop-shell spec
+# "Tauri and steamworks-rs versions are pinned". To update: bump the specific
+# number, run `cargo update`, and explain the bump in the PR description.
+tauri-build = { version = "=2.6.2", features = [] }
+
+[dependencies]
+tauri = { version = "=2.11.2", features = [] }
+tauri-plugin-shell = "=2.0.2"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.133"
+log = "=0.4.22"
+env_logger = "=0.11.5"
+anyhow = "=1.0.93"
+
+[features]
+# Default to non-shipped dev config: single-instance lock disabled for
+# multi-window QA. Shipped builds enable the single-instance feature, which
+# pulls in tauri-plugin-single-instance — that plugin is added in §9 (Rust
+# shell single-instance + connect_lobby argv). For now the feature toggle
+# is just a placeholder so the build matrix is unambiguous.
+default = []
+single-instance = []
+
+[profile.release]
+panic = "abort"     # surfaced via the panic hook in §22.7
+codegen-units = 1
+lto = true
+incremental = false
+opt-level = "s"
+strip = true

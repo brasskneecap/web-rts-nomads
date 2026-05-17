@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capabilities for the Nomads main window. Per the desktop-shell spec, every IPC command AND every Tauri built-in plugin permission MUST be enumerated explicitly. NO wildcard or allow-all permissions. NO fs:*, http:*, or process:* permissions — these are explicitly forbidden by the spec.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "shell:default"
+  ]
+}
