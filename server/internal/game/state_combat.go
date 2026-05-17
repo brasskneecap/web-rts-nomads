@@ -171,6 +171,7 @@ func unitCanTargetPlane(unit, target *Unit) bool {
 func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer profileStart("cmd.AttackWithUnits")()
 
 	target := s.getUnitByIDLocked(targetUnitID)
 	if target == nil || !target.Visible || !s.playersAreHostileLocked(target.OwnerID, playerID) {
@@ -203,6 +204,12 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 		s.resetUnitMovementLocked(unit, orderID)
 	}
 
+	// Share the sub-cell blocked map across the group — see MoveUnits.
+	groundSubBlocked, flyerSubBlocked := s.buildGroupSubBlockedLocked(groupUnits, blocked)
+
+	// Order / anchor / target assignment first, pathing second. Splitting the
+	// two passes lets assignAttackGroupPathsLocked run one full A* for the
+	// leader and reuse the result for every follower — see its docstring.
 	for _, unit := range groupUnits {
 		unit.AttackTargetID = targetUnitID
 		unit.Attacking = false
@@ -214,21 +221,11 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 		// the next tick. Target-centered anchor mirrors MoveUnits/AttackMoveUnits.
 		unit.CombatAnchorX = target.X
 		unit.CombatAnchorY = target.Y
-
-		dx := target.X - unit.X
-		dy := target.Y - unit.Y
-		dist := math.Sqrt(dx*dx + dy*dy)
-		if dist > unit.AttackRange {
-			// Pathfind toward the target and stop at the first cell within
-			// attack range. assignAttackApproachPathLocked handles obstacles
-			// between unit and target (cliffs, terrain transitions) by
-			// routing around them — the older "project a single approach
-			// point on the unit→target line" flow would land that point on
-			// the obstacle and snap to the unit's side, leaving the unit
-			// unable to ever close the distance.
-			s.assignAttackApproachPathLocked(unit, target, blocked)
-		}
 	}
+
+	// Leader-follower attack pathing — shortest-range unit leads, others
+	// truncate its path at their own range. Skips units already in range.
+	s.assignAttackGroupPathsLocked(groupUnits, target, blocked, groundSubBlocked, flyerSubBlocked)
 }
 
 // resolveAttackHitLocked applies damage to target and runs every on-hit
@@ -555,24 +552,15 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					}
 					unit.Status = "Moving To Attack"
 					profile := resolveCombatProfile(unit)
-					if !unit.Moving {
-						// Throttle forced repathing: if the last attempt failed
-						// (unit still not moving after the call), back off before
-						// retrying. Without this, a unit surrounded by a dense crowd
-						// runs full sub-cell A* (~65k cells) every tick even though
-						// no path exists, locking the tick budget.
-						if s.Tick >= unit.NextApproachRepathTick {
-							movingBefore := unit.Moving
-							s.refreshUnitAttackApproachLocked(unit, target, profile, blocked, true)
-							if !movingBefore && !unit.Moving {
-								// Path still failed — impose cooldown.
-								unit.NextApproachRepathTick = s.Tick + approachRepathCooldownTicks
-							}
-						}
-					} else {
-						unit.NextApproachRepathTick = 0 // reset when moving normally
-						s.refreshUnitAttackApproachLocked(unit, target, profile, blocked, false)
-					}
+					// Refresh approach unconditionally — refreshUnitAttackApproachLocked
+					// either lays a fresh A* path (cheap thanks to the in-range
+					// short-circuit when the destination is already valid) or, on A*
+					// failure, drops the unit into drift mode. Drift is single-step
+					// straight-line movement (no per-tick A*) so there is no longer a
+					// per-tick A* storm to throttle here. AttackDrifting=true with an
+					// empty Path is the unit's "I'm advancing toward target without a
+					// route" state; the per-unit movement loop in state.go handles it.
+					s.refreshUnitAttackApproachLocked(unit, target, profile, blocked, !unit.Moving)
 				}
 			}
 			continue
@@ -641,9 +629,31 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 					}
 					unit.Status = "Moving To Attack"
 					if !unit.Moving {
-						// Re-path to the same claimed position rather than recalculating,
-						// so enemies don't all converge on the same closest cell.
-						s.assignUnitPath(unit, protocol.Vec2{X: unit.TargetX, Y: unit.TargetY}, blocked, nil)
+						// Throttle forced repathing for building targets, mirroring the
+						// unit-vs-unit branch above. Without this, a unit whose A* keeps
+						// failing (target enclosed, dense crowd, etc.) runs full sub-cell
+						// A* (~65k cells) every tick, dominating the tick budget on maps
+						// with multiple stuck attackers.
+						//
+						// On each failure escalate via applyBuildingUnreachableEscalation-
+						// Locked: shouldDropCurrentTargetLocked has no unreachable-memo
+						// check for buildings (it only drops on destruction), so without
+						// active escalation here a unit committed to an unreachable
+						// building loops forever at the throttle cadence. The escalation
+						// drops the target via clearCombatTargetLocked on strike 3, which
+						// breaks the loop and lets the unit fall back to an objective.
+						if s.Tick >= unit.NextApproachRepathTick {
+							buildingID := unit.AttackBuildingTargetID
+							s.assignUnitPath(unit, protocol.Vec2{X: unit.TargetX, Y: unit.TargetY}, blocked, nil)
+							if !unit.Moving {
+								unit.NextApproachRepathTick = s.Tick + approachRepathCooldownTicks
+								if buildingID != "" {
+									s.applyBuildingUnreachableEscalationLocked(unit, buildingID, blocked)
+								}
+							}
+						}
+					} else {
+						unit.NextApproachRepathTick = 0
 					}
 				}
 			}

@@ -8,6 +8,7 @@ import (
 func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, targetID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer profileStart("cmd.GatherWithUnits")()
 
 	node := s.getResourceNodeByIDLocked(targetID)
 	if node == nil || node.ResourceAmount <= 0 {

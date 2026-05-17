@@ -123,6 +123,16 @@ func (s *GameState) tickWaveLocked(dt float64) {
 			wm.CurrentWave++
 			wm.State = "active"
 			wm.Timer = 0
+			// Per-wave reset of pathing diagnostics + building strike count so the
+			// debug snapshot reflects only the current wave's behaviour and the
+			// escalation system doesn't carry forward stale memos.
+			for _, u := range s.Units {
+				if u == nil {
+					continue
+				}
+				u.PathDiagnostics = PathDiagnostics{}
+				u.UnreachableBuildingStrikeCount = 0
+			}
 			// Reset spawn timers so this wave's points re-arm from the wave start.
 			s.resetWaveSpawnTimersLocked(wm.CurrentWave)
 		}
@@ -402,6 +412,9 @@ func (s *GameState) findNearestAttackablePlayerBuildingLocked(enemy *Unit) *prot
 		if !ok || hp <= 0 {
 			continue
 		}
+		if b.ID == enemy.UnreachableBuildingTargetID && s.Tick < enemy.UnreachableUntilTick {
+			continue
+		}
 		dist := s.distanceToBuilding(enemy.X, enemy.Y, b)
 		if dist < bestDistSq {
 			bestDistSq = dist
@@ -430,6 +443,9 @@ func (s *GameState) findNearestAttackableBuildingForPlayerLocked(enemy *Unit, pl
 		}
 		hp, _, ok := getBuildingHP(b)
 		if !ok || hp <= 0 {
+			continue
+		}
+		if b.ID == enemy.UnreachableBuildingTargetID && s.Tick < enemy.UnreachableUntilTick {
 			continue
 		}
 		dist := s.distanceToBuilding(enemy.X, enemy.Y, b)

@@ -91,9 +91,6 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 		if !unitCanTargetPlane(unit, hostile) {
 			continue
 		}
-		if s.Tick < unit.UnreachableUntilTick && hostile.ID == unit.UnreachableTargetID {
-			continue
-		}
 		if !s.targetInsideLeashLocked(unit, hostile.X, hostile.Y, profile) {
 			continue
 		}
@@ -141,9 +138,6 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 				continue
 			}
 			if !unitCanTargetPlane(unit, hostile) {
-				continue
-			}
-			if s.Tick < unit.UnreachableUntilTick && hostile.ID == unit.UnreachableTargetID {
 				continue
 			}
 			score := s.scoreUnitTargetLocked(unit, hostile, profile, ctx)

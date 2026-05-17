@@ -99,12 +99,14 @@ const (
 	// blocked unit. The separation system (applyUnitSeparationLocked) nudges
 	// units apart between retries, so paths typically clear within 1-2 windows.
 	approachRepathCooldownTicks = 3
-	// guardReturnGraceTicks is the window after a guard loses its target during
-	// which tickGuardReturnLocked will not yank it back to its anchor. Lets the
-	// retarget cooldown (RetargetIntervalTicks) elapse and pick a replacement
-	// first — without it, a guard mid-fight whose target dies snaps home for one
-	// frame before reacquiring, producing visible jitter (~1 second at 20Hz).
-	guardReturnGraceTicks = 20
+	// retargetStaggerTicks spreads "I just lost my target → pick a new one"
+	// work across consecutive ticks when many units drop their target the
+	// same tick (wave clear, mass kill). With N=10 units all losing targets
+	// simultaneously, the unstaggered path runs 10 sub-cell A*s in one tick
+	// (~100ms freeze). Staggering by unit.ID modulo this constant spreads
+	// the work across 5 ticks for an average ~50ms delay before any given
+	// unit re-engages — invisible to the player but huge for tick budget.
+	retargetStaggerTicks = 5
 )
 
 func (s *GameState) initializeCombatUnitLocked(unit *Unit) {
@@ -220,6 +222,16 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 	profile := resolveCombatProfile(unit)
 	if s.shouldDropCurrentTargetLocked(unit, profile, ctx) {
 		s.clearCombatTargetLocked(unit)
+		// Stagger re-acquisition across consecutive ticks when many units lose
+		// targets in the same tick (wave clear, AoE kill, mass aggro). Without
+		// this, N units all run selectBestTargetLocked + applyCombatTargetLocked
+		// (each with its own sub-cell A*) in one tick, producing a 100+ms
+		// freeze. The ID-modulo spread is deterministic (seeded replays stay
+		// reproducible) and bounded — at most retargetStaggerTicks-1 ticks
+		// (~0.2s) before the highest-ID unit re-evaluates. Per-tick load drops
+		// from N units retargeting to N/retargetStaggerTicks. Applies to both
+		// player and enemy units since both run evaluateCombatLocked.
+		unit.NextCombatEvalTick = s.Tick + (unit.ID % retargetStaggerTicks)
 	}
 
 	// Player-issued attack targets are sticky. The AI must not retarget off
@@ -256,13 +268,15 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 		return
 	}
 
-	// A unit with no target must always be able to acquire one; the
-	// RetargetIntervalTicks throttle is for *re-evaluation while engaged*,
-	// not first-acquisition. Only apply the interval on the taunt-override
-	// path (unit has a target AND is taunted); without-target acquisition
-	// is already throttled by the unreachable-target memo
-	// (unreachableTargetCooldownTicks) and by the stickiness early-return
-	// above for units that hold a valid target.
+	// A unit with no target must be able to acquire one, but a unit whose last
+	// acquisition just failed (no reachable target) is throttled by
+	// NextCombatEvalTick so it doesn't cycle through unreachable candidates
+	// every tick. Without this throttle, a unit whose only-in-detection-range
+	// buildings are all unreachable runs selectBestTargetLocked +
+	// applyCombatTargetLocked + escalation every tick, dominating tick budget.
+	if !hasTarget && s.Tick < unit.NextCombatEvalTick {
+		return
+	}
 	shouldEvaluate := !hasTarget
 	if !shouldEvaluate {
 		// Reaches here only when hasTarget && isTaunted.
@@ -300,14 +314,17 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 			if s.Tick < unit.NextObjectiveSearchTick {
 				return
 			}
+			// Global gate: cap A* objective searches to one per 5 ticks regardless
+			// of army size. Per-unit cooldown acts as the secondary guard.
+			if s.Tick < s.nextGlobalObjectiveSearchTick {
+				return
+			}
+			s.nextGlobalObjectiveSearchTick = s.Tick + 5
 			s.assignEnemyObjectiveLocked(unit, ctx.blocked)
-			// Always back off after a search regardless of outcome. Without this,
-			// units that complete a townhall path drop back to Moving=false on the
-			// next tick and immediately re-enter the search — and A* on the
-			// 256x256 sub-grid plus a per-call rebuild of the unit-blocked map
-			// dominates the simulation budget. applyCombatTargetLocked clears the
-			// backoff when a real target is acquired so target loss is still
-			// re-evaluated promptly.
+			// Back off after a search so units that complete a townhall path don't
+			// immediately re-enter the search next tick. Per-unit cooldown must be
+			// inside this success path — otherwise globally-gated units advance it
+			// to Tick+20 while skipped, making the 5-tick global cadence degrade.
 			unit.NextObjectiveSearchTick = s.Tick + enemyObjectiveSearchCooldownTicks
 			return
 		}
@@ -335,6 +352,20 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 	// Acquired a real target — reset the no-objective backoff so the next loss
 	// re-evaluates immediately.
 	unit.NextObjectiveSearchTick = 0
+	// If acquisition failed (no AttackTargetID, no AttackBuildingTargetID, not
+	// Moving / drifting), throttle re-evaluation so we don't cycle through
+	// unreachable candidates next tick. Unit-target failures already set
+	// AttackDrifting=true via assignAttackApproachPathLocked, so this catches
+	// the building-target nil-pos case from applyCombatTargetLocked above.
+	if !unit.Moving && unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == "" {
+		interval := profile.RetargetIntervalTicks
+		if interval <= 0 {
+			interval = enemyObjectiveSearchCooldownTicks
+		}
+		unit.NextCombatEvalTick = s.Tick + interval
+	} else {
+		unit.NextCombatEvalTick = 0
+	}
 }
 
 func (s *GameState) applyCombatTargetLocked(unit *Unit, target combatTarget, blocked map[gridPoint]bool) {
@@ -362,14 +393,46 @@ func (s *GameState) applyCombatTargetLocked(unit *Unit, target combatTarget, blo
 		}
 	case combatTargetBuilding:
 		unit.AttackTargetID = 0
-		unit.AttackBuildingTargetID = target.Building.ID
 		unit.Attacking = false
 		unit.Status = "Moving To Attack"
 		if !holdUnit && s.distanceToBuilding(unit.X, unit.Y, target.Building) > unit.AttackRange {
 			if pos := s.findBestBuildingAttackPositionLocked(unit, target.Building, blocked); pos != nil {
+				unit.AttackBuildingTargetID = target.Building.ID
+				unit.UnreachableBuildingTargetID = ""
+				unit.UnreachableBuildingStrikeCount = 0
 				s.assignUnitPath(unit, *pos, blocked, nil)
+			} else {
+				unit.AttackBuildingTargetID = ""
+				s.applyBuildingUnreachableEscalationLocked(unit, target.Building.ID, blocked)
 			}
+		} else {
+			unit.AttackBuildingTargetID = target.Building.ID
 		}
+	}
+}
+
+// applyBuildingUnreachableEscalationLocked handles the tiered backoff when A*
+// fails to reach a building target. Strike 1 = 40-tick cooldown, strike 2 = 120
+// ticks, strike 3+ = clear target and fall back to objective search.
+func (s *GameState) applyBuildingUnreachableEscalationLocked(unit *Unit, buildingID string, blocked map[gridPoint]bool) {
+	if unit.UnreachableBuildingTargetID == buildingID {
+		unit.UnreachableBuildingStrikeCount++
+	} else {
+		unit.UnreachableBuildingStrikeCount = 1
+	}
+	unit.UnreachableBuildingTargetID = buildingID
+
+	switch {
+	case unit.UnreachableBuildingStrikeCount >= 3:
+		s.clearCombatTargetLocked(unit)
+		unit.UnreachableBuildingStrikeCount = 0
+		if !unit.GuardMode && unit.Order.Type != OrderHold {
+			s.assignEnemyObjectiveLocked(unit, blocked)
+		}
+	case unit.UnreachableBuildingStrikeCount == 2:
+		unit.UnreachableUntilTick = s.Tick + 120
+	default:
+		unit.UnreachableUntilTick = s.Tick + unreachableTargetCooldownTicks
 	}
 }
 
@@ -427,6 +490,7 @@ func (s *GameState) resumeStandingOrderLocked(unit *Unit, blocked map[gridPoint]
 func (s *GameState) SetUnitStance(playerID string, unitIDs []int, stance string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer profileStart("cmd.SetUnitStance")()
 
 	orderID := s.nextMovementOrderIDLocked()
 
@@ -459,6 +523,7 @@ func (s *GameState) SetUnitStance(playerID string, unitIDs []int, stance string)
 func (s *GameState) PatrolUnits(playerID string, unitIDs []int, dest protocol.Vec2) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer profileStart("cmd.PatrolUnits")()
 
 	blocked := s.getBlockedCellsLocked()
 	orderID := s.nextMovementOrderIDLocked()
@@ -477,7 +542,13 @@ func (s *GameState) PatrolUnits(playerID string, unitIDs []int, dest protocol.Ve
 		s.resetUnitMovementLocked(unit, orderID)
 	}
 
-	for _, unit := range groupUnits {
+	groundSubBlocked, flyerSubBlocked := s.buildGroupSubBlockedLocked(groupUnits, blocked)
+
+	// Leader-follower group pathing. Patrol destinations collapse onto the
+	// single click point (no per-unit formation slot here), so all unit
+	// targets are the same.
+	dests := make([]protocol.Vec2, len(groupUnits))
+	for i, unit := range groupUnits {
 		unit.Order = OrderState{
 			Type:          OrderPatrol,
 			DestX:         dest.X,
@@ -487,7 +558,10 @@ func (s *GameState) PatrolUnits(playerID string, unitIDs []int, dest protocol.Ve
 		}
 		unit.CombatAnchorX = dest.X
 		unit.CombatAnchorY = dest.Y
-		s.assignUnitPath(unit, dest, blocked, nil)
+		dests[i] = dest
+	}
+	s.assignGroupPathsLocked(groupUnits, dests, blocked, groundSubBlocked, flyerSubBlocked)
+	for _, unit := range groupUnits {
 		if unit.Moving {
 			unit.Status = "Patrolling"
 		} else {
@@ -544,6 +618,7 @@ func (s *GameState) tickGuardReturnLocked(blocked map[gridPoint]bool) {
 func (s *GameState) clearCombatTargetLocked(unit *Unit) {
 	unit.AttackTargetID = 0
 	unit.AttackBuildingTargetID = ""
+	unit.AttackDrifting = false
 	// Abort any in-flight swing — the target is gone and a leftover windup
 	// would keep the unit stuck in Status="Attacking" via the windup-at-top
 	// block in tickUnitCombatLocked. The AI gate prevents this path from
@@ -564,8 +639,9 @@ func (s *GameState) clearCombatTargetLocked(unit *Unit) {
 	// range cause per-tick A* oscillation as the single-slot memo flips.
 	unit.LastTargetEvalTick = s.Tick
 	// Grace window for guards: don't snap home before the retarget cooldown
-	// has a chance to pick a replacement.
-	unit.NextGuardReturnTick = s.Tick + guardReturnGraceTicks
+	// has a chance to pick a replacement. Scale to the profile's interval so
+	// profiles with short RetargetIntervalTicks don't still flicker.
+	unit.NextGuardReturnTick = s.Tick + resolveCombatProfile(unit).RetargetIntervalTicks + 5
 	if !unit.Moving {
 		unit.Status = "Idle"
 	}

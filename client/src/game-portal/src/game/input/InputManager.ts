@@ -178,9 +178,20 @@ export class InputManager {
     }
 
     if (e.button === 2) {
-      // Panning is gated behind a 100 ms hold so that quick right-clicks always
-      // issue unit commands without accidentally panning the map. Once the delay
-      // expires, dragging past the threshold activates pan mode and onRightClick
+      // Right-click panning is intentionally disabled while units are selected.
+      // Even with the 100ms hold gate below, a player who holds slightly too
+      // long while issuing a command would activate pan and onRightClick would
+      // suppress the unit command — a confusing, command-eating UX. With units
+      // selected, right-click is reserved for commands; pan remains available
+      // via middle mouse or space+left mouse.
+      if (this.state.getSelectedUnits().length > 0) {
+        return
+      }
+      // No units selected: keep the existing camera-pan-on-hold behaviour so
+      // the player can survey the map. Pan is gated behind a 100ms hold so
+      // that quick right-clicks (which still produce a contextmenu event with
+      // no command target) don't accidentally pan. Once the delay expires,
+      // dragging past the threshold activates pan mode and onRightClick
       // suppresses any command that would otherwise fire.
       this.isRightMouseDown = true
       this.isRightPanning = false
@@ -277,6 +288,10 @@ export class InputManager {
     }
 
     if (e.button === 2) {
+      // Only meaningful when right-pan was armed in onMouseDown — gated on
+      // "no units selected" there. When units are selected the right-button
+      // arm step is skipped, so all these fields are already false and the
+      // body below is a no-op cleanup.
       this.isRightMouseDown = false
       if (this.rightPanDelayTimer !== null) {
         clearTimeout(this.rightPanDelayTimer)

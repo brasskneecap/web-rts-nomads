@@ -624,6 +624,13 @@ type UnitSnapshot struct {
 	// Inventory carries the unit's item slots. Nil/omitted for units with no
 	// inventory (rank below bronze). Size is the slot count; Slots is positional.
 	Inventory *InventorySnapshot `json:"inventory,omitempty"`
+
+	// Pathing diagnostics: opt-in telemetry for debugging stuck-unit / repath
+	// behaviour. All fields use omitempty so they drop from the wire when zero —
+	// production clients pay no cost.
+	RepathCount       int `json:"repathCount,omitempty"`
+	StuckTriggerCount int `json:"stuckTriggerCount,omitempty"`
+	LastStuckTick     int `json:"lastStuckTick,omitempty"`
 }
 
 type WelcomeMessage struct {
@@ -891,6 +898,11 @@ type MatchSnapshotMessage struct {
 	Victory       *VictorySnapshot        `json:"victory,omitempty"`
 	Fow           *FogOfWarSnapshot       `json:"fow,omitempty"`
 	WaveUpgrade   *WaveUpgradeOfferSnapshot `json:"waveUpgrade,omitempty"`
+
+	// PersistentlyStuckUnits lists IDs of units whose pathing watchdog has fired
+	// 4+ times in the current wave. Computed at snapshot time, not stored on the
+	// state. omitempty so the field drops from the wire when the slice is empty.
+	PersistentlyStuckUnits []int `json:"persistentlyStuckUnits,omitempty"`
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────

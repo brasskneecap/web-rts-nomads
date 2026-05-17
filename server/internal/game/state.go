@@ -278,21 +278,29 @@ type Unit struct {
 	// the simulation budget. Set forward by enemyObjectiveSearchCooldownTicks
 	// after a search; cleared to 0 when the unit acquires any target.
 	NextObjectiveSearchTick int
-	// UnreachableTargetID / UnreachableBuildingTargetID / UnreachableUntilTick
-	// memo the last target that failed A* so the scoring loop can skip it for
-	// unreachableTargetCooldownTicks, forcing selection of a different enemy
-	// instead of hammering pathfinding every tick against an inaccessible target.
-	UnreachableTargetID         int
+	// UnreachableBuildingTargetID / UnreachableUntilTick memo the last building
+	// that failed A* so the scoring loop can skip it for the cooldown window,
+	// forcing selection of a different building instead of hammering pathfinding
+	// every tick against an inaccessible one. Unit-target unreachability uses
+	// drift-mode (AttackDrifting) instead — no memo needed.
 	UnreachableBuildingTargetID string
 	UnreachableUntilTick        int
-	// NextApproachRepathTick throttles the forced repath that tickUnitCombatLocked
-	// issues every tick a unit is out of attack range and not moving. Without this,
-	// a unit surrounded by a dense crowd runs the full sub-cell A* (up to 65k
-	// node explorations) every single tick even though no path exists, locking
-	// the tick budget. Mirrors NextObjectiveSearchTick — set forward by
-	// approachRepathCooldownTicks when assignUnitPath fails; cleared when the
-	// unit starts moving or switches targets.
+	// NextApproachRepathTick throttles the forced repath that
+	// tickUnitCombatLocked issues for unit-vs-building combatants out of attack
+	// range with a non-moving state. Without this, units stuck on unreachable
+	// building targets run the full sub-cell A* (~65k cells) every tick.
+	// Unit-vs-unit no longer needs this throttle because drift mode replaces
+	// the per-tick A* retry. Set forward by approachRepathCooldownTicks when
+	// assignUnitPath fails; cleared when the unit starts moving.
 	NextApproachRepathTick int
+	// NextCombatEvalTick throttles evaluateCombatLocked for a unit whose last
+	// target acquisition failed (A* couldn't reach the chosen building, no
+	// alternative reachable, etc.). Without this gate a unit with no target
+	// re-runs selectBestTargetLocked + applyCombatTargetLocked + escalation on
+	// every tick, cycling through unreachable buildings and burning ~30ms/tick
+	// at army scale. Set forward by RetargetIntervalTicks ticks on failure;
+	// cleared on successful target acquisition.
+	NextCombatEvalTick int
 	// NextGuardReturnTick holds tickGuardReturnLocked off for a brief grace
 	// window after a target is dropped. Without this, a guard that loses its
 	// target (e.g. target died) is yanked back to its anchor on the same tick
@@ -352,6 +360,35 @@ type Unit struct {
 	// items. Recomputed by recomputeUnitEquipmentBonusLocked and folded into
 	// derived stats by applyRankModifiersLocked.
 	EquipmentBonus UnitEquipmentBonus
+
+	// UnreachableBuildingStrikeCount tracks consecutive A* failures against the
+	// current building target so escalation can increase the cooldown and
+	// eventually fall back to an objective. Reset to 0 on successful path.
+	// Note: unit-target unreachability uses drift-mode (AttackDrifting) instead
+	// of strike escalation — see assignAttackApproachPathLocked.
+	UnreachableBuildingStrikeCount int
+
+	// AttackDrifting signals the per-unit movement loop to step straight-line
+	// toward TargetX/TargetY each tick (no A*) instead of following a path.
+	// Set by assignAttackApproachPathLocked when A* to a unit target fails;
+	// cleared on successful repath, target acquisition, target clear, or when
+	// the unit reaches attack range / hits an impassable cell. Lets a unit
+	// physically advance toward an unreachable target via separation pressure
+	// rather than burning A* budget every tick or sitting idle.
+	AttackDrifting bool
+
+	// PathDiagnostics carries lightweight per-unit pathing telemetry for debug
+	// snapshots. Zero-cost in production paths — just integer increments.
+	PathDiagnostics PathDiagnostics
+}
+
+// PathDiagnostics holds lightweight per-unit pathing telemetry exposed via the
+// debug snapshot. Not duplicated in GameState — lives directly on Unit so it
+// is cache-local with the rest of the unit's pathing fields.
+type PathDiagnostics struct {
+	RepathCount      int
+	StuckTriggerCount int
+	LastStuckTick    int
 }
 
 const (
@@ -548,6 +585,10 @@ type GameState struct {
 	// floating number. Passive regen is intentionally excluded. See
 	// heal_events.go.
 	healEventsThisTick []healEvent
+
+	// nextGlobalObjectiveSearchTick gates assignEnemyObjectiveLocked globally so
+	// at most one map-wide A* runs per 5 ticks regardless of army size.
+	nextGlobalObjectiveSearchTick int
 
 	// guardianAuraCache maps recipient unit ID to the combined armor bonus they
 	// receive from the strongest guardian_aura covering them this tick.
@@ -913,6 +954,9 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Moving:              unit.Moving,
 			ActionFacingDX:      unit.ActionFacingDX,
 			ActionFacingDY:      unit.ActionFacingDY,
+			RepathCount:       unit.PathDiagnostics.RepathCount,
+			StuckTriggerCount: unit.PathDiagnostics.StuckTriggerCount,
+			LastStuckTick:     unit.PathDiagnostics.LastStuckTick,
 		}
 
 		if unit.Moving {
@@ -1087,9 +1131,10 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			WaveDuration: wm.WaveDuration,
 		},
 		// Nil when debug tracker is disabled — `omitempty` drops it from JSON.
-		BattleTracker: s.battleTrackerSnapshotLocked(),
-		GameOver:      gameOver,
-		Victory:       victory,
+		BattleTracker:          s.battleTrackerSnapshotLocked(),
+		GameOver:               gameOver,
+		Victory:                victory,
+		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 	}
 }
 
@@ -1226,6 +1271,9 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			Moving:              unit.Moving,
 			ActionFacingDX:      unit.ActionFacingDX,
 			ActionFacingDY:      unit.ActionFacingDY,
+			RepathCount:       unit.PathDiagnostics.RepathCount,
+			StuckTriggerCount: unit.PathDiagnostics.StuckTriggerCount,
+			LastStuckTick:     unit.PathDiagnostics.LastStuckTick,
 		}
 		if unit.Moving {
 			snapshot.TargetX = unit.TargetX
@@ -1420,12 +1468,31 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			Timer:        wm.Timer,
 			WaveDuration: wm.WaveDuration,
 		},
-		BattleTracker: s.battleTrackerSnapshotLocked(),
-		GameOver:      gameOver,
-		Victory:       victory,
-		Fow:           packFOW(fow, s.Tick),
-		WaveUpgrade:   s.buildWaveUpgradeSnapshotLocked(viewerID),
+		BattleTracker:          s.battleTrackerSnapshotLocked(),
+		GameOver:               gameOver,
+		Victory:                victory,
+		Fow:                    packFOW(fow, s.Tick),
+		WaveUpgrade:            s.buildWaveUpgradeSnapshotLocked(viewerID),
+		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 	}
+}
+
+// persistentlyStuckUnitsLocked returns the IDs of units whose stuck watchdog
+// has fired 4 or more times in the current wave. Used by the debug snapshot to
+// surface units that need investigation. Threshold mirrors the diagnostics spec
+// (`pathing-diagnostics`: 4+ triggers in the current wave). Returns nil when no
+// unit meets the threshold so omitempty drops the field from the wire.
+func (s *GameState) persistentlyStuckUnitsLocked() []int {
+	var ids []int
+	for _, unit := range s.Units {
+		if unit == nil {
+			continue
+		}
+		if unit.PathDiagnostics.StuckTriggerCount >= 4 {
+			ids = append(ids, unit.ID)
+		}
+	}
+	return ids
 }
 
 // snapshotUnfilteredLocked builds the full unfiltered snapshot. Caller must hold
@@ -1498,6 +1565,9 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			Moving:              unit.Moving,
 			ActionFacingDX:      unit.ActionFacingDX,
 			ActionFacingDY:      unit.ActionFacingDY,
+			RepathCount:       unit.PathDiagnostics.RepathCount,
+			StuckTriggerCount: unit.PathDiagnostics.StuckTriggerCount,
+			LastStuckTick:     unit.PathDiagnostics.LastStuckTick,
 		}
 		if unit.Moving {
 			snapshot.TargetX = unit.TargetX
@@ -1656,9 +1726,10 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			Timer:        wm.Timer,
 			WaveDuration: wm.WaveDuration,
 		},
-		BattleTracker: s.battleTrackerSnapshotLocked(),
-		GameOver:      gameOver,
-		Victory:       victory,
+		BattleTracker:          s.battleTrackerSnapshotLocked(),
+		GameOver:               gameOver,
+		Victory:                victory,
+		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 	}
 }
 
@@ -1756,9 +1827,8 @@ func (s *GameState) Update(dt float64) {
 		// Generic CC decay — Stun and Slow are general primitives that any perk or
 		// ability can stamp onto any unit, so they decay here alongside the other
 		// cross-unit debuffs rather than in tickUnitPerkStateLocked.
-		if unit.StunnedRemaining > 0 {
-			unit.StunnedRemaining = math.Max(0, unit.StunnedRemaining-dt)
-		}
+		wasStunned := unit.StunnedRemaining > 0
+		unit.StunnedRemaining = math.Max(0, unit.StunnedRemaining-dt)
 		if unit.SlowedRemaining > 0 {
 			unit.SlowedRemaining = math.Max(0, unit.SlowedRemaining-dt)
 			if unit.SlowedRemaining == 0 {
@@ -1821,6 +1891,14 @@ func (s *GameState) Update(dt float64) {
 
 		// Stun gates all pathing. Leave Moving and Path intact so the unit
 		// resumes exactly where it was once the stun expires.
+		// On stun expiry, force a repath: the path may now pass through buildings
+		// placed while the unit was stunned.
+		if wasStunned && unit.StunnedRemaining <= 0 && unit.Moving && len(unit.Path) > 0 {
+			if !s.repathUnitLocked(unit, blocked) {
+				unit.Moving = false
+				unit.Path = nil
+			}
+		}
 		if unit.StunnedRemaining > 0 {
 			continue
 		}
@@ -1830,6 +1908,47 @@ func (s *GameState) Update(dt float64) {
 			if unit.Order.Type == OrderMove {
 				unit.Order = OrderState{Type: OrderIdle}
 			}
+			unit.AttackDrifting = false
+			continue
+		}
+
+		// Capture perk speed multiplier once for both the stuck watchdog and the
+		// movement step below — avoids a second map lookup in the hot path.
+		perkSpeedMult := s.perkMoveSpeedMultiplierLocked(unit)
+
+		// Drift mode: A* to an attack target failed, so step straight-line toward
+		// the target's current coordinates instead of standing idle. Separation
+		// resolves ally collisions; impassable terrain silently halts the unit
+		// (next AI eval re-acquires). Drift consumes one walkability check per
+		// tick — orders of magnitude cheaper than running A* every retry cycle.
+		if unit.AttackDrifting && len(unit.Path) == 0 {
+			dx := unit.TargetX - unit.X
+			dy := unit.TargetY - unit.Y
+			dist := math.Sqrt(dx*dx + dy*dy)
+			if dist <= unitRadius {
+				// Reached the drift target's last known position. Stop here;
+				// combat tick / next AI eval handles whatever comes next.
+				unit.Moving = false
+				unit.AttackDrifting = false
+				continue
+			}
+			step := unit.MoveSpeed * perkSpeedMult * slowFactorLocked(unit) * dt
+			if step >= dist {
+				step = dist
+			}
+			nextX := unit.X + (dx/dist)*step
+			nextY := unit.Y + (dy/dist)*step
+			if !unit.Flyer {
+				nextCell := s.worldToGrid(nextX, nextY)
+				if !s.isWalkable(nextCell, blocked) {
+					// Wall in the way — halt silently. No repath storm.
+					unit.Moving = false
+					unit.AttackDrifting = false
+					continue
+				}
+			}
+			unit.X = clampFloat(nextX, unitRadius, s.MapWidth-unitRadius)
+			unit.Y = clampFloat(nextY, unitRadius, s.MapHeight-unitRadius)
 			continue
 		}
 
@@ -1843,16 +1962,19 @@ func (s *GameState) Update(dt float64) {
 		}
 
 		// Stuck-progress watchdog. Accumulate dt; once a sample window has
-		// elapsed, repath if the unit hasn't displaced past the progress
-		// threshold. Catches separation-vs-path oscillation where the unit
-		// is technically Moving=true every tick but its net position barely
-		// changes. assignUnitPath resets the sample, so the watchdog gets a
-		// fresh window after every repath.
+		// elapsed, repath if the unit hasn't displaced past the speed-proportional
+		// threshold. Catches separation-vs-path oscillation where the unit is
+		// technically Moving=true every tick but its net position barely changes.
+		// assignUnitPath resets the sample, so the watchdog gets a fresh window
+		// after every repath.
 		unit.StuckSampleAccum += dt
 		if unit.StuckSampleAccum >= stuckSampleInterval {
 			ddx := unit.X - unit.StuckSampleX
 			ddy := unit.Y - unit.StuckSampleY
-			if ddx*ddx+ddy*ddy < stuckProgressThresholdSq {
+			stuckThreshold := math.Max(8.0, unit.MoveSpeed*perkSpeedMult*stuckSampleInterval*0.4)
+			if ddx*ddx+ddy*ddy < stuckThreshold*stuckThreshold {
+				unit.PathDiagnostics.StuckTriggerCount++
+				unit.PathDiagnostics.LastStuckTick = s.Tick
 				s.repathUnitLocked(unit, blocked)
 			} else {
 				unit.StuckSampleX = unit.X
@@ -1880,7 +2002,7 @@ func (s *GameState) Update(dt float64) {
 		// Effective move speed: per-unit stat (base × rank × path, already baked
 		// into unit.MoveSpeed by applyRankModifiersLocked) × perk multiplier
 		// (momentum, future speed perks) × slow multiplier (CC primitive).
-		step := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit) * slowFactorLocked(unit) * dt
+		step := unit.MoveSpeed * perkSpeedMult * slowFactorLocked(unit) * dt
 		if step >= dist {
 			unit.X = nextWaypoint.X
 			unit.Y = nextWaypoint.Y
