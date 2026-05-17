@@ -9,6 +9,7 @@ import (
 func (s *GameState) MoveUnits(playerID string, unitIDs []int, dest protocol.Vec2) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer profileStart("cmd.MoveUnits")()
 
 	validUnits := make([]*Unit, 0, len(unitIDs))
 	blocked := s.getBlockedCellsLocked()
@@ -63,22 +64,196 @@ func (s *GameState) MoveUnits(playerID string, unitIDs []int, dest protocol.Vec2
 		s.resetUnitMovementLocked(unit, orderID)
 	}
 
+	// Build the per-plane sub-cell blocked map ONCE for the whole group.
+	// All units share OrderID so buildUnitPathBlockedLocked excludes the
+	// same set, producing an identical map regardless of "self".
+	groundSubBlocked, flyerSubBlocked := s.buildGroupSubBlockedLocked(validUnits, blocked)
+
+	// Stamp order + anchor up front, then hand the whole group off to the
+	// leader-follower pather. One A* drives the whole group's route; followers
+	// reuse it and validate their first leg via cheap LoS sampling.
+	clampedTargets := make([]protocol.Vec2, len(validUnits))
 	for i, unit := range validUnits {
 		target := targets[i]
 		unit.Order = OrderState{Type: OrderMove, DestX: target.X, DestY: target.Y}
 		unit.CombatAnchorX = target.X
 		unit.CombatAnchorY = target.Y
-
-		s.assignUnitPath(unit, protocol.Vec2{
+		clampedTargets[i] = protocol.Vec2{
 			X: clampFloat(target.X, 0, s.MapWidth),
 			Y: clampFloat(target.Y, 0, s.MapHeight),
-		}, blocked, nil)
+		}
+	}
+	s.assignGroupPathsLocked(validUnits, clampedTargets, blocked, groundSubBlocked, flyerSubBlocked)
+}
+
+// buildGroupSubBlockedLocked builds the sub-cell blocked map(s) for a
+// shared-OrderID group exactly once. Returns (groundMap, flyerMap); either
+// may be nil if no unit of that plane exists in the group. The caller picks
+// the right map per unit based on unit.Flyer. Lets multi-unit handlers skip
+// K-1 redundant rebuilds of an identical map.
+func (s *GameState) buildGroupSubBlockedLocked(units []*Unit, blocked map[gridPoint]bool) (ground, flyer map[gridPoint]bool) {
+	var groundExemplar, flyerExemplar *Unit
+	for _, u := range units {
+		if u == nil {
+			continue
+		}
+		if u.Flyer {
+			if flyerExemplar == nil {
+				flyerExemplar = u
+			}
+		} else if groundExemplar == nil {
+			groundExemplar = u
+		}
+		if groundExemplar != nil && flyerExemplar != nil {
+			break
+		}
+	}
+	if groundExemplar != nil {
+		ground = s.buildUnitPathBlockedLocked(groundExemplar, blocked)
+	}
+	if flyerExemplar != nil {
+		flyer = s.buildUnitPathBlockedLocked(flyerExemplar, nil)
+	}
+	return ground, flyer
+}
+
+// lineWalkableLocked checks line-of-sight between two world points by sampling
+// terrain walkability at half-cell intervals. Used to verify a follower's
+// first leg before reusing the leader's spine path in leader-follower group
+// moves. Flyers always pass (they ignore terrain). Cost is O(distance /
+// cell_size) — orders of magnitude cheaper than A*.
+func (s *GameState) lineWalkableLocked(startX, startY, endX, endY float64, blocked map[gridPoint]bool, flyer bool) bool {
+	if flyer {
+		return true
+	}
+	dx := endX - startX
+	dy := endY - startY
+	dist := math.Sqrt(dx*dx + dy*dy)
+	if dist == 0 {
+		return true
+	}
+	cellSize := s.MapConfig.CellSize
+	if cellSize <= 0 {
+		return true
+	}
+	step := cellSize / 2
+	n := int(math.Ceil(dist / step))
+	if n < 1 {
+		n = 1
+	}
+	for i := 0; i <= n; i++ {
+		t := float64(i) / float64(n)
+		px := startX + dx*t
+		py := startY + dy*t
+		cell := s.worldToGrid(px, py)
+		if !s.isWalkable(cell, blocked) {
+			return false
+		}
+	}
+	return true
+}
+
+// assignGroupPathsLocked computes paths for a shared-OrderID group using a
+// leader-follower model: one full A* for a representative leader (the unit
+// closest to its formation slot — covers similar ground to the rest),
+// followers reuse the leader's middle waypoints and substitute their own
+// formation slot as the endpoint. Drops cost from O(K) sub-cell A*s to one,
+// plus K cheap LoS checks. Followers whose line-of-sight to the leader's
+// first waypoint is blocked fall back to a per-unit A* — preserving
+// correctness for spread-out selections without re-introducing the O(K)
+// worst case for tight ones.
+//
+// units and destinations must be parallel slices of equal length. Caller
+// owns Order / CombatAnchor / OrderID assignment; this helper only writes
+// Path, Moving, TargetX/Y, and the stuck-sample fields.
+func (s *GameState) assignGroupPathsLocked(units []*Unit, destinations []protocol.Vec2, blocked map[gridPoint]bool, groundSubBlocked map[gridPoint]bool, flyerSubBlocked map[gridPoint]bool) {
+	if len(units) == 0 || len(units) != len(destinations) {
+		return
+	}
+
+	subFor := func(u *Unit) map[gridPoint]bool {
+		if u != nil && u.Flyer {
+			return flyerSubBlocked
+		}
+		return groundSubBlocked
+	}
+
+	if len(units) == 1 {
+		s.assignUnitPathWithSubBlocked(units[0], destinations[0], blocked, subFor(units[0]), nil)
+		return
+	}
+
+	// Leader heuristic: the unit whose current position is closest to its own
+	// formation slot. That unit's A* route is the most representative of the
+	// distance the rest of the group needs to cover, so followers reusing its
+	// middle waypoints will track the right corridor.
+	leaderIdx := 0
+	bestDistSq := math.MaxFloat64
+	for i, u := range units {
+		if u == nil {
+			continue
+		}
+		d := distanceSquared(u.X, u.Y, destinations[i].X, destinations[i].Y)
+		if d < bestDistSq {
+			bestDistSq = d
+			leaderIdx = i
+		}
+	}
+
+	leader := units[leaderIdx]
+	s.assignUnitPathWithSubBlocked(leader, destinations[leaderIdx], blocked, subFor(leader), nil)
+
+	// Leader couldn't path — fall back to per-unit A* for everyone else and
+	// give up the optimization for this command. Failure here usually means
+	// the destination is truly unreachable from this group's area.
+	if !leader.Moving || len(leader.Path) == 0 {
+		for i, unit := range units {
+			if unit == nil || i == leaderIdx {
+				continue
+			}
+			s.assignUnitPathWithSubBlocked(unit, destinations[i], blocked, subFor(unit), nil)
+		}
+		return
+	}
+
+	leaderPath := leader.Path
+	firstWaypoint := leaderPath[0]
+
+	for i, unit := range units {
+		if unit == nil || i == leaderIdx {
+			continue
+		}
+
+		// LoS gate: follower's first leg is start → leader's w1. If clear, we
+		// can safely splice the rest of the leader's path onto a follower-
+		// specific endpoint. If blocked (follower is on the wrong side of an
+		// obstacle relative to the leader), fall back to a full A* for this
+		// unit only — preserves correctness, costs one A* in the rare case.
+		if !s.lineWalkableLocked(unit.X, unit.Y, firstWaypoint.X, firstWaypoint.Y, blocked, unit.Flyer) {
+			s.assignUnitPathWithSubBlocked(unit, destinations[i], blocked, subFor(unit), nil)
+			continue
+		}
+
+		// Copy the leader's waypoints and substitute this unit's formation slot
+		// at the end. Copy (not slice-share) so per-unit Path mutations during
+		// movement don't trample the leader's path.
+		newPath := make([]protocol.Vec2, len(leaderPath))
+		copy(newPath, leaderPath)
+		newPath[len(newPath)-1] = destinations[i]
+		unit.Path = newPath
+		unit.Moving = true
+		unit.TargetX = destinations[i].X
+		unit.TargetY = destinations[i].Y
+		unit.StuckSampleX = unit.X
+		unit.StuckSampleY = unit.Y
+		unit.StuckSampleAccum = 0
 	}
 }
 
 func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protocol.Vec2) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer profileStart("cmd.AttackMoveUnits")()
 
 	validUnits := make([]*Unit, 0, len(unitIDs))
 	blocked := s.getBlockedCellsLocked()
@@ -130,20 +305,37 @@ func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protoco
 		s.resetUnitMovementLocked(unit, orderID)
 	}
 
+	// Share one sub-cell blocked map across the group — see MoveUnits.
+	groundSubBlocked, flyerSubBlocked := s.buildGroupSubBlockedLocked(validUnits, blocked)
+
+	// Leader-follower group pathing — see assignGroupPathsLocked.
+	clampedTargets := make([]protocol.Vec2, len(validUnits))
 	for i, unit := range validUnits {
 		target := targets[i]
 		unit.Order = OrderState{Type: OrderAttackMove, DestX: target.X, DestY: target.Y}
 		unit.CombatAnchorX = target.X
 		unit.CombatAnchorY = target.Y
-
-		s.assignUnitPath(unit, protocol.Vec2{
+		clampedTargets[i] = protocol.Vec2{
 			X: clampFloat(target.X, 0, s.MapWidth),
 			Y: clampFloat(target.Y, 0, s.MapHeight),
-		}, blocked, nil)
+		}
 	}
+	s.assignGroupPathsLocked(validUnits, clampedTargets, blocked, groundSubBlocked, flyerSubBlocked)
 }
 
 func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[gridPoint]bool, reservedGoals map[gridPoint]bool) {
+	s.assignUnitPathWithSubBlocked(unit, dest, blocked, nil, reservedGoals)
+}
+
+// assignUnitPathWithSubBlocked is the internal pathing entry. When subBlocked
+// is non-nil it is used directly, letting batch commands (MoveUnits and friends)
+// build the per-plane sub-cell blocked map once and reuse it across the whole
+// group. The blocked map is identical for all units in a shared-OrderID group
+// (buildUnitPathBlockedLocked excludes same-OrderID peers and "self"), so per-
+// unit rebuilds were pure waste. When subBlocked is nil this falls back to
+// building one for this unit alone — same behaviour as before for single-unit
+// callers (repaths, retargets, etc.).
+func (s *GameState) assignUnitPathWithSubBlocked(unit *Unit, dest protocol.Vec2, blocked map[gridPoint]bool, subBlocked map[gridPoint]bool, reservedGoals map[gridPoint]bool) {
 	s.debugPathTracker.recordRepath(unit.ID, unit.X, unit.Y, s.Tick)
 	clampedDest := protocol.Vec2{
 		X: clampFloat(dest.X, unitRadius, s.MapWidth-unitRadius),
@@ -161,11 +353,13 @@ func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[g
 	// Flyers ignore terrain entirely — only map bounds and other flyers
 	// can constrain their path. buildUnitPathBlockedLocked sees nil terrain
 	// and filters out ground-unit obstacles when self.Flyer is true.
-	terrainBlockedForPath := blocked
-	if unit != nil && unit.Flyer {
-		terrainBlockedForPath = nil
+	if subBlocked == nil {
+		terrainBlockedForPath := blocked
+		if unit != nil && unit.Flyer {
+			terrainBlockedForPath = nil
+		}
+		subBlocked = s.buildUnitPathBlockedLocked(unit, terrainBlockedForPath)
 	}
-	subBlocked := s.buildUnitPathBlockedLocked(unit, terrainBlockedForPath)
 
 	subStart := s.worldToUnitPathSubGrid(unit.X, unit.Y)
 	if rs, ok := s.findNearestUnitPathSubWalkable(subStart, subBlocked); ok {
@@ -258,6 +452,7 @@ func (s *GameState) repathUnitLocked(unit *Unit, blocked map[gridPoint]bool) boo
 		return false
 	}
 
+	unit.PathDiagnostics.RepathCount++
 	dest := protocol.Vec2{X: unit.TargetX, Y: unit.TargetY}
 	s.assignUnitPath(unit, dest, blocked, nil)
 	return unit.Moving
@@ -403,6 +598,7 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.AttackBuildingTargetID = ""
 	unit.AttackWindupRemaining = 0
 	unit.Attacking = false
+	unit.AttackDrifting = false
 	unit.Order = OrderState{Type: OrderIdle}
 	unit.Visible = true
 	unit.Status = "Idle"

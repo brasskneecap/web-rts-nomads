@@ -2337,57 +2337,92 @@
         "x": 9,
         "y": 9,
         "id": "placed-unit-player-9-9",
-        "owner": "player",
-        "playerLabel": "player1",
-        "unitType": "archer"
+        "playerSlot": "player1",
+        "unitType": "archer",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 10,
         "y": 8,
         "id": "placed-unit-player-10-8",
-        "owner": "player",
-        "playerLabel": "player1",
-        "unitType": "archer"
+        "playerSlot": "player1",
+        "unitType": "archer",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 4,
         "y": 3,
         "id": "placed-unit-player-4-3",
-        "owner": "player",
-        "playerLabel": "player1",
-        "unitType": "worker"
+        "playerSlot": "player1",
+        "unitType": "worker",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 4,
         "y": 4,
         "id": "placed-unit-player-4-4",
-        "owner": "player",
-        "playerLabel": "player1",
-        "unitType": "worker"
+        "playerSlot": "player1",
+        "unitType": "worker",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 4,
         "y": 5,
         "id": "placed-unit-player-4-5",
-        "owner": "player",
-        "playerLabel": "player1",
-        "unitType": "worker"
+        "playerSlot": "player1",
+        "unitType": "worker",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 9,
         "y": 10,
         "id": "placed-unit-player-9-10",
-        "owner": "player",
-        "playerLabel": "player1",
-        "unitType": "soldier"
+        "playerSlot": "player1",
+        "unitType": "soldier",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 10,
         "y": 9,
         "id": "placed-unit-player-10-9",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
+        "unitType": "soldier",
+        "aggroRange": 150,
+        "leashRange": 200
+      },
+      {
+        "x": 9,
+        "y": 8,
+        "id": "placed-unit-player1-9-8",
+        "playerSlot": "player1",
+        "unitType": "apprentice"
+      },
+      {
+        "x": 8,
+        "y": 11,
+        "id": "placed-unit-player1-8-11",
+        "playerSlot": "player1",
         "unitType": "soldier"
+      },
+      {
+        "x": 8,
+        "y": 10,
+        "id": "placed-unit-player1-8-10",
+        "playerSlot": "player1",
+        "unitType": "archer"
+      },
+      {
+        "x": 8,
+        "y": 9,
+        "id": "placed-unit-player1-8-9",
+        "playerSlot": "player1",
+        "unitType": "apprentice"
       }
     ],
     "waveConfig": {
