@@ -91,6 +91,12 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 		if !unitCanTargetPlane(unit, hostile) {
 			continue
 		}
+		// Skip a unit memoed unreachable (A* failed within the cooldown window)
+		// so the enemy switches to a reachable target instead of re-picking the
+		// one it cannot path to. Mirrors the building skip a few blocks down.
+		if hostile.ID == unit.UnreachableUnitTargetID && s.Tick < unit.UnreachableUnitUntilTick {
+			continue
+		}
 		if !s.targetInsideLeashLocked(unit, hostile.X, hostile.Y, profile) {
 			continue
 		}

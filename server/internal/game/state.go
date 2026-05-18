@@ -272,7 +272,7 @@ type Unit struct {
 	CombatAnchorY      float64
 	LastTargetEvalTick int
 	CurrentTargetScore float64
-	// NextObjectiveSearchTick gates re-entry into assignEnemyObjectiveLocked
+	// NextObjectiveSearchTick gates re-entry into enemyAdvanceToObjectiveLocked
 	// for enemy units that found nothing attackable last call. Without this,
 	// every idle enemy reruns the building search + A* every tick and dominates
 	// the simulation budget. Set forward by enemyObjectiveSearchCooldownTicks
@@ -281,10 +281,26 @@ type Unit struct {
 	// UnreachableBuildingTargetID / UnreachableUntilTick memo the last building
 	// that failed A* so the scoring loop can skip it for the cooldown window,
 	// forcing selection of a different building instead of hammering pathfinding
-	// every tick against an inaccessible one. Unit-target unreachability uses
-	// drift-mode (AttackDrifting) instead — no memo needed.
+	// every tick against an inaccessible one.
 	UnreachableBuildingTargetID string
 	UnreachableUntilTick        int
+	// ObjectiveBuildingID is the building this routed enemy is attack-moving
+	// toward (its sticky objective — typically the assigned/nearest townhall).
+	// Distinct from ObjectiveID (static victory-point lock) and TargetPlayerID
+	// (player-routing preference). Resolved + validated at point-of-use every
+	// time a repath is needed via getBuildingByIDLocked; never a cached pointer.
+	// Re-acquired only when the current objective building dies/disappears, so
+	// advancing enemies do not re-pick an objective every tick (anti-churn).
+	ObjectiveBuildingID string
+	// UnreachableUnitTargetID / UnreachableUnitUntilTick memo the last
+	// AI-acquired unit target that failed A*, so selectBestTargetLocked skips it
+	// for the cooldown window and the enemy switches to a reachable target
+	// instead of drifting. Single-slot (last unreachable unit); with >=2
+	// simultaneously unreachable units the staggered re-eval self-corrects.
+	// Player-issued (OrderAttackTarget) targets are NOT memoed — they keep
+	// drift mode (see assignAttackApproachPathLockedWithSubBlocked).
+	UnreachableUnitTargetID  int
+	UnreachableUnitUntilTick int
 	// NextApproachRepathTick throttles the forced repath that
 	// tickUnitCombatLocked issues for unit-vs-building combatants out of attack
 	// range with a non-moving state. Without this, units stuck on unreachable
@@ -586,7 +602,7 @@ type GameState struct {
 	// heal_events.go.
 	healEventsThisTick []healEvent
 
-	// nextGlobalObjectiveSearchTick gates assignEnemyObjectiveLocked globally so
+	// nextGlobalObjectiveSearchTick gates enemyAdvanceToObjectiveLocked globally so
 	// at most one map-wide A* runs per 5 ticks regardless of army size.
 	nextGlobalObjectiveSearchTick int
 

@@ -222,6 +222,34 @@ func (s *GameState) ensureEnemyPlayerLocked() {
 	}
 }
 
+// seedEnemyObjectiveAtSpawnLocked sets a routed enemy's sticky
+// ObjectiveBuildingID at spawn so it does not have to lazily re-acquire on its
+// first no-target eval. Mirrors the spawn routing rules: __none__ and static-
+// objective (ObjectiveID already set) units get no objective; targetPlayerLabel
+// units prefer that player's townhall; the default routes to the nearest
+// player townhall. spawnPos is the unit's spawn position (origin for the
+// nearest-townhall search).
+func (s *GameState) seedEnemyObjectiveAtSpawnLocked(unit *Unit, targetPlayerLabel string, spawnPos protocol.Vec2) {
+	if unit == nil || unit.ObjectiveID != "" || targetPlayerLabel == "__none__" {
+		return
+	}
+	var b *protocol.BuildingTile
+	if targetPlayerLabel != "" && unit.TargetPlayerID != "" {
+		b = s.findNearestAttackableBuildingForPlayerLocked(unit, unit.TargetPlayerID)
+	}
+	if b == nil {
+		b = s.getNearestPlayerTownhallBuildingLocked(spawnPos.X, spawnPos.Y)
+	}
+	if b != nil {
+		// The seeded ObjectiveBuildingID may differ from the initial spawn-path
+		// destination (seed picks the nearest attackable building for TargetPlayerID
+		// while the spawn path goes to a townhall center). This is intentional:
+		// enemyAdvanceToObjectiveLocked re-validates ObjectiveBuildingID every
+		// no-target eval, so the sticky objective self-corrects within one tick.
+		unit.ObjectiveBuildingID = b.ID
+	}
+}
+
 func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint]bool) {
 	for i := range s.MapConfig.Buildings {
 		building := &s.MapConfig.Buildings[i]
@@ -368,7 +396,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 				// Route to a specific player's townhall, falling back to nearest.
 				// Persist the resolved player ID on the unit so the AI's
 				// "no target → nearest building" fallback in
-				// assignEnemyObjectiveLocked keeps preferring this player even
+				// enemyAdvanceToObjectiveLocked keeps preferring this player even
 				// after the unit re-evaluates mid-flight.
 				unit.Status = "Advancing"
 				playerID := s.findPlayerIDByLabelLocked(targetPlayerLabel)
@@ -391,6 +419,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 					s.assignUnitPath(unit, *target, blocked, nil)
 				}
 			}
+			s.seedEnemyObjectiveAtSpawnLocked(unit, targetPlayerLabel, spawnPos)
 		}
 
 		if timer.SpawnOnce {
@@ -416,7 +445,7 @@ func (s *GameState) findNearestAttackablePlayerBuildingLocked(enemy *Unit) *prot
 			continue
 		}
 		dist := s.distanceToBuilding(enemy.X, enemy.Y, b)
-		if dist < bestDistSq {
+		if dist < bestDistSq || (dist == bestDistSq && (best == nil || b.ID < best.ID)) {
 			bestDistSq = dist
 			best = b
 		}
@@ -449,7 +478,7 @@ func (s *GameState) findNearestAttackableBuildingForPlayerLocked(enemy *Unit, pl
 			continue
 		}
 		dist := s.distanceToBuilding(enemy.X, enemy.Y, b)
-		if dist < bestDistSq {
+		if dist < bestDistSq || (dist == bestDistSq && (best == nil || b.ID < best.ID)) {
 			bestDistSq = dist
 			best = b
 		}
