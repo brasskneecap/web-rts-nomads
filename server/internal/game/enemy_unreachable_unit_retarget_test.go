@@ -104,13 +104,20 @@ func TestUnreachableUnit_SkippedBySelection(t *testing.T) {
 
 // Player-issued (OrderAttackTarget) unreachable unit still uses drift mode —
 // the deliberate "the player explicitly chose this fight" invariant.
+//
+// The partitioning wall is __enemy__-owned, NOT p1-owned. Allied units no
+// longer block an ally's pathing (buildUnitPathBlockedLocked excludes
+// friendlies), so a same-owner wall would be passable here and the target
+// would be reachable — the fixture must use a hostile wall to remain a genuine
+// partition for the p1 mover. (Sibling AIAcquired test keeps a p1 wall because
+// its mover is __enemy__, for which a p1 wall is still hostile and blocking.)
 func TestUnreachableUnit_PlayerIssued_StillDrifts(t *testing.T) {
 	s := newObjectiveTestState(t)
 	defer s.mu.Unlock()
 	ownerID := "p1"
 
 	for y := 10.0; y <= s.MapHeight-10.0; y += 20.0 {
-		w := s.spawnPlayerUnitLocked("soldier", ownerID, "#3498db", protocol.Vec2{X: 1200, Y: y})
+		w := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 1200, Y: y})
 		w.Visible = true
 		w.MaxHP, w.HP = 1000, 1000
 		w.MoveSpeed = 0
@@ -132,6 +139,15 @@ func TestUnreachableUnit_PlayerIssued_StillDrifts(t *testing.T) {
 	player.Order = OrderState{Type: OrderAttackTarget}
 	player.AttackTargetID = victimID
 	blocked := s.getBlockedCellsLocked()
+
+	// Precondition: the hostile wall must be a genuine partition for the p1
+	// mover — a direct path request to the victim must fail. Without this the
+	// test could silently pass on a reachable target (drift never exercised).
+	probe := *player
+	s.assignUnitPath(&probe, protocol.Vec2{X: enemyVictim.X, Y: enemyVictim.Y}, blocked, nil)
+	if probe.Moving {
+		t.Fatal("precondition: wall must fully block the p1 mover's path to the victim")
+	}
 
 	s.assignAttackApproachPathLocked(player, s.unitsByID[victimID], blocked)
 
