@@ -427,7 +427,16 @@ func (s *GameState) applyBuildingUnreachableEscalationLocked(unit *Unit, buildin
 		s.clearCombatTargetLocked(unit)
 		unit.UnreachableBuildingStrikeCount = 0
 		if !unit.GuardMode && unit.Order.Type != OrderHold {
-			s.assignEnemyObjectiveLocked(unit, blocked)
+			// The building is sealed off by units, not terrain. Rather than
+			// loop forever on a route that cannot exist (the freeze-at-spawn
+			// deadlock), push the enemy at whatever hostile is closest — by
+			// construction one of the units walling the objective off. Killing
+			// through it reopens the path and the normal drop-on-death →
+			// re-objective flow resumes the advance. Only fall back to the
+			// objective search when there is no blocker to engage.
+			if !s.acquireNearestBlockingHostileLocked(unit, blocked) {
+				s.assignEnemyObjectiveLocked(unit, blocked)
+			}
 		}
 	case unit.UnreachableBuildingStrikeCount == 2:
 		unit.UnreachableUntilTick = s.Tick + 120
