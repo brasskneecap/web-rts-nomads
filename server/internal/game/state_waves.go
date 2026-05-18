@@ -416,7 +416,7 @@ func (s *GameState) findNearestAttackablePlayerBuildingLocked(enemy *Unit) *prot
 			continue
 		}
 		dist := s.distanceToBuilding(enemy.X, enemy.Y, b)
-		if dist < bestDistSq {
+		if dist < bestDistSq || (dist == bestDistSq && (best == nil || b.ID < best.ID)) {
 			bestDistSq = dist
 			best = b
 		}
@@ -449,7 +449,7 @@ func (s *GameState) findNearestAttackableBuildingForPlayerLocked(enemy *Unit, pl
 			continue
 		}
 		dist := s.distanceToBuilding(enemy.X, enemy.Y, b)
-		if dist < bestDistSq {
+		if dist < bestDistSq || (dist == bestDistSq && (best == nil || b.ID < best.ID)) {
 			bestDistSq = dist
 			best = b
 		}

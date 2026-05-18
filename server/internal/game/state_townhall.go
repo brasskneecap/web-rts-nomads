@@ -377,3 +377,34 @@ func (s *GameState) getNearestPlayerTownhallCenterLocked(x, y float64) *protocol
 
 	return best
 }
+
+// getNearestPlayerTownhallBuildingLocked returns the live, occupied,
+// non-enemy townhall building geographically nearest to (x,y), or nil. The
+// building-returning companion to getNearestPlayerTownhallCenterLocked, used
+// to seed an enemy's sticky ObjectiveBuildingID at spawn. Deterministic: ties
+// resolve to the lower building ID.
+func (s *GameState) getNearestPlayerTownhallBuildingLocked(x, y float64) *protocol.BuildingTile {
+	var best *protocol.BuildingTile
+	bestDistSq := math.MaxFloat64
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "townhall" || !b.Occupied || !b.Visible {
+			continue
+		}
+		if b.OwnerID == nil || *b.OwnerID == enemyPlayerID {
+			continue
+		}
+		hp, _, ok := getBuildingHP(b)
+		if !ok || hp <= 0 {
+			continue
+		}
+		cx := (float64(b.X) + float64(b.Width)/2) * s.MapConfig.CellSize
+		cy := (float64(b.Y) + float64(b.Height)/2) * s.MapConfig.CellSize
+		distSq := distanceSquared(x, y, cx, cy)
+		if distSq < bestDistSq || (distSq == bestDistSq && (best == nil || b.ID < best.ID)) {
+			bestDistSq = distSq
+			best = b
+		}
+	}
+	return best
+}
