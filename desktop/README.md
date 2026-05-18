@@ -90,7 +90,13 @@ What you DO need:
    launch you). Without it, `SteamAPI_RestartAppIfNecessary` returns true
    when run outside Steam, and Steam responds by launching the actual
    Spacewar game (since appid 480 = Spacewar) instead of yours. The file
-   is gitignored.
+   is gitignored (Steam SDK rules forbid shipping it in release
+   bundles), so a fresh clone won't have it.
+   **`build.ps1 -Steam` auto-creates it** with the Spacewar appid if
+   missing — you don't need to do anything manually for dev builds.
+   If you see Spacewar launching instead of Nomads, you ran the binary
+   without first running `.\build package -Steam` (or you deleted the
+   file after building).
 3. **The appid is also passed via `Client::init_app(STEAM_APPID)`** in
    `lib.rs` so it's set even when launched via Steam.
 

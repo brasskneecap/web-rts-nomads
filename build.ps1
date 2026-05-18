@@ -201,14 +201,22 @@ function Invoke-Shell {
             # this, launching nomads-desktop.exe directly causes Steam to
             # relaunch us as "appid 480" — which Steam knows as Spacewar, so
             # it launches the actual Spacewar binary instead of ours.
+            #
+            # The source file is gitignored (it's a dev-only artefact that
+            # MUST NOT be in release bundles per Steam SDK rules), so a
+            # fresh clone won't have it. Auto-create with the Spacewar
+            # appid when missing so the build is self-contained for any
+            # developer running -Steam. When the project moves to a real
+            # paid appid in Phase 3, this auto-create stays as the
+            # development-against-Spacewar path and the real appid lives
+            # in lib.rs's STEAM_APPID constant.
             $appidSrc = Join-Path $RepoRoot 'desktop\src-tauri\steam_appid.txt'
-            if (Test-Path $appidSrc) {
-                Copy-Item $appidSrc (Join-Path $releaseDir 'steam_appid.txt') -Force
-                Write-Host "staged steam_appid.txt next to nomads-desktop.exe"
+            if (-not (Test-Path $appidSrc)) {
+                Write-Host "desktop/src-tauri/steam_appid.txt missing; auto-creating with appid 480 (Spacewar, dev)"
+                Set-Content -Path $appidSrc -Value '480' -NoNewline -Encoding ASCII
             }
-            else {
-                Write-Warning "desktop/src-tauri/steam_appid.txt missing; raw .exe will bounce to Spacewar"
-            }
+            Copy-Item $appidSrc (Join-Path $releaseDir 'steam_appid.txt') -Force
+            Write-Host "staged steam_appid.txt next to nomads-desktop.exe"
         }
     } finally {
         Pop-Location
