@@ -92,6 +92,14 @@ const (
 	// A* path came back empty, preventing per-tick pathfinding storms when many
 	// units crowd around an inaccessible enemy (~2 seconds at 20Hz).
 	unreachableTargetCooldownTicks = 40
+	// objectiveUnreachableTTLTicks is how long the ARMY-WIDE objective cache
+	// (s.objectiveUnreachableUntil) suppresses re-pathing a walled-off
+	// objective (~5s at 20Hz). Longer than the per-target unit cooldown
+	// because it is shared — one enemy's failed pathfind speaks for the whole
+	// army, so no one re-pays the budget-bounded failed A* until the TTL
+	// lapses; a route reopened by killing through the wall is re-detected
+	// within one TTL (and clears the entry immediately on the first success).
+	objectiveUnreachableTTLTicks = 100
 	// approachRepathCooldownTicks throttles the forced repath in tickUnitCombatLocked
 	// when the sub-cell A* fails (unit surrounded by a crowd). 3 ticks = 0.15s —
 	// short enough that the unit retries almost immediately as the crowd shifts,
@@ -291,7 +299,12 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 	}
 	unit.LastTargetEvalTick = s.Tick
 
+	// Diagnostic: target selection is a scored spatial-index scan with no A*.
+	// Timing it separately lets the profiler prove the cost of "find a new
+	// target" lives in combatAI.approach.* (the pathfind), not here.
+	stopSelectProfile := profileStart("combatAI.selectTarget")
 	best := s.selectBestTargetLocked(unit, profile, ctx)
+	stopSelectProfile()
 	if best.Kind == combatTargetNone {
 		if unit.OwnerID == enemyPlayerID && unit.AttackBuildingTargetID == "" && unit.AttackTargetID == 0 && unit.ObjectiveID == "" {
 			// Guards and Hold-order enemies have an authored post — they must
