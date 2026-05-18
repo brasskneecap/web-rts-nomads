@@ -690,6 +690,14 @@ async fn list_steam_lobbies(
     let (tx, rx) = tokio::sync::oneshot::channel();
     {
         let mm = b.client.matchmaking();
+        // Worldwide distance filter: the default is geography-scoped (close
+        // regions only), which can hide friend lobbies in different regions
+        // even for FriendsOnly visibility. Explicit Worldwide removes any
+        // regional gating so a single Steam-friend check is the only thing
+        // determining whether the friend sees the lobby.
+        mm.set_request_lobby_list_distance_filter(
+            steamworks::DistanceFilter::Worldwide,
+        );
         mm.request_lobby_list(move |result| {
             let _ = tx.send(result.map_err(|e| format!("{e:?}")));
         });
