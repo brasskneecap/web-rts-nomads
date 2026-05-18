@@ -353,10 +353,13 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 	// re-evaluates immediately.
 	unit.NextObjectiveSearchTick = 0
 	// If acquisition failed (no AttackTargetID, no AttackBuildingTargetID, not
-	// Moving / drifting), throttle re-evaluation so we don't cycle through
-	// unreachable candidates next tick. Unit-target failures already set
-	// AttackDrifting=true via assignAttackApproachPathLocked, so this catches
-	// the building-target nil-pos case from applyCombatTargetLocked above.
+	// Moving), throttle re-evaluation so we don't cycle through unreachable
+	// candidates next tick. AI-acquired unit-target A* failures now call
+	// dropUnreachableAITargetLocked (clear + memo, not drift), so they land
+	// here with no target and !Moving. Player-issued (OrderAttackTarget) unit
+	// failures still drift, so those units are Moving and skip this branch.
+	// Building-target nil-pos failures from applyCombatTargetLocked above also
+	// reach this branch.
 	if !unit.Moving && unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == "" {
 		interval := profile.RetargetIntervalTicks
 		if interval <= 0 {
