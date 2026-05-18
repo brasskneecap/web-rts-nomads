@@ -128,14 +128,26 @@ runs only on objective loss, never per tick.
 
 1. **New `enemyAdvanceToObjectiveLocked(unit, blocked)`** — modeled on
    `resumeStandingOrderLocked`'s `OrderAttackMove` case
-   ([combat_ai.go:456-470](../../../server/internal/game/combat_ai.go#L456-L470)):
-   resolve & validate the sticky objective building; if dead/missing,
-   re-acquire the nearest player building (per Decision 2) and store its ID; if
-   `unit.Moving` already heading there, return; else `assignUnitPath` to the
-   building's position. **Never sets `AttackBuildingTargetID`, never computes a
-   perimeter slot, never escalates.** If no live player building exists, fall
-   back to `getNearestPlayerTownhallCenterLocked`; if that is also nil, the
-   enemy idles in place (cooldown-guarded) until a target reappears.
+   ([combat_ai.go:456-470](../../../server/internal/game/combat_ai.go#L456-L470)).
+   Fallback chain:
+   1. Resolve & validate the sticky objective building. If dead/missing,
+      re-acquire the nearest player building (per Decision 2) and store its ID.
+      If still none, fall back to a `getNearestPlayerTownhallCenterLocked`
+      position; if that is also nil, idle in place (cooldown-guarded) until a
+      target reappears — done.
+   2. If `unit.Moving` already heading there, return (no recompute — this is
+      the per-tick anti-churn guard).
+   3. `assignUnitPath` to the objective position. **Never sets
+      `AttackBuildingTargetID`, never computes a perimeter slot, never
+      escalates.**
+   4. If that path fails (`!unit.Moving` — the objective exists but is
+      completely partitioned off by a unit/terrain wall),
+      `acquireNearestBlockingHostileLocked`: path toward the nearest hostile
+      anywhere on the map. Normal in-range scoring engages it as the enemy
+      closes; killing through reopens the route and the drop-on-death →
+      re-advance flow resumes. This preserves the existing anti-spawn-freeze
+      guarantee without re-introducing the per-tick escalation churn (step 2
+      still short-circuits every tick the unit is `Moving`).
 
 2. **`evaluateCombatLocked` enemy no-target branch**
    ([combat_ai.go:296-330](../../../server/internal/game/combat_ai.go#L296-L330)):
@@ -196,8 +208,10 @@ a pinned tick number.
 - `applyBuildingUnreachableEscalationLocked` + `UnreachableBuilding*` fields:
   still used by the in-range building commit path and player-issued building
   attacks.
-- `acquireNearestBlockingHostileLocked`: rare strike-3 safety net for the
-  in-range building case; kept as-is.
+- `acquireNearestBlockingHostileLocked`: kept as-is, now serving two callers
+  — the in-range building strike-3 safety net (unchanged) and the new
+  `enemyAdvanceToObjectiveLocked` objective-unreachable fallback (Section 3.1
+  step 4).
 - Retarget stagger / global objective-search rate-limiter: cheap, still guard
   wave-clear retarget bursts.
 - All Guard / Hold / `ObjectiveID` static-objective behavior.
@@ -223,6 +237,13 @@ a pinned tick number.
 - **Wall sealing the path:** the wall is an in-range building → scored and
   attacked via the normal path (Decision 1). Enemies do not get permanently
   stuck.
+- **Objective completely partitioned off (no path, no in-range hostile):**
+  `enemyAdvanceToObjectiveLocked` step 4 → `acquireNearestBlockingHostileLocked`
+  paths toward the nearest hostile anywhere; the enemy closes, normal scoring
+  engages it, killing through reopens the route. Preserves the anti-spawn-
+  freeze guarantee (regression-guarded by
+  `TestEnemy_WalledOffFromBuilding_EngagesBlockers`, updated for the new
+  mechanism).
 - **Player kites a reachable unit far away:** unchanged — handled by the
   existing leash-drop, not by the new unreachable rule.
 - **Two simultaneously unreachable units:** single-slot memo self-corrects
