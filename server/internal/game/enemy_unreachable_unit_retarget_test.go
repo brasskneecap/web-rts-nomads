@@ -62,6 +62,10 @@ func TestUnreachableUnit_SkippedBySelection(t *testing.T) {
 	defer s.mu.Unlock()
 	ownerID := "p1"
 
+	// NOTE: `far` is deliberately the unit PHYSICALLY CLOSEST to the enemy
+	// (5px) and `near` the farther one (90px). The memoed-unreachable unit
+	// must be the strictly-highest-scored pre-skip pick, so this test fails
+	// iff the selection-skip is absent (true red->green guard).
 	near := s.spawnPlayerUnitLocked("soldier", ownerID, "#3498db", protocol.Vec2{X: 1340, Y: 768})
 	near.Visible = true
 	near.MaxHP, near.HP = 50, 50

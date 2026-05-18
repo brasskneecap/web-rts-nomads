@@ -429,11 +429,11 @@ func (s *GameState) applyBuildingUnreachableEscalationLocked(unit *Unit, buildin
 		if !unit.GuardMode && unit.Order.Type != OrderHold {
 			// The building is sealed off by units, not terrain. Rather than
 			// loop forever on a route that cannot exist (the freeze-at-spawn
-			// deadlock), push the enemy at whatever hostile is closest — by
-			// construction one of the units walling the objective off. Killing
-			// through it reopens the path and the normal drop-on-death →
-			// re-objective flow resumes the advance. Only fall back to the
-			// objective search when there is no blocker to engage.
+			// deadlock), delegate to enemyAdvanceToObjectiveLocked which
+			// re-resolves the objective and plain-moves toward it. Only when
+			// the objective is fully partitioned (no path at all) does it fall
+			// back to engaging the nearest blocking hostile — killing through
+			// the wall reopens the route and drop-on-death resumes the advance.
 			s.enemyAdvanceToObjectiveLocked(unit, blocked)
 		}
 	case unit.UnreachableBuildingStrikeCount == 2:

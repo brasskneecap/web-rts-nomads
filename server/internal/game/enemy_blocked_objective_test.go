@@ -11,7 +11,11 @@ import (
 // off by a wall of player units must NOT sit frozen at its spawn forever. It
 // must drop the unreachable building and engage one of the blocking units, so
 // it actually fights its way toward the base instead of bogging the sim down
-// in a perpetual failed-pathfind loop.
+// in a perpetual failed-pathfind loop. Under the objective-attack-move model
+// the path runs enemyAdvanceToObjectiveLocked: the townhall is unreachable
+// (full partition) so step 4 falls back to acquireNearestBlockingHostile,
+// the enemy closes on the wall, and normal in-range scoring acquires a wall
+// unit — same observable invariant, new mechanism.
 //
 // Repro construction (no reliance on default-map geometry, so it is fully
 // deterministic):
@@ -25,7 +29,7 @@ import (
 //   - The enemy spawns far to the right, well beyond its profile DetectionRange
 //     (raider = 240) from the wall, so it cannot "accidentally" acquire a wall
 //     unit through normal in-range target selection — the only way it engages
-//     a blocker is the unreachable-building fallback this test is exercising.
+//     a blocker is the objective-unreachable fallback this test is exercising.
 func TestEnemy_WalledOffFromBuilding_EngagesBlockers(t *testing.T) {
 	const (
 		cellSize = 64.0

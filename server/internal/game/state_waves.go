@@ -241,6 +241,11 @@ func (s *GameState) seedEnemyObjectiveAtSpawnLocked(unit *Unit, targetPlayerLabe
 		b = s.getNearestPlayerTownhallBuildingLocked(spawnPos.X, spawnPos.Y)
 	}
 	if b != nil {
+		// The seeded ObjectiveBuildingID may differ from the initial spawn-path
+		// destination (seed picks the nearest attackable building for TargetPlayerID
+		// while the spawn path goes to a townhall center). This is intentional:
+		// enemyAdvanceToObjectiveLocked re-validates ObjectiveBuildingID every
+		// no-target eval, so the sticky objective self-corrects within one tick.
 		unit.ObjectiveBuildingID = b.ID
 	}
 }
