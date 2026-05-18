@@ -62,13 +62,13 @@ func TestUnreachableUnit_SkippedBySelection(t *testing.T) {
 	defer s.mu.Unlock()
 	ownerID := "p1"
 
-	near := s.spawnPlayerUnitLocked("soldier", ownerID, "#3498db", protocol.Vec2{X: 1260, Y: 768})
+	near := s.spawnPlayerUnitLocked("soldier", ownerID, "#3498db", protocol.Vec2{X: 1340, Y: 768})
 	near.Visible = true
 	near.MaxHP, near.HP = 50, 50
 	s.initializeCombatUnitLocked(near)
 	nearID := near.ID
 
-	far := s.spawnPlayerUnitLocked("soldier", ownerID, "#3498db", protocol.Vec2{X: 1240, Y: 768})
+	far := s.spawnPlayerUnitLocked("soldier", ownerID, "#3498db", protocol.Vec2{X: 1255, Y: 768})
 	far.Visible = true
 	far.MaxHP, far.HP = 50, 50
 	s.initializeCombatUnitLocked(far)
