@@ -44,11 +44,7 @@
       <label class="ds-row">
         <span class="ds-label">Path</span>
         <select v-model="path" class="ds-select">
-          <option value="none">(none)</option>
-          <option value="trapper">Trapper</option>
-          <option value="marksman">Marksman</option>
-          <option value="vanguard">Vanguard</option>
-          <option value="berserker">Berserker</option>
+          <option v-for="p in pathOptions" :key="p.value" :value="p.value">{{ p.label }}</option>
         </select>
       </label>
 
@@ -155,6 +151,36 @@ const unitTypeOptions = computed(() => {
   return fromCatalog.sort((a, b) => a.label.localeCompare(b.label))
 })
 
+// Promotion paths available per unit type. Mirrors the server's random
+// assignment switch in assignUnitPathOnRankUpLocked (progression.go) — that
+// is the source of truth; keep this in sync when a unit type gains a path.
+// Unit types absent here have no promotion paths (worker, raider, …) and
+// only get the "(none)" option. Labels match formatUnitPath in GameState.ts.
+const PATHS_BY_UNIT_TYPE: Record<string, { value: string; label: string }[]> = {
+  soldier: [
+    { value: 'vanguard', label: 'Vanguard' },
+    { value: 'berserker', label: 'Berserker' },
+  ],
+  archer: [
+    { value: 'trapper', label: 'Trapper' },
+    { value: 'marksman', label: 'Marksman' },
+  ],
+  apprentice: [
+    { value: 'cleric', label: 'Cleric' },
+    { value: 'arch_mage', label: 'Arch Mage' },
+  ],
+}
+
+// Path dropdown options for the selected unit type: always "(none)" plus any
+// promotion paths that unit type can roll. Filtering to the relevant paths
+// keeps the list honest — the server applies whatever path is sent verbatim
+// (no eligibility check in DebugSpawnUnit), so an off-type pick would spawn a
+// nonsensical unit (e.g. a soldier on the arch_mage path).
+const pathOptions = computed(() => [
+  { value: 'none', label: '(none)' },
+  ...(PATHS_BY_UNIT_TYPE[unitType.value] ?? []),
+])
+
 // perkSlots determines which rank slots are visible given the selected rank.
 // A Silver-ranked unit gets Bronze + Silver slots; a Gold unit gets all three.
 const perkSlots = computed(() => {
@@ -193,6 +219,16 @@ function gatedWarning(perk: PerkDef): string {
   const picked = [perkSelections.bronze, perkSelections.silver, perkSelections.gold]
   return picked.includes(req) ? '' : ' (!)'
 }
+
+// When the unit type changes, drop a now-invalid path back to "(none)" so the
+// dropdown can't display/submit a stale off-type pick (e.g. switching an
+// archer on "marksman" over to soldier). Re-triggers the perk-clear watch
+// below via the path change, which is harmless (idempotent).
+watch(unitType, () => {
+  if (!pathOptions.value.some((p) => p.value === path.value)) {
+    path.value = 'none'
+  }
+})
 
 // Clear slot picks when the unit type or path changes, since the eligible
 // pool shifts completely and the old picks are almost never still valid.
