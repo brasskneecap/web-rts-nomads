@@ -672,11 +672,16 @@ pub struct SteamLobbyListEntry {
 #[tauri::command]
 async fn list_steam_lobbies(
     bridge: tauri::State<'_, SteamBridgeState>,
+    shell_log: tauri::State<'_, logs::ShellLogHandle>,
 ) -> Result<Vec<SteamLobbyListEntry>, String> {
+    let sl = shell_log.inner().clone();
     let b = bridge
         .0
         .as_ref()
-        .ok_or_else(|| "steam_unavailable".to_string())?
+        .ok_or_else(|| {
+            sl.write_line("WARN", "list_steam_lobbies: bridge None — steam_unavailable");
+            "steam_unavailable".to_string()
+        })?
         .clone();
     // Send the RequestLobbyList call and drop the Matchmaking handle
     // BEFORE the await — Matchmaking holds a raw `*mut ISteamMatchmaking`
@@ -691,26 +696,60 @@ async fn list_steam_lobbies(
     }
     let lobby_ids = rx
         .await
-        .map_err(|_| "callback dropped before steam responded".to_string())
-        .and_then(|r| r)?;
+        .map_err(|_| {
+            sl.write_line("WARN", "list_steam_lobbies: oneshot dropped");
+            "callback dropped before steam responded".to_string()
+        })
+        .and_then(|r| {
+            if let Err(e) = &r {
+                sl.write_line(
+                    "WARN",
+                    &format!("list_steam_lobbies: RequestLobbyList error: {e}"),
+                );
+            }
+            r
+        })?;
+    sl.write_line(
+        "INFO",
+        &format!(
+            "list_steam_lobbies: RequestLobbyList returned {} lobbies",
+            lobby_ids.len()
+        ),
+    );
 
     let mm = b.client.matchmaking();
     let mut out = Vec::with_capacity(lobby_ids.len());
     for id in lobby_ids {
-        let host_steam_id = mm
-            .lobby_data(id, "host_steam_id")
-            .unwrap_or_default();
-        if host_steam_id.is_empty() {
-            // Lobby exists but predates the metadata convention — skip so
-            // the SPA never sees an entry it can't render or join cleanly.
-            continue;
-        }
+        let host_steam_id = mm.lobby_data(id, "host_steam_id").unwrap_or_default();
         let host_persona = mm.lobby_data(id, "host_persona").unwrap_or_default();
         let map_id = mm.lobby_data(id, "map_id").unwrap_or_default();
         let local_lobby_id = mm.lobby_data(id, "local_lobby_id").unwrap_or_default();
         let status = mm.lobby_data(id, "status").unwrap_or_default();
         let player_count = mm.lobby_member_count(id) as u32;
         let max_players = mm.lobby_member_limit(id).unwrap_or(0) as u32;
+        sl.write_line(
+            "INFO",
+            &format!(
+                "list_steam_lobbies: lobby={} host_steam_id={:?} host_persona={:?} map_id={:?} status={:?} players={}/{}",
+                id.raw(),
+                host_steam_id,
+                host_persona,
+                map_id,
+                status,
+                player_count,
+                max_players
+            ),
+        );
+        if host_steam_id.is_empty() {
+            sl.write_line(
+                "INFO",
+                &format!(
+                    "list_steam_lobbies: skipping lobby={} (no host_steam_id metadata — not a Nomads lobby or stale entry)",
+                    id.raw()
+                ),
+            );
+            continue;
+        }
         out.push(SteamLobbyListEntry {
             steam_lobby_id: id.raw().to_string(),
             host_steam_id,
@@ -722,6 +761,10 @@ async fn list_steam_lobbies(
             max_players,
         });
     }
+    sl.write_line(
+        "INFO",
+        &format!("list_steam_lobbies: returning {} entries to SPA", out.len()),
+    );
     Ok(out)
 }
 
