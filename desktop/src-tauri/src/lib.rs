@@ -442,8 +442,12 @@ async fn create_lobby(
     let sl_cb = sl.clone();
     {
         let mm = b.client.matchmaking();
+        // TEMP DEBUG: Public so the friend can see the lobby without
+        // depending on Steam friend graph + region visibility quirks.
+        // Revert to FriendsOnly once we've confirmed the rest of the
+        // discovery pipeline works.
         mm.create_lobby(
-            steamworks::LobbyType::FriendsOnly,
+            steamworks::LobbyType::Public,
             max,
             move |result| {
                 sl_cb.write_line(
