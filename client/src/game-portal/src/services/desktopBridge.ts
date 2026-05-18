@@ -45,9 +45,15 @@ export interface LogEntry {
   context?: Record<string, unknown>
 }
 
-/** True when the SPA is running inside the Tauri shell. */
+/** True when the SPA is running inside the Tauri shell. Checks every
+ *  global the v1, v2.0, and v2.x runtimes have used: `window.isTauri`
+ *  (current v2 helper-blessed flag), `window.__TAURI_INTERNALS__` (early
+ *  v2 internal), and `window.__TAURI__` (v1 legacy). At least one of these
+ *  is set by the Tauri runtime; none should be present in plain browser dev. */
 export function isInTauri(): boolean {
-  return typeof window !== 'undefined' && (window as any).__TAURI__ !== undefined
+  if (typeof window === 'undefined') return false
+  const w = window as any
+  return w.isTauri === true || w.__TAURI_INTERNALS__ !== undefined || w.__TAURI__ !== undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +79,12 @@ export async function inviteFriend(lobbyId: string): Promise<void> {
   await invoke('open_invite_overlay', { lobbyId })
 }
 
+/** Result of a successful lobby create/join. Returned to the SPA UI so it
+ *  can display the lobby id (for copy/share) and the player count. */
+export interface LobbyHandle {
+  lobbyId: string
+}
+
 /** Reports an achievement to Steam. Fire-and-forget (design D19) — errors are swallowed. */
 export async function reportAchievement(id: string): Promise<void> {
   if (!isInTauri()) return
@@ -83,16 +95,21 @@ export async function reportAchievement(id: string): Promise<void> {
   }
 }
 
-/** Creates a Steam lobby. No-op in browser dev. Returns the lobby id. */
-export async function openLobby(opts: { maxPlayers: number; mapId: string }): Promise<string | null> {
+/** Creates a Steam Matchmaking lobby (FriendsOnly). Returns the lobby's
+ *  SteamID64-as-string, or null when running outside Tauri. Throws on
+ *  Steam-side errors (steam_unavailable, callback dropped, etc.). */
+export async function openLobby(opts: { maxPlayers?: number } = {}): Promise<LobbyHandle | null> {
   if (!isInTauri()) return null
-  return invoke<string>('create_lobby', opts)
+  const lobbyId = await invoke<string>('create_lobby', { maxPlayers: opts.maxPlayers ?? 4 })
+  return { lobbyId }
 }
 
-/** Joins an existing Steam lobby. */
-export async function joinLobby(lobbyId: string): Promise<void> {
-  if (!isInTauri()) return
-  await invoke('join_lobby', { lobbyId })
+/** Joins an existing Steam lobby by SteamID64 string. Returns the joined
+ *  lobby's id (echoed back so the SPA can confirm). */
+export async function joinLobby(lobbyId: string): Promise<LobbyHandle | null> {
+  if (!isInTauri()) return null
+  const joined = await invoke<string>('join_lobby', { lobbyId })
+  return { lobbyId: joined }
 }
 
 /** Signals the shell that the SPA is mounted and ready to receive deferred

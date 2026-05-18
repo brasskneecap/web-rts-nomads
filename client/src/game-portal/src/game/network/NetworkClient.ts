@@ -33,7 +33,29 @@ function getWsBaseUrl(): string {
   return http.replace(/^http/, 'ws')
 }
 
-const WS_URL = `${getWsBaseUrl()}/ws`
+/** Session-storage key for the Direct-connect proxy token. Set by the
+ *  DirectConnect.vue view after a successful POST /api/direct-connect/join;
+ *  consumed by every WebSocket open in this tab so all WS traffic flows
+ *  through the joiner-as-proxy path to the remote host's hub. Cleared by
+ *  DirectConnect on explicit disconnect or by the user closing the tab. */
+const PROXY_TOKEN_STORAGE_KEY = 'webrts.directConnect.proxyToken'
+
+/** Resolve the WS URL fresh on every connect so a Direct-connect session
+ *  starting mid-tab is picked up without a page reload (sessionStorage may
+ *  have changed since the module loaded). */
+function resolveWsUrl(): string {
+  let url = `${getWsBaseUrl()}/ws`
+  let token: string | null = null
+  try {
+    token = sessionStorage.getItem(PROXY_TOKEN_STORAGE_KEY)
+  } catch {
+    // sessionStorage can throw in some sandboxed contexts; degrade silently.
+  }
+  if (token) {
+    url += `?proxy=${encodeURIComponent(token)}`
+  }
+  return url
+}
 
 const PLAYER_ID_STORAGE_KEY = 'webrts.playerId'
 const MAP_ID_STORAGE_KEY = 'webrts.mapId'
@@ -129,7 +151,7 @@ export class NetworkClient {
     isReconnect: boolean
   }): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(WS_URL)
+      const ws = new WebSocket(resolveWsUrl())
       this.socket = ws
 
       ws.onopen = () => {
@@ -267,7 +289,7 @@ export class NetworkClient {
       this.closeSocket()
     } else {
       // No live socket (page reload, tab restore) — open a temp one.
-      const socket = new WebSocket(WS_URL)
+      const socket = new WebSocket(resolveWsUrl())
       await new Promise<void>((resolve, reject) => {
         socket.onopen = () => {
           socket.send(JSON.stringify(message))

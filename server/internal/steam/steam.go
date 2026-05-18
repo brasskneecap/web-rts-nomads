@@ -39,4 +39,11 @@ type SteamBridge interface {
 	ReportAchievement(id string) error
 	OpenInviteOverlay(lobbyID string) error
 	RegisterTransport(t any) error
+	// CreateLobby creates a Steam Matchmaking lobby (FriendsOnly) and
+	// returns its SteamID64-as-string. Async on the Steam side (the IPC
+	// awaits the LobbyCreated_t callback before responding).
+	CreateLobby(maxPlayers int) (string, error)
+	// JoinLobby joins an existing lobby by SteamID64 string. Async on the
+	// Steam side (awaits LobbyEnter_t).
+	JoinLobby(lobbyID string) error
 }

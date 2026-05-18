@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"webrts/server/internal/game"
+	"webrts/server/internal/transportbridge"
 	"webrts/server/pkg/protocol"
 
 	"github.com/gorilla/websocket"
@@ -44,6 +45,11 @@ type Hub struct {
 	// `var version` that populates NOMADS_READY.
 	version string
 
+	// directSessions stores host-side WS connections dialled by
+	// /api/direct-connect/join, keyed by token, until the joiner's SPA
+	// reconnects with ?proxy=<token> (§11.5 + §13.4 joiner-as-proxy model).
+	directSessions *transportbridge.SessionStore
+
 	originRejectMu      sync.Mutex
 	originRejectLastLog map[string]time.Time
 }
@@ -60,14 +66,36 @@ func NewHub(manager *game.MatchManager, lobbyManager *game.LobbyManager) *Hub {
 		lobbyManager:        lobbyManager,
 		quit:                make(chan struct{}),
 		originRejectLastLog: make(map[string]time.Time),
+		directSessions:      transportbridge.NewSessionStore(),
 	}
 	h.upgrader = websocket.Upgrader{
 		CheckOrigin: h.checkOrigin,
 	}
 
 	go h.heartbeatLoop()
+	go h.reapStaleSessionsLoop()
 
 	return h
+}
+
+// DirectSessions exposes the session store so the HTTP router's
+// /api/direct-connect/join handler can register dialled host conns.
+// Returns the same instance for the Hub's lifetime.
+func (h *Hub) DirectSessions() *transportbridge.SessionStore { return h.directSessions }
+
+func (h *Hub) reapStaleSessionsLoop() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-h.quit:
+			return
+		case t := <-ticker.C:
+			if n := h.directSessions.ReapStale(t); n > 0 {
+				log.Printf("transportbridge: reaped %d stale direct-connect session(s)", n)
+			}
+		}
+	}
 }
 
 // SetAllowNonLoopback toggles the runtime gate that lets non-loopback peers
@@ -178,6 +206,31 @@ func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "non-loopback connections are not allowed; host must enable LAN/Internet access", http.StatusForbidden)
 		return
 	}
+
+	// §11.5 / §13.4: proxy-mode SPAs include ?proxy=<token>. The token was
+	// returned by a prior POST /api/direct-connect/join that dialled the
+	// host. Look it up BEFORE the upgrade so we can return 502 with a JSON
+	// error body if the session is missing/expired.
+	if token := r.URL.Query().Get("proxy"); token != "" {
+		hostConn, ok := h.directSessions.Take(token)
+		if !ok {
+			http.Error(w, `{"error":"unknown or expired proxy token"}`, http.StatusBadGateway)
+			return
+		}
+		spaConn, err := h.upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			// We already took the host conn; clean it up so it doesn't leak.
+			_ = hostConn.Close()
+			log.Println("proxy upgrade error:", err)
+			return
+		}
+		log.Printf("direct-connect proxy active: spa=%s -> host (token=%s…)",
+			spaConn.RemoteAddr(), token[:8])
+		transportbridge.Proxy(spaConn, hostConn)
+		log.Printf("direct-connect proxy ended: spa=%s", spaConn.RemoteAddr())
+		return
+	}
+
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("upgrade error:", err)

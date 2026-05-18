@@ -64,11 +64,98 @@ ranges (`^` or `*`). To bump a pin:
 4. In the PR description, explain *why* the bump is happening (CVE, new feature
    we depend on, etc.). Drive-by version bumps are not in scope.
 
+## Steamworks setup (Phase 2)
+
+The `steam` cargo feature enables the Steamworks SDK integration (player
+identity, lobby create/join, friend invites, Steam Networking Sockets
+transport). It is OFF by default so the existing dev loop and CI don't need
+Steamworks.
+
+### One-time setup
+
+Good news — **`steamworks-sys 0.13` bundles the Steamworks SDK** so you do
+NOT need to download anything from partner.steamgames.com or set
+`STEAM_SDK_LOCATION`. The crate ships with the redistributable headers and
+libraries for Windows / macOS / Linux / Steam Deck.
+
+What you DO need:
+
+1. **Steam client installed and running and signed in.** Without Steam
+   running, `SteamAPI_Init` fails and the shell falls back to the Phase 1
+   no-Steam behaviour (the `NoopBridge` in the Go server, SPA hides Steam-
+   mode UI). This is not a bug — it's the documented offline degradation.
+2. **`desktop/src-tauri/steam_appid.txt` containing `480`** for dev
+   launches. This signals to the Steam SDK that you are launching the
+   binary directly during development (rather than expecting Steam to
+   launch you). Without it, `SteamAPI_RestartAppIfNecessary` returns true
+   when run outside Steam, and Steam responds by launching the actual
+   Spacewar game (since appid 480 = Spacewar) instead of yours. The file
+   is gitignored.
+3. **The appid is also passed via `Client::init_app(STEAM_APPID)`** in
+   `lib.rs` so it's set even when launched via Steam.
+
+That's it. No partner account needed, no $100 fee, no manual SDK download.
+The $100 only matters once you want to ship under your own appid instead
+of Spacewar.
+
+### Runtime files on Windows
+
+Two files must sit next to `nomads-desktop.exe` at runtime:
+
+- **`steam_api64.dll`** — Steam SDK's redistributable. `build.ps1 -Steam`
+  copies it automatically from the `steamworks-sys` build output.
+- **`steam_appid.txt`** — see #2 above. `build.ps1 -Steam` also stages
+  this from `desktop/src-tauri/steam_appid.txt` into `target/release/`.
+
+For MSI bundling these are not currently in the installer (deferred to
+follow-up); raw-exe launch from `target/release/` is the supported test
+path for now.
+
+### Building with Steam enabled
+
+```sh
+# Dev iteration
+cd desktop/src-tauri
+cargo build --features steam
+
+# Packaged build (MSI / DMG / AppImage)
+cargo tauri build --features steam
+```
+
+The Windows `build.ps1` / `build.cmd` wrapper passes through extra args:
+
+```cmd
+build package --features steam
+```
+
+### Verifying it worked
+
+- Log line `steam: initialised as <persona> (steamid=<id>)` in the shell
+  log (`%APPDATA%/Nomads/logs/<timestamp>-shell.log`).
+- `desktopBridge.getSteamPlayer()` returns `{ steamId64, personaName }`
+  instead of null.
+- Main menu shows your Steam persona name in the corner once the SPA
+  has booted (the small UI badge).
+
+### Switching from 480 to a real appid
+
+When you have your own paid Steam appid:
+
+1. Replace `480` in `desktop/src-tauri/steam_appid.txt` with your appid
+   for dev launches.
+2. Update `STEAM_APPID` in `desktop/src-tauri/src/lib.rs` (one constant)
+   for the embedded value the release build uses.
+3. Configure the achievement IDs in the Steam Partner dashboard to match
+   the constants in `server/internal/steam/achievements.go`.
+
+No other code changes needed.
+
 ## `steam_appid.txt`
 
 For Steam features in dev (Phase 2), place the appid in
-`desktop/steam_appid.txt`. The file is gitignored and is NOT included in
-release artifacts (release builds embed the appid via Tauri config /
+`desktop/src-tauri/steam_appid.txt` (containing `480` for development).
+The file is gitignored and is NOT included in release artifacts (release
+builds embed the appid via the `STEAM_APPID` constant in `lib.rs` +
 `SteamAPI_RestartAppIfNecessary`).
 
 ## Port collision with `air`

@@ -2,13 +2,17 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
+	"sort"
 	"strings"
 
 	"webrts/server/internal/game"
 	"webrts/server/internal/profile"
+	"webrts/server/internal/transportbridge"
 	"webrts/server/internal/ws"
 )
 
@@ -299,6 +303,65 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 		}
 	})
 
+	// §13 task 13.3 + 13.9: list the host's reachable non-loopback IPv4
+	// addresses with the documented sort order (Tailscale CGNAT first,
+	// RFC1918 private next, everything else last). SPA host UI calls this
+	// when the user toggles "Allow LAN/Internet connections" on.
+	mux.HandleFunc("/api/direct-connect/ips", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		ips := enumerateReachableIPv4s()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ips": ips})
+	})
+
+	// §11.5 + §13.4: joiner-as-proxy join. SPA posts the host's address;
+	// server dials the host's WS (5s timeout via transportbridge), stashes
+	// the conn under a token, returns the token. SPA then reconnects its
+	// own WS as ?proxy=<token> and the hub wires the two bytes-for-bytes.
+	mux.HandleFunc("/api/direct-connect/join", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			HostPort string `json:"hostPort"`
+			UseTLS   bool   `json:"useTls,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, `{"error":"invalid JSON body"}`, http.StatusBadRequest)
+			return
+		}
+		if body.HostPort == "" {
+			http.Error(w, `{"error":"hostPort is required"}`, http.StatusBadRequest)
+			return
+		}
+		hostConn, err := transportbridge.ConnectToHost(context.Background(), body.HostPort, body.UseTLS)
+		if err != nil {
+			// Surface the DialError kind so the SPA can pick a sensible UI string.
+			kind := transportbridge.DialErrOther
+			var de *transportbridge.DialError
+			if errors.As(err, &de) {
+				kind = de.Kind
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": err.Error(),
+				"kind":  string(kind),
+			})
+			return
+		}
+		token := hub.DirectSessions().Put(hostConn.Conn)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"token":  token,
+			"hostPort": body.HostPort,
+		})
+	})
+
 	if spaHandler != nil {
 		mux.Handle("/", spaHandler)
 	}
@@ -317,6 +380,71 @@ func lobbyHTTPError(w http.ResponseWriter, err error) {
 	default:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// enumerateReachableIPv4s returns the host's non-loopback IPv4 addresses in
+// the order §13 task 13.9 documents:
+//   1. Tailscale CGNAT (100.64.0.0/10) — listed first because Tailscale is
+//      the lowest-friction reachability path for ad-hoc playtests.
+//   2. RFC1918 private (10/8, 172.16/12, 192.168/16) — typical LAN.
+//   3. Everything else — public IPs, link-local, etc.
+//
+// Within each bucket, order is whatever the OS reports; we don't second-guess
+// the interface order. Errors at the interface enumeration level fall through
+// to an empty list (the SPA's UI shows "no addresses found").
+func enumerateReachableIPv4s() []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	type bucket int
+	const (
+		bucketTailscale bucket = iota
+		bucketRFC1918
+		bucketOther
+	)
+	type entry struct {
+		ip     string
+		bucket bucket
+	}
+	var entries []entry
+	for _, a := range addrs {
+		ipNet, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		v4 := ipNet.IP.To4()
+		if v4 == nil || v4.IsLoopback() || v4.IsUnspecified() || v4.IsLinkLocalUnicast() {
+			continue
+		}
+		switch {
+		case isTailscaleCGNAT(v4):
+			entries = append(entries, entry{v4.String(), bucketTailscale})
+		case v4.IsPrivate():
+			entries = append(entries, entry{v4.String(), bucketRFC1918})
+		default:
+			entries = append(entries, entry{v4.String(), bucketOther})
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].bucket < entries[j].bucket
+	})
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.ip)
+	}
+	return out
+}
+
+// isTailscaleCGNAT returns true for addresses inside the CGNAT range
+// (100.64.0.0/10) that Tailscale uses. CGNAT is technically a shared address
+// range, but in practice the only consumer who routes traffic through it on
+// a typical dev machine is Tailscale itself, so it's a reliable signal.
+func isTailscaleCGNAT(ip net.IP) bool {
+	if v4 := ip.To4(); v4 != nil {
+		return v4[0] == 100 && (v4[1] >= 64 && v4[1] <= 127)
+	}
+	return false
 }
 
 func withCORS(next http.Handler, allowedOrigin string) http.Handler {

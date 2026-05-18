@@ -8,15 +8,20 @@ import "sync"
 // game code calls into the bridge correctly. Production code MUST NOT depend
 // on FakeBridge.
 type FakeBridge struct {
-	mu                       sync.Mutex
-	LocalPlayerValue         LocalPlayer
-	LocalPlayerError         error
-	ReportAchievementCalls   []string
-	OpenInviteOverlayCalls   []string
-	RegisterTransportCalls   []any
-	ReportAchievementErr     error
-	OpenInviteOverlayErr     error
-	RegisterTransportErr     error
+	mu                     sync.Mutex
+	LocalPlayerValue       LocalPlayer
+	LocalPlayerError       error
+	ReportAchievementCalls []string
+	OpenInviteOverlayCalls []string
+	RegisterTransportCalls []any
+	CreateLobbyCalls       []int
+	JoinLobbyCalls         []string
+	ReportAchievementErr   error
+	OpenInviteOverlayErr   error
+	RegisterTransportErr   error
+	CreateLobbyResult      string // returned by CreateLobby on success
+	CreateLobbyErr         error
+	JoinLobbyErr           error
 }
 
 // NewFakeBridge returns a FakeBridge whose LocalPlayer reports the Steam-
@@ -49,6 +54,20 @@ func (f *FakeBridge) RegisterTransport(t any) error {
 	defer f.mu.Unlock()
 	f.RegisterTransportCalls = append(f.RegisterTransportCalls, t)
 	return f.RegisterTransportErr
+}
+
+func (f *FakeBridge) CreateLobby(maxPlayers int) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.CreateLobbyCalls = append(f.CreateLobbyCalls, maxPlayers)
+	return f.CreateLobbyResult, f.CreateLobbyErr
+}
+
+func (f *FakeBridge) JoinLobby(lobbyID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.JoinLobbyCalls = append(f.JoinLobbyCalls, lobbyID)
+	return f.JoinLobbyErr
 }
 
 // Snapshot returns immutable copies of the recorded call lists so test

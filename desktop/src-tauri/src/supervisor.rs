@@ -161,9 +161,14 @@ fn write_stderr_tail(
 /// `server_log_path` (§22 task 22.2) is the file the supervisor tees the Go
 /// child's stdout+stderr into, after the NOMADS_READY line has been consumed.
 /// Pass None to skip the tee (tests).
+///
+/// `ipc_path` (§8.3) is the local-socket path the Rust shell is listening on
+/// for Steam IPC. When set, the Go server constructs an IPCBridge against it;
+/// when None, the Go server falls back to NoopBridge (the §4.3 default).
 pub fn spawn_and_wait_ready(
     paths: &Paths,
     server_log_path: Option<std::path::PathBuf>,
+    ipc_path: Option<String>,
 ) -> Result<(ReadyInfo, ChildHandle), SupervisorError> {
     let bin = resolve_sidecar_path()?;
     info!("supervisor: spawning {}", bin.display());
@@ -175,6 +180,9 @@ pub fn spawn_and_wait_ready(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(path) = ipc_path {
+        cmd.env("NOMADS_IPC_PATH", path);
+    }
 
     // Windows: the Go binary is built with the console subsystem, so without
     // this flag Windows would attach a new console window to the spawned

@@ -12,7 +12,12 @@ publish = false
 
 [lib]
 name = "nomads_desktop_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# rlib only — staticlib/cdylib are for mobile (iOS/Android Tauri targets) and
+# aren't used on desktop. Keeping them around produced a separate .dll
+# artefact whose feature set could drift from the binary's, which caused a
+# subtle bug where `cargo build --features steam` produced a Steam-enabled
+# rlib but the binary at target/release/ was the wrong artefact.
+crate-type = ["rlib"]
 
 [build-dependencies]
 # Pinned exact versions per §18 task 18.4 and the desktop-shell spec
@@ -28,6 +33,17 @@ serde_json = "=1.0.133"
 log = "=0.4.22"
 env_logger = "=0.11.5"
 anyhow = "=1.0.93"
+# tokio sync primitives — used by async Tauri commands that need to bridge
+# Steam callbacks back to the JS invoke caller (one-shot channels). Tauri
+# already pulls tokio in transitively; this gates the named features we use.
+tokio = { version = "=1.41.1", features = ["sync"] }
+# Steamworks SDK bindings — optional, gated by the `steam` feature so default
+# builds and CI don't need the SDK installed. Enable with --features steam
+# once STEAM_SDK_LOCATION is set per desktop/README.md.
+steamworks = { version = "=0.13.1", optional = true }
+# Cross-platform local sockets (Unix socket / Windows named pipe). Used for
+# the Go-server ↔ Rust-shell IPC channel that exposes Steamworks (§8.3).
+interprocess = { version = "=2.2.2", optional = true }
 
 [features]
 # Default to non-shipped dev config: single-instance lock disabled for
@@ -37,6 +53,11 @@ anyhow = "=1.0.93"
 # is just a placeholder so the build matrix is unambiguous.
 default = []
 single-instance = []
+# Enable Steamworks integration. Requires STEAM_SDK_LOCATION env var pointing
+# to the Steamworks SDK at build time, and `desktop/src-tauri/steam_appid.txt`
+# at runtime (containing 480 for development, your real appid for release).
+# See desktop/README.md "Steamworks setup".
+steam = ["dep:steamworks", "dep:interprocess"]
 
 [profile.release]
 panic = "abort"     # surfaced via the panic hook in §22.7

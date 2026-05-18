@@ -55,13 +55,18 @@ func main() {
 	}
 
 	// SteamBridge selection: when the Tauri shell launches the server it sets
-	// NOMADS_IPC_PATH to the shell-owned named-pipe / Unix-socket path. In
-	// Phase 1 we only have NoopBridge; IPCBridge construction lands with
-	// §4 task 4.4 in Phase 2. We log when the env is set so a future P2
-	// launch where IPCBridge construction was skipped is obvious.
+	// NOMADS_IPC_PATH to the shell-owned named-pipe / Unix-socket path. If
+	// set, we connect to the IPCBridge so the Go server can reach Steam
+	// (player identity, achievements, lobby create/join). If unset we fall
+	// back to NoopBridge (browser dev loop, server run bare, etc.).
 	var bridge steam.SteamBridge = steam.NewNoopBridge()
 	if path := os.Getenv("NOMADS_IPC_PATH"); path != "" {
-		log.Printf("NOMADS_IPC_PATH=%q set but IPCBridge is Phase 2 — using NoopBridge", path)
+		if b, err := steam.NewIPCBridge(path); err != nil {
+			log.Printf("steam: IPCBridge dial failed (%v) — falling back to NoopBridge", err)
+		} else {
+			log.Printf("steam: IPCBridge connected to %s", path)
+			bridge = b
+		}
 	}
 	_ = bridge // wired into subsystems when achievement / lobby callers land (§16, §17)
 

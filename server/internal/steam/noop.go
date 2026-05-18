@@ -30,3 +30,11 @@ func (*NoopBridge) OpenInviteOverlay(lobbyID string) error { return nil }
 // registration only happens in Phase 2 via IPCBridge; NoopBridge has nothing
 // to do with it.
 func (*NoopBridge) RegisterTransport(t any) error { return nil }
+
+// CreateLobby returns the steam_unavailable sentinel. The SPA's
+// SteamMultiplayer view branches on the error rather than trying to surface
+// the empty lobby id.
+func (*NoopBridge) CreateLobby(_ int) (string, error) { return "", nil }
+
+// JoinLobby is a no-op for the same reason CreateLobby is.
+func (*NoopBridge) JoinLobby(_ string) error { return nil }
