@@ -50,6 +50,11 @@ type Hub struct {
 	// reconnects with ?proxy=<token> (§11.5 + §13.4 joiner-as-proxy model).
 	directSessions *transportbridge.SessionStore
 
+	// steamSessions parks the joiner's upstream Steam Sockets transport
+	// awaiting an SPA reconnect with ?proxy=steam (§14.3). Single-slot —
+	// a Steam joiner has at most one upstream peer at a time.
+	steamSessions *transportbridge.SteamSessionStore
+
 	originRejectMu      sync.Mutex
 	originRejectLastLog map[string]time.Time
 }
@@ -67,6 +72,7 @@ func NewHub(manager *game.MatchManager, lobbyManager *game.LobbyManager) *Hub {
 		quit:                make(chan struct{}),
 		originRejectLastLog: make(map[string]time.Time),
 		directSessions:      transportbridge.NewSessionStore(),
+		steamSessions:       transportbridge.NewSteamSessionStore(),
 	}
 	h.upgrader = websocket.Upgrader{
 		CheckOrigin: h.checkOrigin,
@@ -83,6 +89,12 @@ func NewHub(manager *game.MatchManager, lobbyManager *game.LobbyManager) *Hub {
 // Returns the same instance for the Hub's lifetime.
 func (h *Hub) DirectSessions() *transportbridge.SessionStore { return h.directSessions }
 
+// SteamSessions exposes the single-slot Steam-upstream parking lot so
+// main.go's lobby_joined handler can Set the steamTransport before the
+// joiner SPA reconnects with `?proxy=steam`. Returns the same instance
+// for the Hub's lifetime.
+func (h *Hub) SteamSessions() *transportbridge.SteamSessionStore { return h.steamSessions }
+
 func (h *Hub) reapStaleSessionsLoop() {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -93,6 +105,9 @@ func (h *Hub) reapStaleSessionsLoop() {
 		case t := <-ticker.C:
 			if n := h.directSessions.ReapStale(t); n > 0 {
 				log.Printf("transportbridge: reaped %d stale direct-connect session(s)", n)
+			}
+			if h.steamSessions.ReapStale(t) {
+				log.Printf("transportbridge: reaped stale steam-upstream session")
 			}
 		}
 	}
@@ -184,9 +199,11 @@ func (h *Hub) checkRemoteAddrAllowed(r *http.Request) bool {
 	return false
 }
 
-// Close signals the heartbeat goroutine to stop. Call during graceful shutdown.
+// Close signals the heartbeat goroutine to stop and drops any parked
+// proxy sessions. Call during graceful shutdown.
 func (h *Hub) Close() {
 	close(h.quit)
+	h.steamSessions.Close()
 }
 
 func (h *Hub) GetMatch(matchID string) (*game.Match, bool) {
@@ -207,11 +224,33 @@ func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// §11.5 / §13.4: proxy-mode SPAs include ?proxy=<token>. The token was
-	// returned by a prior POST /api/direct-connect/join that dialled the
-	// host. Look it up BEFORE the upgrade so we can return 502 with a JSON
-	// error body if the session is missing/expired.
+	// §11.5 / §13.4 / §14.3: proxy-mode SPAs include ?proxy=<token>.
+	//   token == "steam"   — Steam Sockets joiner-as-proxy (§14.3); pull the
+	//                        parked upstream from steamSessions
+	//   token == "<hex>"   — Direct-connect joiner-as-proxy (§11.5); pull from
+	//                        directSessions by the hex token returned from
+	//                        /api/direct-connect/join
+	// Look up BEFORE the upgrade so we can return 502 with a JSON error body
+	// if the session is missing/expired.
 	if token := r.URL.Query().Get("proxy"); token != "" {
+		if token == "steam" {
+			upstream, ok := h.steamSessions.Take()
+			if !ok {
+				http.Error(w, `{"error":"no steam upstream parked"}`, http.StatusBadGateway)
+				return
+			}
+			spaConn, err := h.upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				_ = upstream.Close()
+				log.Println("steam proxy upgrade error:", err)
+				return
+			}
+			log.Printf("steam-sockets proxy active: spa=%s -> steam upstream",
+				spaConn.RemoteAddr())
+			transportbridge.ProxyStreams(transportbridge.NewWSConnStream(spaConn), upstream)
+			log.Printf("steam-sockets proxy ended: spa=%s", spaConn.RemoteAddr())
+			return
+		}
 		hostConn, ok := h.directSessions.Take(token)
 		if !ok {
 			http.Error(w, `{"error":"unknown or expired proxy token"}`, http.StatusBadGateway)

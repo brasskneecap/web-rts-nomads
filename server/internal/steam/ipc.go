@@ -24,6 +24,7 @@ import (
 	"log"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -33,8 +34,23 @@ const ipcCallTimeout = 5 * time.Second
 // IPCBridge is the Phase 2 SteamBridge that proxies SDK calls into the Tauri
 // shell. Construct via NewIPCBridge(path) once at server startup; reuse for
 // the process lifetime. Safe for concurrent calls.
+//
+// On Windows the shell exposes TWO named pipes — one per direction —
+// because `interprocess`'s ConcurrencyDetector panics on concurrent
+// read+write of the same pipe handle (Windows named pipe constraint).
+// The shell stamps the combined path into NOMADS_IPC_PATH as
+// "c2s=<path>|s2c=<path>". This bridge dials both and routes traffic:
+// writes go out on c2s, reads come in on s2c. On Unix the shell uses the
+// same shape; one Unix-socket per direction even though Unix sockets
+// handle concurrent I/O fine — keeps the wire contract identical across
+// platforms.
 type IPCBridge struct {
-	conn net.Conn
+	// writeConn carries Go → Rust traffic (requests, e.g. local_player,
+	// create_lobby, send_peer_message). Locked via writeMu while encoding.
+	writeConn net.Conn
+	// recvConn carries Rust → Go traffic (responses, notifications). Owned
+	// by readLoop, never written to.
+	recvConn net.Conn
 
 	writeMu sync.Mutex
 	encoder *json.Encoder
@@ -50,28 +66,73 @@ type IPCBridge struct {
 	// goroutine, so handlers MUST NOT block.
 	eventMu  sync.RWMutex
 	handlers map[string]func(params json.RawMessage)
+
+	// Peer-event routing (§12). Populated by SetPeerHandler. Lock order:
+	// peerMu may NOT be held across a PeerSink callback (the callback would
+	// otherwise deadlock if it tried to ForgetPeer itself). See
+	// peer_routing.go.
+	peerMu      sync.RWMutex
+	peers       map[uint64]PeerSink
+	peerHandler NewPeerHandler
 }
 
-// NewIPCBridge dials path and starts a background reader. Returns an error
-// when the dial fails; on success, the caller MUST call Close at shutdown
-// (or accept that the read loop runs until process exit).
-func NewIPCBridge(path string) (*IPCBridge, error) {
-	conn, err := dialIPC(path)
-	if err != nil {
-		return nil, fmt.Errorf("ipc dial %q: %w", path, err)
+// parseIPCPath understands both the legacy single-path form and the new
+// two-pipe "c2s=<path>|s2c=<path>" form. Returns (c2sPath, s2cPath); for
+// the legacy form both are the same.
+func parseIPCPath(path string) (string, string) {
+	if !strings.Contains(path, "=") {
+		return path, path
 	}
-	return newIPCBridgeFromConn(conn), nil
+	var c2s, s2c string
+	for _, part := range strings.Split(path, "|") {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		switch kv[0] {
+		case "c2s":
+			c2s = kv[1]
+		case "s2c":
+			s2c = kv[1]
+		}
+	}
+	return c2s, s2c
 }
 
-// newIPCBridgeFromConn wraps an already-connected net.Conn. Used by tests
-// that want to drive the bridge through an in-memory pipe instead of a
-// real Unix socket / named pipe.
-func newIPCBridgeFromConn(conn net.Conn) *IPCBridge {
+// NewIPCBridge dials the shell-side pipes named in `path` (the combined
+// "c2s=...|s2c=..." form set by the shell). Returns an error when either
+// dial fails; on success, the caller MUST call Close at shutdown (or
+// accept that the read loop runs until process exit).
+func NewIPCBridge(path string) (*IPCBridge, error) {
+	c2sPath, s2cPath := parseIPCPath(path)
+	writeConn, err := dialIPC(c2sPath)
+	if err != nil {
+		return nil, fmt.Errorf("ipc dial c2s %q: %w", c2sPath, err)
+	}
+	recvConn, err := dialIPC(s2cPath)
+	if err != nil {
+		_ = writeConn.Close()
+		return nil, fmt.Errorf("ipc dial s2c %q: %w", s2cPath, err)
+	}
+	return newIPCBridgeFromConns(writeConn, recvConn), nil
+}
+
+// NewIPCBridgeFromConn wraps an already-connected net.Conn. Exported for
+// integration tests in other packages (e.g. ws/steam_e2e_test.go) that
+// want to drive the bridge through an in-memory pipe. The single-conn
+// form passes the same conn for both directions — fine for net.Pipe()
+// tests which handle concurrent read+write correctly.
+func NewIPCBridgeFromConn(conn net.Conn) *IPCBridge {
+	return newIPCBridgeFromConns(conn, conn)
+}
+
+func newIPCBridgeFromConns(writeConn, recvConn net.Conn) *IPCBridge {
 	b := &IPCBridge{
-		conn:     conn,
-		encoder:  json.NewEncoder(conn),
-		pending:  make(map[string]chan ipcResponse),
-		handlers: make(map[string]func(params json.RawMessage)),
+		writeConn: writeConn,
+		recvConn:  recvConn,
+		encoder:   json.NewEncoder(writeConn),
+		pending:   make(map[string]chan ipcResponse),
+		handlers:  make(map[string]func(params json.RawMessage)),
 	}
 	go b.readLoop()
 	return b
@@ -108,7 +169,13 @@ func (b *IPCBridge) Close() error {
 	}
 	b.closed = true
 	b.closedMu.Unlock()
-	return b.conn.Close()
+	werr := b.writeConn.Close()
+	// recvConn might be the same conn as writeConn (test path with one
+	// net.Pipe). Closing twice on the same conn is safe — io.ErrClosedPipe.
+	if b.recvConn != b.writeConn {
+		_ = b.recvConn.Close()
+	}
+	return werr
 }
 
 func (b *IPCBridge) isClosed() bool {
@@ -221,7 +288,7 @@ func (b *IPCBridge) call(ctx context.Context, method string, params any, out any
 }
 
 func (b *IPCBridge) readLoop() {
-	reader := bufio.NewReader(b.conn)
+	reader := bufio.NewReader(b.recvConn)
 	for {
 		line, err := reader.ReadBytes('\n')
 		if err != nil {

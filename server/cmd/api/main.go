@@ -68,7 +68,30 @@ func main() {
 			bridge = b
 		}
 	}
-	_ = bridge // wired into subsystems when achievement / lobby callers land (§16, §17)
+
+	// §12 / §14 — Steam Networking Sockets transport bridge wiring. When
+	// the bridge is the live IPCBridge:
+	//
+	//   - With NOMADS_SELFTEST set, the smoke-test handler replaces the
+	//     default and fires OpenListener/ConnectTo immediately. Used for
+	//     two-machine CLI verification before §14 SPA wiring landed.
+	//   - Without NOMADS_SELFTEST, lobby state drives the wiring: the
+	//     shell pushes `lobby_hosted` after CreateLobby and `lobby_joined`
+	//     after JoinLobby; the handlers (see steam_lobby.go) install the
+	//     right peer handler and fire OpenListener/ConnectTo at that point.
+	//     Until one of those events arrives the bridge holds no peer
+	//     handler and any premature new_peer_transport notification is
+	//     dropped by the bridge with a log.
+	if ipcBridge, ok := bridge.(*steam.IPCBridge); ok {
+		if selftest := os.Getenv("NOMADS_SELFTEST"); selftest != "" {
+			if err := installSteamNetSelftest(ipcBridge, selftest); err != nil {
+				log.Printf("[SELFTEST] install failed: %v", err)
+			}
+		} else {
+			wireSteamLobbyHandlers(ipcBridge, hub)
+		}
+	}
+	_ = bridge // achievements §16, lobby state sync §14.5/§14.6 land later
 
 	router := httpserver.NewRouter(hub, corsOrigin, profileManager, spaHandler)
 

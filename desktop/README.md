@@ -158,6 +158,125 @@ The file is gitignored and is NOT included in release artifacts (release
 builds embed the appid via the `STEAM_APPID` constant in `lib.rs` +
 `SteamAPI_RestartAppIfNecessary`).
 
+## Steam friend MP smoke testing
+
+Two ways to validate the pipeline.
+
+### A. The SPA flow (production path)
+
+This is what end users get. Requires both machines signed into Steam under
+accounts that are friends with each other.
+
+1. **Host:** Main Menu → Start Game → pick a map → **Create Lobby**.
+   You land on `/lobby/<id>`. The Invite Friend button is visible (Steam
+   overlay invite). The lobby is auto-listed in your friends'
+   `/find-game` view because it was created with `LobbyType::FriendsOnly`.
+2. **Joiner:** Main Menu → Find Game. The host's lobby appears in the
+   list with their persona + map name. Click it.
+3. **Joiner** lands on `/lobby/<id>` with the player list and a "Waiting
+   for the host to start the game…" status. Steam Networking Sockets
+   transport is already established in the background.
+4. **Host:** clicks **Start Game**. Both clients auto-navigate to
+   `/match/<id>` and the simulation begins. The joiner's WS traffic
+   flows through `?proxy=steam` to the host's authoritative hub.
+
+If anything stalls, check `%APPDATA%\Nomads\logs\<ts>-server.log` for
+`steam:` and `[SELFTEST]` lines, and `<ts>-shell.log` for steam SDK
+events.
+
+### B. CLI selftest (low-level debugging)
+
+`--steam-net-selftest` is a CLI flag the Tauri shell honours when the
+`steam` cargo feature is on. It bypasses the SPA and exercises the same
+transport pipeline at the byte level — useful when you want to validate
+the wire without touching the UI.
+
+### Host machine
+
+```cmd
+.\desktop\src-tauri\target\release\nomads-desktop.exe --steam-net-selftest host
+```
+
+The Go server's log file at
+`%APPDATA%\Nomads\logs\<ts>-server.log` will record:
+
+```
+[SELFTEST] host mode: opening listener on virtual port 27
+[SELFTEST] listener open; waiting for joiner. Share your SteamID with them.
+```
+
+Find your SteamID64 in the shell log (`<ts>-shell.log`), the line
+`steam: initialised as <persona> (steamid=<ID>)`. Send that ID to the
+joiner.
+
+### Joiner machine
+
+```cmd
+.\desktop\src-tauri\target\release\nomads-desktop.exe --steam-net-selftest connect:<HOST_STEAMID>
+```
+
+Substitute the host's SteamID. The joiner's `<ts>-server.log` will record:
+
+```
+[SELFTEST] joiner mode: connecting to steamID=… on virtual port 27
+[SELFTEST] ConnectTo returned peerID=…; awaiting new_peer_transport event
+[SELFTEST] peer transport up: peerID=… steamID=… role=joiner
+[SELFTEST] → peer=… sent: PING peer=… seq=1 ts=…
+[SELFTEST] ← peer=… received: PING peer=… seq=1 ts=…
+```
+
+The host's log will mirror — `role=host`, alternating `→ sent` / `← received`
+lines once every 2 seconds in each direction. If you see PINGs flowing both
+ways, the pipeline works. Ctrl-C either side to tear down.
+
+### Requirements
+
+- Both machines signed into Steam under accounts that are friends with
+  each other (Steam Networking Sockets P2P requires this for unowned
+  appids in dev, including Spacewar's 480).
+- Both binaries built with the `steam` feature (`.\build package -Steam`).
+- The host should be reachable through Steam's relay network — happens
+  automatically as soon as `init_relay_network_access` runs at first
+  selftest invocation.
+
+If the connection times out, the joiner's log will show a
+`peer_disconnected reason=…` line. Common failure causes: not yet
+friends on Steam, host not actually running with `--steam-net-selftest host`,
+firewall blocking Steam Datagram Relay traffic.
+
+## Steam overlay injection (dev caveat)
+
+The **Invite Friend** button in `/lobby` calls
+`ISteamFriends::ActivateGameOverlayInviteDialog`. Steam silently no-ops
+this call when the overlay hasn't been injected into our process, which
+is the default state in dev builds.
+
+Why: Steam's overlay injector decides whether to hook a binary based on
+the appid in `steam_appid.txt` AND the binary's registered location. We
+develop against appid 480 (Spacewar) but our binary is `nomads-desktop.exe`
+in `desktop\src-tauri\target\release\`. Steam's registry has no record of
+that path being a Spacewar binary, so the overlay isn't injected and the
+invite dialog never appears.
+
+What works regardless: lobby **discovery via Find Game** — friends see
+your lobby through `SteamMatchmaking::RequestLobbyList`, which works
+without overlay injection. That's the primary friend-discovery path
+anyway (§14R design).
+
+Resolution: when shipping with a real paid Steam appid, the overlay will
+inject correctly with no code changes — swap `STEAM_APPID` in `lib.rs`
+and the appid in `steam_appid.txt`. Phase 3 work.
+
+To confirm the call is reaching Steam (vs. a code bug), grep the shell
+log after clicking the button:
+
+```cmd
+powershell -Command "Select-String -Path (Get-ChildItem $env:APPDATA\Nomads\logs -Filter '*-shell.log' | Sort LastWriteTime -Descending | Select-Object -First 1).FullName -Pattern 'open_invite_overlay'"
+```
+
+If you see `ActivateGameOverlayInviteDialog called`, the call landed —
+the overlay just isn't injected.
+
 ## Port collision with `air`
 
 Running `npm run tauri:dev` and `air` simultaneously will both try to bind

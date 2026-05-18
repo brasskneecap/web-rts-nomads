@@ -30,14 +30,6 @@
             <UiButton size="lg" @click="router.push('/direct-connect')">Direct Connect</UiButton>
           </UiPanel>
         </div>
-
-        <div class="custom-game__card">
-          <UiPanel :padding="32" class="custom-game__card-panel">
-            <div class="custom-game__card-label">Steam Multiplayer</div>
-            <div class="custom-game__card-desc">Friends-only lobbies via Steam invites.</div>
-            <UiButton size="lg" @click="router.push('/steam-mp')">Steam Multiplayer</UiButton>
-          </UiPanel>
-        </div>
       </div>
     </div>
   </div>

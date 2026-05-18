@@ -94,45 +94,50 @@ func (s *SessionStore) Len() int {
 // Blocks until both directions have terminated. Caller is responsible for
 // holding the goroutine that invoked Proxy (typically the Hub's HandleWS
 // returning will release the WS upgrade).
+//
+// Thin wrapper over ProxyStreams (see stream.go) so the Direct-connect
+// callers keep their *websocket.Conn signature; the Steam Sockets path
+// (§14) calls ProxyStreams directly with a ws.Transport on the upstream
+// side. Both code paths share the same byte-forwarding loop.
 func Proxy(spa, host *websocket.Conn) {
-	done := make(chan struct{}, 2)
-
-	// SPA -> host
-	go func() {
-		defer func() { done <- struct{}{} }()
-		for {
-			msgType, data, err := spa.ReadMessage()
-			if err != nil {
-				return
-			}
-			if err := host.WriteMessage(msgType, data); err != nil {
-				return
-			}
-		}
-	}()
-
-	// host -> SPA
-	go func() {
-		defer func() { done <- struct{}{} }()
-		for {
-			msgType, data, err := host.ReadMessage()
-			if err != nil {
-				return
-			}
-			if err := spa.WriteMessage(msgType, data); err != nil {
-				return
-			}
-		}
-	}()
-
-	// As soon as one direction closes, close both conns so the other
-	// goroutine's ReadMessage returns and we drain. Then wait for both
-	// halves to exit before returning.
-	<-done
-	_ = spa.Close()
-	_ = host.Close()
-	<-done
+	ProxyStreams(NewWSConnStream(spa), NewWSConnStream(host))
 }
+
+// WSConnStream adapts a `*websocket.Conn` to the MessageStream interface so
+// ProxyStreams can pipe bytes between WS connections and any other
+// MessageStream-shaped transport (notably ws.steamTransport for the Steam
+// Sockets joiner path).
+//
+// The adapter assumes text-frame protocol bytes (the existing
+// websocketTransport's contract). For binary frames the caller must wrap
+// the conn differently.
+type WSConnStream struct {
+	conn *websocket.Conn
+}
+
+// NewWSConnStream wraps conn so it satisfies MessageStream.
+func NewWSConnStream(conn *websocket.Conn) *WSConnStream {
+	return &WSConnStream{conn: conn}
+}
+
+// ReadMessage reads the next WS frame's payload, discarding the message
+// type. The proxy doesn't preserve text-vs-binary distinction; the game
+// protocol is text-only by convention.
+func (w *WSConnStream) ReadMessage() ([]byte, error) {
+	_, data, err := w.conn.ReadMessage()
+	return data, err
+}
+
+// WriteMessage writes payload as a TextMessage. Matches the
+// websocketTransport's WriteMessage in ws/transport_websocket.go.
+func (w *WSConnStream) WriteMessage(payload []byte) error {
+	return w.conn.WriteMessage(websocket.TextMessage, payload)
+}
+
+// Close closes the underlying WS conn. Idempotent in practice — calling
+// Close on an already-closed gorilla conn returns an error that the
+// proxy loop ignores.
+func (w *WSConnStream) Close() error { return w.conn.Close() }
 
 func newToken() string {
 	var b [16]byte

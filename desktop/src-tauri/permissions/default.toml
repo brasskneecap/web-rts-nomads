@@ -16,6 +16,9 @@ permissions = [
     "allow-create-lobby",
     "allow-join-lobby",
     "allow-open-invite-overlay",
+    "allow-start-steam-game",
+    "allow-list-steam-lobbies",
+    "allow-get-steam-lobby-data",
 ]
 
 [[permission]]
@@ -57,3 +60,18 @@ commands.allow = ["join_lobby"]
 identifier = "allow-open-invite-overlay"
 description = "Allow opening the Steam friend-invite overlay for a given lobby."
 commands.allow = ["open_invite_overlay"]
+
+[[permission]]
+identifier = "allow-start-steam-game"
+description = "Allow stamping the chosen matchId into the Steam lobby metadata to signal joiners to enter the match (§14.3)."
+commands.allow = ["start_steam_game"]
+
+[[permission]]
+identifier = "allow-list-steam-lobbies"
+description = "Allow listing friends' Steam Matchmaking lobbies for /find-game (§14R-A)."
+commands.allow = ["list_steam_lobbies"]
+
+[[permission]]
+identifier = "allow-get-steam-lobby-data"
+description = "Allow reading a Steam lobby's metadata and member list for the joiner's /lobby view (§14R-A)."
+commands.allow = ["get_steam_lobby_data"]

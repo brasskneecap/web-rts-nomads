@@ -78,7 +78,7 @@ func newTestBridge(t *testing.T) (*IPCBridge, *fakeShell) {
 	bridgeConn, shellConn := net.Pipe()
 	shell := newFakeShell(shellConn)
 	shell.start()
-	bridge := newIPCBridgeFromConn(bridgeConn)
+	bridge := newIPCBridgeFromConns(bridgeConn, bridgeConn)
 	t.Cleanup(func() {
 		_ = bridge.Close()
 		shell.close()

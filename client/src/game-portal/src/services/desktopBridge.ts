@@ -97,19 +97,145 @@ export async function reportAchievement(id: string): Promise<void> {
 
 /** Creates a Steam Matchmaking lobby (FriendsOnly). Returns the lobby's
  *  SteamID64-as-string, or null when running outside Tauri. Throws on
- *  Steam-side errors (steam_unavailable, callback dropped, etc.). */
-export async function openLobby(opts: { maxPlayers?: number } = {}): Promise<LobbyHandle | null> {
+ *  Steam-side errors (steam_unavailable, callback dropped, etc.).
+ *
+ *  §14R-A: extra metadata stamped onto the lobby so /find-game listings
+ *  and the joiner's /lobby polling have what they need without each
+ *  consumer making follow-up calls. mapId / localLobbyId / hostPersona
+ *  are all optional — older callers that omit them produce a lobby that
+ *  works but renders as "Unknown map / Unknown host" in /find-game. */
+export async function openLobby(
+  opts: {
+    maxPlayers?: number
+    mapId?: string
+    localLobbyId?: string
+    hostPersona?: string
+  } = {},
+): Promise<LobbyHandle | null> {
   if (!isInTauri()) return null
-  const lobbyId = await invoke<string>('create_lobby', { maxPlayers: opts.maxPlayers ?? 4 })
+  const lobbyId = await invoke<string>('create_lobby', {
+    maxPlayers: opts.maxPlayers ?? 4,
+    mapId: opts.mapId ?? '',
+    localLobbyId: opts.localLobbyId ?? '',
+    hostPersona: opts.hostPersona ?? '',
+  })
   return { lobbyId }
 }
 
-/** Joins an existing Steam lobby by SteamID64 string. Returns the joined
- *  lobby's id (echoed back so the SPA can confirm). */
-export async function joinLobby(lobbyId: string): Promise<LobbyHandle | null> {
+/** Single entry in the friends'-lobby list returned by listSteamLobbies. */
+export interface SteamLobbyListEntry {
+  steamLobbyId: string
+  hostSteamId: string
+  hostPersona: string
+  mapId: string
+  localLobbyId: string
+  status: string
+  playerCount: number
+  maxPlayers: number
+}
+
+/** Lists friends' Steam Matchmaking lobbies with the metadata each entry
+ *  has stamped (per §14R-A). Returns [] in browser dev or when Steam is
+ *  unavailable — the caller's /find-game UI just shows local lobbies in
+ *  that case. */
+export async function listSteamLobbies(): Promise<SteamLobbyListEntry[]> {
+  if (!isInTauri()) return []
+  try {
+    return await invoke<SteamLobbyListEntry[]>('list_steam_lobbies')
+  } catch (e) {
+    console.warn('listSteamLobbies failed:', e)
+    return []
+  }
+}
+
+/** Member of a Steam lobby as exposed to /lobby's joiner-side polling. */
+export interface SteamLobbyMember {
+  steamId64: string
+  personaName: string
+}
+
+/** Full snapshot of a Steam lobby's metadata + member list. Used by the
+ *  joiner's /lobby view to render the player list and detect status
+ *  transitions (host-clicks-Start ⇒ status="started" + matchId set). */
+export interface SteamLobbyData {
+  steamLobbyId: string
+  hostSteamId: string
+  hostPersona: string
+  mapId: string
+  localLobbyId: string
+  status: string
+  matchId: string
+  maxPlayers: number
+  members: SteamLobbyMember[]
+}
+
+/** Reads the current snapshot of a Steam lobby's metadata + member list.
+ *  Joiner-side /lobby polls this at ~1Hz until the host clicks Start.
+ *  Throws when Steam is unavailable or the lobby id is malformed; returns
+ *  null in browser dev so /lobby can fall back to local /lobbies polling. */
+export async function getSteamLobbyData(
+  steamLobbyId: string,
+): Promise<SteamLobbyData | null> {
   if (!isInTauri()) return null
-  const joined = await invoke<string>('join_lobby', { lobbyId })
-  return { lobbyId: joined }
+  return invoke<SteamLobbyData>('get_steam_lobby_data', { steamLobbyId })
+}
+
+/** Richer shape returned by `joinLobby` (§14R-C). The joiner SPA needs:
+ *  - lobbyId: the Steam lobby id (echoed back)
+ *  - hostSteamId64: who's the authoritative host
+ *  - localLobbyId: the host's local lobby id, used as the SPA route
+ *    `/lobby/<localLobbyId>` so host + joiner views point at the same id
+ *  - mapId: pre-rendered in the lobby waiting room before the first
+ *    metadata poll completes */
+export interface JoinLobbyResult {
+  lobbyId: string
+  hostSteamId64: string
+  localLobbyId: string
+  mapId: string
+}
+
+/** Joins an existing Steam lobby by SteamID64 string. Returns the rich
+ *  shape above (or null in browser dev). Throws on join failure
+ *  (lobby_missing_host_id / steam_error / etc.) so the SPA can surface
+ *  the error inline. */
+export async function joinLobby(
+  lobbyId: string,
+): Promise<JoinLobbyResult | null> {
+  if (!isInTauri()) return null
+  return invoke<JoinLobbyResult>('join_lobby', { lobbyId })
+}
+
+/** Signals the host has chosen a matchId and the joiners may enter the
+ *  match. Stamps `match_id` into the Steam lobby metadata; joiners receive
+ *  a `steam_lobby_started` Tauri event via LobbyDataUpdate_t and use it to
+ *  navigate to /match/<matchId> with the Steam-proxy flag set.
+ *
+ *  Throws when Steam is unavailable or the metadata write fails. */
+export async function startSteamGame(lobbyId: string, matchId: string): Promise<void> {
+  if (!isInTauri()) return
+  await invoke<void>('start_steam_game', { lobbyId, matchId })
+}
+
+/** Payload of the `steam_lobby_started` Tauri event. Emitted on the
+ *  joiner's shell when the host calls startSteamGame; ignored on the host
+ *  itself (it already knows the matchId from the local `welcome` message). */
+export interface SteamLobbyStartedEvent {
+  lobbyId: string
+  matchId: string
+}
+
+/** Subscribes to the `steam_lobby_started` Tauri event. The returned
+ *  promise resolves to an unlisten function; call it to deregister.
+ *  In browser dev (no Tauri) the unlisten is a no-op. */
+export async function onSteamLobbyStarted(
+  handler: (event: SteamLobbyStartedEvent) => void,
+): Promise<() => void> {
+  if (!isInTauri()) return () => {}
+  const listen = await tauriListen()
+  const unlisten = await listen<SteamLobbyStartedEvent>('steam_lobby_started', (evt) => {
+    handler(evt.payload)
+  })
+  return unlisten
 }
 
 /** Signals the shell that the SPA is mounted and ready to receive deferred
@@ -184,6 +310,21 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     cachedInvoke = mod.invoke
   }
   return cachedInvoke(cmd, args) as Promise<T>
+}
+
+// Same lazy-import pattern for the event-subscription API. Separate cache
+// so the event module is only pulled in when something actually subscribes.
+type TauriListen = <T>(
+  event: string,
+  handler: (e: { payload: T }) => void,
+) => Promise<() => void>
+let cachedListen: TauriListen | undefined
+async function tauriListen(): Promise<TauriListen> {
+  if (!cachedListen) {
+    const mod = await import('@tauri-apps/api/event')
+    cachedListen = mod.listen as unknown as TauriListen
+  }
+  return cachedListen
 }
 
 function browserLocalStoragePlayerId(): string | undefined {

@@ -14,6 +14,8 @@ mod migration;
 mod settings;
 #[cfg(feature = "steam")]
 mod steam;
+#[cfg(feature = "steam")]
+mod steam_net;
 mod supervisor;
 mod userdata;
 
@@ -31,6 +33,16 @@ pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     info!("nomads-desktop starting");
+
+    // Smoke-test argv: `--steam-net-selftest host` or
+    // `--steam-net-selftest connect:<steamid64>`. When set, we pass the value
+    // through to the Go child via NOMADS_SELFTEST; the Go server interprets
+    // it (see cmd/api/main.go). Pre-§14 helper for two-machine verification
+    // that the Steam Sockets pipeline carries real bytes end to end.
+    let selftest = parse_selftest_mode_from_args();
+    if let Some(mode) = &selftest {
+        info!("nomads-desktop: --steam-net-selftest active (mode={mode})");
+    }
 
     // §8.1: SteamAPI_RestartAppIfNecessary MUST be the first Steam SDK call.
     // If Steam wants to relaunch us with the correct appid attribution we
@@ -149,6 +161,7 @@ pub fn run() {
                 &paths,
                 Some(log_session.server_log_path.clone()),
                 ipc_path.clone(),
+                selftest.clone(),
             ) {
                 Ok(v) => v,
                 Err(e) => {
@@ -215,6 +228,53 @@ pub fn run() {
                 }
             });
 
+            // §14.3: LobbyDataUpdate_t callback fires on every member when
+            // any lobby metadata changes. We read `match_id`; if set, the
+            // host has clicked Start and we emit a Tauri event so the
+            // joiner SPA can navigate into the match. Host-side this is a
+            // no-op (the host already knows the match_id it just set).
+            // The CallbackHandle returned by register_callback must be
+            // kept alive — drop = deregister — so we stash it in managed
+            // state alongside the bridge.
+            #[cfg(feature = "steam")]
+            if let Some(bridge) = steam_bridge.as_ref() {
+                let app_handle_for_lobby = app.handle().clone();
+                let bridge_for_callback = bridge.clone();
+                let cb_handle = bridge.client.register_callback(
+                    move |evt: steamworks::LobbyDataUpdate| {
+                        if !evt.success {
+                            return;
+                        }
+                        // Only act on lobby-scope updates (member==lobby
+                        // means the lobby metadata changed; otherwise it's
+                        // a per-member update we don't need here).
+                        if evt.member.raw() != evt.lobby.raw() {
+                            return;
+                        }
+                        let match_id = bridge_for_callback
+                            .client
+                            .matchmaking()
+                            .lobby_data(evt.lobby, "match_id");
+                        if let Some(mid) = match_id {
+                            if !mid.is_empty() {
+                                let payload = serde_json::json!({
+                                    "lobbyId": evt.lobby.raw().to_string(),
+                                    "matchId": mid,
+                                });
+                                if let Err(e) = tauri::Emitter::emit(
+                                    &app_handle_for_lobby,
+                                    "steam_lobby_started",
+                                    payload,
+                                ) {
+                                    warn!("emit steam_lobby_started: {e}");
+                                }
+                            }
+                        }
+                    },
+                );
+                app.manage(SteamLobbyCallbackHandle(cb_handle));
+            }
+
             // Stash the child handle in app state so the window-close handler
             // and other commands can reach it for shutdown.
             app.manage(std::sync::Mutex::new(Some(handle)));
@@ -227,6 +287,11 @@ pub fn run() {
             // SPA's get_steam_player command branches on Option.
             #[cfg(feature = "steam")]
             app.manage(SteamBridgeState(steam_bridge.clone()));
+            // Shell log handle in managed state so Tauri commands can
+            // write diagnostic lines into <ts>-shell.log without going
+            // through env_logger (whose stderr output is detached in
+            // windowed release builds and never reaches the log file).
+            app.manage(log_session.shell_log.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -237,7 +302,10 @@ pub fn run() {
             get_steam_player,
             create_lobby,
             join_lobby,
-            open_invite_overlay
+            open_invite_overlay,
+            start_steam_game,
+            list_steam_lobbies,
+            get_steam_lobby_data
         ])
         .on_window_event(|window, event| {
             use tauri::{Manager, WindowEvent};
@@ -314,31 +382,162 @@ fn get_steam_player(
 #[cfg(feature = "steam")]
 pub struct SteamBridgeState(pub Option<std::sync::Arc<steam::Bridge>>);
 
+/// Newtype wrapper around the LobbyDataUpdate callback handle. Held in
+/// Tauri's managed state so the callback survives until the app exits —
+/// dropping the CallbackHandle deregisters the callback on the Steam SDK
+/// side.
+#[cfg(feature = "steam")]
+struct SteamLobbyCallbackHandle(#[allow(dead_code)] steamworks::CallbackHandle);
+
 // ----- Steam lobby commands (§14.1 / Step 3) --------------------------------
 
 #[cfg(feature = "steam")]
 #[tauri::command]
 async fn create_lobby(
     bridge: tauri::State<'_, SteamBridgeState>,
+    shell_log: tauri::State<'_, logs::ShellLogHandle>,
     max_players: Option<u32>,
+    map_id: Option<String>,
+    local_lobby_id: Option<String>,
+    host_persona: Option<String>,
 ) -> Result<String, String> {
-    let b = bridge.0.as_ref().ok_or_else(|| "steam_unavailable".to_string())?;
-    let max = max_players.unwrap_or(4).clamp(2, 8);
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    b.client.matchmaking().create_lobby(
-        steamworks::LobbyType::FriendsOnly,
-        max,
-        move |result| {
-            let _ = tx.send(
-                result
-                    .map(|id| id.raw().to_string())
-                    .map_err(|e| format!("{e:?}")),
-            );
-        },
+    let sl = shell_log.inner().clone();
+    sl.write_line(
+        "INFO",
+        &format!(
+            "create_lobby: entered (maxPlayers={max_players:?} mapId={map_id:?} localLobbyId={local_lobby_id:?})"
+        ),
     );
-    rx.await
-        .map_err(|_| "callback dropped before steam responded".to_string())
-        .and_then(|r| r)
+    let b = bridge
+        .0
+        .as_ref()
+        .ok_or_else(|| {
+            sl.write_line(
+                "WARN",
+                "create_lobby: bridge slot is None — steam_unavailable",
+            );
+            "steam_unavailable".to_string()
+        })?
+        .clone();
+    let max = max_players.unwrap_or(4).clamp(2, 8);
+    let map_id = map_id.unwrap_or_default();
+    let local_lobby_id = local_lobby_id.unwrap_or_default();
+    let host_persona_param = host_persona.unwrap_or_default();
+    let host_steam_id = b.client.user().steam_id().raw();
+    sl.write_line(
+        "INFO",
+        &format!("create_lobby: bridge OK hostSteamId={host_steam_id} max={max}"),
+    );
+    let host_persona_resolved = if host_persona_param.is_empty() {
+        b.client.friends().name()
+    } else {
+        host_persona_param
+    };
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    sl.write_line(
+        "INFO",
+        "create_lobby: registering SteamMatchmaking::CreateLobby callback",
+    );
+    let sl_cb = sl.clone();
+    {
+        let mm = b.client.matchmaking();
+        mm.create_lobby(
+            steamworks::LobbyType::FriendsOnly,
+            max,
+            move |result| {
+                sl_cb.write_line(
+                    "INFO",
+                    &format!("create_lobby: LobbyCreated_t callback fired result={result:?}"),
+                );
+                let _ = tx.send(
+                    result
+                        .map(|id| id.raw())
+                        .map_err(|e| format!("{e:?}")),
+                );
+            },
+        );
+    }
+    sl.write_line(
+        "INFO",
+        "create_lobby: awaiting LobbyCreated_t (callback pump should fire it)",
+    );
+    let raw_lobby_id = rx
+        .await
+        .map_err(|_| {
+            sl.write_line("WARN", "create_lobby: oneshot dropped before steam responded");
+            "callback dropped before steam responded".to_string()
+        })
+        .and_then(|r| {
+            if let Err(e) = &r {
+                sl.write_line("WARN", &format!("create_lobby: steam returned error: {e}"));
+            }
+            r
+        })?;
+    sl.write_line(
+        "INFO",
+        &format!("create_lobby: got rawLobbyId={raw_lobby_id}"),
+    );
+
+    let lobby = steamworks::LobbyId::from_raw(raw_lobby_id);
+    sl.write_line("INFO", "create_lobby: stamping set_lobby_data …");
+    // §14R-A: stamp the lobby metadata both /find-game and the Steam
+    // Sockets handoff depend on. Best-effort — set_lobby_data returns
+    // false if we don't own the lobby, which can't happen here.
+    {
+        let mm = b.client.matchmaking();
+        let r1 = mm.set_lobby_data(lobby, "host_steam_id", &host_steam_id.to_string());
+        sl.write_line("INFO", &format!("create_lobby: set host_steam_id → {r1}"));
+        let r2 = mm.set_lobby_data(lobby, "host_persona", &host_persona_resolved);
+        sl.write_line("INFO", &format!("create_lobby: set host_persona → {r2}"));
+        let r3 = mm.set_lobby_data(lobby, "status", "waiting");
+        sl.write_line("INFO", &format!("create_lobby: set status → {r3}"));
+        if !map_id.is_empty() {
+            let r4 = mm.set_lobby_data(lobby, "map_id", &map_id);
+            sl.write_line("INFO", &format!("create_lobby: set map_id → {r4}"));
+        }
+        if !local_lobby_id.is_empty() {
+            let r5 = mm.set_lobby_data(lobby, "local_lobby_id", &local_lobby_id);
+            sl.write_line("INFO", &format!("create_lobby: set local_lobby_id → {r5}"));
+        }
+    }
+    sl.write_line("INFO", "create_lobby: set_lobby_data block complete");
+
+    sl.write_line("INFO", "create_lobby: looking up Go IPC writer …");
+    let go_writer = ipc::current_go_writer();
+    sl.write_line(
+        "INFO",
+        &format!("create_lobby: Go IPC writer present={}", go_writer.is_some()),
+    );
+    if let Some(writer) = go_writer {
+        sl.write_line("INFO", "create_lobby: pushing lobby_hosted notification …");
+        ipc::push_notification(
+            &writer,
+            "lobby_hosted",
+            serde_json::json!({
+                "lobbyId": raw_lobby_id.to_string(),
+                "hostSteamId64": host_steam_id.to_string(),
+                "localLobbyId": local_lobby_id,
+            }),
+        );
+        sl.write_line("INFO", "create_lobby: lobby_hosted pushed");
+    }
+
+    sl.write_line("INFO", "create_lobby: returning Ok to JS");
+    Ok(raw_lobby_id.to_string())
+}
+
+/// Joiner-side response shape: the SPA needs the local_lobby_id (read
+/// from the host's lobby metadata) so it can navigate to /lobby/<id>
+/// with the same id the host's local server uses.
+#[cfg(feature = "steam")]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinLobbyResponse {
+    pub lobby_id: String,
+    pub host_steam_id_64: String,
+    pub local_lobby_id: String,
+    pub map_id: String,
 }
 
 #[cfg(feature = "steam")]
@@ -346,41 +545,279 @@ async fn create_lobby(
 async fn join_lobby(
     bridge: tauri::State<'_, SteamBridgeState>,
     lobby_id: String,
-) -> Result<String, String> {
-    let b = bridge.0.as_ref().ok_or_else(|| "steam_unavailable".to_string())?;
+) -> Result<JoinLobbyResponse, String> {
+    let b = bridge
+        .0
+        .as_ref()
+        .ok_or_else(|| "steam_unavailable".to_string())?
+        .clone();
     let raw = lobby_id
         .parse::<u64>()
         .map_err(|e| format!("bad lobby id: {e}"))?;
     let (tx, rx) = tokio::sync::oneshot::channel();
-    b.client
-        .matchmaking()
-        .join_lobby(steamworks::LobbyId::from_raw(raw), move |result| {
-            let _ = tx.send(
-                result
-                    .map(|id| id.raw().to_string())
-                    .map_err(|_| {
-                        "join failed (lobby full / not authorised / no longer exists)".to_string()
-                    }),
-            );
+    {
+        let mm = b.client.matchmaking();
+        mm.join_lobby(steamworks::LobbyId::from_raw(raw), move |result| {
+            let _ = tx.send(result.map(|id| id.raw()).map_err(|_| {
+                "join failed (lobby full / not authorised / no longer exists)".to_string()
+            }));
         });
-    rx.await
+    }
+    let raw_lobby_id = rx
+        .await
         .map_err(|_| "callback dropped before steam responded".to_string())
-        .and_then(|r| r)
+        .and_then(|r| r)?;
+
+    let lobby = steamworks::LobbyId::from_raw(raw_lobby_id);
+    let (host_steam_id_64, local_lobby_id, map_id) = {
+        let mm = b.client.matchmaking();
+        (
+            mm.lobby_data(lobby, "host_steam_id").unwrap_or_default(),
+            mm.lobby_data(lobby, "local_lobby_id").unwrap_or_default(),
+            mm.lobby_data(lobby, "map_id").unwrap_or_default(),
+        )
+    };
+
+    if host_steam_id_64.is_empty() {
+        return Err(
+            "lobby_missing_host_id: host_steam_id metadata absent or malformed".to_string(),
+        );
+    }
+
+    // §14R-C: tell the Go server it should install the proxy-storing
+    // peer handler and fire ConnectTo on the host's SteamID.
+    if let Some(writer) = ipc::current_go_writer() {
+        ipc::push_notification(
+            &writer,
+            "lobby_joined",
+            serde_json::json!({
+                "lobbyId": raw_lobby_id.to_string(),
+                "hostSteamId64": host_steam_id_64,
+                "localLobbyId": local_lobby_id,
+            }),
+        );
+    }
+
+    Ok(JoinLobbyResponse {
+        lobby_id: raw_lobby_id.to_string(),
+        host_steam_id_64,
+        local_lobby_id,
+        map_id,
+    })
 }
 
 #[cfg(feature = "steam")]
 #[tauri::command]
 fn open_invite_overlay(
     bridge: tauri::State<'_, SteamBridgeState>,
+    shell_log: tauri::State<'_, logs::ShellLogHandle>,
     lobby_id: String,
 ) -> Result<(), String> {
-    let b = bridge.0.as_ref().ok_or_else(|| "steam_unavailable".to_string())?;
-    let raw = lobby_id
-        .parse::<u64>()
-        .map_err(|e| format!("bad lobby id: {e}"))?;
+    let sl = shell_log.inner().clone();
+    sl.write_line(
+        "INFO",
+        &format!("open_invite_overlay: entered lobbyId={lobby_id}"),
+    );
+    let b = bridge.0.as_ref().ok_or_else(|| {
+        sl.write_line("WARN", "open_invite_overlay: bridge None — steam_unavailable");
+        "steam_unavailable".to_string()
+    })?;
+    let raw = lobby_id.parse::<u64>().map_err(|e| {
+        sl.write_line(
+            "WARN",
+            &format!("open_invite_overlay: bad lobby id {lobby_id}: {e}"),
+        );
+        format!("bad lobby id: {e}")
+    })?;
+    // ActivateGameOverlayInviteDialog returns void — Steam silently no-ops
+    // if the overlay hasn't been injected into this process (the classic
+    // Spacewar-appid-with-non-Spacewar-binary failure). We log that we
+    // called it so the operator can verify the command reached Steam even
+    // when the overlay doesn't visibly appear.
     b.client
         .friends()
         .activate_invite_dialog(steamworks::LobbyId::from_raw(raw));
+    sl.write_line(
+        "INFO",
+        &format!(
+            "open_invite_overlay: ActivateGameOverlayInviteDialog called (lobby={raw}); if no overlay appears, Steam overlay injection failed — see desktop/README.md 'Steam overlay injection'"
+        ),
+    );
+    Ok(())
+}
+
+/// §14R-A list_steam_lobbies. Calls RequestLobbyList (FriendsOnly distance
+/// filter — friends' lobbies only, no public listing) and reads the metadata
+/// each lobby has stamped (host_persona, map_id, local_lobby_id, status,
+/// host_steam_id) so the SPA's /find-game can render a useful list without
+/// each entry needing a follow-up call. Lobbies missing required metadata
+/// (host_steam_id) are dropped from the result.
+///
+/// Async; resolves after the LobbyMatchList_t callback fires.
+#[cfg(feature = "steam")]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SteamLobbyListEntry {
+    pub steam_lobby_id: String,
+    pub host_steam_id: String,
+    pub host_persona: String,
+    pub map_id: String,
+    pub local_lobby_id: String,
+    pub status: String,
+    pub player_count: u32,
+    pub max_players: u32,
+}
+
+#[cfg(feature = "steam")]
+#[tauri::command]
+async fn list_steam_lobbies(
+    bridge: tauri::State<'_, SteamBridgeState>,
+) -> Result<Vec<SteamLobbyListEntry>, String> {
+    let b = bridge
+        .0
+        .as_ref()
+        .ok_or_else(|| "steam_unavailable".to_string())?
+        .clone();
+    // Send the RequestLobbyList call and drop the Matchmaking handle
+    // BEFORE the await — Matchmaking holds a raw `*mut ISteamMatchmaking`
+    // pointer and isn't Send, so it can't be held across an await point.
+    // Tauri command futures need Send. We re-acquire the handle after.
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    {
+        let mm = b.client.matchmaking();
+        mm.request_lobby_list(move |result| {
+            let _ = tx.send(result.map_err(|e| format!("{e:?}")));
+        });
+    }
+    let lobby_ids = rx
+        .await
+        .map_err(|_| "callback dropped before steam responded".to_string())
+        .and_then(|r| r)?;
+
+    let mm = b.client.matchmaking();
+    let mut out = Vec::with_capacity(lobby_ids.len());
+    for id in lobby_ids {
+        let host_steam_id = mm
+            .lobby_data(id, "host_steam_id")
+            .unwrap_or_default();
+        if host_steam_id.is_empty() {
+            // Lobby exists but predates the metadata convention — skip so
+            // the SPA never sees an entry it can't render or join cleanly.
+            continue;
+        }
+        let host_persona = mm.lobby_data(id, "host_persona").unwrap_or_default();
+        let map_id = mm.lobby_data(id, "map_id").unwrap_or_default();
+        let local_lobby_id = mm.lobby_data(id, "local_lobby_id").unwrap_or_default();
+        let status = mm.lobby_data(id, "status").unwrap_or_default();
+        let player_count = mm.lobby_member_count(id) as u32;
+        let max_players = mm.lobby_member_limit(id).unwrap_or(0) as u32;
+        out.push(SteamLobbyListEntry {
+            steam_lobby_id: id.raw().to_string(),
+            host_steam_id,
+            host_persona,
+            map_id,
+            local_lobby_id,
+            status,
+            player_count,
+            max_players,
+        });
+    }
+    Ok(out)
+}
+
+/// §14R-A get_steam_lobby_data. Joiner-side /lobby polls this to read
+/// metadata + member personas without server-side mirroring (deferred to
+/// §14.5). The joiner can poll at ~1Hz; lobby metadata updates fire fast
+/// enough through Steam's relay that this is non-load-bearing.
+#[cfg(feature = "steam")]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SteamLobbyMember {
+    pub steam_id_64: String,
+    pub persona_name: String,
+}
+
+#[cfg(feature = "steam")]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SteamLobbyData {
+    pub steam_lobby_id: String,
+    pub host_steam_id: String,
+    pub host_persona: String,
+    pub map_id: String,
+    pub local_lobby_id: String,
+    pub status: String,
+    pub match_id: String,
+    pub max_players: u32,
+    pub members: Vec<SteamLobbyMember>,
+}
+
+#[cfg(feature = "steam")]
+#[tauri::command]
+fn get_steam_lobby_data(
+    bridge: tauri::State<'_, SteamBridgeState>,
+    steam_lobby_id: String,
+) -> Result<SteamLobbyData, String> {
+    let b = bridge.0.as_ref().ok_or_else(|| "steam_unavailable".to_string())?;
+    let raw = steam_lobby_id
+        .parse::<u64>()
+        .map_err(|e| format!("bad steam_lobby_id: {e}"))?;
+    let lobby = steamworks::LobbyId::from_raw(raw);
+    let mm = b.client.matchmaking();
+    let friends = b.client.friends();
+    let members: Vec<SteamLobbyMember> = mm
+        .lobby_members(lobby)
+        .into_iter()
+        .map(|sid| {
+            let name = friends.get_friend(sid).name();
+            SteamLobbyMember {
+                steam_id_64: sid.raw().to_string(),
+                persona_name: name,
+            }
+        })
+        .collect();
+    Ok(SteamLobbyData {
+        steam_lobby_id: steam_lobby_id.clone(),
+        host_steam_id: mm.lobby_data(lobby, "host_steam_id").unwrap_or_default(),
+        host_persona: mm.lobby_data(lobby, "host_persona").unwrap_or_default(),
+        map_id: mm.lobby_data(lobby, "map_id").unwrap_or_default(),
+        local_lobby_id: mm.lobby_data(lobby, "local_lobby_id").unwrap_or_default(),
+        status: mm.lobby_data(lobby, "status").unwrap_or_default(),
+        match_id: mm.lobby_data(lobby, "match_id").unwrap_or_default(),
+        max_players: mm.lobby_member_limit(lobby).unwrap_or(0) as u32,
+        members,
+    })
+}
+
+/// §14.3 start-game signal. Host SPA calls this after the host's own
+/// `welcome` message returns a real `matchId`. We stamp the matchId into
+/// the Steam lobby metadata; joiners observe LobbyDataUpdate_t and emit
+/// `steam_lobby_started` to their SPA, which navigates them into /match.
+///
+/// Idempotent — calling twice just rewrites the same metadata. The host
+/// SPA is expected to call this once per session.
+#[cfg(feature = "steam")]
+#[tauri::command]
+fn start_steam_game(
+    bridge: tauri::State<'_, SteamBridgeState>,
+    lobby_id: String,
+    match_id: String,
+) -> Result<(), String> {
+    let b = bridge.0.as_ref().ok_or_else(|| "steam_unavailable".to_string())?;
+    if match_id.is_empty() {
+        return Err("empty match_id".to_string());
+    }
+    let raw = lobby_id
+        .parse::<u64>()
+        .map_err(|e| format!("bad lobby id: {e}"))?;
+    let mm = b.client.matchmaking();
+    let lobby = steamworks::LobbyId::from_raw(raw);
+    if !mm.set_lobby_data(lobby, "match_id", &match_id) {
+        return Err("set_lobby_data(match_id) failed".to_string());
+    }
+    if !mm.set_lobby_data(lobby, "status", "started") {
+        return Err("set_lobby_data(status) failed".to_string());
+    }
     Ok(())
 }
 
@@ -394,13 +831,18 @@ fn get_steam_player() -> Option<serde_json::Value> {
 
 #[cfg(not(feature = "steam"))]
 #[tauri::command]
-async fn create_lobby(_max_players: Option<u32>) -> Result<String, String> {
+async fn create_lobby(
+    _max_players: Option<u32>,
+    _map_id: Option<String>,
+    _local_lobby_id: Option<String>,
+    _host_persona: Option<String>,
+) -> Result<String, String> {
     Err("steam_unavailable".to_string())
 }
 
 #[cfg(not(feature = "steam"))]
 #[tauri::command]
-async fn join_lobby(_lobby_id: String) -> Result<String, String> {
+async fn join_lobby(_lobby_id: String) -> Result<serde_json::Value, String> {
     Err("steam_unavailable".to_string())
 }
 
@@ -408,4 +850,85 @@ async fn join_lobby(_lobby_id: String) -> Result<String, String> {
 #[tauri::command]
 fn open_invite_overlay(_lobby_id: String) -> Result<(), String> {
     Err("steam_unavailable".to_string())
+}
+
+#[cfg(not(feature = "steam"))]
+#[tauri::command]
+fn start_steam_game(_lobby_id: String, _match_id: String) -> Result<(), String> {
+    Err("steam_unavailable".to_string())
+}
+
+#[cfg(not(feature = "steam"))]
+#[tauri::command]
+async fn list_steam_lobbies() -> Result<Vec<serde_json::Value>, String> {
+    Ok(Vec::new())
+}
+
+#[cfg(not(feature = "steam"))]
+#[tauri::command]
+fn get_steam_lobby_data(_steam_lobby_id: String) -> Result<serde_json::Value, String> {
+    Err("steam_unavailable".to_string())
+}
+
+/// Parses `--steam-net-selftest` from `std::env::args()`. Accepts both
+/// `--steam-net-selftest <value>` and `--steam-net-selftest=<value>`.
+/// Returns the raw value string (`"host"` or `"connect:<steamid>"`); the Go
+/// side validates the contents.
+fn parse_selftest_mode_from_args() -> Option<String> {
+    parse_selftest_mode(std::env::args().skip(1).collect::<Vec<_>>())
+}
+
+fn parse_selftest_mode<I, S>(args: I) -> Option<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut iter = args.into_iter();
+    while let Some(arg) = iter.next() {
+        let s = arg.as_ref();
+        if let Some(rest) = s.strip_prefix("--steam-net-selftest=") {
+            if !rest.is_empty() {
+                return Some(rest.to_string());
+            }
+        } else if s == "--steam-net-selftest" {
+            if let Some(next) = iter.next() {
+                let v = next.as_ref().to_string();
+                if !v.is_empty() {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selftest_mode_space_separated() {
+        let v = parse_selftest_mode(vec!["--steam-net-selftest", "host"]);
+        assert_eq!(v.as_deref(), Some("host"));
+    }
+
+    #[test]
+    fn selftest_mode_equals_form() {
+        let v = parse_selftest_mode(vec!["--steam-net-selftest=connect:76561197960287930"]);
+        assert_eq!(v.as_deref(), Some("connect:76561197960287930"));
+    }
+
+    #[test]
+    fn selftest_mode_absent_returns_none() {
+        let v = parse_selftest_mode(vec!["--other-flag", "value"]);
+        assert!(v.is_none());
+    }
+
+    #[test]
+    fn selftest_mode_empty_value_returns_none() {
+        // `--steam-net-selftest=` and `--steam-net-selftest ` (no following
+        // token) are both treated as "not set" rather than the empty string.
+        assert!(parse_selftest_mode(vec!["--steam-net-selftest="]).is_none());
+        assert!(parse_selftest_mode(vec!["--steam-net-selftest"]).is_none());
+    }
 }

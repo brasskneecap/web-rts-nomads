@@ -22,6 +22,20 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }))
 
+// Patchable listen fake — captures the most recent handler so tests can
+// trigger it directly. Returns an unlisten fn that increments
+// unlistenCallCount on each call.
+let lastListenHandler: ((evt: { payload: unknown }) => void) | undefined
+let unlistenCallCount = 0
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: (_event: string, handler: (evt: { payload: unknown }) => void) => {
+    lastListenHandler = handler
+    return Promise.resolve(() => {
+      unlistenCallCount++
+    })
+  },
+}))
+
 function setTauri(present: boolean) {
   if (present) {
     ;(window as any).__TAURI__ = {}
@@ -33,6 +47,8 @@ function setTauri(present: boolean) {
 beforeEach(() => {
   invokeMock.mockReset()
   window.localStorage.clear()
+  lastListenHandler = undefined
+  unlistenCallCount = 0
 })
 
 afterEach(() => {
@@ -160,5 +176,150 @@ describe('reportAchievement', () => {
     setTauri(false)
     await bridge.reportAchievement('ACH_X')
     expect(invokeMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('openLobby extended metadata (§14R-A)', () => {
+  it('forwards mapId / localLobbyId / hostPersona when present', async () => {
+    setTauri(true)
+    invokeMock.mockResolvedValueOnce('12345')
+    const handle = await bridge.openLobby({
+      maxPlayers: 4,
+      mapId: 'enemy-test-small',
+      localLobbyId: 'lobby-abc',
+      hostPersona: 'gabe',
+    })
+    expect(handle).toEqual({ lobbyId: '12345' })
+    expect(invokeMock).toHaveBeenCalledWith('create_lobby', {
+      maxPlayers: 4,
+      mapId: 'enemy-test-small',
+      localLobbyId: 'lobby-abc',
+      hostPersona: 'gabe',
+    })
+  })
+
+  it('defaults missing optional fields to empty strings', async () => {
+    setTauri(true)
+    invokeMock.mockResolvedValueOnce('99')
+    await bridge.openLobby({ maxPlayers: 2 })
+    expect(invokeMock).toHaveBeenCalledWith('create_lobby', {
+      maxPlayers: 2,
+      mapId: '',
+      localLobbyId: '',
+      hostPersona: '',
+    })
+  })
+})
+
+describe('listSteamLobbies / getSteamLobbyData (§14R-A)', () => {
+  it('listSteamLobbies returns [] in browser dev', async () => {
+    setTauri(false)
+    const result = await bridge.listSteamLobbies()
+    expect(result).toEqual([])
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
+  it('listSteamLobbies forwards the Tauri result', async () => {
+    setTauri(true)
+    const entry: bridge.SteamLobbyListEntry = {
+      steamLobbyId: '12345',
+      hostSteamId: '76561197960287930',
+      hostPersona: 'gabe',
+      mapId: 'enemy-test-small',
+      localLobbyId: 'lobby-abc',
+      status: 'waiting',
+      playerCount: 1,
+      maxPlayers: 4,
+    }
+    invokeMock.mockResolvedValueOnce([entry])
+    const result = await bridge.listSteamLobbies()
+    expect(result).toEqual([entry])
+    expect(invokeMock).toHaveBeenCalledWith('list_steam_lobbies', undefined)
+  })
+
+  it('listSteamLobbies returns [] when Tauri throws (degraded mode)', async () => {
+    setTauri(true)
+    invokeMock.mockRejectedValueOnce(new Error('steam_unavailable'))
+    const result = await bridge.listSteamLobbies()
+    expect(result).toEqual([])
+  })
+
+  it('getSteamLobbyData returns null in browser dev', async () => {
+    setTauri(false)
+    const result = await bridge.getSteamLobbyData('12345')
+    expect(result).toBeNull()
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
+  it('getSteamLobbyData passes the lobby id and returns the snapshot', async () => {
+    setTauri(true)
+    const snapshot: bridge.SteamLobbyData = {
+      steamLobbyId: '12345',
+      hostSteamId: '76561197960287930',
+      hostPersona: 'gabe',
+      mapId: 'enemy-test-small',
+      localLobbyId: 'lobby-abc',
+      status: 'waiting',
+      matchId: '',
+      maxPlayers: 4,
+      members: [
+        { steamId64: '76561197960287930', personaName: 'gabe' },
+      ],
+    }
+    invokeMock.mockResolvedValueOnce(snapshot)
+    const result = await bridge.getSteamLobbyData('12345')
+    expect(result).toEqual(snapshot)
+    expect(invokeMock).toHaveBeenCalledWith('get_steam_lobby_data', {
+      steamLobbyId: '12345',
+    })
+  })
+})
+
+describe('startSteamGame', () => {
+  it('invokes start_steam_game with lobbyId + matchId in Tauri', async () => {
+    setTauri(true)
+    invokeMock.mockResolvedValueOnce(undefined)
+    await bridge.startSteamGame('12345', 'match-abc')
+    expect(invokeMock).toHaveBeenCalledWith('start_steam_game', {
+      lobbyId: '12345',
+      matchId: 'match-abc',
+    })
+  })
+
+  it('is a no-op in browser dev', async () => {
+    setTauri(false)
+    await bridge.startSteamGame('12345', 'match-abc')
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
+  it('propagates Tauri errors so the SPA can surface them', async () => {
+    setTauri(true)
+    invokeMock.mockRejectedValueOnce(new Error('steam_unavailable'))
+    await expect(bridge.startSteamGame('12345', 'match-abc')).rejects.toThrow('steam_unavailable')
+  })
+})
+
+describe('onSteamLobbyStarted', () => {
+  it('subscribes via tauri listen and routes the payload to the handler', async () => {
+    setTauri(true)
+    const handler = vi.fn()
+    const unlisten = await bridge.onSteamLobbyStarted(handler)
+
+    // Simulate the shell emitting the event.
+    expect(lastListenHandler).toBeDefined()
+    lastListenHandler!({ payload: { lobbyId: '12345', matchId: 'match-abc' } })
+    expect(handler).toHaveBeenCalledWith({ lobbyId: '12345', matchId: 'match-abc' })
+
+    unlisten()
+    expect(unlistenCallCount).toBe(1)
+  })
+
+  it('returns a no-op unlisten in browser dev (does not subscribe)', async () => {
+    setTauri(false)
+    const handler = vi.fn()
+    const unlisten = await bridge.onSteamLobbyStarted(handler)
+    expect(lastListenHandler).toBeUndefined()
+    unlisten() // should not throw
+    expect(handler).not.toHaveBeenCalled()
   })
 })

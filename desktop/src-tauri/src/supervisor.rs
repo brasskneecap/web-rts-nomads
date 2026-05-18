@@ -165,10 +165,18 @@ fn write_stderr_tail(
 /// `ipc_path` (§8.3) is the local-socket path the Rust shell is listening on
 /// for Steam IPC. When set, the Go server constructs an IPCBridge against it;
 /// when None, the Go server falls back to NoopBridge (the §4.3 default).
+///
+/// `selftest` (smoke-test option) carries the value of the `--steam-net-selftest`
+/// argv flag straight into the Go child via `NOMADS_SELFTEST`. When set, the
+/// Go server replaces its hub-registration peer handler with a ping/log one
+/// and auto-fires the matching IPC call (OpenListener / ConnectTo). The Go
+/// side is the canonical place to interpret the value because it owns the
+/// IPCBridge — the shell's role is just to pass it through.
 pub fn spawn_and_wait_ready(
     paths: &Paths,
     server_log_path: Option<std::path::PathBuf>,
     ipc_path: Option<String>,
+    selftest: Option<String>,
 ) -> Result<(ReadyInfo, ChildHandle), SupervisorError> {
     let bin = resolve_sidecar_path()?;
     info!("supervisor: spawning {}", bin.display());
@@ -182,6 +190,9 @@ pub fn spawn_and_wait_ready(
         .stderr(Stdio::piped());
     if let Some(path) = ipc_path {
         cmd.env("NOMADS_IPC_PATH", path);
+    }
+    if let Some(mode) = selftest {
+        cmd.env("NOMADS_SELFTEST", mode);
     }
 
     // Windows: the Go binary is built with the console subsystem, so without
