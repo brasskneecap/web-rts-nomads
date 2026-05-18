@@ -405,3 +405,77 @@ func (s *GameState) assignEnemyObjectiveLocked(unit *Unit, blocked map[gridPoint
 		s.assignUnitPath(unit, *target, blocked, nil)
 	}
 }
+
+// enemyAdvanceToObjectiveLocked is the routed-enemy analog of
+// resumeStandingOrderLocked's OrderAttackMove case: the enemy plain-moves
+// toward a sticky objective building and lets normal in-range scoring engage
+// whatever it meets (unit or building) on the way. It NEVER sets
+// AttackBuildingTargetID, computes a perimeter slot, or runs strike escalation
+// — the townhall is destroyed via ordinary scoreBuildingTargetLocked once it
+// comes into detection range and commits like any other building.
+//
+// Fallback chain (see docs/superpowers/specs/2026-05-18-enemy-objective-
+// attack-move-design.md):
+//  1. Resolve & validate the sticky objective building; re-acquire the nearest
+//     player building (honoring TargetPlayerID) when it died/disappeared. With
+//     no building at all, fall back to a townhall-center position; with none,
+//     idle (the evaluateCombatLocked cooldown guard prevents per-tick retry).
+//  2. If already Moving toward it, return — the per-tick anti-churn guard that
+//     removes the old re-acquisition stutter.
+//  3. assignUnitPath to the objective position (a plain move).
+//  4. If that path is impossible (objective fully walled off), engage the
+//     nearest hostile anywhere so killing through reopens the route; the
+//     drop-on-death -> re-advance flow then resumes.
+func (s *GameState) enemyAdvanceToObjectiveLocked(unit *Unit, blocked map[gridPoint]bool) {
+	// (1) Resolve / re-acquire the sticky objective building. isValidHostile-
+	// BuildingTarget handles a nil building and validates visible/hostile/hp>0.
+	building := s.getBuildingByIDLocked(unit.ObjectiveBuildingID)
+	if !s.isValidHostileBuildingTarget(unit, building) {
+		building = nil
+		unit.ObjectiveBuildingID = ""
+		if unit.TargetPlayerID != "" {
+			building = s.findNearestAttackableBuildingForPlayerLocked(unit, unit.TargetPlayerID)
+		}
+		if building == nil {
+			building = s.findNearestAttackablePlayerBuildingLocked(unit)
+		}
+		if building != nil {
+			unit.ObjectiveBuildingID = building.ID
+		}
+	}
+
+	var objectivePos protocol.Vec2
+	if building != nil {
+		objectivePos = s.buildingCenterLocked(building)
+	} else if thc := s.getNearestPlayerTownhallCenterLocked(unit.X, unit.Y); thc != nil {
+		objectivePos = *thc
+	} else {
+		// Nothing to advance on. Idle in place; evaluateCombatLocked's
+		// NextObjectiveSearchTick / global cooldown stops this re-running
+		// every tick.
+		return
+	}
+
+	// (2) Already advancing — do not recompute. This is the guard that
+	// removes the per-tick re-acquisition stutter.
+	if unit.Moving {
+		return
+	}
+
+	// (3) Plain move toward the objective. No attack target, no escalation.
+	unit.AttackTargetID = 0
+	unit.AttackBuildingTargetID = ""
+	unit.Attacking = false
+	unit.Status = "Advancing"
+	s.assignUnitPath(unit, objectivePos, blocked, nil)
+	if unit.Moving {
+		return
+	}
+
+	// (4) Objective exists but is completely partitioned off by a wall of
+	// units/terrain. Push the enemy at the nearest hostile anywhere; normal
+	// in-range scoring engages it as the enemy closes, and killing through
+	// reopens the route. (acquireNearestBlockingHostileLocked already issues a
+	// movement path and ignores the DetectionRange cap.)
+	s.acquireNearestBlockingHostileLocked(unit, blocked)
+}
