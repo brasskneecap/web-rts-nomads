@@ -197,6 +197,30 @@ func TestEnemyAdvanceToObjective_PartitionFallsBackToBlocker(t *testing.T) {
 	}
 }
 
+// The spawn-time objective resolver seeds ObjectiveBuildingID for routed
+// enemies (targetPlayerLabel and default), and leaves it empty for stay-at-
+// spawn / static-objective units. Tests the extracted helper directly to
+// avoid driving the wave-timer machinery.
+func TestSpawnObjectiveSeeding(t *testing.T) {
+	s := newObjectiveTestState(t)
+	defer s.mu.Unlock()
+
+	enemy := s.spawnEnemyUnitLocked("raider", protocol.Vec2{X: 2200, Y: 768})
+	if enemy == nil {
+		t.Fatal("spawnEnemyUnitLocked returned nil")
+	}
+	s.seedEnemyObjectiveAtSpawnLocked(enemy, "", protocol.Vec2{X: 2200, Y: 768})
+	if enemy.ObjectiveBuildingID != "townhall-1" {
+		t.Fatalf("default route should seed townhall-1; got %q", enemy.ObjectiveBuildingID)
+	}
+
+	stay := s.spawnEnemyUnitLocked("raider", protocol.Vec2{X: 2200, Y: 700})
+	s.seedEnemyObjectiveAtSpawnLocked(stay, "__none__", protocol.Vec2{X: 2200, Y: 700})
+	if stay.ObjectiveBuildingID != "" {
+		t.Fatalf("stay-at-spawn (__none__) must NOT seed an objective; got %q", stay.ObjectiveBuildingID)
+	}
+}
+
 // End-to-end through the real sim: a routed enemy with a clear lane reaches
 // and destroys the townhall via normal scoring (no hard-target while
 // advancing), and engages an in-range player unit on the way then resumes.

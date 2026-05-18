@@ -222,6 +222,29 @@ func (s *GameState) ensureEnemyPlayerLocked() {
 	}
 }
 
+// seedEnemyObjectiveAtSpawnLocked sets a routed enemy's sticky
+// ObjectiveBuildingID at spawn so it does not have to lazily re-acquire on its
+// first no-target eval. Mirrors the spawn routing rules: __none__ and static-
+// objective (ObjectiveID already set) units get no objective; targetPlayerLabel
+// units prefer that player's townhall; the default routes to the nearest
+// player townhall. spawnPos is the unit's spawn position (origin for the
+// nearest-townhall search).
+func (s *GameState) seedEnemyObjectiveAtSpawnLocked(unit *Unit, targetPlayerLabel string, spawnPos protocol.Vec2) {
+	if unit == nil || unit.ObjectiveID != "" || targetPlayerLabel == "__none__" {
+		return
+	}
+	var b *protocol.BuildingTile
+	if targetPlayerLabel != "" && unit.TargetPlayerID != "" {
+		b = s.findNearestAttackableBuildingForPlayerLocked(unit, unit.TargetPlayerID)
+	}
+	if b == nil {
+		b = s.getNearestPlayerTownhallBuildingLocked(spawnPos.X, spawnPos.Y)
+	}
+	if b != nil {
+		unit.ObjectiveBuildingID = b.ID
+	}
+}
+
 func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint]bool) {
 	for i := range s.MapConfig.Buildings {
 		building := &s.MapConfig.Buildings[i]
@@ -391,6 +414,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 					s.assignUnitPath(unit, *target, blocked, nil)
 				}
 			}
+			s.seedEnemyObjectiveAtSpawnLocked(unit, targetPlayerLabel, spawnPos)
 		}
 
 		if timer.SpawnOnce {
