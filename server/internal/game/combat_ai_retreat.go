@@ -76,6 +76,18 @@ func (s *GameState) assignAttackApproachPathLocked(unit, target *Unit, blocked m
 	s.assignAttackApproachPathLockedWithSubBlocked(unit, target, blocked, nil)
 }
 
+// dropUnreachableAITargetLocked handles an AI-acquired unit target that A*
+// could not reach: memo it on a short cooldown so selectBestTargetLocked skips
+// it, then clear the target so the next eval picks a reachable alternative (or
+// resumes the objective advance when none is in range). Player-issued targets
+// (OrderAttackTarget) do NOT come here — they keep drift mode, preserving the
+// "the player explicitly chose this fight" invariant.
+func (s *GameState) dropUnreachableAITargetLocked(unit, target *Unit) {
+	unit.UnreachableUnitTargetID = target.ID
+	unit.UnreachableUnitUntilTick = s.Tick + unreachableTargetCooldownTicks
+	s.clearCombatTargetLocked(unit)
+}
+
 // assignAttackApproachPathLockedWithSubBlocked is the internal variant that
 // accepts a pre-built sub-cell blocked map. Used by batch handlers
 // (AttackWithUnits) to share one map across all members of a shared-OrderID
@@ -105,13 +117,21 @@ func (s *GameState) assignAttackApproachPathLockedWithSubBlocked(unit, target *U
 	targetCell := s.worldToGrid(target.X, target.Y)
 	goalCell, ok := s.findNearestWalkable(targetCell, blocked)
 	if !ok {
-		s.enterAttackDriftLocked(unit, target)
+		if unit.Order.Type == OrderAttackTarget {
+			s.enterAttackDriftLocked(unit, target)
+		} else {
+			s.dropUnreachableAITargetLocked(unit, target)
+		}
 		return
 	}
 
 	fullPath := s.findPath(startCell, goalCell, blocked, nil)
 	if len(fullPath) == 0 {
-		s.enterAttackDriftLocked(unit, target)
+		if unit.Order.Type == OrderAttackTarget {
+			s.enterAttackDriftLocked(unit, target)
+		} else {
+			s.dropUnreachableAITargetLocked(unit, target)
+		}
 		return
 	}
 
@@ -134,7 +154,11 @@ func (s *GameState) assignAttackApproachPathLockedWithSubBlocked(unit, target *U
 	// obstacles). Fall back to drift in that case so the unit still makes
 	// directional progress instead of standing idle.
 	if !unit.Moving {
-		s.enterAttackDriftLocked(unit, target)
+		if unit.Order.Type == OrderAttackTarget {
+			s.enterAttackDriftLocked(unit, target)
+		} else {
+			s.dropUnreachableAITargetLocked(unit, target)
+		}
 	}
 }
 
