@@ -133,6 +133,16 @@ type AbilityDef struct {
 	// does not heal. Capped at the target's MaxHP (no overheal) at resolve.
 	HealAmount int `json:"healAmount,omitempty"`
 
+	// DamageAmount is the HP an offensive ability deals to its target on
+	// resolve. Symmetric to HealAmount: 0 ⇒ the ability does no damage (the
+	// field is additive and inert for every ability that omits it). Applied
+	// through the shared authoritative damage pipeline
+	// (applyUnitDamageWithSourceLocked) so mitigation, the death pipeline,
+	// threat, and determinism are inherited — it is NOT a parallel damage
+	// path. HealAmount and DamageAmount are independent resolve steps; an
+	// ability may declare either, both, or neither.
+	DamageAmount int `json:"damageAmount,omitempty"`
+
 	// ── Auto-cast ──────────────────────────────────────────────────────────
 	// SupportsAutoCast gates whether the action bar exposes an auto-cast
 	// toggle for this ability (default false). AutoCastTargetSelector names a

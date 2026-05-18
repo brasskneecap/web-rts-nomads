@@ -70,6 +70,23 @@ func (s *GameState) tickUnitAbilityCooldownsLocked(unit *Unit, dt float64) {
 // (so cast_time is respected). On a successful initiation the ability's
 // cooldown is armed.
 //
+// Phase 2: selection is gather → score → pick (no longer first-ready). It
+// gathers every candidate that passes the UNCHANGED gates (autocast enabled,
+// SupportsAutoCast, off cooldown, enough mana, a non-nil selector target),
+// scores each via scoreAutoCastCandidateLocked, and casts the single highest
+// (deterministic tiebreak: ascending unit.Abilities slot index, then ability
+// id). A best score at/below minActivationScore ⇒ cast nothing (the basic
+// attack proceeds via the unchanged combat AI).
+//
+// NO-REGRESSION INVARIANT: with exactly one passing candidate, scoring's
+// per-category base (≥ candidateBaseScore ≫ minActivationScore for any valid
+// target — see ability_priority.go) guarantees that candidate clears the
+// floor, so the result is identical to the prior first-ready behaviour: the
+// lone ability is cast on exactly the same ticks. Slot order is iterated
+// ascending and a candidate replaces the best only on a STRICTLY greater
+// score, so equal scores keep the lower slot (the spec's slot-then-id
+// tiebreak; ids are unique per slot so the id tier is a documented no-op).
+//
 // Caller holds s.mu.
 func (s *GameState) tickUnitAutoCastLocked(unit *Unit) {
 	if unit == nil || unit.HP <= 0 || len(unit.AutoCastEnabled) == 0 {
@@ -79,6 +96,14 @@ func (s *GameState) tickUnitAutoCastLocked(unit *Unit) {
 	if unit.CastAbilityID != "" {
 		return
 	}
+
+	var (
+		bestID    string
+		bestDef   AbilityDef
+		bestTgt   *Unit
+		bestScore float64
+		haveBest  bool
+	)
 	for _, abilityID := range unit.Abilities { // ordered ⇒ deterministic
 		if !unit.AutoCastEnabled[abilityID] {
 			continue
@@ -97,18 +122,31 @@ func (s *GameState) tickUnitAutoCastLocked(unit *Unit) {
 		if target == nil {
 			continue // no valid target right now
 		}
-		ok2, _ := s.beginAbilityCastLocked(unit, abilityID, target)
-		if !ok2 {
-			continue // initiation rejected (race) — try the next ability
+		score := s.scoreAutoCastCandidateLocked(unit, def, target)
+		if score <= minActivationScore {
+			continue // not worth a cast (e.g. buff_ally/summon "not useful")
 		}
-		if def.Cooldown > 0 {
-			if unit.AbilityCooldowns == nil {
-				unit.AbilityCooldowns = make(map[string]float64, 1)
-			}
-			unit.AbilityCooldowns[abilityID] = def.Cooldown
+		// Iterating slots ascending + replacing only on a strictly greater
+		// score ⇒ ties resolve to the lower slot index (spec tiebreak).
+		if !haveBest || score > bestScore {
+			bestID, bestDef, bestTgt, bestScore, haveBest = abilityID, def, target, score, true
 		}
-		return // one auto-cast initiation per unit per tick
 	}
+	if !haveBest {
+		return // nothing ready cleared the activation floor this tick
+	}
+
+	ok2, _ := s.beginAbilityCastLocked(unit, bestID, bestTgt)
+	if !ok2 {
+		return // initiation rejected (race) — re-evaluated next tick
+	}
+	if bestDef.Cooldown > 0 {
+		if unit.AbilityCooldowns == nil {
+			unit.AbilityCooldowns = make(map[string]float64, 1)
+		}
+		unit.AbilityCooldowns[bestID] = bestDef.Cooldown
+	}
+	// one auto-cast initiation per unit per tick (single return path)
 }
 
 // abilityStatesLocked builds the per-ability snapshot slice for unit's

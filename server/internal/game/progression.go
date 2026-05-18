@@ -254,6 +254,10 @@ func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
 		// Perk definitions: catalog/perks/<unit>/<path>/<rank>.json
 		// Perk runtime/handlers + assignment rules: perks.go
 		s.assignUnitPerkLocked(unit)
+		// Grant path-specific abilities for the new (path, rank) after the perk
+		// (same ordering rationale: path is already assigned). Idempotent,
+		// ordered, RNG-free — see assignUnitPathAbilitiesLocked.
+		s.assignUnitPathAbilitiesLocked(unit)
 		s.applyRankModifiersLocked(unit, true)
 		s.onUnitRankUpLocked(unit)
 	}
