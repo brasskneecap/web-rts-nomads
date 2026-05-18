@@ -272,7 +272,7 @@ type Unit struct {
 	CombatAnchorY      float64
 	LastTargetEvalTick int
 	CurrentTargetScore float64
-	// NextObjectiveSearchTick gates re-entry into assignEnemyObjectiveLocked
+	// NextObjectiveSearchTick gates re-entry into enemyAdvanceToObjectiveLocked
 	// for enemy units that found nothing attackable last call. Without this,
 	// every idle enemy reruns the building search + A* every tick and dominates
 	// the simulation budget. Set forward by enemyObjectiveSearchCooldownTicks
@@ -602,7 +602,7 @@ type GameState struct {
 	// heal_events.go.
 	healEventsThisTick []healEvent
 
-	// nextGlobalObjectiveSearchTick gates assignEnemyObjectiveLocked globally so
+	// nextGlobalObjectiveSearchTick gates enemyAdvanceToObjectiveLocked globally so
 	// at most one map-wide A* runs per 5 ticks regardless of army size.
 	nextGlobalObjectiveSearchTick int
 

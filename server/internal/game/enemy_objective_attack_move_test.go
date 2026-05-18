@@ -196,3 +196,49 @@ func TestEnemyAdvanceToObjective_PartitionFallsBackToBlocker(t *testing.T) {
 			enemy.AttackBuildingTargetID, enemy.UnreachableBuildingStrikeCount)
 	}
 }
+
+// End-to-end through the real sim: a routed enemy with a clear lane reaches
+// and destroys the townhall via normal scoring (no hard-target while
+// advancing), and engages an in-range player unit on the way then resumes.
+func TestEnemy_AttackMovesToTownhall_EngagesEnRoute(t *testing.T) {
+	s := newObjectiveTestState(t)
+	ownerID := "p1"
+
+	// One defender between the enemy and the townhall.
+	def := s.spawnPlayerUnitLocked("soldier", ownerID, "#3498db",
+		protocol.Vec2{X: 900, Y: 768})
+	def.Visible = true
+	def.MaxHP, def.HP = 60, 60
+	def.MoveSpeed = 0
+	s.initializeCombatUnitLocked(def)
+	defID := def.ID
+
+	// Use "raider" so the enemy profile has TargetBuildings=true; the soldier
+	// profile omits it, so a soldier enemy would plain-move to the townhall but
+	// never commit an attack via scoreBuildingTargetLocked.
+	enemy := s.spawnPlayerUnitLocked("raider", enemyPlayerID, "#e74c3c",
+		protocol.Vec2{X: 2200, Y: 768})
+	enemy.Visible = true
+	enemy.MaxHP, enemy.HP = 2000, 2000
+	enemy.Damage = 25
+	enemy.MoveSpeed = 180
+	s.initializeCombatUnitLocked(enemy)
+	enemyID := enemy.ID
+	s.mu.Unlock()
+
+	tickN(s, 600)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	e := s.unitsByID[enemyID]
+	if e == nil {
+		t.Fatal("enemy disappeared")
+	}
+	if d := s.unitsByID[defID]; d != nil && d.HP > 0 {
+		t.Fatalf("enemy should have engaged & killed the en-route defender (hp=%d)", d.HP)
+	}
+	hp, _, _ := getBuildingHP(&s.MapConfig.Buildings[0])
+	if hp >= 5000.0 {
+		t.Fatalf("enemy should have reached and damaged the townhall; hp still %.0f", hp)
+	}
+}

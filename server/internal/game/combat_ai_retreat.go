@@ -354,58 +354,6 @@ func (s *GameState) targetInsideLeashLocked(unit *Unit, targetX, targetY float64
 	return distanceSquared(unit.CombatAnchorX, unit.CombatAnchorY, targetX, targetY) <= leash*leash
 }
 
-func (s *GameState) assignEnemyObjectiveLocked(unit *Unit, blocked map[gridPoint]bool) {
-	// If this enemy was spawned to target a specific player, prefer that
-	// player's buildings. Falls through to the nearest-anywhere logic only when
-	// the targeted player has no live owned buildings (e.g. they've been
-	// eliminated). Without this, every wave enemy would unconditionally drift
-	// toward the geographically nearest base, defeating per-spawnpoint
-	// targetPlayerLabel routing in multi-player matches.
-	var building *protocol.BuildingTile
-	if unit.TargetPlayerID != "" {
-		building = s.findNearestAttackableBuildingForPlayerLocked(unit, unit.TargetPlayerID)
-	}
-	if building == nil {
-		building = s.findNearestAttackablePlayerBuildingLocked(unit)
-	}
-	if building != nil {
-		unit.AttackTargetID = 0
-		unit.Attacking = false
-		unit.Status = "Moving To Attack"
-		if pos := s.findBestBuildingAttackPositionLocked(unit, building, blocked); pos != nil {
-			unit.AttackBuildingTargetID = building.ID
-			unit.UnreachableBuildingTargetID = ""
-			unit.UnreachableBuildingStrikeCount = 0
-			s.assignUnitPath(unit, *pos, blocked, nil)
-			return
-		}
-		// No path to this building — apply escalation; strike-3 falls through to
-		// the townhall path below instead of returning early.
-		if unit.UnreachableBuildingTargetID == building.ID {
-			unit.UnreachableBuildingStrikeCount++
-		} else {
-			unit.UnreachableBuildingStrikeCount = 1
-		}
-		unit.UnreachableBuildingTargetID = building.ID
-		switch {
-		case unit.UnreachableBuildingStrikeCount >= 3:
-			unit.UnreachableBuildingStrikeCount = 0
-			// Fall through to townhall path below.
-		case unit.UnreachableBuildingStrikeCount == 2:
-			unit.UnreachableUntilTick = s.Tick + 120
-			return
-		default:
-			unit.UnreachableUntilTick = s.Tick + unreachableTargetCooldownTicks
-			return
-		}
-	}
-	target := s.getNearestPlayerTownhallCenterLocked(unit.X, unit.Y)
-	if target != nil && !unit.Moving {
-		unit.Status = "Advancing"
-		s.assignUnitPath(unit, *target, blocked, nil)
-	}
-}
-
 // enemyAdvanceToObjectiveLocked is the routed-enemy analog of
 // resumeStandingOrderLocked's OrderAttackMove case: the enemy plain-moves
 // toward a sticky objective building and lets normal in-range scoring engage

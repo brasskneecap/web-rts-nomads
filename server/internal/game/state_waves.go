@@ -368,7 +368,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 				// Route to a specific player's townhall, falling back to nearest.
 				// Persist the resolved player ID on the unit so the AI's
 				// "no target → nearest building" fallback in
-				// assignEnemyObjectiveLocked keeps preferring this player even
+				// enemyAdvanceToObjectiveLocked keeps preferring this player even
 				// after the unit re-evaluates mid-flight.
 				unit.Status = "Advancing"
 				playerID := s.findPlayerIDByLabelLocked(targetPlayerLabel)
