@@ -18,12 +18,12 @@ import (
 type OrderType int
 
 const (
-	OrderIdle        OrderType = iota // no standing order; default acquisition
-	OrderMove                         // force-move: ignore enemies en route
-	OrderAttackMove                   // a-move: break off to engage acquired enemies
-	OrderAttackTarget                 // sticky attack on AttackTargetID/AttackBuildingTargetID
-	OrderHold                         // do not move; engage in-range enemies only
-	OrderPatrol                       // cycle waypoints; engage acquired enemies; resume
+	OrderIdle         OrderType = iota // no standing order; default acquisition
+	OrderMove                          // force-move: ignore enemies en route
+	OrderAttackMove                    // a-move: break off to engage acquired enemies
+	OrderAttackTarget                  // sticky attack on AttackTargetID/AttackBuildingTargetID
+	OrderHold                          // do not move; engage in-range enemies only
+	OrderPatrol                        // cycle waypoints; engage acquired enemies; resume
 )
 
 // orderTypeString returns the wire-format string for OrderType, matching the
@@ -60,20 +60,20 @@ type OrderState struct {
 }
 
 type Unit struct {
-	ID                  int
-	OwnerID             string
-	Color               string
-	UnitType            string
-	Archetype           string
-	Name                string
-	Capabilities        []string
-	Visible             bool
-	Status              string
-	X                   float64
-	Y                   float64
-	HP                  int
-	MaxHP               int
-	BaseMaxHP           int
+	ID           int
+	OwnerID      string
+	Color        string
+	UnitType     string
+	Archetype    string
+	Name         string
+	Capabilities []string
+	Visible      bool
+	Status       string
+	X            float64
+	Y            float64
+	HP           int
+	MaxHP        int
+	BaseMaxHP    int
 	// HealthRegenPerSecond is the baseline passive HP regeneration rate (HP per
 	// real-time second) applied in Update(). Defaults to defaultHealthRegenPerSecond
 	// on spawn; future perks / buffs can modify it. HealthRegenAccumulator carries
@@ -93,18 +93,18 @@ type Unit struct {
 	CurrentMana          int
 	ManaRegenPerSecond   float64
 	ManaRegenAccumulator float64
-	BaseDamage          int
-	BaseArmor           int
-	BaseAttackSpeed     float64
-	BaseMoveSpeed       float64
-	XP                  int
-	XPProgressRemainder float64
-	Rank                string
-	RankUpFxRemaining   float64
-	ProgressionPath     string
-	Armor               int
-	PerkIDs             []string  // assigned perk ids, in rank-up order (index 0 = Bronze, 1 = Silver, 2 = Gold)
-	PerkState           UnitPerkState // runtime state shared across the unit's perks
+	BaseDamage           int
+	BaseArmor            int
+	BaseAttackSpeed      float64
+	BaseMoveSpeed        float64
+	XP                   int
+	XPProgressRemainder  float64
+	Rank                 string
+	RankUpFxRemaining    float64
+	ProgressionPath      string
+	Armor                int
+	PerkIDs              []string      // assigned perk ids, in rank-up order (index 0 = Bronze, 1 = Silver, 2 = Gold)
+	PerkState            UnitPerkState // runtime state shared across the unit's perks
 
 	// Shield is a temporary HP pool consumed before HP by applyUnitDamageLocked.
 	// First-pass implementation: only granted by blood_engine (gold berserker)
@@ -152,11 +152,11 @@ type Unit struct {
 	// build-target completion. Inside builder during construction does not
 	// consume this — they build for free.
 	RepairChargeAccumulator float64
-	TargetX             float64
-	TargetY             float64
-	Moving              bool
-	Path                []protocol.Vec2
-	OrderID             int64
+	TargetX                 float64
+	TargetY                 float64
+	Moving                  bool
+	Path                    []protocol.Vec2
+	OrderID                 int64
 
 	// Stuck-progress sample. Position recorded at the start of the most
 	// recent watchdog window, plus elapsed seconds in that window. If the
@@ -186,23 +186,23 @@ type Unit struct {
 	// combatTargetIsValidLocked to exclude invalid targets up front.
 	TargetableTypes []string
 
-	Damage                 int
-	AttackRange            float64
+	Damage      int
+	AttackRange float64
 	// BaseAttackRange is the catalog AttackRange before any perk-driven range
 	// modifiers (eagle_spirit, bullseye). Treated like BaseDamage / BaseAttackSpeed:
 	// recomputed into AttackRange by applyRankModifiersLocked so range-modifying
 	// perks (Marksman) flow through to combat acquisition, projectile flight,
 	// pierce length, and the HUD without scattered mutation sites.
-	BaseAttackRange        float64
-	AttackSpeed            float64
+	BaseAttackRange float64
+	AttackSpeed     float64
 	// SplashRadius: when > 0, every attack landing on a primary target also
 	// damages every other hostile within this radius of the target's position.
 	// Populated from UnitDef.SplashRadius at spawn time.
-	SplashRadius           float64
+	SplashRadius float64
 	// MoveSpeed is the effective pixels-per-second for pathing movement, after
 	// rank/path/perk modifiers are applied. Populated by applyRankModifiersLocked.
-	MoveSpeed              float64
-	AttackCooldown         float64
+	MoveSpeed      float64
+	AttackCooldown float64
 	// AttackWindupRemaining is the seconds left in the swing's animation
 	// window before damage actually lands. When > 0 the unit is mid-swing:
 	// it stays in status "Attacking" (so the client keeps playing the attack
@@ -323,8 +323,8 @@ type Unit struct {
 	// before the retarget cooldown can pick a replacement, producing the
 	// visible "Moving To Attack ↔ Guarding" flicker at retarget cadence.
 	NextGuardReturnTick int
-	TauntedByUnitID         int
-	TauntRemaining          float64
+	TauntedByUnitID     int
+	TauntRemaining      float64
 	// StunnedRemaining is seconds left on the stun CC applied to this unit by
 	// ApplyStunLocked. Decays in state.go Update() alongside WeakenedRemaining.
 	// While > 0 the unit cannot attack or move along its path, but
@@ -336,7 +336,7 @@ type Unit struct {
 	SlowedRemaining float64
 	// SlowedMultiplier is the movement speed fraction while slowed (e.g. 0.7 =
 	// 70% speed). Set by ApplySlowLocked; 0 when no slow is active.
-	SlowedMultiplier float64
+	SlowedMultiplier   float64
 	ThreatTable        map[int]*ThreatEntry
 	TankedDamageByUnit map[int]float64
 	// DamageDealtByUnit accumulates damage this unit has taken from each
@@ -402,9 +402,9 @@ type Unit struct {
 // debug snapshot. Not duplicated in GameState — lives directly on Unit so it
 // is cache-local with the rest of the unit's pathing fields.
 type PathDiagnostics struct {
-	RepathCount      int
+	RepathCount       int
 	StuckTriggerCount int
-	LastStuckTick    int
+	LastStuckTick     int
 }
 
 const (
@@ -448,8 +448,8 @@ const (
 )
 
 type Player struct {
-	ID        string
-	Color     string
+	ID    string
+	Color string
 	// TeamID is the alliance group. 0 = the default shared team, so every
 	// existing/zero-value Player is allied (current behavior preserved).
 	// Same TeamID ⇒ allies; different ⇒ hostile. __enemy__ is hostile to all
@@ -606,6 +606,17 @@ type GameState struct {
 	// at most one map-wide A* runs per 5 ticks regardless of army size.
 	nextGlobalObjectiveSearchTick int
 
+	// objectiveUnreachableUntil is the ARMY-WIDE unreachable-objective cache:
+	// objective building ID → tick the suppression expires. When any enemy's
+	// pathfind to an objective fails, every enemy skips re-pathing that
+	// objective until the TTL lapses; then one gated enemy re-tests and either
+	// clears it (route reopened by killing through the wall → path succeeds)
+	// or re-arms it. Replaces the per-unit memo churn that let a large walled
+	// army keep re-paying the (budget-bounded but ~9ms) failed A* every gate.
+	// Point get/set/delete only — never iterated for outcomes — so it stays
+	// deterministic under a seed.
+	objectiveUnreachableUntil map[string]int
+
 	// guardianAuraCache maps recipient unit ID to the combined armor bonus they
 	// receive from the strongest guardian_aura covering them this tick.
 	// FlatArmor and PercentArmor are taken as max independently across all
@@ -717,28 +728,29 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		saltCombat   int64 = 0x5
 	)
 	state := &GameState{
-		Units:               []*Unit{},
-		Players:             map[string]*Player{},
-		Productions:         map[string][]*UnitProduction{},
-		EnemySpawnTimers:    map[string]*EnemySpawnTimer{},
-		nextUnitID:          1,
-		nextBannerID:        1,
-		nextTrapID:          1,
-		nextProjectileID:    1,
-		matchSeed:           seed,
-		rngPerks:            mrand.New(mrand.NewSource(seed ^ saltPerks)),
-		rngCosmetic:         mrand.New(mrand.NewSource(seed ^ saltCosmetic)),
-		rngSpawn:            mrand.New(mrand.NewSource(seed ^ saltSpawn)),
-		rngLoot:             mrand.New(mrand.NewSource(seed ^ saltLoot)),
-		rngCombat:           mrand.New(mrand.NewSource(seed ^ saltCombat)),
-		buildingDamageDealt: map[string]map[int]int{},
-		unitsByID:           map[int]*Unit{},
-		buildingsByID:       map[string]*protocol.BuildingTile{},
-		obstaclesByID:       map[string]*protocol.ObstacleTile{},
-		guardianAuraCache:   map[int]guardianAuraValue{},
-		pendingDeathsSet:    map[int]bool{},
-		itemCatalog:         itemCatalogSingleton,
-		FOW:                 map[string]*PlayerFOW{},
+		Units:                     []*Unit{},
+		Players:                   map[string]*Player{},
+		Productions:               map[string][]*UnitProduction{},
+		EnemySpawnTimers:          map[string]*EnemySpawnTimer{},
+		nextUnitID:                1,
+		nextBannerID:              1,
+		nextTrapID:                1,
+		nextProjectileID:          1,
+		matchSeed:                 seed,
+		rngPerks:                  mrand.New(mrand.NewSource(seed ^ saltPerks)),
+		rngCosmetic:               mrand.New(mrand.NewSource(seed ^ saltCosmetic)),
+		rngSpawn:                  mrand.New(mrand.NewSource(seed ^ saltSpawn)),
+		rngLoot:                   mrand.New(mrand.NewSource(seed ^ saltLoot)),
+		rngCombat:                 mrand.New(mrand.NewSource(seed ^ saltCombat)),
+		buildingDamageDealt:       map[string]map[int]int{},
+		unitsByID:                 map[int]*Unit{},
+		buildingsByID:             map[string]*protocol.BuildingTile{},
+		obstaclesByID:             map[string]*protocol.ObstacleTile{},
+		guardianAuraCache:         map[int]guardianAuraValue{},
+		objectiveUnreachableUntil: map[string]int{},
+		pendingDeathsSet:          map[int]bool{},
+		itemCatalog:               itemCatalogSingleton,
+		FOW:                       map[string]*PlayerFOW{},
 	}
 
 	// Arm the battle tracker iff the map opts in via debug.battleTracker. The
@@ -970,9 +982,9 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Moving:              unit.Moving,
 			ActionFacingDX:      unit.ActionFacingDX,
 			ActionFacingDY:      unit.ActionFacingDY,
-			RepathCount:       unit.PathDiagnostics.RepathCount,
-			StuckTriggerCount: unit.PathDiagnostics.StuckTriggerCount,
-			LastStuckTick:     unit.PathDiagnostics.LastStuckTick,
+			RepathCount:         unit.PathDiagnostics.RepathCount,
+			StuckTriggerCount:   unit.PathDiagnostics.StuckTriggerCount,
+			LastStuckTick:       unit.PathDiagnostics.LastStuckTick,
 		}
 
 		if unit.Moving {
@@ -1123,17 +1135,17 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	}
 
 	return protocol.MatchSnapshotMessage{
-		Type:      "match_snapshot",
-		Tick:      s.Tick,
-		ServerNow: time.Now().UnixMilli(),
-		Buildings: buildings,
-		Obstacles: obstacles,
-		Players:   players,
-		Units:     units,
-		Banners:     banners,
-		Traps:       traps,
-		Projectiles: projectiles,
-		Effects:     s.effectSnapshotsLocked(),
+		Type:               "match_snapshot",
+		Tick:               s.Tick,
+		ServerNow:          time.Now().UnixMilli(),
+		Buildings:          buildings,
+		Obstacles:          obstacles,
+		Players:            players,
+		Units:              units,
+		Banners:            banners,
+		Traps:              traps,
+		Projectiles:        projectiles,
+		Effects:            s.effectSnapshotsLocked(),
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
@@ -1287,9 +1299,9 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			Moving:              unit.Moving,
 			ActionFacingDX:      unit.ActionFacingDX,
 			ActionFacingDY:      unit.ActionFacingDY,
-			RepathCount:       unit.PathDiagnostics.RepathCount,
-			StuckTriggerCount: unit.PathDiagnostics.StuckTriggerCount,
-			LastStuckTick:     unit.PathDiagnostics.LastStuckTick,
+			RepathCount:         unit.PathDiagnostics.RepathCount,
+			StuckTriggerCount:   unit.PathDiagnostics.StuckTriggerCount,
+			LastStuckTick:       unit.PathDiagnostics.LastStuckTick,
 		}
 		if unit.Moving {
 			snapshot.TargetX = unit.TargetX
@@ -1461,17 +1473,17 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 	}
 
 	return protocol.MatchSnapshotMessage{
-		Type:      "match_snapshot",
-		Tick:      s.Tick,
-		ServerNow: time.Now().UnixMilli(),
-		Buildings: buildings,
-		Obstacles: obstacles,
-		Players:   players,
-		Units:     units,
-		Banners:     banners,
-		Traps:       traps,
-		Projectiles: projectiles,
-		Effects:     effects,
+		Type:               "match_snapshot",
+		Tick:               s.Tick,
+		ServerNow:          time.Now().UnixMilli(),
+		Buildings:          buildings,
+		Obstacles:          obstacles,
+		Players:            players,
+		Units:              units,
+		Banners:            banners,
+		Traps:              traps,
+		Projectiles:        projectiles,
+		Effects:            effects,
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
@@ -1581,9 +1593,9 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			Moving:              unit.Moving,
 			ActionFacingDX:      unit.ActionFacingDX,
 			ActionFacingDY:      unit.ActionFacingDY,
-			RepathCount:       unit.PathDiagnostics.RepathCount,
-			StuckTriggerCount: unit.PathDiagnostics.StuckTriggerCount,
-			LastStuckTick:     unit.PathDiagnostics.LastStuckTick,
+			RepathCount:         unit.PathDiagnostics.RepathCount,
+			StuckTriggerCount:   unit.PathDiagnostics.StuckTriggerCount,
+			LastStuckTick:       unit.PathDiagnostics.LastStuckTick,
 		}
 		if unit.Moving {
 			snapshot.TargetX = unit.TargetX
@@ -1719,17 +1731,17 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 	}
 
 	return protocol.MatchSnapshotMessage{
-		Type:      "match_snapshot",
-		Tick:      s.Tick,
-		ServerNow: time.Now().UnixMilli(),
-		Buildings: buildings,
-		Obstacles: obstacles,
-		Players:   players,
-		Units:     units,
-		Banners:     banners,
-		Traps:       traps,
-		Projectiles: projectiles,
-		Effects:     s.effectSnapshotsLocked(),
+		Type:               "match_snapshot",
+		Tick:               s.Tick,
+		ServerNow:          time.Now().UnixMilli(),
+		Buildings:          buildings,
+		Obstacles:          obstacles,
+		Players:            players,
+		Units:              units,
+		Banners:            banners,
+		Traps:              traps,
+		Projectiles:        projectiles,
+		Effects:            s.effectSnapshotsLocked(),
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
@@ -1791,7 +1803,7 @@ func (s *GameState) Update(dt float64) {
 	profileSection("projectiles", func() { s.tickProjectilesLocked(dt) })
 	profileSection("effects", func() { s.tickEffectsLocked() })
 	profileSection("enemySpawnpoints", func() { s.tickEnemySpawnpointsLocked(dt, blocked) })
-	profileSection("trapEffects", func() { s.tickTrapEffectsLocked(dt) })           // zone effects + trigger detection
+	profileSection("trapEffects", func() { s.tickTrapEffectsLocked(dt) })                   // zone effects + trigger detection
 	profileSection("trapperSilverDebuffs", func() { s.tickTrapperSilverDebuffsLocked(dt) }) // barbed ramp, lasting_flames exit, burn DoT
 	profileSection("banners", func() { s.tickBannersLocked(dt) })
 	profileSection("traps", func() { s.tickTrapsLocked(dt) }) // lifetime decay + triggered cull
@@ -2058,7 +2070,7 @@ func (s *GameState) Update(dt float64) {
 
 	s.reportPathDebugLocked()
 
-	profileTickComplete(len(s.Units))
+	profileTickComplete(s.Tick, len(s.Units))
 }
 
 // markObjectiveKillLocked records a kill toward a "killUnit" victory condition

@@ -83,6 +83,7 @@ func (s *GameState) assignAttackApproachPathLocked(unit, target *Unit, blocked m
 // (OrderAttackTarget) do NOT come here — they keep drift mode, preserving the
 // "the player explicitly chose this fight" invariant.
 func (s *GameState) dropUnreachableAITargetLocked(unit, target *Unit) {
+	s.debugPathTracker.recordUnreachableRetarget(unit.OwnerID == enemyPlayerID)
 	unit.UnreachableUnitTargetID = target.ID
 	unit.UnreachableUnitUntilTick = s.Tick + unreachableTargetCooldownTicks
 	s.clearCombatTargetLocked(unit)
@@ -94,6 +95,15 @@ func (s *GameState) dropUnreachableAITargetLocked(unit, target *Unit) {
 // group instead of rebuilding it per unit. When subBlocked is nil this falls
 // back to the standard per-call build path.
 func (s *GameState) assignAttackApproachPathLockedWithSubBlocked(unit, target *Unit, blocked map[gridPoint]bool, subBlocked map[gridPoint]bool) {
+	// Diagnostic: attribute this pathfind's wall-time by outcome so the tick
+	// profiler reports combatAI.approach.{ok,coarseFail,fineFail,skip}
+	// separately. fineFail is the suspected stutter source (a failed ~15k-cell
+	// sub-grid A* when a chased unit is threading a blob of hostile units).
+	// Observation-only and a no-op unless WEBRTS_TICK_PROFILE is set.
+	stopApproachProfile := profileStartDeferred()
+	approachOutcome := "combatAI.approach.skip"
+	defer func() { stopApproachProfile(approachOutcome) }()
+
 	if target == nil {
 		unit.Path = nil
 		unit.Moving = false
@@ -117,6 +127,7 @@ func (s *GameState) assignAttackApproachPathLockedWithSubBlocked(unit, target *U
 	targetCell := s.worldToGrid(target.X, target.Y)
 	goalCell, ok := s.findNearestWalkable(targetCell, blocked)
 	if !ok {
+		approachOutcome = "combatAI.approach.coarseFail"
 		if unit.Order.Type == OrderAttackTarget {
 			s.enterAttackDriftLocked(unit, target)
 		} else {
@@ -127,6 +138,7 @@ func (s *GameState) assignAttackApproachPathLockedWithSubBlocked(unit, target *U
 
 	fullPath := s.findPath(startCell, goalCell, blocked, nil)
 	if len(fullPath) == 0 {
+		approachOutcome = "combatAI.approach.coarseFail"
 		if unit.Order.Type == OrderAttackTarget {
 			s.enterAttackDriftLocked(unit, target)
 		} else {
@@ -154,11 +166,14 @@ func (s *GameState) assignAttackApproachPathLockedWithSubBlocked(unit, target *U
 	// obstacles). Fall back to drift in that case so the unit still makes
 	// directional progress instead of standing idle.
 	if !unit.Moving {
+		approachOutcome = "combatAI.approach.fineFail"
 		if unit.Order.Type == OrderAttackTarget {
 			s.enterAttackDriftLocked(unit, target)
 		} else {
 			s.dropUnreachableAITargetLocked(unit, target)
 		}
+	} else {
+		approachOutcome = "combatAI.approach.ok"
 	}
 }
 
@@ -284,6 +299,7 @@ func (s *GameState) assignAttackGroupPathsLocked(attackers []*Unit, target *Unit
 // and silently stops when the next cell is blocked. Replaces the strike-count
 // escalation that the unit-target memo system previously used.
 func (s *GameState) enterAttackDriftLocked(unit, target *Unit) {
+	s.debugPathTracker.recordUnreachableRetarget(unit.OwnerID == enemyPlayerID)
 	unit.AttackDrifting = true
 	unit.TargetX = target.X
 	unit.TargetY = target.Y
@@ -434,20 +450,58 @@ func (s *GameState) enemyAdvanceToObjectiveLocked(unit *Unit, blocked map[gridPo
 		return
 	}
 
-	// (3) Plain move toward the objective. No attack target, no escalation.
-	unit.AttackTargetID = 0
-	unit.AttackBuildingTargetID = ""
-	unit.Attacking = false
-	unit.Status = "Advancing"
-	s.assignUnitPath(unit, objectivePos, blocked, nil)
-	if unit.Moving {
-		return
+	// (2b) Army-wide unreachable-objective cache. The node budget bounds a
+	// single objective pathfind, but with a large walled-off army each enemy
+	// would still re-pay that bounded-yet-~9ms failed A* every objective-
+	// search gate. This shared cache makes one enemy's failure speak for the
+	// whole army: while an objective is cached unreachable, every enemy skips
+	// straight to engaging the blockers instead of re-running the doomed
+	// pathfind. Keyed by objective building ID (the townhall-center fallback,
+	// building==nil, is the rare no-buildings edge and is left uncached).
+	// Self-heals: a later success (route reopened by killing through the wall)
+	// clears the entry for everyone immediately; otherwise it lapses after
+	// objectiveUnreachableTTLTicks and one gated enemy re-tests.
+	objKey := ""
+	if building != nil {
+		objKey = building.ID
+	}
+	objCached := objKey != "" && s.Tick < s.objectiveUnreachableUntil[objKey]
+
+	if !objCached {
+		// (3) Plain move toward the objective. No attack target, no escalation.
+		unit.AttackTargetID = 0
+		unit.AttackBuildingTargetID = ""
+		unit.Attacking = false
+		unit.Status = "Advancing"
+		// Diagnostic: this is a full per-unit move pathfind (blocked-map
+		// rebuild + fine sub-cell A*) to the objective — NOT the attack-
+		// approach path, so combatAI.approach.* never covers it. Split so the
+		// slow-tick tripwire names objAdvance.path vs objAdvance.blockHostile.
+		profileSection("combatAI.objAdvance.path", func() {
+			s.assignUnitPath(unit, objectivePos, blocked, nil)
+		})
+		if unit.Moving {
+			// Route exists (possibly reopened) — clear any stale suppression
+			// so the rest of the army stops skipping immediately.
+			if objKey != "" {
+				delete(s.objectiveUnreachableUntil, objKey)
+			}
+			return
+		}
+		// Path failed → arm the army-wide cache so the next gate (any enemy)
+		// doesn't re-pay it until the TTL lapses.
+		if objKey != "" {
+			s.objectiveUnreachableUntil[objKey] = s.Tick + objectiveUnreachableTTLTicks
+		}
 	}
 
 	// (4) Objective exists but is completely partitioned off by a wall of
-	// units/terrain. Push the enemy at the nearest hostile anywhere; normal
-	// in-range scoring engages it as the enemy closes, and killing through
-	// reopens the route. (acquireNearestBlockingHostileLocked already issues a
-	// movement path and ignores the DetectionRange cap.)
-	s.acquireNearestBlockingHostileLocked(unit, blocked)
+	// units/terrain (path just failed, or is cached unreachable army-wide).
+	// Push the enemy at the nearest hostile anywhere; normal in-range scoring
+	// engages it as the enemy closes, and killing through reopens the route.
+	// (acquireNearestBlockingHostileLocked already issues a movement path and
+	// ignores the DetectionRange cap.)
+	profileSection("combatAI.objAdvance.blockHostile", func() {
+		s.acquireNearestBlockingHostileLocked(unit, blocked)
+	})
 }
