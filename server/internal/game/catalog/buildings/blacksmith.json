@@ -12,8 +12,8 @@
   "maxHp": 500,
   "buildSeconds": 25,
   "resourceCost": {
-    "gold": 25,
-    "wood": 25
+    "gold": 250,
+    "wood": 200
   },
   "capabilities": [
     "upgrade-purchase"
@@ -22,7 +22,7 @@
   "metadata": {},
   "color": "#1e40af",
   "label": "Blacksmith",
-  "hotkey": "u",
+  "hotkey": "s",
   "render": {
     "inset": 0.18,
     "layers": [
