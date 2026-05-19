@@ -231,3 +231,63 @@ func TestSplit_ZeroXPValue_NoAward(t *testing.T) {
 		t.Errorf("ally gained XP from a 0-XP enemy (%d / %v)", ally.XP, ally.XPProgressRemainder)
 	}
 }
+
+func TestDispatcher_ClassicReproducesPair(t *testing.T) {
+	// Default tuning = classic. awardUnitDeathXPLocked(dead, killer) must equal
+	// the legacy pair: killer gets the kill bonus, contributors get damage XP.
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	killer := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 100, Y: 100})
+	dead := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 120, Y: 100})
+	contributor := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 140, Y: 100})
+	s.recordDamageDealtLocked(contributor, dead, 30)
+
+	// Baseline reference: a second, identical setup run through the legacy pair.
+	rs := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	rs.mu.Lock()
+	rk := rs.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 100, Y: 100})
+	rd := rs.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 120, Y: 100})
+	rc := rs.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 140, Y: 100})
+	rs.recordDamageDealtLocked(rc, rd, 30)
+	rs.awardKillXPLocked(rk)
+	rs.payoutDamageDealtXPLocked(rd)
+	rs.mu.Unlock()
+
+	s.awardUnitDeathXPLocked(dead, killer)
+
+	if killer.XP != rk.XP || killer.XPProgressRemainder != rk.XPProgressRemainder {
+		t.Errorf("killer XP %d/%v != legacy %d/%v", killer.XP, killer.XPProgressRemainder, rk.XP, rk.XPProgressRemainder)
+	}
+	if contributor.XP != rc.XP || contributor.XPProgressRemainder != rc.XPProgressRemainder {
+		t.Errorf("contributor XP %d/%v != legacy %d/%v", contributor.XP, contributor.XPProgressRemainder, rc.XP, rc.XPProgressRemainder)
+	}
+}
+
+func TestDispatcher_SplitRoutesAndSuppressesTank(t *testing.T) {
+	withExperienceTuning(t, splitTuning(500))
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dead := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 1000, Y: 1000})
+	dead.XPValue = 10
+	killer := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 1005, Y: 1000})
+
+	// A soldier that tanked damage from `dead`. In split mode the tank payout
+	// must be suppressed — this unit only earns its split share (it is in range).
+	tanker := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 1010, Y: 1000})
+	s.recordSoldierTankContributionLocked(dead, tanker, 100)
+
+	s.awardUnitDeathXPLocked(dead, killer)
+	s.awardSoldierTankKillXPLocked(dead.ID) // guarded → no-op in split
+
+	// killer + tanker both in range → 10/2 = 5 each. Tank payout added nothing.
+	if killer.XP != 5 {
+		t.Errorf("killer.XP = %d, want 5 (split share only)", killer.XP)
+	}
+	if tanker.XP != 5 {
+		t.Errorf("tanker.XP = %d, want 5 (split share only; tank payout suppressed)", tanker.XP)
+	}
+}

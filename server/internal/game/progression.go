@@ -517,6 +517,9 @@ func (s *GameState) recordDamageDealtBuildingLocked(attacker *Unit, buildingID s
 // payoutBuildingDamageDealtXPLocked pays banked damage XP to each surviving
 // contributor when a building is destroyed.
 func (s *GameState) payoutBuildingDamageDealtXPLocked(buildingID string) {
+	if gameplayTuning().Experience.Mode == experienceModeSplit {
+		return // buildings grant no XP in split mode
+	}
 	m, ok := s.buildingDamageDealt[buildingID]
 	if !ok {
 		return
@@ -608,7 +611,31 @@ func (s *GameState) awardSplitDeathXPLocked(dead *Unit) {
 	}
 }
 
+// awardUnitDeathXPLocked is the single entry point for "a unit just died,
+// settle its XP". It replaces the legacy awardKillXPLocked+payoutDamageDealtXPLocked
+// pair at every kill site. `killer` may be nil (matching the legacy pair's
+// nil-safety) and is ignored in split mode.
+//
+//   - classic: verbatim relocation of the legacy pair, in the original order.
+//   - split:   even per-enemy split (killer intentionally unused).
+func (s *GameState) awardUnitDeathXPLocked(dead, killer *Unit) {
+	if dead == nil {
+		return
+	}
+	if gameplayTuning().Experience.Mode == experienceModeSplit {
+		s.awardSplitDeathXPLocked(dead)
+		return
+	}
+	if killer != nil {
+		s.awardKillXPLocked(killer)
+	}
+	s.payoutDamageDealtXPLocked(dead)
+}
+
 func (s *GameState) awardSoldierTankKillXPLocked(defeatedUnitID int) {
+	if gameplayTuning().Experience.Mode == experienceModeSplit {
+		return // split mode fully replaces classic payouts
+	}
 	if defeatedUnitID == 0 {
 		return
 	}
