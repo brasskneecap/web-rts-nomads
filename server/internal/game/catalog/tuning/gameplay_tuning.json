@@ -27,5 +27,10 @@
     "milestoneWaves": [5, 10, 15, 20],
     "milestoneMinRarity": "epic"
   },
-  "unitOverrides": {}
+  "unitOverrides": {},
+  "experience": {
+    "mode": "classic",
+    "splitDefaultXP": 10,
+    "splitEligibilityRadius": 500
+  }
 }

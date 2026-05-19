@@ -33,6 +33,14 @@ const (
 	xpPerSoldierDamageTankedOnKill = 0.5
 	rankUpFxDurationSecs           = 1.4
 
+	// Experience-system selector values. The active mode is read from
+	// gameplayTuning().Experience.Mode (catalog/tuning/gameplay_tuning.json).
+	// "classic" = kill bonus + damage-dealt + soldier-tank payouts (legacy).
+	// "split"   = a single per-enemy experience value, divided evenly among
+	//             eligible recipients as raw XP, fully replacing the above.
+	experienceModeClassic = "classic"
+	experienceModeSplit   = "split"
+
 	// Wave completion XP intentionally omitted — future reward mechanics
 	// (e.g. loot, bounties) will cover this instead.
 )
