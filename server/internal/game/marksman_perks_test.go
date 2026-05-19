@@ -340,22 +340,35 @@ func TestMarksman_BullseyeStacksWithEagleSpiritOnRange(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestMarksman_SplitShot_FiresExtraProjectiles(t *testing.T) {
+	// Derive expected count from the perk catalog so a config change to
+	// extraShots rebalances behavior without breaking this test.
+	extras := int(perkDefByID("split_shot").Config["extraShots"])
+	if extras <= 0 {
+		t.Skip("split_shot extraShots = 0 — no extras would fire; behavior covered by primary-only path")
+	}
+
 	s, attacker, primary := newMarksmanState(t, 12)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Two extra hostile archers near the primary target so split shot has
-	// something to splash to.
-	extra1 := s.spawnPlayerUnitLocked("archer", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 580, Y: 420})
-	extra2 := s.spawnPlayerUnitLocked("archer", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 560, Y: 380})
-	if extra1 == nil || extra2 == nil {
-		t.Fatal("extra archer spawn failed")
+	// Spawn exactly `extras` distinct hostile archers near the primary so
+	// split shot has one target per extra arrow. Scales with the perk config:
+	// raising extraShots in the catalog spawns more enemies here automatically.
+	for i := 0; i < extras; i++ {
+		// Small position jitter so each enemy is at a distinct point near the
+		// primary (and thus within the "distinct in-range hostile" filter).
+		dx := float64((i%3)*30 - 30)
+		dy := float64((i/3)*30 - 30)
+		u := s.spawnPlayerUnitLocked("archer", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 580 + dx, Y: 420 + dy})
+		if u == nil {
+			t.Fatalf("extra archer spawn %d failed", i)
+		}
 	}
 	grantPerk(attacker, "split_shot")
 	forceNoCrit(s)
 	// Fire-time path: fireProjectileLocked spawns the primary AND triggers
-	// onMarksmanProjectileFiredLocked which fires the split arrows. Three
-	// projectiles total: primary + 2 extras.
+	// onMarksmanProjectileFiredLocked which fires the split arrows. Total:
+	// primary + `extras` extra arrows.
 	s.fireProjectileLocked(attacker, primary, 5)
 
 	got := 0
@@ -364,12 +377,25 @@ func TestMarksman_SplitShot_FiresExtraProjectiles(t *testing.T) {
 			got++
 		}
 	}
-	if got != 3 {
-		t.Errorf("total split-shot projectiles = %d, want 3 (primary + 2 extras)", got)
+	want := 1 + extras
+	if got != want {
+		t.Errorf("total split-shot projectiles = %d, want %d (primary + %d extras)", got, want, extras)
 	}
 }
 
 func TestMarksman_SplitShot_FallsBackToPrimaryWhenNoExtras(t *testing.T) {
+	// Derive expected count from the perk catalog: with no extra hostiles
+	// available, every extra arrow falls back onto the primary (when the
+	// fallbackOnPrimary flag is on).
+	def := perkDefByID("split_shot")
+	if def.Config["fallbackOnPrimary"] <= 0 {
+		t.Skip("split_shot fallbackOnPrimary disabled — fallback path not exercised")
+	}
+	extras := int(def.Config["extraShots"])
+	if extras <= 0 {
+		t.Skip("split_shot extraShots = 0 — no extras to fall back; nothing to verify")
+	}
+
 	s, attacker, primary := newMarksmanState(t, 13)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -378,15 +404,16 @@ func TestMarksman_SplitShot_FallsBackToPrimaryWhenNoExtras(t *testing.T) {
 	forceNoCrit(s)
 	s.fireProjectileLocked(attacker, primary, 5)
 
-	// All projectiles end up aimed at primary: 1 primary + 2 fallback = 3.
+	// All projectiles end up aimed at primary: 1 primary + `extras` fallback.
 	primaryCount := 0
 	for _, p := range s.Projectiles {
 		if p.OwnerUnitID == attacker.ID && p.TargetUnitID == primary.ID {
 			primaryCount++
 		}
 	}
-	if primaryCount != 3 {
-		t.Errorf("fallback projectiles at primary = %d, want 3 (primary + 2 fallback)", primaryCount)
+	want := 1 + extras
+	if primaryCount != want {
+		t.Errorf("fallback projectiles at primary = %d, want %d (primary + %d fallback)", primaryCount, want, extras)
 	}
 }
 
