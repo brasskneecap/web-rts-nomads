@@ -347,8 +347,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 					s.trackBattleDamageLocked(battleSourceFromTrap(trap), unit, dmg)
 					if unit.HP <= 0 {
 						if ownerUnit != nil {
-							s.awardKillXPLocked(ownerUnit)
-							s.payoutDamageDealtXPLocked(unit)
+							s.awardUnitDeathXPLocked(unit, ownerUnit)
 						}
 						s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
 						deadUnitIDs = append(deadUnitIDs, unit.ID)
@@ -381,8 +380,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 						s.trackBattleDamageLocked(battleSourceFromTrap(trap), unit, bonus)
 						if unit.HP <= 0 {
 							if ownerUnit != nil {
-								s.awardKillXPLocked(ownerUnit)
-								s.payoutDamageDealtXPLocked(unit)
+								s.awardUnitDeathXPLocked(unit, ownerUnit)
 							}
 							s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
 							deadUnitIDs = append(deadUnitIDs, unit.ID)
@@ -415,8 +413,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 								s.trackBattleDamageLocked(battleSourceFromTrap(trap), unit, stunDmg)
 								if unit.HP <= 0 {
 									if ownerUnit != nil {
-										s.awardKillXPLocked(ownerUnit)
-										s.payoutDamageDealtXPLocked(unit)
+										s.awardUnitDeathXPLocked(unit, ownerUnit)
 									}
 									s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
 									deadUnitIDs = append(deadUnitIDs, unit.ID)
@@ -523,8 +520,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 					s.trackBattleDamageLocked(battleSourceFromTrap(trap), unit, dmg)
 					if unit.HP <= 0 {
 						if ownerUnit != nil {
-							s.awardKillXPLocked(ownerUnit)
-							s.payoutDamageDealtXPLocked(unit)
+							s.awardUnitDeathXPLocked(unit, ownerUnit)
 						}
 						s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
 						deadUnitIDs = append(deadUnitIDs, unit.ID)
@@ -809,8 +805,7 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 				}
 				if unit.HP <= 0 {
 					if owner != nil {
-						s.awardKillXPLocked(owner)
-						s.payoutDamageDealtXPLocked(unit)
+						s.awardUnitDeathXPLocked(unit, owner)
 						s.trackBattleKillLocked(
 							BattleSource{PlayerID: owner.OwnerID, Kind: "trap", Subtype: "fire_pit"},
 							unit,
@@ -1267,8 +1262,7 @@ func (s *GameState) detonateExplosiveTrapLocked(trap *Trap, ownerUnit *Unit, dea
 		s.trackBattleDamageLocked(battleSourceFromTrap(trap), unit, trap.BurstDamage)
 		if unit.HP <= 0 {
 			if ownerUnit != nil {
-				s.awardKillXPLocked(ownerUnit)
-				s.payoutDamageDealtXPLocked(unit)
+				s.awardUnitDeathXPLocked(unit, ownerUnit)
 			}
 			s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
 			deadUnitIDs = append(deadUnitIDs, unit.ID)
@@ -1322,8 +1316,7 @@ func (s *GameState) fireCataclysmLocked(trap *Trap, ownerUnit *Unit, deadUnitIDs
 		s.trackBattleDamageLocked(battleSourceFromTrap(trap), unit, trap.BurstDamage)
 		if unit.HP <= 0 {
 			if ownerUnit != nil {
-				s.awardKillXPLocked(ownerUnit)
-				s.payoutDamageDealtXPLocked(unit)
+				s.awardUnitDeathXPLocked(unit, ownerUnit)
 			}
 			s.trackBattleKillLocked(battleSourceFromTrap(trap), unit)
 			deadUnitIDs = append(deadUnitIDs, unit.ID)
@@ -1379,8 +1372,7 @@ func (s *GameState) fireReactiveFlamesLocked(cx, cy, radius float64, damage int,
 		}
 		if u.HP <= 0 {
 			if ownerUnit != nil && ownerUnit.HP > 0 {
-				s.awardKillXPLocked(ownerUnit)
-				s.payoutDamageDealtXPLocked(u)
+				s.awardUnitDeathXPLocked(u, ownerUnit)
 			}
 			if ownerPlayerID != "" {
 				s.trackBattleKillLocked(
@@ -1443,8 +1435,7 @@ func (s *GameState) fireFinalExposureLocked(victim *Unit) {
 		s.trackBattleDamageLocked(finalExposureSrc, u, damage)
 		if u.HP <= 0 {
 			if owner != nil {
-				s.awardKillXPLocked(owner)
-				s.payoutDamageDealtXPLocked(u)
+				s.awardUnitDeathXPLocked(u, owner)
 			}
 			s.trackBattleKillLocked(finalExposureSrc, u)
 			dead = append(dead, u.ID)
@@ -1626,8 +1617,7 @@ func (s *GameState) fireTrapOverloadOnExitLocked(trap *Trap, ownerUnit, victim *
 		}
 		if victim.HP <= 0 {
 			if ownerUnit != nil {
-				s.awardKillXPLocked(ownerUnit)
-				s.payoutDamageDealtXPLocked(victim)
+				s.awardUnitDeathXPLocked(victim, ownerUnit)
 			}
 			s.trackBattleKillLocked(battleSourceFromTrap(trap), victim)
 			deadUnitIDs = append(deadUnitIDs, victim.ID)
@@ -1659,8 +1649,7 @@ func (s *GameState) fireTrapOverloadOnExitLocked(trap *Trap, ownerUnit, victim *
 		}
 		if victim.HP <= 0 {
 			if ownerUnit != nil {
-				s.awardKillXPLocked(ownerUnit)
-				s.payoutDamageDealtXPLocked(victim)
+				s.awardUnitDeathXPLocked(victim, ownerUnit)
 			}
 			s.trackBattleKillLocked(battleSourceFromTrap(trap), victim)
 			deadUnitIDs = append(deadUnitIDs, victim.ID)
