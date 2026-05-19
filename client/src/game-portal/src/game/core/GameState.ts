@@ -220,15 +220,17 @@ const TRAP_CENTER_HIT_RADIUS = 14
  * 100ms because their snapshot arrival is consistent.
  */
 function detectInitialInterpolationDelayMs(): number {
+  let delay = 100
   try {
-    if (typeof window === 'undefined') return 100
+    if (typeof window === 'undefined') return delay
     if (window.sessionStorage.getItem('webrts.steam.proxyActive') === '1') {
-      return 200
+      delay = 200
     }
   } catch {
     // sessionStorage may be unavailable in some sandboxed contexts.
   }
-  return 100
+  console.log('[GameState] interpolationDelayMs initialised to', delay)
+  return delay
 }
 
 // Matches the accent colors used by ResourceStock in the HUD resource tray.
