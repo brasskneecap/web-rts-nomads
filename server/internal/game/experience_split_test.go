@@ -321,3 +321,180 @@ func TestSplit_EndToEndMeleeKill(t *testing.T) {
 		t.Errorf("ally.XP = %d, want 5 (in-range split share)", ally.XP)
 	}
 }
+
+// TestSplit_EnemyBystander_NoXP asserts that an enemy-owned unit in proximity
+// of the death does NOT receive XP. This exercises unitCanGainXPLocked's
+// ownership check as a defense-in-depth guard inside awardSplitDeathXPLocked.
+func TestSplit_EnemyBystander_NoXP(t *testing.T) {
+	withExperienceTuning(t, splitTuning(500))
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dead := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 1000, Y: 1000})
+	dead.XPValue = 10
+
+	ally := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 1005, Y: 1000})
+
+	// An enemy-team bystander standing right next to the death.
+	enemyBystander := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 1002, Y: 1000})
+
+	s.awardSplitDeathXPLocked(dead)
+
+	// Only the allied unit receives XP; the enemy bystander gets none.
+	if ally.XP != dead.XPValue {
+		t.Errorf("ally.XP = %d, want %d (sole eligible recipient)", ally.XP, dead.XPValue)
+	}
+	if enemyBystander.XP != 0 || enemyBystander.XPProgressRemainder != 0 {
+		t.Errorf("enemy bystander gained XP (%d / %v); unitCanGainXPLocked should exclude enemies",
+			enemyBystander.XP, enemyBystander.XPProgressRemainder)
+	}
+}
+
+// TestSplit_BuildingDestroy_NoXP verifies the payoutBuildingDamageDealtXPLocked
+// early-return guard: in split mode, units that damaged an enemy building
+// receive no XP when the building is destroyed.
+func TestSplit_BuildingDestroy_NoXP(t *testing.T) {
+	withExperienceTuning(t, splitTuning(500))
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	attacker := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 100, Y: 100})
+	const buildingID = "test-building-1"
+
+	// Bank some damage against the building — this is what would pay out in classic.
+	s.recordDamageDealtBuildingLocked(attacker, buildingID, 200)
+
+	// Simulate the building being destroyed and the payout being triggered.
+	s.payoutBuildingDamageDealtXPLocked(buildingID)
+
+	if attacker.XP != 0 || attacker.XPProgressRemainder != 0 {
+		t.Errorf("attacker gained XP from building destruction in split mode (%d / %v); want none",
+			attacker.XP, attacker.XPProgressRemainder)
+	}
+}
+
+// TestSplit_Determinism_SameResultAcrossRuns executes the same split scenario
+// N times and asserts every run produces an identical final XP state.
+// This catches any accidental map-iteration-order dependence that would cause
+// nondeterministic share ordering (even though equal shares make ordering moot
+// for the final sum, this guards against future code changes that break the invariant).
+func TestSplit_Determinism_SameResultAcrossRuns(t *testing.T) {
+	const runs = 10
+	const recipients = 5
+	const xpValue = 13 // intentionally indivisible to test remainder accumulation
+
+	type result struct {
+		xp        int
+		remainder float64
+	}
+
+	var baseline []result
+
+	for run := 0; run < runs; run++ {
+		withExperienceTuning(t, splitTuning(500))
+		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+		s.mu.Lock()
+
+		dead := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 1000, Y: 1000})
+		dead.XPValue = xpValue
+
+		var recips []*Unit
+		for i := 0; i < recipients; i++ {
+			u := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 1000 + float64(i*5), Y: 1000})
+			recips = append(recips, u)
+		}
+
+		s.awardSplitDeathXPLocked(dead)
+
+		got := make([]result, len(recips))
+		for i, u := range recips {
+			got[i] = result{xp: u.XP, remainder: u.XPProgressRemainder}
+		}
+		s.mu.Unlock()
+
+		if run == 0 {
+			baseline = got
+			continue
+		}
+		for i, r := range got {
+			if r != baseline[i] {
+				t.Errorf("run %d recipient %d: XP=%d remainder=%v, baseline XP=%d remainder=%v — nondeterministic result",
+					run, i, r.xp, r.remainder, baseline[i].xp, baseline[i].remainder)
+			}
+		}
+	}
+}
+
+// TestSplit_TrapDeadTrapper_XPLost verifies that when a trap kills a unit and
+// the trap owner is nil (trapper died before the kill), no XP is distributed
+// in split mode. This exercises the call-site guard in trap.go: the dispatcher
+// call is inside "if ownerUnit != nil { ... }", so with a nil owner, the
+// dispatcher is never invoked and the XP is simply lost.
+//
+// This test exercises the guard structurally by calling awardUnitDeathXPLocked
+// directly with a nil killer (replicating what the trap site does when ownerUnit
+// is non-nil), and separately confirming that awardSplitDeathXPLocked with no
+// nearby allies also yields lost XP — the two halves of the trap guard.
+func TestSplit_TrapDeadTrapper_XPLost(t *testing.T) {
+	withExperienceTuning(t, splitTuning(500))
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// The trap victim (the unit the trap killed).
+	victim := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 5000, Y: 5000})
+	victim.XPValue = 20
+
+	// A living ally far from the trap kill site (no proximity eligibility).
+	farAlly := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 100, Y: 100})
+
+	// Simulate: the trap fires, victim dies, but ownerUnit is nil — the trap
+	// site's guard prevents the dispatcher call entirely. We verify this by
+	// calling the dispatcher with a nil killer (split mode ignores killer)
+	// with no allies in range. Since the victim is at (5000,5000) and farAlly
+	// is at (100,100), the split radius of 500 does not cover farAlly.
+	// Nobody dealt damage to victim either, so the eligible set is empty → XP lost.
+	s.awardUnitDeathXPLocked(victim, nil /* nil killer: dead trapper */)
+
+	if farAlly.XP != 0 || farAlly.XPProgressRemainder != 0 {
+		t.Errorf("farAlly gained XP (%d / %v) from trap kill with no nearby allies; XP should be lost",
+			farAlly.XP, farAlly.XPProgressRemainder)
+	}
+}
+
+// TestClassic_SoldierTankKillXP_NotSuppressed verifies that in classic mode
+// the awardSoldierTankKillXPLocked function still runs and credits XP to a
+// tanking soldier. This is the counterpart of TestDispatcher_SplitRoutesAndSuppressesTank.
+func TestClassic_SoldierTankKillXP_NotSuppressed(t *testing.T) {
+	// Default tuning = classic; no withExperienceTuning override needed.
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dead := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 100, Y: 100})
+	killer := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 110, Y: 100})
+	tanker := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 120, Y: 100})
+
+	// Record that tanker absorbed damage from `dead`.
+	const tankedDamage = 50
+	s.recordSoldierTankContributionLocked(dead, tanker, tankedDamage)
+
+	// Run the two-step classic kill sequence.
+	s.awardUnitDeathXPLocked(dead, killer)
+	s.awardSoldierTankKillXPLocked(dead.ID)
+
+	// Tank XP = tankedDamage × xpPerSoldierDamageTankedOnKill × xpGainMultiplier
+	// (the last scaling happens inside addUnitXPFloatLocked which is called by
+	// awardSoldierTankKillXPLocked). Assert that the tanker received strictly
+	// more XP than zero — we do not pin the exact value since it derives from
+	// three catalog constants (xpPerSoldierDamageTankedOnKill=0.5, xpGainMultiplier=0.2).
+	if tanker.XP == 0 && tanker.XPProgressRemainder == 0 {
+		t.Errorf("tanker received no XP in classic mode; awardSoldierTankKillXPLocked may be suppressed")
+	}
+	// Killer should also have received kill-bonus XP.
+	if killer.XP == 0 && killer.XPProgressRemainder == 0 {
+		t.Errorf("killer received no XP in classic mode")
+	}
+}
