@@ -318,7 +318,7 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 // ─────────────────────────────────────────────────────────────────────────────
 
 // onPerkKillLocked is called immediately after a unit lands a killing blow on
-// a target. Called alongside awardKillXPLocked in state.go.
+// a target. Called at each kill site alongside awardUnitDeathXPLocked (progression.go).
 //
 // ADD NEW ON-KILL PERKS HERE.
 func (s *GameState) onPerkKillLocked(attacker *Unit) {
