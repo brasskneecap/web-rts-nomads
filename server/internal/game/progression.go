@@ -271,6 +271,17 @@ func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
 	}
 }
 
+// resolveUnitXPValue returns the raw XP a unit of this def yields when killed
+// in "split" mode. Absent experience falls back to the tuned default; an
+// explicit 0 means the unit grants no XP. Mode-agnostic — the value is seeded
+// at spawn and simply unused in "classic" mode.
+func resolveUnitXPValue(def UnitDef) int {
+	if def.Experience != nil {
+		return *def.Experience
+	}
+	return gameplayTuning().Experience.SplitDefaultXP
+}
+
 func (s *GameState) addUnitXPFloatLocked(unit *Unit, amount float64) {
 	if !s.unitCanGainXPLocked(unit) || amount <= 0 {
 		return
