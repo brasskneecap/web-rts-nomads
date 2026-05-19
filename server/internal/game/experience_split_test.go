@@ -291,3 +291,33 @@ func TestDispatcher_SplitRoutesAndSuppressesTank(t *testing.T) {
 		t.Errorf("tanker.XP = %d, want 5 (split share only; tank payout suppressed)", tanker.XP)
 	}
 }
+
+// Drives a real melee kill (resolveAttackHitLocked → awardUnitDeathXPLocked)
+// in split mode and asserts the dispatcher routes to the split algorithm:
+// the killer and a nearby ally each get half the enemy's XPValue, and the
+// classic kill bonus (25 × 0.2) does NOT appear.
+func TestSplit_EndToEndMeleeKill(t *testing.T) {
+	withExperienceTuning(t, splitTuning(500))
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	killer := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 1000, Y: 1000})
+	killer.Damage = 9999 // one-shot
+	ally := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 1010, Y: 1000})
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 1005, Y: 1000})
+	enemy.HP = 1
+	enemy.MaxHP = 1
+	enemy.XPValue = 10
+
+	var dead []int
+	s.resolveAttackHitLocked(killer, enemy, killer.Damage, &dead)
+
+	// Eligible = {killer, ally} (both in range) → 10/2 = 5 each, no kill bonus.
+	if killer.XP != 5 {
+		t.Errorf("killer.XP = %d, want 5 (split share, no classic kill bonus)", killer.XP)
+	}
+	if ally.XP != 5 {
+		t.Errorf("ally.XP = %d, want 5 (in-range split share)", ally.XP)
+	}
+}
