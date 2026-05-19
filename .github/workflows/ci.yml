@@ -1,0 +1,122 @@
+name: ci
+
+on:
+  push:
+    branches: [main, standaloneApp]
+  pull_request:
+    branches: [main, standaloneApp]
+
+# Per §19 task 19.4: packaging (cargo tauri build) is intentionally NOT on
+# this matrix. It runs only as a manual or release-tagged workflow because
+# bundling is slow and produces large artefacts.
+
+jobs:
+  go:
+    name: go test + build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.0"
+          cache: true
+          cache-dependency-path: server/go.sum
+
+      - name: go test (no tag)
+        working-directory: server
+        run: go test ./...
+
+      - name: go build with embed_spa tag (using a stub dist)
+        working-directory: server
+        shell: bash
+        run: |
+          # The embed_spa-tagged build requires a dist/ directory inside
+          # cmd/api/. CI doesn't run npm build, so stub the minimum needed
+          # to satisfy //go:embed all:dist.
+          mkdir -p cmd/api/dist/assets
+          printf '<!doctype html><html><body><div id="app"></div></body></html>' > cmd/api/dist/index.html
+          printf 'console.log("ci stub");' > cmd/api/dist/assets/index-cistub.js
+          go build -tags embed_spa ./cmd/api
+
+  rust:
+    name: cargo test + clippy
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # Tauri requires webkit2gtk + a few other libs on Linux for the runtime
+      # crate to compile, even when we only run cargo test (the build script
+      # links against them).
+      - name: Linux deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libsoup-3.0-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Stage placeholder sidecar (build script requires the file to exist)
+        shell: bash
+        run: |
+          mkdir -p desktop/src-tauri/binaries
+          triple="$(rustc -vV | awk '/^host:/ {print $2}')"
+          ext=""
+          case "$triple" in *windows*) ext=".exe" ;; esac
+          touch "desktop/src-tauri/binaries/nomads-server-${triple}${ext}"
+          chmod +x "desktop/src-tauri/binaries/nomads-server-${triple}${ext}" || true
+
+      - name: cargo test
+        working-directory: desktop/src-tauri
+        run: cargo test --lib
+
+      - name: cargo clippy
+        working-directory: desktop/src-tauri
+        run: cargo clippy --lib --tests -- -D warnings
+
+  vitest:
+    name: vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: client/src/game-portal/package-lock.json
+
+      - name: Install
+        working-directory: client/src/game-portal
+        # CI installs may fail if package-lock.json doesn't exist yet (Vitest
+        # is added in §15). Soft-fail so this job tracks the eventual wiring
+        # rather than blocking PRs that don't touch frontend.
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+        continue-on-error: true
+
+      - name: Vitest
+        working-directory: client/src/game-portal
+        run: |
+          if grep -q '"test"' package.json; then
+            npm test
+          else
+            echo "Vitest not yet wired (§15) — skipping"
+          fi

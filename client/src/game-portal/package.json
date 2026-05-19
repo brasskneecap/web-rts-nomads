@@ -7,20 +7,26 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "pack:sprites": "node ./scripts/pack-unit-sprites.mjs"
+    "pack:sprites": "node ./scripts/pack-unit-sprites.mjs",
+    "tauri:dev": "cd ../../../desktop/src-tauri && cargo tauri dev",
+    "tauri:build": "cd ../../../desktop/src-tauri && cargo tauri build",
+    "test": "vitest run"
   },
   "dependencies": {
     "vue": "^3.5.32",
-    "vue-router": "^4.6.4"
+    "vue-router": "^4.6.4",
+    "@tauri-apps/api": "^2.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
     "@types/pngjs": "^6.0.5",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/tsconfig": "^0.9.1",
+    "happy-dom": "^15.0.0",
     "pngjs": "^7.0.0",
     "typescript": "~6.0.2",
     "vite": "^8.0.4",
+    "vitest": "^2.0.0",
     "vue-tsc": "^3.2.6"
   }
 }

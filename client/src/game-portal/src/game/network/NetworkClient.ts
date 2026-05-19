@@ -23,6 +23,7 @@ import type {
   UpgradeTownHallCommand,
 } from './protocol'
 import { GameState } from '../core/GameState'
+import { startSteamGame } from '@/services/desktopBridge'
 
 /** Derive the WebSocket base URL from the HTTP base URL env var.
  *  http -> ws, https -> wss so both schemes work in prod and dev.
@@ -33,7 +34,60 @@ function getWsBaseUrl(): string {
   return http.replace(/^http/, 'ws')
 }
 
-const WS_URL = `${getWsBaseUrl()}/ws`
+/** Session-storage key for the Direct-connect proxy token. Set by the
+ *  DirectConnect.vue view after a successful POST /api/direct-connect/join;
+ *  consumed by every WebSocket open in this tab so all WS traffic flows
+ *  through the joiner-as-proxy path to the remote host's hub. Cleared by
+ *  DirectConnect on explicit disconnect or by the user closing the tab. */
+const PROXY_TOKEN_STORAGE_KEY = 'webrts.directConnect.proxyToken'
+
+/** Session-storage flag for the Steam Sockets joiner-as-proxy path (§14.3).
+ *  Set by SteamMultiplayer.vue when the joiner receives the
+ *  `steam_lobby_started` Tauri event from the shell. When set, every WS
+ *  open in this tab includes `?proxy=steam` so the joiner's local hub
+ *  pulls the parked steamTransport from SteamSessions and pairs it with
+ *  the SPA conn. Cleared by leaveStoredMatch. Exported so SteamMultiplayer.vue
+ *  can set it without re-declaring the storage key string. */
+export const STEAM_PROXY_FLAG_KEY = 'webrts.steam.proxyActive'
+
+/** Session-storage key the host uses to signal "after this welcome arrives,
+ *  call startSteamGame with the matchId". Value is the lobbyId. Set by
+ *  SteamMultiplayer.vue on the host's "Start Game" click; cleared by
+ *  handleMessage('welcome') after firing startSteamGame. */
+export const STEAM_PENDING_HOST_START_KEY = 'webrts.steam.pendingHostStart'
+
+/** Session-storage key identifying the paired Steam Matchmaking lobby for
+ *  the SPA's current /lobby view (host OR joiner side). Set by CreateGame
+ *  (host) or FindGame (joiner) when a Steam lobby is involved. /lobby
+ *  reads it to:
+ *    - render the Invite Friend button (host-side, Steam-only)
+ *    - poll Steam lobby metadata for the joiner's player list / status
+ *  Cleared on /lobby leave or when the user lands back at /custom. */
+export const STEAM_LOBBY_ID_KEY = 'webrts.steam.lobbyId'
+
+/** Resolve the WS URL fresh on every connect so a Direct-connect session
+ *  starting mid-tab is picked up without a page reload (sessionStorage may
+ *  have changed since the module loaded). Steam-proxy takes precedence
+ *  over direct-connect token if both happen to be set, because the §14.3
+ *  flow is the more-specific intent — but in normal use only one is set
+ *  at a time. */
+function resolveWsUrl(): string {
+  let url = `${getWsBaseUrl()}/ws`
+  let steamProxy = false
+  let token: string | null = null
+  try {
+    steamProxy = sessionStorage.getItem(STEAM_PROXY_FLAG_KEY) === '1'
+    token = sessionStorage.getItem(PROXY_TOKEN_STORAGE_KEY)
+  } catch {
+    // sessionStorage can throw in some sandboxed contexts; degrade silently.
+  }
+  if (steamProxy) {
+    url += '?proxy=steam'
+  } else if (token) {
+    url += `?proxy=${encodeURIComponent(token)}`
+  }
+  return url
+}
 
 const PLAYER_ID_STORAGE_KEY = 'webrts.playerId'
 const MAP_ID_STORAGE_KEY = 'webrts.mapId'
@@ -59,6 +113,31 @@ function getPreferredMapId(): MapId {
 
 function getStoredMatchId(): string | null {
   return localStorage.getItem(MATCH_ID_STORAGE_KEY)
+}
+
+/** §14.3 host fan-out: when the SteamMultiplayer view set the pending
+ *  start flag and we just received our matchId via `welcome`, stamp the
+ *  matchId into the Steam lobby metadata so joiners can enter. Cleared
+ *  once fired regardless of outcome — a retry on reconnect would
+ *  double-fire and stamp a fresh matchId, which is not what we want. */
+function firePendingSteamHostStartIfNeeded(matchId: string): void {
+  let lobbyId: string | null = null
+  try {
+    lobbyId = sessionStorage.getItem(STEAM_PENDING_HOST_START_KEY)
+  } catch {
+    return
+  }
+  if (!lobbyId) return
+  try {
+    sessionStorage.removeItem(STEAM_PENDING_HOST_START_KEY)
+  } catch {
+    // Best-effort; even if removal fails we still attempt the call.
+  }
+  // Fire-and-forget; errors surface as console logs since the host's
+  // session is already in the match either way.
+  void startSteamGame(lobbyId, matchId).catch((e) => {
+    console.error('startSteamGame failed:', e)
+  })
 }
 
 export class NetworkClient {
@@ -129,7 +208,7 @@ export class NetworkClient {
     isReconnect: boolean
   }): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(WS_URL)
+      const ws = new WebSocket(resolveWsUrl())
       this.socket = ws
 
       ws.onopen = () => {
@@ -267,7 +346,7 @@ export class NetworkClient {
       this.closeSocket()
     } else {
       // No live socket (page reload, tab restore) — open a temp one.
-      const socket = new WebSocket(WS_URL)
+      const socket = new WebSocket(resolveWsUrl())
       await new Promise<void>((resolve, reject) => {
         socket.onopen = () => {
           socket.send(JSON.stringify(message))
@@ -279,6 +358,16 @@ export class NetworkClient {
     }
 
     this.matchId = null
+    // Clear the Steam-proxy flag so a subsequent fresh SP/local session
+    // doesn't accidentally try to ?proxy=steam against a non-existent
+    // upstream. The flag is set by SteamMultiplayer.vue when the joiner
+    // navigates into a Steam-hosted match; leaving any match ends that
+    // intent. Direct-connect token is owned by directConnect.clearProxy.
+    try {
+      sessionStorage.removeItem(STEAM_PROXY_FLAG_KEY)
+    } catch {
+      /* sessionStorage may be sandboxed; no-op is correct */
+    }
     // localStorage cleared by the caller (MatchView / startNewGame / exitGame).
   }
 
@@ -478,6 +567,14 @@ export class NetworkClient {
         localStorage.setItem(MATCH_ID_STORAGE_KEY, message.matchId)
         this.onMatchIdChange?.(message.matchId)
         console.log('connected as', message.playerId, 'in', message.matchId)
+
+        // §14.3 host-side fan-out: if the SteamMultiplayer view set the
+        // pending-host-start flag, the welcome we just received is the
+        // one that gives us a real matchId to stamp into the Steam lobby
+        // metadata. Fire startSteamGame so joiners' shells emit
+        // steam_lobby_started and they navigate in. Cleared once fired so
+        // a subsequent reconnect doesn't re-trigger.
+        firePendingSteamHostStartIfNeeded(message.matchId)
 
         if (isReconnect) {
           // Clear stale interpolation frames before the fresh snapshot arrives

@@ -1,0 +1,4030 @@
+[
+  {
+    "map": {
+      "buildings": [
+        {
+          "buildingType": "townhall",
+          "capabilities": [
+            "unit-spawner",
+            "occupiable",
+            "deposit-point",
+            "vault-access"
+          ],
+          "height": 2,
+          "id": "NORM-STR",
+          "metadata": {
+            "foodSupply": 15,
+            "hp": 1000,
+            "maxHp": 1000,
+            "tier": 1
+          },
+          "occupied": true,
+          "ownerId": "baseline-player",
+          "spawnUnitTypes": [
+            "worker"
+          ],
+          "visible": true,
+          "width": 3,
+          "x": 7,
+          "y": 3
+        },
+        {
+          "buildingType": "townhall",
+          "capabilities": [
+            "unit-spawner",
+            "occupiable",
+            "deposit-point",
+            "vault-access"
+          ],
+          "height": 2,
+          "id": "NORM-STR",
+          "metadata": {
+            "foodSupply": 15,
+            "tier": 1
+          },
+          "occupied": false,
+          "spawnUnitTypes": [
+            "worker"
+          ],
+          "visible": false,
+          "width": 3,
+          "x": 28,
+          "y": 3
+        },
+        {
+          "buildingType": "spawn-point",
+          "capabilities": null,
+          "height": 1,
+          "id": "NORM-STR",
+          "metadata": {
+            "fillOrder": 2,
+            "spawnUnits": [
+              {
+                "count": 3,
+                "unitType": "worker"
+              },
+              {
+                "count": 1,
+                "unitType": "soldier"
+              }
+            ],
+            "townhallId": null
+          },
+          "occupied": false,
+          "visible": false,
+          "width": 1,
+          "x": 26,
+          "y": 4
+        },
+        {
+          "buildingType": "spawn-point",
+          "capabilities": null,
+          "height": 1,
+          "id": "NORM-STR",
+          "metadata": {
+            "fillOrder": 0,
+            "spawnUnits": [
+              {
+                "count": 3,
+                "unitType": "worker"
+              },
+              {
+                "count": 1,
+                "unitType": "soldier"
+              }
+            ],
+            "townhallId": null
+          },
+          "occupied": false,
+          "visible": false,
+          "width": 1,
+          "x": 7,
+          "y": 6
+        },
+        {
+          "buildingType": "goldmine",
+          "capabilities": [
+            "resource-source"
+          ],
+          "height": 2,
+          "id": "NORM-STR",
+          "metadata": {
+            "gatherRate": 10
+          },
+          "occupied": true,
+          "resourceAmount": 15000,
+          "resourceType": "gold",
+          "visible": true,
+          "width": 2,
+          "x": 3,
+          "y": 7
+        },
+        {
+          "buildingType": "goldmine",
+          "capabilities": [
+            "resource-source"
+          ],
+          "height": 2,
+          "id": "NORM-STR",
+          "metadata": {
+            "gatherRate": 10
+          },
+          "occupied": true,
+          "resourceAmount": 15000,
+          "resourceType": "gold",
+          "visible": true,
+          "width": 2,
+          "x": 31,
+          "y": 7
+        },
+        {
+          "buildingType": "enemy-spawnpoint",
+          "capabilities": [
+            "enemy-spawner"
+          ],
+          "height": 2,
+          "id": "NORM-STR",
+          "metadata": {
+            "spawnCount": 1,
+            "spawnDelaySeconds": 0,
+            "spawnIntervalSeconds": 10,
+            "startingWave": 0,
+            "unitType": "raider"
+          },
+          "occupied": true,
+          "visible": true,
+          "width": 2,
+          "x": 15,
+          "y": 16
+        },
+        {
+          "buildingType": "enemy-spawnpoint",
+          "capabilities": [
+            "enemy-spawner"
+          ],
+          "height": 2,
+          "id": "NORM-STR",
+          "metadata": {
+            "spawnCount": 2,
+            "spawnDelaySeconds": 0,
+            "spawnIntervalSeconds": 10,
+            "startingWave": 0,
+            "unitType": "raider"
+          },
+          "occupied": true,
+          "visible": true,
+          "width": 2,
+          "x": 21,
+          "y": 18
+        },
+        {
+          "buildingType": "enemy-spawnpoint",
+          "capabilities": [
+            "enemy-spawner"
+          ],
+          "height": 2,
+          "id": "NORM-STR",
+          "metadata": {
+            "spawnCount": 2,
+            "spawnDelaySeconds": 0,
+            "spawnIntervalSeconds": 10,
+            "unitType": "raider",
+            "waveNumber": 2
+          },
+          "occupied": true,
+          "visible": true,
+          "width": 2,
+          "x": 25,
+          "y": 20
+        },
+        {
+          "buildingType": "enemy-spawnpoint",
+          "capabilities": [
+            "enemy-spawner"
+          ],
+          "height": 2,
+          "id": "NORM-STR",
+          "metadata": {
+            "spawnCount": 2,
+            "spawnDelaySeconds": 0,
+            "spawnIntervalSeconds": 10,
+            "unitType": "raider",
+            "waveNumber": 2
+          },
+          "occupied": true,
+          "visible": true,
+          "width": 2,
+          "x": 14,
+          "y": 22
+        },
+        {
+          "buildingType": "enemy-spawnpoint",
+          "capabilities": [
+            "enemy-spawner"
+          ],
+          "height": 2,
+          "id": "NORM-STR",
+          "metadata": {
+            "spawnCount": 2,
+            "spawnDelaySeconds": 30,
+            "spawnIntervalSeconds": 10,
+            "startingWave": 0,
+            "unitType": "raider"
+          },
+          "occupied": true,
+          "visible": true,
+          "width": 2,
+          "x": 18,
+          "y": 22
+        }
+      ],
+      "cellSize": 64,
+      "defaultTile": {
+        "sheet": "tileset",
+        "sx": 64,
+        "sy": 32
+      },
+      "description": "A compact battleground for fast openings and early pressure.",
+      "gridCols": 64,
+      "gridRows": 64,
+      "height": 4096,
+      "id": "NORM-STR",
+      "name": "Enemy Test (small)",
+      "obstacles": [
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 1,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 2,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 3,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 4,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 5,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 6,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 7,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 8,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 9,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 10,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 11,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 12,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 18,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 19,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 20,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 21,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 22,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 23,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 24,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 25,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 26,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 27,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 28,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 29,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 30,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 31,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 32,
+          "y": 0
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 1,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 2,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 3,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 4,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 11,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 12,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 18,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 19,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 20,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 21,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 22,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 23,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 24,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 25,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 26,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 27,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 28,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 29,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 30,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 31,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 32,
+          "y": 1
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 2
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 1,
+          "y": 2
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 2,
+          "y": 2
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 3,
+          "y": 2
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 18,
+          "y": 2
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 19,
+          "y": 2
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 20,
+          "y": 2
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 31,
+          "y": 2
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 32,
+          "y": 2
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 3
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 1,
+          "y": 3
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 2,
+          "y": 3
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 18,
+          "y": 3
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 19,
+          "y": 3
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 20,
+          "y": 3
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 31,
+          "y": 3
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 32,
+          "y": 3
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 33,
+          "y": 3
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 4
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 1,
+          "y": 4
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 18,
+          "y": 4
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 19,
+          "y": 4
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 20,
+          "y": 4
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 32,
+          "y": 4
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 33,
+          "y": 4
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 5
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 1,
+          "y": 5
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 18,
+          "y": 5
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 19,
+          "y": 5
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 20,
+          "y": 5
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 32,
+          "y": 5
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 33,
+          "y": 5
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 6
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 17,
+          "y": 6
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 18,
+          "y": 6
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 7
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 17,
+          "y": 7
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 8
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 17,
+          "y": 8
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 9
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 17,
+          "y": 9
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 10
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 1,
+          "y": 10
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 2,
+          "y": 10
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 16,
+          "y": 10
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 17,
+          "y": 10
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 18,
+          "y": 10
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 19,
+          "y": 10
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 0,
+          "y": 11
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 1,
+          "y": 11
+        },
+        {
+          "capabilities": [
+            "resource-source",
+            "selectable"
+          ],
+          "height": 1,
+          "id": "NORM-STR",
+          "obstacle": "tree",
+          "resourceAmount": 250,
+          "resourceType": "wood",
+          "width": 1,
+          "x": 2,
+          "y": 11
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 14,
+          "y": 11
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 15,
+          "y": 11
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 16,
+          "y": 11
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 19,
+          "y": 11
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 14,
+          "y": 12
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 19,
+          "y": 12
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 20,
+          "y": 12
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 20,
+          "y": 13
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 21,
+          "y": 13
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 11,
+          "y": 15
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 10,
+          "y": 16
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 11,
+          "y": 16
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 8,
+          "y": 17
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 9,
+          "y": 17
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 10,
+          "y": 17
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 5,
+          "y": 18
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 6,
+          "y": 18
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 7,
+          "y": 18
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 8,
+          "y": 18
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 0,
+          "y": 19
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 1,
+          "y": 19
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 2,
+          "y": 19
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 3,
+          "y": 19
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 4,
+          "y": 19
+        },
+        {
+          "capabilities": [
+            "selectable"
+          ],
+          "height": 1,
+          "hp": 150,
+          "id": "NORM-STR",
+          "maxHp": 150,
+          "obstacle": "rock",
+          "width": 1,
+          "x": 5,
+          "y": 19
+        }
+      ],
+      "size": "enemy-test-small",
+      "terrain": null,
+      "waveConfig": {
+        "prepDuration": 60,
+        "waveDuration": 120
+      },
+      "width": 4096
+    },
+    "matchId": "NORM-STR",
+    "playerId": "baseline-player",
+    "type": "welcome"
+  },
+  {
+    "buildings": [
+      {
+        "buildingType": "townhall",
+        "capabilities": [
+          "unit-spawner",
+          "occupiable",
+          "deposit-point",
+          "vault-access"
+        ],
+        "height": 2,
+        "id": "NORM-STR",
+        "metadata": {
+          "foodSupply": 15,
+          "hp": 1000,
+          "maxHp": 1000,
+          "tier": 1
+        },
+        "occupied": true,
+        "ownerId": "baseline-player",
+        "spawnUnitTypes": [
+          "worker"
+        ],
+        "visible": true,
+        "width": 3,
+        "x": 7,
+        "y": 3
+      },
+      {
+        "buildingType": "townhall",
+        "capabilities": [
+          "unit-spawner",
+          "occupiable",
+          "deposit-point",
+          "vault-access"
+        ],
+        "height": 2,
+        "id": "NORM-STR",
+        "metadata": {
+          "foodSupply": 15,
+          "tier": 1
+        },
+        "occupied": false,
+        "spawnUnitTypes": [
+          "worker"
+        ],
+        "visible": false,
+        "width": 3,
+        "x": 28,
+        "y": 3
+      },
+      {
+        "buildingType": "spawn-point",
+        "capabilities": null,
+        "height": 1,
+        "id": "NORM-STR",
+        "metadata": {
+          "fillOrder": 2,
+          "spawnUnits": [
+            {
+              "count": 3,
+              "unitType": "worker"
+            },
+            {
+              "count": 1,
+              "unitType": "soldier"
+            }
+          ],
+          "townhallId": null
+        },
+        "occupied": false,
+        "visible": false,
+        "width": 1,
+        "x": 26,
+        "y": 4
+      },
+      {
+        "buildingType": "spawn-point",
+        "capabilities": null,
+        "height": 1,
+        "id": "NORM-STR",
+        "metadata": {
+          "fillOrder": 0,
+          "spawnUnits": [
+            {
+              "count": 3,
+              "unitType": "worker"
+            },
+            {
+              "count": 1,
+              "unitType": "soldier"
+            }
+          ],
+          "townhallId": null
+        },
+        "occupied": false,
+        "visible": false,
+        "width": 1,
+        "x": 7,
+        "y": 6
+      },
+      {
+        "buildingType": "goldmine",
+        "capabilities": [
+          "resource-source"
+        ],
+        "height": 2,
+        "id": "NORM-STR",
+        "metadata": {
+          "gatherRate": 10
+        },
+        "occupied": true,
+        "resourceAmount": 15000,
+        "resourceType": "gold",
+        "visible": true,
+        "width": 2,
+        "x": 3,
+        "y": 7
+      },
+      {
+        "buildingType": "goldmine",
+        "capabilities": [
+          "resource-source"
+        ],
+        "height": 2,
+        "id": "NORM-STR",
+        "metadata": {
+          "gatherRate": 10
+        },
+        "occupied": true,
+        "resourceAmount": 15000,
+        "resourceType": "gold",
+        "visible": true,
+        "width": 2,
+        "x": 31,
+        "y": 7
+      },
+      {
+        "buildingType": "enemy-spawnpoint",
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "height": 2,
+        "id": "NORM-STR",
+        "metadata": {
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 0,
+          "unitType": "raider"
+        },
+        "occupied": true,
+        "visible": true,
+        "width": 2,
+        "x": 15,
+        "y": 16
+      },
+      {
+        "buildingType": "enemy-spawnpoint",
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "height": 2,
+        "id": "NORM-STR",
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 0,
+          "unitType": "raider"
+        },
+        "occupied": true,
+        "visible": true,
+        "width": 2,
+        "x": 21,
+        "y": 18
+      },
+      {
+        "buildingType": "enemy-spawnpoint",
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "height": 2,
+        "id": "NORM-STR",
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "unitType": "raider",
+          "waveNumber": 2
+        },
+        "occupied": true,
+        "visible": true,
+        "width": 2,
+        "x": 25,
+        "y": 20
+      },
+      {
+        "buildingType": "enemy-spawnpoint",
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "height": 2,
+        "id": "NORM-STR",
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "unitType": "raider",
+          "waveNumber": 2
+        },
+        "occupied": true,
+        "visible": true,
+        "width": 2,
+        "x": 14,
+        "y": 22
+      },
+      {
+        "buildingType": "enemy-spawnpoint",
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "height": 2,
+        "id": "NORM-STR",
+        "metadata": {
+          "spawnCount": 2,
+          "spawnDelaySeconds": 30,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 0,
+          "unitType": "raider"
+        },
+        "occupied": true,
+        "visible": true,
+        "width": 2,
+        "x": 18,
+        "y": 22
+      }
+    ],
+    "matchId": "NORM-STR",
+    "obstacles": [
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 1,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 2,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 3,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 4,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 5,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 6,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 7,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 8,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 9,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 10,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 11,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 12,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 18,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 19,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 20,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 21,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 22,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 23,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 24,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 25,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 26,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 27,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 28,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 29,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 30,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 31,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 32,
+        "y": 0
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 1,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 2,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 3,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 4,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 11,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 12,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 18,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 19,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 20,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 21,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 22,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 23,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 24,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 25,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 26,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 27,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 28,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 29,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 30,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 31,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 32,
+        "y": 1
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 2
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 1,
+        "y": 2
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 2,
+        "y": 2
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 3,
+        "y": 2
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 18,
+        "y": 2
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 19,
+        "y": 2
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 20,
+        "y": 2
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 31,
+        "y": 2
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 32,
+        "y": 2
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 3
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 1,
+        "y": 3
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 2,
+        "y": 3
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 18,
+        "y": 3
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 19,
+        "y": 3
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 20,
+        "y": 3
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 31,
+        "y": 3
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 32,
+        "y": 3
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 33,
+        "y": 3
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 4
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 1,
+        "y": 4
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 18,
+        "y": 4
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 19,
+        "y": 4
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 20,
+        "y": 4
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 32,
+        "y": 4
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 33,
+        "y": 4
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 5
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 1,
+        "y": 5
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 18,
+        "y": 5
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 19,
+        "y": 5
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 20,
+        "y": 5
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 32,
+        "y": 5
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 33,
+        "y": 5
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 6
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 17,
+        "y": 6
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 18,
+        "y": 6
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 7
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 17,
+        "y": 7
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 8
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 17,
+        "y": 8
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 9
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 17,
+        "y": 9
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 10
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 1,
+        "y": 10
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 2,
+        "y": 10
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 16,
+        "y": 10
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 17,
+        "y": 10
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 18,
+        "y": 10
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 19,
+        "y": 10
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 0,
+        "y": 11
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 1,
+        "y": 11
+      },
+      {
+        "capabilities": [
+          "resource-source",
+          "selectable"
+        ],
+        "height": 1,
+        "id": "NORM-STR",
+        "obstacle": "tree",
+        "resourceAmount": 250,
+        "resourceType": "wood",
+        "width": 1,
+        "x": 2,
+        "y": 11
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 14,
+        "y": 11
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 15,
+        "y": 11
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 16,
+        "y": 11
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 19,
+        "y": 11
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 14,
+        "y": 12
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 19,
+        "y": 12
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 20,
+        "y": 12
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 20,
+        "y": 13
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 21,
+        "y": 13
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 11,
+        "y": 15
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 10,
+        "y": 16
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 11,
+        "y": 16
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 8,
+        "y": 17
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 9,
+        "y": 17
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 10,
+        "y": 17
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 5,
+        "y": 18
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 6,
+        "y": 18
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 7,
+        "y": 18
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 8,
+        "y": 18
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 0,
+        "y": 19
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 1,
+        "y": 19
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 2,
+        "y": 19
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 3,
+        "y": 19
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 4,
+        "y": 19
+      },
+      {
+        "capabilities": [
+          "selectable"
+        ],
+        "height": 1,
+        "hp": 150,
+        "id": "NORM-STR",
+        "maxHp": 150,
+        "obstacle": "rock",
+        "width": 1,
+        "x": 5,
+        "y": 19
+      }
+    ],
+    "players": [
+      {
+        "color": "NORM-STR",
+        "playerId": "baseline-player",
+        "resources": [
+          {
+            "accent": "#d4a84f",
+            "amount": 500,
+            "id": "NORM-STR",
+            "label": "Gold"
+          },
+          {
+            "accent": "#7a9a52",
+            "amount": 180,
+            "id": "NORM-STR",
+            "label": "Wood"
+          },
+          {
+            "accent": "#c96e43",
+            "amount": 0,
+            "id": "NORM-STR",
+            "label": "Food",
+            "max": 15
+          }
+        ],
+        "teamId": 0,
+        "townHallTier": 1,
+        "upgrades": [
+          {
+            "armorPerLevel": 1,
+            "attackSpeedPerLevel": 0.05,
+            "canAfford": false,
+            "cap": 3,
+            "damagePerLevel": 2,
+            "displayName": "Soldier",
+            "hasBlacksmith": false,
+            "hpPerLevel": 25,
+            "level": 0,
+            "moveSpeedPerLevel": 3,
+            "nextCostGold": 150,
+            "track": "soldier"
+          },
+          {
+            "armorPerLevel": 0,
+            "attackSpeedPerLevel": 0.1,
+            "canAfford": false,
+            "cap": 3,
+            "damagePerLevel": 2,
+            "displayName": "Archer",
+            "hasBlacksmith": false,
+            "hpPerLevel": 8,
+            "level": 0,
+            "moveSpeedPerLevel": 5,
+            "nextCostGold": 175,
+            "track": "archer"
+          }
+        ],
+        "vault": [],
+        "vaultCapacity": 5
+      }
+    ],
+    "serverNow": 0,
+    "tick": 0,
+    "type": "match_snapshot",
+    "units": [],
+    "wave": {
+      "currentWave": 0,
+      "enabled": true,
+      "state": "prep",
+      "timer": 60,
+      "totalWaves": 2,
+      "waveDuration": 120
+    }
+  }
+]

@@ -387,6 +387,17 @@ type ClientMessage struct {
 	Type string `json:"type"`
 }
 
+// HelloMessage is the first message the SPA sends after the WebSocket upgrade
+// completes. The server compares Version against its own compiled version and
+// closes the connection with a defined close code (4000) if they differ; the
+// SPA renders that as the "Build mismatch — please restart" modal. Sending
+// HelloMessage is optional for non-browser peers (transportbridge sends its
+// own version handshake — §13 task 13.7).
+type HelloMessage struct {
+	Type    string `json:"type"`    // "hello"
+	Version string `json:"version"` // SPA build version (from __APP_VERSION__)
+}
+
 type ResourceStock struct {
 	ID     string `json:"id"`
 	Label  string `json:"label"`

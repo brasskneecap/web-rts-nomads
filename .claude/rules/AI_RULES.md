@@ -60,6 +60,57 @@ Concrete identifier types:
 - Client is **TypeScript / Vue 3** (see [client/src/game-portal/src/](../../client/src/game-portal/src/)). Prefer editing existing components and Pinia stores over introducing new abstractions.
 - The client is a view of server state. Never simulate gameplay logic client-side that the server is authoritative over — render what the server sends.
 
+## Desktop (Tauri) shell rules
+
+These rules apply to the [desktop/](../../desktop/) Rust crate added by the
+`standalone-desktop-app` change. They guard the architectural invariants that
+make the packaged desktop build work safely alongside the existing Go server
+and Vue SPA.
+
+1. **No game logic in `desktop/`.** The Rust crate is glue: window, sidecar
+   supervisor, Steam wrapper, log writer. Any code that touches simulation,
+   AI, combat, pathing, lobby state, or player profiles belongs in the Go
+   server, never in `desktop/src-tauri/src/`.
+
+2. **No Steamworks symbols in any Go file.** All Steam SDK interaction lives
+   in `desktop/` (Rust, via `steamworks-rs`). The Go server speaks to the
+   shell over the typed `SteamBridge` interface (`server/internal/steam/`),
+   which is implemented as a newline-delimited JSON IPC client. A
+   `steamworks::*` import in Go is a hard reject in code review.
+
+3. **`desktopBridge.ts` is the ONLY SPA file that imports `@tauri-apps/api`.**
+   Every other SPA file that needs shell-side functionality imports the typed
+   `desktopBridge` (see `client/src/game-portal/src/services/desktopBridge.ts`).
+   Probing `window.__TAURI__` directly in component code is a hard reject —
+   it bypasses the dev-loop / packaged-build degradation contract.
+
+4. **IPC and shell are not on the tick path.** No code path inside
+   `server/internal/game/`'s tick loop may block on an IPC call, a transport
+   write, or any shell-side operation. This matches the existing determinism
+   invariant. `SteamBridge.ReportAchievement` is intentionally fire-and-forget
+   (design D19) so achievement triggers fired from inside the tick loop never
+   stall it.
+
+## Diagnostics logging rules
+
+Logs are written by three processes: the Rust shell (`<ts>-shell.log`), the
+Go server (`<ts>-server.log` via the shell's stdout/stderr tee), and the SPA
+(`<ts>-spa.log` via `desktopBridge.appendLog`). Per `diagnostics-logging`
+spec content rules (§22 task 22.4):
+
+- **No per-tick simulation data** in any log file. State snapshots are
+  fine for diagnostics but MUST be at major-event granularity, never every
+  tick.
+- **No raw game-state snapshots** in any log file. If you need to debug a
+  state corruption, attach to the running process or use the existing tick
+  profiler — don't dump full state to a log.
+- **No Steam auth tickets**, session secrets, or anything that could
+  impersonate the user if leaked. Steam ID and persona name ARE allowed
+  (they're public identifiers).
+- **No per-message bytes** from any transport. Transport-layer logging is
+  fine at connect / disconnect / error granularity; logging every WS frame
+  would make every match unreviewable.
+
 ## When in doubt
 
 - Read the adjacent code before introducing a new pattern. The existing combat AI, projectile, threat, and CC systems are the reference implementations for ID-based targeting.

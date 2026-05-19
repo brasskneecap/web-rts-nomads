@@ -15,22 +15,50 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLobbies } from '@/composables/useLobbies'
 import { usePlayer } from '@/composables/usePlayer'
+import { joinLobby as steamJoinLobby, listSteamLobbies } from '@/services/desktopBridge'
+import {
+  STEAM_LOBBY_ID_KEY,
+  STEAM_PROXY_FLAG_KEY,
+} from '@/game/network/NetworkClient'
+import type { Lobby } from '@/game/network/protocol'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import LobbyList from '@/components/menu/LobbyList.vue'
 
 const router = useRouter()
-const { lobbies, refreshList, joinLobby } = useLobbies()
+const { lobbies: localLobbies, refreshList, joinLobby: joinLocalLobby } = useLobbies()
 const { playerId } = usePlayer()
 
 const refreshError = ref(false)
+const steamLobbies = ref<readonly Lobby[]>([])
 let pollInterval: ReturnType<typeof setInterval> | null = null
 
-async function poll() {
+// §14R-C: distinguish a local-lobby id from a Steam-lobby id by prefix.
+// Steam entries surface in /find-game as `steam:<steamLobbyId>` so the
+// click handler can dispatch to the right join path. The local Lobby
+// shape has no source-discriminator field; encoding it in the id keeps
+// the LobbyList component generic.
+const STEAM_ID_PREFIX = 'steam:'
+
+/** Union of local lobby entries and Steam friend lobby entries, both
+ *  shaped as the existing `Lobby` type so LobbyList can render them
+ *  uniformly. Steam entries get the `steam:` id prefix; the playersList
+ *  fakes one persona per slot so the "X / Y players" cell renders right
+ *  without needing a real member list (the joiner's /lobby will fetch
+ *  the real one). */
+const lobbies = computed<readonly Lobby[]>(() => {
+  const merged: Lobby[] = [...localLobbies.value]
+  for (const s of steamLobbies.value) {
+    merged.push(s)
+  }
+  return merged
+})
+
+async function pollLocal() {
   try {
     await refreshList()
     refreshError.value = false
@@ -39,9 +67,58 @@ async function poll() {
   }
 }
 
+async function pollSteam() {
+  const entries = await listSteamLobbies()
+  // Adapt to the existing Lobby type so LobbyList doesn't need changes.
+  steamLobbies.value = entries.map((e) => ({
+    id: `${STEAM_ID_PREFIX}${e.steamLobbyId}`,
+    mapId: e.mapId,
+    mapName: e.mapId || '(unknown map)',
+    hostPlayerId: e.hostPersona || '(unknown host)',
+    players: Array.from(
+      { length: Math.max(e.playerCount, 1) },
+      (_, i) => (i === 0 ? e.hostPersona || 'host' : `slot-${i + 1}`),
+    ),
+    maxPlayers: e.maxPlayers > 0 ? e.maxPlayers : 4,
+    createdAt: 0,
+    status: e.status === 'started' ? 'started' : 'open',
+  }))
+}
+
+async function poll() {
+  await Promise.all([pollLocal(), pollSteam()])
+}
+
 async function onJoin(id: string) {
+  if (id.startsWith(STEAM_ID_PREFIX)) {
+    const steamLobbyId = id.slice(STEAM_ID_PREFIX.length)
+    try {
+      const result = await steamJoinLobby(steamLobbyId)
+      if (!result) {
+        refreshError.value = true
+        return
+      }
+      // §14R-C: stash the steam-proxy intent + the steam lobby id so
+      // (1) the next WS open uses ?proxy=steam and (2) /lobby polls
+      // Steam metadata for the player list / status.
+      try {
+        sessionStorage.setItem(STEAM_PROXY_FLAG_KEY, '1')
+        sessionStorage.setItem(STEAM_LOBBY_ID_KEY, steamLobbyId)
+      } catch {
+        /* sessionStorage may be sandboxed */
+      }
+      // Navigate to the same /lobby/<id> the host's view uses.
+      void router.push(`/lobby/${result.localLobbyId || steamLobbyId}`)
+    } catch (e) {
+      console.error('Steam joinLobby failed:', e)
+      refreshError.value = true
+    }
+    return
+  }
+
+  // Local lobby — existing path.
   try {
-    await joinLobby({ id, playerId: playerId.value })
+    await joinLocalLobby({ id, playerId: playerId.value })
   } catch {
     // If join fails (e.g. 409 already in lobby), still navigate — the lobby
     // polling will surface the real state.

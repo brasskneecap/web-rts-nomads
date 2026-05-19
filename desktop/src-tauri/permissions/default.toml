@@ -1,0 +1,83 @@
+# Permissions for the Nomads desktop app's custom commands. Tauri 2 requires
+# every #[tauri::command] to have a corresponding permission identifier the
+# capability file can grant. The top-level `[default]` table is the canonical
+# Tauri TOML form for the app's default permission set (referenced as
+# `"default"` from capabilities); individual `[[permission]]` blocks declare
+# the allow-* permissions the set aggregates.
+
+[default]
+description = "Default permission set for the Nomads SPA: all custom commands the SPA needs to call."
+permissions = [
+    "allow-get-steam-player",
+    "allow-get-settings",
+    "allow-set-settings",
+    "allow-open-logs-directory",
+    "allow-get-logs-directory",
+    "allow-create-lobby",
+    "allow-join-lobby",
+    "allow-open-invite-overlay",
+    "allow-start-steam-game",
+    "allow-list-steam-lobbies",
+    "allow-get-steam-lobby-data",
+    "allow-leave-steam-lobby",
+]
+
+[[permission]]
+identifier = "allow-get-steam-player"
+description = "Allow reading the local Steam player identity (steamID64 + persona)."
+commands.allow = ["get_steam_player"]
+
+[[permission]]
+identifier = "allow-get-settings"
+description = "Allow reading the persisted settings.json snapshot."
+commands.allow = ["get_settings"]
+
+[[permission]]
+identifier = "allow-set-settings"
+description = "Allow merging a partial update into settings.json."
+commands.allow = ["set_settings"]
+
+[[permission]]
+identifier = "allow-open-logs-directory"
+description = "Allow opening the user-data logs directory in the OS file manager."
+commands.allow = ["open_logs_directory"]
+
+[[permission]]
+identifier = "allow-get-logs-directory"
+description = "Allow reading the absolute path of the logs directory."
+commands.allow = ["get_logs_directory"]
+
+[[permission]]
+identifier = "allow-create-lobby"
+description = "Allow creating a Steam Matchmaking lobby (FriendsOnly)."
+commands.allow = ["create_lobby"]
+
+[[permission]]
+identifier = "allow-join-lobby"
+description = "Allow joining an existing Steam lobby by SteamID64 string."
+commands.allow = ["join_lobby"]
+
+[[permission]]
+identifier = "allow-open-invite-overlay"
+description = "Allow opening the Steam friend-invite overlay for a given lobby."
+commands.allow = ["open_invite_overlay"]
+
+[[permission]]
+identifier = "allow-start-steam-game"
+description = "Allow stamping the chosen matchId into the Steam lobby metadata to signal joiners to enter the match (§14.3)."
+commands.allow = ["start_steam_game"]
+
+[[permission]]
+identifier = "allow-list-steam-lobbies"
+description = "Allow listing friends' Steam Matchmaking lobbies for /find-game (§14R-A)."
+commands.allow = ["list_steam_lobbies"]
+
+[[permission]]
+identifier = "allow-get-steam-lobby-data"
+description = "Allow reading a Steam lobby's metadata and member list for the joiner's /lobby view (§14R-A)."
+commands.allow = ["get_steam_lobby_data"]
+
+[[permission]]
+identifier = "allow-leave-steam-lobby"
+description = "Allow leaving the active Steam lobby — host destroys it, joiner removes themselves."
+commands.allow = ["leave_steam_lobby"]

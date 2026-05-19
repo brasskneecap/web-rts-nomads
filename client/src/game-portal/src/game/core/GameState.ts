@@ -208,6 +208,31 @@ export type DetailItem = {
 // clicks intended for ground orders or units inside the zone.
 const TRAP_CENTER_HIT_RADIUS = 14
 
+/**
+ * Picks the initial snapshot-interpolation buffer depth based on the current
+ * network path. The Steam Sockets joiner sees relay jitter (snapshot arrival
+ * intervals drift in the 40-80ms range over a target 50ms cadence); a tight
+ * 100ms buffer regularly underruns and the player perceives stutter. A
+ * 200ms buffer absorbs that jitter at the cost of 100ms more input-feel
+ * latency, which is acceptable for an RTS over Steam.
+ *
+ * LAN / loopback / Direct-connect host / single-player keep the original
+ * 100ms because their snapshot arrival is consistent.
+ */
+function detectInitialInterpolationDelayMs(): number {
+  let delay = 100
+  try {
+    if (typeof window === 'undefined') return delay
+    if (window.sessionStorage.getItem('webrts.steam.proxyActive') === '1') {
+      delay = 200
+    }
+  } catch {
+    // sessionStorage may be unavailable in some sandboxed contexts.
+  }
+  console.log('[GameState] interpolationDelayMs initialised to', delay)
+  return delay
+}
+
 // Matches the accent colors used by ResourceStock in the HUD resource tray.
 // Add new resource types here as they are introduced on the server.
 const RESOURCE_ACCENT: Record<string, string> = {
@@ -465,7 +490,17 @@ export class GameState {
   fow: FogOfWar = new FogOfWar()
 
   snapshotBuffer: InterpolationFrame[] = []
-  interpolationDelayMs = 100
+  // Interpolation buffer depth. The renderer plays back snapshots
+  // delayed by this much so it can smoothly interpolate between them
+  // even when arrival times jitter. Tuned per network path:
+  //   - 100ms: LAN / loopback / Direct connect (consistent ~50ms gaps)
+  //   - 200ms: Steam Sockets joiner (relay jitter regularly pushes
+  //     individual snapshots 40-80ms late; a 100ms buffer underruns
+  //     and the joiner sees stutter). Initialised below by the
+  //     `?proxy=steam` detection. Increase if you still see stutter
+  //     on poor relay routes; decrease to trade smoothness for less
+  //     input-feel latency.
+  interpolationDelayMs = detectInitialInterpolationDelayMs()
   maxBufferedSnapshots = 20
 
   localPlayerId: string | null = null

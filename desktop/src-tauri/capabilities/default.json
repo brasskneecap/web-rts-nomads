@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capabilities for the Nomads main window. The SPA loads from http://127.0.0.1:<random-port> (the embedded Go server), so we must opt-in via remote.urls to allow this capability to apply to that 'remote' origin. Tauri's loopback URL is treated as remote by default. Per the desktop-shell spec, every IPC command AND every Tauri built-in plugin permission MUST be enumerated explicitly.",
+  "windows": ["*"],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*",
+      "http://localhost:*"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "shell:default",
+    "default"
+  ]
+}

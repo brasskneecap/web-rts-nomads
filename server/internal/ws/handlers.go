@@ -3,10 +3,16 @@ package ws
 import (
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"webrts/server/internal/game"
+	"webrts/server/internal/transportbridge"
 	"webrts/server/pkg/protocol"
 
 	"github.com/gorilla/websocket"
@@ -15,6 +21,11 @@ import (
 const (
 	heartbeatInterval = 30 * time.Second
 	heartbeatTimeout  = 75 * time.Second
+
+	// originRejectLogThrottle keeps the rejection log from flooding when a
+	// misbehaving caller hammers the WS endpoint with a bad Origin. One line
+	// per origin per minute is plenty for diagnostics.
+	originRejectLogThrottle = time.Minute
 )
 
 type Hub struct {
@@ -22,26 +33,177 @@ type Hub struct {
 	manager      *game.MatchManager
 	lobbyManager *game.LobbyManager
 	quit         chan struct{}
+
+	// allowNonLoopback gates whether non-loopback peers can complete the WS
+	// upgrade. Toggled at runtime by the SPA via SetAllowNonLoopback (§13
+	// task 13.1). The listener itself is bound to all interfaces — this
+	// accept-time gate (design D11) is the only mechanism. Default off.
+	allowNonLoopback atomic.Bool
+
+	// version is the server's compiled version. Used by the hello-message
+	// version-mismatch check (§17 task 17.1). Set by main.go from the same
+	// `var version` that populates NOMADS_READY.
+	version string
+
+	// directSessions stores host-side WS connections dialled by
+	// /api/direct-connect/join, keyed by token, until the joiner's SPA
+	// reconnects with ?proxy=<token> (§11.5 + §13.4 joiner-as-proxy model).
+	directSessions *transportbridge.SessionStore
+
+	// steamSessions parks the joiner's upstream Steam Sockets transport
+	// awaiting an SPA reconnect with ?proxy=steam (§14.3). Single-slot —
+	// a Steam joiner has at most one upstream peer at a time.
+	steamSessions *transportbridge.SteamSessionStore
+
+	originRejectMu      sync.Mutex
+	originRejectLastLog map[string]time.Time
 }
+
+// CloseCodeVersionMismatch is the WebSocket close code used when the SPA's
+// hello version doesn't match the server's compiled version. The SPA's onclose
+// handler maps this to the "Build mismatch — please restart" modal.
+// 4000-4999 is the application-defined range per RFC 6455.
+const CloseCodeVersionMismatch = 4000
 
 func NewHub(manager *game.MatchManager, lobbyManager *game.LobbyManager) *Hub {
 	h := &Hub{
-		manager:      manager,
-		lobbyManager: lobbyManager,
-		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
-		},
-		quit: make(chan struct{}),
+		manager:             manager,
+		lobbyManager:        lobbyManager,
+		quit:                make(chan struct{}),
+		originRejectLastLog: make(map[string]time.Time),
+		directSessions:      transportbridge.NewSessionStore(),
+		steamSessions:       transportbridge.NewSteamSessionStore(),
+	}
+	h.upgrader = websocket.Upgrader{
+		CheckOrigin: h.checkOrigin,
 	}
 
 	go h.heartbeatLoop()
+	go h.reapStaleSessionsLoop()
 
 	return h
 }
 
-// Close signals the heartbeat goroutine to stop. Call during graceful shutdown.
+// DirectSessions exposes the session store so the HTTP router's
+// /api/direct-connect/join handler can register dialled host conns.
+// Returns the same instance for the Hub's lifetime.
+func (h *Hub) DirectSessions() *transportbridge.SessionStore { return h.directSessions }
+
+// SteamSessions exposes the single-slot Steam-upstream parking lot so
+// main.go's lobby_joined handler can Set the steamTransport before the
+// joiner SPA reconnects with `?proxy=steam`. Returns the same instance
+// for the Hub's lifetime.
+func (h *Hub) SteamSessions() *transportbridge.SteamSessionStore { return h.steamSessions }
+
+func (h *Hub) reapStaleSessionsLoop() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-h.quit:
+			return
+		case t := <-ticker.C:
+			if n := h.directSessions.ReapStale(t); n > 0 {
+				log.Printf("transportbridge: reaped %d stale direct-connect session(s)", n)
+			}
+			if h.steamSessions.ReapStale(t) {
+				log.Printf("transportbridge: reaped stale steam-upstream session")
+			}
+		}
+	}
+}
+
+// SetAllowNonLoopback toggles the runtime gate that lets non-loopback peers
+// complete the WS upgrade. Toggling off does NOT disconnect existing peers
+// (per §13 task 13.10); it only affects subsequent accept-time decisions.
+func (h *Hub) SetAllowNonLoopback(allow bool) {
+	h.allowNonLoopback.Store(allow)
+}
+
+// SetVersion records the server's compiled version for the §17.1 hello
+// handshake. Empty version disables the check (used in tests).
+func (h *Hub) SetVersion(v string) { h.version = v }
+
+// Version returns the recorded server version.
+func (h *Hub) Version() string { return h.version }
+
+// AllowNonLoopback reports the current toggle state. Used by the SPA's
+// lobby UI to drive the toggle's checked state on render.
+func (h *Hub) AllowNonLoopback() bool { return h.allowNonLoopback.Load() }
+
+// checkOrigin implements the §13 task 13.11 Origin policy. Replaces the
+// previous always-true CheckOrigin. Accepts:
+//   - No Origin header (non-browser clients incl. transportbridge)
+//   - Origin host is a loopback host (127.0.0.1, localhost, [::1] — any port)
+// Rejects everything else with a single rate-limited log line per bad host.
+// The check is UNCONDITIONAL (does not consult AllowNonLoopback) because
+// the rule is correct in both toggle states and keeps the upgrade-time guard
+// simple. Non-loopback peer admission lives in checkRemoteAddrAllowed.
+func (h *Hub) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		h.logOriginReject(origin, "malformed Origin")
+		return false
+	}
+	host := u.Hostname()
+	if isLoopbackHost(host) {
+		return true
+	}
+	h.logOriginReject(origin, "non-loopback Origin")
+	return false
+}
+
+func isLoopbackHost(host string) bool {
+	switch strings.ToLower(host) {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
+}
+
+func (h *Hub) logOriginReject(origin, reason string) {
+	h.originRejectMu.Lock()
+	defer h.originRejectMu.Unlock()
+	now := time.Now()
+	if last, ok := h.originRejectLastLog[origin]; ok && now.Sub(last) < originRejectLogThrottle {
+		return
+	}
+	h.originRejectLastLog[origin] = now
+	log.Printf("ws: %s — rejected (origin=%q)", reason, origin)
+}
+
+// checkRemoteAddrAllowed enforces the AllowNonLoopback gate at WS upgrade
+// time (§13 task 13.1, design D11). Loopback peers always pass; non-loopback
+// peers pass only when the toggle is on. Returns true if upgrade should
+// proceed; false (with a logged reason) if it should be rejected.
+func (h *Hub) checkRemoteAddrAllowed(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	if h.allowNonLoopback.Load() {
+		return true
+	}
+	log.Printf("ws: rejecting non-loopback peer %s (AllowNonLoopback=false)", r.RemoteAddr)
+	return false
+}
+
+// Close signals the heartbeat goroutine to stop and drops any parked
+// proxy sessions. Call during graceful shutdown.
 func (h *Hub) Close() {
 	close(h.quit)
+	h.steamSessions.Close()
 }
 
 func (h *Hub) GetMatch(matchID string) (*game.Match, bool) {
@@ -57,23 +219,87 @@ func (h *Hub) GetMatchManager() *game.MatchManager {
 }
 
 func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
+	if !h.checkRemoteAddrAllowed(r) {
+		http.Error(w, "non-loopback connections are not allowed; host must enable LAN/Internet access", http.StatusForbidden)
+		return
+	}
+
+	// §11.5 / §13.4 / §14.3: proxy-mode SPAs include ?proxy=<token>.
+	//   token == "steam"   — Steam Sockets joiner-as-proxy (§14.3); pull the
+	//                        parked upstream from steamSessions
+	//   token == "<hex>"   — Direct-connect joiner-as-proxy (§11.5); pull from
+	//                        directSessions by the hex token returned from
+	//                        /api/direct-connect/join
+	// Look up BEFORE the upgrade so we can return 502 with a JSON error body
+	// if the session is missing/expired.
+	if token := r.URL.Query().Get("proxy"); token != "" {
+		if token == "steam" {
+			upstream, ok := h.steamSessions.Take()
+			if !ok {
+				http.Error(w, `{"error":"no steam upstream parked"}`, http.StatusBadGateway)
+				return
+			}
+			spaConn, err := h.upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				_ = upstream.Close()
+				log.Println("steam proxy upgrade error:", err)
+				return
+			}
+			log.Printf("steam-sockets proxy active: spa=%s -> steam upstream",
+				spaConn.RemoteAddr())
+			transportbridge.ProxyStreams(transportbridge.NewWSConnStream(spaConn), upstream)
+			log.Printf("steam-sockets proxy ended: spa=%s", spaConn.RemoteAddr())
+			return
+		}
+		hostConn, ok := h.directSessions.Take(token)
+		if !ok {
+			http.Error(w, `{"error":"unknown or expired proxy token"}`, http.StatusBadGateway)
+			return
+		}
+		spaConn, err := h.upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			// We already took the host conn; clean it up so it doesn't leak.
+			_ = hostConn.Close()
+			log.Println("proxy upgrade error:", err)
+			return
+		}
+		log.Printf("direct-connect proxy active: spa=%s -> host (token=%s…)",
+			spaConn.RemoteAddr(), token[:8])
+		transportbridge.Proxy(spaConn, hostConn)
+		log.Printf("direct-connect proxy ended: spa=%s", spaConn.RemoteAddr())
+		return
+	}
+
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("upgrade error:", err)
 		return
 	}
 
-	client := NewClient(conn)
+	transport := newWebSocketTransport(conn, conn.RemoteAddr().String())
+	client := NewClient(transport)
+	log.Printf("peer connected: %s", client.PeerIdentity())
 	go h.readLoop(client)
+}
+
+// RegisterTransport attaches an externally-constructed Transport (Steam
+// Sockets in Phase 2, the direct-connect transportbridge in §13) as a
+// hub-managed client. The peer is treated identically to a WebSocket client
+// from this point forward — no transport-specific branches downstream.
+func (h *Hub) RegisterTransport(transport Transport) *Client {
+	client := NewClient(transport)
+	log.Printf("peer connected: %s", client.PeerIdentity())
+	go h.readLoop(client)
+	return client
 }
 
 func (h *Hub) readLoop(client *Client) {
 	defer h.cleanupClient(client, true)
 
 	for {
-		_, data, err := client.Conn.ReadMessage()
+		data, err := client.Read()
 		if err != nil {
-			log.Println("read error:", err)
+			log.Printf("read error from %s: %v", client.PeerIdentity(), err)
 			return
 		}
 
@@ -87,6 +313,34 @@ func (h *Hub) readLoop(client *Client) {
 		}
 
 		switch base.Type {
+		case "hello":
+			// §17 task 17.1: version-mismatch close code. Only enforced when
+			// the server's version is set (empty = test mode); both values
+			// equal to "dev" or "unknown" match by construction so the
+			// dev/CI workflows never trip this gate (per the
+			// embedded-spa-serving spec D23).
+			var msg protocol.HelloMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid hello payload",
+				})
+				continue
+			}
+			if h.version != "" && msg.Version != "" && msg.Version != h.version {
+				log.Printf("ws: version mismatch (server=%q client=%q) — closing %s",
+					h.version, msg.Version, client.PeerIdentity())
+				// Try to send a close frame with the documented code; ignore
+				// errors because we're closing anyway.
+				if wt, ok := client.Transport().(*websocketTransport); ok {
+					msg := websocket.FormatCloseMessage(CloseCodeVersionMismatch,
+						"build mismatch — please restart")
+					_ = wt.conn.WriteControl(websocket.CloseMessage, msg,
+						time.Now().Add(writeDeadline))
+				}
+				return
+			}
+
 		case "join_match":
 			var msg protocol.JoinMatchMessage
 			if err := json.Unmarshal(data, &msg); err != nil {

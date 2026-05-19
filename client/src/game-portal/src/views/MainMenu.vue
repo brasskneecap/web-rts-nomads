@@ -1,5 +1,7 @@
 <template>
   <div class="main-menu">
+    <SteamStatusBadge class="main-menu__steam-badge" />
+
     <ResumeSessionCard
       v-if="hasResumableSession"
       :map-name="resumeMapName"
@@ -30,6 +32,7 @@ import { useMapSelection } from '@/composables/useMapSelection'
 import MenuPanel from '@/components/menu/MenuPanel.vue'
 import ResumeSessionCard from '@/components/menu/ResumeSessionCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import SteamStatusBadge from '@/components/SteamStatusBadge.vue'
 
 const HAS_ACTIVE_SESSION_KEY = 'webrts.hasActiveSession'
 const MATCH_ID_STORAGE_KEY = 'webrts.matchId'
@@ -81,6 +84,13 @@ function onDismiss() {
   display: flex;
   flex-direction: column;
   background: radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%);
+}
+
+.main-menu__steam-badge {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  z-index: 2;
 }
 
 .main-menu__layout {
