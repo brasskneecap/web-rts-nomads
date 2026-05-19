@@ -1,14 +1,56 @@
 package ws
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"io"
+	"log"
 	"strconv"
 	"sync"
 	"sync/atomic"
 
 	"webrts/server/internal/steam"
 )
+
+// Wire-level compression for game state over the Steam transport.
+//
+// Why: RTS state snapshots run ~30-40 KB of JSON each. Sending those over
+// Steam's reliable relay fragments each into 25-35 UDP packets that must
+// arrive in order with acks; per-message transmission latency stacks up
+// fast and the SDK send buffer fills, manifesting as multi-second input
+// lag on the joiner.
+//
+// gzip on the JSON payload runs ~5-10× compression (many repeated keys
+// like `playerId`, `unitId`, `x`, `y`), shrinking 37 KB → ~4-7 KB and
+// roughly halving on-wire packet count. Compression CPU cost is
+// negligible at our message rates.
+//
+// Symmetric: both ends of a steamTransport must run this. The proxy
+// goroutines on the joiner side are unaware — they see uncompressed
+// bytes via ReadMessage and write uncompressed to the SPA WS.
+
+func compressForWire(payload []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	if _, err := w.Write(payload); err != nil {
+		_ = w.Close()
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func decompressFromWire(payload []byte) ([]byte, error) {
+	r, err := gzip.NewReader(bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
+}
 
 // SteamPeerIPC is the slice of the steam.IPCBridge surface this transport
 // needs. Kept as an interface so unit tests can inject a recorder without
@@ -82,7 +124,15 @@ func (t *steamTransport) WriteMessage(payload []byte) error {
 	if t.closed.Load() {
 		return errors.New("steam transport: closed")
 	}
-	return t.ipc.SendPeerMessage(t.peerID, payload)
+	compressed, err := compressForWire(payload)
+	if err != nil {
+		// Should not happen — gzip writer to an in-memory bytes.Buffer
+		// has no failure modes other than OOM. Fall through with the
+		// raw payload so a transient bug doesn't kill the connection.
+		log.Printf("steam transport: compress failed (%v); sending raw", err)
+		return t.ipc.SendPeerMessage(t.peerID, payload)
+	}
+	return t.ipc.SendPeerMessage(t.peerID, compressed)
 }
 
 // WritePing is intentionally a no-op. Steam Networking Sockets has its own
@@ -140,18 +190,27 @@ func (t *steamTransport) SetPongHandler(cb func()) {
 // Called on the IPCBridge reader goroutine — MUST NOT block indefinitely.
 // If the queue is full (slow consumer) we drop the message and log; the
 // alternative (blocking the IPC reader) would stall every other peer too.
+//
+// Decompresses the on-wire gzipped payload before pushing. If the payload
+// doesn't decompress (e.g. an old build talking to a new build during a
+// rolling upgrade), pass through raw so the system still functions —
+// the consumer's JSON parser will reject obvious garbage, surfacing the
+// version mismatch via existing error handling.
 func (t *steamTransport) Deliver(payload []byte) {
 	if t.closed.Load() {
 		return
 	}
+	decompressed, err := decompressFromWire(payload)
+	if err != nil {
+		log.Printf("steam transport: gunzip failed (%v); delivering raw — peer may be on an older build", err)
+		decompressed = payload
+	}
 	select {
-	case t.incoming <- payload:
+	case t.incoming <- decompressed:
 	default:
 		// Match the FakeTransport contract: dropped on queue-full. The hub
 		// will time the client out via the pong-deadline mechanism if it
-		// stops making progress. The Steam SDK's reliable+ordered semantic
-		// at the wire layer means this only fires under sustained head-of-
-		// line stalls in the Go-side consumer.
+		// stops making progress.
 	}
 }
 

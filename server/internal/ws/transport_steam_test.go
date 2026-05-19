@@ -82,7 +82,10 @@ func TestSteamTransport_PeerIdentity(t *testing.T) {
 }
 
 // TestSteamTransport_WriteMessageGoesToIPC asserts that WriteMessage delegates
-// to SendPeerMessage byte-for-byte (no reframing).
+// to SendPeerMessage with gzip-compression on the wire (the transport
+// compresses to reduce per-message size; see compressForWire). Round-trip
+// the compressed bytes through decompressFromWire to assert the payload
+// arrived without semantic loss.
 func TestSteamTransport_WriteMessageGoesToIPC(t *testing.T) {
 	ipc := &recordingIPC{}
 	tr := NewSteamTransport(7, 1, ipc)
@@ -95,8 +98,12 @@ func TestSteamTransport_WriteMessageGoesToIPC(t *testing.T) {
 	if len(sends) != 1 {
 		t.Fatalf("len(sends) = %d, want 1", len(sends))
 	}
-	if string(sends[0]) != string(payload) {
-		t.Errorf("payload = %q, want %q", sends[0], payload)
+	got, err := decompressFromWire(sends[0])
+	if err != nil {
+		t.Fatalf("on-wire bytes did not decompress: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Errorf("payload = %q, want %q", got, payload)
 	}
 }
 
