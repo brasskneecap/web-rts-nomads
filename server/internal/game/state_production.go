@@ -2,6 +2,7 @@ package game
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"webrts/server/pkg/protocol"
 )
@@ -434,21 +435,48 @@ func (s *GameState) playerMeetsUnitRequirementsLocked(playerID, unitType string)
 	return true
 }
 
+// buildPlayerSnapshotLocked assembles the per-player wire snapshot used
+// by every outbound match-snapshot path. Each field is a pure read of
+// per-player state; the helper exists so the three Snapshot* functions
+// don't drift in lockstep every time the snapshot schema grows. Must
+// be called under s.mu.
+func (s *GameState) buildPlayerSnapshotLocked(player *Player) protocol.PlayerSnapshot {
+	snap := protocol.PlayerSnapshot{
+		PlayerID:        player.ID,
+		Color:           player.Color,
+		TeamID:          player.TeamID,
+		Resources:       s.getPlayerResourceStocksLocked(player),
+		Upgrades:        s.playerUpgradeSnapshotsLocked(player.ID),
+		TownHallTier:    s.townhallTierForPlayerLocked(player.ID),
+		Vault:           s.playerVaultSnapshotsLocked(player.ID),
+		VaultCapacity:   s.vaultCapacityForPlayerLocked(player.ID),
+		LockedUnitTypes: s.lockedUnitTypesForPlayerLocked(player.ID),
+	}
+	snap.ActiveBuffs = s.activePlayerBuffIconsLocked(player.ID)
+	return snap
+}
+
 // lockedUnitTypesForPlayerLocked returns the set of unit types the
-// player currently cannot train due to unmet RequiresBuildings.
-// Iterates ListUnitDefs() once per player per snapshot — runs at
-// snapshot cadence, not on the simulation hot path. Returns nil (not an
-// empty slice) when nothing is locked so the protocol's omitempty drops
-// the field from the wire. Must be called under s.mu.
+// player currently cannot train due to unmet RequiresBuildings. Called
+// once per player per outbound snapshot (≈20 Hz × player count), so
+// keep it cheap: iterate unitDefsByType directly (no allocation, no
+// pre-sort) and sort only the small locked result for deterministic
+// wire output. Returns nil (not an empty slice) when nothing is locked
+// so the protocol's omitempty drops the field from the wire. If the
+// unit catalog ever grows large, cache the result on Player and
+// invalidate on building add/complete/destroy. Must be called under s.mu.
 func (s *GameState) lockedUnitTypesForPlayerLocked(playerID string) []string {
 	var locked []string
-	for _, def := range ListUnitDefs() {
+	for unitType, def := range unitDefsByType {
 		if len(def.RequiresBuildings) == 0 {
 			continue
 		}
-		if !s.playerMeetsUnitRequirementsLocked(playerID, def.Type) {
-			locked = append(locked, def.Type)
+		if !s.playerMeetsUnitRequirementsLocked(playerID, unitType) {
+			locked = append(locked, unitType)
 		}
+	}
+	if len(locked) > 1 {
+		sort.Strings(locked)
 	}
 	return locked
 }

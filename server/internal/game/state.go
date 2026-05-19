@@ -1021,19 +1021,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		if player.ID == enemyPlayerID {
 			continue
 		}
-		playerSnap := protocol.PlayerSnapshot{
-			PlayerID:        player.ID,
-			Color:           player.Color,
-			TeamID:          player.TeamID,
-			Resources:       s.getPlayerResourceStocksLocked(player),
-			Upgrades:        s.playerUpgradeSnapshotsLocked(player.ID),
-			TownHallTier:    s.townhallTierForPlayerLocked(player.ID),
-			Vault:           s.playerVaultSnapshotsLocked(player.ID),
-			VaultCapacity:   s.vaultCapacityForPlayerLocked(player.ID),
-			LockedUnitTypes: s.lockedUnitTypesForPlayerLocked(player.ID),
-		}
-		playerSnap.ActiveBuffs = s.activePlayerBuffIconsLocked(player.ID)
-		players = append(players, playerSnap)
+		players = append(players, s.buildPlayerSnapshotLocked(player))
 	}
 
 	wm := s.WaveManager
@@ -1333,19 +1321,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		if player.ID == enemyPlayerID {
 			continue
 		}
-		playerSnap := protocol.PlayerSnapshot{
-			PlayerID:        player.ID,
-			Color:           player.Color,
-			TeamID:          player.TeamID,
-			Resources:       s.getPlayerResourceStocksLocked(player),
-			Upgrades:        s.playerUpgradeSnapshotsLocked(player.ID),
-			TownHallTier:    s.townhallTierForPlayerLocked(player.ID),
-			Vault:           s.playerVaultSnapshotsLocked(player.ID),
-			VaultCapacity:   s.vaultCapacityForPlayerLocked(player.ID),
-			LockedUnitTypes: s.lockedUnitTypesForPlayerLocked(player.ID),
-		}
-		playerSnap.ActiveBuffs = s.activePlayerBuffIconsLocked(player.ID)
-		players = append(players, playerSnap)
+		players = append(players, s.buildPlayerSnapshotLocked(player))
 	}
 
 	wm := s.WaveManager
@@ -1629,19 +1605,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		if player.ID == enemyPlayerID {
 			continue
 		}
-		playerSnap := protocol.PlayerSnapshot{
-			PlayerID:        player.ID,
-			Color:           player.Color,
-			TeamID:          player.TeamID,
-			Resources:       s.getPlayerResourceStocksLocked(player),
-			Upgrades:        s.playerUpgradeSnapshotsLocked(player.ID),
-			TownHallTier:    s.townhallTierForPlayerLocked(player.ID),
-			Vault:           s.playerVaultSnapshotsLocked(player.ID),
-			VaultCapacity:   s.vaultCapacityForPlayerLocked(player.ID),
-			LockedUnitTypes: s.lockedUnitTypesForPlayerLocked(player.ID),
-		}
-		playerSnap.ActiveBuffs = s.activePlayerBuffIconsLocked(player.ID)
-		players = append(players, playerSnap)
+		players = append(players, s.buildPlayerSnapshotLocked(player))
 	}
 
 	wm := s.WaveManager

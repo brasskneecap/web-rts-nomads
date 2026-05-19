@@ -153,12 +153,14 @@ func TestPlayerMeetsUnitRequirementsLocked(t *testing.T) {
 
 // trainAndAssertNoOp calls TrainUnit and asserts no production was
 // queued and no resources were deducted. Caller must NOT hold s.mu.
+// Re-resolves *Player inside each critical section so the test does
+// not depend on Players map entries being stored as long-lived
+// pointers.
 func trainAndAssertNoOp(t *testing.T, s *GameState, playerID, buildingID, unitType string) {
 	t.Helper()
 	s.mu.RLock()
-	player := s.Players[playerID]
-	preGold := player.Resources["gold"]
-	preWood := player.Resources["wood"]
+	preGold := s.Players[playerID].Resources["gold"]
+	preWood := s.Players[playerID].Resources["wood"]
 	preQueueLen := len(s.Productions[buildingID])
 	s.mu.RUnlock()
 
@@ -169,21 +171,21 @@ func trainAndAssertNoOp(t *testing.T, s *GameState, playerID, buildingID, unitTy
 	if got := len(s.Productions[buildingID]); got != preQueueLen {
 		t.Errorf("queue length after TrainUnit(%q) = %d; want %d (no-op expected)", unitType, got, preQueueLen)
 	}
-	if player.Resources["gold"] != preGold {
-		t.Errorf("gold after TrainUnit(%q) = %d; want %d (no-op expected)", unitType, player.Resources["gold"], preGold)
+	if got := s.Players[playerID].Resources["gold"]; got != preGold {
+		t.Errorf("gold after TrainUnit(%q) = %d; want %d (no-op expected)", unitType, got, preGold)
 	}
-	if player.Resources["wood"] != preWood {
-		t.Errorf("wood after TrainUnit(%q) = %d; want %d (no-op expected)", unitType, player.Resources["wood"], preWood)
+	if got := s.Players[playerID].Resources["wood"]; got != preWood {
+		t.Errorf("wood after TrainUnit(%q) = %d; want %d (no-op expected)", unitType, got, preWood)
 	}
 }
 
-// addBarracks injects a barracks owned by playerID and returns its ID.
-// Caller must hold s.mu.
-func addBarracks(s *GameState, playerID string) string {
-	bid := "barracks-1"
+// addBarracks injects a barracks with the given id owned by playerID
+// and returns its id. Tests that need multiple barracks in one state
+// must supply distinct ids. Caller must hold s.mu.
+func addBarracks(s *GameState, id, playerID string) string {
 	owner := playerID
 	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
-		ID:             bid,
+		ID:             id,
 		BuildingType:   "barracks",
 		Width:          3,
 		Height:         3,
@@ -198,14 +200,14 @@ func addBarracks(s *GameState, playerID string) string {
 	}
 	last := &s.MapConfig.Buildings[len(s.MapConfig.Buildings)-1]
 	s.buildingsByID[last.ID] = last
-	return bid
+	return id
 }
 
 func TestTrainUnit_ArcherRequiresBlacksmith_NoBuilding(t *testing.T) {
 	s, p1 := newRequirementsTestState(t)
 	s.mu.Lock()
 	s.Players[p1].Resources = map[string]int{"gold": 1000, "wood": 1000}
-	bid := addBarracks(s, p1)
+	bid := addBarracks(s, "barracks-1", p1)
 	s.mu.Unlock()
 
 	trainAndAssertNoOp(t, s, p1, bid, "archer")
@@ -215,7 +217,7 @@ func TestTrainUnit_ArcherRequiresBlacksmith_UnderConstruction(t *testing.T) {
 	s, p1 := newRequirementsTestState(t)
 	s.mu.Lock()
 	s.Players[p1].Resources = map[string]int{"gold": 1000, "wood": 1000}
-	bid := addBarracks(s, p1)
+	bid := addBarracks(s, "barracks-1", p1)
 	addBuildingToState(s, "bs-uc", "blacksmith", p1, true, true)
 	s.mu.Unlock()
 
@@ -226,7 +228,7 @@ func TestTrainUnit_ArcherRequiresBlacksmith_Built(t *testing.T) {
 	s, p1 := newRequirementsTestState(t)
 	s.mu.Lock()
 	s.Players[p1].Resources = map[string]int{"gold": 1000, "wood": 1000}
-	bid := addBarracks(s, p1)
+	bid := addBarracks(s, "barracks-1", p1)
 	addBuildingToState(s, "bs-built", "blacksmith", p1, false, true)
 	preGold := s.Players[p1].Resources["gold"]
 	preWood := s.Players[p1].Resources["wood"]
@@ -257,7 +259,7 @@ func TestTrainUnit_SoldierUnaffected(t *testing.T) {
 	s, p1 := newRequirementsTestState(t)
 	s.mu.Lock()
 	s.Players[p1].Resources = map[string]int{"gold": 1000, "wood": 1000}
-	bid := addBarracks(s, p1)
+	bid := addBarracks(s, "barracks-1", p1)
 	s.mu.Unlock()
 
 	s.TrainUnit(p1, bid, "soldier")
