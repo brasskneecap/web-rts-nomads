@@ -298,6 +298,25 @@ func (s *GameState) addUnitXPFloatLocked(unit *Unit, amount float64) {
 	s.addUnitXPLocked(unit, wholeXP)
 }
 
+// addUnitXPRawFloatLocked is addUnitXPFloatLocked WITHOUT the xpGainMultiplier
+// scaling: `amount` is the literal XP, accumulated through the same per-unit
+// XPProgressRemainder so sub-1 fractions (e.g. 0.5) eventually form whole XP
+// and cross rank thresholds. Used only by "split" mode. Because exactly one
+// mode is active per server run, scaled (addUnitXPFloatLocked) and raw
+// contributions never mix into the same accumulator.
+func (s *GameState) addUnitXPRawFloatLocked(unit *Unit, amount float64) {
+	if !s.unitCanGainXPLocked(unit) || amount <= 0 {
+		return
+	}
+	total := unit.XPProgressRemainder + amount
+	wholeXP := int(math.Floor(total))
+	unit.XPProgressRemainder = total - float64(wholeXP)
+	if wholeXP <= 0 {
+		return
+	}
+	s.addUnitXPLocked(unit, wholeXP)
+}
+
 // assignUnitPathOnRankUpLocked assigns a promotion path to a unit the first
 // time it reaches Bronze rank. The path is fixed for the unit's lifetime.
 //

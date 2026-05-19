@@ -61,3 +61,28 @@ func TestExperienceTuning_DefaultsLoaded(t *testing.T) {
 		t.Errorf("default experience.splitEligibilityRadius = %v, want 500", et.SplitEligibilityRadius)
 	}
 }
+
+func TestAddUnitXPRawFloat_NoMultiplierAndAccumulates(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 100, Y: 100})
+
+	// 0.5 alone must not yet count as whole XP, but must be retained.
+	s.addUnitXPRawFloatLocked(u, 0.5)
+	if u.XP != 0 {
+		t.Errorf("after +0.5: XP = %d, want 0", u.XP)
+	}
+	if u.XPProgressRemainder != 0.5 {
+		t.Errorf("after +0.5: remainder = %v, want 0.5", u.XPProgressRemainder)
+	}
+
+	// Another 0.5 completes a whole point — RAW, with NO 0.2 scaling applied.
+	s.addUnitXPRawFloatLocked(u, 0.5)
+	if u.XP != 1 {
+		t.Errorf("after +0.5 again: XP = %d, want 1 (raw, unscaled)", u.XP)
+	}
+	if u.XPProgressRemainder != 0 {
+		t.Errorf("after +0.5 again: remainder = %v, want 0", u.XPProgressRemainder)
+	}
+}
