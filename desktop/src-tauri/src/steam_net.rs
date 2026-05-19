@@ -261,21 +261,37 @@ impl Worker {
         info!("steam_net: worker exiting");
     }
 
-    /// Logs sent/recv throughput once every STATS_INTERVAL. Quiet when no
-    /// peers are connected (avoids cluttering the shell log during idle
-    /// pre-match time).
+    /// Logs sent/recv throughput once every STATS_INTERVAL. Logs only
+    /// when peers are connected (avoids cluttering the shell log during
+    /// idle pre-match time) but always emits a line in that case so we
+    /// can see "0 sent, 0 recv" as a problem signal too. Writes via
+    /// `current_shell_log()` because env_logger's stderr output is
+    /// detached in windowed release builds.
     fn maybe_log_stats(&mut self) {
         const STATS_INTERVAL: Duration = Duration::from_secs(5);
         if self.stats_last_log.elapsed() < STATS_INTERVAL {
             return;
         }
         let active_peers = self.peers.len();
-        if active_peers > 0
-            && (self.stats_sent_msgs > 0 || self.stats_recv_msgs > 0)
-        {
+        let elapsed = self.stats_last_log.elapsed();
+        if active_peers > 0 {
+            if let Some(sl) = crate::logs::current_shell_log() {
+                sl.write_line(
+                    "INFO",
+                    &format!(
+                        "steam_net stats over {:?}: peers={} sent={} msgs ({} bytes) recv={} msgs ({} bytes)",
+                        elapsed,
+                        active_peers,
+                        self.stats_sent_msgs,
+                        self.stats_sent_bytes,
+                        self.stats_recv_msgs,
+                        self.stats_recv_bytes,
+                    ),
+                );
+            }
             info!(
-                "steam_net stats over {:?}: peers={} sent={} msgs ({} bytes) recv={} msgs ({} bytes)",
-                self.stats_last_log.elapsed(),
+                "steam_net stats over {:?}: peers={} sent={} ({} bytes) recv={} ({} bytes)",
+                elapsed,
                 active_peers,
                 self.stats_sent_msgs,
                 self.stats_sent_bytes,
@@ -457,6 +473,14 @@ impl Worker {
                     info!(
                         "steam_net: peer connected steamId={steam_id_64} → peerId={peer_id}"
                     );
+                    if let Some(sl) = crate::logs::current_shell_log() {
+                        sl.write_line(
+                            "INFO",
+                            &format!(
+                                "steam_net: peer connected (host-side) steamId={steam_id_64} peerId={peer_id}"
+                            ),
+                        );
+                    }
                     push_notification(
                         &self.writer,
                         "new_peer_transport",
@@ -555,6 +579,14 @@ impl Worker {
                 info!(
                     "steam_net: outbound connect completed steamId={steam_id_64} peerId={peer_id}"
                 );
+                if let Some(sl) = crate::logs::current_shell_log() {
+                    sl.write_line(
+                        "INFO",
+                        &format!(
+                            "steam_net: outbound connect completed (joiner-side) steamId={steam_id_64} peerId={peer_id}"
+                        ),
+                    );
+                }
                 push_notification(
                     &self.writer,
                     "new_peer_transport",

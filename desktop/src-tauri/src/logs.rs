@@ -16,10 +16,25 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::{info, warn};
+
+/// Process-wide slot for the shell log handle. Set once at startup by
+/// `init` so any thread / module can write diagnostic lines that
+/// actually reach `<ts>-shell.log` (the `info!()` macro writes via
+/// env_logger to stderr, which is detached in windowed release builds
+/// and never reaches the file). Used by modules that don't have direct
+/// access to LogSession — notably the steam_net Worker thread.
+static SHELL_LOG_SLOT: OnceLock<ShellLogHandle> = OnceLock::new();
+
+/// Returns the process-wide shell log handle if `init` has been called.
+/// Cheap clone (Arc-backed internally). Returns None during tests or
+/// before init completes.
+pub fn current_shell_log() -> Option<ShellLogHandle> {
+    SHELL_LOG_SLOT.get().cloned()
+}
 
 /// 200 MiB cap on the logs/ directory per task 22.5.
 pub const LOG_DIR_CAP_BYTES: u64 = 200 * 1024 * 1024;
@@ -68,6 +83,9 @@ pub fn init(logs_dir: &Path) -> std::io::Result<LogSession> {
         file: Arc::new(Mutex::new(shell_file)),
     };
     handle.write_line("INFO", &format!("nomads-desktop session start ts={timestamp}"));
+    // Make the handle accessible to threads that don't have a direct
+    // reference to LogSession (e.g. the steam_net Worker thread).
+    let _ = SHELL_LOG_SLOT.set(handle.clone());
 
     // §22.5 rotation: protect current run, evict oldest complete triples.
     if let Err(e) = rotate(logs_dir, &timestamp, LOG_DIR_CAP_BYTES) {
