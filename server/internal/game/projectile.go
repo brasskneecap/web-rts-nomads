@@ -75,6 +75,12 @@ type Projectile struct {
 	// tinting will read. Empty ⇒ physical (DamageType.OrPhysical()).
 	DamageType DamageType
 
+	// Scale is the render-size multiplier for the projectile sprite, snapshot
+	// from the firing unit's ProjectileScale at fire time and forwarded to
+	// the client as ProjectileSnapshot.Scale. Purely visual — never read by
+	// the simulation, flight, or damage logic. 0 ⇒ the client's default 1×.
+	Scale float64
+
 	// ── Pierce (Marksman silver) ───────────────────────────────────────────
 	// When true the arrow flies in a fixed straight line and damages enemies
 	// as it passes through them rather than homing on a single target. All
@@ -183,6 +189,7 @@ func (s *GameState) fireHomingProjectileLocked(attacker, target *Unit, damage in
 		FollowEffect:     followEffect,
 		ImpactEffect:     impactEffect,
 		DamageType:       attacker.AttackDamageType,
+		Scale:            attacker.ProjectileScale,
 	})
 }
 
@@ -265,6 +272,11 @@ func (s *GameState) firePierceProjectileLocked(attacker, target *Unit, damage in
 		PierceLength:        length,
 		PierceDirX:          dirX,
 		PierceDirY:          dirY,
+		// Carried for invariant consistency (every fired projectile records
+		// its firer's scale). The pierce visual is procedural "wind_pierce",
+		// not a sprite, so this has no effect today — it future-proofs a
+		// sprite-backed pierce variant.
+		Scale: attacker.ProjectileScale,
 	})
 }
 

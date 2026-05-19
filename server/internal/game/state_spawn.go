@@ -78,6 +78,7 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		ManaRegenPerSecond: def.ManaRegenRate,
 		ProjectileID:       def.Projectile,
 		AttackDamageType:   def.DamageType,
+		ProjectileScale:    def.ProjectileScale,
 		Abilities:          append([]string{}, def.Abilities...),
 		Rank:               unitRankBase,
 		ProgressionPath:    unitPathNone,

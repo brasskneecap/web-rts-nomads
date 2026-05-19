@@ -229,6 +229,13 @@ type Unit struct {
 	// flavor/metadata; empty ⇒ physical). Set at spawn from the unit def.
 	ProjectileID     string
 	AttackDamageType DamageType
+	// ProjectileScale is a per-unit render-size multiplier for this unit's
+	// projectile sprite (from UnitDef.ProjectileScale, optionally overridden
+	// by the promotion path). It is copied onto every projectile this unit
+	// fires and travels to the client as ProjectileSnapshot.Scale, so two
+	// units sharing one projectile def can draw it at different sizes.
+	// 0 ⇒ the client's default 1× (purely visual; never read by simulation).
+	ProjectileScale float64
 	// Abilities are the ability ids this unit has (AbilityDef ids, slot order;
 	// from UnitDef.Abilities). Per-instance auto-cast / cooldown state is
 	// layered on in the action-bar part. Nil for non-caster units.
@@ -1070,6 +1077,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			Variant:          proj.Variant,
 			DoubleShotSecond: proj.DoubleShotSecond,
 			Pierce:           proj.Pierce,
+			Scale:            proj.Scale,
 		})
 	}
 
@@ -1405,6 +1413,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			Variant:          proj.Variant,
 			DoubleShotSecond: proj.DoubleShotSecond,
 			Pierce:           proj.Pierce,
+			Scale:            proj.Scale,
 		})
 	}
 
@@ -1674,6 +1683,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			Variant:          proj.Variant,
 			DoubleShotSecond: proj.DoubleShotSecond,
 			Pierce:           proj.Pierce,
+			Scale:            proj.Scale,
 		})
 	}
 

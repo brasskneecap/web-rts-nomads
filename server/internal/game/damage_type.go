@@ -35,6 +35,11 @@ const (
 	DamageLightning DamageType = "lightning"
 	DamageArcane    DamageType = "arcane"
 	DamageHoly      DamageType = "holy"
+	// DamageShadow is the dark/necrotic school. Today, like every other
+	// non-physical type, it is flavor/metadata only and does not change damage
+	// numbers — it is the tag the Arch Mage's dark_bolt rides on and the seam
+	// future shadow-resistance logic / client tinting will read.
+	DamageShadow    DamageType = "shadow"
 )
 
 // damageTypeRegistry is the recognised damage-type set. Populated at package
@@ -48,6 +53,7 @@ var damageTypeRegistry = map[DamageType]struct{}{
 	DamageLightning: {},
 	DamageArcane:    {},
 	DamageHoly:      {},
+	DamageShadow:    {},
 }
 
 // RegisterDamageType adds dt to the recognised set so more schools can be

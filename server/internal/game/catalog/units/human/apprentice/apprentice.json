@@ -27,6 +27,7 @@
   "manaRegenRate": 1.0,
   "projectile": "fire_bolt",
   "damageType": "fire",
+  "projectileScale": 1.5,
   "abilities": [
     "heal"
   ],

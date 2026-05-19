@@ -755,6 +755,12 @@ export type ProjectileSnapshot = {
    *  the arrow visual to TargetX/Y (which is the far endpoint of the pierce
    *  line, not a homing target position). */
   pierce?: boolean
+  /** Per-shot render-size multiplier applied on top of the base
+   *  projectile-sprite scale (same role as TrapSnapshot.scaleMultiplier).
+   *  Resolved server-side from the firing unit's `projectileScale`, so two
+   *  units firing the same projectile can draw it at different sizes.
+   *  Absent / 0 ⇒ 1× (no change). */
+  scale?: number
 }
 
 /**

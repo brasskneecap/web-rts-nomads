@@ -365,6 +365,23 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	}
 	unit.VisionRange = baseVision * s.perkVisionRangeMultiplierLocked(unit)
 
+	// Path-level basic-attack overrides: a promotion path may swap the
+	// projectile asset and/or damage-type tag the unit def set at spawn
+	// (e.g. Cleric → holy_bolt/holy, Arch Mage → dark_bolt/shadow). Paths
+	// without an override are absent from these maps and leave the unit-def
+	// values untouched. ProgressionPath is monotonic (none → path, never
+	// reverted), so a conditional set suffices — unlike HP/damage there is no
+	// per-tick base to re-derive from.
+	if pathProjectile, ok := pathProjectileByPath[unit.ProgressionPath]; ok {
+		unit.ProjectileID = pathProjectile
+	}
+	if pathDamageType, ok := pathDamageTypeByPath[unit.ProgressionPath]; ok {
+		unit.AttackDamageType = pathDamageType
+	}
+	if pathProjectileScale, ok := pathProjectileScaleByPath[unit.ProgressionPath]; ok {
+		unit.ProjectileScale = pathProjectileScale
+	}
+
 	if unit.UnitType == "soldier" && unit.ProgressionPath == unitPathNone {
 		unit.Armor = soldierBaseArmor
 	}

@@ -34,8 +34,25 @@ type pathCatalogFile struct {
 	Bounds json.RawMessage `json:"bounds,omitempty"`
 	// VisionRange overrides BaseVisionRange for units on this path, in world pixels.
 	// When 0 or absent, the unit's BaseVisionRange (from its unit def) is used.
-	VisionRange float64              `json:"visionRange,omitempty"`
-	Ranks       map[string]pathRankStatsJSON `json:"ranks"`
+	VisionRange float64 `json:"visionRange,omitempty"`
+	// Projectile overrides the unit def's Projectile (the ProjectileDef id the
+	// basic ranged attack fires) for units promoted onto this path — e.g. the
+	// Cleric firing "holy_bolt" instead of the Apprentice's "fire_bolt". Empty
+	// ⇒ keep whatever the unit def set at spawn. Validated at load against the
+	// projectile catalog (same fail-loud contract as UnitDef.Projectile).
+	Projectile string `json:"projectile,omitempty"`
+	// DamageType overrides the unit def's DamageType (the basic attack's
+	// element/school tag) for units on this path. Optional flavor/metadata,
+	// same as UnitDef.DamageType; empty ⇒ keep the unit def's type. Validated
+	// at load when non-empty.
+	DamageType DamageType `json:"damageType,omitempty"`
+	// ProjectileScale overrides the unit def's ProjectileScale (the per-unit
+	// projectile-sprite render multiplier) for units promoted onto this path,
+	// so two paths of the same base unit (e.g. Apprentice → Cleric vs Arch
+	// Mage) can size their shots independently. Purely visual; > 0 ⇒ override,
+	// omitted / 0 ⇒ keep whatever the unit def set at spawn. Validated >= 0.
+	ProjectileScale float64 `json:"projectileScale,omitempty"`
+	Ranks           map[string]pathRankStatsJSON `json:"ranks"`
 }
 
 // pathRankStatsJSON mirrors the stat-modifier fields of pathModifierDef (the
@@ -74,6 +91,24 @@ var pathBoundsByPath = map[string]json.RawMessage{}
 // pixels, keyed by path id (e.g. "marksman": 448). Zero means "use the unit
 // def's visionRange". Applied in applyRankModifiersLocked.
 var pathVisionRangeByPath = map[string]float64{}
+
+// pathProjectileByPath / pathDamageTypeByPath hold the optional per-path
+// overrides of the unit def's basic-attack projectile and damage-type tag,
+// keyed by path id (e.g. "cleric": "holy_bolt", "cleric": "holy"). A path
+// absent from a map means "no override — keep the unit def value set at
+// spawn". Applied in applyRankModifiersLocked once the unit's ProgressionPath
+// is assigned. Validated at load (path_defs init) so a typo'd projectile or
+// unknown damage type fails loud at startup, same as UnitDef.
+var pathProjectileByPath = map[string]string{}
+var pathDamageTypeByPath = map[string]DamageType{}
+
+// pathProjectileScaleByPath holds the optional per-path projectile-sprite
+// render multiplier override, keyed by path id (e.g. "cleric": 1.5). A path
+// absent from the map means "no override — keep the unit def's
+// ProjectileScale". Only paths declaring a positive value are stored, so an
+// omitted / zero field never zeroes the unit-def value. Applied in
+// applyRankModifiersLocked.
+var pathProjectileScaleByPath = map[string]float64{}
 
 // PathBoundsEntry is the shape served to the client: a path id plus its
 // raw bounds blob. Slice form (rather than map) gives stable ordering in
@@ -190,6 +225,24 @@ func init() {
 				}
 				if file.VisionRange > 0 {
 					pathVisionRangeByPath[file.Path] = file.VisionRange
+				}
+				if file.Projectile != "" {
+					if _, ok := getProjectileDef(file.Projectile); !ok {
+						panic(rel + `: projectile "` + file.Projectile + `" is not a registered projectile def`)
+					}
+					pathProjectileByPath[file.Path] = file.Projectile
+				}
+				if file.DamageType != "" {
+					if !IsValidDamageType(file.DamageType) {
+						panic(rel + `: damageType "` + string(file.DamageType) + `" is not a registered damage type`)
+					}
+					pathDamageTypeByPath[file.Path] = file.DamageType
+				}
+				if file.ProjectileScale < 0 {
+					panic(rel + `: projectileScale must be >= 0 (0/omitted ⇒ keep the unit def value)`)
+				}
+				if file.ProjectileScale > 0 {
+					pathProjectileScaleByPath[file.Path] = file.ProjectileScale
 				}
 				for rankName, stats := range file.Ranks {
 					if _, ok := validRankName[rankName]; !ok {

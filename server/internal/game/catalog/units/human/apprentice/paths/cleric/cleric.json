@@ -8,6 +8,9 @@
     "ringOffsetX": 0,
     "ringOffsetY": -16
   },
+  "projectile": "holy_bolt",
+  "damageType": "holy",
+  "projectileScale": 1.0,
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.10,

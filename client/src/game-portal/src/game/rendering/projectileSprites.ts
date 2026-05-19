@@ -156,8 +156,18 @@ function makeSpriteProjectileDraw(spriteId: string): ProjectileDrawFn {
       return
     }
     const img = set.image
-    const w = (img.naturalWidth || PROJECTILE_SPRITE_FALLBACK_SIZE) * PROJECTILE_SPRITE_SCALE
-    const h = (img.naturalHeight || PROJECTILE_SPRITE_FALLBACK_SIZE) * PROJECTILE_SPRITE_SCALE
+    // Per-shot multiplier on top of the global base scale. The server
+    // resolves it from the firing unit's projectileScale (unit def or its
+    // promotion-path override) and sends it on the snapshot, so two units
+    // sharing one projectile sprite can render it at different sizes.
+    // Absent / <= 0 ⇒ 1× (every existing projectile unchanged).
+    const shotScale = drawCtx.projectile.scale
+    const scale =
+      shotScale && shotScale > 0
+        ? PROJECTILE_SPRITE_SCALE * shotScale
+        : PROJECTILE_SPRITE_SCALE
+    const w = (img.naturalWidth || PROJECTILE_SPRITE_FALLBACK_SIZE) * scale
+    const h = (img.naturalHeight || PROJECTILE_SPRITE_FALLBACK_SIZE) * scale
     const prevSmoothing = ctx.imageSmoothingEnabled
     ctx.imageSmoothingEnabled = false // pixel art — keep crisp
     if (PROJECTILE_SPRITE_ANGLE_OFFSET !== 0) {

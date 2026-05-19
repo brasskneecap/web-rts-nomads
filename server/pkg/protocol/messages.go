@@ -792,6 +792,14 @@ type ProjectileSnapshot struct {
 	// fly all the way to TargetX/Y (the far endpoint of the line) rather
 	// than stopping at the target unit.
 	Pierce bool `json:"pierce,omitempty"`
+	// Scale is a per-shot render-size multiplier applied on top of the
+	// client's base projectile-sprite scale (same role as
+	// TrapSnapshot.ScaleMultiplier / EffectSnapshot.SizeScale). Resolved
+	// server-side from the firing unit's projectileScale (unit def, or its
+	// promotion-path override), so two different units firing the same
+	// projectile can render it at different sizes. 0/omitted ⇒ the client's
+	// default (1×) — every existing projectile is unchanged.
+	Scale float64 `json:"scale,omitempty"`
 }
 
 // CritEventSnapshot is a per-tick record of a critical hit that landed.

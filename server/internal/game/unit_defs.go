@@ -101,6 +101,15 @@ type UnitDef struct {
 	// DamageType tags this unit's basic attack damage (Part 2). Optional
 	// flavor/metadata; empty ⇒ physical. Validated at load when non-empty.
 	DamageType DamageType `json:"damageType,omitempty"`
+	// ProjectileScale is a render-size multiplier for this unit's projectile
+	// sprite, applied client-side on top of the base projectile-sprite scale
+	// (e.g. 2 ⇒ twice as large, 0.5 ⇒ half). It is per-unit, not per
+	// projectile def, so two units sharing one projectile (e.g. "fire_bolt")
+	// can size it differently; a promotion path may override it (see
+	// pathCatalogFile.ProjectileScale). Purely visual — never read by the
+	// simulation. Omitted / 0 ⇒ the client default (1×). Must be >= 0;
+	// validated at load.
+	ProjectileScale float64 `json:"projectileScale,omitempty"`
 	// Abilities is the unit's ability id list (AbilityDef ids, Part 6), slot
 	// order. Not validated at load — an ability may be authored in a later
 	// part; resolution is fail-safe at use (getAbilityDef).
@@ -190,6 +199,9 @@ func loadUnitDefsByType() map[string]UnitDef {
 				if _, ok := getProjectileDef(def.Projectile); !ok {
 					panic(rel + `: projectile "` + def.Projectile + `" is not a registered projectile def`)
 				}
+			}
+			if def.ProjectileScale < 0 {
+				panic(rel + `: unit "` + def.Type + `": projectileScale must be >= 0 (0/omitted ⇒ client default 1×)`)
 			}
 			if def.MaxMana < 0 || def.ManaRegenRate < 0 {
 				panic(rel + `: maxMana and manaRegenRate must be >= 0`)

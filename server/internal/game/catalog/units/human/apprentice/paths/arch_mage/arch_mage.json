@@ -8,6 +8,9 @@
     "ringOffsetX": 0,
     "ringOffsetY": 3
   },
+  "projectile": "dark_bolt",
+  "damageType": "shadow",
+  "projectileScale": 2.5,
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.10,
