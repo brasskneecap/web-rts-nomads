@@ -122,6 +122,12 @@ type UnitDef struct {
 	// ["ground"]. Authoring an explicit value overrides the default — e.g.
 	// "anti-air only" units would author ["flyer"].
 	TargetableTypes []string `json:"targetableTypes,omitempty"`
+
+	// RequiresBuildings is the list of building types the player must own
+	// fully built (Visible, not underConstruction) before this unit can
+	// be trained. Empty/omitted = no requirement. Multiple entries are
+	// ANDed. Validated at load time against the building catalog.
+	RequiresBuildings []string `json:"requiresBuildings,omitempty"`
 }
 
 // Target class strings recognised by TargetableTypes. Kept as a small closed
@@ -205,6 +211,12 @@ func loadUnitDefsByType() map[string]UnitDef {
 			}
 			if def.MaxMana < 0 || def.ManaRegenRate < 0 {
 				panic(rel + `: maxMana and manaRegenRate must be >= 0`)
+			}
+			for _, b := range def.RequiresBuildings {
+				if _, ok := getBuildingDef(b); !ok {
+					panic(rel + `: requiresBuildings entry "` + b +
+						`" is not a registered building type`)
+				}
 			}
 			if _, dup := result[def.Type]; dup {
 				panic(rel + `: duplicate unit type "` + def.Type + `" — type ids must be globally unique across factions`)
