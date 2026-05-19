@@ -2063,7 +2063,7 @@ export class GameState {
       // bronze, silver, gold — slot 12 is left empty for future use.
       // When the build menu is open the full 12 slots are used for building
       // choices, so we skip the perk row in that state.
-      const regularActions = getUnitActions(unit, this.unitTargetingMode, buildMenuOpen)
+      const regularActions = getUnitActions(unit, this.unitTargetingMode, buildMenuOpen, this.townHallTier)
       // Interactive ability buttons follow the standard actions, sharing the
       // top-8 slots. Empty for non-caster units / when the build menu is open.
       const abilityActions = buildMenuOpen
@@ -2119,7 +2119,7 @@ export class GameState {
             this.unitTargetingMode,
           ),
       details: getGroupDetails(selectedUnits),
-      actions: getGroupActions(selectedUnits, this.unitTargetingMode, groupBuildMenuOpen),
+      actions: getGroupActions(selectedUnits, this.unitTargetingMode, groupBuildMenuOpen, this.townHallTier),
     }
   }
 
@@ -2466,22 +2466,40 @@ function getPerkActionItems(unit: Unit): ActionItem[] {
   })
 }
 
+// Names matching tier levels in handleUpgradeTownHallLocked. Used to label
+// "Requires Keep / Castle" tooltips on locked build-menu entries.
+const TOWN_HALL_TIER_NAMES = ['Town Hall', 'Keep', 'Castle']
+
+function buildMenuActionForDef(
+  def: (typeof BUILDABLE_BUILDING_DEFS)[number],
+  townHallTier: number,
+): ActionItem {
+  const requiredTier = def.requiresTownhallTier ?? 0
+  const meetsTier = requiredTier <= 0 || townHallTier >= requiredTier
+  const tierName = TOWN_HALL_TIER_NAMES[requiredTier - 1] ?? `Tier ${requiredTier}`
+  return {
+    id: `build-${def.type}`,
+    label: def.label,
+    iconDef: { kind: 'building', type: def.type },
+    cost: Object.entries(def.resourceCost ?? {})
+      .filter(([, amount]) => amount > 0)
+      .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' })),
+    disabled: !meetsTier,
+    tooltipTitle: meetsTier ? undefined : def.label,
+    tooltipBody: meetsTier ? undefined : `Requires ${tierName}`,
+  }
+}
+
 function getUnitActions(
   unit: Unit,
   activeMode: UnitTargetingMode | null,
   buildMenuOpen: boolean,
+  townHallTier: number = 0,
 ): ActionItem[] {
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
     BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
-      actions[i] = {
-        id: `build-${def.type}`,
-        label: def.label,
-        iconDef: { kind: 'building', type: def.type },
-        cost: Object.entries(def.resourceCost ?? {})
-          .filter(([, amount]) => amount > 0)
-          .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' })),
-      }
+      actions[i] = buildMenuActionForDef(def, townHallTier)
     })
     actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
     return actions
@@ -2512,18 +2530,12 @@ function getGroupActions(
   units: Unit[],
   activeMode: UnitTargetingMode | null,
   buildMenuOpen: boolean,
+  townHallTier: number = 0,
 ): ActionItem[] {
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
     BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
-      actions[i] = {
-        id: `build-${def.type}`,
-        label: def.label,
-        iconDef: { kind: 'building', type: def.type },
-        cost: Object.entries(def.resourceCost ?? {})
-          .filter(([, amount]) => amount > 0)
-          .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' })),
-      }
+      actions[i] = buildMenuActionForDef(def, townHallTier)
     })
     actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
     return actions

@@ -63,6 +63,11 @@ func (s *GameState) BuildBuilding(playerID, buildingType string, unitIDs []int, 
 		return
 	}
 
+	if def.RequiresTownhallTier > 0 &&
+		s.townhallTierForPlayerLocked(playerID) < def.RequiresTownhallTier {
+		return
+	}
+
 	for resource, cost := range def.ResourceCost {
 		if player.Resources[resource] < cost {
 			return

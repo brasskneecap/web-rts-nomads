@@ -95,6 +95,9 @@ export type BuildingDef = {
   resourceCost: Record<string, number>
   capabilities: BuildingCapability[]
   spawnUnitTypes: string[]
+  // Minimum town-hall tier the owning player must control to build this.
+  // 0/omitted ⇒ no requirement. Mirrors the server's BuildingDef field.
+  requiresTownhallTier?: number
   metadata: JsonObject
   color: string
   label: string

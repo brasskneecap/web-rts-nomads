@@ -31,7 +31,13 @@ type BuildingDef struct {
 	ResourceCost   map[string]int  `json:"resourceCost"`
 	Capabilities   []string        `json:"capabilities"`
 	SpawnUnitTypes []string        `json:"spawnUnitTypes"`
-	Metadata       map[string]any  `json:"metadata"`
+	// RequiresTownhallTier gates construction: the owning player must control
+	// at least one fully-built townhall whose tier is ≥ this value before
+	// BuildBuilding accepts the placement. Zero/omitted ⇒ no requirement.
+	// Tiers: 1 = Town Hall, 2 = Keep, 3 = Castle (mirrors the upgrade chain
+	// in state_upgrades.go's handleUpgradeTownHallLocked).
+	RequiresTownhallTier int             `json:"requiresTownhallTier,omitempty"`
+	Metadata             map[string]any  `json:"metadata"`
 	Color          string          `json:"color,omitempty"`
 	Label          string          `json:"label,omitempty"`
 	Hotkey         string          `json:"hotkey,omitempty"`

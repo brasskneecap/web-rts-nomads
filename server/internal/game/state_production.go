@@ -74,7 +74,7 @@ func (s *GameState) CancelTrainingAt(playerID, buildingID string, queueIndex int
 	if building == nil || !building.Visible {
 		return
 	}
-	if building.BuildingType != "townhall" && building.BuildingType != "barracks" {
+	if !containsString(building.Capabilities, "unit-spawner") {
 		return
 	}
 	if building.OwnerID == nil || *building.OwnerID != playerID {
@@ -119,7 +119,7 @@ func (s *GameState) SetBuildingSpawnPoint(playerID, buildingID string, point pro
 	if building == nil || !building.Visible {
 		return
 	}
-	if building.BuildingType != "townhall" && building.BuildingType != "barracks" {
+	if !containsString(building.Capabilities, "unit-spawner") {
 		return
 	}
 	if building.OwnerID == nil || *building.OwnerID != playerID {
