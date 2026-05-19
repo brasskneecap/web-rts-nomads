@@ -2,6 +2,7 @@ package game
 
 import (
 	"math"
+	"sort"
 )
 
 const (
@@ -548,6 +549,63 @@ func (s *GameState) recordSoldierTankContributionLocked(attacker, target *Unit, 
 
 func (s *GameState) awardKillXPLocked(attacker *Unit) {
 	s.addUnitXPFloatLocked(attacker, xpPerKillBonus)
+}
+
+// awardSplitDeathXPLocked distributes a dead enemy's raw XPValue evenly among
+// every eligible recipient: friendly units (per unitCanGainXPLocked) either
+// within SplitEligibilityRadius of the death position OR that ever dealt
+// damage to it. No eligible recipients ⇒ the XP is lost (no killer fallback).
+// Used only in "split" mode. Recipient IDs are sorted before payout so the
+// distribution is deterministic regardless of map iteration order (per the
+// determinism invariant) — order does not change the equal share anyway.
+func (s *GameState) awardSplitDeathXPLocked(dead *Unit) {
+	if dead == nil || dead.XPValue <= 0 {
+		return
+	}
+
+	recipients := map[int]*Unit{}
+
+	// Proximity: any eligible unit within the radius of the death position.
+	radius := gameplayTuning().Experience.SplitEligibilityRadius
+	radiusSq := radius * radius
+	for _, u := range s.Units {
+		if u == nil || !s.unitCanGainXPLocked(u) {
+			continue
+		}
+		dx := u.X - dead.X
+		dy := u.Y - dead.Y
+		if dx*dx+dy*dy <= radiusSq {
+			recipients[u.ID] = u
+		}
+	}
+
+	// Contributors: any unit that ever dealt damage to this enemy. The ledger
+	// is populated in every mode by recordDamageDealtLocked.
+	for attackerID := range dead.DamageDealtByUnit {
+		if _, seen := recipients[attackerID]; seen {
+			continue
+		}
+		attacker := s.getUnitByIDLocked(attackerID)
+		if attacker == nil || !s.unitCanGainXPLocked(attacker) {
+			continue
+		}
+		recipients[attackerID] = attacker
+	}
+
+	if len(recipients) == 0 {
+		return // no eligible recipients → XP is lost
+	}
+
+	ids := make([]int, 0, len(recipients))
+	for id := range recipients {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+
+	share := float64(dead.XPValue) / float64(len(ids))
+	for _, id := range ids {
+		s.addUnitXPRawFloatLocked(recipients[id], share)
+	}
 }
 
 func (s *GameState) awardSoldierTankKillXPLocked(defeatedUnitID int) {
