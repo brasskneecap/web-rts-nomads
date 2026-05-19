@@ -369,6 +369,9 @@ export type PlayerSnapshot = {
   townHallTier?: number
   vault?: VaultItemSnapshot[]
   vaultCapacity?: number
+  /** Unit types this player cannot train because their server-side
+   *  RequiresBuildings list is unsatisfied. Absent/empty = no locks. */
+  lockedUnitTypes?: string[]
 }
 
 export type PurchaseItemCommand = {
