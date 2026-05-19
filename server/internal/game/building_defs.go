@@ -94,15 +94,23 @@ func (d BuildingDef) HpPerSecond() float64 {
 	return d.MaxHp / d.BuildSeconds
 }
 
-var buildingDefsByType map[string]BuildingDef
+// buildingDefsByType MUST be a var initializer (not init()) so that
+// Go's package-level dependency analysis can order it before any other
+// var initializer that calls getBuildingDef — most importantly
+// unitDefsByType's loader, which validates each unit's RequiresBuildings
+// against the building catalog. All package-level var initializers run
+// before any init() function, so converting this to init() would race
+// with unitDefsByType (and break maps.go's placedUnits hydration via
+// the `_ = unitDefsByType` dependency-injection marker).
+var buildingDefsByType = loadBuildingDefsByType()
 
-func init() {
+func loadBuildingDefsByType() map[string]BuildingDef {
 	// Each file under catalog/buildings/ is a single BuildingDef object.
 	entries, err := fs.ReadDir(buildingDefsFS, "catalog/buildings")
 	if err != nil {
 		panic("catalog/buildings: " + err.Error())
 	}
-	buildingDefsByType = make(map[string]BuildingDef, len(entries))
+	result := make(map[string]BuildingDef, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -115,8 +123,9 @@ func init() {
 		if err := json.Unmarshal(data, &def); err != nil {
 			panic("catalog/buildings/" + entry.Name() + ": " + err.Error())
 		}
-		buildingDefsByType[def.Type] = def
+		result[def.Type] = def
 	}
+	return result
 }
 
 func getBuildingDef(buildingType string) (BuildingDef, bool) {

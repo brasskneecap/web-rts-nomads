@@ -137,11 +137,19 @@ const (
 	TargetClassFlyer  = "flyer"
 )
 
-var unitDefsByType map[string]UnitDef
-
-func init() {
-	unitDefsByType = loadUnitDefsByType()
-}
+// unitDefsByType MUST remain a var initializer (not init()) because
+// maps.go's mapCatalog var initializer references it via
+// `_ = unitDefsByType` to force dependency-ordered loading
+// (placedUnits hydration calls getUnitDef during catalog load).
+// All var initializers run before any init() function, so converting
+// this to init() would cause every map's placedUnits to be silently
+// dropped at startup with "unknown unitType" warnings.
+//
+// loadUnitDefsByType validates each unit's RequiresBuildings against
+// the building catalog, which means buildingDefsByType must also be
+// a var initializer; Go's dependency analysis then orders building
+// defs before unit defs automatically.
+var unitDefsByType = loadUnitDefsByType()
 
 func loadUnitDefsByType() map[string]UnitDef {
 	// Two-level directory layout: catalog/units/<faction>/<unit>/<unit>.json.
