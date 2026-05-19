@@ -29,8 +29,26 @@ type debugPathTracker struct {
 	unitStats          map[int]*unitPathDebugStats
 	totalCoarsePathCalls int
 	totalFinePathCalls   int
-	callerCounts         map[string]int
-	lastReportTick       int
+	// Failed A* is the expensive case: it exhausts the whole reachable
+	// component before returning nil, where a successful search terminates
+	// early at the goal. These split the call totals above into the subset
+	// that returned no route.
+	totalCoarsePathFails int
+	totalFinePathFails   int
+	// unreachableRetargets counts "a unit target became unreachable" events
+	// (assignAttackApproachPath gave up → drift or drop+memo). Enemy split is
+	// tracked separately to confirm/deny the "enemies chasing player units
+	// through a blob" hypothesis.
+	unreachableRetargets      int
+	unreachableRetargetsEnemy int
+	// unitPathBudgetHits counts fine A* searches aborted by the node-expansion
+	// budget (treated as "no route"). This is the bound that caps the ~70ms
+	// exhaustive-search freezes; tracking it lets the tripwire re-measure show
+	// how often the cap fires (and flags a too-tight budget cutting reachable
+	// routes if it climbs on open maps).
+	unitPathBudgetHits int
+	callerCounts       map[string]int
+	lastReportTick     int
 }
 
 // newDebugPathTracker returns nil when the feature is disabled, keeping every
@@ -60,6 +78,45 @@ func (t *debugPathTracker) recordFinePath() {
 		return
 	}
 	t.totalFinePathCalls++
+}
+
+// recordCoarseFail increments the coarse (terrain A*) no-route counter. Call
+// when findPath returns nil — the search exhausted the reachable component.
+func (t *debugPathTracker) recordCoarseFail() {
+	if t == nil {
+		return
+	}
+	t.totalCoarsePathFails++
+}
+
+// recordFineFail increments the fine (sub-cell A*) no-route counter. Call when
+// findUnitPath returns nil — the most expensive pathing outcome in the sim.
+func (t *debugPathTracker) recordFineFail() {
+	if t == nil {
+		return
+	}
+	t.totalFinePathFails++
+}
+
+// recordUnitPathBudgetHit records one fine A* aborted by the expansion budget.
+func (t *debugPathTracker) recordUnitPathBudgetHit() {
+	if t == nil {
+		return
+	}
+	t.unitPathBudgetHits++
+}
+
+// recordUnreachableRetarget records one "target became unreachable" event
+// (enterAttackDrift / dropUnreachableAITarget). isEnemy attributes it to the
+// wave AI so the report can isolate enemy-vs-player retarget churn.
+func (t *debugPathTracker) recordUnreachableRetarget(isEnemy bool) {
+	if t == nil {
+		return
+	}
+	t.unreachableRetargets++
+	if isEnemy {
+		t.unreachableRetargetsEnemy++
+	}
 }
 
 // recordRepath records one re-path event for unitID at the given world
@@ -176,8 +233,11 @@ func (s *GameState) reportPathDebugLocked() {
 		}
 	}
 
-	log.Printf("[debug-path tick=%d coarse=%d fine=%d suspicious=%d/%d-units]",
-		s.Tick, t.totalCoarsePathCalls, t.totalFinePathCalls, len(suspects), aliveUnitCount)
+	log.Printf("[debug-path tick=%d coarse=%d(fail=%d) fine=%d(fail=%d) budgetHit=%d unreachRetarget=%d(enemy=%d) suspicious=%d/%d-units]",
+		s.Tick, t.totalCoarsePathCalls, t.totalCoarsePathFails,
+		t.totalFinePathCalls, t.totalFinePathFails, t.unitPathBudgetHits,
+		t.unreachableRetargets, t.unreachableRetargetsEnemy,
+		len(suspects), aliveUnitCount)
 
 	// Top assignUnitPath callers, hottest first.
 	type callerHit struct {
@@ -211,6 +271,11 @@ func (s *GameState) reportPathDebugLocked() {
 	// for units that are no longer alive so the map doesn't grow unboundedly.
 	t.totalCoarsePathCalls = 0
 	t.totalFinePathCalls = 0
+	t.totalCoarsePathFails = 0
+	t.totalFinePathFails = 0
+	t.unreachableRetargets = 0
+	t.unreachableRetargetsEnemy = 0
+	t.unitPathBudgetHits = 0
 	for k := range t.callerCounts {
 		delete(t.callerCounts, k)
 	}

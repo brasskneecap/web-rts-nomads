@@ -296,8 +296,17 @@ func (s *GameState) findNearestWalkableAvailable(start gridPoint, blocked map[gr
 // to make them more eager to push through.
 const softBlockedPenalty = 2.0
 
-func (s *GameState) findPath(start, goal gridPoint, blocked map[gridPoint]bool, softBlocked map[gridPoint]bool) []protocol.Vec2 {
+func (s *GameState) findPath(start, goal gridPoint, blocked map[gridPoint]bool, softBlocked map[gridPoint]bool) (result []protocol.Vec2) {
 	s.debugPathTracker.recordCoarsePath()
+	// A failed coarse search exhausted the whole reachable terrain component
+	// before returning nil — far costlier than a successful early-terminating
+	// one. Pairing the fail counter with the call counter at the same exit
+	// keeps coarse=N(fail=M) apples-to-apples in the debug-path report.
+	defer func() {
+		if len(result) == 0 {
+			s.debugPathTracker.recordCoarseFail()
+		}
+	}()
 	start = s.clampGridPoint(start)
 	goal = s.clampGridPoint(goal)
 
@@ -415,6 +424,22 @@ func heuristicCost(a, b gridPoint) float64 {
 // could not see.
 const unitPathSubCellSize = 16.0
 
+// unitPathExpansionFactor bounds findUnitPath's A* work. The node-expansion
+// budget is unitPathExpansionFactor * (subCols + subRows), so it scales with
+// map size. A reachable route's A* expands roughly proportional to its length
+// (well under this on realistic RTS layouts); a blocked/unreachable goal would
+// otherwise exhaust the entire reachable sub-grid (tens of thousands of nodes)
+// before returning nil — the ~70ms single-tick freezes the tick profiler
+// caught in objective-advance, wave spawn, and the attack-approach path. When
+// the budget is hit the search reports "no route" and the caller falls back to
+// its existing unreachable handling (drift / drop+memo / blocking-hostile).
+//
+// Single tuning knob. Lower → cheaper worst case but risks abandoning long
+// but genuinely reachable routes (debug-path `budgetHit` climbing on open
+// maps is the regression signal). Raise → safer reachability, larger residual
+// worst case. Re-measure with WEBRTS_TICK_PROFILE after changing.
+const unitPathExpansionFactor = 16
+
 func (s *GameState) worldToUnitPathSubGrid(x, y float64) gridPoint {
 	return gridPoint{
 		X: int(math.Floor(x / unitPathSubCellSize)),
@@ -487,8 +512,16 @@ func (s *GameState) findNearestUnitPathSubWalkable(start gridPoint, blocked map[
 // two units in adjacent terrain cells leaving a sub-cell-wide corridor
 // between their separation circles. Returns world-space waypoints; the
 // caller is expected to simplify (line-of-sight collapse) before assigning.
-func (s *GameState) findUnitPath(start, goal gridPoint, blocked map[gridPoint]bool) []protocol.Vec2 {
+func (s *GameState) findUnitPath(start, goal gridPoint, blocked map[gridPoint]bool) (result []protocol.Vec2) {
 	s.debugPathTracker.recordFinePath()
+	// The fine sub-cell grid is ~15k cells; a failed search here (no route
+	// through the unit-obstacle field — the "chased unit threading a blob"
+	// case) is the single most expensive pathing op in the sim. Count it.
+	defer func() {
+		if len(result) == 0 {
+			s.debugPathTracker.recordFineFail()
+		}
+	}()
 	cols, rows := s.unitPathSubGridDims()
 
 	if start == goal {
@@ -505,6 +538,12 @@ func (s *GameState) findUnitPath(start, goal gridPoint, blocked map[gridPoint]bo
 	cameFrom := map[gridPoint]gridPoint{}
 	gScore := map[gridPoint]float64{start: 0}
 	closed := make(map[gridPoint]bool)
+
+	// Bound the search: a blocked/unreachable goal would otherwise settle the
+	// entire reachable sub-grid before returning nil (~70ms). Treat budget
+	// exhaustion exactly like "no route" — callers already handle that.
+	maxExpansions := unitPathExpansionFactor * (cols + rows)
+	expansions := 0
 
 	directions := []struct {
 		dx   int
@@ -544,6 +583,12 @@ func (s *GameState) findUnitPath(start, goal gridPoint, blocked map[gridPoint]bo
 		}
 
 		closed[current] = true
+
+		expansions++
+		if expansions >= maxExpansions {
+			s.debugPathTracker.recordUnitPathBudgetHit()
+			return nil
+		}
 
 		for _, direction := range directions {
 			next := gridPoint{X: current.X + direction.dx, Y: current.Y + direction.dy}

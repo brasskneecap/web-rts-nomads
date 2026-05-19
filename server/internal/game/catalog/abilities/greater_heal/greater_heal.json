@@ -1,0 +1,21 @@
+{
+  "_dormant": "DORMANT / UNWIRED. Not granted by anything. Intended acquisition is DEFERRED: greater_heal is meant to be a perk-gated REPLACEMENT of base 'heal' (the gating perk is undesigned/TBD by the user). Kept as a valid, ready def — do not delete as dead code, and do not re-add a path-ability grant for it without that perk design. See openspec/changes/archive/.../defer-caster-ability-content and the project caster-archetype memory.",
+  "id": "greater_heal",
+  "displayName": "Greater Heal",
+  "type": "spell",
+  "category": "heal",
+  "manaCost": 10,
+  "healAmount": 25,
+  "castRange": "match_attack_range",
+  "castTime": 1.0,
+  "cooldown": 3,
+  "damageType": "holy",
+  "canTargetSelf": true,
+  "canTargetAllies": true,
+  "canTargetEnemies": false,
+  "casterAnimation": "Casting",
+  "effectOnTarget": "healing_glow",
+  "icon": "TODO/abilities/greater_heal.png",
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "lowest_hp_percentage_ally_in_range"
+}

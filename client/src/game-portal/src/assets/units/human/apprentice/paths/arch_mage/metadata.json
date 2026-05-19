@@ -1,0 +1,153 @@
+{
+  "group_id": null,
+  "states": [
+    {
+      "character": {
+        "id": "6fbe3b0f-2863-45ce-a6ea-3d66adbf04e1",
+        "name": "Arch Mage",
+        "prompt": "pixel art sprite of an athletic human female destruction archmage, 64x64 resolution, transparent background. top-down 3/4 perspective, Warcraft 2 RTS style, bold outlines, limited earthy palette. she wears a hooded dark purple and plum robe with complex green runes, featuring a deeply cut V-neck bodice showing cleavage, and a parted skirt with high leg slits to reveal bare legs above her boots. long black hair. hands glow with teal energy flames. idle pose facing south, high contrast crisp pixels.",
+        "size": {
+          "width": 108,
+          "height": 108
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-05-15T04:11:16.158028+00:00"
+      },
+      "folder": "Arch_Mage",
+      "frames": {
+        "rotations": {
+          "south": "Arch_Mage/rotations/south.png",
+          "south-east": "Arch_Mage/rotations/south-east.png",
+          "east": "Arch_Mage/rotations/east.png",
+          "north-east": "Arch_Mage/rotations/north-east.png",
+          "north": "Arch_Mage/rotations/north.png",
+          "north-west": "Arch_Mage/rotations/north-west.png",
+          "west": "Arch_Mage/rotations/west.png",
+          "south-west": "Arch_Mage/rotations/south-west.png"
+        },
+        "animations": {
+          "Walking-d3f4bf2d": {
+            "east": [
+              "Arch_Mage/animations/Walking-d3f4bf2d/east/frame_000.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/east/frame_001.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/east/frame_002.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/east/frame_003.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/east/frame_004.png"
+            ],
+            "south-east": [
+              "Arch_Mage/animations/Walking-d3f4bf2d/south-east/frame_000.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south-east/frame_001.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south-east/frame_002.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south-east/frame_003.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south-east/frame_004.png"
+            ],
+            "west": [
+              "Arch_Mage/animations/Walking-d3f4bf2d/west/frame_000.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/west/frame_001.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/west/frame_002.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/west/frame_003.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/west/frame_004.png"
+            ],
+            "south": [
+              "Arch_Mage/animations/Walking-d3f4bf2d/south/frame_000.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south/frame_001.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south/frame_002.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south/frame_003.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south/frame_004.png"
+            ],
+            "north": [
+              "Arch_Mage/animations/Walking-d3f4bf2d/north/frame_000.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north/frame_001.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north/frame_002.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north/frame_003.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north/frame_004.png"
+            ],
+            "north-west": [
+              "Arch_Mage/animations/Walking-d3f4bf2d/north-west/frame_000.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north-west/frame_001.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north-west/frame_002.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north-west/frame_003.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north-west/frame_004.png"
+            ],
+            "south-west": [
+              "Arch_Mage/animations/Walking-d3f4bf2d/south-west/frame_000.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south-west/frame_001.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south-west/frame_002.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south-west/frame_003.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/south-west/frame_004.png"
+            ],
+            "north-east": [
+              "Arch_Mage/animations/Walking-d3f4bf2d/north-east/frame_000.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north-east/frame_001.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north-east/frame_002.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north-east/frame_003.png",
+              "Arch_Mage/animations/Walking-d3f4bf2d/north-east/frame_004.png"
+            ]
+          },
+          "Attacking-b9f9eab9": {
+            "west": [
+              "Arch_Mage/animations/Attacking-b9f9eab9/west/frame_000.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/west/frame_001.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/west/frame_002.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/west/frame_003.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/west/frame_004.png"
+            ],
+            "east": [
+              "Arch_Mage/animations/Attacking-b9f9eab9/east/frame_000.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/east/frame_001.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/east/frame_002.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/east/frame_003.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/east/frame_004.png"
+            ],
+            "north": [
+              "Arch_Mage/animations/Attacking-b9f9eab9/north/frame_000.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north/frame_001.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north/frame_002.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north/frame_003.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north/frame_004.png"
+            ],
+            "north-west": [
+              "Arch_Mage/animations/Attacking-b9f9eab9/north-west/frame_000.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north-west/frame_001.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north-west/frame_002.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north-west/frame_003.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north-west/frame_004.png"
+            ],
+            "south": [
+              "Arch_Mage/animations/Attacking-b9f9eab9/south/frame_000.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south/frame_001.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south/frame_002.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south/frame_003.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south/frame_004.png"
+            ],
+            "north-east": [
+              "Arch_Mage/animations/Attacking-b9f9eab9/north-east/frame_000.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north-east/frame_001.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north-east/frame_002.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north-east/frame_003.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/north-east/frame_004.png"
+            ],
+            "south-east": [
+              "Arch_Mage/animations/Attacking-b9f9eab9/south-east/frame_000.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south-east/frame_001.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south-east/frame_002.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south-east/frame_003.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south-east/frame_004.png"
+            ],
+            "south-west": [
+              "Arch_Mage/animations/Attacking-b9f9eab9/south-west/frame_000.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south-west/frame_001.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south-west/frame_002.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south-west/frame_003.png",
+              "Arch_Mage/animations/Attacking-b9f9eab9/south-west/frame_004.png"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "export_version": "3.0",
+  "export_date": "2026-05-18T22:19:47.250179"
+}

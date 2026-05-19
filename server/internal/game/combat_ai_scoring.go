@@ -91,6 +91,12 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 		if !unitCanTargetPlane(unit, hostile) {
 			continue
 		}
+		// Skip a unit memoed unreachable (A* failed within the cooldown window)
+		// so the enemy switches to a reachable target instead of re-picking the
+		// one it cannot path to. Mirrors the building skip a few blocks down.
+		if hostile.ID == unit.UnreachableUnitTargetID && s.Tick < unit.UnreachableUnitUntilTick {
+			continue
+		}
 		if !s.targetInsideLeashLocked(unit, hostile.X, hostile.Y, profile) {
 			continue
 		}
@@ -517,4 +523,54 @@ func (s *GameState) isValidHostileBuildingTarget(unit *Unit, building *protocol.
 	}
 	hp, _, ok := getBuildingHP(building)
 	return ok && hp > 0
+}
+
+// acquireNearestBlockingHostileLocked is the escape hatch for an enemy whose
+// building objective is sealed off by player units. Instead of looping forever
+// on a route that cannot exist, it walks the enemy toward the closest hostile
+// unit — which, when a wall of units is what is blocking the objective, is one
+// of those wall units. It deliberately ignores the profile DetectionRange cap
+// (the blockers are, by definition of this bug, further out than that) and does
+// NOT set AttackTargetID directly: it issues a movement path so the existing
+// sliding-anchor + in-range acquisition (tickCombatAILocked anchor slide →
+// selectBestTargetLocked) engages the blocker normally once the enemy closes,
+// without the leash — anchored at the now-stale spawn — instantly rejecting a
+// far target. The standard drop-on-death → re-objective flow then resumes the
+// advance on the building once the wall is thinned.
+//
+// Returns false (caller falls back to the objective search, i.e. unchanged
+// behavior) when there is no hostile unit or none the enemy can path toward.
+//
+// Determinism: nearest by squared distance with the unit ID as a stable
+// tiebreak, over the already-deterministic s.Units slice — seeded replays pick
+// the same blocker.
+func (s *GameState) acquireNearestBlockingHostileLocked(unit *Unit, blocked map[gridPoint]bool) bool {
+	var best *Unit
+	bestDistSq := math.MaxFloat64
+	for _, hostile := range s.Units {
+		if hostile == nil || hostile == unit || hostile.HP <= 0 || !hostile.Visible {
+			continue
+		}
+		if !s.playersAreHostileLocked(hostile.OwnerID, unit.OwnerID) {
+			continue
+		}
+		if !unitCanTargetPlane(unit, hostile) {
+			continue
+		}
+		dSq := distanceSquared(unit.X, unit.Y, hostile.X, hostile.Y)
+		if dSq < bestDistSq || (dSq == bestDistSq && best != nil && hostile.ID < best.ID) {
+			bestDistSq = dSq
+			best = hostile
+		}
+	}
+	if best == nil {
+		return false
+	}
+
+	s.assignUnitPath(unit, protocol.Vec2{X: best.X, Y: best.Y}, blocked, nil)
+	if !unit.Moving {
+		return false
+	}
+	unit.Status = "Advancing"
+	return true
 }

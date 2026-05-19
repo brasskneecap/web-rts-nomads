@@ -1,0 +1,20 @@
+{
+  "_dormant": "DORMANT / UNWIRED. Not granted by anything. Acquisition mechanism is DEFERRED/TBD by the user (path grant vs perk vs tech — undecided). Kept as a valid, ready def — do not delete as dead code, and do not re-add a path-ability grant for it without an acquisition design. See the defer-caster-ability-content change and the project caster-archetype memory.",
+  "id": "arcane_bolt",
+  "displayName": "Arcane Bolt",
+  "type": "spell",
+  "category": "offensive",
+  "manaCost": 8,
+  "damageAmount": 30,
+  "castRange": "match_attack_range",
+  "castTime": 0.5,
+  "cooldown": 2,
+  "damageType": "arcane",
+  "canTargetSelf": false,
+  "canTargetAllies": false,
+  "canTargetEnemies": true,
+  "casterAnimation": "Casting",
+  "icon": "TODO/abilities/arcane_bolt.png",
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "closest_enemy_in_range"
+}

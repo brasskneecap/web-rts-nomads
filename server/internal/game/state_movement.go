@@ -541,6 +541,16 @@ func (s *GameState) buildUnitPathBlockedLocked(self *Unit, terrainBlocked map[gr
 		if self != nil && self.OrderID != 0 && other.OrderID == self.OrderID {
 			continue
 		}
+		// Allied units never block an ally's path. The mover plans straight
+		// through stationary friendlies instead of detouring around them or
+		// failing to reach a destination they're standing on. unitsFriendlyLocked
+		// is the canonical alliance check: same Player.TeamID, and the __enemy__
+		// wave AI is never friendly even to itself — so enemy units still block
+		// each other and a walled-off wave still has to fight through (preserves
+		// the enemy-blocked-objective invariant).
+		if self != nil && s.unitsFriendlyLocked(self, other) {
+			continue
+		}
 		// Different planes never collide in pathing (ground passes under flyers).
 		if other.Flyer != selfFlyer {
 			continue
@@ -656,6 +666,17 @@ func (s *GameState) applyUnitSeparationLocked(blocked map[gridPoint]bool) {
 			// Flyers still resolve overlap against other flyers so two rocs
 			// don't visually fuse.
 			if a.Flyer != b.Flyer {
+				continue
+			}
+			// Allies don't shove each other while either is in motion: a
+			// moving unit ghosts straight through idle allies (the physical
+			// counterpart to the pathing exclusion in
+			// buildUnitPathBlockedLocked — so passing works even in a
+			// one-unit-wide corridor where the idle ally has nowhere to be
+			// pushed). Two idle allies still fall through to the push below,
+			// so a selected blob spreads out instead of permanently stacking
+			// on one point. Hostile pairs are unaffected.
+			if (a.Moving || b.Moving) && s.unitsFriendlyLocked(a, b) {
 				continue
 			}
 			dx := b.X - a.X

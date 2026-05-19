@@ -119,11 +119,12 @@ func selectLowestHPPercentageAllyInRange(s *GameState, caster *Unit, def Ability
 	return best
 }
 
-// selectClosestEnemyInRange is a placeholder for future offensive auto-cast
-// abilities (none use it yet). Returns the closest visible hostile unit the
-// ability can target within cast range, ties broken by lowest unit ID.
-// TODO: revisit once a real offensive auto-cast ability exists (tuning,
-// threat weighting, target priority).
+// selectClosestEnemyInRange is the offensive auto-cast selector. The Arch Mage
+// path's `arcane_bolt` (Phase 2) uses it. Returns the closest visible hostile
+// unit the ability can target within cast range, ties broken by lowest unit ID.
+// TODO: revisit tuning (threat weighting, target priority) — currently pure
+// closest-in-range; the priority scorer (ability_priority.go) handles
+// heal-vs-offensive selection, this only resolves the offensive target.
 func selectClosestEnemyInRange(s *GameState, caster *Unit, def AbilityDef) *Unit {
 	if caster == nil {
 		return nil

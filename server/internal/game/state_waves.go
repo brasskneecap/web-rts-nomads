@@ -222,6 +222,34 @@ func (s *GameState) ensureEnemyPlayerLocked() {
 	}
 }
 
+// seedEnemyObjectiveAtSpawnLocked sets a routed enemy's sticky
+// ObjectiveBuildingID at spawn so it does not have to lazily re-acquire on its
+// first no-target eval. Mirrors the spawn routing rules: __none__ and static-
+// objective (ObjectiveID already set) units get no objective; targetPlayerLabel
+// units prefer that player's townhall; the default routes to the nearest
+// player townhall. spawnPos is the unit's spawn position (origin for the
+// nearest-townhall search).
+func (s *GameState) seedEnemyObjectiveAtSpawnLocked(unit *Unit, targetPlayerLabel string, spawnPos protocol.Vec2) {
+	if unit == nil || unit.ObjectiveID != "" || targetPlayerLabel == "__none__" {
+		return
+	}
+	var b *protocol.BuildingTile
+	if targetPlayerLabel != "" && unit.TargetPlayerID != "" {
+		b = s.findNearestAttackableBuildingForPlayerLocked(unit, unit.TargetPlayerID)
+	}
+	if b == nil {
+		b = s.getNearestPlayerTownhallBuildingLocked(spawnPos.X, spawnPos.Y)
+	}
+	if b != nil {
+		// The seeded ObjectiveBuildingID may differ from the initial spawn-path
+		// destination (seed picks the nearest attackable building for TargetPlayerID
+		// while the spawn path goes to a townhall center). This is intentional:
+		// enemyAdvanceToObjectiveLocked re-validates ObjectiveBuildingID every
+		// no-target eval, so the sticky objective self-corrects within one tick.
+		unit.ObjectiveBuildingID = b.ID
+	}
+}
+
 func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint]bool) {
 	for i := range s.MapConfig.Buildings {
 		building := &s.MapConfig.Buildings[i]
@@ -331,12 +359,29 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 
 		hpMult, dmgMult := s.computeWaveStatScalingLocked(building)
 
+		stopSpawnPos := profileStart("enemySpawn.positions")
 		spawnPositions := s.getTownhallSpawnPositionsLocked(*building, spawnCount, blocked)
+		stopSpawnPos()
 
 		center := protocol.Vec2{
 			X: (float64(building.X) + float64(building.Width)/2) * s.MapConfig.CellSize,
 			Y: (float64(building.Y) + float64(building.Height)/2) * s.MapConfig.CellSize,
 		}
+
+		// Two-phase spawn: configure every unit first, collecting the ones
+		// that need a route, THEN path them as a batch sharing one
+		// unit-obstacle blocked map. Every spawned unit carries the same
+		// orderID, so buildUnitPathBlockedLocked excludes the identical set
+		// for all of them — the per-plane sub-cell map is the same map.
+		// Building it once instead of once-per-unit (a fresh large map alloc +
+		// full unit/terrain scan each time) is what removes the per-spawn
+		// pathing spike. Mirrors the player MoveUnits batch path.
+		type spawnPathReq struct {
+			unit   *Unit
+			target protocol.Vec2
+		}
+		spawnedUnits := make([]*Unit, 0, spawnCount)
+		pathReqs := make([]spawnPathReq, 0, spawnCount)
 
 		for i := 0; i < spawnCount; i++ {
 			var spawnPos protocol.Vec2
@@ -357,6 +402,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			s.applyWaveStatScalingLocked(unit, hpMult, dmgMult)
 			unit.OrderID = orderID
 			unit.IgnoreWaveClear = ignoreWaveClear
+			spawnedUnits = append(spawnedUnits, unit)
 			if objectiveId != "" {
 				// Existing objective mechanic: keep unit stationary at an objective.
 				unit.ObjectiveID = objectiveId
@@ -368,7 +414,7 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 				// Route to a specific player's townhall, falling back to nearest.
 				// Persist the resolved player ID on the unit so the AI's
 				// "no target → nearest building" fallback in
-				// assignEnemyObjectiveLocked keeps preferring this player even
+				// enemyAdvanceToObjectiveLocked keeps preferring this player even
 				// after the unit re-evaluates mid-flight.
 				unit.Status = "Advancing"
 				playerID := s.findPlayerIDByLabelLocked(targetPlayerLabel)
@@ -381,16 +427,50 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 					target = s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
 				}
 				if target != nil {
-					s.assignUnitPath(unit, *target, blocked, nil)
+					pathReqs = append(pathReqs, spawnPathReq{unit: unit, target: *target})
 				}
 			} else {
 				// Default: route to nearest player townhall.
 				unit.Status = "Advancing"
 				target := s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
 				if target != nil {
-					s.assignUnitPath(unit, *target, blocked, nil)
+					pathReqs = append(pathReqs, spawnPathReq{unit: unit, target: *target})
 				}
 			}
+			s.seedEnemyObjectiveAtSpawnLocked(unit, targetPlayerLabel, spawnPos)
+		}
+
+		// Drop path requests whose objective is cached unreachable army-wide.
+		// seedEnemyObjectiveAtSpawnLocked set ObjectiveBuildingID above, so we
+		// can consult the same s.objectiveUnreachableUntil cache that
+		// enemyAdvanceToObjectiveLocked uses. A skipped unit isn't stranded:
+		// its first no-target eval runs enemyAdvanceToObjectiveLocked which,
+		// seeing the same cache, goes straight to engaging the blockers. This
+		// removes the per-wave N×budgeted-A* spawn spike when the base is
+		// walled off, without changing behavior when it is reachable (no cache
+		// entry → every request still paths).
+		pending := pathReqs[:0]
+		for _, r := range pathReqs {
+			if r.unit.ObjectiveBuildingID != "" &&
+				s.Tick < s.objectiveUnreachableUntil[r.unit.ObjectiveBuildingID] {
+				continue
+			}
+			pending = append(pending, r)
+		}
+
+		if len(pending) > 0 {
+			groundSub, flyerSub := s.buildGroupSubBlockedLocked(spawnedUnits, blocked)
+			subFor := func(u *Unit) map[gridPoint]bool {
+				if u != nil && u.Flyer {
+					return flyerSub
+				}
+				return groundSub
+			}
+			profileSection("enemySpawn.unitPath", func() {
+				for _, r := range pending {
+					s.assignUnitPathWithSubBlocked(r.unit, r.target, blocked, subFor(r.unit), nil)
+				}
+			})
 		}
 
 		if timer.SpawnOnce {
@@ -416,7 +496,7 @@ func (s *GameState) findNearestAttackablePlayerBuildingLocked(enemy *Unit) *prot
 			continue
 		}
 		dist := s.distanceToBuilding(enemy.X, enemy.Y, b)
-		if dist < bestDistSq {
+		if dist < bestDistSq || (dist == bestDistSq && (best == nil || b.ID < best.ID)) {
 			bestDistSq = dist
 			best = b
 		}
@@ -449,7 +529,7 @@ func (s *GameState) findNearestAttackableBuildingForPlayerLocked(enemy *Unit, pl
 			continue
 		}
 		dist := s.distanceToBuilding(enemy.X, enemy.Y, b)
-		if dist < bestDistSq {
+		if dist < bestDistSq || (dist == bestDistSq && (best == nil || b.ID < best.ID)) {
 			bestDistSq = dist
 			best = b
 		}

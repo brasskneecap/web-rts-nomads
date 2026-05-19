@@ -1,0 +1,153 @@
+{
+  "group_id": null,
+  "states": [
+    {
+      "character": {
+        "id": "7d63b828-4644-4c64-a272-1c16acdc964f",
+        "name": "Cleric",
+        "prompt": "pixel art, top-down 3/4 perspective, 64x64 sprite, chunky dark outlines, limited earthy palette, 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, human female healer, slender feminine figure in flowing cream and slate blue robed dress, large flowing cloak draped over shoulders with cream interior and warm brown exterior, short blonde hair with small floral hair ornament, holding a tall wooden nature staff topped with a glowing flower bloom and small leaves, leather satchel at hip with potion vials and small pouches, pendant necklace at chest, gentle compassionate stance, soft warm magical aura at the staff bloom, cream and slate blue palette with warm brown accents, faction healer appearance",
+        "size": {
+          "width": 116,
+          "height": 116
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-04-29T21:51:28.671719+00:00"
+      },
+      "folder": "Cleric",
+      "frames": {
+        "rotations": {
+          "south": "Cleric/rotations/south.png",
+          "south-east": "Cleric/rotations/south-east.png",
+          "east": "Cleric/rotations/east.png",
+          "north-east": "Cleric/rotations/north-east.png",
+          "north": "Cleric/rotations/north.png",
+          "north-west": "Cleric/rotations/north-west.png",
+          "west": "Cleric/rotations/west.png",
+          "south-west": "Cleric/rotations/south-west.png"
+        },
+        "animations": {
+          "Walking-4d2b69f3": {
+            "north-west": [
+              "Cleric/animations/Walking-4d2b69f3/north-west/frame_000.png",
+              "Cleric/animations/Walking-4d2b69f3/north-west/frame_001.png",
+              "Cleric/animations/Walking-4d2b69f3/north-west/frame_002.png",
+              "Cleric/animations/Walking-4d2b69f3/north-west/frame_003.png",
+              "Cleric/animations/Walking-4d2b69f3/north-west/frame_004.png"
+            ],
+            "north-east": [
+              "Cleric/animations/Walking-4d2b69f3/north-east/frame_000.png",
+              "Cleric/animations/Walking-4d2b69f3/north-east/frame_001.png",
+              "Cleric/animations/Walking-4d2b69f3/north-east/frame_002.png",
+              "Cleric/animations/Walking-4d2b69f3/north-east/frame_003.png",
+              "Cleric/animations/Walking-4d2b69f3/north-east/frame_004.png"
+            ],
+            "south-east": [
+              "Cleric/animations/Walking-4d2b69f3/south-east/frame_000.png",
+              "Cleric/animations/Walking-4d2b69f3/south-east/frame_001.png",
+              "Cleric/animations/Walking-4d2b69f3/south-east/frame_002.png",
+              "Cleric/animations/Walking-4d2b69f3/south-east/frame_003.png",
+              "Cleric/animations/Walking-4d2b69f3/south-east/frame_004.png"
+            ],
+            "south-west": [
+              "Cleric/animations/Walking-4d2b69f3/south-west/frame_000.png",
+              "Cleric/animations/Walking-4d2b69f3/south-west/frame_001.png",
+              "Cleric/animations/Walking-4d2b69f3/south-west/frame_002.png",
+              "Cleric/animations/Walking-4d2b69f3/south-west/frame_003.png",
+              "Cleric/animations/Walking-4d2b69f3/south-west/frame_004.png"
+            ],
+            "north": [
+              "Cleric/animations/Walking-4d2b69f3/north/frame_000.png",
+              "Cleric/animations/Walking-4d2b69f3/north/frame_001.png",
+              "Cleric/animations/Walking-4d2b69f3/north/frame_002.png",
+              "Cleric/animations/Walking-4d2b69f3/north/frame_003.png",
+              "Cleric/animations/Walking-4d2b69f3/north/frame_004.png"
+            ],
+            "south": [
+              "Cleric/animations/Walking-4d2b69f3/south/frame_000.png",
+              "Cleric/animations/Walking-4d2b69f3/south/frame_001.png",
+              "Cleric/animations/Walking-4d2b69f3/south/frame_002.png",
+              "Cleric/animations/Walking-4d2b69f3/south/frame_003.png",
+              "Cleric/animations/Walking-4d2b69f3/south/frame_004.png"
+            ],
+            "east": [
+              "Cleric/animations/Walking-4d2b69f3/east/frame_000.png",
+              "Cleric/animations/Walking-4d2b69f3/east/frame_001.png",
+              "Cleric/animations/Walking-4d2b69f3/east/frame_002.png",
+              "Cleric/animations/Walking-4d2b69f3/east/frame_003.png",
+              "Cleric/animations/Walking-4d2b69f3/east/frame_004.png"
+            ],
+            "west": [
+              "Cleric/animations/Walking-4d2b69f3/west/frame_000.png",
+              "Cleric/animations/Walking-4d2b69f3/west/frame_001.png",
+              "Cleric/animations/Walking-4d2b69f3/west/frame_002.png",
+              "Cleric/animations/Walking-4d2b69f3/west/frame_003.png",
+              "Cleric/animations/Walking-4d2b69f3/west/frame_004.png"
+            ]
+          },
+          "Attacking-162a6b5c": {
+            "south-west": [
+              "Cleric/animations/Attacking-162a6b5c/south-west/frame_000.png",
+              "Cleric/animations/Attacking-162a6b5c/south-west/frame_001.png",
+              "Cleric/animations/Attacking-162a6b5c/south-west/frame_002.png",
+              "Cleric/animations/Attacking-162a6b5c/south-west/frame_003.png",
+              "Cleric/animations/Attacking-162a6b5c/south-west/frame_004.png"
+            ],
+            "south": [
+              "Cleric/animations/Attacking-162a6b5c/south/frame_000.png",
+              "Cleric/animations/Attacking-162a6b5c/south/frame_001.png",
+              "Cleric/animations/Attacking-162a6b5c/south/frame_002.png",
+              "Cleric/animations/Attacking-162a6b5c/south/frame_003.png",
+              "Cleric/animations/Attacking-162a6b5c/south/frame_004.png"
+            ],
+            "south-east": [
+              "Cleric/animations/Attacking-162a6b5c/south-east/frame_000.png",
+              "Cleric/animations/Attacking-162a6b5c/south-east/frame_001.png",
+              "Cleric/animations/Attacking-162a6b5c/south-east/frame_002.png",
+              "Cleric/animations/Attacking-162a6b5c/south-east/frame_003.png",
+              "Cleric/animations/Attacking-162a6b5c/south-east/frame_004.png"
+            ],
+            "east": [
+              "Cleric/animations/Attacking-162a6b5c/east/frame_000.png",
+              "Cleric/animations/Attacking-162a6b5c/east/frame_001.png",
+              "Cleric/animations/Attacking-162a6b5c/east/frame_002.png",
+              "Cleric/animations/Attacking-162a6b5c/east/frame_003.png",
+              "Cleric/animations/Attacking-162a6b5c/east/frame_004.png"
+            ],
+            "west": [
+              "Cleric/animations/Attacking-162a6b5c/west/frame_000.png",
+              "Cleric/animations/Attacking-162a6b5c/west/frame_001.png",
+              "Cleric/animations/Attacking-162a6b5c/west/frame_002.png",
+              "Cleric/animations/Attacking-162a6b5c/west/frame_003.png",
+              "Cleric/animations/Attacking-162a6b5c/west/frame_004.png"
+            ],
+            "north-west": [
+              "Cleric/animations/Attacking-162a6b5c/north-west/frame_000.png",
+              "Cleric/animations/Attacking-162a6b5c/north-west/frame_001.png",
+              "Cleric/animations/Attacking-162a6b5c/north-west/frame_002.png",
+              "Cleric/animations/Attacking-162a6b5c/north-west/frame_003.png",
+              "Cleric/animations/Attacking-162a6b5c/north-west/frame_004.png"
+            ],
+            "north-east": [
+              "Cleric/animations/Attacking-162a6b5c/north-east/frame_000.png",
+              "Cleric/animations/Attacking-162a6b5c/north-east/frame_001.png",
+              "Cleric/animations/Attacking-162a6b5c/north-east/frame_002.png",
+              "Cleric/animations/Attacking-162a6b5c/north-east/frame_003.png",
+              "Cleric/animations/Attacking-162a6b5c/north-east/frame_004.png"
+            ],
+            "north": [
+              "Cleric/animations/Attacking-162a6b5c/north/frame_000.png",
+              "Cleric/animations/Attacking-162a6b5c/north/frame_001.png",
+              "Cleric/animations/Attacking-162a6b5c/north/frame_002.png",
+              "Cleric/animations/Attacking-162a6b5c/north/frame_003.png",
+              "Cleric/animations/Attacking-162a6b5c/north/frame_004.png"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "export_version": "3.0",
+  "export_date": "2026-05-18T22:18:17.150039"
+}

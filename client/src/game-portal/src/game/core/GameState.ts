@@ -3044,6 +3044,10 @@ function formatUnitPath(path?: string) {
       return 'Trapper'
     case 'marksman':
       return 'Marksman'
+    case 'cleric':
+      return 'Cleric'
+    case 'arch_mage':
+      return 'Arch Mage'
     default:
       return ''
   }

@@ -83,7 +83,7 @@ const (
 	combatThreatStructureSplashRadius  = 240.0
 	combatDangerFrontlineSupportRadius = 180.0
 	combatTauntBonusScore              = 10000.0
-	// enemyObjectiveSearchCooldownTicks throttles assignEnemyObjectiveLocked
+	// enemyObjectiveSearchCooldownTicks throttles enemyAdvanceToObjectiveLocked
 	// after a fruitless search. 1 second at 20Hz — long enough to keep the
 	// per-tick cost under control, short enough that a freshly-built player
 	// building gets attacked promptly.
@@ -92,6 +92,14 @@ const (
 	// A* path came back empty, preventing per-tick pathfinding storms when many
 	// units crowd around an inaccessible enemy (~2 seconds at 20Hz).
 	unreachableTargetCooldownTicks = 40
+	// objectiveUnreachableTTLTicks is how long the ARMY-WIDE objective cache
+	// (s.objectiveUnreachableUntil) suppresses re-pathing a walled-off
+	// objective (~5s at 20Hz). Longer than the per-target unit cooldown
+	// because it is shared — one enemy's failed pathfind speaks for the whole
+	// army, so no one re-pays the budget-bounded failed A* until the TTL
+	// lapses; a route reopened by killing through the wall is re-detected
+	// within one TTL (and clears the entry immediately on the first success).
+	objectiveUnreachableTTLTicks = 100
 	// approachRepathCooldownTicks throttles the forced repath in tickUnitCombatLocked
 	// when the sub-cell A* fails (unit surrounded by a crowd). 3 ticks = 0.15s —
 	// short enough that the unit retries almost immediately as the crowd shifts,
@@ -291,7 +299,12 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 	}
 	unit.LastTargetEvalTick = s.Tick
 
+	// Diagnostic: target selection is a scored spatial-index scan with no A*.
+	// Timing it separately lets the profiler prove the cost of "find a new
+	// target" lives in combatAI.approach.* (the pathfind), not here.
+	stopSelectProfile := profileStart("combatAI.selectTarget")
 	best := s.selectBestTargetLocked(unit, profile, ctx)
+	stopSelectProfile()
 	if best.Kind == combatTargetNone {
 		if unit.OwnerID == enemyPlayerID && unit.AttackBuildingTargetID == "" && unit.AttackTargetID == 0 && unit.ObjectiveID == "" {
 			// Guards and Hold-order enemies have an authored post — they must
@@ -303,7 +316,7 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 			if unit.GuardMode || unit.Order.Type == OrderHold {
 				return
 			}
-			// Skip if the unit is already advancing on a path — assignEnemyObjectiveLocked
+			// Skip if the unit is already advancing on a path — enemyAdvanceToObjectiveLocked
 			// would re-pick the same townhall and rerun A* from a position one step further
 			// along the same route, doing real work for zero behavioural difference.
 			// Also honour the per-unit cooldown so a fruitless previous search (no live
@@ -320,7 +333,7 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 				return
 			}
 			s.nextGlobalObjectiveSearchTick = s.Tick + 5
-			s.assignEnemyObjectiveLocked(unit, ctx.blocked)
+			s.enemyAdvanceToObjectiveLocked(unit, ctx.blocked)
 			// Back off after a search so units that complete a townhall path don't
 			// immediately re-enter the search next tick. Per-unit cooldown must be
 			// inside this success path — otherwise globally-gated units advance it
@@ -353,10 +366,13 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 	// re-evaluates immediately.
 	unit.NextObjectiveSearchTick = 0
 	// If acquisition failed (no AttackTargetID, no AttackBuildingTargetID, not
-	// Moving / drifting), throttle re-evaluation so we don't cycle through
-	// unreachable candidates next tick. Unit-target failures already set
-	// AttackDrifting=true via assignAttackApproachPathLocked, so this catches
-	// the building-target nil-pos case from applyCombatTargetLocked above.
+	// Moving), throttle re-evaluation so we don't cycle through unreachable
+	// candidates next tick. AI-acquired unit-target A* failures now call
+	// dropUnreachableAITargetLocked (clear + memo, not drift), so they land
+	// here with no target and !Moving. Player-issued (OrderAttackTarget) unit
+	// failures still drift, so those units are Moving and skip this branch.
+	// Building-target nil-pos failures from applyCombatTargetLocked above also
+	// reach this branch.
 	if !unit.Moving && unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == "" {
 		interval := profile.RetargetIntervalTicks
 		if interval <= 0 {
@@ -427,7 +443,14 @@ func (s *GameState) applyBuildingUnreachableEscalationLocked(unit *Unit, buildin
 		s.clearCombatTargetLocked(unit)
 		unit.UnreachableBuildingStrikeCount = 0
 		if !unit.GuardMode && unit.Order.Type != OrderHold {
-			s.assignEnemyObjectiveLocked(unit, blocked)
+			// The building is sealed off by units, not terrain. Rather than
+			// loop forever on a route that cannot exist (the freeze-at-spawn
+			// deadlock), delegate to enemyAdvanceToObjectiveLocked which
+			// re-resolves the objective and plain-moves toward it. Only when
+			// the objective is fully partitioned (no path at all) does it fall
+			// back to engaging the nearest blocking hostile — killing through
+			// the wall reopens the route and drop-on-death resumes the advance.
+			s.enemyAdvanceToObjectiveLocked(unit, blocked)
 		}
 	case unit.UnreachableBuildingStrikeCount == 2:
 		unit.UnreachableUntilTick = s.Tick + 120

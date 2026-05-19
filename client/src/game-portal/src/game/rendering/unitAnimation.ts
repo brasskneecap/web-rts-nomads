@@ -65,6 +65,7 @@ export class UnitAnimationController {
     renderTime: number,
     carriedResource: string | undefined,
     unitType: string | undefined,
+    path: string | undefined,
     ownerId: string | undefined,
     localPlayerId: string | null | undefined,
     flyer: boolean | undefined,
@@ -107,6 +108,7 @@ export class UnitAnimationController {
       serverMoving === true || interpolatedMoving,
       carriedResource,
       unitType,
+      path,
       flyer === true,
     )
 
@@ -284,6 +286,7 @@ function pickAnimation(
   moving: boolean,
   carriedResource: string | undefined,
   unitType: string | undefined,
+  path: string | undefined,
   flyer: boolean,
 ): UnitAnimationName {
   if (status === 'Attacking') {
@@ -314,7 +317,11 @@ function pickAnimation(
     return 'walking'
   }
   // Flyers have no idle pose — a stationary flap reads as floating mid-air,
-  // so reuse the walking animation when the unit is otherwise idle.
-  if (flyer) return 'walking'
+  // so reuse the walking animation when the unit is otherwise idle. The
+  // Arch Mage isn't an actual flyer (still ground-targetable, renders at
+  // ground level) but is visually hovering: its walking cycle has a gentle
+  // bob, so reusing it as the idle pose sells the float in place of a
+  // static stance. Paired with the lifted bounds in arch_mage.json.
+  if (flyer || path === 'arch_mage') return 'walking'
   return 'idle'
 }

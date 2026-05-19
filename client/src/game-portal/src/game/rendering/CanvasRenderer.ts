@@ -1952,6 +1952,7 @@ export class CanvasRenderer {
           this.renderTime,
           unit.carriedResourceType,
           unit.unitType,
+          unit.path,
           unit.ownerId,
           this.state.localPlayerId,
           unit.flyer,
