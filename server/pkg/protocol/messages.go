@@ -520,7 +520,12 @@ type PlayerSnapshot struct {
 	TownHallTier  int                     `json:"townHallTier,omitempty"`
 	Vault         []VaultItemSnapshot     `json:"vault"`
 	VaultCapacity int                     `json:"vaultCapacity,omitempty"`
-	ActiveBuffs   []ActiveEffectIcon      `json:"activeBuffs,omitempty"`
+	// LockedUnitTypes lists the unit types this player currently cannot
+	// train because their RequiresBuildings list is unsatisfied. Empty
+	// or omitted = no locks. The client uses this to grey out train
+	// actions in the building action panel.
+	LockedUnitTypes []string               `json:"lockedUnitTypes,omitempty"`
+	ActiveBuffs     []ActiveEffectIcon     `json:"activeBuffs,omitempty"`
 }
 
 type UnitSnapshot struct {

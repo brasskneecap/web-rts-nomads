@@ -268,3 +268,28 @@ func TestTrainUnit_SoldierUnaffected(t *testing.T) {
 		t.Fatalf("soldier should queue without a blacksmith; got %d productions", got)
 	}
 }
+
+// TestLockedUnitTypesForPlayerLocked verifies the helper returns the
+// set of unit types whose RequiresBuildings list is unsatisfied.
+func TestLockedUnitTypesForPlayerLocked(t *testing.T) {
+	s, p1 := newRequirementsTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// No buildings → archer is locked.
+	locked := s.lockedUnitTypesForPlayerLocked(p1)
+	if !containsString(locked, "archer") {
+		t.Errorf("with no blacksmith, expected archer in locked set; got %v", locked)
+	}
+	// Soldier has no requirements and must never appear.
+	if containsString(locked, "soldier") {
+		t.Errorf("soldier has no requirements; should not appear in locked set; got %v", locked)
+	}
+
+	// Fully-built blacksmith → archer unlocks.
+	addBuildingToState(s, "bs-built", "blacksmith", p1, false, true)
+	locked = s.lockedUnitTypesForPlayerLocked(p1)
+	if containsString(locked, "archer") {
+		t.Errorf("with fully-built blacksmith, archer should not be locked; got %v", locked)
+	}
+}

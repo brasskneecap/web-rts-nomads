@@ -433,3 +433,22 @@ func (s *GameState) playerMeetsUnitRequirementsLocked(playerID, unitType string)
 	}
 	return true
 }
+
+// lockedUnitTypesForPlayerLocked returns the set of unit types the
+// player currently cannot train due to unmet RequiresBuildings.
+// Iterates ListUnitDefs() once per player per snapshot — runs at
+// snapshot cadence, not on the simulation hot path. Returns nil (not an
+// empty slice) when nothing is locked so the protocol's omitempty drops
+// the field from the wire. Must be called under s.mu.
+func (s *GameState) lockedUnitTypesForPlayerLocked(playerID string) []string {
+	var locked []string
+	for _, def := range ListUnitDefs() {
+		if len(def.RequiresBuildings) == 0 {
+			continue
+		}
+		if !s.playerMeetsUnitRequirementsLocked(playerID, def.Type) {
+			locked = append(locked, def.Type)
+		}
+	}
+	return locked
+}
