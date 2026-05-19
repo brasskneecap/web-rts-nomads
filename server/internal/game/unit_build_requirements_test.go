@@ -150,3 +150,121 @@ func TestPlayerMeetsUnitRequirementsLocked(t *testing.T) {
 		t.Error("unknown unit type; want false")
 	}
 }
+
+// trainAndAssertNoOp calls TrainUnit and asserts no production was
+// queued and no resources were deducted. Caller must NOT hold s.mu.
+func trainAndAssertNoOp(t *testing.T, s *GameState, playerID, buildingID, unitType string) {
+	t.Helper()
+	s.mu.RLock()
+	player := s.Players[playerID]
+	preGold := player.Resources["gold"]
+	preWood := player.Resources["wood"]
+	preQueueLen := len(s.Productions[buildingID])
+	s.mu.RUnlock()
+
+	s.TrainUnit(playerID, buildingID, unitType)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if got := len(s.Productions[buildingID]); got != preQueueLen {
+		t.Errorf("queue length after TrainUnit(%q) = %d; want %d (no-op expected)", unitType, got, preQueueLen)
+	}
+	if player.Resources["gold"] != preGold {
+		t.Errorf("gold after TrainUnit(%q) = %d; want %d (no-op expected)", unitType, player.Resources["gold"], preGold)
+	}
+	if player.Resources["wood"] != preWood {
+		t.Errorf("wood after TrainUnit(%q) = %d; want %d (no-op expected)", unitType, player.Resources["wood"], preWood)
+	}
+}
+
+// addBarracks injects a barracks owned by playerID and returns its ID.
+// Caller must hold s.mu.
+func addBarracks(s *GameState, playerID string) string {
+	bid := "barracks-1"
+	owner := playerID
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
+		ID:             bid,
+		BuildingType:   "barracks",
+		Width:          3,
+		Height:         3,
+		Visible:        true,
+		OwnerID:        &owner,
+		Capabilities:   []string{"unit-spawner"},
+		SpawnUnitTypes: []string{"soldier", "archer"},
+		Metadata:       map[string]interface{}{},
+	})
+	if s.buildingsByID == nil {
+		s.buildingsByID = map[string]*protocol.BuildingTile{}
+	}
+	last := &s.MapConfig.Buildings[len(s.MapConfig.Buildings)-1]
+	s.buildingsByID[last.ID] = last
+	return bid
+}
+
+func TestTrainUnit_ArcherRequiresBlacksmith_NoBuilding(t *testing.T) {
+	s, p1 := newRequirementsTestState(t)
+	s.mu.Lock()
+	s.Players[p1].Resources = map[string]int{"gold": 1000, "wood": 1000}
+	bid := addBarracks(s, p1)
+	s.mu.Unlock()
+
+	trainAndAssertNoOp(t, s, p1, bid, "archer")
+}
+
+func TestTrainUnit_ArcherRequiresBlacksmith_UnderConstruction(t *testing.T) {
+	s, p1 := newRequirementsTestState(t)
+	s.mu.Lock()
+	s.Players[p1].Resources = map[string]int{"gold": 1000, "wood": 1000}
+	bid := addBarracks(s, p1)
+	addBuildingToState(s, "bs-uc", "blacksmith", p1, true, true)
+	s.mu.Unlock()
+
+	trainAndAssertNoOp(t, s, p1, bid, "archer")
+}
+
+func TestTrainUnit_ArcherRequiresBlacksmith_Built(t *testing.T) {
+	s, p1 := newRequirementsTestState(t)
+	s.mu.Lock()
+	s.Players[p1].Resources = map[string]int{"gold": 1000, "wood": 1000}
+	bid := addBarracks(s, p1)
+	addBuildingToState(s, "bs-built", "blacksmith", p1, false, true)
+	preGold := s.Players[p1].Resources["gold"]
+	preWood := s.Players[p1].Resources["wood"]
+	archerDef, _ := getUnitDef("archer")
+	s.mu.Unlock()
+
+	s.TrainUnit(p1, bid, "archer")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if got := len(s.Productions[bid]); got != 1 {
+		t.Fatalf("expected 1 production queued; got %d", got)
+	}
+	if s.Productions[bid][0].UnitType != "archer" {
+		t.Errorf("queued unit type = %q; want %q", s.Productions[bid][0].UnitType, "archer")
+	}
+	wantGold := preGold - archerDef.ResourceCost["gold"]
+	wantWood := preWood - archerDef.ResourceCost["wood"]
+	if s.Players[p1].Resources["gold"] != wantGold {
+		t.Errorf("gold = %d; want %d", s.Players[p1].Resources["gold"], wantGold)
+	}
+	if s.Players[p1].Resources["wood"] != wantWood {
+		t.Errorf("wood = %d; want %d", s.Players[p1].Resources["wood"], wantWood)
+	}
+}
+
+func TestTrainUnit_SoldierUnaffected(t *testing.T) {
+	s, p1 := newRequirementsTestState(t)
+	s.mu.Lock()
+	s.Players[p1].Resources = map[string]int{"gold": 1000, "wood": 1000}
+	bid := addBarracks(s, p1)
+	s.mu.Unlock()
+
+	s.TrainUnit(p1, bid, "soldier")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if got := len(s.Productions[bid]); got != 1 {
+		t.Fatalf("soldier should queue without a blacksmith; got %d productions", got)
+	}
+}

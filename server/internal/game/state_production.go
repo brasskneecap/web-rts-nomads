@@ -40,6 +40,9 @@ func (s *GameState) TrainUnit(playerID, buildingID, unitType string) {
 	if !containsString(building.SpawnUnitTypes, unitType) {
 		return
 	}
+	if !s.playerMeetsUnitRequirementsLocked(playerID, unitType) {
+		return
+	}
 	if len(s.Productions[buildingID]) >= unitProductionMaxQueue {
 		return
 	}
