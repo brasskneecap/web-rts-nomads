@@ -67,6 +67,7 @@ import { useMapSelection } from '@/composables/useMapSelection'
 import {
   getSteamLobbyData,
   inviteFriend,
+  leaveSteamLobby,
   startSteamGame,
 } from '@/services/desktopBridge'
 import {
@@ -198,12 +199,26 @@ async function poll() {
   })
 
   // Pick the source for the visible lobby snapshot. Local wins when
-  // present (more accurate player list); fall back to synthesized Steam
-  // data for the joiner who has no local entry.
+  // present for status/match_id/etc., but the player list is overridden
+  // by Steam's member list when a Steam pairing exists — the host's
+  // local LobbyManager only knows about players added via HTTP /join
+  // (always just themselves in Steam-MP), while Steam knows the real
+  // membership including everyone who joined via SteamMatchmaking.
   if (localUpdated) {
     sawLocalLobby = true
     coldPollMisses = 0
-    lobby.value = localUpdated
+    if (steamData && steamData.members.length > 0) {
+      const steamPlayers = steamData.members.map((m) => m.personaName)
+      lobby.value = {
+        ...localUpdated,
+        players: steamPlayers,
+        // Bump maxPlayers to whatever Steam thinks if it's higher, so the
+        // "N / M Players" cell doesn't read "3 / 1" if local was stale.
+        maxPlayers: Math.max(localUpdated.maxPlayers, steamData.maxPlayers),
+      }
+    } else {
+      lobby.value = localUpdated
+    }
   } else if (steamData) {
     coldPollMisses = 0
     lobby.value = synthesizeLobbyFromSteam(lobbyId.value, steamData)
@@ -258,10 +273,19 @@ async function poll() {
 
 async function leaveAndGoBack() {
   stopPoller()
+  // Capture the Steam lobby id before clearing reactive state so we can
+  // tell Steam we've left. Host leaving destroys the lobby; joiner
+  // leaving just removes them from the member list.
+  const sid = steamLobbyId.value
   try {
     await leaveLobby({ id: lobbyId.value, playerId: playerId.value })
   } catch {
     // best-effort leave; navigate regardless
+  }
+  if (sid) {
+    // Best-effort. Errors are logged inside leaveSteamLobby — we don't
+    // want a Steam SDK hiccup to block the user's nav back.
+    await leaveSteamLobby(sid)
   }
   // Clear Steam-paired session state so a subsequent /custom → /create-game
   // run doesn't accidentally try to proxy or invite into a dead lobby.

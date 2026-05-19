@@ -216,6 +216,20 @@ export async function startSteamGame(lobbyId: string, matchId: string): Promise<
   await invoke<void>('start_steam_game', { lobbyId, matchId })
 }
 
+/** Leaves the Steam lobby. Host leaving destroys the lobby (Steam
+ *  Matchmaking transfers ownership or destroys when owner leaves);
+ *  joiner leaving just removes them from the member list. Best-effort —
+ *  errors are swallowed because the SPA's leave-flow shouldn't be
+ *  blocked by a Steam-side cleanup hiccup. */
+export async function leaveSteamLobby(lobbyId: string): Promise<void> {
+  if (!isInTauri()) return
+  try {
+    await invoke<void>('leave_steam_lobby', { lobbyId })
+  } catch (e) {
+    console.warn('leaveSteamLobby failed (non-fatal):', e)
+  }
+}
+
 /** Payload of the `steam_lobby_started` Tauri event. Emitted on the
  *  joiner's shell when the host calls startSteamGame; ignored on the host
  *  itself (it already knows the matchId from the local `welcome` message). */

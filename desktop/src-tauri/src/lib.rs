@@ -305,7 +305,8 @@ pub fn run() {
             open_invite_overlay,
             start_steam_game,
             list_steam_lobbies,
-            get_steam_lobby_data
+            get_steam_lobby_data,
+            leave_steam_lobby
         ])
         .on_window_event(|window, event| {
             use tauri::{Manager, WindowEvent};
@@ -762,6 +763,23 @@ async fn list_steam_lobbies(
             );
             continue;
         }
+        // §14R follow-up: hide lobbies that have already started. The host's
+        // start_steam_game stamps status="started"; once that's set the
+        // lobby is no longer joinable from /find-game and shouldn't clutter
+        // the list. (Steam-side we ALSO call SetLobbyJoinable(false) so
+        // Steam itself eventually drops it from RequestLobbyList, but
+        // that's eventually-consistent — this filter is the immediate
+        // user-visible behaviour.)
+        if status == "started" {
+            sl.write_line(
+                "INFO",
+                &format!(
+                    "list_steam_lobbies: skipping lobby={} (status=started; already in a match)",
+                    id.raw()
+                ),
+            );
+            continue;
+        }
         out.push(SteamLobbyListEntry {
             steam_lobby_id: id.raw().to_string(),
             host_steam_id,
@@ -873,6 +891,38 @@ fn start_steam_game(
     if !mm.set_lobby_data(lobby, "status", "started") {
         return Err("set_lobby_data(status) failed".to_string());
     }
+    // Tell Steam to stop advertising this lobby in RequestLobbyList
+    // results. Combined with the SPA-side status="started" filter in
+    // list_steam_lobbies, this ensures started matches don't appear in
+    // /find-game on any peer (immediately on our side, eventually-
+    // consistent on Steam's side).
+    mm.set_lobby_joinable(lobby, false);
+    Ok(())
+}
+
+/// §14R follow-up: leave the Steam lobby. Called when the host (or
+/// joiner) clicks Back from /lobby before the match starts. Without
+/// this, the lobby stays alive on Steam as long as the binary is
+/// running, polluting /find-game lists. The host leaving destroys the
+/// lobby Steam-side (Matchmaking auto-removes lobbies when the owner
+/// disconnects); a joiner leaving just removes them from the member
+/// list.
+#[cfg(feature = "steam")]
+#[tauri::command]
+fn leave_steam_lobby(
+    bridge: tauri::State<'_, SteamBridgeState>,
+    lobby_id: String,
+) -> Result<(), String> {
+    let b = bridge
+        .0
+        .as_ref()
+        .ok_or_else(|| "steam_unavailable".to_string())?;
+    let raw = lobby_id
+        .parse::<u64>()
+        .map_err(|e| format!("bad lobby id: {e}"))?;
+    b.client
+        .matchmaking()
+        .leave_lobby(steamworks::LobbyId::from_raw(raw));
     Ok(())
 }
 
@@ -911,6 +961,12 @@ fn open_invite_overlay(_lobby_id: String) -> Result<(), String> {
 #[tauri::command]
 fn start_steam_game(_lobby_id: String, _match_id: String) -> Result<(), String> {
     Err("steam_unavailable".to_string())
+}
+
+#[cfg(not(feature = "steam"))]
+#[tauri::command]
+fn leave_steam_lobby(_lobby_id: String) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(not(feature = "steam"))]

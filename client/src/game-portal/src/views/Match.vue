@@ -136,6 +136,12 @@ const PLAYER_ID_STORAGE_KEY = 'webrts.playerId'
 const MAP_ID_STORAGE_KEY = 'webrts.mapId'
 const MATCH_ID_STORAGE_KEY = 'webrts.matchId'
 const HAS_ACTIVE_SESSION_KEY = 'webrts.hasActiveSession'
+// §14R: joiners arrive via ?proxy=steam — their LOCAL Go server has no
+// match registered for the host's matchId, so the preflight
+// /matches/<id>/status would 404 → main-menu kick. Detect proxy mode
+// and skip the preflight; the WS open will reach the host's hub via
+// the parked Steam transport, and the hub does its own join validation.
+const STEAM_PROXY_FLAG_KEY = 'webrts.steam.proxyActive'
 
 const router = useRouter()
 const route = useRoute()
@@ -246,22 +252,63 @@ window.addEventListener('beforeunload', markActiveSession)
 
 onMounted(async () => {
   const urlMatchId = route.params.matchId as string | undefined
+  // §14R: detect Steam-proxy mode. Joiners arrive here via a host's
+  // matchId that lives on the HOST's Go server; their own local server
+  // returns 404 for the preflight. Skip the preflight and let the WS
+  // connect (via ?proxy=steam) reach the host's hub directly. The hub
+  // validates membership and will close the connection if the joiner
+  // isn't supposed to be there.
+  let isSteamProxyJoiner = false
+  try {
+    isSteamProxyJoiner = sessionStorage.getItem(STEAM_PROXY_FLAG_KEY) === '1'
+  } catch {
+    /* sessionStorage may be sandboxed */
+  }
+  console.log('[Match.onMounted]', { urlMatchId, isSteamProxyJoiner })
+
   if (urlMatchId) {
     const playerId = localStorage.getItem(PLAYER_ID_STORAGE_KEY) ?? ''
     if (!playerId) {
+      console.warn('[Match.onMounted] no playerId in localStorage; kick to /')
       clearStaleSession()
       void router.push('/')
       return
     }
+
+    if (isSteamProxyJoiner) {
+      // Skip the local preflight. We don't have the match locally; the
+      // host's hub does. NetworkClient.connect will WS-open with
+      // ?proxy=steam and the hub's join_match handler will admit us (or
+      // reject us cleanly, in which case we get a normal disconnect).
+      const mapId = selectedMapId.value || localStorage.getItem(MAP_ID_STORAGE_KEY) || ''
+      localStorage.setItem(MATCH_ID_STORAGE_KEY, urlMatchId)
+      localStorage.setItem(HAS_ACTIVE_SESSION_KEY, 'true')
+      if (mapId) {
+        localStorage.setItem(MAP_ID_STORAGE_KEY, mapId)
+        await startGame(mapId, { resume: true })
+      } else {
+        console.warn('[Match.onMounted] steam-proxy joiner but no mapId; falling back without preferred map')
+        // The hub will tell us what map the host is on via the welcome
+        // message; pass empty so the server's default catalogue entry
+        // applies if NetworkClient happens to need it before welcome.
+        await startGame('', { resume: true })
+      }
+      return
+    }
+
     try {
       const res = await fetch(`${API_BASE}/matches/${encodeURIComponent(urlMatchId)}/status?playerId=${encodeURIComponent(playerId)}`)
+      console.log('[Match.onMounted] preflight', { status: res.status, ok: res.ok })
       if (res.status === 404 || !res.ok) {
+        console.warn('[Match.onMounted] preflight non-OK; kick to /')
         clearStaleSession()
         void router.push('/')
         return
       }
       const data = await res.json() as { matchId: string; mapId: string; isParticipant: boolean }
+      console.log('[Match.onMounted] preflight body', data)
       if (!data.isParticipant) {
+        console.warn('[Match.onMounted] not a participant; kick to /')
         clearStaleSession()
         void router.push('/')
         return
@@ -272,7 +319,8 @@ onMounted(async () => {
       setSelectedMapId(data.mapId, '')
       await startGame(data.mapId, { resume: true })
       return
-    } catch {
+    } catch (e) {
+      console.warn('[Match.onMounted] preflight threw; kick to /', e)
       clearStaleSession()
       void router.push('/')
       return

@@ -19,6 +19,7 @@ permissions = [
     "allow-start-steam-game",
     "allow-list-steam-lobbies",
     "allow-get-steam-lobby-data",
+    "allow-leave-steam-lobby",
 ]
 
 [[permission]]
@@ -75,3 +76,8 @@ commands.allow = ["list_steam_lobbies"]
 identifier = "allow-get-steam-lobby-data"
 description = "Allow reading a Steam lobby's metadata and member list for the joiner's /lobby view (§14R-A)."
 commands.allow = ["get_steam_lobby_data"]
+
+[[permission]]
+identifier = "allow-leave-steam-lobby"
+description = "Allow leaving the active Steam lobby — host destroys it, joiner removes themselves."
+commands.allow = ["leave_steam_lobby"]
