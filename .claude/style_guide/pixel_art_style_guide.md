@@ -18,12 +18,13 @@ A comprehensive style reference for a Warcraft 2 inspired pixel art real-time st
 1. **Chunky dark outlines** on all sprites — defines silhouette and reads at small sizes
 2. **Limited earthy palette** — slate blue, cream, warm brown, steel gray as core faction colors
 3. **Hand-pixeled look, no anti-aliasing** — clean pixel edges, intentional pixel placement
-4. **High top-down 3/4 perspective** for units and buildings
-5. **Low top-down (overhead) perspective** for terrain tiles
-6. **South-facing** as the standard idle direction
-7. **Single subject centered** with transparent background for sprites
-8. **Color discipline** — faction colors echo across all assets within a faction
-9. **Silhouette test** — every asset should be recognizable by silhouette alone
+4. **High top-down 3/4 perspective** for units (front-facing with slight downward tilt, so face, weapon, and stance read clearly)
+5. **Steep high-angle 3/4 isometric view** for buildings (viewed from above front-right corner, roof dominates upper silhouette, walls compressed)
+6. **Low top-down (overhead) perspective** for terrain tiles
+7. **South-facing** as the standard idle direction
+8. **Single subject centered** with transparent background for sprites
+9. **Color discipline** — faction colors echo across all assets within a faction
+10. **Silhouette test** — every asset should be recognizable by silhouette alone
 
 ---
 
@@ -79,7 +80,7 @@ pixel art, top-down 3/4 perspective, chunky dark outlines, 16-bit SNES era RTS, 
 ### Buildings Style Block
 
 ```
-pixel art, top-down 3/4 perspective, chunky dark outlines, limited earthy palette, 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, building centered on transparent background with grass and dirt foundation
+pixel art, steep high-angle isometric view looking down at building from above front-right corner, roof dominating upper silhouette, chunky dark outlines, limited earthy palette, 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, flat color blocks with minimal shading, compact chunky building silhouette centered on transparent background with small grass and dirt foundation patch
 ```
 
 ### Objects Style Block (Props, Items, Decorations)
@@ -125,7 +126,7 @@ pixel art character portrait, head and upper shoulders viewed from front, chunky
 
 ### Buildings
 - **Tool**: Create M-XL image
-- **View**: High top-down
+- **View**: High top-down (note: in prompt, specify "steep high-angle isometric view from above front-right corner" — PixelLab's "high top-down" setting alone tends to produce front-facing facades)
 - **Direction**: South
 - **Size**: 64x64 (small) / 96x96 (medium) / 128x128 (large)
 - **Transparent background**: Checked
@@ -518,6 +519,14 @@ Every unit must be recognizable by silhouette alone:
 - **Iterating on existing asset**: 0.5-0.7 strength
 - **Small tweaks**: 0.8-0.9 strength
 - **Regenerating variants**: 0.6-0.8 strength
+
+### Building Perspective Lock-In
+PixelLab's "high top-down" view setting interprets ambiguously for buildings, often generating front-facing facade views instead of the steep isometric angle this project uses. To enforce the correct angle:
+- Always include explicit perspective language in the prompt: "steep high-angle isometric view from above front-right corner"
+- Use an existing building (e.g. Tavern, Barracks) as an init image at 0.2-0.3 strength for palette and angle reference
+- Reinforce silhouette with "roof dominating upper half of sprite" and "compact chunky silhouette"
+- Push back on painterly tendencies with "flat color blocks with minimal shading"
+- Avoid ornate facade details (stained glass, carved emblems) — they don't survive at 64-128px and pull the model toward illustration style
 
 ### Color Palette Discipline
 - Use PixelLab's color palette field to lock faction colors
