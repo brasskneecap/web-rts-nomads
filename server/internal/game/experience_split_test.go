@@ -36,6 +36,19 @@ func TestSpawnSeedsXPValue(t *testing.T) {
 	}
 }
 
+func TestSpawnRaiderUnit_SeedsXPValue(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r := s.spawnRaiderUnitLocked(enemyPlayerID, "#e74c3c", protocol.Vec2{X: 200, Y: 200})
+	if r == nil {
+		t.Fatal("spawnRaiderUnitLocked returned nil")
+	}
+	if r.XPValue != gameplayTuning().Experience.SplitDefaultXP {
+		t.Errorf("raider fallback XPValue = %d, want %d (splitDefaultXP)", r.XPValue, gameplayTuning().Experience.SplitDefaultXP)
+	}
+}
+
 func TestExperienceTuning_DefaultsLoaded(t *testing.T) {
 	et := gameplayTuning().Experience
 	if et.Mode != experienceModeClassic {
