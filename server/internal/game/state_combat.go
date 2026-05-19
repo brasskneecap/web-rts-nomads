@@ -252,8 +252,7 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 	}
 
 	if attacker.HP <= 0 {
-		s.awardKillXPLocked(target)
-		s.payoutDamageDealtXPLocked(attacker)
+		s.awardUnitDeathXPLocked(attacker, target)
 		s.awardSoldierTankKillXPLocked(attacker.ID)
 		s.onPerkKillLocked(target)
 		*deadUnitIDs = append(*deadUnitIDs, attacker.ID)
@@ -268,8 +267,7 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 
 	if target.HP <= 0 {
 		target.HP = 0
-		s.awardKillXPLocked(attacker)
-		s.payoutDamageDealtXPLocked(target)
+		s.awardUnitDeathXPLocked(target, attacker)
 		s.awardSoldierTankKillXPLocked(target.ID)
 		s.onPerkKillLocked(attacker)
 		s.trackBattleKillLocked(battleSourceFromUnit(attacker), target)
@@ -316,8 +314,7 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 		s.recordDamageDealtLocked(attacker, u, damage)
 		s.trackBattleDamageLocked(battleSourceFromUnit(attacker), u, damage)
 		if u.HP <= 0 {
-			s.awardKillXPLocked(attacker)
-			s.payoutDamageDealtXPLocked(u)
+			s.awardUnitDeathXPLocked(u, attacker)
 			s.awardSoldierTankKillXPLocked(u.ID)
 			s.trackBattleKillLocked(battleSourceFromUnit(attacker), u)
 			*deadUnitIDs = append(*deadUnitIDs, u.ID)

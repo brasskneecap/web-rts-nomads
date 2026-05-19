@@ -116,8 +116,7 @@ func (s *GameState) drainPendingDeathsLocked() {
 			if d.Source.AttackerUnitID != 0 {
 				attackerUnit := s.getUnitByIDLocked(d.Source.AttackerUnitID)
 				if attackerUnit != nil {
-					s.awardKillXPLocked(attackerUnit)
-					s.payoutDamageDealtXPLocked(target)
+					s.awardUnitDeathXPLocked(target, attackerUnit)
 					s.awardSoldierTankKillXPLocked(target.ID)
 					s.onPerkKillLocked(attackerUnit)
 					s.trackBattleKillLocked(battleSourceFromUnit(attackerUnit), target)
@@ -150,8 +149,7 @@ func (s *GameState) drainPendingDeathsLocked() {
 						ownerUnit = nil
 					}
 					if ownerUnit != nil {
-						s.awardKillXPLocked(ownerUnit)
-						s.payoutDamageDealtXPLocked(target)
+						s.awardUnitDeathXPLocked(target, ownerUnit)
 						s.awardSoldierTankKillXPLocked(target.ID)
 						s.trackBattleKillLocked(battleSourceFromTrap(trap), target)
 					} else {

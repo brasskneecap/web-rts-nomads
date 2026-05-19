@@ -228,8 +228,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		s.onPerkAttackDamageAppliedLocked(attacker, candidate, damage)
 		if candidate.HP <= 0 {
 			candidate.HP = 0
-			s.awardKillXPLocked(attacker)
-			s.payoutDamageDealtXPLocked(candidate)
+			s.awardUnitDeathXPLocked(candidate, attacker)
 			s.awardSoldierTankKillXPLocked(candidate.ID)
 			s.onPerkKillLocked(attacker)
 			s.trackBattleKillLocked(battleSourceFromUnit(attacker), candidate)
@@ -307,8 +306,7 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 	s.onPerkAttackDamageAppliedLocked(attacker, secondary, damage)
 	if secondary.HP <= 0 {
 		secondary.HP = 0
-		s.awardKillXPLocked(attacker)
-		s.payoutDamageDealtXPLocked(secondary)
+		s.awardUnitDeathXPLocked(secondary, attacker)
 		s.awardSoldierTankKillXPLocked(secondary.ID)
 		s.trackBattleKillLocked(battleSourceFromUnit(attacker), secondary)
 		*deadUnitIDs = append(*deadUnitIDs, secondary.ID)
