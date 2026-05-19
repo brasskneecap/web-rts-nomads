@@ -469,6 +469,10 @@ export class GameState {
   // Permanent per-player upgrade state. Populated from the local player's
   // PlayerSnapshot every tick. Empty until the server sends upgrade data.
   playerUpgrades: PlayerUpgradeSnapshot[] = []
+  // Unit types the local player cannot currently train (RequiresBuildings
+  // unsatisfied). Populated from the local player's PlayerSnapshot every
+  // tick. Empty until the server says otherwise.
+  lockedUnitTypes: string[] = []
   // Current tier of the local player's town hall (1 = Town Hall, 2 = Keep,
   // 3 = Castle). 0 until the server sends the first snapshot with this data.
   townHallTier: number = 0
@@ -2029,6 +2033,7 @@ export class GameState {
                 vaultPanelOpen: this.vaultPanelOpen,
               },
               this.townHallTier,
+              new Set(this.lockedUnitTypes),
             ),
         production: activeProduction ? toProductionSummary(activeProduction) : undefined,
         construction: isUnderConstruction
@@ -2195,6 +2200,11 @@ export class GameState {
     if (localPlayer.upgrades !== undefined) {
       this.playerUpgrades = localPlayer.upgrades
     }
+    if (localPlayer.lockedUnitTypes !== undefined) {
+      this.lockedUnitTypes = localPlayer.lockedUnitTypes
+    } else {
+      this.lockedUnitTypes = []
+    }
     if (localPlayer.townHallTier !== undefined) {
       this.townHallTier = localPlayer.townHallTier
     }
@@ -2314,7 +2324,12 @@ function formatUnitOrder(order: string): string {
   return UNIT_ORDER_LABELS[order as UnitOrder] ?? order
 }
 
-function formatBuildingName(buildingType: BuildingTile['buildingType']): string {
+function formatBuildingName(buildingType: string): string {
+  // Prefer the display label from the building def map (covers buildable types
+  // including those referenced by RequiresBuildings).
+  const defLabel = BUILDING_DEF_MAP.get(buildingType)?.label
+  if (defLabel) return defLabel
+  // Fallback to legacy switch for well-known non-buildable types.
   switch (buildingType) {
     case 'goldmine':
       return 'Goldmine'
@@ -2329,7 +2344,8 @@ function formatBuildingName(buildingType: BuildingTile['buildingType']): string 
     case 'spawn-point':
       return 'Rally Point'
     default:
-      return buildingType
+      if (!buildingType) return ''
+      return buildingType.charAt(0).toUpperCase() + buildingType.slice(1)
   }
 }
 
@@ -2575,6 +2591,7 @@ function getBuildingActions(
   upgrades: PlayerUpgradeSnapshot[] = [],
   vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number; vaultPanelOpen: boolean },
   townHallTier: number = 0,
+  lockedUnitTypes: ReadonlySet<string> = new Set(),
 ): ActionItem[] {
   const actions: ActionItem[] = []
 
@@ -2623,11 +2640,18 @@ function getBuildingActions(
         const cost = Object.entries(def.resourceCost ?? {})
           .filter(([, amount]) => amount > 0)
           .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' }))
+        const isLocked = lockedUnitTypes.has(unitType)
+        const requires = def.requiresBuildings ?? []
         actions.push({
           id: `train-${unitType}`,
           label: def.trainLabel,
           iconDef: { kind: 'unit', type: unitType },
           cost,
+          disabled: isLocked,
+          tooltipTitle: isLocked ? def.trainLabel : undefined,
+          tooltipBody: isLocked
+            ? `Requires: ${requires.map(formatBuildingName).join(', ')}`
+            : undefined,
         })
         hasTrainable = true
       }
