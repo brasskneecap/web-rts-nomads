@@ -98,6 +98,7 @@ type Unit struct {
 	BaseAttackSpeed      float64
 	BaseMoveSpeed        float64
 	XP                   int
+	XPValue              int // raw XP yielded when killed in "split" mode; seeded at spawn
 	XPProgressRemainder  float64
 	Rank                 string
 	RankUpFxRemaining    float64

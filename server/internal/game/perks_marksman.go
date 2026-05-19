@@ -592,8 +592,7 @@ func (s *GameState) fireExplosiveTipsLocked(attacker, primaryTarget *Unit, def *
 			}
 			if candidate.HP <= 0 {
 				candidate.HP = 0
-				s.awardKillXPLocked(attacker)
-				s.payoutDamageDealtXPLocked(candidate)
+				s.awardUnitDeathXPLocked(candidate, attacker)
 				s.awardSoldierTankKillXPLocked(candidate.ID)
 				s.onPerkKillLocked(attacker)
 				s.trackBattleKillLocked(battleSourceFromUnit(attacker), candidate)

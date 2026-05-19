@@ -17,6 +17,7 @@ type GameplayTuning struct {
 	BuffSlots     BuffSlotsTuning                    `json:"buffSlots"`
 	WaveUpgrade   WaveUpgradeTuning                  `json:"waveUpgrade"`
 	UnitOverrides map[string]UnitLegendPointOverride `json:"unitOverrides"`
+	Experience    ExperienceTuning                   `json:"experience"`
 }
 
 // LegendPointsTuning holds all legend-point earning rates.
@@ -52,6 +53,20 @@ type WaveUpgradeTuning struct {
 type UnitLegendPointOverride struct {
 	LegendPointDropChance float64 `json:"legendPointDropChance"`
 	LegendPointAmount     int     `json:"legendPointAmount"`
+}
+
+// ExperienceTuning selects the experience-gaining system and tunes the
+// "split" mode. Mode "classic" leaves all legacy payouts unchanged; "split"
+// distributes each enemy's experience value evenly among eligible recipients.
+type ExperienceTuning struct {
+	// Mode is "classic" (legacy payouts) or "split" (even per-enemy split).
+	Mode string `json:"mode"`
+	// SplitDefaultXP is the experience used when an enemy's UnitDef omits the
+	// "experience" field. Must be >= 0.
+	SplitDefaultXP int `json:"splitDefaultXP"`
+	// SplitEligibilityRadius is the proximity radius in world pixels, measured
+	// from the dying unit at the moment of death. Must be > 0.
+	SplitEligibilityRadius float64 `json:"splitEligibilityRadius"`
 }
 
 var gameplayTuningSingleton GameplayTuning
@@ -98,6 +113,17 @@ func init() {
 	}
 	if _, ok := upgradeRarityOrder[t.WaveUpgrade.MilestoneMinRarity]; !ok {
 		panic("catalog/tuning/gameplay_tuning.json: waveUpgrade.milestoneMinRarity: unknown rarity " + t.WaveUpgrade.MilestoneMinRarity)
+	}
+	switch t.Experience.Mode {
+	case experienceModeClassic, experienceModeSplit:
+	default:
+		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: experience.mode must be %q or %q, got %q", experienceModeClassic, experienceModeSplit, t.Experience.Mode))
+	}
+	if t.Experience.SplitDefaultXP < 0 {
+		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: experience.splitDefaultXP must be >= 0, got %d", t.Experience.SplitDefaultXP))
+	}
+	if t.Experience.SplitEligibilityRadius <= 0 {
+		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: experience.splitEligibilityRadius must be > 0, got %v", t.Experience.SplitEligibilityRadius))
 	}
 	gameplayTuningSingleton = t
 }

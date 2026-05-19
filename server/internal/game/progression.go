@@ -2,6 +2,7 @@ package game
 
 import (
 	"math"
+	"sort"
 )
 
 const (
@@ -32,6 +33,14 @@ const (
 	xpPerKillBonus                 = 25.0
 	xpPerSoldierDamageTankedOnKill = 0.5
 	rankUpFxDurationSecs           = 1.4
+
+	// Experience-system selector values. The active mode is read from
+	// gameplayTuning().Experience.Mode (catalog/tuning/gameplay_tuning.json).
+	// "classic" = kill bonus + damage-dealt + soldier-tank payouts (legacy).
+	// "split"   = a single per-enemy experience value, divided evenly among
+	//             eligible recipients as raw XP, fully replacing the above.
+	experienceModeClassic = "classic"
+	experienceModeSplit   = "split"
 
 	// Wave completion XP intentionally omitted — future reward mechanics
 	// (e.g. loot, bounties) will cover this instead.
@@ -263,6 +272,17 @@ func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
 	}
 }
 
+// resolveUnitXPValue returns the raw XP a unit of this def yields when killed
+// in "split" mode. Absent experience falls back to the tuned default; an
+// explicit 0 means the unit grants no XP. Mode-agnostic — the value is seeded
+// at spawn and simply unused in "classic" mode.
+func resolveUnitXPValue(def UnitDef) int {
+	if def.Experience != nil {
+		return *def.Experience
+	}
+	return gameplayTuning().Experience.SplitDefaultXP
+}
+
 func (s *GameState) addUnitXPFloatLocked(unit *Unit, amount float64) {
 	if !s.unitCanGainXPLocked(unit) || amount <= 0 {
 		return
@@ -276,6 +296,25 @@ func (s *GameState) addUnitXPFloatLocked(unit *Unit, amount float64) {
 		return
 	}
 
+	s.addUnitXPLocked(unit, wholeXP)
+}
+
+// addUnitXPRawFloatLocked is addUnitXPFloatLocked WITHOUT the xpGainMultiplier
+// scaling: `amount` is the literal XP, accumulated through the same per-unit
+// XPProgressRemainder so sub-1 fractions (e.g. 0.5) eventually form whole XP
+// and cross rank thresholds. Used only by "split" mode. Because exactly one
+// mode is active per server run, scaled (addUnitXPFloatLocked) and raw
+// contributions never mix into the same accumulator.
+func (s *GameState) addUnitXPRawFloatLocked(unit *Unit, amount float64) {
+	if !s.unitCanGainXPLocked(unit) || amount <= 0 {
+		return
+	}
+	total := unit.XPProgressRemainder + amount
+	wholeXP := int(math.Floor(total))
+	unit.XPProgressRemainder = total - float64(wholeXP)
+	if wholeXP <= 0 {
+		return
+	}
 	s.addUnitXPLocked(unit, wholeXP)
 }
 
@@ -478,6 +517,9 @@ func (s *GameState) recordDamageDealtBuildingLocked(attacker *Unit, buildingID s
 // payoutBuildingDamageDealtXPLocked pays banked damage XP to each surviving
 // contributor when a building is destroyed.
 func (s *GameState) payoutBuildingDamageDealtXPLocked(buildingID string) {
+	if gameplayTuning().Experience.Mode == experienceModeSplit {
+		return // buildings grant no XP in split mode
+	}
 	m, ok := s.buildingDamageDealt[buildingID]
 	if !ok {
 		return
@@ -512,7 +554,88 @@ func (s *GameState) awardKillXPLocked(attacker *Unit) {
 	s.addUnitXPFloatLocked(attacker, xpPerKillBonus)
 }
 
+// awardSplitDeathXPLocked distributes a dead enemy's raw XPValue evenly among
+// every eligible recipient: friendly units (per unitCanGainXPLocked) either
+// within SplitEligibilityRadius of the death position OR that ever dealt
+// damage to it. No eligible recipients ⇒ the XP is lost (no killer fallback).
+// Used only in "split" mode. Recipient IDs are sorted before payout so the
+// distribution is deterministic regardless of map iteration order (per the
+// determinism invariant) — order does not change the equal share anyway.
+func (s *GameState) awardSplitDeathXPLocked(dead *Unit) {
+	if dead == nil || dead.XPValue <= 0 {
+		return
+	}
+
+	recipients := map[int]*Unit{}
+
+	// Proximity: any eligible unit within the radius of the death position.
+	radius := gameplayTuning().Experience.SplitEligibilityRadius
+	radiusSq := radius * radius
+	for _, u := range s.Units {
+		if u == nil || !s.unitCanGainXPLocked(u) {
+			continue
+		}
+		dx := u.X - dead.X
+		dy := u.Y - dead.Y
+		if dx*dx+dy*dy <= radiusSq {
+			recipients[u.ID] = u
+		}
+	}
+
+	// Contributors: any unit that ever dealt damage to this enemy. The ledger
+	// is populated in every mode by recordDamageDealtLocked.
+	for attackerID := range dead.DamageDealtByUnit {
+		if _, seen := recipients[attackerID]; seen {
+			continue
+		}
+		attacker := s.getUnitByIDLocked(attackerID)
+		if attacker == nil || !s.unitCanGainXPLocked(attacker) {
+			continue
+		}
+		recipients[attackerID] = attacker
+	}
+
+	if len(recipients) == 0 {
+		return // no eligible recipients → XP is lost
+	}
+
+	ids := make([]int, 0, len(recipients))
+	for id := range recipients {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+
+	share := float64(dead.XPValue) / float64(len(ids))
+	for _, id := range ids {
+		s.addUnitXPRawFloatLocked(recipients[id], share)
+	}
+}
+
+// awardUnitDeathXPLocked is the single entry point for "a unit just died,
+// settle its XP". It replaces the legacy awardKillXPLocked+payoutDamageDealtXPLocked
+// pair at every kill site. `killer` may be nil (matching the legacy pair's
+// nil-safety) and is ignored in split mode.
+//
+//   - classic: verbatim relocation of the legacy pair, in the original order.
+//   - split:   even per-enemy split (killer intentionally unused).
+func (s *GameState) awardUnitDeathXPLocked(dead, killer *Unit) {
+	if dead == nil {
+		return
+	}
+	if gameplayTuning().Experience.Mode == experienceModeSplit {
+		s.awardSplitDeathXPLocked(dead)
+		return
+	}
+	if killer != nil {
+		s.awardKillXPLocked(killer)
+	}
+	s.payoutDamageDealtXPLocked(dead)
+}
+
 func (s *GameState) awardSoldierTankKillXPLocked(defeatedUnitID int) {
+	if gameplayTuning().Experience.Mode == experienceModeSplit {
+		return // split mode fully replaces classic payouts
+	}
 	if defeatedUnitID == 0 {
 		return
 	}

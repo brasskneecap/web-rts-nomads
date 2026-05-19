@@ -79,6 +79,12 @@ type UnitDef struct {
 	// triggers. Must be >= 0. Overrides the base tuning value.
 	LegendPointAmount int `json:"legendPointAmount,omitempty"`
 
+	// Experience is the raw XP this unit yields when killed in "split" mode
+	// (catalog/tuning/gameplay_tuning.json experience.mode). Pointer so the
+	// catalog can distinguish absent (→ splitDefaultXP) from an explicit 0
+	// (unit grants no XP). Ignored entirely in "classic" mode.
+	Experience *int `json:"experience,omitempty"`
+
 	// VisionRange is the base vision radius in world pixels. When 0 or absent,
 	// the spawn path falls back to defaultVisionRange.
 	VisionRange float64 `json:"visionRange,omitempty"`
