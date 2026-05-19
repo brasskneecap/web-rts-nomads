@@ -2200,6 +2200,12 @@ export class GameState {
     if (localPlayer.upgrades !== undefined) {
       this.playerUpgrades = localPlayer.upgrades
     }
+    // Server uses `omitempty` for lockedUnitTypes, so an empty locked set
+    // arrives as undefined — that means "nothing locked right now", not
+    // "no data yet". The else branch must reset the field; without it the
+    // train button stays greyed after the player completes a Blacksmith.
+    // Don't harmonize this with the surrounding `if (... !== undefined)`
+    // blocks that legitimately preserve last-known state.
     if (localPlayer.lockedUnitTypes !== undefined) {
       this.lockedUnitTypes = localPlayer.lockedUnitTypes
     } else {
@@ -2642,6 +2648,7 @@ function getBuildingActions(
           .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' }))
         const isLocked = lockedUnitTypes.has(unitType)
         const requires = def.requiresBuildings ?? []
+        const hasRequirements = requires.length > 0
         actions.push({
           id: `train-${unitType}`,
           label: def.trainLabel,
@@ -2650,7 +2657,9 @@ function getBuildingActions(
           disabled: isLocked,
           tooltipTitle: isLocked ? def.trainLabel : undefined,
           tooltipBody: isLocked
-            ? `Requires: ${requires.map(formatBuildingName).join(', ')}`
+            ? (hasRequirements
+                ? `Requires: ${requires.map(formatBuildingName).join(', ')}`
+                : 'Requirements not met')
             : undefined,
         })
         hasTrainable = true
