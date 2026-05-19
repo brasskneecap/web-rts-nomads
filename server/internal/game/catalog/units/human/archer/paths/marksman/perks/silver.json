@@ -6,8 +6,8 @@
     "description": "Each attack fires additional arrows at nearby enemies. When fewer extra targets are in range, the surplus shots strike the primary target instead.",
     "tooltipTemplate": "Each attack fires {extraShots} extra arrows at distinct in-range enemies for {secondaryDamageMultiplier%} damage. Excess shots fall back to the primary target.",
     "config": {
-      "extraShots": 2,
-      "secondaryDamageMultiplier": 0.6,
+      "extraShots": 1,
+      "secondaryDamageMultiplier": 0.1,
       "fallbackOnPrimary": 1
     }
   },

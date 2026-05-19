@@ -34,10 +34,10 @@ import "math"
 
 const (
 	// defaultCritChance is the baseline crit probability that every unit has
-	// before any perk modifiers. 10% — Marksman perks add on top of this so
-	// e.g. eagle_spirit (+10%) on a marksman archer ends up at 20% effective
+	// before any perk modifiers. 5% — Marksman perks add on top of this so
+	// e.g. eagle_spirit (+10%) on a marksman archer ends up at 15% effective
 	// chance against an unmarked target.
-	defaultCritChance = 0.10
+	defaultCritChance = 0.05
 
 	// defaultCritMultiplier is the damage multiplier on a normal crit. 2.0
 	// (double damage). bullseye overrides this to 2.5 — see perkCritMultiplierBonusLocked.
