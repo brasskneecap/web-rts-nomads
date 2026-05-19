@@ -69,6 +69,10 @@ export type UnitDef = {
   flyer?: boolean
   /** Target classes this unit's attacks can hit. When absent the server derives a default at spawn (projectile attacks → ground+flyer, otherwise ground only). */
   targetableTypes?: UnitTargetClass[]
+  /** Building types the player must own fully-built before this unit
+   *  can be trained. Server is authoritative; client uses this only to
+   *  render the requirement tooltip on locked train actions. */
+  requiresBuildings?: string[]
 }
 
 export let UNIT_DEFS: UnitDef[] = []
