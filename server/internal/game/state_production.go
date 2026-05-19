@@ -390,3 +390,43 @@ func joinProductionUnitTypes(queue []*UnitProduction) string {
 
 	return strings.Join(unitTypes, ",")
 }
+
+// playerHasBuildingTypeLocked returns true if the player owns at least
+// one Visible, fully-built (not underConstruction) building of the
+// given type. Must be called under s.mu.
+func (s *GameState) playerHasBuildingTypeLocked(playerID, buildingType string) bool {
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if !b.Visible {
+			continue
+		}
+		if b.BuildingType != buildingType {
+			continue
+		}
+		if b.OwnerID == nil || *b.OwnerID != playerID {
+			continue
+		}
+		if getMetadataBool(b.Metadata, "underConstruction") {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// playerMeetsUnitRequirementsLocked returns true if every building type
+// in def.RequiresBuildings is satisfied for playerID. Empty list = true.
+// Unknown unitType = false (defensive; should be unreachable because
+// callers verify the def exists first). Must be called under s.mu.
+func (s *GameState) playerMeetsUnitRequirementsLocked(playerID, unitType string) bool {
+	def, ok := getUnitDef(unitType)
+	if !ok {
+		return false
+	}
+	for _, required := range def.RequiresBuildings {
+		if !s.playerHasBuildingTypeLocked(playerID, required) {
+			return false
+		}
+	}
+	return true
+}

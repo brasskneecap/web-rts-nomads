@@ -2,6 +2,8 @@ package game
 
 import (
 	"testing"
+
+	"webrts/server/pkg/protocol"
 )
 
 // TestRequiresBuildings_FieldExistsOnUnitDef verifies the new field is
@@ -41,5 +43,110 @@ func TestSoldier_NoRequirements(t *testing.T) {
 	}
 	if len(def.RequiresBuildings) != 0 {
 		t.Errorf("soldier.RequiresBuildings = %v; want []", def.RequiresBuildings)
+	}
+}
+
+// newRequirementsTestState builds a GameState with player "p1" already
+// ensured and no buildings. Tests add buildings as needed.
+func newRequirementsTestState(t *testing.T) (*GameState, string) {
+	t.Helper()
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	const playerID = "p1"
+	s.EnsurePlayer(playerID)
+	return s, playerID
+}
+
+// addBuildingToState injects a building owned by ownerID into the state
+// and re-indexes buildingsByID. Caller must hold s.mu.
+func addBuildingToState(s *GameState, id, buildingType, ownerID string, underConstruction bool, visible bool) {
+	owner := ownerID
+	meta := map[string]interface{}{}
+	if underConstruction {
+		meta["underConstruction"] = true
+	}
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
+		ID:           id,
+		BuildingType: buildingType,
+		Width:        2,
+		Height:       2,
+		Visible:      visible,
+		OwnerID:      &owner,
+		Capabilities: []string{},
+		Metadata:     meta,
+	})
+	if s.buildingsByID == nil {
+		s.buildingsByID = map[string]*protocol.BuildingTile{}
+	}
+	last := &s.MapConfig.Buildings[len(s.MapConfig.Buildings)-1]
+	s.buildingsByID[last.ID] = last
+}
+
+// TestPlayerHasBuildingTypeLocked covers the four corners: present and
+// fully built (true), under construction (false), invisible (false),
+// wrong type (false).
+func TestPlayerHasBuildingTypeLocked(t *testing.T) {
+	s, p1 := newRequirementsTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.playerHasBuildingTypeLocked(p1, "blacksmith") {
+		t.Error("no blacksmith yet; want false")
+	}
+
+	addBuildingToState(s, "bs-built", "blacksmith", p1, false, true)
+	if !s.playerHasBuildingTypeLocked(p1, "blacksmith") {
+		t.Error("fully-built blacksmith present; want true")
+	}
+
+	// Mid-construction does NOT count.
+	addBuildingToState(s, "bs-uc", "blacksmith", "p2", true, true)
+	if s.playerHasBuildingTypeLocked("p2", "blacksmith") {
+		t.Error("only mid-construction blacksmith; want false")
+	}
+
+	// Invisible does NOT count.
+	addBuildingToState(s, "bs-inv", "blacksmith", "p3", false, false)
+	if s.playerHasBuildingTypeLocked("p3", "blacksmith") {
+		t.Error("only invisible blacksmith; want false")
+	}
+
+	// Wrong type does NOT match.
+	if s.playerHasBuildingTypeLocked(p1, "barracks") {
+		t.Error("no barracks present; want false")
+	}
+}
+
+// TestPlayerMeetsUnitRequirementsLocked verifies the AND semantics of
+// RequiresBuildings and the "unknown unit type" defensive branch.
+func TestPlayerMeetsUnitRequirementsLocked(t *testing.T) {
+	s, p1 := newRequirementsTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Soldier has no requirements → always true.
+	if !s.playerMeetsUnitRequirementsLocked(p1, "soldier") {
+		t.Error("soldier has no requirements; want true")
+	}
+
+	// Archer requires blacksmith. Without one → false.
+	if s.playerMeetsUnitRequirementsLocked(p1, "archer") {
+		t.Error("no blacksmith; archer requirements should not be met")
+	}
+
+	// Mid-construction blacksmith → still false.
+	addBuildingToState(s, "bs-uc", "blacksmith", p1, true, true)
+	if s.playerMeetsUnitRequirementsLocked(p1, "archer") {
+		t.Error("mid-construction blacksmith; archer requirements should not be met")
+	}
+
+	// Fully-built blacksmith → true.
+	addBuildingToState(s, "bs-built", "blacksmith", p1, false, true)
+	if !s.playerMeetsUnitRequirementsLocked(p1, "archer") {
+		t.Error("fully-built blacksmith; archer requirements should be met")
+	}
+
+	// Unknown unit type → false (defensive).
+	if s.playerMeetsUnitRequirementsLocked(p1, "no_such_unit") {
+		t.Error("unknown unit type; want false")
 	}
 }
