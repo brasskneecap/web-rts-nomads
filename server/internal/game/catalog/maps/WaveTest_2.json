@@ -2401,28 +2401,113 @@
         "y": 8,
         "id": "placed-unit-player1-9-8",
         "playerSlot": "player1",
-        "unitType": "apprentice"
+        "unitType": "apprentice",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 8,
         "y": 11,
         "id": "placed-unit-player1-8-11",
         "playerSlot": "player1",
-        "unitType": "soldier"
+        "unitType": "soldier",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 8,
         "y": 10,
         "id": "placed-unit-player1-8-10",
         "playerSlot": "player1",
-        "unitType": "archer"
+        "unitType": "archer",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 8,
         "y": 9,
         "id": "placed-unit-player1-8-9",
         "playerSlot": "player1",
+        "unitType": "apprentice",
+        "aggroRange": 150,
+        "leashRange": 200
+      },
+      {
+        "x": 30,
+        "y": 5,
+        "id": "placed-unit-player2-30-5",
+        "playerSlot": "player2",
+        "unitType": "worker"
+      },
+      {
+        "x": 29,
+        "y": 6,
+        "id": "placed-unit-player2-29-6",
+        "playerSlot": "player2",
+        "unitType": "worker"
+      },
+      {
+        "x": 30,
+        "y": 6,
+        "id": "placed-unit-player2-30-6",
+        "playerSlot": "player2",
+        "unitType": "worker"
+      },
+      {
+        "x": 24,
+        "y": 7,
+        "id": "placed-unit-player2-24-7",
+        "playerSlot": "player2",
         "unitType": "apprentice"
+      },
+      {
+        "x": 26,
+        "y": 7,
+        "id": "placed-unit-player2-26-7",
+        "playerSlot": "player2",
+        "unitType": "apprentice"
+      },
+      {
+        "x": 24,
+        "y": 9,
+        "id": "placed-unit-player2-24-9",
+        "playerSlot": "player2",
+        "unitType": "soldier"
+      },
+      {
+        "x": 25,
+        "y": 9,
+        "id": "placed-unit-player2-25-9",
+        "playerSlot": "player2",
+        "unitType": "soldier"
+      },
+      {
+        "x": 26,
+        "y": 9,
+        "id": "placed-unit-player2-26-9",
+        "playerSlot": "player2",
+        "unitType": "soldier"
+      },
+      {
+        "x": 24,
+        "y": 8,
+        "id": "placed-unit-player2-24-8",
+        "playerSlot": "player2",
+        "unitType": "archer"
+      },
+      {
+        "x": 25,
+        "y": 8,
+        "id": "placed-unit-player2-25-8",
+        "playerSlot": "player2",
+        "unitType": "archer"
+      },
+      {
+        "x": 26,
+        "y": 8,
+        "id": "placed-unit-player2-26-8",
+        "playerSlot": "player2",
+        "unitType": "archer"
       }
     ],
     "waveConfig": {

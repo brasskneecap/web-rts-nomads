@@ -200,6 +200,15 @@ struct Worker {
     /// at ConnectP2P time so the joiner-side IPC reply can include it.
     /// On Connected we drain into `peers` and emit new_peer_transport.
     pending_outbound: HashMap<u64, NetConnection>,
+    /// Throughput counters for the periodic stats log line. Reset every
+    /// STATS_INTERVAL. Helps diagnose backpressure (high send count but
+    /// game-side feels slow → bandwidth/relay issue), starvation (low
+    /// counts despite active gameplay → worker loop is starved), etc.
+    stats_sent_msgs: u64,
+    stats_sent_bytes: u64,
+    stats_recv_msgs: u64,
+    stats_recv_bytes: u64,
+    stats_last_log: std::time::Instant,
 }
 
 impl Worker {
@@ -219,6 +228,11 @@ impl Worker {
             peers: HashMap::new(),
             next_peer_id: AtomicU64::new(1),
             pending_outbound: HashMap::new(),
+            stats_sent_msgs: 0,
+            stats_sent_bytes: 0,
+            stats_recv_msgs: 0,
+            stats_recv_bytes: 0,
+            stats_last_log: std::time::Instant::now(),
         }
     }
 
@@ -242,8 +256,38 @@ impl Worker {
             }
             self.pump_listener_events();
             self.pump_connection_messages();
+            self.maybe_log_stats();
         }
         info!("steam_net: worker exiting");
+    }
+
+    /// Logs sent/recv throughput once every STATS_INTERVAL. Quiet when no
+    /// peers are connected (avoids cluttering the shell log during idle
+    /// pre-match time).
+    fn maybe_log_stats(&mut self) {
+        const STATS_INTERVAL: Duration = Duration::from_secs(5);
+        if self.stats_last_log.elapsed() < STATS_INTERVAL {
+            return;
+        }
+        let active_peers = self.peers.len();
+        if active_peers > 0
+            && (self.stats_sent_msgs > 0 || self.stats_recv_msgs > 0)
+        {
+            info!(
+                "steam_net stats over {:?}: peers={} sent={} msgs ({} bytes) recv={} msgs ({} bytes)",
+                self.stats_last_log.elapsed(),
+                active_peers,
+                self.stats_sent_msgs,
+                self.stats_sent_bytes,
+                self.stats_recv_msgs,
+                self.stats_recv_bytes,
+            );
+        }
+        self.stats_sent_msgs = 0;
+        self.stats_sent_bytes = 0;
+        self.stats_recv_msgs = 0;
+        self.stats_recv_bytes = 0;
+        self.stats_last_log = std::time::Instant::now();
     }
 
     fn handle_command(&mut self, cmd: Command) {
@@ -322,20 +366,42 @@ impl Worker {
         // §12.0: every send_message call uses SendFlags::RELIABLE
         // (reliable + ordered). The marker test below grep-asserts no other
         // flag appears in this file.
+        //
+        // After each send we IMMEDIATELY flush messages on the connection.
+        // The default Steam Sockets behaviour batches small writes for up
+        // to ~200ms (Nagle), which compounds across multiple hops to
+        // multi-second perceived latency for RTS inputs. Flushing forces
+        // the SDK to dispatch what's queued right now. This is the §12.0-
+        // compliant alternative to switching the send flag to RELIABLE_NO_NAGLE
+        // (spec D22 prefers we keep RELIABLE as the wire flag; flushing
+        // doesn't change the flag, just disables the timer batching).
+        let payload_len = payload.len() as u64;
         if let Some(entry) = self.peers.get_mut(&peer_id) {
-            return entry
+            let result = entry
                 .conn
                 .send_message(payload, SendFlags::RELIABLE)
                 .map(|_| ())
                 .map_err(|e| format!("send_message({peer_id}): {e:?}"));
+            if result.is_ok() {
+                let _ = entry.conn.flush_messages();
+                self.stats_sent_msgs += 1;
+                self.stats_sent_bytes += payload_len;
+            }
+            return result;
         }
         if let Some(conn) = self.pending_outbound.get_mut(&peer_id) {
             // Sending before Connected is permitted by Steamworks; messages
             // are queued and flushed once the connection completes.
-            return conn
+            let result = conn
                 .send_message(payload, SendFlags::RELIABLE)
                 .map(|_| ())
                 .map_err(|e| format!("send_message({peer_id} pending): {e:?}"));
+            if result.is_ok() {
+                let _ = conn.flush_messages();
+                self.stats_sent_msgs += 1;
+                self.stats_sent_bytes += payload_len;
+            }
+            return result;
         }
         Err(format!("unknown peer_id {peer_id}"))
     }
@@ -523,6 +589,8 @@ impl Worker {
                 }
             }
             for payload in to_emit {
+                self.stats_recv_msgs += 1;
+                self.stats_recv_bytes += payload.len() as u64;
                 let b64 = base64::engine::general_purpose::STANDARD.encode(&payload);
                 push_notification(
                     &self.writer,

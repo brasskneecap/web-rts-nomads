@@ -194,6 +194,21 @@ pub fn spawn_and_wait_ready(
     if let Some(mode) = selftest {
         cmd.env("NOMADS_SELFTEST", mode);
     }
+    // Map editor save path: maps are embedded into the Go binary at
+    // compile time (read path), but writing back to disk requires a real
+    // directory. The Go server probes MAP_CATALOG_DIR first. When this
+    // binary is run from a packaged release in <repo>/desktop/src-tauri/
+    // target/release/, walk up to the repo root and look for the maps
+    // directory there. If found, set the env so the editor's save path
+    // works. If not found (binary distributed to a friend's machine
+    // without the repo), the editor save is unavailable but reads still
+    // work — same UX as before this fix.
+    if let Some(maps_dir) = locate_repo_maps_dir() {
+        info!("supervisor: MAP_CATALOG_DIR={}", maps_dir.display());
+        cmd.env("MAP_CATALOG_DIR", maps_dir);
+    } else {
+        info!("supervisor: no repo maps dir found near binary; map editor save will be unavailable");
+    }
 
     // Windows: the Go binary is built with the console subsystem, so without
     // this flag Windows would attach a new console window to the spawned
@@ -334,6 +349,32 @@ pub fn parse_ready_line(line: &str) -> Option<ReadyInfo> {
         url: url?,
         version: version?,
     })
+}
+
+/// Walks up from the running binary looking for the source repo's
+/// `server/internal/game/catalog/maps` directory. Returns Some(absolute
+/// path) if found, None otherwise.
+///
+/// Layout when built locally with `.\build package -Steam`:
+///   <repo>/desktop/src-tauri/target/release/nomads-desktop.exe   ← bin
+///   <repo>/server/internal/game/catalog/maps                     ← maps
+/// So from the binary's parent dir, walk up to 6 ancestors looking for
+/// `server/internal/game/catalog/maps`. The walk is bounded so we don't
+/// accidentally hit a root-level match on a redistributed binary that
+/// happens to live deep in a user's filesystem.
+fn locate_repo_maps_dir() -> Option<PathBuf> {
+    let exe = env::current_exe().ok()?;
+    let mut dir = exe.parent()?.to_path_buf();
+    for _ in 0..6 {
+        let candidate = dir.join("server").join("internal").join("game").join("catalog").join("maps");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+    None
 }
 
 fn resolve_sidecar_path() -> Result<PathBuf, SupervisorError> {
