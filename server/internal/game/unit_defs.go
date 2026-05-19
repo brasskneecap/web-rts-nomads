@@ -137,7 +137,11 @@ const (
 	TargetClassFlyer  = "flyer"
 )
 
-var unitDefsByType = loadUnitDefsByType()
+var unitDefsByType map[string]UnitDef
+
+func init() {
+	unitDefsByType = loadUnitDefsByType()
+}
 
 func loadUnitDefsByType() map[string]UnitDef {
 	// Two-level directory layout: catalog/units/<faction>/<unit>/<unit>.json.
