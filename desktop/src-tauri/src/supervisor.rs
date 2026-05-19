@@ -185,6 +185,12 @@ pub fn spawn_and_wait_ready(
     cmd.env("WEBRTS_PORT", "0")
         .env("WEBRTS_PROFILES_DIR", &paths.profiles)
         .env("WEBRTS_LOGS_DIR", &paths.logs)
+        // Opt the Go child into the stdin-EOF shutdown signal (design D7).
+        // Only the shell holds the stdin write end open for the app's
+        // lifetime and drops it on exit; standalone dev loops (start.bat →
+        // air) get immediate stdin EOF, so the child must NOT watch stdin
+        // there. This explicit flag is that discriminator.
+        .env("NOMADS_SHELL_MANAGED", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

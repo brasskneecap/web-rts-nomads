@@ -113,7 +113,16 @@ func main() {
 	// the Tauri shell tells the Go child "parent is closing, please exit").
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go watchStdin(stop)
+	// The stdin-EOF shutdown signal (design D7) is ONLY meaningful when the
+	// Tauri shell is our parent: it pipes our stdin, holds the write end for
+	// the app's lifetime, and drops it on exit. The shell sets
+	// NOMADS_SHELL_MANAGED=1 to opt in. When run standalone (start.bat → air,
+	// `go run`, bare binary) stdin is non-interactive and reads EOF
+	// immediately, so an unconditional watchStdin would kill the server one
+	// second after it binds. Gate on the explicit shell signal.
+	if os.Getenv("NOMADS_SHELL_MANAGED") != "" {
+		go watchStdin(stop)
+	}
 
 	go func() {
 		log.Printf("server listening on %s", listener.Addr())
