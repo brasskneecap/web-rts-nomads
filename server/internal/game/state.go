@@ -2244,6 +2244,7 @@ func (s *GameState) EnsurePlayer(playerID string, equippedBuffIDs ...string) {
 	}
 
 	s.claimPlayerStartLocked(playerID)
+	s.claimLabeledBuildingsForPlayerLocked(playerID)
 	s.spawnPlacedUnitsForPlayerLocked(playerID, color)
 	s.ensurePlacedEnemiesSpawnedLocked()
 
