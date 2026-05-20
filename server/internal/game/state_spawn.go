@@ -198,6 +198,61 @@ func (s *GameState) findPlayerLabelLocked(playerID string) string {
 	return ""
 }
 
+// claimLabeledBuildingsForPlayerLocked walks every authored player-class
+// building (other than townhalls and spawn-points, which have their own claim
+// paths) whose metadata.playerLabel matches the label of the townhall slot
+// claimed by playerID, and assigns ownership: OwnerID, Visible, Occupied,
+// hp/maxHp from the catalog def, and SpawnUnitTypes copied from the def for
+// any unit-spawner. Idempotent — buildings that are already owned by another
+// player or that lack a matching playerLabel are skipped. Must be called
+// under s.mu write lock.
+func (s *GameState) claimLabeledBuildingsForPlayerLocked(playerID string) {
+	playerLabel := s.findPlayerLabelLocked(playerID)
+	if playerLabel == "" {
+		return
+	}
+	changed := false
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType == "townhall" || b.BuildingType == "spawn-point" {
+			continue
+		}
+		if b.OwnerID != nil {
+			continue
+		}
+		lbl, ok := getMetadataString(b.Metadata, "playerLabel")
+		if !ok || lbl != playerLabel {
+			continue
+		}
+		def, ok := getBuildingDef(b.BuildingType)
+		if !ok {
+			continue
+		}
+		owner := playerID
+		b.OwnerID = &owner
+		b.Visible = true
+		b.Occupied = true
+		if b.Metadata == nil {
+			b.Metadata = map[string]interface{}{}
+		}
+		b.Metadata["hp"] = def.MaxHp
+		b.Metadata["maxHp"] = def.MaxHp
+		// pre-built ⇒ never underConstruction / pendingStart
+		delete(b.Metadata, "underConstruction")
+		delete(b.Metadata, "pendingStart")
+		if len(b.SpawnUnitTypes) == 0 && len(def.SpawnUnitTypes) > 0 {
+			b.SpawnUnitTypes = append([]string{}, def.SpawnUnitTypes...)
+		}
+		if len(b.Capabilities) == 0 && len(def.Capabilities) > 0 {
+			b.Capabilities = append([]string{}, def.Capabilities...)
+		}
+		changed = true
+	}
+	if changed {
+		s.invalidateBlockedCellsLocked()
+	}
+}
+
 // spawnPlacedUnitsForPlayerLocked spawns authored player-owned placed units
 // whose PlayerLabel matches the label of the townhall slot claimed by playerID.
 // Must be called under s.mu write lock.

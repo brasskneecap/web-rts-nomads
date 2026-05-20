@@ -272,10 +272,20 @@
           <div v-if="brushMode === 'building'" class="control-group">
             <label for="building-type">Building Type</label>
             <select id="building-type" v-model="selectedBuilding" :disabled="!paintModeEnabled">
-              <option value="goldmine">Goldmine</option>
-              <option value="townhall">Townhall</option>
-              <option value="spawn-point">Spawn Point</option>
-              <option value="enemy-spawnpoint">Enemy Spawnpoint</option>
+              <option v-for="def in paintableBuildingDefs" :key="def.type" :value="def.type">
+                {{ def.label || def.type }}
+              </option>
+            </select>
+          </div>
+
+          <div
+            v-if="brushMode === 'building' && isPlayerOwnableBuildingType(selectedBuilding)"
+            class="control-group"
+          >
+            <label for="building-player-label">Player Slot</label>
+            <select id="building-player-label" v-model="buildingPlayerLabel" :disabled="!paintModeEnabled">
+              <option value="">Unassigned</option>
+              <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
             </select>
           </div>
 
@@ -620,8 +630,18 @@
             </div>
           </template>
 
-          <!-- generic building: objective -->
+          <!-- generic building: objective + (for player-class) owner slot -->
           <template v-else>
+            <div v-if="isPlayerOwnableBuildingType(selectedEditBuilding.buildingType)" class="edit-field">
+              <label>Player Slot</label>
+              <select
+                :value="(selectedEditBuilding.metadata?.['playerLabel'] as string | undefined) ?? ''"
+                @change="updateEditMeta('playerLabel', ($event.target as HTMLSelectElement).value || undefined)"
+              >
+                <option value="">Unassigned</option>
+                <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
+              </select>
+            </div>
             <div v-if="destroyBuildingObjectives.length" class="edit-field">
               <label>Destroy Objective</label>
               <select :value="selectedEditBuilding.metadata?.['objectiveId'] ?? ''" @change="updateEditMeta('objectiveId', ($event.target as HTMLSelectElement).value || undefined)">
@@ -629,7 +649,10 @@
                 <option v-for="vc in destroyBuildingObjectives" :key="vc.id" :value="vc.id">{{ vc.label || vc.id }}</option>
               </select>
             </div>
-            <div v-else class="edit-panel__empty">No editable fields for this building type.</div>
+            <div
+              v-if="!isPlayerOwnableBuildingType(selectedEditBuilding.buildingType) && !destroyBuildingObjectives.length"
+              class="edit-panel__empty"
+            >No editable fields for this building type.</div>
           </template>
 
           <button type="button" class="edit-delete-btn" @click="deleteSelectedBuilding">Delete Building</button>
@@ -756,7 +779,7 @@ import { getBuildingSprite } from '@/game/rendering/buildingSprites'
 import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { initObstacleDefs, OBSTACLE_DEF_MAP } from '@/game/maps/obstacleDefs'
-import { BUILDING_DEF_MAP, initBuildingDefs } from '@/game/maps/buildingDefs'
+import { BUILDING_DEF_MAP, BUILDING_DEFS, initBuildingDefs } from '@/game/maps/buildingDefs'
 import { initPathBounds } from '@/game/maps/unitDefs'
 
 const model = defineModel<MapConfig>({ required: true })
@@ -782,6 +805,10 @@ const selectedTileCoord = ref<{ sx: number; sy: number } | null>(null)
 const selectedSpawnTownhallId = ref('')
 const spawnPointFillOrder = ref(0)
 const spawnPointPlayerLabel = ref('')
+// Player slot assigned to newly-painted player-class buildings other than
+// spawn-points (which carry their own playerLabel UI). Empty string ⇒
+// unassigned (no metadata.playerLabel written, building stays unowned).
+const buildingPlayerLabel = ref('')
 const enemyTargetPlayerLabel = ref('')
 const enemySpawnDelay = ref(0)
 const enemySpawnInterval = ref(10)
@@ -869,6 +896,29 @@ const hasPaintedContent = computed(() =>
 const activeBrushMode = computed(() =>
   isControlHeld.value ? 'erase' : brushMode.value,
 )
+// Every building def in the catalog, sorted by label, with class=neutral/enemy
+// surfaced last. Drives the paint dropdown so any catalog addition (e.g. a new
+// chapel) is paintable in the editor with zero code changes.
+const paintableBuildingDefs = computed(() => {
+  const classRank = (kind: string) => (kind === 'player' ? 0 : kind === 'neutral' ? 1 : 2)
+  return [...BUILDING_DEFS].sort((a, b) => {
+    const ca = classRank(a.class ?? 'player')
+    const cb = classRank(b.class ?? 'player')
+    if (ca !== cb) return ca - cb
+    return (a.label || a.type).localeCompare(b.label || b.type)
+  })
+})
+
+// Whether a building type accepts a playerLabel assignment. spawn-points have
+// their own playerLabel UI; enemy-spawnpoints and neutral buildings (goldmine)
+// are not player-owned.
+function isPlayerOwnableBuildingType(buildingType: string): boolean {
+  if (buildingType === 'spawn-point' || buildingType === 'enemy-spawnpoint') return false
+  const def = BUILDING_DEF_MAP.get(buildingType)
+  if (!def) return false
+  return (def.class ?? 'player') === 'player'
+}
+
 const townhallOptions = computed(() =>
   model.value.buildings
     .filter((building) => building.buildingType === 'townhall')
@@ -1484,6 +1534,10 @@ function paintBuildingAt(cx: number, cy: number) {
     }
   } else if (buildingObjectiveId.value) {
     metadata = { objectiveId: buildingObjectiveId.value }
+  }
+
+  if (isPlayerOwnableBuildingType(selectedBuilding.value) && buildingPlayerLabel.value) {
+    metadata = { ...(metadata ?? {}), playerLabel: buildingPlayerLabel.value }
   }
 
   model.value = setBuildingTile(model.value, cx, cy, selectedBuilding.value, metadata)
