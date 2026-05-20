@@ -274,7 +274,10 @@ func (s *GameState) onMarksmanProjectileFiredLocked(attacker, primaryTarget *Uni
 	defer func() { attacker.PerkState.MarksmanFireInProgress = false }()
 
 	// 1. Split Shot — fire up to N extra shots at distinct in-range hostiles.
-	if hasSplitShot && splitShotExtraTargets > 0 && splitShotDamageMult > 0 {
+	// Distinct targets always take full damage; splitShotDamageMult only
+	// scales fallback shots that redirect onto the primary, so a 0 multiplier
+	// just disables fallback rather than the whole perk.
+	if hasSplitShot && splitShotExtraTargets > 0 {
 		s.fireSplitShotsLocked(attacker, primaryTarget, primaryDamage, splitShotExtraTargets, splitShotDamageMult, splitShotFallbackOnSelf, nil)
 	}
 
@@ -333,9 +336,12 @@ func (s *GameState) onMarksmanDamageAppliedLocked(attacker, target *Unit, damage
 // Split Shot — fires N additional shots at in-range hostiles
 //
 // Each extra shot rolls its own crit chance independently and routes through
-// the same projectile pipeline as the primary. Damage is scaled by
-// secondaryDamageMultiplier. When fewer than N extras are in range, the
-// missing slots fall back to extra hits on the primary target (configurable).
+// the same projectile pipeline as the primary. Distinct extra targets take
+// FULL damage — the perk's value when multiple enemies are in range is the
+// extra arrows themselves, not their per-arrow damage. When fewer than N
+// extras are in range, the missing slots fall back to extra hits on the
+// primary target scaled by secondaryDamageMultiplier so a single-target
+// volley doesn't double-tap the same enemy at full damage.
 //
 // Recursion: split-shot does NOT call onMarksmanAttackFiredLocked again, so
 // there is no risk of split → split chains. Each extra projectile is fired
@@ -343,7 +349,7 @@ func (s *GameState) onMarksmanDamageAppliedLocked(attacker, target *Unit, damage
 // pierce perk, since pierce is checked at land-time off the attacker's perks).
 // ─────────────────────────────────────────────────────────────────────────────
 
-func (s *GameState) fireSplitShotsLocked(attacker, primaryTarget *Unit, primaryRawDamage int, extraTargets int, damageMultiplier float64, fallbackOnPrimary bool, deadUnitIDs *[]int) {
+func (s *GameState) fireSplitShotsLocked(attacker, primaryTarget *Unit, primaryRawDamage int, extraTargets int, fallbackDamageMultiplier float64, fallbackOnPrimary bool, deadUnitIDs *[]int) {
 	if attacker == nil || primaryTarget == nil || extraTargets <= 0 {
 		return
 	}
@@ -390,8 +396,13 @@ func (s *GameState) fireSplitShotsLocked(attacker, primaryTarget *Unit, primaryR
 	// rationale: split shot is meant to feel like multiple arrows, each with
 	// its own physical "fortune". Without independent rolls, all extras
 	// crit/non-crit together which feels deterministic.
-	fireExtra := func(target *Unit) {
-		base := float64(primaryRawDamage) * damageMultiplier
+	//
+	// damageScale is 1.0 for distinct extra targets (full damage) and
+	// fallbackDamageMultiplier for shots redirected back onto the primary —
+	// so split shot doesn't degenerate into "second free arrow at the primary"
+	// when there are no other enemies in range.
+	fireExtra := func(target *Unit, damageScale float64) {
+		base := float64(primaryRawDamage) * damageScale
 		critMult := 1.0
 		isCrit := false
 		if rolled := s.rollCritDamage(attacker, target); rolled > 1.0 {
@@ -415,14 +426,14 @@ func (s *GameState) fireSplitShotsLocked(attacker, primaryTarget *Unit, primaryR
 	}
 
 	for i := 0; i < maxCandidates; i++ {
-		fireExtra(candidates[i].unit)
+		fireExtra(candidates[i].unit, 1.0)
 	}
 	if fallbackOnPrimary {
-		// Fewer extras than slots — fill the rest with extra shots at the primary,
-		// at the same reduced damage. Clamp to primary still alive.
+		// Fewer extras than slots — fill the rest with extra shots at the primary
+		// at the reduced fallback damage. Clamp to primary still alive.
 		shortfall := extraTargets - maxCandidates
 		for i := 0; i < shortfall && primaryTarget.HP > 0; i++ {
-			fireExtra(primaryTarget)
+			fireExtra(primaryTarget, fallbackDamageMultiplier)
 		}
 	}
 	_ = deadUnitIDs // future hook if instant-resolve ever replaces fireProjectileLocked
