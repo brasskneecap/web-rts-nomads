@@ -1,89 +1,133 @@
 <template>
   <div class="profile-view">
     <div class="profile-view__layout">
-      <header class="profile-view__header">
-        <button class="profile-view__back" type="button" @click="router.back()">Back</button>
-        <h1 class="profile-view__title">Player Profile</h1>
-      </header>
-
-      <div v-if="isLoading && !profile" class="profile-view__loading" aria-live="polite">
-        Loading profile...
+      <div class="profile-view__back-row">
+        <UiButton size="sm" @click="router.back()">Back</UiButton>
       </div>
 
-      <div v-else-if="error && !profile" class="profile-view__error" role="alert">
-        {{ error }}
-        <button type="button" class="profile-view__retry" @click="initialize">Retry</button>
-      </div>
+      <MenuPanel class="profile-view__panel">
+        <header class="profile-view__header">
+          <h1 class="profile-view__title">Player Profile</h1>
+        </header>
 
-      <div v-else-if="profile" class="profile-view__body">
-        <div class="profile-view__left">
-          <section class="profile-card" aria-label="Legend Points">
-            <div class="profile-card__label">Legend Points</div>
-            <div class="profile-card__value profile-card__value--legend">
-              {{ profile.legendPoints.toLocaleString() }}
+        <div class="profile-view__tabs" role="tablist" aria-label="Profile sections">
+          <UiButton
+            size="md"
+            :selected="activeTab === 'profile'"
+            role="tab"
+            :aria-selected="activeTab === 'profile'"
+            @click="activeTab = 'profile'"
+          >
+            Profile
+          </UiButton>
+          <UiButton
+            size="md"
+            :selected="activeTab === 'upgrades'"
+            role="tab"
+            :aria-selected="activeTab === 'upgrades'"
+            @click="activeTab = 'upgrades'"
+          >
+            Upgrades
+          </UiButton>
+        </div>
+
+        <!-- Profile tab ─────────────────────────────────────────────────── -->
+        <div v-if="activeTab === 'profile'" class="profile-view__tab-panel" role="tabpanel">
+          <div v-if="isLoading && !profile" class="profile-view__loading" aria-live="polite">
+            Loading profile...
+          </div>
+
+          <div v-else-if="error && !profile" class="profile-view__error" role="alert">
+            {{ error }}
+            <UiButton size="sm" @click="initialize">Retry</UiButton>
+          </div>
+
+          <div v-else-if="profile" class="profile-view__body">
+            <div class="profile-view__left">
+              <section class="profile-card" aria-label="Legend Points">
+                <div class="profile-card__label">Legend Points</div>
+                <div class="profile-card__value profile-card__value--legend">
+                  {{ profile.legendPoints.toLocaleString() }}
+                </div>
+                <div class="profile-card__sub">
+                  {{ profile.lifetimeLegendPoints.toLocaleString() }} lifetime
+                </div>
+              </section>
+
+              <section class="profile-card" aria-label="Commander">
+                <div class="profile-card__label">Commander</div>
+                <div class="profile-card__value profile-card__value--commander">
+                  {{ profile.selectedCommanderId || 'Default' }}
+                </div>
+              </section>
+
+              <section class="profile-card" aria-label="Match Statistics">
+                <div class="profile-card__label">Statistics</div>
+                <dl class="profile-stats">
+                  <div class="profile-stats__row">
+                    <dt>Matches Played</dt>
+                    <dd>{{ profile.stats.matchesPlayed }}</dd>
+                  </div>
+                  <div class="profile-stats__row">
+                    <dt>Matches Won</dt>
+                    <dd>{{ profile.stats.matchesWon }}</dd>
+                  </div>
+                  <div class="profile-stats__row">
+                    <dt>Matches Lost</dt>
+                    <dd>{{ profile.stats.matchesLost }}</dd>
+                  </div>
+                  <div class="profile-stats__row">
+                    <dt>Enemies Killed</dt>
+                    <dd>{{ profile.stats.enemiesKilled.toLocaleString() }}</dd>
+                  </div>
+                  <div class="profile-stats__row">
+                    <dt>Objectives Done</dt>
+                    <dd>{{ profile.stats.objectivesDone }}</dd>
+                  </div>
+                  <div class="profile-stats__row">
+                    <dt>Win Rate</dt>
+                    <dd>{{ winRate }}</dd>
+                  </div>
+                </dl>
+              </section>
             </div>
+
+            <div class="profile-view__right">
+              <section class="profile-card" aria-label="Buff Loadout">
+                <BuffLoadoutPicker />
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <!-- Upgrades tab ────────────────────────────────────────────────── -->
+        <div v-else-if="activeTab === 'upgrades'" class="profile-view__tab-panel" role="tabpanel">
+          <section class="profile-card profile-card--placeholder" aria-label="Upgrades">
+            <div class="profile-card__label">Upgrades</div>
+            <div class="profile-card__value">Coming Soon</div>
             <div class="profile-card__sub">
-              {{ profile.lifetimeLegendPoints.toLocaleString() }} lifetime
+              Spend Legend Points to permanently improve your roster.
             </div>
           </section>
-
-          <section class="profile-card" aria-label="Commander">
-            <div class="profile-card__label">Commander</div>
-            <div class="profile-card__value">
-              {{ profile.selectedCommanderId || 'Default' }}
-            </div>
-          </section>
-
-          <section class="profile-card" aria-label="Match Statistics">
-            <div class="profile-card__label">Statistics</div>
-            <dl class="profile-stats">
-              <div class="profile-stats__row">
-                <dt>Matches Played</dt>
-                <dd>{{ profile.stats.matchesPlayed }}</dd>
-              </div>
-              <div class="profile-stats__row">
-                <dt>Matches Won</dt>
-                <dd>{{ profile.stats.matchesWon }}</dd>
-              </div>
-              <div class="profile-stats__row">
-                <dt>Matches Lost</dt>
-                <dd>{{ profile.stats.matchesLost }}</dd>
-              </div>
-              <div class="profile-stats__row">
-                <dt>Enemies Killed</dt>
-                <dd>{{ profile.stats.enemiesKilled.toLocaleString() }}</dd>
-              </div>
-              <div class="profile-stats__row">
-                <dt>Objectives Done</dt>
-                <dd>{{ profile.stats.objectivesDone }}</dd>
-              </div>
-              <div class="profile-stats__row">
-                <dt>Win Rate</dt>
-                <dd>{{ winRate }}</dd>
-              </div>
-            </dl>
-          </section>
         </div>
-
-        <div class="profile-view__right">
-          <section class="profile-card" aria-label="Buff Loadout">
-            <div class="profile-card__label">Buff Loadout</div>
-            <BuffLoadoutPicker />
-          </section>
-        </div>
-      </div>
+      </MenuPanel>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfile } from '@/composables/useProfile'
 import BuffLoadoutPicker from '@/components/profile/BuffLoadoutPicker.vue'
+import MenuPanel from '@/components/menu/MenuPanel.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const router = useRouter()
 const { profile, isLoading, error, initialize } = useProfile()
+
+type Tab = 'profile' | 'upgrades'
+const activeTab = ref<Tab>('profile')
 
 onMounted(() => { void initialize() })
 
@@ -100,60 +144,79 @@ const winRate = computed(() => {
   z-index: 1;
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  background: radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%);
-  padding: 32px;
-  box-sizing: border-box;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .profile-view__layout {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  align-items: center;
+  gap: 16px;
+  padding: 32px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.profile-view__back-row {
   width: 100%;
   max-width: 980px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.profile-view__panel {
+  width: 100%;
+  max-width: 980px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .profile-view__header {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.profile-view__back {
-  padding: 8px 18px;
-  border-radius: 8px;
-  border: 1px solid rgba(200, 164, 106, 0.28);
-  background: linear-gradient(180deg, rgba(60, 40, 18, 0.85), rgba(30, 18, 8, 0.92));
-  color: #f5ead2;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  letter-spacing: 0.05em;
-  transition: background 0.1s, border-color 0.1s;
-}
-
-.profile-view__back:hover {
-  background: linear-gradient(180deg, rgba(90, 60, 25, 0.9), rgba(50, 30, 12, 0.95));
-  border-color: rgba(220, 180, 100, 0.5);
-}
-
-.profile-view__back:focus-visible {
-  outline: 2px solid rgba(247, 216, 142, 0.9);
-  outline-offset: 2px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(212, 168, 79, 0.35);
 }
 
 .profile-view__title {
+  margin: 0;
   font-size: 24px;
   font-weight: 700;
   color: #f5ead2;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin: 0;
+}
+
+.profile-view__tabs {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.profile-view__tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(210, 176, 113, 0.4) transparent;
+  /* Inset right padding so the scrollbar doesn't crowd the content. */
+  padding-right: 6px;
+}
+
+.profile-view__tab-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.profile-view__tab-panel::-webkit-scrollbar-thumb {
+  background: rgba(210, 176, 113, 0.4);
+  border-radius: 4px;
+}
+
+.profile-view__tab-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(210, 176, 113, 0.65);
 }
 
 .profile-view__loading {
@@ -169,25 +232,14 @@ const winRate = computed(() => {
   gap: 16px;
   color: #f07070;
   font-size: 14px;
-  padding: 32px 0;
-}
-
-.profile-view__retry {
-  padding: 6px 16px;
-  border-radius: 6px;
-  border: 1px solid rgba(200, 80, 80, 0.4);
-  background: linear-gradient(180deg, rgba(80, 20, 20, 0.85), rgba(40, 10, 10, 0.9));
-  color: #f5d8d8;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
+  padding: 16px 0;
 }
 
 .profile-view__body {
   display: grid;
   grid-template-columns: 280px 1fr;
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .profile-view__left {
@@ -202,11 +254,23 @@ const winRate = computed(() => {
   gap: 14px;
 }
 
+.profile-view__right > .profile-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .profile-card {
   padding: 16px;
   border-radius: 10px;
   border: 1px solid rgba(200, 164, 106, 0.2);
   background: linear-gradient(180deg, rgba(20, 13, 6, 0.9), rgba(10, 7, 3, 0.95));
+}
+
+.profile-card--placeholder {
+  text-align: center;
+  padding: 40px 24px;
 }
 
 .profile-card__label {
@@ -227,6 +291,13 @@ const winRate = computed(() => {
 .profile-card__value--legend {
   font-size: 32px;
   color: #f7d88e;
+}
+
+.profile-card__value--commander {
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 
 .profile-card__sub {

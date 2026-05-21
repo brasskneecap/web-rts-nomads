@@ -17,8 +17,8 @@
           <UiButton size="lg" :disabled="true">Campaign</UiButton>
           <UiButton size="lg" @click="router.push('/custom')">Custom Game</UiButton>
           <UiButton size="lg" @click="router.push('/profile')">Profile</UiButton>
-          <UiButton size="lg" :disabled="true">Upgrades</UiButton>
           <UiButton size="lg" @click="router.push('/editor')">Map Editor</UiButton>
+          <UiButton size="lg" @click="router.push('/options')">Options</UiButton>
         </MenuPanel>
       </nav>
     </div>

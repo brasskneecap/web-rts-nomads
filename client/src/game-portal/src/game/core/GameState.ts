@@ -247,11 +247,11 @@ const RESOURCE_ACCENT: Record<string, string> = {
 }
 
 const STAT_ICON_HEART = 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'
+// Lightning bolt — used for the mana row on spellcaster units.
+const STAT_ICON_BOLT = 'M13 2L4 14L11 14L9 22L20 10L13 10Z'
 const STAT_ICON_SWORD = 'M14.5 17.5 L3 6 L3 3 L6 3 L17.5 14.5 M20 12 L12 20.5 M16.5 17.5 L20.5 21.5 L21.5 20.5 L17.5 16.5'
 const STAT_ICON_BOOT = 'M6 3v11 M6 13h9v5 M3 18h18 M6 7h2 M6 10h2'
 const STAT_ICON_SHIELD = 'M12 2L4 5v6c0 5.5 3.5 10 8 11 4.5-1 8-5.5 8-11V5z'
-// Bow / target — used for the Marksman attack-range row.
-const STAT_ICON_BOW = 'M3 21l8-8 M3 21l5 0 M3 21l0-5 M21 3a14 14 0 0 1-14 14 M21 3a14 14 0 0 0-14 14 M16 8l3-3 M19 5l1 1'
 // Crit (target/burst) — used for the Marksman crit row.
 const STAT_ICON_CRIT = 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z M12 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M2 12h3 M19 12h3 M12 2v3 M12 19v3'
 
@@ -3119,13 +3119,32 @@ function getUnitDetails(unit: Unit): DetailItem[] {
     },
   ]
 
-  // Damage and attack speed share one row — the sword icon covers both.
+  // Mana — only surfaced for spellcaster units (server omits maxMana for
+  // non-casters). Mirrors the durability row's current/max format.
+  if ((unit.maxMana ?? 0) > 0) {
+    const mana = unit.mana ?? 0
+    const maxMana = unit.maxMana ?? 0
+    details.push({
+      id: 'mana',
+      label: 'Mana',
+      value: `${mana} / ${maxMana}`,
+      icon: STAT_ICON_BOLT,
+      tooltipTitle: `Mana ${mana} / ${maxMana}`,
+      tooltipBody: 'Spent to cast abilities.',
+    })
+  }
+
+  // Damage, attack speed, and attack range share one row — the sword icon
+  // covers all three. Range is a substat under attack rather than its own row
+  // so the stats panel stays compact.
   const hasDamage = (unit.damage ?? 0) > 0
   const hasAttackSpeed = (unit.attackSpeed ?? 0) > 0
+  const hasAttackRange = unit.attackRange !== undefined && unit.attackRange > 0
   if (hasDamage || hasAttackSpeed) {
     const parts: string[] = []
     if (hasDamage) parts.push(String(unit.damage))
     if (hasAttackSpeed) parts.push(attackSpeedLabel(unit.attackSpeed!))
+    if (hasAttackRange) parts.push(`${Math.round(unit.attackRange!)} rng`)
 
     // Build hover tooltip with base vs bonus breakdown.
     const unitDef = UNIT_DEF_MAP.get(unit.unitType)
@@ -3142,33 +3161,21 @@ function getUnitDetails(unit: Unit): DetailItem[] {
       tooltipLines.push(`Attack speed: ${unit.attackSpeed!.toFixed(2)}/s`)
       if (bonusSpeed > 0) tooltipLines.push(`Bonus speed: +${bonusSpeed.toFixed(2)}/s`)
     }
+    if (hasAttackRange) {
+      const baseRange = unitDef?.attackRange ?? unit.attackRange!
+      const bonusRange = unit.attackRange! - baseRange
+      tooltipLines.push(`Attack range: ${Math.round(unit.attackRange!)}`)
+      if (Math.abs(bonusRange) >= 1) {
+        tooltipLines.push(`Bonus range: ${bonusRange > 0 ? '+' : ''}${Math.round(bonusRange)}`)
+      }
+    }
 
     details.push({
       id: 'attack',
-      label: 'Damage / Attack Speed',
+      label: 'Damage / Attack Speed / Range',
       value: parts.join(' · '),
       icon: STAT_ICON_SWORD,
       tooltipTitle: parts.join(' · '),
-      tooltipBody: tooltipLines.join('\n'),
-    })
-  }
-
-  // Attack range — only useful for ranged units. Surfaced so Marksman perks
-  // (eagle_spirit, bullseye) that extend range are visible on the HUD.
-  if (unit.attackRange !== undefined && unit.attackRange > 0) {
-    const unitDef = UNIT_DEF_MAP.get(unit.unitType)
-    const baseRange = unitDef?.attackRange ?? unit.attackRange
-    const bonusRange = unit.attackRange - baseRange
-    const tooltipLines: string[] = [`Base attack range: ${Math.round(baseRange)}`]
-    if (Math.abs(bonusRange) >= 1) {
-      tooltipLines.push(`Bonus range: ${bonusRange > 0 ? '+' : ''}${Math.round(bonusRange)}`)
-    }
-    details.push({
-      id: 'attack-range',
-      label: 'Attack Range',
-      value: String(Math.round(unit.attackRange)),
-      icon: STAT_ICON_BOW,
-      tooltipTitle: `Attack Range: ${Math.round(unit.attackRange)}`,
       tooltipBody: tooltipLines.join('\n'),
     })
   }

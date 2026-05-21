@@ -8,6 +8,7 @@ import FindGame from '@/views/FindGame.vue'
 import Match from '@/views/Match.vue'
 import Editor from '@/views/Editor.vue'
 import ProfileView from '@/views/ProfileView.vue'
+import OptionsView from '@/views/OptionsView.vue'
 
 // /steam-mp removed as of §14R-E. Steam friend MP is now integrated into
 // /create-game (Steam lobby created in parallel with the local one) and
@@ -27,6 +28,7 @@ export const router = createRouter({
     { path: '/match/:matchId', component: Match, meta: { hideMenuChrome: true } },
     { path: '/editor', component: Editor },
     { path: '/profile', component: ProfileView },
+    { path: '/options', component: OptionsView },
     { path: '/:catchAll(.*)', redirect: '/' },
   ],
 })

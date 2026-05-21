@@ -43,7 +43,6 @@
           <div class="buff-item__name">{{ buff.displayName }}</div>
           <div v-if="buff.description" class="buff-item__desc">{{ buff.description }}</div>
         </div>
-        <span v-if="isEquipped(buff.id)" class="buff-item__badge">Equipped</span>
       </button>
     </div>
 
@@ -254,8 +253,8 @@ async function saveLoadout() {
 }
 
 .buff-picker__list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   max-height: 260px;
   overflow-y: auto;
@@ -270,13 +269,14 @@ async function saveLoadout() {
 .buff-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid rgba(200, 164, 106, 0.18);
   background: linear-gradient(180deg, rgba(25, 18, 8, 0.85), rgba(12, 9, 4, 0.9));
   text-align: left;
   color: #f5ead2;
+  min-width: 0;
 }
 
 .buff-item--unlocked {
@@ -314,25 +314,17 @@ async function saveLoadout() {
 }
 
 .buff-item__name {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
   color: #f5ead2;
+  line-height: 1.25;
 }
 
 .buff-item__desc {
   margin-top: 2px;
-  font-size: 11px;
-  color: #a09070;
-  line-height: 1.4;
-}
-
-.buff-item__badge {
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #f7d88e;
-  white-space: nowrap;
+  color: #a09070;
+  line-height: 1.35;
 }
 
 .buff-item__cost {

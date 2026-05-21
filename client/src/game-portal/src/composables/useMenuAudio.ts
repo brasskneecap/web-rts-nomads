@@ -1,6 +1,8 @@
+import { watch } from 'vue'
 import ironWarchantUrl from '@/assets/audio/music/Iron Warchant.mp3'
+import { useAudioSettings } from '@/composables/useAudioSettings'
 
-const MENU_MUSIC_VOLUME = 0.4
+const { effectiveMusicVolume } = useAudioSettings()
 
 let audio: HTMLAudioElement | null = null
 let gestureCleanup: (() => void) | null = null
@@ -9,9 +11,16 @@ function ensureAudio(): HTMLAudioElement {
   if (audio) return audio
   audio = new Audio(ironWarchantUrl)
   audio.loop = true
-  audio.volume = MENU_MUSIC_VOLUME
+  audio.volume = effectiveMusicVolume.value
   return audio
 }
+
+// Live-update the audio element whenever the effective music volume changes
+// (master or music slider moves). Subscribed once at module load so the
+// options panel can preview changes in real time without restarting playback.
+watch(effectiveMusicVolume, (v) => {
+  if (audio) audio.volume = v
+})
 
 function attachGestureFallback(el: HTMLAudioElement) {
   if (gestureCleanup) return

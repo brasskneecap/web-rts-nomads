@@ -1056,9 +1056,12 @@ button.inventory-slot:focus-visible {
 }
 
 .detail-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(4, auto);
+  grid-auto-columns: max-content;
+  row-gap: 8px;
+  column-gap: 16px;
   flex: 0 0 auto;
   padding: 10px 4px;
   background: rgba(0, 0, 0, 0.6);
