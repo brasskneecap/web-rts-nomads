@@ -107,6 +107,7 @@ type Unit struct {
 	BaseAttackSpeed      float64
 	BaseMoveSpeed        float64
 	XP                   int
+	XPValue              int // raw XP yielded when killed in "split" mode; seeded at spawn
 	XPProgressRemainder  float64
 	Rank                 string
 	RankUpFxRemaining    float64
@@ -2290,6 +2291,7 @@ func (s *GameState) EnsurePlayer(playerID string, equippedBuffIDs ...string) {
 	}
 
 	s.claimPlayerStartLocked(playerID)
+	s.claimLabeledBuildingsForPlayerLocked(playerID)
 	s.spawnPlacedUnitsForPlayerLocked(playerID, color)
 	s.ensurePlacedEnemiesSpawnedLocked()
 

@@ -25,22 +25,42 @@
         "terrain": "dirt"
       },
       {
+        "x": 38,
+        "y": 0,
+        "terrain": "dirt"
+      },
+      {
+        "x": 39,
+        "y": 0,
+        "terrain": "dirt"
+      },
+      {
         "x": 15,
+        "y": 1,
+        "terrain": "dirt"
+      },
+      {
+        "x": 38,
+        "y": 1,
+        "terrain": "dirt"
+      },
+      {
+        "x": 39,
         "y": 1,
         "terrain": "dirt"
       },
       {
         "x": 16,
-        "y": 1,
-        "terrain": "dirt"
-      },
-      {
-        "x": 15,
         "y": 2,
         "terrain": "dirt"
       },
       {
-        "x": 16,
+        "x": 38,
+        "y": 2,
+        "terrain": "dirt"
+      },
+      {
+        "x": 39,
         "y": 2,
         "terrain": "dirt"
       },
@@ -55,7 +75,17 @@
         "terrain": "dirt"
       },
       {
-        "x": 16,
+        "x": 38,
+        "y": 3,
+        "terrain": "dirt"
+      },
+      {
+        "x": 38,
+        "y": 4,
+        "terrain": "dirt"
+      },
+      {
+        "x": 39,
         "y": 4,
         "terrain": "dirt"
       },
@@ -70,7 +100,22 @@
         "terrain": "dirt"
       },
       {
+        "x": 38,
+        "y": 5,
+        "terrain": "dirt"
+      },
+      {
+        "x": 39,
+        "y": 5,
+        "terrain": "dirt"
+      },
+      {
         "x": 15,
+        "y": 6,
+        "terrain": "dirt"
+      },
+      {
+        "x": 38,
         "y": 6,
         "terrain": "dirt"
       },
@@ -85,7 +130,22 @@
         "terrain": "dirt"
       },
       {
+        "x": 38,
+        "y": 7,
+        "terrain": "dirt"
+      },
+      {
+        "x": 39,
+        "y": 7,
+        "terrain": "dirt"
+      },
+      {
         "x": 16,
+        "y": 8,
+        "terrain": "dirt"
+      },
+      {
+        "x": 39,
         "y": 8,
         "terrain": "dirt"
       },
@@ -100,13 +160,63 @@
         "terrain": "dirt"
       },
       {
+        "x": 38,
+        "y": 9,
+        "terrain": "dirt"
+      },
+      {
+        "x": 39,
+        "y": 9,
+        "terrain": "dirt"
+      },
+      {
         "x": 15,
+        "y": 10,
+        "terrain": "dirt"
+      },
+      {
+        "x": 38,
         "y": 10,
         "terrain": "dirt"
       },
       {
         "x": 14,
         "y": 11,
+        "terrain": "dirt"
+      },
+      {
+        "x": 38,
+        "y": 11,
+        "terrain": "dirt"
+      },
+      {
+        "x": 39,
+        "y": 11,
+        "terrain": "dirt"
+      },
+      {
+        "x": 38,
+        "y": 12,
+        "terrain": "dirt"
+      },
+      {
+        "x": 36,
+        "y": 13,
+        "terrain": "dirt"
+      },
+      {
+        "x": 37,
+        "y": 13,
+        "terrain": "dirt"
+      },
+      {
+        "x": 38,
+        "y": 13,
+        "terrain": "dirt"
+      },
+      {
+        "x": 39,
+        "y": 13,
         "terrain": "dirt"
       },
       {
@@ -1648,6 +1758,36 @@
     ],
     "buildings": [
       {
+        "x": 35,
+        "y": 0,
+        "id": "farm-35-0",
+        "buildingType": "farm",
+        "width": 2,
+        "height": 2,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "foodSupply": 6,
+          "playerLabel": "player2"
+        }
+      },
+      {
+        "x": 35,
+        "y": 2,
+        "id": "farm-35-2",
+        "buildingType": "farm",
+        "width": 2,
+        "height": 2,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "foodSupply": 6,
+          "playerLabel": "player2"
+        }
+      },
+      {
         "x": 7,
         "y": 3,
         "id": "townhall-7-2",
@@ -1708,6 +1848,21 @@
         }
       },
       {
+        "x": 35,
+        "y": 4,
+        "id": "farm-35-4",
+        "buildingType": "farm",
+        "width": 2,
+        "height": 2,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "foodSupply": 6,
+          "playerLabel": "player2"
+        }
+      },
+      {
         "x": 7,
         "y": 6,
         "id": "spawn-point-7-6",
@@ -1760,6 +1915,36 @@
         }
       },
       {
+        "x": 0,
+        "y": 12,
+        "id": "farm-0-12",
+        "buildingType": "farm",
+        "width": 2,
+        "height": 2,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "foodSupply": 6,
+          "playerLabel": "player1"
+        }
+      },
+      {
+        "x": 0,
+        "y": 14,
+        "id": "farm-0-14",
+        "buildingType": "farm",
+        "width": 2,
+        "height": 2,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "foodSupply": 6,
+          "playerLabel": "player1"
+        }
+      },
+      {
         "x": 27,
         "y": 15,
         "id": "enemy-spawnpoint-27-15",
@@ -1780,6 +1965,21 @@
           "spawnIntervalSeconds": 10,
           "targetPlayerLabel": "player2",
           "unitType": "raider"
+        }
+      },
+      {
+        "x": 0,
+        "y": 16,
+        "id": "farm-0-16",
+        "buildingType": "farm",
+        "width": 2,
+        "height": 2,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "foodSupply": 6,
+          "playerLabel": "player1"
         }
       },
       {
@@ -2437,77 +2637,99 @@
         "y": 5,
         "id": "placed-unit-player2-30-5",
         "playerSlot": "player2",
-        "unitType": "worker"
+        "unitType": "worker",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 29,
         "y": 6,
         "id": "placed-unit-player2-29-6",
         "playerSlot": "player2",
-        "unitType": "worker"
+        "unitType": "worker",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 30,
         "y": 6,
         "id": "placed-unit-player2-30-6",
         "playerSlot": "player2",
-        "unitType": "worker"
+        "unitType": "worker",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 24,
         "y": 7,
         "id": "placed-unit-player2-24-7",
         "playerSlot": "player2",
-        "unitType": "apprentice"
+        "unitType": "apprentice",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 26,
         "y": 7,
         "id": "placed-unit-player2-26-7",
         "playerSlot": "player2",
-        "unitType": "apprentice"
+        "unitType": "apprentice",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 24,
         "y": 9,
         "id": "placed-unit-player2-24-9",
         "playerSlot": "player2",
-        "unitType": "soldier"
+        "unitType": "soldier",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 25,
         "y": 9,
         "id": "placed-unit-player2-25-9",
         "playerSlot": "player2",
-        "unitType": "soldier"
+        "unitType": "soldier",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 26,
         "y": 9,
         "id": "placed-unit-player2-26-9",
         "playerSlot": "player2",
-        "unitType": "soldier"
+        "unitType": "soldier",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 24,
         "y": 8,
         "id": "placed-unit-player2-24-8",
         "playerSlot": "player2",
-        "unitType": "archer"
+        "unitType": "archer",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 25,
         "y": 8,
         "id": "placed-unit-player2-25-8",
         "playerSlot": "player2",
-        "unitType": "archer"
+        "unitType": "archer",
+        "aggroRange": 150,
+        "leashRange": 200
       },
       {
         "x": 26,
         "y": 8,
         "id": "placed-unit-player2-26-8",
         "playerSlot": "player2",
-        "unitType": "archer"
+        "unitType": "archer",
+        "aggroRange": 150,
+        "leashRange": 200
       }
     ],
     "waveConfig": {
