@@ -1,37 +1,4 @@
-# per-path-ability-kits Specification
-
-## Purpose
-
-Defines catalog-driven, per-(path, rank) ability grants for the Apprentice unit
-line: a strict loader, deterministic idempotent promotion grants, snapshot
-surfacing with no protocol change, and an additive offensive `DamageAmount`
-resolve step. The grant mechanism ships and is test-covered, but no authored
-Cleric/Arch Mage starter kits exist — ability acquisition is deferred and every
-`(path, rank)` resolves to an empty grant.
-## Requirements
-### Requirement: Path ability grants are catalog-defined per (path, rank)
-
-A loader (`path_ability_defs.go`), structurally mirroring `path_defs.go`, SHALL read `catalog/units/human/apprentice/paths/<path>/abilities/<rank>.json` of shape `{ "grant": ["<abilityID>", …] }` into a `(path, rank) → []string` map. Rank names SHALL be validated against `bronze`/`silver`/`gold` with a load-time panic on an unknown rank, and a granted ability id that has no registered `AbilityDef` SHALL panic at load (mirroring `path_defs.go` strictness and the Phase-1 category-validation panic). A missing file for a `(path, rank)` cell SHALL resolve to an empty grant, not an error.
-
-#### Scenario: Grant file is loaded into the keyed map
-
-- **WHEN** `paths/cleric/abilities/silver.json` contains `{ "grant": ["greater_heal"] }`
-- **THEN** the loader maps `(cleric, silver)` to `["greater_heal"]`
-
-#### Scenario: Unknown ability id panics at load
-
-- **WHEN** a grant file lists an ability id with no registered `AbilityDef`
-- **THEN** catalog load panics with a message naming the offending file and id
-
-#### Scenario: Unknown rank panics at load
-
-- **WHEN** a grant file is placed under a rank directory other than `bronze`/`silver`/`gold`
-- **THEN** catalog load panics naming the offending file and rank
-
-#### Scenario: Missing cell is an empty grant
-
-- **WHEN** no abilities file exists for a `(path, rank)` cell
-- **THEN** that cell resolves to an empty grant and no error is raised
+## MODIFIED Requirements
 
 ### Requirement: Promotion grants path abilities deterministically and idempotently
 
@@ -71,15 +38,6 @@ Granted/overridden ability entries SHALL initialise their autocast/cooldown maps
 - **WHEN** an apprentice with `AutoCastEnabled["heal"] = true` and `AbilityCooldowns["heal"] = 1.5` is promoted to (cleric, bronze)
 - **THEN** after the recompute `AutoCastEnabled["greater_heal"] = true`, `AbilityCooldowns["greater_heal"] = 1.5`, and the `"heal"` keys are absent from both maps
 
-### Requirement: Granted abilities surface with no protocol change
-
-A path-granted ability SHALL appear in the owner-facing `AbilitySnapshot` via the existing `unit.Abilities` → `abilityStatesLocked` path, carrying its display name, icon, mana cost, per-ability autocast toggle, and cooldown. No protocol/wire field SHALL be added or changed for this capability.
-
-#### Scenario: Post-promotion ability appears in the snapshot
-
-- **WHEN** a unit is granted a path ability on promotion
-- **THEN** that ability is present in its `AbilitySnapshot` with a working autocast toggle and cooldown fields, and no new protocol field was introduced
-
 ### Requirement: Path ability grants are deferred; only the mechanism ships
 
 The per-(path, rank) ability-grant **mechanism** (the loader in `path_ability_defs.go`, the `(path, rank) → []string` lookup via `pathAbilityGrantsFor`, and the additive append step inside `assignUnitPathAbilitiesLocked`) SHALL remain present and behaviourally covered by tests, but no `paths/<path>/abilities/<rank>.json` rank-grant files SHALL exist for the Apprentice line; every `(path, rank)` cell SHALL resolve to an empty grant.
@@ -108,24 +66,7 @@ Acquisition of dormant offensive content (`arcane_bolt`) remains deferred. The d
 - **WHEN** the ability catalog loads
 - **THEN** `arcane_bolt` loads and validates (registered `Category`/`DamageType`) and is resolvable by id, even though nothing grants it
 
-### Requirement: Offensive abilities deal their `DamageAmount` on resolve
-
-`AbilityDef` SHALL carry an optional `DamageAmount int` (JSON `damageAmount`, omitted/zero ⇒ no damage), symmetric to the existing `HealAmount`. On cast resolution (`resolveAbilityCastLocked`), an ability with `DamageAmount > 0` and a living target SHALL deal that damage through the existing authoritative damage pipeline (`applyUnitDamageWithSourceLocked`) attributed to the caster, with the ability's `DamageType` (resolved via `OrPhysical()` when unset). It SHALL NOT hand-roll damage: mitigation, the death pipeline, threat, and determinism are inherited from the shared pipeline. `HealAmount` and `DamageAmount` are independent resolve steps; an ability may declare either, both, or neither.
-
-#### Scenario: Offensive ability damages its target on resolve
-
-- **WHEN** an ability with `DamageAmount > 0` resolves on a living hostile target
-- **THEN** the target loses HP via `applyUnitDamageWithSourceLocked`, the damage is attributed to the caster, and it is typed by the ability's `DamageType` (physical when unset)
-
-#### Scenario: Absent or zero DamageAmount deals no damage
-
-- **WHEN** an ability with no `damageAmount` (or `0`) resolves
-- **THEN** no damage is applied — the field is additive and inert for every existing ability (e.g. `heal`)
-
-#### Scenario: Damage routes through the shared pipeline
-
-- **WHEN** an offensive ability kills its target
-- **THEN** the normal death pipeline runs (same as a melee/splash kill) — no parallel death/threat path is introduced
+## ADDED Requirements
 
 ### Requirement: Path JSON `"abilities"` field declares a path-level ability list override
 
@@ -161,4 +102,3 @@ The cleric path SHALL declare `"abilities": ["greater_heal"]` in `cleric.json`. 
 
 - **WHEN** an apprentice is at `ProgressionPath == "none"` and `assignUnitPathAbilitiesLocked` runs
 - **THEN** `unit.Abilities` resolves to the unit def's base list (e.g., `["heal"]`) — no path-level override applies
-

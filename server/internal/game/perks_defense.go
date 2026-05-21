@@ -452,22 +452,52 @@ func (s *GameState) perkBonusArmorLocked(unit *Unit) int {
 //	effectiveArmor = floor(unit.Armor × (1 + percentBonus)) + flatBonus
 //
 // Where:
-//   - flatBonus    = perkBonusArmorLocked + perkBonusArmorFromBannersLocked + perkBonusArmorFromAurasLocked
+//   - flatBonus    = perkBonusArmorLocked + perkBonusArmorFromBannersLocked +
+//                    perkBonusArmorFromAurasLocked + perkBonusArmorFromBuffsLocked
 //   - percentBonus = perkArmorPercentBonusLocked + perkArmorPercentBonusFromAurasLocked
 //
 // Percent bonuses stack additively: two sources of +20% = +40% of base armor.
 // This means high-armor units benefit more from percent bonuses, which is the
 // intended design (guardian_aura scales with the unit's invested armor stat).
+// Buff sources (e.g. bolstering_prayer) are flat — never scaled by percent
+// bonuses, so the +50 armor on a healed ally is +50 regardless of percent
+// armor modifiers on that ally.
 func (s *GameState) effectiveArmorLocked(unit *Unit) int {
 	if unit == nil {
 		return 0
 	}
 	flatBonus := s.perkBonusArmorLocked(unit) +
 		s.perkBonusArmorFromBannersLocked(unit) +
-		s.perkBonusArmorFromAurasLocked(unit)
+		s.perkBonusArmorFromAurasLocked(unit) +
+		s.perkBonusArmorFromBuffsLocked(unit)
 	percentBonus := s.perkArmorPercentBonusLocked(unit) +
 		s.perkArmorPercentBonusFromAurasLocked(unit)
 	return int(math.Floor(float64(unit.Armor)*(1.0+percentBonus))) + flatBonus
+}
+
+// perkBonusArmorFromBuffsLocked returns the flat-armor contribution from
+// cross-unit *buffs* currently active on `unit`. Buffs differ from perks /
+// banners / auras in that the buffed unit need not own the originating perk
+// — the buff is stamped on PerkState by another unit's cast (e.g. a Cleric
+// with bolstering_prayer healing this unit). This helper aggregates every
+// such source and is summed into the flat-armor bonus by effectiveArmorLocked.
+//
+// Currently surfaces:
+//   - bolstering_prayer (cleric bronze): BolsteringPrayerArmor while
+//     BolsteringPrayerRemaining > 0; rounded to int.
+//
+// ADD NEW FLAT-ARMOR BUFF SOURCES HERE.
+//
+// Caller holds s.mu.
+func (s *GameState) perkBonusArmorFromBuffsLocked(unit *Unit) int {
+	if unit == nil {
+		return 0
+	}
+	total := 0
+	if unit.PerkState.BolsteringPrayerRemaining > 0 && unit.PerkState.BolsteringPrayerArmor > 0 {
+		total += int(math.Round(unit.PerkState.BolsteringPrayerArmor))
+	}
+	return total
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

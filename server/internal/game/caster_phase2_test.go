@@ -845,46 +845,52 @@ func TestPhase2_SummonScoring(t *testing.T) {
 // 7.7  path_ability_defs.go loader
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestPhase2_PathAbilityLoader_GrantFileShape verifies that the actual catalog
-// files loaded into pathAbilityGrantsByKey match their expected content, using
-// the accessor (pathAbilityGrantsFor) and the list helper (ListPathAbilityGrants).
-// TestPhase2_PathAbilityLoader_NoAuthoredGrants_MechanismIntact replaces the
-// old GrantFileShape test. The placeholder Cleric/Arch Mage grant files were
-// removed (defer-caster-ability-content) so acquisition can be designed later,
-// therefore NO (path,rank) cell resolves to a real grant. This asserts that
-// deferral at the loader level AND that the lookup mechanism itself is still
-// intact via an injected synthetic grant.
+// TestPhase2_PathAbilityLoader_NoAuthoredGrants_MechanismIntact verifies that
+// the per-(path, rank) grant loader is structurally intact even though no
+// (path, rank) cell currently has an authored grant file. The cleric's
+// greater_heal lives in the path-level "abilities" override (path_defs.go),
+// NOT in this rank-grant system — the rank-grant system stays in place as a
+// composable mechanism for future "silver cleric also gets X" content.
+//
+// Both the dormant arcane_bolt def and the path-overridden greater_heal def
+// must load and resolve via getAbilityDef regardless of whether anything
+// grants them through this system.
 func TestPhase2_PathAbilityLoader_NoAuthoredGrants_MechanismIntact(t *testing.T) {
-	// The dormant defs must still load/resolve even though nothing grants them.
+	// Both ability defs must still load/resolve.
 	if _, ok := getAbilityDef("greater_heal"); !ok {
-		t.Error(`getAbilityDef("greater_heal") = _, false; dormant def must still resolve`)
+		t.Error(`getAbilityDef("greater_heal") = _, false; the def must resolve`)
 	}
 	if _, ok := getAbilityDef("arcane_bolt"); !ok {
 		t.Error(`getAbilityDef("arcane_bolt") = _, false; dormant def must still resolve`)
 	}
 
-	// No authored grant: the formerly-authored cells now resolve empty.
+	// No (path, rank) cell anywhere has an authored grant.
 	for _, c := range []struct {
 		path, rank string
 	}{
+		{unitPathCleric, unitRankBronze},
 		{unitPathCleric, unitRankSilver},
+		{unitPathCleric, unitRankGold},
+		{unitPathArchMage, unitRankBronze},
 		{unitPathArchMage, unitRankSilver},
+		{unitPathArchMage, unitRankGold},
 	} {
 		if g := pathAbilityGrantsFor(c.path, c.rank); len(g) != 0 {
-			t.Errorf("pathAbilityGrantsFor(%q,%q) = %v; want empty (grants are deferred — no authored content)",
+			t.Errorf("pathAbilityGrantsFor(%q,%q) = %v; want empty (no authored rank-grant)",
 				c.path, c.rank, g)
 		}
 	}
 
-	// No (path,rank) cell anywhere resolves to a real grant.
+	// ListPathAbilityGrants must be empty — no (path, rank) cell authored.
 	if all := ListPathAbilityGrants(); len(all) != 0 {
-		t.Errorf("ListPathAbilityGrants() = %v; want empty (all caster ability grants deferred)", all)
+		t.Errorf("ListPathAbilityGrants() = %v; want empty (rank-grant system has no authored content)", all)
 	}
 
-	// Lookup MECHANISM is still intact: an injected synthetic grant is
-	// returned by pathAbilityGrantsFor exactly as authored content would be.
-	withSyntheticPathGrant(t, unitPathCleric, unitRankGold, []string{"synth_loader_probe"})
-	got := pathAbilityGrantsFor(unitPathCleric, unitRankGold)
+	// Lookup MECHANISM is still intact: an injected synthetic grant overrides
+	// the empty content for the duration of the test and is returned exactly
+	// as authored content would be (via the same accessor).
+	withSyntheticPathGrant(t, unitPathArchMage, unitRankGold, []string{"synth_loader_probe"})
+	got := pathAbilityGrantsFor(unitPathArchMage, unitRankGold)
 	if len(got) != 1 || got[0] != "synth_loader_probe" {
 		t.Errorf("pathAbilityGrantsFor after synthetic inject = %v; want [synth_loader_probe] (lookup mechanism broken)", got)
 	}
@@ -897,11 +903,10 @@ func TestPhase2_PathAbilityLoader_NoAuthoredGrants_MechanismIntact(t *testing.T)
 }
 
 // TestPhase2_PathAbilityLoader_MissingCellIsEmptyGrant verifies that cells
-// with no ability grant file resolve to nil/empty (not an error). Since
-// defer-caster-ability-content removed all authored grant files, EVERY
-// (path,rank) cell — and any unknown path — must resolve empty.
+// with no ability grant file resolve to nil/empty (not an error). Every
+// (path, rank) cell is currently unauthored; this is a structural sanity
+// check.
 func TestPhase2_PathAbilityLoader_MissingCellIsEmptyGrant(t *testing.T) {
-	// No grant files are authored (acquisition deferred); all cells empty.
 	bronze := pathAbilityGrantsFor(unitPathCleric, unitRankBronze)
 	if len(bronze) != 0 {
 		t.Errorf("cleric/bronze: want empty grant (no file authored); got %v", bronze)

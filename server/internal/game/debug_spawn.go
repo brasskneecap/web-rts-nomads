@@ -101,14 +101,21 @@ func (s *GameState) DebugSpawnUnit(msg protocol.DebugSpawnUnitMessage, callerPla
 		unit.Rank = msg.Rank
 	}
 
+	// Fire path-ability grants for the chosen (path, rank). The natural
+	// rank-up path runs this from addUnitXPLocked, but debug spawn sets the
+	// rank directly without going through XP, so the grant has to be invoked
+	// here too. Without this, a debug-spawned Bronze Cleric would keep base
+	// "heal" instead of receiving "greater_heal" via the path-ability grant.
+	s.assignUnitPathAbilitiesLocked(unit)
+
 	// Append perks verbatim. The UI is expected to pass them in rank order
 	// (bronze, silver, gold) — the runtime hooks iterate PerkIDs as an
 	// unordered set so order only matters for tie-breaks in the HUD.
 	//
-	// applyPerkGrantedHooksLocked fires the same post-grant side-effects the
-	// natural rank-up path runs (e.g. greater_heal swaps "heal" → "greater_heal"
-	// in the unit's Abilities slice). Without this, a debug-spawned unit with
-	// the greater_heal perk would keep "heal" on its ability bar.
+	// applyPerkGrantedHooksLocked is the post-grant extension seam. It
+	// currently has no per-perk consumers (the heal → greater_heal swap
+	// moved to the path-ability path above), but is invoked here so future
+	// ability-replacing perks pick up debug-spawned units automatically.
 	for _, perkID := range msg.PerkIDs {
 		if perkID == "" {
 			continue

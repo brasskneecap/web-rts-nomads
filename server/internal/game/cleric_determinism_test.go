@@ -235,8 +235,9 @@ func TestDeterminism_GreaterHealTargetSetAcrossReplays(t *testing.T) {
 		cleric.CurrentMana = 200
 
 		if len(cleric.Abilities) > 0 && cleric.Abilities[0] == "heal" {
-			grantPerk(cleric, "greater_heal")
-			s.applyPerkGrantedHooksLocked(cleric, "greater_heal")
+			// Grant-pipeline test: promote to (cleric, bronze) so the
+			// path-ability grant runs the heal → greater_heal swap.
+			promoteToBronzeCleric(s, cleric)
 		}
 
 		def, ok := getAbilityDef("greater_heal")

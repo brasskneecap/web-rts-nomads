@@ -52,7 +52,21 @@ type pathCatalogFile struct {
 	// Mage) can size their shots independently. Purely visual; > 0 ⇒ override,
 	// omitted / 0 ⇒ keep whatever the unit def set at spawn. Validated >= 0.
 	ProjectileScale float64 `json:"projectileScale,omitempty"`
-	Ranks           map[string]pathRankStatsJSON `json:"ranks"`
+	// Abilities, when present, REPLACES the base unit def's Abilities list for
+	// units on this path. The mechanism is symmetric to Projectile / DamageType
+	// / VisionRange above: the path JSON gets to declare what its units have
+	// instead of layering a "swap" mutation on top of the base. Each entry
+	// MUST be a registered AbilityDef id (load-time panic on typo).
+	//
+	// A pointer-to-slice is used so the loader can distinguish "field absent"
+	// (no override, keep base) from "field present but empty" (this path has
+	// no abilities — strips the base list). The common case (cleric) is the
+	// "1-for-1 swap" pattern: apprentice ["heal"] → cleric ["greater_heal"].
+	// Per-instance AutoCastEnabled / AbilityCooldowns are migrated by position
+	// in assignUnitPathAbilitiesLocked so a heal-autocasted apprentice keeps
+	// autocast on greater_heal after promotion.
+	Abilities *[]string                    `json:"abilities,omitempty"`
+	Ranks     map[string]pathRankStatsJSON `json:"ranks"`
 }
 
 // pathRankStatsJSON mirrors the stat-modifier fields of pathModifierDef (the
@@ -109,6 +123,15 @@ var pathDamageTypeByPath = map[string]DamageType{}
 // omitted / zero field never zeroes the unit-def value. Applied in
 // applyRankModifiersLocked.
 var pathProjectileScaleByPath = map[string]float64{}
+
+// pathAbilitiesByPath stores the optional per-path ability list override,
+// keyed by path id (e.g. "cleric": ["greater_heal"]). A path absent from the
+// map means "no override — keep the base unit def's Abilities". A path
+// present with an empty slice means "explicit empty list" (strips the base).
+// Applied in assignUnitPathAbilitiesLocked, which composes path override +
+// rank-grants (path_ability_defs.go) + state migration in one resolution
+// pass.
+var pathAbilitiesByPath = map[string][]string{}
 
 // PathBoundsEntry is the shape served to the client: a path id plus its
 // raw bounds blob. Slice form (rather than map) gives stable ordering in
@@ -243,6 +266,26 @@ func init() {
 				}
 				if file.ProjectileScale > 0 {
 					pathProjectileScaleByPath[file.Path] = file.ProjectileScale
+				}
+				// Validate and store per-path ability override (when declared).
+				// Each id must be a registered AbilityDef so a typo fails loud
+				// at startup. Mirrors the projectile/damage-type validation.
+				if file.Abilities != nil {
+					for _, abilityID := range *file.Abilities {
+						if abilityID == "" {
+							panic(rel + `: empty ability id in "abilities"`)
+						}
+						if _, ok := getAbilityDef(abilityID); !ok {
+							panic(fmt.Sprintf("%s: ability %q in \"abilities\" has no registered AbilityDef", rel, abilityID))
+						}
+					}
+					if _, dup := pathAbilitiesByPath[file.Path]; dup {
+						panic(fmt.Sprintf("%s: duplicate path-level abilities override for %q", rel, file.Path))
+					}
+					// Copy so the stored slice is independent of the unmarshal buffer.
+					cp := make([]string, len(*file.Abilities))
+					copy(cp, *file.Abilities)
+					pathAbilitiesByPath[file.Path] = cp
 				}
 				for rankName, stats := range file.Ranks {
 					if _, ok := validRankName[rankName]; !ok {

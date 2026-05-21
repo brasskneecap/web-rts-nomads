@@ -133,34 +133,115 @@ func init() {
 	}
 }
 
-// assignUnitPathAbilitiesLocked grants unit the path-specific abilities for
-// its current (ProgressionPath, Rank). It is the ability twin of
-// assignUnitPerkLocked (perks.go) and is called from addUnitXPLocked's
-// per-crossed-rank loop, immediately after assignUnitPerkLocked.
+// assignUnitPathAbilitiesLocked re-derives unit.Abilities from its current
+// (UnitType, ProgressionPath, Rank). It is the canonical answer to "what
+// abilities does this unit have?" and is idempotent: calling it twice with
+// the same inputs produces the same result.
 //
-// Invariants (see openspec/changes/.../per-path-ability-kits/spec.md):
-//   - Idempotent: an id already on unit.Abilities is never appended twice, so
-//     it is safe across the multi-rank catch-up loop and on re-invocation.
-//   - Ordered: ids are appended in catalog "grant" order (== autocast slot
-//     order), deterministically.
-//   - RNG-free: the only progression RNG remains the path *choice* in
-//     assignUnitPathOnRankUpLocked; granting introduces none.
+// Composition (in order):
 //
-// Base-rank or path-less units get nothing (mirrors assignUnitPerkLocked's
-// unitRankBase short-circuit). Granted spell abilities need no spawn-path
-// change: autocast/cooldown maps initialise lazily on first use exactly as
-// for base abilities.
+//  1. Start with the unit def's base abilities (apprentice → ["heal"]).
+//  2. If the unit's path declares an "abilities" override in its path JSON
+//     (e.g. cleric.json's "abilities": ["greater_heal"]), REPLACE the list.
+//     This is the "1-for-1 upgrade" pattern — paths declare what their units
+//     have, full stop, with no swap mutation needed.
+//  3. For each rank R the unit has reached (bronze → silver → gold up to its
+//     current rank), append any (path, R) grants from path_ability_defs.go
+//     ADDITIVELY (de-duped). This is for future "silver cleric also gets X"
+//     content; the cleric/bronze cell intentionally has no grant file because
+//     greater_heal lives in the path-level override above.
+//
+// Per-instance AutoCastEnabled / AbilityCooldowns are migrated by position
+// when an entry changes (e.g. apprentice "heal" at index 0 → cleric
+// "greater_heal" at index 0). A heal-autocasted apprentice promoted to
+// cleric keeps autocast on greater_heal automatically.
+//
+// Called every promotion event (addUnitXPLocked rank loop) and from
+// DebugSpawnUnit after path/rank assignment. Safe to call repeatedly.
 //
 // Caller holds s.mu.
 func (s *GameState) assignUnitPathAbilitiesLocked(unit *Unit) {
-	if unit == nil || unit.Rank == unitRankBase || unit.ProgressionPath == unitPathNone {
+	if unit == nil {
 		return
 	}
-	for _, abilityID := range pathAbilityGrantsFor(unit.ProgressionPath, unit.Rank) {
-		if !containsAbility(unit, abilityID) {
-			unit.Abilities = append(unit.Abilities, abilityID)
+
+	// Step 1: base abilities from the unit def. spawnUnitFromDefLocked already
+	// initialises unit.Abilities with this list — we re-derive it here so the
+	// function is a pure (UnitType, Path, Rank) → []string recompute regardless
+	// of what unit.Abilities currently holds.
+	var newAbilities []string
+	if def, ok := getUnitDef(unit.UnitType); ok {
+		newAbilities = append([]string(nil), def.Abilities...)
+	}
+
+	// Step 2: path-level override. Applies whenever a path is assigned (even
+	// at base rank — a debug-spawned cleric/base still gets greater_heal).
+	if unit.ProgressionPath != unitPathNone {
+		if pathAbilities, ok := pathAbilitiesByPath[unit.ProgressionPath]; ok {
+			newAbilities = append([]string(nil), pathAbilities...)
 		}
 	}
+
+	// Step 3: per-(path, rank) grants. Walks every rank the unit has reached
+	// so the result is correct on a single call even if multiple ranks were
+	// crossed at once (debug spawn, large XP gain).
+	if unit.Rank != unitRankBase && unit.ProgressionPath != unitPathNone {
+		for _, rank := range ranksUpToInclusive(unit.Rank) {
+			for _, abilityID := range pathAbilityGrantsFor(unit.ProgressionPath, rank) {
+				if !containsString(newAbilities, abilityID) {
+					newAbilities = append(newAbilities, abilityID)
+				}
+			}
+		}
+	}
+
+	// Migrate AutoCastEnabled / AbilityCooldowns by position. Same-index
+	// replacements (heal → greater_heal) carry player intent and runtime
+	// timer state across the swap. Indices that don't change are skipped;
+	// indices that grow beyond the old length are fresh slots with no
+	// migration source (defaults apply).
+	for i, newID := range newAbilities {
+		if i >= len(unit.Abilities) {
+			break
+		}
+		oldID := unit.Abilities[i]
+		if oldID == newID {
+			continue
+		}
+		if unit.AutoCastEnabled != nil {
+			if v, had := unit.AutoCastEnabled[oldID]; had {
+				unit.AutoCastEnabled[newID] = v
+				delete(unit.AutoCastEnabled, oldID)
+			}
+		}
+		if unit.AbilityCooldowns != nil {
+			if v, had := unit.AbilityCooldowns[oldID]; had {
+				unit.AbilityCooldowns[newID] = v
+				delete(unit.AbilityCooldowns, oldID)
+			}
+		}
+	}
+
+	unit.Abilities = newAbilities
+}
+
+// ranksUpToInclusive returns the rank slugs from bronze through `rank` in
+// promotion order. base returns nil (no grants apply at base rank).
+// Unknown ranks return the full bronze→gold sequence (defensive — the loader
+// already panics on unknown ranks, but a runtime caller asking for an unknown
+// rank gets the maximal set rather than empty).
+func ranksUpToInclusive(rank string) []string {
+	out := make([]string, 0, 3)
+	for _, r := range []string{unitRankBronze, unitRankSilver, unitRankGold} {
+		out = append(out, r)
+		if r == rank {
+			return out
+		}
+	}
+	if rank == unitRankBase {
+		return nil
+	}
+	return out
 }
 
 // ListPathAbilityGrants returns every (path,rank) grant, sorted by key, for

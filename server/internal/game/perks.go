@@ -97,10 +97,14 @@ package game
 //   • ability_cast.go    resolveAbilityCastOnTargetLocked — onPerkAbilityResolvedLocked
 //                                                          (per ability target; battle_prayer
 //                                                          uses this to stamp the cross-unit buff)
-//   • perks.go           assignUnitPerkLocked   — applyPerkGrantedHooksLocked (post-grant side-effects)
+//   • perks.go           assignUnitPerkLocked   — applyPerkGrantedHooksLocked (post-grant side-effects;
+//                                                  currently no consumers — kept as extension seam)
 //   • debug_spawn.go     DebugSpawnUnit         — applyPerkGrantedHooksLocked (per appended perk;
-//                                                  ensures greater_heal's swap fires for manually
-//                                                  configured debug units too)
+//                                                  forwards to the same seam)
+//   • path_ability_defs.go assignUnitPathAbilitiesLocked — derives unit.Abilities from path-level
+//                                                  override (path JSON's "abilities" field) plus any
+//                                                  rank-specific grants; called on every promotion
+//                                                  and from DebugSpawnUnit.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import (
@@ -423,22 +427,37 @@ type UnitPerkState struct {
 	// Per-attacker; different attackers' guards are independent.
 	MarksmanFireInProgress bool
 
-	// ── battle_prayer (cleric bronze) ────────────────────────────────────────
-	// Cross-unit buff applied to every target a Battle-Prayer-Cleric heals.
-	// Lives on the HEALED TARGET's PerkState (not the Cleric's), matching the
-	// cross-unit debuff convention for WeakenedRemaining / TauntRemaining.
-	// Decays in state.go Update() per-unit loop, not in tickUnitPerkStateLocked,
-	// because the buffed unit may not own the battle_prayer perk itself.
+	// ── cleric heal-buff perks (bronze) ──────────────────────────────────────
+	// Cross-unit buffs applied to every target a Cleric heals when the Cleric
+	// owns the corresponding perk. The buff lives on the HEALED TARGET's
+	// PerkState (not the Cleric's), matching the cross-unit debuff convention
+	// for WeakenedRemaining / TauntRemaining. Decays in state.go Update() per-
+	// unit loop, not in tickUnitPerkStateLocked, because the buffed unit may
+	// not own the originating perk itself.
 	//
-	// BattlePrayerRemaining: seconds left on the buff. 0 = inactive.
-	// BattlePrayerMultiplier: attack-speed fraction (e.g. 0.25 = +25%).
-	//   Set to Config["attackSpeedMultiplier"] on application and carried on
-	//   the buff so the value travels with the buff regardless of perk re-tuning.
-	// Refresh semantics: refresh-longer (max of current vs new duration) and
-	//   refresh-stronger (max of current vs new multiplier) — same as the
-	//   existing mark-stack refresh rules.
+	// Refresh semantics for both: refresh-longer (max of current vs new
+	// duration) and refresh-stronger (max of current vs new bonus value) —
+	// same as the existing mark-stack refresh rules. The two buffs are
+	// independent fields: a unit healed by two Clerics (one of each flavor)
+	// gains both simultaneously.
+
+	// battle_prayer — temporary attack-speed bonus.
+	//   BattlePrayerRemaining:  seconds left on the buff. 0 = inactive.
+	//   BattlePrayerMultiplier: attack-speed fraction (e.g. 0.25 = +25%).
+	//     Set to Config["attackSpeedMultiplier"] on application; carried on
+	//     the buff so the value travels with it independent of perk re-tuning.
 	BattlePrayerRemaining  float64
 	BattlePrayerMultiplier float64
+
+	// bolstering_prayer — temporary flat armor bonus.
+	//   BolsteringPrayerRemaining: seconds left on the buff. 0 = inactive.
+	//   BolsteringPrayerArmor:     flat armor bonus while the buff is active.
+	//     Set to Config["armorBonus"] on application; carried on the buff so
+	//     the value travels with it independent of perk re-tuning. Stored as
+	//     float64 to mirror the BattlePrayer pair; rounded to int in
+	//     effectiveArmorLocked.
+	BolsteringPrayerRemaining float64
+	BolsteringPrayerArmor     float64
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -649,66 +668,21 @@ func (s *GameState) assignUnitPerkLocked(unit *Unit) {
 // applyPerkGrantedHooksLocked runs the post-grant side-effects for one perk id
 // that was just appended to unit.PerkIDs. Centralised so every path that adds
 // a perk (rank-up roll, debug spawn, future scripted grants) picks up the same
-// behaviour — most perks are runtime-only and don't need a hook here, but a
-// few (greater_heal swap, hypothetical future ability-replacing perks) mutate
-// the unit's kit at grant time and MUST fire regardless of how the perk got
-// onto the unit.
+// behaviour — most perks are runtime-only and don't need a hook here, but
+// future ability-replacing perks may need to mutate the unit's kit at grant
+// time and MUST fire regardless of how the perk got onto the unit.
+//
+// Currently no perk consumes this seam — the heal → greater_heal swap that
+// used to live here moved to assignUnitPathAbilitiesLocked when Greater Heal
+// became a Cleric path baseline rather than a perk. The function is kept as
+// the documented extension point for future ability-replacing perks.
 //
 // Caller holds s.mu.
 func (s *GameState) applyPerkGrantedHooksLocked(unit *Unit, perkID string) {
 	if unit == nil {
 		return
 	}
-	switch perkID {
-	case "greater_heal":
-		s.applyGreaterHealPerkSwapLocked(unit)
-	}
-}
-
-// applyGreaterHealPerkSwapLocked replaces "heal" with "greater_heal" in the
-// unit's Abilities slice (slot preserved) and migrates AutoCastEnabled /
-// AbilityCooldowns from the old key to the new one. Safe no-op when "heal" is
-// not present.
-//
-// Caller holds s.mu.
-func (s *GameState) applyGreaterHealPerkSwapLocked(unit *Unit) {
-	if unit == nil {
-		return
-	}
-	// Find "heal" in the abilities slice.
-	swapIdx := -1
-	for i, id := range unit.Abilities {
-		if id == "heal" {
-			swapIdx = i
-			break
-		}
-	}
-	if swapIdx < 0 {
-		return // "heal" not present; safe no-op
-	}
-	unit.Abilities[swapIdx] = "greater_heal"
-
-	// Migrate AutoCastEnabled.
-	if unit.AutoCastEnabled != nil {
-		if v, ok := unit.AutoCastEnabled["heal"]; ok {
-			if unit.AutoCastEnabled == nil {
-				unit.AutoCastEnabled = make(map[string]bool, 1)
-			}
-			unit.AutoCastEnabled["greater_heal"] = v
-			delete(unit.AutoCastEnabled, "heal")
-		}
-	}
-
-	// Migrate AbilityCooldowns.
-	if unit.AbilityCooldowns != nil {
-		if v, ok := unit.AbilityCooldowns["heal"]; ok {
-			if unit.AbilityCooldowns == nil {
-				unit.AbilityCooldowns = make(map[string]float64, 1)
-			}
-			unit.AbilityCooldowns["greater_heal"] = v
-			delete(unit.AbilityCooldowns, "heal")
-		}
-	}
+	_ = perkID // no per-perk hooks currently; switch case added here when needed
 }
 
 // perkPoolForRankLocked returns the list of perk defs a unit is eligible to be
@@ -1011,15 +985,16 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 // resolveAbilityCastLocked. It fires perk side-effects that are gated on
 // ability resolution rather than on the attack cycle.
 //
-// battle_prayer: if the caster owns battle_prayer and the ability is heal-
-// category, stamp the buff onto target using refresh-max semantics: each of
-// BattlePrayerRemaining and BattlePrayerMultiplier is set to
-// max(current, configured value). This lets a re-cast on an already-buffed
-// target extend the duration without ever reducing it.
+// Cleric heal-buff perks (battle_prayer, bolstering_prayer): if the caster
+// owns the perk and the ability is heal-category, stamp the corresponding
+// buff onto the target using refresh-max semantics. Each (remaining, bonus)
+// pair is set independently to max(current, configured value), so a re-cast
+// on an already-buffed target extends the duration without ever reducing it
+// and never weakens an existing stronger buff.
 //
-// The buff lives on target.PerkState (cross-unit, same as WeakenedRemaining)
-// so perkAttackSpeedBonusLocked can read it even when the target does not own
-// battle_prayer itself.
+// Both buffs live on target.PerkState (cross-unit, same as WeakenedRemaining)
+// so the consuming sites (perkAttackSpeedBonusLocked, effectiveArmorLocked)
+// can read them even when the target does not own the originating perk itself.
 //
 // Caller holds s.mu.
 func (s *GameState) onPerkAbilityResolvedLocked(caster *Unit, def AbilityDef, target *Unit) {
@@ -1042,14 +1017,29 @@ func (s *GameState) onPerkAbilityResolvedLocked(caster *Unit, def AbilityDef, ta
 			if duration <= 0 || mult <= 0 {
 				continue
 			}
-			// Refresh-max semantics: take the longer duration and stronger
-			// multiplier independently so a re-cast on a fully-buffed target
-			// never downgrades the buff.
 			if duration > target.PerkState.BattlePrayerRemaining {
 				target.PerkState.BattlePrayerRemaining = duration
 			}
 			if mult > target.PerkState.BattlePrayerMultiplier {
 				target.PerkState.BattlePrayerMultiplier = mult
+			}
+
+		case "bolstering_prayer":
+			pDef := perkDefByID("bolstering_prayer")
+			if pDef == nil {
+				continue
+			}
+			cfg := pDef.ConfigForRank(caster.Rank)
+			duration := cfg["buffDurationSeconds"]
+			armor := cfg["armorBonus"]
+			if duration <= 0 || armor <= 0 {
+				continue
+			}
+			if duration > target.PerkState.BolsteringPrayerRemaining {
+				target.PerkState.BolsteringPrayerRemaining = duration
+			}
+			if armor > target.PerkState.BolsteringPrayerArmor {
+				target.PerkState.BolsteringPrayerArmor = armor
 			}
 		}
 	}

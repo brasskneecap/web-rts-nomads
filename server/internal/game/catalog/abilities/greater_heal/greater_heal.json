@@ -5,7 +5,7 @@
   "category": "heal",
   "targetCount": 3,
   "manaCost": 10,
-  "healAmount": 10,
+  "healAmount": 15,
   "castRange": "match_attack_range",
   "castTime": 1.0,
   "cooldown": 3,

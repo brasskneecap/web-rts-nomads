@@ -99,25 +99,90 @@ func (s *GameState) resolveFocusHealTargetLocked(caster *Unit, def AbilityDef) *
 	if focus.HP < focus.MaxHP {
 		return focus
 	}
-	// Full-HP focus: only cast to refresh battle_prayer when the buff is
-	// stale enough to be worth a recast.
-	if !containsString(caster.PerkIDs, "battle_prayer") {
+	// Full-HP focus: only cast to refresh a heal-buff perk when the buff is
+	// stale enough to be worth a recast. Covers battle_prayer and
+	// bolstering_prayer via the shared healBuffRecastSpecs registry — either-
+	// stale qualifies if the caster owns both.
+	if !s.casterOwnsAnyHealBuffPerkLocked(caster) {
 		return nil
 	}
-	bpDef := perkDefByID("battle_prayer")
-	if bpDef == nil {
-		return nil
-	}
-	cfg := bpDef.ConfigForRank(caster.Rank)
-	duration := cfg["buffDurationSeconds"]
-	thresholdPct := cfg["recastThresholdPercent"]
-	if duration <= 0 || thresholdPct <= 0 {
-		return nil
-	}
-	if focus.PerkState.BattlePrayerRemaining < thresholdPct*duration {
+	if s.focusHasStaleHealBuffLocked(caster, focus) {
 		return focus
 	}
 	return nil
+}
+
+// healBuffRecastSpec describes one cleric "heal-buff" perk for the purposes
+// of the autocast recast-threshold path: which perk it is, how to read the
+// buff's remaining-seconds field off a target's PerkState, and which config
+// key holds the buff's full duration.
+//
+// The recast threshold itself is read from the same perk's Config[
+// "recastThresholdPercent"] so each perk can be tuned independently. Adding
+// a future heal-buff perk (e.g. silver/gold "spirit_link") is a single new
+// entry here plus the matching fields on UnitPerkState and decay loop.
+type healBuffRecastSpec struct {
+	perkID         string
+	remainingField func(*UnitPerkState) float64
+	durationKey    string
+}
+
+var healBuffRecastSpecs = []healBuffRecastSpec{
+	{
+		perkID:         "battle_prayer",
+		remainingField: func(ps *UnitPerkState) float64 { return ps.BattlePrayerRemaining },
+		durationKey:    "buffDurationSeconds",
+	},
+	{
+		perkID:         "bolstering_prayer",
+		remainingField: func(ps *UnitPerkState) float64 { return ps.BolsteringPrayerRemaining },
+		durationKey:    "buffDurationSeconds",
+	},
+}
+
+// casterOwnsAnyHealBuffPerkLocked reports whether caster owns at least one
+// perk in healBuffRecastSpecs. Used to gate the full-HP focus recast path —
+// a Cleric without any of these perks falls through to the "don't cast on
+// full-HP allies" default.
+func (s *GameState) casterOwnsAnyHealBuffPerkLocked(caster *Unit) bool {
+	if caster == nil {
+		return false
+	}
+	for _, spec := range healBuffRecastSpecs {
+		if containsString(caster.PerkIDs, spec.perkID) {
+			return true
+		}
+	}
+	return false
+}
+
+// focusHasStaleHealBuffLocked reports whether ANY heal-buff perk the caster
+// owns has its corresponding buff on focus below the recast threshold. Each
+// owned perk independently reads its own duration and recast-percent config
+// — different perks may use different tunings cleanly.
+func (s *GameState) focusHasStaleHealBuffLocked(caster, focus *Unit) bool {
+	if caster == nil || focus == nil {
+		return false
+	}
+	for _, spec := range healBuffRecastSpecs {
+		if !containsString(caster.PerkIDs, spec.perkID) {
+			continue
+		}
+		pDef := perkDefByID(spec.perkID)
+		if pDef == nil {
+			continue
+		}
+		cfg := pDef.ConfigForRank(caster.Rank)
+		duration := cfg[spec.durationKey]
+		thresholdPct := cfg["recastThresholdPercent"]
+		if duration <= 0 || thresholdPct <= 0 {
+			continue
+		}
+		if spec.remainingField(&focus.PerkState) < thresholdPct*duration {
+			return true
+		}
+	}
+	return false
 }
 
 func init() {
@@ -129,18 +194,28 @@ func init() {
 // buildCastTargetSetLocked constructs the full []*Unit slice that
 // resolveAbilityCastLocked applies the ability's effect to. Handles both
 // single-target (def.TargetCount == 1) and multi-target abilities, plus the
-// force-include logic for battle_prayer (task 2.3 / 6.6).
+// force-include logic for heal-buff perks (battle_prayer, bolstering_prayer).
 //
 // For TargetCount == 1 the result is always [primary].
 //
 // For TargetCount > 1:
-//   - Collect valid candidates (alive, visible, friendly, in cast range, below
-//     full HP), sorted ascending by HP%, ties broken by ascending unit.ID.
+//   - Collect valid candidates (alive, visible, friendly, in cast range),
+//     sorted ascending by HP%, ties broken by ascending unit.ID.
+//     - Without a focus target, full-HP allies are EXCLUDED — the cleric saves
+//       casts for actual injuries.
+//     - With a focus target set, full-HP allies are INCLUDED so the AoE
+//       slots (2 and 3 for greater_heal) fill with nearby allies even when
+//       nothing else is injured. Injured allies still sort first, so they
+//       are preferred whenever they exist. This keeps the "focus reserves
+//       the cleric for itself" semantic intact (the cast still fires for
+//       the focus's sake) while making the AoE benefit non-wasteful when
+//       buff perks like battle_prayer or bolstering_prayer are propagating
+//       through the cast.
 //   - primary is always guaranteed in the set (it was validated by the caller);
 //     if not already in the top-N it displaces the worst natural pick.
-//   - If the caster owns battle_prayer and FocusTargetID resolves to a valid
-//     in-range ally, that unit is force-included (even at full HP), displacing
-//     the highest-HP-percent natural pick when the set is full.
+//   - If the caster owns any heal-buff perk (battle_prayer / bolstering_prayer)
+//     and FocusTargetID resolves to a valid in-range ally, that unit is force-
+//     included (even at full HP) so the buff(s) get refreshed.
 //   - Truncate to def.TargetCount.
 //
 // Caller holds s.mu.
@@ -149,7 +224,13 @@ func (s *GameState) buildCastTargetSetLocked(caster *Unit, def AbilityDef, prima
 		return []*Unit{primary}
 	}
 
-	// Collect candidates below full HP, in cast range, friendly, alive/visible.
+	// Focus-active casts widen the candidate pool to include full-HP allies
+	// so greater_heal's AoE slots fill instead of leaving the cast as a
+	// single-target heal. Without a focus the standard "don't heal full-HP
+	// allies" filter applies.
+	includeFullHP := caster != nil && caster.FocusTargetID != 0
+
+	// Collect candidates in cast range, friendly, alive/visible.
 	// s.Units is a slice so iteration order is deterministic.
 	cands := make([]*Unit, 0, def.TargetCount+2)
 	for _, u := range s.Units {
@@ -162,8 +243,17 @@ func (s *GameState) buildCastTargetSetLocked(caster *Unit, def AbilityDef, prima
 		if !s.canAbilityTargetUnitLocked(def, caster, u) {
 			continue
 		}
-		if u.HP >= u.MaxHP {
-			continue // full HP skipped by default; force-include handles exceptions
+		if includeFullHP && caster != nil && u.ID == caster.ID {
+			// Focus-widened pool: the user-facing intent is "fill slots 2-3
+			// with OTHER allies near the healer." Without this exclusion the
+			// caster (full HP, in range, self-targetable) would sort into a
+			// slot and displace a genuine ally. The non-focus path leaves the
+			// caster eligible as before so an injured self-heal can still
+			// happen via the standard multi-target selection.
+			continue
+		}
+		if !includeFullHP && u.HP >= u.MaxHP {
+			continue // standard "save heals for injuries" filter
 		}
 		if !def.WithinCastRange(caster, u) {
 			continue
@@ -183,8 +273,9 @@ func (s *GameState) buildCastTargetSetLocked(caster *Unit, def AbilityDef, prima
 	// Guarantee primary is in the set.
 	cands = castTargetForceInclude(cands, primary, def.TargetCount)
 
-	// Force-include focus when caster owns battle_prayer (even at full HP).
-	if containsString(caster.PerkIDs, "battle_prayer") && caster.FocusTargetID != 0 {
+	// Force-include focus when caster owns any heal-buff perk (even at full HP).
+	// Covers battle_prayer and bolstering_prayer via the shared registry.
+	if s.casterOwnsAnyHealBuffPerkLocked(caster) && caster.FocusTargetID != 0 {
 		focus := s.getUnitByIDLocked(caster.FocusTargetID)
 		if focus != nil && focus.HP > 0 && focus.Visible &&
 			s.unitsFriendlyLocked(caster, focus) &&

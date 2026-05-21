@@ -59,46 +59,22 @@ func spawnClericTestAlly(t *testing.T, s *GameState, x, y float64) *Unit {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 14.1 — greater_heal perk swaps ability and migrates state
+// 14.1 — Heal → greater_heal swap is covered in greater_heal_swap_test.go.
+// (The swap moved from a perk grant to the (cleric, bronze) path-ability grant
+// when Greater Heal became a Cleric path baseline. The dedicated test file
+// exercises both the path-grant entry point and the swap helper itself.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestGreaterHeal_PerkSwapsAbility verifies that granting greater_heal replaces
-// "heal" in Abilities and migrates AutoCastEnabled / AbilityCooldowns.
-func TestGreaterHeal_PerkSwapsAbility(t *testing.T) {
-	s, cleric := newClericBronzeState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "heal" {
-		t.Skipf("apprentice Abilities[0] != \"heal\"; got %v", cleric.Abilities)
-	}
-
-	cleric.AutoCastEnabled["heal"] = true
-	cleric.AbilityCooldowns["heal"] = 0.8
-
-	grantPerk(cleric, "greater_heal")
-	s.applyPerkGrantedHooksLocked(cleric, "greater_heal")
-
-	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "greater_heal" {
-		t.Errorf("Abilities[0] = %q, want \"greater_heal\"", func() string {
-			if len(cleric.Abilities) == 0 {
-				return "<empty>"
-			}
-			return cleric.Abilities[0]
-		}())
-	}
-	if !cleric.AutoCastEnabled["greater_heal"] {
-		t.Error("AutoCastEnabled[\"greater_heal\"] should be true after swap")
-	}
-	if _, still := cleric.AutoCastEnabled["heal"]; still {
-		t.Error("AutoCastEnabled[\"heal\"] key should be absent after swap")
-	}
-	if cleric.AbilityCooldowns["greater_heal"] != 0.8 {
-		t.Errorf("AbilityCooldowns[\"greater_heal\"] = %.2f, want 0.8", cleric.AbilityCooldowns["greater_heal"])
-	}
-	if _, still := cleric.AbilityCooldowns["heal"]; still {
-		t.Error("AbilityCooldowns[\"heal\"] key should be absent after swap")
-	}
+// promoteToBronzeCleric drives the canonical "promote unit to (cleric, bronze)"
+// path-ability grant flow inside a test. Mirrors what addUnitXPLocked does on a
+// natural rank-up: set path + rank, then run assignUnitPathAbilitiesLocked.
+// The heal → greater_heal swap fires inside the grant helper.
+//
+// Must be called under s.mu.
+func promoteToBronzeCleric(s *GameState, cleric *Unit) {
+	cleric.ProgressionPath = unitPathCleric
+	cleric.Rank = unitRankBronze
+	s.assignUnitPathAbilitiesLocked(cleric)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,8 +88,9 @@ func TestGreaterHeal_TargetsThreeLowestHPAllies(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	grantPerk(cleric, "greater_heal")
-	s.applyPerkGrantedHooksLocked(cleric, "greater_heal")
+	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
+	// grant runs the heal → greater_heal swap.
+	promoteToBronzeCleric(s, cleric)
 
 	def, ok := getAbilityDef("greater_heal")
 	if !ok {
@@ -211,8 +188,9 @@ func TestGreaterHeal_ForceIncludesFocus(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	grantPerk(cleric, "greater_heal")
-	s.applyPerkGrantedHooksLocked(cleric, "greater_heal")
+	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
+	// grant runs the heal → greater_heal swap.
+	promoteToBronzeCleric(s, cleric)
 	grantPerk(cleric, "battle_prayer")
 
 	def, ok := getAbilityDef("greater_heal")
@@ -263,6 +241,145 @@ func TestGreaterHeal_ForceIncludesFocus(t *testing.T) {
 		if tgt.ID == d.ID {
 			t.Errorf("d (70%% HP) should be displaced by force-include of focus; found in set")
 		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Focus-active multi-target fill — full-HP allies included
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestGreaterHeal_FocusActiveFillsWithFullHPAllies verifies the focus-aware
+// AoE-fill behaviour: when a cleric has a focus target and greater_heal casts,
+// the other two slots fill with allies in cast range REGARDLESS of HP — so
+// nothing-is-injured-but-buff-needs-refresh scenarios don't waste the cast as a
+// single-target heal. Injured allies still sort first, so they're preferred
+// when they exist.
+//
+// Scenario:
+//   - focus: full HP
+//   - one nearby ally: also full HP
+//   - one nearby ally: also full HP
+//
+// Expected: all three appear in the target set.
+func TestGreaterHeal_FocusActiveFillsWithFullHPAllies(t *testing.T) {
+	s, cleric := newClericBronzeState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	promoteToBronzeCleric(s, cleric)
+
+	def, ok := getAbilityDef("greater_heal")
+	if !ok {
+		t.Fatal("greater_heal ability def not found")
+	}
+	if def.TargetCount < 3 {
+		t.Skipf("greater_heal TargetCount = %d, want >= 3", def.TargetCount)
+	}
+
+	// Three full-HP allies; the first becomes the focus.
+	focusUnit := spawnClericTestAlly(t, s, 430, 400)
+	focusUnit.HP = focusUnit.MaxHP
+	otherA := spawnClericTestAlly(t, s, 440, 400)
+	otherA.HP = otherA.MaxHP
+	otherB := spawnClericTestAlly(t, s, 450, 400)
+	otherB.HP = otherB.MaxHP
+
+	s.RequestSetFocusTargetLocked("p1", cleric.ID, focusUnit.ID)
+
+	targets := s.buildCastTargetSetLocked(cleric, def, focusUnit)
+
+	if len(targets) != 3 {
+		t.Fatalf("target set size = %d, want 3 (focus + 2 nearby full-HP allies)", len(targets))
+	}
+
+	want := map[int]bool{focusUnit.ID: true, otherA.ID: true, otherB.ID: true}
+	for _, tgt := range targets {
+		if !want[tgt.ID] {
+			t.Errorf("unexpected target id %d in set; want %v", tgt.ID, want)
+		}
+	}
+	for id := range want {
+		found := false
+		for _, tgt := range targets {
+			if tgt.ID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected ally id %d in target set", id)
+		}
+	}
+}
+
+// TestGreaterHeal_FocusActivePrefersInjuredOverFullHP verifies that the
+// focus-active widened candidate pool still SORTS injured allies first, so
+// the cleric prefers to spend slots on real heals when injuries exist near
+// the focus.
+//
+// Scenario:
+//   - focus: 30% HP (injured — drives the primary)
+//   - injured ally B: 50% HP
+//   - full-HP ally C
+//   - full-HP ally D (further away — kept in range)
+//
+// Expected: target set = {focus, B, one of C/D}. C/D is the fallback slot.
+func TestGreaterHeal_FocusActivePrefersInjuredOverFullHP(t *testing.T) {
+	s, cleric := newClericBronzeState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	promoteToBronzeCleric(s, cleric)
+
+	def, ok := getAbilityDef("greater_heal")
+	if !ok {
+		t.Fatal("greater_heal ability def not found")
+	}
+	if def.TargetCount < 3 {
+		t.Skipf("greater_heal TargetCount = %d, want >= 3", def.TargetCount)
+	}
+
+	focusUnit := spawnClericTestAlly(t, s, 430, 400)
+	focusUnit.MaxHP = 100
+	focusUnit.HP = 30
+	injuredB := spawnClericTestAlly(t, s, 440, 400)
+	injuredB.MaxHP = 100
+	injuredB.HP = 50
+	fullC := spawnClericTestAlly(t, s, 450, 400)
+	fullC.HP = fullC.MaxHP
+	fullD := spawnClericTestAlly(t, s, 460, 400)
+	fullD.HP = fullD.MaxHP
+
+	s.RequestSetFocusTargetLocked("p1", cleric.ID, focusUnit.ID)
+
+	targets := s.buildCastTargetSetLocked(cleric, def, focusUnit)
+
+	if len(targets) != 3 {
+		t.Fatalf("target set size = %d, want 3", len(targets))
+	}
+
+	// Focus and injuredB MUST be in the set (lowest HP%).
+	for _, want := range []int{focusUnit.ID, injuredB.ID} {
+		found := false
+		for _, tgt := range targets {
+			if tgt.ID == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("ally id %d missing from target set; injured allies must be prioritized", want)
+		}
+	}
+	// One slot for a full-HP fallback; C and D are eligible.
+	fillFound := false
+	for _, tgt := range targets {
+		if tgt.ID == fullC.ID || tgt.ID == fullD.ID {
+			fillFound = true
+		}
+	}
+	if !fillFound {
+		t.Errorf("expected one of full-HP allies C/D to fill slot 3; got %v", targets)
 	}
 }
 
@@ -332,8 +449,9 @@ func TestBattlePrayer_BuffAppliedToAllGreaterHealTargets(t *testing.T) {
 		s.mu.Unlock()
 		t.Skipf("apprentice Abilities[0] != \"heal\"")
 	}
-	grantPerk(cleric, "greater_heal")
-	s.applyPerkGrantedHooksLocked(cleric, "greater_heal")
+	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
+	// grant runs the heal → greater_heal swap.
+	promoteToBronzeCleric(s, cleric)
 	grantPerk(cleric, "battle_prayer")
 
 	// Three injured allies.

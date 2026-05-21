@@ -1,14 +1,15 @@
 package game
 
-// caster_defer_test.go — tests for the defer-caster-ability-content change.
+// caster_defer_test.go — grant-engine tests via synthetic fixtures.
 //
-// The placeholder Cleric/Arch Mage grant files were removed (greater_heal /
-// arcane_bolt acquisition is deferred), so the Phase-2 content-asserting
-// promotion tests were deleted. The per-path grant ENGINE
-// (assignUnitPathAbilitiesLocked + the (path,rank) lookup) still ships and
-// must stay covered — these tests exercise it via an injected SYNTHETIC grant
-// so coverage has zero dependence on authored catalog content. The snapshot
-// mechanism is re-tested by adding an ability id directly (no promotion).
+// The per-(path, rank) ability-grant ENGINE
+// (assignUnitPathAbilitiesLocked + the (path, rank) lookup) ships and is
+// covered here via synthetic injection so coverage has zero dependence on
+// authored catalog content. No (path, rank) cell currently has an authored
+// grant file — the cleric's greater_heal lives in the path-level "abilities"
+// override on cleric.json (see path_defs.go's pathAbilitiesByPath), NOT in
+// this rank-grant system. The rank-grant system remains for future
+// "silver cleric also gets X" composable content.
 //
 // No hardcoded balance/tunable numbers: ids are synthetic, ranks come from
 // constants, XP thresholds are derived from rank defs.
@@ -48,8 +49,14 @@ func abilitiesContain(abilities []string, id string) bool {
 
 // TestDefer_GrantEngine_AppendsInOrderAndIdempotent drives
 // assignUnitPathAbilitiesLocked directly with a synthetic 2-id grant and
-// asserts: granted ids are appended after the base abilities in catalog order;
-// a second invocation is idempotent (append-iff-absent).
+// asserts: granted ids are appended in catalog order; a second invocation is
+// idempotent.
+//
+// Uses unitPathArchMage to exercise the rank-grant engine independently of
+// any path-level "abilities" override (cleric.json's override would replace
+// the base ability list, masking the "appended after base" assertion). The
+// arch_mage path has no override, so its grant behavior matches the test's
+// "base preserved as prefix" expectation.
 func TestDefer_GrantEngine_AppendsInOrderAndIdempotent(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
@@ -61,8 +68,8 @@ func TestDefer_GrantEngine_AppendsInOrderAndIdempotent(t *testing.T) {
 	}
 	base := append([]string(nil), app.Abilities...)
 
-	withSyntheticPathGrant(t, unitPathCleric, unitRankSilver, []string{"synth_grant_a", "synth_grant_b"})
-	app.ProgressionPath = unitPathCleric
+	withSyntheticPathGrant(t, unitPathArchMage, unitRankSilver, []string{"synth_grant_a", "synth_grant_b"})
+	app.ProgressionPath = unitPathArchMage
 	app.Rank = unitRankSilver
 
 	s.assignUnitPathAbilitiesLocked(app)
@@ -138,12 +145,14 @@ func TestDefer_GrantEngine_MultiRankCatchupNoDuplicates(t *testing.T) {
 // engine itself uses no RNG — only the path *choice* does, and the test bypasses
 // it by forcing ProgressionPath.
 //
-// Note: a Silver rank-up now ALSO triggers assignUnitPerkLocked, whose
-// Bronze-cascade fallback can roll greater_heal — and greater_heal's post-grant
-// hook swaps "heal" → "greater_heal" in unit.Abilities. That perk roll is
-// legitimately seed-dependent, so this test deliberately checks the grant
-// engine's contribution (the synthetic id) rather than asserting byte-equal
-// ability slices across seeds.
+// Note: a Silver rank-up also triggers assignUnitPerkLocked, whose
+// Bronze-cascade fallback can roll any of the Cleric Bronze perks. The
+// path-level "abilities" override on cleric.json (path_defs.go's
+// pathAbilitiesByPath) independently swaps base "heal" for "greater_heal"
+// on every promotion regardless of seed. Both effects are deterministic
+// under a fixed seed but vary across seeds, so this test checks the grant
+// engine's contribution (the synthetic id appended for the Silver grant)
+// rather than asserting byte-equal ability slices across seeds.
 func TestDefer_GrantEngine_RNGFree(t *testing.T) {
 	withSyntheticPathGrant(t, unitPathCleric, unitRankSilver, []string{"synth_rngfree"})
 
@@ -246,5 +255,21 @@ func TestDefer_GrantedAbilityInSnapshot(t *testing.T) {
 		if sn.ID == "greater_heal" && !sn.AutoCast {
 			t.Error("after toggle, snapshot AutoCast=false; want true")
 		}
+	}
+}
+
+// TestPathAbilities_ClericPathOverridesHealWithGreaterHeal is the real-catalog
+// regression guard for the path-level "abilities" override on cleric.json.
+// It asserts that pathAbilitiesByPath["cleric"] resolves to ["greater_heal"]
+// — i.e. that the override field on cleric.json is correctly authored and
+// loaded. The runtime effect (unit.Abilities = ["greater_heal"] after a
+// promotion) is covered separately in greater_heal_swap_test.go.
+func TestPathAbilities_ClericPathOverridesHealWithGreaterHeal(t *testing.T) {
+	got, ok := pathAbilitiesByPath[unitPathCleric]
+	if !ok {
+		t.Fatalf("pathAbilitiesByPath[%q] not present; cleric.json's \"abilities\" override is missing or unloaded", unitPathCleric)
+	}
+	if len(got) != 1 || got[0] != "greater_heal" {
+		t.Errorf("pathAbilitiesByPath[%q] = %v; want [\"greater_heal\"]", unitPathCleric, got)
 	}
 }

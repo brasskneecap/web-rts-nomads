@@ -11,6 +11,7 @@
   "projectile": "holy_bolt",
   "damageType": "holy",
   "projectileScale": 1.0,
+  "abilities": ["greater_heal"],
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.10,

@@ -105,8 +105,9 @@ func TestMultiTarget_ThreeInjuredAlliesAllReceiveHeal(t *testing.T) {
 	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "heal" {
 		t.Skipf("apprentice Abilities[0] != \"heal\"")
 	}
-	grantPerk(cleric, "greater_heal")
-	s.applyPerkGrantedHooksLocked(cleric, "greater_heal")
+	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
+	// grant runs the heal → greater_heal swap.
+	promoteToBronzeCleric(s, cleric)
 
 	def, ok := getAbilityDef("greater_heal")
 	if !ok {
@@ -146,8 +147,9 @@ func TestMultiTarget_OnlyOneAllyInRange(t *testing.T) {
 	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "heal" {
 		t.Skipf("apprentice Abilities[0] != \"heal\"")
 	}
-	grantPerk(cleric, "greater_heal")
-	s.applyPerkGrantedHooksLocked(cleric, "greater_heal")
+	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
+	// grant runs the heal → greater_heal swap.
+	promoteToBronzeCleric(s, cleric)
 
 	def, ok := getAbilityDef("greater_heal")
 	if !ok {
@@ -177,8 +179,9 @@ func TestMultiTarget_FullHPAlliesExcludedByDefault(t *testing.T) {
 	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "heal" {
 		t.Skipf("apprentice Abilities[0] != \"heal\"")
 	}
-	grantPerk(cleric, "greater_heal")
-	s.applyPerkGrantedHooksLocked(cleric, "greater_heal")
+	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
+	// grant runs the heal → greater_heal swap.
+	promoteToBronzeCleric(s, cleric)
 
 	def, ok := getAbilityDef("greater_heal")
 	if !ok {
@@ -316,8 +319,9 @@ func TestMultiTarget_PostCastHookCalledPerTarget(t *testing.T) {
 		s.mu.Unlock()
 		t.Skipf("apprentice Abilities[0] != \"heal\"")
 	}
-	grantPerk(cleric, "greater_heal")
-	s.applyPerkGrantedHooksLocked(cleric, "greater_heal")
+	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
+	// grant runs the heal → greater_heal swap.
+	promoteToBronzeCleric(s, cleric)
 	grantPerk(cleric, "battle_prayer")
 
 	def, ok := getAbilityDef("greater_heal")
@@ -437,8 +441,9 @@ func TestAbilitySnapshot_TargetCountGreaterHeal(t *testing.T) {
 		s.mu.Unlock()
 		t.Skip("app doesn't have heal in slot 0")
 	}
-	grantPerk(app, "greater_heal")
-	s.applyPerkGrantedHooksLocked(app, "greater_heal")
+	// Grant-pipeline test: promote the apprentice to (cleric, bronze) so the
+	// path-ability grant runs the heal → greater_heal swap.
+	promoteToBronzeCleric(s, app)
 	s.mu.Unlock()
 
 	s.mu.RLock()

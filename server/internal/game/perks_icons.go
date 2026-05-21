@@ -228,6 +228,14 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 		addIcon("battle_prayer", 1)
 	}
 
+	// bolstering_prayer recipient buff: surfaced under the same cross-unit
+	// rule as battle_prayer above — the buff lives on the healed target, so
+	// any unit with BolsteringPrayerRemaining > 0 shows the icon, perk-owner
+	// or not. Both icons co-exist when both buffs are simultaneously active.
+	if unit.PerkState.BolsteringPrayerRemaining > 0 {
+		addIcon("bolstering_prayer", 1)
+	}
+
 	return active
 }
 

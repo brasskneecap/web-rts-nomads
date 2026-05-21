@@ -1879,6 +1879,18 @@ func (s *GameState) Update(dt float64) {
 			}
 		}
 
+		// Bolstering Prayer buff decay — cross-unit (same pattern as
+		// BattlePrayer above). Lives on any healed unit even if they don't own
+		// the bolstering_prayer perk. The flat armor bonus stored alongside
+		// the timer is zeroed on expiry so a stale field never contributes to
+		// effectiveArmorLocked.
+		if unit.PerkState.BolsteringPrayerRemaining > 0 {
+			unit.PerkState.BolsteringPrayerRemaining = math.Max(0, unit.PerkState.BolsteringPrayerRemaining-dt)
+			if unit.PerkState.BolsteringPrayerRemaining == 0 {
+				unit.PerkState.BolsteringPrayerArmor = 0
+			}
+		}
+
 		// Focus target validation — clears stale focus (dead, invisible,
 		// switched teams) every tick while OrderFocusFollow is active.
 		// The unit falls back to idle / auto-heal after clearFocusTargetLocked
