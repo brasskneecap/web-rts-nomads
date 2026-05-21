@@ -45,9 +45,11 @@ const enemyPlayerColor = "#e74c3c"
 
 // -------------------------------------------------------------------------
 
-// initWaveManagerLocked scans all enemy-spawnpoint buildings for "waveNumber"
-// or "startingWave" metadata. If any have a value > 0 the wave system is
-// enabled and the manager is initialised in the "prep" phase for wave 1.
+// initWaveManagerLocked scans all enemy-spawnpoint buildings for "waveNumber",
+// "startingWave", or "waveInterval" metadata. If any are present the wave
+// system is enabled and the manager is initialised in the "prep" phase for
+// wave 1. Only "waveNumber" contributes to TotalWaves — "startingWave" and
+// "waveInterval" are open-ended (no implied cap).
 func (s *GameState) initWaveManagerLocked() {
 	hasWavePoints := false
 	maxWave := 0
@@ -63,6 +65,9 @@ func (s *GameState) initWaveManagerLocked() {
 			}
 		}
 		if _, ok := getMetadataFloat(b.Metadata, "startingWave"); ok {
+			hasWavePoints = true
+		}
+		if iv, ok := getMetadataFloat(b.Metadata, "waveInterval"); ok && int(iv) > 0 {
 			hasWavePoints = true
 		}
 	}
@@ -205,6 +210,12 @@ func (s *GameState) resetWaveSpawnTimersLocked(waveNumber int) {
 		// Reset repeating spawners that are active at this wave number.
 		if sw, ok := getMetadataFloat(b.Metadata, "startingWave"); ok && waveNumber >= int(sw) {
 			delete(s.EnemySpawnTimers, b.ID)
+			continue
+		}
+		// Reset interval spawners on waves that are multiples of waveInterval
+		// (active waves only — waveNumber == 0 is the pre-wave-1 prep state).
+		if iv, ok := getMetadataFloat(b.Metadata, "waveInterval"); ok && int(iv) > 0 && waveNumber > 0 && waveNumber%int(iv) == 0 {
+			delete(s.EnemySpawnTimers, b.ID)
 		}
 	}
 }
@@ -267,7 +278,13 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 				wm := &s.WaveManager
 				waveTimerExpired := wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration
 
-				if sw, hasSW := getMetadataFloat(building.Metadata, "startingWave"); hasSW && int(sw) > 0 {
+				if iv, hasIV := getMetadataFloat(building.Metadata, "waveInterval"); hasIV && int(iv) > 0 {
+					// Interval spawn: active on every wave that is a multiple of N
+					// (waves N, 2N, 3N…) while the active timer is running.
+					if wm.State != "active" || wm.CurrentWave <= 0 || wm.CurrentWave%int(iv) != 0 || waveTimerExpired {
+						continue
+					}
+				} else if sw, hasSW := getMetadataFloat(building.Metadata, "startingWave"); hasSW && int(sw) > 0 {
 					// Repeating spawn: active every wave >= startingWave while timer is running.
 					if wm.State != "active" || wm.CurrentWave < int(sw) || waveTimerExpired {
 						continue

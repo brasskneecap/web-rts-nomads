@@ -1,6 +1,10 @@
 package game
 
-import "webrts/server/pkg/protocol"
+import (
+	"sort"
+
+	"webrts/server/pkg/protocol"
+)
 
 type ThreatEntry struct {
 	Value          float64
@@ -112,9 +116,24 @@ const (
 	// same tick (wave clear, mass kill). With N=10 units all losing targets
 	// simultaneously, the unstaggered path runs 10 sub-cell A*s in one tick
 	// (~100ms freeze). Staggering by unit.ID modulo this constant spreads
-	// the work across 5 ticks for an average ~50ms delay before any given
-	// unit re-engages — invisible to the player but huge for tick budget.
-	retargetStaggerTicks = 5
+	// the work across N ticks for an average N/2 × 50ms delay before any
+	// given unit re-engages — invisible to the player but huge for tick
+	// budget. Widened from 5 to 12 after profiling 339-unit fights showed
+	// the previous spread still allowed 8+ re-acquisitions in a single
+	// tick (~100ms spikes, missed snapshots). 12 ticks = 0.6s worst-case
+	// re-engage latency, well below human-perceptible reaction.
+	retargetStaggerTicks = 12
+
+	// combatApproachBudgetPerTick caps how many AI-driven approach A* runs
+	// can fire in a single combat tick. Each call costs ~6-14ms at 339-unit
+	// scale, so a hard ceiling here puts a deterministic upper bound on the
+	// combatAI section's per-tick cost (≈ N × per-call). Units past the cap
+	// drift toward target.X/Y straight-line for one tick (single direction
+	// step, no A*) and refresh A* next tick when budget refills. Combined
+	// with the wider retargetStaggerTicks (~0.6s spread), batching, and
+	// per-tick caching, this cap is rarely hit in practice — it's the
+	// defense-in-depth "no matter what, the section can't blow the tick".
+	combatApproachBudgetPerTick = 3
 )
 
 func (s *GameState) initializeCombatUnitLocked(unit *Unit) {
@@ -128,6 +147,18 @@ func (s *GameState) initializeCombatUnitLocked(unit *Unit) {
 }
 
 func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
+	// Refill the per-tick approach A* budget. See combatApproachBudgetPerTick
+	// for rationale.
+	s.combatApproachBudgetRemaining = combatApproachBudgetPerTick
+	// Reset the per-tick coarse-path cache. See approachCoarsePathCache.
+	if s.approachCoarsePathCache == nil {
+		s.approachCoarsePathCache = map[approachPathCacheKey][]protocol.Vec2{}
+	} else {
+		for k := range s.approachCoarsePathCache {
+			delete(s.approachCoarsePathCache, k)
+		}
+	}
+
 	index := newCombatSpatialIndex(combatSpatialBucketSize)
 	profileSection("combatAI.indexBuild", func() {
 		for _, unit := range s.Units {
@@ -185,6 +216,14 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 		}
 	})
 
+	// approachByTarget collects out-of-range attackers that acquired a NEW
+	// unit target during this evaluate pass, keyed by target unit ID. After
+	// the loop runs we drain this map through assignAttackGroupPathsLocked
+	// once per target — turning K independent sub-cell A*s into 1 leader A*
+	// + (K-1) cheap LoS-truncations. Keys are iterated in sorted order to
+	// preserve deterministic simulation under the per-tick budget.
+	approachByTarget := map[int][]*Unit{}
+
 	profileSection("combatAI.evaluate", func() {
 		for _, unit := range s.Units {
 			if !s.unitUsesCombatAI(unit) {
@@ -215,11 +254,69 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 			if unit.NonCombat && unit.Order.Type != OrderAttackTarget {
 				continue
 			}
+			prevTargetID := unit.AttackTargetID
 			s.evaluateCombatLocked(unit, ctx)
+			// Newly-acquired unit target → defer approach pathing to the
+			// batch below. We require the target ID to have changed AND a
+			// non-zero new ID. Hold units (without GuardMode) never path —
+			// skip them, mirroring the old applyCombatTargetLocked gate.
+			if unit.AttackTargetID == 0 || unit.AttackTargetID == prevTargetID {
+				continue
+			}
+			if unit.Order.Type == OrderHold && !unit.GuardMode {
+				continue
+			}
+			approachByTarget[unit.AttackTargetID] = append(approachByTarget[unit.AttackTargetID], unit)
 		}
 	})
 
+	profileSection("combatAI.approachBatch", func() {
+		s.processApproachBatchLocked(approachByTarget, blocked)
+	})
+
 	profileSection("combatAI.guardReturn", func() { s.tickGuardReturnLocked(blocked) })
+}
+
+// processApproachBatchLocked drains per-target attacker buckets through
+// assignAttackGroupPathsLocked, paying one leader sub-cell A* per target
+// instead of one per attacker. The per-tick approach budget
+// (combatApproachBudgetRemaining) gates how many target groups can pay the
+// A* cost in a single tick; over-budget groups fall back to drift mode for
+// every attacker in the group. Target IDs are iterated in sorted order so
+// determinism does not depend on Go map iteration randomisation.
+func (s *GameState) processApproachBatchLocked(approachByTarget map[int][]*Unit, blocked map[gridPoint]bool) {
+	if len(approachByTarget) == 0 {
+		return
+	}
+	targetIDs := make([]int, 0, len(approachByTarget))
+	for id := range approachByTarget {
+		targetIDs = append(targetIDs, id)
+	}
+	sort.Ints(targetIDs)
+	for _, targetID := range targetIDs {
+		attackers := approachByTarget[targetID]
+		if len(attackers) == 0 {
+			continue
+		}
+		target := s.getUnitByIDLocked(targetID)
+		if target == nil || target.HP <= 0 || !target.Visible {
+			continue
+		}
+		if s.combatApproachBudgetRemaining <= 0 {
+			// Over budget — drift every attacker in this group. Cheap
+			// straight-line movement until budget refills next tick.
+			profileSection("combatAI.approach.budgeted", func() {
+				for _, u := range attackers {
+					s.enterAttackDriftLocked(u, target)
+				}
+			})
+			continue
+		}
+		s.combatApproachBudgetRemaining--
+		profileSection("combatAI.approach.batch", func() {
+			s.assignAttackGroupPathsLocked(attackers, target, blocked, nil, nil)
+		})
+	}
 }
 
 func (s *GameState) unitUsesCombatAI(unit *Unit) bool {
@@ -404,9 +501,14 @@ func (s *GameState) applyCombatTargetLocked(unit *Unit, target combatTarget, blo
 		unit.AttackBuildingTargetID = ""
 		unit.Attacking = false
 		unit.Status = "Moving To Attack"
-		if !holdUnit && distanceSquared(unit.X, unit.Y, target.Unit.X, target.Unit.Y) > unit.AttackRange*unit.AttackRange {
-			s.refreshUnitAttackApproachLocked(unit, target.Unit, resolveCombatProfile(unit), blocked, true)
-		}
+		// Approach pathing is deferred to the post-loop batch in
+		// tickCombatAILocked: out-of-range attackers acquiring the same target
+		// in the same tick share a single A* via assignAttackGroupPathsLocked
+		// (leader-follower truncation), turning K × sub-cell A* into 1 + K
+		// cheap LoS checks. Hold units never path — they fire from current
+		// position. The batch caller checks the range gate itself.
+		_ = holdUnit
+		_ = blocked
 	case combatTargetBuilding:
 		unit.AttackTargetID = 0
 		unit.Attacking = false

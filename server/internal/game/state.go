@@ -632,6 +632,25 @@ type GameState struct {
 	// at most one map-wide A* runs per 5 ticks regardless of army size.
 	nextGlobalObjectiveSearchTick int
 
+	// combatApproachBudgetRemaining caps the number of AI-driven approach A*
+	// runs per combat tick. Reset to combatApproachBudgetPerTick at the start
+	// of tickCombatAILocked. When exhausted, refreshUnitAttackApproachLocked
+	// drops the unit into drift mode (straight-line, no A*) instead of paying
+	// the ~6-14ms sub-cell A* cost. The deferred work picks up on the next
+	// tick when budget refills. Player-issued commands bypass this gate
+	// entirely (they go through assignAttackGroupPathsLocked / direct
+	// assignAttackApproachPathLocked, not refreshUnitAttackApproachLocked).
+	combatApproachBudgetRemaining int
+
+	// approachCoarsePathCache memoises the coarse-grid findPath() result
+	// inside assignAttackApproachPathLockedWithSubBlocked, keyed by
+	// (startCell, goalCell). Cleared at the start of every tickCombatAILocked.
+	// Hit rate is highest when multiple units stacked on the same grid cell
+	// chase the same target — the sub-cell A* still runs per-unit (subBlocked
+	// is per-unit-spawn-state and cannot be safely shared), but the coarse
+	// pass is shared. Miss path is a single map lookup, free at runtime.
+	approachCoarsePathCache map[approachPathCacheKey][]protocol.Vec2
+
 	// objectiveUnreachableUntil is the ARMY-WIDE unreachable-objective cache:
 	// objective building ID → tick the suppression expires. When any enemy's
 	// pathfind to an objective fails, every enemy skips re-pathing that

@@ -217,28 +217,55 @@ func (s *GameState) assignGroupPathsLocked(units []*Unit, destinations []protoco
 	}
 
 	leaderPath := leader.Path
-	firstWaypoint := leaderPath[0]
+	leaderDest := leaderPath[len(leaderPath)-1]
 
 	for i, unit := range units {
 		if unit == nil || i == leaderIdx {
 			continue
 		}
 
-		// LoS gate: follower's first leg is start → leader's w1. If clear, we
-		// can safely splice the rest of the leader's path onto a follower-
-		// specific endpoint. If blocked (follower is on the wrong side of an
-		// obstacle relative to the leader), fall back to a full A* for this
-		// unit only — preserves correctness, costs one A* in the rare case.
-		if !s.lineWalkableLocked(unit.X, unit.Y, firstWaypoint.X, firstWaypoint.Y, blocked, unit.Flyer) {
+		// Find the entry waypoint for this follower on the leader's spine.
+		// The previous logic always entered at leaderPath[0], which is at the
+		// LEADER'S start position — units that were geometrically AHEAD of
+		// the leader (closer to the destination) ended up walking BACKWARD
+		// to leaderPath[0] before tracking forward. The user's complaint:
+		// "units in front of the chosen unit run backwards to start
+		// following the unit."
+		//
+		// Pick the first waypoint that is BOTH closer to the destination
+		// than the follower's current position AND line-of-sight reachable.
+		// Waypoints behind the follower are skipped — the follower picks up
+		// the spine at the earliest point that actually moves it forward.
+		// When no forward waypoint qualifies (follower is already past the
+		// leader's destination, or every forward waypoint is LoS-blocked),
+		// fall back to a per-unit A* — same as the legacy LoS-fail branch.
+		followerDistSq := distanceSquared(unit.X, unit.Y, leaderDest.X, leaderDest.Y)
+		entryIdx := -1
+		for j, wp := range leaderPath {
+			if distanceSquared(wp.X, wp.Y, leaderDest.X, leaderDest.Y) >= followerDistSq {
+				// Waypoint is at-or-behind the follower's progress toward
+				// the destination — walking to it would be backward or
+				// sideways. Skip.
+				continue
+			}
+			if !s.lineWalkableLocked(unit.X, unit.Y, wp.X, wp.Y, blocked, unit.Flyer) {
+				continue
+			}
+			entryIdx = j
+			break
+		}
+		if entryIdx < 0 {
 			s.assignUnitPathWithSubBlocked(unit, destinations[i], blocked, subFor(unit), nil)
 			continue
 		}
 
-		// Copy the leader's waypoints and substitute this unit's formation slot
-		// at the end. Copy (not slice-share) so per-unit Path mutations during
-		// movement don't trample the leader's path.
-		newPath := make([]protocol.Vec2, len(leaderPath))
-		copy(newPath, leaderPath)
+		// Splice from the entry waypoint onward, then substitute the
+		// follower's formation slot as the final waypoint. Copy (not
+		// slice-share) so per-unit Path mutations during movement don't
+		// trample the leader's path.
+		tailLen := len(leaderPath) - entryIdx
+		newPath := make([]protocol.Vec2, tailLen)
+		copy(newPath, leaderPath[entryIdx:])
 		newPath[len(newPath)-1] = destinations[i]
 		unit.Path = newPath
 		unit.Moving = true

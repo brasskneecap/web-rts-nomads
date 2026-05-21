@@ -57,6 +57,23 @@ func (s *GameState) refreshUnitAttackApproachLocked(unit, target *Unit, profile 
 	}
 
 	_ = profile // kept on the signature for symmetry with other approach helpers; truncation does not depend on it
+
+	// Per-tick approach A* budget. When 339+ units re-acquire targets in the
+	// same tick after a mass kill the unstaggered combat AI section spikes
+	// to 100+ms (= missed snapshots). Once the per-tick budget is exhausted
+	// the unit drifts straight-line toward the target instead of paying
+	// another sub-cell A*. Drift is the same fallback the coarseFail/fineFail
+	// paths use, so behaviour is "we tried to plan and chose to commit
+	// without one this tick" rather than "we don't engage". Budget refills
+	// at the next tick boundary in tickCombatAILocked.
+	if s.combatApproachBudgetRemaining <= 0 {
+		profileSection("combatAI.approach.budgeted", func() {
+			s.enterAttackDriftLocked(unit, target)
+		})
+		return
+	}
+	s.combatApproachBudgetRemaining--
+
 	s.assignAttackApproachPathLocked(unit, target, blocked)
 }
 
@@ -87,6 +104,13 @@ func (s *GameState) dropUnreachableAITargetLocked(unit, target *Unit) {
 	unit.UnreachableUnitTargetID = target.ID
 	unit.UnreachableUnitUntilTick = s.Tick + unreachableTargetCooldownTicks
 	s.clearCombatTargetLocked(unit)
+}
+
+// approachPathCacheKey is the key for GameState.approachCoarsePathCache.
+// Comparable by value so it works as a map key.
+type approachPathCacheKey struct {
+	start gridPoint
+	goal  gridPoint
 }
 
 // assignAttackApproachPathLockedWithSubBlocked is the internal variant that
@@ -136,7 +160,26 @@ func (s *GameState) assignAttackApproachPathLockedWithSubBlocked(unit, target *U
 		return
 	}
 
-	fullPath := s.findPath(startCell, goalCell, blocked, nil)
+	// Per-tick coarse-path cache: when two units share startCell + goalCell
+	// in the same tick, reuse the findPath() result. The sub-cell A* below
+	// still runs per-unit (subBlocked is per-unit-spawn-state). Lazy-init
+	// the map so call paths that bypass tickCombatAILocked (tests, direct
+	// player-command pathing) still work without panicking on the nil map
+	// write — the cache is still cleared at every tickCombatAILocked.
+	cacheKey := approachPathCacheKey{start: startCell, goal: goalCell}
+	var fullPath []protocol.Vec2
+	if cached, hit := s.approachCoarsePathCache[cacheKey]; hit {
+		profileSection("combatAI.approach.cached", func() {})
+		fullPath = cached
+	} else {
+		fullPath = s.findPath(startCell, goalCell, blocked, nil)
+		if len(fullPath) > 0 {
+			if s.approachCoarsePathCache == nil {
+				s.approachCoarsePathCache = map[approachPathCacheKey][]protocol.Vec2{}
+			}
+			s.approachCoarsePathCache[cacheKey] = fullPath
+		}
+	}
 	if len(fullPath) == 0 {
 		approachOutcome = "combatAI.approach.coarseFail"
 		if unit.Order.Type == OrderAttackTarget {

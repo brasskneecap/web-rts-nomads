@@ -210,12 +210,13 @@
               <option value="tile">Tile</option>
               <option value="obstacle">Obstacle</option>
               <option value="building">Building</option>
+              <option value="enemy-spawn">Enemy Spawn</option>
               <option value="unit">Unit</option>
               <option value="erase">Erase</option>
             </select>
           </div>
 
-          <div v-if="brushMode !== 'building' && brushMode !== 'unit'" class="control-group">
+          <div v-if="brushMode !== 'building' && brushMode !== 'enemy-spawn' && brushMode !== 'unit'" class="control-group">
             <label for="brush-size">Brush Size</label>
             <select id="brush-size" v-model.number="brushSize" :disabled="!paintModeEnabled">
               <option :value="1">1 × 1</option>
@@ -319,7 +320,7 @@
             />
           </div>
 
-          <div v-if="brushMode === 'building' && selectedBuilding === 'enemy-spawnpoint'" class="control-group enemy-spawn-config">
+          <div v-if="brushMode === 'enemy-spawn'" class="control-group enemy-spawn-config">
             <label for="enemy-unit-type">Unit Type</label>
             <select
               id="enemy-unit-type"
@@ -334,12 +335,24 @@
               <option value="always">Always (legacy)</option>
               <option value="specific">Specific Wave</option>
               <option value="repeating">Every Wave From</option>
+              <option value="interval">Every Nth Wave</option>
             </select>
-            <template v-if="enemyWaveMode !== 'always' && enemyWaveMode !== 'gameStart'">
+            <template v-if="enemyWaveMode === 'specific' || enemyWaveMode === 'repeating'">
               <label for="enemy-wave-number">{{ enemyWaveMode === 'specific' ? 'Wave Number' : 'Starting Wave' }}</label>
               <input
                 id="enemy-wave-number"
                 v-model.number="enemyWaveNumber"
+                type="number"
+                min="1"
+                max="999"
+                :disabled="!paintModeEnabled"
+              />
+            </template>
+            <template v-if="enemyWaveMode === 'interval'">
+              <label for="enemy-wave-interval">Interval (every Nth wave)</label>
+              <input
+                id="enemy-wave-interval"
+                v-model.number="enemyWaveInterval"
                 type="number"
                 min="1"
                 max="999"
@@ -448,7 +461,7 @@
             </template>
           </div>
 
-          <div v-if="brushMode === 'building' && selectedBuilding !== 'enemy-spawnpoint' && destroyBuildingObjectives.length" class="control-group">
+          <div v-if="brushMode === 'building' && destroyBuildingObjectives.length" class="control-group">
             <label for="building-objective-id">Destroy Objective <span class="field-hint">(optional)</span></label>
             <select id="building-objective-id" v-model="buildingObjectiveId" :disabled="!paintModeEnabled">
               <option value="">None</option>
@@ -533,15 +546,16 @@
             </div>
             <div class="edit-field">
               <label>Spawn Timing</label>
-              <select :value="editWaveMode" @change="updateEditWaveMode(($event.target as HTMLSelectElement).value as 'gameStart'|'always'|'specific'|'repeating', editWaveNumber)">
+              <select :value="editWaveMode" @change="updateEditWaveMode(($event.target as HTMLSelectElement).value as 'gameStart'|'always'|'specific'|'repeating'|'interval', editWaveNumber)">
                 <option value="gameStart">Game Start</option>
                 <option value="always">Always</option>
                 <option value="specific">Specific Wave</option>
                 <option value="repeating">Every Wave From</option>
+                <option value="interval">Every Nth Wave</option>
               </select>
             </div>
             <div v-if="editWaveMode !== 'always' && editWaveMode !== 'gameStart'" class="edit-field">
-              <label>{{ editWaveMode === 'specific' ? 'Wave Number' : 'Starting Wave' }}</label>
+              <label>{{ editWaveMode === 'specific' ? 'Wave Number' : editWaveMode === 'repeating' ? 'Starting Wave' : 'Interval (every Nth wave)' }}</label>
               <input type="number" min="1" max="999" :value="editWaveNumber" @input="updateEditWaveMode(editWaveMode, +($event.target as HTMLInputElement).value)" />
             </div>
             <template v-if="editWaveMode !== 'gameStart'">
@@ -788,7 +802,7 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const tilePickerCanvas = ref<HTMLCanvasElement | null>(null)
 
 const TILE_PICKER_SCALE = 2
-const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'unit' | 'erase'>('terrain')
+const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'enemy-spawn' | 'unit' | 'erase'>('terrain')
 const brushSize = ref<1 | 3 | 5 | 7>(1)
 const selectedTerrain = ref<TerrainType>('grass')
 const selectedObstacle = ref<ObstacleType>('rock')
@@ -816,8 +830,12 @@ const enemySpawnCount = ref(1)
 const enemySpawnOnce = ref(false)
 const enemyIgnoreWaveClear = ref(false)
 const enemyUnitType = ref('raider')
-const enemyWaveMode = ref<'gameStart' | 'always' | 'specific' | 'repeating'>('always')
+const enemyWaveMode = ref<'gameStart' | 'always' | 'specific' | 'repeating' | 'interval'>('always')
 const enemyWaveNumber = ref(1)
+// Multiplier for the 'interval' spawn-timing mode. waveInterval = 3 ⇒ fires on
+// waves 3, 6, 9, … Separate ref from enemyWaveNumber so switching modes mid-
+// authoring doesn't clobber the other field's value.
+const enemyWaveInterval = ref(3)
 const placedUnitFaction = ref<UnitFaction>('raider')
 const placedUnitPlayerSlot = ref<string>('enemy')
 const placedUnitType = ref('raider')
@@ -898,15 +916,20 @@ const activeBrushMode = computed(() =>
 )
 // Every building def in the catalog, sorted by label, with class=neutral/enemy
 // surfaced last. Drives the paint dropdown so any catalog addition (e.g. a new
-// chapel) is paintable in the editor with zero code changes.
+// chapel) is paintable in the editor with zero code changes. Excludes
+// enemy-spawnpoint — it has its own top-level "Enemy Spawn" brush mode with a
+// dedicated config UI rather than living inside the Building brush.
 const paintableBuildingDefs = computed(() => {
   const classRank = (kind: string) => (kind === 'player' ? 0 : kind === 'neutral' ? 1 : 2)
-  return [...BUILDING_DEFS].sort((a, b) => {
-    const ca = classRank(a.class ?? 'player')
-    const cb = classRank(b.class ?? 'player')
-    if (ca !== cb) return ca - cb
-    return (a.label || a.type).localeCompare(b.label || b.type)
-  })
+  return BUILDING_DEFS
+    .filter((def) => def.type !== 'enemy-spawnpoint')
+    .slice()
+    .sort((a, b) => {
+      const ca = classRank(a.class ?? 'player')
+      const cb = classRank(b.class ?? 'player')
+      if (ca !== cb) return ca - cb
+      return (a.label || a.type).localeCompare(b.label || b.type)
+    })
 })
 
 // Whether a building type accepts a playerLabel assignment. spawn-points have
@@ -1053,10 +1076,11 @@ const placedUnitEditPanelStyle = computed(() => {
   return { left: `${placedUnitEditPanelPos.value.x}px`, top: `${placedUnitEditPanelPos.value.y}px` }
 })
 
-const editWaveMode = computed<'gameStart' | 'always' | 'specific' | 'repeating'>(() => {
+const editWaveMode = computed<'gameStart' | 'always' | 'specific' | 'repeating' | 'interval'>(() => {
   const meta = selectedEditBuilding.value?.metadata
   if (!meta) return 'always'
   if (meta['gameStart'] === true) return 'gameStart'
+  if ('waveInterval' in meta) return 'interval'
   if ('waveNumber' in meta) return 'specific'
   if ('startingWave' in meta) return 'repeating'
   return 'always'
@@ -1065,7 +1089,10 @@ const editWaveMode = computed<'gameStart' | 'always' | 'specific' | 'repeating'>
 const editWaveNumber = computed(() => {
   const meta = selectedEditBuilding.value?.metadata
   if (!meta) return 1
-  return (meta['waveNumber'] as number) ?? (meta['startingWave'] as number) ?? 1
+  return (meta['waveNumber'] as number)
+    ?? (meta['startingWave'] as number)
+    ?? (meta['waveInterval'] as number)
+    ?? 1
 })
 
 const defaultGroundName = computed<'grass' | 'dirt'>(() => {
@@ -1194,7 +1221,10 @@ function updateEditMeta(key: string, value: JsonValue | undefined) {
   }
 }
 
-function updateEditWaveMode(mode: 'gameStart' | 'always' | 'specific' | 'repeating', waveNum: number) {
+function updateEditWaveMode(
+  mode: 'gameStart' | 'always' | 'specific' | 'repeating' | 'interval',
+  waveNum: number,
+) {
   if (!selectedEditBuildingId.value) return
   model.value = {
     ...model.value,
@@ -1204,9 +1234,11 @@ function updateEditWaveMode(mode: 'gameStart' | 'always' | 'specific' | 'repeati
       delete meta['gameStart']
       delete meta['waveNumber']
       delete meta['startingWave']
+      delete meta['waveInterval']
       if (mode === 'gameStart') meta['gameStart'] = true
       if (mode === 'specific') meta['waveNumber'] = waveNum
       if (mode === 'repeating') meta['startingWave'] = waveNum
+      if (mode === 'interval') meta['waveInterval'] = waveNum
       return { ...b, metadata: meta }
     }),
   }
@@ -1446,9 +1478,14 @@ function paintAtScreen(screenX: number, screenY: number) {
   if (paintKey === lastPaintKey) return
   lastPaintKey = paintKey
 
-  // Buildings and units ignore brush size — placement is per-cell.
+  // Buildings, enemy-spawn, and units ignore brush size — placement is per-cell.
   if (activeBrushMode.value === 'building') {
     paintBuildingAt(cell.x, cell.y)
+    return
+  }
+
+  if (activeBrushMode.value === 'enemy-spawn') {
+    paintEnemySpawnAt(cell.x, cell.y)
     return
   }
 
@@ -1519,19 +1556,6 @@ function paintBuildingAt(cx: number, cy: number) {
       fillOrder: Math.round(spawnPointFillOrder.value || 0),
       ...(spawnPointPlayerLabel.value ? { playerLabel: spawnPointPlayerLabel.value } : {}),
     }
-  } else if (selectedBuilding.value === 'enemy-spawnpoint') {
-    metadata = {
-      ...(enemyWaveMode.value === 'gameStart' ? { gameStart: true } : {}),
-      ...(enemyWaveMode.value === 'specific' ? { waveNumber: enemyWaveNumber.value } : {}),
-      ...(enemyWaveMode.value === 'repeating' ? { startingWave: enemyWaveNumber.value } : {}),
-      ...(enemyWaveMode.value !== 'gameStart' ? { spawnDelaySeconds: enemySpawnDelay.value, spawnIntervalSeconds: enemySpawnInterval.value } : {}),
-      ...(enemyWaveMode.value !== 'gameStart' && enemySpawnOnce.value ? { spawnOnce: true } : {}),
-      ...(enemyIgnoreWaveClear.value ? { ignoreWaveClear: true } : {}),
-      spawnCount: enemySpawnCount.value,
-      unitType: enemyUnitType.value,
-      ...(enemyObjectiveId.value ? { objectiveId: enemyObjectiveId.value } : {}),
-      ...(enemyTargetPlayerLabel.value ? { targetPlayerLabel: enemyTargetPlayerLabel.value } : {}),
-    }
   } else if (buildingObjectiveId.value) {
     metadata = { objectiveId: buildingObjectiveId.value }
   }
@@ -1541,6 +1565,26 @@ function paintBuildingAt(cx: number, cy: number) {
   }
 
   model.value = setBuildingTile(model.value, cx, cy, selectedBuilding.value, metadata)
+}
+
+// Stamps an enemy-spawnpoint tile using the dedicated Enemy Spawn brush. Lives
+// in its own brush mode (not under Building) because the config UI is large
+// and the building type is logical, not structural.
+function paintEnemySpawnAt(cx: number, cy: number) {
+  const metadata: JsonObject = {
+    ...(enemyWaveMode.value === 'gameStart' ? { gameStart: true } : {}),
+    ...(enemyWaveMode.value === 'specific' ? { waveNumber: enemyWaveNumber.value } : {}),
+    ...(enemyWaveMode.value === 'repeating' ? { startingWave: enemyWaveNumber.value } : {}),
+    ...(enemyWaveMode.value === 'interval' ? { waveInterval: enemyWaveInterval.value } : {}),
+    ...(enemyWaveMode.value !== 'gameStart' ? { spawnDelaySeconds: enemySpawnDelay.value, spawnIntervalSeconds: enemySpawnInterval.value } : {}),
+    ...(enemyWaveMode.value !== 'gameStart' && enemySpawnOnce.value ? { spawnOnce: true } : {}),
+    ...(enemyIgnoreWaveClear.value ? { ignoreWaveClear: true } : {}),
+    spawnCount: enemySpawnCount.value,
+    unitType: enemyUnitType.value,
+    ...(enemyObjectiveId.value ? { objectiveId: enemyObjectiveId.value } : {}),
+    ...(enemyTargetPlayerLabel.value ? { targetPlayerLabel: enemyTargetPlayerLabel.value } : {}),
+  }
+  model.value = setBuildingTile(model.value, cx, cy, 'enemy-spawnpoint', metadata)
 }
 
 function placedUnitAt(x: number, y: number): PlacedUnit | undefined {

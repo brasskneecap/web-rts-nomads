@@ -142,7 +142,7 @@
           "capabilities": [
             "enemy-spawner"
           ],
-          "height": 2,
+          "height": 1,
           "id": "NORM-STR",
           "metadata": {
             "spawnCount": 1,
@@ -153,7 +153,7 @@
           },
           "occupied": true,
           "visible": true,
-          "width": 2,
+          "width": 1,
           "x": 15,
           "y": 16
         },
@@ -162,7 +162,7 @@
           "capabilities": [
             "enemy-spawner"
           ],
-          "height": 2,
+          "height": 1,
           "id": "NORM-STR",
           "metadata": {
             "spawnCount": 2,
@@ -173,7 +173,7 @@
           },
           "occupied": true,
           "visible": true,
-          "width": 2,
+          "width": 1,
           "x": 21,
           "y": 18
         },
@@ -182,7 +182,7 @@
           "capabilities": [
             "enemy-spawner"
           ],
-          "height": 2,
+          "height": 1,
           "id": "NORM-STR",
           "metadata": {
             "spawnCount": 2,
@@ -193,7 +193,7 @@
           },
           "occupied": true,
           "visible": true,
-          "width": 2,
+          "width": 1,
           "x": 25,
           "y": 20
         },
@@ -202,7 +202,7 @@
           "capabilities": [
             "enemy-spawner"
           ],
-          "height": 2,
+          "height": 1,
           "id": "NORM-STR",
           "metadata": {
             "spawnCount": 2,
@@ -213,7 +213,7 @@
           },
           "occupied": true,
           "visible": true,
-          "width": 2,
+          "width": 1,
           "x": 14,
           "y": 22
         },
@@ -222,7 +222,7 @@
           "capabilities": [
             "enemy-spawner"
           ],
-          "height": 2,
+          "height": 1,
           "id": "NORM-STR",
           "metadata": {
             "spawnCount": 2,
@@ -233,7 +233,7 @@
           },
           "occupied": true,
           "visible": true,
-          "width": 2,
+          "width": 1,
           "x": 18,
           "y": 22
         }
@@ -2130,7 +2130,7 @@
         "capabilities": [
           "enemy-spawner"
         ],
-        "height": 2,
+        "height": 1,
         "id": "NORM-STR",
         "metadata": {
           "spawnCount": 1,
@@ -2141,7 +2141,7 @@
         },
         "occupied": true,
         "visible": true,
-        "width": 2,
+        "width": 1,
         "x": 15,
         "y": 16
       },
@@ -2150,7 +2150,7 @@
         "capabilities": [
           "enemy-spawner"
         ],
-        "height": 2,
+        "height": 1,
         "id": "NORM-STR",
         "metadata": {
           "spawnCount": 2,
@@ -2161,7 +2161,7 @@
         },
         "occupied": true,
         "visible": true,
-        "width": 2,
+        "width": 1,
         "x": 21,
         "y": 18
       },
@@ -2170,7 +2170,7 @@
         "capabilities": [
           "enemy-spawner"
         ],
-        "height": 2,
+        "height": 1,
         "id": "NORM-STR",
         "metadata": {
           "spawnCount": 2,
@@ -2181,7 +2181,7 @@
         },
         "occupied": true,
         "visible": true,
-        "width": 2,
+        "width": 1,
         "x": 25,
         "y": 20
       },
@@ -2190,7 +2190,7 @@
         "capabilities": [
           "enemy-spawner"
         ],
-        "height": 2,
+        "height": 1,
         "id": "NORM-STR",
         "metadata": {
           "spawnCount": 2,
@@ -2201,7 +2201,7 @@
         },
         "occupied": true,
         "visible": true,
-        "width": 2,
+        "width": 1,
         "x": 14,
         "y": 22
       },
@@ -2210,7 +2210,7 @@
         "capabilities": [
           "enemy-spawner"
         ],
-        "height": 2,
+        "height": 1,
         "id": "NORM-STR",
         "metadata": {
           "spawnCount": 2,
@@ -2221,7 +2221,7 @@
         },
         "occupied": true,
         "visible": true,
-        "width": 2,
+        "width": 1,
         "x": 18,
         "y": 22
       }
