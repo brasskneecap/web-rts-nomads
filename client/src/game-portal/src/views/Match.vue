@@ -129,6 +129,7 @@ import DebugSpawnPanel from '@/components/DebugSpawnPanel.vue'
 import WaveUpgradeModal from '@/components/WaveUpgradeModal.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { useMapSelection } from '@/composables/useMapSelection'
+import { setCursorGrab } from '@/services/desktopBridge'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -251,6 +252,12 @@ watch(currentMatchId, (id) => {
 window.addEventListener('beforeunload', markActiveSession)
 
 onMounted(async () => {
+  // Confine the OS cursor to the game window for the duration of the
+  // match. No-op outside the Tauri shell. Released in onBeforeUnmount so
+  // returning to the menu (or any other route) restores normal cursor
+  // movement across monitors.
+  void setCursorGrab(true)
+
   const urlMatchId = route.params.matchId as string | undefined
   // §14R: detect Steam-proxy mode. Joiners arrive here via a host's
   // matchId that lives on the HOST's Go server; their own local server
@@ -346,6 +353,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  void setCursorGrab(false)
   window.removeEventListener('beforeunload', markActiveSession)
   destroy()
 })

@@ -299,6 +299,9 @@ pub fn run() {
             set_settings,
             open_logs_directory,
             get_logs_directory,
+            set_cursor_grab,
+            set_fullscreen,
+            is_fullscreen,
             get_steam_player,
             create_lobby,
             join_lobby,
@@ -363,6 +366,56 @@ fn get_logs_directory(
     paths: tauri::State<'_, std::sync::Arc<userdata::Paths>>,
 ) -> String {
     paths.logs.display().to_string()
+}
+
+// Toggles native window fullscreen on the main window. The browser
+// Fullscreen API also works inside a Tauri webview, but it only enters
+// "webview fullscreen" — the OS title bar / chrome can linger. Using
+// `WebviewWindow::set_fullscreen` gets the real OS fullscreen mode that
+// players expect from a packaged desktop game.
+//
+// Browser-dev callers never reach this — the desktopBridge falls back to
+// the browser Fullscreen API when isInTauri() is false.
+#[tauri::command]
+fn set_fullscreen(fullscreen: bool, app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    window.set_fullscreen(fullscreen).map_err(|e| e.to_string())
+}
+
+// Companion getter so the SPA can keep its Options toggle in sync with the
+// actual window state on mount (or after an external fullscreen change).
+#[tauri::command]
+fn is_fullscreen(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    window.is_fullscreen().map_err(|e| e.to_string())
+}
+
+// Confines / releases the OS cursor to the main window's client area.
+//
+// Called from the SPA at match start (grab=true) and match exit (grab=false)
+// so the RTS edge-pan UX isn't broken by the cursor wandering off onto a
+// second monitor mid-game. Browser-dev callers never reach this — the
+// desktopBridge no-ops when isInTauri() is false.
+//
+// Platform notes:
+//   - Windows / Linux: ClipCursor-style "confined" — cursor stays visible
+//     and moves freely inside the window; OS lets it escape on Alt+Tab.
+//   - macOS: pointer is "locked" (relative-motion only) which is not great
+//     for an RTS HUD; if Mac ships, gate this with cfg!(target_os = "macos")
+//     and use a different confinement strategy there.
+#[tauri::command]
+fn set_cursor_grab(grab: bool, app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    window.set_cursor_grab(grab).map_err(|e| e.to_string())
 }
 
 // §8.5 + §14.4: SPA reads this on boot to decide whether to show Steam-mode

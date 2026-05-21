@@ -286,6 +286,45 @@ export async function setSettings(partial: Partial<SettingsSnapshot>): Promise<S
   return invoke<SettingsSnapshot>('set_settings', { partial })
 }
 
+/** Sets the main window to native OS fullscreen (or windowed) in the
+ * packaged Tauri build. Returns false in browser dev (the SPA should fall
+ * back to the browser Fullscreen API). Best-effort: errors are logged. */
+export async function setFullscreen(fullscreen: boolean): Promise<boolean> {
+  if (!isInTauri()) return false
+  try {
+    await invoke<void>('set_fullscreen', { fullscreen })
+    return true
+  } catch (e) {
+    console.warn('setFullscreen failed (non-fatal):', e)
+    return false
+  }
+}
+
+/** Reads the current native fullscreen state of the main window. Returns
+ * false in browser dev. */
+export async function isFullscreen(): Promise<boolean> {
+  if (!isInTauri()) return false
+  try {
+    return await invoke<boolean>('is_fullscreen')
+  } catch (e) {
+    console.warn('isFullscreen failed:', e)
+    return false
+  }
+}
+
+/** Confines the OS cursor to the game window's client area (or releases it
+ * when grab=false). No-op in browser dev. Best-effort: errors from the
+ * shell (e.g., the platform refusing to grab) are logged and swallowed so a
+ * grab-failure never blocks the match. */
+export async function setCursorGrab(grab: boolean): Promise<void> {
+  if (!isInTauri()) return
+  try {
+    await invoke<void>('set_cursor_grab', { grab })
+  } catch (e) {
+    console.warn('setCursorGrab failed (non-fatal):', e)
+  }
+}
+
 /** Returns the absolute path to the logs directory (for display in the SPA's
  * support / about screen). Returns null in browser dev. */
 export async function getLogsDirectory(): Promise<string | null> {

@@ -18,7 +18,6 @@
         <div class="crest-mark"></div>
       </button>
       <div class="crest-copy">
-        <div class="hud-kicker">Warband</div>
         <div class="player-row">
           <span
             v-if="ui.player.color"
@@ -157,7 +156,7 @@ function exitGame() {
   justify-content: space-between;
   align-items: center;
   gap: 18px;
-  padding: 4px 18px;
+  padding: 0 18px;
 
   /* 9-slice panel: shared 56×56 source, 16px corners. */
   background: none;
@@ -212,21 +211,11 @@ function exitGame() {
   min-width: 0;
 }
 
-.hud-kicker {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #d7bb84;
-  white-space: nowrap;
-}
-
 .player-row {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  margin-top: 2px;
 }
 
 .player-name {
@@ -375,7 +364,7 @@ function exitGame() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 1px;
 }
 
 .wave-label {
@@ -385,12 +374,14 @@ function exitGame() {
   text-transform: uppercase;
   color: #d7bb84;
   white-space: nowrap;
+  line-height: 1.1;
 }
 
 .wave-timer {
   font-size: 11px;
   font-weight: 600;
   color: #cbb893;
+  line-height: 1.1;
   letter-spacing: 0.06em;
   white-space: nowrap;
 }

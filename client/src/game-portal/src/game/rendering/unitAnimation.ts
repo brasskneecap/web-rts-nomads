@@ -103,9 +103,10 @@ export class UnitAnimationController {
     // Animation — attacking/chopping stay sticky even if the server ticks
     // `moving` briefly; walking requires either the server flag or visible
     // interpolation movement so we don't freeze mid-stride between snapshots.
+    const moving = serverMoving === true || interpolatedMoving
     const animation = pickAnimation(
       status,
-      serverMoving === true || interpolatedMoving,
+      moving,
       carriedResource,
       unitType,
       path,
@@ -174,6 +175,14 @@ export class UnitAnimationController {
       }
       const frameIndex = Math.floor(cycleElapsed / attackTiming.frameDurationMs)
       return { direction, animation, frameIndex }
+    }
+
+    // Stationary worker holding gold: pin to frame 0 of carrying_gold so the
+    // idle pose still shows the hold instead of reverting to the empty-handed
+    // rotation. pickAnimation routes the idle case here by returning
+    // 'carrying_gold' even when not moving.
+    if (animation === 'carrying_gold' && !moving) {
+      return { direction, animation, frameIndex: 0 }
     }
 
     const frameIndex = Math.floor((renderTime - state.animStartedAt) / this.frameDurationMs)
@@ -317,6 +326,10 @@ function pickAnimation(
     if (carriedResource === 'gold') return 'carrying_gold'
     return 'walking'
   }
+  // Worker carrying gold but standing still: use carrying_gold so the caller
+  // (UnitAnimationController.sample) can pin frame 0 as the hold-pose idle,
+  // instead of the empty-handed rotation.
+  if (carriedResource === 'gold') return 'carrying_gold'
   // Flyers have no idle pose — a stationary flap reads as floating mid-air,
   // so reuse the walking animation when the unit is otherwise idle. The
   // Arch Mage isn't an actual flyer (still ground-targetable, renders at

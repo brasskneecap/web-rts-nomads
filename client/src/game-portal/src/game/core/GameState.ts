@@ -1952,6 +1952,26 @@ export class GameState {
     return units.length > 0 && units.every((unit) => unit.capabilities.includes('gather'))
   }
 
+  // True when at least one selected unit is currently carrying a resource —
+  // gates the deposit hover/right-click on owned deposit-point buildings.
+  selectedUnitsHaveCarriedResource(): boolean {
+    return this.getSelectedUnits().some(
+      (unit) => (unit.carriedAmount ?? 0) > 0 && !!unit.carriedResourceType,
+    )
+  }
+
+  // Subset of the ordered selection that is currently carrying a resource. Used
+  // by the deposit right-click flow so only carriers receive the deposit order;
+  // non-carriers fall through to a normal move command.
+  getSelectedCarrierUnitIds(): number[] {
+    const carrying = new Set(
+      this.getSelectedUnits()
+        .filter((unit) => (unit.carriedAmount ?? 0) > 0 && !!unit.carriedResourceType)
+        .map((unit) => unit.id),
+    )
+    return this.getOrderedSelectedUnitIds().filter((id) => carrying.has(id))
+  }
+
   selectedUnitsCanBuild(): boolean {
     const units = this.getSelectedUnits()
     return units.length > 0 && units.some((unit) => unit.capabilities.includes('build'))

@@ -487,6 +487,35 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.State.GatherWithUnits(client.PlayerID(), msg.UnitIDs, msg.TargetID)
 
+		case "deposit_command":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.DepositCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid deposit_command payload",
+				})
+				continue
+			}
+
+			match.State.DepositWithUnits(client.PlayerID(), msg.UnitIDs, msg.BuildingID)
+
 		case "train_unit_command":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})

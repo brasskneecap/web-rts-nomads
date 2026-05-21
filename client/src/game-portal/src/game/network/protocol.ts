@@ -206,6 +206,12 @@ export type GatherCommandMessage = {
   targetId: string
 }
 
+export type DepositCommandMessage = {
+  type: 'deposit_command'
+  unitIds: number[]
+  buildingId: string
+}
+
 export type TrainUnitCommandMessage = {
   type: 'train_unit_command'
   unitType: string
@@ -441,6 +447,7 @@ export type ClientMessage =
   | LeaveMatchMessage
   | MoveCommandMessage
   | GatherCommandMessage
+  | DepositCommandMessage
   | TrainUnitCommandMessage
   | AttackCommandMessage
   | CastAbilityCommandMessage

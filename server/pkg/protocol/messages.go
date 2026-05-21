@@ -299,6 +299,16 @@ type GatherCommandMessage struct {
 	TargetID string `json:"targetId"`
 }
 
+// DepositCommandMessage is the player-directed "drop off carried resources at
+// THIS specific deposit-point building" command. Workers without carried
+// resources in UnitIDs are silently ignored server-side; the client routes
+// them through a separate move command (see InputManager.onRightClick).
+type DepositCommandMessage struct {
+	Type       string `json:"type"`
+	UnitIDs    []int  `json:"unitIds"`
+	BuildingID string `json:"buildingId"`
+}
+
 type TrainUnitCommandMessage struct {
 	Type       string `json:"type"`
 	UnitType   string `json:"unitType"`

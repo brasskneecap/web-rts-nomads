@@ -5,6 +5,72 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
+// DepositWithUnits is the player-directed "drop off your carried resources at
+// THIS specific deposit-point" command. Mirrors GatherWithUnits but targets a
+// friendly deposit-point building instead of a resource source. Workers
+// without carried resources in unitIDs are silently skipped — the client
+// routes empty-handed selection members through a separate move command.
+//
+// On arrival the existing tick loop (updateWorkerTaskLocked) deposits the load
+// and, if the worker still has a live GatherTargetID, redirects back to the
+// mine/tree so the gather job resumes.
+func (s *GameState) DepositWithUnits(playerID string, unitIDs []int, buildingID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	defer profileStart("cmd.DepositWithUnits")()
+
+	building := s.getBuildingByIDLocked(buildingID)
+	if building == nil || !building.Visible {
+		return
+	}
+	if building.OwnerID == nil || *building.OwnerID != playerID {
+		return
+	}
+	if !containsString(building.Capabilities, "deposit-point") {
+		return
+	}
+
+	blocked := s.getBlockedCellsLocked()
+	if len(s.getBuildingApproachPositionsLocked(*building, 1, blocked, nil)) == 0 {
+		return
+	}
+
+	orderID := s.nextMovementOrderIDLocked()
+
+	for _, unitID := range unitIDs {
+		unit := s.getUnitByIDLocked(unitID)
+		if unit == nil || unit.OwnerID != playerID {
+			continue
+		}
+		if !unitHasCapability(unit.UnitType, "gather") {
+			continue
+		}
+		if unit.CarriedAmount <= 0 {
+			continue
+		}
+
+		unitPos := &protocol.Vec2{X: unit.X, Y: unit.Y}
+		approachPoints := s.getBuildingApproachPositionsLocked(*building, 1, blocked, unitPos)
+		if len(approachPoints) == 0 {
+			continue
+		}
+
+		s.resetUnitMovementLocked(unit, orderID)
+		unit.ReturnTargetID = building.ID
+		unit.Returning = true
+		unit.Gathering = false
+		unit.MiningInside = false
+		unit.MiningRemaining = 0
+		unit.Visible = true
+		if unit.CarriedResourceType == "wood" {
+			unit.Status = "Returning Wood"
+		} else {
+			unit.Status = "Returning Gold"
+		}
+		s.assignUnitPath(unit, approachPoints[0], blocked, nil)
+	}
+}
+
 func (s *GameState) GatherWithUnits(playerID string, unitIDs []int, targetID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -202,6 +268,13 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 	}
 
 	if unit.GatherTargetID == "" {
+		// Player-directed deposit (or stranded carrier from a prior move order):
+		// drive to ReturnTargetID and complete the hand-off. Without this branch
+		// the worker would freeze mid-route because the rest of this function
+		// keys off GatherTargetID.
+		if unit.Returning && unit.CarriedAmount > 0 {
+			s.completeReturnDepositLocked(unit, blocked)
+		}
 		return
 	}
 

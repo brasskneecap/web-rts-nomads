@@ -31,6 +31,32 @@ export class InputManager {
 
   private lastMouseX = 0
   private lastMouseY = 0
+  // Edge-pan: when the mouse hovers within `edgePanThresholdPx` of the canvas
+  // edge, a rAF loop pans the camera at a speed proportional to how deep
+  // into the edge zone the cursor sits. Stops itself when the cursor leaves
+  // the zone, leaves the canvas, or another pan gesture takes over.
+  private edgePanRafId = 0
+  private lastEdgePanTime = 0
+  // Latest cursor position relative to the canvas; updated on every
+  // mousemove. Tracked separately from lastMouseX/Y because the existing
+  // drag-pan code computes a delta against lastMouseX/Y and depends on it
+  // not being overwritten mid-frame.
+  private edgePanMouseX = 0
+  private edgePanMouseY = 0
+  // Distance from the window top to the canvas top — i.e., the height of
+  // the MatchHud sitting above the canvas. Sampled each mousemove so layout
+  // changes (resize, fullscreen toggle) are picked up automatically. Used
+  // by the tick to compute the "upper half of the top bar" pan zone.
+  private canvasTopOffset = 0
+  private readonly edgePanThresholdPx = 24
+  // Screen-space pixels per second at the very edge. Divided by zoom so the
+  // perceived screen-pan speed feels constant across zoom levels.
+  private readonly edgePanMaxSpeed = 2200
+  // 8 chevron cursors, indexed by direction: 0=E, 1=SE, 2=S, 3=SW, 4=W,
+  // 5=NW, 6=N, 7=NE. Built lazily in the constructor so the data URIs are
+  // computed once. -1 means "not currently showing an edge-pan cursor."
+  private edgePanCursors: string[] = []
+  private currentEdgePanDir = -1
   private readonly moveCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' stroke='%230f172a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='14' cy='14' r='10.5' fill='rgba(125,220,255,0.92)'/%3E%3Cpath d='M14 5v18M5 14h18'/%3E%3Cpath d='M14 5l-3 3M14 5l3 3M23 14l-3-3M23 14l-3 3M14 23l-3-3M14 23l3-3M5 14l3-3M5 14l3 3'/%3E%3C/g%3E%3C/svg%3E") 14 14, pointer`
   private readonly gatherCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Ccircle cx='14' cy='14' r='11' fill='rgba(202,138,4,0.95)' stroke='rgba(15,23,42,0.9)' stroke-width='2'/%3E%3Cpath d='M9 16l4.2-4.4 2.6 2.6L12 18z' fill='%23fff7d6'/%3E%3Cpath d='M15.6 9.4l3 3' stroke='%230f172a' stroke-width='2.2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 14 14, pointer`
   private readonly repairCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Ccircle cx='14' cy='14' r='11' fill='rgba(74,222,128,0.92)' stroke='rgba(15,23,42,0.9)' stroke-width='2'/%3E%3Cpath d='M9 14h10M14 9v10' stroke='%230f172a' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M10 10l8 8M18 10l-8 8' stroke='rgba(15,23,42,0.25)' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") 14 14, pointer`
@@ -49,6 +75,12 @@ export class InputManager {
     this.camera = camera
     this.network = network
 
+    // Pre-build the 8 directional cursors. Each is a black-outlined white
+    // chevron pointing in the indicated direction, with the hotspot at the
+    // SVG center (16,16) so the cursor anchors to the actual mouse point.
+    const angles = [0, 45, 90, 135, 180, 225, 270, 315]
+    this.edgePanCursors = angles.map((a) => this.buildEdgePanCursor(a))
+
     canvas.addEventListener('contextmenu', this.onRightClick)
     canvas.addEventListener('mousedown', this.onMouseDown)
     canvas.addEventListener('mousemove', this.onMouseMove)
@@ -59,6 +91,15 @@ export class InputManager {
     window.addEventListener('mouseup', this.onMouseUp)
     window.addEventListener('keydown', this.onKeyDown)
     window.addEventListener('keyup', this.onKeyUp)
+    // Window-level mousemove drives edge-pan. We need cursor position even
+    // when the pointer sits over the footer HUD or other overlays — those
+    // elements consume the canvas-level mousemove, but the window listener
+    // still fires. The handler converts to canvas-relative coords itself.
+    window.addEventListener('mousemove', this.onWindowMouseMove)
+    // Stop edge-pan when the cursor leaves the browser viewport entirely
+    // (e.g., into the OS taskbar) or the tab loses focus.
+    document.documentElement.addEventListener('mouseleave', this.onDocumentLeave)
+    window.addEventListener('blur', this.onWindowBlur)
   }
 
   private getScreenPosition(e: MouseEvent | WheelEvent) {
@@ -439,6 +480,33 @@ export class InputManager {
       return
     }
 
+    // Player-directed deposit: a right-click on an owned deposit-point building
+    // (e.g. a townhall) with at least one carrying worker selected routes the
+    // carriers there to drop off their resource. Non-carrying selection members
+    // fall through to a normal move so they don't ignore the order. Checked
+    // before repair so a carrier+damaged-townhall combo deposits first rather
+    // than queuing up a repair task while still holding gold.
+    if (
+      clickedBuilding &&
+      clickedBuilding.capabilities.includes('deposit-point') &&
+      clickedBuilding.ownerId === this.state.localPlayerId &&
+      this.state.selectedUnitsHaveCarriedResource()
+    ) {
+      const carrierIds = this.state.getSelectedCarrierUnitIds()
+      const otherIds = unitIds.filter((id) => !carrierIds.includes(id))
+      const cellSize = this.state.mapConfig.cellSize
+      const buildingCenterX = (clickedBuilding.x + clickedBuilding.width / 2) * cellSize
+      const buildingCenterY = (clickedBuilding.y + clickedBuilding.height / 2) * cellSize
+      this.state.addMoveMarker(buildingCenterX, buildingCenterY, 700)
+      if (carrierIds.length > 0) {
+        this.network.sendDepositCommand(carrierIds, clickedBuilding.id)
+      }
+      if (otherIds.length > 0) {
+        this.network.sendMoveCommand(otherIds, buildingCenterX, buildingCenterY)
+      }
+      return
+    }
+
     if (
       clickedBuilding &&
       this.isRepairableBuilding(clickedBuilding) &&
@@ -486,6 +554,171 @@ export class InputManager {
     if (!this.isSpaceHeld && !this.isSpacePanning && !this.isMiddleMouseDown) {
       this.canvas.style.cursor = resolveCursor('default', 'default')
     }
+    // Don't stop edge-pan here — the cursor leaving the canvas (e.g., onto
+    // the footer HUD) is exactly when we want to keep panning. The window-
+    // level handlers take responsibility for stopping the loop.
+  }
+
+  // Window-level mousemove: converts the global cursor position into
+  // canvas-relative coords and arms the edge-pan loop. Fires whether the
+  // cursor is over the canvas or over a HUD overlay sitting on top of it.
+  private onWindowMouseMove = (e: MouseEvent) => {
+    const rect = this.canvas.getBoundingClientRect()
+    this.edgePanMouseX = e.clientX - rect.left
+    this.edgePanMouseY = e.clientY - rect.top
+    this.canvasTopOffset = rect.top
+    this.startEdgePanLoop()
+  }
+
+  private onDocumentLeave = () => {
+    this.stopEdgePanLoop()
+  }
+
+  private onWindowBlur = () => {
+    this.stopEdgePanLoop()
+  }
+
+  // Edge-pan rAF loop. Idempotent — calling startEdgePanLoop while it's
+  // already running is a no-op. The tick stops itself when the cursor is
+  // no longer in an edge zone or another pan gesture is active.
+  private startEdgePanLoop() {
+    if (this.edgePanRafId !== 0) return
+    this.lastEdgePanTime = performance.now()
+    this.edgePanRafId = requestAnimationFrame(this.edgePanTick)
+  }
+
+  private stopEdgePanLoop() {
+    if (this.edgePanRafId !== 0) {
+      cancelAnimationFrame(this.edgePanRafId)
+      this.edgePanRafId = 0
+    }
+    this.clearEdgePanCursor()
+  }
+
+  private edgePanTick = (now: number) => {
+    this.edgePanRafId = 0
+
+    // Bail out while another pan gesture owns the camera so we don't fight
+    // it. The next mousemove will re-arm the loop if the cursor is still in
+    // an edge zone.
+    if (
+      this.isMiddleMouseDown ||
+      this.isSpacePanning ||
+      this.isRightPanning ||
+      this.isMinimapNavigating
+    ) {
+      this.clearEdgePanCursor()
+      return
+    }
+
+    const t = this.edgePanThresholdPx
+    const w = this.canvas.width
+    const h = this.canvas.height
+    const x = this.edgePanMouseX
+    const y = this.edgePanMouseY
+
+    // Pan velocity ramps linearly from 0 at the threshold boundary up to
+    // edgePanMaxSpeed at the very edge. Negative = pan left/up, positive =
+    // pan right/down. Outside the canvas, the depth ratio is clamped to 1.
+    // Top-edge pan only triggers in the UPPER HALF of the MatchHud — that
+    // is, when the cursor is closer to the window top than to the canvas
+    // top. The lower half of the top bar is a dead zone so the cursor can
+    // drift near the HUD without launching the camera upward
+    // unintentionally; that dead zone also naturally protects the menu
+    // (crest) button, which sits in the lower half of the bar — no extra
+    // x-gate needed. y < 0 means "above the canvas"; topBarHalfBoundary
+    // is the y-coord (negative) where the dead zone ends and the pan zone
+    // begins. Falls back to the canvas top edge if no top bar is detected.
+    const topBar = this.canvasTopOffset
+    const topBarHalfBoundary = topBar > 0 ? -topBar / 2 : 0
+
+    let vx = 0
+    let vy = 0
+    if (x < t) vx = -Math.min(1, (t - x) / t) * this.edgePanMaxSpeed
+    else if (x > w - t) vx = Math.min(1, (x - (w - t)) / t) * this.edgePanMaxSpeed
+
+    if (y < topBarHalfBoundary) {
+      // Ramp from 0 at the boundary up to max speed at the window top.
+      const zoneDepth = Math.max(1, topBar / 2)
+      const ratio = Math.min(1, (topBarHalfBoundary - y) / zoneDepth)
+      vy = -ratio * this.edgePanMaxSpeed
+    } else if (y > h - t) {
+      vy = Math.min(1, (y - (h - t)) / t) * this.edgePanMaxSpeed
+    }
+
+    if (vx === 0 && vy === 0) {
+      // Cursor moved out of the edge zone; let the loop sleep until the
+      // next mousemove brings it back.
+      this.clearEdgePanCursor()
+      return
+    }
+
+    // dt clamped to 100ms to keep the camera from teleporting after a long
+    // tab-out / hitch. Screen velocity → world delta via the zoom factor,
+    // matching the convention used by the drag-pan path above.
+    const dt = Math.min(0.1, (now - this.lastEdgePanTime) / 1000)
+    this.lastEdgePanTime = now
+    this.camera.pan((vx * dt) / this.camera.zoom, (vy * dt) / this.camera.zoom)
+    this.camera.clamp(w, h, this.state.mapWidth, this.state.mapHeight)
+
+    this.applyEdgePanCursor(vx, vy)
+
+    this.edgePanRafId = requestAnimationFrame(this.edgePanTick)
+  }
+
+  // Direction index from a pan velocity, mapped onto the 8-way cursor
+  // array. Returns -1 when there is no pan (defensive — caller should
+  // already have early-exited).
+  private edgePanDirection(vx: number, vy: number): number {
+    if (vx === 0 && vy === 0) return -1
+    if (vx > 0 && vy === 0) return 0 // E
+    if (vx > 0 && vy > 0) return 1 // SE
+    if (vx === 0 && vy > 0) return 2 // S
+    if (vx < 0 && vy > 0) return 3 // SW
+    if (vx < 0 && vy === 0) return 4 // W
+    if (vx < 0 && vy < 0) return 5 // NW
+    if (vx === 0 && vy < 0) return 6 // N
+    return 7 // NE: vx > 0 && vy < 0
+  }
+
+  // Apply the directional cursor to both the canvas and document.body so
+  // the indicator is visible whether the actual pointer sits over the
+  // canvas (top/left/right edges) or over the SelectionHud footer at the
+  // bottom. Only re-applies when the direction has actually changed to
+  // avoid thrashing style on every tick.
+  private applyEdgePanCursor(vx: number, vy: number) {
+    const dir = this.edgePanDirection(vx, vy)
+    if (dir === -1 || dir === this.currentEdgePanDir) return
+    this.currentEdgePanDir = dir
+    const cursor = this.edgePanCursors[dir]
+    this.canvas.style.cursor = cursor
+    document.body.style.cursor = cursor
+  }
+
+  private clearEdgePanCursor() {
+    if (this.currentEdgePanDir === -1) return
+    this.currentEdgePanDir = -1
+    document.body.style.cursor = ''
+    // The canvas cursor is re-derived from hover state on the next
+    // mousemove; clear here so the panning chevron doesn't linger if the
+    // cursor parks outside the canvas after edge-pan stops.
+    this.updateHoverCursor(this.lastMouseX, this.lastMouseY)
+  }
+
+  // Build a chevron-arrow cursor data URI rotated to point in the given
+  // direction (degrees, 0 = right/east). Black outline with a white inner
+  // stroke for legibility on light and dark backgrounds.
+  private buildEdgePanCursor(angle: number): string {
+    const svg =
+      `<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'>` +
+      `<g transform='rotate(${angle} 16 16)'>` +
+      `<path d='M11 7 L23 16 L11 25' stroke='black' stroke-width='6' fill='none' ` +
+      `stroke-linejoin='round' stroke-linecap='round'/>` +
+      `<path d='M11 7 L23 16 L11 25' stroke='white' stroke-width='3' fill='none' ` +
+      `stroke-linejoin='round' stroke-linecap='round'/>` +
+      `</g></svg>`
+    const encoded = encodeURIComponent(svg)
+    return `url("data:image/svg+xml,${encoded}") 16 16, default`
   }
 
   private onWheel = (e: WheelEvent) => {
@@ -505,6 +738,7 @@ export class InputManager {
   }
 
   destroy() {
+    this.stopEdgePanLoop()
     if (this.rightPanDelayTimer !== null) {
       clearTimeout(this.rightPanDelayTimer)
       this.rightPanDelayTimer = null
@@ -519,6 +753,9 @@ export class InputManager {
     window.removeEventListener('mouseup', this.onMouseUp)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
+    window.removeEventListener('mousemove', this.onWindowMouseMove)
+    document.documentElement.removeEventListener('mouseleave', this.onDocumentLeave)
+    window.removeEventListener('blur', this.onWindowBlur)
   }
 
   private isRepairableBuilding(
@@ -582,6 +819,13 @@ export class InputManager {
     // the reset once up here means every other branch can ignore the field
     // entirely (instead of having to remember to null it).
     this.state.setHoveredFriendlyUnit(null)
+
+    // Edge-pan owns the cursor while active. Skipping the rest of this
+    // function prevents the canvas mousemove handler from flickering the
+    // chevron back to the hover cursor between rAF ticks.
+    if (this.currentEdgePanDir !== -1) {
+      return
+    }
 
     if (this.isSpaceHeld || this.isSpacePanning) {
       this.canvas.style.cursor = this.isSpacePanning
@@ -707,6 +951,14 @@ export class InputManager {
 
     this.state.setHoveredEnemyUnit(hoveredEnemy?.id ?? null)
 
+    // Deposit hover: owned deposit-point building + at least one carrying worker
+    // in the selection. Matches the right-click branch in onRightClick and takes
+    // precedence over repair so the cursor advertises the dominant action.
+    const canDepositHere =
+      !!hoveredBuilding &&
+      hoveredBuilding.capabilities.includes('deposit-point') &&
+      hoveredBuilding.ownerId === this.state.localPlayerId &&
+      this.state.selectedUnitsHaveCarriedResource()
     const canGatherBuilding =
       isGatherableBuilding &&
       this.state.selectedUnitsCanGather()
@@ -718,16 +970,18 @@ export class InputManager {
       this.state.selectedUnitsCanBuild()
 
     this.state.setHoveredInteractableBuilding(
-      canRepair || canGatherBuilding ? hoveredBuilding!.id : null,
+      canDepositHere || canRepair || canGatherBuilding ? hoveredBuilding!.id : null,
     )
     this.state.setHoveredInteractableObstacle(
       canGatherObstacle && hoveredObstacle?.id ? hoveredObstacle.id : null,
     )
-    this.canvas.style.cursor = canRepair
-      ? resolveCursor('repair', this.repairCursor)
-      : canGatherBuilding || canGatherObstacle
-        ? resolveCursor(gatherCursorKey, this.gatherCursor)
-        : resolveCursor('default', 'default')
+    this.canvas.style.cursor = canDepositHere
+      ? resolveCursor('minegold', this.gatherCursor)
+      : canRepair
+        ? resolveCursor('repair', this.repairCursor)
+        : canGatherBuilding || canGatherObstacle
+          ? resolveCursor(gatherCursorKey, this.gatherCursor)
+          : resolveCursor('default', 'default')
   }
 
   private isInsideMinimap(screenX: number, screenY: number) {

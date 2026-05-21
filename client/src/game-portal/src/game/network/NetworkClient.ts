@@ -8,6 +8,7 @@ import type {
   ClientMessage,
   ConnectionState,
   DemolishBuildingCommandMessage,
+  DepositCommandMessage,
   GatherCommandMessage,
   KickBuildersCommandMessage,
   LeaveMatchMessage,
@@ -391,6 +392,16 @@ export class NetworkClient {
       type: 'gather_command',
       unitIds,
       targetId,
+    }
+
+    this.send(message)
+  }
+
+  sendDepositCommand(unitIds: number[], buildingId: string) {
+    const message: DepositCommandMessage = {
+      type: 'deposit_command',
+      unitIds,
+      buildingId,
     }
 
     this.send(message)

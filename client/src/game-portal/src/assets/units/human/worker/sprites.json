@@ -5,14 +5,14 @@
     "height": 116
   },
   "rotations": {
-    "south": "rotations/south.png",
-    "south-east": "rotations/south-east.png",
-    "east": "rotations/east.png",
-    "north-east": "rotations/north-east.png",
-    "north": "rotations/north.png",
-    "north-west": "rotations/north-west.png",
-    "west": "rotations/west.png",
-    "south-west": "rotations/south-west.png"
+    "south": "worker/rotations/south.png",
+    "south-east": "worker/rotations/south-east.png",
+    "east": "worker/rotations/east.png",
+    "north-east": "worker/rotations/north-east.png",
+    "north": "worker/rotations/north.png",
+    "north-west": "worker/rotations/north-west.png",
+    "west": "worker/rotations/west.png",
+    "south-west": "worker/rotations/south-west.png"
   },
   "animations": {
     "walking": {
@@ -20,22 +20,6 @@
       "frameWidth": 116,
       "frameHeight": 116,
       "sheet": "packed/walking.png",
-      "rowOrder": [
-        "north",
-        "south",
-        "east",
-        "west",
-        "north-east",
-        "south-east",
-        "south-west",
-        "north-west"
-      ]
-    },
-    "chopping": {
-      "frameCount": 4,
-      "frameWidth": 116,
-      "frameHeight": 116,
-      "sheet": "packed/chopping.png",
       "rowOrder": [
         "north",
         "south",
@@ -78,7 +62,23 @@
         "south-west",
         "north-west"
       ]
+    },
+    "chopping": {
+      "frameCount": 4,
+      "frameWidth": 116,
+      "frameHeight": 116,
+      "sheet": "packed/chopping.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
     }
   },
-  "packedAt": "2026-05-04T16:02:25.222Z"
+  "packedAt": "2026-05-21T23:30:18.415Z"
 }
