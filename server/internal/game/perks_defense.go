@@ -67,6 +67,17 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	if totalMult := target.PerkState.totalMarkMultiplier(); totalMult > 0 {
 		damage = maxInt(damage, int(math.Round(float64(damage)*(1.0+totalMult))))
 	}
+	// Step 3b: Sanctuary aura mitigation (projectile-only). max-wins, no-stack.
+	// Applied after mark amplification and before flat reduction so sanctuary
+	// reduces on top of any mark bonus — consistent with the design intent that
+	// sanctuary protects its zone from incoming fire.
+	if sanctuaryMult := s.perkRangedDamageMultiplierFromAurasLocked(target, src); sanctuaryMult < 1.0 {
+		damage = maxInt(0, int(math.Round(float64(damage)*sanctuaryMult)))
+		if damage == 0 {
+			s.perkShareDamageToMarkedLocked(target, origDamage, src)
+			return 0
+		}
+	}
 	// Step 4: Flat per-hit reduction.
 	if reduction := s.perkFlatDamageReductionLocked(target); reduction > 0 {
 		damage = maxInt(0, damage-reduction)

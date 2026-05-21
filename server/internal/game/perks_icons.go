@@ -170,6 +170,22 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 		// banner renders as a placed entity on the ground (sprite + radius
 		// circle), making an additional icon-on-Vanguard redundant.
 
+		case "sanctuary":
+			// Cleric bronze passive: always emit for the owner so the player
+			// sees the aura is live whenever the Cleric is alive. Allies
+			// inside the aura get a separate recipient-style icon below.
+			addIcon(perkID, 1)
+
+		case "mana_conduit":
+			// Cleric bronze passive: always emit for the owner. The mana-regen
+			// effect is keyed on nearby injured allies, but the perk itself is
+			// the durable thing the player wants to see represented.
+			addIcon(perkID, 1)
+
+		// battle_prayer's icon lives on the BUFFED TARGET (cross-unit buff),
+		// not on the perk owner. Surfaced below this loop so allies who don't
+		// own the perk still display the buff icon while it is active.
+
 		// ── add cases for new visually-indicated buffs below this line ──────
 		}
 	}
@@ -202,6 +218,14 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 		if dx*dx+dy*dy <= b.Radius*b.Radius {
 			addIcon("rallying_banner", 1)
 		}
+	}
+
+	// battle_prayer recipient buff: surfaced on any unit currently carrying a
+	// non-zero BattlePrayerRemaining, regardless of whether they own the perk
+	// (the buff lives on the healed target, not the Cleric). Mirrors the
+	// cross-unit-debuff pattern used for WeakenedRemaining in activeDebuffIconsLocked.
+	if unit.PerkState.BattlePrayerRemaining > 0 {
+		addIcon("battle_prayer", 1)
 	}
 
 	return active

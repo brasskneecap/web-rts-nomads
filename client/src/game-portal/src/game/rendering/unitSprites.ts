@@ -137,8 +137,14 @@ for (const [filePath, url] of Object.entries(portraitGlob)) {
 // If a requested animation isn't defined for a given unit, try this alternate.
 // Keeps carrying_gold workers walking normally when only some units have the
 // dedicated carrying pose, instead of freezing on the idle rotation.
+//
+// `casting → attacking` covers spellcasters whose sprite set lacks a dedicated
+// casting sheet (e.g. the Cleric promotion variant of Apprentice): the cast
+// reads as the unit's attack swing instead of a frozen rotation pose. Base
+// Apprentice has its own casting.png and is unaffected by this fallback.
 const ANIMATION_FALLBACK: Record<string, string> = {
   carrying_gold: 'walking',
+  casting: 'attacking',
 }
 
 const sprites = new Map<string, UnitSpriteSet>()

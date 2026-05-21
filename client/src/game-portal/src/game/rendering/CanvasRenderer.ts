@@ -1695,6 +1695,7 @@ export class CanvasRenderer {
       actionFacingDx?: number
       actionFacingDy?: number
       flyer?: boolean
+      focusTargetId?: number
     }>,
   ) {
     const ctx = this.ctx
@@ -1712,6 +1713,29 @@ export class CanvasRenderer {
         effectNamesByUnit.set(e.anchorUnitId, names)
       }
       names.add(e.name)
+    }
+
+    // Pre-index unit IDs that are the Focus Target of the currently-selected
+    // unit, so the per-unit render can draw a glow ring under them. The ring
+    // is intentionally gated on EXACTLY ONE selected unit: showing rings for
+    // every Cleric's focus in a multi-selection would clutter the world. So
+    // the ring reads as "this is the ally that the unit you have selected is
+    // focused on" — clean 1:1 visual mapping. Matches the autocast button
+    // glow color so "Focus Target button is active" and "this is the
+    // focused unit" are obviously the same idea.
+    const localPlayerId = this.state.localPlayerId
+    const focusTargetIds = new Set<number>()
+    if (localPlayerId && this.state.selectedUnitIds.size === 1) {
+      // Single-selection branch: read the focus from whatever unit is solely
+      // selected (must be local-player-owned and have an active focus).
+      const onlySelectedId = this.state.selectedUnitIds.values().next().value
+      for (const u of units) {
+        if (u.id !== onlySelectedId) continue
+        if (u.ownerId !== localPlayerId) break
+        if (!u.focusTargetId) break
+        focusTargetIds.add(u.focusTargetId)
+        break
+      }
     }
 
     // Y-sort obstacles, buildings, and units together so a unit standing
@@ -1806,6 +1830,31 @@ export class CanvasRenderer {
         ctx.stroke()
       }
 
+      // Focus Target marker — sky-blue glow ring around any unit currently
+      // assigned as a Cleric's focus. Same hue as the action-bar autocast
+      // glow so "Focus Target button is active" and "this is the focused
+      // unit" read as one connected visual idea. Stacks below the selection
+      // ring if both apply (a player can focus on a unit they've selected).
+      if (focusTargetIds.has(unit.id)) {
+        ctx.save()
+        ctx.shadowColor = 'rgba(90, 190, 255, 0.85)'
+        ctx.shadowBlur = 9 / this.camera.zoom
+        ctx.strokeStyle = 'rgba(90, 190, 255, 0.95)'
+        ctx.lineWidth = 2.5 / this.camera.zoom
+        ctx.beginPath()
+        ctx.ellipse(
+          selectionCenterX,
+          selectionCenterY,
+          selectionRadiusX + 1.5,
+          selectionRadiusY + 1.5,
+          0,
+          0,
+          Math.PI * 2,
+        )
+        ctx.stroke()
+        ctx.restore()
+      }
+
       // Drag-select candidate ring — shown while the selection box is active
       // for any friendly unit whose body is inside the box. Matches the
       // selection box color so it reads as "will be selected on release".
@@ -1824,6 +1873,23 @@ export class CanvasRenderer {
       if (isHoveredEnemy && !isInspected) {
         ctx.save()
         ctx.strokeStyle = 'rgba(251, 146, 60, 0.9)'
+        ctx.lineWidth = 2 / this.camera.zoom
+        ctx.setLineDash([5 / this.camera.zoom, 4 / this.camera.zoom])
+        ctx.beginPath()
+        ctx.ellipse(selectionCenterX, selectionCenterY, selectionRadiusX + 1, selectionRadiusY + 1, 0, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // Friendly hover ring (sky-blue dashed). Mirrors the enemy hover ring
+      // visually but in the autocast / focus-target hue so the family of
+      // ally-targeting cues stays cohesive: the cursor is a target reticle,
+      // the action button glows blue, and the unit under the cursor lights
+      // up in matching blue. Only set while the player is in a cast-ability
+      // or focus-target cursor mode (see InputManager.updateHoverCursor).
+      if (this.state.hoveredFriendlyUnitId === unit.id) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(90, 190, 255, 0.95)'
         ctx.lineWidth = 2 / this.camera.zoom
         ctx.setLineDash([5 / this.camera.zoom, 4 / this.camera.zoom])
         ctx.beginPath()

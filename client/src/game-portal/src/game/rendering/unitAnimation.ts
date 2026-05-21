@@ -297,9 +297,10 @@ function pickAnimation(
   }
   // Spell-cast slot, distinct from 'Attacking' (basic attack). Checked before
   // moving/idle so a cast always reads clearly and "interrupts" the idle pose.
-  // Deliberately NOT added to ANIMATION_FALLBACK → 'attacking': a unit with no
-  // dedicated casting sheet degrades to its neutral rotation pose, never the
-  // attack swing, keeping cast and attack visually distinct (spec requirement).
+  // Units without a dedicated casting sheet fall back to their attacking
+  // animation via ANIMATION_FALLBACK['casting'] = 'attacking' in unitSprites.ts
+  // — better than freezing in the neutral rotation pose. Base Apprentice has
+  // its own casting sheet and is unaffected.
   if (status === 'Casting') return 'casting'
   if (status === 'Chopping Wood') return 'chopping'
   // All construction/repair statuses — including paused variants emitted when

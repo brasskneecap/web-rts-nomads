@@ -24,6 +24,13 @@ const (
 	OrderAttackTarget                  // sticky attack on AttackTargetID/AttackBuildingTargetID
 	OrderHold                          // do not move; engage in-range enemies only
 	OrderPatrol                        // cycle waypoints; engage acquired enemies; resume
+	// OrderFocusFollow: sticky support assignment. The unit follows FocusTargetID
+	// (a same-team ally, stored by ID per the project ID-not-pointer rule) and
+	// prioritises healing that ally. Cleared whenever any other order replaces it;
+	// the clear path always zeroes FocusTargetID alongside the order so the two
+	// never diverge. Use RequestSetFocusTargetLocked / clearFocusTargetLocked to
+	// set/clear; never mutate FocusTargetID or this order type directly.
+	OrderFocusFollow
 )
 
 // orderTypeString returns the wire-format string for OrderType, matching the
@@ -40,6 +47,8 @@ func orderTypeString(t OrderType) string {
 		return protocol.OrderStringHold
 	case OrderPatrol:
 		return protocol.OrderStringPatrol
+	case OrderFocusFollow:
+		return protocol.OrderStringFocusFollow
 	default:
 		return protocol.OrderStringIdle
 	}
@@ -274,6 +283,15 @@ type Unit struct {
 	// and resume-after-combat logic key off Order.Type.
 	// queue-ready: becomes []OrderState for shift-queue in a future design.
 	Order OrderState
+
+	// FocusTargetID is the ID of the ally this unit is focused on (Cleric only).
+	// Zero means no focus target. Stores the ally's unit.ID — never a *Unit
+	// pointer, matching the project's ID-not-pointer targeting invariant. Mutated
+	// only via RequestSetFocusTargetLocked / clearFocusTargetLocked so all
+	// transitions are observable in one place (focus_target.go). Always paired
+	// with Order.Type == OrderFocusFollow; any order replacement also zeroes this
+	// field via clearFocusTargetLocked.
+	FocusTargetID int
 
 	CombatAnchorX      float64
 	CombatAnchorY      float64
@@ -943,6 +961,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		}
 		snapshot := protocol.UnitSnapshot{
 			ObjectiveID:         unit.ObjectiveID,
+			FocusTargetID:       unit.FocusTargetID,
 			ID:                  unit.ID,
 			OwnerID:             unit.OwnerID,
 			Color:               unit.Color,
@@ -1250,6 +1269,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		}
 		snapshot := protocol.UnitSnapshot{
 			ObjectiveID:         unit.ObjectiveID,
+			FocusTargetID:       unit.FocusTargetID,
 			ID:                  unit.ID,
 			OwnerID:             unit.OwnerID,
 			Color:               unit.Color,
@@ -1534,6 +1554,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		}
 		snapshot := protocol.UnitSnapshot{
 			ObjectiveID:         unit.ObjectiveID,
+			FocusTargetID:       unit.FocusTargetID,
 			ID:                  unit.ID,
 			OwnerID:             unit.OwnerID,
 			Color:               unit.Color,
@@ -1847,6 +1868,24 @@ func (s *GameState) Update(dt float64) {
 			unit.PerkState.LastCombatSeconds = math.Max(0, unit.PerkState.LastCombatSeconds-dt)
 		}
 
+		// Battle Prayer buff decay — cross-unit: lives on any healed unit even if
+		// they don't own the battle_prayer perk. Decays here alongside the other
+		// cross-unit timers (WeakenedRemaining, TauntRemaining, etc.).
+		if unit.PerkState.BattlePrayerRemaining > 0 {
+			unit.PerkState.BattlePrayerRemaining = math.Max(0, unit.PerkState.BattlePrayerRemaining-dt)
+			if unit.PerkState.BattlePrayerRemaining == 0 {
+				unit.PerkState.BattlePrayerMultiplier = 0
+			}
+		}
+
+		// Focus target validation — clears stale focus (dead, invisible,
+		// switched teams) every tick while OrderFocusFollow is active.
+		// The unit falls back to idle / auto-heal after clearFocusTargetLocked
+		// transitions it to OrderIdle.
+		if unit.Order.Type == OrderFocusFollow {
+			s.validateFocusTargetLocked(unit)
+		}
+
 		// Passive health regen. Accumulator carries fractional HP between ticks
 		// so sub-1 rates (the default 0.2 HP/s) still heal integer HP on the
 		// correct cadence. Skipped for dead / full-HP units; accumulator resets
@@ -1906,6 +1945,14 @@ func (s *GameState) Update(dt float64) {
 		}
 		if unit.StunnedRemaining > 0 {
 			continue
+		}
+
+		// Focus follow: when the Cleric has an active focus target, drive its
+		// path toward the follow destination each tick (with repath debouncing).
+		// Must run before the !unit.Moving check so a stationary Cleric that
+		// needs to follow a moving ally will start a new path this tick.
+		if unit.Order.Type == OrderFocusFollow && unit.FocusTargetID != 0 {
+			s.tickFocusFollowMovementLocked(unit, blocked)
 		}
 
 		if !unit.Moving {

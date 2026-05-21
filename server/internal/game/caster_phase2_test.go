@@ -1027,7 +1027,7 @@ func TestPhase2_DamageAmount_DamagesTargetOnResolve(t *testing.T) {
 	// Resolve the ability directly (synchronous — CastTime = 0 would instant-resolve;
 	// use resolveAbilityCastLocked directly to test the resolve step in isolation,
 	// bypassing the cast timer).
-	s.resolveAbilityCastLocked(caster, arcaneDef, target)
+	s.resolveAbilityCastLocked(caster, arcaneDef, []*Unit{target})
 
 	liveTarget := s.unitsByID[targetID]
 	if liveTarget == nil {
@@ -1088,7 +1088,7 @@ func TestPhase2_DamageAmount_ZeroDealsNoDamage(t *testing.T) {
 	allyID := ally.ID
 
 	// Resolve a heal — it must NOT deal any damage to the ally.
-	s.resolveAbilityCastLocked(caster, healAbilDef, ally)
+	s.resolveAbilityCastLocked(caster, healAbilDef, []*Unit{ally})
 
 	liveAlly := s.unitsByID[allyID]
 	if liveAlly == nil {
@@ -1133,7 +1133,7 @@ func TestPhase2_DamageAmount_LethalCastRunsDeathPipeline(t *testing.T) {
 	target.Armor = 0
 	targetID := target.ID
 
-	s.resolveAbilityCastLocked(caster, arcaneDef, target)
+	s.resolveAbilityCastLocked(caster, arcaneDef, []*Unit{target})
 	s.mu.Unlock()
 
 	// Run one tick to drain the pending death queue.
@@ -1182,7 +1182,7 @@ func TestPhase2_DamageAmount_AttributedToCaster(t *testing.T) {
 	// resolveAbilityCastLocked calls applyUnitDamageWithSourceLocked with
 	// DamageSource{AttackerUnitID: caster.ID, Kind: "ability", DamageType: ...}
 	// which enqueues the target's death attributed to the caster.
-	s.resolveAbilityCastLocked(caster, arcaneDef, target)
+	s.resolveAbilityCastLocked(caster, arcaneDef, []*Unit{target})
 	s.mu.Unlock()
 
 	// Run a tick to drain the pending death queue → awardKillXPLocked fires.

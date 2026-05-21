@@ -104,11 +104,17 @@ func (s *GameState) DebugSpawnUnit(msg protocol.DebugSpawnUnitMessage, callerPla
 	// Append perks verbatim. The UI is expected to pass them in rank order
 	// (bronze, silver, gold) — the runtime hooks iterate PerkIDs as an
 	// unordered set so order only matters for tie-breaks in the HUD.
+	//
+	// applyPerkGrantedHooksLocked fires the same post-grant side-effects the
+	// natural rank-up path runs (e.g. greater_heal swaps "heal" → "greater_heal"
+	// in the unit's Abilities slice). Without this, a debug-spawned unit with
+	// the greater_heal perk would keep "heal" on its ability bar.
 	for _, perkID := range msg.PerkIDs {
 		if perkID == "" {
 			continue
 		}
 		unit.PerkIDs = append(unit.PerkIDs, perkID)
+		s.applyPerkGrantedHooksLocked(unit, perkID)
 	}
 
 	// Reapply rank / path modifiers so the debug-set rank actually scales

@@ -316,6 +316,66 @@ func (s *GameState) perkBonusArmorFromBannersLocked(unit *Unit) int {
 	return total
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// sanctuary — ranged damage reduction aura
+//
+// perkRangedDamageMultiplierFromAurasLocked returns the outgoing-damage
+// multiplier that sanctuary auras impose on an incoming projectile hit. Only
+// projectile-Kind damage is ever reduced (src.Kind == "projectile"); melee,
+// trap, ability, and all other kinds return 1.0 with no work.
+//
+// Algorithm: scan s.Units in slice order for alive, visible, same-team units
+// that own sanctuary and are within their configured radiusPixels of the
+// target. Track the single strongest reduction (max-wins, no-stack) so two
+// overlapping sanctuaries use the better reduction, not the sum. Returns
+// 1.0 - bestReductionPercent (e.g. 0.75 for 25% reduction).
+//
+// Called from applyUnitDamageWithSourceLocked after mark amplification and
+// before flat reduction, so sanctuary reduces the full post-mark damage.
+// Must be called under s.mu write lock.
+// ─────────────────────────────────────────────────────────────────────────────
+func (s *GameState) perkRangedDamageMultiplierFromAurasLocked(target *Unit, src DamageSource) float64 {
+	if src.Kind != "projectile" {
+		return 1.0 // only projectile damage is mitigated by sanctuary
+	}
+	if target == nil {
+		return 1.0
+	}
+
+	def := perkDefByID("sanctuary")
+	if def == nil {
+		return 1.0
+	}
+
+	bestReduction := 0.0
+	for _, u := range s.Units {
+		if u == nil || u.HP <= 0 || !u.Visible {
+			continue
+		}
+		if !containsString(u.PerkIDs, "sanctuary") {
+			continue
+		}
+		// Aura must cover the target, not the source; same-team requirement.
+		if !s.unitsFriendlyLocked(u, target) {
+			continue
+		}
+		radius := def.Config["radiusPixels"]
+		dx := u.X - target.X
+		dy := u.Y - target.Y
+		if dx*dx+dy*dy > radius*radius {
+			continue
+		}
+		reduction := def.Config["damageReductionPercent"]
+		if reduction > bestReduction {
+			bestReduction = reduction
+		}
+	}
+	if bestReduction <= 0 {
+		return 1.0
+	}
+	return 1.0 - bestReduction
+}
+
 // perkAttackSpeedBonusFromBannersLocked returns the total attack-speed bonus
 // this unit receives from all active rallying banners planted by the same player.
 // Contributions from multiple banners are summed.

@@ -3,6 +3,7 @@
   "displayName": "Heal",
   "type": "spell",
   "category": "heal",
+  "targetCount": 1,
   "manaCost": 5,
   "healAmount": 10,
   "castRange": "match_attack_range",

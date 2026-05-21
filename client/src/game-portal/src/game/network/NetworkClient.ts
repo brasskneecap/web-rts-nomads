@@ -17,6 +17,7 @@ import type {
   PatrolCommandMessage,
   PurchaseUpgradeCommand,
   SetBuildingSpawnPointCommandMessage,
+  SetFocusTargetCommandMessage,
   SetStanceCommandMessage,
   ServerMessage,
   TrainUnitCommandMessage,
@@ -452,6 +453,20 @@ export class NetworkClient {
       type: 'toggle_autocast_command',
       unitId,
       abilityId,
+    }
+
+    this.send(message)
+  }
+
+  // Set or clear the Focus Target for a Cleric/support unit. targetUnitId === 0
+  // clears the focus. The server validates ownership of casterUnitId and
+  // team-allegiance of targetUnitId; rejection comes back via
+  // NotificationMessage (handled by the existing notification toast path).
+  sendSetFocusTargetCommand(casterUnitId: number, targetUnitId: number) {
+    const message: SetFocusTargetCommandMessage = {
+      type: 'set_focus_target_command',
+      casterUnitId,
+      targetUnitId,
     }
 
     this.send(message)

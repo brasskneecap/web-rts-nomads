@@ -143,6 +143,13 @@ type AbilityDef struct {
 	// ability may declare either, both, or neither.
 	DamageAmount int `json:"damageAmount,omitempty"`
 
+	// TargetCount is the number of targets this ability can affect per cast.
+	// Default (0 or absent) normalises to 1 (single-target). Values > 1 drive
+	// the multi-target path: the resolver applies the effect to up to TargetCount
+	// valid candidates ordered by ascending HP percent, tie-broken by unit.ID.
+	// Loaded from JSON key "targetCount"; values < 1 are normalised to 1 at load.
+	TargetCount int `json:"targetCount,omitempty"`
+
 	// ── Auto-cast ──────────────────────────────────────────────────────────
 	// SupportsAutoCast gates whether the action bar exposes an auto-cast
 	// toggle for this ability (default false). AutoCastTargetSelector names a
@@ -171,6 +178,23 @@ func (a AbilityDef) CasterAnimationOrCasting() string {
 		return unitStatusCasting
 	}
 	return a.CasterAnimation
+}
+
+// EffectiveCooldown returns the cooldown duration the UI should display and
+// the cooldown system should arm on each cast. It is max(Cooldown, CastTime)
+// so the action-bar clock-wipe overlay is always visible while the cast is
+// in flight — without this clamp, a 1s-cast / 0s-cooldown spell (base Heal)
+// would have NO visible wipe even though the unit is locked in place
+// casting for a full second, leaving the player wondering whether their
+// click registered. When Cooldown >= CastTime (Greater Heal: 3s cd vs 1s
+// cast) the cooldown drives the wipe as authored. Cast time alone is never
+// shorter than what the unit is committed to anyway, so this lower bound
+// adds no false "still on cooldown" gating.
+func (a AbilityDef) EffectiveCooldown() float64 {
+	if a.CastTime > a.Cooldown {
+		return a.CastTime
+	}
+	return a.Cooldown
 }
 
 // canAbilityTargetUnitLocked reports whether target is a legal target for
@@ -254,6 +278,12 @@ func loadAbilityDefs() map[string]AbilityDef {
 		}
 		if _, dup := result[def.ID]; dup {
 			panic(rel + `: duplicate ability id "` + def.ID + `"`)
+		}
+		// Normalise TargetCount: 0 (omitted) and negative values both mean
+		// single-target (TargetCount == 1). This ensures the multi-target path
+		// is only entered for explicitly-authored values > 1.
+		if def.TargetCount < 1 {
+			def.TargetCount = 1
 		}
 		result[def.ID] = def
 	}

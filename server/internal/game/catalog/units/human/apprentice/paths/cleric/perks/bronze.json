@@ -1,1 +1,44 @@
-[]
+[
+  {
+    "id": "greater_heal",
+    "displayName": "Greater Heal",
+    "icon": "perk-greater-heal",
+    "description": "Heal becomes an AoE healing wave, affecting up to 3 allies.",
+    "config": {}
+  },
+  {
+    "id": "sanctuary",
+    "displayName": "Sanctuary",
+    "icon": "perk-sanctuary",
+    "description": "Nearby allies take reduced damage from projectiles.",
+    "tooltipTemplate": "Allies within {radiusPixels} of this Cleric take {damageReductionPercent%} less projectile damage.",
+    "config": {
+      "radiusPixels": 192,
+      "damageReductionPercent": 0.25
+    }
+  },
+  {
+    "id": "battle_prayer",
+    "displayName": "Battle Prayer",
+    "icon": "perk-battle-prayer",
+    "description": "Heal also grants temporary attack speed to every target.",
+    "tooltipTemplate": "Healed allies gain +{attackSpeedMultiplier%} attack speed for {buffDurationSeconds:1}s. Recasts on the focus target when the buff is below {recastThresholdPercent%} of full duration.",
+    "config": {
+      "buffDurationSeconds": 5.0,
+      "attackSpeedMultiplier": 0.25,
+      "recastThresholdPercent": 0.30
+    }
+  },
+  {
+    "id": "mana_conduit",
+    "displayName": "Mana Conduit",
+    "icon": "perk-mana-conduit",
+    "description": "Gain bonus mana regeneration for each injured ally nearby.",
+    "tooltipTemplate": "+{bonusManaRegenPerAlly:1} mana/s per injured ally within {radiusPixels}, up to {maxAlliesCounted} allies.",
+    "config": {
+      "radiusPixels": 192,
+      "bonusManaRegenPerAlly": 0.5,
+      "maxAlliesCounted": 5
+    }
+  }
+]

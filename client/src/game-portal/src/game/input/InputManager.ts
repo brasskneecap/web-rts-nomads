@@ -576,6 +576,13 @@ export class InputManager {
   }
 
   private updateHoverCursor(screenX: number, screenY: number) {
+    // Reset the friendly-hover indicator every frame. It only matters inside
+    // the cast-ability / focus-target branches below, which set it back to a
+    // non-null value when the cursor is over a valid same-team unit. Doing
+    // the reset once up here means every other branch can ignore the field
+    // entirely (instead of having to remember to null it).
+    this.state.setHoveredFriendlyUnit(null)
+
     if (this.isSpaceHeld || this.isSpacePanning) {
       this.canvas.style.cursor = this.isSpacePanning
         ? resolveCursor('grabbing', 'grabbing')
@@ -633,15 +640,31 @@ export class InputManager {
 
     // Target-selection modes: show the reticle cursor while waiting for the
     // player to click a target, regardless of what's under the pointer. This
-    // covers an armed ability (heal, etc.) and the attack command (clicking
-    // Attack or pressing A → attack-move targeting).
+    // covers an armed ability (heal, etc.), the attack command (clicking
+    // Attack or pressing A → attack-move targeting), and the Focus Target
+    // command (player picking an ally for a Cleric to follow / prioritise).
+    //
+    // Per-mode hover preview: stamp the hover state for whichever class of
+    // target the active mode is asking for, so the renderer can draw the
+    // corresponding ring under the cursor.
+    //   - cast-ability / focus-target: same-team unit  → blue dashed ring
+    //   - attack:                      hostile unit     → orange dashed ring
+    // Both rings preview "this is the unit your next click will commit to."
     if (
       this.state.isUnitTargetingActive('cast-ability') ||
-      this.state.isUnitTargetingActive('attack')
+      this.state.isUnitTargetingActive('attack') ||
+      this.state.isUnitTargetingActive('focus-target')
     ) {
       this.state.setHoveredInteractableBuilding(null)
       this.state.setHoveredInteractableObstacle(null)
-      this.state.setHoveredEnemyUnit(null)
+      if (this.state.isUnitTargetingActive('attack')) {
+        const enemy = this.state.getEnemyUnitAtPosition(world.x, world.y)
+        this.state.setHoveredEnemyUnit(enemy ? enemy.id : null)
+      } else {
+        this.state.setHoveredEnemyUnit(null)
+        const ally = this.state.getUnitAtPosition(world.x, world.y)
+        this.state.setHoveredFriendlyUnit(ally ? ally.id : null)
+      }
       this.canvas.style.cursor = resolveCursor('target', 'crosshair')
       return
     }

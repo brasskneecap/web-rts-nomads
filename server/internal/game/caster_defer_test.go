@@ -132,10 +132,18 @@ func TestDefer_GrantEngine_MultiRankCatchupNoDuplicates(t *testing.T) {
 	}
 }
 
-// TestDefer_GrantEngine_RNGFree asserts the grant is deterministic: two seeded
-// states with the same forced path + same synthetic grant produce identical
-// unit.Abilities (the grant introduces no RNG; only the path *choice* is RNG
-// and it is bypassed by forcing ProgressionPath).
+// TestDefer_GrantEngine_RNGFree asserts the PATH-ABILITY grant is deterministic:
+// two seeded states with the same forced path + same synthetic grant get the
+// synthetic ability appended (deterministically) regardless of seed. The grant
+// engine itself uses no RNG — only the path *choice* does, and the test bypasses
+// it by forcing ProgressionPath.
+//
+// Note: a Silver rank-up now ALSO triggers assignUnitPerkLocked, whose
+// Bronze-cascade fallback can roll greater_heal — and greater_heal's post-grant
+// hook swaps "heal" → "greater_heal" in unit.Abilities. That perk roll is
+// legitimately seed-dependent, so this test deliberately checks the grant
+// engine's contribution (the synthetic id) rather than asserting byte-equal
+// ability slices across seeds.
 func TestDefer_GrantEngine_RNGFree(t *testing.T) {
 	withSyntheticPathGrant(t, unitPathCleric, unitRankSilver, []string{"synth_rngfree"})
 
@@ -165,16 +173,17 @@ func TestDefer_GrantEngine_RNGFree(t *testing.T) {
 
 	a := runSim(11111)
 	b := runSim(22222)
-	if len(a) != len(b) {
-		t.Fatalf("abilities differ across seeds: %v vs %v (grant must be RNG-free)", a, b)
+	// The synthetic grant is deterministic regardless of which perk landed in
+	// the Silver→Bronze-cascade roll; both runs must contain it.
+	if !abilitiesContain(a, "synth_rngfree") || !abilitiesContain(b, "synth_rngfree") {
+		t.Errorf("synthetic grant not applied via addUnitXPLocked path; a=%v b=%v", a, b)
 	}
-	for i := range a {
-		if a[i] != b[i] {
-			t.Errorf("ability[%d] differs across seeds: %q vs %q (RNG-free violation)", i, a[i], b[i])
-		}
-	}
-	if !abilitiesContain(a, "synth_rngfree") {
-		t.Errorf("synthetic grant not applied via addUnitXPLocked path; Abilities=%v", a)
+	// And the grant engine's contribution to the ability slice (i.e. the
+	// synthetic id, indexed from the end since perk-induced changes only
+	// affect existing slots and never re-order the grant append) must match.
+	if a[len(a)-1] != b[len(b)-1] {
+		t.Errorf("grant-appended ability differs across seeds: %q vs %q (grant must be RNG-free)",
+			a[len(a)-1], b[len(b)-1])
 	}
 }
 

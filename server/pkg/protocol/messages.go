@@ -12,6 +12,11 @@ const (
 	OrderStringAttackTarget = "attack_target"
 	OrderStringHold         = "hold"
 	OrderStringPatrol       = "patrol"
+	// OrderStringFocusFollow is the wire value for the Focus Target order — the
+	// Cleric follows and prioritises healing a chosen ally. Mirrors the Go-side
+	// OrderFocusFollow constant; both must match the TypeScript client's
+	// OrderType enum addition (task 10.4).
+	OrderStringFocusFollow  = "focus_follow"
 )
 
 type Vec2 struct {
@@ -207,6 +212,10 @@ type AbilitySnapshot struct {
 	DisplayName       string  `json:"displayName,omitempty"`
 	Icon              string  `json:"icon,omitempty"`
 	ManaCost          int     `json:"manaCost,omitempty"`
+	// TargetCount is the number of targets this ability can affect per cast.
+	// Always >= 1; single-target abilities report 1 so the client can skip the
+	// multi-target indicator without special-casing "field absent".
+	TargetCount       int     `json:"targetCount,omitempty"`
 	SupportsAutoCast  bool    `json:"supportsAutoCast,omitempty"`
 	AutoCast          bool    `json:"autoCast,omitempty"` // auto-cast currently enabled
 	CooldownRemaining float64 `json:"cooldownRemaining,omitempty"`
@@ -311,6 +320,16 @@ type CastAbilityCommandMessage struct {
 	CasterUnitID int    `json:"casterUnitId"`
 	AbilityID    string `json:"abilityId"`
 	TargetUnitID int    `json:"targetUnitId"`
+}
+
+// SetFocusTargetCommandMessage sets or clears a Cleric's sticky focus target.
+// Type tag: "set_focus_target_command". TargetUnitID == 0 means "clear focus".
+// The server validates match membership and caster ownership before applying.
+// Validation failures are reported via NotificationMessage.
+type SetFocusTargetCommandMessage struct {
+	Type         string `json:"type"`
+	CasterUnitID int    `json:"casterUnitId"`
+	TargetUnitID int    `json:"targetUnitId"` // 0 = clear focus
 }
 
 // ToggleAutoCastCommandMessage is the action-bar auto-cast toggle
@@ -603,6 +622,11 @@ type UnitSnapshot struct {
 	// auto-cast + cooldown state, for the action bar. Owned units only;
 	// absent for units with no abilities.
 	Abilities []AbilitySnapshot `json:"abilities,omitempty"`
+	// FocusTargetID is the unit ID of the ally this Cleric is focused on.
+	// Zero when no focus is active. Drives the Focus Target button highlight
+	// and selection-HUD focus indicator on the client. omitempty so non-Cleric
+	// units and Clerics without a focus target drop the field from the wire.
+	FocusTargetID int `json:"focusTargetId,omitempty"`
 	// ObjectiveID is non-empty when this unit is linked to a victory condition.
 	// Matches a VictoryCondition.ID in MapConfig.VictoryConditions.
 	ObjectiveID string `json:"objectiveId,omitempty"`

@@ -3957,6 +3957,7 @@
       {
         "color": "NORM-STR",
         "lockedUnitTypes": [
+          "apprentice",
           "archer"
         ],
         "playerId": "baseline-player",
@@ -3978,7 +3979,7 @@
             "amount": 0,
             "id": "NORM-STR",
             "label": "Food",
-            "max": 15
+            "max": 10
           }
         ],
         "teamId": 0,

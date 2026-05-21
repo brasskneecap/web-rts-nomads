@@ -309,6 +309,18 @@ export class GameClient {
     this.state.selectControlGroup(groupKey)
   }
 
+  // finishUnitTargeting pairs the state mutation with an immediate cursor
+  // refresh so the targeting reticle reverts to the default arrow on the same
+  // frame as the click. Without the explicit refresh, the cursor only
+  // updates on the next mousemove event — producing a visible lag between
+  // "I clicked to confirm" and "the cursor looks normal again." Every site
+  // that ends a unit-targeting cursor mode after a successful pick should
+  // go through this helper so the pattern can't accidentally be split.
+  private finishUnitTargeting() {
+    this.state.cancelUnitTargeting()
+    this.input.refreshCursor()
+  }
+
   performSelectionAction(actionId: string) {
     const selectedBuilding = this.state.getSelectedBuilding()
 
@@ -344,15 +356,62 @@ export class GameClient {
       return
     }
 
+    // Focus Target — left-click enters ally-only targeting cursor; the next
+    // valid ally click sends SetFocusTargetCommandMessage. Clicking anywhere
+    // invalid in this cursor mode is treated as a clear (see the click
+    // handler below).
+    if (actionId === 'focus_target') {
+      this.state.beginFocusTargetTargeting()
+      this.input.refreshCursor()
+      return
+    }
+
+    // Focus Target right-click (action-bar emits 'autocast-toggle-focus_target')
+    // — clears focus on every selected unit that supports it. Mirrors the
+    // multi-unit autocast semantics above: one click, deterministic result
+    // across the whole group.
+    if (actionId === 'autocast-toggle-focus_target') {
+      const selectedUnits = this.state.getSelectedUnits()
+      for (const u of selectedUnits) {
+        this.network.sendSetFocusTargetCommand(u.id, 0)
+      }
+      this.finishUnitTargeting()
+      return
+    }
+
     // Auto-cast toggle (action-bar right-click → emits 'autocast-toggle-' +
     // the ability's action id). No-op for non-ability cells.
+    //
+    // Group semantics: when multiple selected units share the ability, the
+    // right-click derives a single desired state for the whole group rather
+    // than flipping each unit independently. If ANY unit currently has the
+    // ability's auto-cast OFF, the click enables it everywhere (toggling
+    // only the off ones). If ALL units have it ON, the click disables it
+    // everywhere. This makes the button behave like a group switch instead
+    // of a per-unit toggle that would create split states (some on, some off).
     if (actionId.startsWith('autocast-toggle-')) {
       const rest = actionId.slice('autocast-toggle-'.length)
       if (rest.startsWith('cast-ability-')) {
         const abilityId = rest.slice('cast-ability-'.length)
-        const ids = this.state.getOrderedSelectedUnitIds()
-        if (ids.length > 0) {
-          this.network.sendToggleAutocastCommand(ids[0], abilityId)
+        const selectedUnits = this.state.getSelectedUnits()
+        // Restrict to units that actually own this ability — irrelevant
+        // selections (e.g. a Soldier alongside Clerics) are skipped.
+        const owners = selectedUnits.filter((u) =>
+          (u.abilities ?? []).some((a) => a.id === abilityId),
+        )
+        if (owners.length === 0) return
+        const anyOff = owners.some(
+          (u) => !(u.abilities ?? []).find((a) => a.id === abilityId)?.autoCast,
+        )
+        // Send a toggle to every unit whose current state doesn't match the
+        // desired group state. anyOff → desired ON, so flip the off ones.
+        // !anyOff (all on) → desired OFF, so flip them all.
+        for (const u of owners) {
+          const current = (u.abilities ?? []).find((a) => a.id === abilityId)?.autoCast ?? false
+          const needsFlip = anyOff ? !current : current
+          if (needsFlip) {
+            this.network.sendToggleAutocastCommand(u.id, abilityId)
+          }
         }
       }
       return
@@ -491,7 +550,7 @@ export class GameClient {
       if (this.state.isUnitTargetingActive('move') && unitIds.length > 0) {
         this.state.addFormationMoveMarkers(x, y)
         this.network.sendMoveCommand(unitIds, x, y)
-        this.state.cancelUnitTargeting()
+        this.finishUnitTargeting()
         return true
       }
 
@@ -519,7 +578,7 @@ export class GameClient {
           }
         }
 
-        this.state.cancelUnitTargeting()
+        this.finishUnitTargeting()
         return true
       }
 
@@ -532,7 +591,29 @@ export class GameClient {
         if (target && abilityId) {
           this.network.sendCastAbilityCommand(unitIds[0], abilityId, target.id)
         }
-        this.state.cancelUnitTargeting()
+        this.finishUnitTargeting()
+        return true
+      }
+
+      // Focus-target targeting: a click on a same-team ally sets focus for
+      // every selected unit (so a group of Clerics can be aimed at one
+      // protectee with one click). A click on anything else — enemy, ground,
+      // a building — clears focus on the group, matching the auto-cast UX
+      // where re-entering targeting and failing to pick a valid target
+      // deactivates the toggle.
+      if (this.state.isUnitTargetingActive('focus-target') && unitIds.length > 0) {
+        const clickedUnit = this.state.getUnitAtPosition(x, y)
+        const localPlayerId = this.state.localPlayerId
+        const isAlly = !!clickedUnit && !!localPlayerId && clickedUnit.ownerId === localPlayerId
+        const targetId = isAlly ? clickedUnit!.id : 0
+        for (const uid of unitIds) {
+          // Skip self-as-target: a Cleric cannot focus on itself (no support
+          // value, and the server would just reject it anyway). Sending the
+          // clear case (targetId === 0) is always safe.
+          if (targetId !== 0 && targetId === uid) continue
+          this.network.sendSetFocusTargetCommand(uid, targetId)
+        }
+        this.finishUnitTargeting()
         return true
       }
 
@@ -546,14 +627,14 @@ export class GameClient {
           this.network.sendAttackMoveCommand(unitIds, x, y)
         }
 
-        this.state.cancelUnitTargeting()
+        this.finishUnitTargeting()
         return true
       }
 
       if (this.state.isUnitTargetingActive('patrol') && unitIds.length > 0) {
         this.state.addFormationMoveMarkers(x, y)
         this.network.sendPatrolCommand(unitIds, x, y)
-        this.state.cancelUnitTargeting()
+        this.finishUnitTargeting()
         return true
       }
 
@@ -572,7 +653,7 @@ export class GameClient {
           this.network.sendRepairCommand(unitIds, clickedBuilding.id)
         }
 
-        this.state.cancelUnitTargeting()
+        this.finishUnitTargeting()
         return true
       }
 
@@ -592,6 +673,10 @@ export class GameClient {
     this.state.cancelBuildingTargeting()
     this.state.cancelUnitTargeting()
     this.state.cancelBuildPlacement()
+    // Same rationale as finishUnitTargeting: refresh the cursor right now
+    // (right-click / Escape cancel path) so the reticle reverts on the same
+    // frame as the cancel action, not on the next mousemove.
+    this.input.refreshCursor()
   }
 
   private centerCameraOnSpawnIfNeeded() {

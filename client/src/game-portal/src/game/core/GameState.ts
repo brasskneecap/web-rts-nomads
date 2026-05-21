@@ -132,6 +132,11 @@ export type Unit = {
   effectiveTrap?: EffectiveTrapSnapshot
   /** Current order — mirrors UnitSnapshot.order. Absent on old-server snapshots; treat as 'idle'. */
   order?: string
+  /** Focus Target — ID of the ally this unit (typically a Cleric) is focused
+   *  on. Mirrors UnitSnapshot.focusTargetId. 0/absent means no focus. Drives
+   *  the Focus Target button highlight, selection-HUD focus indicator, and
+   *  the world-space focus marker drawn under the focused ally. */
+  focusTargetId?: number
   /** Inventory the unit is carrying. Absent for units that don't have an
    *  inventory capability. See ItemDef / ITEM_DEF_MAP for item resolution. */
   inventory?: Inventory
@@ -409,7 +414,7 @@ export type DebugSpawnConfig = {
   perkIds?: string[]
   customHp?: number
 }
-export type UnitTargetingMode = 'move' | 'gather' | 'repair' | 'attack' | 'patrol' | 'cast-ability'
+export type UnitTargetingMode = 'move' | 'gather' | 'repair' | 'attack' | 'patrol' | 'cast-ability' | 'focus-target'
 
 export type BuildPlacement = {
   buildingType: string
@@ -550,6 +555,12 @@ export class GameState {
   // inspected-* / selected-* fields, same lifecycle pattern.
   inspectedAllyUnitId: number | null = null
   hoveredEnemyUnitId: number | null = null
+  // Set by InputManager while the player is in a friendly-targeting cursor
+  // mode (cast-ability, focus-target). The renderer draws a blue dashed ring
+  // around this unit so the player can see which ally their click would
+  // commit to. Null whenever no friendly-targeting mode is active OR the
+  // cursor is not over a valid friendly. Same lifecycle as hoveredEnemyUnitId.
+  hoveredFriendlyUnitId: number | null = null
   hoveredInteractableBuildingId: string | null = null
   hoveredInteractableObstacleId: string | null = null
   buildingTargetingMode: BuildingTargetingMode | null = null
@@ -715,6 +726,7 @@ export class GameState {
         workTargetId: unit.workTargetId,
         effectiveTrap: unit.effectiveTrap,
         order: unit.order,
+        focusTargetId: unit.focusTargetId,
         inventory: unit.inventory,
       })),
     }
@@ -1661,6 +1673,18 @@ export class GameState {
     this.unitTargetingMode = 'cast-ability'
   }
 
+  // Enter focus-target targeting: the next ally click sets this unit's focus
+  // target (Cleric support assignment). Mirrors beginAbilityTargeting; the
+  // selected unit is the caster. A click on anything other than a valid ally
+  // is handled by the input layer as a "cancel" that also clears focus.
+  beginFocusTargetTargeting() {
+    if (this.getSelectedUnits().length === 0) return
+    this.selectedBuildingId = null
+    this.buildingTargetingMode = null
+    this.castAbilityId = null
+    this.unitTargetingMode = 'focus-target'
+  }
+
   cancelUnitTargeting() {
     this.unitTargetingMode = null
     this.castAbilityId = null
@@ -1801,6 +1825,13 @@ export class GameState {
 
   setHoveredEnemyUnit(unitId: number | null) {
     this.hoveredEnemyUnitId = unitId
+  }
+
+  // Mirrors setHoveredEnemyUnit for the friendly-targeting cursor modes
+  // (cast-ability, focus-target). Called from InputManager each frame the
+  // pointer is over a same-team unit and a friendly-targeting mode is active.
+  setHoveredFriendlyUnit(unitId: number | null) {
+    this.hoveredFriendlyUnitId = unitId
   }
 
   inspectEnemyUnit(unitId: number) {
@@ -2069,7 +2100,14 @@ export class GameState {
       const abilityActions = buildMenuOpen
         ? []
         : getAbilityActionItems(unit, this.unitTargetingMode, this.castAbilityId)
-      const topActions = [...regularActions, ...abilityActions]
+      // Focus Target action — only for units that can heal an ally. Appears
+      // alongside heal/greater_heal in the action bar so the support kit
+      // reads as one group.
+      const focusActions =
+        !buildMenuOpen && unitOwnsHealAbility(unit)
+          ? [buildFocusTargetActionItem([unit], this.unitTargetingMode)]
+          : []
+      const topActions = [...regularActions, ...abilityActions, ...focusActions]
       const emptySlot: ActionItem = { id: '', label: '', disabled: true }
       const actions = buildMenuOpen
         ? regularActions
@@ -2119,7 +2157,7 @@ export class GameState {
             this.unitTargetingMode,
           ),
       details: getGroupDetails(selectedUnits),
-      actions: getGroupActions(selectedUnits, this.unitTargetingMode, groupBuildMenuOpen, this.townHallTier),
+      actions: getGroupActions(selectedUnits, this.unitTargetingMode, groupBuildMenuOpen, this.townHallTier, this.castAbilityId),
     }
   }
 
@@ -2398,6 +2436,64 @@ function getBuildingConstructionSummary(building: BuildingTile): RepairSummary |
 // ─────────────────────────────────────────────────────────────────────────────
 const PERK_RANKS: Array<'bronze' | 'silver' | 'gold'> = ['bronze', 'silver', 'gold']
 
+// HEAL_ABILITY_IDS gates the Focus Target action button: it's only meaningful
+// for units whose kit can support an ally with a single-target or AoE heal.
+// Keep this in sync with any new heal-class ability ids added to the catalog.
+const HEAL_ABILITY_IDS = new Set(['heal', 'greater_heal'])
+
+// unitOwnsHealAbility returns true when the unit has at least one heal-class
+// ability — the criterion for surfacing the Focus Target action button. We
+// gate on the ability id rather than the unit type/path so a future
+// non-cleric support unit picks up the feature automatically.
+function unitOwnsHealAbility(unit: Unit): boolean {
+  if (!unit.abilities || unit.abilities.length === 0) return false
+  return unit.abilities.some((a) => HEAL_ABILITY_IDS.has(a.id))
+}
+
+// buildFocusTargetActionItem produces the Focus Target action cell. The same
+// shape works for single-unit and group selections.
+//
+// Highlight model — `autoCast` drives the sky-blue glow used elsewhere for
+// auto-cast toggles. We light it up in TWO situations so the button reads as
+// "armed" both while the player is mid-selection and after they commit:
+//
+//   1) `activeMode === 'focus-target'` — the player has clicked the button
+//      and is currently picking an ally; the glow gives immediate feedback
+//      that the cursor is now armed for targeting.
+//   2) Any selected unit has `focusTargetId !== 0` — the focus has been
+//      committed; the glow persists so the player can see at a glance that
+//      this Cleric/group is currently in support-focus mode.
+//
+// `active` (the subtler brightness boost) is also set during selection so the
+// two visual states layer slightly — armed reads as "glow + bright icon" and
+// committed reads as "glow only", which is a small but useful distinction.
+function buildFocusTargetActionItem(
+  units: Unit[],
+  activeMode: UnitTargetingMode | null,
+): ActionItem {
+  const anyFocused = units.some((u) => (u.focusTargetId ?? 0) !== 0)
+  const selecting = activeMode === 'focus-target'
+  const label = 'Focus Target'
+  return {
+    id: 'focus_target',
+    label,
+    kind: 'ability' as const,
+    // Note: the action click id uses an underscore (`focus_target`) for
+    // consistency with the server's wire string, but the icon catalog
+    // registers art under the hyphen form (`focus-target`) like the other
+    // perk icons. iconId routes the look-up to the right entry.
+    iconId: 'focus-target',
+    active: selecting,
+    autoCast: anyFocused || selecting,
+    supportsAutoCast: true,
+    tooltipTitle: label,
+    tooltipBody:
+      units.length > 1
+        ? `Left-click then pick an ally to focus all ${units.length} units on them. Right-click to clear.`
+        : 'Left-click then pick an ally to focus on. Right-click to clear.',
+  }
+}
+
 // getAbilityActionItems builds interactive ability buttons from the unit's
 // snapshot abilities. id `cast-ability-<id>` drives left-click (cast →
 // targeting) and, via the `autocast-toggle-` prefix, right-click. `active`
@@ -2531,6 +2627,7 @@ function getGroupActions(
   activeMode: UnitTargetingMode | null,
   buildMenuOpen: boolean,
   townHallTier: number = 0,
+  castAbilityId: string | null = null,
 ): ActionItem[] {
   if (buildMenuOpen) {
     const actions: ActionItem[] = []
@@ -2568,7 +2665,75 @@ function getGroupActions(
     actions.push({ id: 'hold', label: '(H)old' })
     actions.push({ id: 'patrol', label: '(P)atrol', active: activeMode === 'patrol' })
   }
+  // Shared ability buttons — appear when every selected unit owns the same
+  // ability id (typical case: a group of Clerics with Heal). Right-click on
+  // the button toggles auto-cast across the whole group (see GameClient
+  // autocast handler for the "any-off → enable all" semantics).
+  actions.push(...getSharedAbilityActionItems(units, activeMode, castAbilityId))
+  // Focus Target — group variant. Surfaces when EVERY selected unit owns a
+  // heal-class ability, so a Cleric + Apprentice mixed pair still works.
+  if (units.every(unitOwnsHealAbility)) {
+    actions.push(buildFocusTargetActionItem(units, activeMode))
+  }
   return actions
+}
+
+// getSharedAbilityActionItems returns ability buttons for the group selection.
+// An ability is "shared" iff every selected unit owns an ability with the same
+// id. Aggregation rules:
+//   - autoCast: true iff EVERY unit has autoCast enabled (so the glow only
+//     appears when the whole group is auto-casting; partial-on shows un-lit).
+//   - cooldownRemaining / cooldownTotal: max across units. Reflects the
+//     slowest unit's readiness, so "ready" means the whole group is ready.
+//   - displayName / supportsAutoCast: taken from the first unit (these are
+//     intrinsic to the ability def, so they're identical across owners).
+function getSharedAbilityActionItems(
+  units: Unit[],
+  activeMode: UnitTargetingMode | null,
+  castAbilityId: string | null,
+): ActionItem[] {
+  if (units.length === 0) return []
+  const first = units[0]
+  if (!first.abilities || first.abilities.length === 0) return []
+
+  return first.abilities
+    .filter((a) =>
+      units.every((u) => (u.abilities ?? []).some((other) => other.id === a.id)),
+    )
+    .map((a) => {
+      const name = a.displayName ?? a.id
+      // Aggregate across every unit's snapshot of THIS ability id.
+      let allAutoCast = true
+      let supportsAutoCast = false
+      let maxCdRemaining = 0
+      let maxCdTotal = 0
+      for (const u of units) {
+        const snap = (u.abilities ?? []).find((other) => other.id === a.id)
+        if (!snap) continue
+        if (!snap.autoCast) allAutoCast = false
+        if (snap.supportsAutoCast) supportsAutoCast = true
+        if ((snap.cooldownRemaining ?? 0) > maxCdRemaining) {
+          maxCdRemaining = snap.cooldownRemaining ?? 0
+        }
+        if ((snap.cooldownTotal ?? 0) > maxCdTotal) {
+          maxCdTotal = snap.cooldownTotal ?? 0
+        }
+      }
+      return {
+        id: `cast-ability-${a.id}`,
+        label: name,
+        kind: 'ability' as const,
+        active: activeMode === 'cast-ability' && castAbilityId === a.id,
+        autoCast: allAutoCast,
+        supportsAutoCast,
+        cooldownRemaining: maxCdRemaining > 0 ? maxCdRemaining : undefined,
+        cooldownTotal: maxCdTotal > 0 ? maxCdTotal : undefined,
+        tooltipTitle: name,
+        tooltipBody: supportsAutoCast
+          ? `Left-click: cast. Right-click: toggle auto-cast for ${units.length} units.`
+          : 'Left-click: cast.',
+      }
+    })
 }
 
 /**

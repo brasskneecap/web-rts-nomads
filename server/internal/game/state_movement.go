@@ -610,6 +610,10 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.Attacking = false
 	unit.AttackDrifting = false
 	unit.Order = OrderState{Type: OrderIdle}
+	// Any new order clears focus so FocusTargetID and Order.Type never diverge.
+	// This covers Move, AttackMove, Hold, Stop, AttackTarget, Patrol — every
+	// order path that goes through resetUnitMovementLocked.
+	unit.FocusTargetID = 0
 	unit.Visible = true
 	unit.Status = "Idle"
 	unit.CurrentTargetScore = 0
@@ -860,4 +864,92 @@ func averageUnitPosition(units []*Unit) protocol.Vec2 {
 		X: totalX / float64(len(units)),
 		Y: totalY / float64(len(units)),
 	}
+}
+
+// ── Focus Target follow movement ──────────────────────────────────────────────
+//
+// focusFollowDistance is the target gap between the follower (Cleric) and the
+// focus ally. The Cleric paths to a point focusFollowDistance px behind the
+// focus (in the direction from focus toward the Cleric) so they stay near but
+// not on top of each other. This value keeps the Cleric inside heal range for
+// a typical Apprentice/Cleric (cast range = match_attack_range ≈ 256 px).
+//
+// focusLeashSlack is the hysteresis band. A new path is only requested when
+// the current path's end-point is farther than (focusFollowDistance +
+// focusLeashSlack) from the focus's current position, preventing stutter when
+// the focus target wobbles by small amounts each tick.
+//
+// Both constants live here because they are movement-system tuning, not perk
+// tuning. They are not data-driven from JSON (matching the precedent for
+// unitRadius, unitSeparationDistance, etc.).
+const (
+	focusFollowDistance = 80.0
+	focusLeashSlack     = 24.0
+)
+
+// tickFocusFollowMovementLocked updates the follow path for a unit in
+// OrderFocusFollow. It:
+//  1. Re-resolves and validates the focus target (caller should have already
+//     called validateFocusTargetLocked, but we guard defensively).
+//  2. Computes the follow destination: a point focusFollowDistance px from
+//     the focus in the direction from focus toward the follower.
+//  3. Repaths only when the current path's end-point is farther than
+//     focusFollowDistance + focusLeashSlack from the focus's current position
+//     (squared-distance comparison throughout — no sqrt in hot path).
+//
+// Caller holds s.mu.
+func (s *GameState) tickFocusFollowMovementLocked(unit *Unit, blocked map[gridPoint]bool) {
+	if unit == nil || unit.FocusTargetID == 0 {
+		return
+	}
+	focus := s.getUnitByIDLocked(unit.FocusTargetID)
+	if focus == nil || focus.HP <= 0 || !focus.Visible {
+		// Focus became invalid; clearFocusTargetLocked handles state cleanup.
+		// validateFocusTargetLocked (called in the decay loop) will pick this up.
+		return
+	}
+
+	// Compute follow destination: point focusFollowDistance px from focus,
+	// offset toward the follower so the Cleric trails behind the focus.
+	dx := unit.X - focus.X
+	dy := unit.Y - focus.Y
+	distSq := dx*dx + dy*dy
+
+	var destX, destY float64
+	if distSq < 1e-6 {
+		// Caster is on top of the focus — offset directly "behind" in world-up.
+		destX = focus.X
+		destY = focus.Y + focusFollowDistance
+	} else {
+		dist := math.Sqrt(distSq)
+		// Normalised direction from focus toward caster, scaled to focusFollowDistance.
+		destX = focus.X + (dx/dist)*focusFollowDistance
+		destY = focus.Y + (dy/dist)*focusFollowDistance
+	}
+
+	// Repath debounce: only repath when the current path's end is farther than
+	// (focusFollowDistance + focusLeashSlack) from the focus's CURRENT position.
+	// This prevents per-tick repath storms when the focus is stationary or
+	// moving within the slack window.
+	leashThreshSq := (focusFollowDistance + focusLeashSlack) * (focusFollowDistance + focusLeashSlack)
+
+	if unit.Moving && len(unit.Path) > 0 {
+		// Compare the path's final waypoint against the focus's current position.
+		last := unit.Path[len(unit.Path)-1]
+		ddx := last.X - focus.X
+		ddy := last.Y - focus.Y
+		if ddx*ddx+ddy*ddy <= leashThreshSq {
+			return // existing path still good; don't repath
+		}
+	} else if !unit.Moving {
+		// Unit is stationary; check if it is already close enough to the focus.
+		cddx := unit.X - focus.X
+		cddy := unit.Y - focus.Y
+		if cddx*cddx+cddy*cddy <= leashThreshSq {
+			return // already within the slack window; no movement needed
+		}
+	}
+
+	// Request a new path toward the follow destination.
+	s.assignUnitPathWithSubBlocked(unit, protocol.Vec2{X: destX, Y: destY}, blocked, nil, nil)
 }

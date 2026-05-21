@@ -67,8 +67,9 @@ func (s *GameState) tickUnitAbilityCooldownsLocked(unit *Unit, dt float64) {
 
 // tickUnitAutoCastLocked runs the auto-cast loop for one unit for this tick.
 // It initiates at most one cast and never while the unit is already casting
-// (so cast_time is respected). On a successful initiation the ability's
-// cooldown is armed.
+// (so cast_time is respected). Cooldown arming happens inside
+// beginAbilityCastLocked itself, so both the manual cast-ability flow and
+// this auto-cast path share one source of truth — no per-path duplication.
 //
 // Phase 2: selection is gather → score → pick (no longer first-ready). It
 // gathers every candidate that passes the UNCHANGED gates (autocast enabled,
@@ -96,10 +97,25 @@ func (s *GameState) tickUnitAutoCastLocked(unit *Unit) {
 	if unit.CastAbilityID != "" {
 		return
 	}
+	// A player-issued Move command suppresses auto-cast for the duration of
+	// the move. Without this, a Cleric ordered to a position would get glued
+	// in place by repeatedly autocasting Heal on injured allies it passes —
+	// each cast pins it (the cast lifecycle clears Moving/Path), and the
+	// move command never reaches the destination. Once the unit arrives and
+	// Order transitions back to Idle (or any non-Move state), autocast
+	// resumes naturally.
+	//
+	// Scope: ONLY OrderMove. Other orders that involve travel (AttackMove,
+	// Patrol, FocusFollow) intentionally still allow autocast — those orders
+	// are about reaching a destination AND engaging/supporting en route, so
+	// pausing for a heal is the right behaviour there. The plain Move order
+	// is the only one with a "get there above all else" semantic.
+	if unit.Order.Type == OrderMove {
+		return
+	}
 
 	var (
 		bestID    string
-		bestDef   AbilityDef
 		bestTgt   *Unit
 		bestScore float64
 		haveBest  bool
@@ -129,23 +145,16 @@ func (s *GameState) tickUnitAutoCastLocked(unit *Unit) {
 		// Iterating slots ascending + replacing only on a strictly greater
 		// score ⇒ ties resolve to the lower slot index (spec tiebreak).
 		if !haveBest || score > bestScore {
-			bestID, bestDef, bestTgt, bestScore, haveBest = abilityID, def, target, score, true
+			bestID, bestTgt, bestScore, haveBest = abilityID, target, score, true
 		}
 	}
 	if !haveBest {
 		return // nothing ready cleared the activation floor this tick
 	}
 
-	ok2, _ := s.beginAbilityCastLocked(unit, bestID, bestTgt)
-	if !ok2 {
-		return // initiation rejected (race) — re-evaluated next tick
-	}
-	if bestDef.Cooldown > 0 {
-		if unit.AbilityCooldowns == nil {
-			unit.AbilityCooldowns = make(map[string]float64, 1)
-		}
-		unit.AbilityCooldowns[bestID] = bestDef.Cooldown
-	}
+	// beginAbilityCastLocked arms the ability cooldown itself, so both manual
+	// and auto-cast paths share one source of truth — no double-arming here.
+	s.beginAbilityCastLocked(unit, bestID, bestTgt)
 	// one auto-cast initiation per unit per tick (single return path)
 }
 
@@ -166,14 +175,19 @@ func (s *GameState) abilityStatesLocked(unit *Unit) []protocol.AbilitySnapshot {
 			continue
 		}
 		out = append(out, protocol.AbilitySnapshot{
-			ID:                def.ID,
-			DisplayName:       def.DisplayName,
-			Icon:              def.Icon,
-			ManaCost:          def.ManaCost,
-			SupportsAutoCast:  def.SupportsAutoCast,
-			AutoCast:          unit.AutoCastEnabled[id],
+			ID:               def.ID,
+			DisplayName:      def.DisplayName,
+			Icon:             def.Icon,
+			ManaCost:         def.ManaCost,
+			TargetCount:      def.TargetCount,
+			SupportsAutoCast: def.SupportsAutoCast,
+			AutoCast:         unit.AutoCastEnabled[id],
+			// EffectiveCooldown() matches what beginAbilityCastLocked arms, so
+			// the client's wipe fraction (remaining / total) is consistent with
+			// the actual decay. For Heal (cast=1, cd=0) this surfaces 1s of
+			// visible cooldown that doubles as a "you're casting" indicator.
 			CooldownRemaining: unit.AbilityCooldowns[id],
-			CooldownTotal:     def.Cooldown,
+			CooldownTotal:     def.EffectiveCooldown(),
 		})
 	}
 	if len(out) == 0 {

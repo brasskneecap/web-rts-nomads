@@ -38,6 +38,13 @@
                 > {{ buildingDurability.value }}</span>
               </div>
               <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
+              <div
+                v-if="focusTargetLabel"
+                class="selection-focus"
+                :title="focusTargetLabel"
+              >
+                Focusing: {{ focusTargetLabel }}
+              </div>
             </div>
             <div
               v-if="ui.selection.kind === 'unit' && (ui.selection.rankLabel || ui.selection.xpLabel)"
@@ -326,6 +333,7 @@
               :class="{
                 'action-cell--active': ui.selection.actions[i - 1].active,
                 'action-cell--autocast': ui.selection.actions[i - 1].autoCast,
+                'action-cell--cooldown': perkCooldownFraction(ui.selection.actions[i - 1]) > 0,
               }"
               :disabled="ui.selection.actions[i - 1].disabled"
               type="button"
@@ -333,6 +341,21 @@
               @contextmenu.prevent="$emit('action', 'autocast-toggle-' + ui.selection.actions[i - 1].id)"
             >
               <ActionIcon :action="ui.selection.actions[i - 1]" />
+              <!-- Ability cooldown clock-wipe overlay. Shares the same
+                   conic-gradient + countdown-number visual language as the
+                   perk cooldown overlay so cooldowns read consistently
+                   across both perk slots and ability buttons. pointer-events
+                   none so the button itself still gets the click. -->
+              <div
+                v-if="perkCooldownFraction(ui.selection.actions[i - 1]) > 0"
+                class="perk-cooldown-overlay"
+                :style="{ '--perk-cooldown-cleared': `${(1 - perkCooldownFraction(ui.selection.actions[i - 1])) * 360}deg` }"
+                aria-hidden="true"
+              >
+                <span class="perk-cooldown-number">
+                  {{ Math.max(1, Math.ceil(ui.selection.actions[i - 1].cooldownRemaining ?? 0)) }}
+                </span>
+              </div>
               <!-- Styled action tooltip — shared frame with the stat /
                    perk tooltips. Always shows the label; cost rows are
                    only rendered for actions that have a cost (training,
@@ -487,6 +510,26 @@ const buildingDurability = computed(() => {
   )
   if (!detail || !detail.value) return null
   return { label: detail.label, value: detail.value }
+})
+
+// Focus Target indicator — shown in the header when exactly one Cleric (or
+// other heal-class support unit) is selected and has an active focus target.
+// Resolves the focused ally's name + HP from the snapshot's selectedUnits when
+// possible; falls back to the bare ID when the focus is out of vision and
+// no longer present in the current snapshot.
+const focusTargetLabel = computed(() => {
+  if (props.ui.selectedUnits.length !== 1) return null
+  const caster = props.ui.selectedUnits[0]
+  const focusId = caster.focusTargetId ?? 0
+  if (focusId === 0) return null
+  const focusUnit = props.ui.selectedUnits.find((u) => u.id === focusId)
+  if (focusUnit) {
+    const name = focusUnit.name || focusUnit.unitType || `Unit ${focusUnit.id}`
+    const hp = focusUnit.hp ?? 0
+    const max = focusUnit.maxHp ?? hp
+    return `${name} (${hp}/${max})`
+  }
+  return `Unit ${focusId}`
 })
 
 // True when the server has set tierUpRemaining on the selected building's
@@ -936,6 +979,19 @@ button.inventory-slot:focus-visible {
   line-height: 1.35;
   overflow-wrap: anywhere;
   color: #cbb893;
+}
+
+/* Focus Target indicator — sits between the subtitle and the progression row
+   for a single Cleric / support unit with an active focus. Color matches the
+   auto-cast highlight (sky-blue) so the visual association between the
+   Focus Target button glow and this indicator is clear. */
+.selection-focus {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  color: #9bd4ff;
+  font-weight: 600;
 }
 
 .selection-title__path {
@@ -1621,8 +1677,11 @@ button.inventory-slot:focus-visible {
 }
 
 /* Drop the icon's saturation/brightness while on cooldown for a "disabled"   */
-/* readability cue beyond the dark overlay alone.                             */
-.action-cell--perk-cooldown .action-icon {
+/* readability cue beyond the dark overlay alone. Shared between perk cells   */
+/* and regular ability buttons — both use the same conic-gradient overlay so  */
+/* they should also share the underlying icon-dim treatment.                  */
+.action-cell--perk-cooldown .action-icon,
+.action-cell--cooldown .action-icon {
   opacity: 0.45;
   filter: grayscale(0.6);
 }

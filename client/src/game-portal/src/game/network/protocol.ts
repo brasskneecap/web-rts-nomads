@@ -226,6 +226,17 @@ export type CastAbilityCommandMessage = {
   targetUnitId: number
 }
 
+/** Action-bar "focus target" assignment (player-issued sticky support
+ *  target for Clerics). When `targetUnitId === 0` the focus is cleared.
+ *  Server validates ownership of `casterUnitId` and team-allegiance of
+ *  `targetUnitId`; rejection comes back via NotificationMessage. */
+export type SetFocusTargetCommandMessage = {
+  type: 'set_focus_target_command'
+  casterUnitId: number
+  /** Allied target unit ID; 0 clears the current focus. */
+  targetUnitId: number
+}
+
 /** Action-bar auto-cast toggle (right-click an ability). */
 export type ToggleAutoCastCommandMessage = {
   type: 'toggle_autocast_command'
@@ -282,7 +293,14 @@ export type DemolishBuildingCommandMessage = {
 
 /** Compile-time-safe union of every order string the server can put on a unit.
  *  If the server renames a value, the client breaks here at typecheck time. */
-export type UnitOrder = 'idle' | 'move' | 'attack_move' | 'attack_target' | 'hold' | 'patrol'
+export type UnitOrder =
+  | 'idle'
+  | 'move'
+  | 'attack_move'
+  | 'attack_target'
+  | 'hold'
+  | 'patrol'
+  | 'focus_follow'
 
 /** Exhaustive map so a human-readable label is always available without
  *  scattered switch statements across the codebase. */
@@ -293,6 +311,7 @@ export const UNIT_ORDER_LABELS: Record<UnitOrder, string> = {
   attack_target: 'Attacking',
   hold: 'Hold',
   patrol: 'Patrol',
+  focus_follow: 'Following',
 }
 
 export type SetStanceCommandMessage = {
@@ -426,6 +445,7 @@ export type ClientMessage =
   | AttackCommandMessage
   | CastAbilityCommandMessage
   | ToggleAutoCastCommandMessage
+  | SetFocusTargetCommandMessage
   | AttackMoveCommandMessage
   | CancelTrainingCommandMessage
   | SetBuildingSpawnPointCommandMessage
@@ -480,6 +500,11 @@ export type AbilitySnapshot = {
   autoCast?: boolean
   cooldownRemaining?: number
   cooldownTotal?: number
+  /** Number of targets this ability hits per cast. 1 for single-target (the
+   *  default when the server omits the field); >1 for multi-target abilities
+   *  like Greater Heal. The action-bar uses this to render a multi-target
+   *  hint and the targeting cursor adapts accordingly. */
+  targetCount?: number
 }
 
 /** A single item held in an inventory slot. */
@@ -590,6 +615,12 @@ export type UnitSnapshot = {
   workTargetId?: string
   /** Current order type — one of the UnitOrder values. Omitted by old servers; treat absence as 'idle'. */
   order?: UnitOrder
+  /** Focus Target — the ally ID this unit (typically a Cleric) is following
+   *  and prioritising for support casts. Paired with `order === 'focus_follow'`
+   *  while focus is active; 0/absent means no focus. The client uses this to
+   *  drive the Focus Target button's highlight and the selection-HUD focus
+   *  indicator. */
+  focusTargetId?: number
   /** Inventory the unit is carrying. Optional — units without inventory
    *  capability omit it entirely. */
   inventory?: InventorySnapshot

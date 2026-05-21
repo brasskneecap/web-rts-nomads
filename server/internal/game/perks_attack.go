@@ -76,6 +76,13 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 	// Player-buff contribution — equipped player buffs add a flat attack speed bonus.
 	total += s.playerBuffAggregateLocked(unit).AttackSpeedBonus
 
+	// Battle Prayer buff — cross-unit buff applied to the healed target by a
+	// Cleric with battle_prayer. The buffed unit does not need to own the perk;
+	// the multiplier lives on PerkState (same as WeakenedRemaining pattern).
+	if unit.PerkState.BattlePrayerRemaining > 0 {
+		total += unit.PerkState.BattlePrayerMultiplier
+	}
+
 	return total
 }
 

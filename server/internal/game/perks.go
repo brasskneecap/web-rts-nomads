@@ -46,6 +46,7 @@ package game
 // │         onPerkAttackDamageAppliedLocked      on-hit / lifesteal         │
 // │         onPerkDamageTakenLocked              on damage received (def.)  │
 // │         onPerkKillLocked                     on every kill              │
+// │         onPerkAbilityResolvedLocked          per resolved ability target│
 // │         perkFlatDamageReductionLocked        flat per-hit reduction     │
 // │         perkBonusArmorLocked                 conditional armor bonus    │
 // │         perkFlatMaxHPBonusLocked             flat max HP bonus          │
@@ -59,10 +60,11 @@ package game
 // │       on a previously-owned perk ID. The prereq filter runs in          │
 // │       perkPoolForRankLocked and silently excludes the perk from the     │
 // │       pool until the unit owns the named perk.                          │
-// │    6. Cross-unit debuffs (WeakenedRemaining, MarkedRemaining) decay in  │
-// │       state.go Update() alongside TauntRemaining — not in                │
-// │       tickUnitPerkStateLocked — because they live on units that may     │
-// │       not own the perk themselves.                                      │
+// │    6. Cross-unit buffs/debuffs (WeakenedRemaining, MarkedRemaining,     │
+// │       BattlePrayerRemaining) decay in state.go Update() alongside       │
+// │       TauntRemaining — not in tickUnitPerkStateLocked — because they    │
+// │       live on units that may not own the perk themselves (e.g. a        │
+// │       Soldier carrying Battle Prayer's attack-speed buff from a Cleric).│
 // │                                                                         │
 // │  No other files need to change for a new perk.                          │
 // └─────────────────────────────────────────────────────────────────────────┘
@@ -92,6 +94,13 @@ package game
 //                                                 perkArmorPercentBonusFromAurasLocked
 //   • progression.go     addUnitXPLocked()      — assignUnitPerkLocked (on rank-up)
 //   • progression.go     applyRankModifiersLocked() — perkFlatMaxHPBonusLocked
+//   • ability_cast.go    resolveAbilityCastOnTargetLocked — onPerkAbilityResolvedLocked
+//                                                          (per ability target; battle_prayer
+//                                                          uses this to stamp the cross-unit buff)
+//   • perks.go           assignUnitPerkLocked   — applyPerkGrantedHooksLocked (post-grant side-effects)
+//   • debug_spawn.go     DebugSpawnUnit         — applyPerkGrantedHooksLocked (per appended perk;
+//                                                  ensures greater_heal's swap fires for manually
+//                                                  configured debug units too)
 // ═════════════════════════════════════════════════════════════════════════════
 
 import (
@@ -413,6 +422,23 @@ type UnitPerkState struct {
 	// don't recurse into the same dispatch and chain into infinite shots.
 	// Per-attacker; different attackers' guards are independent.
 	MarksmanFireInProgress bool
+
+	// ── battle_prayer (cleric bronze) ────────────────────────────────────────
+	// Cross-unit buff applied to every target a Battle-Prayer-Cleric heals.
+	// Lives on the HEALED TARGET's PerkState (not the Cleric's), matching the
+	// cross-unit debuff convention for WeakenedRemaining / TauntRemaining.
+	// Decays in state.go Update() per-unit loop, not in tickUnitPerkStateLocked,
+	// because the buffed unit may not own the battle_prayer perk itself.
+	//
+	// BattlePrayerRemaining: seconds left on the buff. 0 = inactive.
+	// BattlePrayerMultiplier: attack-speed fraction (e.g. 0.25 = +25%).
+	//   Set to Config["attackSpeedMultiplier"] on application and carried on
+	//   the buff so the value travels with the buff regardless of perk re-tuning.
+	// Refresh semantics: refresh-longer (max of current vs new duration) and
+	//   refresh-stronger (max of current vs new multiplier) — same as the
+	//   existing mark-stack refresh rules.
+	BattlePrayerRemaining  float64
+	BattlePrayerMultiplier float64
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -615,7 +641,74 @@ func (s *GameState) assignUnitPerkLocked(unit *Unit) {
 	if len(pool) == 0 {
 		return
 	}
-	unit.PerkIDs = append(unit.PerkIDs, pool[s.rngPerks.Intn(len(pool))].ID)
+	perkID := pool[s.rngPerks.Intn(len(pool))].ID
+	unit.PerkIDs = append(unit.PerkIDs, perkID)
+	s.applyPerkGrantedHooksLocked(unit, perkID)
+}
+
+// applyPerkGrantedHooksLocked runs the post-grant side-effects for one perk id
+// that was just appended to unit.PerkIDs. Centralised so every path that adds
+// a perk (rank-up roll, debug spawn, future scripted grants) picks up the same
+// behaviour — most perks are runtime-only and don't need a hook here, but a
+// few (greater_heal swap, hypothetical future ability-replacing perks) mutate
+// the unit's kit at grant time and MUST fire regardless of how the perk got
+// onto the unit.
+//
+// Caller holds s.mu.
+func (s *GameState) applyPerkGrantedHooksLocked(unit *Unit, perkID string) {
+	if unit == nil {
+		return
+	}
+	switch perkID {
+	case "greater_heal":
+		s.applyGreaterHealPerkSwapLocked(unit)
+	}
+}
+
+// applyGreaterHealPerkSwapLocked replaces "heal" with "greater_heal" in the
+// unit's Abilities slice (slot preserved) and migrates AutoCastEnabled /
+// AbilityCooldowns from the old key to the new one. Safe no-op when "heal" is
+// not present.
+//
+// Caller holds s.mu.
+func (s *GameState) applyGreaterHealPerkSwapLocked(unit *Unit) {
+	if unit == nil {
+		return
+	}
+	// Find "heal" in the abilities slice.
+	swapIdx := -1
+	for i, id := range unit.Abilities {
+		if id == "heal" {
+			swapIdx = i
+			break
+		}
+	}
+	if swapIdx < 0 {
+		return // "heal" not present; safe no-op
+	}
+	unit.Abilities[swapIdx] = "greater_heal"
+
+	// Migrate AutoCastEnabled.
+	if unit.AutoCastEnabled != nil {
+		if v, ok := unit.AutoCastEnabled["heal"]; ok {
+			if unit.AutoCastEnabled == nil {
+				unit.AutoCastEnabled = make(map[string]bool, 1)
+			}
+			unit.AutoCastEnabled["greater_heal"] = v
+			delete(unit.AutoCastEnabled, "heal")
+		}
+	}
+
+	// Migrate AbilityCooldowns.
+	if unit.AbilityCooldowns != nil {
+		if v, ok := unit.AbilityCooldowns["heal"]; ok {
+			if unit.AbilityCooldowns == nil {
+				unit.AbilityCooldowns = make(map[string]float64, 1)
+			}
+			unit.AbilityCooldowns["greater_heal"] = v
+			delete(unit.AbilityCooldowns, "heal")
+		}
+	}
 }
 
 // perkPoolForRankLocked returns the list of perk defs a unit is eligible to be
@@ -856,6 +949,108 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			}
 
 		// ── add cases for new perks with timer/decay needs below this line ──
+
+		case "mana_conduit":
+			// Passive: bonus mana regen per injured ally in radius.
+			// Iterates s.Units in slice order (deterministic). Caps at
+			// Config["maxAlliesCounted"]. Injured = HP > 0 && Visible && HP < MaxHP.
+			if unit.MaxMana <= 0 {
+				continue // no mana pool
+			}
+			radius := def.Config["radiusPixels"]
+			radiusSq := radius * radius
+			bonusPerAlly := def.Config["bonusManaRegenPerAlly"]
+			maxCount := int(def.Config["maxAlliesCounted"])
+			if maxCount <= 0 {
+				maxCount = 1
+			}
+			count := 0
+			for _, ally := range s.Units {
+				if count >= maxCount {
+					break
+				}
+				if ally == nil || ally.ID == unit.ID {
+					continue
+				}
+				if !s.unitsFriendlyLocked(unit, ally) {
+					continue
+				}
+				if ally.HP <= 0 || !ally.Visible || ally.HP >= ally.MaxHP {
+					continue
+				}
+				dx := ally.X - unit.X
+				dy := ally.Y - unit.Y
+				if dx*dx+dy*dy > radiusSq {
+					continue
+				}
+				count++
+			}
+			if count > 0 {
+				// Use ManaRegenAccumulator to accumulate fractional mana across
+				// ticks — same pattern as ManaRegenPerSecond in mana.go.
+				unit.ManaRegenAccumulator += bonusPerAlly * float64(count) * dt
+				if unit.ManaRegenAccumulator >= 1 {
+					gain := int(unit.ManaRegenAccumulator)
+					unit.ManaRegenAccumulator -= float64(gain)
+					unit.CurrentMana += gain
+					if unit.CurrentMana > unit.MaxMana {
+						unit.CurrentMana = unit.MaxMana
+					}
+				}
+			}
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook: on ability resolved (per resolved target)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// onPerkAbilityResolvedLocked is called once per (caster, target) pair
+// immediately after an ability effect has been applied in
+// resolveAbilityCastLocked. It fires perk side-effects that are gated on
+// ability resolution rather than on the attack cycle.
+//
+// battle_prayer: if the caster owns battle_prayer and the ability is heal-
+// category, stamp the buff onto target using refresh-max semantics: each of
+// BattlePrayerRemaining and BattlePrayerMultiplier is set to
+// max(current, configured value). This lets a re-cast on an already-buffed
+// target extend the duration without ever reducing it.
+//
+// The buff lives on target.PerkState (cross-unit, same as WeakenedRemaining)
+// so perkAttackSpeedBonusLocked can read it even when the target does not own
+// battle_prayer itself.
+//
+// Caller holds s.mu.
+func (s *GameState) onPerkAbilityResolvedLocked(caster *Unit, def AbilityDef, target *Unit) {
+	if caster == nil || target == nil {
+		return
+	}
+	if def.Category != AbilityCategoryHeal {
+		return
+	}
+	for _, perkID := range caster.PerkIDs {
+		switch perkID {
+		case "battle_prayer":
+			pDef := perkDefByID("battle_prayer")
+			if pDef == nil {
+				continue
+			}
+			cfg := pDef.ConfigForRank(caster.Rank)
+			duration := cfg["buffDurationSeconds"]
+			mult := cfg["attackSpeedMultiplier"]
+			if duration <= 0 || mult <= 0 {
+				continue
+			}
+			// Refresh-max semantics: take the longer duration and stronger
+			// multiplier independently so a re-cast on a fully-buffed target
+			// never downgrades the buff.
+			if duration > target.PerkState.BattlePrayerRemaining {
+				target.PerkState.BattlePrayerRemaining = duration
+			}
+			if mult > target.PerkState.BattlePrayerMultiplier {
+				target.PerkState.BattlePrayerMultiplier = mult
+			}
 		}
 	}
 }
