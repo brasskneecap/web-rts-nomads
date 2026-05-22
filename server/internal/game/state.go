@@ -1910,6 +1910,25 @@ func (s *GameState) Update(dt float64) {
 			}
 		}
 
+		// Divine Aegis protection decay — cross-unit (same pattern as the
+		// prayer buffs above). The recipient's charge expires after the
+		// configured window if no damage instance consumes it first. Owner-
+		// side pulse timer (DivineAegisPulseRemaining) decays in
+		// tickUnitPerkStateLocked because it lives on the cleric that owns
+		// the perk, not on the recipient.
+		if unit.PerkState.DivineAegisRemaining > 0 {
+			unit.PerkState.DivineAegisRemaining = math.Max(0, unit.PerkState.DivineAegisRemaining-dt)
+		}
+
+		// Divine Intervention invulnerability window decay — cross-unit
+		// (lives on the saved unit, not the saving cleric). Time-based —
+		// not consumed on hit. The damage pipeline checks this at the very
+		// top of applyUnitDamageWithSourceLocked and returns 0 immediately
+		// when > 0, so any number of hits within the window are negated.
+		if unit.PerkState.InvulnerabilityRemaining > 0 {
+			unit.PerkState.InvulnerabilityRemaining = math.Max(0, unit.PerkState.InvulnerabilityRemaining-dt)
+		}
+
 		// Focus target validation — clears stale focus (dead, invisible,
 		// switched teams) every tick while OrderFocusFollow is active.
 		// The unit falls back to idle / auto-heal after clearFocusTargetLocked

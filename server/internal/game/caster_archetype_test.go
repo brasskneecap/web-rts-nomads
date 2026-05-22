@@ -799,6 +799,11 @@ func TestHealAutocast_SeededReplayNoMeleeNoDivergence(t *testing.T) {
 		ally.HP = 1 // critically low — always a valid heal target
 		allyID := ally.ID
 
+		// Catalog seeds heal autocast ON at spawn; clear so the toggle below
+		// flips it on (the asserted starting state for this replay test).
+		// Determinism doesn't care about the default, only that both runs
+		// match — clearing on both runs preserves the property.
+		delete(app.AutoCastEnabled, "heal")
 		s.toggleAutoCastLocked(app, "heal")
 		appID := app.ID
 		s.mu.Unlock()

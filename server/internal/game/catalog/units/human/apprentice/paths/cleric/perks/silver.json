@@ -1,1 +1,49 @@
-[]
+[
+  {
+    "id": "divine_aegis",
+    "displayName": "Divine Aegis",
+    "icon": "perk-divine-aegis",
+    "description": "Pulses a one-hit barrier onto nearby allies.",
+    "tooltipTemplate": "Every {intervalSeconds:0}s, allies within {radiusPixels} gain a barrier that fully negates the next damage instance. Barrier lasts {protectionDurationSeconds:0}s and does not stack.",
+    "config": {
+      "intervalSeconds": 15.0,
+      "radiusPixels": 192,
+      "protectionDurationSeconds": 6.0
+    }
+  },
+  {
+    "id": "restoration_aura",
+    "displayName": "Restoration Aura",
+    "icon": "perk-restoration-aura",
+    "description": "Periodically heals nearby allies.",
+    "tooltipTemplate": "Every {intervalSeconds:0}s, allies within {radiusPixels} are healed for {healAmount}. Fires even at full HP so future heal-trigger effects can react.",
+    "config": {
+      "intervalSeconds": 5.0,
+      "radiusPixels": 192,
+      "healAmount": 3
+    }
+  },
+  {
+    "id": "zealous_march",
+    "displayName": "Zealous March",
+    "icon": "perk-zealous-march",
+    "description": "Nearby allies gain bonus movement speed. Additional Clerics add a smaller stacking bonus.",
+    "tooltipTemplate": "Allies within {radiusPixels} gain +{moveSpeedMultiplier%} movement speed. Each additional covering Cleric adds +{stackBonus%}.",
+    "config": {
+      "radiusPixels": 192,
+      "moveSpeedMultiplier": 0.30,
+      "stackBonus": 0.05
+    }
+  },
+  {
+    "id": "divine_healer",
+    "displayName": "Divine Healer",
+    "icon": "perk-divine-healer",
+    "description": "Strengthens Greater Heal and heal-triggered effects.",
+    "tooltipTemplate": "Greater Heal and Restoration Aura heal for {healMultiplier:1}× the base amount. Heal-triggered buffs (Battle Prayer, Bolstering Prayer) have {triggeredEffectMultiplier:1}× strength and duration.",
+    "config": {
+      "healMultiplier": 2.0,
+      "triggeredEffectMultiplier": 2.0
+    }
+  }
+]

@@ -182,6 +182,38 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 			// the durable thing the player wants to see represented.
 			addIcon(perkID, 1)
 
+		case "divine_aegis":
+			// Cleric silver passive: always emit on the owner so the player
+			// can see the pulsing aura is live. The single-charge protection
+			// itself surfaces on recipients via the cross-unit branch below.
+			addIcon(perkID, 1)
+
+		case "restoration_aura":
+			// Cleric silver passive: always emit on the owner — pulses are
+			// time-based, so the HUD signals "this aura is on" rather than
+			// trying to flash at each pulse moment (which would be
+			// distracting and inconsistent across multiple Clerics).
+			addIcon(perkID, 1)
+
+		case "zealous_march":
+			// Cleric silver passive: always emit on the owner. Recipients
+			// (allies inside the aura) get their own icon via the cross-unit
+			// branch below so allies without the perk still display the
+			// movement-speed buff while it is live.
+			addIcon(perkID, 1)
+
+		case "divine_healer":
+			// Cleric silver passive: always emit on the owner — the multiplier
+			// is always-on, the HUD just signals "this Cleric heals stronger".
+			addIcon(perkID, 1)
+
+		case "divine_intervention", "beacon_of_life", "divine_judgement":
+			// Cleric gold passives: always emit for the owner so the player
+			// can see the perk is owned. Intervention's cooldown wipes via
+			// perkCooldownsLocked; beacon and judgement are reactive (fire on
+			// heal events) so there's no per-unit "active" state to gate on.
+			addIcon(perkID, 1)
+
 		// battle_prayer's icon lives on the BUFFED TARGET (cross-unit buff),
 		// not on the perk owner. Surfaced below this loop so allies who don't
 		// own the perk still display the buff icon while it is active.
@@ -234,6 +266,45 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 	// or not. Both icons co-exist when both buffs are simultaneously active.
 	if unit.PerkState.BolsteringPrayerRemaining > 0 {
 		addIcon("bolstering_prayer", 1)
+	}
+
+	// divine_aegis recipient buff: surfaced on any unit carrying a non-zero
+	// DivineAegisRemaining charge. The recipient need not own the perk —
+	// same cross-unit pattern as BattlePrayer / BolsteringPrayer. addIcon
+	// dedupes with the owner-case above so a Cleric standing in their own
+	// aura sees 1 icon (single charge — overlapping clerics refresh the
+	// same charge, they do not stack).
+	if unit.PerkState.DivineAegisRemaining > 0 {
+		addIcon("divine_aegis", 1)
+	}
+
+	// divine_intervention recipient buff: surfaced on any unit currently
+	// inside the brief invulnerability window stamped by a save. The icon
+	// reads as "this unit cannot be killed right now" — a clear visual tell
+	// to the player that follow-up burst will whiff. The owner-side icon
+	// (above) shows perk ownership; this one shows active protection.
+	if unit.PerkState.InvulnerabilityRemaining > 0 {
+		addIcon("divine_intervention", 1)
+	}
+
+	// zealous_march recipient buff: emit the icon while ANY allied Cleric
+	// with zealous_march has this unit inside their aura. Reuses the same
+	// scan as perkMoveSpeedBonusFromClericAurasLocked so the icon appears
+	// exactly when the move-speed bonus is live. addIcon dedupes with the
+	// owner-case above so a Cleric standing in another Cleric's aura
+	// (or their own friendly area) sees a single icon, not two.
+	if s.hasZealousMarchAuraLocked(unit) {
+		addIcon("zealous_march", 1)
+	}
+
+	// divine_intervention recipient buff: a unit currently inside a brief
+	// invulnerability window (typically just saved from death by a nearby
+	// Cleric) shows the intervention icon so the player can see they are
+	// untouchable for the moment. The buff lives on the recipient — not
+	// the saving cleric — same cross-unit pattern as the prayer / aegis
+	// buffs above. Decays in state.go alongside the other cross-unit timers.
+	if unit.PerkState.InvulnerabilityRemaining > 0 {
+		addIcon("divine_intervention", 1)
 	}
 
 	return active
@@ -339,6 +410,18 @@ func (s *GameState) perkCooldownsLocked(unit *Unit) []protocol.PerkCooldownSnaps
 			// the wipe matches the actual wait.
 			mods := s.trapModifiersForUnitLocked(unit)
 			add(perkID, unit.PerkState.TrapPlaceCooldownRemaining, cfg["placeIntervalSeconds"]*mods.CooldownMultiplier)
+		case "divine_aegis":
+			// Silver cleric pulse — surfaces the wipe so the player can see
+			// when the next protection wave will land on their nearby allies.
+			add(perkID, unit.PerkState.DivineAegisPulseRemaining, cfg["intervalSeconds"])
+		case "restoration_aura":
+			// Silver cleric pulse — same wipe convention as divine_aegis so
+			// the player can read the next heal's cadence at a glance.
+			add(perkID, unit.PerkState.RestorationPulseRemaining, cfg["intervalSeconds"])
+		case "divine_intervention":
+			// Gold cleric save — surfaces the cooldown wipe so the player
+			// knows when their next clutch save is available.
+			add(perkID, unit.PerkState.DivineInterventionCooldownRemaining, cfg["cooldownSeconds"])
 		}
 	}
 	return cds

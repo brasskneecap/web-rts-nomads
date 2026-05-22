@@ -17,5 +17,6 @@
   "effectOnTarget": "healing_glow",
   "icon": "TODO/abilities/heal.png",
   "supportsAutoCast": true,
-  "autoCastTargetSelector": "lowest_hp_percentage_ally_in_range"
+  "autoCastTargetSelector": "lowest_hp_percentage_ally_in_range",
+  "defaultAutoCast": true
 }

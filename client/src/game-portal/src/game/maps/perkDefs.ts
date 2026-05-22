@@ -110,6 +110,14 @@ const AURA_RADIUS_SOURCES: Record<string, AuraRadiusSource> = {
   // tauntDurationSeconds. Gated on activeBuffs so the ring only appears
   // while the taunt is actually live.
   last_stand: { key: 'tauntRadius', onlyWhenActive: true },
+  // Cleric Silver — always-on support auras. All three read from the
+  // "radiusPixels" config key (the bronze-cleric convention) rather than
+  // the vanguard "radius" key, so the ring source must point at the right
+  // field. The rings render whenever the owning unit is alive — no extra
+  // gating required since these auras have no on/off state of their own.
+  divine_aegis: { key: 'radiusPixels' },
+  restoration_aura: { key: 'radiusPixels' },
+  zealous_march: { key: 'radiusPixels' },
   // NOT listed — draw off their own entities:
   //   rallying_banner (bannerRadius): banner is a detached map entity.
   //   All trapper perks (caltrops / fire_pit / explosive_trap / marker_trap):

@@ -38,12 +38,10 @@
     "id": "mana_conduit",
     "displayName": "Mana Conduit",
     "icon": "perk-mana-conduit",
-    "description": "Gain bonus mana regeneration for each injured ally nearby.",
-    "tooltipTemplate": "+{bonusManaRegenPerAlly:1} mana/s per injured ally within {radiusPixels}, up to {maxAlliesCounted} allies.",
+    "description": "Passively regenerate bonus mana.",
+    "tooltipTemplate": "Regenerate an additional {bonusManaRegen:1} mana per second.",
     "config": {
-      "radiusPixels": 192,
-      "bonusManaRegenPerAlly": 0.5,
-      "maxAlliesCounted": 5
+      "bonusManaRegen": 1.0
     }
   }
 ]

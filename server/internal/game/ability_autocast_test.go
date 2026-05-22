@@ -21,12 +21,21 @@ func apprenticeMaxMana(t *testing.T) int {
 // autoCastSetup: an apprentice (p1, has the auto-cast-capable "heal") and a
 // friendly soldier damaged by `missing` HP, within the apprentice's cast
 // range. Lock NOT held on return.
+//
+// NOTE: the catalog now seeds heal auto-cast ON by default at spawn (per
+// heal.json's defaultAutoCast: true). Toggle-flow tests below were written
+// against the legacy "off by default" baseline, so we explicitly disable
+// auto-cast here to preserve their semantics. Tests that want to assert
+// default-on behaviour read AutoCastEnabled before this helper clears it.
 func autoCastSetup(t *testing.T, missing int) (s *GameState, app, ally *Unit) {
 	t.Helper()
 	s = newProjectileTestState(t)
 	s.mu.Lock()
 	app = s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	app.Visible = true
+	if app.AutoCastEnabled != nil {
+		delete(app.AutoCastEnabled, "heal")
+	}
 	ally = spawnProjTestUnit(t, s, "p1", 460, 400)
 	ally.HP = ally.MaxHP - missing
 	s.mu.Unlock()
@@ -184,6 +193,9 @@ func TestAutoCast_PicksCorrectAlly(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	// Catalog seeds heal autocast ON at spawn; clear so the toggle below moves
+	// the state in the asserted direction (off → on) the test was written for.
+	delete(app.AutoCastEnabled, "heal")
 	high := spawnProjTestUnit(t, s, "p1", 440, 400)
 	high.HP = high.MaxHP - 10 // ~98%
 	low := spawnProjTestUnit(t, s, "p1", 470, 400)
@@ -242,6 +254,10 @@ func TestAutoCast_StateIsPerUnitInstance(t *testing.T) {
 	defer s.mu.Unlock()
 	a := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 100, Y: 100})
 	b := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 200, Y: 100})
+	// Clear catalog-seeded defaults so this test isolates per-instance toggle
+	// isolation (its actual subject) rather than the spawn-time default.
+	delete(a.AutoCastEnabled, "heal")
+	delete(b.AutoCastEnabled, "heal")
 
 	s.toggleAutoCastLocked(a, "heal")
 	if !s.autoCastEnabledLocked(a, "heal") {

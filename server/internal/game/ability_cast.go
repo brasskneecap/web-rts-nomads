@@ -1,5 +1,7 @@
 package game
 
+import "math"
+
 // Ability cast lifecycle.
 //
 // Flow:
@@ -211,14 +213,20 @@ func (s *GameState) resolveAbilityCastOnTargetLocked(caster *Unit, def AbilityDe
 		return
 	}
 	if def.HealAmount > 0 && target.HP > 0 {
-		before := target.HP
-		target.HP += def.HealAmount
-		if target.HP > target.MaxHP {
-			target.HP = target.MaxHP // no overheal
+		// Divine Healer (silver cleric) scales every heal amount produced by
+		// the caster. Default multiplier is 1.0; perks_cleric_silver.go owns
+		// the lookup so future heal-sources just call the same helper.
+		amount := int(math.Round(float64(def.HealAmount) * s.perkClericHealOutputMultiplierLocked(caster)))
+		if amount < 0 {
+			amount = 0
 		}
-		// Record the effective gain (clamped), not def.HealAmount, so the
-		// floating "+N" reflects real HP restored on a near-full target.
-		s.recordHealEventLocked(target, target.HP-before)
+		// Route the heal through the central cleric helper so gold-tier
+		// triggers (beacon_of_life splash, divine_judgement AoE) fire under
+		// the canonical metadata flags. The helper handles overheal routing,
+		// records the heal event with the EFFECTIVE gain, and dispatches
+		// triggers using the INTENDED amount (per spec: Judgement uses the
+		// full heal value even on full-HP / overheal targets).
+		s.applyClericHealLocked(caster, target, amount, healMetaPrimaryAbility())
 	}
 
 	// Offensive resolve step (symmetric to HealAmount). Routes through the

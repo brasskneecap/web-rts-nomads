@@ -2398,12 +2398,15 @@ export class CanvasRenderer {
     ctx.lineWidth = 3 / this.camera.zoom
     ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
 
-    const baseFontPx = Math.max(12, 14 / this.camera.zoom)
-    const combinedFontPx = Math.max(16, 19 / this.camera.zoom)
-    const critFontPx = Math.max(14, 17 / this.camera.zoom)
-    // Minor (Reactive Flames splash, etc.) — smaller than base, drawn in
-    // orange so it reads as ancillary damage without dominating the popup.
-    const minorFontPx = Math.max(9, 10 / this.camera.zoom)
+    // All damage popup font sizes bumped up a few points for readability.
+    // Crit and combined are scaled in lockstep to preserve the size
+    // hierarchy (combined > crit > base > minor).
+    const baseFontPx = Math.max(15, 17 / this.camera.zoom)
+    const combinedFontPx = Math.max(19, 22 / this.camera.zoom)
+    const critFontPx = Math.max(17, 20 / this.camera.zoom)
+    // Minor (Reactive Flames splash, Divine Judgement, etc.) — still smaller
+    // than base so it reads as ancillary damage.
+    const minorFontPx = Math.max(14, 15 / this.camera.zoom)
 
     const kept: typeof this.floatingDamageNumbers = []
     for (const num of this.floatingDamageNumbers) {
@@ -2470,13 +2473,17 @@ export class CanvasRenderer {
       } else if (num.kind === 'minor') {
         // Smaller popup so the splash reads as a side-effect, not a hit
         // from the trap itself. Color derives from variant: "electric" =
-        // purple (Electrified Caltrops), default = orange (Reactive
-        // Flames / generic fire splash).
+        // purple (Electrified Caltrops), "holy" = gold (Divine Judgement),
+        // default = orange (Reactive Flames / generic fire splash).
         ctx.font = `bold ${minorFontPx}px sans-serif`
         ctx.strokeText(text, drawX, drawY)
-        ctx.fillStyle = num.minorVariant === 'electric'
-          ? '#c084fc' // tailwind purple-400
-          : '#fb923c' // tailwind orange-400
+        let minorFill = '#fb923c' // tailwind orange-400 (fire / default)
+        if (num.minorVariant === 'electric') {
+          minorFill = '#c084fc' // tailwind purple-400
+        } else if (num.minorVariant === 'holy') {
+          minorFill = '#fcd34d' // tailwind amber-300
+        }
+        ctx.fillStyle = minorFill
         ctx.fillText(text, drawX, drawY)
       } else if (num.kind === 'heal') {
         // Intentional healing — light-green "+N" floating up, distinct from

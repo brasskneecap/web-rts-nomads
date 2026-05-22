@@ -41,6 +41,14 @@ func newClericBronzeState(t *testing.T) (s *GameState, cleric *Unit) {
 	if cleric.AutoCastEnabled == nil {
 		cleric.AutoCastEnabled = make(map[string]bool)
 	}
+	// Catalog seeds heal auto-cast ON for player units at spawn
+	// (heal.json → defaultAutoCast: true). Cleric tests that drive perk-state
+	// decay over many ticks (BattlePrayer / BolsteringPrayer expiry) would
+	// have auto-cast refreshing the buffs mid-test. Clear here so each test
+	// runs from a known baseline; tests that want to assert default-on
+	// behaviour set AutoCastEnabled explicitly after this helper returns.
+	delete(cleric.AutoCastEnabled, "heal")
+	delete(cleric.AutoCastEnabled, "greater_heal")
 	if cleric.AbilityCooldowns == nil {
 		cleric.AbilityCooldowns = make(map[string]float64)
 	}
@@ -971,14 +979,17 @@ func TestSanctuary_OverlappingAurasTakeMaxNoStack(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 14.19 — mana_conduit scales with injured ally count
+// mana_conduit — flat passive bonus regen
+//
+// Redesigned from the original "scales with injured allies in radius" to a
+// constant +bonusManaRegen mana/sec passive. The old per-ally / radius /
+// cap tests no longer apply; the new suite asserts the rate is correct,
+// that it doesn't run for unitless casters, and that it clamps at MaxMana.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestManaConduit_BonusScalesWithInjuredAllies places 3 injured allies in
-// radius and asserts the bonus mana accumulation after one tick matches
-// 3 * bonusManaRegenPerAlly * dt. Uses the accumulator approach that the
-// implementation uses (accumulates fractional mana).
-func TestManaConduit_BonusScalesWithInjuredAllies(t *testing.T) {
+// TestManaConduit_GrantsFlatRegen drives one tick and asserts the accumulator
+// reflects bonusManaRegen × dt.
+func TestManaConduit_GrantsFlatRegen(t *testing.T) {
 	s, cleric := newClericBronzeState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -989,17 +1000,9 @@ func TestManaConduit_BonusScalesWithInjuredAllies(t *testing.T) {
 	if mcDef == nil {
 		t.Fatal("mana_conduit perk def not found")
 	}
-	cfg := mcDef.ConfigForRank(cleric.Rank)
-	radius := cfg["radiusPixels"]
-	bonusPerAlly := cfg["bonusManaRegenPerAlly"]
-	maxCount := int(cfg["maxAlliesCounted"])
-	if maxCount < 3 {
-		t.Skipf("maxAlliesCounted = %d, want >= 3 for this test", maxCount)
-	}
-
-	for i := 0; i < 3; i++ {
-		a := spawnClericTestAlly(t, s, cleric.X+radius*0.5+float64(i*5), cleric.Y)
-		a.HP = a.MaxHP / 2 // injured
+	bonusPerSec := mcDef.ConfigForRank(cleric.Rank)["bonusManaRegen"]
+	if bonusPerSec <= 0 {
+		t.Fatalf("bonusManaRegen = %.4f; expected positive value in the catalog", bonusPerSec)
 	}
 
 	cleric.CurrentMana = 0
@@ -1008,21 +1011,17 @@ func TestManaConduit_BonusScalesWithInjuredAllies(t *testing.T) {
 	const dt = 0.1
 	s.tickUnitPerkStateLocked(cleric, dt)
 
-	wantAccumulated := 3 * bonusPerAlly * dt
-	// The accumulator may have converted to integer mana already if wantAccumulated >= 1.
+	wantAccum := bonusPerSec * dt
 	totalMana := float64(cleric.CurrentMana) + cleric.ManaRegenAccumulator
-	if math.Abs(totalMana-wantAccumulated) > 0.01 {
-		t.Errorf("mana_conduit 3 allies: total mana gain = %.4f, want ~%.4f (3 * bonusManaRegenPerAlly * dt)", totalMana, wantAccumulated)
+	if math.Abs(totalMana-wantAccum) > 0.01 {
+		t.Errorf("flat mana_conduit regen: total = %.4f, want %.4f (bonusManaRegen × dt)", totalMana, wantAccum)
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 14.20 — mana_conduit is capped by maxAlliesCounted
-// ─────────────────────────────────────────────────────────────────────────────
-
-// TestManaConduit_CapsAtMaxAlliesCounted places 5 injured allies with cap = 3
-// and asserts the bonus is capped.
-func TestManaConduit_CapsAtMaxAlliesCounted(t *testing.T) {
+// TestManaConduit_NearbyAlliesDoNotChangeRate confirms the rate is FLAT —
+// adding nearby injured allies (the old design's trigger) must not change
+// the per-tick accumulation now that the design is a constant bonus.
+func TestManaConduit_NearbyAlliesDoNotChangeRate(t *testing.T) {
 	s, cleric := newClericBronzeState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1033,15 +1032,12 @@ func TestManaConduit_CapsAtMaxAlliesCounted(t *testing.T) {
 	if mcDef == nil {
 		t.Fatal("mana_conduit perk def not found")
 	}
-	cfg := mcDef.ConfigForRank(cleric.Rank)
-	radius := cfg["radiusPixels"]
-	bonusPerAlly := cfg["bonusManaRegenPerAlly"]
-	maxCount := int(cfg["maxAlliesCounted"])
+	bonusPerSec := mcDef.ConfigForRank(cleric.Rank)["bonusManaRegen"]
 
-	// Spawn more allies than the cap.
-	count := maxCount + 2
-	for i := 0; i < count; i++ {
-		a := spawnClericTestAlly(t, s, cleric.X+radius*0.5+float64(i*5), cleric.Y)
+	// Three injured allies right next to the cleric. Under the old design
+	// these would have scaled the regen — now they must have no effect.
+	for i := 0; i < 3; i++ {
+		a := spawnClericTestAlly(t, s, cleric.X+10+float64(i*5), cleric.Y)
 		a.HP = a.MaxHP / 2
 	}
 
@@ -1051,109 +1047,47 @@ func TestManaConduit_CapsAtMaxAlliesCounted(t *testing.T) {
 	const dt = 0.1
 	s.tickUnitPerkStateLocked(cleric, dt)
 
-	cappedBonus := float64(maxCount) * bonusPerAlly * dt
-	uncappedBonus := float64(count) * bonusPerAlly * dt
+	wantAccum := bonusPerSec * dt
 	totalMana := float64(cleric.CurrentMana) + cleric.ManaRegenAccumulator
-
-	if math.Abs(totalMana-cappedBonus) > 0.01 {
-		t.Errorf("mana_conduit capped: total mana gain = %.4f, want ~%.4f (cap=%d, not uncapped %.4f)",
-			totalMana, cappedBonus, maxCount, uncappedBonus)
+	if math.Abs(totalMana-wantAccum) > 0.01 {
+		t.Errorf("flat regen must not scale with nearby allies: got %.4f, want %.4f", totalMana, wantAccum)
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 14.21 — full-HP allies not counted by mana_conduit
-// ─────────────────────────────────────────────────────────────────────────────
-
-// TestManaConduit_FullHPAlliesNotCounted places 5 full-HP allies and asserts
-// zero bonus.
-func TestManaConduit_FullHPAlliesNotCounted(t *testing.T) {
-	s, cleric := newClericBronzeState(t)
+// TestManaConduit_NoOpForUnitsWithoutMana confirms the perk is inert on a unit
+// that has no mana pool. Defensive — the runtime check prevents writing
+// CurrentMana on a unit that doesn't track mana.
+func TestManaConduit_NoOpForUnitsWithoutMana(t *testing.T) {
+	s, _ := newClericBronzeState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	grantPerk(cleric, "mana_conduit")
-
-	mcDef := perkDefByID("mana_conduit")
-	if mcDef == nil {
-		t.Fatal("mana_conduit perk def not found")
+	// Soldier has no mana pool by default.
+	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#aabb00", protocol.Vec2{X: 450, Y: 400})
+	soldier.Visible = true
+	if soldier.MaxMana > 0 {
+		t.Skipf("soldier MaxMana = %d; test assumes 0", soldier.MaxMana)
 	}
-	radius := mcDef.Config["radiusPixels"]
+	grantPerk(soldier, "mana_conduit")
 
-	for i := 0; i < 5; i++ {
-		a := spawnClericTestAlly(t, s, cleric.X+radius*0.5+float64(i*5), cleric.Y)
-		a.HP = a.MaxHP // full HP
-	}
+	startMana := soldier.CurrentMana
+	startAccum := soldier.ManaRegenAccumulator
+	s.tickUnitPerkStateLocked(soldier, 0.1)
 
-	cleric.CurrentMana = 0
-	cleric.ManaRegenAccumulator = 0
-
-	s.tickUnitPerkStateLocked(cleric, 0.1)
-
-	if cleric.CurrentMana != 0 || cleric.ManaRegenAccumulator > 0.001 {
-		t.Errorf("full-HP allies should not contribute: CurrentMana=%d, Accumulator=%.4f",
-			cleric.CurrentMana, cleric.ManaRegenAccumulator)
+	if soldier.CurrentMana != startMana || soldier.ManaRegenAccumulator != startAccum {
+		t.Errorf("mana_conduit ran on no-mana unit: mana %d → %d, accum %.4f → %.4f",
+			startMana, soldier.CurrentMana, startAccum, soldier.ManaRegenAccumulator)
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 14.22 — enemies not counted by mana_conduit
-// ─────────────────────────────────────────────────────────────────────────────
-
-// TestManaConduit_EnemiesNotCounted places an injured enemy in radius with no
-// injured allies and asserts zero bonus.
-func TestManaConduit_EnemiesNotCounted(t *testing.T) {
-	s, cleric := newClericBronzeState(t)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	grantPerk(cleric, "mana_conduit")
-
-	mcDef := perkDefByID("mana_conduit")
-	if mcDef == nil {
-		t.Fatal("mana_conduit perk def not found")
-	}
-	radius := mcDef.Config["radiusPixels"]
-
-	// Injured enemy inside radius.
-	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: cleric.X + radius*0.5, Y: cleric.Y})
-	enemy.Visible = true
-	enemy.HP = enemy.MaxHP / 2
-
-	cleric.CurrentMana = 0
-	cleric.ManaRegenAccumulator = 0
-
-	s.tickUnitPerkStateLocked(cleric, 0.1)
-
-	if cleric.CurrentMana != 0 || cleric.ManaRegenAccumulator > 0.001 {
-		t.Errorf("enemy in range should not contribute: CurrentMana=%d, Accumulator=%.4f",
-			cleric.CurrentMana, cleric.ManaRegenAccumulator)
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 14.23 — mana_conduit clamps at MaxMana
-// ─────────────────────────────────────────────────────────────────────────────
-
-// TestManaConduit_ClampsAtMaxMana places the Cleric at MaxMana and confirms it
-// stays clamped.
+// TestManaConduit_ClampsAtMaxMana confirms the bonus regen cannot push mana
+// past MaxMana when the unit is already full.
 func TestManaConduit_ClampsAtMaxMana(t *testing.T) {
 	s, cleric := newClericBronzeState(t)
 
 	s.mu.Lock()
 	grantPerk(cleric, "mana_conduit")
-
-	mcDef := perkDefByID("mana_conduit")
-	if mcDef == nil {
-		s.mu.Unlock()
-		t.Fatal("mana_conduit perk def not found")
-	}
-	radius := mcDef.Config["radiusPixels"]
 	clericID := cleric.ID
-
-	// Injured ally in range to trigger the bonus.
-	a := spawnClericTestAlly(t, s, cleric.X+radius*0.5, cleric.Y)
-	a.HP = a.MaxHP / 2
 
 	// Set cleric to full mana.
 	cleric.CurrentMana = cleric.MaxMana

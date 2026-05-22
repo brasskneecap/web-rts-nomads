@@ -38,5 +38,11 @@ func (s *GameState) perkMoveSpeedMultiplierLocked(unit *Unit) float64 {
 	// Player-buff contribution — equipped player buffs add a flat move-speed multiplier bonus.
 	bonus += s.playerBuffAggregateLocked(unit).MoveSpeedMultBonus
 
+	// zealous_march (silver cleric): max-wins aura contribution from nearby
+	// allied Clerics. Lives in perks_cleric_silver.go so all four cleric
+	// silver perks stay colocated. Returns 0 when no covering aura is in
+	// range, so it's free when off.
+	bonus += s.perkMoveSpeedBonusFromClericAurasLocked(unit)
+
 	return 1.0 + bonus
 }

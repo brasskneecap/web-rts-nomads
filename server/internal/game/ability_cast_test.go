@@ -31,6 +31,15 @@ func healSetup(t *testing.T) (s *GameState, app, ally *Unit) {
 	s.mu.Lock()
 	app = s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	app.Visible = true
+	// Catalog seeds heal auto-cast ON for player units at spawn
+	// (heal.json → defaultAutoCast: true). The tests using this helper want
+	// to exercise the MANUAL cast path; auto-cast firing during their tick
+	// advance would mutate ally HP behind the assertions. Clear so each test
+	// runs from a known baseline. Tests that care about the seeded default
+	// read AutoCastEnabled before calling helpers like this.
+	if app.AutoCastEnabled != nil {
+		delete(app.AutoCastEnabled, "heal")
+	}
 	ally = spawnProjTestUnit(t, s, "p1", 450, 400)  // 50px away, within 220 range
 	ally.HP = ally.MaxHP - def.HealAmount - 20       // missing > one heal, so +HealAmount never clips MaxHP
 	s.mu.Unlock()

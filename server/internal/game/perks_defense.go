@@ -50,6 +50,17 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	if target == nil || damage <= 0 {
 		return 0
 	}
+	// Step 1: Divine Intervention invulnerability window (gold cleric). When
+	// a recently-saved unit has InvulnerabilityRemaining > 0, the entire hit
+	// is ignored — no mitigation, no shared pain, no shield drain, no mark
+	// consumed. This is true invulnerability rather than a damage-instance
+	// absorb (which is Divine Aegis below), because the design intent is
+	// that a freshly-revived unit gets a brief moment of safety to escape
+	// the burst that just killed them. Checking BEFORE pain_share so an
+	// invuln unit's redirect target also takes nothing.
+	if s.consumeInvulnerabilityLocked(target) {
+		return 0
+	}
 	// Preserve the pre-mitigation input for Shared Pain redistribution.
 	origDamage := damage
 	// Step 2: pain_share redirect — propagate attribution so if the absorbing
@@ -60,6 +71,18 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 		// Shared Pain — the attack "hit" the marked enemy, it just got fully
 		// redirected. Keep the semantic consistent with the other early-exit
 		// path below.
+		s.perkShareDamageToMarkedLocked(target, origDamage, src)
+		return 0
+	}
+	// Step 2b: Divine Aegis (silver cleric) — if the target currently holds an
+	// unconsumed protection charge, the entire damage instance is negated and
+	// the charge is consumed. The consume helper clears the field in-place so
+	// no on-damage perk can re-trigger the same charge during this call stack
+	// (the design constraint forbids recursive prevention). Shared Pain still
+	// fires on the pre-mitigation amount so the attack's "hit" semantics are
+	// preserved for downstream marked-enemy fan-out — consistent with the
+	// pain_share / shield-full-absorb branches above and below.
+	if s.consumeDivineAegisLocked(target) {
 		s.perkShareDamageToMarkedLocked(target, origDamage, src)
 		return 0
 	}
@@ -114,6 +137,15 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	// other marked enemies. Propagate attribution so indirect kills credit the
 	// original attacker.
 	s.perkShareDamageToMarkedLocked(target, origDamage, src)
+	// Step 6b: Divine Intervention (gold cleric). When the unit's HP would
+	// hit 0, scan nearby allied clerics for one off cooldown that can revive
+	// the target. A successful save restores HP and stamps an invulnerability
+	// window, then we return WITHOUT enqueueing the death. The damage value
+	// is still reported (so the floating "-N" reads correctly) — only the
+	// death is averted.
+	if target.HP <= 0 && s.tryDivineInterventionLocked(target) {
+		return damage
+	}
 	// Step 7: Enqueue death so drainPendingDeathsLocked handles cleanup and XP.
 	s.enqueueDeathLocked(target, src)
 	return damage

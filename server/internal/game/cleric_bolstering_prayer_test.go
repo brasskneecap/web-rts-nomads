@@ -421,6 +421,9 @@ func TestBolstering_And_BattlePrayer_StackIndependently(t *testing.T) {
 	if clericB.AutoCastEnabled == nil {
 		clericB.AutoCastEnabled = make(map[string]bool)
 	}
+	// Catalog seeds heal autocast ON at spawn; clear so the decay loop
+	// below isn't continually refreshing the prayer buffs by re-casting heal.
+	delete(clericB.AutoCastEnabled, "heal")
 	if clericB.AbilityCooldowns == nil {
 		clericB.AbilityCooldowns = make(map[string]float64)
 	}

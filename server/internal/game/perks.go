@@ -458,6 +458,70 @@ type UnitPerkState struct {
 	//     effectiveArmorLocked.
 	BolsteringPrayerRemaining float64
 	BolsteringPrayerArmor     float64
+
+	// ── cleric silver perks ─────────────────────────────────────────────────
+	// divine_aegis splits state across two roles:
+	//   • Owner-side (Cleric with the perk):
+	//     DivineAegisPulseRemaining — seconds until the next aura pulse. Set
+	//     to intervalSeconds whenever a pulse fires; decays in
+	//     tickUnitPerkStateLocked. The initial value is 0 so the first pulse
+	//     fires immediately on grant — by design, allies under a freshly-
+	//     summoned cleric should not have to wait the full interval for
+	//     their first shield.
+	//   • Recipient-side (any ally inside a pulse radius):
+	//     DivineAegisRemaining — seconds left on the protection charge. Set
+	//     to protectionDurationSeconds when a pulse stamps the recipient;
+	//     decays alongside the other cross-unit buff timers in state.go
+	//     Update(). Consumed (set to 0) the moment any damage instance
+	//     lands on the recipient — the damage pipeline checks this field
+	//     before mark amplification / sanctuary / shield / HP, and a non-
+	//     zero charge zeroes the incoming damage. Refresh semantics are
+	//     refresh-longer (max of current vs new duration) so two clerics
+	//     do not waste each other's shield by overwriting a stronger one.
+	//     This is a single-charge field — overlapping clerics do not grant
+	//     two consecutive blocks; the design constraint is one absorption
+	//     per pulse.
+	DivineAegisPulseRemaining float64
+	DivineAegisRemaining      float64
+
+	// ── restoration_aura (silver cleric) — owner pulse only ────────────────
+	// RestorationPulseRemaining is the seconds until the next pulse. Set to
+	// intervalSeconds whenever a pulse fires; decays in
+	// tickUnitPerkStateLocked. Initial value of 0 means the first pulse
+	// fires on the first tick after the perk is granted (same pattern as
+	// DivineAegisPulseRemaining). The heal itself routes through the
+	// healing-event path (recordHealEventLocked) so the floating +N pops on
+	// the client, and is scaled by divine_healer when the owner has it.
+	RestorationPulseRemaining float64
+
+	// ── cleric gold perks ───────────────────────────────────────────────────
+	// divine_intervention is split across owner-side cooldown and recipient-
+	// side invulnerability window:
+	//   • Owner-side (Cleric with the perk):
+	//     DivineInterventionCooldownRemaining — seconds until the cleric may
+	//     fire another intervention. Set to cooldownSeconds when an
+	//     intervention fires; decays every tick in tickUnitPerkStateLocked.
+	//     Zero allows the next save. The cooldown is per-cleric — multiple
+	//     clerics with the perk each have their own gate.
+	//   • Recipient-side (any saved unit):
+	//     InvulnerabilityRemaining — seconds left on the brief protection
+	//     window stamped onto the rescued unit. The damage pipeline checks
+	//     this AT THE TOP of applyUnitDamageWithSourceLocked and returns 0
+	//     immediately if > 0 (no mitigation, no shared pain, no death). This
+	//     is true invulnerability rather than a damage-instance absorb so
+	//     burst follow-up cannot kill a freshly-saved unit. Decays alongside
+	//     the other cross-unit buff timers in state.go Update(). Future
+	//     perks that grant temporary invulnerability can reuse this field.
+	DivineInterventionCooldownRemaining float64
+	InvulnerabilityRemaining            float64
+
+	// beacon_of_life and divine_judgement do not need persistent per-unit
+	// state — beacon's "no recursive splash" rule and judgement's "no
+	// recursive damage" rule are both enforced via the HealMeta flags
+	// threaded through applyClericHealLocked (see perks_cleric_gold.go).
+	// Per-unit recursion guards would be redundant with the metadata flags
+	// and would risk leaving stale `true` values if a panic/return skipped
+	// the reset path.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -924,52 +988,51 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 
 		// ── add cases for new perks with timer/decay needs below this line ──
 
+		case "divine_aegis":
+			// Silver cleric: pulse a one-hit protection charge onto nearby
+			// allies on a fixed cadence. Lives in perks_cleric_silver.go to
+			// keep the silver cleric perks colocated.
+			s.tickDivineAegisPulseLocked(unit, def, dt)
+
+		case "restoration_aura":
+			// Silver cleric: pulse a small heal to every nearby ally on a
+			// fixed cadence. Routes through applyClericHealLocked so gold
+			// triggers (divine_judgement) can fire on every pulse.
+			s.tickRestorationAuraPulseLocked(unit, def, dt)
+
+		case "divine_intervention":
+			// Gold cleric: owner-side cooldown decay. The save itself fires
+			// from the damage pipeline (tryDivineInterventionLocked) when an
+			// allied unit's HP would hit 0; this branch only ticks the
+			// cooldown down so the perk re-arms.
+			if unit.PerkState.DivineInterventionCooldownRemaining > 0 {
+				unit.PerkState.DivineInterventionCooldownRemaining = math.Max(0, unit.PerkState.DivineInterventionCooldownRemaining-dt)
+			}
+
 		case "mana_conduit":
-			// Passive: bonus mana regen per injured ally in radius.
-			// Iterates s.Units in slice order (deterministic). Caps at
-			// Config["maxAlliesCounted"]. Injured = HP > 0 && Visible && HP < MaxHP.
+			// Passive: flat bonus mana regen while alive. No targeting, no
+			// ally scan — the perk used to scale off nearby injured allies,
+			// but the current design is just a constant bonus so the cleric's
+			// support tempo improves immediately rather than depending on
+			// surrounding ally state. Skips units without a mana pool.
 			if unit.MaxMana <= 0 {
-				continue // no mana pool
+				continue
 			}
-			radius := def.Config["radiusPixels"]
-			radiusSq := radius * radius
-			bonusPerAlly := def.Config["bonusManaRegenPerAlly"]
-			maxCount := int(def.Config["maxAlliesCounted"])
-			if maxCount <= 0 {
-				maxCount = 1
+			bonusPerSec := def.Config["bonusManaRegen"]
+			if bonusPerSec <= 0 {
+				continue
 			}
-			count := 0
-			for _, ally := range s.Units {
-				if count >= maxCount {
-					break
-				}
-				if ally == nil || ally.ID == unit.ID {
-					continue
-				}
-				if !s.unitsFriendlyLocked(unit, ally) {
-					continue
-				}
-				if ally.HP <= 0 || !ally.Visible || ally.HP >= ally.MaxHP {
-					continue
-				}
-				dx := ally.X - unit.X
-				dy := ally.Y - unit.Y
-				if dx*dx+dy*dy > radiusSq {
-					continue
-				}
-				count++
-			}
-			if count > 0 {
-				// Use ManaRegenAccumulator to accumulate fractional mana across
-				// ticks — same pattern as ManaRegenPerSecond in mana.go.
-				unit.ManaRegenAccumulator += bonusPerAlly * float64(count) * dt
-				if unit.ManaRegenAccumulator >= 1 {
-					gain := int(unit.ManaRegenAccumulator)
-					unit.ManaRegenAccumulator -= float64(gain)
-					unit.CurrentMana += gain
-					if unit.CurrentMana > unit.MaxMana {
-						unit.CurrentMana = unit.MaxMana
-					}
+			// Reuse the existing accumulator (same pattern as the base
+			// ManaRegenPerSecond loop in mana.go) so fractional bonuses
+			// accumulate correctly across ticks and integer mana lands on
+			// the same cadence as the base regen.
+			unit.ManaRegenAccumulator += bonusPerSec * dt
+			if unit.ManaRegenAccumulator >= 1 {
+				gain := int(unit.ManaRegenAccumulator)
+				unit.ManaRegenAccumulator -= float64(gain)
+				unit.CurrentMana += gain
+				if unit.CurrentMana > unit.MaxMana {
+					unit.CurrentMana = unit.MaxMana
 				}
 			}
 		}
@@ -1004,6 +1067,12 @@ func (s *GameState) onPerkAbilityResolvedLocked(caster *Unit, def AbilityDef, ta
 	if def.Category != AbilityCategoryHeal {
 		return
 	}
+	// divine_healer (silver cleric) scales every heal-triggered buff's
+	// strength and duration. Returns 1.0 when the caster lacks the perk so
+	// the multiply is inert in the common case. Disjoint from the heal-
+	// AMOUNT multiplier (which scales raw HP restored) so the two effects
+	// can be tuned independently in the perk JSON.
+	triggerMult := s.perkClericHealTriggeredMultiplierLocked(caster)
 	for _, perkID := range caster.PerkIDs {
 		switch perkID {
 		case "battle_prayer":
@@ -1012,8 +1081,8 @@ func (s *GameState) onPerkAbilityResolvedLocked(caster *Unit, def AbilityDef, ta
 				continue
 			}
 			cfg := pDef.ConfigForRank(caster.Rank)
-			duration := cfg["buffDurationSeconds"]
-			mult := cfg["attackSpeedMultiplier"]
+			duration := cfg["buffDurationSeconds"] * triggerMult
+			mult := cfg["attackSpeedMultiplier"] * triggerMult
 			if duration <= 0 || mult <= 0 {
 				continue
 			}
@@ -1030,8 +1099,8 @@ func (s *GameState) onPerkAbilityResolvedLocked(caster *Unit, def AbilityDef, ta
 				continue
 			}
 			cfg := pDef.ConfigForRank(caster.Rank)
-			duration := cfg["buffDurationSeconds"]
-			armor := cfg["armorBonus"]
+			duration := cfg["buffDurationSeconds"] * triggerMult
+			armor := cfg["armorBonus"] * triggerMult
 			if duration <= 0 || armor <= 0 {
 				continue
 			}

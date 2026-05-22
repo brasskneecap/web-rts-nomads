@@ -159,6 +159,10 @@ func TestPhase2_NoRegression_SeededHealOnlyReplay(t *testing.T) {
 		ally := spawnProjTestUnit(t, s, "p1", 450, 400)
 		ally.HP = 1 // always a valid heal target
 		allyID := ally.ID
+		// Catalog seeds heal autocast ON at spawn; clear so the toggle below
+		// moves the state in the asserted direction (off → on). This test
+		// measures replay determinism and doesn't care about the default.
+		delete(app.AutoCastEnabled, "heal")
 		s.toggleAutoCastLocked(app, "heal")
 		appID := app.ID
 		s.mu.Unlock()
@@ -478,6 +482,13 @@ func TestPhase2_Tiebreak_RealTick_LowerSlotWins(t *testing.T) {
 		caster := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		caster.Visible = true
 		caster.Abilities = append([]string{}, abilities...) // slot order under test
+		// Catalog seeds heal autocast ON at spawn; clear before toggling so
+		// each toggle flips from off → on regardless of which ids are under
+		// test. The tie-break under test depends only on slot order, not
+		// on whether the toggle was the first or second flip.
+		for _, id := range abilities {
+			delete(caster.AutoCastEnabled, id)
+		}
 		for _, id := range abilities {
 			s.toggleAutoCastLocked(caster, id)
 		}
@@ -588,6 +599,11 @@ func TestPhase2_PriorityCorrectness_HealWinsWhenAllyLow(t *testing.T) {
 	caster.Visible = true
 	// Give both abilities in slot order.
 	caster.Abilities = []string{"heal", "arcane_bolt"}
+	// Catalog seeds heal autocast ON at spawn; clear so the toggles below
+	// flip both abilities from off → on (the asserted starting state for
+	// this priority test).
+	delete(caster.AutoCastEnabled, "heal")
+	delete(caster.AutoCastEnabled, "arcane_bolt")
 	s.toggleAutoCastLocked(caster, "heal")
 	s.toggleAutoCastLocked(caster, "arcane_bolt")
 

@@ -158,6 +158,14 @@ type AbilityDef struct {
 	// registry's job.
 	SupportsAutoCast      bool   `json:"supportsAutoCast,omitempty"`
 	AutoCastTargetSelector string `json:"autoCastTargetSelector,omitempty"`
+	// DefaultAutoCast controls whether the ability's auto-cast toggle starts
+	// in the ENABLED state at unit spawn / ability grant. Only applies when
+	// SupportsAutoCast is true. Player intent always overrides — once the
+	// player toggles the ability (on or off), the explicit value is preserved
+	// through promotions and ability replacements (heal → greater_heal). New
+	// abilities granted at higher ranks default per this flag at grant time.
+	// Player-owned units only — enemy units never get the default seeded.
+	DefaultAutoCast bool `json:"defaultAutoCast,omitempty"`
 
 	// ── Presentation / resolution hooks ────────────────────────────────────
 	// Icon is the action-bar icon path. TODO(asset): real icon art.

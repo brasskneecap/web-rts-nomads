@@ -1,1 +1,42 @@
-[]
+[
+  {
+    "id": "divine_intervention",
+    "displayName": "Divine Intervention",
+    "icon": "perk-divine-intervention",
+    "description": "Prevents nearby allied deaths on a cooldown. Saved allies are briefly invulnerable.",
+    "tooltipTemplate": "When a nearby ally within {triggerRadius} would die, restore {healAmount} HP and grant {protectionDurationSeconds:1}s of invulnerability. {cooldownSeconds:0}s cooldown.",
+    "config": {
+      "triggerRadius": 120,
+      "healAmount": 20,
+      "protectionDurationSeconds": 1.5,
+      "cooldownSeconds": 20
+    }
+  },
+  {
+    "id": "beacon_of_life",
+    "displayName": "Beacon of Life",
+    "icon": "perk-beacon-of-life",
+    "description": "Healing spreads to nearby allies.",
+    "tooltipTemplate": "Every heal you cast also restores {splashHealPercent%} of the heal amount to allies within {splashRadius}. Splash heals do not chain.",
+    "config": {
+      "splashHealPercent": 0.40,
+      "splashRadius": 90
+    }
+  },
+  {
+    "id": "divine_judgement",
+    "displayName": "Divine Judgement",
+    "icon": "perk-divine-judgement",
+    "description": "Healing detonates holy damage around the healed unit.",
+    "tooltipTemplate": "Every heal you cast deals Holy damage equal to the full heal amount to enemies within {radius} of the healed unit. Triggers even at full HP and on overheal.",
+    "config": {
+      "radius": 80
+    },
+    "effect": {
+      "name": "holy_explosion",
+      "target": "self",
+      "sizeScale": 1.0,
+      "durationSeconds": 0.6
+    }
+  }
+]

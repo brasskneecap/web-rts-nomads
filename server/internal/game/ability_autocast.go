@@ -44,6 +44,47 @@ func (s *GameState) autoCastEnabledLocked(unit *Unit, abilityID string) bool {
 	return unit != nil && unit.AutoCastEnabled[abilityID]
 }
 
+// seedDefaultAutoCastLocked walks the unit's current Abilities slice and seeds
+// AutoCastEnabled[id] = true for every ability whose def carries both
+// SupportsAutoCast = true and DefaultAutoCast = true — but ONLY when there is
+// no existing entry for that ability id. Player intent (an explicit on OR off
+// toggle, or a value preserved through the heal→greater_heal migration)
+// always wins; this helper never overwrites it.
+//
+// Called from two seams to keep the "default on" behavior consistent across
+// every code path that gives a unit an ability:
+//   - spawnUnitFromDefLocked, right after the initial Abilities slice is set
+//     (only for player-owned units — enemy clerics intentionally never auto-
+//     cast).
+//   - assignUnitPathAbilitiesLocked, right after the position-by-position
+//     migration loop, so additive grants at higher ranks (silver/gold cleric
+//     getting a new ability, future paths granting new spells) inherit their
+//     authored default without each call site re-implementing it.
+//
+// The DefaultAutoCast / SupportsAutoCast pair is the single switch a content
+// author needs to toggle — no Go change required for a new auto-cast-on-spawn
+// ability.
+//
+// Caller holds s.mu.
+func (s *GameState) seedDefaultAutoCastLocked(unit *Unit) {
+	if unit == nil {
+		return
+	}
+	for _, id := range unit.Abilities {
+		def, ok := getAbilityDef(id)
+		if !ok || !def.SupportsAutoCast || !def.DefaultAutoCast {
+			continue
+		}
+		if _, set := unit.AutoCastEnabled[id]; set {
+			continue // preserve explicit player choice (or migrated value)
+		}
+		if unit.AutoCastEnabled == nil {
+			unit.AutoCastEnabled = make(map[string]bool, 1)
+		}
+		unit.AutoCastEnabled[id] = true
+	}
+}
+
 // tickUnitAbilityCooldownsLocked decays this unit's ability cooldowns by dt,
 // clamping at 0. Iterates the unit's ordered Abilities slice (not the map)
 // so it never depends on map order. No-op when nothing is on cooldown.
