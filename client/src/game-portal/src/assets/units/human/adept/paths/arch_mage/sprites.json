@@ -5,14 +5,19 @@
     "height": 108
   },
   "rotations": {
-    "south": "Arch_Mage/rotations/south.png",
-    "south-east": "Arch_Mage/rotations/south-east.png",
-    "east": "Arch_Mage/rotations/east.png",
-    "north-east": "Arch_Mage/rotations/north-east.png",
-    "north": "Arch_Mage/rotations/north.png",
-    "north-west": "Arch_Mage/rotations/north-west.png",
-    "west": "Arch_Mage/rotations/west.png",
-    "south-west": "Arch_Mage/rotations/south-west.png"
+    "sheet": "packed/rotations.png",
+    "rowOrder": [
+      "north",
+      "south",
+      "east",
+      "west",
+      "north-east",
+      "south-east",
+      "south-west",
+      "north-west"
+    ],
+    "frameWidth": 108,
+    "frameHeight": 108
   },
   "animations": {
     "walking": {
@@ -48,5 +53,5 @@
       ]
     }
   },
-  "packedAt": "2026-05-18T22:20:31.466Z"
+  "packedAt": "2026-05-22T21:49:29.046Z"
 }

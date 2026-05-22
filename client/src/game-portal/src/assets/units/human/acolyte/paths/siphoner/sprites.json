@@ -5,14 +5,19 @@
     "height": 120
   },
   "rotations": {
-    "south": "Siphoner/rotations/south.png",
-    "south-east": "Siphoner/rotations/south-east.png",
-    "east": "Siphoner/rotations/east.png",
-    "north-east": "Siphoner/rotations/north-east.png",
-    "north": "Siphoner/rotations/north.png",
-    "north-west": "Siphoner/rotations/north-west.png",
-    "west": "Siphoner/rotations/west.png",
-    "south-west": "Siphoner/rotations/south-west.png"
+    "sheet": "packed/rotations.png",
+    "rowOrder": [
+      "north",
+      "south",
+      "east",
+      "west",
+      "north-east",
+      "south-east",
+      "south-west",
+      "north-west"
+    ],
+    "frameWidth": 120,
+    "frameHeight": 120
   },
   "animations": {
     "walking": {
@@ -48,5 +53,5 @@
       ]
     }
   },
-  "packedAt": "2026-05-22T21:31:22.855Z"
+  "packedAt": "2026-05-22T21:49:28.949Z"
 }

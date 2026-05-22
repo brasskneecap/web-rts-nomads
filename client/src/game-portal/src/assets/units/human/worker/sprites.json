@@ -5,14 +5,19 @@
     "height": 116
   },
   "rotations": {
-    "south": "worker/rotations/south.png",
-    "south-east": "worker/rotations/south-east.png",
-    "east": "worker/rotations/east.png",
-    "north-east": "worker/rotations/north-east.png",
-    "north": "worker/rotations/north.png",
-    "north-west": "worker/rotations/north-west.png",
-    "west": "worker/rotations/west.png",
-    "south-west": "worker/rotations/south-west.png"
+    "sheet": "packed/rotations.png",
+    "rowOrder": [
+      "north",
+      "south",
+      "east",
+      "west",
+      "north-east",
+      "south-east",
+      "south-west",
+      "north-west"
+    ],
+    "frameWidth": 116,
+    "frameHeight": 116
   },
   "animations": {
     "walking": {
@@ -80,5 +85,5 @@
       ]
     }
   },
-  "packedAt": "2026-05-21T23:30:18.415Z"
+  "packedAt": "2026-05-22T21:49:29.243Z"
 }

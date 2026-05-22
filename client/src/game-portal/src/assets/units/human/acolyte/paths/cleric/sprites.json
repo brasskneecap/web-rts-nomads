@@ -5,14 +5,19 @@
     "height": 116
   },
   "rotations": {
-    "south": "Cleric/rotations/south.png",
-    "south-east": "Cleric/rotations/south-east.png",
-    "east": "Cleric/rotations/east.png",
-    "north-east": "Cleric/rotations/north-east.png",
-    "north": "Cleric/rotations/north.png",
-    "north-west": "Cleric/rotations/north-west.png",
-    "west": "Cleric/rotations/west.png",
-    "south-west": "Cleric/rotations/south-west.png"
+    "sheet": "packed/rotations.png",
+    "rowOrder": [
+      "north",
+      "south",
+      "east",
+      "west",
+      "north-east",
+      "south-east",
+      "south-west",
+      "north-west"
+    ],
+    "frameWidth": 116,
+    "frameHeight": 116
   },
   "animations": {
     "walking": {
@@ -48,5 +53,5 @@
       ]
     }
   },
-  "packedAt": "2026-05-18T22:20:31.939Z"
+  "packedAt": "2026-05-22T21:49:28.803Z"
 }

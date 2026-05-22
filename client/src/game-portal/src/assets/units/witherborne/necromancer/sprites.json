@@ -1,8 +1,8 @@
 {
-  "key": "vanguard",
+  "key": "necromancer",
   "size": {
-    "width": 120,
-    "height": 120
+    "width": 68,
+    "height": 68
   },
   "rotations": {
     "sheet": "packed/rotations.png",
@@ -16,15 +16,15 @@
       "south-west",
       "north-west"
     ],
-    "frameWidth": 120,
-    "frameHeight": 120
+    "frameWidth": 68,
+    "frameHeight": 68
   },
   "animations": {
-    "attacking": {
-      "frameCount": 9,
-      "frameWidth": 120,
-      "frameHeight": 120,
-      "sheet": "packed/attacking.png",
+    "animation": {
+      "frameCount": 6,
+      "frameWidth": 68,
+      "frameHeight": 68,
+      "sheet": "packed/animation.png",
       "rowOrder": [
         "north",
         "south",
@@ -36,11 +36,11 @@
         "north-west"
       ]
     },
-    "walking": {
-      "frameCount": 6,
-      "frameWidth": 120,
-      "frameHeight": 120,
-      "sheet": "packed/walking.png",
+    "raised_the_one_handed_staff_up": {
+      "frameCount": 4,
+      "frameWidth": 68,
+      "frameHeight": 68,
+      "sheet": "packed/raised_the_one_handed_staff_up.png",
       "rowOrder": [
         "north",
         "south",
@@ -53,5 +53,5 @@
       ]
     }
   },
-  "packedAt": "2026-05-22T21:51:22.587Z"
+  "packedAt": "2026-05-22T21:49:29.380Z"
 }
