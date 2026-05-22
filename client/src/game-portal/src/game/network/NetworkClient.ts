@@ -1,6 +1,7 @@
 import type {
   AttackCommandMessage,
   CastAbilityCommandMessage,
+  CastCommanderAbilityCommandMessage,
   ToggleAutoCastCommandMessage,
   AttackMoveCommandMessage,
   BuildBuildingCommandMessage,
@@ -454,6 +455,17 @@ export class NetworkClient {
       casterUnitId,
       abilityId,
       targetUnitId,
+    }
+
+    this.send(message)
+  }
+
+  sendCastCommanderAbilityCommand(abilityId: string, x: number, y: number) {
+    const message: CastCommanderAbilityCommandMessage = {
+      type: 'cast_commander_ability',
+      abilityId,
+      x,
+      y,
     }
 
     this.send(message)

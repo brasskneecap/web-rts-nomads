@@ -228,6 +228,12 @@ export class InputManager {
       if (this.state.getSelectedUnits().length > 0) {
         return
       }
+      // While ANY targeting mode is active (commander ability, build
+      // placement, etc.) right-click must reliably cancel — so suppress
+      // the pan-on-hold path that would otherwise eat the cancel.
+      if (this.state.isAnyTargetingActive()) {
+        return
+      }
       // No units selected: keep the existing camera-pan-on-hold behaviour so
       // the player can survey the map. Pan is gated behind a 100ms hold so
       // that quick right-clicks (which still produce a contextmenu event with
@@ -855,6 +861,15 @@ export class InputManager {
       this.state.setHoveredInteractableBuilding(null)
       this.state.setHoveredInteractableObstacle(null)
       this.canvas.style.cursor = resolveCursor('crosshair', 'crosshair')
+      return
+    }
+
+    if (this.state.isCommanderTargetingActive()) {
+      this.state.setHoveredInteractableBuilding(null)
+      this.state.setHoveredInteractableObstacle(null)
+      this.state.setHoveredEnemyUnit(null)
+      this.state.setHoveredFriendlyUnit(null)
+      this.canvas.style.cursor = resolveCursor('target', 'crosshair')
       return
     }
 

@@ -3,6 +3,7 @@ import type {
   BannerSnapshot,
   BattleTrackerSnapshot,
   BuildingTile,
+  CommanderAbilitySnapshot,
   EffectSnapshot,
   GameOverSnapshot,
   InventorySnapshot,
@@ -489,6 +490,15 @@ export class GameState {
   // Vault state — populated from PlayerSnapshot each tick.
   localPlayerVault: VaultItemSnapshot[] = []
   localPlayerVaultCapacity = 0
+
+  // Commander abilities (player-level action bar). Populated from
+  // PlayerSnapshot.commanderAbilities every tick.
+  localPlayerCommanderAbilities: CommanderAbilitySnapshot[] = []
+  // Active commander targeting — the ability whose cast point is being
+  // picked. Null when no commander targeting is active. Separate from
+  // unitTargetingMode because the cast is player-level, not unit-level,
+  // and must work with no units selected.
+  commanderTargetingAbilityId: string | null = null
   // True when the vault panel overlay is visible (toggled by the "Open Vault"
   // building action). Stored here so it persists across selection changes.
   vaultPanelOpen = false
@@ -1690,13 +1700,38 @@ export class GameState {
     this.castAbilityId = null
   }
 
+  // Enter commander-ability targeting: the next world click casts the
+  // selected commander ability at that position. Independent of unit
+  // selection (the player IS the caster).
+  beginCommanderTargeting(abilityId: string) {
+    this.buildingTargetingMode = null
+    this.unitTargetingMode = null
+    this.castAbilityId = null
+    this.buildPlacement = null
+    this.commanderTargetingAbilityId = abilityId
+  }
+
+  cancelCommanderTargeting() {
+    this.commanderTargetingAbilityId = null
+  }
+
+  isCommanderTargetingActive(abilityId?: string): boolean {
+    if (!this.commanderTargetingAbilityId) return false
+    return abilityId ? this.commanderTargetingAbilityId === abilityId : true
+  }
+
   isUnitTargetingActive(mode?: UnitTargetingMode) {
     if (!this.unitTargetingMode) return false
     return mode ? this.unitTargetingMode === mode : true
   }
 
   isAnyTargetingActive() {
-    return this.isBuildingTargetingActive() || this.isUnitTargetingActive() || this.buildPlacement !== null
+    return (
+      this.isBuildingTargetingActive() ||
+      this.isUnitTargetingActive() ||
+      this.isCommanderTargetingActive() ||
+      this.buildPlacement !== null
+    )
   }
 
   isBuildPlacementActive(): boolean {
@@ -2278,6 +2313,7 @@ export class GameState {
     if (localPlayer.vaultCapacity !== undefined) {
       this.localPlayerVaultCapacity = localPlayer.vaultCapacity
     }
+    this.localPlayerCommanderAbilities = localPlayer.commanderAbilities ?? []
   }
 }
 

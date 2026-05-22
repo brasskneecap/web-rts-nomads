@@ -670,6 +670,25 @@ func (h *Hub) readLoop(client *Client) {
 				_ = client.WriteJSON(protocol.NotificationMessage{Type: "notification", Message: reason})
 			}
 
+		case "cast_commander_ability":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.CastCommanderAbilityCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid cast_commander_ability payload"})
+				continue
+			}
+			if ok, reason := match.State.RequestCastCommanderAbility(client.PlayerID(), msg.AbilityID, msg.X, msg.Y); !ok {
+				_ = client.WriteJSON(protocol.NotificationMessage{Type: "notification", Message: reason})
+			}
+
 		case "set_focus_target_command":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})

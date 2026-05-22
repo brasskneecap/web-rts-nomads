@@ -321,6 +321,18 @@ type AttackCommandMessage struct {
 	TargetUnitID int    `json:"targetUnitId"`
 }
 
+// CastCommanderAbilityCommandMessage is a player-level "commander" ability
+// cast — the player is the implicit caster (no unit selection required) and
+// the ability resolves at the supplied world position. Server validates the
+// player's cooldown on the chosen ability; rejection comes back via a
+// NotificationMessage (same pattern as CastAbilityCommandMessage).
+type CastCommanderAbilityCommandMessage struct {
+	Type      string  `json:"type"`
+	AbilityID string  `json:"abilityId"`
+	X         float64 `json:"x"`
+	Y         float64 `json:"y"`
+}
+
 // CastAbilityCommandMessage is the action-bar standard-cast (left-click):
 // caster casts AbilityID at TargetUnitID. The server validates ownership,
 // targeting, range, and mana; on failure it replies with a
@@ -537,6 +549,19 @@ type InventorySnapshot struct {
 	Slots []*ItemSnapshot `json:"slots"` // positional; nil = empty slot
 }
 
+// CommanderAbilitySnapshot is one player-level ability slot in the
+// action bar. Cooldowns drive the same clock-wipe overlay the unit-ability
+// cooldowns use. Sent per-player (only relevant for the snapshot's owner;
+// other players ignore it).
+type CommanderAbilitySnapshot struct {
+	ID                string  `json:"id"`
+	DisplayName       string  `json:"displayName,omitempty"`
+	Icon              string  `json:"icon,omitempty"`
+	Radius            float64 `json:"radius,omitempty"`
+	CooldownTotal     float64 `json:"cooldownTotal,omitempty"`
+	CooldownRemaining float64 `json:"cooldownRemaining,omitempty"`
+}
+
 type PlayerSnapshot struct {
 	PlayerID      string                  `json:"playerId"`
 	Color         string                  `json:"color"`
@@ -555,6 +580,10 @@ type PlayerSnapshot struct {
 	// actions in the building action panel.
 	LockedUnitTypes []string               `json:"lockedUnitTypes,omitempty"`
 	ActiveBuffs     []ActiveEffectIcon     `json:"activeBuffs,omitempty"`
+	// CommanderAbilities are the player-level abilities surfaced on the
+	// action bar (Smite, Blessing). Always populated for the snapshot's
+	// owner so the HUD can render slots even when every ability is ready.
+	CommanderAbilities []CommanderAbilitySnapshot `json:"commanderAbilities,omitempty"`
 }
 
 type UnitSnapshot struct {

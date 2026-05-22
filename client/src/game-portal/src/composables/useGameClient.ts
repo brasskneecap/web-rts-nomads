@@ -50,6 +50,8 @@ const emptyUiSnapshot: GameUiSnapshot = {
   vaultSelectedInstanceId: null,
   allPlayerUnits: [],
   waveUpgrade: null,
+  commanderAbilities: [],
+  commanderTargetingAbilityId: null,
 }
 
 export function useGameClient() {
@@ -195,6 +197,14 @@ export function useGameClient() {
     client?.sendWaveUpgradeReroll()
   }
 
+  function beginCommanderAbility(abilityId: string) {
+    client?.beginCommanderAbility(abilityId)
+  }
+
+  function cancelCommanderAbility() {
+    client?.cancelCommanderAbility()
+  }
+
   onBeforeUnmount(() => {
     destroy()
   })
@@ -220,6 +230,8 @@ export function useGameClient() {
     setVaultSelectedInstanceId,
     sendWaveUpgradeChoice,
     sendWaveUpgradeReroll,
+    beginCommanderAbility,
+    cancelCommanderAbility,
     ui,
     connectionState,
     currentMatchId,

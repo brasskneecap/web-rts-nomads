@@ -101,6 +101,12 @@
         @unequip-item="({ unitId, slotIndex }) => sendUnequipItem(unitId, slotIndex)"
         @equip-item="({ unitId, slotIndex, instanceId }) => sendEquipItem(unitId, slotIndex, instanceId)"
       />
+      <CommanderActionBar
+        v-if="hasStarted"
+        :abilities="ui.commanderAbilities"
+        :active-ability-id="ui.commanderTargetingAbilityId"
+        @cast="onCommanderCast"
+      />
       <VaultPanel
         v-if="hasStarted && ui.vaultPanelOpen"
         :vault="ui.vault"
@@ -127,6 +133,7 @@ import VaultPanel from '@/components/VaultPanel.vue'
 import BattleTrackerPanel from '@/components/BattleTrackerPanel.vue'
 import DebugSpawnPanel from '@/components/DebugSpawnPanel.vue'
 import WaveUpgradeModal from '@/components/WaveUpgradeModal.vue'
+import CommanderActionBar from '@/components/CommanderActionBar.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { useMapSelection } from '@/composables/useMapSelection'
 import { setCursorGrab } from '@/services/desktopBridge'
@@ -183,6 +190,8 @@ const {
   setVaultSelectedInstanceId,
   sendWaveUpgradeChoice,
   sendWaveUpgradeReroll,
+  beginCommanderAbility,
+  cancelCommanderAbility,
   ui,
   connectionState,
   currentMatchId,
@@ -191,6 +200,17 @@ const {
 } = useGameClient()
 
 const debugSpawnTargetingActive = computed(() => ui.value.debugSpawnTargetingActive)
+
+function onCommanderCast(abilityId: string) {
+  // Toggle behaviour: clicking the same slot a second time cancels the
+  // pending cast instead of re-arming it. Mirrors the unit-action-bar
+  // ergonomic that already cancels on the second click.
+  if (ui.value.commanderTargetingAbilityId === abilityId) {
+    cancelCommanderAbility()
+    return
+  }
+  beginCommanderAbility(abilityId)
+}
 
 function clearStaleSession() {
   localStorage.removeItem(MAP_ID_STORAGE_KEY)

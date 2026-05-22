@@ -507,6 +507,12 @@ type Player struct {
 
 	// UpgradeState tracks wave upgrade picks and per-wave offer state.
 	UpgradeState PlayerUpgradeState
+
+	// CommanderAbilityCooldowns tracks wall-clock seconds remaining on each
+	// commander ability (see commander_abilities.go). Keyed by ability id;
+	// entries are removed as they decay to 0. Nil/empty = every ability is
+	// ready.
+	CommanderAbilityCooldowns map[string]float64
 }
 
 const (
@@ -1804,6 +1810,7 @@ func (s *GameState) Update(dt float64) {
 	s.resetLethalDamageEventsThisTickLocked()
 	s.resetHealEventsThisTickLocked()
 
+	profileSection("commanderCooldowns", func() { s.tickCommanderCooldownsLocked(dt) })
 	profileSection("battleTracker", func() { s.battleTracker.tickLocked(dt) })
 	profileSection("unitProductions", func() { s.updateUnitProductionsLocked(dt) })
 	profileSection("orphanedPendingBuildings", func() { s.cancelOrphanedPendingBuildingsLocked() })
@@ -2338,6 +2345,7 @@ func (s *GameState) EnsurePlayer(playerID string, equippedBuffIDs ...string) {
 		Vault:                         []*VaultItem{},
 		ProfileBuffIDs:                append([]string(nil), equippedBuffIDs...),
 		UpgradeState:                  newPlayerUpgradeState(1, 3),
+		CommanderAbilityCooldowns:     map[string]float64{},
 	}
 
 	s.claimPlayerStartLocked(playerID)

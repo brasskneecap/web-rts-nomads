@@ -6,6 +6,7 @@ import { Camera } from '../rendering/Camera'
 import { NetworkClient } from '../network/NetworkClient'
 import type {
   BattleTrackerSnapshot,
+  CommanderAbilitySnapshot,
   ConnectionState,
   MapId,
   PlayerUpgradeSnapshot,
@@ -71,6 +72,12 @@ export type GameUiSnapshot = {
   allPlayerUnits: Unit[]
   // Wave upgrade offer. Null when no offer is active.
   waveUpgrade: WaveUpgradeOfferSnapshot | null
+  // Player-level "commander" abilities for the bottom action bar.
+  commanderAbilities: CommanderAbilitySnapshot[]
+  // ID of the commander ability whose cast point is currently being picked
+  // (a slot was clicked, awaiting world click). Null when no commander
+  // targeting is active.
+  commanderTargetingAbilityId: string | null
 }
 
 export class GameClient {
@@ -236,6 +243,8 @@ export class GameClient {
       vaultSelectedInstanceId: this.state.vaultSelectedInstanceId,
       allPlayerUnits: this.state.getLocalPlayerUnits(),
       waveUpgrade: this.state.waveUpgrade,
+      commanderAbilities: this.state.localPlayerCommanderAbilities,
+      commanderTargetingAbilityId: this.state.commanderTargetingAbilityId,
     }
   }
 
@@ -512,7 +521,39 @@ export class GameClient {
     }
   }
 
+  /** Arm commander-ability targeting. Called by the bottom action bar when
+   *  a slot is clicked. The next world click resolves to a
+   *  CastCommanderAbilityCommandMessage at the click point. */
+  beginCommanderAbility(abilityId: string) {
+    // Block when this ability is still on cooldown — the action bar already
+    // greys out the button, but this defends against any other entry path
+    // (keyboard shortcut, programmatic call) racing ahead of the snapshot.
+    const ability = this.state.localPlayerCommanderAbilities.find((a) => a.id === abilityId)
+    if (ability && (ability.cooldownRemaining ?? 0) > 0) return
+    this.state.beginCommanderTargeting(abilityId)
+    this.input.refreshCursor()
+  }
+
+  cancelCommanderAbility() {
+    this.state.cancelCommanderTargeting()
+    this.input.refreshCursor()
+  }
+
   tryHandleWorldClick(x: number, y: number) {
+    // Commander abilities are player-level (no unit selection needed) and
+    // resolve at the click point. Handle BEFORE the build/unit-targeting
+    // branches so a click during commander targeting commits the cast even
+    // when a building is also selected.
+    if (this.state.isCommanderTargetingActive()) {
+      const abilityId = this.state.commanderTargetingAbilityId
+      if (abilityId) {
+        this.network.sendCastCommanderAbilityCommand(abilityId, x, y)
+      }
+      this.state.cancelCommanderTargeting()
+      this.input.refreshCursor()
+      return true
+    }
+
     if (this.state.isBuildPlacementActive()) {
       this.state.updateBuildPlacement(x, y)
       const placement = this.state.buildPlacement
@@ -672,6 +713,7 @@ export class GameClient {
   cancelTargeting() {
     this.state.cancelBuildingTargeting()
     this.state.cancelUnitTargeting()
+    this.state.cancelCommanderTargeting()
     this.state.cancelBuildPlacement()
     // Same rationale as finishUnitTargeting: refresh the cursor right now
     // (right-click / Escape cancel path) so the reticle reverts on the same

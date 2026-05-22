@@ -224,6 +224,16 @@ export type AttackCommandMessage = {
   targetUnitId: number
 }
 
+/** Player-level "commander" ability cast — fired from the bottom action bar
+ *  at a world position; no unit selection required. The server validates the
+ *  player's cooldown; rejections come back as NotificationMessage. */
+export type CastCommanderAbilityCommandMessage = {
+  type: 'cast_commander_ability'
+  abilityId: string
+  x: number
+  y: number
+}
+
 /** Action-bar standard cast (left-click → click target). */
 export type CastAbilityCommandMessage = {
   type: 'cast_ability_command'
@@ -382,6 +392,16 @@ export type PlayerUpgradeSnapshot = {
   moveSpeedPerLevel: number
 }
 
+/** Commander ability slot — player-level ability with a live cooldown. */
+export type CommanderAbilitySnapshot = {
+  id: string
+  displayName?: string
+  icon?: string
+  radius?: number
+  cooldownTotal?: number
+  cooldownRemaining?: number
+}
+
 export type PlayerSnapshot = {
   playerId: string
   color: string
@@ -397,6 +417,9 @@ export type PlayerSnapshot = {
   /** Unit types this player cannot train because their server-side
    *  RequiresBuildings list is unsatisfied. Absent/empty = no locks. */
   lockedUnitTypes?: string[]
+  /** Commander abilities slotted in the bottom action bar. Always present
+   *  for the local player; absent / empty for older servers. */
+  commanderAbilities?: CommanderAbilitySnapshot[]
 }
 
 export type PurchaseItemCommand = {
@@ -451,6 +474,7 @@ export type ClientMessage =
   | TrainUnitCommandMessage
   | AttackCommandMessage
   | CastAbilityCommandMessage
+  | CastCommanderAbilityCommandMessage
   | ToggleAutoCastCommandMessage
   | SetFocusTargetCommandMessage
   | AttackMoveCommandMessage
