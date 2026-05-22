@@ -17,7 +17,7 @@ package game
 // empty/unknown fallback — returns a per-category BASE that is strictly
 // greater than minActivationScore for ANY candidate that has a valid target,
 // before any situational bonus. So with a single autocast ability (e.g. an
-// un-promoted heal-only Apprentice) "highest-scored-ready" collapses to
+// un-promoted heal-only Acolyte) "highest-scored-ready" collapses to
 // exactly the prior "first-ready" behaviour: the lone candidate always clears
 // the floor and is cast on exactly the ticks it would have been before. Only
 // buff_ally / summon may dip to 0 (return "not worth it"), which is the

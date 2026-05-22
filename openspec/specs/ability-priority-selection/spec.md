@@ -51,9 +51,9 @@ Candidate scoring SHALL break ties deterministically by ascending `unit.Abilitie
 
 With exactly one autocast-enabled candidate, highest-scored-ready SHALL be behaviourally identical to the prior first-ready logic: the lone candidate SHALL be cast on exactly the ticks it would have been cast before. `minActivationScore` and the per-category formulas (including the empty/unknown-category fallback) SHALL be set so that any currently-castable ability with a valid selector target scores strictly above `minActivationScore`.
 
-#### Scenario: Heal-only Apprentice is byte-identical pre/post
+#### Scenario: Heal-only Acolyte is byte-identical pre/post
 
-- **WHEN** a seeded match with a heal-only (un-promoted) Apprentice is run before and after this change with the same seed and inputs
+- **WHEN** a seeded match with a heal-only (un-promoted) Acolyte is run before and after this change with the same seed and inputs
 - **THEN** the set of ticks heal is auto-cast on is identical between the two runs
 
 #### Scenario: A lone uncategorised ability still fires

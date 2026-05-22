@@ -2,11 +2,11 @@
 
 ### Requirement: Path ability grants are deferred; only the mechanism ships
 
-The per-path ability-grant **mechanism** (the loader, `assignUnitPathAbilitiesLocked`, the `(path,rank)` grant lookup) SHALL remain present and behaviourally covered by tests, but the catalog SHALL NOT grant any real ability on promotion. No `paths/<path>/abilities/<rank>.json` grant files SHALL exist for the Apprentice line; every `(path,rank)` SHALL resolve to an empty grant. Acquisition of the dormant abilities is explicitly deferred: `greater_heal` is intended as a future perk-gated *replacement* of base `heal` (the gating perk is undesigned), and `arcane_bolt`'s acquisition is TBD. The dormant `greater_heal` / `arcane_bolt` `AbilityDef`s SHALL remain valid (load + validate + resolvable by id) so the engine and dormant-def tests keep working.
+The per-path ability-grant **mechanism** (the loader, `assignUnitPathAbilitiesLocked`, the `(path,rank)` grant lookup) SHALL remain present and behaviourally covered by tests, but the catalog SHALL NOT grant any real ability on promotion. No `paths/<path>/abilities/<rank>.json` grant files SHALL exist for the Acolyte line; every `(path,rank)` SHALL resolve to an empty grant. Acquisition of the dormant abilities is explicitly deferred: `greater_heal` is intended as a future perk-gated *replacement* of base `heal` (the gating perk is undesigned), and `arcane_bolt`'s acquisition is TBD. The dormant `greater_heal` / `arcane_bolt` `AbilityDef`s SHALL remain valid (load + validate + resolvable by id) so the engine and dormant-def tests keep working.
 
 #### Scenario: No promotion grants any ability by default
 
-- **WHEN** an Apprentice is promoted on the Cleric or Arch Mage path to any rank
+- **WHEN** an Acolyte is promoted on the Cleric or Arch Mage path to any rank
 - **THEN** `assignUnitPathAbilitiesLocked` appends nothing (no grant files exist) and the unit's `Abilities` is unchanged by the grant step
 
 #### Scenario: Grant mechanism stays covered via a synthetic fixture

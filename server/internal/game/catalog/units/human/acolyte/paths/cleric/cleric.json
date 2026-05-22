@@ -1,6 +1,6 @@
 {
   "path": "cleric",
-  "description": "Support caster path for the Apprentice — intended fantasy is healing/protection over raw damage. Stat tuning deferred: rows currently mirror the default rank curve (see defaultRankCurve in path_defs.go) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Cleric gets its formal pass. Bounds below are the base Apprentice footprint scaled 116/108 for the larger Cleric art — placeholder pending an in-game visual tuning pass.",
+  "description": "Support caster path for the Acolyte — intended fantasy is healing/protection over raw damage. Stat tuning deferred: rows currently mirror the default rank curve (see defaultRankCurve in path_defs.go) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Cleric gets its formal pass. Bounds below are the base Acolyte footprint scaled 116/108 for the larger Cleric art — placeholder pending an in-game visual tuning pass.",
   "bounds": {
     "halfWidth": 21,
     "top": -77,

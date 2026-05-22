@@ -1,0 +1,52 @@
+{
+  "key": "siphoner",
+  "size": {
+    "width": 120,
+    "height": 120
+  },
+  "rotations": {
+    "south": "Siphoner/rotations/south.png",
+    "south-east": "Siphoner/rotations/south-east.png",
+    "east": "Siphoner/rotations/east.png",
+    "north-east": "Siphoner/rotations/north-east.png",
+    "north": "Siphoner/rotations/north.png",
+    "north-west": "Siphoner/rotations/north-west.png",
+    "west": "Siphoner/rotations/west.png",
+    "south-west": "Siphoner/rotations/south-west.png"
+  },
+  "animations": {
+    "walking": {
+      "frameCount": 7,
+      "frameWidth": 120,
+      "frameHeight": 120,
+      "sheet": "packed/walking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    },
+    "attacking": {
+      "frameCount": 7,
+      "frameWidth": 120,
+      "frameHeight": 120,
+      "sheet": "packed/attacking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    }
+  },
+  "packedAt": "2026-05-22T21:31:22.855Z"
+}

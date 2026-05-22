@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines the player-issued sticky support assignment for Cleric / Apprentice (and future heal-class support units): a new `OrderFocusFollow` order type paired with a `FocusTargetID int` field on `Unit` (stored by ID per the project's ID-not-pointer rule), per-tick validation, a configurable-distance follow movement, focus-aware heal autocast that reserves mana for the focus target, the `SetFocusTargetCommandMessage` wire protocol, and the client UI (button toggle + targeting cursor + selection-HUD indicator + ally marker).
+Defines the player-issued sticky support assignment for Cleric / Acolyte (and future heal-class support units): a new `OrderFocusFollow` order type paired with a `FocusTargetID int` field on `Unit` (stored by ID per the project's ID-not-pointer rule), per-tick validation, a configurable-distance follow movement, focus-aware heal autocast that reserves mana for the focus target, the `SetFocusTargetCommandMessage` wire protocol, and the client UI (button toggle + targeting cursor + selection-HUD indicator + ally marker).
 
 ## Requirements
 

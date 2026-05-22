@@ -349,15 +349,15 @@ var combatProfiles = map[string]CombatProfile{
 	},
 	"caster": {
 		// Phase 1 caster profile: a faithful clone of "support" (backline +
-		// retreat, which the Apprentice's old "archer" profile lacked) with
+		// retreat, which the Acolyte's old "archer" profile lacked) with
 		// three intentional deltas, written inline:
 		//   1. Name: "caster" — distinct, independently-tunable identity.
 		//   2. MaxChaseDistance: 180 (the "archer" envelope) instead of
 		//      support's 110. Leash self-clamps up to AttackRange via
 		//      effectiveLeashDistance, but MaxChaseDistance has no such clamp,
 		//      so inheriting support's 110 would silently shrink the
-		//      Apprentice's (AttackRange 220) pursuit range.
-		//   3. AoERadius / Weights.AoECluster zeroed — the Apprentice's
+		//      Acolyte's (AttackRange 220) pursuit range.
+		//   3. AoERadius / Weights.AoECluster zeroed — the Acolyte's
 		//      current kit is single-target (basic attack = fire_bolt
 		//      projectile; only ability = heal). A future AoE caster ability
 		//      would warrant re-tuning this profile then.

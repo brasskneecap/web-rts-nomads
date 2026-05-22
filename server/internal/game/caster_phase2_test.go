@@ -121,7 +121,7 @@ func TestPhase2_NoRegression_GatherGateEquivalence(t *testing.T) {
 }
 
 // TestPhase2_NoRegression_SeededHealOnlyReplay runs a heal-only (un-promoted)
-// Apprentice with a fixed seed twice and asserts the set of cast-initiation
+// Acolyte with a fixed seed twice and asserts the set of cast-initiation
 // ticks is identical. This is the executable proof that highest-scored-ready
 // is behaviourally identical to the prior first-ready for single-ability units.
 // NOTE: the pre-existing TestHealAutocast_SeededReplayNoMeleeNoDivergence in
@@ -144,16 +144,16 @@ func TestPhase2_NoRegression_SeededHealOnlyReplay(t *testing.T) {
 				Vault:                         []*VaultItem{},
 			}
 		}
-		app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		if app == nil {
 			s.mu.Unlock()
-			t.Fatal("failed to spawn apprentice")
+			t.Fatal("failed to spawn acolyte")
 		}
 		app.Visible = true
 		// Un-promoted: no path, base rank, only the base "heal" ability.
 		// Confirm the unit has exactly the base abilities — no granted extras.
 		if app.ProgressionPath != unitPathNone {
-			t.Errorf("fresh apprentice ProgressionPath = %q; want %q", app.ProgressionPath, unitPathNone)
+			t.Errorf("fresh acolyte ProgressionPath = %q; want %q", app.ProgressionPath, unitPathNone)
 		}
 
 		ally := spawnProjTestUnit(t, s, "p1", 450, 400)
@@ -278,8 +278,8 @@ func TestPhase2_ScoreWinsOverSlot_OffensiveWinsWhenNoAllyInjured(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Spawn an apprentice manually so we can give it both abilities.
-	caster := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	// Spawn an acolyte manually so we can give it both abilities.
+	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	caster.Visible = true
 	// Give it both abilities in slot order: heal first, arcane_bolt second.
 	caster.Abilities = []string{"heal", "arcane_bolt"}
@@ -479,7 +479,7 @@ func TestPhase2_Tiebreak_RealTick_LowerSlotWins(t *testing.T) {
 		s := newProjectileTestState(t)
 		s.mu.Lock()
 
-		caster := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		caster.Visible = true
 		caster.Abilities = append([]string{}, abilities...) // slot order under test
 		// Catalog seeds heal autocast ON at spawn; clear before toggling so
@@ -588,14 +588,14 @@ func TestPhase2_BelowFloor_CastsNothing(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestPhase2_PriorityCorrectness_HealWinsWhenAllyLow exercises the real tick
-// path: a promoted Arch-Mage-path apprentice (has heal + arcane_bolt) with a
+// path: a promoted Arch-Mage-path acolyte (has heal + arcane_bolt) with a
 // critically-low ally AND an enemy in range. Heal should win because the ally
 // HP-deficit bonus dominates.
 func TestPhase2_PriorityCorrectness_HealWinsWhenAllyLow(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 
-	caster := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	caster.Visible = true
 	// Give both abilities in slot order.
 	caster.Abilities = []string{"heal", "arcane_bolt"}
@@ -659,7 +659,7 @@ func TestPhase2_PriorityCorrectness_OffensiveWinsWhenNoAllyHurt(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 
-	caster := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	caster.Visible = true
 	caster.Abilities = []string{"heal", "arcane_bolt"}
 	s.toggleAutoCastLocked(caster, "heal")
@@ -1034,7 +1034,7 @@ func TestPhase2_DamageAmount_DamagesTargetOnResolve(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	caster := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	caster.Abilities = append(caster.Abilities, "arcane_bolt")
 	// Ensure plenty of mana.
 	caster.CurrentMana = arcaneDef.ManaCost + 200
@@ -1099,7 +1099,7 @@ func TestPhase2_DamageAmount_ZeroDealsNoDamage(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	caster := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	caster.CurrentMana = healAbilDef.ManaCost + 200
 
 	// A damaged ally (valid heal target).
@@ -1144,7 +1144,7 @@ func TestPhase2_DamageAmount_LethalCastRunsDeathPipeline(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 
-	caster := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	caster.Abilities = append(caster.Abilities, "arcane_bolt")
 	caster.CurrentMana = arcaneDef.ManaCost + 200
 
@@ -1187,7 +1187,7 @@ func TestPhase2_DamageAmount_AttributedToCaster(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 
-	caster := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	caster.Visible = true
 	caster.Abilities = append(caster.Abilities, "arcane_bolt")
 	caster.CurrentMana = arcaneDef.ManaCost + 200
@@ -1271,10 +1271,10 @@ func TestPhase2_SeededMultiAbilityReplay(t *testing.T) {
 				Vault:                         []*VaultItem{},
 			}
 		}
-		caster := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		if caster == nil {
 			s.mu.Unlock()
-			t.Fatal("failed to spawn apprentice")
+			t.Fatal("failed to spawn acolyte")
 		}
 		caster.Visible = true
 		// Give both abilities; no promotion required for the replay test.

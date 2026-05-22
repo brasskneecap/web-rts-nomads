@@ -35,7 +35,7 @@ func TestDeterminism_BattlePrayerBuffApplicationsAcrossReplays(t *testing.T) {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
 		s.mu.Lock()
 
-		cleric := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		cleric := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		cleric.Visible = true
 		cleric.HP = cleric.MaxHP
 		cleric.AttackRange = 1000
@@ -111,7 +111,7 @@ func TestDeterminism_ManaConduitBonusAcrossReplays(t *testing.T) {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
 		s.mu.Lock()
 
-		cleric := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		cleric := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		cleric.Visible = true
 		cleric.HP = cleric.MaxHP
 		cleric.MaxMana = 200
@@ -177,7 +177,7 @@ func TestDeterminism_SanctuaryMitigationAcrossReplays(t *testing.T) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		cleric := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		cleric := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		cleric.Visible = true
 		grantPerk(cleric, "sanctuary")
 
@@ -227,7 +227,7 @@ func TestDeterminism_GreaterHealTargetSetAcrossReplays(t *testing.T) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		cleric := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		cleric := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		cleric.Visible = true
 		cleric.HP = cleric.MaxHP
 		cleric.AttackRange = 1000

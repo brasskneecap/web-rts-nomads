@@ -6,7 +6,7 @@
 
 Composition (in order):
 
-1. Start with the unit def's `Abilities` (e.g., apprentice → `["heal"]`).
+1. Start with the unit def's `Abilities` (e.g., acolyte → `["heal"]`).
 2. If `pathAbilitiesByPath[unit.ProgressionPath]` is set (declared via the path JSON's `"abilities"` field — see the new requirement below), REPLACE the list with the path-level override. This covers the "cleric is a unit with greater_heal" baseline.
 3. For each rank `R` the unit has reached (bronze → silver → gold up to its current rank), append any `(path, R)` rank-grants from `pathAbilityGrantsByKey` ADDITIVELY, in catalog list order, skipping any id already present. Rank-grants compose on top of the path-level override — they remain the right tool for "silver cleric also gains X" composable content.
 4. Migrate `AutoCastEnabled` / `AbilityCooldowns` entries by position: when the new list at index `i` differs from the existing `unit.Abilities[i]`, migrate the old entry's value to the new key and delete the old key. Indices that don't change are skipped; indices beyond the old length are fresh slots with default state.
@@ -15,7 +15,7 @@ Granted/overridden ability entries SHALL initialise their autocast/cooldown maps
 
 #### Scenario: Path-level override fires on promotion
 
-- **WHEN** an apprentice with `Abilities: ["heal"]` is promoted to the cleric path (any rank)
+- **WHEN** an acolyte with `Abilities: ["heal"]` is promoted to the cleric path (any rank)
 - **THEN** after `assignUnitPathAbilitiesLocked`, `unit.Abilities == ["greater_heal"]`
 
 #### Scenario: Multi-rank catch-up composes overrides and grants without duplicates
@@ -35,12 +35,12 @@ Granted/overridden ability entries SHALL initialise their autocast/cooldown maps
 
 #### Scenario: AutoCast and Cooldown state migrate across same-index swaps
 
-- **WHEN** an apprentice with `AutoCastEnabled["heal"] = true` and `AbilityCooldowns["heal"] = 1.5` is promoted to (cleric, bronze)
+- **WHEN** an acolyte with `AutoCastEnabled["heal"] = true` and `AbilityCooldowns["heal"] = 1.5` is promoted to (cleric, bronze)
 - **THEN** after the recompute `AutoCastEnabled["greater_heal"] = true`, `AbilityCooldowns["greater_heal"] = 1.5`, and the `"heal"` keys are absent from both maps
 
 ### Requirement: Path ability grants are deferred; only the mechanism ships
 
-The per-(path, rank) ability-grant **mechanism** (the loader in `path_ability_defs.go`, the `(path, rank) → []string` lookup via `pathAbilityGrantsFor`, and the additive append step inside `assignUnitPathAbilitiesLocked`) SHALL remain present and behaviourally covered by tests, but no `paths/<path>/abilities/<rank>.json` rank-grant files SHALL exist for the Apprentice line; every `(path, rank)` cell SHALL resolve to an empty grant.
+The per-(path, rank) ability-grant **mechanism** (the loader in `path_ability_defs.go`, the `(path, rank) → []string` lookup via `pathAbilityGrantsFor`, and the additive append step inside `assignUnitPathAbilitiesLocked`) SHALL remain present and behaviourally covered by tests, but no `paths/<path>/abilities/<rank>.json` rank-grant files SHALL exist for the Acolyte line; every `(path, rank)` cell SHALL resolve to an empty grant.
 
 Greater Heal acquisition does NOT live in this rank-grant system — it is the cleric path's *path-level* baseline declared in `cleric.json`'s `"abilities"` override (see the new requirement below). The rank-grant system is reserved for future composable per-rank content like "silver cleric also gains X."
 
@@ -53,7 +53,7 @@ Acquisition of dormant offensive content (`arcane_bolt`) remains deferred. The d
 
 #### Scenario: Cleric and Arch Mage promotions don't append anything via the rank-grant system
 
-- **WHEN** an Apprentice is promoted on the Cleric or Arch Mage path to any rank
+- **WHEN** an Acolyte is promoted on the Cleric or Arch Mage path to any rank
 - **THEN** the per-rank grant step inside `assignUnitPathAbilitiesLocked` appends nothing (no grant files exist); the cleric's `greater_heal` comes from the path-level override, not this step
 
 #### Scenario: Rank-grant mechanism stays covered via a synthetic fixture
@@ -74,9 +74,9 @@ A promotion path's JSON (`catalog/units/<faction>/<unit>/paths/<p>/<p>.json`) MA
 
 The loader SHALL distinguish "field absent" (no override; the base unit's abilities are kept) from "field present but empty" (override active; the path strips base abilities). The catalog struct uses `*[]string` to preserve this distinction. Every entry MUST be a registered `AbilityDef` id; an empty string or an unregistered id SHALL panic at load (mirroring the projectile / damage-type validators in the same file).
 
-The path-level override is symmetric with the existing per-path overrides for `projectile`, `damageType`, `projectileScale`, and `visionRange` (also in `path_defs.go`): a path declares what its units have, and the unit-side recompute reads the declaration. The semantic is "the cleric IS this unit," not "the cleric gets a delta applied to apprentice."
+The path-level override is symmetric with the existing per-path overrides for `projectile`, `damageType`, `projectileScale`, and `visionRange` (also in `path_defs.go`): a path declares what its units have, and the unit-side recompute reads the declaration. The semantic is "the cleric IS this unit," not "the cleric gets a delta applied to acolyte."
 
-The cleric path SHALL declare `"abilities": ["greater_heal"]` in `cleric.json`. No other Apprentice-line path declares an override at this time.
+The cleric path SHALL declare `"abilities": ["greater_heal"]` in `cleric.json`. No other Acolyte-line path declares an override at this time.
 
 #### Scenario: Cleric path override is loaded
 
@@ -98,7 +98,7 @@ The cleric path SHALL declare `"abilities": ["greater_heal"]` in `cleric.json`. 
 - **WHEN** a path JSON's `"abilities"` array contains an empty string
 - **THEN** catalog load panics naming the offending file
 
-#### Scenario: Base apprentice without a path keeps base abilities
+#### Scenario: Base acolyte without a path keeps base abilities
 
-- **WHEN** an apprentice is at `ProgressionPath == "none"` and `assignUnitPathAbilitiesLocked` runs
+- **WHEN** an acolyte is at `ProgressionPath == "none"` and `assignUnitPathAbilitiesLocked` runs
 - **THEN** `unit.Abilities` resolves to the unit def's base list (e.g., `["heal"]`) — no path-level override applies

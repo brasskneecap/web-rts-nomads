@@ -50,7 +50,7 @@ Weights: a small unexported `map[AbilityCategory]…` table in `ability_priority
 
 ### Decision 3: `minActivationScore` chosen so a lone categorised/uncategorised candidate never regresses
 
-`minActivationScore` is a low constant such that any ability that is *currently castable and has a valid selector target* scores strictly above it in its normal operating range (heal of a damaged ally, offensive on a valid enemy, or the uncategorised fallback). The no-regression test (below) is the executable proof: same seed, heal-only Apprentice, identical cast-tick set pre/post. If a category's natural minimum could dip to the floor, that category's formula gets a small positive ε so a valid-target candidate always clears it.
+`minActivationScore` is a low constant such that any ability that is *currently castable and has a valid selector target* scores strictly above it in its normal operating range (heal of a damaged ally, offensive on a valid enemy, or the uncategorised fallback). The no-regression test (below) is the executable proof: same seed, heal-only Acolyte, identical cast-tick set pre/post. If a category's natural minimum could dip to the floor, that category's formula gets a small positive ε so a valid-target candidate always clears it.
 
 ### Decision 4: `path_ability_defs.go` is a structural twin of `path_defs.go`
 
@@ -85,7 +85,7 @@ This routes through the existing authoritative damage pipeline (same entrypoint 
 
 ## Risks / Trade-offs
 
-- **[No-regression invariant is the whole ballgame]** If `minActivationScore` or any single-candidate score is mis-set, every existing autocast unit silently changes cadence. → Decision 3 + an executable seeded-replay equivalence test (heal-only Apprentice, identical cast-tick set pre/post) is the gate; also assert the gather phase reproduces the old gate set exactly.
+- **[No-regression invariant is the whole ballgame]** If `minActivationScore` or any single-candidate score is mis-set, every existing autocast unit silently changes cadence. → Decision 3 + an executable seeded-replay equivalence test (heal-only Acolyte, identical cast-tick set pre/post) is the gate; also assert the gather phase reproduces the old gate set exactly.
 - **[Uncategorised abilities]** Other abilities in the catalog may have no `Category`. → The empty-category fallback score (Decision 2) keeps them behaving as first-ready for the single-ability case; multi-ability units mixing categorised/uncategorised are covered by explicit tests.
 - **[Determinism of scoring]** A score that reads map iteration or unseeded randomness would desync replays. → Scoring reads only live unit fields + ordered slices; tiebreak is total (slot index then id); covered by a seeded multi-ability replay test.
 - **[Grant idempotency across multi-rank catch-up]** A single large XP gain crosses several ranks in one loop; a non-idempotent append would duplicate abilities. → Append-iff-absent (Decision 5) + a test that boosts XP past multiple thresholds at once and asserts no duplicate grants.

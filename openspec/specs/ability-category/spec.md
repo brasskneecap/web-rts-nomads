@@ -84,9 +84,9 @@ A definition with no `"category"` key SHALL load successfully with `Category == 
 
 ### Requirement: Heal-autocast guarantee is gating-equivalence plus a no-melee tripwire
 
-The heal autocast selector (`lowest_hp_percentage_ally_in_range`, `castRange: match_attack_range`) is position-gated, and the `caster` combat profile deliberately moves the unit (retreat). A blanket "byte-identical heal autocast under any fixed seed" claim is therefore false and SHALL NOT be asserted: once a `caster`-profiled Apprentice retreats, its position changes, which legitimately changes which allies are in heal range and thus which ticks heal fires on. That divergence is correct behaviour, not a regression.
+The heal autocast selector (`lowest_hp_percentage_ally_in_range`, `castRange: match_attack_range`) is position-gated, and the `caster` combat profile deliberately moves the unit (retreat). A blanket "byte-identical heal autocast under any fixed seed" claim is therefore false and SHALL NOT be asserted: once a `caster`-profiled Acolyte retreats, its position changes, which legitimately changes which allies are in heal range and thus which ticks heal fires on. That divergence is correct behaviour, not a regression.
 
-The system SHALL instead guarantee: (a) the heal-autocast **gating logic** (mana availability, cooldown, and the `SupportsAutoCast` / selector predicate) is unchanged by the `caster` profile flip and the `Category` tag; and (b) in a scenario with **no melee threat** (the Apprentice never retreats, so position is held constant), the set of ticks heal is auto-cast on is identical pre/post change for the same seed and inputs.
+The system SHALL instead guarantee: (a) the heal-autocast **gating logic** (mana availability, cooldown, and the `SupportsAutoCast` / selector predicate) is unchanged by the `caster` profile flip and the `Category` tag; and (b) in a scenario with **no melee threat** (the Acolyte never retreats, so position is held constant), the set of ticks heal is auto-cast on is identical pre/post change for the same seed and inputs.
 
 #### Scenario: Heal-autocast gating is unchanged by the profile flip and category tag
 
@@ -95,10 +95,10 @@ The system SHALL instead guarantee: (a) the heal-autocast **gating logic** (mana
 
 #### Scenario: No profile↔cadence coupling in a no-melee seeded replay
 
-- **WHEN** a seeded match with an autocasting Apprentice and **no melee threat to it** is run before and after this change with the same seed and inputs
+- **WHEN** a seeded match with an autocasting Acolyte and **no melee threat to it** is run before and after this change with the same seed and inputs
 - **THEN** the set of ticks on which heal is cast is identical between the two runs (a tripwire for unintended profile↔cadence coupling)
 
 #### Scenario: Cadence divergence under retreat is expected, not asserted against
 
-- **WHEN** a `caster`-profiled Apprentice retreats from a melee attacker and its heal-target-in-range set changes as a result
+- **WHEN** a `caster`-profiled Acolyte retreats from a melee attacker and its heal-target-in-range set changes as a result
 - **THEN** the resulting change in heal cast ticks is treated as correct intended behaviour and is explicitly outside the byte-identical guarantee

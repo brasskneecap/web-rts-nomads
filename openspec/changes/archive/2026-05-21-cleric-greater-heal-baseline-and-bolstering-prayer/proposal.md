@@ -4,7 +4,7 @@ The Cleric path's identity is healing/protection. Right now Greater Heal is gate
 
 ## What Changes
 
-- **Greater Heal becomes a Cleric path baseline ability via a new `"abilities"` override field on path JSONs.** `cleric.json` declares `"abilities": ["greater_heal"]`, which is loaded into `pathAbilitiesByPath` by `path_defs.go` (symmetric to the existing `projectile` / `damageType` / `visionRange` overrides). On every promotion event, `assignUnitPathAbilitiesLocked` recomputes `unit.Abilities` from `(UnitType, ProgressionPath, Rank)` — base unit abilities → path-level override → additive per-rank grants → position-based state migration. Greater Heal is "what the cleric IS," not "a delta applied to apprentice." (Initial design used a per-(path, rank) grant file; that approach was abandoned mid-implementation in favour of the path-level override because the one-shot mutation was fragile and the path-level pattern is consistent with the existing per-path overrides for other stats.)
+- **Greater Heal becomes a Cleric path baseline ability via a new `"abilities"` override field on path JSONs.** `cleric.json` declares `"abilities": ["greater_heal"]`, which is loaded into `pathAbilitiesByPath` by `path_defs.go` (symmetric to the existing `projectile` / `damageType` / `visionRange` overrides). On every promotion event, `assignUnitPathAbilitiesLocked` recomputes `unit.Abilities` from `(UnitType, ProgressionPath, Rank)` — base unit abilities → path-level override → additive per-rank grants → position-based state migration. Greater Heal is "what the cleric IS," not "a delta applied to acolyte." (Initial design used a per-(path, rank) grant file; that approach was abandoned mid-implementation in favour of the path-level override because the one-shot mutation was fragile and the path-level pattern is consistent with the existing per-path overrides for other stats.)
 - **`greater_heal` is removed from the Cleric Bronze perk pool.** The slot-preserving swap helper (`applyGreaterHealSwapLocked`) is deleted entirely; state migration now happens by position inside `assignUnitPathAbilitiesLocked`.
 - **New `bolstering_prayer` Bronze perk.** Mechanically symmetric to `battle_prayer`: a Cleric owning it stamps a timed armor buff onto every target it heals. Uses cross-unit `UnitPerkState` fields (`BolsteringPrayerRemaining`, `BolsteringPrayerArmor`) that mirror `BattlePrayerRemaining` / `BattlePrayerMultiplier`. Decays in the same `state.go Update()` per-unit loop. Picks up the same full-HP focus-target recast-threshold logic, generalised so both perks share the autocast trigger.
 - **Bronze pool stays at four entries:** `sanctuary`, `battle_prayer`, `bolstering_prayer`, `mana_conduit`.
@@ -25,8 +25,8 @@ The Cleric path's identity is healing/protection. Right now Greater Heal is gate
 ## Impact
 
 **Server (Go) — catalog:**
-- `server/internal/game/catalog/units/human/apprentice/paths/cleric/cleric.json` — add `"abilities": ["greater_heal"]` to the path JSON.
-- `server/internal/game/catalog/units/human/apprentice/paths/cleric/perks/bronze.json` — drop the `greater_heal` perk entry; add the `bolstering_prayer` entry.
+- `server/internal/game/catalog/units/human/acolyte/paths/cleric/cleric.json` — add `"abilities": ["greater_heal"]` to the path JSON.
+- `server/internal/game/catalog/units/human/acolyte/paths/cleric/perks/bronze.json` — drop the `greater_heal` perk entry; add the `bolstering_prayer` entry.
 - `server/internal/game/catalog/action-icons.json` — add a `perk-bolstering-prayer` icon entry (placeholder asset OK pending art).
 
 **Server (Go) — path-ability resolution:**

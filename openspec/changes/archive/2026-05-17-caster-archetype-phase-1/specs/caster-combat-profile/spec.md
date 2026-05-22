@@ -7,7 +7,7 @@ The `combatProfiles` registry SHALL contain a `"caster"` entry whose every field
 - `Name`, which SHALL be `"caster"`;
 - `MaxChaseDistance`, which SHALL be set near the `"archer"` profile's pursuit envelope and SHALL NOT be shrunk below the `"archer"` profile's `MaxChaseDistance` (rationale: leash self-clamps to the unit's `AttackRange` but `MaxChaseDistance` does not, so inheriting `support`'s smaller value would silently reduce caster pursuit range);
 - `AoERadius`, which SHALL be `0`;
-- the `AoECluster` target weight, which SHALL be `0` (the Apprentice's *current* kit is single-target — its basic attack fires the `fire_bolt` projectile and its only ability is `heal`, neither AoE — so `support`'s AoE tuning is inapplicable today; this is a current-kit decision, not a claim that casters are never AoE: the design intentionally anticipates future AoE caster abilities, at which point this profile is re-tuned).
+- the `AoECluster` target weight, which SHALL be `0` (the Acolyte's *current* kit is single-target — its basic attack fires the `fire_bolt` projectile and its only ability is `heal`, neither AoE — so `support`'s AoE tuning is inapplicable today; this is a current-kit decision, not a claim that casters are never AoE: the design intentionally anticipates future AoE caster abilities, at which point this profile is re-tuned).
 
 The existing `"archer"` and `"support"` entries SHALL NOT be modified by this change.
 
@@ -38,42 +38,42 @@ Because `unit_defs.go` validates `UnitDef.CombatProfile` against `combatProfiles
 - **WHEN** the `"archer"` and `"support"` profile entries are inspected after this change
 - **THEN** their field values are byte-identical to before the change
 
-### Requirement: The Apprentice unit uses the `caster` profile and archetype
+### Requirement: The Acolyte unit uses the `caster` profile and archetype
 
-The Apprentice catalog entry (`catalog/units/human/apprentice/apprentice.json`) SHALL set both `"archetype"` and `"combatProfile"` to `"caster"` (previously both `"archer"`). The Apprentice's `UnitType` and all other catalog fields SHALL be unchanged. The Cleric and Arch Mage promotion paths are the same `UnitDef` plus rank stat-multipliers (their JSON files carry no `type`/`archetype`/`combatProfile`); they inherit the `caster` profile because `resolveCombatProfile` resolves through `apprentice.json` for `UnitType == "apprentice"`, with no separate catalog edit and no `combatProfile` field in the path files.
+The Acolyte catalog entry (`catalog/units/human/acolyte/acolyte.json`) SHALL set both `"archetype"` and `"combatProfile"` to `"caster"` (previously both `"archer"`). The Acolyte's `UnitType` and all other catalog fields SHALL be unchanged. The Cleric and Arch Mage promotion paths are the same `UnitDef` plus rank stat-multipliers (their JSON files carry no `type`/`archetype`/`combatProfile`); they inherit the `caster` profile because `resolveCombatProfile` resolves through `acolyte.json` for `UnitType == "acolyte"`, with no separate catalog edit and no `combatProfile` field in the path files.
 
-#### Scenario: Apprentice resolves to the caster profile
+#### Scenario: Acolyte resolves to the caster profile
 
-- **WHEN** an Apprentice unit's combat profile is resolved
+- **WHEN** an Acolyte unit's combat profile is resolved
 - **THEN** the resolved profile is `"caster"`
 
 #### Scenario: Cleric and Arch Mage resolve to the caster profile without a path-file edit
 
-- **WHEN** an Apprentice is promoted to the Cleric or Arch Mage path and its combat profile is resolved
-- **THEN** the resolved profile is `"caster"`, resolved via `apprentice.json` (the path files contain no `combatProfile`), with no separate catalog change
+- **WHEN** an Acolyte is promoted to the Cleric or Arch Mage path and its combat profile is resolved
+- **THEN** the resolved profile is `"caster"`, resolved via `acolyte.json` (the path files contain no `combatProfile`), with no separate catalog change
 
-#### Scenario: Apprentice kites melee instead of standing and dying
+#### Scenario: Acolyte kites melee instead of standing and dying
 
-- **WHEN** an enemy melee unit closes into an Apprentice that previously (archer profile) would have stood still
-- **THEN** the Apprentice retreats while remaining able to act, instead of standing in place until it dies
+- **WHEN** an enemy melee unit closes into an Acolyte that previously (archer profile) would have stood still
+- **THEN** the Acolyte retreats while remaining able to act, instead of standing in place until it dies
 
-#### Scenario: Apprentice fallback archetype is also caster
+#### Scenario: Acolyte fallback archetype is also caster
 
-- **WHEN** the Apprentice's archetype is used as the profile-resolution fallback key (the `combatProfile`-empty path)
+- **WHEN** the Acolyte's archetype is used as the profile-resolution fallback key (the `combatProfile`-empty path)
 - **THEN** the fallback key is `"caster"`, consistent with its explicit `combatProfile`
 
 ### Requirement: Archetype scoping excludes the caster line from `archer`-only upgrades (intended role separation)
 
-Because `unit.Archetype` is the match key for archetype-scoped upgrades (`upgradeScopeArchetype` in `upgrade_apply.go`), flipping the Apprentice's `archetype` from `"archer"` to `"caster"` SHALL remove the Apprentice / Cleric / Arch Mage from every `archetype: "archer"` upgrade — specifically the live `swift_strikes_*` attack-speed upgrades. This exclusion is a **design goal** of the archetype, not a tolerated side-effect: a backline caster SHALL NOT inherit archer-only upgrades, and `archetype` is the boundary that enforces this. No caster-scoped upgrade is added in Phase 1 (a caster upgrade line is future content, not part of this change).
+Because `unit.Archetype` is the match key for archetype-scoped upgrades (`upgradeScopeArchetype` in `upgrade_apply.go`), flipping the Acolyte's `archetype` from `"archer"` to `"caster"` SHALL remove the Acolyte / Cleric / Arch Mage from every `archetype: "archer"` upgrade — specifically the live `swift_strikes_*` attack-speed upgrades. This exclusion is a **design goal** of the archetype, not a tolerated side-effect: a backline caster SHALL NOT inherit archer-only upgrades, and `archetype` is the boundary that enforces this. No caster-scoped upgrade is added in Phase 1 (a caster upgrade line is future content, not part of this change).
 
-#### Scenario: Apprentice no longer matches the archer-scoped Swift Strikes upgrade
+#### Scenario: Acolyte no longer matches the archer-scoped Swift Strikes upgrade
 
-- **WHEN** the archetype-scoped upgrade match (`upgradeScopeArchetype`) is evaluated for an Apprentice (now `archetype: "caster"`) against an `archetype: "archer"` upgrade such as `swift_strikes_common`
-- **THEN** the upgrade does not match the Apprentice
+- **WHEN** the archetype-scoped upgrade match (`upgradeScopeArchetype`) is evaluated for an Acolyte (now `archetype: "caster"`) against an `archetype: "archer"` upgrade such as `swift_strikes_common`
+- **THEN** the upgrade does not match the Acolyte
 
-#### Scenario: No archer-only upgrade leaks onto the caster Apprentice
+#### Scenario: No archer-only upgrade leaks onto the caster Acolyte
 
-- **WHEN** every archetype-scoped upgrade in the catalog is evaluated against an Apprentice with `archetype: "caster"`
+- **WHEN** every archetype-scoped upgrade in the catalog is evaluated against an Acolyte with `archetype: "caster"`
 - **THEN** no `archetype: "archer"` upgrade matches, and no archetype-scoped upgrade matches at all (no caster-scoped upgrade exists yet) — this is the intended role separation, with caster-scoped upgrades left to future content
 
 ### Requirement: AI scoring treats `caster` exactly as `support`

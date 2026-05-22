@@ -6,20 +6,20 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
-// apprenticeMaxMana returns the apprentice's catalog-authored mana pool size
-// (catalog/units/human/apprentice/apprentice.json → maxMana). Auto-cast tests
+// acolyteMaxMana returns the acolyte's catalog-authored mana pool size
+// (catalog/units/human/acolyte/acolyte.json → maxMana). Auto-cast tests
 // derive expected post-cast mana from this rather than hardcoding 50.
-func apprenticeMaxMana(t *testing.T) int {
+func acolyteMaxMana(t *testing.T) int {
 	t.Helper()
-	def, ok := getUnitDef("apprentice")
+	def, ok := getUnitDef("acolyte")
 	if !ok {
-		t.Fatal(`getUnitDef("apprentice") = _, false; want the catalog-authored apprentice`)
+		t.Fatal(`getUnitDef("acolyte") = _, false; want the catalog-authored acolyte`)
 	}
 	return def.MaxMana
 }
 
-// autoCastSetup: an apprentice (p1, has the auto-cast-capable "heal") and a
-// friendly soldier damaged by `missing` HP, within the apprentice's cast
+// autoCastSetup: an acolyte (p1, has the auto-cast-capable "heal") and a
+// friendly soldier damaged by `missing` HP, within the acolyte's cast
 // range. Lock NOT held on return.
 //
 // NOTE: the catalog now seeds heal auto-cast ON by default at spawn (per
@@ -31,7 +31,7 @@ func autoCastSetup(t *testing.T, missing int) (s *GameState, app, ally *Unit) {
 	t.Helper()
 	s = newProjectileTestState(t)
 	s.mu.Lock()
-	app = s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	app = s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	app.Visible = true
 	if app.AutoCastEnabled != nil {
 		delete(app.AutoCastEnabled, "heal")
@@ -170,7 +170,7 @@ func TestAutoCast_NoTriggerOnCooldown(t *testing.T) {
 func TestAutoCast_NoTriggerNoValidTarget(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
-	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	full := spawnProjTestUnit(t, s, "p1", 460, 400) // ally at FULL HP → not a target
 	enemy := spawnProjTestUnit(t, s, enemyPlayerID, 470, 400)
 	enemy.HP = 1        // hurt but hostile (enemy team) → heal can't target it
@@ -192,7 +192,7 @@ func TestAutoCast_NoTriggerNoValidTarget(t *testing.T) {
 func TestAutoCast_PicksCorrectAlly(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
-	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	// Catalog seeds heal autocast ON at spawn; clear so the toggle below moves
 	// the state in the asserted direction (off → on) the test was written for.
 	delete(app.AutoCastEnabled, "heal")
@@ -252,8 +252,8 @@ func TestAutoCast_StateIsPerUnitInstance(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	a := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 100, Y: 100})
-	b := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 200, Y: 100})
+	a := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 100, Y: 100})
+	b := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 200, Y: 100})
 	// Clear catalog-seeded defaults so this test isolates per-instance toggle
 	// isolation (its actual subject) rather than the spawn-time default.
 	delete(a.AutoCastEnabled, "heal")

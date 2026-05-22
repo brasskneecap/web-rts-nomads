@@ -2920,7 +2920,7 @@ export class CanvasRenderer {
 
     // Mana bar: a blue bar stacked directly below the HP bar, scaled against
     // max-mana. Drawn for any spellcaster (maxMana > 0) even when the pool is
-    // empty, so the depleted state stays visible (e.g. apprentice).
+    // empty, so the depleted state stays visible (e.g. acolyte).
     const maxMana = Math.max(0, unit.maxMana ?? 0)
     if (maxMana > 0) {
       const mana = Math.max(0, Math.min(unit.mana ?? 0, maxMana))

@@ -3,7 +3,7 @@
 > **Status: DESIGN ONLY — not implemented.** Recorded at the user's request.
 > No code exists for this yet. Implementation deferred pending user direction.
 > Produced by the `game-architect` agent; companion to
-> [apprentice_and_systems.md](./apprentice_and_systems.md).
+> [acolyte_and_systems.md](./acolyte_and_systems.md).
 
 > **Conventions** (per `.claude/rules/AI_RULES.md`)
 > - Go server authoritative; client renders server state.
@@ -18,7 +18,7 @@
 
 ## Goal
 
-A `caster` `archetype` + `combatProfile` for the **Apprentice** and its
+A `caster` `archetype` + `combatProfile` for the **Acolyte** and its
 promotion paths **Cleric** and **Arch Mage**. Casters cast spells (mana cost,
 optional cooldown), keep a basic ranged attack between casts, and choose the
 situationally-best ability each tick (e.g. prioritise heal when nearby allies
@@ -30,7 +30,7 @@ buffs (armor/AD/AS), offensive spells, anti-air.
 1. **The hard infrastructure already exists** — ability cast lifecycle,
    autocast loop, target-selector registry, mana, per-unit cooldowns, and the
    action-bar UI. This is a compose-and-extend job, not a new subsystem.
-2. **`caster` is a NEW combat profile**, not a reuse of `archer`. The Apprentice
+2. **`caster` is a NEW combat profile**, not a reuse of `archer`. The Acolyte
    today never kites (`archer` profile has no retreat configured → it stands and
    dies to melee). `caster` clones the `support` profile (backline + retreat),
    leaving `archer` untouched.
@@ -43,7 +43,7 @@ buffs (armor/AD/AS), offensive spells, anti-air.
    ready ability wins," with category-driven scoring and deterministic
    tiebreaks (ability slot index, then id).
 5. **Per-path kits** declared in new `paths/<path>/abilities/<rank>.json` files
-   (mirroring the perk layout), granted on promotion. Phase 1 keeps Apprentice's
+   (mirroring the perk layout), granted on promotion. Phase 1 keeps Acolyte's
    `["heal"]` → zero migration, zero behaviour regression.
 
 ## Resolved decisions (locked by user)
@@ -58,13 +58,13 @@ buffs (armor/AD/AS), offensive spells, anti-air.
 
 ## Data model
 
-- **`UnitDef.Abilities []string`** stays the base/always-on kit. Apprentice
+- **`UnitDef.Abilities []string`** stays the base/always-on kit. Acolyte
   keeps `["heal"]` (no `heal.json` migration for Phase 1).
 - **Per-path grants** in new files, ordered id lists (AbilityDef remains the
   single source of truth for ability data):
   ```
-  catalog/units/human/apprentice/paths/cleric/abilities/{bronze,silver,gold}.json
-  catalog/units/human/apprentice/paths/arch_mage/abilities/{bronze,silver,gold}.json
+  catalog/units/human/acolyte/paths/cleric/abilities/{bronze,silver,gold}.json
+  catalog/units/human/acolyte/paths/arch_mage/abilities/{bronze,silver,gold}.json
   ```
   Shape: `{ "grant": ["greater_heal"] }`. Loaded by a new `path_ability_defs.go`
   (twin of `path_defs.go`) → `pathAbilityGrantsByKey[(path,rank)] []string`.
@@ -114,7 +114,7 @@ exactly today's behaviour.
 |---|---|---|
 | `combat_ai_profiles.go` | add `"caster"` to `combatProfiles` (clone `support`) | additive |
 | `combat_ai_scoring.go` | add `"caster"` to `unitStrategicValue` support branch + `unitTypePreference` cases & `support`/`mage` target checks | additive, behaviour-affecting → tested |
-| `catalog/.../apprentice/apprentice.json` | `archetype`+`combatProfile` → `"caster"` | changed |
+| `catalog/.../acolyte/acolyte.json` | `archetype`+`combatProfile` → `"caster"` | changed |
 | `ability_defs.go` | `AbilityCategory` enum + `Category` field | additive |
 | `catalog/abilities/heal/heal.json` | `"category":"heal"` | additive |
 | `path_ability_defs.go` (new) | load `paths/<p>/abilities/<rank>.json` | new |
@@ -131,11 +131,11 @@ No new lock acquisition, no new persisted pointer fields.
 
 **Phase 1 — `caster` profile, zero behaviour regression.**
 - backend: add `caster` profile (clone `support`); add `caster` to strategic
-  value + type-preference; flip `apprentice.json`; add `AbilityCategory` +
+  value + type-preference; flip `acolyte.json`; add `AbilityCategory` +
   `Category`; `"category":"heal"`. No priority scoring yet, no per-path files.
 - frontend: none (snapshot shape unchanged).
 - qa: heal autocast byte-identical pre/post (same seed → same cast ticks);
-  Apprentice now kites melee instead of standing; full server suite as the
+  Acolyte now kites melee instead of standing; full server suite as the
   no-regression gate.
 
 **Phase 2 — priority selection + per-path kits.**

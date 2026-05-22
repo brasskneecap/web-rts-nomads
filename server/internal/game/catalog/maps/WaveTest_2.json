@@ -2601,7 +2601,7 @@
         "y": 8,
         "id": "placed-unit-player1-9-8",
         "playerSlot": "player1",
-        "unitType": "apprentice",
+        "unitType": "acolyte",
         "aggroRange": 150,
         "leashRange": 200
       },
@@ -2628,7 +2628,7 @@
         "y": 9,
         "id": "placed-unit-player1-8-9",
         "playerSlot": "player1",
-        "unitType": "apprentice",
+        "unitType": "acolyte",
         "aggroRange": 150,
         "leashRange": 200
       },
@@ -2664,7 +2664,7 @@
         "y": 7,
         "id": "placed-unit-player2-24-7",
         "playerSlot": "player2",
-        "unitType": "apprentice",
+        "unitType": "acolyte",
         "aggroRange": 150,
         "leashRange": 200
       },
@@ -2673,7 +2673,7 @@
         "y": 7,
         "id": "placed-unit-player2-26-7",
         "playerSlot": "player2",
-        "unitType": "apprentice",
+        "unitType": "acolyte",
         "aggroRange": 150,
         "leashRange": 200
       },

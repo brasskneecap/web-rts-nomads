@@ -794,7 +794,7 @@ import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { initObstacleDefs, OBSTACLE_DEF_MAP } from '@/game/maps/obstacleDefs'
 import { BUILDING_DEF_MAP, BUILDING_DEFS, initBuildingDefs } from '@/game/maps/buildingDefs'
-import { initPathBounds } from '@/game/maps/unitDefs'
+import { initPathBounds, initPathsByUnitType } from '@/game/maps/unitDefs'
 
 const model = defineModel<MapConfig>({ required: true })
 
@@ -2205,8 +2205,9 @@ onMounted(() => {
   void fetchBuildingDefs().then(initBuildingDefs).catch(() => {})
   void fetchObstacleDefs().then(initObstacleDefs).catch(() => {})
   void fetchUnitDefs()
-    .then(({ units, paths }) => {
+    .then(({ units, paths, pathsByUnit }) => {
       initPathBounds(paths)
+      initPathsByUnitType(pathsByUnit)
       // Bucket every catalog unit by its declared faction. Buckets are created
       // on demand from `def.faction`, so a new faction directory on the server
       // produces a new dropdown entry on next editor load with zero edits here.

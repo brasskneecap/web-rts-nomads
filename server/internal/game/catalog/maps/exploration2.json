@@ -68354,7 +68354,7 @@
         "y": 8,
         "id": "placed-unit-player1-10-8",
         "playerSlot": "player1",
-        "unitType": "apprentice",
+        "unitType": "acolyte",
         "aggroRange": 150,
         "leashRange": 200
       },
@@ -68408,7 +68408,7 @@
         "y": 7,
         "id": "placed-unit-player1-25-7",
         "playerSlot": "player2",
-        "unitType": "apprentice",
+        "unitType": "acolyte",
         "aggroRange": 150,
         "leashRange": 200
       },

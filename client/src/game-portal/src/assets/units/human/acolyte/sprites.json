@@ -1,18 +1,18 @@
 {
-  "key": "apprentice",
+  "key": "acolyte",
   "size": {
     "width": 108,
     "height": 108
   },
   "rotations": {
-    "south": "states/Apprentice/rotations/south.png",
-    "south-east": "states/Apprentice/rotations/south-east.png",
-    "east": "states/Apprentice/rotations/east.png",
-    "north-east": "states/Apprentice/rotations/north-east.png",
-    "north": "states/Apprentice/rotations/north.png",
-    "north-west": "states/Apprentice/rotations/north-west.png",
-    "west": "states/Apprentice/rotations/west.png",
-    "south-west": "states/Apprentice/rotations/south-west.png"
+    "south": "states/Acolyte/rotations/south.png",
+    "south-east": "states/Acolyte/rotations/south-east.png",
+    "east": "states/Acolyte/rotations/east.png",
+    "north-east": "states/Acolyte/rotations/north-east.png",
+    "north": "states/Acolyte/rotations/north.png",
+    "north-west": "states/Acolyte/rotations/north-west.png",
+    "west": "states/Acolyte/rotations/west.png",
+    "south-west": "states/Acolyte/rotations/south-west.png"
   },
   "animations": {
     "walking": {

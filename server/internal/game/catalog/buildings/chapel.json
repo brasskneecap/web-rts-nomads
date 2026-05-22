@@ -19,7 +19,7 @@
     "unit-spawner"
   ],
   "spawnUnitTypes": [
-    "apprentice"
+    "acolyte"
   ],
   "requiresTownhallTier": 2,
   "metadata": {},

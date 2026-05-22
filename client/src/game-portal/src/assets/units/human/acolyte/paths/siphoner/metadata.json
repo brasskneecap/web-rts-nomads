@@ -1,0 +1,185 @@
+{
+  "group_id": null,
+  "states": [
+    {
+      "character": {
+        "id": "d487cbd7-a3bf-40da-8675-cb447c959ded",
+        "name": "Siphoner",
+        "prompt": "pixel art, top-down 3/4 perspective, 64x64 sprite, chunky dark outlines, limited earthy palette, 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, human female shadow priestess vampiress, slender feminine figure in flowing deep black and dark plum robed dress with cream linen trim at sleeves and collar, large flowing cloak draped over shoulders with deep crimson red interior lining and black exterior, short pale blonde hair with small dark wilted floral hair ornament, deathly pale porcelain skin, dark shadowed eyes with subtle violet glow, small fangs barely visible at lips, holding a tall gnarled dark wood staff topped with a glowing deep crimson red crystal orb dripping with dark wisps of shadow smoke, leather satchel at hip with dark glass vials of blood-red potions, ornate silver pendant with red gemstone at chest, graceful predatory stance, soft cold crimson magical aura swirling at the staff orb, deep black and dark plum palette with crimson red and cream accents, faction shadow healer appearance",
+        "size": {
+          "width": 120,
+          "height": 120
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-05-22T19:36:28.618481+00:00"
+      },
+      "folder": "Siphoner",
+      "frames": {
+        "rotations": {
+          "south": "Siphoner/rotations/south.png",
+          "south-east": "Siphoner/rotations/south-east.png",
+          "east": "Siphoner/rotations/east.png",
+          "north-east": "Siphoner/rotations/north-east.png",
+          "north": "Siphoner/rotations/north.png",
+          "north-west": "Siphoner/rotations/north-west.png",
+          "west": "Siphoner/rotations/west.png",
+          "south-west": "Siphoner/rotations/south-west.png"
+        },
+        "animations": {
+          "Walking-e3c9edc8": {
+            "south": [
+              "Siphoner/animations/Walking-e3c9edc8/south/frame_000.png",
+              "Siphoner/animations/Walking-e3c9edc8/south/frame_001.png",
+              "Siphoner/animations/Walking-e3c9edc8/south/frame_002.png",
+              "Siphoner/animations/Walking-e3c9edc8/south/frame_003.png",
+              "Siphoner/animations/Walking-e3c9edc8/south/frame_004.png",
+              "Siphoner/animations/Walking-e3c9edc8/south/frame_005.png",
+              "Siphoner/animations/Walking-e3c9edc8/south/frame_006.png"
+            ],
+            "west": [
+              "Siphoner/animations/Walking-e3c9edc8/west/frame_000.png",
+              "Siphoner/animations/Walking-e3c9edc8/west/frame_001.png",
+              "Siphoner/animations/Walking-e3c9edc8/west/frame_002.png",
+              "Siphoner/animations/Walking-e3c9edc8/west/frame_003.png",
+              "Siphoner/animations/Walking-e3c9edc8/west/frame_004.png",
+              "Siphoner/animations/Walking-e3c9edc8/west/frame_005.png",
+              "Siphoner/animations/Walking-e3c9edc8/west/frame_006.png"
+            ],
+            "south-west": [
+              "Siphoner/animations/Walking-e3c9edc8/south-west/frame_000.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-west/frame_001.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-west/frame_002.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-west/frame_003.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-west/frame_004.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-west/frame_005.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-west/frame_006.png"
+            ],
+            "north": [
+              "Siphoner/animations/Walking-e3c9edc8/north/frame_000.png",
+              "Siphoner/animations/Walking-e3c9edc8/north/frame_001.png",
+              "Siphoner/animations/Walking-e3c9edc8/north/frame_002.png",
+              "Siphoner/animations/Walking-e3c9edc8/north/frame_003.png",
+              "Siphoner/animations/Walking-e3c9edc8/north/frame_004.png",
+              "Siphoner/animations/Walking-e3c9edc8/north/frame_005.png",
+              "Siphoner/animations/Walking-e3c9edc8/north/frame_006.png"
+            ],
+            "south-east": [
+              "Siphoner/animations/Walking-e3c9edc8/south-east/frame_000.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-east/frame_001.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-east/frame_002.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-east/frame_003.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-east/frame_004.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-east/frame_005.png",
+              "Siphoner/animations/Walking-e3c9edc8/south-east/frame_006.png"
+            ],
+            "north-west": [
+              "Siphoner/animations/Walking-e3c9edc8/north-west/frame_000.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-west/frame_001.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-west/frame_002.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-west/frame_003.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-west/frame_004.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-west/frame_005.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-west/frame_006.png"
+            ],
+            "north-east": [
+              "Siphoner/animations/Walking-e3c9edc8/north-east/frame_000.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-east/frame_001.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-east/frame_002.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-east/frame_003.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-east/frame_004.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-east/frame_005.png",
+              "Siphoner/animations/Walking-e3c9edc8/north-east/frame_006.png"
+            ],
+            "east": [
+              "Siphoner/animations/Walking-e3c9edc8/east/frame_000.png",
+              "Siphoner/animations/Walking-e3c9edc8/east/frame_001.png",
+              "Siphoner/animations/Walking-e3c9edc8/east/frame_002.png",
+              "Siphoner/animations/Walking-e3c9edc8/east/frame_003.png",
+              "Siphoner/animations/Walking-e3c9edc8/east/frame_004.png",
+              "Siphoner/animations/Walking-e3c9edc8/east/frame_005.png",
+              "Siphoner/animations/Walking-e3c9edc8/east/frame_006.png"
+            ]
+          },
+          "Attacking-84714e3a": {
+            "south": [
+              "Siphoner/animations/Attacking-84714e3a/south/frame_000.png",
+              "Siphoner/animations/Attacking-84714e3a/south/frame_001.png",
+              "Siphoner/animations/Attacking-84714e3a/south/frame_002.png",
+              "Siphoner/animations/Attacking-84714e3a/south/frame_003.png",
+              "Siphoner/animations/Attacking-84714e3a/south/frame_004.png",
+              "Siphoner/animations/Attacking-84714e3a/south/frame_005.png",
+              "Siphoner/animations/Attacking-84714e3a/south/frame_006.png"
+            ],
+            "south-east": [
+              "Siphoner/animations/Attacking-84714e3a/south-east/frame_000.png",
+              "Siphoner/animations/Attacking-84714e3a/south-east/frame_001.png",
+              "Siphoner/animations/Attacking-84714e3a/south-east/frame_002.png",
+              "Siphoner/animations/Attacking-84714e3a/south-east/frame_003.png",
+              "Siphoner/animations/Attacking-84714e3a/south-east/frame_004.png",
+              "Siphoner/animations/Attacking-84714e3a/south-east/frame_005.png",
+              "Siphoner/animations/Attacking-84714e3a/south-east/frame_006.png"
+            ],
+            "north": [
+              "Siphoner/animations/Attacking-84714e3a/north/frame_000.png",
+              "Siphoner/animations/Attacking-84714e3a/north/frame_001.png",
+              "Siphoner/animations/Attacking-84714e3a/north/frame_002.png",
+              "Siphoner/animations/Attacking-84714e3a/north/frame_003.png",
+              "Siphoner/animations/Attacking-84714e3a/north/frame_004.png",
+              "Siphoner/animations/Attacking-84714e3a/north/frame_005.png",
+              "Siphoner/animations/Attacking-84714e3a/north/frame_006.png"
+            ],
+            "south-west": [
+              "Siphoner/animations/Attacking-84714e3a/south-west/frame_000.png",
+              "Siphoner/animations/Attacking-84714e3a/south-west/frame_001.png",
+              "Siphoner/animations/Attacking-84714e3a/south-west/frame_002.png",
+              "Siphoner/animations/Attacking-84714e3a/south-west/frame_003.png",
+              "Siphoner/animations/Attacking-84714e3a/south-west/frame_004.png",
+              "Siphoner/animations/Attacking-84714e3a/south-west/frame_005.png",
+              "Siphoner/animations/Attacking-84714e3a/south-west/frame_006.png"
+            ],
+            "east": [
+              "Siphoner/animations/Attacking-84714e3a/east/frame_000.png",
+              "Siphoner/animations/Attacking-84714e3a/east/frame_001.png",
+              "Siphoner/animations/Attacking-84714e3a/east/frame_002.png",
+              "Siphoner/animations/Attacking-84714e3a/east/frame_003.png",
+              "Siphoner/animations/Attacking-84714e3a/east/frame_004.png",
+              "Siphoner/animations/Attacking-84714e3a/east/frame_005.png",
+              "Siphoner/animations/Attacking-84714e3a/east/frame_006.png"
+            ],
+            "north-east": [
+              "Siphoner/animations/Attacking-84714e3a/north-east/frame_000.png",
+              "Siphoner/animations/Attacking-84714e3a/north-east/frame_001.png",
+              "Siphoner/animations/Attacking-84714e3a/north-east/frame_002.png",
+              "Siphoner/animations/Attacking-84714e3a/north-east/frame_003.png",
+              "Siphoner/animations/Attacking-84714e3a/north-east/frame_004.png",
+              "Siphoner/animations/Attacking-84714e3a/north-east/frame_005.png",
+              "Siphoner/animations/Attacking-84714e3a/north-east/frame_006.png"
+            ],
+            "north-west": [
+              "Siphoner/animations/Attacking-84714e3a/north-west/frame_000.png",
+              "Siphoner/animations/Attacking-84714e3a/north-west/frame_001.png",
+              "Siphoner/animations/Attacking-84714e3a/north-west/frame_002.png",
+              "Siphoner/animations/Attacking-84714e3a/north-west/frame_003.png",
+              "Siphoner/animations/Attacking-84714e3a/north-west/frame_004.png",
+              "Siphoner/animations/Attacking-84714e3a/north-west/frame_005.png",
+              "Siphoner/animations/Attacking-84714e3a/north-west/frame_006.png"
+            ],
+            "west": [
+              "Siphoner/animations/Attacking-84714e3a/west/frame_000.png",
+              "Siphoner/animations/Attacking-84714e3a/west/frame_001.png",
+              "Siphoner/animations/Attacking-84714e3a/west/frame_002.png",
+              "Siphoner/animations/Attacking-84714e3a/west/frame_003.png",
+              "Siphoner/animations/Attacking-84714e3a/west/frame_004.png",
+              "Siphoner/animations/Attacking-84714e3a/west/frame_005.png",
+              "Siphoner/animations/Attacking-84714e3a/west/frame_006.png"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "export_version": "3.0",
+  "export_date": "2026-05-22T21:26:07.104015"
+}

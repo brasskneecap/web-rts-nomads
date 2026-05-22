@@ -308,7 +308,7 @@ function pickAnimation(
   // moving/idle so a cast always reads clearly and "interrupts" the idle pose.
   // Units without a dedicated casting sheet fall back to their attacking
   // animation via ANIMATION_FALLBACK['casting'] = 'attacking' in unitSprites.ts
-  // — better than freezing in the neutral rotation pose. Base Apprentice has
+  // — better than freezing in the neutral rotation pose. Base Acolyte has
   // its own casting sheet and is unaffected.
   if (status === 'Casting') return 'casting'
   if (status === 'Chopping Wood') return 'chopping'

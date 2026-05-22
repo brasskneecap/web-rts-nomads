@@ -10,7 +10,7 @@ Allow unit definitions to declare prerequisite buildings that must exist
 
 Scope of this change: introduce the system end-to-end and wire up exactly
 one requirement — **Archer requires a fully-built Blacksmith.** All other
-units (Worker, Soldier, Apprentice) are unaffected. Adding the next
+units (Worker, Soldier, Acolyte) are unaffected. Adding the next
 requirement after this lands is a one-line JSON edit + a unit test.
 
 ## Acceptance Criteria

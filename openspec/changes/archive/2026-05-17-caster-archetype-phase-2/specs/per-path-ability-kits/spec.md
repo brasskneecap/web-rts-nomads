@@ -2,7 +2,7 @@
 
 ### Requirement: Path ability grants are catalog-defined per (path, rank)
 
-A loader (`path_ability_defs.go`), structurally mirroring `path_defs.go`, SHALL read `catalog/units/human/apprentice/paths/<path>/abilities/<rank>.json` of shape `{ "grant": ["<abilityID>", …] }` into a `(path, rank) → []string` map. Rank names SHALL be validated against `bronze`/`silver`/`gold` with a load-time panic on an unknown rank, and a granted ability id that has no registered `AbilityDef` SHALL panic at load (mirroring `path_defs.go` strictness and the Phase-1 category-validation panic). A missing file for a `(path, rank)` cell SHALL resolve to an empty grant, not an error.
+A loader (`path_ability_defs.go`), structurally mirroring `path_defs.go`, SHALL read `catalog/units/human/acolyte/paths/<path>/abilities/<rank>.json` of shape `{ "grant": ["<abilityID>", …] }` into a `(path, rank) → []string` map. Rank names SHALL be validated against `bronze`/`silver`/`gold` with a load-time panic on an unknown rank, and a granted ability id that has no registered `AbilityDef` SHALL panic at load (mirroring `path_defs.go` strictness and the Phase-1 category-validation panic). A missing file for a `(path, rank)` cell SHALL resolve to an empty grant, not an error.
 
 #### Scenario: Grant file is loaded into the keyed map
 
@@ -30,7 +30,7 @@ A loader (`path_ability_defs.go`), structurally mirroring `path_defs.go`, SHALL 
 
 #### Scenario: Abilities granted on reaching a rank
 
-- **WHEN** an Apprentice on the Cleric path advances to a rank whose Cleric grant is `["greater_heal"]`
+- **WHEN** an Acolyte on the Cleric path advances to a rank whose Cleric grant is `["greater_heal"]`
 - **THEN** `greater_heal` is appended to `unit.Abilities` after that rank-up
 
 #### Scenario: Multi-rank catch-up grants each crossed rank with no duplicates
@@ -63,12 +63,12 @@ The catalog SHALL define at least one Cleric heal-line ability grant and at leas
 
 #### Scenario: Cleric path grants a heal-line ability
 
-- **WHEN** an Apprentice promoted on the Cleric path reaches the granting rank
+- **WHEN** an Acolyte promoted on the Cleric path reaches the granting rank
 - **THEN** it holds at least one `heal`-category ability beyond base `heal`
 
 #### Scenario: Arch Mage path grants an offensive ability
 
-- **WHEN** an Apprentice promoted on the Arch Mage path reaches the granting rank
+- **WHEN** an Acolyte promoted on the Arch Mage path reaches the granting rank
 - **THEN** it holds at least one `offensive`-category ability whose `AutoCastTargetSelector` is `closest_enemy_in_range`
 
 ### Requirement: Offensive abilities deal their `DamageAmount` on resolve

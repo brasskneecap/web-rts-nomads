@@ -139,9 +139,9 @@ for (const [filePath, url] of Object.entries(portraitGlob)) {
 // dedicated carrying pose, instead of freezing on the idle rotation.
 //
 // `casting → attacking` covers spellcasters whose sprite set lacks a dedicated
-// casting sheet (e.g. the Cleric promotion variant of Apprentice): the cast
+// casting sheet (e.g. the Cleric promotion variant of Acolyte): the cast
 // reads as the unit's attack swing instead of a frozen rotation pose. Base
-// Apprentice has its own casting.png and is unaffected by this fallback.
+// Acolyte has its own casting.png and is unaffected by this fallback.
 const ANIMATION_FALLBACK: Record<string, string> = {
   carrying_gold: 'walking',
   casting: 'attacking',

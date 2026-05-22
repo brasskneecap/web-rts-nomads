@@ -8,17 +8,17 @@ import (
 
 // ── Base stats are copied verbatim from archer ───────────────────────────────
 
-func TestApprentice_BaseStatsCopiedFromArcher(t *testing.T) {
-	app, ok := getUnitDef("apprentice")
+func TestAcolyte_BaseStatsCopiedFromArcher(t *testing.T) {
+	app, ok := getUnitDef("acolyte")
 	if !ok {
-		t.Fatal("apprentice unit def not registered")
+		t.Fatal("acolyte unit def not registered")
 	}
 	arch, ok := getUnitDef("archer")
 	if !ok {
 		t.Fatal("archer unit def not registered")
 	}
 
-	if app.Type != "apprentice" || app.Name != "Apprentice" || app.Faction != "human" {
+	if app.Type != "acolyte" || app.Name != "Acolyte" || app.Faction != "human" {
 		t.Errorf("identity wrong: type=%q name=%q faction=%q", app.Type, app.Name, app.Faction)
 	}
 	// Every combat/economy base stat must match archer (tune later).
@@ -26,35 +26,35 @@ func TestApprentice_BaseStatsCopiedFromArcher(t *testing.T) {
 		app.AttackSpeed != arch.AttackSpeed || app.MoveSpeed != arch.MoveSpeed ||
 		app.VisionRange != arch.VisionRange || app.MeatCost != arch.MeatCost ||
 		app.SpawnSeconds != arch.SpawnSeconds {
-		t.Errorf("apprentice base stats diverge from archer:\n apprentice=%+v\n archer=%+v", app, arch)
+		t.Errorf("acolyte base stats diverge from archer:\n acolyte=%+v\n archer=%+v", app, arch)
 	}
 }
 
 // ── Mana kit + attack configuration ──────────────────────────────────────────
 
-func TestApprentice_ManaAndAttackKit(t *testing.T) {
+func TestAcolyte_ManaAndAttackKit(t *testing.T) {
 	// The mana pool, regen, projectile, damage type, and ability list are all
-	// catalog-driven (apprentice.json). Derive expectations from the def so
+	// catalog-driven (acolyte.json). Derive expectations from the def so
 	// balance tweaks to the JSON do not break this test — it verifies the
 	// spawn path faithfully copies the def, not specific tuned numbers.
-	def, ok := getUnitDef("apprentice")
+	def, ok := getUnitDef("acolyte")
 	if !ok {
-		t.Fatal("apprentice unit def not registered")
+		t.Fatal("acolyte unit def not registered")
 	}
 
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	u := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	u := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	if u == nil {
-		t.Fatal("failed to spawn apprentice")
+		t.Fatal("failed to spawn acolyte")
 	}
 
 	// A spellcaster must actually have a mana pool (invariant), and the spawn
 	// path must seed it from the def: CurrentMana starts full at MaxMana.
 	if def.MaxMana <= 0 {
-		t.Errorf("apprentice def MaxMana=%d; a spellcaster must have a positive mana pool", def.MaxMana)
+		t.Errorf("acolyte def MaxMana=%d; a spellcaster must have a positive mana pool", def.MaxMana)
 	}
 	if u.MaxMana != def.MaxMana || u.CurrentMana != def.MaxMana {
 		t.Errorf("mana pool: MaxMana=%d CurrentMana=%d; want %d/%d (def.MaxMana, starts full)",
@@ -82,38 +82,38 @@ func TestApprentice_ManaAndAttackKit(t *testing.T) {
 
 // ── Combat profile is ranged, exactly like archer ────────────────────────────
 
-func TestApprentice_IsRangedLikeArcher(t *testing.T) {
+func TestAcolyte_IsRangedLikeArcher(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 100, Y: 100})
+	app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 100, Y: 100})
 	arch := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 140, Y: 100})
 
 	appProf := resolveCombatProfile(app)
 	archProf := resolveCombatProfile(arch)
 	if appProf.Melee {
-		t.Error("apprentice must use a ranged combat profile, not melee")
+		t.Error("acolyte must use a ranged combat profile, not melee")
 	}
 	if appProf.Melee != archProf.Melee {
-		t.Errorf("apprentice combat profile should match archer's (Melee=%v vs %v)", appProf.Melee, archProf.Melee)
+		t.Errorf("acolyte combat profile should match archer's (Melee=%v vs %v)", appProf.Melee, archProf.Melee)
 	}
 }
 
-// ── Apprentice fires a fire_bolt projectile (Fire, fizzle on impact) ──────────
+// ── Acolyte fires a fire_bolt projectile (Fire, fizzle on impact) ──────────
 
-func TestApprentice_FiresFireBoltWithFireDamageAndFizzle(t *testing.T) {
+func TestAcolyte_FiresFireBoltWithFireDamageAndFizzle(t *testing.T) {
 	// The projectile id, its impact/follow effects, and the damage type are all
-	// catalog-driven (apprentice.json → fire_bolt projectile def). Derive the
+	// catalog-driven (acolyte.json → fire_bolt projectile def). Derive the
 	// expected wire values from the defs so balance/asset tweaks don't break
 	// this test; it verifies the firing path threads the catalog data through.
-	appDef, ok := getUnitDef("apprentice")
+	appDef, ok := getUnitDef("acolyte")
 	if !ok {
-		t.Fatal("apprentice unit def not registered")
+		t.Fatal("acolyte unit def not registered")
 	}
 	projDef, ok := getProjectileDef(appDef.Projectile)
 	if !ok {
-		t.Fatalf("apprentice projectile def %q not registered", appDef.Projectile)
+		t.Fatalf("acolyte projectile def %q not registered", appDef.Projectile)
 	}
 	wantVariant := appDef.Projectile
 	wantImpact := impactEffectForProjectileDef(projDef)
@@ -122,9 +122,9 @@ func TestApprentice_FiresFireBoltWithFireDamageAndFizzle(t *testing.T) {
 
 	s := newProjectileTestState(t)
 	s.mu.Lock()
-	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	app.Visible = true
-	// Stationary hostile inside the apprentice's attack range.
+	// Stationary hostile inside the acolyte's attack range.
 	enemy := spawnProjTestUnit(t, s, "enemy", 400+150, 400)
 	enemy.MoveSpeed = 0
 	enemyID := enemy.ID
@@ -136,7 +136,7 @@ func TestApprentice_FiresFireBoltWithFireDamageAndFizzle(t *testing.T) {
 	s.fireProjectileLocked(app, enemy, app.Damage)
 	if len(s.Projectiles) <= before {
 		s.mu.Unlock()
-		t.Fatal("apprentice fireProjectileLocked produced no projectile")
+		t.Fatal("acolyte fireProjectileLocked produced no projectile")
 	}
 	proj := s.Projectiles[before]
 

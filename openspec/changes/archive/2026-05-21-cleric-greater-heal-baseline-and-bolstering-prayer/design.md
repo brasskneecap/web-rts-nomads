@@ -75,10 +75,10 @@ generalised mechanism:
 
 #### A.1. Catalog
 
-- `catalog/units/human/apprentice/paths/cleric/cleric.json`: add
+- `catalog/units/human/acolyte/paths/cleric/cleric.json`: add
   `"abilities": ["greater_heal"]` to the path JSON, alongside the existing
   `projectile`/`damageType`/`projectileScale` overrides.
-- `catalog/units/human/apprentice/paths/cleric/perks/bronze.json`: remove the
+- `catalog/units/human/acolyte/paths/cleric/perks/bronze.json`: remove the
   `greater_heal` entry. Add `bolstering_prayer` (see Section B). Pool stays at
   four entries.
 - `catalog/abilities/greater_heal/greater_heal.json`: unchanged.
@@ -105,12 +105,12 @@ at one specific call site, and a debug-spawn path was missing it entirely. The
 fix is to make `assignUnitPathAbilitiesLocked` a pure recompute from
 `(UnitType, ProgressionPath, Rank)`. Composition:
 
-1. Start with the unit def's `Abilities` (e.g., apprentice → `["heal"]`).
+1. Start with the unit def's `Abilities` (e.g., acolyte → `["heal"]`).
 2. If `pathAbilitiesByPath[unit.ProgressionPath]` exists, REPLACE the list with
    the override (cleric → `["greater_heal"]`).
 3. For each rank R ≤ current rank, append `(path, R)` rank-grants additively,
    skipping ids already present. No rank-grant files are authored for the
-   apprentice line today; this step is the future-extension seam.
+   acolyte line today; this step is the future-extension seam.
 4. Migrate `AutoCastEnabled` / `AbilityCooldowns` by position: when the new
    list at index `i` differs from the old `unit.Abilities[i]`, move the
    entry under the new key and delete the old key. Indices beyond the old

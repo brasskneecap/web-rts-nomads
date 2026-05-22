@@ -50,8 +50,9 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 	mux.HandleFunc("/catalog/units", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"units": game.ListUnitDefs(),
-			"paths": game.ListPathBounds(),
+			"units":       game.ListUnitDefs(),
+			"paths":       game.ListPathBounds(),
+			"pathsByUnit": game.ListPathsByUnitType(),
 		})
 	})
 

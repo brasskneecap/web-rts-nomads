@@ -20,7 +20,7 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // newClericBronzeState returns a GameState with:
-//   - cleric: an Apprentice owned by "p1" at (400,400). Visible, full HP,
+//   - cleric: an Acolyte owned by "p1" at (400,400). Visible, full HP,
 //     large AttackRange so range never gates tests. MaxMana and CurrentMana
 //     set generously.
 //   - A wave-enemy soldier at (600,400) for damage tests that need a hostile.
@@ -32,7 +32,7 @@ func newClericBronzeState(t *testing.T) (s *GameState, cleric *Unit) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cleric = s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	cleric = s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	cleric.Visible = true
 	cleric.HP = cleric.MaxHP
 	cleric.AttackRange = 1000 // large range so tests don't depend on distance
@@ -455,7 +455,7 @@ func TestBattlePrayer_BuffAppliedToAllGreaterHealTargets(t *testing.T) {
 	s.mu.Lock()
 	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "heal" {
 		s.mu.Unlock()
-		t.Skipf("apprentice Abilities[0] != \"heal\"")
+		t.Skipf("acolyte Abilities[0] != \"heal\"")
 	}
 	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
 	// grant runs the heal → greater_heal swap.
@@ -953,7 +953,7 @@ func TestSanctuary_OverlappingAurasTakeMaxNoStack(t *testing.T) {
 	// (1 - catalogValue) when both are in range, not (1 - catalogValue)^2.
 	grantPerk(clericA, "sanctuary")
 
-	clericB := s.spawnPlayerUnitLocked("apprentice", "p1", "#aabbcc", protocol.Vec2{X: 410, Y: 400})
+	clericB := s.spawnPlayerUnitLocked("acolyte", "p1", "#aabbcc", protocol.Vec2{X: 410, Y: 400})
 	clericB.Visible = true
 	grantPerk(clericB, "sanctuary")
 
@@ -1115,7 +1115,7 @@ func TestManaConduit_ClampsAtMaxMana(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestNoFocus_AutoHealUnchangedForSingleTarget verifies that a heal-only
-// Apprentice without focus and without greater_heal behaves identically to the
+// Acolyte without focus and without greater_heal behaves identically to the
 // pre-change single-target behavior: exactly one heal event, one healing_glow
 // VFX, and exactly one HP delta on the ally.
 func TestNoFocus_AutoHealUnchangedForSingleTarget(t *testing.T) {
@@ -1131,12 +1131,12 @@ func TestNoFocus_AutoHealUnchangedForSingleTarget(t *testing.T) {
 	// Confirm no focus, no greater_heal perk.
 	if app.FocusTargetID != 0 {
 		s.mu.Unlock()
-		t.Fatal("precondition: apprentice should have no focus target")
+		t.Fatal("precondition: acolyte should have no focus target")
 	}
 	for _, p := range app.PerkIDs {
 		if p == "greater_heal" {
 			s.mu.Unlock()
-			t.Skip("apprentice already has greater_heal; skip single-target regression test")
+			t.Skip("acolyte already has greater_heal; skip single-target regression test")
 		}
 	}
 

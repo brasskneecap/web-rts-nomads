@@ -3957,7 +3957,7 @@
       {
         "color": "NORM-STR",
         "lockedUnitTypes": [
-          "apprentice",
+          "acolyte",
           "archer"
         ],
         "playerId": "baseline-player",

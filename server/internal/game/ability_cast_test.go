@@ -19,8 +19,8 @@ func healDef(t *testing.T) AbilityDef {
 	return def
 }
 
-// healSetup spawns an apprentice (p1) and a damaged friendly soldier within
-// the apprentice's cast range. The ally is left missing strictly more HP than
+// healSetup spawns an acolyte (p1) and a damaged friendly soldier within
+// the acolyte's cast range. The ally is left missing strictly more HP than
 // a single heal restores (derived from the catalog), so exact-heal assertions
 // never collide with the no-overheal clamp regardless of how healAmount is
 // tuned in JSON. Lock is NOT held on return.
@@ -29,7 +29,7 @@ func healSetup(t *testing.T) (s *GameState, app, ally *Unit) {
 	s = newProjectileTestState(t)
 	def := healDef(t)
 	s.mu.Lock()
-	app = s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	app = s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	app.Visible = true
 	// Catalog seeds heal auto-cast ON for player units at spawn
 	// (heal.json → defaultAutoCast: true). The tests using this helper want
@@ -204,7 +204,7 @@ func TestHeal_CastTimePreventsInstantResolution(t *testing.T) {
 func TestHeal_CasterLockedDuringCast(t *testing.T) {
 	s, app, ally := healSetup(t)
 	s.mu.Lock()
-	// An enemy sits in the apprentice's attack range: normally it would shoot.
+	// An enemy sits in the acolyte's attack range: normally it would shoot.
 	enemy := spawnProjTestUnit(t, s, enemyPlayerID, 400+120, 400)
 	enemy.MoveSpeed = 0
 	appID := app.ID

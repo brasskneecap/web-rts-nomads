@@ -22,7 +22,7 @@ The Cleric promotion path currently has only base Heal and no Bronze perks (its 
 
 ### New Capabilities
 
-- `cleric-focus-target`: Player-issued sticky support assignment for Cleric/Apprentice — order type, ID-stored target, follow movement at configurable distance, heal prioritization on focus, clearing semantics (any new order, target death/invalid, right-click button, failed-target re-pick), new protocol message, and client UI (button toggle + targeting cursor + selection-HUD indicator + ally marker).
+- `cleric-focus-target`: Player-issued sticky support assignment for Cleric/Acolyte — order type, ID-stored target, follow movement at configurable distance, heal prioritization on focus, clearing semantics (any new order, target death/invalid, right-click button, failed-target re-pick), new protocol message, and client UI (button toggle + targeting cursor + selection-HUD indicator + ally marker).
 - `cleric-bronze-perks`: The four authored Cleric Bronze perks (`greater_heal`, `sanctuary`, `battle_prayer`, `mana_conduit`), their `PerkDef.Config` tuning surface, the runtime hooks each plugs into (post-cast resolve hook, aura mitigation, per-tick scan), and the ability-swap mechanic that turns Heal into Greater Heal when the perk is granted. Includes Battle Prayer's cross-unit buff state and recast-threshold semantics that interact with focus target.
 - `ability-multi-target`: Extension of `AbilityDef` with an optional `TargetCount int` field (default 1). The resolver, when invoked with TargetCount > 1, applies the ability to up to N lowest-HP-percent valid allies within cast range, with explicit prioritization for a caster-provided "force-include" target (used by focus target). Single-target abilities are byte-identical to today.
 
@@ -43,7 +43,7 @@ The Cleric promotion path currently has only base Heal and no Bronze perks (its 
 - `server/internal/game/damage_pipeline.go` — call site for sanctuary mitigation when `src.Kind == "projectile"`.
 - `server/internal/game/state_movement.go` — follow path when `Order.Type == OrderFocusFollow`.
 - `server/internal/game/focus_target.go` *(new file)* — `RequestSetFocusTargetLocked`, `clearFocusTargetLocked`, per-tick validation helper.
-- `server/internal/game/catalog/units/human/apprentice/paths/cleric/perks/bronze.json` — the four new perks with `Config` tuning.
+- `server/internal/game/catalog/units/human/acolyte/paths/cleric/perks/bronze.json` — the four new perks with `Config` tuning.
 - `server/internal/game/catalog/abilities/heal/heal.json` — confirm `category: "heal"` already set; no behavior change required, but add `targetCount: 1` for clarity.
 - `server/internal/game/catalog/abilities/greater_heal/greater_heal.json` — `targetCount: 3`, `manaCost: 10`, `healAmount: 10`.
 - `server/pkg/protocol/messages.go` — `SetFocusTargetCommandMessage`.

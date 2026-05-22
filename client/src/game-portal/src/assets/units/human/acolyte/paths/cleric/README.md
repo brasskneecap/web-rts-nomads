@@ -1,10 +1,10 @@
-# Cleric (Apprentice promotion path) — art placeholder
+# Cleric (Acolyte promotion path) — art placeholder
 
 This directory is reserved for the Cleric promotion variant's sprites. It is
 intentionally empty of art for now.
 
-Until a PixelLab export is dropped in here, Cleric apprentices render with the
-base `apprentice` sprite (the runtime loader in `unitSprites.ts` falls back
+Until a PixelLab export is dropped in here, Cleric acolytes render with the
+base `acolyte` sprite (the runtime loader in `unitSprites.ts` falls back
 from `path` → `unitType`), so the path is fully playable without art.
 
 ## Adding the art
@@ -18,9 +18,9 @@ from `path` → `unitType`), so the path is fully playable without art.
 2. From `client/src/game-portal/`, run `npm run pack:sprites`. The packer
    auto-discovers `<unit>/paths/<path>/` — no config to edit — and emits
    `packed/*.png` + `sprites.json` next to this file.
-3. If the new sprites are a different pixel size than the base Apprentice,
+3. If the new sprites are a different pixel size than the base Acolyte,
    add a `"bounds"` override to
-   `server/internal/game/catalog/units/human/apprentice/paths/cleric/cleric.json`
+   `server/internal/game/catalog/units/human/acolyte/paths/cleric/cleric.json`
    so the selection ring / hit-test rect match the new art.
 
 The keyed sprite id is the directory name (`cleric`), which must match the

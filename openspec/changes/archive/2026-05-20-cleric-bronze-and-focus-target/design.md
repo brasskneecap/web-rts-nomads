@@ -1,6 +1,6 @@
 ## Context
 
-The Apprentice → Cleric promotion path currently has Heal (single-target, mana-gated, cooldowned) and no perks (its `bronze.json` is `[]`). Greater Heal exists in the catalog (`catalog/abilities/greater_heal/greater_heal.json`) but is dormant — the file's own comment marks it as "DEFERRED" and "perk-gated REPLACEMENT of base heal". This change activates that intent and lays the rest of Cleric's identity on top.
+The Acolyte → Cleric promotion path currently has Heal (single-target, mana-gated, cooldowned) and no perks (its `bronze.json` is `[]`). Greater Heal exists in the catalog (`catalog/abilities/greater_heal/greater_heal.json`) but is dormant — the file's own comment marks it as "DEFERRED" and "perk-gated REPLACEMENT of base heal". This change activates that intent and lays the rest of Cleric's identity on top.
 
 The server is the simulation authority: a Go tick loop under `s.mu` mutates `GameState`, the client (TypeScript / Vue 3) is a thin view that sends command intents and renders snapshots. CLAUDE.md mandates that combat-and-AI targets be stored by **ID**, validated every tick — never by long-lived pointer — and the perk runtime already follows a tight recipe documented at `server/internal/game/perks.go:34-68`. The auras module (`perks_auras.go`) and cross-unit debuff decays (`WeakenedRemaining` / `TauntRemaining` in `state.go Update()`) are the prior-art patterns this design mirrors.
 
@@ -166,7 +166,7 @@ The selection HUD adds a single line: `Focusing: <unitName> (<currentHP>/<maxHP>
 
 ### Decision 12 — Cleric Bronze perks all roll from a single pool
 
-The existing perk pool mechanic in `perks.go:perkPoolForRankLocked` already handles this — we simply author all four perks in `catalog/units/human/apprentice/paths/cleric/perks/bronze.json` and rank-up uses the unchanged RNG roll. A Cleric reaching Bronze rank gets exactly one of the four. No exclusion / requires-perk gating between them at Bronze tier (Silver/Gold will gate via `requiresPerk` later, out of scope here).
+The existing perk pool mechanic in `perks.go:perkPoolForRankLocked` already handles this — we simply author all four perks in `catalog/units/human/acolyte/paths/cleric/perks/bronze.json` and rank-up uses the unchanged RNG roll. A Cleric reaching Bronze rank gets exactly one of the four. No exclusion / requires-perk gating between them at Bronze tier (Silver/Gold will gate via `requiresPerk` later, out of scope here).
 
 ## Risks / Trade-offs
 

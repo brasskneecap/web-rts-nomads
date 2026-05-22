@@ -1,6 +1,6 @@
 {
-  "type": "apprentice",
-  "name": "Apprentice",
+  "type": "adept",
+  "name": "Adept",
   "faction": "human",
   "archetype": "caster",
   "combatProfile": "caster",
@@ -23,7 +23,7 @@
     "move",
     "attack"
   ],
-  "trainLabel": "Train Apprentice",
+  "trainLabel": "Train Adept",
   "maxMana": 50,
   "manaRegenRate": 1.0,
   "projectile": "fire_bolt",
@@ -33,7 +33,7 @@
     "heal"
   ],
   "metadata": {
-    "todo": "Tune these values after playtesting — base stats are copied verbatim from archer; maxMana/manaRegenRate are placeholder values."
+    "todo": "Placeholder — copied verbatim from acolyte.json so the catalog loader accepts the dir. Author real Adept stats (HP/damage/range/cost/abilities/etc.) before this unit ships."
   },
   "attackVisual": {
     "kind": "projectile",

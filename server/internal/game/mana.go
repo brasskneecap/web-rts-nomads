@@ -13,7 +13,7 @@ package game
 //   - Spending more mana than available fails and changes nothing.
 //
 // TODO(tuning): mana costs / regen rates are authored per ability and per
-// unit (see Part 6 ability defs and Part 7 Apprentice). This file owns only
+// unit (see Part 6 ability defs and Part 7 Acolyte). This file owns only
 // the resource mechanics, not the values.
 
 // tickUnitManaRegenLocked advances a unit's passive mana regeneration for one

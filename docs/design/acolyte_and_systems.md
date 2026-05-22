@@ -1,8 +1,8 @@
-# Apprentice & Spellcaster Systems
+# Acolyte & Spellcaster Systems
 
-Reference for the systems introduced to support the **Apprentice**, the
+Reference for the systems introduced to support the **Acolyte**, the
 faction's first spellcaster. These systems are deliberately generic — the
-Apprentice and its **Heal** spell are simply the first consumers. Use this
+Acolyte and its **Heal** spell are simply the first consumers. Use this
 doc when adding future spellcaster units or abilities.
 
 > **Conventions used throughout** (per `.claude/rules/AI_RULES.md`)
@@ -263,14 +263,14 @@ spec `TODO`).
 
 ---
 
-## 6. The Apprentice & Heal — first consumers
+## 6. The Acolyte & Heal — first consumers
 
-**Apprentice** (`catalog/units/human/apprentice/apprentice.json`): base stats
+**Acolyte** (`catalog/units/human/acolyte/acolyte.json`): base stats
 copied verbatim from `archer` (placeholder — `metadata.todo` flags
 post-playtest tuning). Key wiring:
 
 - `combatProfile: "archer"` — **load-bearing**: `inferCombatArchetype`
-  switches on `UnitType`, so without this the `"apprentice"` type would fall
+  switches on `UnitType`, so without this the `"acolyte"` type would fall
   through to the melee `soldier` profile. This makes it ranged.
 - Mana: `maxMana 50`, `manaRegenRate 1.0` (placeholders), `CurrentMana`
   starts full.
