@@ -31,10 +31,13 @@ desktop/src-tauri/target/release/steam_api64.dll
 desktop/src-tauri/target/release/steam_appid.txt
 desktop/src-tauri/gen/
 
-# PixelLab per-frame unit exports — packed into sprites.json + packed/ strips
-# by `npm run pack:sprites`. The raw frames aren't imported by the runtime.
-# `**` covers both base units (units/<faction>/<unit>/animations/) and
-# promotion variants (units/<faction>/<unit>/paths/<path>/animations/), plus
-# any other asset category that follows the same pack-from-frames pattern.
+# PixelLab per-frame unit exports — packed into sprites.json + packed/ sheets
+# by `npm run pack:sprites`. The raw frames and rotation PNGs aren't loaded
+# at runtime (the loader reads packed/walking.png, packed/attacking.png,
+# packed/rotations.png — sliced into per-direction images on the fly). `**`
+# covers both base units (units/<faction>/<unit>/) and promotion variants
+# (units/<faction>/<unit>/paths/<path>/), plus any other asset category
+# that follows the same pack-from-frames pattern.
 client/src/game-portal/src/assets/**/animations/
+client/src/game-portal/src/assets/**/rotations/
 *.bak
