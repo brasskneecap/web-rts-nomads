@@ -273,6 +273,65 @@ function animSlugFromHashedName(name) {
   return name.split('-')[0].toLowerCase()
 }
 
+// Packs the 8 (or fewer) per-direction rotation PNGs into a single vertical
+// strip — 1 column wide, N rows tall — at packed/rotations.png. Returns the
+// manifest shape the runtime expects (sheet + rowOrder + frame size), or
+// `{pruned: true}` when the raw rotation frames have been deleted since the
+// last pack (caller should carry the prior manifest entry forward). Returns
+// null when the unit has no rotations declared at all.
+async function packRotationsSheet(unitDir, rotations) {
+  const dirs = DIRECTION_ORDER.filter((d) => typeof rotations[d] === 'string')
+  if (dirs.length === 0) return null
+
+  // Prune detection: if the first referenced rotation PNG is missing, treat
+  // the whole rotations set as pruned. Matches packAnimation's contract so a
+  // mid-clean-up state doesn't bring the whole run down.
+  const probe = path.join(unitDir, rotations[dirs[0]])
+  try {
+    await fs.access(probe)
+  } catch {
+    return { pruned: true }
+  }
+
+  const pngs = []
+  let frameWidth = 0
+  let frameHeight = 0
+  for (const dir of dirs) {
+    const png = await readPng(path.join(unitDir, rotations[dir]))
+    pngs.push(png)
+    if (!frameWidth) {
+      frameWidth = png.width
+      frameHeight = png.height
+    } else if (png.width !== frameWidth || png.height !== frameHeight) {
+      throw new Error(
+        `rotation size mismatch in ${unitDir}: expected ${frameWidth}x${frameHeight}, got ${png.width}x${png.height} for ${dir}`,
+      )
+    }
+  }
+
+  const sheetH = frameHeight * dirs.length
+  const sheet = new PNG({ width: frameWidth, height: sheetH })
+  for (let r = 0; r < dirs.length; r++) {
+    const src = pngs[r]
+    for (let y = 0; y < frameHeight; y++) {
+      const srcStart = y * src.width * 4
+      const dstStart = (r * frameHeight + y) * frameWidth * 4
+      src.data.copy(sheet.data, dstStart, srcStart, srcStart + frameWidth * 4)
+    }
+  }
+
+  const outDir = path.join(unitDir, 'packed')
+  await fs.mkdir(outDir, { recursive: true })
+  await fs.writeFile(path.join(outDir, 'rotations.png'), PNG.sync.write(sheet))
+
+  return {
+    sheet: 'packed/rotations.png',
+    rowOrder: dirs,
+    frameWidth,
+    frameHeight,
+  }
+}
+
 async function packUnit(unitDir) {
   const metaPath = path.join(unitDir, 'metadata.json')
   let meta
@@ -286,17 +345,28 @@ async function packUnit(unitDir) {
   const unitKey = path.basename(unitDir)
 
   // Raw PixelLab frames may have been pruned after a prior pack (see header
-  // comment — they're optional on disk). If the first referenced frame is
-  // gone, assume this unit is already packed and leave its sprites.json alone.
+  // comment — they're optional on disk). Only bail when BOTH the animation
+  // frames AND the rotation PNGs are gone — if rotations are still on disk
+  // (or there were never any to begin with), we still want to migrate the
+  // rotations into the packed-sheet manifest shape so existing units don't
+  // straggle on the legacy per-direction layout forever.
   const firstFrame = Object.values(meta?.frames?.animations ?? {})
     .flatMap((byDir) => Object.values(byDir ?? {}))
     .find((rels) => Array.isArray(rels) && rels.length > 0)?.[0]
+  const firstRotation = Object.values(meta?.frames?.rotations ?? {})
+    .find((rel) => typeof rel === 'string')
+  let animsPruned = false
+  let rotationsPruned = false
   if (firstFrame) {
-    try {
-      await fs.access(path.join(unitDir, firstFrame))
-    } catch {
-      return { alreadyPacked: true, unitKey }
-    }
+    try { await fs.access(path.join(unitDir, firstFrame)) } catch { animsPruned = true }
+  }
+  if (firstRotation) {
+    try { await fs.access(path.join(unitDir, firstRotation)) } catch { rotationsPruned = true }
+  }
+  // Both prunable resources gone (or never declared) → nothing to pack;
+  // keep the existing sprites.json untouched.
+  if ((!firstFrame || animsPruned) && (!firstRotation || rotationsPruned)) {
+    return { alreadyPacked: true, unitKey }
   }
 
   // Skip folders whose inputs haven't changed since the last pack. Includes
@@ -323,28 +393,44 @@ async function packUnit(unitDir) {
     height: meta?.character?.size?.height ?? 64,
   }
 
-  const rotations = {}
-  for (const [dir, rel] of Object.entries(meta?.frames?.rotations ?? {})) {
-    if (typeof rel !== 'string') continue
-    const source = path.join(unitDir, rel)
-    try {
-      await fs.access(source)
-      rotations[dir] = rel
-    } catch {
-      console.warn(`[pack:sprites] ${unitKey}: missing rotation '${rel}' — skipping`)
-    }
-  }
-
-  // Prior manifest — used to carry forward animation entries for animations
-  // whose raw frames have been pruned since the last pack.
+  // Prior manifest — used to carry forward animation entries and the
+  // rotations sheet entry when their raw inputs have been pruned since the
+  // last pack.
   let priorAnimations = {}
+  let priorRotations = null
   try {
     const prior = JSON.parse(await fs.readFile(path.join(unitDir, 'sprites.json'), 'utf8'))
     if (prior && typeof prior.animations === 'object' && prior.animations) {
       priorAnimations = prior.animations
     }
+    // Carry forward only the new packed-sheet shape. Legacy per-direction
+    // file-path manifests aren't portable post-prune — if the user pruned
+    // raw rotation PNGs without ever re-packing into the new shape, we drop
+    // rotations rather than ship a stale manifest reference.
+    if (prior && prior.rotations && typeof prior.rotations === 'object'
+        && typeof prior.rotations.sheet === 'string'
+        && Array.isArray(prior.rotations.rowOrder)) {
+      priorRotations = prior.rotations
+    }
   } catch {
     /* no prior manifest — nothing to carry forward */
+  }
+
+  // Pack rotations into a single vertical strip at packed/rotations.png —
+  // replaces the prior per-direction file references in the manifest. Lets
+  // the runtime load one sheet per unit instead of N rotation PNGs, and
+  // frees the raw rotations/ PNGs to be deleted by the user once they're
+  // confident in the pack.
+  let rotationsSheet = null
+  const rotResult = await packRotationsSheet(unitDir, meta?.frames?.rotations ?? {})
+  if (rotResult && rotResult.pruned) {
+    if (priorRotations) {
+      rotationsSheet = priorRotations
+    } else {
+      console.warn(`[pack:sprites] ${unitKey}: rotation frames pruned and no prior manifest entry — dropping`)
+    }
+  } else if (rotResult) {
+    rotationsSheet = rotResult
   }
 
   const animations = {}
@@ -372,7 +458,7 @@ async function packUnit(unitDir) {
   const manifest = {
     key: unitKey,
     size,
-    rotations,
+    ...(rotationsSheet ? { rotations: rotationsSheet } : {}),
     animations,
     packedAt: new Date().toISOString(),
   }
@@ -381,7 +467,7 @@ async function packUnit(unitDir) {
 
   return {
     unitKey,
-    rotations: Object.keys(rotations).length,
+    rotations: rotationsSheet ? rotationsSheet.rowOrder.length : 0,
     animations: Object.keys(animations).length,
     wroteManifest,
   }

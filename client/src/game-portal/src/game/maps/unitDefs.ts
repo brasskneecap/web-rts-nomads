@@ -106,6 +106,17 @@ export function initPathBounds(entries: Array<{ path: string; bounds: UnitBounds
   PATH_BOUNDS_MAP = new Map(entries.map((e) => [e.path, e.bounds]))
 }
 
+// Catalog topology: unit type → its promotion path ids, mirroring the
+// server directory layout under catalog/units/<faction>/<unit>/paths/.
+// Populated from the /catalog/units `pathsByUnit` field. Consumers (e.g.
+// DebugSpawnPanel) should derive their unit→path UI from this map instead
+// of duplicating the layout in code.
+export let PATHS_BY_UNIT_TYPE_MAP: Map<string, string[]> = new Map()
+
+export function initPathsByUnitType(byUnit: Record<string, string[]>): void {
+  PATHS_BY_UNIT_TYPE_MAP = new Map(Object.entries(byUnit))
+}
+
 // Resolves bounds for a unit instance, checking path before unitType. Mirrors
 // the path-then-type lookup in getUnitSpriteSet so a path-promoted unit's
 // selection ring tracks its own sprite, not the base unit's.

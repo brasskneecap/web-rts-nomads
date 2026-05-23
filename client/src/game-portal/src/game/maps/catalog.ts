@@ -68,6 +68,7 @@ export type PathBoundsEntry = { path: string; bounds: UnitBounds }
 export async function fetchUnitDefs(): Promise<{
   units: UnitDef[]
   paths: PathBoundsEntry[]
+  pathsByUnit: Record<string, string[]>
 }> {
   const response = await fetch(`${API_BASE}/catalog/units`)
 
@@ -78,8 +79,13 @@ export async function fetchUnitDefs(): Promise<{
   const data = (await response.json()) as {
     units: UnitDef[]
     paths?: PathBoundsEntry[]
+    pathsByUnit?: Record<string, string[]>
   }
-  return { units: data.units, paths: data.paths ?? [] }
+  return {
+    units: data.units,
+    paths: data.paths ?? [],
+    pathsByUnit: data.pathsByUnit ?? {},
+  }
 }
 
 export async function fetchPerkDefs(): Promise<PerkDef[]> {

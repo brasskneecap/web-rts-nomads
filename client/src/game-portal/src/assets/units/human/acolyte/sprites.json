@@ -1,0 +1,73 @@
+{
+  "key": "acolyte",
+  "size": {
+    "width": 108,
+    "height": 108
+  },
+  "rotations": {
+    "sheet": "packed/rotations.png",
+    "rowOrder": [
+      "north",
+      "south",
+      "east",
+      "west",
+      "north-east",
+      "south-east",
+      "south-west",
+      "north-west"
+    ],
+    "frameWidth": 108,
+    "frameHeight": 108
+  },
+  "animations": {
+    "walking": {
+      "frameCount": 4,
+      "frameWidth": 108,
+      "frameHeight": 108,
+      "sheet": "packed/walking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    },
+    "attacking": {
+      "frameCount": 5,
+      "frameWidth": 108,
+      "frameHeight": 108,
+      "sheet": "packed/attacking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    },
+    "casting": {
+      "frameCount": 5,
+      "frameWidth": 108,
+      "frameHeight": 108,
+      "sheet": "packed/casting.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    }
+  },
+  "packedAt": "2026-05-22T21:49:28.696Z"
+}

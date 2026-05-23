@@ -639,7 +639,7 @@ type UnitSnapshot struct {
 	MaxShield int `json:"maxShield,omitempty"`
 	// Mana / MaxMana: optional spellcaster resource pool. MaxMana == 0 means
 	// the unit has no mana (non-caster), which omitempty drops from the wire.
-	// Drives the blue mana bar under the HP bar for casters (e.g. apprentice).
+	// Drives the blue mana bar under the HP bar for casters (e.g. acolyte).
 	Mana    int `json:"mana,omitempty"`
 	MaxMana int `json:"maxMana,omitempty"`
 	// ActiveBuffs: entries for buffs currently active on this unit. `id` is

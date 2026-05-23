@@ -2,7 +2,7 @@
 
 ### Requirement: Cleric Bronze perk pool contains exactly four perks
 
-`catalog/units/human/apprentice/paths/cleric/perks/bronze.json` SHALL list exactly four perk definitions with IDs: `sanctuary`, `battle_prayer`, `bolstering_prayer`, `mana_conduit`. Each perk SHALL have a non-empty `Config map[string]float64` defining every tunable value (radii, percentages, durations, multipliers, caps, armor amounts). No tuning value SHALL be hardcoded in the Go runtime; all values SHALL be read from `def.Config[...]` at use sites, matching the existing perk-runtime convention (`rallying_banner`, `last_stand`, etc.).
+`catalog/units/human/acolyte/paths/cleric/perks/bronze.json` SHALL list exactly four perk definitions with IDs: `sanctuary`, `battle_prayer`, `bolstering_prayer`, `mana_conduit`. Each perk SHALL have a non-empty `Config map[string]float64` defining every tunable value (radii, percentages, durations, multipliers, caps, armor amounts). No tuning value SHALL be hardcoded in the Go runtime; all values SHALL be read from `def.Config[...]` at use sites, matching the existing perk-runtime convention (`rallying_banner`, `last_stand`, etc.).
 
 #### Scenario: Cleric Bronze pool loads exactly four perks
 
@@ -150,7 +150,7 @@ Bolstering Prayer SHALL be deterministic under a fixed seed and identical inputs
 
 ### Requirement: `greater_heal` perk swaps `"heal"` for `"greater_heal"` in `Unit.Abilities`
 
-**Reason:** Greater Heal is no longer a perk. It is a path-level baseline declared in `cleric.json`'s `"abilities"` override field (loaded by `path_defs.go` into `pathAbilitiesByPath`). Every promotion or recompute via `assignUnitPathAbilitiesLocked` replaces the base apprentice `["heal"]` with the cleric path's `["greater_heal"]` and migrates `AutoCastEnabled` / `AbilityCooldowns` by position. See the `per-path-ability-kits` delta for the path-override mechanism.
+**Reason:** Greater Heal is no longer a perk. It is a path-level baseline declared in `cleric.json`'s `"abilities"` override field (loaded by `path_defs.go` into `pathAbilitiesByPath`). Every promotion or recompute via `assignUnitPathAbilitiesLocked` replaces the base acolyte `["heal"]` with the cleric path's `["greater_heal"]` and migrates `AutoCastEnabled` / `AbilityCooldowns` by position. See the `per-path-ability-kits` delta for the path-override mechanism.
 
 **Migration:** Existing units holding the obsolete `greater_heal` perk id in `PerkIDs` keep the id (perk-def lookup returns nil and every hook handles that defensively). Their `Abilities` already contain `"greater_heal"` from the original swap (or now from the path-level override on next recompute), so the unit is functionally equivalent to a Cleric promoted under the new rules.
 

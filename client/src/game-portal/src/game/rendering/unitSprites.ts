@@ -47,10 +47,24 @@ export const UNIT_DIRECTIONS: readonly UnitDirection[] = [
 
 type DirectionMap<T> = Partial<Record<UnitDirection, T>>
 
+// Packed rotation manifest — emitted by pack:sprites since the rotation
+// consolidation pass. Single vertical strip (1 col × N rows) keyed by
+// rowOrder[row] = direction. Loaded once per unit, sliced into per-
+// direction Image elements at module init so the rendering / portrait
+// code keeps its existing DirectionMap<HTMLImageElement> shape.
+interface PackedRotations {
+  sheet: string
+  rowOrder: UnitDirection[]
+  frameWidth: number
+  frameHeight: number
+}
+
 interface SpriteManifest {
   key?: string
   size?: { width?: number; height?: number }
-  rotations?: DirectionMap<string>
+  // Packed rotations sheet. Legacy per-direction file paths are no longer
+  // supported by the runtime — re-run `npm run pack:sprites` to migrate.
+  rotations?: PackedRotations
   animations?: Record<string, {
     frameCount?: number
     frameWidth?: number
@@ -61,6 +75,12 @@ interface SpriteManifest {
     // Legacy layout: per-direction horizontal strip (row always 0).
     strips?: DirectionMap<string>
   }>
+}
+
+function isPackedRotations(r: unknown): r is PackedRotations {
+  if (!r || typeof r !== 'object') return false
+  const obj = r as Record<string, unknown>
+  return typeof obj.sheet === 'string' && Array.isArray(obj.rowOrder)
 }
 
 export interface DirectionSource {
@@ -101,11 +121,6 @@ const manifestGlob = import.meta.glob<SpriteManifest>(
   { eager: true, import: 'default' },
 )
 
-const rotationGlob = import.meta.glob<string>(
-  '../../assets/units/**/rotations/*.png',
-  { eager: true, query: '?url', import: 'default' },
-)
-
 const stripGlob = import.meta.glob<string>(
   '../../assets/units/**/packed/*.png',
   { eager: true, query: '?url', import: 'default' },
@@ -139,9 +154,9 @@ for (const [filePath, url] of Object.entries(portraitGlob)) {
 // dedicated carrying pose, instead of freezing on the idle rotation.
 //
 // `casting → attacking` covers spellcasters whose sprite set lacks a dedicated
-// casting sheet (e.g. the Cleric promotion variant of Apprentice): the cast
+// casting sheet (e.g. the Cleric promotion variant of Acolyte): the cast
 // reads as the unit's attack swing instead of a frozen rotation pose. Base
-// Apprentice has its own casting.png and is unaffected by this fallback.
+// Acolyte has its own casting.png and is unaffected by this fallback.
 const ANIMATION_FALLBACK: Record<string, string> = {
   carrying_gold: 'walking',
   casting: 'attacking',
@@ -153,6 +168,50 @@ function loadImage(url: string): HTMLImageElement {
   const img = new Image()
   img.src = url
   return img
+}
+
+// Loads a unit's packed rotations sheet and slices it into one HTMLImageElement
+// per direction (via canvas → data URL). Per-direction Image placeholders are
+// allocated synchronously so consumers can hold refs immediately; their src
+// (and thus naturalWidth) becomes valid once the underlying sheet decodes.
+// Keeps the public UnitSpriteSet.rotations: DirectionMap<HTMLImageElement>
+// shape unchanged, so renderer / portrait / ActionIcon code keeps working.
+function loadPackedRotations(
+  sheetUrl: string,
+  manifest: PackedRotations,
+): DirectionMap<HTMLImageElement> {
+  const dest: DirectionMap<HTMLImageElement> = {}
+  for (const dir of manifest.rowOrder) {
+    dest[dir] = new Image()
+  }
+
+  const sliceWhenReady = (sheet: HTMLImageElement) => {
+    for (let i = 0; i < manifest.rowOrder.length; i++) {
+      const dir = manifest.rowOrder[i]
+      const canvas = document.createElement('canvas')
+      canvas.width = manifest.frameWidth
+      canvas.height = manifest.frameHeight
+      const ctx = canvas.getContext('2d')
+      if (!ctx) continue
+      ctx.drawImage(
+        sheet,
+        0, i * manifest.frameHeight, manifest.frameWidth, manifest.frameHeight,
+        0, 0, manifest.frameWidth, manifest.frameHeight,
+      )
+      const placeholder = dest[dir]
+      if (placeholder) placeholder.src = canvas.toDataURL('image/png')
+    }
+  }
+
+  const sheet = new Image()
+  sheet.onload = () => sliceWhenReady(sheet)
+  sheet.src = sheetUrl
+  // Vite resolves bundled URLs at module init; the browser may have the
+  // image in HTTP cache already, in which case `.complete` is already true
+  // and onload won't fire. Slice synchronously in that case.
+  if (sheet.complete && sheet.naturalWidth > 0) sliceWhenReady(sheet)
+
+  return dest
 }
 
 for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
@@ -170,12 +229,17 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
     height: manifest.size?.height ?? 64,
   }
 
-  const rotations: DirectionMap<HTMLImageElement> = {}
-  for (const [dir, rel] of Object.entries(manifest.rotations ?? {})) {
-    if (!rel) continue
-    const url = rotationGlob[`${unitFolder}/${rel}`]
-    if (!url) continue
-    rotations[dir as UnitDirection] = loadImage(url)
+  let rotations: DirectionMap<HTMLImageElement> = {}
+  if (isPackedRotations(manifest.rotations)) {
+    const sheetUrl = stripGlob[`${unitFolder}/${manifest.rotations.sheet}`]
+    if (sheetUrl) {
+      rotations = loadPackedRotations(sheetUrl, manifest.rotations)
+    }
+  } else if (manifest.rotations) {
+    console.warn(
+      `[unitSprites] ${key}: sprites.json uses the legacy per-direction rotation shape; ` +
+      `re-run \`npm run pack:sprites\` to migrate to the packed-sheet layout.`,
+    )
   }
 
   const animations = new Map<string, StripAnimation>()

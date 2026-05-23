@@ -902,7 +902,7 @@ func averageUnitPosition(units []*Unit) protocol.Vec2 {
 // focus ally. The Cleric paths to a point focusFollowDistance px behind the
 // focus (in the direction from focus toward the Cleric) so they stay near but
 // not on top of each other. This value keeps the Cleric inside heal range for
-// a typical Apprentice/Cleric (cast range = match_attack_range ≈ 256 px).
+// a typical Acolyte/Cleric (cast range = match_attack_range ≈ 256 px).
 //
 // focusLeashSlack is the hysteresis band. A new path is only requested when
 // the current path's end-point is farther than (focusFollowDistance +

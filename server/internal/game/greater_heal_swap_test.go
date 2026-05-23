@@ -5,7 +5,7 @@ package game
 // Greater Heal lives in cleric.json as a path-level "abilities" override:
 // every cleric, on every promotion (and after every applyRankModifiersLocked
 // recompute) ends up with Abilities = ["greater_heal"] instead of the
-// apprentice's base ["heal"]. The recompute is in assignUnitPathAbilitiesLocked
+// acolyte's base ["heal"]. The recompute is in assignUnitPathAbilitiesLocked
 // (path_ability_defs.go), which also handles per-instance
 // AutoCastEnabled / AbilityCooldowns migration by position.
 //
@@ -28,7 +28,7 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestGreaterHeal_PathOverrideSwapsHealOnPromotion verifies the full recompute
-// flow: an apprentice with autocast on heal + a non-zero cooldown timer is
+// flow: an acolyte with autocast on heal + a non-zero cooldown timer is
 // promoted to (cleric, bronze) via the same assignUnitPathAbilitiesLocked call
 // path used in production by addUnitXPLocked and DebugSpawnUnit. After the
 // recompute:
@@ -42,7 +42,7 @@ func TestGreaterHeal_PathOverrideSwapsHealOnPromotion(t *testing.T) {
 	defer s.mu.Unlock()
 
 	if len(app.Abilities) == 0 || app.Abilities[0] != "heal" {
-		t.Skipf("apprentice Abilities[0] != \"heal\"; got %v", app.Abilities)
+		t.Skipf("acolyte Abilities[0] != \"heal\"; got %v", app.Abilities)
 	}
 	if app.AutoCastEnabled == nil {
 		app.AutoCastEnabled = make(map[string]bool)
@@ -138,7 +138,7 @@ func TestGreaterHeal_GrantedRegardlessOfBronzePerkRoll(t *testing.T) {
 			defer s.mu.Unlock()
 
 			if len(app.Abilities) == 0 || app.Abilities[0] != "heal" {
-				t.Skipf("apprentice Abilities[0] != \"heal\"; got %v", app.Abilities)
+				t.Skipf("acolyte Abilities[0] != \"heal\"; got %v", app.Abilities)
 			}
 
 			// Roll this specific Bronze perk, then run the path-ability
@@ -168,25 +168,25 @@ func TestGreaterHeal_GrantedRegardlessOfBronzePerkRoll(t *testing.T) {
 	}
 }
 
-// TestGreaterHeal_BaseApprenticeRetainsHeal is the negative control: an
-// apprentice without a path keeps base "heal" — the path override only fires
+// TestGreaterHeal_BaseAcolyteRetainsHeal is the negative control: an
+// acolyte without a path keeps base "heal" — the path override only fires
 // when ProgressionPath is set.
-func TestGreaterHeal_BaseApprenticeRetainsHeal(t *testing.T) {
+func TestGreaterHeal_BaseAcolyteRetainsHeal(t *testing.T) {
 	s, app, _ := healSetup(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Apprentice with no path. assignUnitPathAbilitiesLocked recomputes from
+	// Acolyte with no path. assignUnitPathAbilitiesLocked recomputes from
 	// the unit def's Abilities; the cleric override doesn't apply because
 	// ProgressionPath == "none".
 	s.assignUnitPathAbilitiesLocked(app)
 
 	if len(app.Abilities) == 0 || app.Abilities[0] != "heal" {
-		t.Errorf("base apprentice Abilities = %v; want first entry \"heal\"", app.Abilities)
+		t.Errorf("base acolyte Abilities = %v; want first entry \"heal\"", app.Abilities)
 	}
 	for _, id := range app.Abilities {
 		if id == "greater_heal" {
-			t.Errorf("base apprentice unexpectedly has greater_heal; Abilities = %v", app.Abilities)
+			t.Errorf("base acolyte unexpectedly has greater_heal; Abilities = %v", app.Abilities)
 		}
 	}
 }

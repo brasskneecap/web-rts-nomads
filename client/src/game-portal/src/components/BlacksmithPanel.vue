@@ -74,19 +74,15 @@
 import { ref } from 'vue'
 import type { PlayerUpgradeSnapshot } from '@/game/network/protocol'
 import { useDraggablePanel } from '@/composables/useDraggablePanel'
-
-const unitPortraitModules = import.meta.glob(
-  '@/assets/units/**/rotations/south.png',
-  { eager: true, import: 'default' }
-) as Record<string, string>
+import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 
 function unitPortrait(track: string): string {
-  // Match by `/<track>/rotations/...` — the recursive glob picks up both base
-  // unit dirs and path-promoted dirs (e.g. archer/paths/marksman), and the
-  // unit/path id is always the last directory segment before /rotations/.
-  const suffix = `/${track}/rotations/south.png`
-  const key = Object.keys(unitPortraitModules).find(k => k.endsWith(suffix))
-  return key ? unitPortraitModules[key] : ''
+  // Delegates to the shared unit-sprite portrait resolver — prefers a
+  // dedicated portrait.png next to the track's sprites.json, otherwise
+  // falls back to the south-facing rotation sliced out of the packed
+  // rotations sheet. Empty string when nothing is available so the
+  // <img> tag silently shows no source instead of a broken icon.
+  return getUnitPortraitUrl(undefined, track) ?? ''
 }
 
 const props = defineProps<{

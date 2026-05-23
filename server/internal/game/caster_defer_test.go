@@ -62,9 +62,9 @@ func TestDefer_GrantEngine_AppendsInOrderAndIdempotent(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	if app == nil {
-		t.Fatal("failed to spawn apprentice")
+		t.Fatal("failed to spawn acolyte")
 	}
 	base := append([]string(nil), app.Abilities...)
 
@@ -109,9 +109,9 @@ func TestDefer_GrantEngine_MultiRankCatchupNoDuplicates(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	if app == nil {
-		t.Fatal("failed to spawn apprentice")
+		t.Fatal("failed to spawn acolyte")
 	}
 
 	withSyntheticPathGrant(t, unitPathCleric, unitRankBronze, []string{"synth_bronze"})
@@ -170,9 +170,9 @@ func TestDefer_GrantEngine_RNGFree(t *testing.T) {
 				Vault:                         []*VaultItem{},
 			}
 		}
-		app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		if app == nil {
-			t.Fatal("failed to spawn apprentice")
+			t.Fatal("failed to spawn acolyte")
 		}
 		app.ProgressionPath = unitPathCleric
 		silverThreshold := rankDefByName(unitRankSilver).XPThreshold
@@ -211,12 +211,12 @@ func TestDefer_GrantedAbilityInSnapshot(t *testing.T) {
 		t.Fatal(`getAbilityDef("greater_heal") = _, false; the dormant def must still load and resolve`)
 	}
 
-	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	if app == nil {
-		t.Fatal("failed to spawn apprentice")
+		t.Fatal("failed to spawn acolyte")
 	}
 	if abilitiesContain(app.Abilities, "greater_heal") {
-		t.Fatal("precondition: apprentice must not already have greater_heal (it is dormant/ungranted)")
+		t.Fatal("precondition: acolyte must not already have greater_heal (it is dormant/ungranted)")
 	}
 	// Add it directly — the snapshot path reads unit.Abilities regardless of
 	// how an id got there; this isolates the snapshot mechanism from grants.

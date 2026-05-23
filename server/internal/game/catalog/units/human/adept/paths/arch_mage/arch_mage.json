@@ -1,0 +1,40 @@
+{
+  "path": "arch_mage",
+  "description": "Offensive caster path for the Adept — intended fantasy is escalating spell damage. Stat tuning deferred: rows currently mirror the default rank curve (see defaultRankCurve in path_defs.go) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Arch Mage gets its formal pass. Bounds intentionally float her: the Adept's 108px footprint with `bottom` raised 18px to lift the sprite off the ground, and `ringOffsetY` pushed back down by the same amount so the selection ring stays planted where her feet would be — sells the hovering read together with the idle-as-walking bob (see pickAnimation in unitAnimation.ts).",
+  "bounds": {
+    "halfWidth": 20,
+    "top": -72,
+    "bottom": 18,
+    "ringOffsetX": 0,
+    "ringOffsetY": 3
+  },
+  "projectile": "dark_bolt",
+  "damageType": "shadow",
+  "projectileScale": 2.5,
+  "ranks": {
+    "bronze": {
+      "maxHPMultiplier": 1.10,
+      "damageMultiplier": 1.10,
+      "attackSpeedMultiplier": 1.00,
+      "moveSpeedMultiplier": 1.00,
+      "attackRangeMultiplier": 1.00,
+      "armor": 0
+    },
+    "silver": {
+      "maxHPMultiplier": 1.20,
+      "damageMultiplier": 1.25,
+      "attackSpeedMultiplier": 1.10,
+      "moveSpeedMultiplier": 1.00,
+      "attackRangeMultiplier": 1.00,
+      "armor": 0
+    },
+    "gold": {
+      "maxHPMultiplier": 1.35,
+      "damageMultiplier": 1.50,
+      "attackSpeedMultiplier": 1.25,
+      "moveSpeedMultiplier": 1.00,
+      "attackRangeMultiplier": 1.00,
+      "armor": 0
+    }
+  }
+}

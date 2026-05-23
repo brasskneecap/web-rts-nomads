@@ -43,7 +43,7 @@ import { GameState, type Unit, type ActionItem } from './GameState'
 function makeCleric(overrides: Partial<Unit> = {}): Unit {
   return {
     id: 1,
-    unitType: 'apprentice',
+    unitType: 'acolyte',
     name: 'Cleric',
     capabilities: ['attack'] as Unit['capabilities'],
     visible: true,

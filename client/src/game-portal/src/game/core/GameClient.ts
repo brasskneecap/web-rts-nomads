@@ -17,7 +17,7 @@ import type {
 import type { DebugSpawnConfig, PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
-import { UNIT_DEF_MAP, initPathBounds, initUnitDefs } from '../maps/unitDefs'
+import { UNIT_DEF_MAP, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs } from '../maps/perkDefs'
 import { initItemDefs } from '../maps/itemDefs'
@@ -141,6 +141,7 @@ export class GameClient {
     initObstacleDefs(obstacleDefs)
     initUnitDefs(unitDefs.units)
     initPathBounds(unitDefs.paths)
+    initPathsByUnitType(unitDefs.pathsByUnit)
     initActionIcons(actionIcons)
     initPerkDefs(perkDefs)
     initItemDefs(itemDefs)
@@ -158,9 +159,10 @@ export class GameClient {
     if (e.key !== 'F9') return
     e.preventDefault()
     void Promise.all([fetchUnitDefs(), fetchBuildingDefs()])
-      .then(([{ units, paths }, buildingDefs]) => {
+      .then(([{ units, paths, pathsByUnit }, buildingDefs]) => {
         initUnitDefs(units)
         initPathBounds(paths)
+        initPathsByUnitType(pathsByUnit)
         initBuildingDefs(buildingDefs)
         console.log('[dev] reloaded unit defs + path bounds + building defs')
       })

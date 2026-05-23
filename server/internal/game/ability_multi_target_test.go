@@ -21,7 +21,7 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // TestNoRegression_SingleTargetHealUnchanged verifies that a heal-only
-// Apprentice (no greater_heal, no focus) heals exactly one ally, deducts mana,
+// Acolyte (no greater_heal, no focus) heals exactly one ally, deducts mana,
 // and plays healing_glow — byte-identical to the pre-multi-target behavior.
 // This documents the invariant: TargetCount == 1 must produce identical
 // results to the original single-target resolver.
@@ -43,7 +43,7 @@ func TestNoRegression_SingleTargetHealUnchanged(t *testing.T) {
 	}
 	if app.FocusTargetID != 0 {
 		s.mu.Unlock()
-		t.Fatal("precondition: apprentice should have no focus")
+		t.Fatal("precondition: acolyte should have no focus")
 	}
 
 	allyID := ally.ID
@@ -103,7 +103,7 @@ func TestMultiTarget_ThreeInjuredAlliesAllReceiveHeal(t *testing.T) {
 	defer s.mu.Unlock()
 
 	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "heal" {
-		t.Skipf("apprentice Abilities[0] != \"heal\"")
+		t.Skipf("acolyte Abilities[0] != \"heal\"")
 	}
 	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
 	// grant runs the heal → greater_heal swap.
@@ -145,7 +145,7 @@ func TestMultiTarget_OnlyOneAllyInRange(t *testing.T) {
 	defer s.mu.Unlock()
 
 	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "heal" {
-		t.Skipf("apprentice Abilities[0] != \"heal\"")
+		t.Skipf("acolyte Abilities[0] != \"heal\"")
 	}
 	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
 	// grant runs the heal → greater_heal swap.
@@ -177,7 +177,7 @@ func TestMultiTarget_FullHPAlliesExcludedByDefault(t *testing.T) {
 	defer s.mu.Unlock()
 
 	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "heal" {
-		t.Skipf("apprentice Abilities[0] != \"heal\"")
+		t.Skipf("acolyte Abilities[0] != \"heal\"")
 	}
 	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
 	// grant runs the heal → greater_heal swap.
@@ -317,7 +317,7 @@ func TestMultiTarget_PostCastHookCalledPerTarget(t *testing.T) {
 	s.mu.Lock()
 	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "heal" {
 		s.mu.Unlock()
-		t.Skipf("apprentice Abilities[0] != \"heal\"")
+		t.Skipf("acolyte Abilities[0] != \"heal\"")
 	}
 	// Grant-pipeline test: promote to (cleric, bronze) so the path-ability
 	// grant runs the heal → greater_heal swap.
@@ -428,7 +428,7 @@ func TestAbilitySnapshot_TargetCountSingleTarget(t *testing.T) {
 			return
 		}
 	}
-	t.Skip("heal not in apprentice's ability snapshot; skip TargetCount surface test")
+	t.Skip("heal not in acolyte's ability snapshot; skip TargetCount surface test")
 }
 
 // TestAbilitySnapshot_TargetCountGreaterHeal verifies that a unit with
@@ -441,7 +441,7 @@ func TestAbilitySnapshot_TargetCountGreaterHeal(t *testing.T) {
 		s.mu.Unlock()
 		t.Skip("app doesn't have heal in slot 0")
 	}
-	// Grant-pipeline test: promote the apprentice to (cleric, bronze) so the
+	// Grant-pipeline test: promote the acolyte to (cleric, bronze) so the
 	// path-ability grant runs the heal → greater_heal swap.
 	promoteToBronzeCleric(s, app)
 	s.mu.Unlock()

@@ -3973,7 +3973,7 @@
           }
         ],
         "lockedUnitTypes": [
-          "apprentice",
+          "acolyte",
           "archer"
         ],
         "playerId": "baseline-player",

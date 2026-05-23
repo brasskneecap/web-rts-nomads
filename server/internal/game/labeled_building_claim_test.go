@@ -111,9 +111,9 @@ func TestClaimLabeledBuildings_PlayerOnlyClaimsMatchingLabel(t *testing.T) {
 		t.Errorf("chapel hp = %v (ok=%v); want %v", hp, ok, chapelDef.MaxHp)
 	}
 	// SpawnUnitTypes must be hydrated from the catalog so the chapel can train
-	// apprentices immediately on a claimed pre-built structure.
-	if len(chapel.SpawnUnitTypes) == 0 || chapel.SpawnUnitTypes[0] != "apprentice" {
-		t.Errorf("chapel.SpawnUnitTypes = %v; want [apprentice]", chapel.SpawnUnitTypes)
+	// acolytes immediately on a claimed pre-built structure.
+	if len(chapel.SpawnUnitTypes) == 0 || chapel.SpawnUnitTypes[0] != "acolyte" {
+		t.Errorf("chapel.SpawnUnitTypes = %v; want [acolyte]", chapel.SpawnUnitTypes)
 	}
 
 	barracks := s.getBuildingByIDLocked("barracks-1")

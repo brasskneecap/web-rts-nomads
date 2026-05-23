@@ -22,7 +22,7 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // newFocusTargetTestState returns a minimal GameState containing:
-//   - cleric: an Apprentice owned by "p1" at (400,400). Fully constructed, HP >
+//   - cleric: an Acolyte owned by "p1" at (400,400). Fully constructed, HP >
 //     0, Visible. Has the "heal" ability and autocast enabled on it.
 //   - ally: a soldier owned by "p1" at (450,400). Same team, visible, alive.
 //   - opponent: a soldier owned by the wave-enemy faction at (600,400).
@@ -35,7 +35,7 @@ func newFocusTargetTestState(t *testing.T) (s *GameState, cleric, ally, opponent
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cleric = s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	cleric = s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	cleric.Visible = true
 	cleric.HP = cleric.MaxHP
 	if cleric.AutoCastEnabled == nil {

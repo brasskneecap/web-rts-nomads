@@ -1,12 +1,12 @@
 ## 1. Investigation
 
-- [x] 1.1 Confirm the two grant files exist (`catalog/units/human/apprentice/paths/{cleric,arch_mage}/abilities/silver.json`) and that `pathAbilityGrantsFor` / `assignUnitPathAbilitiesLocked` read them; confirm no other `paths/*/abilities/*.json` exist
+- [x] 1.1 Confirm the two grant files exist (`catalog/units/human/acolyte/paths/{cleric,arch_mage}/abilities/silver.json`) and that `pathAbilityGrantsFor` / `assignUnitPathAbilitiesLocked` read them; confirm no other `paths/*/abilities/*.json` exist
 - [x] 1.2 In `caster_phase2_test.go`, identify exactly which tests depend on the real grant files vs. which set `unit.Abilities` directly (the latter are unaffected); list the synthetic-fixture seam (`pathAbilityGrantsByKey` + `pathModifierKey`)
 - [x] 1.3 Confirm no archived Phase-2 file and no engine file (`ability_priority.go`, `path_ability_defs.go`, `tickUnitAutoCastLocked`, `AbilityDef.DamageAmount`) needs to change
 
 ## 2. Remove Grant Content
 
-- [x] 2.1 Delete `catalog/units/human/apprentice/paths/cleric/abilities/silver.json` and `catalog/units/human/apprentice/paths/arch_mage/abilities/silver.json`
+- [x] 2.1 Delete `catalog/units/human/acolyte/paths/cleric/abilities/silver.json` and `catalog/units/human/acolyte/paths/arch_mage/abilities/silver.json`
 - [x] 2.2 Remove the now-empty `cleric/abilities/` and `arch_mage/abilities/` directories
 - [x] 2.3 Build + force catalog init; confirm it loads without panic and `pathAbilityGrantsFor` returns empty for every `(path,rank)`
 

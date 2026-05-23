@@ -37,7 +37,7 @@ type pathCatalogFile struct {
 	VisionRange float64 `json:"visionRange,omitempty"`
 	// Projectile overrides the unit def's Projectile (the ProjectileDef id the
 	// basic ranged attack fires) for units promoted onto this path — e.g. the
-	// Cleric firing "holy_bolt" instead of the Apprentice's "fire_bolt". Empty
+	// Cleric firing "holy_bolt" instead of the Acolyte's "fire_bolt". Empty
 	// ⇒ keep whatever the unit def set at spawn. Validated at load against the
 	// projectile catalog (same fail-loud contract as UnitDef.Projectile).
 	Projectile string `json:"projectile,omitempty"`
@@ -48,7 +48,7 @@ type pathCatalogFile struct {
 	DamageType DamageType `json:"damageType,omitempty"`
 	// ProjectileScale overrides the unit def's ProjectileScale (the per-unit
 	// projectile-sprite render multiplier) for units promoted onto this path,
-	// so two paths of the same base unit (e.g. Apprentice → Cleric vs Arch
+	// so two paths of the same base unit (e.g. Acolyte → Cleric vs Arch
 	// Mage) can size their shots independently. Purely visual; > 0 ⇒ override,
 	// omitted / 0 ⇒ keep whatever the unit def set at spawn. Validated >= 0.
 	ProjectileScale float64 `json:"projectileScale,omitempty"`
@@ -61,9 +61,9 @@ type pathCatalogFile struct {
 	// A pointer-to-slice is used so the loader can distinguish "field absent"
 	// (no override, keep base) from "field present but empty" (this path has
 	// no abilities — strips the base list). The common case (cleric) is the
-	// "1-for-1 swap" pattern: apprentice ["heal"] → cleric ["greater_heal"].
+	// "1-for-1 swap" pattern: acolyte ["heal"] → cleric ["greater_heal"].
 	// Per-instance AutoCastEnabled / AbilityCooldowns are migrated by position
-	// in assignUnitPathAbilitiesLocked so a heal-autocasted apprentice keeps
+	// in assignUnitPathAbilitiesLocked so a heal-autocasted acolyte keeps
 	// autocast on greater_heal after promotion.
 	Abilities *[]string                    `json:"abilities,omitempty"`
 	Ranks     map[string]pathRankStatsJSON `json:"ranks"`
@@ -133,6 +133,14 @@ var pathProjectileScaleByPath = map[string]float64{}
 // pass.
 var pathAbilitiesByPath = map[string][]string{}
 
+// pathsByUnitType records the catalog topology: which unit directory owns
+// each path directory. Keyed by unit type, value is the sorted list of path
+// ids that live under catalog/units/<faction>/<unit>/paths/. Populated by
+// the init walk in this file. Exposed via ListPathsByUnitType so clients
+// (e.g. DebugSpawnPanel) can derive their unit→path UI from the directory
+// layout instead of duplicating it.
+var pathsByUnitType = map[string][]string{}
+
 // PathBoundsEntry is the shape served to the client: a path id plus its
 // raw bounds blob. Slice form (rather than map) gives stable ordering in
 // the JSON response.
@@ -149,6 +157,20 @@ func ListPathBounds() []PathBoundsEntry {
 		out = append(out, PathBoundsEntry{Path: path, Bounds: bounds})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
+}
+
+// ListPathsByUnitType returns a copy of the unit→paths catalog topology
+// (which path directories live under each unit directory). The returned
+// map is freshly allocated so callers can mutate it without affecting the
+// package state; path-id slices are stable-sorted.
+func ListPathsByUnitType() map[string][]string {
+	out := make(map[string][]string, len(pathsByUnitType))
+	for unitType, paths := range pathsByUnitType {
+		cp := make([]string, len(paths))
+		copy(cp, paths)
+		out[unitType] = cp
+	}
 	return out
 }
 
@@ -225,6 +247,7 @@ func init() {
 						pathsDir, pathEntry.Name()))
 				}
 				pathKey := pathEntry.Name()
+				pathsByUnitType[unitKey] = append(pathsByUnitType[unitKey], pathKey)
 				rel := pathsDir + "/" + pathKey + "/" + pathKey + ".json"
 				data, err := pathDefsFS.ReadFile(rel)
 				if err != nil {

@@ -99,7 +99,7 @@ func TestSetBuildingSpawnPoint_ChapelAccepted(t *testing.T) {
 		Visible:        true,
 		OwnerID:        &owner,
 		Capabilities:   []string{"unit-spawner"},
-		SpawnUnitTypes: []string{"apprentice"},
+		SpawnUnitTypes: []string{"acolyte"},
 		Metadata:       map[string]interface{}{},
 	})
 	if s.buildingsByID == nil {

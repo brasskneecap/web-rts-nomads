@@ -280,7 +280,7 @@ func TestZealousMarch_AdditionalCovererAddsStackBonus(t *testing.T) {
 	defer s.mu.Unlock()
 
 	grantPerk(clericA, "zealous_march")
-	clericB := s.spawnPlayerUnitLocked("apprentice", "p1", "#aabbcc", protocol.Vec2{X: 410, Y: 400})
+	clericB := s.spawnPlayerUnitLocked("acolyte", "p1", "#aabbcc", protocol.Vec2{X: 410, Y: 400})
 	clericB.Visible = true
 	grantPerk(clericB, "zealous_march")
 
@@ -312,10 +312,10 @@ func TestZealousMarch_ThreeCoverersAddTwoStacks(t *testing.T) {
 	defer s.mu.Unlock()
 
 	grantPerk(clericA, "zealous_march")
-	clericB := s.spawnPlayerUnitLocked("apprentice", "p1", "#aabbcc", protocol.Vec2{X: 410, Y: 400})
+	clericB := s.spawnPlayerUnitLocked("acolyte", "p1", "#aabbcc", protocol.Vec2{X: 410, Y: 400})
 	clericB.Visible = true
 	grantPerk(clericB, "zealous_march")
-	clericC := s.spawnPlayerUnitLocked("apprentice", "p1", "#ccddee", protocol.Vec2{X: 420, Y: 400})
+	clericC := s.spawnPlayerUnitLocked("acolyte", "p1", "#ccddee", protocol.Vec2{X: 420, Y: 400})
 	clericC.Visible = true
 	grantPerk(clericC, "zealous_march")
 

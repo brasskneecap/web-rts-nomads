@@ -4,7 +4,7 @@
 - [x] 1.2 Surface `TargetCount` on `AbilitySnapshot` (Go + TS types) and confirm it serialises to JSON without breaking existing snapshots.
 - [x] 1.3 Author `catalog/abilities/greater_heal/greater_heal.json`: set `category: "heal"`, `targetCount: 3`, `manaCost: 10`, `healAmount: 10`, `canTargetAllies: true`, `canTargetSelf: true`, ally-only selector. Drop the dormant comments — the file goes live.
 - [x] 1.4 Confirm `catalog/abilities/heal/heal.json` has `category: "heal"` (it already does) and explicitly add `"targetCount": 1` for clarity.
-- [x] 1.5 Author all four perks in `catalog/units/human/apprentice/paths/cleric/perks/bronze.json` with starting `Config` values:
+- [x] 1.5 Author all four perks in `catalog/units/human/acolyte/paths/cleric/perks/bronze.json` with starting `Config` values:
   - `greater_heal`: no `Config` keys needed beyond the ability swap (the heal numbers live on the ability def).
   - `sanctuary`: `radiusPixels: 192`, `damageReductionPercent: 0.25`.
   - `battle_prayer`: `buffDurationSeconds: 5.0`, `attackSpeedMultiplier: 0.25`, `recastThresholdPercent: 0.30`.
@@ -18,7 +18,7 @@
 - [x] 2.3 Add a `forceIncludeUnitID` parameter to the multi-target selector. When non-zero and resolves to a valid ally, force-include it (displace the highest-HP-percent natural pick if the natural set is already full).
 - [x] 2.4 Refactor `resolveAbilityCastLocked` to accept a `[]*Unit` target slice (length 1 for legacy single-target, length up to `TargetCount` for multi). Apply per-target effect (heal amount, effect, heal-event record, healing_glow VFX) once per target.
 - [x] 2.5 Update `tickUnitCastLocked` target-validation to re-check every target in the resolved set; if all targets become invalid, cancel the cast (single-target case is byte-identical: 1-element set).
-- [x] 2.6 Add a unit test verifying single-target abilities behave identically (no regression: pre/post snapshot of a heal-only Apprentice match).
+- [x] 2.6 Add a unit test verifying single-target abilities behave identically (no regression: pre/post snapshot of a heal-only Acolyte match).
 
 ## 3. Focus target — server state & protocol
 
@@ -132,7 +132,7 @@
 - [x] 14.21 `TestManaConduit_FullHPAlliesNotCounted` — 5 full-HP allies; assert zero bonus.
 - [x] 14.22 `TestManaConduit_EnemiesNotCounted` — injured enemy in range, no allies injured; assert zero bonus.
 - [x] 14.23 `TestManaConduit_ClampsAtMaxMana` — Cleric at full mana receiving bonus; assert `CurrentMana == MaxMana` after the tick.
-- [x] 14.24 `TestNoFocus_AutoHealUnchangedForSingleTarget` — Cleric without focus, no `greater_heal`; assert behavior is byte-identical to current heal-only Apprentice (this is the no-regression test).
+- [x] 14.24 `TestNoFocus_AutoHealUnchangedForSingleTarget` — Cleric without focus, no `greater_heal`; assert behavior is byte-identical to current heal-only Acolyte (this is the no-regression test).
 
 ## 15. Determinism tests
 

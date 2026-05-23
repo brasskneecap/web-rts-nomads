@@ -101,7 +101,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 import type { DebugSpawnConfig } from '@/game/core/GameState'
-import { UNIT_DEFS } from '@/game/maps/unitDefs'
+import { PATHS_BY_UNIT_TYPE_MAP, UNIT_DEFS } from '@/game/maps/unitDefs'
 import { PERK_DEFS, type PerkDef } from '@/game/maps/perkDefs'
 import { useDraggablePanel } from '@/composables/useDraggablePanel'
 
@@ -151,35 +151,29 @@ const unitTypeOptions = computed(() => {
   return fromCatalog.sort((a, b) => a.label.localeCompare(b.label))
 })
 
-// Promotion paths available per unit type. Mirrors the server's random
-// assignment switch in assignUnitPathOnRankUpLocked (progression.go) — that
-// is the source of truth; keep this in sync when a unit type gains a path.
-// Unit types absent here have no promotion paths (worker, raider, …) and
-// only get the "(none)" option. Labels match formatUnitPath in GameState.ts.
-const PATHS_BY_UNIT_TYPE: Record<string, { value: string; label: string }[]> = {
-  soldier: [
-    { value: 'vanguard', label: 'Vanguard' },
-    { value: 'berserker', label: 'Berserker' },
-  ],
-  archer: [
-    { value: 'trapper', label: 'Trapper' },
-    { value: 'marksman', label: 'Marksman' },
-  ],
-  apprentice: [
-    { value: 'cleric', label: 'Cleric' },
-    { value: 'arch_mage', label: 'Arch Mage' },
-  ],
+// Snake_case path id → Title Case display label (e.g. "arch_mage" → "Arch
+// Mage"). Used to label promotion-path options without maintaining a parallel
+// hardcoded lookup; the catalog is the source of truth for which paths exist.
+function formatPathLabel(pathId: string): string {
+  return pathId
+    .split('_')
+    .map((seg) => (seg ? seg[0].toUpperCase() + seg.slice(1) : seg))
+    .join(' ')
 }
 
 // Path dropdown options for the selected unit type: always "(none)" plus any
-// promotion paths that unit type can roll. Filtering to the relevant paths
-// keeps the list honest — the server applies whatever path is sent verbatim
-// (no eligibility check in DebugSpawnUnit), so an off-type pick would spawn a
-// nonsensical unit (e.g. a soldier on the arch_mage path).
-const pathOptions = computed(() => [
-  { value: 'none', label: '(none)' },
-  ...(PATHS_BY_UNIT_TYPE[unitType.value] ?? []),
-])
+// promotion paths that unit type owns in the server catalog
+// (PATHS_BY_UNIT_TYPE_MAP, populated from /catalog/units). Filtering to the
+// relevant paths keeps the list honest — the server applies whatever path
+// is sent verbatim (no eligibility check in DebugSpawnUnit), so an off-type
+// pick would spawn a nonsensical unit (e.g. a soldier on the arch_mage path).
+const pathOptions = computed(() => {
+  const paths = PATHS_BY_UNIT_TYPE_MAP.get(unitType.value) ?? []
+  return [
+    { value: 'none', label: '(none)' },
+    ...paths.map((p) => ({ value: p, label: formatPathLabel(p) })),
+  ]
+})
 
 // perkSlots determines which rank slots are visible given the selected rank.
 // A Silver-ranked unit gets Bronze + Silver slots; a Gold unit gets all three.

@@ -6,7 +6,7 @@ Defines the four authored Cleric Bronze perks (`greater_heal`, `sanctuary`, `bat
 ## Requirements
 ### Requirement: Cleric Bronze perk pool contains exactly four perks
 
-`catalog/units/human/apprentice/paths/cleric/perks/bronze.json` SHALL list exactly four perk definitions with IDs: `sanctuary`, `battle_prayer`, `bolstering_prayer`, `mana_conduit`. Each perk SHALL have a non-empty `Config map[string]float64` defining every tunable value (radii, percentages, durations, multipliers, caps, armor amounts). No tuning value SHALL be hardcoded in the Go runtime; all values SHALL be read from `def.Config[...]` at use sites, matching the existing perk-runtime convention (`rallying_banner`, `last_stand`, etc.).
+`catalog/units/human/acolyte/paths/cleric/perks/bronze.json` SHALL list exactly four perk definitions with IDs: `sanctuary`, `battle_prayer`, `bolstering_prayer`, `mana_conduit`. Each perk SHALL have a non-empty `Config map[string]float64` defining every tunable value (radii, percentages, durations, multipliers, caps, armor amounts). No tuning value SHALL be hardcoded in the Go runtime; all values SHALL be read from `def.Config[...]` at use sites, matching the existing perk-runtime convention (`rallying_banner`, `last_stand`, etc.).
 
 #### Scenario: Cleric Bronze pool loads exactly four perks
 

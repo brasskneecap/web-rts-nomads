@@ -14,7 +14,7 @@ const (
 
 // Promotion path constants. Assigned at Bronze rank and fixed for the unit's lifetime.
 // Soldiers randomly receive Vanguard or Berserker. Archers randomly receive
-// Trapper or Marksman. Apprentices randomly receive Cleric or Arch Mage.
+// Trapper or Marksman. Acolytes randomly receive Cleric or Arch Mage.
 const (
 	unitPathNone      = "none"
 	unitPathVanguard  = "vanguard"
@@ -136,9 +136,9 @@ var identityPathModifier = pathModifierDef{
 //	            baseline HP/damage/AS bumps.
 //	marksman  — precision-ranged archer; stat tuning deferred, rows currently
 //	            mirror the default rank curve.
-//	cleric    — support caster (Apprentice); stat tuning deferred, rows
+//	cleric    — support caster (Acolyte); stat tuning deferred, rows
 //	            currently mirror the default rank curve. No perks yet.
-//	arch_mage — offensive caster (Apprentice); stat tuning deferred, rows
+//	arch_mage — offensive caster (Adept); stat tuning deferred, rows
 //	            currently mirror the default rank curve. No perks yet.
 //	none      — default rank curve for units that earn XP without ever being
 //	            assigned a path (workers, future utility units).
@@ -323,7 +323,8 @@ func (s *GameState) addUnitXPRawFloatLocked(unit *Unit, amount float64) {
 //
 //   - Soldiers: randomly choose Vanguard or Berserker (50/50 via rngPerks).
 //   - Archers: randomly choose Trapper or Marksman (50/50 via rngPerks).
-//   - Apprentices: randomly choose Cleric or Arch Mage (50/50 via rngPerks).
+//   - Acolytes: always promote to Cleric (single-path).
+//   - Adepts: always promote to Arch Mage (single-path).
 //   - Other unit types: no path assignment (return early).
 func (s *GameState) assignUnitPathOnRankUpLocked(unit *Unit) {
 	if unit.ProgressionPath != unitPathNone {
@@ -339,9 +340,10 @@ func (s *GameState) assignUnitPathOnRankUpLocked(unit *Unit) {
 	case "archer":
 		paths := [2]string{unitPathTrapper, unitPathMarksman}
 		unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
-	case "apprentice":
-		paths := [2]string{unitPathCleric, unitPathArchMage}
-		unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
+	case "acolyte":
+		unit.ProgressionPath = unitPathCleric
+	case "adept":
+		unit.ProgressionPath = unitPathArchMage
 	default:
 		return
 	}

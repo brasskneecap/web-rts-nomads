@@ -9,7 +9,7 @@
 
 ## 2. Path Ability Loader (`path_ability_defs.go`)
 
-- [x] 2.1 Create `path_ability_defs.go` mirroring `path_defs.go`: embed FS, parse `catalog/units/human/apprentice/paths/<path>/abilities/<rank>.json` of shape `{ "grant": ["<id>", …] }` into `pathAbilityGrantsByKey` keyed by `(path,rank)`
+- [x] 2.1 Create `path_ability_defs.go` mirroring `path_defs.go`: embed FS, parse `catalog/units/human/acolyte/paths/<path>/abilities/<rank>.json` of shape `{ "grant": ["<id>", …] }` into `pathAbilityGrantsByKey` keyed by `(path,rank)`
 - [x] 2.2 Validate at load: unknown rank dir → panic (naming file+rank); a granted id with no registered `AbilityDef` → panic (naming file+id); missing file → empty grant (no error)
 - [x] 2.3 Add an accessor (twin of the `path_defs.go` getter) returning the ordered grant slice for a `(path,rank)`
 - [x] 2.4 Build; confirm package compiles and existing catalog still loads (no grant files yet → all cells empty)
@@ -45,14 +45,14 @@
 - [x] 6.3 Build + `go vet`; confirm inert for existing abilities (only `heal`, no `damageAmount`)
 - [x] 6.4 Author the Cleric heal-line ability def(s) (e.g. `catalog/abilities/greater_heal/greater_heal.json`) with `category: "heal"`, `supportsAutoCast`, `autoCastTargetSelector: "lowest_hp_percentage_ally_in_range"`, mana/cooldown/castRange per existing conventions
 - [x] 6.5 Author the Arch Mage offensive ability def(s) with `category: "offensive"`, `damageAmount`, a `damageType`, `supportsAutoCast`, and `autoCastTargetSelector: "closest_enemy_in_range"`
-- [x] 6.6 Author the grant files: `catalog/units/human/apprentice/paths/{cleric,arch_mage}/abilities/{bronze,silver,gold}.json` (`{ "grant": [...] }`) — ≥1 Cleric heal-line, ≥1 Arch Mage offensive
+- [x] 6.6 Author the grant files: `catalog/units/human/acolyte/paths/{cleric,arch_mage}/abilities/{bronze,silver,gold}.json` (`{ "grant": [...] }`) — ≥1 Cleric heal-line, ≥1 Arch Mage offensive
 - [x] 6.7 Build + start: confirm catalog loads without panic (validates 2.2 ability-id validation and the new defs)
 
 ## 7. Tests
 
 The full server suite is the no-regression gate. The no-regression equivalence (7.1) MUST pass before the multi-ability tests are trusted.
 
-- [x] 7.1 **No-regression gate:** seeded-replay equivalence — a heal-only (un-promoted) Apprentice casts heal on the identical set of ticks pre/post the autocast rework, same seed+inputs. Also assert the gather phase reproduces the exact prior gate set for a single candidate
+- [x] 7.1 **No-regression gate:** seeded-replay equivalence — a heal-only (un-promoted) Acolyte casts heal on the identical set of ticks pre/post the autocast rework, same seed+inputs. Also assert the gather phase reproduces the exact prior gate set for a single candidate
 - [x] 7.2 Test: a lone autocast ability with empty/unregistered `Category` still fires (fallback ≥ `minActivationScore`)
 - [x] 7.3 Test: highest-scored ready ability wins over an earlier slot; gated (cooldown/mana/no-target) abilities are never scored/cast; one cast/unit/tick; not while casting
 - [x] 7.4 Test: deterministic tiebreak (equal scores → lower slot index, then smaller id); below `minActivationScore` → casts nothing

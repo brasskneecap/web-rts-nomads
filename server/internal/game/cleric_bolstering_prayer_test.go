@@ -81,7 +81,7 @@ func TestBolsteringPrayer_BuffAppliedToAllGreaterHealTargets(t *testing.T) {
 	s.mu.Lock()
 	if len(cleric.Abilities) == 0 || cleric.Abilities[0] != "heal" {
 		s.mu.Unlock()
-		t.Skipf("apprentice Abilities[0] != \"heal\"")
+		t.Skipf("acolyte Abilities[0] != \"heal\"")
 	}
 	promoteToBronzeCleric(s, cleric)
 	grantPerk(cleric, "bolstering_prayer")
@@ -412,7 +412,7 @@ func TestBolstering_And_BattlePrayer_StackIndependently(t *testing.T) {
 	grantPerk(clericA, "battle_prayer")
 
 	// Second Cleric, same player, owning bolstering_prayer.
-	clericB := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 410, Y: 400})
+	clericB := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 410, Y: 400})
 	clericB.Visible = true
 	clericB.HP = clericB.MaxHP
 	clericB.AttackRange = 1000
@@ -527,7 +527,7 @@ func TestDeterminism_BolsteringPrayerBuffApplicationsAcrossReplays(t *testing.T)
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		cleric := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		cleric := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		cleric.Visible = true
 		cleric.HP = cleric.MaxHP
 		cleric.AttackRange = 1000

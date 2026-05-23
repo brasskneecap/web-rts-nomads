@@ -102,7 +102,7 @@ export type Unit = {
   perkIds?: string[]
   shield?: number
   maxShield?: number
-  /** Current mana for spellcaster units (apprentice). Absent for non-casters. */
+  /** Current mana for spellcaster units (acolyte). Absent for non-casters. */
   mana?: number
   /** Max mana pool. Absent/0 for units with no mana. Drives the mana bar. */
   maxMana?: number
@@ -2727,7 +2727,7 @@ function getGroupActions(
   // autocast handler for the "any-off → enable all" semantics).
   actions.push(...getSharedAbilityActionItems(units, activeMode, castAbilityId))
   // Focus Target — group variant. Surfaces when EVERY selected unit owns a
-  // heal-class ability, so a Cleric + Apprentice mixed pair still works.
+  // heal-class ability, so a Cleric + Acolyte mixed pair still works.
   if (units.every(unitOwnsHealAbility)) {
     actions.push(buildFocusTargetActionItem(units, activeMode))
   }

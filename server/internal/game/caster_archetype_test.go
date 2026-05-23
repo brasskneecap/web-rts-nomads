@@ -3,7 +3,7 @@ package game
 // caster_archetype_test.go — Phase-1 caster archetype acceptance tests (tasks 6.1–6.8).
 //
 // Task map:
-//   6.1  TestCasterProfile_ResolvedForApprentice + TestCasterProfile_StructuralDeltas
+//   6.1  TestCasterProfile_ResolvedForAcolyte + TestCasterProfile_StructuralDeltas
 //   6.2  TestCasterProfile_ArcherAndSupportUnchanged
 //   6.3  TestCasterScoring_StrategicValueEqualToSupport + TestCasterScoring_TypePreferenceEqualToSupport
 //   6.4  TestCasterKiting_RetreatsWhereArcherDoesNot
@@ -20,24 +20,24 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
-// ── 6.1: resolveCombatProfile returns "caster" for an Apprentice; structural deltas are correct ──
+// ── 6.1: resolveCombatProfile returns "caster" for an Acolyte; structural deltas are correct ──
 
-// TestCasterProfile_ResolvedForApprentice verifies that spawning an Apprentice
+// TestCasterProfile_ResolvedForAcolyte verifies that spawning an Acolyte
 // and calling resolveCombatProfile returns the "caster" profile (the catalog
-// flip in apprentice.json is in effect and the profile registry is loaded).
-func TestCasterProfile_ResolvedForApprentice(t *testing.T) {
+// flip in acolyte.json is in effect and the profile registry is loaded).
+func TestCasterProfile_ResolvedForAcolyte(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	if app == nil {
-		t.Fatal("failed to spawn apprentice")
+		t.Fatal("failed to spawn acolyte")
 	}
 
 	prof := resolveCombatProfile(app)
 	if prof.Name != "caster" {
-		t.Errorf("resolveCombatProfile(apprentice) = %q; want \"caster\"", prof.Name)
+		t.Errorf("resolveCombatProfile(acolyte) = %q; want \"caster\"", prof.Name)
 	}
 
 	// Also confirm the profile is in the registry directly.
@@ -351,7 +351,7 @@ func TestCasterScoring_TypePreferenceEqualToSupport(t *testing.T) {
 //
 //  (a) shouldRetreatLocked returns true for a caster-profiled unit and false for
 //      an archer-profiled unit given the same melee threat scenario.
-//  (b) An end-to-end live tick: the caster Apprentice enters "Repositioning"
+//  (b) An end-to-end live tick: the caster Acolyte enters "Repositioning"
 //      status while the archer does not, proving issueRetreatLocked fires.
 func TestCasterKiting_RetreatsWhereArcherDoesNot(t *testing.T) {
 	caster, ok := combatProfiles["caster"]
@@ -376,10 +376,10 @@ func TestCasterKiting_RetreatsWhereArcherDoesNot(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 
-	casterUnit := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 500, Y: 500})
+	casterUnit := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 500, Y: 500})
 	if casterUnit == nil {
 		s.mu.Unlock()
-		t.Fatal("failed to spawn apprentice (caster)")
+		t.Fatal("failed to spawn acolyte (caster)")
 	}
 	archerUnit := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 550, Y: 500})
 	if archerUnit == nil {
@@ -416,11 +416,11 @@ func TestCasterKiting_RetreatsWhereArcherDoesNot(t *testing.T) {
 	// ── Part (b): end-to-end tick observable ─────────────────────────────────
 	s2 := newProjectileTestState(t)
 	s2.mu.Lock()
-	app2 := s2.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 500, Y: 500})
+	app2 := s2.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 500, Y: 500})
 	app2.Visible = true
 	arch2 := s2.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 550, Y: 500})
 	arch2.Visible = true
-	// Melee enemy inside apprentice's trigger range (apprentice at 500,500).
+	// Melee enemy inside acolyte's trigger range (acolyte at 500,500).
 	enemy2 := spawnProjTestUnit(t, s2, enemyPlayerID, 500+meleeDist, 500)
 	enemy2.HP = 9999
 	enemy2.MoveSpeed = 0 // stationary — deterministic position each tick
@@ -442,7 +442,7 @@ func TestCasterKiting_RetreatsWhereArcherDoesNot(t *testing.T) {
 		t.Fatal("a unit was unexpectedly removed during the retreat tick")
 	}
 	if app2Live.Status != "Repositioning" {
-		t.Errorf("after one tick with melee enemy in trigger range, apprentice Status = %q; want \"Repositioning\" (caster must kite)",
+		t.Errorf("after one tick with melee enemy in trigger range, acolyte Status = %q; want \"Repositioning\" (caster must kite)",
 			app2Live.Status)
 	}
 	if arch2Live.Status == "Repositioning" {
@@ -450,41 +450,41 @@ func TestCasterKiting_RetreatsWhereArcherDoesNot(t *testing.T) {
 	}
 }
 
-// ── 6.5: Apprentice (archetype="caster") forfeits Swift Strikes (Delta 3) ────
+// ── 6.5: Acolyte (archetype="caster") forfeits Swift Strikes (Delta 3) ────
 
-// TestCasterUpgrade_SwiftStrikesForfeited asserts that an Apprentice unit with
+// TestCasterUpgrade_SwiftStrikesForfeited asserts that an Acolyte unit with
 // archetype="caster" does NOT match the archer-scoped swift_strikes_* upgrades
 // via matchesUpgradeScope, and that no archetype-scoped upgrade in the catalog
 // matches the caster archetype.
 //
 // DESIGN INTENT — this is NOT a regression:
 //
-//   Flipping the Apprentice's archetype from "archer" to "caster" is the
-//   mechanism by which the Apprentice is removed from the archer attack-speed
+//   Flipping the Acolyte's archetype from "archer" to "caster" is the
+//   mechanism by which the Acolyte is removed from the archer attack-speed
 //   upgrade pool. A backline caster should not inherit archer-specific upgrades.
 //   archetype is the role-separation boundary in upgrade_apply.go.
 //   If a future reader sees this test failing because a caster-scoped upgrade
 //   was added, update the assertion with a comment explaining the new upgrade —
 //   do not revert the archetype flip or delete this test.
 func TestCasterUpgrade_SwiftStrikesForfeited(t *testing.T) {
-	// Derive the apprentice archetype from the catalog, not a hardcoded string.
-	appDef, ok := getUnitDef("apprentice")
+	// Derive the acolyte archetype from the catalog, not a hardcoded string.
+	appDef, ok := getUnitDef("acolyte")
 	if !ok {
-		t.Fatal("apprentice unit def not registered")
+		t.Fatal("acolyte unit def not registered")
 	}
 	if appDef.Archetype != "caster" {
-		t.Fatalf("apprentice.Archetype = %q; want \"caster\" (catalog flip not in effect)", appDef.Archetype)
+		t.Fatalf("acolyte.Archetype = %q; want \"caster\" (catalog flip not in effect)", appDef.Archetype)
 	}
 
-	// Build a synthetic apprentice unit matching what spawnPlayerUnitLocked produces.
+	// Build a synthetic acolyte unit matching what spawnPlayerUnitLocked produces.
 	app := &Unit{
-		UnitType:  "apprentice",
+		UnitType:  "acolyte",
 		Archetype: appDef.Archetype,
 		HP:        100,
 		MaxHP:     100,
 	}
 
-	// Swift Strikes must NOT match the caster Apprentice.
+	// Swift Strikes must NOT match the caster Acolyte.
 	for _, upgradeID := range []string{"swift_strikes_common", "swift_strikes_rare"} {
 		def, exists := getUpgradeDef(upgradeID)
 		if !exists {
@@ -497,7 +497,7 @@ func TestCasterUpgrade_SwiftStrikesForfeited(t *testing.T) {
 			t.Fatalf("%s archetype = %q; expected \"archer\" — test assumption broken", upgradeID, def.Archetype)
 		}
 		if matchesUpgradeScope(def, app) {
-			t.Errorf("%s matches a caster Apprentice via matchesUpgradeScope; it must not (Apprentice archetype is now \"caster\", not \"archer\")",
+			t.Errorf("%s matches a caster Acolyte via matchesUpgradeScope; it must not (Acolyte archetype is now \"caster\", not \"archer\")",
 				upgradeID)
 		}
 	}
@@ -510,7 +510,7 @@ func TestCasterUpgrade_SwiftStrikesForfeited(t *testing.T) {
 			continue
 		}
 		if matchesUpgradeScope(def, app) {
-			t.Errorf("upgrade %q (scope=archetype, archetype=%q) matches a caster Apprentice; no caster-scoped upgrade should exist in Phase 1. If this is intentional (new caster upgrade added), update this assertion with a comment.",
+			t.Errorf("upgrade %q (scope=archetype, archetype=%q) matches a caster Acolyte; no caster-scoped upgrade should exist in Phase 1. If this is intentional (new caster upgrade added), update this assertion with a comment.",
 				def.ID, def.Archetype)
 		}
 	}
@@ -695,7 +695,7 @@ func TestAbilityCategory_CatalogValidation(t *testing.T) {
 
 // TestHealAutocast_GatingUnchangedByProfileFlip verifies that the mana / cooldown /
 // selector predicate gates for heal autocast produce the same decisions for a
-// caster-profiled Apprentice as they would for any unit with the same ability
+// caster-profiled Acolyte as they would for any unit with the same ability
 // and mana state: the profile change introduces no new gate and removes none.
 //
 // Two sub-cases:
@@ -710,7 +710,7 @@ func TestHealAutocast_GatingUnchangedByProfileFlip(t *testing.T) {
 
 	s.mu.Lock()
 	if p := resolveCombatProfile(app); p.Name != "caster" {
-		t.Fatalf("apprentice resolves to %q; expected \"caster\" (profile flip must be in effect)", p.Name)
+		t.Fatalf("acolyte resolves to %q; expected \"caster\" (profile flip must be in effect)", p.Name)
 	}
 	startHP := ally.HP
 	s.toggleAutoCastLocked(app, "heal")
@@ -743,7 +743,7 @@ func TestHealAutocast_GatingUnchangedByProfileFlip(t *testing.T) {
 	defer s2.mu.RUnlock()
 	ally2Live := s2.unitsByID[allyID2]
 	if ally2Live != nil && ally2Live.HP != startHP2 {
-		t.Error("heal fired with insufficient mana on caster-profiled Apprentice; the mana gate must be unchanged by the profile flip")
+		t.Error("heal fired with insufficient mana on caster-profiled Acolyte; the mana gate must be unchanged by the profile flip")
 	}
 	if app2.CastAbilityID != "" {
 		t.Error("CastAbilityID set despite insufficient mana; mana gate not working for caster profile")
@@ -755,7 +755,7 @@ func TestHealAutocast_GatingUnchangedByProfileFlip(t *testing.T) {
 // TestHealAutocast_SeededReplayNoMeleeNoDivergence is a TRIPWIRE for unintended
 // profile↔cadence coupling. It verifies the narrower guarantee from the proposal:
 //
-//   In a scenario with NO melee threat (the Apprentice never retreats),
+//   In a scenario with NO melee threat (the Acolyte never retreats),
 //   the set of ticks on which heal is auto-cast is identical across two
 //   seeded runs with the same seed and inputs.
 //
@@ -784,16 +784,16 @@ func TestHealAutocast_SeededReplayNoMeleeNoDivergence(t *testing.T) {
 			}
 		}
 
-		// Spawn Apprentice (caster profile after catalog flip).
-		app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+		// Spawn Acolyte (caster profile after catalog flip).
+		app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 		if app == nil {
 			s.mu.Unlock()
-			t.Fatal("failed to spawn apprentice in seeded state")
+			t.Fatal("failed to spawn acolyte in seeded state")
 		}
 		app.Visible = true
 
 		// Spawn a single permanently-damaged ally within heal range.
-		// No melee enemies — Apprentice never retreats, position is held constant.
+		// No melee enemies — Acolyte never retreats, position is held constant.
 		// The selector will target this ally every time mana permits.
 		ally := spawnProjTestUnit(t, s, "p1", 450, 400)
 		ally.HP = 1 // critically low — always a valid heal target

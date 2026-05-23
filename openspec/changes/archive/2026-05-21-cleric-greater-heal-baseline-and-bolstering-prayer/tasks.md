@@ -1,7 +1,7 @@
 ## 1. Catalog edits
 
-- [x] 1.1 Create `server/internal/game/catalog/units/human/apprentice/paths/cleric/abilities/bronze.json` with `{ "grant": ["greater_heal"] }`.
-- [x] 1.2 In `server/internal/game/catalog/units/human/apprentice/paths/cleric/perks/bronze.json`:
+- [x] 1.1 Create `server/internal/game/catalog/units/human/acolyte/paths/cleric/abilities/bronze.json` with `{ "grant": ["greater_heal"] }`.
+- [x] 1.2 In `server/internal/game/catalog/units/human/acolyte/paths/cleric/perks/bronze.json`:
   - Remove the `greater_heal` entry.
   - Add the `bolstering_prayer` entry with `Config: { buffDurationSeconds: 5.0, armorBonus: 50, recastThresholdPercent: 0.30 }`.
   - Confirm the file ends with exactly four entries: `sanctuary`, `battle_prayer`, `bolstering_prayer`, `mana_conduit` (order matches the existing convention — alphabetical or whatever the file's current style is; not significant for selection).

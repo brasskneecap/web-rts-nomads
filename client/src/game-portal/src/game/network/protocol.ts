@@ -607,7 +607,7 @@ export type UnitSnapshot = {
   shield?: number
   /** Max shield pool advertised by the unit's perks. */
   maxShield?: number
-  /** Current mana for spellcaster units (e.g. apprentice). Omitted (0) for
+  /** Current mana for spellcaster units (e.g. acolyte). Omitted (0) for
    *  non-casters. */
   mana?: number
   /** Max mana pool. 0/undefined for units that have no mana. Drives the

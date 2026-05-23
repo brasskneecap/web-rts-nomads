@@ -141,7 +141,7 @@ func (s *GameState) fireProjectileLocked(attacker, target *Unit, damage int) {
 // second arrow so the client can render a combined damage number).
 func (s *GameState) fireHomingProjectileLocked(attacker, target *Unit, damage int, variant string) {
 	// A unit may declare a projectile asset (UnitDef.projectile → ProjectileID,
-	// e.g. the Apprentice's "fire_bolt"). When set and resolvable, the shot
+	// e.g. the Acolyte's "fire_bolt"). When set and resolvable, the shot
 	// uses that def's speed and carries its follow/impact effects, and the
 	// wire Variant defaults to the projectile id so the client renders that
 	// sprite. Unset (the archer / default case) is unchanged: defaultProjectile

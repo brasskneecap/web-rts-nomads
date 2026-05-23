@@ -140,7 +140,7 @@ func init() {
 //
 // Composition (in order):
 //
-//  1. Start with the unit def's base abilities (apprentice → ["heal"]).
+//  1. Start with the unit def's base abilities (acolyte → ["heal"]).
 //  2. If the unit's path declares an "abilities" override in its path JSON
 //     (e.g. cleric.json's "abilities": ["greater_heal"]), REPLACE the list.
 //     This is the "1-for-1 upgrade" pattern — paths declare what their units
@@ -152,8 +152,8 @@ func init() {
 //     greater_heal lives in the path-level override above.
 //
 // Per-instance AutoCastEnabled / AbilityCooldowns are migrated by position
-// when an entry changes (e.g. apprentice "heal" at index 0 → cleric
-// "greater_heal" at index 0). A heal-autocasted apprentice promoted to
+// when an entry changes (e.g. acolyte "heal" at index 0 → cleric
+// "greater_heal" at index 0). A heal-autocasted acolyte promoted to
 // cleric keeps autocast on greater_heal automatically.
 //
 // Called every promotion event (addUnitXPLocked rank loop) and from

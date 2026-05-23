@@ -69,7 +69,7 @@ func TestTeam_AbilityTargetingIsTeamBased(t *testing.T) {
 func TestTeam_HealCastResolvesOnCrossOwnerTeammate(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
-	app := s.spawnPlayerUnitLocked("apprentice", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
+	app := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	app.Visible = true
 	def := healDef(t)
 	mate := spawnProjTestUnit(t, s, "p2", 450, 400) // different owner, same team

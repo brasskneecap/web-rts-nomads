@@ -72,7 +72,7 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		VisionRange:        baseVision,
 		HealthRegenPerSecond: defaultHealthRegenPerSecond,
 		// Spellcaster kit (zero values for non-casters). CurrentMana starts
-		// full per the Apprentice spec.
+		// full per the Acolyte spec.
 		MaxMana:            def.MaxMana,
 		CurrentMana:        def.MaxMana,
 		ManaRegenPerSecond: def.ManaRegenRate,
