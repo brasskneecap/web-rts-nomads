@@ -74,8 +74,39 @@ type combatTarget struct {
 }
 
 type combatEvalContext struct {
-	index   *combatSpatialIndex
-	blocked map[gridPoint]bool
+	index *combatSpatialIndex
+	// buildings indexes every player-owned building by world position so
+	// structureDefenseScoreLocked can query a small neighbourhood instead of
+	// iterating MapConfig.Buildings for every scored target. Bucket size
+	// matches combatStructureThreatRadius so a single bucket of margin
+	// guarantees correctness while keeping per-query work bounded.
+	buildings *buildingSpatialIndex
+	blocked   map[gridPoint]bool
+
+	// attacker is scratch state populated once per scoring pass (one call to
+	// selectBestTargetLocked) so the K-candidate scoring loop doesn't pay the
+	// same O(N) helper costs K times. Reset on every selectBestTargetLocked
+	// entry; readers must treat it as undefined outside a scoring pass.
+	attacker attackerScoringCtx
+}
+
+// attackerScoringCtx caches values that depend on the attacker but not on
+// the target being scored — hoisted out of scoreUnitTargetLocked /
+// unitTypePreference / backline helpers so the K-candidate loop reads them
+// instead of recomputing per candidate.
+type attackerScoringCtx struct {
+	// profile is the attacker's resolved combat profile. Resolving a unit's
+	// profile costs a unitDef map lookup plus a combatProfiles map lookup —
+	// cheap individually but repeated 4-6 times per candidate across the
+	// helper chain. Cached once per scoring pass.
+	profile CombatProfile
+
+	// frontlineAllyTargets is the set of unit IDs currently being attacked
+	// by an allied frontliner of the attacker, within 1.5× that ally's
+	// attack range (matches the historical isEngagedByFriendlyFrontlineLocked
+	// predicate). Built once per pass; replaces the per-candidate O(N) scan.
+	// Nil when no allied frontliner has a target — readers check len() == 0.
+	frontlineAllyTargets map[int]struct{}
 }
 
 const (
@@ -159,20 +190,49 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 		}
 	}
 
-	index := newCombatSpatialIndex(combatSpatialBucketSize)
+	// Reuse the shared per-tick unit index built at the top of Update. The
+	// fallback path (build-our-own) keeps tests that drive tickCombatAI
+	// directly (without going through Update) working — at production tick
+	// time s.unitSpatialIndex is never nil.
+	index := s.unitSpatialIndex
+	if index == nil {
+		index = newCombatSpatialIndex(combatSpatialBucketSize)
+		for _, u := range s.Units {
+			if u == nil || !u.Visible || u.HP <= 0 {
+				continue
+			}
+			index.add(u)
+		}
+	}
+	buildings := newBuildingSpatialIndex(combatStructureThreatRadius)
 	profileSection("combatAI.indexBuild", func() {
+		// Combat units still need initializeCombatUnitLocked called once per
+		// tick — that's combat-AI specific bookkeeping, not spatial-index
+		// state, so keep it in this loop even though the index itself was
+		// already built upstream.
 		for _, unit := range s.Units {
 			if unit == nil || !unit.Visible || unit.HP <= 0 {
 				continue
 			}
 			s.initializeCombatUnitLocked(unit)
-			index.add(unit)
+		}
+		// Index only player-owned buildings — structureDefenseScoreLocked
+		// only ever scores friendly buildings near a target, so anything
+		// without an owner (unclaimed map geometry) is uninteresting.
+		for i := range s.MapConfig.Buildings {
+			b := &s.MapConfig.Buildings[i]
+			if b.OwnerID == nil {
+				continue
+			}
+			center := s.buildingCenterLocked(b)
+			buildings.add(b, center.X, center.Y)
 		}
 	})
 
 	ctx := combatEvalContext{
-		index:   index,
-		blocked: blocked,
+		index:     index,
+		buildings: buildings,
+		blocked:   blocked,
 	}
 
 	// Units advancing toward a destination (no active unit target) slide their

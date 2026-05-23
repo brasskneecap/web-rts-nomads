@@ -69,6 +69,13 @@ func (s *GameState) shouldDropCurrentTargetLocked(unit *Unit, profile CombatProf
 func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ctx combatEvalContext) combatTarget {
 	best := combatTarget{Kind: combatTargetNone, Score: -math.MaxFloat64}
 
+	// Hoist per-attacker constants. These do not change across candidates, so
+	// they get computed once here instead of once-per-candidate inside the
+	// helper chain. ctx is a value, not a pointer; mutating fields on this
+	// frame's copy keeps the caller's context untouched.
+	ctx.attacker.profile = profile
+	ctx.attacker.frontlineAllyTargets = s.buildFrontlineAllyTargetsLocked(unit.OwnerID)
+
 	// Gate B: Hold units never move, so restrict acquisition to weapons range.
 	// This prevents a Hold unit from "pre-acquiring" a target it can't shoot
 	// until the enemy closes to AttackRange, which would cause the unit to
@@ -223,9 +230,9 @@ func (s *GameState) scoreUnitTargetLocked(unit, target *Unit, profile CombatProf
 	danger := s.estimateDangerScoreLocked(unit, target.X, target.Y, profile, ctx)
 	threatScore := clamp01(s.getThreatValueLocked(unit, target.ID) / 80)
 	targetValue := clamp01(s.unitStrategicValue(target) / 10)
-	typePreference := clamp01((s.unitTypePreference(unit, target) + 6) / 12)
+	typePreference := clamp01((s.unitTypePreference(unit, target, ctx) + 6) / 12)
 	protectScore := clamp01(s.backlineProtectionScoreLocked(unit.OwnerID, target) / 8)
-	structureDefense := clamp01(s.structureDefenseScoreLocked(unit, target) / 8)
+	structureDefense := clamp01(s.structureDefenseScoreLocked(unit, target, ctx) / 8)
 	cluster := 0.0
 	if profile.AoERadius > 0 {
 		cluster = clamp01(float64(s.countNearbyHostilesLocked(target, profile.AoERadius, ctx.index)-1) / 4)
@@ -341,8 +348,13 @@ func (s *GameState) buildingStrategicValue(building *protocol.BuildingTile) floa
 	}
 }
 
-func (s *GameState) unitTypePreference(unit, target *Unit) float64 {
-	profile := resolveCombatProfile(unit)
+func (s *GameState) unitTypePreference(unit, target *Unit, ctx combatEvalContext) float64 {
+	// Attacker profile already resolved at the top of selectBestTargetLocked;
+	// reuse it instead of paying another resolve per candidate.
+	profile := ctx.attacker.profile
+	if profile.Name == "" {
+		profile = resolveCombatProfile(unit)
+	}
 	targetProfile := resolveCombatProfile(target)
 
 	switch profile.Name {
@@ -357,7 +369,16 @@ func (s *GameState) unitTypePreference(unit, target *Unit) float64 {
 		if targetProfile.Frontline {
 			return -2
 		}
-		if s.isEngagedByFriendlyFrontlineLocked(unit.OwnerID, target) {
+		// Fast path: O(1) check against the precomputed set. Falls back to
+		// the legacy O(N) scan when ctx.attacker is unset (tests / call
+		// sites that build their own ctx without filling the scratch).
+		engaged := false
+		if ctx.attacker.frontlineAllyTargets != nil {
+			_, engaged = ctx.attacker.frontlineAllyTargets[target.ID]
+		} else {
+			engaged = s.isEngagedByFriendlyFrontlineLocked(unit.OwnerID, target)
+		}
+		if engaged {
 			return 4
 		}
 		if targetProfile.Name == "support" || targetProfile.Name == "caster" || targetProfile.Name == "mage" || targetProfile.Name == "catapult" || targetProfile.Name == "enemy_siege" {
@@ -425,8 +446,25 @@ func (s *GameState) backlineProtectionScoreLocked(ownerID string, target *Unit) 
 	return 1
 }
 
-func (s *GameState) structureDefenseScoreLocked(unit, target *Unit) float64 {
+func (s *GameState) structureDefenseScoreLocked(unit, target *Unit, ctx combatEvalContext) float64 {
+	// Fast path: bucket-index query against player buildings inside the
+	// structure-threat radius of the target. Falls back to the full scan
+	// when the index is absent (tests / legacy call sites that built their
+	// own ctx without a buildings index).
 	best := 0.0
+	if ctx.buildings != nil {
+		for _, entry := range ctx.buildings.query(target.X, target.Y, combatStructureThreatRadius) {
+			b := entry.Building
+			if b == nil || b.OwnerID == nil || !s.playersAreFriendlyLocked(*b.OwnerID, unit.OwnerID) {
+				continue
+			}
+			score := s.buildingStrategicValue(b)
+			if score > best {
+				best = score
+			}
+		}
+		return best / 2
+	}
 	for i := range s.MapConfig.Buildings {
 		building := &s.MapConfig.Buildings[i]
 		if building.OwnerID == nil || !s.playersAreFriendlyLocked(*building.OwnerID, unit.OwnerID) {
@@ -471,6 +509,44 @@ func (s *GameState) isEngagedByFriendlyFrontlineLocked(ownerID string, target *U
 		}
 	}
 	return false
+}
+
+// buildFrontlineAllyTargetsLocked precomputes the set of unit IDs that any
+// allied frontliner is currently attacking AND is within 1.5× attack range
+// of. Matches the historical isEngagedByFriendlyFrontlineLocked predicate;
+// built once per scoring pass so unitTypePreference becomes an O(1) map
+// lookup instead of an O(N) scan per candidate.
+//
+// Caller holds s.mu.
+func (s *GameState) buildFrontlineAllyTargetsLocked(ownerID string) map[int]struct{} {
+	var out map[int]struct{}
+	for _, ally := range s.Units {
+		if ally == nil || ally.HP <= 0 || !ally.Visible {
+			continue
+		}
+		if ally.AttackTargetID == 0 {
+			continue
+		}
+		if !s.playersAreFriendlyLocked(ally.OwnerID, ownerID) {
+			continue
+		}
+		if !resolveCombatProfile(ally).Frontline {
+			continue
+		}
+		target := s.getUnitByIDLocked(ally.AttackTargetID)
+		if target == nil {
+			continue
+		}
+		// Match the legacy radius check exactly so behaviour is bit-identical.
+		if distanceSquared(ally.X, ally.Y, target.X, target.Y) > ally.AttackRange*ally.AttackRange*2.25 {
+			continue
+		}
+		if out == nil {
+			out = map[int]struct{}{}
+		}
+		out[target.ID] = struct{}{}
+	}
+	return out
 }
 
 func (s *GameState) estimateDangerScoreLocked(unit *Unit, targetX, targetY float64, profile CombatProfile, ctx combatEvalContext) float64 {

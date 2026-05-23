@@ -451,20 +451,27 @@ func (s *GameState) perkBonusArmorLocked(unit *Unit) int {
 			}
 
 		case "interlock":
-			// Flat armor bonus while any allied (same OwnerID), visible, alive unit
-			// is within the configured radius. O(N) per call — same cost as brace.
-			// hasAllyInRangeLocked is shared with activeBuffIconsLocked to avoid
-			// duplicating the scan loop.
-			if s.hasAllyInRangeLocked(unit, def.Config["radius"]) {
+			// Prefer the per-tick predicate cache (recomputePerkPredicate-
+			// CacheLocked) so the snapshot path doesn't pay another O(N) scan
+			// for an answer the cache already computed. Fall back to a live
+			// scan when the cache is stale (helpers called outside Update,
+			// e.g. direct-call tests).
+			active := unit.PerkState.InterlockActive
+			if s.perkPredicateCacheTick != s.Tick {
+				active = s.hasAllyInRangeLocked(unit, def.Config["radius"])
+			}
+			if active {
 				total += int(def.Config["bonusArmor"])
 			}
 
 		case "brace":
-			// Flat armor bonus when surrounded by at least enemyThreshold visible
-			// enemies within the configured radius. Moved from the old percentage-
-			// DR hook — now contributes pre-mitigation armor instead.
-			enemyThreshold := int(def.Config["enemyThreshold"])
-			if s.countEnemiesInRangeLocked(unit, def.Config["radius"], enemyThreshold) >= enemyThreshold {
+			// Prefer the per-tick predicate cache — see interlock above.
+			active := unit.PerkState.BraceActive
+			if s.perkPredicateCacheTick != s.Tick {
+				threshold := int(def.Config["enemyThreshold"])
+				active = s.countEnemiesInRangeLocked(unit, def.Config["radius"], threshold) >= threshold
+			}
+			if active {
 				total += int(def.Config["bonusArmor"])
 			}
 

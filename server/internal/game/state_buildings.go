@@ -566,8 +566,9 @@ func (s *GameState) RepairBuilding(playerID string, unitIDs []int, buildingID st
 			continue
 		}
 
+		// Decrement counter BEFORE wiping GatherTargetID — helper keys on it.
+		s.setUnitMiningInsideLocked(unit, false)
 		unit.GatherTargetID = ""
-		unit.MiningInside = false
 		unit.Building = false
 		unit.InsideBuilder = false
 		unit.RepairChargeAccumulator = 0

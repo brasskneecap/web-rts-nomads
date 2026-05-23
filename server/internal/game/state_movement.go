@@ -620,10 +620,13 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.StuckSampleX = unit.X
 	unit.StuckSampleY = unit.Y
 	unit.StuckSampleAccum = 0
+	// Decrement the workersInsideResource counter BEFORE GatherTargetID is
+	// cleared — the helper keys on the current target ID. setUnit-
+	// MiningInsideLocked is a no-op when MiningInside was already false.
+	s.setUnitMiningInsideLocked(unit, false)
 	unit.GatherTargetID = ""
 	unit.GatherBuildingType = ""
 	unit.ReturnTargetID = ""
-	unit.MiningInside = false
 	unit.MiningRemaining = 0
 	unit.Gathering = false
 	unit.Returning = false

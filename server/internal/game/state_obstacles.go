@@ -61,21 +61,17 @@ func (s *GameState) refreshObstacleRuntimeMetadataLocked() {
 	}
 }
 
-// countWorkersInsideResourceNodeLocked counts units currently chopping/mining
-// the given resource node id (obstacle or building). Replaces the
-// building-only countWorkersInsideBuildingLocked for use by the unified
-// gather pipeline.
+// countWorkersInsideResourceNodeLocked returns the number of units currently
+// chopping/mining the given resource node id (obstacle or building). O(1) —
+// reads s.workersInsideResource, which is maintained incrementally by
+// setUnitMiningInsideLocked at every MiningInside flip plus removeUnitByID-
+// Locked for dying miners. The historical per-tick s.Units scan added ~1.5ms
+// on combat ticks for a UI tooltip; this lookup is constant-time.
 func (s *GameState) countWorkersInsideResourceNodeLocked(id string) int {
-	if id == "" {
+	if id == "" || s.workersInsideResource == nil {
 		return 0
 	}
-	count := 0
-	for _, unit := range s.Units {
-		if unit.MiningInside && unit.GatherTargetID == id {
-			count++
-		}
-	}
-	return count
+	return s.workersInsideResource[id]
 }
 
 // resourceNode is an internal, pointer-backed view over either an ObstacleTile

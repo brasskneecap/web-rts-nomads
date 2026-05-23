@@ -305,8 +305,8 @@ func TestCasterScoring_TypePreferenceEqualToSupport(t *testing.T) {
 	}
 	for _, tgt := range targets {
 		tgtUnit := makeScoringUnit(&idGen, enemyPlayerID, tgt.unitType, tgt.archetype)
-		casterPref := s.unitTypePreference(casterAttacker, tgtUnit)
-		supportPref := s.unitTypePreference(supportAttacker, tgtUnit)
+		casterPref := s.unitTypePreference(casterAttacker, tgtUnit, combatEvalContext{})
+		supportPref := s.unitTypePreference(supportAttacker, tgtUnit, combatEvalContext{})
 		if casterPref != supportPref {
 			t.Errorf("unitTypePreference(caster_attacker, %s) = %v; unitTypePreference(support_attacker, %s) = %v; must be equal (caster wired to same attacker case as support)",
 				tgt.label, casterPref, tgt.label, supportPref)
@@ -336,8 +336,8 @@ func TestCasterScoring_TypePreferenceEqualToSupport(t *testing.T) {
 	}
 	for _, ev := range evaluators {
 		atk := makeScoringUnit(&idGen, ev.ownerID, ev.unitType, ev.archetype)
-		casterBonus := s.unitTypePreference(atk, casterTarget)
-		supportBonus := s.unitTypePreference(atk, supportTarget)
+		casterBonus := s.unitTypePreference(atk, casterTarget, combatEvalContext{})
+		supportBonus := s.unitTypePreference(atk, supportTarget, combatEvalContext{})
 		if casterBonus != supportBonus {
 			t.Errorf("unitTypePreference(attacker=%s, caster_target) = %v; unitTypePreference(attacker=%s, support_target) = %v; must be equal (caster target wired to same check as support target)",
 				ev.label, casterBonus, ev.label, supportBonus)

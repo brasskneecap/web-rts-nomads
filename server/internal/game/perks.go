@@ -204,6 +204,18 @@ type UnitPerkState struct {
 	// stack; future idle-sensitive perks can reuse it for free.
 	TimeSinceLastAttack float64
 
+	// ── per-tick predicate cache ──────────────────────────────────────────────
+	// These flags are refreshed once per tick by recomputePerkPredicateCache-
+	// Locked. They replace the O(N) full-unit scans (countEnemiesInRangeLocked,
+	// hasAllyInRangeLocked) that were being called once per unit per snapshot
+	// per player from BOTH effectiveArmorLocked (perkBonusArmorLocked) AND
+	// activeBuffIconsLocked — duplicating the work. Cached value reflects the
+	// unit's state at end of the previous Update tick; in-tick damage paths
+	// that need fresh data can still call the underlying helpers, but the hot
+	// snapshot path reads only this cache.
+	BraceActive     bool
+	InterlockActive bool
+
 	// ── bloodlust ─────────────────────────────────────────────────────────────
 	// Accumulated attack-speed bonus from consecutive attacks. Falls back to 0
 	// when TimeSinceLastAttack exceeds the perk's resetAfterSeconds config value.

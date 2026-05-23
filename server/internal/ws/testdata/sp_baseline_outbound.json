@@ -3956,6 +3956,22 @@
     "players": [
       {
         "color": "NORM-STR",
+        "commanderAbilities": [
+          {
+            "cooldownTotal": 60,
+            "displayName": "Blessing",
+            "icon": "heal",
+            "id": "NORM-STR",
+            "radius": 160
+          },
+          {
+            "cooldownTotal": 60,
+            "displayName": "Smite",
+            "icon": "attack",
+            "id": "NORM-STR",
+            "radius": 160
+          }
+        ],
         "lockedUnitTypes": [
           "apprentice",
           "archer"

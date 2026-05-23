@@ -59,7 +59,7 @@ func (s *GameState) DepositWithUnits(playerID string, unitIDs []int, buildingID 
 		unit.ReturnTargetID = building.ID
 		unit.Returning = true
 		unit.Gathering = false
-		unit.MiningInside = false
+		s.setUnitMiningInsideLocked(unit, false)
 		unit.MiningRemaining = 0
 		unit.Visible = true
 		if unit.CarriedResourceType == "wood" {
@@ -134,10 +134,12 @@ func resourceNodeKindTag(n *resourceNode) string {
 }
 
 func (s *GameState) clearUnitGatherStateLocked(unit *Unit) {
+	// Decrement counter BEFORE GatherTargetID is wiped — the helper keys on
+	// the current target ID. No-op when MiningInside was already false.
+	s.setUnitMiningInsideLocked(unit, false)
 	unit.GatherTargetID = ""
 	unit.GatherBuildingType = ""
 	unit.ReturnTargetID = ""
-	unit.MiningInside = false
 	unit.MiningRemaining = 0
 	unit.Gathering = false
 	unit.Returning = false
@@ -236,12 +238,13 @@ func (s *GameState) redirectUnitToTreeLocked(unit *Unit, blocked map[gridPoint]b
 		return
 	}
 
+	// Decrement counter against the OLD GatherTargetID before reassigning.
+	s.setUnitMiningInsideLocked(unit, false)
 	unit.GatherTargetID = next.ID
 	unit.GatherBuildingType = "tree"
 	unit.ReturnTargetID = ""
 	unit.Returning = false
 	unit.Gathering = false
-	unit.MiningInside = false
 	unit.MiningRemaining = 0
 	unit.Status = "Heading To Tree"
 
@@ -309,7 +312,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 			return
 		}
 
-		unit.MiningInside = false
+		s.setUnitMiningInsideLocked(unit, false)
 		unit.Gathering = false
 		unit.Visible = true
 		desired := gatherAmountForUnitResource(unit.UnitType, resourceNode.ResourceType)
@@ -448,7 +451,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		choppingDuration = treeChoppingSeconds
 	}
 	unit.Gathering = true
-	unit.MiningInside = true
+	s.setUnitMiningInsideLocked(unit, true)
 	unit.MiningRemaining = choppingDuration
 	if !isTree {
 		unit.Visible = false

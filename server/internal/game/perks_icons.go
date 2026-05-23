@@ -2,17 +2,92 @@ package game
 
 import "webrts/server/pkg/protocol"
 
+// recomputePerkPredicateCacheLocked refreshes the per-tick BraceActive /
+// InterlockActive flags on every unit so the snapshot path can read O(1)
+// instead of running the historical countEnemiesInRangeLocked /
+// hasAllyInRangeLocked scans for each consumer. Uses the shared per-tick
+// spatial index built at the top of Update — units outside the perk's
+// radius are not even visited.
+//
+// Sets perkPredicateCacheTick = s.Tick so downstream helpers know the cache
+// is fresh and can safely read from it. Helpers called outside this window
+// fall back to a live scan.
+//
+// Caller holds s.mu.
+func (s *GameState) recomputePerkPredicateCacheLocked() {
+	s.perkPredicateCacheTick = s.Tick
+	if len(s.Units) == 0 {
+		return
+	}
+	braceDef := perkDefByID("brace")
+	interlockDef := perkDefByID("interlock")
+	for _, unit := range s.Units {
+		if unit == nil {
+			continue
+		}
+		// Reset to false first so units that lose the perk (rare; usually
+		// only via death) don't keep a stale active flag.
+		unit.PerkState.BraceActive = false
+		unit.PerkState.InterlockActive = false
+		if len(unit.PerkIDs) == 0 || unit.HP <= 0 {
+			continue
+		}
+		for _, perkID := range unit.PerkIDs {
+			switch perkID {
+			case "brace":
+				if braceDef == nil {
+					continue
+				}
+				radius := braceDef.Config["radius"]
+				threshold := int(braceDef.Config["enemyThreshold"])
+				count := s.countEnemiesInRangeLocked(unit, radius, threshold)
+				if count >= threshold {
+					unit.PerkState.BraceActive = true
+				}
+			case "interlock":
+				if interlockDef == nil {
+					continue
+				}
+				if s.hasAllyInRangeLocked(unit, interlockDef.Config["radius"]) {
+					unit.PerkState.InterlockActive = true
+				}
+			}
+		}
+	}
+}
+
 // countEnemiesInRangeLocked returns the number of visible, alive enemy units
 // (different OwnerID) within radius of unit, up to a maximum of limit. If limit
-// is <= 0 all enemies are counted. O(N) per call; early-exit once limit is hit.
+// is <= 0 all enemies are counted. Uses the per-tick spatial index when
+// available (the hot path; built at the top of Update). Falls back to the
+// linear scan for tests / call sites that drive helpers directly without
+// constructing the index first.
 //
 // Used by both perkBonusArmorLocked (brace condition) and
-// activeBuffIconsLocked (brace buff-icon) to avoid duplicating the scan loop.
+// activeBuffIconsLocked (brace buff-icon) — though both now go through the
+// per-tick predicate cache (PerkState.BraceActive) on the snapshot path.
 //
 // Must be called under s.mu (read or write) lock.
 func (s *GameState) countEnemiesInRangeLocked(unit *Unit, radius float64, limit int) int {
 	if unit == nil || radius <= 0 {
 		return 0
+	}
+	if s.unitSpatialIndex != nil {
+		count := 0
+		for _, candidate := range s.unitSpatialIndex.query(unit.X, unit.Y, radius) {
+			if candidate == nil || candidate.ID == unit.ID {
+				continue
+			}
+			if candidate.OwnerID == unit.OwnerID {
+				continue
+			}
+			// index already filtered HP > 0 && Visible at build time
+			count++
+			if limit > 0 && count >= limit {
+				return count
+			}
+		}
+		return count
 	}
 	radiusSq := radius * radius
 	count := 0
@@ -39,11 +114,24 @@ func (s *GameState) countEnemiesInRangeLocked(unit *Unit, radius float64, limit 
 }
 
 // hasAllyInRangeLocked returns true when any allied (same OwnerID), visible,
-// alive unit — excluding self — is within radius of unit. O(N) per call.
+// alive unit — excluding self — is within radius of unit. Uses the per-tick
+// spatial index when available.
 //
 // Must be called under s.mu (read or write) lock.
 func (s *GameState) hasAllyInRangeLocked(unit *Unit, radius float64) bool {
 	if unit == nil || radius <= 0 {
+		return false
+	}
+	if s.unitSpatialIndex != nil {
+		for _, candidate := range s.unitSpatialIndex.query(unit.X, unit.Y, radius) {
+			if candidate == nil || candidate.ID == unit.ID {
+				continue
+			}
+			if candidate.OwnerID != unit.OwnerID {
+				continue
+			}
+			return true
+		}
 		return false
 	}
 	radiusSq := radius * radius
@@ -140,20 +228,26 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 			}
 
 		case "brace":
-			// Show while the unit is surrounded by enough enemies to trigger
-			// the armor bonus. Uses countEnemiesInRangeLocked, which is also
-			// used by perkBonusArmorLocked, so the icon appears exactly when
-			// the armor bonus is live.
-			enemyThreshold := int(def.Config["enemyThreshold"])
-			if s.countEnemiesInRangeLocked(unit, def.Config["radius"], enemyThreshold) >= enemyThreshold {
+			// Prefer the per-tick predicate cache so both the armor bonus
+			// (perkBonusArmorLocked) and this icon agree without paying the
+			// O(N) scan twice per snapshot. Fall back to live scan when
+			// the cache is stale (direct-call tests outside Update).
+			active := unit.PerkState.BraceActive
+			if s.perkPredicateCacheTick != s.Tick {
+				threshold := int(def.Config["enemyThreshold"])
+				active = s.countEnemiesInRangeLocked(unit, def.Config["radius"], threshold) >= threshold
+			}
+			if active {
 				addIcon(perkID, 1)
 			}
 
 		case "interlock":
-			// Show the buff icon while any ally is in range. Re-uses the same
-			// helper as perkBonusArmorLocked so the icon appears exactly when
-			// the armor bonus is live.
-			if def != nil && s.hasAllyInRangeLocked(unit, def.Config["radius"]) {
+			// Prefer the per-tick predicate cache — see brace above.
+			active := unit.PerkState.InterlockActive
+			if def != nil && s.perkPredicateCacheTick != s.Tick {
+				active = s.hasAllyInRangeLocked(unit, def.Config["radius"])
+			}
+			if active {
 				addIcon(perkID, 1)
 			}
 

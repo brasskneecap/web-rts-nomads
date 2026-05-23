@@ -422,6 +422,35 @@ type Unit struct {
 	// PathDiagnostics carries lightweight per-unit pathing telemetry for debug
 	// snapshots. Zero-cost in production paths — just integer increments.
 	PathDiagnostics PathDiagnostics
+
+	// SnapshotCache is the per-tick cache of effective stats used by every
+	// MatchSnapshot* path. Populated by recomputeUnitSnapshotCacheLocked at
+	// the end of Update so the per-viewer snapshot loop reads constant-time
+	// fields instead of recomputing every perk hook (perkBonusDamageMulti-
+	// plierLocked, perkAttackSpeedBonusLocked, effectiveArmorLocked, etc.)
+	// for every unit for every viewer. Freshness is gated on
+	// GameState.unitSnapshotCacheTick; readers that find a stale cache fall
+	// back to live computation, preserving direct-call test behaviour.
+	SnapshotCache unitSnapshotCache
+}
+
+// unitSnapshotCache stores the values the snapshot loop used to recompute on
+// the fly. Everything here is per-unit (not per-viewer) — even Damage, which
+// folds in the global enemy-facing buff multiplier.
+type unitSnapshotCache struct {
+	EffectiveDamage      int
+	EffectiveAttackSpeed float64
+	EffectiveMoveSpeed   float64
+	EffectiveArmor       int
+	MaxShield            int
+	CritChance           float64
+	CritMultiplier       float64
+	ActiveBuffs          []protocol.ActiveEffectIcon
+	ActiveDebuffs        []protocol.ActiveEffectIcon
+	PerkCooldowns        []protocol.PerkCooldownSnapshot
+	Abilities            []protocol.AbilitySnapshot
+	XPToNextRank         int
+	XPIntoCurrentRank    int
 }
 
 // PathDiagnostics holds lightweight per-unit pathing telemetry exposed via the
@@ -720,6 +749,46 @@ type GameState struct {
 	// (never by enemyPlayerID). Initialized in EnsurePlayer and rebuilt
 	// each tick by recomputeFOWLocked.
 	FOW map[string]*PlayerFOW
+
+	// perkPredicateCacheTick is the s.Tick value at which the BraceActive /
+	// InterlockActive caches on UnitPerkState were last rebuilt. The hot
+	// snapshot path trusts the cache only when this equals s.Tick (i.e.
+	// recomputePerkPredicateCacheLocked has been called THIS tick). Any
+	// helper called outside the post-recompute window falls back to a live
+	// scan so direct-call tests (which bypass Update) keep working.
+	perkPredicateCacheTick int
+
+	// unitSnapshotCacheTick is the s.Tick value at which every
+	// Unit.SnapshotCache was last rebuilt. Same freshness contract as
+	// perkPredicateCacheTick. -1 sentinel until the first Update runs.
+	unitSnapshotCacheTick int
+
+	// enemyFacingBonusMultCache is the cached enemyFacingDamageMultLocked
+	// value at the moment unitSnapshotCacheTick was set. Folded into
+	// SnapshotCache.EffectiveDamage so per-viewer snapshots don't have to
+	// recompute it.
+	enemyFacingBonusMultCache float64
+
+	// unitSpatialIndex is rebuilt once per tick at the top of Update and
+	// shared across every subsystem that needs proximity queries against
+	// living, visible units (combat AI, perk predicate cache, etc.). Bucket
+	// size matches combatSpatialBucketSize so queries with radius ~180px
+	// only touch ~3×3 buckets. Replaces the per-subsystem newCombatSpatial-
+	// Index calls that used to allocate + rebuild N×subsystems per tick.
+	//
+	// Reset at the top of Update; readers must treat it as undefined
+	// outside the tick (it is a tick-local data structure).
+	unitSpatialIndex *combatSpatialIndex
+
+	// workersInsideResource is an incremental counter of units currently
+	// MiningInside a given resource node (obstacle ID or building ID). It
+	// replaces the per-tick s.Units scan that previously rebuilt these
+	// counts in refreshObstacleRuntimeMetadataLocked /
+	// refreshBuildingRuntimeMetadataLocked. Maintained by
+	// setUnitMiningInsideLocked at every MiningInside flip plus
+	// removeUnitByIDLocked for dying miners. Zero entries are deleted so
+	// len() stays bounded by active nodes.
+	workersInsideResource map[string]int
 }
 
 const (
@@ -802,6 +871,14 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		pendingDeathsSet:          map[int]bool{},
 		itemCatalog:               itemCatalogSingleton,
 		FOW:                       map[string]*PlayerFOW{},
+		workersInsideResource:     map[string]int{},
+		// -1 sentinel: no Update tick has run yet, so any helper that checks
+		// "is the predicate cache fresh?" (cacheTick == s.Tick) falls back
+		// to a live scan. After the first Update, perkPredicateCacheTick is
+		// set to the current tick number by recomputePerkPredicateCacheLocked.
+		perkPredicateCacheTick: -1,
+		// Same sentinel as perkPredicateCacheTick.
+		unitSnapshotCacheTick: -1,
 	}
 
 	// Arm the battle tracker iff the map opts in via debug.battleTracker. The
@@ -929,6 +1006,11 @@ func (s *GameState) addUnitLocked(u *Unit) {
 // and s.unitsByID. Returns true if the unit was found.
 // Must be called under s.mu write lock.
 func (s *GameState) removeUnitByIDLocked(id int) bool {
+	if u, ok := s.unitsByID[id]; ok && u != nil {
+		// Release any incremental counters this unit was contributing to so
+		// the next tick's tooltip doesn't lie about node occupancy.
+		s.setUnitMiningInsideLocked(u, false)
+	}
 	delete(s.unitsByID, id)
 	filtered := make([]*Unit, 0, len(s.Units))
 	found := false
@@ -941,6 +1023,40 @@ func (s *GameState) removeUnitByIDLocked(id int) bool {
 	}
 	s.Units = filtered
 	return found
+}
+
+// setUnitMiningInsideLocked is the single authoritative writer for
+// Unit.MiningInside. It keeps the s.workersInsideResource counter in sync so
+// the per-tick metadata refresh can read O(1) instead of scanning all units.
+//
+// Idempotent: a no-op when the value is unchanged. Increment / decrement are
+// keyed on the unit's CURRENT GatherTargetID, so callers that ALSO need to
+// clear GatherTargetID must call this BEFORE clearing the field — otherwise
+// the decrement loses track of which node the unit was occupying.
+//
+// Caller holds s.mu.
+func (s *GameState) setUnitMiningInsideLocked(unit *Unit, mining bool) {
+	if unit == nil || unit.MiningInside == mining {
+		return
+	}
+	if s.workersInsideResource == nil {
+		s.workersInsideResource = map[string]int{}
+	}
+	if mining {
+		if unit.GatherTargetID != "" {
+			s.workersInsideResource[unit.GatherTargetID]++
+		}
+	} else {
+		if unit.GatherTargetID != "" {
+			n := s.workersInsideResource[unit.GatherTargetID] - 1
+			if n <= 0 {
+				delete(s.workersInsideResource, unit.GatherTargetID)
+			} else {
+				s.workersInsideResource[unit.GatherTargetID] = n
+			}
+		}
+	}
+	unit.MiningInside = mining
 }
 
 func (s *GameState) GetMapConfig() protocol.MapConfig {
@@ -971,20 +1087,17 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		if unit.OwnerID == enemyPlayerID {
 			extraMult = enemyFacingBonusMult
 		}
-		effectiveDamage := int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)))
-		effectiveAttackSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
-		effectiveMoveSpeed := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
+		effectiveDamage := s.effectiveDamageForSnapshotLocked(unit, extraMult)
+		effectiveAttackSpeed := s.effectiveAttackSpeedForSnapshotLocked(unit)
+		effectiveMoveSpeed := s.effectiveMoveSpeedForSnapshotLocked(unit)
 
 		// Crit values are reported with the target left nil — the snapshot
 		// shows the unit's own crit chance against an unmarked target so the
 		// HUD value is stable. Hunter's Mark contribution shows up in combat,
 		// not in the static HUD readout. CritChance/CritMultiplier are 0 for
 		// units with no crit sources, which omitempty drops from the wire.
-		baseCritChance := s.unitCritChanceLocked(unit, nil)
-		critMultiplier := 0.0
-		if baseCritChance > 0 || s.perkCritMultiplierBonusLocked(unit) > 0 {
-			critMultiplier = s.unitCritMultiplierLocked(unit)
-		}
+		baseCritChance := s.unitCritChanceForSnapshotLocked(unit)
+		critMultiplier := s.unitCritMultiplierForSnapshotLocked(unit, baseCritChance)
 		snapshot := protocol.UnitSnapshot{
 			ObjectiveID:         unit.ObjectiveID,
 			FocusTargetID:       unit.FocusTargetID,
@@ -1007,25 +1120,25 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			AttackSpeed:         effectiveAttackSpeed,
 			AttackRange:         unit.AttackRange,
 			MoveSpeed:           effectiveMoveSpeed,
-			Armor:               s.effectiveArmorLocked(unit),
+			Armor:               s.effectiveArmorForSnapshotLocked(unit),
 			CritChance:          baseCritChance,
 			CritMultiplier:      critMultiplier,
 			HealthRegen:         unit.HealthRegenPerSecond,
 			XP:                  unit.XP,
 			Rank:                unit.Rank,
-			XPToNextRank:        s.unitXPToNextRankLocked(unit),
-			XPIntoCurrentRank:   s.unitXPIntoCurrentRankLocked(unit),
+			XPToNextRank:        s.unitXPToNextRankForSnapshotLocked(unit),
+			XPIntoCurrentRank:   s.unitXPIntoCurrentRankForSnapshotLocked(unit),
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
 			PerkIDs:             unit.PerkIDs,
 			Shield:              unit.Shield,
-			MaxShield:           s.unitMaxShieldLocked(unit),
+			MaxShield:           s.unitMaxShieldForSnapshotLocked(unit),
 			Mana:                unit.CurrentMana,
 			MaxMana:             unit.MaxMana,
-			ActiveBuffs:         s.activeBuffIconsLocked(unit),
-			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
-			PerkCooldowns:       s.perkCooldownsLocked(unit),
-			Abilities:           s.abilityStatesLocked(unit),
+			ActiveBuffs:         s.activeBuffIconsForSnapshotLocked(unit),
+			ActiveDebuffs:       s.activeDebuffIconsForSnapshotLocked(unit),
+			PerkCooldowns:       s.perkCooldownsForSnapshotLocked(unit),
+			Abilities:           s.abilityStatesForSnapshotLocked(unit),
 			StunnedRemaining:    unit.StunnedRemaining,
 			SlowedRemaining:     unit.SlowedRemaining,
 			SlowedMultiplier:    unit.SlowedMultiplier,
@@ -1284,15 +1397,12 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		if unit.OwnerID == enemyPlayerID {
 			extraMult = enemyFacingBonusMult
 		}
-		effectiveDamage := int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)))
-		effectiveAttackSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
-		effectiveMoveSpeed := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
+		effectiveDamage := s.effectiveDamageForSnapshotLocked(unit, extraMult)
+		effectiveAttackSpeed := s.effectiveAttackSpeedForSnapshotLocked(unit)
+		effectiveMoveSpeed := s.effectiveMoveSpeedForSnapshotLocked(unit)
 
-		baseCritChance := s.unitCritChanceLocked(unit, nil)
-		critMultiplier := 0.0
-		if baseCritChance > 0 || s.perkCritMultiplierBonusLocked(unit) > 0 {
-			critMultiplier = s.unitCritMultiplierLocked(unit)
-		}
+		baseCritChance := s.unitCritChanceForSnapshotLocked(unit)
+		critMultiplier := s.unitCritMultiplierForSnapshotLocked(unit, baseCritChance)
 		snapshot := protocol.UnitSnapshot{
 			ObjectiveID:         unit.ObjectiveID,
 			FocusTargetID:       unit.FocusTargetID,
@@ -1315,25 +1425,25 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			AttackSpeed:         effectiveAttackSpeed,
 			AttackRange:         unit.AttackRange,
 			MoveSpeed:           effectiveMoveSpeed,
-			Armor:               s.effectiveArmorLocked(unit),
+			Armor:               s.effectiveArmorForSnapshotLocked(unit),
 			CritChance:          baseCritChance,
 			CritMultiplier:      critMultiplier,
 			HealthRegen:         unit.HealthRegenPerSecond,
 			XP:                  unit.XP,
 			Rank:                unit.Rank,
-			XPToNextRank:        s.unitXPToNextRankLocked(unit),
-			XPIntoCurrentRank:   s.unitXPIntoCurrentRankLocked(unit),
+			XPToNextRank:        s.unitXPToNextRankForSnapshotLocked(unit),
+			XPIntoCurrentRank:   s.unitXPIntoCurrentRankForSnapshotLocked(unit),
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
 			PerkIDs:             unit.PerkIDs,
 			Shield:              unit.Shield,
-			MaxShield:           s.unitMaxShieldLocked(unit),
+			MaxShield:           s.unitMaxShieldForSnapshotLocked(unit),
 			Mana:                unit.CurrentMana,
 			MaxMana:             unit.MaxMana,
-			ActiveBuffs:         s.activeBuffIconsLocked(unit),
-			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
-			PerkCooldowns:       s.perkCooldownsLocked(unit),
-			Abilities:           s.abilityStatesLocked(unit),
+			ActiveBuffs:         s.activeBuffIconsForSnapshotLocked(unit),
+			ActiveDebuffs:       s.activeDebuffIconsForSnapshotLocked(unit),
+			PerkCooldowns:       s.perkCooldownsForSnapshotLocked(unit),
+			Abilities:           s.abilityStatesForSnapshotLocked(unit),
 			StunnedRemaining:    unit.StunnedRemaining,
 			SlowedRemaining:     unit.SlowedRemaining,
 			SlowedMultiplier:    unit.SlowedMultiplier,
@@ -1560,6 +1670,147 @@ func (s *GameState) persistentlyStuckUnitsLocked() []int {
 // s.mu in at least read mode. This is the internal version of Snapshot() that
 // does not acquire the lock itself, used by SnapshotForPlayer when the viewer
 // has no FOW entry.
+// recomputeUnitSnapshotCacheLocked refreshes every Unit.SnapshotCache so the
+// per-viewer snapshot loop reads constant-time fields instead of paying the
+// 13 perk-hook calls per unit per viewer that the historical code did.
+//
+// Called once per tick at the end of Update, after positions and predicates
+// have settled. Sets unitSnapshotCacheTick = s.Tick so readers know the
+// cache is fresh; helpers called outside this window fall back to live
+// recomputation to preserve direct-call test behaviour.
+//
+// Caller holds s.mu.
+func (s *GameState) recomputeUnitSnapshotCacheLocked() {
+	s.enemyFacingBonusMultCache = s.enemyFacingDamageMultLocked()
+	s.unitSnapshotCacheTick = s.Tick
+	for _, unit := range s.Units {
+		if unit == nil {
+			continue
+		}
+		extraMult := 0.0
+		if unit.OwnerID == enemyPlayerID {
+			extraMult = s.enemyFacingBonusMultCache
+		}
+		unit.SnapshotCache.EffectiveDamage = int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)))
+		unit.SnapshotCache.EffectiveAttackSpeed = math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+		unit.SnapshotCache.EffectiveMoveSpeed = unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
+		unit.SnapshotCache.EffectiveArmor = s.effectiveArmorLocked(unit)
+		unit.SnapshotCache.MaxShield = s.unitMaxShieldLocked(unit)
+		baseCritChance := s.unitCritChanceLocked(unit, nil)
+		unit.SnapshotCache.CritChance = baseCritChance
+		critMult := 0.0
+		if baseCritChance > 0 || s.perkCritMultiplierBonusLocked(unit) > 0 {
+			critMult = s.unitCritMultiplierLocked(unit)
+		}
+		unit.SnapshotCache.CritMultiplier = critMult
+		unit.SnapshotCache.ActiveBuffs = s.activeBuffIconsLocked(unit)
+		unit.SnapshotCache.ActiveDebuffs = s.activeDebuffIconsLocked(unit)
+		unit.SnapshotCache.PerkCooldowns = s.perkCooldownsLocked(unit)
+		unit.SnapshotCache.Abilities = s.abilityStatesLocked(unit)
+		unit.SnapshotCache.XPToNextRank = s.unitXPToNextRankLocked(unit)
+		unit.SnapshotCache.XPIntoCurrentRank = s.unitXPIntoCurrentRankLocked(unit)
+	}
+}
+
+// effectiveDamageForSnapshotLocked returns the effective damage to display
+// for a unit, preferring the per-tick SnapshotCache when fresh. extraMult is
+// the global enemy-facing bonus that the cache already folded in; pass 0 to
+// skip re-folding (the cached value already includes it).
+func (s *GameState) effectiveDamageForSnapshotLocked(unit *Unit, extraMult float64) int {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.EffectiveDamage
+	}
+	return int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)))
+}
+
+// effectiveAttackSpeedForSnapshotLocked mirrors effectiveDamageForSnapshotLocked.
+func (s *GameState) effectiveAttackSpeedForSnapshotLocked(unit *Unit) float64 {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.EffectiveAttackSpeed
+	}
+	return math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
+}
+
+func (s *GameState) effectiveMoveSpeedForSnapshotLocked(unit *Unit) float64 {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.EffectiveMoveSpeed
+	}
+	return unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
+}
+
+func (s *GameState) effectiveArmorForSnapshotLocked(unit *Unit) int {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.EffectiveArmor
+	}
+	return s.effectiveArmorLocked(unit)
+}
+
+func (s *GameState) unitMaxShieldForSnapshotLocked(unit *Unit) int {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.MaxShield
+	}
+	return s.unitMaxShieldLocked(unit)
+}
+
+func (s *GameState) unitCritChanceForSnapshotLocked(unit *Unit) float64 {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.CritChance
+	}
+	return s.unitCritChanceLocked(unit, nil)
+}
+
+func (s *GameState) unitCritMultiplierForSnapshotLocked(unit *Unit, baseCritChance float64) float64 {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.CritMultiplier
+	}
+	if baseCritChance > 0 || s.perkCritMultiplierBonusLocked(unit) > 0 {
+		return s.unitCritMultiplierLocked(unit)
+	}
+	return 0
+}
+
+func (s *GameState) activeBuffIconsForSnapshotLocked(unit *Unit) []protocol.ActiveEffectIcon {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.ActiveBuffs
+	}
+	return s.activeBuffIconsLocked(unit)
+}
+
+func (s *GameState) activeDebuffIconsForSnapshotLocked(unit *Unit) []protocol.ActiveEffectIcon {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.ActiveDebuffs
+	}
+	return s.activeDebuffIconsLocked(unit)
+}
+
+func (s *GameState) perkCooldownsForSnapshotLocked(unit *Unit) []protocol.PerkCooldownSnapshot {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.PerkCooldowns
+	}
+	return s.perkCooldownsLocked(unit)
+}
+
+func (s *GameState) abilityStatesForSnapshotLocked(unit *Unit) []protocol.AbilitySnapshot {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.Abilities
+	}
+	return s.abilityStatesLocked(unit)
+}
+
+func (s *GameState) unitXPToNextRankForSnapshotLocked(unit *Unit) int {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.XPToNextRank
+	}
+	return s.unitXPToNextRankLocked(unit)
+}
+
+func (s *GameState) unitXPIntoCurrentRankForSnapshotLocked(unit *Unit) int {
+	if s.unitSnapshotCacheTick == s.Tick {
+		return unit.SnapshotCache.XPIntoCurrentRank
+	}
+	return s.unitXPIntoCurrentRankLocked(unit)
+}
+
 func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 	enemyFacingBonusMult := s.enemyFacingDamageMultLocked()
 
@@ -1569,15 +1820,12 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		if unit.OwnerID == enemyPlayerID {
 			extraMult = enemyFacingBonusMult
 		}
-		effectiveDamage := int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)))
-		effectiveAttackSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
-		effectiveMoveSpeed := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
+		effectiveDamage := s.effectiveDamageForSnapshotLocked(unit, extraMult)
+		effectiveAttackSpeed := s.effectiveAttackSpeedForSnapshotLocked(unit)
+		effectiveMoveSpeed := s.effectiveMoveSpeedForSnapshotLocked(unit)
 
-		baseCritChance := s.unitCritChanceLocked(unit, nil)
-		critMultiplier := 0.0
-		if baseCritChance > 0 || s.perkCritMultiplierBonusLocked(unit) > 0 {
-			critMultiplier = s.unitCritMultiplierLocked(unit)
-		}
+		baseCritChance := s.unitCritChanceForSnapshotLocked(unit)
+		critMultiplier := s.unitCritMultiplierForSnapshotLocked(unit, baseCritChance)
 		snapshot := protocol.UnitSnapshot{
 			ObjectiveID:         unit.ObjectiveID,
 			FocusTargetID:       unit.FocusTargetID,
@@ -1600,25 +1848,25 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			AttackSpeed:         effectiveAttackSpeed,
 			AttackRange:         unit.AttackRange,
 			MoveSpeed:           effectiveMoveSpeed,
-			Armor:               s.effectiveArmorLocked(unit),
+			Armor:               s.effectiveArmorForSnapshotLocked(unit),
 			CritChance:          baseCritChance,
 			CritMultiplier:      critMultiplier,
 			HealthRegen:         unit.HealthRegenPerSecond,
 			XP:                  unit.XP,
 			Rank:                unit.Rank,
-			XPToNextRank:        s.unitXPToNextRankLocked(unit),
-			XPIntoCurrentRank:   s.unitXPIntoCurrentRankLocked(unit),
+			XPToNextRank:        s.unitXPToNextRankForSnapshotLocked(unit),
+			XPIntoCurrentRank:   s.unitXPIntoCurrentRankForSnapshotLocked(unit),
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
 			PerkIDs:             unit.PerkIDs,
 			Shield:              unit.Shield,
-			MaxShield:           s.unitMaxShieldLocked(unit),
+			MaxShield:           s.unitMaxShieldForSnapshotLocked(unit),
 			Mana:                unit.CurrentMana,
 			MaxMana:             unit.MaxMana,
-			ActiveBuffs:         s.activeBuffIconsLocked(unit),
-			ActiveDebuffs:       s.activeDebuffIconsLocked(unit),
-			PerkCooldowns:       s.perkCooldownsLocked(unit),
-			Abilities:           s.abilityStatesLocked(unit),
+			ActiveBuffs:         s.activeBuffIconsForSnapshotLocked(unit),
+			ActiveDebuffs:       s.activeDebuffIconsForSnapshotLocked(unit),
+			PerkCooldowns:       s.perkCooldownsForSnapshotLocked(unit),
+			Abilities:           s.abilityStatesForSnapshotLocked(unit),
 			StunnedRemaining:    unit.StunnedRemaining,
 			SlowedRemaining:     unit.SlowedRemaining,
 			SlowedMultiplier:    unit.SlowedMultiplier,
@@ -1811,6 +2059,21 @@ func (s *GameState) Update(dt float64) {
 	s.resetHealEventsThisTickLocked()
 
 	profileSection("commanderCooldowns", func() { s.tickCommanderCooldownsLocked(dt) })
+
+	// Build the shared per-tick unit spatial index once. Combat AI, perk
+	// predicate cache, FOW vision iteration, and any future radius-query
+	// subsystem all read it instead of allocating their own. Bucket size
+	// matches combatSpatialBucketSize.
+	profileSection("spatialIndex", func() {
+		s.unitSpatialIndex = newCombatSpatialIndex(combatSpatialBucketSize)
+		for _, u := range s.Units {
+			if u == nil || !u.Visible || u.HP <= 0 {
+				continue
+			}
+			s.unitSpatialIndex.add(u)
+		}
+	})
+
 	profileSection("battleTracker", func() { s.battleTracker.tickLocked(dt) })
 	profileSection("unitProductions", func() { s.updateUnitProductionsLocked(dt) })
 	profileSection("orphanedPendingBuildings", func() { s.cancelOrphanedPendingBuildingsLocked() })
@@ -2077,6 +2340,14 @@ func (s *GameState) Update(dt float64) {
 		// technically Moving=true every tick but its net position barely changes.
 		// assignUnitPath resets the sample, so the watchdog gets a fresh window
 		// after every repath.
+		//
+		// Pathing budget: the historical code called repathUnitLocked
+		// unconditionally, so a packed melee blob where every member trips the
+		// watchdog on the same tick produced an N-wide A* storm. We now gate on
+		// combatApproachBudgetRemaining (shared with combat-AI approach
+		// pathing): in-budget → repath, over-budget → drift toward the chase
+		// target (matching the [[feedback_pathfinding_drift_over_retry]] rule
+		// the project already uses on the combat-AI side).
 		unit.StuckSampleAccum += dt
 		if unit.StuckSampleAccum >= stuckSampleInterval {
 			ddx := unit.X - unit.StuckSampleX
@@ -2085,7 +2356,17 @@ func (s *GameState) Update(dt float64) {
 			if ddx*ddx+ddy*ddy < stuckThreshold*stuckThreshold {
 				unit.PathDiagnostics.StuckTriggerCount++
 				unit.PathDiagnostics.LastStuckTick = s.Tick
-				s.repathUnitLocked(unit, blocked)
+				if s.combatApproachBudgetRemaining > 0 {
+					s.combatApproachBudgetRemaining--
+					s.repathUnitLocked(unit, blocked)
+				} else if unit.AttackTargetID != 0 {
+					// Over budget and chasing a target → drift instead of A*.
+					if target := s.getUnitByIDLocked(unit.AttackTargetID); target != nil && target.HP > 0 && target.Visible {
+						s.enterAttackDriftLocked(unit, target)
+					}
+				}
+				// No target + over budget: leave the path alone; the watchdog
+				// will retry on the next sample window (when budget refills).
 			} else {
 				unit.StuckSampleX = unit.X
 				unit.StuckSampleY = unit.Y
@@ -2144,6 +2425,13 @@ func (s *GameState) Update(dt float64) {
 	stopPerUnitTick()
 
 	profileSection("separation", func() { s.applyUnitSeparationLocked(blocked) })
+	// Refresh predicate cache AFTER separation so cached flags reflect final
+	// end-of-tick positions for the snapshot consumers.
+	profileSection("perkPredicateCache", func() { s.recomputePerkPredicateCacheLocked() })
+	// Snapshot cache must run AFTER the predicate cache (effectiveArmorLocked
+	// reads BraceActive / InterlockActive) so the cached armor value is
+	// consistent with the icons.
+	profileSection("snapshotCache", func() { s.recomputeUnitSnapshotCacheLocked() })
 	profileSection("buildingMetadata", func() { s.refreshBuildingRuntimeMetadataLocked() })
 	profileSection("obstacleMetadata", func() { s.refreshObstacleRuntimeMetadataLocked() })
 	profileSection("playerLoss", func() { s.checkPlayerLossLocked() })
@@ -2366,9 +2654,12 @@ func (s *GameState) RemovePlayer(playerID string) {
 	delete(s.Players, playerID)
 
 	// Collect IDs first, then remove via the helper to keep the index in sync.
+	// Release any incremental counters (mining occupancy) the doomed units were
+	// contributing to BEFORE we drop them — otherwise the tooltip stays stale.
 	var toRemove []int
 	for _, unit := range s.Units {
 		if unit.OwnerID == playerID {
+			s.setUnitMiningInsideLocked(unit, false)
 			toRemove = append(toRemove, unit.ID)
 		}
 	}
