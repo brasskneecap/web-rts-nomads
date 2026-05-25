@@ -69,6 +69,8 @@ export class UnitAnimationController {
     ownerId: string | undefined,
     localPlayerId: string | null | undefined,
     flyer: boolean | undefined,
+    channelLoopStart: number | undefined,
+    channelLoopEnd: number | undefined,
   ): UnitAnimationSample {
     let state = this.states.get(unitId)
     if (!state) {
@@ -183,6 +185,26 @@ export class UnitAnimationController {
     // 'carrying_gold' even when not moving.
     if (animation === 'carrying_gold' && !moving) {
       return { direction, animation, frameIndex: 0 }
+    }
+
+    // Channeled-beam loop: drive the casting sprite as a one-way loop over
+    // [channelLoopStart, channelLoopEnd] inclusive at the unit's normal frame
+    // cadence, producing a sustained-but-living pose for the channel.
+    // Gated on status === 'Channeling' so casts and channels can share the
+    // casting sheet without the cast ever freezing. start == end produces a
+    // single held frame (loop degenerates to a hold). Negative/absent fields
+    // fall through to the normal cycling default. Out-of-range positive
+    // values modulo into the sheet at draw time via getUnitFrame.
+    if (status === 'Channeling' && animation === 'casting') {
+      const start = typeof channelLoopStart === 'number' && channelLoopStart >= 0 ? channelLoopStart : -1
+      const endRaw = typeof channelLoopEnd === 'number' ? channelLoopEnd : start
+      if (start >= 0) {
+        const end = endRaw < start ? start : endRaw
+        const frameCount = end - start + 1
+        const phase = Math.floor((renderTime - state.animStartedAt) / this.frameDurationMs)
+        const frameIndex = start + (frameCount > 0 ? ((phase % frameCount) + frameCount) % frameCount : 0)
+        return { direction, animation, frameIndex }
+      }
     }
 
     const frameIndex = Math.floor((renderTime - state.animStartedAt) / this.frameDurationMs)
@@ -310,7 +332,11 @@ function pickAnimation(
   // animation via ANIMATION_FALLBACK['casting'] = 'attacking' in unitSprites.ts
   // — better than freezing in the neutral rotation pose. Base Acolyte has
   // its own casting sheet and is unaffected.
-  if (status === 'Casting') return 'casting'
+  //
+  // 'Channeling' shares the casting sprite sheet — the channel lifecycle
+  // (Siphon Life) pins frameIndex to UnitSnapshot.channelHoldFrame rather
+  // than cycling. The pin is applied in UnitAnimationController.sample().
+  if (status === 'Casting' || status === 'Channeling') return 'casting'
   if (status === 'Chopping Wood') return 'chopping'
   // All construction/repair statuses — including paused variants emitted when
   // no workers are assigned — map to the same hammer-swing animation.

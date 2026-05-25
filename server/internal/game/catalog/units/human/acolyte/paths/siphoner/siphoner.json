@@ -1,6 +1,11 @@
 {
   "path": "siphoner",
   "description": "Acolyte promotion path — stub. Stat tuning, projectile / damageType / projectileScale, and any ability override are deferred; rows currently mirror the default rank curve (see defaultRankCurve in path_defs.go) so promotions still grant baseline HP/damage/AS bumps. Replace any rank row with path-specific numbers when the Siphoner gets its formal pass. If the shipped sprites are a different pixel size than the base Acolyte, add a `bounds` field here so the selection ring / hit-test rect track the new art.",
+  "abilities": ["siphon_life"],
+  "channelLoop": {
+    "start": 3,
+    "end": 4
+  },
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.10,

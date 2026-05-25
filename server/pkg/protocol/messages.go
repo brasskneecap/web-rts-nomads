@@ -208,10 +208,10 @@ type PerkCooldownSnapshot struct {
 // your own selection). CooldownRemaining/Total drive the same clock-wipe
 // overlay the perk cooldowns use.
 type AbilitySnapshot struct {
-	ID                string  `json:"id"`
-	DisplayName       string  `json:"displayName,omitempty"`
-	Icon              string  `json:"icon,omitempty"`
-	ManaCost          int     `json:"manaCost,omitempty"`
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName,omitempty"`
+	Icon        string `json:"icon,omitempty"`
+	ManaCost    int    `json:"manaCost,omitempty"`
 	// TargetCount is the number of targets this ability can affect per cast.
 	// Always >= 1; single-target abilities report 1 so the client can skip the
 	// multi-target indicator without special-casing "field absent".
@@ -220,6 +220,23 @@ type AbilitySnapshot struct {
 	AutoCast          bool    `json:"autoCast,omitempty"` // auto-cast currently enabled
 	CooldownRemaining float64 `json:"cooldownRemaining,omitempty"`
 	CooldownTotal     float64 `json:"cooldownTotal,omitempty"`
+	// Channeling is true when this ability is the unit's active channel.
+	// The action bar uses this to render the "channeling in progress" state
+	// (e.g. a pulsing overlay instead of the cooldown wipe).
+	Channeling bool `json:"channeling,omitempty"`
+}
+
+// BeamSnapshot carries one active channeled-beam visual to the client.
+// The beam is rendered as a persistent line/effect between caster and target
+// for the duration of the channel. FOW-filtered: only included when the
+// caster or target is visible to the viewer.
+type BeamSnapshot struct {
+	ID           string `json:"id"`
+	CasterUnitId int    `json:"casterUnitId"`
+	TargetUnitId int    `json:"targetUnitId"`
+	OwnerId      string `json:"ownerId"`
+	AbilityId    string `json:"abilityId,omitempty"`
+	Variant      string `json:"variant,omitempty"`
 }
 
 type TerrainTile struct {
@@ -675,6 +692,15 @@ type UnitSnapshot struct {
 	StunnedRemaining float64 `json:"stunnedRemaining,omitempty"`
 	SlowedRemaining  float64 `json:"slowedRemaining,omitempty"`
 	SlowedMultiplier float64 `json:"slowedMultiplier,omitempty"`
+	// ChannelLoopStart / ChannelLoopEnd are the inclusive frame range the
+	// client loops through (one-way, forward) on the unit's casting sprite
+	// sheet while it is channeling a beam ability (Siphon Life). Set only
+	// when Status == "Channeling"; absent otherwise. start == end produces
+	// a single held pose; start < end produces a small loop at the unit's
+	// natural frame cadence. Out-of-range values modulo against the
+	// sheet's frame count on the client.
+	ChannelLoopStart int `json:"channelLoopStart,omitempty"`
+	ChannelLoopEnd   int `json:"channelLoopEnd,omitempty"`
 	CarriedResourceType string   `json:"carriedResourceType,omitempty"`
 	CarriedAmount       int      `json:"carriedAmount,omitempty"`
 	TargetX             float64  `json:"targetX,omitempty"`
@@ -975,6 +1001,7 @@ type MatchSnapshotMessage struct {
 	Banners       []BannerSnapshot        `json:"banners,omitempty"`
 	Traps         []TrapSnapshot          `json:"traps,omitempty"`
 	Projectiles   []ProjectileSnapshot    `json:"projectiles,omitempty"`
+	Beams         []BeamSnapshot          `json:"beams,omitempty"`
 	Effects       []EffectSnapshot        `json:"effects,omitempty"`
 	CritEvents         []CritEventSnapshot         `json:"critEvents,omitempty"`
 	MinorDamageEvents  []MinorDamageEventSnapshot  `json:"minorDamageEvents,omitempty"`

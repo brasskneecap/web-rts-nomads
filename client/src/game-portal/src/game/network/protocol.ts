@@ -536,6 +536,28 @@ export type AbilitySnapshot = {
    *  like Greater Heal. The action-bar uses this to render a multi-target
    *  hint and the targeting cursor adapts accordingly. */
   targetCount?: number
+  /** True while this ability is the unit's active channel. The action bar
+   *  renders a distinct "channeling in progress" state (pulsing green border)
+   *  when this is set. Omitted/false when not channeling. */
+  channeling?: boolean
+}
+
+/**
+ * BeamSnapshot carries one active channeled-beam visual to the client.
+ * The beam is rendered as a persistent line/effect from the caster to the
+ * target for the duration of the channel. Position data is intentionally
+ * absent — the beam stretches dynamically between the current positions of
+ * casterUnitId and targetUnitId, both of which are in the unit list each frame.
+ * FOW-filtered: only included when the caster or target is visible to the viewer.
+ */
+export type BeamSnapshot = {
+  id: string
+  casterUnitId: number
+  targetUnitId: number
+  ownerId: string
+  abilityId?: string
+  /** Visual variant tag. "siphon_life" = necrotic green drain beam. */
+  variant?: string
 }
 
 /** A single item held in an inventory slot. */
@@ -576,6 +598,14 @@ export type UnitSnapshot = {
   flyer?: boolean
   visible: boolean
   status?: string
+  /** Inclusive frame range the client one-way loops through on the unit's
+   *  casting sprite sheet while it is channeling a beam ability. start ==
+   *  end produces a single held frame; start < end produces a small loop
+   *  (e.g. 3 → 4 → 3 → 4 …) at the unit's normal frame cadence. Both fields
+   *  only present when status === 'Channeling'; absent otherwise. Out-of-
+   *  range values modulo against the sheet's frame count at render time. */
+  channelLoopStart?: number
+  channelLoopEnd?: number
   x: number
   y: number
   hp: number
@@ -923,6 +953,7 @@ export type MatchSnapshotMessage = {
   banners?: BannerSnapshot[]
   traps?: TrapSnapshot[]
   projectiles?: ProjectileSnapshot[]
+  beams?: BeamSnapshot[]
   effects?: EffectSnapshot[]
   critEvents?: CritEventSnapshot[]
   minorDamageEvents?: MinorDamageEventSnapshot[]

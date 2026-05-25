@@ -26,9 +26,9 @@
   "trainLabel": "Train Acolyte",
   "maxMana": 50,
   "manaRegenRate": 1.0,
-  "projectile": "fire_bolt",
-  "damageType": "fire",
-  "projectileScale": 1.5,
+  "projectile": "holy_bolt",
+  "damageType": "holy",
+  "projectileScale": 1.0,
   "abilities": [
     "heal"
   ],
@@ -37,8 +37,8 @@
   },
   "attackVisual": {
     "kind": "projectile",
-    "originX": 24,
-    "originY": 5,
+    "originX": 34,
+    "originY": 0,
     "effectLength": 22
   },
   "bounds": {

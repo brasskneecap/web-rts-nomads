@@ -167,6 +167,46 @@ type AbilityDef struct {
 	// Player-owned units only — enemy units never get the default seeded.
 	DefaultAutoCast bool `json:"defaultAutoCast,omitempty"`
 
+	// ── Channeled-beam extension ───────────────────────────────────────────
+	// ChannelType, when non-empty, routes the ability into the channel
+	// lifecycle (ability_channel.go) instead of the standard one-shot cast.
+	// The only supported value today is "beam" (Siphon Life). Empty or absent
+	// = legacy one-shot cast; all existing abilities are unaffected.
+	ChannelType string `json:"channelType,omitempty"`
+
+	// TickIntervalSeconds is the cadence at which the channel's per-tick
+	// effect fires (e.g. 0.25 = four times per second). Only meaningful when
+	// ChannelType != "".
+	TickIntervalSeconds float64 `json:"tickIntervalSeconds,omitempty"`
+
+	// ManaCostPerTick is the mana deducted on each channel tick. The channel
+	// stops when the caster cannot afford the next tick. Only meaningful when
+	// ChannelType != "". The top-level ManaCost field is the per-CAST cost
+	// (paid at channel start); these two are independent.
+	ManaCostPerTick int `json:"manaCostPerTick,omitempty"`
+
+	// DamagePerTick is the damage dealt to the channel target each tick.
+	// Routed through applyUnitDamageWithSourceLocked. Only meaningful when
+	// ChannelType != "".
+	DamagePerTick int `json:"damagePerTick,omitempty"`
+
+	// HealingMultiplier scales the damage-to-healing conversion for Siphon
+	// Life. healAmount = round(DamagePerTick * HealingMultiplier). Default
+	// 0.0 (zero) is normalised to 1.0 at load time so omitting the field
+	// produces 1× conversion (lossless siphon). Only meaningful when
+	// ChannelType != "".
+	HealingMultiplier float64 `json:"healingMultiplier,omitempty"`
+
+	// AllyHealRadius is the world-pixel radius within which the channel
+	// looks for an ally to route excess healing to when the caster is at full
+	// HP. 0 = no ally routing (self-only). Only meaningful when ChannelType != "".
+	AllyHealRadius float64 `json:"allyHealRadius,omitempty"`
+
+	// (Channel-pose frames live on the caster's UnitDef / PathDef — see
+	// UnitDef.ChannelLoop and pathCatalogFile.ChannelLoop. They are visual
+	// data about the caster's sprite, not the ability, so two units sharing
+	// one channel ability can pin to different frames on their own sheets.)
+
 	// ── Presentation / resolution hooks ────────────────────────────────────
 	// Icon is the action-bar icon path. TODO(asset): real icon art.
 	Icon string `json:"icon,omitempty"`
@@ -292,6 +332,13 @@ func loadAbilityDefs() map[string]AbilityDef {
 		// is only entered for explicitly-authored values > 1.
 		if def.TargetCount < 1 {
 			def.TargetCount = 1
+		}
+		// Normalise HealingMultiplier: 0 (omitted) → 1.0 so a siphon_life
+		// that omits the field gets a lossless 1× conversion. Only applies
+		// to channeled abilities; for one-shot casts the field is unused and
+		// this normalisation is a harmless no-op.
+		if def.ChannelType != "" && def.HealingMultiplier == 0 {
+			def.HealingMultiplier = 1.0
 		}
 		result[def.ID] = def
 	}

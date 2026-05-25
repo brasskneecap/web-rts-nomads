@@ -35,7 +35,7 @@ import {
 } from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
-import type { BannerSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
+import type { BannerSnapshot, BeamSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
 import { ENEMY_PLAYER_ID } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
@@ -347,6 +347,9 @@ export class CanvasRenderer {
     this.drawEffects(this.state.effects, units)
     // Drawn after units so arrows render on top of the firing unit's body.
     this.drawProjectiles(this.state.projectiles)
+    // Channeled beams render at the same z-layer as projectiles so they sit
+    // above unit sprites but below the FOW and UI overlays.
+    this.drawBeams(this.state.beams)
 
     if (this.state.fow.cols > 0) {
       const cs = this.state.mapConfig.cellSize
@@ -1696,6 +1699,8 @@ export class CanvasRenderer {
       actionFacingDy?: number
       flyer?: boolean
       focusTargetId?: number
+      channelLoopStart?: number
+      channelLoopEnd?: number
     }>,
   ) {
     const ctx = this.ctx
@@ -2022,6 +2027,8 @@ export class CanvasRenderer {
           unit.ownerId,
           this.state.localPlayerId,
           unit.flyer,
+          unit.channelLoopStart,
+          unit.channelLoopEnd,
         )
         const frame = getUnitFrame(spriteSet, anim.animation, anim.direction, anim.frameIndex)
         if (frame) {
@@ -2323,6 +2330,142 @@ export class CanvasRenderer {
       ctx.fill()
       ctx.restore()
     }
+  }
+
+  /**
+   * Render all active channeled beams. Each beam is a sustained line from the
+   * caster to the target for the duration of the channel. Endpoints are
+   * derived from the current unit positions each frame — the server does not
+   * send coords; that is intentional.
+   *
+   * Per-variant dispatch: add cases to the inner switch for future beam types.
+   * Defaults to the siphon_life look for any unrecognised variant.
+   */
+  private drawBeams(beams: BeamSnapshot[]) {
+    if (beams.length === 0) return
+
+    const unitsById = new Map<number, Unit>()
+    for (const u of this.state.units) unitsById.set(u.id, u)
+
+    const originLiftCache = new Map<string, { x: number; y: number }>()
+    const targetLiftCache = new Map<string, { x: number; y: number }>()
+
+    for (const beam of beams) {
+      const caster = unitsById.get(beam.casterUnitId)
+      const target = unitsById.get(beam.targetUnitId)
+      // Defensive: skip if either unit is missing from the current frame.
+      if (!caster || !target) continue
+
+      const originLift = this.getProjectileOriginLift(caster, originLiftCache)
+      const targetLift = this.getProjectileTargetLift(target, targetLiftCache)
+
+      const originX = caster.x + originLift.x
+      const originY = caster.y + originLift.y
+      const endX = target.x + targetLift.x
+      const endY = target.y + targetLift.y
+
+      switch (beam.variant) {
+        case 'siphon_life':
+        default:
+          this.drawSiphonLifeBeam(originX, originY, endX, endY)
+          break
+      }
+    }
+  }
+
+  /**
+   * Draw a single Siphon Life drain beam — a sustained necrotic green energy
+   * tendril from the caster's hand to the target.
+   *
+   * Layered passes (back to front):
+   *   1. Faint wide outer glow  — vivid green, low alpha, 10px envelope.
+   *   2. Mid-layer glow         — green-cyan, medium alpha, 5px.
+   *   3. Bright core            — near-white green, 1.75px, high alpha.
+   *   4. Caster-side puff       — soft radial gradient at origin.
+   *   5. Target-side ember      — brighter radial gradient at endpoint.
+   *
+   * All widths scale with camera zoom identically to drawPierceWindStreak.
+   * Core alpha and width pulse gently via performance.now() so the beam feels
+   * "alive" without animating the endpoints (those are unit-position-driven).
+   */
+  private drawSiphonLifeBeam(originX: number, originY: number, endX: number, endY: number) {
+    const ctx = this.ctx
+
+    // Pulse: ±15% sine wave over ~700ms.
+    const pulseT = (Math.sin((performance.now() / 700) * Math.PI * 2) + 1) / 2 // 0..1
+    const pulseFactor = 0.85 + 0.15 * pulseT
+
+    // Width budget — same scaling pattern as drawPierceWindStreak.
+    const outerGlowWidth = Math.max(6, 10 / this.camera.zoom)
+    const midGlowWidth   = Math.max(3, 5  / this.camera.zoom)
+    const coreWidth      = Math.max(1, 1.75 / this.camera.zoom) * pulseFactor
+    const puffRadius     = Math.max(3, 5  / this.camera.zoom)
+    const emberRadius    = Math.max(3.5, 6 / this.camera.zoom)
+
+    // Pass 1 — faint wide outer glow. A dark, sickly green haze around the
+    // beam to give it a "necrotic" feel vs. the brighter pierce streak.
+    ctx.save()
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = 'rgba(40, 200, 90, 0.18)'
+    ctx.lineWidth = outerGlowWidth
+    ctx.beginPath()
+    ctx.moveTo(originX, originY)
+    ctx.lineTo(endX, endY)
+    ctx.stroke()
+    ctx.restore()
+
+    // Pass 2 — mid-layer green-cyan glow. Slightly narrower and more opaque
+    // than the outer haze so the beam tapers visually toward the core.
+    const midAlpha = 0.45 + 0.05 * pulseFactor
+    ctx.save()
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = `rgba(50, 210, 120, ${midAlpha})`
+    ctx.lineWidth = midGlowWidth
+    ctx.beginPath()
+    ctx.moveTo(originX, originY)
+    ctx.lineTo(endX, endY)
+    ctx.stroke()
+    ctx.restore()
+
+    // Pass 3 — bright near-white green core spine. Pulsing alpha + width give
+    // the sustained beam a sense of active energy transfer.
+    const coreAlpha = (0.88 + 0.07 * pulseFactor)
+    ctx.save()
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = `rgba(180, 255, 200, ${coreAlpha})`
+    ctx.lineWidth = coreWidth
+    ctx.beginPath()
+    ctx.moveTo(originX, originY)
+    ctx.lineTo(endX, endY)
+    ctx.stroke()
+    ctx.restore()
+
+    // Pass 4 — caster-side puff: soft green radial gradient at the origin
+    // ("energy emanating from the hand").
+    const puffGradient = ctx.createRadialGradient(originX, originY, 0, originX, originY, puffRadius)
+    puffGradient.addColorStop(0, `rgba(200, 255, 215, ${0.75 * pulseFactor})`)
+    puffGradient.addColorStop(0.55, `rgba(50, 200, 100, ${0.35 * pulseFactor})`)
+    puffGradient.addColorStop(1, 'rgba(0, 100, 50, 0)')
+    ctx.save()
+    ctx.fillStyle = puffGradient
+    ctx.beginPath()
+    ctx.arc(originX, originY, puffRadius, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+
+    // Pass 5 — target-side ember: slightly brighter and more saturated to sell
+    // "being drained" — the terminus is where the energy is being absorbed.
+    const emberAlpha = 0.80 + 0.10 * pulseFactor
+    const emberGradient = ctx.createRadialGradient(endX, endY, 0, endX, endY, emberRadius)
+    emberGradient.addColorStop(0, `rgba(160, 255, 180, ${emberAlpha})`)
+    emberGradient.addColorStop(0.45, `rgba(30, 180, 80, ${0.55 * emberAlpha})`)
+    emberGradient.addColorStop(1, 'rgba(0, 80, 30, 0)')
+    ctx.save()
+    ctx.fillStyle = emberGradient
+    ctx.beginPath()
+    ctx.arc(endX, endY, emberRadius, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
   }
 
   // spriteBodyCenterLift back-computes the visible body from the sprite draw

@@ -64,6 +64,12 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 	if !ok {
 		return s.failCastLocked(caster, castFailUnknownAbility)
 	}
+	// Channeled abilities use a separate lifecycle. Route them here so that
+	// the WS handler and auto-cast code paths need no change — they all call
+	// beginAbilityCastLocked and this branch handles the dispatch transparently.
+	if def.ChannelType != "" {
+		return s.beginAbilityChannelLocked(caster, abilityID, target)
+	}
 	if !containsAbility(caster, abilityID) {
 		return s.failCastLocked(caster, castFailNotOwned)
 	}

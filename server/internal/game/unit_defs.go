@@ -134,6 +134,26 @@ type UnitDef struct {
 	// be trained. Empty/omitted = no requirement. Multiple entries are
 	// ANDed. Validated at load time against the building catalog.
 	RequiresBuildings []string `json:"requiresBuildings,omitempty"`
+
+	// ChannelLoop, when set, defines the inclusive frame range the client
+	// one-way loops through on this unit's casting sprite sheet while it is
+	// channeling a beam ability (Siphon Life, etc.). Pointer-to-struct so
+	// the loader can distinguish "field absent" (no channel pose authored —
+	// degenerates to frame 0 hold) from "field present" (use these frames).
+	// A promotion path may override this via pathCatalogFile.ChannelLoop —
+	// resolution order is path > unit. Validated at load (start >= 0,
+	// end >= start). Purely visual; server simulation never reads it.
+	ChannelLoop *ChannelLoopRange `json:"channelLoop,omitempty"`
+}
+
+// ChannelLoopRange is an inclusive [Start, End] frame range on a unit's
+// casting sprite sheet. The client one-way loops through these frames at
+// the unit's normal frame cadence while the unit is channeling. start == end
+// produces a single held pose; start < end produces a small loop. Defined
+// at package scope so UnitDef and pathCatalogFile can share the type.
+type ChannelLoopRange struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
 }
 
 // Target class strings recognised by TargetableTypes. Kept as a small closed
@@ -226,6 +246,14 @@ func loadUnitDefsByType() map[string]UnitDef {
 			}
 			if def.ProjectileScale < 0 {
 				panic(rel + `: unit "` + def.Type + `": projectileScale must be >= 0 (0/omitted ⇒ client default 1×)`)
+			}
+			if def.ChannelLoop != nil {
+				if def.ChannelLoop.Start < 0 {
+					panic(rel + `: unit "` + def.Type + `": channelLoop.start must be >= 0`)
+				}
+				if def.ChannelLoop.End < def.ChannelLoop.Start {
+					panic(rel + `: unit "` + def.Type + `": channelLoop.end must be >= channelLoop.start`)
+				}
 			}
 			if def.MaxMana < 0 || def.ManaRegenRate < 0 {
 				panic(rel + `: maxMana and manaRegenRate must be >= 0`)

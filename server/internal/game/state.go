@@ -260,6 +260,19 @@ type Unit struct {
 	CastTargetID      int
 	CastTimeRemaining float64
 	LastCastFailure   string
+
+	// Active channel state (channeled abilities — first in-game: siphon_life).
+	// ChannelAbilityID == "" ⇒ not channeling. Channels and one-shot casts
+	// are mutually exclusive: a unit with ChannelAbilityID set has no
+	// CastAbilityID and vice versa. Target is held by ID and re-resolved /
+	// validated every tick (ID-not-pointer rule). ChannelNextTickIn counts
+	// down in tickUnitChannelLocked; when it crosses below 0 the next effect
+	// tick fires and it is reset by adding ChannelTickInterval. Initialized to
+	// ChannelTickInterval so the first tick fires after one full interval.
+	ChannelAbilityID    string  // active channel ability id; "" = not channeling
+	ChannelTargetID     int     // enemy target unit ID, resolved every tick
+	ChannelTickInterval float64 // seconds between channel effect ticks (snapshot of ability def)
+	ChannelNextTickIn   float64 // seconds until next effect tick fires
 	// Auto-cast state (Part 10), per unit instance — lazily allocated, GC'd
 	// with the unit on death (no shared/global state, nothing to clean up).
 	// AutoCastEnabled[abilityID] == true ⇒ the unit auto-casts that ability
@@ -632,6 +645,14 @@ type GameState struct {
 	// fire when a projectile lands; see projectile.go.
 	Projectiles      []*Projectile
 	nextProjectileID int
+
+	// Beams is the set of active channeled-beam visuals. Each Beam is owned
+	// by a unit that is currently channeling a beam-type ability (siphon_life).
+	// The channel lifecycle (damage, mana, stop) is driven by the Unit's
+	// Channel* fields; Beams is purely the visual entity the client renders.
+	// Managed via spawnBeamLocked / removeBeamForUnitLocked / removeBeamForTargetLocked.
+	Beams      []*Beam
+	nextBeamID int
 
 	// activeEffects is the set of generalized transient visual effects (e.g.
 	// "whirlwind" spin overlay). Purely visual — gameplay logic is handled by
@@ -1142,6 +1163,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			StunnedRemaining:    unit.StunnedRemaining,
 			SlowedRemaining:     unit.SlowedRemaining,
 			SlowedMultiplier:    unit.SlowedMultiplier,
+			ChannelLoopStart:    s.channelLoopStartForUnitLocked(unit),
+			ChannelLoopEnd:      s.channelLoopEndForUnitLocked(unit),
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -1289,6 +1312,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		}
 	}
 
+	beams := s.beamSnapshotsLocked(nil)
+
 	return protocol.MatchSnapshotMessage{
 		Type:               "match_snapshot",
 		Tick:               s.Tick,
@@ -1300,6 +1325,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Banners:            banners,
 		Traps:              traps,
 		Projectiles:        projectiles,
+		Beams:              beams,
 		Effects:            s.effectSnapshotsLocked(),
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
@@ -1447,6 +1473,8 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			StunnedRemaining:    unit.StunnedRemaining,
 			SlowedRemaining:     unit.SlowedRemaining,
 			SlowedMultiplier:    unit.SlowedMultiplier,
+			ChannelLoopStart:    s.channelLoopStartForUnitLocked(unit),
+			ChannelLoopEnd:      s.channelLoopEndForUnitLocked(unit),
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -1615,6 +1643,8 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		}
 	}
 
+	beams := s.beamSnapshotsLocked(fow)
+
 	return protocol.MatchSnapshotMessage{
 		Type:               "match_snapshot",
 		Tick:               s.Tick,
@@ -1626,6 +1656,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		Banners:            banners,
 		Traps:              traps,
 		Projectiles:        projectiles,
+		Beams:              beams,
 		Effects:            effects,
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
@@ -1870,6 +1901,8 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			StunnedRemaining:    unit.StunnedRemaining,
 			SlowedRemaining:     unit.SlowedRemaining,
 			SlowedMultiplier:    unit.SlowedMultiplier,
+			ChannelLoopStart:    s.channelLoopStartForUnitLocked(unit),
+			ChannelLoopEnd:      s.channelLoopEndForUnitLocked(unit),
 			CarriedResourceType: unit.CarriedResourceType,
 			CarriedAmount:       unit.CarriedAmount,
 			Moving:              unit.Moving,
@@ -2002,6 +2035,8 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		}
 	}
 
+	beams := s.beamSnapshotsLocked(nil)
+
 	return protocol.MatchSnapshotMessage{
 		Type:               "match_snapshot",
 		Tick:               s.Tick,
@@ -2013,6 +2048,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		Banners:            banners,
 		Traps:              traps,
 		Projectiles:        projectiles,
+		Beams:              beams,
 		Effects:            s.effectSnapshotsLocked(),
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
@@ -2231,6 +2267,13 @@ func (s *GameState) Update(dt float64) {
 		// Advance an in-progress ability cast (count down, resolve, or cancel
 		// if the target became invalid). No-op when not casting.
 		s.tickUnitCastLocked(unit, dt)
+
+		// Advance an active channel (Siphon Life etc.). Channels and one-shot
+		// casts are mutually exclusive, so at most one of these is a no-op per
+		// unit per tick. Channel tick runs AFTER the one-shot tick so that a
+		// 0-cast-time ability that resolves to a channel entry this same tick
+		// would still have its first channel tick next Update().
+		s.tickUnitChannelLocked(unit, dt)
 
 		// Decay ability cooldowns, then run the auto-cast loop (may initiate
 		// a new cast if an auto-cast-enabled ability is ready). No-op for
@@ -2694,6 +2737,21 @@ func (s *GameState) RemovePlayer(playerID string) {
 }
 
 func (s *GameState) removeUnitLocked(unitID int) {
+	// Clean up any active channel the dying unit was running, and clear the
+	// channel state on any unit that was targeting this unit's beam.
+	// Do this before removeUnitByIDLocked so the unit is still resolvable
+	// inside stopUnitChannelLocked / clearChannelStateLocked.
+	if u, ok := s.unitsByID[unitID]; ok && u != nil {
+		if u.ChannelAbilityID != "" {
+			// Caster died — clear without a reason (no UI feedback needed).
+			s.clearUnitChannelLocked(u)
+		}
+	}
+	// If this unit was the TARGET of someone else's beam, drop that beam
+	// immediately. The channel tick will also catch it next tick, but
+	// removing here keeps visual state clean within the same tick.
+	s.removeBeamForTargetLocked(unitID)
+
 	s.removeUnitByIDLocked(unitID)
 
 	// Drop in-flight projectiles involving this unit so stale IDs don't linger.

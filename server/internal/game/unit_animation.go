@@ -21,9 +21,10 @@ package game
 //     client UnitAnimationName union has a death entry. Out of scope here —
 //     the spec only mandated adding "Casting".
 const (
-	unitStatusIdle      = "Idle"
-	unitStatusAttacking = "Attacking"
-	unitStatusCasting   = "Casting"
+	unitStatusIdle       = "Idle"
+	unitStatusAttacking  = "Attacking"
+	unitStatusCasting    = "Casting"
+	unitStatusChanneling = "Channeling"
 )
 
 // beginUnitCastingLocked puts a unit into the casting animation state. It is

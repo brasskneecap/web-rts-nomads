@@ -188,6 +188,7 @@ func (s *GameState) focusHasStaleHealBuffLocked(caster, focus *Unit) bool {
 func init() {
 	RegisterAutoCastSelector("lowest_hp_percentage_ally_in_range", selectLowestHPPercentageAllyInRange)
 	RegisterAutoCastSelector("closest_enemy_in_range", selectClosestEnemyInRange)
+	RegisterAutoCastSelector("lowest_hp_percentage_enemy_in_range", selectLowestHPPercentageEnemyInRange)
 	RegisterAutoCastSelector("self", selectSelf)
 }
 
@@ -410,6 +411,44 @@ func selectClosestEnemyInRange(s *GameState, caster *Unit, def AbilityDef) *Unit
 		distSq := distanceSquared(caster.X, caster.Y, u.X, u.Y)
 		if best == nil || distSq < bestDistSq || (distSq == bestDistSq && u.ID < best.ID) {
 			best, bestDistSq = u, distSq
+		}
+	}
+	return best
+}
+
+// selectLowestHPPercentageEnemyInRange returns the hostile unit that is in
+// cast range and has the lowest current/max HP ratio. Mirrors
+// selectLowestHPPercentageAllyInRange but targets enemies instead of allies.
+// Ties are broken by ascending unit ID for determinism. Returns nil when no
+// valid hostile is in range.
+func selectLowestHPPercentageEnemyInRange(s *GameState, caster *Unit, def AbilityDef) *Unit {
+	if caster == nil {
+		return nil
+	}
+	var best *Unit
+	for _, u := range s.Units {
+		if u == nil || u.MaxHP <= 0 || u.HP <= 0 || !u.Visible {
+			continue
+		}
+		if !s.unitsHostileLocked(caster, u) {
+			continue
+		}
+		if !s.canAbilityTargetUnitLocked(def, caster, u) {
+			continue
+		}
+		if !def.WithinCastRange(caster, u) {
+			continue
+		}
+		if best == nil {
+			best = u
+			continue
+		}
+		// Lower HP% wins: u.HP/u.MaxHP < best.HP/best.MaxHP
+		// ⟺ u.HP*best.MaxHP < best.HP*u.MaxHP (int64 avoids overflow).
+		lhs := int64(u.HP) * int64(best.MaxHP)
+		rhs := int64(best.HP) * int64(u.MaxHP)
+		if lhs < rhs || (lhs == rhs && u.ID < best.ID) {
+			best = u
 		}
 	}
 	return best

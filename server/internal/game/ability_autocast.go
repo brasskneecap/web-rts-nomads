@@ -175,6 +175,20 @@ func (s *GameState) tickUnitAutoCastLocked(unit *Unit) {
 		if unit.CurrentMana < def.ManaCost {
 			continue // not enough mana
 		}
+		// Channeled-ability precondition: for siphon_life (and any future
+		// channeled ability with AllyHealRadius > 0), only auto-start when
+		// the caster or a nearby ally needs healing. Without this guard, the
+		// auto-cast would drain mana whenever an enemy is in range even when
+		// the caster's team is at full health — wasteful and player-hostile.
+		if def.ChannelType != "" && !s.siphonHealingNeededLocked(unit, def) {
+			continue
+		}
+		// Also gate: don't start a channel while already channeling another
+		// ability (the channel lifecycle itself enforces this, but skipping
+		// here avoids routing a no-op cast through beginAbilityCastLocked).
+		if def.ChannelType != "" && unit.ChannelAbilityID != "" {
+			continue
+		}
 		target := s.resolveAutoCastTargetLocked(unit, def)
 		if target == nil {
 			continue // no valid target right now
@@ -229,6 +243,9 @@ func (s *GameState) abilityStatesLocked(unit *Unit) []protocol.AbilitySnapshot {
 			// visible cooldown that doubles as a "you're casting" indicator.
 			CooldownRemaining: unit.AbilityCooldowns[id],
 			CooldownTotal:     def.EffectiveCooldown(),
+			// Channeling is true when this ability is the unit's active channel.
+			// The action bar uses this to render the "channeling in progress" state.
+			Channeling: unit.ChannelAbilityID == id,
 		})
 	}
 	if len(out) == 0 {

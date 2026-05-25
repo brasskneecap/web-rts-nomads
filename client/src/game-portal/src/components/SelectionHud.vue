@@ -333,6 +333,7 @@
               :class="{
                 'action-cell--active': ui.selection.actions[i - 1].active,
                 'action-cell--autocast': ui.selection.actions[i - 1].autoCast,
+                'action-cell--channeling': ui.selection.actions[i - 1].channeling,
                 'action-cell--cooldown': perkCooldownFraction(ui.selection.actions[i - 1]) > 0,
               }"
               :disabled="ui.selection.actions[i - 1].disabled"
@@ -1599,6 +1600,27 @@ button.inventory-slot:focus-visible {
   box-shadow:
     inset 0 0 0 2px rgba(90, 190, 255, 0.7),
     0 0 7px rgba(90, 190, 255, 0.45);
+}
+
+/* Channeling in progress: pulsing green border. Distinct from auto-cast
+   (blue) so the player can glance at the action bar and read "this unit is
+   actively channeling this ability right now." The animation pulses between
+   a dim and bright green glow over 0.7 s to match the beam's pulse rate. */
+.action-cell--channeling {
+  animation: ability-channeling-pulse 0.7s ease-in-out infinite;
+}
+
+@keyframes ability-channeling-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 2px rgba(50, 210, 100, 0.55),
+      0 0 5px rgba(40, 190, 80, 0.30);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 2px rgba(80, 255, 140, 0.90),
+      0 0 10px rgba(60, 230, 110, 0.65);
+  }
 }
 
 .action-cell:disabled {

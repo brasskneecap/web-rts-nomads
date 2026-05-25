@@ -65,8 +65,14 @@ type pathCatalogFile struct {
 	// Per-instance AutoCastEnabled / AbilityCooldowns are migrated by position
 	// in assignUnitPathAbilitiesLocked so a heal-autocasted acolyte keeps
 	// autocast on greater_heal after promotion.
-	Abilities *[]string                    `json:"abilities,omitempty"`
-	Ranks     map[string]pathRankStatsJSON `json:"ranks"`
+	Abilities *[]string `json:"abilities,omitempty"`
+	// ChannelLoop overrides the base unit def's ChannelLoop for units on
+	// this path (e.g. the Siphoner pinning its channel pose to a different
+	// pair of frames than a hypothetical other Acolyte channel-path). Same
+	// pointer-to-struct semantics as UnitDef.ChannelLoop: absent ⇒ inherit
+	// from the unit def. Validated at load (start >= 0, end >= start).
+	ChannelLoop *ChannelLoopRange            `json:"channelLoop,omitempty"`
+	Ranks       map[string]pathRankStatsJSON `json:"ranks"`
 }
 
 // pathRankStatsJSON mirrors the stat-modifier fields of pathModifierDef (the
@@ -132,6 +138,13 @@ var pathProjectileScaleByPath = map[string]float64{}
 // rank-grants (path_ability_defs.go) + state migration in one resolution
 // pass.
 var pathAbilitiesByPath = map[string][]string{}
+
+// pathChannelLoopByPath stores the optional per-path channel-pose frame
+// override, keyed by path id (e.g. "siphoner": {Start: 3, End: 4}). A path
+// absent from the map means "no override — fall back to the base unit
+// def's ChannelLoop, or (0, 0) if that is also absent". Read by
+// channelLoopRangeForUnitLocked at snapshot time.
+var pathChannelLoopByPath = map[string]ChannelLoopRange{}
 
 // pathsByUnitType records the catalog topology: which unit directory owns
 // each path directory. Keyed by unit type, value is the sorted list of path
@@ -289,6 +302,24 @@ func init() {
 				}
 				if file.ProjectileScale > 0 {
 					pathProjectileScaleByPath[file.Path] = file.ProjectileScale
+				}
+				// Validate and store per-path channel-pose frame override
+				// (when declared). Frame indices must be non-negative and
+				// end >= start. Out-of-range positive values modulo on the
+				// client at draw time, so we don't bound-check against an
+				// expected sheet frame count here — the sprite sheet is
+				// client-side data the server doesn't know about.
+				if file.ChannelLoop != nil {
+					if file.ChannelLoop.Start < 0 {
+						panic(rel + `: channelLoop.start must be >= 0`)
+					}
+					if file.ChannelLoop.End < file.ChannelLoop.Start {
+						panic(rel + `: channelLoop.end must be >= channelLoop.start`)
+					}
+					if _, dup := pathChannelLoopByPath[file.Path]; dup {
+						panic(fmt.Sprintf("%s: duplicate path-level channelLoop override for %q", rel, file.Path))
+					}
+					pathChannelLoopByPath[file.Path] = *file.ChannelLoop
 				}
 				// Validate and store per-path ability override (when declared).
 				// Each id must be a registered AbilityDef so a typo fails loud

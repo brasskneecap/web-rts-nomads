@@ -2,6 +2,7 @@ import type {
   ActiveEffectIcon,
   BannerSnapshot,
   BattleTrackerSnapshot,
+  BeamSnapshot,
   BuildingTile,
   CommanderAbilitySnapshot,
   EffectSnapshot,
@@ -141,6 +142,14 @@ export type Unit = {
   /** Inventory the unit is carrying. Absent for units that don't have an
    *  inventory capability. See ItemDef / ITEM_DEF_MAP for item resolution. */
   inventory?: Inventory
+  /** Inclusive frame range the client one-way loops through on the casting
+   *  sprite sheet while this unit is channeling a beam ability. Mirrors
+   *  UnitSnapshot.channelLoopStart / channelLoopEnd — both set when status
+   *  is 'Channeling', absent otherwise. start == end → single held frame;
+   *  start < end → small loop at the unit's normal frame cadence. Out-of-
+   *  range values modulo into the sheet at draw time. */
+  channelLoopStart?: number
+  channelLoopEnd?: number
 }
 
 /** A held item — carries the item id and optional stack count. Look up
@@ -173,6 +182,9 @@ export type ActionItem = {
   autoCast?: boolean
   /** Ability supports auto-cast (right-click toggles it). */
   supportsAutoCast?: boolean
+  /** True while this ability is actively channeling on the unit. Drives the
+   *  pulsing green border on the action button in SelectionHud. */
+  channeling?: boolean
   /** Rank tier for perk slots — drives the rank-colored border in SelectionHud. */
   perkRank?: 'bronze' | 'silver' | 'gold'
   /** Tooltip header shown on hover for perk slots. */
@@ -467,6 +479,7 @@ export class GameState {
   banners: BannerSnapshot[] = []
   traps: TrapSnapshot[] = []
   projectiles: ProjectileSnapshot[] = []
+  beams: BeamSnapshot[] = []
   effects: EffectSnapshot[] = []
   // Battle tracker snapshot (debug). Null when the active map does not have
   // debug.battleTracker enabled. Consumed by BattleTrackerPanel.vue.
@@ -738,6 +751,8 @@ export class GameState {
         order: unit.order,
         focusTargetId: unit.focusTargetId,
         inventory: unit.inventory,
+        channelLoopStart: unit.channelLoopStart,
+        channelLoopEnd: unit.channelLoopEnd,
       })),
     }
 
@@ -1053,6 +1068,7 @@ export class GameState {
     this.banners = message.banners ?? []
     this.traps = message.traps ?? []
     this.projectiles = message.projectiles ?? []
+    this.beams = message.beams ?? []
     this.effects = message.effects ?? []
     if (this.selectedTrapId && !this.traps.some((t) => t.id === this.selectedTrapId)) {
       this.selectedTrapId = null
@@ -2570,6 +2586,7 @@ function getAbilityActionItems(
       active: activeMode === 'cast-ability' && castAbilityId === a.id,
       autoCast: !!a.autoCast,
       supportsAutoCast: !!a.supportsAutoCast,
+      channeling: !!a.channeling,
       cooldownRemaining: a.cooldownRemaining,
       cooldownTotal: a.cooldownTotal,
       tooltipTitle: name,
@@ -2761,6 +2778,7 @@ function getSharedAbilityActionItems(
       // Aggregate across every unit's snapshot of THIS ability id.
       let allAutoCast = true
       let supportsAutoCast = false
+      let anyChanneling = false
       let maxCdRemaining = 0
       let maxCdTotal = 0
       for (const u of units) {
@@ -2768,6 +2786,7 @@ function getSharedAbilityActionItems(
         if (!snap) continue
         if (!snap.autoCast) allAutoCast = false
         if (snap.supportsAutoCast) supportsAutoCast = true
+        if (snap.channeling) anyChanneling = true
         if ((snap.cooldownRemaining ?? 0) > maxCdRemaining) {
           maxCdRemaining = snap.cooldownRemaining ?? 0
         }
@@ -2782,6 +2801,7 @@ function getSharedAbilityActionItems(
         active: activeMode === 'cast-ability' && castAbilityId === a.id,
         autoCast: allAutoCast,
         supportsAutoCast,
+        channeling: anyChanneling,
         cooldownRemaining: maxCdRemaining > 0 ? maxCdRemaining : undefined,
         cooldownTotal: maxCdTotal > 0 ? maxCdTotal : undefined,
         tooltipTitle: name,

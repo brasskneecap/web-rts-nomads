@@ -1,0 +1,23 @@
+{
+  "id": "siphon_life",
+  "displayName": "Siphon Life",
+  "type": "spell",
+  "channelType": "beam",
+  "canTargetEnemies": true,
+  "castRange": 220,
+  "castTime": 0,
+  "manaCost": 0,
+  "cooldown": 0,
+  "damageType": "shadow",
+  "damageAmount": 0,
+  "icon": "TODO/abilities/siphon_life.png",
+  "casterAnimation": "Casting",
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "lowest_hp_percentage_enemy_in_range",
+  "defaultAutoCast": false,
+  "tickIntervalSeconds": 0.25,
+  "manaCostPerTick": 1,
+  "damagePerTick": 3,
+  "healingMultiplier": 1.0,
+  "allyHealRadius": 220
+}

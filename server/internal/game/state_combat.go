@@ -444,7 +444,14 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 		// timed cast lifecycle (duration, mana, interrupt) is layered on this
 		// by the ability system.
 		if unit.Casting {
-			unit.Status = unitStatusCasting
+			// Channeled abilities (Siphon Life) ride the same Casting lock but
+			// expose a distinct status so the client can pin a held sprite
+			// frame instead of looping the casting cycle.
+			if unit.ChannelAbilityID != "" {
+				unit.Status = unitStatusChanneling
+			} else {
+				unit.Status = unitStatusCasting
+			}
 			continue
 		}
 

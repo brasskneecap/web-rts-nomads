@@ -612,6 +612,13 @@ func (s *GameState) nextMovementOrderIDLocked() int64 {
 }
 
 func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
+	// A new order cancels any active channel (Siphon Life etc.). This must
+	// run before the movement fields are overwritten so the stop reason is
+	// recorded cleanly. stopUnitChannelLocked is a no-op when not channeling.
+	if unit.ChannelAbilityID != "" {
+		s.stopUnitChannelLocked(unit, channelInterruptedOrder)
+	}
+
 	unit.OrderID = orderID
 	unit.Path = nil
 	unit.Moving = false
