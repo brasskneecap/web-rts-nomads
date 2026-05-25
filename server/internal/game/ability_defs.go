@@ -160,6 +160,13 @@ type AbilityDef struct {
 	// existing getProjectileDef miss handling.
 	SummonUnitType string `json:"summonUnitType,omitempty"`
 
+	// SummonCount is the number of units (of SummonUnitType) this ability
+	// spawns per resolve. Default (0 or absent) normalises to 1. Values > 1
+	// fan the spawns out in a deterministic horizontal row below the caster
+	// so they do not stack at the same coordinate. Inert when
+	// SummonUnitType is empty.
+	SummonCount int `json:"summonCount,omitempty"`
+
 	// ── Auto-cast ──────────────────────────────────────────────────────────
 	// SupportsAutoCast gates whether the action bar exposes an auto-cast
 	// toggle for this ability (default false). AutoCastTargetSelector names a
@@ -342,6 +349,12 @@ func loadAbilityDefs() map[string]AbilityDef {
 		// is only entered for explicitly-authored values > 1.
 		if def.TargetCount < 1 {
 			def.TargetCount = 1
+		}
+		// Normalise SummonCount the same way: 0 / negative ⇒ 1. The summon
+		// loop in spawnSummonedUnitLocked is only entered when SummonUnitType
+		// is set, so this normalisation is inert for non-summon abilities.
+		if def.SummonCount < 1 {
+			def.SummonCount = 1
 		}
 		// Normalise HealingMultiplier: 0 (omitted) → 1.0 so a siphon_life
 		// that omits the field gets a lossless 1× conversion. Only applies

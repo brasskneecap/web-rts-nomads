@@ -29,9 +29,9 @@ func countUnitsOfType(s *GameState, unitType string) int {
 	return n
 }
 
-// Happy path: a necromancer casting raise_skeleton spawns one skeleton_soldier
-// owned by the same player, deducts the catalog mana cost, and arms the
-// cooldown.
+// Happy path: a necromancer casting raise_skeleton spawns def.SummonCount
+// skeleton_soldiers owned by the same player, deducts the catalog mana cost
+// once (not per-summon), and arms the cooldown.
 func TestRaiseSkeleton_SpawnsSkeletonAndDeductsMana(t *testing.T) {
 	s := newProjectileTestState(t)
 	def := raiseSkeletonDef(t)
@@ -59,8 +59,8 @@ func TestRaiseSkeleton_SpawnsSkeletonAndDeductsMana(t *testing.T) {
 	defer s.mu.RUnlock()
 
 	skeletonsAfter := countUnitsOfType(s, "skeleton_soldier")
-	if got, want := skeletonsAfter-skeletonsBefore, 1; got != want {
-		t.Errorf("skeleton_soldier count delta = %d; want %d", got, want)
+	if got, want := skeletonsAfter-skeletonsBefore, def.SummonCount; got != want {
+		t.Errorf("skeleton_soldier count delta = %d; want %d (def.SummonCount)", got, want)
 	}
 
 	n := s.unitsByID[necroID]
@@ -162,6 +162,9 @@ func TestRaiseSkeleton_CatalogWiring(t *testing.T) {
 	def := raiseSkeletonDef(t)
 	if def.SummonUnitType != "skeleton_soldier" {
 		t.Errorf("raise_skeleton.summonUnitType = %q; want %q", def.SummonUnitType, "skeleton_soldier")
+	}
+	if def.SummonCount < 1 {
+		t.Errorf("raise_skeleton.summonCount = %d; want >= 1 (loader normalisation expected)", def.SummonCount)
 	}
 	if !def.CanTargetSelf {
 		t.Error("raise_skeleton must be self-targetable (a necromancer summons next to itself)")

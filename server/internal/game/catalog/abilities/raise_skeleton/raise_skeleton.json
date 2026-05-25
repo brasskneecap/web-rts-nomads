@@ -13,6 +13,7 @@
   "damageType": "shadow",
   "casterAnimation": "Casting",
   "summonUnitType": "skeleton_soldier",
+  "summonCount": 3,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "self",
   "defaultAutoCast": true
