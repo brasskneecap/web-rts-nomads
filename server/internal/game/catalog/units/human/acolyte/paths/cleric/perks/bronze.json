@@ -42,7 +42,7 @@
     "tooltipTemplate": "Allies within {radiusPixels} regenerate an additional {bonusManaRegen:1} mana per second. Multiple Mana Conduits do not stack; the strongest aura wins.",
     "config": {
       "radiusPixels": 120,
-      "bonusManaRegen": 1.0
+      "bonusManaRegen": 2.0
     }
   }
 ]
