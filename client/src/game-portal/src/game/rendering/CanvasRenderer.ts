@@ -51,6 +51,7 @@ import {
 } from './unitSprites'
 import { getObjectSpriteSet } from './objectSprites'
 import { getEffectSprite } from './effectSprites'
+import { getBeamSprite } from './beamSprites'
 import { getResourceIconImage } from './resourceSprites'
 import { UnitAnimationController } from './unitAnimation'
 
@@ -2359,8 +2360,15 @@ export class CanvasRenderer {
       const originLift = this.getProjectileOriginLift(caster, originLiftCache)
       const targetLift = this.getProjectileTargetLift(target, targetLiftCache)
 
-      const originX = caster.x + originLift.x
-      const originY = caster.y + originLift.y
+      // Per-unit nudge for the beam source — sprites whose chest anchor
+      // doesn't fit (tall hood lands the default on the head; staff hand is
+      // off to one side) declare a `beamOrigin` in their sprites.json.
+      // Screen-space delta — does not rotate with facing.
+      const casterSpriteSet = getUnitSpriteSet(caster.path, caster.unitType)
+      const beamOrigin = casterSpriteSet?.beamOrigin ?? { x: 0, y: 0 }
+
+      const originX = caster.x + originLift.x + beamOrigin.x
+      const originY = caster.y + originLift.y + beamOrigin.y
       const endX = target.x + targetLift.x
       const endY = target.y + targetLift.y
 
@@ -2377,71 +2385,59 @@ export class CanvasRenderer {
    * Draw a single Siphon Life drain beam — a sustained necrotic green energy
    * tendril from the caster's hand to the target.
    *
-   * Layered passes (back to front):
-   *   1. Faint wide outer glow  — vivid green, low alpha, 10px envelope.
-   *   2. Mid-layer glow         — green-cyan, medium alpha, 5px.
-   *   3. Bright core            — near-white green, 1.75px, high alpha.
-   *   4. Caster-side puff       — soft radial gradient at origin.
-   *   5. Target-side ember      — brighter radial gradient at endpoint.
+   * Hybrid render:
+   *   1. Animated sprite body — frame strip from assets/beams/siphon_life/,
+   *      stretched along the caster→target vector. Frame index advances from
+   *      performance.now() so the beam wiggles continuously while channeling.
+   *      Sprite supplies its own outline + core; manifest's axisRotation
+   *      compensates for art painted on a diagonal.
+   *   2. Caster-side puff   — soft radial gradient at origin (energy emanating
+   *      from the hand). Sells the "this unit is the source" relationship.
+   *   3. Target-side ember  — brighter radial gradient at endpoint. Sells the
+   *      "being drained" relationship at the absorption point.
    *
-   * All widths scale with camera zoom identically to drawPierceWindStreak.
-   * Core alpha and width pulse gently via performance.now() so the beam feels
-   * "alive" without animating the endpoints (those are unit-position-driven).
+   * If the sprite hasn't decoded yet (first-frame race) we still draw the
+   * end-glows so the beam isn't visually missing.
    */
   private drawSiphonLifeBeam(originX: number, originY: number, endX: number, endY: number) {
     const ctx = this.ctx
 
-    // Pulse: ±15% sine wave over ~700ms.
+    const dx = endX - originX
+    const dy = endY - originY
+    const length = Math.hypot(dx, dy)
+    if (length < 0.5) return // caster and target coincident — nothing meaningful to draw
+    const angle = Math.atan2(dy, dx)
+
+    // Pulse used by the end-glows so they breathe in time with the channel.
     const pulseT = (Math.sin((performance.now() / 700) * Math.PI * 2) + 1) / 2 // 0..1
     const pulseFactor = 0.85 + 0.15 * pulseT
 
-    // Width budget — same scaling pattern as drawPierceWindStreak.
-    const outerGlowWidth = Math.max(6, 10 / this.camera.zoom)
-    const midGlowWidth   = Math.max(3, 5  / this.camera.zoom)
-    const coreWidth      = Math.max(1, 1.75 / this.camera.zoom) * pulseFactor
-    const puffRadius     = Math.max(3, 5  / this.camera.zoom)
-    const emberRadius    = Math.max(3.5, 6 / this.camera.zoom)
+    const sprite = getBeamSprite('siphon_life')
+    if (sprite && sprite.image && sprite.image.complete && sprite.image.naturalWidth > 0) {
+      const { image, frameWidth, frameHeight, frames, frameDurationMs, axisRotation, headOnRight, displayHeight } = sprite
+      const frameIndex = Math.floor(performance.now() / frameDurationMs) % frames
+      const sx = frameIndex * frameWidth
+      const axisRad = (axisRotation * Math.PI) / 180
 
-    // Pass 1 — faint wide outer glow. A dark, sickly green haze around the
-    // beam to give it a "necrotic" feel vs. the brighter pierce streak.
-    ctx.save()
-    ctx.lineCap = 'round'
-    ctx.strokeStyle = 'rgba(40, 200, 90, 0.18)'
-    ctx.lineWidth = outerGlowWidth
-    ctx.beginPath()
-    ctx.moveTo(originX, originY)
-    ctx.lineTo(endX, endY)
-    ctx.stroke()
-    ctx.restore()
+      ctx.save()
+      const prevSmoothing = ctx.imageSmoothingEnabled
+      ctx.imageSmoothingEnabled = false
+      ctx.translate(originX, originY)
+      // Rotate so the painted axis ends up parallel to caster→target.
+      ctx.rotate(angle - axisRad)
+      if (!headOnRight) {
+        // Mirror horizontally so the painted "head" (impact end) lands on the
+        // target side after the stretch.
+        ctx.translate(length, 0)
+        ctx.scale(-1, 1)
+      }
+      ctx.drawImage(image, sx, 0, frameWidth, frameHeight, 0, -displayHeight / 2, length, displayHeight)
+      ctx.imageSmoothingEnabled = prevSmoothing
+      ctx.restore()
+    }
 
-    // Pass 2 — mid-layer green-cyan glow. Slightly narrower and more opaque
-    // than the outer haze so the beam tapers visually toward the core.
-    const midAlpha = 0.45 + 0.05 * pulseFactor
-    ctx.save()
-    ctx.lineCap = 'round'
-    ctx.strokeStyle = `rgba(50, 210, 120, ${midAlpha})`
-    ctx.lineWidth = midGlowWidth
-    ctx.beginPath()
-    ctx.moveTo(originX, originY)
-    ctx.lineTo(endX, endY)
-    ctx.stroke()
-    ctx.restore()
-
-    // Pass 3 — bright near-white green core spine. Pulsing alpha + width give
-    // the sustained beam a sense of active energy transfer.
-    const coreAlpha = (0.88 + 0.07 * pulseFactor)
-    ctx.save()
-    ctx.lineCap = 'round'
-    ctx.strokeStyle = `rgba(180, 255, 200, ${coreAlpha})`
-    ctx.lineWidth = coreWidth
-    ctx.beginPath()
-    ctx.moveTo(originX, originY)
-    ctx.lineTo(endX, endY)
-    ctx.stroke()
-    ctx.restore()
-
-    // Pass 4 — caster-side puff: soft green radial gradient at the origin
-    // ("energy emanating from the hand").
+    // Caster-side puff: soft green radial gradient at the origin.
+    const puffRadius = Math.max(3, 5 / this.camera.zoom)
     const puffGradient = ctx.createRadialGradient(originX, originY, 0, originX, originY, puffRadius)
     puffGradient.addColorStop(0, `rgba(200, 255, 215, ${0.75 * pulseFactor})`)
     puffGradient.addColorStop(0.55, `rgba(50, 200, 100, ${0.35 * pulseFactor})`)
@@ -2453,8 +2449,9 @@ export class CanvasRenderer {
     ctx.fill()
     ctx.restore()
 
-    // Pass 5 — target-side ember: slightly brighter and more saturated to sell
-    // "being drained" — the terminus is where the energy is being absorbed.
+    // Target-side ember: slightly brighter and more saturated to sell the
+    // absorption point ("energy being drained here").
+    const emberRadius = Math.max(3.5, 6 / this.camera.zoom)
     const emberAlpha = 0.80 + 0.10 * pulseFactor
     const emberGradient = ctx.createRadialGradient(endX, endY, 0, endX, endY, emberRadius)
     emberGradient.addColorStop(0, `rgba(160, 255, 180, ${emberAlpha})`)

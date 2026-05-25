@@ -7,7 +7,15 @@
       "Bash(python -c \"from PIL import Image; im = Image.open\\(r'c:/Dev/web-rts-nomads/client/src/game-portal/src/assets/buildings/farm/sprite.png'\\); print\\(im.size\\)\")",
       "Bash(PowerShell -Command \"Select-String -Path 'C:\\\\Dev\\\\web-rts-nomads\\\\server\\\\pkg\\\\protocol\\\\messages.go' -Pattern 'MinorDamageEventSnapshot' -Context 0,5\")",
       "Bash(PowerShell -Command \"Select-String -Path 'C:\\\\Dev\\\\web-rts-nomads\\\\server\\\\internal\\\\game\\\\trap.go' -Pattern 'recordMinorDamageHitLocked' -Context 3,3\")",
-      "Bash(wait)"
+      "Bash(wait)",
+      "Bash(xargs ls -la)",
+      "Read(//c/Users/codya/Downloads/**)",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile\\('C:\\\\Users\\\\codya\\\\Downloads\\\\siphon-life.png'\\); \"Width: $\\($img.Width\\), Height: $\\($img.Height\\)\"; $img.Dispose\\(\\))",
+      "Bash(mkdir -p \"c:/Dev/web-rts-nomads/client/src/game-portal/src/assets/beams/siphon_life\" && cp \"c:/Users/codya/Downloads/siphon-life.png\" \"c:/Dev/web-rts-nomads/client/src/game-portal/src/assets/beams/siphon_life/sheet.png\" && ls \"c:/Dev/web-rts-nomads/client/src/game-portal/src/assets/beams/siphon_life/\")",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile\\('c:\\\\Dev\\\\web-rts-nomads\\\\client\\\\src\\\\game-portal\\\\src\\\\assets\\\\beams\\\\siphon_life\\\\sheet.png'\\); \"Width: $\\($img.Width\\), Height: $\\($img.Height\\)\"; $img.Dispose\\(\\))"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\codya\\Downloads"
     ]
   }
 }

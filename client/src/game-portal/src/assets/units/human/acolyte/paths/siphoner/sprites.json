@@ -4,6 +4,10 @@
     "width": 120,
     "height": 120
   },
+  "beamOrigin": {
+    "x": 0,
+    "y": 15
+  },
   "rotations": {
     "sheet": "packed/rotations.png",
     "rowOrder": [

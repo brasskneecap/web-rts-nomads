@@ -75,6 +75,13 @@ interface SpriteManifest {
     // Legacy layout: per-direction horizontal strip (row always 0).
     strips?: DirectionMap<string>
   }>
+  // Optional world-pixel offset added to the chest anchor when a channel
+  // beam (e.g. siphon_life) originates from this unit. +x = right on screen,
+  // +y = down on screen. Use to nudge the beam source onto the actual
+  // mid-body / weapon hand when the default chest anchor doesn't fit (tall
+  // hood, offset shoulder, etc.). Applied in screen-space — does NOT rotate
+  // with the unit's facing, so tune for the most common cast direction.
+  beamOrigin?: { x?: number; y?: number }
 }
 
 function isPackedRotations(r: unknown): r is PackedRotations {
@@ -100,6 +107,9 @@ export interface UnitSpriteSet {
   size: { width: number; height: number }
   rotations: DirectionMap<HTMLImageElement>
   animations: Map<string, StripAnimation>
+  // World-pixel offset applied to the chest anchor when this unit is the
+  // source of a channel beam. Always present; defaults to { x: 0, y: 0 }.
+  beamOrigin: { x: number; y: number }
 }
 
 export interface DrawableFrame {
@@ -274,7 +284,16 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
     })
   }
 
-  sprites.set(key, { key, size, rotations, animations })
+  sprites.set(key, {
+    key,
+    size,
+    rotations,
+    animations,
+    beamOrigin: {
+      x: manifest.beamOrigin?.x ?? 0,
+      y: manifest.beamOrigin?.y ?? 0,
+    },
+  })
 }
 
 // Picks the first sprite set matching any of the supplied keys (case-insensitive).
