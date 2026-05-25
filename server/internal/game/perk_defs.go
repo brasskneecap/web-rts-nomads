@@ -126,6 +126,16 @@ type PerkDef struct {
 	// the perk has no generalized visual effect (most perks). Populated from
 	// the "effect" key in the catalog JSON.
 	Effect *PerkEffect `json:"effect,omitempty"`
+	// GrantsAbilities lists ability ids that should be appended to the
+	// unit's Abilities slice when this perk is owned. Empty / nil for the
+	// vast majority of perks. Used by ability-granting perks (Siphoner
+	// bronze: lingering_hex / mark_of_weakness) so a Siphoner with the
+	// corresponding Bronze pick gains a new castable on their action bar.
+	// The grant is applied in assignUnitPathAbilitiesLocked (step 4) and
+	// is idempotent — duplicate ids are filtered. Removing the perk would
+	// strip the ability; we don't currently support perk removal, so this
+	// is unidirectional.
+	GrantsAbilities []string `json:"grantsAbilities,omitempty"`
 }
 
 // ConfigForRank returns the effective config map for a perk at a given rank.
@@ -175,6 +185,7 @@ type perkEntryJSON struct {
 	RequiresPerk          string                     `json:"requiresPerk,omitempty"`
 	Config                map[string]json.RawMessage `json:"config"`
 	Effect                *PerkEffect                `json:"effect,omitempty"`
+	GrantsAbilities       []string                   `json:"grantsAbilities,omitempty"`
 }
 
 // perkRankOverrideKeys enumerates the JSON keys inside `config` that are
@@ -279,6 +290,7 @@ func init() {
 				Config:                base,
 				ConfigByRank:          overrides,
 				Effect:                entry.Effect,
+				GrantsAbilities:       entry.GrantsAbilities,
 			}
 			perkDefsByID[def.ID] = def
 		}

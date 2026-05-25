@@ -196,6 +196,18 @@ func (s *GameState) healUnitLocked(unit *Unit, amount int) {
 	if unit == nil || amount <= 0 || unit.HP <= 0 {
 		return
 	}
+	// Mark of Weakness (Siphoner bronze) scales every incoming heal applied
+	// to this unit. The check is cheap (one PerkState read) and a no-op when
+	// the debuff isn't active. Applied here — at the canonical heal entry —
+	// so EVERY heal path (passive regen, blood_sustain, applyClericHeal-
+	// Locked overflow, future sources) is consistently throttled without
+	// requiring each call site to remember.
+	if mult := markOfWeaknessHealingReceivedMultiplierLocked(unit); mult < 1.0 {
+		amount = int(math.Round(float64(amount) * mult))
+		if amount <= 0 {
+			return
+		}
+	}
 	missing := unit.MaxHP - unit.HP
 	if amount <= missing {
 		unit.HP += amount
@@ -271,10 +283,24 @@ func (s *GameState) perkArmorPercentBonusLocked(unit *Unit) float64 {
 // Returns 0 when no debuff is active.
 // ─────────────────────────────────────────────────────────────────────────────
 func (s *GameState) perkOutgoingDamageDebuffMultiplierLocked(unit *Unit) float64 {
-	if unit == nil || unit.PerkState.WeakenedRemaining <= 0 {
+	if unit == nil {
 		return 0
 	}
-	return unit.PerkState.WeakenedMultiplier
+	total := 0.0
+	if unit.PerkState.WeakenedRemaining > 0 {
+		total += unit.PerkState.WeakenedMultiplier
+	}
+	// Withering Beam (Siphoner bronze) stacks an additional outgoing-damage
+	// debuff on top of Weakened. Both feed the same consumer in
+	// tickUnitCombatLocked (raw_damage *= 1 - debuff). Cap the total at 1.0
+	// so the multiplier can never produce negative damage even if both
+	// sources hit at full strength simultaneously (which is intentional —
+	// stacking debuffs feel valuable — just bounded).
+	total += witheringBeamDamageDebuffMultiplierLocked(unit)
+	if total > 1.0 {
+		total = 1.0
+	}
+	return total
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -511,7 +537,18 @@ func (s *GameState) effectiveArmorLocked(unit *Unit) int {
 		s.perkBonusArmorFromBuffsLocked(unit)
 	percentBonus := s.perkArmorPercentBonusLocked(unit) +
 		s.perkArmorPercentBonusFromAurasLocked(unit)
-	return int(math.Floor(float64(unit.Armor)*(1.0+percentBonus))) + flatBonus
+	// Mark of Weakness (Siphoner bronze) — flat armor reduction applied
+	// after all positive bonuses so it always lands at face value rather
+	// than being scaled by percent armor sources. Clamp at 0 so a stacked
+	// debuff against a low-armor unit doesn't produce negative armor (the
+	// damage pipeline treats negative armor as "no mitigation", but a
+	// clearly-clamped zero is easier to reason about in the HUD).
+	result := int(math.Floor(float64(unit.Armor)*(1.0+percentBonus))) + flatBonus
+	result -= markOfWeaknessArmorReductionLocked(unit)
+	if result < 0 {
+		result = 0
+	}
+	return result
 }
 
 // perkBonusArmorFromBuffsLocked returns the flat-armor contribution from

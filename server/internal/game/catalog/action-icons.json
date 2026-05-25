@@ -113,6 +113,15 @@
     { "id": "perk-beacon-of-life",      "path": "M12 2l2 5h5l-4 3 2 6-5-4-5 4 2-6-4-3h5z M12 14a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 16v4 M10 18h4 M4 20l2-2 M20 20l-2-2" },
     { "id": "perk-divine-judgement",    "path": "M12 2l2 6h6l-5 4 2 7-5-4-5 4 2-7-5-4h6z M12 14v8 M8 18h8 M3 5l3 2 M21 5l-3 2 M3 21l4-3 M21 21l-4-3" },
 
-    { "id": "focus-target",          "path": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z M12 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M2 12h3 M19 12h3 M12 2v3 M12 19v3 M8 4l2 2 M16 4l-2 2 M8 20l2-2 M16 20l-2-2" }
+    { "id": "focus-target",          "path": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z M12 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M2 12h3 M19 12h3 M12 2v3 M12 19v3 M8 4l2 2 M16 4l-2 2 M8 20l2-2 M16 20l-2-2" },
+
+    { "id": "perk-soul-leech",       "path": "M12 2C9 6 7 9 7 13a5 5 0 0 0 10 0c0-4-2-7-5-11z M9 13a3 3 0 1 0 6 0 M12 7v6 M5 5l2 2 M19 5l-2 2 M3 11h2 M19 11h2 M8 18l-2 3 M16 18l2 3" },
+    { "id": "perk-withering-beam",   "path": "M3 12h18 M3 12l3-3 M3 12l3 3 M21 12l-3-3 M21 12l-3 3 M7 8v8 M12 7v10 M17 8v8 M5 4l1 2 M19 4l-1 2 M5 20l1-2 M19 20l-1-2" },
+    { "id": "perk-lingering-hex",    "path": "M12 2l3 5 5 1-3 4 1 6-6-3-6 3 1-6-3-4 5-1z M12 9v6 M9 12h6 M7 22l2-3 M17 22l-2-3 M3 18l3-1 M21 18l-3-1" },
+    { "id": "perk-mark-of-weakness", "path": "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M7 7l10 10 M17 7L7 17 M12 2v3 M12 19v3 M2 12h3 M19 12h3" },
+
+    { "id": "debuff-withering-beam",   "path": "M12 4v14 M8 8l4 4 4-4 M8 14l4-4 4 4 M5 20h14 M3 4l3 1 M21 4l-3 1" },
+    { "id": "debuff-lingering-hex",    "path": "M12 3l3 4h4l-2 4 3 4-5 1-3 4-3-4-5-1 3-4-2-4h4z M9 11h6 M12 9v6 M5 21l2-2 M19 21l-2-2" },
+    { "id": "debuff-mark-of-weakness", "path": "M12 2l8 5v5l-8 8-8-8V7z M8 8l8 8 M16 8L8 16 M12 6v2 M12 17v2 M5 12h2 M17 12h2" }
   ]
 }

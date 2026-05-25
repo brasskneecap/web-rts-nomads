@@ -17,15 +17,44 @@ package game
 // │        are inferred from the file path during loading.                  │
 // │                                                                         │
 // │    PERK RUNTIME BEHAVIOUR (effects, hooks, state)                       │
-// │      → perks.go          UnitPerkState, assignUnitPerkLocked,           │
-// │                          perkPoolForRankLocked, tickUnitPerkStateLocked │
-// │      → perks_attack.go   attack-speed / on-fire / on-hit / on-kill /    │
-// │                          whirlwind / cleave / bonus-damage hooks        │
-// │      → perks_defense.go  damage application, healing, shields, armor,  │
-// │                          incoming-damage mults, on-damage-taken,       │
-// │                          flat reduction, max-HP bonus                  │
-// │      → perks_movement.go perkMoveSpeedMultiplierLocked                  │
-// │      → perks_icons.go    activeBuff/DebuffIconsLocked (HUD)             │
+// │                                                                         │
+// │    FILE ORGANIZATION CONVENTION                                         │
+// │      Two axes in play. A perk's behaviour gets split across them:       │
+// │                                                                         │
+// │      1. By HOOK (concern) — shared, cross-cutting files:                │
+// │           perks.go          UnitPerkState, assignment, tick dispatch    │
+// │           perks_attack.go   attack-speed, on-fire, on-hit, on-kill,     │
+// │                             whirlwind, cleave, bonus-damage             │
+// │           perks_defense.go  damage application, healing, shields,       │
+// │                             armor, on-damage-taken, flat reduction,    │
+// │                             max-HP bonus                                │
+// │           perks_movement.go perkMoveSpeedMultiplierLocked               │
+// │           perks_icons.go    activeBuff/DebuffIconsLocked (HUD),         │
+// │                             perkCooldownsLocked                         │
+// │           perks_auras.go    perks_crit.go  perks_vision.go              │
+// │                                                                         │
+// │      2. By PATH — one file per promotion path, holds heavy helpers:    │
+// │           perks_cleric.go    Silver + Gold (Bronze is light → shared)   │
+// │           perks_marksman.go  every Marksman perk                        │
+// │           perks_siphoner.go  every Siphoner perk                        │
+// │           perks_trapper.go   Trapper modifier pipeline (trap data       │
+// │                              model + lifecycle lives in trap.go)        │
+// │                                                                         │
+// │      ADDING A NEW PERK                                                  │
+// │        - Lightweight perk (only a few case arms in the shared hook      │
+// │          functions, no helper state machine): add cases inline in the   │
+// │          shared hook files. No path file needed.                        │
+// │        - Heavy perk (helper functions, state machines, multi-helper     │
+// │          stamps, novel pipelines like the cleric heal funnel): put the  │
+// │          helpers in perks_<path>.go. If the file doesn't exist yet,     │
+// │          create it. The shared hook files still dispatch case arms      │
+// │          to this file's helpers.                                        │
+// │                                                                         │
+// │      WHY THE SPLIT — hook files keep cross-cutting concerns (every       │
+// │      attack-speed source in one place) easy to scan; path files keep    │
+// │      a path's authoring story (the helpers and state for cleric heal    │
+// │      routing, say) co-located. Forcing everything onto one axis loses   │
+// │      one of these benefits.                                             │
 // │                                                                         │
 // │    PERK ICONS (HUD artwork)                                             │
 // │      → catalog/action-icons.json  (id: "perk-<name>")                   │
@@ -534,6 +563,71 @@ type UnitPerkState struct {
 	// Per-unit recursion guards would be redundant with the metadata flags
 	// and would risk leaving stale `true` values if a panic/return skipped
 	// the reset path.
+
+	// ── Siphoner bronze perks ───────────────────────────────────────────────
+	// All four Siphoner Bronze perks layer onto the existing channel /
+	// ability / damage / heal pipelines. Soul Leech is stateless (read-only
+	// multiplier in the channel tick) so it has no PerkState fields.
+	//
+	// Withering Beam splits state across two roles:
+	//   • Caster-side (Siphoner owning the perk):
+	//       WitheringBeamChannelTargetID — id of the unit the caster has been
+	//         continuously siphoning. Reset to 0 when the channel ends or the
+	//         target changes; the accumulator below resets at the same time.
+	//       WitheringBeamChannelAccum — seconds of continuous siphon since the
+	//         last stack tick on the current target. Every `secondsPerStack`
+	//         it crosses the threshold the helper stamps one more stack on
+	//         the current target and subtracts the threshold.
+	//   • Target-side (any enemy carrying live stacks):
+	//       WitheringBeamStacks — current stack count (0..maxStacks).
+	//       WitheringBeamRemaining — seconds until the entire stack list
+	//         expires. Refreshed to `lingerSeconds` every time a new stack
+	//         lands; decays in the cross-unit loop in state.go alongside
+	//         WeakenedRemaining. When 0, WitheringBeamStacks and
+	//         WitheringBeamReductionPerStack are also cleared.
+	//       WitheringBeamReductionPerStack — outgoing-damage reduction
+	//         contributed by each stack. Carried with the affliction (set
+	//         at stamp time) so re-tuning the perk later doesn't retroact-
+	//         ively change live debuffs on units in flight.
+	WitheringBeamChannelTargetID  int
+	WitheringBeamChannelAccum     float64
+	WitheringBeamStacks           int
+	WitheringBeamRemaining        float64
+	WitheringBeamReductionPerStack float64
+
+	// Lingering Hex (autonomous AoE slow). The state splits across two
+	// roles:
+	//
+	//   • Owner-side (Siphoner with the perk):
+	//       LingeringHexCooldownRemaining — seconds until the perk may fire
+	//         again. Set to cooldownSeconds when the AoE pulses; decays in
+	//         tickUnitPerkStateLocked via tickLingeringHexPerkLocked. Zero
+	//         means "armed and waiting for an anchor enemy".
+	//
+	//   • Recipient-side (any hexed enemy):
+	//       LingeringHexRemaining — seconds left on the affliction. Decays
+	//         in the state.go cross-unit loop alongside WeakenedRemaining.
+	//       LingeringHexMoveMult / LingeringHexAttackSpeedMult — the two
+	//         multipliers carried with the affliction. Authored with
+	//         different defaults (0.75 move vs 0.80 attack) and consumed
+	//         by independent stat hooks (movement step + attack cadence).
+	//         Cleared when Remaining hits 0.
+	LingeringHexCooldownRemaining float64
+	LingeringHexRemaining         float64
+	LingeringHexMoveMult          float64
+	LingeringHexAttackSpeedMult   float64
+
+	// Mark of Weakness (autonomous AoE armor + healing-received debuff).
+	// Owner-side cooldown / recipient-side affliction split mirrors
+	// Lingering Hex above. ArmorReduction subtracts from effectiveArmor-
+	// Locked while Remaining > 0; HealingReceivedMult scales every
+	// incoming heal applied via healUnitLocked / applyClericHealLocked.
+	// Both affliction values are cleared in the state.go cross-unit
+	// decay when Remaining reaches 0.
+	MarkOfWeaknessCooldownRemaining   float64
+	MarkOfWeaknessRemaining           float64
+	MarkOfWeaknessArmorReduction      int
+	MarkOfWeaknessHealingReceivedMult float64
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1020,6 +1114,19 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			if unit.PerkState.DivineInterventionCooldownRemaining > 0 {
 				unit.PerkState.DivineInterventionCooldownRemaining = math.Max(0, unit.PerkState.DivineInterventionCooldownRemaining-dt)
 			}
+
+		// ── siphoner bronze autonomous-fire perks ────────────────────────────
+		// Lingering Hex and Mark of Weakness pulse their AoE on a per-unit
+		// cooldown, similar in spirit to the Trapper's auto-trap placement.
+		// The handlers gate on cooldown, mana, and a valid anchor enemy
+		// (preferring the Siphoner's current channel target, else nearest
+		// hostile in castRange). No cast time, no projectile — purely an
+		// affliction stamp + cooldown reset on success.
+		case "lingering_hex":
+			s.tickLingeringHexPerkLocked(unit, def, dt)
+
+		case "mark_of_weakness":
+			s.tickMarkOfWeaknessPerkLocked(unit, def, dt)
 
 		case "mana_conduit":
 			// Passive: flat bonus mana regen while alive. No targeting, no

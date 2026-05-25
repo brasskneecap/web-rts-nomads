@@ -3,7 +3,21 @@ package game
 import "webrts/server/pkg/protocol"
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TRAP MODIFIER PIPELINE
+// TRAPPER PERKS
+//
+// This file owns the perk-modifier pipeline that aggregates every Silver /
+// Gold Trapper perk into the effective trap stats applied at plant time.
+// The Bronze Trapper perks (caltrops, fire_pit, explosive_trap, marker_trap)
+// are case arms in tickUnitPerkStateLocked + light state on UnitPerkState;
+// the broader trap data model + lifecycle (plant / decay / on-stay / detonate
+// / cleanup) lives in trap.go because it is core simulation, not perk code.
+//
+// This split mirrors the per-path file convention documented in perks.go:
+// the perk-specific helpers (modifiers, gating) belong in perks_trapper.go;
+// the shared simulation backbone they call into (trap entities, zone
+// effects, placement timer) belongs in trap.go.
+//
+// MODIFIER PIPELINE
 //
 // Resolves the effective trap stats for a Trapper unit by aggregating all
 // perk-driven modifiers the unit currently owns. This pipeline is the single

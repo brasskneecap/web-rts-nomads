@@ -124,6 +124,14 @@ func (s *GameState) DebugSpawnUnit(msg protocol.DebugSpawnUnitMessage, callerPla
 		s.applyPerkGrantedHooksLocked(unit, perkID)
 	}
 
+	// Re-run path-ability derivation now that perks are appended so any
+	// perk-granted abilities (PerkDef.GrantsAbilities — Siphoner bronze
+	// lingering_hex / mark_of_weakness, future ability-granting perks)
+	// land on unit.Abilities. The earlier call above runs BEFORE perks
+	// are appended (path-level override + rank grants seed the list);
+	// this second call layers perk-grants on top idempotently.
+	s.assignUnitPathAbilitiesLocked(unit)
+
 	// Reapply rank / path modifiers so the debug-set rank actually scales
 	// MaxHP / Damage / MoveSpeed. preserveHealthPercent=false because the
 	// spawn is fresh (HP == MaxHP at this point).

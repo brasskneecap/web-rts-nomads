@@ -340,7 +340,7 @@ func (s *GameState) applyDelayedAttackLocked(unit *Unit, deadUnitIDs *[]int, des
 	// (cycle − pre-impact windup) so the next swing fires at the right
 	// moment to keep the overall cadence at 1/effectiveSpeed.
 	effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
-	effectiveSpeed = math.Max(0.1, effectiveSpeed*slowFactorLocked(unit))
+	effectiveSpeed = math.Max(0.1, effectiveSpeed*slowFactorLocked(unit)*lingeringHexAttackSpeedFactorLocked(unit))
 	cycleSeconds := 1.0 / effectiveSpeed
 	animDur := math.Min(1.0, cycleSeconds)
 	preImpact := animDur * attackDamageDeliveryFraction
@@ -532,7 +532,7 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 							// at attackDamageDeliveryFraction of the swing so the
 							// floating number coincides with the visible hit frame.
 							effectiveSpeed := math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
-							effectiveSpeed = math.Max(0.1, effectiveSpeed*slowFactorLocked(unit))
+							effectiveSpeed = math.Max(0.1, effectiveSpeed*slowFactorLocked(unit)*lingeringHexAttackSpeedFactorLocked(unit))
 							animDur := math.Min(1.0, 1.0/effectiveSpeed)
 							unit.AttackWindupRemaining = animDur * attackDamageDeliveryFraction
 						}
@@ -613,7 +613,7 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 							unit.AttackCooldown = math.Max(0, unit.AttackCooldown-dt)
 						}
 						if unit.AttackCooldown <= 0 {
-							buildingAttackSpeed := math.Max(0.1, unit.AttackSpeed*slowFactorLocked(unit))
+							buildingAttackSpeed := math.Max(0.1, unit.AttackSpeed*slowFactorLocked(unit)*lingeringHexAttackSpeedFactorLocked(unit))
 							animDur := math.Min(1.0, 1.0/buildingAttackSpeed)
 							unit.AttackWindupRemaining = animDur * attackDamageDeliveryFraction
 						}

@@ -195,6 +195,27 @@ func (s *GameState) assignUnitPathAbilitiesLocked(unit *Unit) {
 		}
 	}
 
+	// Step 4: per-perk ability grants. A perk's PerkDef.GrantsAbilities lists
+	// ability ids that should appear on the unit's action bar when the perk is
+	// owned. Used by ability-granting perks (e.g. Siphoner bronze:
+	// lingering_hex / mark_of_weakness — a Siphoner who rolls one of those
+	// Bronze picks gains a new castable). Idempotent: containsString dedupes
+	// so re-runs (DebugSpawnUnit, rank-up loop) never duplicate entries.
+	for _, perkID := range unit.PerkIDs {
+		def := perkDefByID(perkID)
+		if def == nil {
+			continue
+		}
+		for _, abilityID := range def.GrantsAbilities {
+			if abilityID == "" {
+				continue
+			}
+			if !containsString(newAbilities, abilityID) {
+				newAbilities = append(newAbilities, abilityID)
+			}
+		}
+	}
+
 	// Migrate AutoCastEnabled / AbilityCooldowns by position. Same-index
 	// replacements (heal → greater_heal) carry player intent and runtime
 	// timer state across the swap. Indices that don't change are skipped;

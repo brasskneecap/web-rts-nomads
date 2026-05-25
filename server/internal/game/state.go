@@ -2235,6 +2235,44 @@ func (s *GameState) Update(dt float64) {
 			unit.PerkState.InvulnerabilityRemaining = math.Max(0, unit.PerkState.InvulnerabilityRemaining-dt)
 		}
 
+		// ── Siphoner afflictions (cross-unit decay) ──────────────────────
+		// Same pattern as WeakenedRemaining above: stamped on any enemy by
+		// a Siphoner's perks, decays here regardless of whether the unit
+		// owns the originating perk itself. When the timer expires, the
+		// per-affliction multiplier(s) and stack count are zeroed so a
+		// stale field never contributes to its consuming stat hook.
+
+		// Withering Beam stacks. Set by withering_beam during continuous
+		// Siphon Life contact (see applyWitheringBeamStackLocked). The
+		// whole stack list shares one timer; when it expires, stacks +
+		// per-stack reduction are cleared so perkOutgoingDamageDebuff-
+		// MultiplierLocked never reads a partial state.
+		if unit.PerkState.WitheringBeamRemaining > 0 {
+			unit.PerkState.WitheringBeamRemaining = math.Max(0, unit.PerkState.WitheringBeamRemaining-dt)
+			if unit.PerkState.WitheringBeamRemaining == 0 {
+				unit.PerkState.WitheringBeamStacks = 0
+				unit.PerkState.WitheringBeamReductionPerStack = 0
+			}
+		}
+
+		// Lingering Hex — move + attack-speed slow.
+		if unit.PerkState.LingeringHexRemaining > 0 {
+			unit.PerkState.LingeringHexRemaining = math.Max(0, unit.PerkState.LingeringHexRemaining-dt)
+			if unit.PerkState.LingeringHexRemaining == 0 {
+				unit.PerkState.LingeringHexMoveMult = 0
+				unit.PerkState.LingeringHexAttackSpeedMult = 0
+			}
+		}
+
+		// Mark of Weakness — armor + healing-received debuff.
+		if unit.PerkState.MarkOfWeaknessRemaining > 0 {
+			unit.PerkState.MarkOfWeaknessRemaining = math.Max(0, unit.PerkState.MarkOfWeaknessRemaining-dt)
+			if unit.PerkState.MarkOfWeaknessRemaining == 0 {
+				unit.PerkState.MarkOfWeaknessArmorReduction = 0
+				unit.PerkState.MarkOfWeaknessHealingReceivedMult = 0
+			}
+		}
+
 		// Focus target validation — clears stale focus (dead, invisible,
 		// switched teams) every tick while OrderFocusFollow is active.
 		// The unit falls back to idle / auto-heal after clearFocusTargetLocked
@@ -2348,7 +2386,7 @@ func (s *GameState) Update(dt float64) {
 				unit.AttackDrifting = false
 				continue
 			}
-			step := unit.MoveSpeed * perkSpeedMult * slowFactorLocked(unit) * dt
+			step := unit.MoveSpeed * perkSpeedMult * slowFactorLocked(unit) * lingeringHexMoveSpeedFactorLocked(unit) * dt
 			if step >= dist {
 				step = dist
 			}
@@ -2395,7 +2433,7 @@ func (s *GameState) Update(dt float64) {
 		if unit.StuckSampleAccum >= stuckSampleInterval {
 			ddx := unit.X - unit.StuckSampleX
 			ddy := unit.Y - unit.StuckSampleY
-			stuckThreshold := math.Max(8.0, unit.MoveSpeed*perkSpeedMult*stuckSampleInterval*0.4)
+			stuckThreshold := math.Max(8.0, unit.MoveSpeed*perkSpeedMult*lingeringHexMoveSpeedFactorLocked(unit)*stuckSampleInterval*0.4)
 			if ddx*ddx+ddy*ddy < stuckThreshold*stuckThreshold {
 				unit.PathDiagnostics.StuckTriggerCount++
 				unit.PathDiagnostics.LastStuckTick = s.Tick

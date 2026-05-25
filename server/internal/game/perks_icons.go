@@ -308,6 +308,18 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 			// heal events) so there's no per-unit "active" state to gate on.
 			addIcon(perkID, 1)
 
+		// Siphoner bronze perks are intentionally NOT emitted on the owner:
+		//   - soul_leech is a conditional damage/heal multiplier on Siphon
+		//     Life — it doesn't stat-buff the Siphoner itself.
+		//   - withering_beam, lingering_hex, mark_of_weakness all act on
+		//     enemies; their visual presence is the corresponding debuff
+		//     icon on the affected unit (debuff-withering-beam, etc.).
+		// Convention: a floating buff badge on a unit should signal an
+		// active stat benefit on THAT unit. Perk-owned indicators that
+		// only buff allies / debuff enemies live on the affected target.
+		// Cooldown wipes for the two autonomous AoEs surface via
+		// perkCooldownsLocked → SelectionHud's perk slot.
+
 		// battle_prayer's icon lives on the BUFFED TARGET (cross-unit buff),
 		// not on the perk owner. Surfaced below this loop so allies who don't
 		// own the perk still display the buff icon while it is active.
@@ -458,6 +470,20 @@ func (s *GameState) activeDebuffIconsLocked(unit *Unit) []protocol.ActiveEffectI
 	if unit.PerkState.huntersMarkCount() > 0 {
 		addIcon("debuff-hunters-mark", unit.PerkState.huntersMarkCount())
 	}
+	// Siphoner bronze afflictions — cross-unit debuffs that live on the
+	// affected enemy regardless of whether the unit owns the source perk.
+	// Withering Beam shows stack count so the player can see how close it
+	// is to maxStacks; Lingering Hex and Mark of Weakness are non-stacking
+	// and always report a single icon.
+	if unit.PerkState.WitheringBeamRemaining > 0 && unit.PerkState.WitheringBeamStacks > 0 {
+		addIcon("debuff-withering-beam", unit.PerkState.WitheringBeamStacks)
+	}
+	if unit.PerkState.LingeringHexRemaining > 0 {
+		addIcon("debuff-lingering-hex", 1)
+	}
+	if unit.PerkState.MarkOfWeaknessRemaining > 0 {
+		addIcon("debuff-mark-of-weakness", 1)
+	}
 	return active
 }
 
@@ -516,6 +542,15 @@ func (s *GameState) perkCooldownsLocked(unit *Unit) []protocol.PerkCooldownSnaps
 			// Gold cleric save — surfaces the cooldown wipe so the player
 			// knows when their next clutch save is available.
 			add(perkID, unit.PerkState.DivineInterventionCooldownRemaining, cfg["cooldownSeconds"])
+		case "lingering_hex":
+			// Siphoner bronze autonomous AoE — wipe shows when the next
+			// hex pulse will fire. Total uses cooldownSeconds from the
+			// perk config (set on every successful pulse).
+			add(perkID, unit.PerkState.LingeringHexCooldownRemaining, cfg["cooldownSeconds"])
+		case "mark_of_weakness":
+			// Siphoner bronze autonomous AoE — same cooldown wipe convention
+			// as lingering_hex.
+			add(perkID, unit.PerkState.MarkOfWeaknessCooldownRemaining, cfg["cooldownSeconds"])
 		}
 	}
 	return cds
