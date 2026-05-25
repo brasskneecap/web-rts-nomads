@@ -438,6 +438,18 @@ func TestChainSiphon_SecondaryDamageScalesByMultiplier(t *testing.T) {
 // chain_siphon — secondary beam visuals
 // ─────────────────────────────────────────────────────────────────────────────
 
+// chainBeamForTarget returns the (beamID, found) pair for the chain link
+// whose TargetID matches `targetID`. Tests use this to look up the beam id
+// without caring about its bounce position in the ordered Links slice.
+func chainBeamForTarget(siphoner *Unit, targetID int) (string, bool) {
+	for _, link := range siphoner.PerkState.ChainSiphonLinks {
+		if link.TargetID == targetID {
+			return link.BeamID, true
+		}
+	}
+	return "", false
+}
+
 func TestChainSiphon_SpawnsBeamPerChainTarget(t *testing.T) {
 	s, siphoner, primary := newSiphonerSilverState(t)
 	s.mu.Lock()
@@ -451,10 +463,10 @@ func TestChainSiphon_SpawnsBeamPerChainTarget(t *testing.T) {
 	// Fire one channel tick worth of chain beams.
 	s.applyChainSiphonBeamsLocked(siphoner, primary, 5, 5, 220, "siphon_life")
 
-	if len(siphoner.PerkState.ChainSiphonBeamIDs) != 1 {
-		t.Fatalf("expected 1 tracked chain beam id, got %d", len(siphoner.PerkState.ChainSiphonBeamIDs))
+	if got := len(siphoner.PerkState.ChainSiphonLinks); got != 1 {
+		t.Fatalf("expected 1 tracked chain link, got %d", got)
 	}
-	beamID, tracked := siphoner.PerkState.ChainSiphonBeamIDs[chainTarget.ID]
+	beamID, tracked := chainBeamForTarget(siphoner, chainTarget.ID)
 	if !tracked {
 		t.Fatalf("chain target id %d not tracked", chainTarget.ID)
 	}
@@ -471,10 +483,10 @@ func TestChainSiphon_SpawnsBeamPerChainTarget(t *testing.T) {
 		t.Fatalf("spawned beam id %s not found in s.Beams", beamID)
 	}
 	if found.CasterUnitID != primary.ID {
-		t.Errorf("chain beam caster = %d, want %d (primary target)", found.CasterUnitID, primary.ID)
+		t.Errorf("first-hop chain beam caster = %d, want %d (primary target)", found.CasterUnitID, primary.ID)
 	}
 	if found.TargetUnitID != chainTarget.ID {
-		t.Errorf("chain beam target = %d, want %d (chain target)", found.TargetUnitID, chainTarget.ID)
+		t.Errorf("first-hop chain beam target = %d, want %d (chain target)", found.TargetUnitID, chainTarget.ID)
 	}
 	if found.Variant != chainSiphonBeamVariant {
 		t.Errorf("chain beam variant = %q, want %q", found.Variant, chainSiphonBeamVariant)
@@ -495,13 +507,13 @@ func TestChainSiphon_ReusesBeamAcrossTicksForStableChainTarget(t *testing.T) {
 
 	// First tick.
 	s.applyChainSiphonBeamsLocked(siphoner, primary, 5, 5, 220, "siphon_life")
-	firstID := siphoner.PerkState.ChainSiphonBeamIDs[chainTarget.ID]
+	firstID, _ := chainBeamForTarget(siphoner, chainTarget.ID)
 	firstBeamCount := len(s.Beams)
 
 	// Second tick — chain target unchanged. Beam id must be the SAME (reused),
 	// and s.Beams should not have grown.
 	s.applyChainSiphonBeamsLocked(siphoner, primary, 5, 5, 220, "siphon_life")
-	secondID := siphoner.PerkState.ChainSiphonBeamIDs[chainTarget.ID]
+	secondID, _ := chainBeamForTarget(siphoner, chainTarget.ID)
 	if secondID != firstID {
 		t.Errorf("beam id changed across ticks: %s -> %s (should reuse)", firstID, secondID)
 	}
@@ -520,17 +532,17 @@ func TestChainSiphon_DespawnsBeamWhenChainTargetLeavesRange(t *testing.T) {
 	chainTarget := spawnEnemyAt(s, primary.X+chainRange*0.5, primary.Y)
 
 	s.applyChainSiphonBeamsLocked(siphoner, primary, 5, 5, 220, "siphon_life")
-	if len(siphoner.PerkState.ChainSiphonBeamIDs) != 1 {
-		t.Fatalf("setup failed: expected 1 tracked beam, got %d", len(siphoner.PerkState.ChainSiphonBeamIDs))
+	if got := len(siphoner.PerkState.ChainSiphonLinks); got != 1 {
+		t.Fatalf("setup failed: expected 1 tracked link, got %d", got)
 	}
-	startBeamID := siphoner.PerkState.ChainSiphonBeamIDs[chainTarget.ID]
+	startBeamID, _ := chainBeamForTarget(siphoner, chainTarget.ID)
 
 	// Move chain target out of range — next tick should drop the beam.
 	chainTarget.X = primary.X + chainRange*5
 	s.applyChainSiphonBeamsLocked(siphoner, primary, 5, 5, 220, "siphon_life")
 
-	if _, stillTracked := siphoner.PerkState.ChainSiphonBeamIDs[chainTarget.ID]; stillTracked {
-		t.Errorf("chain target id should be removed from map after leaving range")
+	if _, stillTracked := chainBeamForTarget(siphoner, chainTarget.ID); stillTracked {
+		t.Errorf("chain target id should be removed from the links slice after leaving range")
 	}
 	for _, b := range s.Beams {
 		if b.ID == startBeamID {
@@ -549,7 +561,7 @@ func TestChainSiphon_RespawnsBeamsOnPrimaryTargetSwap(t *testing.T) {
 	chainTarget := spawnEnemyAt(s, primary.X+chainRange*0.5, primary.Y)
 
 	s.applyChainSiphonBeamsLocked(siphoner, primary, 5, 5, 220, "siphon_life")
-	oldBeamID := siphoner.PerkState.ChainSiphonBeamIDs[chainTarget.ID]
+	oldBeamID, _ := chainBeamForTarget(siphoner, chainTarget.ID)
 
 	// Swap primary target. Spawn a brand-new primary far from chainTarget so
 	// the old chain target is now out of range and a fresh chain target slot
@@ -567,8 +579,8 @@ func TestChainSiphon_RespawnsBeamsOnPrimaryTargetSwap(t *testing.T) {
 			t.Errorf("old chain beam %s still present after primary swap", oldBeamID)
 		}
 	}
-	// The new chain beam should be rooted at the new primary.
-	newBeamID, ok := siphoner.PerkState.ChainSiphonBeamIDs[chainTarget2.ID]
+	// The new first-hop chain beam should be rooted at the new primary.
+	newBeamID, ok := chainBeamForTarget(siphoner, chainTarget2.ID)
 	if !ok {
 		t.Fatalf("no chain beam tracked against new chain target id %d", chainTarget2.ID)
 	}
@@ -595,20 +607,19 @@ func TestChainSiphon_ClearChannelDespawnsAllChainBeams(t *testing.T) {
 	spawnEnemyAt(s, primary.X+chainRange*0.5, primary.Y)
 
 	s.applyChainSiphonBeamsLocked(siphoner, primary, 5, 5, 220, "siphon_life")
-	if len(siphoner.PerkState.ChainSiphonBeamIDs) == 0 {
+	if len(siphoner.PerkState.ChainSiphonLinks) == 0 {
 		t.Fatal("setup failed: no chain beams spawned")
 	}
-	trackedIDs := make([]string, 0, len(siphoner.PerkState.ChainSiphonBeamIDs))
-	for _, id := range siphoner.PerkState.ChainSiphonBeamIDs {
-		trackedIDs = append(trackedIDs, id)
+	trackedIDs := make([]string, 0, len(siphoner.PerkState.ChainSiphonLinks))
+	for _, link := range siphoner.PerkState.ChainSiphonLinks {
+		trackedIDs = append(trackedIDs, link.BeamID)
 	}
 
 	// Simulate channel ending.
 	s.clearChannelStateLocked(siphoner)
 
-	if len(siphoner.PerkState.ChainSiphonBeamIDs) != 0 {
-		t.Errorf("ChainSiphonBeamIDs should be empty after clearChannelStateLocked, got %d entries",
-			len(siphoner.PerkState.ChainSiphonBeamIDs))
+	if got := len(siphoner.PerkState.ChainSiphonLinks); got != 0 {
+		t.Errorf("ChainSiphonLinks should be empty after clearChannelStateLocked, got %d entries", got)
 	}
 	if siphoner.PerkState.ChainSiphonPrimaryTargetID != 0 {
 		t.Errorf("ChainSiphonPrimaryTargetID should reset to 0, got %d",
@@ -620,6 +631,142 @@ func TestChainSiphon_ClearChannelDespawnsAllChainBeams(t *testing.T) {
 			if b.ID == want {
 				t.Errorf("beam id %s still present in s.Beams after channel clear", want)
 			}
+		}
+	}
+}
+
+func TestChainSiphon_BouncesFromPreviousVictimNotPrimary(t *testing.T) {
+	s, siphoner, primary := newSiphonerSilverState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Author a Gold-rank Siphoner so chain count goes up to 3 via
+	// beam_mastery (+1) and ascended_corruption (+1) on top of the base 1.
+	// That gives us a 3-link chain to inspect.
+	siphoner.Rank = unitRankGold
+	siphoner.PerkIDs = append(siphoner.PerkIDs, "chain_siphon", "beam_mastery", "ascended_corruption")
+	cfg := s.chainSiphonEffectiveConfigLocked(siphoner)
+	maxCount := int(cfg["additionalTargetCount"])
+	if maxCount < 3 {
+		t.Fatalf("setup expected additionalTargetCount >= 3, got %d", maxCount)
+	}
+	chainRange := cfg["chainRange"]
+
+	// Lay out four enemies in a line so the bounce chain MUST step from each
+	// to the next. If the chain fanned out from the primary instead, only
+	// the two nearest-to-primary enemies would even be in range — the
+	// farthest enemy is reachable only by hopping through intermediates.
+	step := chainRange * 0.6
+	primary.X = 0
+	primary.Y = 0
+	a := spawnEnemyAt(s, primary.X+step, primary.Y) // hop 1: primary → a (in range of primary)
+	b := spawnEnemyAt(s, a.X+step, a.Y)             // hop 2: a → b (in range of a, NOT primary)
+	c := spawnEnemyAt(s, b.X+step, b.Y)             // hop 3: b → c (in range of b, NOT primary or a)
+	// Sanity: c must be OUTSIDE chainRange of primary so the fan-out shape
+	// would have rejected it. The bounce shape reaches it via a, b.
+	dxC := c.X - primary.X
+	if dxC <= chainRange {
+		t.Fatalf("layout error: c must be outside primary's chainRange to prove bounce reach (dxC=%.1f range=%.1f)", dxC, chainRange)
+	}
+
+	// Pick chain targets — they must come out [a, b, c] in bounce order.
+	targets := s.chainSiphonTargetsLocked(siphoner, primary)
+	if len(targets) != 3 {
+		t.Fatalf("bounce chain should reach 3 targets, got %d", len(targets))
+	}
+	wantOrder := []*Unit{a, b, c}
+	for i, want := range wantOrder {
+		if targets[i].ID != want.ID {
+			t.Errorf("chain[%d] = %d, want %d (expected bounce order a→b→c)", i, targets[i].ID, want.ID)
+		}
+	}
+
+	// Fire the channel-tick sync and verify each beam's caster is the
+	// PREVIOUS link's unit (not always the primary).
+	s.applyChainSiphonBeamsLocked(siphoner, primary, 5, 5, 220, "siphon_life")
+	if got := len(siphoner.PerkState.ChainSiphonLinks); got != 3 {
+		t.Fatalf("expected 3 chain links recorded, got %d", got)
+	}
+	wantSources := []int{primary.ID, a.ID, b.ID} // beam[i] should originate from this id
+	wantTargets := []int{a.ID, b.ID, c.ID}
+	for i, link := range siphoner.PerkState.ChainSiphonLinks {
+		var beam *Beam
+		for _, bb := range s.Beams {
+			if bb.ID == link.BeamID {
+				beam = bb
+				break
+			}
+		}
+		if beam == nil {
+			t.Errorf("link[%d] beam %s missing from s.Beams", i, link.BeamID)
+			continue
+		}
+		if beam.CasterUnitID != wantSources[i] {
+			t.Errorf("link[%d] beam caster = %d, want %d (must bounce from previous victim)",
+				i, beam.CasterUnitID, wantSources[i])
+		}
+		if beam.TargetUnitID != wantTargets[i] {
+			t.Errorf("link[%d] beam target = %d, want %d", i, beam.TargetUnitID, wantTargets[i])
+		}
+	}
+}
+
+func TestChainSiphon_BouncePrefixReuseOnTailChange(t *testing.T) {
+	s, siphoner, primary := newSiphonerSilverState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 3-hop chain.
+	siphoner.Rank = unitRankGold
+	siphoner.PerkIDs = append(siphoner.PerkIDs, "chain_siphon", "beam_mastery", "ascended_corruption")
+	cfg := s.chainSiphonEffectiveConfigLocked(siphoner)
+	chainRange := cfg["chainRange"]
+	step := chainRange * 0.6
+
+	primary.X, primary.Y = 0, 0
+	a := spawnEnemyAt(s, primary.X+step, primary.Y)
+	b := spawnEnemyAt(s, a.X+step, a.Y)
+	c := spawnEnemyAt(s, b.X+step, b.Y)
+
+	// First tick: chain is primary → a → b → c.
+	s.applyChainSiphonBeamsLocked(siphoner, primary, 5, 5, 220, "siphon_life")
+	links := siphoner.PerkState.ChainSiphonLinks
+	if len(links) != 3 {
+		t.Fatalf("setup expected 3 links, got %d", len(links))
+	}
+	// Snapshot the first two beam ids — they should survive a tail change.
+	keep0 := links[0].BeamID
+	keep1 := links[1].BeamID
+	drop2 := links[2].BeamID
+
+	// Move c out of b's range so the tail re-routes. Place a NEW candidate
+	// `cAlt` in b's range so the third link rebinds to it. cAlt's id is
+	// strictly larger than c's id, so tie-breaks don't matter here.
+	c.X = b.X + chainRange*10 // far out
+	cAlt := spawnEnemyAt(s, b.X+step, b.Y+10)
+
+	// Second tick: prefix [primary→a→b] is unchanged; only the tail rebinds.
+	s.applyChainSiphonBeamsLocked(siphoner, primary, 5, 5, 220, "siphon_life")
+	links = siphoner.PerkState.ChainSiphonLinks
+	if len(links) != 3 {
+		t.Fatalf("post-rebind expected 3 links, got %d", len(links))
+	}
+	if links[0].BeamID != keep0 {
+		t.Errorf("link[0] beam id changed: %s -> %s (should be REUSED)", keep0, links[0].BeamID)
+	}
+	if links[1].BeamID != keep1 {
+		t.Errorf("link[1] beam id changed: %s -> %s (should be REUSED)", keep1, links[1].BeamID)
+	}
+	if links[2].TargetID != cAlt.ID {
+		t.Errorf("link[2] target = %d, want %d (cAlt rebind)", links[2].TargetID, cAlt.ID)
+	}
+	if links[2].BeamID == drop2 {
+		t.Errorf("link[2] beam id %s should be a fresh beam (old beam should be despawned)", drop2)
+	}
+	// The dropped beam must no longer exist on s.Beams.
+	for _, bb := range s.Beams {
+		if bb.ID == drop2 {
+			t.Errorf("dropped beam %s still present in s.Beams", drop2)
 		}
 	}
 }
@@ -891,7 +1038,7 @@ func TestDarkRenewal_ShieldPersistsUntilDepleted(t *testing.T) {
 // shared_suffering
 // ═════════════════════════════════════════════════════════════════════════════
 
-func TestSharedSuffering_EchoesToAfflictedEnemiesInRange(t *testing.T) {
+func TestSharedSuffering_EchoesToEveryEnemyInRange(t *testing.T) {
 	s, siphoner, primary := newSiphonerSilverState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -901,25 +1048,25 @@ func TestSharedSuffering_EchoesToAfflictedEnemiesInRange(t *testing.T) {
 	radius := def.Config["radius"]
 	sharePct := def.Config["damageSharePercent"]
 
-	// Spawn two extra enemies in range: one with a Siphoner affliction, one without.
-	afflicted := spawnEnemyAt(s, primary.X+radius*0.4, primary.Y)
-	afflicted.PerkState.WitheringBeamRemaining = 5
-	afflicted.PerkState.WitheringBeamStacks = 1
-	unafflicted := spawnEnemyAt(s, primary.X+radius*0.5, primary.Y)
+	// Spawn two extra enemies in range: neither carries any Siphoner
+	// affliction. Both must still take echo damage — the perk no longer
+	// requires afflicted neighbors, it just sprays the percent of primary
+	// damage onto every visible hostile in radius.
+	clean1 := spawnEnemyAt(s, primary.X+radius*0.4, primary.Y)
+	clean2 := spawnEnemyAt(s, primary.X+radius*0.5, primary.Y)
 
-	afflictedStart := afflicted.HP
-	unafflictedStart := unafflicted.HP
+	start1 := clean1.HP
+	start2 := clean2.HP
 
 	primaryDamage := 20
 	s.applySharedSufferingLocked(siphoner, primary, primaryDamage)
 
 	expectedEcho := int(math.Round(float64(primaryDamage) * sharePct))
-	if got := afflictedStart - afflicted.HP; got != expectedEcho {
-		t.Errorf("afflicted echo damage = %d, want %d", got, expectedEcho)
+	if got := start1 - clean1.HP; got != expectedEcho {
+		t.Errorf("clean1 echo damage = %d, want %d", got, expectedEcho)
 	}
-	if unafflicted.HP != unafflictedStart {
-		t.Errorf("unafflicted enemy should NOT take echo damage; HP %d -> %d",
-			unafflictedStart, unafflicted.HP)
+	if got := start2 - clean2.HP; got != expectedEcho {
+		t.Errorf("clean2 echo damage = %d, want %d", got, expectedEcho)
 	}
 }
 
@@ -932,44 +1079,53 @@ func TestSharedSuffering_OutOfRangeEnemyNotEchoed(t *testing.T) {
 	def := perkDefByID("shared_suffering")
 	radius := def.Config["radius"]
 
-	farAfflicted := spawnEnemyAt(s, primary.X+radius*2, primary.Y)
-	farAfflicted.PerkState.LingeringHexRemaining = 5
-	start := farAfflicted.HP
+	far := spawnEnemyAt(s, primary.X+radius*2, primary.Y)
+	start := far.HP
 
 	s.applySharedSufferingLocked(siphoner, primary, 30)
-	if farAfflicted.HP != start {
-		t.Errorf("out-of-range afflicted enemy took echo damage: %d -> %d", start, farAfflicted.HP)
+	if far.HP != start {
+		t.Errorf("out-of-range enemy took echo damage: %d -> %d", start, far.HP)
 	}
 }
 
-func TestSharedSuffering_RecognisesEverySiphonerAfflictionTag(t *testing.T) {
-	s, _, _ := newSiphonerSilverState(t)
+func TestSharedSuffering_EmitsMinorDamagePopupPerEcho(t *testing.T) {
+	s, siphoner, primary := newSiphonerSilverState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	tests := []struct {
-		name  string
-		setup func(u *Unit)
-	}{
-		{"withering_beam", func(u *Unit) {
-			u.PerkState.WitheringBeamRemaining = 5
-			u.PerkState.WitheringBeamStacks = 1
-		}},
-		{"lingering_hex", func(u *Unit) { u.PerkState.LingeringHexRemaining = 5 }},
-		{"mark_of_weakness", func(u *Unit) { u.PerkState.MarkOfWeaknessRemaining = 5 }},
-		{"amplify_damage", func(u *Unit) { u.PerkState.AmplifyDamageRemaining = 5 }},
-	}
-	for _, tc := range tests {
-		u := spawnEnemyAt(s, 100, 100)
-		tc.setup(u)
-		if !hasAnySiphonerAfflictionLocked(u) {
-			t.Errorf("%s: hasAnySiphonerAfflictionLocked should return true", tc.name)
+	siphoner.PerkIDs = append(siphoner.PerkIDs, "shared_suffering")
+	def := perkDefByID("shared_suffering")
+	radius := def.Config["radius"]
+	sharePct := def.Config["damageSharePercent"]
+
+	v1 := spawnEnemyAt(s, primary.X+radius*0.3, primary.Y)
+	v2 := spawnEnemyAt(s, primary.X+radius*0.4, primary.Y+10)
+
+	primaryDamage := 20
+	expectedEcho := int(math.Round(float64(primaryDamage) * sharePct))
+
+	// Snapshot the minor-damage queue before/after so we can verify each
+	// echo target gets a "shadow" minor entry that the client can peel into
+	// a side-falling popup.
+	beforeQueue := len(s.minorDamageEventsThisTick)
+	s.applySharedSufferingLocked(siphoner, primary, primaryDamage)
+	added := s.minorDamageEventsThisTick[beforeQueue:]
+
+	gotIDs := make(map[int]int) // unitID → count of shadow entries
+	for _, evt := range added {
+		if evt.Variant != "shadow" {
+			t.Errorf("minor event variant = %q, want %q", evt.Variant, "shadow")
 		}
+		if evt.Damage != expectedEcho {
+			t.Errorf("minor event damage = %d, want %d", evt.Damage, expectedEcho)
+		}
+		gotIDs[evt.UnitID]++
 	}
-	// Empty PerkState is not afflicted.
-	clean := spawnEnemyAt(s, 100, 100)
-	if hasAnySiphonerAfflictionLocked(clean) {
-		t.Error("clean unit should not be flagged afflicted")
+	if gotIDs[v1.ID] != 1 {
+		t.Errorf("expected 1 minor event for v1 (id=%d), got %d", v1.ID, gotIDs[v1.ID])
+	}
+	if gotIDs[v2.ID] != 1 {
+		t.Errorf("expected 1 minor event for v2 (id=%d), got %d", v2.ID, gotIDs[v2.ID])
 	}
 }
 
@@ -978,13 +1134,12 @@ func TestSharedSuffering_NoOpWithoutPerk(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	afflicted := spawnEnemyAt(s, primary.X+50, primary.Y)
-	afflicted.PerkState.WitheringBeamRemaining = 5
-	start := afflicted.HP
+	bystander := spawnEnemyAt(s, primary.X+50, primary.Y)
+	start := bystander.HP
 
 	// No perk — call must be a clean no-op.
 	s.applySharedSufferingLocked(siphoner, primary, 30)
-	if afflicted.HP != start {
-		t.Errorf("echo fired despite no perk; HP %d -> %d", start, afflicted.HP)
+	if bystander.HP != start {
+		t.Errorf("echo fired despite no perk; HP %d -> %d", start, bystander.HP)
 	}
 }

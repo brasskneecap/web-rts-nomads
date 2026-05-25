@@ -284,17 +284,8 @@ func TestTooltipTemplate_AllTokensReferenceValidKeys(t *testing.T) {
 	for _, def := range ListPerkDefs() {
 		def := def // capture
 		t.Run(fmt.Sprintf("perk=%s", def.ID), func(t *testing.T) {
-			if def.TooltipTemplate == "" {
-				t.Skip("no tooltipTemplate — static description only")
-			}
-
-			matches := tokenRe.FindAllStringSubmatch(def.TooltipTemplate, -1)
-			if len(matches) == 0 {
-				// Template present but has no tokens — odd but not invalid.
-				return
-			}
-
-			// Build the merged config across all ranks for this perk.
+			// Build the merged config across all ranks for this perk once;
+			// shared across every template variant we validate below.
 			mergedConfig := make(map[string]float64)
 			for k, v := range def.Config {
 				mergedConfig[k] = v
@@ -305,26 +296,57 @@ func TestTooltipTemplate_AllTokensReferenceValidKeys(t *testing.T) {
 				}
 			}
 
-			for _, match := range matches {
-				raw := match[1] // e.g. "key%", "trap.radius", "key:2"
-				key := extractTokenKey(raw)
+			// Collect every template variant to validate: the base
+			// tooltipTemplate plus any by-trap / by-owned-perk variants.
+			// Each entry carries a label so error messages identify which
+			// variant has the bad token.
+			type templateVariant struct {
+				label    string
+				template string
+			}
+			variants := make([]templateVariant, 0, 4)
+			if def.TooltipTemplate != "" {
+				variants = append(variants, templateVariant{label: "tooltipTemplate", template: def.TooltipTemplate})
+			}
+			for trapKey, body := range def.TooltipTemplateByTrap {
+				variants = append(variants, templateVariant{
+					label:    fmt.Sprintf("tooltipTemplateByTrap[%q]", trapKey),
+					template: body,
+				})
+			}
+			for ownedKey, body := range def.TooltipTemplateByOwnedPerk {
+				variants = append(variants, templateVariant{
+					label:    fmt.Sprintf("tooltipTemplateByOwnedPerk[%q]", ownedKey),
+					template: body,
+				})
+			}
+			if len(variants) == 0 {
+				t.Skip("no template variants — static description only")
+			}
 
-				if strings.HasPrefix(key, "trap.") {
-					// {trap.*} tokens: only valid on the four bronze trap perks.
-					if _, isBronzeTrap := bronzeTrapPerkIDs[def.ID]; !isBronzeTrap {
-						t.Errorf("{%s}: trap.* token on perk %q (not a bronze trap perk)", raw, def.ID)
+			for _, v := range variants {
+				matches := tokenRe.FindAllStringSubmatch(v.template, -1)
+				for _, match := range matches {
+					raw := match[1] // e.g. "key%", "trap.radius", "key:2"
+					key := extractTokenKey(raw)
+
+					if strings.HasPrefix(key, "trap.") {
+						// {trap.*} tokens: only valid on the four bronze trap perks.
+						if _, isBronzeTrap := bronzeTrapPerkIDs[def.ID]; !isBronzeTrap {
+							t.Errorf("%s — {%s}: trap.* token on perk %q (not a bronze trap perk)", v.label, raw, def.ID)
+							continue
+						}
+						fieldName := strings.TrimPrefix(key, "trap.")
+						if _, ok := effectiveTrapSnapshotFields[fieldName]; !ok {
+							t.Errorf("%s — {%s}: perk %q — field %q does not exist on EffectiveTrapSnapshot", v.label, raw, def.ID, fieldName)
+						}
 						continue
 					}
-					fieldName := strings.TrimPrefix(key, "trap.")
-					if _, ok := effectiveTrapSnapshotFields[fieldName]; !ok {
-						t.Errorf("{%s}: perk %q — field %q does not exist on EffectiveTrapSnapshot", raw, def.ID, fieldName)
-					}
-					continue
-				}
 
-				// Non-trap token: must exist in the merged config.
-				if _, ok := mergedConfig[key]; !ok {
-					t.Errorf("{%s}: perk %q — key %q not found in config (or any configByRank override)", raw, def.ID, key)
+					// Non-trap token: must exist in the merged config.
+					if _, ok := mergedConfig[key]; !ok {
+						t.Errorf("%s — {%s}: perk %q — key %q not found in config (or any configByRank override)", v.label, raw, def.ID, key)
+					}
 				}
 			}
 		})

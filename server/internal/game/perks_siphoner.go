@@ -38,22 +38,58 @@ import "math"
 //                          fields where possible and put helpers in this file.
 // ═════════════════════════════════════════════════════════════════════════════
 
-// siphonLifeModifiersForCasterLocked returns the (damageMultiplier,
-// healingMultiplier) the channeling Siphoner currently applies to every
-// Siphon Life tick. Defaults are 1.0/1.0; Soul Leech multiplies in
-// additively-per-perk-instance (a single Siphoner can only own one Bronze
-// perk today, so multiplication is identical to selection, but keeping the
-// loop pattern means future Silver/Gold tuning that also scales the channel
-// composes cleanly).
+// SiphonLifeChannelModifiers bundles every multiplicative scaler the
+// caster's perks apply to a single Siphon Life channel tick. All four
+// fields default to 1.0 so the tick math (raw * mult) is a clean no-op for
+// units without any modifier perks.
 //
-// Safe to call on a nil caster (returns 1.0/1.0).
+//	DamageMult    — scales damagePerTick (Soul Leech, Beam Mastery).
+//	HealMult      — scales healing generated per tick (same sources).
+//	ManaCostMult  — scales the mana cost paid per tick (Beam Mastery; <= 1
+//	                means cheaper, > 1 means more expensive). Applied to
+//	                def.ManaCostPerTick at consumption time.
+//	RangeMult     — scales the effective cast range used by
+//	                isValidChannelTargetLocked (Beam Mastery; > 1 means
+//	                farther reach).
+//
+// Add new scalers as fields here when a future perk needs to scale another
+// Siphon Life attribute; the channel tick consumes them all in one place.
+type SiphonLifeChannelModifiers struct {
+	DamageMult   float64
+	HealMult     float64
+	ManaCostMult float64
+	RangeMult    float64
+}
+
+// defaultSiphonLifeChannelModifiers is the no-op identity — every field set
+// to 1.0. Used as the starting point in siphonLifeChannelModifiersForCaster-
+// Locked and as a safe return value for nil casters.
+func defaultSiphonLifeChannelModifiers() SiphonLifeChannelModifiers {
+	return SiphonLifeChannelModifiers{
+		DamageMult:   1.0,
+		HealMult:     1.0,
+		ManaCostMult: 1.0,
+		RangeMult:    1.0,
+	}
+}
+
+// siphonLifeChannelModifiersForCasterLocked aggregates every perk on the
+// caster that scales a Siphon Life channel tick — damage, healing, mana
+// cost per tick, and cast range. Multiplicative composition: two scalers
+// for the same field multiply (so a 2× damage Bronze with a 1.5× damage
+// Gold yields a 3× tick).
+//
+// Currently consumes:
+//   - soul_leech (Bronze)  → damage + healing
+//   - beam_mastery (Gold) → damage + healing + mana cost + range
+//
+// Safe to call on a nil caster (returns the identity modifiers).
 //
 // Caller holds s.mu (read or write).
-func (s *GameState) siphonLifeModifiersForCasterLocked(caster *Unit) (damageMult, healMult float64) {
-	damageMult = 1.0
-	healMult = 1.0
+func (s *GameState) siphonLifeChannelModifiersForCasterLocked(caster *Unit) SiphonLifeChannelModifiers {
+	mods := defaultSiphonLifeChannelModifiers()
 	if caster == nil {
-		return
+		return mods
 	}
 	for _, perkID := range caster.PerkIDs {
 		def := perkDefByID(perkID)
@@ -64,14 +100,39 @@ func (s *GameState) siphonLifeModifiersForCasterLocked(caster *Unit) (damageMult
 		case "soul_leech":
 			cfg := def.ConfigForRank(caster.Rank)
 			if m := cfg["damageMultiplier"]; m > 0 {
-				damageMult *= m
+				mods.DamageMult *= m
 			}
 			if m := cfg["healingMultiplier"]; m > 0 {
-				healMult *= m
+				mods.HealMult *= m
+			}
+		case "beam_mastery":
+			cfg := def.ConfigForRank(caster.Rank)
+			if m := cfg["damageMultiplier"]; m > 0 {
+				mods.DamageMult *= m
+			}
+			if m := cfg["healingMultiplier"]; m > 0 {
+				mods.HealMult *= m
+			}
+			if m := cfg["manaCostMultiplier"]; m > 0 {
+				mods.ManaCostMult *= m
+			}
+			if m := cfg["rangeMultiplier"]; m > 0 {
+				mods.RangeMult *= m
 			}
 		}
 	}
-	return
+	return mods
+}
+
+// siphonLifeModifiersForCasterLocked is the legacy two-return shim around
+// siphonLifeChannelModifiersForCasterLocked, kept for any external callers
+// that only care about damage + healing. New code should call the full
+// helper above so it can read the mana / range scalers too.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) siphonLifeModifiersForCasterLocked(caster *Unit) (damageMult, healMult float64) {
+	mods := s.siphonLifeChannelModifiersForCasterLocked(caster)
+	return mods.DamageMult, mods.HealMult
 }
 
 // tickWitheringBeamChannelLocked advances the caster's continuous-siphon
@@ -520,77 +581,104 @@ func lingeringHexAttackSpeedFactorLocked(unit *Unit) float64 {
 // Chain Siphon
 // ─────────────────────────────────────────────────────────────────────────────
 
-// chainSiphonTargetsLocked picks up to `additionalTargetCount` valid chain
-// targets for a Siphon Life beam centered on the primary target. Selection
-// rules:
+// chainSiphonTargetsLocked picks the bouncing chain of up to
+// additionalTargetCount Siphon Life secondary victims. The chain BOUNCES:
+// each link is the nearest valid enemy within chainRange of the PREVIOUS
+// link (or the primary target for link 0). The result is an ordered slice
+// where targets[i] is `chainRange` from targets[i-1] (and targets[0] is
+// chainRange from `primary`).
+//
+// Selection rules per hop:
 //
 //   - Hostile, alive, visible.
-//   - Not the primary target itself.
-//   - Within chainRange of the primary target's position.
-//   - Sorted by ascending distance from the primary target; ties broken by
-//     ascending unit.ID for deterministic tick replay.
+//   - Not the primary target; not any unit already chosen earlier in this
+//     chain (no oscillation between two close enemies).
+//   - Within chainRange of the cursor (the previous link's unit).
+//   - Ties on distance broken by ascending unit.ID for deterministic replay.
 //
 // Returns nil when the caster doesn't own chain_siphon, when the perk's
 // config is malformed (additionalTargetCount <= 0 or chainRange <= 0), or
-// when no chain target exists.
+// when no chain target is reachable from the primary on the first hop.
 //
 // Caller holds s.mu (read or write).
 func (s *GameState) chainSiphonTargetsLocked(caster, primary *Unit) []*Unit {
 	if caster == nil || primary == nil {
 		return nil
 	}
-	def := perkDefByID("chain_siphon")
-	if def == nil || !containsString(caster.PerkIDs, "chain_siphon") {
+	if !containsString(caster.PerkIDs, "chain_siphon") {
 		return nil
 	}
-	cfg := def.ConfigForRank(caster.Rank)
+	cfg := s.chainSiphonEffectiveConfigLocked(caster)
+	if cfg == nil {
+		return nil
+	}
 	maxCount := int(cfg["additionalTargetCount"])
 	chainRange := cfg["chainRange"]
 	if maxCount <= 0 || chainRange <= 0 {
 		return nil
 	}
 	rangeSq := chainRange * chainRange
-	// Collect candidates with distance metadata so we can sort
-	// deterministically before truncating to maxCount.
-	var pool []chainSiphonCandidate
+
+	// Bookkeeping: every unit that's already a link in the chain (plus the
+	// primary and the caster) is excluded from subsequent hops. Caster
+	// exclusion is defensive — the bouncing chain only ever picks hostiles
+	// so the caster (friendly) can't match the hostility filter anyway, but
+	// keeping the id in the set makes the intent explicit and is free.
+	excluded := make(map[int]struct{}, maxCount+2)
+	excluded[primary.ID] = struct{}{}
+	excluded[caster.ID] = struct{}{}
+
+	cursor := primary
+	out := make([]*Unit, 0, maxCount)
+	for i := 0; i < maxCount; i++ {
+		next := s.nearestChainBounceTargetLocked(caster, cursor, rangeSq, excluded)
+		if next == nil {
+			break // chain breaks: no eligible enemy within chainRange of the last link
+		}
+		out = append(out, next)
+		excluded[next.ID] = struct{}{}
+		cursor = next
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// nearestChainBounceTargetLocked returns the nearest hostile (to `caster`)
+// that is alive, visible, within `rangeSq` of `from`, and not in the
+// `excluded` set. Ties on squared distance break by ascending unit.ID for
+// deterministic tick replay.
+//
+// Returns nil when no candidate exists — that's how the bounce loop knows
+// the chain has hit a dead end.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) nearestChainBounceTargetLocked(caster, from *Unit, rangeSq float64, excluded map[int]struct{}) *Unit {
+	var best *Unit
+	var bestSq float64
 	for _, u := range s.Units {
-		if u == nil || u.ID == primary.ID || u.HP <= 0 || !u.Visible {
+		if u == nil || u.HP <= 0 || !u.Visible {
+			continue
+		}
+		if _, skip := excluded[u.ID]; skip {
 			continue
 		}
 		if !s.playersAreHostileLocked(caster.OwnerID, u.OwnerID) {
 			continue
 		}
-		dx := u.X - primary.X
-		dy := u.Y - primary.Y
+		dx := u.X - from.X
+		dy := u.Y - from.Y
 		d2 := dx*dx + dy*dy
 		if d2 > rangeSq {
 			continue
 		}
-		pool = append(pool, chainSiphonCandidate{u: u, distSq: d2})
+		if best == nil || d2 < bestSq || (d2 == bestSq && u.ID < best.ID) {
+			best = u
+			bestSq = d2
+		}
 	}
-	if len(pool) == 0 {
-		return nil
-	}
-	// Stable sort: ascending distance, then ascending id.
-	sortChainCandidatesByDistThenID(pool)
-	if len(pool) > maxCount {
-		pool = pool[:maxCount]
-	}
-	out := make([]*Unit, 0, len(pool))
-	for _, c := range pool {
-		out = append(out, c.u)
-	}
-	return out
-}
-
-// chainSiphonCandidate is the tuple held by chainSiphonTargetsLocked while it
-// gathers and sorts chain targets. Named (rather than inlined as a struct
-// literal at both the slice and the sort helper) so the sort helper can
-// reference the same type without Go's strict structural-type rules
-// rejecting the call.
-type chainSiphonCandidate struct {
-	u      *Unit
-	distSq float64
+	return best
 }
 
 // chainSiphonBeamVariant is the client renderer key for a Siphon Life
@@ -631,11 +719,16 @@ func (s *GameState) applyChainSiphonBeamsLocked(caster, primary *Unit, primaryDa
 	if caster == nil || primary == nil {
 		return
 	}
-	def := perkDefByID("chain_siphon")
-	if def == nil || !containsString(caster.PerkIDs, "chain_siphon") {
+	if !containsString(caster.PerkIDs, "chain_siphon") {
 		return
 	}
-	cfg := def.ConfigForRank(caster.Rank)
+	// Read through the effective-config helper so Gold modifiers
+	// (beam_mastery, ascended_corruption) automatically scale every
+	// chain_siphon mechanic without per-perk patches here.
+	cfg := s.chainSiphonEffectiveConfigLocked(caster)
+	if cfg == nil {
+		return
+	}
 	dmgMult := cfg["secondaryDamageMultiplier"]
 	healMult := cfg["secondaryHealingMultiplier"]
 	chainTargets := s.chainSiphonTargetsLocked(caster, primary)
@@ -661,7 +754,9 @@ func (s *GameState) applyChainSiphonBeamsLocked(caster, primary *Unit, primaryDa
 			// Tag with Kind="chain_siphon" so telemetry / debug filters can
 			// distinguish chain beams from the primary tick. Routes through the
 			// canonical pipeline so amplify_damage, sanctuary, shields etc. all
-			// apply on chain victims for free.
+			// apply on chain victims for free. The chain-beam major popup
+			// auto-colors dark purple via the damage-type hint emitted inside
+			// applyUnitDamageWithSourceLocked off DamageType=DamageShadow.
 			s.applyUnitDamageWithSourceLocked(t, secondaryDamage, DamageSource{
 				AttackerUnitID: caster.ID,
 				Kind:           "chain_siphon",
@@ -679,35 +774,40 @@ func (s *GameState) applyChainSiphonBeamsLocked(caster, primary *Unit, primaryDa
 }
 
 // syncChainSiphonBeamsLocked diffs the currently-tracked chain beams on the
-// caster against the freshly-selected chainTargets and reconciles:
+// caster against the freshly-bounced chain reconciles the chain prefix-wise:
 //
 //   - If the primary target ID has changed since the last tick, ALL tracked
-//     chain beams are despawned (they emanated from a now-stale primary).
-//     The map is then rebuilt below from scratch.
-//   - For each previously-tracked chain target that is NOT in the new set:
-//     remove its beam via removeBeamByIDLocked and delete the map entry.
-//   - For each new chain target that is not yet tracked: spawn a beam with
-//     caster = primary target, target = chain target, and record its ID.
+//     chain links are despawned (they emanate from a now-stale chain) and
+//     the slice is rebuilt below from scratch.
+//   - We walk the new chain and the recorded chain in lockstep. Every
+//     leading position whose TargetID still matches is REUSED (no respawn).
+//   - On the first divergence (different TargetID or recorded chain ran
+//     out), we despawn the recorded beam at that position and EVERY
+//     recorded beam after it — because the source units for those later
+//     beams have just shifted, so the beams would visually anchor in the
+//     wrong place.
+//   - For positions past the kept prefix, we spawn a fresh beam with
+//     caster = previous link's unit (or `primary` for position 0) and
+//     target = new link's unit, recording the new (TargetID, BeamID) pair.
 //
-// Reusing beams whose target is unchanged keeps the visual stable across
-// ticks — only entry/exit transitions cause a respawn, not the 0.25s-cadence
-// channel tick. Pass chainTargets = nil (or empty slice) to clear ALL
-// tracked chain beams without resetting the primary-target id;
-// clearChainSiphonBeamsLocked is the dedicated cleanup entry point used by
-// clearChannelStateLocked when the channel ends.
+// Reusing beams across stable ticks keeps the visual flicker-free at the
+// 0.25s channel cadence; only true entry / exit / re-route transitions
+// touch the beam list. Pass chainTargets = nil to clear every link without
+// touching the primary id (used by the per-tick "no chain reachable" path).
 //
 // Caller holds s.mu write lock.
 func (s *GameState) syncChainSiphonBeamsLocked(caster, primary *Unit, chainTargets []*Unit, abilityID string) {
 	if caster == nil {
 		return
 	}
-	// Primary-target swap: every tracked beam roots from a stale unit. Drop
-	// them all so the rebuild below re-anchors against the new primary.
+	// Primary-target swap (or primary lost): every tracked link anchors off
+	// a stale chain. Drop them all so the rebuild below re-anchors against
+	// the new primary.
 	if primary == nil || caster.PerkState.ChainSiphonPrimaryTargetID != primary.ID {
-		for _, id := range caster.PerkState.ChainSiphonBeamIDs {
-			s.removeBeamByIDLocked(id)
+		for _, link := range caster.PerkState.ChainSiphonLinks {
+			s.removeBeamByIDLocked(link.BeamID)
 		}
-		caster.PerkState.ChainSiphonBeamIDs = nil
+		caster.PerkState.ChainSiphonLinks = caster.PerkState.ChainSiphonLinks[:0]
 		if primary == nil {
 			caster.PerkState.ChainSiphonPrimaryTargetID = 0
 			return
@@ -715,38 +815,47 @@ func (s *GameState) syncChainSiphonBeamsLocked(caster, primary *Unit, chainTarge
 		caster.PerkState.ChainSiphonPrimaryTargetID = primary.ID
 	}
 
-	// Build the new target-id set for diffing.
-	newSet := make(map[int]struct{}, len(chainTargets))
-	for _, t := range chainTargets {
-		if t != nil {
-			newSet[t.ID] = struct{}{}
+	recorded := caster.PerkState.ChainSiphonLinks
+
+	// Walk both chains in lockstep to find the longest matching prefix.
+	keep := 0
+	for keep < len(recorded) && keep < len(chainTargets) {
+		if chainTargets[keep] == nil {
+			break
 		}
+		if recorded[keep].TargetID != chainTargets[keep].ID {
+			break
+		}
+		keep++
 	}
 
-	// Drop beams whose target is no longer in the chain set.
-	for targetID, beamID := range caster.PerkState.ChainSiphonBeamIDs {
-		if _, keep := newSet[targetID]; !keep {
-			s.removeBeamByIDLocked(beamID)
-			delete(caster.PerkState.ChainSiphonBeamIDs, targetID)
+	// Despawn the diverged tail (recorded[keep:]). Their source units
+	// shifted (or they're being replaced by different targets) so the
+	// beams would draw from the wrong place.
+	for i := keep; i < len(recorded); i++ {
+		s.removeBeamByIDLocked(recorded[i].BeamID)
+	}
+	recorded = recorded[:keep]
+
+	// Spawn fresh beams for every new tail position. The beam's "caster"
+	// (visual source) is the unit at chainTargets[i-1] for i > 0, or the
+	// primary for i == 0 — that's the bouncing chain shape (x — x — x).
+	for i := keep; i < len(chainTargets); i++ {
+		next := chainTargets[i]
+		if next == nil {
+			break // defensive: don't spawn a half-formed link
 		}
+		var fromUnit *Unit
+		if i == 0 {
+			fromUnit = primary
+		} else {
+			fromUnit = chainTargets[i-1]
+		}
+		beam := s.spawnBeamLocked(fromUnit, next, abilityID, chainSiphonBeamVariant)
+		recorded = append(recorded, ChainSiphonLink{TargetID: next.ID, BeamID: beam.ID})
 	}
 
-	// Spawn beams for newly-selected chain targets. Lazy-init the map only
-	// when we actually need to add an entry so units without the perk pay
-	// nothing for the field.
-	for _, t := range chainTargets {
-		if t == nil {
-			continue
-		}
-		if _, exists := caster.PerkState.ChainSiphonBeamIDs[t.ID]; exists {
-			continue
-		}
-		beam := s.spawnBeamLocked(primary, t, abilityID, chainSiphonBeamVariant)
-		if caster.PerkState.ChainSiphonBeamIDs == nil {
-			caster.PerkState.ChainSiphonBeamIDs = make(map[int]string, len(chainTargets))
-		}
-		caster.PerkState.ChainSiphonBeamIDs[t.ID] = beam.ID
-	}
+	caster.PerkState.ChainSiphonLinks = recorded
 }
 
 // clearChainSiphonBeamsLocked despawns every chain beam the unit currently
@@ -755,39 +864,21 @@ func (s *GameState) syncChainSiphonBeamsLocked(caster, primary *Unit, chainTarge
 // channel ends naturally (target lost, mana depleted, order issued) or
 // because the caster died.
 //
-// No-op for units that never owned chain_siphon (the map stays at its zero
-// nil value); the primary-target id is still defensively reset so a unit
-// that owned chain_siphon, channeled once, then lost the perk doesn't carry
-// a stale ID forever.
+// No-op for units that never owned chain_siphon (the slice stays at its
+// nil zero value); the primary-target id is still defensively reset so a
+// unit that owned chain_siphon, channeled once, then lost the perk doesn't
+// carry a stale ID forever.
 //
 // Caller holds s.mu write lock.
 func (s *GameState) clearChainSiphonBeamsLocked(unit *Unit) {
 	if unit == nil {
 		return
 	}
-	for _, id := range unit.PerkState.ChainSiphonBeamIDs {
-		s.removeBeamByIDLocked(id)
+	for _, link := range unit.PerkState.ChainSiphonLinks {
+		s.removeBeamByIDLocked(link.BeamID)
 	}
-	unit.PerkState.ChainSiphonBeamIDs = nil
+	unit.PerkState.ChainSiphonLinks = nil
 	unit.PerkState.ChainSiphonPrimaryTargetID = 0
-}
-
-// sortChainCandidatesByDistThenID is a small deterministic sort helper for
-// chain target selection. Operates on the named chainSiphonCandidate type
-// declared next to chainSiphonTargetsLocked.
-func sortChainCandidatesByDistThenID(c []chainSiphonCandidate) {
-	// Simple insertion sort — chain pools are tiny (typically 0–3 enemies
-	// inside a 140-pixel radius), so the constant-factor cost of
-	// sort.Slice's reflection beats the asymptotic win. Stable too.
-	for i := 1; i < len(c); i++ {
-		x := c[i]
-		j := i - 1
-		for j >= 0 && (c[j].distSq > x.distSq || (c[j].distSq == x.distSq && c[j].u.ID > x.u.ID)) {
-			c[j+1] = c[j]
-			j--
-		}
-		c[j+1] = x
-	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -843,11 +934,16 @@ func (s *GameState) tickAmplifyDamagePerkLocked(unit *Unit, def *PerkDef, dt flo
 //
 // Caller holds s.mu write lock.
 func (s *GameState) applyAmplifyDamageAoELocked(caster, anchor *Unit) {
-	def := perkDefByID("amplify_damage")
-	if def == nil || caster == nil || anchor == nil {
+	if caster == nil || anchor == nil {
 		return
 	}
-	cfg := def.ConfigForRank(caster.Rank)
+	// Effective config layers ascended_corruption modifiers (radius, duration,
+	// potency) on top of the base when the caster owns the Gold perk. Base
+	// values returned unchanged otherwise.
+	cfg := s.amplifyDamageEffectiveConfigLocked(caster)
+	if cfg == nil {
+		return
+	}
 	radius := cfg["radius"]
 	duration := cfg["durationSeconds"]
 	mult := cfg["damageTakenMultiplier"]
@@ -926,17 +1022,27 @@ func (s *GameState) applyDarkRenewalExcessLocked(siphoner *Unit, remaining int, 
 	if siphoner == nil || remaining <= 0 {
 		return 0
 	}
-	def := perkDefByID("dark_renewal")
-	if def == nil || !containsString(siphoner.PerkIDs, "dark_renewal") {
+	if !containsString(siphoner.PerkIDs, "dark_renewal") {
 		return 0
 	}
-	cfg := def.ConfigForRank(siphoner.Rank)
+	// Effective config: base dark_renewal config with ascended_corruption
+	// modifiers layered in (bigger self/ally caps, more ally targets). The
+	// helper also injects allyTargetCount = 1 (default) so the multi-ally
+	// loop has a single key to read.
+	cfg := s.darkRenewalEffectiveConfigLocked(siphoner)
+	if cfg == nil {
+		return 0
+	}
 	conversionPercent := cfg["shieldConversionPercent"]
 	if conversionPercent <= 0 {
 		return 0
 	}
 	maxSelfShield := int(cfg["maxSelfShield"])
 	maxAllyShield := int(cfg["maxAllyShield"])
+	allyTargetCount := int(cfg["allyTargetCount"])
+	if allyTargetCount < 1 {
+		allyTargetCount = 1
+	}
 	allyR := cfg["allyRadius"]
 	if allyR <= 0 {
 		allyR = allyRadius // fall back to the channel's allyHealRadius
@@ -967,10 +1073,18 @@ func (s *GameState) applyDarkRenewalExcessLocked(siphoner *Unit, remaining int, 
 		available -= applied
 	}
 
-	// Step 3: nearest in-range ally pool (with room).
+	// Step 3: up to allyTargetCount nearest in-range allies, each with room.
+	// Walk one ally at a time, exclude already-served recipients via a small
+	// id-set so we never pick the same ally twice in one call. Without
+	// ascended_corruption allyTargetCount == 1 and this collapses to the
+	// legacy single-ally behaviour.
 	if available > 0 && maxAllyShield > 0 {
-		ally := s.darkRenewalAllyRecipientLocked(siphoner, allyR, maxAllyShield)
-		if ally != nil {
+		served := make(map[int]struct{}, allyTargetCount)
+		for i := 0; i < allyTargetCount && available > 0; i++ {
+			ally := s.darkRenewalAllyRecipientLockedExcluding(siphoner, allyR, maxAllyShield, served)
+			if ally == nil {
+				break
+			}
 			applied := s.applyShieldFromSourceLocked(
 				ally,
 				darkRenewalShieldSource,
@@ -981,6 +1095,7 @@ func (s *GameState) applyDarkRenewalExcessLocked(siphoner *Unit, remaining int, 
 			)
 			banked += applied
 			available -= applied
+			served[ally.ID] = struct{}{}
 		}
 	}
 
@@ -1006,6 +1121,18 @@ func (s *GameState) applyDarkRenewalExcessLocked(siphoner *Unit, remaining int, 
 //
 // Caller holds s.mu (read or write).
 func (s *GameState) darkRenewalAllyRecipientLocked(siphoner *Unit, radius float64, maxAllyShield int) *Unit {
+	return s.darkRenewalAllyRecipientLockedExcluding(siphoner, radius, maxAllyShield, nil)
+}
+
+// darkRenewalAllyRecipientLockedExcluding is the multi-target variant used
+// by applyDarkRenewalExcessLocked when ascended_corruption raises
+// allyTargetCount above 1. `exclude` carries the set of ally ids already
+// served in the current cascade so we never pick the same ally twice in one
+// call. Pass nil (or empty) for the legacy single-pick behaviour — the
+// shadowed wrapper above does exactly that.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) darkRenewalAllyRecipientLockedExcluding(siphoner *Unit, radius float64, maxAllyShield int, exclude map[int]struct{}) *Unit {
 	if siphoner == nil || radius <= 0 {
 		return nil
 	}
@@ -1019,6 +1146,9 @@ func (s *GameState) darkRenewalAllyRecipientLocked(siphoner *Unit, radius float6
 	var bestSq float64
 	for _, u := range s.Units {
 		if u == nil || u.ID == siphoner.ID || u.HP <= 0 || !u.Visible {
+			continue
+		}
+		if _, skipped := exclude[u.ID]; skipped {
 			continue
 		}
 		if !s.unitsFriendlyLocked(siphoner, u) {
@@ -1061,13 +1191,17 @@ func (s *GameState) darkRenewalAllyRecipientLocked(siphoner *Unit, radius float6
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared Suffering — damage echo to nearby afflicted enemies
+// Shared Suffering — damage echo to nearby enemies
 //
 // When the Siphoner's primary Siphon Life tick damages an enemy, a
-// percentage of that damage is also dealt to every other enemy within
-// `radius` of the primary that already carries any Siphoner affliction
-// (withering_beam, lingering_hex, mark_of_weakness, amplify_damage, and any
-// future Siphoner-tagged affliction added via hasAnySiphonerAfflictionLocked).
+// percentage of that damage is also dealt to every other visible hostile
+// within `radius` of the primary target. No affliction prerequisite — the
+// echo fires on every nearby enemy so the perk stands on its own without
+// requiring another Siphoner affliction perk to seed the field.
+//
+// Echo damage is rendered as a minor (side-falling, smaller) shadow popup
+// on each recipient — a true secondary effect, visually distinct from the
+// primary Siphon Life tick on the original target.
 //
 // Recursion safety:
 //
@@ -1080,22 +1214,26 @@ func (s *GameState) darkRenewalAllyRecipientLocked(siphoner *Unit, radius float6
 // ─────────────────────────────────────────────────────────────────────────────
 
 // applySharedSufferingLocked echoes a fraction of `primaryDamage` to every
-// enemy within `radius` of `primary` that already carries any Siphoner
-// affliction. Fires no-op when the caster doesn't own the perk.
+// visible hostile within `radius` of `primary`. Fires no-op when the caster
+// doesn't own the perk.
 //
 // Caller holds s.mu write lock.
 func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDamage int) {
 	if caster == nil || primary == nil || primaryDamage <= 0 {
 		return
 	}
-	def := perkDefByID("shared_suffering")
-	if def == nil || !containsString(caster.PerkIDs, "shared_suffering") {
+	if !containsString(caster.PerkIDs, "shared_suffering") {
 		return
 	}
 	if caster.PerkState.SharedSufferingActive {
 		return // recursion guard
 	}
-	cfg := def.ConfigForRank(caster.Rank)
+	// Effective config layers ascended_corruption modifiers (radius, share%)
+	// on top of the base when the caster owns the Gold perk.
+	cfg := s.sharedSufferingEffectiveConfigLocked(caster)
+	if cfg == nil {
+		return
+	}
 	radius := cfg["radius"]
 	sharePct := cfg["damageSharePercent"]
 	if radius <= 0 || sharePct <= 0 {
@@ -1116,9 +1254,6 @@ func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDam
 		if !s.playersAreHostileLocked(caster.OwnerID, u.OwnerID) {
 			continue
 		}
-		if !hasAnySiphonerAfflictionLocked(u) {
-			continue
-		}
 		dx := u.X - primary.X
 		dy := u.Y - primary.Y
 		if dx*dx+dy*dy > radiusSq {
@@ -1127,6 +1262,14 @@ func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDam
 		// Visual placeholder: shadowburst on each echo victim. A dedicated
 		// "shared suffering" arc VFX can replace this later.
 		s.queueEffectLocked("shadowburst", u.ID, u.X, u.Y, 0.6, 0.4, "")
+		// Echo damage is a true secondary/splash effect, not a direct hit —
+		// queue a MINOR damage event so the popup drifts sideways in dark
+		// purple, distinguishing it from the primary Siphon Life tick's
+		// floating-up popup. The minor pool peels the matching portion off
+		// the HP-diff before the major popup is emitted; the auto-emitted
+		// shadow damage-type hint that would otherwise color the major
+		// popup is naturally consumed when no remainder is left.
+		s.recordMinorDamageHitLocked(u, echoDamage, "shadow")
 		s.applyUnitDamageWithSourceLocked(u, echoDamage, DamageSource{
 			AttackerUnitID: caster.ID,
 			Kind:           "shared_suffering",
@@ -1135,20 +1278,288 @@ func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDam
 	}
 }
 
-// hasAnySiphonerAfflictionLocked reports whether `unit` currently carries
-// any active Siphoner-source affliction. Generic by design so new Siphoner
-// affliction perks added later only need to expose a Remaining > 0 check
-// here — the consumer (shared_suffering) auto-includes them.
+// ═════════════════════════════════════════════════════════════════════════════
+// SIPHONER GOLD PERKS
 //
-// Today's set: withering_beam, lingering_hex, mark_of_weakness,
-// amplify_damage.
-func hasAnySiphonerAfflictionLocked(unit *Unit) bool {
-	if unit == nil {
-		return false
+//   ascended_corruption — adaptive. Layers per-Silver-perk modifiers via
+//                         the effective-config helpers below. Mirrors the
+//                         Trapper ascendant_infusion pattern: one Gold
+//                         perk produces different effects depending on
+//                         which Silver perk the unit already owns.
+//
+//   beam_mastery       — global Siphon Life buff. Scales damage / healing /
+//                         range / mana cost via siphonLifeChannelModifiers-
+//                         ForCasterLocked, and bumps Chain Siphon's target
+//                         count via chainSiphonEffectiveConfigLocked when
+//                         the unit also owns Chain Siphon.
+//
+//   repurposed_life    — on-death mana support. Fires when an enemy
+//                         actively being drained by a Siphoner with the
+//                         perk dies — restores mana to nearby allies
+//                         (including the Siphoner). Wired through the
+//                         death-pipeline hook onSiphonVictimDeathLocked.
+//
+// ── EFFECTIVE-CONFIG PATTERN ─────────────────────────────────────────────────
+//
+// Each Silver perk has a thin "effective config" helper that returns the
+// JSON config with every modifier applied. The Silver helpers (chain
+// targets / amplify AoE / dark renewal cascade / shared suffering echo) all
+// read from these helpers instead of perkDefByID(...).Config directly, so
+// adding a new modifier source (Gold, future Legendary, item, etc.) means
+// touching ONE helper per Silver perk rather than every consumer.
+//
+// Modifier composition rules (followed by every helper below):
+//   - "Bonus" fields ADD to the base (e.g. +0.25 damage share).
+//   - "Multiplier" fields MULTIPLY the base (e.g. 1.5× radius).
+//   - "Count" bonuses add to integer counts (additionalTargetCount + 1).
+//   - Missing Gold perk = base config returned unchanged.
+//
+// All effective-config helpers return a fresh map (never alias the catalog
+// map) so mutation later in the call stack is safe.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// chainSiphonEffectiveConfigLocked returns the chain_siphon config with
+// every modifier from the caster's other perks layered in. Layers:
+//   - beam_mastery: +chainAdditionalTargetBonus to additionalTargetCount.
+//   - ascended_corruption: +chainAdditionalTargetCountBonus, ×chainRange-
+//     Multiplier, +chainSecondaryDamageMultiplierBonus, +chainSecondary-
+//     HealingMultiplierBonus.
+//
+// Returns nil when chain_siphon is not in the catalog (defensive). Returns
+// the base config unchanged when the caster owns no modifiers.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) chainSiphonEffectiveConfigLocked(caster *Unit) map[string]float64 {
+	def := perkDefByID("chain_siphon")
+	if def == nil {
+		return nil
 	}
-	ps := &unit.PerkState
-	return ps.WitheringBeamRemaining > 0 ||
-		ps.LingeringHexRemaining > 0 ||
-		ps.MarkOfWeaknessRemaining > 0 ||
-		ps.AmplifyDamageRemaining > 0
+	base := def.ConfigForRank(rankOrEmpty(caster))
+	cfg := copyConfigMap(base)
+	if caster == nil {
+		return cfg
+	}
+	if beam := perkDefByID("beam_mastery"); beam != nil && containsString(caster.PerkIDs, "beam_mastery") {
+		bcfg := beam.ConfigForRank(caster.Rank)
+		if v := bcfg["chainAdditionalTargetBonus"]; v > 0 {
+			cfg["additionalTargetCount"] = cfg["additionalTargetCount"] + v
+		}
+	}
+	if asc := perkDefByID("ascended_corruption"); asc != nil && containsString(caster.PerkIDs, "ascended_corruption") {
+		acfg := asc.ConfigForRank(caster.Rank)
+		if v := acfg["chainAdditionalTargetCountBonus"]; v > 0 {
+			cfg["additionalTargetCount"] = cfg["additionalTargetCount"] + v
+		}
+		if v := acfg["chainRangeMultiplier"]; v > 0 {
+			cfg["chainRange"] = cfg["chainRange"] * v
+		}
+		if v := acfg["chainSecondaryDamageMultiplierBonus"]; v > 0 {
+			cfg["secondaryDamageMultiplier"] = cfg["secondaryDamageMultiplier"] + v
+		}
+		if v := acfg["chainSecondaryHealingMultiplierBonus"]; v > 0 {
+			cfg["secondaryHealingMultiplier"] = cfg["secondaryHealingMultiplier"] + v
+		}
+	}
+	return cfg
+}
+
+// amplifyDamageEffectiveConfigLocked returns the amplify_damage config with
+// ascended_corruption modifiers layered in. Layers:
+//   - amplifyRadiusMultiplier  → ×radius
+//   - amplifyDurationMultiplier → ×durationSeconds
+//   - amplifyDamageTakenMultiplierBonus → +damageTakenMultiplier
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) amplifyDamageEffectiveConfigLocked(caster *Unit) map[string]float64 {
+	def := perkDefByID("amplify_damage")
+	if def == nil {
+		return nil
+	}
+	cfg := copyConfigMap(def.ConfigForRank(rankOrEmpty(caster)))
+	if caster == nil {
+		return cfg
+	}
+	if asc := perkDefByID("ascended_corruption"); asc != nil && containsString(caster.PerkIDs, "ascended_corruption") {
+		acfg := asc.ConfigForRank(caster.Rank)
+		if v := acfg["amplifyRadiusMultiplier"]; v > 0 {
+			cfg["radius"] = cfg["radius"] * v
+		}
+		if v := acfg["amplifyDurationMultiplier"]; v > 0 {
+			cfg["durationSeconds"] = cfg["durationSeconds"] * v
+		}
+		if v := acfg["amplifyDamageTakenMultiplierBonus"]; v > 0 {
+			cfg["damageTakenMultiplier"] = cfg["damageTakenMultiplier"] + v
+		}
+	}
+	return cfg
+}
+
+// darkRenewalEffectiveConfigLocked returns the dark_renewal config with
+// ascended_corruption modifiers layered in. Layers:
+//   - darkMaxSelfShieldBonus  → +maxSelfShield
+//   - darkMaxAllyShieldBonus  → +maxAllyShield
+//   - darkAdditionalAllyShieldTargets → injected as "allyTargetCount"
+//     (default 1; total = 1 + bonus). Read by applyDarkRenewalExcessLocked
+//     to drive the multi-ally loop.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) darkRenewalEffectiveConfigLocked(caster *Unit) map[string]float64 {
+	def := perkDefByID("dark_renewal")
+	if def == nil {
+		return nil
+	}
+	cfg := copyConfigMap(def.ConfigForRank(rankOrEmpty(caster)))
+	// Always inject the ally target count so the consumer has a single key
+	// to read (default 1 = single nearest ally, matching legacy behaviour).
+	cfg["allyTargetCount"] = 1
+	if caster == nil {
+		return cfg
+	}
+	if asc := perkDefByID("ascended_corruption"); asc != nil && containsString(caster.PerkIDs, "ascended_corruption") {
+		acfg := asc.ConfigForRank(caster.Rank)
+		if v := acfg["darkMaxSelfShieldBonus"]; v > 0 {
+			cfg["maxSelfShield"] = cfg["maxSelfShield"] + v
+		}
+		if v := acfg["darkMaxAllyShieldBonus"]; v > 0 {
+			cfg["maxAllyShield"] = cfg["maxAllyShield"] + v
+		}
+		if v := acfg["darkAdditionalAllyShieldTargets"]; v > 0 {
+			cfg["allyTargetCount"] = cfg["allyTargetCount"] + v
+		}
+	}
+	return cfg
+}
+
+// sharedSufferingEffectiveConfigLocked returns the shared_suffering config
+// with ascended_corruption modifiers layered in. Layers:
+//   - sharedRadiusMultiplier  → ×radius
+//   - sharedDamageSharePercentBonus → +damageSharePercent
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) sharedSufferingEffectiveConfigLocked(caster *Unit) map[string]float64 {
+	def := perkDefByID("shared_suffering")
+	if def == nil {
+		return nil
+	}
+	cfg := copyConfigMap(def.ConfigForRank(rankOrEmpty(caster)))
+	if caster == nil {
+		return cfg
+	}
+	if asc := perkDefByID("ascended_corruption"); asc != nil && containsString(caster.PerkIDs, "ascended_corruption") {
+		acfg := asc.ConfigForRank(caster.Rank)
+		if v := acfg["sharedRadiusMultiplier"]; v > 0 {
+			cfg["radius"] = cfg["radius"] * v
+		}
+		if v := acfg["sharedDamageSharePercentBonus"]; v > 0 {
+			cfg["damageSharePercent"] = cfg["damageSharePercent"] + v
+		}
+	}
+	return cfg
+}
+
+// copyConfigMap returns a shallow copy of a perk config map so callers can
+// mutate it without disturbing the catalog's shared instance. Cheap — perk
+// configs hold a handful of keys at most.
+func copyConfigMap(src map[string]float64) map[string]float64 {
+	if src == nil {
+		return map[string]float64{}
+	}
+	out := make(map[string]float64, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// rankOrEmpty returns caster.Rank, or "" when caster is nil. Used by the
+// effective-config helpers so they accept a nil caster (during catalog
+// inspection) without panicking. ConfigForRank("") falls back to base.
+func rankOrEmpty(caster *Unit) string {
+	if caster == nil {
+		return ""
+	}
+	return caster.Rank
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Repurposed Life — on-death mana support
+//
+// Fires when an enemy that is CURRENTLY being drained by a Siphoner with the
+// perk dies. The trigger is per-Siphoner: every alive Siphoner whose
+// ChannelAbilityID == "siphon_life" and whose ChannelTargetID == victim.ID
+// at the moment of death (and who owns repurposed_life) fires its own mana
+// pulse to its nearby allies. Multiple Siphoners simultaneously draining
+// the same enemy each fire their own pulse — that's intentional, the
+// "siphoned at moment of death" condition is a per-channel fact.
+//
+// Recursion safety: mana restore is a pure CurrentMana mutation via
+// addUnitManaLocked — it does not trigger any death event or perk hook,
+// so no recursion guard is needed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// onSiphonVictimDeathLocked is called from drainPendingDeathsLocked once
+// per dying unit (after kill attribution / XP bookkeeping). It scans for
+// every active Siphoner whose Siphon Life channel was targeting the dying
+// unit at the moment of death — for each that owns repurposed_life, fires
+// the mana pulse to nearby allies.
+//
+// Cheap when no Siphoner is channeling the victim (early-out on the
+// channel-target check); pays the per-Siphoner scan only when there's
+// actually a Siphoner draining this unit.
+//
+// Caller holds s.mu write lock.
+func (s *GameState) onSiphonVictimDeathLocked(victim *Unit) {
+	if victim == nil {
+		return
+	}
+	def := perkDefByID("repurposed_life")
+	if def == nil {
+		return
+	}
+	for _, u := range s.Units {
+		if u == nil || u.HP <= 0 {
+			continue
+		}
+		if u.ChannelAbilityID != "siphon_life" || u.ChannelTargetID != victim.ID {
+			continue
+		}
+		if !containsString(u.PerkIDs, "repurposed_life") {
+			continue
+		}
+		s.fireRepurposedLifeManaRestoreLocked(u, def)
+	}
+}
+
+// fireRepurposedLifeManaRestoreLocked pulses manaRestoreAmount to every
+// alive friendly unit within radius of the Siphoner, the Siphoner included.
+// Routed through addUnitManaLocked so the per-recipient cap is respected
+// uniformly (no over-restore beyond MaxMana). Allies without a mana pool
+// (MaxMana == 0) are skipped automatically by the helper.
+//
+// Caller holds s.mu write lock.
+func (s *GameState) fireRepurposedLifeManaRestoreLocked(siphoner *Unit, def *PerkDef) {
+	if siphoner == nil || def == nil {
+		return
+	}
+	cfg := def.ConfigForRank(siphoner.Rank)
+	amount := int(cfg["manaRestoreAmount"])
+	radius := cfg["radius"]
+	if amount <= 0 || radius <= 0 {
+		return
+	}
+	radiusSq := radius * radius
+	for _, ally := range s.Units {
+		if ally == nil || ally.HP <= 0 {
+			continue
+		}
+		if !s.unitsFriendlyLocked(siphoner, ally) {
+			continue
+		}
+		dx := ally.X - siphoner.X
+		dy := ally.Y - siphoner.Y
+		if dx*dx+dy*dy > radiusSq {
+			continue
+		}
+		s.addUnitManaLocked(ally, amount)
+	}
 }

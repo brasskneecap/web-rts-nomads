@@ -672,6 +672,13 @@ type GameState struct {
 	// (Reactive Flames splash, etc.). See minor_damage_events.go.
 	minorDamageEventsThisTick []minorDamageEvent
 
+	// damageTypeHintsThisTick is the parallel channel for COLORING the
+	// regular floating-up popup (not a separate popup like minor events).
+	// Auto-emitted by applyUnitDamageWithSourceLocked whenever the damage
+	// source carries a typed DamageType recognised by
+	// damageTypeColorVariant. See damage_type_hints.go.
+	damageTypeHintsThisTick []damageTypeHint
+
 	// lethalDamageEventsThisTick mirrors critEventsThisTick for overkill
 	// killing-blow amounts. The client uses these to override its synthesized
 	// killing-blow popup so overkill displays the real damage instead of the
@@ -1330,6 +1337,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Effects:            s.effectSnapshotsLocked(),
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
 		HealEvents:         s.snapshotHealEventsLocked(),
 		Wave: protocol.WaveSnapshot{
@@ -1662,6 +1670,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		Effects:            effects,
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
 		HealEvents:         s.snapshotHealEventsLocked(),
 		Wave: protocol.WaveSnapshot{
@@ -2120,6 +2129,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		Effects:            s.effectSnapshotsLocked(),
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
 		HealEvents:         s.snapshotHealEventsLocked(),
 		Wave: protocol.WaveSnapshot{
@@ -2159,6 +2169,7 @@ func (s *GameState) Update(dt float64) {
 	// client can match against its HP-diff damage events.
 	s.resetCritEventsThisTickLocked()
 	s.resetMinorDamageEventsThisTickLocked()
+	s.resetDamageTypeHintsThisTickLocked()
 	s.resetLethalDamageEventsThisTickLocked()
 	s.resetHealEventsThisTickLocked()
 

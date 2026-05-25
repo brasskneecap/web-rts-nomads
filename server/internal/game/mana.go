@@ -80,3 +80,26 @@ func (s *GameState) spendUnitManaLocked(unit *Unit, cost int) bool {
 	}
 	return true
 }
+
+// addUnitManaLocked grants `amount` mana to unit, clamped to [0, MaxMana].
+// Returns the amount actually granted (0 when the unit has no mana pool, is
+// already at max, or amount <= 0). Symmetric to spendUnitManaLocked — this
+// is the single entry point for restoring mana so perks / abilities don't
+// each re-implement the clamping + nil-guard logic.
+//
+// Caller holds s.mu.
+func (s *GameState) addUnitManaLocked(unit *Unit, amount int) int {
+	if amount <= 0 || unit == nil || unit.MaxMana <= 0 || unit.HP <= 0 {
+		return 0
+	}
+	room := unit.MaxMana - unit.CurrentMana
+	if room <= 0 {
+		return 0
+	}
+	gain := amount
+	if gain > room {
+		gain = room
+	}
+	unit.CurrentMana += gain
+	return gain
+}

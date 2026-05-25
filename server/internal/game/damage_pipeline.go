@@ -111,6 +111,14 @@ func (s *GameState) drainPendingDeathsLocked() {
 			continue
 		}
 
+		// Siphoner repurposed_life: fire mana restore for every Siphoner that
+		// was actively channeling Siphon Life on this victim at the moment of
+		// death, regardless of who landed the killing blow. Called BEFORE
+		// removeUnitLocked below so the dying unit's channel-target back-refs
+		// on Siphoners are still resolvable. No-op when no Siphoner has the
+		// perk + the dying unit as channel target.
+		s.onSiphonVictimDeathLocked(target)
+
 		if !d.Source.IsAnonymous() {
 			// Resolve attacker and run kill bookkeeping.
 			if d.Source.AttackerUnitID != 0 {

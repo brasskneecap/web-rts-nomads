@@ -632,20 +632,25 @@ type UnitPerkState struct {
 	// ── Siphoner silver perks ───────────────────────────────────────────────
 	// chain_siphon — damage / heal are stateless (resolved fresh each tick),
 	// but the SECONDARY BEAM VISUALS need to persist across ticks to avoid
-	// 4-fps flicker at the 0.25s channel cadence. We track active chain
-	// beams by their stable wire ID, keyed on the chain target's unit ID,
-	// so the per-tick sync can:
-	//   - reuse beams whose chain target is still selected (no respawn),
-	//   - despawn beams whose target dropped out of the chain set,
-	//   - spawn beams for newly-selected chain targets.
-	// ChainSiphonPrimaryTargetID remembers WHO the chain beams currently
-	// emanate from. When the Siphoner swaps primary target (channel re-
-	// acquires), every chain beam roots from a stale unit, so the sync
-	// helper detects the mismatch and respawns all chain beams from the
-	// new primary. Both fields zero out when the channel ends, via
-	// clearChainSiphonBeamsLocked called from clearChannelStateLocked.
+	// 4-fps flicker at the 0.25s channel cadence. The chain BOUNCES — each
+	// secondary beam starts from the previous chain victim, not the primary
+	// (x — x — x, not x ⟵ x x). The tracking is therefore ORDERED: the
+	// slice index is the bounce position, and beam visuals are anchored to
+	// (chain[i-1].unit, chain[i].unit) where chain[-1] is the primary target.
+	//
+	// The per-tick sync compares the freshly-bounced chain against the
+	// recorded chain prefix-wise: every leading entry whose TargetID still
+	// matches is reused (no respawn → no flicker), and the first divergence
+	// despawns that beam and every beam after it (the tail's source units
+	// have shifted, so those beams would now be drawn from the wrong place).
+	//
+	// ChainSiphonPrimaryTargetID remembers WHO the bouncing chain currently
+	// roots from. When the Siphoner swaps primary target, every link roots
+	// from a stale chain and is rebuilt from scratch. Both fields zero out
+	// when the channel ends, via clearChainSiphonBeamsLocked called from
+	// clearChannelStateLocked.
 	ChainSiphonPrimaryTargetID int
-	ChainSiphonBeamIDs         map[int]string
+	ChainSiphonLinks           []ChainSiphonLink
 
 	// amplify_damage — autonomous AoE affliction with the same shape as
 	// Lingering Hex / Mark of Weakness (owner-side cooldown + recipient-side
@@ -706,6 +711,17 @@ type ShieldPool struct {
 	CurrentValue int
 	MaxValue     int
 	Tags         []string
+}
+
+// ChainSiphonLink is one position in the bouncing Siphon Life chain. Slice
+// index is the bounce position (0 = first hop off the primary target). Each
+// beam animates from the unit one position earlier in the chain (or the
+// primary for index 0) to the unit referenced by TargetID. BeamID is the
+// stable wire id assigned by spawnBeamLocked so the sync helper can drop a
+// specific link without disturbing earlier or later beams.
+type ChainSiphonLink struct {
+	TargetID int
+	BeamID   string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

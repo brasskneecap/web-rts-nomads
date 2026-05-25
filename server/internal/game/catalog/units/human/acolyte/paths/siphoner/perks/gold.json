@@ -1,1 +1,57 @@
-[]
+[
+  {
+    "id": "ascended_corruption",
+    "displayName": "Ascended Corruption",
+    "icon": "perk-ascended-corruption",
+    "description": "Enhances whichever Silver Siphoner perk you own — chains reach further, afflictions cut deeper, shields stretch wider, suffering spreads thicker.",
+    "tooltipTemplate": "Enhances your Silver Siphoner perk. Pick a Silver perk to see its specific bonus.",
+    "tooltipTemplateByOwnedPerk": {
+      "chain_siphon": "Chain Siphon: +{chainAdditionalTargetCountBonus:0} target, {chainRangeMultiplier:1}× range, +{chainSecondaryDamageMultiplierBonus%} secondary damage, +{chainSecondaryHealingMultiplierBonus%} secondary healing.",
+      "amplify_damage": "Amplify Damage: {amplifyRadiusMultiplier:1}× radius, {amplifyDurationMultiplier:1}× duration, +{amplifyDamageTakenMultiplierBonus%} damage amplification.",
+      "dark_renewal": "Dark Renewal: +{darkMaxSelfShieldBonus:0} self shield cap, +{darkMaxAllyShieldBonus:0} ally shield cap, +{darkAdditionalAllyShieldTargets:0} additional ally targets for overflow shielding.",
+      "shared_suffering": "Shared Suffering: {sharedRadiusMultiplier:1}× radius, +{sharedDamageSharePercentBonus%} damage share."
+    },
+    "config": {
+      "chainAdditionalTargetCountBonus": 1,
+      "chainRangeMultiplier": 1.5,
+      "chainSecondaryDamageMultiplierBonus": 0.25,
+      "chainSecondaryHealingMultiplierBonus": 0.25,
+
+      "amplifyRadiusMultiplier": 1.5,
+      "amplifyDurationMultiplier": 1.5,
+      "amplifyDamageTakenMultiplierBonus": 0.25,
+
+      "darkMaxSelfShieldBonus": 40,
+      "darkMaxAllyShieldBonus": 40,
+      "darkAdditionalAllyShieldTargets": 2,
+
+      "sharedRadiusMultiplier": 1.5,
+      "sharedDamageSharePercentBonus": 0.20
+    }
+  },
+  {
+    "id": "beam_mastery",
+    "displayName": "Beam Mastery",
+    "icon": "perk-beam-mastery",
+    "description": "Siphon Life deals more damage, heals more, reaches further, and costs less mana. Adds an extra chain target when paired with Chain Siphon.",
+    "tooltipTemplate": "Siphon Life: {damageMultiplier:1}× damage, {healingMultiplier:1}× healing, {rangeMultiplier:1}× range, {manaCostMultiplier:1}× mana cost per tick. With Chain Siphon: +{chainAdditionalTargetBonus:0} chain target.",
+    "config": {
+      "damageMultiplier": 1.5,
+      "healingMultiplier": 1.5,
+      "rangeMultiplier": 1.25,
+      "manaCostMultiplier": 0.5,
+      "chainAdditionalTargetBonus": 1
+    }
+  },
+  {
+    "id": "repurposed_life",
+    "displayName": "Repurposed Life",
+    "icon": "perk-repurposed-life",
+    "description": "When an enemy being drained by your Siphon Life dies, harvest its expiring essence as mana for nearby allies.",
+    "tooltipTemplate": "When an enemy actively being drained by your Siphon Life dies, restore {manaRestoreAmount:0} mana to every ally within {radius:0} (the Siphoner included).",
+    "config": {
+      "manaRestoreAmount": 5,
+      "radius": 500
+    }
+  }
+]

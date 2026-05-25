@@ -19,7 +19,9 @@
       "Bash(awk '/--- expected/,/--- actual/' /tmp/baseline_out.txt)",
       "Bash(awk '/--- actual/,/^FAIL$/' /tmp/baseline_out.txt)",
       "Bash(git fsck *)",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(cd /c/Dev/web-rts-nomads/server && wc -l internal/game/perks_siphoner.go)",
+      "Read(//c/c/Dev/web-rts-nomads/server/internal/game/**)"
     ],
     "additionalDirectories": [
       "c:\\Users\\codya\\Downloads",

@@ -911,6 +911,27 @@ export type MinorDamageEventSnapshot = {
 }
 
 /**
+ * DamageTypeHintSnapshot tags a chunk of HP loss with its damage type so the
+ * client can COLOR the existing major (floating-up) damage popup it derives
+ * from HP-diff. Unlike MinorDamageEventSnapshot, this does NOT spawn an
+ * extra popup — it only changes the color of the popup that would already
+ * appear.
+ *
+ * Auto-emitted by the server damage pipeline whenever a typed DamageSource
+ * (shadow, fire, holy, lightning, …) lands HP loss. Unmatched hints are
+ * safe to silently drop; the popup then keeps its default white/red.
+ *
+ * `variant` shares the same palette as MinorDamageEventSnapshot.variant so
+ * the same damage type reads the same color in both the major popup
+ * (floating up) and the minor splash popup (drifting sideways).
+ */
+export type DamageTypeHintSnapshot = {
+  unitId: number
+  damage: number
+  variant?: string
+}
+
+/**
  * LethalDamageEventSnapshot carries the pre-clamp damage value for an overkill
  * killing blow. The client's killing-blow synthesis would otherwise show only
  * the victim's remaining HP (capped) because dead units are stripped from the
@@ -981,6 +1002,7 @@ export type MatchSnapshotMessage = {
   effects?: EffectSnapshot[]
   critEvents?: CritEventSnapshot[]
   minorDamageEvents?: MinorDamageEventSnapshot[]
+  damageTypeHints?: DamageTypeHintSnapshot[]
   lethalDamageEvents?: LethalDamageEventSnapshot[]
   healEvents?: HealEventSnapshot[]
   // Present only when the active map has debug.battleTracker=true. Absent

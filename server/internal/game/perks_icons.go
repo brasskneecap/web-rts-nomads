@@ -296,17 +296,18 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 			// movement-speed buff while it is live.
 			addIcon(perkID, 1)
 
-		case "divine_healer":
-			// Cleric silver passive: always emit on the owner — the multiplier
-			// is always-on, the HUD just signals "this Cleric heals stronger".
-			addIcon(perkID, 1)
-
-		case "divine_intervention", "beacon_of_life", "divine_judgement":
-			// Cleric gold passives: always emit for the owner so the player
-			// can see the perk is owned. Intervention's cooldown wipes via
-			// perkCooldownsLocked; beacon and judgement are reactive (fire on
-			// heal events) so there's no per-unit "active" state to gate on.
-			addIcon(perkID, 1)
+		// divine_healer, divine_intervention, beacon_of_life, divine_judgement
+		// intentionally emit NO owner buff icons. Per the floating-icon rule
+		// (active effect on THIS unit, not perk ownership):
+		//   - divine_healer scales heals the cleric CASTS — visible on heal
+		//     amount itself, not on the cleric.
+		//   - divine_intervention is a triggered emergency save — fires on
+		//     ally death, no active state on the cleric. Cooldown still
+		//     surfaces via perkCooldownsLocked on the perk slot.
+		//   - beacon_of_life splashes on heal events — recipients show the
+		//     heal popup; no active state on the cleric.
+		//   - divine_judgement detonates AoE on heal events — same.
+		// Perk ownership is conveyed by the selection panel's perk slots.
 
 		// Siphoner bronze perks are intentionally NOT emitted on the owner:
 		//   - soul_leech is a conditional damage/heal multiplier on Siphon
@@ -320,15 +321,25 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 		// Cooldown wipes for the two autonomous AoEs surface via
 		// perkCooldownsLocked → SelectionHud's perk slot.
 
-		// Siphoner silver perks — same convention split:
-		//   - chain_siphon, shared_suffering act on enemies; no owner badge
-		//     (their visual is the secondary beam / echo damage on victims).
-		//   - amplify_damage is autonomous AoE — surfaces via the cooldown
-		//     wipe in perkCooldownsLocked rather than a buff badge.
-		//   - dark_renewal is the one perk a player wants to see "is on" so
-		//     they recognise the shielding routing is live. Emit on the owner.
-		case "dark_renewal":
-			addIcon(perkID, 1)
+		// Siphoner silver & gold perks intentionally emit NO owner buff
+		// icons. Floating buff icons represent ACTIVE effects on the unit
+		// (time-bounded buffs, current shield, etc.), not perk ownership —
+		// the selection panel's perk slots already show which perks the
+		// unit owns. None of the following passively modify the Siphoner
+		// in a way that warrants a head-icon:
+		//   - chain_siphon, shared_suffering: act on enemies (chain beams,
+		//     echo damage popups on victims).
+		//   - amplify_damage: autonomous AoE; cooldown wipes via
+		//     perkCooldownsLocked on the perk slot.
+		//   - dark_renewal: active benefit IS the shield pool, which
+		//     already surfaces as the "Shield X/Y" stat row and the
+		//     per-source tooltip — no separate floating icon needed.
+		//   - beam_mastery: silently buffs Siphon Life ticks; the channel
+		//     beam itself is the visual.
+		//   - repurposed_life: triggers on enemy death; recipients' mana
+		//     bars filling is the visible signal.
+		//   - ascended_corruption: enhances whichever Silver perk the unit
+		//     owns; the Silver perk's own visuals carry the load.
 
 		// battle_prayer's icon lives on the BUFFED TARGET (cross-unit buff),
 		// not on the perk owner. Surfaced below this loop so allies who don't

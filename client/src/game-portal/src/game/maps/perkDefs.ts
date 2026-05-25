@@ -36,6 +36,15 @@ export type PerkDef = {
    */
   tooltipTemplateByTrap?: Record<string, string>
   /**
+   * Per-owned-perk templates for adaptive perks whose effect varies with the
+   * unit's other picks (e.g. Siphoner ascended_corruption, which mirrors
+   * whichever Silver perk the unit owns). Keys are perk ids; the formatter
+   * iterates unit.perkIds in slot order and picks the first key the unit
+   * owns. Takes precedence over tooltipTemplate; the tooltip then shows
+   * only the branch relevant to this unit's loadout.
+   */
+  tooltipTemplateByOwnedPerk?: Record<string, string>
+  /**
    * Action-icon ID used to render this perk's icon in the HUD.
    * Matches an entry in action-icons.json (e.g. "perk-bloodlust").
    * Edit the SVG path for this ID in the action-icon editor to customise the artwork.

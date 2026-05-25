@@ -112,6 +112,27 @@ function handleMissingKey(perkId: string, token: string): string {
   return token
 }
 
+// pickOwnedPerkBranch returns the tooltipTemplateByOwnedPerk entry whose key
+// matches the first perk in unit.perkIds that exists in the map. Returns
+// undefined when the perk has no map, no perks are owned, or no owned perk
+// matches a key — caller then falls back to the plain tooltipTemplate.
+//
+// Iteration order is unit.perkIds (slot order: Bronze → Silver → Gold), so
+// adaptive perks naturally pick the Silver branch when one exists. If two
+// owned perks both match (unlikely with current design but allowed), the
+// earlier slot wins.
+function pickOwnedPerkBranch(def: PerkDef, unit: Unit): string | undefined {
+  const map = def.tooltipTemplateByOwnedPerk
+  if (!map) return undefined
+  const owned = unit.perkIds
+  if (!owned || owned.length === 0) return undefined
+  for (const id of owned) {
+    const branch = map[id]
+    if (branch !== undefined) return branch
+  }
+  return undefined
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,8 +152,13 @@ export function formatPerkTooltip(def: PerkDef, unit: Unit): string {
   // Trap-branched templates: pick the entry matching the unit's owned Bronze
   // trap perk. Prevents multi-variant perks (ascendant_infusion, overload_protocol)
   // from dumping all four trap descriptions into the tooltip.
-  const branched = trap?.perkId ? def.tooltipTemplateByTrap?.[trap.perkId] : undefined
-  const template = branched ?? def.tooltipTemplate
+  const trapBranch = trap?.perkId ? def.tooltipTemplateByTrap?.[trap.perkId] : undefined
+  // Owned-perk-branched templates: pick the entry matching the first perk in
+  // unit.perkIds that the map has a key for. Generic version of the trap
+  // branch above, used by adaptive perks like Siphoner ascended_corruption
+  // (whose effect mirrors whichever Silver perk the unit owns).
+  const ownedBranch = pickOwnedPerkBranch(def, unit)
+  const template = trapBranch ?? ownedBranch ?? def.tooltipTemplate
   if (!template) {
     return def.description ?? ''
   }

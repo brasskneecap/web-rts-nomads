@@ -290,13 +290,22 @@ func (s *GameState) canAbilityTargetUnitLocked(a AbilityDef, caster, target *Uni
 // match_attack_range case). A non-positive resolved range can never reach a
 // distinct target; a unit targeting itself is always within range.
 func (a AbilityDef) WithinCastRange(caster, target *Unit) bool {
+	return a.WithinCastRangeScaled(caster, target, 1.0)
+}
+
+// WithinCastRangeScaled is WithinCastRange with the resolved range
+// multiplied by `mult` first. Used by perks that scale a specific channel
+// ability's reach (e.g. beam_mastery on Siphon Life). Pass 1.0 for the
+// default behaviour. A non-positive `mult` collapses the range to 0,
+// matching the "ability can't reach anything" semantic of CastRange == 0.
+func (a AbilityDef) WithinCastRangeScaled(caster, target *Unit, mult float64) bool {
 	if caster == nil || target == nil {
 		return false
 	}
 	if target.ID == caster.ID {
 		return true // distance 0 — self is always in range
 	}
-	r := a.CastRange.Resolve(caster)
+	r := a.CastRange.Resolve(caster) * mult
 	if r <= 0 {
 		return false
 	}

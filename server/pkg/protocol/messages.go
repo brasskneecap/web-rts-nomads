@@ -964,6 +964,18 @@ type MinorDamageEventSnapshot struct {
 	Variant string `json:"variant,omitempty"`
 }
 
+// DamageTypeHintSnapshot carries a server-side hint that one chunk of HP
+// loss this tick has a specific damage type. Used by the client to COLOR
+// the existing major (floating-up) damage popup it derives from HP-diff —
+// it does NOT spawn an additional popup. Auto-emitted by the damage
+// pipeline whenever a typed DamageSource produces HP loss; safe to silently
+// drop unmatched entries (the popup falls back to the default color).
+type DamageTypeHintSnapshot struct {
+	UnitID  int    `json:"unitId"`
+	Damage  int    `json:"damage"`
+	Variant string `json:"variant,omitempty"`
+}
+
 // LethalDamageEventSnapshot carries the pre-clamp damage value for an overkill
 // killing blow. HP-deltas on the wire clamp to remaining HP, so the client's
 // HP-diff popup would otherwise show only the leftover HP. Each entry tells
@@ -1039,6 +1051,7 @@ type MatchSnapshotMessage struct {
 	Effects       []EffectSnapshot        `json:"effects,omitempty"`
 	CritEvents         []CritEventSnapshot         `json:"critEvents,omitempty"`
 	MinorDamageEvents  []MinorDamageEventSnapshot  `json:"minorDamageEvents,omitempty"`
+	DamageTypeHints    []DamageTypeHintSnapshot    `json:"damageTypeHints,omitempty"`
 	LethalDamageEvents []LethalDamageEventSnapshot `json:"lethalDamageEvents,omitempty"`
 	HealEvents         []HealEventSnapshot         `json:"healEvents,omitempty"`
 	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`

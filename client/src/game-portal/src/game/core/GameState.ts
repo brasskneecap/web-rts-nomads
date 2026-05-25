@@ -414,6 +414,14 @@ export type DamageEvent = {
    * "fire" → orange, "electric" → purple, omitted defaults to fire/orange.
    */
   minorVariant?: string
+  /**
+   * Sub-flavour for kind='normal' / 'crit' — mirrors
+   * DamageTypeHintSnapshot.variant. When set, the renderer colors the major
+   * (floating-up) popup with the same palette used by minorVariant ("shadow"
+   * → dark purple, "fire" → orange, "holy" → gold, "electric" → light
+   * purple). Absent ⇒ default white/red.
+   */
+  damageType?: string
 }
 
 export type Vec2 = {
@@ -809,6 +817,24 @@ export class GameState {
       pool.push({ damage: evt.damage, variant: evt.variant })
     }
 
+    // Build per-unit damage-type hint pools. Unlike the minor pool above,
+    // hints do NOT spawn additional popups — they only COLOR the existing
+    // major (floating-up) popup the HP-diff loop emits. The server auto-
+    // emits a hint at every typed damage call, so a unit struck by a
+    // shadow-typed Siphon Life tick this frame has a {damage, "shadow"}
+    // entry here; the renderer paints the regular popup dark purple
+    // instead of the default white/red. Unmatched hints (mitigation
+    // mismatch, etc.) silently fall through to the default color.
+    const damageTypePool = new Map<number, Array<{ damage: number; variant?: string }>>()
+    for (const evt of message.damageTypeHints ?? []) {
+      let pool = damageTypePool.get(evt.unitId)
+      if (!pool) {
+        pool = []
+        damageTypePool.set(evt.unitId, pool)
+      }
+      pool.push({ damage: evt.damage, variant: evt.variant })
+    }
+
     // Helper: emit a damage event with crit-pool matching and rolling
     // history mirror, shared by the surviving-unit HP-diff loop and the
     // killing-blow synthesis below. Pass-through `amount`, `unit info`, etc.
@@ -853,6 +879,41 @@ export class GameState {
       }
       if (remainder <= 0) return
 
+      // Damage-type color hint: peel a matching entry off the pool to
+      // color the major popup. Two-phase matching:
+      //
+      //   1. EXACT amount first. In the common single-source tick the
+      //      server's hint equals the HP-diff exactly and this wins.
+      //
+      //   2. FALLBACK to the first hint when no exact match exists. This
+      //      catches the cases where HP-diff doesn't match any single
+      //      hint cleanly: passive HP regen landing in the same tick
+      //      (prev.hp - damage + 1 regen ≠ hint.damage), two siphoner
+      //      beams stacking on one enemy, future shield-decay perks, etc.
+      //      The cost of the fallback: if a unit takes mixed damage
+      //      types in one tick (e.g. shadow Siphon + physical sword
+      //      strike), the popup colors with the typed hint even though
+      //      part of the HP loss was physical. We accept that edge — the
+      //      user-facing rule "my Siphoner's damage looks shadow" reads
+      //      cleanly, and physical attacks emit no hint so they can't
+      //      compete in practice today.
+      //
+      // Consumed entries are removed so a second damage event on the
+      // same unit this tick can't re-use the same hint (one popup per
+      // hint, not infinite re-use).
+      let damageType: string | undefined
+      const typeList = damageTypePool.get(unitId)
+      if (typeList && typeList.length > 0) {
+        const exactIdx = typeList.findIndex((t) => t.damage === remainder)
+        if (exactIdx >= 0) {
+          damageType = typeList[exactIdx].variant
+          typeList.splice(exactIdx, 1)
+        } else {
+          damageType = typeList[0].variant
+          typeList.shift()
+        }
+      }
+
       let kind: 'normal' | 'crit' = 'normal'
       const pool = critPool.get(unitId)
       if (pool && pool.length > 0) {
@@ -876,6 +937,7 @@ export class GameState {
         isFriendly,
         createdAt: now,
         kind,
+        damageType,
       })
       // Debug: pair with the [atk-timing] anim-start logs from unitAnimation
       // to verify swing-vs-damage alignment. The filter trio mirrors the

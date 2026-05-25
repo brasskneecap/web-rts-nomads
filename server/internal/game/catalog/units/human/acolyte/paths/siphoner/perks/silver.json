@@ -43,8 +43,8 @@
     "id": "shared_suffering",
     "displayName": "Shared Suffering",
     "icon": "perk-shared-suffering",
-    "description": "A portion of Siphon Life damage echoes to nearby enemies already carrying a Siphoner affliction.",
-    "tooltipTemplate": "Siphon Life damage echoes for {damageSharePercent%} to other enemies within {radius:0} of the primary target that already carry a Siphoner affliction.",
+    "description": "A portion of Siphon Life damage echoes to every nearby enemy.",
+    "tooltipTemplate": "Siphon Life damage echoes for {damageSharePercent%} to every other visible enemy within {radius:0} of the primary target.",
     "config": {
       "radius": 120,
       "damageSharePercent": 0.40

@@ -119,6 +119,33 @@ function getCachedPath2D(svgPath: string): Path2D {
   return p
 }
 
+// Shared damage-variant → color palette used by BOTH the minor (side-falling)
+// popup and the major (floating-up) popup. Mirrors the server's
+// damageTypeColorVariant in damage_type_hints.go so a damage type the server
+// is willing to tag is always paired with a color here.
+//
+// Returns `fallback` when variant is undefined or unrecognised so callers
+// can supply different defaults — minor popups default to fire/orange (the
+// historical Reactive Flames look), major popups default to enemy-white /
+// friendly-red. Both branches stay in sync by using this one map.
+//
+// EXTENSION POINT: add a case here when adding a new damage type color on
+// the server; client behaviour then comes online automatically.
+function colorForDamageVariant(variant: string | undefined, fallback: string): string {
+  switch (variant) {
+    case 'electric':
+      return '#c084fc' // tailwind purple-400 — light/lavender
+    case 'holy':
+      return '#fcd34d' // tailwind amber-300 — gold
+    case 'shadow':
+      return '#7e22ce' // tailwind purple-700 — dark, necrotic
+    case 'fire':
+      return '#fb923c' // tailwind orange-400
+    default:
+      return fallback
+  }
+}
+
 export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D
   private canvas: HTMLCanvasElement
@@ -216,6 +243,14 @@ export class CanvasRenderer {
      * "electric" → purple. Mirrors the server MinorDamageEventSnapshot.variant.
      */
     minorVariant?: string
+    /**
+     * Sub-flavour for 'normal' / 'crit' popups: shares the same palette
+     * as minorVariant ("shadow" → dark purple, "fire" → orange, "holy" →
+     * gold, "electric" → light purple). When absent the popup falls back
+     * to the default friendly-red / enemy-white. Mirrors the server
+     * DamageTypeHintSnapshot.variant.
+     */
+    damageType?: string
   }> = []
   private readonly FLOATING_DAMAGE_DURATION_MS = 900
   private readonly FLOATING_DAMAGE_RISE_PX = 32
@@ -305,6 +340,7 @@ export class CanvasRenderer {
           kind,
           xDriftSign,
           minorVariant: evt.minorVariant,
+          damageType: evt.damageType,
         })
       }
       this.state.damageEvents.length = 0
@@ -2623,18 +2659,12 @@ export class CanvasRenderer {
         ctx.fillText(text, drawX, drawY)
       } else if (num.kind === 'minor') {
         // Smaller popup so the splash reads as a side-effect, not a hit
-        // from the trap itself. Color derives from variant: "electric" =
-        // purple (Electrified Caltrops), "holy" = gold (Divine Judgement),
-        // default = orange (Reactive Flames / generic fire splash).
+        // from the trap itself. Color shared with major popups via
+        // colorForDamageVariant; minor's fallback (no variant) is the
+        // legacy fire / orange used by Reactive Flames.
         ctx.font = `bold ${minorFontPx}px sans-serif`
         ctx.strokeText(text, drawX, drawY)
-        let minorFill = '#fb923c' // tailwind orange-400 (fire / default)
-        if (num.minorVariant === 'electric') {
-          minorFill = '#c084fc' // tailwind purple-400
-        } else if (num.minorVariant === 'holy') {
-          minorFill = '#fcd34d' // tailwind amber-300
-        }
-        ctx.fillStyle = minorFill
+        ctx.fillStyle = colorForDamageVariant(num.minorVariant, '#fb923c')
         ctx.fillText(text, drawX, drawY)
       } else if (num.kind === 'heal') {
         // Intentional healing — light-green "+N" floating up, distinct from
@@ -2645,9 +2675,16 @@ export class CanvasRenderer {
         ctx.fillStyle = '#4ade80' // tailwind green-400
         ctx.fillText(healText, drawX, drawY)
       } else {
+        // Major (floating-up) popup — color by damage type when the server
+        // has tagged this HP-loss via damageTypeHints; otherwise default
+        // friendly-red / enemy-white. Shares the colorForDamageVariant
+        // palette with the minor branch above so a "shadow" Siphon Life
+        // primary tick and a "shadow" Shared Suffering echo read as the
+        // same hue, just at different sizes / animation styles.
         ctx.font = `bold ${baseFontPx}px sans-serif`
         ctx.strokeText(text, drawX, drawY)
-        ctx.fillStyle = num.isFriendly ? '#ef4444' : '#ffffff'
+        const defaultFill = num.isFriendly ? '#ef4444' : '#ffffff'
+        ctx.fillStyle = colorForDamageVariant(num.damageType, defaultFill)
         ctx.fillText(text, drawX, drawY)
       }
       kept.push(num)

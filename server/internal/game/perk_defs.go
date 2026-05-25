@@ -108,6 +108,15 @@ type PerkDef struct {
 	// picks the entry matching unit.effectiveTrap.perkId. Takes precedence over
 	// TooltipTemplate when both are present and the unit has an effective trap.
 	TooltipTemplateByTrap map[string]string `json:"tooltipTemplateByTrap,omitempty"`
+	// TooltipTemplateByOwnedPerk is the generic equivalent of
+	// TooltipTemplateByTrap for adaptive perks whose effect varies with the
+	// unit's other perk picks (e.g. Siphoner ascended_corruption, whose
+	// behaviour mirrors whichever Silver perk the unit owns). Keys are perk
+	// ids; the client iterates unit.PerkIDs in slot order and picks the
+	// first key that the unit owns. Takes precedence over TooltipTemplate
+	// when a match is found, so the tooltip only shows the relevant
+	// branch instead of dumping every variant.
+	TooltipTemplateByOwnedPerk map[string]string `json:"tooltipTemplateByOwnedPerk,omitempty"`
 	// Icon is the action-icon ID used to render this perk in the HUD.
 	// Matches an entry in catalog/action-icons.json ("perk-<name>").
 	Icon         string             `json:"icon,omitempty"`
@@ -180,7 +189,8 @@ type perkEntryJSON struct {
 	DisplayName           string                     `json:"displayName"`
 	Description           string                     `json:"description,omitempty"`
 	TooltipTemplate       string                     `json:"tooltipTemplate,omitempty"`
-	TooltipTemplateByTrap map[string]string          `json:"tooltipTemplateByTrap,omitempty"`
+	TooltipTemplateByTrap      map[string]string          `json:"tooltipTemplateByTrap,omitempty"`
+	TooltipTemplateByOwnedPerk map[string]string          `json:"tooltipTemplateByOwnedPerk,omitempty"`
 	Icon                  string                     `json:"icon,omitempty"`
 	RequiresPerk          string                     `json:"requiresPerk,omitempty"`
 	Config                map[string]json.RawMessage `json:"config"`
@@ -281,7 +291,8 @@ func init() {
 				DisplayName:           entry.DisplayName,
 				Description:           entry.Description,
 				TooltipTemplate:       entry.TooltipTemplate,
-				TooltipTemplateByTrap: entry.TooltipTemplateByTrap,
+				TooltipTemplateByTrap:      entry.TooltipTemplateByTrap,
+				TooltipTemplateByOwnedPerk: entry.TooltipTemplateByOwnedPerk,
 				Icon:                  entry.Icon,
 				UnitType:              unitType,
 				Path:                  pathName,
