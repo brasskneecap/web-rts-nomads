@@ -3,195 +3,161 @@
   "states": [
     {
       "character": {
-        "id": "095a32ea-fdb0-44ef-a5d3-697b944dee74",
+        "id": "d8e28aae-a741-42cf-a49b-69003b83e310",
         "name": "Acolyte",
-        "prompt": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, cute human female caster, slender feminine figure in flowing slate blue mage robes with cream trim and visible cleavage, ornate cream and slate blue heraldic emblem on chest matching faction soldiers, long dark hair tied back, wooden staff held vertically in right hand topped with glowing cream crystal orb, small spellbook hanging from belt, leather satchel with potion vials at hip, focused mystical stance, faint magical aura at hands, slate blue cloth and steel accents palette",
+        "prompt": "pixel art, top-down 3/4 perspective, 64x64 sprite, chunky dark outlines, limited earthy palette, 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, young human female apprentice healer acolyte, slender feminine figure in simple plain cream colored novice robes with slate blue rope sash tied at waist, no cloak just a small modest hood lying flat behind shoulders, short blonde hair with no ornament in a simple tied back style, no staff and no weapon, hands gently clasped together at chest in a humble prayer-like gesture with very faint soft warm magical glow at her palms, simple cloth pouch at hip with one small potion vial, small wooden pendant necklace at chest, humble eager learning stance, cream and warm brown palette with subtle slate blue sash accent, faction apprentice healer appearance",
         "size": {
-          "width": 108,
-          "height": 108
+          "width": 104,
+          "height": 104
         },
         "template_id": "mannequin",
         "directions": 8,
         "view": "low top-down",
-        "created_at": "2026-04-28T03:25:06.776588+00:00"
+        "created_at": "2026-05-24T23:39:01.472199+00:00"
       },
-      "folder": "states/Acolyte",
+      "folder": "Acolyte",
       "frames": {
         "rotations": {
-          "south": "states/Acolyte/rotations/south.png",
-          "south-east": "states/Acolyte/rotations/south-east.png",
-          "east": "states/Acolyte/rotations/east.png",
-          "north-east": "states/Acolyte/rotations/north-east.png",
-          "north": "states/Acolyte/rotations/north.png",
-          "north-west": "states/Acolyte/rotations/north-west.png",
-          "west": "states/Acolyte/rotations/west.png",
-          "south-west": "states/Acolyte/rotations/south-west.png"
+          "south": "Acolyte/rotations/south.png",
+          "south-east": "Acolyte/rotations/south-east.png",
+          "east": "Acolyte/rotations/east.png",
+          "north-east": "Acolyte/rotations/north-east.png",
+          "north": "Acolyte/rotations/north.png",
+          "north-west": "Acolyte/rotations/north-west.png",
+          "west": "Acolyte/rotations/west.png",
+          "south-west": "Acolyte/rotations/south-west.png"
         },
         "animations": {
-          "Walking-9d2a9de1": {
+          "Walking-a9feb67b": {
             "south-west": [
-              "states/Acolyte/animations/Walking-9d2a9de1/south-west/frame_000.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/south-west/frame_001.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/south-west/frame_002.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/south-west/frame_003.png"
-            ],
-            "south": [
-              "states/Acolyte/animations/Walking-9d2a9de1/south/frame_000.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/south/frame_001.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/south/frame_002.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/south/frame_003.png"
-            ],
-            "north": [
-              "states/Acolyte/animations/Walking-9d2a9de1/north/frame_000.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/north/frame_001.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/north/frame_002.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/north/frame_003.png"
-            ],
-            "west": [
-              "states/Acolyte/animations/Walking-9d2a9de1/west/frame_000.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/west/frame_001.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/west/frame_002.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/west/frame_003.png"
+              "Acolyte/animations/Walking-a9feb67b/south-west/frame_000.png",
+              "Acolyte/animations/Walking-a9feb67b/south-west/frame_001.png",
+              "Acolyte/animations/Walking-a9feb67b/south-west/frame_002.png",
+              "Acolyte/animations/Walking-a9feb67b/south-west/frame_003.png",
+              "Acolyte/animations/Walking-a9feb67b/south-west/frame_004.png",
+              "Acolyte/animations/Walking-a9feb67b/south-west/frame_005.png",
+              "Acolyte/animations/Walking-a9feb67b/south-west/frame_006.png"
             ],
             "north-west": [
-              "states/Acolyte/animations/Walking-9d2a9de1/north-west/frame_000.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/north-west/frame_001.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/north-west/frame_002.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/north-west/frame_003.png"
+              "Acolyte/animations/Walking-a9feb67b/north-west/frame_000.png",
+              "Acolyte/animations/Walking-a9feb67b/north-west/frame_001.png",
+              "Acolyte/animations/Walking-a9feb67b/north-west/frame_002.png",
+              "Acolyte/animations/Walking-a9feb67b/north-west/frame_003.png",
+              "Acolyte/animations/Walking-a9feb67b/north-west/frame_004.png",
+              "Acolyte/animations/Walking-a9feb67b/north-west/frame_005.png",
+              "Acolyte/animations/Walking-a9feb67b/north-west/frame_006.png"
+            ],
+            "south": [
+              "Acolyte/animations/Walking-a9feb67b/south/frame_000.png",
+              "Acolyte/animations/Walking-a9feb67b/south/frame_001.png",
+              "Acolyte/animations/Walking-a9feb67b/south/frame_002.png",
+              "Acolyte/animations/Walking-a9feb67b/south/frame_003.png",
+              "Acolyte/animations/Walking-a9feb67b/south/frame_004.png",
+              "Acolyte/animations/Walking-a9feb67b/south/frame_005.png",
+              "Acolyte/animations/Walking-a9feb67b/south/frame_006.png"
             ],
             "north-east": [
-              "states/Acolyte/animations/Walking-9d2a9de1/north-east/frame_000.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/north-east/frame_001.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/north-east/frame_002.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/north-east/frame_003.png"
+              "Acolyte/animations/Walking-a9feb67b/north-east/frame_000.png",
+              "Acolyte/animations/Walking-a9feb67b/north-east/frame_001.png",
+              "Acolyte/animations/Walking-a9feb67b/north-east/frame_002.png",
+              "Acolyte/animations/Walking-a9feb67b/north-east/frame_003.png",
+              "Acolyte/animations/Walking-a9feb67b/north-east/frame_004.png",
+              "Acolyte/animations/Walking-a9feb67b/north-east/frame_005.png",
+              "Acolyte/animations/Walking-a9feb67b/north-east/frame_006.png"
             ],
             "south-east": [
-              "states/Acolyte/animations/Walking-9d2a9de1/south-east/frame_000.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/south-east/frame_001.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/south-east/frame_002.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/south-east/frame_003.png"
+              "Acolyte/animations/Walking-a9feb67b/south-east/frame_000.png",
+              "Acolyte/animations/Walking-a9feb67b/south-east/frame_001.png",
+              "Acolyte/animations/Walking-a9feb67b/south-east/frame_002.png",
+              "Acolyte/animations/Walking-a9feb67b/south-east/frame_003.png",
+              "Acolyte/animations/Walking-a9feb67b/south-east/frame_004.png",
+              "Acolyte/animations/Walking-a9feb67b/south-east/frame_005.png",
+              "Acolyte/animations/Walking-a9feb67b/south-east/frame_006.png"
+            ],
+            "west": [
+              "Acolyte/animations/Walking-a9feb67b/west/frame_000.png",
+              "Acolyte/animations/Walking-a9feb67b/west/frame_001.png",
+              "Acolyte/animations/Walking-a9feb67b/west/frame_002.png",
+              "Acolyte/animations/Walking-a9feb67b/west/frame_003.png",
+              "Acolyte/animations/Walking-a9feb67b/west/frame_004.png",
+              "Acolyte/animations/Walking-a9feb67b/west/frame_005.png",
+              "Acolyte/animations/Walking-a9feb67b/west/frame_006.png"
+            ],
+            "north": [
+              "Acolyte/animations/Walking-a9feb67b/north/frame_000.png",
+              "Acolyte/animations/Walking-a9feb67b/north/frame_001.png",
+              "Acolyte/animations/Walking-a9feb67b/north/frame_002.png",
+              "Acolyte/animations/Walking-a9feb67b/north/frame_003.png",
+              "Acolyte/animations/Walking-a9feb67b/north/frame_004.png",
+              "Acolyte/animations/Walking-a9feb67b/north/frame_005.png",
+              "Acolyte/animations/Walking-a9feb67b/north/frame_006.png"
             ],
             "east": [
-              "states/Acolyte/animations/Walking-9d2a9de1/east/frame_000.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/east/frame_001.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/east/frame_002.png",
-              "states/Acolyte/animations/Walking-9d2a9de1/east/frame_003.png"
+              "Acolyte/animations/Walking-a9feb67b/east/frame_000.png",
+              "Acolyte/animations/Walking-a9feb67b/east/frame_001.png",
+              "Acolyte/animations/Walking-a9feb67b/east/frame_002.png",
+              "Acolyte/animations/Walking-a9feb67b/east/frame_003.png",
+              "Acolyte/animations/Walking-a9feb67b/east/frame_004.png",
+              "Acolyte/animations/Walking-a9feb67b/east/frame_005.png",
+              "Acolyte/animations/Walking-a9feb67b/east/frame_006.png"
             ]
           },
-          "Attacking-95d57a33": {
-            "south": [
-              "states/Acolyte/animations/Attacking-95d57a33/south/frame_000.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south/frame_001.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south/frame_002.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south/frame_003.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south/frame_004.png"
-            ],
-            "south-east": [
-              "states/Acolyte/animations/Attacking-95d57a33/south-east/frame_000.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south-east/frame_001.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south-east/frame_002.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south-east/frame_003.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south-east/frame_004.png"
-            ],
-            "north-west": [
-              "states/Acolyte/animations/Attacking-95d57a33/north-west/frame_000.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north-west/frame_001.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north-west/frame_002.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north-west/frame_003.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north-west/frame_004.png"
+          "Attacking-8190a835": {
+            "south-west": [
+              "Acolyte/animations/Attacking-8190a835/south-west/frame_000.png",
+              "Acolyte/animations/Attacking-8190a835/south-west/frame_001.png",
+              "Acolyte/animations/Attacking-8190a835/south-west/frame_002.png",
+              "Acolyte/animations/Attacking-8190a835/south-west/frame_003.png",
+              "Acolyte/animations/Attacking-8190a835/south-west/frame_004.png"
             ],
             "north-east": [
-              "states/Acolyte/animations/Attacking-95d57a33/north-east/frame_000.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north-east/frame_001.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north-east/frame_002.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north-east/frame_003.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north-east/frame_004.png"
+              "Acolyte/animations/Attacking-8190a835/north-east/frame_000.png",
+              "Acolyte/animations/Attacking-8190a835/north-east/frame_001.png",
+              "Acolyte/animations/Attacking-8190a835/north-east/frame_002.png",
+              "Acolyte/animations/Attacking-8190a835/north-east/frame_003.png",
+              "Acolyte/animations/Attacking-8190a835/north-east/frame_004.png"
             ],
             "west": [
-              "states/Acolyte/animations/Attacking-95d57a33/west/frame_000.png",
-              "states/Acolyte/animations/Attacking-95d57a33/west/frame_001.png",
-              "states/Acolyte/animations/Attacking-95d57a33/west/frame_002.png",
-              "states/Acolyte/animations/Attacking-95d57a33/west/frame_003.png",
-              "states/Acolyte/animations/Attacking-95d57a33/west/frame_004.png"
+              "Acolyte/animations/Attacking-8190a835/west/frame_000.png",
+              "Acolyte/animations/Attacking-8190a835/west/frame_001.png",
+              "Acolyte/animations/Attacking-8190a835/west/frame_002.png",
+              "Acolyte/animations/Attacking-8190a835/west/frame_003.png",
+              "Acolyte/animations/Attacking-8190a835/west/frame_004.png"
             ],
             "east": [
-              "states/Acolyte/animations/Attacking-95d57a33/east/frame_000.png",
-              "states/Acolyte/animations/Attacking-95d57a33/east/frame_001.png",
-              "states/Acolyte/animations/Attacking-95d57a33/east/frame_002.png",
-              "states/Acolyte/animations/Attacking-95d57a33/east/frame_003.png",
-              "states/Acolyte/animations/Attacking-95d57a33/east/frame_004.png"
-            ],
-            "north": [
-              "states/Acolyte/animations/Attacking-95d57a33/north/frame_000.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north/frame_001.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north/frame_002.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north/frame_003.png",
-              "states/Acolyte/animations/Attacking-95d57a33/north/frame_004.png"
-            ],
-            "south-west": [
-              "states/Acolyte/animations/Attacking-95d57a33/south-west/frame_000.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south-west/frame_001.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south-west/frame_002.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south-west/frame_003.png",
-              "states/Acolyte/animations/Attacking-95d57a33/south-west/frame_004.png"
-            ]
-          },
-          "Casting-38311a6f": {
-            "south-east": [
-              "states/Acolyte/animations/Casting-38311a6f/south-east/frame_000.png",
-              "states/Acolyte/animations/Casting-38311a6f/south-east/frame_001.png",
-              "states/Acolyte/animations/Casting-38311a6f/south-east/frame_002.png",
-              "states/Acolyte/animations/Casting-38311a6f/south-east/frame_003.png",
-              "states/Acolyte/animations/Casting-38311a6f/south-east/frame_004.png"
+              "Acolyte/animations/Attacking-8190a835/east/frame_000.png",
+              "Acolyte/animations/Attacking-8190a835/east/frame_001.png",
+              "Acolyte/animations/Attacking-8190a835/east/frame_002.png",
+              "Acolyte/animations/Attacking-8190a835/east/frame_003.png",
+              "Acolyte/animations/Attacking-8190a835/east/frame_004.png"
             ],
             "north-west": [
-              "states/Acolyte/animations/Casting-38311a6f/north-west/frame_000.png",
-              "states/Acolyte/animations/Casting-38311a6f/north-west/frame_001.png",
-              "states/Acolyte/animations/Casting-38311a6f/north-west/frame_002.png",
-              "states/Acolyte/animations/Casting-38311a6f/north-west/frame_003.png",
-              "states/Acolyte/animations/Casting-38311a6f/north-west/frame_004.png"
-            ],
-            "north-east": [
-              "states/Acolyte/animations/Casting-38311a6f/north-east/frame_000.png",
-              "states/Acolyte/animations/Casting-38311a6f/north-east/frame_001.png",
-              "states/Acolyte/animations/Casting-38311a6f/north-east/frame_002.png",
-              "states/Acolyte/animations/Casting-38311a6f/north-east/frame_003.png",
-              "states/Acolyte/animations/Casting-38311a6f/north-east/frame_004.png"
-            ],
-            "south-west": [
-              "states/Acolyte/animations/Casting-38311a6f/south-west/frame_000.png",
-              "states/Acolyte/animations/Casting-38311a6f/south-west/frame_001.png",
-              "states/Acolyte/animations/Casting-38311a6f/south-west/frame_002.png",
-              "states/Acolyte/animations/Casting-38311a6f/south-west/frame_003.png",
-              "states/Acolyte/animations/Casting-38311a6f/south-west/frame_004.png"
-            ],
-            "east": [
-              "states/Acolyte/animations/Casting-38311a6f/east/frame_000.png",
-              "states/Acolyte/animations/Casting-38311a6f/east/frame_001.png",
-              "states/Acolyte/animations/Casting-38311a6f/east/frame_002.png",
-              "states/Acolyte/animations/Casting-38311a6f/east/frame_003.png",
-              "states/Acolyte/animations/Casting-38311a6f/east/frame_004.png"
-            ],
-            "west": [
-              "states/Acolyte/animations/Casting-38311a6f/west/frame_000.png",
-              "states/Acolyte/animations/Casting-38311a6f/west/frame_001.png",
-              "states/Acolyte/animations/Casting-38311a6f/west/frame_002.png",
-              "states/Acolyte/animations/Casting-38311a6f/west/frame_003.png",
-              "states/Acolyte/animations/Casting-38311a6f/west/frame_004.png"
-            ],
-            "north": [
-              "states/Acolyte/animations/Casting-38311a6f/north/frame_000.png",
-              "states/Acolyte/animations/Casting-38311a6f/north/frame_001.png",
-              "states/Acolyte/animations/Casting-38311a6f/north/frame_002.png",
-              "states/Acolyte/animations/Casting-38311a6f/north/frame_003.png",
-              "states/Acolyte/animations/Casting-38311a6f/north/frame_004.png"
+              "Acolyte/animations/Attacking-8190a835/north-west/frame_000.png",
+              "Acolyte/animations/Attacking-8190a835/north-west/frame_001.png",
+              "Acolyte/animations/Attacking-8190a835/north-west/frame_002.png",
+              "Acolyte/animations/Attacking-8190a835/north-west/frame_003.png",
+              "Acolyte/animations/Attacking-8190a835/north-west/frame_004.png"
             ],
             "south": [
-              "states/Acolyte/animations/Casting-38311a6f/south/frame_000.png",
-              "states/Acolyte/animations/Casting-38311a6f/south/frame_001.png",
-              "states/Acolyte/animations/Casting-38311a6f/south/frame_002.png",
-              "states/Acolyte/animations/Casting-38311a6f/south/frame_003.png",
-              "states/Acolyte/animations/Casting-38311a6f/south/frame_004.png"
+              "Acolyte/animations/Attacking-8190a835/south/frame_000.png",
+              "Acolyte/animations/Attacking-8190a835/south/frame_001.png",
+              "Acolyte/animations/Attacking-8190a835/south/frame_002.png",
+              "Acolyte/animations/Attacking-8190a835/south/frame_003.png",
+              "Acolyte/animations/Attacking-8190a835/south/frame_004.png"
+            ],
+            "north": [
+              "Acolyte/animations/Attacking-8190a835/north/frame_000.png",
+              "Acolyte/animations/Attacking-8190a835/north/frame_001.png",
+              "Acolyte/animations/Attacking-8190a835/north/frame_002.png",
+              "Acolyte/animations/Attacking-8190a835/north/frame_003.png",
+              "Acolyte/animations/Attacking-8190a835/north/frame_004.png"
+            ],
+            "south-east": [
+              "Acolyte/animations/Attacking-8190a835/south-east/frame_000.png",
+              "Acolyte/animations/Attacking-8190a835/south-east/frame_001.png",
+              "Acolyte/animations/Attacking-8190a835/south-east/frame_002.png",
+              "Acolyte/animations/Attacking-8190a835/south-east/frame_003.png",
+              "Acolyte/animations/Attacking-8190a835/south-east/frame_004.png"
             ]
           }
         }
@@ -199,5 +165,5 @@
     }
   ],
   "export_version": "3.0",
-  "export_date": "2026-05-15T23:48:27.236078"
+  "export_date": "2026-05-25T02:33:23.923426"
 }
