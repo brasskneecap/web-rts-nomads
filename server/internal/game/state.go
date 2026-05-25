@@ -691,6 +691,13 @@ type GameState struct {
 	// heal_events.go.
 	healEventsThisTick []healEvent
 
+	// manaRestoreEventsThisTick mirrors healEventsThisTick for intentional
+	// mana grants (Repurposed Life on enemy death, future cleric mana
+	// abilities). Drives a blue "+N" floating number. Passive mana regen
+	// is intentionally excluded (too spammy at the 0.2/s default rate).
+	// See mana_restore_events.go.
+	manaRestoreEventsThisTick []manaRestoreEvent
+
 	// nextGlobalObjectiveSearchTick gates enemyAdvanceToObjectiveLocked globally so
 	// at most one map-wide A* runs per 5 ticks regardless of army size.
 	nextGlobalObjectiveSearchTick int
@@ -1164,6 +1171,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			ShieldPools:         s.unitShieldPoolsForSnapshotLocked(unit),
 			Mana:                unit.CurrentMana,
 			MaxMana:             unit.MaxMana,
+			ManaRegen:           s.effectiveManaRegenLocked(unit),
 			ActiveBuffs:         s.activeBuffIconsForSnapshotLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsForSnapshotLocked(unit),
 			PerkCooldowns:       s.perkCooldownsForSnapshotLocked(unit),
@@ -1340,6 +1348,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
 		HealEvents:         s.snapshotHealEventsLocked(),
+		ManaRestoreEvents:  s.snapshotManaRestoreEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -1476,6 +1485,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			ShieldPools:         s.unitShieldPoolsForSnapshotLocked(unit),
 			Mana:                unit.CurrentMana,
 			MaxMana:             unit.MaxMana,
+			ManaRegen:           s.effectiveManaRegenLocked(unit),
 			ActiveBuffs:         s.activeBuffIconsForSnapshotLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsForSnapshotLocked(unit),
 			PerkCooldowns:       s.perkCooldownsForSnapshotLocked(unit),
@@ -1673,6 +1683,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
 		HealEvents:         s.snapshotHealEventsLocked(),
+		ManaRestoreEvents:  s.snapshotManaRestoreEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -1971,6 +1982,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			ShieldPools:         s.unitShieldPoolsForSnapshotLocked(unit),
 			Mana:                unit.CurrentMana,
 			MaxMana:             unit.MaxMana,
+			ManaRegen:           s.effectiveManaRegenLocked(unit),
 			ActiveBuffs:         s.activeBuffIconsForSnapshotLocked(unit),
 			ActiveDebuffs:       s.activeDebuffIconsForSnapshotLocked(unit),
 			PerkCooldowns:       s.perkCooldownsForSnapshotLocked(unit),
@@ -2132,6 +2144,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
 		HealEvents:         s.snapshotHealEventsLocked(),
+		ManaRestoreEvents:  s.snapshotManaRestoreEventsLocked(),
 		Wave: protocol.WaveSnapshot{
 			Enabled:      wm.Enabled,
 			CurrentWave:  wm.CurrentWave,
@@ -2172,6 +2185,7 @@ func (s *GameState) Update(dt float64) {
 	s.resetDamageTypeHintsThisTickLocked()
 	s.resetLethalDamageEventsThisTickLocked()
 	s.resetHealEventsThisTickLocked()
+	s.resetManaRestoreEventsThisTickLocked()
 
 	profileSection("commanderCooldowns", func() { s.tickCommanderCooldownsLocked(dt) })
 

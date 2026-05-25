@@ -987,9 +987,11 @@ func TestSanctuary_OverlappingAurasTakeMaxNoStack(t *testing.T) {
 // that it doesn't run for unitless casters, and that it clamps at MaxMana.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestManaConduit_GrantsFlatRegen drives one tick and asserts the accumulator
-// reflects bonusManaRegen × dt.
-func TestManaConduit_GrantsFlatRegen(t *testing.T) {
+// TestManaConduit_AuraGrantsBonusToOwner verifies the Cleric is inside their
+// own aura (distance 0 to themselves) and receives the bonus when their
+// mana regen ticks. Drives tickUnitManaRegenLocked, the helper that now
+// folds the aura bonus into the per-tick rate.
+func TestManaConduit_AuraGrantsBonusToOwner(t *testing.T) {
 	s, cleric := newClericBronzeState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1007,50 +1009,107 @@ func TestManaConduit_GrantsFlatRegen(t *testing.T) {
 
 	cleric.CurrentMana = 0
 	cleric.ManaRegenAccumulator = 0
+	// Zero out base regen so this test isolates the aura contribution.
+	baseRegen := cleric.ManaRegenPerSecond
+	cleric.ManaRegenPerSecond = 0
 
 	const dt = 0.1
-	s.tickUnitPerkStateLocked(cleric, dt)
+	s.tickUnitManaRegenLocked(cleric, dt)
 
 	wantAccum := bonusPerSec * dt
 	totalMana := float64(cleric.CurrentMana) + cleric.ManaRegenAccumulator
 	if math.Abs(totalMana-wantAccum) > 0.01 {
-		t.Errorf("flat mana_conduit regen: total = %.4f, want %.4f (bonusManaRegen × dt)", totalMana, wantAccum)
+		t.Errorf("aura bonus on self: total = %.4f, want %.4f (bonusManaRegen × dt)", totalMana, wantAccum)
 	}
+	// Restore base rate; other test invariants depend on it.
+	cleric.ManaRegenPerSecond = baseRegen
 }
 
-// TestManaConduit_NearbyAlliesDoNotChangeRate confirms the rate is FLAT —
-// adding nearby injured allies (the old design's trigger) must not change
-// the per-tick accumulation now that the design is a constant bonus.
-func TestManaConduit_NearbyAlliesDoNotChangeRate(t *testing.T) {
+// TestManaConduit_AuraCoversNearbyAlly verifies a spellcasting ally within
+// the radius receives the bonus regen.
+func TestManaConduit_AuraCoversNearbyAlly(t *testing.T) {
 	s, cleric := newClericBronzeState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	grantPerk(cleric, "mana_conduit")
-
 	mcDef := perkDefByID("mana_conduit")
-	if mcDef == nil {
-		t.Fatal("mana_conduit perk def not found")
-	}
-	bonusPerSec := mcDef.ConfigForRank(cleric.Rank)["bonusManaRegen"]
+	cfg := mcDef.ConfigForRank(cleric.Rank)
+	bonusPerSec := cfg["bonusManaRegen"]
+	radius := cfg["radiusPixels"]
 
-	// Three injured allies right next to the cleric. Under the old design
-	// these would have scaled the regen — now they must have no effect.
-	for i := 0; i < 3; i++ {
-		a := spawnClericTestAlly(t, s, cleric.X+10+float64(i*5), cleric.Y)
-		a.HP = a.MaxHP / 2
-	}
-
-	cleric.CurrentMana = 0
-	cleric.ManaRegenAccumulator = 0
+	// Place an Acolyte (spellcaster) inside the radius.
+	ally := s.spawnPlayerUnitLocked("acolyte", "p1", "#0099ff", protocol.Vec2{X: cleric.X + radius*0.5, Y: cleric.Y})
+	ally.Visible = true
+	ally.CurrentMana = 0
+	ally.ManaRegenAccumulator = 0
+	ally.ManaRegenPerSecond = 0 // isolate aura contribution
 
 	const dt = 0.1
-	s.tickUnitPerkStateLocked(cleric, dt)
+	s.tickUnitManaRegenLocked(ally, dt)
 
 	wantAccum := bonusPerSec * dt
-	totalMana := float64(cleric.CurrentMana) + cleric.ManaRegenAccumulator
+	totalMana := float64(ally.CurrentMana) + ally.ManaRegenAccumulator
 	if math.Abs(totalMana-wantAccum) > 0.01 {
-		t.Errorf("flat regen must not scale with nearby allies: got %.4f, want %.4f", totalMana, wantAccum)
+		t.Errorf("aura on in-range ally: total = %.4f, want %.4f", totalMana, wantAccum)
+	}
+}
+
+// TestManaConduit_AuraSkipsOutOfRangeAlly verifies an ally outside the
+// radius gets no bonus. Sanity check that the distance gate works.
+func TestManaConduit_AuraSkipsOutOfRangeAlly(t *testing.T) {
+	s, cleric := newClericBronzeState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	grantPerk(cleric, "mana_conduit")
+	mcDef := perkDefByID("mana_conduit")
+	radius := mcDef.ConfigForRank(cleric.Rank)["radiusPixels"]
+
+	ally := s.spawnPlayerUnitLocked("acolyte", "p1", "#0099ff", protocol.Vec2{X: cleric.X + radius*2, Y: cleric.Y})
+	ally.Visible = true
+	ally.CurrentMana = 0
+	ally.ManaRegenAccumulator = 0
+	ally.ManaRegenPerSecond = 0 // isolate aura
+
+	s.tickUnitManaRegenLocked(ally, 0.1)
+
+	totalMana := float64(ally.CurrentMana) + ally.ManaRegenAccumulator
+	if math.Abs(totalMana) > 0.01 {
+		t.Errorf("out-of-range ally should get no aura bonus; got %.4f", totalMana)
+	}
+}
+
+// TestManaConduit_AuraMaxWinsNoStack verifies two overlapping Clerics don't
+// stack — the recipient gets only the strongest bonus, not the sum.
+// Consistent with the "all cleric auras are max-wins, no-stack" convention.
+func TestManaConduit_AuraMaxWinsNoStack(t *testing.T) {
+	s, cleric := newClericBronzeState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	grantPerk(cleric, "mana_conduit")
+	cleric2 := s.spawnPlayerUnitLocked("acolyte", "p1", "#22aaff", protocol.Vec2{X: cleric.X + 5, Y: cleric.Y})
+	cleric2.Visible = true
+	grantPerk(cleric2, "mana_conduit")
+
+	mcDef := perkDefByID("mana_conduit")
+	bonusPerSec := mcDef.ConfigForRank(cleric.Rank)["bonusManaRegen"]
+
+	// An ally inside both auras.
+	ally := s.spawnPlayerUnitLocked("acolyte", "p1", "#0099ff", protocol.Vec2{X: cleric.X + 10, Y: cleric.Y})
+	ally.Visible = true
+	ally.CurrentMana = 0
+	ally.ManaRegenAccumulator = 0
+	ally.ManaRegenPerSecond = 0
+
+	const dt = 0.1
+	s.tickUnitManaRegenLocked(ally, dt)
+
+	wantAccum := bonusPerSec * dt // max-wins, not 2× bonus
+	totalMana := float64(ally.CurrentMana) + ally.ManaRegenAccumulator
+	if math.Abs(totalMana-wantAccum) > 0.01 {
+		t.Errorf("two overlapping auras should not stack: got %.4f, want %.4f", totalMana, wantAccum)
 	}
 }
 
@@ -1058,24 +1117,25 @@ func TestManaConduit_NearbyAlliesDoNotChangeRate(t *testing.T) {
 // that has no mana pool. Defensive — the runtime check prevents writing
 // CurrentMana on a unit that doesn't track mana.
 func TestManaConduit_NoOpForUnitsWithoutMana(t *testing.T) {
-	s, _ := newClericBronzeState(t)
+	s, cleric := newClericBronzeState(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Soldier has no mana pool by default.
-	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#aabb00", protocol.Vec2{X: 450, Y: 400})
+	grantPerk(cleric, "mana_conduit")
+
+	// Soldier has no mana pool by default — should not receive aura regen.
+	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#aabb00", protocol.Vec2{X: cleric.X + 10, Y: cleric.Y})
 	soldier.Visible = true
 	if soldier.MaxMana > 0 {
 		t.Skipf("soldier MaxMana = %d; test assumes 0", soldier.MaxMana)
 	}
-	grantPerk(soldier, "mana_conduit")
 
 	startMana := soldier.CurrentMana
 	startAccum := soldier.ManaRegenAccumulator
-	s.tickUnitPerkStateLocked(soldier, 0.1)
+	s.tickUnitManaRegenLocked(soldier, 0.1)
 
 	if soldier.CurrentMana != startMana || soldier.ManaRegenAccumulator != startAccum {
-		t.Errorf("mana_conduit ran on no-mana unit: mana %d → %d, accum %.4f → %.4f",
+		t.Errorf("aura should be inert on no-mana unit: mana %d → %d, accum %.4f → %.4f",
 			startMana, soldier.CurrentMana, startAccum, soldier.ManaRegenAccumulator)
 	}
 }

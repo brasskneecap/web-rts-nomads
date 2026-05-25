@@ -294,6 +294,106 @@ func (s *GameState) hasZealousMarchAuraLocked(unit *Unit) bool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// BRONZE — Mana Conduit (aura: bonus mana regen for nearby allies)
+//
+// Recipient-query pattern (same shape as zealous_march): each unit's mana
+// regen tick asks "is any allied Cleric with mana_conduit covering me?" and
+// if so adds the strongest covering source's bonusManaRegen to the per-tick
+// rate. Max-wins across multiple Clerics — they don't stack (consistent
+// with the "all cleric auras are max-wins, no-stack at the magnitude
+// level" convention).
+//
+// The Cleric is inside their own aura (distance 0) so they benefit too,
+// matching the old self-only behavior the perk replaced.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// manaConduitAuraBonusLocked returns the bonus mana-regen rate (per second)
+// the unit receives from every allied Cleric with mana_conduit whose aura
+// covers it. Max-wins across covering sources — a unit in two Clerics'
+// auras still receives only the strongest bonus, not the sum.
+//
+// Returns 0 when no covering source exists. Called from
+// tickUnitManaRegenLocked on every mana-bearing unit per tick, so it stays
+// cheap: skips units with no mana pool earlier (caller's gate), and the
+// scan walks s.Units once with simple distance + perk checks per candidate.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) manaConduitAuraBonusLocked(unit *Unit) float64 {
+	if unit == nil {
+		return 0
+	}
+	def := perkDefByID("mana_conduit")
+	if def == nil {
+		return 0
+	}
+	best := 0.0
+	for _, src := range s.Units {
+		if src == nil || src.HP <= 0 || !src.Visible {
+			continue
+		}
+		if !containsString(src.PerkIDs, "mana_conduit") {
+			continue
+		}
+		if !s.unitsFriendlyLocked(src, unit) {
+			continue
+		}
+		cfg := def.ConfigForRank(src.Rank)
+		radius := cfg["radiusPixels"]
+		bonus := cfg["bonusManaRegen"]
+		if radius <= 0 || bonus <= 0 {
+			continue
+		}
+		dx := src.X - unit.X
+		dy := src.Y - unit.Y
+		if dx*dx+dy*dy > radius*radius {
+			continue
+		}
+		if bonus > best {
+			best = bonus
+		}
+	}
+	return best
+}
+
+// hasManaConduitAuraLocked is a cheap one-shot probe used by the HUD code
+// to decide whether to display the mana_conduit recipient buff icon.
+// Mirrors hasZealousMarchAuraLocked: same scan shape as the bonus helper
+// above but bails on the first matching source.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) hasManaConduitAuraLocked(unit *Unit) bool {
+	if unit == nil {
+		return false
+	}
+	def := perkDefByID("mana_conduit")
+	if def == nil {
+		return false
+	}
+	for _, src := range s.Units {
+		if src == nil || src.HP <= 0 || !src.Visible {
+			continue
+		}
+		if !containsString(src.PerkIDs, "mana_conduit") {
+			continue
+		}
+		if !s.unitsFriendlyLocked(src, unit) {
+			continue
+		}
+		cfg := def.ConfigForRank(src.Rank)
+		radius := cfg["radiusPixels"]
+		if radius <= 0 {
+			continue
+		}
+		dx := src.X - unit.X
+		dy := src.Y - unit.Y
+		if dx*dx+dy*dy <= radius*radius {
+			return true
+		}
+	}
+	return false
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SILVER — Divine Healer (heal / trigger scaling)
 //
 // perkClericHealOutputMultiplierLocked returns the multiplier applied to

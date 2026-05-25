@@ -340,6 +340,30 @@ func (s *GameState) clearChannelStateLocked(unit *Unit) {
 	if unit == nil {
 		return
 	}
+	// Repurposed Life — if this Siphoner's channel is ending because the
+	// channel target just died (Siphoner's own killing tick is the most
+	// common case), fire the mana restore BEFORE clearing the channel
+	// fields. The drainPendingDeathsLocked path catches the parallel case
+	// where an ally landed the killing blow while the channel was still
+	// running, but THAT path can't see this case because the channel auto-
+	// stops at the post-validate inside tickUnitChannelLocked before the
+	// drain runs. Without this hook here, repurposed_life would silently
+	// miss every kill the Siphoner delivers themselves.
+	//
+	// Gated on (siphon_life channel + target died this tick + perk owned)
+	// so unrelated channel stops (mana out, interrupt, target invisible,
+	// caster died but target lived) don't fire spuriously. target.HP <= 0
+	// is the precise "the channel ended because they died" signal — every
+	// other stop reason leaves the target alive (or removes the target via
+	// FoW, in which case getUnitByIDLocked returns nil and we skip).
+	if unit.ChannelAbilityID == "siphon_life" && unit.ChannelTargetID != 0 &&
+		containsString(unit.PerkIDs, "repurposed_life") {
+		if target := s.getUnitByIDLocked(unit.ChannelTargetID); target != nil && target.HP <= 0 {
+			if def := perkDefByID("repurposed_life"); def != nil {
+				s.fireRepurposedLifeManaRestoreLocked(unit, def)
+			}
+		}
+	}
 	unit.ChannelAbilityID = ""
 	unit.ChannelTargetID = 0
 	unit.ChannelTickInterval = 0

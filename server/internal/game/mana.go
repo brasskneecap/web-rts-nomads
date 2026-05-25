@@ -29,7 +29,11 @@ package game
 //
 // Caller holds s.mu.
 func (s *GameState) tickUnitManaRegenLocked(unit *Unit, dt float64) {
-	if unit == nil || unit.HP <= 0 || unit.MaxMana <= 0 || unit.ManaRegenPerSecond <= 0 {
+	if unit == nil || unit.HP <= 0 || unit.MaxMana <= 0 {
+		return
+	}
+	rate := s.effectiveManaRegenLocked(unit)
+	if rate <= 0 {
 		return
 	}
 	if unit.CurrentMana >= unit.MaxMana {
@@ -39,7 +43,7 @@ func (s *GameState) tickUnitManaRegenLocked(unit *Unit, dt float64) {
 		unit.ManaRegenAccumulator = 0
 		return
 	}
-	unit.ManaRegenAccumulator += unit.ManaRegenPerSecond * dt
+	unit.ManaRegenAccumulator += rate * dt
 	if unit.ManaRegenAccumulator < 1 {
 		return
 	}
@@ -50,6 +54,21 @@ func (s *GameState) tickUnitManaRegenLocked(unit *Unit, dt float64) {
 		unit.CurrentMana = unit.MaxMana
 		unit.ManaRegenAccumulator = 0
 	}
+}
+
+// effectiveManaRegenLocked returns the unit's current passive mana regen
+// rate in mana/second, including any covering Mana Conduit aura bonus from
+// an allied Cleric (max-wins across multiple covering sources). Returns 0
+// when the unit has no mana pool. Shared between the regen tick and the
+// snapshot builder so the HUD's stat row always shows the same effective
+// rate the simulation will apply this tick.
+//
+// Caller holds s.mu.
+func (s *GameState) effectiveManaRegenLocked(unit *Unit) float64 {
+	if unit == nil || unit.MaxMana <= 0 {
+		return 0
+	}
+	return unit.ManaRegenPerSecond + s.manaConduitAuraBonusLocked(unit)
 }
 
 // spendUnitManaLocked attempts to deduct cost mana from unit and reports
@@ -87,6 +106,13 @@ func (s *GameState) spendUnitManaLocked(unit *Unit, cost int) bool {
 // is the single entry point for restoring mana so perks / abilities don't
 // each re-implement the clamping + nil-guard logic.
 //
+// Auto-emits a manaRestoreEvent for the client when gain > 0 so every
+// intentional grant produces a blue "+N" floating popup. Passive regen
+// deliberately bypasses this helper (it mutates Unit.CurrentMana directly
+// in tickUnitManaRegenLocked) so the +1/5s drip never spams popups —
+// that's the load-bearing reason intentional vs passive grants are split
+// across two code paths.
+//
 // Caller holds s.mu.
 func (s *GameState) addUnitManaLocked(unit *Unit, amount int) int {
 	if amount <= 0 || unit == nil || unit.MaxMana <= 0 || unit.HP <= 0 {
@@ -101,5 +127,6 @@ func (s *GameState) addUnitManaLocked(unit *Unit, amount int) int {
 		gain = room
 	}
 	unit.CurrentMana += gain
+	s.recordManaRestoreEventLocked(unit, gain)
 	return gain
 }

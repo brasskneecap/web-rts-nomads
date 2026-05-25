@@ -113,6 +113,8 @@ export type Unit = {
   mana?: number
   /** Max mana pool. Absent/0 for units with no mana. Drives the mana bar. */
   maxMana?: number
+  /** Base passive mana regen in mana/second. Absent when 0. */
+  manaRegen?: number
   /** Buffs currently active — each entry carries a perk id + optional stacks. */
   activeBuffs?: ActiveEffectIcon[]
   /** Debuffs currently active — each entry carries a raw icon id + optional stacks. */
@@ -408,7 +410,7 @@ export type DamageEvent = {
    *                  HealEventSnapshot, not from HP-diff (HP going up is
    *                  not tracked as a damage event).
    */
-  kind?: 'normal' | 'combined' | 'crit' | 'minor' | 'heal'
+  kind?: 'normal' | 'combined' | 'crit' | 'minor' | 'heal' | 'manaRestore'
   /**
    * Sub-flavour for kind='minor', mirroring MinorDamageEventSnapshot.variant.
    * "fire" → orange, "electric" → purple, omitted defaults to fire/orange.
@@ -753,6 +755,7 @@ export class GameState {
         shieldPools: unit.shieldPools,
         mana: unit.mana,
         maxMana: unit.maxMana,
+        manaRegen: unit.manaRegen,
         activeBuffs: unit.activeBuffs,
         activeDebuffs: unit.activeDebuffs,
         perkCooldowns: unit.perkCooldowns,
@@ -1036,6 +1039,30 @@ export class GameState {
           isFriendly: !!this.localPlayerId && u.ownerId === this.localPlayerId,
           createdAt: now,
           kind: 'heal',
+        })
+      }
+    }
+
+    // Mana restore popups — mirror the heal-event loop above. Blue "+N"
+    // floats over the recipient when an intentional mana grant lands
+    // (Repurposed Life, future cleric mana abilities). Passive regen is
+    // not emitted by the server, so this loop naturally only fires for
+    // intentional grants.
+    if (message.manaRestoreEvents && message.manaRestoreEvents.length > 0) {
+      const unitById = new Map(frame.units.map((u) => [u.id, u]))
+      for (const evt of message.manaRestoreEvents) {
+        if (evt.amount <= 0) continue
+        const u = unitById.get(evt.unitId)
+        if (!u) continue
+        this.damageEvents.push({
+          unitId: u.id,
+          unitType: u.unitType,
+          x: u.x,
+          y: u.y,
+          amount: evt.amount,
+          isFriendly: !!this.localPlayerId && u.ownerId === this.localPlayerId,
+          createdAt: now,
+          kind: 'manaRestore',
         })
       }
     }
@@ -3243,6 +3270,18 @@ function formatHealthRegen(hpPerSecond: number): string {
   return `${hpPerSecond.toFixed(1)} HP / s`
 }
 
+// Mirror of formatHealthRegen for mana regen — same "1 every N" phrasing
+// for sub-1 mana/s trickle rates (e.g. the acolyte's 0.2/s default), decimal
+// form for faster rates.
+function formatManaRegen(manaPerSecond: number): string {
+  if (manaPerSecond <= 0) return '0 / s'
+  if (manaPerSecond < 1) {
+    const interval = Math.round(10 / manaPerSecond) / 10
+    return `1 / ${interval}s`
+  }
+  return `${manaPerSecond.toFixed(1)} / s`
+}
+
 // Mirrors server/internal/game/progression.go armorDamageReduction — keep in sync.
 // reduction = armor / (armor + K) where K = 100.
 const ARMOR_MITIGATION_K = 100
@@ -3333,17 +3372,25 @@ function getUnitDetails(unit: Unit): DetailItem[] {
   }
 
   // Mana — only surfaced for spellcaster units (server omits maxMana for
-  // non-casters). Mirrors the durability row's current/max format.
+  // non-casters). Mirrors the durability row's current/max format and
+  // appends the passive regen rate inline when present so the player can
+  // read both pool size and refill cadence in one glance.
   if ((unit.maxMana ?? 0) > 0) {
     const mana = unit.mana ?? 0
     const maxMana = unit.maxMana ?? 0
+    const manaRegen = unit.manaRegen ?? 0
+    const regenSuffix = manaRegen > 0 ? ` (+${formatManaRegen(manaRegen)})` : ''
+    const tooltipLines = ['Spent to cast abilities.']
+    if (manaRegen > 0) {
+      tooltipLines.push(`Regenerates ${formatManaRegen(manaRegen)}`)
+    }
     details.push({
       id: 'mana',
       label: 'Mana',
-      value: `${mana} / ${maxMana}`,
+      value: `${mana} / ${maxMana}${regenSuffix}`,
       icon: STAT_ICON_BOLT,
       tooltipTitle: `Mana ${mana} / ${maxMana}`,
-      tooltipBody: 'Spent to cast abilities.',
+      tooltipBody: tooltipLines.join('\n'),
     })
   }
 

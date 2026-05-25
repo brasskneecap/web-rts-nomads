@@ -1230,32 +1230,13 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 			// damage pipeline via amplifyDamageTakenMultiplierLocked.
 			s.tickAmplifyDamagePerkLocked(unit, def, dt)
 
-		case "mana_conduit":
-			// Passive: flat bonus mana regen while alive. No targeting, no
-			// ally scan — the perk used to scale off nearby injured allies,
-			// but the current design is just a constant bonus so the cleric's
-			// support tempo improves immediately rather than depending on
-			// surrounding ally state. Skips units without a mana pool.
-			if unit.MaxMana <= 0 {
-				continue
-			}
-			bonusPerSec := def.Config["bonusManaRegen"]
-			if bonusPerSec <= 0 {
-				continue
-			}
-			// Reuse the existing accumulator (same pattern as the base
-			// ManaRegenPerSecond loop in mana.go) so fractional bonuses
-			// accumulate correctly across ticks and integer mana lands on
-			// the same cadence as the base regen.
-			unit.ManaRegenAccumulator += bonusPerSec * dt
-			if unit.ManaRegenAccumulator >= 1 {
-				gain := int(unit.ManaRegenAccumulator)
-				unit.ManaRegenAccumulator -= float64(gain)
-				unit.CurrentMana += gain
-				if unit.CurrentMana > unit.MaxMana {
-					unit.CurrentMana = unit.MaxMana
-				}
-			}
+		// mana_conduit intentionally has NO case here. It used to be a
+		// self-only per-tick regen, but it's now an aura — every mana
+		// regen tick (tickUnitManaRegenLocked in mana.go) folds in the
+		// recipient-queried aura bonus via manaConduitAuraBonusLocked, so
+		// the cleric and any covered ally automatically benefit. Keeping
+		// the perk out of this dispatch ensures the bonus isn't double-
+		// applied (per-tick AND via regen).
 		}
 	}
 }

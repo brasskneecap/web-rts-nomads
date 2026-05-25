@@ -230,7 +230,7 @@ export class CanvasRenderer {
      * dominating the main damage popup. 'heal' renders a light-green "+N"
      * floating up (intentional healing, e.g. the heal ability).
      */
-    kind: 'normal' | 'combined' | 'crit' | 'minor' | 'heal'
+    kind: 'normal' | 'combined' | 'crit' | 'minor' | 'heal' | 'manaRestore'
     /**
      * Horizontal drift direction (±1) for 'minor' popups so they spray out
      * sideways and fall, distinguishing them from the upward-drifting normal
@@ -2674,6 +2674,16 @@ export class CanvasRenderer {
         ctx.strokeText(healText, drawX, drawY)
         ctx.fillStyle = '#4ade80' // tailwind green-400
         ctx.fillText(healText, drawX, drawY)
+      } else if (num.kind === 'manaRestore') {
+        // Intentional mana grant (Repurposed Life, future cleric mana
+        // abilities) — blue "+N" floating up, matching the mana-bar's
+        // visual identity. Passive regen does not emit, so this only
+        // fires for perk / ability grants.
+        const manaText = `+${text}`
+        ctx.font = `bold ${baseFontPx}px sans-serif`
+        ctx.strokeText(manaText, drawX, drawY)
+        ctx.fillStyle = '#60a5fa' // tailwind blue-400
+        ctx.fillText(manaText, drawX, drawY)
       } else {
         // Major (floating-up) popup — color by damage type when the server
         // has tagged this HP-loss via damageTypeHints; otherwise default

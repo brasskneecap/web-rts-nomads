@@ -28,6 +28,57 @@ import "math"
 //   tickTrapPlacementLocked     — called from tickUnitPerkStateLocked
 // ═════════════════════════════════════════════════════════════════════════════
 
+// damageTypeForTrap returns the elemental damage type a trap's hits should
+// carry. Every damage call originating from a trap (DoT ticks, burst
+// detonations, infusion bonus damage, overload effects, Reactive Flames
+// splash, Final Exposure burst, Shared Pain redirect) routes through this
+// helper so the colored-popup system on the client paints each trap's
+// damage in its thematic color uniformly:
+//
+//   caltrops       → Physical (sharp metal spikes) by default; Lightning
+//                    when Ascendant Infusion's Electrified Caltrops
+//                    upgrade is active (the spikes channel current). The
+//                    Spike Surge expiry effect (Overload Protocol) stays
+//                    physical — that branch can't coexist with Electrified
+//                    because a trapper owns at most one Gold perk.
+//   fire_pit       → Fire      (orange) — the trap IS a fire pit, every
+//                    branch (Reactive Flames, Flame Collapse, base DoT)
+//                    is a flame effect.
+//   explosive_trap → Fire      (orange) — explosions / scattered bomblets
+//                    / Cataclysm are all fiery.
+//   marker_trap    → Shadow    (dark purple) — base marker_trap deals no
+//                    damage; only Final Exposure (Overload) and Shared
+//                    Pain (Infusion) emit damage, both shadow-themed.
+//
+// Returns DamagePhysical for unknown trap types — defensive default so a
+// new trap added without an entry here renders as plain physical damage
+// rather than picking up a wrong color silently.
+func damageTypeForTrap(trap *Trap) DamageType {
+	if trap == nil {
+		return DamagePhysical
+	}
+	switch trap.TrapType {
+	case "caltrops":
+		// Electrified Caltrops (Ascendant Infusion) flips caltrops over to
+		// Lightning across every damage branch (base DoT + bonus damage +
+		// stun damage). Without the infusion the spikes deal plain
+		// physical damage. The InfusionElectrifiedBonusDamage field is set
+		// at plant time when ascendant_infusion is owned with caltrops, so
+		// it's a stable gate that doesn't flicker mid-life.
+		if trap.InfusionElectrifiedBonusDamage > 0 {
+			return DamageLightning
+		}
+		return DamagePhysical
+	case "fire_pit":
+		return DamageFire
+	case "explosive_trap":
+		return DamageFire
+	case "marker_trap":
+		return DamageShadow
+	}
+	return DamagePhysical
+}
+
 // Trap is a placeable hazard entity created by Archer Trapper perks.
 // All config fields are snapshotted from the perk's Config map at plant time
 // so that live catalog tuning does not retroactively change active traps.
@@ -338,7 +389,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 				if unit.PerkState.TrapDoTAccumulator >= dotThreshold {
 					dmg := int(unit.PerkState.TrapDoTAccumulator)
 					unit.PerkState.TrapDoTAccumulator -= float64(dmg)
-					s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_dot"})
+					s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_dot", DamageType: damageTypeForTrap(trap)})
 					if ownerUnit != nil {
 						s.recordDamageDealtLocked(ownerUnit, unit, dmg)
 					}
@@ -372,7 +423,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 					if unit.PerkState.ElectrifiedBonusAccumulator >= threshold {
 						bonus := int(unit.PerkState.ElectrifiedBonusAccumulator)
 						unit.PerkState.ElectrifiedBonusAccumulator -= float64(bonus)
-						s.applyUnitDamageWithSourceLocked(unit, bonus, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_infusion"})
+						s.applyUnitDamageWithSourceLocked(unit, bonus, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_infusion", DamageType: damageTypeForTrap(trap)})
 						s.recordMinorDamageHitLocked(unit, bonus, "electric")
 						if ownerUnit != nil {
 							s.recordDamageDealtLocked(ownerUnit, unit, bonus)
@@ -405,7 +456,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 							// small bonus-damage stream.
 							if trap.InfusionElectrifiedStunDamage > 0 {
 								stunDmg := trap.InfusionElectrifiedStunDamage
-								s.applyUnitDamageWithSourceLocked(unit, stunDmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_infusion"})
+								s.applyUnitDamageWithSourceLocked(unit, stunDmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_infusion", DamageType: damageTypeForTrap(trap)})
 								s.recordMinorDamageHitLocked(unit, stunDmg, "electric")
 								if ownerUnit != nil {
 									s.recordDamageDealtLocked(ownerUnit, unit, stunDmg)
@@ -512,7 +563,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 				if unit.PerkState.TrapDoTAccumulator >= dotThreshold {
 					dmg := int(unit.PerkState.TrapDoTAccumulator)
 					unit.PerkState.TrapDoTAccumulator -= float64(dmg)
-					s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_dot"})
+					s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: trap.ID, Kind: "trap_dot", DamageType: damageTypeForTrap(trap)})
 					if ownerUnit != nil {
 						s.recordDamageDealtLocked(ownerUnit, unit, dmg)
 					}
@@ -785,7 +836,11 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 				if owner != nil && owner.HP <= 0 {
 					owner = nil
 				}
-				s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: stack.SourceID, Kind: "trap_silver_stack"})
+				// Burn stacks come from lasting_flames / Flame Collapse, both
+				// fire_pit-sourced — tag DamageFire directly rather than
+				// looking up the trap by stack.SourceID (which would be one
+				// O(n) Traps scan per burn tick per stack).
+				s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: stack.SourceID, Kind: "trap_silver_stack", DamageType: DamageFire})
 				// Tag the burn tick as "fire" minor damage so the client
 				// renders it as a small orange floating popup (matches
 				// Reactive Flames). lasting_flames + Flame Collapse both
@@ -1251,7 +1306,7 @@ func (s *GameState) detonateExplosiveTrapLocked(trap *Trap, ownerUnit *Unit, dea
 		if dx*dx+dy*dy > explosionRadSq {
 			continue
 		}
-		s.applyUnitDamageWithSourceLocked(unit, trap.BurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "explosive_burst"})
+		s.applyUnitDamageWithSourceLocked(unit, trap.BurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "explosive_burst", DamageType: damageTypeForTrap(trap)})
 		if ownerUnit != nil {
 			s.recordDamageDealtLocked(ownerUnit, unit, trap.BurstDamage)
 		}
@@ -1309,7 +1364,7 @@ func (s *GameState) fireCataclysmLocked(trap *Trap, ownerUnit *Unit, deadUnitIDs
 		if dx*dx+dy*dy > radSq {
 			continue
 		}
-		s.applyUnitDamageWithSourceLocked(unit, trap.BurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "explosive_cataclysm"})
+		s.applyUnitDamageWithSourceLocked(unit, trap.BurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "explosive_cataclysm", DamageType: damageTypeForTrap(trap)})
 		if ownerUnit != nil {
 			s.recordDamageDealtLocked(ownerUnit, unit, trap.BurstDamage)
 		}
@@ -1353,7 +1408,10 @@ func (s *GameState) fireReactiveFlamesLocked(cx, cy, radius float64, damage int,
 		if dx*dx+dy*dy > radSq {
 			continue
 		}
-		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerTrapID: trapID, Kind: "trap_silver_tick"})
+		// Reactive Flames is fire_pit-only (ascendant_infusion's silver
+		// branch attached to fire_pit). Tag fire directly rather than
+		// looking up the trap by ID.
+		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerTrapID: trapID, Kind: "trap_silver_tick", DamageType: DamageFire})
 		// Tag this hit as ancillary so the client renders it as a smaller
 		// orange floating number (splash damage feel, not "the trap hit
 		// harder"). Splits cleanly off the HP-diff popup on the client.
@@ -1413,8 +1471,10 @@ func (s *GameState) fireFinalExposureLocked(victim *Unit) {
 	// Final Exposure attributes to the owning player's marker_trap bucket.
 	trapID := victim.PerkState.FinalExposureTrapID
 	var finalExposureSrc BattleSource
-	directDmgSrc := DamageSource{AttackerTrapID: trapID, Kind: "final_exposure"}
-	siblingDmgSrc := DamageSource{AttackerTrapID: trapID, Kind: "final_exposure_share"}
+	// Final Exposure is a marker_trap effect — both direct and sibling-share
+	// damage render as Shadow (dark-purple popup) per the marker_trap theme.
+	directDmgSrc := DamageSource{AttackerTrapID: trapID, Kind: "final_exposure", DamageType: DamageShadow}
+	siblingDmgSrc := DamageSource{AttackerTrapID: trapID, Kind: "final_exposure_share", DamageType: DamageShadow}
 	if owner != nil {
 		finalExposureSrc = BattleSource{PlayerID: owner.OwnerID, Kind: "trap", Subtype: "marker_trap"}
 	}
@@ -1513,12 +1573,16 @@ func (s *GameState) perkShareDamageToMarkedLocked(source *Unit, rawDamage int, s
 	}
 	// Kill credit for Shared Pain victims goes to the original attacker — the
 	// unit being damaged is not the killer, it's the conduit. Preserve attacker
-	// IDs from src and override Kind for telemetry.
+	// IDs from src and override Kind for telemetry. DamageType is forced to
+	// Shadow because Shared Pain is a marker_trap effect — every redistribution
+	// reads as necrotic (dark-purple popup) regardless of what flavor of damage
+	// originally hit the source victim.
 	sharedSrc := DamageSource{
 		AttackerUnitID:     src.AttackerUnitID,
 		AttackerBuildingID: src.AttackerBuildingID,
 		AttackerTrapID:     src.AttackerTrapID,
 		Kind:               "shared_pain",
+		DamageType:         DamageShadow,
 	}
 	for _, u := range s.Units {
 		if u == nil || u.ID == source.ID {
@@ -1607,7 +1671,7 @@ func (s *GameState) fireTrapOverloadOnExitLocked(trap *Trap, ownerUnit, victim *
 		if trap.OverloadSpikeSurgeBurstDamage <= 0 {
 			return deadUnitIDs
 		}
-		s.applyUnitDamageWithSourceLocked(victim, trap.OverloadSpikeSurgeBurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "overload_spike_surge"})
+		s.applyUnitDamageWithSourceLocked(victim, trap.OverloadSpikeSurgeBurstDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "overload_spike_surge", DamageType: damageTypeForTrap(trap)})
 		if ownerUnit != nil {
 			s.recordDamageDealtLocked(ownerUnit, victim, trap.OverloadSpikeSurgeBurstDamage)
 		}
@@ -1627,7 +1691,7 @@ func (s *GameState) fireTrapOverloadOnExitLocked(trap *Trap, ownerUnit, victim *
 		if trap.OverloadFlameCollapseDamage <= 0 {
 			return deadUnitIDs
 		}
-		s.applyUnitDamageWithSourceLocked(victim, trap.OverloadFlameCollapseDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "overload_flame_collapse"})
+		s.applyUnitDamageWithSourceLocked(victim, trap.OverloadFlameCollapseDamage, DamageSource{AttackerTrapID: trap.ID, Kind: "overload_flame_collapse", DamageType: damageTypeForTrap(trap)})
 		if ownerUnit != nil {
 			s.recordDamageDealtLocked(ownerUnit, victim, trap.OverloadFlameCollapseDamage)
 		}

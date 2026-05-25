@@ -457,9 +457,10 @@ func TestDivineHealer_DoublesBattlePrayerBuff(t *testing.T) {
 	}
 }
 
-// TestDivineHealer_DoesNotDoubleManaConduit confirms the multiplier does NOT
-// bleed into mana_conduit's per-tick mana regen (the design forbids touching
-// mana / cooldown systems).
+// TestDivineHealer_DoesNotDoubleManaConduit confirms divine_healer's heal
+// multiplier does NOT bleed into mana_conduit's aura bonus (the design
+// forbids touching mana / cooldown systems). Drives the mana regen tick
+// directly so this tests the aura helper end-to-end alongside divine_healer.
 func TestDivineHealer_DoesNotDoubleManaConduit(t *testing.T) {
 	s, cleric := newClericBronzeState(t)
 	s.mu.Lock()
@@ -477,13 +478,14 @@ func TestDivineHealer_DoesNotDoubleManaConduit(t *testing.T) {
 
 	cleric.CurrentMana = 0
 	cleric.ManaRegenAccumulator = 0
+	cleric.ManaRegenPerSecond = 0 // isolate aura contribution
 
 	const dt = 0.1
-	s.tickUnitPerkStateLocked(cleric, dt)
+	s.tickUnitManaRegenLocked(cleric, dt)
 
 	wantAccum := bonusPerSec * dt
 	totalMana := float64(cleric.CurrentMana) + cleric.ManaRegenAccumulator
 	if math.Abs(totalMana-wantAccum) > 0.01 {
-		t.Errorf("divine_healer should not scale mana_conduit: got %.4f, want %.4f", totalMana, wantAccum)
+		t.Errorf("divine_healer should not scale mana_conduit aura: got %.4f, want %.4f", totalMana, wantAccum)
 	}
 }

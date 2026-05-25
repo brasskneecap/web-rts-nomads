@@ -306,6 +306,64 @@ func spendsMana(unit *Unit, amount int) {
 	}
 }
 
+// TestRepurposedLife_TriggersWhenSiphonerOwnTickKills exercises the
+// scenario the channel-stop hook was added to fix: the Siphoner's own
+// Siphon Life tick lands the killing blow. Before the fix, the channel
+// auto-stopped at the post-validate inside tickUnitChannelLocked BEFORE
+// drainPendingDeathsLocked ran, so the channel-target back-reference the
+// drain hook looked for was already cleared — the perk silently missed
+// every kill the Siphoner delivered themselves.
+func TestRepurposedLife_TriggersWhenSiphonerOwnTickKills(t *testing.T) {
+	s, siphoner, enemy := newSiphonerGoldState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	siphoner.PerkIDs = append(siphoner.PerkIDs, "repurposed_life")
+	def := perkDefByID("repurposed_life")
+	amount := int(def.Config["manaRestoreAmount"])
+
+	ally := spawnAllyAt(s, siphoner.X+100, siphoner.Y)
+	ally.MaxMana = 100
+	ally.CurrentMana = 20
+	spendsMana(siphoner, 50)
+	startAlly := ally.CurrentMana
+	startSiphoner := siphoner.CurrentMana
+
+	// Start the channel through the real entry point so the post-validate
+	// path inside tickUnitChannelLocked runs end-to-end.
+	enemy.HP = 1 // one-shot kill on the very first tick
+	ok, reason := s.beginAbilityChannelLocked(siphoner, "siphon_life", enemy)
+	if !ok {
+		t.Fatalf("beginAbilityChannelLocked failed: %s", reason)
+	}
+
+	// Drive one full channel tick. The damage applies, target.HP -> 0,
+	// post-validate fails, stopUnitChannelLocked runs, clearChannelState-
+	// Locked fires repurposed_life BEFORE clearing the channel fields.
+	s.tickUnitChannelLocked(siphoner, siphoner.ChannelTickInterval)
+	s.drainPendingDeathsLocked()
+
+	if enemy.HP > 0 {
+		t.Fatalf("expected enemy to die from siphon tick; HP %d", enemy.HP)
+	}
+	// Ally is the cleanest authoritative signal: they don't pay mana cost
+	// or spend mana for the channel tick, so their delta is exactly the
+	// perk's restore amount (no other mana sources active in this test).
+	if got := ally.CurrentMana - startAlly; got != amount {
+		t.Errorf("ally mana on Siphoner-killing-blow: got +%d, want +%d", got, amount)
+	}
+	// The Siphoner's own delta nets out to (restore − ManaCostPerTick) for
+	// the killing tick (they paid 1 mana to cast the tick that triggered
+	// the restore). Use a lower bound that accounts for any tick mana cost
+	// rather than asserting the full amount.
+	channelCfg, _ := getAbilityDef("siphon_life")
+	expectedSiphonerGain := amount - channelCfg.ManaCostPerTick
+	if got := siphoner.CurrentMana - startSiphoner; got < expectedSiphonerGain {
+		t.Errorf("siphoner mana on Siphoner-killing-blow: got +%d, want >= +%d (restore %d − tick cost %d)",
+			got, expectedSiphonerGain, amount, channelCfg.ManaCostPerTick)
+	}
+}
+
 func TestRepurposedLife_TriggersOnSiphonedVictimDeath(t *testing.T) {
 	s, siphoner, enemy := newSiphonerGoldState(t)
 	s.mu.Lock()

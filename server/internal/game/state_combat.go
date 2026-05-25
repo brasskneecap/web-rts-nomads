@@ -239,7 +239,12 @@ func (s *GameState) AttackWithUnits(playerID string, unitIDs []int, targetUnitID
 // target dies from this hit. Layering another cooldown write in here would
 // stomp those decisions.
 func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, deadUnitIDs *[]int) bool {
-	s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "melee"})
+	// Tag the damage with the attacker's declared school (set at spawn from
+	// unit def, defaults to "" = physical). Carries through to the client's
+	// colored-popup system so a fire-typed mage's basic attack pops orange,
+	// a shadow-typed necromancer's attack pops dark purple, etc. Untyped
+	// units (most soldiers, raiders) keep the default white/red popup.
+	s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "melee", DamageType: attacker.AttackDamageType})
 	s.onUnitDamagedLocked(attacker, target, damage)
 	s.onPerkDamageTakenLocked(target, attacker, damage)
 
@@ -310,7 +315,10 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 		if dx*dx+dy*dy > radSq {
 			continue
 		}
-		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "splash"})
+		// Base-stat splash inherits the attacker's damage school — a fire-
+		// typed splasher's AoE reads as fire, etc. Defaults to physical for
+		// untyped attackers (raider_brute today).
+		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{AttackerUnitID: attacker.ID, Kind: "splash", DamageType: attacker.AttackDamageType})
 		s.recordDamageDealtLocked(attacker, u, damage)
 		s.trackBattleDamageLocked(battleSourceFromUnit(attacker), u, damage)
 		if u.HP <= 0 {

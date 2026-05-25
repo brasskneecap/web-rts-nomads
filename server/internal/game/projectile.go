@@ -388,7 +388,11 @@ func (s *GameState) tickPierceProjectileLocked(proj *Projectile, dt float64, dea
 		// landProjectileLocked. No crit roll here; the attacker isn't
 		// available to read crit-bonus perks off of.
 		if attacker == nil {
-			s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{AttackerUnitID: proj.OwnerUnitID, Kind: "pierce"})
+			// Attacker died mid-flight — apply via the canonical pipeline
+			// directly. DamageType rides on the projectile (snapshot of the
+			// attacker's AttackDamageType at fire time) so the popup colors
+			// correctly even after the firing unit is gone.
+			s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{AttackerUnitID: proj.OwnerUnitID, Kind: "pierce", DamageType: proj.DamageType})
 			if target.HP <= 0 {
 				target.HP = 0
 				*deadUnitIDs = append(*deadUnitIDs, target.ID)
@@ -495,7 +499,10 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 		// was already in flight), but attacker-side perks are skipped.
 		// Use the owner unit ID from the projectile for attribution so the drain
 		// can attempt XP bookkeeping (it will no-op if the attacker is gone).
-		s.applyUnitDamageWithSourceLocked(target, proj.Damage, DamageSource{AttackerUnitID: proj.OwnerUnitID, Kind: "projectile"})
+		// DamageType carried on the projectile (snapshot of attacker's
+		// AttackDamageType at fire time) so the popup colors correctly
+		// whether or not the firing unit is still alive when it lands.
+		s.applyUnitDamageWithSourceLocked(target, proj.Damage, DamageSource{AttackerUnitID: proj.OwnerUnitID, Kind: "projectile", DamageType: proj.DamageType})
 		if target.HP <= 0 {
 			target.HP = 0
 			*deadUnitIDs = append(*deadUnitIDs, target.ID)

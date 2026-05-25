@@ -271,9 +271,11 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 			addIcon(perkID, 1)
 
 		case "mana_conduit":
-			// Cleric bronze passive: always emit for the owner. The mana-regen
-			// effect is keyed on nearby injured allies, but the perk itself is
-			// the durable thing the player wants to see represented.
+			// Cleric bronze aura: always emit for the owner — the Cleric is
+			// projecting a mana-regen aura that covers themselves and nearby
+			// allies (same "owner is the source of an aura" sub-rule as
+			// sanctuary / guardian_aura). Recipient-side icon for allies
+			// covered by the aura is added in the cross-unit block below.
 			addIcon(perkID, 1)
 
 		case "divine_aegis":
@@ -417,11 +419,27 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 	// zealous_march recipient buff: emit the icon while ANY allied Cleric
 	// with zealous_march has this unit inside their aura. Reuses the same
 	// scan as perkMoveSpeedBonusFromClericAurasLocked so the icon appears
-	// exactly when the move-speed bonus is live. addIcon dedupes with the
-	// owner-case above so a Cleric standing in another Cleric's aura
-	// (or their own friendly area) sees a single icon, not two.
-	if s.hasZealousMarchAuraLocked(unit) {
+	// exactly when the move-speed bonus is live. Skip when the unit owns
+	// zealous_march itself — the owner-branch above already added the
+	// icon, and `addIcon` sums stacks (not dedupes), so a second add here
+	// would surface as a misleading "x2" badge on the Cleric whose own
+	// aura covers themselves at distance 0.
+	if !containsString(unit.PerkIDs, "zealous_march") && s.hasZealousMarchAuraLocked(unit) {
 		addIcon("zealous_march", 1)
+	}
+
+	// mana_conduit recipient buff: emit the icon while ANY allied Cleric
+	// with mana_conduit covers this unit. Reuses the same scan as
+	// manaConduitAuraBonusLocked so the icon appears exactly when the
+	// bonus mana regen is live. Skip when the unit owns mana_conduit
+	// itself — the owner-branch above already added the icon, and
+	// `addIcon` sums stacks (not dedupes), so a second add here would
+	// surface as a misleading "x2" badge on the Cleric (whose own aura
+	// covers themselves at distance 0). Mana Conduit is a max-wins
+	// aura — it does not actually stack with itself.
+	// Also skip units with no mana pool — they can't benefit.
+	if unit.MaxMana > 0 && !containsString(unit.PerkIDs, "mana_conduit") && s.hasManaConduitAuraLocked(unit) {
+		addIcon("mana_conduit", 1)
 	}
 
 	// divine_intervention recipient buff: a unit currently inside a brief

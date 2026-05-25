@@ -693,6 +693,12 @@ type UnitSnapshot struct {
 	// Drives the blue mana bar under the HP bar for casters (e.g. acolyte).
 	Mana    int `json:"mana,omitempty"`
 	MaxMana int `json:"maxMana,omitempty"`
+	// ManaRegen is the unit's effective passive mana regen in mana/second
+	// for the current tick — base ManaRegenPerSecond plus any covering
+	// Mana Conduit aura bonus (max-wins across allied Clerics in range).
+	// Surfaced in the selection HUD's mana stat row when > 0; omitempty
+	// drops it from the wire when the unit has no regen this tick.
+	ManaRegen float64 `json:"manaRegen,omitempty"`
 	// ActiveBuffs: entries for buffs currently active on this unit. `id` is
 	// a perk id (resolved to an icon via the PerkDef catalog). See
 	// ActiveEffectIcon for the stacks semantics.
@@ -997,6 +1003,16 @@ type HealEventSnapshot struct {
 	Amount int `json:"amount"`
 }
 
+// ManaRestoreEventSnapshot mirrors HealEventSnapshot for intentional mana
+// grants (perks like Repurposed Life, future cleric mana abilities). The
+// client spawns a blue "+Amount" floating popup over the recipient. Passive
+// regen is intentionally not reported — it would spam +1s at the natural
+// 0.2/s rate. Drained per-tick alongside the other transient event queues.
+type ManaRestoreEventSnapshot struct {
+	UnitID int `json:"unitId"`
+	Amount int `json:"amount"`
+}
+
 // EffectSnapshot is a generalized transient visual effect anchored to a unit
 // or a world position. It is emitted by the server (typically via perk hooks)
 // and drained per-tick to the client alongside ProjectileSnapshot and
@@ -1054,6 +1070,7 @@ type MatchSnapshotMessage struct {
 	DamageTypeHints    []DamageTypeHintSnapshot    `json:"damageTypeHints,omitempty"`
 	LethalDamageEvents []LethalDamageEventSnapshot `json:"lethalDamageEvents,omitempty"`
 	HealEvents         []HealEventSnapshot         `json:"healEvents,omitempty"`
+	ManaRestoreEvents  []ManaRestoreEventSnapshot  `json:"manaRestoreEvents,omitempty"`
 	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
 	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
 	Victory       *VictorySnapshot        `json:"victory,omitempty"`

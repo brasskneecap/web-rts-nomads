@@ -667,6 +667,10 @@ export type UnitSnapshot = {
   /** Max mana pool. 0/undefined for units that have no mana. Drives the
    *  blue mana bar under the HP bar. */
   maxMana?: number
+  /** Base passive mana regen in mana/second. Omitted when 0. Excludes
+   *  conditional aura bonuses (e.g. Mana Conduit) — those live in their
+   *  perk tooltip, not the unit's intrinsic stat row. */
+  manaRegen?: number
   /** Buffs currently active on this unit — each entry carries a perk id and
    *  optional stack count (omitted when 1). Stacks >= 2 render a count
    *  badge over the icon on-screen. */
@@ -957,6 +961,19 @@ export type HealEventSnapshot = {
 }
 
 /**
+ * ManaRestoreEventSnapshot mirrors HealEventSnapshot for intentional mana
+ * grants (Repurposed Life, future cleric mana abilities). The client spawns
+ * a blue "+amount" floating popup over the recipient. Passive mana regen is
+ * intentionally not reported here — it would spam +1s at the natural 0.2/s
+ * rate. Only grants that route through the server's addUnitManaLocked
+ * helper emit a popup.
+ */
+export type ManaRestoreEventSnapshot = {
+  unitId: number
+  amount: number
+}
+
+/**
  * EffectSnapshot is a transient sprite-sheet VFX anchored to a unit or world
  * position. The server owns the lifecycle; the client renders sprite frames
  * driven by `progress` (0 = first frame, 1 = last frame). `anchorUnitId`
@@ -1005,6 +1022,7 @@ export type MatchSnapshotMessage = {
   damageTypeHints?: DamageTypeHintSnapshot[]
   lethalDamageEvents?: LethalDamageEventSnapshot[]
   healEvents?: HealEventSnapshot[]
+  manaRestoreEvents?: ManaRestoreEventSnapshot[]
   // Present only when the active map has debug.battleTracker=true. Absent
   // otherwise — the client treats absence as "debug tracker disabled".
   battleTracker?: BattleTrackerSnapshot
