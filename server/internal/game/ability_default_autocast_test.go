@@ -40,9 +40,11 @@ func TestDefaultAutoCast_HealOnAtPlayerSpawn(t *testing.T) {
 	}
 }
 
-// TestDefaultAutoCast_EnemyAcolyteNoSeed confirms enemy-owned acolytes
-// do NOT get the default seeded (per design — only player-owned units).
-func TestDefaultAutoCast_EnemyAcolyteNoSeed(t *testing.T) {
+// TestDefaultAutoCast_EnemyAcolyteSeeded confirms enemy-owned acolytes
+// DO get default auto-cast seeded. Enemies are AI-controlled and must use
+// their abilities — player toggles never reach them, so there is no choice
+// to preserve and no reason to suppress the seed.
+func TestDefaultAutoCast_EnemyAcolyteSeeded(t *testing.T) {
 	def, ok := getAbilityDef("heal")
 	if !ok {
 		t.Fatal("heal ability def not found")
@@ -59,8 +61,8 @@ func TestDefaultAutoCast_EnemyAcolyteNoSeed(t *testing.T) {
 	if enemy == nil {
 		t.Fatal("enemy acolyte spawn failed")
 	}
-	if enemy.AutoCastEnabled["heal"] {
-		t.Errorf("enemy acolyte has heal autocast seeded ON; enemy casters must never default-autocast")
+	if !enemy.AutoCastEnabled["heal"] {
+		t.Errorf("enemy acolyte AutoCastEnabled[\"heal\"] = false; want true (enemy units are AI-controlled and must auto-cast their abilities)")
 	}
 }
 

@@ -20,11 +20,11 @@
     "frameHeight": 68
   },
   "animations": {
-    "animation": {
+    "walking": {
       "frameCount": 6,
       "frameWidth": 68,
       "frameHeight": 68,
-      "sheet": "packed/animation.png",
+      "sheet": "packed/walking.png",
       "rowOrder": [
         "north",
         "south",
@@ -36,11 +36,11 @@
         "north-west"
       ]
     },
-    "raised_the_one_handed_staff_up": {
+    "attacking": {
       "frameCount": 4,
       "frameWidth": 68,
       "frameHeight": 68,
-      "sheet": "packed/raised_the_one_handed_staff_up.png",
+      "sheet": "packed/attacking.png",
       "rowOrder": [
         "north",
         "south",

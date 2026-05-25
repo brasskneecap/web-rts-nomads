@@ -408,7 +408,7 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 
 	// Path-level basic-attack overrides: a promotion path may swap the
 	// projectile asset and/or damage-type tag the unit def set at spawn
-	// (e.g. Cleric → holy_bolt/holy, Arch Mage → dark_bolt/shadow). Paths
+	// (e.g. Cleric → holy_bolt/holy, Arch Mage → shadow_bolt/shadow). Paths
 	// without an override are absent from these maps and leave the unit-def
 	// values untouched. ProgressionPath is monotonic (none → path, never
 	// reverted), so a conditional set suffices — unlike HP/damage there is no

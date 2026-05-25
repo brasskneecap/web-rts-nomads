@@ -571,15 +571,16 @@ func TestPhase2_BelowFloor_CastsNothing(t *testing.T) {
 		t.Errorf("buff_ally score against out-of-combat ally = %v; want <= minActivationScore %v (not useful)", score, minActivationScore)
 	}
 
-	// Similarly for summon: no hostiles nearby → deficit <= 0 → score = 0.
+	// Similarly for summon: caster not in combat → score = 0.
 	summonDef := AbilityDef{Category: AbilityCategorySummon}
-	// No enemies in the scene → summon returns 0.
+	caster.AttackTargetID = 0
+	caster.AttackBuildingTargetID = ""
 	scoreSummon := s.scoreSummonCandidateLocked(caster, summonDef, caster)
 	if scoreSummon > minActivationScore {
-		t.Errorf("summon score with no nearby hostiles = %v; want <= minActivationScore %v", scoreSummon, minActivationScore)
+		t.Errorf("summon score for out-of-combat caster = %v; want <= minActivationScore %v", scoreSummon, minActivationScore)
 	}
 	if scoreSummon != 0 {
-		t.Errorf("summon score with no deficit = %v; want exactly 0", scoreSummon)
+		t.Errorf("summon score for out-of-combat caster = %v; want exactly 0", scoreSummon)
 	}
 }
 
@@ -801,10 +802,13 @@ func TestPhase2_BuffAllyScoring(t *testing.T) {
 	}
 }
 
-// TestPhase2_SummonScoring verifies:
-//   - No hostiles nearby → 0 (below floor)
-//   - More hostiles than allies → > minActivationScore (returns > 0)
-//   - Score bounded (deficit capped at 5 per design)
+// TestPhase2_SummonScoring verifies the combat-gated scoring:
+//   - Out of combat (no AttackTargetID, no AttackBuildingTargetID) → 0
+//   - Engaged on a unit → base + full weight (well above minActivationScore)
+//   - Engaged on a building → same
+//
+// Local force balance / deficit is intentionally ignored: a necromancer fighting
+// next to its own skeletons should still summon more on cooldown.
 func TestPhase2_SummonScoring(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
@@ -813,47 +817,26 @@ func TestPhase2_SummonScoring(t *testing.T) {
 	caster := spawnProjTestUnit(t, s, "p1", 200, 200)
 	summonDef := AbilityDef{Category: AbilityCategorySummon}
 
-	// No hostiles → deficit = 0 → score = 0.
-	scoreNone := s.scoreSummonCandidateLocked(caster, summonDef, caster)
-	if scoreNone != 0 {
-		t.Errorf("summon score with no hostiles = %v; want 0", scoreNone)
+	// Out of combat → 0.
+	caster.AttackTargetID = 0
+	caster.AttackBuildingTargetID = ""
+	if got := s.scoreSummonCandidateLocked(caster, summonDef, caster); got != 0 {
+		t.Errorf("summon score for out-of-combat caster = %v; want 0", got)
 	}
 
-	// Add 3 enemies within radius (320px), 0 other allies → deficit = 3.
-	e1 := spawnProjTestUnit(t, s, enemyPlayerID, 250, 200)
-	e2 := spawnProjTestUnit(t, s, enemyPlayerID, 260, 200)
-	e3 := spawnProjTestUnit(t, s, enemyPlayerID, 270, 200)
-	_ = e1
-	_ = e2
-	_ = e3
-
-	score3v0 := s.scoreSummonCandidateLocked(caster, summonDef, caster)
-	if score3v0 <= minActivationScore {
-		t.Errorf("summon with 3 hostiles, 0 allies: score = %v; must be > minActivationScore %v", score3v0, minActivationScore)
-	}
-	if score3v0 <= 0 {
-		t.Errorf("summon with 3 hostiles deficit: score = %v; must be > 0", score3v0)
+	// Engaged on a unit → above floor and equal to base+weight (no situational
+	// modifier — combat-gate is binary by design).
+	caster.AttackTargetID = 12345
+	wantInCombat := candidateBaseScore + abilityCategoryWeights[AbilityCategorySummon]
+	if got := s.scoreSummonCandidateLocked(caster, summonDef, caster); got != wantInCombat {
+		t.Errorf("summon score with AttackTargetID set = %v; want %v (base+weight)", got, wantInCombat)
 	}
 
-	// Add 5 allies (deficit goes negative / zero from 3-5 perspective — but we
-	// already have 3 hostiles so now it's 3h vs 5a → deficit = -2 → 0).
-	a1 := spawnProjTestUnit(t, s, "p1", 280, 200)
-	a2 := spawnProjTestUnit(t, s, "p1", 290, 200)
-	a3 := spawnProjTestUnit(t, s, "p1", 300, 200)
-	a4 := spawnProjTestUnit(t, s, "p1", 310, 200)
-	a5 := spawnProjTestUnit(t, s, "p1", 320, 200)
-	_ = a1; _ = a2; _ = a3; _ = a4; _ = a5
-
-	scoreNoDeficit := s.scoreSummonCandidateLocked(caster, summonDef, caster)
-	if scoreNoDeficit != 0 {
-		t.Errorf("summon with no deficit (more allies than hostiles): score = %v; want 0", scoreNoDeficit)
-	}
-
-	// Score with deficit 3 must be below the max possible (deficit=5).
-	// (score3v0 < max = candidateBaseScore + weight*(5/5))
-	maxScore := candidateBaseScore + abilityCategoryWeights[AbilityCategorySummon]
-	if score3v0 >= maxScore {
-		t.Errorf("summon score with deficit=3 (%v) should be < max (deficit=5) score (%v); cap not applied correctly", score3v0, maxScore)
+	// Building target alone also counts as combat.
+	caster.AttackTargetID = 0
+	caster.AttackBuildingTargetID = "fake-building"
+	if got := s.scoreSummonCandidateLocked(caster, summonDef, caster); got != wantInCombat {
+		t.Errorf("summon score with AttackBuildingTargetID set = %v; want %v (base+weight)", got, wantInCombat)
 	}
 }
 

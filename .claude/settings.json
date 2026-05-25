@@ -3,7 +3,7 @@
     "allow": [
       "Bash(Get-ChildItem -Path \"c:\\\\Dev\\\\web-rts-nomads\" -Directory)",
       "Bash(Select-Object Name)",
-      "PowerShell(Add-Type -AssemblyName System.Drawing; foreach\\($p in @\\(\"fire_bolt\",\"dark_bolt\"\\)\\){ $f=\"c:\\\\Dev\\\\web-rts-nomads\\\\client\\\\src\\\\game-portal\\\\src\\\\assets\\\\projectiles\\\\$p\\\\sprite.png\"; if\\(Test-Path $f\\){ $i=[System.Drawing.Image]::FromFile\\($f\\); \"${p} sprite.png = $\\($i.Width\\)x$\\($i.Height\\)\"; $i.Dispose\\(\\) } else { \"${p} = NO sprite.png\" } })",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; foreach\\($p in @\\(\"fire_bolt\",\"shadow_bolt\"\\)\\){ $f=\"c:\\\\Dev\\\\web-rts-nomads\\\\client\\\\src\\\\game-portal\\\\src\\\\assets\\\\projectiles\\\\$p\\\\sprite.png\"; if\\(Test-Path $f\\){ $i=[System.Drawing.Image]::FromFile\\($f\\); \"${p} sprite.png = $\\($i.Width\\)x$\\($i.Height\\)\"; $i.Dispose\\(\\) } else { \"${p} = NO sprite.png\" } })",
       "Bash(python -c \"from PIL import Image; im = Image.open\\(r'c:/Dev/web-rts-nomads/client/src/game-portal/src/assets/buildings/farm/sprite.png'\\); print\\(im.size\\)\")",
       "Bash(PowerShell -Command \"Select-String -Path 'C:\\\\Dev\\\\web-rts-nomads\\\\server\\\\pkg\\\\protocol\\\\messages.go' -Pattern 'MinorDamageEventSnapshot' -Context 0,5\")",
       "Bash(PowerShell -Command \"Select-String -Path 'C:\\\\Dev\\\\web-rts-nomads\\\\server\\\\internal\\\\game\\\\trap.go' -Pattern 'recordMinorDamageHitLocked' -Context 3,3\")",

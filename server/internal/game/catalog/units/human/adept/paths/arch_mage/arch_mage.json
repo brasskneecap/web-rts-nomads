@@ -8,7 +8,7 @@
     "ringOffsetX": 0,
     "ringOffsetY": 3
   },
-  "projectile": "dark_bolt",
+  "projectile": "shadow_bolt",
   "damageType": "shadow",
   "projectileScale": 2.5,
   "ranks": {

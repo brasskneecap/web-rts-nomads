@@ -1,0 +1,19 @@
+{
+  "id": "raise_skeleton",
+  "displayName": "Raise Skeleton",
+  "type": "spell",
+  "category": "summon",
+  "canTargetSelf": true,
+  "canTargetAllies": false,
+  "canTargetEnemies": false,
+  "castRange": 0,
+  "castTime": 1.5,
+  "manaCost": 30,
+  "cooldown": 10,
+  "damageType": "shadow",
+  "casterAnimation": "Casting",
+  "summonUnitType": "skeleton_soldier",
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "self",
+  "defaultAutoCast": true
+}

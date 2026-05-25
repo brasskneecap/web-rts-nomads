@@ -15,133 +15,133 @@
         "view": "low top-down",
         "created_at": "2026-05-02T22:24:08.360255+00:00"
       },
-      "folder": "An_evil_wizard_with_pale_skin_and_dark_robes_and_h",
+      "folder": "necromancer",
       "frames": {
         "rotations": {
-          "south": "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/rotations/south.png",
-          "south-east": "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/rotations/south-east.png",
-          "east": "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/rotations/east.png",
-          "north-east": "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/rotations/north-east.png",
-          "north": "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/rotations/north.png",
-          "north-west": "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/rotations/north-west.png",
-          "west": "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/rotations/west.png",
-          "south-west": "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/rotations/south-west.png"
+          "south": "necromancer/rotations/south.png",
+          "south-east": "necromancer/rotations/south-east.png",
+          "east": "necromancer/rotations/east.png",
+          "north-east": "necromancer/rotations/north-east.png",
+          "north": "necromancer/rotations/north.png",
+          "north-west": "necromancer/rotations/north-west.png",
+          "west": "necromancer/rotations/west.png",
+          "south-west": "necromancer/rotations/south-west.png"
         },
         "animations": {
-          "animation-f38772c1": {
+          "walking-f38772c1": {
             "north": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north/frame_003.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north/frame_004.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north/frame_005.png"
+              "necromancer/animations/walking-f38772c1/north/frame_000.png",
+              "necromancer/animations/walking-f38772c1/north/frame_001.png",
+              "necromancer/animations/walking-f38772c1/north/frame_002.png",
+              "necromancer/animations/walking-f38772c1/north/frame_003.png",
+              "necromancer/animations/walking-f38772c1/north/frame_004.png",
+              "necromancer/animations/walking-f38772c1/north/frame_005.png"
             ],
             "east": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/east/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/east/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/east/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/east/frame_003.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/east/frame_004.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/east/frame_005.png"
+              "necromancer/animations/walking-f38772c1/east/frame_000.png",
+              "necromancer/animations/walking-f38772c1/east/frame_001.png",
+              "necromancer/animations/walking-f38772c1/east/frame_002.png",
+              "necromancer/animations/walking-f38772c1/east/frame_003.png",
+              "necromancer/animations/walking-f38772c1/east/frame_004.png",
+              "necromancer/animations/walking-f38772c1/east/frame_005.png"
             ],
             "west": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/west/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/west/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/west/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/west/frame_003.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/west/frame_004.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/west/frame_005.png"
+              "necromancer/animations/walking-f38772c1/west/frame_000.png",
+              "necromancer/animations/walking-f38772c1/west/frame_001.png",
+              "necromancer/animations/walking-f38772c1/west/frame_002.png",
+              "necromancer/animations/walking-f38772c1/west/frame_003.png",
+              "necromancer/animations/walking-f38772c1/west/frame_004.png",
+              "necromancer/animations/walking-f38772c1/west/frame_005.png"
             ],
             "north-east": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-east/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-east/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-east/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-east/frame_003.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-east/frame_004.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-east/frame_005.png"
+              "necromancer/animations/walking-f38772c1/north-east/frame_000.png",
+              "necromancer/animations/walking-f38772c1/north-east/frame_001.png",
+              "necromancer/animations/walking-f38772c1/north-east/frame_002.png",
+              "necromancer/animations/walking-f38772c1/north-east/frame_003.png",
+              "necromancer/animations/walking-f38772c1/north-east/frame_004.png",
+              "necromancer/animations/walking-f38772c1/north-east/frame_005.png"
             ],
             "north-west": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-west/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-west/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-west/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-west/frame_003.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-west/frame_004.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/north-west/frame_005.png"
+              "necromancer/animations/walking-f38772c1/north-west/frame_000.png",
+              "necromancer/animations/walking-f38772c1/north-west/frame_001.png",
+              "necromancer/animations/walking-f38772c1/north-west/frame_002.png",
+              "necromancer/animations/walking-f38772c1/north-west/frame_003.png",
+              "necromancer/animations/walking-f38772c1/north-west/frame_004.png",
+              "necromancer/animations/walking-f38772c1/north-west/frame_005.png"
             ],
             "south": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south/frame_003.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south/frame_004.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south/frame_005.png"
+              "necromancer/animations/walking-f38772c1/south/frame_000.png",
+              "necromancer/animations/walking-f38772c1/south/frame_001.png",
+              "necromancer/animations/walking-f38772c1/south/frame_002.png",
+              "necromancer/animations/walking-f38772c1/south/frame_003.png",
+              "necromancer/animations/walking-f38772c1/south/frame_004.png",
+              "necromancer/animations/walking-f38772c1/south/frame_005.png"
             ],
             "south-west": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-west/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-west/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-west/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-west/frame_003.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-west/frame_004.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-west/frame_005.png"
+              "necromancer/animations/walking-f38772c1/south-west/frame_000.png",
+              "necromancer/animations/walking-f38772c1/south-west/frame_001.png",
+              "necromancer/animations/walking-f38772c1/south-west/frame_002.png",
+              "necromancer/animations/walking-f38772c1/south-west/frame_003.png",
+              "necromancer/animations/walking-f38772c1/south-west/frame_004.png",
+              "necromancer/animations/walking-f38772c1/south-west/frame_005.png"
             ],
             "south-east": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-east/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-east/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-east/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-east/frame_003.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-east/frame_004.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/animation-f38772c1/south-east/frame_005.png"
+              "necromancer/animations/walking-f38772c1/south-east/frame_000.png",
+              "necromancer/animations/walking-f38772c1/south-east/frame_001.png",
+              "necromancer/animations/walking-f38772c1/south-east/frame_002.png",
+              "necromancer/animations/walking-f38772c1/south-east/frame_003.png",
+              "necromancer/animations/walking-f38772c1/south-east/frame_004.png",
+              "necromancer/animations/walking-f38772c1/south-east/frame_005.png"
             ]
           },
-          "raised_the_one_handed_staff_up-7437f293": {
+          "attacking-7437f293": {
             "south": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south/frame_003.png"
+              "necromancer/animations/attacking-7437f293/south/frame_000.png",
+              "necromancer/animations/attacking-7437f293/south/frame_001.png",
+              "necromancer/animations/attacking-7437f293/south/frame_002.png",
+              "necromancer/animations/attacking-7437f293/south/frame_003.png"
             ],
             "south-east": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south-east/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south-east/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south-east/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south-east/frame_003.png"
+              "necromancer/animations/attacking-7437f293/south-east/frame_000.png",
+              "necromancer/animations/attacking-7437f293/south-east/frame_001.png",
+              "necromancer/animations/attacking-7437f293/south-east/frame_002.png",
+              "necromancer/animations/attacking-7437f293/south-east/frame_003.png"
             ],
             "west": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/west/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/west/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/west/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/west/frame_003.png"
+              "necromancer/animations/attacking-7437f293/west/frame_000.png",
+              "necromancer/animations/attacking-7437f293/west/frame_001.png",
+              "necromancer/animations/attacking-7437f293/west/frame_002.png",
+              "necromancer/animations/attacking-7437f293/west/frame_003.png"
             ],
             "south-west": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south-west/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south-west/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south-west/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/south-west/frame_003.png"
+              "necromancer/animations/attacking-7437f293/south-west/frame_000.png",
+              "necromancer/animations/attacking-7437f293/south-west/frame_001.png",
+              "necromancer/animations/attacking-7437f293/south-west/frame_002.png",
+              "necromancer/animations/attacking-7437f293/south-west/frame_003.png"
             ],
             "east": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/east/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/east/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/east/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/east/frame_003.png"
+              "necromancer/animations/attacking-7437f293/east/frame_000.png",
+              "necromancer/animations/attacking-7437f293/east/frame_001.png",
+              "necromancer/animations/attacking-7437f293/east/frame_002.png",
+              "necromancer/animations/attacking-7437f293/east/frame_003.png"
             ],
             "north": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north/frame_003.png"
+              "necromancer/animations/attacking-7437f293/north/frame_000.png",
+              "necromancer/animations/attacking-7437f293/north/frame_001.png",
+              "necromancer/animations/attacking-7437f293/north/frame_002.png",
+              "necromancer/animations/attacking-7437f293/north/frame_003.png"
             ],
             "north-east": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north-east/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north-east/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north-east/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north-east/frame_003.png"
+              "necromancer/animations/attacking-7437f293/north-east/frame_000.png",
+              "necromancer/animations/attacking-7437f293/north-east/frame_001.png",
+              "necromancer/animations/attacking-7437f293/north-east/frame_002.png",
+              "necromancer/animations/attacking-7437f293/north-east/frame_003.png"
             ],
             "north-west": [
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north-west/frame_000.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north-west/frame_001.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north-west/frame_002.png",
-              "An_evil_wizard_with_pale_skin_and_dark_robes_and_h/animations/raised_the_one_handed_staff_up-7437f293/north-west/frame_003.png"
+              "necromancer/animations/attacking-7437f293/north-west/frame_000.png",
+              "necromancer/animations/attacking-7437f293/north-west/frame_001.png",
+              "necromancer/animations/attacking-7437f293/north-west/frame_002.png",
+              "necromancer/animations/attacking-7437f293/north-west/frame_003.png"
             ]
           }
         }

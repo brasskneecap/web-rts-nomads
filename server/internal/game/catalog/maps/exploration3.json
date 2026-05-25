@@ -550,28 +550,8 @@
         "terrain": "grass"
       },
       {
-        "x": 0,
-        "y": 29,
-        "terrain": "grass"
-      },
-      {
         "x": 3,
         "y": 29,
-        "terrain": "grass"
-      },
-      {
-        "x": 0,
-        "y": 30,
-        "terrain": "grass"
-      },
-      {
-        "x": 1,
-        "y": 30,
-        "terrain": "grass"
-      },
-      {
-        "x": 2,
-        "y": 30,
         "terrain": "grass"
       },
       {
@@ -65900,24 +65880,6 @@
         "leashRange": 200
       },
       {
-        "x": 2,
-        "y": 30,
-        "id": "placed-unit-enemy-2-30",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 0,
-        "y": 30,
-        "id": "placed-unit-enemy-0-30",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
         "x": 1,
         "y": 44,
         "id": "placed-unit-enemy-1-44",
@@ -66047,42 +66009,6 @@
         "x": 58,
         "y": 53,
         "id": "placed-unit-enemy-58-53",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 1,
-        "y": 30,
-        "id": "placed-unit-enemy-1-30",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 0,
-        "y": 29,
-        "id": "placed-unit-enemy-0-29",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 1,
-        "y": 29,
-        "id": "placed-unit-enemy-1-29",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 2,
-        "y": 29,
-        "id": "placed-unit-enemy-2-29",
         "playerSlot": "enemy",
         "unitType": "ranged_raider",
         "aggroRange": 150,
@@ -68196,15 +68122,6 @@
       },
       {
         "x": 10,
-        "y": 8,
-        "id": "placed-unit-player1-10-8",
-        "playerSlot": "player1",
-        "unitType": "apprentice",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 10,
         "y": 9,
         "id": "placed-unit-player1-10-9",
         "playerSlot": "player1",
@@ -68250,15 +68167,6 @@
       },
       {
         "x": 25,
-        "y": 7,
-        "id": "placed-unit-player1-25-7",
-        "playerSlot": "player2",
-        "unitType": "apprentice",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 25,
         "y": 8,
         "id": "placed-unit-player1-25-8",
         "playerSlot": "player2",
@@ -68299,6 +68207,33 @@
         "id": "placed-unit-player1-27-7",
         "playerSlot": "player2",
         "unitType": "soldier",
+        "aggroRange": 150,
+        "leashRange": 200
+      },
+      {
+        "x": 2,
+        "y": 29,
+        "id": "placed-unit-enemy-2-29",
+        "playerSlot": "enemy",
+        "unitType": "necromancer",
+        "aggroRange": 150,
+        "leashRange": 200
+      },
+      {
+        "x": 2,
+        "y": 28,
+        "id": "placed-unit-enemy-2-28",
+        "playerSlot": "enemy",
+        "unitType": "skeleton_soldier",
+        "aggroRange": 150,
+        "leashRange": 200
+      },
+      {
+        "x": 3,
+        "y": 29,
+        "id": "placed-unit-enemy-3-29",
+        "playerSlot": "enemy",
+        "unitType": "skeleton_soldier",
         "aggroRange": 150,
         "leashRange": 200
       }

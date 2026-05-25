@@ -228,11 +228,10 @@ func (s *GameState) assignUnitPathAbilitiesLocked(unit *Unit) {
 	// id present in newAbilities but with no AutoCastEnabled entry yet — e.g.
 	// additive grants at higher ranks). Same helper used at spawn; honors
 	// explicit player choice by skipping ids already present in the map. Enemy
-	// units that promote (theoretical today) also skip this in practice because
-	// they never get heal/greater_heal seeded at spawn either.
-	if unit.OwnerID != enemyPlayerID {
-		s.seedDefaultAutoCastLocked(unit)
-	}
+	// units are also seeded — they are AI-controlled and must use their
+	// abilities (player toggles never reach them, so there is no choice to
+	// preserve).
+	s.seedDefaultAutoCastLocked(unit)
 }
 
 // ranksUpToInclusive returns the rank slugs from bronze through `rank` in

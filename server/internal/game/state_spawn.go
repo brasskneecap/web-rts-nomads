@@ -107,12 +107,13 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 	if playerID != enemyPlayerID {
 		s.setInventorySizeForRankLocked(unit)
 		unit.Equipped = make([]*EquippedItem, unit.InventorySize)
-		// Seed default auto-cast for any spawned ability whose def declares
-		// DefaultAutoCast (e.g. heal). Player-only by design — enemy casters
-		// must not auto-cast on spawn. Idempotent: only adds entries that
-		// don't already exist, so explicit values never get clobbered.
-		s.seedDefaultAutoCastLocked(unit)
 	}
+	// Seed default auto-cast for any spawned ability whose def declares
+	// DefaultAutoCast. Applies to enemy units too — they are AI-controlled
+	// and must use their abilities (e.g. the necromancer's raise_skeleton);
+	// player toggles never reach them so there is no choice to preserve.
+	// Idempotent: only adds entries that don't already exist.
+	s.seedDefaultAutoCastLocked(unit)
 	return unit
 }
 

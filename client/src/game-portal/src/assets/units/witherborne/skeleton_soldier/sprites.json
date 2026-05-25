@@ -20,11 +20,11 @@
     "frameHeight": 68
   },
   "animations": {
-    "animation": {
+    "walking": {
       "frameCount": 6,
       "frameWidth": 68,
       "frameHeight": 68,
-      "sheet": "packed/animation.png",
+      "sheet": "packed/walking.png",
       "rowOrder": [
         "north",
         "south",
@@ -36,11 +36,11 @@
         "north-west"
       ]
     },
-    "swing_the_one_handed_sword_up_and_down": {
+    "attacking": {
       "frameCount": 4,
       "frameWidth": 68,
       "frameHeight": 68,
-      "sheet": "packed/swing_the_one_handed_sword_up_and_down.png",
+      "sheet": "packed/attacking.png",
       "rowOrder": [
         "north",
         "south",
@@ -53,5 +53,5 @@
       ]
     }
   },
-  "packedAt": "2026-05-22T21:49:29.436Z"
+  "packedAt": "2026-05-25T03:14:42.294Z"
 }

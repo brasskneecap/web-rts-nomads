@@ -1,0 +1,27 @@
+{
+  "type": "skeleton_soldier",
+  "name": "Skeleton Soldier",
+  "faction": "witherborne",
+  "archetype": "raider",
+  "visionRange": 256,
+  "hp": 75,
+  "damage": 5,
+  "attackRange": 60,
+  "attackSpeed": 1,
+  "moveSpeed": 100,
+  "resourceCost": {},
+  "meatCost": 0,
+  "spawnSeconds": 0,
+  "capabilities": [
+    "move",
+    "attack"
+  ],
+  "trainLabel": "",
+  "bounds": {
+    "halfWidth": 14,
+    "top": -60,
+    "bottom": 10,
+    "ringOffsetX": 0,
+    "ringOffsetY": -8
+  }
+}

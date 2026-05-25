@@ -1,0 +1,42 @@
+{
+  "type": "necromancer",
+  "name": "Necromancer",
+  "faction": "witherborne",
+  "archetype": "caster",
+  "combatProfile": "caster",
+  "visionRange": 384,
+  "hp": 75,
+  "damage": 8,
+  "attackRange": 220,
+  "attackSpeed": 1.5,
+  "moveSpeed": 100,
+  "resourceCost": {},
+  "meatCost": 0,
+  "spawnSeconds": 0,
+  "capabilities": [
+    "move",
+    "attack"
+  ],
+  "trainLabel": "",
+  "maxMana": 50,
+  "manaRegenRate": 1.0,
+  "projectile": "shadow_bolt",
+  "damageType": "shadow",
+  "projectileScale": 1.5,
+  "abilities": [
+    "raise_skeleton"
+  ],
+  "attackVisual": {
+    "kind": "projectile",
+    "originX": 24,
+    "originY": 5,
+    "effectLength": 22
+  },
+  "bounds": {
+    "halfWidth": 20,
+    "top": -72,
+    "bottom": 36,
+    "ringOffsetX": 0,
+    "ringOffsetY": -15
+  }
+}

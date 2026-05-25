@@ -251,6 +251,10 @@ func (s *GameState) resolveAbilityCastOnTargetLocked(caster *Unit, def AbilityDe
 		s.playEffectOnUnitLocked(target, def.EffectOnTarget)
 	}
 
+	if def.SummonUnitType != "" {
+		s.spawnSummonedUnitLocked(caster, def)
+	}
+
 	// Perk hook: fire once per resolved target so perks like battle_prayer
 	// can stamp cross-unit buffs on every ally the ability touches.
 	s.onPerkAbilityResolvedLocked(caster, def, target)

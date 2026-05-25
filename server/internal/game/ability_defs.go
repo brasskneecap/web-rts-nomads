@@ -150,6 +150,16 @@ type AbilityDef struct {
 	// Loaded from JSON key "targetCount"; values < 1 are normalised to 1 at load.
 	TargetCount int `json:"targetCount,omitempty"`
 
+	// SummonUnitType is the unit-type id (matches a catalog/units/.../<id>.json)
+	// that this ability spawns on resolve. Empty ⇒ ability is not a summon
+	// (the field is inert for every existing ability, same pattern as
+	// HealAmount / DamageAmount). The spawned unit takes the caster's OwnerID
+	// and color and appears at a small fixed offset from the caster's
+	// position (deterministic — no RNG). An unknown id is logged once at
+	// resolve and the call is a no-op (mana was already spent), matching the
+	// existing getProjectileDef miss handling.
+	SummonUnitType string `json:"summonUnitType,omitempty"`
+
 	// ── Auto-cast ──────────────────────────────────────────────────────────
 	// SupportsAutoCast gates whether the action bar exposes an auto-cast
 	// toggle for this ability (default false). AutoCastTargetSelector names a

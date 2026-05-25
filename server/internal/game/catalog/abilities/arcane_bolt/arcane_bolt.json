@@ -16,5 +16,6 @@
   "casterAnimation": "Casting",
   "icon": "TODO/abilities/arcane_bolt.png",
   "supportsAutoCast": true,
-  "autoCastTargetSelector": "closest_enemy_in_range"
+  "autoCastTargetSelector": "closest_enemy_in_range",
+  "defaultAutoCast": true
 }

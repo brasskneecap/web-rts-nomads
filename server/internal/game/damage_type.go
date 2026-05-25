@@ -37,7 +37,7 @@ const (
 	DamageHoly      DamageType = "holy"
 	// DamageShadow is the dark/necrotic school. Today, like every other
 	// non-physical type, it is flavor/metadata only and does not change damage
-	// numbers — it is the tag the Arch Mage's dark_bolt rides on and the seam
+	// numbers — it is the tag the Arch Mage's shadow_bolt rides on and the seam
 	// future shadow-resistance logic / client tinting will read.
 	DamageShadow    DamageType = "shadow"
 )

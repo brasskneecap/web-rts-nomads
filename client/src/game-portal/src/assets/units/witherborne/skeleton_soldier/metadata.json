@@ -4,8 +4,8 @@
     {
       "character": {
         "id": "762ea2e4-7c63-41c0-a97e-df36fb134930",
-        "name": "48 pixel skeleton holding a sword and shield",
-        "prompt": "48 pixel skeleton holding a sword and shield",
+        "name": "skeleton soldier",
+        "prompt": "skeleton soldier",
         "size": {
           "width": 68,
           "height": 68
@@ -15,133 +15,133 @@
         "view": "low top-down",
         "created_at": "2026-04-24T03:10:43.78804+00:00"
       },
-      "folder": "48_pixel_skeleton_holding_a_sword_and_shield",
+      "folder": "skeleton_soldier",
       "frames": {
         "rotations": {
-          "south": "48_pixel_skeleton_holding_a_sword_and_shield/rotations/south.png",
-          "south-east": "48_pixel_skeleton_holding_a_sword_and_shield/rotations/south-east.png",
-          "east": "48_pixel_skeleton_holding_a_sword_and_shield/rotations/east.png",
-          "north-east": "48_pixel_skeleton_holding_a_sword_and_shield/rotations/north-east.png",
-          "north": "48_pixel_skeleton_holding_a_sword_and_shield/rotations/north.png",
-          "north-west": "48_pixel_skeleton_holding_a_sword_and_shield/rotations/north-west.png",
-          "west": "48_pixel_skeleton_holding_a_sword_and_shield/rotations/west.png",
-          "south-west": "48_pixel_skeleton_holding_a_sword_and_shield/rotations/south-west.png"
+          "south": "skeleton_soldier/rotations/south.png",
+          "south-east": "skeleton_soldier/rotations/south-east.png",
+          "east": "skeleton_soldier/rotations/east.png",
+          "north-east": "skeleton_soldier/rotations/north-east.png",
+          "north": "skeleton_soldier/rotations/north.png",
+          "north-west": "skeleton_soldier/rotations/north-west.png",
+          "west": "skeleton_soldier/rotations/west.png",
+          "south-west": "skeleton_soldier/rotations/south-west.png"
         },
         "animations": {
-          "animation-baeaf5d0": {
+          "walking-baeaf5d0": {
             "north-east": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-east/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-east/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-east/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-east/frame_003.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-east/frame_004.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-east/frame_005.png"
+              "skeleton_soldier/animations/walking-baeaf5d0/north-east/frame_000.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north-east/frame_001.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north-east/frame_002.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north-east/frame_003.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north-east/frame_004.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north-east/frame_005.png"
             ],
             "south-west": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-west/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-west/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-west/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-west/frame_003.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-west/frame_004.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-west/frame_005.png"
+              "skeleton_soldier/animations/walking-baeaf5d0/south-west/frame_000.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south-west/frame_001.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south-west/frame_002.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south-west/frame_003.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south-west/frame_004.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south-west/frame_005.png"
             ],
             "north": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north/frame_003.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north/frame_004.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north/frame_005.png"
+              "skeleton_soldier/animations/walking-baeaf5d0/north/frame_000.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north/frame_001.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north/frame_002.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north/frame_003.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north/frame_004.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north/frame_005.png"
             ],
             "west": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/west/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/west/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/west/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/west/frame_003.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/west/frame_004.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/west/frame_005.png"
+              "skeleton_soldier/animations/walking-baeaf5d0/west/frame_000.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/west/frame_001.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/west/frame_002.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/west/frame_003.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/west/frame_004.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/west/frame_005.png"
             ],
             "south": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south/frame_003.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south/frame_004.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south/frame_005.png"
+              "skeleton_soldier/animations/walking-baeaf5d0/south/frame_000.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south/frame_001.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south/frame_002.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south/frame_003.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south/frame_004.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south/frame_005.png"
             ],
             "north-west": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-west/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-west/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-west/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-west/frame_003.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-west/frame_004.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/north-west/frame_005.png"
+              "skeleton_soldier/animations/walking-baeaf5d0/north-west/frame_000.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north-west/frame_001.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north-west/frame_002.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north-west/frame_003.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north-west/frame_004.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/north-west/frame_005.png"
             ],
             "east": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/east/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/east/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/east/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/east/frame_003.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/east/frame_004.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/east/frame_005.png"
+              "skeleton_soldier/animations/walking-baeaf5d0/east/frame_000.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/east/frame_001.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/east/frame_002.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/east/frame_003.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/east/frame_004.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/east/frame_005.png"
             ],
             "south-east": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-east/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-east/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-east/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-east/frame_003.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-east/frame_004.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/animation-baeaf5d0/south-east/frame_005.png"
+              "skeleton_soldier/animations/walking-baeaf5d0/south-east/frame_000.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south-east/frame_001.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south-east/frame_002.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south-east/frame_003.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south-east/frame_004.png",
+              "skeleton_soldier/animations/walking-baeaf5d0/south-east/frame_005.png"
             ]
           },
-          "swing_the_one_handed_sword_up_and_down-7cc1b6a7": {
+          "attacking-7cc1b6a7": {
             "south": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south/frame_003.png"
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south/frame_000.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south/frame_001.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south/frame_002.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south/frame_003.png"
             ],
             "north-east": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north-east/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north-east/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north-east/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north-east/frame_003.png"
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north-east/frame_000.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north-east/frame_001.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north-east/frame_002.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north-east/frame_003.png"
             ],
             "north": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north/frame_003.png"
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north/frame_000.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north/frame_001.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north/frame_002.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north/frame_003.png"
             ],
             "south-east": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south-east/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south-east/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south-east/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south-east/frame_003.png"
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south-east/frame_000.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south-east/frame_001.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south-east/frame_002.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south-east/frame_003.png"
             ],
             "east": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/east/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/east/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/east/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/east/frame_003.png"
+              "skeleton_soldier/animations/attacking-7cc1b6a7/east/frame_000.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/east/frame_001.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/east/frame_002.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/east/frame_003.png"
             ],
             "south-west": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south-west/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south-west/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south-west/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/south-west/frame_003.png"
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south-west/frame_000.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south-west/frame_001.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south-west/frame_002.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/south-west/frame_003.png"
             ],
             "west": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/west/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/west/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/west/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/west/frame_003.png"
+              "skeleton_soldier/animations/attacking-7cc1b6a7/west/frame_000.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/west/frame_001.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/west/frame_002.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/west/frame_003.png"
             ],
             "north-west": [
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north-west/frame_000.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north-west/frame_001.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north-west/frame_002.png",
-              "48_pixel_skeleton_holding_a_sword_and_shield/animations/swing_the_one_handed_sword_up_and_down-7cc1b6a7/north-west/frame_003.png"
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north-west/frame_000.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north-west/frame_001.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north-west/frame_002.png",
+              "skeleton_soldier/animations/attacking-7cc1b6a7/north-west/frame_003.png"
             ]
           }
         }

@@ -146,36 +146,23 @@ func (s *GameState) scoreBuffAllyCandidateLocked(unit *Unit, def AbilityDef, tar
 	return candidateBaseScore + abilityCategoryWeights[AbilityCategoryBuffAlly]
 }
 
-// scoreSummonCandidateLocked: derived from the local force deficit around the
-// caster (more nearby hostiles than same-team allies ⇒ summon). Target is self
-// (the "self" selector). 0 when there is no deficit. Phase 2 authors no summon
-// ability; exercised only by direct unit tests.
+// scoreSummonCandidateLocked: combat-gated. A summon is a combat ability —
+// the caster only summons when actively engaged (has a unit or building
+// attack target). Out of combat, returns 0 ⇒ below minActivationScore ⇒ not
+// cast. In combat, returns base + full weight so the cast fires as soon as
+// the ability is off cooldown and mana is available. Target is self (the
+// "self" selector).
+//
+// No local deficit / force-balance logic: necromancers fighting next to
+// existing skeletons should still raise more on cooldown, and the player's
+// stated expectation is "cast it whenever ready while fighting."
 func (s *GameState) scoreSummonCandidateLocked(unit *Unit, def AbilityDef, target *Unit) float64 {
-	const radius = 320.0
-	radiusSq := radius * radius
-	hostiles, allies := 0, 0
-	for _, u := range s.Units {
-		if u == nil || u.HP <= 0 {
-			continue
-		}
-		if distanceSquared(unit.X, unit.Y, u.X, u.Y) > radiusSq {
-			continue
-		}
-		switch {
-		case s.unitsHostileLocked(unit, u):
-			hostiles++
-		case u != unit && s.unitsFriendlyLocked(unit, u):
-			allies++
-		}
-	}
-	deficit := hostiles - allies
-	if deficit <= 0 {
+	if unit == nil {
 		return 0
 	}
-	// Bound the deficit's contribution so one chaotic fight can't dominate.
-	d := float64(deficit)
-	if d > 5 {
-		d = 5
+	inCombat := unit.AttackTargetID != 0 || unit.AttackBuildingTargetID != ""
+	if !inCombat {
+		return 0
 	}
-	return candidateBaseScore + abilityCategoryWeights[AbilityCategorySummon]*(d/5.0)
+	return candidateBaseScore + abilityCategoryWeights[AbilityCategorySummon]
 }
