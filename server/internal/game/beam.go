@@ -67,6 +67,26 @@ func (s *GameState) removeBeamForUnitLocked(unitID int) {
 	s.Beams = kept
 }
 
+// removeBeamByIDLocked drops the beam with the given stable wire ID. No-op
+// when no beam matches (the caller may be cleaning up state that was already
+// removed via a different path — e.g. removeBeamForTargetLocked firing on a
+// dead chain victim before chain_siphon's per-tick sync runs).
+//
+// Caller holds s.mu write lock.
+func (s *GameState) removeBeamByIDLocked(id string) {
+	if len(s.Beams) == 0 || id == "" {
+		return
+	}
+	kept := s.Beams[:0]
+	for _, b := range s.Beams {
+		if b.ID == id {
+			continue // drop
+		}
+		kept = append(kept, b)
+	}
+	s.Beams = kept
+}
+
 // removeBeamForTargetLocked drops any beam whose TargetUnitID == targetID.
 // Called from removeUnitLocked so a beam whose target died is dropped
 // immediately. The channel tick also catches this on the next tick, but

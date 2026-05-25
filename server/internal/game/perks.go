@@ -628,6 +628,84 @@ type UnitPerkState struct {
 	MarkOfWeaknessRemaining           float64
 	MarkOfWeaknessArmorReduction      int
 	MarkOfWeaknessHealingReceivedMult float64
+
+	// ── Siphoner silver perks ───────────────────────────────────────────────
+	// chain_siphon — damage / heal are stateless (resolved fresh each tick),
+	// but the SECONDARY BEAM VISUALS need to persist across ticks to avoid
+	// 4-fps flicker at the 0.25s channel cadence. We track active chain
+	// beams by their stable wire ID, keyed on the chain target's unit ID,
+	// so the per-tick sync can:
+	//   - reuse beams whose chain target is still selected (no respawn),
+	//   - despawn beams whose target dropped out of the chain set,
+	//   - spawn beams for newly-selected chain targets.
+	// ChainSiphonPrimaryTargetID remembers WHO the chain beams currently
+	// emanate from. When the Siphoner swaps primary target (channel re-
+	// acquires), every chain beam roots from a stale unit, so the sync
+	// helper detects the mismatch and respawns all chain beams from the
+	// new primary. Both fields zero out when the channel ends, via
+	// clearChainSiphonBeamsLocked called from clearChannelStateLocked.
+	ChainSiphonPrimaryTargetID int
+	ChainSiphonBeamIDs         map[int]string
+
+	// amplify_damage — autonomous AoE affliction with the same shape as
+	// Lingering Hex / Mark of Weakness (owner-side cooldown + recipient-side
+	// affliction). The damage-taken multiplier is read by the damage pipeline
+	// to amplify every incoming damage instance. Refresh-longer for
+	// duration, refresh-stronger (max-wins) for the multiplier.
+	AmplifyDamageCooldownRemaining float64
+	AmplifyDamageRemaining         float64
+	AmplifyDamageMultiplier        float64
+
+	// shared_suffering — recursion guard. Set true on the caster's PerkState
+	// while a shared-damage echo is being applied so a victim with their
+	// own future on-damage perk cannot chain-trigger another echo. The
+	// echo damage is also tagged DamageSource.Kind = "shared_suffering"
+	// for telemetry / debug filtering — see applySharedSufferingLocked.
+	SharedSufferingActive bool
+
+	// ── Source-specific shield pools ────────────────────────────────────────
+	// A unit can carry multiple independent shield pools at the same time
+	// (e.g. dark_renewal + a future cleric barrier perk). Each pool tracks
+	// its own current value, max value, and source identity. The damage
+	// pipeline drains pools oldest-first (slice order) before falling
+	// through to the legacy Unit.Shield (blood_engine) and finally HP.
+	//
+	// Pools persist until depleted unless a future source defines its own
+	// expiration (no decay path today). Dark Renewal pools never expire.
+	//
+	// Tags are intentionally free-form ("corruption", "siphoner", …) so
+	// future perks that want to interact with shield categories (e.g. a
+	// debuff that strips shadow-tagged shields) can filter without
+	// hard-coding source ids.
+	ShieldPools []ShieldPool
+}
+
+// ShieldPool is a single source-specific shield pool carried on
+// UnitPerkState. Add new pool types by allocating one (via
+// applyShieldFromSourceLocked) and the damage pipeline picks them up
+// automatically — pools are agnostic to their producer.
+//
+// Fields:
+//
+//	SourceType   — namespacing tag, e.g. "dark_renewal". Used for keying
+//	               so re-applying from the same producer tops up the
+//	               existing pool rather than allocating a new one.
+//	SourceUnitID — unit that granted this pool (Siphoner id for
+//	               dark_renewal). Carried for telemetry / future
+//	               source-aware interactions; not used for stacking.
+//	CurrentValue — current shield value, drained by the damage pipeline.
+//	MaxValue     — per-source cap. Top-ups beyond this are wasted (the
+//	               total "displayed shield" on the unit is the sum across
+//	               every pool, but each pool respects its own cap).
+//	Tags         — free-form category tags. Not consumed by the damage
+//	               pipeline today; reserved for future perk interactions
+//	               (e.g. shield-strip mechanics that filter by tag).
+type ShieldPool struct {
+	SourceType   string
+	SourceUnitID int
+	CurrentValue int
+	MaxValue     int
+	Tags         []string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1127,6 +1205,14 @@ func (s *GameState) tickUnitPerkStateLocked(unit *Unit, dt float64) {
 
 		case "mark_of_weakness":
 			s.tickMarkOfWeaknessPerkLocked(unit, def, dt)
+
+		case "amplify_damage":
+			// Siphoner silver: same autonomous AoE pattern as the bronze
+			// affliction perks above — gated on cooldown + anchor enemy
+			// (current channel target preferred). No mana cost per the perk
+			// spec. The stamped damage-taken multiplier is read by the
+			// damage pipeline via amplifyDamageTakenMultiplierLocked.
+			s.tickAmplifyDamagePerkLocked(unit, def, dt)
 
 		case "mana_conduit":
 			// Passive: flat bonus mana regen while alive. No targeting, no

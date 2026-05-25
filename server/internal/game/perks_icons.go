@@ -320,6 +320,16 @@ func (s *GameState) activeBuffIconsLocked(unit *Unit) []protocol.ActiveEffectIco
 		// Cooldown wipes for the two autonomous AoEs surface via
 		// perkCooldownsLocked → SelectionHud's perk slot.
 
+		// Siphoner silver perks — same convention split:
+		//   - chain_siphon, shared_suffering act on enemies; no owner badge
+		//     (their visual is the secondary beam / echo damage on victims).
+		//   - amplify_damage is autonomous AoE — surfaces via the cooldown
+		//     wipe in perkCooldownsLocked rather than a buff badge.
+		//   - dark_renewal is the one perk a player wants to see "is on" so
+		//     they recognise the shielding routing is live. Emit on the owner.
+		case "dark_renewal":
+			addIcon(perkID, 1)
+
 		// battle_prayer's icon lives on the BUFFED TARGET (cross-unit buff),
 		// not on the perk owner. Surfaced below this loop so allies who don't
 		// own the perk still display the buff icon while it is active.
@@ -484,6 +494,11 @@ func (s *GameState) activeDebuffIconsLocked(unit *Unit) []protocol.ActiveEffectI
 	if unit.PerkState.MarkOfWeaknessRemaining > 0 {
 		addIcon("debuff-mark-of-weakness", 1)
 	}
+	// Amplify Damage (Siphoner silver) — damage-taken multiplier debuff.
+	// Cross-unit: lives on the afflicted enemy regardless of source.
+	if unit.PerkState.AmplifyDamageRemaining > 0 {
+		addIcon("debuff-amplify-damage", 1)
+	}
 	return active
 }
 
@@ -551,6 +566,10 @@ func (s *GameState) perkCooldownsLocked(unit *Unit) []protocol.PerkCooldownSnaps
 			// Siphoner bronze autonomous AoE — same cooldown wipe convention
 			// as lingering_hex.
 			add(perkID, unit.PerkState.MarkOfWeaknessCooldownRemaining, cfg["cooldownSeconds"])
+		case "amplify_damage":
+			// Siphoner silver autonomous AoE — same cooldown wipe convention
+			// as the bronze affliction perks above.
+			add(perkID, unit.PerkState.AmplifyDamageCooldownRemaining, cfg["cooldownSeconds"])
 		}
 	}
 	return cds

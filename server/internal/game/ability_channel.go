@@ -210,6 +210,26 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 			s.distributeSiphonHealLocked(unit, healAmount, def.AllyHealRadius)
 		}
 
+		// ── Silver Siphoner perks ──────────────────────────────────────────
+		// Chain Siphon: fire secondary beams to up to N nearby enemies. Damage
+		// scales by secondaryDamageMultiplier of the primary tick; heal scales
+		// by secondaryHealingMultiplier of healAmount and routes back through
+		// distributeSiphonHealLocked so dark_renewal can also catch chain
+		// overflow. No-op when the perk isn't owned. Fires even on a killing
+		// primary tick — chain victims still get hit before target.HP=0 is
+		// drained, which feels right ("the beam fans out even as the primary
+		// dies"). The channel ability id is threaded through so the spawned
+		// chain beams carry the same AbilityID on the wire as the primary,
+		// keeping the client's per-ability beam dispatch consistent.
+		s.applyChainSiphonBeamsLocked(unit, target, tickDamage, healAmount, def.AllyHealRadius, unit.ChannelAbilityID)
+
+		// Shared Suffering: echo a fraction of the primary tick damage to
+		// every nearby enemy that already carries any Siphoner affliction.
+		// No-op when the perk isn't owned or when no afflicted neighbor is
+		// in range. Echo damage is tagged Kind="shared_suffering" and the
+		// caster-side recursion guard prevents re-entry within a tick.
+		s.applySharedSufferingLocked(unit, target, tickDamage)
+
 		// Withering Beam — accrue continuous-siphon time and stamp stacks
 		// on the target every secondsPerStack. Runs after damage so a
 		// killing tick doesn't also stamp on a corpse (the helper checks
@@ -293,6 +313,9 @@ func (s *GameState) clearChannelStateLocked(unit *Unit) {
 	// a fresh channel starts cleanly. Stacks already on previously-siphoned
 	// enemies keep decaying via the cross-unit loop in state.go.
 	s.clearWitheringBeamCasterStateLocked(unit)
+	// Chain Siphon: despawn every secondary beam the caster was rendering
+	// against the now-departed primary. No-op for units without the perk.
+	s.clearChainSiphonBeamsLocked(unit)
 	s.endUnitCastingLocked(unit)
 }
 
@@ -395,17 +418,20 @@ func (s *GameState) siphonHealingNeededLocked(caster *Unit, def AbilityDef) bool
 // distributeSiphonHealLocked applies amount HP of healing according to the
 // Siphon Life binary rule:
 //
-//   - If the Siphoner's HP < MaxHP: route the entire amount to the Siphoner.
-//   - Else: find the lowest-HP-percent ally within allyHealRadius (alive,
-//     visible, same team, HP < MaxHP), heal that ally. Ties broken by
-//     ascending unit.ID for determinism.
+//   - If the Siphoner's HP < MaxHP: heal the Siphoner first (up to missing
+//     HP). Any leftover with dark_renewal routes through the shield cascade
+//     (self pool → ally pool → waste); without dark_renewal leftover is
+//     simply wasted (heals never overheal-then-spill to ally HP).
+//   - Else (Siphoner at full HP): with dark_renewal, the whole amount routes
+//     through the shield cascade. Without dark_renewal, fall through to the
+//     legacy ally-heal path (lowest-HP-percent ally within allyHealRadius).
 //
-// In both cases the heal routes through applyClericHealLocked so the existing
-// cleric perk pipeline (beacon_of_life, divine_judgement) fires when the
-// Siphoner is also a Cleric (future cross-path extension point). Overheal is
-// wasted; healing is always clamped to MaxHP. Returns the unit that received
-// the heal, or nil if healing was wasted (no valid ally, or caster at full HP
-// with no ally in range).
+// In all cases the HP heal routes through applyClericHealLocked so the
+// existing cleric perk pipeline (beacon_of_life, divine_judgement) fires
+// when the Siphoner is also a Cleric (future cross-path extension point).
+// Returns the unit that received the heal, or nil if healing was wasted
+// (no valid ally, no shielding banked, caster at full HP without
+// dark_renewal and no ally in range).
 //
 // Caller holds s.mu write lock.
 func (s *GameState) distributeSiphonHealLocked(siphoner *Unit, amount int, allyHealRadius float64) *Unit {
@@ -413,10 +439,34 @@ func (s *GameState) distributeSiphonHealLocked(siphoner *Unit, amount int, allyH
 		return nil
 	}
 
-	// Self-heal path: Siphoner is below max HP.
+	hasDarkRenewal := containsString(siphoner.PerkIDs, "dark_renewal")
+
+	// Self-heal path: Siphoner is below max HP. Heal only what fits; with
+	// dark_renewal route any overflow through the shield cascade rather
+	// than re-attempting an ally heal.
 	if siphoner.HP < siphoner.MaxHP {
-		s.applyClericHealLocked(siphoner, siphoner, amount, healMetaPrimaryAbility())
+		selfNeed := siphoner.MaxHP - siphoner.HP
+		selfHeal := amount
+		if selfHeal > selfNeed {
+			selfHeal = selfNeed
+		}
+		s.applyClericHealLocked(siphoner, siphoner, selfHeal, healMetaPrimaryAbility())
+		remaining := amount - selfHeal
+		if remaining > 0 && hasDarkRenewal {
+			s.applyDarkRenewalExcessLocked(siphoner, remaining, allyHealRadius)
+		}
 		return siphoner
+	}
+
+	// Siphoner is at full HP. dark_renewal overrides the legacy ally-heal
+	// path — overflow becomes shielding on self (then on a nearby ally) per
+	// the perk spec, never an ally HP heal. Without dark_renewal, fall
+	// through to the existing lowest-HP-percent ally selector below.
+	if hasDarkRenewal {
+		if s.applyDarkRenewalExcessLocked(siphoner, amount, allyHealRadius) > 0 {
+			return siphoner
+		}
+		return nil
 	}
 
 	// Ally path: find lowest-HP-percent ally within allyHealRadius.

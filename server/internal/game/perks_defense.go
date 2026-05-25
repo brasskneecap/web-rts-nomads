@@ -108,7 +108,31 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 			return 0
 		}
 	}
-	// Steps 5 & 6: Shield pool then HP.
+	// Step 4b: Amplify Damage (Siphoner silver) — flat damage-taken multiplier
+	// applied to every incoming damage instance while the affliction is
+	// active. Applied AFTER flat reduction (so the multiplier scales whatever
+	// survived armor / reinforced_armor / sanctuary) and BEFORE shield
+	// consumption (so amplified damage drains shields faster too). Composes
+	// multiplicatively with the mark amplification above — the two systems
+	// are intentionally independent so a victim carrying both gets the
+	// combined effect.
+	if mult := amplifyDamageTakenMultiplierLocked(target); mult > 0 {
+		damage = maxInt(0, int(math.Round(float64(damage)*(1.0+mult))))
+		if damage == 0 {
+			s.perkShareDamageToMarkedLocked(target, origDamage, src)
+			return 0
+		}
+	}
+	// Steps 5 & 6: Source-specific shield pools, then legacy shield, then HP.
+	// Pools drain oldest-first (slice order) so the consumption order is
+	// predictable for debugging. Each pool consumes up to its CurrentValue;
+	// the remainder cascades to the next pool, then to the legacy single-
+	// pool Unit.Shield (blood_engine), then to HP.
+	damage = s.drainShieldPoolsLocked(target, damage)
+	if damage == 0 {
+		s.perkShareDamageToMarkedLocked(target, origDamage, src)
+		return 0
+	}
 	if target.Shield > 0 {
 		if target.Shield >= damage {
 			target.Shield -= damage
@@ -222,9 +246,14 @@ func (s *GameState) healUnitLocked(unit *Unit, amount int) {
 	unit.Shield = minInt(maxShield, unit.Shield+overheal)
 }
 
-// unitMaxShieldLocked returns the unit's current shield capacity, aggregated
-// from all perks that contribute a shield pool. 0 for units with no such perk.
-// ADD NEW SHIELD-GRANTING PERKS HERE.
+// unitMaxShieldLocked returns the unit's current shield capacity from the
+// LEGACY single-pool path (Unit.Shield). Today only blood_engine contributes
+// here; source-specific shield perks (dark_renewal, future cleric barrier
+// perks) carry their own per-source caps on UnitPerkState.ShieldPools and
+// surface them via totalMaxShieldFromPoolsLocked instead.
+//
+// Use unitTotalMaxShieldLocked when you need the aggregate (legacy + pools)
+// for HUD / snapshot purposes.
 func (s *GameState) unitMaxShieldLocked(unit *Unit) int {
 	if unit == nil || len(unit.PerkIDs) == 0 {
 		return 0
@@ -242,6 +271,236 @@ func (s *GameState) unitMaxShieldLocked(unit *Unit) int {
 		}
 	}
 	return total
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Source-specific shield pools
+//
+// A unit may carry multiple independent shield pools at once (e.g.
+// dark_renewal + a future cleric barrier). The damage pipeline drains pools
+// oldest-first (slice order) so the consumption order is predictable and
+// easy to debug.
+//
+// Stacking modes:
+//   - ShieldStackingPerSource (default): pools are keyed by
+//     (SourceType, SourceUnitID). Two granting units of the same perk give
+//     the recipient TWO independent pools, each respecting its own cap.
+//     Example use case: a future "shield stamp" attack where multiple
+//     stamps from different units should stack.
+//   - ShieldStackingShared: pools are keyed by SourceType ALONE. All
+//     granting units of the same perk feed ONE shared pool that respects a
+//     single cap across them all. This is the "buff doesn't double-up"
+//     model — e.g. dark_renewal: two Siphoners shielding the same ally
+//     still cap the ally's dark_renewal shield at maxSelfShield, they just
+//     fill it faster between them.
+//
+// Register a new shield source's stacking mode in shieldStackingModes
+// below; unregistered source types default to PerSource (the zero value).
+//
+// Design notes:
+//   - Pools live on UnitPerkState.ShieldPools so they ride along with the
+//     rest of per-unit perk state and decay/cleanup all happen through the
+//     same machinery (no new lifecycle to manage).
+//   - Pools do NOT decay by default; dark_renewal pools persist until
+//     depleted. Future pools with timed expiration can add an expiry field
+//     here and decay alongside the other cross-unit timers in state.go.
+//   - applyShieldFromSourceLocked returns the amount actually banked so
+//     callers can attribute waste (e.g. dark_renewal overflow → ally).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ShieldStacking declares how multiple granting units of the same shield
+// SourceType combine on one recipient.
+type ShieldStacking int
+
+const (
+	// ShieldStackingPerSource (zero value): each granting unit gets its own
+	// pool. Two grantors of the same perk on the same recipient = two pools,
+	// each with its own MaxValue cap. Total shield = sum of both pools.
+	ShieldStackingPerSource ShieldStacking = 0
+	// ShieldStackingShared: all grantors of this SourceType feed ONE pool on
+	// the recipient. The cap is shared across every grantor — total shield
+	// cannot exceed MaxValue regardless of how many sources are stacking.
+	// SourceUnitID on the pool is "first grantor wins" — refreshes from
+	// other units top up the same bucket without changing the pool identity.
+	ShieldStackingShared ShieldStacking = 1
+)
+
+// shieldStackingModes registers the stacking behaviour of each shield
+// SourceType the game knows about. Unregistered types fall through to the
+// zero value (ShieldStackingPerSource), which is the safe default — a new
+// shield perk added without an entry here gets independent per-source
+// pools, which never violates any cap.
+//
+// ADD NEW SHIELD-GRANTING PERKS HERE when their stacking behaviour is not
+// the per-source default. Keep this map small and obvious — it is the
+// canonical "which shield buffs don't stack" list.
+var shieldStackingModes = map[string]ShieldStacking{
+	"dark_renewal": ShieldStackingShared,
+}
+
+// shieldStackingFor returns the stacking mode for a SourceType, defaulting
+// to ShieldStackingPerSource when the type is unregistered. Cheap O(1)
+// map read; safe on the hot path.
+func shieldStackingFor(sourceType string) ShieldStacking {
+	return shieldStackingModes[sourceType]
+}
+
+// applyShieldFromSourceLocked tops up (or creates) a source-specific shield
+// pool on `unit`. Returns the amount actually added — anything beyond the
+// pool's MaxValue is wasted and reported back so the caller can route it
+// elsewhere (e.g. dark_renewal overflow → ally pool).
+//
+// Keying depends on the SourceType's registered stacking mode:
+//   - PerSource (default): keyed by (SourceType, SourceUnitID). Two
+//     grantors of the same perk get two pools, each respecting its own cap.
+//   - Shared: keyed by SourceType only. All grantors feed one shared pool
+//     capped at MaxValue. The pool's SourceUnitID is "first grantor wins";
+//     subsequent top-ups from other units don't change pool identity.
+//
+// Safe to call with amount <= 0 (no-op) or maxValue <= 0 (no-op).
+//
+// Caller holds s.mu write lock.
+func (s *GameState) applyShieldFromSourceLocked(unit *Unit, sourceType string, sourceUnitID, amount, maxValue int, tags []string) int {
+	if unit == nil || amount <= 0 || maxValue <= 0 || sourceType == "" {
+		return 0
+	}
+	shared := shieldStackingFor(sourceType) == ShieldStackingShared
+	// Top up an existing matching pool. For PerSource we require both keys to
+	// match; for Shared the SourceType alone is the identity.
+	for i := range unit.PerkState.ShieldPools {
+		p := &unit.PerkState.ShieldPools[i]
+		if p.SourceType != sourceType {
+			continue
+		}
+		if !shared && p.SourceUnitID != sourceUnitID {
+			continue
+		}
+		// Cap raised? Honor the larger of the two (re-tuning the perk
+		// later doesn't shrink already-allocated pools).
+		if maxValue > p.MaxValue {
+			p.MaxValue = maxValue
+		}
+		room := p.MaxValue - p.CurrentValue
+		if room <= 0 {
+			return 0
+		}
+		add := amount
+		if add > room {
+			add = room
+		}
+		p.CurrentValue += add
+		return add
+	}
+	// Allocate a fresh pool.
+	add := amount
+	if add > maxValue {
+		add = maxValue
+	}
+	unit.PerkState.ShieldPools = append(unit.PerkState.ShieldPools, ShieldPool{
+		SourceType:   sourceType,
+		SourceUnitID: sourceUnitID,
+		CurrentValue: add,
+		MaxValue:     maxValue,
+		Tags:         tags,
+	})
+	return add
+}
+
+// drainShieldPoolsLocked drains `damage` from the unit's source-specific
+// shield pools, oldest-first (slice order). Returns the damage REMAINING
+// after pools are exhausted, which the damage pipeline then routes to
+// Unit.Shield (legacy blood_engine pool) and finally HP.
+//
+// Empty pools (CurrentValue == 0) are filtered out in-place so the slice
+// shrinks cleanly as pools are exhausted. Pools with non-zero current
+// value are preserved so future top-ups (e.g. another dark_renewal pulse)
+// can re-fill them.
+//
+// Caller holds s.mu write lock.
+func (s *GameState) drainShieldPoolsLocked(unit *Unit, damage int) int {
+	if unit == nil || damage <= 0 || len(unit.PerkState.ShieldPools) == 0 {
+		return damage
+	}
+	kept := unit.PerkState.ShieldPools[:0]
+	for _, p := range unit.PerkState.ShieldPools {
+		if damage <= 0 || p.CurrentValue <= 0 {
+			// Either we've absorbed everything (preserve remaining pools) or
+			// this pool was already empty — drop it.
+			if p.CurrentValue > 0 {
+				kept = append(kept, p)
+			}
+			continue
+		}
+		if p.CurrentValue >= damage {
+			p.CurrentValue -= damage
+			damage = 0
+			kept = append(kept, p)
+			continue
+		}
+		damage -= p.CurrentValue
+		p.CurrentValue = 0
+		// Drop this exhausted pool.
+	}
+	unit.PerkState.ShieldPools = kept
+	return damage
+}
+
+// totalShieldFromPoolsLocked returns the sum of CurrentValue across every
+// active source-specific shield pool on the unit. Used by the snapshot path
+// to ship "displayed shield" to the client (combined with Unit.Shield for
+// the legacy blood_engine pool).
+//
+// Caller holds s.mu (read or write).
+func totalShieldFromPoolsLocked(unit *Unit) int {
+	if unit == nil {
+		return 0
+	}
+	total := 0
+	for i := range unit.PerkState.ShieldPools {
+		total += unit.PerkState.ShieldPools[i].CurrentValue
+	}
+	return total
+}
+
+// totalMaxShieldFromPoolsLocked is the analogue of totalShieldFromPools-
+// Locked for MaxValue. Sum of every pool's per-source cap.
+//
+// Caller holds s.mu (read or write).
+func totalMaxShieldFromPoolsLocked(unit *Unit) int {
+	if unit == nil {
+		return 0
+	}
+	total := 0
+	for i := range unit.PerkState.ShieldPools {
+		total += unit.PerkState.ShieldPools[i].MaxValue
+	}
+	return total
+}
+
+// unitTotalShieldLocked returns the aggregate "displayed shield" for a unit:
+// the sum of every source-specific shield pool plus the legacy single-pool
+// Unit.Shield (blood_engine). Used by the snapshot path; HUD shows this as
+// the unit's "Shield: X / Y" line.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) unitTotalShieldLocked(unit *Unit) int {
+	if unit == nil {
+		return 0
+	}
+	return unit.Shield + totalShieldFromPoolsLocked(unit)
+}
+
+// unitTotalMaxShieldLocked is the aggregate cap: legacy maxShield (from
+// unitMaxShieldLocked) plus the sum of every source-specific pool cap.
+// Used by the snapshot path so the HUD's "Shield: X / Y" displays the
+// combined ceiling rather than just the blood_engine cap.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) unitTotalMaxShieldLocked(unit *Unit) int {
+	if unit == nil {
+		return 0
+	}
+	return s.unitMaxShieldLocked(unit) + totalMaxShieldFromPoolsLocked(unit)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1152,8 +1152,9 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
 			PerkIDs:             unit.PerkIDs,
-			Shield:              unit.Shield,
+			Shield:              s.unitShieldForSnapshotLocked(unit),
 			MaxShield:           s.unitMaxShieldForSnapshotLocked(unit),
+			ShieldPools:         s.unitShieldPoolsForSnapshotLocked(unit),
 			Mana:                unit.CurrentMana,
 			MaxMana:             unit.MaxMana,
 			ActiveBuffs:         s.activeBuffIconsForSnapshotLocked(unit),
@@ -1462,8 +1463,9 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
 			PerkIDs:             unit.PerkIDs,
-			Shield:              unit.Shield,
+			Shield:              s.unitShieldForSnapshotLocked(unit),
 			MaxShield:           s.unitMaxShieldForSnapshotLocked(unit),
+			ShieldPools:         s.unitShieldPoolsForSnapshotLocked(unit),
 			Mana:                unit.CurrentMana,
 			MaxMana:             unit.MaxMana,
 			ActiveBuffs:         s.activeBuffIconsForSnapshotLocked(unit),
@@ -1777,10 +1779,75 @@ func (s *GameState) effectiveArmorForSnapshotLocked(unit *Unit) int {
 }
 
 func (s *GameState) unitMaxShieldForSnapshotLocked(unit *Unit) int {
-	if s.unitSnapshotCacheTick == s.Tick {
-		return unit.SnapshotCache.MaxShield
+	// Returns the AGGREGATE max-shield (legacy blood_engine pool + every
+	// source-specific pool on PerkState). The cached MaxShield value covers
+	// the legacy slice only — pool totals are summed live because pools mutate
+	// inside the tick (dark_renewal pulses) and a cache-tick race would
+	// surface stale numbers in the HUD.
+	legacy := unit.SnapshotCache.MaxShield
+	if s.unitSnapshotCacheTick != s.Tick {
+		legacy = s.unitMaxShieldLocked(unit)
 	}
-	return s.unitMaxShieldLocked(unit)
+	return legacy + totalMaxShieldFromPoolsLocked(unit)
+}
+
+// unitShieldForSnapshotLocked is the analogue for the CURRENT shield value:
+// legacy Unit.Shield (blood_engine) plus the sum of every source-specific
+// shield pool. Used by every snapshot builder so the HUD line "Shield: X / Y"
+// reflects the combined value rather than just the legacy pool.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) unitShieldForSnapshotLocked(unit *Unit) int {
+	if unit == nil {
+		return 0
+	}
+	return unit.Shield + totalShieldFromPoolsLocked(unit)
+}
+
+// unitShieldPoolsForSnapshotLocked converts the unit's source-specific shield
+// pools into the wire-format slice the client renders in the unit-info
+// tooltip. The aggregate Shield / MaxShield fields on UnitSnapshot still
+// hold the totals; this slice is just the per-source breakdown so the HUD
+// can show "Dark Renewal: 20/40" etc.
+//
+// The legacy single-pool Unit.Shield (blood_engine) is NOT emitted here —
+// it's already represented in the aggregate Shield / MaxShield numbers and
+// has no per-source identity worth surfacing for now (blood_engine is the
+// only contributor today). When more legacy contributors land, finish
+// migrating them into the pool system rather than synthesising entries here.
+//
+// Returns nil for units with no source-specific pools so the omitempty tag
+// drops the field from the wire entirely.
+//
+// Caller holds s.mu (read or write).
+func (s *GameState) unitShieldPoolsForSnapshotLocked(unit *Unit) []protocol.ShieldPoolSnapshot {
+	if unit == nil || len(unit.PerkState.ShieldPools) == 0 {
+		return nil
+	}
+	out := make([]protocol.ShieldPoolSnapshot, 0, len(unit.PerkState.ShieldPools))
+	for i := range unit.PerkState.ShieldPools {
+		p := &unit.PerkState.ShieldPools[i]
+		if p.CurrentValue <= 0 && p.MaxValue <= 0 {
+			continue // defensive: skip degenerate / fully-drained pools mid-cleanup
+		}
+		// Copy tags so the wire slice does not alias UnitPerkState memory —
+		// the snapshot may be serialised after the tick lock is released.
+		var tags []string
+		if len(p.Tags) > 0 {
+			tags = append(tags, p.Tags...)
+		}
+		out = append(out, protocol.ShieldPoolSnapshot{
+			SourceType:   p.SourceType,
+			SourceUnitID: p.SourceUnitID,
+			Current:      p.CurrentValue,
+			Max:          p.MaxValue,
+			Tags:         tags,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *GameState) unitCritChanceForSnapshotLocked(unit *Unit) float64 {
@@ -1890,8 +1957,9 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
 			PerkIDs:             unit.PerkIDs,
-			Shield:              unit.Shield,
+			Shield:              s.unitShieldForSnapshotLocked(unit),
 			MaxShield:           s.unitMaxShieldForSnapshotLocked(unit),
+			ShieldPools:         s.unitShieldPoolsForSnapshotLocked(unit),
 			Mana:                unit.CurrentMana,
 			MaxMana:             unit.MaxMana,
 			ActiveBuffs:         s.activeBuffIconsForSnapshotLocked(unit),
@@ -2270,6 +2338,17 @@ func (s *GameState) Update(dt float64) {
 			if unit.PerkState.MarkOfWeaknessRemaining == 0 {
 				unit.PerkState.MarkOfWeaknessArmorReduction = 0
 				unit.PerkState.MarkOfWeaknessHealingReceivedMult = 0
+			}
+		}
+
+		// Amplify Damage (Siphoner silver) — damage-taken multiplier. Same
+		// cross-unit decay pattern as the Bronze afflictions above; the
+		// multiplier is zeroed on expiry so the damage pipeline never reads a
+		// stale field.
+		if unit.PerkState.AmplifyDamageRemaining > 0 {
+			unit.PerkState.AmplifyDamageRemaining = math.Max(0, unit.PerkState.AmplifyDamageRemaining-dt)
+			if unit.PerkState.AmplifyDamageRemaining == 0 {
+				unit.PerkState.AmplifyDamageMultiplier = 0
 			}
 		}
 

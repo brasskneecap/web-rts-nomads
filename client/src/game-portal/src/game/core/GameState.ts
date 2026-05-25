@@ -21,6 +21,7 @@ import type {
   PlayerSnapshot,
   ProjectileSnapshot,
   ResourceType,
+  ShieldPoolSnapshot,
   TrapSnapshot,
   UnitCapability,
   UnitOrder,
@@ -103,6 +104,11 @@ export type Unit = {
   perkIds?: string[]
   shield?: number
   maxShield?: number
+  /** Per-source shield pool breakdown — one entry per active source-specific
+   *  shield pool (e.g. dark_renewal). Absent when the unit has no source-
+   *  specific pools. The aggregate shield/maxShield above always reflect the
+   *  totals including these pools plus any legacy single-pool shields. */
+  shieldPools?: ShieldPoolSnapshot[]
   /** Current mana for spellcaster units (acolyte). Absent for non-casters. */
   mana?: number
   /** Max mana pool. Absent/0 for units with no mana. Drives the mana bar. */
@@ -265,6 +271,11 @@ const STAT_ICON_BOLT = 'M13 2L4 14L11 14L9 22L20 10L13 10Z'
 const STAT_ICON_SWORD = 'M14.5 17.5 L3 6 L3 3 L6 3 L17.5 14.5 M20 12 L12 20.5 M16.5 17.5 L20.5 21.5 L21.5 20.5 L17.5 16.5'
 const STAT_ICON_BOOT = 'M6 3v11 M6 13h9v5 M3 18h18 M6 7h2 M6 10h2'
 const STAT_ICON_SHIELD = 'M12 2L4 5v6c0 5.5 3.5 10 8 11 4.5-1 8-5.5 8-11V5z'
+// Shield-within-shield — distinct from the armor shield so a unit carrying
+// both armor and an active overshield reads as two different concepts in the
+// stat grid. The inner shield reads as "extra protection layer" at a glance.
+const STAT_ICON_BARRIER =
+  'M12 2L4 5v6c0 5.5 3.5 10 8 11 4.5-1 8-5.5 8-11V5z M12 6L8 7.5v3.5c0 3.5 2 6 4 6.5 2-.5 4-3 4-6.5V7.5z'
 // Crit (target/burst) — used for the Marksman crit row.
 const STAT_ICON_CRIT = 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z M12 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M2 12h3 M19 12h3 M12 2v3 M12 19v3'
 
@@ -731,6 +742,7 @@ export class GameState {
         perkIds: unit.perkIds,
         shield: unit.shield,
         maxShield: unit.maxShield,
+        shieldPools: unit.shieldPools,
         mana: unit.mana,
         maxMana: unit.maxMana,
         activeBuffs: unit.activeBuffs,
@@ -3178,6 +3190,24 @@ function armorDamageReductionFraction(armor: number): number {
   return armor / (armor + ARMOR_MITIGATION_K)
 }
 
+// Display labels for source-specific shield pools (server -> human-readable).
+// Add an entry when you wire up a new shield perk on the server. Unknown
+// source types fall back to a title-cased version of the raw id so a missing
+// entry degrades gracefully instead of dumping an internal snake_case key.
+const SHIELD_SOURCE_LABELS: Record<string, string> = {
+  dark_renewal: 'Dark Renewal',
+}
+
+function shieldSourceLabel(sourceType: string): string {
+  const known = SHIELD_SOURCE_LABELS[sourceType]
+  if (known) return known
+  return sourceType
+    .split(/[_-]/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 function getUnitDetails(unit: Unit): DetailItem[] {
   const healthRegen = unit.healthRegen ?? 0
   const durabilityTooltipBody = healthRegen > 0
@@ -3194,6 +3224,51 @@ function getUnitDetails(unit: Unit): DetailItem[] {
       tooltipBody: durabilityTooltipBody,
     },
   ]
+
+  // Overshield — placed directly under Durability so the player reads the
+  // protective layer alongside HP. Only surfaced when an active shield source
+  // exists; units with no source (the common case) skip this row entirely so
+  // the panel stays compact.
+  //
+  // Aggregate values come from unit.shield / unit.maxShield. The tooltip body
+  // breaks the totals out by source via unit.shieldPools when the server has
+  // shipped a per-source breakdown — that's the case for source-specific
+  // perks like dark_renewal. Legacy single-pool shields (blood_engine) are
+  // represented only in the aggregate and surface as a "(other sources)"
+  // remainder line when present so the totals always reconcile.
+  const overshield = unit.shield ?? 0
+  const maxOvershield = unit.maxShield ?? 0
+  if (maxOvershield > 0 || overshield > 0) {
+    const pools = unit.shieldPools ?? []
+    const tooltipLines: string[] = [
+      `Shield: ${overshield} / ${maxOvershield}`,
+      'Temporary HP pool. Drains before HP on every incoming hit.',
+    ]
+    if (pools.length > 0) {
+      tooltipLines.push('') // blank line before the per-source breakdown
+      for (const pool of pools) {
+        tooltipLines.push(`${shieldSourceLabel(pool.sourceType)}: ${pool.current} / ${pool.max}`)
+      }
+      // Reconcile pools vs aggregate so any legacy single-pool shield
+      // (blood_engine) the server hasn't decomposed surfaces as a labelled
+      // remainder instead of silently disappearing from the breakdown.
+      const poolsCurrent = pools.reduce((sum, p) => sum + p.current, 0)
+      const poolsMax = pools.reduce((sum, p) => sum + p.max, 0)
+      const otherCurrent = Math.max(0, overshield - poolsCurrent)
+      const otherMax = Math.max(0, maxOvershield - poolsMax)
+      if (otherCurrent > 0 || otherMax > 0) {
+        tooltipLines.push(`Other sources: ${otherCurrent} / ${otherMax}`)
+      }
+    }
+    details.push({
+      id: 'overshield',
+      label: 'Shield',
+      value: `${overshield} / ${maxOvershield}`,
+      icon: STAT_ICON_BARRIER,
+      tooltipTitle: `Shield: ${overshield} / ${maxOvershield}`,
+      tooltipBody: tooltipLines.join('\n'),
+    })
+  }
 
   // Mana — only surfaced for spellcaster units (server omits maxMana for
   // non-casters). Mirrors the durability row's current/max format.
@@ -3309,15 +3384,8 @@ function getUnitDetails(unit: Unit): DetailItem[] {
   }
 
   // Non-stat details without icons — rendered inline below the stat grid.
-  // Shield is only granted by blood_engine; only show when the unit can
-  // actually carry shield so stateless units never show "Shield 0/0".
-  if ((unit.maxShield ?? 0) > 0) {
-    details.push({
-      id: 'shield',
-      label: 'Shield',
-      value: `${unit.shield ?? 0} / ${unit.maxShield ?? 0}`,
-    })
-  }
+  // (Shield used to live here as a non-stat row; it's now a first-class stat
+  // entry inserted under Durability above, with a per-source tooltip.)
 
   if (unit.carriedResourceType && unit.carriedAmount !== undefined) {
     details.push({

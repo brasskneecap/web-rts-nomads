@@ -508,6 +508,19 @@ export type ActiveEffectIcon = {
   stacks?: number
 }
 
+/** ShieldPoolSnapshot is one source-specific shield pool the unit currently
+ *  carries (e.g. dark_renewal). The aggregate shield/maxShield on Unit hold
+ *  the totals; this slice gives the per-source breakdown for the unit-info
+ *  tooltip ("Dark Renewal: 20 / 40"). sourceType is a stable wire id; the
+ *  client maps it to a display label via a small lookup table. */
+export type ShieldPoolSnapshot = {
+  sourceType: string
+  sourceUnitId?: number
+  current: number
+  max: number
+  tags?: string[]
+}
+
 /** PerkCooldownSnapshot advertises a ticking cooldown on one of a unit's
  *  owned perks. The HUD renders a clock-wipe overlay covering fraction
  *  remaining / total of the icon, plus `ceil(remaining)` as a label. */
@@ -633,10 +646,21 @@ export type UnitSnapshot = {
   recentRankUpSeconds?: number
   progressionPath?: string
   perkIds?: string[]
-  /** Temporary HP pool (from blood_engine). 0/undefined when absent. */
+  /** Aggregate temporary HP pool — sum of every active shield source on the
+   *  unit (legacy single Unit.Shield from blood_engine + every source-specific
+   *  pool). 0/undefined when the unit has no active shield at all. */
   shield?: number
-  /** Max shield pool advertised by the unit's perks. */
+  /** Aggregate max shield — sum of every active source's cap. The HUD's
+   *  "Shield X / Y" line uses these two values for the totals; the per-source
+   *  breakdown lives in shieldPools below. */
   maxShield?: number
+  /** Per-source shield pool breakdown. Each entry is one independently-capped
+   *  pool (e.g. dark_renewal) the unit currently carries. Omitted when the
+   *  unit has no source-specific pools. The legacy blood_engine pool is NOT
+   *  reflected here — it's represented only in the aggregate shield/maxShield
+   *  above. The unit-info tooltip iterates this slice to surface "Dark
+   *  Renewal: 20/40" etc. */
+  shieldPools?: ShieldPoolSnapshot[]
   /** Current mana for spellcaster units (e.g. acolyte). Omitted (0) for
    *  non-casters. */
   mana?: number

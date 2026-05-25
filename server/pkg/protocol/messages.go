@@ -159,6 +159,31 @@ type ActiveEffectIcon struct {
 	Stacks int    `json:"stacks,omitempty"`
 }
 
+// ShieldPoolSnapshot is one source-specific shield pool the unit currently
+// carries (e.g. dark_renewal). The client uses this to render a per-source
+// breakdown in the unit info tooltip ("Dark Renewal: 20 / 40"). The
+// aggregate Shield / MaxShield fields on UnitSnapshot still hold the totals
+// so callers that only care about the combined amount don't need to walk
+// this slice.
+//
+// Fields:
+//
+//	SourceType   — namespacing tag (e.g. "dark_renewal"). The client maps
+//	               this to a display label via a small lookup table.
+//	SourceUnitID — granting unit id (Siphoner id for dark_renewal). Lets the
+//	               HUD highlight the granting ally if desired.
+//	Current      — current shield value remaining in this pool.
+//	Max          — per-source cap on this pool.
+//	Tags         — free-form category tags ("corruption", "siphoner", …),
+//	               reserved for future per-tag interactions.
+type ShieldPoolSnapshot struct {
+	SourceType   string   `json:"sourceType"`
+	SourceUnitID int      `json:"sourceUnitId,omitempty"`
+	Current      int      `json:"current"`
+	Max          int      `json:"max"`
+	Tags         []string `json:"tags,omitempty"`
+}
+
 // EffectiveTrapSnapshot carries the live compounded trap stats for an
 // archer/trapper unit to the client on every tick. All multiplier effects
 // (extended_setup, wider_nets, amplified_effects, rapid_deployment, and the
@@ -651,9 +676,18 @@ type UnitSnapshot struct {
 	RecentRankUpSeconds float64  `json:"recentRankUpSeconds,omitempty"`
 	ProgressionPath     string   `json:"progressionPath,omitempty"`
 	PerkIDs             []string `json:"perkIds,omitempty"`
-	// Shield / MaxShield: temporary HP pool (from blood_engine). 0 when absent.
+	// Shield / MaxShield: aggregate "displayed shield" — sum of every active
+	// shield source on this unit (legacy single Unit.Shield pool from
+	// blood_engine + every source-specific pool from perks like dark_renewal).
+	// 0 when the unit has no active shield at all (omitempty drops from wire).
 	Shield    int `json:"shield,omitempty"`
 	MaxShield int `json:"maxShield,omitempty"`
+	// ShieldPools: per-source breakdown of the source-specific shield pools
+	// the unit currently carries. Lets the client surface "Dark Renewal: 20/40"
+	// in the unit info tooltip independently of the aggregate above. Omitted
+	// when the unit has no source-specific pools (legacy blood_engine shields
+	// don't appear here — they're surfaced only via the aggregate above).
+	ShieldPools []ShieldPoolSnapshot `json:"shieldPools,omitempty"`
 	// Mana / MaxMana: optional spellcaster resource pool. MaxMana == 0 means
 	// the unit has no mana (non-caster), which omitempty drops from the wire.
 	// Drives the blue mana bar under the HP bar for casters (e.g. acolyte).

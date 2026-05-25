@@ -2374,6 +2374,17 @@ export class CanvasRenderer {
 
       switch (beam.variant) {
         case 'siphon_life':
+          this.drawSiphonLifeBeam(originX, originY, endX, endY)
+          break
+        case 'chain_siphon':
+          // Secondary beam fired by the chain_siphon perk: primary target ->
+          // chain target. Reuses the siphon_life look for now (the beam
+          // emerges from the primary victim's body and "leaps" to the chain
+          // victim, so the same necrotic green tendril reads correctly). If
+          // we later want to differentiate (thinner, dimmer, different tint)
+          // this is the seam — author a dedicated drawChainSiphonBeam.
+          this.drawSiphonLifeBeam(originX, originY, endX, endY)
+          break
         default:
           this.drawSiphonLifeBeam(originX, originY, endX, endY)
           break
