@@ -108,7 +108,7 @@
         :active-ability-id="ui.commanderTargetingAbilityId"
         @open="openMenuTab"
         @cast-ability="onCommanderCast"
-        @settings="matchSettingsOpen = true"
+        @settings="matchSettingsOpen = !matchSettingsOpen"
       />
       <MatchSettingsModal
         v-if="hasStarted && matchSettingsOpen"
@@ -302,6 +302,10 @@ function isTextInputFocused() {
 }
 
 function openMenuTab(tabId: string) {
+  if (matchMenuOpen.value && matchMenuTab.value === tabId) {
+    matchMenuOpen.value = false
+    return
+  }
   matchMenuTab.value = tabId
   matchMenuOpen.value = true
 }
