@@ -4,7 +4,6 @@
     role="dialog"
     aria-modal="true"
     aria-label="Settings"
-    @click.self="onBackdropClick"
   >
     <div class="match-settings__panel-wrap">
       <UiPanel class="match-settings__panel" :padding="28">
@@ -33,10 +32,6 @@ import SettingsPanel from '@/components/menu/SettingsPanel.vue'
 const emit = defineEmits<{
   close: []
 }>()
-
-function onBackdropClick() {
-  emit('close')
-}
 
 function onKeydown(e: KeyboardEvent) {
   if (e.code === 'Escape') {

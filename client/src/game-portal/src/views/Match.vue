@@ -329,8 +329,24 @@ function onMatchMenuHotkey(e: KeyboardEvent) {
   e.preventDefault()
 }
 
+// ESC closes the launcher menu (Shop/Upgrades/Vault) when it's open.
+// Capture-phase listener so this runs before InputManager's bubble-phase
+// ESC=clearSelection handler — we stop propagation so the selection
+// doesn't also get wiped underneath the menu dismissal. Defers to the
+// settings modal (which has its own capture-phase ESC handler) so the
+// two never race when both happen to be open.
+function onMatchMenuEscape(e: KeyboardEvent) {
+  if (e.code !== 'Escape') return
+  if (matchSettingsOpen.value) return
+  if (!matchMenuOpen.value) return
+  matchMenuOpen.value = false
+  e.preventDefault()
+  e.stopPropagation()
+}
+
 window.addEventListener('beforeunload', markActiveSession)
 window.addEventListener('keydown', onMatchMenuHotkey)
+window.addEventListener('keydown', onMatchMenuEscape, { capture: true })
 
 onMounted(async () => {
   // Confine the OS cursor to the game window for the duration of the
@@ -437,6 +453,7 @@ onBeforeUnmount(() => {
   void setCursorGrab(false)
   window.removeEventListener('beforeunload', markActiveSession)
   window.removeEventListener('keydown', onMatchMenuHotkey)
+  window.removeEventListener('keydown', onMatchMenuEscape, { capture: true })
   destroy()
 })
 </script>
