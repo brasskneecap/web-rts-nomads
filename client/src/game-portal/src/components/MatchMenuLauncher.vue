@@ -3,18 +3,29 @@
     class="menu-launcher"
     role="toolbar"
     aria-label="Match actions"
+    :style="{ '--ui-icon-container-image': `url(${iconContainerUrl})` }"
   >
     <button
       v-for="entry in ENTRIES"
       :key="entry.tabId"
       type="button"
       class="menu-launcher__btn"
-      :class="{ 'menu-launcher__btn--active': activeTab === entry.tabId }"
+      :class="[
+        { 'menu-launcher__btn--active': activeTab === entry.tabId },
+        entry.icon ? 'menu-launcher__btn--icon' : null,
+      ]"
       :aria-pressed="activeTab === entry.tabId"
       :aria-label="`${entry.label} — ${entry.description} (hotkey ${entry.hotkey})`"
       @click="emit('open', entry.tabId)"
     >
-      <span class="menu-launcher__label">{{ entry.label }}</span>
+      <img
+        v-if="entry.icon"
+        :src="entry.icon"
+        :alt="entry.label"
+        class="menu-launcher__icon"
+        draggable="false"
+      />
+      <span v-else class="menu-launcher__label">{{ entry.label }}</span>
       <div class="menu-launcher__tooltip" role="tooltip">
         <div class="menu-launcher__tooltip-title">{{ entry.label }}</div>
         <div class="menu-launcher__tooltip-desc">{{ entry.description }}</div>
@@ -22,20 +33,33 @@
       </div>
     </button>
 
-    <CommanderActionBar
-      embedded
-      :abilities="abilities"
-      :active-ability-id="activeAbilityId"
-      @cast="(id) => emit('cast-ability', id)"
-    />
+    <!-- Centered group: commander abilities centered on the launcher /
+         details-panel midline. Floats above the left-anchored
+         Shop/Upgrades/Vault row. -->
+    <div class="menu-launcher__center-group">
+      <CommanderActionBar
+        embedded
+        :abilities="abilities"
+        :active-ability-id="activeAbilityId"
+        @cast="(id) => emit('cast-ability', id)"
+      />
+    </div>
 
+    <!-- Settings sits at the far right edge of the launcher. margin-left:
+         auto pushes it past the centered group (which is absolute, so it
+         doesn't consume flex space) to the launcher's right edge. -->
     <button
       type="button"
-      class="menu-launcher__btn"
+      class="menu-launcher__btn menu-launcher__btn--icon menu-launcher__btn--settings"
       aria-label="Settings"
       @click="emit('settings')"
     >
-      <span class="menu-launcher__label">Settings</span>
+      <img
+        :src="settingsIconUrl"
+        alt="Settings"
+        class="menu-launcher__icon"
+        draggable="false"
+      />
       <div class="menu-launcher__tooltip" role="tooltip">
         <div class="menu-launcher__tooltip-title">Settings</div>
         <div class="menu-launcher__tooltip-desc">Open the match settings menu.</div>
@@ -47,12 +71,18 @@
 <script setup lang="ts">
 import CommanderActionBar from '@/components/CommanderActionBar.vue'
 import type { CommanderAbilitySnapshot } from '@/game/network/protocol'
+import shopIconUrl from '@/assets/ui/buttons/shop.png'
+import upgradesIconUrl from '@/assets/ui/buttons/upgrades.png'
+import vaultIconUrl from '@/assets/ui/buttons/vault.png'
+import settingsIconUrl from '@/assets/ui/buttons/settings.png'
+import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
 
 interface LauncherEntry {
   tabId: string
   label: string
   hotkey: string
   description: string
+  icon?: string
 }
 
 // Keep in sync with MATCH_MENU_HOTKEYS in Match.vue. Order here drives
@@ -63,18 +93,21 @@ const ENTRIES: LauncherEntry[] = [
     label: 'Shop',
     hotkey: 'S',
     description: 'Browse and purchase items from buildings you own.',
+    icon: shopIconUrl,
   },
   {
     tabId: 'upgrades',
     label: 'Upgrades',
     hotkey: 'U',
     description: 'View and purchase permanent upgrades for your units.',
+    icon: upgradesIconUrl,
   },
   {
     tabId: 'vault',
     label: 'Vault',
     hotkey: 'V',
     description: 'Manage stored items and equip them on your units.',
+    icon: vaultIconUrl,
   },
 ]
 
@@ -102,18 +135,18 @@ const emit = defineEmits<{
 .menu-launcher {
   /* Horizontal strip sitting on top of SelectionHud's details panel,
      spanning the gap between the minimap (left) and actions (right) side
-     panels. SelectionHud anatomy: selection-main = 1080px centered →
-     left edge at calc(50% - 540px). Inside it: minimap (220) | details
-     (600) | actions (260). So the details panel spans
-     [50% - 320px, 50% + 280px] — the launcher mirrors that.
+     panels. SelectionHud anatomy (post-25% scale): selection-main = 1350px
+     centered → left edge at calc(50% - 675px). Inside it: minimap (275) |
+     details (750) | actions (325). So the details panel spans
+     [50% - 400px, 50% + 350px] — the launcher mirrors that.
      Vertical: bottom edge sits at the top of the details panel frame
-     (SelectionHud height 200px minus --details-top-spacer 32px = 168px).
-     Height = 64px so the embedded ability slots fit at full size. */
+     (SelectionHud height 250px minus --details-top-spacer 40px = 210px).
+     Height = 80px so the embedded ability slots fit at full size. */
   position: absolute;
-  bottom: 168px;
-  left: calc(50% - 320px);
-  width: 600px;
-  height: 64px;
+  bottom: 210px;
+  left: calc(50% - 400px);
+  width: 750px;
+  height: 80px;
   z-index: 6;
   display: flex;
   flex-direction: row;
@@ -121,8 +154,10 @@ const emit = defineEmits<{
   justify-content: flex-start;
   gap: 8px;
   /* Match the inter-button gap so the Shop button stands off the minimap
-     by the same distance as the buttons stand off each other. */
+     (left) and Settings stands off the actions panel (right) by the same
+     distance the inner buttons stand off each other. */
   padding-left: 8px;
+  padding-right: 8px;
   box-sizing: border-box;
   pointer-events: auto;
   user-select: none;
@@ -135,8 +170,8 @@ const emit = defineEmits<{
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 36px;
-  padding: 0 16px;
+  height: 45px;
+  padding: 0 20px;
   border-radius: 8px;
   border: 1px solid rgba(200, 164, 106, 0.24);
   background: linear-gradient(180deg, rgba(113, 75, 39, 0.85), rgba(61, 39, 22, 0.95));
@@ -168,8 +203,68 @@ const emit = defineEmits<{
   outline-offset: 2px;
 }
 
+/* Elevate the hovered/focused button so its tooltip (and the filter-induced
+   stacking context on icon-mode buttons) sits above sibling action bar slots
+   that come later in the DOM. */
+.menu-launcher__btn:hover,
+.menu-launcher__btn:focus-visible {
+  z-index: 2;
+}
+
 .menu-launcher__label {
   color: #f5ead2;
+}
+
+/* Center group holds the commander ability bar. Absolute-positioned at the
+   launcher's horizontal center with translateX(-50%) so the bar lands on
+   the launcher midline — which aligns with the SelectionHud details panel
+   midline. Out of the flex flow, so Settings (with margin-left: auto) can
+   still travel all the way to the launcher's right edge. */
+.menu-launcher__center-group {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-end;
+  pointer-events: auto;
+}
+
+/* Pin the Settings button to the right edge of the launcher row. */
+.menu-launcher__btn--settings {
+  margin-left: auto;
+}
+
+/* Icon-mode buttons (Shop, Upgrades) use the shared icon-container frame
+   as their background instead of the warm-brown pill, with the action
+   artwork centered inside at 70% — same idiom as inventory/action slots
+   in SelectionHud. */
+.menu-launcher__btn--icon,
+.menu-launcher__btn--icon:hover,
+.menu-launcher__btn--icon.menu-launcher__btn--active {
+  width: 45px;
+  height: 45px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+}
+
+.menu-launcher__btn--icon:hover {
+  filter: brightness(1.1);
+}
+
+.menu-launcher__btn--icon.menu-launcher__btn--active {
+  filter: brightness(1.2);
+}
+
+.menu-launcher__icon {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
 
 /* Hover tooltip — shares the action-tooltip language used elsewhere in the

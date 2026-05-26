@@ -618,6 +618,12 @@ export class GameState {
   // commit to. Null whenever no friendly-targeting mode is active OR the
   // cursor is not over a valid friendly. Same lifecycle as hoveredEnemyUnitId.
   hoveredFriendlyUnitId: number | null = null
+  // Last known cursor position in world space (set by InputManager every
+  // mousemove). Lets renderer code that needs to anchor a preview at the
+  // cursor (commander ability AoE indicator, etc.) read it directly without
+  // each call site doing its own screen→world conversion.
+  cursorWorldX = 0
+  cursorWorldY = 0
   hoveredInteractableBuildingId: string | null = null
   hoveredInteractableObstacleId: string | null = null
   buildingTargetingMode: BuildingTargetingMode | null = null
@@ -1999,6 +2005,11 @@ export class GameState {
     this.hoveredFriendlyUnitId = unitId
   }
 
+  setCursorWorld(x: number, y: number) {
+    this.cursorWorldX = x
+    this.cursorWorldY = y
+  }
+
   inspectEnemyUnit(unitId: number) {
     const unit = this.units.find((u) => u.id === unitId)
     if (!unit || !this.isHostileToLocalPlayer(unit.ownerId)) return
@@ -2974,7 +2985,7 @@ function getSharedAbilityActionItems(
  * Icon choice: both buttons reuse the existing 'repair' PNG icon (the hammer)
  * as a placeholder because no dedicated construction-management icons exist yet.
  * The asset pipeline owner can drop kick-builders.png / demolish-building.png
- * into src/assets/actions/ and the renderer will pick them up automatically via
+ * into src/assets/ui/actions/ and the renderer will pick them up automatically via
  * actionIconSprites.ts — no code change needed.
  */
 function getUnderConstructionActions(building: BuildingTile): ActionItem[] {

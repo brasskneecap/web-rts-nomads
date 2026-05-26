@@ -3,7 +3,7 @@
 //
 // Mirrors the ItemDef struct on the server. Each item carries:
 //   - identity (id + display copy)
-//   - an icon key matching a PNG in src/assets/actions/ (loaded by
+//   - an icon key matching a PNG in src/assets/ui/actions/ (loaded by
 //     actionIconSprites — same loader the perk/action HUD uses)
 //   - optional stat modifiers applied to the holder
 //   - optional effect tags that flag systems (e.g. "regenerate", "aura")
@@ -51,7 +51,7 @@ export type ItemDef = {
   description?: string
   /**
    * Action-icon ID used to render this item's icon. Resolved via
-   * `getActionIconImage(iconKey)` against `src/assets/actions/<iconKey>.png`.
+   * `getActionIconImage(iconKey)` against `src/assets/ui/actions/<iconKey>.png`.
    * Falls back to the SVG path map when no PNG is present.
    */
   iconKey: string

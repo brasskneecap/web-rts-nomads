@@ -826,6 +826,15 @@ export class InputManager {
     // entirely (instead of having to remember to null it).
     this.state.setHoveredFriendlyUnit(null)
 
+    // Push the current cursor world position into state every frame so
+    // renderers that anchor world-space previews to the cursor (commander
+    // ability AoE, etc.) can read it without re-doing the screen→world
+    // conversion. Cheap, runs once per mousemove, harmless when not needed.
+    {
+      const w = this.camera.screenToWorld(screenX, screenY)
+      this.state.setCursorWorld(w.x, w.y)
+    }
+
     // Edge-pan owns the cursor while active. Skipping the rest of this
     // function prevents the canvas mousemove handler from flickering the
     // chevron back to the hover cursor between rAF ticks.

@@ -3960,12 +3960,14 @@
           {
             "cooldownTotal": 60,
             "displayName": "Blessing",
+            "heal": 150,
             "icon": "heal",
             "id": "NORM-STR",
             "radius": 160
           },
           {
             "cooldownTotal": 60,
+            "damage": 150,
             "displayName": "Smite",
             "icon": "attack",
             "id": "NORM-STR",
@@ -3974,6 +3976,7 @@
         ],
         "lockedUnitTypes": [
           "acolyte",
+          "adept",
           "archer"
         ],
         "playerId": "baseline-player",

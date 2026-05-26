@@ -400,6 +400,10 @@ export type CommanderAbilitySnapshot = {
   radius?: number
   cooldownTotal?: number
   cooldownRemaining?: number
+  /** Per-cast magnitude — exactly one is non-zero per ability, mirroring the
+   *  server's Damage>0 vs Heal>0 apply switch. Surfaced for HUD tooltips. */
+  damage?: number
+  heal?: number
 }
 
 export type PlayerSnapshot = {

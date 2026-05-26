@@ -724,19 +724,22 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
      each panel resets its own font-size. */
   text-align: center;
   font-size: 0;
-  --minimap-panel-width: 220px;
-  --details-panel-width: 600px;
-  --actions-panel-width: 260px;
+  /* +25% pass over the original (220/600/260/200/32/12) — UI was reading
+     too small at 100% zoom. Scale all panel-defining variables together so
+     internal layout stays proportional. */
+  --minimap-panel-width: 275px;
+  --details-panel-width: 750px;
+  --actions-panel-width: 325px;
   /* All three panels share the same height so the frame reads as one
      continuous footer rather than two adjacent panels at different sizes. */
-  --main-panel-height: 200px;
-  --hud-height: 200px;
+  --main-panel-height: 250px;
+  --hud-height: 250px;
   /* The details panel is pushed down by this amount, leaving a transparent
      gap above its frame while minimap/actions stay at full height. */
-  --details-top-spacer: 32px;
+  --details-top-spacer: 40px;
   /* Horizontal breathing room between the details frame and the minimap /
      actions panels on either side of it. */
-  --panel-side-gap: 12px;
+  --panel-side-gap: 15px;
   pointer-events: none;
 }
 

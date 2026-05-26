@@ -51,6 +51,7 @@ const emptyUiSnapshot: GameUiSnapshot = {
   waveUpgrade: null,
   commanderAbilities: [],
   commanderTargetingAbilityId: null,
+  shopCatalog: [],
 }
 
 export function useGameClient() {

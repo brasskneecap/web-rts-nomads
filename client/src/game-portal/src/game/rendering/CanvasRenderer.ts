@@ -401,6 +401,7 @@ export class CanvasRenderer {
     // commanded their units to go, even into unexplored territory.
     this.drawMoveMarkers()
     this.drawBuildPlacementGhost()
+    this.drawCommanderTargetingAoE()
     this.drawSelectionBox()
     this.drawFloatingDamageNumbers(renderTime)
     this.drawFloatingResourceNumbers(renderTime)
@@ -1780,6 +1781,12 @@ export class CanvasRenderer {
       }
     }
 
+    // Pre-resolve the active commander targeting AoE so the per-unit loop
+    // below can do an O(1) inside-radius test instead of looking the ability
+    // up for every unit. Null whenever no commander targeting is active or
+    // the ability has no usable radius.
+    const commanderAoE = this.getActiveCommanderAoE()
+
     // Y-sort obstacles, buildings, and units together so a unit standing
     // behind a tree canopy / building (smaller feet-Y than the entity's
     // bottom edge) renders first and gets visually occluded by that sprite.
@@ -1947,6 +1954,25 @@ export class CanvasRenderer {
         ctx.beginPath()
         ctx.ellipse(selectionCenterX, selectionCenterY, selectionRadiusX, selectionRadiusY, 0, 0, Math.PI * 2)
         ctx.stroke()
+      }
+
+      // Commander AoE highlight: if the player is currently aiming Smite /
+      // Blessing and this unit's body sits inside the cursor's AoE AND the
+      // unit matches the ability's affect team (hostile for damage, friendly
+      // for heal), paint a solid ring in the ability's tint so the player
+      // can see at a glance which units the cast will actually hit.
+      if (commanderAoE) {
+        const dx = unit.x - commanderAoE.centerX
+        const dy = unit.y - commanderAoE.centerY
+        if (dx * dx + dy * dy <= commanderAoE.radiusSq && this.unitMatchesCommanderAoETeam(unit, commanderAoE.affectsTeam)) {
+          ctx.save()
+          ctx.strokeStyle = commanderAoE.unitRingColor
+          ctx.lineWidth = 2.5 / this.camera.zoom
+          ctx.beginPath()
+          ctx.ellipse(selectionCenterX, selectionCenterY, selectionRadiusX + 1, selectionRadiusY + 1, 0, 0, Math.PI * 2)
+          ctx.stroke()
+          ctx.restore()
+        }
       }
 
       // Visible head-top Y — anchor for all overhead UI (health bar,
@@ -3394,6 +3420,107 @@ export class CanvasRenderer {
 
     ctx.fillRect(left, top, width, height)
     ctx.strokeRect(left, top, width, height)
+  }
+
+  // Per-ability targeting metadata. The server's commander_abilities.go is
+  // the source of truth for which team each ability affects (Damage > 0 ⇒
+  // hostiles, Heal > 0 ⇒ allies); we mirror that mapping here so the AoE
+  // preview tints + per-unit ring colors match the cast outcome. Add a new
+  // entry whenever a commander ability is introduced.
+  private static readonly COMMANDER_AOE_THEMES: Record<
+    string,
+    {
+      affectsTeam: 'enemy' | 'friendly'
+      fill: string
+      stroke: string
+      unitRing: string
+    }
+  > = {
+    smite: {
+      affectsTeam: 'enemy',
+      fill: 'rgba(239, 68, 68, 0.14)',
+      stroke: 'rgba(239, 68, 68, 0.85)',
+      unitRing: 'rgba(248, 113, 113, 0.95)',
+    },
+    blessing: {
+      affectsTeam: 'friendly',
+      fill: 'rgba(74, 222, 128, 0.14)',
+      stroke: 'rgba(74, 222, 128, 0.85)',
+      unitRing: 'rgba(134, 239, 172, 0.95)',
+    },
+  }
+
+  // Resolve the active commander targeting AoE if any. Returns the cursor
+  // center (in world space), the squared radius (so the per-unit hit-test
+  // can skip the sqrt), the affected team, and the ability-specific colors
+  // — or null when no commander targeting is active / the ability is
+  // unknown / has no usable radius.
+  private getActiveCommanderAoE():
+    | {
+        centerX: number
+        centerY: number
+        radius: number
+        radiusSq: number
+        affectsTeam: 'enemy' | 'friendly'
+        fillColor: string
+        strokeColor: string
+        unitRingColor: string
+      }
+    | null {
+    const abilityId = this.state.commanderTargetingAbilityId
+    if (!abilityId) return null
+    const ability = this.state.localPlayerCommanderAbilities.find((a) => a.id === abilityId)
+    const radius = ability?.radius ?? 0
+    if (!ability || radius <= 0) return null
+    const key = ability.id.replace(/^commander_/, '').toLowerCase()
+    const theme = CanvasRenderer.COMMANDER_AOE_THEMES[key]
+    if (!theme) return null
+    return {
+      centerX: this.state.cursorWorldX,
+      centerY: this.state.cursorWorldY,
+      radius,
+      radiusSq: radius * radius,
+      affectsTeam: theme.affectsTeam,
+      fillColor: theme.fill,
+      strokeColor: theme.stroke,
+      unitRingColor: theme.unitRing,
+    }
+  }
+
+  // Returns true when the unit is on the team the active commander ability
+  // would actually affect. Mirrors the server's playersAreHostileLocked /
+  // playersAreFriendlyLocked gates in applyCommanderAbilityLocked.
+  private unitMatchesCommanderAoETeam(
+    unit: { ownerId?: string },
+    affectsTeam: 'enemy' | 'friendly',
+  ): boolean {
+    if (affectsTeam === 'enemy') {
+      return this.state.isHostileToLocalPlayer(unit.ownerId)
+    }
+    // Friendly: must have an owner, must not be hostile to the local player.
+    // Unowned / wave-enemy units are excluded by the ownerId guard.
+    if (!unit.ownerId) return false
+    return !this.state.isHostileToLocalPlayer(unit.ownerId)
+  }
+
+  // World-space AoE indicator drawn at the cursor while the player is
+  // aiming Smite / Blessing. Sized to the ability's actual radius so the
+  // visual previews exactly what the server will hit.
+  private drawCommanderTargetingAoE() {
+    const aoe = this.getActiveCommanderAoE()
+    if (!aoe) return
+
+    const ctx = this.ctx
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(aoe.centerX, aoe.centerY, aoe.radius, 0, Math.PI * 2)
+    ctx.fillStyle = aoe.fillColor
+    ctx.fill()
+    ctx.strokeStyle = aoe.strokeColor
+    ctx.lineWidth = 2 / this.camera.zoom
+    ctx.setLineDash([8 / this.camera.zoom, 4 / this.camera.zoom])
+    ctx.stroke()
+    ctx.restore()
   }
 
   private drawMinimap(

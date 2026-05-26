@@ -3,6 +3,7 @@
     v-if="abilities.length > 0"
     class="commander-bar"
     :class="{ 'commander-bar--embedded': embedded }"
+    :style="{ '--ui-icon-container-image': `url(${iconContainerUrl})` }"
     aria-label="Commander abilities"
   >
     <button
@@ -16,10 +17,17 @@
         'is-disabled': cooldownRatio(ability) > 0,
       }"
       :disabled="cooldownRatio(ability) > 0"
-      :title="ability.displayName ?? ability.id"
+      :aria-label="`${ability.displayName ?? ability.id} — ${descriptionFor(ability)}`"
       @click="onSlotClick(ability.id, cooldownRatio(ability) > 0)"
     >
-      <span class="slot-label">{{ ability.displayName ?? ability.id }}</span>
+      <img
+        v-if="iconForAbility(ability)"
+        :src="iconForAbility(ability)!"
+        :alt="ability.displayName ?? ability.id"
+        class="ability-slot__icon"
+        draggable="false"
+      />
+      <span v-else class="slot-label">{{ ability.displayName ?? ability.id }}</span>
 
       <div
         v-if="cooldownRatio(ability) > 0"
@@ -33,12 +41,60 @@
         class="cooldown-label"
         aria-hidden="true"
       >{{ Math.ceil(cooldownRemaining(ability)) }}</div>
+
+      <div class="ability-tooltip" role="tooltip">
+        <div class="ability-tooltip__title">{{ ability.displayName ?? ability.id }}</div>
+        <div v-if="descriptionFor(ability)" class="ability-tooltip__desc">
+          {{ descriptionFor(ability) }}
+        </div>
+        <div v-if="(ability.damage ?? 0) > 0" class="ability-tooltip__stat">
+          Damage: <kbd>{{ ability.damage }}</kbd>
+        </div>
+        <div v-if="(ability.heal ?? 0) > 0" class="ability-tooltip__stat">
+          Healing: <kbd>{{ ability.heal }}</kbd>
+        </div>
+        <div v-if="(ability.cooldownTotal ?? 0) > 0" class="ability-tooltip__stat">
+          Cooldown: <kbd>{{ ability.cooldownTotal }}s</kbd>
+        </div>
+      </div>
     </button>
   </section>
 </template>
 
 <script setup lang="ts">
 import type { CommanderAbilitySnapshot } from '@/game/network/protocol'
+import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
+
+// Eagerly resolve all PNGs in `assets/ui/abilities/`. The key is the file
+// stem (e.g. `blessing.png` -> `blessing`); ability ids are matched after
+// stripping the `commander_` prefix so `commander_blessing` -> `blessing`.
+const abilityIconGlob = import.meta.glob<string>(
+  '../assets/ui/abilities/*.png',
+  { eager: true, query: '?url', import: 'default' },
+)
+const abilityIcons = new Map<string, string>()
+for (const [path, url] of Object.entries(abilityIconGlob)) {
+  const m = path.match(/\/assets\/ui\/abilities\/([^/]+)\.png$/)
+  if (m) abilityIcons.set(m[1].toLowerCase(), url)
+}
+
+function iconForAbility(ability: CommanderAbilitySnapshot): string | null {
+  const key = ability.id.replace(/^commander_/, '').toLowerCase()
+  return abilityIcons.get(key) ?? null
+}
+
+// Human-readable descriptions for the hover tooltip. Keyed by the ability id
+// with the `commander_` prefix stripped. Add an entry here when a new
+// commander ability is introduced.
+const ABILITY_DESCRIPTIONS: Record<string, string> = {
+  blessing: 'Heals friendly units in a small area at the target location.',
+  smite: 'Deals damage to enemy units in a small area at the target location.',
+}
+
+function descriptionFor(ability: CommanderAbilitySnapshot): string {
+  const key = ability.id.replace(/^commander_/, '').toLowerCase()
+  return ABILITY_DESCRIPTIONS[key] ?? ''
+}
 
 const props = withDefaults(defineProps<{
   abilities: CommanderAbilitySnapshot[]
@@ -122,36 +178,57 @@ void props
 
 .ability-slot {
   position: relative;
-  width: 64px;
-  height: 64px;
+  width: 70px;
+  height: 70px;
   padding: 0;
-  border-radius: 8px;
-  border: 1px solid rgba(220, 180, 110, 0.4);
-  background: linear-gradient(180deg, rgba(95, 65, 30, 0.9), rgba(40, 25, 12, 0.95));
+  border: 0;
+  border-radius: 0;
+  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
+  image-rendering: pixelated;
   color: #f7d88e;
   font-weight: 700;
   letter-spacing: 0.06em;
   cursor: pointer;
-  overflow: hidden;
-  transition: border-color 0.12s, transform 0.08s;
+  transition: filter 0.12s, transform 0.08s;
+}
+
+/* Lift the hovered/focused slot so its tooltip (and the filter-induced
+   stacking context) sits above neighboring slots and the surrounding HUD. */
+.ability-slot:hover,
+.ability-slot:focus-visible {
+  z-index: 2;
 }
 
 .ability-slot:hover:not(.is-disabled) {
-  border-color: rgba(255, 220, 140, 0.85);
+  filter: brightness(1.1);
   transform: translateY(-1px);
 }
 
 .ability-slot.is-active {
-  border-color: #ffe28a;
   box-shadow:
     inset 0 0 0 2px rgba(255, 226, 138, 0.7),
     0 0 18px rgba(255, 200, 80, 0.45);
+  filter: brightness(1.15);
 }
 
 .ability-slot.is-disabled {
   cursor: not-allowed;
   color: #b39a6b;
-  border-color: rgba(160, 130, 80, 0.35);
+  filter: brightness(0.7) saturate(0.6);
+}
+
+/* Action art rendered inside the icon-container frame at 70% so the
+   container's outer edge stays visible — same idiom as inventory slots. */
+.ability-slot__icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 70%;
+  height: 70%;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
 
 .slot-label {
@@ -186,5 +263,75 @@ void props
   color: #fff2d6;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
   pointer-events: none;
+}
+
+/* Hover tooltip — mirrors .menu-launcher__tooltip so the visual language
+   stays consistent across the in-match action bar and the launcher row. */
+.ability-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 180px;
+  max-width: 260px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(34, 22, 10, 0.98), rgba(20, 12, 4, 0.98));
+  border: 1px solid rgba(200, 164, 106, 0.45);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  color: #f5ead2;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease-out;
+  pointer-events: none;
+  z-index: 10;
+  letter-spacing: normal;
+}
+
+.ability-slot:hover .ability-tooltip,
+.ability-slot:focus-visible .ability-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.ability-tooltip__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff2d6;
+  margin-bottom: 4px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
+.ability-tooltip__desc {
+  font-size: 11px;
+  color: #d4b87a;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.ability-tooltip__stat {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(200, 164, 106, 0.22);
+  font-size: 11px;
+  color: #d4b87a;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.ability-tooltip__stat kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-left: 4px;
+  border-radius: 4px;
+  background: rgba(20, 12, 4, 0.6);
+  border: 1px solid rgba(200, 164, 106, 0.35);
+  color: #ffe9a0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 </style>

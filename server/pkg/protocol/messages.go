@@ -602,6 +602,13 @@ type CommanderAbilitySnapshot struct {
 	Radius            float64 `json:"radius,omitempty"`
 	CooldownTotal     float64 `json:"cooldownTotal,omitempty"`
 	CooldownRemaining float64 `json:"cooldownRemaining,omitempty"`
+	// Damage / Heal each carry the per-cast magnitude when the ability is a
+	// damaging / healing AoE respectively. Exactly one is non-zero per
+	// ability (mirroring the server's apply path which switches on
+	// Damage>0 vs Heal>0). Surfaced so the HUD tooltip can show the
+	// number without duplicating the catalog client-side.
+	Damage int `json:"damage,omitempty"`
+	Heal   int `json:"heal,omitempty"`
 }
 
 type PlayerSnapshot struct {

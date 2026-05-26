@@ -258,8 +258,6 @@ const {
   sendEquipItem,
   sendUnequipItem,
   sendUseConsumable,
-  sendTransferItem,
-  setVaultSelectedInstanceId,
   sendWaveUpgradeChoice,
   sendWaveUpgradeReroll,
   ui,

@@ -139,6 +139,8 @@ func (s *GameState) commanderAbilitySnapshotsLocked(p *Player) []protocol.Comman
 			Radius:            def.Radius,
 			CooldownTotal:     def.CooldownSeconds,
 			CooldownRemaining: remaining,
+			Damage:            def.Damage,
+			Heal:              def.Heal,
 		})
 	}
 	return out
