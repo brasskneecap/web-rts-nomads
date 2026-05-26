@@ -9,7 +9,7 @@ import "testing"
 // row is missing from a path's JSON, the loader dropped it, or a multiplier
 // accidentally went to zero/negative (which would nerf the unit to nothing).
 func TestPathCatalog_ShippedPathsHaveAllRanks(t *testing.T) {
-	paths := []string{unitPathVanguard, unitPathBerserker, unitPathTrapper, unitPathMarksman, unitPathCleric, unitPathArchMage}
+	paths := []string{unitPathVanguard, unitPathBerserker, unitPathTrapper, unitPathMarksman, unitPathCleric, unitPathSiphoner, unitPathArchMage}
 	ranks := []string{unitRankBronze, unitRankSilver, unitRankGold}
 
 	for _, p := range paths {
@@ -61,7 +61,7 @@ func TestPathCatalog_NoneUsesGoDefaultCurve(t *testing.T) {
 // working even if someone adds a base-rank block to a JSON file (which
 // the loader explicitly rejects via validRankName).
 func TestPathCatalog_BaseRankAlwaysIdentity(t *testing.T) {
-	paths := []string{unitPathNone, unitPathVanguard, unitPathBerserker, unitPathTrapper, unitPathMarksman, unitPathCleric, unitPathArchMage}
+	paths := []string{unitPathNone, unitPathVanguard, unitPathBerserker, unitPathTrapper, unitPathMarksman, unitPathCleric, unitPathSiphoner, unitPathArchMage}
 	for _, path := range paths {
 		got := pathModifierFor(path, unitRankBase)
 		if got != identityPathModifier {

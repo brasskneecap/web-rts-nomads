@@ -14,7 +14,7 @@ const (
 
 // Promotion path constants. Assigned at Bronze rank and fixed for the unit's lifetime.
 // Soldiers randomly receive Vanguard or Berserker. Archers randomly receive
-// Trapper or Marksman. Acolytes randomly receive Cleric or Arch Mage.
+// Trapper or Marksman. Acolytes randomly receive Cleric or Siphoner.
 const (
 	unitPathNone      = "none"
 	unitPathVanguard  = "vanguard"
@@ -22,6 +22,7 @@ const (
 	unitPathTrapper   = "trapper"
 	unitPathMarksman  = "marksman"
 	unitPathCleric    = "cleric"
+	unitPathSiphoner  = "siphoner"
 	unitPathArchMage  = "arch_mage"
 )
 
@@ -341,7 +342,8 @@ func (s *GameState) assignUnitPathOnRankUpLocked(unit *Unit) {
 		paths := [2]string{unitPathTrapper, unitPathMarksman}
 		unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
 	case "acolyte":
-		unit.ProgressionPath = unitPathCleric
+		paths := [2]string{unitPathCleric, unitPathSiphoner}
+		unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
 	case "adept":
 		unit.ProgressionPath = unitPathArchMage
 	default:

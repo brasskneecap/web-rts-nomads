@@ -2337,7 +2337,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .editor-shell {
   display: grid;
-  grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
+  grid-template-columns: minmax(410px, 450px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
@@ -2950,7 +2950,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1100px) {
   .editor-shell {
-    grid-template-columns: minmax(200px, 230px) minmax(0, 1fr);
+    grid-template-columns: minmax(400px, 430px) minmax(0, 1fr);
   }
 
   .canvas-frame {
