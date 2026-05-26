@@ -29,8 +29,8 @@
   },
   "unitOverrides": {},
   "experience": {
-    "mode": "classic",
+    "mode": "split",
     "splitDefaultXP": 10,
-    "splitEligibilityRadius": 500
+    "splitEligibilityRadius": 700
   }
 }
