@@ -78,6 +78,13 @@ type ItemDef struct {
 	SlotKind         ItemSlotKind      `json:"slotKind"`
 	AllowedUnitTypes []string          `json:"allowedUnitTypes,omitempty"`
 	CostGold         int               `json:"costGold"`
+	// RequiredBuilding is the building type that must be built and owned by the
+	// player for this item to be purchasable. Empty means no building is
+	// required (item is always available wherever item-purchase is offered).
+	// Currently informational only — Shop UI uses it to render locked items
+	// with the required-building label; purchase validation still gates on the
+	// item-purchase capability of the targeted building.
+	RequiredBuilding string            `json:"requiredBuilding,omitempty"`
 	Modifiers        *ItemModifiers    `json:"modifiers,omitempty"`
 	Effects          []string          `json:"effects,omitempty"`    // future: "lifesteal", "splash", etc.
 	Consumable       *ConsumableEffect `json:"consumable,omitempty"`

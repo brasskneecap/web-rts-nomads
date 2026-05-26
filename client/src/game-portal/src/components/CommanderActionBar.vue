@@ -1,5 +1,10 @@
 <template>
-  <section v-if="abilities.length > 0" class="commander-bar" aria-label="Commander abilities">
+  <section
+    v-if="abilities.length > 0"
+    class="commander-bar"
+    :class="{ 'commander-bar--embedded': embedded }"
+    aria-label="Commander abilities"
+  >
     <button
       v-for="ability in abilities"
       :key="ability.id"
@@ -35,10 +40,16 @@
 <script setup lang="ts">
 import type { CommanderAbilitySnapshot } from '@/game/network/protocol'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   abilities: CommanderAbilitySnapshot[]
   activeAbilityId: string | null
-}>()
+  /** When true: drop the floating panel chrome (position, background,
+   *  border, padding, blur) so the host container places and frames the
+   *  bar. Ability-slot styling and cooldown rendering are unchanged. */
+  embedded?: boolean
+}>(), {
+  embedded: false,
+})
 
 const emit = defineEmits<{
   cast: [abilityId: string]
@@ -70,9 +81,10 @@ void props
 <style scoped>
 .commander-bar {
   position: absolute;
-  /* Sit just above the SelectionHud footer (200px tall, anchored bottom:0)
-     with a small breathing gap so the bar reads as a separate panel. */
-  bottom: 212px;
+  /* Sit just above the MatchMenuLauncher strip (bottom: 168px, height: 40px →
+     top edge at 208px) with a small breathing gap so the bar reads as a
+     separate panel above the launcher row. */
+  bottom: 220px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 25;
@@ -87,6 +99,25 @@ void props
     0 12px 26px rgba(0, 0, 0, 0.45);
   pointer-events: auto;
   backdrop-filter: blur(6px);
+}
+
+/* Embedded inside another container (e.g. MatchMenuLauncher's action row):
+   drop the floating panel so the host container handles framing/positioning.
+   Slot sizing and cooldown styling are unchanged. */
+.commander-bar--embedded {
+  position: static;
+  left: auto;
+  transform: none;
+  z-index: auto;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  /* Match the gap of the host action row so ability spacing reads the
+     same as the launcher pill spacing on either side. */
+  gap: 8px;
 }
 
 .ability-slot {

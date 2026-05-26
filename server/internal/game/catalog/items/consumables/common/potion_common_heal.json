@@ -9,6 +9,7 @@
   "slotKind": "any",
   "allowedUnitTypes": [],
   "costGold": 1,
+  "requiredBuilding": "marketplace",
   "maxStacks": 99,
   "consumable": { "type": "heal", "amount": 50 }
 }

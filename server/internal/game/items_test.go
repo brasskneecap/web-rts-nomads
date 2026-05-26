@@ -212,6 +212,55 @@ func TestPurchaseItem_ConsumableStacks(t *testing.T) {
 	}
 }
 
+// TestPurchaseItem_MismatchedBuildingType_NoOp verifies that buying an item
+// whose RequiredBuilding doesn't match the targeted building's type silently
+// no-ops, even when the building has the item-purchase capability. Guards
+// the post-marketplace world where multiple buildings sell distinct items.
+func TestPurchaseItem_MismatchedBuildingType_NoOp(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	const playerID = "p1"
+	s.EnsurePlayer(playerID)
+
+	// Inject a non-marketplace building with the item-purchase capability so
+	// the older capability gate alone would let the purchase through.
+	s.mu.Lock()
+	bid := "other-1"
+	owner := playerID
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
+		ID:           bid,
+		BuildingType: "not_a_marketplace",
+		Width:        2,
+		Height:       2,
+		Visible:      true,
+		OwnerID:      &owner,
+		Capabilities: []string{"item-purchase"},
+		Metadata:     map[string]interface{}{},
+	})
+	if s.buildingsByID == nil {
+		s.buildingsByID = map[string]*protocol.BuildingTile{}
+	}
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		s.buildingsByID[b.ID] = b
+	}
+	goldBefore := s.Players[playerID].Resources["gold"]
+	s.mu.Unlock()
+
+	// broad_sword has RequiredBuilding="marketplace"; targeted building is
+	// "not_a_marketplace" → purchase must no-op.
+	s.PurchaseItem(playerID, bid, "broad_sword")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	player := s.Players[playerID]
+	if len(player.Vault) != 0 {
+		t.Errorf("expected empty vault on mismatched building, got %d items", len(player.Vault))
+	}
+	if player.Resources["gold"] != goldBefore {
+		t.Errorf("expected no gold deduction on mismatched building, before=%d after=%d", goldBefore, player.Resources["gold"])
+	}
+}
+
 // TestPurchaseItem_InsufficientGold_NoOp verifies the purchase silently does
 // nothing when the player can't afford the item.
 func TestPurchaseItem_InsufficientGold_NoOp(t *testing.T) {

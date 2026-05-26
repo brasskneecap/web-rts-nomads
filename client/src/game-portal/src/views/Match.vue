@@ -101,14 +101,23 @@
         @unequip-item="({ unitId, slotIndex }) => sendUnequipItem(unitId, slotIndex)"
         @equip-item="({ unitId, slotIndex, instanceId }) => sendEquipItem(unitId, slotIndex, instanceId)"
       />
-      <CommanderActionBar
+      <MatchMenuLauncher
         v-if="hasStarted"
+        :active-tab="matchMenuOpen ? matchMenuTab : null"
         :abilities="ui.commanderAbilities"
         :active-ability-id="ui.commanderTargetingAbilityId"
-        @cast="onCommanderCast"
+        @open="openMenuTab"
+        @cast-ability="onCommanderCast"
+        @settings="matchSettingsOpen = true"
       />
-      <VaultPanel
-        v-if="hasStarted && ui.vaultPanelOpen"
+      <MatchSettingsModal
+        v-if="hasStarted && matchSettingsOpen"
+        @close="matchSettingsOpen = false"
+      />
+      <MatchMenu
+        v-if="hasStarted && matchMenuOpen"
+        v-model:active-tab="matchMenuTab"
+        :shop-catalog="ui.shopCatalog"
         :vault="ui.vault"
         :vault-capacity="ui.vaultCapacity"
         :vault-selected-instance-id="ui.vaultSelectedInstanceId"
@@ -118,7 +127,8 @@
         :on-unequip-item="sendUnequipItem"
         :on-use-consumable="sendUseConsumable"
         :on-transfer-item="sendTransferItem"
-        :on-close="() => performSelectionAction('open-vault')"
+        @close="matchMenuOpen = false"
+        @purchase="({ itemId, buildingId }) => sendPurchaseItem(buildingId, itemId)"
       />
     </div>
   </div>
@@ -129,11 +139,12 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import MatchHud from '@/components/MatchHud.vue'
 import SelectionHud from '@/components/SelectionHud.vue'
-import VaultPanel from '@/components/VaultPanel.vue'
 import BattleTrackerPanel from '@/components/BattleTrackerPanel.vue'
 import DebugSpawnPanel from '@/components/DebugSpawnPanel.vue'
 import WaveUpgradeModal from '@/components/WaveUpgradeModal.vue'
-import CommanderActionBar from '@/components/CommanderActionBar.vue'
+import MatchMenu from '@/components/MatchMenu.vue'
+import MatchMenuLauncher from '@/components/MatchMenuLauncher.vue'
+import MatchSettingsModal from '@/components/MatchSettingsModal.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { useMapSelection } from '@/composables/useMapSelection'
 import { setCursorGrab } from '@/services/desktopBridge'
@@ -183,6 +194,7 @@ const {
   selectUnitOnly,
   deselectUnit,
   setMinimapPanelRect,
+  sendPurchaseItem,
   sendEquipItem,
   sendUnequipItem,
   sendUseConsumable,
@@ -269,7 +281,52 @@ watch(currentMatchId, (id) => {
   }
 })
 
+const matchMenuOpen = ref(false)
+const matchMenuTab = ref<string>('shop')
+const matchSettingsOpen = ref(false)
+
+// Maps a KeyboardEvent.code to the MatchMenu tab id it opens. Each key
+// jumps directly to its tab; pressing the same key again closes the menu.
+const MATCH_MENU_HOTKEYS: Record<string, string> = {
+  KeyS: 'shop',
+  KeyU: 'upgrades',
+  KeyV: 'vault',
+}
+
+function isTextInputFocused() {
+  const el = document.activeElement as HTMLElement | null
+  if (!el) return false
+  if (el.isContentEditable) return true
+  const tag = el.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
+
+function openMenuTab(tabId: string) {
+  matchMenuTab.value = tabId
+  matchMenuOpen.value = true
+}
+
+function onMatchMenuHotkey(e: KeyboardEvent) {
+  if (!hasStarted.value) return
+  if (!(e.code in MATCH_MENU_HOTKEYS)) return
+  if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return
+  if (isTextInputFocused()) return
+  if (ui.value.selectedUnits.length > 0) return
+
+  const targetTab = MATCH_MENU_HOTKEYS[e.code]
+  if (matchMenuOpen.value && matchMenuTab.value === targetTab) {
+    // Pressing the same tab key while already on it closes the menu.
+    matchMenuOpen.value = false
+  } else {
+    // Open (or switch) to the requested tab.
+    matchMenuTab.value = targetTab
+    matchMenuOpen.value = true
+  }
+  e.preventDefault()
+}
+
 window.addEventListener('beforeunload', markActiveSession)
+window.addEventListener('keydown', onMatchMenuHotkey)
 
 onMounted(async () => {
   // Confine the OS cursor to the game window for the duration of the
@@ -375,6 +432,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   void setCursorGrab(false)
   window.removeEventListener('beforeunload', markActiveSession)
+  window.removeEventListener('keydown', onMatchMenuHotkey)
   destroy()
 })
 </script>

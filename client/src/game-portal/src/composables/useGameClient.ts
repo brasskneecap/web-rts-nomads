@@ -46,7 +46,6 @@ const emptyUiSnapshot: GameUiSnapshot = {
   selectedBuildingType: null,
   vault: [],
   vaultCapacity: 0,
-  vaultPanelOpen: false,
   vaultSelectedInstanceId: null,
   allPlayerUnits: [],
   waveUpgrade: null,
@@ -169,6 +168,10 @@ export function useGameClient() {
     client?.upgradeTownHall(buildingId)
   }
 
+  function sendPurchaseItem(buildingId: string, itemId: string) {
+    client?.sendPurchaseItem(buildingId, itemId)
+  }
+
   function sendEquipItem(unitId: number, slotIndex: number, instanceId: number) {
     client?.sendEquipItem(unitId, slotIndex, instanceId)
   }
@@ -223,6 +226,7 @@ export function useGameClient() {
     setMinimapPanelRect,
     purchaseUpgrade,
     upgradeTownHall,
+    sendPurchaseItem,
     sendEquipItem,
     sendUnequipItem,
     sendUseConsumable,

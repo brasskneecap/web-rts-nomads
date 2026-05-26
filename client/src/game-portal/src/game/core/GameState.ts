@@ -483,6 +483,22 @@ export type Notification = {
   remaining: number
 }
 
+export type ShopCatalogEntry = {
+  itemId: string
+  displayName: string
+  description?: string
+  iconKey: string
+  kind: 'equipment' | 'consumable'
+  tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
+  costGold: number
+  available: boolean
+  requiredBuildingType: string
+  requiredBuildingLabel: string
+  /** ID of a player-owned, built building that can sell this item. Empty
+   *  when no such building exists (i.e. when available=false). */
+  purchaseBuildingId: string
+}
+
 export class GameState {
   private resourceStocks: ResourceStock[] = [
     { id: 'gold', label: 'Gold', amount: 500, accent: '#d4a84f' },
@@ -533,9 +549,6 @@ export class GameState {
   // unitTargetingMode because the cast is player-level, not unit-level,
   // and must work with no units selected.
   commanderTargetingAbilityId: string | null = null
-  // True when the vault panel overlay is visible (toggled by the "Open Vault"
-  // building action). Stored here so it persists across selection changes.
-  vaultPanelOpen = false
   // Currently selected vault item (for click-to-equip flow). Set by
   // VaultPanel; cleared when the user deselects or closes the panel.
   vaultSelectedInstanceId: number | null = null
@@ -2091,6 +2104,48 @@ export class GameState {
     return this.units.filter((unit) => unit.ownerId === this.localPlayerId)
   }
 
+  // Returns the Shop catalog for the local player: one entry per ItemDef that
+  // declares a RequiredBuilding. `available` is true when the player owns at
+  // least one built (not under-construction) building of that type, and
+  // `purchaseBuildingId` is set to that building's ID for the purchase call.
+  getShopCatalogSnapshot(): ShopCatalogEntry[] {
+    // First built (not under-construction) player-owned building per type.
+    // Used to satisfy the click → purchase flow's BuildingID parameter.
+    const firstBuildingByType = new Map<string, string>()
+    if (this.localPlayerId) {
+      for (const b of this.mapConfig.buildings) {
+        if (b.ownerId !== this.localPlayerId) continue
+        if (b.metadata?.['underConstruction'] === true) continue
+        if (!firstBuildingByType.has(b.buildingType)) {
+          firstBuildingByType.set(b.buildingType, b.id)
+        }
+      }
+    }
+
+    const entries: ShopCatalogEntry[] = []
+    for (const def of ITEM_DEF_MAP.values()) {
+      if (!def.requiredBuilding) continue
+      const requiredBuildingType = def.requiredBuilding
+      const buildingDef = BUILDING_DEF_MAP.get(requiredBuildingType)
+      const purchaseBuildingId = firstBuildingByType.get(requiredBuildingType) ?? ''
+      entries.push({
+        itemId: def.id,
+        displayName: def.displayName,
+        description: def.description,
+        iconKey: def.iconKey,
+        kind: def.kind,
+        tier: def.tier,
+        costGold: def.costGold,
+        available: purchaseBuildingId !== '',
+        requiredBuildingType,
+        requiredBuildingLabel: buildingDef?.label ?? requiredBuildingType,
+        purchaseBuildingId,
+      })
+    }
+    entries.sort((a, b) => a.costGold - b.costGold || a.displayName.localeCompare(b.displayName))
+    return entries
+  }
+
   getSelectedUnits(): Unit[] {
     const selectedIds = this.getOrderedSelectedUnitIds()
 
@@ -2233,7 +2288,6 @@ export class GameState {
               {
                 vault: this.localPlayerVault,
                 vaultCapacity: this.localPlayerVaultCapacity,
-                vaultPanelOpen: this.vaultPanelOpen,
               },
               this.townHallTier,
               new Set(this.lockedUnitTypes),
@@ -2949,7 +3003,7 @@ function getUnderConstructionActions(building: BuildingTile): ActionItem[] {
 function getBuildingActions(
   building: BuildingTile,
   upgrades: PlayerUpgradeSnapshot[] = [],
-  vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number; vaultPanelOpen: boolean },
+  vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number },
   townHallTier: number = 0,
   lockedUnitTypes: ReadonlySet<string> = new Set(),
 ): ActionItem[] {
@@ -2981,15 +3035,6 @@ function getBuildingActions(
         disabled: atCapacity,
       })
     }
-  }
-
-  if (building.capabilities.includes('vault-access')) {
-    actions.push({
-      id: 'open-vault',
-      label: 'Vault',
-      iconId: 'set-spawn-point',
-      active: vaultState?.vaultPanelOpen ?? false,
-    })
   }
 
   if (building.capabilities.includes('unit-spawner')) {

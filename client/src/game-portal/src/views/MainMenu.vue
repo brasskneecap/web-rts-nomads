@@ -18,7 +18,7 @@
           <UiButton size="lg" @click="router.push('/custom')">Custom Game</UiButton>
           <UiButton size="lg" @click="router.push('/profile')">Profile</UiButton>
           <UiButton size="lg" @click="router.push('/editor')">Map Editor</UiButton>
-          <UiButton size="lg" @click="router.push('/options')">Options</UiButton>
+          <UiButton size="lg" @click="router.push('/options')">Settings</UiButton>
         </MenuPanel>
       </nav>
     </div>

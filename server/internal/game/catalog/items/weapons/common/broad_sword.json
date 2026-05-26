@@ -9,6 +9,7 @@
   "slotKind": "weapon",
   "allowedUnitTypes": [],
   "costGold": 50,
+  "requiredBuilding": "marketplace",
   "modifiers": { "damage": 5 },
   "effects": []
 }

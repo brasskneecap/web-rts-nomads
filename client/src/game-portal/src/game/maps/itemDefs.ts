@@ -65,6 +65,12 @@ export type ItemDef = {
   allowedUnitTypes?: string[]
   /** Gold cost to purchase from a shop building. */
   costGold: number
+  /**
+   * Building type that must be built and owned for this item to be purchasable.
+   * Empty/undefined means no building gate. Drives Shop UI availability and
+   * locked-state tooltips.
+   */
+  requiredBuilding?: string
   /** Display-only category label ("Weapon", "Trinket", "Consumable"). */
   category?: string
   /** Stat changes applied while held. Absent = no stat changes. */

@@ -1,13 +1,18 @@
 <template>
   <div
     class="vault-panel"
-    :class="{ 'vault-panel--collapsed': collapsed, 'vault-panel--dragging': drag.dragging.value }"
-    :style="drag.style.value"
+    :class="{
+      'vault-panel--collapsed': collapsed,
+      'vault-panel--dragging': !embedded && drag.dragging.value,
+      'vault-panel--embedded': embedded,
+    }"
+    :style="embedded ? undefined : drag.style.value"
     role="dialog"
     aria-label="Vault"
   >
-    <!-- Drag handle / header -->
+    <!-- Drag handle / header (hidden when embedded inside another panel) -->
     <header
+      v-if="!embedded"
       class="vault-head"
       :class="{ 'vault-head--dragging': drag.dragging.value }"
       v-bind="drag.handleBindings"
@@ -24,18 +29,19 @@
         <span class="vault-title">Vault ({{ vaultCount }}/{{ vaultCapacity }})</span>
       </button>
       <button
+        v-if="onClose"
         class="vault-close"
         type="button"
         title="Close Vault"
-        @click="onClose()"
+        @click="onClose && onClose()"
       >✕</button>
     </header>
 
-    <div v-if="!collapsed" class="vault-body">
+    <div v-if="embedded || !collapsed" class="vault-body">
       <div class="vault-columns">
         <!-- Left column: vault item grid -->
         <div class="vault-grid-col">
-          <div class="vault-col-label">Storage</div>
+          <div class="vault-col-label">Storage {{ vaultCount }} / {{ vaultCapacity }}</div>
           <div
             class="vault-grid"
             :class="{ 'vault-grid--drop-active': dragSource?.kind === 'unit-slot' && vaultGridDragOver }"
@@ -157,7 +163,7 @@ import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 import { useDraggablePanel } from '@/composables/useDraggablePanel'
 import ActionIcon from '@/components/ActionIcon.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   vault: VaultItemSnapshot[]
   vaultCapacity: number
   vaultSelectedInstanceId: number | null
@@ -167,8 +173,16 @@ const props = defineProps<{
   onEquipItem: (unitId: number, slotIndex: number, instanceId: number) => void
   onUseConsumable: (unitId: number, slotIndex: number) => void
   onTransferItem: (fromUnitId: number, fromSlotIdx: number, toUnitId: number, toSlotIdx: number) => void
-  onClose: () => void
-}>()
+  onClose?: () => void
+  /**
+   * When true, render only the body (no drag handle, no header chrome, no
+   * absolute positioning, no panel background). Used when the vault is
+   * embedded inside another container such as the MatchMenu Vault tab.
+   */
+  embedded?: boolean
+}>(), {
+  embedded: false,
+})
 
 // ── Panel drag (header) ────────────────────────────────────────────────────
 const collapsed = ref(false)
@@ -402,6 +416,24 @@ function onUnitSlotClick(
   color: #e8d9b8;
   font-size: 13px;
   pointer-events: auto;
+}
+
+/* Embedded mode: drop all the floating-panel chrome so the host container
+   (MatchMenu Vault tab) provides background, border, sizing, and position. */
+.vault-panel--embedded {
+  position: static;
+  left: auto;
+  bottom: auto;
+  z-index: auto;
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none !important;
 }
 
 .vault-head {

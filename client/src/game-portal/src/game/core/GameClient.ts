@@ -14,7 +14,7 @@ import type {
   WaveSnapshot,
   WaveUpgradeOfferSnapshot,
 } from '../network/protocol'
-import type { DebugSpawnConfig, PlayerSummary, SelectionSummary, Unit, Notification } from './GameState'
+import type { DebugSpawnConfig, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
@@ -65,7 +65,6 @@ export type GameUiSnapshot = {
   // Vault contents for the local player.
   vault: VaultItemSnapshot[]
   vaultCapacity: number
-  vaultPanelOpen: boolean
   vaultSelectedInstanceId: number | null
   // All local-player units (not just selected ones). Needed by VaultPanel to
   // show all units that can receive equipped items.
@@ -78,6 +77,10 @@ export type GameUiSnapshot = {
   // (a slot was clicked, awaiting world click). Null when no commander
   // targeting is active.
   commanderTargetingAbilityId: string | null
+  // Shop catalog for the MatchMenu Shop tab. One entry per item with a
+  // RequiredBuilding declared; available=true when the gating building is
+  // built and owned by the local player.
+  shopCatalog: ShopCatalogEntry[]
 }
 
 export class GameClient {
@@ -241,12 +244,12 @@ export class GameClient {
       selectedBuildingType: this.state.getSelectedBuildingType(),
       vault: this.state.localPlayerVault,
       vaultCapacity: this.state.localPlayerVaultCapacity,
-      vaultPanelOpen: this.state.vaultPanelOpen,
       vaultSelectedInstanceId: this.state.vaultSelectedInstanceId,
       allPlayerUnits: this.state.getLocalPlayerUnits(),
       waveUpgrade: this.state.waveUpgrade,
       commanderAbilities: this.state.localPlayerCommanderAbilities,
       commanderTargetingAbilityId: this.state.commanderTargetingAbilityId,
+      shopCatalog: this.state.getShopCatalogSnapshot(),
     }
   }
 
@@ -517,10 +520,6 @@ export class GameClient {
       return
     }
 
-    if (actionId === 'open-vault') {
-      this.state.vaultPanelOpen = !this.state.vaultPanelOpen
-      return
-    }
   }
 
   /** Arm commander-ability targeting. Called by the bottom action bar when

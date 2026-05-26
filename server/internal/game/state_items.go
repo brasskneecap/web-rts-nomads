@@ -299,6 +299,13 @@ func (s *GameState) handlePurchaseItemLocked(playerID, buildingID, itemID string
 		return
 	}
 
+	// RequiredBuilding gate: if the item declares a required building type, the
+	// targeted building must be of that type. Items with empty RequiredBuilding
+	// are available wherever item-purchase is offered.
+	if def.RequiredBuilding != "" && building.BuildingType != def.RequiredBuilding {
+		return
+	}
+
 	// TH destroyed = no purchases, even if vault has space.
 	if s.townhallTierForPlayerLocked(playerID) == 0 {
 		return
