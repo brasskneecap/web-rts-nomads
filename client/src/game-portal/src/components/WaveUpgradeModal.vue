@@ -1,9 +1,18 @@
 <template>
   <div class="wave-upgrade-overlay" role="dialog" aria-modal="true" aria-label="Wave upgrade">
-    <!-- Waiting state — shown after the local player has picked -->
+    <!-- Waiting state — shown after the local player has picked. The bottom
+         timer mirrors the deadline shared by all players so the local player
+         can see how much longer they may be waiting. -->
     <div v-if="resolved" class="upgrade-waiting">
       <div class="upgrade-waiting-title">Upgrade chosen!</div>
-      <p class="upgrade-waiting-sub">Waiting for other players…</p>
+      <p class="upgrade-waiting-sub">Awaiting other players…</p>
+      <div class="upgrade-waiting-timer-track" aria-label="Time remaining for other players">
+        <div
+          class="upgrade-waiting-timer-fill"
+          :class="timerClass"
+          :style="{ width: timerPercent + '%' }"
+        ></div>
+      </div>
     </div>
 
     <!-- Active state — offer cards -->
@@ -73,12 +82,20 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { WaveUpgradeOfferSnapshot, UpgradeOffer } from '@/game/network/protocol'
 import type { Unit } from '@/game/core/GameState'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   upgrade: WaveUpgradeOfferSnapshot
   units: Unit[]
   sendChoice: (upgradeID: string, targetUnitID?: number) => void
   sendReroll: () => void
-}>()
+  // When true the server is paused — freeze the visible timer at the moment
+  // the pause arrived rather than letting Date.now() continue to drain it.
+  paused?: boolean
+  // Wall-clock at which the pause began on the local client. 0 when not paused.
+  pausedSinceMs?: number
+}>(), {
+  paused: false,
+  pausedSinceMs: 0,
+})
 
 const resolved = ref(false)
 const pendingXpOffer = ref<UpgradeOffer | null>(null)
@@ -92,8 +109,14 @@ function tick() {
 onMounted(() => { rafId = requestAnimationFrame(tick) })
 onUnmounted(() => cancelAnimationFrame(rafId))
 
+// When paused, freeze the effective "now" at the moment the pause arrived so
+// the visible timer doesn't drain while the simulation is frozen.
+const effectiveNow = computed(() =>
+  props.paused && props.pausedSinceMs > 0 ? props.pausedSinceMs : now.value,
+)
+
 const timerPercent = computed(() => {
-  const remaining = Math.max(0, props.upgrade.deadlineMs - now.value)
+  const remaining = Math.max(0, props.upgrade.deadlineMs - effectiveNow.value)
   return Math.min(100, (remaining / 25_000) * 100)
 })
 
@@ -139,9 +162,23 @@ function reroll() {
 .upgrade-waiting {
   text-align: center;
   color: #e2e8f0;
+  width: min(420px, 80vw);
 }
 .upgrade-waiting-title { font-size: 1.5rem; font-weight: bold; margin-bottom: 8px; }
-.upgrade-waiting-sub { color: #94a3b8; }
+.upgrade-waiting-sub { color: #94a3b8; margin-bottom: 18px; }
+
+.upgrade-waiting-timer-track {
+  height: 6px;
+  background: #1e293b;
+  border-radius: 3px;
+  overflow: hidden;
+  width: 100%;
+}
+.upgrade-waiting-timer-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.25s linear, background 0.5s;
+}
 
 .upgrade-panel {
   background: #0d1117;

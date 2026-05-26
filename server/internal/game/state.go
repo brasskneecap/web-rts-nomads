@@ -824,6 +824,16 @@ type GameState struct {
 	// removeUnitByIDLocked for dying miners. Zero entries are deleted so
 	// len() stays bounded by active nodes.
 	workersInsideResource map[string]int
+
+	// Paused, when true, freezes Update() — no simulation, no wave/upgrade
+	// timer progression. Set by any player via HandleSetPause. PausedBy is
+	// the player ID that initiated the pause (empty when not paused);
+	// snapshot consumers use it to render "Paused by <name>" in multiplayer.
+	// pausedAtMs is the wall-clock at which the pause began, so resume can
+	// shift wave-upgrade OfferDeadlineMs forward by the elapsed pause window.
+	Paused      bool
+	PausedBy    string
+	pausedAtMs  int64
 }
 
 const (
@@ -1361,6 +1371,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		BattleTracker:          s.battleTrackerSnapshotLocked(),
 		GameOver:               gameOver,
 		Victory:                victory,
+		Paused:                 s.Paused,
+		PausedBy:               s.PausedBy,
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 	}
 }
@@ -1697,6 +1709,8 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		Victory:                victory,
 		Fow:                    packFOW(fow, s.Tick),
 		WaveUpgrade:            s.buildWaveUpgradeSnapshotLocked(viewerID),
+		Paused:                 s.Paused,
+		PausedBy:               s.PausedBy,
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 	}
 }
@@ -2156,6 +2170,8 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		BattleTracker:          s.battleTrackerSnapshotLocked(),
 		GameOver:               gameOver,
 		Victory:                victory,
+		Paused:                 s.Paused,
+		PausedBy:               s.PausedBy,
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 	}
 }
@@ -2169,6 +2185,21 @@ func (s *GameState) IncrementTick() {
 func (s *GameState) Update(dt float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// User-initiated pause: every subsystem is frozen, including the
+	// wave-upgrade auto-pick deadline (which is wall-clock based, so we
+	// extend it on resume to preserve the remaining selection time).
+	if s.Paused {
+		return
+	}
+
+	// Auto-pause during the wave-upgrade selection phase: simulation is
+	// frozen but tickUpgradePhaseLocked still advances so deadlines fire
+	// and "all resolved → prep" transitions happen.
+	if s.WaveManager.State == "upgrade" {
+		s.tickUpgradePhaseLocked()
+		return
+	}
 
 	// One Update == one simulation frame; advance the tick counter here so
 	// callers can't forget. IncrementTick is still exposed for tests that

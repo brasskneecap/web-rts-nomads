@@ -1084,6 +1084,13 @@ type MatchSnapshotMessage struct {
 	Fow           *FogOfWarSnapshot       `json:"fow,omitempty"`
 	WaveUpgrade   *WaveUpgradeOfferSnapshot `json:"waveUpgrade,omitempty"`
 
+	// Paused is true when the simulation is frozen via the in-match settings
+	// "Pause Game" action. The client renders a paused overlay and freezes the
+	// wave-upgrade selection timer while this is true. PausedBy is the player
+	// ID that initiated the pause; the client maps it to a display name.
+	Paused   bool   `json:"paused,omitempty"`
+	PausedBy string `json:"pausedBy,omitempty"`
+
 	// PersistentlyStuckUnits lists IDs of units whose pathing watchdog has fired
 	// 4+ times in the current wave. Computed at snapshot time, not stored on the
 	// state. omitempty so the field drops from the wire when the slice is empty.
@@ -1190,4 +1197,12 @@ type WaveUpgradeChoiceMessage struct {
 // WaveUpgradeRerollMessage is sent by the client when the player uses a reroll.
 type WaveUpgradeRerollMessage struct {
 	Type string `json:"type"`
+}
+
+// SetPauseMessage is sent by the client when the player toggles the pause
+// state from the in-match settings menu. Paused=true pauses the simulation;
+// false resumes. Either action is allowed from any player in the match.
+type SetPauseMessage struct {
+	Type   string `json:"type"`
+	Paused bool   `json:"paused"`
 }

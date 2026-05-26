@@ -81,6 +81,15 @@ export type GameUiSnapshot = {
   // RequiredBuilding declared; available=true when the gating building is
   // built and owned by the local player.
   shopCatalog: ShopCatalogEntry[]
+  // Server-side pause flag. When true the client renders a paused overlay
+  // and the wave-upgrade modal freezes its visible timer.
+  paused: boolean
+  // Player ID that initiated the pause. Empty string when not paused.
+  pausedBy: string
+  // Wall-clock (Date.now()) at which the client first observed paused=true.
+  // 0 when not paused. Lets the wave-upgrade modal compute a frozen
+  // remaining-time at the pause moment rather than draining.
+  pausedSinceMs: number
 }
 
 export class GameClient {
@@ -250,6 +259,9 @@ export class GameClient {
       commanderAbilities: this.state.localPlayerCommanderAbilities,
       commanderTargetingAbilityId: this.state.commanderTargetingAbilityId,
       shopCatalog: this.state.getShopCatalogSnapshot(),
+      paused: this.state.paused,
+      pausedBy: this.state.pausedBy,
+      pausedSinceMs: this.state.pausedSinceMs,
     }
   }
 
@@ -287,6 +299,10 @@ export class GameClient {
 
   sendWaveUpgradeReroll(): void {
     this.network.send({ type: 'wave_upgrade_reroll' })
+  }
+
+  sendSetPause(paused: boolean): void {
+    this.network.send({ type: 'set_pause', paused })
   }
 
   setVaultSelectedInstanceId(instanceId: number | null): void {

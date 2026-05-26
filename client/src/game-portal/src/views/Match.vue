@@ -21,6 +21,8 @@
       :units="ui.allPlayerUnits.filter(u => u.unitType !== 'worker')"
       :send-choice="sendWaveUpgradeChoice"
       :send-reroll="sendWaveUpgradeReroll"
+      :paused="ui.paused"
+      :paused-since-ms="ui.pausedSinceMs"
     />
 
     <BattleTrackerPanel v-if="hasStarted" :ui="ui" />
@@ -32,6 +34,18 @@
       :begin-debug-spawn="beginDebugSpawn"
       :cancel-debug-spawn="cancelDebugSpawn"
     />
+
+    <div
+      v-if="hasStarted && ui.paused"
+      class="pause-banner"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="pause-banner__title">Game Paused</div>
+      <div class="pause-banner__sub">
+        {{ pausedByLabel }} Open Settings to resume.
+      </div>
+    </div>
 
     <div v-if="hasStarted && ((ui.wave.enabled && ui.wave.state === 'complete' && !ui.objectives.length) || ui.isVictory)" class="victory-overlay">
       <div class="victory-card">
@@ -112,7 +126,9 @@
       />
       <MatchSettingsModal
         v-if="hasStarted && matchSettingsOpen"
+        :paused="ui.paused"
         @close="matchSettingsOpen = false"
+        @toggle-pause="(next) => sendSetPause(next)"
       />
       <MatchMenu
         v-if="hasStarted && matchMenuOpen"
@@ -202,6 +218,7 @@ const {
   setVaultSelectedInstanceId,
   sendWaveUpgradeChoice,
   sendWaveUpgradeReroll,
+  sendSetPause,
   beginCommanderAbility,
   cancelCommanderAbility,
   ui,
@@ -212,6 +229,15 @@ const {
 } = useGameClient()
 
 const debugSpawnTargetingActive = computed(() => ui.value.debugSpawnTargetingActive)
+
+const pausedByLabel = computed(() => {
+  const id = ui.value.pausedBy
+  if (!id) return ''
+  if (ui.value.player.playerId && id === ui.value.player.playerId) {
+    return 'Paused by you.'
+  }
+  return `Paused by ${id}.`
+})
 
 function onCommanderCast(abilityId: string) {
   // Toggle behaviour: clicking the same slot a second time cancels the
@@ -513,6 +539,37 @@ onBeforeUnmount(() => {
   height: 100%;
   display: block;
   background: #111;
+}
+
+.pause-banner {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 14px 28px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(8, 12, 20, 0.96));
+  border: 1px solid rgba(220, 180, 100, 0.45);
+  color: #f5ead2;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
+.pause-banner__title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f7d88e;
+}
+
+.pause-banner__sub {
+  margin-top: 4px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: #cbb893;
 }
 
 .victory-overlay {

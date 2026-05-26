@@ -537,6 +537,17 @@ export class GameState {
   // when no offer is active (between waves or before the first wave).
   waveUpgrade: WaveUpgradeOfferSnapshot | null = null
 
+  // Server-side pause state. paused=true freezes the visible wave-upgrade
+  // timer and triggers the in-match paused overlay. pausedBy is the player
+  // ID that initiated the pause (empty when not paused).
+  paused = false
+  pausedBy = ''
+  // Wall-clock at which the local client first observed paused=true. Reset
+  // to 0 on resume. Used by the wave-upgrade modal to freeze its visible
+  // timer at the moment the pause arrived rather than letting Date.now()
+  // continue to drain it.
+  pausedSinceMs = 0
+
   // Vault state — populated from PlayerSnapshot each tick.
   localPlayerVault: VaultItemSnapshot[] = []
   localPlayerVaultCapacity = 0
@@ -1213,6 +1224,15 @@ export class GameState {
     }
 
     this.waveUpgrade = message.waveUpgrade ?? null
+
+    const nextPaused = message.paused === true
+    if (nextPaused && !this.paused) {
+      this.pausedSinceMs = Date.now()
+    } else if (!nextPaused && this.paused) {
+      this.pausedSinceMs = 0
+    }
+    this.paused = nextPaused
+    this.pausedBy = message.pausedBy ?? ''
 
     const validIds = new Set(this.units.map((u) => u.id))
 

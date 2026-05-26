@@ -282,6 +282,20 @@ func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	go h.readLoop(client)
 }
 
+// isPausableCommand reports whether a client message type is a world-mutating
+// command that should be dropped while the simulation is paused. Lifecycle
+// messages, the pause toggle itself, wave-upgrade flow messages, and the
+// heartbeat all return false so a paused player can still resume, finish
+// picking an upgrade, and stay connected.
+func isPausableCommand(msgType string) bool {
+	switch msgType {
+	case "hello", "join_match", "leave_match", "pong",
+		"set_pause", "wave_upgrade_choice", "wave_upgrade_reroll":
+		return false
+	}
+	return true
+}
+
 // RegisterTransport attaches an externally-constructed Transport (Steam
 // Sockets in Phase 2, the direct-connect transportbridge in §13) as a
 // hub-managed client. The peer is treated identically to a WebSocket client
@@ -310,6 +324,16 @@ func (h *Hub) readLoop(client *Client) {
 				Message: "invalid message",
 			})
 			continue
+		}
+
+		// Drop world-mutating commands while the simulation is paused so an
+		// order issued during pause can't quietly land the moment we resume.
+		// Selection is client-side and untouched. Lifecycle, pause-toggle,
+		// wave-upgrade selection, and heartbeat traffic all pass through.
+		if isPausableCommand(base.Type) && client.MatchID() != "" {
+			if match, ok := h.manager.GetMatch(client.MatchID()); ok && match.State.IsPaused() {
+				continue
+			}
 		}
 
 		switch base.Type {
@@ -992,6 +1016,23 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 			match.State.HandleWaveUpgradeReroll(client.PlayerID())
+
+		case "set_pause":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.SetPauseMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid set_pause payload"})
+				continue
+			}
+			match.State.HandleSetPause(client.PlayerID(), msg.Paused)
 
 		case "use_consumable":
 			if client.MatchID() == "" {

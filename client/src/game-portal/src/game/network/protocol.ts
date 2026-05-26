@@ -1034,6 +1034,11 @@ export type MatchSnapshotMessage = {
   victory?: VictorySnapshot
   fow?: FogOfWarSnapshot
   waveUpgrade?: WaveUpgradeOfferSnapshot
+  // Server-side pause flag. When true the simulation is frozen; the client
+  // shows a paused overlay and freezes the visible wave-upgrade timer.
+  paused?: boolean
+  // Player ID that initiated the pause (empty/absent when not paused).
+  pausedBy?: string
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────

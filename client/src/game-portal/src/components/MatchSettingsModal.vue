@@ -18,6 +18,16 @@
           <h2 class="match-settings__title">Settings</h2>
         </header>
 
+        <section class="match-settings__section" aria-label="Match">
+          <div class="match-settings__section-title">Match</div>
+          <div class="match-settings__row">
+            <span class="match-settings__label">{{ paused ? 'Game Paused' : 'Pause Game' }}</span>
+            <UiButton size="sm" @click="onTogglePause">
+              {{ paused ? 'Resume Game' : 'Pause Game' }}
+            </UiButton>
+          </div>
+        </section>
+
         <SettingsPanel />
       </UiPanel>
     </div>
@@ -27,11 +37,21 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount } from 'vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import SettingsPanel from '@/components/menu/SettingsPanel.vue'
+
+const props = defineProps<{
+  paused: boolean
+}>()
 
 const emit = defineEmits<{
   close: []
+  'toggle-pause': [next: boolean]
 }>()
+
+function onTogglePause() {
+  emit('toggle-pause', !props.paused)
+}
 
 function onKeydown(e: KeyboardEvent) {
   if (e.code === 'Escape') {
@@ -117,6 +137,35 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
+  color: #f5ead2;
+  letter-spacing: 0.04em;
+}
+
+.match-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.match-settings__section-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #d4b87a;
+}
+
+.match-settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.match-settings__label {
+  font-size: 14px;
+  font-weight: 600;
   color: #f5ead2;
   letter-spacing: 0.04em;
 }

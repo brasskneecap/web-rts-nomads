@@ -57,6 +57,8 @@
       :units="ui.allPlayerUnits"
       :send-choice="sendWaveUpgradeChoice"
       :send-reroll="sendWaveUpgradeReroll"
+      :paused="ui.paused"
+      :paused-since-ms="ui.pausedSinceMs"
     />
 
     <!-- Debug panel — only rendered when the active map has debug.battleTracker.

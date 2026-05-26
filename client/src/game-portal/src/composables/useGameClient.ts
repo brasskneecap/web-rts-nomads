@@ -52,6 +52,9 @@ const emptyUiSnapshot: GameUiSnapshot = {
   commanderAbilities: [],
   commanderTargetingAbilityId: null,
   shopCatalog: [],
+  paused: false,
+  pausedBy: '',
+  pausedSinceMs: 0,
 }
 
 export function useGameClient() {
@@ -201,6 +204,10 @@ export function useGameClient() {
     client?.sendWaveUpgradeReroll()
   }
 
+  function sendSetPause(paused: boolean) {
+    client?.sendSetPause(paused)
+  }
+
   function beginCommanderAbility(abilityId: string) {
     client?.beginCommanderAbility(abilityId)
   }
@@ -235,6 +242,7 @@ export function useGameClient() {
     setVaultSelectedInstanceId,
     sendWaveUpgradeChoice,
     sendWaveUpgradeReroll,
+    sendSetPause,
     beginCommanderAbility,
     cancelCommanderAbility,
     ui,
