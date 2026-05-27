@@ -111,6 +111,37 @@ export type PlacedUnit = {
   leashRange?: number
 }
 
+export interface NeutralSpawn {
+  id: string
+  x: number
+  y: number
+  groupId: string
+  startingTier?: number
+  tierUpEveryNWaves?: number
+  aggroRange?: number
+  leashRange?: number
+  healthMultiplier?: number
+  healthMultiplierPerWave?: number
+  damageMultiplier?: number
+  damageMultiplierPerWave?: number
+}
+
+export const NEUTRAL_SPAWN_RANDOM_GROUP_ID = '__random__'
+
+// Mirrors server-side neutralPlayerColor (state_waves.go). Centralized here
+// so the map-editor marker and any future minimap/HUD treatment stay in sync.
+export const NEUTRAL_PLAYER_COLOR = '#9b59b6'
+
+// Catalog DTOs from GET /api/catalog/neutral-groups
+export interface NeutralGroupSummary {
+  id: string
+  name: string
+}
+export interface NeutralGroupTierSummary {
+  tier: number
+  groups: NeutralGroupSummary[]
+}
+
 export type MapConfig = {
   id: MapId
   name: string
@@ -130,6 +161,7 @@ export type MapConfig = {
   victoryConditions?: VictoryCondition[]
   debug?: MapDebugConfig
   placedUnits?: PlacedUnit[]
+  neutralSpawns?: NeutralSpawn[]
 }
 
 // Per-map debug/telemetry opt-ins. Only set on development maps — production
@@ -1057,8 +1089,13 @@ export type BattleBucket = {
 }
 
 // Sentinel owner ID for wave / NPC enemies. Real players are allied with each
-// other; only this ID is hostile to them. Mirrors enemyPlayerID on the server.
+// other; this ID is hostile to them. Mirrors enemyPlayerID on the server.
 export const ENEMY_PLAYER_ID = '__enemy__'
+
+// Sentinel owner ID for neutral camp mobs. Hostile to every real player team
+// and to the wave-enemy AI; not allied with anyone (not even other neutrals
+// for ally-scoring purposes). Mirrors neutralPlayerID on the server.
+export const NEUTRAL_PLAYER_ID = '__neutral__'
 
 export type BattlePlayerStats = {
   // Player ID that owns the damage-dealing source. ENEMY_PLAYER_ID is the

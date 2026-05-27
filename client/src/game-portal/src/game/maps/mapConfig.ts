@@ -3,6 +3,7 @@ import type {
   BuildingType,
   JsonObject,
   MapConfig,
+  NeutralSpawn,
   ObstacleTile,
   ObstacleType,
   PlacedUnit,
@@ -47,6 +48,7 @@ export function createEditorMapConfig(
     obstacles: existing?.obstacles ?? [],
     buildings: existing?.buildings ?? [],
     placedUnits: existing?.placedUnits,
+    neutralSpawns: existing?.neutralSpawns,
     waveConfig: existing?.waveConfig,
     victoryConditions: existing?.victoryConditions,
   })
@@ -75,6 +77,7 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
     victoryConditions: map.victoryConditions?.length ? map.victoryConditions : undefined,
     debug: map.debug,
     placedUnits: clampPlacedUnits(map.placedUnits ?? [], gridCols, gridRows),
+    neutralSpawns: clampNeutralSpawns(map.neutralSpawns ?? [], gridCols, gridRows),
   }
 }
 
@@ -433,6 +436,15 @@ function clampPlacedUnits(
   gridRows: number,
 ): PlacedUnit[] {
   return units.filter((u) => isWithinGrid(u.x, u.y, gridCols, gridRows))
+}
+
+function clampNeutralSpawns(
+  spawns: NeutralSpawn[],
+  gridCols: number,
+  gridRows: number,
+): NeutralSpawn[] | undefined {
+  const filtered = spawns.filter((s) => isWithinGrid(s.x, s.y, gridCols, gridRows))
+  return filtered.length > 0 ? filtered : undefined
 }
 
 function doesBuildingCoverCell(building: BuildingTile, x: number, y: number) {

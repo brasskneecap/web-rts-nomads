@@ -1,0 +1,13 @@
+{
+  "tier": 1,
+  "groups": [
+    {
+      "id": "small_raider_group",
+      "name": "Small Raider Group",
+      "composition": [
+        { "unitType": "raider", "count": 2 },
+        { "unitType": "ranged_raider", "count": 2 }
+      ]
+    }
+  ]
+}

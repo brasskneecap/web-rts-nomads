@@ -8,7 +8,7 @@ import "webrts/server/pkg/protocol"
 // UnitType must appear in that list for the buff to contribute.
 // Must be called under s.mu lock.
 func (s *GameState) playerBuffAggregateLocked(unit *Unit) PlayerBuffModifiers {
-	if unit == nil || unit.OwnerID == enemyPlayerID {
+	if unit == nil || unit.OwnerID == enemyPlayerID || unit.OwnerID == neutralPlayerID {
 		return PlayerBuffModifiers{}
 	}
 	player, ok := s.Players[unit.OwnerID]
@@ -72,7 +72,7 @@ func (s *GameState) playerEnemyDamageMultiplierLocked(attacker, defender *Unit) 
 	if !s.playersAreHostileLocked(attacker.OwnerID, defender.OwnerID) {
 		return 0
 	}
-	if defender.OwnerID == enemyPlayerID {
+	if defender.OwnerID == enemyPlayerID || defender.OwnerID == neutralPlayerID {
 		return 0
 	}
 	player, ok := s.Players[defender.OwnerID]
@@ -96,7 +96,7 @@ func (s *GameState) playerEnemyDamageMultiplierLocked(attacker, defender *Unit) 
 // BEFORE applyRankModifiersLocked runs.
 // Must be called under s.mu write lock.
 func (s *GameState) applyPlayerBuffsAtSpawnLocked(unit *Unit) {
-	if unit == nil || unit.OwnerID == enemyPlayerID {
+	if unit == nil || unit.OwnerID == enemyPlayerID || unit.OwnerID == neutralPlayerID {
 		return
 	}
 	mods := s.playerBuffAggregateLocked(unit)
@@ -147,7 +147,7 @@ func (s *GameState) rollLegendPointDropLocked(attackerOwnerID string, deadUnit *
 	if attackerOwnerID == "" || deadUnit == nil {
 		return
 	}
-	if attackerOwnerID == enemyPlayerID {
+	if attackerOwnerID == enemyPlayerID || attackerOwnerID == neutralPlayerID {
 		return
 	}
 	if attackerOwnerID == deadUnit.OwnerID {

@@ -1,4 +1,4 @@
-import type { MapCatalogEntry, MapCatalogFile } from '../network/protocol'
+import type { MapCatalogEntry, MapCatalogFile, NeutralGroupTierSummary } from '../network/protocol'
 import type { BuildingDef } from './buildingDefs'
 import type { ObstacleDef } from './obstacleDefs'
 import type { UnitBounds, UnitDef } from './unitDefs'
@@ -119,4 +119,15 @@ export async function fetchItemDefs(): Promise<ItemDef[]> {
 
   const data = (await response.json()) as { items: ItemDef[] }
   return data.items
+}
+
+export async function fetchNeutralGroups(): Promise<NeutralGroupTierSummary[]> {
+  const response = await fetch(`${API_BASE}/api/catalog/neutral-groups`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to load neutral groups: ${response.status}`)
+  }
+
+  const data = (await response.json()) as { tiers: NeutralGroupTierSummary[] }
+  return data.tiers
 }

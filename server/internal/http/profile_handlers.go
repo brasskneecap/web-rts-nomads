@@ -186,6 +186,12 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 	mux.HandleFunc("/api/catalog/tuning", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, game.ExportedGameplayTuning())
 	})
+
+	mux.HandleFunc("/api/catalog/neutral-groups", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{
+			"tiers": game.ListNeutralGroupsForCatalog(),
+		})
+	})
 }
 
 // errAbortType is the type of errAbort so callers can use errors.Is.

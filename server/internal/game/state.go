@@ -141,6 +141,15 @@ type Unit struct {
 	// nearest player building (legacy behavior).
 	TargetPlayerID string
 
+	// NeutralCampID, when non-empty, links this unit to a NeutralCamp.
+	// Empty for all non-neutral units. Set at spawn by
+	// spawnGroupForCampLocked (Batch D); consumed by:
+	//   1. the group-aggro broadcast in combat AI (one camp-mate spotting a
+	//      player target triggers the rest of the camp to engage; Batch F).
+	//   2. removeUnitLocked, which calls onUnitRemovedFromCampLocked to keep
+	//      camp.AliveUnitIDs in sync (Batch E).
+	NeutralCampID string
+
 	CarriedResourceType string
 	CarriedAmount       int
 	GatherTargetID      string
@@ -579,6 +588,12 @@ type GameState struct {
 	EnemySpawnTimers map[string]*EnemySpawnTimer
 	WaveManager      WaveManager
 
+	// NeutralCamps is the runtime state for map-authored NeutralSpawns.
+	// Built once by initNeutralCampsLocked from MapConfig.NeutralSpawns and
+	// driven by tickNeutralCampsLocked (Batch E). Empty/nil on maps with
+	// no neutral spawns.
+	NeutralCamps []NeutralCamp
+
 	nextUnitID         int
 	nextBuildingID     int
 	nextOrderID        int64
@@ -959,6 +974,7 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 	s.Productions = map[string][]*UnitProduction{}
 	s.EnemySpawnTimers = map[string]*EnemySpawnTimer{}
 	s.initWaveManagerLocked()
+	s.initNeutralCampsLocked()
 
 	// Rebuild buildingsByID index from the freshly-cloned Buildings slice.
 	s.buildingsByID = make(map[string]*protocol.BuildingTile, len(s.MapConfig.Buildings))
@@ -2243,6 +2259,7 @@ func (s *GameState) Update(dt float64) {
 	profileSection("getBlockedCells", func() { blocked = s.getBlockedCellsLocked() })
 	profileSection("buildingCombat", func() { s.tickBuildingCombatLocked(dt) })
 	profileSection("wave", func() { s.tickWaveLocked(dt) })
+	profileSection("neutralCamps", func() { s.tickNeutralCampsLocked() })
 	profileSection("guardianAuraCache", func() { s.rebuildGuardianAuraCacheLocked() })
 	profileSection("combatAI", func() { s.tickCombatAILocked(dt, blocked) })
 	profileSection("unitCombat", func() { s.tickUnitCombatLocked(dt, blocked) })
@@ -2924,6 +2941,12 @@ func (s *GameState) removeUnitLocked(unitID int) {
 	// immediately. The channel tick will also catch it next tick, but
 	// removing here keeps visual state clean within the same tick.
 	s.removeBeamForTargetLocked(unitID)
+
+	// If this unit belongs to a neutral camp, strip it from the camp's
+	// alive list before the unit is deleted from the registry.
+	if u, ok := s.unitsByID[unitID]; ok && u != nil && u.NeutralCampID != "" {
+		s.onUnitRemovedFromCampLocked(unitID, u.NeutralCampID)
+	}
 
 	s.removeUnitByIDLocked(unitID)
 

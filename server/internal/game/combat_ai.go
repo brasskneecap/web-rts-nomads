@@ -519,6 +519,13 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 
 	s.applyCombatTargetLocked(unit, best, ctx.blocked)
 	unit.CurrentTargetScore = best.Score
+	// One-pulls-all camp aggro: when a neutral guard acquires a unit target,
+	// broadcast to camp-mates so the whole group engages together. Gated on
+	// NeutralCampID so non-neutral units pay zero cost. Building targets are
+	// excluded (neutrals don't attack buildings; guard would be no-op anyway).
+	if unit.NeutralCampID != "" && unit.AttackTargetID != 0 {
+		s.broadcastNeutralCampAggroLocked(unit, unit.AttackTargetID)
+	}
 	// Acquired a real target — reset the no-objective backoff so the next loss
 	// re-evaluates immediately.
 	unit.NextObjectiveSearchTick = 0

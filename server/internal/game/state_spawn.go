@@ -174,6 +174,25 @@ func (s *GameState) spawnEnemyUnitLocked(unitType string, spawn protocol.Vec2) *
 	}
 }
 
+// spawnNeutralUnitLocked materializes a single unit under the neutral player
+// slot. Mirrors spawnEnemyUnitLocked but uses neutralPlayerID/neutralPlayerColor
+// so the unit is owned by the virtual neutral faction rather than the enemy
+// faction. The caller (spawnGroupForCampLocked) is responsible for calling
+// ensureNeutralPlayerLocked before the spawn loop and for setting guard-mode
+// fields after this returns. Returns nil when unitType is unknown.
+func (s *GameState) spawnNeutralUnitLocked(unitType string, spawn protocol.Vec2) *Unit {
+	if def, ok := getUnitDef(unitType); ok {
+		return s.spawnUnitFromDefLocked(def, unitType, neutralPlayerID, neutralPlayerColor, spawn)
+	}
+	// Fallback for legacy hardcoded types (e.g. bare "raider" without a catalog entry).
+	switch unitType {
+	case "raider":
+		return s.spawnRaiderUnitLocked(neutralPlayerID, neutralPlayerColor, spawn)
+	default:
+		return nil
+	}
+}
+
 func resolveUnitArchetype(def UnitDef, unitType string) string {
 	if def.Archetype != "" {
 		return def.Archetype

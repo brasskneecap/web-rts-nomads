@@ -211,12 +211,13 @@
               <option value="obstacle">Obstacle</option>
               <option value="building">Building</option>
               <option value="enemy-spawn">Enemy Spawn</option>
+              <option value="neutral-spawn">Neutral Spawn</option>
               <option value="unit">Unit</option>
               <option value="erase">Erase</option>
             </select>
           </div>
 
-          <div v-if="brushMode !== 'building' && brushMode !== 'enemy-spawn' && brushMode !== 'unit'" class="control-group">
+          <div v-if="brushMode !== 'building' && brushMode !== 'enemy-spawn' && brushMode !== 'neutral-spawn' && brushMode !== 'unit'" class="control-group">
             <label for="brush-size">Brush Size</label>
             <select id="brush-size" v-model.number="brushSize" :disabled="!paintModeEnabled">
               <option :value="1">1 × 1</option>
@@ -421,6 +422,50 @@
               <option value="__none__">None (Stay at Spawn)</option>
               <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
             </select>
+          </div>
+
+          <div v-if="brushMode === 'neutral-spawn'" class="control-group neutral-spawn-config">
+            <label for="neutral-starting-tier">Starting Tier</label>
+            <input
+              id="neutral-starting-tier"
+              v-model.number="neutralStartingTier"
+              type="number"
+              min="1"
+              :disabled="!paintModeEnabled"
+            />
+            <label for="neutral-tierup-every">Tier Up Every N Waves <span class="field-hint">(0 = off)</span></label>
+            <input
+              id="neutral-tierup-every"
+              v-model.number="neutralTierUpEveryNWaves"
+              type="number"
+              min="0"
+              :disabled="!paintModeEnabled"
+            />
+            <label for="neutral-group-id">Group</label>
+            <select
+              id="neutral-group-id"
+              v-model="neutralGroupId"
+              :disabled="!paintModeEnabled"
+            >
+              <option :value="NEUTRAL_SPAWN_RANDOM_GROUP_ID">Random</option>
+              <option
+                v-for="g in groupsForCurrentTier"
+                :key="g.id"
+                :value="g.id"
+              >{{ g.name }}</option>
+            </select>
+            <label for="neutral-aggro">Aggro Range</label>
+            <input id="neutral-aggro" v-model.number="neutralAggroRange" type="number" min="0" :disabled="!paintModeEnabled" />
+            <label for="neutral-leash">Leash Range</label>
+            <input id="neutral-leash" v-model.number="neutralLeashRange" type="number" min="0" :disabled="!paintModeEnabled" />
+            <label for="neutral-hp-base">Health Multiplier</label>
+            <input id="neutral-hp-base" v-model.number="neutralHealthMultiplier" type="number" step="0.1" min="0" :disabled="!paintModeEnabled" />
+            <label for="neutral-hp-perwave">Health Multiplier Per Wave</label>
+            <input id="neutral-hp-perwave" v-model.number="neutralHealthMultiplierPerWave" type="number" step="0.1" min="0" :disabled="!paintModeEnabled" />
+            <label for="neutral-dmg-base">Damage Multiplier</label>
+            <input id="neutral-dmg-base" v-model.number="neutralDamageMultiplier" type="number" step="0.1" min="0" :disabled="!paintModeEnabled" />
+            <label for="neutral-dmg-perwave">Damage Multiplier Per Wave</label>
+            <input id="neutral-dmg-perwave" v-model.number="neutralDamageMultiplierPerWave" type="number" step="0.1" min="0" :disabled="!paintModeEnabled" />
           </div>
 
           <div v-if="brushMode === 'unit'" class="control-group unit-brush-config">
@@ -744,13 +789,103 @@
           <button type="button" class="edit-delete-btn" @click="deleteSelectedPlacedUnit">Delete Unit</button>
         </div>
       </div>
+
+      <!-- Neutral spawn edit panel -->
+      <div v-if="selectedEditNeutralSpawn" class="edit-panel neutral-spawn-edit-panel" :style="neutralSpawnEditPanelStyle">
+        <div class="edit-panel__header">
+          <span class="edit-panel__title">Neutral Spawn</span>
+          <button type="button" class="edit-panel__close" @click="selectedEditNeutralSpawnId = null">&#x2715;</button>
+        </div>
+        <div class="edit-panel__body">
+          <div class="edit-field">
+            <label>Starting Tier</label>
+            <input
+              type="number" min="1"
+              :value="selectedEditNeutralSpawn.startingTier ?? 1"
+              @input="updateSelectedNeutralSpawn({ startingTier: Math.max(1, +($event.target as HTMLInputElement).value) })"
+            />
+          </div>
+          <div class="edit-field">
+            <label>Tier Up Every N Waves (0 = off)</label>
+            <input
+              type="number" min="0"
+              :value="selectedEditNeutralSpawn.tierUpEveryNWaves ?? 0"
+              @input="updateSelectedNeutralSpawn({ tierUpEveryNWaves: Math.max(0, +($event.target as HTMLInputElement).value) })"
+            />
+          </div>
+          <div class="edit-field">
+            <label>Group</label>
+            <select
+              :value="selectedEditNeutralSpawn.groupId"
+              @change="updateSelectedNeutralSpawn({ groupId: ($event.target as HTMLSelectElement).value })"
+            >
+              <option :value="NEUTRAL_SPAWN_RANDOM_GROUP_ID">Random</option>
+              <option
+                v-for="g in editNeutralGroupsForTier"
+                :key="g.id"
+                :value="g.id"
+              >{{ g.name }}</option>
+            </select>
+          </div>
+          <div class="edit-field">
+            <label>Aggro Range (px)</label>
+            <input
+              type="number" min="0"
+              :value="selectedEditNeutralSpawn.aggroRange ?? 150"
+              @input="updateSelectedNeutralSpawn({ aggroRange: +($event.target as HTMLInputElement).value })"
+            />
+          </div>
+          <div class="edit-field">
+            <label>Leash Range (px)</label>
+            <input
+              type="number" min="0"
+              :value="selectedEditNeutralSpawn.leashRange ?? 200"
+              @input="updateSelectedNeutralSpawn({ leashRange: +($event.target as HTMLInputElement).value })"
+            />
+          </div>
+          <div class="edit-field">
+            <label>Health Multiplier</label>
+            <input
+              type="number" min="0" step="0.1"
+              :value="selectedEditNeutralSpawn.healthMultiplier ?? 1"
+              @input="updateSelectedNeutralSpawn({ healthMultiplier: +($event.target as HTMLInputElement).value })"
+            />
+          </div>
+          <div class="edit-field">
+            <label>Health Multiplier Per Wave</label>
+            <input
+              type="number" min="0" step="0.1"
+              :value="selectedEditNeutralSpawn.healthMultiplierPerWave ?? 0"
+              @input="updateSelectedNeutralSpawn({ healthMultiplierPerWave: +($event.target as HTMLInputElement).value })"
+            />
+          </div>
+          <div class="edit-field">
+            <label>Damage Multiplier</label>
+            <input
+              type="number" min="0" step="0.1"
+              :value="selectedEditNeutralSpawn.damageMultiplier ?? 1"
+              @input="updateSelectedNeutralSpawn({ damageMultiplier: +($event.target as HTMLInputElement).value })"
+            />
+          </div>
+          <div class="edit-field">
+            <label>Damage Multiplier Per Wave</label>
+            <input
+              type="number" min="0" step="0.1"
+              :value="selectedEditNeutralSpawn.damageMultiplierPerWave ?? 0"
+              @input="updateSelectedNeutralSpawn({ damageMultiplierPerWave: +($event.target as HTMLInputElement).value })"
+            />
+          </div>
+
+          <button type="button" class="edit-delete-btn" @click="deleteSelectedNeutralSpawn">Delete Neutral Spawn</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchObstacleDefs, fetchUnitDefs, saveMapCatalogFile } from '@/game/maps/catalog'
+import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchUnitDefs, saveMapCatalogFile } from '@/game/maps/catalog'
 import type {
   BuildingType,
   JsonObject,
@@ -758,6 +893,9 @@ import type {
   MapCatalogEntry,
   MapCatalogFile,
   MapConfig,
+  NeutralGroupSummary,
+  NeutralGroupTierSummary,
+  NeutralSpawn,
   ObstacleType,
   PlacedUnit,
   TerrainType,
@@ -765,6 +903,7 @@ import type {
   UnitType,
   VictoryCondition,
 } from '@/game/network/protocol'
+import { NEUTRAL_PLAYER_COLOR, NEUTRAL_SPAWN_RANDOM_GROUP_ID } from '@/game/network/protocol'
 import type { UnitFaction } from '@/game/maps/unitDefs'
 import { Camera } from '@/game/rendering/Camera'
 import {
@@ -802,7 +941,7 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const tilePickerCanvas = ref<HTMLCanvasElement | null>(null)
 
 const TILE_PICKER_SCALE = 2
-const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'enemy-spawn' | 'unit' | 'erase'>('terrain')
+const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'enemy-spawn' | 'neutral-spawn' | 'unit' | 'erase'>('terrain')
 const brushSize = ref<1 | 3 | 5 | 7>(1)
 const selectedTerrain = ref<TerrainType>('grass')
 const selectedObstacle = ref<ObstacleType>('rock')
@@ -836,6 +975,39 @@ const enemyWaveNumber = ref(1)
 // waves 3, 6, 9, … Separate ref from enemyWaveNumber so switching modes mid-
 // authoring doesn't clobber the other field's value.
 const enemyWaveInterval = ref(3)
+const neutralStartingTier = ref(1)
+const neutralTierUpEveryNWaves = ref(0)
+const neutralGroupId = ref<string>(NEUTRAL_SPAWN_RANDOM_GROUP_ID)
+const neutralAggroRange = ref(150)
+const neutralLeashRange = ref(200)
+const neutralHealthMultiplier = ref(1.0)
+const neutralHealthMultiplierPerWave = ref(0.0)
+const neutralDamageMultiplier = ref(1.0)
+const neutralDamageMultiplierPerWave = ref(0.0)
+const neutralGroupTiers = ref<NeutralGroupTierSummary[] | null>(null)
+
+const groupsForCurrentTier = computed<NeutralGroupSummary[]>(() => {
+  const tiers = neutralGroupTiers.value
+  if (!tiers || tiers.length === 0) return []
+  // Pick the largest tier <= requested (mirrors server resolveNeutralTier).
+  const sorted = [...tiers].sort((a, b) => a.tier - b.tier)
+  let pick: NeutralGroupTierSummary | null = null
+  for (const t of sorted) {
+    if (t.tier <= neutralStartingTier.value) pick = t
+  }
+  return pick ? pick.groups : []
+})
+
+// If the user lowers the tier so the currently-selected group no longer
+// exists in the resolved tier, fall back to Random so a click can't stamp
+// a stale id the server won't recognize.
+watch(groupsForCurrentTier, (groups) => {
+  if (neutralGroupId.value === NEUTRAL_SPAWN_RANDOM_GROUP_ID) return
+  if (!groups.some((g) => g.id === neutralGroupId.value)) {
+    neutralGroupId.value = NEUTRAL_SPAWN_RANDOM_GROUP_ID
+  }
+})
+
 const placedUnitFaction = ref<UnitFaction>('raider')
 const placedUnitPlayerSlot = ref<string>('enemy')
 const placedUnitType = ref('raider')
@@ -860,8 +1032,10 @@ const enemyObjectiveId = ref('')
 const buildingObjectiveId = ref('')
 const selectedEditBuildingId = ref<string | null>(null)
 const selectedEditPlacedUnitId = ref<string | null>(null)
+const selectedEditNeutralSpawnId = ref<string | null>(null)
 const editPanelPos = ref<{ x: number; y: number } | null>(null)
 const placedUnitEditPanelPos = ref<{ x: number; y: number } | null>(null)
+const neutralSpawnEditPanelPos = ref<{ x: number; y: number } | null>(null)
 const copiedBuilding = ref<{ buildingType: string; metadata: JsonObject | undefined } | null>(null)
 const isPasteMode = ref(false)
 const movingBuilding = ref<{ id: string; buildingType: string; metadata: JsonObject | undefined; x: number; y: number } | null>(null)
@@ -1066,6 +1240,44 @@ function deleteSelectedPlacedUnit() {
   selectedEditPlacedUnitId.value = null
 }
 
+const selectedEditNeutralSpawn = computed<NeutralSpawn | null>(() => {
+  const id = selectedEditNeutralSpawnId.value
+  if (!id) return null
+  return model.value.neutralSpawns?.find((s) => s.id === id) ?? null
+})
+
+function updateSelectedNeutralSpawn(patch: Partial<NeutralSpawn>) {
+  const id = selectedEditNeutralSpawnId.value
+  if (!id) return
+  const existing = model.value.neutralSpawns ?? []
+  const next = existing.map((s) => (s.id === id ? { ...s, ...patch } : s))
+  model.value = { ...model.value, neutralSpawns: next }
+}
+
+function deleteSelectedNeutralSpawn() {
+  const id = selectedEditNeutralSpawnId.value
+  if (!id) return
+  const existing = model.value.neutralSpawns ?? []
+  const next = existing.filter((s) => s.id !== id)
+  model.value = { ...model.value, neutralSpawns: next.length ? next : undefined }
+  selectedEditNeutralSpawnId.value = null
+  neutralSpawnEditPanelPos.value = null
+}
+
+// Group dropdown options for the edit panel, computed from the SELECTED
+// spawn's startingTier (independent of the brush-panel tier).
+const editNeutralGroupsForTier = computed<NeutralGroupSummary[]>(() => {
+  const tiers = neutralGroupTiers.value
+  if (!tiers || tiers.length === 0) return []
+  const requested = selectedEditNeutralSpawn.value?.startingTier ?? 1
+  const sorted = [...tiers].sort((a, b) => a.tier - b.tier)
+  let pick: NeutralGroupTierSummary | null = null
+  for (const t of sorted) {
+    if (t.tier <= requested) pick = t
+  }
+  return pick ? pick.groups : []
+})
+
 const editPanelStyle = computed(() => {
   if (!editPanelPos.value) return {}
   return { left: `${editPanelPos.value.x}px`, top: `${editPanelPos.value.y}px` }
@@ -1074,6 +1286,11 @@ const editPanelStyle = computed(() => {
 const placedUnitEditPanelStyle = computed(() => {
   if (!placedUnitEditPanelPos.value) return {}
   return { left: `${placedUnitEditPanelPos.value.x}px`, top: `${placedUnitEditPanelPos.value.y}px` }
+})
+
+const neutralSpawnEditPanelStyle = computed(() => {
+  if (!neutralSpawnEditPanelPos.value) return {}
+  return { left: `${neutralSpawnEditPanelPos.value.x}px`, top: `${neutralSpawnEditPanelPos.value.y}px` }
 })
 
 const editWaveMode = computed<'gameStart' | 'always' | 'specific' | 'repeating' | 'interval'>(() => {
@@ -1185,6 +1402,7 @@ function clearMap() {
   model.value = createEditorMapConfig(model.value.gridCols, model.value.gridRows)
   placedUnits.value = []
   selectedEditPlacedUnitId.value = null
+  selectedEditNeutralSpawnId.value = null
 }
 
 // Wipes all painted content (terrain, custom tiles, obstacles, buildings)
@@ -1203,6 +1421,7 @@ function clearEverything() {
   })
   placedUnits.value = []
   selectedEditPlacedUnitId.value = null
+  selectedEditNeutralSpawnId.value = null
   selectedSpawnTownhallId.value = ''
 }
 
@@ -1471,6 +1690,7 @@ function getBrushCells(cx: number, cy: number, size: number): Array<{ x: number;
 function paintAtScreen(screenX: number, screenY: number) {
   selectedEditBuildingId.value = null
   selectedEditPlacedUnitId.value = null
+  selectedEditNeutralSpawnId.value = null
   const cell = getGridCellAtScreen(screenX, screenY)
   if (!cell) return
 
@@ -1486,6 +1706,11 @@ function paintAtScreen(screenX: number, screenY: number) {
 
   if (activeBrushMode.value === 'enemy-spawn') {
     paintEnemySpawnAt(cell.x, cell.y)
+    return
+  }
+
+  if (activeBrushMode.value === 'neutral-spawn') {
+    paintNeutralSpawnAt(cell.x, cell.y)
     return
   }
 
@@ -1511,6 +1736,12 @@ function paintAtScreen(screenX: number, screenY: number) {
         null,
       )
       placedUnits.value = placedUnits.value.filter((u) => !(u.x === c.x && u.y === c.y))
+      if (next.neutralSpawns) {
+        next = {
+          ...next,
+          neutralSpawns: next.neutralSpawns.filter((s) => !(s.x === c.x && s.y === c.y)),
+        }
+      }
     }
     model.value = { ...next, placedUnits: placedUnits.value }
     return
@@ -1587,8 +1818,39 @@ function paintEnemySpawnAt(cx: number, cy: number) {
   model.value = setBuildingTile(model.value, cx, cy, 'enemy-spawnpoint', metadata)
 }
 
+function paintNeutralSpawnAt(cx: number, cy: number) {
+  const id = `neutral-spawn-${cx}-${cy}`
+  const record: NeutralSpawn = {
+    id,
+    x: cx,
+    y: cy,
+    groupId: neutralGroupId.value,
+    startingTier: neutralStartingTier.value,
+    tierUpEveryNWaves: neutralTierUpEveryNWaves.value,
+    aggroRange: neutralAggroRange.value,
+    leashRange: neutralLeashRange.value,
+    healthMultiplier: neutralHealthMultiplier.value,
+    healthMultiplierPerWave: neutralHealthMultiplierPerWave.value,
+    damageMultiplier: neutralDamageMultiplier.value,
+    damageMultiplierPerWave: neutralDamageMultiplierPerWave.value,
+  }
+  const existing = model.value.neutralSpawns ?? []
+  const existingIdx = existing.findIndex((s) => s.id === id)
+  let next: NeutralSpawn[]
+  if (existingIdx >= 0) {
+    next = existing.map((s, i) => (i === existingIdx ? record : s))
+  } else {
+    next = [...existing, record]
+  }
+  model.value = { ...model.value, neutralSpawns: next }
+}
+
 function placedUnitAt(x: number, y: number): PlacedUnit | undefined {
   return placedUnits.value.find((u) => u.x === x && u.y === y)
+}
+
+function neutralSpawnAt(x: number, y: number): NeutralSpawn | undefined {
+  return model.value.neutralSpawns?.find((s) => s.x === x && s.y === y)
 }
 
 function paintUnitAt(cx: number, cy: number) {
@@ -1684,13 +1946,20 @@ function onMouseDown(event: MouseEvent) {
     if (event.button === 0 && !isSpaceHeld) {
       const cell = getGridCellAtScreen(screen.x, screen.y)
       const hitUnit = cell ? placedUnitAt(cell.x, cell.y) : null
+      const hitNeutral = !hitUnit && cell ? neutralSpawnAt(cell.x, cell.y) : null
       if (hitUnit) {
         selectedEditPlacedUnitId.value = hitUnit.id
+        selectedEditNeutralSpawnId.value = null
+        selectedEditBuildingId.value = null
+      } else if (hitNeutral) {
+        selectedEditNeutralSpawnId.value = hitNeutral.id
+        selectedEditPlacedUnitId.value = null
         selectedEditBuildingId.value = null
       } else {
         const hit = cell ? getBuildingAt(cell.x, cell.y) : null
         selectedEditBuildingId.value = hit?.id ?? null
         selectedEditPlacedUnitId.value = null
+        selectedEditNeutralSpawnId.value = null
       }
     }
     return
@@ -1761,6 +2030,7 @@ function onKeyDown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     selectedEditBuildingId.value = null
     selectedEditPlacedUnitId.value = null
+    selectedEditNeutralSpawnId.value = null
     isPasteMode.value = false
     cancelMoveBuilding()
   }
@@ -1814,6 +2084,7 @@ function render() {
     drawGrid(ctx)
     drawMapBounds(ctx)
     drawPlacedUnits(ctx)
+    drawNeutralSpawns(ctx)
     drawSelectionHighlight(ctx)
 
     ctx.restore()
@@ -1853,18 +2124,42 @@ function updateEditPanelPos() {
     const clampedY = Math.max(0, Math.min(screenY, targetCanvas.height - 100))
     placedUnitEditPanelPos.value = { x: clampedX, y: clampedY }
   }
+
+  const ns = selectedEditNeutralSpawn.value
+  if (!ns || !targetCanvas) {
+    neutralSpawnEditPanelPos.value = null
+  } else {
+    const cellSize = model.value.cellSize
+    const worldRight = (ns.x + 1) * cellSize
+    const worldTop = ns.y * cellSize
+    const screenX = (worldRight - camera.x) * camera.zoom + 10
+    const screenY = (worldTop - camera.y) * camera.zoom
+    const clampedX = Math.min(screenX, targetCanvas.width - 280)
+    const clampedY = Math.max(0, Math.min(screenY, targetCanvas.height - 100))
+    neutralSpawnEditPanelPos.value = { x: clampedX, y: clampedY }
+  }
 }
 
 function drawSelectionHighlight(ctx: CanvasRenderingContext2D) {
-  const b = selectedEditBuilding.value
-  if (!b) return
   const cellSize = model.value.cellSize
-  ctx.save()
-  ctx.strokeStyle = '#60a5fa'
-  ctx.lineWidth = 2 / camera.zoom
-  ctx.setLineDash([])
-  ctx.strokeRect(b.x * cellSize, b.y * cellSize, b.width * cellSize, b.height * cellSize)
-  ctx.restore()
+  const b = selectedEditBuilding.value
+  if (b) {
+    ctx.save()
+    ctx.strokeStyle = '#60a5fa'
+    ctx.lineWidth = 2 / camera.zoom
+    ctx.setLineDash([])
+    ctx.strokeRect(b.x * cellSize, b.y * cellSize, b.width * cellSize, b.height * cellSize)
+    ctx.restore()
+  }
+  const ns = selectedEditNeutralSpawn.value
+  if (ns) {
+    ctx.save()
+    ctx.strokeStyle = '#60a5fa'
+    ctx.lineWidth = 2 / camera.zoom
+    ctx.setLineDash([])
+    ctx.strokeRect(ns.x * cellSize, ns.y * cellSize, cellSize, cellSize)
+    ctx.restore()
+  }
 }
 
 function drawMapBackground(ctx: CanvasRenderingContext2D) {
@@ -2173,6 +2468,27 @@ function drawPlacedUnits(ctx: CanvasRenderingContext2D) {
   ctx.textBaseline = 'alphabetic'
 }
 
+function drawNeutralSpawns(ctx: CanvasRenderingContext2D) {
+  const spawns = model.value.neutralSpawns
+  if (!spawns || spawns.length === 0) return
+  const cellSize = model.value.cellSize
+  for (const ns of spawns) {
+    const px = ns.x * cellSize + cellSize / 2
+    const py = ns.y * cellSize + cellSize / 2
+    ctx.save()
+    ctx.fillStyle = NEUTRAL_PLAYER_COLOR
+    ctx.beginPath()
+    ctx.arc(px, py, cellSize * 0.4, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#fff'
+    ctx.font = `bold ${Math.max(8, cellSize * 0.3)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('N', px, py)
+    ctx.restore()
+  }
+}
+
 // Re-render the tile picker whenever it becomes visible or the sheet changes.
 // Wait a tick so the v-if'd canvas is mounted before we try to draw.
 watch(
@@ -2204,6 +2520,7 @@ onMounted(() => {
   void loadAvailableMaps()
   void fetchBuildingDefs().then(initBuildingDefs).catch(() => {})
   void fetchObstacleDefs().then(initObstacleDefs).catch(() => {})
+  void fetchNeutralGroups().then((tiers) => { neutralGroupTiers.value = tiers }).catch(() => {})
   void fetchUnitDefs()
     .then(({ units, paths, pathsByUnit }) => {
       initPathBounds(paths)
@@ -2313,6 +2630,16 @@ watch(placedUnits, (units) => {
     selectedEditPlacedUnitId.value = null
   }
 })
+
+watch(
+  () => model.value.neutralSpawns,
+  (spawns) => {
+    const id = selectedEditNeutralSpawnId.value
+    if (id && !(spawns?.some((s) => s.id === id))) {
+      selectedEditNeutralSpawnId.value = null
+    }
+  },
+)
 
 onBeforeUnmount(() => {
   if (canvas.value) {

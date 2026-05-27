@@ -71,9 +71,11 @@ func (s *GameState) logAttackTiming(kind string, attacker *Unit, targetID int, t
 // playersAreHostile reports whether two owner IDs should treat each other as
 // enemies for combat / target acquisition purposes.
 //
-// Currently: real players are always allied with each other. Only the wave-enemy
-// owner ID (enemyPlayerID, "__enemy__") is hostile to real players, and real
-// players are hostile to it. Same owner is never hostile.
+// Currently: real players are always allied with each other. The wave-enemy
+// owner ID (enemyPlayerID, "__enemy__") and the neutral-camp owner ID
+// (neutralPlayerID, "__neutral__") are both hostile to real players, and real
+// players are hostile to them. Same owner is never hostile (so two units in
+// the same neutral camp don't fight each other).
 //
 // ── Team / alliance chokepoint ───────────────────────────────────────────────
 //
@@ -95,9 +97,10 @@ func (s *GameState) playerTeamLocked(ownerID string) int {
 	return 0
 }
 
-// playersAreHostileLocked: same owner ⇒ never hostile; __enemy__ ⇒ hostile to
-// every player team (and vice-versa); otherwise hostile iff different team.
-// At the default (all team 0) this collapses exactly onto the pre-team logic.
+// playersAreHostileLocked: same owner ⇒ never hostile; __enemy__ or
+// __neutral__ ⇒ hostile to every player team (and vice-versa); otherwise
+// hostile iff different team. At the default (all team 0) this collapses
+// exactly onto the pre-team logic.
 func (s *GameState) playersAreHostileLocked(a, b string) bool {
 	if a == b {
 		return false
@@ -105,15 +108,21 @@ func (s *GameState) playersAreHostileLocked(a, b string) bool {
 	if a == enemyPlayerID || b == enemyPlayerID {
 		return true
 	}
+	if a == neutralPlayerID || b == neutralPlayerID {
+		return true
+	}
 	return s.playerTeamLocked(a) != s.playerTeamLocked(b)
 }
 
 // playersAreFriendlyLocked reports allies (same team, self included). This is
-// NOT !hostile: the __enemy__ AI is never an ally — not even to itself — so
-// heals / ally-scoring / friendly-fire skips never treat enemy units as
-// friendly.
+// NOT !hostile: the __enemy__ AI and __neutral__ camp mobs are never allies —
+// not even to themselves — so heals / ally-scoring / friendly-fire skips
+// never treat enemy or neutral units as friendly.
 func (s *GameState) playersAreFriendlyLocked(a, b string) bool {
 	if a == enemyPlayerID || b == enemyPlayerID {
+		return false
+	}
+	if a == neutralPlayerID || b == neutralPlayerID {
 		return false
 	}
 	return s.playerTeamLocked(a) == s.playerTeamLocked(b)

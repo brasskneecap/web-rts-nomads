@@ -43,6 +43,15 @@ const enemyPlayerID = "__enemy__"
 
 const enemyPlayerColor = "#e74c3c"
 
+// neutralPlayerID is the virtual player slot for neutral camp units.
+// Neutrals are hostile to player units (distinct OwnerID → existing AI
+// scoring treats them as valid targets in both directions) and have no
+// base/resources/defeat condition. Neutrals only exist outside "active"
+// wave state; the lifecycle is owned by state_neutral_camps.go.
+const neutralPlayerID = "__neutral__"
+
+const neutralPlayerColor = "#9b59b6"
+
 // -------------------------------------------------------------------------
 
 // initWaveManagerLocked scans all enemy-spawnpoint buildings for "waveNumber",
@@ -227,6 +236,19 @@ func (s *GameState) ensureEnemyPlayerLocked() {
 	s.Players[enemyPlayerID] = &Player{
 		ID:                            enemyPlayerID,
 		Color:                         enemyPlayerColor,
+		Resources:                     map[string]int{},
+		GlobalUnitSpawnTimeMultiplier: 1,
+		UnitSpawnTimeMultipliers:      map[string]float64{},
+	}
+}
+
+func (s *GameState) ensureNeutralPlayerLocked() {
+	if _, exists := s.Players[neutralPlayerID]; exists {
+		return
+	}
+	s.Players[neutralPlayerID] = &Player{
+		ID:                            neutralPlayerID,
+		Color:                         neutralPlayerColor,
 		Resources:                     map[string]int{},
 		GlobalUnitSpawnTimeMultiplier: 1,
 		UnitSpawnTimeMultipliers:      map[string]float64{},

@@ -29,7 +29,7 @@ import type {
   WaveSnapshot,
   WaveUpgradeOfferSnapshot,
 } from '../network/protocol'
-import { ENEMY_PLAYER_ID, UNIT_ORDER_LABELS } from '../network/protocol'
+import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID, UNIT_ORDER_LABELS } from '../network/protocol'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
@@ -1334,29 +1334,32 @@ export class GameState {
   }
 
   // Alliance is now team-based (PlayerSnapshot.teamId), mirroring the server
-  // chokepoint. Same owner ⇒ never hostile; the __enemy__ AI ⇒ hostile to
-  // every team; otherwise hostile iff different team. At the default (all
-  // team 0) this is exactly the old "only __enemy__ is hostile" behavior.
+  // chokepoint. Same owner ⇒ never hostile; the __enemy__ AI and __neutral__
+  // camp mobs ⇒ hostile to every team; otherwise hostile iff different team.
+  // At the default (all team 0) this is exactly the old "only __enemy__ is
+  // hostile" behavior, extended to include neutral camps.
   // Use this (not raw ownerId comparisons) for any "should the cursor /
   // health bar / attack visual treat this as an enemy?" decision.
   isHostileToLocalPlayer(ownerId: string | undefined): boolean {
     if (!ownerId) return false
-    if (!this.localPlayerId) return ownerId === ENEMY_PLAYER_ID
+    if (!this.localPlayerId) return ownerId === ENEMY_PLAYER_ID || ownerId === NEUTRAL_PLAYER_ID
     return this.ownersAreHostile(ownerId, this.localPlayerId)
   }
 
   ownersAreHostile(a: string | null | undefined, b: string | null | undefined): boolean {
     if (!a || !b || a === b) return false
     if (a === ENEMY_PLAYER_ID || b === ENEMY_PLAYER_ID) return true
+    if (a === NEUTRAL_PLAYER_ID || b === NEUTRAL_PLAYER_ID) return true
     return this.teamOf(a) !== this.teamOf(b)
   }
 
   // True when the unit belongs to a real allied player — same team, not me,
-  // not the __enemy__ AI. Used to gate read-only inspection of allies.
-  // Mirrors the server playersAreFriendly (which is NOT just !hostile).
+  // not the __enemy__ AI, not a neutral mob. Used to gate read-only
+  // inspection of allies. Mirrors the server playersAreFriendly (which is
+  // NOT just !hostile).
   private isAlliedOtherPlayerUnit(unit: Unit): boolean {
     const ownerId = unit.ownerId
-    if (!ownerId || ownerId === ENEMY_PLAYER_ID) return false
+    if (!ownerId || ownerId === ENEMY_PLAYER_ID || ownerId === NEUTRAL_PLAYER_ID) return false
     if (!this.localPlayerId || ownerId === this.localPlayerId) return false
     return this.teamOf(ownerId) === this.teamOf(this.localPlayerId)
   }

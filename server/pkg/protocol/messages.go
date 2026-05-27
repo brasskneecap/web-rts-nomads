@@ -98,6 +98,38 @@ func (p *PlacedUnit) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// NeutralSpawn is a map-authored tile that materializes a guard squad of
+// "neutral" units between waves. The squad despawns instantly when a wave
+// starts and respawns when the wave clears. Composition is drawn from a
+// tier file in catalog/neutral_groups/. See neutral_group_defs.go for the
+// runtime loader and state_neutral_camps.go for the lifecycle.
+//
+// GroupID is either a specific group id (e.g. "small_raider_group") or the
+// sentinel "__random__" to roll a random group from the current tier each
+// respawn.
+//
+// StartingTier defaults to 1. TierUpEveryNWaves = 0 disables auto-scaling.
+// Aggro/leash and the four per-wave scaling fields mirror enemy-spawnpoint
+// semantics (see state_waves.go computeWaveStatScalingLocked) so authors
+// have a consistent mental model.
+type NeutralSpawn struct {
+	GridCoord
+	ID                      string  `json:"id"`
+	GroupID                 string  `json:"groupId"`
+	StartingTier            int     `json:"startingTier,omitempty"`
+	TierUpEveryNWaves       int     `json:"tierUpEveryNWaves,omitempty"`
+	AggroRange              float64 `json:"aggroRange,omitempty"`
+	LeashRange              float64 `json:"leashRange,omitempty"`
+	HealthMultiplier        float64 `json:"healthMultiplier,omitempty"`
+	HealthMultiplierPerWave float64 `json:"healthMultiplierPerWave,omitempty"`
+	DamageMultiplier        float64 `json:"damageMultiplier,omitempty"`
+	DamageMultiplierPerWave float64 `json:"damageMultiplierPerWave,omitempty"`
+}
+
+// NeutralSpawnRandomGroupID is the sentinel GroupID value meaning "pick a
+// random group from the current tier each time the camp respawns."
+const NeutralSpawnRandomGroupID = "__random__"
+
 type MapConfig struct {
 	ID          string             `json:"id"`
 	Name        string             `json:"name"`
@@ -113,8 +145,9 @@ type MapConfig struct {
 	DefaultTile *TileCoord         `json:"defaultTile,omitempty"`
 	Obstacles   []ObstacleTile     `json:"obstacles"`
 	Buildings   []BuildingTile     `json:"buildings"`
-	PlacedUnits []PlacedUnit       `json:"placedUnits,omitempty"`
-	WaveConfig  *WaveConfig        `json:"waveConfig,omitempty"`
+	PlacedUnits   []PlacedUnit   `json:"placedUnits,omitempty"`
+	NeutralSpawns []NeutralSpawn `json:"neutralSpawns,omitempty"`
+	WaveConfig    *WaveConfig    `json:"waveConfig,omitempty"`
 	// VictoryConditions lists the objectives that must ALL be completed for the
 	// player to win. Omitted or empty means no server-managed win condition
 	// (the legacy wave-complete client check still works for wave maps).

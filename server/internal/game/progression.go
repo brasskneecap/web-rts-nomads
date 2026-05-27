@@ -236,7 +236,13 @@ func nextRankDef(rank string) (rankProgressionDef, bool) {
 }
 
 func (s *GameState) unitCanGainXPLocked(unit *Unit) bool {
-	return unit != nil && unit.OwnerID != enemyPlayerID && unit.HP > 0 && unit.Visible
+	if unit == nil || unit.HP <= 0 || !unit.Visible {
+		return false
+	}
+	if unit.OwnerID == enemyPlayerID || unit.OwnerID == neutralPlayerID {
+		return false
+	}
+	return true
 }
 
 func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
