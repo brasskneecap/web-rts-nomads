@@ -119,7 +119,7 @@ func (s *GameState) enterWaveUpgradePhaseLocked() {
 	deadlineMs := time.Now().UnixMilli() + int64(tuning.TimerSeconds*1000)
 	humanCount := 0
 	for playerID, player := range s.Players {
-		if playerID == enemyPlayerID {
+		if playerID == enemyPlayerID || playerID == neutralPlayerID {
 			continue
 		}
 		humanCount++
@@ -139,7 +139,7 @@ func (s *GameState) enterWaveUpgradePhaseLocked() {
 func (s *GameState) tickUpgradePhaseLocked() {
 	now := time.Now().UnixMilli()
 	for playerID, player := range s.Players {
-		if playerID == enemyPlayerID || player.UpgradeState.Resolved {
+		if playerID == enemyPlayerID || playerID == neutralPlayerID || player.UpgradeState.Resolved {
 			continue
 		}
 		if now >= player.UpgradeState.OfferDeadlineMs {
@@ -159,7 +159,7 @@ func (s *GameState) tickUpgradePhaseLocked() {
 
 func (s *GameState) waveUpgradeAllResolvedLocked() bool {
 	for playerID, player := range s.Players {
-		if playerID == enemyPlayerID {
+		if playerID == enemyPlayerID || playerID == neutralPlayerID {
 			continue
 		}
 		if !player.UpgradeState.Resolved {
