@@ -8,6 +8,7 @@ import type {
   BattleTrackerSnapshot,
   CommanderAbilitySnapshot,
   ConnectionState,
+  LootDropSnapshot,
   MapId,
   PlayerUpgradeSnapshot,
   VaultItemSnapshot,
@@ -90,6 +91,15 @@ export type GameUiSnapshot = {
   // 0 when not paused. Lets the wave-upgrade modal compute a frozen
   // remaining-time at the pause moment rather than draining.
   pausedSinceMs: number
+  // The ground-loot chest the cursor is currently hovering over, or null.
+  // Used by the LootDropTooltip to render the chest contents near the cursor.
+  hoveredLootDrop: LootDropSnapshot | null
+  // Canvas-relative screen position of the cursor. Used to position the
+  // loot-drop tooltip near the pointer in DOM space.
+  cursorScreenX: number
+  cursorScreenY: number
+  cursorClientX: number
+  cursorClientY: number
 }
 
 export class GameClient {
@@ -129,6 +139,7 @@ export class GameClient {
     }
 
     this.renderer = new CanvasRenderer(canvas, this.state, this.camera)
+    this.network.setRenderer(this.renderer)
     this.input = new InputManager(canvas, this.state, this, this.camera, this.network)
 
     this.loop = new GameLoop({
@@ -262,6 +273,13 @@ export class GameClient {
       paused: this.state.paused,
       pausedBy: this.state.pausedBy,
       pausedSinceMs: this.state.pausedSinceMs,
+      hoveredLootDrop: this.state.hoveredLootDropId
+        ? (this.state.lootDropsById.get(this.state.hoveredLootDropId) ?? null)
+        : null,
+      cursorScreenX: this.state.cursorScreenX,
+      cursorScreenY: this.state.cursorScreenY,
+      cursorClientX: this.state.cursorClientX,
+      cursorClientY: this.state.cursorClientY,
     }
   }
 

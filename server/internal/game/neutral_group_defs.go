@@ -36,6 +36,7 @@ type NeutralGroup struct {
 	ID          string                         `json:"id"`
 	Name        string                         `json:"name"`
 	Composition []NeutralGroupCompositionEntry `json:"composition"`
+	LootTable   string                         `json:"lootTable,omitempty"`
 }
 
 // NeutralGroupTier holds all groups available at a given tier level.
@@ -67,6 +68,11 @@ func loadNeutralGroupsByTier() map[int]NeutralGroupTier {
 		}
 		m := neutralGroupTierFilenameRE.FindStringSubmatch(entry.Name())
 		if m == nil {
+			// loot_tables.json lives alongside the tier files and is loaded
+			// separately by loot_table_defs.go. Skip it here.
+			if entry.Name() == "loot_tables.json" {
+				continue
+			}
 			panic("catalog/neutral_groups: unexpected file " + entry.Name() + ` — must match "tier_<N>.json"`)
 		}
 		tierNum, err := strconv.Atoi(m[1])
@@ -112,6 +118,11 @@ func loadNeutralGroupsByTier() map[int]NeutralGroupTier {
 				}
 				if _, ok := getUnitDef(c.UnitType); !ok {
 					panic(rel + ": group " + g.ID + " references unknown unitType " + c.UnitType)
+				}
+			}
+			if g.LootTable != "" {
+				if _, ok := getLootTable(g.LootTable); !ok {
+					panic(rel + ": group " + g.ID + ` references unknown lootTable "` + g.LootTable + `"`)
 				}
 			}
 		}

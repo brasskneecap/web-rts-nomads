@@ -147,6 +147,15 @@
         @purchase="({ itemId, buildingId }) => sendPurchaseItem(buildingId, itemId)"
       />
     </div>
+
+    <!-- Loot-drop hover tooltip. Rendered outside the canvas stacking
+         context so it can float above all other UI layers. -->
+    <LootDropTooltip
+      v-if="hasStarted"
+      :drop="ui.hoveredLootDrop"
+      :cursor-client-x="ui.cursorClientX"
+      :cursor-client-y="ui.cursorClientY"
+    />
   </div>
 </template>
 
@@ -161,6 +170,7 @@ import WaveUpgradeModal from '@/components/WaveUpgradeModal.vue'
 import MatchMenu from '@/components/MatchMenu.vue'
 import MatchMenuLauncher from '@/components/MatchMenuLauncher.vue'
 import MatchSettingsModal from '@/components/MatchSettingsModal.vue'
+import LootDropTooltip from '@/components/LootDropTooltip.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { useMapSelection } from '@/composables/useMapSelection'
 import { setCursorGrab } from '@/services/desktopBridge'

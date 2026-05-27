@@ -55,6 +55,11 @@ const emptyUiSnapshot: GameUiSnapshot = {
   paused: false,
   pausedBy: '',
   pausedSinceMs: 0,
+  hoveredLootDrop: null,
+  cursorScreenX: 0,
+  cursorScreenY: 0,
+  cursorClientX: 0,
+  cursorClientY: 0,
 }
 
 export function useGameClient() {

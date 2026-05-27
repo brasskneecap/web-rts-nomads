@@ -91,12 +91,15 @@ type ItemDef struct {
 	MaxStacks        int               `json:"maxStacks,omitempty"`  // consumables only; 0 treated as 1
 }
 
-// itemCatalogSingleton is the package-level item catalog loaded at init time.
-// GameState.itemCatalog points at this map; it is never mutated after init.
-var itemCatalogSingleton map[string]*ItemDef
+// itemCatalogSingleton is the package-level item catalog. Populated by a var
+// initializer (not init()) so that other var initializers — specifically the
+// loot-table loader in loot_table_defs.go — can reference it via getItemDef
+// and have Go's dependency-graph-based var ordering guarantee it is ready
+// before they run.
+var itemCatalogSingleton = loadItemCatalog()
 
-func init() {
-	itemCatalogSingleton = make(map[string]*ItemDef)
+func loadItemCatalog() map[string]*ItemDef {
+	catalog := make(map[string]*ItemDef)
 	err := fs.WalkDir(itemDefsFS, "catalog/items", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -115,12 +118,20 @@ func init() {
 		if def.ID == "" {
 			panic(path + `: missing "id" field`)
 		}
-		itemCatalogSingleton[def.ID] = &def
+		catalog[def.ID] = &def
 		return nil
 	})
 	if err != nil {
 		panic("catalog/items: " + err.Error())
 	}
+	return catalog
+}
+
+// getItemDef returns the item definition for the given id, or (nil, false)
+// when the id is not in the catalog. Safe to call after package init.
+func getItemDef(id string) (*ItemDef, bool) {
+	def, ok := itemCatalogSingleton[id]
+	return def, ok
 }
 
 // ListItemDefs returns all item definitions as a deterministically sorted

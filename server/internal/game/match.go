@@ -100,6 +100,18 @@ func (m *Match) BroadcastSnapshot() {
 	}
 	m.mu.RUnlock()
 
+	// Drain the per-tick loot notification queue once before the client loop.
+	// Keyed by playerID → slice so the same player can collect multiple chests
+	// in one tick (e.g. two units on two different chests both arrive this tick).
+	// DrainPendingLootNotifications acquires s.mu internally.
+	var lootNotifsByPlayer map[string][]protocol.LootCollectedNotification
+	if notifs := m.State.DrainPendingLootNotifications(); len(notifs) > 0 {
+		lootNotifsByPlayer = make(map[string][]protocol.LootCollectedNotification, len(notifs))
+		for _, n := range notifs {
+			lootNotifsByPlayer[n.PlayerID] = append(lootNotifsByPlayer[n.PlayerID], n)
+		}
+	}
+
 	profileSection("snapshotBroadcast", func() {
 		for _, client := range clients {
 			var snap protocol.MatchSnapshotMessage
@@ -109,6 +121,13 @@ func (m *Match) BroadcastSnapshot() {
 				snap.ServerNow = time.Now().UnixMilli()
 			})
 			_ = client.WriteJSON(snap)
+
+			// Push any loot-collected notifications for this player. Sent
+			// after the snapshot so the client can correlate: resources
+			// already appear in the snapshot by the time the toasts fire.
+			for _, n := range lootNotifsByPlayer[client.PlayerID()] {
+				_ = client.WriteJSON(n)
+			}
 		}
 	})
 }

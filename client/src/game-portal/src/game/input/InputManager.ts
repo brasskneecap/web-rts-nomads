@@ -1,6 +1,7 @@
 // src/game/input/InputManager.ts
 import { GameState } from '../core/GameState'
 import type { GameClient } from '../core/GameClient'
+import type { LootDropSnapshot } from '../network/protocol'
 import { Camera } from '../rendering/Camera'
 import { getMinimapBounds } from '../rendering/CanvasRenderer'
 import { NetworkClient } from '../network/NetworkClient'
@@ -255,6 +256,9 @@ export class InputManager {
 
   private onMouseMove = (e: MouseEvent) => {
     const screen = this.getScreenPosition(e)
+    // Push raw viewport coords so DOM-overlay tooltips (LootDropTooltip)
+    // can render at the cursor without depending on a cached canvas rect.
+    this.state.setCursorClient(e.clientX, e.clientY)
     this.updateHoverCursor(screen.x, screen.y)
 
     if (this.state.isBuildPlacementActive()) {
@@ -549,6 +553,14 @@ export class InputManager {
       return
     }
 
+    // Loot drop chest — any selected unit can pick up a chest.
+    const clickedLootDrop = findLootDropAtWorldPos(this.state, world.x, world.y)
+    if (clickedLootDrop) {
+      this.state.addMoveMarker(clickedLootDrop.x, clickedLootDrop.y, 700)
+      this.network.sendPickupLootCommand(unitIds, clickedLootDrop.id)
+      return
+    }
+
     this.state.addFormationMoveMarkers(world.x, world.y)
     this.network.sendMoveCommand(unitIds, world.x, world.y)
   }
@@ -557,6 +569,7 @@ export class InputManager {
     this.state.setHoveredInteractableBuilding(null)
     this.state.setHoveredInteractableObstacle(null)
     this.state.setHoveredEnemyUnit(null)
+    this.state.setHoveredLootDrop(null)
     if (!this.isSpaceHeld && !this.isSpacePanning && !this.isMiddleMouseDown) {
       this.canvas.style.cursor = resolveCursor('default', 'default')
     }
@@ -826,13 +839,12 @@ export class InputManager {
     // entirely (instead of having to remember to null it).
     this.state.setHoveredFriendlyUnit(null)
 
-    // Push the current cursor world position into state every frame so
-    // renderers that anchor world-space previews to the cursor (commander
-    // ability AoE, etc.) can read it without re-doing the screen→world
-    // conversion. Cheap, runs once per mousemove, harmless when not needed.
+    // Push the current cursor position into state every frame — world space
+    // for renderer previews, screen space for DOM-overlay tooltips.
     {
       const w = this.camera.screenToWorld(screenX, screenY)
       this.state.setCursorWorld(w.x, w.y)
+      this.state.setCursorScreen(screenX, screenY)
     }
 
     // Edge-pan owns the cursor while active. Skipping the rest of this
@@ -883,6 +895,12 @@ export class InputManager {
     }
 
     const world = this.camera.screenToWorld(screenX, screenY)
+
+    // Always clear and re-evaluate the hovered loot drop so it resets when
+    // the cursor moves away from a chest.
+    const hoveredLootDrop = findLootDropAtWorldPos(this.state, world.x, world.y)
+    this.state.setHoveredLootDrop(hoveredLootDrop ? hoveredLootDrop.id : null)
+
     const hoveredBuilding = this.state.getBuildingAtPosition(world.x, world.y, 16)
     const hoveredObstacle = hoveredBuilding
       ? undefined
@@ -1068,4 +1086,26 @@ export class InputManager {
     const tag = el.tagName
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
   }
+}
+
+// ─── Module-level helpers ─────────────────────────────────────────────────────
+
+// Hit-test `state.lootDropsById` against a world-space position. The pick
+// radius (16 px) is generous enough for a comfortable click target.
+// Returns the first matching drop, or null if no chest is within range.
+function findLootDropAtWorldPos(
+  state: GameState,
+  worldX: number,
+  worldY: number,
+): LootDropSnapshot | null {
+  const pickRadius = 16
+  const pickRadiusSq = pickRadius * pickRadius
+  for (const drop of state.lootDropsById.values()) {
+    const dx = drop.x - worldX
+    const dy = drop.y - worldY
+    if (dx * dx + dy * dy <= pickRadiusSq) {
+      return drop
+    }
+  }
+  return null
 }

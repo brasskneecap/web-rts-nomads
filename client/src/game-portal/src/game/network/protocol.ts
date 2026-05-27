@@ -134,14 +134,58 @@ export const NEUTRAL_PLAYER_COLOR = '#9b59b6'
 
 // Per-tick wire view of a neutral camp. The static placement (position,
 // group, scaling) lives in MapConfig.neutralSpawns; this carries only the
-// fields that change per wave (currentTier). Sent unfiltered — neutrals are
-// mapper-authored points of interest and always appear on the minimap.
+// fields that change per wave (currentTier, aliveUnitCount). Sent
+// unfiltered — neutrals are mapper-authored points of interest and always
+// reach the client regardless of fog of war.
+//
+// aliveUnitCount lets the client hide the minimap POI dot for cleared or
+// wave-hidden camps so the minimap reflects which camps currently have
+// enemies on the field.
 export interface NeutralCampSnapshot {
   id: string
   x: number
   y: number
   currentTier: number
+  aliveUnitCount: number
 }
+
+// Per-tick wire view of one ground-loot chest. Sent unfiltered (no FOW
+// gating) so chests behave like POI dots on the minimap. The pre-rolled
+// `resources` and `itemIds` are shown in the hover tooltip — these are
+// the same values granted on pickup (less vault-overflow items).
+export interface LootDropSnapshot {
+  id: string
+  x: number
+  y: number
+  iconKey: string
+  resources?: Record<string, number>
+  itemIds?: string[]
+}
+
+// Right-click "go collect that chest" order. Mirrors GatherCommandMessage
+// exactly so transport / replay layers handle it uniformly.
+export interface PickupLootCommandMessage {
+  type: 'pickup_loot_command'
+  unitIds: number[]
+  targetId: string
+}
+
+// Pushed to the collecting player when a chest pickup completes. The HUD
+// renders a toast listing resources + items received; overflowItemIds
+// lists items that couldn't fit in the vault and were lost.
+export interface LootCollectedNotification {
+  type: 'loot_collected'
+  playerId: string
+  lootDropId: string
+  collectingUnitId: number
+  resources?: Record<string, number>
+  itemIds?: string[]
+  overflowItemIds?: string[]
+}
+
+// Wire string for the new OrderPickupLoot type. The server emits this
+// in UnitSnapshot.order when the unit is en route to collect a chest.
+export const OrderStringPickupLoot = 'pickup_loot'
 
 // Catalog DTOs from GET /api/catalog/neutral-groups
 export interface NeutralGroupSummary {
@@ -360,6 +404,7 @@ export type UnitOrder =
   | 'hold'
   | 'patrol'
   | 'focus_follow'
+  | 'pickup_loot'
 
 /** Exhaustive map so a human-readable label is always available without
  *  scattered switch statements across the codebase. */
@@ -371,6 +416,7 @@ export const UNIT_ORDER_LABELS: Record<UnitOrder, string> = {
   hold: 'Hold',
   patrol: 'Patrol',
   focus_follow: 'Following',
+  pickup_loot: 'Picking Up',
 }
 
 export type SetStanceCommandMessage = {
@@ -757,6 +803,10 @@ export type UnitSnapshot = {
    *  drive the Focus Target button's highlight and the selection-HUD focus
    *  indicator. */
   focusTargetId?: number
+  /** Non-empty when this unit has a pending pickup-loot order and is en route
+   *  to a chest. The value is the LootDrop.ID the unit is walking toward.
+   *  Cleared when the order finishes or is replaced by another order. */
+  pickupLootId?: string
   /** Inventory the unit is carrying. Optional — units without inventory
    *  capability omit it entirely. */
   inventory?: InventorySnapshot
@@ -1078,6 +1128,9 @@ export type MatchSnapshotMessage = {
   fow?: FogOfWarSnapshot
   waveUpgrade?: WaveUpgradeOfferSnapshot
   neutralCamps?: NeutralCampSnapshot[]
+  // Ground-loot chests currently on the map. Sent unfiltered — always
+  // visible regardless of FOW so the minimap POI dot is always shown.
+  lootDrops?: LootDropSnapshot[]
   // Server-side pause flag. When true the simulation is frozen; the client
   // shows a paused overlay and freezes the visible wave-upgrade timer.
   paused?: boolean
@@ -1147,4 +1200,5 @@ export type ServerMessage =
   | MatchSnapshotMessage
   | ErrorMessage
   | NotificationMessage
+  | LootCollectedNotification
   | PingMessage

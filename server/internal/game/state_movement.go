@@ -646,6 +646,7 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.AttackWindupRemaining = 0
 	unit.Attacking = false
 	unit.AttackDrifting = false
+	unit.PickupLootID = ""
 	unit.Order = OrderState{Type: OrderIdle}
 	// Any new order clears focus so FocusTargetID and Order.Type never diverge.
 	// This covers Move, AttackMove, Hold, Stop, AttackTarget, Patrol — every

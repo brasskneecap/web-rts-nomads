@@ -9,12 +9,14 @@ import type {
   GameOverSnapshot,
   InventorySnapshot,
   ItemSnapshot,
+  LootDropSnapshot,
   ObjectiveSnapshot,
   PlayerUpgradeSnapshot,
   VaultItemSnapshot,
   VictorySnapshot,
   MapConfig,
   MatchSnapshotMessage,
+  NeutralCampSnapshot,
   ObstacleTile,
   PerkCooldownSnapshot,
   AbilitySnapshot,
@@ -537,11 +539,18 @@ export class GameState {
   // when no offer is active (between waves or before the first wave).
   waveUpgrade: WaveUpgradeOfferSnapshot | null = null
 
-  // Live current-tier for each neutral camp, keyed by camp placement id.
-  // Populated from MatchSnapshotMessage.neutralCamps each tick. Used by the
-  // minimap to color the POI dot. Static placement data (position, group,
-  // scaling) still comes from MapConfig.neutralSpawns.
-  neutralCampCurrentTierById: Map<string, number> = new Map()
+  // Live per-tick state for each neutral camp, keyed by camp placement id.
+  // Populated from MatchSnapshotMessage.neutralCamps each tick. The
+  // minimap uses currentTier for dot color and aliveUnitCount to hide
+  // dots for cleared / wave-hidden camps. Static placement data
+  // (position, group, scaling) still comes from MapConfig.neutralSpawns.
+  neutralCampSnapshotsById: Map<string, NeutralCampSnapshot> = new Map()
+
+  // Live ground-loot chests, keyed by id. Populated from
+  // MatchSnapshotMessage.lootDrops each tick. Used by the world render
+  // layer (chest sprites), the minimap POI layer, hover tooltip, and the
+  // right-click input dispatch.
+  lootDropsById: Map<string, LootDropSnapshot> = new Map()
 
   // Server-side pause state. paused=true freezes the visible wave-upgrade
   // timer and triggers the in-match paused overlay. pausedBy is the player
@@ -641,8 +650,21 @@ export class GameState {
   // each call site doing its own screen→world conversion.
   cursorWorldX = 0
   cursorWorldY = 0
+  // Last known cursor position in canvas-relative screen space. Set by
+  // InputManager alongside cursorWorldX/Y.
+  cursorScreenX = 0
+  cursorScreenY = 0
+  // Last known cursor position in VIEWPORT-relative coords (event.clientX/Y).
+  // Used directly by DOM-overlay tooltips (LootDropTooltip) with
+  // position:fixed so they don't depend on the canvas's bounding rect.
+  cursorClientX = 0
+  cursorClientY = 0
   hoveredInteractableBuildingId: string | null = null
   hoveredInteractableObstacleId: string | null = null
+  // Non-null while the cursor hovers a ground-loot chest. The chest tooltip
+  // reads this to show the chest's pre-rolled contents. Cleared on mouse-leave
+  // and on every frame where the cursor is not over any chest.
+  hoveredLootDropId: string | null = null
   buildingTargetingMode: BuildingTargetingMode | null = null
   unitTargetingMode: UnitTargetingMode | null = null
   // Ability whose cast target is being picked. Only meaningful while
@@ -1231,12 +1253,22 @@ export class GameState {
 
     this.waveUpgrade = message.waveUpgrade ?? null
 
-    // Rebuild the camp tier map each tick. Empty/absent snapshot field ⇒
-    // the minimap falls back to startingTier from MapConfig.neutralSpawns.
-    this.neutralCampCurrentTierById.clear()
+    // Rebuild the camp snapshot map each tick. Empty/absent snapshot
+    // field ⇒ the minimap falls back to startingTier from
+    // MapConfig.neutralSpawns and shows every camp's dot.
+    this.neutralCampSnapshotsById.clear()
     if (message.neutralCamps) {
       for (const camp of message.neutralCamps) {
-        this.neutralCampCurrentTierById.set(camp.id, camp.currentTier)
+        this.neutralCampSnapshotsById.set(camp.id, camp)
+      }
+    }
+
+    // Rebuild the loot-drop map each tick. Chests are always-visible world
+    // entities — no FOW gating — so we simply replace the entire map.
+    this.lootDropsById.clear()
+    if (message.lootDrops) {
+      for (const drop of message.lootDrops) {
+        this.lootDropsById.set(drop.id, drop)
       }
     }
 
@@ -2032,6 +2064,10 @@ export class GameState {
     this.hoveredInteractableBuildingId = buildingId
   }
 
+  setHoveredLootDrop(lootDropId: string | null) {
+    this.hoveredLootDropId = lootDropId
+  }
+
   setHoveredEnemyUnit(unitId: number | null) {
     this.hoveredEnemyUnitId = unitId
   }
@@ -2046,6 +2082,16 @@ export class GameState {
   setCursorWorld(x: number, y: number) {
     this.cursorWorldX = x
     this.cursorWorldY = y
+  }
+
+  setCursorScreen(x: number, y: number) {
+    this.cursorScreenX = x
+    this.cursorScreenY = y
+  }
+
+  setCursorClient(x: number, y: number) {
+    this.cursorClientX = x
+    this.cursorClientY = y
   }
 
   inspectEnemyUnit(unitId: number) {

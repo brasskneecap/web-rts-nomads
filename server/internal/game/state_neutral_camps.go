@@ -27,9 +27,14 @@ type NeutralCamp struct {
 	StartingTier int
 	TierUpEveryN int
 	GroupID      string // specific id or protocol.NeutralSpawnRandomGroupID
-	CurrentTier  int    // recomputed each respawn
-	AliveUnitIDs []int
-	State        NeutralCampState
+	// SpawnedGroupID is the id of the group rolled at the most recent
+	// spawnGroupForCampLocked call. Used at wipe time (Batch 3+) to find
+	// the right loot_table even when GroupID is the "__random__" sentinel.
+	// Empty before the first spawn.
+	SpawnedGroupID string
+	CurrentTier    int // recomputed each respawn
+	AliveUnitIDs   []int
+	State          NeutralCampState
 
 	AggroRange              float64
 	LeashRange              float64
@@ -151,6 +156,12 @@ func computeNeutralCurrentTier(currentWave, startingTier, tierUpEveryN int) int 
 // Must be called under s.mu write lock.
 func (s *GameState) despawnNeutralCampLocked(camp *NeutralCamp) {
 	toRemove := append([]int(nil), camp.AliveUnitIDs...)
+	// Flip state BEFORE per-unit removals fire the hook. The wipe
+	// trigger in onUnitRemovedFromCampLocked is gated on
+	// State == NeutralCampActive specifically so wave-start despawn
+	// (which also drives the slice to 0) does NOT spawn chests — those
+	// units weren't killed by the player.
+	camp.State = NeutralCampWaveHidden
 	for _, id := range toRemove {
 		u := s.getUnitByIDLocked(id)
 		if u == nil {
@@ -158,9 +169,8 @@ func (s *GameState) despawnNeutralCampLocked(camp *NeutralCamp) {
 		}
 		s.removeUnitLocked(id)
 	}
-	// Clear any IDs that the hook may have missed (e.g. units already gone).
+	// Belt-and-suspenders clear: any IDs the hook may have missed.
 	camp.AliveUnitIDs = camp.AliveUnitIDs[:0]
-	camp.State = NeutralCampWaveHidden
 }
 
 // onUnitRemovedFromCampLocked strips a unit ID from its owning camp's
@@ -178,6 +188,14 @@ func (s *GameState) onUnitRemovedFromCampLocked(unitID int, campID string) {
 		for j, id := range camp.AliveUnitIDs {
 			if id == unitID {
 				camp.AliveUnitIDs = append(camp.AliveUnitIDs[:j], camp.AliveUnitIDs[j+1:]...)
+				// Wipe-trigger: when the player's combat drove this camp from >0
+				// units to 0, roll the loot table. The State guard ensures
+				// wave-start despawn (which also drives the slice to 0) does NOT
+				// fire this — despawnNeutralCampLocked flips State to WaveHidden
+				// before invoking removeUnitLocked.
+				if len(camp.AliveUnitIDs) == 0 && camp.State == NeutralCampActive {
+					s.maybeDropChestForCampLocked(camp)
+				}
 				return
 			}
 		}
@@ -224,6 +242,8 @@ func (s *GameState) spawnGroupForCampLocked(camp *NeutralCamp) {
 			"campID", camp.PlacementID, "groupID", camp.GroupID, "tier", tier)
 		return
 	}
+
+	camp.SpawnedGroupID = group.ID
 
 	s.ensureNeutralPlayerLocked()
 
@@ -394,10 +414,11 @@ func (s *GameState) neutralCampSnapshotsLocked() []protocol.NeutralCampSnapshot 
 	for i := range s.NeutralCamps {
 		camp := &s.NeutralCamps[i]
 		out[i] = protocol.NeutralCampSnapshot{
-			ID:          camp.PlacementID,
-			X:           camp.X,
-			Y:           camp.Y,
-			CurrentTier: camp.CurrentTier,
+			ID:             camp.PlacementID,
+			X:              camp.X,
+			Y:              camp.Y,
+			CurrentTier:    camp.CurrentTier,
+			AliveUnitCount: len(camp.AliveUnitIDs),
 		}
 	}
 	return out

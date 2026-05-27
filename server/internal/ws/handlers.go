@@ -511,6 +511,35 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.State.GatherWithUnits(client.PlayerID(), msg.UnitIDs, msg.TargetID)
 
+		case "pickup_loot_command":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.PickupLootCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid pickup_loot_command payload",
+				})
+				continue
+			}
+
+			match.State.PickupLootWithUnits(client.PlayerID(), msg.UnitIDs, msg.TargetID)
+
 		case "deposit_command":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{
