@@ -8,6 +8,20 @@
         { "unitType": "raider", "count": 2 },
         { "unitType": "ranged_raider", "count": 2 }
       ]
+    },
+    {
+      "id": "small_4raider_group",
+      "name": "Small 4 Raider Group",
+      "composition": [
+        { "unitType": "raider", "count": 4 }
+      ] 
+    },
+    {
+      "id": "small_ranged_raider_group",
+      "name": "Small Raider Ranged Group",
+      "composition": [
+        { "unitType": "ranged_raider", "count": 4 }
+      ]
     }
   ]
 }
