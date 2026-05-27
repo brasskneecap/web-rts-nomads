@@ -1390,6 +1390,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Paused:                 s.Paused,
 		PausedBy:               s.PausedBy,
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
+		NeutralCamps:           s.neutralCampSnapshotsLocked(),
 	}
 }
 
@@ -1728,6 +1729,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		Paused:                 s.Paused,
 		PausedBy:               s.PausedBy,
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
+		NeutralCamps:           s.neutralCampSnapshotsLocked(),
 	}
 }
 
@@ -2189,6 +2191,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		Paused:                 s.Paused,
 		PausedBy:               s.PausedBy,
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
+		NeutralCamps:           s.neutralCampSnapshotsLocked(),
 	}
 }
 

@@ -537,6 +537,12 @@ export class GameState {
   // when no offer is active (between waves or before the first wave).
   waveUpgrade: WaveUpgradeOfferSnapshot | null = null
 
+  // Live current-tier for each neutral camp, keyed by camp placement id.
+  // Populated from MatchSnapshotMessage.neutralCamps each tick. Used by the
+  // minimap to color the POI dot. Static placement data (position, group,
+  // scaling) still comes from MapConfig.neutralSpawns.
+  neutralCampCurrentTierById: Map<string, number> = new Map()
+
   // Server-side pause state. paused=true freezes the visible wave-upgrade
   // timer and triggers the in-match paused overlay. pausedBy is the player
   // ID that initiated the pause (empty when not paused).
@@ -1224,6 +1230,15 @@ export class GameState {
     }
 
     this.waveUpgrade = message.waveUpgrade ?? null
+
+    // Rebuild the camp tier map each tick. Empty/absent snapshot field ⇒
+    // the minimap falls back to startingTier from MapConfig.neutralSpawns.
+    this.neutralCampCurrentTierById.clear()
+    if (message.neutralCamps) {
+      for (const camp of message.neutralCamps) {
+        this.neutralCampCurrentTierById.set(camp.id, camp.currentTier)
+      }
+    }
 
     const nextPaused = message.paused === true
     if (nextPaused && !this.paused) {

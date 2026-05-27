@@ -240,6 +240,16 @@ export function getObstacleColor(obstacle: ObstacleType): string {
   }
 }
 
+// Minimap POI color for a neutral camp by tier. Tiers >= 3 saturate at dark
+// red so the palette keeps reading as a "low / mid / high danger" scale even
+// when more tier files are added later. Tier <= 0 is defensive and falls
+// back to tier-1 green.
+export function getNeutralSpawnTierColor(tier: number): string {
+  if (tier <= 1) return '#006400' // dark green
+  if (tier === 2) return '#b8860b' // dark goldenrod (dark yellow)
+  return '#8b0000' // dark red (tier 3+)
+}
+
 function dedupeTerrainTiles(
   tiles: TerrainTile[],
   gridCols: number,

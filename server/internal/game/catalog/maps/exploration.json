@@ -65915,348 +65915,6 @@
         "unitType": "worker",
         "aggroRange": 150,
         "leashRange": 200
-      },
-      {
-        "x": 1,
-        "y": 44,
-        "id": "placed-unit-enemy-1-44",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 3,
-        "y": 44,
-        "id": "placed-unit-enemy-3-44",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 2,
-        "y": 45,
-        "id": "placed-unit-enemy-2-45",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 4,
-        "y": 57,
-        "id": "placed-unit-enemy-4-57",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 3,
-        "y": 56,
-        "id": "placed-unit-enemy-3-56",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 5,
-        "y": 56,
-        "id": "placed-unit-enemy-5-56",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 21,
-        "y": 57,
-        "id": "placed-unit-enemy-21-57",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 22,
-        "y": 56,
-        "id": "placed-unit-enemy-22-56",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 38,
-        "y": 57,
-        "id": "placed-unit-enemy-38-57",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 39,
-        "y": 56,
-        "id": "placed-unit-enemy-39-56",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 55,
-        "y": 54,
-        "id": "placed-unit-enemy-55-54",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 56,
-        "y": 53,
-        "id": "placed-unit-enemy-56-53",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 56,
-        "y": 55,
-        "id": "placed-unit-enemy-56-55",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 58,
-        "y": 55,
-        "id": "placed-unit-enemy-58-55",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 58,
-        "y": 53,
-        "id": "placed-unit-enemy-58-53",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 2,
-        "y": 44,
-        "id": "placed-unit-enemy-2-44",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 1,
-        "y": 45,
-        "id": "placed-unit-enemy-1-45",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 3,
-        "y": 45,
-        "id": "placed-unit-enemy-3-45",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 4,
-        "y": 56,
-        "id": "placed-unit-enemy-4-56",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 3,
-        "y": 57,
-        "id": "placed-unit-enemy-3-57",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 5,
-        "y": 57,
-        "id": "placed-unit-enemy-5-57",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 21,
-        "y": 56,
-        "id": "placed-unit-enemy-21-56",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 22,
-        "y": 57,
-        "id": "placed-unit-enemy-22-57",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 39,
-        "y": 58,
-        "id": "placed-unit-enemy-39-58",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 39,
-        "y": 57,
-        "id": "placed-unit-enemy-39-57",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 38,
-        "y": 58,
-        "id": "placed-unit-enemy-38-58",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 38,
-        "y": 56,
-        "id": "placed-unit-enemy-38-56",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 40,
-        "y": 58,
-        "id": "placed-unit-enemy-40-58",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 40,
-        "y": 56,
-        "id": "placed-unit-enemy-40-56",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 40,
-        "y": 57,
-        "id": "placed-unit-enemy-40-57",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 55,
-        "y": 55,
-        "id": "placed-unit-enemy-55-55",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 56,
-        "y": 54,
-        "id": "placed-unit-enemy-56-54",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 55,
-        "y": 53,
-        "id": "placed-unit-enemy-55-53",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 57,
-        "y": 54,
-        "id": "placed-unit-enemy-57-54",
-        "playerSlot": "enemy",
-        "unitType": "ranged_raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 57,
-        "y": 56,
-        "id": "placed-unit-enemy-57-56",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 57,
-        "y": 55,
-        "id": "placed-unit-enemy-57-55",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 58,
-        "y": 54,
-        "id": "placed-unit-enemy-58-54",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
-      },
-      {
-        "x": 57,
-        "y": 53,
-        "id": "placed-unit-enemy-57-53",
-        "playerSlot": "enemy",
-        "unitType": "raider",
-        "aggroRange": 150,
-        "leashRange": 200
       }
     ],
     "neutralSpawns": [
@@ -66264,6 +65922,105 @@
         "x": 2,
         "y": 29,
         "id": "neutral-spawn-2-29",
+        "groupId": "__random__",
+        "startingTier": 1,
+        "aggroRange": 150,
+        "leashRange": 200,
+        "healthMultiplier": 1,
+        "damageMultiplier": 1
+      },
+      {
+        "x": 4,
+        "y": 57,
+        "id": "neutral-spawn-4-57",
+        "groupId": "__random__",
+        "startingTier": 1,
+        "aggroRange": 150,
+        "leashRange": 200,
+        "healthMultiplier": 1,
+        "damageMultiplier": 1
+      },
+      {
+        "x": 3,
+        "y": 44,
+        "id": "neutral-spawn-3-44",
+        "groupId": "__random__",
+        "startingTier": 1,
+        "aggroRange": 150,
+        "leashRange": 200,
+        "healthMultiplier": 1,
+        "damageMultiplier": 1
+      },
+      {
+        "x": 22,
+        "y": 57,
+        "id": "neutral-spawn-22-57",
+        "groupId": "__random__",
+        "startingTier": 1,
+        "aggroRange": 150,
+        "leashRange": 200,
+        "healthMultiplier": 1,
+        "damageMultiplier": 1
+      },
+      {
+        "x": 35,
+        "y": 56,
+        "id": "neutral-spawn-35-56",
+        "groupId": "__random__",
+        "startingTier": 1,
+        "aggroRange": 150,
+        "leashRange": 200,
+        "healthMultiplier": 1,
+        "damageMultiplier": 1
+      },
+      {
+        "x": 40,
+        "y": 52,
+        "id": "neutral-spawn-40-52",
+        "groupId": "__random__",
+        "startingTier": 1,
+        "aggroRange": 150,
+        "leashRange": 200,
+        "healthMultiplier": 1,
+        "damageMultiplier": 1
+      },
+      {
+        "x": 55,
+        "y": 56,
+        "id": "neutral-spawn-55-56",
+        "groupId": "__random__",
+        "startingTier": 1,
+        "aggroRange": 150,
+        "leashRange": 200,
+        "healthMultiplier": 1,
+        "damageMultiplier": 1
+      },
+      {
+        "x": 58,
+        "y": 35,
+        "id": "neutral-spawn-58-35",
+        "groupId": "__random__",
+        "startingTier": 1,
+        "aggroRange": 150,
+        "leashRange": 200,
+        "healthMultiplier": 1,
+        "damageMultiplier": 1
+      },
+      {
+        "x": 49,
+        "y": 13,
+        "id": "neutral-spawn-49-13",
+        "groupId": "__random__",
+        "startingTier": 1,
+        "aggroRange": 150,
+        "leashRange": 200,
+        "healthMultiplier": 1,
+        "damageMultiplier": 1
+      },
+      {
+        "x": 29,
+        "y": 29,
+        "id": "neutral-spawn-29-29",
         "groupId": "__random__",
         "startingTier": 1,
         "aggroRange": 150,

@@ -379,3 +379,26 @@ func neutralCampRingOffset(center gridPoint, idx int) gridPoint {
 	step := (idx - 1) - len(ring1)
 	return gridPoint{X: center.X + 2 + step%3, Y: center.Y + step/3}
 }
+
+// neutralCampSnapshotsLocked returns the per-tick wire view of every camp.
+// Sent unfiltered (no FOW gating) so the minimap can always render the POI
+// dot. Iteration order is the camp slice's deterministic order
+// (sorted by PlacementID via initNeutralCampsLocked).
+//
+// Must be called under s.mu read lock.
+func (s *GameState) neutralCampSnapshotsLocked() []protocol.NeutralCampSnapshot {
+	if len(s.NeutralCamps) == 0 {
+		return nil
+	}
+	out := make([]protocol.NeutralCampSnapshot, len(s.NeutralCamps))
+	for i := range s.NeutralCamps {
+		camp := &s.NeutralCamps[i]
+		out[i] = protocol.NeutralCampSnapshot{
+			ID:          camp.PlacementID,
+			X:           camp.X,
+			Y:           camp.Y,
+			CurrentTier: camp.CurrentTier,
+		}
+	}
+	return out
+}

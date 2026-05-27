@@ -1090,6 +1090,19 @@ type FogOfWarSnapshot struct {
 	RevTick int   `json:"revTick"`
 }
 
+// NeutralCampSnapshot is the per-tick wire view of one neutral spawn camp.
+// Lightweight by design: the static placement (position, group, scaling)
+// lives in MapConfig.NeutralSpawns and is sent once at match join; only the
+// fields that change per wave (CurrentTier) need to be in the per-tick
+// snapshot. Sent unfiltered — neutrals are mapper-authored points of
+// interest and should appear on the minimap regardless of fog of war.
+type NeutralCampSnapshot struct {
+	ID          string `json:"id"`
+	X           int    `json:"x"`
+	Y           int    `json:"y"`
+	CurrentTier int    `json:"currentTier"`
+}
+
 type MatchSnapshotMessage struct {
 	Type          string                  `json:"type"`
 	Tick          int                     `json:"tick"`
@@ -1116,6 +1129,7 @@ type MatchSnapshotMessage struct {
 	Victory       *VictorySnapshot        `json:"victory,omitempty"`
 	Fow           *FogOfWarSnapshot       `json:"fow,omitempty"`
 	WaveUpgrade   *WaveUpgradeOfferSnapshot `json:"waveUpgrade,omitempty"`
+	NeutralCamps  []NeutralCampSnapshot   `json:"neutralCamps,omitempty"`
 
 	// Paused is true when the simulation is frozen via the in-match settings
 	// "Pause Game" action. The client renders a paused overlay and freezes the

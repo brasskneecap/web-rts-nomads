@@ -8,6 +8,7 @@ import {
   getObstacleColor,
   getTerrainColor,
 } from '../maps/mapConfig'
+import { drawMinimapBase, drawMinimapPOIs } from './minimapLayers'
 import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual } from '../maps/buildingDefs'
 import {
   CONSTRUCTION_FRAME_COUNT,
@@ -3550,78 +3551,18 @@ export class CanvasRenderer {
     // opaque. Without this, the canvas world view shows through the gap
     // between the minimap and the panel frame on the top/bottom (or sides).
     const panelRect = this.state.minimapPanelRect
-    ctx.fillStyle = '#000'
     if (panelRect) {
+      ctx.fillStyle = '#000'
       ctx.fillRect(panelRect.x, panelRect.y, panelRect.width, panelRect.height)
-    } else {
-      ctx.fillRect(x, y, minimapWidth, minimapHeight)
     }
 
-    // Blit the offscreen terrain cache into the minimap area. The cache
-    // already contains the rendered sprite tiles, custom-per-tile sprites,
-    // and terrain overrides exactly as they appear in-world, so blitting it
-    // gives the most faithful color match possible. Smoothing is left on so
-    // the heavy downscale averages neighboring pixels into a clean color
-    // rather than aliasing into individual sprite pixels.
-    if (this.terrainCache) {
-      const prevSmoothing = ctx.imageSmoothingEnabled
-      ctx.imageSmoothingEnabled = true
-      ctx.drawImage(this.terrainCache, x, y, minimapWidth, minimapHeight)
-      ctx.imageSmoothingEnabled = prevSmoothing
-    } else {
-      // Fallback for the brief window before the terrain cache is built —
-      // paint the explicit terrain overrides at their per-tile color.
-      for (const tile of this.state.mapConfig.terrain) {
-        ctx.fillStyle = getTerrainColor(tile.terrain)
-        ctx.fillRect(
-          x + (tile.x / this.state.mapConfig.gridCols) * minimapWidth,
-          y + (tile.y / this.state.mapConfig.gridRows) * minimapHeight,
-          minimapWidth / this.state.mapConfig.gridCols,
-          minimapHeight / this.state.mapConfig.gridRows,
-        )
-      }
-    }
-
-    for (const tile of this.state.mapConfig.obstacles) {
-      ctx.fillStyle = getObstacleColor(tile.obstacle)
-      const tileW = tile.width ?? 1
-      const tileH = tile.height ?? 1
-      ctx.fillRect(
-        x + (tile.x / this.state.mapConfig.gridCols) * minimapWidth,
-        y + (tile.y / this.state.mapConfig.gridRows) * minimapHeight,
-        (tileW / this.state.mapConfig.gridCols) * minimapWidth,
-        (tileH / this.state.mapConfig.gridRows) * minimapHeight,
-      )
-    }
-
-    for (const building of this.state.mapConfig.buildings) {
-      if (!building.visible) continue
-      // Enemy spawn points are logical spawners and must not appear on the
-      // minimap. Mirrors the world-render skip in the main building loop.
-      if (building.buildingType === 'enemy-spawnpoint') continue
-      if (building.ghost) continue
-
-      const isLocalPlayerBuilding =
-        building.occupied && building.ownerId === this.state.localPlayerId
-      const ownerColor =
-        building.occupied && building.ownerId
-          ? this.state.getPlayerColor(building.ownerId)
-          : null
-
-      ctx.fillStyle = isLocalPlayerBuilding
-        ? '#f8fafc'
-        : getBuildingColor(building.buildingType, building.occupied, ownerColor)
-      ctx.fillRect(
-        x + (building.x / this.state.mapConfig.gridCols) * minimapWidth,
-        y + (building.y / this.state.mapConfig.gridRows) * minimapHeight,
-        (building.width / this.state.mapConfig.gridCols) * minimapWidth,
-        (building.height / this.state.mapConfig.gridRows) * minimapHeight,
-      )
-    }
-
-    ctx.strokeStyle = 'rgba(166, 191, 255, 0.35)'
-    ctx.lineWidth = 1
-    ctx.strokeRect(x, y, minimapWidth, minimapHeight)
+    // Static base layer (terrain + obstacles + buildings + border) — shared
+    // with the lobby minimap preview via minimapLayers.ts so a new map
+    // element type only has to be wired in once.
+    drawMinimapBase(ctx, this.state.mapConfig, bounds, this.terrainCache, {
+      localPlayerId: this.state.localPlayerId,
+      getOwnerColor: (id) => this.state.getPlayerColor(id),
+    })
 
     for (const unit of units) {
       if (unit.visible === false) {
@@ -3660,6 +3601,10 @@ export class CanvasRenderer {
         }
       }
     }
+
+    // Neutral camp POIs. Drawn AFTER fog of war so they remain visible
+    // regardless of scouting state. Same renderer as the lobby preview.
+    drawMinimapPOIs(ctx, this.state.mapConfig, bounds, this.state.neutralCampCurrentTierById)
 
     const worldWidth = this.canvas.width / this.camera.zoom
     const worldHeight = this.canvas.height / this.camera.zoom

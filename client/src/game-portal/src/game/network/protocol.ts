@@ -132,6 +132,17 @@ export const NEUTRAL_SPAWN_RANDOM_GROUP_ID = '__random__'
 // so the map-editor marker and any future minimap/HUD treatment stay in sync.
 export const NEUTRAL_PLAYER_COLOR = '#9b59b6'
 
+// Per-tick wire view of a neutral camp. The static placement (position,
+// group, scaling) lives in MapConfig.neutralSpawns; this carries only the
+// fields that change per wave (currentTier). Sent unfiltered — neutrals are
+// mapper-authored points of interest and always appear on the minimap.
+export interface NeutralCampSnapshot {
+  id: string
+  x: number
+  y: number
+  currentTier: number
+}
+
 // Catalog DTOs from GET /api/catalog/neutral-groups
 export interface NeutralGroupSummary {
   id: string
@@ -1066,6 +1077,7 @@ export type MatchSnapshotMessage = {
   victory?: VictorySnapshot
   fow?: FogOfWarSnapshot
   waveUpgrade?: WaveUpgradeOfferSnapshot
+  neutralCamps?: NeutralCampSnapshot[]
   // Server-side pause flag. When true the simulation is frozen; the client
   // shows a paused overlay and freezes the visible wave-upgrade timer.
   paused?: boolean

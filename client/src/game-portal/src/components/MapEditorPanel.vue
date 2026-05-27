@@ -573,6 +573,15 @@
 
       <div class="canvas-frame">
         <canvas ref="canvas" class="editor-canvas"></canvas>
+        <canvas
+          ref="minimapCanvas"
+          class="editor-minimap"
+          aria-label="Map minimap (click or drag to jump)"
+          @mousedown="onMinimapMouseDown"
+          @mousemove="onMinimapMouseMove"
+          @mouseup="onMinimapMouseUp"
+          @mouseleave="onMinimapMouseUp"
+        ></canvas>
         <div v-if="selectedEditBuilding && editPanelPos" class="edit-panel" :style="editPanelStyle">
           <div class="edit-panel__header">
             <span class="edit-panel__title">{{ selectedEditBuilding.buildingType }}</span>
@@ -906,6 +915,7 @@ import type {
 import { NEUTRAL_PLAYER_COLOR, NEUTRAL_SPAWN_RANDOM_GROUP_ID } from '@/game/network/protocol'
 import type { UnitFaction } from '@/game/maps/unitDefs'
 import { Camera } from '@/game/rendering/Camera'
+import { buildTerrainSurface, drawMinimapBase, drawMinimapPOIs } from '@/game/rendering/minimapLayers'
 import {
   DEFAULT_GRASS_COLOR,
   MAP_EDITOR_PRESETS,
@@ -939,6 +949,25 @@ const model = defineModel<MapConfig>({ required: true })
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 const tilePickerCanvas = ref<HTMLCanvasElement | null>(null)
+
+// Editor minimap overlay. Lives in the top-left of .canvas-frame and
+// provides a click/drag jump-to navigation plus a viewport rect tied to
+// the editor camera. Static layers (terrain/obstacles/buildings/POIs)
+// render through the shared minimapLayers module so the visual style
+// matches the in-game minimap and the lobby preview.
+const minimapCanvas = ref<HTMLCanvasElement | null>(null)
+const MINIMAP_MAX_SIZE = 200
+// Inset of the minimap from the top-left corner of the canvas frame, plus
+// a small buffer. Used both for CSS positioning and for sizing the editor
+// camera's top-left pan overscan so the user can scroll the map past the
+// minimap to see the underlying top-left content. Kept slightly bigger
+// than MINIMAP_MAX_SIZE + margin so there's a visible breath of black
+// gutter when panned to the extreme corner.
+const MINIMAP_INSET = 12
+const MINIMAP_CLEAR_OVERSCAN = MINIMAP_MAX_SIZE + MINIMAP_INSET * 2
+let minimapTerrainSurface: HTMLCanvasElement | null = null
+let minimapStaticDirty = true
+let minimapDragging = false
 
 const TILE_PICKER_SCALE = 2
 const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'enemy-spawn' | 'neutral-spawn' | 'unit' | 'erase'>('terrain')
@@ -1042,6 +1071,13 @@ const movingBuilding = ref<{ id: string; buildingType: string; metadata: JsonObj
 let nextVictoryConditionId = 1
 
 const camera = new Camera()
+// Bump the top + left overscan so the user can pan the map's top-left
+// corner past the minimap overlay. Right/bottom use the defaults.
+camera.overscan = {
+  ...camera.overscan,
+  left: Math.max(camera.overscan.left, MINIMAP_CLEAR_OVERSCAN),
+  top: Math.max(camera.overscan.top, MINIMAP_CLEAR_OVERSCAN),
+}
 let resizeObserver: ResizeObserver | null = null
 let animationFrameId = 0
 let isLeftMouseDown = false
@@ -2090,10 +2126,112 @@ function render() {
     ctx.restore()
 
     updateEditPanelPos()
+    drawEditorMinimap()
   }
 
   animationFrameId = requestAnimationFrame(render)
 }
+
+// Computes the minimap canvas size that fits MINIMAP_MAX_SIZE while
+// preserving the map's aspect ratio. Used both to set the canvas pixel
+// resolution and to convert between minimap coords and world coords.
+function getMinimapDims(): { w: number; h: number } {
+  const aspect = model.value.gridCols / model.value.gridRows
+  if (aspect >= 1) {
+    return { w: MINIMAP_MAX_SIZE, h: Math.max(1, Math.round(MINIMAP_MAX_SIZE / aspect)) }
+  }
+  return { h: MINIMAP_MAX_SIZE, w: Math.max(1, Math.round(MINIMAP_MAX_SIZE * aspect)) }
+}
+
+function drawEditorMinimap() {
+  const c = minimapCanvas.value
+  if (!c) return
+  const { w, h } = getMinimapDims()
+  if (c.width !== w || c.height !== h) {
+    c.width = w
+    c.height = h
+    c.style.width = `${w}px`
+    c.style.height = `${h}px`
+    // Resolution change invalidates the (full map-resolution) terrain
+    // surface only indirectly — but easier to just force a rebuild.
+    minimapStaticDirty = true
+  }
+  const mctx = c.getContext('2d')
+  if (!mctx) return
+
+  if (minimapStaticDirty || !minimapTerrainSurface) {
+    minimapTerrainSurface = buildTerrainSurface(model.value)
+    minimapStaticDirty = false
+  }
+
+  const bounds = { x: 0, y: 0, width: w, height: h }
+  drawMinimapBase(mctx, model.value, bounds, minimapTerrainSurface)
+  drawMinimapPOIs(mctx, model.value, bounds, null)
+
+  // Viewport rect tied to the editor camera. Clipped to the minimap rect
+  // so it can't bleed past the frame when the camera overscans the map
+  // edges (the editor allows some pan overscan — see Camera.clamp).
+  const main = canvas.value
+  if (main && main.width > 0 && main.height > 0) {
+    const mapW = model.value.width
+    const mapH = model.value.height
+    if (mapW > 0 && mapH > 0) {
+      const viewW = main.width / camera.zoom
+      const viewH = main.height / camera.zoom
+      const vx = (camera.x / mapW) * w
+      const vy = (camera.y / mapH) * h
+      const vw = (viewW / mapW) * w
+      const vh = (viewH / mapH) * h
+      mctx.save()
+      mctx.beginPath()
+      mctx.rect(0, 0, w, h)
+      mctx.clip()
+      mctx.strokeStyle = 'rgba(125, 211, 252, 0.95)'
+      mctx.lineWidth = 1.5
+      mctx.strokeRect(vx, vy, vw, vh)
+      mctx.restore()
+    }
+  }
+}
+
+// Click / drag on the minimap pans the editor camera. Continuous tracking
+// while the mouse is held down so the mapper can survey a large map by
+// dragging.
+function onMinimapMouseDown(event: MouseEvent) {
+  if (event.button !== 0) return
+  minimapDragging = true
+  jumpEditorCameraFromMinimap(event)
+}
+
+function onMinimapMouseMove(event: MouseEvent) {
+  if (!minimapDragging) return
+  jumpEditorCameraFromMinimap(event)
+}
+
+function onMinimapMouseUp() {
+  minimapDragging = false
+}
+
+function jumpEditorCameraFromMinimap(event: MouseEvent) {
+  const c = minimapCanvas.value
+  const main = canvas.value
+  if (!c || !main) return
+  const rect = c.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0) return
+  const mx = event.clientX - rect.left
+  const my = event.clientY - rect.top
+  const mapW = model.value.width
+  const mapH = model.value.height
+  const worldX = (mx / rect.width) * mapW
+  const worldY = (my / rect.height) * mapH
+  camera.centerOn(worldX, worldY, main.width, main.height, mapW, mapH)
+}
+
+// Any change to the model's static content (terrain, obstacles, buildings,
+// neutral spawns, grid size, default tile) invalidates the cached terrain
+// surface so the minimap rebuilds on the next frame. Deep watch is fine
+// here — the model is small and edits happen at human cadence.
+watch(model, () => { minimapStaticDirty = true }, { deep: true })
 
 function updateEditPanelPos() {
   const targetCanvas = canvas.value
@@ -3273,6 +3411,19 @@ onBeforeUnmount(() => {
   height: 100%;
   display: block;
   background: #0a0a0a;
+}
+
+.editor-minimap {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 15;
+  border: 1px solid rgba(166, 191, 255, 0.45);
+  border-radius: 6px;
+  background: #000;
+  cursor: crosshair;
+  /* Width/height set in script based on map aspect ratio. */
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
 }
 
 @media (max-width: 1100px) {

@@ -33,11 +33,11 @@ import { ref, watch, nextTick } from 'vue'
 import type { MapCatalogEntry, MapCatalogFile } from '@/game/network/protocol'
 import { fetchMapCatalogFile } from '@/game/maps/catalog'
 import {
-  DEFAULT_GRASS_COLOR,
-  getTerrainColor,
-  getObstacleColor,
-  getBuildingColor,
-} from '@/game/maps/mapConfig'
+  buildTerrainSurface,
+  drawMinimapBase,
+  drawMinimapPOIs,
+} from '@/game/rendering/minimapLayers'
+import { isTerrainTilesetReady, onSheetReady } from '@/game/rendering/terrainTileset'
 import UiPanel from '@/components/ui/UiPanel.vue'
 
 const MAX_DISPLAY_SIZE = 240
@@ -52,9 +52,15 @@ const loadError = ref(false)
 
 const fileCache = new Map<string, MapCatalogFile>()
 
+// Tracks which map is currently "displayed" so an async tileset-ready
+// callback doesn't redraw a stale map after the user switched selections.
+let currentMapId: string | null = null
+let tilesetReadyHookInstalled = false
+
 async function loadAndRender(mapId: string) {
   isLoading.value = true
   loadError.value = false
+  currentMapId = mapId
 
   let file: MapCatalogFile
   if (fileCache.has(mapId)) {
@@ -73,18 +79,24 @@ async function loadAndRender(mapId: string) {
   isLoading.value = false
 
   await nextTick()
+  if (currentMapId !== mapId) return // user already switched maps
 
+  renderMap(file)
+}
+
+function renderMap(file: MapCatalogFile) {
   const canvas = canvasEl.value
   if (!canvas) return
 
   const mapData = file.map
   const cols = mapData.gridCols
   const rows = mapData.gridRows
-
-  canvas.width = cols
-  canvas.height = rows
-
   const aspectRatio = cols / rows
+
+  // Canvas resolution is the actual display size (in CSS pixels). This is
+  // the same approach the in-game minimap uses — the world is downscaled
+  // into a screen-pixel-resolution rect with smoothing, so the result
+  // matches the in-game look.
   let displayW: number
   let displayH: number
   if (aspectRatio >= 1) {
@@ -94,32 +106,32 @@ async function loadAndRender(mapId: string) {
     displayH = MAX_DISPLAY_SIZE
     displayW = Math.round(MAX_DISPLAY_SIZE * aspectRatio)
   }
+  canvas.width = displayW
+  canvas.height = displayH
   canvas.style.width = `${displayW}px`
   canvas.style.height = `${displayH}px`
 
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  ctx.fillStyle = DEFAULT_GRASS_COLOR
-  ctx.fillRect(0, 0, cols, rows)
+  const terrainSurface = buildTerrainSurface(mapData)
+  const bounds = { x: 0, y: 0, width: displayW, height: displayH }
+  drawMinimapBase(ctx, mapData, bounds, terrainSurface)
+  drawMinimapPOIs(ctx, mapData, bounds, null)
 
-  // Go encodes empty slices as JSON `null`, which a sparse runtime-saved map
-  // (e.g. no painted terrain) round-trips back to the client. Coerce to []
-  // before iterating so the for…of doesn't throw on a missing field.
-  for (const tile of mapData.terrain ?? []) {
-    ctx.fillStyle = getTerrainColor(tile.terrain)
-    ctx.fillRect(tile.x, tile.y, 1, 1)
-  }
-
-  for (const obstacle of mapData.obstacles ?? []) {
-    ctx.fillStyle = getObstacleColor(obstacle.obstacle)
-    ctx.fillRect(obstacle.x, obstacle.y, obstacle.width ?? 1, obstacle.height ?? 1)
-  }
-
-  for (const building of mapData.buildings ?? []) {
-    if (building.buildingType === 'enemy-spawnpoint') continue
-    ctx.fillStyle = getBuildingColor(building.buildingType)
-    ctx.fillRect(building.x, building.y, building.width, building.height)
+  // First-visit case: the sprite tileset may still be loading. The base
+  // renderer falls back to category-color terrain, but we want the real
+  // sprite look as soon as the asset arrives. Re-render once the sheet
+  // becomes ready, but only if the user hasn't switched maps in the
+  // meantime. Install the hook at most once.
+  if (!isTerrainTilesetReady() && !tilesetReadyHookInstalled) {
+    tilesetReadyHookInstalled = true
+    onSheetReady('tileset', () => {
+      const id = currentMapId
+      if (!id) return
+      const cached = fileCache.get(id)
+      if (cached) renderMap(cached)
+    })
   }
 }
 
@@ -182,7 +194,6 @@ watch(
 }
 
 .minimap-preview__canvas {
-  image-rendering: pixelated;
   display: block;
   max-width: 100%;
   max-height: 100%;
