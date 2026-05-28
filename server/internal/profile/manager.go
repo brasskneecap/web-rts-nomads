@@ -12,7 +12,7 @@ import (
 // parallel.
 type Manager struct {
 	store  Store
-	muMap  sync.Map // playerID string → *sync.Mutex
+	muMap  sync.Map // playerID string -> *sync.Mutex
 }
 
 // NewManager returns a Manager backed by files in profilesDir. If profilesDir
@@ -53,6 +53,20 @@ func (m *Manager) Save(playerID string, p *PlayerProfile) error {
 	return m.store.Save(playerID, p)
 }
 
+// CommitLegendPoints atomically adds earned to both LegendPoints and
+// LifetimeLegendPoints for the named player. Called once per match-end by the
+// match manager; a no-op when earned <= 0. Satisfies game.LegendPointCommitter.
+func (m *Manager) CommitLegendPoints(playerID string, earned int) error {
+	if earned <= 0 {
+		return nil
+	}
+	return m.WithLocked(playerID, func(p *PlayerProfile) error {
+		p.LegendPoints += earned
+		p.LifetimeLegendPoints += earned
+		return nil
+	})
+}
+
 // WithLocked loads the profile for playerID (creating a default if absent),
 // calls fn with a pointer to it, and saves the result. The player mutex is
 // held for the entire duration, so fn must not call Get/Save for the same
@@ -67,7 +81,7 @@ func (m *Manager) WithLocked(playerID string, fn func(*PlayerProfile) error) err
 		return fmt.Errorf("profile.WithLocked load %q: %w", playerID, err)
 	}
 	if p == nil {
-		p = newDefaultProfile(playerID, DefaultCommanderID, nil)
+		p = newDefaultProfile(playerID, DefaultCommanderID)
 	}
 	if err := fn(p); err != nil {
 		return err
@@ -77,10 +91,9 @@ func (m *Manager) WithLocked(playerID string, fn func(*PlayerProfile) error) err
 }
 
 // GetOrCreate returns the existing profile for playerID, or creates and
-// persists a fresh default profile if none exists. defaultBuffIDs are added to
-// UnlockedBuffIDs on the new profile; defaultCommanderID is set as the owned
-// and selected commander.
-func (m *Manager) GetOrCreate(playerID string, defaultCommanderID string, defaultBuffIDs []string) (*PlayerProfile, error) {
+// persists a fresh default profile if none exists. defaultCommanderID is set
+// as the owned and selected commander.
+func (m *Manager) GetOrCreate(playerID string, defaultCommanderID string) (*PlayerProfile, error) {
 	mu := m.playerMu(playerID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -93,7 +106,7 @@ func (m *Manager) GetOrCreate(playerID string, defaultCommanderID string, defaul
 		return p, nil
 	}
 
-	p = newDefaultProfile(playerID, defaultCommanderID, defaultBuffIDs)
+	p = newDefaultProfile(playerID, defaultCommanderID)
 	p.UpdatedAtUnix = time.Now().Unix()
 	if err := m.store.Save(playerID, p); err != nil {
 		return nil, fmt.Errorf("profile.GetOrCreate save %q: %w", playerID, err)
@@ -102,11 +115,8 @@ func (m *Manager) GetOrCreate(playerID string, defaultCommanderID string, defaul
 }
 
 // newDefaultProfile returns a freshly initialised profile with no match history.
-func newDefaultProfile(playerID, commanderID string, buffIDs []string) *PlayerProfile {
+func newDefaultProfile(playerID, commanderID string) *PlayerProfile {
 	now := time.Now().Unix()
-	if buffIDs == nil {
-		buffIDs = []string{}
-	}
 	return &PlayerProfile{
 		PlayerID:            playerID,
 		Version:             CurrentVersion,
@@ -114,7 +124,7 @@ func newDefaultProfile(playerID, commanderID string, buffIDs []string) *PlayerPr
 		UpdatedAtUnix:       now,
 		OwnedCommanderIDs:   []string{commanderID},
 		SelectedCommanderID: commanderID,
-		EquippedBuffIDs:     []string{},
-		UnlockedBuffIDs:     append([]string(nil), buffIDs...),
+		OwnedUpgradeRanks:   map[string]int{},
+		ActiveUpgradeIDs:    []string{},
 	}
 }

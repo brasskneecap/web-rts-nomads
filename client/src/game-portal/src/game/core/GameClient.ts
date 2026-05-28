@@ -181,8 +181,12 @@ export class GameClient {
       .catch((err) => console.error('[dev] catalog reload failed:', err))
   }
 
-  setEquippedBuffIds(ids: string[]) {
-    this.network.setEquippedBuffIds(ids)
+  setActiveUpgradeIds(ids: string[] | null) {
+    this.network.setActiveUpgradeIds(ids)
+  }
+
+  setOwnedUpgradeRanks(ranks: Record<string, number>) {
+    this.network.setOwnedUpgradeRanks(ranks)
   }
 
   async leaveStoredMatch() {

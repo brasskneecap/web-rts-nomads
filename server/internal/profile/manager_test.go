@@ -19,7 +19,7 @@ func TestManager_WEBRTSProfilesDirEnv_HonoredWhenArgEmpty(t *testing.T) {
 	m := NewManager("")
 
 	playerID := "abcdef01-2345-6789-abcd-ef0123456789"
-	if _, err := m.GetOrCreate(playerID, "default_commander", nil); err != nil {
+	if _, err := m.GetOrCreate(playerID, "default_commander"); err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
 
@@ -45,7 +45,7 @@ func TestManager_ExplicitArgOverridesEnv(t *testing.T) {
 	m := NewManager(argDir)
 
 	playerID := "11111111-2222-3333-4444-555555555555"
-	if _, err := m.GetOrCreate(playerID, "default_commander", nil); err != nil {
+	if _, err := m.GetOrCreate(playerID, "default_commander"); err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
 

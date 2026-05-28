@@ -7,9 +7,22 @@ export type PlayerProfile = {
   lifetimeLegendPoints: number
   ownedCommanderIds: string[]
   selectedCommanderId: string
-  equippedBuffIds: string[]
-  unlockedBuffIds: string[]
+  activeUpgradeIds: string[]
+  ownedUpgradeRanks: Record<string, number>
   stats: ProfileStats
+}
+
+export type ProfileUpgradeEffect =
+  | { type: 'extraStartingUnit'; unitType: string; countPerRank: number }
+  | { type: 'damageMultiplierByType'; damageTypeClass: 'physical' | 'nonPhysical'; multiplierPerRank: number }
+
+export type ProfileUpgradeDef = {
+  id: string
+  name: string
+  description: string
+  maxRanks: number
+  costPerRank: number[]
+  effect: ProfileUpgradeEffect
 }
 
 export type ProfileStats = {
@@ -20,27 +33,6 @@ export type ProfileStats = {
   objectivesDone: number
 }
 
-export type PlayerBuffDef = {
-  id: string
-  displayName: string
-  description?: string
-  iconKey: string
-  unlockLegendPointCost: number
-  /** "ownedUnits" (default) boosts own units; "enemyUnits" boosts enemies (self-debuff). */
-  appliesTo?: 'ownedUnits' | 'enemyUnits'
-  modifiers: PlayerBuffModifiers
-  allowedUnitTypes?: string[]
-}
-
-export type PlayerBuffModifiers = {
-  hpBonus?: number
-  damageBonus?: number
-  armorBonus?: number
-  attackSpeedBonus?: number
-  moveSpeedMultBonus?: number
-  bonusDamageMult?: number
-}
-
 export type GameplayTuning = {
   version: number
   legendPoints: {
@@ -49,8 +41,5 @@ export type GameplayTuning = {
     perObjective: number
     perKillBaseDropChance: number
     perKillBaseAmount: number
-  }
-  buffSlots: {
-    maxActive: number
   }
 }

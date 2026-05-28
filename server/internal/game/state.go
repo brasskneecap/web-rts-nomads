@@ -3,8 +3,10 @@ package game
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"log/slog"
 	"math"
 	mrand "math/rand"
+	"sort"
 	"sync"
 	"time"
 	"webrts/server/pkg/protocol"
@@ -548,13 +550,33 @@ type Player struct {
 	// vaultCapacityForPlayerLocked. Initialized to an empty (non-nil) slice.
 	Vault []*VaultItem
 
-	// ProfileBuffIDs holds the player's equipped buff IDs as validated at match
-	// start. Used by playerBuffAggregateLocked. Empty for AI/enemy players.
-	ProfileBuffIDs []string
-
 	// RunLegendPointDrops accumulates legend-point drops during the match.
 	// Committed to the profile file at match end.
 	RunLegendPointDrops int
+
+	// ProfileUpgrades is a snapshot of PlayerProfile.OwnedUpgradeRanks taken
+	// at match join. Mutations to the profile during the match do not affect
+	// this field. Nil / empty means no upgrades purchased.
+	ProfileUpgrades map[string]int
+
+	// ActiveUpgradeIDs is a set view of the player's active upgrade IDs.
+	// Presence means active; used for O(1) lookup in applyProfileUpgradesToPlayerLocked.
+	// Derived from the activeUpgradeIds passed at join time.
+	ActiveUpgradeIDs map[string]bool
+
+	// PhysicalDamageMultiplier is the total outgoing-damage multiplier applied
+	// to physical attacks by this player's units. Initialized to 1.0 at match
+	// join; increased by damageMultiplierByType upgrades with class "physical".
+	PhysicalDamageMultiplier float64
+
+	// MagicDamageMultiplier is the total outgoing-damage multiplier applied to
+	// non-physical attacks by this player's units. Initialized to 1.0 at match
+	// join; increased by damageMultiplierByType upgrades with class "nonPhysical".
+	MagicDamageMultiplier float64
+
+	// ExtraStartingWorkers is the number of additional worker units to spawn
+	// during match setup, derived from extraStartingUnit upgrade ranks.
+	ExtraStartingWorkers int
 
 	// UpgradeState tracks wave upgrade picks and per-wave offer state.
 	UpgradeState PlayerUpgradeState
@@ -813,12 +835,6 @@ type GameState struct {
 	// perkPredicateCacheTick. -1 sentinel until the first Update runs.
 	unitSnapshotCacheTick int
 
-	// enemyFacingBonusMultCache is the cached enemyFacingDamageMultLocked
-	// value at the moment unitSnapshotCacheTick was set. Folded into
-	// SnapshotCache.EffectiveDamage so per-viewer snapshots don't have to
-	// recompute it.
-	enemyFacingBonusMultCache float64
-
 	// unitSpatialIndex is rebuilt once per tick at the top of Update and
 	// shared across every subsystem that needs proximity queries against
 	// living, visible units (combat AI, perk predicate cache, etc.). Bucket
@@ -849,6 +865,15 @@ type GameState struct {
 	Paused      bool
 	PausedBy    string
 	pausedAtMs  int64
+
+	// onLegendPointDropImmediate is fired by rollLegendPointDropLocked when
+	// gameplay tuning's legendPoints.commitMode == "immediate". The hook MUST
+	// be safe to invoke while holding s.mu — implementations are required to
+	// be fire-and-forget (spawn a goroutine for the actual profile write);
+	// blocking I/O on the tick path is forbidden by AI_RULES.
+	// Wired by MatchManager.newMatchLocked; nil in unit tests that do not
+	// exercise the immediate-commit path.
+	onLegendPointDropImmediate func(playerID string, amount int)
 }
 
 const (
@@ -1131,24 +1156,14 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Sum up the "enemyUnits" bonus damage multiplier from all real players
-	// so it can be applied to enemy unit snapshots. Computed once outside the
-	// loop; in a solo-vs-AI game this is just one player's contribution.
-	enemyFacingBonusMult := s.enemyFacingDamageMultLocked()
-
 	units := make([]protocol.UnitSnapshot, 0, len(s.Units))
 	for _, unit := range s.Units {
 		// Effective stats for the HUD: base × rank × path (already in
 		// unit.Damage/AttackSpeed/MoveSpeed) × live perk multipliers. Kept
 		// target-agnostic (target=nil) so only self-based perk bonuses apply
 		// here — per-hit situational bonuses like executioner still live in
-		// the combat-resolution path. Enemy units also pick up the
-		// player-sourced "enemyUnits" buff bonus for an accurate HUD readout.
-		extraMult := 0.0
-		if unit.OwnerID == enemyPlayerID {
-			extraMult = enemyFacingBonusMult
-		}
-		effectiveDamage := s.effectiveDamageForSnapshotLocked(unit, extraMult)
+		// the combat-resolution path.
+		effectiveDamage := s.effectiveDamageForSnapshotLocked(unit, 0.0)
 		effectiveAttackSpeed := s.effectiveAttackSpeedForSnapshotLocked(unit)
 		effectiveMoveSpeed := s.effectiveMoveSpeedForSnapshotLocked(unit)
 
@@ -1457,8 +1472,6 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 
 	cellSize := s.MapConfig.CellSize
 
-	enemyFacingBonusMult := s.enemyFacingDamageMultLocked()
-
 	units := make([]protocol.UnitSnapshot, 0, len(s.Units))
 	for _, unit := range s.Units {
 		isOwn := unit.OwnerID == viewerID
@@ -1466,11 +1479,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 			continue
 		}
 
-		extraMult := 0.0
-		if unit.OwnerID == enemyPlayerID {
-			extraMult = enemyFacingBonusMult
-		}
-		effectiveDamage := s.effectiveDamageForSnapshotLocked(unit, extraMult)
+		effectiveDamage := s.effectiveDamageForSnapshotLocked(unit, 0.0)
 		effectiveAttackSpeed := s.effectiveAttackSpeedForSnapshotLocked(unit)
 		effectiveMoveSpeed := s.effectiveMoveSpeedForSnapshotLocked(unit)
 
@@ -1766,17 +1775,12 @@ func (s *GameState) persistentlyStuckUnitsLocked() []int {
 //
 // Caller holds s.mu.
 func (s *GameState) recomputeUnitSnapshotCacheLocked() {
-	s.enemyFacingBonusMultCache = s.enemyFacingDamageMultLocked()
 	s.unitSnapshotCacheTick = s.Tick
 	for _, unit := range s.Units {
 		if unit == nil {
 			continue
 		}
-		extraMult := 0.0
-		if unit.OwnerID == enemyPlayerID {
-			extraMult = s.enemyFacingBonusMultCache
-		}
-		unit.SnapshotCache.EffectiveDamage = int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil) + extraMult)))
+		unit.SnapshotCache.EffectiveDamage = int(math.Round(float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, nil))))
 		unit.SnapshotCache.EffectiveAttackSpeed = math.Max(0.1, unit.AttackSpeed+s.perkAttackSpeedBonusLocked(unit))
 		unit.SnapshotCache.EffectiveMoveSpeed = unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit)
 		unit.SnapshotCache.EffectiveArmor = s.effectiveArmorLocked(unit)
@@ -1962,15 +1966,9 @@ func (s *GameState) unitXPIntoCurrentRankForSnapshotLocked(unit *Unit) int {
 }
 
 func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
-	enemyFacingBonusMult := s.enemyFacingDamageMultLocked()
-
 	units := make([]protocol.UnitSnapshot, 0, len(s.Units))
 	for _, unit := range s.Units {
-		extraMult := 0.0
-		if unit.OwnerID == enemyPlayerID {
-			extraMult = enemyFacingBonusMult
-		}
-		effectiveDamage := s.effectiveDamageForSnapshotLocked(unit, extraMult)
+		effectiveDamage := s.effectiveDamageForSnapshotLocked(unit, 0.0)
 		effectiveAttackSpeed := s.effectiveAttackSpeedForSnapshotLocked(unit)
 		effectiveMoveSpeed := s.effectiveMoveSpeedForSnapshotLocked(unit)
 
@@ -2816,14 +2814,13 @@ func (s *GameState) IsGameOver() bool {
 // playerID. Won is true when the player is not in the lost set. The legend
 // points earned are: kill drops accumulated during the match plus the
 // win/loss bonus from tuning.
-//
-// TODO: the profile REST handler should call profileManager.WithLocked to
-// persist LegendPointsEarned into the player's profile.LegendPoints and
-// profile.LifetimeLegendPoints.
 func (s *GameState) MatchSummaryForPlayer(playerID string) protocol.MatchSummary {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.matchSummaryForPlayerLocked(playerID)
+}
 
+func (s *GameState) matchSummaryForPlayerLocked(playerID string) protocol.MatchSummary {
 	lost := s.lostPlayerIDs != nil && s.lostPlayerIDs[playerID]
 	tuning := gameplayTuning()
 
@@ -2844,21 +2841,74 @@ func (s *GameState) MatchSummaryForPlayer(playerID string) protocol.MatchSummary
 	}
 }
 
-func (s *GameState) EnsurePlayer(playerID string, equippedBuffIDs ...string) {
+// HumanPlayerMatchSummaries returns one MatchSummary per human player in the
+// match, skipping the synthetic enemy / neutral entries. Sorted by player ID
+// for deterministic iteration. Called once by the match manager when the loop
+// transitions to game-over.
+func (s *GameState) HumanPlayerMatchSummaries() []protocol.MatchSummary {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	playerIDs := make([]string, 0, len(s.Players))
+	for id := range s.Players {
+		if id == enemyPlayerID || id == neutralPlayerID {
+			continue
+		}
+		playerIDs = append(playerIDs, id)
+	}
+	sort.Strings(playerIDs)
+
+	summaries := make([]protocol.MatchSummary, 0, len(playerIDs))
+	for _, id := range playerIDs {
+		summaries = append(summaries, s.matchSummaryForPlayerLocked(id))
+	}
+	return summaries
+}
+
+func (s *GameState) EnsurePlayer(playerID string) {
+	s.EnsurePlayerWithUpgrades(playerID, nil, nil)
+}
+
+// EnsurePlayerWithUpgrades is the full match-join path. It creates the Player
+// entry and spawns starting units if the player is new. On reconnect it is a
+// no-op (multipliers and active upgrades do not reset between connection drops).
+// ownedUpgradeRanks is a snapshot of PlayerProfile.OwnedUpgradeRanks taken at
+// join time; nil is treated as empty (default multipliers, no extra workers).
+// activeUpgradeIDs lists which upgrades are enabled for this match; nil means
+// all owned upgrades are active (backwards-compatible default).
+func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks map[string]int, activeUpgradeIDs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if existing, exists := s.Players[playerID]; exists {
-		// Refresh ProfileBuffIDs so loadout changes applied in the profile
-		// menu take effect on reconnect without requiring a brand-new match.
-		existing.ProfileBuffIDs = append([]string(nil), equippedBuffIDs...)
+	if _, exists := s.Players[playerID]; exists {
+		// Reconnect: multipliers and active set were computed at initial join;
+		// they don't change unless the player leaves and rejoins.
 		return
 	}
 
-	color := s.randomColor()
-	s.Players[playerID] = &Player{
+	// Snapshot owned upgrade ranks (nil -> empty, never keep nil on Player).
+	upgrades := make(map[string]int, len(ownedUpgradeRanks))
+	for k, v := range ownedUpgradeRanks {
+		if v > 0 {
+			upgrades[k] = v
+		}
+	}
+
+	// Build the active set. nil activeUpgradeIDs means "all owned are active".
+	activeSet := make(map[string]bool, len(upgrades))
+	if activeUpgradeIDs != nil {
+		for _, id := range activeUpgradeIDs {
+			activeSet[id] = true
+		}
+	} else {
+		for id := range upgrades {
+			activeSet[id] = true
+		}
+	}
+
+	player := &Player{
 		ID:    playerID,
-		Color: color,
+		Color: s.randomColor(),
 		Resources: map[string]int{
 			"gold": 500,
 			"wood": 180,
@@ -2867,15 +2917,37 @@ func (s *GameState) EnsurePlayer(playerID string, equippedBuffIDs ...string) {
 		UnitSpawnTimeMultipliers:      map[string]float64{},
 		Upgrades:                      make(map[UpgradeTrack]int),
 		Vault:                         []*VaultItem{},
-		ProfileBuffIDs:                append([]string(nil), equippedBuffIDs...),
 		UpgradeState:                  newPlayerUpgradeState(1, 3),
 		CommanderAbilityCooldowns:     map[string]float64{},
+		ProfileUpgrades:               upgrades,
+		ActiveUpgradeIDs:              activeSet,
+		PhysicalDamageMultiplier:      1.0,
+		MagicDamageMultiplier:         1.0,
 	}
+	// Derive precomputed multipliers and extra workers from the upgrade catalog.
+	applyProfileUpgradesToPlayerLocked(player)
+	s.Players[playerID] = player
+	color := player.Color
 
-	s.claimPlayerStartLocked(playerID)
+	townhall, _ := s.claimPlayerStartLocked(playerID)
 	s.claimLabeledBuildingsForPlayerLocked(playerID)
 	s.spawnPlacedUnitsForPlayerLocked(playerID, color)
+	s.spawnExtraStartingWorkersLocked(player, townhall, color)
 	s.ensurePlacedEnemiesSpawnedLocked()
+
+	// Diagnostic: which slot did this player land in? Useful when a map has
+	// authored player1/player2 labels and the caller wants to know which
+	// side they were assigned to. Logged once per fresh join.
+	label := s.findPlayerLabelLocked(playerID)
+	var townhallID string
+	if townhall != nil {
+		townhallID = townhall.ID
+	}
+	slog.Info("player joined match slot",
+		"playerID", playerID,
+		"label", label,
+		"townhallID", townhallID,
+	)
 
 	if s.FOW == nil {
 		s.FOW = map[string]*PlayerFOW{}

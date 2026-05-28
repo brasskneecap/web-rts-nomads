@@ -127,6 +127,22 @@ func (lm *LobbyManager) Get(id string) (*Lobby, bool) {
 	return lm.shallowCopy(l), true
 }
 
+// FindByMatchID returns the lobby whose started match has the given ID, or
+// nil if no lobby spawned that match. Used by the match-status preflight to
+// authorise WS-pre-join requests: a lobby member is a valid participant even
+// though the match's player state is still empty until the WS join arrives.
+func (lm *LobbyManager) FindByMatchID(matchID string) *Lobby {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+
+	for _, l := range lm.lobbies {
+		if l.MatchID == matchID {
+			return lm.shallowCopy(l)
+		}
+	}
+	return nil
+}
+
 func (lm *LobbyManager) Join(id, playerID string) (*Lobby, error) {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
@@ -209,9 +225,11 @@ func (lm *LobbyManager) Start(id, callerPlayerID string, manager *MatchManager) 
 	}
 
 	match := manager.NewMatch(l.MapID)
-	for _, p := range l.Players {
-		match.State.EnsurePlayer(p)
-	}
+	// Players are NOT added to the match here — the WS join_match handler
+	// is the sole entry point and brings each player's owned/active upgrade
+	// ranks with them. Pre-creating the Player struct from the lobby would
+	// race with the WS join: EnsurePlayerWithUpgrades's "player exists" early
+	// return would skip the upgrade application, leaving multipliers at 1.0.
 
 	l.MatchID = match.ID
 	l.Status = LobbyStatusStarted

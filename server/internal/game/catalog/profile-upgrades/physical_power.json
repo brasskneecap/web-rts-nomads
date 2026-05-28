@@ -1,0 +1,12 @@
+{
+  "id": "physical_power",
+  "name": "Physical Power",
+  "description": "Increases physical damage dealt by your units by 10% per rank.",
+  "maxRanks": 10,
+  "costPerRank": [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+  "effect": {
+    "type": "damageMultiplierByType",
+    "damageTypeClass": "physical",
+    "multiplierPerRank": 0.10
+  }
+}

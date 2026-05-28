@@ -48,6 +48,7 @@ func main() {
 	hub := ws.NewHub(manager, lobbyManager)
 	hub.SetVersion(version) // §17.1 build-mismatch handshake
 	profileManager := profile.NewManager("")
+	manager.SetLegendPointCommitter(profileManager)
 
 	spaHandler, err := newSPAHandler()
 	if err != nil {

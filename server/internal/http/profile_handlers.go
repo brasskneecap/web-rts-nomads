@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"sort"
 
 	"webrts/server/internal/game"
 	"webrts/server/internal/profile"
@@ -51,82 +52,18 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 		if playerID == "" {
 			return
 		}
-		p, err := pm.GetOrCreate(playerID, profile.DefaultCommanderID, []string{"iron_discipline", "all_out_assault", "enemy_empowered"})
+		p, err := pm.GetOrCreate(playerID, profile.DefaultCommanderID)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
 			return
 		}
 		writeJSON(w, map[string]any{
-			"profile":    p,
-			"buffCatalog": game.ListPlayerBuffDefs(),
+			"profile":               p,
+			"profileUpgradeCatalog": game.ListProfileUpgradeDefs(),
 		})
 	})
 
-	mux.HandleFunc("/api/profile/loadout", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		playerID := extractPlayerID(w, r)
-		if playerID == "" {
-			return
-		}
-		var body struct {
-			EquippedBuffIDs []string `json:"equippedBuffIds"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
-			return
-		}
-
-		tuning := game.ExportedGameplayTuning()
-		if len(body.EquippedBuffIDs) > tuning.BuffSlots.MaxActive {
-			writeJSONError(w, http.StatusBadRequest, "too_many_buffs",
-				"cannot equip more than the maximum number of buff slots")
-			return
-		}
-
-		// Check for duplicates.
-		seen := make(map[string]bool, len(body.EquippedBuffIDs))
-		for _, id := range body.EquippedBuffIDs {
-			if seen[id] {
-				writeJSONError(w, http.StatusBadRequest, "buff_duplicate", "duplicate buff id: "+id)
-				return
-			}
-			seen[id] = true
-		}
-
-		var updated *profile.PlayerProfile
-		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
-			unlockedSet := make(map[string]bool, len(p.UnlockedBuffIDs))
-			for _, id := range p.UnlockedBuffIDs {
-				unlockedSet[id] = true
-			}
-			for _, id := range body.EquippedBuffIDs {
-				if game.PlayerBuffDefByID(id) == nil {
-					writeJSONError(w, http.StatusBadRequest, "unknown_buff", "unknown buff id: "+id)
-					return errAbort
-				}
-				if !unlockedSet[id] {
-					writeJSONError(w, http.StatusBadRequest, "buff_not_unlocked", "buff not unlocked: "+id)
-					return errAbort
-				}
-			}
-			p.EquippedBuffIDs = append([]string(nil), body.EquippedBuffIDs...)
-			updated = p
-			return nil
-		})
-		if err != nil {
-			if _, ok := err.(errAbortType); ok {
-				return
-			}
-			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
-			return
-		}
-		writeJSON(w, updated)
-	})
-
-	mux.HandleFunc("/api/profile/unlock-buff", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/profile/upgrades/purchase", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -136,34 +73,35 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 			return
 		}
 		var body struct {
-			BuffID string `json:"buffId"`
+			UpgradeID string `json:"upgradeId"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
 			return
 		}
-
-		def := game.PlayerBuffDefByID(body.BuffID)
-		if def == nil {
-			writeJSONError(w, http.StatusBadRequest, "unknown_buff", "unknown buff id: "+body.BuffID)
+		def, ok := game.GetProfileUpgradeDef(body.UpgradeID)
+		if !ok {
+			writeJSONError(w, http.StatusBadRequest, "unknown_upgrade", "unknown upgrade id: "+body.UpgradeID)
 			return
 		}
-
 		var updated *profile.PlayerProfile
 		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
-			for _, id := range p.UnlockedBuffIDs {
-				if id == body.BuffID {
-					writeJSONError(w, http.StatusBadRequest, "already_unlocked", "buff already unlocked: "+body.BuffID)
-					return errAbort
-				}
-			}
-			if p.LegendPoints < def.UnlockCost {
-				writeJSONError(w, http.StatusBadRequest, "insufficient_legend_points",
-					"not enough legend points to unlock this buff")
+			currentRank := p.OwnedUpgradeRanks[body.UpgradeID]
+			if currentRank >= def.MaxRanks {
+				writeJSONError(w, http.StatusBadRequest, "max_rank_reached", "upgrade is already at maximum rank")
 				return errAbort
 			}
-			p.LegendPoints -= def.UnlockCost
-			p.UnlockedBuffIDs = append(p.UnlockedBuffIDs, body.BuffID)
+			cost := def.CostPerRank[currentRank]
+			if p.LegendPoints < cost {
+				writeJSONError(w, http.StatusBadRequest, "insufficient_legend_points", "not enough legend points to purchase this rank")
+				return errAbort
+			}
+			p.LegendPoints -= cost
+			p.OwnedUpgradeRanks[body.UpgradeID] = currentRank + 1
+			// Auto-activate on first rank purchase.
+			if currentRank == 0 {
+				p.ActiveUpgradeIDs = addToSortedSet(p.ActiveUpgradeIDs, body.UpgradeID)
+			}
 			updated = p
 			return nil
 		})
@@ -177,9 +115,102 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 		writeJSON(w, updated)
 	})
 
-	mux.HandleFunc("/api/catalog/player-buffs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/profile/upgrades/refund", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		playerID := extractPlayerID(w, r)
+		if playerID == "" {
+			return
+		}
+		var body struct {
+			UpgradeID string `json:"upgradeId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+			return
+		}
+		def, ok := game.GetProfileUpgradeDef(body.UpgradeID)
+		if !ok {
+			writeJSONError(w, http.StatusBadRequest, "unknown_upgrade", "unknown upgrade id: "+body.UpgradeID)
+			return
+		}
+		var updated *profile.PlayerProfile
+		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
+			currentRank := p.OwnedUpgradeRanks[body.UpgradeID]
+			if currentRank <= 0 {
+				writeJSONError(w, http.StatusBadRequest, "not_owned", "upgrade is not owned at any rank")
+				return errAbort
+			}
+			refund := def.CostPerRank[currentRank-1]
+			p.LegendPoints += refund
+			p.OwnedUpgradeRanks[body.UpgradeID] = currentRank - 1
+			// Auto-deactivate when fully refunded.
+			if currentRank-1 == 0 {
+				p.ActiveUpgradeIDs = removeFromSortedSet(p.ActiveUpgradeIDs, body.UpgradeID)
+			}
+			updated = p
+			return nil
+		})
+		if err != nil {
+			if _, ok := err.(errAbortType); ok {
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
+			return
+		}
+		writeJSON(w, updated)
+	})
+
+	mux.HandleFunc("/api/profile/upgrades/toggle", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		playerID := extractPlayerID(w, r)
+		if playerID == "" {
+			return
+		}
+		var body struct {
+			UpgradeID string `json:"upgradeId"`
+			Active    bool   `json:"active"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+			return
+		}
+		if _, ok := game.GetProfileUpgradeDef(body.UpgradeID); !ok {
+			writeJSONError(w, http.StatusBadRequest, "unknown_upgrade", "unknown upgrade id: "+body.UpgradeID)
+			return
+		}
+		var updated *profile.PlayerProfile
+		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
+			if p.OwnedUpgradeRanks[body.UpgradeID] <= 0 {
+				writeJSONError(w, http.StatusBadRequest, "not_owned", "upgrade is not owned")
+				return errAbort
+			}
+			if body.Active {
+				p.ActiveUpgradeIDs = addToSortedSet(p.ActiveUpgradeIDs, body.UpgradeID)
+			} else {
+				p.ActiveUpgradeIDs = removeFromSortedSet(p.ActiveUpgradeIDs, body.UpgradeID)
+			}
+			updated = p
+			return nil
+		})
+		if err != nil {
+			if _, ok := err.(errAbortType); ok {
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
+			return
+		}
+		writeJSON(w, updated)
+	})
+
+	mux.HandleFunc("/api/catalog/profile-upgrades", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{
-			"buffs": game.ListPlayerBuffDefs(),
+			"upgrades": game.ListProfileUpgradeDefs(),
 		})
 	})
 
@@ -192,6 +223,29 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 			"tiers": game.ListNeutralGroupsForCatalog(),
 		})
 	})
+}
+
+// addToSortedSet appends id to the sorted slice if not already present.
+func addToSortedSet(s []string, id string) []string {
+	for _, existing := range s {
+		if existing == id {
+			return s
+		}
+	}
+	s = append(s, id)
+	sort.Strings(s)
+	return s
+}
+
+// removeFromSortedSet removes id from the sorted slice if present.
+func removeFromSortedSet(s []string, id string) []string {
+	out := s[:0]
+	for _, existing := range s {
+		if existing != id {
+			out = append(out, existing)
+		}
+	}
+	return out
 }
 
 // errAbortType is the type of errAbort so callers can use errors.Is.

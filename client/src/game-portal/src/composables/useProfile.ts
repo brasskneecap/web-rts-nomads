@@ -1,59 +1,30 @@
-import { ref, computed } from 'vue'
-import type { GameplayTuning, PlayerBuffDef, PlayerProfile } from '@/types/profile'
+import { ref } from 'vue'
+import type { GameplayTuning, PlayerProfile } from '@/types/profile'
 import {
   fetchProfile,
   fetchTuning,
   getOrCreatePlayerId,
-  updateLoadout as apiUpdateLoadout,
-  unlockBuff as apiUnlockBuff,
 } from '@/services/profileApi'
 
 // Module-level singleton — one fetch for the entire app lifetime.
 const profile = ref<PlayerProfile | null>(null)
-const buffCatalog = ref<PlayerBuffDef[]>([])
 const tuning = ref<GameplayTuning | null>(null)
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 let initialized = false
 
-const DEFAULT_MAX_BUFF_SLOTS = 3
-
-const maxBuffSlots = computed(() =>
-  tuning.value?.buffSlots.maxActive ?? DEFAULT_MAX_BUFF_SLOTS,
-)
-
-const equippedBuffs = computed<PlayerBuffDef[]>(() => {
-  if (!profile.value) return []
-  const catalog = new Map(buffCatalog.value.map((d) => [d.id, d]))
-  // Profile JSON may serialise an empty list as `null` (Go's nil slice ↔ JSON
-  // null), so coerce before iterating — `.flatMap` on null throws and the
-  // resulting render exception cascades up through MatchHud and hides the
-  // entire in-game HUD.
-  const ids = profile.value.equippedBuffIds ?? []
-  return ids.flatMap((id) => {
-    const def = catalog.get(id)
-    return def ? [def] : []
-  })
-})
-
-const unlockedBuffs = computed<PlayerBuffDef[]>(() => {
-  if (!profile.value) return []
-  const unlockedSet = new Set(profile.value.unlockedBuffIds ?? [])
-  return buffCatalog.value.filter((d) => unlockedSet.has(d.id))
-})
-
-const lockedBuffs = computed<PlayerBuffDef[]>(() => {
-  if (!profile.value) return buffCatalog.value.slice().sort((a, b) => a.unlockLegendPointCost - b.unlockLegendPointCost)
-  const unlockedSet = new Set(profile.value.unlockedBuffIds ?? [])
-  return buffCatalog.value
-    .filter((d) => !unlockedSet.has(d.id))
-    .sort((a, b) => a.unlockLegendPointCost - b.unlockLegendPointCost)
-})
-
 async function initialize(): Promise<void> {
   if (initialized) return
   initialized = true
+  await refresh()
+}
 
+// refresh re-fetches the profile from the server, overwriting the
+// module-level singleton's profile ref. Use this after any server-side
+// mutation the client did NOT issue itself (e.g. mid-match LP drops persisted
+// via the immediate commit hook). Cheap enough to call on every Profile-view
+// mount; the server handler is one file read.
+async function refresh(): Promise<void> {
   // Ensure UUID exists before any fetch
   getOrCreatePlayerId()
 
@@ -66,7 +37,6 @@ async function initialize(): Promise<void> {
       fetchTuning().catch(() => null),
     ])
     profile.value = profileResult.profile
-    buffCatalog.value = profileResult.buffCatalog
     if (tuningResult) tuning.value = tuningResult
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load profile'
@@ -75,45 +45,13 @@ async function initialize(): Promise<void> {
   }
 }
 
-async function updateLoadout(buffIds: string[]): Promise<void> {
-  isLoading.value = true
-  error.value = null
-  try {
-    const updated = await apiUpdateLoadout(buffIds)
-    profile.value = updated
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to save loadout'
-  } finally {
-    isLoading.value = false
-  }
-}
-
-async function unlockBuff(buffId: string): Promise<void> {
-  isLoading.value = true
-  error.value = null
-  try {
-    const updated = await apiUnlockBuff(buffId)
-    profile.value = updated
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to unlock buff'
-  } finally {
-    isLoading.value = false
-  }
-}
-
 export function useProfile() {
   return {
     profile,
-    buffCatalog,
     tuning,
     isLoading,
     error,
-    maxBuffSlots,
-    equippedBuffs,
-    unlockedBuffs,
-    lockedBuffs,
     initialize,
-    updateLoadout,
-    unlockBuff,
+    refresh,
   }
 }

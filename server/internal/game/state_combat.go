@@ -285,6 +285,13 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 		s.awardSoldierTankKillXPLocked(target.ID)
 		s.onPerkKillLocked(attacker)
 		s.trackBattleKillLocked(battleSourceFromUnit(attacker), target)
+		// LP drop rolls on melee kills. The dual-death pipeline removes the
+		// unit synchronously here (via deadUnitIDs → removeUnitLocked), so by
+		// the time drainPendingDeathsLocked iterates the pending queue the
+		// target is already gone and its rollLegendPointDropLocked branch is
+		// skipped. Mirror the call site in drainPendingDeathsLocked so kills
+		// landed via this legacy direct-remove path still roll for drops.
+		s.rollLegendPointDropLocked(attacker.OwnerID, target)
 		*deadUnitIDs = append(*deadUnitIDs, target.ID)
 		if target.ObjectiveID != "" {
 			s.markObjectiveKillLocked(target.ObjectiveID)
@@ -334,6 +341,9 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 			s.awardUnitDeathXPLocked(u, attacker)
 			s.awardSoldierTankKillXPLocked(u.ID)
 			s.trackBattleKillLocked(battleSourceFromUnit(attacker), u)
+			// LP roll on splash kills. Same legacy direct-remove path as the
+			// melee branch — see comment in resolveAttackHitLocked.
+			s.rollLegendPointDropLocked(attacker.OwnerID, u)
 			*deadUnitIDs = append(*deadUnitIDs, u.ID)
 		}
 	}
@@ -394,6 +404,9 @@ func (s *GameState) applyDelayedAttackLocked(unit *Unit, deadUnitIDs *[]int, des
 		}
 		rawDamage *= critMult
 		rawDamage *= (1.0 - s.perkOutgoingDamageDebuffMultiplierLocked(unit))
+		// Profile damage multiplier (physical_power / magic_power) is baked
+		// into unit.BaseDamage at spawn time via applyPlayerUpgradesAtSpawnLocked,
+		// so rawDamage already reflects it here — no runtime multiply needed.
 		damage := applyArmorMitigation(int(math.Round(rawDamage)), s.effectiveArmorLocked(target))
 
 		if !profile.Melee {

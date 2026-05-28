@@ -14,7 +14,6 @@ var gameplayTuningJSON []byte
 type GameplayTuning struct {
 	Version       int                                `json:"version"`
 	LegendPoints  LegendPointsTuning                 `json:"legendPoints"`
-	BuffSlots     BuffSlotsTuning                    `json:"buffSlots"`
 	WaveUpgrade   WaveUpgradeTuning                  `json:"waveUpgrade"`
 	UnitOverrides map[string]UnitLegendPointOverride `json:"unitOverrides"`
 	Experience    ExperienceTuning                   `json:"experience"`
@@ -27,12 +26,21 @@ type LegendPointsTuning struct {
 	PerObjective          int     `json:"perObjective"`
 	PerKillBaseDropChance float64 `json:"perKillBaseDropChance"`
 	PerKillBaseAmount     int     `json:"perKillBaseAmount"`
+	// CommitMode selects when kill-drop earnings reach the player's profile:
+	//   "matchEnd"  — accumulate into Player.RunLegendPointDrops, commit
+	//                 once at game-over via the MatchManager's committer.
+	//                 Default; intended for shipped builds.
+	//   "immediate" — fire-and-forget commit per drop (skips the
+	//                 RunLegendPointDrops accumulator). Intended for
+	//                 testing / verification builds only.
+	// Empty string is treated as "matchEnd" for backward compatibility.
+	CommitMode string `json:"commitMode"`
 }
 
-// BuffSlotsTuning controls how many player buffs can be active simultaneously.
-type BuffSlotsTuning struct {
-	MaxActive int `json:"maxActive"`
-}
+const (
+	legendPointCommitModeMatchEnd  = "matchEnd"
+	legendPointCommitModeImmediate = "immediate"
+)
 
 // WaveUpgradeTuning controls offer generation for the wave upgrade phase.
 type WaveUpgradeTuning struct {
@@ -94,8 +102,12 @@ func init() {
 	if t.LegendPoints.PerKillBaseAmount < 0 {
 		panic("catalog/tuning/gameplay_tuning.json: legendPoints.perKillBaseAmount must be >= 0")
 	}
-	if t.BuffSlots.MaxActive <= 0 {
-		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: buffSlots.maxActive must be > 0, got %d", t.BuffSlots.MaxActive))
+	switch t.LegendPoints.CommitMode {
+	case "", legendPointCommitModeMatchEnd, legendPointCommitModeImmediate:
+		// valid
+	default:
+		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: legendPoints.commitMode must be %q or %q, got %q",
+			legendPointCommitModeMatchEnd, legendPointCommitModeImmediate, t.LegendPoints.CommitMode))
 	}
 	for unitType, override := range t.UnitOverrides {
 		if override.LegendPointDropChance < 0 || override.LegendPointDropChance > 1 {

@@ -55,10 +55,9 @@ func TestSPBaseline_StructuralShape(t *testing.T) {
 
 	// Scripted scenario: a single SP join.
 	join := protocol.JoinMatchMessage{
-		Type:            "join_match",
-		PlayerID:        "baseline-player",
-		MapID:           "",
-		EquippedBuffIDs: []string{},
+		Type:     "join_match",
+		PlayerID: "baseline-player",
+		MapID:    "",
 	}
 	rawJoin, err := json.Marshal(join)
 	if err != nil {

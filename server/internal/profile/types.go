@@ -2,7 +2,7 @@ package profile
 
 // CurrentVersion is the schema version written into every new profile.
 // Increment this when the struct layout changes and add migration logic.
-const CurrentVersion = 1
+const CurrentVersion = 3
 
 // DefaultCommanderID is the commander assigned to new profiles when no other
 // commander is specified.
@@ -19,14 +19,24 @@ type PlayerProfile struct {
 	LifetimeLegendPoints int          `json:"lifetimeLegendPoints"`
 	OwnedCommanderIDs    []string     `json:"ownedCommanderIds"`
 	SelectedCommanderID  string       `json:"selectedCommanderId"`
-	EquippedBuffIDs      []string     `json:"equippedBuffIds"`
-	UnlockedBuffIDs      []string     `json:"unlockedBuffIds"`
 	Stats                ProfileStats `json:"stats"`
 
 	// Wave upgrade legend-incrementable caps. Zero values fall back to defaults
 	// (MaxRerolls=1, MaxUpgradeStacks=3) applied at match start.
 	MaxRerolls       int `json:"maxRerolls"`
 	MaxUpgradeStacks int `json:"maxUpgradeStacks"`
+
+	// OwnedUpgradeRanks maps profile upgrade ID to the player's purchased rank.
+	// Added in schema version 2. A nil map is equivalent to an empty map; both
+	// mean no upgrades have been purchased. Initialized to a non-nil empty map
+	// on creation and on v1->v2 migration.
+	OwnedUpgradeRanks map[string]int `json:"ownedUpgradeRanks"`
+
+	// ActiveUpgradeIDs is the sorted set of upgrade IDs the player has chosen
+	// to activate. Presence in the slice means active; absence means inactive.
+	// Added in schema version 3. On v2->v3 migration, any upgrade with rank > 0
+	// is automatically added (active by default).
+	ActiveUpgradeIDs []string `json:"activeUpgradeIds"`
 }
 
 // ProfileStats tracks lifetime match and combat statistics for a player.

@@ -73,9 +73,6 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 	// (not necessarily by this unit), so they are not in the perk loop above.
 	total += s.perkAttackSpeedBonusFromBannersLocked(unit)
 
-	// Player-buff contribution — equipped player buffs add a flat attack speed bonus.
-	total += s.playerBuffAggregateLocked(unit).AttackSpeedBonus
-
 	// Battle Prayer buff — cross-unit buff applied to the healed target by a
 	// Cleric with battle_prayer. The buffed unit does not need to own the perk;
 	// the multiplier lives on PerkState (same as WeakenedRemaining pattern).
@@ -415,12 +412,6 @@ func (s *GameState) perkBonusDamageMultiplierLocked(attacker, target *Unit) floa
 		// ── add cases for new damage-multiplier perks below this line ───────
 		}
 	}
-
-	// Player-buff contribution — own-unit buffs boost the attacker's damage.
-	total += s.playerBuffAggregateLocked(attacker).BonusDamageMult
-	// Enemy-facing debuffs — the defender's player may have equipped a buff
-	// that intentionally boosts enemy damage (e.g. a difficulty modifier).
-	total += s.playerEnemyDamageMultiplierLocked(attacker, target)
 
 	return total
 }

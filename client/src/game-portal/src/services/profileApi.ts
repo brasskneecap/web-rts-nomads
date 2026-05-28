@@ -1,4 +1,4 @@
-import type { GameplayTuning, PlayerBuffDef, PlayerProfile } from '@/types/profile'
+import type { GameplayTuning, PlayerProfile, ProfileUpgradeDef } from '@/types/profile'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 const PLAYER_ID_KEY = 'webrts.profile.id'
@@ -44,35 +44,44 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function fetchProfile(): Promise<{ profile: PlayerProfile; buffCatalog: PlayerBuffDef[] }> {
+export async function fetchProfile(): Promise<{ profile: PlayerProfile; profileUpgradeCatalog: ProfileUpgradeDef[] }> {
   const res = await fetch(`${API_BASE}/api/profile`, { headers: playerHeaders() })
   return handleResponse(res)
 }
 
-export async function updateLoadout(equippedBuffIds: string[]): Promise<PlayerProfile> {
-  const res = await fetch(`${API_BASE}/api/profile/loadout`, {
-    method: 'PUT',
-    headers: playerHeaders(),
-    body: JSON.stringify({ equippedBuffIds }),
-  })
-  return handleResponse<PlayerProfile>(res)
-}
-
-export async function unlockBuff(buffId: string): Promise<PlayerProfile> {
-  const res = await fetch(`${API_BASE}/api/profile/unlock-buff`, {
+export async function toggleProfileUpgrade(upgradeId: string, active: boolean): Promise<PlayerProfile> {
+  const res = await fetch(`${API_BASE}/api/profile/upgrades/toggle`, {
     method: 'POST',
     headers: playerHeaders(),
-    body: JSON.stringify({ buffId }),
+    body: JSON.stringify({ upgradeId, active }),
   })
   return handleResponse<PlayerProfile>(res)
-}
-
-export async function fetchBuffCatalog(): Promise<PlayerBuffDef[]> {
-  const res = await fetch(`${API_BASE}/api/catalog/player-buffs`, { headers: playerHeaders() })
-  return handleResponse<PlayerBuffDef[]>(res)
 }
 
 export async function fetchTuning(): Promise<GameplayTuning> {
   const res = await fetch(`${API_BASE}/api/catalog/tuning`, { headers: playerHeaders() })
   return handleResponse<GameplayTuning>(res)
+}
+
+export async function fetchProfileUpgradeCatalog(): Promise<{ upgrades: ProfileUpgradeDef[] }> {
+  const res = await fetch(`${API_BASE}/api/catalog/profile-upgrades`, { headers: playerHeaders() })
+  return handleResponse<{ upgrades: ProfileUpgradeDef[] }>(res)
+}
+
+export async function purchaseProfileUpgrade(upgradeId: string): Promise<PlayerProfile> {
+  const res = await fetch(`${API_BASE}/api/profile/upgrades/purchase`, {
+    method: 'POST',
+    headers: playerHeaders(),
+    body: JSON.stringify({ upgradeId }),
+  })
+  return handleResponse<PlayerProfile>(res)
+}
+
+export async function refundProfileUpgrade(upgradeId: string): Promise<PlayerProfile> {
+  const res = await fetch(`${API_BASE}/api/profile/upgrades/refund`, {
+    method: 'POST',
+    headers: playerHeaders(),
+    body: JSON.stringify({ upgradeId }),
+  })
+  return handleResponse<PlayerProfile>(res)
 }

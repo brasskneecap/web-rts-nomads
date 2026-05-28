@@ -93,8 +93,8 @@
             </div>
 
             <div class="profile-view__right">
-              <section class="profile-card" aria-label="Buff Loadout">
-                <BuffLoadoutPicker />
+              <section class="profile-card" aria-label="Active Upgrade Loadout">
+                <ProfileUpgradeLoadoutPicker @switch-tab="activeTab = $event as Tab" />
               </section>
             </div>
           </div>
@@ -102,13 +102,7 @@
 
         <!-- Upgrades tab ────────────────────────────────────────────────── -->
         <div v-else-if="activeTab === 'upgrades'" class="profile-view__tab-panel" role="tabpanel">
-          <section class="profile-card profile-card--placeholder" aria-label="Upgrades">
-            <div class="profile-card__label">Upgrades</div>
-            <div class="profile-card__value">Coming Soon</div>
-            <div class="profile-card__sub">
-              Spend Legend Points to permanently improve your roster.
-            </div>
-          </section>
+          <ProfileUpgradesPanel />
         </div>
       </MenuPanel>
     </div>
@@ -119,17 +113,25 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfile } from '@/composables/useProfile'
-import BuffLoadoutPicker from '@/components/profile/BuffLoadoutPicker.vue'
+import ProfileUpgradeLoadoutPicker from '@/components/profile/ProfileUpgradeLoadoutPicker.vue'
+import ProfileUpgradesPanel from '@/components/profile/ProfileUpgradesPanel.vue'
 import MenuPanel from '@/components/menu/MenuPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 
 const router = useRouter()
-const { profile, isLoading, error, initialize } = useProfile()
+const { profile, isLoading, error, initialize, refresh } = useProfile()
 
 type Tab = 'profile' | 'upgrades'
 const activeTab = ref<Tab>('profile')
 
-onMounted(() => { void initialize() })
+onMounted(async () => {
+  // initialize() is a one-shot — it primes the buff catalog + tuning on the
+  // very first visit. refresh() always re-fetches the profile so mid-match
+  // server-side mutations (e.g. immediate LP commits) appear here without a
+  // page reload.
+  await initialize()
+  void refresh()
+})
 
 const winRate = computed(() => {
   if (!profile.value || profile.value.stats.matchesPlayed === 0) return '—'

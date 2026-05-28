@@ -27,6 +27,7 @@ import type {
 } from './protocol'
 import { GameState } from '../core/GameState'
 import { startSteamGame } from '@/services/desktopBridge'
+import { getOrCreatePlayerId as getProfilePlayerId } from '@/services/profileApi'
 
 /** Derive the WebSocket base URL from the HTTP base URL env var.
  *  http -> ws, https -> wss so both schemes work in prod and dev.
@@ -92,7 +93,6 @@ function resolveWsUrl(): string {
   return url
 }
 
-const PLAYER_ID_STORAGE_KEY = 'webrts.playerId'
 const MAP_ID_STORAGE_KEY = 'webrts.mapId'
 const MATCH_ID_STORAGE_KEY = 'webrts.matchId'
 
@@ -101,13 +101,14 @@ const MATCH_ID_STORAGE_KEY = 'webrts.matchId'
 const BACKOFF_DELAYS_MS = [1000, 2000, 4000, 8000]
 const MAX_RECONNECT_ATTEMPTS = BACKOFF_DELAYS_MS.length
 
+// Single source of truth for the player's identity across both the WS match
+// path and the HTTP profile path. The HTTP layer (X-Player-ID header)
+// requires a UUID, so we delegate to profileApi's UUID-based implementation.
+// Historically NetworkClient had its own `player-XXXXXX` generator under a
+// separate localStorage key, which meant match progress (LP drops, etc.)
+// was credited to a different profile than the one the Profile screen read.
 function getOrCreatePlayerId(): string {
-  const existing = localStorage.getItem(PLAYER_ID_STORAGE_KEY)
-  if (existing) return existing
-
-  const created = `player-${Math.random().toString(36).slice(2, 8)}`
-  localStorage.setItem(PLAYER_ID_STORAGE_KEY, created)
-  return created
+  return getProfilePlayerId()
 }
 
 function getPreferredMapId(): MapId {
@@ -149,7 +150,8 @@ export class NetworkClient {
   private playerId = getOrCreatePlayerId()
   private matchId: string | null = getStoredMatchId()
   private mapId: MapId = getPreferredMapId()
-  private equippedBuffIds: string[] = []
+  private activeUpgradeIds: string[] | null = null
+  private ownedUpgradeRanks: Record<string, number> = {}
 
   /** Set to false before calling close() for an intentional disconnect so the
    *  reconnect loop does not fire. */
@@ -173,8 +175,12 @@ export class NetworkClient {
     this.state.setLocalPlayerId(this.playerId)
   }
 
-  setEquippedBuffIds(ids: string[]) {
-    this.equippedBuffIds = ids
+  setActiveUpgradeIds(ids: string[] | null) {
+    this.activeUpgradeIds = ids
+  }
+
+  setOwnedUpgradeRanks(ranks: Record<string, number>) {
+    this.ownedUpgradeRanks = ranks
   }
 
   setPreferredMapId(mapId: MapId) {
@@ -215,14 +221,20 @@ export class NetworkClient {
       this.socket = ws
 
       ws.onopen = () => {
+        const hasUpgrades = Object.keys(this.ownedUpgradeRanks).length > 0
+        // Omit activeUpgradeIds when null or empty so the server falls back to
+        // "all owned upgrades active" — the correct default per schema v3.
+        const shouldSendActiveUpgrades =
+          this.activeUpgradeIds !== null && this.activeUpgradeIds.length > 0
         const joinMessage: ClientMessage = {
           type: 'join_match',
           playerId: this.playerId,
           mapId: this.mapId,
           matchId: resume ? (this.matchId ?? undefined) : undefined,
-          equippedBuffIds: this.equippedBuffIds.length > 0 ? this.equippedBuffIds : undefined,
+          activeUpgradeIds: shouldSendActiveUpgrades ? this.activeUpgradeIds! : undefined,
+          ownedUpgradeRanks: hasUpgrades ? this.ownedUpgradeRanks : undefined,
         }
-        console.log('[join_match] equippedBuffIds:', this.equippedBuffIds)
+        console.log('[join_match] activeUpgradeIds:', this.activeUpgradeIds, 'ownedUpgradeRanks:', this.ownedUpgradeRanks)
         this.send(joinMessage)
 
         if (!isReconnect) {
@@ -600,7 +612,6 @@ export class NetworkClient {
         this.matchId = message.matchId
         this.state.setLocalPlayerId(message.playerId)
         this.state.setMapConfig(message.map)
-        localStorage.setItem(PLAYER_ID_STORAGE_KEY, message.playerId)
         localStorage.setItem(MAP_ID_STORAGE_KEY, message.map.id)
         localStorage.setItem(MATCH_ID_STORAGE_KEY, message.matchId)
         this.onMatchIdChange?.(message.matchId)

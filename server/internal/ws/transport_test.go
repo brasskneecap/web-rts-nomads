@@ -219,9 +219,8 @@ func TestRegisterTransport_FakeReadsAndWritesThroughHub(t *testing.T) {
 	// Send join_match with a stable player id; expect the hub to respond
 	// with welcome + initial snapshot.
 	join := protocol.JoinMatchMessage{
-		Type:            "join_match",
-		PlayerID:        "test-player-1",
-		EquippedBuffIDs: []string{},
+		Type:     "join_match",
+		PlayerID: "test-player-1",
 	}
 	rawJoin, err := json.Marshal(join)
 	if err != nil {

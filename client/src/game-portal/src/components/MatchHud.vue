@@ -24,7 +24,7 @@
             class="player-color"
             :style="{ backgroundColor: ui.player.color }"
           ></span>
-          <span class="player-name">{{ ui.player.playerId || 'Connecting...' }}</span>
+          <span class="player-name">{{ ui.player.playerId ? 'You' : 'Connecting...' }}</span>
         </div>
       </div>
 
@@ -70,13 +70,6 @@
       </article>
     </section>
 
-    <!-- Equipped buffs/debuffs anchored below the header on the right. Lives
-         inside <header> only to inherit its positioning context; visually
-         it sits outside the panel frame. -->
-    <section class="buff-tray" aria-label="Active player buffs">
-      <!-- TODO: pass PlayerSnapshot.activeBuffs here once the backend ships that field -->
-      <PlayerBuffStrip />
-    </section>
   </header>
 
   <transition-group name="toast" tag="div" class="toast-stack">
@@ -94,7 +87,6 @@ import type { GameUiSnapshot } from '@/game/core/GameClient'
 import uiPanelUrl from '@/assets/ui/themes/default/ui_panel.png'
 import theme from '@/assets/ui/themes/default/theme.json'
 import { getResourceIconUrl } from '@/game/rendering/resourceSprites'
-import PlayerBuffStrip from '@/components/profile/PlayerBuffStrip.vue'
 
 const emit = defineEmits<{
   exit: []
@@ -233,19 +225,6 @@ function exitGame() {
   border-radius: 999px;
   flex: 0 0 auto;
   box-shadow: 0 0 0 2px rgba(245, 234, 210, 0.16);
-}
-
-.buff-tray {
-  /* Anchored below the header's visible bottom edge on the right. `top: 100%`
-     references the header's padding-box bottom, so we add the 17px transparent
-     border (which the panel border-image paints into) plus a small gap to clear
-     the visible frame. */
-  position: absolute;
-  top: calc(100% + var(--ui-panel-slice) * 1px + 8px);
-  right: 0;
-  display: flex;
-  align-items: center;
-  pointer-events: auto;
 }
 
 .resource-tray {

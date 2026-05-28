@@ -1,6 +1,36 @@
 package game
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Profile upgrade damage multiplier
+// ═════════════════════════════════════════════════════════════════════════════
+
+// applyProfileDamageMultiplierLocked multiplies rawDamage by the attacker
+// owner's PhysicalDamageMultiplier or MagicDamageMultiplier, depending on
+// the resolved damage type of the attack. Returns rawDamage unchanged when
+// the attacker is the enemy AI or neutral faction, or has no real player entry.
+//
+// Applied once per damage event, after crit and perk multipliers, before
+// applyArmorMitigation. Must be called under s.mu lock.
+func (s *GameState) applyProfileDamageMultiplierLocked(attacker *Unit, rawDamage float64) float64 {
+	if attacker == nil {
+		return rawDamage
+	}
+	// Skip virtual AI/neutral players — they are never profile-upgraded.
+	if attacker.OwnerID == enemyPlayerID || attacker.OwnerID == neutralPlayerID {
+		return rawDamage
+	}
+	player, ok := s.Players[attacker.OwnerID]
+	if !ok {
+		return rawDamage
+	}
+	resolvedType := attacker.AttackDamageType.OrPhysical()
+	if resolvedType == DamagePhysical {
+		return rawDamage * player.PhysicalDamageMultiplier
+	}
+	return rawDamage * player.MagicDamageMultiplier
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Centralized death pipeline
 //
 // Problem: indirect damage paths (Shared Pain, pain_share redirect,

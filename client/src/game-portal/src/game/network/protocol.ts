@@ -228,7 +228,8 @@ export type JoinMatchMessage = {
   playerId: string
   mapId: MapId
   matchId?: string
-  equippedBuffIds?: string[]
+  activeUpgradeIds?: string[]
+  ownedUpgradeRanks?: Record<string, number>
 }
 
 export type LeaveMatchMessage = {

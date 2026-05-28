@@ -98,7 +98,6 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 	// pass. Only applies to player-owned units (enemy player has no upgrades).
 	if playerID != enemyPlayerID {
 		s.applyPlayerUpgradesAtSpawnLocked(unit)
-		s.applyPlayerBuffsAtSpawnLocked(unit)
 	}
 	s.applyRankModifiersLocked(unit, false)
 	// Initialise inventory slots for player-owned units. At spawn the rank is
@@ -377,6 +376,45 @@ func (s *GameState) spawnPlacedEnemyUnitsLocked() {
 		unit.CombatAnchorX = spawnPos.X
 		unit.CombatAnchorY = spawnPos.Y
 		unit.Status = "Guarding"
+	}
+}
+
+// spawnExtraStartingWorkersLocked spawns extra worker units for a player whose
+// profile upgrade ExtraStartingWorkers > 0. Units are placed on the nearest
+// walkable cell to the townhall center using the existing findNearestWalkable
+// search. If townhall is nil or no walkable cell can be found within the search
+// radius, a warning is logged and that worker is skipped — the match continues
+// without crashing. Must be called under s.mu write lock.
+func (s *GameState) spawnExtraStartingWorkersLocked(player *Player, townhall *protocol.BuildingTile, color string) {
+	if player == nil || player.ExtraStartingWorkers <= 0 {
+		return
+	}
+	if townhall == nil {
+		slog.Warn("spawnExtraStartingWorkersLocked: no townhall for player; skipping extra workers",
+			"playerID", player.ID, "count", player.ExtraStartingWorkers)
+		return
+	}
+
+	cellSize := s.MapConfig.CellSize
+	// Compute world-space center of the townhall building.
+	centerX := (float64(townhall.X) + float64(townhall.Width)/2) * cellSize
+	centerY := (float64(townhall.Y) + float64(townhall.Height)/2) * cellSize
+	blocked := s.getBlockedCellsLocked()
+
+	for i := 0; i < player.ExtraStartingWorkers; i++ {
+		center := s.worldToGrid(centerX, centerY)
+		spawnCell, ok := s.findNearestWalkable(center, blocked)
+		if !ok {
+			slog.Warn("spawnExtraStartingWorkersLocked: no walkable cell found for extra worker; skipping",
+				"playerID", player.ID, "workerIndex", i)
+			continue
+		}
+		spawnPos := s.gridToWorldCenter(spawnCell)
+		unit := s.spawnPlayerUnitLocked("worker", player.ID, color, spawnPos)
+		if unit == nil {
+			slog.Warn("spawnExtraStartingWorkersLocked: spawnPlayerUnitLocked returned nil; skipping",
+				"playerID", player.ID, "workerIndex", i)
+		}
 	}
 }
 

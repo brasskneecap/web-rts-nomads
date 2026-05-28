@@ -349,11 +349,12 @@ type BuildingTile struct {
 }
 
 type JoinMatchMessage struct {
-	Type            string   `json:"type"`
-	PlayerID        string   `json:"playerId"`
-	MapID           string   `json:"mapId"`
-	MatchID         string   `json:"matchId,omitempty"`
-	EquippedBuffIDs []string `json:"equippedBuffIds,omitempty"`
+	Type              string         `json:"type"`
+	PlayerID          string         `json:"playerId"`
+	MapID             string         `json:"mapId"`
+	MatchID           string         `json:"matchId,omitempty"`
+	OwnedUpgradeRanks map[string]int `json:"ownedUpgradeRanks,omitempty"`
+	ActiveUpgradeIDs  []string       `json:"activeUpgradeIds,omitempty"`
 }
 
 type LeaveMatchMessage struct {
@@ -912,13 +913,10 @@ type GameOverSnapshot struct {
 }
 
 // MatchSummary carries per-player match-end data alongside the game-over
-// snapshot. Populated once per match when the game ends. The HTTP layer
-// (profile handler) is responsible for persisting LegendPointsEarned to the
-// player profile via profileManager.WithLocked — the simulation only computes
-// the totals; it does not touch the profile store directly.
-//
-// TODO: the profile REST handler should call profileManager.WithLocked to add
-// LegendPointsEarned to profile.LegendPoints and profile.LifetimeLegendPoints.
+// snapshot. Populated once per match when the game ends. The match manager's
+// OnGameOver hook calls a LegendPointCommitter (implemented by
+// profile.Manager) to persist LegendPointsEarned into the profile —
+// simulation code does not touch the profile store directly.
 type MatchSummary struct {
 	PlayerID           string `json:"playerId"`
 	Won                bool   `json:"won"`

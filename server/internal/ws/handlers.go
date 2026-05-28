@@ -391,6 +391,14 @@ func (h *Hub) readLoop(client *Client) {
 					}
 				}
 			}
+			// Enforce "one active match per player": evict from any other
+			// match (including ones still inside the disconnect grace window)
+			// before joining. Reconnects to the same match are exempt.
+			var exceptMatchID string
+			if match != nil {
+				exceptMatchID = match.ID
+			}
+			h.manager.EvictPlayerFromOtherMatches(msg.PlayerID, exceptMatchID)
 			if match == nil {
 				match = h.manager.FindOrCreateMatch(mapID)
 			}
@@ -400,8 +408,8 @@ func (h *Hub) readLoop(client *Client) {
 			client.TouchPong()
 
 			match.AddClient(client)
-			log.Printf("join_match: player=%s equippedBuffIDs=%v\n", msg.PlayerID, msg.EquippedBuffIDs)
-			match.State.EnsurePlayer(msg.PlayerID, msg.EquippedBuffIDs...)
+			log.Printf("join_match: player=%s\n", msg.PlayerID)
+			match.State.EnsurePlayerWithUpgrades(msg.PlayerID, msg.OwnedUpgradeRanks, msg.ActiveUpgradeIDs)
 
 			welcome := protocol.WelcomeMessage{
 				Type:     "welcome",

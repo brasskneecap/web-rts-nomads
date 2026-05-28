@@ -214,7 +214,6 @@ watch(
 
 const hasPreviousSession = ref(
   localStorage.getItem(HAS_ACTIVE_SESSION_KEY) === 'true' &&
-    !!localStorage.getItem(PLAYER_ID_STORAGE_KEY) &&
     !!localStorage.getItem(MATCH_ID_STORAGE_KEY),
 )
 

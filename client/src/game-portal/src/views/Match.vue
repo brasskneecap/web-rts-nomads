@@ -164,10 +164,10 @@ import MatchSettingsModal from '@/components/MatchSettingsModal.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { useMapSelection } from '@/composables/useMapSelection'
 import { setCursorGrab } from '@/services/desktopBridge'
+import { getOrCreatePlayerId } from '@/services/profileApi'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
-const PLAYER_ID_STORAGE_KEY = 'webrts.playerId'
 const MAP_ID_STORAGE_KEY = 'webrts.mapId'
 const MATCH_ID_STORAGE_KEY = 'webrts.matchId'
 const HAS_ACTIVE_SESSION_KEY = 'webrts.hasActiveSession'
@@ -187,7 +187,6 @@ const { selectedMapId, selectedMapName, setSelectedMapId } = useMapSelection()
 
 const hasPreviousSession = ref(
   localStorage.getItem(HAS_ACTIVE_SESSION_KEY) === 'true' &&
-    !!localStorage.getItem(PLAYER_ID_STORAGE_KEY) &&
     !!localStorage.getItem(MATCH_ID_STORAGE_KEY),
 )
 
@@ -397,13 +396,12 @@ onMounted(async () => {
   console.log('[Match.onMounted]', { urlMatchId, isSteamProxyJoiner })
 
   if (urlMatchId) {
-    const playerId = localStorage.getItem(PLAYER_ID_STORAGE_KEY) ?? ''
-    if (!playerId) {
-      console.warn('[Match.onMounted] no playerId in localStorage; kick to /')
-      clearStaleSession()
-      void router.push('/')
-      return
-    }
+    // Use the unified player identity (UUID from webrts.profile.id) so the
+    // /matches/<id>/status preflight asks the server about the SAME player
+    // ID that NetworkClient will use on the WS connect. Reading the legacy
+    // `webrts.playerId` key here was the cause of an "isParticipant: false"
+    // false negative that bounced the user back to / on every Start Game.
+    const playerId = getOrCreatePlayerId()
 
     if (isSteamProxyJoiner) {
       // Skip the local preflight. We don't have the match locally; the

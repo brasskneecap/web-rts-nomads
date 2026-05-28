@@ -159,19 +159,24 @@ func (s *GameState) townhallTierForPlayerLocked(playerID string) int {
 // UnitType has no matching track. Must be called under s.mu.
 func (s *GameState) applyPlayerUpgradesAtSpawnLocked(unit *Unit) {
 	player, ok := s.Players[unit.OwnerID]
-	if !ok || player.Upgrades == nil {
+	if !ok {
 		return
 	}
-	track := UpgradeTrack(unit.UnitType)
-	trackDef, hasDef := upgradeTrackDefByID(track)
-	if hasDef {
-		level := player.Upgrades[track]
-		if level > 0 {
-			unit.BaseMaxHP += trackDef.HPPerLevel * level
-			unit.BaseDamage += trackDef.DamagePerLevel * level
-			unit.BaseArmor += trackDef.ArmorPerLevel * level
-			unit.BaseAttackSpeed += trackDef.AttackSpeedPerLevel * float64(level)
-			unit.BaseMoveSpeed += trackDef.MoveSpeedPerLevel * float64(level)
+	// Per-unit-type upgrade tracks (workshop / armoury). Guard on the
+	// Upgrades map being non-nil — wave-upgrade buffs and the profile
+	// damage multiplier below run regardless.
+	if player.Upgrades != nil {
+		track := UpgradeTrack(unit.UnitType)
+		trackDef, hasDef := upgradeTrackDefByID(track)
+		if hasDef {
+			level := player.Upgrades[track]
+			if level > 0 {
+				unit.BaseMaxHP += trackDef.HPPerLevel * level
+				unit.BaseDamage += trackDef.DamagePerLevel * level
+				unit.BaseArmor += trackDef.ArmorPerLevel * level
+				unit.BaseAttackSpeed += trackDef.AttackSpeedPerLevel * float64(level)
+				unit.BaseMoveSpeed += trackDef.MoveSpeedPerLevel * float64(level)
+			}
 		}
 	}
 
@@ -184,6 +189,22 @@ func (s *GameState) applyPlayerUpgradesAtSpawnLocked(unit *Unit) {
 		applyStatMultiplierToUnit(UpgradeDef{
 			Effect: UpgradeEffect{Stat: buff.Stat, Multiplier: buff.Multiplier},
 		}, unit)
+	}
+
+	// Bake the player's profile damage multiplier into BaseDamage so the
+	// unit's displayed stat (and every downstream attack path) reads the
+	// buffed number. Physical/magic split is driven by the unit's
+	// AttackDamageType — empty/unset defaults to physical via OrPhysical().
+	// Match-start application means the bonus is locked at spawn and won't
+	// change if the player toggles the upgrade off mid-match.
+	mult := 1.0
+	if unit.AttackDamageType.OrPhysical() == DamagePhysical {
+		mult = player.PhysicalDamageMultiplier
+	} else {
+		mult = player.MagicDamageMultiplier
+	}
+	if mult != 1.0 && unit.BaseDamage > 0 {
+		unit.BaseDamage = int(math.Round(float64(unit.BaseDamage) * mult))
 	}
 }
 

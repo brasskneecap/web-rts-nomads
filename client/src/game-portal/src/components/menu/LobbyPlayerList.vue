@@ -7,7 +7,7 @@
       :class="{ 'lobby-player-list__slot--filled': players[i - 1] }"
     >
       <template v-if="players[i - 1]">
-        <span class="lobby-player-list__id">{{ players[i - 1] }}</span>
+        <span class="lobby-player-list__id">{{ formatDisplayName(players[i - 1]) }}</span>
         <span v-if="players[i - 1] === hostPlayerId" class="lobby-player-list__tag">(host)</span>
       </template>
       <span v-else class="lobby-player-list__empty">— empty —</span>
@@ -16,6 +16,8 @@
 </template>
 
 <script setup lang="ts">
+import { formatDisplayName } from '@/composables/usePlayer'
+
 defineProps<{
   players: string[]
   hostPlayerId: string

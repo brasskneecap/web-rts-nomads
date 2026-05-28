@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 )
 
 // ProfileCorruptError is returned when both the primary and backup profile
@@ -80,6 +81,7 @@ func (s *fileStore) Load(playerID string) (*PlayerProfile, error) {
 
 	var p PlayerProfile
 	if err := json.Unmarshal(data, &p); err == nil {
+		migrateProfile(&p)
 		return &p, nil
 	}
 	primaryErr := err
@@ -94,7 +96,33 @@ func (s *fileStore) Load(playerID string) (*PlayerProfile, error) {
 	if err2 := json.Unmarshal(bakData, &bp); err2 != nil {
 		return nil, &ProfileCorruptError{PlayerID: playerID, PrimaryErr: primaryErr, BackupErr: err2}
 	}
+	migrateProfile(&bp)
 	return &bp, nil
+}
+
+// migrateProfile applies forward migrations to bring a profile up to
+// CurrentVersion. Safe to call on a profile at any version including
+// CurrentVersion (idempotent). The Version field is updated to CurrentVersion
+// so that the next Save writes the new schema.
+func migrateProfile(p *PlayerProfile) {
+	// v1 -> v2: initialize OwnedUpgradeRanks.
+	if p.OwnedUpgradeRanks == nil {
+		p.OwnedUpgradeRanks = map[string]int{}
+	}
+	// v2 -> v3: initialize ActiveUpgradeIDs. Any upgrade with rank > 0 is
+	// activated by default so existing owners keep their upgrades active.
+	if p.ActiveUpgradeIDs == nil {
+		active := make([]string, 0, len(p.OwnedUpgradeRanks))
+		for id, rank := range p.OwnedUpgradeRanks {
+			if rank > 0 {
+				active = append(active, id)
+			}
+		}
+		sort.Strings(active)
+		p.ActiveUpgradeIDs = active
+	}
+	// Stamp current version so the next Save persists the new schema.
+	p.Version = CurrentVersion
 }
 
 func (s *fileStore) Save(playerID string, p *PlayerProfile) error {

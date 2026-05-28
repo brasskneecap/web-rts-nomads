@@ -254,7 +254,12 @@ function formatSavedAt(ms: number): string {
 }
 
 function formatPlayerId(id: string): string {
-  return id === '__enemy__' ? 'NPC Enemies' : id
+  if (id === '__enemy__') return 'NPC Enemies'
+  if (id === '__neutral__') return 'Neutral'
+  // UUID identities (the canonical X-Player-ID format) are 36 chars with
+  // hyphens — truncate to the first 6 hex chars so the panel stays readable.
+  if (/^[0-9a-f-]{36}$/.test(id)) return `Player ${id.slice(0, 6)}`
+  return id
 }
 
 const elapsedText = computed(() => {

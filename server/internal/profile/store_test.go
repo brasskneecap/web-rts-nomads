@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,14 +14,14 @@ func TestFileStore_SaveAndLoad_RoundTrip(t *testing.T) {
 
 	playerID := "12345678-1234-1234-1234-123456789abc"
 	p := &PlayerProfile{
-		PlayerID:            playerID,
-		Version:             CurrentVersion,
-		CreatedAtUnix:       time.Now().Unix(),
-		UpdatedAtUnix:       time.Now().Unix(),
-		LegendPoints:        42,
+		PlayerID:             playerID,
+		Version:              CurrentVersion,
+		CreatedAtUnix:        time.Now().Unix(),
+		UpdatedAtUnix:        time.Now().Unix(),
+		LegendPoints:         42,
 		LifetimeLegendPoints: 100,
-		UnlockedBuffIDs:     []string{"iron_discipline"},
-		EquippedBuffIDs:     []string{},
+		OwnedUpgradeRanks:    map[string]int{},
+		ActiveUpgradeIDs:     []string{},
 	}
 
 	if err := store.Save(playerID, p); err != nil {
@@ -36,9 +37,6 @@ func TestFileStore_SaveAndLoad_RoundTrip(t *testing.T) {
 	}
 	if loaded.LegendPoints != 42 {
 		t.Errorf("LegendPoints: want 42, got %d", loaded.LegendPoints)
-	}
-	if len(loaded.UnlockedBuffIDs) != 1 || loaded.UnlockedBuffIDs[0] != "iron_discipline" {
-		t.Errorf("UnlockedBuffIDs: want [iron_discipline], got %v", loaded.UnlockedBuffIDs)
 	}
 }
 
@@ -75,12 +73,12 @@ func TestFileStore_BackupFallback(t *testing.T) {
 
 	playerID := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	p := &PlayerProfile{
-		PlayerID:        playerID,
-		Version:         CurrentVersion,
-		LegendPoints:    7,
-		CreatedAtUnix:   time.Now().Unix(),
-		EquippedBuffIDs: []string{},
-		UnlockedBuffIDs: []string{},
+		PlayerID:         playerID,
+		Version:          CurrentVersion,
+		LegendPoints:     7,
+		CreatedAtUnix:    time.Now().Unix(),
+		OwnedUpgradeRanks: map[string]int{},
+		ActiveUpgradeIDs: []string{},
 	}
 
 	// Save twice so the second save creates a .bak of the first.
@@ -116,11 +114,11 @@ func TestFileStore_BothCorrupt_ReturnsProfileCorruptError(t *testing.T) {
 
 	playerID := "cccccccc-cccc-cccc-cccc-cccccccccccc"
 	p := &PlayerProfile{
-		PlayerID:        playerID,
-		Version:         CurrentVersion,
-		CreatedAtUnix:   time.Now().Unix(),
-		EquippedBuffIDs: []string{},
-		UnlockedBuffIDs: []string{},
+		PlayerID:         playerID,
+		Version:          CurrentVersion,
+		CreatedAtUnix:    time.Now().Unix(),
+		OwnedUpgradeRanks: map[string]int{},
+		ActiveUpgradeIDs: []string{},
 	}
 
 	// Save to get a backup created on next save.
@@ -163,7 +161,7 @@ func TestManager_GetOrCreate_DefaultsCorrect(t *testing.T) {
 	m := NewManager(dir)
 
 	playerID := "dddddddd-dddd-dddd-dddd-dddddddddddd"
-	p, err := m.GetOrCreate(playerID, "default_commander", []string{"iron_discipline"})
+	p, err := m.GetOrCreate(playerID, "default_commander")
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
@@ -173,14 +171,11 @@ func TestManager_GetOrCreate_DefaultsCorrect(t *testing.T) {
 	if p.SelectedCommanderID != "default_commander" {
 		t.Errorf("SelectedCommanderID: want default_commander, got %q", p.SelectedCommanderID)
 	}
-	if len(p.UnlockedBuffIDs) != 1 || p.UnlockedBuffIDs[0] != "iron_discipline" {
-		t.Errorf("UnlockedBuffIDs: want [iron_discipline], got %v", p.UnlockedBuffIDs)
-	}
-	if len(p.EquippedBuffIDs) != 0 {
-		t.Errorf("EquippedBuffIDs should be empty, got %v", p.EquippedBuffIDs)
-	}
 	if p.Version != CurrentVersion {
 		t.Errorf("Version: want %d, got %d", CurrentVersion, p.Version)
+	}
+	if p.ActiveUpgradeIDs == nil {
+		t.Error("ActiveUpgradeIDs should be non-nil on a new profile")
 	}
 }
 
@@ -189,11 +184,11 @@ func TestManager_GetOrCreate_IdempotentOnSecondCall(t *testing.T) {
 	m := NewManager(dir)
 
 	playerID := "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-	p1, err := m.GetOrCreate(playerID, "cmd1", nil)
+	p1, err := m.GetOrCreate(playerID, "cmd1")
 	if err != nil {
 		t.Fatalf("first GetOrCreate: %v", err)
 	}
-	p2, err := m.GetOrCreate(playerID, "cmd2", []string{"buff_x"})
+	p2, err := m.GetOrCreate(playerID, "cmd2")
 	if err != nil {
 		t.Fatalf("second GetOrCreate: %v", err)
 	}
@@ -208,7 +203,7 @@ func TestManager_WithLocked_MutatesAndPersists(t *testing.T) {
 	m := NewManager(dir)
 
 	playerID := "ffffffff-ffff-ffff-ffff-ffffffffffff"
-	_, err := m.GetOrCreate(playerID, "cmd", nil)
+	_, err := m.GetOrCreate(playerID, "cmd")
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
@@ -227,5 +222,151 @@ func TestManager_WithLocked_MutatesAndPersists(t *testing.T) {
 	}
 	if loaded.LegendPoints != 99 {
 		t.Errorf("LegendPoints after WithLocked: want 99, got %d", loaded.LegendPoints)
+	}
+}
+
+// TestMigrateProfile_V1ToV2_OwnedUpgradeRanksInitialized verifies that loading
+// a v1 profile (which lacks ownedUpgradeRanks) produces a non-nil empty map
+// and that the next save persists the v2 schema version.
+func TestMigrateProfile_V1ToV2_OwnedUpgradeRanksInitialized(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+	m := NewManager(dir)
+
+	playerID := "11111111-1111-1111-1111-111111111111"
+
+	// Write a hand-rolled v1 JSON fixture that lacks ownedUpgradeRanks.
+	v1JSON := `{
+		"playerId": "11111111-1111-1111-1111-111111111111",
+		"version": 1,
+		"createdAtUnix": 0,
+		"updatedAtUnix": 0,
+		"legendPoints": 42,
+		"lifetimeLegendPoints": 50,
+		"ownedCommanderIds": [],
+		"selectedCommanderId": "",
+		"equippedBuffIds": [],
+		"unlockedBuffIds": [],
+		"stats": {}
+	}`
+	primaryPath := filepath.Join(dir, playerID+".json")
+	if err := os.WriteFile(primaryPath, []byte(v1JSON), 0o644); err != nil {
+		t.Fatalf("write v1 fixture: %v", err)
+	}
+
+	// Load should apply migration.
+	loaded, err := store.Load(playerID)
+	if err != nil {
+		t.Fatalf("Load v1 profile: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("Load returned nil for existing v1 profile")
+	}
+	if loaded.OwnedUpgradeRanks == nil {
+		t.Error("OwnedUpgradeRanks should be non-nil after v1→v2 migration")
+	}
+	if len(loaded.OwnedUpgradeRanks) != 0 {
+		t.Errorf("OwnedUpgradeRanks should be empty after migration, got %v", loaded.OwnedUpgradeRanks)
+	}
+	if loaded.Version != CurrentVersion {
+		t.Errorf("Version after migration: want %d, got %d", CurrentVersion, loaded.Version)
+	}
+	if loaded.LegendPoints != 42 {
+		t.Errorf("LegendPoints should be preserved: want 42, got %d", loaded.LegendPoints)
+	}
+
+	// Trigger a WithLocked mutation to force a save.
+	err = m.WithLocked(playerID, func(p *PlayerProfile) error {
+		p.LegendPoints = 55
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithLocked after migration: %v", err)
+	}
+
+	// Re-read the raw file and verify the saved version is CurrentVersion.
+	data, err := os.ReadFile(primaryPath)
+	if err != nil {
+		t.Fatalf("re-read saved file: %v", err)
+	}
+	var saved PlayerProfile
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("unmarshal saved file: %v", err)
+	}
+	if saved.Version != CurrentVersion {
+		t.Errorf("saved version: want %d, got %d", CurrentVersion, saved.Version)
+	}
+	if saved.OwnedUpgradeRanks == nil {
+		t.Error("saved OwnedUpgradeRanks should be non-nil")
+	}
+}
+
+// TestGetOrCreate_NewProfile_OwnedUpgradeRanksNonNil verifies that a brand-new
+// profile has a non-nil empty OwnedUpgradeRanks and the current schema version.
+func TestGetOrCreate_NewProfile_OwnedUpgradeRanksNonNil(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+
+	playerID := "22222222-2222-2222-2222-222222222222"
+	p, err := m.GetOrCreate(playerID, "default_commander")
+	if err != nil {
+		t.Fatalf("GetOrCreate: %v", err)
+	}
+	if p.OwnedUpgradeRanks == nil {
+		t.Error("new profile OwnedUpgradeRanks should be non-nil")
+	}
+	if len(p.OwnedUpgradeRanks) != 0 {
+		t.Errorf("new profile OwnedUpgradeRanks should be empty, got %v", p.OwnedUpgradeRanks)
+	}
+	if p.Version != CurrentVersion {
+		t.Errorf("new profile version: want %d, got %d", CurrentVersion, p.Version)
+	}
+	if p.ActiveUpgradeIDs == nil {
+		t.Error("new profile ActiveUpgradeIDs should be non-nil")
+	}
+}
+
+// TestMigrateProfile_V2ToV3_ActiveUpgradeIDsPopulated verifies that a v2
+// profile with OwnedUpgradeRanks populated gets ActiveUpgradeIDs defaulted to
+// the sorted list of all owned upgrades with rank > 0.
+func TestMigrateProfile_V2ToV3_ActiveUpgradeIDsPopulated(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+
+	playerID := "33333333-3333-3333-3333-333333333333"
+
+	// Write a hand-rolled v2 JSON fixture that lacks activeUpgradeIds.
+	v2JSON := `{
+		"playerId": "33333333-3333-3333-3333-333333333333",
+		"version": 2,
+		"createdAtUnix": 0,
+		"updatedAtUnix": 0,
+		"legendPoints": 0,
+		"lifetimeLegendPoints": 0,
+		"ownedCommanderIds": [],
+		"selectedCommanderId": "",
+		"stats": {},
+		"ownedUpgradeRanks": {"additional_worker": 2}
+	}`
+	primaryPath := filepath.Join(dir, playerID+".json")
+	if err := os.WriteFile(primaryPath, []byte(v2JSON), 0o644); err != nil {
+		t.Fatalf("write v2 fixture: %v", err)
+	}
+
+	loaded, err := store.Load(playerID)
+	if err != nil {
+		t.Fatalf("Load v2 profile: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("Load returned nil for existing v2 profile")
+	}
+	if loaded.ActiveUpgradeIDs == nil {
+		t.Fatal("ActiveUpgradeIDs should be non-nil after v2->v3 migration")
+	}
+	if len(loaded.ActiveUpgradeIDs) != 1 || loaded.ActiveUpgradeIDs[0] != "additional_worker" {
+		t.Errorf("ActiveUpgradeIDs: want [additional_worker], got %v", loaded.ActiveUpgradeIDs)
+	}
+	if loaded.Version != CurrentVersion {
+		t.Errorf("Version after migration: want %d, got %d", CurrentVersion, loaded.Version)
 	}
 }

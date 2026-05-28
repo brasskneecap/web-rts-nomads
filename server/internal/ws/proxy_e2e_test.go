@@ -71,9 +71,8 @@ func TestDirectConnect_EndToEnd(t *testing.T) {
 
 	// --- SPA sends join_match (travels: SPA → joiner proxy → host hub) ----
 	join := protocol.JoinMatchMessage{
-		Type:            "join_match",
-		PlayerID:        "joiner-player-1",
-		EquippedBuffIDs: []string{},
+		Type:     "join_match",
+		PlayerID: "joiner-player-1",
 	}
 	rawJoin, _ := json.Marshal(join)
 	if err := spa.WriteMessage(websocket.TextMessage, rawJoin); err != nil {

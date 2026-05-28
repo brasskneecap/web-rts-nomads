@@ -141,11 +141,30 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 			return
 		}
 
+		// Participant check: a player is a participant if they're already in
+		// the match's state (reconnect path) OR if a lobby started this match
+		// and the player is on that lobby's roster (first-join path — the WS
+		// join_match handler is the sole entry point that adds the player to
+		// the match state, so HasPlayer would be false before the WS opens).
+		isParticipant := match.HasPlayer(playerID)
+		if !isParticipant {
+			if lobbyMgr := hub.GetLobbyManager(); lobbyMgr != nil {
+				if l := lobbyMgr.FindByMatchID(matchID); l != nil {
+					for _, pid := range l.Players {
+						if pid == playerID {
+							isParticipant = true
+							break
+						}
+					}
+				}
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"matchId":       match.ID,
 			"mapId":         match.MapID,
-			"isParticipant": match.HasPlayer(playerID),
+			"isParticipant": isParticipant,
 		})
 	})
 

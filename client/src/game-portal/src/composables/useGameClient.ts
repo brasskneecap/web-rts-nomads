@@ -92,11 +92,18 @@ export function useGameClient() {
     client?.stop()
     stopUiSync()
 
-    const { initialize: initProfile, profile } = useProfile()
+    const { initialize: initProfile, refresh: refreshProfile, profile } = useProfile()
     await initProfile()
+    // Always refresh right before reading — mid-session toggles/purchases land
+    // in the profile ref, but a fresh tab that never visited /profile would
+    // otherwise read the very first fetch's snapshot, missing any state the
+    // user mutated since. Cheap enough to do on every match start.
+    await refreshProfile()
 
     client = new GameClient(canvas, mapId)
-    client.setEquippedBuffIds(profile.value?.equippedBuffIds ?? [])
+    // null signals "use server-side default" (all owned upgrades active per schema v3).
+    client.setActiveUpgradeIds(profile.value?.activeUpgradeIds ?? null)
+    client.setOwnedUpgradeRanks(profile.value?.ownedUpgradeRanks ?? {})
 
     // Wire the connection state callback. This runs outside the RAF loop so
     // connection state changes are never masked by the snapshot polling rhythm.

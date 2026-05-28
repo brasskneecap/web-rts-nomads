@@ -4,11 +4,9 @@
     "winBonus": 0,
     "lossConsolation": 0,
     "perObjective": 0,
-    "perKillBaseDropChance": 0.0,
-    "perKillBaseAmount": 0
-  },
-  "buffSlots": {
-    "maxActive": 3
+    "perKillBaseDropChance": 1.0,
+    "perKillBaseAmount": 1,
+    "commitMode": "immediate"
   },
   "waveUpgrade": {
     "timerSeconds": 25.0,

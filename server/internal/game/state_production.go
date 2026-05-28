@@ -452,7 +452,6 @@ func (s *GameState) buildPlayerSnapshotLocked(player *Player) protocol.PlayerSna
 		VaultCapacity:   s.vaultCapacityForPlayerLocked(player.ID),
 		LockedUnitTypes: s.lockedUnitTypesForPlayerLocked(player.ID),
 	}
-	snap.ActiveBuffs = s.activePlayerBuffIconsLocked(player.ID)
 	snap.CommanderAbilities = s.commanderAbilitySnapshotsLocked(player)
 	return snap
 }
