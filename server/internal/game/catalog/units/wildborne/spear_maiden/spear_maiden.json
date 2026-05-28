@@ -1,0 +1,26 @@
+{
+  "type": "spear_maiden",
+  "name": "Spear Maiden",
+  "faction": "wildborne",
+  "visionRange": 320,
+  "hp": 250,
+  "damage": 35,
+  "attackRange": 60,
+  "attackSpeed": 1.0,
+  "moveSpeed": 110,
+  "resourceCost": {},
+  "meatCost": 0,
+  "spawnSeconds": 0,
+  "capabilities": [
+    "move",
+    "attack"
+  ],
+  "trainLabel": "",
+  "bounds": {
+    "halfWidth": 14,
+    "top": -60,
+    "bottom": 10,
+    "ringOffsetX": 0,
+    "ringOffsetY": -8
+  }
+}

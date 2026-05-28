@@ -23,7 +23,8 @@
       "Bash(cd /c/Dev/web-rts-nomads/server && wc -l internal/game/perks_siphoner.go)",
       "Read(//c/c/Dev/web-rts-nomads/server/internal/game/**)",
       "Bash(grep -v '//')",
-      "Bash(node -e \"const fs=require\\('fs'\\);const png=require\\('c:/Dev/web-rts-nomads/client/src/game-portal/node_modules/pngjs'\\).PNG; const data=fs.readFileSync\\('c:/Dev/web-rts-nomads/client/src/game-portal/src/assets/objects/chest/sprite.png'\\); const p=png.sync.read\\(data\\); console.log\\(JSON.stringify\\({w:p.width,h:p.height}\\)\\);\")"
+      "Bash(node -e \"const fs=require\\('fs'\\);const png=require\\('c:/Dev/web-rts-nomads/client/src/game-portal/node_modules/pngjs'\\).PNG; const data=fs.readFileSync\\('c:/Dev/web-rts-nomads/client/src/game-portal/src/assets/objects/chest/sprite.png'\\); const p=png.sync.read\\(data\\); console.log\\(JSON.stringify\\({w:p.width,h:p.height}\\)\\);\")",
+      "Bash(dir \"server\\\\internal\\\\game\\\\catalog\\\\units\\\\wildborne\\\\\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\codya\\Downloads",

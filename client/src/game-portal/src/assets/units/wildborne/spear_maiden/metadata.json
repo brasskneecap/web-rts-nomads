@@ -1,0 +1,153 @@
+{
+  "group_id": null,
+  "states": [
+    {
+      "character": {
+        "id": "5457b27d-d0d3-4e2d-8c18-e4b24825f4a2",
+        "name": "Spear Maiden",
+        "prompt": "pixel art, top-down 3/4 perspective, 64x64 sprite, chunky dark outlines, limited earthy palette, 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, druidic female warrior nature guardian, athletic feminine figure in hardened leather and bark armor over a forest green tunic, leather pauldrons reinforced with carved wooden plates, woven leaf-patterned cloak hanging from shoulders, long dark hair tied back in a single braid with feathers and small bones woven in, war paint streaks across cheeks in earthy red and white, holding a curved wooden polearm or staff-spear with a leaf-shaped iron blade tipped with feathers and a wrapped cord grip, small round wooden buckler shield on left arm carved with druidic spiral patterns, hunting knife at hip, sturdy leather wraps on legs and forearms, fierce protective stance ready to defend, deep forest green and warm brown palette with red and white war paint accents",
+        "size": {
+          "width": 116,
+          "height": 116
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-05-28T02:18:26.472478+00:00"
+      },
+      "folder": "Spear_Maiden",
+      "frames": {
+        "rotations": {
+          "south": "Spear_Maiden/rotations/south.png",
+          "south-east": "Spear_Maiden/rotations/south-east.png",
+          "east": "Spear_Maiden/rotations/east.png",
+          "north-east": "Spear_Maiden/rotations/north-east.png",
+          "north": "Spear_Maiden/rotations/north.png",
+          "north-west": "Spear_Maiden/rotations/north-west.png",
+          "west": "Spear_Maiden/rotations/west.png",
+          "south-west": "Spear_Maiden/rotations/south-west.png"
+        },
+        "animations": {
+          "Walking-ef4270ad": {
+            "south-east": [
+              "Spear_Maiden/animations/Walking-ef4270ad/south-east/frame_000.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south-east/frame_001.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south-east/frame_002.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south-east/frame_003.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south-east/frame_004.png"
+            ],
+            "north-east": [
+              "Spear_Maiden/animations/Walking-ef4270ad/north-east/frame_000.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north-east/frame_001.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north-east/frame_002.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north-east/frame_003.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north-east/frame_004.png"
+            ],
+            "north-west": [
+              "Spear_Maiden/animations/Walking-ef4270ad/north-west/frame_000.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north-west/frame_001.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north-west/frame_002.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north-west/frame_003.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north-west/frame_004.png"
+            ],
+            "west": [
+              "Spear_Maiden/animations/Walking-ef4270ad/west/frame_000.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/west/frame_001.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/west/frame_002.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/west/frame_003.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/west/frame_004.png"
+            ],
+            "north": [
+              "Spear_Maiden/animations/Walking-ef4270ad/north/frame_000.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north/frame_001.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north/frame_002.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north/frame_003.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/north/frame_004.png"
+            ],
+            "south": [
+              "Spear_Maiden/animations/Walking-ef4270ad/south/frame_000.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south/frame_001.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south/frame_002.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south/frame_003.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south/frame_004.png"
+            ],
+            "south-west": [
+              "Spear_Maiden/animations/Walking-ef4270ad/south-west/frame_000.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south-west/frame_001.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south-west/frame_002.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south-west/frame_003.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/south-west/frame_004.png"
+            ],
+            "east": [
+              "Spear_Maiden/animations/Walking-ef4270ad/east/frame_000.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/east/frame_001.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/east/frame_002.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/east/frame_003.png",
+              "Spear_Maiden/animations/Walking-ef4270ad/east/frame_004.png"
+            ]
+          },
+          "Attacking-e10e1399": {
+            "south-east": [
+              "Spear_Maiden/animations/Attacking-e10e1399/south-east/frame_000.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south-east/frame_001.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south-east/frame_002.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south-east/frame_003.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south-east/frame_004.png"
+            ],
+            "north": [
+              "Spear_Maiden/animations/Attacking-e10e1399/north/frame_000.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north/frame_001.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north/frame_002.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north/frame_003.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north/frame_004.png"
+            ],
+            "east": [
+              "Spear_Maiden/animations/Attacking-e10e1399/east/frame_000.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/east/frame_001.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/east/frame_002.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/east/frame_003.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/east/frame_004.png"
+            ],
+            "south-west": [
+              "Spear_Maiden/animations/Attacking-e10e1399/south-west/frame_000.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south-west/frame_001.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south-west/frame_002.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south-west/frame_003.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south-west/frame_004.png"
+            ],
+            "south": [
+              "Spear_Maiden/animations/Attacking-e10e1399/south/frame_000.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south/frame_001.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south/frame_002.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south/frame_003.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/south/frame_004.png"
+            ],
+            "west": [
+              "Spear_Maiden/animations/Attacking-e10e1399/west/frame_000.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/west/frame_001.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/west/frame_002.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/west/frame_003.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/west/frame_004.png"
+            ],
+            "north-east": [
+              "Spear_Maiden/animations/Attacking-e10e1399/north-east/frame_000.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north-east/frame_001.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north-east/frame_002.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north-east/frame_003.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north-east/frame_004.png"
+            ],
+            "north-west": [
+              "Spear_Maiden/animations/Attacking-e10e1399/north-west/frame_000.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north-west/frame_001.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north-west/frame_002.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north-west/frame_003.png",
+              "Spear_Maiden/animations/Attacking-e10e1399/north-west/frame_004.png"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "export_version": "3.0",
+  "export_date": "2026-05-28T05:23:11.968442"
+}
