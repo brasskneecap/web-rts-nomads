@@ -317,6 +317,17 @@ export class CanvasRenderer {
   private readonly FLOATING_LOOT_DURATION_MS = 1300
   private readonly FLOATING_LOOT_RISE_PX = 40
 
+  // Loot-chest "open-then-disappear" animation state. When a drop leaves
+  // state.lootDropsById (collected by a unit, or any other removal path) we
+  // snapshot its last-known position here and play the chest's opening sheet
+  // through one cycle at that spot, then drop it. Driven entirely from the
+  // render loop's diff against state — no notification plumbing needed.
+  private lastLootDropPositions: Map<string, { x: number; y: number }> = new Map()
+  private openingLootDrops: Map<string, { x: number; y: number; startedAt: number }> =
+    new Map()
+  private readonly LOOT_OPENING_FRAME_MS = 110
+  private readonly LOOT_OPENING_DURATION_MS = this.LOOT_OPENING_FRAME_MS * 4
+
   constructor(canvas: HTMLCanvasElement, state: GameState, camera: Camera) {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas not supported')
@@ -1769,71 +1780,142 @@ export class CanvasRenderer {
     }
   }
 
-  // Draws ground-loot chests from state.lootDropsById. v1 ships a procedural
-  // placeholder (warm-brown rounded rect with amber lid stripe). When a sprite
-  // asset is added for `iconKey === "treasure_chest"`, swap the fallback block
-  // below with a sprite draw and keep the rounded-rect as the true fallback.
+  // Draws ground-loot chests from state.lootDropsById. Live drops render the
+  // chest sprite's idle frame; drops that disappeared since the previous frame
+  // get a short "opening" animation played at their last-known position before
+  // vanishing. Falls back to a procedural rounded-rect when the sprite set
+  // hasn't loaded yet (first frames after page load).
   private drawLootDrops() {
     const drops = this.state.lootDropsById
-    if (drops.size === 0) return
-
     const ctx = this.ctx
-    const size = 24 // world pixels — matches the click-radius in InputManager
+    const now = performance.now()
 
+    const spriteSet = getObjectSpriteSet('chest')
+    const idleAnim = spriteSet?.animations.get('idle') ?? null
+    const openingAnim = spriteSet?.animations.get('opening') ?? null
+
+    // Detect drops that left state since the previous render frame and queue
+    // an opening animation at their last-known position. Captures the player-
+    // pickup path AND any other removal (expiration, etc.) uniformly.
+    if (openingAnim) {
+      for (const [id, pos] of this.lastLootDropPositions) {
+        if (!drops.has(id) && !this.openingLootDrops.has(id)) {
+          this.openingLootDrops.set(id, { x: pos.x, y: pos.y, startedAt: now })
+        }
+      }
+    }
+
+    // Refresh the position snapshot for next frame's diff.
+    this.lastLootDropPositions.clear()
     for (const drop of drops.values()) {
-      // TODO: resolve sprite asset from drop.iconKey when one is committed.
-      // For now render a recognisable brown rounded-rect chest shape.
-      ctx.save()
+      this.lastLootDropPositions.set(drop.id, { x: drop.x, y: drop.y })
+    }
 
-      const x = drop.x - size / 2
-      const y = drop.y - size / 2
-      const r = 4
+    // Expire opening animations once they've played through.
+    for (const [id, anim] of this.openingLootDrops) {
+      if (now - anim.startedAt >= this.LOOT_OPENING_DURATION_MS) {
+        this.openingLootDrops.delete(id)
+      }
+    }
 
-      // Ambient shadow so the chest reads clearly on varied terrain.
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.55)'
-      ctx.shadowBlur = 4 / this.camera.zoom
+    if (drops.size === 0 && this.openingLootDrops.size === 0) return
 
-      // Body
-      ctx.fillStyle = '#8b6914'
-      ctx.strokeStyle = '#3d2c0a'
-      ctx.lineWidth = 1.5 / this.camera.zoom
-      ctx.beginPath()
-      ctx.moveTo(x + r, y)
-      ctx.lineTo(x + size - r, y)
-      ctx.arcTo(x + size, y, x + size, y + r, r)
-      ctx.lineTo(x + size, y + size - r)
-      ctx.arcTo(x + size, y + size, x + size - r, y + size, r)
-      ctx.lineTo(x + r, y + size)
-      ctx.arcTo(x, y + size, x, y + size - r, r)
-      ctx.lineTo(x, y + r)
-      ctx.arcTo(x, y, x + r, y, r)
-      ctx.closePath()
-      ctx.fill()
+    const fallbackSize = 24 // world px — matches InputManager's click radius
+    const spriteReady =
+      spriteSet != null &&
+      idleAnim != null &&
+      idleAnim.sheet.complete &&
+      idleAnim.sheet.naturalWidth > 0
+    const scale = spriteSet?.scale ?? this.OBJECT_SPRITE_SCALE
+    const offX = (spriteSet?.offsetX ?? 0) * scale
+    const offY = (spriteSet?.offsetY ?? 0) * scale
 
-      ctx.shadowColor = 'transparent'
-      ctx.stroke()
+    // Live (un-collected) chests — idle frame.
+    for (const drop of drops.values()) {
+      if (spriteReady && idleAnim) {
+        this.drawObjectFrame(idleAnim, 0, drop.x + offX, drop.y + offY, scale)
+      } else {
+        this.drawLootDropFallback(drop.x, drop.y, fallbackSize)
+      }
 
-      // Lid stripe — amber horizontal line ~40% down, suggesting a chest hinge.
-      ctx.strokeStyle = '#f5b400'
-      ctx.lineWidth = 2 / this.camera.zoom
-      ctx.beginPath()
-      ctx.moveTo(x + 3, y + size * 0.4)
-      ctx.lineTo(x + size - 3, y + size * 0.4)
-      ctx.stroke()
-
-      // Hover highlight ring when the cursor is over this chest.
       if (this.state.hoveredLootDropId === drop.id) {
+        ctx.save()
         ctx.strokeStyle = 'rgba(245, 180, 0, 0.9)'
         ctx.lineWidth = 2 / this.camera.zoom
         ctx.setLineDash([4 / this.camera.zoom, 3 / this.camera.zoom])
         ctx.beginPath()
-        ctx.arc(drop.x, drop.y, size * 0.72, 0, Math.PI * 2)
+        ctx.arc(drop.x, drop.y, fallbackSize * 0.72, 0, Math.PI * 2)
         ctx.stroke()
         ctx.setLineDash([])
+        ctx.restore()
       }
-
-      ctx.restore()
     }
+
+    // Collected chests — play the opening sheet once at their last position.
+    if (
+      spriteSet &&
+      openingAnim &&
+      openingAnim.sheet.complete &&
+      openingAnim.sheet.naturalWidth > 0
+    ) {
+      for (const opening of this.openingLootDrops.values()) {
+        const elapsed = now - opening.startedAt
+        const frameIndex = Math.min(
+          Math.floor(elapsed / this.LOOT_OPENING_FRAME_MS),
+          openingAnim.frameCount - 1,
+        )
+        this.drawObjectFrame(
+          openingAnim,
+          frameIndex,
+          opening.x + offX,
+          opening.y + offY,
+          scale,
+        )
+      }
+    }
+  }
+
+  // Procedural chest shape used while the sprite sheet is still loading or
+  // when the asset is missing entirely. Mirrors the original placeholder so
+  // a brand-new client never sees a blank loot drop.
+  private drawLootDropFallback(cx: number, cy: number, size: number) {
+    const ctx = this.ctx
+    ctx.save()
+
+    const x = cx - size / 2
+    const y = cy - size / 2
+    const r = 4
+
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)'
+    ctx.shadowBlur = 4 / this.camera.zoom
+
+    ctx.fillStyle = '#8b6914'
+    ctx.strokeStyle = '#3d2c0a'
+    ctx.lineWidth = 1.5 / this.camera.zoom
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.lineTo(x + size - r, y)
+    ctx.arcTo(x + size, y, x + size, y + r, r)
+    ctx.lineTo(x + size, y + size - r)
+    ctx.arcTo(x + size, y + size, x + size - r, y + size, r)
+    ctx.lineTo(x + r, y + size)
+    ctx.arcTo(x, y + size, x, y + size - r, r)
+    ctx.lineTo(x, y + r)
+    ctx.arcTo(x, y, x + r, y, r)
+    ctx.closePath()
+    ctx.fill()
+
+    ctx.shadowColor = 'transparent'
+    ctx.stroke()
+
+    ctx.strokeStyle = '#f5b400'
+    ctx.lineWidth = 2 / this.camera.zoom
+    ctx.beginPath()
+    ctx.moveTo(x + 3, y + size * 0.4)
+    ctx.lineTo(x + size - 3, y + size * 0.4)
+    ctx.stroke()
+
+    ctx.restore()
   }
 
   private drawUnits(

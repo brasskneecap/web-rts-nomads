@@ -1,0 +1,25 @@
+{
+  "key": "chest",
+  "size": {
+    "width": 64,
+    "height": 64
+  },
+  "animations": {
+    "opening": {
+      "frameCount": 4,
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "sheet": "packed/opening.png",
+      "loop": true
+    },
+    "idle": {
+      "frameCount": 1,
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "sheet": "packed/idle.png",
+      "loop": true
+    }
+  },
+  "scale": 1,
+  "packedAt": "2026-05-28T01:27:02.257Z"
+}
