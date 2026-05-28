@@ -1,8 +1,8 @@
 {
-  "key": "siphoner",
+  "key": "bear_cub",
   "size": {
-    "width": 120,
-    "height": 120
+    "width": 100,
+    "height": 100
   },
   "rotations": {
     "sheet": "packed/rotations.png",
@@ -16,14 +16,14 @@
       "south-west",
       "north-west"
     ],
-    "frameWidth": 120,
-    "frameHeight": 120
+    "frameWidth": 100,
+    "frameHeight": 100
   },
   "animations": {
     "walking": {
-      "frameCount": 7,
-      "frameWidth": 120,
-      "frameHeight": 120,
+      "frameCount": 5,
+      "frameWidth": 100,
+      "frameHeight": 100,
       "sheet": "packed/walking.png",
       "rowOrder": [
         "north",
@@ -38,8 +38,8 @@
     },
     "attacking": {
       "frameCount": 7,
-      "frameWidth": 120,
-      "frameHeight": 120,
+      "frameWidth": 100,
+      "frameHeight": 100,
       "sheet": "packed/attacking.png",
       "rowOrder": [
         "north",
@@ -53,5 +53,5 @@
       ]
     }
   },
-  "packedAt": "2026-05-28T21:10:08.375Z"
+  "packedAt": "2026-05-28T21:10:08.822Z"
 }

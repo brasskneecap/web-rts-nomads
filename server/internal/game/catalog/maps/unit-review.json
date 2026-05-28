@@ -1,0 +1,41 @@
+{
+  "id": "unit-review",
+  "name": "Unit-Review",
+  "description": "Unit_tester",
+  "sortOrder": 1000,
+  "map": {
+    "id": "",
+    "name": "",
+    "description": "",
+    "size": "",
+    "width": 1536,
+    "height": 1152,
+    "gridCols": 24,
+    "gridRows": 18,
+    "cellSize": 64,
+    "terrain": [],
+    "obstacles": [],
+    "buildings": [
+      {
+        "x": 3,
+        "y": 3,
+        "id": "spawn-point-3-3",
+        "buildingType": "spawn-point",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "fillOrder": 0,
+          "playerLabel": "player1",
+          "townhallId": null
+        }
+      }
+    ],
+    "debug": {
+      "battleTracker": true,
+      "debugSpawn": true
+    }
+  }
+}

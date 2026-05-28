@@ -1,12 +1,12 @@
 {
-  "type": "spear_maiden",
-  "name": "Spear Maiden",
+  "type": "bear_cub",
+  "name": "Bear Cub",
   "faction": "wildborne",
   "visionRange": 320,
-  "hp": 250,
-  "damage": 35,
-  "experience": 100,
-  "attackRange": 90,
+  "hp": 150,
+  "damage": 20,
+  "experience": 75,
+  "attackRange": 80,
   "attackSpeed": 1.0,
   "moveSpeed": 110,
   "resourceCost": {},
@@ -18,10 +18,10 @@
   ],
   "trainLabel": "",
   "bounds": {
-    "halfWidth": 16,
-    "top": -60,
-    "bottom": 10,
+    "halfWidth": 30,
+    "top": -40,
+    "bottom": 40,
     "ringOffsetX": 0,
-    "ringOffsetY": -16
+    "ringOffsetY": -18
   }
 }
