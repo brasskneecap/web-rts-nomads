@@ -376,3 +376,49 @@ func spawnFakePlayerUnitForTest(t *testing.T, s *GameState, ownerID string) *Uni
 	u.Visible = true
 	return u
 }
+
+// TestNeutralCamp_DamageIsNonZero is a regression guard for the
+// neutral-faction Player having zero PhysicalDamageMultiplier /
+// MagicDamageMultiplier (default float64). Before the fix in
+// state_spawn.go, applyPlayerUpgradesAtSpawnLocked ran for every
+// non-enemy owner — including neutralPlayerID — and multiplied
+// BaseDamage by 0, leaving neutrals with Damage=0. That made
+// unitUsesCombatAI return false, so neutrals never entered the combat
+// AI loop at all (no proximity aggro, no retaliation) — they just sat
+// there guarding while the player attacked them.
+func TestNeutralCamp_DamageIsNonZero(t *testing.T) {
+	s := newTestStateWithNeutralCamp(t)
+	camp := &s.NeutralCamps[0]
+	camp.GroupID = "small_raider_group"
+	camp.CurrentTier = 1
+
+	s.spawnGroupForCampLocked(camp)
+	if len(camp.AliveUnitIDs) == 0 {
+		t.Fatalf("setup: expected spawn to populate AliveUnitIDs")
+	}
+	for _, id := range camp.AliveUnitIDs {
+		u := s.getUnitByIDLocked(id)
+		if u == nil {
+			t.Fatalf("camp unit id %d missing", id)
+		}
+		def, ok := getUnitDef(u.UnitType)
+		if !ok {
+			t.Fatalf("unit %d: UnitDef for %q not found", id, u.UnitType)
+		}
+		if def.Damage <= 0 {
+			continue // catalog itself authored 0 damage — not the regression we're guarding.
+		}
+		if u.BaseDamage <= 0 {
+			t.Errorf("unit %d (%s): BaseDamage = %d, want > 0 (catalog = %d). Player-upgrade multiplier zeroed it.",
+				id, u.UnitType, u.BaseDamage, def.Damage)
+		}
+		if u.Damage <= 0 {
+			t.Errorf("unit %d (%s): Damage = %d, want > 0. unitUsesCombatAI will filter this unit out.",
+				id, u.UnitType, u.Damage)
+		}
+		if !s.unitUsesCombatAI(u) {
+			t.Errorf("unit %d (%s): unitUsesCombatAI returned false — neutral will never enter combat AI loop",
+				id, u.UnitType)
+		}
+	}
+}

@@ -95,15 +95,19 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 	s.initializeCombatUnitLocked(unit)
 	// Apply permanent player upgrades before rank modifiers so that the upgrade
 	// bonuses to Base* stats are included in the first applyRankModifiersLocked
-	// pass. Only applies to player-owned units (enemy player has no upgrades).
-	if playerID != enemyPlayerID {
+	// pass. Only applies to real player-owned units — the enemy AI and the
+	// neutral camp faction have no upgrade tracks, and their Player entries
+	// leave PhysicalDamageMultiplier/MagicDamageMultiplier at zero, which would
+	// otherwise zero BaseDamage and silently disable their combat AI
+	// (unitUsesCombatAI gates on Damage > 0).
+	if playerID != enemyPlayerID && playerID != neutralPlayerID {
 		s.applyPlayerUpgradesAtSpawnLocked(unit)
 	}
 	s.applyRankModifiersLocked(unit, false)
 	// Initialise inventory slots for player-owned units. At spawn the rank is
 	// always "base" (InventorySize = 0), but calling here ensures future code
 	// paths that spawn higher-rank units (e.g. debug_spawn) work correctly.
-	if playerID != enemyPlayerID {
+	if playerID != enemyPlayerID && playerID != neutralPlayerID {
 		s.setInventorySizeForRankLocked(unit)
 		unit.Equipped = make([]*EquippedItem, unit.InventorySize)
 	}
