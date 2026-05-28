@@ -1,0 +1,14 @@
+{
+  "tier": 2,
+  "groups": [
+    {
+      "id": "wildborne_bear_group",
+      "name": "Wildborne Bear Group",
+      "lootTable": "raider_loot",
+      "composition": [
+        { "unitType": "druid_matriarch", "count": 1 },
+        { "unitType": "spear_maiden", "count": 1 }
+      ]
+    }
+  ]
+}
