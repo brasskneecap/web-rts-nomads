@@ -619,6 +619,25 @@ func (s *GameState) handleTransferItemLocked(playerID string, fromUnitID, fromSl
 	}
 }
 
+// ─── Resource grant helpers ───────────────────────────────────────────────────
+
+// grantResourceToPlayerLocked adds an amount of a single resource type
+// to player.Resources. Centralizes the mutation so future hooks
+// (telemetry, achievements, resource caps) live in one place.
+//
+// amount <= 0 is a no-op. key need not pre-exist in the map.
+//
+// Must be called under s.mu write lock.
+func (s *GameState) grantResourceToPlayerLocked(player *Player, key string, amount int) {
+	if player == nil || amount <= 0 || key == "" {
+		return
+	}
+	if player.Resources == nil {
+		player.Resources = map[string]int{}
+	}
+	player.Resources[key] += amount
+}
+
 // ─── Snapshot helpers ────────────────────────────────────────────────────────
 
 // playerVaultSnapshotsLocked builds the []protocol.VaultItemSnapshot for a

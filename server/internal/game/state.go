@@ -33,6 +33,12 @@ const (
 	// never diverge. Use RequestSetFocusTargetLocked / clearFocusTargetLocked to
 	// set/clear; never mutate FocusTargetID or this order type directly.
 	OrderFocusFollow
+	// OrderPickupLoot: walk to a treasure chest and collect it. Sticky
+	// unit field PickupLootID is stored by ID per AI_RULES; the
+	// tickLootDropsLocked path (Batch 4) resolves and validates each
+	// tick. Combat AI does NOT engage on the way (matches OrderMove
+	// semantics — the player wants the chest, not a fight).
+	OrderPickupLoot
 )
 
 // orderTypeString returns the wire-format string for OrderType, matching the
@@ -51,6 +57,8 @@ func orderTypeString(t OrderType) string {
 		return protocol.OrderStringPatrol
 	case OrderFocusFollow:
 		return protocol.OrderStringFocusFollow
+	case OrderPickupLoot:
+		return protocol.OrderStringPickupLoot
 	default:
 		return protocol.OrderStringIdle
 	}
@@ -317,6 +325,12 @@ type Unit struct {
 	// with Order.Type == OrderFocusFollow; any order replacement also zeroes this
 	// field via clearFocusTargetLocked.
 	FocusTargetID int
+	// PickupLootID links this unit to a LootDrop it is walking to
+	// collect. Empty when not pickup-bound. Stored as ID (not pointer)
+	// per AI_RULES; resolved each tick in tickLootDropsLocked (Batch 4).
+	// Cleared by any order-replacement helper that already clears other
+	// sticky targets (GatherTargetID etc.) — see Batch 4 task.
+	PickupLootID string
 
 	CombatAnchorX      float64
 	CombatAnchorY      float64
@@ -615,6 +629,19 @@ type GameState struct {
 	// driven by tickNeutralCampsLocked (Batch E). Empty/nil on maps with
 	// no neutral spawns.
 	NeutralCamps []NeutralCamp
+
+	// LootDrops is the registry of ground-loot chests currently in the
+	// world. Keyed by stable string id (allocated via nextLootDropID).
+	// Drops persist until collected — no automatic expiry, no wave-start
+	// despawn. See state_loot_drops.go for the spawn/pickup lifecycle.
+	LootDrops      map[string]*LootDrop
+	nextLootDropID int
+
+	// pendingLootNotifications is the per-tick queue of chest pickups
+	// that need to be pushed to the collecting player. The match
+	// broadcast loop drains this after snapshots are sent. Cleared at
+	// each drain; never read from a context that doesn't hold s.mu.
+	pendingLootNotifications []protocol.LootCollectedNotification
 
 	nextUnitID         int
 	nextBuildingID     int
@@ -937,6 +964,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		Players:                   map[string]*Player{},
 		Productions:               map[string][]*UnitProduction{},
 		EnemySpawnTimers:          map[string]*EnemySpawnTimer{},
+		LootDrops:                 map[string]*LootDrop{},
 		nextUnitID:                1,
 		nextBannerID:              1,
 		nextTrapID:                1,
@@ -1406,6 +1434,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		PausedBy:               s.PausedBy,
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 		NeutralCamps:           s.neutralCampSnapshotsLocked(),
+		LootDrops:              s.lootDropSnapshotsLocked(),
 	}
 }
 
@@ -1739,6 +1768,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		PausedBy:               s.PausedBy,
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 		NeutralCamps:           s.neutralCampSnapshotsLocked(),
+		LootDrops:              s.lootDropSnapshotsLocked(),
 	}
 }
 
@@ -2190,6 +2220,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		PausedBy:               s.PausedBy,
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 		NeutralCamps:           s.neutralCampSnapshotsLocked(),
+		LootDrops:              s.lootDropSnapshotsLocked(),
 	}
 }
 
@@ -2278,6 +2309,14 @@ func (s *GameState) Update(dt float64) {
 	// Pain, pain_share redirect, retaliation) is cleaned up before the per-unit
 	// loop below, which gates regen on HP>0.
 	profileSection("drainPendingDeaths", func() { s.drainPendingDeathsLocked() })
+	// tickLootDropsLocked runs after death drain so dead carriers are already
+	// absent from s.Units, but BEFORE the per-unit movement loop below —
+	// proximity checks therefore use positions from the previous tick's
+	// movement settle (one-tick pickup lag). The half-cell radius is generous
+	// enough that this lag is invisible at 20 Hz. Running before the per-unit
+	// loop also ensures collected chests are removed from s.LootDrops before
+	// the snapshot builder iterates, keeping the snapshot view consistent.
+	profileSection("lootDrops", func() { s.tickLootDropsLocked() })
 
 	stopPerUnitTick := profileStart("perUnitTick")
 	for _, unit := range s.Units {

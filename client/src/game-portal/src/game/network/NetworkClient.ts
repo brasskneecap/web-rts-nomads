@@ -13,10 +13,12 @@ import type {
   GatherCommandMessage,
   KickBuildersCommandMessage,
   LeaveMatchMessage,
+  LootCollectedNotification,
   MapId,
   MatchSnapshotMessage,
   MoveCommandMessage,
   PatrolCommandMessage,
+  PickupLootCommandMessage,
   PurchaseUpgradeCommand,
   SetBuildingSpawnPointCommandMessage,
   SetFocusTargetCommandMessage,
@@ -26,8 +28,10 @@ import type {
   UpgradeTownHallCommand,
 } from './protocol'
 import { GameState } from '../core/GameState'
+import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { startSteamGame } from '@/services/desktopBridge'
 import { getOrCreatePlayerId as getProfilePlayerId } from '@/services/profileApi'
+import type { CanvasRenderer } from '../rendering/CanvasRenderer'
 
 /** Derive the WebSocket base URL from the HTTP base URL env var.
  *  http -> ws, https -> wss so both schemes work in prod and dev.
@@ -147,6 +151,9 @@ function firePendingSteamHostStartIfNeeded(matchId: string): void {
 export class NetworkClient {
   private socket: WebSocket | null = null
   private state: GameState
+  /** Injected by GameClient after both are constructed. Used to spawn
+   *  world-space floating text for loot pickup events. */
+  private renderer: CanvasRenderer | null = null
   private playerId = getOrCreatePlayerId()
   private matchId: string | null = getStoredMatchId()
   private mapId: MapId = getPreferredMapId()
@@ -181,6 +188,12 @@ export class NetworkClient {
 
   setOwnedUpgradeRanks(ranks: Record<string, number>) {
     this.ownedUpgradeRanks = ranks
+  }
+
+  /** Provide the renderer so loot pickup events can spawn world-space
+   *  floating text. Called by GameClient after the renderer is constructed. */
+  setRenderer(renderer: CanvasRenderer): void {
+    this.renderer = renderer
   }
 
   setPreferredMapId(mapId: MapId) {
@@ -383,7 +396,7 @@ export class NetworkClient {
     } catch {
       /* sessionStorage may be sandboxed; no-op is correct */
     }
-    // localStorage cleared by the caller (MatchView / startNewGame / exitGame).
+    // localStorage cleared by the caller (Match.vue's exitGame / startNewGame).
   }
 
   // -------------------------------------------------------------------------
@@ -408,6 +421,14 @@ export class NetworkClient {
     }
 
     this.send(message)
+  }
+
+  sendPickupLootCommand(unitIds: number[], lootDropId: string) {
+    this.send({
+      type: 'pickup_loot_command',
+      unitIds,
+      targetId: lootDropId,
+    } satisfies PickupLootCommandMessage)
   }
 
   sendDepositCommand(unitIds: number[], buildingId: string) {
@@ -650,10 +671,79 @@ export class NetworkClient {
         this.state.addNotification(message.message)
         break
 
+      case 'loot_collected':
+        this.handleLootCollected(message as LootCollectedNotification)
+        break
+
       case 'error':
         console.error('server error:', message.message)
         break
     }
+  }
+
+  // Spawn world-space floating text above the collecting unit for each
+  // resource and item gained from a loot chest pickup.
+  // If the collecting unit can't be found (already dead / FOW edge case),
+  // the handler skips silently — no toast, no error.
+  private handleLootCollected(notif: LootCollectedNotification) {
+    if (!notif.collectingUnitId) return
+    const unit = this.state.units.find((u) => u.id === notif.collectingUnitId)
+    if (!unit || !this.renderer) return
+
+    const RESOURCE_COLOR = '#86efac' // soft green
+    const ITEM_COLOR = '#f5b400'     // amber — matches chest
+    const OVERFLOW_COLOR = '#fca5a5' // light red — vault full
+
+    // Stack spacing between simultaneous lines (resources first, then items,
+    // then overflow). Each line offsets upward from the baseline.
+    const STACK_STEP_PX = 18
+
+    type LineKind = 'resource' | 'item' | 'overflow'
+    const lines: Array<{ kind: LineKind; key: string; label: string }> = []
+
+    if (notif.resources) {
+      for (const [resourceId, amount] of Object.entries(notif.resources)) {
+        lines.push({ kind: 'resource', key: resourceId, label: `+${amount}` })
+      }
+    }
+    if (notif.itemIds) {
+      for (const id of notif.itemIds) {
+        const def = ITEM_DEF_MAP.get(id)
+        lines.push({ kind: 'item', key: id, label: def ? def.displayName : id })
+      }
+    }
+    if (notif.overflowItemIds) {
+      for (const id of notif.overflowItemIds) {
+        const def = ITEM_DEF_MAP.get(id)
+        lines.push({
+          kind: 'overflow',
+          key: id,
+          label: `${def ? def.displayName : id} (vault full)`,
+        })
+      }
+    }
+
+    // Baseline sits a bit above the unit's world-space center; each subsequent
+    // line stacks upward so they don't overlap.
+    const baselineY = unit.y - 24
+    lines.forEach((line, idx) => {
+      const y = baselineY - idx * STACK_STEP_PX
+      const color =
+        line.kind === 'overflow'
+          ? OVERFLOW_COLOR
+          : line.kind === 'item'
+            ? ITEM_COLOR
+            : RESOURCE_COLOR
+      this.renderer!.spawnLootPickupFloater({
+        x: unit.x,
+        y,
+        kind: line.kind === 'overflow' ? 'item' : line.kind,
+        resourceId: line.kind === 'resource' ? line.key : undefined,
+        itemId: line.kind !== 'resource' ? line.key : undefined,
+        label: line.label,
+        color,
+      })
+    })
   }
 
   private applySnapshot(message: MatchSnapshotMessage) {

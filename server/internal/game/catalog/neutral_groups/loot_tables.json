@@ -1,0 +1,25 @@
+{
+  "packagedItems": {
+    "small_resource_bundle": {
+      "kind": "resource_bundle",
+      "resources": { "gold": 50, "wood": 15 }
+    },
+    "medium_resource_bundle": {
+      "kind": "resource_bundle",
+      "resources": { "gold": 100, "wood": 45 }
+    },
+    "basic_weapons": {
+      "kind": "item_subtable",
+      "entries": [
+        { "item": "broad_sword", "min": 1, "max": 10 },
+        { "item": "scimitar",    "min": 11, "max": 15 }
+      ]
+    }
+  },
+  "tables": {
+    "raider_loot": [
+      { "entry": "small_resource_bundle", "min": 1,  "max": 50 },
+      { "entry": "basic_weapons",         "min": 51, "max": 100 }
+    ]
+  }
+}

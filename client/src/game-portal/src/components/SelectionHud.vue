@@ -440,7 +440,7 @@ const props = defineProps<{
 
 // ── Minimap panel rect tracking ────────────────────────────────────────────
 // The canvas-rendered minimap reads its bounds from GameState; we push the
-// panel's viewport rect up to MatchView (and through GameClient → state) any
+// panel's viewport rect up to Match.vue (and through GameClient → state) any
 // time the layout shifts (resize, scroll, responsive breakpoint).
 const minimapPanelEl = ref<HTMLElement | null>(null)
 let rafId = 0

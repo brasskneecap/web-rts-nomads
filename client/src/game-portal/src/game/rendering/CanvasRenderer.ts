@@ -54,7 +54,31 @@ import { getObjectSpriteSet } from './objectSprites'
 import { getEffectSprite } from './effectSprites'
 import { getBeamSprite } from './beamSprites'
 import { getResourceIconImage } from './resourceSprites'
+import { getActionIconImage } from './actionIconSprites'
+import { getItemAssetImage } from './itemAssets'
+import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { UnitAnimationController } from './unitAnimation'
+
+// Cache of item-icon HTMLImageElements keyed by itemId. Built lazily on first
+// request. Resolves the item def's iconKey through the same fallback chain
+// ActionIcon.vue uses: action-icon sprites first (covers icons authored
+// alongside abilities), then assets/items/**/<iconKey>.png (where the
+// actual item PNGs live — broad_sword, scimitar, potions, etc.).
+const itemIconCache = new Map<string, HTMLImageElement | null>()
+
+/** Returns a preloaded HTMLImageElement for a catalog item id, or null when
+ *  no PNG is available. Caches the result so repeat calls within a frame are
+ *  free. Cached null is intentionally NOT stored — items load asynchronously
+ *  from the asset glob, and a too-early miss would poison the cache. */
+function resolveItemIconImage(itemId: string): HTMLImageElement | null {
+  const cached = itemIconCache.get(itemId)
+  if (cached) return cached
+  const def = ITEM_DEF_MAP.get(itemId)
+  if (!def) return null
+  const img = getActionIconImage(def.iconKey) ?? getItemAssetImage(def.iconKey)
+  if (img) itemIconCache.set(itemId, img)
+  return img
+}
 
 export type MinimapBounds = {
   x: number
@@ -276,6 +300,34 @@ export class CanvasRenderer {
   private readonly FLOATING_RESOURCE_DURATION_MS = 1100
   private readonly FLOATING_RESOURCE_RISE_PX = 36
 
+  // Floating loot-pickup indicators — icon + label floating up above the
+  // collecting unit when a chest is picked up. Spawned by NetworkClient via
+  // spawnLootPickupFloater(). Visually mirrors floatingResourceNumbers but
+  // uses a longer duration since pickup is a discrete notable event.
+  private floatingLootPickups: Array<{
+    x: number
+    y: number
+    kind: 'resource' | 'item'
+    resourceId?: string
+    itemId?: string
+    label: string
+    color: string
+    startedAt: number
+  }> = []
+  private readonly FLOATING_LOOT_DURATION_MS = 1300
+  private readonly FLOATING_LOOT_RISE_PX = 40
+
+  // Loot-chest "open-then-disappear" animation state. When a drop leaves
+  // state.lootDropsById (collected by a unit, or any other removal path) we
+  // snapshot its last-known position here and play the chest's opening sheet
+  // through one cycle at that spot, then drop it. Driven entirely from the
+  // render loop's diff against state — no notification plumbing needed.
+  private lastLootDropPositions: Map<string, { x: number; y: number }> = new Map()
+  private openingLootDrops: Map<string, { x: number; y: number; startedAt: number }> =
+    new Map()
+  private readonly LOOT_OPENING_FRAME_MS = 110
+  private readonly LOOT_OPENING_DURATION_MS = this.LOOT_OPENING_FRAME_MS * 4
+
   constructor(canvas: HTMLCanvasElement, state: GameState, camera: Camera) {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas not supported')
@@ -379,6 +431,9 @@ export class CanvasRenderer {
     this.drawBuildingSpawnMarkers()
     this.drawTraps(this.state.traps)
     this.drawBanners(this.state.banners)
+    // Loot-drop chests render after banners but before units so the collecting
+    // unit visually passes over the chest (unit z-order wins).
+    this.drawLootDrops()
     this.drawUnits(units)
     // Effects sit on top of the caster body but underneath projectiles so
     // arrows and bolts always read clearly over the VFX layer.
@@ -406,10 +461,29 @@ export class CanvasRenderer {
     this.drawSelectionBox()
     this.drawFloatingDamageNumbers(renderTime)
     this.drawFloatingResourceNumbers(renderTime)
+    this.drawFloatingLootPickups()
 
     ctx.restore()
 
     this.drawMinimap(units)
+  }
+
+  /** Spawn a floating icon + label above a world position when a unit picks
+   *  up a loot chest. Called by NetworkClient.handleLootCollected. One call
+   *  per resource line or item line — stacking is the caller's responsibility. */
+  spawnLootPickupFloater(opts: {
+    x: number
+    y: number
+    kind: 'resource' | 'item'
+    resourceId?: string
+    itemId?: string
+    label: string
+    color: string
+  }): void {
+    this.floatingLootPickups.push({
+      ...opts,
+      startedAt: performance.now(),
+    })
   }
 
   destroy() {
@@ -1706,6 +1780,144 @@ export class CanvasRenderer {
     }
   }
 
+  // Draws ground-loot chests from state.lootDropsById. Live drops render the
+  // chest sprite's idle frame; drops that disappeared since the previous frame
+  // get a short "opening" animation played at their last-known position before
+  // vanishing. Falls back to a procedural rounded-rect when the sprite set
+  // hasn't loaded yet (first frames after page load).
+  private drawLootDrops() {
+    const drops = this.state.lootDropsById
+    const ctx = this.ctx
+    const now = performance.now()
+
+    const spriteSet = getObjectSpriteSet('chest')
+    const idleAnim = spriteSet?.animations.get('idle') ?? null
+    const openingAnim = spriteSet?.animations.get('opening') ?? null
+
+    // Detect drops that left state since the previous render frame and queue
+    // an opening animation at their last-known position. Captures the player-
+    // pickup path AND any other removal (expiration, etc.) uniformly.
+    if (openingAnim) {
+      for (const [id, pos] of this.lastLootDropPositions) {
+        if (!drops.has(id) && !this.openingLootDrops.has(id)) {
+          this.openingLootDrops.set(id, { x: pos.x, y: pos.y, startedAt: now })
+        }
+      }
+    }
+
+    // Refresh the position snapshot for next frame's diff.
+    this.lastLootDropPositions.clear()
+    for (const drop of drops.values()) {
+      this.lastLootDropPositions.set(drop.id, { x: drop.x, y: drop.y })
+    }
+
+    // Expire opening animations once they've played through.
+    for (const [id, anim] of this.openingLootDrops) {
+      if (now - anim.startedAt >= this.LOOT_OPENING_DURATION_MS) {
+        this.openingLootDrops.delete(id)
+      }
+    }
+
+    if (drops.size === 0 && this.openingLootDrops.size === 0) return
+
+    const fallbackSize = 24 // world px — matches InputManager's click radius
+    const spriteReady =
+      spriteSet != null &&
+      idleAnim != null &&
+      idleAnim.sheet.complete &&
+      idleAnim.sheet.naturalWidth > 0
+    const scale = spriteSet?.scale ?? this.OBJECT_SPRITE_SCALE
+    const offX = (spriteSet?.offsetX ?? 0) * scale
+    const offY = (spriteSet?.offsetY ?? 0) * scale
+
+    // Live (un-collected) chests — idle frame.
+    for (const drop of drops.values()) {
+      if (spriteReady && idleAnim) {
+        this.drawObjectFrame(idleAnim, 0, drop.x + offX, drop.y + offY, scale)
+      } else {
+        this.drawLootDropFallback(drop.x, drop.y, fallbackSize)
+      }
+
+      if (this.state.hoveredLootDropId === drop.id) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(245, 180, 0, 0.9)'
+        ctx.lineWidth = 2 / this.camera.zoom
+        ctx.setLineDash([4 / this.camera.zoom, 3 / this.camera.zoom])
+        ctx.beginPath()
+        ctx.arc(drop.x, drop.y, fallbackSize * 0.72, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.restore()
+      }
+    }
+
+    // Collected chests — play the opening sheet once at their last position.
+    if (
+      spriteSet &&
+      openingAnim &&
+      openingAnim.sheet.complete &&
+      openingAnim.sheet.naturalWidth > 0
+    ) {
+      for (const opening of this.openingLootDrops.values()) {
+        const elapsed = now - opening.startedAt
+        const frameIndex = Math.min(
+          Math.floor(elapsed / this.LOOT_OPENING_FRAME_MS),
+          openingAnim.frameCount - 1,
+        )
+        this.drawObjectFrame(
+          openingAnim,
+          frameIndex,
+          opening.x + offX,
+          opening.y + offY,
+          scale,
+        )
+      }
+    }
+  }
+
+  // Procedural chest shape used while the sprite sheet is still loading or
+  // when the asset is missing entirely. Mirrors the original placeholder so
+  // a brand-new client never sees a blank loot drop.
+  private drawLootDropFallback(cx: number, cy: number, size: number) {
+    const ctx = this.ctx
+    ctx.save()
+
+    const x = cx - size / 2
+    const y = cy - size / 2
+    const r = 4
+
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)'
+    ctx.shadowBlur = 4 / this.camera.zoom
+
+    ctx.fillStyle = '#8b6914'
+    ctx.strokeStyle = '#3d2c0a'
+    ctx.lineWidth = 1.5 / this.camera.zoom
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.lineTo(x + size - r, y)
+    ctx.arcTo(x + size, y, x + size, y + r, r)
+    ctx.lineTo(x + size, y + size - r)
+    ctx.arcTo(x + size, y + size, x + size - r, y + size, r)
+    ctx.lineTo(x + r, y + size)
+    ctx.arcTo(x, y + size, x, y + size - r, r)
+    ctx.lineTo(x, y + r)
+    ctx.arcTo(x, y, x + r, y, r)
+    ctx.closePath()
+    ctx.fill()
+
+    ctx.shadowColor = 'transparent'
+    ctx.stroke()
+
+    ctx.strokeStyle = '#f5b400'
+    ctx.lineWidth = 2 / this.camera.zoom
+    ctx.beginPath()
+    ctx.moveTo(x + 3, y + size * 0.4)
+    ctx.lineTo(x + size - 3, y + size * 0.4)
+    ctx.stroke()
+
+    ctx.restore()
+  }
+
   private drawUnits(
     units: Array<{
       id: number
@@ -2788,6 +3000,72 @@ export class CanvasRenderer {
     this.floatingResourceNumbers = kept
   }
 
+  // Floating loot-pickup labels — icon + label that rises and fades above the
+  // collecting unit for each resource line and item the unit just picked up.
+  // Mirrors drawFloatingResourceNumbers; duration is longer (1300 ms) because
+  // pickup is a discrete event the player wants to read fully.
+  private drawFloatingLootPickups() {
+    if (this.floatingLootPickups.length === 0) return
+    const ctx = this.ctx
+    const now = performance.now()
+
+    // Drop expired entries first so we only iterate live ones.
+    this.floatingLootPickups = this.floatingLootPickups.filter(
+      (f) => now - f.startedAt < this.FLOATING_LOOT_DURATION_MS,
+    )
+    if (this.floatingLootPickups.length === 0) return
+
+    ctx.save()
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.lineWidth = 3 / this.camera.zoom
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)'
+    ctx.font = `bold ${Math.max(12, 14 / this.camera.zoom)}px sans-serif`
+
+    const iconPx = Math.max(12, 16 / this.camera.zoom)
+    const gap = Math.max(2, 3 / this.camera.zoom)
+
+    for (const f of this.floatingLootPickups) {
+      const elapsed = now - f.startedAt
+      const t = elapsed / this.FLOATING_LOOT_DURATION_MS
+      const drawY = f.y - this.FLOATING_LOOT_RISE_PX * t
+      // Ease-out fade: starts sharp, softens toward end.
+      ctx.globalAlpha = Math.max(0, 1 - t * t)
+
+      const text = f.label
+      const textWidth = ctx.measureText(text).width
+      const totalWidth = iconPx + gap + textWidth
+      const groupX = f.x - totalWidth / 2
+
+      let icon: HTMLImageElement | null = null
+      if (f.kind === 'resource' && f.resourceId) {
+        icon = getResourceIconImage(f.resourceId)
+      } else if (f.kind === 'item' && f.itemId) {
+        icon = resolveItemIconImage(f.itemId)
+      }
+
+      if (icon && icon.complete && icon.naturalWidth > 0) {
+        const prevSmoothing = ctx.imageSmoothingEnabled
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(icon, groupX, drawY - iconPx / 2, iconPx, iconPx)
+        ctx.imageSmoothingEnabled = prevSmoothing
+      } else {
+        // Fallback dot when the asset hasn't loaded yet.
+        ctx.fillStyle = f.color
+        ctx.beginPath()
+        ctx.arc(groupX + iconPx / 2, drawY, Math.max(4, 5 / this.camera.zoom), 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      const textX = groupX + iconPx + gap
+      ctx.strokeText(text, textX, drawY)
+      ctx.fillStyle = f.color
+      ctx.fillText(text, textX, drawY)
+    }
+
+    ctx.restore()
+  }
+
   private drawUnitRankUpBurst(
     unit: { x: number; y: number; recentRankUpSeconds?: number },
     headTopY: number,
@@ -3602,9 +3880,15 @@ export class CanvasRenderer {
       }
     }
 
-    // Neutral camp POIs. Drawn AFTER fog of war so they remain visible
-    // regardless of scouting state. Same renderer as the lobby preview.
-    drawMinimapPOIs(ctx, this.state.mapConfig, bounds, this.state.neutralCampCurrentTierById)
+    // Neutral camp POIs and loot-drop chest dots. Both drawn AFTER fog of war
+    // so they remain visible regardless of scouting state.
+    drawMinimapPOIs(
+      ctx,
+      this.state.mapConfig,
+      bounds,
+      this.state.neutralCampSnapshotsById,
+      this.state.lootDropsById,
+    )
 
     const worldWidth = this.canvas.width / this.camera.zoom
     const worldHeight = this.canvas.height / this.camera.zoom

@@ -17,6 +17,7 @@ const (
 	// OrderFocusFollow constant; both must match the TypeScript client's
 	// OrderType enum addition (task 10.4).
 	OrderStringFocusFollow  = "focus_follow"
+	OrderStringPickupLoot   = "pickup_loot"
 )
 
 type Vec2 struct {
@@ -373,6 +374,15 @@ type GatherCommandMessage struct {
 	Type     string `json:"type"`
 	UnitIDs  []int  `json:"unitIds"`
 	TargetID string `json:"targetId"`
+}
+
+// PickupLootCommandMessage is the right-click "go collect that chest"
+// order. Mirrors GatherCommandMessage exactly so transport/replay
+// layers handle it uniformly. Server validates ownership + chest existence.
+type PickupLootCommandMessage struct {
+	Type     string `json:"type"`
+	UnitIDs  []int  `json:"unitIds"`
+	TargetID string `json:"targetId"` // LootDrop.ID
 }
 
 // DepositCommandMessage is the player-directed "drop off carried resources at
@@ -764,6 +774,11 @@ type UnitSnapshot struct {
 	// and selection-HUD focus indicator on the client. omitempty so non-Cleric
 	// units and Clerics without a focus target drop the field from the wire.
 	FocusTargetID int `json:"focusTargetId,omitempty"`
+	// PickupLootID is the LootDrop.ID this unit is walking to collect.
+	// Empty when the unit has no active pickup order. omitempty so it drops
+	// from the wire for the overwhelming majority of units that are not
+	// pickup-bound.
+	PickupLootID string `json:"pickupLootId,omitempty"`
 	// ObjectiveID is non-empty when this unit is linked to a victory condition.
 	// Matches a VictoryCondition.ID in MapConfig.VictoryConditions.
 	ObjectiveID string `json:"objectiveId,omitempty"`
@@ -1091,14 +1106,37 @@ type FogOfWarSnapshot struct {
 // NeutralCampSnapshot is the per-tick wire view of one neutral spawn camp.
 // Lightweight by design: the static placement (position, group, scaling)
 // lives in MapConfig.NeutralSpawns and is sent once at match join; only the
-// fields that change per wave (CurrentTier) need to be in the per-tick
-// snapshot. Sent unfiltered — neutrals are mapper-authored points of
-// interest and should appear on the minimap regardless of fog of war.
+// fields that change per wave (CurrentTier, AliveUnitCount) need to be in
+// the per-tick snapshot. Sent unfiltered — neutrals are mapper-authored
+// points of interest and should appear on the minimap regardless of fog
+// of war.
+//
+// AliveUnitCount = 0 lets the client hide the minimap POI dot for camps
+// the player has cleared (or that are wave-hidden), so the minimap
+// reflects which camps currently have enemies on the field.
 type NeutralCampSnapshot struct {
-	ID          string `json:"id"`
-	X           int    `json:"x"`
-	Y           int    `json:"y"`
-	CurrentTier int    `json:"currentTier"`
+	ID             string `json:"id"`
+	X              int    `json:"x"`
+	Y              int    `json:"y"`
+	CurrentTier    int    `json:"currentTier"`
+	AliveUnitCount int    `json:"aliveUnitCount"`
+}
+
+// LootDropSnapshot is the per-tick wire view of one ground-loot chest.
+// Sent unfiltered (no FOW gating) so chests behave like POI dots on the
+// minimap — the player can always navigate back to an uncollected chest.
+//
+// Resources and ItemIDs mirror the chest's pre-rolled contents so the
+// client can render a hover tooltip showing what the chest contains
+// before the player collects it. These are the same values granted on
+// pickup (less vault-overflow items).
+type LootDropSnapshot struct {
+	ID        string         `json:"id"`
+	X         float64        `json:"x"`
+	Y         float64        `json:"y"`
+	IconKey   string         `json:"iconKey"`
+	Resources map[string]int `json:"resources,omitempty"`
+	ItemIDs   []string       `json:"itemIds,omitempty"`
 }
 
 type MatchSnapshotMessage struct {
@@ -1128,6 +1166,7 @@ type MatchSnapshotMessage struct {
 	Fow           *FogOfWarSnapshot       `json:"fow,omitempty"`
 	WaveUpgrade   *WaveUpgradeOfferSnapshot `json:"waveUpgrade,omitempty"`
 	NeutralCamps  []NeutralCampSnapshot   `json:"neutralCamps,omitempty"`
+	LootDrops     []LootDropSnapshot      `json:"lootDrops,omitempty"`
 
 	// Paused is true when the simulation is frozen via the in-match settings
 	// "Pause Game" action. The client renders a paused overlay and freezes the
@@ -1196,6 +1235,24 @@ type ErrorMessage struct {
 type NotificationMessage struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
+}
+
+// LootCollectedNotification is pushed to the collecting player when a
+// chest pickup completes. The HUD renders a toast listing the resources
+// and items received. Items that couldn't fit in the vault are listed in
+// OverflowItemIDs so the toast can show "+50 gold, Broad Sword (lost —
+// vault full)".
+type LootCollectedNotification struct {
+	Type            string         `json:"type"` // "loot_collected"
+	PlayerID        string         `json:"playerId"`
+	LootDropID      string         `json:"lootDropId"`
+	// CollectingUnitID is the ID of the unit that walked to and collected
+	// the chest. Used by the client to position the floating "+X gold"
+	// pickup text in world space above that unit.
+	CollectingUnitID int            `json:"collectingUnitId"`
+	Resources        map[string]int `json:"resources,omitempty"`
+	ItemIDs          []string       `json:"itemIds,omitempty"`
+	OverflowItemIDs  []string       `json:"overflowItemIds,omitempty"`
 }
 
 // DebugSpawnUnitMessage is a dev-only command that spawns a fully configured

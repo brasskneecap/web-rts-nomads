@@ -9,7 +9,7 @@
 // rule, etc.) should happen here once; both renderers pick it up
 // automatically.
 
-import type { MapConfig } from '../network/protocol'
+import type { LootDropSnapshot, MapConfig, NeutralCampSnapshot } from '../network/protocol'
 import {
   DEFAULT_GRASS_COLOR,
   getBuildingColor,
@@ -175,33 +175,67 @@ export function drawMinimapBase(
 
 // Paints neutral-camp POI markers (and any other authored POIs we add
 // later) into the given rect. Drawn ABOVE any FOW so they remain visible
-// regardless of scouting state. Dot color uses the live currentTier from
-// the snapshot when supplied, falling back to startingTier from the
-// authored placement (which is all the lobby preview has).
+// regardless of scouting state.
+//
+// When `snapshotsById` is provided (in-game), the dot uses live state:
+//   - color from currentTier
+//   - dot hidden when aliveUnitCount === 0 so cleared / wave-hidden camps
+//     drop off the minimap until they respawn
+//
+// When `snapshotsById` is null (lobby preview, map editor — no live
+// server data), every authored camp renders in its startingTier color.
 export function drawMinimapPOIs(
   ctx: CanvasRenderingContext2D,
   mapConfig: MinimapMapInput,
   bounds: MinimapRect,
-  currentTierById: Map<string, number> | null,
+  snapshotsById: Map<string, NeutralCampSnapshot> | null,
+  // Live ground-loot chests. Always-visible (no FOW gating). Pass null or
+  // undefined in lobby/editor contexts where no live server data exists.
+  lootDropsById?: Map<string, LootDropSnapshot> | null,
 ): void {
   const spawns = mapConfig.neutralSpawns
-  if (!spawns || spawns.length === 0) return
   const { x, y, width, height } = bounds
-  const { gridCols, gridRows } = mapConfig
-  const cellMinimapW = width / gridCols
-  const cellMinimapH = height / gridRows
+  const { gridCols, gridRows, cellSize } = mapConfig
 
-  for (const ns of spawns) {
-    const dotX = x + (ns.x + 0.5) * cellMinimapW
-    const dotY = y + (ns.y + 0.5) * cellMinimapH
-    const liveTier = currentTierById?.get(ns.id)
-    const tier = liveTier ?? ns.startingTier ?? 1
-    ctx.fillStyle = getNeutralSpawnTierColor(tier)
-    ctx.beginPath()
-    ctx.arc(dotX, dotY, 3, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.lineWidth = 0.75
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)'
-    ctx.stroke()
+  if (spawns && spawns.length > 0) {
+    const cellMinimapW = width / gridCols
+    const cellMinimapH = height / gridRows
+
+    for (const ns of spawns) {
+      const snap = snapshotsById?.get(ns.id)
+      // Live-state camps with no units are invisible on the minimap; they
+      // re-appear when spawnGroupForCampLocked next runs (wave clear).
+      // Camps without a snapshot (no live data — lobby/editor) still render.
+      if (snap && snap.aliveUnitCount === 0) continue
+
+      const dotX = x + (ns.x + 0.5) * cellMinimapW
+      const dotY = y + (ns.y + 0.5) * cellMinimapH
+      const tier = snap?.currentTier ?? ns.startingTier ?? 1
+      ctx.fillStyle = getNeutralSpawnTierColor(tier)
+      ctx.beginPath()
+      ctx.arc(dotX, dotY, 3, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.lineWidth = 0.75
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)'
+      ctx.stroke()
+    }
+  }
+
+  // Loot-drop dots — amber, slightly smaller than camp dots so they
+  // visually distinguish from camp POIs. Always visible regardless of FOW.
+  if (lootDropsById && lootDropsById.size > 0) {
+    const mapW = gridCols * cellSize
+    const mapH = gridRows * cellSize
+    for (const drop of lootDropsById.values()) {
+      const dotX = x + (drop.x / mapW) * width
+      const dotY = y + (drop.y / mapH) * height
+      ctx.fillStyle = '#f5b400'
+      ctx.beginPath()
+      ctx.arc(dotX, dotY, 2.5, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.lineWidth = 0.75
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)'
+      ctx.stroke()
+    }
   }
 }
