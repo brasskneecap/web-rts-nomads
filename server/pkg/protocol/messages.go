@@ -328,6 +328,17 @@ type ObstacleTile struct {
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
 
+// ObstacleMetadataPatch is a per-tick patch for an obstacle whose live
+// metadata changed since the previous broadcast. Currently only emitted for
+// tree obstacles whose currentWorkers count changed (a worker entered or
+// left a tree). MaxWorkers is constant per type and known to the client
+// from the WelcomeMessage, so we don't re-send it. Steady-state ticks emit
+// nothing; this list is empty on most snapshots.
+type ObstacleMetadataPatch struct {
+	ID             string `json:"id"`
+	CurrentWorkers int    `json:"currentWorkers"`
+}
+
 type BuildingTile struct {
 	GridCoord
 	ID             string                 `json:"id"`
@@ -1145,7 +1156,21 @@ type MatchSnapshotMessage struct {
 	ServerNow     int64                   `json:"serverNow"`
 	MatchID       string                  `json:"matchId"`
 	Buildings     []BuildingTile          `json:"buildings"`
-	Obstacles     []ObstacleTile          `json:"obstacles"`
+	// ObstaclesRemoved: obstacle IDs that have been removed from the world
+	// since the previous broadcast (trees chopped, rocks mined to depletion).
+	// Only populated on broadcasts that follow a removeObstacleByIDLocked;
+	// empty on the steady state. The full obstacle geometry is sent ONCE in
+	// the WelcomeMessage's MapConfig — clients maintain their local mirror
+	// and apply removals from this list. Eliminates the per-tick retransmit
+	// of the entire obstacle array (~870KB on the exploration map at 20Hz).
+	ObstaclesRemoved []string `json:"obstaclesRemoved,omitempty"`
+	// ObstacleMetadata: per-obstacle live metadata patches that have changed
+	// since the previous broadcast. Currently only `currentWorkers` on tree
+	// obstacles (used by the HUD tooltip). Only obstacles whose count changed
+	// since the last send are included — steady-state ticks send nothing.
+	// `maxWorkers` is constant per obstacle type and known to the client from
+	// the WelcomeMessage, so we don't re-send it.
+	ObstacleMetadata []ObstacleMetadataPatch `json:"obstacleMetadata,omitempty"`
 	Players       []PlayerSnapshot        `json:"players"`
 	Units         []UnitSnapshot          `json:"units"`
 	Wave          WaveSnapshot            `json:"wave"`

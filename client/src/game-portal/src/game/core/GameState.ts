@@ -17,6 +17,7 @@ import type {
   MapConfig,
   MatchSnapshotMessage,
   NeutralCampSnapshot,
+  ObstacleMetadataPatch,
   ObstacleTile,
   PerkCooldownSnapshot,
   AbilitySnapshot,
@@ -904,7 +905,7 @@ export class GameState {
     const now = performance.now()
 
     this.mergeSnapshotBuildings(message.buildings)
-    this.mergeSnapshotObstacles(message.obstacles ?? [])
+    this.applyObstacleDeltas(message.obstaclesRemoved, message.obstacleMetadata)
 
     const frame: InterpolationFrame = {
       tick: message.tick,
@@ -2281,12 +2282,58 @@ export class GameState {
   }
 
   /**
-   * Called on every match_snapshot. Replaces the obstacles array in the
-   * stored mapConfig, then invalidates any obstacle selection that refers to
-   * an obstacle that is no longer present (e.g. a depleted tree). Rock/wall
-   * HP updates flow through the same path once damage is wired up.
+   * Called on every match_snapshot. Applies obstacle deltas — IDs removed
+   * since the previous broadcast, and metadata patches (currently only
+   * tree currentWorkers updates) — to the locally-mirrored obstacle list.
+   *
+   * The full obstacle geometry is sent ONCE in the WelcomeMessage's
+   * MapConfig (consumed by setMapConfig). Subsequent snapshots only ship
+   * the changes. Both deltas are absent on the overwhelming majority of
+   * ticks (no tree was chopped, no worker entered/left), so this is a
+   * near-no-op in the steady state.
+   *
+   * Both arguments are optional: an absent removed list means "nothing
+   * disappeared this tick", and an absent metadata list means "no live
+   * counter changed". Removals on IDs the client doesn't have are silent
+   * no-ops (idempotent against double-delivery / out-of-order applies);
+   * metadata patches for unknown IDs are also dropped.
    */
-  private mergeSnapshotObstacles(obstacles: ObstacleTile[]) {
+  private applyObstacleDeltas(
+    removed: string[] | undefined,
+    metadata: ObstacleMetadataPatch[] | undefined,
+  ) {
+    const hasRemoved = removed !== undefined && removed.length > 0
+    const hasMetadata = metadata !== undefined && metadata.length > 0
+    if (!hasRemoved && !hasMetadata) {
+      return
+    }
+
+    let obstacles = this.mapConfig.obstacles
+
+    if (hasRemoved) {
+      const removedSet = new Set(removed)
+      obstacles = obstacles.filter((o) => !(o.id !== undefined && removedSet.has(o.id)))
+    }
+
+    if (hasMetadata) {
+      // Build an id→patch map once, then walk obstacles once. Patches for
+      // unknown ids are silently ignored — same as removed-IDs above.
+      const patchById = new Map<string, ObstacleMetadataPatch>()
+      for (const p of metadata!) patchById.set(p.id, p)
+      obstacles = obstacles.map((o) => {
+        if (o.id === undefined) return o
+        const p = patchById.get(o.id)
+        if (!p) return o
+        // Preserve every other metadata key the welcome sent; only patch
+        // currentWorkers. Spread keeps maxWorkers (constant, set at welcome)
+        // and any future per-obstacle annotations intact.
+        return {
+          ...o,
+          metadata: { ...(o.metadata ?? {}), currentWorkers: p.currentWorkers },
+        }
+      })
+    }
+
     this.mapConfig = { ...this.mapConfig, obstacles }
     this.invalidateObstacleSelection()
   }
