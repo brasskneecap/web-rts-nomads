@@ -1176,9 +1176,17 @@ func (h *Hub) heartbeatLoop() {
 						continue
 					}
 
-					// Send a WebSocket-level ping frame. The client's pong handler
-					// will call TouchPong and extend the read deadline.
-					if err := client.WritePing(); err != nil {
+					// Send an application-level ping. The client's NetworkClient
+					// replies with {type:"pong"}, which the read loop dispatches
+					// to client.TouchPong() (see the "pong" case below). This
+					// path works uniformly across WebSocket, Steam Sockets, and
+					// any future transport — every transport carries the JSON
+					// payload as opaque bytes. The legacy WS-frame ping path
+					// (transport.WritePing + SetPongHandler) is left in place
+					// for transports that want frame-level liveness in addition
+					// to the app-level heartbeat, but is no longer the primary
+					// mechanism.
+					if err := client.WriteJSON(protocol.PingMessage{Type: "ping"}); err != nil {
 						log.Printf("ping failed for player=%s match=%s: %v\n", client.PlayerID(), client.MatchID(), err)
 						h.cleanupClient(client, false)
 					}

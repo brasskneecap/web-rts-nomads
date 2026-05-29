@@ -883,6 +883,21 @@ type GameState struct {
 	// len() stays bounded by active nodes.
 	workersInsideResource map[string]int
 
+	// Obstacle delta state — drives the snapshot's ObstaclesRemoved /
+	// ObstacleMetadata fields. The full obstacle geometry is sent ONCE in
+	// the WelcomeMessage; per-tick snapshots send only changes since the
+	// previous broadcast. Eliminates the per-tick retransmit of the entire
+	// obstacle array (~870KB on the exploration map at 20Hz → ~17 MB/sec
+	// of pure static geometry that previously saturated the Steam relay).
+	//
+	// pendingObstacleRemovals accumulates IDs removed via
+	// removeObstacleByIDLocked between broadcasts; drained at the end of
+	// BroadcastSnapshot. lastSentObstacleWorkerCounts records the value
+	// each tree obstacle's currentWorkers had in the most recent broadcast
+	// so we can emit a metadata patch only when the count actually changed.
+	pendingObstacleRemovals      []string
+	lastSentObstacleWorkerCounts map[string]int
+
 	// Paused, when true, freezes Update() — no simulation, no wave/upgrade
 	// timer progression. Set by any player via HandleSetPause. PausedBy is
 	// the player ID that initiated the pause (empty when not paused);
@@ -1293,8 +1308,7 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	wm := s.WaveManager
 	buildings := make([]protocol.BuildingTile, len(s.MapConfig.Buildings))
 	copy(buildings, s.MapConfig.Buildings)
-	obstacles := make([]protocol.ObstacleTile, len(s.MapConfig.Obstacles))
-	copy(obstacles, s.MapConfig.Obstacles)
+	obstaclesRemoved, obstacleMetadata := s.snapshotObstacleDeltasLocked()
 
 	var banners []protocol.BannerSnapshot
 	for _, b := range s.Banners {
@@ -1404,7 +1418,8 @@ func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 		Tick:               s.Tick,
 		ServerNow:          time.Now().UnixMilli(),
 		Buildings:          buildings,
-		Obstacles:          obstacles,
+		ObstaclesRemoved:   obstaclesRemoved,
+		ObstacleMetadata:   obstacleMetadata,
 		Players:            players,
 		Units:              units,
 		Banners:            banners,
@@ -1596,8 +1611,7 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 	}
 
 	wm := s.WaveManager
-	obstacles := make([]protocol.ObstacleTile, len(s.MapConfig.Obstacles))
-	copy(obstacles, s.MapConfig.Obstacles)
+	obstaclesRemoved, obstacleMetadata := s.snapshotObstacleDeltasLocked()
 
 	// Filter buildings: own→always, clear→as-is, known→ghost, else drop.
 	buildings := make([]protocol.BuildingTile, 0, len(s.MapConfig.Buildings))
@@ -1737,7 +1751,8 @@ func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMes
 		Tick:               s.Tick,
 		ServerNow:          time.Now().UnixMilli(),
 		Buildings:          buildings,
-		Obstacles:          obstacles,
+		ObstaclesRemoved:   obstaclesRemoved,
+		ObstacleMetadata:   obstacleMetadata,
 		Players:            players,
 		Units:              units,
 		Banners:            banners,
@@ -2088,8 +2103,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 	wm := s.WaveManager
 	buildings := make([]protocol.BuildingTile, len(s.MapConfig.Buildings))
 	copy(buildings, s.MapConfig.Buildings)
-	obstacles := make([]protocol.ObstacleTile, len(s.MapConfig.Obstacles))
-	copy(obstacles, s.MapConfig.Obstacles)
+	obstaclesRemoved, obstacleMetadata := s.snapshotObstacleDeltasLocked()
 
 	var banners []protocol.BannerSnapshot
 	for _, b := range s.Banners {
@@ -2191,7 +2205,8 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		Tick:               s.Tick,
 		ServerNow:          time.Now().UnixMilli(),
 		Buildings:          buildings,
-		Obstacles:          obstacles,
+		ObstaclesRemoved:   obstaclesRemoved,
+		ObstacleMetadata:   obstacleMetadata,
 		Players:            players,
 		Units:              units,
 		Banners:            banners,

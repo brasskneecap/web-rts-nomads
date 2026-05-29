@@ -60,6 +60,18 @@ const emptyUiSnapshot: GameUiSnapshot = {
   cursorScreenY: 0,
   cursorClientX: 0,
   cursorClientY: 0,
+  netStats: {
+    snapshotAgeMs: 0,
+    snapshotAgeAvgMs: 0,
+    snapshotAgeMaxMs: 0,
+    receiveGapMs: 0,
+    receiveGapMaxMs: 0,
+    snapshotsPerSec: 0,
+    bufferDepth: 0,
+    lastSnapshotBytes: 0,
+    totalSnapshots: 0,
+    transportLabel: 'direct',
+  },
 }
 
 export function useGameClient() {

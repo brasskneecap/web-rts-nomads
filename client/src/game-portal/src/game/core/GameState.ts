@@ -17,6 +17,7 @@ import type {
   MapConfig,
   MatchSnapshotMessage,
   NeutralCampSnapshot,
+  ObstacleMetadataPatch,
   ObstacleTile,
   PerkCooldownSnapshot,
   AbilitySnapshot,
@@ -355,6 +356,27 @@ export type SelectionBox = {
   active: boolean
 }
 
+// Network diagnostics surfaced by the debug HUD (F3). Updated every time
+// applySnapshot consumes a server snapshot. snapshotAgeMs is the wall-time
+// delta between server-stamped `serverNow` and the client's Date.now() at
+// receive; for a steady ~5s buffered lag it will read ~5000ms, far above
+// any reasonable clock skew. receiveGapMs is the gap between consecutive
+// snapshot arrivals — server broadcasts at 20 Hz so the healthy steady
+// state is ~50ms; spikes/freezes appear here. bufferDepth is the
+// interpolation-buffer depth at receive time.
+export type NetStats = {
+  snapshotAgeMs: number
+  snapshotAgeAvgMs: number
+  snapshotAgeMaxMs: number
+  receiveGapMs: number
+  receiveGapMaxMs: number
+  snapshotsPerSec: number
+  bufferDepth: number
+  lastSnapshotBytes: number
+  totalSnapshots: number
+  transportLabel: 'steam-proxy' | 'direct'
+}
+
 export type MoveMarker = {
   id: number
   x: number
@@ -582,6 +604,21 @@ export class GameState {
   fow: FogOfWar = new FogOfWar()
 
   snapshotBuffer: InterpolationFrame[] = []
+
+  // -------------------------------------------------------------------------
+  // Network diagnostics (debug HUD — toggle with F3)
+  // -------------------------------------------------------------------------
+  // Ring of recent snapshot ages (ms) for max-over-window computation.
+  // 40 entries = 2s at the server's 20 Hz broadcast cadence.
+  private readonly NET_STATS_WINDOW = 40
+  private netAgeRing: number[] = []
+  private netGapRing: number[] = []
+  private netReceiveTimesRing: number[] = []
+  private netLastReceivedAt = 0
+  private netLastSnapshotBytes = 0
+  private netTotalSnapshots = 0
+  // EWMA of snapshot age (ms). Alpha=0.2 → ~10-sample effective window.
+  private netAgeEwmaMs = 0
   // Interpolation buffer depth. The renderer plays back snapshots
   // delayed by this much so it can smoothly interpolate between them
   // even when arrival times jitter. Tuned per network path:
@@ -730,6 +767,100 @@ export class GameState {
 
   clearSnapshotBuffer() {
     this.snapshotBuffer = []
+    // Reset net-stats rings too — a stale gap-ms value carried across a
+    // reconnect would show a misleading "5s freeze" on the HUD right
+    // after the resume.
+    this.netAgeRing = []
+    this.netGapRing = []
+    this.netReceiveTimesRing = []
+    this.netLastReceivedAt = 0
+    this.netAgeEwmaMs = 0
+  }
+
+  // Called by NetworkClient.onmessage with the raw wire byte length BEFORE
+  // applySnapshot runs, so the size lines up with the snapshot the HUD is
+  // about to read. Kept as its own setter (rather than threading bytes
+  // through applySnapshot's signature) so the snapshot pipeline stays
+  // ignorant of transport-level details.
+  recordSnapshotBytes(bytes: number) {
+    this.netLastSnapshotBytes = bytes
+  }
+
+  // Returns a snapshot of network diagnostics for the debug HUD. Cheap —
+  // called once per RAF from GameClient.getUiSnapshot().
+  getNetStats(): NetStats {
+    // Compute snapshots-per-second over the last second by counting
+    // receive timestamps that fall inside the 1s window. The ring is
+    // maintained in applySnapshot below.
+    const now = performance.now()
+    const cutoff = now - 1000
+    let perSec = 0
+    for (let i = this.netReceiveTimesRing.length - 1; i >= 0; i--) {
+      if (this.netReceiveTimesRing[i] >= cutoff) perSec++
+      else break
+    }
+
+    let ageMax = 0
+    for (const v of this.netAgeRing) if (v > ageMax) ageMax = v
+    let gapMax = 0
+    for (const v of this.netGapRing) if (v > gapMax) gapMax = v
+
+    const lastAge = this.netAgeRing.length ? this.netAgeRing[this.netAgeRing.length - 1] : 0
+    const lastGap = this.netGapRing.length ? this.netGapRing[this.netGapRing.length - 1] : 0
+
+    let transportLabel: 'steam-proxy' | 'direct' = 'direct'
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage.getItem('webrts.steam.proxyActive') === '1') {
+        transportLabel = 'steam-proxy'
+      }
+    } catch {
+      // sessionStorage may be unavailable in sandboxed contexts.
+    }
+
+    return {
+      snapshotAgeMs: lastAge,
+      snapshotAgeAvgMs: this.netAgeEwmaMs,
+      snapshotAgeMaxMs: ageMax,
+      receiveGapMs: lastGap,
+      receiveGapMaxMs: gapMax,
+      snapshotsPerSec: perSec,
+      bufferDepth: this.snapshotBuffer.length,
+      lastSnapshotBytes: this.netLastSnapshotBytes,
+      totalSnapshots: this.netTotalSnapshots,
+      transportLabel,
+    }
+  }
+
+  // Records one snapshot's diagnostic samples. Called from applySnapshot
+  // with the values it already has on hand — no extra time reads.
+  private recordNetSample(serverNow: number, receivedAt: number) {
+    // Snapshot age: wall-clock delta between server stamp and client
+    // receive. Date.now() is wall-clock to match server's UnixMilli();
+    // includes any clock skew between machines, but a steady ~5s value
+    // is far above any plausible skew so the signal is unambiguous.
+    const ageMs = Date.now() - serverNow
+
+    // Receive gap: monotonic delta between consecutive snapshot arrivals.
+    // First snapshot of a session has no predecessor — record 0.
+    const gapMs = this.netLastReceivedAt > 0 ? receivedAt - this.netLastReceivedAt : 0
+    this.netLastReceivedAt = receivedAt
+
+    // Push to rings, trim to window.
+    this.netAgeRing.push(ageMs)
+    if (this.netAgeRing.length > this.NET_STATS_WINDOW) this.netAgeRing.shift()
+    this.netGapRing.push(gapMs)
+    if (this.netGapRing.length > this.NET_STATS_WINDOW) this.netGapRing.shift()
+    this.netReceiveTimesRing.push(receivedAt)
+    if (this.netReceiveTimesRing.length > this.NET_STATS_WINDOW) this.netReceiveTimesRing.shift()
+
+    // EWMA of age — alpha=0.2 gives ~10-sample effective window, smooth
+    // enough for the live readout without lagging real shifts.
+    if (this.netTotalSnapshots === 0) {
+      this.netAgeEwmaMs = ageMs
+    } else {
+      this.netAgeEwmaMs = 0.2 * ageMs + 0.8 * this.netAgeEwmaMs
+    }
+    this.netTotalSnapshots++
   }
 
   update(dt: number) {
@@ -774,7 +905,7 @@ export class GameState {
     const now = performance.now()
 
     this.mergeSnapshotBuildings(message.buildings)
-    this.mergeSnapshotObstacles(message.obstacles ?? [])
+    this.applyObstacleDeltas(message.obstaclesRemoved, message.obstacleMetadata)
 
     const frame: InterpolationFrame = {
       tick: message.tick,
@@ -842,6 +973,10 @@ export class GameState {
     if (this.snapshotBuffer.length > this.maxBufferedSnapshots) {
       this.snapshotBuffer.shift()
     }
+
+    // Debug HUD diagnostics. Records age/gap/etc using values already on
+    // hand in this scope so no extra time reads are needed.
+    this.recordNetSample(message.serverNow, now)
 
     // Build per-unit crit pools for this tick so the HP-diff loop below can
     // tag matching damage events as crits. Server pushes (unitId, damage)
@@ -2147,12 +2282,58 @@ export class GameState {
   }
 
   /**
-   * Called on every match_snapshot. Replaces the obstacles array in the
-   * stored mapConfig, then invalidates any obstacle selection that refers to
-   * an obstacle that is no longer present (e.g. a depleted tree). Rock/wall
-   * HP updates flow through the same path once damage is wired up.
+   * Called on every match_snapshot. Applies obstacle deltas — IDs removed
+   * since the previous broadcast, and metadata patches (currently only
+   * tree currentWorkers updates) — to the locally-mirrored obstacle list.
+   *
+   * The full obstacle geometry is sent ONCE in the WelcomeMessage's
+   * MapConfig (consumed by setMapConfig). Subsequent snapshots only ship
+   * the changes. Both deltas are absent on the overwhelming majority of
+   * ticks (no tree was chopped, no worker entered/left), so this is a
+   * near-no-op in the steady state.
+   *
+   * Both arguments are optional: an absent removed list means "nothing
+   * disappeared this tick", and an absent metadata list means "no live
+   * counter changed". Removals on IDs the client doesn't have are silent
+   * no-ops (idempotent against double-delivery / out-of-order applies);
+   * metadata patches for unknown IDs are also dropped.
    */
-  private mergeSnapshotObstacles(obstacles: ObstacleTile[]) {
+  private applyObstacleDeltas(
+    removed: string[] | undefined,
+    metadata: ObstacleMetadataPatch[] | undefined,
+  ) {
+    const hasRemoved = removed !== undefined && removed.length > 0
+    const hasMetadata = metadata !== undefined && metadata.length > 0
+    if (!hasRemoved && !hasMetadata) {
+      return
+    }
+
+    let obstacles = this.mapConfig.obstacles
+
+    if (hasRemoved) {
+      const removedSet = new Set(removed)
+      obstacles = obstacles.filter((o) => !(o.id !== undefined && removedSet.has(o.id)))
+    }
+
+    if (hasMetadata) {
+      // Build an id→patch map once, then walk obstacles once. Patches for
+      // unknown ids are silently ignored — same as removed-IDs above.
+      const patchById = new Map<string, ObstacleMetadataPatch>()
+      for (const p of metadata!) patchById.set(p.id, p)
+      obstacles = obstacles.map((o) => {
+        if (o.id === undefined) return o
+        const p = patchById.get(o.id)
+        if (!p) return o
+        // Preserve every other metadata key the welcome sent; only patch
+        // currentWorkers. Spread keeps maxWorkers (constant, set at welcome)
+        // and any future per-obstacle annotations intact.
+        return {
+          ...o,
+          metadata: { ...(o.metadata ?? {}), currentWorkers: p.currentWorkers },
+        }
+      })
+    }
+
     this.mapConfig = { ...this.mapConfig, obstacles }
     this.invalidateObstacleSelection()
   }

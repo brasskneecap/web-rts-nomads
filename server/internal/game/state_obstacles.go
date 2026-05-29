@@ -41,6 +41,97 @@ func (s *GameState) removeObstacleByIDLocked(id string) {
 		s.obstaclesByID[o.ID] = o
 	}
 	s.invalidateBlockedCellsLocked()
+
+	// Record for the next broadcast's ObstaclesRemoved delta. The client
+	// keeps its own obstacle mirror seeded from the WelcomeMessage and
+	// applies removals from this list, so we don't have to re-send the
+	// full geometry just because one tree died.
+	s.pendingObstacleRemovals = append(s.pendingObstacleRemovals, id)
+	// Also drop any stale worker-count entry. If the same id is later
+	// reassigned to a new obstacle (not currently possible, but cheap
+	// insurance), the first patch will emit fresh state.
+	if s.lastSentObstacleWorkerCounts != nil {
+		delete(s.lastSentObstacleWorkerCounts, id)
+	}
+}
+
+// snapshotObstacleDeltasLocked returns the per-broadcast obstacle deltas:
+// IDs removed since the previous broadcast (drained from
+// pendingObstacleRemovals) and metadata patches for obstacles whose
+// currentWorkers count changed (vs lastSentObstacleWorkerCounts).
+//
+// Pure read of the staged state — does NOT mutate. The matching
+// commitObstacleDeltaStateAfterBroadcastLocked is what advances the
+// last-sent baseline and clears pendingObstacleRemovals; this split lets
+// BroadcastSnapshot build the same delta for every viewer before
+// flushing once at the end.
+//
+// Returned slices are freshly allocated and safe to embed in per-viewer
+// snapshots. nil/empty slices are dropped from the wire by omitempty.
+//
+// Must be called under s.mu read or write lock.
+func (s *GameState) snapshotObstacleDeltasLocked() (removed []string, patches []protocol.ObstacleMetadataPatch) {
+	if len(s.pendingObstacleRemovals) > 0 {
+		removed = make([]string, len(s.pendingObstacleRemovals))
+		copy(removed, s.pendingObstacleRemovals)
+	}
+
+	for i := range s.MapConfig.Obstacles {
+		o := &s.MapConfig.Obstacles[i]
+		if o.Obstacle != "tree" || o.ID == "" {
+			continue
+		}
+		current := s.countWorkersInsideResourceNodeLocked(o.ID)
+		last, ok := s.lastSentObstacleWorkerCounts[o.ID]
+		// Missing entry is treated as "0 last sent" — matches the welcome's
+		// pre-game state (no workers anywhere), so a fresh tree with no
+		// workers emits nothing until someone actually walks in.
+		if !ok && current == 0 {
+			continue
+		}
+		if ok && last == current {
+			continue
+		}
+		patches = append(patches, protocol.ObstacleMetadataPatch{
+			ID:             o.ID,
+			CurrentWorkers: current,
+		})
+	}
+	return removed, patches
+}
+
+// CommitObstacleDeltaStateAfterBroadcast is the exported wrapper used by
+// Match.BroadcastSnapshot. Acquires the write lock and delegates to the
+// Locked form. Calling this once per broadcast — after every client has
+// been served — advances the delta baseline so the next broadcast ships
+// only what changed since this one.
+func (s *GameState) CommitObstacleDeltaStateAfterBroadcast() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.commitObstacleDeltaStateAfterBroadcastLocked()
+}
+
+// commitObstacleDeltaStateAfterBroadcastLocked advances the baseline used
+// by snapshotObstacleDeltasLocked so the next broadcast only sees what
+// changed AFTER this one. Called once by BroadcastSnapshot after every
+// client has been served. Must be called under s.mu write lock.
+func (s *GameState) commitObstacleDeltaStateAfterBroadcastLocked() {
+	s.pendingObstacleRemovals = nil
+	if s.lastSentObstacleWorkerCounts == nil {
+		s.lastSentObstacleWorkerCounts = map[string]int{}
+	}
+	for i := range s.MapConfig.Obstacles {
+		o := &s.MapConfig.Obstacles[i]
+		if o.Obstacle != "tree" || o.ID == "" {
+			continue
+		}
+		current := s.countWorkersInsideResourceNodeLocked(o.ID)
+		if current == 0 {
+			delete(s.lastSentObstacleWorkerCounts, o.ID)
+		} else {
+			s.lastSentObstacleWorkerCounts[o.ID] = current
+		}
+	}
 }
 
 // refreshObstacleRuntimeMetadataLocked publishes transient, per-tick fields

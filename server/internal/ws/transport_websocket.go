@@ -34,6 +34,18 @@ func newWebSocketTransport(conn *websocket.Conn, addr string) *websocketTranspor
 
 func (t *websocketTransport) ReadMessage() ([]byte, error) {
 	_, data, err := t.conn.ReadMessage()
+	if err == nil {
+		// Any inbound activity proves the peer is alive; extend the read
+		// deadline so the hub's app-level heartbeat (sends a {type:"ping"}
+		// every heartbeatInterval, expects a {type:"pong"} reply) is what
+		// governs the liveness window. Without this, the gorilla read
+		// deadline would expire after pongWait even though valid pong
+		// messages were arriving — defeating the heartbeat. The gorilla
+		// SetPongHandler also extends the deadline for legacy WS-frame
+		// pongs, so that path keeps working for any future code path that
+		// still uses WritePing directly.
+		_ = t.conn.SetReadDeadline(time.Now().Add(pongWait))
+	}
 	return data, err
 }
 

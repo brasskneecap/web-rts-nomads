@@ -263,7 +263,18 @@ export class NetworkClient {
       }
 
       ws.onmessage = (event) => {
+        // Capture wire byte size BEFORE parse so the debug HUD (F3) can
+        // show last-snapshot bandwidth. event.data is always a string here
+        // (server sends text frames); length is UTF-16 chars which is a
+        // close-enough proxy for the JSON payload size in bytes for the
+        // ASCII-dominated snapshot wire format. The Steam-relayed path
+        // gzips upstream but the SPA always reads decompressed JSON, so
+        // this measures payload-into-the-renderer regardless of route.
+        const rawLength = typeof event.data === 'string' ? event.data.length : 0
         const message = JSON.parse(event.data) as ServerMessage
+        if (message.type === 'match_snapshot') {
+          this.state.recordSnapshotBytes(rawLength)
+        }
         this.handleMessage(message, isReconnect)
       }
 

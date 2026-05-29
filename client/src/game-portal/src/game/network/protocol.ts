@@ -65,6 +65,16 @@ export type ObstacleTile = GridCoord & {
   metadata?: JsonObject
 }
 
+/** Per-tick patch for one obstacle's live metadata. The server only emits
+ *  these when a value actually changed since the previous broadcast (e.g.
+ *  a worker entered or left a tree), so the wire cost is near zero in the
+ *  steady state. maxWorkers is constant per obstacle type and known from
+ *  welcome, so it is not part of the patch. */
+export type ObstacleMetadataPatch = {
+  id: string
+  currentWorkers: number
+}
+
 export type BuildingTile = GridCoord & {
   id: string
   buildingType: BuildingType
@@ -1115,7 +1125,19 @@ export type MatchSnapshotMessage = {
   serverNow: number
   matchId: string
   buildings: BuildingTile[]
-  obstacles: ObstacleTile[]
+  /** Obstacle IDs that have been removed from the world since the previous
+   *  broadcast (trees chopped, rocks mined to depletion). Only present on
+   *  broadcasts that follow a server-side removal; the steady state ships
+   *  nothing in this field. Clients maintain their obstacle mirror from the
+   *  WelcomeMessage's MapConfig and apply removals listed here. Replaces
+   *  the per-tick full-list resend that previously cost ~870KB/snapshot on
+   *  the exploration map. */
+  obstaclesRemoved?: string[]
+  /** Live obstacle metadata patches whose value changed since the previous
+   *  broadcast — currently only tree currentWorkers (worker count) updates.
+   *  maxWorkers is constant per obstacle type and known from welcome, so
+   *  it is not resent. Empty/absent on the steady state. */
+  obstacleMetadata?: ObstacleMetadataPatch[]
   players: PlayerSnapshot[]
   units: UnitSnapshot[]
   wave: WaveSnapshot

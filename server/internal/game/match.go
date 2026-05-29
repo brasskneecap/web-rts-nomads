@@ -120,7 +120,9 @@ func (m *Match) BroadcastSnapshot() {
 				snap.MatchID = m.ID
 				snap.ServerNow = time.Now().UnixMilli()
 			})
-			_ = client.WriteJSON(snap)
+			profileClientSend(client.PlayerID(), func() {
+				_ = client.WriteJSON(snap)
+			})
 
 			// Push any loot-collected notifications for this player. Sent
 			// after the snapshot so the client can correlate: resources
@@ -130,6 +132,16 @@ func (m *Match) BroadcastSnapshot() {
 			}
 		}
 	})
+
+	// Advance the obstacle-delta baseline ONCE after every client has been
+	// served. snapshotObstacleDeltasLocked is a pure read, so each viewer's
+	// SnapshotForPlayer above sees the same removals + metadata patches;
+	// this commit clears pendingObstacleRemovals and updates the last-sent
+	// worker counts so the NEXT broadcast only ships what changed since
+	// this one.
+	m.State.CommitObstacleDeltaStateAfterBroadcast()
+
+	sendProfileBroadcastComplete()
 }
 
 func (m *Match) RemovePlayer(playerID string) {

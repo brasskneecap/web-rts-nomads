@@ -156,6 +156,8 @@
       :cursor-client-x="ui.cursorClientX"
       :cursor-client-y="ui.cursorClientY"
     />
+
+    <DebugHud v-if="hasStarted && debugHudVisible" :stats="ui.netStats" />
   </div>
 </template>
 
@@ -171,6 +173,7 @@ import MatchMenu from '@/components/MatchMenu.vue'
 import MatchMenuLauncher from '@/components/MatchMenuLauncher.vue'
 import MatchSettingsModal from '@/components/MatchSettingsModal.vue'
 import LootDropTooltip from '@/components/LootDropTooltip.vue'
+import DebugHud from '@/components/DebugHud.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { useMapSelection } from '@/composables/useMapSelection'
 import { setCursorGrab } from '@/services/desktopBridge'
@@ -345,6 +348,18 @@ function openMenuTab(tabId: string) {
   matchMenuOpen.value = true
 }
 
+// Network diagnostics overlay (Phase 1A). Hidden by default; F3 toggles.
+// Stats are always being collected on the GameState side (cost is bounded
+// by a 40-sample ring), so toggling visibility is purely a UI concern.
+const debugHudVisible = ref(false)
+
+function onDebugHudHotkey(e: KeyboardEvent) {
+  if (e.code !== 'F3') return
+  if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return
+  debugHudVisible.value = !debugHudVisible.value
+  e.preventDefault()
+}
+
 function onMatchMenuHotkey(e: KeyboardEvent) {
   if (!hasStarted.value) return
   if (!(e.code in MATCH_MENU_HOTKEYS)) return
@@ -382,6 +397,7 @@ function onMatchMenuEscape(e: KeyboardEvent) {
 window.addEventListener('beforeunload', markActiveSession)
 window.addEventListener('keydown', onMatchMenuHotkey)
 window.addEventListener('keydown', onMatchMenuEscape, { capture: true })
+window.addEventListener('keydown', onDebugHudHotkey)
 
 onMounted(async () => {
   // Confine the OS cursor to the game window for the duration of the
@@ -488,6 +504,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', markActiveSession)
   window.removeEventListener('keydown', onMatchMenuHotkey)
   window.removeEventListener('keydown', onMatchMenuEscape, { capture: true })
+  window.removeEventListener('keydown', onDebugHudHotkey)
   destroy()
 })
 </script>
