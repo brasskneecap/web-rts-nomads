@@ -1,5 +1,6 @@
 {
-  "default":  { "file": "default.png",  "hotspot": [0, 0], "size": 32,  "fallback": "default" },
+  "default":  { "file": "default.png",  "hotspot": [8, 10], "size": 40,  "fallback": "default" },
+  "hover":    { "file": "hover.png",    "hotspot": [16, 4], "size": 48,  "fallback": "pointer" },
   "move":     { "file": "move.png",     "hotspot": [14, 14], "size": 32, "fallback": "pointer" },
   "attack":   { "file": "attack.png",   "hotspot": [14, 14], "size": 48, "fallback": "crosshair" },
   "target":   { "file": "target.png",   "hotspot": [24, 24], "size": 32, "fallback": "crosshair" },

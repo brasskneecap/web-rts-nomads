@@ -52,6 +52,80 @@
 
 body {
   margin: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea,
+[contenteditable='true'],
+[contenteditable=''],
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(210, 176, 113, 0.4) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(210, 176, 113, 0.4);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(210, 176, 113, 0.65);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Game hover cursor for clickable elements. Specificity = (0,3,1) which
+   beats Vue scoped CSS like `.foo[data-v-xxx]` = (0,2,0); component rules
+   like `cursor: pointer` are overridden without needing !important. The
+   :not() chain preserves `cursor: not-allowed` on disabled states. */
+:is(
+  button,
+  a[href],
+  summary,
+  label[for],
+  select,
+  input[type='button'],
+  input[type='submit'],
+  input[type='reset'],
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='range'],
+  input[type='file'],
+  [role='button'],
+  [role='link'],
+  [role='tab'],
+  [role='checkbox'],
+  [role='radio'],
+  [role='option'],
+  [role='switch'],
+  [role='menuitem']
+):not(:disabled):not([aria-disabled='true']) {
+  cursor: var(--cursor-hover, pointer);
 }
 
 h1,

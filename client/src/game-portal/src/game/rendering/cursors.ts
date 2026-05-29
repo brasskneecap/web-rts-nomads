@@ -52,6 +52,25 @@ const fileGlob = import.meta.glob<string>(
 // so the swap is picked up on the next frame with no explicit invalidation.
 const resolved = new Map<string, string>()
 
+type CursorChangeListener = (key: string) => void
+const listeners = new Set<CursorChangeListener>()
+
+function setResolved(key: string, css: string): void {
+  resolved.set(key, css)
+  for (const l of listeners) l(key)
+}
+
+// Subscribe to cursor resolution updates. Fires synchronously when a key's
+// CSS value is (re)set — including the async rescale completion. Returns an
+// unsubscribe function. Useful for callers that want to apply a cursor to a
+// long-lived element (e.g. document.body) without polling.
+export function onCursorChange(listener: CursorChangeListener): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
 function buildCursorCss(url: string, hx: number, hy: number, fallback: string): string {
   return `url("${url}") ${hx} ${hy}, ${fallback}`
 }
@@ -101,7 +120,7 @@ for (const [key, entry] of Object.entries(manifest)) {
 
   // Seed with the natural-size URL so the cursor is usable during the brief
   // window before the async rescale completes.
-  resolved.set(key, buildCursorCss(url, hx, hy, fallback))
+  setResolved(key, buildCursorCss(url, hx, hy, fallback))
 
   const needsRescale = entry.size !== undefined || (entry.scale !== undefined && entry.scale !== 1)
   if (!needsRescale) continue
@@ -111,7 +130,7 @@ for (const [key, entry] of Object.entries(manifest)) {
       const target = resolveTargetSize(entry, { width: img.naturalWidth, height: img.naturalHeight })
       if (!target) return
       const dataUrl = rasterizeScaled(img, target[0], target[1])
-      resolved.set(key, buildCursorCss(dataUrl, hx, hy, fallback))
+      setResolved(key, buildCursorCss(dataUrl, hx, hy, fallback))
     })
     .catch(() => {
       /* leave the natural-size URL in place — better than nothing */

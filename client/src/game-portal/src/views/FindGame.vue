@@ -8,7 +8,9 @@
       </header>
 
       <UiPanel class="find-game__list-panel" :padding="16">
-        <LobbyList :lobbies="lobbies" @join="onJoin" />
+        <GameScrollArea class="find-game__scroll">
+          <LobbyList :lobbies="lobbies" @join="onJoin" />
+        </GameScrollArea>
       </UiPanel>
     </div>
   </div>
@@ -27,6 +29,7 @@ import {
 import type { Lobby } from '@/game/network/protocol'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import GameScrollArea from '@/components/ui/GameScrollArea.vue'
 import LobbyList from '@/components/menu/LobbyList.vue'
 
 const router = useRouter()
@@ -185,6 +188,13 @@ onUnmounted(() => {
 
 .find-game__list-panel {
   max-height: 500px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.find-game__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 </style>

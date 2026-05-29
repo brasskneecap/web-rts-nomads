@@ -1,27 +1,32 @@
 <template>
   <div class="map-list" role="listbox" aria-label="Select map">
-    <button
-      v-for="map in maps"
-      :key="map.id"
-      class="map-list__item"
-      :class="{ 'map-list__item--selected': map.id === selectedMapId }"
-      role="option"
-      :aria-selected="map.id === selectedMapId"
-      type="button"
-      @click="emit('update:selectedMapId', map.id)"
-    >
-      <span class="map-list__name">{{ map.name }}</span>
-      <span class="map-list__size">{{ map.gridCols }}x{{ map.gridRows }}</span>
-    </button>
+    <GameScrollArea class="map-list__scroll">
+      <div class="map-list__items">
+        <button
+          v-for="map in maps"
+          :key="map.id"
+          class="map-list__item"
+          :class="{ 'map-list__item--selected': map.id === selectedMapId }"
+          role="option"
+          :aria-selected="map.id === selectedMapId"
+          type="button"
+          @click="emit('update:selectedMapId', map.id)"
+        >
+          <span class="map-list__name">{{ map.name }}</span>
+          <span class="map-list__size">{{ map.gridCols }}x{{ map.gridRows }}</span>
+        </button>
 
-    <div v-if="maps.length === 0" class="map-list__empty">
-      {{ loading ? 'Loading maps...' : 'No maps available.' }}
-    </div>
+        <div v-if="maps.length === 0" class="map-list__empty">
+          {{ loading ? 'Loading maps...' : 'No maps available.' }}
+        </div>
+      </div>
+    </GameScrollArea>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { MapCatalogEntry } from '@/game/network/protocol'
+import GameScrollArea from '@/components/ui/GameScrollArea.vue'
 
 defineProps<{
   maps: MapCatalogEntry[]
@@ -36,13 +41,18 @@ const emit = defineEmits<{
 
 <style scoped>
 .map-list {
+  padding: 2px;
+}
+
+.map-list__scroll {
+  max-height: 360px;
+  min-height: 120px;
+}
+
+.map-list__items {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  overflow-y: auto;
-  max-height: 360px;
-  min-height: 120px;
-  padding: 2px;
 }
 
 .map-list__item {
