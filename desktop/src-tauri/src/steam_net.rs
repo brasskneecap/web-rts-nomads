@@ -215,6 +215,10 @@ struct Worker {
     stats_recv_msgs: u64,
     stats_recv_bytes: u64,
     stats_last_log: std::time::Instant,
+    // TEMP DIAGNOSTIC (D22 verification): running count of UNRELIABLE_NO_DELAY
+    // sends. The send path logs every 100th to confirm the new code path is
+    // reached. Remove once production-verified.
+    stats_unreliable_sends_total: u64,
 }
 
 impl Worker {
@@ -239,6 +243,7 @@ impl Worker {
             stats_recv_msgs: 0,
             stats_recv_bytes: 0,
             stats_last_log: std::time::Instant::now(),
+            stats_unreliable_sends_total: 0,
         }
     }
 
@@ -410,6 +415,19 @@ impl Worker {
         } else {
             SendFlags::UNRELIABLE_NO_DELAY
         };
+        // TEMP DIAGNOSTIC (D22 verification): log every 100th UNRELIABLE
+        // send so we can confirm the new code path is reached without
+        // flooding the shell log. RELIABLE sends are silent.
+        if !reliable {
+            self.stats_unreliable_sends_total += 1;
+            if self.stats_unreliable_sends_total % 100 == 1 {
+                info!(
+                    "steam_net: UNRELIABLE_NO_DELAY send peer={peer_id} bytes={} (count={})",
+                    payload.len(),
+                    self.stats_unreliable_sends_total,
+                );
+            }
+        }
         let payload_len = payload.len() as u64;
         if let Some(entry) = self.peers.get_mut(&peer_id) {
             let result = entry
