@@ -101,11 +101,28 @@ func (c *Client) SetPlayerID(id string) {
 // protocol payload bytes" the pluggable-mp-transport spec asserts byte-identity
 // for across transports — encoding happens here, in transport-agnostic code,
 // not inside any individual Transport implementation.
+//
+// HOT-PATH NOTE: WriteJSON marshals AFTER returning to the caller, which
+// means any reference fields in v (maps, slices) are read by the encoder
+// without any state lock. If v aliases live game state (e.g. snapshot
+// messages where BuildingTile.Metadata points into MapConfig), the caller
+// MUST instead marshal under the game state RLock and use WriteBytes.
+// The per-tick broadcast loop uses MarshalSnapshotForPlayer + WriteBytes
+// for exactly this reason.
 func (c *Client) WriteJSON(v any) error {
 	payload, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
+	return c.transport.WriteMessage(payload)
+}
+
+// WriteBytes sends a pre-marshaled JSON payload through the transport. The
+// counterpart to marshalling under a held state lock: the caller produces
+// the bytes while still holding the lock, then releases the lock before
+// calling WriteBytes so a slow or stuck transport write does not block
+// state mutations.
+func (c *Client) WriteBytes(payload []byte) error {
 	return c.transport.WriteMessage(payload)
 }
 

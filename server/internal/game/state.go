@@ -3,6 +3,7 @@ package game
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"log/slog"
 	"math"
 	mrand "math/rand"
@@ -1195,10 +1196,51 @@ func (s *GameState) GetMapConfig() protocol.MapConfig {
 	return s.MapConfig
 }
 
+// MarshalWelcomeMessage builds the join-time welcome envelope (player + match
+// IDs + the full MapConfig) and marshals it to JSON under s.mu RLock. The
+// embedded MapConfig exposes Buildings/Obstacles slices whose Metadata maps
+// the tick loop mutates, so the encoder MUST run under the lock — same
+// architecture as MarshalSnapshot / MarshalSnapshotForPlayer. Returning bytes
+// lets the handler release the lock before the transport write.
+func (s *GameState) MarshalWelcomeMessage(playerID, matchID string) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	welcome := protocol.WelcomeMessage{
+		Type:     "welcome",
+		PlayerID: playerID,
+		MatchID:  matchID,
+		Map:      s.MapConfig,
+	}
+	return json.Marshal(welcome)
+}
+
+// Snapshot builds an unfiltered match snapshot. Used by tests and by the
+// join handler to seed a freshly-connected client. For the per-tick
+// broadcast hot path, use MarshalSnapshotForPlayer / MarshalSnapshot
+// instead: those marshal the snapshot to bytes under the same RLock,
+// preventing concurrent tick-loop mutations from racing the JSON encoder
+// on shared maps like BuildingTile.Metadata.
 func (s *GameState) Snapshot() protocol.MatchSnapshotMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.snapshotLocked()
+}
 
+// MarshalSnapshot builds the unfiltered snapshot AND marshals it to JSON
+// bytes while holding s.mu RLock. See SnapshotForPlayer / MarshalSnapshotForPlayer
+// for the same pattern on the per-player path.
+func (s *GameState) MarshalSnapshot(matchID string, serverNow int64) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	snap := s.snapshotLocked()
+	snap.MatchID = matchID
+	snap.ServerNow = serverNow
+	return json.Marshal(snap)
+}
+
+// snapshotLocked is the lock-held body of Snapshot. Caller must hold s.mu
+// (RLock is sufficient).
+func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 	units := make([]protocol.UnitSnapshot, 0, len(s.Units))
 	for _, unit := range s.Units {
 		// Effective stats for the HUD: base × rank × path (already in
@@ -1499,10 +1541,37 @@ func (s *GameState) buildWaveUpgradeSnapshotLocked(viewerID string) *protocol.Wa
 // viewerID. Units, buildings, projectiles, traps, effects, and banners outside
 // the viewer's vision are excluded or replaced with ghost entries. Returns the
 // unfiltered Snapshot() result when the viewer has no FOW entry (e.g. spectator).
+//
+// Production hot path: prefer MarshalSnapshotForPlayer, which marshals the
+// snapshot to bytes under the same RLock. Several wire structs (notably
+// BuildingTile.Metadata) intentionally alias live state maps, so the encoder
+// MUST run under the lock or it will race with tick-loop mutations and panic
+// inside encoding/json's mapEncoder.
 func (s *GameState) SnapshotForPlayer(viewerID string) protocol.MatchSnapshotMessage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.snapshotForPlayerLocked(viewerID)
+}
 
+// MarshalSnapshotForPlayer builds the per-player snapshot AND marshals it to
+// JSON bytes while holding s.mu RLock. Returning bytes (not the snapshot
+// struct) lets the broadcast loop release the lock before the transport
+// write, while still keeping json.Marshal — which iterates the snapshot's
+// map fields via reflection — safely inside the lock. matchID and
+// serverNow are stamped before marshaling so the caller doesn't have to
+// mutate the bytes.
+func (s *GameState) MarshalSnapshotForPlayer(viewerID, matchID string, serverNow int64) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	snap := s.snapshotForPlayerLocked(viewerID)
+	snap.MatchID = matchID
+	snap.ServerNow = serverNow
+	return json.Marshal(snap)
+}
+
+// snapshotForPlayerLocked is the lock-held body of SnapshotForPlayer.
+// Caller must hold s.mu (RLock is sufficient).
+func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnapshotMessage {
 	fow := s.FOW[viewerID]
 
 	if fow == nil {

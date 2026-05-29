@@ -13,6 +13,11 @@ const PlayerRemovalGrace = 30 * time.Second
 
 type MatchClient interface {
 	WriteJSON(v any) error
+	// WriteBytes sends a pre-marshaled JSON payload. Used by BroadcastSnapshot
+	// so the per-tick snapshot can be marshaled while still holding the game
+	// state lock (avoiding a concurrent-mutation race in json.Marshal over
+	// shared map fields), then sent without the lock.
+	WriteBytes(payload []byte) error
 	// PlayerID returns the player ID associated with this connection. Used by
 	// BroadcastSnapshot to build a per-player FOW-filtered snapshot.
 	PlayerID() string
@@ -112,21 +117,40 @@ func (m *Match) BroadcastSnapshot() {
 		}
 	}
 
+	serverNow := time.Now().UnixMilli()
 	profileSection("snapshotBroadcast", func() {
 		for _, client := range clients {
-			var snap protocol.MatchSnapshotMessage
+			// Marshal the per-player snapshot to bytes WHILE the state
+			// RLock is held (inside MarshalSnapshotForPlayer). This is
+			// the load-bearing piece of the snapshot-race fix: several
+			// snapshot fields (notably BuildingTile.Metadata) alias live
+			// state maps that the tick loop mutates every tick, so the
+			// JSON encoder MUST run under the lock or it can panic with
+			// "index out of range" inside encoding/json's mapEncoder
+			// when the live map grows mid-marshal.
+			var (
+				payload []byte
+				err     error
+			)
 			profileSection("snapshotBuild", func() {
-				snap = m.State.SnapshotForPlayer(client.PlayerID())
-				snap.MatchID = m.ID
-				snap.ServerNow = time.Now().UnixMilli()
+				payload, err = m.State.MarshalSnapshotForPlayer(client.PlayerID(), m.ID, serverNow)
 			})
+			if err != nil {
+				// Snapshot marshal failures are bugs (the schema is
+				// fully JSON-encodable); skip this client for this
+				// tick rather than spamming the log.
+				continue
+			}
 			profileClientSend(client.PlayerID(), func() {
-				_ = client.WriteJSON(snap)
+				_ = client.WriteBytes(payload)
 			})
 
 			// Push any loot-collected notifications for this player. Sent
 			// after the snapshot so the client can correlate: resources
 			// already appear in the snapshot by the time the toasts fire.
+			// LootCollectedNotification.Resources is allocated fresh by
+			// grantLootDropToPlayerLocked (deep-copied from the chest), so
+			// these messages don't alias live state and WriteJSON is safe.
 			for _, n := range lootNotifsByPlayer[client.PlayerID()] {
 				_ = client.WriteJSON(n)
 			}

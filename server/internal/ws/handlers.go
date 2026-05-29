@@ -411,20 +411,30 @@ func (h *Hub) readLoop(client *Client) {
 			log.Printf("join_match: player=%s\n", msg.PlayerID)
 			match.State.EnsurePlayerWithUpgrades(msg.PlayerID, msg.OwnedUpgradeRanks, msg.ActiveUpgradeIDs)
 
-			welcome := protocol.WelcomeMessage{
-				Type:     "welcome",
-				PlayerID: msg.PlayerID,
-				MatchID:  match.ID,
-				Map:      match.State.GetMapConfig(),
+			// Marshal welcome under the state RLock. WelcomeMessage embeds
+			// the live MapConfig, whose Buildings/Obstacles slices alias
+			// Metadata maps the tick loop mutates — same race window as
+			// the snapshot path, just hit once per join instead of 20Hz.
+			// See ws.Client.WriteJSON's HOT-PATH NOTE.
+			welcomeBytes, err := match.State.MarshalWelcomeMessage(msg.PlayerID, match.ID)
+			if err != nil {
+				log.Println("failed to marshal welcome:", err)
+				return
 			}
-			if err := client.WriteJSON(welcome); err != nil {
+			if err := client.WriteBytes(welcomeBytes); err != nil {
 				log.Println("failed to send welcome:", err)
 				return
 			}
 
-			snapshot := match.State.Snapshot()
-			snapshot.MatchID = match.ID
-			if err := client.WriteJSON(snapshot); err != nil {
+			// Marshal join snapshot under the state RLock for the same
+			// reason — BuildingTile.Metadata aliasing in the unfiltered
+			// Snapshot path.
+			snapshotBytes, err := match.State.MarshalSnapshot(match.ID, time.Now().UnixMilli())
+			if err != nil {
+				log.Println("failed to marshal join snapshot:", err)
+				return
+			}
+			if err := client.WriteBytes(snapshotBytes); err != nil {
 				log.Println("failed to send snapshot:", err)
 				return
 			}
