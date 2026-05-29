@@ -3,33 +3,29 @@ import { getSteamPlayer } from '@/services/desktopBridge'
 import { getOrCreatePlayerId } from '@/services/profileApi'
 
 // Single source of truth for the local player's identity. Shared with
-// NetworkClient (WS) and profileApi (HTTP) — getOrCreatePlayerId reads
-// localStorage key 'webrts.profile.id', minting a UUID on first call.
-// The Steam-persona override below replaces this value when running in
-// the Tauri shell so "Acegamer" shows in lobbies instead of the UUID.
+// NetworkClient (WS), profileApi (HTTP), and the lobby system —
+// getOrCreatePlayerId reads localStorage key 'webrts.profile.id',
+// minting a UUID on first call. This value NEVER changes at runtime:
+// all server-side identity matching (lobby host, lobby roster, WS join,
+// match-status preflight) joins on the UUID. Steam persona names are
+// display-only and live on personaName below.
 const playerId = ref(getOrCreatePlayerId())
 
-// §14R: when Steam is available, use the persona name as the playerId so
-// "Acegamer" shows in the lobby instead of "player-m4ezzo". This is a
-// minimal-impact resolution of design D20 / §7.8 (which would have us
-// also key profile-id storage by steamID — that's still deferred). The
-// persona-as-id approach trades identity stability (your Steam rename
-// changes your in-game name too) for a recognisable display name; fine
-// for §14R-scope testing.
-//
-// Fired at module load. Synchronous app code that reads playerId in the
-// same tick before this resolves sees the localStorage value; the ref
-// updates reactively when the persona arrives so live UI catches up.
+// personaName starts empty (browser dev loop) and is populated when the
+// Tauri shell reports a Steam persona — used purely for friendly display
+// labels (HUD player name, lobby roster). Never sent to the Go server as
+// an identity field.
+const personaName = ref<string>('')
+
 void (async () => {
   try {
     const steam = await getSteamPlayer()
     if (steam && steam.personaName) {
-      if (playerId.value !== steam.personaName) {
-        playerId.value = steam.personaName
-      }
+      personaName.value = steam.personaName
     }
   } catch {
-    // Steam unavailable; keep the UUID.
+    // Steam unavailable; persona stays empty and displayName falls back
+    // to the truncated-UUID label.
   }
 })()
 
@@ -45,6 +41,11 @@ export function formatDisplayName(id: string): string {
 }
 
 export function usePlayer() {
-  const displayName = computed(() => formatDisplayName(playerId.value))
+  // Local display name: Steam persona when available, else truncated UUID.
+  // Remote players in lobby rosters and battle trackers still resolve via
+  // formatDisplayName(theirID) since we don't know remote personas.
+  const displayName = computed(() =>
+    personaName.value || formatDisplayName(playerId.value),
+  )
   return { playerId, displayName }
 }
