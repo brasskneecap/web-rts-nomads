@@ -559,11 +559,19 @@ export type WaveUpgradeRerollCommand = {
   type: 'wave_upgrade_reroll'
 }
 
+// Sent when the player toggles the pause state from the in-match settings
+// menu. Mirrors server protocol.SetPauseMessage.
+export interface SetPauseMessage {
+  type: 'set_pause'
+  paused: boolean
+}
+
 export type ClientMessage =
   | JoinMatchMessage
   | LeaveMatchMessage
   | MoveCommandMessage
   | GatherCommandMessage
+  | PickupLootCommandMessage
   | DepositCommandMessage
   | TrainUnitCommandMessage
   | AttackCommandMessage
@@ -590,6 +598,7 @@ export type ClientMessage =
   | TransferItemCommand
   | WaveUpgradeChoiceCommand
   | WaveUpgradeRerollCommand
+  | SetPauseMessage
   | PongMessage
 
 // One entry in a unit's activeBuffs / activeDebuffs list. `id` is the perk

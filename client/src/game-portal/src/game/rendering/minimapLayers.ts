@@ -47,7 +47,7 @@ export type MinimapMapInput = Pick<
 // invalid. Callers should treat null as "no terrain layer" — drawMinimapBase
 // gracefully degrades by painting category-color cells directly into the
 // minimap rect.
-export function buildTerrainSurface(mapConfig: MapConfig): HTMLCanvasElement | null {
+export function buildTerrainSurface(mapConfig: MinimapMapInput): HTMLCanvasElement | null {
   const { gridCols, gridRows, cellSize, terrain, tiles, defaultTile } = mapConfig
   const mapWidth = gridCols * cellSize
   const mapHeight = gridRows * cellSize
@@ -87,7 +87,7 @@ export type MinimapBaseOpts = {
   localPlayerId?: string | null
   // Resolves a building owner's color when occupied. Lobby preview leaves
   // this null because the static catalog file carries no owner state.
-  getOwnerColor?: ((ownerId: string) => string) | null
+  getOwnerColor?: ((ownerId: string) => string | null) | null
 }
 
 // Paints the static "base" of a minimap into the given rect: black panel
