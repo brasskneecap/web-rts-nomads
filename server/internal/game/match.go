@@ -131,6 +131,9 @@ func (m *Match) BroadcastSnapshot() {
 			// at the Steam Sockets layer that compounds into multi-second
 			// joiner-side latency on saturated relays (D22).
 			_ = client.WriteJSONUnreliable(snap)
+			profileClientSend(client.PlayerID(), func() {
+				_ = client.WriteJSON(snap)
+			})
 
 			// Loot-collected notifications stay on the RELIABLE path —
 			// they're one-shot events that resource accounting depends on;
@@ -140,6 +143,7 @@ func (m *Match) BroadcastSnapshot() {
 			}
 		}
 	})
+	sendProfileBroadcastComplete()
 }
 
 func (m *Match) RemovePlayer(playerID string) {

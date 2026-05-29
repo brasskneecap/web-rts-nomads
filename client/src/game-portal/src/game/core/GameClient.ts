@@ -15,7 +15,7 @@ import type {
   WaveSnapshot,
   WaveUpgradeOfferSnapshot,
 } from '../network/protocol'
-import type { DebugSpawnConfig, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification } from './GameState'
+import type { DebugSpawnConfig, NetStats, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
@@ -100,6 +100,11 @@ export type GameUiSnapshot = {
   cursorScreenY: number
   cursorClientX: number
   cursorClientY: number
+  // Network diagnostics for the debug HUD (F3 toggle). Always populated;
+  // the HUD component decides whether to render based on its own visible
+  // ref. Cheap to read every RAF — getNetStats does only window scans
+  // bounded at NET_STATS_WINDOW (40 samples).
+  netStats: NetStats
 }
 
 export class GameClient {
@@ -284,6 +289,7 @@ export class GameClient {
       cursorScreenY: this.state.cursorScreenY,
       cursorClientX: this.state.cursorClientX,
       cursorClientY: this.state.cursorClientY,
+      netStats: this.state.getNetStats(),
     }
   }
 
