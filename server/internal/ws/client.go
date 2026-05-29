@@ -38,10 +38,14 @@ type Client struct {
 }
 
 // NewClient wraps a Transport in a hub-ready Client. The transport's pong
-// handler is wired to refresh the per-client liveness clock; transports that
-// don't have a notion of pongs (e.g. Steam Sockets) simply never invoke the
-// callback and the heartbeat loop will time the client out — which is the
-// documented "transport reports closed" path in the spec.
+// handler is wired to refresh the per-client liveness clock for legacy
+// WS-frame ping/pong paths. The primary heartbeat mechanism is the
+// application-level {type:"ping"}/{type:"pong"} round-trip dispatched in
+// handlers.heartbeatLoop and handlers.readLoop, which works uniformly
+// across all transports (WS, Steam Sockets, future direct-connect). The
+// SetPongHandler path remains as a no-cost belt-and-braces for the WS
+// transport, where the gorilla pong handler also extends the read
+// deadline on every WS-frame pong.
 func NewClient(transport Transport) *Client {
 	c := &Client{
 		transport: transport,

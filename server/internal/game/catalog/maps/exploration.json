@@ -65915,6 +65915,27 @@
         "unitType": "worker",
         "aggroRange": 150,
         "leashRange": 200
+      },
+      {
+        "x": 27,
+        "y": 6,
+        "id": "placed-unit-player2-27-6",
+        "playerSlot": "player2",
+        "unitType": "worker"
+      },
+      {
+        "x": 28,
+        "y": 6,
+        "id": "placed-unit-player2-28-6",
+        "playerSlot": "player2",
+        "unitType": "worker"
+      },
+      {
+        "x": 29,
+        "y": 6,
+        "id": "placed-unit-player2-29-6",
+        "playerSlot": "player2",
+        "unitType": "worker"
       }
     ],
     "neutralSpawns": [

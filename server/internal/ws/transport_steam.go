@@ -137,11 +137,11 @@ func (t *steamTransport) WriteMessage(payload []byte) error {
 
 // WritePing is intentionally a no-op. Steam Networking Sockets has its own
 // keepalive at the SDK layer (`SteamNetConnectionRealTimeStatus_t` exposes
-// the timer the SDK uses for stale-connection detection). The hub's
-// heartbeat loop will still time the client out if Steam reports the
-// connection as closed via `peer_disconnected`, which triggers Disconnect()
-// → Close() on this transport — matching the documented "transport reports
-// closed" path in client.go.
+// the timer the SDK uses for stale-connection detection), and per-client
+// liveness for Steam joiners is governed by the hub's application-level
+// {type:"ping"}/{type:"pong"} round-trip (see handlers.heartbeatLoop). A
+// dropped connection still surfaces via `peer_disconnected` from the
+// shell, which triggers Disconnect() → Close() on this transport.
 func (t *steamTransport) WritePing() error { return nil }
 
 func (t *steamTransport) Close() error {
@@ -175,9 +175,10 @@ func (t *steamTransport) PeerIdentity() PeerIdentity {
 }
 
 // SetPongHandler stores the callback for completeness; it is never invoked
-// because WritePing is a no-op (see the WritePing comment for why). The hub
-// will rely on `peer_disconnected` from the shell — surfaced through
-// Disconnect() — for liveness signalling on this transport.
+// because WritePing is a no-op (see the WritePing comment for why). The
+// hub's application-level {type:"ping"}/{type:"pong"} heartbeat is what
+// keeps Steam clients alive; `peer_disconnected` from the shell remains the
+// terminal signal for an actually-dropped connection.
 func (t *steamTransport) SetPongHandler(cb func()) {
 	t.pongMu.Lock()
 	t.pongCb = cb
