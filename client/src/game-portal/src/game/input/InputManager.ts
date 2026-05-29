@@ -583,10 +583,33 @@ export class InputManager {
   // cursor is over the canvas or over a HUD overlay sitting on top of it.
   private onWindowMouseMove = (e: MouseEvent) => {
     const rect = this.canvas.getBoundingClientRect()
-    this.edgePanMouseX = e.clientX - rect.left
-    this.edgePanMouseY = e.clientY - rect.top
+    const canvasX = e.clientX - rect.left
+    const canvasY = e.clientY - rect.top
+    this.edgePanMouseX = canvasX
+    this.edgePanMouseY = canvasY
     this.canvasTopOffset = rect.top
     this.startEdgePanLoop()
+
+    // Drag-select continuation while the cursor is over the MatchHud header
+    // or any pointer-events: auto region of the SelectionHud footer (which
+    // overlays the canvas). The canvas mousemove listener doesn't fire when
+    // a DOM overlay swallows the event, so without this the selection box
+    // freezes mid-drag. Skip when the canvas itself was the hit target
+    // (onMouseMove already handled it) or when a non-select gesture owns
+    // the left button. The cursor's world position is computed from the
+    // raw screen coords — when the footer covers part of the canvas, this
+    // projects "beneath" the footer in world space, which is what we want.
+    if (!this.isLeftMouseDown || this.isMinimapNavigating || this.isSpacePanning) return
+    if (e.target === this.canvas) return
+
+    const world = this.camera.screenToWorld(canvasX, canvasY)
+    this.state.updateSelectionBox(world.x, world.y)
+    const bounds = this.state.getSelectionBounds()
+    const width = bounds.right - bounds.left
+    const height = bounds.bottom - bounds.top
+    if (width > this.dragThreshold || height > this.dragThreshold) {
+      this.dragStarted = true
+    }
   }
 
   private onDocumentLeave = () => {
