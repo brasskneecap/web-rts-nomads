@@ -8,6 +8,7 @@ REM e.g. 15) when investigating tick performance.
 set WEBRTS_TICK_PROFILE=0
 set WEBRTS_TICK_SLOW_MS=0
 set WEBRTS_DEBUG_PATHING=0
+set WEBRTS_SEND_PROFILE=1
 cd /d "%~dp0"
 REM `air` is the hot-reload runner; falls back to `go run` when not installed.
 where air >nul 2>nul

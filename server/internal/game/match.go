@@ -120,7 +120,9 @@ func (m *Match) BroadcastSnapshot() {
 				snap.MatchID = m.ID
 				snap.ServerNow = time.Now().UnixMilli()
 			})
-			_ = client.WriteJSON(snap)
+			profileClientSend(client.PlayerID(), func() {
+				_ = client.WriteJSON(snap)
+			})
 
 			// Push any loot-collected notifications for this player. Sent
 			// after the snapshot so the client can correlate: resources
@@ -130,6 +132,7 @@ func (m *Match) BroadcastSnapshot() {
 			}
 		}
 	})
+	sendProfileBroadcastComplete()
 }
 
 func (m *Match) RemovePlayer(playerID string) {
