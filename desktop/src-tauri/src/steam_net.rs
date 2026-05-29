@@ -99,12 +99,16 @@ impl SteamNet {
         })
     }
 
-    /// Send `payload` to the peer with id `peer_id`. Always reliable+ordered
-    /// per §12.0 / D22.
-    pub fn send(&self, peer_id: u64, payload: Vec<u8>) -> Result<(), String> {
+    /// Send `payload` to the peer with id `peer_id`. When `reliable` is true
+    /// the message goes out as RELIABLE+ordered; when false it goes out as
+    /// UNRELIABLE_NO_DELAY (drop-on-saturation, no Nagle). See D22 for the
+    /// per-message-type policy — snapshots use unreliable, everything else
+    /// uses reliable.
+    pub fn send(&self, peer_id: u64, payload: Vec<u8>, reliable: bool) -> Result<(), String> {
         self.dispatch(|reply| Command::Send {
             peer_id,
             payload,
+            reliable,
             reply,
         })
     }
@@ -150,6 +154,8 @@ enum Command {
     Send {
         peer_id: u64,
         payload: Vec<u8>,
+        // D22: true → SendFlags::RELIABLE; false → SendFlags::UNRELIABLE_NO_DELAY
+        reliable: bool,
         reply: Sender<Result<(), String>>,
     },
     Close {
@@ -323,9 +329,10 @@ impl Worker {
             Command::Send {
                 peer_id,
                 payload,
+                reliable,
                 reply,
             } => {
-                let result = self.send_locked(peer_id, &payload);
+                let result = self.send_locked(peer_id, &payload, reliable);
                 let _ = reply.send(result);
             }
             Command::Close { peer_id, reply } => {
@@ -378,28 +385,42 @@ impl Worker {
         Ok(peer_id)
     }
 
-    fn send_locked(&mut self, peer_id: u64, payload: &[u8]) -> Result<(), String> {
-        // §12.0: every send_message call uses SendFlags::RELIABLE
-        // (reliable + ordered). The marker test below grep-asserts no other
-        // flag appears in this file.
+    fn send_locked(
+        &mut self,
+        peer_id: u64,
+        payload: &[u8],
+        reliable: bool,
+    ) -> Result<(), String> {
+        // §12.0 / D22: every send_message call uses one of exactly two flag
+        // constants — SendFlags::RELIABLE (reliable + ordered) for commands
+        // and SendFlags::UNRELIABLE_NO_DELAY (drop-on-link-full, no Nagle)
+        // for snapshots. The marker test below grep-asserts only these two
+        // constants appear in this file.
         //
-        // After each send we IMMEDIATELY flush messages on the connection.
-        // The default Steam Sockets behaviour batches small writes for up
-        // to ~200ms (Nagle), which compounds across multiple hops to
-        // multi-second perceived latency for RTS inputs. Flushing forces
-        // the SDK to dispatch what's queued right now. This is the §12.0-
-        // compliant alternative to switching the send flag to RELIABLE_NO_NAGLE
-        // (spec D22 prefers we keep RELIABLE as the wire flag; flushing
-        // doesn't change the flag, just disables the timer batching).
+        // For reliable sends we also flush messages on the connection after
+        // each send. The default Steam Sockets behaviour batches small writes
+        // for up to ~200ms (Nagle), which compounds across multiple hops to
+        // multi-second perceived latency for RTS inputs. Flushing forces the
+        // SDK to dispatch what's queued right now. UnreliableNoDelay already
+        // skips the Nagle timer at the SDK layer, so a separate flush is
+        // unnecessary (but harmless if called) — we omit it on the unreliable
+        // path to save a syscall.
+        let flags = if reliable {
+            SendFlags::RELIABLE
+        } else {
+            SendFlags::UNRELIABLE_NO_DELAY
+        };
         let payload_len = payload.len() as u64;
         if let Some(entry) = self.peers.get_mut(&peer_id) {
             let result = entry
                 .conn
-                .send_message(payload, SendFlags::RELIABLE)
+                .send_message(payload, flags)
                 .map(|_| ())
                 .map_err(|e| format!("send_message({peer_id}): {e:?}"));
             if result.is_ok() {
-                let _ = entry.conn.flush_messages();
+                if reliable {
+                    let _ = entry.conn.flush_messages();
+                }
                 self.stats_sent_msgs += 1;
                 self.stats_sent_bytes += payload_len;
             }
@@ -409,11 +430,13 @@ impl Worker {
             // Sending before Connected is permitted by Steamworks; messages
             // are queued and flushed once the connection completes.
             let result = conn
-                .send_message(payload, SendFlags::RELIABLE)
+                .send_message(payload, flags)
                 .map(|_| ())
                 .map_err(|e| format!("send_message({peer_id} pending): {e:?}"));
             if result.is_ok() {
-                let _ = conn.flush_messages();
+                if reliable {
+                    let _ = conn.flush_messages();
+                }
                 self.stats_sent_msgs += 1;
                 self.stats_sent_bytes += payload_len;
             }
@@ -659,18 +682,21 @@ impl Worker {
 mod tests {
     use super::*;
 
-    /// §12.0 marker: this file must use `SendFlags::RELIABLE` and ONLY that
-    /// send flag in the send_message path. Reads its own source via the
-    /// include_str! macro so the grep is portable (works in CI without a
+    /// §12.0 / D22 marker: this file must use `SendFlags::RELIABLE` AND
+    /// `SendFlags::UNRELIABLE_NO_DELAY` and ONLY those two send flags in the
+    /// send_message path. The reliable flag is used for commands and every
+    /// non-snapshot message; the unreliable+no-delay flag is used for
+    /// per-tick snapshot broadcasts (D22 amended after a 5s observed lag in
+    /// two-machine playtests traced to reliable-queue compounding latency
+    /// on bandwidth-saturated Steam relays). Reads its own source via
+    /// include_str! so the grep is portable (works in CI without a
     /// `grep` binary). If the assertion fires, audit every `SendFlags::` use
-    /// and confirm the change is intentional — Reliable+Ordered is the
-    /// spec'd default per `pluggable-mp-transport` "Send mode" scenario.
+    /// and confirm the change is intentional.
     #[test]
-    fn reliable_send_flag_is_the_only_one_used() {
+    fn send_flags_are_restricted_to_the_two_allowed_constants() {
         let src = include_str!("steam_net.rs");
         let mut occurrences: Vec<&str> = Vec::new();
-        // Find every SendFlags-double-colon use; ignore matches in the
-        // comment mentioning Unreliable/etc. by anchoring on the separator.
+        // Find every SendFlags-double-colon use.
         for (idx, _) in src.match_indices("SendFlags::") {
             let after = &src[idx + "SendFlags::".len()..];
             let end = after
@@ -681,17 +707,27 @@ mod tests {
                 occurrences.push(ident);
             }
         }
-        // Allowed: RELIABLE only. The marker assertion is the test name; the
-        // failure message lists every unexpected ident to make the regression
-        // obvious in CI output.
-        let unexpected: Vec<&&str> = occurrences.iter().filter(|i| **i != "RELIABLE").collect();
+        // Allowed set per D22.
+        let allowed = ["RELIABLE", "UNRELIABLE_NO_DELAY"];
+        let unexpected: Vec<&&str> = occurrences
+            .iter()
+            .filter(|i| !allowed.contains(*i))
+            .collect();
         assert!(
             unexpected.is_empty(),
-            "steam_net.rs must use SendFlags::RELIABLE exclusively (§12.0); unexpected idents: {unexpected:?}"
+            "steam_net.rs may only use SendFlags::{{RELIABLE, UNRELIABLE_NO_DELAY}} per D22; unexpected idents: {unexpected:?}"
+        );
+        // Both constants MUST appear in the file — RELIABLE for commands,
+        // UNRELIABLE_NO_DELAY for snapshots. Missing either means a refactor
+        // dropped one of the two paths and invalidated the per-message-type
+        // policy.
+        assert!(
+            occurrences.contains(&"RELIABLE"),
+            "steam_net.rs no longer references SendFlags::RELIABLE — every non-snapshot send needs the reliable path"
         );
         assert!(
-            !occurrences.is_empty(),
-            "steam_net.rs no longer uses SendFlags::RELIABLE — refactor invalidated the §12.0 invariant"
+            occurrences.contains(&"UNRELIABLE_NO_DELAY"),
+            "steam_net.rs no longer references SendFlags::UNRELIABLE_NO_DELAY — snapshot broadcasts need the drop-on-saturation path (D22)"
         );
     }
 

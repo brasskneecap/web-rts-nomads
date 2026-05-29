@@ -73,8 +73,20 @@ type Transport interface {
 	// bytes. The protocol bytes MUST be returned unchanged.
 	ReadMessage() ([]byte, error)
 	// WriteMessage sends the payload bytes as a single message. Safe for
-	// concurrent callers.
+	// concurrent callers. On Steam Sockets this maps to a Reliable + ordered
+	// send (k_nSteamNetworkingSend_Reliable); on WebSocket the underlying
+	// medium is already reliable + ordered. Use this for commands, lobby
+	// control, welcomes, errors — everything except per-tick snapshots.
 	WriteMessage(payload []byte) error
+	// WriteUnreliable sends the payload as an at-most-once, no-Nagle message.
+	// On Steam Sockets this maps to k_nSteamNetworkingSend_UnreliableNoDelay
+	// — the SDK drops the message rather than queue if the link is saturated,
+	// avoiding the reliable-queue compounding-latency failure mode for
+	// snapshots (D22). On WebSocket / Fake transports this is an alias for
+	// WriteMessage because the underlying medium is already reliable + ordered.
+	// ONLY callers that can tolerate loss should use this — per-tick
+	// match_snapshot messages today; nothing else.
+	WriteUnreliable(payload []byte) error
 	// WritePing sends a transport-level liveness probe. WebSocket sends a
 	// ping control frame; FakeTransport records the call; Steam Sockets is a
 	// no-op (Steam handles its own keepalive). Safe for concurrent callers.

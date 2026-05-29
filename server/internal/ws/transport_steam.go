@@ -56,12 +56,20 @@ func decompressFromWire(payload []byte) ([]byte, error) {
 // needs. Kept as an interface so unit tests can inject a recorder without
 // standing up a real IPC pipe.
 //
-// All three methods MUST be safe for concurrent calls. SendPeerMessage may
+// All methods MUST be safe for concurrent calls. SendPeerMessage* may
 // block for the IPC round-trip (5s timeout); the WS hub's write paths are
 // already serialised behind the per-client writeMu in the gorilla transport,
 // so we follow the same pattern here.
+//
+// SendPeerMessage uses the Steam Sockets Reliable + ordered flag at the
+// Rust shell; SendPeerMessageUnreliable uses UnreliableNoDelay so the
+// SDK drops on link-saturation rather than queueing. The split surfaces
+// the D22 carve-out for per-tick snapshot traffic. The Rust shell defaults
+// to Reliable when the IPC payload omits the `reliable` field, so older
+// build pairings still behave correctly.
 type SteamPeerIPC interface {
 	SendPeerMessage(peerID uint64, payload []byte) error
+	SendPeerMessageUnreliable(peerID uint64, payload []byte) error
 	ClosePeer(peerID uint64) error
 	ForgetPeer(peerID uint64)
 }
@@ -133,6 +141,23 @@ func (t *steamTransport) WriteMessage(payload []byte) error {
 		return t.ipc.SendPeerMessage(t.peerID, payload)
 	}
 	return t.ipc.SendPeerMessage(t.peerID, compressed)
+}
+
+// WriteUnreliable sends the payload as a single Steam Sockets message with
+// the UnreliableNoDelay flag — the SDK will drop the message if the link is
+// saturated rather than queueing. Used for per-tick snapshot broadcasts
+// (D22). Compression failures fall through to a raw uncompressed send,
+// matching WriteMessage's defensive behaviour.
+func (t *steamTransport) WriteUnreliable(payload []byte) error {
+	if t.closed.Load() {
+		return errors.New("steam transport: closed")
+	}
+	compressed, err := compressForWire(payload)
+	if err != nil {
+		log.Printf("steam transport: compress failed (%v); sending raw unreliable", err)
+		return t.ipc.SendPeerMessageUnreliable(t.peerID, payload)
+	}
+	return t.ipc.SendPeerMessageUnreliable(t.peerID, compressed)
 }
 
 // WritePing is intentionally a no-op. Steam Networking Sockets has its own

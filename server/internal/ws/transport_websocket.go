@@ -46,6 +46,14 @@ func (t *websocketTransport) WriteMessage(payload []byte) error {
 	return t.conn.WriteMessage(websocket.TextMessage, payload)
 }
 
+// WriteUnreliable is an alias for WriteMessage on this transport — WebSocket
+// is reliable + ordered at the TCP layer, so the at-most-once hint has no
+// meaningful effect here. Kept for Transport interface conformance so the
+// hub can call the same method regardless of the underlying medium.
+func (t *websocketTransport) WriteUnreliable(payload []byte) error {
+	return t.WriteMessage(payload)
+}
+
 func (t *websocketTransport) WritePing() error {
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()

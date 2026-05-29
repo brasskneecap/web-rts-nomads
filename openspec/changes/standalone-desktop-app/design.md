@@ -155,9 +155,21 @@ Considered alternatives: auto-merge (rejected — two profile JSONs cannot be sa
 
 The single-player byte-identical regression guard (`pluggable-mp-transport` "Single-player byte-traffic regression guard") works by comparing a pre- and post-refactor byte capture. The pre-refactor capture SHALL be produced and committed to `server/internal/ws/testdata/sp_baseline_*.bin` in a preparatory PR that lands BEFORE the Transport refactor PR. The refactor PR's CI then runs the post-refactor capture and asserts byte equivalence against the committed baseline. Comparison is at the WebSocket *payload* level (the application-protocol bytes), not the WebSocket *frame* level (which includes timing-dependent control frames and would trivially fail). The baseline is regenerated only when the application protocol itself intentionally changes, with a code-review note explaining why.
 
-### D22. Steam Networking Sockets uses Reliable + ordered send mode
+### D22. Steam Networking Sockets uses per-message-type send flags
 
-All game-state traffic over Steam Networking Sockets SHALL use `k_nSteamNetworkingSend_Reliable` (which is reliable AND ordered). Considered alternative: `k_nSteamNetworkingSend_Unreliable` or `k_nSteamNetworkingSend_ReliableNoNagle`. Rejected — the existing WebSocket transport gives reliable+ordered semantics, and the protocol assumes them. Using unreliable would silently corrupt game state; ReliableNoNagle would marginally reduce latency at the cost of bandwidth and is a follow-up optimisation, not a Phase 2 default.
+Game traffic over Steam Networking Sockets uses one of TWO send flags, selected by message type:
+
+- **`k_nSteamNetworkingSend_Reliable`** (reliable + ordered) — for commands (move, attack, build, cast, lobby join/leave, welcome, error, etc.). The protocol assumes these arrive exactly once in order; losing one would silently corrupt game state.
+- **`k_nSteamNetworkingSend_UnreliableNoDelay`** (unreliable, no Nagle, drop-on-link-full) — for `match_snapshot` messages only. Snapshots are full-state replacements at 20Hz; losing one is corrected by the next tick. Reliable+ordered for snapshots queues sustained 200+ KB/s traffic at the SDK layer when the Steam relay route has lower capacity, compounding into multi-second perceived latency for the joiner. Unreliable lets the SDK drop stale snapshots when the link saturates, keeping joiner-side state within one tick of host-side state.
+
+Initial revision (Phase 2 ship) used reliable for everything. This amendment was made after a 5-second observed lag in two-machine Steam multiplayer playtests was traced to relay bandwidth saturation; the snapshot-only carve-out preserves the protocol assumptions for every other message type.
+
+Considered alternatives:
+- `k_nSteamNetworkingSend_Unreliable` (with Nagle) — rejected, the Nagle batch timer can hold snapshots up to ~200ms which compounds with the SDK's own buffering. `UnreliableNoDelay` is correct for time-critical state replication.
+- `k_nSteamNetworkingSend_ReliableNoNagle` for snapshots — rejected, still queues on relay saturation; doesn't address the root cause.
+- Bandwidth reduction first (delta encoding, lower tick rate) — appropriate longer-term work, but doesn't address the underlying reliable-queue compounding behaviour. Lower bandwidth still queues on saturation; just more slowly.
+
+The client SHALL tolerate snapshots arriving out-of-order or with gaps: each snapshot's `tick` field is monotonic-from-the-server, and the client SHALL discard any snapshot whose tick is not strictly greater than the latest applied tick. Interpolation continues to work over gaps because each frame is a full state replacement.
 
 ### D23. SPA learns its compiled version via Vite define-injection at build time
 

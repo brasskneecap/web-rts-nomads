@@ -582,6 +582,11 @@ export class GameState {
   fow: FogOfWar = new FogOfWar()
 
   snapshotBuffer: InterpolationFrame[] = []
+  // Highest server tick ever applied via applySnapshot. Snapshots arriving
+  // out-of-order or with stale ticks (possible under D22's UnreliableNoDelay
+  // path) are dropped to keep rendered state monotonic. -1 sentinel so the
+  // very first snapshot — whose tick is typically 0 or 1 — always applies.
+  lastAppliedTick = -1
   // Interpolation buffer depth. The renderer plays back snapshots
   // delayed by this much so it can smoothly interpolate between them
   // even when arrival times jitter. Tuned per network path:
@@ -730,6 +735,12 @@ export class GameState {
 
   clearSnapshotBuffer() {
     this.snapshotBuffer = []
+    // Reset the monotonic-tick guard alongside the buffer — after a
+    // reconnect the server may resume from an earlier tick (rare) or the
+    // very next tick (common). The -1 sentinel lets the first post-
+    // reconnect snapshot apply unconditionally; subsequent snapshots
+    // resume normal monotonicity enforcement.
+    this.lastAppliedTick = -1
   }
 
   update(dt: number) {
@@ -771,6 +782,17 @@ export class GameState {
   }
 
   applySnapshot(message: MatchSnapshotMessage) {
+    // D22: snapshots may now arrive out-of-order or with gaps when the
+    // Steam Sockets transport uses UnreliableNoDelay for snapshot frames.
+    // Drop any frame whose tick is not strictly greater than the latest
+    // tick we have already applied. Building / obstacle merges and the
+    // interpolation buffer push downstream are skipped for stale frames
+    // so the rendered state stays monotonic.
+    if (message.tick <= this.lastAppliedTick) {
+      return
+    }
+    this.lastAppliedTick = message.tick
+
     const now = performance.now()
 
     this.mergeSnapshotBuildings(message.buildings)

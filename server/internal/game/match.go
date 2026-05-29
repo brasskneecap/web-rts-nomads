@@ -13,6 +13,11 @@ const PlayerRemovalGrace = 30 * time.Second
 
 type MatchClient interface {
 	WriteJSON(v any) error
+	// WriteJSONUnreliable sends the payload via the transport's
+	// drop-on-saturation path (UnreliableNoDelay on Steam Sockets; alias for
+	// WriteJSON on any transport whose medium is already reliable+ordered).
+	// Used ONLY for per-tick snapshot frames — see design D22.
+	WriteJSONUnreliable(v any) error
 	// PlayerID returns the player ID associated with this connection. Used by
 	// BroadcastSnapshot to build a per-player FOW-filtered snapshot.
 	PlayerID() string
@@ -120,11 +125,16 @@ func (m *Match) BroadcastSnapshot() {
 				snap.MatchID = m.ID
 				snap.ServerNow = time.Now().UnixMilli()
 			})
-			_ = client.WriteJSON(snap)
+			// Snapshots take the unreliable transport path — full-state
+			// replacements at 20Hz tolerate occasional drops, and using
+			// reliable+ordered for them queues sustained 200+ KB/s traffic
+			// at the Steam Sockets layer that compounds into multi-second
+			// joiner-side latency on saturated relays (D22).
+			_ = client.WriteJSONUnreliable(snap)
 
-			// Push any loot-collected notifications for this player. Sent
-			// after the snapshot so the client can correlate: resources
-			// already appear in the snapshot by the time the toasts fire.
+			// Loot-collected notifications stay on the RELIABLE path —
+			// they're one-shot events that resource accounting depends on;
+			// losing one would silently drop chest contents.
 			for _, n := range lootNotifsByPlayer[client.PlayerID()] {
 				_ = client.WriteJSON(n)
 			}

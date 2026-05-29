@@ -197,11 +197,20 @@ func (s *GameState) applyPlayerUpgradesAtSpawnLocked(unit *Unit) {
 	// AttackDamageType — empty/unset defaults to physical via OrPhysical().
 	// Match-start application means the bonus is locked at spawn and won't
 	// change if the player toggles the upgrade off mid-match.
+	//
+	// Tests that construct a Player struct directly (bypassing
+	// EnsurePlayerWithUpgrades) leave the multipliers at the zero value;
+	// treat anything <= 0 as 1.0 so those tests don't silently zero out
+	// BaseDamage.
 	mult := 1.0
 	if unit.AttackDamageType.OrPhysical() == DamagePhysical {
-		mult = player.PhysicalDamageMultiplier
+		if player.PhysicalDamageMultiplier > 0 {
+			mult = player.PhysicalDamageMultiplier
+		}
 	} else {
-		mult = player.MagicDamageMultiplier
+		if player.MagicDamageMultiplier > 0 {
+			mult = player.MagicDamageMultiplier
+		}
 	}
 	if mult != 1.0 && unit.BaseDamage > 0 {
 		unit.BaseDamage = int(math.Round(float64(unit.BaseDamage) * mult))

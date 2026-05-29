@@ -640,7 +640,16 @@ fn handle(
                         ));
                     }
                 };
-                match n.send(peer_id, payload) {
+                // D22: the IPC payload includes a `reliable` bool that
+                // selects between Reliable+Ordered and UnreliableNoDelay.
+                // Default to true when absent so older Go binaries paired
+                // with this shell behave correctly.
+                let reliable = req
+                    .params
+                    .get("reliable")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                match n.send(peer_id, payload, reliable) {
                     Ok(()) => Response::ok(&req.id, serde_json::Value::Null),
                     Err(e) => Response::err(&req.id, "steam_net_error", e),
                 }

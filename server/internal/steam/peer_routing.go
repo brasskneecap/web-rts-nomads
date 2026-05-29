@@ -227,11 +227,25 @@ func (b *IPCBridge) ConnectTo(steamID64 uint64, virtualPort int) (uint64, error)
 }
 
 // SendPeerMessage asks the shell to forward `payload` to the peer addressed
-// by peerID. The shell always uses Reliable + Ordered send mode (§12.0).
+// by peerID. The shell uses Reliable + ordered send mode (D22 default).
 func (b *IPCBridge) SendPeerMessage(peerID uint64, payload []byte) error {
-	params := map[string]string{
-		"peerId":  strconv.FormatUint(peerID, 10),
-		"payload": base64.StdEncoding.EncodeToString(payload),
+	params := map[string]any{
+		"peerId":   strconv.FormatUint(peerID, 10),
+		"payload":  base64.StdEncoding.EncodeToString(payload),
+		"reliable": true,
+	}
+	return b.call(context.Background(), "send_peer_message", params, nil)
+}
+
+// SendPeerMessageUnreliable asks the shell to forward `payload` to the peer
+// addressed by peerID using the UnreliableNoDelay send flag. The SDK will
+// drop the message rather than queue if the link is saturated. Used for
+// per-tick snapshot broadcasts where loss is tolerable (D22).
+func (b *IPCBridge) SendPeerMessageUnreliable(peerID uint64, payload []byte) error {
+	params := map[string]any{
+		"peerId":   strconv.FormatUint(peerID, 10),
+		"payload":  base64.StdEncoding.EncodeToString(payload),
+		"reliable": false,
 	}
 	return b.call(context.Background(), "send_peer_message", params, nil)
 }

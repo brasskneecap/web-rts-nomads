@@ -17,6 +17,7 @@ import (
 type recordingIPC struct {
 	mu        sync.Mutex
 	sends     [][]byte
+	sendKinds []string // "reliable" or "unreliable" — one entry per sends[i]
 	closes    []uint64
 	forgets   []uint64
 	sendError error
@@ -31,6 +32,20 @@ func (r *recordingIPC) SendPeerMessage(_ uint64, payload []byte) error {
 	cp := make([]byte, len(payload))
 	copy(cp, payload)
 	r.sends = append(r.sends, cp)
+	r.sendKinds = append(r.sendKinds, "reliable")
+	return nil
+}
+
+func (r *recordingIPC) SendPeerMessageUnreliable(_ uint64, payload []byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sendError != nil {
+		return r.sendError
+	}
+	cp := make([]byte, len(payload))
+	copy(cp, payload)
+	r.sends = append(r.sends, cp)
+	r.sendKinds = append(r.sendKinds, "unreliable")
 	return nil
 }
 

@@ -114,6 +114,15 @@ func (f *FakeTransport) WriteMessage(payload []byte) error {
 	return nil
 }
 
+// WriteUnreliable implements Transport. Aliases WriteMessage on this
+// transport — the fake delivers every payload reliably so the test surface
+// behaves identically regardless of which method the caller used. The
+// per-message-type unreliable-vs-reliable distinction is exercised by the
+// Steam transport's IPC payload assertions, not this one.
+func (f *FakeTransport) WriteUnreliable(payload []byte) error {
+	return f.WriteMessage(payload)
+}
+
 // WritePing implements Transport. Increments the ping counter.
 func (f *FakeTransport) WritePing() error {
 	if f.closed.Load() {

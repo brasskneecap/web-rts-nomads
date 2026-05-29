@@ -105,6 +105,19 @@ func (c *Client) WriteJSON(v any) error {
 	return c.transport.WriteMessage(payload)
 }
 
+// WriteJSONUnreliable serialises v and sends it via the transport's
+// unreliable path (UnreliableNoDelay on Steam Sockets; alias for WriteMessage
+// on transports whose underlying medium is already reliable). Use ONLY for
+// idempotent, drop-tolerant payloads — currently MatchSnapshotMessage. See
+// design D22.
+func (c *Client) WriteJSONUnreliable(v any) error {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return c.transport.WriteUnreliable(payload)
+}
+
 // WritePing delegates to the transport. Returns the transport's error
 // directly; the hub's heartbeat loop treats any non-nil error as a dead
 // connection and cleans up.
