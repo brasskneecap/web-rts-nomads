@@ -412,7 +412,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
-import type { ActionItem } from '@/game/core/GameState'
+import { formatUnitPath, type ActionItem } from '@/game/core/GameState'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
 import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 import { getRankToneColor } from '@/game/rendering/rankColors'
@@ -569,11 +569,13 @@ const unitCards = computed(() => {
     // tinted by the same rank palette used on unit overlays.
     const rankChevrons =
       u.rank === 'bronze' ? 1 : u.rank === 'silver' ? 2 : u.rank === 'gold' ? 3 : 0
+    const pathLabel = u.path && u.path !== 'none' ? formatUnitPath(u.path) : ''
+    const displayName = pathLabel || u.name
     return {
       id: u.id,
-      title: `${u.name}  ${hp} / ${max}`,
+      title: `${displayName}  ${hp} / ${max}`,
       portraitUrl: getUnitPortraitUrl(u.path, u.unitType),
-      initials: (u.name || u.unitType || '?').slice(0, 2).toUpperCase(),
+      initials: (displayName || u.unitType || '?').slice(0, 2).toUpperCase(),
       hpFraction,
       rank: u.rank ?? '',
       rankChevrons,
@@ -1177,16 +1179,11 @@ button.inventory-slot:focus-visible {
   cursor: pointer;
   overflow: hidden;
   box-shadow: inset 0 1px 0 rgba(255, 235, 193, 0.08);
-  transition: border-color 0.12s ease-out, transform 0.08s ease-out;
+  transition: border-color 0.12s ease-out;
 }
 
 .unit-card:hover {
   border-color: rgba(251, 205, 120, 0.9);
-  transform: translateY(-1px);
-}
-
-.unit-card:active {
-  transform: translateY(0);
 }
 
 .unit-card__hp {

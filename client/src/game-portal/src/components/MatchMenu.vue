@@ -41,7 +41,7 @@
               v-for="cell in shopCells"
               :key="cell.key"
               type="button"
-              class="match-menu__slot"
+              class="match-menu__slot ui-hover-glow"
               :class="{
                 'match-menu__slot--locked': cell.entry && !cell.entry.available,
                 'match-menu__slot--filled': !!cell.entry,
@@ -309,28 +309,35 @@ function onPurchase(entry: ShopCatalogEntry) {
   image-rendering: pixelated;
   color: inherit;
   font: inherit;
+  /* Empty slots inherit the game default cursor (set on <html> by main.ts).
+     Explicit `inherit` beats the UA stylesheet's button default and the
+     global :is(button…) rule's :not(:disabled) exclusion. */
+  cursor: inherit;
 }
 
-.match-menu__slot--filled:not(:disabled) {
-  cursor: pointer;
-}
-
-.match-menu__slot--filled:not(:disabled):hover {
-  filter: brightness(1.15);
+/* Any filled slot — available or locked — shows the game hover cursor since
+   it has an item and a hover tooltip. The global :is(button…) rule already
+   handles available slots, but it excludes :disabled / aria-disabled, so we
+   restore hover cursor for locked slots here. */
+.match-menu__slot--filled {
+  cursor: var(--cursor-hover, pointer);
 }
 
 .match-menu__slot--locked,
 .match-menu__slot:disabled {
-  cursor: not-allowed;
   opacity: 1; /* override user-agent disabled opacity; locked dim handled on icon */
 }
 
+/* Shop item art rendered inside the icon-container frame at 70% so the
+   container's outer edge stays visible — same idiom as .ability-slot__icon. */
 .match-menu__slot-icon {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: 50%;
+  left: 50%;
+  width: 70%;
+  height: 70%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 
 .match-menu__slot--locked .match-menu__slot-icon {
@@ -360,7 +367,6 @@ function onPurchase(entry: ShopCatalogEntry) {
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(34, 22, 10, 0.98), rgba(20, 12, 4, 0.98));
   border: 1px solid rgba(200, 164, 106, 0.45);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
   color: #f5ead2;
   text-align: left;
   opacity: 0;

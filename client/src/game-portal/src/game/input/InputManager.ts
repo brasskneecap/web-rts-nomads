@@ -30,6 +30,14 @@ export class InputManager {
   private rightPanStartY = 0
   private isMinimapNavigating = false
 
+  // Tracks the most recent successful control-group recall so a second tap
+  // of the same key inside the double-tap window centers the camera on the
+  // group's centroid. Reset to null after centering, after a different group
+  // key is pressed, or after the window elapses on the next tap.
+  private lastGroupRecallKey: number | null = null
+  private lastGroupRecallTimeMs = 0
+  private readonly groupRecallDoubleTapMs = 400
+
   private lastMouseX = 0
   private lastMouseY = 0
   // Edge-pan: when the mouse hovers within `edgePanThresholdPx` of the canvas
@@ -143,7 +151,24 @@ export class InputManager {
           return
         }
         if (!e.shiftKey) {
-          this.client.selectControlGroup(groupKey)
+          const recalled = this.client.selectControlGroup(groupKey)
+          if (recalled) {
+            const nowMs = performance.now()
+            const isDoubleTap =
+              this.lastGroupRecallKey === groupKey &&
+              nowMs - this.lastGroupRecallTimeMs <= this.groupRecallDoubleTapMs
+            if (isDoubleTap) {
+              this.centerCameraOnSelection()
+              this.lastGroupRecallKey = null
+              this.lastGroupRecallTimeMs = 0
+            } else {
+              this.lastGroupRecallKey = groupKey
+              this.lastGroupRecallTimeMs = nowMs
+            }
+          } else {
+            this.lastGroupRecallKey = null
+            this.lastGroupRecallTimeMs = 0
+          }
           e.preventDefault()
           return
         }
@@ -448,7 +473,7 @@ export class InputManager {
       right: this.camera.x + this.canvas.width / this.camera.zoom,
       bottom: this.camera.y + this.canvas.height / this.camera.zoom,
     }
-    this.state.selectVisibleSameTypeUnits(clickedUnit.unitType, viewBounds)
+    this.state.selectVisibleSameTypeUnits(clickedUnit.unitType, clickedUnit.path, viewBounds)
   }
 
   private onRightClick = (e: MouseEvent) => {
@@ -836,10 +861,25 @@ export class InputManager {
       p: 'patrol',
     }
 
+    // Building hotkeys are only live while the build menu is open — i.e.,
+    // when the per-building `build-<type>` actions are present on the
+    // selection. When the menu is closed only B opens it; pressing W/C/F/K
+    // etc. on a worker is intentionally inert so it doesn't dump the player
+    // into the build menu through a key they meant for another purpose
+    // (e.g. S → Shop). Once the menu opens, each building's hotkey routes
+    // to its specific placement action as before.
     for (const def of BUILDABLE_BUILDING_DEFS) {
       const buildActionId = `build-${def.type}`
-      const menuIsOpen = selection.actions.some((action) => action.id === buildActionId)
-      hotkeyActionMap[def.hotkey.toLowerCase()] = menuIsOpen ? buildActionId : 'build'
+      if (selection.actions.some((action) => action.id === buildActionId)) {
+        hotkeyActionMap[def.hotkey.toLowerCase()] = buildActionId
+      }
+    }
+    // B opens the build menu when the menu-open action is available. Kept
+    // outside the loop so it doesn't collide with barracks (also `b`) when
+    // the menu is already open — the loop above wins in that case and
+    // routes B straight to build-barracks.
+    if (selection.actions.some((action) => action.id === 'build' && !action.disabled)) {
+      hotkeyActionMap['b'] = hotkeyActionMap['b'] ?? 'build'
     }
 
     const requestedAction = hotkeyActionMap[normalizedKey]
@@ -1083,6 +1123,29 @@ export class InputManager {
     this.camera.centerOn(
       worldX,
       worldY,
+      this.canvas.width,
+      this.canvas.height,
+      this.state.mapWidth,
+      this.state.mapHeight,
+    )
+  }
+
+  // Snaps the camera to the centroid of the currently-selected units. Used
+  // by the double-tap control-group-key gesture (e.g. 2-then-2) to jump to
+  // a group after recalling it. Falls through silently when nothing is
+  // selected so a double-tap on an emptied slot doesn't move the camera.
+  private centerCameraOnSelection() {
+    const units = this.state.getSelectedUnits()
+    if (units.length === 0) return
+    let sumX = 0
+    let sumY = 0
+    for (const u of units) {
+      sumX += u.x
+      sumY += u.y
+    }
+    this.camera.centerOn(
+      sumX / units.length,
+      sumY / units.length,
       this.canvas.width,
       this.canvas.height,
       this.state.mapWidth,

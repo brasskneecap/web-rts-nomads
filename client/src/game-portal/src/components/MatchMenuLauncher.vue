@@ -181,7 +181,7 @@ const emit = defineEmits<{
   font-weight: 700;
   letter-spacing: 0.04em;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, filter 0.12s ease;
+  transition: border-color 0.12s ease;
 }
 
 .menu-launcher__btn:hover {

@@ -189,7 +189,7 @@ void props
   font-weight: 700;
   letter-spacing: 0.06em;
   cursor: pointer;
-  transition: filter 0.12s, transform 0.08s;
+  transition: filter 0.12s;
 }
 
 /* Lift the hovered/focused slot so its tooltip (and the filter-induced
@@ -201,7 +201,6 @@ void props
 
 .ability-slot:hover:not(.is-disabled) {
   filter: brightness(1.1);
-  transform: translateY(-1px);
 }
 
 .ability-slot.is-active {

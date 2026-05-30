@@ -178,6 +178,7 @@ import { useGameClient } from '@/composables/useGameClient'
 import { useMapSelection } from '@/composables/useMapSelection'
 import { setCursorGrab } from '@/services/desktopBridge'
 import { getOrCreatePlayerId } from '@/services/profileApi'
+import { BUILDABLE_BUILDING_DEFS } from '@/game/maps/buildingDefs'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -360,12 +361,45 @@ function onDebugHudHotkey(e: KeyboardEvent) {
   e.preventDefault()
 }
 
+// Returns true when the current selection would fire a unit/building action
+// on this key (e.g. S routes to blacksmith for a selected worker). Mirrors
+// the resolution in InputManager.getHotkeyAction — building hotkeys win the
+// race when their corresponding action is available and enabled. Used to
+// decide whether V/S/U should open the MatchMenu or defer to the unit
+// action. V and U currently never conflict; S conflicts with blacksmith
+// while a worker is selected.
+function selectionWouldHandleKey(letter: string): boolean {
+  const lower = letter.toLowerCase()
+  const actions = ui.value.selection?.actions
+  if (!actions || actions.length === 0) return false
+
+  for (const def of BUILDABLE_BUILDING_DEFS) {
+    if (!def.hotkey || def.hotkey.toLowerCase() !== lower) continue
+    const buildSpecificId = `build-${def.type}`
+    if (actions.some((a) => a.id === buildSpecificId && !a.disabled)) return true
+  }
+
+  const staticUnitHotkeys: Record<string, string> = {
+    m: 'move', r: 'repair', g: 'gather', a: 'attack', h: 'hold', p: 'patrol',
+  }
+  const staticActionId = staticUnitHotkeys[lower]
+  if (staticActionId && actions.some((a) => a.id === staticActionId && !a.disabled)) return true
+
+  return false
+}
+
 function onMatchMenuHotkey(e: KeyboardEvent) {
   if (!hasStarted.value) return
   if (!(e.code in MATCH_MENU_HOTKEYS)) return
   if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return
   if (isTextInputFocused()) return
-  if (ui.value.selectedUnits.length > 0) return
+
+  // `e.code` is "Key<X>" for letter keys — strip the prefix to compare
+  // against the action hotkey map. If the current selection would fire a
+  // unit action on this letter, defer to it (building hotkey wins). Otherwise
+  // open the menu, regardless of whether anything is selected.
+  const letter = e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : ''
+  if (letter && selectionWouldHandleKey(letter)) return
 
   const targetTab = MATCH_MENU_HOTKEYS[e.code]
   if (matchMenuOpen.value && matchMenuTab.value === targetTab) {

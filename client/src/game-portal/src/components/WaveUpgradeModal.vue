@@ -41,7 +41,7 @@
             @click="pickXpTarget(unit.id)"
             @keydown.enter="pickXpTarget(unit.id)"
           >
-            <span class="unit-name">{{ unit.name }}</span>
+            <span class="unit-name">{{ unitDisplayName(unit) }}</span>
             <span class="unit-xp">XP {{ unit.xp ?? 0 }} / {{ unit.xpToNextRank ?? 0 }}</span>
           </li>
         </ul>
@@ -52,7 +52,7 @@
         <button
           v-for="offer in upgrade.offers"
           :key="offer.id"
-          class="upgrade-card"
+          class="upgrade-card ui-hover-glow"
           :class="`rarity-${offer.rarity}`"
           @click="selectOffer(offer)"
         >
@@ -80,7 +80,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { WaveUpgradeOfferSnapshot, UpgradeOffer } from '@/game/network/protocol'
-import type { Unit } from '@/game/core/GameState'
+import { formatUnitPath, type Unit } from '@/game/core/GameState'
 
 const props = withDefaults(defineProps<{
   upgrade: WaveUpgradeOfferSnapshot
@@ -145,6 +145,14 @@ function pickXpTarget(unitId: number) {
 function reroll() {
   if (props.upgrade.rerollsLeft <= 0) return
   props.sendReroll()
+}
+
+function unitDisplayName(unit: Unit): string {
+  if (unit.path && unit.path !== 'none') {
+    const label = formatUnitPath(unit.path)
+    if (label) return label
+  }
+  return unit.name
 }
 </script>
 
@@ -231,11 +239,8 @@ function reroll() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  transition: transform 0.1s, box-shadow 0.1s;
+  transition: box-shadow 0.1s;
   color: #e2e8f0;
-}
-.upgrade-card:hover {
-  transform: translateY(-2px);
 }
 
 .rarity-common    { border-color: #64748b; }

@@ -68,7 +68,9 @@ function onClick() {
   image-rendering: pixelated;
   background: none;
   padding: 0;
-  transition: filter 0.1s ease;
+  /* No filter transition: animating brightness on a border-image element with
+     image-rendering: pixelated causes GPU layer churn that flashes nearby
+     icon-container PNG backgrounds in shared compositing groups. */
 }
 
 .ui-button--sm {

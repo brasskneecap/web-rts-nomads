@@ -6,7 +6,7 @@
       'vault-panel--dragging': !embedded && drag.dragging.value,
       'vault-panel--embedded': embedded,
     }"
-    :style="embedded ? undefined : drag.style.value"
+    :style="rootStyle"
     role="dialog"
     aria-label="Vault"
   >
@@ -156,12 +156,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { VaultItemSnapshot } from '@/game/network/protocol'
-import type { Unit } from '@/game/core/GameState'
+import { formatUnitPath, type Unit } from '@/game/core/GameState'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
 import { TIER_COLORS, buildItemTooltipBody } from '@/game/items/itemRules'
 import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 import { useDraggablePanel } from '@/composables/useDraggablePanel'
 import ActionIcon from '@/components/ActionIcon.vue'
+import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
 
 const props = withDefaults(defineProps<{
   vault: VaultItemSnapshot[]
@@ -187,6 +188,12 @@ const props = withDefaults(defineProps<{
 // ── Panel drag (header) ────────────────────────────────────────────────────
 const collapsed = ref(false)
 const drag = useDraggablePanel('vault-panel')
+
+const rootStyle = computed(() => {
+  const cssVar = { '--ui-icon-container-image': `url(${iconContainerUrl})` }
+  if (props.embedded) return cssVar
+  return { ...cssVar, ...drag.style.value }
+})
 
 // ── HTML5 drag-and-drop state ──────────────────────────────────────────────
 type DragSource =
@@ -268,12 +275,14 @@ const inventoryUnits = computed(() => {
       })
       const maxHp = u.maxHp ?? u.hp ?? 0
       const hp = u.hp ?? 0
+      const pathLabel = u.path && u.path !== 'none' ? formatUnitPath(u.path) : ''
+      const displayName = pathLabel || u.name
       return {
         id: u.id,
-        name: u.name,
+        name: displayName,
         unitType: u.unitType,
         portraitUrl: getUnitPortraitUrl(u.path, u.unitType),
-        initials: (u.name || u.unitType || '?').slice(0, 2).toUpperCase(),
+        initials: (displayName || u.unitType || '?').slice(0, 2).toUpperCase(),
         hp,
         maxHp,
         slots,
@@ -535,43 +544,57 @@ function onUnitSlotClick(
 
 .vault-grid {
   display: grid;
-  grid-template-columns: repeat(4, 48px);
-  gap: 4px;
+  grid-template-columns: repeat(4, 75px);
+  gap: 8px;
 }
 
+/* Storage cell: icon-container frame as background (same idiom as
+   .inventory-slot in SelectionHud). Tier color is conveyed via an inset
+   box-shadow ring so it composes with the icon-container art instead of
+   replacing it with a flat colored border. */
 .vault-cell {
   position: relative;
-  width: 48px;
-  height: 48px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  width: 75px;
+  height: 75px;
+  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  border: 2px solid transparent;
+  border-radius: 0;
   padding: 0;
-  cursor: default;
   transition: border-color 0.15s;
   box-sizing: border-box;
+  /* Empty (disabled) cells inherit the game default cursor from <html>.
+     Without this explicit declaration, the UA stylesheet's `button { cursor:
+     default }` shows the OS white arrow instead of the game's default.png. */
+  cursor: inherit;
 }
 
 .vault-cell:not(.vault-cell--empty) {
-  border-color: var(--tier-color, #9ca3af);
-  cursor: pointer;
+  box-shadow: inset 0 0 0 2px var(--tier-color, transparent);
 }
 
+/* Compose the tier-color ring with the standard hover glow (defined globally
+   as --ui-hover-glow in style.css). Keep this scoped hover rule rather than
+   adding ui-hover-glow as a class, because the tier ring needs to live in
+   the same box-shadow declaration as the glow. */
 .vault-cell:not(.vault-cell--empty):hover {
-  border-color: color-mix(in srgb, var(--tier-color, #9ca3af), white 40%);
+  box-shadow:
+    inset 0 0 0 2px var(--tier-color, transparent),
+    var(--ui-hover-glow);
 }
 
 .vault-cell--selected {
-  border-color: var(--tier-color, #9ca3af) !important;
-  box-shadow: 0 0 8px var(--tier-color, #9ca3af);
+  box-shadow:
+    inset 0 0 0 2px var(--tier-color, #9ca3af),
+    0 0 8px var(--tier-color, #9ca3af);
 }
 
 .vault-cell__icon {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 80%;
-  height: 80%;
+  width: 70%;
+  height: 70%;
   transform: translate(-50%, -50%);
   pointer-events: none;
   display: flex;
@@ -735,34 +758,45 @@ function onUnitSlotClick(
 
 .vault-unit-slots {
   display: flex;
-  gap: 4px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
+/* Unit inventory slot: same icon-container idiom as .vault-cell so the
+   storage column and the unit-equipped column read as one visual family. */
 .vault-unit-slot {
   position: relative;
-  width: 40px;
-  height: 40px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  width: 75px;
+  height: 75px;
+  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  border: 2px solid transparent;
+  border-radius: 0;
   padding: 0;
-  cursor: pointer;
   transition: border-color 0.15s;
   box-sizing: border-box;
 }
 
+/* Inert empty slot: no equipped item and no active equip prompt. Restore the
+   game's default cursor (inherited from <html>) — the global :is(button…)
+   rule would otherwise force the hover cursor on every unit slot. Specificity
+   here is (0,4,0) which beats the global rule's (0,3,1). */
+.vault-unit-slot:not(.vault-unit-slot--occupied):not(.vault-unit-slot--equip-target) {
+  cursor: inherit;
+}
+
 .vault-unit-slot--occupied {
-  border-color: var(--tier-color, #9ca3af);
+  box-shadow: inset 0 0 0 2px var(--tier-color, transparent);
 }
 
 .vault-unit-slot--occupied:hover {
-  border-color: color-mix(in srgb, var(--tier-color, #9ca3af), white 40%);
+  box-shadow:
+    inset 0 0 0 2px var(--tier-color, transparent),
+    var(--ui-hover-glow);
 }
 
 .vault-unit-slot--equip-target {
   animation: unit-slot-pulse 1.2s ease-in-out infinite;
-  cursor: pointer;
 }
 
 @keyframes unit-slot-pulse {
@@ -774,8 +808,8 @@ function onUnitSlotClick(
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 78%;
-  height: 78%;
+  width: 70%;
+  height: 70%;
   transform: translate(-50%, -50%);
   display: flex;
   align-items: center;

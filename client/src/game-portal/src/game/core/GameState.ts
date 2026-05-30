@@ -1615,12 +1615,16 @@ export class GameState {
   }
 
   /** Recall a previously-assigned control group, replacing the current
-   *  selection. No-op when the slot is empty or holds only stale ids. */
-  selectControlGroup(groupKey: number) {
-    if (!Number.isInteger(groupKey) || groupKey < 1 || groupKey > 10) return
+   *  selection. No-op when the slot is empty or holds only stale ids.
+   *  Returns true when a recall actually replaced the selection, false
+   *  when the slot was empty/invalid — used by the input layer to detect
+   *  "double-tap on a populated group" and center the camera on it. */
+  selectControlGroup(groupKey: number): boolean {
+    if (!Number.isInteger(groupKey) || groupKey < 1 || groupKey > 10) return false
     const ids = this.controlGroups.get(groupKey)
-    if (!ids || ids.length === 0) return
+    if (!ids || ids.length === 0) return false
     this.setSelection(ids)
+    return true
   }
 
   openWorkerBuildMenu() {
@@ -1747,17 +1751,25 @@ export class GameState {
     }
   }
 
-  // Selects every owned, visible unit of the given type whose position is
-  // inside the supplied world-space viewport rect. Used by the double-click
-  // "select all of type on screen" gesture.
+  // Selects every owned, visible unit matching the given (unitType, path)
+  // tuple whose position is inside the supplied world-space viewport rect.
+  // Used by the double-click "select all of type on screen" gesture. Path
+  // is part of the match key so a double-clicked Vanguard selects only
+  // other Vanguards rather than every base Soldier — same for other ranked
+  // paths (Berserker, Marksman, Trapper, Cleric, Arch Mage). Units that
+  // haven't ranked into a path are bucketed together as "no path".
   selectVisibleSameTypeUnits(
     unitType: string,
+    path: string | undefined,
     viewBounds: { left: number; top: number; right: number; bottom: number },
   ) {
+    const targetPath = path && path !== 'none' ? path : ''
     const matches = this.getInteractionUnits()
       .filter((unit) => {
         if (!this.isOwnedByLocalPlayer(unit) || !unit.visible) return false
         if (unit.unitType !== unitType) return false
+        const unitPath = unit.path && unit.path !== 'none' ? unit.path : ''
+        if (unitPath !== targetPath) return false
         return (
           unit.x >= viewBounds.left &&
           unit.x <= viewBounds.right &&
@@ -3860,7 +3872,7 @@ function getGroupDetails(units: Unit[]): DetailItem[] {
   return details
 }
 
-function formatUnitPath(path?: string) {
+export function formatUnitPath(path?: string) {
   switch (path) {
     case 'vanguard':
       return 'Vanguard'

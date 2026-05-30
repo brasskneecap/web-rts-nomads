@@ -362,9 +362,11 @@ export class GameClient {
     this.state.assignControlGroup(groupKey)
   }
 
-  /** Recall control group N (1..10), replacing the current selection — N. */
-  selectControlGroup(groupKey: number) {
-    this.state.selectControlGroup(groupKey)
+  /** Recall control group N (1..10), replacing the current selection — N.
+   *  Returns true when a recall actually happened (the slot was populated),
+   *  so the input layer can branch on double-tap behavior. */
+  selectControlGroup(groupKey: number): boolean {
+    return this.state.selectControlGroup(groupKey)
   }
 
   // finishUnitTargeting pairs the state mutation with an immediate cursor

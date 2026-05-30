@@ -6,7 +6,7 @@
   "visionRange": 224,
   "hp": 500,
   "damage": 20,
-  "experience": 200,
+  "experience": 150,
   "attackRange": 100,
   "attackSpeed": 0.5,
   "moveSpeed": 80,

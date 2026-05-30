@@ -128,6 +128,34 @@ html {
   cursor: var(--cursor-hover, pointer);
 }
 
+/* ── Standard hover treatment for clickable boxes ─────────────────────────
+   The single source of truth for the gold inset glow that signals "this
+   icon-container / card is hoverable." Filter-based brightness changes
+   cause perceptual contrast on neighboring boxes and GPU layer churn that
+   flashes pixelated PNG backgrounds — both bugs that have hit shop, vault,
+   and upgrade cards. The inset box-shadow stays entirely within the
+   element's bounds, so it cannot affect siblings.
+
+   How to use:
+   - Simple case: add `class="ui-hover-glow"` to any clickable element
+     (button, [role="button"], etc.). It picks up the glow on hover and
+     no-ops on :disabled / aria-disabled.
+   - Composed case (the element already has its own box-shadow, e.g. a
+     tier-color ring on vault cells): keep your own hover rule but
+     reference `var(--ui-hover-glow)` for the glow layer. Specificity of
+     the scoped rule beats this global rule, which is desirable when you
+     need to compose shadows.
+
+   Do NOT use `filter: brightness()` for hover feedback on
+   icon-container backgrounds — it triggers the bugs this rule replaces. */
+:root {
+  --ui-hover-glow: inset 0 0 8px 1px rgba(255, 215, 110, 0.55);
+}
+
+.ui-hover-glow:not(:disabled):not([aria-disabled='true']):hover {
+  box-shadow: var(--ui-hover-glow);
+}
+
 h1,
 h2 {
   font-family: var(--heading);

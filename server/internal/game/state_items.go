@@ -38,9 +38,8 @@ type UnitEquipmentBonus struct {
 // ─── Capacity / presence helpers ─────────────────────────────────────────────
 
 // vaultCapacityForPlayerLocked returns the number of vault slots available to
-// a player, gated by their townhall tier. Tier 1 → 5, Tier 2 → 10, Tier 3 → 15.
-// If the TH is destroyed (tier 0), returns 0 — new purchases are blocked even
-// if the vault already has items. Must be called under s.mu.
+// a player, gated by their townhall tier. Default (no TH / tier 0) → 6,
+// Tier 1 → 5, Tier 2 → 10, Tier 3 → 15. Must be called under s.mu.
 func (s *GameState) vaultCapacityForPlayerLocked(playerID string) int {
 	tier := s.townhallTierForPlayerLocked(playerID)
 	switch tier {
@@ -51,7 +50,7 @@ func (s *GameState) vaultCapacityForPlayerLocked(playerID string) int {
 	case 3:
 		return 15
 	default:
-		return 0
+		return 6
 	}
 }
 
@@ -303,11 +302,6 @@ func (s *GameState) handlePurchaseItemLocked(playerID, buildingID, itemID string
 	// targeted building must be of that type. Items with empty RequiredBuilding
 	// are available wherever item-purchase is offered.
 	if def.RequiredBuilding != "" && building.BuildingType != def.RequiredBuilding {
-		return
-	}
-
-	// TH destroyed = no purchases, even if vault has space.
-	if s.townhallTierForPlayerLocked(playerID) == 0 {
 		return
 	}
 
