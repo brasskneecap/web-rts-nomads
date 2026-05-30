@@ -1320,11 +1320,15 @@ button.inventory-slot:focus-visible {
   font: inherit;
   color: inherit;
   cursor: pointer;
-  transition: filter 0.08s ease-out;
+  transition: box-shadow 0.08s ease-out;
 }
 
+/* Hover glow matches the shop/vault/upgrade idiom (the shared inset
+   --ui-hover-glow from style.css). Replaces the old `filter: brightness()`
+   hover, which churned a GPU compositing layer over the pixelated
+   icon-container PNG and made the slot flicker. */
 .production-queue__slot:not(:disabled):hover {
-  filter: brightness(1.15);
+  box-shadow: var(--ui-hover-glow);
 }
 
 /* Empty slots stay rendered but dimmed so the panel always shows the full
@@ -1585,12 +1589,35 @@ button.inventory-slot:focus-visible {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
+/* Hover / active highlight uses the shared inset glow (style.css
+   --ui-hover-glow) instead of `filter: brightness()`, which flickered the
+   pixelated icon-container background (same bug fixed in shop/vault/upgrade).
+   The active state is now a persistent gold ring + glow, mirroring
+   .ability-slot.is-active and the autocast / channeling ring idiom below.
+   The per-state hover rules compose the glow on top of the cell's existing
+   ring so a hovered active/autocast cell keeps its state indicator. */
 .action-cell:not(:disabled):hover {
-  filter: brightness(1.15);
+  box-shadow: var(--ui-hover-glow);
 }
 
 .action-cell--active {
-  filter: brightness(1.25) saturate(1.15);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 226, 138, 0.7),
+    0 0 14px rgba(255, 200, 80, 0.45);
+}
+
+.action-cell--active:not(:disabled):hover {
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 226, 138, 0.7),
+    0 0 14px rgba(255, 200, 80, 0.45),
+    var(--ui-hover-glow);
+}
+
+.action-cell--autocast:not(:disabled):hover {
+  box-shadow:
+    inset 0 0 0 2px rgba(90, 190, 255, 0.7),
+    0 0 7px rgba(90, 190, 255, 0.45),
+    var(--ui-hover-glow);
 }
 
 /* Auto-cast enabled: glowing border around the ability icon. Placeholder
@@ -1640,7 +1667,11 @@ button.inventory-slot:focus-visible {
 /* pointer-events: auto so the custom hover tooltip can trigger.              */
 .action-cell--perk {
   position: relative;
-  cursor: default;
+  /* Perk cells are display-only <div>s, so the global :is(button…) hover
+     cursor never applies. Inherit the game's default cursor from <html>
+     (set inline in main.ts) instead of `cursor: default`, which would force
+     the OS white arrow. Same idiom as the vault's inert slots. */
+  cursor: inherit;
   pointer-events: auto;
   color: #d4b87a;
 }

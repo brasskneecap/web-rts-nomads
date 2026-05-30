@@ -189,7 +189,7 @@ void props
   font-weight: 700;
   letter-spacing: 0.06em;
   cursor: pointer;
-  transition: filter 0.12s;
+  transition: box-shadow 0.12s;
 }
 
 /* Lift the hovered/focused slot so its tooltip (and the filter-induced
@@ -199,15 +199,26 @@ void props
   z-index: 2;
 }
 
+/* Hover glow matches the shop/vault/upgrade idiom (shared --ui-hover-glow
+   from style.css) instead of `filter: brightness()`, which churned a GPU
+   layer over the pixelated icon-container PNG and caused flicker. */
 .ability-slot:hover:not(.is-disabled) {
-  filter: brightness(1.1);
+  box-shadow: var(--ui-hover-glow);
 }
 
 .ability-slot.is-active {
   box-shadow:
     inset 0 0 0 2px rgba(255, 226, 138, 0.7),
     0 0 18px rgba(255, 200, 80, 0.45);
-  filter: brightness(1.15);
+}
+
+/* Hovering the active slot keeps its gold ring and layers the shared hover
+   glow on top (composed case), instead of the old filter: brightness(). */
+.ability-slot.is-active:hover:not(.is-disabled) {
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 226, 138, 0.7),
+    0 0 18px rgba(255, 200, 80, 0.45),
+    var(--ui-hover-glow);
 }
 
 .ability-slot.is-disabled {

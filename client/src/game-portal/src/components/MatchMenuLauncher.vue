@@ -203,9 +203,10 @@ const emit = defineEmits<{
   outline-offset: 2px;
 }
 
-/* Elevate the hovered/focused button so its tooltip (and the filter-induced
-   stacking context on icon-mode buttons) sits above sibling action bar slots
-   that come later in the DOM. */
+/* Elevate the hovered/focused button so its tooltip sits above sibling action
+   bar slots that come later in the DOM. (position: relative on the base rule
+   makes this z-index effective; it no longer relies on a filter-induced
+   stacking context.) */
 .menu-launcher__btn:hover,
 .menu-launcher__btn:focus-visible {
   z-index: 2;
@@ -251,12 +252,26 @@ const emit = defineEmits<{
   image-rendering: pixelated;
 }
 
+/* Hover / active highlight uses the shared inset glow (--ui-hover-glow from
+   style.css) instead of `filter: brightness()`, which churned a GPU layer
+   over the pixelated icon-container PNG and caused flicker — the same fix
+   applied to the shop/vault/upgrade slots and the SelectionHud action cells.
+   The active-hover rule composes the glow on top of the active gold ring. */
 .menu-launcher__btn--icon:hover {
-  filter: brightness(1.1);
+  box-shadow: var(--ui-hover-glow);
 }
 
 .menu-launcher__btn--icon.menu-launcher__btn--active {
-  filter: brightness(1.2);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 226, 138, 0.7),
+    0 0 12px rgba(255, 200, 80, 0.45);
+}
+
+.menu-launcher__btn--icon.menu-launcher__btn--active:hover {
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 226, 138, 0.7),
+    0 0 12px rgba(255, 200, 80, 0.45),
+    var(--ui-hover-glow);
 }
 
 .menu-launcher__icon {
