@@ -1,0 +1,10 @@
+{
+  "id": "spawn_archer_rare",
+  "group": "spawn_archer",
+  "name": "Recruit: Archer",
+  "description": "Spawn 1 archer at your spawn point.",
+  "rarity": "rare",
+  "scope": "army",
+  "effect": { "type": "spawnUnit", "unitType": "archer", "count": 1 },
+  "unlimited": true
+}

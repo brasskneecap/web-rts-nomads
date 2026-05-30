@@ -31,6 +31,8 @@ func (s *GameState) applyUpgradeLocked(playerID, upgradeID string, targetUnitID 
 	case upgradeEffectTypeResources:
 		player.Resources["gold"] += def.Effect.Gold
 		player.Resources["wood"] += def.Effect.Wood
+	case upgradeEffectTypeSpawnUnit:
+		s.spawnUnitsForPlayerAtSpawnPointLocked(player, def.Effect.UnitType, def.Effect.Count)
 	default: // upgradeEffectTypeStat
 		for _, unit := range s.Units {
 			if unit.OwnerID != playerID || unit.HP <= 0 {

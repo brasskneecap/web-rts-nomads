@@ -11,7 +11,7 @@ import (
 
 // TestProfileUpgrade_NoUpgrades_DefaultMultipliers verifies a player with no
 // owned upgrades gets PhysicalDamageMultiplier=1.0, MagicDamageMultiplier=1.0,
-// and ExtraStartingWorkers=0.
+// and ExtraStartingUnits is empty (no per-unit-type grants).
 func TestProfileUpgrade_NoUpgrades_DefaultMultipliers(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
 	s.EnsurePlayerWithUpgrades("p1", nil, nil)
@@ -29,8 +29,11 @@ func TestProfileUpgrade_NoUpgrades_DefaultMultipliers(t *testing.T) {
 	if p.MagicDamageMultiplier != 1.0 {
 		t.Errorf("MagicDamageMultiplier: want 1.0, got %v", p.MagicDamageMultiplier)
 	}
-	if p.ExtraStartingWorkers != 0 {
-		t.Errorf("ExtraStartingWorkers: want 0, got %d", p.ExtraStartingWorkers)
+	if got := p.ExtraStartingUnits["worker"]; got != 0 {
+		t.Errorf(`ExtraStartingUnits["worker"]: want 0, got %d`, got)
+	}
+	if len(p.ExtraStartingUnits) != 0 {
+		t.Errorf("ExtraStartingUnits: want empty map, got %v", p.ExtraStartingUnits)
 	}
 }
 

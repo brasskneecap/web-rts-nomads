@@ -383,41 +383,75 @@ func (s *GameState) spawnPlacedEnemyUnitsLocked() {
 	}
 }
 
-// spawnExtraStartingWorkersLocked spawns extra worker units for a player whose
-// profile upgrade ExtraStartingWorkers > 0. Units are placed on the nearest
-// walkable cell to the townhall center using the existing findNearestWalkable
-// search. If townhall is nil or no walkable cell can be found within the search
-// radius, a warning is logged and that worker is skipped — the match continues
-// without crashing. Must be called under s.mu write lock.
-func (s *GameState) spawnExtraStartingWorkersLocked(player *Player, townhall *protocol.BuildingTile, color string) {
-	if player == nil || player.ExtraStartingWorkers <= 0 {
+// findPlayerSpawnPointLocked returns the spawn-point BuildingTile associated
+// with playerID's claimed townhall, or nil when the map has no spawn-point
+// linked to that townhall. The association is the same one
+// resolveSpawnPointTownhallLocked uses: an explicit metadata.townhallId link
+// when present, otherwise nearest townhall by distance. metadata.playerLabel
+// is NOT required — maps without authored labels (e.g. enemy-test-small)
+// still pair each spawn-point with its spatially-nearest townhall.
+// Must be called under s.mu lock.
+func (s *GameState) findPlayerSpawnPointLocked(playerID string) *protocol.BuildingTile {
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "spawn-point" {
+			continue
+		}
+		townhall := s.resolveSpawnPointTownhallLocked(*b, true)
+		if townhall == nil || townhall.OwnerID == nil || *townhall.OwnerID != playerID {
+			continue
+		}
+		return b
+	}
+	return nil
+}
+
+// spawnUnitsForPlayerAtSpawnPointLocked spawns `count` units of `unitType`
+// for `player`, placed at walkable cells near the player's authored
+// spawn-point building. When the player has no spawn-point on the map, the
+// helper logs a warning and returns without spawning (no townhall fallback).
+// Used by both start-of-match profile-upgrade grants and the wave-upgrade
+// "spawnUnit" effect. Must be called under s.mu write lock.
+func (s *GameState) spawnUnitsForPlayerAtSpawnPointLocked(player *Player, unitType string, count int) {
+	if player == nil {
+		slog.Warn("spawnUnitsForPlayerAtSpawnPointLocked: nil player; skipping",
+			"unitType", unitType, "count", count)
 		return
 	}
-	if townhall == nil {
-		slog.Warn("spawnExtraStartingWorkersLocked: no townhall for player; skipping extra workers",
-			"playerID", player.ID, "count", player.ExtraStartingWorkers)
+	if unitType == "" {
+		slog.Warn("spawnUnitsForPlayerAtSpawnPointLocked: empty unitType; skipping",
+			"playerID", player.ID, "count", count)
+		return
+	}
+	if count <= 0 {
+		return
+	}
+
+	sp := s.findPlayerSpawnPointLocked(player.ID)
+	if sp == nil {
+		slog.Warn("spawnUnitsForPlayerAtSpawnPointLocked: no spawn-point for player; skipping",
+			"playerID", player.ID, "unitType", unitType, "count", count)
 		return
 	}
 
 	cellSize := s.MapConfig.CellSize
-	// Compute world-space center of the townhall building.
-	centerX := (float64(townhall.X) + float64(townhall.Width)/2) * cellSize
-	centerY := (float64(townhall.Y) + float64(townhall.Height)/2) * cellSize
+	centerX := (float64(sp.X) + float64(sp.Width)/2) * cellSize
+	centerY := (float64(sp.Y) + float64(sp.Height)/2) * cellSize
 	blocked := s.getBlockedCellsLocked()
 
-	for i := 0; i < player.ExtraStartingWorkers; i++ {
+	for i := 0; i < count; i++ {
 		center := s.worldToGrid(centerX, centerY)
 		spawnCell, ok := s.findNearestWalkable(center, blocked)
 		if !ok {
-			slog.Warn("spawnExtraStartingWorkersLocked: no walkable cell found for extra worker; skipping",
-				"playerID", player.ID, "workerIndex", i)
+			slog.Warn("spawnUnitsForPlayerAtSpawnPointLocked: no walkable cell found near spawn-point; skipping",
+				"playerID", player.ID, "unitType", unitType, "index", i)
 			continue
 		}
 		spawnPos := s.gridToWorldCenter(spawnCell)
-		unit := s.spawnPlayerUnitLocked("worker", player.ID, color, spawnPos)
+		unit := s.spawnPlayerUnitLocked(unitType, player.ID, player.Color, spawnPos)
 		if unit == nil {
-			slog.Warn("spawnExtraStartingWorkersLocked: spawnPlayerUnitLocked returned nil; skipping",
-				"playerID", player.ID, "workerIndex", i)
+			slog.Warn("spawnUnitsForPlayerAtSpawnPointLocked: spawnPlayerUnitLocked returned nil; skipping",
+				"playerID", player.ID, "unitType", unitType, "index", i)
 		}
 	}
 }

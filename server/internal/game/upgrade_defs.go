@@ -43,6 +43,10 @@ type UpgradeEffect struct {
 	ItemID     string  `json:"itemID,omitempty"`
 	Gold       int     `json:"gold,omitempty"`
 	Wood       int     `json:"wood,omitempty"`
+	// spawnUnit fields: spawn `Count` units of `UnitType` at the picking
+	// player's spawn-point via spawnUnitsForPlayerAtSpawnPointLocked.
+	UnitType string `json:"unitType,omitempty"`
+	Count    int    `json:"count,omitempty"`
 }
 
 // Upgrade scope constants — controls which units an upgrade targets.
@@ -62,6 +66,7 @@ const (
 	upgradeEffectTypeXP        = "xp"
 	upgradeEffectTypeEquipment = "equipment"
 	upgradeEffectTypeResources = "resources"
+	upgradeEffectTypeSpawnUnit = "spawnUnit"
 )
 
 // Upgrade stat constants — valid values for UpgradeEffect.Stat in stat-multiplier mode.
@@ -154,6 +159,16 @@ func loadUpgradeDefs() map[string]UpgradeDef {
 		case upgradeEffectTypeResources:
 			if def.Effect.Gold <= 0 && def.Effect.Wood <= 0 {
 				panic("catalog/upgrades/" + entry.Name() + `: effect type "resources" requires gold > 0 or wood > 0`)
+			}
+		case upgradeEffectTypeSpawnUnit:
+			if def.Effect.UnitType == "" {
+				panic("catalog/upgrades/" + entry.Name() + `: effect type "spawnUnit" requires non-empty unitType`)
+			}
+			if _, ok := getUnitDef(def.Effect.UnitType); !ok {
+				panic("catalog/upgrades/" + entry.Name() + `: effect type "spawnUnit" unitType "` + def.Effect.UnitType + `" is not in the unit catalog`)
+			}
+			if def.Effect.Count <= 0 {
+				panic("catalog/upgrades/" + entry.Name() + `: effect type "spawnUnit" requires count > 0`)
 			}
 		default:
 			panic("catalog/upgrades/" + entry.Name() + `: unknown effect type "` + def.Effect.Type + `"`)

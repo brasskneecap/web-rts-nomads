@@ -589,9 +589,11 @@ type Player struct {
 	// join; increased by damageMultiplierByType upgrades with class "nonPhysical".
 	MagicDamageMultiplier float64
 
-	// ExtraStartingWorkers is the number of additional worker units to spawn
-	// during match setup, derived from extraStartingUnit upgrade ranks.
-	ExtraStartingWorkers int
+	// ExtraStartingUnits tallies additional starting units granted to this
+	// player by profile upgrades (extraStartingUnit effect), keyed by
+	// unitType → count. Iterated in sorted key order at match start and
+	// spawned at the player's assigned spawn-point.
+	ExtraStartingUnits map[string]int
 
 	// UpgradeState tracks wave upgrade picks and per-wave offer state.
 	UpgradeState PlayerUpgradeState
@@ -3046,6 +3048,7 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		ActiveUpgradeIDs:              activeSet,
 		PhysicalDamageMultiplier:      1.0,
 		MagicDamageMultiplier:         1.0,
+		ExtraStartingUnits:            map[string]int{},
 	}
 	// Derive precomputed multipliers and extra workers from the upgrade catalog.
 	applyProfileUpgradesToPlayerLocked(player)
@@ -3055,7 +3058,16 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 	townhall, _ := s.claimPlayerStartLocked(playerID)
 	s.claimLabeledBuildingsForPlayerLocked(playerID)
 	s.spawnPlacedUnitsForPlayerLocked(playerID, color)
-	s.spawnExtraStartingWorkersLocked(player, townhall, color)
+	// Spawn upgrade-granted starting units at the player's spawn-point.
+	// Iterate in sorted key order for deterministic spawn order across runs.
+	extraUnitTypes := make([]string, 0, len(player.ExtraStartingUnits))
+	for ut := range player.ExtraStartingUnits {
+		extraUnitTypes = append(extraUnitTypes, ut)
+	}
+	sort.Strings(extraUnitTypes)
+	for _, ut := range extraUnitTypes {
+		s.spawnUnitsForPlayerAtSpawnPointLocked(player, ut, player.ExtraStartingUnits[ut])
+	}
 	s.ensurePlacedEnemiesSpawnedLocked()
 
 	// Diagnostic: which slot did this player land in? Useful when a map has

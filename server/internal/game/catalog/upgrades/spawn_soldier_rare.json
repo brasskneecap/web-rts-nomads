@@ -1,0 +1,10 @@
+{
+  "id": "spawn_soldier_rare",
+  "group": "spawn_soldier",
+  "name": "Recruit: Soldier",
+  "description": "Spawn 1 soldier at your spawn point.",
+  "rarity": "rare",
+  "scope": "army",
+  "effect": { "type": "spawnUnit", "unitType": "soldier", "count": 1 },
+  "unlimited": true
+}

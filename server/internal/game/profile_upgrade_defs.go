@@ -66,7 +66,10 @@ var profileUpgradeEffectRegistry = map[string]profileUpgradeEffectHandler{
 			}
 		},
 		applyAtMatchStart: func(player *Player, rank int, effect ProfileUpgradeEffect) {
-			player.ExtraStartingWorkers += rank * effect.CountPerRank
+			if player.ExtraStartingUnits == nil {
+				player.ExtraStartingUnits = map[string]int{}
+			}
+			player.ExtraStartingUnits[effect.UnitType] += rank * effect.CountPerRank
 		},
 	},
 	"damageMultiplierByType": {
