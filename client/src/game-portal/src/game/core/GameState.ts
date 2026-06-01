@@ -515,11 +515,12 @@ export type ShopCatalogEntry = {
   kind: 'equipment' | 'consumable'
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
   costGold: number
-  available: boolean
-  requiredBuildingType: string
-  requiredBuildingLabel: string
-  /** ID of a player-owned, built building that can sell this item. Empty
-   *  when no such building exists (i.e. when available=false). */
+  /** Remaining stock at the purchase building. 0 = sold out (entry stays
+   *  visible but the buy action is disabled / greyed-out). */
+  quantity: number
+  /** ID of the shop building this item will be purchased from. Always
+   *  set; only available items are emitted, so there is no "unavailable"
+   *  state and no lock indicator. */
   purchaseBuildingId: string
 }
 
@@ -588,6 +589,10 @@ export class GameState {
   // Vault state — populated from PlayerSnapshot each tick.
   localPlayerVault: VaultItemSnapshot[] = []
   localPlayerVaultCapacity = 0
+
+  // Remaining merchant-reroll budget. Mirrored from PlayerSnapshot each tick.
+  // Drives whether the reroll action on a neutral-shop building is enabled.
+  localPlayerShopRerollsRemaining = 0
 
   // Commander abilities (player-level action bar). Populated from
   // PlayerSnapshot.commanderAbilities every tick.
@@ -2392,44 +2397,69 @@ export class GameState {
     return this.units.filter((unit) => unit.ownerId === this.localPlayerId)
   }
 
-  // Returns the Shop catalog for the local player: one entry per ItemDef that
-  // declares a RequiredBuilding. `available` is true when the player owns at
-  // least one built (not under-construction) building of that type, and
-  // `purchaseBuildingId` is set to that building's ID for the purchase call.
+  // Returns the Shop catalog for the local player: one entry per distinct
+  // item stocked by any shop the player can currently buy from. Eligible
+  // shops are:
+  //   - Player-owned buildings with the "item-purchase" capability that
+  //     are not under construction.
+  //   - Neutral-owned shop buildings that have been discovered by the
+  //     player (shopDiscovered === true) and are not guard-locked
+  //     (shopLocked !== true).
+  // Items are deduped across shops by itemId; the first eligible building
+  // (player-owned shops scanned first) is the one used for the purchase
+  // call. Unavailable items are not emitted — the shop tab no longer
+  // renders lock icons.
   getShopCatalogSnapshot(): ShopCatalogEntry[] {
-    // First built (not under-construction) player-owned building per type.
-    // Used to satisfy the click → purchase flow's BuildingID parameter.
-    const firstBuildingByType = new Map<string, string>()
-    if (this.localPlayerId) {
-      for (const b of this.mapConfig.buildings) {
-        if (b.ownerId !== this.localPlayerId) continue
-        if (b.metadata?.['underConstruction'] === true) continue
-        if (!firstBuildingByType.has(b.buildingType)) {
-          firstBuildingByType.set(b.buildingType, b.id)
-        }
+    const entries: ShopCatalogEntry[] = []
+    const seenItems = new Set<string>()
+
+    if (!this.localPlayerId) {
+      return entries
+    }
+
+    // Player-owned shops first so duplicates resolve to a player building.
+    // capabilities can arrive as null/undefined for partial building tiles
+    // (e.g. freshly placed ghosts before the server fills in the def).
+    // Optional-chaining the call guards against a TypeError that would
+    // otherwise propagate out of the snapshot builder and freeze the UI.
+    const eligibleBuildings: BuildingTile[] = []
+    for (const b of this.mapConfig.buildings) {
+      if (!b.capabilities?.includes('item-purchase')) continue
+      if (b.metadata?.['underConstruction'] === true) continue
+      if (b.ownerId !== this.localPlayerId) continue
+      eligibleBuildings.push(b)
+    }
+    for (const b of this.mapConfig.buildings) {
+      if (!b.capabilities?.includes('item-purchase')) continue
+      if (b.metadata?.['underConstruction'] === true) continue
+      if (b.ownerId === this.localPlayerId) continue
+      // Neutral shop access requires both discovery and an unlocked state.
+      if (b.shopDiscovered !== true) continue
+      if (b.shopLocked === true) continue
+      eligibleBuildings.push(b)
+    }
+
+    for (const b of eligibleBuildings) {
+      const inventory = b.shopInventory ?? []
+      for (const slot of inventory) {
+        if (seenItems.has(slot.itemId)) continue
+        const def = ITEM_DEF_MAP.get(slot.itemId)
+        if (!def) continue
+        seenItems.add(slot.itemId)
+        entries.push({
+          itemId: def.id,
+          displayName: def.displayName,
+          description: def.description,
+          iconKey: def.iconKey,
+          kind: def.kind,
+          tier: def.tier,
+          costGold: def.costGold,
+          quantity: slot.quantity,
+          purchaseBuildingId: b.id,
+        })
       }
     }
 
-    const entries: ShopCatalogEntry[] = []
-    for (const def of ITEM_DEF_MAP.values()) {
-      if (!def.requiredBuilding) continue
-      const requiredBuildingType = def.requiredBuilding
-      const buildingDef = BUILDING_DEF_MAP.get(requiredBuildingType)
-      const purchaseBuildingId = firstBuildingByType.get(requiredBuildingType) ?? ''
-      entries.push({
-        itemId: def.id,
-        displayName: def.displayName,
-        description: def.description,
-        iconKey: def.iconKey,
-        kind: def.kind,
-        tier: def.tier,
-        costGold: def.costGold,
-        available: purchaseBuildingId !== '',
-        requiredBuildingType,
-        requiredBuildingLabel: buildingDef?.label ?? requiredBuildingType,
-        purchaseBuildingId,
-      })
-    }
     entries.sort((a, b) => a.costGold - b.costGold || a.displayName.localeCompare(b.displayName))
     return entries
   }
@@ -2579,6 +2609,7 @@ export class GameState {
               },
               this.townHallTier,
               new Set(this.lockedUnitTypes),
+              this.localPlayerShopRerollsRemaining,
             ),
         production: activeProduction ? toProductionSummary(activeProduction) : undefined,
         construction: isUnderConstruction
@@ -2772,6 +2803,7 @@ export class GameState {
     if (localPlayer.vaultCapacity !== undefined) {
       this.localPlayerVaultCapacity = localPlayer.vaultCapacity
     }
+    this.localPlayerShopRerollsRemaining = localPlayer.shopRerollsRemaining ?? 0
     this.localPlayerCommanderAbilities = localPlayer.commanderAbilities ?? []
   }
 }
@@ -3294,18 +3326,29 @@ function getBuildingActions(
   vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number },
   townHallTier: number = 0,
   lockedUnitTypes: ReadonlySet<string> = new Set(),
+  shopRerollsRemaining: number = 0,
 ): ActionItem[] {
   const actions: ActionItem[] = []
 
-  if (building.capabilities.includes('item-purchase')) {
-    for (const itemDef of ITEM_DEF_MAP.values()) {
+  if (building.capabilities?.includes('item-purchase')) {
+    // Per-building shop inventory: the server populates building.shopInventory
+    // at match start (fixed list, loot-table roll, or marketplace catalog
+    // fallback). Locked neutral shops disable their buy actions; undiscovered
+    // shops never reach this code because the selection HUD won't surface
+    // them as targets. Each entry carries the remaining quantity; entries
+    // at quantity 0 stay rendered but are disabled (greyed-out).
+    const inventory = building.shopInventory ?? []
+    const shopLocked = building.shopLocked === true
+    for (const slot of inventory) {
+      const itemDef = ITEM_DEF_MAP.get(slot.itemId)
+      if (!itemDef) continue
+      const soldOut = slot.quantity <= 0
       // Vault capacity check: if vault is full and the item can't stack onto
       // an existing entry, disable the purchase button.
       const capacity = vaultState?.vaultCapacity ?? 0
       const vault = vaultState?.vault ?? []
       let atCapacity = false
       if (capacity > 0 && vault.length >= capacity) {
-        // Check if any existing entry can absorb a stack
         const existingEntry = vault.find((v) => v.itemId === itemDef.id)
         const maxStacks = itemDef.maxStacks ?? 1
         const currentStacks = existingEntry?.stacks ?? (existingEntry ? 1 : 0)
@@ -3313,14 +3356,46 @@ function getBuildingActions(
           atCapacity = true
         }
       }
+      let tooltipBody = buildItemTooltipBody(itemDef)
+      if (soldOut) {
+        tooltipBody = `${tooltipBody}\n\nSold out at this shop.`
+      } else if (shopLocked) {
+        tooltipBody = `${tooltipBody}\n\nGuards remain — clear them to unlock this shop.`
+      } else if (slot.quantity > 0) {
+        tooltipBody = `${tooltipBody}\n\nStock remaining: ${slot.quantity}`
+      }
       actions.push({
         id: `buy-item-${itemDef.id}`,
         label: itemDef.displayName,
         iconDef: { kind: 'item', type: itemDef.id },
         cost: [{ resourceId: 'gold', amount: itemDef.costGold, accent: '#d4a84f' }],
         tooltipTitle: itemDef.displayName,
-        tooltipBody: buildItemTooltipBody(itemDef),
-        disabled: atCapacity,
+        tooltipBody,
+        disabled: atCapacity || shopLocked || soldOut,
+      })
+    }
+
+    // Reroll button — only on neutral-shop buildings. The button is placed
+    // in the bottom-right slot of the 12-cell action grid by padding the
+    // intervening slots with id:"" so the renderer skips them. Disabled
+    // when the player has no rerolls remaining; tooltip explains why.
+    if (building.buildingType === 'neutral-shop') {
+      while (actions.length < 11) {
+        actions.push({ id: '', label: '', iconDef: { kind: 'item', type: '' } })
+      }
+      const canReroll = !shopLocked && shopRerollsRemaining > 0
+      const rerollTooltip = shopLocked
+        ? 'Guards remain — clear them to unlock this shop.'
+        : canReroll
+          ? `Reroll this merchant's inventory.\n\nRerolls remaining: ${shopRerollsRemaining}`
+          : `Out of rerolls. Purchase the Merchant Reroll legend-point upgrade to gain more.`
+      actions.push({
+        id: 'reroll-shop',
+        label: 'Reroll',
+        iconDef: { kind: 'item', type: 'reroll' },
+        tooltipTitle: 'Reroll Merchant',
+        tooltipBody: rerollTooltip,
+        disabled: !canReroll,
       })
     }
   }

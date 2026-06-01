@@ -305,6 +305,10 @@ export class GameClient {
     this.network.send({ type: 'purchase_item', buildingId, itemId })
   }
 
+  sendRerollShop(buildingId: string): void {
+    this.network.send({ type: 'reroll_shop', buildingId })
+  }
+
   sendEquipItem(unitId: number, slotIndex: number, instanceId: number): void {
     this.network.send({ type: 'equip_item', unitId, slotIndex, instanceId })
   }
@@ -562,6 +566,13 @@ export class GameClient {
       const itemId = actionId.slice('buy-item-'.length)
       if (selectedBuilding) {
         this.sendPurchaseItem(selectedBuilding.id, itemId)
+      }
+      return
+    }
+
+    if (actionId === 'reroll-shop') {
+      if (selectedBuilding && selectedBuilding.buildingType === 'neutral-shop') {
+        this.sendRerollShop(selectedBuilding.id)
       }
       return
     }

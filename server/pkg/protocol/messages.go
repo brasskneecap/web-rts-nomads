@@ -358,6 +358,43 @@ type BuildingTile struct {
 	// The client should render the last-known appearance without live state.
 	Ghost        bool `json:"ghost,omitempty"`
 	LastSeenTick int  `json:"lastSeenTick,omitempty"`
+
+	// ─── Shop fields (per-building-shop-inventories) ───────────────────────
+	// ShopInventory is the runtime list of items this building sells, with
+	// per-item quantity remaining. Populated by populateShopInventoriesLocked
+	// at match start and refilled by a successful reroll. Each entry's
+	// Quantity decrements on purchase; at 0 the entry stays in the list so
+	// the client can render it disabled (greyed-out).
+	ShopInventory []ShopStockEntry `json:"shopInventory,omitempty"`
+	// ShopLootTableID, when set, is the key into the loot-table catalog
+	// rolled into ShopInventory at match start. Authored (map JSON) field;
+	// mutually exclusive with ShopFixedInventory.
+	ShopLootTableID string `json:"shopLootTableId,omitempty"`
+	// ShopFixedInventory, when set, is copied verbatim into ShopInventory
+	// at match start (each entry gets the building-type's starter quantity).
+	// Authored (map JSON) field; takes precedence over ShopLootTableID.
+	ShopFixedInventory []string `json:"shopFixedInventory,omitempty"`
+	// ShopGuardUnitIDs is the list of unit IDs spawned to guard this
+	// building. While any ID resolves to a unit with HP > 0, the shop is
+	// considered locked. Runtime field; populated by spawnShopGuardsLocked.
+	ShopGuardUnitIDs []int `json:"shopGuardUnitIds,omitempty"`
+	// ShopLocked is a per-snapshot, computed field set by the snapshot
+	// filter from shopLockedLocked(building). Always emitted for shop
+	// buildings so the client doesn't need to default it.
+	ShopLocked bool `json:"shopLocked,omitempty"`
+	// ShopDiscovered is a per-viewer field set by the snapshot filter
+	// from PlayerFOW.KnownBuildings[building.ID] != nil. True for any
+	// shop the viewer has ever revealed (including their own).
+	ShopDiscovered bool `json:"shopDiscovered,omitempty"`
+}
+
+// ShopStockEntry is one item slot in a shop building's inventory.
+// Quantity decrements on each successful purchase; when it reaches 0 the
+// entry stays in the list (so the client can render it greyed) but
+// further purchases of that item from that shop are rejected.
+type ShopStockEntry struct {
+	ItemID   string `json:"itemId"`
+	Quantity int    `json:"quantity"`
 }
 
 type JoinMatchMessage struct {
@@ -567,6 +604,18 @@ type PurchaseItemCommandMessage struct {
 	ItemID     string `json:"itemId"`
 }
 
+// RerollShopCommandMessage requests rerolling the inventory of a neutral
+// shop building. BuildingID must reference a building of type "neutral-shop".
+// The server validates that the requesting player has discovered and
+// unlocked the shop, and that the player has at least one reroll remaining
+// in their personal pool (Player.ShopRerollsRemaining); on success the
+// shop's inventory is regenerated from its loot table and the player's
+// pool decrements by one.
+type RerollShopCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+}
+
 // EquipItemCommandMessage moves an item from the player's vault into a unit
 // slot. InstanceID identifies the specific vault entry. SlotIndex is 0-based;
 // must be within the unit's InventorySize.
@@ -688,6 +737,10 @@ type PlayerSnapshot struct {
 	// action bar (Smite, Blessing). Always populated for the snapshot's
 	// owner so the HUD can render slots even when every ability is ready.
 	CommanderAbilities []CommanderAbilitySnapshot `json:"commanderAbilities,omitempty"`
+	// ShopRerollsRemaining is the player's remaining merchant-reroll
+	// budget for this match. Drives the reroll button on neutral-shop
+	// buildings (enabled when > 0).
+	ShopRerollsRemaining int `json:"shopRerollsRemaining,omitempty"`
 }
 
 type UnitSnapshot struct {

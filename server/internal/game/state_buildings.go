@@ -446,6 +446,11 @@ func (s *GameState) tickBuildingRepairsLocked(dt float64) {
 			// without that path firing for any reason, drop it here so the
 			// finished building never renders as the 40%-alpha ghost preview.
 			delete(building.Metadata, "pendingStart")
+			// Populate the shop inventory now that the marketplace exists.
+			// No-op for buildings without the item-purchase capability.
+			if hasItemPurchaseCapability(building) && len(building.ShopInventory) == 0 {
+				s.populateShopInventoryForBuildingLocked(building)
+			}
 			// Clear all assigned workers.
 			for _, u := range s.Units {
 				if u.BuildTargetID == building.ID {

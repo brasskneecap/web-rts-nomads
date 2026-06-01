@@ -21,6 +21,26 @@
         { "item": "scimitar",    "min": 1, "max": 15 },
         { "item": "flame_sword", "min": 16, "max": 20 }
       ]
+    },
+    "merchant_weapons": {
+      "kind": "item_subtable",
+      "entries": [
+        { "item": "broad_sword",  "min": 1,  "max": 40 },
+        { "item": "scimitar",     "min": 41, "max": 65 },
+        { "item": "flame_sword",  "min": 66, "max": 85 },
+        { "item": "ice_sword",    "min": 86, "max": 95 },
+        { "item": "shadow_blade", "min": 96, "max": 100 }
+      ]
+    },
+    "merchant_potions": {
+      "kind": "item_subtable",
+      "entries": [
+        { "item": "potion_common_heal",    "min": 1,  "max": 40 },
+        { "item": "potion_uncommon_heal",  "min": 41, "max": 65 },
+        { "item": "potion_rare_heal",      "min": 66, "max": 85 },
+        { "item": "potion_epic_heal",      "min": 86, "max": 95 },
+        { "item": "potion_legendary_heal", "min": 96, "max": 100 }
+      ]
     }
   },
   "tables": {
@@ -32,6 +52,10 @@
       { "entry": "small_resource_bundle", "min": 1,  "max": 25 },
       { "entry": "medium_resource_bundle", "min": 26,  "max": 75 },
       { "entry": "rare_weapons",         "min": 76, "max": 100 }
+    ],
+    "merchant_basic": [
+      { "entry": "merchant_weapons", "min": 1,  "max": 50 },
+      { "entry": "merchant_potions", "min": 51, "max": 100 }
     ]
   }
 }

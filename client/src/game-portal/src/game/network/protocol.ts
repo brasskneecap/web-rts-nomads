@@ -90,6 +90,22 @@ export type BuildingTile = GridCoord & {
   metadata?: JsonObject
   ghost?: boolean
   lastSeenTick?: number
+  // Shop fields (per-building-shop-inventories). Runtime: shopInventory,
+  // shopGuardUnitIds, shopLocked, shopDiscovered. Authored: shopLootTableId,
+  // shopFixedInventory. Each shopInventory entry carries the item id and
+  // the remaining purchasable quantity; quantity 0 means the slot stays
+  // visible but is rendered disabled (greyed-out).
+  shopInventory?: ShopStockEntry[]
+  shopLootTableId?: string
+  shopFixedInventory?: string[]
+  shopGuardUnitIds?: number[]
+  shopLocked?: boolean
+  shopDiscovered?: boolean
+}
+
+export type ShopStockEntry = {
+  itemId: string
+  quantity: number
 }
 
 export type FogOfWarSnapshot = {
@@ -524,12 +540,20 @@ export type PlayerSnapshot = {
   /** Commander abilities slotted in the bottom action bar. Always present
    *  for the local player; absent / empty for older servers. */
   commanderAbilities?: CommanderAbilitySnapshot[]
+  /** Remaining merchant-reroll budget for this match. Drives the reroll
+   *  button on neutral-shop buildings (enabled when > 0). Absent = 0. */
+  shopRerollsRemaining?: number
 }
 
 export type PurchaseItemCommand = {
   type: 'purchase_item'
   buildingId: string
   itemId: string
+}
+
+export type RerollShopCommand = {
+  type: 'reroll_shop'
+  buildingId: string
 }
 
 export type EquipItemCommand = {

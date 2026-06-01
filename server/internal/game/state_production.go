@@ -442,15 +442,16 @@ func (s *GameState) playerMeetsUnitRequirementsLocked(playerID, unitType string)
 // be called under s.mu.
 func (s *GameState) buildPlayerSnapshotLocked(player *Player) protocol.PlayerSnapshot {
 	snap := protocol.PlayerSnapshot{
-		PlayerID:        player.ID,
-		Color:           player.Color,
-		TeamID:          player.TeamID,
-		Resources:       s.getPlayerResourceStocksLocked(player),
-		Upgrades:        s.playerUpgradeSnapshotsLocked(player.ID),
-		TownHallTier:    s.townhallTierForPlayerLocked(player.ID),
-		Vault:           s.playerVaultSnapshotsLocked(player.ID),
-		VaultCapacity:   s.vaultCapacityForPlayerLocked(player.ID),
-		LockedUnitTypes: s.lockedUnitTypesForPlayerLocked(player.ID),
+		PlayerID:             player.ID,
+		Color:                player.Color,
+		TeamID:               player.TeamID,
+		Resources:            s.getPlayerResourceStocksLocked(player),
+		Upgrades:             s.playerUpgradeSnapshotsLocked(player.ID),
+		TownHallTier:         s.townhallTierForPlayerLocked(player.ID),
+		Vault:                s.playerVaultSnapshotsLocked(player.ID),
+		VaultCapacity:        s.vaultCapacityForPlayerLocked(player.ID),
+		LockedUnitTypes:      s.lockedUnitTypesForPlayerLocked(player.ID),
+		ShopRerollsRemaining: player.ShopRerollsRemaining,
 	}
 	snap.CommanderAbilities = s.commanderAbilitySnapshotsLocked(player)
 	return snap

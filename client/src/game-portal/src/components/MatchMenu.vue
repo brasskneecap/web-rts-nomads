@@ -43,13 +43,12 @@
               type="button"
               class="match-menu__slot ui-hover-glow"
               :class="{
-                'match-menu__slot--locked': cell.entry && !cell.entry.available,
                 'match-menu__slot--filled': !!cell.entry,
+                'match-menu__slot--sold-out': !!cell.entry && cell.entry.quantity <= 0,
               }"
-              :disabled="!cell.entry || !cell.entry.available"
-              :aria-disabled="cell.entry && !cell.entry.available ? 'true' : undefined"
-              :aria-label="cell.entry ? `Buy ${cell.entry.displayName} for ${cell.entry.costGold} gold` : undefined"
-              @click="cell.entry ? onPurchase(cell.entry) : undefined"
+              :disabled="!cell.entry || cell.entry.quantity <= 0"
+              :aria-label="cell.entry ? (cell.entry.quantity > 0 ? `Buy ${cell.entry.displayName} for ${cell.entry.costGold} gold` : `${cell.entry.displayName} (sold out)`) : undefined"
+              @click="cell.entry && cell.entry.quantity > 0 ? onPurchase(cell.entry) : undefined"
             >
               <template v-if="cell.entry">
                 <ActionIcon
@@ -60,19 +59,12 @@
                     iconDef: { kind: 'item', type: cell.entry.itemId },
                   }"
                 />
-                <div
-                  v-if="!cell.entry.available"
-                  class="match-menu__slot-lock"
-                  aria-hidden="true"
-                >🔒</div>
                 <div class="match-menu__tooltip">
                   <div class="match-menu__tooltip-title">{{ cell.entry.displayName }}</div>
                   <div v-if="cell.entry.description" class="match-menu__tooltip-desc">{{ cell.entry.description }}</div>
                   <div class="match-menu__tooltip-cost">{{ cell.entry.costGold }}g</div>
-                  <div
-                    v-if="!cell.entry.available"
-                    class="match-menu__tooltip-locked"
-                  >Requires {{ cell.entry.requiredBuildingLabel }}</div>
+                  <div v-if="cell.entry.quantity <= 0" class="match-menu__tooltip-sold-out">Sold out</div>
+                  <div v-else-if="cell.entry.quantity < 99" class="match-menu__tooltip-stock">Stock: {{ cell.entry.quantity }}</div>
                 </div>
               </template>
             </button>
@@ -193,7 +185,7 @@ function setActiveTab(id: string) {
 }
 
 function onPurchase(entry: ShopCatalogEntry) {
-  if (!entry.available || !entry.purchaseBuildingId) return
+  if (!entry.purchaseBuildingId || entry.quantity <= 0) return
   emit('purchase', { itemId: entry.itemId, buildingId: entry.purchaseBuildingId })
 }
 </script>
@@ -315,17 +307,22 @@ function onPurchase(entry: ShopCatalogEntry) {
   cursor: inherit;
 }
 
-/* Any filled slot — available or locked — shows the game hover cursor since
-   it has an item and a hover tooltip. The global :is(button…) rule already
-   handles available slots, but it excludes :disabled / aria-disabled, so we
-   restore hover cursor for locked slots here. */
+/* Filled slots show the game hover cursor since they have a tooltip. */
 .match-menu__slot--filled {
   cursor: var(--cursor-hover, pointer);
 }
 
-.match-menu__slot--locked,
 .match-menu__slot:disabled {
-  opacity: 1; /* override user-agent disabled opacity; locked dim handled on icon */
+  opacity: 1; /* override user-agent disabled opacity on empty slots */
+}
+
+/* Sold-out slot: still visible (tooltip still readable) but greyed so the
+   player can see what the shop used to stock without being able to click. */
+.match-menu__slot--sold-out .match-menu__slot-icon {
+  filter: grayscale(0.85) brightness(0.55);
+}
+.match-menu__slot--sold-out {
+  cursor: var(--cursor-disabled, default);
 }
 
 /* Shop item art rendered inside the icon-container frame at 70% so the
@@ -340,18 +337,23 @@ function onPurchase(entry: ShopCatalogEntry) {
   pointer-events: none;
 }
 
-.match-menu__slot--locked .match-menu__slot-icon {
-  filter: grayscale(0.85) brightness(0.55);
+.match-menu__tooltip-sold-out {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(200, 164, 106, 0.22);
+  font-size: 11px;
+  font-weight: 700;
+  color: #f5a3a3;
+  line-height: 1.5;
 }
 
-.match-menu__slot-lock {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 26px;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
-  pointer-events: none;
+.match-menu__tooltip-stock {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(200, 164, 106, 0.22);
+  font-size: 11px;
+  color: #d4b87a;
+  line-height: 1.5;
 }
 
 /* Shop-item hover tooltip — mirrors the action-tooltip language used by
@@ -406,13 +408,4 @@ function onPurchase(entry: ShopCatalogEntry) {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
-.match-menu__tooltip-locked {
-  margin-top: 5px;
-  padding-top: 5px;
-  border-top: 1px solid rgba(200, 164, 106, 0.22);
-  font-size: 11px;
-  font-weight: 600;
-  color: #f5a3a3;
-  line-height: 1.5;
-}
 </style>

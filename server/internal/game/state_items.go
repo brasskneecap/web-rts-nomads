@@ -269,39 +269,58 @@ func (s *GameState) handlePurchaseItemLocked(playerID, buildingID, itemID string
 		return
 	}
 
-	// Building must exist, be owned by this player, have item-purchase
-	// capability, and not be under construction.
+	// Building must exist, be visible, have item-purchase capability, and
+	// not be under construction.
 	building := s.getBuildingByIDLocked(buildingID)
 	if building == nil || !building.Visible {
-		return
-	}
-	if building.OwnerID == nil || *building.OwnerID != playerID {
 		return
 	}
 	if getMetadataBool(building.Metadata, "underConstruction") {
 		return
 	}
-	hasCapability := false
-	for _, cap := range building.Capabilities {
-		if cap == "item-purchase" {
-			hasCapability = true
+	if !hasItemPurchaseCapability(building) {
+		return
+	}
+
+	// Ownership / discovery / lock gates.
+	//   - Neutral shops: purchaser must have discovered the building (FOW
+	//     KnownBuildings cache) AND the building must not be guard-locked.
+	//   - Player-owned shops: purchaser must equal the owner.
+	if building.OwnerID == nil {
+		return
+	}
+	if *building.OwnerID == neutralPlayerID {
+		fow := s.FOW[playerID]
+		if fow == nil {
+			return
+		}
+		if _, discovered := fow.KnownBuildings[building.ID]; !discovered {
+			return
+		}
+		if s.shopLockedLocked(building) {
+			return
+		}
+	} else if *building.OwnerID != playerID {
+		return
+	}
+
+	// Item must be in this building's current ShopInventory with quantity
+	// remaining. An entry with quantity 0 stays in the inventory list so
+	// the client can render it greyed-out, but the purchase is rejected.
+	stockIdx := -1
+	for i, entry := range building.ShopInventory {
+		if entry.ItemID == itemID {
+			stockIdx = i
 			break
 		}
 	}
-	if !hasCapability {
+	if stockIdx < 0 || building.ShopInventory[stockIdx].Quantity <= 0 {
 		return
 	}
 
 	// Item must exist in catalog.
 	def, ok := s.itemCatalog[itemID]
 	if !ok {
-		return
-	}
-
-	// RequiredBuilding gate: if the item declares a required building type, the
-	// targeted building must be of that type. Items with empty RequiredBuilding
-	// are available wherever item-purchase is offered.
-	if def.RequiredBuilding != "" && building.BuildingType != def.RequiredBuilding {
 		return
 	}
 
@@ -339,6 +358,10 @@ func (s *GameState) handlePurchaseItemLocked(playerID, buildingID, itemID string
 
 	player.Resources["gold"] -= def.CostGold
 	s.addItemToVaultLocked(player, def)
+	// Decrement the shop's stock for this item. The entry stays in the
+	// inventory list at quantity 0 so the client can render it greyed-out
+	// rather than removing the slot entirely.
+	building.ShopInventory[stockIdx].Quantity--
 }
 
 // handleEquipItemLocked validates and moves an item from the player's vault

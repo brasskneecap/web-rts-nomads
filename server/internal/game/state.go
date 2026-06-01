@@ -598,6 +598,14 @@ type Player struct {
 	// UpgradeState tracks wave upgrade picks and per-wave offer state.
 	UpgradeState PlayerUpgradeState
 
+	// ShopRerollsRemaining is the player's per-match pool of merchant
+	// rerolls. Each reroll regenerates one neutral-shop's inventory and
+	// decrements this counter. Initialised at match-join from
+	// defaultShopRerollsPerPlayer (currently 1); future legend-point
+	// profile upgrades can bump the starting value via the same
+	// applyProfileUpgradesToPlayerLocked path used by ExtraStartingUnits.
+	ShopRerollsRemaining int
+
 	// CommanderAbilityCooldowns tracks wall-clock seconds remaining on each
 	// commander ability (see commander_abilities.go). Keyed by ability id;
 	// entries are removed as they decay to 0. Nil/empty = every ability is
@@ -1046,6 +1054,9 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 	s.EnemySpawnTimers = map[string]*EnemySpawnTimer{}
 	s.initWaveManagerLocked()
 	s.initNeutralCampsLocked()
+	s.initShopBuildingsLocked()
+	s.populateShopInventoriesLocked()
+	s.spawnShopGuardsLocked()
 
 	// Rebuild buildingsByID index from the freshly-cloned Buildings slice.
 	s.buildingsByID = make(map[string]*protocol.BuildingTile, len(s.MapConfig.Buildings))
@@ -1689,18 +1700,34 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
 		isOwn := b.OwnerID != nil && *b.OwnerID == viewerID
+		isShop := hasItemPurchaseCapability(b)
+		_, knownToViewer := fow.KnownBuildings[b.ID]
 		if isOwn {
-			buildings = append(buildings, *b)
+			tile := *b
+			if isShop {
+				tile.ShopLocked = s.shopLockedLocked(b)
+				tile.ShopDiscovered = true
+			}
+			buildings = append(buildings, tile)
 			continue
 		}
 		if fow.anyFootprintClear(b) {
-			buildings = append(buildings, *b)
+			tile := *b
+			if isShop {
+				tile.ShopLocked = s.shopLockedLocked(b)
+				tile.ShopDiscovered = knownToViewer || true // currently visible ⇒ discovered
+			}
+			buildings = append(buildings, tile)
 			continue
 		}
 		if known, ok := fow.KnownBuildings[b.ID]; ok {
 			ghost := *known
 			ghost.Ghost = true
 			ghost.LastSeenTick = s.Tick
+			if isShop {
+				ghost.ShopLocked = s.shopLockedLocked(b)
+				ghost.ShopDiscovered = true
+			}
 			buildings = append(buildings, ghost)
 		}
 	}
@@ -3049,6 +3076,7 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		PhysicalDamageMultiplier:      1.0,
 		MagicDamageMultiplier:         1.0,
 		ExtraStartingUnits:            map[string]int{},
+		ShopRerollsRemaining:          defaultShopRerollsPerPlayer,
 	}
 	// Derive precomputed multipliers and extra workers from the upgrade catalog.
 	applyProfileUpgradesToPlayerLocked(player)

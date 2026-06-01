@@ -42,13 +42,18 @@ func newItemTestState(t *testing.T) (*GameState, string) {
 		Capabilities: []string{"item-purchase"},
 		Metadata:     map[string]interface{}{},
 	})
-	// Re-index buildingsByID.
+	// Re-index buildingsByID and populate the marketplace's shop inventory
+	// via the standard helper so the new per-building inventory gate sees
+	// the catalog-filtered set.
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
 		if s.buildingsByID == nil {
 			s.buildingsByID = map[string]*protocol.BuildingTile{}
 		}
 		s.buildingsByID[b.ID] = b
+		if b.ID == bid {
+			s.populateShopInventoryForBuildingLocked(b)
+		}
 	}
 	s.mu.Unlock()
 

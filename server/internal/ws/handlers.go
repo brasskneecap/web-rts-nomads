@@ -1001,6 +1001,23 @@ func (h *Hub) readLoop(client *Client) {
 			}
 			match.State.PurchaseItem(client.PlayerID(), msg.BuildingID, msg.ItemID)
 
+		case "reroll_shop":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.RerollShopCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid reroll_shop payload"})
+				continue
+			}
+			match.State.RerollShop(client.PlayerID(), msg.BuildingID)
+
 		case "equip_item":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})

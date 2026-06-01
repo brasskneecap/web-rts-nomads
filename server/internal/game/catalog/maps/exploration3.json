@@ -65209,6 +65209,19 @@
         }
       },
       {
+        "x": 38,
+        "y": 6,
+        "id": "neutral-shop-38-6",
+        "buildingType": "neutral-shop",
+        "width": 3,
+        "height": 3,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "item-purchase"
+        ]
+      },
+      {
         "x": 3,
         "y": 7,
         "id": "goldmine-3-7",
