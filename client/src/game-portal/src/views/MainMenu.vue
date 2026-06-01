@@ -15,6 +15,7 @@
       <nav class="main-menu__nav" aria-label="Main menu">
         <MenuPanel>
           <UiButton size="lg" :disabled="true">Campaign</UiButton>
+          <UiButton size="lg" @click="router.push('/war-room')">Start Game</UiButton>
           <UiButton size="lg" @click="router.push('/custom')">Custom Game</UiButton>
           <UiButton size="lg" @click="router.push('/profile')">Profile</UiButton>
           <UiButton size="lg" @click="router.push('/editor')">Map Editor</UiButton>
