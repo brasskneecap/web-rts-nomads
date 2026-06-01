@@ -423,6 +423,35 @@ func TestPurchase_DecrementsStockAndRejectsAtZero(t *testing.T) {
 	}
 }
 
+// TestRerollShop_AppliesPlayerItemCountBonus verifies that a player with
+// ShopItemCountBonus > 0 gets that many extra distinct items when they
+// reroll a merchant. This is the seam future legend-point profile
+// upgrades plug into — bumping the field is the only change needed for
+// the upgrade to take effect.
+func TestRerollShop_AppliesPlayerItemCountBonus(t *testing.T) {
+	s := makeShopTestState(t, 99)
+	s.mu.Lock()
+	addShopBuilding(s, "ms-bonus", "neutral-shop", nil, nil, "", "")
+	reindexShopTestState(s)
+	b := s.buildingsByID["ms-bonus"]
+	clone := *b
+	s.FOW["p1"].KnownBuildings[b.ID] = &clone
+	// Grant the player a bonus and refill the reroll budget so we can spend it.
+	s.Players["p1"].ShopItemCountBonus = 2
+	s.Players["p1"].ShopRerollsRemaining = 1
+	s.mu.Unlock()
+
+	s.RerollShop("p1", "ms-bonus")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	got := shopInventoryItemIDs(s.buildingsByID["ms-bonus"])
+	want := defaultShopLootTargetCount + 2
+	if len(got) != want {
+		t.Errorf("rerolled inventory length with +2 bonus: want %d, got %d (%v)", want, len(got), got)
+	}
+}
+
 // TestRerollShop_RegeneratesInventoryAndDecrementsBudget verifies the
 // reroll handler replaces a neutral-shop's inventory with a fresh roll
 // and decrements the player's ShopRerollsRemaining. A player with zero
