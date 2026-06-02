@@ -121,6 +121,12 @@ func migrateProfile(p *PlayerProfile) {
 		sort.Strings(active)
 		p.ActiveUpgradeIDs = active
 	}
+	// v3 -> v4: initialize AcquiredAdvancements. A nil slice is treated as
+	// empty; we normalise to a non-nil empty slice so JSON serialisation
+	// produces [] rather than null and downstream code can range over it safely.
+	if p.AcquiredAdvancements == nil {
+		p.AcquiredAdvancements = []AcquiredAdvancement{}
+	}
 	// Stamp current version so the next Save persists the new schema.
 	p.Version = CurrentVersion
 }

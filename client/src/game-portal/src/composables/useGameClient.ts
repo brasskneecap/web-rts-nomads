@@ -121,6 +121,11 @@ export function useGameClient() {
     // null signals "use server-side default" (all owned upgrades active per schema v3).
     client.setActiveUpgradeIds(profile.value?.activeUpgradeIds ?? null)
     client.setOwnedUpgradeRanks(profile.value?.ownedUpgradeRanks ?? {})
+    // Send acquired advancement IDs so the server applies them at match start.
+    // Falls back to [] when the profile hasn't loaded — server treats empty as "none".
+    client.setAcquiredAdvancementIds(
+      (profile.value?.acquiredAdvancements ?? []).map((a) => a.id),
+    )
 
     // Wire the connection state callback. This runs outside the RAF loop so
     // connection state changes are never masked by the snapshot polling rhythm.

@@ -139,6 +139,23 @@ func (m *MatchManager) DeleteMatch(matchID string) {
 	}
 }
 
+// IsPlayerInActiveMatch returns true when playerID has an active (non-game-over)
+// presence in any match currently tracked by this manager. Used by purchase
+// handlers to reject profile changes while a player is mid-match.
+func (m *MatchManager) IsPlayerInActiveMatch(playerID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, match := range m.matches {
+		if match.State.IsGameOver() {
+			continue
+		}
+		if match.HasPlayer(playerID) {
+			return true
+		}
+	}
+	return false
+}
+
 // EvictPlayerFromOtherMatches enforces the "one active match per player"
 // rule: any match the player still occupies (or has a pending disconnect-
 // grace timer in) other than exceptMatchID has the player removed

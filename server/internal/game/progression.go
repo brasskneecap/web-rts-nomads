@@ -102,18 +102,17 @@ type pathModifierDef struct {
 //
 //	armor   reduction
 //	   18       15.3%   (berserker baseline)
-//	   33       24.8%   (soldier pre-promotion)
+//	   33       24.8%   (soldier pre-promotion, from soldier.json "armor": 33)
 //	   54       35.1%   (vanguard baseline)
 //	  100       50.0%
 //	  200       66.7%
 //	  300       75.0%
 //
-// soldierBaseArmor is applied to soldiers that have not yet been assigned a
-// promotion path (rank below Bronze). Once pathed, pathModifierDef.Armor takes
-// over and this value is no longer used.
+// Base armor for unpathed units comes from the unit catalog JSON ("armor" field).
+// For promoted units, armor comes from pathModifierDef.Armor plus any per-player
+// advancement bonus (the delta between the effective def and the raw catalog def).
 const (
 	armorMitigationK = 100
-	soldierBaseArmor = 33
 )
 
 // identityPathModifier is returned for units with no path or unknown path/rank combos.
@@ -431,12 +430,44 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 		unit.ProjectileScale = pathProjectileScale
 	}
 
-	if unit.UnitType == "soldier" && unit.ProgressionPath == unitPathNone {
-		unit.Armor = soldierBaseArmor
+	// Armor from catalog and per-player advancement bonus.
+	//
+	// rawCatalogArmor: the unit's base armor as authored in <unit>.json, before
+	// any player advancements are applied.
+	//
+	// effectiveDefArmor: raw + per-player advancement deltas (e.g. +25 per
+	// soldier_armor node). Resolved via EffectiveUnitDefs so the advancement
+	// bonus is per-player, identical to what spawnPlayerUnitLocked uses.
+	//
+	// For unpathed units the catalog base armor IS the unit's armor; advancements
+	// stack on top. For promoted units the path/rank table provides the armor
+	// (pathDef.Armor above), and only the advancement delta is added on top so
+	// that promoting a soldier doesn't lose the armor-advancement bonus.
+	rawCatalogArmor := 0
+	if rawDef, rawOK := getUnitDef(unit.UnitType); rawOK {
+		rawCatalogArmor = rawDef.Armor
 	}
-	// Stack upgrade-sourced armor (stored in BaseArmor) on top of path/rank
-	// armor without overwriting it. BaseArmor is 0 for units with no upgrades,
-	// so this is a no-op for the vast majority of units.
+	effectiveDefArmor := rawCatalogArmor
+	if player, pOK := s.Players[unit.OwnerID]; pOK {
+		if effDef, eOK := player.EffectiveUnitDefs[unit.UnitType]; eOK {
+			effectiveDefArmor = effDef.Armor
+		}
+	}
+	if unit.ProgressionPath == unitPathNone {
+		// No promotion path: catalog base armor is the unit's entire armor
+		// contribution from the def layer (replaces the old soldierBaseArmor
+		// const and the unit-type-specific special case it required).
+		unit.Armor = effectiveDefArmor
+	} else {
+		// Promoted unit: pathDef.Armor was set above (line: unit.Armor = pathDef.Armor).
+		// Add only the advancement delta so the player's armor advancements
+		// continue to benefit promoted soldiers.
+		unit.Armor += effectiveDefArmor - rawCatalogArmor
+	}
+	// Stack upgrade-track armor (stored in BaseArmor) on top. BaseArmor is only
+	// populated by applyPlayerUpgradesAtSpawnLocked (workshop/armoury upgrade
+	// tracks). Advancement armor flows through effectiveDefArmor above, so
+	// BaseArmor no longer carries it — avoiding the previous double-count.
 	unit.Armor += unit.BaseArmor
 
 	// Fold in equipment bonuses after path/rank multipliers and upgrade armor.

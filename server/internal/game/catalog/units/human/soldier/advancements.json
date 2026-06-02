@@ -1,0 +1,116 @@
+{
+  "unitType": "soldier",
+  "nodes": [
+    {
+      "id": "soldier_hp_1",
+      "name": "Hardened Veteran",
+      "description": "Soldiers start each match with +50 maximum HP.",
+      "kind": "minor",
+      "cost": 50,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "maxHp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "soldier_armor_1",
+      "name": "Hardened Plate",
+      "description": "Soldiers gain +25 base armor.",
+      "kind": "minor",
+      "cost": 50,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "armor",
+          "amount": 25
+        }
+      ]
+    },
+    {
+      "id": "soldier_damage_1",
+      "name": "Whetted Steel",
+      "description": "Soldiers gain +5 base damage.",
+      "kind": "minor",
+      "cost": 50,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "damage",
+          "amount": 5
+        }
+      ]
+    },
+    {
+      "id": "soldier_veteran_initiates",
+      "name": "Veteran Initiates",
+      "description": "Soldiers spawn with 50 EXP.",
+      "kind": "major",
+      "cost": 150,
+      "effects": [
+        {
+          "kind": "unitSpawnExp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "soldier_hp_2",
+      "name": "Hardened Veteran II",
+      "description": "Soldiers gain an additional +50 maximum HP.",
+      "kind": "minor",
+      "cost": 100,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "maxHp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "soldier_armor_2",
+      "name": "Hardened Plate II",
+      "description": "Soldiers gain an additional +25 base armor.",
+      "kind": "minor",
+      "cost": 100,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "armor",
+          "amount": 25
+        }
+      ]
+    },
+    {
+      "id": "soldier_damage_2",
+      "name": "Whetted Steel II",
+      "description": "Soldiers gain an additional +5 base damage.",
+      "kind": "minor",
+      "cost": 100,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "damage",
+          "amount": 5
+        }
+      ]
+    },
+    {
+      "id": "soldier_twin_bronze",
+      "name": "Twin Bronze",
+      "description": "Soldiers gain a second Bronze perk at promotion. The two perks are drawn from the same path's Bronze pool and are always distinct.",
+      "kind": "major",
+      "cost": 300,
+      "effects": [
+        {
+          "kind": "unitExtraPerkSlot",
+          "tier": "bronze",
+          "rank": 1
+        }
+      ]
+    }
+  ]
+}

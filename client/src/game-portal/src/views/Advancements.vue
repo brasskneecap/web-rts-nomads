@@ -1,20 +1,29 @@
 <template>
   <div class="advancements">
-    <h1 class="advancements__title">Advancements</h1>
+    <div class="advancements__header">
+      <h1 class="advancements__title">Advancements</h1>
+      <div class="advancements__balance" aria-label="Legend points balance">
+        <span class="advancements__balance-label">Legend Points</span>
+        <span class="advancements__balance-value">{{ legendPoints }}</span>
+      </div>
+    </div>
+
+    <div v-if="error" class="advancements__error" role="alert">{{ error }}</div>
+
     <div class="advancements__rows">
       <div
         v-for="row in visibleRows"
-        :key="row.id"
+        :key="row.unitType"
         class="advancement-row"
       >
         <div class="advancement-row__character">
           <div
             class="advancement-row__portrait"
-            :style="{ backgroundImage: `url(${row.portraitUrl})` }"
-            :aria-label="row.name"
+            :style="{ backgroundImage: portraitBg(row.unitType) }"
+            :aria-label="unitDisplayName(row.unitType)"
             role="img"
           ></div>
-          <div class="advancement-row__name">{{ row.name }}</div>
+          <div class="advancement-row__name">{{ unitDisplayName(row.unitType) }}</div>
         </div>
 
         <div class="advancement-row__nodes">
@@ -24,14 +33,24 @@
             type="button"
             class="advancement-node"
             :class="[
-              `advancement-node--${node.shape}`,
+              nodeShapeClass(node),
               nodeStateClass(row, idx),
             ]"
-            :style="{ backgroundImage: `url(${node.acquired ? node.acquiredIcon : node.icon})` }"
-            :disabled="!isAvailable(row, idx) && !node.acquired"
-            :aria-label="`${node.label} (${nodeStateLabel(row, idx)})`"
-            @click="acquire(row, idx)"
-          ></button>
+            :style="{ backgroundImage: nodeIcon(node, isAcquired(node.id)) }"
+            :disabled="isBusy || isAcquired(node.id) || !isAvailable(row, idx) || !canAfford(node.cost)"
+            :aria-label="`${node.name} (${nodeStateLabel(row, idx)})`"
+            @click="purchase(node.id)"
+          >
+            <UiTooltip :title="node.name" :body="tooltipBody(node)" />
+          </button>
+        </div>
+
+        <div class="advancement-row__cost">
+          <template v-if="nextNodeFor(row)">
+            <span class="advancement-row__cost-label">Next</span>
+            <span class="advancement-row__cost-value">{{ nextNodeFor(row)!.cost }} LP</span>
+          </template>
+          <span v-else class="advancement-row__cost-complete">Complete</span>
         </div>
       </div>
     </div>
@@ -85,7 +104,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, ref } from 'vue'
+import UiTooltip from '@/components/ui/UiTooltip.vue'
+import { useAdvancements } from '@/composables/useAdvancements'
+import type { UnitAdvancementNode, UnitAdvancementTrack } from '@/types/profile'
 import acolytePortraitUrl from '@/assets/units/human/acolyte/portrait.png'
 import adeptPortraitUrl from '@/assets/units/human/adept/portrait.png'
 import archerPortraitUrl from '@/assets/units/human/archer/portrait.png'
@@ -95,85 +117,49 @@ import waxSealUrl from '@/assets/ui/buttons/war_room/advancement/wax-seal.png'
 import medalSlotEmptyUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot-empty.png'
 import medalSlotUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot.png'
 
-type NodeShape = 'circle' | 'square'
+const { catalog, legendPoints, isBusy, error, isAcquired, canAfford, nextNodeFor, purchase } =
+  useAdvancements()
 
-interface AdvancementNode {
-  id: string
-  label: string
-  icon: string
-  acquiredIcon: string
-  shape: NodeShape
-  acquired: boolean
+// Portrait lookup: unitType -> static import URL. Extended as new unit types
+// get advancement tracks. Unknown types fall back to a transparent pixel.
+const PORTRAIT_MAP: Record<string, string> = {
+  soldier: soldierPortraitUrl,
+  archer: archerPortraitUrl,
+  acolyte: acolytePortraitUrl,
+  adept: adeptPortraitUrl,
 }
 
-interface AdvancementRow {
-  id: string
-  name: string
-  portraitUrl: string
-  nodes: AdvancementNode[]
+// Human-readable label for a unit type. Falls back to capitalised unitType.
+function unitDisplayName(unitType: string): string {
+  const overrides: Record<string, string> = {
+    soldier: 'Soldier',
+    archer: 'Archer',
+    acolyte: 'Acolyte',
+    adept: 'Adept',
+  }
+  return overrides[unitType] ?? (unitType.charAt(0).toUpperCase() + unitType.slice(1))
 }
+
+function portraitBg(unitType: string): string {
+  const url = PORTRAIT_MAP[unitType]
+  return url ? `url(${url})` : 'none'
+}
+
+// Only show tracks that have at least one node — empty tracks (archer/acolyte/
+// adept before their advancements.json ships) are hidden rather than shown as
+// ghost rows.
+const rowsWithNodes = computed<UnitAdvancementTrack[]>(() =>
+  catalog.value.filter((t) => t.nodes.length > 0),
+)
 
 const PAGE_SIZE = 3
-
-const SEAL_SLOT = { icon: unsealedUrl, acquiredIcon: waxSealUrl, shape: 'circle' as const }
-const MEDAL_SLOT = { icon: medalSlotEmptyUrl, acquiredIcon: medalSlotUrl, shape: 'square' as const }
-
-const TRACK_LAYOUT = [
-  SEAL_SLOT,
-  SEAL_SLOT,
-  SEAL_SLOT,
-  MEDAL_SLOT,
-  SEAL_SLOT,
-  SEAL_SLOT,
-  SEAL_SLOT,
-  MEDAL_SLOT,
-]
-
-function placeholderNodes(rowId: string): AdvancementNode[] {
-  return TRACK_LAYOUT.map((slot, i) => ({
-    id: `${rowId}-${i + 1}`,
-    label: `Tier ${i + 1}`,
-    icon: slot.icon,
-    acquiredIcon: slot.acquiredIcon,
-    shape: slot.shape,
-    acquired: false,
-  }))
-}
-
-const rows = reactive<AdvancementRow[]>([
-  {
-    id: 'soldier',
-    name: 'Soldier',
-    portraitUrl: soldierPortraitUrl,
-    nodes: placeholderNodes('soldier'),
-  },
-  {
-    id: 'archer',
-    name: 'Archer',
-    portraitUrl: archerPortraitUrl,
-    nodes: placeholderNodes('archer'),
-  },
-  {
-    id: 'acolyte',
-    name: 'Acolyte',
-    portraitUrl: acolytePortraitUrl,
-    nodes: placeholderNodes('acolyte'),
-  },
-  {
-    id: 'adept',
-    name: 'Adept',
-    portraitUrl: adeptPortraitUrl,
-    nodes: placeholderNodes('adept'),
-  },
-])
-
 const pageIndex = ref(0)
 
-const totalPages = computed(() => Math.max(1, Math.ceil(rows.length / PAGE_SIZE)))
+const totalPages = computed(() => Math.max(1, Math.ceil(rowsWithNodes.value.length / PAGE_SIZE)))
 
-const visibleRows = computed(() => {
+const visibleRows = computed<UnitAdvancementTrack[]>(() => {
   const start = pageIndex.value * PAGE_SIZE
-  return rows.slice(start, start + PAGE_SIZE)
+  return rowsWithNodes.value.slice(start, start + PAGE_SIZE)
 })
 
 function prevPage() {
@@ -184,29 +170,48 @@ function nextPage() {
   if (pageIndex.value < totalPages.value - 1) pageIndex.value += 1
 }
 
-function isAvailable(row: AdvancementRow, idx: number): boolean {
+function isAvailable(track: UnitAdvancementTrack, idx: number): boolean {
   if (idx === 0) return true
-  return row.nodes[idx - 1].acquired
+  return isAcquired(track.nodes[idx - 1].id)
 }
 
-function nodeStateClass(row: AdvancementRow, idx: number) {
-  const node = row.nodes[idx]
-  if (node.acquired) return 'advancement-node--acquired'
-  if (isAvailable(row, idx)) return 'advancement-node--available'
+function nodeShapeClass(node: UnitAdvancementNode): string {
+  return node.kind === 'major' ? 'advancement-node--square' : 'advancement-node--circle'
+}
+
+function nodeIcon(node: UnitAdvancementNode, acquired: boolean): string {
+  if (node.kind === 'major') {
+    return `url(${acquired ? medalSlotUrl : medalSlotEmptyUrl})`
+  }
+  return `url(${acquired ? waxSealUrl : unsealedUrl})`
+}
+
+function nodeStateClass(track: UnitAdvancementTrack, idx: number): string {
+  const node = track.nodes[idx]
+  if (isAcquired(node.id)) return 'advancement-node--acquired'
+  if (isAvailable(track, idx)) {
+    return canAfford(node.cost)
+      ? 'advancement-node--available'
+      : 'advancement-node--unaffordable'
+  }
   return 'advancement-node--locked'
 }
 
-function nodeStateLabel(row: AdvancementRow, idx: number): string {
-  const node = row.nodes[idx]
-  if (node.acquired) return 'acquired'
-  if (isAvailable(row, idx)) return 'available'
+function nodeStateLabel(track: UnitAdvancementTrack, idx: number): string {
+  const node = track.nodes[idx]
+  if (isAcquired(node.id)) return 'acquired'
+  if (isAvailable(track, idx)) return canAfford(node.cost) ? 'available' : 'not enough Legend Points'
   return 'locked'
 }
 
-function acquire(row: AdvancementRow, idx: number) {
-  if (!isAvailable(row, idx)) return
-  row.nodes[idx].acquired = true
+function tooltipBody(node: UnitAdvancementNode): string {
+  const lines: string[] = []
+  if (node.description) lines.push(node.description)
+  lines.push(`Cost: ${node.cost} LP`)
+  return lines.join('\n')
 }
+
+
 </script>
 
 <style scoped>
@@ -217,12 +222,21 @@ function acquire(row: AdvancementRow, idx: number) {
   flex-direction: column;
   padding: 1% 2%;
   box-sizing: border-box;
-  overflow: hidden;
+  /* No overflow clipping — tooltips on top-row nodes need to extend above
+     the panel bounds. Pagination already keeps content from overflowing. */
+}
+
+.advancements__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 16px;
 }
 
 .advancements__title {
-  flex: 0 0 auto;
-  margin: 0 0 8px;
+  margin: 0;
   text-align: left;
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
   font-size: 18px;
@@ -233,13 +247,47 @@ function acquire(row: AdvancementRow, idx: number) {
   transform: translateX(80px);
 }
 
+.advancements__balance {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid #c68c44;
+  border-radius: 4px;
+  background-color: rgba(198, 140, 68, 0.12);
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  color: #3a1f0a;
+}
+
+.advancements__balance-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.advancements__balance-value {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.advancements__error {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  background-color: rgba(180, 40, 20, 0.15);
+  border: 1px solid rgba(180, 40, 20, 0.4);
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-size: 11px;
+  color: #7a1a0a;
+}
+
 .advancements__rows {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  overflow-y: auto;
-  min-height: 0;
 }
 
 .advancement-row {
@@ -296,7 +344,39 @@ function acquire(row: AdvancementRow, idx: number) {
   flex-wrap: nowrap;
 }
 
+.advancement-row__cost {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  color: #3a1f0a;
+  white-space: nowrap;
+}
+
+.advancement-row__cost-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.advancement-row__cost-value {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.advancement-row__cost-complete {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
 .advancement-node {
+  position: relative;
   flex: 0 0 auto;
   width: 48px;
   height: 48px;
@@ -306,12 +386,17 @@ function acquire(row: AdvancementRow, idx: number) {
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
-  cursor: pointer;
   image-rendering: pixelated;
   transition:
     transform 120ms ease,
     filter 120ms ease,
     opacity 120ms ease;
+}
+
+.advancement-node:hover .ui-tooltip,
+.advancement-node:focus-visible .ui-tooltip {
+  opacity: 1;
+  visibility: visible;
 }
 
 .advancement-node--circle {
@@ -331,6 +416,14 @@ function acquire(row: AdvancementRow, idx: number) {
 
 .advancement-node--available {
   animation: advancement-pulse 1.6s ease-in-out infinite;
+}
+
+.advancement-node--unaffordable {
+  /* Unlocked but the player can't pay yet — keep the art readable but
+     drop the pulse and dim slightly to signal "wait". */
+  filter: grayscale(0.4) brightness(0.85);
+  opacity: 0.85;
+  cursor: not-allowed;
 }
 
 .advancement-node--locked {
@@ -376,7 +469,6 @@ function acquire(row: AdvancementRow, idx: number) {
   border: 0;
   background: transparent;
   color: #3a1f0a;
-  cursor: pointer;
   transition:
     transform 120ms ease,
     filter 120ms ease,

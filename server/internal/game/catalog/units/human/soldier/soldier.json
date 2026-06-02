@@ -5,6 +5,7 @@
   "archetype": "soldier",
   "visionRange": 288,
   "hp": 175,
+  "armor": 33,
   "damage": 12,
   "attackRange": 60,
   "attackSpeed": 1,

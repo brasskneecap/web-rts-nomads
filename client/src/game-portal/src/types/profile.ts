@@ -1,3 +1,27 @@
+export type AcquiredAdvancement = {
+  id: string
+  costPaid: number
+}
+
+export type UnitAdvancementEffect =
+  | { kind: 'unitStatAdd'; stat: 'maxHp' | 'armor' | 'damage' | 'attackRange' | 'moveSpeed' | 'attackSpeed'; amount: number }
+  | { kind: 'unitSpawnExp'; amount: number }
+  | { kind: 'unitExtraPerkSlot'; tier: 'bronze' | 'silver' | 'gold'; rank: number }
+
+export type UnitAdvancementNode = {
+  id: string
+  name: string
+  description: string
+  kind: 'minor' | 'major'
+  cost: number
+  effects: UnitAdvancementEffect[]
+}
+
+export type UnitAdvancementTrack = {
+  unitType: string
+  nodes: UnitAdvancementNode[]
+}
+
 export type PlayerProfile = {
   playerId: string
   version: number
@@ -9,6 +33,7 @@ export type PlayerProfile = {
   selectedCommanderId: string
   activeUpgradeIds: string[]
   ownedUpgradeRanks: Record<string, number>
+  acquiredAdvancements: AcquiredAdvancement[]
   stats: ProfileStats
 }
 

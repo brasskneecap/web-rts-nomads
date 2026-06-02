@@ -5,6 +5,7 @@
   "archetype": "raider",
   "visionRange": 256,
   "hp": 75,
+  "armor": 0,
   "damage": 5,
   "attackRange": 60,
   "attackSpeed": 1,

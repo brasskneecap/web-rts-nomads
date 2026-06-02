@@ -59,6 +59,17 @@ Concrete identifier types:
 
 - Client is **TypeScript / Vue 3** (see [client/src/game-portal/src/](../../client/src/game-portal/src/)). Prefer editing existing components and Pinia stores over introducing new abstractions.
 - The client is a view of server state. Never simulate gameplay logic client-side that the server is authoritative over — render what the server sends.
+- **Custom cursor must always win.** The project sets a custom game cursor on `<html>` via [main.ts](../../client/src/game-portal/src/main.ts) (assets at [client/src/game-portal/src/assets/cursors/](../../client/src/game-portal/src/assets/cursors/) — `default.png` is the yellow pointer, `hover.png` is the dark gauntlet). Two global rules in [style.css](../../client/src/game-portal/src/style.css) paint the cursor on interactive elements:
+  - **Enabled** interactive elements get `var(--cursor-hover)`.
+  - **Disabled** interactive elements get `var(--cursor-default)` — this is required because the browser user-agent stylesheet sets its own cursor on `:disabled` buttons, which would otherwise shadow the cursor inherited from `<html>`.
+  Both rules are necessary; deleting the disabled one re-introduces the OS arrow on disabled buttons.
+  
+  Component CSS must NOT write `cursor: default`, `cursor: pointer`, `cursor: auto`, or any other literal cursor — the global rules already cover it. Convention:
+  - Interactive elements (`<button>`, `[role="button"]`, etc.): write nothing.
+  - Disabled / inactive states (acquired advancement nodes, etc.): write nothing.
+  - "Forbidden action" states (locked / unaffordable nodes): `cursor: not-allowed` is acceptable (semantic system cursor, not the OS white arrow). Per-state, not on the base class.
+  
+  When editing a file that already has component-level `cursor:` declarations, remove them — they shadow the global rule on disabled states.
 
 ## Desktop (Tauri) shell rules
 

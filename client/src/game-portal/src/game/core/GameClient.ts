@@ -205,6 +205,10 @@ export class GameClient {
     this.network.setOwnedUpgradeRanks(ranks)
   }
 
+  setAcquiredAdvancementIds(ids: string[]) {
+    this.network.setAcquiredAdvancementIds(ids)
+  }
+
   async leaveStoredMatch() {
     await this.network.leaveStoredMatch()
   }

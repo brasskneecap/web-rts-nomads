@@ -14,7 +14,7 @@ import (
 // and ExtraStartingUnits is empty (no per-unit-type grants).
 func TestProfileUpgrade_NoUpgrades_DefaultMultipliers(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
 
 	s.mu.RLock()
 	p, ok := s.Players["p1"]
@@ -41,7 +41,7 @@ func TestProfileUpgrade_NoUpgrades_DefaultMultipliers(t *testing.T) {
 // at rank 3 yields PhysicalDamageMultiplier=1.30 and unchanged MagicDamageMultiplier.
 func TestProfileUpgrade_PhysicalPowerRank3_Multiplier(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, nil)
+	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, nil, nil)
 
 	s.mu.RLock()
 	p, ok := s.Players["p1"]
@@ -78,7 +78,7 @@ func TestProfileUpgrade_AdditionalWorkerRank2_ExtraWorkers(t *testing.T) {
 	s.mu.RUnlock()
 
 	// Now enroll a player with additional_worker rank 2.
-	s.EnsurePlayerWithUpgrades("p2", map[string]int{"additional_worker": 2}, nil)
+	s.EnsurePlayerWithUpgrades("p2", map[string]int{"additional_worker": 2}, nil, nil)
 
 	s.mu.RLock()
 	var p2Workers int
@@ -100,7 +100,7 @@ func TestProfileUpgrade_AdditionalWorkerRank2_ExtraWorkers(t *testing.T) {
 // rank 1 yields MagicDamageMultiplier=1.10 and PhysicalDamageMultiplier=1.0.
 func TestProfileUpgrade_MagicPowerRank1_OnlyMagicMultiplied(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"magic_power": 1}, nil)
+	s.EnsurePlayerWithUpgrades("p1", map[string]int{"magic_power": 1}, nil, nil)
 
 	s.mu.RLock()
 	p, ok := s.Players["p1"]
@@ -126,7 +126,7 @@ func TestProfileUpgrade_PhysicalPower_DamageMultiplied(t *testing.T) {
 	s := newProjectileTestState(t)
 
 	// Set up a player with rank-3 physical_power → multiplier = 1.30.
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, nil)
+	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, nil, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -184,7 +184,7 @@ func TestProfileUpgrade_PhysicalPower_DamageMultiplied(t *testing.T) {
 // fire-typed attack — fire uses MagicDamageMultiplier, which is 1.0.
 func TestProfileUpgrade_MagicAttack_PhysicalPowerNotApplied(t *testing.T) {
 	s := newProjectileTestState(t)
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, nil)
+	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, nil, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -235,7 +235,7 @@ func TestProfileUpgrade_EnemyAI_Unaffected(t *testing.T) {
 // (100 * 1.30) before armor mitigation, where armor=0 means the full 130 lands.
 func TestProfileUpgrade_FullDamagePipeline_PlayerPhysicalAttack(t *testing.T) {
 	s := newProjectileTestState(t)
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, nil)
+	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, nil, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -272,7 +272,7 @@ func TestProfileUpgrade_FullDamagePipeline_PlayerPhysicalAttack(t *testing.T) {
 // have their multipliers reset.
 func TestProfileUpgrade_ReconnectDoesNotResetMultipliers(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, nil)
+	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, nil, nil)
 
 	s.mu.RLock()
 	multBefore := s.Players["p1"].PhysicalDamageMultiplier
@@ -329,7 +329,7 @@ func TestApplyProfileUpgradesToPlayerLocked_Deterministic(t *testing.T) {
 func TestActiveUpgradeGate_InactiveUpgradeNotApplied(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
 	// Pass an explicit empty active set — physical_power is owned but inactive.
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, []string{})
+	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, []string{}, nil)
 
 	s.mu.RLock()
 	p, ok := s.Players["p1"]
@@ -348,7 +348,7 @@ func TestActiveUpgradeGate_InactiveUpgradeNotApplied(t *testing.T) {
 // PhysicalDamageMultiplier=1.30.
 func TestActiveUpgradeGate_ActiveUpgradeApplied(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, []string{"physical_power"})
+	s.EnsurePlayerWithUpgrades("p1", map[string]int{"physical_power": 3}, []string{"physical_power"}, nil)
 
 	s.mu.RLock()
 	p, ok := s.Players["p1"]

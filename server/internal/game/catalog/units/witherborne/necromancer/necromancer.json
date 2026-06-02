@@ -6,6 +6,7 @@
   "combatProfile": "caster",
   "visionRange": 384,
   "hp": 75,
+  "armor": 0,
   "damage": 8,
   "attackRange": 220,
   "attackSpeed": 1.5,

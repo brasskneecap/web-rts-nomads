@@ -6,6 +6,7 @@
   "nonCombat": true,
   "visionRange": 256,
   "hp": 100,
+  "armor": 0,
   "damage": 3,
   "attackRange": 60,
   "attackSpeed": 1,

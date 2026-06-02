@@ -349,6 +349,12 @@ func eligiblePerksForUnitAtRank(unit *Unit, rank string) []*PerkDef {
 		}
 		eligible = append(eligible, def)
 	}
+	// Sort by ID before returning so that rngPerks.Intn picks from a
+	// deterministic order regardless of map iteration order. Without this sort,
+	// two GameState instances with the same seed can produce different perks
+	// because Go randomises map iteration order per process, violating the
+	// replay-reproducibility invariant required by AI_RULES.md.
+	sort.Slice(eligible, func(i, j int) bool { return eligible[i].ID < eligible[j].ID })
 	return eligible
 }
 

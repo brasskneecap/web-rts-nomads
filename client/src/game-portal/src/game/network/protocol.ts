@@ -300,6 +300,7 @@ export type JoinMatchMessage = {
   matchId?: string
   activeUpgradeIds?: string[]
   ownedUpgradeRanks?: Record<string, number>
+  acquiredAdvancementIds?: string[]
 }
 
 export type LeaveMatchMessage = {
@@ -783,6 +784,15 @@ export type UnitSnapshot = {
   recentRankUpSeconds?: number
   progressionPath?: string
   perkIds?: string[]
+  /** Advancement-granted extra perk slot counts, keyed by tier.
+   *  Mirrors server `UnitSnapshot.ExtraPerkSlots`. Populated only when the
+   *  unit's owner has a `unitExtraPerkSlot` advancement (e.g. Twin Bronze)
+   *  for this unit type. Value is the count of EXTRA slots at that tier
+   *  (1 for Twin Bronze; future Triple Bronze would set 2). Absent /
+   *  undefined for units whose owner has no such advancement. The HUD uses
+   *  this to render extra perk cells beyond the standard 3 — locked icon
+   *  before the perk is granted, perk icon after. */
+  extraPerkSlots?: Record<string, number>
   /** Aggregate temporary HP pool — sum of every active shield source on the
    *  unit (legacy single Unit.Shield from blood_engine + every source-specific
    *  pool). 0/undefined when the unit has no active shield at all. */

@@ -124,7 +124,11 @@ type Unit struct {
 	RankUpFxRemaining    float64
 	ProgressionPath      string
 	Armor                int
-	PerkIDs              []string      // assigned perk ids, in rank-up order (index 0 = Bronze, 1 = Silver, 2 = Gold)
+	PerkIDs []string // assigned perk ids, in rank-up order. Length is typically
+	// 3 (one per tier). Length 4 indicates the owner had a
+	// unitExtraPerkSlot advancement granting a second pick at
+	// the same rank as one of the existing tiers (see advancement
+	// handler "unitExtraPerkSlot" and assignUnitPerkLocked).
 	PerkState            UnitPerkState // runtime state shared across the unit's perks
 
 	// Shield is a temporary HP pool consumed before HP by applyUnitDamageLocked.
@@ -611,6 +615,27 @@ type Player struct {
 	// entries are removed as they decay to 0. Nil/empty = every ability is
 	// ready.
 	CommanderAbilityCooldowns map[string]float64
+
+	// AcquiredAdvancements is a snapshot of the player's purchased advancement
+	// IDs taken at match join. Mutations to the profile during the match do not
+	// affect this field. Nil / empty means no advancements purchased.
+	AcquiredAdvancements []string
+
+	// EffectiveUnitDefs is a per-player map of unitType → modified UnitDef
+	// reflecting all owned advancements. Computed once at match start by
+	// applyAdvancementsToEffectiveDefsLocked. Only contains entries for unit
+	// types the player has at least one advancement for; absent entries fall
+	// back to the catalog def. Never mutated after match start.
+	EffectiveUnitDefs map[string]UnitDef
+
+	// ExtraPerkSlots records advancement-granted extra perk tiers per unit type.
+	// Outer key: unitType (e.g. "soldier"). Inner key: tier ("bronze" / "silver" /
+	// "gold"). Value true means assignUnitPerkLocked grants a SECOND perk of that
+	// tier at the rank-up moment. Computed once at match start by the
+	// unitExtraPerkSlot effect handler in advancementEffectRegistry and never
+	// mutated thereafter. Nil-map fast path: a player with no extra-slot
+	// advancements has a nil map, and the perk-grant logic short-circuits.
+	ExtraPerkSlots map[string]map[string]bool
 }
 
 const (
@@ -944,16 +969,6 @@ const (
 	defaultVisionRange = 400.0
 )
 
-const (
-	raiderDamage      = 5
-	raiderAttackRange = 60.0
-	raiderAttackSpeed = 1.0
-	raiderHP          = 75
-	raiderMaxHP       = 75
-	// Mirror of catalog/units/raider/raider/raider.json moveSpeed — kept here because
-	// spawnRaiderUnitLocked doesn't do a def lookup like the soldier-type path.
-	raiderMoveSpeed = 100.0
-)
 
 // newMatchSeed generates a cryptographically-random int64 seed so concurrent
 // match creations never collide on the same nanosecond.
@@ -1305,6 +1320,7 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
 			PerkIDs:             unit.PerkIDs,
+			ExtraPerkSlots:      s.unitExtraPerkSlotsForSnapshotLocked(unit),
 			Shield:              s.unitShieldForSnapshotLocked(unit),
 			MaxShield:           s.unitMaxShieldForSnapshotLocked(unit),
 			ShieldPools:         s.unitShieldPoolsForSnapshotLocked(unit),
@@ -1644,6 +1660,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
 			PerkIDs:             unit.PerkIDs,
+			ExtraPerkSlots:      s.unitExtraPerkSlotsForSnapshotLocked(unit),
 			Shield:              s.unitShieldForSnapshotLocked(unit),
 			MaxShield:           s.unitMaxShieldForSnapshotLocked(unit),
 			ShieldPools:         s.unitShieldPoolsForSnapshotLocked(unit),
@@ -2108,6 +2125,32 @@ func (s *GameState) unitXPIntoCurrentRankForSnapshotLocked(unit *Unit) int {
 	return s.unitXPIntoCurrentRankLocked(unit)
 }
 
+// unitExtraPerkSlotsForSnapshotLocked converts Player.ExtraPerkSlots
+// (map[string]bool, keyed by tier) into the wire-format map[string]int the
+// client uses to render extra locked-or-filled perk slot cells. Returns nil
+// when the unit's owner has no extra-slot advancements for this unit type so
+// the omitempty JSON tag elides the field from the payload entirely.
+func (s *GameState) unitExtraPerkSlotsForSnapshotLocked(unit *Unit) map[string]int {
+	player, ok := s.Players[unit.OwnerID]
+	if !ok || player == nil || player.ExtraPerkSlots == nil {
+		return nil
+	}
+	tiers, hasUnit := player.ExtraPerkSlots[unit.UnitType]
+	if !hasUnit || len(tiers) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(tiers))
+	for tier, granted := range tiers {
+		if granted {
+			out[tier] = 1
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 	units := make([]protocol.UnitSnapshot, 0, len(s.Units))
 	for _, unit := range s.Units {
@@ -2150,6 +2193,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			RecentRankUpSeconds: unit.RankUpFxRemaining,
 			ProgressionPath:     unit.ProgressionPath,
 			PerkIDs:             unit.PerkIDs,
+			ExtraPerkSlots:      s.unitExtraPerkSlotsForSnapshotLocked(unit),
 			Shield:              s.unitShieldForSnapshotLocked(unit),
 			MaxShield:           s.unitMaxShieldForSnapshotLocked(unit),
 			ShieldPools:         s.unitShieldPoolsForSnapshotLocked(unit),
@@ -3018,7 +3062,7 @@ func (s *GameState) HumanPlayerMatchSummaries() []protocol.MatchSummary {
 }
 
 func (s *GameState) EnsurePlayer(playerID string) {
-	s.EnsurePlayerWithUpgrades(playerID, nil, nil)
+	s.EnsurePlayerWithUpgrades(playerID, nil, nil, nil)
 }
 
 // EnsurePlayerWithUpgrades is the full match-join path. It creates the Player
@@ -3028,7 +3072,9 @@ func (s *GameState) EnsurePlayer(playerID string) {
 // join time; nil is treated as empty (default multipliers, no extra workers).
 // activeUpgradeIDs lists which upgrades are enabled for this match; nil means
 // all owned upgrades are active (backwards-compatible default).
-func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks map[string]int, activeUpgradeIDs []string) {
+// acquiredAdvancementIDs is the sorted list of advancement IDs the player owns
+// (from PlayerProfile.AcquiredAdvancements); nil / empty means no advancements.
+func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks map[string]int, activeUpgradeIDs []string, acquiredAdvancementIDs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -3058,6 +3104,14 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		}
 	}
 
+	// Snapshot acquired advancement IDs. Defensive copy; nil -> empty slice.
+	advancementIDs := make([]string, 0, len(acquiredAdvancementIDs))
+	for _, id := range acquiredAdvancementIDs {
+		if id != "" {
+			advancementIDs = append(advancementIDs, id)
+		}
+	}
+
 	player := &Player{
 		ID:    playerID,
 		Color: s.randomColor(),
@@ -3077,9 +3131,14 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		MagicDamageMultiplier:         1.0,
 		ExtraStartingUnits:            map[string]int{},
 		ShopRerollsRemaining:          defaultShopRerollsPerPlayer,
+		AcquiredAdvancements:          advancementIDs,
 	}
 	// Derive precomputed multipliers and extra workers from the upgrade catalog.
 	applyProfileUpgradesToPlayerLocked(player)
+	// Compute per-player effective unit defs from owned advancements. Must run
+	// after applyProfileUpgradesToPlayerLocked so the effective defs are ready
+	// before the first unit spawns below.
+	applyAdvancementsToEffectiveDefsLocked(player)
 	s.Players[playerID] = player
 	color := player.Color
 

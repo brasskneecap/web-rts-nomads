@@ -5,6 +5,7 @@ import {
   fetchTuning,
   getOrCreatePlayerId,
 } from '@/services/profileApi'
+import { setAdvancementCatalog } from '@/composables/useAdvancements'
 
 // Module-level singleton — one fetch for the entire app lifetime.
 const profile = ref<PlayerProfile | null>(null)
@@ -37,6 +38,7 @@ async function refresh(): Promise<void> {
       fetchTuning().catch(() => null),
     ])
     profile.value = profileResult.profile
+    if (profileResult.advancementCatalog) setAdvancementCatalog(profileResult.advancementCatalog)
     if (tuningResult) tuning.value = tuningResult
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load profile'

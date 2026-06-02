@@ -20,10 +20,23 @@ const applyHoverCursorVar = () => {
     resolveCursor('hover', 'pointer'),
   )
 }
+const applyDefaultCursorVar = () => {
+  // Exposes the game default cursor as a CSS variable so style.css rules
+  // can re-assert it on disabled buttons (where the browser's user-agent
+  // stylesheet otherwise overrides the inherited cursor with the OS arrow).
+  document.documentElement.style.setProperty(
+    '--cursor-default',
+    resolveCursor('default', 'default'),
+  )
+}
 applyBodyCursor()
 applyHoverCursorVar()
+applyDefaultCursorVar()
 onCursorChange((key) => {
-  if (key === 'default') applyBodyCursor()
+  if (key === 'default') {
+    applyBodyCursor()
+    applyDefaultCursorVar()
+  }
   if (key === 'hover') applyHoverCursorVar()
 })
 

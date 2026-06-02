@@ -52,14 +52,27 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 		if playerID == "" {
 			return
 		}
-		p, err := pm.GetOrCreate(playerID, profile.DefaultCommanderID)
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
+
+		// Load (or create) the profile, running the advancement cost-change
+		// refund migration atomically inside WithLocked so any refunds are
+		// persisted before we return the profile to the caller.
+		var p *profile.PlayerProfile
+		migrationErr := pm.WithLocked(playerID, func(prof *profile.PlayerProfile) error {
+			if refundStaleAdvancementCosts(prof) {
+				// Profile was modified; WithLocked will persist it.
+			}
+			p = prof
+			return nil
+		})
+		if migrationErr != nil {
+			writeJSONError(w, http.StatusInternalServerError, "profile_error", migrationErr.Error())
 			return
 		}
+
 		writeJSON(w, map[string]any{
 			"profile":               p,
 			"profileUpgradeCatalog": game.ListProfileUpgradeDefs(),
+			"advancementCatalog":    game.ListUnitAdvancementTracks(),
 		})
 	})
 
@@ -202,6 +215,47 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 			if _, ok := err.(errAbortType); ok {
 				return
 			}
+			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
+			return
+		}
+		writeJSON(w, updated)
+	})
+
+	// DEV-ONLY: grant Legend Points to the caller for testing the advancement
+	// / upgrade purchase flow without grinding matches. Body: `{amount: int}`.
+	// Negative amounts are rejected. Returns the updated profile.
+	//
+	// TODO: gate behind a build tag or env var (e.g. WEBRTS_DEV=1) before
+	// shipping a production build. For now it's an unconditional endpoint to
+	// keep iteration fast.
+	mux.HandleFunc("/api/profile/dev/grant-legend-points", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		playerID := extractPlayerID(w, r)
+		if playerID == "" {
+			return
+		}
+		var body struct {
+			Amount int `json:"amount"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+			return
+		}
+		if body.Amount <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "invalid_amount", "amount must be > 0")
+			return
+		}
+		var updated *profile.PlayerProfile
+		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
+			p.LegendPoints += body.Amount
+			p.LifetimeLegendPoints += body.Amount
+			updated = p
+			return nil
+		})
+		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
 			return
 		}

@@ -118,13 +118,14 @@ func (m *Manager) GetOrCreate(playerID string, defaultCommanderID string) (*Play
 func newDefaultProfile(playerID, commanderID string) *PlayerProfile {
 	now := time.Now().Unix()
 	return &PlayerProfile{
-		PlayerID:            playerID,
-		Version:             CurrentVersion,
-		CreatedAtUnix:       now,
-		UpdatedAtUnix:       now,
-		OwnedCommanderIDs:   []string{commanderID},
-		SelectedCommanderID: commanderID,
-		OwnedUpgradeRanks:   map[string]int{},
-		ActiveUpgradeIDs:    []string{},
+		PlayerID:             playerID,
+		Version:              CurrentVersion,
+		CreatedAtUnix:        now,
+		UpdatedAtUnix:        now,
+		OwnedCommanderIDs:    []string{commanderID},
+		SelectedCommanderID:  commanderID,
+		OwnedUpgradeRanks:    map[string]int{},
+		ActiveUpgradeIDs:     []string{},
+		AcquiredAdvancements: []AcquiredAdvancement{},
 	}
 }

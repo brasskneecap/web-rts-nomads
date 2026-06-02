@@ -2,7 +2,7 @@ package profile
 
 // CurrentVersion is the schema version written into every new profile.
 // Increment this when the struct layout changes and add migration logic.
-const CurrentVersion = 3
+const CurrentVersion = 4
 
 // DefaultCommanderID is the commander assigned to new profiles when no other
 // commander is specified.
@@ -37,6 +37,22 @@ type PlayerProfile struct {
 	// Added in schema version 3. On v2->v3 migration, any upgrade with rank > 0
 	// is automatically added (active by default).
 	ActiveUpgradeIDs []string `json:"activeUpgradeIds"`
+
+	// AcquiredAdvancements is the list of unit advancement nodes the player has
+	// purchased. Each entry records the advancement ID and the Legend Point cost
+	// paid at purchase time (used for refund-on-cost-change on load).
+	// Added in schema version 4. A nil slice is equivalent to an empty slice.
+	AcquiredAdvancements []AcquiredAdvancement `json:"acquiredAdvancements"`
+}
+
+// AcquiredAdvancement records a single purchased advancement node.
+type AcquiredAdvancement struct {
+	// ID is the UnitAdvancementNode.ID that was purchased.
+	ID string `json:"id"`
+	// CostPaid is the Legend Point cost deducted at purchase time. Stored so
+	// that if the catalog cost changes after purchase, a refund-on-cost-change
+	// migration can issue the correct delta on next load.
+	CostPaid int `json:"costPaid"`
 }
 
 // ProfileStats tracks lifetime match and combat statistics for a player.

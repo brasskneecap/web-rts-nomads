@@ -1,4 +1,4 @@
-import type { GameplayTuning, PlayerProfile, ProfileUpgradeDef } from '@/types/profile'
+import type { AcquiredAdvancement, GameplayTuning, PlayerProfile, ProfileUpgradeDef, UnitAdvancementTrack } from '@/types/profile'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 const PLAYER_ID_KEY = 'webrts.profile.id'
@@ -44,7 +44,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function fetchProfile(): Promise<{ profile: PlayerProfile; profileUpgradeCatalog: ProfileUpgradeDef[] }> {
+export async function fetchProfile(): Promise<{
+  profile: PlayerProfile
+  profileUpgradeCatalog: ProfileUpgradeDef[]
+  advancementCatalog: UnitAdvancementTrack[]
+}> {
   const res = await fetch(`${API_BASE}/api/profile`, { headers: playerHeaders() })
   return handleResponse(res)
 }
@@ -82,6 +86,34 @@ export async function refundProfileUpgrade(upgradeId: string): Promise<PlayerPro
     method: 'POST',
     headers: playerHeaders(),
     body: JSON.stringify({ upgradeId }),
+  })
+  return handleResponse<PlayerProfile>(res)
+}
+
+export type PurchaseAdvancementResponse = {
+  legendPoints: number
+  acquiredAdvancements: AcquiredAdvancement[]
+}
+
+export async function purchaseAdvancement(advancementId: string): Promise<PurchaseAdvancementResponse> {
+  const res = await fetch(`${API_BASE}/api/profile/advancements/purchase`, {
+    method: 'POST',
+    headers: playerHeaders(),
+    body: JSON.stringify({ advancementId }),
+  })
+  return handleResponse<PurchaseAdvancementResponse>(res)
+}
+
+/**
+ * DEV-ONLY: grant Legend Points to the calling player for testing. Returns the
+ * updated profile. The endpoint is intentionally ungated for dev iteration —
+ * callers in the UI should label it clearly as a dev affordance.
+ */
+export async function devGrantLegendPoints(amount: number): Promise<PlayerProfile> {
+  const res = await fetch(`${API_BASE}/api/profile/dev/grant-legend-points`, {
+    method: 'POST',
+    headers: playerHeaders(),
+    body: JSON.stringify({ amount }),
   })
   return handleResponse<PlayerProfile>(res)
 }

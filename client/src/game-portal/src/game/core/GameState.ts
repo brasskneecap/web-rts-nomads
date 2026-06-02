@@ -105,6 +105,11 @@ export type Unit = {
   recentRankUpSeconds?: number
   path?: string
   perkIds?: string[]
+  /** Advancement-granted extra perk slot counts, keyed by tier. Mirrors
+   *  server `UnitSnapshot.ExtraPerkSlots`. Populated only when the unit's
+   *  owner has a `unitExtraPerkSlot` advancement (e.g. Twin Bronze) for
+   *  this unit type. Value is the count of EXTRA slots at that tier. */
+  extraPerkSlots?: Record<string, number>
   shield?: number
   maxShield?: number
   /** Per-source shield pool breakdown — one entry per active source-specific
@@ -944,6 +949,7 @@ export class GameState {
         recentRankUpSeconds: unit.recentRankUpSeconds,
         path: unit.progressionPath,
         perkIds: unit.perkIds,
+        extraPerkSlots: unit.extraPerkSlots,
         shield: unit.shield,
         maxShield: unit.maxShield,
         shieldPools: unit.shieldPools,
@@ -2654,6 +2660,7 @@ export class GameState {
           : []
       const topActions = [...regularActions, ...abilityActions, ...focusActions]
       const emptySlot: ActionItem = { id: '', label: '', disabled: true }
+      const perkActions = getPerkActionItems(unit)
       const actions = buildMenuOpen
         ? regularActions
         : [
@@ -2661,9 +2668,11 @@ export class GameState {
             // Pad to 8 so perks always land starting at slot 9 (bottom-left)
             // regardless of how many action/ability slots are filled.
             ...Array<ActionItem>(Math.max(0, 8 - topActions.length)).fill(emptySlot),
-            ...getPerkActionItems(unit),
-            // Slot 12: reserved empty cell at bottom-right.
-            emptySlot,
+            ...perkActions,
+            // When perkActions has length 3 (no extra slot), pad slot 12 with an
+            // empty cell. When length 4 (Twin Bronze granted), the 4th cell IS
+            // slot 12.
+            ...(perkActions.length < 4 ? [emptySlot] : []),
           ]
 
       return {
@@ -3072,42 +3081,77 @@ function getAbilityActionItems(
   })
 }
 
-function getPerkActionItems(unit: Unit): ActionItem[] {
-  // Perks are appended in rank-up order — index 0 = Bronze grant, 1 = Silver, 2 = Gold.
-  return PERK_RANKS.map((rank, i) => {
-    const perkId = unit.perkIds?.[i]
-    const def = perkId ? PERK_DEF_MAP.get(perkId) : undefined
-
-    const rankLabel = rank.charAt(0).toUpperCase() + rank.slice(1)
-
-    if (def) {
-      const cd = perkId
-        ? unit.perkCooldowns?.find((c) => c.perkId === perkId)
-        : undefined
-      return {
-        id: def.icon ?? 'perk-locked',
-        label: def.displayName,
-        kind: 'perk' as const,
-        perkRank: rank,
-        tooltipTitle: `${def.displayName} (${rankLabel})`,
-        tooltipBody: formatPerkTooltip(def, unit),
-        disabled: true,
-        cooldownRemaining: cd?.remaining,
-        cooldownTotal: cd?.total,
-      }
-    }
-
-    // Locked / empty slot for ranks the unit hasn't reached yet.
+// buildPerkSlot renders a single perk cell in the HUD action grid.
+// perkId is the granted perk's id (or undefined when the rank hasn't been
+// reached yet, in which case a locked placeholder is emitted).
+// rank and tierLabel are both the CSS/perkRank tier string — they are the
+// same in all current call sites but kept separate so future cross-rank
+// remaps can pass different values without touching the render path.
+function buildPerkSlot(
+  unit: Unit,
+  perkId: string | undefined,
+  rank: 'bronze' | 'silver' | 'gold',
+  tierLabel: 'bronze' | 'silver' | 'gold',
+): ActionItem {
+  const def = perkId ? PERK_DEF_MAP.get(perkId) : undefined
+  const rankLabel = tierLabel.charAt(0).toUpperCase() + tierLabel.slice(1)
+  if (def) {
+    const cd = perkId ? unit.perkCooldowns?.find((c) => c.perkId === perkId) : undefined
     return {
-      id: 'lock',
-      label: `${rankLabel} Perk (locked)`,
+      id: def.icon ?? 'perk-locked',
+      label: def.displayName,
       kind: 'perk' as const,
       perkRank: rank,
-      tooltipTitle: `${rankLabel} Perk`,
-      tooltipBody: 'Locked — earn this rank to unlock.',
+      tooltipTitle: `${def.displayName} (${rankLabel})`,
+      tooltipBody: formatPerkTooltip(def, unit),
       disabled: true,
+      cooldownRemaining: cd?.remaining,
+      cooldownTotal: cd?.total,
     }
-  })
+  }
+  // Locked / empty slot for ranks the unit hasn't reached yet.
+  return {
+    id: 'lock',
+    label: `${rankLabel} Perk (locked)`,
+    kind: 'perk' as const,
+    perkRank: rank,
+    tooltipTitle: `${rankLabel} Perk`,
+    tooltipBody: 'Locked — earn this rank to unlock.',
+    disabled: true,
+  }
+}
+
+function getPerkActionItems(unit: Unit): ActionItem[] {
+  // The 4th cell (slot 12, right of gold) is an EXTRA perk slot reserved by
+  // an advancement on the unit's owner (e.g. Twin Bronze). It exists as a
+  // locked placeholder from the moment the advancement is owned, mirroring
+  // the way the silver/gold slots render locked before the unit promotes
+  // into those tiers. The trigger is the server-authoritative
+  // `unit.extraPerkSlots` snapshot field, NOT the length of perkIds.
+  const extraBronze = unit.extraPerkSlots?.bronze ?? 0
+
+  if (extraBronze === 0) {
+    // Standard 3-cell layout: bronze, silver, gold. Each cell shows the
+    // granted perk (perkIds[i]) or a locked placeholder.
+    return PERK_RANKS.map((rank, i) =>
+      buildPerkSlot(unit, unit.perkIds?.[i], rank, rank),
+    )
+  }
+
+  // Twin Bronze layout. Server grant order is:
+  //   perkIds[0] = primary bronze (granted at bronze rank-up)
+  //   perkIds[1] = secondary bronze (granted at bronze rank-up alongside primary)
+  //   perkIds[2] = silver (granted at silver rank-up)
+  //   perkIds[3] = gold   (granted at gold rank-up)
+  // Standard tier cells consume indices 0/2/3; the 4th cell at the right of
+  // gold consumes index 1. Any missing index renders a locked placeholder,
+  // including pre-bronze (perkIds empty / undefined → all 4 cells locked).
+  return [
+    buildPerkSlot(unit, unit.perkIds?.[0], 'bronze', 'bronze'),
+    buildPerkSlot(unit, unit.perkIds?.[2], 'silver', 'silver'),
+    buildPerkSlot(unit, unit.perkIds?.[3], 'gold', 'gold'),
+    buildPerkSlot(unit, unit.perkIds?.[1], 'bronze', 'bronze'),
+  ]
 }
 
 // Names matching tier levels in handleUpgradeTownHallLocked. Used to label

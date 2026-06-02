@@ -927,6 +927,39 @@ func (s *GameState) assignUnitPerkLocked(unit *Unit) {
 	perkID := pool[s.rngPerks.Intn(len(pool))].ID
 	unit.PerkIDs = append(unit.PerkIDs, perkID)
 	s.applyPerkGrantedHooksLocked(unit, perkID)
+
+	// Extra-slot pass (Twin Bronze and any future unitExtraPerkSlot advancement).
+	// Draws from the same rngPerks stream immediately after the primary pick so
+	// replay determinism is preserved. The pool re-query automatically excludes
+	// the perk just appended via the "already owned" filter in
+	// eligiblePerksAfterFiltersLocked.
+	s.maybeAssignExtraPerkLocked(unit)
+}
+
+// maybeAssignExtraPerkLocked appends one additional perk to unit.PerkIDs when
+// the owning player holds a unitExtraPerkSlot advancement for this unit type
+// at the unit's current rank tier. Silently no-ops when the owner is absent,
+// the advancement isn't owned, or the post-dedup pool is empty. Caller holds
+// s.mu.
+func (s *GameState) maybeAssignExtraPerkLocked(unit *Unit) {
+	if unit == nil {
+		return
+	}
+	player, ok := s.Players[unit.OwnerID]
+	if !ok || player.ExtraPerkSlots == nil {
+		return
+	}
+	tiers, hasUnit := player.ExtraPerkSlots[unit.UnitType]
+	if !hasUnit || !tiers[unit.Rank] {
+		return
+	}
+	pool := s.perkPoolForRankLocked(unit, unit.Rank)
+	if len(pool) == 0 {
+		return // bronze pool exhausted by RequiresPerk filters or pool size 1
+	}
+	perkID := pool[s.rngPerks.Intn(len(pool))].ID
+	unit.PerkIDs = append(unit.PerkIDs, perkID)
+	s.applyPerkGrantedHooksLocked(unit, perkID)
 }
 
 // applyPerkGrantedHooksLocked runs the post-grant side-effects for one perk id

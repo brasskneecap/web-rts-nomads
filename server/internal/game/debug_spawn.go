@@ -77,16 +77,12 @@ func (s *GameState) DebugSpawnUnit(msg protocol.DebugSpawnUnitMessage, callerPla
 	spawn := protocol.Vec2{X: msg.X, Y: msg.Y}
 
 	// Reuse the regular spawn path so archetype / capabilities / XP plumbing
-	// all light up correctly. Raider is hardcoded on its own path because it
-	// isn't registered in the UnitDef catalog.
-	var unit *Unit
-	if def, ok := getUnitDef(msg.UnitType); ok {
-		unit = s.spawnUnitFromDefLocked(def, msg.UnitType, ownerPlayerID, ownerColor, spawn)
-	} else if msg.UnitType == "raider" {
-		unit = s.spawnRaiderUnitLocked(ownerPlayerID, ownerColor, spawn)
-	} else {
+	// all light up correctly.
+	def, ok := getUnitDef(msg.UnitType)
+	if !ok {
 		return false
 	}
+	unit := s.spawnUnitFromDefLocked(def, msg.UnitType, ownerPlayerID, ownerColor, spawn)
 	if unit == nil {
 		return false
 	}

@@ -39,8 +39,20 @@ type UnitDef struct {
 	// OrderAttackTarget (via AttackWithUnits). The unit still carries the
 	// `"attack"` capability so the player's attack command is accepted.
 	NonCombat   bool    `json:"nonCombat,omitempty"`
-	HP          int     `json:"hp"`
-	Damage      int     `json:"damage"`
+	HP      int `json:"hp"`
+	// Armor is the catalog base armor for this unit type. All unit catalog JSON
+	// files carry an explicit "armor" field (0 when the unit has no base armor,
+	// 33 for soldier). The value is used directly by applyRankModifiersLocked to
+	// set unit.Armor for unpathed units, and contributes the advancement-bonus
+	// delta for promoted units. Do NOT seed unit.BaseArmor from this field at
+	// spawn — BaseArmor is reserved for player-upgrade-track armor only
+	// (applyPlayerUpgradesAtSpawnLocked).
+	Armor   int `json:"armor,omitempty"`
+	// SpawnExp is pre-loaded XP granted to a unit at spawn (before any rank
+	// modifiers run). Zero-value default is safe; units without this field
+	// spawn at 0 XP as before. Used by the "Veteran Initiates" advancement.
+	SpawnExp int     `json:"spawnExp,omitempty"`
+	Damage   int     `json:"damage"`
 	AttackRange float64 `json:"attackRange"`
 	AttackSpeed float64 `json:"attackSpeed"`
 	// SplashRadius: when > 0, every attack landing on a primary target also

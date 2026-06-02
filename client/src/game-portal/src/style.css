@@ -128,6 +128,37 @@ html {
   cursor: var(--cursor-hover, pointer);
 }
 
+/* Disabled interactive elements: the browser's user-agent stylesheet sets
+   its own cursor (the OS arrow), which would shadow the game cursor
+   inherited from <html>. Force the game default cursor explicitly. Components
+   that need a "forbidden action" cursor on disabled state (e.g.
+   --locked / --unaffordable) can still set `cursor: not-allowed` and win on
+   specificity. */
+:is(
+  button,
+  a[href],
+  summary,
+  label[for],
+  select,
+  input[type='button'],
+  input[type='submit'],
+  input[type='reset'],
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='range'],
+  input[type='file'],
+  [role='button'],
+  [role='link'],
+  [role='tab'],
+  [role='checkbox'],
+  [role='radio'],
+  [role='option'],
+  [role='switch'],
+  [role='menuitem']
+):is(:disabled, [aria-disabled='true']) {
+  cursor: var(--cursor-default, default);
+}
+
 /* ── Standard hover treatment for clickable boxes ─────────────────────────
    The single source of truth for the gold inset glow that signals "this
    icon-container / card is hoverable." Filter-based brightness changes

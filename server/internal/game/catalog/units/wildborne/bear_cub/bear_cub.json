@@ -4,6 +4,7 @@
   "faction": "wildborne",
   "visionRange": 320,
   "hp": 150,
+  "armor": 0,
   "damage": 20,
   "experience": 75,
   "attackRange": 80,

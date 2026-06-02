@@ -159,6 +159,7 @@ export class NetworkClient {
   private mapId: MapId = getPreferredMapId()
   private activeUpgradeIds: string[] | null = null
   private ownedUpgradeRanks: Record<string, number> = {}
+  private acquiredAdvancementIds: string[] = []
 
   /** Set to false before calling close() for an intentional disconnect so the
    *  reconnect loop does not fire. */
@@ -188,6 +189,10 @@ export class NetworkClient {
 
   setOwnedUpgradeRanks(ranks: Record<string, number>) {
     this.ownedUpgradeRanks = ranks
+  }
+
+  setAcquiredAdvancementIds(ids: string[]) {
+    this.acquiredAdvancementIds = ids
   }
 
   /** Provide the renderer so loot pickup events can spawn world-space
@@ -246,6 +251,7 @@ export class NetworkClient {
           matchId: resume ? (this.matchId ?? undefined) : undefined,
           activeUpgradeIds: shouldSendActiveUpgrades ? this.activeUpgradeIds! : undefined,
           ownedUpgradeRanks: hasUpgrades ? this.ownedUpgradeRanks : undefined,
+          acquiredAdvancementIds: this.acquiredAdvancementIds,
         }
         console.log('[join_match] activeUpgradeIds:', this.activeUpgradeIds, 'ownedUpgradeRanks:', this.ownedUpgradeRanks)
         this.send(joinMessage)

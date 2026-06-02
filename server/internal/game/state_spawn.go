@@ -33,6 +33,15 @@ func (s *GameState) spawnPlayerUnitLocked(unitType, playerID, color string, spaw
 	if !ok {
 		return nil
 	}
+	// If the player has advancement-driven overrides for this unit type, use
+	// the effective def (a pre-computed copy with stat deltas baked in) instead
+	// of the raw catalog def. The effective def is computed once at match start
+	// by applyAdvancementsToEffectiveDefsLocked and never mutated thereafter.
+	if player, playerOK := s.Players[playerID]; playerOK {
+		if effective, hasOverride := player.EffectiveUnitDefs[unitType]; hasOverride {
+			def = effective
+		}
+	}
 	return s.spawnUnitFromDefLocked(def, unitType, playerID, color, spawn)
 }
 
@@ -60,9 +69,11 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		MaxHP:              def.HP,
 		BaseMaxHP:          def.HP,
 		BaseDamage:         def.Damage,
+		BaseArmor:          0,
 		BaseAttackSpeed:    def.AttackSpeed,
 		BaseMoveSpeed:      def.MoveSpeed,
 		Damage:             def.Damage,
+		Armor:              def.Armor,
 		AttackRange:        def.AttackRange,
 		BaseAttackRange:    def.AttackRange,
 		AttackSpeed:        def.AttackSpeed,
@@ -81,6 +92,7 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		ProjectileScale:    def.ProjectileScale,
 		Abilities:          append([]string{}, def.Abilities...),
 		Rank:               unitRankBase,
+		XP:                 def.SpawnExp,
 		XPValue:            resolveUnitXPValue(def),
 		ProgressionPath:    unitPathNone,
 		CombatAnchorX:      spawn.X,
@@ -121,60 +133,19 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 }
 
 func (s *GameState) spawnRaiderUnitLocked(playerID, color string, spawn protocol.Vec2) *Unit {
-	unit := &Unit{
-		ID:                 s.nextUnitID,
-		OwnerID:            playerID,
-		Color:              color,
-		UnitType:           "raider",
-		Archetype:          "raider",
-		Name:               "Raider",
-		Capabilities:       []string{"move", "attack"},
-		TargetableTypes:    []string{TargetClassGround},
-		Visible:            true,
-		Status:             "Idle",
-		X:                  spawn.X,
-		Y:                  spawn.Y,
-		HP:                 raiderHP,
-		MaxHP:              raiderMaxHP,
-		BaseMaxHP:          raiderMaxHP,
-		BaseDamage:         raiderDamage,
-		BaseAttackSpeed:    raiderAttackSpeed,
-		BaseMoveSpeed:      raiderMoveSpeed,
-		MoveSpeed:          raiderMoveSpeed,
-		Damage:             raiderDamage,
-		AttackRange:        raiderAttackRange,
-		BaseAttackRange:    raiderAttackRange,
-		AttackSpeed:        raiderAttackSpeed,
-		BaseVisionRange:    defaultVisionRange,
-		VisionRange:        defaultVisionRange,
-		HealthRegenPerSecond: defaultHealthRegenPerSecond,
-		Rank:               unitRankBase,
-		XPValue:            gameplayTuning().Experience.SplitDefaultXP,
-		ProgressionPath:    unitPathNone,
-		CombatAnchorX:      spawn.X,
-		CombatAnchorY:      spawn.Y,
-		ThreatTable:        map[int]*ThreatEntry{},
-		TankedDamageByUnit: map[int]float64{},
-		DamageDealtByUnit:  map[int]int{},
+	def, ok := getUnitDef("raider")
+	if !ok {
+		// raider is a shipped catalog entry; this must never happen.
+		panic("spawnRaiderUnitLocked: raider not found in unit catalog — check catalog/units/raider/raider/raider.json")
 	}
-
-	s.nextUnitID++
-	s.addUnitLocked(unit)
-	s.initializeCombatUnitLocked(unit)
-	s.applyRankModifiersLocked(unit, false)
-	return unit
+	return s.spawnUnitFromDefLocked(def, "raider", playerID, color, spawn)
 }
 
 func (s *GameState) spawnEnemyUnitLocked(unitType string, spawn protocol.Vec2) *Unit {
 	if def, ok := getUnitDef(unitType); ok {
 		return s.spawnUnitFromDefLocked(def, unitType, enemyPlayerID, enemyPlayerColor, spawn)
 	}
-	switch unitType {
-	case "raider":
-		return s.spawnRaiderUnitLocked(enemyPlayerID, enemyPlayerColor, spawn)
-	default:
-		return s.spawnRaiderUnitLocked(enemyPlayerID, enemyPlayerColor, spawn)
-	}
+	return nil
 }
 
 // spawnNeutralUnitLocked materializes a single unit under the neutral player
@@ -187,13 +158,7 @@ func (s *GameState) spawnNeutralUnitLocked(unitType string, spawn protocol.Vec2)
 	if def, ok := getUnitDef(unitType); ok {
 		return s.spawnUnitFromDefLocked(def, unitType, neutralPlayerID, neutralPlayerColor, spawn)
 	}
-	// Fallback for legacy hardcoded types (e.g. bare "raider" without a catalog entry).
-	switch unitType {
-	case "raider":
-		return s.spawnRaiderUnitLocked(neutralPlayerID, neutralPlayerColor, spawn)
-	default:
-		return nil
-	}
+	return nil
 }
 
 func resolveUnitArchetype(def UnitDef, unitType string) string {

@@ -5,6 +5,7 @@
   "archetype": "ranged_raider",
   "visionRange": 352,
   "hp": 75,
+  "armor": 0,
   "experience": 15,
   "damage": 8,
   "attackRange": 220,

@@ -404,6 +404,10 @@ type JoinMatchMessage struct {
 	MatchID           string         `json:"matchId,omitempty"`
 	OwnedUpgradeRanks map[string]int `json:"ownedUpgradeRanks,omitempty"`
 	ActiveUpgradeIDs  []string       `json:"activeUpgradeIds,omitempty"`
+	// AcquiredAdvancementIDs is the sorted list of advancement node IDs the
+	// player currently owns (extracted from PlayerProfile.AcquiredAdvancements
+	// by the client at join time). Nil / absent means no advancements.
+	AcquiredAdvancementIDs []string `json:"acquiredAdvancementIds,omitempty"`
 }
 
 type LeaveMatchMessage struct {
@@ -791,6 +795,14 @@ type UnitSnapshot struct {
 	RecentRankUpSeconds float64  `json:"recentRankUpSeconds,omitempty"`
 	ProgressionPath     string   `json:"progressionPath,omitempty"`
 	PerkIDs             []string `json:"perkIds,omitempty"`
+	// ExtraPerkSlots reports advancement-granted extra perk slot counts per tier
+	// for this unit's owner. Empty / nil when the owner has no
+	// unitExtraPerkSlot advancements for this unit type. Keyed by tier
+	// ("bronze" | "silver" | "gold"); value is the count of EXTRA slots at that
+	// tier (1 for Twin Bronze, 2 for hypothetical Triple Bronze, etc.). The
+	// client uses this to render extra locked-or-filled perk slots beyond the
+	// standard 3.
+	ExtraPerkSlots      map[string]int `json:"extraPerkSlots,omitempty"`
 	// Shield / MaxShield: aggregate "displayed shield" — sum of every active
 	// shield source on this unit (legacy single Unit.Shield pool from
 	// blood_engine + every source-specific pool from perks like dark_renewal).

@@ -52,6 +52,13 @@
                 <div class="profile-card__sub">
                   {{ profile.lifetimeLegendPoints.toLocaleString() }} lifetime
                 </div>
+                <button
+                  type="button"
+                  class="profile-card__dev-grant"
+                  :disabled="isGrantingLP"
+                  title="DEV: grant +50 Legend Points to this profile"
+                  @click="grantDevLegendPoints"
+                >+50 LP (dev)</button>
               </section>
 
               <section class="profile-card" aria-label="Commander">
@@ -113,6 +120,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfile } from '@/composables/useProfile'
+import { devGrantLegendPoints } from '@/services/profileApi'
 import ProfileUpgradeLoadoutPicker from '@/components/profile/ProfileUpgradeLoadoutPicker.vue'
 import ProfileUpgradesPanel from '@/components/profile/ProfileUpgradesPanel.vue'
 import MenuPanel from '@/components/menu/MenuPanel.vue'
@@ -120,6 +128,20 @@ import UiButton from '@/components/ui/UiButton.vue'
 
 const router = useRouter()
 const { profile, isLoading, error, initialize, refresh } = useProfile()
+
+// DEV-only affordance: grants +50 LP to this profile via the dev endpoint and
+// re-fetches so the displayed balance updates.
+const isGrantingLP = ref(false)
+async function grantDevLegendPoints() {
+  if (isGrantingLP.value) return
+  isGrantingLP.value = true
+  try {
+    await devGrantLegendPoints(50)
+    await refresh()
+  } finally {
+    isGrantingLP.value = false
+  }
+}
 
 type Tab = 'profile' | 'upgrades'
 const activeTab = ref<Tab>('profile')
@@ -306,6 +328,32 @@ const winRate = computed(() => {
   margin-top: 4px;
   font-size: 11px;
   color: #8a7a5a;
+}
+
+/* DEV-only "+50 LP" button — visually distinct (dashed border, muted tint)
+   so it doesn't look like a real player-facing button. Remove or gate
+   behind an env var before shipping. */
+.profile-card__dev-grant {
+  margin-top: 10px;
+  padding: 4px 10px;
+  border: 1px dashed #c68c44;
+  border-radius: 3px;
+  background-color: rgba(58, 31, 10, 0.18);
+  color: #d4b87a;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profile-card__dev-grant:hover:not(:disabled) {
+  background-color: rgba(198, 140, 68, 0.28);
+  color: #fff2d6;
+}
+
+.profile-card__dev-grant:disabled {
+  opacity: 0.5;
 }
 
 .profile-stats {
