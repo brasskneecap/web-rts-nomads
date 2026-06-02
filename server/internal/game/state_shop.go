@@ -7,11 +7,33 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
-// defaultShopLootTargetCount is the default number of distinct items a shop
+// defaultShopLootTargetCount is the base number of distinct items a shop
 // rolls when its inventory comes from a loot table. The roller keeps
 // rolling (with an attempt cap to prevent infinite loops on degenerate
-// tables) until it has this many unique item IDs.
+// tables) until it has this many unique item IDs. Player-initiated
+// rerolls bump this by Player.ShopItemCountBonus, so a future legend-
+// point upgrade can ship by writing to that field alone.
 const defaultShopLootTargetCount = 3
+
+// shopItemTargetCountForPlayerLocked returns the effective number of
+// distinct items a player's reroll should produce — the base count plus
+// any ShopItemCountBonus on the player. Returns the base unmodified
+// when playerID is empty or the player is missing. Must be called under
+// s.mu.
+func (s *GameState) shopItemTargetCountForPlayerLocked(playerID string) int {
+	if playerID == "" {
+		return defaultShopLootTargetCount
+	}
+	player, ok := s.Players[playerID]
+	if !ok {
+		return defaultShopLootTargetCount
+	}
+	target := defaultShopLootTargetCount + player.ShopItemCountBonus
+	if target < 1 {
+		target = 1
+	}
+	return target
+}
 
 // defaultMarketplaceStarterInventory is the precedence-3 fallback list for
 // a player-built marketplace that the map author did not configure with a
@@ -245,7 +267,8 @@ func (s *GameState) handleRerollShopLocked(playerID, buildingID string) {
 	if tableID == "" {
 		tableID = defaultNeutralShopLootTableID
 	}
-	rolled, ok := s.rollShopLootTableLocked(building.ID, tableID, defaultShopLootTargetCount)
+	targetCount := s.shopItemTargetCountForPlayerLocked(playerID)
+	rolled, ok := s.rollShopLootTableLocked(building.ID, tableID, targetCount)
 	if !ok {
 		// Helper already logged. Don't charge the player for a failed roll.
 		return

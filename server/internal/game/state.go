@@ -610,6 +610,16 @@ type Player struct {
 	// applyProfileUpgradesToPlayerLocked path used by ExtraStartingUnits.
 	ShopRerollsRemaining int
 
+	// ShopItemCountBonus adds to the number of distinct items a neutral
+	// merchant rolls into its inventory when this player rerolls it. The
+	// effective roll target is defaultShopLootTargetCount + bonus (see
+	// shopItemTargetCountForPlayerLocked). Initialised to 0 at match-join;
+	// future legend-point profile upgrades (e.g. "Merchant Expanded
+	// Selection: +1 item per rank") bump this via the same
+	// applyProfileUpgradesToPlayerLocked registry pattern used by
+	// PhysicalDamageMultiplier and ExtraStartingUnits.
+	ShopItemCountBonus int
+
 	// CommanderAbilityCooldowns tracks wall-clock seconds remaining on each
 	// commander ability (see commander_abilities.go). Keyed by ability id;
 	// entries are removed as they decay to 0. Nil/empty = every ability is
