@@ -95,6 +95,17 @@ func (s *GameState) trapModifiersForUnitLocked(unit *Unit) TrapModifiers {
 	if unit == nil {
 		return m
 	}
+	// Archer "Master Huntsman" advancement (unitTrapEffectMul / unitTrapRadiusMul):
+	// additive bonus fractions seeded onto the unit from its effective def, folded
+	// in as (1 + bonus) multipliers. Compose multiplicatively with the perk-driven
+	// modifiers below (wider_nets, amplified_effects), so a ×2 advancement and a
+	// perk multiplier stack as the player expects.
+	if unit.TrapEffectBonus > 0 {
+		m.EffectMultiplier *= 1 + unit.TrapEffectBonus
+	}
+	if unit.TrapRadiusBonus > 0 {
+		m.RadiusMultiplier *= 1 + unit.TrapRadiusBonus
+	}
 	for _, perkID := range unit.PerkIDs {
 		def := perkDefByID(perkID)
 		if def == nil {

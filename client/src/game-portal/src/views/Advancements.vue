@@ -2,6 +2,15 @@
   <div class="advancements">
     <div class="advancements__header">
       <h1 class="advancements__title">Advancements</h1>
+      <button
+        type="button"
+        class="advancements__reset"
+        :disabled="isBusy || acquiredIds.size === 0"
+        title="Refund all advancements and clear them (for before/after testing)"
+        @click="reset"
+      >
+        Reset
+      </button>
     </div>
 
     <div v-if="error" class="advancements__error" role="alert">{{ error }}</div>
@@ -106,7 +115,7 @@ import waxSealUrl from '@/assets/ui/buttons/war_room/advancement/wax-seal.png'
 import medalSlotEmptyUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot-empty.png'
 import medalSlotUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot.png'
 
-const { catalog, isBusy, error, isAcquired, canAfford, purchase } =
+const { catalog, acquiredIds, isBusy, error, isAcquired, canAfford, purchase, reset } =
   useAdvancements()
 
 // Portrait lookup: unitType -> static import URL. Extended as new unit types
@@ -134,11 +143,29 @@ function portraitBg(unitType: string): string {
   return url ? `url(${url})` : 'none'
 }
 
-// Only show tracks that have at least one node — empty tracks (archer/acolyte/
-// adept before their advancements.json ships) are hidden rather than shown as
-// ghost rows.
+// Preferred display order for unit tracks. The server serves tracks sorted
+// alphabetically by unitType; we override that for presentation so the roster
+// reads in roster order rather than A–Z. Unit types not listed here fall back
+// to alphabetical, after the listed ones.
+const UNIT_DISPLAY_ORDER = ['soldier', 'archer', 'acolyte', 'adept']
+
+function unitOrderRank(unitType: string): number {
+  const idx = UNIT_DISPLAY_ORDER.indexOf(unitType)
+  return idx === -1 ? UNIT_DISPLAY_ORDER.length : idx
+}
+
+// Only show tracks that have at least one node — empty tracks (acolyte/adept
+// before their advancements.json ships) are hidden rather than shown as ghost
+// rows — then order them by UNIT_DISPLAY_ORDER for display.
 const rowsWithNodes = computed<UnitAdvancementTrack[]>(() =>
-  catalog.value.filter((t) => t.nodes.length > 0),
+  catalog.value
+    .filter((t) => t.nodes.length > 0)
+    .slice()
+    .sort((a, b) => {
+      const ra = unitOrderRank(a.unitType)
+      const rb = unitOrderRank(b.unitType)
+      return ra !== rb ? ra - rb : a.unitType.localeCompare(b.unitType)
+    }),
 )
 
 const PAGE_SIZE = 3
@@ -243,6 +270,29 @@ function tooltipBody(node: UnitAdvancementNode): string {
   text-transform: uppercase;
   color: #3a1f0a;
   transform: translateX(calc(var(--s) * 80));
+}
+
+.advancements__reset {
+  flex: 0 0 auto;
+  padding: calc(var(--s) * 4) calc(var(--s) * 12);
+  border: 1px solid #9a4a2a;
+  border-radius: 4px;
+  background-color: rgba(150, 50, 30, 0.16);
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-size: calc(var(--s) * 11);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a1a0a;
+}
+
+.advancements__reset:hover:not(:disabled) {
+  background-color: rgba(150, 50, 30, 0.3);
+  border-color: #b85a36;
+}
+
+.advancements__reset:disabled {
+  opacity: 0.4;
 }
 
 .advancements__error {

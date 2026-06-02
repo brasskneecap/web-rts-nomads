@@ -137,6 +137,16 @@ type Unit struct {
 	// if future perks need shield decay or alternate gain mechanics.
 	Shield int
 
+	// ── Advancement-granted bonuses (seeded from the effective UnitDef) ──────
+	// Set by the Archer "Master Huntsman" advancement; zero on every other
+	// unit. See UnitDef.BonusArrows / TrapEffectBonus / TrapRadiusBonus.
+	// BonusArrows: extra arrows per attack, fired via the split-shot fan-out.
+	BonusArrows int
+	// TrapEffectBonus / TrapRadiusBonus: additive fractions folded into the
+	// trap modifier pipeline as (1 + bonus) multipliers at plant time.
+	TrapEffectBonus float64
+	TrapRadiusBonus float64
+
 	// ObjectiveID links this unit to a VictoryCondition. Non-empty when spawned
 	// from an enemy-spawnpoint whose metadata["objectiveId"] matches a condition.
 	ObjectiveID string

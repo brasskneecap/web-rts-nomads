@@ -76,13 +76,14 @@ func (s *GameState) DebugSpawnUnit(msg protocol.DebugSpawnUnitMessage, callerPla
 
 	spawn := protocol.Vec2{X: msg.X, Y: msg.Y}
 
-	// Reuse the regular spawn path so archetype / capabilities / XP plumbing
-	// all light up correctly.
-	def, ok := getUnitDef(msg.UnitType)
-	if !ok {
-		return false
-	}
-	unit := s.spawnUnitFromDefLocked(def, msg.UnitType, ownerPlayerID, ownerColor, spawn)
+	// Reuse the regular PLAYER spawn path (spawnPlayerUnitLocked, not the lower
+	// level spawnUnitFromDefLocked) so archetype / capabilities / XP plumbing
+	// AND the owning player's advancement-effective UnitDef both light up — a
+	// debug-spawned archer gets the same advancement buffs (HP/damage/attack-
+	// speed/spawn-EXP/bonus-arrows/trap mods) a naturally-trained one would.
+	// For enemy-owned spawns the player has no advancements, so this degrades
+	// to the raw catalog def. Returns nil for an unknown unit type.
+	unit := s.spawnPlayerUnitLocked(msg.UnitType, ownerPlayerID, ownerColor, spawn)
 	if unit == nil {
 		return false
 	}

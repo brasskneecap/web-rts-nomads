@@ -1,0 +1,123 @@
+{
+  "unitType": "archer",
+  "nodes": [
+    {
+      "id": "archer_hp_1",
+      "name": "Seasoned Scout",
+      "description": "Archers start each match with +25 maximum HP.",
+      "kind": "minor",
+      "cost": 50,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "maxHp",
+          "amount": 25
+        }
+      ]
+    },
+    {
+      "id": "archer_damage_1",
+      "name": "Honed Arrowheads",
+      "description": "Archers gain +5 base damage.",
+      "kind": "minor",
+      "cost": 50,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "damage",
+          "amount": 5
+        }
+      ]
+    },
+    {
+      "id": "archer_attack_speed_1",
+      "name": "Quick Nock",
+      "description": "Archers attack 10% faster.",
+      "kind": "minor",
+      "cost": 50,
+      "effects": [
+        {
+          "kind": "unitStatMul",
+          "stat": "attackSpeed",
+          "percent": 10
+        }
+      ]
+    },
+    {
+      "id": "archer_keen_recruits",
+      "name": "Keen Recruits",
+      "description": "Archers spawn with 50 EXP.",
+      "kind": "major",
+      "cost": 150,
+      "effects": [
+        {
+          "kind": "unitSpawnExp",
+          "amount": 50
+        }
+      ]
+    },
+    {
+      "id": "archer_hp_2",
+      "name": "Seasoned Scout II",
+      "description": "Archers gain an additional +25 maximum HP.",
+      "kind": "minor",
+      "cost": 100,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "maxHp",
+          "amount": 25
+        }
+      ]
+    },
+    {
+      "id": "archer_damage_2",
+      "name": "Honed Arrowheads II",
+      "description": "Archers gain an additional +5 base damage.",
+      "kind": "minor",
+      "cost": 100,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "damage",
+          "amount": 5
+        }
+      ]
+    },
+    {
+      "id": "archer_attack_speed_2",
+      "name": "Quick Nock II",
+      "description": "Archers attack an additional 10% faster.",
+      "kind": "minor",
+      "cost": 100,
+      "effects": [
+        {
+          "kind": "unitStatMul",
+          "stat": "attackSpeed",
+          "percent": 10
+        }
+      ]
+    },
+    {
+      "id": "archer_master_huntsman",
+      "name": "Master Huntsman",
+      "description": "Every archer fires one additional arrow each attack (stacking with Split Shot for a third). Traps deal double damage and cover twice the radius.",
+      "kind": "major",
+      "cost": 300,
+      "effects": [
+        {
+          "kind": "unitBonusArrows",
+          "amount": 1
+        },
+        {
+          "kind": "unitTrapEffectMul",
+          "percent": 100
+        },
+        {
+          "kind": "unitTrapRadiusMul",
+          "percent": 100
+        }
+      ]
+    }
+  ]
+}

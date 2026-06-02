@@ -3,6 +3,7 @@ package game
 import (
 	"encoding/json"
 	"io/fs"
+	"math"
 	"sort"
 )
 
@@ -44,15 +45,21 @@ type UnitAdvancementNode struct {
 // UnitAdvancementEffect is the typed effect payload for a UnitAdvancementNode.
 // The Kind field discriminates the active mode.
 type UnitAdvancementEffect struct {
-	// Kind is the effect discriminator. Registered kinds: "unitStatAdd", "unitSpawnExp", "unitExtraPerkSlot".
+	// Kind is the effect discriminator. Registered kinds: "unitStatAdd", "unitStatMul", "unitSpawnExp", "unitExtraPerkSlot", "unitBonusArrows", "unitTrapEffectMul", "unitTrapRadiusMul".
 	Kind string `json:"kind"`
-	// unitStatAdd fields:
+	// unitStatAdd / unitStatMul fields:
 	// Stat names the unit stat to modify. Recognised values: "maxHp", "damage",
 	// "attackRange", "attackSpeed", "moveSpeed", "armor".
 	Stat string `json:"stat,omitempty"`
-	// Amount is the integer value added to the named stat. Also used by
-	// unitSpawnExp as the amount of XP to pre-load at spawn.
+	// Amount is the integer value added to the named stat (unitStatAdd). Also
+	// used by unitSpawnExp as the amount of XP to pre-load at spawn.
 	Amount int `json:"amount,omitempty"`
+	// unitStatMul fields:
+	// Percent is the percentage by which to scale the named stat (unitStatMul):
+	// 10 means +10% (multiplier 1.10). Stacks multiplicatively across nodes.
+	// Integer-typed stats (maxHp, damage, armor) are rounded to nearest after
+	// scaling; float stats (attackSpeed, attackRange, moveSpeed) keep precision.
+	Percent float64 `json:"percent,omitempty"`
 	// unitExtraPerkSlot fields:
 	// Tier is the perk tier the second slot draws from: "bronze" | "silver" | "gold".
 	Tier string `json:"tier,omitempty"`
@@ -110,6 +117,42 @@ var advancementEffectRegistry = map[string]advancementEffectHandler{
 			}
 		},
 	},
+	// unitStatMul scales a unit stat by a percentage (multiplicative). Percent
+	// is the percentage delta: 10 → ×1.10. Multiple owned nodes that scale the
+	// same stat stack multiplicatively (two +10% nodes → ×1.21). Used for
+	// "+X% attack speed" style advancements that a flat unitStatAdd cannot
+	// express on a float stat. Integer stats are rounded to nearest after
+	// scaling so the spawn pipeline still sees clean integers.
+	"unitStatMul": {
+		validate: func(src string, effect UnitAdvancementEffect) {
+			switch effect.Stat {
+			case "maxHp", "damage", "attackRange", "attackSpeed", "moveSpeed", "armor":
+				// valid
+			default:
+				panic(src + `: effect "unitStatMul" stat must be one of "maxHp", "damage", "attackRange", "attackSpeed", "moveSpeed", "armor", got "` + effect.Stat + `"`)
+			}
+			if effect.Percent == 0 {
+				panic(src + `: effect "unitStatMul" requires non-zero percent`)
+			}
+		},
+		applyAtMatchStart: func(def *UnitDef, effect UnitAdvancementEffect) {
+			mul := 1 + effect.Percent/100
+			switch effect.Stat {
+			case "maxHp":
+				def.HP = int(math.Round(float64(def.HP) * mul))
+			case "damage":
+				def.Damage = int(math.Round(float64(def.Damage) * mul))
+			case "attackRange":
+				def.AttackRange *= mul
+			case "attackSpeed":
+				def.AttackSpeed *= mul
+			case "moveSpeed":
+				def.MoveSpeed *= mul
+			case "armor":
+				def.Armor = int(math.Round(float64(def.Armor) * mul))
+			}
+		},
+	},
 	// unitSpawnExp pre-loads XP onto a unit at spawn. Units that start with
 	// enough XP to rank up will trigger the rank-up pipeline immediately after
 	// spawn via addUnitXPLocked (called indirectly through the normal XP path
@@ -144,6 +187,48 @@ var advancementEffectRegistry = map[string]advancementEffectHandler{
 		applyAtMatchStart: func(def *UnitDef, effect UnitAdvancementEffect) {
 			// No-op on UnitDef — this handler signals via Player.ExtraPerkSlots,
 			// which is populated by a sibling pass in applyAdvancementsToEffectiveDefsLocked.
+		},
+	},
+	// unitBonusArrows grants extra arrows per attack, fired through the
+	// split-shot fan-out (see onMarksmanProjectileFiredLocked). Stacks on top
+	// of the split_shot perk's own extra-shot count. Amount is the number of
+	// extra arrows to add; must be > 0.
+	"unitBonusArrows": {
+		validate: func(src string, effect UnitAdvancementEffect) {
+			if effect.Amount <= 0 {
+				panic(src + `: effect "unitBonusArrows" requires amount > 0`)
+			}
+		},
+		applyAtMatchStart: func(def *UnitDef, effect UnitAdvancementEffect) {
+			def.BonusArrows += effect.Amount
+		},
+	},
+	// unitTrapEffectMul scales the strength of every trap this unit plants
+	// (damage, slow, mark) by a percentage. Percent is the percentage delta:
+	// 100 → ×2 trap effect. Stored as an additive fraction on the def and
+	// folded into the trap pipeline's EffectMultiplier as (1 + fraction) at
+	// plant time (see trapModifiersForUnitLocked). Non-zero percent required.
+	"unitTrapEffectMul": {
+		validate: func(src string, effect UnitAdvancementEffect) {
+			if effect.Percent == 0 {
+				panic(src + `: effect "unitTrapEffectMul" requires non-zero percent`)
+			}
+		},
+		applyAtMatchStart: func(def *UnitDef, effect UnitAdvancementEffect) {
+			def.TrapEffectBonus += effect.Percent / 100
+		},
+	},
+	// unitTrapRadiusMul scales the radius of every trap this unit plants by a
+	// percentage. Percent is the percentage delta: 100 → ×2 radius. Mirrors
+	// unitTrapEffectMul, folded into the trap pipeline's RadiusMultiplier.
+	"unitTrapRadiusMul": {
+		validate: func(src string, effect UnitAdvancementEffect) {
+			if effect.Percent == 0 {
+				panic(src + `: effect "unitTrapRadiusMul" requires non-zero percent`)
+			}
+		},
+		applyAtMatchStart: func(def *UnitDef, effect UnitAdvancementEffect) {
+			def.TrapRadiusBonus += effect.Percent / 100
 		},
 	},
 }
