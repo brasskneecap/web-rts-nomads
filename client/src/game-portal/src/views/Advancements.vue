@@ -2,10 +2,6 @@
   <div class="advancements">
     <div class="advancements__header">
       <h1 class="advancements__title">Advancements</h1>
-      <div class="advancements__balance" aria-label="Legend points balance">
-        <span class="advancements__balance-label">Legend Points</span>
-        <span class="advancements__balance-value">{{ legendPoints }}</span>
-      </div>
     </div>
 
     <div v-if="error" class="advancements__error" role="alert">{{ error }}</div>
@@ -45,13 +41,6 @@
           </button>
         </div>
 
-        <div class="advancement-row__cost">
-          <template v-if="nextNodeFor(row)">
-            <span class="advancement-row__cost-label">Next</span>
-            <span class="advancement-row__cost-value">{{ nextNodeFor(row)!.cost }} LP</span>
-          </template>
-          <span v-else class="advancement-row__cost-complete">Complete</span>
-        </div>
       </div>
     </div>
 
@@ -117,7 +106,7 @@ import waxSealUrl from '@/assets/ui/buttons/war_room/advancement/wax-seal.png'
 import medalSlotEmptyUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot-empty.png'
 import medalSlotUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot.png'
 
-const { catalog, legendPoints, isBusy, error, isAcquired, canAfford, nextNodeFor, purchase } =
+const { catalog, isBusy, error, isAcquired, canAfford, purchase } =
   useAdvancements()
 
 // Portrait lookup: unitType -> static import URL. Extended as new unit types
@@ -222,6 +211,15 @@ function tooltipBody(node: UnitAdvancementNode): string {
   flex-direction: column;
   padding: 1% 2%;
   box-sizing: border-box;
+  /*
+   * Single scale unit driving every size below. `--s` is ~1px at the
+   * reference parchment width (~1076px, i.e. a 1080p viewport) and scales
+   * linearly with the container via cqw, so the whole panel grows and
+   * shrinks with the parchment. Every value below is `calc(var(--s) * <px>)`
+   * — a 1:1 map from the original fixed pixels. Retune the whole panel by
+   * changing this one number.
+   */
+  --s: 0.0929cqw;
   /* No overflow clipping — tooltips on top-row nodes need to extend above
      the panel bounds. Pagination already keeps content from overflowing. */
 }
@@ -231,55 +229,31 @@ function tooltipBody(node: UnitAdvancementNode): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  gap: 16px;
+  margin-bottom: calc(var(--s) * 8);
+  gap: calc(var(--s) * 16);
 }
 
 .advancements__title {
   margin: 0;
   text-align: left;
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
-  font-size: 18px;
+  font-size: calc(var(--s) * 18);
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: #3a1f0a;
-  transform: translateX(80px);
-}
-
-.advancements__balance {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 4px 10px;
-  border: 1px solid #c68c44;
-  border-radius: 4px;
-  background-color: rgba(198, 140, 68, 0.12);
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
-  color: #3a1f0a;
-}
-
-.advancements__balance-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.advancements__balance-value {
-  font-size: 14px;
-  font-weight: 700;
+  transform: translateX(calc(var(--s) * 80));
 }
 
 .advancements__error {
   flex: 0 0 auto;
-  padding: 4px 8px;
-  margin-bottom: 6px;
+  padding: calc(var(--s) * 4) calc(var(--s) * 8);
+  margin-bottom: calc(var(--s) * 6);
   border-radius: 4px;
   background-color: rgba(180, 40, 20, 0.15);
   border: 1px solid rgba(180, 40, 20, 0.4);
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
-  font-size: 11px;
+  font-size: calc(var(--s) * 11);
   color: #7a1a0a;
 }
 
@@ -287,21 +261,21 @@ function tooltipBody(node: UnitAdvancementNode): string {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: calc(var(--s) * 18);
 }
 
 .advancement-row {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: calc(var(--s) * 18);
 }
 
 /*
  * Stagger left padding so the rows lean inward following the slanted
  * left edge of the parchment in the war_room_bg artwork.
  */
-.advancement-row:nth-child(1) { padding-left: 60px; }
-.advancement-row:nth-child(2) { padding-left: 30px; }
+.advancement-row:nth-child(1) { padding-left: calc(var(--s) * 60); }
+.advancement-row:nth-child(2) { padding-left: calc(var(--s) * 30); }
 .advancement-row:nth-child(3) { padding-left: 0; }
 
 .advancement-row__character {
@@ -309,12 +283,12 @@ function tooltipBody(node: UnitAdvancementNode): string {
   display: flex;
   flex-direction: row-reverse;
   align-items: center;
-  gap: 8px;
+  gap: calc(var(--s) * 8);
 }
 
 .advancement-row__name {
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
-  font-size: 13px;
+  font-size: calc(var(--s) * 13);
   font-weight: 700;
   letter-spacing: 0.06em;
   color: #3a1f0a;
@@ -323,8 +297,8 @@ function tooltipBody(node: UnitAdvancementNode): string {
 
 .advancement-row__portrait {
   flex: 0 0 auto;
-  width: 52px;
-  height: 52px;
+  width: calc(var(--s) * 52);
+  height: calc(var(--s) * 52);
   border-radius: 50%;
   border: 2px solid #c68c44;
   background-color: #1a1208;
@@ -340,46 +314,15 @@ function tooltipBody(node: UnitAdvancementNode): string {
 .advancement-row__nodes {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: calc(var(--s) * 10);
   flex-wrap: nowrap;
-}
-
-.advancement-row__cost {
-  margin-left: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
-  color: #3a1f0a;
-  white-space: nowrap;
-}
-
-.advancement-row__cost-label {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.75;
-}
-
-.advancement-row__cost-value {
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.advancement-row__cost-complete {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.65;
 }
 
 .advancement-node {
   position: relative;
   flex: 0 0 auto;
-  width: 48px;
-  height: 48px;
+  width: calc(var(--s) * 48);
+  height: calc(var(--s) * 48);
   padding: 0;
   border: 0;
   background-color: transparent;
@@ -405,8 +348,8 @@ function tooltipBody(node: UnitAdvancementNode): string {
 }
 
 .advancement-node--square {
-  width: 60px;
-  height: 60px;
+  width: calc(var(--s) * 60);
+  height: calc(var(--s) * 60);
   border-radius: 4px;
 }
 
@@ -456,16 +399,16 @@ function tooltipBody(node: UnitAdvancementNode): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  padding-top: 8px;
-  transform: translate(-65px, -25px);
+  gap: calc(var(--s) * 14);
+  padding-top: calc(var(--s) * 8);
+  transform: translate(calc(var(--s) * -65), calc(var(--s) * -25));
 }
 
 .advancements__pager-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 6px;
+  padding: calc(var(--s) * 4) calc(var(--s) * 6);
   border: 0;
   background: transparent;
   color: #3a1f0a;
@@ -477,8 +420,8 @@ function tooltipBody(node: UnitAdvancementNode): string {
 }
 
 .advancements__arrow {
-  width: 32px;
-  height: 24px;
+  width: calc(var(--s) * 32);
+  height: calc(var(--s) * 24);
   display: block;
   /* The double-stroked path catches a touch of ink-bleed underneath for a
      stamped-on-parchment feel. */
@@ -506,11 +449,11 @@ function tooltipBody(node: UnitAdvancementNode): string {
 
 .advancements__pager-label {
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
-  font-size: 11px;
+  font-size: calc(var(--s) * 11);
   font-weight: 700;
   letter-spacing: 0.08em;
   color: #3a1f0a;
-  min-width: 32px;
+  min-width: calc(var(--s) * 32);
   text-align: center;
 }
 </style>
