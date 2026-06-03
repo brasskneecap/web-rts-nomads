@@ -153,7 +153,32 @@ func (s *GameState) combatTargetIsValidLocked(unit, target *Unit) bool {
 	if target == nil || !target.Visible || target.HP <= 0 || !s.playersAreHostileLocked(target.OwnerID, unit.OwnerID) {
 		return false
 	}
+	if !s.targetRevealedToOwnerLocked(unit, target) {
+		return false
+	}
 	return unitCanTargetPlane(unit, target)
+}
+
+// targetRevealedToOwnerLocked reports whether `target` is currently visible to
+// `unit`'s owner through the fog of war. A unit must only engage enemies its
+// owner can actually see — fog was previously enforced only in the snapshot
+// layer, so combat AI could acquire and chase enemies the player could not see.
+//
+// Owners without an FOW grid — the __enemy__ AI and __neutral__ camp mobs —
+// have no fog and always "see" the target, preserving their omniscient
+// acquisition (intentional asymmetry: only real players are fog-limited).
+// Shared team vision is already baked into each player's grid by
+// recomputeFOWLocked, so checking the owner's own grid covers allied vision
+// too. Caller holds s.mu.
+func (s *GameState) targetRevealedToOwnerLocked(unit, target *Unit) bool {
+	if unit == nil || target == nil {
+		return false
+	}
+	fow, ok := s.FOW[unit.OwnerID]
+	if !ok {
+		return true // no fog grid (enemy AI / neutral) — full sight
+	}
+	return fow.isClearAtWorld(target.X, target.Y, s.MapConfig.CellSize)
 }
 
 // unitCanTargetPlane reports whether `unit`'s TargetableTypes include the

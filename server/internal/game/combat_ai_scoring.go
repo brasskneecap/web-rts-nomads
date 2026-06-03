@@ -95,6 +95,11 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 		if hostile == unit || !s.playersAreHostileLocked(hostile.OwnerID, unit.OwnerID) || hostile.HP <= 0 || !hostile.Visible {
 			continue
 		}
+		// Fog of war: a player-owned unit must not acquire an enemy its owner
+		// cannot see. Enemy AI / neutral owners have no FOW grid and are exempt.
+		if !s.targetRevealedToOwnerLocked(unit, hostile) {
+			continue
+		}
 		if !unitCanTargetPlane(unit, hostile) {
 			continue
 		}
@@ -150,6 +155,12 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 			if !s.playersAreHostileLocked(hostile.OwnerID, unit.OwnerID) {
 				continue
 			}
+			// Retaliation still respects fog: a unit shot from cells its owner
+			// cannot see cannot fire back until the attacker is revealed. Enemy
+			// AI / neutral owners (no FOW grid) are exempt.
+			if !s.targetRevealedToOwnerLocked(unit, hostile) {
+				continue
+			}
 			if !unitCanTargetPlane(unit, hostile) {
 				continue
 			}
@@ -185,7 +196,7 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 
 	if unit.TauntedByUnitID != 0 && unit.TauntRemaining > 0 {
 		taunter := s.getUnitByIDLocked(unit.TauntedByUnitID)
-		if taunter != nil && taunter.Visible && taunter.HP > 0 && s.playersAreHostileLocked(taunter.OwnerID, unit.OwnerID) && unitCanTargetPlane(unit, taunter) {
+		if taunter != nil && taunter.Visible && taunter.HP > 0 && s.playersAreHostileLocked(taunter.OwnerID, unit.OwnerID) && s.targetRevealedToOwnerLocked(unit, taunter) && unitCanTargetPlane(unit, taunter) {
 			score := s.scoreUnitTargetLocked(unit, taunter, profile, ctx) + combatTauntBonusScore
 			best = combatTarget{Kind: combatTargetUnit, Unit: taunter, Score: score}
 		}

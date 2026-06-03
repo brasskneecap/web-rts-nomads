@@ -489,8 +489,10 @@ func (s *GameState) fireDeferredDoubleShotLocked(attacker *Unit) {
 		return
 	}
 	target := s.getUnitByIDLocked(attacker.PerkState.DoubleShotPendingTargetID)
-	// Standard target validation — same predicate set as combatTargetIsValidLocked.
-	if target == nil || target.HP <= 0 || !target.Visible || !s.playersAreHostileLocked(target.OwnerID, attacker.OwnerID) {
+	// Standard target validation — same predicate set as combatTargetIsValidLocked,
+	// including the fog-of-war gate: the deferred shot is dropped if the target
+	// slipped into cells the attacker's owner can no longer see.
+	if target == nil || target.HP <= 0 || !target.Visible || !s.playersAreHostileLocked(target.OwnerID, attacker.OwnerID) || !s.targetRevealedToOwnerLocked(attacker, target) {
 		return
 	}
 	// Range gate: out-of-range targets just drop the second shot rather than
