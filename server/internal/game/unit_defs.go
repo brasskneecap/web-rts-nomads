@@ -156,6 +156,26 @@ type UnitDef struct {
 	// resolution order is path > unit. Validated at load (start >= 0,
 	// end >= start). Purely visual; server simulation never reads it.
 	ChannelLoop *ChannelLoopRange `json:"channelLoop,omitempty"`
+
+	// ── Advancement-granted bonuses (not authored in unit JSON) ──────────────
+	// These three fields are zero in the catalog and are only set by the Archer
+	// "Master Huntsman" advancement (advancement_defs.go effect kinds
+	// unitBonusArrows / unitTrapEffectMul / unitTrapRadiusMul) on a player's
+	// EffectiveUnitDefs copy. They flow def → unit at spawn, so only units whose
+	// effective def was modified (i.e. the owning player's archers) carry them.
+
+	// BonusArrows is the number of extra arrows this unit fires per attack on
+	// top of any split_shot perk, routed through the split-shot fan-out
+	// (fireSplitShotsLocked). Zero ⇒ no bonus arrow.
+	BonusArrows int `json:"-"`
+	// TrapEffectBonus is an additive fraction applied to the unit's trap
+	// EffectMultiplier: the trap pipeline multiplies by (1 + TrapEffectBonus),
+	// so 1.0 ⇒ ×2 trap effect strength. Zero ⇒ no change.
+	TrapEffectBonus float64 `json:"-"`
+	// TrapRadiusBonus is the same additive fraction for the trap
+	// RadiusMultiplier: (1 + TrapRadiusBonus), so 1.0 ⇒ ×2 trap radius. Zero ⇒
+	// no change.
+	TrapRadiusBonus float64 `json:"-"`
 }
 
 // ChannelLoopRange is an inclusive [Start, End] frame range on a unit's

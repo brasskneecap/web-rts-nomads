@@ -227,7 +227,15 @@ func (s *GameState) perkAttackRangeMultiplierLocked(unit *Unit) float64 {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func (s *GameState) onMarksmanProjectileFiredLocked(attacker, primaryTarget *Unit, primaryDamage int) {
-	if attacker == nil || primaryTarget == nil || len(attacker.PerkIDs) == 0 {
+	if attacker == nil || primaryTarget == nil {
+		return
+	}
+	// Bonus arrows (Master Huntsman advancement) apply to EVERY archer attack —
+	// including perkless / Trapper-path archers — so they're read before the
+	// perk-list early-out below. attacker.BonusArrows is zero on every unit whose
+	// effective def was not modified by the advancement (non-archers included).
+	bonusArrows := attacker.BonusArrows
+	if len(attacker.PerkIDs) == 0 && bonusArrows == 0 {
 		return
 	}
 	if attacker.PerkState.MarksmanFireInProgress {
@@ -265,7 +273,13 @@ func (s *GameState) onMarksmanProjectileFiredLocked(attacker, primaryTarget *Uni
 		}
 	}
 
-	if !hasSplitShot && !hasDoubleShot {
+	// Effective extra arrows = the split_shot perk's own count (0 when unowned)
+	// plus the advancement's bonus arrows. Both fan out through the same
+	// split-shot pipeline, so split_shot + Master Huntsman = 2 extra (3 arrows
+	// total), bonus-only = 1 extra (2 arrows total).
+	effectiveExtraTargets := splitShotExtraTargets + bonusArrows
+
+	if effectiveExtraTargets <= 0 && !hasDoubleShot {
 		return
 	}
 
@@ -273,12 +287,24 @@ func (s *GameState) onMarksmanProjectileFiredLocked(attacker, primaryTarget *Uni
 	attacker.PerkState.MarksmanFireInProgress = true
 	defer func() { attacker.PerkState.MarksmanFireInProgress = false }()
 
-	// 1. Split Shot — fire up to N extra shots at distinct in-range hostiles.
-	// Distinct targets always take full damage; splitShotDamageMult only
-	// scales fallback shots that redirect onto the primary, so a 0 multiplier
-	// just disables fallback rather than the whole perk.
-	if hasSplitShot && splitShotExtraTargets > 0 {
-		s.fireSplitShotsLocked(attacker, primaryTarget, primaryDamage, splitShotExtraTargets, splitShotDamageMult, splitShotFallbackOnSelf, nil)
+	// 1. Split Shot / bonus arrows — fire N extra shots at distinct in-range
+	// hostiles. Distinct targets always take full damage; the fallback
+	// multiplier only scales shots redirected onto the primary when fewer
+	// hostiles than slots are in range.
+	if effectiveExtraTargets > 0 {
+		// When split_shot isn't owned, the advancement's bonus arrows still use
+		// the split-shot fallback tuning (distinct target full damage, primary
+		// fallback at reduced damage). Pull those defaults from the split_shot
+		// perk def so the numbers stay authored in one place (silver.json).
+		damageMult := splitShotDamageMult
+		fallbackOnSelf := splitShotFallbackOnSelf
+		if !hasSplitShot {
+			if def := perkDefByID("split_shot"); def != nil {
+				damageMult = def.Config["secondaryDamageMultiplier"]
+				fallbackOnSelf = def.Config["fallbackOnPrimary"] > 0
+			}
+		}
+		s.fireSplitShotsLocked(attacker, primaryTarget, primaryDamage, effectiveExtraTargets, damageMult, fallbackOnSelf, nil)
 	}
 
 	// 2. Double Shot — RNG-proc the deferred second-shot timer. Skipped if
@@ -463,8 +489,10 @@ func (s *GameState) fireDeferredDoubleShotLocked(attacker *Unit) {
 		return
 	}
 	target := s.getUnitByIDLocked(attacker.PerkState.DoubleShotPendingTargetID)
-	// Standard target validation — same predicate set as combatTargetIsValidLocked.
-	if target == nil || target.HP <= 0 || !target.Visible || !s.playersAreHostileLocked(target.OwnerID, attacker.OwnerID) {
+	// Standard target validation — same predicate set as combatTargetIsValidLocked,
+	// including the fog-of-war gate: the deferred shot is dropped if the target
+	// slipped into cells the attacker's owner can no longer see.
+	if target == nil || target.HP <= 0 || !target.Visible || !s.playersAreHostileLocked(target.OwnerID, attacker.OwnerID) || !s.targetRevealedToOwnerLocked(attacker, target) {
 		return
 	}
 	// Range gate: out-of-range targets just drop the second shot rather than

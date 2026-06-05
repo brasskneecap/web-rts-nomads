@@ -111,6 +111,54 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 		}
 		writeJSON(w, resp)
 	})
+
+	// POST /api/profile/advancements/reset
+	//
+	// Refunds every acquired advancement's paid cost back to Legend Points and
+	// clears the acquired list, returning the player to a clean slate. Intended
+	// as a dev/testing affordance for A/B-comparing unit behavior with and
+	// without advancements; the refund means the player can immediately re-buy.
+	mux.HandleFunc("/api/profile/advancements/reset", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		playerID := extractPlayerID(w, r)
+		if playerID == "" {
+			return
+		}
+
+		// Same guard as purchase: profile changes during a match would not take
+		// effect until the next match start, so block at the API level.
+		if mm != nil && mm.IsPlayerInActiveMatch(playerID) {
+			writeJSONError(w, http.StatusConflict, "player_in_match", "cannot reset advancements while in an active match")
+			return
+		}
+
+		type resetResponse struct {
+			LegendPoints         int                           `json:"legendPoints"`
+			AcquiredAdvancements []profile.AcquiredAdvancement `json:"acquiredAdvancements"`
+		}
+
+		var resp resetResponse
+		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
+			for _, aa := range p.AcquiredAdvancements {
+				p.LegendPoints += aa.CostPaid
+			}
+			// Empty (non-nil) slice so the JSON serializes as [] rather than null.
+			p.AcquiredAdvancements = []profile.AcquiredAdvancement{}
+			resp = resetResponse{
+				LegendPoints:         p.LegendPoints,
+				AcquiredAdvancements: p.AcquiredAdvancements,
+			}
+			return nil
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
+			return
+		}
+		writeJSON(w, resp)
+	})
 }
 
 // matchInActiveChecker is the minimal interface needed from *game.MatchManager

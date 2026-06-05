@@ -49,14 +49,14 @@
             :class="{ 'war-room__hotspot--selected': isSelected('advancements') }"
             :style="{ backgroundImage: `url(${astrolabUrl})` }"
             aria-label="Advancements"
-            @click="router.push('/war-room/advancements')"
+            @click="selectTab('advancements')"
           >
             <span class="war-room__label">Advancements</span>
           </button>
         </div>
 
         <div class="war-room__page">
-          <RouterView />
+          <Advancements v-if="activeTab === 'advancements'" />
         </div>
       </div>
     </div>
@@ -64,9 +64,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute, useRouter, RouterView } from 'vue-router'
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import UiButton from '@/components/ui/UiButton.vue'
+import Advancements from '@/views/Advancements.vue'
 import warRoomBgUrl from '@/assets/background-images/war_room_bg.png'
 import campaignUrl from '@/assets/ui/buttons/war_room/campaign.png'
 import customGameUrl from '@/assets/ui/buttons/war_room/custom_game.png'
@@ -74,22 +75,25 @@ import astrolabUrl from '@/assets/ui/buttons/war_room/astrolab.png'
 import upgradesUrl from '@/assets/ui/buttons/war_room/upgrades.png'
 
 const router = useRouter()
-const route = useRoute()
 
-// True when a nested page (e.g. /war-room/advancements) is open, so the
-// hotspots should fade out and the parchment slot takes over.
-const pageOpen = computed(() => route.matched.length > 1)
+// In-room tab state. The hotspots act as a tab bar: selecting one renders its
+// content inline in the parchment slot instead of pushing a nested route, so
+// Back always returns to the main menu rather than a /war-room/* sub-route.
+// `null` means no tab open (bare room with just the hotspots showing).
+const activeTab = ref<string | null>(null)
 
 function isSelected(tab: string): boolean {
-  return route.path === `/war-room/${tab}`
+  return activeTab.value === tab
+}
+
+// Toggle the tab: clicking the active hotspot again closes it back to the
+// bare room.
+function selectTab(tab: string) {
+  activeTab.value = activeTab.value === tab ? null : tab
 }
 
 function onBack() {
-  if (pageOpen.value) {
-    router.push('/war-room')
-  } else {
-    router.push('/')
-  }
+  router.push('/')
 }
 
 function onCampaign() {
@@ -128,11 +132,19 @@ function onCampaign() {
  * and grows until it covers the viewport on both axes. Overflow is clipped
  * by the stage. This lets us position hotspots in percentages and have
  * them stay locked to the artwork regardless of window aspect ratio.
+ *
+ * `--scene-min-width` is a hard floor: once the viewport gets narrower than
+ * this, the scene stops shrinking and the stage crops it symmetrically on
+ * the left/right (and top/bottom if needed) instead — so the active items
+ * never shrink past a usable size. The locked aspect-ratio keeps the floor
+ * proportional, so the artwork never distorts. Raise this number to crop
+ * sooner / keep items larger; lower it to allow more shrinkage.
  */
 .war-room__scene {
+  --scene-min-width: 1280px;
   position: relative;
   aspect-ratio: 1162 / 830;
-  min-width: 100%;
+  min-width: max(100%, var(--scene-min-width));
   min-height: 100%;
   background-size: 100% 100%;
   background-position: center;
@@ -152,6 +164,14 @@ function onCampaign() {
   top: 46%;
   bottom: 26%;
   pointer-events: none;
+  /*
+   * Establish a size query container so the nested page (Advancements) can
+   * size its contents in container-query units and scale 1:1 with the
+   * parchment slot — which itself already tracks the cover-fit scene.
+   * `container-type: size` applies size/layout/style containment but NOT
+   * paint, so node tooltips can still extend above the panel bounds.
+   */
+  container-type: size;
 }
 
 .war-room__page :deep(> *) {

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import type { UnitAdvancementTrack } from '@/types/profile'
 import { useProfile } from '@/composables/useProfile'
-import { purchaseAdvancement } from '@/services/profileApi'
+import { purchaseAdvancement, resetAdvancements } from '@/services/profileApi'
 
 // Module-level singleton — catalog is populated by setAdvancementCatalog(),
 // which useProfile's refresh() calls immediately after profile resolves.
@@ -55,6 +55,26 @@ export function useAdvancements() {
     }
   }
 
+  // Refund all acquired advancements and clear them — a dev/testing affordance
+  // for comparing unit behavior with vs without advancements. The refund lets
+  // the player immediately re-buy.
+  async function reset(): Promise<void> {
+    isBusy.value = true
+    error.value = null
+    try {
+      const updated = await resetAdvancements()
+      const p = profile.value
+      if (p) {
+        p.legendPoints = updated.legendPoints
+        p.acquiredAdvancements = updated.acquiredAdvancements
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Reset failed'
+    } finally {
+      isBusy.value = false
+    }
+  }
+
   return {
     catalog,
     acquiredIds,
@@ -65,5 +85,6 @@ export function useAdvancements() {
     canAfford,
     nextNodeFor,
     purchase,
+    reset,
   }
 }

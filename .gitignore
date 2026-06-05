@@ -12,6 +12,10 @@ bin/
 # Regenerated on every save; nothing here belongs in the repo.
 server/tmp/
 
+# Player profile saves — runtime-generated per-player state, recreated by the
+# server on demand (server/internal/profile/store.go MkdirAll). Not source.
+server/profiles/
+
 # OS
 .DS_Store
 

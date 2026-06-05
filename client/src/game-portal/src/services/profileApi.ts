@@ -105,6 +105,19 @@ export async function purchaseAdvancement(advancementId: string): Promise<Purcha
 }
 
 /**
+ * Refunds all acquired advancements (paid cost returned to Legend Points) and
+ * clears the acquired list. Returns the updated legend points + (empty)
+ * acquired list. Rejected while the player is in an active match.
+ */
+export async function resetAdvancements(): Promise<PurchaseAdvancementResponse> {
+  const res = await fetch(`${API_BASE}/api/profile/advancements/reset`, {
+    method: 'POST',
+    headers: playerHeaders(),
+  })
+  return handleResponse<PurchaseAdvancementResponse>(res)
+}
+
+/**
  * DEV-ONLY: grant Legend Points to the calling player for testing. Returns the
  * updated profile. The endpoint is intentionally ungated for dev iteration —
  * callers in the UI should label it clearly as a dev affordance.

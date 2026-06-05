@@ -5,8 +5,12 @@ export type AcquiredAdvancement = {
 
 export type UnitAdvancementEffect =
   | { kind: 'unitStatAdd'; stat: 'maxHp' | 'armor' | 'damage' | 'attackRange' | 'moveSpeed' | 'attackSpeed'; amount: number }
+  | { kind: 'unitStatMul'; stat: 'maxHp' | 'armor' | 'damage' | 'attackRange' | 'moveSpeed' | 'attackSpeed'; percent: number }
   | { kind: 'unitSpawnExp'; amount: number }
   | { kind: 'unitExtraPerkSlot'; tier: 'bronze' | 'silver' | 'gold'; rank: number }
+  | { kind: 'unitBonusArrows'; amount: number }
+  | { kind: 'unitTrapEffectMul'; percent: number }
+  | { kind: 'unitTrapRadiusMul'; percent: number }
 
 export type UnitAdvancementNode = {
   id: string
