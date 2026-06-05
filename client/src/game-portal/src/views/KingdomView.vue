@@ -10,57 +10,19 @@
         :style="{ backgroundImage: `url(${kingdomBgUrl})` }"
       >
         <button
+          v-for="b in BUILDINGS"
+          :key="b.id"
           type="button"
-          class="kingdom__hotspot kingdom__hotspot--town-hall"
-          aria-label="War Room"
-          @click="onTownHall"
+          class="kingdom__hotspot"
+          :style="hotspotStyle(b)"
+          :aria-label="b.label"
+          @click="onSelect(b)"
         >
-          <span class="kingdom__label">War Room</span>
-        </button>
+          <!-- Orb & Beam: a soft halo orb under the label with a beam rising to it. -->
+          <span class="fx fx-beam"></span>
+          <span class="fx fx-orb"></span>
 
-        <button
-          type="button"
-          class="kingdom__hotspot kingdom__hotspot--marketplace"
-          aria-label="Marketplace"
-          @click="onMarketplace"
-        >
-          <span class="kingdom__label">Marketplace</span>
-        </button>
-
-        <button
-          type="button"
-          class="kingdom__hotspot kingdom__hotspot--blacksmith"
-          aria-label="Blacksmith"
-          @click="onBlacksmith"
-        >
-          <span class="kingdom__label">Blacksmith</span>
-        </button>
-
-        <button
-          type="button"
-          class="kingdom__hotspot kingdom__hotspot--barracks"
-          aria-label="Barracks"
-          @click="onBarracks"
-        >
-          <span class="kingdom__label">Barracks</span>
-        </button>
-
-        <button
-          type="button"
-          class="kingdom__hotspot kingdom__hotspot--chapel"
-          aria-label="Chapel"
-          @click="onChapel"
-        >
-          <span class="kingdom__label">Chapel</span>
-        </button>
-
-        <button
-          type="button"
-          class="kingdom__hotspot kingdom__hotspot--farm"
-          aria-label="Farm"
-          @click="onFarm"
-        >
-          <span class="kingdom__label">Farm</span>
+          <span class="kingdom__label">{{ b.label }}</span>
         </button>
       </div>
     </div>
@@ -74,32 +36,43 @@ import kingdomBgUrl from '@/assets/background-images/castle-view_tier1/full-town
 
 const router = useRouter()
 
+/* ----------------------------------------------------------------
+ * Buildings: tuned against full-town-view_tier1.png (2064x1152).
+ * x/y are center positions, w/h are size — all percentages of the scene.
+ * ---------------------------------------------------------------- */
+interface Building {
+  id: string
+  label: string
+  x: number
+  y: number
+  w: number
+  h: number
+  route?: string
+}
+
+const BUILDINGS: ReadonlyArray<Building> = [
+  { id: 'townHall', label: 'War Room', x: 50, y: 22, w: 22, h: 25, route: '/war-room' },
+  { id: 'barracks', label: 'Barracks', x: 21.2, y: 42, w: 31, h: 30 },
+  { id: 'chapel', label: 'Chapel', x: 75, y: 39, w: 24, h: 40 },
+  { id: 'farm', label: 'Farm', x: 19, y: 73, w: 20, h: 30 },
+  { id: 'marketplace', label: 'Marketplace', x: 50, y: 74, w: 18, h: 26 },
+  { id: 'blacksmith', label: 'Blacksmith', x: 80.2, y: 76, w: 20, h: 34 },
+]
+
+function hotspotStyle(b: Building) {
+  return { left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` }
+}
+
+function onSelect(b: Building) {
+  if (b.route) {
+    router.push(b.route)
+    return
+  }
+  // TODO: wire up Marketplace / Blacksmith / Barracks / Chapel / Farm interactions.
+}
+
 function onBack() {
   router.push('/war-room')
-}
-
-function onTownHall() {
-  router.push('/war-room')
-}
-
-function onMarketplace() {
-  // TODO: wire up Marketplace interaction.
-}
-
-function onBlacksmith() {
-  // TODO: wire up Blacksmith interaction.
-}
-
-function onBarracks() {
-  // TODO: wire up Barracks interaction.
-}
-
-function onChapel() {
-  // TODO: wire up Chapel interaction.
-}
-
-function onFarm() {
-  // TODO: wire up Farm interaction.
 }
 </script>
 
@@ -159,10 +132,112 @@ function onFarm() {
   outline: none;
 }
 
+/* Shared base for the orb/beam layers. */
+.fx {
+  position: absolute;
+  left: 50%;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 0;
+}
+
+/*
+ * Orb — a soft, edgeless halo of golden light centered under the label.
+ * Anchored at (--orb-x, --orb-y) within the hotspot box; bottom + translateY(50%)
+ * puts the orb CENTER on the anchor line. The glow uses drop-shadow (follows the
+ * shape), and the hover pulse animates it.
+ */
+.fx-orb {
+  --orb-size: 34px;
+  --orb-soft: 5px;
+  --orb-glow: rgba(212, 168, 71, 0.5);
+  left: var(--orb-x, 50%);
+  bottom: calc(100% - var(--orb-y, 90%));
+  width: var(--orb-size);
+  height: var(--orb-size);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 45%,
+    rgba(255, 243, 214, 0.95),
+    rgba(212, 168, 71, 0.55) 45%,
+    rgba(212, 168, 71, 0) 75%
+  );
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 6px var(--orb-glow)) blur(var(--orb-soft));
+  transform: translate(-50%, 50%) scale(0);
+  transition:
+    opacity 160ms ease,
+    transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1); /* bounce-in */
+}
+
+.kingdom__hotspot:hover .fx-orb,
+.kingdom__hotspot:focus-visible .fx-orb {
+  opacity: 1;
+  transform: translate(-50%, 50%) scale(1);
+  animation: fx-orb-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes fx-orb-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 6px var(--orb-glow)) blur(var(--orb-soft));
+  }
+  50% {
+    filter: drop-shadow(0 0 13px var(--orb-glow)) blur(var(--orb-soft));
+  }
+}
+
+/*
+ * Beam — rises straight up from the orb center to the label. Its bottom edge
+ * sits on the anchor line; --beam-h is how far up it reaches (% of hotspot).
+ */
+.fx-beam {
+  --beam-w: 16px;
+  left: var(--orb-x, 50%);
+  bottom: calc(100% - var(--orb-y, 90%));
+  width: var(--beam-w);
+  height: var(--beam-h, 105%);
+  background: linear-gradient(
+    to top,
+    rgba(212, 168, 71, 0.85),
+    rgba(212, 168, 71, 0.35) 50%,
+    rgba(245, 235, 200, 0) 100%
+  );
+  /* 16px wide at bottom -> ~10px at top: inset (16-10)/2 / 16 = 18.75%. */
+  clip-path: polygon(0% 100%, 100% 100%, 81.25% 0%, 18.75% 0%);
+  filter: blur(3px);
+  mix-blend-mode: screen;
+  transform: translateX(-50%) scaleY(0);
+  transform-origin: bottom center;
+  /* 150ms delay so the orb appears first, then the beam grows up. */
+  transition:
+    opacity 200ms ease 150ms,
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1) 150ms;
+}
+
+.kingdom__hotspot:hover .fx-beam,
+.kingdom__hotspot:focus-visible .fx-beam {
+  opacity: 1;
+  transform: translateX(-50%) scaleY(1);
+  animation: fx-beam-shimmer 1.8s ease-in-out infinite 0.4s;
+}
+
+@keyframes fx-beam-shimmer {
+  0%,
+  100% {
+    filter: blur(3px) brightness(1);
+  }
+  50% {
+    filter: blur(3px) brightness(1.3);
+  }
+}
+
+/* Building label */
 .kingdom__label {
   position: absolute;
   bottom: 100%;
   left: 50%;
+  z-index: 1;
   transform: translateX(-50%);
   margin-bottom: 8px;
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
@@ -176,7 +251,10 @@ function onFarm() {
     0 1px 2px rgba(0, 0, 0, 0.9),
     0 0 10px rgba(255, 200, 100, 0.25);
   pointer-events: none;
-  transition: color 140ms ease, text-shadow 140ms ease, transform 140ms ease;
+  transition:
+    color 140ms ease,
+    text-shadow 140ms ease,
+    transform 140ms ease;
 }
 
 .kingdom__hotspot:hover .kingdom__label,
@@ -188,52 +266,5 @@ function onFarm() {
     0 1px 2px rgba(0, 0, 0, 0.95),
     0 0 12px rgba(255, 220, 140, 0.95),
     0 0 24px rgba(255, 200, 100, 0.7);
-}
-
-/*
- * Hotspot placements are tuned against full-town-view_tier1.png (2064x1152).
- * Percentages are relative to the scene, so they track the artwork as the
- * window resizes.
- */
-.kingdom__hotspot--town-hall {
-  left: 50%;
-  top: 24%;
-  width: 22%;
-  height: 25%;
-}
-
-.kingdom__hotspot--marketplace {
-  left: 50%;
-  top: 74%;
-  width: 18%;
-  height: 26%;
-}
-
-.kingdom__hotspot--blacksmith {
-  left: 84%;
-  top: 74%;
-  width: 20%;
-  height: 34%;
-}
-
-.kingdom__hotspot--barracks {
-  left: 21%;
-  top: 42%;
-  width: 31%;
-  height: 30%;
-}
-
-.kingdom__hotspot--chapel {
-  left: 76%;
-  top: 36%;
-  width: 29%;
-  height: 42%;
-}
-
-.kingdom__hotspot--farm {
-  left: 13%;
-  top: 75%;
-  width: 29%;
-  height: 38%;
 }
 </style>
