@@ -16,7 +16,7 @@
             :class="{ 'war-room__hotspot--selected': isSelected('upgrades') }"
             :style="{ backgroundImage: `url(${upgradesUrl})` }"
             aria-label="Upgrades"
-            @click="router.push('/profile')"
+            @click="router.push('/kingdom')"
           >
             <span class="war-room__label">Upgrades</span>
           </button>

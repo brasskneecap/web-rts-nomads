@@ -11,6 +11,7 @@ import ProfileView from '@/views/ProfileView.vue'
 import OptionsView from '@/views/OptionsView.vue'
 import WarRoom from '@/views/WarRoom.vue'
 import Advancements from '@/views/Advancements.vue'
+import KingdomView from '@/views/KingdomView.vue'
 
 // /steam-mp removed as of §14R-E. Steam friend MP is now integrated into
 // /create-game (Steam lobby created in parallel with the local one) and
@@ -39,6 +40,7 @@ export const router = createRouter({
         { path: 'advancements', component: Advancements },
       ],
     },
+    { path: '/kingdom', component: KingdomView, meta: { hideMenuChrome: true } },
     { path: '/:catchAll(.*)', redirect: '/' },
   ],
 })
