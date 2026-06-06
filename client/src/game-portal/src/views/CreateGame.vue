@@ -2,7 +2,7 @@
   <div class="create-game">
     <div class="create-game__layout">
       <header class="create-game__header">
-        <UiButton size="sm" @click="router.push('/custom')">Back</UiButton>
+        <ExitButton @click="router.push('/custom')" />
         <h1 class="create-game__title">Create Lobby</h1>
       </header>
 
@@ -50,6 +50,7 @@ import {
   completeSteamLobbyPairing,
 } from '@/state/steamLobbyState'
 import UiButton from '@/components/ui/UiButton.vue'
+import ExitButton from '@/components/ui/ExitButton.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import MapList from '@/components/menu/MapList.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'

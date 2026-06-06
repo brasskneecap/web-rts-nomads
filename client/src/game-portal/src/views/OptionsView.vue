@@ -2,7 +2,7 @@
   <div class="options-view">
     <div class="options-view__layout">
       <div class="options-view__back-row">
-        <UiButton size="sm" @click="router.back()">Back</UiButton>
+        <ExitButton @click="router.back()" />
       </div>
 
       <MenuPanel class="options-view__panel">
@@ -21,7 +21,7 @@
 import { useRouter } from 'vue-router'
 import MenuPanel from '@/components/menu/MenuPanel.vue'
 import SettingsPanel from '@/components/menu/SettingsPanel.vue'
-import UiButton from '@/components/ui/UiButton.vue'
+import ExitButton from '@/components/ui/ExitButton.vue'
 
 const router = useRouter()
 </script>

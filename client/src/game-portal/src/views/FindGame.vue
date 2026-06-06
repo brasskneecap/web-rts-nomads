@@ -2,7 +2,7 @@
   <div class="find-game">
     <div class="find-game__layout">
       <header class="find-game__header">
-        <UiButton size="sm" @click="router.push('/custom')">Back</UiButton>
+        <ExitButton @click="router.push('/custom')" />
         <h1 class="find-game__title">Find Game</h1>
         <span v-if="refreshError" class="find-game__refresh-error">Couldn't refresh</span>
       </header>
@@ -28,7 +28,7 @@ import {
 } from '@/game/network/NetworkClient'
 import type { Lobby } from '@/game/network/protocol'
 import UiPanel from '@/components/ui/UiPanel.vue'
-import UiButton from '@/components/ui/UiButton.vue'
+import ExitButton from '@/components/ui/ExitButton.vue'
 import GameScrollArea from '@/components/ui/GameScrollArea.vue'
 import LobbyList from '@/components/menu/LobbyList.vue'
 

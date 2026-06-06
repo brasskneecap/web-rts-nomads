@@ -2,7 +2,7 @@
   <div class="custom-game">
     <div class="custom-game__layout">
       <header class="custom-game__header">
-        <UiButton size="sm" @click="router.push('/')">Back</UiButton>
+        <ExitButton @click="router.push('/')" />
         <h1 class="custom-game__title">Custom Game</h1>
       </header>
 
@@ -39,6 +39,7 @@
 import { useRouter } from 'vue-router'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import ExitButton from '@/components/ui/ExitButton.vue'
 
 const router = useRouter()
 </script>

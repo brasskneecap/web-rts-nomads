@@ -1,7 +1,7 @@
 <template>
   <div class="editor-view">
     <div class="editor-topbar editor-topbar--right">
-      <UiButton size="sm" @click="router.push('/')">Back</UiButton>
+      <ExitButton @click="router.push('/')" />
     </div>
     <MapEditorPanel v-model="editorMap" />
   </div>
@@ -11,7 +11,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import MapEditorPanel from '@/components/MapEditorPanel.vue'
-import UiButton from '@/components/ui/UiButton.vue'
+import ExitButton from '@/components/ui/ExitButton.vue'
 import { createEditorMapConfig } from '@/game/maps/mapConfig'
 
 const router = useRouter()

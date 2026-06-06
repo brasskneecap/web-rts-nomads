@@ -1,7 +1,7 @@
 <template>
   <div class="kingdom">
     <div class="kingdom__back">
-      <UiButton size="sm" @click="onBack">Back</UiButton>
+      <ExitButton aria-label="Back to War Room" @click="onBack" />
     </div>
 
     <div class="kingdom__stage">
@@ -31,7 +31,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import UiButton from '@/components/ui/UiButton.vue'
+import ExitButton from '@/components/ui/ExitButton.vue'
 import kingdomBgUrl from '@/assets/background-images/castle-view_tier1/full-town-view_tier1.png'
 
 const router = useRouter()
@@ -51,12 +51,12 @@ interface Building {
 }
 
 const BUILDINGS: ReadonlyArray<Building> = [
-  { id: 'townHall', label: 'War Room', x: 50, y: 22, w: 22, h: 25, route: '/war-room' },
-  { id: 'barracks', label: 'Barracks', x: 21.2, y: 42, w: 31, h: 30 },
-  { id: 'chapel', label: 'Chapel', x: 75, y: 39, w: 24, h: 40 },
-  { id: 'farm', label: 'Farm', x: 19, y: 73, w: 20, h: 30 },
-  { id: 'marketplace', label: 'Marketplace', x: 50, y: 74, w: 18, h: 26 },
-  { id: 'blacksmith', label: 'Blacksmith', x: 80.2, y: 76, w: 20, h: 34 },
+  { id: 'townHall', label: 'War Room', x: 50.5, y: 21, w: 22, h: 25, route: '/war-room' },
+  { id: 'barracks', label: 'Barracks', x: 13.2, y: 42, w: 31, h: 30, route: '/kingdom/barracks' },
+  { id: 'chapel', label: 'Chapel', x: 79, y: 41, w: 22, h: 32, route: '/kingdom/chapel' },
+  { id: 'farm', label: 'Farm', x: 19, y: 73, w: 20, h: 30, route: '/kingdom/farm' },
+  { id: 'marketplace', label: 'Marketplace', x: 51, y: 54, w: 28, h: 26, route: '/kingdom/marketplace' },
+  { id: 'blacksmith', label: 'Blacksmith', x: 80.2, y: 76, w: 20, h: 34, route: '/kingdom/blacksmith' },
 ]
 
 function hotspotStyle(b: Building) {
@@ -66,9 +66,7 @@ function hotspotStyle(b: Building) {
 function onSelect(b: Building) {
   if (b.route) {
     router.push(b.route)
-    return
   }
-  // TODO: wire up Marketplace / Blacksmith / Barracks / Chapel / Farm interactions.
 }
 
 function onBack() {
@@ -88,8 +86,9 @@ function onBack() {
 
 .kingdom__back {
   position: absolute;
-  top: 16px;
-  left: 20px;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 2;
 }
 
@@ -103,17 +102,17 @@ function onBack() {
 }
 
 /*
- * Contain-style sizing: the scene preserves the background's aspect ratio
- * and shrinks to fit inside the viewport on both axes, so the full image —
- * including the top and bottom edges — is always visible. Hotspots are
- * positioned by percentage relative to the scene, so they stay locked to
- * the artwork at any window aspect ratio.
+ * Cover-style sizing: the scene preserves the background's aspect ratio
+ * and grows until it covers the viewport on both axes — no letterbox bars.
+ * Any overflow is clipped by the stage. Hotspots are positioned by
+ * percentage relative to the scene, so they stay locked to the artwork at
+ * any window aspect ratio.
  */
 .kingdom__scene {
   position: relative;
   aspect-ratio: 2064 / 1152;
-  width: 100%;
-  max-height: 100%;
+  min-width: 100%;
+  min-height: 100%;
   background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;

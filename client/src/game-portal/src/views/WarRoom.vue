@@ -1,7 +1,7 @@
 <template>
   <div class="war-room">
     <div class="war-room__back">
-      <UiButton size="sm" @click="onBack">Back</UiButton>
+      <ExitButton aria-label="Back" @click="onBack" />
     </div>
 
     <div class="war-room__stage">
@@ -66,7 +66,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import UiButton from '@/components/ui/UiButton.vue'
+import ExitButton from '@/components/ui/ExitButton.vue'
 import Advancements from '@/views/Advancements.vue'
 import warRoomBgUrl from '@/assets/background-images/war_room_bg.png'
 import campaignUrl from '@/assets/ui/buttons/war_room/campaign.png'
@@ -113,8 +113,9 @@ function onCampaign() {
 
 .war-room__back {
   position: absolute;
-  top: 16px;
-  left: 20px;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 2;
 }
 

@@ -2,7 +2,7 @@
   <div class="profile-view">
     <div class="profile-view__layout">
       <div class="profile-view__back-row">
-        <UiButton size="sm" @click="router.back()">Back</UiButton>
+        <ExitButton @click="router.back()" />
       </div>
 
       <MenuPanel class="profile-view__panel">
@@ -125,6 +125,7 @@ import ProfileUpgradeLoadoutPicker from '@/components/profile/ProfileUpgradeLoad
 import ProfileUpgradesPanel from '@/components/profile/ProfileUpgradesPanel.vue'
 import MenuPanel from '@/components/menu/MenuPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import ExitButton from '@/components/ui/ExitButton.vue'
 
 const router = useRouter()
 const { profile, isLoading, error, initialize, refresh } = useProfile()

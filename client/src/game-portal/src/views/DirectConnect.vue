@@ -2,7 +2,7 @@
   <div class="direct-connect">
     <div class="direct-connect__layout">
       <header class="direct-connect__header">
-        <UiButton size="sm" @click="router.push('/custom')">Back</UiButton>
+        <ExitButton @click="router.push('/custom')" />
         <h1 class="direct-connect__title">Direct Connect</h1>
       </header>
 
@@ -91,6 +91,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import ExitButton from '@/components/ui/ExitButton.vue'
 import * as dc from '@/services/directConnect'
 
 const router = useRouter()

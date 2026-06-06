@@ -11,6 +11,11 @@ import ProfileView from '@/views/ProfileView.vue'
 import OptionsView from '@/views/OptionsView.vue'
 import WarRoom from '@/views/WarRoom.vue'
 import KingdomView from '@/views/KingdomView.vue'
+import BarracksView from '@/views/BarracksView.vue'
+import ChapelView from '@/views/ChapelView.vue'
+import FarmView from '@/views/FarmView.vue'
+import MarketplaceView from '@/views/MarketplaceView.vue'
+import BlacksmithView from '@/views/BlacksmithView.vue'
 
 // /steam-mp removed as of §14R-E. Steam friend MP is now integrated into
 // /create-game (Steam lobby created in parallel with the local one) and
@@ -33,6 +38,11 @@ export const router = createRouter({
     { path: '/options', component: OptionsView },
     { path: '/war-room', component: WarRoom, meta: { hideMenuChrome: true } },
     { path: '/kingdom', component: KingdomView, meta: { hideMenuChrome: true } },
+    { path: '/kingdom/barracks', component: BarracksView, meta: { hideMenuChrome: true } },
+    { path: '/kingdom/chapel', component: ChapelView, meta: { hideMenuChrome: true } },
+    { path: '/kingdom/farm', component: FarmView, meta: { hideMenuChrome: true } },
+    { path: '/kingdom/marketplace', component: MarketplaceView, meta: { hideMenuChrome: true } },
+    { path: '/kingdom/blacksmith', component: BlacksmithView, meta: { hideMenuChrome: true } },
     { path: '/:catchAll(.*)', redirect: '/' },
   ],
 })

@@ -2,7 +2,7 @@
   <div class="lobby">
     <div class="lobby__layout">
       <header class="lobby__header">
-        <UiButton size="sm" @click="leaveAndGoBack">Back</UiButton>
+        <ExitButton @click="leaveAndGoBack" />
         <div class="lobby__header-info">
           <h1 class="lobby__title">{{ lobby?.mapName ?? 'Lobby' }}</h1>
           <span class="lobby__slots">{{ lobby?.players.length ?? 0 }} / {{ lobby?.maxPlayers ?? 4 }} Players</span>
@@ -81,6 +81,7 @@ import {
 import type { Lobby } from '@/game/network/protocol'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import ExitButton from '@/components/ui/ExitButton.vue'
 import LobbyPlayerList from '@/components/menu/LobbyPlayerList.vue'
 
 const router = useRouter()
