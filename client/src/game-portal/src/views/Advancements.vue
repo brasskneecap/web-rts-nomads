@@ -1,8 +1,9 @@
 <template>
-  <div class="advancements">
+  <div class="advancements" :class="{ 'advancements--single': unitType }">
     <div class="advancements__header">
-      <h1 class="advancements__title">Advancements</h1>
+      <h1 class="advancements__title">{{ titleText }}</h1>
       <button
+        v-if="!unitType"
         type="button"
         class="advancements__reset"
         :disabled="isBusy || acquiredIds.size === 0"
@@ -23,37 +24,43 @@
       >
         <div class="advancement-row__character">
           <div
+            v-if="!unitType"
             class="advancement-row__portrait"
             :style="{ backgroundImage: portraitBg(row.unitType) }"
             :aria-label="unitDisplayName(row.unitType)"
             role="img"
           ></div>
-          <div class="advancement-row__name">{{ unitDisplayName(row.unitType) }}</div>
+          <div v-if="!unitType" class="advancement-row__name">{{ unitDisplayName(row.unitType) }}</div>
         </div>
 
         <div class="advancement-row__nodes">
-          <button
+          <div
             v-for="(node, idx) in row.nodes"
             :key="node.id"
-            type="button"
-            class="advancement-node"
-            :class="[
-              nodeShapeClass(node),
-              nodeStateClass(row, idx),
-            ]"
-            :style="{ backgroundImage: nodeIcon(node, isAcquired(node.id)) }"
-            :disabled="isBusy || isAcquired(node.id) || !isAvailable(row, idx) || !canAfford(node.cost)"
-            :aria-label="`${node.name} (${nodeStateLabel(row, idx)})`"
-            @click="purchase(node.id)"
+            class="advancement-node-cell"
           >
-            <UiTooltip :title="node.name" :body="tooltipBody(node)" />
-          </button>
+            <button
+              type="button"
+              class="advancement-node"
+              :class="[
+                nodeShapeClass(node),
+                nodeStateClass(row, idx),
+              ]"
+              :style="{ backgroundImage: nodeIcon(node, isAcquired(node.id)) }"
+              :disabled="isBusy || isAcquired(node.id) || !isAvailable(row, idx) || !canAfford(node.cost)"
+              :aria-label="`${node.name} (${nodeStateLabel(row, idx)})`"
+              @click="purchase(node.id)"
+            >
+              <UiTooltip :title="node.name" :body="tooltipBody(node)" />
+            </button>
+            <span v-if="unitType" class="advancement-node__cost">{{ node.cost }} LP</span>
+          </div>
         </div>
 
       </div>
     </div>
 
-    <div class="advancements__pager">
+    <div v-if="!unitType" class="advancements__pager">
       <button
         type="button"
         class="advancements__pager-btn advancements__pager-btn--prev"
@@ -115,6 +122,15 @@ import waxSealUrl from '@/assets/ui/buttons/war_room/advancement/wax-seal.png'
 import medalSlotEmptyUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot-empty.png'
 import medalSlotUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot.png'
 
+// When `unitType` is provided, the component renders only that unit's track
+// (and hides pagination) — used by the Barracks unit-detail popup. With no
+// prop it shows every track with pagination, as in the War Room.
+const props = withDefaults(defineProps<{
+  unitType?: string
+}>(), {
+  unitType: undefined,
+})
+
 const { catalog, acquiredIds, isBusy, error, isAcquired, canAfford, purchase, reset } =
   useAdvancements()
 
@@ -138,6 +154,12 @@ function unitDisplayName(unitType: string): string {
   return overrides[unitType] ?? (unitType.charAt(0).toUpperCase() + unitType.slice(1))
 }
 
+// In single-unit (Barracks popup) mode the header names the unit, e.g.
+// "Advancements - Soldier". The CSS uppercases it for display.
+const titleText = computed(() =>
+  props.unitType ? `Advancements - ${unitDisplayName(props.unitType)}` : 'Advancements',
+)
+
 function portraitBg(unitType: string): string {
   const url = PORTRAIT_MAP[unitType]
   return url ? `url(${url})` : 'none'
@@ -160,6 +182,7 @@ function unitOrderRank(unitType: string): number {
 const rowsWithNodes = computed<UnitAdvancementTrack[]>(() =>
   catalog.value
     .filter((t) => t.nodes.length > 0)
+    .filter((t) => !props.unitType || t.unitType === props.unitType)
     .slice()
     .sort((a, b) => {
       const ra = unitOrderRank(a.unitType)
@@ -223,7 +246,9 @@ function nodeStateLabel(track: UnitAdvancementTrack, idx: number): string {
 function tooltipBody(node: UnitAdvancementNode): string {
   const lines: string[] = []
   if (node.description) lines.push(node.description)
-  lines.push(`Cost: ${node.cost} LP`)
+  // In single-unit mode the cost is shown as a label under each node, so it's
+  // omitted from the tooltip to avoid duplication.
+  if (!props.unitType) lines.push(`Cost: ${node.cost} LP`)
   return lines.join('\n')
 }
 
@@ -258,6 +283,68 @@ function tooltipBody(node: UnitAdvancementNode): string {
   justify-content: space-between;
   margin-bottom: calc(var(--s) * 8);
   gap: calc(var(--s) * 16);
+}
+
+/* Single-unit (Barracks popup) mode: no reset/portrait, centered title. */
+.advancements--single .advancements__header {
+  justify-content: center;
+}
+
+.advancements--single .advancements__title {
+  text-align: center;
+  transform: none;
+}
+
+/*
+ * Single-unit mode has the whole panel for one row, so the nodes get larger
+ * and are centered both axes. The (now-empty) character column is removed so
+ * its gap doesn't bias the horizontal centering.
+ */
+.advancements--single .advancements__rows {
+  justify-content: center;
+}
+
+.advancements--single .advancement-row {
+  padding-left: 0;
+  justify-content: flex-start;
+}
+
+.advancements--single .advancement-row__character {
+  display: none;
+}
+
+.advancements--single .advancement-row__nodes {
+  justify-content: flex-start;
+  align-items: flex-end;
+  gap: calc(var(--s) * 18);
+}
+
+/* Node + its cost label stack vertically; bottom-aligned in the row so the
+   cost labels line up regardless of node size. */
+.advancement-node-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--s) * 6);
+}
+
+.advancement-node__cost {
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-size: calc(var(--s) * 14);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #3a1f0a;
+  white-space: nowrap;
+}
+
+.advancements--single .advancement-node {
+  width: calc(var(--s) * 76);
+  height: calc(var(--s) * 76);
+}
+
+.advancements--single .advancement-node--square {
+  width: calc(var(--s) * 96);
+  height: calc(var(--s) * 96);
 }
 
 .advancements__title {

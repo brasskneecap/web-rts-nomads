@@ -7,19 +7,32 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import uiPanelUrl from '@/assets/ui/themes/default/ui_panel.png'
+import parchmentPanelUrl from '@/assets/ui/themes/default/ui_parchment_panel.png'
+import footerPanelUrl from '@/assets/ui/themes/default/footer_panel.png'
 import theme from '@/assets/ui/themes/default/theme.json'
 
 const props = withDefaults(defineProps<{
   padding?: number
+  variant?: 'default' | 'parchment' | 'footer'
 }>(), {
   padding: 12,
+  variant: 'default',
 })
 
-const panelStyle = computed(() => ({
-  '--ui-panel-image': `url(${uiPanelUrl})`,
-  '--ui-panel-slice': String(theme.uiPanel.slice),
-  padding: `${props.padding}px`,
-}))
+const variants = {
+  default: { image: uiPanelUrl, slice: theme.uiPanel.slice },
+  parchment: { image: parchmentPanelUrl, slice: theme.parchmentPanel.slice },
+  footer: { image: footerPanelUrl, slice: theme.footerPanel.slice },
+}
+
+const panelStyle = computed(() => {
+  const v = variants[props.variant]
+  return {
+    '--ui-panel-image': `url(${v.image})`,
+    '--ui-panel-slice': String(v.slice),
+    padding: `${props.padding}px`,
+  }
+})
 </script>
 
 <style scoped>

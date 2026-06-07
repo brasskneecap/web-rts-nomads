@@ -13,7 +13,7 @@
       <div class="menu-logo-slot" aria-hidden="true"></div>
 
       <nav class="main-menu__nav" aria-label="Main menu">
-        <MenuPanel>
+        <MenuPanel variant="parchment">
           <UiButton size="lg" @click="router.push('/war-room')">Start Game</UiButton>
           <UiButton size="lg" @click="router.push('/profile')">Profile</UiButton>
           <UiButton size="lg" @click="router.push('/editor')">Map Editor</UiButton>
@@ -117,10 +117,44 @@ function onDismiss() {
   min-width: 330px;
 }
 
+/*
+ * Main-menu buttons drop the shared ui_panel.png border-image entirely and
+ * render as the golden Cinzel text used on the war-room hotspot labels, so the
+ * entries read as inscriptions on the parchment rather than nested panels.
+ */
 .main-menu__nav :deep(.ui-button--lg) {
   min-width: 270px;
-  min-height: 84px;
+  min-height: 64px;
   font-size: 24px;
-  padding: 12px 36px;
+  padding: 8px 36px;
+  border: 0;
+  border-image: none;
+  background: none;
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  letter-spacing: 0.06em;
+  color: #f4d27a;
+  text-decoration: none;
+  text-underline-offset: 6px;
+  text-decoration-thickness: 2px;
+  text-shadow:
+    0 0 6px rgba(0, 0, 0, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 12px rgba(255, 200, 100, 0.35);
+  transition: color 120ms ease, text-shadow 120ms ease, transform 120ms ease;
+}
+
+.main-menu__nav :deep(.ui-button--lg:hover:not(:disabled)) {
+  filter: none;
+  color: #ffe9a8;
+  text-decoration: underline #ffe9a8;
+  text-shadow:
+    0 0 6px rgba(0, 0, 0, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 14px rgba(255, 220, 140, 0.6);
+}
+
+.main-menu__nav :deep(.ui-button--lg:active:not(:disabled)) {
+  filter: none;
+  transform: translateY(1px);
 }
 </style>

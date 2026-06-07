@@ -16,14 +16,19 @@ const splashDismissed = ref(false)
 
 const showMenuChrome = computed(() => !route.meta.hideMenuChrome)
 
+// Music plays across the menu, war-room, kingdom and meta views. It is only
+// silenced once an actual match starts (routes flagged `silenceMusic`), so it
+// persists through the chrome-less war-room/kingdom/meta scenes.
+const shouldPlayMusic = computed(() => !route.meta.silenceMusic)
+
 function onSplashDismiss() {
   splashDismissed.value = true
-  if (showMenuChrome.value) startMenuMusic()
+  if (shouldPlayMusic.value) startMenuMusic()
 }
 
-watch(showMenuChrome, (visible) => {
+watch(shouldPlayMusic, (playing) => {
   if (!splashDismissed.value) return
-  if (visible) startMenuMusic()
+  if (playing) startMenuMusic()
   else stopMenuMusic()
 })
 </script>
