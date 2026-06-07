@@ -14,7 +14,7 @@
             type="button"
             class="war-room__hotspot war-room__hotspot--upgrades"
             :class="{ 'war-room__hotspot--selected': isSelected('upgrades') }"
-            :style="{ backgroundImage: `url(${upgradesUrl})` }"
+            :style="{ backgroundImage: `url(${kingdomUrl})` }"
             aria-label="Kingdom"
             @click="router.push('/kingdom')"
           >
@@ -72,7 +72,7 @@ import warRoomBgUrl from '@/assets/background-images/war_room_bg.png'
 import campaignUrl from '@/assets/ui/buttons/war_room/campaign.png'
 import customGameUrl from '@/assets/ui/buttons/war_room/custom_game.png'
 import astrolabUrl from '@/assets/ui/buttons/war_room/astrolab.png'
-import upgradesUrl from '@/assets/ui/buttons/war_room/upgrades.png'
+import kingdomUrl from '@/assets/ui/buttons/war_room/kingdom.png'
 
 const router = useRouter()
 
@@ -270,7 +270,7 @@ function onCampaign() {
 }
 
 .war-room__hotspot--campaign {
-  left: 31%;
+  left: 36%;
   top: 43%;
   width: 7%;
   aspect-ratio: 1 / 1;
@@ -284,14 +284,14 @@ function onCampaign() {
 }
 
 .war-room__hotspot--upgrades {
-  left: 58%;
+  left: 52%;
   top: 42%;
   width: 8%;
   aspect-ratio: 1 / 1;
 }
 
 .war-room__hotspot--astrolab {
-  left: 71%;
+  left: 60%;
   top: 42%;
   width: 7%;
   aspect-ratio: 1 / 1;
