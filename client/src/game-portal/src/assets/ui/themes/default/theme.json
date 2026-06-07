@@ -4,5 +4,8 @@
   },
   "footerPanel": {
     "slice": 17
+  },
+  "parchmentPanel": {
+    "slice": 24
   }
 }

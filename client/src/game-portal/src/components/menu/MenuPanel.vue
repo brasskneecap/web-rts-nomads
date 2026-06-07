@@ -1,11 +1,17 @@
 <template>
-  <UiPanel class="menu-panel" :padding="16">
+  <UiPanel class="menu-panel" :padding="16" :variant="variant">
     <slot />
   </UiPanel>
 </template>
 
 <script setup lang="ts">
 import UiPanel from '@/components/ui/UiPanel.vue'
+
+withDefaults(defineProps<{
+  variant?: 'default' | 'parchment'
+}>(), {
+  variant: 'default',
+})
 </script>
 
 <style scoped>

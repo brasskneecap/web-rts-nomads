@@ -10,7 +10,11 @@
         role="img"
         :aria-label="title"
         :style="{ backgroundImage: `url(${bg})` }"
-      ></div>
+      >
+        <!-- Overlay slot: scene-relative so children can be positioned in
+             percentages and stay locked to the cover-fit artwork. -->
+        <slot />
+      </div>
     </div>
   </div>
 </template>
@@ -43,10 +47,15 @@ function onBack() {
 
 .meta-scene__exit {
   position: absolute;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 50px;
+  left: 50px;
   z-index: 2;
+}
+
+/* Meta views use a larger exit icon (2x the base) pinned to the top-left. */
+.meta-scene__exit :deep(.exit-button) {
+  width: 112px;
+  height: 112px;
 }
 
 .meta-scene__stage {
@@ -62,11 +71,18 @@ function onBack() {
  * Cover-style sizing matches KingdomView: the scene preserves the
  * background's aspect ratio and grows to fill both axes — no letterbox.
  * Any overflow is clipped by the stage.
+ *
+ * `--scene-min-width` is a hard floor: once the viewport gets narrower than
+ * this, the scene stops shrinking and the stage crops it symmetrically
+ * instead — so the artwork (and any overlaid panels) never shrink past a
+ * usable size. Raise this number to crop sooner / keep things larger; lower
+ * it to allow more shrinkage.
  */
 .meta-scene__scene {
+  --scene-min-width: 1500px;
   position: relative;
   aspect-ratio: 1672 / 941;
-  min-width: 100%;
+  min-width: max(100%, var(--scene-min-width));
   min-height: 100%;
   background-size: 100% 100%;
   background-position: center;

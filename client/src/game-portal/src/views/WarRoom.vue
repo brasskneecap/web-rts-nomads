@@ -113,10 +113,15 @@ function onCampaign() {
 
 .war-room__back {
   position: absolute;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 50px;
+  left: 50px;
   z-index: 2;
+}
+
+/* Larger exit icon (2x the base) pinned to the top-left, matching meta views. */
+.war-room__back :deep(.exit-button) {
+  width: 112px;
+  height: 112px;
 }
 
 .war-room__stage {

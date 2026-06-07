@@ -51,12 +51,12 @@ interface Building {
 }
 
 const BUILDINGS: ReadonlyArray<Building> = [
-  { id: 'townHall', label: 'War Room', x: 50.5, y: 21, w: 22, h: 25, route: '/war-room' },
-  { id: 'barracks', label: 'Barracks', x: 13.2, y: 42, w: 31, h: 30, route: '/kingdom/barracks' },
-  { id: 'chapel', label: 'Chapel', x: 79, y: 41, w: 22, h: 32, route: '/kingdom/chapel' },
-  { id: 'farm', label: 'Farm', x: 19, y: 73, w: 20, h: 30, route: '/kingdom/farm' },
-  { id: 'marketplace', label: 'Marketplace', x: 51, y: 54, w: 28, h: 26, route: '/kingdom/marketplace' },
-  { id: 'blacksmith', label: 'Blacksmith', x: 80.2, y: 76, w: 20, h: 34, route: '/kingdom/blacksmith' },
+  { id: 'townHall', label: 'War Room', x: 51.3, y: 16.5, w: 22, h: 22, route: '/war-room' },
+  { id: 'barracks', label: 'Barracks', x: 13, y: 37, w: 31, h: 29, route: '/kingdom/barracks' },
+  { id: 'chapel', label: 'Chapel', x: 80.3, y: 36, w: 22, h: 34, route: '/kingdom/chapel' },
+  { id: 'farm', label: 'Farm', x: 18.5, y: 69, w: 20, h: 30, route: '/kingdom/farm' },
+  { id: 'marketplace', label: 'Marketplace', x: 51, y: 51, w: 28, h: 26, route: '/kingdom/marketplace' },
+  { id: 'blacksmith', label: 'Blacksmith', x: 80.2, y: 71, w: 20, h: 34, route: '/kingdom/blacksmith' },
 ]
 
 function hotspotStyle(b: Building) {
@@ -86,10 +86,15 @@ function onBack() {
 
 .kingdom__back {
   position: absolute;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 50px;
+  left: 50px;
   z-index: 2;
+}
+
+/* Larger exit icon (2x the base) pinned to the top-left, matching meta views. */
+.kingdom__back :deep(.exit-button) {
+  width: 112px;
+  height: 112px;
 }
 
 .kingdom__stage {
