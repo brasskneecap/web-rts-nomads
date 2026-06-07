@@ -52,10 +52,10 @@ interface Building {
 
 const BUILDINGS: ReadonlyArray<Building> = [
   { id: 'townHall', label: 'War Room', x: 50.5, y: 21, w: 22, h: 25, route: '/war-room' },
-  { id: 'barracks', label: 'Barracks', x: 13.2, y: 42, w: 31, h: 30, route: '/kingdom/barracks' },
+  { id: 'barracks', label: 'Barracks', x: 13.2, y: 43, w: 31, h: 28, route: '/kingdom/barracks' },
   { id: 'chapel', label: 'Chapel', x: 79, y: 41, w: 22, h: 32, route: '/kingdom/chapel' },
-  { id: 'farm', label: 'Farm', x: 19, y: 73, w: 20, h: 30, route: '/kingdom/farm' },
-  { id: 'marketplace', label: 'Marketplace', x: 51, y: 54, w: 28, h: 26, route: '/kingdom/marketplace' },
+  { id: 'farm', label: 'Farm', x: 19, y: 74, w: 20, h: 27, route: '/kingdom/farm' },
+  { id: 'marketplace', label: 'Marketplace', x: 51, y: 57, w: 28, h: 26, route: '/kingdom/marketplace' },
   { id: 'blacksmith', label: 'Blacksmith', x: 80.2, y: 76, w: 20, h: 34, route: '/kingdom/blacksmith' },
 ]
 
