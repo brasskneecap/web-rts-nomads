@@ -285,15 +285,9 @@ function tooltipBody(node: UnitAdvancementNode): string {
   gap: calc(var(--s) * 16);
 }
 
-/* Single-unit (Barracks popup) mode: no reset/portrait, centered title. */
-.advancements--single .advancements__header {
-  justify-content: center;
-}
-
-.advancements--single .advancements__title {
-  text-align: center;
-  transform: none;
-}
+/* Single-unit (Barracks popup) mode: no reset/portrait. Header inherits the
+   default `justify-content: space-between`, which left-aligns the title
+   when the reset button is hidden, matching the Campaign panel header. */
 
 /*
  * Single-unit mode has the whole panel for one row, so the nodes get larger
@@ -356,7 +350,6 @@ function tooltipBody(node: UnitAdvancementNode): string {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: #3a1f0a;
-  transform: translateX(calc(var(--s) * 80));
 }
 
 .advancements__reset {

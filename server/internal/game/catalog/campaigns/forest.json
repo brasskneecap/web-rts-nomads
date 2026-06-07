@@ -1,0 +1,29 @@
+{
+  "id": "forest",
+  "displayName": "Forest",
+  "description": "Carve a path through the green sea.",
+  "sortOrder": 1,
+  "levels": [
+    {
+      "id": "forest_01",
+      "displayName": "Forest 1",
+      "mapId": "exploration",
+      "prerequisiteLevelId": null,
+      "description": "Establish a foothold at the forest edge."
+    },
+    {
+      "id": "forest_02",
+      "displayName": "Forest 2",
+      "mapId": "exploration2",
+      "prerequisiteLevelId": "forest_01",
+      "description": "Push deeper into the wood."
+    },
+    {
+      "id": "forest_03",
+      "displayName": "Forest 3",
+      "mapId": "exploration3",
+      "prerequisiteLevelId": "forest_02",
+      "description": "Reach the heart of the forest."
+    }
+  ]
+}

@@ -177,8 +177,9 @@ import DebugHud from '@/components/DebugHud.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { useMapSelection } from '@/composables/useMapSelection'
 import { setCursorGrab } from '@/services/desktopBridge'
-import { getOrCreatePlayerId } from '@/services/profileApi'
+import { getOrCreatePlayerId, markCampaignLevelComplete } from '@/services/profileApi'
 import { BUILDABLE_BUILDING_DEFS } from '@/game/maps/buildingDefs'
+import { campaignSession, clearCampaignSession } from '@/state/campaignSession'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -304,9 +305,41 @@ async function exitGame() {
   localStorage.removeItem(MAP_ID_STORAGE_KEY)
   localStorage.removeItem(MATCH_ID_STORAGE_KEY)
   localStorage.removeItem(HAS_ACTIVE_SESSION_KEY)
+  // Reset campaign tracking: a fresh match (campaign or otherwise) should
+  // start with no session and no fired-completion guard.
+  clearCampaignSession()
+  campaignCompletionFired = false
   setSelectedMapId('', '')
   void router.push('/')
 }
+
+// Campaign completion hook. When the match enters a victory state AND the
+// current match was launched from the campaign panel, mark the level complete
+// on the server. Fires at most once per match — a re-trigger of `isVictory`
+// from a state edge would otherwise spam the endpoint. The server-side
+// handler is idempotent so this is belt-and-braces.
+let campaignCompletionFired = false
+
+const isVictorious = computed(() => {
+  const u = ui.value
+  if (!hasStarted.value) return false
+  if (u.isVictory) return true
+  if (u.wave.enabled && u.wave.state === 'complete' && !u.objectives.length) return true
+  return false
+})
+
+watch(isVictorious, (won) => {
+  if (!won || campaignCompletionFired) return
+  const session = campaignSession.value
+  if (!session) return
+  campaignCompletionFired = true
+  // Fire-and-forget. Failures are logged but not surfaced to the player —
+  // the match was won regardless, and the server endpoint is idempotent so
+  // a follow-up call from a future session would still record it.
+  void markCampaignLevelComplete(session.levelId).catch((err) => {
+    console.error('[Campaign] failed to record completion:', err)
+  })
+})
 
 function markActiveSession() {
   if (hasStarted.value) {

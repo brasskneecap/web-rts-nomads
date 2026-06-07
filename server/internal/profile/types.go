@@ -2,7 +2,7 @@ package profile
 
 // CurrentVersion is the schema version written into every new profile.
 // Increment this when the struct layout changes and add migration logic.
-const CurrentVersion = 4
+const CurrentVersion = 5
 
 // DefaultCommanderID is the commander assigned to new profiles when no other
 // commander is specified.
@@ -43,6 +43,13 @@ type PlayerProfile struct {
 	// paid at purchase time (used for refund-on-cost-change on load).
 	// Added in schema version 4. A nil slice is equivalent to an empty slice.
 	AcquiredAdvancements []AcquiredAdvancement `json:"acquiredAdvancements"`
+
+	// CompletedCampaignLevels is the set of campaign level IDs the player has
+	// completed. Stored sorted + deduped. The campaign catalog itself lives on
+	// the client (see client/src/game-portal/src/data/campaigns.ts) — the server
+	// only records which level IDs the player has finished so unlock state can
+	// be computed from this list at any time. Added in schema version 5.
+	CompletedCampaignLevels []string `json:"completedCampaignLevels"`
 }
 
 // AcquiredAdvancement records a single purchased advancement node.

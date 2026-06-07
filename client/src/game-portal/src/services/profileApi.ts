@@ -118,6 +118,19 @@ export async function resetAdvancements(): Promise<PurchaseAdvancementResponse> 
 }
 
 /**
+ * Mark a campaign level as completed for the calling player. Idempotent on
+ * the server — re-completing a level is a no-op. Returns the updated profile.
+ */
+export async function markCampaignLevelComplete(levelId: string): Promise<PlayerProfile> {
+  const res = await fetch(`${API_BASE}/api/profile/campaign/complete-level`, {
+    method: 'POST',
+    headers: playerHeaders(),
+    body: JSON.stringify({ levelId }),
+  })
+  return handleResponse<PlayerProfile>(res)
+}
+
+/**
  * DEV-ONLY: grant Legend Points to the calling player for testing. Returns the
  * updated profile. The endpoint is intentionally ungated for dev iteration —
  * callers in the UI should label it clearly as a dev affordance.

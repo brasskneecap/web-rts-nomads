@@ -38,6 +38,7 @@ export type PlayerProfile = {
   activeUpgradeIds: string[]
   ownedUpgradeRanks: Record<string, number>
   acquiredAdvancements: AcquiredAdvancement[]
+  completedCampaignLevels: string[]
   stats: ProfileStats
 }
 

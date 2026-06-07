@@ -262,6 +262,49 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 		writeJSON(w, updated)
 	})
 
+	// Campaign progression. The campaign catalog (campaign IDs, level IDs,
+	// prerequisite chains) lives on the client; the server only records which
+	// level IDs the player has finished. Idempotent — re-completing a level is
+	// a no-op rather than an error so the client can call this fire-and-forget
+	// from the match-end hook without needing to track whether it already fired.
+	//
+	// Extension points: when richer per-level data is needed (best time, star
+	// rating, score), replace the []string slice with a []CompletedCampaignLevel
+	// struct and bump the profile schema version. The endpoint shape can stay
+	// the same — just accept an optional body of metadata.
+	mux.HandleFunc("/api/profile/campaign/complete-level", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		playerID := extractPlayerID(w, r)
+		if playerID == "" {
+			return
+		}
+		var body struct {
+			LevelID string `json:"levelId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+			return
+		}
+		if body.LevelID == "" {
+			writeJSONError(w, http.StatusBadRequest, "invalid_level_id", "levelId is required")
+			return
+		}
+		var updated *profile.PlayerProfile
+		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
+			p.CompletedCampaignLevels = addToSortedSet(p.CompletedCampaignLevels, body.LevelID)
+			updated = p
+			return nil
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
+			return
+		}
+		writeJSON(w, updated)
+	})
+
 	mux.HandleFunc("/api/catalog/profile-upgrades", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{
 			"upgrades": game.ListProfileUpgradeDefs(),
@@ -275,6 +318,20 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 	mux.HandleFunc("/api/catalog/neutral-groups", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{
 			"tiers": game.ListNeutralGroupsForCatalog(),
+		})
+	})
+
+	// Campaign catalog. Static data sourced from
+	// server/internal/game/catalog/campaigns/*.json — drop new files there to
+	// add campaigns; no code change is required for the data path. The
+	// payload shape matches `Campaign` in client/src/game-portal/src/types/campaign.ts.
+	mux.HandleFunc("/api/catalog/campaigns", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"campaigns": game.ListCampaignDefs(),
 		})
 	})
 }

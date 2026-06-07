@@ -27,7 +27,7 @@
             :class="{ 'war-room__hotspot--selected': isSelected('campaign') }"
             :style="{ backgroundImage: `url(${campaignUrl})` }"
             aria-label="Campaign"
-            @click="onCampaign"
+            @click="selectTab('campaign')"
           >
             <span class="war-room__label">Campaign</span>
           </button>
@@ -55,8 +55,12 @@
           </button>
         </div>
 
-        <div class="war-room__page">
+        <div
+          class="war-room__page"
+          :class="{ 'war-room__page--campaign': activeTab === 'campaign' }"
+        >
           <Advancements v-if="activeTab === 'advancements'" />
+          <Campaign v-if="activeTab === 'campaign'" @close="activeTab = null" />
         </div>
       </div>
     </div>
@@ -68,6 +72,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ExitButton from '@/components/ui/ExitButton.vue'
 import Advancements from '@/views/Advancements.vue'
+import Campaign from '@/views/Campaign.vue'
 import warRoomBgUrl from '@/assets/background-images/war_room_bg.png'
 import campaignUrl from '@/assets/ui/buttons/war_room/campaign.png'
 import customGameUrl from '@/assets/ui/buttons/war_room/custom_game.png'
@@ -94,10 +99,6 @@ function selectTab(tab: string) {
 
 function onBack() {
   router.push('/')
-}
-
-function onCampaign() {
-  // Campaign is not implemented yet (disabled on the main menu).
 }
 </script>
 
@@ -178,6 +179,15 @@ function onCampaign() {
    * paint, so node tooltips can still extend above the panel bounds.
    */
   container-type: size;
+}
+
+/* Campaign uses a taller slot — it lists levels vertically and needs more
+   headroom than Advancements' single-row layout. Top is raised; the bottom
+   edge is pushed 50px lower than the default slot so the panel extends
+   further down while keeping the same horizontal bounds. */
+.war-room__page--campaign {
+  top: calc(18% + 50px);
+  bottom: calc(26% - 50px);
 }
 
 .war-room__page :deep(> *) {

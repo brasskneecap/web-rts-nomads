@@ -1,5 +1,7 @@
 <template>
-  <UiPanel class="minimap-preview" :padding="16">
+  <!-- Default layout: outer panel framing metadata + canvas panel. Used by
+       the Custom Game lobby (CreateGame.vue). -->
+  <UiPanel v-if="showMetadata" class="minimap-preview" :padding="16">
     <div v-if="map" class="minimap-preview__content">
       <div class="minimap-preview__name">{{ map.name }}</div>
       <div v-if="map.description" class="minimap-preview__description">{{ map.description }}</div>
@@ -26,6 +28,29 @@
       Select a map to see details.
     </div>
   </UiPanel>
+
+  <!-- Bare layout: no UiPanel frame at all. The consumer (Campaign panel)
+       supplies its own border styling on the wrapping div so the visual
+       matches the surrounding theme (e.g. the level-row border palette). -->
+  <div
+    v-else-if="map"
+    class="minimap-preview minimap-preview--bare"
+  >
+    <div v-if="isLoading" class="minimap-preview__status">Loading...</div>
+    <div v-else-if="loadError" class="minimap-preview__status minimap-preview__status--error">
+      Failed to load preview
+    </div>
+    <canvas
+      v-show="!isLoading && !loadError"
+      ref="canvasEl"
+      class="minimap-preview__canvas"
+      aria-label="Minimap preview"
+    />
+  </div>
+
+  <div v-else class="minimap-preview__empty minimap-preview__empty--bare">
+    Select a map to see details.
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -40,11 +65,23 @@ import {
 import { isTerrainTilesetReady, onSheetReady } from '@/game/rendering/terrainTileset'
 import UiPanel from '@/components/ui/UiPanel.vue'
 
-const MAX_DISPLAY_SIZE = 240
-
-const props = defineProps<{
-  map: MapCatalogEntry | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    map: MapCatalogEntry | null
+    /** Show the map name, description, and size/player metadata above the
+     *  canvas. Off when the surrounding UI already provides the level / map
+     *  label (e.g. the Campaign panel uses the level's display name on the
+     *  left and just wants the visual on the right). */
+    showMetadata?: boolean
+    /** Max canvas edge length in CSS pixels. The canvas is square-bounded:
+     *  the larger edge gets this size and the smaller edge is derived from
+     *  the map's aspect ratio. Default 240 matches the original Custom
+     *  Game lobby preview; the Campaign panel passes a smaller value so
+     *  the level objectives section fits below the map. */
+    maxDisplaySize?: number
+  }>(),
+  { showMetadata: true, maxDisplaySize: 240 },
+)
 
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 const isLoading = ref(false)
@@ -97,14 +134,15 @@ function renderMap(file: MapCatalogFile) {
   // the same approach the in-game minimap uses — the world is downscaled
   // into a screen-pixel-resolution rect with smoothing, so the result
   // matches the in-game look.
+  const maxSize = props.maxDisplaySize
   let displayW: number
   let displayH: number
   if (aspectRatio >= 1) {
-    displayW = MAX_DISPLAY_SIZE
-    displayH = Math.round(MAX_DISPLAY_SIZE / aspectRatio)
+    displayW = maxSize
+    displayH = Math.round(maxSize / aspectRatio)
   } else {
-    displayH = MAX_DISPLAY_SIZE
-    displayW = Math.round(MAX_DISPLAY_SIZE * aspectRatio)
+    displayH = maxSize
+    displayW = Math.round(maxSize * aspectRatio)
   }
   canvas.width = displayW
   canvas.height = displayH
@@ -151,6 +189,15 @@ watch(
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
+}
+
+/* Bare variant: outer wrapper is gone, so this UiPanel IS the canvas frame.
+   Centers the loading/error status text and the canvas the same way the
+   inner .minimap-preview__image-area does in the framed variant. */
+.minimap-preview--bare {
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
 }
 
 .minimap-preview__content {

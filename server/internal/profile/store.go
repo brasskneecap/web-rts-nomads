@@ -127,6 +127,11 @@ func migrateProfile(p *PlayerProfile) {
 	if p.AcquiredAdvancements == nil {
 		p.AcquiredAdvancements = []AcquiredAdvancement{}
 	}
+	// v4 -> v5: initialize CompletedCampaignLevels for the same reason as above
+	// (nil -> [] on the wire, safe range in all downstream code).
+	if p.CompletedCampaignLevels == nil {
+		p.CompletedCampaignLevels = []string{}
+	}
 	// Stamp current version so the next Save persists the new schema.
 	p.Version = CurrentVersion
 }
