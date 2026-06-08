@@ -149,11 +149,13 @@ type MapConfig struct {
 	PlacedUnits   []PlacedUnit   `json:"placedUnits,omitempty"`
 	NeutralSpawns []NeutralSpawn `json:"neutralSpawns,omitempty"`
 	WaveConfig    *WaveConfig    `json:"waveConfig,omitempty"`
-	// VictoryConditions lists the objectives that must ALL be completed for the
-	// player to win. Omitted or empty means no server-managed win condition
-	// (the legacy wave-complete client check still works for wave maps).
-	VictoryConditions []VictoryCondition `json:"victoryConditions,omitempty"`
-	Debug             *MapDebugConfig    `json:"debug,omitempty"`
+	// VictoryConditions removed in the campaign-objectives-and-metrics change.
+	// Per-level objectives now live on `CampaignLevelDef.Objectives` and are
+	// evaluated by the objective handler registry. See
+	// `server/internal/game/catalog/maps/migration_notes.md` for the migration
+	// record. The `VictoryCondition` and `VictorySnapshot` structs below are
+	// retained until the snapshot reshape in §10 of the OpenSpec change.
+	Debug *MapDebugConfig `json:"debug,omitempty"`
 }
 
 // MapDebugConfig is the container for per-map debug/telemetry opt-ins. It
@@ -745,6 +747,12 @@ type PlayerSnapshot struct {
 	// budget for this match. Drives the reroll button on neutral-shop
 	// buildings (enabled when > 0).
 	ShopRerollsRemaining int `json:"shopRerollsRemaining,omitempty"`
+	// Metrics carries this player's cumulative match metrics (gold earned,
+	// kills, buildings built, etc). Always present so every snapshot
+	// recipient can render the end-of-round per-player comparison columns
+	// (§15). For team-scope objectives, the evaluator aggregates these per
+	// tick — but the wire still carries the per-player breakdown.
+	Metrics MatchMetricsSnapshot `json:"metrics"`
 }
 
 type UnitSnapshot struct {
@@ -855,8 +863,11 @@ type UnitSnapshot struct {
 	// from the wire for the overwhelming majority of units that are not
 	// pickup-bound.
 	PickupLootID string `json:"pickupLootId,omitempty"`
-	// ObjectiveID is non-empty when this unit is linked to a victory condition.
-	// Matches a VictoryCondition.ID in MapConfig.VictoryConditions.
+	// ObjectiveID was the link to a legacy VictoryCondition in MapConfig.
+	// The field carries through the wire for snapshot stability but is no
+	// longer consulted by the engine; §6 of the campaign-objectives-and-metrics
+	// change removed `MapConfig.VictoryConditions`, and §9 will drop the
+	// related state hooks. Map JSONs no longer author this field.
 	ObjectiveID string `json:"objectiveId,omitempty"`
 	// StunnedRemaining / SlowedRemaining / SlowedMultiplier carry the current CC
 	// state to the client each tick so it can render stun/slow indicator icons.
@@ -1017,22 +1028,70 @@ type MatchSummary struct {
 // ObjectiveSnapshot carries the current state of one victory condition to the
 // client every tick (once the map has VictoryConditions defined). Clients use
 // this to render an objective tracker HUD and detect when all are complete.
+// ObjectiveSnapshot is the per-tick wire shape for one campaign objective's
+// state from the perspective of the snapshot's viewer. Reshaped in §10 of
+// campaign-objectives-and-metrics: the old `label`/`progress`/`count` fields
+// (designed for the legacy killUnit/destroyBuilding/surviveWaves system)
+// are gone, replaced by the richer fields below.
+//
+// Scope semantics:
+//   - team-scope objectives carry the team-aggregated state — every viewer
+//     sees identical values.
+//   - player-scope objectives carry the VIEWER's own per-player state. Two
+//     players in the same lobby see different values on the same objective.
 type ObjectiveSnapshot struct {
-	ID        string `json:"id"`
-	Type      string `json:"type"`
-	Label     string `json:"label,omitempty"`
-	Completed bool   `json:"completed"`
-	// Progress / Count are only meaningful for "killUnit" objectives.
-	Progress int `json:"progress,omitempty"`
-	Count    int `json:"count,omitempty"`
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+	// Scope is the literal "team" or "player". Drives client rendering hints
+	// (e.g. team-scope objectives may render a single shared progress bar
+	// vs player-scope showing each player's column at end of round).
+	Scope string `json:"scope"`
+	// Required: when true, this objective must complete for victory to fire
+	// (per the §9 AND-gate). Optional objectives never gate victory.
+	Required bool `json:"required,omitempty"`
+	// Current is the live counter value (e.g. camps killed, gold earned).
+	Current int `json:"current"`
+	// RequiredCount is the threshold value (e.g. count, amount, wavesToSurvive)
+	// the handler uses to declare completion.
+	RequiredCount int `json:"requiredCount"`
+	// Completed becomes true when Current >= RequiredCount AND the handler
+	// has declared the objective complete. Sticky: once true, stays true.
+	Completed bool `json:"completed"`
+	// Failed is only set by time-boxed objectives (e.g. kill_camps_before_wave).
+	// Sticky once set. omitempty so the wire stays compact for the common case.
+	Failed bool `json:"failed,omitempty"`
 }
 
-// VictorySnapshot is included in every snapshot when the map has
-// VictoryConditions defined. Achieved becomes true once ALL objectives are
-// complete — that is the client's cue to show the victory screen.
+// VictorySnapshot is included on every per-tick MatchSnapshot when the
+// launching campaign level declared any objectives. Custom Game matches
+// (zero objectives) have nil Victory.
+//
+// Achieved is the server's authoritative win flag — when true the client
+// should show the victory recap. The AND-gate that drives it lives in
+// `(*GameState).checkVictoryLocked`: wave/townhall condition met AND every
+// required objective complete.
 type VictorySnapshot struct {
-	Achieved   bool               `json:"achieved"`
+	Achieved   bool                `json:"achieved"`
 	Objectives []ObjectiveSnapshot `json:"objectives"`
+}
+
+// MatchMetricsSnapshot mirrors the server-side game.MatchMetrics struct on
+// the wire. Identical JSON tags so the marshaled bytes are equivalent; lives
+// in the protocol package so PlayerSnapshot can embed it without a circular
+// import. See server/internal/game/match_metrics.go for field semantics.
+type MatchMetricsSnapshot struct {
+	TotalGoldEarned          int            `json:"totalGoldEarned"`
+	TotalWoodEarned          int            `json:"totalWoodEarned"`
+	TotalEnemiesKilled       int            `json:"totalEnemiesKilled"`
+	BuildingsBuilt           int            `json:"buildingsBuilt"`
+	BuildingsBuiltByType     map[string]int `json:"buildingsBuiltByType"`
+	NeutralCampsKilled       int            `json:"neutralCampsKilled"`
+	NeutralCampsKilledByTier map[int]int    `json:"neutralCampsKilledByTier"`
+	UnitsTrained             int            `json:"unitsTrained"`
+	UnitsTrainedByType       map[string]int `json:"unitsTrainedByType"`
+	UnitsByRank              map[string]int `json:"unitsByRank"`
+	WavesCleared             int            `json:"wavesCleared"`
 }
 
 // ProjectileSnapshot carries an in-flight ranged attack to the client each tick.

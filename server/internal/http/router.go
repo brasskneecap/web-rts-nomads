@@ -183,6 +183,10 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 			var body struct {
 				MapID        string `json:"mapId"`
 				HostPlayerID string `json:"hostPlayerId"`
+				// CampaignLevelID is optional. When set, the lobby is
+				// campaign-launched and the engine installs the level's
+				// objectives at match-start. Custom Game lobbies omit it.
+				CampaignLevelID string `json:"campaignLevelId,omitempty"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -192,7 +196,7 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 				http.Error(w, "mapId and hostPlayerId are required", http.StatusBadRequest)
 				return
 			}
-			lobby, err := lm.Create(body.MapID, body.HostPlayerID)
+			lobby, err := lm.Create(body.MapID, body.HostPlayerID, body.CampaignLevelID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return

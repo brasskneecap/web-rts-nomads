@@ -81,6 +81,24 @@ export function useCampaign() {
     () => new Set(profile.value?.completedCampaignLevels ?? []),
   )
 
+  /** Reactive lookup of "is this objective ever completed for this level?"
+   *  Reads from the profile's `completedCampaignObjectives` map keyed by
+   *  `"<campaignId>/<levelId>"`. The level-select UI (Campaign.vue, §13)
+   *  uses this to render the ✓ / □ icon per objective row.
+   *
+   *  Returns false when the profile hasn't loaded yet; the panel re-renders
+   *  reactively once the profile arrives. */
+  function isObjectiveCompletedForLevel(
+    campaignId: string,
+    levelId: string,
+    objectiveId: string,
+  ): boolean {
+    const key = `${campaignId}/${levelId}`
+    const set = profile.value?.completedCampaignObjectives?.[key]
+    if (!set) return false
+    return set.includes(objectiveId)
+  }
+
   /** Reactive view of all campaigns with each level's status precomputed. */
   const campaignsView = computed<ReadonlyArray<{ campaign: Campaign; levels: CampaignLevelView[] }>>(
     () => {
@@ -115,12 +133,18 @@ export function useCampaign() {
       campaignId: owningCampaign.id,
       levelId: level.id,
       mapId: level.mapId,
+      levelDisplayName: level.displayName,
     })
 
     try {
       const lobby = await createMultiplayerLobby({
         mapId: level.mapId,
         hostPlayerId: playerId.value,
+        // Tell the server which campaign level this lobby is for. The
+        // server installs that level's authored objectives on the
+        // GameState at match start (see §7 of the change). Custom Game
+        // lobbies leave this undefined.
+        campaignLevelId: level.id,
       })
       return lobby.id
     } catch (err) {
@@ -167,6 +191,7 @@ export function useCampaign() {
   return {
     campaignsView,
     completedLevels,
+    isObjectiveCompletedForLevel,
     isLoading,
     loadError,
     initialize: ensureCatalogLoaded,

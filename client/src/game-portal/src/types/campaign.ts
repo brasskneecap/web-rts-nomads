@@ -15,6 +15,49 @@
  *  the campaign definition + the player's completed-level set. */
 export type CampaignLevelStatus = 'locked' | 'unlocked' | 'completed'
 
+/** Whether an objective is evaluated against team-aggregated metrics or each
+ *  player's own. Mirrors the server's `ObjectiveScope` enum. */
+export type ObjectiveScope = 'team' | 'player'
+
+/** Static, catalog-loaded definition of one objective attached to a campaign
+ *  level. Mirrors the server's `ObjectiveDef` JSON shape (see
+ *  `server/internal/game/objective_defs.go`). The handler-typed `config`
+ *  is preserved verbatim — the client doesn't validate it; the server
+ *  panics at startup on bad data. */
+export interface Objective {
+  /** Stable id, unique within the level. Persisted to
+   *  `completedCampaignObjectives` on the player profile. */
+  id: string
+  /** Dispatch key identifying the handler. One of `kill_camps`,
+   *  `build_buildings`, `collect_resource`, `kill_camps_before_wave`,
+   *  `rank_units`, `survive_waves`. */
+  type: string
+  /** Human-readable summary shown in the level select and in-match HUD. */
+  description?: string
+  /** Defaults to `'team'` server-side when omitted. */
+  scope?: ObjectiveScope
+  /** When true, this objective gates victory via the §9 AND-rule. */
+  required?: boolean
+  /** Opaque to the client — passed through to the server handler. */
+  config?: Record<string, unknown>
+}
+
+/** Per-tick wire shape of one objective's state from the snapshot's
+ *  viewer's perspective. Carried inside `VictorySnapshot.objectives[]`
+ *  on every match snapshot. Mirrors the server's `ObjectiveSnapshot`
+ *  (see `server/pkg/protocol/messages.go`). */
+export interface ObjectiveProgress {
+  id: string
+  type: string
+  description?: string
+  scope: ObjectiveScope
+  required?: boolean
+  current: number
+  requiredCount: number
+  completed: boolean
+  failed?: boolean
+}
+
 export interface CampaignLevel {
   /** Stable, globally-unique level id (e.g. `forest_01`). Used as the key
    *  in `completedCampaignLevels` on the player profile. */
@@ -33,10 +76,15 @@ export interface CampaignLevel {
   prerequisiteLevelId: string | null
   /** Optional short blurb shown on the level row. */
   description?: string
+  /** Per-level objectives. Server-authored in `catalog/campaigns/*.json`;
+   *  the campaign panel renders each row with a check/uncheck based on
+   *  the player profile's `completedCampaignObjectives` set. May be
+   *  empty / absent — a level with no objectives wins purely on the
+   *  legacy wave/townhall rule. */
+  objectives?: Objective[]
 
   // EXT-REWARDS: per-level reward payload (legend points, items, perks).
   // EXT-MODIFIERS: per-level gameplay modifiers (timer, fog density, etc.).
-  // EXT-OBJECTIVES: per-level optional/bonus objectives for star ratings.
   // EXT-STORY: pre/post story text or cutscene id.
 }
 

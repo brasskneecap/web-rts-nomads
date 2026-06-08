@@ -33,7 +33,8 @@
       "PowerShell(Add-Type -AssemblyName System.Drawing; foreach \\($f in 'barracks-view','chapel-view','farm-view','marketplace-view','blacksmith-view','kingdom-view'\\) { $p = \"c:\\\\Dev\\\\web-rts-nomads\\\\client\\\\src\\\\game-portal\\\\src\\\\assets\\\\background-images\\\\meta-views\\\\$f.png\"; $img = [System.Drawing.Image]::FromFile\\($p\\); \"$f $\\($img.Width\\)x$\\($img.Height\\)\"; $img.Dispose\\(\\) })",
       "PowerShell(Add-Type -AssemblyName System.Drawing; foreach \\($f in 'kingdom-view','chapel-view','barracks-view'\\) { $p = \"c:\\\\Dev\\\\web-rts-nomads\\\\client\\\\src\\\\game-portal\\\\src\\\\assets\\\\background-images\\\\meta-views\\\\$f.png\"; $h = \\(Get-FileHash $p -Algorithm MD5\\).Hash; \"$f $h\"; })",
       "PowerShell(Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile\\('c:\\\\Dev\\\\web-rts-nomads\\\\client\\\\src\\\\game-portal\\\\src\\\\assets\\\\ui\\\\buttons\\\\exit.png'\\); \"$\\($img.Width\\)x$\\($img.Height\\)\"; $img.Dispose\\(\\))",
-      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")"
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
+      "Bash(openspec list *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\codya\\Downloads",

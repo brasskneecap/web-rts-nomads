@@ -13,7 +13,18 @@
       </div>
     </div>
 
-    <MatchHud v-if="hasStarted" :ui="ui" @exit="exitGame" />
+    <MatchHud v-if="hasStarted" :ui="ui" @exit="requestForfeit" />
+
+    <!-- Campaign objectives panel: top-right under the resource tray.
+         Mounted only when this match was launched from the Campaign panel
+         (the campaign session ref is non-null) AND there are objectives to
+         show. Custom Game and Find Game flows never see this panel. -->
+    <div
+      v-if="hasStarted && campaignSession && ui.objectives.length"
+      class="match-objectives-anchor"
+    >
+      <MatchObjectivesPanel :objectives="ui.objectives" />
+    </div>
 
     <WaveUpgradeModal
       v-if="hasStarted && ui.waveUpgrade"
@@ -47,23 +58,10 @@
       </div>
     </div>
 
-    <div v-if="hasStarted && ((ui.wave.enabled && ui.wave.state === 'complete' && !ui.objectives.length) || ui.isVictory)" class="victory-overlay">
-      <div class="victory-card">
-        <div class="victory-title">Victory</div>
-        <div class="victory-subtitle">{{ ui.objectives.length ? 'All objectives completed' : 'All waves defeated' }}</div>
-        <!-- TODO: wire legendPointsEarned from MatchSummary — display as "You earned N legend points" -->
-        <button class="victory-button" type="button" @click="exitGame">Return to Menu</button>
-      </div>
-    </div>
+    <!-- The end-of-match recap is now a separate route (/match-end). The
+         watcher on `endOfMatchOutcome` below captures the recap data and
+         navigates over there. No overlay markup here. -->
 
-    <div v-if="hasStarted && ui.isDefeated" class="defeat-overlay">
-      <div class="defeat-card">
-        <div class="defeat-title">Defeated</div>
-        <div class="defeat-subtitle">All townhalls have been destroyed</div>
-        <!-- TODO: wire legendPointsEarned from MatchSummary — display as "You earned N legend points" -->
-        <button class="defeat-button" type="button" @click="exitGame">Return to Menu</button>
-      </div>
-    </div>
 
     <div
       v-if="hasStarted && (connectionState === 'reconnecting' || connectionState === 'failed')"
@@ -94,7 +92,14 @@
             <button type="button" class="disconnect-button disconnect-button--retry" @click="retryReconnect">
               Retry
             </button>
-            <button type="button" class="disconnect-button disconnect-button--exit" @click="exitGame">
+            <!-- Routes through the same forfeit → recap flow as a manual
+                 Exit Game so any objectives the player completed before
+                 the disconnect still get a write attempt. The recap's
+                 `markCampaignObjectivesComplete` call is wrapped in
+                 try/catch and won't block exit when the server is
+                 unreachable, so the failed-reconnect case still ends
+                 cleanly at the main menu. -->
+            <button type="button" class="disconnect-button disconnect-button--exit" @click="requestForfeit">
               Return to Menu
             </button>
           </div>
@@ -165,6 +170,9 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import MatchHud from '@/components/MatchHud.vue'
+import MatchObjectivesPanel from '@/components/match/MatchObjectivesPanel.vue'
+import type { MatchEndOutcome } from '@/components/match/matchEndOutcome'
+import { setMatchEndSnapshot } from '@/state/matchEndState'
 import SelectionHud from '@/components/SelectionHud.vue'
 import BattleTrackerPanel from '@/components/BattleTrackerPanel.vue'
 import DebugSpawnPanel from '@/components/DebugSpawnPanel.vue'
@@ -309,9 +317,96 @@ async function exitGame() {
   // start with no session and no fired-completion guard.
   clearCampaignSession()
   campaignCompletionFired = false
+  forfeitRequested.value = false
   setSelectedMapId('', '')
   void router.push('/')
 }
+
+/** Reactive flag set by `requestForfeit` (the MatchHud's Exit button while
+ *  the match is live). Drives endOfMatchOutcome → 'forfeit', which opens
+ *  the recap overlay. The recap's Return-to-Menu button is the canonical
+ *  exit path; it calls exitGame directly. Clearing this flag is part of
+ *  exitGame so a subsequent campaign launch starts clean. */
+const forfeitRequested = ref(false)
+
+/** Combined end-of-match indicator. Precedence:
+ *   1. forfeit (player clicked Exit during a live match) — even if a later
+ *      tick would have produced victory, the forfeit framing wins.
+ *   2. victory — server signaled the AND-gate passed.
+ *   3. defeat — server signaled the player has no townhalls left.
+ *  Returns null while the match is still in progress so the overlay
+ *  stays hidden. */
+const endOfMatchOutcome = computed<MatchEndOutcome | null>(() => {
+  if (!hasStarted.value) return null
+  if (forfeitRequested.value) return 'forfeit'
+  if (isVictorious.value) return 'victory'
+  if (ui.value.isDefeated) return 'defeat'
+  return null
+})
+
+/** Click handler for the MatchHud's Exit button. Open the recap with the
+ *  Forfeit framing rather than immediately tearing down the match — the
+ *  recap's Return-to-Menu is the canonical exit. */
+function requestForfeit() {
+  if (!hasStarted.value) {
+    // Defensive: shouldn't happen because the HUD only renders while
+    // hasStarted, but if the user mashes the button during teardown we
+    // should still respect the legacy direct-exit semantic.
+    void exitGame()
+    return
+  }
+  forfeitRequested.value = true
+}
+
+/** Guard so the end-of-match transition fires exactly once per match.
+ *  Without this, the `endOfMatchOutcome` watcher would re-fire on every
+ *  reactive flip (e.g. a brief snapshot redelivery) and try to navigate
+ *  to /match-end multiple times. */
+let endTransitioning = false
+
+/** End-of-match transition: capture the recap data into the module-level
+ *  `matchEndSnapshot` ref so it survives the route change, tear the
+ *  running match down, then push to /match-end. The recap view reads
+ *  from `matchEndSnapshot`; the campaign session ref is intentionally
+ *  preserved here so MatchEnd.vue can write completed objectives
+ *  against the right `{campaignId, levelId}` — MatchEnd's own dismiss
+ *  handler clears it after the write. */
+async function transitionToMatchEnd(outcome: MatchEndOutcome) {
+  setMatchEndSnapshot({
+    outcome,
+    // Defensive shallow copies — the underlying arrays are reactive and
+    // mutated by the network layer; the recap should see a stable
+    // post-match view, not the next snapshot's diff.
+    objectives: [...ui.value.objectives],
+    players: [...ui.value.players],
+    viewerId: ui.value.player.playerId ?? '',
+    campaignId: campaignSession.value?.campaignId ?? null,
+    levelId: campaignSession.value?.levelId ?? null,
+    levelDisplayName: campaignSession.value?.levelDisplayName,
+  })
+
+  // Tear down the running match BUT preserve the campaign session
+  // (MatchEnd.vue's dismiss handler is responsible for clearing it
+  // after writing completed objectives).
+  await leaveStoredMatch()
+  destroy()
+  hasStarted.value = false
+  hasPreviousSession.value = false
+  localStorage.removeItem(MAP_ID_STORAGE_KEY)
+  localStorage.removeItem(MATCH_ID_STORAGE_KEY)
+  localStorage.removeItem(HAS_ACTIVE_SESSION_KEY)
+  forfeitRequested.value = false
+  campaignCompletionFired = false
+  setSelectedMapId('', '')
+
+  await router.push('/match-end')
+}
+
+watch(endOfMatchOutcome, (outcome) => {
+  if (!outcome || endTransitioning) return
+  endTransitioning = true
+  void transitionToMatchEnd(outcome)
+})
 
 // Campaign completion hook. When the match enters a victory state AND the
 // current match was launched from the campaign panel, mark the level complete
@@ -591,6 +686,17 @@ onBeforeUnmount(() => {
     #05080d;
 }
 
+/* Anchor for the campaign objectives HUD panel. Sits under the resource
+   tray (top-right). The MatchHud header reserves ~64px at the top; we
+   start just below that. Pointer-events handled inside the panel itself. */
+.match-objectives-anchor {
+  position: absolute;
+  top: 70px;
+  right: 16px;
+  z-index: 15;
+  pointer-events: none;
+}
+
 .menu {
   position: absolute;
   top: 16px;
@@ -664,66 +770,9 @@ onBeforeUnmount(() => {
   color: #cbb893;
 }
 
-.victory-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(5, 8, 13, 0.72);
-  backdrop-filter: blur(4px);
-}
-
-.victory-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 48px 56px;
-  border-radius: 20px;
-  background:
-    radial-gradient(circle at top, rgba(196, 158, 62, 0.22), transparent 52%),
-    linear-gradient(180deg, rgba(62, 39, 20, 0.98), rgba(22, 13, 7, 0.98));
-  border: 1px solid rgba(220, 180, 100, 0.35);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 200, 0.14),
-    0 24px 60px rgba(0, 0, 0, 0.6);
-}
-
-.victory-title {
-  font-size: 48px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: #f7d88e;
-  text-transform: uppercase;
-}
-
-.victory-subtitle {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #cbb893;
-}
-
-.victory-button {
-  margin-top: 10px;
-  padding: 12px 32px;
-  border-radius: 12px;
-  border: 1px solid rgba(220, 180, 100, 0.35);
-  background: linear-gradient(180deg, rgba(145, 96, 48, 0.95), rgba(83, 53, 28, 0.98));
-  color: #f5ead2;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
-
-.victory-button:hover {
-  background: linear-gradient(180deg, rgba(175, 118, 58, 1), rgba(105, 67, 35, 1));
-  border-color: rgba(240, 200, 120, 0.55);
-}
+/* .victory-overlay / .victory-card / .victory-title / .victory-subtitle /
+   .victory-button classes were removed when the end-of-match recap moved
+   to its own /match-end route. Same for the .defeat-* set below. */
 
 .disconnect-overlay {
   position: absolute;
@@ -823,65 +872,6 @@ onBeforeUnmount(() => {
   border-color: rgba(200, 100, 100, 0.55);
 }
 
-.defeat-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(5, 8, 13, 0.72);
-  backdrop-filter: blur(4px);
-  pointer-events: all;
-}
-
-.defeat-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 48px 56px;
-  border-radius: 20px;
-  background:
-    radial-gradient(circle at top, rgba(160, 30, 30, 0.22), transparent 52%),
-    linear-gradient(180deg, rgba(40, 12, 12, 0.98), rgba(16, 6, 6, 0.98));
-  border: 1px solid rgba(200, 60, 60, 0.35);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 180, 180, 0.1),
-    0 24px 60px rgba(0, 0, 0, 0.65);
-}
-
-.defeat-title {
-  font-size: 48px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: #f07070;
-  text-transform: uppercase;
-}
-
-.defeat-subtitle {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #b88888;
-}
-
-.defeat-button {
-  margin-top: 10px;
-  padding: 12px 32px;
-  border-radius: 12px;
-  border: 1px solid rgba(200, 60, 60, 0.35);
-  background: linear-gradient(180deg, rgba(120, 30, 30, 0.95), rgba(70, 16, 16, 0.98));
-  color: #f5d8d8;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
-
-.defeat-button:hover {
-  background: linear-gradient(180deg, rgba(150, 40, 40, 1), rgba(90, 22, 22, 1));
-  border-color: rgba(230, 80, 80, 0.55);
-}
+/* .defeat-* rules removed alongside the move to /match-end (see also the
+   .victory-* removal note above). */
 </style>

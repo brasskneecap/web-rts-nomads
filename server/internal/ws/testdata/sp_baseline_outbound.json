@@ -2253,6 +2253,19 @@
           "adept",
           "archer"
         ],
+        "metrics": {
+          "buildingsBuilt": 0,
+          "buildingsBuiltByType": {},
+          "neutralCampsKilled": 0,
+          "neutralCampsKilledByTier": {},
+          "totalEnemiesKilled": 0,
+          "totalGoldEarned": 0,
+          "totalWoodEarned": 0,
+          "unitsByRank": {},
+          "unitsTrained": 0,
+          "unitsTrainedByType": {},
+          "wavesCleared": 0
+        },
         "playerId": "baseline-player",
         "resources": [
           {
@@ -2275,6 +2288,7 @@
             "max": 10
           }
         ],
+        "shopRerollsRemaining": 1,
         "teamId": 0,
         "townHallTier": 1,
         "upgrades": [

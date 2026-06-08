@@ -1998,13 +1998,6 @@
     "waveConfig": {
       "prepDuration": 60,
       "waveDuration": 120
-    },
-    "victoryConditions": [
-      {
-        "id": "obj-1",
-        "type": "killUnit",
-        "count": 1
-      }
-    ]
+    }
   }
 }

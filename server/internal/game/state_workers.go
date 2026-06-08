@@ -166,6 +166,7 @@ func (s *GameState) completeReturnDepositLocked(unit *Unit, blocked map[gridPoin
 	if s.isUnitNearBuildingLocked(unit, *townhall, s.MapConfig.CellSize*1.5) && !unit.Moving {
 		if player, ok := s.Players[unit.OwnerID]; ok && unit.CarriedAmount > 0 {
 			player.Resources[unit.CarriedResourceType] += unit.CarriedAmount
+			recordResourceEarnedMetricLocked(player, unit.CarriedResourceType, unit.CarriedAmount)
 		}
 		unit.CarriedAmount = 0
 		unit.CarriedResourceType = ""
@@ -361,6 +362,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		if s.isUnitNearBuildingLocked(unit, *townhall, s.MapConfig.CellSize*1.5) && !unit.Moving {
 			if player, ok := s.Players[unit.OwnerID]; ok && unit.CarriedResourceType != "" && unit.CarriedAmount > 0 {
 				player.Resources[unit.CarriedResourceType] += unit.CarriedAmount
+				recordResourceEarnedMetricLocked(player, unit.CarriedResourceType, unit.CarriedAmount)
 			}
 			unit.CarriedAmount = 0
 			unit.CarriedResourceType = ""

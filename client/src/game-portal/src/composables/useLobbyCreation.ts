@@ -21,6 +21,11 @@ import {
 export interface CreateMultiplayerLobbyArgs {
   mapId: string
   hostPlayerId: string
+  /** Optional campaign-level identifier. When set, the server installs the
+   *  authored objectives on the GameState at match start. The campaign flow
+   *  (useCampaign.startCampaignLevel / openCampaignLobby) reads this from
+   *  the active campaignSession; Custom Game omits it. */
+  campaignLevelId?: string
 }
 
 /** Create a local lobby and start the paired Steam lobby in the background.
@@ -35,6 +40,7 @@ export async function createMultiplayerLobby(
   const created = await createLobby({
     mapId: args.mapId,
     hostPlayerId: args.hostPlayerId,
+    campaignLevelId: args.campaignLevelId,
   })
 
   // Step 2: seed pairing state as "pending" and kick off the Steam lobby

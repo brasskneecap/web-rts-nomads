@@ -132,6 +132,12 @@ func migrateProfile(p *PlayerProfile) {
 	if p.CompletedCampaignLevels == nil {
 		p.CompletedCampaignLevels = []string{}
 	}
+	// v5 -> v6: initialize CompletedCampaignObjectives. nil -> empty map on
+	// the wire so JSON serialises as `{}` rather than `null` and downstream
+	// code can index into it without a nil check.
+	if p.CompletedCampaignObjectives == nil {
+		p.CompletedCampaignObjectives = map[string][]string{}
+	}
 	// Stamp current version so the next Save persists the new schema.
 	p.Version = CurrentVersion
 }

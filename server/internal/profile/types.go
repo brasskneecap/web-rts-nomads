@@ -2,7 +2,7 @@ package profile
 
 // CurrentVersion is the schema version written into every new profile.
 // Increment this when the struct layout changes and add migration logic.
-const CurrentVersion = 5
+const CurrentVersion = 6
 
 // DefaultCommanderID is the commander assigned to new profiles when no other
 // commander is specified.
@@ -50,6 +50,15 @@ type PlayerProfile struct {
 	// only records which level IDs the player has finished so unlock state can
 	// be computed from this list at any time. Added in schema version 5.
 	CompletedCampaignLevels []string `json:"completedCampaignLevels"`
+
+	// CompletedCampaignObjectives records the union of objective IDs the
+	// player has ever completed in any past attempt of a campaign level. The
+	// map key is the literal string "<campaignId>/<levelId>"; the value is a
+	// sorted, deduped set of objective IDs. Replay starts with fresh in-match
+	// progress; this map is the all-time record. A level can have objectives
+	// completed without the level itself being beaten — the two are tracked
+	// independently. Added in schema version 6.
+	CompletedCampaignObjectives map[string][]string `json:"completedCampaignObjectives"`
 }
 
 // AcquiredAdvancement records a single purchased advancement node.

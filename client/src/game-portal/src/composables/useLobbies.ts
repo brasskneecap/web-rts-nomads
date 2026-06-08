@@ -35,10 +35,22 @@ async function fetchLobby(id: string): Promise<Lobby | null> {
   return data.lobby
 }
 
-async function createLobby(opts: { mapId: string; hostPlayerId: string }): Promise<Lobby> {
+async function createLobby(opts: {
+  mapId: string
+  hostPlayerId: string
+  /** Optional campaign-level identifier. When provided, the server installs
+   *  that level's authored objectives on the GameState at match start.
+   *  Custom Game callers omit this. */
+  campaignLevelId?: string
+}): Promise<Lobby> {
+  const body: Record<string, unknown> = {
+    mapId: opts.mapId,
+    hostPlayerId: opts.hostPlayerId,
+  }
+  if (opts.campaignLevelId) body.campaignLevelId = opts.campaignLevelId
   const data = await apiRequest<{ lobby: Lobby }>('/lobbies', {
     method: 'POST',
-    body: JSON.stringify({ mapId: opts.mapId, hostPlayerId: opts.hostPlayerId }),
+    body: JSON.stringify(body),
   })
   return data.lobby
 }

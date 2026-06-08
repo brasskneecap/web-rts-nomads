@@ -238,8 +238,11 @@ export type MapConfig = {
   obstacles: ObstacleTile[]
   buildings: BuildingTile[]
   waveConfig?: WaveConfig
-  /** All conditions must be completed simultaneously for victory. */
-  victoryConditions?: VictoryCondition[]
+  // victoryConditions removed in the campaign-objectives-and-metrics §6
+  // migration. Per-level objectives now live on CampaignLevel.objectives
+  // and flow through the server objective handler registry. The
+  // VictoryCondition + VictorySnapshot types below are retained until §10
+  // (snapshot reshape).
   debug?: MapDebugConfig
   placedUnits?: PlacedUnit[]
   neutralSpawns?: NeutralSpawn[]
@@ -281,6 +284,9 @@ export type Lobby = {
   createdAt: number
   status: LobbyStatus
   matchId?: string
+  /** Set when the lobby was created for a campaign level. Drives server
+   *  objective injection at match start (see §7 of campaign-objectives-and-metrics). */
+  campaignLevelId?: string
 }
 
 export type MapCatalogMapPayload = Omit<MapConfig, 'id' | 'name' | 'description'>
@@ -544,6 +550,11 @@ export type PlayerSnapshot = {
   /** Remaining merchant-reroll budget for this match. Drives the reroll
    *  button on neutral-shop buildings (enabled when > 0). Absent = 0. */
   shopRerollsRemaining?: number
+  /** Cumulative per-player match metrics. Always present so the
+   *  end-of-round recap (§15) can render per-player comparison columns
+   *  regardless of who is viewing. Older servers omit this; consumers
+   *  should default-coalesce. */
+  metrics?: MatchMetricsSnapshot
 }
 
 export type PurchaseItemCommand = {
@@ -832,7 +843,10 @@ export type UnitSnapshot = {
   perkCooldowns?: PerkCooldownSnapshot[]
   /** Activatable abilities (owned units only) for the action bar. */
   abilities?: AbilitySnapshot[]
-  /** Non-empty when this unit is linked to a VictoryCondition by objectiveId. */
+  /** Legacy: was the link to a VictoryCondition by objectiveId. The
+   *  campaign-objectives-and-metrics §6 migration removed MapConfig.VictoryConditions,
+   *  so this field is no longer authored by maps. Section 9 drops the
+   *  server-side hooks; this client field is retained on the wire until §10. */
   objectiveId?: string
   carriedResourceType?: ResourceType
   carriedAmount?: number
@@ -973,15 +987,49 @@ export type GameOverSnapshot = {
   lostPlayerIds: string[]
 }
 
+/** Per-tick wire shape of one player's cumulative match metrics. Mirror of
+ *  the server's `protocol.MatchMetricsSnapshot`; carried inside
+ *  `PlayerSnapshot.metrics` on every snapshot so the end-of-round recap
+ *  (§15) can render per-player comparison columns regardless of who is
+ *  viewing. Maps may be empty / undefined on the wire — consumers should
+ *  default-coalesce with `?? {}`. */
+export type MatchMetricsSnapshot = {
+  totalGoldEarned: number
+  totalWoodEarned: number
+  totalEnemiesKilled: number
+  buildingsBuilt: number
+  buildingsBuiltByType: Record<string, number>
+  neutralCampsKilled: number
+  /** Keys are numeric strings (server-side `map[int]int`); use bracket
+   *  notation with the tier number converted to string. */
+  neutralCampsKilledByTier: Record<string, number>
+  unitsTrained: number
+  unitsTrainedByType: Record<string, number>
+  unitsByRank: Record<string, number>
+  wavesCleared: number
+}
+
+/** Per-tick wire shape of one campaign objective's state from the viewer's
+ *  perspective. Reshaped in §10 of campaign-objectives-and-metrics to
+ *  carry the richer state needed by the in-match HUD and end-of-round
+ *  recap (description, scope, required, current vs required count,
+ *  completed/failed). The legacy `label`/`progress`/`count` fields were
+ *  dropped alongside the legacy victoryConditions system in §6. */
 export type ObjectiveSnapshot = {
   id: string
-  type: 'killUnit' | 'destroyBuilding' | 'surviveWaves'
-  label?: string
+  /** Handler dispatch key: `kill_camps` | `build_buildings` |
+   *  `collect_resource` | `kill_camps_before_wave` | `rank_units` |
+   *  `survive_waves`. String not enum so adding handlers server-side
+   *  doesn't require client lockstep updates. */
+  type: string
+  description?: string
+  scope: 'team' | 'player'
+  required?: boolean
+  current: number
+  requiredCount: number
   completed: boolean
-  /** Current kills toward a killUnit objective. */
-  progress?: number
-  /** Required kills for a killUnit objective (default 1). */
-  count?: number
+  /** Only set by time-boxed objectives that missed their deadline. Sticky. */
+  failed?: boolean
 }
 
 export type VictorySnapshot = {

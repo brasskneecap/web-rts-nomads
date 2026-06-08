@@ -39,6 +39,10 @@ export type PlayerProfile = {
   ownedUpgradeRanks: Record<string, number>
   acquiredAdvancements: AcquiredAdvancement[]
   completedCampaignLevels: string[]
+  /** Per-level union of objective IDs the player has ever completed.
+   *  Keys are `"<campaignId>/<levelId>"`. Written by the §11
+   *  complete-objectives endpoint at match end. */
+  completedCampaignObjectives: Record<string, string[]>
   stats: ProfileStats
 }
 

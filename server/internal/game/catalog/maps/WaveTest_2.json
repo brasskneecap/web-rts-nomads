@@ -2736,13 +2736,6 @@
       "totalWaves": 10,
       "prepDuration": 10,
       "waveDuration": 10
-    },
-    "victoryConditions": [
-      {
-        "id": "obj-1",
-        "type": "killUnit",
-        "count": 1
-      }
-    ]
+    }
   }
 }

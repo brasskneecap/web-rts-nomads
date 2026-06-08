@@ -28,6 +28,13 @@ type Lobby struct {
 	LastActivity int64       `json:"-"`
 	Status       LobbyStatus `json:"status"`
 	MatchID      string      `json:"matchId,omitempty"`
+
+	// CampaignLevelID, when non-empty, names the CampaignLevelDef this match
+	// is being launched for. The match-start handoff in LobbyManager.Start
+	// passes this through to Match.SetCampaignLevel so the level's authored
+	// objectives are installed on GameState before the first tick. Empty for
+	// Custom Game / find-game flows; those matches have no objectives.
+	CampaignLevelID string `json:"campaignLevelId,omitempty"`
 }
 
 var (
@@ -57,7 +64,12 @@ func (lm *LobbyManager) Close() {
 	close(lm.stop)
 }
 
-func (lm *LobbyManager) Create(mapID, hostPlayerID string) (*Lobby, error) {
+// Create constructs a new lobby for the given map. campaignLevelID is
+// optional — empty for Custom Game lobbies, non-empty for campaign-launched
+// lobbies. The id is stored verbatim on the Lobby; validation against the
+// campaign catalog happens at match-start, not at lobby creation, so a stale
+// id from a client side restart does not block lobby creation.
+func (lm *LobbyManager) Create(mapID, hostPlayerID, campaignLevelID string) (*Lobby, error) {
 	entry, ok := GetMapCatalogEntryByID(mapID)
 	if !ok {
 		return nil, fmt.Errorf("map %q not found", mapID)
@@ -80,15 +92,16 @@ func (lm *LobbyManager) Create(mapID, hostPlayerID string) (*Lobby, error) {
 
 	now := time.Now().UnixMilli()
 	lobby := &Lobby{
-		ID:           id,
-		MapID:        mapID,
-		MapName:      entry.Name,
-		HostPlayerID: hostPlayerID,
-		Players:      []string{hostPlayerID},
-		MaxPlayers:   maxPlayers,
-		CreatedAt:    now,
-		LastActivity: now,
-		Status:       LobbyStatusOpen,
+		ID:              id,
+		MapID:           mapID,
+		MapName:         entry.Name,
+		HostPlayerID:    hostPlayerID,
+		Players:         []string{hostPlayerID},
+		MaxPlayers:      maxPlayers,
+		CreatedAt:       now,
+		LastActivity:    now,
+		Status:          LobbyStatusOpen,
+		CampaignLevelID: campaignLevelID,
 	}
 
 	lm.mu.Lock()
@@ -230,6 +243,12 @@ func (lm *LobbyManager) Start(id, callerPlayerID string, manager *MatchManager) 
 	// ranks with them. Pre-creating the Player struct from the lobby would
 	// race with the WS join: EnsurePlayerWithUpgrades's "player exists" early
 	// return would skip the upgrade application, leaving multipliers at 1.0.
+
+	// Install campaign-level objectives if this lobby was campaign-launched.
+	// Empty CampaignLevelID is a no-op; SetCampaignLevel tolerates it.
+	// Runs synchronously before this function returns so the first lobby state
+	// broadcast already reflects the started match.
+	match.SetCampaignLevel(l.CampaignLevelID)
 
 	l.MatchID = match.ID
 	l.Status = LobbyStatusStarted

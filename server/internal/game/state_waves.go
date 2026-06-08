@@ -165,9 +165,17 @@ func (s *GameState) tickWaveLocked(dt float64) {
 		// wait for the full WaveDuration timer.
 		const minActiveSeconds = 5.0
 		if wm.Timer >= minActiveSeconds && s.countEnemyUnitsLocked() == 0 {
+			// Metrics: credit every human player with a wave clear before the
+			// state actually transitions away from "active." Mirrors the camp
+			// clear hook: in single-team campaign play this is equivalent to
+			// "the team that survived the wave."
+			s.recordWaveClearedMetricLocked()
 			if wm.TotalWaves > 0 && wm.CurrentWave >= wm.TotalWaves {
 				wm.State = "complete"
-				s.markWaveObjectivesCompleteLocked()
+				// Legacy markWaveObjectivesCompleteLocked() call removed in §9
+				// of campaign-objectives-and-metrics. The wave-complete state
+				// alone is now consumed by the new victory rule in
+				// checkVictoryLocked, gated AND with allRequiredObjectivesCompleted.
 			} else {
 				wm.State = "upgrade"
 				s.enterWaveUpgradePhaseLocked()
@@ -239,6 +247,7 @@ func (s *GameState) ensureEnemyPlayerLocked() {
 		Resources:                     map[string]int{},
 		GlobalUnitSpawnTimeMultiplier: 1,
 		UnitSpawnTimeMultipliers:      map[string]float64{},
+		Metrics:                       NewMatchMetrics(),
 	}
 }
 
@@ -252,6 +261,7 @@ func (s *GameState) ensureNeutralPlayerLocked() {
 		Resources:                     map[string]int{},
 		GlobalUnitSpawnTimeMultiplier: 1,
 		UnitSpawnTimeMultipliers:      map[string]float64{},
+		Metrics:                       NewMatchMetrics(),
 	}
 }
 

@@ -15,6 +15,10 @@ export interface CampaignSession {
   /** Map id the level launched on. Stored for diagnostics; the actual map
    *  selection flow uses the lobby's own mapId field. */
   mapId: string
+  /** Human-readable level name (e.g. "Forest 1") captured at launch so
+   *  downstream views (e.g. MatchEndRecap) can render it without having
+   *  to re-resolve through the campaign catalog. */
+  levelDisplayName: string
 }
 
 /** Active campaign session, or null when the current match is not part of

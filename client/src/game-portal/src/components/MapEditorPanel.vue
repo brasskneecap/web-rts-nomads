@@ -87,41 +87,11 @@
             </label>
           </div>
 
-          <div class="wave-config-block">
-            <div class="wave-config-title">Victory Conditions <span class="field-hint">(all must be met)</span></div>
-            <div
-              v-for="(vc, i) in model.victoryConditions ?? []"
-              :key="vc.id"
-              class="victory-condition-row"
-            >
-              <select
-                :value="vc.type"
-                @change="updateVictoryCondition(i, 'type', ($event.target as HTMLSelectElement).value)"
-              >
-                <option value="killUnit">Kill Unit</option>
-                <option value="destroyBuilding">Destroy Building</option>
-                <option value="surviveWaves">Survive Waves</option>
-              </select>
-              <input
-                :value="vc.label ?? ''"
-                @input="updateVictoryCondition(i, 'label', ($event.target as HTMLInputElement).value)"
-                type="text"
-                placeholder="Label (shown in HUD)"
-              />
-              <input
-                v-if="vc.type === 'killUnit'"
-                :value="vc.count ?? 1"
-                @input="updateVictoryCondition(i, 'count', +($event.target as HTMLInputElement).value)"
-                type="number"
-                min="1"
-                title="Kills required"
-                style="width: 56px"
-              />
-              <span class="vc-id-badge" :title="`Objective ID: ${vc.id}`">{{ vc.id }}</span>
-              <button type="button" @click="removeVictoryCondition(i)">✕</button>
-            </div>
-            <button type="button" @click="addVictoryCondition()">+ Add Condition</button>
-          </div>
+          <!-- Victory Conditions editor card removed in the
+               campaign-objectives-and-metrics §6 migration. Per-level
+               objectives now live on `CampaignLevel.objectives` in
+               `catalog/campaigns/*.json` and are authored by hand for this
+               change. A campaign objectives editor is a separate proposal. -->
 
           <div class="control-group load-map-group">
             <label for="editor-load-map">Load Existing Map</label>
@@ -1068,7 +1038,6 @@ const neutralSpawnEditPanelPos = ref<{ x: number; y: number } | null>(null)
 const copiedBuilding = ref<{ buildingType: string; metadata: JsonObject | undefined } | null>(null)
 const isPasteMode = ref(false)
 const movingBuilding = ref<{ id: string; buildingType: string; metadata: JsonObject | undefined; x: number; y: number } | null>(null)
-let nextVictoryConditionId = 1
 
 const camera = new Camera()
 // Bump the top + left overscan so the user can pan the map's top-left
@@ -1161,13 +1130,14 @@ const townhallOptions = computed(() =>
     })),
 )
 
-const killUnitObjectives = computed(() =>
-  (model.value.victoryConditions ?? []).filter((vc) => vc.type === 'killUnit'),
-)
-
-const destroyBuildingObjectives = computed(() =>
-  (model.value.victoryConditions ?? []).filter((vc) => vc.type === 'destroyBuilding'),
-)
+// Legacy objective-assignment dropdowns on the unit/building edit forms
+// referenced these computeds via `.length` guards. The Victory Conditions
+// authoring card was removed in §6 of campaign-objectives-and-metrics, so
+// the source array is gone; returning empty here keeps the v-if guards
+// truthful (the dropdowns simply no longer render). Section 9 cleanup or a
+// future maintenance change will delete the unreachable template branches.
+const killUnitObjectives = computed<VictoryCondition[]>(() => [])
+const destroyBuildingObjectives = computed<VictoryCondition[]>(() => [])
 
 const availablePlayerLabels = computed(() => {
   const labels = new Set<string>()
@@ -1384,26 +1354,10 @@ function toggleSection(section: 'setup' | 'paint' | 'export') {
   openSection.value = openSection.value === section ? null : section
 }
 
-function addVictoryCondition() {
-  const id = `obj-${nextVictoryConditionId++}`
-  const conditions: VictoryCondition[] = [
-    ...(model.value.victoryConditions ?? []),
-    { id, type: 'killUnit', label: '', count: 1 },
-  ]
-  model.value = { ...model.value, victoryConditions: conditions }
-}
-
-function removeVictoryCondition(index: number) {
-  const conditions = (model.value.victoryConditions ?? []).filter((_, i) => i !== index)
-  model.value = { ...model.value, victoryConditions: conditions.length ? conditions : undefined }
-}
-
-function updateVictoryCondition(index: number, field: string, value: string | number) {
-  const conditions = (model.value.victoryConditions ?? []).map((vc, i) =>
-    i === index ? { ...vc, [field]: value } : vc,
-  )
-  model.value = { ...model.value, victoryConditions: conditions }
-}
+// addVictoryCondition / removeVictoryCondition / updateVictoryCondition were
+// removed in the campaign-objectives-and-metrics §6 migration alongside the
+// Victory Conditions authoring card. `nextVictoryConditionId` is removed for
+// the same reason. Per-level objectives are now hand-authored in campaign JSON.
 
 function setWaveConfig(field: 'totalWaves' | 'prepDuration' | 'waveDuration', value: number) {
   const current = model.value.waveConfig ?? {}
@@ -3121,47 +3075,8 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 
-.victory-condition-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
-  gap: 4px;
-  align-items: center;
-}
-
-.victory-condition-row select,
-.victory-condition-row input[type='text'],
-.victory-condition-row input[type='number'] {
-  min-width: 0;
-}
-
-.victory-condition-row button {
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  border-radius: 6px;
-  background: rgba(127, 29, 29, 0.45);
-  color: #fca5a5;
-  padding: 4px 7px;
-  font-size: 0.72rem;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.victory-condition-row button:hover {
-  background: rgba(153, 27, 27, 0.65);
-}
-
-.vc-id-badge {
-  font-size: 0.65rem;
-  font-family: Consolas, 'Courier New', monospace;
-  color: #d7bb84;
-  background: rgba(58, 35, 18, 0.55);
-  border: 1px solid rgba(215, 187, 132, 0.25);
-  border-radius: 4px;
-  padding: 2px 5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 72px;
-}
+/* .victory-condition-row + .vc-id-badge rules removed alongside the Victory
+   Conditions authoring card (campaign-objectives-and-metrics §6.5). */
 
 .editor-preview {
   min-height: 0;

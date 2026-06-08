@@ -6,6 +6,7 @@ import DirectConnect from '@/views/DirectConnect.vue'
 import Lobby from '@/views/Lobby.vue'
 import FindGame from '@/views/FindGame.vue'
 import Match from '@/views/Match.vue'
+import MatchEnd from '@/views/MatchEnd.vue'
 import Editor from '@/views/Editor.vue'
 import ProfileView from '@/views/ProfileView.vue'
 import OptionsView from '@/views/OptionsView.vue'
@@ -33,6 +34,7 @@ export const router = createRouter({
     { path: '/find-game', component: FindGame },
     { path: '/starting', component: Match, meta: { hideMenuChrome: true, silenceMusic: true } },
     { path: '/match/:matchId', component: Match, meta: { hideMenuChrome: true, silenceMusic: true } },
+    { path: '/match-end', component: MatchEnd, meta: { hideMenuChrome: true, silenceMusic: true } },
     { path: '/editor', component: Editor },
     { path: '/profile', component: ProfileView },
     { path: '/options', component: OptionsView },

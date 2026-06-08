@@ -326,6 +326,108 @@ func TestGetOrCreate_NewProfile_OwnedUpgradeRanksNonNil(t *testing.T) {
 	}
 }
 
+// TestMigrateProfile_V5ToV6_CompletedCampaignObjectivesInitialized verifies
+// that loading a v5 profile (which lacks completedCampaignObjectives) produces
+// a non-nil empty map and that the next save persists the v6 schema version.
+// Other v5 fields (notably CompletedCampaignLevels) are preserved unchanged.
+func TestMigrateProfile_V5ToV6_CompletedCampaignObjectivesInitialized(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+	m := NewManager(dir)
+
+	playerID := "55555555-5555-5555-5555-555555555555"
+
+	// Hand-rolled v5 JSON fixture: has every v5 field (including
+	// completedCampaignLevels) but is missing completedCampaignObjectives.
+	v5JSON := `{
+		"playerId": "55555555-5555-5555-5555-555555555555",
+		"version": 5,
+		"createdAtUnix": 0,
+		"updatedAtUnix": 0,
+		"legendPoints": 7,
+		"lifetimeLegendPoints": 12,
+		"ownedCommanderIds": ["nomad_commander_default"],
+		"selectedCommanderId": "nomad_commander_default",
+		"stats": {},
+		"ownedUpgradeRanks": {},
+		"activeUpgradeIds": [],
+		"acquiredAdvancements": [],
+		"completedCampaignLevels": ["forest_01"]
+	}`
+	primaryPath := filepath.Join(dir, playerID+".json")
+	if err := os.WriteFile(primaryPath, []byte(v5JSON), 0o644); err != nil {
+		t.Fatalf("write v5 fixture: %v", err)
+	}
+
+	loaded, err := store.Load(playerID)
+	if err != nil {
+		t.Fatalf("Load v5 profile: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("Load returned nil for existing v5 profile")
+	}
+	if loaded.CompletedCampaignObjectives == nil {
+		t.Error("CompletedCampaignObjectives should be non-nil after v5→v6 migration")
+	}
+	if len(loaded.CompletedCampaignObjectives) != 0 {
+		t.Errorf("CompletedCampaignObjectives should be empty after migration, got %v", loaded.CompletedCampaignObjectives)
+	}
+	if loaded.Version != CurrentVersion {
+		t.Errorf("Version after migration: want %d, got %d", CurrentVersion, loaded.Version)
+	}
+	// v5 data must survive the migration unchanged.
+	if loaded.LegendPoints != 7 {
+		t.Errorf("LegendPoints: want 7, got %d", loaded.LegendPoints)
+	}
+	if len(loaded.CompletedCampaignLevels) != 1 || loaded.CompletedCampaignLevels[0] != "forest_01" {
+		t.Errorf("CompletedCampaignLevels lost across migration, got %v", loaded.CompletedCampaignLevels)
+	}
+
+	// Trigger a WithLocked mutation to force a save and verify the on-disk
+	// JSON now carries version=6 AND a non-nil empty objectives map.
+	err = m.WithLocked(playerID, func(p *PlayerProfile) error {
+		p.LegendPoints = 9
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithLocked after migration: %v", err)
+	}
+
+	data, err := os.ReadFile(primaryPath)
+	if err != nil {
+		t.Fatalf("re-read saved file: %v", err)
+	}
+	var saved PlayerProfile
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("unmarshal saved file: %v", err)
+	}
+	if saved.Version != CurrentVersion {
+		t.Errorf("saved version: want %d, got %d", CurrentVersion, saved.Version)
+	}
+	if saved.CompletedCampaignObjectives == nil {
+		t.Error("saved CompletedCampaignObjectives should be non-nil (so JSON is {} not null)")
+	}
+}
+
+// TestGetOrCreate_NewProfile_CompletedCampaignObjectivesNonNil verifies that
+// a brand-new profile has a non-nil empty CompletedCampaignObjectives map.
+func TestGetOrCreate_NewProfile_CompletedCampaignObjectivesNonNil(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+
+	playerID := "66666666-6666-6666-6666-666666666666"
+	p, err := m.GetOrCreate(playerID, "default_commander")
+	if err != nil {
+		t.Fatalf("GetOrCreate: %v", err)
+	}
+	if p.CompletedCampaignObjectives == nil {
+		t.Error("new profile CompletedCampaignObjectives should be non-nil")
+	}
+	if len(p.CompletedCampaignObjectives) != 0 {
+		t.Errorf("new profile CompletedCampaignObjectives should be empty, got %v", p.CompletedCampaignObjectives)
+	}
+}
+
 // TestMigrateProfile_V2ToV3_ActiveUpgradeIDsPopulated verifies that a v2
 // profile with OwnedUpgradeRanks populated gets ActiveUpgradeIDs defaulted to
 // the sorted list of all owned upgrades with rank > 0.

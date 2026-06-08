@@ -159,16 +159,22 @@ func (s *GameState) drainPendingDeathsLocked() {
 					s.onPerkKillLocked(attackerUnit)
 					s.trackBattleKillLocked(battleSourceFromUnit(attackerUnit), target)
 					s.rollLegendPointDropLocked(attackerUnit.OwnerID, target)
-					if target.ObjectiveID != "" {
-						s.markObjectiveKillLocked(target.ObjectiveID)
-					}
+					// Legacy markObjectiveKillLocked(target.ObjectiveID) call
+					// removed in §9 of campaign-objectives-and-metrics. Kill
+					// counters now live on Player.Metrics and feed the new
+					// objective evaluator (§8) directly.
+					s.recordEnemyKillMetricLocked(attackerUnit.OwnerID, target.OwnerID)
 				}
 			} else if d.Source.AttackerBuildingID != "" {
 				building := s.getBuildingByIDLocked(d.Source.AttackerBuildingID)
 				if building != nil {
 					s.trackBattleKillLocked(battleSourceFromBuilding(building), target)
-					if target.ObjectiveID != "" {
-						s.markObjectiveKillLocked(target.ObjectiveID)
+					// Legacy markObjectiveKillLocked(target.ObjectiveID) call
+					// removed in §9 of campaign-objectives-and-metrics. Kill
+					// counters now live on Player.Metrics and feed the new
+					// objective evaluator (§8) directly.
+					if building.OwnerID != nil {
+						s.recordEnemyKillMetricLocked(*building.OwnerID, target.OwnerID)
 					}
 				}
 			} else if d.Source.AttackerTrapID != "" {
@@ -190,16 +196,25 @@ func (s *GameState) drainPendingDeathsLocked() {
 						s.awardUnitDeathXPLocked(target, ownerUnit)
 						s.awardSoldierTankKillXPLocked(target.ID)
 						s.trackBattleKillLocked(battleSourceFromTrap(trap), target)
+						s.recordEnemyKillMetricLocked(ownerUnit.OwnerID, target.OwnerID)
 					} else {
 						// Trapper died; still track the kill under the trap source
-						// for battle telemetry.
+						// for battle telemetry. No metric credit when the trapper
+						// is dead — there's no surviving owner to attribute to.
 						s.trackBattleKillLocked(battleSourceFromTrap(trap), target)
 					}
-					if target.ObjectiveID != "" {
-						s.markObjectiveKillLocked(target.ObjectiveID)
-					}
+					// Legacy markObjectiveKillLocked(target.ObjectiveID) call
+					// removed in §9 of campaign-objectives-and-metrics. Kill
+					// counters now live on Player.Metrics and feed the new
+					// objective evaluator (§8) directly.
 				}
 			}
+		}
+		// Metrics: a ranked unit's death drops the owner's UnitsByRank counts
+		// (semantic: "at-or-above this rank"). Recompute before remove so the
+		// dying unit (HP <= 0) is excluded by the scan.
+		if target.Rank != unitRankBase {
+			s.recomputeUnitsByRankForOwnerLocked(target.OwnerID)
 		}
 		// Anonymous or after bookkeeping: remove the unit. If the unit was
 		// already removed by the call site above, removeUnitLocked is safe

@@ -55,6 +55,11 @@ export type GameUiSnapshot = {
   // True when all victory objectives have been completed.
   isVictory: boolean
   objectives: import('../network/protocol').ObjectiveSnapshot[]
+  /** Full per-player snapshot array from the most recent tick. Drives the
+   *  end-of-match recap's per-player metrics columns (§15). Empty until
+   *  the first snapshot arrives. AI players (enemy/neutral) are filtered
+   *  out server-side before being sent. */
+  players: import('../network/protocol').PlayerSnapshot[]
   // Permanent per-player upgrades. Empty array until the server sends upgrade data.
   upgrades: PlayerUpgradeSnapshot[]
   // Current town hall tier for the local player (1/2/3). 0 until first snapshot.
@@ -272,6 +277,7 @@ export class GameClient {
       isDefeated: this.state.isLocalPlayerDefeated(),
       isVictory: this.state.isVictoryAchieved(),
       objectives: this.state.getObjectives(),
+      players: this.state.playerSnapshots,
       upgrades: this.state.playerUpgrades,
       townHallTier: this.state.townHallTier,
       selectedBuildingType: this.state.getSelectedBuildingType(),

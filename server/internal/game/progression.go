@@ -500,6 +500,10 @@ func (s *GameState) onUnitRankUpLocked(unit *Unit) {
 	// Grow the inventory to match the new rank. setInventorySizeForRankLocked
 	// only ever grows the slice — rank cannot decrease.
 	s.setInventorySizeForRankLocked(unit)
+	// Metrics: recompute the owner's UnitsByRank map. The semantic is
+	// "currently at this rank or higher" (see match_metrics.go), so the
+	// recompute walks all alive units for that owner.
+	s.recomputeUnitsByRankForOwnerLocked(unit.OwnerID)
 }
 
 // recordDamageDealtLocked banks damage an attacker has dealt to a unit. The XP

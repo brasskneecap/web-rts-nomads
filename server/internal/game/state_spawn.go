@@ -117,6 +117,12 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 	// (unitUsesCombatAI gates on Damage > 0).
 	if playerID != enemyPlayerID && playerID != neutralPlayerID {
 		s.applyPlayerUpgradesAtSpawnLocked(unit)
+		// Metrics: bump UnitsTrained on every successful player-owned unit
+		// spawn. Includes authored starting units and upgrade-granted extras,
+		// per the design's "every unit a player ever owned" reading.
+		if player, ok := s.Players[playerID]; ok {
+			player.Metrics.RecordUnitTrained(unitType)
+		}
 	}
 	s.applyRankModifiersLocked(unit, false)
 	// Initialise inventory slots for player-owned units. At spawn the rank is

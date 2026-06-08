@@ -318,9 +318,9 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 		// landed via this legacy direct-remove path still roll for drops.
 		s.rollLegendPointDropLocked(attacker.OwnerID, target)
 		*deadUnitIDs = append(*deadUnitIDs, target.ID)
-		if target.ObjectiveID != "" {
-			s.markObjectiveKillLocked(target.ObjectiveID)
-		}
+		// Legacy markObjectiveKillLocked(target.ObjectiveID) call removed in
+		// §9 of campaign-objectives-and-metrics; kill counters now feed the
+		// new objective evaluator via Player.Metrics.
 	}
 	return false
 }

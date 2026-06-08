@@ -101,20 +101,40 @@
             </div>
           </div>
 
-          <!-- Objectives — placeholder tasks for now. The data model is
-               intentionally static so the visual ships; a future change
-               wires per-level objectives off `CampaignLevel` (see the
-               EXT-OBJECTIVES note in @/types/campaign). -->
+          <!-- Objectives — real per-level data. Each row shows whether the
+               profile has ever recorded a completion of this objective,
+               regardless of how many attempts it took (achievement mode,
+               see Decision in design.md). Required objectives are marked
+               with a small badge so the player knows which gate victory. -->
           <div class="campaign__objectives">
             <div class="campaign__objectives-header">Objectives</div>
-            <ul class="campaign__objectives-list">
+            <div
+              v-if="!selectedLevelObjectives.length"
+              class="campaign__objectives-empty"
+            >
+              No objectives for this level.
+            </div>
+            <ul v-else class="campaign__objectives-list">
               <li
-                v-for="task in placeholderObjectives"
-                :key="task"
+                v-for="obj in selectedLevelObjectives"
+                :key="obj.id"
                 class="campaign-objective"
+                :class="{
+                  'campaign-objective--completed': isObjectiveDone(obj.id),
+                  'campaign-objective--required': obj.required,
+                }"
               >
-                <span class="campaign-objective__checkbox" aria-hidden="true"></span>
-                <span class="campaign-objective__label">{{ task }}</span>
+                <span
+                  class="campaign-objective__checkbox"
+                  :class="{ 'campaign-objective__checkbox--checked': isObjectiveDone(obj.id) }"
+                  aria-hidden="true"
+                >{{ isObjectiveDone(obj.id) ? '✓' : '' }}</span>
+                <span class="campaign-objective__label">
+                  {{ obj.description || obj.id }}
+                </span>
+                <span v-if="obj.required" class="campaign-objective__required-badge">
+                  Required
+                </span>
               </li>
             </ul>
           </div>
@@ -166,6 +186,7 @@ const {
   initialize: initCampaigns,
   startCampaignLevel,
   openCampaignLobby,
+  isObjectiveCompletedForLevel,
 } = useCampaign()
 const { initialize: initProfile } = useProfile()
 
@@ -205,10 +226,24 @@ function selectCampaign(id: string) {
 const isStarting = ref(false)
 const startError = ref<string>('')
 
-// Placeholder objectives shown under the map preview. Hard-coded for now —
-// replace with per-level data when the CampaignLevel type grows an
-// `objectives` field (see EXT-OBJECTIVES in @/types/campaign).
-const placeholderObjectives = ['Task 1', 'Task 2', 'Task 3']
+/** The selected level's authored objectives (server catalog data). Empty
+ *  when no level is selected, or when the level was authored without an
+ *  `objectives` array. */
+const selectedLevelObjectives = computed(() => {
+  return selectedLevelView.value?.level.objectives ?? []
+})
+
+/** Is the given objective recorded as completed in the player profile?
+ *  Reads via useCampaign so the lookup is reactive to profile refreshes
+ *  (e.g. after a match-end write triggers a profile re-fetch). */
+function isObjectiveDone(objectiveId: string): boolean {
+  if (!activeCampaign.value || !selectedLevelView.value) return false
+  return isObjectiveCompletedForLevel(
+    activeCampaign.value.campaign.id,
+    selectedLevelView.value.level.id,
+    objectiveId,
+  )
+}
 
 // Map catalog: needed so the right-column MinimapPreview can render the
 // selected level's terrain. Mirrors CreateGame.vue's load pattern — one
@@ -574,6 +609,48 @@ onMounted(() => {
   background: rgba(245, 234, 210, 0.4);
   border-radius: calc(var(--s) * 2);
   box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--s) * 12);
+  font-weight: 700;
+  line-height: 1;
+  color: transparent;
+}
+
+/* Completed: bronze ✓ on a slightly darker background so the row reads as
+   "done". Mirrors the level-row completed treatment. */
+.campaign-objective__checkbox--checked {
+  background: rgba(200, 180, 110, 0.55);
+  border-color: rgba(58, 31, 10, 0.85);
+  color: #3a1f0a;
+}
+
+/* Required objectives get a small badge so the player knows which gate
+   victory. Optional objectives have no badge — they read as bonus tasks. */
+.campaign-objective__required-badge {
+  margin-left: auto;
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-size: calc(var(--s) * 9);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(58, 31, 10, 0.75);
+  border: 1px solid rgba(58, 31, 10, 0.4);
+  border-radius: calc(var(--s) * 2);
+  padding: calc(var(--s) * 1) calc(var(--s) * 4);
+  background: rgba(245, 234, 210, 0.5);
+}
+
+.campaign-objective--required .campaign-objective__label {
+  font-weight: 600;
+}
+
+/* Empty-state hint when a level has no objectives authored. */
+.campaign__objectives-empty {
+  font-size: calc(var(--s) * 12);
+  font-style: italic;
+  color: rgba(58, 31, 10, 0.55);
 }
 
 .campaign__actions {

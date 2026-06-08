@@ -52,6 +52,20 @@ func NewMatch(id string, mapID string) *Match {
 	return match
 }
 
+// SetCampaignLevel installs the objectives authored on the named campaign
+// level onto the match's GameState. Idempotent and no-op when levelID is
+// empty (Custom Game lobbies). When the levelID is non-empty but does not
+// resolve in the campaign catalog, logs and leaves the objectives slice
+// empty — a stale id from the client should not fail the whole match start.
+//
+// Called by LobbyManager.Start immediately after `manager.NewMatch`. The
+// loop has already started ticking by then (see NewMatch above), so the
+// objectives may briefly be missing for tick 0; tick evaluation is monotone
+// and self-corrects on tick 1.
+func (m *Match) SetCampaignLevel(levelID string) {
+	m.State.SetCampaignLevelLocked(levelID)
+}
+
 func (m *Match) AddClient(client MatchClient) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

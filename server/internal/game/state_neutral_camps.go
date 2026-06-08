@@ -195,6 +195,13 @@ func (s *GameState) onUnitRemovedFromCampLocked(unitID int, campID string) {
 				// before invoking removeUnitLocked.
 				if len(camp.AliveUnitIDs) == 0 && camp.State == NeutralCampActive {
 					s.maybeDropChestForCampLocked(camp)
+					// Metrics: credit every human player on the team that
+					// cleared this camp. Phase 1 has a single shared team for
+					// campaign play (TeamID 0 across all human players), so
+					// crediting all non-AI players is equivalent to "the team
+					// that landed the killing blow." When PvP campaign ships,
+					// this needs to thread the killer's TeamID through.
+					s.recordCampClearedMetricLocked(camp.CurrentTier)
 				}
 				return
 			}

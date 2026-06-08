@@ -439,6 +439,15 @@ func (s *GameState) tickBuildingRepairsLocked(dt float64) {
 		// Update the stored hp (applyChargedHPLocked also writes into building.Metadata["hp"]).
 		// If hp reached maxHp, complete the build/repair.
 		if hp >= maxHp {
+			// Metrics: bump owner's BuildingsBuilt counters only when this was a
+			// new construction (not a repair-to-full). underConstruction was
+			// captured before this tick's HP work, so the flag here still
+			// reflects the pre-tick state; we record before the delete below.
+			if underConstruction && building.OwnerID != nil {
+				if player, ok := s.Players[*building.OwnerID]; ok {
+					player.Metrics.RecordBuildingBuilt(building.BuildingType)
+				}
+			}
 			delete(building.Metadata, "underConstruction")
 			delete(building.Metadata, "builderCount")
 			// Defensive: pendingStart is normally cleared on first worker
@@ -796,9 +805,10 @@ func (s *GameState) destroyBuildingLocked(buildingID string) {
 	// before queuing destruction, so this is only defensive.
 	delete(s.buildingDamageDealt, buildingID)
 
-	// Check for a linked "destroyBuilding" victory objective before removal
-	// (the building pointer becomes invalid after removeBuildingLocked).
-	s.markBuildingObjectiveCompleteLocked(buildingID)
+	// Legacy markBuildingObjectiveCompleteLocked call removed in §9 of
+	// campaign-objectives-and-metrics. Destroy-building victory conditions
+	// no longer exist; building destruction now flows only through the wave
+	// system and the building-built metric counter (§2).
 
 	// Remove the building from the map and invalidate blocked-cells cache.
 	s.removeBuildingLocked(buildingID)

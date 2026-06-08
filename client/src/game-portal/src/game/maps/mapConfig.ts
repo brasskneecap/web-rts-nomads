@@ -50,7 +50,6 @@ export function createEditorMapConfig(
     placedUnits: existing?.placedUnits,
     neutralSpawns: existing?.neutralSpawns,
     waveConfig: existing?.waveConfig,
-    victoryConditions: existing?.victoryConditions,
   })
 }
 
@@ -74,7 +73,6 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
     obstacles: dedupeObstacleTiles(map.obstacles ?? [], gridCols, gridRows),
     buildings: dedupeBuildings(map.buildings ?? [], gridCols, gridRows),
     waveConfig: map.waveConfig,
-    victoryConditions: map.victoryConditions?.length ? map.victoryConditions : undefined,
     debug: map.debug,
     placedUnits: clampPlacedUnits(map.placedUnits ?? [], gridCols, gridRows),
     neutralSpawns: clampNeutralSpawns(map.neutralSpawns ?? [], gridCols, gridRows),

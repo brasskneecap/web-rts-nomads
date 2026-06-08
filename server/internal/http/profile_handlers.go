@@ -305,6 +305,70 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 		writeJSON(w, updated)
 	})
 
+	// Campaign objective completion. Batched at match end by the client
+	// (§15's MatchEndRecap dismiss handler) — one POST per match regardless
+	// of outcome, carrying the union of objective IDs whose state.Completed
+	// was true at the moment the match ended (failed objectives are not
+	// written). Idempotent: re-completing the same objectives is a no-op.
+	//
+	// Body: {campaignId: string, levelId: string, objectiveIds: []string}
+	// Header: X-Player-ID
+	//
+	// Storage: PlayerProfile.CompletedCampaignObjectives map[key][]string
+	// where key = "<campaignId>/<levelId>". Sorted-set merge via
+	// addToSortedSet for stable JSON wire format.
+	mux.HandleFunc("/api/profile/campaign/complete-objectives", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		playerID := extractPlayerID(w, r)
+		if playerID == "" {
+			return
+		}
+		var body struct {
+			CampaignID   string   `json:"campaignId"`
+			LevelID      string   `json:"levelId"`
+			ObjectiveIDs []string `json:"objectiveIds"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+			return
+		}
+		if body.CampaignID == "" {
+			writeJSONError(w, http.StatusBadRequest, "invalid_campaign_id", "campaignId is required")
+			return
+		}
+		if body.LevelID == "" {
+			writeJSONError(w, http.StatusBadRequest, "invalid_level_id", "levelId is required")
+			return
+		}
+		// objectiveIds is allowed to be empty (a defeat with zero
+		// completions still POSTs to keep client logic simple).
+		key := body.CampaignID + "/" + body.LevelID
+		var updated *profile.PlayerProfile
+		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
+			if p.CompletedCampaignObjectives == nil {
+				p.CompletedCampaignObjectives = map[string][]string{}
+			}
+			set := p.CompletedCampaignObjectives[key]
+			for _, id := range body.ObjectiveIDs {
+				if id == "" {
+					continue
+				}
+				set = addToSortedSet(set, id)
+			}
+			p.CompletedCampaignObjectives[key] = set
+			updated = p
+			return nil
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
+			return
+		}
+		writeJSON(w, updated)
+	})
+
 	mux.HandleFunc("/api/catalog/profile-upgrades", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{
 			"upgrades": game.ListProfileUpgradeDefs(),

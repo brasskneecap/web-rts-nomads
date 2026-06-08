@@ -539,6 +539,11 @@ export class GameState {
   // ownerId → TeamID, mirrored from PlayerSnapshot each tick. Drives the
   // alliance predicates so the client matches the server chokepoint.
   private playerTeams = new Map<string, number>()
+  /** Full per-player snapshot array from the most recent tick. Retained so
+   *  the end-of-match recap (§15 of campaign-objectives-and-metrics) can
+   *  render comparison columns for every player in the lobby. Empty until
+   *  the first snapshot arrives. */
+  playerSnapshots: PlayerSnapshot[] = []
   private nextNotificationId = 0
   notifications: Notification[] = []
 
@@ -2773,6 +2778,7 @@ export class GameState {
   }
 
   private applyPlayerSnapshots(players: PlayerSnapshot[]) {
+    this.playerSnapshots = players
     this.playerColors = new Map(players.map((player) => [player.playerId, player.color]))
     this.playerTeams = new Map(players.map((player) => [player.playerId, player.teamId ?? 0]))
 

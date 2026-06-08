@@ -656,6 +656,14 @@ type Player struct {
 	// mutated thereafter. Nil-map fast path: a player with no extra-slot
 	// advancements has a nil map, and the perk-grant logic short-circuits.
 	ExtraPerkSlots map[string]map[string]bool
+
+	// Metrics aggregates per-player gameplay totals during a single match.
+	// Bumped by event hooks (deposit, kill, building complete, camp clear,
+	// wave clear, unit train, rank-up) and consumed by the objective evaluator
+	// + match snapshot. See match_metrics.go for the full surface area.
+	// Initialise via NewMatchMetrics() at every player-construction site to
+	// guarantee non-nil maps on the wire.
+	Metrics MatchMetrics
 }
 
 const (
@@ -672,6 +680,17 @@ type GameState struct {
 	MapID     string
 	MapWidth  float64
 	MapHeight float64
+
+	// CampaignLevelID, when non-empty, identifies the CampaignLevelDef this
+	// match was launched for. Set by Match.SetCampaignLevel before the loop
+	// starts ticking. Empty for Custom Game / find-game matches.
+	CampaignLevelID string
+
+	// Objectives holds the per-match runtime state for the launching
+	// campaign level's objectives. Empty slice when CampaignLevelID is empty.
+	// Evaluated each tick by evaluateObjectivesLocked (§8); written by the
+	// snapshot serialiser (§10) and the victory check (§9).
+	Objectives []objectiveRuntime
 
 	Units   []*Unit
 	Players map[string]*Player
@@ -888,11 +907,12 @@ type GameState struct {
 	// Once set, it is never cleared for the duration of the match.
 	lostPlayerIDs map[string]bool
 
-	// objectiveCompleted tracks which VictoryCondition IDs have been fulfilled.
-	objectiveCompleted map[string]bool
-	// objectiveKillCounts tracks progress toward "killUnit" objectives.
-	objectiveKillCounts map[string]int
-	// victoryAchieved is true once every VictoryCondition is complete.
+	// victoryAchieved is true once the legacy wave/townhall rule is satisfied
+	// AND every required objective in `s.Objectives` is completed. See
+	// checkVictoryLocked for the AND-gate. Once set, never cleared for the
+	// match. The legacy `objectiveCompleted` and `objectiveKillCounts` maps
+	// were removed in §9 of campaign-objectives-and-metrics; per-objective
+	// progress now lives on `s.Objectives[i].TeamState` / `.PlayerStates`.
 	victoryAchieved bool
 
 	// PlacedEnemiesSpawned is set to true after spawnPlacedEnemyUnitsLocked
@@ -1478,29 +1498,12 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 		gameOver = &protocol.GameOverSnapshot{LostPlayerIDs: ids}
 	}
 
-	var victory *protocol.VictorySnapshot
-	if len(s.MapConfig.VictoryConditions) > 0 {
-		objectives := make([]protocol.ObjectiveSnapshot, 0, len(s.MapConfig.VictoryConditions))
-		for _, vc := range s.MapConfig.VictoryConditions {
-			progress := 0
-			if vc.Type == "killUnit" && s.objectiveKillCounts != nil {
-				progress = s.objectiveKillCounts[vc.ID]
-			}
-			completed := s.objectiveCompleted != nil && s.objectiveCompleted[vc.ID]
-			objectives = append(objectives, protocol.ObjectiveSnapshot{
-				ID:        vc.ID,
-				Type:      vc.Type,
-				Label:     vc.Label,
-				Completed: completed,
-				Progress:  progress,
-				Count:     vc.Count,
-			})
-		}
-		victory = &protocol.VictorySnapshot{
-			Achieved:   s.victoryAchieved,
-			Objectives: objectives,
-		}
-	}
+	// Broadcast / unfiltered snapshot: no viewer identity available here.
+	// Team-scope objectives use TeamState (correct for any viewer);
+	// player-scope objectives fall back to initial state (Current=0). The
+	// per-viewer caller in snapshotForPlayerLocked patches `snap.Victory`
+	// with the viewer-specific copy after the unfiltered snapshot is built.
+	victory := s.buildVictorySnapshotForViewerLocked("")
 
 	beams := s.beamSnapshotsLocked(nil)
 
@@ -1629,6 +1632,10 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 		// build inline using the same lock we already hold.
 		snap := s.snapshotUnfilteredLocked()
 		snap.WaveUpgrade = s.buildWaveUpgradeSnapshotLocked(viewerID)
+		// snapshotUnfilteredLocked populated Victory with viewerID="" (no
+		// per-viewer identity); override with this viewer's player-scope
+		// objective state. Team-scope objectives are unchanged.
+		snap.Victory = s.buildVictorySnapshotForViewerLocked(viewerID)
 		return snap
 	}
 
@@ -1855,29 +1862,11 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 		gameOver = &protocol.GameOverSnapshot{LostPlayerIDs: ids}
 	}
 
-	var victory *protocol.VictorySnapshot
-	if len(s.MapConfig.VictoryConditions) > 0 {
-		objectives := make([]protocol.ObjectiveSnapshot, 0, len(s.MapConfig.VictoryConditions))
-		for _, vc := range s.MapConfig.VictoryConditions {
-			progress := 0
-			if vc.Type == "killUnit" && s.objectiveKillCounts != nil {
-				progress = s.objectiveKillCounts[vc.ID]
-			}
-			completed := s.objectiveCompleted != nil && s.objectiveCompleted[vc.ID]
-			objectives = append(objectives, protocol.ObjectiveSnapshot{
-				ID:        vc.ID,
-				Type:      vc.Type,
-				Label:     vc.Label,
-				Completed: completed,
-				Progress:  progress,
-				Count:     vc.Count,
-			})
-		}
-		victory = &protocol.VictorySnapshot{
-			Achieved:   s.victoryAchieved,
-			Objectives: objectives,
-		}
-	}
+	// Per-viewer Victory snapshot: team-scope objectives read TeamState
+	// (identical for every viewer); player-scope objectives read this
+	// viewer's PlayerStates entry. Returns nil when no objectives are
+	// installed (Custom Game), keeping the wire compact.
+	victory := s.buildVictorySnapshotForViewerLocked(viewerID)
 
 	beams := s.beamSnapshotsLocked(fow)
 
@@ -2336,29 +2325,12 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		gameOver = &protocol.GameOverSnapshot{LostPlayerIDs: ids}
 	}
 
-	var victory *protocol.VictorySnapshot
-	if len(s.MapConfig.VictoryConditions) > 0 {
-		objectives := make([]protocol.ObjectiveSnapshot, 0, len(s.MapConfig.VictoryConditions))
-		for _, vc := range s.MapConfig.VictoryConditions {
-			progress := 0
-			if vc.Type == "killUnit" && s.objectiveKillCounts != nil {
-				progress = s.objectiveKillCounts[vc.ID]
-			}
-			completed := s.objectiveCompleted != nil && s.objectiveCompleted[vc.ID]
-			objectives = append(objectives, protocol.ObjectiveSnapshot{
-				ID:        vc.ID,
-				Type:      vc.Type,
-				Label:     vc.Label,
-				Completed: completed,
-				Progress:  progress,
-				Count:     vc.Count,
-			})
-		}
-		victory = &protocol.VictorySnapshot{
-			Achieved:   s.victoryAchieved,
-			Objectives: objectives,
-		}
-	}
+	// Broadcast / unfiltered snapshot: no viewer identity available here.
+	// Team-scope objectives use TeamState (correct for any viewer);
+	// player-scope objectives fall back to initial state (Current=0). The
+	// per-viewer caller in snapshotForPlayerLocked patches `snap.Victory`
+	// with the viewer-specific copy after the unfiltered snapshot is built.
+	victory := s.buildVictorySnapshotForViewerLocked("")
 
 	beams := s.beamSnapshotsLocked(nil)
 
@@ -2885,6 +2857,10 @@ func (s *GameState) Update(dt float64) {
 	profileSection("buildingMetadata", func() { s.refreshBuildingRuntimeMetadataLocked() })
 	profileSection("obstacleMetadata", func() { s.refreshObstacleRuntimeMetadataLocked() })
 	profileSection("playerLoss", func() { s.checkPlayerLossLocked() })
+	// Objective evaluation runs after all metric-bumping subsystems and
+	// before the victory check so checkVictoryLocked (§9) sees current
+	// objective state when computing the new AND-gate.
+	profileSection("objectives", func() { s.evaluateObjectivesLocked() })
 	profileSection("victory", func() { s.checkVictoryLocked() })
 	profileSection("fow", func() { s.recomputeFOWLocked() })
 
@@ -2893,81 +2869,80 @@ func (s *GameState) Update(dt float64) {
 	profileTickComplete(s.Tick, len(s.Units))
 }
 
-// markObjectiveKillLocked records a kill toward a "killUnit" victory condition
-// and marks it complete once the required kill count is reached.
-func (s *GameState) markObjectiveKillLocked(objectiveID string) {
-	if objectiveID == "" {
-		return
-	}
-	if s.objectiveCompleted == nil {
-		s.objectiveCompleted = map[string]bool{}
-	}
-	if s.objectiveKillCounts == nil {
-		s.objectiveKillCounts = map[string]int{}
-	}
-	for _, vc := range s.MapConfig.VictoryConditions {
-		if vc.ID != objectiveID || vc.Type != "killUnit" {
-			continue
-		}
-		s.objectiveKillCounts[objectiveID]++
-		needed := vc.Count
-		if needed <= 0 {
-			needed = 1
-		}
-		if s.objectiveKillCounts[objectiveID] >= needed {
-			s.objectiveCompleted[objectiveID] = true
-		}
-		return
-	}
-}
-
-// markBuildingObjectiveCompleteLocked checks if the destroyed building is
-// linked to a "destroyBuilding" victory condition and marks it complete.
-func (s *GameState) markBuildingObjectiveCompleteLocked(buildingID string) {
-	building := s.getBuildingByIDLocked(buildingID)
-	if building == nil {
-		return
-	}
-	objectiveID, ok := getMetadataString(building.Metadata, "objectiveId")
-	if !ok || objectiveID == "" {
-		return
-	}
-	if s.objectiveCompleted == nil {
-		s.objectiveCompleted = map[string]bool{}
-	}
-	for _, vc := range s.MapConfig.VictoryConditions {
-		if vc.ID == objectiveID && vc.Type == "destroyBuilding" {
-			s.objectiveCompleted[objectiveID] = true
-			return
-		}
-	}
-}
-
-// markWaveObjectivesCompleteLocked marks all "surviveWaves" victory conditions
-// as complete. Called when the wave manager reaches state "complete".
-func (s *GameState) markWaveObjectivesCompleteLocked() {
-	if s.objectiveCompleted == nil {
-		s.objectiveCompleted = map[string]bool{}
-	}
-	for _, vc := range s.MapConfig.VictoryConditions {
-		if vc.Type == "surviveWaves" {
-			s.objectiveCompleted[vc.ID] = true
-		}
-	}
-}
-
-// checkVictoryLocked checks whether all VictoryConditions are complete and
-// sets victoryAchieved. No-op when the map has no victory conditions.
+// checkVictoryLocked sets victoryAchieved when both gates are satisfied:
+//
+//  1. waveOrTownhallConditionMet — today this is the wave manager reaching
+//     `state == "complete"`. The legacy townhall-destruction rule existed
+//     only via `MapConfig.VictoryConditions`, which was removed in §6, so
+//     wave completion is the sole legacy victory path for now. Adding a
+//     townhall-destruction handler to the objective registry will let that
+//     condition migrate into the new system later.
+//  2. allRequiredObjectivesCompleted() — every objective marked
+//     `required: true` on the launching campaign level has its TeamState
+//     (or every player's PlayerState, for player-scope objectives) marked
+//     complete.
+//
+// Optional objectives never gate victory. A match with no required
+// objectives reduces to just the legacy condition (the AND with `true`
+// trivially holds), which preserves Custom Game behaviour. Once set,
+// victoryAchieved is sticky for the match.
 func (s *GameState) checkVictoryLocked() {
-	if len(s.MapConfig.VictoryConditions) == 0 || s.victoryAchieved {
+	if s.victoryAchieved {
 		return
 	}
-	for _, vc := range s.MapConfig.VictoryConditions {
-		if s.objectiveCompleted == nil || !s.objectiveCompleted[vc.ID] {
-			return
-		}
+	if !s.waveOrTownhallConditionMetLocked() {
+		return
+	}
+	if !s.allRequiredObjectivesCompletedLocked() {
+		return
 	}
 	s.victoryAchieved = true
+}
+
+// waveOrTownhallConditionMetLocked reports whether the legacy victory rule
+// fires this tick. Today: wave manager reached "complete" state. Future
+// addition: an `enemy_townhalls_destroyed` objective handler would let
+// townhall-destruction levels express victory through the registry, and
+// this helper could collapse to a single trivially-true.
+func (s *GameState) waveOrTownhallConditionMetLocked() bool {
+	return s.WaveManager.State == "complete"
+}
+
+// allRequiredObjectivesCompletedLocked walks `s.Objectives` and returns true
+// when every objective with `Required: true` is complete:
+//
+//   - team-scope: TeamState.Completed must be true.
+//   - player-scope: every non-AI player's PlayerState must exist and have
+//     Completed = true. Strictest reading — every player in the match has
+//     to satisfy the requirement. (Phase 1 doesn't author any required
+//     player-scope objectives, so this branch is defensive.)
+//
+// Returns true when `s.Objectives` is empty — Custom Game and other
+// non-campaign matches degrade to the legacy rule alone.
+func (s *GameState) allRequiredObjectivesCompletedLocked() bool {
+	for i := range s.Objectives {
+		runtime := &s.Objectives[i]
+		if !runtime.Def.Required {
+			continue
+		}
+		switch runtime.Def.Scope {
+		case ObjectiveScopeTeam:
+			if !runtime.TeamState.Completed {
+				return false
+			}
+		case ObjectiveScopePlayer:
+			for playerID := range s.Players {
+				if playerID == enemyPlayerID || playerID == neutralPlayerID {
+					continue
+				}
+				state, ok := runtime.PlayerStates[playerID]
+				if !ok || !state.Completed {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 // checkPlayerLossLocked scans all townhalls each tick to detect players who
@@ -3152,6 +3127,7 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		ExtraStartingUnits:            map[string]int{},
 		ShopRerollsRemaining:          defaultShopRerollsPerPlayer,
 		AcquiredAdvancements:          advancementIDs,
+		Metrics:                       NewMatchMetrics(),
 	}
 	// Derive precomputed multipliers and extra workers from the upgrade catalog.
 	applyProfileUpgradesToPlayerLocked(player)
