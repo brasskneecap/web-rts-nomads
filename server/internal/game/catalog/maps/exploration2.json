@@ -68987,6 +68987,40 @@
       "totalWaves": 10,
       "prepDuration": 180,
       "waveDuration": 60
+    },
+    "campaign": {
+      "campaignId": "forest",
+      "levelId": "forest_02",
+      "displayName": "Forest 2",
+      "prerequisiteLevelId": "forest_01",
+      "description": "Push deeper into the wood.",
+      "sortOrder": 2,
+      "objectives": [
+        {
+          "id": "survive_to_wave_10",
+          "type": "survive_waves",
+          "description": "Survive 10 waves",
+          "scope": "team",
+          "required": true,
+          "config": { "wavesToSurvive": 10 }
+        },
+        {
+          "id": "early_camp_clear",
+          "type": "kill_camps_before_wave",
+          "description": "Clear 3 neutral camps before wave 5",
+          "scope": "team",
+          "required": false,
+          "config": { "count": 3, "beforeWave": 5 }
+        },
+        {
+          "id": "bronze_squad",
+          "type": "rank_units",
+          "description": "Have 5 Bronze-rank units",
+          "scope": "player",
+          "required": false,
+          "config": { "rank": "bronze", "count": 5 }
+        }
+      ]
     }
   }
 }

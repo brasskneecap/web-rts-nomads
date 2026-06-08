@@ -86,3 +86,30 @@ emits when an author has not actively configured a victory condition. If
 custom-game-with-objectives ships later (proposal §"Out of Scope"), the
 right place to attach is a new lobby-creation field — NOT a re-introduction
 of `MapConfig.VictoryConditions`.
+
+## Follow-up: map-editor-authors-campaign-maps
+
+A follow-up change (the **map-editor-authors-campaign-maps** work) shifts
+where per-level campaign data lives:
+
+- **Before:** `catalog/campaigns/<id>.json` carried both campaign metadata
+  AND the `levels[]` array (id, display name, prereq, objectives).
+- **After:** `catalog/campaigns/<id>.json` is a **header** (id, displayName,
+  description, sortOrder, locked). Per-level data — including objectives —
+  now rides on the map JSON via an optional `Campaign` block on
+  `MapConfig`. Maps with the block are tagged as campaign maps; the
+  campaign tree is built by scanning the map catalog at request time.
+
+For Forest, this means:
+
+| Map | Now owns |
+|---|---|
+| `exploration.json` | `campaign` block for `forest_01` (Forest 1) |
+| `exploration2.json` | `campaign` block for `forest_02` (Forest 2) |
+| `exploration3.json` | `campaign` block for `forest_03` (Forest 3) |
+
+`forest.json` was trimmed to the header. `swamp.json` was already a header.
+Custom Game lobby filters maps with a `Campaign` block out of its dropdown;
+the editor's "Load Existing Map" list keeps them so campaign maps are still
+editable. To use a campaign map's geometry in Custom Game, duplicate the
+map in the editor under a new id without the Campaign block.

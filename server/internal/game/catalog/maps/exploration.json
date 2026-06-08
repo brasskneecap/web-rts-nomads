@@ -66061,6 +66061,46 @@
       "totalWaves": 10,
       "prepDuration": 180,
       "waveDuration": 60
+    },
+    "campaign": {
+      "campaignId": "forest",
+      "levelId": "forest_01",
+      "displayName": "Forest 1",
+      "prerequisiteLevelId": null,
+      "description": "Establish a foothold at the forest edge.",
+      "sortOrder": 1,
+      "objectives": [
+        {
+          "id": "survive_to_wave_6",
+          "type": "survive_waves",
+          "description": "Survive 6 waves",
+          "scope": "team",
+          "required": true,
+          "config": {
+            "wavesToSurvive": 6
+          }
+        },
+        {
+          "id": "stockpile_gold",
+          "type": "collect_resource",
+          "description": "Earn 500 gold",
+          "scope": "team",
+          "config": {
+            "resource": "gold",
+            "amount": 500
+          }
+        },
+        {
+          "id": "raise_a_barracks",
+          "type": "build_buildings",
+          "description": "Build a Barracks",
+          "scope": "player",
+          "config": {
+            "buildingType": "barracks",
+            "count": 1
+          }
+        }
+      ]
     }
   }
 }

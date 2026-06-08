@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"webrts/server/pkg/protocol"
 )
 
 // expectCampaignPanic runs fn and asserts it panics with a message containing
@@ -25,198 +27,254 @@ func expectCampaignPanic(t *testing.T, msgSubstring string, fn func()) {
 	fn()
 }
 
-// makeCampaignWithObjectives is a small helper to build a CampaignDef with
-// the right shape for validateCampaignDef. The function takes raw configs
-// (any type that marshals to JSON) so each test can drive both valid and
-// invalid shapes without writing literal json.RawMessage.
-func makeObjectiveDef(t *testing.T, id, typeKey string, cfg any) ObjectiveDef {
+// makeMapCampaignObjective builds one wire-shape objective for a campaign
+// block. Accepts any cfg that marshals to JSON.
+func makeMapCampaignObjective(t *testing.T, id, typeKey string, cfg any) protocol.MapCampaignObjective {
 	t.Helper()
 	rawCfg, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal cfg: %v", err)
 	}
-	return ObjectiveDef{
+	return protocol.MapCampaignObjective{
 		ID:     id,
 		Type:   typeKey,
 		Config: rawCfg,
 	}
 }
 
-// TestValidateCampaignDef_AcceptsValidShape verifies that a campaign with a
-// mix of registered objective types loads cleanly and that parseAndValidate
-// has populated the typed config on every objective.
-func TestValidateCampaignDef_AcceptsValidShape(t *testing.T) {
-	prereq := "lvl_01"
-	def := CampaignDef{
-		ID:          "forest",
-		DisplayName: "Forest",
-		Levels: []CampaignLevelDef{
-			{
-				ID:          "lvl_01",
-				DisplayName: "Forest 1",
-				MapID:       "exploration",
-				Objectives: []ObjectiveDef{
-					makeObjectiveDef(t, "clear_t1", "kill_camps", killCampsConfig{CampTier: 1, Count: 3}),
-					makeObjectiveDef(t, "win_waves", "survive_waves", surviveWavesConfig{WavesToSurvive: 3}),
-				},
-			},
-			{
-				ID:                  "lvl_02",
-				DisplayName:         "Forest 2",
-				MapID:               "exploration2",
-				PrerequisiteLevelID: &prereq,
-				Objectives: []ObjectiveDef{
-					makeObjectiveDef(t, "elite_squad", "rank_units", rankUnitsConfig{Rank: "bronze", Count: 5}),
-				},
-			},
+// TestConvertMapCampaignBlock_AcceptsValidShape verifies that a map's
+// campaign block with a mix of registered objective types converts cleanly
+// and that parseAndValidate has populated the typed config on every
+// objective.
+func TestConvertMapCampaignBlock_AcceptsValidShape(t *testing.T) {
+	block := protocol.MapCampaignBlock{
+		CampaignID:  "forest",
+		LevelID:     "lvl_01",
+		DisplayName: "Forest 1",
+		Objectives: []protocol.MapCampaignObjective{
+			makeMapCampaignObjective(t, "clear_t1", "kill_camps", killCampsConfig{CampTier: 1, Count: 3}),
+			makeMapCampaignObjective(t, "win_waves", "survive_waves", surviveWavesConfig{WavesToSurvive: 3}),
 		},
 	}
-	got := validateCampaignDef("forest.json", def)
 
-	if len(got.Levels) != 2 {
-		t.Fatalf("expected 2 levels, got %d", len(got.Levels))
+	got := convertMapCampaignBlockToLevel("exploration", block)
+
+	if got.ID != "lvl_01" || got.MapID != "exploration" {
+		t.Fatalf("unexpected level identity: id=%s mapId=%s", got.ID, got.MapID)
 	}
-	for i, lvl := range got.Levels {
-		if lvl.Objectives == nil {
-			t.Errorf("level %d: Objectives should be non-nil after validation", i)
+	if len(got.Objectives) != 2 {
+		t.Fatalf("expected 2 objectives, got %d", len(got.Objectives))
+	}
+	for j, obj := range got.Objectives {
+		if obj.ParsedConfig() == nil {
+			t.Errorf("objective %d (%s): ParsedConfig should be set after validation", j, obj.ID)
 		}
-		for j, obj := range lvl.Objectives {
-			if obj.ParsedConfig() == nil {
-				t.Errorf("level %d objective %d (%s): ParsedConfig should be set after validation", i, j, obj.ID)
-			}
-			if obj.Scope != ObjectiveScopeTeam {
-				t.Errorf("level %d objective %d (%s): default scope should be team, got %q", i, j, obj.ID, obj.Scope)
-			}
+		if obj.Scope != ObjectiveScopeTeam {
+			t.Errorf("objective %d (%s): default scope should be team, got %q", j, obj.ID, obj.Scope)
 		}
 	}
 }
 
-// TestValidateCampaignDef_EmptyObjectivesSliceNormalised verifies the nil →
-// [] normalisation so the wire format never contains `null` for an empty
-// objectives slice. Spec invariant: clients can `range` over the slice
-// without a nil check.
-func TestValidateCampaignDef_EmptyObjectivesSliceNormalised(t *testing.T) {
-	def := CampaignDef{
-		ID:          "forest",
-		DisplayName: "Forest",
-		Levels: []CampaignLevelDef{
-			{ID: "lvl_01", DisplayName: "Forest 1", MapID: "exploration"},
-		},
-	}
-	got := validateCampaignDef("forest.json", def)
-
-	if got.Levels[0].Objectives == nil {
-		t.Error("nil Objectives slice should be normalised to empty slice")
-	}
-	if len(got.Levels[0].Objectives) != 0 {
-		t.Errorf("Objectives should be empty, got %v", got.Levels[0].Objectives)
-	}
-}
-
-// TestValidateCampaignDef_RejectsDuplicateObjectiveID covers the
-// per-level duplicate check. The same objective id is fine across two
-// different levels (different scope), but a single level cannot have two
-// objectives with the same id — the in-match snapshot keys on id.
-func TestValidateCampaignDef_RejectsDuplicateObjectiveID(t *testing.T) {
-	def := CampaignDef{
-		ID:          "forest",
-		DisplayName: "Forest",
-		Levels: []CampaignLevelDef{
-			{
-				ID:          "lvl_01",
-				DisplayName: "Forest 1",
-				MapID:       "exploration",
-				Objectives: []ObjectiveDef{
-					makeObjectiveDef(t, "the_objective", "survive_waves", surviveWavesConfig{WavesToSurvive: 3}),
-					makeObjectiveDef(t, "the_objective", "kill_camps", killCampsConfig{Count: 1}),
-				},
-			},
+// TestConvertMapCampaignBlock_RejectsDuplicateObjectiveID covers the
+// per-level duplicate check. A single level cannot have two objectives with
+// the same id — the in-match snapshot keys on id.
+func TestConvertMapCampaignBlock_RejectsDuplicateObjectiveID(t *testing.T) {
+	block := protocol.MapCampaignBlock{
+		CampaignID:  "forest",
+		LevelID:     "lvl_01",
+		DisplayName: "Forest 1",
+		Objectives: []protocol.MapCampaignObjective{
+			makeMapCampaignObjective(t, "the_objective", "survive_waves", surviveWavesConfig{WavesToSurvive: 3}),
+			makeMapCampaignObjective(t, "the_objective", "kill_camps", killCampsConfig{Count: 1}),
 		},
 	}
 	expectCampaignPanic(t, `duplicate objective id "the_objective"`, func() {
-		validateCampaignDef("forest.json", def)
+		_ = convertMapCampaignBlockToLevel("exploration", block)
 	})
 }
 
-// TestValidateCampaignDef_BubblesUpObjectiveValidatorPanic verifies that the
-// per-objective handler panic (from kill_camps requiring count > 0) propagates
-// up cleanly with the file + level + objective context attached. The
-// dispatcher does not swallow registry panics.
-func TestValidateCampaignDef_BubblesUpObjectiveValidatorPanic(t *testing.T) {
-	def := CampaignDef{
-		ID:          "forest",
-		DisplayName: "Forest",
-		Levels: []CampaignLevelDef{
-			{
-				ID:          "lvl_01",
-				DisplayName: "Forest 1",
-				MapID:       "exploration",
-				Objectives: []ObjectiveDef{
-					makeObjectiveDef(t, "bad_obj", "kill_camps", killCampsConfig{Count: 0}),
-				},
-			},
+// TestConvertMapCampaignBlock_BubblesUpObjectiveValidatorPanic verifies that
+// the per-objective handler panic (from kill_camps requiring count > 0)
+// propagates up cleanly with the file + level + objective context attached.
+func TestConvertMapCampaignBlock_BubblesUpObjectiveValidatorPanic(t *testing.T) {
+	block := protocol.MapCampaignBlock{
+		CampaignID:  "forest",
+		LevelID:     "lvl_01",
+		DisplayName: "Forest 1",
+		Objectives: []protocol.MapCampaignObjective{
+			makeMapCampaignObjective(t, "bad_obj", "kill_camps", killCampsConfig{Count: 0}),
 		},
 	}
 	expectCampaignPanic(t, `level lvl_01: objective bad_obj: kill_camps requires count > 0`, func() {
-		validateCampaignDef("forest.json", def)
+		_ = convertMapCampaignBlockToLevel("exploration", block)
 	})
 }
 
-// TestValidateCampaignDef_RejectsUnknownObjectiveType verifies that an
+// TestConvertMapCampaignBlock_RejectsUnknownObjectiveType verifies that an
 // objective referencing a non-registered type fails the load. The error
 // message must surface the file path so an author can fix it.
-func TestValidateCampaignDef_RejectsUnknownObjectiveType(t *testing.T) {
-	def := CampaignDef{
-		ID:          "forest",
-		DisplayName: "Forest",
-		Levels: []CampaignLevelDef{
-			{
-				ID:          "lvl_01",
-				DisplayName: "Forest 1",
-				MapID:       "exploration",
-				Objectives: []ObjectiveDef{
-					{
-						ID:     "fly",
-						Type:   "fly_to_moon",
-						Config: json.RawMessage(`{}`),
-					},
-				},
-			},
+func TestConvertMapCampaignBlock_RejectsUnknownObjectiveType(t *testing.T) {
+	block := protocol.MapCampaignBlock{
+		CampaignID:  "forest",
+		LevelID:     "lvl_01",
+		DisplayName: "Forest 1",
+		Objectives: []protocol.MapCampaignObjective{
+			{ID: "fly", Type: "fly_to_moon", Config: json.RawMessage(`{}`)},
 		},
 	}
 	expectCampaignPanic(t, "unknown type fly_to_moon", func() {
-		validateCampaignDef("forest.json", def)
+		_ = convertMapCampaignBlockToLevel("exploration", block)
 	})
 }
 
-// TestValidateCampaignDef_PrereqValidationStillWorks regression test: the
-// section-5 refactor moved validation into validateCampaignDef. Verify that
-// prereq resolution (originally inline in loadCampaignDefs) still rejects
-// dangling references.
-func TestValidateCampaignDef_PrereqValidationStillWorks(t *testing.T) {
+// TestSortAndValidateLevels_PrereqValidation verifies that prereq resolution
+// (now part of post-discovery sorting) still rejects dangling references.
+func TestSortAndValidateLevels_PrereqValidation(t *testing.T) {
 	bogus := "missing_level"
-	def := CampaignDef{
-		ID:          "forest",
-		DisplayName: "Forest",
-		Levels: []CampaignLevelDef{
-			{
-				ID:                  "lvl_01",
-				DisplayName:         "Forest 1",
-				MapID:               "exploration",
-				PrerequisiteLevelID: &bogus,
-			},
+	levels := []CampaignLevelDef{
+		{
+			ID:                  "lvl_01",
+			DisplayName:         "Forest 1",
+			MapID:               "exploration",
+			PrerequisiteLevelID: &bogus,
 		},
 	}
 	expectCampaignPanic(t, `references unknown prerequisite "missing_level"`, func() {
-		validateCampaignDef("forest.json", def)
+		_ = sortAndValidateLevels("forest", levels)
 	})
 }
 
-// TestValidateCampaignDef_RealForestCatalogStillLoads is a smoke test that
-// the existing embedded forest.json + swamp.json catalog still validates
-// after Section 5's refactor. If either file regresses (e.g. someone adds an
-// invalid objective shape during the Section 6 migration), this test fires.
-func TestValidateCampaignDef_RealForestCatalogStillLoads(t *testing.T) {
+// TestSortAndValidateLevels_RejectsSelfPrereq guards against a level listing
+// itself as its own prerequisite — would otherwise lock the level out forever.
+func TestSortAndValidateLevels_RejectsSelfPrereq(t *testing.T) {
+	self := "lvl_01"
+	levels := []CampaignLevelDef{
+		{ID: "lvl_01", DisplayName: "Forest 1", MapID: "exploration", PrerequisiteLevelID: &self},
+	}
+	expectCampaignPanic(t, `lists itself as a prerequisite`, func() {
+		_ = sortAndValidateLevels("forest", levels)
+	})
+}
+
+// TestSortAndValidateLevels_RejectsDuplicateLevelID guards against two maps
+// claiming the same level id within one campaign. Author error; would cause
+// the in-match snapshot to be ambiguous.
+func TestSortAndValidateLevels_RejectsDuplicateLevelID(t *testing.T) {
+	levels := []CampaignLevelDef{
+		{ID: "lvl_01", DisplayName: "Forest 1", MapID: "explorationA"},
+		{ID: "lvl_01", DisplayName: "Forest 1 (dup)", MapID: "explorationB"},
+	}
+	expectCampaignPanic(t, `duplicate level id "lvl_01"`, func() {
+		_ = sortAndValidateLevels("forest", levels)
+	})
+}
+
+// TestValidateMapCampaignBlockForSave_RecoversFromPanic verifies that the
+// save-path validator returns errors (not panics) so the HTTP layer can
+// surface a 400 instead of taking the server down.
+func TestValidateMapCampaignBlockForSave_RecoversFromPanic(t *testing.T) {
+	block := &protocol.MapCampaignBlock{
+		CampaignID:  "forest",
+		LevelID:     "lvl_01",
+		DisplayName: "Forest 1",
+		Objectives: []protocol.MapCampaignObjective{
+			makeMapCampaignObjective(t, "bad", "kill_camps", killCampsConfig{Count: 0}),
+		},
+	}
+	err := ValidateMapCampaignBlockForSave("exploration", block)
+	if err == nil {
+		t.Fatal("expected error for invalid objective config; got nil")
+	}
+	if !strings.Contains(err.Error(), "kill_camps requires count > 0") {
+		t.Errorf("expected panic message in error, got %q", err.Error())
+	}
+}
+
+// TestValidateMapCampaignBlockForSave_RejectsOrphanedCampaignID guards against
+// an editor save naming a campaign id that has no header file. Discovery would
+// panic on this; the save path returns an error instead.
+func TestValidateMapCampaignBlockForSave_RejectsOrphanedCampaignID(t *testing.T) {
+	block := &protocol.MapCampaignBlock{
+		CampaignID:  "this_does_not_exist",
+		LevelID:     "lvl_01",
+		DisplayName: "Lonely",
+	}
+	err := ValidateMapCampaignBlockForSave("exploration", block)
+	if err == nil {
+		t.Fatal("expected error for unknown campaignId; got nil")
+	}
+	if !strings.Contains(err.Error(), "this_does_not_exist") {
+		t.Errorf("expected campaign id in error, got %q", err.Error())
+	}
+}
+
+// TestValidateMapCampaignBlockForSave_RejectsDuplicateLevelIDAcrossMaps is
+// the regression guard for the editor footgun: an author saves a NEW map and
+// types a levelId that another map in the same campaign already claims. The
+// save must fail so the next /api/catalog/campaigns request doesn't panic
+// the server in discovery's duplicate-id check.
+//
+// Embedded forest_01 lives on exploration.json, so saving a different map id
+// (here "exploration_alt") with levelId "forest_01" must be rejected.
+func TestValidateMapCampaignBlockForSave_RejectsDuplicateLevelIDAcrossMaps(t *testing.T) {
+	block := &protocol.MapCampaignBlock{
+		CampaignID:  "forest",
+		LevelID:     "forest_01",
+		DisplayName: "Stolen Slot",
+		Objectives: []protocol.MapCampaignObjective{
+			makeMapCampaignObjective(t, "win_waves", "survive_waves", surviveWavesConfig{WavesToSurvive: 3}),
+		},
+	}
+	err := ValidateMapCampaignBlockForSave("exploration_alt", block)
+	if err == nil {
+		t.Fatal("expected error for duplicate levelId across maps; got nil")
+	}
+	if !strings.Contains(err.Error(), "forest_01") || !strings.Contains(err.Error(), "exploration") {
+		t.Errorf("expected error to name the conflicting level + map, got %q", err.Error())
+	}
+}
+
+// TestValidateMapCampaignBlockForSave_AllowsSameMapResave covers the
+// re-edit path: saving the same map id with the same levelId must succeed.
+// Without the entry.ID == mapID skip in the cross-map loop, every in-place
+// edit would falsely trip the duplicate guard against its own previous save.
+func TestValidateMapCampaignBlockForSave_AllowsSameMapResave(t *testing.T) {
+	block := &protocol.MapCampaignBlock{
+		CampaignID:  "forest",
+		LevelID:     "forest_01",
+		DisplayName: "Forest 1 (edited)",
+		Objectives: []protocol.MapCampaignObjective{
+			makeMapCampaignObjective(t, "win_waves", "survive_waves", surviveWavesConfig{WavesToSurvive: 5}),
+		},
+	}
+	if err := ValidateMapCampaignBlockForSave("exploration", block); err != nil {
+		t.Fatalf("expected re-save of same map to succeed; got %v", err)
+	}
+}
+
+// TestValidateMapCampaignBlockForSave_AllowsSameLevelIDAcrossCampaigns
+// verifies that campaigns are independent ID namespaces. Reusing "forest_01"
+// inside the Swamp campaign should succeed — the duplicate guard only fires
+// when both campaignId AND levelId match.
+func TestValidateMapCampaignBlockForSave_AllowsSameLevelIDAcrossCampaigns(t *testing.T) {
+	block := &protocol.MapCampaignBlock{
+		CampaignID:  "swamp",
+		LevelID:     "forest_01",
+		DisplayName: "Swamp 1",
+		Objectives: []protocol.MapCampaignObjective{
+			makeMapCampaignObjective(t, "win_waves", "survive_waves", surviveWavesConfig{WavesToSurvive: 3}),
+		},
+	}
+	if err := ValidateMapCampaignBlockForSave("swamp_alt_map", block); err != nil {
+		t.Fatalf("expected cross-campaign id reuse to succeed; got %v", err)
+	}
+}
+
+// TestListCampaignDefs_RealForestCatalogStillLoads is a smoke test that the
+// existing embedded forest.json + swamp.json catalog still validates after
+// the map-editor-authors-campaign-maps refactor. After migration, Forest's
+// levels come from exploration*.json's Campaign blocks.
+func TestListCampaignDefs_RealForestCatalogStillLoads(t *testing.T) {
 	defs := ListCampaignDefs()
 	if len(defs) == 0 {
 		t.Fatal("expected at least one campaign def in the embedded catalog")

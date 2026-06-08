@@ -68255,6 +68255,40 @@
       "totalWaves": 10,
       "prepDuration": 180,
       "waveDuration": 60
+    },
+    "campaign": {
+      "campaignId": "forest",
+      "levelId": "forest_03",
+      "displayName": "Forest 3",
+      "prerequisiteLevelId": "forest_02",
+      "description": "Reach the heart of the forest.",
+      "sortOrder": 3,
+      "objectives": [
+        {
+          "id": "survive_to_wave_10",
+          "type": "survive_waves",
+          "description": "Survive 10 waves",
+          "scope": "team",
+          "required": true,
+          "config": { "wavesToSurvive": 10 }
+        },
+        {
+          "id": "clear_tier_1",
+          "type": "kill_camps",
+          "description": "Clear 5 Tier 1 camps",
+          "scope": "team",
+          "required": false,
+          "config": { "campTier": 1, "count": 5 }
+        },
+        {
+          "id": "silver_squad",
+          "type": "rank_units",
+          "description": "Have 3 Silver-rank units",
+          "scope": "player",
+          "required": false,
+          "config": { "rank": "silver", "count": 3 }
+        }
+      ]
     }
   }
 }

@@ -76,9 +76,14 @@ async function loadMapCatalog() {
   mapsLoadError.value = ''
   try {
     const maps = await fetchMapCatalog()
-    mapCatalog.value = maps
-    if (maps.length > 0 && !selectedMapId.value) {
-      selectedMapId.value = maps[0].id
+    // Hide campaign-tagged maps from the Custom Game lobby. Campaign maps
+    // are only reachable from the Campaign panel so the objectives + level
+    // gating apply. To use a campaign map's geometry in custom games,
+    // duplicate-and-rename it in the editor without the campaign tag.
+    const customGameMaps = maps.filter((m) => !m.campaignId)
+    mapCatalog.value = customGameMaps
+    if (customGameMaps.length > 0 && !selectedMapId.value) {
+      selectedMapId.value = customGameMaps[0].id
     }
   } catch (err) {
     mapsLoadError.value = err instanceof Error ? err.message : 'Failed to load maps.'

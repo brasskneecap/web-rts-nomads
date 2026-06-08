@@ -50,6 +50,7 @@ export function createEditorMapConfig(
     placedUnits: existing?.placedUnits,
     neutralSpawns: existing?.neutralSpawns,
     waveConfig: existing?.waveConfig,
+    campaign: existing?.campaign,
   })
 }
 
@@ -76,6 +77,7 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
     debug: map.debug,
     placedUnits: clampPlacedUnits(map.placedUnits ?? [], gridCols, gridRows),
     neutralSpawns: clampNeutralSpawns(map.neutralSpawns ?? [], gridCols, gridRows),
+    campaign: map.campaign,
   }
 }
 

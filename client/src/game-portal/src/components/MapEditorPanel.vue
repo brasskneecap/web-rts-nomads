@@ -159,6 +159,270 @@
         </div>
       </section>
 
+      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'campaign' }">
+        <button type="button" class="editor-section__summary" @click="toggleSection('campaign')">
+          Campaign
+        </button>
+        <div v-if="openSection === 'campaign'" class="editor-section__body">
+          <label class="debug-flag-row">
+            <input
+              type="checkbox"
+              :checked="!!model.campaign"
+              @change="toggleCampaign(($event.target as HTMLInputElement).checked)"
+            />
+            <span>This map is a campaign map <span class="field-hint">(hides it from Custom Game)</span></span>
+          </label>
+
+          <div v-if="campaignCatalogError" class="menu-text">{{ campaignCatalogError }}</div>
+
+          <template v-if="model.campaign">
+            <div class="control-group">
+              <label for="editor-campaign-id">Campaign</label>
+              <select
+                id="editor-campaign-id"
+                :value="model.campaign.campaignId"
+                @change="setCampaignField('campaignId', ($event.target as HTMLSelectElement).value)"
+                :disabled="campaignCatalogLoading"
+              >
+                <option v-for="c in campaignCatalog" :key="c.id" :value="c.id">
+                  {{ c.displayName }}
+                </option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label for="editor-campaign-level-id">Level ID</label>
+              <input
+                id="editor-campaign-level-id"
+                type="text"
+                :value="model.campaign.levelId"
+                @input="setCampaignField('levelId', ($event.target as HTMLInputElement).value)"
+                placeholder="e.g. forest_01"
+              />
+            </div>
+
+            <div class="control-group">
+              <label for="editor-campaign-display-name">Display Name</label>
+              <input
+                id="editor-campaign-display-name"
+                type="text"
+                :value="model.campaign.displayName"
+                @input="setCampaignField('displayName', ($event.target as HTMLInputElement).value)"
+                placeholder="e.g. Forest 1"
+              />
+            </div>
+
+            <div class="control-group">
+              <label for="editor-campaign-prereq">Prerequisite Level</label>
+              <select
+                id="editor-campaign-prereq"
+                :value="model.campaign.prerequisiteLevelId ?? ''"
+                @change="setCampaignField(
+                  'prerequisiteLevelId',
+                  ($event.target as HTMLSelectElement).value || null,
+                )"
+              >
+                <option value="">None (first level)</option>
+                <option
+                  v-for="lvl in levelsForCampaign(model.campaign.campaignId)"
+                  :key="lvl.id"
+                  :value="lvl.id"
+                  :disabled="lvl.id === model.campaign.levelId"
+                >
+                  {{ lvl.displayName }} ({{ lvl.id }})
+                </option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label for="editor-campaign-sort-order">Sort Order <span class="field-hint">(level row order)</span></label>
+              <input
+                id="editor-campaign-sort-order"
+                type="number"
+                :value="model.campaign.sortOrder ?? 0"
+                @input="setCampaignField('sortOrder', +($event.target as HTMLInputElement).value)"
+              />
+            </div>
+
+            <div class="control-group">
+              <label for="editor-campaign-description">Description</label>
+              <textarea
+                id="editor-campaign-description"
+                :value="model.campaign.description ?? ''"
+                @input="setCampaignField('description', ($event.target as HTMLTextAreaElement).value)"
+                class="metadata-box"
+                rows="2"
+              ></textarea>
+            </div>
+
+            <div class="campaign-objectives">
+              <div class="campaign-objectives__header">
+                <span>Objectives</span>
+                <button type="button" @click="addObjective">+ Add</button>
+              </div>
+
+              <div
+                v-for="(obj, idx) in (model.campaign.objectives ?? [])"
+                :key="idx"
+                class="campaign-objective"
+              >
+                <div class="campaign-objective__row">
+                  <input
+                    class="campaign-objective__id"
+                    :value="obj.id"
+                    placeholder="objective id"
+                    @input="updateObjective(idx, { id: ($event.target as HTMLInputElement).value })"
+                  />
+                  <select
+                    :value="obj.type"
+                    @change="updateObjectiveType(idx, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="t in KNOWN_OBJECTIVE_TYPES" :key="t" :value="t">{{ t }}</option>
+                  </select>
+                  <button type="button" class="campaign-objective__remove" @click="removeObjective(idx)" title="Remove objective">×</button>
+                </div>
+
+                <div class="campaign-objective__row">
+                  <input
+                    type="text"
+                    :value="obj.description ?? ''"
+                    placeholder="description (shown to player)"
+                    @input="updateObjective(idx, { description: ($event.target as HTMLInputElement).value })"
+                  />
+                </div>
+
+                <div class="campaign-objective__row campaign-objective__meta">
+                  <select
+                    :value="obj.scope ?? 'team'"
+                    @change="updateObjective(idx, { scope: ($event.target as HTMLSelectElement).value as 'team' | 'player' })"
+                  >
+                    <option value="team">Team</option>
+                    <option value="player">Per-Player</option>
+                  </select>
+                  <label class="campaign-objective__required">
+                    <input
+                      type="checkbox"
+                      :checked="obj.required ?? false"
+                      @change="updateObjective(idx, { required: ($event.target as HTMLInputElement).checked })"
+                    />
+                    <span>Required <span class="field-hint">(gates victory)</span></span>
+                  </label>
+                </div>
+
+                <!-- Per-type config fields. Keys must match the server handler
+                     configs in objective_handlers.go. -->
+                <div v-if="obj.type === 'kill_camps'" class="campaign-objective__config">
+                  <label>Camp Tier <span class="field-hint">(blank = any)</span>
+                    <input
+                      type="number" min="1" max="3"
+                      :value="(objectiveConfigValue(obj, 'campTier') as number | undefined) ?? ''"
+                      @input="updateObjectiveConfigField(idx, 'campTier', ($event.target as HTMLInputElement).value ? +($event.target as HTMLInputElement).value : undefined)"
+                    />
+                  </label>
+                  <label>Count
+                    <input
+                      type="number" min="1"
+                      :value="(objectiveConfigValue(obj, 'count') as number | undefined) ?? 1"
+                      @input="updateObjectiveConfigField(idx, 'count', +($event.target as HTMLInputElement).value)"
+                    />
+                  </label>
+                </div>
+
+                <div v-else-if="obj.type === 'build_buildings'" class="campaign-objective__config">
+                  <label>Building Type
+                    <select
+                      :value="(objectiveConfigValue(obj, 'buildingType') as string | undefined) ?? 'barracks'"
+                      @change="updateObjectiveConfigField(idx, 'buildingType', ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option v-for="def in paintableBuildingDefs" :key="def.type" :value="def.type">
+                        {{ def.label || def.type }}
+                      </option>
+                    </select>
+                  </label>
+                  <label>Count
+                    <input
+                      type="number" min="1"
+                      :value="(objectiveConfigValue(obj, 'count') as number | undefined) ?? 1"
+                      @input="updateObjectiveConfigField(idx, 'count', +($event.target as HTMLInputElement).value)"
+                    />
+                  </label>
+                </div>
+
+                <div v-else-if="obj.type === 'collect_resource'" class="campaign-objective__config">
+                  <label>Resource
+                    <select
+                      :value="(objectiveConfigValue(obj, 'resource') as string | undefined) ?? 'gold'"
+                      @change="updateObjectiveConfigField(idx, 'resource', ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option value="gold">Gold</option>
+                      <option value="wood">Wood</option>
+                    </select>
+                  </label>
+                  <label>Amount
+                    <input
+                      type="number" min="1"
+                      :value="(objectiveConfigValue(obj, 'amount') as number | undefined) ?? 100"
+                      @input="updateObjectiveConfigField(idx, 'amount', +($event.target as HTMLInputElement).value)"
+                    />
+                  </label>
+                </div>
+
+                <div v-else-if="obj.type === 'kill_camps_before_wave'" class="campaign-objective__config">
+                  <label>Count
+                    <input
+                      type="number" min="1"
+                      :value="(objectiveConfigValue(obj, 'count') as number | undefined) ?? 1"
+                      @input="updateObjectiveConfigField(idx, 'count', +($event.target as HTMLInputElement).value)"
+                    />
+                  </label>
+                  <label>Before Wave
+                    <input
+                      type="number" min="1"
+                      :value="(objectiveConfigValue(obj, 'beforeWave') as number | undefined) ?? 5"
+                      @input="updateObjectiveConfigField(idx, 'beforeWave', +($event.target as HTMLInputElement).value)"
+                    />
+                  </label>
+                </div>
+
+                <div v-else-if="obj.type === 'rank_units'" class="campaign-objective__config">
+                  <label>Rank
+                    <select
+                      :value="(objectiveConfigValue(obj, 'rank') as string | undefined) ?? 'bronze'"
+                      @change="updateObjectiveConfigField(idx, 'rank', ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option value="bronze">Bronze</option>
+                      <option value="silver">Silver</option>
+                      <option value="gold">Gold</option>
+                    </select>
+                  </label>
+                  <label>Count
+                    <input
+                      type="number" min="1"
+                      :value="(objectiveConfigValue(obj, 'count') as number | undefined) ?? 1"
+                      @input="updateObjectiveConfigField(idx, 'count', +($event.target as HTMLInputElement).value)"
+                    />
+                  </label>
+                </div>
+
+                <div v-else-if="obj.type === 'survive_waves'" class="campaign-objective__config">
+                  <label>Waves to Survive
+                    <input
+                      type="number" min="1"
+                      :value="(objectiveConfigValue(obj, 'wavesToSurvive') as number | undefined) ?? 1"
+                      @input="updateObjectiveConfigField(idx, 'wavesToSurvive', +($event.target as HTMLInputElement).value)"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div v-if="(model.campaign.objectives ?? []).length === 0" class="campaign-objectives__empty">
+                No objectives yet. Required objectives gate victory; optional ones are achievements.
+              </div>
+            </div>
+          </template>
+        </div>
+      </section>
+
       <section class="editor-section" :class="{ 'editor-section--open': openSection === 'paint' }">
         <button type="button" class="editor-section__summary" @click="toggleSection('paint')">
           Paint
@@ -869,6 +1133,8 @@ import type {
   BuildingType,
   JsonObject,
   JsonValue,
+  MapCampaignBlock,
+  MapCampaignObjective,
   MapCatalogEntry,
   MapCatalogFile,
   MapConfig,
@@ -882,6 +1148,8 @@ import type {
   UnitType,
   VictoryCondition,
 } from '@/game/network/protocol'
+import type { Campaign } from '@/types/campaign'
+import { fetchCampaignCatalog } from '@/services/campaignApi'
 import { NEUTRAL_PLAYER_COLOR, NEUTRAL_SPAWN_RANDOM_GROUP_ID } from '@/game/network/protocol'
 import type { UnitFaction } from '@/game/maps/unitDefs'
 import { Camera } from '@/game/rendering/Camera'
@@ -1020,7 +1288,7 @@ const saveLabel = ref('Save to Server')
 const saveError = ref('')
 const hoverLabel = ref('Hover a tile')
 const paintModeEnabled = ref(false)
-const openSection = ref<'setup' | 'paint' | 'export' | null>('paint')
+const openSection = ref<'setup' | 'campaign' | 'paint' | 'export' | null>('paint')
 const isControlHeld = ref(false)
 const availableMaps = ref<MapCatalogEntry[]>([])
 const selectedLoadMapId = ref('')
@@ -1350,8 +1618,171 @@ function getCanvasCursor() {
   return 'crosshair'
 }
 
-function toggleSection(section: 'setup' | 'paint' | 'export') {
+function toggleSection(section: 'setup' | 'campaign' | 'paint' | 'export') {
   openSection.value = openSection.value === section ? null : section
+}
+
+// ---------------------------------------------------------------------------
+// Campaign authoring — added by the map-editor-authors-campaign-maps change.
+// When the user ticks "this is a campaign map" the editor writes a Campaign
+// block onto `model.value.campaign` that the server picks up on save. The
+// block IS the campaign level: there is no separate catalog/campaigns/*.json
+// level entry to keep in sync.
+//
+// The dropdown of campaigns is populated from /api/catalog/campaigns so the
+// list always reflects whatever header files exist on the server. A new
+// campaign is added by dropping a header at catalog/campaigns/<id>.json (no
+// editor change required).
+// ---------------------------------------------------------------------------
+
+const campaignCatalog = ref<readonly Campaign[]>([])
+const campaignCatalogError = ref('')
+const campaignCatalogLoading = ref(false)
+
+// Objective types known to the editor for the type dropdown. Mirrors the
+// six handlers registered in server/internal/game/objective_handlers.go.
+// When a new handler ships server-side, add the type key here AND a default
+// config in `emptyObjectiveConfig` + a per-type field block in the template.
+const KNOWN_OBJECTIVE_TYPES = [
+  'kill_camps',
+  'build_buildings',
+  'collect_resource',
+  'kill_camps_before_wave',
+  'rank_units',
+  'survive_waves',
+] as const
+
+async function loadCampaignCatalog() {
+  campaignCatalogLoading.value = true
+  campaignCatalogError.value = ''
+  try {
+    campaignCatalog.value = await fetchCampaignCatalog()
+  } catch (err) {
+    campaignCatalogError.value =
+      err instanceof Error ? err.message : 'Failed to load campaigns.'
+  } finally {
+    campaignCatalogLoading.value = false
+  }
+}
+
+// emptyObjectiveConfig returns a sensible starter config for the given type
+// so the user sees real fields the moment they add a row, instead of a blank
+// JSON blob they have to figure out. Per-type fields in the template wire
+// against these keys.
+function emptyObjectiveConfig(typeKey: string): Record<string, unknown> {
+  switch (typeKey) {
+    case 'kill_camps':
+      return { count: 1 }
+    case 'build_buildings':
+      return { buildingType: 'barracks', count: 1 }
+    case 'collect_resource':
+      return { resource: 'gold', amount: 100 }
+    case 'kill_camps_before_wave':
+      return { count: 1, beforeWave: 5 }
+    case 'rank_units':
+      return { rank: 'bronze', count: 1 }
+    case 'survive_waves':
+      return { wavesToSurvive: 1 }
+    default:
+      return {}
+  }
+}
+
+// toggleCampaign turns the campaign tag on/off. Off → strips the field
+// entirely so the saved map JSON is clean (no { campaign: null } noise).
+function toggleCampaign(enabled: boolean) {
+  if (enabled) {
+    model.value = {
+      ...model.value,
+      campaign: model.value.campaign ?? {
+        campaignId: campaignCatalog.value[0]?.id ?? '',
+        levelId: '',
+        displayName: '',
+        prerequisiteLevelId: null,
+        description: '',
+        sortOrder: 0,
+        objectives: [],
+      },
+    }
+  } else {
+    const next = { ...model.value }
+    delete next.campaign
+    model.value = next
+  }
+}
+
+function setCampaignField<K extends keyof MapCampaignBlock>(
+  key: K,
+  value: MapCampaignBlock[K],
+) {
+  if (!model.value.campaign) return
+  model.value = {
+    ...model.value,
+    campaign: { ...model.value.campaign, [key]: value },
+  }
+}
+
+function levelsForCampaign(campaignId: string) {
+  return campaignCatalog.value.find((c) => c.id === campaignId)?.levels ?? []
+}
+
+function addObjective() {
+  if (!model.value.campaign) return
+  const objectives = [...(model.value.campaign.objectives ?? [])]
+  const defaultType = KNOWN_OBJECTIVE_TYPES[0]
+  objectives.push({
+    id: `objective_${objectives.length + 1}`,
+    type: defaultType,
+    description: '',
+    scope: 'team',
+    required: false,
+    config: emptyObjectiveConfig(defaultType),
+  })
+  setCampaignField('objectives', objectives)
+}
+
+function removeObjective(index: number) {
+  if (!model.value.campaign) return
+  const objectives = [...(model.value.campaign.objectives ?? [])]
+  objectives.splice(index, 1)
+  setCampaignField('objectives', objectives)
+}
+
+function updateObjective(index: number, patch: Partial<MapCampaignObjective>) {
+  if (!model.value.campaign) return
+  const objectives = [...(model.value.campaign.objectives ?? [])]
+  if (!objectives[index]) return
+  objectives[index] = { ...objectives[index], ...patch }
+  setCampaignField('objectives', objectives)
+}
+
+// updateObjectiveType swaps the type AND resets the config to the new type's
+// defaults — keeping stale fields from the previous type would silently fail
+// server-side validation, and migrating field-by-field isn't worth the
+// complexity for a low-volume authoring tool.
+function updateObjectiveType(index: number, newType: string) {
+  updateObjective(index, {
+    type: newType,
+    config: emptyObjectiveConfig(newType),
+  })
+}
+
+function updateObjectiveConfigField(index: number, key: string, value: unknown) {
+  if (!model.value.campaign) return
+  const objectives = [...(model.value.campaign.objectives ?? [])]
+  if (!objectives[index]) return
+  const config: Record<string, unknown> = { ...(objectives[index].config ?? {}) }
+  if (value === undefined || value === '' || value === null) {
+    delete config[key]
+  } else {
+    config[key] = value
+  }
+  objectives[index] = { ...objectives[index], config }
+  setCampaignField('objectives', objectives)
+}
+
+function objectiveConfigValue(obj: MapCampaignObjective, key: string): unknown {
+  return (obj.config as Record<string, unknown> | undefined)?.[key]
 }
 
 // addVictoryCondition / removeVictoryCondition / updateVictoryCondition were
@@ -2610,6 +3041,7 @@ onMounted(() => {
   })
   targetCanvas.style.cursor = getCanvasCursor()
   void loadAvailableMaps()
+  void loadCampaignCatalog()
   void fetchBuildingDefs().then(initBuildingDefs).catch(() => {})
   void fetchObstacleDefs().then(initObstacleDefs).catch(() => {})
   void fetchNeutralGroups().then((tiers) => { neutralGroupTiers.value = tiers }).catch(() => {})
@@ -3073,6 +3505,109 @@ onBeforeUnmount(() => {
 
 .debug-flag-row input[type='checkbox'] {
   margin: 0;
+}
+
+/* Campaign authoring (map-editor-authors-campaign-maps) */
+.campaign-objectives {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.campaign-objectives__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #d7bb84;
+}
+
+.campaign-objectives__header button {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.campaign-objectives__empty {
+  font-size: 12px;
+  opacity: 0.6;
+  padding: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+.campaign-objective {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+
+.campaign-objective__row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.campaign-objective__row > input,
+.campaign-objective__row > select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.campaign-objective__id {
+  max-width: 140px;
+}
+
+.campaign-objective__remove {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.campaign-objective__meta {
+  justify-content: space-between;
+}
+
+.campaign-objective__required {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  user-select: none;
+}
+
+.campaign-objective__config {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 6px 0 2px 0;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.campaign-objective__config label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #c8b894;
+}
+
+.campaign-objective__config input,
+.campaign-objective__config select {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* .victory-condition-row + .vc-id-badge rules removed alongside the Victory

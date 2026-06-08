@@ -238,14 +238,50 @@ export type MapConfig = {
   obstacles: ObstacleTile[]
   buildings: BuildingTile[]
   waveConfig?: WaveConfig
-  // victoryConditions removed in the campaign-objectives-and-metrics §6
-  // migration. Per-level objectives now live on CampaignLevel.objectives
-  // and flow through the server objective handler registry. The
-  // VictoryCondition + VictorySnapshot types below are retained until §10
-  // (snapshot reshape).
+  /** Optional campaign tag. Presence makes the map a campaign level — the
+   *  Custom Game lobby hides it from the map dropdown, and the server
+   *  contributes its level info to /api/catalog/campaigns under the named
+   *  campaign. Edited via the map editor's Campaign card. */
+  campaign?: MapCampaignBlock
   debug?: MapDebugConfig
   placedUnits?: PlacedUnit[]
   neutralSpawns?: NeutralSpawn[]
+}
+
+/** Wire shape of the "this map is a campaign level" tag.
+ *  Mirrors `protocol.MapCampaignBlock` on the server. Authored in the map
+ *  editor; the server validates the contained objectives at save time and
+ *  again at catalog-read time so bad data is rejected before it reaches
+ *  match runtime. */
+export type MapCampaignBlock = {
+  /** Parent campaign id (e.g. `forest`). Must match a header file at
+   *  `server/internal/game/catalog/campaigns/<campaignId>.json`. */
+  campaignId: string
+  /** Stable, globally-unique level id (e.g. `forest_01`). */
+  levelId: string
+  /** Human-readable label shown in the campaign panel + recap. */
+  displayName: string
+  /** Level that must be completed before this one unlocks. Use `null` for
+   *  the first level of a chain. Cross-campaign prereqs unsupported. */
+  prerequisiteLevelId: string | null
+  /** Short blurb shown on the level row. */
+  description?: string
+  /** Row ordering within the campaign. Ties broken by levelId. */
+  sortOrder?: number
+  /** Per-level objectives. Each `config` is opaque to the client; the
+   *  server registry's per-type schema lives in `objective_handlers.go`. */
+  objectives?: MapCampaignObjective[]
+}
+
+/** Wire shape of one authored objective on a campaign-tagged map.
+ *  Mirrors `protocol.MapCampaignObjective` on the server. */
+export type MapCampaignObjective = {
+  id: string
+  type: string
+  description?: string
+  scope?: 'team' | 'player'
+  required?: boolean
+  config?: Record<string, unknown>
 }
 
 // Per-map debug/telemetry opt-ins. Only set on development maps — production
@@ -270,6 +306,10 @@ export type MapCatalogEntry = {
   gridCols: number
   gridRows: number
   spawnPointCount: number
+  /** When non-empty, the map is tagged as a campaign level. The Custom
+   *  Game lobby filters these out of its map dropdown; the map editor
+   *  still shows them in its load-map list. */
+  campaignId?: string
 }
 
 export type LobbyStatus = 'open' | 'started' | 'closed'

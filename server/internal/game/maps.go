@@ -155,6 +155,15 @@ type MapCatalogSummary struct {
 	GridCols        int    `json:"gridCols"`
 	GridRows        int    `json:"gridRows"`
 	SpawnPointCount int    `json:"spawnPointCount"`
+	// CampaignID, when non-empty, signals the map is tagged as a campaign
+	// level (via its `Map.Campaign` block). The Custom Game lobby filters
+	// these out of its map dropdown so campaign content can't be played
+	// piecemeal in custom games — duplicate-and-rename the map without the
+	// campaign tag to use the geometry in custom games.
+	//
+	// The editor's "Load Existing Map" dropdown deliberately does NOT
+	// filter on this — campaign maps are still maps and must be editable.
+	CampaignID string `json:"campaignId,omitempty"`
 }
 
 //go:embed catalog/maps/*.json
@@ -189,6 +198,10 @@ func ListMapCatalogSummaries() []MapCatalogSummary {
 				spawnCount++
 			}
 		}
+		campaignID := ""
+		if entry.Map.Campaign != nil {
+			campaignID = entry.Map.Campaign.CampaignID
+		}
 		summaries = append(summaries, MapCatalogSummary{
 			ID:              entry.ID,
 			Name:            entry.Name,
@@ -196,6 +209,7 @@ func ListMapCatalogSummaries() []MapCatalogSummary {
 			GridCols:        entry.Map.GridCols,
 			GridRows:        entry.Map.GridRows,
 			SpawnPointCount: spawnCount,
+			CampaignID:      campaignID,
 		})
 	}
 
@@ -257,7 +271,19 @@ func GetMapCatalogEntryByID(mapID string) (MapCatalogEntry, bool) {
 
 // SaveMapCatalogEntry writes a map catalog entry to disk and immediately
 // registers it in the runtime overlay so it is available without a restart.
+//
+// Validates the optional `Map.Campaign` block before any disk writes via
+// ValidateMapCampaignBlockForSave — catches malformed objective configs,
+// unknown campaign ids, etc. and returns the error so the HTTP layer can
+// surface a 400 to the editor. Cross-map invariants (duplicate level ids
+// within a campaign, broken prereq chains) are surfaced at the next
+// /api/catalog/campaigns request because two concurrent saves can race; the
+// simplest robust place for the "whole tree is coherent" check is at read.
 func SaveMapCatalogEntry(entry MapCatalogEntry) error {
+	if err := ValidateMapCampaignBlockForSave(entry.ID, entry.Map.Campaign); err != nil {
+		return err
+	}
+
 	dir, err := resolveMapsDir()
 	if err != nil {
 		return err
@@ -289,6 +315,33 @@ func SaveMapCatalogEntry(entry MapCatalogEntry) error {
 	runtimeMapsMu.Unlock()
 
 	return nil
+}
+
+// currentMapCatalogSnapshot returns a flat slice of every map known to the
+// catalog right now, with runtime editor saves overlaid on top of the
+// embedded baseline. Used by campaign discovery (`buildCampaignDefs`) so a
+// freshly-saved campaign-tagged map appears in the campaign tree without a
+// restart.
+//
+// The Map field is shared with the embedded/runtime store — discovery treats
+// the slice as read-only and never mutates Campaign blocks. Cheap to call;
+// catalogs are small (low double-digit map count).
+func currentMapCatalogSnapshot() []MapCatalogEntry {
+	merged := make(map[string]MapCatalogEntry, len(mapCatalog))
+	for _, entry := range mapCatalog {
+		merged[entry.ID] = entry
+	}
+	runtimeMapsMu.RLock()
+	for id, entry := range runtimeMaps {
+		merged[id] = entry
+	}
+	runtimeMapsMu.RUnlock()
+
+	out := make([]MapCatalogEntry, 0, len(merged))
+	for _, entry := range merged {
+		out = append(out, entry)
+	}
+	return out
 }
 
 func resolveMapsDir() (string, error) {

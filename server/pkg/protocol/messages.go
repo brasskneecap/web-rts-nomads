@@ -149,13 +149,75 @@ type MapConfig struct {
 	PlacedUnits   []PlacedUnit   `json:"placedUnits,omitempty"`
 	NeutralSpawns []NeutralSpawn `json:"neutralSpawns,omitempty"`
 	WaveConfig    *WaveConfig    `json:"waveConfig,omitempty"`
-	// VictoryConditions removed in the campaign-objectives-and-metrics change.
-	// Per-level objectives now live on `CampaignLevelDef.Objectives` and are
-	// evaluated by the objective handler registry. See
-	// `server/internal/game/catalog/maps/migration_notes.md` for the migration
-	// record. The `VictoryCondition` and `VictorySnapshot` structs below are
-	// retained until the snapshot reshape in §10 of the OpenSpec change.
-	Debug *MapDebugConfig `json:"debug,omitempty"`
+	// Campaign, when set, tags this map as a campaign level. Its presence
+	// makes the map (a) hidden from the Custom Game lobby map list, and (b)
+	// contribute one level to the CampaignDef tree at startup / catalog-read
+	// time. Authored in the map editor's Campaign card. Custom maps and
+	// production non-campaign maps leave this nil.
+	//
+	// The previous design (campaign-objectives-and-metrics) placed objectives
+	// on a separate CampaignLevelDef inside catalog/campaigns/*.json. That
+	// indirection was removed by the map-editor-authors-campaign-maps change:
+	// objectives + display name + prerequisites now live on the map file the
+	// editor saves, and catalog/campaigns/*.json shrinks to a header (id,
+	// displayName, description, sortOrder, locked).
+	Campaign *MapCampaignBlock `json:"campaign,omitempty"`
+	Debug    *MapDebugConfig   `json:"debug,omitempty"`
+}
+
+// MapCampaignBlock is the wire shape of the "this map is a campaign level"
+// tag. When non-nil on a MapConfig, the engine treats the map as a level in
+// the campaign with `CampaignID` and exposes it through /api/catalog/campaigns
+// under that campaign. Same JSON shape both ways — server reads it from
+// catalog/maps/*.json and the editor writes it back via /maps POST.
+//
+// Objectives are kept as a slice of `MapCampaignObjective` rather than a
+// stronger typed union because the per-type `config` shapes live in the
+// server's game package (objective_handlers.go) and the protocol layer
+// cannot import that without a dependency cycle. Each entry is validated
+// once at catalog load by `parseAndValidateObjectiveDef`; bad authored data
+// panics at startup with the offending file + level + objective id named.
+type MapCampaignBlock struct {
+	// CampaignID is the parent campaign's id (e.g. "forest"). Must match a
+	// header file in catalog/campaigns/<CampaignID>.json or catalog load
+	// panics.
+	CampaignID string `json:"campaignId"`
+	// LevelID is the stable, globally-unique level id (e.g. "forest_01").
+	// Persisted to the player profile's `completedCampaignLevels` and
+	// `completedCampaignObjectives` keys.
+	LevelID string `json:"levelId"`
+	// DisplayName is the human-readable label shown in the campaign panel's
+	// level list and in the end-of-match recap.
+	DisplayName string `json:"displayName"`
+	// PrerequisiteLevelID gates which other level must be completed before
+	// this one unlocks. Nil for the first level of a chain. Must reference
+	// another level in the SAME campaign (cross-campaign prereqs unsupported).
+	PrerequisiteLevelID *string `json:"prerequisiteLevelId"`
+	// Description is a short blurb shown on the level row in the campaign
+	// panel. Optional.
+	Description string `json:"description,omitempty"`
+	// SortOrder controls the level row order within the campaign. Ties broken
+	// by LevelID.
+	SortOrder int `json:"sortOrder,omitempty"`
+	// Objectives is the per-level objective list. Each entry mirrors the
+	// `game.ObjectiveDef` JSON shape. The game-package catalog loader runs
+	// every entry through `parseAndValidateObjectiveDef` at startup, so a
+	// reachable map with an invalid objective panics fast.
+	Objectives []MapCampaignObjective `json:"objectives,omitempty"`
+}
+
+// MapCampaignObjective is the wire shape of one authored objective on a
+// campaign-tagged map. Mirrors the JSON tags of `game.ObjectiveDef` so the
+// game package can json.Unmarshal directly between the two without a
+// per-field hand conversion. The `parsedConfig` cache field on ObjectiveDef
+// is unexported and does not appear here.
+type MapCampaignObjective struct {
+	ID          string          `json:"id"`
+	Type        string          `json:"type"`
+	Description string          `json:"description,omitempty"`
+	Scope       string          `json:"scope,omitempty"`
+	Required    bool            `json:"required,omitempty"`
+	Config      json.RawMessage `json:"config"`
 }
 
 // MapDebugConfig is the container for per-map debug/telemetry opt-ins. It

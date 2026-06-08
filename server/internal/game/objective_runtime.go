@@ -47,10 +47,13 @@ func (s *GameState) SetCampaignLevelLocked(levelID string) {
 }
 
 // lookupCampaignLevelByID searches the loaded campaign catalog for a level
-// whose ID matches. Linear scan — campaigns and levels are both small
-// (single digits) so a map index would be premature.
+// whose ID matches. Recomputes the level tree from the current map catalog
+// snapshot so editor saves are visible without a restart.
+//
+// Linear scan — campaigns and levels are both small (single digits) so a
+// map index would be premature.
 func lookupCampaignLevelByID(levelID string) (CampaignLevelDef, bool) {
-	for _, c := range campaignDefsByID {
+	for _, c := range buildCampaignDefs() {
 		for _, lvl := range c.Levels {
 			if lvl.ID == levelID {
 				return lvl, true
