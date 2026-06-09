@@ -48,6 +48,7 @@
             <tr>
               <th aria-hidden="true"></th>
               <th v-for="row in metricRows" :key="row.label">
+                <span v-if="row.groupLabel" class="recap-metrics-table__group-label">{{ row.groupLabel }}</span>
                 {{ row.label }}
               </th>
             </tr>
@@ -186,6 +187,7 @@ const playerColumns = computed<PlayerColumn[]>(() => {
  *  count, which was the failure mode of the old grid layout. */
 interface MetricRow {
   label: string
+  groupLabel?: string
   read: (m: MatchMetricsSnapshot) => string | number
 }
 
@@ -198,6 +200,7 @@ const metricRows: MetricRow[] = [
   { label: 'Waves Cleared', read: (m) => m.wavesCleared ?? 0 },
   {
     label: 'Bronze / Silver / Gold',
+    groupLabel: 'Unit Ranks',
     read: (m) => `${m.unitsByRank?.bronze ?? 0} / ${m.unitsByRank?.silver ?? 0} / ${m.unitsByRank?.gold ?? 0}`,
   },
 ]
@@ -375,6 +378,18 @@ function playerNameOf(playerId: string): string {
   padding-top: 4px;
   padding-bottom: 12px;
   white-space: nowrap;
+}
+
+.recap-metrics-table__group-label {
+  display: block;
+  text-align: center;
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(58, 31, 10, 0.55);
+  margin-bottom: 2px;
 }
 
 /* Row headers now hold player names. These anchor the table — bold,

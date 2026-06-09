@@ -66096,7 +66096,17 @@
           "description": "Build a Barracks",
           "scope": "player",
           "config": {
-            "buildingType": "barracks",
+            "buildingType": "chapel",
+            "count": 1
+          }
+        },
+        {
+          "id": "raise_a_chapel",
+          "type": "build_buildings",
+          "description": "Build a Chapel",
+          "scope": "player",
+          "config": {
+            "buildingType": "chapel",
             "count": 1
           }
         }

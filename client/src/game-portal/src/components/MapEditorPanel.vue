@@ -2447,7 +2447,23 @@ function onMouseLeave() {
   hoverLabel.value = 'Outside map'
 }
 
+// True when the user is typing into an input/textarea/select (or any
+// contentEditable element). Used to suppress the editor's canvas-level
+// keybinds — without this gate, the Space `preventDefault` below swallows
+// the space character before it can land in a text field, which is why
+// users couldn't type spaces in the map Display Name / Description /
+// objective description inputs.
+function isEditingText(): boolean {
+  const el = document.activeElement as HTMLElement | null
+  if (!el) return false
+  if (el.isContentEditable) return true
+  const tag = el.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
+
 function onKeyDown(event: KeyboardEvent) {
+  if (isEditingText()) return
+
   if (event.key === 'Escape') {
     selectedEditBuildingId.value = null
     selectedEditPlacedUnitId.value = null
@@ -2472,6 +2488,8 @@ function onKeyDown(event: KeyboardEvent) {
 }
 
 function onKeyUp(event: KeyboardEvent) {
+  if (isEditingText()) return
+
   if (event.key === 'Control') {
     isControlHeld.value = false
     if (canvas.value && !isSpacePanning) {

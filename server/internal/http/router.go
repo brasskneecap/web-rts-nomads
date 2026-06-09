@@ -24,7 +24,7 @@ import (
 func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, spaHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 
-	registerProfileRoutes(mux, profileManager)
+	registerProfileRoutes(mux, profileManager, hub.GetMatchManager())
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

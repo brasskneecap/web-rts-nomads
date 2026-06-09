@@ -58,6 +58,16 @@
       </div>
     </div>
 
+    <!-- Campaign-victory popup: opens once when all required objectives
+         flip to complete. Sticky-dismissed after "Continue Playing" so it
+         never re-shows; "Exit" routes to the recap. Only relevant for
+         matches with required objectives (the watcher gate). -->
+    <CampaignVictoryModal
+      v-if="hasStarted && victoryPopupOpen"
+      @continue="onCampaignVictoryContinue"
+      @exit="onCampaignVictoryExit"
+    />
+
     <!-- The end-of-match recap is now a separate route (/match-end). The
          watcher on `endOfMatchOutcome` below captures the recap data and
          navigates over there. No overlay markup here. -->
@@ -171,6 +181,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import MatchHud from '@/components/MatchHud.vue'
 import MatchObjectivesPanel from '@/components/match/MatchObjectivesPanel.vue'
+import CampaignVictoryModal from '@/components/match/CampaignVictoryModal.vue'
 import type { MatchEndOutcome } from '@/components/match/matchEndOutcome'
 import { setMatchEndSnapshot } from '@/state/matchEndState'
 import SelectionHud from '@/components/SelectionHud.vue'
@@ -397,6 +408,8 @@ async function transitionToMatchEnd(outcome: MatchEndOutcome) {
   localStorage.removeItem(HAS_ACTIVE_SESSION_KEY)
   forfeitRequested.value = false
   campaignCompletionFired = false
+  victoryPopupOpen.value = false
+  victoryPopupDismissed.value = false
   setSelectedMapId('', '')
 
   await router.push('/match-end')
@@ -415,15 +428,72 @@ watch(endOfMatchOutcome, (outcome) => {
 // handler is idempotent so this is belt-and-braces.
 let campaignCompletionFired = false
 
+/** True when the current match defines at least one required objective.
+ *  Drives the campaign-victory popup flow: in matches with required
+ *  objectives, completing them all opens the popup ("Continue" or "Exit"),
+ *  and the legacy auto-transition is suppressed so the player can choose
+ *  to keep playing past the win condition. Matches without required
+ *  objectives (Custom Game, etc.) keep the legacy wave/server-driven
+ *  auto-transition unchanged. */
+const hasRequiredObjectives = computed(() =>
+  ui.value.objectives.some((o) => o.required),
+)
+
+/** True when every required objective is currently `completed`. Empty
+ *  required-set returns false so this flag only fires for objective-driven
+ *  matches. */
+const allRequiredObjectivesComplete = computed(() => {
+  const required = ui.value.objectives.filter((o) => o.required)
+  if (required.length === 0) return false
+  return required.every((o) => o.completed)
+})
+
+/** Campaign victory popup state. `victoryPopupDismissed` is sticky for the
+ *  match: once the player picks "Continue Playing" we never re-show the
+ *  popup, even if the completion flag bounces. */
+const victoryPopupOpen = ref(false)
+const victoryPopupDismissed = ref(false)
+
+watch(allRequiredObjectivesComplete, (done) => {
+  if (!done) return
+  if (!hasStarted.value) return
+  if (victoryPopupDismissed.value || victoryPopupOpen.value) return
+  victoryPopupOpen.value = true
+})
+
+function onCampaignVictoryContinue() {
+  victoryPopupOpen.value = false
+  victoryPopupDismissed.value = true
+}
+
+function onCampaignVictoryExit() {
+  victoryPopupOpen.value = false
+  void transitionToMatchEnd('victory')
+}
+
 const isVictorious = computed(() => {
   const u = ui.value
   if (!hasStarted.value) return false
+  // Matches with required objectives go through the campaign-victory popup
+  // — suppress the legacy auto-transition entirely so "Continue Playing"
+  // can actually keep the player in the match.
+  if (hasRequiredObjectives.value) return false
   if (u.isVictory) return true
   if (u.wave.enabled && u.wave.state === 'complete' && !u.objectives.length) return true
   return false
 })
 
-watch(isVictorious, (won) => {
+/** "Match was won" for the purpose of recording campaign progress. Tracks
+ *  objective completion directly so progress is logged the moment the
+ *  player satisfies the level, regardless of whether they pick Continue
+ *  or Exit on the popup. */
+const campaignVictoryAchieved = computed(() => {
+  if (!hasStarted.value) return false
+  if (allRequiredObjectivesComplete.value) return true
+  return isVictorious.value
+})
+
+watch(campaignVictoryAchieved, (won) => {
   if (!won || campaignCompletionFired) return
   const session = campaignSession.value
   if (!session) return

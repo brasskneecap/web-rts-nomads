@@ -21,7 +21,7 @@ func newTestMux(t *testing.T) (*http.ServeMux, *profile.Manager) {
 	dir := t.TempDir()
 	pm := profile.NewManager(dir)
 	mux := http.NewServeMux()
-	registerProfileRoutes(mux, pm)
+	registerProfileRoutes(mux, pm, nil)
 	return mux, pm
 }
 

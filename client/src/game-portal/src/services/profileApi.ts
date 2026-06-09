@@ -167,3 +167,17 @@ export async function devGrantLegendPoints(amount: number): Promise<PlayerProfil
   })
   return handleResponse<PlayerProfile>(res)
 }
+
+/**
+ * DEV-ONLY: hard-reset the calling player's profile back to a fresh state —
+ * wipes LP, stats, upgrades, advancements, and all campaign progress. The
+ * server refuses with HTTP 409 / `player_in_match` if the caller is currently
+ * in an active match. Returns the updated (now-empty) profile.
+ */
+export async function devResetProfile(): Promise<PlayerProfile> {
+  const res = await fetch(`${API_BASE}/api/profile/dev/reset`, {
+    method: 'POST',
+    headers: playerHeaders(),
+  })
+  return handleResponse<PlayerProfile>(res)
+}

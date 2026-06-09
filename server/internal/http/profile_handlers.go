@@ -42,7 +42,12 @@ func extractPlayerID(w http.ResponseWriter, r *http.Request) string {
 }
 
 // registerProfileRoutes wires all profile and catalog routes onto mux.
-func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
+//
+// `mm` is consulted by the dev-reset endpoint to refuse a wipe while the
+// player is mid-match (profile mutations don't apply until the next match
+// start, so silently allowing it would confuse the player). Tests that
+// don't exercise the reset endpoint may pass nil.
+func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInActiveChecker) {
 	mux.HandleFunc("/api/profile", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -252,6 +257,53 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager) {
 		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
 			p.LegendPoints += body.Amount
 			p.LifetimeLegendPoints += body.Amount
+			updated = p
+			return nil
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
+			return
+		}
+		writeJSON(w, updated)
+	})
+
+	// DEV-ONLY: hard-reset the calling player's profile back to a fresh
+	// state — zeroes LP / lifetime LP / stats / wave-upgrade caps, empties
+	// owned & active upgrades, acquired advancements, completed campaign
+	// levels & objectives, and re-installs the default commander.
+	// CreatedAtUnix is preserved (the profile still belongs to the same
+	// player); UpdatedAtUnix is bumped by WithLocked. Refused while the
+	// player is in an active match for the same reason as the advancement
+	// reset endpoint — profile mutations don't apply until the next match
+	// start, so silently allowing it would be misleading.
+	mux.HandleFunc("/api/profile/dev/reset", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		playerID := extractPlayerID(w, r)
+		if playerID == "" {
+			return
+		}
+		if mm != nil && mm.IsPlayerInActiveMatch(playerID) {
+			writeJSONError(w, http.StatusConflict, "player_in_match", "cannot reset profile while in an active match")
+			return
+		}
+		var updated *profile.PlayerProfile
+		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
+			p.Version = profile.CurrentVersion
+			p.LegendPoints = 0
+			p.LifetimeLegendPoints = 0
+			p.OwnedCommanderIDs = []string{profile.DefaultCommanderID}
+			p.SelectedCommanderID = profile.DefaultCommanderID
+			p.Stats = profile.ProfileStats{}
+			p.MaxRerolls = 0
+			p.MaxUpgradeStacks = 0
+			p.OwnedUpgradeRanks = map[string]int{}
+			p.ActiveUpgradeIDs = []string{}
+			p.AcquiredAdvancements = []profile.AcquiredAdvancement{}
+			p.CompletedCampaignLevels = []string{}
+			p.CompletedCampaignObjectives = map[string][]string{}
 			updated = p
 			return nil
 		})

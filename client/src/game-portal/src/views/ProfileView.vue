@@ -59,6 +59,13 @@
                   title="DEV: grant +50 Legend Points to this profile"
                   @click="grantDevLegendPoints"
                 >+50 LP (dev)</button>
+                <button
+                  type="button"
+                  class="profile-card__dev-grant profile-card__dev-grant--danger"
+                  :disabled="isResettingProfile"
+                  title="DEV: wipe LP, stats, upgrades, advancements, and all campaign progress"
+                  @click="resetDevProfile"
+                >Reset Profile (dev)</button>
               </section>
 
               <section class="profile-card" aria-label="Commander">
@@ -120,7 +127,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfile } from '@/composables/useProfile'
-import { devGrantLegendPoints } from '@/services/profileApi'
+import { devGrantLegendPoints, devResetProfile } from '@/services/profileApi'
 import ProfileUpgradeLoadoutPicker from '@/components/profile/ProfileUpgradeLoadoutPicker.vue'
 import ProfileUpgradesPanel from '@/components/profile/ProfileUpgradesPanel.vue'
 import MenuPanel from '@/components/menu/MenuPanel.vue'
@@ -141,6 +148,30 @@ async function grantDevLegendPoints() {
     await refresh()
   } finally {
     isGrantingLP.value = false
+  }
+}
+
+// DEV-only affordance: wipe everything on the profile (LP, stats, upgrades,
+// advancements, campaign progress) back to a fresh state. Guarded by a
+// browser confirm() because a misclick would otherwise be silently
+// destructive — the server has no undo. The server itself refuses (HTTP
+// 409) while the player is mid-match.
+const isResettingProfile = ref(false)
+async function resetDevProfile() {
+  if (isResettingProfile.value) return
+  const ok = window.confirm(
+    'Reset this profile?\n\nThis wipes Legend Points, stats, upgrades, advancements, and all completed campaign levels & objectives. This cannot be undone.',
+  )
+  if (!ok) return
+  isResettingProfile.value = true
+  try {
+    await devResetProfile()
+    await refresh()
+  } catch (err) {
+    console.error('[Profile] reset failed:', err)
+    window.alert('Reset failed. See console for details.')
+  } finally {
+    isResettingProfile.value = false
   }
 }
 
@@ -355,6 +386,20 @@ const winRate = computed(() => {
 
 .profile-card__dev-grant:disabled {
   opacity: 0.5;
+}
+
+/* Reset Profile (dev) — same dev affordance treatment as +50 LP but with a
+   destructive red tint so it doesn't get clicked by accident. */
+.profile-card__dev-grant--danger {
+  margin-top: 6px;
+  border-color: #b04848;
+  background-color: rgba(80, 20, 20, 0.22);
+  color: #e8a8a8;
+}
+
+.profile-card__dev-grant--danger:hover:not(:disabled) {
+  background-color: rgba(176, 72, 72, 0.32);
+  color: #ffe2e2;
 }
 
 .profile-stats {
