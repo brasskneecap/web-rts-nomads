@@ -269,52 +269,151 @@ func GetMapCatalogEntryByID(mapID string) (MapCatalogEntry, bool) {
 	return cloned, true
 }
 
+// SaveMapOptions controls optional behavior of a map catalog save.
+type SaveMapOptions struct {
+	// ReassignLevel, when true, resolves a campaign level-ownership conflict by
+	// clearing the previous owner map's campaign block as part of the same
+	// save, instead of rejecting it. No effect when there is no conflict.
+	ReassignLevel bool
+}
+
+// LevelConflict describes a (campaignId, levelId) pair already owned by a
+// different map. SaveMapCatalogEntryWithOptions returns one (writing nothing)
+// when a campaign-tagged save collides with an existing level and the caller
+// did not opt into reassignment, so the HTTP layer can offer the user a
+// reassign confirmation.
+type LevelConflict struct {
+	CampaignID   string `json:"campaignId"`
+	LevelID      string `json:"levelId"`
+	OwnerMapID   string `json:"ownerMapId"`
+	OwnerMapName string `json:"ownerMapName"`
+}
+
 // SaveMapCatalogEntry writes a map catalog entry to disk and immediately
 // registers it in the runtime overlay so it is available without a restart.
-//
-// Validates the optional `Map.Campaign` block before any disk writes via
-// ValidateMapCampaignBlockForSave — catches malformed objective configs,
-// unknown campaign ids, etc. and returns the error so the HTTP layer can
-// surface a 400 to the editor. Cross-map invariants (duplicate level ids
-// within a campaign, broken prereq chains) are surfaced at the next
-// /api/catalog/campaigns request because two concurrent saves can race; the
-// simplest robust place for the "whole tree is coherent" check is at read.
+// A campaign level-ownership conflict is returned as an error (the historical
+// behavior). Callers that want to resolve the conflict by reassigning the
+// level use SaveMapCatalogEntryWithOptions with ReassignLevel set.
 func SaveMapCatalogEntry(entry MapCatalogEntry) error {
-	if err := ValidateMapCampaignBlockForSave(entry.ID, entry.Map.Campaign); err != nil {
-		return err
-	}
-
-	dir, err := resolveMapsDir()
+	_, conflict, err := SaveMapCatalogEntryWithOptions(entry, SaveMapOptions{})
 	if err != nil {
 		return err
 	}
+	if conflict != nil {
+		return errCampaignSave(
+			`level id "` + conflict.LevelID + `" is already used by map "` +
+				conflict.OwnerMapID + `" in campaign "` + conflict.CampaignID +
+				`" — pick a different levelId or edit that map instead`)
+	}
+	return nil
+}
 
+// SaveMapCatalogEntryWithOptions validates and persists a map catalog entry,
+// optionally reassigning a campaign level away from its current owner.
+//
+// Return shapes:
+//   - (err != nil): validation failed or a disk write errored; nothing or a
+//     partial write may have happened (see ordering note below).
+//   - (conflict != nil): the entry claims a (campaignId, levelId) already owned
+//     by a DIFFERENT map and opts.ReassignLevel was false — NOTHING is written.
+//   - (reassignedFrom != ""): the save succeeded and cleared that map's
+//     campaign block as part of the reassign.
+//
+// Validates the `Map.Campaign` block (campaign id, objective configs) before
+// any disk write. Cross-map coherence beyond the single-level uniqueness check
+// (prereq chains, etc.) is surfaced at the next /api/catalog/campaigns read.
+//
+// Reassign atomicity: the previous owner's cleared block is written to disk
+// FIRST so a crash between the two file writes loses the level (recoverable)
+// rather than leaving two maps claiming it (which panics campaign discovery on
+// the next read). The two in-memory overlay updates are applied under a single
+// lock so a concurrent campaign read never observes the transient duplicate.
+func SaveMapCatalogEntryWithOptions(entry MapCatalogEntry, opts SaveMapOptions) (reassignedFrom string, conflict *LevelConflict, err error) {
+	if err := validateMapCampaignBlockBasics(entry.ID, entry.Map.Campaign); err != nil {
+		return "", nil, err
+	}
+
+	owner := MapCatalogEntry{}
+	hasConflict := false
+	if entry.Map.Campaign != nil {
+		owner, hasConflict = findConflictingLevelOwner(entry.ID, entry.Map.Campaign)
+	}
+	if hasConflict && !opts.ReassignLevel {
+		block := entry.Map.Campaign
+		return "", &LevelConflict{
+			CampaignID:   block.CampaignID,
+			LevelID:      block.LevelID,
+			OwnerMapID:   owner.ID,
+			OwnerMapName: owner.Name,
+		}, nil
+	}
+
+	dir, derr := resolveMapsDir()
+	if derr != nil {
+		return "", nil, derr
+	}
+
+	// Prepare the previous owner with its campaign block cleared.
+	var clearedOwner *MapCatalogEntry
+	if hasConflict && opts.ReassignLevel {
+		full, ok := GetMapCatalogEntryByID(owner.ID)
+		if !ok {
+			return "", nil, fmt.Errorf("reassign: previous owner map %q not found", owner.ID)
+		}
+		full.Map.Campaign = nil
+		clearedOwner = &full
+	}
+
+	// Disk writes (cleared owner first — see atomicity note above).
+	if clearedOwner != nil {
+		if werr := writeMapEntryToDisk(dir, *clearedOwner); werr != nil {
+			return "", nil, werr
+		}
+	}
+	if werr := writeMapEntryToDisk(dir, entry); werr != nil {
+		return "", nil, werr
+	}
+
+	// Hydrate for the overlay AFTER serializing to disk (disk keeps the
+	// authored form; the overlay carries the def-expanded form).
+	hydrateEntryInPlace(&entry)
+	runtimeMapsMu.Lock()
+	if clearedOwner != nil {
+		hydrateEntryInPlace(clearedOwner)
+		runtimeMaps[clearedOwner.ID] = *clearedOwner
+	}
+	runtimeMaps[entry.ID] = entry
+	runtimeMapsMu.Unlock()
+
+	if clearedOwner != nil {
+		reassignedFrom = clearedOwner.ID
+	}
+	return reassignedFrom, nil, nil
+}
+
+// writeMapEntryToDisk serializes one catalog entry to <dir>/<sanitizedId>.json.
+// Marshals the entry as-is (callers write the authored form before hydration).
+func writeMapEntryToDisk(dir string, entry MapCatalogEntry) error {
 	safeID := sanitizeMapFilename(entry.ID)
 	if safeID == "" {
 		return fmt.Errorf("map id %q is not a valid filename", entry.ID)
 	}
-
 	raw, err := json.MarshalIndent(entry, "", "  ")
 	if err != nil {
 		return err
 	}
+	return os.WriteFile(filepath.Join(dir, safeID+".json"), raw, 0644)
+}
 
-	if err := os.WriteFile(filepath.Join(dir, safeID+".json"), raw, 0644); err != nil {
-		return err
-	}
-
+// hydrateEntryInPlace expands def-owned fields (obstacle/building footprints,
+// placed-unit defaults) on an entry destined for the runtime overlay.
+func hydrateEntryInPlace(entry *MapCatalogEntry) {
 	hydrateObstacles(entry.Map.Obstacles)
 	hydrateBuildings(entry.Map.Buildings)
 	if entry.Map.PlacedUnits == nil {
 		entry.Map.PlacedUnits = []protocol.PlacedUnit{}
 	}
 	entry.Map.PlacedUnits = hydratePlacedUnits(entry.Map.PlacedUnits, entry.Map)
-
-	runtimeMapsMu.Lock()
-	runtimeMaps[entry.ID] = entry
-	runtimeMapsMu.Unlock()
-
-	return nil
 }
 
 // currentMapCatalogSnapshot returns a flat slice of every map known to the

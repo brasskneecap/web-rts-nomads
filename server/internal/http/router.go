@@ -89,13 +89,36 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 				http.Error(w, "map id is required", http.StatusBadRequest)
 				return
 			}
-			if err := game.SaveMapCatalogEntry(entry); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+			reassign := r.URL.Query().Get("reassignLevel") == "true"
+			reassignedFrom, conflict, err := game.SaveMapCatalogEntryWithOptions(
+				entry, game.SaveMapOptions{ReassignLevel: reassign},
+			)
+			if err != nil {
+				status := http.StatusInternalServerError
+				if game.IsMapSaveValidationError(err) {
+					status = http.StatusBadRequest
+				}
+				http.Error(w, err.Error(), status)
+				return
+			}
+			// A campaign level-ownership conflict the caller didn't opt to
+			// resolve: 409 with the conflict so the editor can offer a reassign.
+			if conflict != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error":    "level_conflict",
+					"conflict": conflict,
+				})
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(map[string]string{"id": entry.ID, "status": "saved"})
+			resp := map[string]string{"id": entry.ID, "status": "saved"}
+			if reassignedFrom != "" {
+				resp["reassignedFrom"] = reassignedFrom
+			}
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 

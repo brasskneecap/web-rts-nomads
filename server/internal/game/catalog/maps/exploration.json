@@ -4,10 +4,10 @@
   "description": "A compact battleground for fast openings and early pressure.",
   "sortOrder": 1000,
   "map": {
-    "id": "",
-    "name": "",
-    "description": "",
-    "size": "",
+    "id": "exploration",
+    "name": "Exploration",
+    "description": "A compact battleground for fast openings and early pressure.",
+    "size": "exploration",
     "width": 8192,
     "height": 8192,
     "gridCols": 128,
@@ -65348,7 +65348,7 @@
         "height": 1,
         "occupied": false,
         "visible": false,
-        "capabilities": [],
+        "capabilities": null,
         "metadata": {
           "fillOrder": 2,
           "playerLabel": "player2",
@@ -65364,7 +65364,7 @@
         "height": 1,
         "occupied": false,
         "visible": false,
-        "capabilities": [],
+        "capabilities": null,
         "metadata": {
           "fillOrder": 0,
           "playerLabel": "player1",
@@ -66061,56 +66061,6 @@
       "totalWaves": 10,
       "prepDuration": 180,
       "waveDuration": 60
-    },
-    "campaign": {
-      "campaignId": "forest",
-      "levelId": "forest_01",
-      "displayName": "Forest 1",
-      "prerequisiteLevelId": null,
-      "description": "Establish a foothold at the forest edge.",
-      "sortOrder": 1,
-      "objectives": [
-        {
-          "id": "survive_to_wave_6",
-          "type": "survive_waves",
-          "description": "Survive 6 waves",
-          "scope": "team",
-          "required": true,
-          "config": {
-            "wavesToSurvive": 6
-          }
-        },
-        {
-          "id": "stockpile_gold",
-          "type": "collect_resource",
-          "description": "Earn 500 gold",
-          "scope": "team",
-          "config": {
-            "resource": "gold",
-            "amount": 500
-          }
-        },
-        {
-          "id": "raise_a_barracks",
-          "type": "build_buildings",
-          "description": "Build a Barracks",
-          "scope": "player",
-          "config": {
-            "buildingType": "chapel",
-            "count": 1
-          }
-        },
-        {
-          "id": "raise_a_chapel",
-          "type": "build_buildings",
-          "description": "Build a Chapel",
-          "scope": "player",
-          "config": {
-            "buildingType": "chapel",
-            "count": 1
-          }
-        }
-      ]
     }
   }
 }

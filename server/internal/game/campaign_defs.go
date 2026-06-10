@@ -3,6 +3,7 @@ package game
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"sort"
 
@@ -284,6 +285,30 @@ func sortAndValidateLevels(campaignID string, levels []CampaignLevelDef) []Campa
 // these errors (the prereq dropdown can't select the currently-edited level),
 // and the discovery-time panic still fires for the exotic remaining cases.
 func ValidateMapCampaignBlockForSave(mapID string, block *protocol.MapCampaignBlock) error {
+	if err := validateMapCampaignBlockBasics(mapID, block); err != nil {
+		return err
+	}
+
+	// Cross-map invariant: refuse a save if a *different* map already owns
+	// this (campaignId, levelId) pair. Re-saving the SAME mapID is fine —
+	// that's an in-place edit. Same level id under a DIFFERENT campaign is
+	// also fine — campaigns are independent ID namespaces.
+	if owner, found := findConflictingLevelOwner(mapID, block); found {
+		return errCampaignSave(
+			`level id "` + block.LevelID + `" is already used by map "` +
+				owner.ID + `" in campaign "` + block.CampaignID +
+				`" — pick a different levelId or edit that map instead`)
+	}
+	return nil
+}
+
+// validateMapCampaignBlockbasics runs every per-block validation EXCEPT the
+// cross-map (campaignId, levelId) uniqueness check: the campaign id is present
+// and has a header, and each objective parses + validates through the registry.
+// Split out from ValidateMapCampaignBlockForSave so the reassign save path can
+// run these checks while deliberately tolerating (and then resolving) a level
+// ownership conflict.
+func validateMapCampaignBlockBasics(mapID string, block *protocol.MapCampaignBlock) error {
 	if block == nil {
 		return nil
 	}
@@ -292,28 +317,6 @@ func ValidateMapCampaignBlockForSave(mapID string, block *protocol.MapCampaignBl
 	}
 	if _, ok := campaignHeadersByID[block.CampaignID]; !ok {
 		return errCampaignSave(`campaign id "` + block.CampaignID + `" has no catalog/campaigns/<id>.json header`)
-	}
-
-	// Cross-map invariant: refuse a save if a *different* map already owns
-	// this (campaignId, levelId) pair. Re-saving the SAME mapID is fine —
-	// that's an in-place edit. Same level id under a DIFFERENT campaign is
-	// also fine — campaigns are independent ID namespaces.
-	if block.LevelID != "" {
-		for _, entry := range currentMapCatalogSnapshot() {
-			if entry.ID == mapID {
-				continue
-			}
-			other := entry.Map.Campaign
-			if other == nil {
-				continue
-			}
-			if other.CampaignID == block.CampaignID && other.LevelID == block.LevelID {
-				return errCampaignSave(
-					`level id "` + block.LevelID + `" is already used by map "` +
-						entry.ID + `" in campaign "` + block.CampaignID +
-						`" — pick a different levelId or edit that map instead`)
-			}
-		}
 	}
 
 	// convertMapCampaignBlockToLevel panics on bad authored data. For the
@@ -330,10 +333,43 @@ func ValidateMapCampaignBlockForSave(mapID string, block *protocol.MapCampaignBl
 	return err
 }
 
+// findConflictingLevelOwner returns the catalog entry of a DIFFERENT map that
+// already claims the same (campaignId, levelId) pair as `block`, if one exists.
+// Re-saving the same mapID is not a conflict (it's an in-place edit), and a
+// block with no levelId can't conflict. The returned entry is the owner whose
+// campaign block must be cleared for a reassign to proceed.
+func findConflictingLevelOwner(mapID string, block *protocol.MapCampaignBlock) (MapCatalogEntry, bool) {
+	if block == nil || block.LevelID == "" {
+		return MapCatalogEntry{}, false
+	}
+	for _, entry := range currentMapCatalogSnapshot() {
+		if entry.ID == mapID {
+			continue
+		}
+		other := entry.Map.Campaign
+		if other == nil {
+			continue
+		}
+		if other.CampaignID == block.CampaignID && other.LevelID == block.LevelID {
+			return entry, true
+		}
+	}
+	return MapCatalogEntry{}, false
+}
+
 type campaignSaveError struct{ msg string }
 
 func (e *campaignSaveError) Error() string { return e.msg }
 func errCampaignSave(msg string) error     { return &campaignSaveError{msg: msg} }
+
+// IsMapSaveValidationError reports whether err is a campaign-block validation
+// failure (bad campaign id, malformed objective, duplicate level id) as opposed
+// to an infrastructure error (disk write, missing maps dir). The HTTP layer
+// uses it to choose a 400 vs 500 response for a map save.
+func IsMapSaveValidationError(err error) bool {
+	var e *campaignSaveError
+	return errors.As(err, &e)
+}
 
 func toErrorString(v any) string {
 	switch t := v.(type) {

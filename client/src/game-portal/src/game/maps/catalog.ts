@@ -29,12 +29,52 @@ export async function fetchMapCatalogFile(mapId: string): Promise<MapCatalogFile
   return (await response.json()) as MapCatalogFile
 }
 
-export async function saveMapCatalogFile(entry: MapCatalogFile): Promise<void> {
-  const response = await fetch(`${API_BASE}/maps`, {
+// LevelConflict describes a campaign (campaignId, levelId) already owned by a
+// different map — returned by the server (409) when a campaign-tagged save
+// collides with an existing level and the caller didn't opt into reassignment.
+export type LevelConflict = {
+  campaignId: string
+  levelId: string
+  ownerMapId: string
+  ownerMapName: string
+}
+
+// LevelConflictError is thrown by saveMapCatalogFile on a 409 so the editor can
+// detect the collision and offer to reassign the level to the new map.
+export class LevelConflictError extends Error {
+  readonly conflict: LevelConflict
+  constructor(conflict: LevelConflict) {
+    super(
+      `Level "${conflict.levelId}" is already owned by map "${conflict.ownerMapName}"`,
+    )
+    this.name = 'LevelConflictError'
+    this.conflict = conflict
+  }
+}
+
+// saveMapCatalogFile POSTs a map. With opts.reassignLevel the server will
+// resolve a campaign level-ownership conflict by clearing the previous owner's
+// campaign block instead of rejecting. On a 409 (conflict, not reassigning) it
+// throws LevelConflictError carrying the conflict details.
+export async function saveMapCatalogFile(
+  entry: MapCatalogFile,
+  opts: { reassignLevel?: boolean } = {},
+): Promise<void> {
+  const query = opts.reassignLevel ? '?reassignLevel=true' : ''
+  const response = await fetch(`${API_BASE}/maps${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(entry),
   })
+  if (response.status === 409) {
+    const body = (await response.json().catch(() => null)) as
+      | { conflict?: LevelConflict }
+      | null
+    if (body?.conflict) {
+      throw new LevelConflictError(body.conflict)
+    }
+    throw new Error('Level conflict')
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText)
     throw new Error(text || `Server error ${response.status}`)

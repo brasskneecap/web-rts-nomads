@@ -1128,7 +1128,8 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchUnitDefs, saveMapCatalogFile } from '@/game/maps/catalog'
+import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchUnitDefs, saveMapCatalogFile, LevelConflictError } from '@/game/maps/catalog'
+import type { LevelConflict } from '@/game/maps/catalog'
 import type {
   BuildingType,
   JsonObject,
@@ -2005,15 +2006,77 @@ async function saveToServer() {
   saveLabel.value = 'Saving...'
   try {
     await saveMapCatalogFile(exportedCatalogFile.value)
-    saveLabel.value = 'Saved!'
-    await loadAvailableMaps()
-    window.setTimeout(() => {
-      saveLabel.value = 'Save to Server'
-    }, 2000)
+    await onSaveSucceeded()
   } catch (err) {
+    if (err instanceof LevelConflictError) {
+      await handleLevelConflict(err.conflict)
+      return
+    }
     saveError.value = err instanceof Error ? err.message : 'Save failed'
     saveLabel.value = 'Save to Server'
   }
+}
+
+// Shared success tail for both a plain save and a reassign save.
+async function onSaveSucceeded() {
+  saveLabel.value = 'Saved!'
+  await loadAvailableMaps()
+  window.setTimeout(() => {
+    saveLabel.value = 'Save to Server'
+  }, 2000)
+}
+
+// A campaign level the author is claiming is already owned by another map.
+// Carry the old owner's level definition across (so a pure geometry swap keeps
+// its objectives), confirm with the author, then re-save as a reassignment —
+// which clears the old map's campaign tag server-side.
+async function handleLevelConflict(conflict: LevelConflict) {
+  try {
+    const ownerFile = await fetchMapCatalogFile(conflict.ownerMapId)
+    if (ownerFile.map.campaign && model.value.campaign) {
+      prefillEmptyCampaignFields(ownerFile.map.campaign)
+    }
+  } catch {
+    // Non-fatal: without the owner we can still reassign using whatever the
+    // author entered — they just don't get the field carry-over.
+  }
+
+  const confirmed = window.confirm(
+    `Level "${conflict.levelId}" is currently the map "${conflict.ownerMapName}".\n\n` +
+      `Move it to this map instead? "${conflict.ownerMapName}" will no longer be a ` +
+      `campaign level (its other map content is untouched).`,
+  )
+  if (!confirmed) {
+    saveLabel.value = 'Save to Server'
+    return
+  }
+
+  saveLabel.value = 'Saving...'
+  try {
+    await saveMapCatalogFile(exportedCatalogFile.value, { reassignLevel: true })
+    await onSaveSucceeded()
+  } catch (err) {
+    saveError.value = err instanceof Error ? err.message : 'Reassign failed'
+    saveLabel.value = 'Save to Server'
+  }
+}
+
+// Fill only the campaign fields the author left at their default with the
+// previous owner's values — anything explicitly authored on the new map wins.
+function prefillEmptyCampaignFields(ownerBlock: MapCampaignBlock) {
+  const cur = model.value.campaign
+  if (!cur) return
+  const filled: MapCampaignBlock = { ...cur }
+  if (!filled.displayName) filled.displayName = ownerBlock.displayName
+  if (filled.prerequisiteLevelId == null) {
+    filled.prerequisiteLevelId = ownerBlock.prerequisiteLevelId ?? null
+  }
+  if (!filled.sortOrder) filled.sortOrder = ownerBlock.sortOrder ?? 0
+  if (!filled.description) filled.description = ownerBlock.description ?? ''
+  if (!filled.objectives || filled.objectives.length === 0) {
+    filled.objectives = ownerBlock.objectives ?? []
+  }
+  model.value = { ...model.value, campaign: filled }
 }
 
 async function copyExport() {
