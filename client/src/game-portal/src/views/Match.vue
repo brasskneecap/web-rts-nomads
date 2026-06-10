@@ -341,14 +341,21 @@ async function exitGame() {
 const forfeitRequested = ref(false)
 
 /** Combined end-of-match indicator. Precedence:
- *   1. forfeit (player clicked Exit during a live match) — even if a later
+ *   1. campaign-victory locked: once the player dismissed the victory popup
+ *      via "Continue Playing", they've already earned the win — any later
+ *      forfeit or defeat resolves to victory so the recap doesn't downgrade
+ *      them.
+ *   2. forfeit (player clicked Exit during a live match) — even if a later
  *      tick would have produced victory, the forfeit framing wins.
- *   2. victory — server signaled the AND-gate passed.
- *   3. defeat — server signaled the player has no townhalls left.
+ *   3. victory — server signaled the AND-gate passed.
+ *   4. defeat — server signaled the player has no townhalls left.
  *  Returns null while the match is still in progress so the overlay
  *  stays hidden. */
 const endOfMatchOutcome = computed<MatchEndOutcome | null>(() => {
   if (!hasStarted.value) return null
+  if (victoryPopupDismissed.value && (forfeitRequested.value || ui.value.isDefeated)) {
+    return 'victory'
+  }
   if (forfeitRequested.value) return 'forfeit'
   if (isVictorious.value) return 'victory'
   if (ui.value.isDefeated) return 'defeat'
