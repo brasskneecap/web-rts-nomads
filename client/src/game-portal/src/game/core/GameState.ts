@@ -186,6 +186,11 @@ export type ActionCost = {
 export type ActionItem = {
   id: string
   label: string
+  /** Explicit hotkey letter shown in the tooltip (e.g. "T"). When absent the
+   *  tooltip falls back to parsing a "(X)" marker out of the label. Set for
+   *  build-menu buildings so every building shows its hotkey with a clean
+   *  (paren-free) label. */
+  hotkey?: string
   /** Resource costs shown on the action button (e.g. train actions). */
   cost?: ActionCost[]
   /**
@@ -297,6 +302,12 @@ export type ProductionSummary = {
   queuedUnitTypes: string[]
   progress: number
   timeLabel: string
+  // Whether the player can cancel this production (omitted/true = cancelable).
+  cancelable?: boolean
+  // Action id emitted by the SelectionHud cancel (X) button. Defaults to
+  // 'cancel-training' for unit production; blacksmith upgrades use
+  // 'cancel-upgrade' so the cancel routes to a refund instead of a queue pop.
+  cancelActionId?: string
 }
 
 export type RepairSummary = {
@@ -2585,6 +2596,10 @@ export class GameState {
     if (selectedBuilding) {
       const title = formatBuildingName(selectedBuilding.buildingType)
       const activeProduction = getBuildingProductionState(selectedBuilding)
+      // A blacksmith researching an upgrade shows the same production card as a
+      // training building (track portrait + progress + countdown), but cannot
+      // be cancelled. Only consulted when no real unit production is active.
+      const upgradeProduction = activeProduction ? null : getBuildingUpgradeState(selectedBuilding)
       const isUnderConstruction = selectedBuilding.metadata?.['underConstruction'] === true
       const defaultSubtitle = selectedBuilding.ownerId
         ? `Owned by ${selectedBuilding.ownerId}`
@@ -2595,10 +2610,10 @@ export class GameState {
           ? 'Under Construction'
           : this.buildingTargetingMode === 'set-spawn-point'
             ? 'Click anywhere on the map to set the rally point target.'
-            : activeProduction
-              // While training, the visual production card (leading unit +
-              // queue cards) conveys what's happening; suppress the textual
-              // "Training X" subtitle so it doesn't duplicate the cards.
+            : activeProduction || upgradeProduction
+              // While training (or researching an upgrade), the visual
+              // production card conveys what's happening; suppress the textual
+              // subtitle so it doesn't duplicate the cards.
               ? ''
               : defaultSubtitle
 
@@ -2622,7 +2637,11 @@ export class GameState {
               new Set(this.lockedUnitTypes),
               this.localPlayerShopRerollsRemaining,
             ),
-        production: activeProduction ? toProductionSummary(activeProduction) : undefined,
+        production: activeProduction
+          ? toProductionSummary(activeProduction)
+          : upgradeProduction
+            ? { ...toProductionSummary(upgradeProduction), cancelActionId: 'cancel-upgrade' }
+            : undefined,
         construction: isUnderConstruction
           ? getBuildingConstructionSummary(selectedBuilding)
           : undefined,
@@ -3174,6 +3193,7 @@ function buildMenuActionForDef(
   return {
     id: `build-${def.type}`,
     label: def.label,
+    hotkey: def.hotkey ? def.hotkey.toUpperCase() : undefined,
     iconDef: { kind: 'building', type: def.type },
     cost: Object.entries(def.resourceCost ?? {})
       .filter(([, amount]) => amount > 0)
@@ -3184,6 +3204,22 @@ function buildMenuActionForDef(
   }
 }
 
+// buildMenuActions assembles the worker build menu: one action per buildable
+// building in slots 0..N-1, then the exit button in the slot IMMEDIATELY AFTER
+// them. Exit is placed after the buildings (not a fixed slot) so it never
+// overwrites a building — the previous hard-coded `actions[6] = exit` collided
+// with the 7th buildable building once the catalog grew past six (sorted by
+// type that was townhall, which became unbuildable). The action grid has 12
+// slots (GRID_SIZE), so this scales well past the current count.
+export function buildMenuActions(townHallTier: number): ActionItem[] {
+  const actions: ActionItem[] = []
+  BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
+    actions[i] = buildMenuActionForDef(def, townHallTier)
+  })
+  actions[BUILDABLE_BUILDING_DEFS.length] = { id: 'close-build-menu', label: 'E(x)it' }
+  return actions
+}
+
 function getUnitActions(
   unit: Unit,
   activeMode: UnitTargetingMode | null,
@@ -3191,12 +3227,7 @@ function getUnitActions(
   townHallTier: number = 0,
 ): ActionItem[] {
   if (buildMenuOpen) {
-    const actions: ActionItem[] = []
-    BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
-      actions[i] = buildMenuActionForDef(def, townHallTier)
-    })
-    actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
-    return actions
+    return buildMenuActions(townHallTier)
   }
   const actions = unit.capabilities.map((capability) => {
     switch (capability) {
@@ -3228,12 +3259,7 @@ function getGroupActions(
   castAbilityId: string | null = null,
 ): ActionItem[] {
   if (buildMenuOpen) {
-    const actions: ActionItem[] = []
-    BUILDABLE_BUILDING_DEFS.forEach((def, i) => {
-      actions[i] = buildMenuActionForDef(def, townHallTier)
-    })
-    actions[6] = { id: 'close-build-menu', label: 'E(x)it' }
-    return actions
+    return buildMenuActions(townHallTier)
   }
 
   const capabilities = new Set<UnitCapability>()
@@ -3483,10 +3509,19 @@ function getBuildingActions(
   }
 
   if (building.capabilities.includes('upgrade-purchase')) {
+    // Per-building upgrade model: this blacksmith researches one upgrade at a
+    // time, and a track in progress at ANY of the player's blacksmiths is
+    // locked everywhere. Determine what THIS building is doing.
+    const thisBuildingTrack =
+      building.metadata?.['upgradeInProgress'] === true
+        ? getBuildingMetadataString(building, 'upgradeTrack')
+        : undefined
     for (const upgrade of upgrades) {
       const atCap = upgrade.level >= upgrade.cap
-      const disabled =
-        !upgrade.hasBlacksmith || upgrade.cap === 0 || atCap || !upgrade.canAfford
+      const researchingSomewhere = (upgrade.researchTotal ?? 0) > 0
+      const researchingHere = thisBuildingTrack === upgrade.track
+      const researchingElsewhere = researchingSomewhere && upgrade.researchBuildingId !== building.id
+      const buildingBusyOther = thisBuildingTrack !== undefined && !researchingHere
       const statParts = [
         `+${upgrade.hpPerLevel} HP`,
         `+${upgrade.damagePerLevel} DMG`,
@@ -3494,17 +3529,49 @@ function getBuildingActions(
         `+${upgrade.attackSpeedPerLevel.toFixed(2)} AS`,
         `+${upgrade.moveSpeedPerLevel} MS`,
       ]
+
+      if (researchingHere) {
+        // This blacksmith is doing the work → show a greyed-out, non-clickable
+        // item. Cancellation is done via the ✕ on the progress card above.
+        const secs = Math.ceil(upgrade.researchRemaining ?? 0)
+        const label = `${upgrade.displayName} (${secs}s)`
+        actions.push({
+          id: `upgrade-${upgrade.track}`,
+          label,
+          iconDef: { kind: 'unit', type: upgrade.track },
+          disabled: true,
+          tooltipTitle: label,
+          tooltipBody: 'Researching… click the ✕ on the progress bar to cancel',
+        })
+        continue
+      }
+
+      const disabled =
+        buildingBusyOther ||
+        researchingElsewhere ||
+        !upgrade.hasBlacksmith ||
+        upgrade.cap === 0 ||
+        atCap ||
+        !upgrade.canAfford
       const levelLabel = atCap
         ? `${upgrade.displayName} (Max)`
         : `${upgrade.displayName} Lv ${upgrade.level} → ${upgrade.level + 1}`
+      const tooltipBody = buildingBusyOther
+        ? 'Blacksmith is busy with another upgrade'
+        : researchingElsewhere
+          ? 'Already being researched at another blacksmith'
+          : statParts.join('  ')
       actions.push({
         id: `upgrade-${upgrade.track}`,
         label: levelLabel,
         iconDef: { kind: 'unit', type: upgrade.track },
-        cost: [{ resourceId: 'gold', amount: upgrade.nextCostGold, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' }],
+        cost: [
+          { resourceId: 'gold', amount: upgrade.nextCostGold, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' },
+          { resourceId: 'wood', amount: upgrade.nextCostWood, accent: RESOURCE_ACCENT.wood ?? '#7a9a52' },
+        ],
         disabled,
         tooltipTitle: levelLabel,
-        tooltipBody: statParts.join('  '),
+        tooltipBody,
       })
     }
   }
@@ -4094,6 +4161,28 @@ function getBuildingProductionState(building: BuildingTile) {
     queuedUnitTypes: queuedUnitTypesRaw
       ? queuedUnitTypesRaw.split(',').map((item) => item.trim()).filter(Boolean)
       : [unitType],
+  }
+}
+
+// Reads the blacksmith upgrade-in-progress metadata (stamped server-side while
+// an upgrade is researching) into the same shape as getBuildingProductionState
+// so the SelectionHud renders an upgrade exactly like a unit being trained.
+// The track string equals a unit type (e.g. "soldier"/"archer") so the unit
+// portrait resolves. Returns null when no upgrade is in flight.
+function getBuildingUpgradeState(building: BuildingTile) {
+  if (building.metadata?.['upgradeInProgress'] !== true) return null
+  const track = getBuildingMetadataString(building, 'upgradeTrack')
+  const remainingSeconds = getBuildingMetadataNumber(building, 'upgradeRemainingSeconds')
+  const totalSeconds = getBuildingMetadataNumber(building, 'upgradeTotalSeconds')
+  if (!track || remainingSeconds === undefined || totalSeconds === undefined) {
+    return null
+  }
+  return {
+    unitType: track,
+    remainingSeconds,
+    totalSeconds,
+    queueLength: 1,
+    queuedUnitTypes: [track],
   }
 }
 

@@ -398,7 +398,7 @@ func writeMapEntryToDisk(dir string, entry MapCatalogEntry) error {
 	if safeID == "" {
 		return fmt.Errorf("map id %q is not a valid filename", entry.ID)
 	}
-	raw, err := json.MarshalIndent(entry, "", "  ")
+	raw, err := RenderCatalogEntryJSON(entry)
 	if err != nil {
 		return err
 	}

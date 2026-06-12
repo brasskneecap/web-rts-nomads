@@ -804,12 +804,15 @@ export class CanvasRenderer {
         isUnderConstruction && !isPendingStart ? getConstructionSprite(building.buildingType) : null
       // Training animation plays only on finished, owned, non-preview buildings
       // that are actively producing a unit. Server sets producingUnitType in
-      // metadata while the head of the production queue is in flight.
+      // metadata while the head of the production queue is in flight. A
+      // blacksmith researching an upgrade reuses the same training animation —
+      // the server stamps upgradeInProgress while research is in flight.
       const isTraining =
         !isUnderConstruction &&
         !isPendingStart &&
-        typeof building.metadata?.['producingUnitType'] === 'string' &&
-        (building.metadata?.['producingUnitType'] as string).length > 0
+        ((typeof building.metadata?.['producingUnitType'] === 'string' &&
+          (building.metadata?.['producingUnitType'] as string).length > 0) ||
+          building.metadata?.['upgradeInProgress'] === true)
       const trainingSprite = isTraining ? getTrainingSprite(building.buildingType) : null
       // Damage tier only applies to finished, non-preview buildings. Under
       // 90% HP picks a row from damaged.png (tier 0..3); above that the

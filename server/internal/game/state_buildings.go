@@ -769,6 +769,14 @@ func (s *GameState) refreshBuildingRuntimeMetadataLocked() {
 			delete(building.Metadata, "queuedUnitTypes")
 		}
 
+		// Blacksmith upgrade-in-progress visual. Upgrade research is per-player
+		// (not per-building), so mirror it onto every upgrade-purchase building
+		// the owner holds: stamp the track nearest completion so the building
+		// plays its training animation and shows a training-style progress card
+		// while an upgrade is being researched. Cleared when nothing is in
+		// flight. Display-only metadata, same pattern as the production block.
+		s.refreshUpgradeVisualMetadataLocked(building)
+
 		if building.BuildingType == "enemy-spawnpoint" {
 			if timer, exists := s.EnemySpawnTimers[building.ID]; exists {
 				if timer.RemainingDelay > 0 {

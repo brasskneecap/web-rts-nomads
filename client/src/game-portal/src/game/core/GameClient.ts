@@ -303,8 +303,12 @@ export class GameClient {
     }
   }
 
-  purchaseUpgrade(track: string): void {
-    this.network.sendPurchaseUpgrade(track)
+  purchaseUpgrade(track: string, buildingId?: string): void {
+    this.network.sendPurchaseUpgrade(track, buildingId)
+  }
+
+  cancelUpgrade(buildingId: string): void {
+    this.network.sendCancelUpgrade(buildingId)
   }
 
   upgradeTownHall(buildingId: string): void {
@@ -564,10 +568,19 @@ export class GameClient {
       return
     }
 
+    // Cancel the in-progress upgrade at the selected blacksmith (full refund).
+    // Emitted both by the action-bar cancel button and the SelectionHud
+    // production card's X for upgrade research.
+    if (selectedBuilding && actionId === 'cancel-upgrade') {
+      this.network.sendCancelUpgrade(selectedBuilding.id)
+      return
+    }
+
     if (selectedBuilding && actionId.startsWith('upgrade-')) {
       const track = actionId.slice('upgrade-'.length)
       if (track && track !== 'townhall') {
-        this.network.sendPurchaseUpgrade(track)
+        // Research at THIS blacksmith (per-building model).
+        this.network.sendPurchaseUpgrade(track, selectedBuilding.id)
         return
       }
     }

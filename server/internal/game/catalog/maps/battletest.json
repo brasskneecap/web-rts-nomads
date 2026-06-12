@@ -13,13 +13,11 @@
     "gridCols": 24,
     "gridRows": 18,
     "cellSize": 64,
-    "terrain": [],
     "defaultTile": {
       "sheet": "tileset",
       "sx": 64,
       "sy": 32
     },
-    "obstacles": [],
     "buildings": [
       {
         "x": 0,
@@ -200,6 +198,8 @@
     "debug": {
       "battleTracker": true,
       "debugSpawn": true
-    }
+    },
+    "terrain": {},
+    "obstacles": {}
   }
 }

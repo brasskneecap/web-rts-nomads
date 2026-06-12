@@ -651,9 +651,19 @@ type ResourceStock struct {
 
 // PurchaseUpgradeCommandMessage requests a permanent upgrade purchase for a
 // unit track. Track must match an UpgradeTrack constant ("soldier" or "archer").
+// BuildingID names the blacksmith to research at; empty means "auto-assign to
+// any idle blacksmith" (used by the global Blacksmith panel).
 type PurchaseUpgradeCommandMessage struct {
-	Type  string `json:"type"`
-	Track string `json:"track"`
+	Type       string `json:"type"`
+	Track      string `json:"track"`
+	BuildingID string `json:"buildingId,omitempty"`
+}
+
+// CancelUpgradeCommandMessage cancels the in-progress upgrade at BuildingID
+// (full refund of gold + wood paid).
+type CancelUpgradeCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
 }
 
 // UpgradeTownHallCommandMessage requests a tier-up on the specified town hall.
@@ -730,8 +740,24 @@ type PlayerUpgradeSnapshot struct {
 	Level               int     `json:"level"`
 	Cap                 int     `json:"cap"`
 	NextCostGold        int     `json:"nextCostGold"`
+	// NextCostWood is the wood cost of the next level. It currently mirrors
+	// NextCostGold (upgrades cost equal gold and wood). 0 at cap.
+	NextCostWood        int     `json:"nextCostWood"`
 	CanAfford           bool    `json:"canAfford"`
+	// CanStart is true when the player can start this upgrade via the global
+	// panel's auto-assign path: affordable, below cap, not already researching,
+	// and at least one idle blacksmith is available.
+	CanStart            bool    `json:"canStart"`
 	HasBlacksmith       bool    `json:"hasBlacksmith"`
+	// ResearchTotal / ResearchRemaining describe an in-progress upgrade for
+	// this track (this player, at any blacksmith). ResearchTotal is the full
+	// duration in seconds (0 when idle); ResearchRemaining counts down to 0.
+	// ResearchBuildingID is the source building performing the research (used to
+	// target a cancel and to tell a selected blacksmith whether it is the one
+	// doing the work). While ResearchTotal > 0 the track is locked everywhere.
+	ResearchTotal       float64 `json:"researchTotal,omitempty"`
+	ResearchRemaining   float64 `json:"researchRemaining,omitempty"`
+	ResearchBuildingID  string  `json:"researchBuildingId,omitempty"`
 	HPPerLevel          int     `json:"hpPerLevel"`
 	DamagePerLevel      int     `json:"damagePerLevel"`
 	ArmorPerLevel       int     `json:"armorPerLevel"`

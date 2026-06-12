@@ -525,6 +525,14 @@ export type DebugSpawnUnitCommandMessage = {
 export type PurchaseUpgradeCommand = {
   type: 'purchase_upgrade'
   track: string
+  // Blacksmith to research at. Omitted = auto-assign to any idle blacksmith
+  // (used by the global Blacksmith panel).
+  buildingId?: string
+}
+
+export type CancelUpgradeCommand = {
+  type: 'cancel_upgrade'
+  buildingId: string
 }
 
 export type UpgradeTownHallCommand = {
@@ -546,8 +554,20 @@ export type PlayerUpgradeSnapshot = {
   level: number
   cap: number              // 0/3/6/9
   nextCostGold: number     // 0 if at cap
+  nextCostWood: number     // mirrors nextCostGold; 0 if at cap
   canAfford: boolean
+  /** True when the global panel can start this upgrade (auto-assign): below
+   *  cap, affordable, not researching, and an idle blacksmith exists. */
+  canStart: boolean
   hasBlacksmith: boolean
+  /** In-progress research for this track (this player, at any blacksmith).
+   *  researchTotal is the full duration in seconds (0/absent when idle);
+   *  researchRemaining counts down to 0; researchBuildingId is the blacksmith
+   *  performing the work (used to target a cancel). While researching, the
+   *  track is locked at every blacksmith. */
+  researchTotal?: number
+  researchRemaining?: number
+  researchBuildingId?: string
   hpPerLevel: number
   damagePerLevel: number
   armorPerLevel: number
@@ -676,6 +696,7 @@ export type ClientMessage =
   | SetStanceCommandMessage
   | PatrolCommandMessage
   | PurchaseUpgradeCommand
+  | CancelUpgradeCommand
   | UpgradeTownHallCommand
   | PurchaseItemCommand
   | EquipItemCommand

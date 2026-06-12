@@ -1,4 +1,25 @@
-import type { MapCatalogEntry, MapCatalogFile, NeutralGroupTierSummary } from '../network/protocol'
+import type {
+  MapCatalogEntry,
+  MapCatalogFile,
+  MapCatalogMapPayload,
+  NeutralGroupTierSummary,
+  ObstacleTile,
+  TerrainTile,
+  TileInstance,
+} from '../network/protocol'
+import {
+  expandObstacleGroups,
+  groupObstacles,
+  type ObstacleGroups,
+} from './obstacleGroups'
+import {
+  expandTerrainGroups,
+  expandTileGroups,
+  groupTerrain,
+  groupTiles,
+  type TerrainGroups,
+  type TileGroupWire,
+} from './terrainTileGroups'
 import type { BuildingDef } from './buildingDefs'
 import type { ObstacleDef } from './obstacleDefs'
 import type { UnitBounds, UnitDef } from './unitDefs'
@@ -19,6 +40,19 @@ export async function fetchMapCatalog(): Promise<MapCatalogEntry[]> {
   return maps
 }
 
+// MapCatalogFileWire is the on-the-wire shape of a map catalog file: identical
+// to MapCatalogFile except its obstacles are grouped by type (or, for older
+// maps, a legacy flat array). fetchMapCatalogFile / saveMapCatalogFile convert
+// between this and the editor's flat MapCatalogFile so the editor and renderer
+// only ever deal with ObstacleTile[].
+type MapCatalogFileWire = Omit<MapCatalogFile, 'map'> & {
+  map: Omit<MapCatalogMapPayload, 'obstacles' | 'terrain' | 'tiles'> & {
+    obstacles?: ObstacleGroups | ObstacleTile[]
+    terrain?: TerrainGroups | TerrainTile[]
+    tiles?: TileGroupWire[] | TileInstance[]
+  }
+}
+
 export async function fetchMapCatalogFile(mapId: string): Promise<MapCatalogFile> {
   const response = await fetch(`${API_BASE}/maps/${encodeURIComponent(mapId)}`)
 
@@ -26,7 +60,16 @@ export async function fetchMapCatalogFile(mapId: string): Promise<MapCatalogFile
     throw new Error(`Failed to load map ${mapId}: ${response.status}`)
   }
 
-  return (await response.json()) as MapCatalogFile
+  const raw = (await response.json()) as MapCatalogFileWire
+  return {
+    ...raw,
+    map: {
+      ...raw.map,
+      terrain: expandTerrainGroups(raw.map.terrain),
+      tiles: expandTileGroups(raw.map.tiles),
+      obstacles: expandObstacleGroups(raw.map.obstacles),
+    },
+  }
 }
 
 // LevelConflict describes a campaign (campaignId, levelId) already owned by a
@@ -61,10 +104,22 @@ export async function saveMapCatalogFile(
   opts: { reassignLevel?: boolean } = {},
 ): Promise<void> {
   const query = opts.reassignLevel ? '?reassignLevel=true' : ''
+  // Convert the editor's flat terrain / tiles / obstacles to the grouped catalog
+  // format. Painting / erasing a cell in the editor adds / removes its [x, y]
+  // entry in the per-kind coordinate / `locations` array produced here.
+  const wire: MapCatalogFileWire = {
+    ...entry,
+    map: {
+      ...entry.map,
+      terrain: groupTerrain(entry.map.terrain ?? []),
+      tiles: groupTiles(entry.map.tiles ?? []),
+      obstacles: groupObstacles(entry.map.obstacles ?? []),
+    },
+  }
   const response = await fetch(`${API_BASE}/maps${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(entry),
+    body: JSON.stringify(wire),
   })
   if (response.status === 409) {
     const body = (await response.json().catch(() => null)) as

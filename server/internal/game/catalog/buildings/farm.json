@@ -15,7 +15,7 @@
     "foodSupply": 6
   },
   "color": "#4a7c3f",
-  "label": "(F)arm",
+  "label": "Farm",
   "hotkey": "f",
   "render": {
     "inset": 0.18,

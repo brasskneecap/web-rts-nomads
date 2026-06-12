@@ -27,7 +27,7 @@
     "foodSupply": 10
   },
   "color": "#b45309",
-  "label": "(T)ownhall",
+  "label": "Townhall",
   "hotkey": "t",
   "render": {
     "inset": 0.18,

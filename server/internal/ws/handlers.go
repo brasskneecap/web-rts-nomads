@@ -965,7 +965,24 @@ func (h *Hub) readLoop(client *Client) {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid purchase_upgrade payload"})
 				continue
 			}
-			match.State.PurchaseUpgrade(client.PlayerID(), msg.Track)
+			match.State.PurchaseUpgrade(client.PlayerID(), msg.BuildingID, msg.Track)
+
+		case "cancel_upgrade":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.CancelUpgradeCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid cancel_upgrade payload"})
+				continue
+			}
+			match.State.CancelUpgrade(client.PlayerID(), msg.BuildingID)
 
 		case "upgrade_townhall":
 			if client.MatchID() == "" {

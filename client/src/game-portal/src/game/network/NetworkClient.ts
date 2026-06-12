@@ -20,6 +20,7 @@ import type {
   PatrolCommandMessage,
   PickupLootCommandMessage,
   PurchaseUpgradeCommand,
+  CancelUpgradeCommand,
   SetBuildingSpawnPointCommandMessage,
   SetFocusTargetCommandMessage,
   SetStanceCommandMessage,
@@ -624,10 +625,19 @@ export class NetworkClient {
     this.send(message)
   }
 
-  sendPurchaseUpgrade(track: string) {
+  sendPurchaseUpgrade(track: string, buildingId?: string) {
     const message: PurchaseUpgradeCommand = {
       type: 'purchase_upgrade',
       track,
+      ...(buildingId ? { buildingId } : {}),
+    }
+    this.send(message)
+  }
+
+  sendCancelUpgrade(buildingId: string) {
+    const message: CancelUpgradeCommand = {
+      type: 'cancel_upgrade',
+      buildingId,
     }
     this.send(message)
   }

@@ -80,11 +80,12 @@
               />
               <div class="production-bar__time">{{ ui.selection.production.timeLabel }}</div>
               <button
+                v-if="ui.selection.production.cancelable !== false"
                 class="production-bar__cancel"
                 type="button"
-                aria-label="Cancel Training"
-                title="Cancel Training"
-                @click="$emit('action', 'cancel-training')"
+                aria-label="Cancel"
+                title="Cancel"
+                @click="$emit('action', ui.selection.production.cancelActionId ?? 'cancel-training')"
               >
                 x
               </button>
@@ -367,9 +368,9 @@
               >
                 <div class="action-tooltip__title">{{ parseActionLabel(ui.selection.actions[i - 1].label).name }}</div>
                 <div
-                  v-if="parseActionLabel(ui.selection.actions[i - 1].label).hotkey"
+                  v-if="actionHotkey(ui.selection.actions[i - 1])"
                   class="action-tooltip__hotkey"
-                >Hotkey: {{ parseActionLabel(ui.selection.actions[i - 1].label).hotkey }}</div>
+                >Hotkey: {{ actionHotkey(ui.selection.actions[i - 1]) }}</div>
                 <div
                   v-if="ui.selection.actions[i - 1].cost?.length"
                   class="action-tooltip__body"
@@ -709,6 +710,13 @@ function parseActionLabel(label: string): { name: string; hotkey: string | null 
     name: label.replace(/\(([A-Za-z])\)/, '$1'),
     hotkey: m[1].toUpperCase(),
   }
+}
+
+// Tooltip hotkey for an action: prefer the explicit `hotkey` field (set on
+// build-menu buildings so they show their key with clean labels), otherwise
+// fall back to a "(X)" marker parsed out of the label (e.g. "E(x)it").
+function actionHotkey(action: { hotkey?: string; label: string }): string | null {
+  return action.hotkey ?? parseActionLabel(action.label).hotkey
 }
 </script>
 

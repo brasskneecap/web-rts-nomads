@@ -55,14 +55,39 @@
             <span class="uc-stat uc-stat--ms">+{{ upgrade.moveSpeedPerLevel }} MS</span>
           </div>
 
+          <!-- Research progress + cancel while an upgrade is in flight -->
+          <div v-if="isResearching(upgrade)" class="uc-row__research">
+            <div class="uc-row__research-bar">
+              <div
+                class="uc-row__research-fill"
+                :style="{ width: `${researchPercent(upgrade)}%` }"
+              />
+            </div>
+            <div class="uc-row__research-foot">
+              <span class="uc-row__research-label">
+                Researching&hellip; {{ Math.ceil(upgrade.researchRemaining ?? 0) }}s
+              </span>
+              <button
+                v-if="upgrade.researchBuildingId"
+                type="button"
+                class="uc-row__cancel"
+                title="Cancel upgrade (full refund)"
+                @click="onCancel(upgrade.researchBuildingId)"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+
           <button
+            v-else
             type="button"
             class="uc-row__btn"
             :disabled="isUpgradeDisabled(upgrade)"
             :title="upgradeDisabledReason(upgrade)"
             @click="onPurchase(upgrade.track)"
           >
-            Upgrade {{ upgrade.displayName }} &mdash; {{ upgrade.nextCostGold }}g
+            Upgrade {{ upgrade.displayName }} &mdash; {{ upgrade.nextCostGold }}g / {{ upgrade.nextCostWood }}w
           </button>
         </div>
       </template>
@@ -89,28 +114,43 @@ const props = defineProps<{
   show: boolean
   upgrades: PlayerUpgradeSnapshot[]
   onPurchase: (track: string) => void
+  onCancel: (buildingId: string) => void
 }>()
 
 const collapsed = ref(false)
 const drag = useDraggablePanel('blacksmith-panel')
 
-// Returns true when the upgrade button should be disabled.
+// Returns true when an upgrade for this track is currently being researched.
+function isResearching(upgrade: PlayerUpgradeSnapshot): boolean {
+  return (upgrade.researchTotal ?? 0) > 0
+}
+
+// Completion percentage (0-100) of an in-progress research.
+function researchPercent(upgrade: PlayerUpgradeSnapshot): number {
+  const total = upgrade.researchTotal ?? 0
+  if (total <= 0) return 0
+  const remaining = upgrade.researchRemaining ?? 0
+  const pct = ((total - remaining) / total) * 100
+  return Math.max(0, Math.min(100, pct))
+}
+
+// Returns true when the (auto-assign) upgrade button should be disabled. The
+// server-computed canStart already folds in: not researching, below cap,
+// affordable, and an idle blacksmith available.
 function isUpgradeDisabled(upgrade: PlayerUpgradeSnapshot): boolean {
-  if (!upgrade.hasBlacksmith) return true
-  if (upgrade.cap === 0) return true
-  if (upgrade.level >= upgrade.cap) return true
-  if (!upgrade.canAfford) return true
-  return false
+  return !upgrade.canStart
 }
 
 // Returns a tooltip explaining why the button is disabled, or empty string
 // when the button is enabled.
 function upgradeDisabledReason(upgrade: PlayerUpgradeSnapshot): string {
-  if (!upgrade.hasBlacksmith) return 'Build an Blacksmith first'
+  if (upgrade.canStart) return ''
+  if (!upgrade.hasBlacksmith) return 'Build a Blacksmith first'
   if (upgrade.cap === 0) return 'Town Hall required'
   if (upgrade.level >= upgrade.cap) return 'Requires a higher tier Town Hall'
-  if (!upgrade.canAfford) return 'Not enough gold'
-  return ''
+  if (!upgrade.canAfford) return 'Not enough gold or wood'
+  // Affordable but cannot start → every blacksmith is busy.
+  return 'All blacksmiths are busy'
 }
 </script>
 
@@ -331,5 +371,58 @@ function upgradeDisabledReason(upgrade: PlayerUpgradeSnapshot): string {
 .uc-row__btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Research progress (shown in place of the purchase button) */
+.uc-row__research {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.uc-row__research-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(200, 164, 106, 0.35);
+  background: rgba(20, 12, 7, 0.7);
+  overflow: hidden;
+}
+
+.uc-row__research-fill {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(220, 180, 110, 0.85), rgba(240, 216, 142, 0.95));
+  transition: width 0.2s linear;
+}
+
+.uc-row__research-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.uc-row__research-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #f0d88e;
+  font-variant-numeric: tabular-nums;
+}
+
+.uc-row__cancel {
+  padding: 2px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(220, 120, 100, 0.5);
+  background: rgba(80, 28, 22, 0.6);
+  color: #f3cabf;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.uc-row__cancel:hover {
+  background: rgba(120, 40, 32, 0.85);
+  border-color: rgba(235, 150, 130, 0.7);
 }
 </style>

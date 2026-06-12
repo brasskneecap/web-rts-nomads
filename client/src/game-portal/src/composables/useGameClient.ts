@@ -194,7 +194,13 @@ export function useGameClient() {
   }
 
   function purchaseUpgrade(track: string) {
+    // No building id from the global panel — server auto-assigns to an idle
+    // blacksmith.
     client?.purchaseUpgrade(track)
+  }
+
+  function cancelUpgrade(buildingId: string) {
+    client?.cancelUpgrade(buildingId)
   }
 
   function upgradeTownHall(buildingId: string) {
@@ -262,6 +268,7 @@ export function useGameClient() {
     deselectUnit,
     setMinimapPanelRect,
     purchaseUpgrade,
+    cancelUpgrade,
     upgradeTownHall,
     sendPurchaseItem,
     sendEquipItem,

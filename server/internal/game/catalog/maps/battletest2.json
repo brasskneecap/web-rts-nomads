@@ -13,13 +13,11 @@
     "gridCols": 24,
     "gridRows": 18,
     "cellSize": 64,
-    "terrain": [],
     "defaultTile": {
       "sheet": "tileset",
       "sx": 64,
       "sy": 32
     },
-    "obstacles": [],
     "buildings": [
       {
         "x": 0,
@@ -75,8 +73,7 @@
         "x": 6,
         "y": 7,
         "id": "placed-unit-player-6-7",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
         "unitType": "soldier",
         "aggroRange": 150,
         "leashRange": 200
@@ -85,8 +82,7 @@
         "x": 6,
         "y": 8,
         "id": "placed-unit-player-6-8",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
         "unitType": "soldier",
         "aggroRange": 150,
         "leashRange": 200
@@ -95,8 +91,7 @@
         "x": 6,
         "y": 9,
         "id": "placed-unit-player-6-9",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
         "unitType": "soldier",
         "aggroRange": 150,
         "leashRange": 200
@@ -105,8 +100,7 @@
         "x": 6,
         "y": 10,
         "id": "placed-unit-player-6-10",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
         "unitType": "soldier",
         "aggroRange": 150,
         "leashRange": 200
@@ -115,8 +109,7 @@
         "x": 6,
         "y": 11,
         "id": "placed-unit-player-6-11",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
         "unitType": "soldier",
         "aggroRange": 150,
         "leashRange": 200
@@ -125,8 +118,7 @@
         "x": 5,
         "y": 11,
         "id": "placed-unit-player-5-11",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
         "unitType": "soldier",
         "aggroRange": 150,
         "leashRange": 200
@@ -135,8 +127,7 @@
         "x": 5,
         "y": 10,
         "id": "placed-unit-player-5-10",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
         "unitType": "soldier",
         "aggroRange": 150,
         "leashRange": 200
@@ -145,8 +136,7 @@
         "x": 5,
         "y": 9,
         "id": "placed-unit-player-5-9",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
         "unitType": "soldier",
         "aggroRange": 150,
         "leashRange": 200
@@ -155,8 +145,7 @@
         "x": 5,
         "y": 8,
         "id": "placed-unit-player-5-8",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
         "unitType": "soldier",
         "aggroRange": 150,
         "leashRange": 200
@@ -165,8 +154,7 @@
         "x": 5,
         "y": 7,
         "id": "placed-unit-player-5-7",
-        "owner": "player",
-        "playerLabel": "player1",
+        "playerSlot": "player1",
         "unitType": "soldier",
         "aggroRange": 150,
         "leashRange": 200
@@ -175,7 +163,7 @@
         "x": 13,
         "y": 6,
         "id": "placed-unit-enemy-13-6",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -184,7 +172,7 @@
         "x": 13,
         "y": 7,
         "id": "placed-unit-enemy-13-7",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -193,7 +181,7 @@
         "x": 13,
         "y": 8,
         "id": "placed-unit-enemy-13-8",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -202,7 +190,7 @@
         "x": 13,
         "y": 9,
         "id": "placed-unit-enemy-13-9",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -211,7 +199,7 @@
         "x": 13,
         "y": 10,
         "id": "placed-unit-enemy-13-10",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -220,7 +208,7 @@
         "x": 13,
         "y": 11,
         "id": "placed-unit-enemy-13-11",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -229,7 +217,7 @@
         "x": 13,
         "y": 12,
         "id": "placed-unit-enemy-13-12",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -238,7 +226,7 @@
         "x": 14,
         "y": 12,
         "id": "placed-unit-enemy-14-12",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -247,7 +235,7 @@
         "x": 15,
         "y": 12,
         "id": "placed-unit-enemy-15-12",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -256,7 +244,7 @@
         "x": 16,
         "y": 12,
         "id": "placed-unit-enemy-16-12",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -265,7 +253,7 @@
         "x": 16,
         "y": 11,
         "id": "placed-unit-enemy-16-11",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -274,7 +262,7 @@
         "x": 16,
         "y": 10,
         "id": "placed-unit-enemy-16-10",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -283,7 +271,7 @@
         "x": 16,
         "y": 9,
         "id": "placed-unit-enemy-16-9",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -292,7 +280,7 @@
         "x": 16,
         "y": 8,
         "id": "placed-unit-enemy-16-8",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -301,7 +289,7 @@
         "x": 16,
         "y": 7,
         "id": "placed-unit-enemy-16-7",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -310,7 +298,7 @@
         "x": 16,
         "y": 6,
         "id": "placed-unit-enemy-16-6",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -319,7 +307,7 @@
         "x": 15,
         "y": 6,
         "id": "placed-unit-enemy-15-6",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -328,7 +316,7 @@
         "x": 15,
         "y": 7,
         "id": "placed-unit-enemy-15-7",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -337,7 +325,7 @@
         "x": 15,
         "y": 8,
         "id": "placed-unit-enemy-15-8",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -346,7 +334,7 @@
         "x": 15,
         "y": 9,
         "id": "placed-unit-enemy-15-9",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -355,7 +343,7 @@
         "x": 15,
         "y": 10,
         "id": "placed-unit-enemy-15-10",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -364,7 +352,7 @@
         "x": 15,
         "y": 11,
         "id": "placed-unit-enemy-15-11",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -373,7 +361,7 @@
         "x": 14,
         "y": 11,
         "id": "placed-unit-enemy-14-11",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -382,7 +370,7 @@
         "x": 14,
         "y": 10,
         "id": "placed-unit-enemy-14-10",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -391,7 +379,7 @@
         "x": 14,
         "y": 9,
         "id": "placed-unit-enemy-14-9",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -400,7 +388,7 @@
         "x": 14,
         "y": 8,
         "id": "placed-unit-enemy-14-8",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -409,7 +397,7 @@
         "x": 14,
         "y": 7,
         "id": "placed-unit-enemy-14-7",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -418,7 +406,7 @@
         "x": 14,
         "y": 6,
         "id": "placed-unit-enemy-14-6",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -427,7 +415,7 @@
         "x": 13,
         "y": 5,
         "id": "placed-unit-enemy-13-5",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -436,7 +424,7 @@
         "x": 14,
         "y": 5,
         "id": "placed-unit-enemy-14-5",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -445,7 +433,7 @@
         "x": 15,
         "y": 5,
         "id": "placed-unit-enemy-15-5",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -454,7 +442,7 @@
         "x": 16,
         "y": 5,
         "id": "placed-unit-enemy-16-5",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -463,7 +451,7 @@
         "x": 17,
         "y": 5,
         "id": "placed-unit-enemy-17-5",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -472,7 +460,7 @@
         "x": 17,
         "y": 6,
         "id": "placed-unit-enemy-17-6",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -481,7 +469,7 @@
         "x": 17,
         "y": 7,
         "id": "placed-unit-enemy-17-7",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -490,7 +478,7 @@
         "x": 17,
         "y": 8,
         "id": "placed-unit-enemy-17-8",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 1500
@@ -499,7 +487,7 @@
         "x": 17,
         "y": 9,
         "id": "placed-unit-enemy-17-9",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 1500
@@ -508,7 +496,7 @@
         "x": 17,
         "y": 10,
         "id": "placed-unit-enemy-17-10",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 1500
@@ -517,7 +505,7 @@
         "x": 17,
         "y": 11,
         "id": "placed-unit-enemy-17-11",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -526,7 +514,7 @@
         "x": 17,
         "y": 12,
         "id": "placed-unit-enemy-17-12",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -535,7 +523,7 @@
         "x": 17,
         "y": 13,
         "id": "placed-unit-enemy-17-13",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -544,7 +532,7 @@
         "x": 16,
         "y": 13,
         "id": "placed-unit-enemy-16-13",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -553,7 +541,7 @@
         "x": 15,
         "y": 13,
         "id": "placed-unit-enemy-15-13",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -562,7 +550,7 @@
         "x": 14,
         "y": 13,
         "id": "placed-unit-enemy-14-13",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -571,7 +559,7 @@
         "x": 13,
         "y": 13,
         "id": "placed-unit-enemy-13-13",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -580,7 +568,7 @@
         "x": 3,
         "y": 14,
         "id": "placed-unit-enemy-3-14",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -589,7 +577,7 @@
         "x": 5,
         "y": 16,
         "id": "placed-unit-enemy-5-16",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -598,7 +586,7 @@
         "x": 4,
         "y": 16,
         "id": "placed-unit-enemy-4-16",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -607,7 +595,7 @@
         "x": 3,
         "y": 16,
         "id": "placed-unit-enemy-3-16",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -616,7 +604,7 @@
         "x": 3,
         "y": 15,
         "id": "placed-unit-enemy-3-15",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -625,7 +613,7 @@
         "x": 4,
         "y": 15,
         "id": "placed-unit-enemy-4-15",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -634,7 +622,7 @@
         "x": 4,
         "y": 14,
         "id": "placed-unit-enemy-4-14",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -643,7 +631,7 @@
         "x": 5,
         "y": 14,
         "id": "placed-unit-enemy-5-14",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -652,7 +640,7 @@
         "x": 5,
         "y": 15,
         "id": "placed-unit-enemy-5-15",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -661,7 +649,7 @@
         "x": 6,
         "y": 16,
         "id": "placed-unit-enemy-6-16",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -670,7 +658,7 @@
         "x": 7,
         "y": 16,
         "id": "placed-unit-enemy-7-16",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -679,7 +667,7 @@
         "x": 8,
         "y": 16,
         "id": "placed-unit-enemy-8-16",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -688,7 +676,7 @@
         "x": 8,
         "y": 14,
         "id": "placed-unit-enemy-8-14",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -697,7 +685,7 @@
         "x": 7,
         "y": 14,
         "id": "placed-unit-enemy-7-14",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -706,7 +694,7 @@
         "x": 6,
         "y": 14,
         "id": "placed-unit-enemy-6-14",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -715,7 +703,7 @@
         "x": 6,
         "y": 15,
         "id": "placed-unit-enemy-6-15",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -724,7 +712,7 @@
         "x": 7,
         "y": 15,
         "id": "placed-unit-enemy-7-15",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -733,7 +721,7 @@
         "x": 8,
         "y": 15,
         "id": "placed-unit-enemy-8-15",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -742,7 +730,7 @@
         "x": 9,
         "y": 16,
         "id": "placed-unit-enemy-9-16",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -751,7 +739,7 @@
         "x": 9,
         "y": 15,
         "id": "placed-unit-enemy-9-15",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -760,7 +748,7 @@
         "x": 10,
         "y": 14,
         "id": "placed-unit-enemy-10-14",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -769,7 +757,7 @@
         "x": 9,
         "y": 14,
         "id": "placed-unit-enemy-9-14",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -778,7 +766,7 @@
         "x": 10,
         "y": 15,
         "id": "placed-unit-enemy-10-15",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -787,7 +775,7 @@
         "x": 10,
         "y": 16,
         "id": "placed-unit-enemy-10-16",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 1500,
         "leashRange": 200
@@ -796,7 +784,7 @@
         "x": 5,
         "y": 4,
         "id": "placed-unit-enemy-5-4",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -805,7 +793,7 @@
         "x": 6,
         "y": 4,
         "id": "placed-unit-enemy-6-4",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -814,7 +802,7 @@
         "x": 7,
         "y": 4,
         "id": "placed-unit-enemy-7-4",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -823,7 +811,7 @@
         "x": 8,
         "y": 4,
         "id": "placed-unit-enemy-8-4",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -832,7 +820,7 @@
         "x": 9,
         "y": 4,
         "id": "placed-unit-enemy-9-4",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -841,7 +829,7 @@
         "x": 10,
         "y": 4,
         "id": "placed-unit-enemy-10-4",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -850,7 +838,7 @@
         "x": 10,
         "y": 3,
         "id": "placed-unit-enemy-10-3",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -859,7 +847,7 @@
         "x": 9,
         "y": 3,
         "id": "placed-unit-enemy-9-3",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -868,7 +856,7 @@
         "x": 8,
         "y": 3,
         "id": "placed-unit-enemy-8-3",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -877,7 +865,7 @@
         "x": 7,
         "y": 3,
         "id": "placed-unit-enemy-7-3",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -886,7 +874,7 @@
         "x": 6,
         "y": 3,
         "id": "placed-unit-enemy-6-3",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -895,7 +883,7 @@
         "x": 5,
         "y": 3,
         "id": "placed-unit-enemy-5-3",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -904,7 +892,7 @@
         "x": 5,
         "y": 2,
         "id": "placed-unit-enemy-5-2",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -913,7 +901,7 @@
         "x": 6,
         "y": 2,
         "id": "placed-unit-enemy-6-2",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -922,7 +910,7 @@
         "x": 7,
         "y": 2,
         "id": "placed-unit-enemy-7-2",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -931,7 +919,7 @@
         "x": 8,
         "y": 2,
         "id": "placed-unit-enemy-8-2",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -940,7 +928,7 @@
         "x": 9,
         "y": 2,
         "id": "placed-unit-enemy-9-2",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -949,7 +937,7 @@
         "x": 10,
         "y": 2,
         "id": "placed-unit-enemy-10-2",
-        "owner": "enemy",
+        "playerSlot": "enemy",
         "unitType": "raider",
         "aggroRange": 150,
         "leashRange": 200
@@ -958,6 +946,8 @@
     "waveConfig": {
       "prepDuration": 60,
       "waveDuration": 120
-    }
+    },
+    "terrain": {},
+    "obstacles": {}
   }
 }

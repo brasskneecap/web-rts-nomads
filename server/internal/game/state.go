@@ -572,6 +572,9 @@ type Player struct {
 	// Upgrades holds the current permanent upgrade level per track for this
 	// player. Keyed by UpgradeTrack (== UnitType string). Initialized to an
 	// empty map on player creation; zero value for missing keys means level 0.
+	// In-progress research is NOT stored here — it lives in the global
+	// GameState.ActiveUpgrades registry (keyed by source building) until it
+	// completes and bumps the level here.
 	Upgrades map[UpgradeTrack]int
 
 	// Vault holds items the player has purchased but not yet equipped. One Vault
@@ -697,7 +700,17 @@ type GameState struct {
 
 	Productions      map[string][]*UnitProduction
 	EnemySpawnTimers map[string]*EnemySpawnTimer
-	WaveManager      WaveManager
+
+	// ActiveUpgrades is the global registry of in-progress building-driven
+	// upgrades (blacksmith track research today; extensible to other source
+	// buildings later). Keyed by the SOURCE building ID — each such building
+	// performs at most one upgrade at a time. The resulting level applies to
+	// the whole player (see Player.Upgrades); the building is just the
+	// workshop. A track is locked for a player while any of their buildings is
+	// researching it. See state_upgrades.go.
+	ActiveUpgrades map[string]*ActiveUpgrade
+
+	WaveManager WaveManager
 
 	// NeutralCamps is the runtime state for map-authored NeutralSpawns.
 	// Built once by initNeutralCampsLocked from MapConfig.NeutralSpawns and
@@ -1045,6 +1058,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		Players:                   map[string]*Player{},
 		Productions:               map[string][]*UnitProduction{},
 		EnemySpawnTimers:          map[string]*EnemySpawnTimer{},
+		ActiveUpgrades:            map[string]*ActiveUpgrade{},
 		LootDrops:                 map[string]*LootDrop{},
 		nextUnitID:                1,
 		nextBannerID:              1,
@@ -2435,6 +2449,7 @@ func (s *GameState) Update(dt float64) {
 	profileSection("unitProductions", func() { s.updateUnitProductionsLocked(dt) })
 	profileSection("orphanedPendingBuildings", func() { s.cancelOrphanedPendingBuildingsLocked() })
 	profileSection("townhallTierUps", func() { s.tickTownHallTierUpsLocked(dt) })
+	profileSection("blacksmithUpgrades", func() { s.tickBlacksmithUpgradesLocked(dt) })
 	profileSection("buildingRepairs", func() { s.tickBuildingRepairsLocked(dt) })
 	var blocked map[gridPoint]bool
 	profileSection("getBlockedCells", func() { blocked = s.getBlockedCellsLocked() })
