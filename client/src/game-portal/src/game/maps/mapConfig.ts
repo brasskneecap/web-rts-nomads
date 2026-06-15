@@ -10,6 +10,7 @@ import type {
   TerrainTile,
   TerrainType,
   TileInstance,
+  Zone,
 } from '../network/protocol'
 import { BUILDING_DEF_MAP } from './buildingDefs'
 import { OBSTACLE_DEF_MAP } from './obstacleDefs'
@@ -51,6 +52,7 @@ export function createEditorMapConfig(
     neutralSpawns: existing?.neutralSpawns,
     waveConfig: existing?.waveConfig,
     campaign: existing?.campaign,
+    zones: existing?.zones,
   })
 }
 
@@ -78,6 +80,7 @@ export function sanitizeMapConfig(map: MapConfig): MapConfig {
     placedUnits: clampPlacedUnits(map.placedUnits ?? [], gridCols, gridRows),
     neutralSpawns: clampNeutralSpawns(map.neutralSpawns ?? [], gridCols, gridRows),
     campaign: map.campaign,
+    zones: clampZones(map.zones ?? [], gridCols, gridRows),
   }
 }
 
@@ -455,6 +458,23 @@ function clampNeutralSpawns(
 ): NeutralSpawn[] | undefined {
   const filtered = spawns.filter((s) => isWithinGrid(s.x, s.y, gridCols, gridRows))
   return filtered.length > 0 ? filtered : undefined
+}
+
+function clampZones(zones: Zone[], gridCols: number, gridRows: number): Zone[] | undefined {
+  if (!zones || zones.length === 0) return undefined
+  return zones.map((zone) => {
+    const clampedCells = zone.cells.filter(([x, y]) => isWithinGrid(x, y, gridCols, gridRows))
+    const result: Zone = { ...zone, cells: clampedCells }
+    if (zone.captureCells && zone.captureCells.length > 0) {
+      const clampedCapture = zone.captureCells.filter(([x, y]) => isWithinGrid(x, y, gridCols, gridRows))
+      if (clampedCapture.length > 0) {
+        result.captureCells = clampedCapture
+      } else {
+        delete result.captureCells
+      }
+    }
+    return result
+  })
 }
 
 function doesBuildingCoverCell(building: BuildingTile, x: number, y: number) {

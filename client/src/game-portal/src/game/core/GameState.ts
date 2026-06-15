@@ -31,6 +31,7 @@ import type {
   UnitType,
   WaveSnapshot,
   WaveUpgradeOfferSnapshot,
+  ZoneSnapshot,
 } from '../network/protocol'
 import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID, UNIT_ORDER_LABELS } from '../network/protocol'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
@@ -595,6 +596,10 @@ export class GameState {
   // layer (chest sprites), the minimap POI layer, hover tooltip, and the
   // right-click input dispatch.
   lootDropsById: Map<string, LootDropSnapshot> = new Map()
+
+  // Per-tick zone ownership snapshots. Parallel to MapConfig.zones by id.
+  // Absent (empty) on maps that have no zones.
+  zoneSnapshotsById: Map<string, ZoneSnapshot> = new Map()
 
   // Server-side pause state. paused=true freezes the visible wave-upgrade
   // timer and triggers the in-match paused overlay. pausedBy is the player
@@ -1431,6 +1436,14 @@ export class GameState {
     if (message.lootDrops) {
       for (const drop of message.lootDrops) {
         this.lootDropsById.set(drop.id, drop)
+      }
+    }
+
+    // Rebuild the zone snapshot map each tick. Absent field = map has no zones.
+    this.zoneSnapshotsById.clear()
+    if (message.zones) {
+      for (const zone of message.zones) {
+        this.zoneSnapshotsById.set(zone.id, zone)
       }
     }
 

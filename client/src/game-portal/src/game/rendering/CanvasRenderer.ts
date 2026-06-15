@@ -36,8 +36,8 @@ import {
 } from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
-import type { BannerSnapshot, BeamSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot } from '../network/protocol'
-import { ENEMY_PLAYER_ID } from '../network/protocol'
+import type { BannerSnapshot, BeamSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot, Zone } from '../network/protocol'
+import { ENEMY_PLAYER_ID, ZONE_TEAM_OWNER } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
 import { getRankToneColor } from './rankColors'
@@ -58,6 +58,7 @@ import { getActionIconImage } from './actionIconSprites'
 import { getItemAssetImage } from './itemAssets'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { UnitAnimationController } from './unitAnimation'
+import { classifyZoneCells } from '../maps/zoneGeometry'
 
 // Cache of item-icon HTMLImageElements keyed by itemId. Built lazily on first
 // request. Resolves the item def's iconKey through the same fallback chain
@@ -428,6 +429,7 @@ export class CanvasRenderer {
 
     this.drawMapBounds()
     this.drawMapBackground()
+    this.drawZoneOverlay()
     this.drawBuildingSpawnMarkers()
     this.drawTraps(this.state.traps)
     this.drawBanners(this.state.banners)
@@ -465,7 +467,61 @@ export class CanvasRenderer {
 
     ctx.restore()
 
+    // Screen-space HUD (identity transform restored above).
+    this.drawCaptureProgressBar()
     this.drawMinimap(units)
+  }
+
+  // Top-of-screen capture progress bar. Appears while any zone has an in-flight
+  // capture/defend timer (0 < progress < 1), showing the most-progressed one as
+  // a single filling bar. Screen space — call after the world transform is
+  // restored. Replaces the old per-cell zone "fill up" visual.
+  private drawCaptureProgressBar() {
+    const zones = this.state.mapConfig.zones
+    if (!zones || zones.length === 0) return
+
+    let bestZone: Zone | null = null
+    let bestProgress = 0
+    let bestContested = false
+    for (const zone of zones) {
+      const snap = this.state.zoneSnapshotsById.get(zone.id)
+      if (!snap || snap.progress === undefined) continue
+      const p = snap.progress
+      if (p > 0 && p < 1 && p > bestProgress) {
+        bestProgress = p
+        bestZone = zone
+        bestContested = snap.contested === true
+      }
+    }
+    if (!bestZone) return
+
+    const ctx = this.ctx
+    const W = 360
+    const H = 24
+    const x = Math.round((this.canvas.width - W) / 2)
+    const y = 16
+    const verb = bestZone.capture?.type === 'claim' ? 'Defending' : 'Capturing'
+    const label = `${bestZone.name || bestZone.id} — ${verb}`
+
+    ctx.save()
+    ctx.setLineDash([])
+    // Track.
+    ctx.fillStyle = 'rgba(15,23,42,0.85)'
+    ctx.fillRect(x, y, W, H)
+    // Fill (amber when contested, blue otherwise).
+    ctx.fillStyle = bestContested ? 'rgba(251,191,36,0.95)' : 'rgba(96,165,250,0.95)'
+    ctx.fillRect(x + 2, y + 2, Math.max(0, (W - 4) * bestProgress), H - 4)
+    // Border.
+    ctx.strokeStyle = 'rgba(148,163,184,0.65)'
+    ctx.lineWidth = 1
+    ctx.strokeRect(x + 0.5, y + 0.5, W - 1, H - 1)
+    // Label.
+    ctx.fillStyle = '#f1f5f9'
+    ctx.font = 'bold 12px system-ui, -apple-system, Segoe UI, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(label, x + W / 2, y + H / 2 + 0.5)
+    ctx.restore()
   }
 
   /** Spawn a floating icon + label above a world position when a unit picks
@@ -1684,6 +1740,105 @@ export class CanvasRenderer {
   //      in world space at the plant position.
   //
   // No alpha fade: the banner reads at full opacity for its entire lifetime
+  // ─── Zone overlay ─────────────────────────────────────────────────────────
+  // Renders the in-match zone overlay from ZoneSnapshot + static MapConfig.zones
+  // geometry. Tints each zone by ownership (ally=blue, enemy=red, neutral=grey),
+  // marks contested zones with a pulsing outline, and renders a progress fill
+  // for presence zones. Zones capturable by the viewing team (adjacent to an
+  // ally-owned zone) are rendered with a distinct capturable tint.
+  //
+  // IMPORTANT: this is DISPLAY ONLY. No capture simulation is done client-side.
+  // The owner/contested/progress values come solely from the server snapshots.
+  // ──────────────────────────────────────────────────────────────────────────
+  private drawZoneOverlay() {
+    const zones = this.state.mapConfig.zones
+    if (!zones || zones.length === 0) return
+    if (this.state.zoneSnapshotsById.size === 0) return
+
+    const ctx = this.ctx
+    const cellSize = this.state.mapConfig.cellSize
+    const localPlayerId = this.state.localPlayerId
+
+    // Build a set of zone ids owned by the local player (or an ally).
+    const allyOwnedIds = new Set<string>()
+    for (const zone of zones) {
+      const snap = this.state.zoneSnapshotsById.get(zone.id)
+      if (!snap) continue
+      // A zone is allied when the owner is the team sentinel (every capture and
+      // every locked home zone resolves to "team") or matches the local player.
+      // ENEMY_PLAYER_ID and 'neutral' are never allied.
+      if (snap.owner === ZONE_TEAM_OWNER || snap.owner === localPlayerId) {
+        allyOwnedIds.add(zone.id)
+      }
+    }
+
+    for (const zone of zones) {
+      const snap = this.state.zoneSnapshotsById.get(zone.id)
+      if (!snap) continue
+
+      const { perimeter } = classifyZoneCells(zone)
+      const isAlly = allyOwnedIds.has(zone.id)
+      const isContested = snap.contested === true
+
+      // Perimeter color = the controlling player's color (server-resolved;
+      // team-owned → the lowest-slot player's color). Unowned/neutral → grey.
+      const ownerColor = snap.ownerColor && snap.ownerColor.length > 0 ? snap.ownerColor : null
+      const fillColor = ownerColor ? this.withAlpha(ownerColor, 0.25) : 'rgba(120,120,120,0.16)'
+      const perimColor = ownerColor ? this.withAlpha(ownerColor, 0.6) : 'rgba(120,120,120,0.45)'
+
+      ctx.save()
+
+      // Only the PERIMETER is tinted — the interior stays the normal ground
+      // color (no fill), so zones read as outlined regions, not filled blocks.
+      ctx.fillStyle = fillColor
+      for (const [x, y] of perimeter) {
+        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize)
+      }
+
+      // Perimeter cell outline.
+      ctx.strokeStyle = perimColor
+      ctx.lineWidth = 2 / this.camera.zoom
+      ctx.setLineDash([])
+      for (const [x, y] of perimeter) {
+        ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize)
+      }
+
+      // Contested: pulsing dashed outline on the perimeter (time-driven blink).
+      if (isContested) {
+        const blinkAlpha = 0.5 + 0.5 * Math.sin(this.renderTime / 300)
+        ctx.strokeStyle = `rgba(251,191,36,${blinkAlpha.toFixed(2)})`
+        ctx.lineWidth = 3 / this.camera.zoom
+        ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom])
+        for (const [x, y] of perimeter) {
+          ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize)
+        }
+        ctx.setLineDash([])
+      }
+
+      // Capture progress is shown by the top-screen bar (drawCaptureProgressBar),
+      // not by filling the zone — see that method.
+
+      // Claim mechanic: highlight the 2x2 build slot (anchor top-left) so the
+      // player knows where to build the tower. Shown until the zone is captured
+      // (team-owned), then dropped. Gentle pulse to draw the eye.
+      if (zone.capture?.type === 'claim' && !isAlly) {
+        const sx = zone.anchor.x * cellSize
+        const sy = zone.anchor.y * cellSize
+        const slot = 2 * cellSize
+        const pulse = 0.6 + 0.4 * Math.sin(this.renderTime / 350)
+        ctx.fillStyle = 'rgba(34,211,238,0.16)' // cyan build slot
+        ctx.fillRect(sx, sy, slot, slot)
+        ctx.strokeStyle = `rgba(34,211,238,${pulse.toFixed(2)})`
+        ctx.lineWidth = 2.5 / this.camera.zoom
+        ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom])
+        ctx.strokeRect(sx, sy, slot, slot)
+        ctx.setLineDash([])
+      }
+
+      ctx.restore()
+    }
+  }
+
   // and disappears when the server drops it from the snapshot.
   // ──────────────────────────────────────────────────────────────────────────
   private drawBanners(banners: BannerSnapshot[]) {
@@ -3805,6 +3960,32 @@ export class CanvasRenderer {
     ctx.restore()
   }
 
+  // Draws each zone's perimeter cells on the minimap, tinted by the controlling
+  // player's color (grey when unowned) — a glanceable map of territorial
+  // control. Mirrors the in-world owner-color logic.
+  private drawMinimapZones(bounds: { x: number; y: number; width: number; height: number }) {
+    const zones = this.state.mapConfig.zones
+    if (!zones || zones.length === 0) return
+
+    const ctx = this.ctx
+    const { x, y, width: mmW, height: mmH } = bounds
+    const { cellSize } = this.state.mapConfig
+    const sx = mmW / this.state.mapWidth
+    const sy = mmH / this.state.mapHeight
+    const cw = Math.max(1, cellSize * sx)
+    const ch = Math.max(1, cellSize * sy)
+
+    for (const zone of zones) {
+      const snap = this.state.zoneSnapshotsById.get(zone.id)
+      const ownerColor = snap?.ownerColor && snap.ownerColor.length > 0 ? snap.ownerColor : null
+      ctx.fillStyle = ownerColor ?? 'rgba(160,160,160,0.85)'
+      const { perimeter } = classifyZoneCells(zone)
+      for (const [cx, cy] of perimeter) {
+        ctx.fillRect(x + cx * cellSize * sx, y + cy * cellSize * sy, cw, ch)
+      }
+    }
+  }
+
   private drawMinimap(
     units: Array<{
       id: number
@@ -3892,6 +4073,10 @@ export class CanvasRenderer {
       this.state.neutralCampSnapshotsById,
       this.state.lootDropsById,
     )
+
+    // Zone perimeters, owner-coloured — drawn above fog so the player can read
+    // their territorial control across the whole map at a glance.
+    this.drawMinimapZones(bounds)
 
     const worldWidth = this.canvas.width / this.camera.zoom
     const worldHeight = this.canvas.height / this.camera.zoom

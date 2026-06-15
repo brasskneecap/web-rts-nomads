@@ -47,6 +47,69 @@ type VictoryCondition struct {
 	Count int `json:"count,omitempty"`
 }
 
+// ZoneCaptureNeutralOwner is the sentinel owner value for a zone controlled by
+// no team. A zone's StartingOwner is normalised to this when unset; the runtime
+// initialises an uncontrolled zone's owner to this value.
+const ZoneCaptureNeutralOwner = "neutral"
+
+// ZoneCaptureTeamOwner is the sentinel owner value for a zone held by the human
+// (co-op) team. Every successful capture assigns this — control is a team
+// effort, not a single player's — and it is allied with every non-AI player.
+// Authors can also pick it as a zone's StartingOwner to seed the frontier.
+const ZoneCaptureTeamOwner = "team"
+
+// ZoneCapture is the per-zone configuration of HOW a zone is captured. Type
+// names a registered capture mechanic (control_point | presence | clear) and
+// Config carries that mechanic's typed config, parsed server-side by the
+// mechanic's parseConfig hook (mirrors ObjectiveDef.Config). The client treats
+// Type as opaque for rendering and never simulates capture itself.
+type ZoneCapture struct {
+	Type   string          `json:"type"`
+	Config json.RawMessage `json:"config,omitempty"`
+}
+
+// Zone is a map-authored territorial region. A player's team must control a
+// zone to build on its cells, and capturing a zone can be a (possibly required)
+// objective. Authored in the map editor's zone brush.
+//
+// Cells is the zone's member set, stored compactly as [x,y] pairs. A cell
+// belongs to at most one zone (validated at load). The perimeter/interior
+// split is DERIVED from this set, never stored: a member cell with a non-member
+// 4-neighbour is perimeter, else interior.
+//
+// Anchor is the editor "node" — the cell the brush drops. It is the popup
+// attach point and (for control_point capture) where the capturable structure
+// sits.
+//
+// Adjacent lists this zone's capture PREREQUISITE zones (directed, not
+// symmetric). The team may capture this zone only once it owns the required
+// links: with RequireAllLinks, ALL of them; otherwise ANY one. An EMPTY list
+// means the zone is ungated — always capturable (no prerequisite).
+type Zone struct {
+	ID            string      `json:"id"`
+	Name          string      `json:"name,omitempty"`
+	Anchor        GridCoord   `json:"anchor"`
+	Cells         [][2]int    `json:"cells"`
+	Capture       ZoneCapture `json:"capture"`
+	StartingOwner string      `json:"startingOwner,omitempty"`
+	Adjacent      []string    `json:"adjacent,omitempty"`
+	// RequireAllLinks controls how the Adjacent prerequisites gate capture:
+	// false (default) ⇒ owning ANY one linked zone unlocks this one; true ⇒
+	// ALL linked zones must be owned. Ignored when Adjacent is empty.
+	RequireAllLinks bool `json:"requireAllLinks,omitempty"`
+	// CaptureCells is the optional "capture sub-zone" for presence capture: a
+	// subset of Cells that a unit must stand in to progress the capture (rather
+	// than anywhere in the zone). Empty ⇒ the whole zone counts. Also used by an
+	// enemy-spawnpoint's `triggerCaptureZoneId` to decide occupancy.
+	CaptureCells [][2]int `json:"captureCells,omitempty"`
+	// LockedSpawnLabel, when set, links this zone to a player's starting point
+	// (the spawn-point's player label, e.g. "player1"). A linked zone is the
+	// team's home territory: it starts team-owned and is NOT capturable (the
+	// capture mechanic never runs on it). The Capture config is ignored. It can
+	// still seed the adjacency frontier for capturing neighbouring zones.
+	LockedSpawnLabel string `json:"lockedSpawnLabel,omitempty"`
+}
+
 // PlacedUnit is a statically authored unit in the map. PlayerSlot determines
 // who controls the unit at runtime: "player1", "player2", ... spawn when that
 // player joins the matching slot; "enemy" spawns at match start as a
@@ -148,6 +211,10 @@ type MapConfig struct {
 	Buildings   []BuildingTile     `json:"buildings"`
 	PlacedUnits   []PlacedUnit   `json:"placedUnits,omitempty"`
 	NeutralSpawns []NeutralSpawn `json:"neutralSpawns,omitempty"`
+	// Zones are map-authored territorial regions. Empty/omitted on maps that
+	// don't use the zone system — a zone-free map behaves exactly as before
+	// (build-gate never fires, no zone snapshots). See the Zone type.
+	Zones []Zone `json:"zones,omitempty"`
 	WaveConfig    *WaveConfig    `json:"waveConfig,omitempty"`
 	// Campaign, when set, tags this map as a campaign level. Its presence
 	// makes the map (a) hidden from the Custom Game lobby map list, and (b)
@@ -1345,6 +1412,29 @@ type NeutralCampSnapshot struct {
 	AliveUnitCount int    `json:"aliveUnitCount"`
 }
 
+// ZoneSnapshot is the per-tick wire view of one zone's mutable control state.
+// The static geometry (cells, anchor, adjacency, capture type) travels once in
+// the WelcomeMessage's MapConfig.Zones; only the fields that change during play
+// need to be here. Sent unfiltered — zones are mapper-authored regions that
+// should render regardless of fog of war.
+//
+// Owner is the controlling team/player id, or ZoneCaptureNeutralOwner.
+// Contested is true when more than one team occupies a presence zone.
+// Progress is the capture/defend timer as a normalised 0..1 fraction of the
+// mechanic's configured duration (NOT raw seconds — the client renders it as a
+// fill over the zone's cells, so a value > 1 would index past the array).
+type ZoneSnapshot struct {
+	ID        string  `json:"id"`
+	Owner     string  `json:"owner"`
+	Contested bool    `json:"contested,omitempty"`
+	Progress  float64 `json:"progress,omitempty"`
+	// OwnerColor is the controlling player's display color, resolved server-side
+	// (the client lacks slot/label data): a specific player owner → their color;
+	// the team sentinel → the LOWEST-slot joined player's color; neutral/unowned
+	// → empty (the client renders grey). Drives the zone perimeter tint.
+	OwnerColor string `json:"ownerColor,omitempty"`
+}
+
 // LootDropSnapshot is the per-tick wire view of one ground-loot chest.
 // Sent unfiltered (no FOW gating) so chests behave like POI dots on the
 // minimap — the player can always navigate back to an uncollected chest.
@@ -1404,6 +1494,10 @@ type MatchSnapshotMessage struct {
 	WaveUpgrade   *WaveUpgradeOfferSnapshot `json:"waveUpgrade,omitempty"`
 	NeutralCamps  []NeutralCampSnapshot   `json:"neutralCamps,omitempty"`
 	LootDrops     []LootDropSnapshot      `json:"lootDrops,omitempty"`
+	// Zones carries per-tick zone control state (owner / contested / progress).
+	// Empty on maps without zones. Static zone geometry is in the welcome
+	// MapConfig; this is only the mutable control layer.
+	Zones         []ZoneSnapshot          `json:"zones,omitempty"`
 
 	// Paused is true when the simulation is frozen via the in-match settings
 	// "Pause Game" action. The client renders a paused overlay and freezes the

@@ -1,0 +1,79 @@
+{
+  "id": "zone-demo",
+  "name": "Zone-Demo",
+  "description": "Demonstrates territorial zones: a player-owned seed zone with presence- and clear-capture neighbours, and a far zone reachable only after capturing the frontier.",
+  "sortOrder": 1000,
+  "map": {
+    "id": "",
+    "name": "",
+    "description": "",
+    "size": "",
+    "width": 1536,
+    "height": 1152,
+    "gridCols": 24,
+    "gridRows": 18,
+    "cellSize": 64,
+    "buildings": [
+      {
+        "x": 3,
+        "y": 1,
+        "id": "spawn-point-3-1",
+        "buildingType": "spawn-point",
+        "width": 1,
+        "height": 1,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [],
+        "metadata": {
+          "fillOrder": 0,
+          "playerLabel": "player1",
+          "townhallId": null
+        }
+      }
+    ],
+    "zones": [
+      {
+        "id": "seed",
+        "name": "Home Plateau",
+        "anchor": { "x": 3, "y": 5 },
+        "cells": [[2,4],[3,4],[4,4],[2,5],[3,5],[4,5],[2,6],[3,6],[4,6]],
+        "capture": { "type": "presence", "config": { "captureSeconds": 5 } },
+        "startingOwner": "player1",
+        "adjacent": ["north", "east"]
+      },
+      {
+        "id": "north",
+        "name": "North Ridge",
+        "anchor": { "x": 3, "y": 10 },
+        "cells": [[2,9],[3,9],[4,9],[2,10],[3,10],[4,10],[2,11],[3,11],[4,11]],
+        "capture": { "type": "presence", "config": { "captureSeconds": 3 } },
+        "startingOwner": "neutral",
+        "adjacent": ["seed", "far"]
+      },
+      {
+        "id": "east",
+        "name": "East Camp",
+        "anchor": { "x": 9, "y": 5 },
+        "cells": [[8,4],[9,4],[10,4],[8,5],[9,5],[10,5],[8,6],[9,6],[10,6]],
+        "capture": { "type": "clear" },
+        "startingOwner": "neutral",
+        "adjacent": ["seed"]
+      },
+      {
+        "id": "far",
+        "name": "Far Hollow",
+        "anchor": { "x": 3, "y": 15 },
+        "cells": [[2,14],[3,14],[4,14],[2,15],[3,15],[4,15],[2,16],[3,16],[4,16]],
+        "capture": { "type": "presence", "config": { "captureSeconds": 3 } },
+        "startingOwner": "neutral",
+        "adjacent": ["north"]
+      }
+    ],
+    "debug": {
+      "battleTracker": true,
+      "debugSpawn": true
+    },
+    "terrain": {},
+    "obstacles": {}
+  }
+}

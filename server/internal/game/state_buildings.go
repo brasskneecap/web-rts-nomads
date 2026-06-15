@@ -83,8 +83,25 @@ func (s *GameState) BuildBuilding(playerID, buildingType string, unitIDs []int, 
 	blocked := s.getBlockedCellsLocked()
 	for dy := 0; dy < gridH; dy++ {
 		for dx := 0; dx < gridW; dx++ {
-			if blocked[gridPoint{X: gridX + dx, Y: gridY + dy}] {
+			cell := gridPoint{X: gridX + dx, Y: gridY + dy}
+			if blocked[cell] {
 				return
+			}
+			// Zone build-gate: a footprint cell inside a zone requires that
+			// zone's owner to be allied with the builder. Cells in no zone are
+			// unaffected. Rejection spends no resources (matches the returns
+			// above). Building is the reward for control, never a prerequisite.
+			//
+			// Exception: a "claim" zone's 2x2 build slot is open to the team
+			// while the zone is capturable (adjacency-unlocked), so they can
+			// build the claim tower there to start the claim — otherwise the
+			// claim mechanic would deadlock (can't build in an unowned zone).
+			if zoneID, inZone := s.zoneOwnerForCellLocked(cell); inZone {
+				rt := s.zoneRuntimeByIDLocked(zoneID)
+				if rt != nil && !s.zonesAlliedLocked(rt.Owner, playerID) &&
+					!s.claimSlotBuildableLocked(rt, cell, buildingType) {
+					return
+				}
 			}
 		}
 	}

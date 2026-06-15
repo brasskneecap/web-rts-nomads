@@ -223,6 +223,56 @@ export interface NeutralGroupTierSummary {
   groups: NeutralGroupSummary[]
 }
 
+/** Mirror of server protocol.ZoneCapture. `config` is opaque JSON whose
+ *  shape is determined by the `type` key. Three registered types:
+ *  `control_point` (no extra config), `presence` ({captureSeconds:number}),
+ *  `clear` (no extra config). Source of truth is ListZoneCaptureTypes() on
+ *  the server; hardcoded here for the editor selector. */
+export type ZoneCapture = {
+  type: string
+  config?: Record<string, unknown>
+}
+
+/** Mirror of server protocol.Zone. `cells` is a compact list of [x,y] pairs;
+ *  perimeter/interior are derived client-side from the cell set and never
+ *  stored. `anchor` is GridCoord {x,y}. `captureCells` is the optional
+ *  capture sub-zone: the subset of cells a unit must stand in to progress a
+ *  PRESENCE capture. Empty/absent means the whole zone counts. */
+export type Zone = {
+  id: string
+  name?: string
+  anchor: GridCoord
+  cells: [number, number][]
+  capture: ZoneCapture
+  startingOwner?: string
+  /** Directed capture-prerequisite zone ids. Empty ⇒ ungated (always
+   *  capturable). See requireAllLinks for any-vs-all semantics. Mirrors
+   *  protocol.Zone.Adjacent. */
+  adjacent?: string[]
+  /** false (default) ⇒ owning ANY linked zone unlocks this one; true ⇒ ALL
+   *  linked zones must be owned. Ignored when adjacent is empty. Mirrors
+   *  protocol.Zone.RequireAllLinks. */
+  requireAllLinks?: boolean
+  captureCells?: [number, number][]
+  /** When set to a player label (e.g. "player1"), this zone is that team's
+   *  HOME zone: it starts team-owned and is NOT capturable (the capture
+   *  mechanic is skipped). Mirrors protocol.Zone.LockedSpawnLabel on the
+   *  server (json:"lockedSpawnLabel,omitempty"). */
+  lockedSpawnLabel?: string
+}
+
+/** Per-tick runtime state of one zone. Mirrors server protocol.ZoneSnapshot. */
+export type ZoneSnapshot = {
+  id: string
+  owner: string
+  contested?: boolean
+  progress?: number
+  /** Controlling player's display color, resolved server-side (team owner →
+   *  lowest-slot player's color). Empty/absent ⇒ unowned → render grey.
+   *  Mirrors protocol.ZoneSnapshot.OwnerColor. */
+  ownerColor?: string
+}
+
 export type MapConfig = {
   id: MapId
   name: string
@@ -246,6 +296,9 @@ export type MapConfig = {
   debug?: MapDebugConfig
   placedUnits?: PlacedUnit[]
   neutralSpawns?: NeutralSpawn[]
+  /** Authored map zones (capture points, presence zones, etc.). Optional —
+   *  maps without zones behave identically to pre-zone maps. */
+  zones?: Zone[]
 }
 
 /** Wire shape of the "this map is a campaign level" tag.
@@ -1311,6 +1364,9 @@ export type MatchSnapshotMessage = {
   paused?: boolean
   // Player ID that initiated the pause (empty/absent when not paused).
   pausedBy?: string
+  /** Per-tick zone ownership/capture state. Parallel to MapConfig.zones
+   *  (same ids, same order). Absent when the map has no zones. */
+  zones?: ZoneSnapshot[]
 }
 
 // ─── Battle Tracker (debug) ──────────────────────────────────────────────────
@@ -1336,6 +1392,11 @@ export const ENEMY_PLAYER_ID = '__enemy__'
 // and to the wave-enemy AI; not allied with anyone (not even other neutrals
 // for ally-scoring purposes). Mirrors neutralPlayerID on the server.
 export const NEUTRAL_PLAYER_ID = '__neutral__'
+
+// Sentinel zone owner for the human (co-op) team. Every zone capture and every
+// locked home zone resolves to this; allied with every non-AI player. Mirrors
+// protocol.ZoneCaptureTeamOwner on the server.
+export const ZONE_TEAM_OWNER = 'team'
 
 export type BattlePlayerStats = {
   // Player ID that owns the damage-dealing source. ENEMY_PLAYER_ID is the

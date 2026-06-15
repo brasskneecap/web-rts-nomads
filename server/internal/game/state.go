@@ -695,6 +695,14 @@ type GameState struct {
 	// snapshot serialiser (§10) and the victory check (§9).
 	Objectives []objectiveRuntime
 
+	// Zones holds the per-match runtime control state for MapConfig.Zones.
+	// Built by installZonesLocked from setMapConfigLocked; evaluated each tick
+	// by tickZonesLocked. Nil/empty on maps without zones. zoneCellIndex is the
+	// cell->zoneId index (single-owner membership) used by the build-gate and
+	// the capture occupancy scans.
+	Zones         []zoneRuntime
+	zoneCellIndex map[gridPoint]string
+
 	Units   []*Unit
 	Players map[string]*Player
 
@@ -1155,6 +1163,8 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 			b.Metadata["tier"] = float64(1)
 		}
 	}
+	// Install zone runtime + cell index from the new map config.
+	s.installZonesLocked()
 	// Blocked cells derived from this new map config are not yet computed.
 	s.invalidateBlockedCellsLocked()
 }
@@ -1558,6 +1568,7 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 		NeutralCamps:           s.neutralCampSnapshotsLocked(),
 		LootDrops:              s.lootDropSnapshotsLocked(),
+		Zones:                  s.zoneSnapshotsLocked(),
 	}
 }
 
@@ -1922,6 +1933,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 		NeutralCamps:           s.neutralCampSnapshotsLocked(),
 		LootDrops:              s.lootDropSnapshotsLocked(),
+		Zones:                  s.zoneSnapshotsLocked(),
 	}
 }
 
@@ -2384,6 +2396,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		PersistentlyStuckUnits: s.persistentlyStuckUnitsLocked(),
 		NeutralCamps:           s.neutralCampSnapshotsLocked(),
 		LootDrops:              s.lootDropSnapshotsLocked(),
+		Zones:                  s.zoneSnapshotsLocked(),
 	}
 }
 
@@ -2872,6 +2885,10 @@ func (s *GameState) Update(dt float64) {
 	profileSection("buildingMetadata", func() { s.refreshBuildingRuntimeMetadataLocked() })
 	profileSection("obstacleMetadata", func() { s.refreshObstacleRuntimeMetadataLocked() })
 	profileSection("playerLoss", func() { s.checkPlayerLossLocked() })
+	// Zone capture evaluation runs after movement/combat settle (so unit
+	// positions and building ownership are current) and before objectives so
+	// a capture_zone objective sees this tick's ownership.
+	profileSection("zones", func() { s.tickZonesLocked(dt) })
 	// Objective evaluation runs after all metric-bumping subsystems and
 	// before the victory check so checkVictoryLocked (§9) sees current
 	// objective state when computing the new AND-gate.

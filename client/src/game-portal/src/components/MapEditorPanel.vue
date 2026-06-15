@@ -423,6 +423,232 @@
         </div>
       </section>
 
+      <!-- ── Zones section ───────────────────────────────────────────────────── -->
+      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'zones' }">
+        <button type="button" class="editor-section__summary" @click="toggleSection('zones')">
+          Zones
+        </button>
+        <div v-if="openSection === 'zones'" class="editor-section__body">
+
+          <!-- Add Zone / placement hint -->
+          <div class="zone-sidebar__add-row">
+            <button
+              type="button"
+              :class="{ 'zone-sidebar__add--active': zoneSubMode === 'place' }"
+              @click="zoneSubMode = zoneSubMode === 'place' ? 'idle' : 'place'"
+            >Add Zone</button>
+            <span v-if="zoneSubMode === 'place'" class="zone-sidebar__hint">
+              Click the map to place the new zone
+            </span>
+          </div>
+
+          <!-- Zone list -->
+          <div class="zone-sidebar__list">
+            <template v-if="(model.zones ?? []).length === 0">
+              <div class="zone-sidebar__empty">No zones yet — click Add Zone</div>
+            </template>
+            <template v-else>
+              <button
+                v-for="zone in (model.zones ?? [])"
+                :key="zone.id"
+                type="button"
+                class="zone-sidebar__row"
+                :class="{ 'zone-sidebar__row--active': zone.id === selectedZoneId }"
+                @click="selectZoneFromList(zone.id)"
+              >
+                <span class="zone-sidebar__row-name">{{ zone.name || zone.id }}</span>
+                <span class="zone-sidebar__row-type">{{ zone.capture.type }}</span>
+              </button>
+            </template>
+          </div>
+
+          <!-- Per-zone config — shown when a zone is selected -->
+          <template v-if="selectedZone">
+            <div class="zone-brush-config">
+              <div class="zone-brush-config__title">Zone: {{ selectedZone.id }}</div>
+
+              <label for="zone-s-name">Name</label>
+              <input
+                id="zone-s-name"
+                type="text"
+                :value="selectedZone.name ?? ''"
+                @input="updateSelectedZoneField('name', ($event.target as HTMLInputElement).value || undefined)"
+                placeholder="e.g. North Hill"
+              />
+
+              <label for="zone-s-lock-to-start">Lock to Start</label>
+              <select
+                id="zone-s-lock-to-start"
+                :value="selectedZone.lockedSpawnLabel ?? ''"
+                @change="updateSelectedZoneField('lockedSpawnLabel', ($event.target as HTMLSelectElement).value || undefined)"
+              >
+                <option value="">(none)</option>
+                <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
+              </select>
+              <div v-if="selectedZone.lockedSpawnLabel" class="zone-brush-config__hint">
+                Home zone — team-owned and not capturable.
+              </div>
+
+              <template v-if="!selectedZone.lockedSpawnLabel">
+                <label for="zone-s-capture-type">Capture Type</label>
+                <!-- Capture types are server-authoritative (ListZoneCaptureTypes()):
+                     control_point, presence, clear, claim. -->
+                <select
+                  id="zone-s-capture-type"
+                  :value="selectedZone.capture.type"
+                  @change="onZoneCaptureTypeChange(($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="control_point">Control Point</option>
+                  <option value="presence">Presence</option>
+                  <option value="clear">Clear</option>
+                  <option value="claim">Claim</option>
+                </select>
+
+                <template v-if="selectedZone.capture.type === 'presence'">
+                  <label for="zone-s-capture-seconds">Capture Duration (seconds)</label>
+                  <input
+                    id="zone-s-capture-seconds"
+                    type="number"
+                    min="1"
+                    step="1"
+                    :value="(selectedZone.capture.config?.['captureSeconds'] as number | undefined) ?? 10"
+                    @input="updateZoneCaptureConfig('captureSeconds', +($event.target as HTMLInputElement).value)"
+                  />
+                </template>
+
+                <template v-if="selectedZone.capture.type === 'claim'">
+                  <label for="zone-s-defend-seconds">Defend Duration (seconds)</label>
+                  <input
+                    id="zone-s-defend-seconds"
+                    type="number"
+                    min="1"
+                    step="1"
+                    :value="(selectedZone.capture.config?.['defendSeconds'] as number | undefined) ?? 30"
+                    @input="updateZoneCaptureConfig('defendSeconds', +($event.target as HTMLInputElement).value)"
+                  />
+                  <label for="zone-s-tower-type">Tower Type</label>
+                  <select
+                    id="zone-s-tower-type"
+                    :value="(selectedZone.capture.config?.['towerType'] as string | undefined) ?? 'Tower'"
+                    @change="updateZoneCaptureConfig('towerType', ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="Tower">Tower</option>
+                  </select>
+                  <div class="zone-brush-config__hint">
+                    Build the tower on the 2&#xD7;2 slot, then defend it for the duration to claim the zone.
+                  </div>
+                </template>
+
+                <label for="zone-s-starting-owner">Starting Owner</label>
+                <select
+                  id="zone-s-starting-owner"
+                  :value="selectedZone.startingOwner ?? 'neutral'"
+                  @change="updateSelectedZoneField('startingOwner', ($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="neutral">Neutral</option>
+                  <option value="team">Team</option>
+                  <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
+                </select>
+              </template>
+
+              <!-- Capture prerequisites (directed links) -->
+              <div class="zone-brush-config__links">
+                <div class="zone-brush-config__links-header">
+                  <span class="zone-brush-config__links-label">Capture requires</span>
+                  <button
+                    type="button"
+                    class="zone-brush-config__links-toggle"
+                    @click="linkPanelOpen = !linkPanelOpen"
+                  >
+                    <span v-if="(selectedZone.adjacent ?? []).length === 0">Any zone (ungated)</span>
+                    <span v-else>{{ (selectedZone.adjacent ?? []).length }} zone{{ (selectedZone.adjacent ?? []).length !== 1 ? 's' : '' }}</span>
+                    <span class="zone-brush-config__links-caret">{{ linkPanelOpen ? '▲' : '▼' }}</span>
+                  </button>
+                </div>
+
+                <div v-if="linkPanelOpen" class="zone-brush-config__links-panel">
+                  <div v-if="otherZones.length === 0" class="zone-brush-config__links-empty">
+                    No other zones to link
+                  </div>
+                  <label
+                    v-for="z in otherZones"
+                    :key="z.id"
+                    class="zone-brush-config__links-row"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="(selectedZone.adjacent ?? []).includes(z.id)"
+                      @change="toggleZoneLink(z.id)"
+                    />
+                    <span>{{ z.name || z.id }}</span>
+                  </label>
+                </div>
+
+                <label
+                  class="zone-brush-config__require-all"
+                  :class="{ 'zone-brush-config__require-all--disabled': (selectedZone.adjacent ?? []).length === 0 }"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="selectedZone.requireAllLinks ?? false"
+                    :disabled="(selectedZone.adjacent ?? []).length === 0"
+                    @change="setZoneRequireAllLinks(($event.target as HTMLInputElement).checked)"
+                  />
+                  <span>Require ALL linked zones <span class="field-hint">(off = any one)</span></span>
+                </label>
+
+                <div class="zone-brush-config__hint">
+                  <template v-if="(selectedZone.adjacent ?? []).length === 0">
+                    Ungated — capturable any time.
+                  </template>
+                  <template v-else-if="selectedZone.requireAllLinks">
+                    Capturable once ALL linked zones are owned.
+                  </template>
+                  <template v-else>
+                    Capturable once ANY linked zone is owned.
+                  </template>
+                </div>
+              </div>
+
+              <div class="zone-brush-config__actions">
+                <button
+                  type="button"
+                  :class="{ 'zone-brush-config__action--active': zoneSubMode === 'draw' }"
+                  @click="zoneSubMode = zoneSubMode === 'draw' ? 'idle' : 'draw'"
+                >Draw Zone</button>
+                <button
+                  v-if="!selectedZone.lockedSpawnLabel && selectedZone.capture.type === 'presence'"
+                  type="button"
+                  :class="{ 'zone-brush-config__action--active': zoneSubMode === 'captureDraw' }"
+                  @click="zoneSubMode = zoneSubMode === 'captureDraw' ? 'idle' : 'captureDraw'"
+                >Draw Capture Zone</button>
+                <button
+                  type="button"
+                  :class="{ 'zone-brush-config__action--active': zoneSubMode === 'move' }"
+                  @click="zoneSubMode = zoneSubMode === 'move' ? 'idle' : 'move'"
+                >Move Node</button>
+                <button
+                  type="button"
+                  class="zone-brush-config__delete"
+                  @click="deleteSelectedZone"
+                >Delete</button>
+              </div>
+
+              <div v-if="zoneSubMode === 'draw'" class="zone-brush-config__hint">
+                Left-click adds a cell · Right-click removes · Esc exits
+              </div>
+              <div v-if="zoneSubMode === 'captureDraw'" class="zone-brush-config__hint">
+                Click cells inside the zone to mark the capture area · Right-click removes · Esc exits
+              </div>
+              <div v-if="zoneSubMode === 'move'" class="zone-brush-config__hint">
+                Click a cell inside the zone to move its node · Esc exits
+              </div>
+            </div>
+          </template>
+
+        </div>
+      </section>
+
       <section class="editor-section" :class="{ 'editor-section--open': openSection === 'paint' }">
         <button type="button" class="editor-section__summary" @click="toggleSection('paint')">
           Paint
@@ -656,6 +882,12 @@
               <option value="__none__">None (Stay at Spawn)</option>
               <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
             </select>
+            <label for="enemy-trigger-zone">Trigger Capture Zone <span class="field-hint">(optional)</span></label>
+            <select id="enemy-trigger-zone" v-model="enemyTriggerCaptureZoneId" :disabled="!paintModeEnabled">
+              <option value="">(none)</option>
+              <option v-for="z in (model.zones ?? [])" :key="z.id" :value="z.id">{{ z.name || z.id }}</option>
+            </select>
+            <span class="field-hint">Spawns only while a player is in this zone's capture area.</span>
           </div>
 
           <div v-if="brushMode === 'neutral-spawn'" class="control-group neutral-spawn-config">
@@ -797,6 +1029,10 @@
           Move mode — click to place {{ movingBuilding.buildingType }}
           <button type="button" class="preview-header__cancel-paste" @click="cancelMoveBuilding">Cancel (Esc)</button>
         </span>
+        <span v-else-if="movingNeutralSpawn" class="preview-header__paste-mode">
+          Move mode — click to place neutral spawn
+          <button type="button" class="preview-header__cancel-paste" @click="cancelMoveNeutralSpawn">Cancel (Esc)</button>
+        </span>
         <span v-else-if="isPasteMode" class="preview-header__paste-mode">
           Paste mode — click to place {{ copiedBuilding?.buildingType }}
           <button type="button" class="preview-header__cancel-paste" @click="isPasteMode = false">Cancel (Esc)</button>
@@ -910,6 +1146,17 @@
                 <option value="__none__">None (Stay at Spawn)</option>
                 <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
               </select>
+            </div>
+            <div class="edit-field">
+              <label>Trigger Capture Zone</label>
+              <select
+                :value="selectedEditBuilding.metadata?.['triggerCaptureZoneId'] ?? ''"
+                @change="updateEditMeta('triggerCaptureZoneId', ($event.target as HTMLSelectElement).value || undefined)"
+              >
+                <option value="">(none)</option>
+                <option v-for="z in (model.zones ?? [])" :key="z.id" :value="z.id">{{ z.name || z.id }}</option>
+              </select>
+              <span class="edit-field__hint">Spawns only while a player is in this zone's capture area.</span>
             </div>
           </template>
 
@@ -1037,6 +1284,7 @@
       <div v-if="selectedEditNeutralSpawn" class="edit-panel neutral-spawn-edit-panel" :style="neutralSpawnEditPanelStyle">
         <div class="edit-panel__header">
           <span class="edit-panel__title">Neutral Spawn</span>
+          <button type="button" class="edit-panel__move" @click="startMoveNeutralSpawn" title="Move — then click canvas to place">Move</button>
           <button type="button" class="edit-panel__close" @click="selectedEditNeutralSpawnId = null">&#x2715;</button>
         </div>
         <div class="edit-panel__body">
@@ -1148,7 +1396,10 @@ import type {
   TileSheet,
   UnitType,
   VictoryCondition,
+  Zone,
+  ZoneCapture,
 } from '@/game/network/protocol'
+import { buildZoneCellIndex, cellKey, classifyZoneCells, fillEnclosedZoneCells } from '@/game/maps/zoneGeometry'
 import type { Campaign } from '@/types/campaign'
 import { fetchCampaignCatalog } from '@/services/campaignApi'
 import { NEUTRAL_PLAYER_COLOR, NEUTRAL_SPAWN_RANDOM_GROUP_ID } from '@/game/network/protocol'
@@ -1210,6 +1461,21 @@ let minimapDragging = false
 
 const TILE_PICKER_SCALE = 2
 const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'enemy-spawn' | 'neutral-spawn' | 'unit' | 'erase'>('terrain')
+
+// ─── Zone sidebar state ────────────────────────────────────────────────────────
+// selectedZoneId: the zone selected in the Zones list
+// zoneSubMode:
+//   'idle'        – normal navigation; no zone canvas interaction
+//   'place'       – click canvas to create a new zone at that cell
+//   'draw'        – left-click/drag adds cells; right-click removes cells
+//   'captureDraw' – left-click/drag marks capture cells; right-click removes
+//   'move'        – click a cell inside the zone to relocate its anchor node
+const selectedZoneId = ref<string | null>(null)
+const zoneSubMode = ref<'idle' | 'place' | 'draw' | 'captureDraw' | 'move'>('idle')
+// Controls visibility of the prerequisite-zone checkbox panel.
+const linkPanelOpen = ref(false)
+// Live cell→zoneId index, rebuilt on every zone mutation. Avoids O(N×M) scans.
+let zoneCellIndex = buildZoneCellIndex(model.value.zones ?? [])
 const brushSize = ref<1 | 3 | 5 | 7>(1)
 const selectedTerrain = ref<TerrainType>('grass')
 const selectedObstacle = ref<ObstacleType>('rock')
@@ -1231,6 +1497,7 @@ const spawnPointPlayerLabel = ref('')
 // unassigned (no metadata.playerLabel written, building stays unowned).
 const buildingPlayerLabel = ref('')
 const enemyTargetPlayerLabel = ref('')
+const enemyTriggerCaptureZoneId = ref('')
 const enemySpawnDelay = ref(0)
 const enemySpawnInterval = ref(10)
 const enemySpawnCount = ref(1)
@@ -1289,7 +1556,7 @@ const saveLabel = ref('Save to Server')
 const saveError = ref('')
 const hoverLabel = ref('Hover a tile')
 const paintModeEnabled = ref(false)
-const openSection = ref<'setup' | 'campaign' | 'paint' | 'export' | null>('paint')
+const openSection = ref<'setup' | 'campaign' | 'zones' | 'paint' | 'export' | null>('paint')
 const isControlHeld = ref(false)
 const availableMaps = ref<MapCatalogEntry[]>([])
 const selectedLoadMapId = ref('')
@@ -1307,6 +1574,7 @@ const neutralSpawnEditPanelPos = ref<{ x: number; y: number } | null>(null)
 const copiedBuilding = ref<{ buildingType: string; metadata: JsonObject | undefined } | null>(null)
 const isPasteMode = ref(false)
 const movingBuilding = ref<{ id: string; buildingType: string; metadata: JsonObject | undefined; x: number; y: number } | null>(null)
+const movingNeutralSpawn = ref<{ id: string; x: number; y: number } | null>(null)
 
 const camera = new Camera()
 // Bump the top + left overscan so the user can pan the map's top-left
@@ -1334,6 +1602,8 @@ watch(
     draftRows.value = nextMap.gridRows
     placedUnits.value = nextMap.placedUnits ?? []
     clampCamera()
+    // Rebuild the cell→zoneId index whenever the map changes.
+    zoneCellIndex = buildZoneCellIndex(nextMap.zones ?? [])
   },
   { deep: true },
 )
@@ -1477,6 +1747,17 @@ function factionForUnitType(unitType: string): UnitFaction {
   return availableFactions.value[0] ?? ''
 }
 
+const selectedZone = computed<Zone | null>(() =>
+  selectedZoneId.value
+    ? (model.value.zones ?? []).find((z) => z.id === selectedZoneId.value) ?? null
+    : null
+)
+
+/** All zones except the currently selected one — drives the prerequisite multiselect. */
+const otherZones = computed<Zone[]>(() =>
+  (model.value.zones ?? []).filter((z) => z.id !== selectedZoneId.value),
+)
+
 const selectedEditBuilding = computed(() =>
   selectedEditBuildingId.value
     ? model.value.buildings.find((b) => b.id === selectedEditBuildingId.value) ?? null
@@ -1537,6 +1818,282 @@ function deleteSelectedNeutralSpawn() {
   model.value = { ...model.value, neutralSpawns: next.length ? next : undefined }
   selectedEditNeutralSpawnId.value = null
   neutralSpawnEditPanelPos.value = null
+}
+
+// ─── Zone brush helpers ───────────────────────────────────────────────────────
+
+/** Generate a zone id that doesn't collide with any existing zone. */
+function generateZoneId(): string {
+  const existing = new Set((model.value.zones ?? []).map((z) => z.id))
+  let n = (model.value.zones ?? []).length + 1
+  let id = `zone-${n}`
+  while (existing.has(id)) {
+    n++
+    id = `zone-${n}`
+  }
+  return id
+}
+
+/** Create a new zone stamped at (anchorX, anchorY) with a 5x5 default footprint. */
+function createZoneAt(anchorX: number, anchorY: number) {
+  const { gridCols, gridRows } = model.value
+  const half = 2 // 5x5 = center ± 2
+  const cells: [number, number][] = []
+  for (let dy = -half; dy <= half; dy++) {
+    for (let dx = -half; dx <= half; dx++) {
+      const x = anchorX + dx
+      const y = anchorY + dy
+      if (x >= 0 && x < gridCols && y >= 0 && y < gridRows) {
+        cells.push([x, y])
+      }
+    }
+  }
+  const id = generateZoneId()
+  const zone: Zone = {
+    id,
+    anchor: { x: anchorX, y: anchorY },
+    cells,
+    capture: { type: 'presence', config: { captureSeconds: 10 } },
+    startingOwner: 'neutral',
+    adjacent: [],
+  }
+  const zones = [...(model.value.zones ?? []), zone]
+  model.value = { ...model.value, zones }
+  selectedZoneId.value = id
+  zoneSubMode.value = 'idle'
+}
+
+/** Update a top-level field on the selected zone. */
+function updateSelectedZoneField<K extends keyof Zone>(key: K, value: Zone[K]) {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = (model.value.zones ?? []).map((z) =>
+    z.id === id ? { ...z, [key]: value } : z,
+  )
+  model.value = { ...model.value, zones }
+}
+
+/** Change the capture type, resetting per-type config. Clears captureCells when leaving presence. */
+function onZoneCaptureTypeChange(type: string) {
+  const id = selectedZoneId.value
+  if (!id) return
+  let config: ZoneCapture['config'] | undefined
+  if (type === 'presence') config = { captureSeconds: 10 }
+  else if (type === 'claim') config = { defendSeconds: 30, towerType: 'Tower' }
+  const capture: ZoneCapture = { type, ...(config ? { config } : {}) }
+  const zones = (model.value.zones ?? []).map((z) => {
+    if (z.id !== id) return z
+    const next: typeof z = { ...z, capture }
+    if (type !== 'presence') delete next.captureCells
+    return next
+  })
+  model.value = { ...model.value, zones }
+}
+
+/** Update a specific field inside the selected zone's capture config. */
+function updateZoneCaptureConfig(field: string, value: unknown) {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = (model.value.zones ?? []).map((z) => {
+    if (z.id !== id) return z
+    return {
+      ...z,
+      capture: {
+        ...z.capture,
+        config: { ...(z.capture.config ?? {}), [field]: value },
+      },
+    }
+  })
+  model.value = { ...model.value, zones }
+}
+
+/** Add (cx, cy) to the selected zone's cells (draw mode). Handles overlap reassign. */
+function addCellToSelectedZone(cx: number, cy: number) {
+  const id = selectedZoneId.value
+  if (!id) return
+  const key = cellKey(cx, cy)
+  const existingOwner = zoneCellIndex.get(key)
+
+  let zones = model.value.zones ?? []
+
+  // Reassign from previous owner if different.
+  if (existingOwner && existingOwner !== id) {
+    zones = zones.map((z) =>
+      z.id === existingOwner
+        ? { ...z, cells: z.cells.filter(([x, y]) => !(x === cx && y === cy)) }
+        : z,
+    )
+  }
+
+  // Add to selected zone if not already there.
+  zones = zones.map((z) => {
+    if (z.id !== id) return z
+    const alreadyMember = z.cells.some(([x, y]) => x === cx && y === cy)
+    if (alreadyMember) return z
+    return { ...z, cells: [...z.cells, [cx, cy]] }
+  })
+
+  model.value = { ...model.value, zones }
+}
+
+/**
+ * Auto-fill any region the selected zone now encloses. Run after a draw stroke:
+ * once the drawn cells form a closed loop, the trapped empty cells fill in and
+ * internal divider lines reclassify from perimeter to interior. Purely additive
+ * (only adds cells), and a no-op when nothing is enclosed, so it's safe to call
+ * on every stroke. Skips the model write when nothing changed.
+ */
+function fillSelectedZoneEnclosed() {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = model.value.zones ?? []
+  const zone = zones.find((z) => z.id === id)
+  if (!zone) return
+  const filled = fillEnclosedZoneCells(zone.cells)
+  if (filled.length === zone.cells.length) return // nothing enclosed
+  model.value = {
+    ...model.value,
+    zones: zones.map((z) => (z.id === id ? { ...z, cells: filled } : z)),
+  }
+}
+
+/** Remove (cx, cy) from the selected zone's cells (right-click in draw mode). */
+function removeCellFromSelectedZone(cx: number, cy: number) {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = (model.value.zones ?? []).map((z) =>
+    z.id === id
+      ? { ...z, cells: z.cells.filter(([x, y]) => !(x === cx && y === cy)) }
+      : z,
+  )
+  model.value = { ...model.value, zones }
+}
+
+/**
+ * Add (cx, cy) to the selected zone's captureCells. The cell must be a member
+ * of that zone's cells — the capture sub-zone must stay inside the zone boundary.
+ * Ignores clicks on cells that don't belong to the zone. Deduplicates.
+ */
+function addCaptureCellToSelectedZone(cx: number, cy: number) {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = model.value.zones ?? []
+  const zone = zones.find((z) => z.id === id)
+  if (!zone) return
+  // Enforce sub-zone membership constraint.
+  const inZone = zone.cells.some(([x, y]) => x === cx && y === cy)
+  if (!inZone) return
+  const existing = zone.captureCells ?? []
+  if (existing.some(([x, y]) => x === cx && y === cy)) return // dedup
+  model.value = {
+    ...model.value,
+    zones: zones.map((z) =>
+      z.id === id
+        ? { ...z, captureCells: [...(z.captureCells ?? []), [cx, cy] as [number, number]] }
+        : z,
+    ),
+  }
+}
+
+/** Remove (cx, cy) from the selected zone's captureCells (right-click in captureDraw mode). */
+function removeCaptureCellFromSelectedZone(cx: number, cy: number) {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = (model.value.zones ?? []).map((z) =>
+    z.id === id
+      ? { ...z, captureCells: (z.captureCells ?? []).filter(([x, y]) => !(x === cx && y === cy)) }
+      : z,
+  )
+  model.value = { ...model.value, zones }
+}
+
+/** Returns the zone whose anchor node sits on (x, y), or null. */
+function zoneAtAnchorCell(x: number, y: number): Zone | null {
+  return (model.value.zones ?? []).find((z) => z.anchor.x === x && z.anchor.y === y) ?? null
+}
+
+/**
+ * Relocate the selected zone's anchor node to (cx, cy). The node must stay
+ * inside the zone (a member cell / inside the perimeter); a click outside the
+ * zone's cells is rejected. Returns true when the move was applied (or was a
+ * no-op on the current anchor), false when the target is outside the zone.
+ */
+function moveSelectedZoneAnchor(cx: number, cy: number): boolean {
+  const id = selectedZoneId.value
+  if (!id) return false
+  const zones = model.value.zones ?? []
+  const zone = zones.find((z) => z.id === id)
+  if (!zone) return false
+  const inside = zone.cells.some(([x, y]) => x === cx && y === cy)
+  if (!inside) return false // can't move the node outside the perimeter
+  if (zone.anchor.x === cx && zone.anchor.y === cy) return true // already there
+  model.value = {
+    ...model.value,
+    zones: zones.map((z) => (z.id === id ? { ...z, anchor: { x: cx, y: cy } } : z)),
+  }
+  return true
+}
+
+/**
+ * Add or remove targetId from the SELECTED zone's adjacent array (directed —
+ * only the selected zone is mutated; the target zone is not touched).
+ * No-op when targetId === selectedZoneId.
+ */
+function toggleZoneLink(targetId: string) {
+  const id = selectedZoneId.value
+  if (!id || id === targetId) return
+  const zones = model.value.zones ?? []
+  const nextZones = zones.map((z) => {
+    if (z.id !== id) return z
+    const adj = z.adjacent ?? []
+    const has = adj.includes(targetId)
+    return {
+      ...z,
+      adjacent: has ? adj.filter((a) => a !== targetId) : [...adj, targetId],
+    }
+  })
+  model.value = { ...model.value, zones: nextZones }
+}
+
+/**
+ * Set requireAllLinks on the selected zone. Writes undefined when false so the
+ * field stays absent in the exported JSON (matches the ?? false read pattern).
+ */
+function setZoneRequireAllLinks(value: boolean) {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = (model.value.zones ?? []).map((z) =>
+    z.id === id
+      ? { ...z, requireAllLinks: value || undefined }
+      : z,
+  )
+  model.value = { ...model.value, zones }
+}
+
+/**
+ * Handle a click on a zone row in the Zones sidebar list.
+ * Selecting a zone always moves to 'idle' sub-mode.
+ */
+function selectZoneFromList(id: string) {
+  selectedZoneId.value = id
+  zoneSubMode.value = 'idle'
+  linkPanelOpen.value = false
+}
+
+/** Delete the selected zone and strip its id from every other zone's adjacent list. */
+function deleteSelectedZone() {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = (model.value.zones ?? [])
+    .filter((z) => z.id !== id)
+    .map((z) => ({
+      ...z,
+      adjacent: (z.adjacent ?? []).filter((a) => a !== id),
+    }))
+  model.value = { ...model.value, zones: zones.length ? zones : undefined }
+  selectedZoneId.value = null
+  zoneSubMode.value = 'idle'
+  linkPanelOpen.value = false
 }
 
 // Group dropdown options for the edit panel, computed from the SELECTED
@@ -1612,14 +2169,14 @@ const eraseCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 
 function getCanvasCursor() {
   if (isSpaceHeld) return 'grab'
-  if (movingBuilding.value) return 'move'
+  if (movingBuilding.value || movingNeutralSpawn.value) return 'move'
   if (isPasteMode.value) return 'copy'
   if (!paintModeEnabled.value) return 'default'
   if (isControlHeld.value) return eraseCursor
   return 'crosshair'
 }
 
-function toggleSection(section: 'setup' | 'campaign' | 'paint' | 'export') {
+function toggleSection(section: 'setup' | 'campaign' | 'zones' | 'paint' | 'export') {
   openSection.value = openSection.value === section ? null : section
 }
 
@@ -1931,6 +2488,30 @@ function commitMoveBuilding(cx: number, cy: number) {
 
 function cancelMoveBuilding() {
   movingBuilding.value = null
+}
+
+function startMoveNeutralSpawn() {
+  const ns = selectedEditNeutralSpawn.value
+  if (!ns) return
+  movingNeutralSpawn.value = { id: ns.id, x: ns.x, y: ns.y }
+  selectedEditNeutralSpawnId.value = null
+}
+
+function commitMoveNeutralSpawn(cx: number, cy: number) {
+  const moving = movingNeutralSpawn.value
+  if (!moving) return
+  const newId = `neutral-spawn-${cx}-${cy}`
+  const spawns = (model.value.neutralSpawns ?? []).map((ns) =>
+    ns.id === moving.id ? { ...ns, id: newId, x: cx, y: cy } : ns,
+  )
+  model.value = { ...model.value, neutralSpawns: spawns }
+  movingNeutralSpawn.value = null
+  // Re-select at the new position so the edit panel reopens.
+  selectedEditNeutralSpawnId.value = newId
+}
+
+function cancelMoveNeutralSpawn() {
+  movingNeutralSpawn.value = null
 }
 
 function deleteSelectedBuilding() {
@@ -2298,6 +2879,7 @@ function paintEnemySpawnAt(cx: number, cy: number) {
     unitType: enemyUnitType.value,
     ...(enemyObjectiveId.value ? { objectiveId: enemyObjectiveId.value } : {}),
     ...(enemyTargetPlayerLabel.value ? { targetPlayerLabel: enemyTargetPlayerLabel.value } : {}),
+    ...(enemyTriggerCaptureZoneId.value ? { triggerCaptureZoneId: enemyTriggerCaptureZoneId.value } : {}),
   }
   model.value = setBuildingTile(model.value, cx, cy, 'enemy-spawnpoint', metadata)
 }
@@ -2390,6 +2972,20 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
+  // Right-click in Zone draw / captureDraw mode: remove a cell from the active set.
+  if (event.button === 2 && (zoneSubMode.value === 'draw' || zoneSubMode.value === 'captureDraw') && selectedZoneId.value) {
+    event.preventDefault()
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) {
+      if (zoneSubMode.value === 'draw') {
+        removeCellFromSelectedZone(cell.x, cell.y)
+      } else {
+        removeCaptureCellFromSelectedZone(cell.x, cell.y)
+      }
+    }
+    return
+  }
+
   // Right-click in Tile brush mode: erase only painted tiles under the brush.
   if (event.button === 2 && paintModeEnabled.value && brushMode.value === 'tile') {
     event.preventDefault()
@@ -2420,9 +3016,57 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
+  if (movingNeutralSpawn.value) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) commitMoveNeutralSpawn(cell.x, cell.y)
+    return
+  }
+
   if (isPasteMode.value && copiedBuilding.value) {
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) pasteCopiedBuilding(cell.x, cell.y)
+    return
+  }
+
+  // Zone place mode: left-click creates a new zone at the target cell.
+  if (zoneSubMode.value === 'place' && !isSpaceHeld) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) {
+      createZoneAt(cell.x, cell.y)
+      zoneSubMode.value = 'idle'
+    }
+    return
+  }
+
+  // Capture sub-zone draw mode: left-click/drag adds capture cells inside the zone.
+  if (zoneSubMode.value === 'captureDraw' && selectedZoneId.value && !isSpaceHeld) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) {
+      addCaptureCellToSelectedZone(cell.x, cell.y)
+      isPainting = true
+      lastPaintKey = cellKey(cell.x, cell.y)
+    }
+    return
+  }
+
+  // Zone draw mode: left-click starts drag-add; right-click remove is handled above.
+  if (zoneSubMode.value === 'draw' && selectedZoneId.value && !isSpaceHeld) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) {
+      addCellToSelectedZone(cell.x, cell.y)
+      isPainting = true
+      lastPaintKey = cellKey(cell.x, cell.y)
+    }
+    return
+  }
+
+  // Zone move mode: click a cell inside the zone to relocate its anchor node.
+  // Clicks outside the perimeter are rejected, keeping move mode armed.
+  if (zoneSubMode.value === 'move' && selectedZoneId.value && !isSpaceHeld) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell && moveSelectedZoneAnchor(cell.x, cell.y)) {
+      zoneSubMode.value = 'idle'
+    }
     return
   }
 
@@ -2441,9 +3085,25 @@ function onMouseDown(event: MouseEvent) {
         selectedEditBuildingId.value = null
       } else {
         const hit = cell ? getBuildingAt(cell.x, cell.y) : null
-        selectedEditBuildingId.value = hit?.id ?? null
-        selectedEditPlacedUnitId.value = null
-        selectedEditNeutralSpawnId.value = null
+        if (hit) {
+          selectedEditBuildingId.value = hit.id
+          selectedEditPlacedUnitId.value = null
+          selectedEditNeutralSpawnId.value = null
+        } else {
+          // Clicking a zone's node (its anchor cell) selects that zone and
+          // opens the Zones section — a precise alternative to the list. Only
+          // the anchor cell triggers this, so it won't fire from clicking
+          // elsewhere in a zone's body.
+          const zoneNode = cell ? zoneAtAnchorCell(cell.x, cell.y) : null
+          if (zoneNode) {
+            selectedZoneId.value = zoneNode.id
+            zoneSubMode.value = 'idle'
+            openSection.value = 'zones'
+          }
+          selectedEditBuildingId.value = null
+          selectedEditPlacedUnitId.value = null
+          selectedEditNeutralSpawnId.value = null
+        }
       }
     }
     return
@@ -2473,6 +3133,32 @@ function onMouseMove(event: MouseEvent) {
     return
   }
 
+  // Zone draw drag: add cells while holding the mouse button, independent of paint mode.
+  if (isPainting && zoneSubMode.value === 'draw' && selectedZoneId.value) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) {
+      const key = cellKey(cell.x, cell.y)
+      if (key !== lastPaintKey) {
+        addCellToSelectedZone(cell.x, cell.y)
+        lastPaintKey = key
+      }
+    }
+    return
+  }
+
+  // Capture sub-zone draw drag: add capture cells while holding mouse button.
+  if (isPainting && zoneSubMode.value === 'captureDraw' && selectedZoneId.value) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) {
+      const key = cellKey(cell.x, cell.y)
+      if (key !== lastPaintKey) {
+        addCaptureCellToSelectedZone(cell.x, cell.y)
+        lastPaintKey = key
+      }
+    }
+    return
+  }
+
   if (isPainting && paintModeEnabled.value) {
     paintAtScreen(screen.x, screen.y)
   }
@@ -2489,6 +3175,12 @@ function onMouseUp(event: MouseEvent) {
   isLeftMouseDown = false
   isPainting = false
   lastPaintKey = ''
+
+  // After a zone draw stroke, auto-fill any region the stroke just enclosed.
+  // No-op unless the drawn cells now form a closed loop.
+  if (zoneSubMode.value === 'draw' && selectedZoneId.value) {
+    fillSelectedZoneEnclosed()
+  }
 
   if (isSpacePanning) {
     isSpacePanning = false
@@ -2533,6 +3225,11 @@ function onKeyDown(event: KeyboardEvent) {
     selectedEditNeutralSpawnId.value = null
     isPasteMode.value = false
     cancelMoveBuilding()
+    cancelMoveNeutralSpawn()
+    // Exit zone place/draw/captureDraw/move sub-mode on Esc. Selection stays intact.
+    if (zoneSubMode.value !== 'idle') {
+      zoneSubMode.value = 'idle'
+    }
   }
 
   if (event.key === 'Control') {
@@ -2583,6 +3280,7 @@ function render() {
     ctx.translate(-camera.x, -camera.y)
 
     drawMapBackground(ctx)
+    drawZones(ctx)
     drawGrid(ctx)
     drawMapBounds(ctx)
     drawPlacedUnits(ctx)
@@ -2762,6 +3460,18 @@ function drawSelectionHighlight(ctx: CanvasRenderingContext2D) {
     ctx.lineWidth = 2 / camera.zoom
     ctx.setLineDash([])
     ctx.strokeRect(ns.x * cellSize, ns.y * cellSize, cellSize, cellSize)
+    ctx.restore()
+  }
+  // Highlight the currently-selected zone (always visible, regardless of paint mode).
+  const z = selectedZone.value
+  if (z) {
+    ctx.save()
+    ctx.strokeStyle = '#60a5fa'
+    ctx.lineWidth = 2 / camera.zoom
+    ctx.setLineDash([])
+    for (const [cx, cy] of z.cells) {
+      ctx.strokeRect(cx * cellSize, cy * cellSize, cellSize, cellSize)
+    }
     ctx.restore()
   }
 }
@@ -3093,6 +3803,238 @@ function drawNeutralSpawns(ctx: CanvasRenderingContext2D) {
   }
 }
 
+/**
+ * Draw all zones on the editor canvas.
+ * - Interior cells: lighter grey, semi-transparent fill.
+ * - Perimeter cells: darker grey, semi-transparent fill.
+ * - Anchor node: small labelled circle.
+ * - Adjacency edges: dashed line between connected anchor nodes.
+ * - Selected zone: highlighted border.
+ * Zones draw above terrain so the author can see the map through them.
+ * Per spec §10.1 and the perimeter-derived-not-stored invariant.
+ */
+function drawZones(ctx: CanvasRenderingContext2D) {
+  const zones = model.value.zones
+  if (!zones || zones.length === 0) return
+  const cellSize = model.value.cellSize
+  const selId = selectedZoneId.value
+
+  // First pass: fill cells (interior and perimeter).
+  for (const zone of zones) {
+    const isSelected = zone.id === selId
+    const { perimeter, interior } = classifyZoneCells(zone)
+
+    ctx.save()
+
+    // Interior: lighter grey
+    ctx.fillStyle = isSelected
+      ? 'rgba(96, 165, 250, 0.18)'
+      : 'rgba(160, 160, 160, 0.15)'
+    for (const [x, y] of interior) {
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize)
+    }
+
+    // Perimeter: darker grey
+    ctx.fillStyle = isSelected
+      ? 'rgba(59, 130, 246, 0.30)'
+      : 'rgba(100, 100, 100, 0.30)'
+    for (const [x, y] of perimeter) {
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize)
+    }
+
+    // Perimeter outline stroke on the zone boundary.
+    ctx.strokeStyle = isSelected ? '#93c5fd' : '#888'
+    ctx.lineWidth = (isSelected ? 2 : 1) / camera.zoom
+    ctx.setLineDash([])
+    for (const [x, y] of perimeter) {
+      ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize)
+    }
+
+    ctx.restore()
+
+    // Capture sub-zone overlay: warm orange tint drawn on top of the normal fill
+    // so authors see the capture area distinctly inside the zone.
+    if (zone.captureCells && zone.captureCells.length > 0) {
+      ctx.save()
+      ctx.fillStyle = isSelected
+        ? 'rgba(251, 146, 60, 0.55)'  // orange-400 at higher opacity when selected
+        : 'rgba(234, 88, 12, 0.40)'   // orange-600 at base opacity
+      for (const [x, y] of zone.captureCells) {
+        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize)
+      }
+      // Thin inner stroke to delineate individual capture cells.
+      ctx.strokeStyle = isSelected ? 'rgba(253, 186, 116, 0.85)' : 'rgba(251, 146, 60, 0.60)'
+      ctx.lineWidth = (isSelected ? 1.5 : 1) / camera.zoom
+      ctx.setLineDash([])
+      for (const [x, y] of zone.captureCells) {
+        ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize)
+      }
+      ctx.restore()
+    }
+
+    // Claim 2×2 build-slot overlay: cyan/teal fill on the four cells rooted at
+    // the anchor. Visually distinct from the orange capture sub-zone and the
+    // grey zone fill. Cells outside the grid are skipped defensively.
+    if (zone.capture.type === 'claim') {
+      const ax = zone.anchor.x
+      const ay = zone.anchor.y
+      const cols = model.value.gridCols
+      const rows = model.value.gridRows
+      const slotCells: [number, number][] = [
+        [ax,     ay    ],
+        [ax + 1, ay    ],
+        [ax,     ay + 1],
+        [ax + 1, ay + 1],
+      ].filter(([cx, cy]) => cx >= 0 && cy >= 0 && cx < cols && cy < rows) as [number, number][]
+
+      if (slotCells.length > 0) {
+        ctx.save()
+        // Semi-transparent cyan fill
+        ctx.fillStyle = isSelected
+          ? 'rgba(34, 211, 238, 0.40)'   // cyan-400 at higher opacity when selected
+          : 'rgba(6, 182, 212, 0.28)'    // cyan-500 at base opacity
+        for (const [cx, cy] of slotCells) {
+          ctx.fillRect(cx * cellSize, cy * cellSize, cellSize, cellSize)
+        }
+        // Solid outline around the full 2×2 block (not per-cell strokes).
+        ctx.strokeStyle = isSelected ? 'rgba(103, 232, 249, 0.95)' : 'rgba(34, 211, 238, 0.75)'
+        ctx.lineWidth = (isSelected ? 2 : 1.5) / camera.zoom
+        ctx.setLineDash([])
+        // Compute the bounding rect of the slot cells so partial slots near
+        // edges render a correctly-sized outline rather than assuming 2×2.
+        const minCx = Math.min(...slotCells.map(([cx]) => cx))
+        const minCy = Math.min(...slotCells.map(([, cy]) => cy))
+        const maxCx = Math.max(...slotCells.map(([cx]) => cx))
+        const maxCy = Math.max(...slotCells.map(([, cy]) => cy))
+        ctx.strokeRect(
+          minCx * cellSize,
+          minCy * cellSize,
+          (maxCx - minCx + 1) * cellSize,
+          (maxCy - minCy + 1) * cellSize,
+        )
+        ctx.restore()
+      }
+    }
+  }
+
+  // Second pass: directed prerequisite edges (zone → its prerequisites).
+  // Each link is drawn from the zone's anchor toward the prerequisite anchor,
+  // with a small arrowhead at the prerequisite end to convey direction.
+  for (const zone of zones) {
+    const ax = zone.anchor.x * cellSize + cellSize / 2
+    const ay = zone.anchor.y * cellSize + cellSize / 2
+    for (const prereqId of zone.adjacent ?? []) {
+      const prereqZone = zones.find((z) => z.id === prereqId)
+      if (!prereqZone) continue
+      const bx = prereqZone.anchor.x * cellSize + cellSize / 2
+      const by = prereqZone.anchor.y * cellSize + cellSize / 2
+      const dx = bx - ax
+      const dy = by - ay
+      const len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1) continue
+
+      ctx.save()
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)' // amber
+      ctx.lineWidth = 2 / camera.zoom
+      ctx.setLineDash([8 / camera.zoom, 4 / camera.zoom])
+      ctx.beginPath()
+      ctx.moveTo(ax, ay)
+      ctx.lineTo(bx, by)
+      ctx.stroke()
+
+      // Arrowhead at the prerequisite end (solid, no dash).
+      const nx = dx / len
+      const ny = dy / len
+      const arrowLen = Math.min(cellSize * 0.35, len * 0.25)
+      const arrowAngle = Math.PI / 6 // 30 degrees
+      ctx.setLineDash([])
+      ctx.lineWidth = 1.5 / camera.zoom
+      ctx.beginPath()
+      ctx.moveTo(bx, by)
+      ctx.lineTo(
+        bx - arrowLen * (nx * Math.cos(arrowAngle) - ny * Math.sin(arrowAngle)),
+        by - arrowLen * (ny * Math.cos(arrowAngle) + nx * Math.sin(arrowAngle)),
+      )
+      ctx.moveTo(bx, by)
+      ctx.lineTo(
+        bx - arrowLen * (nx * Math.cos(arrowAngle) + ny * Math.sin(arrowAngle)),
+        by - arrowLen * (ny * Math.cos(arrowAngle) - nx * Math.sin(arrowAngle)),
+      )
+      ctx.stroke()
+      ctx.restore()
+    }
+  }
+
+  // Third pass: anchor nodes (drawn last so they sit above edges).
+  for (const zone of zones) {
+    const isSelected = zone.id === selId
+    const cx = zone.anchor.x * cellSize + cellSize / 2
+    const cy = zone.anchor.y * cellSize + cellSize / 2
+    const r = cellSize * 0.3
+
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fillStyle = isSelected ? '#3b82f6' : 'rgba(100, 100, 100, 0.85)'
+    ctx.fill()
+    ctx.strokeStyle = isSelected ? '#e0f2fe' : '#ddd'
+    ctx.lineWidth = (isSelected ? 2 : 1) / camera.zoom
+    ctx.setLineDash([])
+    ctx.stroke()
+
+    // Label: first char of id or name.
+    const label = (zone.name ?? zone.id).charAt(0).toUpperCase()
+    ctx.fillStyle = '#fff'
+    ctx.font = `bold ${Math.max(8, cellSize * 0.25)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(label, cx, cy)
+    ctx.restore()
+  }
+
+  // Fourth pass: home-zone spawn-link connectors. For each zone with a
+  // lockedSpawnLabel, draw a dashed gold/amber line from the zone's anchor
+  // cell center to the matching spawn-point building's cell center, plus a
+  // small circle marker at the spawn end. Distinct from adjacency lines
+  // (which are also amber dashes) by using a tighter dash pattern and a
+  // warm-gold fill on the endpoint marker.
+  const buildings = model.value.buildings
+  for (const zone of zones) {
+    if (!zone.lockedSpawnLabel) continue
+    const spawnBuilding = buildings.find(
+      (b) => b.buildingType === 'spawn-point' && b.metadata?.['playerLabel'] === zone.lockedSpawnLabel,
+    )
+    if (!spawnBuilding) continue
+
+    const ax = zone.anchor.x * cellSize + cellSize / 2
+    const ay = zone.anchor.y * cellSize + cellSize / 2
+    const sx = spawnBuilding.x * cellSize + cellSize / 2
+    const sy = spawnBuilding.y * cellSize + cellSize / 2
+
+    ctx.save()
+    // Dashed gold connector line
+    ctx.strokeStyle = 'rgba(250, 176, 5, 0.90)'
+    ctx.lineWidth = 2.5 / camera.zoom
+    ctx.setLineDash([5 / camera.zoom, 3 / camera.zoom])
+    ctx.beginPath()
+    ctx.moveTo(ax, ay)
+    ctx.lineTo(sx, sy)
+    ctx.stroke()
+
+    // Small filled circle at the spawn-point end
+    ctx.setLineDash([])
+    const mr = cellSize * 0.18
+    ctx.beginPath()
+    ctx.arc(sx, sy, mr, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(250, 176, 5, 0.92)'
+    ctx.fill()
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 1 / camera.zoom
+    ctx.stroke()
+    ctx.restore()
+  }
+}
+
 // Re-render the tile picker whenever it becomes visible or the sheet changes.
 // Wait a tick so the v-if'd canvas is mounted before we try to draw.
 watch(
@@ -3191,7 +4133,7 @@ watch(isPasteMode, () => {
   canvas.value.style.cursor = getCanvasCursor()
 })
 
-watch(movingBuilding, () => {
+watch([movingBuilding, movingNeutralSpawn], () => {
   if (!canvas.value || isSpacePanning) return
   canvas.value.style.cursor = getCanvasCursor()
 })
@@ -3209,6 +4151,7 @@ watch(
 
 watch(selectedBuilding, () => {
   enemyObjectiveId.value = ''
+  enemyTriggerCaptureZoneId.value = ''
   buildingObjectiveId.value = ''
   spawnPointPlayerLabel.value = ''
   enemyTargetPlayerLabel.value = ''
@@ -3552,6 +4495,211 @@ onBeforeUnmount(() => {
   background: rgba(127, 29, 29, 0.18);
 }
 
+/* Zone brush config panel */
+.zone-brush-config {
+  background: rgba(20, 50, 30, 0.28);
+  border: 1px solid rgba(74, 222, 128, 0.30);
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.zone-brush-config__title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #86efac;
+}
+
+.zone-brush-config__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.zone-brush-config__action--active {
+  background: rgba(59, 130, 246, 0.30) !important;
+  border-color: rgba(96, 165, 250, 0.70) !important;
+  color: #bfdbfe !important;
+}
+
+.zone-brush-config__delete {
+  margin-left: auto;
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.40) !important;
+}
+
+.zone-brush-config__hint {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* Directed capture-prerequisite link UI */
+.zone-brush-config__links {
+  display: grid;
+  gap: 6px;
+}
+
+.zone-brush-config__links-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.zone-brush-config__links-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.zone-brush-config__links-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 0.7rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.7);
+  color: #e2e8f0;
+}
+
+.zone-brush-config__links-caret {
+  font-size: 0.6rem;
+  color: #94a3b8;
+}
+
+.zone-brush-config__links-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgba(2, 6, 23, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.25) transparent;
+}
+
+.zone-brush-config__links-empty {
+  font-size: 0.68rem;
+  color: #64748b;
+  font-style: italic;
+}
+
+.zone-brush-config__links-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: #e2e8f0;
+  user-select: none;
+}
+
+.zone-brush-config__links-row input[type='checkbox'] {
+  margin: 0;
+  accent-color: #60a5fa;
+}
+
+.zone-brush-config__require-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: #cbd5e1;
+  user-select: none;
+}
+
+.zone-brush-config__require-all input[type='checkbox'] {
+  margin: 0;
+  accent-color: #60a5fa;
+}
+
+.zone-brush-config__require-all--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Zone sidebar section */
+.zone-sidebar__add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.zone-sidebar__add--active {
+  background: rgba(59, 130, 246, 0.30) !important;
+  border-color: rgba(96, 165, 250, 0.70) !important;
+  color: #bfdbfe !important;
+}
+
+.zone-sidebar__hint {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.zone-sidebar__list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.zone-sidebar__empty {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-style: italic;
+  padding: 6px 4px;
+}
+
+.zone-sidebar__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.zone-sidebar__row:hover {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.zone-sidebar__row--active {
+  background: rgba(29, 78, 216, 0.28) !important;
+  border-color: rgba(96, 165, 250, 0.55) !important;
+  color: #bfdbfe !important;
+}
+
+.zone-sidebar__row-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zone-sidebar__row-type {
+  font-size: 0.65rem;
+  color: #86efac;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
 .wave-config-block {
   display: grid;
   gap: 8px;
@@ -3839,6 +4987,13 @@ onBeforeUnmount(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.edit-field__hint {
+  font-size: 10px;
+  color: #64748b;
+  font-style: italic;
+  margin-top: 2px;
 }
 
 .edit-field input,

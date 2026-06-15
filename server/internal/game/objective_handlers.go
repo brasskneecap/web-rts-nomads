@@ -31,7 +31,65 @@ func registerAllObjectiveHandlers() bool {
 	registerKillCampsBeforeWaveHandler()
 	registerRankUnitsHandler()
 	registerSurviveWavesHandler()
+	registerCaptureZoneHandler()
 	return true
+}
+
+// =============================================================================
+// capture_zone — control the referenced map zone(s). Reads live zone ownership
+// from GameState.Zones (set by the zone-control runtime) rather than a metric.
+// =============================================================================
+
+type captureZoneConfig struct {
+	ZoneIDs    []string `json:"zoneIds"`
+	RequireAll bool     `json:"requireAll,omitempty"`
+}
+
+func registerCaptureZoneHandler() {
+	registerObjective("capture_zone", objectiveHandler{
+		parseConfig: func(raw json.RawMessage) (any, error) {
+			var cfg captureZoneConfig
+			if err := json.Unmarshal(raw, &cfg); err != nil {
+				return nil, err
+			}
+			return cfg, nil
+		},
+		validate: func(filename, levelID, objectiveID string, raw any) {
+			cfg := raw.(captureZoneConfig)
+			if len(cfg.ZoneIDs) == 0 {
+				panic(fmt.Sprintf("catalog/campaigns/%s: level %s: objective %s: capture_zone requires a non-empty zoneIds",
+					filename, levelID, objectiveID))
+			}
+			// Cross-map zone-existence is validated when the zone runtime is
+			// installed against the level's map; the campaign catalog loader
+			// does not resolve the map here.
+		},
+		initialize: func(raw any, state *ObjectiveState) {
+			cfg := raw.(captureZoneConfig)
+			if cfg.RequireAll {
+				state.Required = len(cfg.ZoneIDs)
+			} else {
+				state.Required = 1
+			}
+		},
+		evaluate: func(s *GameState, _ *MatchMetrics, raw any, state *ObjectiveState) {
+			cfg := raw.(captureZoneConfig)
+			owned := 0
+			for _, id := range cfg.ZoneIDs {
+				if s.zoneOwnedByTeamLocked(id) {
+					owned++
+				}
+			}
+			state.Current = owned
+			if cfg.RequireAll {
+				if owned >= len(cfg.ZoneIDs) {
+					state.Completed = true
+				}
+			} else if owned >= 1 {
+				state.Completed = true
+			}
+		},
+	})
 }
 
 // =============================================================================

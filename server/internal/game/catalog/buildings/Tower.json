@@ -1,7 +1,7 @@
 {
   "type": "Tower",
   "class": "player",
-  "width": 1,
+  "width": 2,
   "height": 2,
   "visionRange": 512,
   "maxHp": 500,

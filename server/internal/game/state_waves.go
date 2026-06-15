@@ -302,7 +302,20 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 
 		// gameStart spawnpoints fire exactly once at match start, bypassing wave gating.
 		isGameStart := getMetadataBool(building.Metadata, "gameStart")
-		if !isGameStart {
+		triggerZoneID, hasTrigger := getMetadataString(building.Metadata, "triggerCaptureZoneId")
+		hasTrigger = hasTrigger && triggerZoneID != ""
+		if hasTrigger {
+			// Capture-zone-triggered spawnpoint: bypass wave gating and spawn
+			// only while a human unit occupies the linked zone's capture region
+			// (continuous-while-present). Re-arm the interval while empty so a
+			// re-entry doesn't fire instantly.
+			if !s.captureZoneOccupiedByHumanLocked(triggerZoneID) {
+				if t := s.EnemySpawnTimers[building.ID]; t != nil {
+					t.RemainingInterval = t.TotalInterval
+				}
+				continue
+			}
+		} else if !isGameStart {
 			// Wave-gating: when wave mode is enabled, check waveNumber (specific wave)
 			// and startingWave (every wave from N onwards). Points with neither field
 			// (or waveNumber == 0) are legacy points that always fire regardless.

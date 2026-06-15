@@ -140,6 +140,113 @@ func hydratePlacedUnits(units []protocol.PlacedUnit, cfg protocol.MapConfig) []p
 	return out
 }
 
+// normalizeZones fills in per-zone defaults and makes the authored adjacency
+// graph symmetric (if A lists B, ensure B lists A). Mutates and returns the
+// slice. Safe to call on both the embedded-catalog load path and the editor
+// save path — it never panics, so a malformed interactive save cannot crash
+// the server (hard validation is reserved for validateZones at catalog load).
+func normalizeZones(zones []protocol.Zone) []protocol.Zone {
+	if len(zones) == 0 {
+		return zones
+	}
+	for i := range zones {
+		z := &zones[i]
+		if z.Cells == nil {
+			z.Cells = [][2]int{}
+		}
+		if z.StartingOwner == "" {
+			z.StartingOwner = protocol.ZoneCaptureNeutralOwner
+		}
+		if z.Name == "" {
+			z.Name = z.ID
+		}
+	}
+	// Adjacency is a DIRECTED prerequisite list now (zone -> required zones),
+	// not a symmetric graph, so no reciprocal-edge normalisation.
+	return zones
+}
+
+// validateZones enforces the zone invariants at catalog load, panicking (with
+// the map filename) on a violation — catalogs are static, so a bad entry is a
+// build error, mirroring how the objective loader treats catalog data. Checks:
+// unique zone ids, single-owner cell membership, adjacency targets exist, and
+// each capture mechanic's type is registered and its config valid.
+func validateZones(filename string, zones []protocol.Zone) {
+	if len(zones) == 0 {
+		return
+	}
+	seen := make(map[string]bool, len(zones))
+	for i := range zones {
+		z := zones[i]
+		if z.ID == "" {
+			panic("catalog/maps/" + filename + ": zone with empty id")
+		}
+		if seen[z.ID] {
+			panic("catalog/maps/" + filename + ": duplicate zone id " + z.ID)
+		}
+		seen[z.ID] = true
+	}
+	cellOwner := map[gridPoint]string{}
+	for i := range zones {
+		z := zones[i]
+		for _, c := range z.Cells {
+			gp := gridPoint{X: c[0], Y: c[1]}
+			if other, dup := cellOwner[gp]; dup {
+				panic(fmt.Sprintf("catalog/maps/%s: cell [%d,%d] claimed by zones %q and %q",
+					filename, c[0], c[1], other, z.ID))
+			}
+			cellOwner[gp] = z.ID
+		}
+	}
+	for i := range zones {
+		z := zones[i]
+		for _, adjID := range z.Adjacent {
+			if !seen[adjID] {
+				panic(fmt.Sprintf("catalog/maps/%s: zone %s adjacency references unknown zone %q",
+					filename, z.ID, adjID))
+			}
+		}
+		// CaptureCells (presence capture sub-zone) must be a subset of the zone.
+		for _, c := range z.CaptureCells {
+			if cellOwner[gridPoint{X: c[0], Y: c[1]}] != z.ID {
+				panic(fmt.Sprintf("catalog/maps/%s: zone %s capture cell [%d,%d] is not inside the zone",
+					filename, z.ID, c[0], c[1]))
+			}
+		}
+		parseAndValidateZoneCapture(filename, z.ID, z.Capture)
+	}
+}
+
+// validateZoneTriggers checks that every enemy-spawnpoint's triggerCaptureZoneId
+// (when set) names a zone that exists in the same map. Panics at catalog load
+// naming the offending building + zone id.
+func validateZoneTriggers(filename string, buildings []protocol.BuildingTile, zones []protocol.Zone) {
+	if len(buildings) == 0 {
+		return
+	}
+	zoneIDs := make(map[string]bool, len(zones))
+	for _, z := range zones {
+		zoneIDs[z.ID] = true
+	}
+	for _, b := range buildings {
+		if b.BuildingType != "enemy-spawnpoint" || b.Metadata == nil {
+			continue
+		}
+		raw, ok := b.Metadata["triggerCaptureZoneId"]
+		if !ok {
+			continue
+		}
+		zoneID, _ := raw.(string)
+		if zoneID == "" {
+			continue
+		}
+		if !zoneIDs[zoneID] {
+			panic(fmt.Sprintf("catalog/maps/%s: enemy-spawnpoint %s triggerCaptureZoneId references unknown zone %q",
+				filename, b.ID, zoneID))
+		}
+	}
+}
+
 type MapCatalogEntry struct {
 	ID          string             `json:"id"`
 	Name        string             `json:"name"`
@@ -170,7 +277,7 @@ type MapCatalogSummary struct {
 var mapCatalogFS embed.FS
 
 var (
-	mapCatalog       = func() []MapCatalogEntry { _ = unitDefsByType; return mustLoadMapCatalog() }()
+	mapCatalog       = func() []MapCatalogEntry { _ = unitDefsByType; _ = allZoneCaptureHandlersRegistered; return mustLoadMapCatalog() }()
 	mapCatalogByID   = indexMapCatalog(mapCatalog)
 	defaultCatalogID = mapCatalog[0].ID
 
@@ -414,6 +521,7 @@ func hydrateEntryInPlace(entry *MapCatalogEntry) {
 		entry.Map.PlacedUnits = []protocol.PlacedUnit{}
 	}
 	entry.Map.PlacedUnits = hydratePlacedUnits(entry.Map.PlacedUnits, entry.Map)
+	entry.Map.Zones = normalizeZones(entry.Map.Zones)
 }
 
 // currentMapCatalogSnapshot returns a flat slice of every map known to the
@@ -516,6 +624,9 @@ func mustLoadMapCatalog() []MapCatalogEntry {
 		hydrateObstacles(entry.Map.Obstacles)
 		hydrateBuildings(entry.Map.Buildings)
 		entry.Map.PlacedUnits = hydratePlacedUnits(entry.Map.PlacedUnits, entry.Map)
+		entry.Map.Zones = normalizeZones(entry.Map.Zones)
+		validateZones(file.Name(), entry.Map.Zones)
+		validateZoneTriggers(file.Name(), entry.Map.Buildings, entry.Map.Zones)
 
 		entries = append(entries, entry)
 	}
@@ -590,6 +701,15 @@ func cloneMapConfig(mapConfig protocol.MapConfig) protocol.MapConfig {
 	cloned := mapConfig
 	cloned.Terrain = append([]protocol.TerrainTile(nil), mapConfig.Terrain...)
 	cloned.PlacedUnits = append([]protocol.PlacedUnit(nil), mapConfig.PlacedUnits...)
+	cloned.Zones = make([]protocol.Zone, len(mapConfig.Zones))
+	for i, zone := range mapConfig.Zones {
+		clonedZone := zone
+		clonedZone.Cells = append([][2]int(nil), zone.Cells...)
+		clonedZone.CaptureCells = append([][2]int(nil), zone.CaptureCells...)
+		clonedZone.Adjacent = append([]string(nil), zone.Adjacent...)
+		clonedZone.Capture.Config = append(json.RawMessage(nil), zone.Capture.Config...)
+		cloned.Zones[i] = clonedZone
+	}
 	cloned.Obstacles = make([]protocol.ObstacleTile, len(mapConfig.Obstacles))
 	for i, obstacle := range mapConfig.Obstacles {
 		clonedObstacle := obstacle
