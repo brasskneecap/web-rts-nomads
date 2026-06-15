@@ -118,6 +118,54 @@ export function fillEnclosedZoneCells(cells: [number, number][]): [number, numbe
 }
 
 /**
+ * A single boundary edge of a zone, expressed in GRID units (multiply by
+ * cellSize to get pixels). It is the shared side between a member cell and a
+ * non-member neighbour. `nx`/`ny` is the unit normal pointing INWARD (toward
+ * the member cell's centre, canvas y-down); offset the segment along it to draw
+ * the outline just inside the zone so two adjacent zones that share an edge each
+ * render their own line instead of overpainting one another.
+ *
+ * `nbx`/`nby` is the grid cell on the OUTSIDE of this edge (the non-member
+ * neighbour). Callers can look that cell up in a cross-zone ownership index to
+ * decide whether to drop the edge — e.g. hide the shared border between two
+ * zones owned by the same player so they read as one continuous region.
+ */
+export interface ZoneEdge {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  nx: number
+  ny: number
+  nbx: number
+  nby: number
+}
+
+/**
+ * Returns the OUTLINE of a zone as a list of edges: for every member cell, each
+ * of its 4 sides whose neighbour is not a member of the same zone. This traces
+ * the outer boundary (and any interior holes) as line segments rather than
+ * filling whole perimeter cells, so the zone reads as a thin outline instead of
+ * a band of highlighted squares. Derived from the cell set each call — never
+ * cached, matching the perimeter-not-stored invariant.
+ */
+export function zoneBoundaryEdges(zone: Zone): ZoneEdge[] {
+  const members = new Set<string>(zone.cells.map(([x, y]) => cellKey(x, y)))
+  const edges: ZoneEdge[] = []
+  for (const [x, y] of zone.cells) {
+    // top — inward normal points down (+y), neighbour above
+    if (!members.has(cellKey(x, y - 1))) edges.push({ x1: x, y1: y, x2: x + 1, y2: y, nx: 0, ny: 1, nbx: x, nby: y - 1 })
+    // bottom — inward normal points up (-y), neighbour below
+    if (!members.has(cellKey(x, y + 1))) edges.push({ x1: x, y1: y + 1, x2: x + 1, y2: y + 1, nx: 0, ny: -1, nbx: x, nby: y + 1 })
+    // left — inward normal points right (+x), neighbour to the left
+    if (!members.has(cellKey(x - 1, y))) edges.push({ x1: x, y1: y, x2: x, y2: y + 1, nx: 1, ny: 0, nbx: x - 1, nby: y })
+    // right — inward normal points left (-x), neighbour to the right
+    if (!members.has(cellKey(x + 1, y))) edges.push({ x1: x + 1, y1: y, x2: x + 1, y2: y + 1, nx: -1, ny: 0, nbx: x + 1, nby: y })
+  }
+  return edges
+}
+
+/**
  * Classifies all cells in a zone into perimeter and interior arrays.
  * A cell is a perimeter cell iff at least one of its 4-neighbours is not a
  * member of the same zone (including out-of-bounds neighbours, which are

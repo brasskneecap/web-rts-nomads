@@ -58,7 +58,7 @@ import { getActionIconImage } from './actionIconSprites'
 import { getItemAssetImage } from './itemAssets'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { UnitAnimationController } from './unitAnimation'
-import { classifyZoneCells } from '../maps/zoneGeometry'
+import { cellKey, zoneBoundaryEdges } from '../maps/zoneGeometry'
 
 // Cache of item-icon HTMLImageElements keyed by itemId. Built lazily on first
 // request. Resolves the item def's iconKey through the same fallback chain
@@ -1772,46 +1772,71 @@ export class CanvasRenderer {
       }
     }
 
+    // Index every owned cell to its owner color. Used to drop the shared border
+    // between two adjacent zones with the SAME owner so they read as one large
+    // continuous zone. Unowned / neutral zones (no owner color) are not indexed,
+    // so their borders are always kept.
+    const cellOwnerColor = new Map<string, string>()
+    for (const zone of zones) {
+      const snap = this.state.zoneSnapshotsById.get(zone.id)
+      if (!snap) continue
+      const oc = snap.ownerColor && snap.ownerColor.length > 0 ? snap.ownerColor : null
+      if (!oc) continue
+      for (const [x, y] of zone.cells) cellOwnerColor.set(cellKey(x, y), oc)
+    }
+
     for (const zone of zones) {
       const snap = this.state.zoneSnapshotsById.get(zone.id)
       if (!snap) continue
 
-      const { perimeter } = classifyZoneCells(zone)
+      const edges = zoneBoundaryEdges(zone)
       const isAlly = allyOwnedIds.has(zone.id)
       const isContested = snap.contested === true
 
       // Perimeter color = the controlling player's color (server-resolved;
       // team-owned → the lowest-slot player's color). Unowned/neutral → grey.
       const ownerColor = snap.ownerColor && snap.ownerColor.length > 0 ? snap.ownerColor : null
-      const fillColor = ownerColor ? this.withAlpha(ownerColor, 0.25) : 'rgba(120,120,120,0.16)'
-      const perimColor = ownerColor ? this.withAlpha(ownerColor, 0.6) : 'rgba(120,120,120,0.45)'
+      const perimColor = ownerColor ? this.withAlpha(ownerColor, 0.6) : 'rgba(70,70,70,0.75)'
 
       ctx.save()
 
-      // Only the PERIMETER is tinted — the interior stays the normal ground
-      // color (no fill), so zones read as outlined regions, not filled blocks.
-      ctx.fillStyle = fillColor
-      for (const [x, y] of perimeter) {
-        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize)
+      // Trace only the OUTER edges of the zone — the cell sides that border a
+      // non-member — so zones read as a thin outline, not a band of filled
+      // perimeter squares. The interior keeps the normal ground color.
+      //
+      // The outline is inset slightly INWARD (along each edge's inward normal)
+      // so two adjacent zones that share a boundary each draw their own line
+      // just inside their own cells, instead of overpainting the same pixels
+      // (which would hide one zone's color behind the other's).
+      const inset = Math.min(2 / this.camera.zoom, cellSize * 0.25)
+      const trace = () => {
+        ctx.beginPath()
+        for (const e of edges) {
+          // Drop the shared border with an adjacent same-owner zone: the cell on
+          // the outside of this edge belongs to another zone with our owner
+          // color, so the two should look like one merged region.
+          if (ownerColor && cellOwnerColor.get(cellKey(e.nbx, e.nby)) === ownerColor) continue
+          const ox = e.nx * inset
+          const oy = e.ny * inset
+          ctx.moveTo(e.x1 * cellSize + ox, e.y1 * cellSize + oy)
+          ctx.lineTo(e.x2 * cellSize + ox, e.y2 * cellSize + oy)
+        }
       }
 
-      // Perimeter cell outline.
       ctx.strokeStyle = perimColor
       ctx.lineWidth = 2 / this.camera.zoom
       ctx.setLineDash([])
-      for (const [x, y] of perimeter) {
-        ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize)
-      }
+      trace()
+      ctx.stroke()
 
-      // Contested: pulsing dashed outline on the perimeter (time-driven blink).
+      // Contested: pulsing dashed outline on the boundary (time-driven blink).
       if (isContested) {
         const blinkAlpha = 0.5 + 0.5 * Math.sin(this.renderTime / 300)
         ctx.strokeStyle = `rgba(251,191,36,${blinkAlpha.toFixed(2)})`
         ctx.lineWidth = 3 / this.camera.zoom
         ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom])
-        for (const [x, y] of perimeter) {
-          ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize)
-        }
+        trace()
+        ctx.stroke()
         ctx.setLineDash([])
       }
 
@@ -3962,7 +3987,9 @@ export class CanvasRenderer {
 
   // Draws each zone's perimeter cells on the minimap, tinted by the controlling
   // player's color (grey when unowned) — a glanceable map of territorial
-  // control. Mirrors the in-world owner-color logic.
+  // control. Mirrors the in-world owner-color logic, including merging the
+  // shared border between two adjacent same-owner zones so they read as one
+  // large territory.
   private drawMinimapZones(bounds: { x: number; y: number; width: number; height: number }) {
     const zones = this.state.mapConfig.zones
     if (!zones || zones.length === 0) return
@@ -3975,12 +4002,29 @@ export class CanvasRenderer {
     const cw = Math.max(1, cellSize * sx)
     const ch = Math.max(1, cellSize * sy)
 
+    // Group key per cell: same-owner zones share a key (their seam merges away),
+    // while each neutral/unowned zone keeps its own key (borders preserved).
+    // A cell is drawn only when it sits on the OUTER edge of its group.
+    const cellGroup = new Map<string, string>()
+    for (const zone of zones) {
+      const snap = this.state.zoneSnapshotsById.get(zone.id)
+      const oc = snap?.ownerColor && snap.ownerColor.length > 0 ? snap.ownerColor : null
+      const key = oc ?? `z:${zone.id}`
+      for (const [cx, cy] of zone.cells) cellGroup.set(cellKey(cx, cy), key)
+    }
+
     for (const zone of zones) {
       const snap = this.state.zoneSnapshotsById.get(zone.id)
       const ownerColor = snap?.ownerColor && snap.ownerColor.length > 0 ? snap.ownerColor : null
+      const key = ownerColor ?? `z:${zone.id}`
       ctx.fillStyle = ownerColor ?? 'rgba(160,160,160,0.85)'
-      const { perimeter } = classifyZoneCells(zone)
-      for (const [cx, cy] of perimeter) {
+      for (const [cx, cy] of zone.cells) {
+        const onGroupEdge =
+          cellGroup.get(cellKey(cx - 1, cy)) !== key ||
+          cellGroup.get(cellKey(cx + 1, cy)) !== key ||
+          cellGroup.get(cellKey(cx, cy - 1)) !== key ||
+          cellGroup.get(cellKey(cx, cy + 1)) !== key
+        if (!onGroupEdge) continue
         ctx.fillRect(x + cx * cellSize * sx, y + cy * cellSize * sy, cw, ch)
       }
     }

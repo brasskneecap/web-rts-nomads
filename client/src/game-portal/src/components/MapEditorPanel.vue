@@ -1399,7 +1399,7 @@ import type {
   Zone,
   ZoneCapture,
 } from '@/game/network/protocol'
-import { buildZoneCellIndex, cellKey, classifyZoneCells, fillEnclosedZoneCells } from '@/game/maps/zoneGeometry'
+import { buildZoneCellIndex, cellKey, fillEnclosedZoneCells, zoneBoundaryEdges } from '@/game/maps/zoneGeometry'
 import type { Campaign } from '@/types/campaign'
 import { fetchCampaignCatalog } from '@/services/campaignApi'
 import { NEUTRAL_PLAYER_COLOR, NEUTRAL_SPAWN_RANDOM_GROUP_ID } from '@/game/network/protocol'
@@ -3331,6 +3331,7 @@ function drawEditorMinimap() {
   const bounds = { x: 0, y: 0, width: w, height: h }
   drawMinimapBase(mctx, model.value, bounds, minimapTerrainSurface)
   drawMinimapPOIs(mctx, model.value, bounds, null)
+  drawMinimapZones(mctx, bounds)
 
   // Viewport rect tied to the editor camera. Clipped to the minimap rect
   // so it can't bleed past the frame when the camera overscans the map
@@ -3355,6 +3356,56 @@ function drawEditorMinimap() {
       mctx.strokeRect(vx, vy, vw, vh)
       mctx.restore()
     }
+  }
+}
+
+// Draws each zone onto the editor minimap: a faint footprint fill plus the
+// outer boundary edges, scaled from grid coords into the minimap rect. Mirrors
+// the main-canvas zone style (outline, not filled boxes) so the minimap reads
+// consistently. Selected zone is tinted blue.
+function drawMinimapZones(mctx: CanvasRenderingContext2D, bounds: { x: number; y: number; width: number; height: number }) {
+  const zones = model.value.zones
+  if (!zones || zones.length === 0) return
+  const cols = model.value.gridCols
+  const rows = model.value.gridRows
+  if (cols <= 0 || rows <= 0) return
+
+  const cellW = bounds.width / cols
+  const cellH = bounds.height / rows
+  const selId = selectedZoneId.value
+
+  for (const zone of zones) {
+    const isSelected = zone.id === selId
+    const edges = zoneBoundaryEdges(zone)
+
+    mctx.save()
+
+    mctx.fillStyle = isSelected ? 'rgba(96, 165, 250, 0.20)' : 'rgba(160, 160, 160, 0.18)'
+    for (const [cx, cy] of zone.cells) {
+      mctx.fillRect(bounds.x + cx * cellW, bounds.y + cy * cellH, cellW, cellH)
+    }
+
+    // Inset inward so adjacent zones don't overpaint a shared edge (small at
+    // minimap scale, clamped so it can't cross a thin zone).
+    const insetX = Math.min(1, cellW * 0.3)
+    const insetY = Math.min(1, cellH * 0.3)
+    mctx.setLineDash([])
+    mctx.beginPath()
+    for (const e of edges) {
+      mctx.moveTo(bounds.x + e.x1 * cellW + e.nx * insetX, bounds.y + e.y1 * cellH + e.ny * insetY)
+      mctx.lineTo(bounds.x + e.x2 * cellW + e.nx * insetX, bounds.y + e.y2 * cellH + e.ny * insetY)
+    }
+    // Light halo under a dark core so the outline reads at minimap scale too.
+    mctx.lineCap = 'round'
+    mctx.lineJoin = 'round'
+    mctx.strokeStyle = 'rgba(255, 255, 255, 0.6)'
+    mctx.lineWidth = 2.5
+    mctx.stroke()
+    mctx.strokeStyle = isSelected ? '#3b82f6' : 'rgba(20, 20, 20, 0.95)'
+    mctx.lineWidth = 1
+    mctx.stroke()
+
+    mctx.restore()
   }
 }
 
@@ -3819,36 +3870,46 @@ function drawZones(ctx: CanvasRenderingContext2D) {
   const cellSize = model.value.cellSize
   const selId = selectedZoneId.value
 
-  // First pass: fill cells (interior and perimeter).
+  // First pass: faint footprint fill + outline only the OUTER boundary edges
+  // (the cell sides bordering a non-member) so zones read as a thin outline,
+  // not a band of filled perimeter squares. The faint full-footprint fill keeps
+  // cell membership visible for authoring.
   for (const zone of zones) {
     const isSelected = zone.id === selId
-    const { perimeter, interior } = classifyZoneCells(zone)
+    const edges = zoneBoundaryEdges(zone)
 
     ctx.save()
 
-    // Interior: lighter grey
+    // Faint fill across the whole zone footprint (membership aid).
     ctx.fillStyle = isSelected
-      ? 'rgba(96, 165, 250, 0.18)'
-      : 'rgba(160, 160, 160, 0.15)'
-    for (const [x, y] of interior) {
+      ? 'rgba(96, 165, 250, 0.15)'
+      : 'rgba(160, 160, 160, 0.12)'
+    for (const [x, y] of zone.cells) {
       ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize)
     }
 
-    // Perimeter: darker grey
-    ctx.fillStyle = isSelected
-      ? 'rgba(59, 130, 246, 0.30)'
-      : 'rgba(100, 100, 100, 0.30)'
-    for (const [x, y] of perimeter) {
-      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize)
-    }
-
-    // Perimeter outline stroke on the zone boundary.
-    ctx.strokeStyle = isSelected ? '#93c5fd' : '#888'
-    ctx.lineWidth = (isSelected ? 2 : 1) / camera.zoom
+    // Boundary outline. Built once, then stroked twice: a light halo under a
+    // dark (or blue, when selected) core line so it stays legible over both the
+    // faint zone fill and any terrain color. Inset INWARD along each edge's
+    // normal so two adjacent zones sharing a boundary each draw their own line
+    // instead of overpainting the same pixels.
+    const inset = Math.min(2.5 / camera.zoom, cellSize * 0.3)
     ctx.setLineDash([])
-    for (const [x, y] of perimeter) {
-      ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize)
+    ctx.beginPath()
+    for (const e of edges) {
+      const ox = e.nx * inset
+      const oy = e.ny * inset
+      ctx.moveTo(e.x1 * cellSize + ox, e.y1 * cellSize + oy)
+      ctx.lineTo(e.x2 * cellSize + ox, e.y2 * cellSize + oy)
     }
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)'
+    ctx.lineWidth = (isSelected ? 4 : 3.5) / camera.zoom
+    ctx.stroke()
+    ctx.strokeStyle = isSelected ? '#1d4ed8' : 'rgba(20, 20, 20, 0.95)'
+    ctx.lineWidth = (isSelected ? 2 : 1.5) / camera.zoom
+    ctx.stroke()
 
     ctx.restore()
 
