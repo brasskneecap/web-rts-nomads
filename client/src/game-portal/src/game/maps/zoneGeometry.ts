@@ -142,17 +142,15 @@ export interface ZoneEdge {
 }
 
 /**
- * Returns the OUTLINE of a zone as a list of edges: for every member cell, each
- * of its 4 sides whose neighbour is not a member of the same zone. This traces
- * the outer boundary (and any interior holes) as line segments rather than
- * filling whole perimeter cells, so the zone reads as a thin outline instead of
- * a band of highlighted squares. Derived from the cell set each call — never
- * cached, matching the perimeter-not-stored invariant.
+ * Returns the OUTLINE of an arbitrary cell set as a list of edges: for every
+ * member cell, each of its 4 sides whose neighbour is not a member of the set.
+ * Traces the outer boundary (and any interior holes) as line segments rather
+ * than filling whole cells. Derived each call — never cached.
  */
-export function zoneBoundaryEdges(zone: Zone): ZoneEdge[] {
-  const members = new Set<string>(zone.cells.map(([x, y]) => cellKey(x, y)))
+export function cellSetBoundaryEdges(cells: [number, number][]): ZoneEdge[] {
+  const members = new Set<string>(cells.map(([x, y]) => cellKey(x, y)))
   const edges: ZoneEdge[] = []
-  for (const [x, y] of zone.cells) {
+  for (const [x, y] of cells) {
     // top — inward normal points down (+y), neighbour above
     if (!members.has(cellKey(x, y - 1))) edges.push({ x1: x, y1: y, x2: x + 1, y2: y, nx: 0, ny: 1, nbx: x, nby: y - 1 })
     // bottom — inward normal points up (-y), neighbour below
@@ -163,6 +161,14 @@ export function zoneBoundaryEdges(zone: Zone): ZoneEdge[] {
     if (!members.has(cellKey(x + 1, y))) edges.push({ x1: x + 1, y1: y, x2: x + 1, y2: y + 1, nx: -1, ny: 0, nbx: x + 1, nby: y })
   }
   return edges
+}
+
+/**
+ * Returns the OUTLINE of a zone as a list of edges — its cell set's boundary.
+ * The zone reads as a thin outline instead of a band of highlighted squares.
+ */
+export function zoneBoundaryEdges(zone: Zone): ZoneEdge[] {
+  return cellSetBoundaryEdges(zone.cells)
 }
 
 /**

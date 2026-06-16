@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   cellKey,
+  cellSetBoundaryEdges,
   classifyZoneCells,
   fillEnclosedZoneCells,
   zoneBoundaryEdges,
@@ -116,5 +117,38 @@ describe('zoneBoundaryEdges', () => {
     const edges = zoneBoundaryEdges(zone as never)
     // Outer perimeter of the 5x5 box = 20 unit edges; inner 3x3 hole boundary = 12.
     expect(edges).toHaveLength(20 + 12)
+  })
+})
+
+describe('cellSetBoundaryEdges', () => {
+  const edgeKey = (e: { x1: number; y1: number; x2: number; y2: number }) =>
+    `${e.x1},${e.y1}-${e.x2},${e.y2}`
+
+  it('outlines an arbitrary sub-region (used for the capture area)', () => {
+    // A 1x2 vertical strip (the kind a capture sub-zone might be): 6 boundary
+    // edges, and the shared internal side between the two cells is omitted.
+    const strip: [number, number][] = [
+      [3, 3],
+      [3, 4],
+    ]
+    const edges = cellSetBoundaryEdges(strip)
+    expect(edges).toHaveLength(6)
+    const keys = edges.map(edgeKey)
+    // The shared horizontal side at y=4 between (3,3) and (3,4) must NOT appear.
+    expect(keys).not.toContain('3,4-4,4')
+    // Outer sides are present (e.g. the top of (3,3) and the bottom of (3,4)).
+    expect(keys).toContain('3,3-4,3')
+    expect(keys).toContain('3,5-4,5')
+  })
+
+  it('matches zoneBoundaryEdges for a zone’s own cells', () => {
+    const cells: [number, number][] = [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+      [1, 1],
+    ]
+    const zone = { id: 'z', anchor: { x: 0, y: 0 }, cells, capture: { type: 'presence' } }
+    expect(cellSetBoundaryEdges(cells)).toEqual(zoneBoundaryEdges(zone as never))
   })
 })

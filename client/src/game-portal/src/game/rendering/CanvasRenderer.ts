@@ -58,7 +58,7 @@ import { getActionIconImage } from './actionIconSprites'
 import { getItemAssetImage } from './itemAssets'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { UnitAnimationController } from './unitAnimation'
-import { cellKey, zoneBoundaryEdges } from '../maps/zoneGeometry'
+import { cellSetBoundaryEdges, cellKey, zoneBoundaryEdges } from '../maps/zoneGeometry'
 
 // Cache of item-icon HTMLImageElements keyed by itemId. Built lazily on first
 // request. Resolves the item def's iconKey through the same fallback chain
@@ -1842,6 +1842,37 @@ export class CanvasRenderer {
 
       // Capture progress is shown by the top-screen bar (drawCaptureProgressBar),
       // not by filling the zone — see that method.
+
+      // Presence capture sub-zone: a dashed cyan outline (with a faint fill)
+      // marking exactly where the player's units must stand to capture. Shown
+      // until the zone is team-owned. Only drawn when an explicit capture
+      // sub-zone is authored; without one the whole zone is the capture area and
+      // the zone outline above already shows it.
+      if (
+        zone.capture?.type === 'presence' &&
+        !isAlly &&
+        zone.captureCells &&
+        zone.captureCells.length > 0
+      ) {
+        const capCells = zone.captureCells
+        const pulse = 0.55 + 0.45 * Math.sin(this.renderTime / 350)
+        ctx.fillStyle = 'rgba(34,211,238,0.12)' // faint cyan "stand here" area
+        for (const [x, y] of capCells) {
+          ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize)
+        }
+        ctx.strokeStyle = `rgba(34,211,238,${pulse.toFixed(2)})`
+        ctx.lineWidth = 2 / this.camera.zoom
+        ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom])
+        ctx.beginPath()
+        for (const e of cellSetBoundaryEdges(capCells)) {
+          const ox = e.nx * inset
+          const oy = e.ny * inset
+          ctx.moveTo(e.x1 * cellSize + ox, e.y1 * cellSize + oy)
+          ctx.lineTo(e.x2 * cellSize + ox, e.y2 * cellSize + oy)
+        }
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
 
       // Claim mechanic: highlight the 2x2 build slot (anchor top-left) so the
       // player knows where to build the tower. Shown until the zone is captured
