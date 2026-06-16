@@ -167,6 +167,7 @@ func evaluatePresenceCapture(s *GameState, rt *zoneRuntime, dt float64) {
 			return
 		}
 		if s.zoneCapturableByLocked(rt, humanRep) {
+			rt.Capturing = true // progress is actively advancing this tick
 			rt.Progress += dt
 			if rt.Progress >= cfg.CaptureSeconds {
 				rt.Owner = protocol.ZoneCaptureTeamOwner // team effort
@@ -244,6 +245,22 @@ func (s *GameState) claimTowerOnSlotLocked(rt *zoneRuntime, towerType string) *p
 	return nil
 }
 
+// claimZoneTowerLocked returns the completed team tower standing on the named
+// claim zone's slot, or nil when the zone is unknown, isn't a claim zone, or has
+// no tower yet. Used to point capture-trigger enemy spawns at the structure the
+// team is using to capture the zone so the defenders attack it directly.
+func (s *GameState) claimZoneTowerLocked(zoneID string) *protocol.BuildingTile {
+	rt := s.zoneRuntimeByIDLocked(zoneID)
+	if rt == nil {
+		return nil
+	}
+	cfg, ok := rt.captureCfg.(claimCaptureConfig)
+	if !ok {
+		return nil
+	}
+	return s.claimTowerOnSlotLocked(rt, cfg.TowerType)
+}
+
 // claimSlotBuildableLocked reports whether buildingType may be built on cell as
 // the claim-tower exception to the build-gate: the cell is in a claim zone's
 // 2x2 slot and (if a towerType is configured) the building being placed is that
@@ -281,6 +298,7 @@ func evaluateClaimCapture(s *GameState, rt *zoneRuntime, dt float64) {
 		rt.Progress = 0 // no tower (not built yet, or destroyed) → restart defend
 		return
 	}
+	rt.Capturing = true // defend timer is actively advancing this tick
 	rt.Progress += dt
 	if rt.Progress >= cfg.DefendSeconds {
 		rt.Owner = protocol.ZoneCaptureTeamOwner

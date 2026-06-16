@@ -207,6 +207,26 @@
         ]
       },
       {
+        "x": 35,
+        "y": 32,
+        "id": "enemy-spawnpoint-35-32",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "triggerCaptureZoneId": "zone-3",
+          "unitType": "raider"
+        }
+      },
+      {
         "x": 46,
         "y": 38,
         "id": "enemy-spawnpoint-46-38",
@@ -875,7 +895,7 @@
       ]
     },
     "terrain": {
-      "grass": [[48,47]]
+      "grass": [[27,37],[27,38],[27,39],[27,41],[27,43],[48,47]]
     },
     "obstacles": {
       "tree": {

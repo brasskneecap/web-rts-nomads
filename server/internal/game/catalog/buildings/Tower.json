@@ -4,6 +4,7 @@
   "width": 2,
   "height": 2,
   "visionRange": 512,
+  "unobstructedVision": true,
   "maxHp": 500,
   "buildSeconds": 15,
   "damage": 35,

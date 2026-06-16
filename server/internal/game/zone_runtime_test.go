@@ -125,6 +125,74 @@ func TestPresenceCapture_ContestedFreezes(t *testing.T) {
 	}
 }
 
+func TestPresenceCapture_CapturingFlagTransitions(t *testing.T) {
+	s := newZoneTestState([]protocol.Zone{
+		presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1"),
+		presenceZone("north", rectCells(0, 5, 4, 9), [2]int{2, 7}, "neutral", "seed"),
+	})
+	rt := s.zoneRuntimeByIDLocked("north")
+
+	// Empty zone → not capturing.
+	s.tickZonesLocked(0.5)
+	if rt.Capturing {
+		t.Fatal("empty zone should not be flagged Capturing")
+	}
+
+	// A sole human in the (capturable) zone → capturing while progress advances.
+	human := s.addZoneTestUnit("p1", 2, 7)
+	s.tickZonesLocked(0.5)
+	if !rt.Capturing {
+		t.Fatal("zone should be Capturing while a sole team advances progress")
+	}
+
+	// A hostile joins → contested → progress frozen → not capturing.
+	hostile := s.addZoneTestUnit(enemyPlayerID, 3, 7)
+	s.tickZonesLocked(0.5)
+	if rt.Capturing {
+		t.Fatal("contested zone must not be flagged Capturing")
+	}
+	if !rt.Contested {
+		t.Fatal("zone should be contested with a hostile present")
+	}
+
+	// Hostile leaves → capturing resumes.
+	hostile.HP = 0
+	s.tickZonesLocked(0.5)
+	if !rt.Capturing {
+		t.Fatal("zone should resume Capturing once uncontested")
+	}
+
+	// Human leaves → not capturing.
+	human.HP = 0
+	s.tickZonesLocked(0.5)
+	if rt.Capturing {
+		t.Fatal("abandoned zone should not be flagged Capturing")
+	}
+}
+
+func TestPresenceCapture_NotCapturingOnceOwned(t *testing.T) {
+	s := newZoneTestState([]protocol.Zone{
+		presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1"),
+		presenceZone("north", rectCells(0, 5, 4, 9), [2]int{2, 7}, "neutral", "seed"),
+	})
+	s.addZoneTestUnit("p1", 2, 7)
+	rt := s.zoneRuntimeByIDLocked("north")
+
+	// Capture it (captureSeconds=2, dt 0.5 → 4 ticks).
+	for i := 0; i < 4; i++ {
+		s.tickZonesLocked(0.5)
+	}
+	if rt.Owner != protocol.ZoneCaptureTeamOwner {
+		t.Fatalf("north should be captured, owner = %q", rt.Owner)
+	}
+	// Now team-owned: the unit still stands inside, but there is nothing to
+	// capture, so Capturing must be false.
+	s.tickZonesLocked(0.5)
+	if rt.Capturing {
+		t.Fatal("an already team-owned zone must not be flagged Capturing")
+	}
+}
+
 func TestPresenceCapture_LockedWithoutAdjacency(t *testing.T) {
 	// "north" is NOT adjacent to a team-owned zone (its only neighbour, "far",
 	// is neutral), so a p1 unit standing in it must not make progress.
@@ -223,33 +291,6 @@ func TestPresenceCapture_RequiresCaptureSubZone(t *testing.T) {
 	}
 	if zoneOwner(s, "north") != protocol.ZoneCaptureTeamOwner {
 		t.Fatalf("should capture from inside the capture sub-zone, got %q", zoneOwner(s, "north"))
-	}
-}
-
-func TestCaptureZoneOccupiedByHuman(t *testing.T) {
-	north := presenceZone("north", rectCells(0, 5, 4, 9), [2]int{2, 7}, "neutral")
-	north.CaptureCells = [][2]int{{2, 7}}
-
-	s := newZoneTestState([]protocol.Zone{north})
-	if s.captureZoneOccupiedByHumanLocked("north") {
-		t.Fatal("empty zone should not be occupied")
-	}
-	// Human in the zone body but outside the capture sub-zone → not occupied.
-	s.addZoneTestUnit("p1", 0, 5)
-	if s.captureZoneOccupiedByHumanLocked("north") {
-		t.Fatal("human outside the capture sub-zone should not count as occupied")
-	}
-	// Human inside the capture sub-zone → occupied.
-	s.addZoneTestUnit("p1", 2, 7)
-	if !s.captureZoneOccupiedByHumanLocked("north") {
-		t.Fatal("human in the capture sub-zone should count as occupied")
-	}
-
-	// An enemy in the capture sub-zone is not human occupancy.
-	s2 := newZoneTestState([]protocol.Zone{north})
-	s2.addZoneTestUnit(enemyPlayerID, 2, 7)
-	if s2.captureZoneOccupiedByHumanLocked("north") {
-		t.Fatal("an enemy unit should not count as human occupancy")
 	}
 }
 
@@ -409,11 +450,28 @@ func TestZoneBuildGate_AllowsOwnerDeniesNeutral(t *testing.T) {
 
 // --- enemy spawn trigger ----------------------------------------------------
 
-func TestEnemySpawnTrigger_GatedByCaptureZoneOccupancy(t *testing.T) {
+func TestZoneCapturingLocked(t *testing.T) {
+	s := newZoneTestState([]protocol.Zone{
+		presenceZone("z", rectCells(0, 0, 2, 2), [2]int{1, 1}, "neutral"),
+	})
+	if s.zoneCapturingLocked("z") {
+		t.Fatal("a zone with no advancing capture should not be capturing")
+	}
+	s.zoneRuntimeByIDLocked("z").Capturing = true
+	if !s.zoneCapturingLocked("z") {
+		t.Fatal("helper should reflect the runtime Capturing flag")
+	}
+	if s.zoneCapturingLocked("does-not-exist") {
+		t.Fatal("an unknown zone must report not-capturing")
+	}
+}
+
+func TestEnemySpawnTrigger_GatedByCaptureProgress(t *testing.T) {
 	cfg := protocol.MapConfig{
 		ID: "trigger-test", CellSize: 64, GridCols: 32, GridRows: 32,
 		Width: 32 * 64, Height: 32 * 64,
 		Zones: []protocol.Zone{
+			// Ungated presence zone (captureSeconds=2) so a sole p1 unit advances it.
 			presenceZone("cap", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral"),
 		},
 		Buildings: []protocol.BuildingTile{{
@@ -442,25 +500,91 @@ func TestEnemySpawnTrigger_GatedByCaptureZoneOccupancy(t *testing.T) {
 		}
 		return n
 	}
-
-	// Capture zone empty → the triggered spawnpoint stays dormant.
-	for i := 0; i < 5; i++ {
+	// Tick zones first so the Capturing flag is fresh, then the spawnpoints.
+	step := func() {
+		s.tickZonesLocked(1.0)
 		s.tickEnemySpawnpointsLocked(1.0, blocked)
 	}
+
+	// Nobody capturing → dormant.
+	for i := 0; i < 5; i++ {
+		step()
+	}
 	if enemies() != 0 {
-		t.Fatalf("spawnpoint should be dormant while capture zone is empty, got %d enemies", enemies())
+		t.Fatalf("spawnpoint must stay dormant while the zone is not being captured, got %d", enemies())
 	}
 
-	// A human unit enters the capture zone → the spawnpoint activates.
+	// A human enters and starts capturing → spawnpoint activates.
 	s.nextUnitID++
 	s.Units = append(s.Units, &Unit{
 		ID: s.nextUnitID, OwnerID: "p1",
 		X: (7 + 0.5) * cfg.CellSize, Y: (7 + 0.5) * cfg.CellSize,
 		HP: 100, Visible: true,
 	})
-	s.tickEnemySpawnpointsLocked(1.0, blocked)
+	step()
 	if enemies() < 1 {
-		t.Fatalf("spawnpoint should spawn while a player occupies the capture zone, got %d enemies", enemies())
+		t.Fatalf("spawnpoint should spawn while the zone is being captured, got %d", enemies())
+	}
+
+	// Let the capture finish; the unit keeps standing in the (now team-owned)
+	// zone, but there is nothing left to capture → the spawnpoint goes dormant.
+	for i := 0; i < 5; i++ {
+		step()
+	}
+	if got := s.zoneRuntimeByIDLocked("cap").Owner; got != protocol.ZoneCaptureTeamOwner {
+		t.Fatalf("cap should be captured by now, owner = %q", got)
+	}
+	before := enemies()
+	for i := 0; i < 5; i++ {
+		step()
+	}
+	if enemies() != before {
+		t.Fatalf("spawnpoint must be dormant after capture completes; spawned %d more", enemies()-before)
+	}
+}
+
+func TestEnemySpawn_AllianceSelectsOwner(t *testing.T) {
+	cfg := protocol.MapConfig{
+		ID: "alliance-test", CellSize: 64, GridCols: 32, GridRows: 32,
+		Width: 32 * 64, Height: 32 * 64,
+		Buildings: []protocol.BuildingTile{
+			// Default (no spawnAlliance) → enemy-aligned (backward compatible).
+			{GridCoord: protocol.GridCoord{X: 5, Y: 5}, ID: "enemySpawn", BuildingType: "enemy-spawnpoint",
+				Width: 1, Height: 1, Visible: true, Occupied: true,
+				Metadata: map[string]interface{}{"gameStart": true, "unitType": "raider", "spawnCount": float64(1)}},
+			// spawnAlliance=neutral → neutral-aligned.
+			{GridCoord: protocol.GridCoord{X: 25, Y: 25}, ID: "neutralSpawn", BuildingType: "enemy-spawnpoint",
+				Width: 1, Height: 1, Visible: true, Occupied: true,
+				Metadata: map[string]interface{}{"gameStart": true, "unitType": "raider", "spawnCount": float64(1), "spawnAlliance": "neutral"}},
+		},
+	}
+	s := NewGameStateWithSeed(cfg, 7)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.tickEnemySpawnpointsLocked(0.05, map[gridPoint]bool{})
+
+	count := func(owner string) int {
+		n := 0
+		for _, u := range s.Units {
+			if u.OwnerID == owner {
+				n++
+			}
+		}
+		return n
+	}
+	if got := count(enemyPlayerID); got != 1 {
+		t.Fatalf("default spawnpoint should spawn 1 enemy-aligned unit, got %d", got)
+	}
+	if got := count(neutralPlayerID); got != 1 {
+		t.Fatalf("spawnAlliance=neutral should spawn 1 neutral-aligned unit, got %d", got)
+	}
+	// Neutral-aligned spawn units belong to no camp, so camp/wave despawn
+	// (which only removes camp-tracked units) will not cull them.
+	for _, u := range s.Units {
+		if u.OwnerID == neutralPlayerID && u.NeutralCampID != "" {
+			t.Fatalf("spawnpoint neutral unit must not be tied to a camp, got NeutralCampID=%q", u.NeutralCampID)
+		}
 	}
 }
 
@@ -524,6 +648,211 @@ func TestClaimCapture_BuildDefendAndReset(t *testing.T) {
 	s.tickZonesLocked(0.5) // 6th tick → progress reaches 3
 	if got := zoneOwner(s, "claim"); got != protocol.ZoneCaptureTeamOwner {
 		t.Fatalf("claim should capture to the team after defending, got %q", got)
+	}
+}
+
+func TestClaimCapture_CapturingFlag(t *testing.T) {
+	seed := presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1")
+	claim := claimZone("claim", [2]int{6, 6}, rectCells(5, 5, 9, 9), "seed")
+	s := newZoneTestState([]protocol.Zone{seed, claim})
+	rt := s.zoneRuntimeByIDLocked("claim")
+
+	// No tower → defend timer can't advance → not capturing.
+	s.tickZonesLocked(0.5)
+	if rt.Capturing {
+		t.Fatal("claim with no tower must not be flagged Capturing")
+	}
+
+	// Completed team tower on the slot → defend timer advances → capturing.
+	tower := s.placeClaimTower("p1", 6, 6)
+	s.tickZonesLocked(0.5)
+	if !rt.Capturing {
+		t.Fatal("claim should be Capturing while a defended tower stands")
+	}
+
+	// Tower destroyed → timer resets → not capturing.
+	tower.Visible = false
+	s.tickZonesLocked(0.5)
+	if rt.Capturing {
+		t.Fatal("claim must not be Capturing once the tower is gone")
+	}
+
+	// Defend to completion → captured → no longer capturing.
+	tower.Visible = true
+	for i := 0; i < 8; i++ {
+		s.tickZonesLocked(0.5)
+	}
+	if rt.Owner != protocol.ZoneCaptureTeamOwner {
+		t.Fatalf("claim should be captured, owner = %q", rt.Owner)
+	}
+	s.tickZonesLocked(0.5)
+	if rt.Capturing {
+		t.Fatal("an already-claimed zone must not be flagged Capturing")
+	}
+}
+
+func TestNearestCapturingUnitPos(t *testing.T) {
+	s := newZoneTestState([]protocol.Zone{
+		presenceZone("cap", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral"),
+	})
+	rt := s.zoneRuntimeByIDLocked("cap")
+
+	if s.nearestCapturingUnitPosLocked(rt, 0, 0) != nil {
+		t.Fatal("no capturer in the region → nil")
+	}
+	// Enemy / neutral units in the region are not "the capturing team".
+	s.addZoneTestUnit(enemyPlayerID, 7, 7)
+	s.addZoneTestUnit(neutralPlayerID, 8, 8)
+	if s.nearestCapturingUnitPosLocked(rt, 0, 0) != nil {
+		t.Fatal("only the capturing (human) team should count")
+	}
+	// A human unit inside the region is the capturer.
+	capUnit := s.addZoneTestUnit("p1", 6, 6)
+	pos := s.nearestCapturingUnitPosLocked(rt, 0, 0)
+	if pos == nil || pos.X != capUnit.X || pos.Y != capUnit.Y {
+		t.Fatalf("want capturer pos (%v,%v), got %v", capUnit.X, capUnit.Y, pos)
+	}
+	// A human unit OUTSIDE the capture region does not count.
+	s2 := newZoneTestState([]protocol.Zone{
+		presenceZone("cap", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral"),
+	})
+	s2.addZoneTestUnit("p1", 20, 20) // far outside
+	if s2.nearestCapturingUnitPosLocked(s2.zoneRuntimeByIDLocked("cap"), 0, 0) != nil {
+		t.Fatal("a unit outside the capture region must not count as a capturer")
+	}
+}
+
+func TestEnemySpawnTrigger_PresenceTargetsCapturer(t *testing.T) {
+	townhallOwner := "p1"
+	cfg := protocol.MapConfig{
+		ID: "presence-trigger", CellSize: 64, GridCols: 40, GridRows: 40,
+		Width: 40 * 64, Height: 40 * 64,
+		Zones: []protocol.Zone{
+			presenceZone("cap", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral"),
+		},
+		Buildings: []protocol.BuildingTile{
+			// A far-away townhall — the "wrong" target the defender must NOT pick.
+			{GridCoord: protocol.GridCoord{X: 35, Y: 35}, ID: "townhall-1", BuildingType: "townhall",
+				Width: 2, Height: 2, Visible: true, Occupied: true, OwnerID: &townhallOwner,
+				Metadata: map[string]interface{}{"hp": 5000.0, "maxHp": 5000.0}},
+			{GridCoord: protocol.GridCoord{X: 20, Y: 20}, ID: "es", BuildingType: "enemy-spawnpoint",
+				Width: 1, Height: 1, Visible: true, Occupied: true,
+				Metadata: map[string]interface{}{
+					"triggerCaptureZoneId": "cap",
+					"spawnDelaySeconds":    float64(0),
+					"spawnIntervalSeconds": float64(1),
+					"unitType":             "raider",
+					"spawnCount":           float64(1),
+				}},
+		},
+	}
+	s := NewGameStateWithSeed(cfg, 7)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	blocked := map[gridPoint]bool{}
+
+	// A player unit captures the presence zone.
+	s.nextUnitID++
+	capUnit := &Unit{
+		ID: s.nextUnitID, OwnerID: "p1",
+		X: (7 + 0.5) * cfg.CellSize, Y: (7 + 0.5) * cfg.CellSize,
+		HP: 100, Visible: true,
+	}
+	s.Units = append(s.Units, capUnit)
+
+	s.tickZonesLocked(1.0) // sets Capturing
+	s.tickEnemySpawnpointsLocked(1.0, blocked)
+
+	var def *Unit
+	for _, u := range s.Units {
+		if u.OwnerID == enemyPlayerID {
+			def = u
+			break
+		}
+	}
+	if def == nil {
+		t.Fatal("presence capture trigger should spawn a defender")
+	}
+	// The defender heads for the capturer, not the far townhall.
+	dCap := distanceSquared(def.TargetX, def.TargetY, capUnit.X, capUnit.Y)
+	thX := (35.0 + 1) * cfg.CellSize
+	thY := (35.0 + 1) * cfg.CellSize
+	dTH := distanceSquared(def.TargetX, def.TargetY, thX, thY)
+	if dCap >= dTH {
+		t.Fatalf("defender should head for the capturer (d²=%.0f) not the townhall (d²=%.0f); dest=(%.0f,%.0f)",
+			dCap, dTH, def.TargetX, def.TargetY)
+	}
+	if def.ObjectiveBuildingID != "" {
+		t.Fatalf("a presence defender has no building objective; got %q", def.ObjectiveBuildingID)
+	}
+}
+
+func TestClaimZoneTowerLocked(t *testing.T) {
+	seed := presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1")
+	claim := claimZone("claim", [2]int{6, 6}, rectCells(5, 5, 9, 9), "seed")
+	s := newZoneTestState([]protocol.Zone{seed, claim})
+
+	if got := s.claimZoneTowerLocked("claim"); got != nil {
+		t.Fatalf("no tower built yet → want nil, got %v", got)
+	}
+	tower := s.placeClaimTower("p1", 6, 6)
+	got := s.claimZoneTowerLocked("claim")
+	if got == nil || got.ID != tower.ID {
+		t.Fatalf("want the claim tower %q, got %v", tower.ID, got)
+	}
+	if s.claimZoneTowerLocked("seed") != nil {
+		t.Fatal("a presence zone has no claim tower")
+	}
+	if s.claimZoneTowerLocked("missing") != nil {
+		t.Fatal("unknown zone → nil")
+	}
+}
+
+func TestEnemySpawnTrigger_TargetsClaimTower(t *testing.T) {
+	towerOwner := "p1"
+	cfg := protocol.MapConfig{
+		ID: "claim-trigger", CellSize: 64, GridCols: 32, GridRows: 32,
+		Width: 32 * 64, Height: 32 * 64,
+		Zones: []protocol.Zone{
+			claimZone("cap", [2]int{6, 6}, rectCells(5, 5, 9, 9)),
+		},
+		Buildings: []protocol.BuildingTile{
+			// The team's claim tower on the zone slot — what defenders must rush.
+			{GridCoord: protocol.GridCoord{X: 6, Y: 6}, ID: "claim-tower", BuildingType: "Tower",
+				Width: 1, Height: 2, Visible: true, OwnerID: &towerOwner,
+				Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0}},
+			{GridCoord: protocol.GridCoord{X: 20, Y: 20}, ID: "es", BuildingType: "enemy-spawnpoint",
+				Width: 1, Height: 1, Visible: true, Occupied: true,
+				Metadata: map[string]interface{}{
+					"triggerCaptureZoneId": "cap",
+					"spawnDelaySeconds":    float64(0),
+					"spawnIntervalSeconds": float64(1),
+					"unitType":             "raider",
+					"spawnCount":           float64(1),
+				}},
+		},
+	}
+	s := NewGameStateWithSeed(cfg, 7)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	blocked := map[gridPoint]bool{}
+
+	// Tower stands → claim is "being captured" → spawnpoint fires this tick.
+	s.tickZonesLocked(1.0)
+	s.tickEnemySpawnpointsLocked(1.0, blocked)
+
+	var spawned *Unit
+	for _, u := range s.Units {
+		if u.OwnerID == enemyPlayerID {
+			spawned = u
+			break
+		}
+	}
+	if spawned == nil {
+		t.Fatal("capture-trigger spawnpoint should have spawned a defender")
+	}
+	if spawned.ObjectiveBuildingID != "claim-tower" {
+		t.Fatalf("capture defender should target the claim tower, got ObjectiveBuildingID=%q", spawned.ObjectiveBuildingID)
 	}
 }
 

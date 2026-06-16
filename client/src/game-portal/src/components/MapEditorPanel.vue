@@ -790,6 +790,12 @@
             >
               <option v-for="u in ENEMY_SPAWN_UNITS" :key="u.type" :value="u.type">{{ u.label }}</option>
             </select>
+            <label for="enemy-spawn-alliance">Spawn Alliance</label>
+            <select id="enemy-spawn-alliance" v-model="enemySpawnAlliance" :disabled="!paintModeEnabled">
+              <option value="enemy">Enemy</option>
+              <option value="neutral">Neutral</option>
+            </select>
+            <span class="field-hint">Neutral-aligned units won't fight neutral camps.</span>
             <label for="enemy-wave-mode">Spawn Timing</label>
             <select id="enemy-wave-mode" v-model="enemyWaveMode" :disabled="!paintModeEnabled">
               <option value="gameStart">Game Start</option>
@@ -797,6 +803,7 @@
               <option value="specific">Specific Wave</option>
               <option value="repeating">Every Wave From</option>
               <option value="interval">Every Nth Wave</option>
+              <option value="capture">While Zone Being Captured</option>
             </select>
             <template v-if="enemyWaveMode === 'specific' || enemyWaveMode === 'repeating'">
               <label for="enemy-wave-number">{{ enemyWaveMode === 'specific' ? 'Wave Number' : 'Starting Wave' }}</label>
@@ -882,12 +889,14 @@
               <option value="__none__">None (Stay at Spawn)</option>
               <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
             </select>
-            <label for="enemy-trigger-zone">Trigger Capture Zone <span class="field-hint">(optional)</span></label>
-            <select id="enemy-trigger-zone" v-model="enemyTriggerCaptureZoneId" :disabled="!paintModeEnabled">
-              <option value="">(none)</option>
-              <option v-for="z in (model.zones ?? [])" :key="z.id" :value="z.id">{{ z.name || z.id }}</option>
-            </select>
-            <span class="field-hint">Spawns only while a player is in this zone's capture area.</span>
+            <template v-if="enemyWaveMode === 'capture'">
+              <label for="enemy-trigger-zone">Capture Zone</label>
+              <select id="enemy-trigger-zone" v-model="enemyTriggerCaptureZoneId" :disabled="!paintModeEnabled">
+                <option value="">(select a zone)</option>
+                <option v-for="z in captureTriggerZones" :key="z.id" :value="z.id">{{ z.name || z.id }}</option>
+              </select>
+              <span class="field-hint">Spawns only while this zone is actively being captured (presence/claim zones).</span>
+            </template>
           </div>
 
           <div v-if="brushMode === 'neutral-spawn'" class="control-group neutral-spawn-config">
@@ -1069,16 +1078,25 @@
               </select>
             </div>
             <div class="edit-field">
+              <label>Spawn Alliance</label>
+              <select :value="selectedEditBuilding.metadata?.['spawnAlliance'] ?? 'enemy'" @change="updateEditMeta('spawnAlliance', ($event.target as HTMLSelectElement).value === 'neutral' ? 'neutral' : undefined)">
+                <option value="enemy">Enemy</option>
+                <option value="neutral">Neutral</option>
+              </select>
+              <span class="edit-field__hint">Neutral-aligned units won't fight neutral camps.</span>
+            </div>
+            <div class="edit-field">
               <label>Spawn Timing</label>
-              <select :value="editWaveMode" @change="updateEditWaveMode(($event.target as HTMLSelectElement).value as 'gameStart'|'always'|'specific'|'repeating'|'interval', editWaveNumber)">
+              <select :value="editWaveMode" @change="updateEditWaveMode(($event.target as HTMLSelectElement).value as 'gameStart'|'always'|'specific'|'repeating'|'interval'|'capture', editWaveNumber)">
                 <option value="gameStart">Game Start</option>
                 <option value="always">Always</option>
                 <option value="specific">Specific Wave</option>
                 <option value="repeating">Every Wave From</option>
                 <option value="interval">Every Nth Wave</option>
+                <option value="capture">While Zone Being Captured</option>
               </select>
             </div>
-            <div v-if="editWaveMode !== 'always' && editWaveMode !== 'gameStart'" class="edit-field">
+            <div v-if="editWaveMode === 'specific' || editWaveMode === 'repeating' || editWaveMode === 'interval'" class="edit-field">
               <label>{{ editWaveMode === 'specific' ? 'Wave Number' : editWaveMode === 'repeating' ? 'Starting Wave' : 'Interval (every Nth wave)' }}</label>
               <input type="number" min="1" max="999" :value="editWaveNumber" @input="updateEditWaveMode(editWaveMode, +($event.target as HTMLInputElement).value)" />
             </div>
@@ -1147,16 +1165,15 @@
                 <option v-for="lbl in availablePlayerLabels" :key="lbl" :value="lbl">{{ lbl }}</option>
               </select>
             </div>
-            <div class="edit-field">
-              <label>Trigger Capture Zone</label>
+            <div v-if="editWaveMode === 'capture'" class="edit-field">
+              <label>Capture Zone</label>
               <select
                 :value="selectedEditBuilding.metadata?.['triggerCaptureZoneId'] ?? ''"
                 @change="updateEditMeta('triggerCaptureZoneId', ($event.target as HTMLSelectElement).value || undefined)"
               >
-                <option value="">(none)</option>
-                <option v-for="z in (model.zones ?? [])" :key="z.id" :value="z.id">{{ z.name || z.id }}</option>
+                <option v-for="z in captureTriggerZones" :key="z.id" :value="z.id">{{ z.name || z.id }}</option>
               </select>
-              <span class="edit-field__hint">Spawns only while a player is in this zone's capture area.</span>
+              <span class="edit-field__hint">Spawns only while this zone is actively being captured (presence/claim zones).</span>
             </div>
           </template>
 
@@ -1504,7 +1521,10 @@ const enemySpawnCount = ref(1)
 const enemySpawnOnce = ref(false)
 const enemyIgnoreWaveClear = ref(false)
 const enemyUnitType = ref('raider')
-const enemyWaveMode = ref<'gameStart' | 'always' | 'specific' | 'repeating' | 'interval'>('always')
+// 'enemy' (default) spawns units under the hostile enemy faction; 'neutral'
+// spawns them under the neutral-camp faction so they don't fight neutral camps.
+const enemySpawnAlliance = ref<'enemy' | 'neutral'>('enemy')
+const enemyWaveMode = ref<'gameStart' | 'always' | 'specific' | 'repeating' | 'interval' | 'capture'>('always')
 const enemyWaveNumber = ref(1)
 // Multiplier for the 'interval' spawn-timing mode. waveInterval = 3 ⇒ fires on
 // waves 3, 6, 9, … Separate ref from enemyWaveNumber so switching modes mid-
@@ -2125,15 +2145,29 @@ const neutralSpawnEditPanelStyle = computed(() => {
   return { left: `${neutralSpawnEditPanelPos.value.x}px`, top: `${neutralSpawnEditPanelPos.value.y}px` }
 })
 
-const editWaveMode = computed<'gameStart' | 'always' | 'specific' | 'repeating' | 'interval'>(() => {
+const editWaveMode = computed<'gameStart' | 'always' | 'specific' | 'repeating' | 'interval' | 'capture'>(() => {
   const meta = selectedEditBuilding.value?.metadata
   if (!meta) return 'always'
+  // Capture-trigger takes precedence: its presence selects the mutually
+  // exclusive "While Zone Being Captured" mode (auto-heals legacy data that set
+  // both a wave field and a trigger zone).
+  if (meta['triggerCaptureZoneId']) return 'capture'
   if (meta['gameStart'] === true) return 'gameStart'
   if ('waveInterval' in meta) return 'interval'
   if ('waveNumber' in meta) return 'specific'
   if ('startingWave' in meta) return 'repeating'
   return 'always'
 })
+
+// Zones eligible for the "While Zone Being Captured" spawn mode. Only the timed
+// mechanics (presence / claim) have a "being captured" window; clear and
+// control_point flip instantly, so a capture-triggered spawn there would never
+// fire and must not be offered.
+const captureTriggerZones = computed(() =>
+  (model.value.zones ?? []).filter(
+    (z) => z.capture?.type === 'presence' || z.capture?.type === 'claim',
+  ),
+)
 
 const editWaveNumber = computed(() => {
   const meta = selectedEditBuilding.value?.metadata
@@ -2420,7 +2454,7 @@ function updateEditMeta(key: string, value: JsonValue | undefined) {
 }
 
 function updateEditWaveMode(
-  mode: 'gameStart' | 'always' | 'specific' | 'repeating' | 'interval',
+  mode: 'gameStart' | 'always' | 'specific' | 'repeating' | 'interval' | 'capture',
   waveNum: number,
 ) {
   if (!selectedEditBuildingId.value) return
@@ -2429,14 +2463,24 @@ function updateEditWaveMode(
     buildings: model.value.buildings.map((b) => {
       if (b.id !== selectedEditBuildingId.value) return b
       const meta = { ...(b.metadata ?? {}) }
+      // The timing modes are mutually exclusive — clear every mode's marker
+      // (including the capture trigger) before setting the chosen one.
       delete meta['gameStart']
       delete meta['waveNumber']
       delete meta['startingWave']
       delete meta['waveInterval']
+      delete meta['triggerCaptureZoneId']
       if (mode === 'gameStart') meta['gameStart'] = true
       if (mode === 'specific') meta['waveNumber'] = waveNum
       if (mode === 'repeating') meta['startingWave'] = waveNum
       if (mode === 'interval') meta['waveInterval'] = waveNum
+      if (mode === 'capture') {
+        // The mode is derived from triggerCaptureZoneId, so seed it with the
+        // existing value or the first eligible zone so the selection sticks.
+        const current = (b.metadata?.['triggerCaptureZoneId'] as string) || ''
+        const zoneId = current || captureTriggerZones.value[0]?.id || ''
+        if (zoneId) meta['triggerCaptureZoneId'] = zoneId
+      }
       return { ...b, metadata: meta }
     }),
   }
@@ -2877,9 +2921,12 @@ function paintEnemySpawnAt(cx: number, cy: number) {
     ...(enemyIgnoreWaveClear.value ? { ignoreWaveClear: true } : {}),
     spawnCount: enemySpawnCount.value,
     unitType: enemyUnitType.value,
+    ...(enemySpawnAlliance.value === 'neutral' ? { spawnAlliance: 'neutral' } : {}),
     ...(enemyObjectiveId.value ? { objectiveId: enemyObjectiveId.value } : {}),
     ...(enemyTargetPlayerLabel.value ? { targetPlayerLabel: enemyTargetPlayerLabel.value } : {}),
-    ...(enemyTriggerCaptureZoneId.value ? { triggerCaptureZoneId: enemyTriggerCaptureZoneId.value } : {}),
+    ...(enemyWaveMode.value === 'capture' && enemyTriggerCaptureZoneId.value
+      ? { triggerCaptureZoneId: enemyTriggerCaptureZoneId.value }
+      : {}),
   }
   model.value = setBuildingTile(model.value, cx, cy, 'enemy-spawnpoint', metadata)
 }
@@ -4213,6 +4260,7 @@ watch(
 watch(selectedBuilding, () => {
   enemyObjectiveId.value = ''
   enemyTriggerCaptureZoneId.value = ''
+  enemySpawnAlliance.value = 'enemy'
   buildingObjectiveId.value = ''
   spawnPointPlayerLabel.value = ''
   enemyTargetPlayerLabel.value = ''

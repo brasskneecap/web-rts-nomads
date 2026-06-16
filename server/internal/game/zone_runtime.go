@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math"
 	"sort"
 
 	"webrts/server/pkg/protocol"
@@ -180,23 +181,48 @@ func (s *GameState) unitInCaptureRegionLocked(rt *zoneRuntime, unit *Unit) bool 
 	return ok && id == rt.Def.ID
 }
 
-// captureZoneOccupiedByHumanLocked reports whether any live human (non-AI) unit
-// currently stands in the named zone's capture region. Drives enemy-spawnpoint
-// `triggerCaptureZoneId` activation. Returns false for an unknown zone.
-func (s *GameState) captureZoneOccupiedByHumanLocked(zoneID string) bool {
-	rt := s.zoneRuntimeByIDLocked(zoneID)
+// nearestCapturingUnitPosLocked returns the position of the live capturing-team
+// (human) unit standing in rt's capture region nearest to (fromX, fromY), or nil
+// when none is present. Presence zones have no structure to attack, so their
+// capture defenders are pointed at the units holding the zone: arriving contests
+// the zone (freezing progress) and killing them resets it — i.e. it stops the
+// capture, mirroring how claim defenders destroy the tower.
+func (s *GameState) nearestCapturingUnitPosLocked(rt *zoneRuntime, fromX, fromY float64) *protocol.Vec2 {
 	if rt == nil {
-		return false
+		return nil
 	}
+	var best *Unit
+	bestD := math.MaxFloat64
 	for _, u := range s.Units {
-		if u == nil || u.OwnerID == enemyPlayerID || u.OwnerID == neutralPlayerID {
+		if u == nil || !isHumanOwner(u.OwnerID) {
 			continue
 		}
-		if s.unitInCaptureRegionLocked(rt, u) {
-			return true
+		if !s.unitInCaptureRegionLocked(rt, u) {
+			continue
+		}
+		if d := distanceSquared(u.X, u.Y, fromX, fromY); d < bestD {
+			bestD = d
+			best = u
 		}
 	}
-	return false
+	if best == nil {
+		return nil
+	}
+	return &protocol.Vec2{X: best.X, Y: best.Y}
+}
+
+// zoneCapturingLocked reports whether the named zone is currently being
+// captured — i.e. a capture mechanic advanced its Progress on the most recent
+// tickZonesLocked. Drives enemy-spawnpoint `triggerCaptureZoneId` activation
+// (the "While Zone Being Captured" spawn-timing mode). Returns false for an
+// unknown zone, and for zones whose mechanic has no timed capture
+// (clear / control_point never set the flag).
+//
+// Tick ordering: spawnpoints tick before zones, so this reads the flag computed
+// on the previous tick — a deterministic ≤1-tick lag. See the design doc.
+func (s *GameState) zoneCapturingLocked(zoneID string) bool {
+	rt := s.zoneRuntimeByIDLocked(zoneID)
+	return rt != nil && rt.Capturing
 }
 
 // tickZonesLocked runs one tick of zone capture evaluation. No-op when the map
@@ -211,6 +237,7 @@ func (s *GameState) tickZonesLocked(dt float64) {
 	for i := range s.Zones {
 		rt := &s.Zones[i]
 		rt.Contested = false
+		rt.Capturing = false
 		if rt.locked {
 			continue // home zones linked to a start are never capturable
 		}

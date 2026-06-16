@@ -24,6 +24,13 @@ type zoneRuntime struct {
 	Owner     string
 	Progress  float64
 	Contested bool
+	// Capturing is true for the tick(s) on which a capture mechanic actively
+	// advanced this zone's Progress toward a flip — i.e. the zone is currently
+	// "being captured". Reset to false each tick (like Contested) and set by the
+	// presence/claim handlers when they add to Progress. Read by
+	// zoneCapturingLocked to gate capture-triggered enemy spawns. Mechanics
+	// without a timed capture (clear/control_point) never set it.
+	Capturing bool
 	captureCfg any
 	// captureCells is the membership set for the presence "capture sub-zone"
 	// (protocol.Zone.CaptureCells). Empty ⇒ the whole zone is the capture region.

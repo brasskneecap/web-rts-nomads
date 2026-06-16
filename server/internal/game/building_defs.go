@@ -14,23 +14,29 @@ var buildingDefsFS embed.FS
 // Client-only fields (Color, Label, Hotkey, Render) are passed through to the
 // API as-is; the server game logic never reads them.
 type BuildingDef struct {
-	Type           string          `json:"type"`
-	Class          string          `json:"class,omitempty"`
-	Buildable      *bool           `json:"buildable,omitempty"`
-	Width          int             `json:"width"`
-	Height         int             `json:"height"`
-	MaxHp          float64         `json:"maxHp"`
-	BuildSeconds   float64         `json:"buildSeconds"`
-	Damage         int             `json:"damage,omitempty"`
-	AttackRange    float64         `json:"attackRange,omitempty"`
-	AttackSpeed    float64         `json:"attackSpeed,omitempty"`
-	VisionRange    float64         `json:"visionRange,omitempty"`
-	AttackVisual   json.RawMessage `json:"attackVisual,omitempty"`
-	ResourceType   string          `json:"resourceType,omitempty"`
-	ResourceAmount int             `json:"resourceAmount,omitempty"`
-	ResourceCost   map[string]int  `json:"resourceCost"`
-	Capabilities   []string        `json:"capabilities"`
-	SpawnUnitTypes []string        `json:"spawnUnitTypes"`
+	Type         string  `json:"type"`
+	Class        string  `json:"class,omitempty"`
+	Buildable    *bool   `json:"buildable,omitempty"`
+	Width        int     `json:"width"`
+	Height       int     `json:"height"`
+	MaxHp        float64 `json:"maxHp"`
+	BuildSeconds float64 `json:"buildSeconds"`
+	Damage       int     `json:"damage,omitempty"`
+	AttackRange  float64 `json:"attackRange,omitempty"`
+	AttackSpeed  float64 `json:"attackSpeed,omitempty"`
+	VisionRange  float64 `json:"visionRange,omitempty"`
+	// UnobstructedVision, when true, makes this building's FOW vision ignore
+	// line-of-sight blockers (trees/obstacles and terrain cliffs) within its
+	// range — it sees over them, the way flyer units do. Omitted ⇒ normal,
+	// occluded vision. Set on Tower so a tower placed in a forest still reveals
+	// its full radius.
+	UnobstructedVision bool            `json:"unobstructedVision,omitempty"`
+	AttackVisual       json.RawMessage `json:"attackVisual,omitempty"`
+	ResourceType       string          `json:"resourceType,omitempty"`
+	ResourceAmount     int             `json:"resourceAmount,omitempty"`
+	ResourceCost       map[string]int  `json:"resourceCost"`
+	Capabilities       []string        `json:"capabilities"`
+	SpawnUnitTypes     []string        `json:"spawnUnitTypes"`
 	// RequiresTownhallTier gates construction: the owning player must control
 	// at least one fully-built townhall whose tier is ≥ this value before
 	// BuildBuilding accepts the placement. Zero/omitted ⇒ no requirement.
@@ -38,10 +44,10 @@ type BuildingDef struct {
 	// in state_upgrades.go's handleUpgradeTownHallLocked).
 	RequiresTownhallTier int             `json:"requiresTownhallTier,omitempty"`
 	Metadata             map[string]any  `json:"metadata"`
-	Color          string          `json:"color,omitempty"`
-	Label          string          `json:"label,omitempty"`
-	Hotkey         string          `json:"hotkey,omitempty"`
-	Render         json.RawMessage `json:"render,omitempty"`
+	Color                string          `json:"color,omitempty"`
+	Label                string          `json:"label,omitempty"`
+	Hotkey               string          `json:"hotkey,omitempty"`
+	Render               json.RawMessage `json:"render,omitempty"`
 	// SpriteRender lets a building's sprite extend beyond its grid footprint
 	// without affecting pathing, selection hit-testing, or the grid cells
 	// the building occupies. Mirrors ObstacleRenderDef semantics (cell units,

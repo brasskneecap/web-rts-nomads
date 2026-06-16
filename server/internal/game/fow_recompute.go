@@ -68,7 +68,11 @@ func (s *GameState) recomputeFOWLocked() {
 			}
 			cx := (float64(b.GridCoord.X) + float64(b.Width)/2.0) * s.MapConfig.CellSize
 			cy := (float64(b.GridCoord.Y) + float64(b.Height)/2.0) * s.MapConfig.CellSize
-			fow.stampCircle(cx, cy, buildingVisionRange(b.BuildingType), s.MapConfig.CellSize, blocking)
+			buildingBlocking := blocking
+			if def, ok := getBuildingDef(b.BuildingType); ok && def.UnobstructedVision {
+				buildingBlocking = nil // sees over trees/obstacles/terrain (like flyers)
+			}
+			fow.stampCircle(cx, cy, buildingVisionRange(b.BuildingType), s.MapConfig.CellSize, buildingBlocking)
 		}
 
 		for i := range s.MapConfig.Buildings {

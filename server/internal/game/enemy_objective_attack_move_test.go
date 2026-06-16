@@ -221,6 +221,44 @@ func TestSpawnObjectiveSeeding(t *testing.T) {
 	}
 }
 
+// The spawn-time path destination resolver: capture defenders head for the
+// passed claim tower; enemies with a target player head for that player's
+// NEAREST building (a forward tower, not the townhall); everyone else heads for
+// the nearest townhall.
+func TestEnemySpawnPathDestination(t *testing.T) {
+	// Townhall at (2,10); a forward tower much closer to the spawn at x≈2000.
+	s := newObjectiveTestState(t, objBuilding("forward-tower", "tower", 30, 11, 1, 1, 100))
+	defer s.mu.Unlock()
+
+	enemy := s.spawnEnemyUnitLocked("raider", protocol.Vec2{X: 2000, Y: 736})
+	spawnPos := protocol.Vec2{X: 2000, Y: 736}
+
+	// Capture defender → heads for the resolved capture destination, ignoring
+	// player/townhall.
+	capDest := protocol.Vec2{X: 1632, Y: 736}
+	dest := s.enemySpawnPathDestinationLocked(enemy, "p1", spawnPos, &capDest)
+	if dest == nil || *dest != capDest {
+		t.Fatalf("capture defender should head for the capture destination; got %v want %v", dest, capDest)
+	}
+
+	// Target player, no capture → the player's NEAREST building (forward tower).
+	nb := s.findNearestAttackableBuildingForPlayerLocked(enemy, "p1")
+	if nb == nil || nb.ID != "forward-tower" {
+		t.Fatalf("sanity: nearest p1 building to the spawn should be forward-tower, got %v", nb)
+	}
+	dest = s.enemySpawnPathDestinationLocked(enemy, "p1", spawnPos, nil)
+	if want := s.buildingCenterLocked(nb); dest == nil || *dest != want {
+		t.Fatalf("target-player enemy should head for the nearest player building; got %v want %v", dest, want)
+	}
+
+	// No target player, no capture → nearest townhall.
+	dest = s.enemySpawnPathDestinationLocked(enemy, "", spawnPos, nil)
+	wantTH := s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
+	if dest == nil || wantTH == nil || *dest != *wantTH {
+		t.Fatalf("default enemy should head for the nearest townhall; got %v want %v", dest, wantTH)
+	}
+}
+
 // End-to-end through the real sim: a routed enemy with a clear lane reaches
 // and destroys the townhall via normal scoring (no hard-target while
 // advancing), and engages an in-range player unit on the way then resumes.

@@ -251,3 +251,49 @@ func TestSnapshotForPlayer_OwnUnitAlwaysIncluded(t *testing.T) {
 		t.Error("own unit not found in FOW-filtered snapshot even though it is far from vision")
 	}
 }
+
+// A building flagged UnobstructedVision (e.g. Tower) sees past obstacles/trees
+// within its range; a normal building's vision is still occluded by the same
+// obstacle. Geometry: a 2x2 building centred on cell (3,3); a tree at (4,3); the
+// cell behind it at (5,3) is ~163px away — within both the Tower's 512px and a
+// normal building's 320px default range, so range is not the variable, blocking
+// is.
+func TestRecomputeFOW_UnobstructedBuildingVision(t *testing.T) {
+	fowFor := func(buildingType string) *PlayerFOW {
+		owner := "p1"
+		cfg := protocol.MapConfig{
+			ID: "fow-vis", CellSize: 64, GridCols: 20, GridRows: 20,
+			Width: 20 * 64, Height: 20 * 64,
+			Obstacles: []protocol.ObstacleTile{
+				{GridCoord: protocol.GridCoord{X: 4, Y: 3}, Obstacle: "tree"},
+			},
+			Buildings: []protocol.BuildingTile{
+				{GridCoord: protocol.GridCoord{X: 2, Y: 2}, ID: "b", BuildingType: buildingType,
+					Width: 2, Height: 2, Visible: true, Occupied: true, OwnerID: &owner,
+					Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0}},
+			},
+		}
+		state := NewGameState(cfg)
+		state.EnsurePlayer("p1")
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		state.recomputeFOWLocked()
+		return state.FOW["p1"]
+	}
+
+	tower := fowFor("Tower")
+	if tower.cellAt(4, 3) != CellClear {
+		t.Fatal("the tree cell itself should always be visible")
+	}
+	if tower.cellAt(5, 3) != CellClear {
+		t.Fatal("Tower has unobstructed vision: the cell behind the tree should be Clear")
+	}
+
+	normal := fowFor("barracks")
+	if normal.cellAt(4, 3) != CellClear {
+		t.Fatal("the tree cell should still be visible to a normal building")
+	}
+	if normal.cellAt(5, 3) == CellClear {
+		t.Fatal("a normal building's vision must be blocked by the tree")
+	}
+}

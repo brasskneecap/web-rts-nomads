@@ -293,6 +293,34 @@ func (s *GameState) seedEnemyObjectiveAtSpawnLocked(unit *Unit, targetPlayerLabe
 	}
 }
 
+// enemySpawnPathDestinationLocked decides where a freshly spawned advancing
+// enemy should path. Precedence:
+//  1. captureDest — where a capture-defense spawn must go to stop the capture
+//     (the claim tower for claim zones, the capturing units for presence zones);
+//  2. the target player's NEAREST building (e.g. a forward tower) when a target
+//     player is set, instead of beelining their townhall;
+//  3. the nearest player townhall.
+//
+// Returns nil only when there is nothing to advance on. Pure decision (assigns
+// no path) so spawn routing stays unit-testable; mirrors the sticky objective
+// seeded by seedEnemyObjectiveAtSpawnLocked so the movement target and the
+// objective agree.
+func (s *GameState) enemySpawnPathDestinationLocked(unit *Unit, targetPlayerID string, spawnPos protocol.Vec2, captureDest *protocol.Vec2) *protocol.Vec2 {
+	if captureDest != nil {
+		return captureDest
+	}
+	if targetPlayerID != "" {
+		if b := s.findNearestAttackableBuildingForPlayerLocked(unit, targetPlayerID); b != nil {
+			c := s.buildingCenterLocked(b)
+			return &c
+		}
+		if thc := s.getPlayerTownhallCenterLocked(targetPlayerID); thc != nil {
+			return thc
+		}
+	}
+	return s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
+}
+
 func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint]bool) {
 	for i := range s.MapConfig.Buildings {
 		building := &s.MapConfig.Buildings[i]
@@ -304,16 +332,35 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 		isGameStart := getMetadataBool(building.Metadata, "gameStart")
 		triggerZoneID, hasTrigger := getMetadataString(building.Metadata, "triggerCaptureZoneId")
 		hasTrigger = hasTrigger && triggerZoneID != ""
+		// Capture-defense routing. For a capture-trigger spawnpoint that is
+		// actively firing, the units should try to STOP the capture:
+		//   - claim zone  → destroy the tower on the slot (captureTower);
+		//   - presence zone → attack the units holding the zone (captureDest).
+		// captureTower drives the sticky building objective; captureDest is the
+		// move target either way.
+		var captureTower *protocol.BuildingTile
+		var captureDest *protocol.Vec2
 		if hasTrigger {
-			// Capture-zone-triggered spawnpoint: bypass wave gating and spawn
-			// only while a human unit occupies the linked zone's capture region
-			// (continuous-while-present). Re-arm the interval while empty so a
-			// re-entry doesn't fire instantly.
-			if !s.captureZoneOccupiedByHumanLocked(triggerZoneID) {
+			// Capture-zone-triggered spawnpoint ("While Zone Being Captured"
+			// spawn-timing mode): bypass wave gating and spawn only while the
+			// linked zone's capture progress is actively advancing. Stops the
+			// instant the zone is captured, contested, or abandoned. Re-arm the
+			// interval while dormant so re-activation doesn't fire instantly.
+			if !s.zoneCapturingLocked(triggerZoneID) {
 				if t := s.EnemySpawnTimers[building.ID]; t != nil {
 					t.RemainingInterval = t.TotalInterval
 				}
 				continue
+			}
+			if captureTower = s.claimZoneTowerLocked(triggerZoneID); captureTower != nil {
+				c := s.buildingCenterLocked(captureTower)
+				captureDest = &c
+			} else if rt := s.zoneRuntimeByIDLocked(triggerZoneID); rt != nil {
+				// No structure (presence): aim at the units capturing the zone,
+				// measured from the spawnpoint.
+				bx := (float64(building.X) + float64(building.Width)/2) * s.MapConfig.CellSize
+				by := (float64(building.Y) + float64(building.Height)/2) * s.MapConfig.CellSize
+				captureDest = s.nearestCapturingUnitPosLocked(rt, bx, by)
 			}
 		} else if !isGameStart {
 			// Wave-gating: when wave mode is enabled, check waveNumber (specific wave)
@@ -403,6 +450,13 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 		unitType := "raider"
 		objectiveId := ""
 		targetPlayerLabel := ""
+		// spawnAlliance selects the faction of the spawned units: "neutral"
+		// makes them share the neutral camps' owner (so they don't fight the
+		// camps), anything else (default/absent) keeps the legacy enemy faction.
+		spawnNeutral := false
+		if v, ok := getMetadataString(building.Metadata, "spawnAlliance"); ok && v == "neutral" {
+			spawnNeutral = true
+		}
 		ignoreWaveClear := getMetadataBool(building.Metadata, "ignoreWaveClear")
 		if building.Metadata != nil {
 			if v, ok := getMetadataFloat(building.Metadata, "spawnCount"); ok && v >= 1 {
@@ -457,7 +511,12 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 				spawnPos = s.gridToWorldCenter(cell)
 			}
 
-			unit := s.spawnEnemyUnitLocked(unitType, spawnPos)
+			var unit *Unit
+			if spawnNeutral {
+				unit = s.spawnNeutralUnitLocked(unitType, spawnPos)
+			} else {
+				unit = s.spawnEnemyUnitLocked(unitType, spawnPos)
+			}
 			if unit == nil {
 				continue
 			}
@@ -472,34 +531,33 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			} else if targetPlayerLabel == "__none__" {
 				// Explicit stay-at-spawn: no path assigned.
 				unit.Status = "Idle"
-			} else if targetPlayerLabel != "" {
-				// Route to a specific player's townhall, falling back to nearest.
-				// Persist the resolved player ID on the unit so the AI's
-				// "no target → nearest building" fallback in
+			} else {
+				// Advancing. Resolve the target player (if any) and persist it so
+				// the AI's "no target → nearest building" fallback in
 				// enemyAdvanceToObjectiveLocked keeps preferring this player even
 				// after the unit re-evaluates mid-flight.
 				unit.Status = "Advancing"
-				playerID := s.findPlayerIDByLabelLocked(targetPlayerLabel)
-				var target *protocol.Vec2
-				if playerID != "" {
-					target = s.getPlayerTownhallCenterLocked(playerID)
-					unit.TargetPlayerID = playerID
+				playerID := ""
+				if targetPlayerLabel != "" {
+					if playerID = s.findPlayerIDByLabelLocked(targetPlayerLabel); playerID != "" {
+						unit.TargetPlayerID = playerID
+					}
 				}
-				if target == nil {
-					target = s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
+				// Capture defenders go stop the capture (claim tower or the
+				// capturing units); otherwise head for the target player's nearest
+				// building, else the nearest townhall.
+				if captureTower != nil {
+					unit.ObjectiveBuildingID = captureTower.ID
 				}
-				if target != nil {
-					pathReqs = append(pathReqs, spawnPathReq{unit: unit, target: *target})
-				}
-			} else {
-				// Default: route to nearest player townhall.
-				unit.Status = "Advancing"
-				target := s.getNearestPlayerTownhallCenterLocked(spawnPos.X, spawnPos.Y)
-				if target != nil {
-					pathReqs = append(pathReqs, spawnPathReq{unit: unit, target: *target})
+				if dest := s.enemySpawnPathDestinationLocked(unit, playerID, spawnPos, captureDest); dest != nil {
+					pathReqs = append(pathReqs, spawnPathReq{unit: unit, target: *dest})
 				}
 			}
-			s.seedEnemyObjectiveAtSpawnLocked(unit, targetPlayerLabel, spawnPos)
+			// Seed the sticky objective for non-capture units (capture defenders
+			// already point at the tower / capturers above).
+			if captureDest == nil {
+				s.seedEnemyObjectiveAtSpawnLocked(unit, targetPlayerLabel, spawnPos)
+			}
 		}
 
 		// Drop path requests whose objective is cached unreachable army-wide.
