@@ -3477,7 +3477,7 @@ function getBuildingActions(
         ? 'Guards remain — clear them to unlock this shop.'
         : canReroll
           ? `Reroll this merchant's inventory.\n\nRerolls remaining: ${shopRerollsRemaining}`
-          : `Out of rerolls. Purchase the Merchant Reroll legend-point upgrade to gain more.`
+          : `Out of rerolls. Purchase the Merchant Reroll dominion-point upgrade to gain more.`
       actions.push({
         id: 'reroll-shop',
         label: 'Reroll',

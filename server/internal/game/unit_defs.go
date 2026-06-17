@@ -38,8 +38,8 @@ type UnitDef struct {
 	// the combat AI, and only engages when the player issues an explicit
 	// OrderAttackTarget (via AttackWithUnits). The unit still carries the
 	// `"attack"` capability so the player's attack command is accepted.
-	NonCombat   bool    `json:"nonCombat,omitempty"`
-	HP      int `json:"hp"`
+	NonCombat bool `json:"nonCombat,omitempty"`
+	HP        int  `json:"hp"`
 	// Armor is the catalog base armor for this unit type. All unit catalog JSON
 	// files carry an explicit "armor" field (0 when the unit has no base armor,
 	// 33 for soldier). The value is used directly by applyRankModifiersLocked to
@@ -47,12 +47,12 @@ type UnitDef struct {
 	// delta for promoted units. Do NOT seed unit.BaseArmor from this field at
 	// spawn — BaseArmor is reserved for player-upgrade-track armor only
 	// (applyPlayerUpgradesAtSpawnLocked).
-	Armor   int `json:"armor,omitempty"`
+	Armor int `json:"armor,omitempty"`
 	// SpawnExp is pre-loaded XP granted to a unit at spawn (before any rank
 	// modifiers run). Zero-value default is safe; units without this field
 	// spawn at 0 XP as before. Used by the "Veteran Initiates" advancement.
-	SpawnExp int     `json:"spawnExp,omitempty"`
-	Damage   int     `json:"damage"`
+	SpawnExp    int     `json:"spawnExp,omitempty"`
+	Damage      int     `json:"damage"`
 	AttackRange float64 `json:"attackRange"`
 	AttackSpeed float64 `json:"attackSpeed"`
 	// SplashRadius: when > 0, every attack landing on a primary target also
@@ -83,13 +83,13 @@ type UnitDef struct {
 	// through as-is; the server game logic never reads it.
 	Bounds json.RawMessage `json:"bounds,omitempty"`
 
-	// LegendPointDropChance is the per-kill probability that this unit type
-	// drops legend points when killed by a player. Must be in [0,1].
+	// DominionPointDropChance is the per-kill probability that this unit type
+	// drops dominion points when killed by a player. Must be in [0,1].
 	// Zero means no drop. Overrides the base tuning value from gameplay_tuning.json.
-	LegendPointDropChance float64 `json:"legendPointDropChance,omitempty"`
-	// LegendPointAmount is how many legend points drop when the drop chance
+	DominionPointDropChance float64 `json:"dominionPointDropChance,omitempty"`
+	// DominionPointAmount is how many dominion points drop when the drop chance
 	// triggers. Must be >= 0. Overrides the base tuning value.
-	LegendPointAmount int `json:"legendPointAmount,omitempty"`
+	DominionPointAmount int `json:"dominionPointAmount,omitempty"`
 
 	// Experience is the raw XP this unit yields when killed in "split" mode
 	// (catalog/tuning/gameplay_tuning.json experience.mode). Pointer so the
@@ -257,11 +257,11 @@ func loadUnitDefsByType() map[string]UnitDef {
 					panic(rel + `: combatProfile "` + def.CombatProfile + `" is not a known profile (see combat_ai_profiles.go)`)
 				}
 			}
-			if def.LegendPointDropChance < 0 || def.LegendPointDropChance > 1 {
-				panic(rel + `: unit "` + def.Type + `": legendPointDropChance must be in [0,1]`)
+			if def.DominionPointDropChance < 0 || def.DominionPointDropChance > 1 {
+				panic(rel + `: unit "` + def.Type + `": dominionPointDropChance must be in [0,1]`)
 			}
-			if def.LegendPointAmount < 0 {
-				panic(rel + `: unit "` + def.Type + `": legendPointAmount must be >= 0`)
+			if def.DominionPointAmount < 0 {
+				panic(rel + `: unit "` + def.Type + `": dominionPointAmount must be >= 0`)
 			}
 			for _, t := range def.TargetableTypes {
 				if t != TargetClassGround && t != TargetClassFlyer {

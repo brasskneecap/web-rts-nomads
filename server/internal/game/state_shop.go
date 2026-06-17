@@ -11,7 +11,7 @@ import (
 // rolls when its inventory comes from a loot table. The roller keeps
 // rolling (with an attempt cap to prevent infinite loops on degenerate
 // tables) until it has this many unique item IDs. Player-initiated
-// rerolls bump this by Player.ShopItemCountBonus, so a future legend-
+// rerolls bump this by Player.ShopItemCountBonus, so a future dominion-
 // point upgrade can ship by writing to that field alone.
 const defaultShopLootTargetCount = 3
 
@@ -64,7 +64,7 @@ const (
 )
 
 // defaultShopRerollsPerPlayer is the per-match merchant-reroll budget every
-// player starts with. Future legend-point profile upgrades can bump this
+// player starts with. Future dominion-point profile upgrades can bump this
 // via applyProfileUpgradesToPlayerLocked. Used by EnsurePlayerWithUpgrades.
 const defaultShopRerollsPerPlayer = 1
 
@@ -348,7 +348,6 @@ func (s *GameState) rollShopLootTableLocked(buildingID, tableID string, targetCo
 	}
 	return items, true
 }
-
 
 // spawnShopGuardsLocked walks every neutral-shop building, reads its
 // optional guard metadata (`guardGroupId`, `guardStartingTier`,

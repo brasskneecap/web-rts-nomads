@@ -258,7 +258,7 @@ func TestAdvancement_Apply_IndependentOfPurchaseOrder(t *testing.T) {
 // behave correctly — the integration tests in http/ cover the full refund flow.
 
 // TestAdvancement_GetAdvancementDef_ReturnsCurrentCost verifies that the
-// current catalog cost for soldier_hp_1 matches the spec (50 LP). If the cost
+// current catalog cost for soldier_hp_1 matches the spec (50 DP). If the cost
 // were changed in the catalog file, this test catches it so refund tests know
 // their baseline.
 func TestAdvancement_GetAdvancementDef_ReturnsCurrentCost(t *testing.T) {
@@ -392,8 +392,8 @@ func TestAdvancement_IsPlayerInActiveMatch_LobbyPlayerNotBlocked(t *testing.T) {
 	// block this player even though they "own" a match slot.
 	blocked := mm.IsPlayerInActiveMatch("p1")
 	if blocked {
-		t.Errorf("IsPlayerInActiveMatch: want false for player in lobby but not yet joined, got true — "+
-			"this is a known gap: players can purchase advancements between creating a lobby and "+
+		t.Errorf("IsPlayerInActiveMatch: want false for player in lobby but not yet joined, got true — " +
+			"this is a known gap: players can purchase advancements between creating a lobby and " +
 			"sending join_match; the advancement takes effect in the match they are about to join")
 	}
 }

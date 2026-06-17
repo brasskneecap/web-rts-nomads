@@ -16,8 +16,8 @@ const (
 	// Cleric follows and prioritises healing a chosen ally. Mirrors the Go-side
 	// OrderFocusFollow constant; both must match the TypeScript client's
 	// OrderType enum addition (task 10.4).
-	OrderStringFocusFollow  = "focus_follow"
-	OrderStringPickupLoot   = "pickup_loot"
+	OrderStringFocusFollow = "focus_follow"
+	OrderStringPickupLoot  = "pickup_loot"
 )
 
 type Vec2 struct {
@@ -195,27 +195,27 @@ type NeutralSpawn struct {
 const NeutralSpawnRandomGroupID = "__random__"
 
 type MapConfig struct {
-	ID          string             `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	Size        string             `json:"size"`
-	Width       float64            `json:"width"`
-	Height      float64            `json:"height"`
-	GridCols    int                `json:"gridCols"`
-	GridRows    int                `json:"gridRows"`
-	CellSize    float64            `json:"cellSize"`
-	Terrain     []TerrainTile      `json:"terrain"`
-	Tiles       []TileInstance     `json:"tiles,omitempty"`
-	DefaultTile *TileCoord         `json:"defaultTile,omitempty"`
-	Obstacles   []ObstacleTile     `json:"obstacles"`
-	Buildings   []BuildingTile     `json:"buildings"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	Size          string         `json:"size"`
+	Width         float64        `json:"width"`
+	Height        float64        `json:"height"`
+	GridCols      int            `json:"gridCols"`
+	GridRows      int            `json:"gridRows"`
+	CellSize      float64        `json:"cellSize"`
+	Terrain       []TerrainTile  `json:"terrain"`
+	Tiles         []TileInstance `json:"tiles,omitempty"`
+	DefaultTile   *TileCoord     `json:"defaultTile,omitempty"`
+	Obstacles     []ObstacleTile `json:"obstacles"`
+	Buildings     []BuildingTile `json:"buildings"`
 	PlacedUnits   []PlacedUnit   `json:"placedUnits,omitempty"`
 	NeutralSpawns []NeutralSpawn `json:"neutralSpawns,omitempty"`
 	// Zones are map-authored territorial regions. Empty/omitted on maps that
 	// don't use the zone system — a zone-free map behaves exactly as before
 	// (build-gate never fires, no zone snapshots). See the Zone type.
-	Zones []Zone `json:"zones,omitempty"`
-	WaveConfig    *WaveConfig    `json:"waveConfig,omitempty"`
+	Zones      []Zone      `json:"zones,omitempty"`
+	WaveConfig *WaveConfig `json:"waveConfig,omitempty"`
 	// Campaign, when set, tags this map as a campaign level. Its presence
 	// makes the map (a) hidden from the Custom Game lobby map list, and (b)
 	// contribute one level to the CampaignDef tree at startup / catalog-read
@@ -367,7 +367,7 @@ type EffectiveTrapSnapshot struct {
 	// Global modifiers (always present for the trap's own type):
 	DurationSeconds float64 `json:"durationSeconds,omitempty"`
 	Radius          float64 `json:"radius,omitempty"`
-	TriggerRadius   float64 `json:"triggerRadius,omitempty"`  // explosive_trap only
+	TriggerRadius   float64 `json:"triggerRadius,omitempty"` // explosive_trap only
 	PlaceInterval   float64 `json:"placeInterval,omitempty"`
 	DamagePerSecond float64 `json:"damagePerSecond,omitempty"` // caltrops, fire_pit
 	BurstDamage     int     `json:"burstDamage,omitempty"`     // explosive_trap
@@ -802,20 +802,20 @@ type TransferItemCommandMessage struct {
 // PlayerUpgradeSnapshot describes the current state of one upgrade track for a
 // player. Emitted per-player in every MatchSnapshotMessage.Players entry.
 type PlayerUpgradeSnapshot struct {
-	Track               string  `json:"track"`
-	DisplayName         string  `json:"displayName"`
-	Level               int     `json:"level"`
-	Cap                 int     `json:"cap"`
-	NextCostGold        int     `json:"nextCostGold"`
+	Track        string `json:"track"`
+	DisplayName  string `json:"displayName"`
+	Level        int    `json:"level"`
+	Cap          int    `json:"cap"`
+	NextCostGold int    `json:"nextCostGold"`
 	// NextCostWood is the wood cost of the next level. It currently mirrors
 	// NextCostGold (upgrades cost equal gold and wood). 0 at cap.
-	NextCostWood        int     `json:"nextCostWood"`
-	CanAfford           bool    `json:"canAfford"`
+	NextCostWood int  `json:"nextCostWood"`
+	CanAfford    bool `json:"canAfford"`
 	// CanStart is true when the player can start this upgrade via the global
 	// panel's auto-assign path: affordable, below cap, not already researching,
 	// and at least one idle blacksmith is available.
-	CanStart            bool    `json:"canStart"`
-	HasBlacksmith       bool    `json:"hasBlacksmith"`
+	CanStart      bool `json:"canStart"`
+	HasBlacksmith bool `json:"hasBlacksmith"`
 	// ResearchTotal / ResearchRemaining describe an in-progress upgrade for
 	// this track (this player, at any blacksmith). ResearchTotal is the full
 	// duration in seconds (0 when idle); ResearchRemaining counts down to 0.
@@ -877,8 +877,8 @@ type CommanderAbilitySnapshot struct {
 }
 
 type PlayerSnapshot struct {
-	PlayerID      string                  `json:"playerId"`
-	Color         string                  `json:"color"`
+	PlayerID string `json:"playerId"`
+	Color    string `json:"color"`
 	// TeamID is the player's alliance group. 0 = the default shared team
 	// (all players allied — current behavior). Same TeamID ⇒ allies. The
 	// client mirrors the server hostility predicate from this value.
@@ -892,8 +892,8 @@ type PlayerSnapshot struct {
 	// train because their RequiresBuildings list is unsatisfied. Empty
 	// or omitted = no locks. The client uses this to grey out train
 	// actions in the building action panel.
-	LockedUnitTypes []string               `json:"lockedUnitTypes,omitempty"`
-	ActiveBuffs     []ActiveEffectIcon     `json:"activeBuffs,omitempty"`
+	LockedUnitTypes []string           `json:"lockedUnitTypes,omitempty"`
+	ActiveBuffs     []ActiveEffectIcon `json:"activeBuffs,omitempty"`
 	// CommanderAbilities are the player-level abilities surfaced on the
 	// action bar (Smite, Blessing). Always populated for the snapshot's
 	// owner so the HUD can render slots even when every ability is ready.
@@ -911,43 +911,43 @@ type PlayerSnapshot struct {
 }
 
 type UnitSnapshot struct {
-	ID                  int      `json:"id"`
-	OwnerID             string   `json:"ownerId"`
-	Color               string   `json:"color"`
-	UnitType            string   `json:"unitType"`
-	Archetype           string   `json:"archetype,omitempty"`
-	Name                string   `json:"name"`
-	Capabilities        []string `json:"capabilities,omitempty"`
+	ID           int      `json:"id"`
+	OwnerID      string   `json:"ownerId"`
+	Color        string   `json:"color"`
+	UnitType     string   `json:"unitType"`
+	Archetype    string   `json:"archetype,omitempty"`
+	Name         string   `json:"name"`
+	Capabilities []string `json:"capabilities,omitempty"`
 	// Flyer marks the unit as airborne so the client can render an elevation
 	// shadow / altitude offset. omitempty so ground units drop the field.
-	Flyer               bool     `json:"flyer,omitempty"`
-	Visible             bool     `json:"visible"`
-	Status              string   `json:"status,omitempty"`
+	Flyer   bool   `json:"flyer,omitempty"`
+	Visible bool   `json:"visible"`
+	Status  string `json:"status,omitempty"`
 	// Order is the unit's current standing order (see OrderString* constants).
 	// omitempty so old clients receiving snapshots from new servers still parse
 	// cleanly — an absent field is treated as "idle" by clients.
-	Order               string   `json:"order,omitempty"`
-	X                   float64  `json:"x"`
-	Y                   float64  `json:"y"`
-	HP                  int      `json:"hp"`
-	MaxHP               int      `json:"maxHp"`
-	Damage              int      `json:"damage,omitempty"`
-	AttackSpeed         float64  `json:"attackSpeed,omitempty"`
+	Order       string  `json:"order,omitempty"`
+	X           float64 `json:"x"`
+	Y           float64 `json:"y"`
+	HP          int     `json:"hp"`
+	MaxHP       int     `json:"maxHp"`
+	Damage      int     `json:"damage,omitempty"`
+	AttackSpeed float64 `json:"attackSpeed,omitempty"`
 	// AttackRange is the unit's effective attack range in world pixels — base
 	// catalog range × any perk range multipliers (eagle_spirit / bullseye).
 	// Surfaced so the HUD can display it and the renderer can show range rings
 	// for selected units. omitempty so melee units (range 0) drop the field.
-	AttackRange         float64  `json:"attackRange,omitempty"`
-	MoveSpeed           float64  `json:"moveSpeed,omitempty"`
-	Armor               int      `json:"armor,omitempty"`
+	AttackRange float64 `json:"attackRange,omitempty"`
+	MoveSpeed   float64 `json:"moveSpeed,omitempty"`
+	Armor       int     `json:"armor,omitempty"`
 	// CritChance is the unit's effective crit probability against an unmarked
 	// target (0..1). Excludes Hunter's Mark since that is target-dependent.
 	// omitempty so non-Marksman units (no crit sources) drop the field.
-	CritChance          float64  `json:"critChance,omitempty"`
+	CritChance float64 `json:"critChance,omitempty"`
 	// CritMultiplier is the damage multiplier applied on a successful crit
 	// (e.g. 2.0 = double damage). Reported as 0 when the unit has no crit
 	// sources so the HUD can hide the row entirely.
-	CritMultiplier      float64  `json:"critMultiplier,omitempty"`
+	CritMultiplier float64 `json:"critMultiplier,omitempty"`
 	// HealthRegen is the current HP-per-second passive regeneration rate.
 	// omitempty so units with no regen (0) are absent from the payload.
 	HealthRegen         float64  `json:"healthRegen,omitempty"`
@@ -965,7 +965,7 @@ type UnitSnapshot struct {
 	// tier (1 for Twin Bronze, 2 for hypothetical Triple Bronze, etc.). The
 	// client uses this to render extra locked-or-filled perk slots beyond the
 	// standard 3.
-	ExtraPerkSlots      map[string]int `json:"extraPerkSlots,omitempty"`
+	ExtraPerkSlots map[string]int `json:"extraPerkSlots,omitempty"`
 	// Shield / MaxShield: aggregate "displayed shield" — sum of every active
 	// shield source on this unit (legacy single Unit.Shield pool from
 	// blood_engine + every source-specific pool from perks like dark_renewal).
@@ -1037,13 +1037,13 @@ type UnitSnapshot struct {
 	// a single held pose; start < end produces a small loop at the unit's
 	// natural frame cadence. Out-of-range values modulo against the
 	// sheet's frame count on the client.
-	ChannelLoopStart int `json:"channelLoopStart,omitempty"`
-	ChannelLoopEnd   int `json:"channelLoopEnd,omitempty"`
-	CarriedResourceType string   `json:"carriedResourceType,omitempty"`
-	CarriedAmount       int      `json:"carriedAmount,omitempty"`
-	TargetX             float64  `json:"targetX,omitempty"`
-	TargetY             float64  `json:"targetY,omitempty"`
-	Moving              bool     `json:"moving"`
+	ChannelLoopStart    int     `json:"channelLoopStart,omitempty"`
+	ChannelLoopEnd      int     `json:"channelLoopEnd,omitempty"`
+	CarriedResourceType string  `json:"carriedResourceType,omitempty"`
+	CarriedAmount       int     `json:"carriedAmount,omitempty"`
+	TargetX             float64 `json:"targetX,omitempty"`
+	TargetY             float64 `json:"targetY,omitempty"`
+	Moving              bool    `json:"moving"`
 	// ActionFacingDX/DY is the unit→target world-space delta the server is
 	// committing to for the current tick's attack. Non-zero while the unit is
 	// actively firing; both zero when the unit is not in-swing. Always sent
@@ -1059,7 +1059,7 @@ type UnitSnapshot struct {
 	// sprite toward the exact building it is interacting with (there may be
 	// more than one valid candidate within range, so "nearest" is not
 	// sufficient). Empty when the unit is not in a work state.
-	WorkTargetID        string   `json:"workTargetId,omitempty"`
+	WorkTargetID string `json:"workTargetId,omitempty"`
 	// EffectiveTrap carries the live compounded trap stats for the unit's current
 	// bronze trap perk. Only present for archer units on the trapper path that own
 	// a bronze trap perk; nil/omitted for all other units.
@@ -1171,13 +1171,13 @@ type GameOverSnapshot struct {
 
 // MatchSummary carries per-player match-end data alongside the game-over
 // snapshot. Populated once per match when the game ends. The match manager's
-// OnGameOver hook calls a LegendPointCommitter (implemented by
-// profile.Manager) to persist LegendPointsEarned into the profile —
+// OnGameOver hook calls a DominionPointCommitter (implemented by
+// profile.Manager) to persist DominionPointsEarned into the profile —
 // simulation code does not touch the profile store directly.
 type MatchSummary struct {
-	PlayerID           string `json:"playerId"`
-	Won                bool   `json:"won"`
-	LegendPointsEarned int    `json:"legendPointsEarned,omitempty"`
+	PlayerID             string `json:"playerId"`
+	Won                  bool   `json:"won"`
+	DominionPointsEarned int    `json:"dominionPointsEarned,omitempty"`
 }
 
 // ObjectiveSnapshot carries the current state of one victory condition to the
@@ -1453,11 +1453,11 @@ type LootDropSnapshot struct {
 }
 
 type MatchSnapshotMessage struct {
-	Type          string                  `json:"type"`
-	Tick          int                     `json:"tick"`
-	ServerNow     int64                   `json:"serverNow"`
-	MatchID       string                  `json:"matchId"`
-	Buildings     []BuildingTile          `json:"buildings"`
+	Type      string         `json:"type"`
+	Tick      int            `json:"tick"`
+	ServerNow int64          `json:"serverNow"`
+	MatchID   string         `json:"matchId"`
+	Buildings []BuildingTile `json:"buildings"`
 	// ObstaclesRemoved: obstacle IDs that have been removed from the world
 	// since the previous broadcast (trees chopped, rocks mined to depletion).
 	// Only populated on broadcasts that follow a removeObstacleByIDLocked;
@@ -1472,32 +1472,32 @@ type MatchSnapshotMessage struct {
 	// since the last send are included — steady-state ticks send nothing.
 	// `maxWorkers` is constant per obstacle type and known to the client from
 	// the WelcomeMessage, so we don't re-send it.
-	ObstacleMetadata []ObstacleMetadataPatch `json:"obstacleMetadata,omitempty"`
-	Players       []PlayerSnapshot        `json:"players"`
-	Units         []UnitSnapshot          `json:"units"`
-	Wave          WaveSnapshot            `json:"wave"`
-	Banners       []BannerSnapshot        `json:"banners,omitempty"`
-	Traps         []TrapSnapshot          `json:"traps,omitempty"`
-	Projectiles   []ProjectileSnapshot    `json:"projectiles,omitempty"`
-	Beams         []BeamSnapshot          `json:"beams,omitempty"`
-	Effects       []EffectSnapshot        `json:"effects,omitempty"`
+	ObstacleMetadata   []ObstacleMetadataPatch     `json:"obstacleMetadata,omitempty"`
+	Players            []PlayerSnapshot            `json:"players"`
+	Units              []UnitSnapshot              `json:"units"`
+	Wave               WaveSnapshot                `json:"wave"`
+	Banners            []BannerSnapshot            `json:"banners,omitempty"`
+	Traps              []TrapSnapshot              `json:"traps,omitempty"`
+	Projectiles        []ProjectileSnapshot        `json:"projectiles,omitempty"`
+	Beams              []BeamSnapshot              `json:"beams,omitempty"`
+	Effects            []EffectSnapshot            `json:"effects,omitempty"`
 	CritEvents         []CritEventSnapshot         `json:"critEvents,omitempty"`
 	MinorDamageEvents  []MinorDamageEventSnapshot  `json:"minorDamageEvents,omitempty"`
 	DamageTypeHints    []DamageTypeHintSnapshot    `json:"damageTypeHints,omitempty"`
 	LethalDamageEvents []LethalDamageEventSnapshot `json:"lethalDamageEvents,omitempty"`
 	HealEvents         []HealEventSnapshot         `json:"healEvents,omitempty"`
 	ManaRestoreEvents  []ManaRestoreEventSnapshot  `json:"manaRestoreEvents,omitempty"`
-	BattleTracker *BattleTrackerSnapshot  `json:"battleTracker,omitempty"`
-	GameOver      *GameOverSnapshot       `json:"gameOver,omitempty"`
-	Victory       *VictorySnapshot        `json:"victory,omitempty"`
-	Fow           *FogOfWarSnapshot       `json:"fow,omitempty"`
-	WaveUpgrade   *WaveUpgradeOfferSnapshot `json:"waveUpgrade,omitempty"`
-	NeutralCamps  []NeutralCampSnapshot   `json:"neutralCamps,omitempty"`
-	LootDrops     []LootDropSnapshot      `json:"lootDrops,omitempty"`
+	BattleTracker      *BattleTrackerSnapshot      `json:"battleTracker,omitempty"`
+	GameOver           *GameOverSnapshot           `json:"gameOver,omitempty"`
+	Victory            *VictorySnapshot            `json:"victory,omitempty"`
+	Fow                *FogOfWarSnapshot           `json:"fow,omitempty"`
+	WaveUpgrade        *WaveUpgradeOfferSnapshot   `json:"waveUpgrade,omitempty"`
+	NeutralCamps       []NeutralCampSnapshot       `json:"neutralCamps,omitempty"`
+	LootDrops          []LootDropSnapshot          `json:"lootDrops,omitempty"`
 	// Zones carries per-tick zone control state (owner / contested / progress).
 	// Empty on maps without zones. Static zone geometry is in the welcome
 	// MapConfig; this is only the mutable control layer.
-	Zones         []ZoneSnapshot          `json:"zones,omitempty"`
+	Zones []ZoneSnapshot `json:"zones,omitempty"`
 
 	// Paused is true when the simulation is frozen via the in-match settings
 	// "Pause Game" action. The client renders a paused overlay and freezes the
@@ -1574,9 +1574,9 @@ type NotificationMessage struct {
 // OverflowItemIDs so the toast can show "+50 gold, Broad Sword (lost —
 // vault full)".
 type LootCollectedNotification struct {
-	Type            string         `json:"type"` // "loot_collected"
-	PlayerID        string         `json:"playerId"`
-	LootDropID      string         `json:"lootDropId"`
+	Type       string `json:"type"` // "loot_collected"
+	PlayerID   string `json:"playerId"`
+	LootDropID string `json:"lootDropId"`
 	// CollectingUnitID is the ID of the unit that walked to and collected
 	// the chest. Used by the client to position the floating "+X gold"
 	// pickup text in world space above that unit.

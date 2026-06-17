@@ -11,8 +11,8 @@ import (
 // for the same playerID are serialized; calls for different players run in
 // parallel.
 type Manager struct {
-	store  Store
-	muMap  sync.Map // playerID string -> *sync.Mutex
+	store Store
+	muMap sync.Map // playerID string -> *sync.Mutex
 }
 
 // NewManager returns a Manager backed by files in profilesDir. If profilesDir
@@ -53,16 +53,16 @@ func (m *Manager) Save(playerID string, p *PlayerProfile) error {
 	return m.store.Save(playerID, p)
 }
 
-// CommitLegendPoints atomically adds earned to both LegendPoints and
-// LifetimeLegendPoints for the named player. Called once per match-end by the
-// match manager; a no-op when earned <= 0. Satisfies game.LegendPointCommitter.
-func (m *Manager) CommitLegendPoints(playerID string, earned int) error {
+// CommitDominionPoints atomically adds earned to both DominionPoints and
+// LifetimeDominionPoints for the named player. Called once per match-end by the
+// match manager; a no-op when earned <= 0. Satisfies game.DominionPointCommitter.
+func (m *Manager) CommitDominionPoints(playerID string, earned int) error {
 	if earned <= 0 {
 		return nil
 	}
 	return m.WithLocked(playerID, func(p *PlayerProfile) error {
-		p.LegendPoints += earned
-		p.LifetimeLegendPoints += earned
+		p.DominionPoints += earned
+		p.LifetimeDominionPoints += earned
 		return nil
 	})
 }

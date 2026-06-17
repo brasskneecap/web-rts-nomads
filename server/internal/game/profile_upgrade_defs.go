@@ -12,13 +12,13 @@ var profileUpgradeDefsFS embed.FS
 
 // ProfileUpgradeDef is the static definition of a persistent profile upgrade
 // loaded from catalog/profile-upgrades/<id>.json. Profile upgrades are
-// purchased with Legend Points between matches and applied at match start.
+// purchased with Dominion Points between matches and applied at match start.
 type ProfileUpgradeDef struct {
-	ID          string             `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	MaxRanks    int                `json:"maxRanks"`
-	CostPerRank []int              `json:"costPerRank"`
+	ID          string               `json:"id"`
+	Name        string               `json:"name"`
+	Description string               `json:"description"`
+	MaxRanks    int                  `json:"maxRanks"`
+	CostPerRank []int                `json:"costPerRank"`
 	Effect      ProfileUpgradeEffect `json:"effect"`
 }
 
@@ -26,12 +26,12 @@ type ProfileUpgradeDef struct {
 // The Type field discriminates the active mode; all other fields are
 // type-specific and are ignored for types that don't use them.
 type ProfileUpgradeEffect struct {
-	Type            string  `json:"type"`
+	Type string `json:"type"`
 	// extraStartingUnit fields
-	UnitType        string  `json:"unitType,omitempty"`
-	CountPerRank    int     `json:"countPerRank,omitempty"`
+	UnitType     string `json:"unitType,omitempty"`
+	CountPerRank int    `json:"countPerRank,omitempty"`
 	// damageMultiplierByType fields
-	DamageTypeClass string  `json:"damageTypeClass,omitempty"`
+	DamageTypeClass   string  `json:"damageTypeClass,omitempty"`
 	MultiplierPerRank float64 `json:"multiplierPerRank,omitempty"`
 }
 

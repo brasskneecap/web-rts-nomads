@@ -10,7 +10,7 @@ import (
 
 // resetResponseBody is the decoded shape of the reset endpoint's JSON.
 type resetResponseBody struct {
-	LegendPoints         int                           `json:"legendPoints"`
+	DominionPoints       int                           `json:"dominionPoints"`
 	AcquiredAdvancements []profile.AcquiredAdvancement `json:"acquiredAdvancements"`
 }
 
@@ -31,8 +31,8 @@ func TestAdvancementReset_RefundsAndClears(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	// 50 starting + 2 × 50 refunded = 150.
-	if resp.LegendPoints != 150 {
-		t.Errorf("legendPoints after reset: want 150 (50 + 2×50 refund), got %d", resp.LegendPoints)
+	if resp.DominionPoints != 150 {
+		t.Errorf("dominionPoints after reset: want 150 (50 + 2×50 refund), got %d", resp.DominionPoints)
 	}
 	if len(resp.AcquiredAdvancements) != 0 {
 		t.Errorf("acquiredAdvancements after reset: want empty, got %d", len(resp.AcquiredAdvancements))
@@ -47,8 +47,8 @@ func TestAdvancementReset_RefundsAndClears(t *testing.T) {
 	if err := json.NewDecoder(rec2.Body).Decode(&resp2); err != nil {
 		t.Fatalf("decode second response: %v", err)
 	}
-	if resp2.LegendPoints != 150 {
-		t.Errorf("legendPoints after second reset: want 150 (no double refund), got %d", resp2.LegendPoints)
+	if resp2.DominionPoints != 150 {
+		t.Errorf("dominionPoints after second reset: want 150 (no double refund), got %d", resp2.DominionPoints)
 	}
 }
 
@@ -66,8 +66,8 @@ func TestAdvancementReset_NoAcquired_NoChange(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.LegendPoints != 100 {
-		t.Errorf("legendPoints: want 100 (unchanged), got %d", resp.LegendPoints)
+	if resp.DominionPoints != 100 {
+		t.Errorf("dominionPoints: want 100 (unchanged), got %d", resp.DominionPoints)
 	}
 	if len(resp.AcquiredAdvancements) != 0 {
 		t.Errorf("acquiredAdvancements: want empty, got %d", len(resp.AcquiredAdvancements))

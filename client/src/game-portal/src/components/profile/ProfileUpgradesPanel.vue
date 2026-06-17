@@ -1,8 +1,8 @@
 <template>
   <div class="upgrades-panel">
-    <section class="upgrades-panel__balance" aria-label="Legend Points balance">
-      <div class="upgrades-panel__balance-label">Legend Points</div>
-      <div class="upgrades-panel__balance-value">{{ legendPoints.toLocaleString() }}</div>
+    <section class="upgrades-panel__balance" aria-label="Dominion Points balance">
+      <div class="upgrades-panel__balance-label">Dominion Points</div>
+      <div class="upgrades-panel__balance-value">{{ dominionPoints.toLocaleString() }}</div>
     </section>
 
     <div v-if="error" class="upgrades-panel__error" role="alert">
@@ -31,7 +31,7 @@
       <div class="upgrade-card__footer">
         <div class="upgrade-card__cost">
           <template v-if="currentRank(def.id) < def.maxRanks">
-            Next rank: <span class="upgrade-card__cost-value">{{ def.costPerRank[currentRank(def.id)] }} LP</span>
+            Next rank: <span class="upgrade-card__cost-value">{{ def.costPerRank[currentRank(def.id)] }} DP</span>
           </template>
           <template v-else>
             <span class="upgrade-card__maxed">Maxed</span>
@@ -53,10 +53,10 @@
             class="upgrade-card__btn upgrade-card__btn--refund"
             type="button"
             :disabled="isRefundDisabled(def.id)"
-            :aria-label="`Refund rank ${currentRank(def.id)} of ${def.name}${currentRank(def.id) > 0 ? ` for ${def.costPerRank[currentRank(def.id) - 1]} LP` : ''}`"
+            :aria-label="`Refund rank ${currentRank(def.id)} of ${def.name}${currentRank(def.id) > 0 ? ` for ${def.costPerRank[currentRank(def.id) - 1]} DP` : ''}`"
             @click="onRefund(def.id)"
           >
-            Refund{{ currentRank(def.id) > 0 ? ` (${def.costPerRank[currentRank(def.id) - 1]} LP)` : '' }}
+            Refund{{ currentRank(def.id) > 0 ? ` (${def.costPerRank[currentRank(def.id) - 1]} DP)` : '' }}
           </button>
         </div>
       </div>
@@ -69,7 +69,7 @@ import { onMounted } from 'vue'
 import type { ProfileUpgradeDef } from '@/types/profile'
 import { useProfileUpgrades } from '@/composables/useProfileUpgrades'
 
-const { catalog, ownedRanks, legendPoints, isBusy, error, initialize, purchase, refund } =
+const { catalog, ownedRanks, dominionPoints, isBusy, error, initialize, purchase, refund } =
   useProfileUpgrades()
 
 onMounted(() => { void initialize() })
@@ -81,7 +81,7 @@ function currentRank(id: string): number {
 function isBuyDisabled(def: ProfileUpgradeDef): boolean {
   const rank = currentRank(def.id)
   if (rank >= def.maxRanks) return true
-  if (legendPoints.value < def.costPerRank[rank]) return true
+  if (dominionPoints.value < def.costPerRank[rank]) return true
   return isBusy.value
 }
 

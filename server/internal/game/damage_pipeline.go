@@ -158,7 +158,7 @@ func (s *GameState) drainPendingDeathsLocked() {
 					s.awardSoldierTankKillXPLocked(target.ID)
 					s.onPerkKillLocked(attackerUnit)
 					s.trackBattleKillLocked(battleSourceFromUnit(attackerUnit), target)
-					s.rollLegendPointDropLocked(attackerUnit.OwnerID, target)
+					s.rollDominionPointDropLocked(attackerUnit.OwnerID, target)
 					// Legacy markObjectiveKillLocked(target.ObjectiveID) call
 					// removed in §9 of campaign-objectives-and-metrics. Kill
 					// counters now live on Player.Metrics and feed the new

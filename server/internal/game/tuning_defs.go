@@ -12,34 +12,34 @@ var gameplayTuningJSON []byte
 // GameplayTuning is the root struct for all externalized gameplay numeric rates.
 // Loaded once at init; never mutated after startup.
 type GameplayTuning struct {
-	Version       int                                `json:"version"`
-	LegendPoints  LegendPointsTuning                 `json:"legendPoints"`
-	WaveUpgrade   WaveUpgradeTuning                  `json:"waveUpgrade"`
-	UnitOverrides map[string]UnitLegendPointOverride `json:"unitOverrides"`
-	Experience    ExperienceTuning                   `json:"experience"`
+	Version        int                                  `json:"version"`
+	DominionPoints DominionPointsTuning                 `json:"dominionPoints"`
+	WaveUpgrade    WaveUpgradeTuning                    `json:"waveUpgrade"`
+	UnitOverrides  map[string]UnitDominionPointOverride `json:"unitOverrides"`
+	Experience     ExperienceTuning                     `json:"experience"`
 }
 
-// LegendPointsTuning holds all legend-point earning rates.
-type LegendPointsTuning struct {
+// DominionPointsTuning holds all dominion-point earning rates.
+type DominionPointsTuning struct {
 	WinBonus              int     `json:"winBonus"`
 	LossConsolation       int     `json:"lossConsolation"`
 	PerObjective          int     `json:"perObjective"`
 	PerKillBaseDropChance float64 `json:"perKillBaseDropChance"`
 	PerKillBaseAmount     int     `json:"perKillBaseAmount"`
 	// CommitMode selects when kill-drop earnings reach the player's profile:
-	//   "matchEnd"  — accumulate into Player.RunLegendPointDrops, commit
+	//   "matchEnd"  — accumulate into Player.RunDominionPointDrops, commit
 	//                 once at game-over via the MatchManager's committer.
 	//                 Default; intended for shipped builds.
 	//   "immediate" — fire-and-forget commit per drop (skips the
-	//                 RunLegendPointDrops accumulator). Intended for
+	//                 RunDominionPointDrops accumulator). Intended for
 	//                 testing / verification builds only.
 	// Empty string is treated as "matchEnd" for backward compatibility.
 	CommitMode string `json:"commitMode"`
 }
 
 const (
-	legendPointCommitModeMatchEnd  = "matchEnd"
-	legendPointCommitModeImmediate = "immediate"
+	dominionPointCommitModeMatchEnd  = "matchEnd"
+	dominionPointCommitModeImmediate = "immediate"
 )
 
 // WaveUpgradeTuning controls offer generation for the wave upgrade phase.
@@ -56,11 +56,11 @@ type WaveUpgradeTuning struct {
 	MilestoneMinRarity string `json:"milestoneMinRarity"`
 }
 
-// UnitLegendPointOverride lets specific unit types earn different legend-point
+// UnitDominionPointOverride lets specific unit types earn different dominion-point
 // rewards when killed, overriding the base tuning values.
-type UnitLegendPointOverride struct {
-	LegendPointDropChance float64 `json:"legendPointDropChance"`
-	LegendPointAmount     int     `json:"legendPointAmount"`
+type UnitDominionPointOverride struct {
+	DominionPointDropChance float64 `json:"dominionPointDropChance"`
+	DominionPointAmount     int     `json:"dominionPointAmount"`
 }
 
 // ExperienceTuning selects the experience-gaining system and tunes the
@@ -87,34 +87,34 @@ func init() {
 	if t.Version != 1 {
 		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: unsupported version %d (want 1)", t.Version))
 	}
-	if t.LegendPoints.WinBonus < 0 {
-		panic("catalog/tuning/gameplay_tuning.json: legendPoints.winBonus must be >= 0")
+	if t.DominionPoints.WinBonus < 0 {
+		panic("catalog/tuning/gameplay_tuning.json: dominionPoints.winBonus must be >= 0")
 	}
-	if t.LegendPoints.LossConsolation < 0 {
-		panic("catalog/tuning/gameplay_tuning.json: legendPoints.lossConsolation must be >= 0")
+	if t.DominionPoints.LossConsolation < 0 {
+		panic("catalog/tuning/gameplay_tuning.json: dominionPoints.lossConsolation must be >= 0")
 	}
-	if t.LegendPoints.PerObjective < 0 {
-		panic("catalog/tuning/gameplay_tuning.json: legendPoints.perObjective must be >= 0")
+	if t.DominionPoints.PerObjective < 0 {
+		panic("catalog/tuning/gameplay_tuning.json: dominionPoints.perObjective must be >= 0")
 	}
-	if t.LegendPoints.PerKillBaseDropChance < 0 || t.LegendPoints.PerKillBaseDropChance > 1 {
-		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: legendPoints.perKillBaseDropChance must be in [0,1], got %v", t.LegendPoints.PerKillBaseDropChance))
+	if t.DominionPoints.PerKillBaseDropChance < 0 || t.DominionPoints.PerKillBaseDropChance > 1 {
+		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: dominionPoints.perKillBaseDropChance must be in [0,1], got %v", t.DominionPoints.PerKillBaseDropChance))
 	}
-	if t.LegendPoints.PerKillBaseAmount < 0 {
-		panic("catalog/tuning/gameplay_tuning.json: legendPoints.perKillBaseAmount must be >= 0")
+	if t.DominionPoints.PerKillBaseAmount < 0 {
+		panic("catalog/tuning/gameplay_tuning.json: dominionPoints.perKillBaseAmount must be >= 0")
 	}
-	switch t.LegendPoints.CommitMode {
-	case "", legendPointCommitModeMatchEnd, legendPointCommitModeImmediate:
+	switch t.DominionPoints.CommitMode {
+	case "", dominionPointCommitModeMatchEnd, dominionPointCommitModeImmediate:
 		// valid
 	default:
-		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: legendPoints.commitMode must be %q or %q, got %q",
-			legendPointCommitModeMatchEnd, legendPointCommitModeImmediate, t.LegendPoints.CommitMode))
+		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: dominionPoints.commitMode must be %q or %q, got %q",
+			dominionPointCommitModeMatchEnd, dominionPointCommitModeImmediate, t.DominionPoints.CommitMode))
 	}
 	for unitType, override := range t.UnitOverrides {
-		if override.LegendPointDropChance < 0 || override.LegendPointDropChance > 1 {
-			panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: unitOverrides[%q].legendPointDropChance must be in [0,1], got %v", unitType, override.LegendPointDropChance))
+		if override.DominionPointDropChance < 0 || override.DominionPointDropChance > 1 {
+			panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: unitOverrides[%q].dominionPointDropChance must be in [0,1], got %v", unitType, override.DominionPointDropChance))
 		}
-		if override.LegendPointAmount < 0 {
-			panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: unitOverrides[%q].legendPointAmount must be >= 0, got %d", unitType, override.LegendPointAmount))
+		if override.DominionPointAmount < 0 {
+			panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: unitOverrides[%q].dominionPointAmount must be >= 0, got %d", unitType, override.DominionPointAmount))
 		}
 	}
 	if t.WaveUpgrade.TimerSeconds <= 0 {

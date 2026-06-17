@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "legendPoints": {
+  "dominionPoints": {
     "winBonus": 0,
     "lossConsolation": 0,
     "perObjective": 0,

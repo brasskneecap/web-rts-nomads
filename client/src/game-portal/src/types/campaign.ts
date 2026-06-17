@@ -83,7 +83,7 @@ export interface CampaignLevel {
    *  legacy wave/townhall rule. */
   objectives?: Objective[]
 
-  // EXT-REWARDS: per-level reward payload (legend points, items, perks).
+  // EXT-REWARDS: per-level reward payload (dominion points, items, perks).
   // EXT-MODIFIERS: per-level gameplay modifiers (timer, fog density, etc.).
   // EXT-STORY: pre/post story text or cutscene id.
 }

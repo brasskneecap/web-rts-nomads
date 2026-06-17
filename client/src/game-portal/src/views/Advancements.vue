@@ -53,7 +53,7 @@
             >
               <UiTooltip :title="node.name" :body="tooltipBody(node)" />
             </button>
-            <span v-if="unitType" class="advancement-node__cost">{{ node.cost }} LP</span>
+            <span v-if="unitType" class="advancement-node__cost">{{ node.cost }} DP</span>
           </div>
         </div>
 
@@ -239,7 +239,7 @@ function nodeStateClass(track: UnitAdvancementTrack, idx: number): string {
 function nodeStateLabel(track: UnitAdvancementTrack, idx: number): string {
   const node = track.nodes[idx]
   if (isAcquired(node.id)) return 'acquired'
-  if (isAvailable(track, idx)) return canAfford(node.cost) ? 'available' : 'not enough Legend Points'
+  if (isAvailable(track, idx)) return canAfford(node.cost) ? 'available' : 'not enough Dominion Points'
   return 'locked'
 }
 
@@ -248,7 +248,7 @@ function tooltipBody(node: UnitAdvancementNode): string {
   if (node.description) lines.push(node.description)
   // In single-unit mode the cost is shown as a label under each node, so it's
   // omitted from the tooltip to avoid duplication.
-  if (!props.unitType) lines.push(`Cost: ${node.cost} LP`)
+  if (!props.unitType) lines.push(`Cost: ${node.cost} DP`)
   return lines.join('\n')
 }
 

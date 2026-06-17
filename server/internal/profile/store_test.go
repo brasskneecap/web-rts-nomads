@@ -14,14 +14,14 @@ func TestFileStore_SaveAndLoad_RoundTrip(t *testing.T) {
 
 	playerID := "12345678-1234-1234-1234-123456789abc"
 	p := &PlayerProfile{
-		PlayerID:             playerID,
-		Version:              CurrentVersion,
-		CreatedAtUnix:        time.Now().Unix(),
-		UpdatedAtUnix:        time.Now().Unix(),
-		LegendPoints:         42,
-		LifetimeLegendPoints: 100,
-		OwnedUpgradeRanks:    map[string]int{},
-		ActiveUpgradeIDs:     []string{},
+		PlayerID:               playerID,
+		Version:                CurrentVersion,
+		CreatedAtUnix:          time.Now().Unix(),
+		UpdatedAtUnix:          time.Now().Unix(),
+		DominionPoints:         42,
+		LifetimeDominionPoints: 100,
+		OwnedUpgradeRanks:      map[string]int{},
+		ActiveUpgradeIDs:       []string{},
 	}
 
 	if err := store.Save(playerID, p); err != nil {
@@ -35,8 +35,8 @@ func TestFileStore_SaveAndLoad_RoundTrip(t *testing.T) {
 	if loaded == nil {
 		t.Fatal("Load returned nil for existing profile")
 	}
-	if loaded.LegendPoints != 42 {
-		t.Errorf("LegendPoints: want 42, got %d", loaded.LegendPoints)
+	if loaded.DominionPoints != 42 {
+		t.Errorf("DominionPoints: want 42, got %d", loaded.DominionPoints)
 	}
 }
 
@@ -73,12 +73,12 @@ func TestFileStore_BackupFallback(t *testing.T) {
 
 	playerID := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	p := &PlayerProfile{
-		PlayerID:         playerID,
-		Version:          CurrentVersion,
-		LegendPoints:     7,
-		CreatedAtUnix:    time.Now().Unix(),
+		PlayerID:          playerID,
+		Version:           CurrentVersion,
+		DominionPoints:    7,
+		CreatedAtUnix:     time.Now().Unix(),
 		OwnedUpgradeRanks: map[string]int{},
-		ActiveUpgradeIDs: []string{},
+		ActiveUpgradeIDs:  []string{},
 	}
 
 	// Save twice so the second save creates a .bak of the first.
@@ -103,8 +103,8 @@ func TestFileStore_BackupFallback(t *testing.T) {
 	if loaded == nil {
 		t.Fatal("expected fallback to backup, got nil")
 	}
-	if loaded.LegendPoints != 7 {
-		t.Errorf("backup LegendPoints: want 7, got %d", loaded.LegendPoints)
+	if loaded.DominionPoints != 7 {
+		t.Errorf("backup DominionPoints: want 7, got %d", loaded.DominionPoints)
 	}
 }
 
@@ -114,11 +114,11 @@ func TestFileStore_BothCorrupt_ReturnsProfileCorruptError(t *testing.T) {
 
 	playerID := "cccccccc-cccc-cccc-cccc-cccccccccccc"
 	p := &PlayerProfile{
-		PlayerID:         playerID,
-		Version:          CurrentVersion,
-		CreatedAtUnix:    time.Now().Unix(),
+		PlayerID:          playerID,
+		Version:           CurrentVersion,
+		CreatedAtUnix:     time.Now().Unix(),
 		OwnedUpgradeRanks: map[string]int{},
-		ActiveUpgradeIDs: []string{},
+		ActiveUpgradeIDs:  []string{},
 	}
 
 	// Save to get a backup created on next save.
@@ -209,7 +209,7 @@ func TestManager_WithLocked_MutatesAndPersists(t *testing.T) {
 	}
 
 	err = m.WithLocked(playerID, func(p *PlayerProfile) error {
-		p.LegendPoints = 99
+		p.DominionPoints = 99
 		return nil
 	})
 	if err != nil {
@@ -220,8 +220,8 @@ func TestManager_WithLocked_MutatesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get after WithLocked: %v", err)
 	}
-	if loaded.LegendPoints != 99 {
-		t.Errorf("LegendPoints after WithLocked: want 99, got %d", loaded.LegendPoints)
+	if loaded.DominionPoints != 99 {
+		t.Errorf("DominionPoints after WithLocked: want 99, got %d", loaded.DominionPoints)
 	}
 }
 
@@ -241,8 +241,8 @@ func TestMigrateProfile_V1ToV2_OwnedUpgradeRanksInitialized(t *testing.T) {
 		"version": 1,
 		"createdAtUnix": 0,
 		"updatedAtUnix": 0,
-		"legendPoints": 42,
-		"lifetimeLegendPoints": 50,
+		"dominionPoints": 42,
+		"lifetimeDominionPoints": 50,
 		"ownedCommanderIds": [],
 		"selectedCommanderId": "",
 		"equippedBuffIds": [],
@@ -271,13 +271,13 @@ func TestMigrateProfile_V1ToV2_OwnedUpgradeRanksInitialized(t *testing.T) {
 	if loaded.Version != CurrentVersion {
 		t.Errorf("Version after migration: want %d, got %d", CurrentVersion, loaded.Version)
 	}
-	if loaded.LegendPoints != 42 {
-		t.Errorf("LegendPoints should be preserved: want 42, got %d", loaded.LegendPoints)
+	if loaded.DominionPoints != 42 {
+		t.Errorf("DominionPoints should be preserved: want 42, got %d", loaded.DominionPoints)
 	}
 
 	// Trigger a WithLocked mutation to force a save.
 	err = m.WithLocked(playerID, func(p *PlayerProfile) error {
-		p.LegendPoints = 55
+		p.DominionPoints = 55
 		return nil
 	})
 	if err != nil {
@@ -344,8 +344,8 @@ func TestMigrateProfile_V5ToV6_CompletedCampaignObjectivesInitialized(t *testing
 		"version": 5,
 		"createdAtUnix": 0,
 		"updatedAtUnix": 0,
-		"legendPoints": 7,
-		"lifetimeLegendPoints": 12,
+		"dominionPoints": 7,
+		"lifetimeDominionPoints": 12,
 		"ownedCommanderIds": ["nomad_commander_default"],
 		"selectedCommanderId": "nomad_commander_default",
 		"stats": {},
@@ -376,8 +376,8 @@ func TestMigrateProfile_V5ToV6_CompletedCampaignObjectivesInitialized(t *testing
 		t.Errorf("Version after migration: want %d, got %d", CurrentVersion, loaded.Version)
 	}
 	// v5 data must survive the migration unchanged.
-	if loaded.LegendPoints != 7 {
-		t.Errorf("LegendPoints: want 7, got %d", loaded.LegendPoints)
+	if loaded.DominionPoints != 7 {
+		t.Errorf("DominionPoints: want 7, got %d", loaded.DominionPoints)
 	}
 	if len(loaded.CompletedCampaignLevels) != 1 || loaded.CompletedCampaignLevels[0] != "forest_01" {
 		t.Errorf("CompletedCampaignLevels lost across migration, got %v", loaded.CompletedCampaignLevels)
@@ -386,7 +386,7 @@ func TestMigrateProfile_V5ToV6_CompletedCampaignObjectivesInitialized(t *testing
 	// Trigger a WithLocked mutation to force a save and verify the on-disk
 	// JSON now carries version=6 AND a non-nil empty objectives map.
 	err = m.WithLocked(playerID, func(p *PlayerProfile) error {
-		p.LegendPoints = 9
+		p.DominionPoints = 9
 		return nil
 	})
 	if err != nil {
@@ -443,8 +443,8 @@ func TestMigrateProfile_V2ToV3_ActiveUpgradeIDsPopulated(t *testing.T) {
 		"version": 2,
 		"createdAtUnix": 0,
 		"updatedAtUnix": 0,
-		"legendPoints": 0,
-		"lifetimeLegendPoints": 0,
+		"dominionPoints": 0,
+		"lifetimeDominionPoints": 0,
 		"ownedCommanderIds": [],
 		"selectedCommanderId": "",
 		"stats": {},

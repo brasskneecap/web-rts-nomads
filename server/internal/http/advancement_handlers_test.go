@@ -19,16 +19,16 @@ func newAdvancementTestMux(t *testing.T) (*http.ServeMux, *profile.Manager) {
 	return mux, pm
 }
 
-// seedAdvancementPlayer seeds a profile with legendPoints and the given
+// seedAdvancementPlayer seeds a profile with dominionPoints and the given
 // acquired advancement IDs at their catalog cost.
-func seedAdvancementPlayer(t *testing.T, pm *profile.Manager, legendPoints int, acquiredIDs []string) {
+func seedAdvancementPlayer(t *testing.T, pm *profile.Manager, dominionPoints int, acquiredIDs []string) {
 	t.Helper()
 	_, err := pm.GetOrCreate(testPlayerID, profile.DefaultCommanderID)
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
 	err = pm.WithLocked(testPlayerID, func(p *profile.PlayerProfile) error {
-		p.LegendPoints = legendPoints
+		p.DominionPoints = dominionPoints
 		for _, id := range acquiredIDs {
 			p.AcquiredAdvancements = append(p.AcquiredAdvancements, profile.AcquiredAdvancement{
 				ID:       id,
@@ -45,7 +45,7 @@ func seedAdvancementPlayer(t *testing.T, pm *profile.Manager, legendPoints int, 
 // ─── POST /api/profile/advancements/purchase ─────────────────────────────────
 
 // TestAdvancementPurchase_Success_DebitsPointsAndReturnsSlimResponse verifies
-// a successful purchase debits legend points and returns only legendPoints and
+// a successful purchase debits dominion points and returns only dominionPoints and
 // acquiredAdvancements (not the full profile).
 func TestAdvancementPurchase_Success_DebitsPointsAndReturnsSlimResponse(t *testing.T) {
 	mux, pm := newAdvancementTestMux(t)
@@ -59,14 +59,14 @@ func TestAdvancementPurchase_Success_DebitsPointsAndReturnsSlimResponse(t *testi
 	}
 
 	var resp struct {
-		LegendPoints         int                          `json:"legendPoints"`
+		DominionPoints       int                           `json:"dominionPoints"`
 		AcquiredAdvancements []profile.AcquiredAdvancement `json:"acquiredAdvancements"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.LegendPoints != 50 {
-		t.Errorf("legendPoints: want 50 (100 - 50 cost), got %d", resp.LegendPoints)
+	if resp.DominionPoints != 50 {
+		t.Errorf("dominionPoints: want 50 (100 - 50 cost), got %d", resp.DominionPoints)
 	}
 	if len(resp.AcquiredAdvancements) != 1 {
 		t.Fatalf("acquiredAdvancements: want 1, got %d", len(resp.AcquiredAdvancements))
@@ -98,7 +98,7 @@ func TestAdvancementPurchase_ResponseHasNoProfileKey(t *testing.T) {
 			t.Errorf("response must not contain %q key (full profile leak)", forbidden)
 		}
 	}
-	for _, required := range []string{"legendPoints", "acquiredAdvancements"} {
+	for _, required := range []string{"dominionPoints", "acquiredAdvancements"} {
 		if _, present := raw[required]; !present {
 			t.Errorf("response must contain %q key", required)
 		}
@@ -125,7 +125,7 @@ func TestAdvancementPurchase_AlreadyAcquired_Returns400WithAlreadyAcquiredCode(t
 }
 
 // TestAdvancementPurchase_InsufficientPoints_Returns400 verifies that a
-// purchase with insufficient LP returns 400 with "insufficient_legend_points".
+// purchase with insufficient DP returns 400 with "insufficient_dominion_points".
 func TestAdvancementPurchase_InsufficientPoints_Returns400(t *testing.T) {
 	mux, pm := newAdvancementTestMux(t)
 	seedAdvancementPlayer(t, pm, 10 /* < 50 cost */, nil)
@@ -138,13 +138,13 @@ func TestAdvancementPurchase_InsufficientPoints_Returns400(t *testing.T) {
 	}
 	var body map[string]string
 	_ = json.NewDecoder(rec.Body).Decode(&body)
-	if body["error"] != "insufficient_legend_points" {
-		t.Errorf("error code: want %q, got %q", "insufficient_legend_points", body["error"])
+	if body["error"] != "insufficient_dominion_points" {
+		t.Errorf("error code: want %q, got %q", "insufficient_dominion_points", body["error"])
 	}
 	// Profile must be unchanged.
 	p, _ := pm.Get(testPlayerID)
-	if p.LegendPoints != 10 {
-		t.Errorf("legend points should be unchanged (10), got %d", p.LegendPoints)
+	if p.DominionPoints != 10 {
+		t.Errorf("dominion points should be unchanged (10), got %d", p.DominionPoints)
 	}
 }
 

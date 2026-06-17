@@ -54,7 +54,7 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 		prereqID := game.GetAdvancementPrerequisiteID(body.AdvancementID)
 
 		type purchaseResponse struct {
-			LegendPoints         int                          `json:"legendPoints"`
+			DominionPoints       int                           `json:"dominionPoints"`
 			AcquiredAdvancements []profile.AcquiredAdvancement `json:"acquiredAdvancements"`
 		}
 
@@ -83,11 +83,11 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 				}
 			}
 
-			if p.LegendPoints < node.Cost {
-				writeJSONError(w, http.StatusBadRequest, "insufficient_legend_points", "not enough legend points to purchase this advancement")
+			if p.DominionPoints < node.Cost {
+				writeJSONError(w, http.StatusBadRequest, "insufficient_dominion_points", "not enough dominion points to purchase this advancement")
 				return errAbort
 			}
-			p.LegendPoints -= node.Cost
+			p.DominionPoints -= node.Cost
 			p.AcquiredAdvancements = append(p.AcquiredAdvancements, profile.AcquiredAdvancement{
 				ID:       node.ID,
 				CostPaid: node.Cost,
@@ -97,7 +97,7 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 				return p.AcquiredAdvancements[i].ID < p.AcquiredAdvancements[j].ID
 			})
 			resp = purchaseResponse{
-				LegendPoints:         p.LegendPoints,
+				DominionPoints:       p.DominionPoints,
 				AcquiredAdvancements: p.AcquiredAdvancements,
 			}
 			return nil
@@ -114,7 +114,7 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 
 	// POST /api/profile/advancements/reset
 	//
-	// Refunds every acquired advancement's paid cost back to Legend Points and
+	// Refunds every acquired advancement's paid cost back to Dominion Points and
 	// clears the acquired list, returning the player to a clean slate. Intended
 	// as a dev/testing affordance for A/B-comparing unit behavior with and
 	// without advancements; the refund means the player can immediately re-buy.
@@ -136,19 +136,19 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 		}
 
 		type resetResponse struct {
-			LegendPoints         int                           `json:"legendPoints"`
+			DominionPoints       int                           `json:"dominionPoints"`
 			AcquiredAdvancements []profile.AcquiredAdvancement `json:"acquiredAdvancements"`
 		}
 
 		var resp resetResponse
 		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
 			for _, aa := range p.AcquiredAdvancements {
-				p.LegendPoints += aa.CostPaid
+				p.DominionPoints += aa.CostPaid
 			}
 			// Empty (non-nil) slice so the JSON serializes as [] rather than null.
 			p.AcquiredAdvancements = []profile.AcquiredAdvancement{}
 			resp = resetResponse{
-				LegendPoints:         p.LegendPoints,
+				DominionPoints:       p.DominionPoints,
 				AcquiredAdvancements: p.AcquiredAdvancements,
 			}
 			return nil
@@ -171,7 +171,7 @@ type matchInActiveChecker interface {
 
 // refundStaleAdvancementCosts checks the player's AcquiredAdvancements for
 // any entry where the catalog cost has changed (decreased) or the advancement
-// no longer exists in the catalog, and issues a proportional Legend Point
+// no longer exists in the catalog, and issues a proportional Dominion Point
 // refund. Returns true when the profile was modified.
 //
 // This is the "refund-on-cost-change" migration. Call it inside a
@@ -183,14 +183,14 @@ func refundStaleAdvancementCosts(p *profile.PlayerProfile) bool {
 		node, exists := game.GetAdvancementDef(aa.ID)
 		if !exists {
 			// Advancement removed from catalog — full refund of cost paid.
-			p.LegendPoints += aa.CostPaid
+			p.DominionPoints += aa.CostPaid
 			modified = true
 			continue // drop from list
 		}
 		if node.Cost < aa.CostPaid {
 			// Cost decreased — refund the delta.
 			delta := aa.CostPaid - node.Cost
-			p.LegendPoints += delta
+			p.DominionPoints += delta
 			aa.CostPaid = node.Cost
 			modified = true
 		}

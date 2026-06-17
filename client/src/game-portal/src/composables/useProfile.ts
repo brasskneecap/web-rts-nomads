@@ -22,7 +22,7 @@ async function initialize(): Promise<void> {
 
 // refresh re-fetches the profile from the server, overwriting the
 // module-level singleton's profile ref. Use this after any server-side
-// mutation the client did NOT issue itself (e.g. mid-match LP drops persisted
+// mutation the client did NOT issue itself (e.g. mid-match DP drops persisted
 // via the immediate commit hook). Cheap enough to call on every Profile-view
 // mount; the server handler is one file read.
 async function refresh(): Promise<void> {

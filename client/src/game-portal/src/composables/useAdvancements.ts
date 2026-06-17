@@ -20,14 +20,14 @@ export function useAdvancements() {
     () => new Set((profile.value?.acquiredAdvancements ?? []).map((a) => a.id)),
   )
 
-  const legendPoints = computed<number>(() => profile.value?.legendPoints ?? 0)
+  const dominionPoints = computed<number>(() => profile.value?.dominionPoints ?? 0)
 
   function isAcquired(nodeId: string): boolean {
     return acquiredIds.value.has(nodeId)
   }
 
   function canAfford(cost: number): boolean {
-    return legendPoints.value >= cost
+    return dominionPoints.value >= cost
   }
 
   // nextNodeFor returns the first unacquired node on a track, or null if the
@@ -42,10 +42,10 @@ export function useAdvancements() {
     try {
       const updated = await purchaseAdvancement(advancementId)
       // Mutate the profile singleton in place so every consumer reactively
-      // updates (legendPoints display in ProfileView, balance in Advancements).
+      // updates (dominionPoints display in ProfileView, balance in Advancements).
       const p = profile.value
       if (p) {
-        p.legendPoints = updated.legendPoints
+        p.dominionPoints = updated.dominionPoints
         p.acquiredAdvancements = updated.acquiredAdvancements
       }
     } catch (err) {
@@ -65,7 +65,7 @@ export function useAdvancements() {
       const updated = await resetAdvancements()
       const p = profile.value
       if (p) {
-        p.legendPoints = updated.legendPoints
+        p.dominionPoints = updated.dominionPoints
         p.acquiredAdvancements = updated.acquiredAdvancements
       }
     } catch (err) {
@@ -78,7 +78,7 @@ export function useAdvancements() {
   return {
     catalog,
     acquiredIds,
-    legendPoints,
+    dominionPoints,
     isBusy,
     error,
     isAcquired,

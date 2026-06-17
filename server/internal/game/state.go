@@ -124,12 +124,12 @@ type Unit struct {
 	RankUpFxRemaining    float64
 	ProgressionPath      string
 	Armor                int
-	PerkIDs []string // assigned perk ids, in rank-up order. Length is typically
+	PerkIDs              []string // assigned perk ids, in rank-up order. Length is typically
 	// 3 (one per tier). Length 4 indicates the owner had a
 	// unitExtraPerkSlot advancement granting a second pick at
 	// the same rank as one of the existing tiers (see advancement
 	// handler "unitExtraPerkSlot" and assignUnitPerkLocked).
-	PerkState            UnitPerkState // runtime state shared across the unit's perks
+	PerkState UnitPerkState // runtime state shared across the unit's perks
 
 	// Shield is a temporary HP pool consumed before HP by applyUnitDamageLocked.
 	// First-pass implementation: only granted by blood_engine (gold berserker)
@@ -582,9 +582,9 @@ type Player struct {
 	// vaultCapacityForPlayerLocked. Initialized to an empty (non-nil) slice.
 	Vault []*VaultItem
 
-	// RunLegendPointDrops accumulates legend-point drops during the match.
+	// RunDominionPointDrops accumulates dominion-point drops during the match.
 	// Committed to the profile file at match end.
-	RunLegendPointDrops int
+	RunDominionPointDrops int
 
 	// ProfileUpgrades is a snapshot of PlayerProfile.OwnedUpgradeRanks taken
 	// at match join. Mutations to the profile during the match do not affect
@@ -618,7 +618,7 @@ type Player struct {
 	// ShopRerollsRemaining is the player's per-match pool of merchant
 	// rerolls. Each reroll regenerates one neutral-shop's inventory and
 	// decrements this counter. Initialised at match-join from
-	// defaultShopRerollsPerPlayer (currently 1); future legend-point
+	// defaultShopRerollsPerPlayer (currently 1); future dominion-point
 	// profile upgrades can bump the starting value via the same
 	// applyProfileUpgradesToPlayerLocked path used by ExtraStartingUnits.
 	ShopRerollsRemaining int
@@ -627,7 +627,7 @@ type Player struct {
 	// merchant rolls into its inventory when this player rerolls it. The
 	// effective roll target is defaultShopLootTargetCount + bonus (see
 	// shopItemTargetCountForPlayerLocked). Initialised to 0 at match-join;
-	// future legend-point profile upgrades (e.g. "Merchant Expanded
+	// future dominion-point profile upgrades (e.g. "Merchant Expanded
 	// Selection: +1 item per rank") bump this via the same
 	// applyProfileUpgradesToPlayerLocked registry pattern used by
 	// PhysicalDamageMultiplier and ExtraStartingUnits.
@@ -755,7 +755,7 @@ type GameState struct {
 	rngPerks    *mrand.Rand // perk selection, path assignment, taunt procs
 	rngCosmetic *mrand.Rand // unit colour assignment and other visual randomness
 	rngSpawn    *mrand.Rand // reserved for future wave/spawn randomness
-	rngLoot     *mrand.Rand // legend-point drop rolls; seeded with (seed ^ 0x4)
+	rngLoot     *mrand.Rand // dominion-point drop rolls; seeded with (seed ^ 0x4)
 	rngCombat   *mrand.Rand // combat hit-resolution rolls (dodge/block); seeded with (seed ^ 0x5)
 
 	// buildingDamageDealt mirrors Unit.DamageDealtByUnit for buildings.
@@ -1001,18 +1001,18 @@ type GameState struct {
 	// snapshot consumers use it to render "Paused by <name>" in multiplayer.
 	// pausedAtMs is the wall-clock at which the pause began, so resume can
 	// shift wave-upgrade OfferDeadlineMs forward by the elapsed pause window.
-	Paused      bool
-	PausedBy    string
-	pausedAtMs  int64
+	Paused     bool
+	PausedBy   string
+	pausedAtMs int64
 
-	// onLegendPointDropImmediate is fired by rollLegendPointDropLocked when
-	// gameplay tuning's legendPoints.commitMode == "immediate". The hook MUST
+	// onDominionPointDropImmediate is fired by rollDominionPointDropLocked when
+	// gameplay tuning's dominionPoints.commitMode == "immediate". The hook MUST
 	// be safe to invoke while holding s.mu — implementations are required to
 	// be fire-and-forget (spawn a goroutine for the actual profile write);
 	// blocking I/O on the tick path is forbidden by AI_RULES.
 	// Wired by MatchManager.newMatchLocked; nil in unit tests that do not
 	// exercise the immediate-commit path.
-	onLegendPointDropImmediate func(playerID string, amount int)
+	onDominionPointDropImmediate func(playerID string, amount int)
 }
 
 const (
@@ -1029,7 +1029,6 @@ const (
 	// Phase 1 value — tuned for the current map scale.
 	defaultVisionRange = 400.0
 )
-
 
 // newMatchSeed generates a cryptographically-random int64 seed so concurrent
 // match creations never collide on the same nanosecond.
@@ -3033,8 +3032,8 @@ func (s *GameState) IsGameOver() bool {
 	return len(s.lostPlayerIDs) > 0 || s.victoryAchieved
 }
 
-// MatchSummaryForPlayer returns the end-of-match legend-point summary for
-// playerID. Won is true when the player is not in the lost set. The legend
+// MatchSummaryForPlayer returns the end-of-match dominion-point summary for
+// playerID. Won is true when the player is not in the lost set. The dominion
 // points earned are: kill drops accumulated during the match plus the
 // win/loss bonus from tuning.
 func (s *GameState) MatchSummaryForPlayer(playerID string) protocol.MatchSummary {
@@ -3049,18 +3048,18 @@ func (s *GameState) matchSummaryForPlayerLocked(playerID string) protocol.MatchS
 
 	var runDrops int
 	if player, ok := s.Players[playerID]; ok {
-		runDrops = player.RunLegendPointDrops
+		runDrops = player.RunDominionPointDrops
 	}
 
-	bonus := tuning.LegendPoints.LossConsolation
+	bonus := tuning.DominionPoints.LossConsolation
 	if !lost {
-		bonus = tuning.LegendPoints.WinBonus
+		bonus = tuning.DominionPoints.WinBonus
 	}
 
 	return protocol.MatchSummary{
-		PlayerID:           playerID,
-		Won:                !lost,
-		LegendPointsEarned: runDrops + bonus,
+		PlayerID:             playerID,
+		Won:                  !lost,
+		DominionPointsEarned: runDrops + bonus,
 	}
 }
 

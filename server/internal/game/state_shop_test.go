@@ -425,7 +425,7 @@ func TestPurchase_DecrementsStockAndRejectsAtZero(t *testing.T) {
 
 // TestRerollShop_AppliesPlayerItemCountBonus verifies that a player with
 // ShopItemCountBonus > 0 gets that many extra distinct items when they
-// reroll a merchant. This is the seam future legend-point profile
+// reroll a merchant. This is the seam future dominion-point profile
 // upgrades plug into — bumping the field is the only change needed for
 // the upgrade to take effect.
 func TestRerollShop_AppliesPlayerItemCountBonus(t *testing.T) {

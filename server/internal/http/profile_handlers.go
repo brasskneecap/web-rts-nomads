@@ -110,11 +110,11 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 				return errAbort
 			}
 			cost := def.CostPerRank[currentRank]
-			if p.LegendPoints < cost {
-				writeJSONError(w, http.StatusBadRequest, "insufficient_legend_points", "not enough legend points to purchase this rank")
+			if p.DominionPoints < cost {
+				writeJSONError(w, http.StatusBadRequest, "insufficient_dominion_points", "not enough dominion points to purchase this rank")
 				return errAbort
 			}
-			p.LegendPoints -= cost
+			p.DominionPoints -= cost
 			p.OwnedUpgradeRanks[body.UpgradeID] = currentRank + 1
 			// Auto-activate on first rank purchase.
 			if currentRank == 0 {
@@ -162,7 +162,7 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 				return errAbort
 			}
 			refund := def.CostPerRank[currentRank-1]
-			p.LegendPoints += refund
+			p.DominionPoints += refund
 			p.OwnedUpgradeRanks[body.UpgradeID] = currentRank - 1
 			// Auto-deactivate when fully refunded.
 			if currentRank-1 == 0 {
@@ -226,14 +226,14 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 		writeJSON(w, updated)
 	})
 
-	// DEV-ONLY: grant Legend Points to the caller for testing the advancement
+	// DEV-ONLY: grant Dominion Points to the caller for testing the advancement
 	// / upgrade purchase flow without grinding matches. Body: `{amount: int}`.
 	// Negative amounts are rejected. Returns the updated profile.
 	//
 	// TODO: gate behind a build tag or env var (e.g. WEBRTS_DEV=1) before
 	// shipping a production build. For now it's an unconditional endpoint to
 	// keep iteration fast.
-	mux.HandleFunc("/api/profile/dev/grant-legend-points", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/profile/dev/grant-dominion-points", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -255,8 +255,8 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 		}
 		var updated *profile.PlayerProfile
 		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
-			p.LegendPoints += body.Amount
-			p.LifetimeLegendPoints += body.Amount
+			p.DominionPoints += body.Amount
+			p.LifetimeDominionPoints += body.Amount
 			updated = p
 			return nil
 		})
@@ -268,7 +268,7 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 	})
 
 	// DEV-ONLY: hard-reset the calling player's profile back to a fresh
-	// state — zeroes LP / lifetime LP / stats / wave-upgrade caps, empties
+	// state — zeroes DP / lifetime DP / stats / wave-upgrade caps, empties
 	// owned & active upgrades, acquired advancements, completed campaign
 	// levels & objectives, and re-installs the default commander.
 	// CreatedAtUnix is preserved (the profile still belongs to the same
@@ -292,8 +292,8 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 		var updated *profile.PlayerProfile
 		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
 			p.Version = profile.CurrentVersion
-			p.LegendPoints = 0
-			p.LifetimeLegendPoints = 0
+			p.DominionPoints = 0
+			p.LifetimeDominionPoints = 0
 			p.OwnedCommanderIDs = []string{profile.DefaultCommanderID}
 			p.SelectedCommanderID = profile.DefaultCommanderID
 			p.Stats = profile.ProfileStats{}

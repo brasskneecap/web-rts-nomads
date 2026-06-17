@@ -2,11 +2,11 @@
 //
 // Covers:
 //   - acquiredIds derived correctly from profile.acquiredAdvancements
-//   - legendPoints derived correctly from profile.legendPoints
+//   - dominionPoints derived correctly from profile.dominionPoints
 //   - isAcquired / canAfford predicates
 //   - nextNodeFor returns first unacquired node, null when track complete
 //   - setAdvancementCatalog populates the catalog ref
-//   - purchase() on success updates legendPoints and acquiredAdvancements
+//   - purchase() on success updates dominionPoints and acquiredAdvancements
 //   - purchase() on server error sets error ref and does not mutate profile
 //   - WS acquiredAdvancementIds: empty array (not undefined) when no advancements
 
@@ -28,7 +28,7 @@ vi.mock('@/services/profileApi', () => ({
 
 // Shared profile ref so useAdvancements' computed derivations have data.
 const mockProfile = ref<{
-  legendPoints: number
+  dominionPoints: number
   acquiredAdvancements: { id: string; costPaid: number }[]
 } | null>(null)
 
@@ -83,31 +83,31 @@ describe('useAdvancements', () => {
     expect(catalog.value[0].unitType).toBe('soldier')
   })
 
-  // ─── legendPoints derived from profile ─────────────────────────────────────
+  // ─── dominionPoints derived from profile ─────────────────────────────────────
 
-  it('legendPoints returns 0 when profile is null', () => {
+  it('dominionPoints returns 0 when profile is null', () => {
     mockProfile.value = null
-    const { legendPoints } = useAdvancements()
-    expect(legendPoints.value).toBe(0)
+    const { dominionPoints } = useAdvancements()
+    expect(dominionPoints.value).toBe(0)
   })
 
-  it('legendPoints mirrors profile.legendPoints', () => {
-    mockProfile.value = { legendPoints: 150, acquiredAdvancements: [] }
-    const { legendPoints } = useAdvancements()
-    expect(legendPoints.value).toBe(150)
+  it('dominionPoints mirrors profile.dominionPoints', () => {
+    mockProfile.value = { dominionPoints: 150, acquiredAdvancements: [] }
+    const { dominionPoints } = useAdvancements()
+    expect(dominionPoints.value).toBe(150)
   })
 
   // ─── acquiredIds ────────────────────────────────────────────────────────────
 
   it('acquiredIds is empty Set when profile has no advancements', () => {
-    mockProfile.value = { legendPoints: 0, acquiredAdvancements: [] }
+    mockProfile.value = { dominionPoints: 0, acquiredAdvancements: [] }
     const { acquiredIds } = useAdvancements()
     expect(acquiredIds.value.size).toBe(0)
   })
 
   it('acquiredIds contains ids from profile.acquiredAdvancements', () => {
     mockProfile.value = {
-      legendPoints: 50,
+      dominionPoints: 50,
       acquiredAdvancements: [{ id: 'soldier_hp_1', costPaid: 50 }],
     }
     const { acquiredIds } = useAdvancements()
@@ -119,7 +119,7 @@ describe('useAdvancements', () => {
 
   it('isAcquired returns true when node id is in acquiredIds', () => {
     mockProfile.value = {
-      legendPoints: 0,
+      dominionPoints: 0,
       acquiredAdvancements: [{ id: 'soldier_hp_1', costPaid: 50 }],
     }
     const { isAcquired } = useAdvancements()
@@ -129,8 +129,8 @@ describe('useAdvancements', () => {
 
   // ─── canAfford predicate ────────────────────────────────────────────────────
 
-  it('canAfford returns true when legendPoints >= cost', () => {
-    mockProfile.value = { legendPoints: 50, acquiredAdvancements: [] }
+  it('canAfford returns true when dominionPoints >= cost', () => {
+    mockProfile.value = { dominionPoints: 50, acquiredAdvancements: [] }
     const { canAfford } = useAdvancements()
     expect(canAfford(50)).toBe(true)
     expect(canAfford(51)).toBe(false)
@@ -140,7 +140,7 @@ describe('useAdvancements', () => {
   // ─── nextNodeFor ────────────────────────────────────────────────────────────
 
   it('nextNodeFor returns first unacquired node', () => {
-    mockProfile.value = { legendPoints: 0, acquiredAdvancements: [] }
+    mockProfile.value = { dominionPoints: 0, acquiredAdvancements: [] }
     const track: UnitAdvancementTrack = {
       unitType: 'soldier',
       nodes: [
@@ -155,7 +155,7 @@ describe('useAdvancements', () => {
 
   it('nextNodeFor returns second node when first is acquired', () => {
     mockProfile.value = {
-      legendPoints: 100,
+      dominionPoints: 100,
       acquiredAdvancements: [{ id: 'a', costPaid: 25 }],
     }
     const track: UnitAdvancementTrack = {
@@ -172,7 +172,7 @@ describe('useAdvancements', () => {
 
   it('nextNodeFor returns null when all nodes are acquired (track complete)', () => {
     mockProfile.value = {
-      legendPoints: 0,
+      dominionPoints: 0,
       acquiredAdvancements: [
         { id: 'a', costPaid: 25 },
         { id: 'b', costPaid: 75 },
@@ -191,26 +191,26 @@ describe('useAdvancements', () => {
 
   // ─── purchase() — success path ──────────────────────────────────────────────
 
-  it('purchase() on success updates legendPoints and acquiredAdvancements on profile', async () => {
-    mockProfile.value = { legendPoints: 100, acquiredAdvancements: [] }
+  it('purchase() on success updates dominionPoints and acquiredAdvancements on profile', async () => {
+    mockProfile.value = { dominionPoints: 100, acquiredAdvancements: [] }
     purchaseMock.mockResolvedValue({
-      legendPoints: 50,
+      dominionPoints: 50,
       acquiredAdvancements: [{ id: 'soldier_hp_1', costPaid: 50 }],
     })
 
-    const { purchase, legendPoints, acquiredIds, isBusy, error } = useAdvancements()
+    const { purchase, dominionPoints, acquiredIds, isBusy, error } = useAdvancements()
     await purchase('soldier_hp_1')
 
     expect(isBusy.value).toBe(false)
     expect(error.value).toBeNull()
-    expect(legendPoints.value).toBe(50)
+    expect(dominionPoints.value).toBe(50)
     expect(acquiredIds.value.has('soldier_hp_1')).toBe(true)
   })
 
   it('purchase() calls purchaseAdvancement with the correct advancementId', async () => {
-    mockProfile.value = { legendPoints: 100, acquiredAdvancements: [] }
+    mockProfile.value = { dominionPoints: 100, acquiredAdvancements: [] }
     purchaseMock.mockResolvedValue({
-      legendPoints: 50,
+      dominionPoints: 50,
       acquiredAdvancements: [{ id: 'soldier_hp_1', costPaid: 50 }],
     })
 
@@ -224,24 +224,24 @@ describe('useAdvancements', () => {
   // ─── purchase() — error path ────────────────────────────────────────────────
 
   it('purchase() on server error sets error ref and does not mutate profile', async () => {
-    mockProfile.value = { legendPoints: 100, acquiredAdvancements: [] }
-    purchaseMock.mockRejectedValue(new Error('insufficient_legend_points'))
+    mockProfile.value = { dominionPoints: 100, acquiredAdvancements: [] }
+    purchaseMock.mockRejectedValue(new Error('insufficient_dominion_points'))
 
-    const { purchase, legendPoints, error, isBusy } = useAdvancements()
+    const { purchase, dominionPoints, error, isBusy } = useAdvancements()
     await purchase('soldier_hp_1')
 
     expect(isBusy.value).toBe(false)
-    expect(error.value).toBe('insufficient_legend_points')
+    expect(error.value).toBe('insufficient_dominion_points')
     // Profile must be unmodified.
-    expect(legendPoints.value).toBe(100)
+    expect(dominionPoints.value).toBe(100)
   })
 
   it('purchase() resets error on a subsequent successful call', async () => {
-    mockProfile.value = { legendPoints: 100, acquiredAdvancements: [] }
+    mockProfile.value = { dominionPoints: 100, acquiredAdvancements: [] }
     purchaseMock
       .mockRejectedValueOnce(new Error('first_fail'))
       .mockResolvedValueOnce({
-        legendPoints: 50,
+        dominionPoints: 50,
         acquiredAdvancements: [{ id: 'soldier_hp_1', costPaid: 50 }],
       })
 

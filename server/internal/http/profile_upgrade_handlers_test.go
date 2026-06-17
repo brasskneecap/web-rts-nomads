@@ -52,16 +52,16 @@ func getRequest(t *testing.T, mux http.Handler, path, playerID string) *httptest
 	return rec
 }
 
-// seedPlayer creates a profile with the given legend points and upgrade ranks
+// seedPlayer creates a profile with the given dominion points and upgrade ranks
 // via the manager, returning the player ID.
-func seedPlayer(t *testing.T, pm *profile.Manager, legendPoints int, ranks map[string]int) {
+func seedPlayer(t *testing.T, pm *profile.Manager, dominionPoints int, ranks map[string]int) {
 	t.Helper()
 	_, err := pm.GetOrCreate(testPlayerID, profile.DefaultCommanderID)
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
 	err = pm.WithLocked(testPlayerID, func(p *profile.PlayerProfile) error {
-		p.LegendPoints = legendPoints
+		p.DominionPoints = dominionPoints
 		if ranks != nil {
 			for k, v := range ranks {
 				p.OwnedUpgradeRanks[k] = v
@@ -141,7 +141,7 @@ func TestGetProfile_IncludesUpgradeCatalogAndOwnedRanks(t *testing.T) {
 // ─── POST /api/profile/upgrades/purchase ─────────────────────────────────────
 
 // TestPurchase_Success_DebitsExactCostAndIncrementsRank verifies a successful
-// first rank purchase of additional_worker debits 25 LP and sets rank to 1.
+// first rank purchase of additional_worker debits 25 DP and sets rank to 1.
 func TestPurchase_Success_DebitsExactCostAndIncrementsRank(t *testing.T) {
 	mux, pm := newTestMux(t)
 	seedPlayer(t, pm, 25, nil)
@@ -156,8 +156,8 @@ func TestPurchase_Success_DebitsExactCostAndIncrementsRank(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&p); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if p.LegendPoints != 0 {
-		t.Errorf("LegendPoints: want 0, got %d", p.LegendPoints)
+	if p.DominionPoints != 0 {
+		t.Errorf("DominionPoints: want 0, got %d", p.DominionPoints)
 	}
 	if p.OwnedUpgradeRanks["additional_worker"] != 1 {
 		t.Errorf("rank: want 1, got %d", p.OwnedUpgradeRanks["additional_worker"])
@@ -165,11 +165,11 @@ func TestPurchase_Success_DebitsExactCostAndIncrementsRank(t *testing.T) {
 }
 
 // TestPurchase_InsufficientPoints_Returns400 verifies that a purchase with
-// insufficient LP returns 400 with error "insufficient_legend_points" and does
+// insufficient DP returns 400 with error "insufficient_dominion_points" and does
 // not mutate the profile.
 func TestPurchase_InsufficientPoints_Returns400(t *testing.T) {
 	mux, pm := newTestMux(t)
-	// Seed rank 1 (so rank 2 costs 100 LP), but only give 99 LP.
+	// Seed rank 1 (so rank 2 costs 100 DP), but only give 99 DP.
 	seedPlayer(t, pm, 99, map[string]int{"additional_worker": 1})
 
 	rec := postJSON(t, mux, "/api/profile/upgrades/purchase", testPlayerID, map[string]string{
@@ -180,13 +180,13 @@ func TestPurchase_InsufficientPoints_Returns400(t *testing.T) {
 	}
 	var body map[string]string
 	_ = json.NewDecoder(rec.Body).Decode(&body)
-	if body["error"] != "insufficient_legend_points" {
-		t.Errorf("error: want %q, got %q", "insufficient_legend_points", body["error"])
+	if body["error"] != "insufficient_dominion_points" {
+		t.Errorf("error: want %q, got %q", "insufficient_dominion_points", body["error"])
 	}
 	// Verify no mutation.
 	p, _ := pm.Get(testPlayerID)
-	if p.LegendPoints != 99 {
-		t.Errorf("LegendPoints should be unchanged (99), got %d", p.LegendPoints)
+	if p.DominionPoints != 99 {
+		t.Errorf("DominionPoints should be unchanged (99), got %d", p.DominionPoints)
 	}
 	if p.OwnedUpgradeRanks["additional_worker"] != 1 {
 		t.Errorf("rank should be unchanged (1), got %d", p.OwnedUpgradeRanks["additional_worker"])
@@ -235,7 +235,7 @@ func TestPurchase_UnknownUpgrade_Returns400(t *testing.T) {
 // ─── POST /api/profile/upgrades/refund ───────────────────────────────────────
 
 // TestRefund_Success_RefundsExactCostOfLastRank verifies that refunding
-// additional_worker at rank 2 returns 100 LP and decrements rank to 1.
+// additional_worker at rank 2 returns 100 DP and decrements rank to 1.
 func TestRefund_Success_RefundsExactCostOfLastRank(t *testing.T) {
 	mux, pm := newTestMux(t)
 	seedPlayer(t, pm, 0, map[string]int{"additional_worker": 2})
@@ -250,8 +250,8 @@ func TestRefund_Success_RefundsExactCostOfLastRank(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&p); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if p.LegendPoints != 100 {
-		t.Errorf("LegendPoints: want 100 (refund of rank-2 cost), got %d", p.LegendPoints)
+	if p.DominionPoints != 100 {
+		t.Errorf("DominionPoints: want 100 (refund of rank-2 cost), got %d", p.DominionPoints)
 	}
 	if p.OwnedUpgradeRanks["additional_worker"] != 1 {
 		t.Errorf("rank: want 1, got %d", p.OwnedUpgradeRanks["additional_worker"])
@@ -277,15 +277,15 @@ func TestRefund_NotOwned_Returns400(t *testing.T) {
 	}
 }
 
-// TestRefund_DoesNotCreditLifetimeLegendPoints verifies that refunding a rank
-// does not change LifetimeLegendPoints.
-func TestRefund_DoesNotCreditLifetimeLegendPoints(t *testing.T) {
+// TestRefund_DoesNotCreditLifetimeDominionPoints verifies that refunding a rank
+// does not change LifetimeDominionPoints.
+func TestRefund_DoesNotCreditLifetimeDominionPoints(t *testing.T) {
 	mux, pm := newTestMux(t)
 	seedPlayer(t, pm, 0, map[string]int{"additional_worker": 1})
 
 	// Set a known lifetime value.
 	_ = pm.WithLocked(testPlayerID, func(p *profile.PlayerProfile) error {
-		p.LifetimeLegendPoints = 999
+		p.LifetimeDominionPoints = 999
 		return nil
 	})
 
@@ -299,8 +299,8 @@ func TestRefund_DoesNotCreditLifetimeLegendPoints(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&p); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if p.LifetimeLegendPoints != 999 {
-		t.Errorf("LifetimeLegendPoints should be unchanged (999), got %d", p.LifetimeLegendPoints)
+	if p.LifetimeDominionPoints != 999 {
+		t.Errorf("LifetimeDominionPoints should be unchanged (999), got %d", p.LifetimeDominionPoints)
 	}
 }
 

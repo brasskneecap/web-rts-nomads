@@ -14,7 +14,7 @@ import (
 // files exist but cannot be parsed — the profile is unrecoverable without
 // manual intervention.
 type ProfileCorruptError struct {
-	PlayerID string
+	PlayerID   string
 	PrimaryErr error
 	BackupErr  error
 }
@@ -137,6 +137,19 @@ func migrateProfile(p *PlayerProfile) {
 	// code can index into it without a nil check.
 	if p.CompletedCampaignObjectives == nil {
 		p.CompletedCampaignObjectives = map[string][]string{}
+	}
+	// v6 -> v7: "Legend Points" was renamed to "Dominion Points". Old files
+	// carry the balance under the legacy json keys; copy it into the new
+	// fields and clear the legacy pointers so the next Save writes only the
+	// new schema. Guarded on non-nil legacy values so this is a no-op for v7+
+	// files (where the legacy keys are absent) and therefore idempotent.
+	if p.LegacyLegendPoints != nil {
+		p.DominionPoints = *p.LegacyLegendPoints
+		p.LegacyLegendPoints = nil
+	}
+	if p.LegacyLifetimeLegendPoints != nil {
+		p.LifetimeDominionPoints = *p.LegacyLifetimeLegendPoints
+		p.LegacyLifetimeLegendPoints = nil
 	}
 	// Stamp current version so the next Save persists the new schema.
 	p.Version = CurrentVersion

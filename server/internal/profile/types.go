@@ -2,7 +2,7 @@ package profile
 
 // CurrentVersion is the schema version written into every new profile.
 // Increment this when the struct layout changes and add migration logic.
-const CurrentVersion = 6
+const CurrentVersion = 7
 
 // DefaultCommanderID is the commander assigned to new profiles when no other
 // commander is specified.
@@ -11,17 +11,24 @@ const DefaultCommanderID = "nomad_commander_default"
 // PlayerProfile is the persistent per-player profile stored as a JSON file.
 // All match-transient data lives elsewhere; this is the cross-match record.
 type PlayerProfile struct {
-	PlayerID             string       `json:"playerId"`
-	Version              int          `json:"version"`
-	CreatedAtUnix        int64        `json:"createdAtUnix"`
-	UpdatedAtUnix        int64        `json:"updatedAtUnix"`
-	LegendPoints         int          `json:"legendPoints"`
-	LifetimeLegendPoints int          `json:"lifetimeLegendPoints"`
-	OwnedCommanderIDs    []string     `json:"ownedCommanderIds"`
-	SelectedCommanderID  string       `json:"selectedCommanderId"`
-	Stats                ProfileStats `json:"stats"`
+	PlayerID               string       `json:"playerId"`
+	Version                int          `json:"version"`
+	CreatedAtUnix          int64        `json:"createdAtUnix"`
+	UpdatedAtUnix          int64        `json:"updatedAtUnix"`
+	DominionPoints         int          `json:"dominionPoints"`
+	LifetimeDominionPoints int          `json:"lifetimeDominionPoints"`
+	OwnedCommanderIDs      []string     `json:"ownedCommanderIds"`
+	SelectedCommanderID    string       `json:"selectedCommanderId"`
+	Stats                  ProfileStats `json:"stats"`
 
-	// Wave upgrade legend-incrementable caps. Zero values fall back to defaults
+	// Legacy pre-v7 currency keys ("Legend Points"). Read on load so the
+	// v6->v7 migration can carry existing balances into DominionPoints /
+	// LifetimeDominionPoints, then cleared to nil so they are never
+	// re-serialized (omitempty drops nil pointers). See migrateProfile.
+	LegacyLegendPoints         *int `json:"legendPoints,omitempty"`
+	LegacyLifetimeLegendPoints *int `json:"lifetimeLegendPoints,omitempty"`
+
+	// Wave upgrade dominion-incrementable caps. Zero values fall back to defaults
 	// (MaxRerolls=1, MaxUpgradeStacks=3) applied at match start.
 	MaxRerolls       int `json:"maxRerolls"`
 	MaxUpgradeStacks int `json:"maxUpgradeStacks"`
@@ -39,7 +46,7 @@ type PlayerProfile struct {
 	ActiveUpgradeIDs []string `json:"activeUpgradeIds"`
 
 	// AcquiredAdvancements is the list of unit advancement nodes the player has
-	// purchased. Each entry records the advancement ID and the Legend Point cost
+	// purchased. Each entry records the advancement ID and the Dominion Point cost
 	// paid at purchase time (used for refund-on-cost-change on load).
 	// Added in schema version 4. A nil slice is equivalent to an empty slice.
 	AcquiredAdvancements []AcquiredAdvancement `json:"acquiredAdvancements"`
@@ -65,7 +72,7 @@ type PlayerProfile struct {
 type AcquiredAdvancement struct {
 	// ID is the UnitAdvancementNode.ID that was purchased.
 	ID string `json:"id"`
-	// CostPaid is the Legend Point cost deducted at purchase time. Stored so
+	// CostPaid is the Dominion Point cost deducted at purchase time. Stored so
 	// that if the catalog cost changes after purchase, a refund-on-cost-change
 	// migration can issue the correct delta on next load.
 	CostPaid int `json:"costPaid"`

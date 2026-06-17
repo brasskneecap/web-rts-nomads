@@ -13,46 +13,46 @@ func newLPTestState(t *testing.T) (*GameState, string) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
 	const playerID = "p1"
 	s.EnsurePlayer(playerID)
-	// All LP-drop tests assert on Player.RunLegendPointDrops, which only
+	// All DP-drop tests assert on Player.RunDominionPointDrops, which only
 	// accumulates in matchEnd commit mode. Pin it here so tests stay stable
 	// regardless of whatever the shipped tuning JSON has set.
 	withMatchEndCommitMode(t)
 	return s, playerID
 }
 
-// withMatchEndCommitMode pins gameplayTuningSingleton.LegendPoints.CommitMode
+// withMatchEndCommitMode pins gameplayTuningSingleton.DominionPoints.CommitMode
 // to "matchEnd" for the duration of the test, restoring whatever the JSON
 // shipped (which may be "immediate" during a dev/test campaign). All tests
-// that assert on Player.RunLegendPointDrops require matchEnd mode; immediate
+// that assert on Player.RunDominionPointDrops require matchEnd mode; immediate
 // mode deliberately bypasses the accumulator.
 func withMatchEndCommitMode(t *testing.T) {
 	t.Helper()
-	prev := gameplayTuningSingleton.LegendPoints.CommitMode
-	gameplayTuningSingleton.LegendPoints.CommitMode = legendPointCommitModeMatchEnd
+	prev := gameplayTuningSingleton.DominionPoints.CommitMode
+	gameplayTuningSingleton.DominionPoints.CommitMode = dominionPointCommitModeMatchEnd
 	t.Cleanup(func() {
-		gameplayTuningSingleton.LegendPoints.CommitMode = prev
+		gameplayTuningSingleton.DominionPoints.CommitMode = prev
 	})
 }
 
-// ─── rollLegendPointDropLocked ───────────────────────────────────────────────
+// ─── rollDominionPointDropLocked ───────────────────────────────────────────────
 
-// TestRollLegendPointDropLocked_ZeroChance never drops when the tuning
+// TestRollDominionPointDropLocked_ZeroChance never drops when the tuning
 // override for the unit type forces chance to 0. Uses a per-type tuning
 // override to suppress drops independently of the base rate.
-func TestRollLegendPointDropLocked_ZeroChance(t *testing.T) {
+func TestRollDominionPointDropLocked_ZeroChance(t *testing.T) {
 	s, playerID := newLPTestState(t)
 
 	// Inject a tuning override for "soldier" that zeroes out both fields.
-	// UnitOverrides with LegendPointDropChance=0 causes the chance<=0 guard
-	// to fire inside rollLegendPointDropLocked, so no drop can occur.
+	// UnitOverrides with DominionPointDropChance=0 causes the chance<=0 guard
+	// to fire inside rollDominionPointDropLocked, so no drop can occur.
 	if gameplayTuningSingleton.UnitOverrides == nil {
-		gameplayTuningSingleton.UnitOverrides = map[string]UnitLegendPointOverride{}
+		gameplayTuningSingleton.UnitOverrides = map[string]UnitDominionPointOverride{}
 	}
 	const testType = "soldier"
 	oldOverride, hadOverride := gameplayTuningSingleton.UnitOverrides[testType]
-	gameplayTuningSingleton.UnitOverrides[testType] = UnitLegendPointOverride{
-		LegendPointDropChance: 0.0,
-		LegendPointAmount:     0,
+	gameplayTuningSingleton.UnitOverrides[testType] = UnitDominionPointOverride{
+		DominionPointDropChance: 0.0,
+		DominionPointAmount:     0,
 	}
 	defer func() {
 		if hadOverride {
@@ -64,11 +64,11 @@ func TestRollLegendPointDropLocked_ZeroChance(t *testing.T) {
 
 	s.mu.Lock()
 	enemy := s.spawnEnemyUnitLocked(testType, protocol.Vec2{X: 100, Y: 100})
-	before := s.Players[playerID].RunLegendPointDrops
+	before := s.Players[playerID].RunDominionPointDrops
 	for i := 0; i < 1000; i++ {
-		s.rollLegendPointDropLocked(playerID, enemy)
+		s.rollDominionPointDropLocked(playerID, enemy)
 	}
-	after := s.Players[playerID].RunLegendPointDrops
+	after := s.Players[playerID].RunDominionPointDrops
 	s.mu.Unlock()
 
 	if after != before {
@@ -76,11 +76,11 @@ func TestRollLegendPointDropLocked_ZeroChance(t *testing.T) {
 	}
 }
 
-// TestRollLegendPointDropLocked_BaseTuningRateDrops verifies that with the
+// TestRollDominionPointDropLocked_BaseTuningRateDrops verifies that with the
 // live 0.05 base rate, a large number of enemy kills produces some drops (the
 // seeded RNG will produce rolls below 0.05). Also verifies friendly fire never
 // drops regardless of base rate.
-func TestRollLegendPointDropLocked_BaseTuningRateDrops(t *testing.T) {
+func TestRollDominionPointDropLocked_BaseTuningRateDrops(t *testing.T) {
 	s, playerID := newLPTestState(t)
 
 	s.mu.Lock()
@@ -89,17 +89,17 @@ func TestRollLegendPointDropLocked_BaseTuningRateDrops(t *testing.T) {
 
 	const rolls = 1000
 	s.mu.Lock()
-	before := s.Players[playerID].RunLegendPointDrops
+	before := s.Players[playerID].RunDominionPointDrops
 	for i := 0; i < rolls; i++ {
-		s.rollLegendPointDropLocked(playerID, enemy)
+		s.rollDominionPointDropLocked(playerID, enemy)
 	}
-	after := s.Players[playerID].RunLegendPointDrops
+	after := s.Players[playerID].RunDominionPointDrops
 	s.mu.Unlock()
 
 	// At 5% base rate over 1000 rolls, the seeded RNG must produce at least
 	// one hit. Exact count is deterministic under the fixed seed (1).
 	if after <= before {
-		t.Errorf("expected at least one legend point drop over %d rolls at 5%% base chance, got 0", rolls)
+		t.Errorf("expected at least one dominion point drop over %d rolls at 5%% base chance, got 0", rolls)
 	}
 	// Verify each award is exactly 1 (perKillBaseAmount = 1).
 	// We can only verify the total is a multiple of 1 (trivially true), but
@@ -112,29 +112,29 @@ func TestRollLegendPointDropLocked_BaseTuningRateDrops(t *testing.T) {
 	}
 }
 
-// TestRollLegendPointDropLocked_FriendlyFireNeverDrops verifies that even at
-// the live 5% base rate, same-team kills never award legend points.
-func TestRollLegendPointDropLocked_FriendlyFireNeverDrops(t *testing.T) {
+// TestRollDominionPointDropLocked_FriendlyFireNeverDrops verifies that even at
+// the live 5% base rate, same-team kills never award dominion points.
+func TestRollDominionPointDropLocked_FriendlyFireNeverDrops(t *testing.T) {
 	s, playerID := newLPTestState(t)
 
 	s.mu.Lock()
 	player := s.Players[playerID]
 	friendly := s.spawnPlayerUnitLocked("soldier", playerID, player.Color, protocol.Vec2{X: 200, Y: 200})
-	before := s.Players[playerID].RunLegendPointDrops
+	before := s.Players[playerID].RunDominionPointDrops
 	for i := 0; i < 1000; i++ {
-		s.rollLegendPointDropLocked(playerID, friendly)
+		s.rollDominionPointDropLocked(playerID, friendly)
 	}
-	after := s.Players[playerID].RunLegendPointDrops
+	after := s.Players[playerID].RunDominionPointDrops
 	s.mu.Unlock()
 
 	if after != before {
-		t.Errorf("friendly fire should never award legend points; got %d drops", after-before)
+		t.Errorf("friendly fire should never award dominion points; got %d drops", after-before)
 	}
 }
 
-// TestRollLegendPointDropLocked_SameTeamSkipped never drops when attacker and
+// TestRollDominionPointDropLocked_SameTeamSkipped never drops when attacker and
 // victim share the same owner.
-func TestRollLegendPointDropLocked_SameTeamSkipped(t *testing.T) {
+func TestRollDominionPointDropLocked_SameTeamSkipped(t *testing.T) {
 	s, playerID := newLPTestState(t)
 
 	s.mu.Lock()
@@ -142,9 +142,9 @@ func TestRollLegendPointDropLocked_SameTeamSkipped(t *testing.T) {
 	friendly := s.spawnPlayerUnitLocked("soldier", playerID, player.Color, protocol.Vec2{X: 200, Y: 200})
 
 	// We're testing same-team skip, not the drop chance, so just run the roll.
-	before := s.Players[playerID].RunLegendPointDrops
-	s.rollLegendPointDropLocked(playerID, friendly)
-	after := s.Players[playerID].RunLegendPointDrops
+	before := s.Players[playerID].RunDominionPointDrops
+	s.rollDominionPointDropLocked(playerID, friendly)
+	after := s.Players[playerID].RunDominionPointDrops
 	s.mu.Unlock()
 
 	if after != before {
@@ -152,16 +152,16 @@ func TestRollLegendPointDropLocked_SameTeamSkipped(t *testing.T) {
 	}
 }
 
-// TestRollLegendPointDropLocked_EnemyAttackerSkipped skips enemy AI attacker.
-func TestRollLegendPointDropLocked_EnemyAttackerSkipped(t *testing.T) {
+// TestRollDominionPointDropLocked_EnemyAttackerSkipped skips enemy AI attacker.
+func TestRollDominionPointDropLocked_EnemyAttackerSkipped(t *testing.T) {
 	s, playerID := newLPTestState(t)
 
 	s.mu.Lock()
 	player := s.Players[playerID]
 	victim := s.spawnPlayerUnitLocked("soldier", playerID, player.Color, protocol.Vec2{X: 200, Y: 200})
-	before := s.Players[playerID].RunLegendPointDrops
-	s.rollLegendPointDropLocked(enemyPlayerID, victim)
-	after := s.Players[playerID].RunLegendPointDrops
+	before := s.Players[playerID].RunDominionPointDrops
+	s.rollDominionPointDropLocked(enemyPlayerID, victim)
+	after := s.Players[playerID].RunDominionPointDrops
 	s.mu.Unlock()
 
 	if after != before {
@@ -169,56 +169,56 @@ func TestRollLegendPointDropLocked_EnemyAttackerSkipped(t *testing.T) {
 	}
 }
 
-// TestRollLegendPointDropLocked_UnitDefOverride uses the def's own drop fields
+// TestRollDominionPointDropLocked_UnitDefOverride uses the def's own drop fields
 // when they are non-zero.
-func TestRollLegendPointDropLocked_UnitDefOverride(t *testing.T) {
+func TestRollDominionPointDropLocked_UnitDefOverride(t *testing.T) {
 	s, playerID := newLPTestState(t)
 
 	// Inject a unit def override with 100% drop chance.
 	const testType = "soldier"
 	original := unitDefsByType[testType]
 	modified := original
-	modified.LegendPointDropChance = 1.0
-	modified.LegendPointAmount = 5
+	modified.DominionPointDropChance = 1.0
+	modified.DominionPointAmount = 5
 	unitDefsByType[testType] = modified
 	defer func() { unitDefsByType[testType] = original }()
 
 	s.mu.Lock()
 	enemy := s.spawnEnemyUnitLocked(testType, protocol.Vec2{X: 100, Y: 100})
-	before := s.Players[playerID].RunLegendPointDrops
+	before := s.Players[playerID].RunDominionPointDrops
 	// Roll many times — with 100% chance every roll should drop.
-	s.rollLegendPointDropLocked(playerID, enemy)
-	after := s.Players[playerID].RunLegendPointDrops
+	s.rollDominionPointDropLocked(playerID, enemy)
+	after := s.Players[playerID].RunDominionPointDrops
 	s.mu.Unlock()
 
 	if after-before != 5 {
-		t.Errorf("expected 5 legend points from unit def override, got %d", after-before)
+		t.Errorf("expected 5 dominion points from unit def override, got %d", after-before)
 	}
 }
 
-// TestRollLegendPointDropLocked_ImmediateMode_FiresHookAndSkipsAccumulator
+// TestRollDominionPointDropLocked_ImmediateMode_FiresHookAndSkipsAccumulator
 // verifies that with commitMode="immediate", a successful drop roll invokes
-// the immediate-commit hook and does NOT increment RunLegendPointDrops (so
+// the immediate-commit hook and does NOT increment RunDominionPointDrops (so
 // the match-end commit path cannot double-credit it).
-func TestRollLegendPointDropLocked_ImmediateMode_FiresHookAndSkipsAccumulator(t *testing.T) {
+func TestRollDominionPointDropLocked_ImmediateMode_FiresHookAndSkipsAccumulator(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
 	const playerID = "p1"
 	s.EnsurePlayer(playerID)
 
 	// Override tuning to immediate mode with a 100% drop chance via unit
 	// override so every roll succeeds.
-	prevMode := gameplayTuningSingleton.LegendPoints.CommitMode
-	gameplayTuningSingleton.LegendPoints.CommitMode = legendPointCommitModeImmediate
-	t.Cleanup(func() { gameplayTuningSingleton.LegendPoints.CommitMode = prevMode })
+	prevMode := gameplayTuningSingleton.DominionPoints.CommitMode
+	gameplayTuningSingleton.DominionPoints.CommitMode = dominionPointCommitModeImmediate
+	t.Cleanup(func() { gameplayTuningSingleton.DominionPoints.CommitMode = prevMode })
 
 	if gameplayTuningSingleton.UnitOverrides == nil {
-		gameplayTuningSingleton.UnitOverrides = map[string]UnitLegendPointOverride{}
+		gameplayTuningSingleton.UnitOverrides = map[string]UnitDominionPointOverride{}
 	}
 	const testType = "raider"
 	prevOverride, hadOverride := gameplayTuningSingleton.UnitOverrides[testType]
-	gameplayTuningSingleton.UnitOverrides[testType] = UnitLegendPointOverride{
-		LegendPointDropChance: 1.0,
-		LegendPointAmount:     1,
+	gameplayTuningSingleton.UnitOverrides[testType] = UnitDominionPointOverride{
+		DominionPointDropChance: 1.0,
+		DominionPointAmount:     1,
 	}
 	t.Cleanup(func() {
 		if hadOverride {
@@ -232,7 +232,7 @@ func TestRollLegendPointDropLocked_ImmediateMode_FiresHookAndSkipsAccumulator(t 
 		PlayerID string
 		Amount   int
 	}
-	s.SetImmediateLegendPointDropHandler(func(pid string, amt int) {
+	s.SetImmediateDominionPointDropHandler(func(pid string, amt int) {
 		hookCalls = append(hookCalls, struct {
 			PlayerID string
 			Amount   int
@@ -241,16 +241,16 @@ func TestRollLegendPointDropLocked_ImmediateMode_FiresHookAndSkipsAccumulator(t 
 
 	s.mu.Lock()
 	enemy := s.spawnEnemyUnitLocked(testType, protocol.Vec2{X: 100, Y: 100})
-	before := s.Players[playerID].RunLegendPointDrops
+	before := s.Players[playerID].RunDominionPointDrops
 	const rolls = 5
 	for i := 0; i < rolls; i++ {
-		s.rollLegendPointDropLocked(playerID, enemy)
+		s.rollDominionPointDropLocked(playerID, enemy)
 	}
-	after := s.Players[playerID].RunLegendPointDrops
+	after := s.Players[playerID].RunDominionPointDrops
 	s.mu.Unlock()
 
 	if after != before {
-		t.Errorf("immediate mode must NOT increment RunLegendPointDrops; before=%d after=%d", before, after)
+		t.Errorf("immediate mode must NOT increment RunDominionPointDrops; before=%d after=%d", before, after)
 	}
 	if len(hookCalls) != rolls {
 		t.Fatalf("expected %d hook invocations (one per 100%%-drop roll), got %d", rolls, len(hookCalls))
@@ -265,27 +265,27 @@ func TestRollLegendPointDropLocked_ImmediateMode_FiresHookAndSkipsAccumulator(t 
 	}
 }
 
-// TestRollLegendPointDropLocked_ImmediateMode_NoHookIsNoOp verifies that
+// TestRollDominionPointDropLocked_ImmediateMode_NoHookIsNoOp verifies that
 // when commitMode="immediate" but no handler is wired, drops are silently
 // dropped (no panic, no accumulator increment). Tests that don't care about
 // the immediate path stay valid.
-func TestRollLegendPointDropLocked_ImmediateMode_NoHookIsNoOp(t *testing.T) {
+func TestRollDominionPointDropLocked_ImmediateMode_NoHookIsNoOp(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
 	const playerID = "p1"
 	s.EnsurePlayer(playerID)
 
-	prevMode := gameplayTuningSingleton.LegendPoints.CommitMode
-	gameplayTuningSingleton.LegendPoints.CommitMode = legendPointCommitModeImmediate
-	t.Cleanup(func() { gameplayTuningSingleton.LegendPoints.CommitMode = prevMode })
+	prevMode := gameplayTuningSingleton.DominionPoints.CommitMode
+	gameplayTuningSingleton.DominionPoints.CommitMode = dominionPointCommitModeImmediate
+	t.Cleanup(func() { gameplayTuningSingleton.DominionPoints.CommitMode = prevMode })
 
 	if gameplayTuningSingleton.UnitOverrides == nil {
-		gameplayTuningSingleton.UnitOverrides = map[string]UnitLegendPointOverride{}
+		gameplayTuningSingleton.UnitOverrides = map[string]UnitDominionPointOverride{}
 	}
 	const testType = "raider"
 	prevOverride, hadOverride := gameplayTuningSingleton.UnitOverrides[testType]
-	gameplayTuningSingleton.UnitOverrides[testType] = UnitLegendPointOverride{
-		LegendPointDropChance: 1.0,
-		LegendPointAmount:     1,
+	gameplayTuningSingleton.UnitOverrides[testType] = UnitDominionPointOverride{
+		DominionPointDropChance: 1.0,
+		DominionPointAmount:     1,
 	}
 	t.Cleanup(func() {
 		if hadOverride {
@@ -295,14 +295,14 @@ func TestRollLegendPointDropLocked_ImmediateMode_NoHookIsNoOp(t *testing.T) {
 		}
 	})
 
-	// Deliberately do NOT call SetImmediateLegendPointDropHandler.
+	// Deliberately do NOT call SetImmediateDominionPointDropHandler.
 
 	s.mu.Lock()
 	enemy := s.spawnEnemyUnitLocked(testType, protocol.Vec2{X: 100, Y: 100})
 	for i := 0; i < 10; i++ {
-		s.rollLegendPointDropLocked(playerID, enemy) // must not panic
+		s.rollDominionPointDropLocked(playerID, enemy) // must not panic
 	}
-	after := s.Players[playerID].RunLegendPointDrops
+	after := s.Players[playerID].RunDominionPointDrops
 	s.mu.Unlock()
 
 	if after != 0 {

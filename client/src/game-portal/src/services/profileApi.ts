@@ -91,7 +91,7 @@ export async function refundProfileUpgrade(upgradeId: string): Promise<PlayerPro
 }
 
 export type PurchaseAdvancementResponse = {
-  legendPoints: number
+  dominionPoints: number
   acquiredAdvancements: AcquiredAdvancement[]
 }
 
@@ -105,8 +105,8 @@ export async function purchaseAdvancement(advancementId: string): Promise<Purcha
 }
 
 /**
- * Refunds all acquired advancements (paid cost returned to Legend Points) and
- * clears the acquired list. Returns the updated legend points + (empty)
+ * Refunds all acquired advancements (paid cost returned to Dominion Points) and
+ * clears the acquired list. Returns the updated dominion points + (empty)
  * acquired list. Rejected while the player is in an active match.
  */
 export async function resetAdvancements(): Promise<PurchaseAdvancementResponse> {
@@ -155,12 +155,12 @@ export async function markCampaignObjectivesComplete(
 }
 
 /**
- * DEV-ONLY: grant Legend Points to the calling player for testing. Returns the
+ * DEV-ONLY: grant Dominion Points to the calling player for testing. Returns the
  * updated profile. The endpoint is intentionally ungated for dev iteration —
  * callers in the UI should label it clearly as a dev affordance.
  */
-export async function devGrantLegendPoints(amount: number): Promise<PlayerProfile> {
-  const res = await fetch(`${API_BASE}/api/profile/dev/grant-legend-points`, {
+export async function devGrantDominionPoints(amount: number): Promise<PlayerProfile> {
+  const res = await fetch(`${API_BASE}/api/profile/dev/grant-dominion-points`, {
     method: 'POST',
     headers: playerHeaders(),
     body: JSON.stringify({ amount }),
@@ -170,7 +170,7 @@ export async function devGrantLegendPoints(amount: number): Promise<PlayerProfil
 
 /**
  * DEV-ONLY: hard-reset the calling player's profile back to a fresh state —
- * wipes LP, stats, upgrades, advancements, and all campaign progress. The
+ * wipes DP, stats, upgrades, advancements, and all campaign progress. The
  * server refuses with HTTP 409 / `player_in_match` if the caller is currently
  * in an active match. Returns the updated (now-empty) profile.
  */

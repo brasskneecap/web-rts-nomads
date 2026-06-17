@@ -12,7 +12,7 @@ import (
 // what advancements.json files decode into (after unwrapping the track object).
 type UnitAdvancementTrack struct {
 	// UnitType is the unit type these nodes apply to (e.g. "soldier").
-	UnitType string                `json:"unitType"`
+	UnitType string `json:"unitType"`
 	// Nodes is the ordered list of advancement nodes for the unit type. Purchase
 	// order is left-to-right: node at index N requires node at index N-1.
 	Nodes []UnitAdvancementNode `json:"nodes"`
@@ -30,7 +30,7 @@ type UnitAdvancementNode struct {
 	// Kind discriminates minor vs major nodes. The frontend uses this to pick
 	// the seal vs medal-slot icon. Valid values: "minor", "major".
 	Kind string `json:"kind"`
-	// Cost is the Legend Point cost to purchase this node (one-time).
+	// Cost is the Dominion Point cost to purchase this node (one-time).
 	Cost int `json:"cost"`
 	// Effects is the slice of typed effects applied at match start. Multiple
 	// effects may appear (e.g. a future node that grants both +HP and an extra

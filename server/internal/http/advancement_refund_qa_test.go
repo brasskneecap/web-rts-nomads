@@ -30,14 +30,14 @@ import (
 // and CostPaid is updated to the current cost.
 //
 // We simulate a "cost decreased from 80 to 50" scenario by seeding CostPaid=80
-// for soldier_hp_1 (which has catalog cost 50). The refund should be 30 LP.
+// for soldier_hp_1 (which has catalog cost 50). The refund should be 30 DP.
 func TestRefundStaleAdvancementCosts_DeltaRefund(t *testing.T) {
-	const originalCostPaid = 80  // inflated to simulate "past purchase at higher cost"
-	const catalogCost = 50       // real cost from catalog
+	const originalCostPaid = 80 // inflated to simulate "past purchase at higher cost"
+	const catalogCost = 50      // real cost from catalog
 	const expectedRefund = originalCostPaid - catalogCost
 
 	p := &profile.PlayerProfile{
-		LegendPoints: 0,
+		DominionPoints: 0,
 		AcquiredAdvancements: []profile.AcquiredAdvancement{
 			{ID: "soldier_hp_1", CostPaid: originalCostPaid},
 		},
@@ -48,8 +48,8 @@ func TestRefundStaleAdvancementCosts_DeltaRefund(t *testing.T) {
 	if !modified {
 		t.Error("refundStaleAdvancementCosts: want modified=true for cost-decreased advancement")
 	}
-	if p.LegendPoints != expectedRefund {
-		t.Errorf("LegendPoints after delta refund: want %d, got %d", expectedRefund, p.LegendPoints)
+	if p.DominionPoints != expectedRefund {
+		t.Errorf("DominionPoints after delta refund: want %d, got %d", expectedRefund, p.DominionPoints)
 	}
 	if len(p.AcquiredAdvancements) != 1 {
 		t.Fatalf("AcquiredAdvancements: want 1 entry retained, got %d", len(p.AcquiredAdvancements))
@@ -68,7 +68,7 @@ func TestRefundStaleAdvancementCosts_NoRefundWhenCostUnchanged(t *testing.T) {
 	const catalogCost = 50
 
 	p := &profile.PlayerProfile{
-		LegendPoints: 100,
+		DominionPoints: 100,
 		AcquiredAdvancements: []profile.AcquiredAdvancement{
 			{ID: "soldier_hp_1", CostPaid: catalogCost},
 		},
@@ -79,8 +79,8 @@ func TestRefundStaleAdvancementCosts_NoRefundWhenCostUnchanged(t *testing.T) {
 	if modified {
 		t.Error("refundStaleAdvancementCosts: want modified=false when cost is unchanged")
 	}
-	if p.LegendPoints != 100 {
-		t.Errorf("LegendPoints: should be unchanged at 100, got %d", p.LegendPoints)
+	if p.DominionPoints != 100 {
+		t.Errorf("DominionPoints: should be unchanged at 100, got %d", p.DominionPoints)
 	}
 	if p.AcquiredAdvancements[0].CostPaid != catalogCost {
 		t.Errorf("CostPaid: should be unchanged at %d, got %d", catalogCost, p.AcquiredAdvancements[0].CostPaid)
@@ -96,7 +96,7 @@ func TestRefundStaleAdvancementCosts_FullRefundWhenRemoved(t *testing.T) {
 	const paidForRemovedNode = 75
 
 	p := &profile.PlayerProfile{
-		LegendPoints: 10,
+		DominionPoints: 10,
 		AcquiredAdvancements: []profile.AcquiredAdvancement{
 			// This ID is deliberately not in any real catalog.
 			{ID: "advancement_that_was_removed_from_catalog", CostPaid: paidForRemovedNode},
@@ -109,9 +109,9 @@ func TestRefundStaleAdvancementCosts_FullRefundWhenRemoved(t *testing.T) {
 		t.Error("refundStaleAdvancementCosts: want modified=true when advancement removed from catalog")
 	}
 	wantPoints := 10 + paidForRemovedNode
-	if p.LegendPoints != wantPoints {
-		t.Errorf("LegendPoints after full refund: want %d (10 + %d), got %d",
-			wantPoints, paidForRemovedNode, p.LegendPoints)
+	if p.DominionPoints != wantPoints {
+		t.Errorf("DominionPoints after full refund: want %d (10 + %d), got %d",
+			wantPoints, paidForRemovedNode, p.DominionPoints)
 	}
 	if len(p.AcquiredAdvancements) != 0 {
 		t.Errorf("AcquiredAdvancements: want 0 entries after removal, got %d", len(p.AcquiredAdvancements))
@@ -123,10 +123,10 @@ func TestRefundStaleAdvancementCosts_FullRefundWhenRemoved(t *testing.T) {
 // is refunded and dropped, while the valid one is retained.
 func TestRefundStaleAdvancementCosts_MixedPortfolio(t *testing.T) {
 	p := &profile.PlayerProfile{
-		LegendPoints: 0,
+		DominionPoints: 0,
 		AcquiredAdvancements: []profile.AcquiredAdvancement{
-			{ID: "soldier_hp_1", CostPaid: 50},                             // valid, no refund
-			{ID: "ghost_advancement_not_in_catalog", CostPaid: 100},        // removed, full refund
+			{ID: "soldier_hp_1", CostPaid: 50},                      // valid, no refund
+			{ID: "ghost_advancement_not_in_catalog", CostPaid: 100}, // removed, full refund
 		},
 	}
 
@@ -135,8 +135,8 @@ func TestRefundStaleAdvancementCosts_MixedPortfolio(t *testing.T) {
 	if !modified {
 		t.Error("refundStaleAdvancementCosts: want modified=true when one of two advancements was removed")
 	}
-	if p.LegendPoints != 100 {
-		t.Errorf("LegendPoints: want 100 (refund of removed node), got %d", p.LegendPoints)
+	if p.DominionPoints != 100 {
+		t.Errorf("DominionPoints: want 100 (refund of removed node), got %d", p.DominionPoints)
 	}
 	if len(p.AcquiredAdvancements) != 1 {
 		t.Fatalf("AcquiredAdvancements: want 1 retained entry, got %d", len(p.AcquiredAdvancements))
@@ -169,7 +169,7 @@ func TestGetProfile_RefundOnCostChange_TriggersOnGetProfile(t *testing.T) {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
 	err = pm.WithLocked(testPlayerID, func(p *profile.PlayerProfile) error {
-		p.LegendPoints = initialLP
+		p.DominionPoints = initialLP
 		p.AcquiredAdvancements = []profile.AcquiredAdvancement{
 			{ID: "soldier_hp_1", CostPaid: inflatedCost},
 		}
@@ -187,7 +187,7 @@ func TestGetProfile_RefundOnCostChange_TriggersOnGetProfile(t *testing.T) {
 
 	var resp struct {
 		Profile struct {
-			LegendPoints         int `json:"legendPoints"`
+			DominionPoints       int `json:"dominionPoints"`
 			AcquiredAdvancements []struct {
 				ID       string `json:"id"`
 				CostPaid int    `json:"costPaid"`
@@ -198,9 +198,9 @@ func TestGetProfile_RefundOnCostChange_TriggersOnGetProfile(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 
-	if resp.Profile.LegendPoints != expectedLP {
-		t.Errorf("profile.legendPoints after GET-triggered refund: want %d, got %d",
-			expectedLP, resp.Profile.LegendPoints)
+	if resp.Profile.DominionPoints != expectedLP {
+		t.Errorf("profile.dominionPoints after GET-triggered refund: want %d, got %d",
+			expectedLP, resp.Profile.DominionPoints)
 	}
 	if len(resp.Profile.AcquiredAdvancements) != 1 {
 		t.Fatalf("profile.acquiredAdvancements: want 1, got %d", len(resp.Profile.AcquiredAdvancements))
@@ -218,15 +218,15 @@ func TestGetProfile_RefundOnCostChange_TriggersOnGetProfile(t *testing.T) {
 	}
 	var resp2 struct {
 		Profile struct {
-			LegendPoints int `json:"legendPoints"`
+			DominionPoints int `json:"dominionPoints"`
 		} `json:"profile"`
 	}
 	if err := json.NewDecoder(rec2.Body).Decode(&resp2); err != nil {
 		t.Fatalf("decode second response: %v", err)
 	}
-	if resp2.Profile.LegendPoints != expectedLP {
-		t.Errorf("legendPoints on second GET (double-refund check): want %d, got %d — possible double-refund",
-			expectedLP, resp2.Profile.LegendPoints)
+	if resp2.Profile.DominionPoints != expectedLP {
+		t.Errorf("dominionPoints on second GET (double-refund check): want %d, got %d — possible double-refund",
+			expectedLP, resp2.Profile.DominionPoints)
 	}
 }
 
@@ -244,7 +244,7 @@ func TestGetProfile_FullRefundWhenRemoved_TriggersOnGetProfile(t *testing.T) {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
 	err = pm.WithLocked(testPlayerID, func(p *profile.PlayerProfile) error {
-		p.LegendPoints = initialLP
+		p.DominionPoints = initialLP
 		p.AcquiredAdvancements = []profile.AcquiredAdvancement{
 			{ID: "advancement_deleted_from_catalog", CostPaid: paidForGhost},
 		}
@@ -261,7 +261,7 @@ func TestGetProfile_FullRefundWhenRemoved_TriggersOnGetProfile(t *testing.T) {
 
 	var resp struct {
 		Profile struct {
-			LegendPoints         int `json:"legendPoints"`
+			DominionPoints       int `json:"dominionPoints"`
 			AcquiredAdvancements []struct {
 				ID string `json:"id"`
 			} `json:"acquiredAdvancements"`
@@ -272,9 +272,9 @@ func TestGetProfile_FullRefundWhenRemoved_TriggersOnGetProfile(t *testing.T) {
 	}
 
 	wantLP := initialLP + paidForGhost
-	if resp.Profile.LegendPoints != wantLP {
-		t.Errorf("legendPoints after full refund of removed advancement: want %d, got %d",
-			wantLP, resp.Profile.LegendPoints)
+	if resp.Profile.DominionPoints != wantLP {
+		t.Errorf("dominionPoints after full refund of removed advancement: want %d, got %d",
+			wantLP, resp.Profile.DominionPoints)
 	}
 	if len(resp.Profile.AcquiredAdvancements) != 0 {
 		t.Errorf("acquiredAdvancements: want 0 after removal of ghost entry, got %d",

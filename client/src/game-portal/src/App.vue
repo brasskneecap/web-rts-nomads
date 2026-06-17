@@ -1,6 +1,7 @@
 <template>
   <MenuChrome v-if="showMenuChrome" />
   <RouterView />
+  <MenuDominionPanel v-if="showDominionPanel" />
   <StartSplash v-if="!splashDismissed" @dismiss="onSplashDismiss" />
 </template>
 
@@ -8,6 +9,7 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import MenuChrome from '@/components/menu/MenuChrome.vue'
+import MenuDominionPanel from '@/components/menu/MenuDominionPanel.vue'
 import StartSplash from '@/components/menu/StartSplash.vue'
 import { startMenuMusic, stopMenuMusic } from '@/composables/useMenuAudio'
 
@@ -15,6 +17,11 @@ const route = useRoute()
 const splashDismissed = ref(false)
 
 const showMenuChrome = computed(() => !route.meta.hideMenuChrome)
+
+// Persistent Dominion Points readout shows on every out-of-game screen. It is
+// hidden only once an actual match (or the match-end recap) is active — those
+// routes are flagged `silenceMusic`, the same flag that marks "in a match".
+const showDominionPanel = computed(() => !route.meta.silenceMusic)
 
 // Music plays across the menu, war-room, kingdom and meta views. It is only
 // silenced once an actual match starts (routes flagged `silenceMusic`), so it

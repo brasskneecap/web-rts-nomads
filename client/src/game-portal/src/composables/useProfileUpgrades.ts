@@ -77,7 +77,7 @@ export function useProfileUpgrades(): {
   catalog: Ref<ProfileUpgradeDef[]>
   ownedRanks: ComputedRef<Record<string, number>>
   activeUpgradeIds: ComputedRef<string[]>
-  legendPoints: ComputedRef<number>
+  dominionPoints: ComputedRef<number>
   isBusy: Ref<boolean>
   error: Ref<string | null>
   initialize: () => Promise<void>
@@ -96,8 +96,8 @@ export function useProfileUpgrades(): {
     () => profile.value?.activeUpgradeIds ?? [],
   )
 
-  const legendPoints = computed<number>(
-    () => profile.value?.legendPoints ?? 0,
+  const dominionPoints = computed<number>(
+    () => profile.value?.dominionPoints ?? 0,
   )
 
   // Expose a Set-based lookup for O(1) isActive checks in the template.
@@ -112,7 +112,7 @@ export function useProfileUpgrades(): {
     catalog,
     ownedRanks,
     activeUpgradeIds,
-    legendPoints,
+    dominionPoints,
     isBusy,
     error,
     initialize,

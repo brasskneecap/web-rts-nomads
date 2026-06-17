@@ -44,26 +44,26 @@
 
           <div v-else-if="profile" class="profile-view__body">
             <div class="profile-view__left">
-              <section class="profile-card" aria-label="Legend Points">
-                <div class="profile-card__label">Legend Points</div>
-                <div class="profile-card__value profile-card__value--legend">
-                  {{ profile.legendPoints.toLocaleString() }}
+              <section class="profile-card" aria-label="Dominion Points">
+                <div class="profile-card__label">Dominion Points</div>
+                <div class="profile-card__value profile-card__value--dominion">
+                  {{ profile.dominionPoints.toLocaleString() }}
                 </div>
                 <div class="profile-card__sub">
-                  {{ profile.lifetimeLegendPoints.toLocaleString() }} lifetime
+                  {{ profile.lifetimeDominionPoints.toLocaleString() }} lifetime
                 </div>
                 <button
                   type="button"
                   class="profile-card__dev-grant"
                   :disabled="isGrantingLP"
-                  title="DEV: grant +50 Legend Points to this profile"
-                  @click="grantDevLegendPoints"
-                >+50 LP (dev)</button>
+                  title="DEV: grant +50 Dominion Points to this profile"
+                  @click="grantDevDominionPoints"
+                >+50 DP (dev)</button>
                 <button
                   type="button"
                   class="profile-card__dev-grant profile-card__dev-grant--danger"
                   :disabled="isResettingProfile"
-                  title="DEV: wipe LP, stats, upgrades, advancements, and all campaign progress"
+                  title="DEV: wipe DP, stats, upgrades, advancements, and all campaign progress"
                   @click="resetDevProfile"
                 >Reset Profile (dev)</button>
               </section>
@@ -127,7 +127,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfile } from '@/composables/useProfile'
-import { devGrantLegendPoints, devResetProfile } from '@/services/profileApi'
+import { devGrantDominionPoints, devResetProfile } from '@/services/profileApi'
 import ProfileUpgradeLoadoutPicker from '@/components/profile/ProfileUpgradeLoadoutPicker.vue'
 import ProfileUpgradesPanel from '@/components/profile/ProfileUpgradesPanel.vue'
 import MenuPanel from '@/components/menu/MenuPanel.vue'
@@ -137,21 +137,21 @@ import ExitButton from '@/components/ui/ExitButton.vue'
 const router = useRouter()
 const { profile, isLoading, error, initialize, refresh } = useProfile()
 
-// DEV-only affordance: grants +50 LP to this profile via the dev endpoint and
+// DEV-only affordance: grants +50 DP to this profile via the dev endpoint and
 // re-fetches so the displayed balance updates.
 const isGrantingLP = ref(false)
-async function grantDevLegendPoints() {
+async function grantDevDominionPoints() {
   if (isGrantingLP.value) return
   isGrantingLP.value = true
   try {
-    await devGrantLegendPoints(50)
+    await devGrantDominionPoints(50)
     await refresh()
   } finally {
     isGrantingLP.value = false
   }
 }
 
-// DEV-only affordance: wipe everything on the profile (LP, stats, upgrades,
+// DEV-only affordance: wipe everything on the profile (DP, stats, upgrades,
 // advancements, campaign progress) back to a fresh state. Guarded by a
 // browser confirm() because a misclick would otherwise be silently
 // destructive — the server has no undo. The server itself refuses (HTTP
@@ -160,7 +160,7 @@ const isResettingProfile = ref(false)
 async function resetDevProfile() {
   if (isResettingProfile.value) return
   const ok = window.confirm(
-    'Reset this profile?\n\nThis wipes Legend Points, stats, upgrades, advancements, and all completed campaign levels & objectives. This cannot be undone.',
+    'Reset this profile?\n\nThis wipes Dominion Points, stats, upgrades, advancements, and all completed campaign levels & objectives. This cannot be undone.',
   )
   if (!ok) return
   isResettingProfile.value = true
@@ -181,7 +181,7 @@ const activeTab = ref<Tab>('profile')
 onMounted(async () => {
   // initialize() is a one-shot — it primes the buff catalog + tuning on the
   // very first visit. refresh() always re-fetches the profile so mid-match
-  // server-side mutations (e.g. immediate LP commits) appear here without a
+  // server-side mutations (e.g. immediate DP commits) appear here without a
   // page reload.
   await initialize()
   void refresh()
@@ -344,7 +344,7 @@ const winRate = computed(() => {
   color: #f5ead2;
 }
 
-.profile-card__value--legend {
+.profile-card__value--dominion {
   font-size: 32px;
   color: #f7d88e;
 }
@@ -362,7 +362,7 @@ const winRate = computed(() => {
   color: #8a7a5a;
 }
 
-/* DEV-only "+50 LP" button — visually distinct (dashed border, muted tint)
+/* DEV-only "+50 DP" button — visually distinct (dashed border, muted tint)
    so it doesn't look like a real player-facing button. Remove or gate
    behind an env var before shipping. */
 .profile-card__dev-grant {
@@ -388,7 +388,7 @@ const winRate = computed(() => {
   opacity: 0.5;
 }
 
-/* Reset Profile (dev) — same dev affordance treatment as +50 LP but with a
+/* Reset Profile (dev) — same dev affordance treatment as +50 DP but with a
    destructive red tint so it doesn't get clicked by accident. */
 .profile-card__dev-grant--danger {
   margin-top: 6px;

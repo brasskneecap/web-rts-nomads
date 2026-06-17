@@ -110,7 +110,7 @@ const MAX_RECONNECT_ATTEMPTS = BACKOFF_DELAYS_MS.length
 // path and the HTTP profile path. The HTTP layer (X-Player-ID header)
 // requires a UUID, so we delegate to profileApi's UUID-based implementation.
 // Historically NetworkClient had its own `player-XXXXXX` generator under a
-// separate localStorage key, which meant match progress (LP drops, etc.)
+// separate localStorage key, which meant match progress (DP drops, etc.)
 // was credited to a different profile than the one the Profile screen read.
 function getOrCreatePlayerId(): string {
   return getProfilePlayerId()

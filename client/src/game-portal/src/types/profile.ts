@@ -31,8 +31,8 @@ export type PlayerProfile = {
   version: number
   createdAtUnix: number
   updatedAtUnix: number
-  legendPoints: number
-  lifetimeLegendPoints: number
+  dominionPoints: number
+  lifetimeDominionPoints: number
   ownedCommanderIds: string[]
   selectedCommanderId: string
   activeUpgradeIds: string[]
@@ -69,7 +69,7 @@ export type ProfileStats = {
 
 export type GameplayTuning = {
   version: number
-  legendPoints: {
+  dominionPoints: {
     winBonus: number
     lossConsolation: number
     perObjective: number
