@@ -79,6 +79,17 @@ func (s *GameState) onUnitDamagedLocked(attacker, target *Unit, damage int) {
 	amount := float64(damage) * resolveCombatProfile(target).ThreatFromDamage * resolveCombatProfile(attacker).ThreatGenerationMultiplier
 	s.addThreatLocked(target, attacker, amount, true)
 
+	// One-pulls-all camp aggro on damage: when any neutral-camp guard is hit,
+	// the whole camp engages the attacker immediately, independent of aggro/
+	// leash range. This complements the acquire-time broadcast in
+	// refreshUnitCombatTargetLocked so a player who pokes a single guard (e.g.
+	// a ranged poke from outside aggro range) pulls the entire camp rather than
+	// fighting it one unit at a time. Gated on NeutralCampID so non-neutral
+	// units pay zero cost.
+	if target.NeutralCampID != "" {
+		s.broadcastNeutralCampAggroLocked(target, attacker.ID)
+	}
+
 	for _, ally := range s.Units {
 		if !s.unitsFriendlyLocked(ally, target) || ally.ID == target.ID || ally.HP <= 0 || !ally.Visible {
 			continue

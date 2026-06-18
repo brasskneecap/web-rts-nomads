@@ -3,7 +3,7 @@
   "name": "Archer",
   "faction": "human",
   "archetype": "archer",
-  "visionRange": 384,
+  "visionRange": 400,
   "hp": 75,
   "armor": 0,
   "damage": 8,

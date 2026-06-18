@@ -3497,6 +3497,11 @@ function getBuildingActions(
         const cost = Object.entries(def.resourceCost ?? {})
           .filter(([, amount]) => amount > 0)
           .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' }))
+        // Food (meat) is tracked separately from resourceCost on the unit def,
+        // so append it as its own cost row when the unit consumes any.
+        if (def.meatCost > 0) {
+          cost.push({ resourceId: 'food', amount: def.meatCost, accent: RESOURCE_ACCENT.food ?? '#c96e43' })
+        }
         const isLocked = lockedUnitTypes.has(unitType)
         const requires = def.requiresBuildings ?? []
         const hasRequirements = requires.length > 0

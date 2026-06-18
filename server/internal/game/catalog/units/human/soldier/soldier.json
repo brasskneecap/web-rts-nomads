@@ -3,7 +3,7 @@
   "name": "Soldier",
   "faction": "human",
   "archetype": "soldier",
-  "visionRange": 288,
+  "visionRange": 400,
   "hp": 175,
   "armor": 33,
   "damage": 12,

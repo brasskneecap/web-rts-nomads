@@ -531,7 +531,9 @@ const (
 	// guardMinAggroRange is the floor applied to GuardAggroRange at spawn for
 	// placed-enemy guard units. Authored values below this are raised so guards
 	// reliably notice approaching player units before they're already in melee.
-	guardMinAggroRange = 350.0
+	// Neutral camps are exempt: an authored AggroRange overrides this (see
+	// spawnGroupForCampLocked); the value only serves as their default when unset.
+	guardMinAggroRange = 275.0
 
 	// guardRetaliationPersistTicks is how long a guard pursues an attacker
 	// after the last hit lands, regardless of leash. 4 seconds at 20 Hz. Each
@@ -540,6 +542,13 @@ const (
 	// Once attacks stop and this window elapses the leash check resumes and
 	// the guard returns to its anchor.
 	guardRetaliationPersistTicks = 80
+
+	// neutralCampLinkThreat is the threat conferred on every camp-mate when one
+	// camp guard is attacked (broadcastNeutralCampAggroLocked). It exists so
+	// mates get the same retaliation leash-bypass the directly-hit guard gets;
+	// without it a mate whose anchor->attacker distance exceeds GuardLeashRange
+	// would immediately drop the broadcast target and stay at its post.
+	neutralCampLinkThreat = 30.0
 
 	// defaultHealthRegenPerSecond is the baseline passive regen applied to all
 	// units on spawn (1 HP every 5 seconds). Stored as HP-per-second so future

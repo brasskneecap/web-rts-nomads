@@ -11,10 +11,11 @@
   "attackRange": 60,
   "attackSpeed": 1,
   "moveSpeed": 100,
-  "goldGatherAmount": 20,
-  "woodGatherAmount": 15,
+  "goldGatherAmount": 10,
+  "woodGatherAmount": 5,
   "resourceCost": {
-    "gold": 150
+    "gold": 100,
+    "wood": 50
   },
   "meatCost": 1,
   "spawnSeconds": 5,

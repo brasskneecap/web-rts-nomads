@@ -17,7 +17,7 @@
   "defaultAutoCast": false,
   "tickIntervalSeconds": 0.25,
   "manaCostPerTick": 1,
-  "damagePerTick": 3,
+  "damagePerTick": 6,
   "healingMultiplier": 1.0,
   "allyHealRadius": 220
 }

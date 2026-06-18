@@ -274,8 +274,10 @@ func (s *GameState) spawnGroupForCampLocked(camp *NeutralCamp) {
 	hpMult := hpBase + camp.HealthMultiplierPerWave*float64(wavesElapsed)
 	dmgMult := dmgBase + camp.DamageMultiplierPerWave*float64(wavesElapsed)
 
+	// An authored AggroRange overrides the guard floor entirely — neutral camps
+	// honor whatever value the map sets. Only fall back to the default when unset.
 	aggro := camp.AggroRange
-	if aggro < guardMinAggroRange {
+	if aggro <= 0 {
 		aggro = guardMinAggroRange
 	}
 	leash := camp.LeashRange
@@ -370,12 +372,20 @@ func (s *GameState) broadcastNeutralCampAggroLocked(acquirer *Unit, targetID int
 	// Iterate by ID; resolve each mate at point-of-use per AI_RULES rule 2.
 	for _, mateID := range camp.AliveUnitIDs {
 		if mateID == acquirer.ID {
-			continue // skip self
+			continue // skip self; the acquirer already has its own threat/target
 		}
 		mate := s.getUnitByIDLocked(mateID)
 		if mate == nil || mate.HP <= 0 {
 			continue
 		}
+		// Confer threat on the attacker so the mate gets the same retaliation
+		// leash-bypass the directly-hit guards get (shouldDropCurrentTargetLocked).
+		// Without this, a mate whose anchor->attacker distance exceeds its
+		// GuardLeashRange immediately drops the broadcast target and stays at its
+		// post — the "furthest-back guard ignores the fight" case. Applied (and
+		// refreshed) before the idempotent target-set so a sustained attack keeps
+		// the whole camp committed even after every mate already holds the target.
+		s.addThreatLocked(mate, target, neutralCampLinkThreat, true)
 		if mate.AttackTargetID == targetID {
 			continue // already on the same target; idempotent
 		}

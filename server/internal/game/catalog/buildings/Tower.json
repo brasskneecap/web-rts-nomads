@@ -17,8 +17,8 @@
     "effectLength": 30
   },
   "resourceCost": {
-    "gold": 400,
-    "wood": 200
+    "gold": 250,
+    "wood": 400
   },
   "capabilities": [],
   "spawnUnitTypes": [],

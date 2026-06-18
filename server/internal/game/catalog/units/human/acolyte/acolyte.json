@@ -4,7 +4,7 @@
   "faction": "human",
   "archetype": "caster",
   "combatProfile": "caster",
-  "visionRange": 384,
+  "visionRange": 400,
   "hp": 75,
   "armor": 0,
   "damage": 8,
