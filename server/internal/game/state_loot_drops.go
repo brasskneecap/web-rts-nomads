@@ -234,6 +234,11 @@ func (s *GameState) maybeDropChestForCampLocked(camp *NeutralCamp) {
 	if camp == nil || camp.SpawnedGroupID == "" {
 		return
 	}
+	// A camp wiped by the enemy wave faction (EnemiesFightNeutrals maps) drops
+	// no loot — only players earn camp loot.
+	if camp.LastKillerWasEnemy {
+		return
+	}
 	tier := resolveNeutralTier(camp.CurrentTier)
 	if tier == 0 {
 		return

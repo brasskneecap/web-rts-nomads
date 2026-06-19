@@ -65,6 +65,28 @@
                 min="0"
               />
             </div>
+            <div class="control-group control-group--checkbox">
+              <label for="wave-continuous">
+                <input
+                  id="wave-continuous"
+                  type="checkbox"
+                  :checked="!!model.waveConfig?.continuousWaves"
+                  @change="setWaveConfig('continuousWaves', ($event.target as HTMLInputElement).checked)"
+                />
+                Continuous Waves <span class="field-hint">(release next wave on timer; never wait for clear)</span>
+              </label>
+            </div>
+            <div class="control-group control-group--checkbox">
+              <label for="wave-enemies-fight-neutrals">
+                <input
+                  id="wave-enemies-fight-neutrals"
+                  type="checkbox"
+                  :checked="!!model.waveConfig?.enemiesFightNeutrals"
+                  @change="setWaveConfig('enemiesFightNeutrals', ($event.target as HTMLInputElement).checked)"
+                />
+                Enemies Fight Neutrals <span class="field-hint">(camps wiped by enemies drop no loot)</span>
+              </label>
+            </div>
           </div>
 
           <div class="wave-config-block">
@@ -2385,11 +2407,19 @@ function objectiveConfigValue(obj: MapCampaignObjective, key: string): unknown {
 // Victory Conditions authoring card. `nextVictoryConditionId` is removed for
 // the same reason. Per-level objectives are now hand-authored in campaign JSON.
 
-function setWaveConfig(field: 'totalWaves' | 'prepDuration' | 'waveDuration', value: number) {
+function setWaveConfig(
+  field: 'totalWaves' | 'prepDuration' | 'waveDuration' | 'continuousWaves' | 'enemiesFightNeutrals',
+  value: number | boolean,
+) {
   const current = model.value.waveConfig ?? {}
   const updated = { ...current, [field]: value }
-  // Drop waveConfig entirely if all fields are zero/absent — keeps the export clean
-  const hasAny = (updated.totalWaves ?? 0) > 0 || (updated.prepDuration ?? 0) > 0 || (updated.waveDuration ?? 0) > 0
+  // Drop waveConfig entirely if every field is zero/absent/false — keeps the export clean
+  const hasAny =
+    (updated.totalWaves ?? 0) > 0 ||
+    (updated.prepDuration ?? 0) > 0 ||
+    (updated.waveDuration ?? 0) > 0 ||
+    !!updated.continuousWaves ||
+    !!updated.enemiesFightNeutrals
   model.value = { ...model.value, waveConfig: hasAny ? updated : undefined }
 }
 

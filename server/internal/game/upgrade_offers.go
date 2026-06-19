@@ -151,9 +151,31 @@ func (s *GameState) tickUpgradePhaseLocked() {
 		}
 	}
 	if s.waveUpgradeAllResolvedLocked() {
-		log.Printf("[UPGRADE] all resolved → prep")
-		s.WaveManager.State = "prep"
-		s.WaveManager.Timer = s.WaveManager.PrepDuration
+		wm := &s.WaveManager
+		if wm.Continuous {
+			// Continuous mode: the upgrade pick WAS the between-wave pause, so
+			// release the next wave immediately rather than re-running a prep
+			// countdown. Enemies from prior waves persist and accumulate; the
+			// CurrentWave bump drives the neutral-camp reset in
+			// tickNeutralCampsLocked. Mirrors the prep→active re-arm in
+			// tickWaveLocked.
+			wm.CurrentWave++
+			wm.State = "active"
+			wm.Timer = 0
+			for _, u := range s.Units {
+				if u == nil {
+					continue
+				}
+				u.PathDiagnostics = PathDiagnostics{}
+				u.UnreachableBuildingStrikeCount = 0
+			}
+			s.resetWaveSpawnTimersLocked(wm.CurrentWave)
+			log.Printf("[UPGRADE] all resolved → active wave %d (continuous)", wm.CurrentWave)
+		} else {
+			log.Printf("[UPGRADE] all resolved → prep")
+			wm.State = "prep"
+			wm.Timer = wm.PrepDuration
+		}
 	}
 }
 
@@ -186,4 +208,3 @@ func (s *GameState) HandleWaveUpgradeReroll(playerID string) {
 	player.UpgradeState.RerollsRemaining--
 	player.UpgradeState.CurrentOffers = s.generateUpgradeOffersLocked(playerID)
 }
-

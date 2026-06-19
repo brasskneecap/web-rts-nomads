@@ -6,7 +6,7 @@
   "upgradeCost": {
     "gold": 300,
     "wood": 450
-  },
+  }, 
   "upgradeSeconds": 45,
   "width": 3,
   "height": 2,

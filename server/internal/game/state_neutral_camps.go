@@ -35,6 +35,11 @@ type NeutralCamp struct {
 	CurrentTier    int // recomputed each respawn
 	AliveUnitIDs   []int
 	State          NeutralCampState
+	// LastKillerWasEnemy records whether the most recent camp-unit kill was
+	// landed by the __enemy__ wave faction (only possible when EnemiesFightNeutrals
+	// is on). When the camp's final unit dies, this gates loot: an enemy-wiped
+	// camp drops nothing (see maybeDropChestForCampLocked). Reset on (re)spawn.
+	LastKillerWasEnemy bool
 
 	AggroRange              float64
 	LeashRange              float64
@@ -102,6 +107,16 @@ func (s *GameState) tickNeutralCampsLocked() {
 	if len(s.NeutralCamps) == 0 {
 		return
 	}
+
+	// Continuous-wave maps keep camps on the field through every wave and reset
+	// them (full roster respawn) at each new wave instead of despawning while a
+	// wave is active. Handled separately so the discrete lifecycle below is
+	// untouched.
+	if s.WaveManager.Continuous {
+		s.tickNeutralCampsContinuousLocked()
+		return
+	}
+
 	waveActive := s.WaveManager.Enabled && s.WaveManager.State == "active"
 
 	for i := range s.NeutralCamps {
@@ -116,6 +131,35 @@ func (s *GameState) tickNeutralCampsLocked() {
 			if waveActive {
 				s.despawnNeutralCampLocked(camp)
 			}
+		}
+	}
+}
+
+// tickNeutralCampsContinuousLocked is the continuous-mode neutral-camp
+// lifecycle. Camps spawn as soon as they exist (during the initial prep, before
+// wave 1) and persist through active waves — they are NOT despawned when a wave
+// is active. At the start of each new wave (CurrentWave advances past
+// NeutralResetWave) every still-living camp is reset: wiped via
+// despawnNeutralCampLocked (which flips state to WaveHidden first, so the reset
+// drops NO loot) and respawned with a fresh full roster at the new tier. A camp
+// the players fully cleared mid-wave stays cleared until the next wave reset.
+//
+// Must be called under s.mu write lock.
+func (s *GameState) tickNeutralCampsContinuousLocked() {
+	wm := &s.WaveManager
+	newWave := wm.CurrentWave > wm.NeutralResetWave
+	if newWave {
+		wm.NeutralResetWave = wm.CurrentWave
+	}
+	for i := range s.NeutralCamps {
+		camp := &s.NeutralCamps[i]
+		// New wave → wipe living camps so the spawn below brings a fresh roster.
+		if newWave && camp.State == NeutralCampActive {
+			s.despawnNeutralCampLocked(camp)
+		}
+		if camp.State == NeutralCampWaveHidden {
+			camp.CurrentTier = computeNeutralCurrentTier(wm.CurrentWave, camp.StartingTier, camp.TierUpEveryN)
+			s.spawnGroupForCampLocked(camp)
 		}
 	}
 }
@@ -171,6 +215,22 @@ func (s *GameState) despawnNeutralCampLocked(camp *NeutralCamp) {
 	}
 	// Belt-and-suspenders clear: any IDs the hook may have missed.
 	camp.AliveUnitIDs = camp.AliveUnitIDs[:0]
+}
+
+// markCampKillerLocked records on the named camp whether the killing blow on
+// one of its units was landed by the __enemy__ wave faction. Read by
+// maybeDropChestForCampLocked when the camp's final unit dies, so an enemy-wiped
+// camp drops no loot. killerOwnerID is empty for anonymous/unresolved kills,
+// which counts as "not the enemy" (loot still drops, as before).
+//
+// Must be called under s.mu write lock.
+func (s *GameState) markCampKillerLocked(campID, killerOwnerID string) {
+	for i := range s.NeutralCamps {
+		if s.NeutralCamps[i].PlacementID == campID {
+			s.NeutralCamps[i].LastKillerWasEnemy = killerOwnerID == enemyPlayerID
+			return
+		}
+	}
 }
 
 // onUnitRemovedFromCampLocked strips a unit ID from its owning camp's
@@ -251,6 +311,8 @@ func (s *GameState) spawnGroupForCampLocked(camp *NeutralCamp) {
 	}
 
 	camp.SpawnedGroupID = group.ID
+	// Fresh roster — clear any stale enemy-kill marker from the prior cycle.
+	camp.LastKillerWasEnemy = false
 
 	s.ensureNeutralPlayerLocked()
 

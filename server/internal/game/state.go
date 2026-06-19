@@ -2945,7 +2945,16 @@ func (s *GameState) checkVictoryLocked() {
 // townhall-destruction levels express victory through the registry, and
 // this helper could collapse to a single trivially-true.
 func (s *GameState) waveOrTownhallConditionMetLocked() bool {
-	return s.WaveManager.State == "complete"
+	// Endless continuous maps (no wave cap) never reach "complete" — the wave
+	// system runs until defeat. For these the legacy wave gate is N/A, so let
+	// required-objective completion (capture_zone, etc.) drive victory on its
+	// own. Bounded continuous maps (TotalWaves > 0) and all discrete maps still
+	// require clearing the final wave to "complete".
+	wm := s.WaveManager
+	if wm.Enabled && wm.Continuous && wm.TotalWaves == 0 {
+		return true
+	}
+	return wm.State == "complete"
 }
 
 // allRequiredObjectivesCompletedLocked walks `s.Objectives` and returns true

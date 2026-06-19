@@ -149,11 +149,17 @@ func (s *GameState) drainPendingDeathsLocked() {
 		// perk + the dying unit as channel target.
 		s.onSiphonVictimDeathLocked(target)
 
+		// killerOwnerID is who landed the killing blow (empty when anonymous /
+		// unresolved). Used below to gate neutral-camp loot: a camp wiped by the
+		// enemy wave faction drops nothing.
+		killerOwnerID := ""
+
 		if !d.Source.IsAnonymous() {
 			// Resolve attacker and run kill bookkeeping.
 			if d.Source.AttackerUnitID != 0 {
 				attackerUnit := s.getUnitByIDLocked(d.Source.AttackerUnitID)
 				if attackerUnit != nil {
+					killerOwnerID = attackerUnit.OwnerID
 					s.awardUnitDeathXPLocked(target, attackerUnit)
 					s.awardSoldierTankKillXPLocked(target.ID)
 					s.onPerkKillLocked(attackerUnit)
@@ -174,6 +180,7 @@ func (s *GameState) drainPendingDeathsLocked() {
 					// counters now live on Player.Metrics and feed the new
 					// objective evaluator (§8) directly.
 					if building.OwnerID != nil {
+						killerOwnerID = *building.OwnerID
 						s.recordEnemyKillMetricLocked(*building.OwnerID, target.OwnerID)
 					}
 				}
@@ -193,6 +200,7 @@ func (s *GameState) drainPendingDeathsLocked() {
 						ownerUnit = nil
 					}
 					if ownerUnit != nil {
+						killerOwnerID = ownerUnit.OwnerID
 						s.awardUnitDeathXPLocked(target, ownerUnit)
 						s.awardSoldierTankKillXPLocked(target.ID)
 						s.trackBattleKillLocked(battleSourceFromTrap(trap), target)
@@ -215,6 +223,12 @@ func (s *GameState) drainPendingDeathsLocked() {
 		// dying unit (HP <= 0) is excluded by the scan.
 		if target.Rank != unitRankBase {
 			s.recomputeUnitsByRankForOwnerLocked(target.OwnerID)
+		}
+		// Neutral-camp loot gating: record whether the enemy faction landed this
+		// kill BEFORE removeUnitLocked fires the camp's 0-units loot hook
+		// (onUnitRemovedFromCampLocked → maybeDropChestForCampLocked).
+		if target.NeutralCampID != "" {
+			s.markCampKillerLocked(target.NeutralCampID, killerOwnerID)
 		}
 		// Anonymous or after bookkeeping: remove the unit. If the unit was
 		// already removed by the call site above, removeUnitLocked is safe

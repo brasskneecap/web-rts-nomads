@@ -105,6 +105,13 @@ func (s *GameState) playersAreHostileLocked(a, b string) bool {
 	if a == b {
 		return false
 	}
+	// Enemy wave faction vs neutral camps: gated by the per-map toggle. Default
+	// (off) makes them ignore each other; when enabled they fight. Checked before
+	// the blanket enemy/neutral-hostile rules below, which still apply to every
+	// other pairing (enemy vs player, neutral vs player).
+	if (a == enemyPlayerID && b == neutralPlayerID) || (a == neutralPlayerID && b == enemyPlayerID) {
+		return s.enemiesFightNeutralsLocked()
+	}
 	if a == enemyPlayerID || b == enemyPlayerID {
 		return true
 	}
@@ -112,6 +119,16 @@ func (s *GameState) playersAreHostileLocked(a, b string) bool {
 		return true
 	}
 	return s.playerTeamLocked(a) != s.playerTeamLocked(b)
+}
+
+// enemiesFightNeutralsLocked reports whether the active map enables combat
+// between the __enemy__ wave faction and __neutral__ camps
+// (WaveConfig.EnemiesFightNeutrals). Default false — they ignore each other.
+// Only has an observable effect when the two factions coexist on the field,
+// which today is continuous-wave mode.
+func (s *GameState) enemiesFightNeutralsLocked() bool {
+	cfg := s.MapConfig.WaveConfig
+	return cfg != nil && cfg.EnemiesFightNeutrals
 }
 
 // playersAreFriendlyLocked reports allies (same team, self included). This is

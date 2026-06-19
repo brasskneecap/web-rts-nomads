@@ -32,6 +32,18 @@ type WaveConfig struct {
 	TotalWaves   int     `json:"totalWaves,omitempty"`
 	PrepDuration float64 `json:"prepDuration,omitempty"`
 	WaveDuration float64 `json:"waveDuration,omitempty"`
+	// ContinuousWaves switches the map to continuous mode: once a wave starts
+	// releasing enemies it never waits for the field to clear — WaveDuration is
+	// the countdown to releasing the NEXT wave, so waves overlap and accumulate.
+	// An upgrade pick is still presented (sim frozen) at each new wave. Omitted
+	// or false ⇒ the legacy discrete (clear-the-field) flow.
+	ContinuousWaves bool `json:"continuousWaves,omitempty"`
+	// EnemiesFightNeutrals toggles hostility between the __enemy__ wave faction
+	// and __neutral__ camps. Default false ⇒ they ignore each other. When true
+	// they attack each other, and a camp whose killing blow came from an enemy
+	// unit drops no loot. Only has gameplay effect when the two coexist on the
+	// field (continuous mode), but is honored generally by playersAreHostile.
+	EnemiesFightNeutrals bool `json:"enemiesFightNeutrals,omitempty"`
 }
 
 // VictoryCondition defines a single win objective for a map. All conditions

@@ -999,7 +999,8 @@
     "waveConfig": {
       "totalWaves": 6,
       "prepDuration": 180,
-      "waveDuration": 60
+      "waveDuration": 120,
+      "continuousWaves": true
     },
     "campaign": {
       "campaignId": "forest",

@@ -34,6 +34,16 @@ type WaveManager struct {
 	Timer        float64
 	PrepDuration float64
 	WaveDuration float64 // 0 means no automatic timeout; wave must be ended externally
+	// Continuous, when true, runs the map in continuous-wave mode: the active
+	// phase advances to the next wave on the WaveDuration timer instead of
+	// waiting for the field to clear (see tickWaveLocked). Enemies persist and
+	// accumulate across waves; neutral camps reset each wave instead of
+	// despawning. Derived from MapConfig.WaveConfig.ContinuousWaves.
+	Continuous bool
+	// NeutralResetWave is the CurrentWave value the neutral camps were last reset
+	// for in continuous mode. tickNeutralCampsLocked resets all camps when this
+	// lags CurrentWave, giving "camps reset at the start of each new wave."
+	NeutralResetWave int
 }
 
 const enemyPlayerID = "__enemy__"
@@ -87,6 +97,7 @@ func (s *GameState) initWaveManagerLocked() {
 	prepDuration := wavePrepDuration
 	waveDuration := waveActiveDuration
 	totalWaves := maxWave
+	continuous := false
 
 	if cfg := s.MapConfig.WaveConfig; cfg != nil {
 		if cfg.PrepDuration > 0 {
@@ -98,6 +109,7 @@ func (s *GameState) initWaveManagerLocked() {
 		if cfg.TotalWaves > 0 {
 			totalWaves = cfg.TotalWaves
 		}
+		continuous = cfg.ContinuousWaves
 	}
 
 	s.WaveManager = WaveManager{
@@ -108,6 +120,7 @@ func (s *GameState) initWaveManagerLocked() {
 		Timer:        prepDuration,
 		PrepDuration: prepDuration,
 		WaveDuration: waveDuration,
+		Continuous:   continuous,
 	}
 }
 
@@ -148,10 +161,29 @@ func (s *GameState) tickWaveLocked(dt float64) {
 		if wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration {
 			wm.Timer = wm.WaveDuration
 		}
-		// Allow clear once the wave has been active for at least 5 seconds so
-		// spawners with 0-delay have had a chance to place enemies on the field.
-		// After that, transition as soon as all enemies are dead — no need to
-		// wait for the full WaveDuration timer.
+
+		// isFinalWave: the last wave of a bounded run. Both discrete maps and a
+		// bounded continuous map's final wave end by clearing the field.
+		isFinalWave := wm.TotalWaves > 0 && wm.CurrentWave >= wm.TotalWaves
+
+		// Continuous mode, non-final wave: advance to the NEXT wave purely on the
+		// WaveDuration countdown — the field is NOT cleared first, so enemies
+		// persist and accumulate. Crediting the wave-clear metric here is what
+		// lets a survive_waves objective progress (and end the run after its
+		// target wave). The upgrade pick is presented at each new wave.
+		if wm.Continuous && !isFinalWave {
+			if wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration {
+				s.recordWaveClearedMetricLocked()
+				wm.State = "upgrade"
+				s.enterWaveUpgradePhaseLocked()
+			}
+			return
+		}
+
+		// Discrete maps (and a continuous map's final wave): clear the field to
+		// progress. Allow clear once the wave has been active for at least 5
+		// seconds so spawners with 0-delay have had a chance to place enemies on
+		// the field. After that, transition as soon as all enemies are dead.
 		const minActiveSeconds = 5.0
 		if wm.Timer >= minActiveSeconds && s.countEnemyUnitsLocked() == 0 {
 			// Metrics: credit every human player with a wave clear before the
@@ -159,7 +191,7 @@ func (s *GameState) tickWaveLocked(dt float64) {
 			// clear hook: in single-team campaign play this is equivalent to
 			// "the team that survived the wave."
 			s.recordWaveClearedMetricLocked()
-			if wm.TotalWaves > 0 && wm.CurrentWave >= wm.TotalWaves {
+			if isFinalWave {
 				wm.State = "complete"
 				// Legacy markWaveObjectivesCompleteLocked() call removed in §9
 				// of campaign-objectives-and-metrics. The wave-complete state

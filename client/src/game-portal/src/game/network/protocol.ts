@@ -119,6 +119,12 @@ export type WaveConfig = {
   totalWaves?: number
   prepDuration?: number
   waveDuration?: number
+  // Continuous mode: waves keep releasing on the waveDuration timer instead of
+  // waiting for the field to clear; an upgrade pick is shown at each new wave.
+  continuousWaves?: boolean
+  // Whether the enemy wave faction and neutral camps attack each other. When on,
+  // a camp wiped by enemies drops no loot. Default off (they ignore each other).
+  enemiesFightNeutrals?: boolean
 }
 
 /** Runtime control assignment for a statically placed unit. "playerN" spawns
