@@ -37,22 +37,29 @@ func TestNeutralGroupLoader_LoadsTier1(t *testing.T) {
 
 // TestNeutralGroupLoader_TierFallback covers the spec's tier-fallback rule:
 // requesting tier K when tier_K.json is missing resolves to the largest
-// tier file <= K. With only tier 1 shipped today, every K >= 1 resolves to 1.
+// shipped tier <= K. Derives expectations from the tiers actually shipped
+// (neutralTiersSorted) rather than hardcoding a tier count, so adding a
+// tier_<N>.json file doesn't break this test.
 func TestNeutralGroupLoader_TierFallback(t *testing.T) {
-	cases := []struct {
-		requested int
-		want      int
-	}{
-		{1, 1},
-		{2, 1},
-		{5, 1},
-		{100, 1},
+	if len(neutralTiersSorted) == 0 {
+		t.Skip("no neutral tier files shipped")
 	}
-	for _, tc := range cases {
-		got := resolveNeutralTier(tc.requested)
-		if got != tc.want {
-			t.Errorf("resolveNeutralTier(%d): got %d, want %d", tc.requested, got, tc.want)
+	minTier := neutralTiersSorted[0]
+	maxTier := neutralTiersSorted[len(neutralTiersSorted)-1]
+
+	// Each shipped tier resolves to itself.
+	for _, tier := range neutralTiersSorted {
+		if got := resolveNeutralTier(tier); got != tier {
+			t.Errorf("resolveNeutralTier(%d): got %d, want %d (exact shipped tier)", tier, got, tier)
 		}
+	}
+	// Requesting well above the max resolves down to the largest shipped tier.
+	if got := resolveNeutralTier(maxTier + 100); got != maxTier {
+		t.Errorf("resolveNeutralTier(%d): got %d, want %d (largest shipped)", maxTier+100, got, maxTier)
+	}
+	// Requesting the minimum shipped tier resolves to itself, not below.
+	if got := resolveNeutralTier(minTier); got != minTier {
+		t.Errorf("resolveNeutralTier(%d): got %d, want %d", minTier, got, minTier)
 	}
 }
 

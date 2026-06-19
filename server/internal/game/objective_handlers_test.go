@@ -328,11 +328,12 @@ func TestSurviveWavesHandler_ValidateRejectsZero(t *testing.T) {
 // Cross-cutting: registry surface area.
 // =============================================================================
 
-// TestRegistry_ExposesAllSixHandlers pins the "shipped types" list. A future
+// TestRegistry_ExposesAllHandlers pins the "shipped types" list. A future
 // add or removal needs to update this test consciously.
-func TestRegistry_ExposesAllSixHandlers(t *testing.T) {
+func TestRegistry_ExposesAllHandlers(t *testing.T) {
 	expected := []string{
 		"build_buildings",
+		"capture_zone",
 		"collect_resource",
 		"kill_camps",
 		"kill_camps_before_wave",

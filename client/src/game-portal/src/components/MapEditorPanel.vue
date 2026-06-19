@@ -1450,6 +1450,7 @@ import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { initObstacleDefs, OBSTACLE_DEF_MAP } from '@/game/maps/obstacleDefs'
 import { BUILDING_DEF_MAP, BUILDING_DEFS, initBuildingDefs } from '@/game/maps/buildingDefs'
+import { getBuildingFallbackRender } from '@/game/maps/buildingFallbackRender'
 import { initPathBounds, initPathsByUnitType } from '@/game/maps/unitDefs'
 
 const model = defineModel<MapConfig>({ required: true })
@@ -1656,11 +1657,13 @@ const activeBrushMode = computed(() =>
 // surfaced last. Drives the paint dropdown so any catalog addition (e.g. a new
 // chapel) is paintable in the editor with zero code changes. Excludes
 // enemy-spawnpoint — it has its own top-level "Enemy Spawn" brush mode with a
-// dedicated config UI rather than living inside the Building brush.
+// dedicated config UI rather than living inside the Building brush. Also excludes
+// upgrade-tier defs (keep/castle): they're runtime tier states of their base
+// building, not independently placeable.
 const paintableBuildingDefs = computed(() => {
   const classRank = (kind: string) => (kind === 'player' ? 0 : kind === 'neutral' ? 1 : 2)
   return BUILDING_DEFS
-    .filter((def) => def.type !== 'enemy-spawnpoint')
+    .filter((def) => def.type !== 'enemy-spawnpoint' && !def.upgradesFrom)
     .slice()
     .sort((a, b) => {
       const ca = classRank(a.class ?? 'player')
@@ -3648,7 +3651,7 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
     const width = building.width * cellSize
     const height = building.height * cellSize
     const def = BUILDING_DEF_MAP.get(building.buildingType)
-    const renderDef = def?.render
+    const renderDef = getBuildingFallbackRender(building.buildingType)
     const spriteRenderDef = def?.spriteRender
     const sprite = getBuildingSprite(building.buildingType)
     // Sprite box may extend beyond the grid footprint (e.g. townhall's 3x3

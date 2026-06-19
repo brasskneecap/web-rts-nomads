@@ -1,0 +1,39 @@
+{
+  "type": "keep",
+  "class": "player",
+  "buildable": false,
+  "upgradesFrom": "townhall",
+  "upgradeCost": {
+    "gold": 300,
+    "wood": 450
+  },
+  "upgradeSeconds": 45,
+  "width": 3,
+  "height": 2,
+  "spriteRender": {
+    "offsetY": -1,
+    "height": 3
+  },
+  "visionRange": 960,
+  "maxHp": 1000,
+  "buildSeconds": 30,
+  "resourceCost": {
+    "gold": 400,
+    "wood": 400
+  },
+  "capabilities": [
+    "unit-spawner",
+    "occupiable",
+    "deposit-point",
+    "vault-access"
+  ],
+  "spawnUnitTypes": [
+    "worker"
+  ],
+  "metadata": {
+    "foodSupply": 10
+  },
+  "color": "#b45309",
+  "label": "Keep",
+  "hotkey": ""
+}

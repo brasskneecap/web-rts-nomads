@@ -1,0 +1,39 @@
+{
+  "type": "castle",
+  "class": "player",
+  "buildable": false,
+  "upgradesFrom": "keep",
+  "upgradeCost": {
+    "gold": 600,
+    "wood": 800
+  },
+  "upgradeSeconds": 90,
+  "width": 3,
+  "height": 2,
+  "spriteRender": {
+    "offsetY": -1,
+    "height": 3
+  },
+  "visionRange": 960,
+  "maxHp": 1000,
+  "buildSeconds": 30,
+  "resourceCost": {
+    "gold": 400,
+    "wood": 200
+  },
+  "capabilities": [
+    "unit-spawner",
+    "occupiable",
+    "deposit-point",
+    "vault-access"
+  ],
+  "spawnUnitTypes": [
+    "worker"
+  ],
+  "metadata": {
+    "foodSupply": 10
+  },
+  "color": "#b45309",
+  "label": "Castle",
+  "hotkey": ""
+}

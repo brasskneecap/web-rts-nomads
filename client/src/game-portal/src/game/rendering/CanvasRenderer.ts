@@ -10,6 +10,7 @@ import {
 } from '../maps/mapConfig'
 import { drawMinimapBase, drawMinimapPOIs } from './minimapLayers'
 import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual } from '../maps/buildingDefs'
+import { getBuildingFallbackRender } from '../maps/buildingFallbackRender'
 import {
   CONSTRUCTION_FRAME_COUNT,
   DAMAGED_FRAMES_PER_TIER,
@@ -829,7 +830,7 @@ export class CanvasRenderer {
           : null
 
       const buildingDef = BUILDING_DEF_MAP.get(building.buildingType)
-      const renderDef = buildingDef?.render
+      const renderDef = getBuildingFallbackRender(building.buildingType)
       const spriteRenderDef = buildingDef?.spriteRender
       const inset = renderDef ? renderDef.inset * cellSize : cellSize * 0.18
 
@@ -3828,7 +3829,7 @@ export class CanvasRenderer {
     const worldX = cursorGridX * cellSize
     const worldY = cursorGridY * cellSize
     const buildingDef = BUILDING_DEF_MAP.get(placement.buildingType)
-    const renderDef = buildingDef?.render
+    const renderDef = getBuildingFallbackRender(placement.buildingType)
     const spriteRenderDef = buildingDef?.spriteRender
     const sprite = getBuildingSprite(placement.buildingType)
     const footW = gridW * cellSize

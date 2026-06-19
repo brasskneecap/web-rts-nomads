@@ -98,11 +98,18 @@ export type BuildingDef = {
   // Minimum town-hall tier the owning player must control to build this.
   // 0/omitted ⇒ no requirement. Mirrors the server's BuildingDef field.
   requiresTownhallTier?: number
+  // Tier-chain fields (mirrors the server's BuildingDef). A tier def (e.g.
+  // keep, castle) sets upgradesFrom to its previous tier and carries the cost
+  // + duration to upgrade INTO it. A placed building keeps its base type plus a
+  // numeric `tier` in metadata; these defs drive the upgrade action label/cost
+  // and the tier display names. See getUpgradeChain.
+  upgradesFrom?: string
+  upgradeCost?: Record<string, number>
+  upgradeSeconds?: number
   metadata: JsonObject
   color: string
   label: string
   hotkey: string
-  render?: BuildingRenderDef
   spriteRender?: BuildingSpriteRenderDef
   selectionRing?: BuildingSelectionRingDef
 }
@@ -123,6 +130,30 @@ export function initBuildingDefs(defs: BuildingDef[]): void {
   }))
   BUILDABLE_BUILDING_DEFS = BUILDING_DEFS.filter((def) => def.buildable !== false)
   BUILDING_DEF_MAP = new Map(BUILDING_DEFS.map((def) => [def.type, def]))
+}
+
+// Resolves the tier chain rooted at rootType by following upgradesFrom links —
+// e.g. getUpgradeChain('townhall') → [townhall, keep, castle]. Mirrors the
+// server's upgradeChainFor: deterministic and capped at the catalog size so a
+// malformed cycle can't loop forever. Returns [] if rootType is unknown.
+export function getUpgradeChain(rootType: string): BuildingDef[] {
+  const root = BUILDING_DEF_MAP.get(rootType)
+  if (!root) return []
+  const chain: BuildingDef[] = [root]
+  while (chain.length <= BUILDING_DEFS.length) {
+    const current = chain[chain.length - 1]
+    const next = BUILDING_DEFS.find((def) => def.upgradesFrom === current.type)
+    if (!next) break
+    chain.push(next)
+  }
+  return chain
+}
+
+// Display name for a 1-based town-hall tier, sourced from the upgrade chain
+// (tier 1 = Town Hall, 2 = Keep, 3 = Castle). Falls back to a generic label.
+export function townHallTierName(tier: number): string {
+  const chain = getUpgradeChain('townhall')
+  return chain[tier - 1]?.label ?? `Tier ${tier}`
 }
 
 export function getResolvedBuildingAttackVisual(

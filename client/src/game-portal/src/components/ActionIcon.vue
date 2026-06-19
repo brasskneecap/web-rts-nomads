@@ -9,6 +9,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import type { ActionItem } from '@/game/core/GameState'
 import { BUILDING_DEF_MAP } from '@/game/maps/buildingDefs'
+import { getBuildingFallbackRender } from '@/game/maps/buildingFallbackRender'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
 import { ACTION_ICON_MAP } from '@/game/maps/actionIconDefs'
 import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
@@ -50,9 +51,10 @@ function drawBuilding(ctx: CanvasRenderingContext2D, type: string) {
   }
 
   const def = BUILDING_DEF_MAP.get(type)
-  if (!def?.render) return
+  const render = getBuildingFallbackRender(type)
+  if (!def || !render) return
 
-  const { render, width: bW, height: bH, color: playerColor } = def
+  const { width: bW, height: bH, color: playerColor } = def
   const cellSize = DRAW_SIZE / Math.max(bW, bH)
   const offsetX = PADDING + (DRAW_SIZE - bW * cellSize) / 2
   const offsetY = PADDING + (DRAW_SIZE - bH * cellSize) / 2

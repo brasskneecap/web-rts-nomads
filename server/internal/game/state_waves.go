@@ -34,9 +34,6 @@ type WaveManager struct {
 	Timer        float64
 	PrepDuration float64
 	WaveDuration float64 // 0 means no automatic timeout; wave must be ended externally
-	// TEMP TEST: guards the pre-wave-1 upgrade hook so it fires exactly once.
-	// Remove when the test hook in tickWaveLocked is removed.
-	testUpgradeFired bool
 }
 
 const enemyPlayerID = "__enemy__"
@@ -123,14 +120,6 @@ func (s *GameState) tickWaveLocked(dt float64) {
 
 	switch wm.State {
 	case "prep":
-		// TEMP TEST: show upgrade modal before wave 1 so the UI can be verified.
-		// Remove this block when done testing.
-		if wm.CurrentWave == 0 && len(s.Players) > 0 && !wm.testUpgradeFired {
-			wm.testUpgradeFired = true
-			wm.State = "upgrade"
-			s.enterWaveUpgradePhaseLocked()
-			return
-		}
 		wm.Timer -= dt
 		if wm.Timer <= 0 {
 			// Advance to the next wave's active phase.

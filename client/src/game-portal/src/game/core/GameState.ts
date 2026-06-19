@@ -35,7 +35,7 @@ import type {
 } from '../network/protocol'
 import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID, UNIT_ORDER_LABELS } from '../network/protocol'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
-import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP } from '../maps/buildingDefs'
+import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP, getUpgradeChain, townHallTierName } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
@@ -3192,17 +3192,14 @@ function getPerkActionItems(unit: Unit): ActionItem[] {
   ]
 }
 
-// Names matching tier levels in handleUpgradeTownHallLocked. Used to label
-// "Requires Keep / Castle" tooltips on locked build-menu entries.
-const TOWN_HALL_TIER_NAMES = ['Town Hall', 'Keep', 'Castle']
-
 function buildMenuActionForDef(
   def: (typeof BUILDABLE_BUILDING_DEFS)[number],
   townHallTier: number,
 ): ActionItem {
   const requiredTier = def.requiresTownhallTier ?? 0
   const meetsTier = requiredTier <= 0 || townHallTier >= requiredTier
-  const tierName = TOWN_HALL_TIER_NAMES[requiredTier - 1] ?? `Tier ${requiredTier}`
+  // Tier name ("Requires Keep / Castle") comes from the town-hall upgrade chain.
+  const tierName = townHallTierName(requiredTier)
   return {
     id: `build-${def.type}`,
     label: def.label,
@@ -3601,25 +3598,22 @@ function getBuildingActions(
     while (actions.length < 8) {
       actions.push({ id: '', label: '', disabled: true })
     }
+    // Tier chain (townhall → keep → castle) drives the label, cost, and max
+    // tier — all sourced from the catalog rather than hardcoded here.
+    const chain = getUpgradeChain('townhall')
     const tier = townHallTier || 1
     const tierUpRemaining = getBuildingMetadataNumber(building, 'tierUpRemaining')
     const inProgress = tierUpRemaining !== undefined
-    const atMax = tier >= 3
+    const atMax = tier >= chain.length
 
-    let label = 'Town Hall (Max)'
+    let label = `${chain[tier - 1]?.label ?? 'Town Hall'} (Max)`
     let cost: ActionCost[] | undefined
-    if (tier === 1) {
-      label = 'Upgrade to Keep'
-      cost = [
-        { resourceId: 'gold', amount: 400, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' },
-        { resourceId: 'wood', amount: 250, accent: RESOURCE_ACCENT.wood ?? '#7a9a52' },
-      ]
-    } else if (tier === 2) {
-      label = 'Upgrade to Castle'
-      cost = [
-        { resourceId: 'gold', amount: 800, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' },
-        { resourceId: 'wood', amount: 500, accent: RESOURCE_ACCENT.wood ?? '#7a9a52' },
-      ]
+    if (!atMax) {
+      const nextDef = chain[tier] // tier is 1-based; index tier = next tier def
+      label = `Upgrade to ${nextDef?.label ?? 'next tier'}`
+      cost = Object.entries(nextDef?.upgradeCost ?? {})
+        .filter(([, amount]) => amount > 0)
+        .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' }))
     }
 
     actions.push({
@@ -3786,8 +3780,7 @@ function appendTierUpDetails(building: BuildingTile, details: DetailItem[]): voi
   const tierUpTotal = getBuildingMetadataNumber(building, 'tierUpTotal')
   const tierTargetLevel = getBuildingMetadataNumber(building, 'tierTargetLevel')
   if (tierUpRemaining === undefined || tierUpTotal === undefined || tierUpTotal <= 0) return
-  const tierNames = ['Town Hall', 'Keep', 'Castle']
-  const targetName = tierTargetLevel !== undefined ? (tierNames[Math.round(tierTargetLevel) - 1] ?? 'next tier') : 'next tier'
+  const targetName = tierTargetLevel !== undefined ? townHallTierName(Math.round(tierTargetLevel)) : 'next tier'
   const progress = Math.max(0, Math.min(1, 1 - tierUpRemaining / tierUpTotal))
   details.push({ id: 'tierup-remaining', label: 'Upgrading to', value: targetName })
   details.push({ id: 'tierup-progress', label: 'Progress', value: String(progress) })

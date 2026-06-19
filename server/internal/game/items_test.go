@@ -316,12 +316,17 @@ func TestPurchaseItem_VaultAtCapacity_NoOp(t *testing.T) {
 	}
 }
 
-// TestPurchaseItem_TownhallDestroyed_NoOp verifies purchases fail when the TH
-// is gone (tier == 0), even if vault has space.
-func TestPurchaseItem_TownhallDestroyed_NoOp(t *testing.T) {
+// TestPurchaseItem_TownhallDestroyed_RespectsBaseVaultCapacity verifies the
+// destroyed-townhall path: with the TH gone (tier 0) the player falls back to
+// the base no-townhall vault capacity rather than being blocked outright, and
+// purchases are still capped at that capacity. (Previously no townhall meant
+// capacity 0, which blocked all purchases; the base capacity is now positive,
+// so the gate is "full vault", not "no townhall".)
+func TestPurchaseItem_TownhallDestroyed_RespectsBaseVaultCapacity(t *testing.T) {
 	s, playerID := newItemTestState(t)
 
-	// Destroy the townhall by making it invisible.
+	// Destroy the townhall by making it invisible, then fill the vault to the
+	// base capacity so the next purchase must be rejected for lack of room.
 	s.mu.Lock()
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
@@ -329,14 +334,32 @@ func TestPurchaseItem_TownhallDestroyed_NoOp(t *testing.T) {
 			b.Visible = false
 		}
 	}
+	baseCapacity := s.vaultCapacityForPlayerLocked(playerID)
+	player := s.Players[playerID]
+	for i := 0; i < baseCapacity; i++ {
+		s.nextItemInstanceID++
+		player.Vault = append(player.Vault, &VaultItem{
+			InstanceID: s.nextItemInstanceID,
+			ItemID:     "broad_sword",
+			Stacks:     1,
+		})
+	}
 	s.mu.Unlock()
 
+	if baseCapacity <= 0 {
+		t.Fatalf("expected a positive base vault capacity with no townhall, got %d", baseCapacity)
+	}
+
+	goldBefore := player.Resources["gold"]
 	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if len(s.Players[playerID].Vault) != 0 {
-		t.Errorf("expected empty vault when TH destroyed, got %d items", len(s.Players[playerID].Vault))
+	if len(player.Vault) != baseCapacity {
+		t.Errorf("expected vault to stay at base capacity %d, got %d", baseCapacity, len(player.Vault))
+	}
+	if player.Resources["gold"] != goldBefore {
+		t.Errorf("expected no gold deducted at capacity, gold changed from %d to %d", goldBefore, player.Resources["gold"])
 	}
 }
 

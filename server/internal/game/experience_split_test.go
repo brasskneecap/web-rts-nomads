@@ -51,14 +51,16 @@ func TestSpawnRaiderUnit_SeedsXPValue(t *testing.T) {
 
 func TestExperienceTuning_DefaultsLoaded(t *testing.T) {
 	et := gameplayTuning().Experience
-	if et.Mode != experienceModeClassic {
-		t.Errorf("default experience.mode = %q, want %q", et.Mode, experienceModeClassic)
+	// Don't pin exact balance values (mode / xp / radius all get retuned in the
+	// catalog) — assert the tuning loaded as a valid, sane config instead.
+	if et.Mode != experienceModeClassic && et.Mode != experienceModeSplit {
+		t.Errorf("default experience.mode = %q, want one of %q / %q", et.Mode, experienceModeClassic, experienceModeSplit)
 	}
-	if et.SplitDefaultXP != 10 {
-		t.Errorf("default experience.splitDefaultXP = %d, want 10", et.SplitDefaultXP)
+	if et.SplitDefaultXP <= 0 {
+		t.Errorf("default experience.splitDefaultXP = %d, want a positive value", et.SplitDefaultXP)
 	}
-	if et.SplitEligibilityRadius != 500 {
-		t.Errorf("default experience.splitEligibilityRadius = %v, want 500", et.SplitEligibilityRadius)
+	if et.SplitEligibilityRadius <= 0 {
+		t.Errorf("default experience.splitEligibilityRadius = %v, want a positive configured radius", et.SplitEligibilityRadius)
 	}
 }
 
@@ -99,6 +101,10 @@ func withExperienceTuning(t *testing.T, et ExperienceTuning) {
 
 func splitTuning(radius float64) ExperienceTuning {
 	return ExperienceTuning{Mode: experienceModeSplit, SplitDefaultXP: 10, SplitEligibilityRadius: radius}
+}
+
+func classicTuning() ExperienceTuning {
+	return ExperienceTuning{Mode: experienceModeClassic, SplitDefaultXP: 10, SplitEligibilityRadius: 700}
 }
 
 func TestSplit_EvenDivisionAmongInRangeUnits(t *testing.T) {
@@ -233,8 +239,11 @@ func TestSplit_ZeroXPValue_NoAward(t *testing.T) {
 }
 
 func TestDispatcher_ClassicReproducesPair(t *testing.T) {
-	// Default tuning = classic. awardUnitDeathXPLocked(dead, killer) must equal
-	// the legacy pair: killer gets the kill bonus, contributors get damage XP.
+	// This test asserts a property of CLASSIC mode, so pin it explicitly rather
+	// than relying on the catalog default (which is now "split").
+	// awardUnitDeathXPLocked(dead, killer) must equal the legacy pair: killer
+	// gets the kill bonus, contributors get damage XP.
+	withExperienceTuning(t, classicTuning())
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	s.mu.Lock()
 	defer s.mu.Unlock()

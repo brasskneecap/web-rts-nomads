@@ -83,6 +83,12 @@ func TestWaveStatBuffs_SpawnedUnitReceivesStackedMultipliers(t *testing.T) {
 		Resources:    map[string]int{},
 		Upgrades:     map[UpgradeTrack]int{},
 		UpgradeState: newPlayerUpgradeState(1, 99),
+		// Real players spawn with 1.0 damage multipliers (see state.go player
+		// init). applyPlayerUpgradesAtSpawnLocked bakes this into BaseDamage, so
+		// a hand-built player that leaves it at the zero value would zero out
+		// BaseDamage at spawn.
+		PhysicalDamageMultiplier: 1.0,
+		MagicDamageMultiplier:    1.0,
 	}
 
 	// Spawn a soldier so we know its catalog BaseDamage.

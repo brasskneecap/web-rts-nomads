@@ -208,29 +208,46 @@ func TestValidateMapCampaignBlockForSave_RejectsOrphanedCampaignID(t *testing.T)
 	}
 }
 
+// anyCampaignMapEntry returns the (mapID, campaignID, levelID) of the first
+// catalog map that owns a campaign level, so the cross-map save tests below
+// don't hardcode which map owns which levelId (that moves around as the map
+// catalog is edited).
+func anyCampaignMapEntry(t *testing.T) (mapID, campaignID, levelID string) {
+	t.Helper()
+	for _, entry := range currentMapCatalogSnapshot() {
+		if c := entry.Map.Campaign; c != nil && c.LevelID != "" {
+			return entry.ID, c.CampaignID, c.LevelID
+		}
+	}
+	t.Skip("no campaign map entries in catalog")
+	return "", "", ""
+}
+
 // TestValidateMapCampaignBlockForSave_RejectsDuplicateLevelIDAcrossMaps is
 // the regression guard for the editor footgun: an author saves a NEW map and
 // types a levelId that another map in the same campaign already claims. The
 // save must fail so the next /api/catalog/campaigns request doesn't panic
 // the server in discovery's duplicate-id check.
 //
-// Embedded forest_01 lives on exploration.json, so saving a different map id
-// (here "exploration_alt") with levelId "forest_01" must be rejected.
+// Discovers a real (mapID, campaignID, levelID) from the catalog, then saves a
+// DIFFERENT map id with that levelId — which must be rejected and the error
+// must name the conflicting level + the owning map.
 func TestValidateMapCampaignBlockForSave_RejectsDuplicateLevelIDAcrossMaps(t *testing.T) {
+	ownerMapID, campaignID, levelID := anyCampaignMapEntry(t)
 	block := &protocol.MapCampaignBlock{
-		CampaignID:  "forest",
-		LevelID:     "forest_01",
+		CampaignID:  campaignID,
+		LevelID:     levelID,
 		DisplayName: "Stolen Slot",
 		Objectives: []protocol.MapCampaignObjective{
 			makeMapCampaignObjective(t, "win_waves", "survive_waves", surviveWavesConfig{WavesToSurvive: 3}),
 		},
 	}
-	err := ValidateMapCampaignBlockForSave("exploration_alt", block)
+	err := ValidateMapCampaignBlockForSave(ownerMapID+"_alt", block)
 	if err == nil {
 		t.Fatal("expected error for duplicate levelId across maps; got nil")
 	}
-	if !strings.Contains(err.Error(), "forest_01") || !strings.Contains(err.Error(), "exploration") {
-		t.Errorf("expected error to name the conflicting level + map, got %q", err.Error())
+	if !strings.Contains(err.Error(), levelID) || !strings.Contains(err.Error(), ownerMapID) {
+		t.Errorf("expected error to name the conflicting level %q + owner map %q, got %q", levelID, ownerMapID, err.Error())
 	}
 }
 
@@ -239,15 +256,16 @@ func TestValidateMapCampaignBlockForSave_RejectsDuplicateLevelIDAcrossMaps(t *te
 // Without the entry.ID == mapID skip in the cross-map loop, every in-place
 // edit would falsely trip the duplicate guard against its own previous save.
 func TestValidateMapCampaignBlockForSave_AllowsSameMapResave(t *testing.T) {
+	ownerMapID, campaignID, levelID := anyCampaignMapEntry(t)
 	block := &protocol.MapCampaignBlock{
-		CampaignID:  "forest",
-		LevelID:     "forest_01",
-		DisplayName: "Forest 1 (edited)",
+		CampaignID:  campaignID,
+		LevelID:     levelID,
+		DisplayName: "Edited",
 		Objectives: []protocol.MapCampaignObjective{
 			makeMapCampaignObjective(t, "win_waves", "survive_waves", surviveWavesConfig{WavesToSurvive: 5}),
 		},
 	}
-	if err := ValidateMapCampaignBlockForSave("exploration", block); err != nil {
+	if err := ValidateMapCampaignBlockForSave(ownerMapID, block); err != nil {
 		t.Fatalf("expected re-save of same map to succeed; got %v", err)
 	}
 }

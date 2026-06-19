@@ -494,12 +494,12 @@ func (s *GameState) CancelUpgrade(playerID, buildingID string) {
 // Requirements:
 //   - Building exists, is type "townhall", owned by playerID, fully built.
 //   - No active tier-up already in progress (no "tierUpRemaining" key).
-//   - Current tier < 3.
+//   - Current tier below the max (the townhall upgrade chain length).
 //   - Player can afford the upgrade.
 //
-// Costs: tier 1→2: 400 gold / 250 wood / 45 s.
-//
-//	tier 2→3: 800 gold / 500 wood / 90 s.
+// Cost and duration for each transition come from the next tier's catalog def
+// (keep.json, castle.json) via its upgradeCost / upgradeSeconds fields — the
+// chain is resolved by upgradeChainFor("townhall").
 //
 // On success: deduct resources, stamp tierUpRemaining/tierUpTotal/tierTargetLevel
 // into building metadata. Must be called under s.mu.
@@ -526,24 +526,24 @@ func (s *GameState) handleUpgradeTownHallLocked(playerID string, buildingID stri
 	if v, ok := getMetadataFloat(building.Metadata, "tier"); ok && v >= 1 {
 		currentTier = int(v)
 	}
-	if currentTier >= 3 {
-		return
+
+	// Walk the catalog-defined tier chain (townhall → keep → castle). The chain
+	// length is the max tier; the def at index currentTier is the next tier and
+	// carries the cost + duration for this transition.
+	chain := upgradeChainFor("townhall")
+	if currentTier >= len(chain) {
+		return // already at max tier
+	}
+	targetDef := chain[currentTier]
+	goldCost := targetDef.UpgradeCost["gold"]
+	woodCost := targetDef.UpgradeCost["wood"]
+	duration := targetDef.UpgradeSeconds
+	if duration <= 0 {
+		return // misconfigured tier def
 	}
 
 	player, ok := s.Players[playerID]
 	if !ok {
-		return
-	}
-
-	// Determine cost and duration for this tier transition.
-	var goldCost, woodCost int
-	var duration float64
-	switch currentTier {
-	case 1:
-		goldCost, woodCost, duration = 400, 250, 45.0
-	case 2:
-		goldCost, woodCost, duration = 800, 500, 90.0
-	default:
 		return
 	}
 

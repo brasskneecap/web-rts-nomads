@@ -11,8 +11,10 @@ import (
 var buildingDefsFS embed.FS
 
 // BuildingDef holds the configuration for a buildable building type.
-// Client-only fields (Color, Label, Hotkey, Render) are passed through to the
-// API as-is; the server game logic never reads them.
+// Client-only fields (Color, Label, Hotkey) are passed through to the
+// API as-is; the server game logic never reads them. Procedural render
+// fallbacks are no longer carried in the catalog — they live frontend-side
+// (see client buildingFallbackRender.ts).
 type BuildingDef struct {
 	Type         string  `json:"type"`
 	Class        string  `json:"class,omitempty"`
@@ -42,12 +44,25 @@ type BuildingDef struct {
 	// BuildBuilding accepts the placement. Zero/omitted ⇒ no requirement.
 	// Tiers: 1 = Town Hall, 2 = Keep, 3 = Castle (mirrors the upgrade chain
 	// in state_upgrades.go's handleUpgradeTownHallLocked).
-	RequiresTownhallTier int             `json:"requiresTownhallTier,omitempty"`
-	Metadata             map[string]any  `json:"metadata"`
-	Color                string          `json:"color,omitempty"`
-	Label                string          `json:"label,omitempty"`
-	Hotkey               string          `json:"hotkey,omitempty"`
-	Render               json.RawMessage `json:"render,omitempty"`
+	RequiresTownhallTier int `json:"requiresTownhallTier,omitempty"`
+	// UpgradesFrom names the building type this one is a tier-up of (e.g. keep
+	// upgradesFrom townhall, castle upgradesFrom keep). Empty for base/standalone
+	// buildings. The defs form an ordered chain that the tier-up logic walks
+	// instead of hardcoding tiers. NOTE: a placed building keeps its base type
+	// plus a numeric `tier` in metadata — it does not change BuildingType on
+	// upgrade. These tier defs supply the per-step cost, duration, and display
+	// name; their other stats currently mirror the base (tiers are stat-identical
+	// today) and are the hook for future per-tier balancing.
+	UpgradesFrom string `json:"upgradesFrom,omitempty"`
+	// UpgradeCost is the resource cost to upgrade INTO this tier (paired with
+	// UpgradesFrom). Ignored on base buildings.
+	UpgradeCost map[string]int `json:"upgradeCost,omitempty"`
+	// UpgradeSeconds is how long the tier-up into this building takes.
+	UpgradeSeconds float64        `json:"upgradeSeconds,omitempty"`
+	Metadata       map[string]any `json:"metadata"`
+	Color          string         `json:"color,omitempty"`
+	Label          string         `json:"label,omitempty"`
+	Hotkey         string         `json:"hotkey,omitempty"`
 	// SpriteRender lets a building's sprite extend beyond its grid footprint
 	// without affecting pathing, selection hit-testing, or the grid cells
 	// the building occupies. Mirrors ObstacleRenderDef semantics (cell units,
@@ -143,6 +158,43 @@ func loadBuildingDefsByType() map[string]BuildingDef {
 func getBuildingDef(buildingType string) (BuildingDef, bool) {
 	def, ok := buildingDefsByType[buildingType]
 	return def, ok
+}
+
+// upgradeChainFor returns the ordered tier chain rooted at rootType: the base
+// def first, then each def whose UpgradesFrom points at the previous link.
+// e.g. upgradeChainFor("townhall") → [townhall, keep, castle]. Returns nil if
+// rootType is unknown. The catalog is authored as a straight chain; the scan is
+// deterministic (sorted by type) and capped at the catalog size so a malformed
+// cycle can't loop forever.
+func upgradeChainFor(rootType string) []BuildingDef {
+	root, ok := buildingDefsByType[rootType]
+	if !ok {
+		return nil
+	}
+
+	types := make([]string, 0, len(buildingDefsByType))
+	for t := range buildingDefsByType {
+		types = append(types, t)
+	}
+	sort.Strings(types)
+
+	chain := []BuildingDef{root}
+	for len(chain) <= len(buildingDefsByType) {
+		current := chain[len(chain)-1]
+		var next BuildingDef
+		found := false
+		for _, t := range types {
+			if d := buildingDefsByType[t]; d.UpgradesFrom == current.Type {
+				next, found = d, true
+				break
+			}
+		}
+		if !found {
+			break
+		}
+		chain = append(chain, next)
+	}
+	return chain
 }
 
 func (d BuildingDef) IsBuildable() bool {

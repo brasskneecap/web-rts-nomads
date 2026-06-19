@@ -302,9 +302,6 @@ func TestLootDrop_PickupVaultFullPreservesResources(t *testing.T) {
 		[]string{"broad_sword"},
 	)
 
-	// Player with no townhall → vaultCapacityForPlayerLocked returns 0.
-	// The test state created by newTestStateForLootDrops has no townhall
-	// buildings, so the capacity check is 0 without any extra setup.
 	player := &Player{
 		ID:        "p1",
 		Resources: map[string]int{},
@@ -312,10 +309,21 @@ func TestLootDrop_PickupVaultFullPreservesResources(t *testing.T) {
 	}
 	s.Players["p1"] = player
 
-	// Confirm vault capacity is 0 before proceeding; if this fails the
-	// test-state assumption has changed and the setup needs updating.
-	if cap := s.vaultCapacityForPlayerLocked("p1"); cap != 0 {
-		t.Fatalf("test setup: expected vault capacity 0 (no townhall), got %d", cap)
+	// Fill the vault to its actual capacity so the pickup below exercises the
+	// vault-full path regardless of the configured capacity value (it no longer
+	// happens to be 0 for a player without a townhall). Each broad_sword is
+	// equipment and occupies its own slot.
+	capacity := s.vaultCapacityForPlayerLocked("p1")
+	if capacity <= 0 {
+		t.Fatalf("test setup: expected a positive vault capacity, got %d", capacity)
+	}
+	for i := 0; i < capacity; i++ {
+		s.nextItemInstanceID++
+		player.Vault = append(player.Vault, &VaultItem{
+			InstanceID: s.nextItemInstanceID,
+			ItemID:     "broad_sword",
+			Stacks:     1,
+		})
 	}
 
 	// Unit standing on the chest.
@@ -344,9 +352,9 @@ func TestLootDrop_PickupVaultFullPreservesResources(t *testing.T) {
 	if got := player.Resources["wood"]; got != 15 {
 		t.Errorf("wood = %d, want 15 (resources should grant even when vault is full)", got)
 	}
-	// Vault is still empty — the item did not fit.
-	if len(player.Vault) != 0 {
-		t.Errorf("vault grew to %d entries despite cap=0", len(player.Vault))
+	// Vault stays at capacity — the overflow item did not fit.
+	if len(player.Vault) != capacity {
+		t.Errorf("vault grew beyond capacity %d to %d entries", capacity, len(player.Vault))
 	}
 	// Notification reports the item as overflow, not collected.
 	notifs := s.drainPendingLootNotificationsLocked()
