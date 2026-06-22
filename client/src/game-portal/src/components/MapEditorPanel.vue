@@ -955,14 +955,22 @@
             <input id="neutral-aggro" v-model.number="neutralAggroRange" type="number" min="0" :disabled="!paintModeEnabled" />
             <label for="neutral-leash">Leash Range</label>
             <input id="neutral-leash" v-model.number="neutralLeashRange" type="number" min="0" :disabled="!paintModeEnabled" />
-            <label for="neutral-hp-base">Health Multiplier</label>
-            <input id="neutral-hp-base" v-model.number="neutralHealthMultiplier" type="number" step="0.1" min="0" :disabled="!paintModeEnabled" />
-            <label for="neutral-hp-perwave">Health Multiplier Per Wave</label>
-            <input id="neutral-hp-perwave" v-model.number="neutralHealthMultiplierPerWave" type="number" step="0.1" min="0" :disabled="!paintModeEnabled" />
-            <label for="neutral-dmg-base">Damage Multiplier</label>
-            <input id="neutral-dmg-base" v-model.number="neutralDamageMultiplier" type="number" step="0.1" min="0" :disabled="!paintModeEnabled" />
-            <label for="neutral-dmg-perwave">Damage Multiplier Per Wave</label>
-            <input id="neutral-dmg-perwave" v-model.number="neutralDamageMultiplierPerWave" type="number" step="0.1" min="0" :disabled="!paintModeEnabled" />
+            <label for="neutral-hp-base">Wave 1 Health (%)</label>
+            <input id="neutral-hp-base" type="number" step="10" min="0" :disabled="!paintModeEnabled"
+              :value="Math.round(neutralHealthMultiplier * 100)"
+              @input="neutralHealthMultiplier = (+($event.target as HTMLInputElement).value) / 100" />
+            <label for="neutral-hp-perwave">Health Increase Per Wave (%)</label>
+            <input id="neutral-hp-perwave" type="number" step="10" min="0" :disabled="!paintModeEnabled"
+              :value="Math.round(neutralHealthMultiplierPerWave * 100)"
+              @input="neutralHealthMultiplierPerWave = (+($event.target as HTMLInputElement).value) / 100" />
+            <label for="neutral-dmg-base">Wave 1 Damage (%)</label>
+            <input id="neutral-dmg-base" type="number" step="10" min="0" :disabled="!paintModeEnabled"
+              :value="Math.round(neutralDamageMultiplier * 100)"
+              @input="neutralDamageMultiplier = (+($event.target as HTMLInputElement).value) / 100" />
+            <label for="neutral-dmg-perwave">Damage Increase Per Wave (%)</label>
+            <input id="neutral-dmg-perwave" type="number" step="10" min="0" :disabled="!paintModeEnabled"
+              :value="Math.round(neutralDamageMultiplierPerWave * 100)"
+              @input="neutralDamageMultiplierPerWave = (+($event.target as HTMLInputElement).value) / 100" />
           </div>
 
           <div v-if="brushMode === 'unit'" class="control-group unit-brush-config">
@@ -1374,35 +1382,35 @@
             />
           </div>
           <div class="edit-field">
-            <label>Health Multiplier</label>
+            <label>Wave 1 Health (%)</label>
             <input
-              type="number" min="0" step="0.1"
-              :value="selectedEditNeutralSpawn.healthMultiplier ?? 1"
-              @input="updateSelectedNeutralSpawn({ healthMultiplier: +($event.target as HTMLInputElement).value })"
+              type="number" min="0" step="10"
+              :value="Math.round((selectedEditNeutralSpawn.healthMultiplier ?? 1) * 100)"
+              @input="updateSelectedNeutralSpawn({ healthMultiplier: (+($event.target as HTMLInputElement).value) / 100 })"
             />
           </div>
           <div class="edit-field">
-            <label>Health Multiplier Per Wave</label>
+            <label>Health Increase Per Wave (%)</label>
             <input
-              type="number" min="0" step="0.1"
-              :value="selectedEditNeutralSpawn.healthMultiplierPerWave ?? 0"
-              @input="updateSelectedNeutralSpawn({ healthMultiplierPerWave: +($event.target as HTMLInputElement).value })"
+              type="number" min="0" step="10"
+              :value="Math.round((selectedEditNeutralSpawn.healthMultiplierPerWave ?? 0) * 100)"
+              @input="updateSelectedNeutralSpawn({ healthMultiplierPerWave: (+($event.target as HTMLInputElement).value) / 100 })"
             />
           </div>
           <div class="edit-field">
-            <label>Damage Multiplier</label>
+            <label>Wave 1 Damage (%)</label>
             <input
-              type="number" min="0" step="0.1"
-              :value="selectedEditNeutralSpawn.damageMultiplier ?? 1"
-              @input="updateSelectedNeutralSpawn({ damageMultiplier: +($event.target as HTMLInputElement).value })"
+              type="number" min="0" step="10"
+              :value="Math.round((selectedEditNeutralSpawn.damageMultiplier ?? 1) * 100)"
+              @input="updateSelectedNeutralSpawn({ damageMultiplier: (+($event.target as HTMLInputElement).value) / 100 })"
             />
           </div>
           <div class="edit-field">
-            <label>Damage Multiplier Per Wave</label>
+            <label>Damage Increase Per Wave (%)</label>
             <input
-              type="number" min="0" step="0.1"
-              :value="selectedEditNeutralSpawn.damageMultiplierPerWave ?? 0"
-              @input="updateSelectedNeutralSpawn({ damageMultiplierPerWave: +($event.target as HTMLInputElement).value })"
+              type="number" min="0" step="10"
+              :value="Math.round((selectedEditNeutralSpawn.damageMultiplierPerWave ?? 0) * 100)"
+              @input="updateSelectedNeutralSpawn({ damageMultiplierPerWave: (+($event.target as HTMLInputElement).value) / 100 })"
             />
           </div>
 
