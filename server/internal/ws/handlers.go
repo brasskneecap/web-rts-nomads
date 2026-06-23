@@ -885,6 +885,35 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.State.PatrolUnits(client.PlayerID(), msg.UnitIDs, msg.Destination)
 
+		case "guard_command":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "must join a match before sending commands",
+				})
+				continue
+			}
+
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "match not found",
+				})
+				continue
+			}
+
+			var msg protocol.GuardCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{
+					Type:    "error",
+					Message: "invalid guard_command payload",
+				})
+				continue
+			}
+
+			match.State.GuardUnits(client.PlayerID(), msg.UnitIDs)
+
 		case "repair_command":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{

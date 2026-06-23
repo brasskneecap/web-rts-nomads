@@ -40,6 +40,15 @@ const (
 	// tick. Combat AI does NOT engage on the way (matches OrderMove
 	// semantics — the player wants the chest, not a fight).
 	OrderPickupLoot
+	// OrderGuard: hold a commanded position, engage hostiles that enter the
+	// unit's guard-aggro radius, then return to the post when the fight ends.
+	// This is the player-facing face of the GuardMode machinery already used by
+	// neutral camps / placed enemies: GuardUnits sets GuardMode=true with the
+	// anchor at the commanded position, and the existing combat AI
+	// (selectBestTargetLocked aggro, shouldDropCurrentTargetLocked leash,
+	// tickGuardReturnLocked return-to-anchor) drives the behavior. GuardMode is
+	// cleared by resetUnitMovementLocked the moment any other order is issued.
+	OrderGuard
 )
 
 // orderTypeString returns the wire-format string for OrderType, matching the
@@ -60,6 +69,8 @@ func orderTypeString(t OrderType) string {
 		return protocol.OrderStringFocusFollow
 	case OrderPickupLoot:
 		return protocol.OrderStringPickupLoot
+	case OrderGuard:
+		return protocol.OrderStringGuard
 	default:
 		return protocol.OrderStringIdle
 	}
@@ -534,6 +545,14 @@ const (
 	// Neutral camps are exempt: an authored AggroRange overrides this (see
 	// spawnGroupForCampLocked); the value only serves as their default when unset.
 	guardMinAggroRange = 275.0
+
+	// guardLeashAggroMultiplier sets how far past its aggro radius a guard will
+	// chase before the leash yanks it home. It must be > 1 so a hostile acquired
+	// at the edge of the aggro radius (selectBestTargetLocked) is not immediately
+	// dropped by the leash check (shouldDropCurrentTargetLocked) — the chase/drop
+	// juggling the enemy-guard spawn code warns about. Used by the player-issued
+	// GuardUnits command to derive GuardLeashRange from GuardAggroRange.
+	guardLeashAggroMultiplier = 1.5
 
 	// guardRetaliationPersistTicks is how long a guard pursues an attacker
 	// after the last hit lands, regardless of leash. 4 seconds at 20 Hz. Each

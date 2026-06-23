@@ -212,18 +212,34 @@ func evaluateClearCapture(s *GameState, rt *zoneRuntime, _ float64) {
 	rt.Owner = protocol.ZoneCaptureTeamOwner // team effort
 }
 
-// isClaimSlotCell reports whether cell falls in the zone's 2x2 build slot —
-// the 2x2 block whose top-left is the zone's anchor node.
+// isClaimSlotCell reports whether cell falls in ANY claim capture-point's 2x2
+// build slot — the 2x2 block whose top-left is each point cell.
 func isClaimSlotCell(rt *zoneRuntime, cell gridPoint) bool {
-	ax, ay := rt.Def.Anchor.X, rt.Def.Anchor.Y
-	return cell.X >= ax && cell.X <= ax+1 && cell.Y >= ay && cell.Y <= ay+1
+	for _, p := range claimPointCells(rt) {
+		ax, ay := p[0], p[1]
+		if cell.X >= ax && cell.X <= ax+1 && cell.Y >= ay && cell.Y <= ay+1 {
+			return true
+		}
+	}
+	return false
 }
 
-// claimTowerOnSlotLocked returns the team-owned, fully-built tower occupying the
-// zone's 2x2 claim slot (matching towerType if set), or nil if none. Under-
-// construction buildings do not count — the tower must be completed.
-func (s *GameState) claimTowerOnSlotLocked(rt *zoneRuntime, towerType string) *protocol.BuildingTile {
-	ax, ay := rt.Def.Anchor.X, rt.Def.Anchor.Y
+// claimPointCells returns the top-left cell of each claim capture-point slot
+// for rt: the authored Def.ClaimPoints, or a single anchor slot when none are
+// authored (backward-compatible default). Used to size the per-point state and
+// to drive all claim slot geometry.
+func claimPointCells(rt *zoneRuntime) [][2]int {
+	if len(rt.Def.ClaimPoints) > 0 {
+		return rt.Def.ClaimPoints
+	}
+	return [][2]int{{rt.Def.Anchor.X, rt.Def.Anchor.Y}}
+}
+
+// claimTowerAtPointLocked returns the team-owned, fully-built tower occupying
+// the 2x2 slot whose top-left is point (matching towerType if set), or nil.
+// Under-construction buildings do not count.
+func (s *GameState) claimTowerAtPointLocked(point [2]int, towerType string) *protocol.BuildingTile {
+	ax, ay := point[0], point[1]
 	for dy := 0; dy < 2; dy++ {
 		for dx := 0; dx < 2; dx++ {
 			b := s.buildingAtCellLocked(gridPoint{X: ax + dx, Y: ay + dy})
@@ -234,7 +250,7 @@ func (s *GameState) claimTowerOnSlotLocked(rt *zoneRuntime, towerType string) *p
 				continue
 			}
 			if getMetadataBool(b.Metadata, "underConstruction") {
-				continue // not yet completed
+				continue
 			}
 			if towerType != "" && b.BuildingType != towerType {
 				continue
@@ -245,10 +261,10 @@ func (s *GameState) claimTowerOnSlotLocked(rt *zoneRuntime, towerType string) *p
 	return nil
 }
 
-// claimZoneTowerLocked returns the completed team tower standing on the named
-// claim zone's slot, or nil when the zone is unknown, isn't a claim zone, or has
-// no tower yet. Used to point capture-trigger enemy spawns at the structure the
-// team is using to capture the zone so the defenders attack it directly.
+// claimZoneTowerLocked returns the first completed team tower standing on an
+// UNCAPTURED claim point of the named zone (authored order), or nil. Used to
+// point capture-trigger enemy spawns at a structure the team is actively using
+// to capture the zone. Deterministic (authored order, no RNG).
 func (s *GameState) claimZoneTowerLocked(zoneID string) *protocol.BuildingTile {
 	rt := s.zoneRuntimeByIDLocked(zoneID)
 	if rt == nil {
@@ -258,7 +274,16 @@ func (s *GameState) claimZoneTowerLocked(zoneID string) *protocol.BuildingTile {
 	if !ok {
 		return nil
 	}
-	return s.claimTowerOnSlotLocked(rt, cfg.TowerType)
+	points := claimPointCells(rt)
+	for i, p := range points {
+		if i < len(rt.claimPoints) && rt.claimPoints[i].Captured {
+			continue // captured points need no defending
+		}
+		if tower := s.claimTowerAtPointLocked(p, cfg.TowerType); tower != nil {
+			return tower
+		}
+	}
+	return nil
 }
 
 // claimSlotBuildableLocked reports whether buildingType may be built on cell as
@@ -280,11 +305,16 @@ func (s *GameState) claimSlotBuildableLocked(rt *zoneRuntime, cell gridPoint, bu
 	return true
 }
 
-// evaluateClaimCapture advances a defend timer while a completed team tower
-// stands on the zone's claim slot and the team holds an adjacent foothold;
-// capturing the zone (to the team) when the timer reaches defendSeconds. The
-// timer resets if the tower is missing/destroyed — the players must keep it
-// alive for the full duration. Sticky once claimed.
+// evaluateClaimCapture advances a per-point defend timer for every uncaptured
+// claim capture point that has a completed team tower standing on its 2x2 slot.
+// Each point captures independently once its timer reaches the shared
+// defendSeconds and stays captured (sticky). The zone flips to the team only
+// once EVERY point is captured. A point with no/destroyed tower resets its own
+// timer — the team must keep each tower alive for the full duration.
+//
+// rt.Progress is set to the max in-flight point fraction so the existing
+// top-of-screen "Defending" bar shows the most-progressed point; per-point
+// progress travels in the snapshot. rt.Capturing is set if any point advanced.
 func evaluateClaimCapture(s *GameState, rt *zoneRuntime, dt float64) {
 	if isHumanOwner(rt.Owner) {
 		return // already claimed (sticky)
@@ -293,15 +323,41 @@ func evaluateClaimCapture(s *GameState, rt *zoneRuntime, dt float64) {
 	if !ok || cfg.DefendSeconds <= 0 {
 		return
 	}
-	tower := s.claimTowerOnSlotLocked(rt, cfg.TowerType)
-	if tower == nil {
-		rt.Progress = 0 // no tower (not built yet, or destroyed) → restart defend
-		return
+	rt.Progress = 0 // recomputed below as the max in-flight point fraction (0..1)
+	points := claimPointCells(rt)
+	allCaptured := true
+	for i, p := range points {
+		if i >= len(rt.claimPoints) {
+			break // defensive: should not happen (sized at install)
+		}
+		ps := &rt.claimPoints[i]
+		if ps.Captured {
+			continue
+		}
+		tower := s.claimTowerAtPointLocked(p, cfg.TowerType)
+		if tower == nil {
+			ps.Progress = 0 // no tower → restart this point's defend timer
+			allCaptured = false
+			continue
+		}
+		rt.Capturing = true // this point's defend timer is advancing this tick
+		ps.Progress += dt
+		if frac := ps.Progress / cfg.DefendSeconds; frac > rt.Progress {
+			rt.Progress = frac
+		}
+		if ps.Progress >= cfg.DefendSeconds {
+			ps.Captured = true
+			ps.Progress = 0
+		} else {
+			allCaptured = false
+		}
 	}
-	rt.Capturing = true // defend timer is actively advancing this tick
-	rt.Progress += dt
-	if rt.Progress >= cfg.DefendSeconds {
+	if rt.Progress > 1 {
+		rt.Progress = 1
+	}
+	if allCaptured {
 		rt.Owner = protocol.ZoneCaptureTeamOwner
 		rt.Progress = 0
+		rt.Capturing = false
 	}
 }

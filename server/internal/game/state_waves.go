@@ -629,6 +629,10 @@ func (s *GameState) findNearestAttackablePlayerBuildingLocked(enemy *Unit) *prot
 		if b.OwnerID == nil || *b.OwnerID == enemyPlayerID {
 			continue
 		}
+		// Pending-start ghosts are not yet attackable — don't route waves onto them.
+		if buildingPendingStart(b) {
+			continue
+		}
 		hp, _, ok := getBuildingHP(b)
 		if !ok || hp <= 0 {
 			continue
@@ -660,6 +664,10 @@ func (s *GameState) findNearestAttackableBuildingForPlayerLocked(enemy *Unit, pl
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
 		if b.OwnerID == nil || *b.OwnerID != playerID {
+			continue
+		}
+		// Pending-start ghosts are not yet attackable — don't route waves onto them.
+		if buildingPendingStart(b) {
 			continue
 		}
 		hp, _, ok := getBuildingHP(b)

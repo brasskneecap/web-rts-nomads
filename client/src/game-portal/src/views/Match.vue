@@ -20,10 +20,11 @@
          (the campaign session ref is non-null) AND there are objectives to
          show. Custom Game and Find Game flows never see this panel. -->
     <div
-      v-if="hasStarted && campaignSession && ui.objectives.length"
+      v-if="hasStarted && ((campaignSession && ui.objectives.length) || ui.zoneCaptureCards.length)"
       class="match-objectives-anchor"
     >
-      <MatchObjectivesPanel :objectives="ui.objectives" />
+      <MatchObjectivesPanel v-if="campaignSession && ui.objectives.length" :objectives="ui.objectives" />
+      <ZoneCapturePanel v-if="ui.zoneCaptureCards.length" :cards="ui.zoneCaptureCards" />
     </div>
 
     <WaveUpgradeModal
@@ -181,6 +182,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import MatchHud from '@/components/MatchHud.vue'
 import MatchObjectivesPanel from '@/components/match/MatchObjectivesPanel.vue'
+import ZoneCapturePanel from '@/components/match/ZoneCapturePanel.vue'
 import CampaignVictoryModal from '@/components/match/CampaignVictoryModal.vue'
 import type { MatchEndOutcome } from '@/components/match/matchEndOutcome'
 import { setMatchEndSnapshot } from '@/state/matchEndState'
@@ -772,6 +774,10 @@ onBeforeUnmount(() => {
   right: 16px;
   z-index: 15;
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
 }
 
 .menu {

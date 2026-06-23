@@ -394,6 +394,11 @@ func (s *GameState) getNearestPlayerTownhallBuildingLocked(x, y float64) *protoc
 		if b.OwnerID == nil || *b.OwnerID == enemyPlayerID {
 			continue
 		}
+		// Don't seed an attack objective on a pending-start ghost — it isn't
+		// attackable until a worker begins construction.
+		if buildingPendingStart(b) {
+			continue
+		}
 		hp, _, ok := getBuildingHP(b)
 		if !ok || hp <= 0 {
 			continue

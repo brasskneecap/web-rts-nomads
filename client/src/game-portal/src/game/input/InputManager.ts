@@ -852,13 +852,18 @@ export class InputManager {
 
     const normalizedKey = event.key.toLowerCase()
 
-    const hotkeyActionMap: Record<string, string> = {
-      m: 'move',
-      r: 'repair',
-      g: 'gather',
-      a: 'attack',
-      h: 'hold',
-      p: 'patrol',
+    // Each key maps to an ordered list of candidate action ids; the first one
+    // present and enabled on the current selection wins. `g` serves Gather and
+    // Guard: the two never coexist on one unit (Guard is offered only to
+    // non-gathering combat units), so for a worker `g` resolves to Gather and
+    // for a soldier it resolves to Guard.
+    const hotkeyActionMap: Record<string, string[]> = {
+      m: ['move'],
+      r: ['repair'],
+      g: ['gather', 'guard'],
+      a: ['attack'],
+      h: ['hold'],
+      p: ['patrol'],
     }
 
     // Building hotkeys are only live while the build menu is open — i.e.,
@@ -871,7 +876,7 @@ export class InputManager {
     for (const def of BUILDABLE_BUILDING_DEFS) {
       const buildActionId = `build-${def.type}`
       if (selection.actions.some((action) => action.id === buildActionId)) {
-        hotkeyActionMap[def.hotkey.toLowerCase()] = buildActionId
+        hotkeyActionMap[def.hotkey.toLowerCase()] = [buildActionId]
       }
     }
     // B opens the build menu when the menu-open action is available. Kept
@@ -879,19 +884,24 @@ export class InputManager {
     // the menu is already open — the loop above wins in that case and
     // routes B straight to build-barracks.
     if (selection.actions.some((action) => action.id === 'build' && !action.disabled)) {
-      hotkeyActionMap['b'] = hotkeyActionMap['b'] ?? 'build'
+      hotkeyActionMap['b'] = hotkeyActionMap['b'] ?? ['build']
     }
 
-    const requestedAction = hotkeyActionMap[normalizedKey]
-    if (!requestedAction) {
+    const candidates = hotkeyActionMap[normalizedKey]
+    if (!candidates) {
       return null
     }
 
-    const availableAction = selection.actions.find(
-      (action) => action.id === requestedAction && !action.disabled,
-    )
+    for (const candidate of candidates) {
+      const availableAction = selection.actions.find(
+        (action) => action.id === candidate && !action.disabled,
+      )
+      if (availableAction) {
+        return availableAction.id
+      }
+    }
 
-    return availableAction?.id ?? null
+    return null
   }
 
   private updateHoverCursor(screenX: number, screenY: number) {

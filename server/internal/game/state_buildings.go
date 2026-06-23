@@ -229,6 +229,18 @@ func (s *GameState) updateWorkerBuildStateLocked(unit *Unit) {
 
 const maxBuildersPerBuilding = 3
 
+// buildingPendingStart reports whether the building has been placed but no
+// worker has yet arrived to begin construction. While pending, the building is
+// a reserved ghost: its footprint and resource cost are committed, but it does
+// NOT grant its owner vision and CANNOT be targeted by enemies. The flag is
+// cleared the instant the first worker reaches the site
+// (updateWorkerBuildStateLocked), at which point vision and attackability
+// switch on. A pending building never returns to this state once construction
+// begins — cancellation removes it and refunds the cost.
+func buildingPendingStart(building *protocol.BuildingTile) bool {
+	return getMetadataBool(building.Metadata, "pendingStart")
+}
+
 func getBuildingHP(building *protocol.BuildingTile) (hp, maxHp float64, ok bool) {
 	if building.Metadata == nil {
 		return 0, 0, false

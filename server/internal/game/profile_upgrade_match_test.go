@@ -59,43 +59,6 @@ func TestProfileUpgrade_PhysicalPowerRank3_Multiplier(t *testing.T) {
 	}
 }
 
-// TestProfileUpgrade_AdditionalWorkerRank2_ExtraWorkers verifies a player with
-// additional_worker rank 2 starts with authoredCount+2 worker units. We use a
-// map that spawns workers for player slots; if the map has no authored workers,
-// we just verify the count is exactly 2 extra.
-func TestProfileUpgrade_AdditionalWorkerRank2_ExtraWorkers(t *testing.T) {
-	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
-
-	// First enroll a baseline player to count authored units.
-	s.EnsurePlayer("baseline")
-	s.mu.RLock()
-	var baselineWorkers int
-	for _, u := range s.Units {
-		if u.OwnerID == "baseline" && u.UnitType == "worker" {
-			baselineWorkers++
-		}
-	}
-	s.mu.RUnlock()
-
-	// Now enroll a player with additional_worker rank 2.
-	s.EnsurePlayerWithUpgrades("p2", map[string]int{"additional_worker": 2}, nil, nil)
-
-	s.mu.RLock()
-	var p2Workers int
-	for _, u := range s.Units {
-		if u.OwnerID == "p2" && u.UnitType == "worker" {
-			p2Workers++
-		}
-	}
-	s.mu.RUnlock()
-
-	// p2 should have baseline + 2 extra workers.
-	want := baselineWorkers + 2
-	if p2Workers != want {
-		t.Errorf("worker count for rank-2 additional_worker: want %d, got %d", want, p2Workers)
-	}
-}
-
 // TestProfileUpgrade_MagicPowerRank1_OnlyMagicMultiplied verifies magic_power
 // rank 1 yields MagicDamageMultiplier=1.10 and PhysicalDamageMultiplier=1.0.
 func TestProfileUpgrade_MagicPowerRank1_OnlyMagicMultiplied(t *testing.T) {

@@ -18,12 +18,13 @@
   },
   "resourceCost": {
     "gold": 250,
-    "wood": 400
+    "wood": 200
   },
   "capabilities": [],
   "spawnUnitTypes": [],
   "metadata": {},
   "color": "#1e40af",
   "label": "Tower",
-  "hotkey": "w"
+  "hotkey": "w"
+
 }

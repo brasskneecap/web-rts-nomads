@@ -4,9 +4,9 @@ import (
 	"testing"
 )
 
-// TestProfileUpgradeDefs_ThreeInitialDefsLoaded verifies the three initial
-// catalog files load with the expected IDs, maxRanks, and cost arrays.
-func TestProfileUpgradeDefs_ThreeInitialDefsLoaded(t *testing.T) {
+// TestProfileUpgradeDefs_InitialDefsLoaded verifies the initial catalog files
+// load with the expected IDs, maxRanks, and cost arrays.
+func TestProfileUpgradeDefs_InitialDefsLoaded(t *testing.T) {
 	cases := []struct {
 		id          string
 		maxRanks    int
@@ -14,13 +14,6 @@ func TestProfileUpgradeDefs_ThreeInitialDefsLoaded(t *testing.T) {
 		lastCost    int
 		effectType  string
 	}{
-		{
-			id:         "additional_worker",
-			maxRanks:   2,
-			firstCost:  25,
-			lastCost:   100,
-			effectType: "extraStartingUnit",
-		},
 		{
 			id:         "physical_power",
 			maxRanks:   10,
@@ -62,21 +55,6 @@ func TestProfileUpgradeDefs_ThreeInitialDefsLoaded(t *testing.T) {
 	}
 }
 
-// TestProfileUpgradeDefs_AdditionalWorkerEffect verifies the additional_worker
-// effect fields match the spec.
-func TestProfileUpgradeDefs_AdditionalWorkerEffect(t *testing.T) {
-	def, ok := getProfileUpgradeDef("additional_worker")
-	if !ok {
-		t.Fatal("additional_worker not in catalog")
-	}
-	if def.Effect.UnitType != "worker" {
-		t.Errorf("unitType: want %q, got %q", "worker", def.Effect.UnitType)
-	}
-	if def.Effect.CountPerRank != 1 {
-		t.Errorf("countPerRank: want 1, got %d", def.Effect.CountPerRank)
-	}
-}
-
 // TestProfileUpgradeDefs_PhysicalPowerEffect verifies physical_power effect fields.
 func TestProfileUpgradeDefs_PhysicalPowerEffect(t *testing.T) {
 	def, ok := getProfileUpgradeDef("physical_power")
@@ -109,8 +87,8 @@ func TestProfileUpgradeDefs_MagicPowerEffect(t *testing.T) {
 // returns entries sorted by ID.
 func TestProfileUpgradeDefs_ListIsSortedByID(t *testing.T) {
 	defs := ListProfileUpgradeDefs()
-	if len(defs) < 3 {
-		t.Fatalf("expected at least 3 defs, got %d", len(defs))
+	if len(defs) < 2 {
+		t.Fatalf("expected at least 2 defs, got %d", len(defs))
 	}
 	for i := 1; i < len(defs); i++ {
 		if defs[i-1].ID >= defs[i].ID {

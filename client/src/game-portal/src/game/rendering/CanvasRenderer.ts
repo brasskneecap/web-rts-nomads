@@ -37,7 +37,7 @@ import {
 } from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
-import type { BannerSnapshot, BeamSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot, Zone } from '../network/protocol'
+import type { BannerSnapshot, BeamSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot, Zone, ZoneSnapshot } from '../network/protocol'
 import { ENEMY_PLAYER_ID, ZONE_TEAM_OWNER } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
 import { Camera } from './Camera'
@@ -484,6 +484,7 @@ export class CanvasRenderer {
     let bestZone: Zone | null = null
     let bestProgress = 0
     let bestContested = false
+    let bestSnap: ZoneSnapshot | null = null
     for (const zone of zones) {
       const snap = this.state.zoneSnapshotsById.get(zone.id)
       if (!snap || snap.progress === undefined) continue
@@ -492,6 +493,7 @@ export class CanvasRenderer {
         bestProgress = p
         bestZone = zone
         bestContested = snap.contested === true
+        bestSnap = snap
       }
     }
     if (!bestZone) return
@@ -502,7 +504,15 @@ export class CanvasRenderer {
     const x = Math.round((this.canvas.width - W) / 2)
     const y = 16
     const verb = bestZone.capture?.type === 'claim' ? 'Defending' : 'Capturing'
-    const label = `${bestZone.name || bestZone.id} — ${verb}`
+    let suffix = ''
+    if (bestZone.capture?.type === 'claim') {
+      const pts = bestSnap?.claimPoints
+      if (pts && pts.length > 1) {
+        const held = pts.filter((pt) => pt.captured).length
+        suffix = ` (${held}/${pts.length} points)`
+      }
+    }
+    const label = `${bestZone.name || bestZone.id} — ${verb}${suffix}`
 
     ctx.save()
     ctx.setLineDash([])
@@ -1751,6 +1761,16 @@ export class CanvasRenderer {
   // IMPORTANT: this is DISPLAY ONLY. No capture simulation is done client-side.
   // The owner/contested/progress values come solely from the server snapshots.
   // ──────────────────────────────────────────────────────────────────────────
+
+  // True when any building footprint overlaps the 2x2 claim slot whose top-left
+  // is (px, py). Used to suppress the ghost tower once a real tower is placed.
+  private claimSlotHasBuilding(px: number, py: number): boolean {
+    for (const b of this.state.mapConfig.buildings) {
+      if (px < b.x + b.width && px + 2 > b.x && py < b.y + b.height && py + 2 > b.y) return true
+    }
+    return false
+  }
+
   private drawZoneOverlay() {
     const zones = this.state.mapConfig.zones
     if (!zones || zones.length === 0) return
@@ -1875,21 +1895,49 @@ export class CanvasRenderer {
         ctx.setLineDash([])
       }
 
-      // Claim mechanic: highlight the 2x2 build slot (anchor top-left) so the
-      // player knows where to build the tower. Shown until the zone is captured
-      // (team-owned), then dropped. Gentle pulse to draw the eye.
+      // Claim mechanic: highlight each 2x2 capture-point slot so the player
+      // knows where to build towers. Captured points render green; outstanding
+      // points pulse cyan. Whole block hidden once the zone is team-owned.
       if (zone.capture?.type === 'claim' && !isAlly) {
-        const sx = zone.anchor.x * cellSize
-        const sy = zone.anchor.y * cellSize
+        const points: [number, number][] =
+          zone.claimPoints && zone.claimPoints.length > 0
+            ? zone.claimPoints
+            : [[zone.anchor.x, zone.anchor.y]]
         const slot = 2 * cellSize
         const pulse = 0.6 + 0.4 * Math.sin(this.renderTime / 350)
-        ctx.fillStyle = 'rgba(34,211,238,0.16)' // cyan build slot
-        ctx.fillRect(sx, sy, slot, slot)
-        ctx.strokeStyle = `rgba(34,211,238,${pulse.toFixed(2)})`
-        ctx.lineWidth = 2.5 / this.camera.zoom
-        ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom])
-        ctx.strokeRect(sx, sy, slot, slot)
-        ctx.setLineDash([])
+        points.forEach((p, i) => {
+          const sx = p[0] * cellSize
+          const sy = p[1] * cellSize
+          const captured = snap.claimPoints?.[i]?.captured ?? false
+          if (captured) {
+            ctx.fillStyle = 'rgba(74,222,128,0.20)' // green: point held
+            ctx.fillRect(sx, sy, slot, slot)
+            ctx.strokeStyle = 'rgba(74,222,128,0.9)'
+            ctx.lineWidth = 2.5 / this.camera.zoom
+            ctx.setLineDash([])
+            ctx.strokeRect(sx, sy, slot, slot)
+          } else {
+            // Ghost tower: translucent preview of what to build here, until a
+            // real building occupies the slot.
+            if (!this.claimSlotHasBuilding(p[0], p[1])) {
+              const towerType = (zone.capture?.config?.['towerType'] as string | undefined) ?? 'Tower'
+              const ghost = getBuildingSprite(towerType)
+              if (ghost) {
+                ctx.save()
+                ctx.globalAlpha = 0.35
+                ctx.drawImage(ghost, sx, sy, slot, slot)
+                ctx.restore()
+              }
+            }
+            ctx.fillStyle = 'rgba(34,211,238,0.16)' // cyan build slot
+            ctx.fillRect(sx, sy, slot, slot)
+            ctx.strokeStyle = `rgba(34,211,238,${pulse.toFixed(2)})`
+            ctx.lineWidth = 2.5 / this.camera.zoom
+            ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom])
+            ctx.strokeRect(sx, sy, slot, slot)
+            ctx.setLineDash([])
+          }
+        })
       }
 
       ctx.restore()

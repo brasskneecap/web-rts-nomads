@@ -12,7 +12,7 @@
   "attackSpeed": 1,
   "moveSpeed": 100,
   "goldGatherAmount": 10,
-  "woodGatherAmount": 5,
+  "woodGatherAmount": 6,
   "resourceCost": {
     "gold": 100,
     "wood": 50

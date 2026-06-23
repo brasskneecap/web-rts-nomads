@@ -49,7 +49,10 @@ type UnitAdvancementEffect struct {
 	Kind string `json:"kind"`
 	// unitStatAdd / unitStatMul fields:
 	// Stat names the unit stat to modify. Recognised values: "maxHp", "damage",
-	// "attackRange", "attackSpeed", "moveSpeed", "armor".
+	// "attackRange", "attackSpeed", "moveSpeed", "armor". unitStatAdd also accepts
+	// the worker economy stats "goldGatherAmount", "woodGatherAmount", and
+	// "goldCost" (the latter maps to ResourceCost["gold"]; use a negative Amount
+	// to reduce the gold price).
 	Stat string `json:"stat,omitempty"`
 	// Amount is the integer value added to the named stat (unitStatAdd). Also
 	// used by unitSpawnExp as the amount of XP to pre-load at spawn.
@@ -91,10 +94,11 @@ var advancementEffectRegistry = map[string]advancementEffectHandler{
 	"unitStatAdd": {
 		validate: func(src string, effect UnitAdvancementEffect) {
 			switch effect.Stat {
-			case "maxHp", "damage", "attackRange", "attackSpeed", "moveSpeed", "armor":
+			case "maxHp", "damage", "attackRange", "attackSpeed", "moveSpeed", "armor",
+				"goldGatherAmount", "woodGatherAmount", "goldCost":
 				// valid
 			default:
-				panic(src + `: effect "unitStatAdd" stat must be one of "maxHp", "damage", "attackRange", "attackSpeed", "moveSpeed", "armor", got "` + effect.Stat + `"`)
+				panic(src + `: effect "unitStatAdd" stat must be one of "maxHp", "damage", "attackRange", "attackSpeed", "moveSpeed", "armor", "goldGatherAmount", "woodGatherAmount", "goldCost", got "` + effect.Stat + `"`)
 			}
 			if effect.Amount == 0 {
 				panic(src + `: effect "unitStatAdd" requires non-zero amount`)
@@ -114,6 +118,24 @@ var advancementEffectRegistry = map[string]advancementEffectHandler{
 				def.MoveSpeed += float64(effect.Amount)
 			case "armor":
 				def.Armor += effect.Amount
+			case "goldGatherAmount":
+				def.GoldGatherAmount += effect.Amount
+			case "woodGatherAmount":
+				def.WoodGatherAmount += effect.Amount
+			case "goldCost":
+				// ResourceCost is a map shared with the catalog def (the working
+				// def is a shallow struct copy), so copy it before mutating to
+				// avoid corrupting the global catalog entry. Amount is negative
+				// to reduce the gold price.
+				newCost := make(map[string]int, len(def.ResourceCost))
+				for k, v := range def.ResourceCost {
+					newCost[k] = v
+				}
+				newCost["gold"] += effect.Amount
+				if newCost["gold"] < 0 {
+					newCost["gold"] = 0
+				}
+				def.ResourceCost = newCost
 			}
 		},
 	},
@@ -229,6 +251,25 @@ var advancementEffectRegistry = map[string]advancementEffectHandler{
 		},
 		applyAtMatchStart: func(def *UnitDef, effect UnitAdvancementEffect) {
 			def.TrapRadiusBonus += effect.Percent / 100
+		},
+	},
+	// unitExtraStartingUnit grants the player additional copies of the node's own
+	// unit type at match start (e.g. a worker advancement node that grants +1
+	// starting worker). Like unitExtraPerkSlot, the applyAtMatchStart(def, effect)
+	// hook cannot touch the Player, so it's a no-op on the def; a sibling pass in
+	// applyAdvancementsToEffectiveDefsLocked adds Amount to
+	// Player.ExtraStartingUnits[node.UnitType] — the same field the
+	// extraStartingUnit profile upgrade fills, which the spawn-point grant path
+	// consumes. Amount must be > 0.
+	"unitExtraStartingUnit": {
+		validate: func(src string, effect UnitAdvancementEffect) {
+			if effect.Amount <= 0 {
+				panic(src + `: effect "unitExtraStartingUnit" requires amount > 0`)
+			}
+		},
+		applyAtMatchStart: func(def *UnitDef, effect UnitAdvancementEffect) {
+			// No-op on UnitDef — signaled via Player.ExtraStartingUnits, populated
+			// by a sibling pass in applyAdvancementsToEffectiveDefsLocked.
 		},
 	},
 }
@@ -462,6 +503,27 @@ func applyAdvancementsToEffectiveDefsLocked(player *Player) {
 				player.ExtraPerkSlots[node.UnitType] = tiers
 			}
 			tiers[eff.Tier] = true
+		}
+	}
+
+	// Third pass: populate Player.ExtraStartingUnits for any unitExtraStartingUnit
+	// effects. Same rationale as the ExtraPerkSlots pass — the applyAtMatchStart
+	// signature cannot reach the Player. This accumulates onto the same map the
+	// extraStartingUnit profile upgrade fills (see applyProfileUpgradesToPlayerLocked),
+	// so both sources stack additively and the spawn-point grant path consumes the total.
+	for _, id := range ids {
+		node, ok := advancementNodesByID[id]
+		if !ok {
+			continue
+		}
+		for _, eff := range node.Effects {
+			if eff.Kind != "unitExtraStartingUnit" {
+				continue
+			}
+			if player.ExtraStartingUnits == nil {
+				player.ExtraStartingUnits = map[string]int{}
+			}
+			player.ExtraStartingUnits[node.UnitType] += eff.Amount
 		}
 	}
 

@@ -66,6 +66,12 @@ func (s *GameState) recomputeFOWLocked() {
 			if b.OwnerID == nil || !s.fowOwnerSharesVisionLocked(*b.OwnerID, playerID) {
 				continue
 			}
+			// A pending-start building (placed but no worker has begun
+			// construction) grants no vision yet — it is a reserved ghost, not a
+			// working structure.
+			if buildingPendingStart(b) {
+				continue
+			}
 			cx := (float64(b.GridCoord.X) + float64(b.Width)/2.0) * s.MapConfig.CellSize
 			cy := (float64(b.GridCoord.Y) + float64(b.Height)/2.0) * s.MapConfig.CellSize
 			buildingBlocking := blocking

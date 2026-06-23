@@ -21,15 +21,15 @@ func spawnPointCenter(b *protocol.BuildingTile, cellSize float64) (float64, floa
 	return cx, cy
 }
 
-// TestExtraStartingUnits_SpawnsNearSpawnPoint verifies that the
-// additional_worker profile upgrade at rank 2 spawns two workers anchored on
-// the player's spawn-point — i.e. each new worker is closer (or equal) to
-// the spawn-point center than to the townhall center.
+// TestExtraStartingUnits_SpawnsNearSpawnPoint verifies that the worker
+// advancement nodes that grant extra starting workers (two unitExtraStartingUnit
+// nodes) spawn two workers anchored on the player's spawn-point — i.e. each new
+// worker is closer (or equal) to the spawn-point center than to the townhall center.
 func TestExtraStartingUnits_SpawnsNearSpawnPoint(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
 
-	// Baseline: count workers spawned without the upgrade so we isolate the
-	// two extras granted by additional_worker rank 2.
+	// Baseline: count workers spawned without the grant so we isolate the
+	// two extras granted by the worker advancement nodes.
 	s.EnsurePlayer("baseline")
 	s.mu.RLock()
 	var baselineCount int
@@ -40,7 +40,7 @@ func TestExtraStartingUnits_SpawnsNearSpawnPoint(t *testing.T) {
 	}
 	s.mu.RUnlock()
 
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"additional_worker": 2}, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"worker_extra_1", "worker_extra_2"})
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -130,7 +130,7 @@ func TestExtraStartingUnits_NoSpawnPointWarnsAndSkips(t *testing.T) {
 	}
 	s.mu.RUnlock()
 
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"additional_worker": 2}, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"worker_extra_1", "worker_extra_2"})
 
 	s.mu.RLock()
 	var p1Count int
@@ -145,7 +145,7 @@ func TestExtraStartingUnits_NoSpawnPointWarnsAndSkips(t *testing.T) {
 	s.mu.RUnlock()
 
 	if p1Count != baselineCount {
-		t.Errorf("with no spawn-point, additional_worker must spawn nothing: want %d units (matching baseline), got %d",
+		t.Errorf("with no spawn-point, extra-worker grants must spawn nothing: want %d units (matching baseline), got %d",
 			baselineCount, p1Count)
 	}
 }

@@ -15,6 +15,7 @@ import type {
   LeaveMatchMessage,
   LootCollectedNotification,
   MapId,
+  GuardCommandMessage,
   MatchSnapshotMessage,
   MoveCommandMessage,
   PatrolCommandMessage,
@@ -584,6 +585,14 @@ export class NetworkClient {
       type: 'patrol_command',
       unitIds,
       destination: { x, y },
+    }
+    this.send(message)
+  }
+
+  sendGuardCommand(unitIds: number[]) {
+    const message: GuardCommandMessage = {
+      type: 'guard_command',
+      unitIds,
     }
     this.send(message)
   }

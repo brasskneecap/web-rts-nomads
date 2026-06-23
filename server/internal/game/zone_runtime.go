@@ -50,13 +50,17 @@ func (s *GameState) installZonesLocked() {
 				captureCells[gridPoint{X: c[0], Y: c[1]}] = true
 			}
 		}
-		s.Zones = append(s.Zones, zoneRuntime{
+		rt := zoneRuntime{
 			Def:          z,
 			Owner:        owner,
 			captureCfg:   cfg,
 			captureCells: captureCells,
 			locked:       locked,
-		})
+		}
+		if z.Capture.Type == "claim" {
+			rt.claimPoints = make([]claimPointState, len(claimPointCells(&rt)))
+		}
+		s.Zones = append(s.Zones, rt)
 		for _, c := range z.Cells {
 			s.zoneCellIndex[gridPoint{X: c[0], Y: c[1]}] = z.ID
 		}
@@ -249,6 +253,35 @@ func (s *GameState) tickZonesLocked(dt float64) {
 	}
 }
 
+// claimPointSnapshotsLocked projects a claim zone's per-point control state for
+// the snapshot, in authored order. Returns nil for non-claim zones (no point
+// state). Progress is a 0..1 fraction of the shared defendSeconds.
+func claimPointSnapshotsLocked(rt *zoneRuntime) []protocol.ZoneClaimPointSnapshot {
+	if len(rt.claimPoints) == 0 {
+		return nil
+	}
+	cfg, ok := rt.captureCfg.(claimCaptureConfig)
+	if !ok || cfg.DefendSeconds <= 0 {
+		return nil
+	}
+	out := make([]protocol.ZoneClaimPointSnapshot, len(rt.claimPoints))
+	for i := range rt.claimPoints {
+		frac := rt.claimPoints[i].Progress / cfg.DefendSeconds
+		if frac < 0 {
+			frac = 0
+		}
+		if frac > 1 {
+			frac = 1
+		}
+		// A captured point reads as fully filled regardless of its reset timer.
+		if rt.claimPoints[i].Captured {
+			frac = 1
+		}
+		out[i] = protocol.ZoneClaimPointSnapshot{Progress: frac, Captured: rt.claimPoints[i].Captured}
+	}
+	return out
+}
+
 // zoneSnapshotsLocked projects the mutable zone control state for the per-tick
 // match snapshot. Static geometry travels once in the welcome MapConfig.
 //
@@ -263,11 +296,12 @@ func (s *GameState) zoneSnapshotsLocked() []protocol.ZoneSnapshot {
 	for i := range s.Zones {
 		rt := &s.Zones[i]
 		out = append(out, protocol.ZoneSnapshot{
-			ID:         rt.Def.ID,
-			Owner:      rt.Owner,
-			Contested:  rt.Contested,
-			Progress:   zoneProgressFraction(rt),
-			OwnerColor: s.zoneOwnerColorLocked(rt.Owner),
+			ID:          rt.Def.ID,
+			Owner:       rt.Owner,
+			Contested:   rt.Contested,
+			Progress:    zoneProgressFraction(rt),
+			OwnerColor:  s.zoneOwnerColorLocked(rt.Owner),
+			ClaimPoints: claimPointSnapshotsLocked(rt),
 		})
 	}
 	return out
@@ -347,25 +381,20 @@ func (s *GameState) lowestPlayerColorLocked() string {
 }
 
 // zoneProgressFraction normalises a zone's raw capture/defend accumulator
-// (seconds) to a 0..1 fraction of its configured duration, for the snapshot.
+// to a 0..1 fraction for the snapshot.
+// Presence zones: divides by CaptureSeconds (raw seconds accumulator).
+// Claim zones: rt.Progress is already a normalised max-point fraction (0..1).
 // Returns 0 when the mechanic has no timed duration.
 func zoneProgressFraction(rt *zoneRuntime) float64 {
-	var dur float64
 	switch cfg := rt.captureCfg.(type) {
 	case presenceCaptureConfig:
-		dur = cfg.CaptureSeconds
+		if cfg.CaptureSeconds <= 0 {
+			return 0
+		}
+		return clamp01(rt.Progress / cfg.CaptureSeconds)
 	case claimCaptureConfig:
-		dur = cfg.DefendSeconds
+		// Claim sets rt.Progress to an already-normalised max-point fraction.
+		return clamp01(rt.Progress)
 	}
-	if dur <= 0 {
-		return 0
-	}
-	f := rt.Progress / dur
-	if f < 0 {
-		return 0
-	}
-	if f > 1 {
-		return 1
-	}
-	return f
+	return 0
 }

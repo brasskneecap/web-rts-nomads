@@ -557,7 +557,8 @@
                     <option value="Tower">Tower</option>
                   </select>
                   <div class="zone-brush-config__hint">
-                    Build the tower on the 2&#xD7;2 slot, then defend it for the duration to claim the zone.
+                    Build the tower on each 2&#xD7;2 slot, then defend it for the duration to claim the zone.
+                    Use Place Capture Point to add slots; click a slot on the map to select it — a popup opens with Move / Delete.
                   </div>
                 </template>
 
@@ -645,6 +646,12 @@
                   @click="zoneSubMode = zoneSubMode === 'captureDraw' ? 'idle' : 'captureDraw'"
                 >Draw Capture Zone</button>
                 <button
+                  v-if="!selectedZone.lockedSpawnLabel && selectedZone.capture.type === 'claim'"
+                  type="button"
+                  :class="{ 'zone-brush-config__action--active': zoneSubMode === 'claimPoint' }"
+                  @click="zoneSubMode = zoneSubMode === 'claimPoint' ? 'idle' : 'claimPoint'"
+                >Place Capture Point</button>
+                <button
                   type="button"
                   :class="{ 'zone-brush-config__action--active': zoneSubMode === 'move' }"
                   @click="zoneSubMode = zoneSubMode === 'move' ? 'idle' : 'move'"
@@ -664,6 +671,9 @@
               </div>
               <div v-if="zoneSubMode === 'move'" class="zone-brush-config__hint">
                 Click a cell inside the zone to move its node · Esc exits
+              </div>
+              <div v-if="zoneSubMode === 'claimPoint'" class="zone-brush-config__hint">
+                Click an empty cell to add a 2&#xD7;2 capture point · Click a point to select it (a popup opens with Move / Delete) · Right-click also removes · Esc exits
               </div>
             </div>
           </template>
@@ -1417,6 +1427,18 @@
           <button type="button" class="edit-delete-btn" @click="deleteSelectedNeutralSpawn">Delete Neutral Spawn</button>
         </div>
       </div>
+
+      <div v-if="selectedClaimPointCell" class="edit-panel claim-point-edit-panel" :style="claimPointEditPanelStyle">
+        <div class="edit-panel__header">
+          <span class="edit-panel__title">Capture Point</span>
+          <button type="button" class="edit-panel__move" @click="startMoveClaimPoint" title="Move — then click a cell inside the zone">Move</button>
+          <button type="button" class="edit-panel__close" @click="selectedClaimPointIndex = null" title="Deselect">&#x2715;</button>
+        </div>
+        <div class="edit-panel__body">
+          <div v-if="movingClaimPoint" class="edit-panel__empty">Click a cell inside the zone to place it · Esc cancels</div>
+          <button type="button" class="edit-delete-btn" @click="deleteSelectedClaimPoint">Delete Point</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -1519,7 +1541,7 @@ const brushMode = ref<'terrain' | 'tile' | 'obstacle' | 'building' | 'enemy-spaw
 //   'captureDraw' – left-click/drag marks capture cells; right-click removes
 //   'move'        – click a cell inside the zone to relocate its anchor node
 const selectedZoneId = ref<string | null>(null)
-const zoneSubMode = ref<'idle' | 'place' | 'draw' | 'captureDraw' | 'move'>('idle')
+const zoneSubMode = ref<'idle' | 'place' | 'draw' | 'captureDraw' | 'move' | 'claimPoint'>('idle')
 // Controls visibility of the prerequisite-zone checkbox panel.
 const linkPanelOpen = ref(false)
 // Live cell→zoneId index, rebuilt on every zone mutation. Avoids O(N×M) scans.
@@ -1622,10 +1644,17 @@ const selectedEditNeutralSpawnId = ref<string | null>(null)
 const editPanelPos = ref<{ x: number; y: number } | null>(null)
 const placedUnitEditPanelPos = ref<{ x: number; y: number } | null>(null)
 const neutralSpawnEditPanelPos = ref<{ x: number; y: number } | null>(null)
+const claimPointEditPanelPos = ref<{ x: number; y: number } | null>(null)
 const copiedBuilding = ref<{ buildingType: string; metadata: JsonObject | undefined } | null>(null)
 const isPasteMode = ref(false)
 const movingBuilding = ref<{ id: string; buildingType: string; metadata: JsonObject | undefined; x: number; y: number } | null>(null)
 const movingNeutralSpawn = ref<{ id: string; x: number; y: number } | null>(null)
+// Index of the currently selected claim capture point within the selected
+// zone's claimPoints (null = none). movingClaimPoint arms a pending relocate:
+// the next canvas click moves the selected point. The selection resets when the
+// zone changes; movingClaimPoint resets on any sub-mode change (see watches).
+const selectedClaimPointIndex = ref<number | null>(null)
+const movingClaimPoint = ref(false)
 
 const camera = new Camera()
 // Bump the top + left overscan so the user can pan the map's top-left
@@ -1938,6 +1967,7 @@ function onZoneCaptureTypeChange(type: string) {
     if (z.id !== id) return z
     const next: typeof z = { ...z, capture }
     if (type !== 'presence') delete next.captureCells
+    if (type !== 'claim') delete next.claimPoints
     return next
   })
   model.value = { ...model.value, zones }
@@ -2047,6 +2077,122 @@ function addCaptureCellToSelectedZone(cx: number, cy: number) {
     ),
   }
 }
+
+/**
+ * Add (cx, cy) as a claim capture-point slot top-left on the selected zone.
+ * The cell must be inside the zone's cells. Deduplicates. Each point becomes a
+ * 2x2 tower slot the team must build + defend.
+ */
+function addClaimPointToSelectedZone(cx: number, cy: number) {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = model.value.zones ?? []
+  const zone = zones.find((z) => z.id === id)
+  if (!zone) return
+  const inZone = zone.cells.some(([x, y]) => x === cx && y === cy)
+  if (!inZone) return
+  const existing = zone.claimPoints ?? []
+  if (existing.some(([x, y]) => x === cx && y === cy)) return // dedup
+  model.value = {
+    ...model.value,
+    zones: zones.map((z) =>
+      z.id === id
+        ? { ...z, claimPoints: [...(z.claimPoints ?? []), [cx, cy] as [number, number]] }
+        : z,
+    ),
+  }
+}
+
+/** Remove the claim capture-point at (cx, cy) from the selected zone. Clears the
+ *  point selection (indices shift after a removal). */
+function removeClaimPointFromSelectedZone(cx: number, cy: number) {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = (model.value.zones ?? []).map((z) =>
+    z.id === id
+      ? { ...z, claimPoints: (z.claimPoints ?? []).filter(([x, y]) => !(x === cx && y === cy)) }
+      : z,
+  )
+  model.value = { ...model.value, zones }
+  selectedClaimPointIndex.value = null
+  movingClaimPoint.value = false
+}
+
+/** Returns the index of the selected zone's explicit claim point whose 2x2 slot
+ *  covers (cx, cy), or null. The anchor fallback slot (empty claimPoints) is not
+ *  an explicit point and is not selectable. */
+function claimPointIndexAt(cx: number, cy: number): number | null {
+  const zone = selectedZone.value
+  if (!zone) return null
+  const points = zone.claimPoints ?? []
+  for (let i = 0; i < points.length; i++) {
+    const [ax, ay] = points[i]
+    if (cx >= ax && cx <= ax + 1 && cy >= ay && cy <= ay + 1) return i
+  }
+  return null
+}
+
+/** Arm move mode for the selected claim point; the next canvas click inside the
+ *  zone relocates it (mirrors the building Move flow). */
+function startMoveClaimPoint() {
+  if (selectedClaimPointIndex.value === null) return
+  movingClaimPoint.value = true
+}
+
+/** Relocate the selected claim point to (cx, cy). Rejected (move stays armed)
+ *  when the target is outside the zone or on another point's slot top-left. */
+function commitMoveClaimPoint(cx: number, cy: number) {
+  const id = selectedZoneId.value
+  const idx = selectedClaimPointIndex.value
+  if (!id || idx === null) {
+    movingClaimPoint.value = false
+    return
+  }
+  const zone = (model.value.zones ?? []).find((z) => z.id === id)
+  if (!zone) {
+    movingClaimPoint.value = false
+    return
+  }
+  const inZone = zone.cells.some(([x, y]) => x === cx && y === cy)
+  const points = zone.claimPoints ?? []
+  const dup = points.some(([x, y], i) => i !== idx && x === cx && y === cy)
+  if (!inZone || dup) return // invalid target — keep move armed
+  const nextPoints = points.map((p, i) => (i === idx ? ([cx, cy] as [number, number]) : p))
+  model.value = {
+    ...model.value,
+    zones: (model.value.zones ?? []).map((z) =>
+      z.id === id ? { ...z, claimPoints: nextPoints } : z,
+    ),
+  }
+  movingClaimPoint.value = false
+}
+
+/** Delete the currently selected claim point. */
+function deleteSelectedClaimPoint() {
+  const id = selectedZoneId.value
+  const idx = selectedClaimPointIndex.value
+  if (!id || idx === null) return
+  const zones = (model.value.zones ?? []).map((z) =>
+    z.id === id ? { ...z, claimPoints: (z.claimPoints ?? []).filter((_, i) => i !== idx) } : z,
+  )
+  model.value = { ...model.value, zones }
+  selectedClaimPointIndex.value = null
+  movingClaimPoint.value = false
+}
+
+// Clear any capture-point selection when the selected zone changes or the user
+// leaves the Place Capture Point sub-mode, so the highlight / Move-Delete
+// buttons never dangle on a stale point.
+watch(selectedZoneId, () => {
+  selectedClaimPointIndex.value = null
+  movingClaimPoint.value = false
+})
+// Cancel an in-progress point move when the zone sub-mode changes, but KEEP the
+// point selection — a capture point stays selectable/actionable whether or not
+// the Place Capture Point tool is active.
+watch(zoneSubMode, () => {
+  movingClaimPoint.value = false
+})
 
 /** Remove (cx, cy) from the selected zone's captureCells (right-click in captureDraw mode). */
 function removeCaptureCellFromSelectedZone(cx: number, cy: number) {
@@ -2178,6 +2324,22 @@ const neutralSpawnEditPanelStyle = computed(() => {
   return { left: `${neutralSpawnEditPanelPos.value.x}px`, top: `${neutralSpawnEditPanelPos.value.y}px` }
 })
 
+const claimPointEditPanelStyle = computed(() => {
+  if (!claimPointEditPanelPos.value) return {}
+  return { left: `${claimPointEditPanelPos.value.x}px`, top: `${claimPointEditPanelPos.value.y}px` }
+})
+
+// World cell [x,y] of the currently selected capture point (the 2x2 slot's
+// top-left), or null. Drives the floating Capture Point popup.
+const selectedClaimPointCell = computed<{ x: number; y: number } | null>(() => {
+  const zone = selectedZone.value
+  const idx = selectedClaimPointIndex.value
+  if (!zone || idx === null) return null
+  const p = (zone.claimPoints ?? [])[idx]
+  if (!p) return null
+  return { x: p[0], y: p[1] }
+})
+
 const editWaveMode = computed<'gameStart' | 'always' | 'specific' | 'repeating' | 'interval' | 'capture'>(() => {
   const meta = selectedEditBuilding.value?.metadata
   if (!meta) return 'always'
@@ -2236,7 +2398,7 @@ const eraseCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 
 function getCanvasCursor() {
   if (isSpaceHeld) return 'grab'
-  if (movingBuilding.value || movingNeutralSpawn.value) return 'move'
+  if (movingBuilding.value || movingNeutralSpawn.value || movingClaimPoint.value) return 'move'
   if (isPasteMode.value) return 'copy'
   if (!paintModeEnabled.value) return 'default'
   if (isControlHeld.value) return eraseCursor
@@ -3060,15 +3222,21 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
-  // Right-click in Zone draw / captureDraw mode: remove a cell from the active set.
-  if (event.button === 2 && (zoneSubMode.value === 'draw' || zoneSubMode.value === 'captureDraw') && selectedZoneId.value) {
+  // Right-click in Zone draw / captureDraw / claimPoint mode: remove from the active set.
+  if (
+    event.button === 2 &&
+    (zoneSubMode.value === 'draw' || zoneSubMode.value === 'captureDraw' || zoneSubMode.value === 'claimPoint') &&
+    selectedZoneId.value
+  ) {
     event.preventDefault()
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) {
       if (zoneSubMode.value === 'draw') {
         removeCellFromSelectedZone(cell.x, cell.y)
-      } else {
+      } else if (zoneSubMode.value === 'captureDraw') {
         removeCaptureCellFromSelectedZone(cell.x, cell.y)
+      } else {
+        removeClaimPointFromSelectedZone(cell.x, cell.y)
       }
     }
     return
@@ -3101,6 +3269,12 @@ function onMouseDown(event: MouseEvent) {
   if (movingBuilding.value) {
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) commitMoveBuilding(cell.x, cell.y)
+    return
+  }
+
+  if (movingClaimPoint.value) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) commitMoveClaimPoint(cell.x, cell.y)
     return
   }
 
@@ -3137,6 +3311,27 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
+  // Claim capture-point editing: left-click an existing point to SELECT it
+  // (so it can be moved/deleted), or an empty cell inside the zone to ADD a new
+  // point (and select it).
+  if (zoneSubMode.value === 'claimPoint' && selectedZoneId.value && !isSpaceHeld) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) {
+      const hitIdx = claimPointIndexAt(cell.x, cell.y)
+      if (hitIdx !== null) {
+        selectedClaimPointIndex.value = hitIdx
+      } else {
+        const before = (selectedZone.value?.claimPoints ?? []).length
+        addClaimPointToSelectedZone(cell.x, cell.y)
+        const after = selectedZone.value?.claimPoints ?? []
+        // Select the just-added point only if one was actually added (the add is
+        // rejected for out-of-zone or duplicate cells).
+        if (after.length > before) selectedClaimPointIndex.value = after.length - 1
+      }
+    }
+    return
+  }
+
   // Zone draw mode: left-click starts drag-add; right-click remove is handled above.
   if (zoneSubMode.value === 'draw' && selectedZoneId.value && !isSpaceHeld) {
     const cell = getGridCellAtScreen(screen.x, screen.y)
@@ -3161,6 +3356,23 @@ function onMouseDown(event: MouseEvent) {
   if (!paintModeEnabled.value) {
     if (event.button === 0 && !isSpaceHeld) {
       const cell = getGridCellAtScreen(screen.x, screen.y)
+      // Claim capture-point selection: when a claim zone is selected, clicking
+      // one of its capture-point slots selects that point so it can be moved or
+      // deleted (Move Point / Delete Point). Works without entering the Place
+      // Capture Point sub-mode — you just need the zone selected.
+      if (cell && selectedZone.value?.capture.type === 'claim') {
+        const ptIdx = claimPointIndexAt(cell.x, cell.y)
+        if (ptIdx !== null) {
+          selectedClaimPointIndex.value = ptIdx
+          selectedEditBuildingId.value = null
+          selectedEditPlacedUnitId.value = null
+          selectedEditNeutralSpawnId.value = null
+          return
+        }
+      }
+      // Clicked something other than a capture point → deselect any selected
+      // point (closes its popup), so only one thing is selected at a time.
+      selectedClaimPointIndex.value = null
       const hitUnit = cell ? placedUnitAt(cell.x, cell.y) : null
       const hitNeutral = !hitUnit && cell ? neutralSpawnAt(cell.x, cell.y) : null
       if (hitUnit) {
@@ -3314,6 +3526,7 @@ function onKeyDown(event: KeyboardEvent) {
     isPasteMode.value = false
     cancelMoveBuilding()
     cancelMoveNeutralSpawn()
+    movingClaimPoint.value = false
     // Exit zone place/draw/captureDraw/move sub-mode on Esc. Selection stays intact.
     if (zoneSubMode.value !== 'idle') {
       zoneSubMode.value = 'idle'
@@ -3578,6 +3791,20 @@ function updateEditPanelPos() {
     const clampedX = Math.min(screenX, targetCanvas.width - 280)
     const clampedY = Math.max(0, Math.min(screenY, targetCanvas.height - 100))
     neutralSpawnEditPanelPos.value = { x: clampedX, y: clampedY }
+  }
+
+  const cp = selectedClaimPointCell.value
+  if (!cp || !targetCanvas) {
+    claimPointEditPanelPos.value = null
+  } else {
+    const cellSize = model.value.cellSize
+    const worldRight = (cp.x + 2) * cellSize // right edge of the 2x2 slot
+    const worldTop = cp.y * cellSize
+    const screenX = (worldRight - camera.x) * camera.zoom + 10
+    const screenY = (worldTop - camera.y) * camera.zoom
+    const clampedX = Math.min(screenX, targetCanvas.width - 220)
+    const clampedY = Math.max(0, Math.min(screenY, targetCanvas.height - 90))
+    claimPointEditPanelPos.value = { x: clampedX, y: clampedY }
   }
 }
 
@@ -4021,36 +4248,54 @@ function drawZones(ctx: CanvasRenderingContext2D) {
       ctx.restore()
     }
 
-    // Claim 2×2 build-slot overlay: cyan/teal fill on the four cells rooted at
-    // the anchor. Visually distinct from the orange capture sub-zone and the
-    // grey zone fill. Cells outside the grid are skipped defensively.
+    // Claim build-slot overlay: a cyan/teal 2×2 block at EACH authored capture
+    // point (zone.claimPoints), or a single block at the anchor when no points
+    // are authored — mirroring the server's claimPointCells fallback. Visually
+    // distinct from the orange capture sub-zone and the grey zone fill. Cells
+    // outside the grid are skipped defensively.
     if (zone.capture.type === 'claim') {
-      const ax = zone.anchor.x
-      const ay = zone.anchor.y
       const cols = model.value.gridCols
       const rows = model.value.gridRows
-      const slotCells: [number, number][] = [
-        [ax,     ay    ],
-        [ax + 1, ay    ],
-        [ax,     ay + 1],
-        [ax + 1, ay + 1],
-      ].filter(([cx, cy]) => cx >= 0 && cy >= 0 && cx < cols && cy < rows) as [number, number][]
+      const points: [number, number][] =
+        zone.claimPoints && zone.claimPoints.length > 0
+          ? zone.claimPoints
+          : [[zone.anchor.x, zone.anchor.y]]
 
-      if (slotCells.length > 0) {
-        ctx.save()
-        // Semi-transparent cyan fill
-        ctx.fillStyle = isSelected
-          ? 'rgba(34, 211, 238, 0.40)'   // cyan-400 at higher opacity when selected
-          : 'rgba(6, 182, 212, 0.28)'    // cyan-500 at base opacity
+      ctx.save()
+      ctx.setLineDash([])
+      // Only explicit claimPoints entries are selectable; the anchor fallback
+      // (when claimPoints is empty) has no index to select.
+      const hasExplicitPoints = !!(zone.claimPoints && zone.claimPoints.length > 0)
+      for (let i = 0; i < points.length; i++) {
+        const [ax, ay] = points[i]
+        const isSelectedPoint =
+          isSelected && hasExplicitPoints && selectedClaimPointIndex.value === i
+        const slotCells: [number, number][] = [
+          [ax,     ay    ],
+          [ax + 1, ay    ],
+          [ax,     ay + 1],
+          [ax + 1, ay + 1],
+        ].filter(([cx, cy]) => cx >= 0 && cy >= 0 && cx < cols && cy < rows) as [number, number][]
+        if (slotCells.length === 0) continue
+
+        // Semi-transparent fill per cell — amber for the selected point, cyan
+        // otherwise.
+        ctx.fillStyle = isSelectedPoint
+          ? 'rgba(250, 204, 21, 0.38)'   // amber-400: selected point
+          : isSelected
+            ? 'rgba(34, 211, 238, 0.40)' // cyan-400 at higher opacity when zone selected
+            : 'rgba(6, 182, 212, 0.28)'  // cyan-500 at base opacity
         for (const [cx, cy] of slotCells) {
           ctx.fillRect(cx * cellSize, cy * cellSize, cellSize, cellSize)
         }
         // Solid outline around the full 2×2 block (not per-cell strokes).
-        ctx.strokeStyle = isSelected ? 'rgba(103, 232, 249, 0.95)' : 'rgba(34, 211, 238, 0.75)'
-        ctx.lineWidth = (isSelected ? 2 : 1.5) / camera.zoom
-        ctx.setLineDash([])
-        // Compute the bounding rect of the slot cells so partial slots near
-        // edges render a correctly-sized outline rather than assuming 2×2.
+        // Bounding rect so partial slots near edges size correctly.
+        ctx.strokeStyle = isSelectedPoint
+          ? 'rgba(253, 224, 71, 0.98)'   // amber-300: selected point outline
+          : isSelected
+            ? 'rgba(103, 232, 249, 0.95)'
+            : 'rgba(34, 211, 238, 0.75)'
+        ctx.lineWidth = (isSelectedPoint ? 3 : isSelected ? 2 : 1.5) / camera.zoom
         const minCx = Math.min(...slotCells.map(([cx]) => cx))
         const minCy = Math.min(...slotCells.map(([, cy]) => cy))
         const maxCx = Math.max(...slotCells.map(([cx]) => cx))
@@ -4061,8 +4306,8 @@ function drawZones(ctx: CanvasRenderingContext2D) {
           (maxCx - minCx + 1) * cellSize,
           (maxCy - minCy + 1) * cellSize,
         )
-        ctx.restore()
       }
+      ctx.restore()
     }
   }
 

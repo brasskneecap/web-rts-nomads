@@ -448,7 +448,7 @@ func TestMigrateProfile_V2ToV3_ActiveUpgradeIDsPopulated(t *testing.T) {
 		"ownedCommanderIds": [],
 		"selectedCommanderId": "",
 		"stats": {},
-		"ownedUpgradeRanks": {"additional_worker": 2}
+		"ownedUpgradeRanks": {"physical_power": 2}
 	}`
 	primaryPath := filepath.Join(dir, playerID+".json")
 	if err := os.WriteFile(primaryPath, []byte(v2JSON), 0o644); err != nil {
@@ -465,8 +465,8 @@ func TestMigrateProfile_V2ToV3_ActiveUpgradeIDsPopulated(t *testing.T) {
 	if loaded.ActiveUpgradeIDs == nil {
 		t.Fatal("ActiveUpgradeIDs should be non-nil after v2->v3 migration")
 	}
-	if len(loaded.ActiveUpgradeIDs) != 1 || loaded.ActiveUpgradeIDs[0] != "additional_worker" {
-		t.Errorf("ActiveUpgradeIDs: want [additional_worker], got %v", loaded.ActiveUpgradeIDs)
+	if len(loaded.ActiveUpgradeIDs) != 1 || loaded.ActiveUpgradeIDs[0] != "physical_power" {
+		t.Errorf("ActiveUpgradeIDs: want [physical_power], got %v", loaded.ActiveUpgradeIDs)
 	}
 	if loaded.Version != CurrentVersion {
 		t.Errorf("Version after migration: want %d, got %d", CurrentVersion, loaded.Version)

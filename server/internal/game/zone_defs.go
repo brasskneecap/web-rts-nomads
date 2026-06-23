@@ -7,6 +7,15 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
+// claimPointState is the per-tick mutable state of one claim capture point.
+// Progress is the defend-timer accumulator (seconds); Captured is sticky once
+// the point has been defended for the zone's shared defendSeconds. Stores no
+// entity references — pure tick working state.
+type claimPointState struct {
+	Progress float64
+	Captured bool
+}
+
 // zoneRuntime is the per-match mutable shell for one authored protocol.Zone.
 // One instance lives in GameState.Zones per loaded zone for the full match.
 // Mirrors objectiveRuntime: the immutable Def plus the mutable control state.
@@ -40,6 +49,10 @@ type zoneRuntime struct {
 	// (protocol.Zone.LockedSpawnLabel). Locked zones start team-owned and are
 	// skipped by the capture tick — they can never be captured or lost.
 	locked bool
+	// claimPoints holds one state per claim capture point, in the same order as
+	// Def.ClaimPoints (or a single entry for the anchor fallback). Built once at
+	// install; nil for non-claim zones.
+	claimPoints []claimPointState
 }
 
 // zoneCaptureHandler is the registered contract for one capture mechanic.

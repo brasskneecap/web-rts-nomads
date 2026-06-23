@@ -1,0 +1,115 @@
+{
+  "unitType": "worker",
+  "nodes": [
+    {
+      "id": "worker_extra_1",
+      "name": "Extra Hand",
+      "description": "Start each match with one additional worker.",
+      "kind": "minor",
+      "cost": 50,
+      "effects": [
+        {
+          "kind": "unitExtraStartingUnit",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "id": "worker_movespeed_1",
+      "name": "Quick Feet",
+      "description": "Workers move 20 faster.",
+      "kind": "minor",
+      "cost": 50,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "moveSpeed",
+          "amount": 20
+        }
+      ]
+    },
+    {
+      "id": "worker_goldcost_1",
+      "name": "Thrifty Hire",
+      "description": "Workers cost 15 less gold to train.",
+      "kind": "minor",
+      "cost": 50,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "goldCost",
+          "amount": -15
+        }
+      ]
+    },
+    {
+      "id": "worker_woodgather_1",
+      "name": "Seasoned Lumberjacks",
+      "description": "Workers gather 4 more wood per trip.",
+      "kind": "major",
+      "cost": 150,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "woodGatherAmount",
+          "amount": 4
+        }
+      ]
+    },
+    {
+      "id": "worker_movespeed_2",
+      "name": "Quick Feet II",
+      "description": "Workers move an additional 20 faster.",
+      "kind": "minor",
+      "cost": 100,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "moveSpeed",
+          "amount": 20
+        }
+      ]
+    },
+    {
+      "id": "worker_goldcost_2",
+      "name": "Thrifty Hire II",
+      "description": "Workers cost an additional 15 less gold to train.",
+      "kind": "minor",
+      "cost": 100,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "goldCost",
+          "amount": -15
+        }
+      ]
+    },
+    {
+      "id": "worker_extra_2",
+      "name": "Extra Hand II",
+      "description": "Start each match with another additional worker.",
+      "kind": "minor",
+      "cost": 100,
+      "effects": [
+        {
+          "kind": "unitExtraStartingUnit",
+          "amount": 1
+        }
+      ]
+    },
+    {
+      "id": "worker_goldgather_1",
+      "name": "Gold Rush",
+      "description": "Workers gather 5 more gold per trip.",
+      "kind": "major",
+      "cost": 300,
+      "effects": [
+        {
+          "kind": "unitStatAdd",
+          "stat": "goldGatherAmount",
+          "amount": 5
+        }
+      ]
+    }
+  ]
+}

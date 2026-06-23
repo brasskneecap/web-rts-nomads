@@ -608,6 +608,12 @@ func (s *GameState) isValidHostileBuildingTarget(unit *Unit, building *protocol.
 	if building == nil || !building.Visible || building.OwnerID == nil || !s.playersAreHostileLocked(*building.OwnerID, unit.OwnerID) {
 		return false
 	}
+	// A pending-start building has no worker on site yet — it is a reserved
+	// ghost, not a standing structure, so enemies cannot attack it. It becomes
+	// targetable the instant construction begins (pendingStart cleared).
+	if buildingPendingStart(building) {
+		return false
+	}
 	hp, _, ok := getBuildingHP(building)
 	return ok && hp > 0
 }

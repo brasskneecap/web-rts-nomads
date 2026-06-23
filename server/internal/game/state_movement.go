@@ -350,6 +350,60 @@ func (s *GameState) AttackMoveUnits(playerID string, unitIDs []int, dest protoco
 	s.assignGroupPathsLocked(validUnits, clampedTargets, blocked, groundSubBlocked, flyerSubBlocked)
 }
 
+// applyGuardOrderLocked turns unit into a guard posted at `post`: it engages
+// hostiles inside its guard-aggro radius and returns to the post when the fight
+// ends. The aggro radius is derived from the unit's effective vision range
+// (floored at guardMinAggroRange so short-sighted units still hold a meaningful
+// area), and the leash extends past aggro by guardLeashAggroMultiplier so a
+// hostile acquired at the aggro edge isn't dropped on the same tick. The actual
+// behavior is owned by the existing GuardMode combat path
+// (selectBestTargetLocked / shouldDropCurrentTargetLocked / tickGuardReturnLocked).
+// Caller must hold s.mu and have already run resetUnitMovementLocked on the unit
+// (which clears GuardMode); this re-establishes it.
+func (s *GameState) applyGuardOrderLocked(unit *Unit, post protocol.Vec2) {
+	unit.Order = OrderState{
+		Type:  OrderGuard,
+		DestX: post.X, DestY: post.Y,
+		HoldX: post.X, HoldY: post.Y,
+	}
+	unit.GuardMode = true
+	unit.GuardAnchorX = post.X
+	unit.GuardAnchorY = post.Y
+	unit.CombatAnchorX = post.X
+	unit.CombatAnchorY = post.Y
+	aggro := unit.VisionRange
+	if aggro < guardMinAggroRange {
+		aggro = guardMinAggroRange
+	}
+	unit.GuardAggroRange = aggro
+	unit.GuardLeashRange = aggro * guardLeashAggroMultiplier
+}
+
+// GuardUnits issues an OrderGuard to the given combat units: they move to dest,
+// guard their CURRENT position: each engages hostiles that enter its guard
+// radius and returns to the exact spot it was standing when ordered. Like Hold,
+// this is an in-place stance — there is no destination and the units do not
+// move to take it up. Only "attack"-capable, non-NonCombat units are eligible
+// (workers never auto-acquire, so guarding them would be inert).
+func (s *GameState) GuardUnits(playerID string, unitIDs []int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	defer profileStart("cmd.GuardUnits")()
+
+	orderID := s.nextMovementOrderIDLocked()
+	for _, unitID := range unitIDs {
+		unit := s.getUnitByIDLocked(unitID)
+		if unit == nil || unit.OwnerID != playerID || unit.NonCombat ||
+			!unitHasCapability(unit.UnitType, "attack") {
+			continue
+		}
+		s.resetUnitMovementLocked(unit, orderID)
+		// Anchor at the unit's current position — guard where you stand.
+		s.applyGuardOrderLocked(unit, protocol.Vec2{X: unit.X, Y: unit.Y})
+		unit.Status = "Guarding"
+	}
+}
+
 func (s *GameState) assignUnitPath(unit *Unit, dest protocol.Vec2, blocked map[gridPoint]bool, reservedGoals map[gridPoint]bool) {
 	s.assignUnitPathWithSubBlocked(unit, dest, blocked, nil, reservedGoals)
 }
@@ -647,6 +701,16 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.Attacking = false
 	unit.AttackDrifting = false
 	unit.PickupLootID = ""
+	// Exit guard mode on any new order. GuardUnits is the only path that sets
+	// GuardMode on a player unit, and it re-sets these fields AFTER calling this
+	// reset, so the Guard command itself is unaffected. Enemy/neutral guards are
+	// set at spawn and never routed through resetUnitMovementLocked (only player
+	// command paths call it), so clearing here cannot disturb them.
+	unit.GuardMode = false
+	unit.GuardAnchorX = 0
+	unit.GuardAnchorY = 0
+	unit.GuardAggroRange = 0
+	unit.GuardLeashRange = 0
 	unit.Order = OrderState{Type: OrderIdle}
 	// Any new order clears focus so FocusTargetID and Order.Type never diverge.
 	// This covers Move, AttackMove, Hold, Stop, AttackTarget, Patrol — every

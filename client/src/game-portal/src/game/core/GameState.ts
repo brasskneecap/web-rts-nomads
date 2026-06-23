@@ -31,9 +31,11 @@ import type {
   UnitType,
   WaveSnapshot,
   WaveUpgradeOfferSnapshot,
+  Zone,
   ZoneSnapshot,
 } from '../network/protocol'
-import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID, UNIT_ORDER_LABELS } from '../network/protocol'
+import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID, UNIT_ORDER_LABELS, ZONE_TEAM_OWNER } from '../network/protocol'
+import { buildZoneCaptureCards, type ZoneCaptureCard } from '../zones/zoneCaptureCards'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP, getUpgradeChain, townHallTierName } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
@@ -2223,6 +2225,49 @@ export class GameState {
     return true
   }
 
+  /** Mirrors the server zone build-gate: a footprint cell inside a zone the
+   *  player's team does not control blocks the build — EXCEPT a claim zone's
+   *  capture-point slot, which is buildable while unowned (that's how the team
+   *  breaks in to claim it). Returns true when the placement is blocked by an
+   *  uncontrolled zone, so the caller can surface "Zone not controlled". */
+  buildBlockedByUnownedZone(gridX: number, gridY: number, gridW: number, gridH: number, buildingType: string): boolean {
+    const zones = this.mapConfig.zones
+    if (!zones?.length) return false
+    for (let dy = 0; dy < gridH; dy++) {
+      for (let dx = 0; dx < gridW; dx++) {
+        const cx = gridX + dx
+        const cy = gridY + dy
+        const zone = zones.find((z) => z.cells.some(([zx, zy]) => zx === cx && zy === cy))
+        if (!zone) continue
+        if (this.zoneControlledByMyTeam(this.zoneSnapshotsById.get(zone.id)?.owner)) continue // my team controls it
+        if (this.isBuildableClaimSlotCell(zone, cx, cy, buildingType)) continue // claim-slot exception
+        return true
+      }
+    }
+    return false
+  }
+
+  /** Whether a zone owner string means "my team controls this zone". The team
+   *  sentinel or a friendly real player count; the neutral/enemy sentinels and
+   *  empty never do. Mirrors ownerIsTeam in zoneCaptureCards. */
+  private zoneControlledByMyTeam(owner: string | undefined): boolean {
+    if (!owner) return false
+    if (owner === ZONE_TEAM_OWNER) return true
+    if (owner === 'neutral' || owner === ENEMY_PLAYER_ID || owner === NEUTRAL_PLAYER_ID) return false
+    return this.isFriendlyOwnerForZone(owner)
+  }
+
+  /** True when (cx, cy) is a buildable claim capture-point slot for buildingType.
+   *  Mirrors the server claimSlotBuildableLocked: the cell is in a claim zone's
+   *  2x2 slot and (if a towerType is configured) the building is that tower. */
+  private isBuildableClaimSlotCell(zone: Zone, cx: number, cy: number, buildingType: string): boolean {
+    if (zone.capture?.type !== 'claim') return false
+    const towerType = (zone.capture.config?.['towerType'] as string | undefined) ?? ''
+    if (towerType && buildingType !== towerType) return false
+    const points = (zone.claimPoints?.length ?? 0) > 0 ? zone.claimPoints! : [[zone.anchor.x, zone.anchor.y]]
+    return points.some(([ax, ay]) => cx >= ax && cx <= ax + 1 && cy >= ay && cy <= ay + 1)
+  }
+
   isBuildingTargetingActive(mode?: BuildingTargetingMode) {
     if (!this.buildingTargetingMode) return false
     return mode ? this.buildingTargetingMode === mode : true
@@ -2804,6 +2849,33 @@ export class GameState {
     return this.victorySnapshot?.objectives ?? []
   }
 
+  /** A unit owner counts as "my team" when it's the local player or an allied
+   *  player on the same team — never the enemy/neutral AI. Mirrors the server
+   *  playersAreFriendly chokepoint for the zone-capture HUD. */
+  private isFriendlyOwnerForZone(ownerId: string | undefined): boolean {
+    if (!ownerId || ownerId === ENEMY_PLAYER_ID || ownerId === NEUTRAL_PLAYER_ID) return false
+    if (!this.localPlayerId) return false
+    if (ownerId === this.localPlayerId) return true
+    return this.teamOf(ownerId) === this.teamOf(this.localPlayerId)
+  }
+
+  /** Zone-capture requirement cards for zones my team currently occupies but
+   *  does not yet own. Drives ZoneCapturePanel. Empty when no zones qualify. */
+  getZoneCaptureCards(): ZoneCaptureCard[] {
+    // Called every UI tick — skip all work on maps without zones (the common
+    // case). buildZoneCaptureCards accepts BuildingTile (null owner ids) directly.
+    if (!this.mapConfig.zones?.length) return []
+    return buildZoneCaptureCards({
+      zones: this.mapConfig.zones,
+      snapshotsById: this.zoneSnapshotsById,
+      units: this.units,
+      buildings: this.mapConfig.buildings,
+      cellSize: this.mapConfig.cellSize,
+      isFriendlyOwner: (o) => this.isFriendlyOwnerForZone(o),
+      isHostileOwner: (o) => this.isHostileToLocalPlayer(o),
+    })
+  }
+
   getPlayerColor(playerId: string | null | undefined): string | null {
     if (!playerId) return null
     return this.playerColors.get(playerId) ?? null
@@ -3257,6 +3329,12 @@ function getUnitActions(
   if (unit.capabilities.includes('attack')) {
     actions.push({ id: 'hold', label: '(H)old' })
     actions.push({ id: 'patrol', label: '(P)atrol', active: activeMode === 'patrol' })
+    // Guard is for combat units, not workers — gathering units would never
+    // auto-acquire, so the server rejects them anyway (mirrors the NonCombat
+    // gate in GuardUnits). In-place stance like Hold, so no `active` targeting.
+    if (!unit.capabilities.includes('gather')) {
+      actions.push({ id: 'guard', label: '(G)uard' })
+    }
   }
   return actions
 }
@@ -3298,6 +3376,14 @@ function getGroupActions(
   if (capabilities.has('attack')) {
     actions.push({ id: 'hold', label: '(H)old' })
     actions.push({ id: 'patrol', label: '(P)atrol', active: activeMode === 'patrol' })
+    // Guard surfaces when the group holds at least one combat (non-gathering)
+    // unit; the server applies it only to those, skipping any workers.
+    const hasGuardable = units.some(
+      (u) => u.capabilities.includes('attack') && !u.capabilities.includes('gather'),
+    )
+    if (hasGuardable) {
+      actions.push({ id: 'guard', label: '(G)uard' })
+    }
   }
   // Shared ability buttons — appear when every selected unit owns the same
   // ability id (typical case: a group of Clerics with Heal). Right-click on

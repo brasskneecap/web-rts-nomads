@@ -76,9 +76,9 @@ func seedPlayer(t *testing.T, pm *profile.Manager, dominionPoints int, ranks map
 
 // ─── GET /api/catalog/profile-upgrades ───────────────────────────────────────
 
-// TestCatalogProfileUpgrades_ReturnsThreeUpgrades verifies the catalog endpoint
-// returns the three initial upgrades.
-func TestCatalogProfileUpgrades_ReturnsThreeUpgrades(t *testing.T) {
+// TestCatalogProfileUpgrades_ReturnsUpgrades verifies the catalog endpoint
+// returns the registered upgrades.
+func TestCatalogProfileUpgrades_ReturnsUpgrades(t *testing.T) {
 	mux, _ := newTestMux(t)
 	rec := getRequest(t, mux, "/api/catalog/profile-upgrades", "")
 
@@ -93,14 +93,14 @@ func TestCatalogProfileUpgrades_ReturnsThreeUpgrades(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(resp.Upgrades) < 3 {
-		t.Fatalf("want at least 3 upgrades, got %d", len(resp.Upgrades))
+	if len(resp.Upgrades) < 2 {
+		t.Fatalf("want at least 2 upgrades, got %d", len(resp.Upgrades))
 	}
 	ids := make(map[string]bool)
 	for _, u := range resp.Upgrades {
 		ids[u.ID] = true
 	}
-	for _, want := range []string{"additional_worker", "physical_power", "magic_power"} {
+	for _, want := range []string{"physical_power", "magic_power"} {
 		if !ids[want] {
 			t.Errorf("upgrade %q missing from catalog response", want)
 		}
@@ -141,13 +141,13 @@ func TestGetProfile_IncludesUpgradeCatalogAndOwnedRanks(t *testing.T) {
 // ─── POST /api/profile/upgrades/purchase ─────────────────────────────────────
 
 // TestPurchase_Success_DebitsExactCostAndIncrementsRank verifies a successful
-// first rank purchase of additional_worker debits 25 DP and sets rank to 1.
+// first rank purchase of physical_power debits 10 DP and sets rank to 1.
 func TestPurchase_Success_DebitsExactCostAndIncrementsRank(t *testing.T) {
 	mux, pm := newTestMux(t)
-	seedPlayer(t, pm, 25, nil)
+	seedPlayer(t, pm, 10, nil)
 
 	rec := postJSON(t, mux, "/api/profile/upgrades/purchase", testPlayerID, map[string]string{
-		"upgradeId": "additional_worker",
+		"upgradeId": "physical_power",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d — body: %s", rec.Code, rec.Body.String())
@@ -159,8 +159,8 @@ func TestPurchase_Success_DebitsExactCostAndIncrementsRank(t *testing.T) {
 	if p.DominionPoints != 0 {
 		t.Errorf("DominionPoints: want 0, got %d", p.DominionPoints)
 	}
-	if p.OwnedUpgradeRanks["additional_worker"] != 1 {
-		t.Errorf("rank: want 1, got %d", p.OwnedUpgradeRanks["additional_worker"])
+	if p.OwnedUpgradeRanks["physical_power"] != 1 {
+		t.Errorf("rank: want 1, got %d", p.OwnedUpgradeRanks["physical_power"])
 	}
 }
 
@@ -169,11 +169,11 @@ func TestPurchase_Success_DebitsExactCostAndIncrementsRank(t *testing.T) {
 // not mutate the profile.
 func TestPurchase_InsufficientPoints_Returns400(t *testing.T) {
 	mux, pm := newTestMux(t)
-	// Seed rank 1 (so rank 2 costs 100 DP), but only give 99 DP.
-	seedPlayer(t, pm, 99, map[string]int{"additional_worker": 1})
+	// Seed rank 1 (so rank 2 costs 20 DP), but only give 19 DP.
+	seedPlayer(t, pm, 19, map[string]int{"physical_power": 1})
 
 	rec := postJSON(t, mux, "/api/profile/upgrades/purchase", testPlayerID, map[string]string{
-		"upgradeId": "additional_worker",
+		"upgradeId": "physical_power",
 	})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status: want 400, got %d", rec.Code)
@@ -185,11 +185,11 @@ func TestPurchase_InsufficientPoints_Returns400(t *testing.T) {
 	}
 	// Verify no mutation.
 	p, _ := pm.Get(testPlayerID)
-	if p.DominionPoints != 99 {
-		t.Errorf("DominionPoints should be unchanged (99), got %d", p.DominionPoints)
+	if p.DominionPoints != 19 {
+		t.Errorf("DominionPoints should be unchanged (19), got %d", p.DominionPoints)
 	}
-	if p.OwnedUpgradeRanks["additional_worker"] != 1 {
-		t.Errorf("rank should be unchanged (1), got %d", p.OwnedUpgradeRanks["additional_worker"])
+	if p.OwnedUpgradeRanks["physical_power"] != 1 {
+		t.Errorf("rank should be unchanged (1), got %d", p.OwnedUpgradeRanks["physical_power"])
 	}
 }
 
@@ -197,11 +197,11 @@ func TestPurchase_InsufficientPoints_Returns400(t *testing.T) {
 // maxRanks returns 400 with error "max_rank_reached".
 func TestPurchase_MaxRankReached_Returns400(t *testing.T) {
 	mux, pm := newTestMux(t)
-	// additional_worker maxRanks=2; seed at rank 2.
-	seedPlayer(t, pm, 1000, map[string]int{"additional_worker": 2})
+	// physical_power maxRanks=10; seed at rank 10.
+	seedPlayer(t, pm, 1000, map[string]int{"physical_power": 10})
 
 	rec := postJSON(t, mux, "/api/profile/upgrades/purchase", testPlayerID, map[string]string{
-		"upgradeId": "additional_worker",
+		"upgradeId": "physical_power",
 	})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status: want 400, got %d", rec.Code)
@@ -235,13 +235,13 @@ func TestPurchase_UnknownUpgrade_Returns400(t *testing.T) {
 // ─── POST /api/profile/upgrades/refund ───────────────────────────────────────
 
 // TestRefund_Success_RefundsExactCostOfLastRank verifies that refunding
-// additional_worker at rank 2 returns 100 DP and decrements rank to 1.
+// physical_power at rank 2 returns 20 DP and decrements rank to 1.
 func TestRefund_Success_RefundsExactCostOfLastRank(t *testing.T) {
 	mux, pm := newTestMux(t)
-	seedPlayer(t, pm, 0, map[string]int{"additional_worker": 2})
+	seedPlayer(t, pm, 0, map[string]int{"physical_power": 2})
 
 	rec := postJSON(t, mux, "/api/profile/upgrades/refund", testPlayerID, map[string]string{
-		"upgradeId": "additional_worker",
+		"upgradeId": "physical_power",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d — body: %s", rec.Code, rec.Body.String())
@@ -250,11 +250,11 @@ func TestRefund_Success_RefundsExactCostOfLastRank(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&p); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if p.DominionPoints != 100 {
-		t.Errorf("DominionPoints: want 100 (refund of rank-2 cost), got %d", p.DominionPoints)
+	if p.DominionPoints != 20 {
+		t.Errorf("DominionPoints: want 20 (refund of rank-2 cost), got %d", p.DominionPoints)
 	}
-	if p.OwnedUpgradeRanks["additional_worker"] != 1 {
-		t.Errorf("rank: want 1, got %d", p.OwnedUpgradeRanks["additional_worker"])
+	if p.OwnedUpgradeRanks["physical_power"] != 1 {
+		t.Errorf("rank: want 1, got %d", p.OwnedUpgradeRanks["physical_power"])
 	}
 }
 
@@ -281,7 +281,7 @@ func TestRefund_NotOwned_Returns400(t *testing.T) {
 // does not change LifetimeDominionPoints.
 func TestRefund_DoesNotCreditLifetimeDominionPoints(t *testing.T) {
 	mux, pm := newTestMux(t)
-	seedPlayer(t, pm, 0, map[string]int{"additional_worker": 1})
+	seedPlayer(t, pm, 0, map[string]int{"physical_power": 1})
 
 	// Set a known lifetime value.
 	_ = pm.WithLocked(testPlayerID, func(p *profile.PlayerProfile) error {
@@ -290,7 +290,7 @@ func TestRefund_DoesNotCreditLifetimeDominionPoints(t *testing.T) {
 	})
 
 	rec := postJSON(t, mux, "/api/profile/upgrades/refund", testPlayerID, map[string]string{
-		"upgradeId": "additional_worker",
+		"upgradeId": "physical_power",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d", rec.Code)
@@ -329,7 +329,7 @@ func TestRefund_UnknownUpgrade_Returns400(t *testing.T) {
 // adds it to ActiveUpgradeIDs and returns 200 with the updated profile.
 func TestToggle_ToggleOn_Success(t *testing.T) {
 	mux, pm := newTestMux(t)
-	seedPlayer(t, pm, 0, map[string]int{"additional_worker": 1})
+	seedPlayer(t, pm, 0, map[string]int{"physical_power": 1})
 
 	// First toggle off so we can toggle back on.
 	_ = pm.WithLocked(testPlayerID, func(p *profile.PlayerProfile) error {
@@ -338,7 +338,7 @@ func TestToggle_ToggleOn_Success(t *testing.T) {
 	})
 
 	rec := postJSON(t, mux, "/api/profile/upgrades/toggle", testPlayerID, map[string]any{
-		"upgradeId": "additional_worker",
+		"upgradeId": "physical_power",
 		"active":    true,
 	})
 	if rec.Code != http.StatusOK {
@@ -350,13 +350,13 @@ func TestToggle_ToggleOn_Success(t *testing.T) {
 	}
 	found := false
 	for _, id := range p.ActiveUpgradeIDs {
-		if id == "additional_worker" {
+		if id == "physical_power" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("ActiveUpgradeIDs: want additional_worker to be present, got %v", p.ActiveUpgradeIDs)
+		t.Errorf("ActiveUpgradeIDs: want physical_power to be present, got %v", p.ActiveUpgradeIDs)
 	}
 }
 
@@ -364,16 +364,16 @@ func TestToggle_ToggleOn_Success(t *testing.T) {
 // removes it from ActiveUpgradeIDs and returns 200 with the updated profile.
 func TestToggle_ToggleOff_Success(t *testing.T) {
 	mux, pm := newTestMux(t)
-	seedPlayer(t, pm, 0, map[string]int{"additional_worker": 1})
+	seedPlayer(t, pm, 0, map[string]int{"physical_power": 1})
 
 	// Ensure it's active first.
 	_ = pm.WithLocked(testPlayerID, func(p *profile.PlayerProfile) error {
-		p.ActiveUpgradeIDs = []string{"additional_worker"}
+		p.ActiveUpgradeIDs = []string{"physical_power"}
 		return nil
 	})
 
 	rec := postJSON(t, mux, "/api/profile/upgrades/toggle", testPlayerID, map[string]any{
-		"upgradeId": "additional_worker",
+		"upgradeId": "physical_power",
 		"active":    false,
 	})
 	if rec.Code != http.StatusOK {
@@ -384,8 +384,8 @@ func TestToggle_ToggleOff_Success(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	for _, id := range p.ActiveUpgradeIDs {
-		if id == "additional_worker" {
-			t.Errorf("ActiveUpgradeIDs: additional_worker should be absent after toggle off, got %v", p.ActiveUpgradeIDs)
+		if id == "physical_power" {
+			t.Errorf("ActiveUpgradeIDs: physical_power should be absent after toggle off, got %v", p.ActiveUpgradeIDs)
 		}
 	}
 }
@@ -437,7 +437,7 @@ func TestPurchase_AutoActivatesOnFirstRank(t *testing.T) {
 	seedPlayer(t, pm, 25, nil)
 
 	rec := postJSON(t, mux, "/api/profile/upgrades/purchase", testPlayerID, map[string]string{
-		"upgradeId": "additional_worker",
+		"upgradeId": "physical_power",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d — body: %s", rec.Code, rec.Body.String())
@@ -448,13 +448,13 @@ func TestPurchase_AutoActivatesOnFirstRank(t *testing.T) {
 	}
 	found := false
 	for _, id := range p.ActiveUpgradeIDs {
-		if id == "additional_worker" {
+		if id == "physical_power" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("ActiveUpgradeIDs: want additional_worker auto-activated on first purchase, got %v", p.ActiveUpgradeIDs)
+		t.Errorf("ActiveUpgradeIDs: want physical_power auto-activated on first purchase, got %v", p.ActiveUpgradeIDs)
 	}
 }
 
@@ -462,16 +462,16 @@ func TestPurchase_AutoActivatesOnFirstRank(t *testing.T) {
 // removes the upgrade from ActiveUpgradeIDs automatically.
 func TestRefund_AutoDeactivatesOnFullRefund(t *testing.T) {
 	mux, pm := newTestMux(t)
-	seedPlayer(t, pm, 0, map[string]int{"additional_worker": 1})
+	seedPlayer(t, pm, 0, map[string]int{"physical_power": 1})
 
 	// Ensure it's active.
 	_ = pm.WithLocked(testPlayerID, func(p *profile.PlayerProfile) error {
-		p.ActiveUpgradeIDs = []string{"additional_worker"}
+		p.ActiveUpgradeIDs = []string{"physical_power"}
 		return nil
 	})
 
 	rec := postJSON(t, mux, "/api/profile/upgrades/refund", testPlayerID, map[string]string{
-		"upgradeId": "additional_worker",
+		"upgradeId": "physical_power",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d — body: %s", rec.Code, rec.Body.String())
@@ -481,8 +481,8 @@ func TestRefund_AutoDeactivatesOnFullRefund(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	for _, id := range p.ActiveUpgradeIDs {
-		if id == "additional_worker" {
-			t.Errorf("ActiveUpgradeIDs: additional_worker should be removed after full refund, got %v", p.ActiveUpgradeIDs)
+		if id == "physical_power" {
+			t.Errorf("ActiveUpgradeIDs: physical_power should be removed after full refund, got %v", p.ActiveUpgradeIDs)
 		}
 	}
 }

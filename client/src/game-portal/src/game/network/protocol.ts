@@ -260,6 +260,10 @@ export type Zone = {
    *  protocol.Zone.RequireAllLinks. */
   requireAllLinks?: boolean
   captureCells?: [number, number][]
+  /** Capture-point slots for the CLAIM mechanic: each is the top-left cell of a
+   *  2x2 tower slot. The team must build + defend a tower on every point to
+   *  capture the zone. Empty/absent ⇒ a single slot at `anchor`. */
+  claimPoints?: [number, number][]
   /** When set to a player label (e.g. "player1"), this zone is that team's
    *  HOME zone: it starts team-owned and is NOT capturable (the capture
    *  mechanic is skipped). Mirrors protocol.Zone.LockedSpawnLabel on the
@@ -277,6 +281,10 @@ export type ZoneSnapshot = {
    *  lowest-slot player's color). Empty/absent ⇒ unowned → render grey.
    *  Mirrors protocol.ZoneSnapshot.OwnerColor. */
   ownerColor?: string
+  /** Per-capture-point progress for a multi-point CLAIM zone, in the same
+   *  order as the zone's `claimPoints`. `progress` is a 0..1 fraction of the
+   *  shared defend duration; `captured` flips true once the point is held. */
+  claimPoints?: { progress: number; captured?: boolean }[]
 }
 
 export type MapConfig = {
@@ -536,6 +544,7 @@ export type UnitOrder =
   | 'attack_target'
   | 'hold'
   | 'patrol'
+  | 'guard'
   | 'focus_follow'
   | 'pickup_loot'
 
@@ -548,6 +557,7 @@ export const UNIT_ORDER_LABELS: Record<UnitOrder, string> = {
   attack_target: 'Attacking',
   hold: 'Hold',
   patrol: 'Patrol',
+  guard: 'Guard',
   focus_follow: 'Following',
   pickup_loot: 'Picking Up',
 }
@@ -563,6 +573,11 @@ export type PatrolCommandMessage = {
   type: 'patrol_command'
   unitIds: number[]
   destination: Vec2
+}
+
+export type GuardCommandMessage = {
+  type: 'guard_command'
+  unitIds: number[]
 }
 
 // Dev-only command issued by the DebugSpawnPanel. See MapDebugConfig.debugSpawn —
@@ -754,6 +769,7 @@ export type ClientMessage =
   | DebugSpawnUnitCommandMessage
   | SetStanceCommandMessage
   | PatrolCommandMessage
+  | GuardCommandMessage
   | PurchaseUpgradeCommand
   | CancelUpgradeCommand
   | UpgradeTownHallCommand

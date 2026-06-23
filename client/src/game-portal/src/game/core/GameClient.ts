@@ -55,6 +55,9 @@ export type GameUiSnapshot = {
   // True when all victory objectives have been completed.
   isVictory: boolean
   objectives: import('../network/protocol').ObjectiveSnapshot[]
+  /** Zone-capture requirement cards (zones my team occupies but doesn't own).
+   *  Empty when none qualify. Drives ZoneCapturePanel. */
+  zoneCaptureCards: import('../zones/zoneCaptureCards').ZoneCaptureCard[]
   /** Full per-player snapshot array from the most recent tick. Drives the
    *  end-of-match recap's per-player metrics columns (§15). Empty until
    *  the first snapshot arrives. AI players (enemy/neutral) are filtered
@@ -277,6 +280,7 @@ export class GameClient {
       isDefeated: this.state.isLocalPlayerDefeated(),
       isVictory: this.state.isVictoryAchieved(),
       objectives: this.state.getObjectives(),
+      zoneCaptureCards: this.state.getZoneCaptureCards(),
       players: this.state.playerSnapshots,
       upgrades: this.state.playerUpgrades,
       townHallTier: this.state.townHallTier,
@@ -509,6 +513,16 @@ export class GameClient {
       return
     }
 
+    if (actionId === 'guard') {
+      // In-place stance, like Hold — no targeting cursor. Each unit guards the
+      // spot it is currently standing on.
+      const unitIds = this.state.getOrderedSelectedUnitIds()
+      if (unitIds.length > 0) {
+        this.network.sendGuardCommand(unitIds)
+      }
+      return
+    }
+
     if (actionId === 'build') {
       this.state.openWorkerBuildMenu()
       return
@@ -639,8 +653,14 @@ export class GameClient {
       this.state.updateBuildPlacement(x, y)
       const placement = this.state.buildPlacement
       if (placement?.valid) {
-        this.network.sendBuildBuildingCommand(placement.builderUnitIds, placement.buildingType, placement.cursorGridX, placement.cursorGridY)
-        this.state.cancelBuildPlacement()
+        if (this.state.buildBlockedByUnownedZone(placement.cursorGridX, placement.cursorGridY, placement.gridW, placement.gridH, placement.buildingType)) {
+          // The cell sits in a zone the team doesn't control (and isn't a claim
+          // slot) — the server would silently reject the build, so tell the player.
+          this.state.addNotification('Zone not controlled')
+        } else {
+          this.network.sendBuildBuildingCommand(placement.builderUnitIds, placement.buildingType, placement.cursorGridX, placement.cursorGridY)
+          this.state.cancelBuildPlacement()
+        }
       } else {
         this.state.addNotification('Cannot place building here')
       }

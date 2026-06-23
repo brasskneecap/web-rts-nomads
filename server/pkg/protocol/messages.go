@@ -18,6 +18,9 @@ const (
 	// OrderType enum addition (task 10.4).
 	OrderStringFocusFollow = "focus_follow"
 	OrderStringPickupLoot  = "pickup_loot"
+	// OrderStringGuard is the wire value for the Guard order — hold a position,
+	// engage hostiles that come within the unit's guard radius, then return.
+	OrderStringGuard = "guard"
 )
 
 type Vec2 struct {
@@ -114,6 +117,13 @@ type Zone struct {
 	// than anywhere in the zone). Empty ⇒ the whole zone counts. Also used by an
 	// enemy-spawnpoint's `triggerCaptureZoneId` to decide occupancy.
 	CaptureCells [][2]int `json:"captureCells,omitempty"`
+	// ClaimPoints is the optional list of capture-point slots for the "claim"
+	// capture mechanic: each entry is the top-left cell of a 2x2 tower slot. The
+	// team must build and defend a tower on EVERY point to capture the zone; each
+	// point is captured independently and stays captured (sticky) once defended.
+	// EMPTY/absent ⇒ a single slot at Anchor (backward-compatible default). Only
+	// meaningful when Capture.Type == "claim".
+	ClaimPoints [][2]int `json:"claimPoints,omitempty"`
 	// LockedSpawnLabel, when set, links this zone to a player's starting point
 	// (the spawn-point's player label, e.g. "player1"). A linked zone is the
 	// team's home territory: it starts team-owned and is NOT capturable (the
@@ -663,6 +673,15 @@ type SetStanceCommandMessage struct {
 type PatrolCommandMessage struct {
 	UnitIDs     []int `json:"unitIds"`
 	Destination Vec2  `json:"destination"`
+}
+
+// GuardCommandMessage issues an in-place guard stance (like Hold): each unit
+// guards the position it is currently standing on, engaging hostiles that enter
+// its guard radius and returning to that spot afterward. There is no
+// destination — the units do not move to take up the stance.
+type GuardCommandMessage struct {
+	Type    string `json:"type"`
+	UnitIDs []int  `json:"unitIds"`
 }
 
 type CancelTrainingCommandMessage struct {
@@ -1424,6 +1443,15 @@ type NeutralCampSnapshot struct {
 	AliveUnitCount int    `json:"aliveUnitCount"`
 }
 
+// ZoneClaimPointSnapshot is the per-tick wire view of one claim capture point.
+// Progress is a normalised 0..1 fraction of the shared defendSeconds; Captured
+// is set once the point has been defended to completion (sticky). Entries are
+// in the same authored order as Zone.ClaimPoints.
+type ZoneClaimPointSnapshot struct {
+	Progress float64 `json:"progress"`
+	Captured bool    `json:"captured,omitempty"`
+}
+
 // ZoneSnapshot is the per-tick wire view of one zone's mutable control state.
 // The static geometry (cells, anchor, adjacency, capture type) travels once in
 // the WelcomeMessage's MapConfig.Zones; only the fields that change during play
@@ -1445,6 +1473,10 @@ type ZoneSnapshot struct {
 	// the team sentinel → the LOWEST-slot joined player's color; neutral/unowned
 	// → empty (the client renders grey). Drives the zone perimeter tint.
 	OwnerColor string `json:"ownerColor,omitempty"`
+	// ClaimPoints carries per-capture-point progress for a multi-point claim
+	// zone, in authored order. Empty for non-claim zones. Drives the "N/M points"
+	// HUD and per-point timer bars.
+	ClaimPoints []ZoneClaimPointSnapshot `json:"claimPoints,omitempty"`
 }
 
 // LootDropSnapshot is the per-tick wire view of one ground-loot chest.

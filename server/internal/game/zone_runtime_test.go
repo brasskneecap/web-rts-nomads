@@ -893,6 +893,102 @@ func TestZoneSnapshots_CarryControlState(t *testing.T) {
 	}
 }
 
+// --- multi-point claim install -----------------------------------------------
+
+func multiPointClaimZone(id string, points [][2]int, cells [][2]int, adjacent ...string) protocol.Zone {
+	anchor := [2]int{points[0][0], points[0][1]}
+	return protocol.Zone{
+		ID:            id,
+		Anchor:        protocol.GridCoord{X: anchor[0], Y: anchor[1]},
+		Cells:         cells,
+		Capture:       protocol.ZoneCapture{Type: "claim", Config: json.RawMessage(`{"defendSeconds":3,"towerType":"Tower"}`)},
+		ClaimPoints:   points,
+		StartingOwner: "neutral",
+		Adjacent:      adjacent,
+	}
+}
+
+func TestInstallZones_BuildsClaimPointStates(t *testing.T) {
+	seed := presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1")
+	claim := multiPointClaimZone("claim", [][2]int{{6, 6}, {10, 6}}, rectCells(5, 5, 14, 9), "seed")
+	s := newZoneTestState([]protocol.Zone{seed, claim})
+
+	rt := s.zoneRuntimeByIDLocked("claim")
+	if got := len(rt.claimPoints); got != 2 {
+		t.Fatalf("two-point claim zone should build 2 point states, got %d", got)
+	}
+	// A claim zone with NO explicit points falls back to a single anchor slot.
+	single := claimZone("single", [2]int{20, 20}, rectCells(19, 19, 23, 23))
+	s2 := newZoneTestState([]protocol.Zone{single})
+	if got := len(s2.zoneRuntimeByIDLocked("single").claimPoints); got != 1 {
+		t.Fatalf("anchor-fallback claim zone should build 1 point state, got %d", got)
+	}
+}
+
+// --- multi-point claim geometry ----------------------------------------------
+
+func TestClaimMultiPoint_BuildGateAndTowerLookup(t *testing.T) {
+	seed := presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1")
+	claim := multiPointClaimZone("claim", [][2]int{{6, 6}, {10, 6}}, rectCells(5, 5, 14, 9), "seed")
+	s := newZoneTestState([]protocol.Zone{seed, claim})
+	rt := s.zoneRuntimeByIDLocked("claim")
+
+	// The Tower is buildable on BOTH point slots, not just the first.
+	if !s.claimSlotBuildableLocked(rt, gridPoint{X: 6, Y: 6}, "Tower") {
+		t.Fatal("tower should be buildable on point 1 slot")
+	}
+	if !s.claimSlotBuildableLocked(rt, gridPoint{X: 10, Y: 6}, "Tower") {
+		t.Fatal("tower should be buildable on point 2 slot")
+	}
+	// A cell in no point's slot is rejected.
+	if s.claimSlotBuildableLocked(rt, gridPoint{X: 14, Y: 9}, "Tower") {
+		t.Fatal("a non-slot cell must not be buildable")
+	}
+	// A standing tower on point 2 is found by claimZoneTowerLocked.
+	if s.claimZoneTowerLocked("claim") != nil {
+		t.Fatal("no tower built yet → nil")
+	}
+	s.placeClaimTower("p1", 10, 6) // on point 2
+	if got := s.claimZoneTowerLocked("claim"); got == nil {
+		t.Fatal("a tower standing on point 2 should be found")
+	}
+}
+
+// --- multi-point claim capture (per-point independent, sticky) --------------
+
+func TestClaimMultiPoint_AllPointsRequiredAndSticky(t *testing.T) {
+	seed := presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1")
+	claim := multiPointClaimZone("claim", [][2]int{{6, 6}, {10, 6}}, rectCells(5, 5, 14, 9), "seed")
+	s := newZoneTestState([]protocol.Zone{seed, claim})
+
+	// Defend ONLY point 1 to completion (defendSeconds=3, dt 0.5 → 6 ticks).
+	t1 := s.placeClaimTower("p1", 6, 6)
+	for i := 0; i < 7; i++ {
+		s.tickZonesLocked(0.5)
+	}
+	if zoneOwner(s, "claim") != protocol.ZoneCaptureNeutralOwner {
+		t.Fatalf("zone must NOT capture with only 1 of 2 points held, got %q", zoneOwner(s, "claim"))
+	}
+	rt := s.zoneRuntimeByIDLocked("claim")
+	if !rt.claimPoints[0].Captured {
+		t.Fatal("point 1 should be captured")
+	}
+	// Point 1's tower is destroyed — it stays captured (sticky per point).
+	t1.Visible = false
+	s.tickZonesLocked(0.5)
+	if !rt.claimPoints[0].Captured {
+		t.Fatal("a captured point must stay captured after its tower falls")
+	}
+	// Now defend point 2 → the whole zone flips to the team.
+	s.placeClaimTower("p1", 10, 6)
+	for i := 0; i < 7; i++ {
+		s.tickZonesLocked(0.5)
+	}
+	if got := zoneOwner(s, "claim"); got != protocol.ZoneCaptureTeamOwner {
+		t.Fatalf("zone should capture once BOTH points are held, got %q", got)
+	}
+}
+
 // --- determinism ------------------------------------------------------------
 
 func TestZoneCapture_DeterministicReplay(t *testing.T) {
@@ -912,5 +1008,44 @@ func TestZoneCapture_DeterministicReplay(t *testing.T) {
 	o2, p2 := run()
 	if o1 != o2 || p1 != p2 {
 		t.Fatalf("non-deterministic replay: (%q,%v) vs (%q,%v)", o1, p1, o2, p2)
+	}
+}
+
+func TestZoneSnapshot_CarriesClaimPoints(t *testing.T) {
+	seed := presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1")
+	claim := multiPointClaimZone("claim", [][2]int{{6, 6}, {10, 6}}, rectCells(5, 5, 14, 9), "seed")
+	s := newZoneTestState([]protocol.Zone{seed, claim})
+
+	// Defend point 1 to completion first (defendSeconds=3, dt 0.5 → 6 ticks = 3.0s).
+	s.placeClaimTower("p1", 6, 6)
+	for i := 0; i < 6; i++ {
+		s.tickZonesLocked(0.5)
+	}
+	rt := s.zoneRuntimeByIDLocked("claim")
+	if !rt.claimPoints[0].Captured {
+		t.Fatal("setup: point 1 should be captured after 6 ticks (3.0s >= defendSeconds=3)")
+	}
+	// Now start defending point 2 — partway through (1 tick = 0.5s, still mid-defend).
+	s.placeClaimTower("p1", 10, 6)
+	s.tickZonesLocked(0.5)
+
+	snaps := s.zoneSnapshotsLocked()
+	var snap *protocol.ZoneSnapshot
+	for i := range snaps {
+		if snaps[i].ID == "claim" {
+			snap = &snaps[i]
+		}
+	}
+	if snap == nil || len(snap.ClaimPoints) != 2 {
+		t.Fatalf("claim snapshot should carry 2 per-point entries, got %+v", snap)
+	}
+	if !snap.ClaimPoints[0].Captured {
+		t.Fatal("point 1 should report captured in the snapshot")
+	}
+	if snap.ClaimPoints[1].Captured {
+		t.Fatal("point 2 should not yet be captured")
+	}
+	if snap.ClaimPoints[1].Progress <= 0 || snap.ClaimPoints[1].Progress >= 1 {
+		t.Fatalf("point 2 should report mid-defend fraction, got %v", snap.ClaimPoints[1].Progress)
 	}
 }

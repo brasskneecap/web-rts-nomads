@@ -117,6 +117,7 @@ import acolytePortraitUrl from '@/assets/units/human/acolyte/portrait.png'
 import adeptPortraitUrl from '@/assets/units/human/adept/portrait.png'
 import archerPortraitUrl from '@/assets/units/human/archer/portrait.png'
 import soldierPortraitUrl from '@/assets/units/human/soldier/portrait.png'
+import workerPortraitUrl from '@/assets/units/human/worker/portrait.png'
 import unsealedUrl from '@/assets/ui/buttons/war_room/advancement/unsealed.png'
 import waxSealUrl from '@/assets/ui/buttons/war_room/advancement/wax-seal.png'
 import medalSlotEmptyUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot-empty.png'
@@ -141,6 +142,7 @@ const PORTRAIT_MAP: Record<string, string> = {
   archer: archerPortraitUrl,
   acolyte: acolytePortraitUrl,
   adept: adeptPortraitUrl,
+  worker: workerPortraitUrl,
 }
 
 // Human-readable label for a unit type. Falls back to capitalised unitType.
@@ -150,6 +152,7 @@ function unitDisplayName(unitType: string): string {
     archer: 'Archer',
     acolyte: 'Acolyte',
     adept: 'Adept',
+    worker: 'Worker',
   }
   return overrides[unitType] ?? (unitType.charAt(0).toUpperCase() + unitType.slice(1))
 }
@@ -169,7 +172,7 @@ function portraitBg(unitType: string): string {
 // alphabetically by unitType; we override that for presentation so the roster
 // reads in roster order rather than A–Z. Unit types not listed here fall back
 // to alphabetical, after the listed ones.
-const UNIT_DISPLAY_ORDER = ['soldier', 'archer', 'acolyte', 'adept']
+const UNIT_DISPLAY_ORDER = ['soldier', 'archer', 'acolyte', 'adept', 'worker']
 
 function unitOrderRank(unitType: string): number {
   const idx = UNIT_DISPLAY_ORDER.indexOf(unitType)
