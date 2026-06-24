@@ -565,7 +565,7 @@
         "x": 34,
         "y": 5,
         "id": "placed-unit-player3-34-5",
-        "playerSlot": "player3",
+        "playerSlot": "player2",
         "unitType": "worker",
         "aggroRange": 150,
         "leashRange": 200
@@ -574,7 +574,7 @@
         "x": 35,
         "y": 5,
         "id": "placed-unit-player3-35-5",
-        "playerSlot": "player3",
+        "playerSlot": "player2",
         "unitType": "worker",
         "aggroRange": 150,
         "leashRange": 200
@@ -583,7 +583,7 @@
         "x": 36,
         "y": 5,
         "id": "placed-unit-player3-36-5",
-        "playerSlot": "player3",
+        "playerSlot": "player2",
         "unitType": "worker",
         "aggroRange": 150,
         "leashRange": 200
