@@ -3978,9 +3978,34 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
   }
 }
 
+// Short label for the wave an enemy spawn point first activates on, shown on
+// the tile in the editor. Mirrors editWaveMode / editWaveNumber precedence so
+// the badge always matches the Spawn Timing the edit panel would show:
+//   capture → 'C' (zone-triggered, no fixed wave)
+//   gameStart → '0' (spawns at game start, before wave 1)
+//   interval → the interval N (first fires on wave N)
+//   specific → the wave number
+//   repeating → the starting wave
+//   else (always) → '1'
+function enemySpawnWaveLabel(meta: Record<string, unknown> | null | undefined): string {
+  if (!meta) return '1'
+  if (meta['triggerCaptureZoneId']) return 'C'
+  if (meta['gameStart'] === true) return '0'
+  if ('waveInterval' in meta) return String(meta['waveInterval'] ?? 1)
+  if ('waveNumber' in meta) return String(meta['waveNumber'] ?? 1)
+  if ('startingWave' in meta) return String(meta['startingWave'] ?? 1)
+  return '1'
+}
+
 function drawEditorEnemySpawnpoint(
   ctx: CanvasRenderingContext2D,
-  building: { x: number; y: number; width: number; height: number },
+  building: {
+    x: number
+    y: number
+    width: number
+    height: number
+    metadata?: Record<string, unknown> | null
+  },
   cellSize: number,
 ) {
   const worldX = building.x * cellSize
@@ -3995,6 +4020,22 @@ function drawEditorEnemySpawnpoint(
   ctx.lineWidth = 2 / camera.zoom
   ctx.setLineDash([8 / camera.zoom, 4 / camera.zoom])
   ctx.strokeRect(worldX, worldY, width, height)
+
+  // Starting-wave badge — centered, sized to the footprint, with a dark
+  // outline so it stays legible over the translucent red fill at any zoom.
+  const label = enemySpawnWaveLabel(building.metadata)
+  const fontSize = Math.min(width, height) * 0.62
+  ctx.setLineDash([])
+  ctx.font = `bold ${fontSize}px sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.lineWidth = fontSize * 0.18
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)'
+  ctx.fillStyle = '#fee2e2'
+  const cx = worldX + width / 2
+  const cy = worldY + height / 2
+  ctx.strokeText(label, cx, cy)
+  ctx.fillText(label, cx, cy)
   ctx.restore()
 }
 

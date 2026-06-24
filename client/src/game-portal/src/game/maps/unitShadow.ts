@@ -24,6 +24,17 @@ export const FLYER_SHADOW_DROP = 14
 const FLYER_RADIUS_SCALE = 1.15
 const FLYER_OPACITY_SCALE = 0.6
 
+// Global scene lighting: the light is treated as coming from the south-east of
+// the map, so every ground shadow is cast toward the north-west (up and to the
+// left). These describe a unit vector in that direction; the draw layer shifts
+// each shadow along it by SHADOW_LIGHT_SHIFT * radiusX, so larger (taller)
+// entities throw their shadow proportionally farther — chests barely move,
+// buildings move more. Shared by units, buildings, and loot drops so the
+// implied light source is consistent everywhere.
+export const SHADOW_LIGHT_DX = -Math.SQRT1_2
+export const SHADOW_LIGHT_DY = -Math.SQRT1_2
+export const SHADOW_LIGHT_SHIFT = 0.3
+
 const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n)
 
 /**

@@ -20,22 +20,6 @@
     "frameHeight": 116
   },
   "animations": {
-    "walking": {
-      "frameCount": 6,
-      "frameWidth": 116,
-      "frameHeight": 116,
-      "sheet": "packed/walking.png",
-      "rowOrder": [
-        "north",
-        "south",
-        "east",
-        "west",
-        "north-east",
-        "south-east",
-        "south-west",
-        "north-west"
-      ]
-    },
     "repairing": {
       "frameCount": 4,
       "frameWidth": 116,
@@ -68,6 +52,22 @@
         "north-west"
       ]
     },
+    "walking": {
+      "frameCount": 6,
+      "frameWidth": 116,
+      "frameHeight": 116,
+      "sheet": "packed/walking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    },
     "chopping": {
       "frameCount": 4,
       "frameWidth": 116,
@@ -85,5 +85,5 @@
       ]
     }
   },
-  "packedAt": "2026-05-22T21:49:29.243Z"
+  "packedAt": "2026-06-24T20:33:12.711Z"
 }

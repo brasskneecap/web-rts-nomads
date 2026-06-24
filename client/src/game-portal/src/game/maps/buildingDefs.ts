@@ -62,6 +62,28 @@ export type BuildingSelectionRingDef = {
   radiusY?: number
 }
 
+// BuildingShadowDef tunes the ground shadow drawn under a building. Distance
+// fields are in cell units; omitted/zero fields fall back to a footprint-
+// derived default (see resolveBuildingShadow). Mirrors the Go-side struct.
+export type BuildingShadowDef = {
+  enabled?: boolean
+  offsetX?: number
+  offsetY?: number
+  radiusX?: number
+  radiusY?: number
+  opacity?: number
+}
+
+// Resolved, ready-to-draw building shadow in pixels. center is measured from
+// the footprint's top-left world corner.
+export type ResolvedBuildingShadow = {
+  centerX: number
+  centerY: number
+  radiusX: number
+  radiusY: number
+  opacity: number
+}
+
 export type BuildingAttackVisual = {
   kind?: 'melee' | 'projectile'
   originX?: number
@@ -112,6 +134,7 @@ export type BuildingDef = {
   hotkey: string
   spriteRender?: BuildingSpriteRenderDef
   selectionRing?: BuildingSelectionRingDef
+  shadow?: BuildingShadowDef
 }
 
 export function getBuildingClass(def: BuildingDef | undefined | null): BuildingClass {
@@ -154,6 +177,46 @@ export function getUpgradeChain(rootType: string): BuildingDef[] {
 export function townHallTierName(tier: number): string {
   const chain = getUpgradeChain('townhall')
   return chain[tier - 1]?.label ?? `Tier ${tier}`
+}
+
+// Footprint-derived shadow defaults (cell units), used when a building has no
+// `shadow` block or leaves individual fields at zero. Mirrors the comment on
+// the Go-side BuildingShadowDef.
+const BUILDING_SHADOW_RADIUS_X_FROM_WIDTH = 0.42
+const BUILDING_SHADOW_RADIUS_Y_FROM_RADIUS_X = 0.3
+const BUILDING_SHADOW_CENTER_Y_FROM_HEIGHT = 0.85
+const BUILDING_SHADOW_DEFAULT_OPACITY = 0.45
+
+/**
+ * Resolves a building's shadow config into concrete pixel draw params, or null
+ * when disabled. `center` is measured from the footprint's top-left world
+ * corner so the caller adds (worldX, worldY). Distance fields in the config are
+ * in cell units; following the codebase convention for these building render
+ * defs, a zero value means "use the footprint-derived default" (so 0 and
+ * omitted behave identically).
+ */
+export function resolveBuildingShadow(
+  shadow: BuildingShadowDef | undefined,
+  widthCells: number,
+  heightCells: number,
+  cellSize: number,
+): ResolvedBuildingShadow | null {
+  if (shadow?.enabled === false) return null
+
+  const radiusXCells = shadow?.radiusX || widthCells * BUILDING_SHADOW_RADIUS_X_FROM_WIDTH
+  const radiusYCells = shadow?.radiusY || radiusXCells * BUILDING_SHADOW_RADIUS_Y_FROM_RADIUS_X
+  const centerXCells = shadow?.offsetX || widthCells / 2
+  const centerYCells = shadow?.offsetY || heightCells * BUILDING_SHADOW_CENTER_Y_FROM_HEIGHT
+  const opacityRaw = shadow?.opacity || BUILDING_SHADOW_DEFAULT_OPACITY
+  const opacity = opacityRaw < 0 ? 0 : opacityRaw > 1 ? 1 : opacityRaw
+
+  return {
+    centerX: centerXCells * cellSize,
+    centerY: centerYCells * cellSize,
+    radiusX: radiusXCells * cellSize,
+    radiusY: radiusYCells * cellSize,
+    opacity,
+  }
 }
 
 export function getResolvedBuildingAttackVisual(

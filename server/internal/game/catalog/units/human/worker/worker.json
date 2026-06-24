@@ -34,10 +34,10 @@
     "effectLength": 10
   },
   "bounds": {
-    "halfWidth": 16,
+    "halfWidth": 18,
     "top": -80,
     "bottom": 35,
     "ringOffsetX": 0,
-    "ringOffsetY": -16
+    "ringOffsetY": -22
   }
 }

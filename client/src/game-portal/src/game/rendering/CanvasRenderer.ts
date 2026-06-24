@@ -9,7 +9,7 @@ import {
   getTerrainColor,
 } from '../maps/mapConfig'
 import { drawMinimapBase, drawMinimapPOIs } from './minimapLayers'
-import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual } from '../maps/buildingDefs'
+import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual, resolveBuildingShadow } from '../maps/buildingDefs'
 import { getBuildingFallbackRender } from '../maps/buildingFallbackRender'
 import {
   CONSTRUCTION_FRAME_COUNT,
@@ -37,7 +37,7 @@ import {
 } from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
-import { resolveUnitShadow } from '../maps/unitShadow'
+import { resolveUnitShadow, SHADOW_LIGHT_DX, SHADOW_LIGHT_DY, SHADOW_LIGHT_SHIFT } from '../maps/unitShadow'
 import type { BannerSnapshot, BeamSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot, Zone, ZoneSnapshot } from '../network/protocol'
 import { ENEMY_PLAYER_ID, ZONE_TEAM_OWNER } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
@@ -182,10 +182,11 @@ export class CanvasRenderer {
   private resizeObserver: ResizeObserver | null = null
   private renderTime = 0
   // Cached unit-circle radial gradient (opaque black center → transparent
-  // edge) reused for every unit's ground shadow. Built once against the
-  // stable `this.ctx`; per-unit size/opacity come from a transform + global
-  // alpha at draw time (see drawUnits), so one gradient serves all units.
-  private unitShadowGradient: CanvasGradient | null = null
+  // edge) reused for every ground shadow (units, buildings, loot drops). Built
+  // once against the stable `this.ctx`; per-entity size/opacity come from a
+  // transform + global alpha at draw time (see drawGroundShadow), so one
+  // gradient serves everything.
+  private groundShadowGradient: CanvasGradient | null = null
   // Per-banner animation start timestamps (performance.now ms). Lets each
   // banner's idle loop hold its own phase instead of every banner on screen
   // strobing in lockstep.
@@ -924,6 +925,29 @@ export class CanvasRenderer {
         ctx.fillRect(spriteX, spriteY, spriteW, spriteH)
         ctx.restore()
         return
+      }
+
+      // Ground shadow — lowest layer under the building, so the selection ring
+      // and sprite draw on top. Skipped for the placement preview
+      // (pendingStart), which renders as a translucent ghost rather than a real
+      // structure on the ground. Size/center default from the footprint; an
+      // optional `shadow` block in the building catalog tunes or disables it.
+      if (!isPendingStart) {
+        const shadow = resolveBuildingShadow(
+          buildingDef?.shadow,
+          building.width,
+          building.height,
+          cellSize,
+        )
+        if (shadow) {
+          this.drawGroundShadow(
+            worldX + shadow.centerX,
+            worldY + shadow.centerY,
+            shadow.radiusX,
+            shadow.radiusY,
+            shadow.opacity,
+          )
+        }
       }
 
       // Selection / hover ring drawn *before* the sprite so the sprite
@@ -2099,8 +2123,23 @@ export class CanvasRenderer {
     const offX = (spriteSet?.offsetX ?? 0) * scale
     const offY = (spriteSet?.offsetY ?? 0) * scale
 
+    // A small soft shadow grounds each chest. Sized from the chest's world
+    // footprint and seated just below its center so the box reads as sitting on
+    // the terrain. Same gradient + global light direction as unit/building
+    // shadows (see drawGroundShadow).
+    const chestShadowRadiusX = fallbackSize * 0.46
+    const chestShadowRadiusY = chestShadowRadiusX * 0.4
+    const chestShadowCenterDy = fallbackSize * 0.33
+
     // Live (un-collected) chests — idle frame.
     for (const drop of drops.values()) {
+      this.drawGroundShadow(
+        drop.x,
+        drop.y + chestShadowCenterDy,
+        chestShadowRadiusX,
+        chestShadowRadiusY,
+        0.4,
+      )
       if (spriteReady && idleAnim) {
         this.drawObjectFrame(idleAnim, 0, drop.x + offX, drop.y + offY, scale)
       } else {
@@ -2188,19 +2227,47 @@ export class CanvasRenderer {
   }
 
   // Lazily builds (and caches) the unit-circle radial gradient used for every
-  // unit's ground shadow: opaque black at the center fading to transparent at
-  // radius 1. Per-unit ellipse size comes from a scale() transform and per-unit
+  // ground shadow: opaque black at the center fading to transparent at radius
+  // 1. Per-entity ellipse size comes from a scale() transform and per-entity
   // opacity from globalAlpha at draw time, so this single gradient serves all
-  // units. Tied to the stable `this.ctx`, which is never reassigned.
-  private getUnitShadowGradient(): CanvasGradient {
-    if (!this.unitShadowGradient) {
+  // entities. Tied to the stable `this.ctx`, which is never reassigned.
+  private getGroundShadowGradient(): CanvasGradient {
+    if (!this.groundShadowGradient) {
       const g = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1)
       g.addColorStop(0, 'rgba(0, 0, 0, 1)')
       g.addColorStop(0.65, 'rgba(0, 0, 0, 0.85)')
       g.addColorStop(1, 'rgba(0, 0, 0, 0)')
-      this.unitShadowGradient = g
+      this.groundShadowGradient = g
     }
-    return this.unitShadowGradient
+    return this.groundShadowGradient
+  }
+
+  // Draws one soft elliptical ground shadow centered at (centerX, centerY) with
+  // the given pixel radii and peak opacity. Applies the global scene lighting:
+  // the shadow is nudged toward the north-west (light from the south-east),
+  // proportional to its size so taller entities cast longer shadows. Shared by
+  // units, buildings, and loot drops so the implied light source is consistent.
+  private drawGroundShadow(
+    centerX: number,
+    centerY: number,
+    radiusX: number,
+    radiusY: number,
+    opacity: number,
+  ) {
+    if (opacity <= 0 || radiusX <= 0 || radiusY <= 0) return
+    const shift = radiusX * SHADOW_LIGHT_SHIFT
+    const cx = centerX + SHADOW_LIGHT_DX * shift
+    const cy = centerY + SHADOW_LIGHT_DY * shift
+    const ctx = this.ctx
+    ctx.save()
+    ctx.globalAlpha = opacity
+    ctx.translate(cx, cy)
+    ctx.scale(radiusX, radiusY)
+    ctx.beginPath()
+    ctx.arc(0, 0, 1, 0, Math.PI * 2)
+    ctx.fillStyle = this.getGroundShadowGradient()
+    ctx.fill()
+    ctx.restore()
   }
 
   private drawUnits(
@@ -2363,15 +2430,7 @@ export class CanvasRenderer {
         if (shadow) {
           const feetX = unit.x + ringOffsetX + shadow.offsetX
           const feetY = unit.y + bottomOffset - ringLift + ringOffsetY + shadow.offsetY
-          ctx.save()
-          ctx.globalAlpha = shadow.opacity
-          ctx.translate(feetX, feetY)
-          ctx.scale(shadow.radiusX, shadow.radiusY)
-          ctx.beginPath()
-          ctx.arc(0, 0, 1, 0, Math.PI * 2)
-          ctx.fillStyle = this.getUnitShadowGradient()
-          ctx.fill()
-          ctx.restore()
+          this.drawGroundShadow(feetX, feetY, shadow.radiusX, shadow.radiusY, shadow.opacity)
         }
       }
 

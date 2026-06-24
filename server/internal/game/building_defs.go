@@ -70,6 +70,10 @@ type BuildingDef struct {
 	// a flag pole taller than its footprint, or a wider sprite that spills
 	// half a cell over each side.
 	SpriteRender *BuildingSpriteRenderDef `json:"spriteRender,omitempty"`
+	// Shadow tunes the ground shadow drawn under the building. Client-only
+	// render config; the server never reads it and only passes it through.
+	// Omit the block to use the footprint-derived default shadow.
+	Shadow *BuildingShadowDef `json:"shadow,omitempty"`
 	// SelectionRing nudges the size/placement of the selection & hover ring
 	// drawn around the building. Client-only (the server never reads it).
 	// Mirrors ObstacleSelectionRingDef semantics. Omit the block to keep the
@@ -103,6 +107,27 @@ type BuildingSpriteRenderDef struct {
 	OffsetY float64 `json:"offsetY,omitempty"`
 	Width   float64 `json:"width,omitempty"`
 	Height  float64 `json:"height,omitempty"`
+}
+
+// BuildingShadowDef tunes the ground shadow drawn under a building. All
+// distance fields are in *cell units*; omitted/zero fields fall back to a
+// footprint-derived default (see resolveBuildingShadow on the client):
+//
+//	radiusX = footprintWidth * 0.42
+//	radiusY = radiusX * 0.3
+//	center  = horizontally centered, near the footprint's bottom edge
+//
+// Client-only render config; the server passes it through untouched.
+type BuildingShadowDef struct {
+	// Enabled defaults to true; set false to draw no shadow for this building.
+	Enabled *bool   `json:"enabled,omitempty"`
+	OffsetX float64 `json:"offsetX,omitempty"`
+	OffsetY float64 `json:"offsetY,omitempty"`
+	RadiusX float64 `json:"radiusX,omitempty"`
+	RadiusY float64 `json:"radiusY,omitempty"`
+	// Opacity is the peak alpha at the shadow center (0..1). Zero/omitted ⇒
+	// the client default.
+	Opacity float64 `json:"opacity,omitempty"`
 }
 
 // Class returns the building's class, defaulting to "player" when unspecified.

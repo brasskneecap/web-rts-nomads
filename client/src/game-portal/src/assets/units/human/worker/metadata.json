@@ -28,220 +28,220 @@
           "south-west": "worker/rotations/south-west.png"
         },
         "animations": {
-          "Walking-a9a2bf6a": {
+          "Repairing": {
             "west": [
-              "worker/animations/Walking-a9a2bf6a/west/frame_000.png",
-              "worker/animations/Walking-a9a2bf6a/west/frame_001.png",
-              "worker/animations/Walking-a9a2bf6a/west/frame_002.png",
-              "worker/animations/Walking-a9a2bf6a/west/frame_003.png",
-              "worker/animations/Walking-a9a2bf6a/west/frame_004.png",
-              "worker/animations/Walking-a9a2bf6a/west/frame_005.png"
-            ],
-            "east": [
-              "worker/animations/Walking-a9a2bf6a/east/frame_000.png",
-              "worker/animations/Walking-a9a2bf6a/east/frame_001.png",
-              "worker/animations/Walking-a9a2bf6a/east/frame_002.png",
-              "worker/animations/Walking-a9a2bf6a/east/frame_003.png",
-              "worker/animations/Walking-a9a2bf6a/east/frame_004.png",
-              "worker/animations/Walking-a9a2bf6a/east/frame_005.png"
-            ],
-            "north-east": [
-              "worker/animations/Walking-a9a2bf6a/north-east/frame_000.png",
-              "worker/animations/Walking-a9a2bf6a/north-east/frame_001.png",
-              "worker/animations/Walking-a9a2bf6a/north-east/frame_002.png",
-              "worker/animations/Walking-a9a2bf6a/north-east/frame_003.png",
-              "worker/animations/Walking-a9a2bf6a/north-east/frame_004.png",
-              "worker/animations/Walking-a9a2bf6a/north-east/frame_005.png"
-            ],
-            "north": [
-              "worker/animations/Walking-a9a2bf6a/north/frame_000.png",
-              "worker/animations/Walking-a9a2bf6a/north/frame_001.png",
-              "worker/animations/Walking-a9a2bf6a/north/frame_002.png",
-              "worker/animations/Walking-a9a2bf6a/north/frame_003.png",
-              "worker/animations/Walking-a9a2bf6a/north/frame_004.png",
-              "worker/animations/Walking-a9a2bf6a/north/frame_005.png"
-            ],
-            "north-west": [
-              "worker/animations/Walking-a9a2bf6a/north-west/frame_000.png",
-              "worker/animations/Walking-a9a2bf6a/north-west/frame_001.png",
-              "worker/animations/Walking-a9a2bf6a/north-west/frame_002.png",
-              "worker/animations/Walking-a9a2bf6a/north-west/frame_003.png",
-              "worker/animations/Walking-a9a2bf6a/north-west/frame_004.png",
-              "worker/animations/Walking-a9a2bf6a/north-west/frame_005.png"
+              "worker/animations/Repairing/west/frame_000.png",
+              "worker/animations/Repairing/west/frame_001.png",
+              "worker/animations/Repairing/west/frame_002.png",
+              "worker/animations/Repairing/west/frame_003.png"
             ],
             "south": [
-              "worker/animations/Walking-a9a2bf6a/south/frame_000.png",
-              "worker/animations/Walking-a9a2bf6a/south/frame_001.png",
-              "worker/animations/Walking-a9a2bf6a/south/frame_002.png",
-              "worker/animations/Walking-a9a2bf6a/south/frame_003.png",
-              "worker/animations/Walking-a9a2bf6a/south/frame_004.png",
-              "worker/animations/Walking-a9a2bf6a/south/frame_005.png"
+              "worker/animations/Repairing/south/frame_000.png",
+              "worker/animations/Repairing/south/frame_001.png",
+              "worker/animations/Repairing/south/frame_002.png",
+              "worker/animations/Repairing/south/frame_003.png"
+            ],
+            "north-east": [
+              "worker/animations/Repairing/north-east/frame_000.png",
+              "worker/animations/Repairing/north-east/frame_001.png",
+              "worker/animations/Repairing/north-east/frame_002.png",
+              "worker/animations/Repairing/north-east/frame_003.png"
+            ],
+            "north": [
+              "worker/animations/Repairing/north/frame_000.png",
+              "worker/animations/Repairing/north/frame_001.png",
+              "worker/animations/Repairing/north/frame_002.png",
+              "worker/animations/Repairing/north/frame_003.png"
+            ],
+            "north-west": [
+              "worker/animations/Repairing/north-west/frame_000.png",
+              "worker/animations/Repairing/north-west/frame_001.png",
+              "worker/animations/Repairing/north-west/frame_002.png",
+              "worker/animations/Repairing/north-west/frame_003.png"
             ],
             "south-west": [
-              "worker/animations/Walking-a9a2bf6a/south-west/frame_000.png",
-              "worker/animations/Walking-a9a2bf6a/south-west/frame_001.png",
-              "worker/animations/Walking-a9a2bf6a/south-west/frame_002.png",
-              "worker/animations/Walking-a9a2bf6a/south-west/frame_003.png",
-              "worker/animations/Walking-a9a2bf6a/south-west/frame_004.png",
-              "worker/animations/Walking-a9a2bf6a/south-west/frame_005.png"
+              "worker/animations/Repairing/south-west/frame_000.png",
+              "worker/animations/Repairing/south-west/frame_001.png",
+              "worker/animations/Repairing/south-west/frame_002.png",
+              "worker/animations/Repairing/south-west/frame_003.png"
             ],
             "south-east": [
-              "worker/animations/Walking-a9a2bf6a/south-east/frame_000.png",
-              "worker/animations/Walking-a9a2bf6a/south-east/frame_001.png",
-              "worker/animations/Walking-a9a2bf6a/south-east/frame_002.png",
-              "worker/animations/Walking-a9a2bf6a/south-east/frame_003.png",
-              "worker/animations/Walking-a9a2bf6a/south-east/frame_004.png",
-              "worker/animations/Walking-a9a2bf6a/south-east/frame_005.png"
+              "worker/animations/Repairing/south-east/frame_000.png",
+              "worker/animations/Repairing/south-east/frame_001.png",
+              "worker/animations/Repairing/south-east/frame_002.png",
+              "worker/animations/Repairing/south-east/frame_003.png"
+            ],
+            "east": [
+              "worker/animations/Repairing/east/frame_000.png",
+              "worker/animations/Repairing/east/frame_001.png",
+              "worker/animations/Repairing/east/frame_002.png",
+              "worker/animations/Repairing/east/frame_003.png"
             ]
           },
-          "Repairing-144e1406": {
+          "Carrying_Gold": {
             "north": [
-              "worker/animations/Repairing-144e1406/north/frame_000.png",
-              "worker/animations/Repairing-144e1406/north/frame_001.png",
-              "worker/animations/Repairing-144e1406/north/frame_002.png",
-              "worker/animations/Repairing-144e1406/north/frame_003.png"
-            ],
-            "south": [
-              "worker/animations/Repairing-144e1406/south/frame_000.png",
-              "worker/animations/Repairing-144e1406/south/frame_001.png",
-              "worker/animations/Repairing-144e1406/south/frame_002.png",
-              "worker/animations/Repairing-144e1406/south/frame_003.png"
-            ],
-            "south-east": [
-              "worker/animations/Repairing-144e1406/south-east/frame_000.png",
-              "worker/animations/Repairing-144e1406/south-east/frame_001.png",
-              "worker/animations/Repairing-144e1406/south-east/frame_002.png",
-              "worker/animations/Repairing-144e1406/south-east/frame_003.png"
-            ],
-            "north-west": [
-              "worker/animations/Repairing-144e1406/north-west/frame_000.png",
-              "worker/animations/Repairing-144e1406/north-west/frame_001.png",
-              "worker/animations/Repairing-144e1406/north-west/frame_002.png",
-              "worker/animations/Repairing-144e1406/north-west/frame_003.png"
+              "worker/animations/Carrying_Gold/north/frame_000.png",
+              "worker/animations/Carrying_Gold/north/frame_001.png",
+              "worker/animations/Carrying_Gold/north/frame_002.png",
+              "worker/animations/Carrying_Gold/north/frame_003.png"
             ],
             "east": [
-              "worker/animations/Repairing-144e1406/east/frame_000.png",
-              "worker/animations/Repairing-144e1406/east/frame_001.png",
-              "worker/animations/Repairing-144e1406/east/frame_002.png",
-              "worker/animations/Repairing-144e1406/east/frame_003.png"
+              "worker/animations/Carrying_Gold/east/frame_000.png",
+              "worker/animations/Carrying_Gold/east/frame_001.png",
+              "worker/animations/Carrying_Gold/east/frame_002.png",
+              "worker/animations/Carrying_Gold/east/frame_003.png"
             ],
             "south-west": [
-              "worker/animations/Repairing-144e1406/south-west/frame_000.png",
-              "worker/animations/Repairing-144e1406/south-west/frame_001.png",
-              "worker/animations/Repairing-144e1406/south-west/frame_002.png",
-              "worker/animations/Repairing-144e1406/south-west/frame_003.png"
+              "worker/animations/Carrying_Gold/south-west/frame_000.png",
+              "worker/animations/Carrying_Gold/south-west/frame_001.png",
+              "worker/animations/Carrying_Gold/south-west/frame_002.png",
+              "worker/animations/Carrying_Gold/south-west/frame_003.png"
+            ],
+            "north-west": [
+              "worker/animations/Carrying_Gold/north-west/frame_000.png",
+              "worker/animations/Carrying_Gold/north-west/frame_001.png",
+              "worker/animations/Carrying_Gold/north-west/frame_002.png",
+              "worker/animations/Carrying_Gold/north-west/frame_003.png"
+            ],
+            "south-east": [
+              "worker/animations/Carrying_Gold/south-east/frame_000.png",
+              "worker/animations/Carrying_Gold/south-east/frame_001.png",
+              "worker/animations/Carrying_Gold/south-east/frame_002.png",
+              "worker/animations/Carrying_Gold/south-east/frame_003.png"
             ],
             "west": [
-              "worker/animations/Repairing-144e1406/west/frame_000.png",
-              "worker/animations/Repairing-144e1406/west/frame_001.png",
-              "worker/animations/Repairing-144e1406/west/frame_002.png",
-              "worker/animations/Repairing-144e1406/west/frame_003.png"
+              "worker/animations/Carrying_Gold/west/frame_000.png",
+              "worker/animations/Carrying_Gold/west/frame_001.png",
+              "worker/animations/Carrying_Gold/west/frame_002.png",
+              "worker/animations/Carrying_Gold/west/frame_003.png"
             ],
             "north-east": [
-              "worker/animations/Repairing-144e1406/north-east/frame_000.png",
-              "worker/animations/Repairing-144e1406/north-east/frame_001.png",
-              "worker/animations/Repairing-144e1406/north-east/frame_002.png",
-              "worker/animations/Repairing-144e1406/north-east/frame_003.png"
+              "worker/animations/Carrying_Gold/north-east/frame_000.png",
+              "worker/animations/Carrying_Gold/north-east/frame_001.png",
+              "worker/animations/Carrying_Gold/north-east/frame_002.png",
+              "worker/animations/Carrying_Gold/north-east/frame_003.png"
+            ],
+            "south": [
+              "worker/animations/Carrying_Gold/south/frame_000.png",
+              "worker/animations/Carrying_Gold/south/frame_001.png",
+              "worker/animations/Carrying_Gold/south/frame_002.png",
+              "worker/animations/Carrying_Gold/south/frame_003.png"
             ]
           },
-          "Carrying_Gold-9890ef86": {
-            "south": [
-              "worker/animations/Carrying_Gold-9890ef86/south/frame_000.png",
-              "worker/animations/Carrying_Gold-9890ef86/south/frame_001.png",
-              "worker/animations/Carrying_Gold-9890ef86/south/frame_002.png",
-              "worker/animations/Carrying_Gold-9890ef86/south/frame_003.png"
-            ],
-            "east": [
-              "worker/animations/Carrying_Gold-9890ef86/east/frame_000.png",
-              "worker/animations/Carrying_Gold-9890ef86/east/frame_001.png",
-              "worker/animations/Carrying_Gold-9890ef86/east/frame_002.png",
-              "worker/animations/Carrying_Gold-9890ef86/east/frame_003.png"
-            ],
-            "north": [
-              "worker/animations/Carrying_Gold-9890ef86/north/frame_000.png",
-              "worker/animations/Carrying_Gold-9890ef86/north/frame_001.png",
-              "worker/animations/Carrying_Gold-9890ef86/north/frame_002.png",
-              "worker/animations/Carrying_Gold-9890ef86/north/frame_003.png"
-            ],
-            "north-west": [
-              "worker/animations/Carrying_Gold-9890ef86/north-west/frame_000.png",
-              "worker/animations/Carrying_Gold-9890ef86/north-west/frame_001.png",
-              "worker/animations/Carrying_Gold-9890ef86/north-west/frame_002.png",
-              "worker/animations/Carrying_Gold-9890ef86/north-west/frame_003.png"
-            ],
-            "west": [
-              "worker/animations/Carrying_Gold-9890ef86/west/frame_000.png",
-              "worker/animations/Carrying_Gold-9890ef86/west/frame_001.png",
-              "worker/animations/Carrying_Gold-9890ef86/west/frame_002.png",
-              "worker/animations/Carrying_Gold-9890ef86/west/frame_003.png"
+          "Walking": {
+            "south-east": [
+              "worker/animations/Walking/south-east/frame_000.png",
+              "worker/animations/Walking/south-east/frame_001.png",
+              "worker/animations/Walking/south-east/frame_002.png",
+              "worker/animations/Walking/south-east/frame_003.png",
+              "worker/animations/Walking/south-east/frame_004.png",
+              "worker/animations/Walking/south-east/frame_005.png"
             ],
             "north-east": [
-              "worker/animations/Carrying_Gold-9890ef86/north-east/frame_000.png",
-              "worker/animations/Carrying_Gold-9890ef86/north-east/frame_001.png",
-              "worker/animations/Carrying_Gold-9890ef86/north-east/frame_002.png",
-              "worker/animations/Carrying_Gold-9890ef86/north-east/frame_003.png"
+              "worker/animations/Walking/north-east/frame_000.png",
+              "worker/animations/Walking/north-east/frame_001.png",
+              "worker/animations/Walking/north-east/frame_002.png",
+              "worker/animations/Walking/north-east/frame_003.png",
+              "worker/animations/Walking/north-east/frame_004.png",
+              "worker/animations/Walking/north-east/frame_005.png"
             ],
             "south-west": [
-              "worker/animations/Carrying_Gold-9890ef86/south-west/frame_000.png",
-              "worker/animations/Carrying_Gold-9890ef86/south-west/frame_001.png",
-              "worker/animations/Carrying_Gold-9890ef86/south-west/frame_002.png",
-              "worker/animations/Carrying_Gold-9890ef86/south-west/frame_003.png"
+              "worker/animations/Walking/south-west/frame_000.png",
+              "worker/animations/Walking/south-west/frame_001.png",
+              "worker/animations/Walking/south-west/frame_002.png",
+              "worker/animations/Walking/south-west/frame_003.png",
+              "worker/animations/Walking/south-west/frame_004.png",
+              "worker/animations/Walking/south-west/frame_005.png"
             ],
-            "south-east": [
-              "worker/animations/Carrying_Gold-9890ef86/south-east/frame_000.png",
-              "worker/animations/Carrying_Gold-9890ef86/south-east/frame_001.png",
-              "worker/animations/Carrying_Gold-9890ef86/south-east/frame_002.png",
-              "worker/animations/Carrying_Gold-9890ef86/south-east/frame_003.png"
+            "east": [
+              "worker/animations/Walking/east/frame_000.png",
+              "worker/animations/Walking/east/frame_001.png",
+              "worker/animations/Walking/east/frame_002.png",
+              "worker/animations/Walking/east/frame_003.png",
+              "worker/animations/Walking/east/frame_004.png",
+              "worker/animations/Walking/east/frame_005.png"
+            ],
+            "west": [
+              "worker/animations/Walking/west/frame_000.png",
+              "worker/animations/Walking/west/frame_001.png",
+              "worker/animations/Walking/west/frame_002.png",
+              "worker/animations/Walking/west/frame_003.png",
+              "worker/animations/Walking/west/frame_004.png",
+              "worker/animations/Walking/west/frame_005.png"
+            ],
+            "south": [
+              "worker/animations/Walking/south/frame_000.png",
+              "worker/animations/Walking/south/frame_001.png",
+              "worker/animations/Walking/south/frame_002.png",
+              "worker/animations/Walking/south/frame_003.png",
+              "worker/animations/Walking/south/frame_004.png",
+              "worker/animations/Walking/south/frame_005.png"
+            ],
+            "north-west": [
+              "worker/animations/Walking/north-west/frame_000.png",
+              "worker/animations/Walking/north-west/frame_001.png",
+              "worker/animations/Walking/north-west/frame_002.png",
+              "worker/animations/Walking/north-west/frame_003.png",
+              "worker/animations/Walking/north-west/frame_004.png",
+              "worker/animations/Walking/north-west/frame_005.png"
+            ],
+            "north": [
+              "worker/animations/Walking/north/frame_000.png",
+              "worker/animations/Walking/north/frame_001.png",
+              "worker/animations/Walking/north/frame_002.png",
+              "worker/animations/Walking/north/frame_003.png",
+              "worker/animations/Walking/north/frame_004.png",
+              "worker/animations/Walking/north/frame_005.png"
             ]
           },
-          "Chopping-cd1e6778": {
-            "east": [
-              "worker/animations/Chopping-cd1e6778/east/frame_000.png",
-              "worker/animations/Chopping-cd1e6778/east/frame_001.png",
-              "worker/animations/Chopping-cd1e6778/east/frame_002.png",
-              "worker/animations/Chopping-cd1e6778/east/frame_003.png"
-            ],
-            "north": [
-              "worker/animations/Chopping-cd1e6778/north/frame_000.png",
-              "worker/animations/Chopping-cd1e6778/north/frame_001.png",
-              "worker/animations/Chopping-cd1e6778/north/frame_002.png",
-              "worker/animations/Chopping-cd1e6778/north/frame_003.png"
-            ],
+          "Chopping": {
             "west": [
-              "worker/animations/Chopping-cd1e6778/west/frame_000.png",
-              "worker/animations/Chopping-cd1e6778/west/frame_001.png",
-              "worker/animations/Chopping-cd1e6778/west/frame_002.png",
-              "worker/animations/Chopping-cd1e6778/west/frame_003.png"
+              "worker/animations/Chopping/west/frame_000.png",
+              "worker/animations/Chopping/west/frame_001.png",
+              "worker/animations/Chopping/west/frame_002.png",
+              "worker/animations/Chopping/west/frame_003.png"
             ],
-            "north-west": [
-              "worker/animations/Chopping-cd1e6778/north-west/frame_000.png",
-              "worker/animations/Chopping-cd1e6778/north-west/frame_001.png",
-              "worker/animations/Chopping-cd1e6778/north-west/frame_002.png",
-              "worker/animations/Chopping-cd1e6778/north-west/frame_003.png"
-            ],
-            "south": [
-              "worker/animations/Chopping-cd1e6778/south/frame_000.png",
-              "worker/animations/Chopping-cd1e6778/south/frame_001.png",
-              "worker/animations/Chopping-cd1e6778/south/frame_002.png",
-              "worker/animations/Chopping-cd1e6778/south/frame_003.png"
+            "east": [
+              "worker/animations/Chopping/east/frame_000.png",
+              "worker/animations/Chopping/east/frame_001.png",
+              "worker/animations/Chopping/east/frame_002.png",
+              "worker/animations/Chopping/east/frame_003.png"
             ],
             "south-east": [
-              "worker/animations/Chopping-cd1e6778/south-east/frame_000.png",
-              "worker/animations/Chopping-cd1e6778/south-east/frame_001.png",
-              "worker/animations/Chopping-cd1e6778/south-east/frame_002.png",
-              "worker/animations/Chopping-cd1e6778/south-east/frame_003.png"
+              "worker/animations/Chopping/south-east/frame_000.png",
+              "worker/animations/Chopping/south-east/frame_001.png",
+              "worker/animations/Chopping/south-east/frame_002.png",
+              "worker/animations/Chopping/south-east/frame_003.png"
             ],
-            "south-west": [
-              "worker/animations/Chopping-cd1e6778/south-west/frame_000.png",
-              "worker/animations/Chopping-cd1e6778/south-west/frame_001.png",
-              "worker/animations/Chopping-cd1e6778/south-west/frame_002.png",
-              "worker/animations/Chopping-cd1e6778/south-west/frame_003.png"
+            "north": [
+              "worker/animations/Chopping/north/frame_000.png",
+              "worker/animations/Chopping/north/frame_001.png",
+              "worker/animations/Chopping/north/frame_002.png",
+              "worker/animations/Chopping/north/frame_003.png"
+            ],
+            "north-west": [
+              "worker/animations/Chopping/north-west/frame_000.png",
+              "worker/animations/Chopping/north-west/frame_001.png",
+              "worker/animations/Chopping/north-west/frame_002.png",
+              "worker/animations/Chopping/north-west/frame_003.png"
             ],
             "north-east": [
-              "worker/animations/Chopping-cd1e6778/north-east/frame_000.png",
-              "worker/animations/Chopping-cd1e6778/north-east/frame_001.png",
-              "worker/animations/Chopping-cd1e6778/north-east/frame_002.png",
-              "worker/animations/Chopping-cd1e6778/north-east/frame_003.png"
+              "worker/animations/Chopping/north-east/frame_000.png",
+              "worker/animations/Chopping/north-east/frame_001.png",
+              "worker/animations/Chopping/north-east/frame_002.png",
+              "worker/animations/Chopping/north-east/frame_003.png"
+            ],
+            "south": [
+              "worker/animations/Chopping/south/frame_000.png",
+              "worker/animations/Chopping/south/frame_001.png",
+              "worker/animations/Chopping/south/frame_002.png",
+              "worker/animations/Chopping/south/frame_003.png"
+            ],
+            "south-west": [
+              "worker/animations/Chopping/south-west/frame_000.png",
+              "worker/animations/Chopping/south-west/frame_001.png",
+              "worker/animations/Chopping/south-west/frame_002.png",
+              "worker/animations/Chopping/south-west/frame_003.png"
             ]
           }
         }
@@ -249,5 +249,5 @@
     }
   ],
   "export_version": "3.0",
-  "export_date": "2026-05-21T23:29:35.570129"
+  "export_date": "2026-06-24T21:28:38.709238"
 }
