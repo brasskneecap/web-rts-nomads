@@ -388,6 +388,18 @@ fn handle(
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
+                let map_hash = req
+                    .params
+                    .get("mapHash")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let map_version = req
+                    .params
+                    .get("mapVersion")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let local_lobby_id = req
                     .params
                     .get("localLobbyId")
@@ -421,6 +433,12 @@ fn handle(
                                 mm.set_lobby_data(*lobby_id, "status", "waiting");
                                 if !map_id.is_empty() {
                                     mm.set_lobby_data(*lobby_id, "map_id", &map_id);
+                                }
+                                if !map_hash.is_empty() {
+                                    mm.set_lobby_data(*lobby_id, "map_hash", &map_hash);
+                                }
+                                if !map_version.is_empty() {
+                                    mm.set_lobby_data(*lobby_id, "map_version", &map_version);
                                 }
                                 if !local_lobby_id.is_empty() {
                                     mm.set_lobby_data(
@@ -503,6 +521,10 @@ fn handle(
                                     mm.lobby_data(*lobby_id, "local_lobby_id").unwrap_or_default();
                                 let map_id =
                                     mm.lobby_data(*lobby_id, "map_id").unwrap_or_default();
+                                let map_hash =
+                                    mm.lobby_data(*lobby_id, "map_hash").unwrap_or_default();
+                                let map_version =
+                                    mm.lobby_data(*lobby_id, "map_version").unwrap_or_default();
                                 match host_id_str.parse::<u64>() {
                                     Ok(host_id) => {
                                         push_notification(
@@ -521,6 +543,8 @@ fn handle(
                                                 "hostSteamId64": host_id.to_string(),
                                                 "localLobbyId": local_lobby_id,
                                                 "mapId": map_id,
+                                                "mapHash": map_hash,
+                                                "mapVersion": map_version,
                                             }),
                                         )
                                     }

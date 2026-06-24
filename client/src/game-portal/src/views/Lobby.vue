@@ -6,6 +6,9 @@
         <div class="lobby__header-info">
           <h1 class="lobby__title">{{ lobby?.mapName ?? 'Lobby' }}</h1>
           <span class="lobby__slots">{{ lobby?.players.length ?? 0 }} / {{ lobby?.maxPlayers ?? 4 }} Players</span>
+          <span v-if="showMapVersionPlaceholder" class="lobby__map-version-hint">
+            Host's custom map — loads at start
+          </span>
         </div>
       </header>
 
@@ -78,6 +81,7 @@ import {
   clearSteamLobbyPairing,
   steamLobbyPairing,
 } from '@/state/steamLobbyState'
+import { hasMapVersion } from '@/services/mapVersionCache'
 import type { Lobby } from '@/game/network/protocol'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -95,6 +99,22 @@ const lobby = ref<Lobby | null>(null)
 const isHost = computed(() => lobby.value?.hostPlayerId === playerId.value)
 const isStarting = ref(false)
 const startError = ref('')
+
+// Latest mapHash from the Steam lobby poll. Used for version-mismatch detection.
+const latestSteamMapHash = ref<string>('')
+
+/** True when the host's mapHash is non-empty AND the joiner does not have a
+ *  locally-cached entry for this exact (mapId, hash) pair. Triggers the
+ *  "Host's custom map — loads at start" placeholder label in the header.
+ *  Falls back to false (existing behavior) when mapHash is absent/empty
+ *  (older host) or when the joiner already has the host's version. */
+const showMapVersionPlaceholder = computed<boolean>(() => {
+  const hash = latestSteamMapHash.value
+  if (!hash) return false
+  const mapId = lobby.value?.mapId
+  if (!mapId) return false
+  return !hasMapVersion(mapId, hash)
+})
 
 // §14R-D + optimistic-nav fix: the Steam lobby id is reactive so the
 // Invite Friend button appears live when CreateGame's background
@@ -198,6 +218,11 @@ async function poll() {
     sawLocalLobby,
     coldPollMisses,
   })
+
+  // Capture the host's map hash for version-mismatch detection.
+  if (steamData?.mapHash) {
+    latestSteamMapHash.value = steamData.mapHash
+  }
 
   // Pick the source for the visible lobby snapshot. Local wins when
   // present for status/match_id/etc., but the player list is overridden
@@ -463,5 +488,12 @@ onUnmounted(() => {
   color: rgba(245, 234, 210, 0.65);
   align-self: center;
   padding-right: 8px;
+}
+
+.lobby__map-version-hint {
+  font-size: 11px;
+  font-style: italic;
+  color: rgba(215, 187, 132, 0.7);
+  letter-spacing: 0.04em;
 }
 </style>

@@ -217,9 +217,21 @@ type NeutralSpawn struct {
 const NeutralSpawnRandomGroupID = "__random__"
 
 type MapConfig struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	Description   string         `json:"description"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Version is an optional, human-readable map version string (e.g. "v3"),
+	// authored in the map file. Display/logging only — it is NEVER used to
+	// match maps between host and joiner. See ContentHash for the match key.
+	Version string `json:"version,omitempty"`
+	// ContentHash is a derived, deterministic hash of the map's authored
+	// content (set by the server on load/save, never authored, never written
+	// to the on-disk file). It is the canonical key used to detect a
+	// host/joiner map mismatch at join time. Two machines running the same
+	// binary over the same authored map compute the same hash. Computed by
+	// computeMapContentHash; the human Version is excluded from the input so
+	// bumping the version string alone does not change the hash.
+	ContentHash   string         `json:"contentHash,omitempty"`
 	Size          string         `json:"size"`
 	Width         float64        `json:"width"`
 	Height        float64        `json:"height"`

@@ -452,6 +452,8 @@ async fn create_lobby(
     shell_log: tauri::State<'_, logs::ShellLogHandle>,
     max_players: Option<u32>,
     map_id: Option<String>,
+    map_hash: Option<String>,
+    map_version: Option<String>,
     local_lobby_id: Option<String>,
     host_persona: Option<String>,
 ) -> Result<String, String> {
@@ -475,6 +477,8 @@ async fn create_lobby(
         .clone();
     let max = max_players.unwrap_or(4).clamp(2, 8);
     let map_id = map_id.unwrap_or_default();
+    let map_hash = map_hash.unwrap_or_default();
+    let map_version = map_version.unwrap_or_default();
     let local_lobby_id = local_lobby_id.unwrap_or_default();
     let host_persona_param = host_persona.unwrap_or_default();
     let host_steam_id = b.client.user().steam_id().raw();
@@ -554,6 +558,14 @@ async fn create_lobby(
             let r4 = mm.set_lobby_data(lobby, "map_id", &map_id);
             sl.write_line("INFO", &format!("create_lobby: set map_id → {r4}"));
         }
+        if !map_hash.is_empty() {
+            let rh = mm.set_lobby_data(lobby, "map_hash", &map_hash);
+            sl.write_line("INFO", &format!("create_lobby: set map_hash → {rh}"));
+        }
+        if !map_version.is_empty() {
+            let rv = mm.set_lobby_data(lobby, "map_version", &map_version);
+            sl.write_line("INFO", &format!("create_lobby: set map_version → {rv}"));
+        }
         if !local_lobby_id.is_empty() {
             let r5 = mm.set_lobby_data(lobby, "local_lobby_id", &local_lobby_id);
             sl.write_line("INFO", &format!("create_lobby: set local_lobby_id → {r5}"));
@@ -596,6 +608,8 @@ pub struct JoinLobbyResponse {
     pub host_steam_id_64: String,
     pub local_lobby_id: String,
     pub map_id: String,
+    pub map_hash: String,
+    pub map_version: String,
 }
 
 #[cfg(feature = "steam")]
@@ -627,12 +641,14 @@ async fn join_lobby(
         .and_then(|r| r)?;
 
     let lobby = steamworks::LobbyId::from_raw(raw_lobby_id);
-    let (host_steam_id_64, local_lobby_id, map_id) = {
+    let (host_steam_id_64, local_lobby_id, map_id, map_hash, map_version) = {
         let mm = b.client.matchmaking();
         (
             mm.lobby_data(lobby, "host_steam_id").unwrap_or_default(),
             mm.lobby_data(lobby, "local_lobby_id").unwrap_or_default(),
             mm.lobby_data(lobby, "map_id").unwrap_or_default(),
+            mm.lobby_data(lobby, "map_hash").unwrap_or_default(),
+            mm.lobby_data(lobby, "map_version").unwrap_or_default(),
         )
     };
 
@@ -661,6 +677,8 @@ async fn join_lobby(
         host_steam_id_64,
         local_lobby_id,
         map_id,
+        map_hash,
+        map_version,
     })
 }
 
@@ -720,6 +738,8 @@ pub struct SteamLobbyListEntry {
     pub host_steam_id: String,
     pub host_persona: String,
     pub map_id: String,
+    pub map_hash: String,
+    pub map_version: String,
     pub local_lobby_id: String,
     pub status: String,
     pub player_count: u32,
@@ -789,6 +809,8 @@ async fn list_steam_lobbies(
         let host_steam_id = mm.lobby_data(id, "host_steam_id").unwrap_or_default();
         let host_persona = mm.lobby_data(id, "host_persona").unwrap_or_default();
         let map_id = mm.lobby_data(id, "map_id").unwrap_or_default();
+        let map_hash = mm.lobby_data(id, "map_hash").unwrap_or_default();
+        let map_version = mm.lobby_data(id, "map_version").unwrap_or_default();
         let local_lobby_id = mm.lobby_data(id, "local_lobby_id").unwrap_or_default();
         let status = mm.lobby_data(id, "status").unwrap_or_default();
         let player_count = mm.lobby_member_count(id) as u32;
@@ -838,6 +860,8 @@ async fn list_steam_lobbies(
             host_steam_id,
             host_persona,
             map_id,
+            map_hash,
+            map_version,
             local_lobby_id,
             status,
             player_count,
@@ -871,6 +895,8 @@ pub struct SteamLobbyData {
     pub host_steam_id: String,
     pub host_persona: String,
     pub map_id: String,
+    pub map_hash: String,
+    pub map_version: String,
     pub local_lobby_id: String,
     pub status: String,
     pub match_id: String,
@@ -907,6 +933,8 @@ fn get_steam_lobby_data(
         host_steam_id: mm.lobby_data(lobby, "host_steam_id").unwrap_or_default(),
         host_persona: mm.lobby_data(lobby, "host_persona").unwrap_or_default(),
         map_id: mm.lobby_data(lobby, "map_id").unwrap_or_default(),
+        map_hash: mm.lobby_data(lobby, "map_hash").unwrap_or_default(),
+        map_version: mm.lobby_data(lobby, "map_version").unwrap_or_default(),
         local_lobby_id: mm.lobby_data(lobby, "local_lobby_id").unwrap_or_default(),
         status: mm.lobby_data(lobby, "status").unwrap_or_default(),
         match_id: mm.lobby_data(lobby, "match_id").unwrap_or_default(),

@@ -43,6 +43,7 @@ import { fetchMapCatalog } from '@/game/maps/catalog'
 import type { MapCatalogEntry } from '@/game/network/protocol'
 import { usePlayer } from '@/composables/usePlayer'
 import { createMultiplayerLobby } from '@/composables/useLobbyCreation'
+import { putMapVersion } from '@/services/mapVersionCache'
 import UiButton from '@/components/ui/UiButton.vue'
 import ExitButton from '@/components/ui/ExitButton.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
@@ -76,6 +77,23 @@ async function loadMapCatalog() {
   mapsLoadError.value = ''
   try {
     const maps = await fetchMapCatalog()
+    // Seed the map-version cache for every locally-known map that has a
+    // contentHash. This lets FindGame/Lobby correctly identify when the
+    // joiner already has the host's exact version without waiting for a
+    // WelcomeMessage. Best-effort: errors from putMapVersion are swallowed.
+    for (const m of maps) {
+      if (m.contentHash) {
+        putMapVersion({
+          id: m.id,
+          name: m.name,
+          contentHash: m.contentHash,
+          version: m.version ?? '',
+          gridCols: m.gridCols,
+          gridRows: m.gridRows,
+          spawnPointCount: m.spawnPointCount,
+        })
+      }
+    }
     // Hide campaign-tagged maps from the Custom Game lobby. Campaign maps
     // are only reachable from the Campaign panel so the objectives + level
     // gating apply. To use a campaign map's geometry in custom games,
@@ -96,9 +114,12 @@ async function createLobbyAndNavigate() {
   if (!selectedMapId.value || isCreating.value) return
   isCreating.value = true
   try {
+    const mapEntry = selectedMap.value
     const created = await createMultiplayerLobby({
       mapId: selectedMapId.value,
       hostPlayerId: playerId.value,
+      mapHash: mapEntry?.contentHash,
+      mapVersion: mapEntry?.version,
     })
     void router.push(`/lobby/${created.id}`)
   } catch (err) {

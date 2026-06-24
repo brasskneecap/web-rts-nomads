@@ -26,6 +26,7 @@ import {
   STEAM_LOBBY_ID_KEY,
   STEAM_PROXY_FLAG_KEY,
 } from '@/game/network/NetworkClient'
+import { hasMapVersion } from '@/services/mapVersionCache'
 import type { Lobby } from '@/game/network/protocol'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import ExitButton from '@/components/ui/ExitButton.vue'
@@ -73,19 +74,32 @@ async function pollLocal() {
 async function pollSteam() {
   const entries = await listSteamLobbies()
   // Adapt to the existing Lobby type so LobbyList doesn't need changes.
-  steamLobbies.value = entries.map((e) => ({
-    id: `${STEAM_ID_PREFIX}${e.steamLobbyId}`,
-    mapId: e.mapId,
-    mapName: e.mapId || '(unknown map)',
-    hostPlayerId: e.hostPersona || '(unknown host)',
-    players: Array.from(
-      { length: Math.max(e.playerCount, 1) },
-      (_, i) => (i === 0 ? e.hostPersona || 'host' : `slot-${i + 1}`),
-    ),
-    maxPlayers: e.maxPlayers > 0 ? e.maxPlayers : 4,
-    createdAt: 0,
-    status: e.status === 'started' ? 'started' : 'open',
-  }))
+  steamLobbies.value = entries.map((e) => {
+    // Version-mismatch detection: when the host has a non-empty mapHash and
+    // the joiner does NOT have a locally-cached entry for that exact
+    // (mapId, hash) pair, suffix the map name with a placeholder so the
+    // player knows the preview may not match what they'll play.
+    // Falls back to the plain mapId label when mapHash is absent (older host).
+    const hasHash = !!e.mapHash
+    const hashMatches = hasHash && hasMapVersion(e.mapId, e.mapHash)
+    const mapNameLabel = hasHash && !hashMatches
+      ? `${e.mapId || '(unknown map)'} — Host's custom map`
+      : (e.mapId || '(unknown map)')
+
+    return {
+      id: `${STEAM_ID_PREFIX}${e.steamLobbyId}`,
+      mapId: e.mapId,
+      mapName: mapNameLabel,
+      hostPlayerId: e.hostPersona || '(unknown host)',
+      players: Array.from(
+        { length: Math.max(e.playerCount, 1) },
+        (_, i) => (i === 0 ? e.hostPersona || 'host' : `slot-${i + 1}`),
+      ),
+      maxPlayers: e.maxPlayers > 0 ? e.maxPlayers : 4,
+      createdAt: 0,
+      status: e.status === 'started' ? 'started' : 'open',
+    }
+  })
 }
 
 async function poll() {

@@ -296,6 +296,12 @@ export type MapConfig = {
   gridCols: number
   gridRows: number
   cellSize: number
+  /** SHA-256 over the map's canonical authored JSON. Delivered in the
+   *  WelcomeMessage so the joiner can cache the received map keyed by id+hash.
+   *  Empty/absent on older servers. */
+  contentHash?: string
+  /** Optional human-readable version label. Display only. */
+  version?: string
   terrain: TerrainTile[]
   tiles?: TileInstance[]
   defaultTile?: TileCoord
@@ -377,6 +383,12 @@ export type MapCatalogEntry = {
    *  Game lobby filters these out of its map dropdown; the map editor
    *  still shows them in its load-map list. */
   campaignId?: string
+  /** SHA-256 over the map's canonical authored JSON (hash field excluded from
+   *  its own input). Empty/absent on older servers that have not been updated. */
+  contentHash?: string
+  /** Optional human-readable version label (e.g. "v3"). Display only — never
+   *  used for matching. Empty/absent when not set. */
+  version?: string
 }
 
 export type LobbyStatus = 'open' | 'started' | 'closed'

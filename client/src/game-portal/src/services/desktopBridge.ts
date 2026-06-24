@@ -103,13 +103,17 @@ export async function reportAchievement(id: string): Promise<void> {
  *  and the joiner's /lobby polling have what they need without each
  *  consumer making follow-up calls. mapId / localLobbyId / hostPersona
  *  are all optional — older callers that omit them produce a lobby that
- *  works but renders as "Unknown map / Unknown host" in /find-game. */
+ *  works but renders as "Unknown map / Unknown host" in /find-game.
+ *  mapHash / mapVersion carry the host's content hash and display version
+ *  so joiners can detect a stale local copy at join time. */
 export async function openLobby(
   opts: {
     maxPlayers?: number
     mapId?: string
     localLobbyId?: string
     hostPersona?: string
+    mapHash?: string
+    mapVersion?: string
   } = {},
 ): Promise<LobbyHandle | null> {
   if (!isInTauri()) return null
@@ -118,6 +122,8 @@ export async function openLobby(
     mapId: opts.mapId ?? '',
     localLobbyId: opts.localLobbyId ?? '',
     hostPersona: opts.hostPersona ?? '',
+    mapHash: opts.mapHash ?? '',
+    mapVersion: opts.mapVersion ?? '',
   })
   return { lobbyId }
 }
@@ -132,6 +138,11 @@ export interface SteamLobbyListEntry {
   status: string
   playerCount: number
   maxPlayers: number
+  /** SHA-256 content hash of the host's map (e.g. "sha256:abc…"). Empty string
+   *  when the host is on an older shell that does not stamp map_hash. */
+  mapHash: string
+  /** Human-readable map version label (e.g. "v3"). Empty when not set. */
+  mapVersion: string
 }
 
 /** Lists friends' Steam Matchmaking lobbies with the metadata each entry
@@ -167,6 +178,10 @@ export interface SteamLobbyData {
   matchId: string
   maxPlayers: number
   members: SteamLobbyMember[]
+  /** SHA-256 content hash of the host's map. Empty string on older shells. */
+  mapHash: string
+  /** Human-readable map version label. Empty when not set. */
+  mapVersion: string
 }
 
 /** Reads the current snapshot of a Steam lobby's metadata + member list.
@@ -186,12 +201,18 @@ export async function getSteamLobbyData(
  *  - localLobbyId: the host's local lobby id, used as the SPA route
  *    `/lobby/<localLobbyId>` so host + joiner views point at the same id
  *  - mapId: pre-rendered in the lobby waiting room before the first
- *    metadata poll completes */
+ *    metadata poll completes
+ *  - mapHash / mapVersion: the host's content hash and version, used for
+ *    lobby-preview reconciliation before the first metadata poll completes */
 export interface JoinLobbyResult {
   lobbyId: string
   hostSteamId64: string
   localLobbyId: string
   mapId: string
+  /** SHA-256 content hash of the host's map. Empty string on older shells. */
+  mapHash: string
+  /** Human-readable map version label. Empty when not set. */
+  mapVersion: string
 }
 
 /** Joins an existing Steam lobby by SteamID64 string. Returns the rich

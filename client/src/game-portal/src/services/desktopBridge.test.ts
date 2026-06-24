@@ -195,6 +195,8 @@ describe('openLobby extended metadata (§14R-A)', () => {
       mapId: 'enemy-test-small',
       localLobbyId: 'lobby-abc',
       hostPersona: 'gabe',
+      mapHash: '',
+      mapVersion: '',
     })
   })
 
@@ -207,6 +209,8 @@ describe('openLobby extended metadata (§14R-A)', () => {
       mapId: '',
       localLobbyId: '',
       hostPersona: '',
+      mapHash: '',
+      mapVersion: '',
     })
   })
 })
@@ -230,6 +234,8 @@ describe('listSteamLobbies / getSteamLobbyData (§14R-A)', () => {
       status: 'waiting',
       playerCount: 1,
       maxPlayers: 4,
+      mapHash: '',
+      mapVersion: '',
     }
     invokeMock.mockResolvedValueOnce([entry])
     const result = await bridge.listSteamLobbies()
@@ -265,6 +271,8 @@ describe('listSteamLobbies / getSteamLobbyData (§14R-A)', () => {
       members: [
         { steamId64: '76561197960287930', personaName: 'gabe' },
       ],
+      mapHash: '',
+      mapVersion: '',
     }
     invokeMock.mockResolvedValueOnce(snapshot)
     const result = await bridge.getSteamLobbyData('12345')

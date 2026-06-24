@@ -239,6 +239,7 @@
         }
       ],
       "cellSize": 64,
+      "contentHash": "sha256:c7877d37ff43472f49f17832e8bf12f88213afe249d28215b208fe618ad562f6",
       "debug": {
         "battleTracker": true,
         "debugSpawn": true

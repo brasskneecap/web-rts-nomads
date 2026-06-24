@@ -14,6 +14,7 @@ import type {
   KickBuildersCommandMessage,
   LeaveMatchMessage,
   LootCollectedNotification,
+  MapConfig,
   MapId,
   GuardCommandMessage,
   MatchSnapshotMessage,
@@ -33,6 +34,8 @@ import { GameState } from '../core/GameState'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { startSteamGame } from '@/services/desktopBridge'
 import { getOrCreatePlayerId as getProfilePlayerId } from '@/services/profileApi'
+import { hasMapVersion, putMapVersion } from '@/services/mapVersionCache'
+import { fetchMapCatalog, saveMapCatalogFile } from '../maps/catalog'
 import type { CanvasRenderer } from '../rendering/CanvasRenderer'
 
 /** Derive the WebSocket base URL from the HTTP base URL env var.
@@ -148,6 +151,68 @@ function firePendingSteamHostStartIfNeeded(matchId: string): void {
   void startSteamGame(lobbyId, matchId).catch((e) => {
     console.error('startSteamGame failed:', e)
   })
+}
+
+/** Best-effort: persist the host's map so the joiner accumulates (and can
+ *  re-host) the host's version, and so future lobby previews resolve correctly.
+ *
+ *  (a) Writes the localStorage cache (mapVersionCache) — the authority for the
+ *      preview-match check in FindGame/Lobby. Safe: separate from the catalog.
+ *  (b) Best-effort POSTs to /maps so the joiner can re-host the map. Because
+ *      contentHash is recomputed on every editor save, "same id, different
+ *      hash" means the host has a genuinely different version, so we acquire it
+ *      — including UPDATING a map the joiner hosted before. We skip the POST
+ *      only when the joiner already has this exact (id, hash). host-wins means
+ *      the host's version is always the authoritative one in a shared match, so
+ *      adopting it is the correct convergence.
+ *
+ *  Fire-and-forget; wrapped in try/catch so nothing here can block or delay
+ *  match entry. */
+function persistWelcomeMap(map: MapConfig): void {
+  const { id, name, contentHash, version } = map
+  if (!id || !contentHash) return
+
+  // Already processed this exact (id, hash) — cache write + catalog sync done
+  // on a prior welcome. Nothing left to do.
+  if (hasMapVersion(id, contentHash)) return
+
+  // (a) localStorage cache — the authority for preview reconciliation.
+  putMapVersion({
+    id,
+    name: name ?? id,
+    contentHash,
+    version: version ?? '',
+    gridCols: map.gridCols,
+    gridRows: map.gridRows,
+    // WelcomeMessage / MapConfig does not carry spawnPointCount directly;
+    // derive from placedUnits or fall back to 0 (preview null-coalesces).
+    spawnPointCount: (map.placedUnits ?? []).filter(
+      (u) => u.playerSlot !== 'enemy',
+    ).length,
+  })
+
+  // (b) Best-effort POST /maps. Acquire when the id is new to us, or UPDATE
+  // when we have the id but at a different content hash (the host's newer
+  // version). Skip only when our local copy already matches the host's hash.
+  void (async () => {
+    try {
+      const existing = await fetchMapCatalog()
+      const local = existing.find((m) => m.id === id)
+      if (local && local.contentHash === contentHash) return // already have this exact version
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, name: _name, description: _desc, ...mapPayload } = map
+      await saveMapCatalogFile({
+        id,
+        name: name ?? id,
+        description: map.description ?? '',
+        sortOrder: 0,
+        map: mapPayload,
+      })
+    } catch {
+      // Best-effort only — silently swallow. The localStorage cache is the
+      // authority for preview matching; re-host availability is a bonus.
+    }
+  })()
 }
 
 export class NetworkClient {
@@ -673,6 +738,11 @@ export class NetworkClient {
         localStorage.setItem(MATCH_ID_STORAGE_KEY, message.matchId)
         this.onMatchIdChange?.(message.matchId)
         console.log('connected as', message.playerId, 'in', message.matchId)
+
+        // Map versioning: cache the host's map in localStorage so future lobby
+        // previews can detect whether the joiner has the host's exact version.
+        // Best-effort POST /maps so the joiner can re-host it. Errors swallowed.
+        persistWelcomeMap(message.map)
 
         // §14.3 host-side fan-out: if the SteamMultiplayer view set the
         // pending-host-start flag, the welcome we just received is the

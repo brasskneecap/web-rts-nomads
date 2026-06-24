@@ -256,9 +256,14 @@ type MapCatalogEntry struct {
 }
 
 type MapCatalogSummary struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Description     string `json:"description"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Version / ContentHash mirror the map's version fields (see MapConfig).
+	// The SPA reads ContentHash from the summary to stamp into the Steam lobby
+	// metadata at host time and to compare against the host's hash at join time.
+	Version         string `json:"version,omitempty"`
+	ContentHash     string `json:"contentHash,omitempty"`
 	GridCols        int    `json:"gridCols"`
 	GridRows        int    `json:"gridRows"`
 	SpawnPointCount int    `json:"spawnPointCount"`
@@ -277,7 +282,11 @@ type MapCatalogSummary struct {
 var mapCatalogFS embed.FS
 
 var (
-	mapCatalog       = func() []MapCatalogEntry { _ = unitDefsByType; _ = allZoneCaptureHandlersRegistered; return mustLoadMapCatalog() }()
+	mapCatalog = func() []MapCatalogEntry {
+		_ = unitDefsByType
+		_ = allZoneCaptureHandlersRegistered
+		return mustLoadMapCatalog()
+	}()
 	mapCatalogByID   = indexMapCatalog(mapCatalog)
 	defaultCatalogID = mapCatalog[0].ID
 
@@ -313,6 +322,8 @@ func ListMapCatalogSummaries() []MapCatalogSummary {
 			ID:              entry.ID,
 			Name:            entry.Name,
 			Description:     entry.Description,
+			Version:         entry.Map.Version,
+			ContentHash:     entry.Map.ContentHash,
 			GridCols:        entry.Map.GridCols,
 			GridRows:        entry.Map.GridRows,
 			SpawnPointCount: spawnCount,
@@ -484,9 +495,11 @@ func SaveMapCatalogEntryWithOptions(entry MapCatalogEntry, opts SaveMapOptions) 
 	// Hydrate for the overlay AFTER serializing to disk (disk keeps the
 	// authored form; the overlay carries the def-expanded form).
 	hydrateEntryInPlace(&entry)
+	attachMapContentHash(&entry)
 	runtimeMapsMu.Lock()
 	if clearedOwner != nil {
 		hydrateEntryInPlace(clearedOwner)
+		attachMapContentHash(clearedOwner)
 		runtimeMaps[clearedOwner.ID] = *clearedOwner
 	}
 	runtimeMaps[entry.ID] = entry
@@ -505,6 +518,10 @@ func writeMapEntryToDisk(dir string, entry MapCatalogEntry) error {
 	if safeID == "" {
 		return fmt.Errorf("map id %q is not a valid filename", entry.ID)
 	}
+	// ContentHash is derived, not authored — never persist it to disk. It is
+	// recomputed on every load/save. Version (authored) is kept. entry is a
+	// value copy, so clearing the field here is local to this write.
+	entry.Map.ContentHash = ""
 	raw, err := RenderCatalogEntryJSON(entry)
 	if err != nil {
 		return err
@@ -602,15 +619,15 @@ func mustLoadMapCatalog() []MapCatalogEntry {
 		if entry.Map.ID == "" {
 			entry.Map.ID = entry.ID
 		}
-			if entry.Map.Name == "" {
-				entry.Map.Name = entry.Name
-			}
-			if entry.Map.Description == "" {
-				entry.Map.Description = entry.Description
-			}
-			if entry.Map.Size == "" {
-				entry.Map.Size = entry.ID
-			}
+		if entry.Map.Name == "" {
+			entry.Map.Name = entry.Name
+		}
+		if entry.Map.Description == "" {
+			entry.Map.Description = entry.Description
+		}
+		if entry.Map.Size == "" {
+			entry.Map.Size = entry.ID
+		}
 		if entry.Map.Terrain == nil {
 			entry.Map.Terrain = []protocol.TerrainTile{}
 		}
@@ -627,6 +644,7 @@ func mustLoadMapCatalog() []MapCatalogEntry {
 		entry.Map.Zones = normalizeZones(entry.Map.Zones)
 		validateZones(file.Name(), entry.Map.Zones)
 		validateZoneTriggers(file.Name(), entry.Map.Buildings, entry.Map.Zones)
+		attachMapContentHash(&entry)
 
 		entries = append(entries, entry)
 	}

@@ -26,6 +26,13 @@ export interface CreateMultiplayerLobbyArgs {
    *  (useCampaign.startCampaignLevel / openCampaignLobby) reads this from
    *  the active campaignSession; Custom Game omits it. */
   campaignLevelId?: string
+  /** SHA-256 content hash of the map being hosted. Sourced from the GET /maps
+   *  catalog summary. Stamped into the Steam lobby metadata so joiners can
+   *  detect a stale local copy at join time. Empty/absent on older servers. */
+  mapHash?: string
+  /** Human-readable map version label (e.g. "v3"). Stamped alongside mapHash.
+   *  Display only — never used for matching. */
+  mapVersion?: string
 }
 
 /** Create a local lobby and start the paired Steam lobby in the background.
@@ -53,7 +60,7 @@ export async function createMultiplayerLobby(
   } catch {
     /* sessionStorage may be sandboxed; non-fatal */
   }
-  void runBackgroundSteamLobbyCreate(created.id, args.mapId)
+  void runBackgroundSteamLobbyCreate(created.id, args.mapId, args.mapHash, args.mapVersion)
 
   return created
 }
@@ -66,6 +73,8 @@ export async function createMultiplayerLobby(
 async function runBackgroundSteamLobbyCreate(
   localLobbyId: string,
   mapId: string,
+  mapHash?: string,
+  mapVersion?: string,
 ): Promise<void> {
   try {
     const steamPlayer = await getSteamPlayer()
@@ -80,6 +89,8 @@ async function runBackgroundSteamLobbyCreate(
       mapId,
       localLobbyId,
       hostPersona: steamPlayer.personaName,
+      mapHash,
+      mapVersion,
     })
     const steamLobbyId = handle?.lobbyId ?? null
     if (steamLobbyId) {
