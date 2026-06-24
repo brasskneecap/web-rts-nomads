@@ -181,3 +181,30 @@ export async function devResetProfile(): Promise<PlayerProfile> {
   })
   return handleResponse<PlayerProfile>(res)
 }
+
+/** True when this SPA tab is a remote multiplayer client proxying to a host
+ *  (Steam joiner or direct-connect joiner). Mirrors NetworkClient's WS-URL
+ *  resolution. The host / single-player return false and rely on the
+ *  server-side dominion-point commit. */
+export function isRemoteProxyClient(): boolean {
+  try {
+    if (sessionStorage.getItem('webrts.steam.proxyActive') === '1') return true
+    if (sessionStorage.getItem('webrts.directConnect.proxyToken')) return true
+  } catch {
+    // sessionStorage can throw in sandboxed contexts — treat as non-proxy.
+  }
+  return false
+}
+
+/** Persist end-of-match dominion points to THIS machine's local profile.
+ *  Idempotent on the server by matchId. Used by a remote joiner, whose
+ *  earned DP the host could only commit to the host's own disk. Returns the
+ *  updated profile. */
+export async function awardMatchDominionPoints(matchId: string, amount: number): Promise<PlayerProfile> {
+  const res = await fetch(`${API_BASE}/api/profile/match/award-dominion-points`, {
+    method: 'POST',
+    headers: playerHeaders(),
+    body: JSON.stringify({ matchId, amount }),
+  })
+  return handleResponse<PlayerProfile>(res)
+}

@@ -1122,6 +1122,9 @@ export type TrapSnapshot = {
 
 export type GameOverSnapshot = {
   lostPlayerIds: string[]
+  /** This viewer's own per-match earned dominion points. Present only at
+   *  game-over. A remote joiner persists this into its own local profile. */
+  yourDominionPointsEarned?: number
 }
 
 /** Per-tick wire shape of one player's cumulative match metrics. Mirror of

@@ -45,9 +45,15 @@ func (s *GameState) rollDominionPointDropLocked(attackerOwnerID string, deadUnit
 	}
 
 	if s.rngLoot.Float64() < chance {
+		// Always-on per-match earned total (independent of commitMode). This is
+		// what the game-over snapshot reports to each viewer.
+		if player, ok := s.Players[attackerOwnerID]; ok {
+			player.MatchDominionPointsEarned += amount
+		}
+
 		if tuning.DominionPoints.CommitMode == dominionPointCommitModeImmediate {
-			// Fire-and-forget commit; do NOT accumulate on the player so the
-			// match-end commit path sees zero and cannot double-credit.
+			// Fire-and-forget commit; do NOT accumulate RunDominionPointDrops so
+			// the match-end commit path sees zero and cannot double-credit.
 			if s.onDominionPointDropImmediate != nil {
 				s.onDominionPointDropImmediate(attackerOwnerID, amount)
 			} else {

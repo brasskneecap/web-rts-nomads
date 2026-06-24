@@ -614,6 +614,14 @@ type Player struct {
 	// Committed to the profile file at match end.
 	RunDominionPointDrops int
 
+	// MatchDominionPointsEarned is the always-on per-match earned total,
+	// incremented on every successful drop regardless of commitMode. Unlike
+	// RunDominionPointDrops (which stays 0 in immediate mode by design), this
+	// is the authoritative per-player total reported to each viewer in the
+	// game-over snapshot, for end-of-match display and for a remote joiner to
+	// persist into its own local profile (the host commits server-side).
+	MatchDominionPointsEarned int
+
 	// ProfileUpgrades is a snapshot of PlayerProfile.OwnedUpgradeRanks taken
 	// at match join. Mutations to the profile during the match do not affect
 	// this field. Nil / empty means no upgrades purchased.
@@ -1688,6 +1696,9 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 		// per-viewer identity); override with this viewer's player-scope
 		// objective state. Team-scope objectives are unchanged.
 		snap.Victory = s.buildVictorySnapshotForViewerLocked(viewerID)
+		if snap.GameOver != nil {
+			snap.GameOver.YourDominionPointsEarned = s.viewerDominionPointsEarnedLocked(viewerID)
+		}
 		return snap
 	}
 
@@ -1912,6 +1923,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 			ids = append(ids, id)
 		}
 		gameOver = &protocol.GameOverSnapshot{LostPlayerIDs: ids}
+		gameOver.YourDominionPointsEarned = s.viewerDominionPointsEarnedLocked(viewerID)
 	}
 
 	// Per-viewer Victory snapshot: team-scope objectives read TeamState
@@ -3098,6 +3110,25 @@ func (s *GameState) matchSummaryForPlayerLocked(playerID string) protocol.MatchS
 		Won:                  !lost,
 		DominionPointsEarned: runDrops + bonus,
 	}
+}
+
+// viewerDominionPointsEarnedLocked returns the player's full per-match earned
+// dominion-point total — per-kill drops (MatchDominionPointsEarned) plus the
+// win/loss bonus — matching what the host credits server-side via
+// matchSummaryForPlayerLocked. This is the per-viewer value sent in the
+// game-over snapshot so a remote joiner persists the same total the host would.
+func (s *GameState) viewerDominionPointsEarnedLocked(playerID string) int {
+	p, ok := s.Players[playerID]
+	if !ok {
+		return 0
+	}
+	lost := s.lostPlayerIDs != nil && s.lostPlayerIDs[playerID]
+	tuning := gameplayTuning()
+	bonus := tuning.DominionPoints.WinBonus
+	if lost {
+		bonus = tuning.DominionPoints.LossConsolation
+	}
+	return p.MatchDominionPointsEarned + bonus
 }
 
 // HumanPlayerMatchSummaries returns one MatchSummary per human player in the

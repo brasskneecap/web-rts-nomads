@@ -265,6 +265,55 @@ func TestRollDominionPointDropLocked_ImmediateMode_FiresHookAndSkipsAccumulator(
 	}
 }
 
+// TestRollDominionPointDropLocked_ImmediateMode_EarnedCounterIncrements verifies
+// that in commitMode="immediate", a successful drop roll increments
+// MatchDominionPointsEarned (the always-on earned total used for game-over
+// snapshots) while leaving RunDominionPointDrops at zero (immediate mode
+// bypasses the match-end accumulator by design).
+func TestRollDominionPointDropLocked_ImmediateMode_EarnedCounterIncrements(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
+	const playerID = "p1"
+	s.EnsurePlayer(playerID)
+
+	prevMode := gameplayTuningSingleton.DominionPoints.CommitMode
+	gameplayTuningSingleton.DominionPoints.CommitMode = dominionPointCommitModeImmediate
+	t.Cleanup(func() { gameplayTuningSingleton.DominionPoints.CommitMode = prevMode })
+
+	if gameplayTuningSingleton.UnitOverrides == nil {
+		gameplayTuningSingleton.UnitOverrides = map[string]UnitDominionPointOverride{}
+	}
+	const testType = "raider"
+	prevOverride, hadOverride := gameplayTuningSingleton.UnitOverrides[testType]
+	gameplayTuningSingleton.UnitOverrides[testType] = UnitDominionPointOverride{
+		DominionPointDropChance: 1.0,
+		DominionPointAmount:     1,
+	}
+	t.Cleanup(func() {
+		if hadOverride {
+			gameplayTuningSingleton.UnitOverrides[testType] = prevOverride
+		} else {
+			delete(gameplayTuningSingleton.UnitOverrides, testType)
+		}
+	})
+
+	// Wire a no-op so the immediate branch doesn't warn-and-drop.
+	s.SetImmediateDominionPointDropHandler(func(string, int) {})
+
+	s.mu.Lock()
+	enemy := s.spawnEnemyUnitLocked(testType, protocol.Vec2{X: 100, Y: 100})
+	s.rollDominionPointDropLocked(playerID, enemy)
+	earned := s.Players[playerID].MatchDominionPointsEarned
+	accumulated := s.Players[playerID].RunDominionPointDrops
+	s.mu.Unlock()
+
+	if earned <= 0 {
+		t.Errorf("immediate mode must increment MatchDominionPointsEarned; got %d", earned)
+	}
+	if accumulated != 0 {
+		t.Errorf("immediate mode must NOT increment RunDominionPointDrops; got %d", accumulated)
+	}
+}
+
 // TestRollDominionPointDropLocked_ImmediateMode_NoHookIsNoOp verifies that
 // when commitMode="immediate" but no handler is wired, drops are silently
 // dropped (no panic, no accumulator increment). Tests that don't care about

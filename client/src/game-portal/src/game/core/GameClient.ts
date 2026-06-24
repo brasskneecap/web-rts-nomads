@@ -63,6 +63,13 @@ export type GameUiSnapshot = {
    *  the first snapshot arrives. AI players (enemy/neutral) are filtered
    *  out server-side before being sent. */
   players: import('../network/protocol').PlayerSnapshot[]
+  /** Frozen roster captured from the first game-over / victory snapshot.
+   *  Null until the match ends. The recap reads this instead of the live
+   *  `players` array so host disconnects can't drop rows mid-recap. */
+  frozenEndPlayers: import('../network/protocol').PlayerSnapshot[] | null
+  /** This viewer's earned dominion points for the match, frozen at the
+   *  same moment as frozenEndPlayers. 0 until/unless the server reports it. */
+  matchDominionPointsEarned: number
   // Permanent per-player upgrades. Empty array until the server sends upgrade data.
   upgrades: PlayerUpgradeSnapshot[]
   // Current town hall tier for the local player (1/2/3). 0 until first snapshot.
@@ -282,6 +289,8 @@ export class GameClient {
       objectives: this.state.getObjectives(),
       zoneCaptureCards: this.state.getZoneCaptureCards(),
       players: this.state.playerSnapshots,
+      frozenEndPlayers: this.state.frozenEndPlayers,
+      matchDominionPointsEarned: this.state.matchDominionPointsEarned,
       upgrades: this.state.playerUpgrades,
       townHallTier: this.state.townHallTier,
       selectedBuildingType: this.state.getSelectedBuildingType(),

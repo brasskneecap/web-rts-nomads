@@ -66,6 +66,15 @@ type PlayerProfile struct {
 	// completed without the level itself being beaten — the two are tracked
 	// independently. Added in schema version 6.
 	CompletedCampaignObjectives map[string][]string `json:"completedCampaignObjectives"`
+
+	// CreditedMatchIDs records match IDs whose end-of-match dominion-point
+	// award has already been applied to this profile, so a client retry /
+	// recap re-mount cannot double-credit. Bounded to the most recent entries
+	// (see award handler). nil/empty for fresh profiles. Added in schema
+	// version 7. A nil slice is equivalent to an empty slice; no migration is
+	// needed because omitempty serializes nil as absent and the award handler
+	// treats a missing ledger the same as an empty one.
+	CreditedMatchIDs []string `json:"creditedMatchIds,omitempty"`
 }
 
 // AcquiredAdvancement records a single purchased advancement node.

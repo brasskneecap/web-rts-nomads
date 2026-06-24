@@ -681,6 +681,15 @@ export class GameState {
   gameOverSnapshot: GameOverSnapshot | null = null
   // Victory state — non-null once the designated boss unit has been killed.
   victorySnapshot: VictorySnapshot | null = null
+  // Frozen end-of-match roster. Captured from the FIRST snapshot that reports
+  // game-over (or victory) so connection teardown — e.g. the host leaving and
+  // dropping out of the roster — can't clobber the recap's data source. Null
+  // until the match ends. The recap reads this, not the live playerSnapshots.
+  frozenEndPlayers: PlayerSnapshot[] | null = null
+  // This viewer's own earned dominion points for the match, taken from the
+  // game-over snapshot at freeze time. 0 until/unless the server reports it.
+  matchDominionPointsEarned = 0
+  private endRosterFrozen = false
 
   mapWidth = 6144
   mapHeight = 4096
@@ -1414,6 +1423,20 @@ export class GameState {
     }
     if (message.victory) {
       this.victorySnapshot = message.victory
+    }
+
+    // Freeze the end-of-match roster + this viewer's earned DP exactly once,
+    // from the first snapshot that reports the match is over. playerSnapshots
+    // was already updated above (applyPlayerSnapshots ran earlier this call),
+    // so it reflects this snapshot's full roster.
+    const matchEnded = !!message.gameOver || message.victory?.achieved === true
+    if (matchEnded && !this.endRosterFrozen) {
+      this.endRosterFrozen = true
+      // Clone each element too (not just the array): playerSnapshots stores
+      // wire objects directly, so a bare spread would leave the frozen roster
+      // aliasing objects a later snapshot could touch. Defensive immutability.
+      this.frozenEndPlayers = this.playerSnapshots.map((p) => ({ ...p }))
+      this.matchDominionPointsEarned = message.gameOver?.yourDominionPointsEarned ?? 0
     }
 
     if (message.fow) {

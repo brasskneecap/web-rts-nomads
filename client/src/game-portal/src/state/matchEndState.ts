@@ -37,6 +37,12 @@ export interface MatchEndSnapshot {
    *  here so the recap doesn't need to re-resolve it through the
    *  campaign catalog after the route change. */
   levelDisplayName?: string
+  /** This viewer's own earned dominion points for the match. A remote joiner
+   *  persists this to its local profile; the host ignores it (server already
+   *  committed). */
+  dominionPointsEarned: number
+  /** Match ID — idempotency key for the client-side dominion-point award. */
+  matchId: string
 }
 
 /** Current end-of-match snapshot, or null when no recap is pending.
@@ -44,10 +50,17 @@ export interface MatchEndSnapshot {
  *  by MatchEnd.vue's "Return to Menu" handler. */
 export const matchEndSnapshot = ref<MatchEndSnapshot | null>(null)
 
+/** Set once the remote joiner has POSTed its earned DP for the current
+ *  recap, so a recap re-mount / route bounce can't double-fire. Reset
+ *  whenever a new recap snapshot is set (and on clear), so each match's
+ *  recap starts clean regardless of how the previous one was dismissed. */
+export const matchEndDpPersisted = ref(false)
+
 /** Set the snapshot before navigating to the recap route. Subsequent
  *  calls overwrite — there's no use-case for stacking recaps. */
 export function setMatchEndSnapshot(snap: MatchEndSnapshot): void {
   matchEndSnapshot.value = snap
+  matchEndDpPersisted.value = false
 }
 
 /** Drop the snapshot. Called by MatchEnd.vue after the user dismisses
@@ -55,4 +68,5 @@ export function setMatchEndSnapshot(snap: MatchEndSnapshot): void {
  *  re-show stale data. */
 export function clearMatchEndSnapshot(): void {
   matchEndSnapshot.value = null
+  matchEndDpPersisted.value = false
 }
