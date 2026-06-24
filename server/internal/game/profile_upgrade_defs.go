@@ -33,6 +33,9 @@ type ProfileUpgradeEffect struct {
 	// damageMultiplierByType fields
 	DamageTypeClass   string  `json:"damageTypeClass,omitempty"`
 	MultiplierPerRank float64 `json:"multiplierPerRank,omitempty"`
+	// startingResource fields
+	ResourceType  string `json:"resourceType,omitempty"`
+	AmountPerRank int    `json:"amountPerRank,omitempty"`
 }
 
 // profileUpgradeEffectHandler pairs a startup validator with a match-start
@@ -92,6 +95,25 @@ var profileUpgradeEffectRegistry = map[string]profileUpgradeEffectHandler{
 			case "nonPhysical":
 				player.MagicDamageMultiplier += bonus
 			}
+		},
+	},
+	"startingResource": {
+		validate: func(filename string, effect ProfileUpgradeEffect) {
+			if effect.ResourceType == "" {
+				panic("catalog/profile-upgrades/" + filename + `: effect "startingResource" requires non-empty resourceType`)
+			}
+			if _, ok := playerConfig().StartingResources[effect.ResourceType]; !ok {
+				panic("catalog/profile-upgrades/" + filename + `: effect "startingResource" resourceType "` + effect.ResourceType + `" is not a configured starting resource (see catalog/player/player.json)`)
+			}
+			if effect.AmountPerRank <= 0 {
+				panic("catalog/profile-upgrades/" + filename + `: effect "startingResource" requires amountPerRank > 0`)
+			}
+		},
+		applyAtMatchStart: func(player *Player, rank int, effect ProfileUpgradeEffect) {
+			if player.Resources == nil {
+				player.Resources = map[string]int{}
+			}
+			player.Resources[effect.ResourceType] += rank * effect.AmountPerRank
 		},
 	},
 }

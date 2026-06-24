@@ -3209,10 +3209,7 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 	player := &Player{
 		ID:    playerID,
 		Color: s.randomColor(),
-		Resources: map[string]int{
-			"gold": 500,
-			"wood": 180,
-		},
+		Resources: playerConfig().newStartingResources(),
 		GlobalUnitSpawnTimeMultiplier: 1,
 		UnitSpawnTimeMultipliers:      map[string]float64{},
 		Upgrades:                      make(map[UpgradeTrack]int),

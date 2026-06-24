@@ -18,12 +18,7 @@
   },
   "resourceCost": {
     "gold": 250,
-    "wood": 200
-  },
-  "selectionRing": {
-    "radiusX": 1,
-    "radiusY": 0.8,
-    "offsetY":  1.5 
+    "wood": 250
   },
   "capabilities": [],
   "spawnUnitTypes": [],

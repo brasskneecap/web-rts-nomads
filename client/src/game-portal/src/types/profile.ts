@@ -50,6 +50,7 @@ export type PlayerProfile = {
 export type ProfileUpgradeEffect =
   | { type: 'extraStartingUnit'; unitType: string; countPerRank: number }
   | { type: 'damageMultiplierByType'; damageTypeClass: 'physical' | 'nonPhysical'; multiplierPerRank: number }
+  | { type: 'startingResource'; resourceType: string; amountPerRank: number }
 
 export type ProfileUpgradeDef = {
   id: string

@@ -1,0 +1,12 @@
+{
+  "id": "starting_gold",
+  "name": "War Chest",
+  "description": "Start each match with 100 extra gold per rank.",
+  "maxRanks": 5,
+  "costPerRank": [20, 40, 60, 80, 100],
+  "effect": {
+    "type": "startingResource",
+    "resourceType": "gold",
+    "amountPerRank": 100
+  }
+}
