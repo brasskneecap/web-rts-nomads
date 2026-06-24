@@ -23,13 +23,13 @@
       "placeIntervalSeconds": 8,
       "durationSeconds": 10,
       "radius": 55,
-      "damagePerSecond": 12,
+      "damagePerSecond": 16,
       "silver": {
-        "damagePerSecond": 20,
+        "damagePerSecond": 28,
         "radius": 75
       },
       "gold": {
-        "damagePerSecond": 30,
+        "damagePerSecond": 45,
         "radius": 95
       }
     }
@@ -45,7 +45,7 @@
       "durationSeconds": 20,
       "triggerRadius": 50,
       "explosionRadius": 100,
-      "burstDamage": 55
+      "burstDamage": 75
     }
   },
   {

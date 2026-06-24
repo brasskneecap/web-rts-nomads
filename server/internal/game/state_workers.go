@@ -316,7 +316,7 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 		s.setUnitMiningInsideLocked(unit, false)
 		unit.Gathering = false
 		unit.Visible = true
-		desired := gatherAmountForUnitResource(unit.UnitType, resourceNode.ResourceType)
+		desired := s.gatherAmountForUnitResourceLocked(unit.UnitType, unit.OwnerID, resourceNode.ResourceType)
 		gathered := resourceNode.consumeResource(desired)
 		if gathered > 0 {
 			unit.CarriedResourceType = resourceNode.ResourceType
@@ -490,10 +490,20 @@ func (s *GameState) sendWorkerToDepositLocked(unit *Unit, blocked map[gridPoint]
 	}
 }
 
-func gatherAmountForUnitResource(unitType, resourceType string) int {
+// gatherAmountForUnitResourceLocked returns how much of resourceType a unit of
+// unitType owned by ownerID gathers per haul. It resolves the owner's effective
+// unit def (the per-player copy with advancement deltas baked in, e.g. the
+// worker woodGatherAmount/goldGatherAmount advancements) before falling back to
+// the raw catalog def — mirroring spawnPlayerUnitLocked. Must hold s.mu.
+func (s *GameState) gatherAmountForUnitResourceLocked(unitType, ownerID, resourceType string) int {
 	def, ok := getUnitDef(unitType)
 	if !ok {
 		return defaultGatherAmountForResource(resourceType)
+	}
+	if player, playerOK := s.Players[ownerID]; playerOK {
+		if effective, hasOverride := player.EffectiveUnitDefs[unitType]; hasOverride {
+			def = effective
+		}
 	}
 
 	switch resourceType {

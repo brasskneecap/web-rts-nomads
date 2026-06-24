@@ -89,6 +89,41 @@ func TestWorkerAdvancements_FullTrackEffectsApplied(t *testing.T) {
 	}
 }
 
+// TestWorkerAdvancements_GatherUsesEffectiveDef verifies that the per-haul
+// gather amount reflects the owner's woodGatherAmount/goldGatherAmount
+// advancements (resolved through EffectiveUnitDefs), not just the raw catalog
+// def. Regression guard for gatherAmountForUnitResourceLocked.
+func TestWorkerAdvancements_GatherUsesEffectiveDef(t *testing.T) {
+	base, ok := getUnitDef("worker")
+	if !ok {
+		t.Skip("worker not in unit catalog, skip")
+	}
+	woodNode, _ := GetAdvancementDef("worker_woodgather_1")
+	goldNode, _ := GetAdvancementDef("worker_goldgather_1")
+	wantWood := base.WoodGatherAmount + woodNode.Effects[0].Amount
+	wantGold := base.GoldGatherAmount + goldNode.Effects[0].Amount
+
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{
+		"worker_woodgather_1", "worker_goldgather_1",
+	})
+	// A baseline player without the advancements should gather the catalog amounts.
+	s.EnsurePlayer("baseline")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if got := s.gatherAmountForUnitResourceLocked("worker", "p1", "wood"); got != wantWood {
+		t.Errorf("upgraded worker wood gather: want %d, got %d", wantWood, got)
+	}
+	if got := s.gatherAmountForUnitResourceLocked("worker", "p1", "gold"); got != wantGold {
+		t.Errorf("upgraded worker gold gather: want %d, got %d", wantGold, got)
+	}
+	if got := s.gatherAmountForUnitResourceLocked("worker", "baseline", "wood"); got != base.WoodGatherAmount {
+		t.Errorf("baseline worker wood gather: want catalog %d, got %d", base.WoodGatherAmount, got)
+	}
+}
+
 // TestWorkerAdvancements_GoldCostDoesNotMutateCatalog verifies the goldCost
 // effect's map-copy guard: applying it must not mutate the shared catalog
 // UnitDef's ResourceCost map (the working def is only a shallow struct copy, so

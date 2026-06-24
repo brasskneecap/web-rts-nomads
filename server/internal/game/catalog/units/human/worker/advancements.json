@@ -43,16 +43,16 @@
       ]
     },
     {
-      "id": "worker_woodgather_1",
-      "name": "Seasoned Lumberjacks",
-      "description": "Workers gather 4 more wood per trip.",
+      "id": "worker_goldgather_1",
+      "name": "Gold Rush",
+      "description": "Workers gather 5 more gold per trip.",
       "kind": "major",
       "cost": 150,
       "effects": [
         {
           "kind": "unitStatAdd",
-          "stat": "woodGatherAmount",
-          "amount": 4
+          "stat": "goldGatherAmount",
+          "amount": 5
         }
       ]
     },
@@ -98,16 +98,16 @@
       ]
     },
     {
-      "id": "worker_goldgather_1",
-      "name": "Gold Rush",
-      "description": "Workers gather 5 more gold per trip.",
+      "id": "worker_woodgather_1",
+      "name": "Seasoned Lumberjacks",
+      "description": "Workers gather 4 more wood per trip.",
       "kind": "major",
-      "cost": 300,
+      "cost": 150,
       "effects": [
         {
           "kind": "unitStatAdd",
-          "stat": "goldGatherAmount",
-          "amount": 5
+          "stat": "woodGatherAmount",
+          "amount": 4
         }
       ]
     }
