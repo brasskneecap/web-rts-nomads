@@ -82,6 +82,11 @@ type UnitDef struct {
 	// feet, size the selection ring, and compute hit-test rects. Passed
 	// through as-is; the server game logic never reads it.
 	Bounds json.RawMessage `json:"bounds,omitempty"`
+	// Shadow is optional per-unit ground-shadow tuning (enabled, radiusX,
+	// radiusY, opacity, offsetX, offsetY). Client-only render config; the
+	// server never reads it and only passes it through. Absent ⇒ the client
+	// derives a default blob shadow from Bounds.
+	Shadow json.RawMessage `json:"shadow,omitempty"`
 
 	// DominionPointDropChance is the per-kill probability that this unit type
 	// drops dominion points when killed by a player. Must be in [0,1].

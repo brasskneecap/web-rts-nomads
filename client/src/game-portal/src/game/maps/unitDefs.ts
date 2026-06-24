@@ -15,6 +15,25 @@ export type UnitBounds = {
   ringOffsetY?: number
 }
 
+// Per-unit ground-shadow tuning. Every field is optional; absent fields fall
+// back to defaults derived from the unit's bounds (see resolveUnitShadow in
+// unitShadow.ts), so a unit with no `shadow` block still gets a proportional
+// blob shadow. Passed through the catalog as-is; the server never reads it.
+export type UnitShadow = {
+  /** Default true. Set false to draw no shadow for this unit. */
+  enabled?: boolean
+  /** Horizontal radius in px. Default: bounds.halfWidth * 0.85. */
+  radiusX?: number
+  /** Vertical radius in px. Default: resolved radiusX * 0.4. */
+  radiusY?: number
+  /** Peak alpha at the center, 0..1. Default: 0.35. */
+  opacity?: number
+  /** Px nudge from the feet anchor. Default: 0. */
+  offsetX?: number
+  /** Px nudge from the feet anchor (positive = down). Default: 0. */
+  offsetY?: number
+}
+
 export type UnitAttackVisual = {
   kind?: 'melee' | 'projectile'
   originX?: number
@@ -65,6 +84,8 @@ export type UnitDef = {
   combatProfile?: string
   attackVisual?: UnitAttackVisual
   bounds?: UnitBounds
+  /** Optional ground-shadow tuning. Absent ⇒ defaults derived from bounds. */
+  shadow?: UnitShadow
   /** Airborne unit. Renders above ground units (with shadow/elevation) and is only hit by attackers whose targetableTypes include "flyer". */
   flyer?: boolean
   /** Target classes this unit's attacks can hit. When absent the server derives a default at spawn (projectile attacks → ground+flyer, otherwise ground only). */

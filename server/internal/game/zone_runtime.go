@@ -78,6 +78,24 @@ func (s *GameState) zoneRuntimeByIDLocked(id string) *zoneRuntime {
 	return nil
 }
 
+// buildingTouchesZoneLocked reports whether b's footprint — or a one-cell
+// border around it — overlaps any zone cell. Used to scope neutral building
+// aggression to zone territory: neutrals defend the claim tower and anything
+// the player builds in a contested zone, but never march on the off-zone base.
+func (s *GameState) buildingTouchesZoneLocked(b *protocol.BuildingTile) bool {
+	if s.zoneCellIndex == nil || b == nil {
+		return false
+	}
+	for dy := -1; dy <= b.Height; dy++ {
+		for dx := -1; dx <= b.Width; dx++ {
+			if _, ok := s.zoneCellIndex[gridPoint{X: b.X + dx, Y: b.Y + dy}]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // zoneOwnerForCellLocked returns the id of the zone owning cell, if any. O(1).
 func (s *GameState) zoneOwnerForCellLocked(cell gridPoint) (string, bool) {
 	if s.zoneCellIndex == nil {

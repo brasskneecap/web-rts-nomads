@@ -259,6 +259,65 @@ func TestEnemySpawnPathDestination(t *testing.T) {
 	}
 }
 
+// Neutral capture-defender: once its claim tower is invalid (gone/missing),
+// it must NOT fall back to hunting any off-zone player building. It clears its
+// ObjectiveBuildingID and idles so that selectBestTargetLocked picks up in-
+// zone targets normally — the off-zone base fallback must never apply.
+func TestEnemyAdvanceToObjective_NeutralClearsClearsAndIdlesOnInvalidObjective(t *testing.T) {
+	// newObjectiveTestState places a townhall at grid (2,10) owned by "p1";
+	// that acts as the off-zone base building the neutral must NOT route toward.
+	// The neutral's ObjectiveBuildingID points at a nonexistent claim tower so
+	// getBuildingByIDLocked returns nil → isValidHostileBuildingTarget is false.
+	s := newObjectiveTestState(t)
+	defer s.mu.Unlock()
+
+	neutral := s.spawnPlayerUnitLocked("soldier", neutralPlayerID, "#aaaaaa",
+		protocol.Vec2{X: 1500, Y: 768})
+	neutral.Visible = true
+	neutral.MoveSpeed = 150
+	neutral.ObjectiveBuildingID = "claim-tower-gone" // no such building in state
+	s.initializeCombatUnitLocked(neutral)
+	blocked := s.getBlockedCellsLocked()
+
+	s.enemyAdvanceToObjectiveLocked(neutral, blocked)
+
+	if neutral.ObjectiveBuildingID != "" {
+		t.Errorf("neutral: ObjectiveBuildingID must be cleared; got %q", neutral.ObjectiveBuildingID)
+	}
+	if neutral.Moving {
+		t.Errorf("neutral: must NOT start moving toward off-zone base after objective is gone")
+	}
+	if neutral.AttackBuildingTargetID != "" {
+		t.Errorf("neutral: must NOT acquire an off-zone building target; got %q", neutral.AttackBuildingTargetID)
+	}
+}
+
+// Contrast: an enemy unit with the same invalid objective DOES fall back to the
+// nearest player building (the townhall), confirming the enemy re-acquisition
+// path is unchanged by the neutral guard.
+func TestEnemyAdvanceToObjective_EnemyStillReacquiresOnInvalidObjective(t *testing.T) {
+	s := newObjectiveTestState(t)
+	defer s.mu.Unlock()
+
+	enemy := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c",
+		protocol.Vec2{X: 1500, Y: 768})
+	enemy.Visible = true
+	enemy.MoveSpeed = 150
+	enemy.ObjectiveBuildingID = "claim-tower-gone" // no such building → invalid
+	s.initializeCombatUnitLocked(enemy)
+	blocked := s.getBlockedCellsLocked()
+
+	s.enemyAdvanceToObjectiveLocked(enemy, blocked)
+
+	// Enemy must re-acquire a real building (the townhall) and start moving.
+	if enemy.ObjectiveBuildingID == "" {
+		t.Errorf("enemy: should have re-acquired a player building objective")
+	}
+	if !enemy.Moving {
+		t.Errorf("enemy: should be moving toward the re-acquired objective")
+	}
+}
+
 // End-to-end through the real sim: a routed enemy with a clear lane reaches
 // and destroys the townhall via normal scoring (no hard-target while
 // advancing), and engages an in-range player unit on the way then resumes.

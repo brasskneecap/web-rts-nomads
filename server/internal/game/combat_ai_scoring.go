@@ -171,10 +171,21 @@ func (s *GameState) selectBestTargetLocked(unit *Unit, profile CombatProfile, ct
 		}
 	}
 
-	if profile.TargetBuildings {
+	// Neutrals may attack hostile buildings that sit in/adjacent to a zone —
+	// defending their territory without roaming to the player's off-zone base.
+	// Enemy-faction units are unrestricted and continue using profile.TargetBuildings.
+	considerBuildings := profile.TargetBuildings || (unit.OwnerID == neutralPlayerID && len(s.Zones) > 0)
+	if considerBuildings {
 		for i := range s.MapConfig.Buildings {
 			building := &s.MapConfig.Buildings[i]
 			if !s.isValidHostileBuildingTarget(unit, building) {
+				continue
+			}
+			// Neutrals defend only their territory: a neutral may attack a hostile
+			// building only when it sits in/adjacent to a zone. Keeps camp guards
+			// from marching on the player's off-zone base. Enemy units are
+			// unrestricted (profile.TargetBuildings).
+			if unit.OwnerID == neutralPlayerID && !s.buildingTouchesZoneLocked(building) {
 				continue
 			}
 			if s.Tick < unit.UnreachableUntilTick && building.ID == unit.UnreachableBuildingTargetID {

@@ -464,6 +464,14 @@ func (s *GameState) enemyAdvanceToObjectiveLocked(unit *Unit, blocked map[gridPo
 	if !s.isValidHostileBuildingTarget(unit, building) {
 		building = nil
 		unit.ObjectiveBuildingID = ""
+		// Neutral capture-defenders defend only their zone's claim tower. Once
+		// it's gone (captured/destroyed) they have no further objective — they
+		// must NOT fall back to hunting the player's off-zone base like the
+		// enemy faction does. Clear and idle; in-zone targets are still picked
+		// up by selectBestTargetLocked when something comes into range.
+		if unit.OwnerID == neutralPlayerID {
+			return
+		}
 		if unit.TargetPlayerID != "" {
 			building = s.findNearestAttackableBuildingForPlayerLocked(unit, unit.TargetPlayerID)
 		}

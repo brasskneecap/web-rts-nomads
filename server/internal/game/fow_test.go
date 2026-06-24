@@ -297,3 +297,179 @@ func TestRecomputeFOW_UnobstructedBuildingVision(t *testing.T) {
 		t.Fatal("a normal building's vision must be blocked by the tree")
 	}
 }
+
+// newFOWZoneState builds a minimal GameState with a FOW grid for playerID,
+// the given zones installed, and NO units or buildings — so any Clear cells
+// after recomputeFOWLocked must come from the zone-reveal path, not from
+// line-of-sight vision. The grid is 20×20 with a 64-px cell size.
+func newFOWZoneState(t *testing.T, playerID string, zones []protocol.Zone) *GameState {
+	t.Helper()
+	cfg := protocol.MapConfig{
+		ID: "fow-zone-test", CellSize: 64, GridCols: 20, GridRows: 20,
+		Width: 20 * 64, Height: 20 * 64,
+		Zones: normalizeZones(zones),
+	}
+	s := NewGameStateWithSeed(cfg, 1)
+	s.EnsurePlayer(playerID)
+	return s
+}
+
+// TestMarkClearCell_BoundsCheck verifies that out-of-range coordinates are a
+// no-op (no panic) and that in-range coordinates set CellClear.
+func TestMarkClearCell_BoundsCheck(t *testing.T) {
+	f := newPlayerFOW(5, 5)
+
+	// Out-of-range: must not panic and must not change any cell.
+	f.markClearCell(-1, 0)
+	f.markClearCell(0, -1)
+	f.markClearCell(5, 0)
+	f.markClearCell(0, 5)
+	f.markClearCell(100, 100)
+	for gy := 0; gy < 5; gy++ {
+		for gx := 0; gx < 5; gx++ {
+			if f.cellAt(gx, gy) != CellDark {
+				t.Errorf("out-of-range markClearCell mutated cell (%d,%d)", gx, gy)
+			}
+		}
+	}
+
+	// In-range: must set CellClear.
+	f.markClearCell(2, 3)
+	if f.cellAt(2, 3) != CellClear {
+		t.Errorf("markClearCell(2,3) expected CellClear, got %v", f.cellAt(2, 3))
+	}
+	// Adjacent cells must remain dark.
+	for _, p := range [][2]int{{1, 3}, {3, 3}, {2, 2}, {2, 4}} {
+		if f.cellAt(p[0], p[1]) != CellDark {
+			t.Errorf("markClearCell spilled into adjacent cell (%d,%d)", p[0], p[1])
+		}
+	}
+}
+
+// TestRecomputeFOW_OwnedZoneRevealsAllCells verifies that every cell of a zone
+// owned by the player's team reads CellClear after recomputeFOWLocked, even
+// with no units or buildings present (proving it is the zone-reveal path).
+func TestRecomputeFOW_OwnedZoneRevealsAllCells(t *testing.T) {
+	const playerID = "p1"
+	zoneCells := rectCells(3, 3, 6, 6) // 4×4 block
+	s := newFOWZoneState(t, playerID, []protocol.Zone{
+		presenceZone("owned", zoneCells, [2]int{4, 4}, playerID),
+	})
+
+	s.mu.Lock()
+	s.recomputeFOWLocked()
+	s.mu.Unlock()
+
+	fow := s.FOW[playerID]
+	if fow == nil {
+		t.Fatal("FOW not initialized for player")
+	}
+	for _, c := range zoneCells {
+		if got := fow.cellAt(c[0], c[1]); got != CellClear {
+			t.Errorf("zone cell (%d,%d) expected CellClear, got %v", c[0], c[1], got)
+		}
+	}
+	// A cell outside the zone should still be dark (no units/buildings placed).
+	if fow.cellAt(0, 0) != CellDark {
+		t.Error("cell (0,0) outside the zone should remain CellDark")
+	}
+}
+
+// TestRecomputeFOW_TeamSentinelZoneRevealsAllCells verifies that a zone owned
+// by the ZoneCaptureTeamOwner sentinel (e.g. a home/locked zone) is also
+// revealed for a real player.
+func TestRecomputeFOW_TeamSentinelZoneRevealsAllCells(t *testing.T) {
+	const playerID = "p1"
+	zoneCells := rectCells(1, 1, 4, 4)
+
+	// Build a locked home zone: LockedSpawnLabel causes installZonesLocked to set
+	// Owner = ZoneCaptureTeamOwner.
+	homeZone := protocol.Zone{
+		ID:               "home",
+		Anchor:           protocol.GridCoord{X: 2, Y: 2},
+		Cells:            zoneCells,
+		Capture:          protocol.ZoneCapture{Type: "presence"},
+		LockedSpawnLabel: "player1",
+	}
+	s := newFOWZoneState(t, playerID, []protocol.Zone{homeZone})
+
+	// Confirm the zone is team-owned after install.
+	rt := s.zoneRuntimeByIDLocked("home")
+	if rt == nil || rt.Owner != protocol.ZoneCaptureTeamOwner {
+		t.Fatalf("home zone expected ZoneCaptureTeamOwner, got %q", rt.Owner)
+	}
+
+	s.mu.Lock()
+	s.recomputeFOWLocked()
+	s.mu.Unlock()
+
+	fow := s.FOW[playerID]
+	for _, c := range zoneCells {
+		if got := fow.cellAt(c[0], c[1]); got != CellClear {
+			t.Errorf("team-owned zone cell (%d,%d) expected CellClear, got %v", c[0], c[1], got)
+		}
+	}
+}
+
+// TestRecomputeFOW_NeutralZoneNotRevealed verifies that a neutral zone's cells
+// remain CellDark for a player with no units or buildings near them.
+func TestRecomputeFOW_NeutralZoneNotRevealed(t *testing.T) {
+	const playerID = "p1"
+	zoneCells := rectCells(10, 10, 14, 14)
+	s := newFOWZoneState(t, playerID, []protocol.Zone{
+		presenceZone("neutral-zone", zoneCells, [2]int{12, 12}, protocol.ZoneCaptureNeutralOwner),
+	})
+
+	s.mu.Lock()
+	s.recomputeFOWLocked()
+	s.mu.Unlock()
+
+	fow := s.FOW[playerID]
+	if fow == nil {
+		t.Fatal("FOW not initialized for player")
+	}
+	for _, c := range zoneCells {
+		if got := fow.cellAt(c[0], c[1]); got == CellClear {
+			t.Errorf("neutral zone cell (%d,%d) should NOT be CellClear, got %v", c[0], c[1], got)
+		}
+	}
+}
+
+// TestRecomputeFOW_OwnedZoneBuildingBecomesKnown verifies that a building
+// sitting inside a team-owned zone is snapshotted into KnownBuildings after
+// recomputeFOWLocked, because the zone-reveal runs before the KnownBuildings
+// snapshot loop.
+func TestRecomputeFOW_OwnedZoneBuildingBecomesKnown(t *testing.T) {
+	const playerID = "p1"
+	zoneCells := rectCells(5, 5, 9, 9)
+
+	cfg := protocol.MapConfig{
+		ID: "fow-zone-building", CellSize: 64, GridCols: 20, GridRows: 20,
+		Width: 20 * 64, Height: 20 * 64,
+		Zones: normalizeZones([]protocol.Zone{
+			presenceZone("owned", zoneCells, [2]int{7, 7}, playerID),
+		}),
+		Buildings: []protocol.BuildingTile{
+			{
+				GridCoord: protocol.GridCoord{X: 7, Y: 7}, ID: "inside-tower",
+				BuildingType: "Tower", Width: 1, Height: 1,
+				Visible: true, Occupied: true,
+				Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
+			},
+		},
+	}
+	s := NewGameStateWithSeed(cfg, 1)
+	s.EnsurePlayer(playerID)
+
+	s.mu.Lock()
+	s.recomputeFOWLocked()
+	s.mu.Unlock()
+
+	fow := s.FOW[playerID]
+	if fow == nil {
+		t.Fatal("FOW not initialized for player")
+	}
+	if _, known := fow.KnownBuildings["inside-tower"]; !known {
+		t.Error("building inside a team-owned zone should appear in KnownBuildings after recompute")
+	}
+}

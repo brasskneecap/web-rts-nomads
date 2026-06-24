@@ -37,6 +37,7 @@ import {
 } from './terrainTileset'
 import { getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
+import { resolveUnitShadow } from '../maps/unitShadow'
 import type { BannerSnapshot, BeamSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot, Zone, ZoneSnapshot } from '../network/protocol'
 import { ENEMY_PLAYER_ID, ZONE_TEAM_OWNER } from '../network/protocol'
 import { drawProjectileForVariant } from './projectileSprites'
@@ -180,6 +181,11 @@ export class CanvasRenderer {
   private camera: Camera
   private resizeObserver: ResizeObserver | null = null
   private renderTime = 0
+  // Cached unit-circle radial gradient (opaque black center → transparent
+  // edge) reused for every unit's ground shadow. Built once against the
+  // stable `this.ctx`; per-unit size/opacity come from a transform + global
+  // alpha at draw time (see drawUnits), so one gradient serves all units.
+  private unitShadowGradient: CanvasGradient | null = null
   // Per-banner animation start timestamps (performance.now ms). Lets each
   // banner's idle loop hold its own phase instead of every banner on screen
   // strobing in lockstep.
@@ -2181,6 +2187,22 @@ export class CanvasRenderer {
     ctx.restore()
   }
 
+  // Lazily builds (and caches) the unit-circle radial gradient used for every
+  // unit's ground shadow: opaque black at the center fading to transparent at
+  // radius 1. Per-unit ellipse size comes from a scale() transform and per-unit
+  // opacity from globalAlpha at draw time, so this single gradient serves all
+  // units. Tied to the stable `this.ctx`, which is never reassigned.
+  private getUnitShadowGradient(): CanvasGradient {
+    if (!this.unitShadowGradient) {
+      const g = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1)
+      g.addColorStop(0, 'rgba(0, 0, 0, 1)')
+      g.addColorStop(0.65, 'rgba(0, 0, 0, 0.85)')
+      g.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      this.unitShadowGradient = g
+    }
+    return this.unitShadowGradient
+  }
+
   private drawUnits(
     units: Array<{
       id: number
@@ -2328,6 +2350,30 @@ export class CanvasRenderer {
       const ringOffsetY = unitBounds.ringOffsetY ?? 0
       const selectionCenterX = unit.x + ringOffsetX
       const selectionCenterY = unit.y + bottomOffset - selectionRadiusY * 0.35 - ringLift + ringOffsetY
+
+      // Ground shadow — a soft blob under the feet so the sprite reads as
+      // standing ON the terrain instead of floating as a flat sticker. Drawn
+      // first (lowest layer) so selection rings, perk auras, and the sprite
+      // all sit on top. Size/opacity default from the unit's bounds; an
+      // optional `shadow` block in the catalog tunes or disables it. Flyers
+      // get an offset, larger, fainter shadow (see resolveUnitShadow). Skipped
+      // for sprite-less placeholder blobs, which already read as grounded.
+      if (spriteSet) {
+        const shadow = resolveUnitShadow(unitDef?.shadow, unitBounds, !!unit.flyer)
+        if (shadow) {
+          const feetX = unit.x + ringOffsetX + shadow.offsetX
+          const feetY = unit.y + bottomOffset - ringLift + ringOffsetY + shadow.offsetY
+          ctx.save()
+          ctx.globalAlpha = shadow.opacity
+          ctx.translate(feetX, feetY)
+          ctx.scale(shadow.radiusX, shadow.radiusY)
+          ctx.beginPath()
+          ctx.arc(0, 0, 1, 0, Math.PI * 2)
+          ctx.fillStyle = this.getUnitShadowGradient()
+          ctx.fill()
+          ctx.restore()
+        }
+      }
 
       // Perk aura rings — dashed circle around the unit for each unit-centered
       // aura perk it carries (e.g. Guardian Aura). Triggered perks (Last Stand)

@@ -135,6 +135,16 @@ func hasLOS(x0, y0, x1, y1 int, blocking map[gridPoint]bool) bool {
 	}
 }
 
+// markClearCell marks a single grid cell as EverSeen|Clear (CellClear).
+// Bounds-checked: out-of-range cells are ignored. Used to reveal owned-zone
+// interiors during recompute, independent of line-of-sight vision.
+func (f *PlayerFOW) markClearCell(gx, gy int) {
+	if gx < 0 || gx >= f.Cols || gy < 0 || gy >= f.Rows {
+		return
+	}
+	f.Cells[gy*f.Cols+gx] = uint8(CellClear)
+}
+
 // clearClearBits strips the Clear bit from every cell, leaving EverSeen intact.
 // Called at the start of each FOW recompute before re-stamping live vision.
 func (f *PlayerFOW) clearClearBits() {

@@ -1049,3 +1049,194 @@ func TestZoneSnapshot_CarriesClaimPoints(t *testing.T) {
 		t.Fatalf("point 2 should report mid-defend fraction, got %v", snap.ClaimPoints[1].Progress)
 	}
 }
+
+// --- neutral building aggression (zone-scoped) --------------------------------
+
+// buildZoneTestState returns a locked GameState with a grid, one presence zone,
+// and one player (p1). It uses NewGameStateWithSeed so the unit catalog and
+// combat profiles are loaded and available.
+func buildZoneTestStateForCombat(t *testing.T, zones []protocol.Zone, buildings []protocol.BuildingTile) *GameState {
+	t.Helper()
+	const cell = 64.0
+	cols, rows := 40, 40
+	cfg := protocol.MapConfig{
+		ID: "zone-combat-test", CellSize: cell,
+		Width: float64(cols) * cell, Height: float64(rows) * cell,
+		GridCols: cols, GridRows: rows,
+		Zones:     zones,
+		Buildings: buildings,
+	}
+	s := NewGameStateWithSeed(cfg, 42)
+	s.mu.Lock()
+	return s
+}
+
+// TestBuildingTouchesZoneLocked_InZone verifies that a building whose footprint
+// sits entirely within a zone cell reports true.
+func TestBuildingTouchesZoneLocked_InZone(t *testing.T) {
+	// Zone occupies cells (5,5)–(9,9). A 1×1 building at (7,7) is inside.
+	owner := "p1"
+	s := buildZoneTestStateForCombat(t,
+		[]protocol.Zone{presenceZone("z", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral")},
+		[]protocol.BuildingTile{{
+			GridCoord:    protocol.GridCoord{X: 7, Y: 7},
+			ID:           "in-zone-tower", BuildingType: "Tower",
+			Width: 1, Height: 1, Visible: true, OwnerID: &owner,
+			Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
+		}},
+	)
+	defer s.mu.Unlock()
+
+	b := &s.MapConfig.Buildings[0]
+	if !s.buildingTouchesZoneLocked(b) {
+		t.Fatal("a building whose footprint sits on a zone cell must report true")
+	}
+}
+
+// TestBuildingTouchesZoneLocked_OutsideZone verifies that a building far from
+// any zone cell reports false.
+func TestBuildingTouchesZoneLocked_OutsideZone(t *testing.T) {
+	// Zone occupies (5,5)–(9,9). Building is at (25,25) — far away.
+	owner := "p1"
+	s := buildZoneTestStateForCombat(t,
+		[]protocol.Zone{presenceZone("z", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral")},
+		[]protocol.BuildingTile{{
+			GridCoord:    protocol.GridCoord{X: 25, Y: 25},
+			ID:           "far-tower", BuildingType: "Tower",
+			Width: 1, Height: 1, Visible: true, OwnerID: &owner,
+			Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
+		}},
+	)
+	defer s.mu.Unlock()
+
+	b := &s.MapConfig.Buildings[0]
+	if s.buildingTouchesZoneLocked(b) {
+		t.Fatal("a building far from any zone cell must report false")
+	}
+}
+
+// TestBuildingTouchesZoneLocked_AdjacentOneCell verifies that a building one
+// cell outside a zone edge — the 1-cell border adjacency — reports true.
+func TestBuildingTouchesZoneLocked_AdjacentOneCell(t *testing.T) {
+	// Zone occupies (5,5)–(9,9). A 1×1 building at (10,7) is exactly one cell
+	// to the right of the zone's right edge (x=9), so its -1 border (x=9)
+	// overlaps the zone.
+	owner := "p1"
+	s := buildZoneTestStateForCombat(t,
+		[]protocol.Zone{presenceZone("z", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral")},
+		[]protocol.BuildingTile{{
+			GridCoord:    protocol.GridCoord{X: 10, Y: 7},
+			ID:           "adj-tower", BuildingType: "Tower",
+			Width: 1, Height: 1, Visible: true, OwnerID: &owner,
+			Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
+		}},
+	)
+	defer s.mu.Unlock()
+
+	b := &s.MapConfig.Buildings[0]
+	if !s.buildingTouchesZoneLocked(b) {
+		t.Fatal("a building one cell outside the zone edge must report true (1-cell border adjacency)")
+	}
+}
+
+// TestNeutralUnit_AcquiresBuildingInZone verifies that a neutral unit standing
+// within detection range of a player-owned Tower that sits inside a zone will
+// acquire that building as its attack target via selectBestTargetLocked.
+func TestNeutralUnit_AcquiresBuildingInZone(t *testing.T) {
+	// Zone at cells (5,5)–(9,9). Tower at (7,7) inside the zone. Neutral spear_maiden
+	// placed at (7,10) — adjacent but just outside the zone, within detection range.
+	const cell = 64.0
+	towerOwner := "p1"
+
+	s := buildZoneTestStateForCombat(t,
+		[]protocol.Zone{presenceZone("z", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral")},
+		[]protocol.BuildingTile{{
+			GridCoord:    protocol.GridCoord{X: 7, Y: 7},
+			ID:           "zone-tower", BuildingType: "Tower",
+			Width: 1, Height: 1, Visible: true, OwnerID: &towerOwner,
+			Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
+		}},
+	)
+	defer s.mu.Unlock()
+
+	// Spawn a neutral spear_maiden near the tower. Tower center is at
+	// (7.5*cell, 7.5*cell). Unit placed 2 cells south: ~128px apart, well
+	// within the soldier profile's 240px detection range.
+	neutral := s.spawnPlayerUnitLocked("spear_maiden", neutralPlayerID, "", protocol.Vec2{
+		X: (7 + 0.5) * cell, Y: (9 + 0.5) * cell, // ~2 cells south: ~128px away
+	})
+	if neutral == nil {
+		t.Fatal("spear_maiden unit type not found in catalog — check unit defs")
+	}
+	neutral.HP = 100
+	neutral.MaxHP = 100
+	neutral.Visible = true
+	s.initializeCombatUnitLocked(neutral)
+	neutral.CombatAnchorX = neutral.X
+	neutral.CombatAnchorY = neutral.Y
+
+	profile := resolveCombatProfile(neutral)
+	idx := newCombatSpatialIndex(combatSpatialBucketSize)
+	for _, u := range s.Units {
+		if u != nil && u.Visible && u.HP > 0 {
+			idx.add(u)
+		}
+	}
+	ctx := combatEvalContext{index: idx, blocked: s.getBlockedCellsLocked()}
+
+	best := s.selectBestTargetLocked(neutral, profile, ctx)
+	if best.Kind != combatTargetBuilding {
+		t.Fatalf("neutral unit within detection range of an in-zone tower should acquire it; got kind=%d (none=0, unit=1, building=2)", best.Kind)
+	}
+	if best.Building == nil || best.Building.ID != "zone-tower" {
+		t.Fatalf("expected building target zone-tower, got %v", best.Building)
+	}
+}
+
+// TestNeutralUnit_DoesNotAcquireBuildingOutsideZone verifies territory scoping:
+// the same neutral unit does NOT acquire a player tower placed outside any zone.
+func TestNeutralUnit_DoesNotAcquireBuildingOutsideZone(t *testing.T) {
+	// Zone at cells (5,5)–(9,9). Tower at (25,25) — far from any zone. Neutral
+	// unit placed near the tower but outside the zone.
+	const cell = 64.0
+	towerOwner := "p1"
+
+	s := buildZoneTestStateForCombat(t,
+		[]protocol.Zone{presenceZone("z", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral")},
+		[]protocol.BuildingTile{{
+			GridCoord:    protocol.GridCoord{X: 25, Y: 25},
+			ID:           "off-zone-tower", BuildingType: "Tower",
+			Width: 1, Height: 1, Visible: true, OwnerID: &towerOwner,
+			Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
+		}},
+	)
+	defer s.mu.Unlock()
+
+	// Spawn a neutral spear_maiden near the off-zone tower.
+	neutral := s.spawnPlayerUnitLocked("spear_maiden", neutralPlayerID, "", protocol.Vec2{
+		X: (25 + 0.5) * cell, Y: (28 + 0.5) * cell, // ~3 cells away: within detection range
+	})
+	if neutral == nil {
+		t.Fatal("spear_maiden unit type not found in catalog")
+	}
+	neutral.HP = 100
+	neutral.MaxHP = 100
+	neutral.Visible = true
+	s.initializeCombatUnitLocked(neutral)
+	neutral.CombatAnchorX = neutral.X
+	neutral.CombatAnchorY = neutral.Y
+
+	profile := resolveCombatProfile(neutral)
+	idx := newCombatSpatialIndex(combatSpatialBucketSize)
+	for _, u := range s.Units {
+		if u != nil && u.Visible && u.HP > 0 {
+			idx.add(u)
+		}
+	}
+	ctx := combatEvalContext{index: idx, blocked: s.getBlockedCellsLocked()}
+
+	best := s.selectBestTargetLocked(neutral, profile, ctx)
+	if best.Kind == combatTargetBuilding {
+		t.Fatalf("neutral unit must NOT acquire an off-zone tower; got building target %q", best.Building.ID)
+	}
+}

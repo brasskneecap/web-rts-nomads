@@ -81,6 +81,24 @@ func (s *GameState) recomputeFOWLocked() {
 			fow.stampCircle(cx, cy, buildingVisionRange(b.BuildingType), s.MapConfig.CellSize, buildingBlocking)
 		}
 
+		// Reveal owned-zone interiors: a zone controlled by the viewer's team is
+		// fully lit regardless of unit/building line-of-sight, so holding
+		// territory grants map awareness over it. zonesAlliedLocked handles the
+		// team sentinel and allied players; neutral/enemy/unowned zones are not
+		// revealed. Runs before the KnownBuildings snapshot so structures inside
+		// a held zone become known too.
+		if len(s.Zones) > 0 {
+			for zi := range s.Zones {
+				rt := &s.Zones[zi]
+				if !s.zonesAlliedLocked(rt.Owner, playerID) {
+					continue
+				}
+				for _, c := range rt.Def.Cells {
+					fow.markClearCell(c[0], c[1])
+				}
+			}
+		}
+
 		for i := range s.MapConfig.Buildings {
 			b := &s.MapConfig.Buildings[i]
 			if fow.anyFootprintClear(b) {

@@ -260,6 +260,7 @@ var combatProfiles = map[string]CombatProfile{
 		PassiveMeleeThreat:         4,
 		LeashDistance:              140,
 		MaxChaseDistance:           90,
+		TargetBuildings:            true,
 		PreferClosestTarget:        true,
 		PreferMaxRange:             true,
 		Backline:                   true,

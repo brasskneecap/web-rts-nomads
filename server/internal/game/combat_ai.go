@@ -259,6 +259,12 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 			if unit.GuardMode {
 				// Guard anchor is pinned at the authored position — do not slide.
 			} else if unit.OwnerID == enemyPlayerID ||
+				// Neutral capture-defenders (ObjectiveBuildingID set, no GuardMode)
+				// advance on a player claim tower and need the anchor to track them
+				// so the leash gate accepts the tower once they arrive. Without this,
+				// the anchor stays frozen at the far spawn point and
+				// targetInsideLeashLocked rejects the tower for the entire approach.
+				(unit.OwnerID == neutralPlayerID && unit.ObjectiveBuildingID != "") ||
 				unit.Order.Type == OrderAttackMove ||
 				unit.Order.Type == OrderPatrol {
 				unit.CombatAnchorX = unit.X
@@ -463,7 +469,8 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 	best := s.selectBestTargetLocked(unit, profile, ctx)
 	stopSelectProfile()
 	if best.Kind == combatTargetNone {
-		if unit.OwnerID == enemyPlayerID && unit.AttackBuildingTargetID == "" && unit.AttackTargetID == 0 && unit.ObjectiveID == "" {
+		isCaptureDefender := unit.OwnerID == neutralPlayerID && unit.ObjectiveBuildingID != ""
+		if (unit.OwnerID == enemyPlayerID || isCaptureDefender) && unit.AttackBuildingTargetID == "" && unit.AttackTargetID == 0 && unit.ObjectiveID == "" {
 			// Guards and Hold-order enemies have an authored post — they must
 			// not go objective-hunting. Without this gate every placed-enemy
 			// guard with no in-range target re-runs map-wide A* to the player
@@ -522,7 +529,8 @@ func (s *GameState) evaluateCombatLocked(unit *Unit, ctx combatEvalContext) {
 	// One-pulls-all camp aggro: when a neutral guard acquires a unit target,
 	// broadcast to camp-mates so the whole group engages together. Gated on
 	// NeutralCampID so non-neutral units pay zero cost. Building targets are
-	// excluded (neutrals don't attack buildings; guard would be no-op anyway).
+	// excluded from the broadcast (camp-mates each acquire buildings independently
+	// via selectBestTargetLocked once the zone filter admits them).
 	if unit.NeutralCampID != "" && unit.AttackTargetID != 0 {
 		s.broadcastNeutralCampAggroLocked(unit, unit.AttackTargetID)
 	}
