@@ -398,11 +398,17 @@ async function transitionToMatchEnd(outcome: MatchEndOutcome) {
     // mutated by the network layer; the recap should see a stable
     // post-match view, not the next snapshot's diff.
     objectives: [...ui.value.objectives],
-    players: [...ui.value.players],
+    // Prefer the roster frozen at game-over (immune to teardown clobber);
+    // fall back to the live roster for any end path without a freeze.
+    players: ui.value.frozenEndPlayers
+      ? [...ui.value.frozenEndPlayers]
+      : [...ui.value.players],
     viewerId: ui.value.player.playerId ?? '',
     campaignId: campaignSession.value?.campaignId ?? null,
     levelId: campaignSession.value?.levelId ?? null,
     levelDisplayName: campaignSession.value?.levelDisplayName,
+    dominionPointsEarned: ui.value.matchDominionPointsEarned,
+    matchId: currentMatchId.value,
   })
 
   // Tear down the running match BUT preserve the campaign session

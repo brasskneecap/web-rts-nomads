@@ -16,9 +16,9 @@
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import MatchEndRecap from '@/components/match/MatchEndRecap.vue'
-import { matchEndSnapshot, clearMatchEndSnapshot } from '@/state/matchEndState'
+import { matchEndSnapshot, clearMatchEndSnapshot, matchEndDpPersisted } from '@/state/matchEndState'
 import { campaignSession, clearCampaignSession } from '@/state/campaignSession'
-import { markCampaignObjectivesComplete } from '@/services/profileApi'
+import { markCampaignObjectivesComplete, awardMatchDominionPoints, isRemoteProxyClient } from '@/services/profileApi'
 import { useProfile } from '@/composables/useProfile'
 
 const router = useRouter()
@@ -26,12 +26,30 @@ const { refresh: refreshProfile } = useProfile()
 
 const snapshot = computed(() => matchEndSnapshot.value)
 
-// Cold mount with no snapshot — someone navigated to /match-end directly
-// (browser back/forward, deep link, refresh after match exit). Send them
-// home so they don't sit on a blank screen.
 onMounted(() => {
-  if (!snapshot.value) {
+  const snap = snapshot.value
+  if (!snap) {
+    // Cold mount with no snapshot — bounce home so the user isn't stranded.
     void router.replace('/')
+    return
+  }
+
+  // Remote joiner only: the host already committed the host player's DP
+  // server-side, and could only write the joiner's DP to the host's disk —
+  // so the joiner persists its own earned total to ITS local profile here.
+  // Single-player / host take no action (server-side commit is authoritative).
+  // Idempotent on the server by matchId; the local guard prevents a re-mount
+  // from firing a second request.
+  if (
+    !matchEndDpPersisted.value &&
+    isRemoteProxyClient() &&
+    snap.matchId &&
+    snap.dominionPointsEarned > 0
+  ) {
+    matchEndDpPersisted.value = true
+    void awardMatchDominionPoints(snap.matchId, snap.dominionPointsEarned)
+      .then(() => refreshProfile())
+      .catch((err) => console.error('[MatchEnd] failed to persist dominion points:', err))
   }
 })
 

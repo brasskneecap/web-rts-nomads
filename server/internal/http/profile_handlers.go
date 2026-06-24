@@ -314,6 +314,67 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 		writeJSON(w, updated)
 	})
 
+	// Client-driven end-of-match dominion-point award. Needed because in
+	// host-authoritative multiplayer the joiner's profile lives on the
+	// joiner's machine — the host cannot write it. The joiner POSTs its own
+	// server-reported earned total here against ITS local server. Idempotent
+	// by matchId so a recap re-mount / retry cannot double-credit.
+	//
+	// Body: {matchId: string, amount: int}  Header: X-Player-ID
+	mux.HandleFunc("/api/profile/match/award-dominion-points", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		playerID := extractPlayerID(w, r)
+		if playerID == "" {
+			return
+		}
+		var body struct {
+			MatchID string `json:"matchId"`
+			Amount  int    `json:"amount"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+			return
+		}
+		if body.MatchID == "" {
+			writeJSONError(w, http.StatusBadRequest, "invalid_match_id", "matchId is required")
+			return
+		}
+		if body.Amount < 0 {
+			writeJSONError(w, http.StatusBadRequest, "invalid_amount", "amount must be >= 0")
+			return
+		}
+		var updated *profile.PlayerProfile
+		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
+			for _, id := range p.CreditedMatchIDs {
+				if id == body.MatchID {
+					updated = p // already credited — no-op
+					return nil
+				}
+			}
+			if body.Amount > 0 {
+				p.DominionPoints += body.Amount
+				p.LifetimeDominionPoints += body.Amount
+			}
+			p.CreditedMatchIDs = append(p.CreditedMatchIDs, body.MatchID)
+			// Bound the ledger so it can't grow without limit; matchId reuse
+			// across distinct sessions far enough apart is acceptable risk.
+			const maxCredited = 50
+			if len(p.CreditedMatchIDs) > maxCredited {
+				p.CreditedMatchIDs = p.CreditedMatchIDs[len(p.CreditedMatchIDs)-maxCredited:]
+			}
+			updated = p
+			return nil
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
+			return
+		}
+		writeJSON(w, updated)
+	})
+
 	// Campaign progression. The campaign catalog (campaign IDs, level IDs,
 	// prerequisite chains) lives on the client; the server only records which
 	// level IDs the player has finished. Idempotent — re-completing a level is

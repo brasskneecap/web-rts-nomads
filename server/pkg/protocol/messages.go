@@ -1198,6 +1198,13 @@ type TrapSnapshot struct {
 // each client checks whether its own ID is present.
 type GameOverSnapshot struct {
 	LostPlayerIDs []string `json:"lostPlayerIds"`
+	// YourDominionPointsEarned is the snapshot viewer's own full per-match
+	// earned dominion-point total: per-kill drops plus the win/loss bonus from
+	// tuning. Per-viewer: each client sees its own number. The host persists
+	// this server-side; a remote joiner reads this field to persist into its
+	// own local profile (the host can't write the joiner's profile, which lives
+	// on a different machine).
+	YourDominionPointsEarned int `json:"yourDominionPointsEarned,omitempty"`
 }
 
 // MatchSummary carries per-player match-end data alongside the game-over
