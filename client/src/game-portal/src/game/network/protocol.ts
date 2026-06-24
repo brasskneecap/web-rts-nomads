@@ -774,6 +774,7 @@ export type ClientMessage =
   | CancelUpgradeCommand
   | UpgradeTownHallCommand
   | PurchaseItemCommand
+  | RerollShopCommand
   | EquipItemCommand
   | UnequipItemCommand
   | UseConsumableCommand

@@ -42,6 +42,7 @@ const emptyUiSnapshot: GameUiSnapshot = {
   isVictory: false,
   objectives: [],
   zoneCaptureCards: [],
+  players: [],
   upgrades: [],
   townHallTier: 0,
   selectedBuildingType: null,
