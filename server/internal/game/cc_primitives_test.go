@@ -790,7 +790,7 @@ func TestApplyStun_GatesAttack_BuildingTarget(t *testing.T) {
 	building := &protocol.BuildingTile{
 		GridCoord:    protocol.GridCoord{X: 13, Y: 13},
 		ID:           buildingID,
-		BuildingType: "Tower",
+		BuildingType: "tower",
 		Width:        1,
 		Height:       1,
 		Metadata: map[string]interface{}{

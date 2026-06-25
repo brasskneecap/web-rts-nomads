@@ -18,6 +18,10 @@
   },
   "meatCost": 2,
   "spawnSeconds": 10,
+  "pathChances": {
+    "vanguard": 1,
+    "berserker": 1
+  },
   "capabilities": [
     "move",
     "attack"

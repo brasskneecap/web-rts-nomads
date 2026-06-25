@@ -327,11 +327,12 @@ func (s *GameState) addUnitXPRawFloatLocked(unit *Unit, amount float64) {
 // assignUnitPathOnRankUpLocked assigns a promotion path to a unit the first
 // time it reaches Bronze rank. The path is fixed for the unit's lifetime.
 //
-//   - Soldiers: randomly choose Vanguard or Berserker (50/50 via rngPerks).
-//   - Archers: randomly choose Trapper or Marksman (50/50 via rngPerks).
-//   - Acolytes: always promote to Cleric (single-path).
-//   - Adepts: always promote to Arch Mage (single-path).
-//   - Other unit types: no path assignment (return early).
+// The distribution is data-driven: each unit type declares a "pathChances"
+// weight map in its catalog JSON (catalog/units/<faction>/<unit>/<unit>.json),
+// e.g. archer → {"trapper":1,"marksman":1} (50/50) or adept → {"arch_mage":1}
+// (guaranteed). Unit types with no "pathChances" (workers, raiders) get no
+// path and stay on unitPathNone. The roll draws from the deterministic
+// rngPerks stream, so a given seed always assigns the same paths.
 func (s *GameState) assignUnitPathOnRankUpLocked(unit *Unit) {
 	if unit.ProgressionPath != unitPathNone {
 		return // already assigned
@@ -339,21 +340,48 @@ func (s *GameState) assignUnitPathOnRankUpLocked(unit *Unit) {
 	if unit.Rank == unitRankBase {
 		return // shouldn't happen here, but guard anyway
 	}
-	switch unit.UnitType {
-	case "soldier":
-		paths := [2]string{unitPathVanguard, unitPathBerserker}
-		unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
-	case "archer":
-		paths := [2]string{unitPathTrapper, unitPathMarksman}
-		unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
-	case "acolyte":
-		paths := [2]string{unitPathCleric, unitPathSiphoner}
-		unit.ProgressionPath = paths[s.rngPerks.Intn(2)]
-	case "adept":
-		unit.ProgressionPath = unitPathArchMage
-	default:
+	def, ok := getUnitDef(unit.UnitType)
+	if !ok {
 		return
 	}
+	if path := s.rollProgressionPathLocked(def.PathChances); path != "" {
+		unit.ProgressionPath = path
+	}
+}
+
+// rollProgressionPathLocked picks a promotion path from a weighted
+// distribution (path id → relative weight) using the deterministic perk RNG
+// stream. Keys are sorted before the roll so map iteration order never drives
+// the outcome (simulation determinism invariant). Weights are relative and
+// normalized by their sum, so {"a":1,"b":1} is a 50/50 split. Returns "" when
+// the distribution is empty or every weight is non-positive — the caller then
+// leaves the unit on unitPathNone.
+func (s *GameState) rollProgressionPathLocked(chances map[string]float64) string {
+	if len(chances) == 0 {
+		return ""
+	}
+	paths := make([]string, 0, len(chances))
+	var total float64
+	for path, weight := range chances {
+		if weight <= 0 {
+			continue
+		}
+		paths = append(paths, path)
+		total += weight
+	}
+	if total <= 0 {
+		return ""
+	}
+	sort.Strings(paths)
+	r := s.rngPerks.Float64() * total
+	for _, path := range paths {
+		r -= chances[path]
+		if r < 0 {
+			return path
+		}
+	}
+	// Float rounding can leave r exactly at total; fall back to the last path.
+	return paths[len(paths)-1]
 }
 
 func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent bool) {

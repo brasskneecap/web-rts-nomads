@@ -19,6 +19,10 @@
   "meatCost": 3,
   "requiresBuildings": ["blacksmith"],
   "spawnSeconds": 10,
+  "pathChances": {
+    "trapper": 1,
+    "marksman": 1
+  },
   "capabilities": [
     "move",
     "attack"

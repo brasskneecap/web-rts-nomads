@@ -162,6 +162,19 @@ type UnitDef struct {
 	// end >= start). Purely visual; server simulation never reads it.
 	ChannelLoop *ChannelLoopRange `json:"channelLoop,omitempty"`
 
+	// PathChances is the weighted distribution over promotion paths this unit
+	// type rolls the first time it reaches Bronze rank. Keyed by path id (a
+	// directory under catalog/units/<faction>/<unit>/paths/), value is a
+	// RELATIVE weight: the roll normalizes by the sum, so {"trapper":1,
+	// "marksman":1} is a 50/50 split and {"trapper":7,"marksman":3} is 70/30.
+	// A single entry (e.g. {"arch_mage":1}) is a guaranteed promotion. Empty /
+	// absent ⇒ the unit type has no promotion path (workers, raiders) and
+	// stays on unitPathNone. Replaces the old hardcoded per-type switch in
+	// assignUnitPathOnRankUpLocked. Validated at load: every key must be a
+	// real path dir under this unit (path_defs.go init), every weight >= 0,
+	// and the sum must be > 0 when the map is non-empty (loadUnitDefsByType).
+	PathChances map[string]float64 `json:"pathChances,omitempty"`
+
 	// ── Advancement-granted bonuses (not authored in unit JSON) ──────────────
 	// These three fields are zero in the catalog and are only set by the Archer
 	// "Master Huntsman" advancement (advancement_defs.go effect kinds
@@ -294,6 +307,22 @@ func loadUnitDefsByType() map[string]UnitDef {
 			}
 			if def.MaxMana < 0 || def.ManaRegenRate < 0 {
 				panic(rel + `: maxMana and manaRegenRate must be >= 0`)
+			}
+			if len(def.PathChances) > 0 {
+				// Weights are relative and normalized at roll time, so any
+				// non-negative set with a positive sum is valid. Per-key
+				// path-existence is cross-checked in path_defs.go init (the
+				// paths catalog is not yet loaded at this var-init stage).
+				var pathWeightSum float64
+				for path, weight := range def.PathChances {
+					if weight < 0 {
+						panic(rel + `: unit "` + def.Type + `": pathChances["` + path + `"] must be >= 0`)
+					}
+					pathWeightSum += weight
+				}
+				if pathWeightSum <= 0 {
+					panic(rel + `: unit "` + def.Type + `": pathChances weights must sum to > 0`)
+				}
 			}
 			for _, b := range def.RequiresBuildings {
 				if _, ok := getBuildingDef(b); !ok {

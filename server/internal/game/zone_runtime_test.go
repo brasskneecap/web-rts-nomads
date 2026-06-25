@@ -595,7 +595,7 @@ func claimZone(id string, anchor [2]int, cells [][2]int, adjacent ...string) pro
 		ID:            id,
 		Anchor:        protocol.GridCoord{X: anchor[0], Y: anchor[1]},
 		Cells:         cells,
-		Capture:       protocol.ZoneCapture{Type: "claim", Config: json.RawMessage(`{"defendSeconds":3,"towerType":"Tower"}`)},
+		Capture:       protocol.ZoneCapture{Type: "claim", Config: json.RawMessage(`{"defendSeconds":3,"towerType":"tower"}`)},
 		StartingOwner: "neutral",
 		Adjacent:      adjacent,
 	}
@@ -604,7 +604,7 @@ func claimZone(id string, anchor [2]int, cells [][2]int, adjacent ...string) pro
 func (s *GameState) placeClaimTower(owner string, x, y int) *protocol.BuildingTile {
 	o := owner
 	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
-		GridCoord: protocol.GridCoord{X: x, Y: y}, ID: "twr", BuildingType: "Tower",
+		GridCoord: protocol.GridCoord{X: x, Y: y}, ID: "twr", BuildingType: "tower",
 		Width: 1, Height: 2, Visible: true, OwnerID: &o,
 		Metadata: map[string]interface{}{}, // not under construction = completed
 	})
@@ -818,7 +818,7 @@ func TestEnemySpawnTrigger_TargetsClaimTower(t *testing.T) {
 		},
 		Buildings: []protocol.BuildingTile{
 			// The team's claim tower on the zone slot — what defenders must rush.
-			{GridCoord: protocol.GridCoord{X: 6, Y: 6}, ID: "claim-tower", BuildingType: "Tower",
+			{GridCoord: protocol.GridCoord{X: 6, Y: 6}, ID: "claim-tower", BuildingType: "tower",
 				Width: 1, Height: 2, Visible: true, OwnerID: &towerOwner,
 				Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0}},
 			{GridCoord: protocol.GridCoord{X: 20, Y: 20}, ID: "es", BuildingType: "enemy-spawnpoint",
@@ -862,18 +862,18 @@ func TestClaimBuildGate_SlotExceptionAndType(t *testing.T) {
 	s := newZoneTestState([]protocol.Zone{seed, claim})
 	rt := s.zoneRuntimeByIDLocked("claim")
 
-	if !s.claimSlotBuildableLocked(rt, gridPoint{X: 6, Y: 6}, "Tower") {
+	if !s.claimSlotBuildableLocked(rt, gridPoint{X: 6, Y: 6}, "tower") {
 		t.Fatal("the Tower should be buildable on the claim slot")
 	}
 	if s.claimSlotBuildableLocked(rt, gridPoint{X: 6, Y: 6}, "barracks") {
 		t.Fatal("a non-tower building must not use the claim-slot exception")
 	}
-	if s.claimSlotBuildableLocked(rt, gridPoint{X: 9, Y: 9}, "Tower") {
+	if s.claimSlotBuildableLocked(rt, gridPoint{X: 9, Y: 9}, "tower") {
 		t.Fatal("a non-slot cell must not be buildable via the exception")
 	}
 	// Claim is standalone — the slot stays buildable with no adjacent foothold.
 	s.zoneRuntimeByIDLocked("seed").Owner = protocol.ZoneCaptureNeutralOwner
-	if !s.claimSlotBuildableLocked(rt, gridPoint{X: 6, Y: 6}, "Tower") {
+	if !s.claimSlotBuildableLocked(rt, gridPoint{X: 6, Y: 6}, "tower") {
 		t.Fatal("the claim slot should be buildable without an adjacent foothold")
 	}
 }
@@ -901,7 +901,7 @@ func multiPointClaimZone(id string, points [][2]int, cells [][2]int, adjacent ..
 		ID:            id,
 		Anchor:        protocol.GridCoord{X: anchor[0], Y: anchor[1]},
 		Cells:         cells,
-		Capture:       protocol.ZoneCapture{Type: "claim", Config: json.RawMessage(`{"defendSeconds":3,"towerType":"Tower"}`)},
+		Capture:       protocol.ZoneCapture{Type: "claim", Config: json.RawMessage(`{"defendSeconds":3,"towerType":"tower"}`)},
 		ClaimPoints:   points,
 		StartingOwner: "neutral",
 		Adjacent:      adjacent,
@@ -934,14 +934,14 @@ func TestClaimMultiPoint_BuildGateAndTowerLookup(t *testing.T) {
 	rt := s.zoneRuntimeByIDLocked("claim")
 
 	// The Tower is buildable on BOTH point slots, not just the first.
-	if !s.claimSlotBuildableLocked(rt, gridPoint{X: 6, Y: 6}, "Tower") {
+	if !s.claimSlotBuildableLocked(rt, gridPoint{X: 6, Y: 6}, "tower") {
 		t.Fatal("tower should be buildable on point 1 slot")
 	}
-	if !s.claimSlotBuildableLocked(rt, gridPoint{X: 10, Y: 6}, "Tower") {
+	if !s.claimSlotBuildableLocked(rt, gridPoint{X: 10, Y: 6}, "tower") {
 		t.Fatal("tower should be buildable on point 2 slot")
 	}
 	// A cell in no point's slot is rejected.
-	if s.claimSlotBuildableLocked(rt, gridPoint{X: 14, Y: 9}, "Tower") {
+	if s.claimSlotBuildableLocked(rt, gridPoint{X: 14, Y: 9}, "tower") {
 		t.Fatal("a non-slot cell must not be buildable")
 	}
 	// A standing tower on point 2 is found by claimZoneTowerLocked.
@@ -1080,7 +1080,7 @@ func TestBuildingTouchesZoneLocked_InZone(t *testing.T) {
 		[]protocol.Zone{presenceZone("z", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral")},
 		[]protocol.BuildingTile{{
 			GridCoord:    protocol.GridCoord{X: 7, Y: 7},
-			ID:           "in-zone-tower", BuildingType: "Tower",
+			ID:           "in-zone-tower", BuildingType: "tower",
 			Width: 1, Height: 1, Visible: true, OwnerID: &owner,
 			Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
 		}},
@@ -1102,7 +1102,7 @@ func TestBuildingTouchesZoneLocked_OutsideZone(t *testing.T) {
 		[]protocol.Zone{presenceZone("z", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral")},
 		[]protocol.BuildingTile{{
 			GridCoord:    protocol.GridCoord{X: 25, Y: 25},
-			ID:           "far-tower", BuildingType: "Tower",
+			ID:           "far-tower", BuildingType: "tower",
 			Width: 1, Height: 1, Visible: true, OwnerID: &owner,
 			Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
 		}},
@@ -1126,7 +1126,7 @@ func TestBuildingTouchesZoneLocked_AdjacentOneCell(t *testing.T) {
 		[]protocol.Zone{presenceZone("z", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral")},
 		[]protocol.BuildingTile{{
 			GridCoord:    protocol.GridCoord{X: 10, Y: 7},
-			ID:           "adj-tower", BuildingType: "Tower",
+			ID:           "adj-tower", BuildingType: "tower",
 			Width: 1, Height: 1, Visible: true, OwnerID: &owner,
 			Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
 		}},
@@ -1152,7 +1152,7 @@ func TestNeutralUnit_AcquiresBuildingInZone(t *testing.T) {
 		[]protocol.Zone{presenceZone("z", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral")},
 		[]protocol.BuildingTile{{
 			GridCoord:    protocol.GridCoord{X: 7, Y: 7},
-			ID:           "zone-tower", BuildingType: "Tower",
+			ID:           "zone-tower", BuildingType: "tower",
 			Width: 1, Height: 1, Visible: true, OwnerID: &towerOwner,
 			Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
 		}},
@@ -1205,7 +1205,7 @@ func TestNeutralUnit_DoesNotAcquireBuildingOutsideZone(t *testing.T) {
 		[]protocol.Zone{presenceZone("z", rectCells(5, 5, 9, 9), [2]int{7, 7}, "neutral")},
 		[]protocol.BuildingTile{{
 			GridCoord:    protocol.GridCoord{X: 25, Y: 25},
-			ID:           "off-zone-tower", BuildingType: "Tower",
+			ID:           "off-zone-tower", BuildingType: "tower",
 			Width: 1, Height: 1, Visible: true, OwnerID: &towerOwner,
 			Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
 		}},

@@ -36,7 +36,7 @@ describe('worker build menu', () => {
   it('includes every buildable building plus exit, with none overwritten (townhall as 7th building)', () => {
     // 7 buildable (sorted by type, townhall sorts last) + 2 world-placed.
     initBuildingDefs([
-      mkDef('Tower'),
+      mkDef('tower'),
       mkDef('barracks'),
       mkDef('blacksmith'),
       mkDef('chapel'),

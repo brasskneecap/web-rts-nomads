@@ -376,4 +376,38 @@ func init() {
 			}
 		}
 	}
+
+	// Cross-validate UnitDef.PathChances now that pathsByUnitType is populated.
+	// Unit defs load via a var initializer (runs before this init), so this is
+	// the earliest point both catalogs are available. Every weighted path id a
+	// unit can roll must be a real path directory under that unit — a typo here
+	// would otherwise silently leave the unit on unitPathNone at runtime.
+	for _, unitType := range sortedUnitTypesForPathValidation() {
+		def, _ := getUnitDef(unitType)
+		if len(def.PathChances) == 0 {
+			continue
+		}
+		known := make(map[string]struct{}, len(pathsByUnitType[unitType]))
+		for _, p := range pathsByUnitType[unitType] {
+			known[p] = struct{}{}
+		}
+		for path := range def.PathChances {
+			if _, ok := known[path]; !ok {
+				panic(fmt.Sprintf("unit %q: pathChances references %q, which is not a path directory under catalog/units/<faction>/%s/paths/",
+					unitType, path, unitType))
+			}
+		}
+	}
+}
+
+// sortedUnitTypesForPathValidation returns the unit-def keys in a stable order
+// so the PathChances cross-validation panic (if any) is deterministic rather
+// than depending on map iteration order.
+func sortedUnitTypesForPathValidation() []string {
+	types := make([]string, 0, len(unitDefsByType))
+	for unitType := range unitDefsByType {
+		types = append(types, unitType)
+	}
+	sort.Strings(types)
+	return types
 }

@@ -1007,7 +1007,7 @@
           "type": "claim",
           "config": {
             "defendSeconds": 30,
-            "towerType": "Tower"
+            "towerType": "tower"
           }
         },
         "startingOwner": "neutral"
@@ -1024,7 +1024,7 @@
           "type": "claim",
           "config": {
             "defendSeconds": 30,
-            "towerType": "Tower"
+            "towerType": "tower"
           }
         },
         "startingOwner": "neutral"
@@ -1041,7 +1041,7 @@
           "type": "claim",
           "config": {
             "defendSeconds": 30,
-            "towerType": "Tower"
+            "towerType": "tower"
           }
         },
         "startingOwner": "neutral"
@@ -1058,7 +1058,7 @@
           "type": "claim",
           "config": {
             "defendSeconds": 30,
-            "towerType": "Tower"
+            "towerType": "tower"
           }
         },
         "startingOwner": "neutral"

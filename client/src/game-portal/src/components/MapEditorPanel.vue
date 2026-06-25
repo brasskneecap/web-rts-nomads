@@ -551,10 +551,10 @@
                   <label for="zone-s-tower-type">Tower Type</label>
                   <select
                     id="zone-s-tower-type"
-                    :value="(selectedZone.capture.config?.['towerType'] as string | undefined) ?? 'Tower'"
+                    :value="(selectedZone.capture.config?.['towerType'] as string | undefined) ?? 'tower'"
                     @change="updateZoneCaptureConfig('towerType', ($event.target as HTMLSelectElement).value)"
                   >
-                    <option value="Tower">Tower</option>
+                    <option value="tower">Tower</option>
                   </select>
                   <div class="zone-brush-config__hint">
                     Build the tower on each 2&#xD7;2 slot, then defend it for the duration to claim the zone.
@@ -1961,7 +1961,7 @@ function onZoneCaptureTypeChange(type: string) {
   if (!id) return
   let config: ZoneCapture['config'] | undefined
   if (type === 'presence') config = { captureSeconds: 10 }
-  else if (type === 'claim') config = { defendSeconds: 30, towerType: 'Tower' }
+  else if (type === 'claim') config = { defendSeconds: 30, towerType: 'tower' }
   const capture: ZoneCapture = { type, ...(config ? { config } : {}) }
   const zones = (model.value.zones ?? []).map((z) => {
     if (z.id !== id) return z

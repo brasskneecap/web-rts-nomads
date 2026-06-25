@@ -361,7 +361,7 @@ func (s *GameState) buildingStrategicValue(building *protocol.BuildingTile) floa
 		return 12
 	case "barracks":
 		return 9
-	case "Tower":
+	case "tower":
 		return 8
 	case "farm":
 		return 5

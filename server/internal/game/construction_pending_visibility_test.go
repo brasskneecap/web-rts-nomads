@@ -21,7 +21,7 @@ func newPendingBuildingTestState(t *testing.T, setPending bool) (s *GameState, b
 	// Tower at grid (30,5) — far from the townhall at (2,10) so the townhall's
 	// own vision never reaches it; the Tower is the only candidate vision source.
 	const gx, gy = 30, 5
-	tower := objBuilding("tower-pending", "Tower", gx, gy, 2, 2, 500)
+	tower := objBuilding("tower-pending", "tower", gx, gy, 2, 2, 500)
 	s = newObjectiveTestState(t, tower)
 	s.FOW["p1"] = newPlayerFOW(s.MapConfig.GridCols, s.MapConfig.GridRows)
 

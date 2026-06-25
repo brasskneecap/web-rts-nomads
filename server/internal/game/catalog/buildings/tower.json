@@ -1,5 +1,5 @@
 {
-  "type": "Tower",
+  "type": "tower",
   "class": "player",
   "width": 2,
   "height": 2,
@@ -18,7 +18,12 @@
   },
   "resourceCost": {
     "gold": 250,
-    "wood": 250
+    "wood": 200
+  },
+  "selectionRing": {
+    "radiusX": 1,
+    "radiusY": 0.7,
+    "offsetY": 1.5
   },
   "capabilities": [],
   "spawnUnitTypes": [],

@@ -281,7 +281,7 @@ func TestRecomputeFOW_UnobstructedBuildingVision(t *testing.T) {
 		return state.FOW["p1"]
 	}
 
-	tower := fowFor("Tower")
+	tower := fowFor("tower")
 	if tower.cellAt(4, 3) != CellClear {
 		t.Fatal("the tree cell itself should always be visible")
 	}
@@ -452,7 +452,7 @@ func TestRecomputeFOW_OwnedZoneBuildingBecomesKnown(t *testing.T) {
 		Buildings: []protocol.BuildingTile{
 			{
 				GridCoord: protocol.GridCoord{X: 7, Y: 7}, ID: "inside-tower",
-				BuildingType: "Tower", Width: 1, Height: 1,
+				BuildingType: "tower", Width: 1, Height: 1,
 				Visible: true, Occupied: true,
 				Metadata: map[string]interface{}{"hp": 500.0, "maxHp": 500.0},
 			},

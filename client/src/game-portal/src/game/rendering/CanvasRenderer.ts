@@ -1950,7 +1950,7 @@ export class CanvasRenderer {
             // Ghost tower: translucent preview of what to build here, until a
             // real building occupies the slot.
             if (!this.claimSlotHasBuilding(p[0], p[1])) {
-              const towerType = (zone.capture?.config?.['towerType'] as string | undefined) ?? 'Tower'
+              const towerType = (zone.capture?.config?.['towerType'] as string | undefined) ?? 'tower'
               const ghost = getBuildingSprite(towerType)
               if (ghost) {
                 ctx.save()

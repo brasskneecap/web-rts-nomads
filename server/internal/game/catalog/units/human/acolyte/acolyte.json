@@ -20,6 +20,10 @@
   "meatCost": 3,
   "requiresBuildings": ["chapel"],
   "spawnSeconds": 10,
+  "pathChances": {
+    "cleric": 1,
+    "siphoner": 1
+  },
   "capabilities": [
     "move",
     "attack"

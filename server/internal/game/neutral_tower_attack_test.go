@@ -33,7 +33,7 @@ func newNeutralTowerAttackState(t *testing.T) (*GameState, *protocol.BuildingTil
 	tower := protocol.BuildingTile{
 		GridCoord:    protocol.GridCoord{X: 7, Y: 7},
 		ID:           "claim-tower",
-		BuildingType: "Tower",
+		BuildingType: "tower",
 		Width:        1,
 		Height:       2,
 		Visible:      true,
