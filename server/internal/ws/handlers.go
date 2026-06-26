@@ -289,7 +289,7 @@ func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 // picking an upgrade, and stay connected.
 func isPausableCommand(msgType string) bool {
 	switch msgType {
-	case "hello", "join_match", "leave_match", "pong",
+	case "hello", "join_match", "leave_match", "pong", "request_map",
 		"set_pause", "wave_upgrade_choice", "wave_upgrade_reroll":
 		return false
 	}
@@ -416,7 +416,7 @@ func (h *Hub) readLoop(client *Client) {
 			// Metadata maps the tick loop mutates — same race window as
 			// the snapshot path, just hit once per join instead of 20Hz.
 			// See ws.Client.WriteJSON's HOT-PATH NOTE.
-			welcomeBytes, err := match.State.MarshalWelcomeMessage(msg.PlayerID, match.ID)
+			welcomeBytes, err := match.State.MarshalWelcomeMessage(msg.PlayerID, match.ID, msg.CachedMapHashes)
 			if err != nil {
 				log.Println("failed to marshal welcome:", err)
 				return
@@ -436,6 +436,28 @@ func (h *Hub) readLoop(client *Client) {
 			}
 			if err := client.WriteBytes(snapshotBytes); err != nil {
 				log.Println("failed to send snapshot:", err)
+				return
+			}
+
+		case "request_map":
+			// Content-addressed fallback: the client claimed a cache hit but
+			// couldn't load the map locally (eviction race). Reply with the
+			// current match map, compressed. Ignores the requested id/hash —
+			// a client only ever needs its own match's map.
+			if client.MatchID() == "" {
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				continue
+			}
+			contentBytes, err := match.State.MarshalMapContentMessage()
+			if err != nil {
+				log.Println("failed to marshal map_content:", err)
+				continue
+			}
+			if err := client.WriteBytes(contentBytes); err != nil {
+				log.Println("failed to send map_content:", err)
 				return
 			}
 

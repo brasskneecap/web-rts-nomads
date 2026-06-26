@@ -621,6 +621,13 @@ type JoinMatchMessage struct {
 	// player currently owns (extracted from PlayerProfile.AcquiredAdvancements
 	// by the client at join time). Nil / absent means no advancements.
 	AcquiredAdvancementIDs []string `json:"acquiredAdvancementIds,omitempty"`
+	// CachedMapHashes is the set of map contentHashes the client already holds
+	// locally for MapID (content-addressed map distribution). The server omits
+	// the (gzipped) map from the welcome when the match map's contentHash is in
+	// this list — the client renders from its own cache. Empty/absent = "I have
+	// nothing", so the welcome carries the map. Transport-agnostic: this is the
+	// only signal used for the hit/miss decision, made server-side here.
+	CachedMapHashes []string `json:"cachedMapHashes,omitempty"`
 }
 
 type LeaveMatchMessage struct {
@@ -895,10 +902,10 @@ type TransferItemCommandMessage struct {
 // PlayerUpgradeSnapshot describes the current state of one upgrade track for a
 // player. Emitted per-player in every MatchSnapshotMessage.Players entry.
 type PlayerUpgradeSnapshot struct {
-	Track        string `json:"track"`
-	DisplayName  string `json:"displayName"`
-	Level        int    `json:"level"`
-	Cap          int    `json:"cap"`
+	Track       string `json:"track"`
+	DisplayName string `json:"displayName"`
+	Level       int    `json:"level"`
+	Cap         int    `json:"cap"`
 	// QueuedCount is how many of this track are queued at the player's blacksmith
 	// (in progress + waiting). 0 when idle. Level + QueuedCount is the level the
 	// player will reach once the queue drains; the next purchase stacks above it.
@@ -1178,11 +1185,38 @@ type UnitSnapshot struct {
 	LastStuckTick     int `json:"lastStuckTick,omitempty"`
 }
 
+// WelcomeMessage is the join-time envelope. The map is content-addressed:
+// MapID + ContentHash always identify the match map; MapGz carries the full map
+// (base64 of gzip'd flat MapConfig JSON) ONLY when the client did not already
+// have ContentHash (see JoinMatchMessage.CachedMapHashes). On a cache hit MapGz
+// is empty and the client renders the map from its own content-addressed cache.
 type WelcomeMessage struct {
-	Type     string    `json:"type"`
-	PlayerID string    `json:"playerId"`
-	MatchID  string    `json:"matchId"`
-	Map      MapConfig `json:"map"`
+	Type        string `json:"type"`
+	PlayerID    string `json:"playerId"`
+	MatchID     string `json:"matchId"`
+	MapID       string `json:"mapId"`
+	ContentHash string `json:"contentHash"`
+	MapGz       string `json:"mapGz,omitempty"`
+}
+
+// RequestMapMessage is the client→server fallback when the client claimed a
+// cache hit (MapGz omitted) but could not load ContentHash locally — e.g. the
+// cache entry was evicted between the join and the render. The server replies
+// with MapContentMessage. This pair is also the seam where chunking would live
+// if a single compressed map ever approached the transport size cap.
+type RequestMapMessage struct {
+	Type        string `json:"type"`
+	MapID       string `json:"mapId"`
+	ContentHash string `json:"contentHash"`
+}
+
+// MapContentMessage carries a full map out-of-band (same gzip+base64 form as
+// WelcomeMessage.MapGz), in reply to a RequestMapMessage.
+type MapContentMessage struct {
+	Type        string `json:"type"`
+	MapID       string `json:"mapId"`
+	ContentHash string `json:"contentHash"`
+	MapGz       string `json:"mapGz"`
 }
 
 // WaveSnapshot carries the current wave phase and timer to the client each tick.

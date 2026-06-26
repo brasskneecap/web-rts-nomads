@@ -16,6 +16,8 @@ import type {
   LootCollectedNotification,
   MapConfig,
   MapId,
+  WelcomeMessage,
+  MapContentMessage,
   GuardCommandMessage,
   MatchSnapshotMessage,
   MoveCommandMessage,
@@ -35,7 +37,12 @@ import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { startSteamGame } from '@/services/desktopBridge'
 import { getOrCreatePlayerId as getProfilePlayerId } from '@/services/profileApi'
 import { hasMapVersion, putMapVersion } from '@/services/mapVersionCache'
-import { fetchMapCatalog, saveMapCatalogFile } from '../maps/catalog'
+import {
+  getCachedMap,
+  putCachedMap,
+  getHashesForMap,
+  decompressMapGz,
+} from '@/services/mapContentCache'
 import type { CanvasRenderer } from '../rendering/CanvasRenderer'
 
 /** Derive the WebSocket base URL from the HTTP base URL env var.
@@ -153,30 +160,24 @@ function firePendingSteamHostStartIfNeeded(matchId: string): void {
   })
 }
 
-/** Best-effort: persist the host's map so the joiner accumulates (and can
- *  re-host) the host's version, and so future lobby previews resolve correctly.
+/** Records the host's map version in the localStorage cache so future lobby
+ *  previews can tell whether this client has the host's exact version. Pure
+ *  localStorage — no network and no catalog write — so it cannot block, delay,
+ *  or interfere with entering the match. Idempotent: a no-op once this exact
+ *  (id, hash) has been seen.
  *
- *  (a) Writes the localStorage cache (mapVersionCache) — the authority for the
- *      preview-match check in FindGame/Lobby. Safe: separate from the catalog.
- *  (b) Best-effort POSTs to /maps so the joiner can re-host the map. Because
- *      contentHash is recomputed on every editor save, "same id, different
- *      hash" means the host has a genuinely different version, so we acquire it
- *      — including UPDATING a map the joiner hosted before. We skip the POST
- *      only when the joiner already has this exact (id, hash). host-wins means
- *      the host's version is always the authoritative one in a shared match, so
- *      adopting it is the correct convergence.
- *
- *  Fire-and-forget; wrapped in try/catch so nothing here can block or delay
- *  match entry. */
+ *  NOTE: an earlier version also re-grouped the full welcome map and POSTed it
+ *  to the local /maps catalog so a joiner could re-host an acquired map. That
+ *  ran heavy synchronous work plus a (for large maps, multi-hundred-KB) catalog
+ *  write on the match-entry path and was implicated in both clients freezing on
+ *  entry to a large edited map in multiplayer. The catalog re-host path was
+ *  removed; reintroduce it only off the hot path (e.g. a deferred idle task or
+ *  an explicit "import this map" action), never inline on the welcome. */
 function persistWelcomeMap(map: MapConfig): void {
   const { id, name, contentHash, version } = map
   if (!id || !contentHash) return
-
-  // Already processed this exact (id, hash) — cache write + catalog sync done
-  // on a prior welcome. Nothing left to do.
   if (hasMapVersion(id, contentHash)) return
 
-  // (a) localStorage cache — the authority for preview reconciliation.
   putMapVersion({
     id,
     name: name ?? id,
@@ -190,29 +191,6 @@ function persistWelcomeMap(map: MapConfig): void {
       (u) => u.playerSlot !== 'enemy',
     ).length,
   })
-
-  // (b) Best-effort POST /maps. Acquire when the id is new to us, or UPDATE
-  // when we have the id but at a different content hash (the host's newer
-  // version). Skip only when our local copy already matches the host's hash.
-  void (async () => {
-    try {
-      const existing = await fetchMapCatalog()
-      const local = existing.find((m) => m.id === id)
-      if (local && local.contentHash === contentHash) return // already have this exact version
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { id: _id, name: _name, description: _desc, ...mapPayload } = map
-      await saveMapCatalogFile({
-        id,
-        name: name ?? id,
-        description: map.description ?? '',
-        sortOrder: 0,
-        map: mapPayload,
-      })
-    } catch {
-      // Best-effort only — silently swallow. The localStorage cache is the
-      // authority for preview matching; re-host availability is a bonus.
-    }
-  })()
 }
 
 export class NetworkClient {
@@ -227,6 +205,17 @@ export class NetworkClient {
   private activeUpgradeIds: string[] | null = null
   private ownedUpgradeRanks: Record<string, number> = {}
   private acquiredAdvancementIds: string[] = []
+
+  // --- Content-addressed map gate -------------------------------------------
+  // While the welcome map is being resolved (decompressed, loaded from cache,
+  // or fetched via request_map), non-lifecycle messages — chiefly the join
+  // match_snapshot that immediately follows the welcome — are queued so they
+  // never apply before the map exists. Drained in arrival order once the map
+  // is set. Pings bypass the gate so the heartbeat never stalls.
+  private blockedOnMap = false
+  private mapMessageQueue: { message: ServerMessage; isReconnect: boolean }[] = []
+  /** Set while a request_map is in flight; resolved by the map_content reply. */
+  private mapContentResolver: ((mapGz: string) => void) | null = null
 
   /** Set to false before calling close() for an intentional disconnect so the
    *  reconnect loop does not fire. */
@@ -305,12 +294,16 @@ export class NetworkClient {
       const ws = new WebSocket(resolveWsUrl())
       this.socket = ws
 
-      ws.onopen = () => {
+      ws.onopen = async () => {
         const hasUpgrades = Object.keys(this.ownedUpgradeRanks).length > 0
         // Omit activeUpgradeIds when null or empty so the server falls back to
         // "all owned upgrades active" — the correct default per schema v3.
         const shouldSendActiveUpgrades =
           this.activeUpgradeIds !== null && this.activeUpgradeIds.length > 0
+        // Content-addressed map distribution: tell the server which versions of
+        // this map we already hold locally so it can omit the map on a hit.
+        // Degrades to [] when IndexedDB is unavailable (treated as a full miss).
+        const cachedMapHashes = await getHashesForMap(this.mapId)
         const joinMessage: ClientMessage = {
           type: 'join_match',
           playerId: this.playerId,
@@ -319,8 +312,11 @@ export class NetworkClient {
           activeUpgradeIds: shouldSendActiveUpgrades ? this.activeUpgradeIds! : undefined,
           ownedUpgradeRanks: hasUpgrades ? this.ownedUpgradeRanks : undefined,
           acquiredAdvancementIds: this.acquiredAdvancementIds,
+          cachedMapHashes: cachedMapHashes.length > 0 ? cachedMapHashes : undefined,
         }
         console.log('[join_match] activeUpgradeIds:', this.activeUpgradeIds, 'ownedUpgradeRanks:', this.ownedUpgradeRanks)
+        // The socket may have closed during the await (rare). Guard the send.
+        if (this.socket !== ws || ws.readyState !== WebSocket.OPEN) return
         this.send(joinMessage)
 
         if (!isReconnect) {
@@ -348,7 +344,7 @@ export class NetworkClient {
         if (message.type === 'match_snapshot') {
           this.state.recordSnapshotBytes(rawLength)
         }
-        this.handleMessage(message, isReconnect)
+        this.routeMessage(message, isReconnect)
       }
 
       ws.onclose = () => {
@@ -734,34 +730,17 @@ export class NetworkClient {
       case 'welcome':
         this.matchId = message.matchId
         this.state.setLocalPlayerId(message.playerId)
-        this.state.setMapConfig(message.map)
-        localStorage.setItem(MAP_ID_STORAGE_KEY, message.map.id)
+        localStorage.setItem(MAP_ID_STORAGE_KEY, message.mapId)
         localStorage.setItem(MATCH_ID_STORAGE_KEY, message.matchId)
         this.onMatchIdChange?.(message.matchId)
         console.log('connected as', message.playerId, 'in', message.matchId)
-
-        // Map versioning: cache the host's map in localStorage so future lobby
-        // previews can detect whether the joiner has the host's exact version.
-        // Best-effort POST /maps so the joiner can re-host it. Errors swallowed.
-        persistWelcomeMap(message.map)
-
-        // §14.3 host-side fan-out: if the SteamMultiplayer view set the
-        // pending-host-start flag, the welcome we just received is the
-        // one that gives us a real matchId to stamp into the Steam lobby
-        // metadata. Fire startSteamGame so joiners' shells emit
-        // steam_lobby_started and they navigate in. Cleared once fired so
-        // a subsequent reconnect doesn't re-trigger.
-        firePendingSteamHostStartIfNeeded(message.matchId)
-
-        if (isReconnect) {
-          // Clear stale interpolation frames before the fresh snapshot arrives
-          // to avoid a visual glitch from interpolating across the gap.
-          this.state.clearSnapshotBuffer()
-          this.onReconnectSuccess?.()
-        }
-
-        this.reconnectAttempt = 0
-        this.notifyState('connected')
+        // Content-addressed map: resolve the map (decompress the inline mapGz,
+        // load it from the local cache, or fetch it via request_map) BEFORE
+        // applying snapshots or marking connected. Gate other messages until the
+        // map exists. The rest of the welcome flow (host fan-out, connected,
+        // version cache) runs in resolveWelcomeMap once the map is ready.
+        this.blockedOnMap = true
+        void this.resolveWelcomeMap(message, isReconnect)
         break
 
       case 'match_snapshot':
@@ -786,6 +765,120 @@ export class NetworkClient {
         console.error('server error:', message.message)
         break
     }
+  }
+
+  /** First stop for every inbound message. Routes map_content to the pending
+   *  request resolver, lets pings through unconditionally (heartbeat must never
+   *  stall), queues other messages while the welcome map is resolving, and
+   *  otherwise dispatches normally. */
+  private routeMessage(message: ServerMessage, isReconnect: boolean) {
+    if (message.type === 'map_content') {
+      this.handleMapContent(message)
+      return
+    }
+    if (
+      this.blockedOnMap &&
+      message.type !== 'welcome' &&
+      message.type !== 'ping'
+    ) {
+      this.mapMessageQueue.push({ message, isReconnect })
+      return
+    }
+    this.handleMessage(message, isReconnect)
+  }
+
+  /** Resolve the content-addressed map for a welcome, then complete the join.
+   *  - mapGz present (miss)  → decompress + cache it
+   *  - mapGz absent (hit)    → load from cache; on an eviction-race miss,
+   *                            fetch via request_map
+   *  Once the map is set, runs the deferred welcome steps and drains any
+   *  messages (snapshots) that queued while resolving. */
+  private async resolveWelcomeMap(message: WelcomeMessage, isReconnect: boolean) {
+    let cfg: MapConfig | null = null
+    try {
+      if (message.mapGz) {
+        cfg = await decompressMapGz(message.mapGz)
+        await putCachedMap(message.contentHash, message.mapId, cfg)
+      } else {
+        cfg = await getCachedMap(message.contentHash)
+        if (!cfg) {
+          cfg = await this.requestMap(message.mapId, message.contentHash)
+          if (cfg) await putCachedMap(message.contentHash, message.mapId, cfg)
+        }
+      }
+    } catch (e) {
+      console.error('failed to resolve welcome map:', e)
+      cfg = null
+    }
+
+    if (!cfg) {
+      // Could not obtain the map by any path — surface a failure rather than a
+      // silent freeze, and clear the gate so we don't strand queued messages.
+      this.blockedOnMap = false
+      this.mapMessageQueue = []
+      this.notifyState('failed')
+      return
+    }
+
+    this.state.setMapConfig(cfg)
+
+    // §14.3 host-side fan-out: stamp the matchId into the Steam lobby so joiners
+    // can enter. Safe to run now that the map is applied.
+    firePendingSteamHostStartIfNeeded(message.matchId)
+
+    if (isReconnect) {
+      this.state.clearSnapshotBuffer()
+      this.onReconnectSuccess?.()
+    }
+
+    this.reconnectAttempt = 0
+    this.notifyState('connected')
+
+    // Lobby-preview version cache (localStorage, distinct from the IndexedDB
+    // body cache). Purely local; runs after connected.
+    persistWelcomeMap(cfg)
+
+    // Release the gate and drain queued messages in arrival order. handleMessage
+    // is synchronous, so no new messages interleave during the drain.
+    this.blockedOnMap = false
+    const queued = this.mapMessageQueue
+    this.mapMessageQueue = []
+    for (const item of queued) this.handleMessage(item.message, item.isReconnect)
+  }
+
+  /** Fetch a map the server expected us to have but we couldn't load (eviction
+   *  race). Sends request_map and resolves when the map_content reply arrives,
+   *  or null on timeout / decompress failure. */
+  private requestMap(mapId: MapId, contentHash: string): Promise<MapConfig | null> {
+    return new Promise((resolve) => {
+      let settled = false
+      const timeoutId = setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.mapContentResolver = null
+        console.error('request_map timed out for', mapId, contentHash)
+        resolve(null)
+      }, 10000)
+      this.mapContentResolver = async (mapGz: string) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeoutId)
+        try {
+          resolve(await decompressMapGz(mapGz))
+        } catch (e) {
+          console.error('map_content decompress failed:', e)
+          resolve(null)
+        }
+      }
+      this.send({ type: 'request_map', mapId, contentHash })
+    })
+  }
+
+  /** Hand a map_content payload to the pending requestMap resolver (if any). */
+  private handleMapContent(message: MapContentMessage) {
+    const resolver = this.mapContentResolver
+    this.mapContentResolver = null
+    if (resolver) resolver(message.mapGz)
   }
 
   // Spawn world-space floating text above the collecting unit for each
