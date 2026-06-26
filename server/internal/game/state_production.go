@@ -311,6 +311,14 @@ func (s *GameState) getEffectiveUnitSpawnSecondsLocked(player *Player, building 
 		spawnSeconds *= multiplier
 	}
 
+	// Zone-aura unit production speed: base 1.0 (100% speed); effective speed
+	// (1 + add) × mul shortens train time as seconds / speed. Identity ⇒ unchanged.
+	if add, mul := s.playerStatModifierLocked(player.ID, statUnitProductionSpeed); add != 0 || mul != 1 {
+		if speed := (1.0 + add) * mul; speed > 0 {
+			spawnSeconds /= speed
+		}
+	}
+
 	return math.Max(minUnitSpawnSeconds, spawnSeconds)
 }
 

@@ -41,5 +41,23 @@ func (s *GameState) perkMoveSpeedMultiplierLocked(unit *Unit) float64 {
 	// range, so it's free when off.
 	bonus += s.perkMoveSpeedBonusFromClericAurasLocked(unit)
 
-	return 1.0 + bonus
+	perkMult := 1.0 + bonus
+
+	// Zone-aura move speed. The movement step is unit.MoveSpeed × this multiplier,
+	// so we return a multiplier m where unit.MoveSpeed × m = (unit.MoveSpeed +
+	// add) × mul × perkMult — i.e. the canonical (base + add) × mul composed with
+	// the perk multiplier. workerMoveSpeed stacks on top for worker units. No
+	// active aura ⇒ (0, 1) and the worker term is skipped, returning perkMult.
+	add, mul := s.playerStatModifierLocked(unit.OwnerID, statMoveSpeed)
+	if unit.UnitType == "worker" {
+		wAdd, wMul := s.playerStatModifierLocked(unit.OwnerID, statWorkerMoveSpeed)
+		add += wAdd
+		mul *= wMul
+	}
+	if (add != 0 || mul != 1) && unit.MoveSpeed > 0 {
+		effective := (unit.MoveSpeed + add) * mul * perkMult
+		return effective / unit.MoveSpeed
+	}
+
+	return perkMult
 }

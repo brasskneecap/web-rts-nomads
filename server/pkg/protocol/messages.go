@@ -130,7 +130,55 @@ type Zone struct {
 	// capture mechanic never runs on it). The Capture config is ignored. It can
 	// still seed the adjacency frontier for capturing neighbouring zones.
 	LockedSpawnLabel string `json:"lockedSpawnLabel,omitempty"`
+	// Auras is the optional list of passive bonuses the zone grants to its
+	// owner while controlled. Each entry is expressed in the shared stat-modifier
+	// vocabulary (see StatModifier) rather than a zone-specific effect type, so
+	// the same stat ids and operations used by perks/buffs/upgrades apply here.
+	// EMPTY/absent ⇒ the zone grants no passive bonus (only vision + build rights
+	// from add-map-zones). Auras travel with the static zone def (welcome
+	// payload); the live owner comes from ZoneSnapshot.
+	Auras []ZoneAura `json:"auras,omitempty"`
 }
+
+// StatModifier is the canonical, system-agnostic shape for a single stat
+// bonus. Zone auras — and, in future, campaign modifiers, equipment, and
+// global events — all express bonuses as StatModifiers so every gameplay
+// system speaks the same language (the same Stat ids and Operations the
+// stat registry validates). Stacking rule, applied per stat at the read site:
+//
+//	effective = (base + Σ value where Operation==add) × Π value where Operation==multiply
+type StatModifier struct {
+	// Stat is a registered stat identifier (e.g. "healthRegen", "moveSpeed",
+	// "goldGatherRate"). Validated against the server stat registry at load.
+	Stat string `json:"stat"`
+	// Operation is "add" (flat additive, summed) or "multiply" (multiplicative,
+	// producted). Any other value is rejected at load.
+	Operation string `json:"operation"`
+	// Value is the additive delta (Operation=="add") or the multiplier
+	// (Operation=="multiply", e.g. 1.15 for +15%).
+	Value float64 `json:"value"`
+}
+
+// ZoneAura is a typed envelope around an aura effect a zone grants its owner.
+// Type discriminates the kind of effect; v1 implements only "stat_modifier",
+// which carries a StatModifier in Modifier. The Type and Scope fields are the
+// extension seams for future kinds ("periodic", "spawn", "vision", "debuff")
+// and scopes ("radius", "regional") without changing the v1 path.
+type ZoneAura struct {
+	// Type is the aura kind. "stat_modifier" (the only v1 type) reads Modifier.
+	Type string `json:"type"`
+	// Scope defaults to "global" (applies to all of the owner's units/buildings
+	// regardless of position). Reserved future values: "radius", "regional".
+	Scope string `json:"scope,omitempty"`
+	// Modifier is the stat bonus, present when Type == "stat_modifier".
+	Modifier StatModifier `json:"modifier"`
+}
+
+// Zone aura type / scope sentinels.
+const (
+	ZoneAuraTypeStatModifier = "stat_modifier"
+	ZoneAuraScopeGlobal      = "global"
+)
 
 // PlacedUnit is a statically authored unit in the map. PlayerSlot determines
 // who controls the unit at runtime: "player1", "player2", ... spawn when that

@@ -438,13 +438,20 @@ export class InputManager {
         } else if (clickedObstacle && clickedObstacle.id && !isShiftHeld) {
           this.state.selectObstacle(clickedObstacle.id)
         } else if (!isShiftHeld) {
-          // Traps have lowest selection priority — a unit or building standing
-          // on a trap zone is always selected first.
+          // Traps have second-lowest selection priority — a unit or building
+          // standing on a trap zone is always selected first.
           const clickedTrap = this.state.getTrapAtPosition(world.x, world.y)
           if (clickedTrap) {
             this.state.selectTrap(clickedTrap.id)
           } else {
-            this.state.clearSelection()
+            // Zones have the absolute lowest priority: only selected when
+            // nothing else was hit (no unit/building/obstacle/trap).
+            const clickedZoneId = this.state.getZoneIdAtWorld(world.x, world.y)
+            if (clickedZoneId) {
+              this.state.selectZone(clickedZoneId)
+            } else {
+              this.state.clearSelection()
+            }
           }
         }
       }

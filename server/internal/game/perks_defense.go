@@ -812,7 +812,14 @@ func (s *GameState) effectiveArmorLocked(unit *Unit) int {
 	// debuff against a low-armor unit doesn't produce negative armor (the
 	// damage pipeline treats negative armor as "no mitigation", but a
 	// clearly-clamped zero is easier to reason about in the HUD).
-	result := int(math.Floor(float64(unit.Armor)*(1.0+percentBonus))) + flatBonus
+	core := float64(unit.Armor)*(1.0+percentBonus) + float64(flatBonus)
+	// Zone-aura armor: a flat add and a multiplier from the owner's controlled
+	// zones, folded as (existing + add) × mul. No active aura ⇒ (0, 1) identity,
+	// so this is exactly the prior result. Reuses this single armor formula —
+	// no second percent path (AI_RULES: avoid duplicate stat calculation).
+	auraAdd, auraMul := s.playerStatModifierLocked(unit.OwnerID, statArmor)
+	core = (core + auraAdd) * auraMul
+	result := int(math.Floor(core))
 	result -= markOfWeaknessArmorReductionLocked(unit)
 	if result < 0 {
 		result = 0

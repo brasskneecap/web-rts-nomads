@@ -125,7 +125,7 @@ func evaluateControlPointCapture(s *GameState, rt *zoneRuntime, _ float64) {
 	if !s.zoneCapturableByLocked(rt, owner) {
 		return // structure owner lacks an adjacent foothold
 	}
-	rt.Owner = protocol.ZoneCaptureTeamOwner // capture is a team effort
+	s.setZoneOwnerLocked(rt, protocol.ZoneCaptureTeamOwner) // capture is a team effort
 }
 
 // evaluatePresenceCapture advances a capture timer while the human team holds
@@ -170,7 +170,7 @@ func evaluatePresenceCapture(s *GameState, rt *zoneRuntime, dt float64) {
 			rt.Capturing = true // progress is actively advancing this tick
 			rt.Progress += dt
 			if rt.Progress >= cfg.CaptureSeconds {
-				rt.Owner = protocol.ZoneCaptureTeamOwner // team effort
+				s.setZoneOwnerLocked(rt, protocol.ZoneCaptureTeamOwner) // team effort
 				rt.Progress = 0
 			}
 			return
@@ -209,7 +209,7 @@ func evaluateClearCapture(s *GameState, rt *zoneRuntime, _ float64) {
 			return // a hostile still occupies the zone
 		}
 	}
-	rt.Owner = protocol.ZoneCaptureTeamOwner // team effort
+	s.setZoneOwnerLocked(rt, protocol.ZoneCaptureTeamOwner) // team effort
 }
 
 // isClaimSlotCell reports whether cell falls in ANY claim capture-point's 2x2
@@ -356,7 +356,7 @@ func evaluateClaimCapture(s *GameState, rt *zoneRuntime, dt float64) {
 		rt.Progress = 1
 	}
 	if allCaptured {
-		rt.Owner = protocol.ZoneCaptureTeamOwner
+		s.setZoneOwnerLocked(rt, protocol.ZoneCaptureTeamOwner)
 		rt.Progress = 0
 		rt.Capturing = false
 	}

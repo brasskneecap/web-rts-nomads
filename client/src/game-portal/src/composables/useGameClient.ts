@@ -42,6 +42,7 @@ const emptyUiSnapshot: GameUiSnapshot = {
   isVictory: false,
   objectives: [],
   zoneCaptureCards: [],
+  zoneInspection: null,
   players: [],
   frozenEndPlayers: null,
   matchDominionPointsEarned: 0,

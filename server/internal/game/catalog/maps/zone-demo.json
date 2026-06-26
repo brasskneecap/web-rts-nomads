@@ -48,7 +48,11 @@
         "cells": [[2,9],[3,9],[4,9],[2,10],[3,10],[4,10],[2,11],[3,11],[4,11]],
         "capture": { "type": "presence", "config": { "captureSeconds": 3 } },
         "startingOwner": "neutral",
-        "adjacent": ["seed", "far"]
+        "adjacent": ["seed", "far"],
+        "auras": [
+          { "type": "stat_modifier", "modifier": { "stat": "healthRegen", "operation": "add", "value": 2 } },
+          { "type": "stat_modifier", "modifier": { "stat": "moveSpeed", "operation": "multiply", "value": 1.1 } }
+        ]
       },
       {
         "id": "east",
@@ -57,7 +61,10 @@
         "cells": [[8,4],[9,4],[10,4],[8,5],[9,5],[10,5],[8,6],[9,6],[10,6]],
         "capture": { "type": "clear" },
         "startingOwner": "neutral",
-        "adjacent": ["seed"]
+        "adjacent": ["seed"],
+        "auras": [
+          { "type": "stat_modifier", "modifier": { "stat": "armor", "operation": "add", "value": 3 } }
+        ]
       },
       {
         "id": "far",
@@ -66,7 +73,11 @@
         "cells": [[2,14],[3,14],[4,14],[2,15],[3,15],[4,15],[2,16],[3,16],[4,16]],
         "capture": { "type": "presence", "config": { "captureSeconds": 3 } },
         "startingOwner": "neutral",
-        "adjacent": ["north"]
+        "adjacent": ["north"],
+        "auras": [
+          { "type": "stat_modifier", "modifier": { "stat": "goldGatherRate", "operation": "multiply", "value": 1.15 } },
+          { "type": "stat_modifier", "modifier": { "stat": "woodGatherRate", "operation": "multiply", "value": 1.15 } }
+        ]
       }
     ],
     "debug": {

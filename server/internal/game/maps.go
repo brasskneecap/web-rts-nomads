@@ -160,6 +160,17 @@ func normalizeZones(zones []protocol.Zone) []protocol.Zone {
 		if z.Name == "" {
 			z.Name = z.ID
 		}
+		// Aura defaults: empty type ⇒ stat_modifier (the only v1 kind); empty
+		// scope ⇒ global. Leaves an absent Auras slice as nil (no bonuses).
+		for j := range z.Auras {
+			a := &z.Auras[j]
+			if a.Type == "" {
+				a.Type = protocol.ZoneAuraTypeStatModifier
+			}
+			if a.Scope == "" {
+				a.Scope = protocol.ZoneAuraScopeGlobal
+			}
+		}
 	}
 	// Adjacency is a DIRECTED prerequisite list now (zone -> required zones),
 	// not a symmetric graph, so no reciprocal-edge normalisation.
@@ -214,6 +225,22 @@ func validateZones(filename string, zones []protocol.Zone) {
 			}
 		}
 		parseAndValidateZoneCapture(filename, z.ID, z.Capture)
+		// Validate aura definitions: known type, and (for stat_modifier) a known
+		// stat + valid operation + finite value. Catalogs are static, so a bad
+		// aura is a build error — panic naming the map file, zone, and index.
+		for ai := range z.Auras {
+			a := z.Auras[ai]
+			ctx := fmt.Sprintf("zone %s aura %d", z.ID, ai)
+			switch a.Type {
+			case protocol.ZoneAuraTypeStatModifier:
+				if err := validateStatModifier(ctx, a.Modifier); err != nil {
+					panic(fmt.Sprintf("catalog/maps/%s: %v", filename, err))
+				}
+			default:
+				panic(fmt.Sprintf("catalog/maps/%s: zone %s aura %d: unknown aura type %q",
+					filename, z.ID, ai, a.Type))
+			}
+		}
 	}
 }
 
@@ -726,6 +753,9 @@ func cloneMapConfig(mapConfig protocol.MapConfig) protocol.MapConfig {
 		clonedZone.CaptureCells = append([][2]int(nil), zone.CaptureCells...)
 		clonedZone.Adjacent = append([]string(nil), zone.Adjacent...)
 		clonedZone.Capture.Config = append(json.RawMessage(nil), zone.Capture.Config...)
+		// Auras carry only scalar fields (ZoneAura → StatModifier), so a slice
+		// copy is a full deep copy.
+		clonedZone.Auras = append([]protocol.ZoneAura(nil), zone.Auras...)
 		cloned.Zones[i] = clonedZone
 	}
 	cloned.Obstacles = make([]protocol.ObstacleTile, len(mapConfig.Obstacles))

@@ -20,11 +20,15 @@
          (the campaign session ref is non-null) AND there are objectives to
          show. Custom Game and Find Game flows never see this panel. -->
     <div
-      v-if="hasStarted && ((campaignSession && ui.objectives.length) || ui.zoneCaptureCards.length)"
+      v-if="hasStarted && ((campaignSession && ui.objectives.length) || ui.zoneCaptureCards.length || ui.zoneInspection)"
       class="match-objectives-anchor"
     >
       <MatchObjectivesPanel v-if="campaignSession && ui.objectives.length" :objectives="ui.objectives" />
       <ZoneCapturePanel v-if="ui.zoneCaptureCards.length" :cards="ui.zoneCaptureCards" />
+      <!-- Zone Inspection Panel: shown when the player left-clicks a zone on
+           the canvas (lowest click priority: only fires when no unit/building/
+           trap was hit). Dismissed by clicking elsewhere (clearSelection). -->
+      <ZoneInspectionPanel v-if="ui.zoneInspection" :info="ui.zoneInspection" />
     </div>
 
     <WaveUpgradeModal
@@ -183,6 +187,7 @@ import { useRouter, useRoute } from 'vue-router'
 import MatchHud from '@/components/MatchHud.vue'
 import MatchObjectivesPanel from '@/components/match/MatchObjectivesPanel.vue'
 import ZoneCapturePanel from '@/components/match/ZoneCapturePanel.vue'
+import ZoneInspectionPanel from '@/components/match/ZoneInspectionPanel.vue'
 import CampaignVictoryModal from '@/components/match/CampaignVictoryModal.vue'
 import type { MatchEndOutcome } from '@/components/match/matchEndOutcome'
 import { setMatchEndSnapshot } from '@/state/matchEndState'

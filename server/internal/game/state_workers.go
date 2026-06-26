@@ -452,6 +452,14 @@ func (s *GameState) updateWorkerTaskLocked(unit *Unit, dt float64, blocked map[g
 	if isTree {
 		choppingDuration = treeChoppingSeconds
 	}
+	// Zone-aura gather speed: the stat's base is 1.0 (100% speed); effective
+	// speed = (1 + add) × mul shortens the gather time as base / speed. Identity
+	// (0, 1) ⇒ speed 1.0 ⇒ unchanged duration.
+	if add, mul := s.playerStatModifierLocked(unit.OwnerID, statGatherSpeed); add != 0 || mul != 1 {
+		if speed := (1.0 + add) * mul; speed > 0 {
+			choppingDuration /= speed
+		}
+	}
 	unit.Gathering = true
 	s.setUnitMiningInsideLocked(unit, true)
 	unit.MiningRemaining = choppingDuration
@@ -506,18 +514,34 @@ func (s *GameState) gatherAmountForUnitResourceLocked(unitType, ownerID, resourc
 		}
 	}
 
+	base := defaultGatherAmountForResource(resourceType)
+	var rateStat string
 	switch resourceType {
 	case "gold":
 		if def.GoldGatherAmount > 0 {
-			return def.GoldGatherAmount
+			base = def.GoldGatherAmount
 		}
+		rateStat = statGoldGatherRate
 	case "wood":
 		if def.WoodGatherAmount > 0 {
-			return def.WoodGatherAmount
+			base = def.WoodGatherAmount
+		}
+		rateStat = statWoodGatherRate
+	}
+
+	// Zone-aura gather rate: fold (base + add) × mul for the matching resource.
+	// No active aura ⇒ (0, 1) identity, so the per-haul amount is unchanged.
+	if rateStat != "" {
+		if add, mul := s.playerStatModifierLocked(ownerID, rateStat); add != 0 || mul != 1 {
+			scaled := int(math.Round((float64(base) + add) * mul))
+			if scaled < 0 {
+				scaled = 0
+			}
+			return scaled
 		}
 	}
 
-	return defaultGatherAmountForResource(resourceType)
+	return base
 }
 
 func defaultGatherAmountForResource(resourceType string) int {

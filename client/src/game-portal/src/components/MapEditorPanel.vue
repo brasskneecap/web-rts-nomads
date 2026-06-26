@@ -633,6 +633,54 @@
                 </div>
               </div>
 
+              <!-- Bonuses (zone auras): stat modifiers granted to the owner. -->
+              <div class="zone-brush-config__auras">
+                <div class="zone-brush-config__auras-header">
+                  <span class="zone-brush-config__auras-label">Bonuses</span>
+                  <button
+                    type="button"
+                    class="zone-brush-config__aura-add"
+                    @click="addAuraToSelectedZone"
+                  >+ Add Bonus</button>
+                </div>
+                <div v-if="(selectedZone.auras ?? []).length === 0" class="zone-brush-config__hint">
+                  No bonuses — this zone grants only vision + build rights.
+                </div>
+                <div
+                  v-for="(aura, ai) in (selectedZone.auras ?? [])"
+                  :key="ai"
+                  class="zone-brush-config__aura-row"
+                >
+                  <select
+                    :value="aura.modifier.stat"
+                    @change="updateSelectedZoneAura(ai, 'stat', ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="s in STAT_DEFS" :key="s.id" :value="s.id">{{ s.label }}</option>
+                  </select>
+                  <select
+                    :value="aura.modifier.operation"
+                    @change="updateSelectedZoneAura(ai, 'operation', ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option v-for="op in STAT_OPERATIONS" :key="op" :value="op">{{ op }}</option>
+                  </select>
+                  <input
+                    type="number"
+                    step="any"
+                    :value="aura.modifier.value"
+                    @input="updateSelectedZoneAura(ai, 'value', +($event.target as HTMLInputElement).value)"
+                  />
+                  <button
+                    type="button"
+                    class="zone-brush-config__aura-remove"
+                    title="Remove bonus"
+                    @click="removeAuraFromSelectedZone(ai)"
+                  >&#x2715;</button>
+                </div>
+                <div class="zone-brush-config__hint">
+                  add = flat (e.g. +2). multiply = factor (e.g. 1.15 for +15%).
+                </div>
+              </div>
+
               <div class="zone-brush-config__actions">
                 <button
                   type="button"
@@ -1466,8 +1514,11 @@ import type {
   UnitType,
   VictoryCondition,
   Zone,
+  ZoneAura,
   ZoneCapture,
 } from '@/game/network/protocol'
+import { ZONE_AURA_SCOPE_GLOBAL, ZONE_AURA_TYPE_STAT_MODIFIER } from '@/game/network/protocol'
+import { STAT_DEFS, STAT_OPERATIONS } from '@/game/stats/statRegistry'
 import { buildZoneCellIndex, cellKey, fillEnclosedZoneCells, zoneBoundaryEdges } from '@/game/maps/zoneGeometry'
 import type { Campaign } from '@/types/campaign'
 import { fetchCampaignCatalog } from '@/services/campaignApi'
@@ -1988,6 +2039,42 @@ function updateZoneCaptureConfig(field: string, value: unknown) {
     }
   })
   model.value = { ...model.value, zones }
+}
+
+/** Rewrite the selected zone's auras array via the standard model-update path. */
+function setSelectedZoneAuras(auras: ZoneAura[]) {
+  const id = selectedZoneId.value
+  if (!id) return
+  const zones = (model.value.zones ?? []).map((z) =>
+    z.id === id ? { ...z, auras: auras.length ? auras : undefined } : z,
+  )
+  model.value = { ...model.value, zones }
+}
+
+/** Append a default stat-modifier aura (first registered stat, additive, 0). */
+function addAuraToSelectedZone() {
+  const current = selectedZone.value?.auras ?? []
+  const next: ZoneAura = {
+    type: ZONE_AURA_TYPE_STAT_MODIFIER,
+    scope: ZONE_AURA_SCOPE_GLOBAL,
+    modifier: { stat: STAT_DEFS[0].id, operation: 'add', value: 0 },
+  }
+  setSelectedZoneAuras([...current, next])
+}
+
+/** Patch one field of one aura's modifier (stat / operation / value). */
+function updateSelectedZoneAura(index: number, field: 'stat' | 'operation' | 'value', value: string | number) {
+  const current = selectedZone.value?.auras ?? []
+  const next = current.map((a, i) =>
+    i === index ? { ...a, modifier: { ...a.modifier, [field]: value } } : a,
+  )
+  setSelectedZoneAuras(next)
+}
+
+/** Remove the aura at index from the selected zone. */
+function removeAuraFromSelectedZone(index: number) {
+  const current = selectedZone.value?.auras ?? []
+  setSelectedZoneAuras(current.filter((_, i) => i !== index))
 }
 
 /** Add (cx, cy) to the selected zone's cells (draw mode). Handles overlap reassign. */
@@ -4972,6 +5059,40 @@ onBeforeUnmount(() => {
   font-size: 0.68rem;
   color: #94a3b8;
   font-style: italic;
+}
+
+/* Zone aura (Bonuses) authoring UI */
+.zone-brush-config__auras {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.zone-brush-config__auras-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.zone-brush-config__auras-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.zone-brush-config__aura-row {
+  display: grid;
+  grid-template-columns: 1fr auto 70px auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.zone-brush-config__aura-remove {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  padding: 2px 6px;
 }
 
 /* Directed capture-prerequisite link UI */

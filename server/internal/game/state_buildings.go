@@ -440,6 +440,17 @@ func (s *GameState) tickBuildingRepairsLocked(dt float64) {
 			}
 		}
 
+		// Zone-aura building construction speed: scale the HP-per-second rate by
+		// the owner's effective construction-speed (base 1.0; (1 + add) × mul).
+		// Only applies while under construction (not repair). Identity ⇒ unchanged.
+		if underConstruction && building.OwnerID != nil {
+			if add, mul := s.playerStatModifierLocked(*building.OwnerID, statBuildingConstructionSpeed); add != 0 || mul != 1 {
+				if speed := (1.0 + add) * mul; speed > 0 {
+					hpPerSecond *= speed
+				}
+			}
+		}
+
 		// Apply HP from inside builder (free during construction).
 		if inside != nil {
 			hpThisTick := hpPerSecond * dt

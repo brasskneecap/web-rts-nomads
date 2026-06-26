@@ -438,6 +438,13 @@ func (s *GameState) applyDelayedAttackLocked(unit *Unit, deadUnitIDs *[]int, des
 		// projectile carries the pre-crit damage in that case.
 		isPierce := !profile.Melee && containsString(unit.PerkIDs, "pierce")
 		rawDamage := float64(unit.Damage) * (1.0 + s.perkBonusDamageMultiplierLocked(unit, target))
+		// Zone-aura damage: a flat add and a multiplier from the attacker owner's
+		// controlled zones, folded as (existing + add) × mul before crit/armor.
+		// Covers both melee and ranged (this is pre-branch). No active aura ⇒
+		// (0, 1) identity. Ability damage is a separate system, out of v1 scope.
+		if dmgAdd, dmgMul := s.playerStatModifierLocked(unit.OwnerID, statDamage); dmgAdd != 0 || dmgMul != 1 {
+			rawDamage = (rawDamage + dmgAdd) * dmgMul
+		}
 		critMult := 1.0
 		isCrit := false
 		if !isPierce {

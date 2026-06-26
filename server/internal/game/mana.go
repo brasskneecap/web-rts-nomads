@@ -68,7 +68,13 @@ func (s *GameState) effectiveManaRegenLocked(unit *Unit) float64 {
 	if unit == nil || unit.MaxMana <= 0 {
 		return 0
 	}
-	return unit.ManaRegenPerSecond + s.manaConduitAuraBonusLocked(unit)
+	rate := unit.ManaRegenPerSecond + s.manaConduitAuraBonusLocked(unit)
+	// Zone-aura mana regen, folded read-on-demand as (base + add) × mul. Applied
+	// at this shared chokepoint so the regen tick and the HUD stat row agree.
+	if add, mul := s.playerStatModifierLocked(unit.OwnerID, statManaRegen); add != 0 || mul != 1 {
+		rate = (rate + add) * mul
+	}
+	return rate
 }
 
 // spendUnitManaLocked attempts to deduct cost mana from unit and reports

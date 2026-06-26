@@ -34,8 +34,9 @@ import type {
   Zone,
   ZoneSnapshot,
 } from '../network/protocol'
-import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID, UNIT_ORDER_LABELS, ZONE_TEAM_OWNER } from '../network/protocol'
+import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID, UNIT_ORDER_LABELS, ZONE_AURA_TYPE_STAT_MODIFIER, ZONE_TEAM_OWNER } from '../network/protocol'
 import { buildZoneCaptureCards, type ZoneCaptureCard } from '../zones/zoneCaptureCards'
+import { buildZoneCellIndex, cellKey } from '../maps/zoneGeometry'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP, getUpgradeChain, townHallTierName } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
@@ -526,6 +527,24 @@ export type Notification = {
   remaining: number
 }
 
+/** View-model for the Zone Inspection panel. Produced by
+ *  getZoneInspection() and carried in GameUiSnapshot.zoneInspection.
+ *  The component uses formatModifier (from statRegistry) to render each
+ *  aura's bonus — no formatting is done here. */
+export type ZoneInspectionInfo = {
+  zoneId: string
+  name: string
+  /** Display label for the controlling player or team. "Unclaimed" when
+   *  no owner. "Team" when the ZONE_TEAM_OWNER sentinel is set. */
+  ownerLabel: string
+  /** The controlling player's colour hex (from ZoneSnapshot.ownerColor or
+   *  playerColors). Null when unowned / neutral. */
+  ownerColor: string | null
+  /** Static aura definitions from the map config. Only stat_modifier auras
+   *  are shown; unknown types are silently filtered client-side. */
+  auras: import('../network/protocol').ZoneAura[]
+}
+
 export type ShopCatalogEntry = {
   itemId: string
   displayName: string
@@ -710,6 +729,9 @@ export class GameState {
   selectedBuildingId: string | null = null
   selectedObstacleId: string | null = null
   selectedTrapId: string | null = null
+  /** The zone id selected by a canvas left-click that hit no unit/building/trap.
+   *  Cleared whenever any other selection is made or the selection is cleared. */
+  selectedZoneId: string | null = null
   inspectedEnemyUnitId: number | null = null
   // Read-only inspection of an allied (other-real-player) unit. Mirrors
   // inspectedEnemyUnitId — the player can view perks/stats but cannot issue
@@ -1617,6 +1639,7 @@ export class GameState {
     this.selectedBuildingId = null
     this.selectedObstacleId = null
     this.selectedTrapId = null
+    this.selectedZoneId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -1635,6 +1658,7 @@ export class GameState {
     this.selectedBuildingId = null
     this.selectedObstacleId = null
     this.selectedTrapId = null
+    this.selectedZoneId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -1653,6 +1677,7 @@ export class GameState {
     this.selectedBuildingId = null
     this.selectedObstacleId = null
     this.selectedTrapId = null
+    this.selectedZoneId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
@@ -1937,6 +1962,8 @@ export class GameState {
     this.selectedUnitOrder = []
     this.selectedBuildingId = buildingId
     this.selectedObstacleId = null
+    this.selectedTrapId = null
+    this.selectedZoneId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -1951,6 +1978,7 @@ export class GameState {
     this.selectedBuildingId = null
     this.selectedObstacleId = obstacleId
     this.selectedTrapId = null
+    this.selectedZoneId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -1967,12 +1995,61 @@ export class GameState {
     this.selectedBuildingId = null
     this.selectedObstacleId = null
     this.selectedTrapId = trapId
+    this.selectedZoneId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
     this.unitTargetingMode = null
     this.workerBuildMenuOpen = false
     this.buildPlacement = null
+  }
+
+  /** Selects a zone by id. Any pre-existing unit/building/obstacle/trap selection
+   *  is cleared first. Zone selection has the lowest priority — it only fires when
+   *  a left-click (non-drag) lands on a zone cell and no unit/building/trap was hit. */
+  selectZone(zoneId: string) {
+    this.selectedUnitIds.clear()
+    this.selectedUnitOrder = []
+    this.selectedBuildingId = null
+    this.selectedObstacleId = null
+    this.selectedTrapId = null
+    this.selectedZoneId = zoneId
+    this.inspectedEnemyUnitId = null
+    this.inspectedAllyUnitId = null
+    this.buildingTargetingMode = null
+    this.unitTargetingMode = null
+    this.workerBuildMenuOpen = false
+    this.buildPlacement = null
+  }
+
+  /** Hit-test a world-space point against zones on the current map. Returns the
+   *  id of the first zone whose cell set contains the grid cell at (worldX, worldY),
+   *  or null when no zone is hit. Uses the map's cellSize for the conversion.
+   *
+   *  Reuses the buildZoneCellIndex helper (which iterates every cell once and
+   *  builds a Map) only when the map config changes — the result is memoised via
+   *  a simple reference-equality guard on mapConfig.zones. */
+  private _zoneCellIndexZones: import('../network/protocol').Zone[] | null = null
+  private _zoneCellIndex: Map<string, string> | null = null
+
+  getZoneIdAtWorld(worldX: number, worldY: number): string | null {
+    const zones = this.mapConfig.zones
+    if (!zones || zones.length === 0) return null
+    if (this._zoneCellIndexZones !== zones || this._zoneCellIndex === null) {
+      this._zoneCellIndexZones = zones
+      this._zoneCellIndex = buildZoneCellIndex(zones)
+    }
+    const cellSize = this.mapConfig.cellSize
+    const cellX = Math.floor(worldX / cellSize)
+    const cellY = Math.floor(worldY / cellSize)
+    return this._zoneCellIndex.get(cellKey(cellX, cellY)) ?? null
+  }
+
+  /** Invalidates the zone cell index when the map is reloaded so a new zone
+   *  layout doesn't serve stale hit-test results. */
+  private invalidateZoneCellIndex() {
+    this._zoneCellIndexZones = null
+    this._zoneCellIndex = null
   }
 
   getSelectedBuilding(): BuildingTile | null {
@@ -2071,6 +2148,7 @@ export class GameState {
     this.selectedBuildingId = null
     this.selectedObstacleId = null
     this.selectedTrapId = null
+    this.selectedZoneId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = null
     this.unitTargetingMode = null
@@ -2357,6 +2435,7 @@ export class GameState {
     this.selectedUnitOrder = []
     this.selectedBuildingId = null
     this.selectedObstacleId = null
+    this.selectedZoneId = null
     this.inspectedEnemyUnitId = unitId
     this.inspectedAllyUnitId = null
     this.buildingTargetingMode = null
@@ -2376,6 +2455,7 @@ export class GameState {
     this.selectedBuildingId = null
     this.selectedObstacleId = null
     this.selectedTrapId = null
+    this.selectedZoneId = null
     this.inspectedEnemyUnitId = null
     this.inspectedAllyUnitId = unitId
     this.buildingTargetingMode = null
@@ -2493,6 +2573,7 @@ export class GameState {
     this.mapWidth = this.mapConfig.width
     this.mapHeight = this.mapConfig.height
     this.invalidateBuildingSelection()
+    this.invalidateZoneCellIndex()
   }
 
   getLocalPlayerUnits(): Unit[] {
@@ -2902,6 +2983,47 @@ export class GameState {
   getPlayerColor(playerId: string | null | undefined): string | null {
     if (!playerId) return null
     return this.playerColors.get(playerId) ?? null
+  }
+
+  /** Builds the inspection view-model for the currently-selected zone, or
+   *  null when no zone is selected or the selected zone id is stale. */
+  getZoneInspection(): ZoneInspectionInfo | null {
+    const zoneId = this.selectedZoneId
+    if (!zoneId) return null
+    const zone = this.mapConfig.zones?.find((z) => z.id === zoneId)
+    if (!zone) return null
+    const snap = this.zoneSnapshotsById.get(zoneId)
+
+    const owner = snap?.owner ?? ''
+    let ownerLabel: string
+    let ownerColor: string | null = null
+
+    if (!owner || owner === 'neutral') {
+      ownerLabel = 'Unclaimed'
+    } else if (owner === ZONE_TEAM_OWNER) {
+      ownerLabel = 'Team'
+      // ownerColor from the snapshot is the lowest-slot player's color,
+      // resolved server-side for team-owned zones.
+      ownerColor = snap?.ownerColor && snap.ownerColor.length > 0 ? snap.ownerColor : null
+    } else {
+      // Individual player owner — use their color from the registry.
+      ownerLabel = owner
+      ownerColor = snap?.ownerColor && snap.ownerColor.length > 0
+        ? snap.ownerColor
+        : (this.playerColors.get(owner) ?? null)
+    }
+
+    // Only expose stat_modifier auras; unknown types are quietly skipped so
+    // the panel stays correct if the server adds new aura types in future.
+    const auras = (zone.auras ?? []).filter((a) => a.type === ZONE_AURA_TYPE_STAT_MODIFIER)
+
+    return {
+      zoneId,
+      name: zone.name || zone.id,
+      ownerLabel,
+      ownerColor,
+      auras,
+    }
   }
 
   private applyPlayerSnapshots(players: PlayerSnapshot[]) {

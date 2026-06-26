@@ -510,6 +510,33 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	unit.AttackSpeed += unit.EquipmentBonus.AttackSpeed
 	unit.MoveSpeed += unit.EquipmentBonus.MoveSpeed
 
+	// Zone-aura max health: a cached/folded stat (MaxHP is not read on demand),
+	// so it is re-baked here as (current MaxHP + add) × mul. recomputeAllZone
+	// AuraModifiersLocked re-runs this with preserveHealthPercent=true on any
+	// ownership flip, so the cap tracks zone control. Identity (0,1) ⇒ unchanged.
+	if hpAdd, hpMul := s.playerStatModifierLocked(unit.OwnerID, statMaxHealth); hpAdd != 0 || hpMul != 1 {
+		unit.MaxHP = maxInt(1, int(math.Round((float64(unit.MaxHP)+hpAdd)*hpMul)))
+	}
+
+	// Zone-aura max mana: only for units with a mana pool. Always recomputed from
+	// the catalog base (MaxMana is otherwise only ever def.MaxMana) so losing the
+	// zone reverts the pool; mana fraction is preserved across the change.
+	if def, ok := getUnitDef(unit.UnitType); ok && def.MaxMana > 0 {
+		mnAdd, mnMul := s.playerStatModifierLocked(unit.OwnerID, statMaxMana)
+		newMaxMana := maxInt(0, int(math.Round((float64(def.MaxMana)+mnAdd)*mnMul)))
+		if newMaxMana != unit.MaxMana {
+			manaFraction := 1.0
+			if unit.MaxMana > 0 {
+				manaFraction = clampFloat(float64(unit.CurrentMana)/float64(unit.MaxMana), 0, 1)
+			}
+			unit.MaxMana = newMaxMana
+			unit.CurrentMana = int(math.Round(float64(newMaxMana) * manaFraction))
+			if unit.CurrentMana > newMaxMana {
+				unit.CurrentMana = newMaxMana
+			}
+		}
+	}
+
 	if preserveHealthPercent {
 		unit.HP = maxInt(1, int(math.Round(float64(unit.MaxHP)*currentHPFraction)))
 	} else if unit.HP > unit.MaxHP {

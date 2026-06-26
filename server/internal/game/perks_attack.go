@@ -80,6 +80,17 @@ func (s *GameState) perkAttackSpeedBonusLocked(unit *Unit) float64 {
 		total += unit.PerkState.BattlePrayerMultiplier
 	}
 
+	// Zone-aura attack speed. Every call site reads effective speed as
+	// unit.AttackSpeed + perkAttackSpeedBonusLocked(unit), so to apply the
+	// canonical (base + add) × mul rule we return the bonus that makes that sum
+	// equal (unit.AttackSpeed + perkTotal + add) × mul. No active aura ⇒ (0, 1),
+	// which returns `total` unchanged.
+	add, mul := s.playerStatModifierLocked(unit.OwnerID, statAttackSpeed)
+	if add != 0 || mul != 1 {
+		effective := (unit.AttackSpeed + total + add) * mul
+		return effective - unit.AttackSpeed
+	}
+
 	return total
 }
 

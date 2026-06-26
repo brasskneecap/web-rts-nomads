@@ -15,7 +15,7 @@ import type {
   WaveSnapshot,
   WaveUpgradeOfferSnapshot,
 } from '../network/protocol'
-import type { DebugSpawnConfig, NetStats, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification } from './GameState'
+import type { DebugSpawnConfig, NetStats, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification, ZoneInspectionInfo } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
@@ -58,6 +58,9 @@ export type GameUiSnapshot = {
   /** Zone-capture requirement cards (zones my team occupies but doesn't own).
    *  Empty when none qualify. Drives ZoneCapturePanel. */
   zoneCaptureCards: import('../zones/zoneCaptureCards').ZoneCaptureCard[]
+  /** Zone inspection view-model for the currently-selected zone. Null when
+   *  no zone is selected. Drives ZoneInspectionPanel. */
+  zoneInspection: ZoneInspectionInfo | null
   /** Full per-player snapshot array from the most recent tick. Drives the
    *  end-of-match recap's per-player metrics columns (§15). Empty until
    *  the first snapshot arrives. AI players (enemy/neutral) are filtered
@@ -288,6 +291,7 @@ export class GameClient {
       isVictory: this.state.isVictoryAchieved(),
       objectives: this.state.getObjectives(),
       zoneCaptureCards: this.state.getZoneCaptureCards(),
+      zoneInspection: this.state.getZoneInspection(),
       players: this.state.playerSnapshots,
       frozenEndPlayers: this.state.frozenEndPlayers,
       matchDominionPointsEarned: this.state.matchDominionPointsEarned,

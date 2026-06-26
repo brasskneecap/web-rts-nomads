@@ -703,6 +703,15 @@ type Player struct {
 	// Initialise via NewMatchMetrics() at every player-construction site to
 	// guarantee non-nil maps on the wire.
 	Metrics MatchMetrics
+
+	// ZoneStatModifiers is the player's aggregated stat-modifier set reduced
+	// from the auras of every zone the player (or an ally) currently controls.
+	// Server-only (never on the wire); rebuilt event-driven on any zone
+	// ownership change by recomputeAllZoneAuraModifiersLocked (zone_auras.go),
+	// never per tick. Hot-path read sites resolve it in O(1) via
+	// playerStatModifierLocked. Nil/empty ⇒ every stat resolves to identity
+	// (0, 1), so behaviour is unchanged when no auras are active.
+	ZoneStatModifiers PlayerStatModifierSet
 }
 
 const (
@@ -2695,11 +2704,19 @@ func (s *GameState) Update(dt float64) {
 		// so sub-1 rates (the default 0.2 HP/s) still heal integer HP on the
 		// correct cadence. Skipped for dead / full-HP units; accumulator resets
 		// at full HP so the next hit doesn't instantly trigger banked regen.
-		if unit.HP > 0 && unit.HealthRegenPerSecond > 0 {
+		// Zone-aura health regen: folded read-on-demand as (base + add) × mul, so
+		// it tracks ownership with no recompute. Computed before the >0 guard so
+		// an aura can grant regen to a unit whose base rate is 0. Identity (0,1)
+		// ⇒ exactly unit.HealthRegenPerSecond.
+		effectiveHealthRegen := unit.HealthRegenPerSecond
+		if add, mul := s.playerStatModifierLocked(unit.OwnerID, statHealthRegen); add != 0 || mul != 1 {
+			effectiveHealthRegen = (effectiveHealthRegen + add) * mul
+		}
+		if unit.HP > 0 && effectiveHealthRegen > 0 {
 			if unit.HP >= unit.MaxHP {
 				unit.HealthRegenAccumulator = 0
 			} else {
-				unit.HealthRegenAccumulator += unit.HealthRegenPerSecond * dt
+				unit.HealthRegenAccumulator += effectiveHealthRegen * dt
 				if unit.HealthRegenAccumulator >= 1 {
 					healAmt := int(unit.HealthRegenAccumulator)
 					unit.HealthRegenAccumulator -= float64(healAmt)
@@ -3226,6 +3243,7 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		ShopRerollsRemaining:          defaultShopRerollsPerPlayer,
 		AcquiredAdvancements:          advancementIDs,
 		Metrics:                       NewMatchMetrics(),
+		ZoneStatModifiers:             newPlayerStatModifierSet(),
 	}
 	// Derive precomputed multipliers and extra workers from the upgrade catalog.
 	applyProfileUpgradesToPlayerLocked(player)
@@ -3250,6 +3268,12 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		s.spawnUnitsForPlayerAtSpawnPointLocked(player, ut, player.ExtraStartingUnits[ut])
 	}
 	s.ensurePlacedEnemiesSpawnedLocked()
+
+	// Seed this player's zone-aura aggregate from any zones their team already
+	// controls at join (home/team-locked zones, or zones with a StartingOwner of
+	// their slot). Recompute-all is event-driven and cheap; thereafter it only
+	// re-fires on an actual ownership flip via setZoneOwnerLocked.
+	s.recomputeAllZoneAuraModifiersLocked()
 
 	// Diagnostic: which slot did this player land in? Useful when a map has
 	// authored player1/player2 labels and the caller wants to know which

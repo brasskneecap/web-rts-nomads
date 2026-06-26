@@ -269,7 +269,32 @@ export type Zone = {
    *  mechanic is skipped). Mirrors protocol.Zone.LockedSpawnLabel on the
    *  server (json:"lockedSpawnLabel,omitempty"). */
   lockedSpawnLabel?: string
+  /** Optional passive bonuses the zone grants its owner while controlled.
+   *  Expressed in the shared stat-modifier vocabulary (same stat ids/operations
+   *  as perks/buffs). Static (travels in the welcome payload). Mirrors
+   *  protocol.Zone.Auras. */
+  auras?: ZoneAura[]
 }
+
+/** Canonical, system-agnostic stat bonus. Mirrors protocol.StatModifier.
+ *  operation is "add" (flat, summed) or "multiply" (multiplicative, e.g. 1.15
+ *  for +15%). */
+export type StatModifier = {
+  stat: string
+  operation: 'add' | 'multiply'
+  value: number
+}
+
+/** A single zone aura. `type` discriminates the kind; v1 only "stat_modifier"
+ *  (reads `modifier`). `scope` defaults to "global". Mirrors protocol.ZoneAura. */
+export type ZoneAura = {
+  type: string
+  scope?: string
+  modifier: StatModifier
+}
+
+export const ZONE_AURA_TYPE_STAT_MODIFIER = 'stat_modifier'
+export const ZONE_AURA_SCOPE_GLOBAL = 'global'
 
 /** Per-tick runtime state of one zone. Mirrors server protocol.ZoneSnapshot. */
 export type ZoneSnapshot = {
