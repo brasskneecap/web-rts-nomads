@@ -228,6 +228,119 @@
         }
       },
       {
+        "x": 56,
+        "y": 19,
+        "id": "enemy-spawnpoint-56-19",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 2,
+          "spawnDelaySeconds": 5,
+          "spawnIntervalSeconds": 15,
+          "startingWave": 1,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 58,
+        "y": 19,
+        "id": "enemy-spawnpoint-58-19",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 1,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider"
+        }
+      },
+      {
+        "x": 60,
+        "y": 19,
+        "id": "enemy-spawnpoint-60-19",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 2,
+          "targetPlayerLabel": "player2",
+          "unitType": "ranged_raider"
+        }
+      },
+      {
+        "x": 62,
+        "y": 19,
+        "id": "enemy-spawnpoint-62-19",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 13,
+          "startingWave": 3,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider_brute"
+        }
+      },
+      {
+        "x": 64,
+        "y": 19,
+        "id": "enemy-spawnpoint-64-19",
+        "buildingType": "enemy-spawnpoint",
+        "width": 1,
+        "height": 1,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "enemy-spawner"
+        ],
+        "metadata": {
+          "damageMultiplierPerWave": 0.1,
+          "healthMultiplierPerWave": 0.1,
+          "spawnCount": 1,
+          "spawnDelaySeconds": 0,
+          "spawnIntervalSeconds": 10,
+          "startingWave": 5,
+          "targetPlayerLabel": "player2",
+          "unitType": "raider_roc"
+        }
+      },
+      {
         "x": 9,
         "y": 22,
         "id": "enemy-spawnpoint-9-22",
@@ -461,50 +574,6 @@
         }
       },
       {
-        "x": 58,
-        "y": 40,
-        "id": "enemy-spawnpoint-58-40",
-        "buildingType": "enemy-spawnpoint",
-        "width": 1,
-        "height": 1,
-        "occupied": true,
-        "visible": true,
-        "capabilities": [
-          "enemy-spawner"
-        ],
-        "metadata": {
-          "damageMultiplierPerWave": 0.1,
-          "healthMultiplierPerWave": 0.1,
-          "spawnCount": 2,
-          "spawnDelaySeconds": 5,
-          "spawnIntervalSeconds": 15,
-          "startingWave": 1,
-          "targetPlayerLabel": "player2",
-          "unitType": "raider"
-        }
-      },
-      {
-        "x": 58,
-        "y": 41,
-        "id": "enemy-spawnpoint-58-41",
-        "buildingType": "enemy-spawnpoint",
-        "width": 1,
-        "height": 1,
-        "occupied": true,
-        "visible": true,
-        "capabilities": [
-          "enemy-spawner"
-        ],
-        "metadata": {
-          "spawnCount": 1,
-          "spawnDelaySeconds": 0,
-          "spawnIntervalSeconds": 10,
-          "startingWave": 1,
-          "targetPlayerLabel": "player2",
-          "unitType": "raider"
-        }
-      },
-      {
         "x": 16,
         "y": 43,
         "id": "enemy-spawnpoint-16-43",
@@ -571,29 +640,6 @@
         }
       },
       {
-        "x": 58,
-        "y": 43,
-        "id": "enemy-spawnpoint-58-43",
-        "buildingType": "enemy-spawnpoint",
-        "width": 1,
-        "height": 1,
-        "occupied": true,
-        "visible": true,
-        "capabilities": [
-          "enemy-spawner"
-        ],
-        "metadata": {
-          "damageMultiplierPerWave": 0.1,
-          "healthMultiplierPerWave": 0.1,
-          "spawnCount": 1,
-          "spawnDelaySeconds": 0,
-          "spawnIntervalSeconds": 10,
-          "startingWave": 2,
-          "targetPlayerLabel": "player2",
-          "unitType": "ranged_raider"
-        }
-      },
-      {
         "x": 15,
         "y": 44,
         "id": "enemy-spawnpoint-15-44",
@@ -612,29 +658,6 @@
           "startingWave": 1,
           "targetPlayerLabel": "player1",
           "unitType": "raider"
-        }
-      },
-      {
-        "x": 58,
-        "y": 45,
-        "id": "enemy-spawnpoint-58-45",
-        "buildingType": "enemy-spawnpoint",
-        "width": 1,
-        "height": 1,
-        "occupied": true,
-        "visible": true,
-        "capabilities": [
-          "enemy-spawner"
-        ],
-        "metadata": {
-          "damageMultiplierPerWave": 0.1,
-          "healthMultiplierPerWave": 0.1,
-          "spawnCount": 1,
-          "spawnDelaySeconds": 0,
-          "spawnIntervalSeconds": 13,
-          "startingWave": 3,
-          "targetPlayerLabel": "player2",
-          "unitType": "raider_brute"
         }
       },
       {
@@ -658,29 +681,6 @@
           "startingWave": 2,
           "targetPlayerLabel": "player1",
           "unitType": "ranged_raider"
-        }
-      },
-      {
-        "x": 58,
-        "y": 47,
-        "id": "enemy-spawnpoint-58-47",
-        "buildingType": "enemy-spawnpoint",
-        "width": 1,
-        "height": 1,
-        "occupied": true,
-        "visible": true,
-        "capabilities": [
-          "enemy-spawner"
-        ],
-        "metadata": {
-          "damageMultiplierPerWave": 0.1,
-          "healthMultiplierPerWave": 0.1,
-          "spawnCount": 1,
-          "spawnDelaySeconds": 0,
-          "spawnIntervalSeconds": 10,
-          "startingWave": 5,
-          "targetPlayerLabel": "player2",
-          "unitType": "raider_roc"
         }
       },
       {
@@ -1010,7 +1010,18 @@
             "towerType": "tower"
           }
         },
-        "startingOwner": "neutral"
+        "startingOwner": "neutral",
+        "auras": [
+          {
+            "type": "stat_modifier",
+            "scope": "global",
+            "modifier": {
+              "stat": "damage",
+              "operation": "add",
+              "value": 2
+            }
+          }
+        ]
       },
       {
         "id": "zone-6",

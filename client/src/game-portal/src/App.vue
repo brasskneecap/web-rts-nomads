@@ -12,6 +12,7 @@ import MenuChrome from '@/components/menu/MenuChrome.vue'
 import MenuDominionPanel from '@/components/menu/MenuDominionPanel.vue'
 import StartSplash from '@/components/menu/StartSplash.vue'
 import { startMenuMusic, stopMenuMusic } from '@/composables/useMenuAudio'
+import { startMatchMusic, stopMatchMusic } from '@/composables/useMatchMusic'
 
 const route = useRoute()
 const splashDismissed = ref(false)
@@ -31,11 +32,20 @@ const shouldPlayMusic = computed(() => !route.meta.silenceMusic)
 function onSplashDismiss() {
   splashDismissed.value = true
   if (shouldPlayMusic.value) startMenuMusic()
+  else startMatchMusic()
 }
 
+// Menu music plays everywhere outside a match; in-match music cycles through
+// the match/ folder while a match is active. `playing` is true outside a match
+// (shouldPlayMusic === !silenceMusic), so the two engines hand off here.
 watch(shouldPlayMusic, (playing) => {
   if (!splashDismissed.value) return
-  if (playing) startMenuMusic()
-  else stopMenuMusic()
+  if (playing) {
+    stopMatchMusic()
+    startMenuMusic()
+  } else {
+    stopMenuMusic()
+    startMatchMusic()
+  }
 })
 </script>
