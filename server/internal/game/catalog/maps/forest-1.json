@@ -1038,7 +1038,18 @@
             "towerType": "tower"
           }
         },
-        "startingOwner": "neutral"
+        "startingOwner": "neutral",
+        "auras": [
+          {
+            "type": "stat_modifier",
+            "scope": "global",
+            "modifier": {
+              "stat": "manaRegen",
+              "operation": "add",
+              "value": 2
+            }
+          }
+        ]
       },
       {
         "id": "zone-7",

@@ -3,6 +3,7 @@ import { GameClient, type GameUiSnapshot } from '@/game/core/GameClient'
 import type { DebugSpawnConfig } from '@/game/core/GameState'
 import type { ConnectionState } from '@/game/network/protocol'
 import { useProfile } from '@/composables/useProfile'
+import { stopBuildingSelectSound } from '@/composables/useSfx'
 
 let client: GameClient | null = null
 
@@ -92,7 +93,17 @@ export function useGameClient() {
   let rafId = 0
 
   function syncUi() {
+    const prevBuildingType = ui.value.selectedBuildingType
     ui.value = client?.getUiSnapshot() ?? emptyUiSnapshot
+
+    // Stop the building-select sound the moment a building is deselected —
+    // clicked away, destroyed, or replaced by a unit/obstacle selection. Every
+    // deselect path clears selectedBuildingType, so this single check covers
+    // them all. Selecting a different building re-fires the sound from the
+    // input layer (which also stops the prior one).
+    if (prevBuildingType && !ui.value.selectedBuildingType) {
+      stopBuildingSelectSound()
+    }
 
     if (client) {
       rafId = requestAnimationFrame(syncUi)
@@ -160,6 +171,7 @@ export function useGameClient() {
 
   function destroy() {
     stopUiSync()
+    stopBuildingSelectSound()
     client?.stop()
     client = null
     ui.value = emptyUiSnapshot

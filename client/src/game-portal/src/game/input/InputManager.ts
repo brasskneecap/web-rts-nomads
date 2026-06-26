@@ -7,6 +7,7 @@ import { getMinimapBounds } from '../rendering/CanvasRenderer'
 import { NetworkClient } from '../network/NetworkClient'
 import { BUILDABLE_BUILDING_DEFS } from '../maps/buildingDefs'
 import { resolveCursor } from '../rendering/cursors'
+import { playBuildingSelectSound } from '../../composables/useSfx'
 
 export class InputManager {
   private canvas: HTMLCanvasElement
@@ -435,6 +436,7 @@ export class InputManager {
           this.state.inspectEnemyUnit(clickedEnemy.id)
         } else if (clickedBuilding && !isShiftHeld) {
           this.state.selectBuilding(clickedBuilding.id)
+          playBuildingSelectSound(clickedBuilding.buildingType)
         } else if (clickedObstacle && clickedObstacle.id && !isShiftHeld) {
           this.state.selectObstacle(clickedObstacle.id)
         } else if (!isShiftHeld) {
