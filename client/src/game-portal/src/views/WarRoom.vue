@@ -42,24 +42,12 @@
           >
             <span class="war-room__label">Custom Game</span>
           </button>
-
-          <button
-            type="button"
-            class="war-room__hotspot war-room__hotspot--astrolab"
-            :class="{ 'war-room__hotspot--selected': isSelected('advancements') }"
-            :style="{ backgroundImage: `url(${astrolabUrl})` }"
-            aria-label="Advancements"
-            @click="selectTab('advancements')"
-          >
-            <span class="war-room__label">Advancements</span>
-          </button>
         </div>
 
         <div
           class="war-room__page"
           :class="{ 'war-room__page--campaign': activeTab === 'campaign' }"
         >
-          <Advancements v-if="activeTab === 'advancements'" />
           <Campaign v-if="activeTab === 'campaign'" @close="activeTab = null" />
         </div>
       </div>
@@ -71,12 +59,10 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ExitButton from '@/components/ui/ExitButton.vue'
-import Advancements from '@/views/Advancements.vue'
 import Campaign from '@/views/Campaign.vue'
 import warRoomBgUrl from '@/assets/background-images/war_room_bg.png'
 import campaignUrl from '@/assets/ui/buttons/war_room/campaign.png'
 import customGameUrl from '@/assets/ui/buttons/war_room/custom_game.png'
-import astrolabUrl from '@/assets/ui/buttons/war_room/astrolab.png'
 import kingdomUrl from '@/assets/ui/buttons/war_room/kingdom.png'
 
 const router = useRouter()
@@ -285,30 +271,23 @@ function onBack() {
 }
 
 .war-room__hotspot--campaign {
-  left: 36%;
+  left: 50%;
   top: 43%;
   width: 7%;
   aspect-ratio: 1 / 1;
 }
 
 .war-room__hotspot--custom {
-  left: 44%;
-  top: 41%;
+  left: 60%;
+  top: 53%;
   width: 7%;
   aspect-ratio: 1 / 1;
 }
 
 .war-room__hotspot--upgrades {
-  left: 52%;
-  top: 42%;
+  left: 40%;
+  top: 53%;
   width: 8%;
-  aspect-ratio: 1 / 1;
-}
-
-.war-room__hotspot--astrolab {
-  left: 60%;
-  top: 42%;
-  width: 7%;
   aspect-ratio: 1 / 1;
 }
 </style>

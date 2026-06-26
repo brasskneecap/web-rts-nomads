@@ -1065,7 +1065,7 @@
       }
     ],
     "waveConfig": {
-      "totalWaves": 6,
+      "totalWaves": 10,
       "prepDuration": 180,
       "waveDuration": 120,
       "continuousWaves": true
