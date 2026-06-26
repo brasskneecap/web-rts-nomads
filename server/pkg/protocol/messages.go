@@ -769,11 +769,13 @@ type PurchaseUpgradeCommandMessage struct {
 	BuildingID string `json:"buildingId,omitempty"`
 }
 
-// CancelUpgradeCommandMessage cancels the in-progress upgrade at BuildingID
-// (full refund of gold + wood paid).
+// CancelUpgradeCommandMessage cancels a queued upgrade at BuildingID (full
+// refund of gold + wood paid). QueueIndex selects the entry: 0 (the default,
+// omitted) is the in-progress upgrade; higher indices are queued behind it.
 type CancelUpgradeCommandMessage struct {
 	Type       string `json:"type"`
 	BuildingID string `json:"buildingId"`
+	QueueIndex int    `json:"queueIndex,omitempty"`
 }
 
 // UpgradeTownHallCommandMessage requests a tier-up on the specified town hall.
@@ -849,7 +851,11 @@ type PlayerUpgradeSnapshot struct {
 	DisplayName  string `json:"displayName"`
 	Level        int    `json:"level"`
 	Cap          int    `json:"cap"`
-	NextCostGold int    `json:"nextCostGold"`
+	// QueuedCount is how many of this track are queued at the player's blacksmith
+	// (in progress + waiting). 0 when idle. Level + QueuedCount is the level the
+	// player will reach once the queue drains; the next purchase stacks above it.
+	QueuedCount  int `json:"queuedCount,omitempty"`
+	NextCostGold int `json:"nextCostGold"`
 	// NextCostWood is the wood cost of the next level. It currently mirrors
 	// NextCostGold (upgrades cost equal gold and wood). 0 at cap.
 	NextCostWood int  `json:"nextCostWood"`
@@ -865,9 +871,14 @@ type PlayerUpgradeSnapshot struct {
 	// ResearchBuildingID is the source building performing the research (used to
 	// target a cancel and to tell a selected blacksmith whether it is the one
 	// doing the work). While ResearchTotal > 0 the track is locked everywhere.
-	ResearchTotal       float64 `json:"researchTotal,omitempty"`
-	ResearchRemaining   float64 `json:"researchRemaining,omitempty"`
-	ResearchBuildingID  string  `json:"researchBuildingId,omitempty"`
+	ResearchTotal      float64 `json:"researchTotal,omitempty"`
+	ResearchRemaining  float64 `json:"researchRemaining,omitempty"`
+	ResearchBuildingID string  `json:"researchBuildingId,omitempty"`
+	// QueueBuildingID is the blacksmith holding this track's queue (in progress
+	// or merely queued). Equals ResearchBuildingID when the track is at the head;
+	// set even when the track waits behind another. Empty when the track is idle.
+	// The cancel/queue target for this track.
+	QueueBuildingID     string  `json:"queueBuildingId,omitempty"`
 	HPPerLevel          int     `json:"hpPerLevel"`
 	DamagePerLevel      int     `json:"damagePerLevel"`
 	ArmorPerLevel       int     `json:"armorPerLevel"`

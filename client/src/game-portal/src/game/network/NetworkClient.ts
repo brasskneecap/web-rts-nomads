@@ -708,10 +708,11 @@ export class NetworkClient {
     this.send(message)
   }
 
-  sendCancelUpgrade(buildingId: string) {
+  sendCancelUpgrade(buildingId: string, queueIndex?: number) {
     const message: CancelUpgradeCommand = {
       type: 'cancel_upgrade',
       buildingId,
+      ...(queueIndex ? { queueIndex } : {}),
     }
     this.send(message)
   }

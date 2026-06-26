@@ -3633,19 +3633,17 @@ function getBuildingActions(
   }
 
   if (building.capabilities.includes('upgrade-purchase')) {
-    // Per-building upgrade model: this blacksmith researches one upgrade at a
-    // time, and a track in progress at ANY of the player's blacksmiths is
-    // locked everywhere. Determine what THIS building is doing.
-    const thisBuildingTrack =
-      building.metadata?.['upgradeInProgress'] === true
-        ? getBuildingMetadataString(building, 'upgradeTrack')
-        : undefined
+    // Per-blacksmith queue model: a blacksmith can stack multiple upgrades, so a
+    // track already in flight here does NOT block a different track — clicking
+    // it queues behind the active one. A track is only blocked when it is locked
+    // to a DIFFERENT blacksmith (its queueBuildingId is some other building).
     for (const upgrade of upgrades) {
-      const atCap = upgrade.level >= upgrade.cap
-      const researchingSomewhere = (upgrade.researchTotal ?? 0) > 0
-      const researchingHere = thisBuildingTrack === upgrade.track
-      const researchingElsewhere = researchingSomewhere && upgrade.researchBuildingId !== building.id
-      const buildingBusyOther = thisBuildingTrack !== undefined && !researchingHere
+      const homeId = upgrade.queueBuildingId
+      const lockedElsewhere = !!homeId && homeId !== building.id
+      const queued = upgrade.queuedCount ?? 0
+      // The level the queue will reach; the next purchase stacks one above it.
+      const projectedLevel = upgrade.level + queued
+      const atCap = projectedLevel >= upgrade.cap
       const statParts = [
         `+${upgrade.hpPerLevel} HP`,
         `+${upgrade.damagePerLevel} DMG`,
@@ -3654,45 +3652,30 @@ function getBuildingActions(
         `+${upgrade.moveSpeedPerLevel} MS`,
       ]
 
-      if (researchingHere) {
-        // This blacksmith is doing the work → show a greyed-out, non-clickable
-        // item. Cancellation is done via the ✕ on the progress card above.
-        const secs = Math.ceil(upgrade.researchRemaining ?? 0)
-        const label = `${upgrade.displayName} (${secs}s)`
-        actions.push({
-          id: `upgrade-${upgrade.track}`,
-          label,
-          iconDef: { kind: 'unit', type: upgrade.track },
-          disabled: true,
-          tooltipTitle: label,
-          tooltipBody: 'Researching… click the ✕ on the progress bar to cancel',
-        })
-        continue
-      }
-
-      const disabled =
-        buildingBusyOther ||
-        researchingElsewhere ||
-        !upgrade.hasBlacksmith ||
-        upgrade.cap === 0 ||
-        atCap ||
-        !upgrade.canAfford
+      // canStart (server) folds in: below the projected cap, affordable, and a
+      // blacksmith exists. The cross-blacksmith track lock is layered on here.
+      const disabled = lockedElsewhere || !upgrade.canStart
+      const nextLevel = projectedLevel + 1
       const levelLabel = atCap
         ? `${upgrade.displayName} (Max)`
-        : `${upgrade.displayName} Lv ${upgrade.level} → ${upgrade.level + 1}`
-      const tooltipBody = buildingBusyOther
-        ? 'Blacksmith is busy with another upgrade'
-        : researchingElsewhere
-          ? 'Already being researched at another blacksmith'
+        : queued > 0
+          ? `${upgrade.displayName} Lv ${projectedLevel} (+${queued}) → ${nextLevel}`
+          : `${upgrade.displayName} Lv ${upgrade.level} → ${nextLevel}`
+      const tooltipBody = lockedElsewhere
+        ? 'This track is queued at another blacksmith'
+        : atCap
+          ? 'Maximum level reached'
           : statParts.join('  ')
       actions.push({
         id: `upgrade-${upgrade.track}`,
         label: levelLabel,
         iconDef: { kind: 'unit', type: upgrade.track },
-        cost: [
-          { resourceId: 'gold', amount: upgrade.nextCostGold, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' },
-          { resourceId: 'wood', amount: upgrade.nextCostWood, accent: RESOURCE_ACCENT.wood ?? '#7a9a52' },
-        ],
+        cost: atCap
+          ? undefined
+          : [
+              { resourceId: 'gold', amount: upgrade.nextCostGold, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' },
+              { resourceId: 'wood', amount: upgrade.nextCostWood, accent: RESOURCE_ACCENT.wood ?? '#7a9a52' },
+            ],
         disabled,
         tooltipTitle: levelLabel,
         tooltipBody,
@@ -4297,12 +4280,18 @@ function getBuildingUpgradeState(building: BuildingTile) {
   if (!track || remainingSeconds === undefined || totalSeconds === undefined) {
     return null
   }
+  const queueLength = getBuildingMetadataNumber(building, 'upgradeQueueLength')
+  const queuedTracksRaw = getBuildingMetadataString(building, 'queuedUpgradeTracks')
   return {
     unitType: track,
     remainingSeconds,
     totalSeconds,
-    queueLength: 1,
-    queuedUnitTypes: [track],
+    queueLength: Math.max(1, Math.round(queueLength ?? 1)),
+    // Tracks equal unit-type strings ("soldier"/"archer"), so the production
+    // queue strip resolves their portraits the same way it does for training.
+    queuedUnitTypes: queuedTracksRaw
+      ? queuedTracksRaw.split(',').map((item) => item.trim()).filter(Boolean)
+      : [track],
   }
 }
 

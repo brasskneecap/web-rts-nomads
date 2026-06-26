@@ -747,12 +747,14 @@ type GameState struct {
 
 	// ActiveUpgrades is the global registry of in-progress building-driven
 	// upgrades (blacksmith track research today; extensible to other source
-	// buildings later). Keyed by the SOURCE building ID — each such building
-	// performs at most one upgrade at a time. The resulting level applies to
-	// the whole player (see Player.Upgrades); the building is just the
-	// workshop. A track is locked for a player while any of their buildings is
-	// researching it. See state_upgrades.go.
-	ActiveUpgrades map[string]*ActiveUpgrade
+	// buildings later). Keyed by the SOURCE building ID; the value is that
+	// building's upgrade QUEUE — only index 0 researches, the rest wait behind
+	// it (exactly like Productions for unit training). The resulting level
+	// applies to the whole player (see Player.Upgrades); the building is just
+	// the workshop. A track is locked to a single blacksmith for a player: while
+	// any of their blacksmiths has the track in progress OR queued, that track
+	// cannot be started at a different blacksmith. See state_upgrades.go.
+	ActiveUpgrades map[string][]*ActiveUpgrade
 
 	WaveManager WaveManager
 
@@ -1101,7 +1103,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		Players:                   map[string]*Player{},
 		Productions:               map[string][]*UnitProduction{},
 		EnemySpawnTimers:          map[string]*EnemySpawnTimer{},
-		ActiveUpgrades:            map[string]*ActiveUpgrade{},
+		ActiveUpgrades:            map[string][]*ActiveUpgrade{},
 		LootDrops:                 map[string]*LootDrop{},
 		nextUnitID:                1,
 		nextBannerID:              1,

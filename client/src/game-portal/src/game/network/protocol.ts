@@ -619,6 +619,9 @@ export type PurchaseUpgradeCommand = {
 export type CancelUpgradeCommand = {
   type: 'cancel_upgrade'
   buildingId: string
+  // Queue entry to cancel: 0 (default, omitted) is the in-progress upgrade;
+  // higher indices are queued behind it.
+  queueIndex?: number
 }
 
 export type UpgradeTownHallCommand = {
@@ -639,21 +642,28 @@ export type PlayerUpgradeSnapshot = {
   displayName: string
   level: number
   cap: number              // 0/3/6/9
-  nextCostGold: number     // 0 if at cap
+  /** How many of this track are queued (in progress + waiting). 0 when idle.
+   *  level + queuedCount is the level the queue will reach; the next purchase
+   *  stacks above it. */
+  queuedCount?: number
+  nextCostGold: number     // cost of the next stackable level; 0 if at cap
   nextCostWood: number     // mirrors nextCostGold; 0 if at cap
   canAfford: boolean
-  /** True when the global panel can start this upgrade (auto-assign): below
-   *  cap, affordable, not researching, and an idle blacksmith exists. */
+  /** True when this upgrade can be started OR queued: below the projected cap,
+   *  affordable, and a blacksmith exists to host it. */
   canStart: boolean
   hasBlacksmith: boolean
-  /** In-progress research for this track (this player, at any blacksmith).
-   *  researchTotal is the full duration in seconds (0/absent when idle);
-   *  researchRemaining counts down to 0; researchBuildingId is the blacksmith
-   *  performing the work (used to target a cancel). While researching, the
-   *  track is locked at every blacksmith. */
+  /** In-progress research for this track — only populated while the track is at
+   *  the HEAD of its blacksmith's queue. researchTotal is the full duration in
+   *  seconds (0/absent when not actively researching); researchRemaining counts
+   *  down to 0; researchBuildingId is the blacksmith performing the work. */
   researchTotal?: number
   researchRemaining?: number
   researchBuildingId?: string
+  /** Blacksmith holding this track's queue (in progress or merely queued); the
+   *  cancel/queue target. Equals researchBuildingId when at the head. Empty when
+   *  the track is idle. */
+  queueBuildingId?: string
   hpPerLevel: number
   damagePerLevel: number
   armorPerLevel: number

@@ -42,7 +42,9 @@
             />
             <div class="uc-row__title">
               <span class="uc-row__name">{{ upgrade.displayName }}</span>
-              <span class="uc-row__level">Lv {{ upgrade.level }} / {{ upgrade.cap }}</span>
+              <span class="uc-row__level">
+                Lv {{ upgrade.level }}<template v-if="queuedCount(upgrade) > 0"> (+{{ queuedCount(upgrade) }})</template> / {{ upgrade.cap }}
+              </span>
             </div>
           </div>
 
@@ -55,7 +57,8 @@
             <span class="uc-stat uc-stat--ms">+{{ upgrade.moveSpeedPerLevel }} MS</span>
           </div>
 
-          <!-- Research progress + cancel while an upgrade is in flight -->
+          <!-- Research progress + cancel while the head upgrade is in flight.
+               Shown alongside the queue button so more levels can be stacked. -->
           <div v-if="isResearching(upgrade)" class="uc-row__research">
             <div class="uc-row__research-bar">
               <div
@@ -71,7 +74,7 @@
                 v-if="upgrade.researchBuildingId"
                 type="button"
                 class="uc-row__cancel"
-                title="Cancel upgrade (full refund)"
+                title="Cancel current upgrade (full refund)"
                 @click="onCancel(upgrade.researchBuildingId)"
               >
                 Cancel
@@ -80,15 +83,16 @@
           </div>
 
           <button
-            v-else
+            v-if="canQueueMore(upgrade)"
             type="button"
             class="uc-row__btn"
             :disabled="isUpgradeDisabled(upgrade)"
             :title="upgradeDisabledReason(upgrade)"
             @click="onPurchase(upgrade.track)"
           >
-            Upgrade {{ upgrade.displayName }} &mdash; {{ upgrade.nextCostGold }}g / {{ upgrade.nextCostWood }}w
+            {{ buttonLabel(upgrade) }} &mdash; {{ upgrade.nextCostGold }}g / {{ upgrade.nextCostWood }}w
           </button>
+          <div v-else class="uc-row__maxed">Max level reached</div>
         </div>
       </template>
     </div>
@@ -120,9 +124,34 @@ const props = defineProps<{
 const collapsed = ref(false)
 const drag = useDraggablePanel('blacksmith-panel')
 
-// Returns true when an upgrade for this track is currently being researched.
+// Returns true when an upgrade for this track is currently being researched
+// (it is at the head of its blacksmith's queue).
 function isResearching(upgrade: PlayerUpgradeSnapshot): boolean {
   return (upgrade.researchTotal ?? 0) > 0
+}
+
+// How many of this track are queued (in progress + waiting).
+function queuedCount(upgrade: PlayerUpgradeSnapshot): number {
+  return upgrade.queuedCount ?? 0
+}
+
+// The level the queue will reach once it drains.
+function projectedLevel(upgrade: PlayerUpgradeSnapshot): number {
+  return upgrade.level + queuedCount(upgrade)
+}
+
+// Whether there is another level left to buy or stack onto the queue.
+function canQueueMore(upgrade: PlayerUpgradeSnapshot): boolean {
+  return projectedLevel(upgrade) < upgrade.cap
+}
+
+// Button label: "Upgrade <name>" for the first level, "Queue Lv N" once one is
+// already in progress or queued.
+function buttonLabel(upgrade: PlayerUpgradeSnapshot): string {
+  if (queuedCount(upgrade) > 0) {
+    return `Queue Lv ${projectedLevel(upgrade) + 1}`
+  }
+  return `Upgrade ${upgrade.displayName}`
 }
 
 // Completion percentage (0-100) of an in-progress research.
@@ -134,9 +163,10 @@ function researchPercent(upgrade: PlayerUpgradeSnapshot): number {
   return Math.max(0, Math.min(100, pct))
 }
 
-// Returns true when the (auto-assign) upgrade button should be disabled. The
-// server-computed canStart already folds in: not researching, below cap,
-// affordable, and an idle blacksmith available.
+// Returns true when the upgrade/queue button should be disabled. The
+// server-computed canStart already folds in: below the projected cap,
+// affordable, and a blacksmith exists to host the work (queuing is allowed even
+// while a level is already researching).
 function isUpgradeDisabled(upgrade: PlayerUpgradeSnapshot): boolean {
   return !upgrade.canStart
 }
@@ -147,10 +177,9 @@ function upgradeDisabledReason(upgrade: PlayerUpgradeSnapshot): string {
   if (upgrade.canStart) return ''
   if (!upgrade.hasBlacksmith) return 'Build a Blacksmith first'
   if (upgrade.cap === 0) return 'Town Hall required'
-  if (upgrade.level >= upgrade.cap) return 'Requires a higher tier Town Hall'
+  if (projectedLevel(upgrade) >= upgrade.cap) return 'Requires a higher tier Town Hall'
   if (!upgrade.canAfford) return 'Not enough gold or wood'
-  // Affordable but cannot start → every blacksmith is busy.
-  return 'All blacksmiths are busy'
+  return ''
 }
 </script>
 
@@ -373,7 +402,17 @@ function upgradeDisabledReason(upgrade: PlayerUpgradeSnapshot): string {
   cursor: not-allowed;
 }
 
-/* Research progress (shown in place of the purchase button) */
+/* Shown when the projected queue has reached the tier cap. */
+.uc-row__maxed {
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(240, 216, 142, 0.7);
+}
+
+/* Research progress (shown above the purchase button while in flight) */
 .uc-row__research {
   display: flex;
   flex-direction: column;

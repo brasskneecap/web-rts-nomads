@@ -320,8 +320,8 @@ export class GameClient {
     this.network.sendPurchaseUpgrade(track, buildingId)
   }
 
-  cancelUpgrade(buildingId: string): void {
-    this.network.sendCancelUpgrade(buildingId)
+  cancelUpgrade(buildingId: string, queueIndex?: number): void {
+    this.network.sendCancelUpgrade(buildingId, queueIndex)
   }
 
   upgradeTownHall(buildingId: string): void {
@@ -576,7 +576,14 @@ export class GameClient {
     if (selectedBuilding && actionId.startsWith('cancel-queue-')) {
       const index = Number(actionId.slice('cancel-queue-'.length))
       if (Number.isInteger(index) && index > 0) {
-        this.network.sendCancelTrainingCommand(selectedBuilding.id, index)
+        // The same queue strip backs both unit training and blacksmith upgrade
+        // research; a blacksmith stamps upgradeInProgress while it works, so
+        // route the cancel to the matching command.
+        if (selectedBuilding.metadata?.['upgradeInProgress'] === true) {
+          this.network.sendCancelUpgrade(selectedBuilding.id, index)
+        } else {
+          this.network.sendCancelTrainingCommand(selectedBuilding.id, index)
+        }
       }
       return
     }

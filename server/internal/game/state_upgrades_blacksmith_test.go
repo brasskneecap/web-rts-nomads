@@ -95,8 +95,11 @@ func TestBlacksmithUpgrade_ChargesWoodEqualToGold(t *testing.T) {
 	if lvl := s.Players[pid].Upgrades[UpgradeTrackSoldier]; lvl != 0 {
 		t.Errorf("level should still be 0 immediately after purchase (timed), got %d", lvl)
 	}
-	au, ok := s.ActiveUpgrades[bid]
-	if !ok || au.Track != UpgradeTrackSoldier || au.GoldPaid != cost || au.WoodPaid != cost {
+	queue, ok := s.ActiveUpgrades[bid]
+	if !ok || len(queue) != 1 {
+		t.Fatalf("expected one queued upgrade for building %q, got %d", bid, len(queue))
+	}
+	if au := queue[0]; au.Track != UpgradeTrackSoldier || au.GoldPaid != cost || au.WoodPaid != cost {
 		t.Errorf("registry entry missing/wrong for building %q: %+v", bid, au)
 	}
 }
@@ -157,9 +160,10 @@ func TestBlacksmithUpgrade_CompletesAfterTimer(t *testing.T) {
 	}
 }
 
-// TestBlacksmithUpgrade_OneUpgradePerBlacksmith verifies a busy blacksmith
-// rejects a second (different-track) purchase targeting the same building.
-func TestBlacksmithUpgrade_OneUpgradePerBlacksmith(t *testing.T) {
+// TestBlacksmithUpgrade_QueuesBehindActiveAtSameBlacksmith verifies a busy
+// blacksmith ACCEPTS a second (different-track) purchase by stacking it behind
+// the in-progress one: only the head researches, the second waits.
+func TestBlacksmithUpgrade_QueuesBehindActiveAtSameBlacksmith(t *testing.T) {
 	s, pid, bid := newBlacksmithUpgradeTestState(t)
 
 	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier))
@@ -168,16 +172,58 @@ func TestBlacksmithUpgrade_OneUpgradePerBlacksmith(t *testing.T) {
 	goldAfterFirst := s.Players[pid].Resources["gold"]
 	s.mu.RUnlock()
 
-	// Same building, different track — building is busy, must be ignored.
+	// Same building, different track — queues behind the soldier research.
 	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackArcher))
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if g := s.Players[pid].Resources["gold"]; g != goldAfterFirst {
-		t.Errorf("busy blacksmith should not charge again: %d → %d", goldAfterFirst, g)
+	if g := s.Players[pid].Resources["gold"]; g >= goldAfterFirst {
+		t.Errorf("queuing a second upgrade should charge: %d → %d", goldAfterFirst, g)
 	}
-	if au := s.ActiveUpgrades[bid]; au == nil || au.Track != UpgradeTrackSoldier {
-		t.Errorf("busy blacksmith entry should remain the soldier research, got %+v", au)
+	queue := s.ActiveUpgrades[bid]
+	if len(queue) != 2 {
+		t.Fatalf("expected a queue of 2, got %d", len(queue))
+	}
+	if queue[0].Track != UpgradeTrackSoldier {
+		t.Errorf("head should remain the soldier research, got %s", queue[0].Track)
+	}
+	if queue[1].Track != UpgradeTrackArcher {
+		t.Errorf("archer should be queued behind soldier, got %s", queue[1].Track)
+	}
+	// Only the head researches; the queued entry holds its full timer.
+	if queue[1].Remaining != blacksmithUpgradeResearchSeconds {
+		t.Errorf("queued entry should hold a full timer, got %v", queue[1].Remaining)
+	}
+}
+
+// TestBlacksmithUpgrade_StacksSameTrackLevels verifies the same track can be
+// queued multiple times at one blacksmith, with sequentially increasing target
+// levels and per-level costs charged up front.
+func TestBlacksmithUpgrade_StacksSameTrackLevels(t *testing.T) {
+	s, pid, bid := newBlacksmithUpgradeTestState(t)
+
+	// Tier 1 cap is 3 — queue all three soldier levels.
+	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier))
+	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier))
+	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier))
+	// A fourth would exceed the cap and must be rejected.
+	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier))
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	queue := s.ActiveUpgrades[bid]
+	if len(queue) != 3 {
+		t.Fatalf("expected 3 queued soldier upgrades (capped), got %d", len(queue))
+	}
+	def, _ := upgradeTrackDefByID(UpgradeTrackSoldier)
+	for i, au := range queue {
+		wantLevel := i + 1
+		if au.TargetLevel != wantLevel {
+			t.Errorf("queue[%d] target level: want %d, got %d", i, wantLevel, au.TargetLevel)
+		}
+		if wantCost := upgradeCostForLevel(def, wantLevel); au.GoldPaid != wantCost {
+			t.Errorf("queue[%d] gold paid: want %d, got %d", i, wantCost, au.GoldPaid)
+		}
 	}
 }
 
@@ -213,14 +259,14 @@ func TestBlacksmithUpgrade_TrackLockedAcrossBlacksmiths(t *testing.T) {
 	// Archer at blacksmith #2 is a DIFFERENT track — allowed concurrently.
 	s.PurchaseUpgrade(pid, bid2, string(UpgradeTrackArcher))
 	s.mu.RLock()
-	au1 := s.ActiveUpgrades[bid1]
-	au2 := s.ActiveUpgrades[bid2]
+	queue1 := s.ActiveUpgrades[bid1]
+	queue2 := s.ActiveUpgrades[bid2]
 	s.mu.RUnlock()
-	if au1 == nil || au1.Track != UpgradeTrackSoldier {
-		t.Errorf("blacksmith #1 should be researching soldier, got %+v", au1)
+	if len(queue1) == 0 || queue1[0].Track != UpgradeTrackSoldier {
+		t.Errorf("blacksmith #1 should be researching soldier, got %+v", queue1)
 	}
-	if au2 == nil || au2.Track != UpgradeTrackArcher {
-		t.Errorf("blacksmith #2 should be researching archer concurrently, got %+v", au2)
+	if len(queue2) == 0 || queue2[0].Track != UpgradeTrackArcher {
+		t.Errorf("blacksmith #2 should be researching archer concurrently, got %+v", queue2)
 	}
 
 	// Both complete and apply to the player.
@@ -272,9 +318,9 @@ func TestBlacksmithUpgrade_AutoAssignToIdleBlacksmith(t *testing.T) {
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	au, ok := s.ActiveUpgrades[bid]
-	if !ok || au.Track != UpgradeTrackSoldier {
-		t.Errorf("auto-assign should register research on the idle blacksmith %q, got %+v", bid, au)
+	queue, ok := s.ActiveUpgrades[bid]
+	if !ok || len(queue) == 0 || queue[0].Track != UpgradeTrackSoldier {
+		t.Errorf("auto-assign should register research on the idle blacksmith %q, got %+v", bid, queue)
 	}
 }
 
@@ -365,8 +411,53 @@ func TestBlacksmithUpgrade_SnapshotReportsResearchAndWoodCost(t *testing.T) {
 	if soldierAfter.ResearchBuildingID != bid {
 		t.Errorf("ResearchBuildingID: want %q, got %q", bid, soldierAfter.ResearchBuildingID)
 	}
-	if soldierAfter.CanStart {
-		t.Error("CanStart should be false while the track is researching")
+	if soldierAfter.QueuedCount != 1 {
+		t.Errorf("QueuedCount should be 1 while one upgrade researches, got %d", soldierAfter.QueuedCount)
+	}
+	// Cap is 3 and only level 1 is queued, so the player can still queue more.
+	if !soldierAfter.CanStart {
+		t.Error("CanStart should be true while below cap (queuing is allowed)")
+	}
+}
+
+// TestBlacksmithUpgrade_CancelMidQueueReconcilesLevels verifies cancelling an
+// in-progress same-track entry shifts the queued levels down, rebates the price
+// difference, and keeps GoldPaid aligned with the new target level.
+func TestBlacksmithUpgrade_CancelMidQueueReconcilesLevels(t *testing.T) {
+	s, pid, bid := newBlacksmithUpgradeTestState(t)
+	def, _ := upgradeTrackDefByID(UpgradeTrackSoldier)
+
+	// Queue soldier L1, L2, L3 (cap 3 at tier 1).
+	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier))
+	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier))
+	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier))
+
+	s.mu.RLock()
+	goldBeforeCancel := s.Players[pid].Resources["gold"]
+	s.mu.RUnlock()
+
+	// Cancel the head (L1). The L2/L3 entries should become L1/L2.
+	s.CancelUpgradeAt(pid, bid, 0)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	queue := s.ActiveUpgrades[bid]
+	if len(queue) != 2 {
+		t.Fatalf("expected 2 entries after cancelling the head, got %d", len(queue))
+	}
+	if queue[0].TargetLevel != 1 || queue[1].TargetLevel != 2 {
+		t.Errorf("levels should shift down to 1,2 got %d,%d", queue[0].TargetLevel, queue[1].TargetLevel)
+	}
+	if queue[0].GoldPaid != upgradeCostForLevel(def, 1) || queue[1].GoldPaid != upgradeCostForLevel(def, 2) {
+		t.Errorf("GoldPaid should track shifted levels: got %d,%d", queue[0].GoldPaid, queue[1].GoldPaid)
+	}
+	// Refund = cancelled L1 cost + rebates for L2→L1 and L3→L2 down-shifts.
+	cancelledRefund := upgradeCostForLevel(def, 1)
+	rebate := (upgradeCostForLevel(def, 2) - upgradeCostForLevel(def, 1)) +
+		(upgradeCostForLevel(def, 3) - upgradeCostForLevel(def, 2))
+	wantGold := goldBeforeCancel + cancelledRefund + rebate
+	if g := s.Players[pid].Resources["gold"]; g != wantGold {
+		t.Errorf("gold after reconciled cancel: want %d, got %d", wantGold, g)
 	}
 }
 

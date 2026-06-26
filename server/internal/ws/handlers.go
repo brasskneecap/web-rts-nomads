@@ -1011,7 +1011,7 @@ func (h *Hub) readLoop(client *Client) {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid cancel_upgrade payload"})
 				continue
 			}
-			match.State.CancelUpgrade(client.PlayerID(), msg.BuildingID)
+			match.State.CancelUpgradeAt(client.PlayerID(), msg.BuildingID, msg.QueueIndex)
 
 		case "upgrade_townhall":
 			if client.MatchID() == "" {
