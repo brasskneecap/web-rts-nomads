@@ -1335,19 +1335,32 @@ func (s *GameState) GetMapConfig() protocol.MapConfig {
 }
 
 // MarshalWelcomeMessage builds the join-time welcome envelope (player + match
-// IDs + the full MapConfig) and marshals it to JSON under s.mu RLock. The
-// embedded MapConfig exposes Buildings/Obstacles slices whose Metadata maps
-// the tick loop mutates, so the encoder MUST run under the lock — same
-// architecture as MarshalSnapshot / MarshalSnapshotForPlayer. Returning bytes
-// lets the handler release the lock before the transport write.
-func (s *GameState) MarshalWelcomeMessage(playerID, matchID string) ([]byte, error) {
+// IDs + the content-addressed map) and marshals it to JSON under s.mu RLock.
+// The map is gzip-embedded only on a cache miss (cachedMapHashes does not
+// contain the map's contentHash). Marshaling the MapConfig reads Buildings/
+// Obstacles slices whose Metadata maps the tick loop mutates, so it MUST run
+// under the lock — same architecture as MarshalSnapshot / MarshalSnapshotForPlayer.
+// Returning bytes lets the handler release the lock before the transport write.
+func (s *GameState) MarshalWelcomeMessage(playerID, matchID string, cachedMapHashes []string) ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	welcome := protocol.WelcomeMessage{
-		Type:     "welcome",
-		PlayerID: playerID,
-		MatchID:  matchID,
-		Map:      s.MapConfig,
+		Type:        "welcome",
+		PlayerID:    playerID,
+		MatchID:     matchID,
+		MapID:       s.MapConfig.ID,
+		ContentHash: s.MapConfig.ContentHash,
+	}
+	// Content-addressed: embed the gzipped map only on a cache miss — i.e. when
+	// the client did not list this map's contentHash among the versions it
+	// already holds (or we have no hash to match on). On a hit the client
+	// renders from its own cache and no map bytes cross the wire.
+	if hash := s.MapConfig.ContentHash; hash == "" || !containsHash(cachedMapHashes, hash) {
+		gz, err := gzipMapConfig(s.MapConfig)
+		if err != nil {
+			return nil, err
+		}
+		welcome.MapGz = gz
 	}
 	return json.Marshal(welcome)
 }
@@ -3226,9 +3239,9 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 	}
 
 	player := &Player{
-		ID:    playerID,
-		Color: s.randomColor(),
-		Resources: playerConfig().newStartingResources(),
+		ID:                            playerID,
+		Color:                         s.randomColor(),
+		Resources:                     playerConfig().newStartingResources(),
 		GlobalUnitSpawnTimeMultiplier: 1,
 		UnitSpawnTimeMultipliers:      map[string]float64{},
 		Upgrades:                      make(map[UpgradeTrack]int),

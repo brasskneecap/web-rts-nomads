@@ -451,6 +451,18 @@ export type JoinMatchMessage = {
   activeUpgradeIds?: string[]
   ownedUpgradeRanks?: Record<string, number>
   acquiredAdvancementIds?: string[]
+  /** Content-addressed map distribution: the map contentHashes this client
+   *  already holds in its local cache for `mapId`. The server omits the map
+   *  from the welcome when the match map's hash is in this list. */
+  cachedMapHashes?: string[]
+}
+
+/** Client→server fallback when the client claimed a cache hit but couldn't load
+ *  the map locally (eviction race). The server replies with MapContentMessage. */
+export type RequestMapMessage = {
+  type: 'request_map'
+  mapId: MapId
+  contentHash: string
 }
 
 export type LeaveMatchMessage = {
@@ -795,6 +807,7 @@ export interface SetPauseMessage {
 
 export type ClientMessage =
   | JoinMatchMessage
+  | RequestMapMessage
   | LeaveMatchMessage
   | MoveCommandMessage
   | GatherCommandMessage
@@ -1090,7 +1103,21 @@ export type WelcomeMessage = {
   type: 'welcome'
   playerId: string
   matchId: string
-  map: MapConfig
+  /** Content-addressed map identity, always present. */
+  mapId: MapId
+  contentHash: string
+  /** base64(gzip(flat MapConfig JSON)). Present ONLY on a cache miss; on a hit
+   *  the client renders the map from its own content-addressed cache. */
+  mapGz?: string
+}
+
+/** Server→client reply to RequestMapMessage: the full map, gzip+base64 (same
+ *  form as WelcomeMessage.mapGz). */
+export type MapContentMessage = {
+  type: 'map_content'
+  mapId: MapId
+  contentHash: string
+  mapGz: string
 }
 
 /**
@@ -1506,6 +1533,7 @@ export type NotificationMessage = {
 
 export type ServerMessage =
   | WelcomeMessage
+  | MapContentMessage
   | MatchSnapshotMessage
   | ErrorMessage
   | NotificationMessage

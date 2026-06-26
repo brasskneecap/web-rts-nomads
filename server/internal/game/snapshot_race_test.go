@@ -127,7 +127,9 @@ func TestMarshalWelcomeMessage_NoRaceWithTickMutations(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < iters; i++ {
-			payload, err := state.MarshalWelcomeMessage("p1", "match-1")
+			// nil cachedMapHashes → cache miss → the map is gzipped+marshaled
+			// under the lock, which is exactly the race window under test.
+			payload, err := state.MarshalWelcomeMessage("p1", "match-1", nil)
 			if err != nil {
 				t.Errorf("MarshalWelcomeMessage failed: %v", err)
 				return
