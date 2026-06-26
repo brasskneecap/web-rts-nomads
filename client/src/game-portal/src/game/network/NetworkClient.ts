@@ -42,6 +42,7 @@ import {
   putCachedMap,
   getHashesForMap,
   decompressMapGz,
+  withTimeout,
 } from '@/services/mapContentCache'
 import type { CanvasRenderer } from '../rendering/CanvasRenderer'
 
@@ -796,54 +797,76 @@ export class NetworkClient {
   private async resolveWelcomeMap(message: WelcomeMessage, isReconnect: boolean) {
     let cfg: MapConfig | null = null
     try {
-      if (message.mapGz) {
-        cfg = await decompressMapGz(message.mapGz)
-        await putCachedMap(message.contentHash, message.mapId, cfg)
-      } else {
-        cfg = await getCachedMap(message.contentHash)
-        if (!cfg) {
-          cfg = await this.requestMap(message.mapId, message.contentHash)
-          if (cfg) await putCachedMap(message.contentHash, message.mapId, cfg)
-        }
-      }
+      // Bound the whole resolution: no cache read, decompress, or fetch may
+      // hold the match-entry gate open indefinitely. On timeout we fall through
+      // to the failure path (surfaced, not a silent grey screen).
+      cfg = await withTimeout(this.loadWelcomeMap(message), 15000, null)
     } catch (e) {
       console.error('failed to resolve welcome map:', e)
       cfg = null
     }
 
-    if (!cfg) {
-      // Could not obtain the map by any path — surface a failure rather than a
-      // silent freeze, and clear the gate so we don't strand queued messages.
+    try {
+      if (!cfg) {
+        // Could not obtain the map by any path within the budget — surface a
+        // failure rather than a silent grey screen.
+        this.notifyState('failed')
+        return
+      }
+
+      this.state.setMapConfig(cfg)
+
+      // §14.3 host-side fan-out: stamp the matchId into the Steam lobby so
+      // joiners can enter. Safe to run now that the map is applied.
+      firePendingSteamHostStartIfNeeded(message.matchId)
+
+      if (isReconnect) {
+        this.state.clearSnapshotBuffer()
+        this.onReconnectSuccess?.()
+      }
+
+      this.reconnectAttempt = 0
+      this.notifyState('connected')
+
+      // Lobby-preview version cache (localStorage, distinct from the IndexedDB
+      // body cache). Purely local; runs after connected.
+      persistWelcomeMap(cfg)
+    } finally {
+      // ALWAYS release the gate, even if a step above threw — a stuck gate is
+      // exactly the permanent grey screen we're guarding against. Drain queued
+      // messages only when we actually have a map; each drained handler is
+      // isolated so one bad snapshot can't strand the rest.
       this.blockedOnMap = false
+      const queued = this.mapMessageQueue
       this.mapMessageQueue = []
-      this.notifyState('failed')
-      return
+      if (cfg) {
+        for (const item of queued) {
+          try {
+            this.handleMessage(item.message, item.isReconnect)
+          } catch (e) {
+            console.error('drain handleMessage failed:', e)
+          }
+        }
+      }
     }
+  }
 
-    this.state.setMapConfig(cfg)
-
-    // §14.3 host-side fan-out: stamp the matchId into the Steam lobby so joiners
-    // can enter. Safe to run now that the map is applied.
-    firePendingSteamHostStartIfNeeded(message.matchId)
-
-    if (isReconnect) {
-      this.state.clearSnapshotBuffer()
-      this.onReconnectSuccess?.()
+  /** Obtain the map for a welcome. Decompresses the inline mapGz (miss) or loads
+   *  it from the local cache (hit), falling back to request_map on an eviction
+   *  race. Cache WRITES are fire-and-forget: a slow/stalled IndexedDB write must
+   *  never block applying the map and entering the match. Returns null if the
+   *  map can't be obtained. */
+  private async loadWelcomeMap(message: WelcomeMessage): Promise<MapConfig | null> {
+    if (message.mapGz) {
+      const cfg = await decompressMapGz(message.mapGz)
+      void putCachedMap(message.contentHash, message.mapId, cfg)
+      return cfg
     }
-
-    this.reconnectAttempt = 0
-    this.notifyState('connected')
-
-    // Lobby-preview version cache (localStorage, distinct from the IndexedDB
-    // body cache). Purely local; runs after connected.
-    persistWelcomeMap(cfg)
-
-    // Release the gate and drain queued messages in arrival order. handleMessage
-    // is synchronous, so no new messages interleave during the drain.
-    this.blockedOnMap = false
-    const queued = this.mapMessageQueue
-    this.mapMessageQueue = []
-    for (const item of queued) this.handleMessage(item.message, item.isReconnect)
+    const cached = await getCachedMap(message.contentHash)
+    if (cached) return cached
+    const fetched = await this.requestMap(message.mapId, message.contentHash)
+    if (fetched) void putCachedMap(message.contentHash, message.mapId, fetched)
+    return fetched
   }
 
   /** Fetch a map the server expected us to have but we couldn't load (eviction

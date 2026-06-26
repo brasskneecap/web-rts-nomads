@@ -20,6 +20,39 @@ const DB_NAME = 'nomads-map-cache'
 const DB_VERSION = 1
 const STORE = 'maps'
 const MAX_ENTRIES = 20
+// IndexedDB can stall indefinitely on a degraded profile (locked DB, blocked
+// upgrade, a transaction whose oncomplete never fires). Cache reads sit on the
+// match-entry path, so they MUST be bounded — a hang here must degrade to "no
+// cache" (treat as a miss, fetch from the server), never strand the client.
+const OP_TIMEOUT_MS = 2500
+
+/** Resolves to the inner promise's value, or to `fallback` if it does not
+ *  settle within ms. Never rejects. */
+export function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let done = false
+    const t = setTimeout(() => {
+      if (done) return
+      done = true
+      console.warn('mapContentCache: op timed out; treating as cache miss')
+      resolve(fallback)
+    }, ms)
+    p.then(
+      (v) => {
+        if (done) return
+        done = true
+        clearTimeout(t)
+        resolve(v)
+      },
+      () => {
+        if (done) return
+        done = true
+        clearTimeout(t)
+        resolve(fallback)
+      },
+    )
+  })
+}
 
 interface CacheRecord {
   contentHash: string // keyPath
@@ -61,8 +94,11 @@ function store(db: IDBDatabase, mode: IDBTransactionMode): IDBObjectStore {
 
 /** Returns the cached map for an exact contentHash, or null on miss / no DB.
  *  Touches the entry's LRU timestamp on a hit. */
-export async function getCachedMap(contentHash: string): Promise<MapConfig | null> {
-  if (!contentHash) return null
+export function getCachedMap(contentHash: string): Promise<MapConfig | null> {
+  if (!contentHash) return Promise.resolve(null)
+  return withTimeout(getCachedMapInner(contentHash), OP_TIMEOUT_MS, null)
+}
+async function getCachedMapInner(contentHash: string): Promise<MapConfig | null> {
   const db = await openDB()
   if (!db) return null
   return new Promise((resolve) => {
@@ -105,8 +141,11 @@ export async function putCachedMap(
 
 /** The contentHashes the client currently holds for a given mapId. Sent in
  *  join_match as cachedMapHashes so the server can decide hit/miss. */
-export async function getHashesForMap(mapId: string): Promise<string[]> {
-  if (!mapId) return []
+export function getHashesForMap(mapId: string): Promise<string[]> {
+  if (!mapId) return Promise.resolve([])
+  return withTimeout(getHashesForMapInner(mapId), OP_TIMEOUT_MS, [])
+}
+async function getHashesForMapInner(mapId: string): Promise<string[]> {
   const db = await openDB()
   if (!db) return []
   return new Promise((resolve) => {
