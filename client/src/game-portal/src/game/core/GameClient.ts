@@ -4,6 +4,7 @@ import { CanvasRenderer } from '../rendering/CanvasRenderer'
 import { InputManager } from '../input/InputManager'
 import { Camera } from '../rendering/Camera'
 import { NetworkClient } from '../network/NetworkClient'
+import { playSfx } from '../../composables/useSfx'
 import type {
   BattleTrackerSnapshot,
   CommanderAbilitySnapshot,
@@ -100,6 +101,9 @@ export type GameUiSnapshot = {
   // RequiredBuilding declared; available=true when the gating building is
   // built and owned by the local player.
   shopCatalog: ShopCatalogEntry[]
+  /** Remaining merchant-reroll budget for the local player. Drives the
+   *  per-shop refresh button (neutral-shop only) in the Shop menu. */
+  shopRerollsRemaining: number
   // Server-side pause flag. When true the client renders a paused overlay
   // and the wave-upgrade modal freezes its visible timer.
   paused: boolean
@@ -306,6 +310,7 @@ export class GameClient {
       commanderAbilities: this.state.localPlayerCommanderAbilities,
       commanderTargetingAbilityId: this.state.commanderTargetingAbilityId,
       shopCatalog: this.state.getShopCatalogSnapshot(),
+      shopRerollsRemaining: this.state.localPlayerShopRerollsRemaining,
       paused: this.state.paused,
       pausedBy: this.state.pausedBy,
       pausedSinceMs: this.state.pausedSinceMs,
@@ -386,6 +391,28 @@ export class GameClient {
 
   selectUnitOnly(unitId: number) {
     this.state.selectUnit(unitId)
+  }
+
+  /** Select a single unit and pan the camera to center on it. Used by the
+   *  Vault unit cards so clicking a card both selects the unit (showing the
+   *  world selection ring) and brings it into view. */
+  focusUnit(unitId: number) {
+    this.state.selectUnit(unitId)
+    const units = this.state.getSelectedUnits()
+    if (units.length === 0) return
+    const u = units[0]
+    // The Vault window is anchored on the left, so nudge the framing to the
+    // left of the unit by ~100 screen px (converted to world units via zoom)
+    // so the unit lands slightly right of center, clear of the window.
+    const offsetWorldX = 100 / this.camera.zoom
+    this.camera.centerOn(
+      u.x - offsetWorldX,
+      u.y,
+      this.canvas.width,
+      this.canvas.height,
+      this.state.mapWidth,
+      this.state.mapHeight,
+    )
   }
 
   deselectUnit(unitId: number) {
@@ -679,6 +706,7 @@ export class GameClient {
           this.state.addNotification('Zone not controlled')
         } else {
           this.network.sendBuildBuildingCommand(placement.builderUnitIds, placement.buildingType, placement.cursorGridX, placement.cursorGridY)
+          playSfx('building_placement.mp3')
           this.state.cancelBuildPlacement()
         }
       } else {

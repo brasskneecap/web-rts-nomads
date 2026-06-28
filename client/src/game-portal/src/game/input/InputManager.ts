@@ -7,7 +7,7 @@ import { getMinimapBounds } from '../rendering/CanvasRenderer'
 import { NetworkClient } from '../network/NetworkClient'
 import { BUILDABLE_BUILDING_DEFS } from '../maps/buildingDefs'
 import { resolveCursor } from '../rendering/cursors'
-import { playBuildingSelectSound } from '../../composables/useSfx'
+import { playBuildingSelectSound, playSelectSound } from '../../composables/useSfx'
 
 export class InputManager {
   private canvas: HTMLCanvasElement
@@ -436,7 +436,14 @@ export class InputManager {
           this.state.inspectEnemyUnit(clickedEnemy.id)
         } else if (clickedBuilding && !isShiftHeld) {
           this.state.selectBuilding(clickedBuilding.id)
-          playBuildingSelectSound(clickedBuilding.buildingType)
+          // A building still under construction plays the shared construction
+          // sound instead of its normal select sound. Both share the select
+          // channel, so either one stops on deselect.
+          if (clickedBuilding.metadata?.['underConstruction'] === true) {
+            playSelectSound('building_construction.mp3')
+          } else {
+            playBuildingSelectSound(clickedBuilding.buildingType)
+          }
         } else if (clickedObstacle && clickedObstacle.id && !isShiftHeld) {
           this.state.selectObstacle(clickedObstacle.id)
         } else if (!isShiftHeld) {

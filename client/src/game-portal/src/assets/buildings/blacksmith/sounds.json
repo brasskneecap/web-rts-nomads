@@ -1,3 +1,3 @@
 {
-  "select": "blacksmith_select.mp3"
+  "select": { "file": "blacksmith_select.mp3", "volume": 0.4 }
 }

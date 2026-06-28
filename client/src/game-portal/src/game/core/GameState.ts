@@ -560,6 +560,11 @@ export type ShopCatalogEntry = {
    *  set; only available items are emitted, so there is no "unavailable"
    *  state and no lock indicator. */
   purchaseBuildingId: string
+  /** Building type of the shop (e.g. 'marketplace', 'neutral-shop') — drives
+   *  the shop-card icon. */
+  purchaseBuildingType: string
+  /** Human-readable shop name shown on the shop card. */
+  purchaseBuildingName: string
 }
 
 export class GameState {
@@ -2595,7 +2600,6 @@ export class GameState {
   // renders lock icons.
   getShopCatalogSnapshot(): ShopCatalogEntry[] {
     const entries: ShopCatalogEntry[] = []
-    const seenItems = new Set<string>()
 
     if (!this.localPlayerId) {
       return entries
@@ -2625,6 +2629,11 @@ export class GameState {
 
     for (const b of eligibleBuildings) {
       const inventory = b.shopInventory ?? []
+      // Dedup per building, not globally: each shop card must reflect its own
+      // full inventory even when items overlap another shop's stock. (A global
+      // dedup attributed shared items to whichever shop came first, making the
+      // Shop menu under-report a merchant's stock vs. its in-world panel.)
+      const seenItems = new Set<string>()
       for (const slot of inventory) {
         if (seenItems.has(slot.itemId)) continue
         const def = ITEM_DEF_MAP.get(slot.itemId)
@@ -2640,6 +2649,8 @@ export class GameState {
           costGold: def.costGold,
           quantity: slot.quantity,
           purchaseBuildingId: b.id,
+          purchaseBuildingType: b.buildingType,
+          purchaseBuildingName: formatBuildingName(b.buildingType),
         })
       }
     }

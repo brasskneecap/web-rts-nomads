@@ -154,6 +154,7 @@
         v-if="hasStarted && matchMenuOpen"
         v-model:active-tab="matchMenuTab"
         :shop-catalog="ui.shopCatalog"
+        :shop-rerolls-remaining="ui.shopRerollsRemaining"
         :vault="ui.vault"
         :vault-capacity="ui.vaultCapacity"
         :vault-selected-instance-id="ui.vaultSelectedInstanceId"
@@ -163,8 +164,10 @@
         :on-unequip-item="sendUnequipItem"
         :on-use-consumable="sendUseConsumable"
         :on-transfer-item="sendTransferItem"
+        :on-focus-unit="focusUnit"
         @close="matchMenuOpen = false"
         @purchase="({ itemId, buildingId }) => sendPurchaseItem(buildingId, itemId)"
+        @reroll="(buildingId) => rerollShop(buildingId)"
       />
     </div>
 
@@ -248,9 +251,11 @@ const {
   beginDebugSpawn,
   cancelDebugSpawn,
   selectUnitOnly,
+  focusUnit,
   deselectUnit,
   setMinimapPanelRect,
   sendPurchaseItem,
+  rerollShop,
   sendEquipItem,
   sendUnequipItem,
   sendUseConsumable,

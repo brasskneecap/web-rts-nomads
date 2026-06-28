@@ -10,7 +10,7 @@
     role="dialog"
     aria-label="Vault"
   >
-    <!-- Drag handle / header (hidden when embedded inside another panel) -->
+    <!-- Drag handle / header (hidden when embedded inside the MatchMenu tab) -->
     <header
       v-if="!embedded"
       class="vault-head"
@@ -26,7 +26,7 @@
         @click="collapsed = !collapsed"
       >
         <span class="vault-chevron" :class="{ open: !collapsed }">▾</span>
-        <span class="vault-title">Vault ({{ vaultCount }}/{{ vaultCapacity }})</span>
+        <span class="vault-title">Vault ({{ storageItems.length }}/{{ vaultCapacity }})</span>
       </button>
       <button
         v-if="onClose"
@@ -38,113 +38,46 @@
     </header>
 
     <div v-if="embedded || !collapsed" class="vault-body">
-      <div class="vault-columns">
-        <!-- Left column: vault item grid -->
-        <div class="vault-grid-col">
-          <div class="vault-col-label">Storage {{ vaultCount }} / {{ vaultCapacity }}</div>
-          <div
-            class="vault-grid"
-            :class="{ 'vault-grid--drop-active': dragSource?.kind === 'unit-slot' && vaultGridDragOver }"
-            @dragover.prevent="onVaultGridDragOver"
-            @dragleave="onVaultGridDragLeave"
-            @drop="onVaultGridDrop"
-          >
-            <button
-              v-for="cell in vaultCells"
-              :key="cell.key"
-              type="button"
-              class="vault-cell"
-              :class="{
-                'vault-cell--empty': !cell.item,
-                'vault-cell--selected': cell.item && cell.item.instanceId === vaultSelectedInstanceId,
-                'vault-cell--drag-source': dragSource?.kind === 'vault' && cell.item !== null && dragSource.instanceId === cell.item.instanceId,
-              }"
-              :style="cell.item ? { '--tier-color': tierColor(cell.item.tier) } : {}"
-              :disabled="!cell.item"
-              :draggable="cell.item !== null ? 'true' : 'false'"
-              @click="cell.item ? onVaultCellClick(cell.item.instanceId) : undefined"
-              @dragstart="cell.item ? onVaultCellDragStart($event, cell.item.instanceId, cell.item.itemId) : undefined"
-              @dragend="onDragEnd"
-            >
-              <template v-if="cell.item">
-                <ActionIcon
-                  class="vault-cell__icon"
-                  :action="{ id: cell.item.itemId, label: cell.item.displayName, iconDef: { kind: 'item', type: cell.item.itemId } }"
-                />
-                <span
-                  v-if="(cell.item.stacks ?? 1) > 1"
-                  class="vault-cell__stack"
-                >{{ cell.item.stacks }}</span>
-                <div class="vault-cell-tooltip">
-                  <div class="vault-cell-tooltip__title">{{ cell.item.displayName }}</div>
-                  <div v-if="cell.item.tier" class="vault-cell-tooltip__tier">{{ cell.item.tier.charAt(0).toUpperCase() + cell.item.tier.slice(1) }}</div>
-                  <div v-if="cell.item.tooltipBody" class="vault-cell-tooltip__body">{{ cell.item.tooltipBody }}</div>
-                </div>
-              </template>
-            </button>
-          </div>
-          <div v-if="vaultSelectedInstanceId !== null" class="vault-selection-hint">
-            Click a unit slot to equip
-          </div>
+      <div class="vault-layout">
+        <!-- Left: storage grid + selected-item details -->
+        <div class="vault-left">
+          <StorageGrid
+            :items="storageItems"
+            :capacity="vaultCapacity"
+            :selected-instance-id="vaultSelectedInstanceId"
+            :drag-active="dragSource?.kind === 'unit-slot'"
+            :icon-container-url="iconContainerUrl"
+            @select="onSelectStorage"
+            @item-dragstart="onStorageDragStart"
+            @item-dragend="onDragEnd"
+            @storage-drop="onStorageDrop"
+          />
+          <SelectedItemPanel :item="selectedItem" :icon-container-url="iconContainerUrl" />
         </div>
 
-        <!-- Right column: unit list -->
-        <div class="vault-units-col">
-          <div class="vault-col-label">Units</div>
-          <div v-if="inventoryUnits.length === 0" class="vault-empty-units">
-            No units with inventory slots.
+        <!-- Right: eligible unit cards -->
+        <div class="vault-right">
+          <div class="vault-right__head">
+            <span class="vault-right__title">Eligible Units ({{ unitCards.length }})</span>
+            <span v-if="vaultSelectedInstanceId !== null" class="vault-right__hint">
+              Click a unit's empty slot to equip
+            </span>
           </div>
-          <div v-else class="vault-units-list">
-            <div
-              v-for="unitRow in inventoryUnits"
-              :key="unitRow.id"
-              class="vault-unit-row"
-            >
-              <div class="vault-unit-header">
-                <div class="vault-unit-portrait">
-                  <img
-                    v-if="unitRow.portraitUrl"
-                    :src="unitRow.portraitUrl"
-                    :alt="unitRow.name"
-                    draggable="false"
-                  />
-                  <span v-else class="vault-unit-portrait__fallback">{{ unitRow.initials }}</span>
-                </div>
-                <div class="vault-unit-info">
-                  <span class="vault-unit-name">{{ unitRow.name }}</span>
-                  <span class="vault-unit-hp">{{ unitRow.hp }} / {{ unitRow.maxHp }}</span>
-                </div>
-              </div>
-              <div class="vault-unit-slots">
-                <button
-                  v-for="slot in unitRow.slots"
-                  :key="slot.index"
-                  type="button"
-                  class="vault-unit-slot"
-                  :class="{
-                    'vault-unit-slot--occupied': slot.occupied,
-                    'vault-unit-slot--equip-target': !slot.occupied && vaultSelectedInstanceId !== null && dragSource === null,
-                    'vault-unit-slot--drag-source': dragSource?.kind === 'unit-slot' && dragSource.unitId === unitRow.id && dragSource.slotIndex === slot.index,
-                    'vault-unit-slot--drop-valid': dragSource !== null && !slot.occupied && isDropValid(unitRow.unitType),
-                    'vault-unit-slot--drop-invalid': dragSource !== null && slot.occupied && !(dragSource.kind === 'unit-slot' && dragSource.unitId === unitRow.id && dragSource.slotIndex === slot.index),
-                  }"
-                  :style="slot.occupied && slot.tierColor ? { '--tier-color': slot.tierColor } : {}"
-                  :title="slot.tooltip"
-                  :draggable="slot.occupied && slot.itemId !== null ? 'true' : 'false'"
-                  @click="onUnitSlotClick(unitRow.id, slot)"
-                  @dragstart="slot.occupied && slot.itemId !== null && slot.instanceId !== null ? onUnitSlotDragStart($event, unitRow.id, slot.index, slot.instanceId, slot.itemId!) : undefined"
-                  @dragend="onDragEnd"
-                  @dragover.prevent
-                  @drop="onUnitSlotDrop($event, unitRow.id, slot.index, slot)"
-                >
-                  <template v-if="slot.occupied && slot.itemId">
-                    <ActionIcon
-                      class="vault-unit-slot__icon"
-                      :action="{ id: slot.itemId, label: slot.displayName, iconDef: { kind: 'item', type: slot.itemId } }"
-                    />
-                  </template>
-                </button>
-              </div>
+          <div class="vault-right__list">
+            <EligibleUnitCard
+              v-for="card in unitCards"
+              :key="card.id"
+              :card="card"
+              :has-selected-item="vaultSelectedInstanceId !== null"
+              :accepts-drop="acceptsDropForUnit(card.id)"
+              :icon-container-url="iconContainerUrl"
+              @focus="onCardFocus"
+              @slot-dragstart="onCardSlotDragStart"
+              @slot-dragend="onDragEnd"
+              @slot-drop="onCardSlotDrop"
+            />
+            <div v-if="unitCards.length === 0" class="vault-right__empty">
+              No units can hold items.
             </div>
           </div>
         </div>
@@ -158,11 +91,24 @@ import { computed, ref } from 'vue'
 import type { VaultItemSnapshot } from '@/game/network/protocol'
 import { formatUnitPath, type Unit } from '@/game/core/GameState'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
+import { PERK_DEF_MAP } from '@/game/maps/perkDefs'
+import { formatPerkTooltip } from '@/game/core/perkTooltip'
 import { TIER_COLORS, buildItemTooltipBody } from '@/game/items/itemRules'
 import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
+import { getRankToneColor } from '@/game/rendering/rankColors'
 import { useDraggablePanel } from '@/composables/useDraggablePanel'
-import ActionIcon from '@/components/ActionIcon.vue'
+import StorageGrid from '@/components/vault/StorageGrid.vue'
+import SelectedItemPanel from '@/components/vault/SelectedItemPanel.vue'
+import EligibleUnitCard from '@/components/vault/EligibleUnitCard.vue'
 import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
+import type {
+  VaultInventorySlot,
+  VaultPerkChip,
+  VaultRank,
+  VaultSelectedItem,
+  VaultStorageItem,
+  VaultUnitCardData,
+} from '@/components/vault/types'
 
 const props = withDefaults(defineProps<{
   vault: VaultItemSnapshot[]
@@ -174,204 +120,229 @@ const props = withDefaults(defineProps<{
   onEquipItem: (unitId: number, slotIndex: number, instanceId: number) => void
   onUseConsumable: (unitId: number, slotIndex: number) => void
   onTransferItem: (fromUnitId: number, fromSlotIdx: number, toUnitId: number, toSlotIdx: number) => void
+  onFocusUnit?: (unitId: number) => void
   onClose?: () => void
   /**
-   * When true, render only the body (no drag handle, no header chrome, no
-   * absolute positioning, no panel background). Used when the vault is
-   * embedded inside another container such as the MatchMenu Vault tab.
+   * When true, render only the body (no drag handle / header chrome / absolute
+   * positioning / panel background). Used when the vault is embedded inside the
+   * MatchMenu Vault tab.
    */
   embedded?: boolean
 }>(), {
   embedded: false,
+  onFocusUnit: () => {},
 })
 
-// ── Panel drag (header) ────────────────────────────────────────────────────
+// ── Panel drag (floating mode only) ─────────────────────────────────────────
 const collapsed = ref(false)
 const drag = useDraggablePanel('vault-panel')
 
 const rootStyle = computed(() => {
-  const cssVar = { '--ui-icon-container-image': `url(${iconContainerUrl})` }
-  if (props.embedded) return cssVar
-  return { ...cssVar, ...drag.style.value }
+  if (props.embedded) return {}
+  return drag.style.value
 })
 
-// ── HTML5 drag-and-drop state ──────────────────────────────────────────────
-type DragSource =
-  | { kind: 'vault'; instanceId: number; itemId: string }
-  | { kind: 'unit-slot'; unitId: number; slotIndex: number; instanceId: number; itemId: string }
-
-const dragSource = ref<DragSource | null>(null)
-const vaultGridDragOver = ref(false)
-
-// ── Derived counts ─────────────────────────────────────────────────────────
-const vaultCount = computed(() => props.vault.length)
+// Rank slots are positional: index 0 = bronze, 1 = silver, 2 = gold. Mirrors
+// the perk-rank ordering used by getPerkActionItems.
+const RANK_SLOTS: VaultRank[] = ['bronze', 'silver', 'gold']
 
 function tierColor(tier: string | undefined): string {
   if (!tier) return TIER_COLORS.common
   return TIER_COLORS[tier as keyof typeof TIER_COLORS] ?? TIER_COLORS.common
 }
 
-// Build vault cell data. Always show at least vaultCapacity cells.
-const vaultCells = computed(() => {
-  const totalCells = Math.max(props.vaultCapacity, props.vault.length, 6)
-  return Array.from({ length: totalCells }, (_, i) => {
-    const snapshot = props.vault[i] ?? null
-    if (!snapshot) {
-      return { key: `empty-${i}`, item: null }
-    }
-    const def = ITEM_DEF_MAP.get(snapshot.itemId)
-    const displayName = def?.displayName ?? snapshot.itemId
-    const tier = def?.tier
-    const tooltipBody = def ? buildItemTooltipBody(def) : ''
+// gold > silver > bronze > unranked, used for sorting.
+function rankValue(rank: string | undefined): number {
+  return rank === 'gold' ? 3 : rank === 'silver' ? 2 : rank === 'bronze' ? 1 : 0
+}
+
+// ── Fast lookup of raw units for the slot-click handler ─────────────────────
+const unitsById = computed(() => {
+  const m = new Map<number, Unit>()
+  for (const u of props.units) m.set(u.id, u)
+  return m
+})
+
+// ── Storage items ───────────────────────────────────────────────────────────
+const storageItems = computed<VaultStorageItem[]>(() =>
+  props.vault.map((snap) => {
+    const def = ITEM_DEF_MAP.get(snap.itemId)
     return {
-      key: `item-${snapshot.instanceId}`,
-      item: {
-        instanceId: snapshot.instanceId,
-        itemId: snapshot.itemId,
-        stacks: snapshot.stacks,
-        displayName,
-        tier,
-        tooltipBody,
-      },
+      instanceId: snap.instanceId,
+      itemId: snap.itemId,
+      displayName: def?.displayName ?? snap.itemId,
+      tier: def?.tier,
+      tierColor: tierColor(def?.tier),
+      tooltipBody: def ? buildItemTooltipBody(def) : '',
+      stacks: snap.stacks,
     }
-  })
+  }),
+)
+
+// ── Selected item (details panel + eligibility source) ──────────────────────
+const selectedSnapshot = computed<VaultItemSnapshot | null>(() => {
+  if (props.vaultSelectedInstanceId === null) return null
+  return props.vault.find((v) => v.instanceId === props.vaultSelectedInstanceId) ?? null
 })
 
-// Units that have at least one inventory slot.
-const inventoryUnits = computed(() => {
-  return props.units
-    .filter((u) => (u.inventory?.size ?? 0) > 0)
-    .map((u) => {
-      const slots = Array.from({ length: u.inventory!.size }, (_, i) => {
-        const held = u.inventory!.slots[i] ?? null
-        if (!held) {
-          return {
-            index: i,
-            occupied: false as const,
-            itemId: null as string | null,
-            instanceId: null as number | null,
-            displayName: '',
-            tierColor: null,
-            tooltip: props.vaultSelectedInstanceId !== null
-              ? 'Click to equip selected item'
-              : 'Empty slot',
-            isConsumable: false,
-          }
-        }
-        const def = ITEM_DEF_MAP.get(held.itemId)
-        const isConsumable = def?.kind === 'consumable'
-        const tc = def?.tier ? tierColor(def.tier) : null
-        const actionHint = isConsumable ? 'Click to use' : 'Click to unequip'
-        return {
-          index: i,
-          occupied: true as const,
-          itemId: held.itemId,
-          instanceId: held.instanceId,
-          displayName: def?.displayName ?? held.itemId,
-          tierColor: tc,
-          tooltip: def ? `${def.displayName} — ${actionHint}` : held.itemId,
-          isConsumable,
-        }
-      })
-      const maxHp = u.maxHp ?? u.hp ?? 0
-      const hp = u.hp ?? 0
-      const pathLabel = u.path && u.path !== 'none' ? formatUnitPath(u.path) : ''
-      const displayName = pathLabel || u.name
-      return {
-        id: u.id,
-        name: displayName,
-        unitType: u.unitType,
-        portraitUrl: getUnitPortraitUrl(u.path, u.unitType),
-        initials: (displayName || u.unitType || '?').slice(0, 2).toUpperCase(),
-        hp,
-        maxHp,
-        slots,
-      }
-    })
+const selectedItem = computed<VaultSelectedItem | null>(() => {
+  const snap = selectedSnapshot.value
+  if (!snap) return null
+  const def = ITEM_DEF_MAP.get(snap.itemId)
+  return {
+    itemId: snap.itemId,
+    displayName: def?.displayName ?? snap.itemId,
+    tier: def?.tier,
+    tierColor: tierColor(def?.tier),
+    description: def?.description,
+    stats: def ? buildItemTooltipBody(def) : '',
+  }
 })
 
-// ── Drag validation ────────────────────────────────────────────────────────
-/**
- * Returns true when the dragged item is allowed on unitType.
- * Falls back to true when no allowedUnitTypes restriction is set on the def.
- */
-function isDropValid(unitType: string): boolean {
-  const src = dragSource.value
-  if (!src) return false
-  const def = ITEM_DEF_MAP.get(src.itemId)
-  if (!def || !def.allowedUnitTypes || def.allowedUnitTypes.length === 0) return true
+// Whether a specific item is allowed on a unit type. No restriction means any
+// item-capable unit qualifies.
+function itemTypeAllowsUnit(itemId: string, unitType: string): boolean {
+  const def = ITEM_DEF_MAP.get(itemId)
+  if (!def?.allowedUnitTypes || def.allowedUnitTypes.length === 0) return true
   return def.allowedUnitTypes.includes(unitType)
 }
 
-// ── Drag handlers — vault cells ────────────────────────────────────────────
-function onVaultCellDragStart(e: DragEvent, instanceId: number, itemId: string) {
-  dragSource.value = { kind: 'vault', instanceId, itemId }
-  e.dataTransfer!.effectAllowed = 'move'
-  props.onSelectVaultItem(null)
+// Whether the currently-selected item is allowed on a unit type (drives card
+// eligibility / sorting). True when nothing is selected.
+function itemAllowsUnit(unitType: string): boolean {
+  const snap = selectedSnapshot.value
+  if (!snap) return true
+  return itemTypeAllowsUnit(snap.itemId, unitType)
 }
 
-// ── Drag handlers — unit slots ─────────────────────────────────────────────
-function onUnitSlotDragStart(
-  e: DragEvent,
-  unitId: number,
-  slotIndex: number,
-  instanceId: number,
-  itemId: string,
-) {
-  dragSource.value = { kind: 'unit-slot', unitId, slotIndex, instanceId, itemId }
-  e.dataTransfer!.effectAllowed = 'move'
-  props.onSelectVaultItem(null)
+// ── Per-unit card data ──────────────────────────────────────────────────────
+function buildInventory(unit: Unit): VaultInventorySlot[] {
+  const size = unit.inventory?.size ?? 0
+  const slots = unit.inventory?.slots ?? []
+  return RANK_SLOTS.map((rank, index) => {
+    const locked = index >= size
+    const held = !locked ? slots[index] ?? null : null
+    if (!held) {
+      return { rank, slotIndex: index, locked, item: null }
+    }
+    const def = ITEM_DEF_MAP.get(held.itemId)
+    return {
+      rank,
+      slotIndex: index,
+      locked,
+      item: {
+        instanceId: held.instanceId,
+        itemId: held.itemId,
+        displayName: def?.displayName ?? held.itemId,
+        tier: def?.tier,
+        tierColor: tierColor(def?.tier),
+        tooltipBody: def ? buildItemTooltipBody(def) : '',
+        isConsumable: def?.kind === 'consumable',
+      },
+    }
+  })
 }
 
-function onDragEnd() {
-  dragSource.value = null
-  vaultGridDragOver.value = false
-}
-
-// ── Drop zone — vault grid (unequip by dropping back) ─────────────────────
-function onVaultGridDragOver(e: DragEvent) {
-  e.preventDefault()
-  vaultGridDragOver.value = true
-}
-
-function onVaultGridDragLeave() {
-  vaultGridDragOver.value = false
-}
-
-function onVaultGridDrop(e: DragEvent) {
-  e.preventDefault()
-  vaultGridDragOver.value = false
-  const src = dragSource.value
-  dragSource.value = null
-  if (!src) return
-  if (src.kind === 'unit-slot') {
-    props.onUnequipItem(src.unitId, src.slotIndex)
+function buildPerks(unit: Unit): VaultPerkChip[] {
+  const ids = unit.perkIds ?? []
+  const chips: VaultPerkChip[] = []
+  for (const perkId of ids) {
+    const def = PERK_DEF_MAP.get(perkId)
+    if (!def) continue
+    chips.push({
+      id: perkId,
+      iconId: def.icon ?? 'attack',
+      title: def.displayName,
+      body: formatPerkTooltip(def, unit),
+    })
   }
+  return chips
 }
 
-// ── Drop zone — unit slots ─────────────────────────────────────────────────
-function onUnitSlotDrop(
-  e: DragEvent,
-  unitId: number,
-  slotIndex: number,
-  slot: { occupied: boolean; instanceId: number | null },
-) {
-  e.preventDefault()
+const unitCards = computed<VaultUnitCardData[]>(() => {
+  const hasSelection = props.vaultSelectedInstanceId !== null
+
+  // Only units with an inventory capability can hold items.
+  const capable = props.units.filter((u) => u.inventory != null)
+
+  const cards = capable.map((u, originalIndex) => {
+    const inventory = buildInventory(u)
+    const eligible = itemAllowsUnit(u.unitType)
+    const hasEmptyMatchingSlot =
+      eligible && inventory.some((s) => !s.locked && !s.item)
+    const pathLabel = u.path && u.path !== 'none' ? formatUnitPath(u.path) : ''
+    const specializationName = pathLabel || u.name
+    const rankChevrons =
+      u.rank === 'bronze' ? 1 : u.rank === 'silver' ? 2 : u.rank === 'gold' ? 3 : 0
+    return {
+      card: {
+        id: u.id,
+        portraitUrl: getUnitPortraitUrl(u.path, u.unitType) ?? null,
+        initials: (specializationName || u.unitType || '?').slice(0, 2).toUpperCase(),
+        specializationName,
+        rank: u.rank ?? '',
+        rankChevrons,
+        rankColor: getRankToneColor(u.rank, 'light'),
+        xpInto: u.xpIntoCurrentRank ?? null,
+        xpToNext: u.xpToNextRank ?? null,
+        isMaxRank: u.rank === 'gold',
+        perks: buildPerks(u),
+        inventory,
+        eligible,
+        hasEmptyMatchingSlot,
+      } as VaultUnitCardData,
+      originalIndex,
+    }
+  })
+
+  // Sort. With an item selected: eligible-with-empty-slot first, then eligible
+  // (slots full), then ineligible; higher rank wins ties. Without a selection:
+  // simply by rank then name.
+  cards.sort((a, b) => {
+    if (hasSelection) {
+      const groupA = a.card.eligible ? (a.card.hasEmptyMatchingSlot ? 0 : 1) : 2
+      const groupB = b.card.eligible ? (b.card.hasEmptyMatchingSlot ? 0 : 1) : 2
+      if (groupA !== groupB) return groupA - groupB
+    }
+    const rankDiff = rankValue(b.card.rank) - rankValue(a.card.rank)
+    if (rankDiff !== 0) return rankDiff
+    const nameDiff = a.card.specializationName.localeCompare(b.card.specializationName)
+    if (nameDiff !== 0) return nameDiff
+    return a.originalIndex - b.originalIndex
+  })
+
+  return cards.map((c) => c.card)
+})
+
+// ── Drag-and-drop state ─────────────────────────────────────────────────────
+type DragSource =
+  | { kind: 'vault'; instanceId: number; itemId: string }
+  | { kind: 'unit-slot'; unitId: number; slotIndex: number; itemId: string }
+
+const dragSource = ref<DragSource | null>(null)
+
+// Whether a currently-dragged item could be equipped on a given unit: the item
+// must be allowed on that unit's type and the unit must have an empty unlocked
+// slot. Drives the per-slot drop-target glow on each card.
+function acceptsDropForUnit(unitId: number): boolean {
   const src = dragSource.value
-  dragSource.value = null
-  if (!src) return
-  if (slot.occupied) return // reject occupied destination (Phase 1)
-
-  if (src.kind === 'vault') {
-    props.onEquipItem(unitId, slotIndex, src.instanceId)
-  } else if (src.kind === 'unit-slot') {
-    if (src.unitId === unitId && src.slotIndex === slotIndex) return // same slot, no-op
-    props.onTransferItem(src.unitId, src.slotIndex, unitId, slotIndex)
+  if (!src) return false
+  const unit = unitsById.value.get(unitId)
+  if (!unit) return false
+  const def = ITEM_DEF_MAP.get(src.itemId)
+  const allowed = !def?.allowedUnitTypes?.length || def.allowedUnitTypes.includes(unit.unitType)
+  if (!allowed) return false
+  const size = unit.inventory?.size ?? 0
+  const slots = unit.inventory?.slots ?? []
+  for (let i = 0; i < Math.min(RANK_SLOTS.length, size); i++) {
+    if (!slots[i]) return true
   }
+  return false
 }
 
-// ── Click handlers (existing flow — unchanged) ─────────────────────────────
-function onVaultCellClick(instanceId: number) {
+// ── Interactions ────────────────────────────────────────────────────────────
+function onSelectStorage(instanceId: number) {
+  // Click selects an item to view its stats. Toggle off on a second click.
   if (props.vaultSelectedInstanceId === instanceId) {
     props.onSelectVaultItem(null)
   } else {
@@ -379,25 +350,62 @@ function onVaultCellClick(instanceId: number) {
   }
 }
 
-function onUnitSlotClick(
-  unitId: number,
-  slot: { index: number; occupied: boolean; isConsumable: boolean },
-) {
-  if (slot.occupied) {
-    if (props.vaultSelectedInstanceId === null) {
-      if (slot.isConsumable) {
-        props.onUseConsumable(unitId, slot.index)
-      } else {
-        props.onUnequipItem(unitId, slot.index)
-      }
-    }
-    // occupied + vault item selected: do nothing (prevent overwrite)
+function onCardFocus(unitId: number) {
+  props.onFocusUnit(unitId)
+}
+
+function onStorageDragStart(instanceId: number, itemId: string) {
+  dragSource.value = { kind: 'vault', instanceId, itemId }
+}
+
+function onCardSlotDragStart(payload: { unitId: number; slotIndex: number }) {
+  const unit = unitsById.value.get(payload.unitId)
+  const held = unit?.inventory?.slots?.[payload.slotIndex] ?? null
+  if (!held) return
+  dragSource.value = {
+    kind: 'unit-slot',
+    unitId: payload.unitId,
+    slotIndex: payload.slotIndex,
+    itemId: held.itemId,
+  }
+}
+
+function onDragEnd() {
+  dragSource.value = null
+}
+
+// Drop onto a unit's inventory slot: equip from the vault, or transfer from
+// another unit slot. Occupied targets are never overwritten.
+function onCardSlotDrop(payload: { unitId: number; slotIndex: number }) {
+  const src = dragSource.value
+  dragSource.value = null
+  if (!src) return
+
+  const unit = unitsById.value.get(payload.unitId)
+  if (!unit) return
+  const size = unit.inventory?.size ?? 0
+  if (payload.slotIndex >= size) return // locked slot
+  const held = unit.inventory?.slots?.[payload.slotIndex] ?? null
+  if (held) return // occupied — block, never overwrite
+
+  if (!itemTypeAllowsUnit(src.itemId, unit.unitType)) return
+
+  if (src.kind === 'vault') {
+    props.onEquipItem(unit.id, payload.slotIndex, src.instanceId)
+    if (src.instanceId === props.vaultSelectedInstanceId) props.onSelectVaultItem(null)
   } else {
-    const instanceId = props.vaultSelectedInstanceId
-    if (instanceId !== null) {
-      props.onEquipItem(unitId, slot.index, instanceId)
-      props.onSelectVaultItem(null)
-    }
+    // Transfer between unit slots.
+    if (src.unitId === unit.id && src.slotIndex === payload.slotIndex) return
+    props.onTransferItem(src.unitId, src.slotIndex, unit.id, payload.slotIndex)
+  }
+}
+
+// Drop onto the storage grid: unequip an item dragged out of a unit slot.
+function onStorageDrop() {
+  const src = dragSource.value
+  dragSource.value = null
+  if (src?.kind === 'unit-slot') {
+    props.onUnequipItem(src.unitId, src.slotIndex)
   }
 }
 </script>
@@ -406,10 +414,6 @@ function onUnitSlotClick(
 .vault-panel {
   position: absolute;
   bottom: 240px;
-  /* Center horizontally without transform so the drag composable's
-     transform: translate() works without conflicts. Calculate 50vw - half
-     of the expected width (~240px) as a rough center anchor. The user can
-     drag to reposition. */
   left: calc(50vw - 240px);
   z-index: 50;
   min-width: 480px;
@@ -427,8 +431,8 @@ function onUnitSlotClick(
   pointer-events: auto;
 }
 
-/* Embedded mode: drop all the floating-panel chrome so the host container
-   (MatchMenu Vault tab) provides background, border, sizing, and position. */
+/* Embedded mode: drop all floating-panel chrome so the host container provides
+   background, border, sizing, and position. */
 .vault-panel--embedded {
   position: static;
   left: auto;
@@ -476,7 +480,6 @@ function onUnitSlotClick(
   color: #e8d9b8;
   font-size: 13px;
   font-weight: 700;
-  cursor: pointer;
   padding: 0;
   letter-spacing: 0.04em;
 }
@@ -487,7 +490,6 @@ function onUnitSlotClick(
   border: none;
   color: rgba(232, 217, 184, 0.6);
   font-size: 14px;
-  cursor: pointer;
   padding: 2px 6px;
   line-height: 1;
   border-radius: 3px;
@@ -505,340 +507,95 @@ function onUnitSlotClick(
   font-size: 14px;
 }
 
-.vault-chevron.open {
-  transform: rotate(0deg);
-}
-
-.vault-chevron:not(.open) {
-  transform: rotate(-90deg);
-}
+.vault-chevron.open { transform: rotate(0deg); }
+.vault-chevron:not(.open) { transform: rotate(-90deg); }
 
 .vault-title {
   color: #f5e4c0;
 }
 
+/* Embedded body fills the tab; floating body just gets padding. */
 .vault-body {
   padding: 12px;
+  height: 100%;
+  box-sizing: border-box;
 }
 
-.vault-columns {
+.vault-panel--embedded .vault-body {
+  padding: 0;
+}
+
+.vault-layout {
   display: flex;
   gap: 16px;
-  align-items: flex-start;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
 }
 
-.vault-col-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(212, 168, 79, 0.7);
+/* Left column: storage grid + selected-item details. */
+/* Fixed to the storage grid's exact width (4×64 + 3×8 gaps = 280px) so the
+   left column never resizes between the empty and populated selected-item
+   states — keeping the unit cards from shifting. */
+.vault-left {
+  flex: 0 0 280px;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* Right column: scrollable eligible unit list. */
+.vault-right {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.vault-right__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 8px;
-}
-
-/* ── Vault grid (left column) ─────────────────────────────────────────── */
-
-.vault-grid-col {
   flex: 0 0 auto;
 }
 
-.vault-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 75px);
-  gap: 8px;
-}
-
-/* Storage cell: icon-container frame as background (same idiom as
-   .inventory-slot in SelectionHud). Tier color is conveyed via an inset
-   box-shadow ring so it composes with the icon-container art instead of
-   replacing it with a flat colored border. */
-.vault-cell {
-  position: relative;
-  width: 75px;
-  height: 75px;
-  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
-  image-rendering: pixelated;
-  border: 2px solid transparent;
-  border-radius: 0;
-  padding: 0;
-  transition: border-color 0.15s;
-  box-sizing: border-box;
-  /* Empty (disabled) cells inherit the game default cursor from <html>.
-     Without this explicit declaration, the UA stylesheet's `button { cursor:
-     default }` shows the OS white arrow instead of the game's default.png. */
-  cursor: inherit;
-}
-
-.vault-cell:not(.vault-cell--empty) {
-  box-shadow: inset 0 0 0 2px var(--tier-color, transparent);
-}
-
-/* Compose the tier-color ring with the standard hover glow (defined globally
-   as --ui-hover-glow in style.css). Keep this scoped hover rule rather than
-   adding ui-hover-glow as a class, because the tier ring needs to live in
-   the same box-shadow declaration as the glow. */
-.vault-cell:not(.vault-cell--empty):hover {
-  box-shadow:
-    inset 0 0 0 2px var(--tier-color, transparent),
-    var(--ui-hover-glow);
-}
-
-.vault-cell--selected {
-  box-shadow:
-    inset 0 0 0 2px var(--tier-color, #9ca3af),
-    0 0 8px var(--tier-color, #9ca3af);
-}
-
-.vault-cell__icon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 70%;
-  height: 70%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.vault-cell-tooltip {
-  display: none;
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 100;
-  min-width: 120px;
-  max-width: 200px;
-  background: rgba(10, 12, 20, 0.96);
-  border: 1px solid rgba(212, 168, 79, 0.4);
-  border-radius: 6px;
-  padding: 7px 10px;
-  pointer-events: none;
-  white-space: normal;
-}
-
-.vault-cell:hover .vault-cell-tooltip {
-  display: block;
-}
-
-.vault-cell-tooltip__title {
+.vault-right__title {
   font-size: 12px;
   font-weight: 700;
-  color: #f5e4c0;
-  margin-bottom: 2px;
-}
-
-.vault-cell-tooltip__tier {
-  font-size: 10px;
-  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--tier-color, #9ca3af);
-  margin-bottom: 3px;
+  color: #f5e4c0;
 }
 
-.vault-cell-tooltip__body {
-  font-size: 11px;
-  color: rgba(232, 217, 184, 0.75);
-  line-height: 1.4;
-}
-
-.vault-cell__stack {
-  position: absolute;
-  bottom: 2px;
-  right: 3px;
-  font-size: 10px;
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-  pointer-events: none;
-  line-height: 1;
-}
-
-.vault-selection-hint {
-  margin-top: 8px;
+.vault-right__hint {
   font-size: 11px;
   color: rgba(96, 165, 250, 0.9);
-  text-align: center;
-  animation: hint-pulse 1.4s ease-in-out infinite;
 }
 
-@keyframes hint-pulse {
-  0%, 100% { opacity: 0.7; }
-  50%       { opacity: 1; }
-}
-
-/* ── Unit list (right column) ────────────────────────────────────────── */
-
-.vault-units-col {
+.vault-right__list {
   flex: 1 1 auto;
-  min-width: 0;
-}
-
-.vault-empty-units {
-  font-size: 12px;
-  color: rgba(232, 217, 184, 0.5);
-  padding: 8px 0;
-}
-
-.vault-units-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 220px;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Two unit cards per row; each column shrinks freely (minmax 0). */
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 8px;
+  padding-right: 6px;
   scrollbar-width: thin;
   scrollbar-color: rgba(212, 168, 79, 0.3) transparent;
 }
 
-.vault-unit-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(212, 168, 79, 0.15);
-  border-radius: 6px;
-}
-
-.vault-unit-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.vault-unit-portrait {
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
-  border-radius: 4px;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.vault-unit-portrait img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  image-rendering: pixelated;
-}
-
-.vault-unit-portrait__fallback {
-  font-size: 11px;
-  font-weight: 700;
-  color: rgba(232, 217, 184, 0.7);
-}
-
-.vault-unit-info {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.vault-unit-name {
+.vault-right__empty {
+  grid-column: 1 / -1;
   font-size: 12px;
-  font-weight: 700;
-  color: #f0e0c0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.vault-unit-hp {
-  font-size: 11px;
-  color: rgba(232, 217, 184, 0.6);
-}
-
-.vault-unit-slots {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-/* Unit inventory slot: same icon-container idiom as .vault-cell so the
-   storage column and the unit-equipped column read as one visual family. */
-.vault-unit-slot {
-  position: relative;
-  width: 75px;
-  height: 75px;
-  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
-  image-rendering: pixelated;
-  border: 2px solid transparent;
-  border-radius: 0;
-  padding: 0;
-  transition: border-color 0.15s;
-  box-sizing: border-box;
-}
-
-/* Inert empty slot: no equipped item and no active equip prompt. Restore the
-   game's default cursor (inherited from <html>) — the global :is(button…)
-   rule would otherwise force the hover cursor on every unit slot. Specificity
-   here is (0,4,0) which beats the global rule's (0,3,1). */
-.vault-unit-slot:not(.vault-unit-slot--occupied):not(.vault-unit-slot--equip-target) {
-  cursor: inherit;
-}
-
-.vault-unit-slot--occupied {
-  box-shadow: inset 0 0 0 2px var(--tier-color, transparent);
-}
-
-.vault-unit-slot--occupied:hover {
-  box-shadow:
-    inset 0 0 0 2px var(--tier-color, transparent),
-    var(--ui-hover-glow);
-}
-
-.vault-unit-slot--equip-target {
-  animation: unit-slot-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes unit-slot-pulse {
-  0%, 100% { border-color: rgba(96, 165, 250, 0.35); }
-  50%       { border-color: rgba(96, 165, 250, 0.9); }
-}
-
-.vault-unit-slot__icon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 70%;
-  height: 70%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-/* ── Drag-and-drop visual feedback ──────────────────────────────────── */
-
-/* Item being dragged dims slightly to show it is "in motion" */
-.vault-cell--drag-source,
-.vault-unit-slot--drag-source {
-  opacity: 0.45;
-}
-
-/* Valid drop target: pulse with the equip-target rhythm */
-.vault-unit-slot--drop-valid {
-  animation: unit-slot-pulse 0.8s ease-in-out infinite;
-  border-color: rgba(96, 165, 250, 0.7);
-}
-
-/* Invalid drop target: red border hint */
-.vault-unit-slot--drop-invalid {
-  border-color: rgba(239, 68, 68, 0.5);
-}
-
-/* Vault grid accepts drops when a unit-slot item is being dragged */
-.vault-grid--drop-active {
-  outline: 2px dashed rgba(96, 165, 250, 0.4);
-  outline-offset: 2px;
+  color: rgba(232, 217, 184, 0.5);
+  padding: 12px 0;
 }
 </style>

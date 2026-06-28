@@ -9,6 +9,11 @@
     "width": 2.5,
     "height": 2.5
   },
+  "selectionRing": {
+    "radiusX": 1.2,
+    "radiusY": 0.8,
+    "offsetY": 1.4
+  },
   "maxHp": 450,
   "buildSeconds": 25,
   "resourceCost": {
@@ -25,5 +30,6 @@
   "metadata": {},
   "color": "#7c3aed",
   "label": "Chapel",
-  "hotkey": "c"
+  "hotkey": "c"
+
 }

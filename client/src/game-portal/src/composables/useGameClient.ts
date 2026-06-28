@@ -58,6 +58,7 @@ const emptyUiSnapshot: GameUiSnapshot = {
   commanderAbilities: [],
   commanderTargetingAbilityId: null,
   shopCatalog: [],
+  shopRerollsRemaining: 0,
   paused: false,
   pausedBy: '',
   pausedSinceMs: 0,
@@ -202,6 +203,10 @@ export function useGameClient() {
     client?.selectUnitOnly(unitId)
   }
 
+  function focusUnit(unitId: number) {
+    client?.focusUnit(unitId)
+  }
+
   function deselectUnit(unitId: number) {
     client?.deselectUnit(unitId)
   }
@@ -226,6 +231,10 @@ export function useGameClient() {
 
   function sendPurchaseItem(buildingId: string, itemId: string) {
     client?.sendPurchaseItem(buildingId, itemId)
+  }
+
+  function rerollShop(buildingId: string) {
+    client?.sendRerollShop(buildingId)
   }
 
   function sendEquipItem(unitId: number, slotIndex: number, instanceId: number) {
@@ -282,12 +291,14 @@ export function useGameClient() {
     beginDebugSpawn,
     cancelDebugSpawn,
     selectUnitOnly,
+    focusUnit,
     deselectUnit,
     setMinimapPanelRect,
     purchaseUpgrade,
     cancelUpgrade,
     upgradeTownHall,
     sendPurchaseItem,
+    rerollShop,
     sendEquipItem,
     sendUnequipItem,
     sendUseConsumable,
