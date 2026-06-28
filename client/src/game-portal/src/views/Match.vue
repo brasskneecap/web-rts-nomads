@@ -155,6 +155,9 @@
         v-model:active-tab="matchMenuTab"
         :shop-catalog="ui.shopCatalog"
         :shop-rerolls-remaining="ui.shopRerollsRemaining"
+        :upgrades="ui.upgrades"
+        :on-purchase-upgrade="purchaseUpgrade"
+        :on-cancel-upgrade="cancelUpgrade"
         :vault="ui.vault"
         :vault-capacity="ui.vaultCapacity"
         :vault-selected-instance-id="ui.vaultSelectedInstanceId"
@@ -256,6 +259,8 @@ const {
   setMinimapPanelRect,
   sendPurchaseItem,
   rerollShop,
+  purchaseUpgrade,
+  cancelUpgrade,
   sendEquipItem,
   sendUnequipItem,
   sendUseConsumable,

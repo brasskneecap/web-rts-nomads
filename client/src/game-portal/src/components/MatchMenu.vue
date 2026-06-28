@@ -116,12 +116,32 @@
             />
           </div>
 
-          <div v-else class="match-menu__grid">
-            <div
-              v-for="i in SLOTS_PER_TAB"
-              :key="`${activeTabId}-${i}`"
-              class="match-menu__slot"
-            />
+          <!-- Upgrades: one card per upgrade-providing building (currently the
+               Blacksmith). Same card shell as the Shop, minus the reroll. -->
+          <div v-else class="match-menu__shop">
+            <div v-if="!hasUpgradeBuilding" class="match-menu__shop-empty">
+              Build a Blacksmith to research unit upgrades.
+            </div>
+            <div v-else class="shop-card">
+              <div class="shop-card__head">
+                <div class="shop-card__icon">
+                  <ActionIcon
+                    class="shop-card__icon-img"
+                    :action="{ id: 'blacksmith', label: 'Blacksmith', iconDef: { kind: 'building', type: 'blacksmith' } }"
+                  />
+                </div>
+                <div class="shop-card__name">Blacksmith</div>
+              </div>
+              <div class="upgrade-list">
+                <UpgradeRow
+                  v-for="upgrade in upgrades"
+                  :key="upgrade.track"
+                  :upgrade="upgrade"
+                  :on-purchase="onPurchaseUpgrade"
+                />
+              </div>
+              <UpgradeQueue :upgrades="upgrades" :on-cancel="onCancelUpgrade" />
+            </div>
           </div>
         </div>
       </div>
@@ -144,9 +164,11 @@
 import { ref, computed } from 'vue'
 import ActionIcon from '@/components/ActionIcon.vue'
 import VaultPanel from '@/components/VaultPanel.vue'
+import UpgradeRow from '@/components/vault/UpgradeRow.vue'
+import UpgradeQueue from '@/components/vault/UpgradeQueue.vue'
 import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
 import type { ShopCatalogEntry, Unit } from '@/game/core/GameState'
-import type { VaultItemSnapshot } from '@/game/network/protocol'
+import type { PlayerUpgradeSnapshot, VaultItemSnapshot } from '@/game/network/protocol'
 
 interface TabDef {
   id: string
@@ -160,13 +182,15 @@ const TABS: TabDef[] = [
 ]
 
 const TAB_ROW_SLOTS = 4
-const SLOTS_PER_TAB = 18
 // Every shop card shows a fixed grid of slots, padded with empties.
 const SHOP_SLOTS = 12
 
 const props = withDefaults(defineProps<{
   shopCatalog?: ShopCatalogEntry[]
   shopRerollsRemaining?: number
+  upgrades?: PlayerUpgradeSnapshot[]
+  onPurchaseUpgrade?: (track: string) => void
+  onCancelUpgrade?: (buildingId: string) => void
   vault?: VaultItemSnapshot[]
   vaultCapacity?: number
   vaultSelectedInstanceId?: number | null
@@ -180,6 +204,9 @@ const props = withDefaults(defineProps<{
 }>(), {
   shopCatalog: () => [],
   shopRerollsRemaining: 0,
+  upgrades: () => [],
+  onPurchaseUpgrade: () => {},
+  onCancelUpgrade: () => {},
   vault: () => [],
   vaultCapacity: 0,
   vaultSelectedInstanceId: null,
@@ -239,6 +266,11 @@ const shopGroups = computed<ShopGroup[]>(() => {
     return { buildingId, buildingType: g.type, buildingName: g.name, cells, canReroll }
   })
 })
+
+// A blacksmith (the upgrade-providing building) exists for the local player.
+// hasBlacksmith is per-track but reflects the player-level "a blacksmith
+// exists" signal, so any track suffices.
+const hasUpgradeBuilding = computed(() => props.upgrades.some((u) => u.hasBlacksmith))
 
 // ── Shop item tooltip (teleported to body to avoid scroll-container clipping) ─
 const hoveredShopItem = ref<ShopCatalogEntry | null>(null)
@@ -498,6 +530,14 @@ function onPurchase(entry: ShopCatalogEntry) {
   font-weight: 700;
   color: #f5e4c0;
   letter-spacing: 0.03em;
+}
+
+/* Upgrades card: compact upgrade rows laid out in a responsive grid so several
+   stack per row. */
+.upgrade-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
 }
 
 /* Body: the 12-slot grid with the refresh button to its right. */
