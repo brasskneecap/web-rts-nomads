@@ -1,0 +1,13 @@
+{
+  "id": "ice_ring",
+  "displayName": "Ice Ring",
+  "description": "+5 frost damage on hit.",
+  "iconKey": "ice_ring",
+  "kind": "equipment",
+  "tier": "common",
+  "category": "Accessory",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 75,
+  "onHitElemental": [ { "type": "frost", "amount": 5 } ]
+}
