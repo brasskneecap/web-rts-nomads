@@ -869,6 +869,14 @@ type PurchaseItemCommandMessage struct {
 	ItemID     string `json:"itemId"`
 }
 
+// PurchaseRecipeCommandMessage buys one recipe from a Recipe Shop, unlocking it
+// for crafting this match.
+type PurchaseRecipeCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+	RecipeID   string `json:"recipeId"`
+}
+
 // RerollShopCommandMessage requests rerolling the inventory of a neutral
 // shop building. BuildingID must reference a building of type "neutral-shop".
 // The server validates that the requesting player has discovered and
