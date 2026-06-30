@@ -39,7 +39,14 @@ elemental effects** in the game:
 - Elemental resistances/weaknesses on units (the typed damage instance is the seam;
   the actual mitigation math is future work — already a documented TODO in
   `damage_type.go`).
-- Elemental on-hit / proc applying to splash or AoE targets — **primary target only**.
+- Elemental on-hit and the proc are NOT restricted to a single primary target.
+  They apply to every target a landed basic attack reaches — so a piercing
+  attacker (Marksman `pierce`) applies the elemental instance and rolls the proc
+  on each corridor victim. This is intentional: a proc may become an AoE effect
+  or spell in the future, so the system must not assume primary-only. (Base-stat
+  *splash* still bypasses the on-hit hub and therefore does not carry elemental/
+  proc — splash is a separate, pre-existing payload.) Decided 2026-06-30 during
+  Plan 1 review.
 - Crafting from a unit's equipped slots, or any UI to "uncraft".
 - More than the three starter recipes.
 
@@ -73,14 +80,16 @@ Two new **data-driven** optional properties on `ItemDef`
   `EquipmentBonus` (extend `UnitEquipmentBonus` in `state_items.go` with a
   per-type map, e.g. `OnHitElemental map[DamageType]int`), recomputed in
   `recomputeUnitEquipmentBonusLocked`. Two fire items stack to +10 fire.
-- Applied on each **landed basic attack** to the **primary target only**, as its
-  own call through `applyUnitDamageWithSourceLocked` with
-  `DamageSource{Kind: "item-elemental", DamageType: <type>}`.
-  - Melee: in `resolveAttackHitLocked` after the physical hit lands.
-  - Ranged: when the projectile lands (`landProjectileLocked`). The per-element
-    amounts are snapshotted onto the `Projectile` at fire time (alongside the
-    existing physical `Damage` snapshot) so the value reflects the wielder's
-    loadout at fire time and lands deterministically.
+- Applied on each **landed basic attack** as its own call through
+  `applyUnitDamageWithSourceLocked` with
+  `DamageSource{Kind: "item-elemental", DamageType: <type>}`, at the single
+  on-hit hub `resolveAttackHitLocked` — which fires for melee (called directly)
+  and ranged (called from `landProjectileLocked`), and for every pierce-corridor
+  victim. (As-built, the bonus is read from the wielder's live `EquipmentBonus`
+  at hit time rather than snapshotted onto the projectile at fire time; the
+  practical difference is only for a ranged attacker who dies mid-flight, where
+  the orphaned-arrow path applies physical damage only — matching how that path
+  already skips all attacker-side perks.)
 - `type` must be a registered `DamageType` (validated at catalog load, mirroring
   ability damage-type validation).
 
