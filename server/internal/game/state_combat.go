@@ -321,6 +321,7 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 	s.onPerkAttackFiredLocked(attacker, target, damage, deadUnitIDs)
 	s.onPerkAttackDamageAppliedLocked(attacker, target, damage)
 	s.applyEquipmentOnHitElementalLocked(attacker, target)
+	s.rollEquipmentProcsLocked(attacker, target)
 
 	if target.HP <= 0 {
 		target.HP = 0
@@ -412,6 +413,24 @@ func (s *GameState) applyEquipmentOnHitElementalLocked(attacker, target *Unit) {
 			Kind:           "item-elemental",
 			DamageType:     dt,
 		})
+	}
+}
+
+// rollEquipmentProcsLocked rolls each of the attacker's equipped on-hit procs
+// against the seeded perk RNG and fires an elemental bolt for each success at
+// the primary target. Must be called under s.mu. Determinism: rngPerks is the
+// shared seeded stream; OnHitProcs order is fixed by equip order.
+func (s *GameState) rollEquipmentProcsLocked(attacker, target *Unit) {
+	if attacker == nil || target == nil || len(attacker.EquipmentBonus.OnHitProcs) == 0 {
+		return
+	}
+	for _, proc := range attacker.EquipmentBonus.OnHitProcs {
+		if proc.Chance <= 0 || proc.Damage <= 0 {
+			continue
+		}
+		if s.rngPerks.Float64() < proc.Chance {
+			s.fireOnHitProcProjectileLocked(attacker, target, proc)
+		}
 	}
 }
 
