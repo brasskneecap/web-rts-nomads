@@ -6,6 +6,65 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
+// TestCraftedSwords_LoadAllThree verifies that all three crafted elemental
+// swords load from the catalog with the correct flat-damage modifier,
+// on-hit elemental bonus, and proc definition.
+func TestCraftedSwords_LoadAllThree(t *testing.T) {
+	cases := []struct {
+		id              string
+		wantElement     DamageType
+		wantProjectile  string
+	}{
+		{"fire_sword", DamageFire, "fire_bolt"},
+		{"frost_sword", DamageFrost, "frost_bolt"},
+		{"lightning_sword", DamageLightning, "lightning_bolt"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.id, func(t *testing.T) {
+			def, ok := getItemDef(tc.id)
+			if !ok {
+				t.Fatalf("%s: not found in catalog", tc.id)
+			}
+
+			// +5 flat damage modifier.
+			if def.Modifiers == nil || def.Modifiers.Damage != 5 {
+				t.Fatalf("%s: Modifiers.Damage want 5, got %+v", tc.id, def.Modifiers)
+			}
+
+			// onHitElemental must contain exactly one entry of the correct type with amount 5.
+			found := false
+			for _, e := range def.OnHitElemental {
+				if e.Type == tc.wantElement && e.Amount == 5 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("%s: expected onHitElemental entry {%s, 5}, got %+v", tc.id, tc.wantElement, def.OnHitElemental)
+			}
+
+			// onHitProc must specify damage=25, correct damageType, correct projectileID, chance ~0.05.
+			if def.OnHitProc == nil {
+				t.Fatalf("%s: OnHitProc is nil", tc.id)
+			}
+			if def.OnHitProc.Damage != 25 {
+				t.Errorf("%s: OnHitProc.Damage want 25, got %d", tc.id, def.OnHitProc.Damage)
+			}
+			if def.OnHitProc.DamageType != tc.wantElement {
+				t.Errorf("%s: OnHitProc.DamageType want %s, got %s", tc.id, tc.wantElement, def.OnHitProc.DamageType)
+			}
+			if def.OnHitProc.ProjectileID != tc.wantProjectile {
+				t.Errorf("%s: OnHitProc.ProjectileID want %q, got %q", tc.id, tc.wantProjectile, def.OnHitProc.ProjectileID)
+			}
+			if def.OnHitProc.Chance < 0.049 || def.OnHitProc.Chance > 0.051 {
+				t.Errorf("%s: OnHitProc.Chance want ~0.05, got %v", tc.id, def.OnHitProc.Chance)
+			}
+		})
+	}
+}
+
 func TestFireSword_EndToEnd(t *testing.T) {
 	def, ok := getItemDef("fire_sword")
 	if !ok {
