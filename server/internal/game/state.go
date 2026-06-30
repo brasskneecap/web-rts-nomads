@@ -1179,6 +1179,7 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 	s.initNeutralCampsLocked()
 	s.initShopBuildingsLocked()
 	s.populateShopInventoriesLocked()
+	s.populateRecipeShopInventoriesLocked()
 	s.spawnShopGuardsLocked()
 
 	// Rebuild buildingsByID index from the freshly-cloned Buildings slice.

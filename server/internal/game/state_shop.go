@@ -126,7 +126,7 @@ func (s *GameState) initShopBuildingsLocked() {
 	neutralID := neutralPlayerID
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
-		if b.BuildingType != "neutral-shop" {
+		if b.BuildingType != "neutral-shop" && b.BuildingType != "recipe-shop" {
 			continue
 		}
 		if b.OwnerID == nil {

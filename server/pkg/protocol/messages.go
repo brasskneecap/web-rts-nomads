@@ -599,6 +599,14 @@ type BuildingTile struct {
 	// from PlayerFOW.KnownBuildings[building.ID] != nil. True for any
 	// shop the viewer has ever revealed (including their own).
 	ShopDiscovered bool `json:"shopDiscovered,omitempty"`
+
+	// ─── Recipe Shop fields ───────────────────────────────────────────────
+	// RecipeInventory is the runtime list of recipes this building sells,
+	// with per-slot quantity remaining. Populated by
+	// populateRecipeShopInventoriesLocked at match start. Quantity 0 means
+	// sold out (entry kept in list so the client renders it disabled),
+	// mirroring ShopInventory behaviour.
+	RecipeInventory []RecipeStockEntry `json:"recipeInventory,omitempty"`
 }
 
 // ShopStockEntry is one item slot in a shop building's inventory.
@@ -607,6 +615,14 @@ type BuildingTile struct {
 // further purchases of that item from that shop are rejected.
 type ShopStockEntry struct {
 	ItemID   string `json:"itemId"`
+	Quantity int    `json:"quantity"`
+}
+
+// RecipeStockEntry is one purchasable recipe slot in a Recipe Shop's inventory.
+// Quantity decrements on purchase; 0 means sold out (kept in the list so the
+// client can render it disabled), mirroring ShopStockEntry.
+type RecipeStockEntry struct {
+	RecipeID string `json:"recipeId"`
 	Quantity int    `json:"quantity"`
 }
 
