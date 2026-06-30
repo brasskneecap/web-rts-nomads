@@ -185,6 +185,36 @@ func (s *GameState) removeItemFromVaultByInstanceLocked(player *Player, instance
 	return nil, false
 }
 
+// vaultItemCountLocked returns the total number of units of itemID held in the
+// player's vault (summing stacks). Must be called under s.mu.
+func vaultItemCountLocked(player *Player, itemID string) int {
+	n := 0
+	for _, vi := range player.Vault {
+		if vi.ItemID == itemID {
+			n += vi.Stacks
+		}
+	}
+	return n
+}
+
+// removeOneItemFromVaultByItemIDLocked removes a single unit of itemID from the
+// player's vault: decrements a stack if one has Stacks>1, else drops the entry.
+// Returns false if no matching entry exists. Must be called under s.mu.
+func (s *GameState) removeOneItemFromVaultByItemIDLocked(player *Player, itemID string) bool {
+	for i, vi := range player.Vault {
+		if vi.ItemID != itemID {
+			continue
+		}
+		if vi.Stacks > 1 {
+			vi.Stacks--
+			return true
+		}
+		player.Vault = append(player.Vault[:i], player.Vault[i+1:]...)
+		return true
+	}
+	return false
+}
+
 // ─── Inventory size / bonus recomputation ────────────────────────────────────
 
 // setInventorySizeForRankLocked sets unit.InventorySize based on rank and
