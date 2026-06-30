@@ -1,0 +1,1 @@
+{ "id": "fire_sword", "name": "Fire Sword", "inputs": ["broad_sword", "fire_ring"], "costGold": 150, "output": "fire_sword" }
