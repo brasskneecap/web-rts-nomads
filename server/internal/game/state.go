@@ -3255,7 +3255,11 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 	// Snapshot known recipe IDs. Defensive copy; nil -> empty slice. Sorted so
 	// playerKnowsRecipeLocked and unlockRecipeForPlayerLocked maintain invariant.
 	recipeIDs := make([]string, 0, len(knownRecipeIDs))
-	recipeIDs = append(recipeIDs, knownRecipeIDs...)
+	for _, id := range knownRecipeIDs {
+		if id != "" {
+			recipeIDs = append(recipeIDs, id)
+		}
+	}
 	sort.Strings(recipeIDs)
 
 	player := &Player{

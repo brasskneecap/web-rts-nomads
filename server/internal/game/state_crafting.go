@@ -1,9 +1,9 @@
 package game
 
 // CraftItem is the public entry point for crafting a recipe at an Artificer.
-// Acquires s.mu, delegates, and returns whether a craft succeeded. The boolean
-// lets the caller (WS handler) fire the account-wide recipe-record seam only on
-// success.
+// Acquires s.mu, delegates, and returns whether the craft succeeded. The
+// recipe-crafted profile-record handler fires internally on success; the caller
+// does not need to take any action on true.
 func (s *GameState) CraftItem(playerID, recipeID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -70,6 +70,9 @@ func validateRecipeDef(def *RecipeDef) error {
 	if _, ok := getItemDef(def.Output); !ok {
 		return fmt.Errorf("recipe %q: output %q is not a known item", def.ID, def.Output)
 	}
+	if def.CostGold <= 0 {
+		return fmt.Errorf("recipe %q: costGold must be positive, got %d", def.ID, def.CostGold)
+	}
 	return nil
 }
 

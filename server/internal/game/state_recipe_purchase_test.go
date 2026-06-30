@@ -79,6 +79,25 @@ func TestPurchaseRecipe_RejectsWhenUnaffordable(t *testing.T) {
 	if p.Resources["gold"] != 10 {
 		t.Fatalf("gold should be unchanged, got %d", p.Resources["gold"])
 	}
+	if s.buildingsByID["rs-1"].RecipeInventory[0].Quantity != 1 {
+		t.Fatalf("shop stock should be unchanged, got %d", s.buildingsByID["rs-1"].RecipeInventory[0].Quantity)
+	}
+}
+
+func TestPurchaseRecipe_RejectsWhenSoldOut(t *testing.T) {
+	s, p := setupRecipePurchase(t)
+	s.mu.Lock()
+	s.buildingsByID["rs-1"].RecipeInventory[0].Quantity = 0
+	s.mu.Unlock()
+	s.PurchaseRecipe("p1", "rs-1", "fire_sword")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.playerKnowsRecipeLocked("p1", "fire_sword") {
+		t.Fatal("recipe must NOT unlock when stock is sold out")
+	}
+	if p.Resources["gold"] != 1000 {
+		t.Fatalf("gold should be unchanged, got %d", p.Resources["gold"])
+	}
 }
 
 func TestPurchaseRecipe_RejectsUndiscovered(t *testing.T) {

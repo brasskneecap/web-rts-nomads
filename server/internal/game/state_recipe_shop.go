@@ -54,7 +54,7 @@ func (s *GameState) unlockRecipeForPlayerLocked(player *Player, recipeID string)
 // RecipeInventory with a deterministic random subset of all recipes, sampled
 // via s.rngLoot. Iteration order over buildings is sorted by ID so the sample
 // is reproducible across runs. Must be called under s.mu write lock, once at
-// match start (after buildingsByID is built).
+// match start (reads s.MapConfig.Buildings directly; does not require buildingsByID to be populated).
 func (s *GameState) populateRecipeShopInventoriesLocked() {
 	all := ListRecipeDefs() // already sorted by ID
 	if len(all) == 0 {
