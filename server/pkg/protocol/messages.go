@@ -877,6 +877,13 @@ type PurchaseRecipeCommandMessage struct {
 	RecipeID   string `json:"recipeId"`
 }
 
+// CraftItemCommandMessage crafts one recipe at the player's Artificer,
+// consuming the recipe's input items from the vault plus gold.
+type CraftItemCommandMessage struct {
+	Type     string `json:"type"`
+	RecipeID string `json:"recipeId"`
+}
+
 // RerollShopCommandMessage requests rerolling the inventory of a neutral
 // shop building. BuildingID must reference a building of type "neutral-shop".
 // The server validates that the requesting player has discovered and

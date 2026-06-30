@@ -1086,6 +1086,23 @@ func (h *Hub) readLoop(client *Client) {
 			}
 			match.State.PurchaseRecipe(client.PlayerID(), msg.BuildingID, msg.RecipeID)
 
+		case "craft_item":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.CraftItemCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid craft_item payload"})
+				continue
+			}
+			match.State.CraftItem(client.PlayerID(), msg.RecipeID)
+
 		case "reroll_shop":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
