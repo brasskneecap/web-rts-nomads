@@ -22,14 +22,14 @@ func TestElementalRings_Load(t *testing.T) {
 		if def.SlotKind != ItemSlotKindAny {
 			t.Errorf("%s: slotKind = %q, want any", tc.id, def.SlotKind)
 		}
-		var fire int
+		var amount int
 		for _, e := range def.OnHitElemental {
 			if e.Type == tc.elem {
-				fire = e.Amount
+				amount = e.Amount
 			}
 		}
-		if fire != 5 {
-			t.Errorf("%s: onHitElemental %v = %d, want 5", tc.id, tc.elem, fire)
+		if amount != 5 {
+			t.Errorf("%s: onHitElemental %v = %d, want 5", tc.id, tc.elem, amount)
 		}
 	}
 }

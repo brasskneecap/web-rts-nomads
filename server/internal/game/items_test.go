@@ -78,9 +78,9 @@ func spawnBronzeUnit(t *testing.T, s *GameState, playerID string) *Unit {
 
 // ─── Catalog loading ─────────────────────────────────────────────────────────
 
-// TestItemCatalog_AllTenItemsLoaded verifies the embedded catalog has all 16
-// items and that both equipment and consumable kinds are represented.
-func TestItemCatalog_AllTenItemsLoaded(t *testing.T) {
+// TestItemCatalog_AllItemsLoaded verifies the embedded catalog has all items
+// and that both equipment and consumable kinds are represented.
+func TestItemCatalog_AllItemsLoaded(t *testing.T) {
 	defs := ListItemDefs()
 	if len(defs) != 16 {
 		t.Fatalf("expected 16 item defs, got %d", len(defs))
