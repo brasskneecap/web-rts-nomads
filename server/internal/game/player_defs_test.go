@@ -26,7 +26,7 @@ func TestPlayerConfig_StartingResourcesCopyIsolated(t *testing.T) {
 // with exactly the configured starting resources (no upgrades).
 func TestPlayer_DefaultStartingResources(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 
 	s.mu.RLock()
 	p, ok := s.Players["p1"]
@@ -47,7 +47,7 @@ func TestPlayer_DefaultStartingResources(t *testing.T) {
 func TestProfileUpgrade_StartingGold_AddsResource(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
 	const rank = 3
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"starting_gold": rank}, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", map[string]int{"starting_gold": rank}, nil, nil, nil)
 
 	s.mu.RLock()
 	p, ok := s.Players["p1"]
@@ -74,7 +74,7 @@ func TestProfileUpgrade_StartingGold_AddsResource(t *testing.T) {
 // inactive starting_gold upgrade does not grant bonus gold.
 func TestProfileUpgrade_StartingGold_InactiveNotApplied(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
-	s.EnsurePlayerWithUpgrades("p1", map[string]int{"starting_gold": 3}, []string{}, nil)
+	s.EnsurePlayerWithUpgrades("p1", map[string]int{"starting_gold": 3}, []string{}, nil, nil)
 
 	s.mu.RLock()
 	p, ok := s.Players["p1"]

@@ -680,6 +680,11 @@ type Player struct {
 	// affect this field. Nil / empty means no advancements purchased.
 	AcquiredAdvancements []string
 
+	// UnlockedRecipeIDs is the in-match set of recipe IDs this player may craft
+	// at an Artificer. Seeded at join from the profile's KnownRecipeIDs and
+	// grown by purchase_recipe. Sorted, deduped.
+	UnlockedRecipeIDs []string
+
 	// EffectiveUnitDefs is a per-player map of unitType → modified UnitDef
 	// reflecting all owned advancements. Computed once at match start by
 	// applyAdvancementsToEffectiveDefsLocked. Only contains entries for unit
@@ -3189,7 +3194,7 @@ func (s *GameState) HumanPlayerMatchSummaries() []protocol.MatchSummary {
 }
 
 func (s *GameState) EnsurePlayer(playerID string) {
-	s.EnsurePlayerWithUpgrades(playerID, nil, nil, nil)
+	s.EnsurePlayerWithUpgrades(playerID, nil, nil, nil, nil)
 }
 
 // EnsurePlayerWithUpgrades is the full match-join path. It creates the Player
@@ -3201,7 +3206,9 @@ func (s *GameState) EnsurePlayer(playerID string) {
 // all owned upgrades are active (backwards-compatible default).
 // acquiredAdvancementIDs is the sorted list of advancement IDs the player owns
 // (from PlayerProfile.AcquiredAdvancements); nil / empty means no advancements.
-func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks map[string]int, activeUpgradeIDs []string, acquiredAdvancementIDs []string) {
+// knownRecipeIDs is the list of recipe IDs the player may craft this match,
+// seeded from the profile's KnownRecipeIDs; nil / empty means no recipes unlocked.
+func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks map[string]int, activeUpgradeIDs []string, acquiredAdvancementIDs []string, knownRecipeIDs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -3239,6 +3246,12 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		}
 	}
 
+	// Snapshot known recipe IDs. Defensive copy; nil -> empty slice. Sorted so
+	// playerKnowsRecipeLocked and unlockRecipeForPlayerLocked maintain invariant.
+	recipeIDs := make([]string, 0, len(knownRecipeIDs))
+	recipeIDs = append(recipeIDs, knownRecipeIDs...)
+	sort.Strings(recipeIDs)
+
 	player := &Player{
 		ID:                            playerID,
 		Color:                         s.randomColor(),
@@ -3256,6 +3269,7 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		ExtraStartingUnits:            map[string]int{},
 		ShopRerollsRemaining:          defaultShopRerollsPerPlayer,
 		AcquiredAdvancements:          advancementIDs,
+		UnlockedRecipeIDs:             recipeIDs,
 		Metrics:                       NewMatchMetrics(),
 		ZoneStatModifiers:             newPlayerStatModifierSet(),
 	}

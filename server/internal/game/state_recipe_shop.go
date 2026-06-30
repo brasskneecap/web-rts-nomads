@@ -20,6 +20,36 @@ func hasRecipePurchaseCapability(b *protocol.BuildingTile) bool {
 	return false
 }
 
+// playerKnowsRecipeLocked reports whether the player may craft recipeID this
+// match (seeded from profile + purchased). Must be called under s.mu.
+func (s *GameState) playerKnowsRecipeLocked(playerID, recipeID string) bool {
+	p, ok := s.Players[playerID]
+	if !ok {
+		return false
+	}
+	for _, id := range p.UnlockedRecipeIDs {
+		if id == recipeID {
+			return true
+		}
+	}
+	return false
+}
+
+// unlockRecipeForPlayerLocked adds recipeID to the player's in-match unlocked
+// set if absent, keeping the slice sorted. Idempotent. Must be called under s.mu.
+func (s *GameState) unlockRecipeForPlayerLocked(player *Player, recipeID string) {
+	if player == nil || recipeID == "" {
+		return
+	}
+	for _, id := range player.UnlockedRecipeIDs {
+		if id == recipeID {
+			return
+		}
+	}
+	player.UnlockedRecipeIDs = append(player.UnlockedRecipeIDs, recipeID)
+	sort.Strings(player.UnlockedRecipeIDs)
+}
+
 // populateRecipeShopInventoriesLocked fills every recipe-shop building's
 // RecipeInventory with a deterministic random subset of all recipes, sampled
 // via s.rngLoot. Iteration order over buildings is sorted by ID so the sample

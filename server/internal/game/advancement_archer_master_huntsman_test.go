@@ -58,7 +58,7 @@ func nodeEffectPercent(t *testing.T, id, kind string) float64 {
 func spawnHuntsmanArcher(t *testing.T, seed int64) (s *GameState, attacker, target *Unit) {
 	t.Helper()
 	s = NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{masterHuntsmanID})
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{masterHuntsmanID}, nil)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	attacker = s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
@@ -85,7 +85,7 @@ func TestMasterHuntsman_FieldsSeededOnSpawnedArcher(t *testing.T) {
 	wantTrapRadius := nodeEffectPercent(t, masterHuntsmanID, "unitTrapRadiusMul") / 100
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 7)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{masterHuntsmanID})
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{masterHuntsmanID}, nil)
 	s.mu.Lock()
 	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	s.mu.Unlock()
@@ -109,7 +109,7 @@ func TestMasterHuntsman_NoAdvancement_FieldsZero(t *testing.T) {
 		t.Skip("archer not in unit catalog")
 	}
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 7)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 	s.mu.Lock()
 	archer := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	s.mu.Unlock()
@@ -206,7 +206,7 @@ func TestMasterHuntsman_BaselineArcher_NoBonusArrow(t *testing.T) {
 		t.Skip("archer not in unit catalog")
 	}
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 23)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	attacker := s.spawnPlayerUnitLocked("archer", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})

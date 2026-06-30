@@ -34,7 +34,7 @@ func TestDebugSpawn_AppliesArcherAdvancements(t *testing.T) {
 	wantArrows := nodeEffectAmount(t, masterHuntsmanID, "unitBonusArrows")
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 31)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, advancements)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, advancements, nil)
 
 	// Enable the debug-spawn gate (battletest maps set this in their JSON).
 	s.mu.Lock()
@@ -80,7 +80,7 @@ func TestDebugSpawn_EnemyTeam_NoAdvancements(t *testing.T) {
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 32)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"archer_hp_1", masterHuntsmanID})
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"archer_hp_1", masterHuntsmanID}, nil)
 
 	s.mu.Lock()
 	s.MapConfig.Debug = &protocol.MapDebugConfig{DebugSpawn: true}

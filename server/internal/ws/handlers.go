@@ -409,7 +409,7 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.AddClient(client)
 			log.Printf("join_match: player=%s\n", msg.PlayerID)
-			match.State.EnsurePlayerWithUpgrades(msg.PlayerID, msg.OwnedUpgradeRanks, msg.ActiveUpgradeIDs, msg.AcquiredAdvancementIDs)
+			match.State.EnsurePlayerWithUpgrades(msg.PlayerID, msg.OwnedUpgradeRanks, msg.ActiveUpgradeIDs, msg.AcquiredAdvancementIDs, msg.KnownRecipeIDs)
 
 			// Marshal welcome under the state RLock. WelcomeMessage embeds
 			// the live MapConfig, whose Buildings/Obstacles slices alias

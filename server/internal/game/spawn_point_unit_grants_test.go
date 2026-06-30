@@ -40,7 +40,7 @@ func TestExtraStartingUnits_SpawnsNearSpawnPoint(t *testing.T) {
 	}
 	s.mu.RUnlock()
 
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"worker_extra_1", "worker_extra_2"})
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"worker_extra_1", "worker_extra_2"}, nil)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -130,7 +130,7 @@ func TestExtraStartingUnits_NoSpawnPointWarnsAndSkips(t *testing.T) {
 	}
 	s.mu.RUnlock()
 
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"worker_extra_1", "worker_extra_2"})
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"worker_extra_1", "worker_extra_2"}, nil)
 
 	s.mu.RLock()
 	var p1Count int

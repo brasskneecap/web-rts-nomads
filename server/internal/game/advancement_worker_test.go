@@ -106,7 +106,7 @@ func TestWorkerAdvancements_GatherUsesEffectiveDef(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
 	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{
 		"worker_woodgather_1", "worker_goldgather_1",
-	})
+	}, nil)
 	// A baseline player without the advancements should gather the catalog amounts.
 	s.EnsurePlayer("baseline")
 

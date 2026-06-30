@@ -637,6 +637,10 @@ type JoinMatchMessage struct {
 	// player currently owns (extracted from PlayerProfile.AcquiredAdvancements
 	// by the client at join time). Nil / absent means no advancements.
 	AcquiredAdvancementIDs []string `json:"acquiredAdvancementIds,omitempty"`
+	// KnownRecipeIDs is the list of recipe IDs the player may craft this match,
+	// sourced from the profile's KnownRecipeIDs at join time. Nil / absent means
+	// no recipes are pre-unlocked.
+	KnownRecipeIDs []string `json:"knownRecipeIds,omitempty"`
 	// CachedMapHashes is the set of map contentHashes the client already holds
 	// locally for MapID (content-addressed map distribution). The server omits
 	// the (gzipped) map from the welcome when the match map's contentHash is in
@@ -1027,6 +1031,10 @@ type PlayerSnapshot struct {
 	// budget for this match. Drives the reroll button on neutral-shop
 	// buildings (enabled when > 0).
 	ShopRerollsRemaining int `json:"shopRerollsRemaining,omitempty"`
+	// UnlockedRecipeIDs is the player's in-match set of recipe IDs they may
+	// craft at an Artificer. Seeded from profile KnownRecipeIDs at join and
+	// grown by purchase_recipe commands. Omitted when empty.
+	UnlockedRecipeIDs []string `json:"unlockedRecipeIds,omitempty"`
 	// Metrics carries this player's cumulative match metrics (gold earned,
 	// kills, buildings built, etc). Always present so every snapshot
 	// recipient can render the end-of-round per-player comparison columns

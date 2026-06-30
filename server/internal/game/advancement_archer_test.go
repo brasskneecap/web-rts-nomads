@@ -91,7 +91,7 @@ func spawnExpTotal(t *testing.T, ids []string) int {
 func spawnArcherWith(t *testing.T, ids []string, seed int64) *Unit {
 	t.Helper()
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, ids)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, ids, nil)
 	s.mu.Lock()
 	archer := s.spawnPlayerUnitLocked("archer", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
 	s.mu.Unlock()
