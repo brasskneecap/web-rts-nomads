@@ -78,12 +78,12 @@ func spawnBronzeUnit(t *testing.T, s *GameState, playerID string) *Unit {
 
 // ─── Catalog loading ─────────────────────────────────────────────────────────
 
-// TestItemCatalog_AllTenItemsLoaded verifies the embedded catalog has all 10
+// TestItemCatalog_AllTenItemsLoaded verifies the embedded catalog has all 12
 // items and that both equipment and consumable kinds are represented.
 func TestItemCatalog_AllTenItemsLoaded(t *testing.T) {
 	defs := ListItemDefs()
-	if len(defs) != 10 {
-		t.Fatalf("expected 10 item defs, got %d", len(defs))
+	if len(defs) != 12 {
+		t.Fatalf("expected 12 item defs, got %d", len(defs))
 	}
 
 	byID := make(map[string]*ItemDef, len(defs))
@@ -93,7 +93,7 @@ func TestItemCatalog_AllTenItemsLoaded(t *testing.T) {
 
 	weapons := []string{
 		"broad_sword", "scimitar", "flame_sword",
-		"ice_sword", "shadow_blade",
+		"ice_sword", "shadow_blade", "fire_sword",
 	}
 	for _, id := range weapons {
 		def, ok := byID[id]
@@ -106,6 +106,18 @@ func TestItemCatalog_AllTenItemsLoaded(t *testing.T) {
 		}
 		if def.Modifiers == nil || def.Modifiers.Damage <= 0 {
 			t.Errorf("%s: expected positive damage modifier", id)
+		}
+	}
+
+	// Accessories: fire_ring has no stat modifiers but does have on-hit elemental.
+	if def, ok := byID["fire_ring"]; !ok {
+		t.Errorf("missing accessory %q", "fire_ring")
+	} else {
+		if def.Kind != ItemKindEquipment {
+			t.Errorf("fire_ring: expected kind equipment, got %q", def.Kind)
+		}
+		if len(def.OnHitElemental) == 0 {
+			t.Errorf("fire_ring: expected onHitElemental entries")
 		}
 	}
 

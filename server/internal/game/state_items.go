@@ -22,6 +22,16 @@ type EquippedItem struct {
 	Stacks     int    `json:"stacks"`
 }
 
+// EquipmentProc is a runtime copy of an item's ItemOnHitProc, aggregated onto a
+// unit's EquipmentBonus so the combat hook can roll it without re-reading the
+// catalog every hit.
+type EquipmentProc struct {
+	Chance       float64
+	Damage       int
+	DamageType   DamageType
+	ProjectileID string
+}
+
 // UnitEquipmentBonus accumulates the flat stat bonuses from all equipped items.
 // Recomputed by recomputeUnitEquipmentBonusLocked whenever the unit's loadout
 // changes. Applied inside applyRankModifiersLocked after path/rank multipliers.
@@ -33,6 +43,11 @@ type UnitEquipmentBonus struct {
 	MoveSpeed   float64
 	HealthRegen float64
 	MaxShield   int
+	// OnHitElemental sums per-element flat damage applied as a SEPARATE typed
+	// instance on each landed basic attack. nil when no equipped item grants any.
+	OnHitElemental map[DamageType]int
+	// OnHitProcs is one entry per equipped item that defines an onHitProc.
+	OnHitProcs []EquipmentProc
 }
 
 // ─── Capacity / presence helpers ─────────────────────────────────────────────
@@ -211,16 +226,35 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 			continue
 		}
 		def, ok := s.itemCatalog[slot.ItemID]
-		if !ok || def.Modifiers == nil {
+		if !ok {
 			continue
 		}
-		unit.EquipmentBonus.Damage += def.Modifiers.Damage
-		unit.EquipmentBonus.HP += def.Modifiers.HP
-		unit.EquipmentBonus.Armor += def.Modifiers.Armor
-		unit.EquipmentBonus.AttackSpeed += def.Modifiers.AttackSpeed
-		unit.EquipmentBonus.MoveSpeed += def.Modifiers.MoveSpeed
-		unit.EquipmentBonus.HealthRegen += def.Modifiers.HealthRegen
-		unit.EquipmentBonus.MaxShield += def.Modifiers.MaxShield
+		if def.Modifiers != nil {
+			unit.EquipmentBonus.Damage += def.Modifiers.Damage
+			unit.EquipmentBonus.HP += def.Modifiers.HP
+			unit.EquipmentBonus.Armor += def.Modifiers.Armor
+			unit.EquipmentBonus.AttackSpeed += def.Modifiers.AttackSpeed
+			unit.EquipmentBonus.MoveSpeed += def.Modifiers.MoveSpeed
+			unit.EquipmentBonus.HealthRegen += def.Modifiers.HealthRegen
+			unit.EquipmentBonus.MaxShield += def.Modifiers.MaxShield
+		}
+		for _, e := range def.OnHitElemental {
+			if e.Amount == 0 {
+				continue
+			}
+			if unit.EquipmentBonus.OnHitElemental == nil {
+				unit.EquipmentBonus.OnHitElemental = make(map[DamageType]int)
+			}
+			unit.EquipmentBonus.OnHitElemental[e.Type.OrPhysical()] += e.Amount
+		}
+		if p := def.OnHitProc; p != nil {
+			unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, EquipmentProc{
+				Chance:       p.Chance,
+				Damage:       p.Damage,
+				DamageType:   p.DamageType.OrPhysical(),
+				ProjectileID: p.ProjectileID,
+			})
+		}
 	}
 
 	// Apply delta to HealthRegenPerSecond directly.

@@ -1,0 +1,15 @@
+{
+  "id": "fire_sword",
+  "displayName": "Fire Sword",
+  "description": "+5 damage. +5 fire damage on hit. 5% chance on hit to launch a firebolt (25 fire damage).",
+  "iconKey": "fire_sword",
+  "kind": "equipment",
+  "tier": "rare",
+  "category": "Weapon",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 0,
+  "modifiers": { "damage": 5 },
+  "onHitElemental": [ { "type": "fire", "amount": 5 } ],
+  "onHitProc": { "chance": 0.05, "damage": 25, "damageType": "fire", "projectileID": "fire_bolt" }
+}
