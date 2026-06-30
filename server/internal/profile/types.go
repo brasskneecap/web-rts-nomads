@@ -2,7 +2,7 @@ package profile
 
 // CurrentVersion is the schema version written into every new profile.
 // Increment this when the struct layout changes and add migration logic.
-const CurrentVersion = 7
+const CurrentVersion = 8
 
 // DefaultCommanderID is the commander assigned to new profiles when no other
 // commander is specified.
@@ -75,6 +75,11 @@ type PlayerProfile struct {
 	// needed because omitempty serializes nil as absent and the award handler
 	// treats a missing ledger the same as an empty one.
 	CreditedMatchIDs []string `json:"creditedMatchIds,omitempty"`
+
+	// KnownRecipeIDs is the set of crafting recipe IDs this player has crafted
+	// at least once, unlocking them for crafting in all future matches. Added in
+	// schema version 8. Sorted, deduped. nil == empty.
+	KnownRecipeIDs []string `json:"knownRecipeIds"`
 }
 
 // AcquiredAdvancement records a single purchased advancement node.

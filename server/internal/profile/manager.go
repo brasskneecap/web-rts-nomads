@@ -3,6 +3,7 @@ package profile
 import (
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"time"
 )
@@ -129,5 +130,25 @@ func newDefaultProfile(playerID, commanderID string) *PlayerProfile {
 		AcquiredAdvancements:        []AcquiredAdvancement{},
 		CompletedCampaignLevels:     []string{},
 		CompletedCampaignObjectives: map[string][]string{},
+		KnownRecipeIDs:              []string{},
 	}
+}
+
+// RecordKnownRecipe records recipeID into the player's permanent KnownRecipeIDs
+// set (idempotent, sorted). Called fire-and-forget after a successful craft so
+// the recipe is craftable in all future matches. No-op on empty recipeID.
+func (m *Manager) RecordKnownRecipe(playerID, recipeID string) error {
+	if recipeID == "" {
+		return nil
+	}
+	return m.WithLocked(playerID, func(p *PlayerProfile) error {
+		for _, id := range p.KnownRecipeIDs {
+			if id == recipeID {
+				return nil // already known
+			}
+		}
+		p.KnownRecipeIDs = append(p.KnownRecipeIDs, recipeID)
+		sort.Strings(p.KnownRecipeIDs)
+		return nil
+	})
 }
