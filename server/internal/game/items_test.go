@@ -78,12 +78,12 @@ func spawnBronzeUnit(t *testing.T, s *GameState, playerID string) *Unit {
 
 // ─── Catalog loading ─────────────────────────────────────────────────────────
 
-// TestItemCatalog_AllTenItemsLoaded verifies the embedded catalog has all 14
+// TestItemCatalog_AllTenItemsLoaded verifies the embedded catalog has all 15
 // items and that both equipment and consumable kinds are represented.
 func TestItemCatalog_AllTenItemsLoaded(t *testing.T) {
 	defs := ListItemDefs()
-	if len(defs) != 14 {
-		t.Fatalf("expected 14 item defs, got %d", len(defs))
+	if len(defs) != 15 {
+		t.Fatalf("expected 15 item defs, got %d", len(defs))
 	}
 
 	byID := make(map[string]*ItemDef, len(defs))
@@ -94,6 +94,7 @@ func TestItemCatalog_AllTenItemsLoaded(t *testing.T) {
 	weapons := []string{
 		"broad_sword", "scimitar", "flame_sword",
 		"ice_sword", "shadow_blade", "fire_sword",
+		"lightning_sword",
 	}
 	for _, id := range weapons {
 		def, ok := byID[id]
