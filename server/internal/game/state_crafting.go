@@ -77,5 +77,16 @@ func (s *GameState) handleCraftItemLocked(playerID, recipeID string) bool {
 		}
 		return false
 	}
+	if s.recipeCraftedHandler != nil {
+		handler := s.recipeCraftedHandler
+		go handler(playerID, recipeID)
+	}
 	return true
+}
+
+// SetRecipeCraftedHandler installs the post-craft callback. Safe to call once
+// at match construction. Passing nil disables the hook (the default — tests
+// that do not exercise profile persistence do not need to set it).
+func (s *GameState) SetRecipeCraftedHandler(fn func(playerID, recipeID string)) {
+	s.recipeCraftedHandler = fn
 }

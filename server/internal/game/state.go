@@ -1065,6 +1065,12 @@ type GameState struct {
 	// Wired by MatchManager.newMatchLocked; nil in unit tests that do not
 	// exercise the immediate-commit path.
 	onDominionPointDropImmediate func(playerID string, amount int)
+
+	// recipeCraftedHandler is invoked (fire-and-forget) after a successful craft
+	// so the recipe can be recorded to the player's persistent profile. nil in
+	// tests that don't set it. Off the tick path by construction (craft is a
+	// command). Wired by MatchManager.newMatchLocked.
+	recipeCraftedHandler func(playerID, recipeID string)
 }
 
 const (
