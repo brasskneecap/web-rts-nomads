@@ -23,6 +23,7 @@ import { UNIT_DEF_MAP, initPathBounds, initPathsByUnitType, initUnitDefs } from 
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs } from '../maps/perkDefs'
 import { initItemDefs } from '../maps/itemDefs'
+import { initRecipeDefs } from '../maps/recipeDefs'
 import {
   fetchBuildingDefs,
   fetchObstacleDefs,
@@ -30,6 +31,7 @@ import {
   fetchActionIcons,
   fetchPerkDefs,
   fetchItemDefs,
+  fetchRecipeDefs,
 } from '../maps/catalog'
 
 export type GameUiSnapshot = {
@@ -179,13 +181,14 @@ export class GameClient {
   }
 
   async start(options: { resume?: boolean } = {}) {
-    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs] = await Promise.all([
+    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs, recipeDefs] = await Promise.all([
       fetchBuildingDefs(),
       fetchObstacleDefs(),
       fetchUnitDefs(),
       fetchActionIcons(),
       fetchPerkDefs(),
       fetchItemDefs().catch(() => []),
+      fetchRecipeDefs().catch(() => []),
     ])
     initBuildingDefs(buildingDefs)
     initObstacleDefs(obstacleDefs)
@@ -195,6 +198,7 @@ export class GameClient {
     initActionIcons(actionIcons)
     initPerkDefs(perkDefs)
     initItemDefs(itemDefs)
+    initRecipeDefs(recipeDefs)
     window.addEventListener('keydown', this.handleDevHotkey)
     await this.network.connect(options)
     this.loop.start()
