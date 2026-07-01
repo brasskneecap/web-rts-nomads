@@ -457,7 +457,6 @@ func (s *GameState) buildPlayerSnapshotLocked(player *Player) protocol.PlayerSna
 		Upgrades:             s.playerUpgradeSnapshotsLocked(player.ID),
 		TownHallTier:         s.townhallTierForPlayerLocked(player.ID),
 		Vault:                s.playerVaultSnapshotsLocked(player.ID),
-		VaultCapacity:        s.vaultCapacityForPlayerLocked(player.ID),
 		LockedUnitTypes:      s.lockedUnitTypesForPlayerLocked(player.ID),
 		ShopRerollsRemaining: player.ShopRerollsRemaining,
 		// Per-player match metrics for the end-of-round comparison columns

@@ -1,6 +1,6 @@
 <template>
   <div class="storage" :style="{ '--ui-icon-container-image': `url(${iconContainerUrl})` }">
-    <div class="storage__label">Storage {{ items.length }} / {{ capacity }}</div>
+    <div class="storage__label">Storage {{ items.length }}</div>
     <!-- The grid is also a drop zone: dragging an equipped item back here
          unequips it into the vault. -->
     <div
@@ -45,7 +45,6 @@ import type { VaultStorageItem } from './types'
 
 const props = defineProps<{
   items: VaultStorageItem[]
-  capacity: number
   selectedInstanceId: number | null
   /** True while an equipped item is being dragged — the grid lights up as an
    *  unequip drop target. */
@@ -83,9 +82,11 @@ function onGridDrop(e: DragEvent) {
   emit('storage-drop')
 }
 
-// Pad up to a stable grid so the column keeps its shape even when nearly empty.
+// The vault is unbounded, so the grid grows with the item count. Always keep at
+// least one trailing empty cell (a visible drop target for unequipping) and a
+// minimum of 6 cells so a near-empty vault still reads as a grid.
 const cells = computed(() => {
-  const total = Math.max(props.capacity, props.items.length, 6)
+  const total = Math.max(props.items.length + 1, 6)
   return Array.from({ length: total }, (_, i) => {
     const item = props.items[i] ?? null
     return { key: item ? `item-${item.instanceId}` : `empty-${i}`, item }

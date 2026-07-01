@@ -1,6 +1,6 @@
 <template>
   <div v-if="cards.length" class="zone-capture" role="status" aria-live="polite">
-    <div class="zone-capture__header">Capturing</div>
+    <div class="zone-capture__header">Zones</div>
     <ul class="zone-capture__list">
       <li
         v-for="card in cards"
@@ -10,11 +10,15 @@
         :style="card.ownerColor ? { borderLeftColor: card.ownerColor } : undefined"
       >
         <div class="zone-card__name">{{ card.name }}</div>
-        <div class="zone-card__req">{{ card.requirement }}</div>
+        <div v-if="card.requirement" class="zone-card__req">{{ card.requirement }}</div>
         <div class="zone-card__status">{{ card.status }}</div>
         <div v-if="card.progress > 0" class="zone-card__bar">
           <div class="zone-card__bar-fill" :style="{ width: `${Math.round(card.progress * 100)}%` }" />
         </div>
+        <ul v-if="card.bonuses.length" class="zone-card__bonuses">
+          <li v-for="(bonus, i) in card.bonuses" :key="i" class="zone-card__bonus">{{ bonus }}</li>
+        </ul>
+        <div v-else-if="card.state === 'captured'" class="zone-card__bonus zone-card__bonus--none">No bonus</div>
       </li>
     </ul>
   </div>
@@ -90,6 +94,30 @@ void props
 
 .zone-card--locked .zone-card__status {
   color: rgba(244, 210, 122, 0.55);
+}
+
+.zone-card--captured .zone-card__status {
+  color: #86efac;
+}
+
+.zone-card__bonuses {
+  list-style: none;
+  margin: 3px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.zone-card__bonus {
+  font-size: 12px;
+  color: rgba(244, 210, 122, 0.9);
+  line-height: 1.35;
+}
+
+.zone-card__bonus--none {
+  font-style: italic;
+  color: rgba(244, 210, 122, 0.5);
 }
 
 .zone-card__bar {

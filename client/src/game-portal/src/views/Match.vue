@@ -159,7 +159,6 @@
         :on-purchase-upgrade="purchaseUpgrade"
         :on-cancel-upgrade="cancelUpgrade"
         :vault="ui.vault"
-        :vault-capacity="ui.vaultCapacity"
         :vault-selected-instance-id="ui.vaultSelectedInstanceId"
         :units="ui.allPlayerUnits"
         :on-select-vault-item="setVaultSelectedInstanceId"

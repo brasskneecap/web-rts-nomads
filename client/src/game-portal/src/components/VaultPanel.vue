@@ -26,7 +26,7 @@
         @click="collapsed = !collapsed"
       >
         <span class="vault-chevron" :class="{ open: !collapsed }">▾</span>
-        <span class="vault-title">Vault ({{ storageItems.length }}/{{ vaultCapacity }})</span>
+        <span class="vault-title">Vault ({{ storageItems.length }})</span>
       </button>
       <button
         v-if="onClose"
@@ -43,7 +43,6 @@
         <div class="vault-left">
           <StorageGrid
             :items="storageItems"
-            :capacity="vaultCapacity"
             :selected-instance-id="vaultSelectedInstanceId"
             :drag-active="dragSource?.kind === 'unit-slot'"
             :icon-container-url="iconContainerUrl"
@@ -59,9 +58,23 @@
         <div class="vault-right">
           <div class="vault-right__head">
             <span class="vault-right__title">Eligible Units ({{ unitCards.length }})</span>
-            <span v-if="vaultSelectedInstanceId !== null" class="vault-right__hint">
-              Click a unit's empty slot to equip
-            </span>
+          </div>
+          <div
+            v-if="unitTypeTabs.length > 1"
+            class="vault-type-tabs"
+            role="tablist"
+            aria-label="Filter units by type"
+          >
+            <button
+              v-for="tab in unitTypeTabs"
+              :key="tab.type ?? '__all__'"
+              type="button"
+              class="vault-type-tab"
+              :class="{ 'vault-type-tab--active': selectedTypeFilter === tab.type }"
+              role="tab"
+              :aria-selected="selectedTypeFilter === tab.type"
+              @click="selectedTypeFilter = tab.type"
+            >{{ tab.label }}</button>
           </div>
           <div class="vault-right__list">
             <EligibleUnitCard
@@ -87,10 +100,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { VaultItemSnapshot } from '@/game/network/protocol'
 import { formatUnitPath, type Unit } from '@/game/core/GameState'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
+import { UNIT_DEFS, UNIT_DEF_MAP } from '@/game/maps/unitDefs'
 import { PERK_DEF_MAP } from '@/game/maps/perkDefs'
 import { formatPerkTooltip } from '@/game/core/perkTooltip'
 import { TIER_COLORS, buildItemTooltipBody } from '@/game/items/itemRules'
@@ -112,7 +126,6 @@ import type {
 
 const props = withDefaults(defineProps<{
   vault: VaultItemSnapshot[]
-  vaultCapacity: number
   vaultSelectedInstanceId: number | null
   units: Unit[]
   onSelectVaultItem: (instanceId: number | null) => void
@@ -259,11 +272,55 @@ function buildPerks(unit: Unit): VaultPerkChip[] {
   return chips
 }
 
-const unitCards = computed<VaultUnitCardData[]>(() => {
-  const hasSelection = props.vaultSelectedInstanceId !== null
+// ── Unit-type filter sub-tabs ───────────────────────────────────────────────
+// Catalog order so the tabs read in a stable, designed sequence (e.g. Soldier,
+// Archer, Acolyte) rather than insertion/iteration order.
+function unitTypeOrder(type: string): number {
+  const i = UNIT_DEFS.findIndex((d) => d.type === type)
+  return i === -1 ? Number.MAX_SAFE_INTEGER : i
+}
 
+// Distinct unit types that have at least one usable (size ≥ 1) inventory slot.
+const availableUnitTypes = computed<string[]>(() => {
+  const types = new Set<string>()
+  for (const u of props.units) {
+    if ((u.inventory?.size ?? 0) >= 1) types.add(u.unitType)
+  }
+  return Array.from(types).sort((a, b) => unitTypeOrder(a) - unitTypeOrder(b))
+})
+
+interface UnitTypeTab {
+  type: string | null // null = "All"
+  label: string
+}
+
+// "All" plus one tab per available type. Hidden in the template unless there's
+// at least one real type to filter by.
+const unitTypeTabs = computed<UnitTypeTab[]>(() => [
+  { type: null, label: 'All' },
+  ...availableUnitTypes.value.map((t) => ({
+    type: t,
+    label: UNIT_DEF_MAP.get(t)?.name ?? t,
+  })),
+])
+
+// null = "All". User-driven, so it never reshuffles cards on its own.
+const selectedTypeFilter = ref<string | null>(null)
+
+// If the active type disappears (its last unit was removed), fall back to All.
+watch(availableUnitTypes, (types) => {
+  if (selectedTypeFilter.value && !types.includes(selectedTypeFilter.value)) {
+    selectedTypeFilter.value = null
+  }
+})
+
+const unitCards = computed<VaultUnitCardData[]>(() => {
   // Only units with an inventory capability can hold items.
-  const capable = props.units.filter((u) => u.inventory != null)
+  let capable = props.units.filter((u) => u.inventory != null)
+
+  // Apply the user-selected type filter (replaces the old auto-sort-on-select).
+  const typeFilter = selectedTypeFilter.value
+  if (typeFilter) capable = capable.filter((u) => u.unitType === typeFilter)
 
   const cards = capable.map((u, originalIndex) => {
     const inventory = buildInventory(u)
@@ -295,15 +352,10 @@ const unitCards = computed<VaultUnitCardData[]>(() => {
     }
   })
 
-  // Sort. With an item selected: eligible-with-empty-slot first, then eligible
-  // (slots full), then ineligible; higher rank wins ties. Without a selection:
-  // simply by rank then name.
+  // Stable sort independent of the selected item, so equipping an item never
+  // reorders the list (which used to make it look like the wrong unit was
+  // equipped): by rank (desc), then name, then original order.
   cards.sort((a, b) => {
-    if (hasSelection) {
-      const groupA = a.card.eligible ? (a.card.hasEmptyMatchingSlot ? 0 : 1) : 2
-      const groupB = b.card.eligible ? (b.card.hasEmptyMatchingSlot ? 0 : 1) : 2
-      if (groupA !== groupB) return groupA - groupB
-    }
     const rankDiff = rankValue(b.card.rank) - rankValue(a.card.rank)
     if (rankDiff !== 0) return rankDiff
     const nameDiff = a.card.specializationName.localeCompare(b.card.specializationName)
@@ -572,9 +624,37 @@ function onStorageDrop() {
   color: #f5e4c0;
 }
 
-.vault-right__hint {
+/* Unit-type filter sub-tabs, above the unit list. */
+.vault-type-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex: 0 0 auto;
+}
+
+.vault-type-tab {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(212, 168, 79, 0.25);
+  border-radius: 6px;
+  color: rgba(232, 217, 184, 0.7);
   font-size: 11px;
-  color: rgba(96, 165, 250, 0.9);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.vault-type-tab:hover {
+  border-color: rgba(214, 178, 110, 0.6);
+  color: #f0e0c0;
+}
+
+.vault-type-tab--active {
+  background: rgba(196, 158, 62, 0.22);
+  border-color: rgba(214, 178, 110, 0.8);
+  color: #f5e4c0;
 }
 
 .vault-right__list {
