@@ -1303,8 +1303,38 @@
                 <option v-for="vc in destroyBuildingObjectives" :key="vc.id" :value="vc.id">{{ vc.label || vc.id }}</option>
               </select>
             </div>
+            <!-- Shop Guards: opt-in neutral squad that locks a neutral-shop /
+                 recipe-shop until cleared. No guardGroupId = open shop. -->
+            <template v-if="isShopGuardableBuildingType(selectedEditBuilding.buildingType)">
+              <div class="edit-field">
+                <label>Guard Squad</label>
+                <select
+                  :value="(selectedEditBuilding.metadata?.['guardGroupId'] as string | undefined) ?? ''"
+                  @change="updateEditMeta('guardGroupId', ($event.target as HTMLSelectElement).value || undefined)"
+                >
+                  <option value="">None (open shop)</option>
+                  <option v-for="g in guardGroupOptions" :key="g.id" :value="g.id">{{ g.name || g.id }}</option>
+                </select>
+                <span class="edit-field__hint">A neutral squad that locks the shop until cleared. Leave as None to place an unguarded shop.</span>
+              </div>
+              <template v-if="selectedEditBuilding.metadata?.['guardGroupId']">
+                <div class="edit-field">
+                  <label>Guard Tier</label>
+                  <input type="number" min="1" max="10" :value="(selectedEditBuilding.metadata?.['guardStartingTier'] as number | undefined) ?? 1" @input="updateEditMeta('guardStartingTier', +($event.target as HTMLInputElement).value || undefined)" />
+                  <span class="edit-field__hint">The squad must exist at this tier or the guards won't spawn.</span>
+                </div>
+                <div class="edit-field">
+                  <label>Aggro Range</label>
+                  <input type="number" min="0" step="10" :value="(selectedEditBuilding.metadata?.['guardAggroRange'] as number | undefined) ?? 0" @input="updateEditMeta('guardAggroRange', +($event.target as HTMLInputElement).value || undefined)" />
+                </div>
+                <div class="edit-field">
+                  <label>Leash Range</label>
+                  <input type="number" min="0" step="10" :value="(selectedEditBuilding.metadata?.['guardLeashRange'] as number | undefined) ?? 0" @input="updateEditMeta('guardLeashRange', +($event.target as HTMLInputElement).value || undefined)" />
+                </div>
+              </template>
+            </template>
             <div
-              v-if="!isPlayerOwnableBuildingType(selectedEditBuilding.buildingType) && !destroyBuildingObjectives.length"
+              v-if="!isPlayerOwnableBuildingType(selectedEditBuilding.buildingType) && !destroyBuildingObjectives.length && !isShopGuardableBuildingType(selectedEditBuilding.buildingType)"
               class="edit-panel__empty"
             >No editable fields for this building type.</div>
           </template>
@@ -1495,6 +1525,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchUnitDefs, saveMapCatalogFile, LevelConflictError } from '@/game/maps/catalog'
 import type { LevelConflict } from '@/game/maps/catalog'
+import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
 import type {
   BuildingType,
   JsonObject,
@@ -1895,6 +1926,13 @@ const selectedEditBuilding = computed(() =>
   selectedEditBuildingId.value
     ? model.value.buildings.find((b) => b.id === selectedEditBuildingId.value) ?? null
     : null
+)
+
+// Distinct neutral-group options for the shop-guard dropdown (see the Shop
+// Guards section of the building edit panel). Empty until fetchNeutralGroups
+// resolves; the mapper picks a squad + tier, the server resolves it at spawn.
+const guardGroupOptions = computed<NeutralGroupSummary[]>(() =>
+  allGuardGroups(neutralGroupTiers.value),
 )
 
 const selectedEditPlacedUnit = computed(() =>
