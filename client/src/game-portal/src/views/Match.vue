@@ -168,9 +168,12 @@
         :on-use-consumable="sendUseConsumable"
         :on-transfer-item="sendTransferItem"
         :on-focus-unit="focusUnit"
+        :craft-catalog="ui.craftCatalog"
+        :has-artificer="ui.hasArtificer"
         @close="matchMenuOpen = false"
         @purchase="({ itemId, buildingId }) => sendPurchaseItem(buildingId, itemId)"
         @reroll="(buildingId) => rerollShop(buildingId)"
+        @craft="craftItem"
       />
     </div>
 
@@ -259,6 +262,7 @@ const {
   setMinimapPanelRect,
   sendPurchaseItem,
   rerollShop,
+  craftItem,
   purchaseUpgrade,
   cancelUpgrade,
   sendEquipItem,
@@ -558,6 +562,7 @@ const MATCH_MENU_HOTKEYS: Record<string, string> = {
   KeyS: 'shop',
   KeyU: 'upgrades',
   KeyV: 'vault',
+  KeyC: 'craft',
 }
 
 function isTextInputFocused() {
