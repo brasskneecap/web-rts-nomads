@@ -568,6 +568,20 @@ export type ShopCatalogEntry = {
   purchaseBuildingName: string
 }
 
+export interface CraftCatalogIngredient {
+  itemId: string
+  have: number
+  need: number
+}
+export interface CraftCatalogEntry {
+  recipeId: string
+  name: string
+  output: string
+  costGold: number
+  ingredients: CraftCatalogIngredient[]
+  craftable: boolean
+}
+
 export class GameState {
   private resourceStocks: ResourceStock[] = [
     { id: 'gold', label: 'Gold', amount: 500, accent: '#d4a84f' },
@@ -2661,6 +2675,59 @@ export class GameState {
     }
 
     entries.sort((a, b) => a.costGold - b.costGold || a.displayName.localeCompare(b.displayName))
+    return entries
+  }
+
+  // localPlayerHasArtificer reports whether the local player owns at least one
+  // fully-built (not under-construction) building with the "crafting"
+  // capability — the client-side mirror of the server's craft gate. Used to
+  // gate the Craft tab's buttons + empty-state hint.
+  localPlayerHasArtificer(): boolean {
+    if (!this.localPlayerId) return false
+    for (const b of this.mapConfig.buildings) {
+      if (b.ownerId !== this.localPlayerId) continue
+      if (b.metadata?.['underConstruction'] === true) continue
+      if (b.capabilities?.includes('crafting')) return true
+    }
+    return false
+  }
+
+  // getCraftCatalogSnapshot builds the Craft tab's data from the player's
+  // unlocked recipes: per recipe, the ingredient have/need (have summed from the
+  // Vault, need counted from recipe.inputs incl. duplicates) and whether it is
+  // craftable right now. Server re-validates on craft_item — this is a UX hint.
+  getCraftCatalogSnapshot(): CraftCatalogEntry[] {
+    const hasArtificer = this.localPlayerHasArtificer()
+    const have = new Map<string, number>()
+    for (const vi of this.localPlayerVault) {
+      have.set(vi.itemId, (have.get(vi.itemId) ?? 0) + (vi.stacks ?? 1))
+    }
+    const entries: CraftCatalogEntry[] = []
+    // Deterministic order: iterate the sorted unlocked ids.
+    for (const recipeId of [...this.localPlayerUnlockedRecipeIds].sort()) {
+      const recipe = RECIPE_DEF_MAP.get(recipeId)
+      if (!recipe) continue
+      const need = new Map<string, number>()
+      for (const input of recipe.inputs) need.set(input, (need.get(input) ?? 0) + 1)
+      let allPresent = true
+      const ingredients: CraftCatalogIngredient[] = []
+      for (const input of recipe.inputs) {
+        if (ingredients.some((i) => i.itemId === input)) continue // dedup display
+        const needCount = need.get(input) ?? 0
+        const haveCount = have.get(input) ?? 0
+        if (haveCount < needCount) allPresent = false
+        ingredients.push({ itemId: input, have: haveCount, need: needCount })
+      }
+      entries.push({
+        recipeId: recipe.id,
+        name: recipe.name,
+        output: recipe.output,
+        costGold: recipe.costGold,
+        ingredients,
+        craftable: hasArtificer && allPresent,
+      })
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name) || a.recipeId.localeCompare(b.recipeId))
     return entries
   }
 
