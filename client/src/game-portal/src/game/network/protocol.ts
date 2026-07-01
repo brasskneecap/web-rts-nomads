@@ -101,10 +101,16 @@ export type BuildingTile = GridCoord & {
   shopGuardUnitIds?: number[]
   shopLocked?: boolean
   shopDiscovered?: boolean
+  recipeInventory?: RecipeStockEntry[]
 }
 
 export type ShopStockEntry = {
   itemId: string
+  quantity: number
+}
+
+export type RecipeStockEntry = {
+  recipeId: string
   quantity: number
 }
 
@@ -451,6 +457,7 @@ export type JoinMatchMessage = {
   activeUpgradeIds?: string[]
   ownedUpgradeRanks?: Record<string, number>
   acquiredAdvancementIds?: string[]
+  knownRecipeIds?: string[]
   /** Content-addressed map distribution: the map contentHashes this client
    *  already holds in its local cache for `mapId`. The server omits the map
    *  from the welcome when the match map's hash is in this list. */
@@ -734,6 +741,7 @@ export type PlayerSnapshot = {
   townHallTier?: number
   vault?: VaultItemSnapshot[]
   vaultCapacity?: number
+  unlockedRecipeIds?: string[]
   /** Unit types this player cannot train because their server-side
    *  RequiresBuildings list is unsatisfied. Absent/empty = no locks. */
   lockedUnitTypes?: string[]
@@ -759,6 +767,17 @@ export type PurchaseItemCommand = {
 export type RerollShopCommand = {
   type: 'reroll_shop'
   buildingId: string
+}
+
+export type PurchaseRecipeCommand = {
+  type: 'purchase_recipe'
+  buildingId: string
+  recipeId: string
+}
+
+export type CraftItemCommand = {
+  type: 'craft_item'
+  recipeId: string
 }
 
 export type EquipItemCommand = {
@@ -835,6 +854,8 @@ export type ClientMessage =
   | UpgradeTownHallCommand
   | PurchaseItemCommand
   | RerollShopCommand
+  | PurchaseRecipeCommand
+  | CraftItemCommand
   | EquipItemCommand
   | UnequipItemCommand
   | UseConsumableCommand
