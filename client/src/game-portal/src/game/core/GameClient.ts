@@ -86,7 +86,6 @@ export type GameUiSnapshot = {
   selectedBuildingType: string | null
   // Vault contents for the local player.
   vault: VaultItemSnapshot[]
-  vaultCapacity: number
   vaultSelectedInstanceId: number | null
   // All local-player units (not just selected ones). Needed by VaultPanel to
   // show all units that can receive equipped items.
@@ -316,7 +315,6 @@ export class GameClient {
       townHallTier: this.state.townHallTier,
       selectedBuildingType: this.state.getSelectedBuildingType(),
       vault: this.state.localPlayerVault,
-      vaultCapacity: this.state.localPlayerVaultCapacity,
       vaultSelectedInstanceId: this.state.vaultSelectedInstanceId,
       allPlayerUnits: this.state.getLocalPlayerUnits(),
       waveUpgrade: this.state.waveUpgrade,
@@ -416,18 +414,34 @@ export class GameClient {
     this.state.selectUnit(unitId)
   }
 
-  /** Select a single unit and pan the camera to center on it. Used by the
-   *  Vault unit cards so clicking a card both selects the unit (showing the
-   *  world selection ring) and brings it into view. */
-  focusUnit(unitId: number) {
+  /** Select a single unit and pan the camera to bring it into view. Used by
+   *  the Vault unit cards so clicking a card both selects the unit (showing
+   *  the world selection ring) and frames it.
+   *
+   *  The unit is always kept vertically centered. Horizontally, when the Vault
+   *  window's right edge is provided (`menuRightPx`, in viewport CSS px), the
+   *  unit is placed 200 screen px to the right of that edge so it stays clear
+   *  of the window regardless of screen size. Without it we fall back to a
+   *  small fixed left-nudge. */
+  focusUnit(unitId: number, menuRightPx?: number) {
     this.state.selectUnit(unitId)
     const units = this.state.getSelectedUnits()
     if (units.length === 0) return
     const u = units[0]
-    // The Vault window is anchored on the left, so nudge the framing to the
-    // left of the unit by ~100 screen px (converted to world units via zoom)
-    // so the unit lands slightly right of center, clear of the window.
-    const offsetWorldX = 100 / this.camera.zoom
+    // Desired on-canvas screen X (in CSS px; canvas.width === clientWidth) at
+    // which the unit should land.
+    const centerScreenX = this.canvas.width / 2
+    let targetScreenX: number
+    if (menuRightPx != null) {
+      const canvasRect = this.canvas.getBoundingClientRect()
+      targetScreenX = menuRightPx - canvasRect.left + 200
+    } else {
+      // Fallback: nudge slightly right of center, clear of a left-anchored window.
+      targetScreenX = centerScreenX + 100
+    }
+    // centerOn() places the given world point at the screen center, so offset
+    // the world point by the screen delta (converted to world units via zoom).
+    const offsetWorldX = (targetScreenX - centerScreenX) / this.camera.zoom
     this.camera.centerOn(
       u.x - offsetWorldX,
       u.y,

@@ -293,13 +293,13 @@
         "resources": [
           {
             "accent": "#d4a84f",
-            "amount": 500,
+            "amount": 1500,
             "id": "NORM-STR",
             "label": "Gold"
           },
           {
             "accent": "#7a9a52",
-            "amount": 180,
+            "amount": 1180,
             "id": "NORM-STR",
             "label": "Wood"
           },
@@ -348,8 +348,7 @@
             "track": "archer"
           }
         ],
-        "vault": [],
-        "vaultCapacity": 5
+        "vault": []
       }
     ],
     "serverNow": 0,

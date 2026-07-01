@@ -52,23 +52,6 @@ type UnitEquipmentBonus struct {
 
 // ─── Capacity / presence helpers ─────────────────────────────────────────────
 
-// vaultCapacityForPlayerLocked returns the number of vault slots available to
-// a player, gated by their townhall tier. Default (no TH / tier 0) → 6,
-// Tier 1 → 5, Tier 2 → 10, Tier 3 → 15. Must be called under s.mu.
-func (s *GameState) vaultCapacityForPlayerLocked(playerID string) int {
-	tier := s.townhallTierForPlayerLocked(playerID)
-	switch tier {
-	case 1:
-		return 5
-	case 2:
-		return 10
-	case 3:
-		return 15
-	default:
-		return 6
-	}
-}
-
 // playerHasMarketplaceLocked returns true if the player owns at least one
 // fully-built (not under-construction) building with the "item-purchase"
 // capability. Must be called under s.mu.
@@ -112,16 +95,14 @@ func itemMaxStacks(def *ItemDef) int {
 	return 1
 }
 
-// addItemToVaultLocked attempts to add one unit of def to the player's vault.
-// Returns true on success, false if the vault is at capacity and no stack slot
-// is available.
+// addItemToVaultLocked adds one unit of def to the player's vault. The vault is
+// unbounded, so this always succeeds; the bool return is retained for callers
+// that branch on it (e.g. loot pickup) and is always true.
 //
 // Stacking rules:
-//   - Equipment: always creates a new VaultItem with a unique InstanceID; counts
-//     against capacity regardless of existing entries.
 //   - Consumable: if an existing entry with the same ItemID has room to stack,
-//     increment Stacks (no new entry, no capacity check). Otherwise, a new entry
-//     is created — that counts against capacity.
+//     increment Stacks. Otherwise a new entry is created.
+//   - Equipment: always creates a new VaultItem with a unique InstanceID.
 //
 // Must be called under s.mu.
 func (s *GameState) addItemToVaultLocked(player *Player, def *ItemDef) bool {
@@ -134,24 +115,8 @@ func (s *GameState) addItemToVaultLocked(player *Player, def *ItemDef) bool {
 				return true
 			}
 		}
-		// No stackable slot found; need a new entry — check capacity.
-		capacity := s.vaultCapacityForPlayerLocked(player.ID)
-		if len(player.Vault) >= capacity {
-			return false
-		}
-		player.Vault = append(player.Vault, &VaultItem{
-			InstanceID: s.allocItemInstanceIDLocked(),
-			ItemID:     def.ID,
-			Stacks:     1,
-		})
-		return true
 	}
 
-	// Equipment always needs a new slot.
-	capacity := s.vaultCapacityForPlayerLocked(player.ID)
-	if len(player.Vault) >= capacity {
-		return false
-	}
 	player.Vault = append(player.Vault, &VaultItem{
 		InstanceID: s.allocItemInstanceIDLocked(),
 		ItemID:     def.ID,
@@ -393,33 +358,6 @@ func (s *GameState) handlePurchaseItemLocked(playerID, buildingID, itemID string
 		return
 	}
 
-	// Capacity pre-check: if a new vault entry would be needed, verify room.
-	// addItemToVaultLocked handles both the stacking and the capacity guard, so
-	// we attempt the add first; if it returns false we abort before deducting.
-	// To avoid deducting gold before the vault check, we do a dry-run first.
-	if def.Kind == ItemKindConsumable {
-		maxSt := itemMaxStacks(def)
-		canStack := false
-		for _, vi := range player.Vault {
-			if vi.ItemID == def.ID && vi.Stacks < maxSt {
-				canStack = true
-				break
-			}
-		}
-		if !canStack {
-			capacity := s.vaultCapacityForPlayerLocked(playerID)
-			if len(player.Vault) >= capacity {
-				return
-			}
-		}
-	} else {
-		// Equipment always needs a new slot.
-		capacity := s.vaultCapacityForPlayerLocked(playerID)
-		if len(player.Vault) >= capacity {
-			return
-		}
-	}
-
 	player.Resources["gold"] -= def.CostGold
 	s.addItemToVaultLocked(player, def)
 	// Decrement the shop's stock for this item. The entry stays in the
@@ -519,36 +457,14 @@ func (s *GameState) handleUnequipItemLocked(playerID string, unitID int, slotIdx
 	}
 
 	slot := unit.Equipped[slotIdx]
-	def, ok := s.itemCatalog[slot.ItemID]
-	if !ok {
+	if _, ok := s.itemCatalog[slot.ItemID]; !ok {
 		// Unknown item — remove from slot silently, no vault add.
 		unit.Equipped[slotIdx] = nil
 		s.recomputeUnitEquipmentBonusLocked(unit)
 		return
 	}
 
-	// Verify vault has room to receive the item (same logic as addItemToVaultLocked).
-	if def.Kind == ItemKindConsumable {
-		maxSt := itemMaxStacks(def)
-		canStack := false
-		for _, vi := range player.Vault {
-			if vi.ItemID == def.ID && vi.Stacks < maxSt {
-				canStack = true
-				break
-			}
-		}
-		if !canStack {
-			capacity := s.vaultCapacityForPlayerLocked(playerID)
-			if len(player.Vault) >= capacity {
-				return
-			}
-		}
-	} else {
-		capacity := s.vaultCapacityForPlayerLocked(playerID)
-		if len(player.Vault) >= capacity {
-			return
-		}
-	}
+	// The vault is unbounded, so the item can always be returned — no room check.
 
 	// Move item from slot back to vault.
 	unit.Equipped[slotIdx] = nil

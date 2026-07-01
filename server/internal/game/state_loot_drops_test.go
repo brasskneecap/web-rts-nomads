@@ -281,22 +281,13 @@ func TestLootDrop_OutOfRangeDoesNotPickup(t *testing.T) {
 	}
 }
 
-// TestLootDrop_PickupVaultFullPreservesResources: when the vault is at
-// capacity, the chest is still consumed and resources are still granted,
-// but the item is lost and reported via OverflowItemIDs on the notification.
-//
-// Spec requirement (loot-drops design §Pickup test coverage):
-//
-//	"Vault full → resources still granted, items listed in
-//	 OverflowItemIDs of the notification, chest still consumed."
-func TestLootDrop_PickupVaultFullPreservesResources(t *testing.T) {
+// TestLootDrop_PickupUnboundedVaultCollectsItem: the vault is unbounded, so an
+// item is always collected (never overflows), even when the vault already holds
+// many items. Resources are granted and the chest consumed as usual.
+func TestLootDrop_PickupUnboundedVaultCollectsItem(t *testing.T) {
 	s := newTestStateForLootDrops(t, 1)
 	camp := &s.NeutralCamps[0]
 	camp.SpawnedGroupID = "small_raider_group"
-	// Chest has both resources and an equipment item so we can assert
-	// resources land and the item overflows. broad_sword is equipment
-	// (kind=equipment) so it always needs a new vault slot — it cannot
-	// stack onto an existing entry. With vault capacity 0 it must overflow.
 	drop := s.spawnLootDropLocked(camp,
 		map[string]int{"gold": 50, "wood": 15},
 		[]string{"broad_sword"},
@@ -309,15 +300,9 @@ func TestLootDrop_PickupVaultFullPreservesResources(t *testing.T) {
 	}
 	s.Players["p1"] = player
 
-	// Fill the vault to its actual capacity so the pickup below exercises the
-	// vault-full path regardless of the configured capacity value (it no longer
-	// happens to be 0 for a player without a townhall). Each broad_sword is
-	// equipment and occupies its own slot.
-	capacity := s.vaultCapacityForPlayerLocked("p1")
-	if capacity <= 0 {
-		t.Fatalf("test setup: expected a positive vault capacity, got %d", capacity)
-	}
-	for i := 0; i < capacity; i++ {
+	// Pre-fill the vault well past the old tier caps to prove there's no limit.
+	const prefill = 20
+	for i := 0; i < prefill; i++ {
 		s.nextItemInstanceID++
 		player.Vault = append(player.Vault, &VaultItem{
 			InstanceID: s.nextItemInstanceID,
@@ -341,32 +326,32 @@ func TestLootDrop_PickupVaultFullPreservesResources(t *testing.T) {
 
 	s.tickLootDropsLocked()
 
-	// Chest consumed even when vault is full.
+	// Chest consumed.
 	if _, still := s.LootDrops[drop.ID]; still {
-		t.Errorf("chest still present after vault-full pickup")
+		t.Errorf("chest still present after pickup")
 	}
-	// Resources granted unconditionally.
+	// Resources granted.
 	if got := player.Resources["gold"]; got != 50 {
-		t.Errorf("gold = %d, want 50 (resources should grant even when vault is full)", got)
+		t.Errorf("gold = %d, want 50", got)
 	}
 	if got := player.Resources["wood"]; got != 15 {
-		t.Errorf("wood = %d, want 15 (resources should grant even when vault is full)", got)
+		t.Errorf("wood = %d, want 15", got)
 	}
-	// Vault stays at capacity — the overflow item did not fit.
-	if len(player.Vault) != capacity {
-		t.Errorf("vault grew beyond capacity %d to %d entries", capacity, len(player.Vault))
+	// Vault grew by exactly one — the item was collected, not overflowed.
+	if len(player.Vault) != prefill+1 {
+		t.Errorf("vault size = %d, want %d (item should have been collected)", len(player.Vault), prefill+1)
 	}
-	// Notification reports the item as overflow, not collected.
+	// Notification reports the item as collected, with no overflow.
 	notifs := s.drainPendingLootNotificationsLocked()
 	if len(notifs) != 1 {
 		t.Fatalf("pending notifications: got %d, want 1", len(notifs))
 	}
 	n := notifs[0]
-	if len(n.OverflowItemIDs) != 1 || n.OverflowItemIDs[0] != "broad_sword" {
-		t.Errorf("OverflowItemIDs = %v, want [broad_sword]", n.OverflowItemIDs)
+	if len(n.OverflowItemIDs) != 0 {
+		t.Errorf("OverflowItemIDs = %v, want empty (vault is unbounded)", n.OverflowItemIDs)
 	}
-	if len(n.ItemIDs) != 0 {
-		t.Errorf("ItemIDs = %v, want empty (item overflowed, must not appear in ItemIDs)", n.ItemIDs)
+	if len(n.ItemIDs) != 1 || n.ItemIDs[0] != "broad_sword" {
+		t.Errorf("ItemIDs = %v, want [broad_sword]", n.ItemIDs)
 	}
 	if n.Resources["gold"] != 50 || n.Resources["wood"] != 15 {
 		t.Errorf("notification resources mismatch: %+v", n.Resources)

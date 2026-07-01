@@ -1,5 +1,11 @@
 import type { Zone, ZoneSnapshot } from '../network/protocol'
-import { ZONE_TEAM_OWNER, ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID } from '../network/protocol'
+import {
+  ZONE_TEAM_OWNER,
+  ENEMY_PLAYER_ID,
+  NEUTRAL_PLAYER_ID,
+  ZONE_AURA_TYPE_STAT_MODIFIER,
+} from '../network/protocol'
+import { formatModifier } from '../stats/statRegistry'
 
 /** View-model for one zone-capture card in the HUD. Derived entirely from the
  *  per-tick zone snapshot + static map data; no server text. */
@@ -9,9 +15,29 @@ export type ZoneCaptureCard = {
   type: string
   requirement: string
   status: string
-  state: 'progress' | 'contested' | 'locked' | 'idle'
+  state: 'progress' | 'contested' | 'locked' | 'idle' | 'captured'
   progress: number // 0..1 for the bar; 0 when not applicable
+  /** Formatted passive bonuses the zone grants its owner. Shown both before
+   *  capture (as a reward preview) and after. Empty when the zone grants
+   *  nothing. */
+  bonuses: string[]
   ownerColor: string | null
+}
+
+/** A zone the team began the match already owning (its spawn/home zone). These
+ *  weren't captured, so they're excluded from the captured-card display. */
+function isStartingZone(zone: Zone): boolean {
+  if (zone.lockedSpawnLabel) return true
+  const s = zone.startingOwner
+  return !!s && s !== 'neutral' && s !== NEUTRAL_PLAYER_ID
+}
+
+/** Format a zone's passive auras into display strings (e.g. "+15% Gold Gather
+ *  Rate"). Skips non-stat aura kinds the HUD can't render yet. */
+function zoneBonuses(zone: Zone): string[] {
+  return (zone.auras ?? [])
+    .filter((a) => a.type === ZONE_AURA_TYPE_STAT_MODIFIER && a.modifier)
+    .map((a) => formatModifier(a.modifier))
 }
 
 type UnitLike = { x: number; y: number; ownerId?: string }
@@ -59,7 +85,26 @@ export function buildZoneCaptureCards(input: ZoneCaptureCardInput): ZoneCaptureC
   for (const zone of zones) {
     const snap = snapshotsById.get(zone.id)
     if (!snap) continue
-    if (ownerIsTeam(snap.owner, isFriendlyOwner)) continue // already ours -- no card
+
+    // Captured (team-owned) zones are always shown, surfacing the bonuses they
+    // grant. No friendly-unit-inside requirement — ownership alone qualifies.
+    // Starting/home zones are excluded: they were owned from the start, not
+    // captured.
+    if (ownerIsTeam(snap.owner, isFriendlyOwner)) {
+      if (isStartingZone(zone)) continue
+      out.push({
+        id: zone.id,
+        name: zone.name || zone.id,
+        type: zone.capture.type,
+        requirement: '',
+        status: 'Captured',
+        state: 'captured',
+        progress: 0,
+        bonuses: zoneBonuses(zone),
+        ownerColor: snap.ownerColor && snap.ownerColor.length > 0 ? snap.ownerColor : null,
+      })
+      continue
+    }
 
     const cellSet = new Set(zone.cells.map(([x, y]) => cellKey(x, y)))
     const inZone = (u: UnitLike) =>
@@ -126,9 +171,14 @@ export function buildZoneCaptureCards(input: ZoneCaptureCardInput): ZoneCaptureC
       status,
       state,
       progress, // 0..1 from the snapshot; the component shows a bar when > 0
+      bonuses: zoneBonuses(zone), // shown before capture too, as the reward preview
       ownerColor: snap.ownerColor && snap.ownerColor.length > 0 ? snap.ownerColor : null,
     })
   }
+
+  // Keep actionable (in-progress / contested) cards on top; captured zones
+  // settle to the bottom. Array.sort is stable, so each group keeps its order.
+  out.sort((a, b) => Number(a.state === 'captured') - Number(b.state === 'captured'))
 
   return out
 }

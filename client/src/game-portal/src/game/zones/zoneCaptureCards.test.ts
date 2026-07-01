@@ -85,16 +85,76 @@ describe('buildZoneCaptureCards', () => {
     expect(cards[0].status).toBe('2 enemies remain')
   })
 
-  it('skips zones with no friendly units inside, and team-owned zones', () => {
+  it('skips contested zones with no friendly units inside', () => {
     const z = zone({ id: 'a', cells: [[5, 5]], capture: { type: 'presence' } })
-    const owned = zone({ id: 'b', cells: [[7, 7]], capture: { type: 'presence' } })
-    const snaps = new Map<string, ZoneSnapshot>([
-      ['a', { id: 'a', owner: 'neutral' }],
-      ['b', { id: 'b', owner: ZONE_TEAM_OWNER }],
-    ])
+    const snaps = new Map<string, ZoneSnapshot>([['a', { id: 'a', owner: 'neutral' }]])
+    // Unit is in 'a' but neutral, so no friendly contesting -> no card.
     const cards = buildZoneCaptureCards(baseInput({
-      zones: [z, owned], snapshotsById: snaps, units: [unitAt(7, 7)],
+      zones: [z], snapshotsById: snaps, units: [unitAt(5, 5, '__neutral__')],
     }))
     expect(cards).toHaveLength(0)
+  })
+
+  it('captured (team-owned) zones are always shown, even with no units inside', () => {
+    const owned = zone({ id: 'b', cells: [[7, 7]], capture: { type: 'presence' } })
+    const snaps = new Map<string, ZoneSnapshot>([['b', { id: 'b', owner: ZONE_TEAM_OWNER }]])
+    const cards = buildZoneCaptureCards(baseInput({ zones: [owned], snapshotsById: snaps }))
+    expect(cards).toHaveLength(1)
+    expect(cards[0].state).toBe('captured')
+    expect(cards[0].status).toBe('Captured')
+    expect(cards[0].bonuses).toEqual([])
+  })
+
+  it('previews aura bonuses on zones being contested (pre-capture)', () => {
+    const z = zone({
+      id: 'open', cells: [[5, 5]], capture: { type: 'presence' },
+      auras: [
+        { type: 'stat_modifier', modifier: { stat: 'gold_gather_rate', operation: 'multiply', value: 1.15 } },
+      ],
+    })
+    const snaps = new Map<string, ZoneSnapshot>([['open', { id: 'open', owner: 'neutral', progress: 0.5 }]])
+    const cards = buildZoneCaptureCards(baseInput({ zones: [z], snapshotsById: snaps, units: [unitAt(5, 5)] }))
+    expect(cards).toHaveLength(1)
+    expect(cards[0].state).toBe('progress')
+    expect(cards[0].bonuses).toHaveLength(1)
+    expect(cards[0].bonuses[0]).toContain('15%')
+  })
+
+  it('ignores starting zones even when team-owned', () => {
+    const home = zone({
+      id: 'home', name: 'Home', cells: [[1, 1]], capture: { type: 'presence' },
+      startingOwner: 'player1',
+    })
+    const snaps = new Map<string, ZoneSnapshot>([['home', { id: 'home', owner: ZONE_TEAM_OWNER }]])
+    const cards = buildZoneCaptureCards(baseInput({ zones: [home], snapshotsById: snaps }))
+    expect(cards).toHaveLength(0)
+  })
+
+  it('captured zones surface formatted aura bonuses', () => {
+    const owned = zone({
+      id: 'mine', name: 'Gold Mine', cells: [[7, 7]], capture: { type: 'presence' },
+      auras: [
+        { type: 'stat_modifier', modifier: { stat: 'gold_gather_rate', operation: 'multiply', value: 1.15 } },
+      ],
+    })
+    const snaps = new Map<string, ZoneSnapshot>([['mine', { id: 'mine', owner: ZONE_TEAM_OWNER }]])
+    const cards = buildZoneCaptureCards(baseInput({ zones: [owned], snapshotsById: snaps }))
+    expect(cards).toHaveLength(1)
+    expect(cards[0].bonuses).toHaveLength(1)
+    expect(cards[0].bonuses[0]).toContain('15%')
+  })
+
+  it('keeps actionable cards above captured ones', () => {
+    const capturing = zone({ id: 'a', cells: [[5, 5]], capture: { type: 'presence' } })
+    const owned = zone({ id: 'b', cells: [[7, 7]], capture: { type: 'presence' } })
+    const snaps = new Map<string, ZoneSnapshot>([
+      ['a', { id: 'a', owner: 'neutral', progress: 0.5 }],
+      ['b', { id: 'b', owner: ZONE_TEAM_OWNER }],
+    ])
+    // List the owned zone first to prove the sort reorders it below the active one.
+    const cards = buildZoneCaptureCards(baseInput({
+      zones: [owned, capturing], snapshotsById: snaps, units: [unitAt(5, 5)],
+    }))
+    expect(cards.map((c) => c.id)).toEqual(['a', 'b'])
   })
 })

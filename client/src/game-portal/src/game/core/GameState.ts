@@ -653,9 +653,9 @@ export class GameState {
   // continue to drain it.
   pausedSinceMs = 0
 
-  // Vault state — populated from PlayerSnapshot each tick.
+  // Vault state — populated from PlayerSnapshot each tick. The vault is
+  // unbounded; there is no capacity to track.
   localPlayerVault: VaultItemSnapshot[] = []
-  localPlayerVaultCapacity = 0
 
   // Remaining merchant-reroll budget. Mirrored from PlayerSnapshot each tick.
   // Drives whether the reroll action on a neutral-shop building is enabled.
@@ -2874,10 +2874,6 @@ export class GameState {
           : getBuildingActions(
               selectedBuilding,
               this.playerUpgrades,
-              {
-                vault: this.localPlayerVault,
-                vaultCapacity: this.localPlayerVaultCapacity,
-              },
               this.townHallTier,
               new Set(this.lockedUnitTypes),
               this.localPlayerShopRerollsRemaining,
@@ -3047,8 +3043,9 @@ export class GameState {
     return this.teamOf(ownerId) === this.teamOf(this.localPlayerId)
   }
 
-  /** Zone-capture requirement cards for zones my team currently occupies but
-   *  does not yet own. Drives ZoneCapturePanel. Empty when no zones qualify. */
+  /** Zone HUD cards: capture-requirement cards for zones my team is contesting,
+   *  plus an always-on card (with granted bonuses) for every zone my team owns.
+   *  Drives ZoneCapturePanel. Empty when no zones qualify. */
   getZoneCaptureCards(): ZoneCaptureCard[] {
     // Called every UI tick — skip all work on maps without zones (the common
     // case). buildZoneCaptureCards accepts BuildingTile (null owner ids) directly.
@@ -3147,9 +3144,6 @@ export class GameState {
     }
     if (localPlayer.vault !== undefined) {
       this.localPlayerVault = localPlayer.vault ?? []
-    }
-    if (localPlayer.vaultCapacity !== undefined) {
-      this.localPlayerVaultCapacity = localPlayer.vaultCapacity
     }
     this.localPlayerShopRerollsRemaining = localPlayer.shopRerollsRemaining ?? 0
     this.localPlayerUnlockedRecipeIds = localPlayer.unlockedRecipeIds ?? []
@@ -3725,7 +3719,6 @@ function getUnderConstructionActions(building: BuildingTile): ActionItem[] {
 export function getBuildingActions(
   building: BuildingTile,
   upgrades: PlayerUpgradeSnapshot[] = [],
-  vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number },
   townHallTier: number = 0,
   lockedUnitTypes: ReadonlySet<string> = new Set(),
   shopRerollsRemaining: number = 0,
@@ -3746,19 +3739,7 @@ export function getBuildingActions(
       const itemDef = ITEM_DEF_MAP.get(slot.itemId)
       if (!itemDef) continue
       const soldOut = slot.quantity <= 0
-      // Vault capacity check: if vault is full and the item can't stack onto
-      // an existing entry, disable the purchase button.
-      const capacity = vaultState?.vaultCapacity ?? 0
-      const vault = vaultState?.vault ?? []
-      let atCapacity = false
-      if (capacity > 0 && vault.length >= capacity) {
-        const existingEntry = vault.find((v) => v.itemId === itemDef.id)
-        const maxStacks = itemDef.maxStacks ?? 1
-        const currentStacks = existingEntry?.stacks ?? (existingEntry ? 1 : 0)
-        if (!existingEntry || currentStacks >= maxStacks) {
-          atCapacity = true
-        }
-      }
+      // The vault is unbounded, so purchases are never blocked for lack of room.
       let tooltipBody = buildItemTooltipBody(itemDef)
       if (soldOut) {
         tooltipBody = `${tooltipBody}\n\nSold out at this shop.`
@@ -3774,7 +3755,7 @@ export function getBuildingActions(
         cost: [{ resourceId: 'gold', amount: itemDef.costGold, accent: '#d4a84f' }],
         tooltipTitle: itemDef.displayName,
         tooltipBody,
-        disabled: atCapacity || shopLocked || soldOut,
+        disabled: shopLocked || soldOut,
       })
     }
 

@@ -51,7 +51,6 @@ const emptyUiSnapshot: GameUiSnapshot = {
   townHallTier: 0,
   selectedBuildingType: null,
   vault: [],
-  vaultCapacity: 0,
   vaultSelectedInstanceId: null,
   allPlayerUnits: [],
   waveUpgrade: null,
@@ -206,8 +205,8 @@ export function useGameClient() {
     client?.selectUnitOnly(unitId)
   }
 
-  function focusUnit(unitId: number) {
-    client?.focusUnit(unitId)
+  function focusUnit(unitId: number, menuRightPx?: number) {
+    client?.focusUnit(unitId, menuRightPx)
   }
 
   function deselectUnit(unitId: number) {

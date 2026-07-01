@@ -5,7 +5,7 @@
     aria-label="Match menu"
     :style="{ '--ui-icon-container-image': `url(${iconContainerUrl})` }"
   >
-    <div class="match-menu__panel">
+    <div ref="panelEl" class="match-menu__panel">
       <button
         type="button"
         class="match-menu__close"
@@ -104,7 +104,6 @@
             <VaultPanel
               embedded
               :vault="vault"
-              :vault-capacity="vaultCapacity"
               :vault-selected-instance-id="vaultSelectedInstanceId"
               :units="units"
               :on-select-vault-item="onSelectVaultItem"
@@ -112,7 +111,7 @@
               :on-unequip-item="onUnequipItem"
               :on-use-consumable="onUseConsumable"
               :on-transfer-item="onTransferItem"
-              :on-focus-unit="onFocusUnit"
+              :on-focus-unit="handleFocusUnit"
             />
           </div>
 
@@ -238,7 +237,6 @@ const props = withDefaults(defineProps<{
   onPurchaseUpgrade?: (track: string) => void
   onCancelUpgrade?: (buildingId: string) => void
   vault?: VaultItemSnapshot[]
-  vaultCapacity?: number
   vaultSelectedInstanceId?: number | null
   units?: Unit[]
   onSelectVaultItem?: (instanceId: number | null) => void
@@ -249,6 +247,7 @@ const props = withDefaults(defineProps<{
   onFocusUnit?: (unitId: number) => void
   craftCatalog?: CraftCatalogEntry[]
   hasArtificer?: boolean
+  onFocusUnit?: (unitId: number, menuRightPx?: number) => void
 }>(), {
   shopCatalog: () => [],
   shopRerollsRemaining: 0,
@@ -256,7 +255,6 @@ const props = withDefaults(defineProps<{
   onPurchaseUpgrade: () => {},
   onCancelUpgrade: () => {},
   vault: () => [],
-  vaultCapacity: 0,
   vaultSelectedInstanceId: null,
   units: () => [],
   onSelectVaultItem: () => {},
@@ -268,6 +266,18 @@ const props = withDefaults(defineProps<{
   craftCatalog: () => [],
   hasArtificer: false,
 })
+
+// The visible window element; measured so the camera can frame a focused unit
+// just clear of the window's right edge (see handleFocusUnit).
+const panelEl = ref<HTMLElement | null>(null)
+
+// Forward Vault unit focus to the parent, attaching the window's current
+// right edge (viewport CSS px) so the camera can place the unit a fixed gap
+// to its right regardless of screen size.
+function handleFocusUnit(unitId: number) {
+  const menuRightPx = panelEl.value?.getBoundingClientRect().right
+  props.onFocusUnit(unitId, menuRightPx)
+}
 
 const tabSlots = computed(() =>
   Array.from({ length: TAB_ROW_SLOTS }, (_, index) => ({

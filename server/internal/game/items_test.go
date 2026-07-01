@@ -149,38 +149,6 @@ func TestItemCatalog_AllItemsLoaded(t *testing.T) {
 	}
 }
 
-// ─── Vault capacity ───────────────────────────────────────────────────────────
-
-// TestVaultCapacity_TierGating verifies the vault capacity steps match tier.
-func TestVaultCapacity_TierGating(t *testing.T) {
-	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
-	s.EnsurePlayer("p1")
-
-	s.mu.RLock()
-	cap0 := s.vaultCapacityForPlayerLocked("p1")
-	s.mu.RUnlock()
-
-	// Default map gives tier-1 townhall; expect capacity 5.
-	if cap0 != 5 {
-		t.Errorf("expected capacity 5 for tier-1 TH, got %d", cap0)
-	}
-
-	// Forcibly set tier to 2.
-	s.mu.Lock()
-	for i := range s.MapConfig.Buildings {
-		b := &s.MapConfig.Buildings[i]
-		if b.BuildingType == "townhall" && b.OwnerID != nil && *b.OwnerID == "p1" {
-			b.Metadata["tier"] = float64(2)
-		}
-	}
-	cap2 := s.vaultCapacityForPlayerLocked("p1")
-	s.mu.Unlock()
-
-	if cap2 != 10 {
-		t.Errorf("expected capacity 10 for tier-2 TH, got %d", cap2)
-	}
-}
-
 // ─── Purchase item ─────────────────────────────────────────────────────────────
 
 // TestPurchaseItem_EquipmentAddsToVault verifies buying a sword adds it to the
@@ -301,48 +269,13 @@ func TestPurchaseItem_InsufficientGold_NoOp(t *testing.T) {
 	}
 }
 
-// TestPurchaseItem_VaultAtCapacity_NoOp verifies purchases are rejected when
-// the vault is full.
-func TestPurchaseItem_VaultAtCapacity_NoOp(t *testing.T) {
+// TestPurchaseItem_VaultUnbounded verifies the vault has no cap: purchases keep
+// succeeding well past the old tier limits, including with the townhall
+// destroyed (which previously fell back to a small base capacity).
+func TestPurchaseItem_VaultUnbounded(t *testing.T) {
 	s, playerID := newItemTestState(t)
 
-	// Fill vault to capacity (tier-1 = 5 slots).
-	s.mu.Lock()
-	player := s.Players[playerID]
-	for i := 0; i < 5; i++ {
-		s.nextItemInstanceID++
-		player.Vault = append(player.Vault, &VaultItem{
-			InstanceID: s.nextItemInstanceID,
-			ItemID:     "broad_sword",
-			Stacks:     1,
-		})
-	}
-	s.mu.Unlock()
-
-	goldBefore := player.Resources["gold"]
-	s.PurchaseItem(playerID, "bs-1", "broad_sword")
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if len(player.Vault) != 5 {
-		t.Errorf("expected vault still at 5, got %d", len(player.Vault))
-	}
-	if player.Resources["gold"] != goldBefore {
-		t.Errorf("expected no gold deducted, gold changed from %d to %d", goldBefore, player.Resources["gold"])
-	}
-}
-
-// TestPurchaseItem_TownhallDestroyed_RespectsBaseVaultCapacity verifies the
-// destroyed-townhall path: with the TH gone (tier 0) the player falls back to
-// the base no-townhall vault capacity rather than being blocked outright, and
-// purchases are still capped at that capacity. (Previously no townhall meant
-// capacity 0, which blocked all purchases; the base capacity is now positive,
-// so the gate is "full vault", not "no townhall".)
-func TestPurchaseItem_TownhallDestroyed_RespectsBaseVaultCapacity(t *testing.T) {
-	s, playerID := newItemTestState(t)
-
-	// Destroy the townhall by making it invisible, then fill the vault to the
-	// base capacity so the next purchase must be rejected for lack of room.
+	// Destroy the townhall — previously this gated capacity; now it's irrelevant.
 	s.mu.Lock()
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
@@ -350,32 +283,19 @@ func TestPurchaseItem_TownhallDestroyed_RespectsBaseVaultCapacity(t *testing.T) 
 			b.Visible = false
 		}
 	}
-	baseCapacity := s.vaultCapacityForPlayerLocked(playerID)
-	player := s.Players[playerID]
-	for i := 0; i < baseCapacity; i++ {
-		s.nextItemInstanceID++
-		player.Vault = append(player.Vault, &VaultItem{
-			InstanceID: s.nextItemInstanceID,
-			ItemID:     "broad_sword",
-			Stacks:     1,
-		})
-	}
+	// Give the player plenty of gold so afford is never the limiting factor.
+	s.Players[playerID].Resources["gold"] = 1_000_000
 	s.mu.Unlock()
 
-	if baseCapacity <= 0 {
-		t.Fatalf("expected a positive base vault capacity with no townhall, got %d", baseCapacity)
+	const buys = 50 // far beyond the old max capacity (15)
+	for i := 0; i < buys; i++ {
+		s.PurchaseItem(playerID, "bs-1", "broad_sword")
 	}
-
-	goldBefore := player.Resources["gold"]
-	s.PurchaseItem(playerID, "bs-1", "broad_sword")
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if len(player.Vault) != baseCapacity {
-		t.Errorf("expected vault to stay at base capacity %d, got %d", baseCapacity, len(player.Vault))
-	}
-	if player.Resources["gold"] != goldBefore {
-		t.Errorf("expected no gold deducted at capacity, gold changed from %d to %d", goldBefore, player.Resources["gold"])
+	if got := len(s.Players[playerID].Vault); got != buys {
+		t.Errorf("expected %d vault items (vault is unbounded), got %d", buys, got)
 	}
 }
 
