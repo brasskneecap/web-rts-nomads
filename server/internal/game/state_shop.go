@@ -349,12 +349,13 @@ func (s *GameState) rollShopLootTableLocked(buildingID, tableID string, targetCo
 	return items, true
 }
 
-// spawnShopGuardsLocked walks every neutral-shop building, reads its
-// optional guard metadata (`guardGroupId`, `guardStartingTier`,
-// `guardAggroRange`, `guardLeashRange`), and spawns the declared squad
-// around the building's perimeter. Spawned unit IDs are stored on
-// `BuildingTile.ShopGuardUnitIDs` so shopLockedLocked can read them.
-// Buildings with no `guardGroupId` are skipped (unlocked from spawn).
+// spawnShopGuardsLocked walks every neutral shop building (neutral-shop
+// merchants and recipe-shop recipe traders), reads its optional guard
+// metadata (`guardGroupId`, `guardStartingTier`, `guardAggroRange`,
+// `guardLeashRange`), and spawns the declared squad around the building's
+// perimeter. Spawned unit IDs are stored on `BuildingTile.ShopGuardUnitIDs`
+// so shopLockedLocked can read them. Buildings with no `guardGroupId` are
+// skipped (unlocked from spawn) — guards are opt-in per placed building.
 //
 // Iteration order is sorted by building ID so guard composition rolls
 // are deterministic across runs. Must be called under s.mu write lock.
@@ -364,7 +365,7 @@ func (s *GameState) spawnShopGuardsLocked() {
 	indices := make([]int, 0)
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
-		if b.BuildingType != "neutral-shop" {
+		if b.BuildingType != "neutral-shop" && b.BuildingType != "recipe-shop" {
 			continue
 		}
 		gid, ok := getMetadataString(b.Metadata, "guardGroupId")

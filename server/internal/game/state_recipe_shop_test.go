@@ -68,3 +68,77 @@ func TestRecipeShop_PopulatesDeterministicSubset(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+// TestRecipeShopGuards_OptInSpawnAndLock verifies that a recipe-shop with a
+// guardGroupId spawns a guard squad and reports locked while they live, and
+// that a recipe-shop WITHOUT guard metadata spawns no guards and is never
+// locked (guards are opt-in per placed building).
+func TestRecipeShopGuards_OptInSpawnAndLock(t *testing.T) {
+	// Find any neutral group id present in the catalog.
+	var groupID string
+	for tier := 1; tier <= 10 && groupID == ""; tier++ {
+		if ids := listNeutralGroupIDs(tier); len(ids) > 0 {
+			groupID = ids[0]
+			break
+		}
+	}
+	if groupID == "" {
+		t.Skip("no neutral group available")
+	}
+
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 5)
+	s.EnsurePlayer("p1")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	neutral := neutralPlayerID
+	// Guarded recipe shop.
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
+		ID: "rs-guarded", BuildingType: "recipe-shop", Width: 3, Height: 3,
+		Visible: true, Occupied: true, OwnerID: &neutral,
+		Capabilities: []string{"recipe-purchase"},
+		Metadata:     map[string]interface{}{"guardGroupId": groupID},
+	})
+	// Unguarded recipe shop (no guardGroupId).
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
+		ID: "rs-open", BuildingType: "recipe-shop", Width: 3, Height: 3,
+		Visible: true, Occupied: true, OwnerID: &neutral,
+		Capabilities: []string{"recipe-purchase"},
+		Metadata:     map[string]interface{}{},
+	})
+	if s.buildingsByID == nil {
+		s.buildingsByID = map[string]*protocol.BuildingTile{}
+	}
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		s.buildingsByID[b.ID] = b
+	}
+	s.initShopBuildingsLocked()
+	s.spawnShopGuardsLocked()
+
+	guarded := s.buildingsByID["rs-guarded"]
+	if len(guarded.ShopGuardUnitIDs) == 0 {
+		t.Fatal("guarded recipe shop should spawn at least one guard")
+	}
+	if !s.shopLockedLocked(guarded) {
+		t.Fatal("guarded recipe shop should be locked while guards are alive")
+	}
+
+	open := s.buildingsByID["rs-open"]
+	if len(open.ShopGuardUnitIDs) != 0 {
+		t.Fatalf("recipe shop without guardGroupId should spawn no guards, got %d", len(open.ShopGuardUnitIDs))
+	}
+	if s.shopLockedLocked(open) {
+		t.Fatal("recipe shop without guards should not be locked")
+	}
+
+	// Kill the guards → the guarded shop unlocks.
+	for _, id := range guarded.ShopGuardUnitIDs {
+		if u := s.getUnitByIDLocked(id); u != nil {
+			u.HP = 0
+		}
+	}
+	if s.shopLockedLocked(guarded) {
+		t.Error("recipe shop should unlock after all guards reach HP 0")
+	}
+}

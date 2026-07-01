@@ -20,6 +20,14 @@ func hasRecipePurchaseCapability(b *protocol.BuildingTile) bool {
 	return false
 }
 
+// isShopSnapshotBuilding reports whether b should carry the ShopLocked /
+// ShopDiscovered snapshot fields — any neutral building that sells items or
+// recipes. Used by the per-viewer building snapshot so the client can render
+// the guard-lock / discovery state for both merchants and recipe traders.
+func isShopSnapshotBuilding(b *protocol.BuildingTile) bool {
+	return hasItemPurchaseCapability(b) || hasRecipePurchaseCapability(b)
+}
+
 // playerKnowsRecipeLocked reports whether the player may craft recipeID this
 // match (seeded from profile + purchased). Must be called under s.mu.
 func (s *GameState) playerKnowsRecipeLocked(playerID, recipeID string) bool {

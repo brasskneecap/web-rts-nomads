@@ -1843,7 +1843,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
 		isOwn := b.OwnerID != nil && *b.OwnerID == viewerID
-		isShop := hasItemPurchaseCapability(b)
+		isShop := isShopSnapshotBuilding(b)
 		_, knownToViewer := fow.KnownBuildings[b.ID]
 		if isOwn {
 			tile := *b
