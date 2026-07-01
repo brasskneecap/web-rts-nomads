@@ -349,6 +349,14 @@ export class GameClient {
     this.network.send({ type: 'reroll_shop', buildingId })
   }
 
+  sendPurchaseRecipe(buildingId: string, recipeId: string): void {
+    this.network.send({ type: 'purchase_recipe', buildingId, recipeId })
+  }
+
+  sendCraftItem(recipeId: string): void {
+    this.network.send({ type: 'craft_item', recipeId })
+  }
+
   sendEquipItem(unitId: number, slotIndex: number, instanceId: number): void {
     this.network.send({ type: 'equip_item', unitId, slotIndex, instanceId })
   }
@@ -662,6 +670,20 @@ export class GameClient {
       if (selectedBuilding && selectedBuilding.buildingType === 'neutral-shop') {
         this.sendRerollShop(selectedBuilding.id)
       }
+      return
+    }
+
+    if (actionId.startsWith('buy-recipe-')) {
+      const recipeId = actionId.slice('buy-recipe-'.length)
+      if (selectedBuilding) {
+        this.sendPurchaseRecipe(selectedBuilding.id, recipeId)
+      }
+      return
+    }
+
+    if (actionId.startsWith('craft-')) {
+      const recipeId = actionId.slice('craft-'.length)
+      this.sendCraftItem(recipeId)
       return
     }
 
