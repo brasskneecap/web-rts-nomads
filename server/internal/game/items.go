@@ -3,6 +3,7 @@ package game
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"sort"
 	"strings"
@@ -54,6 +55,27 @@ type ItemModifiers struct {
 	MaxShield   int     `json:"maxShield,omitempty"`
 }
 
+// ItemElementalDamage is a flat typed damage amount an equipment item adds as
+// its OWN damage instance on each landed basic attack — separate from physical
+// modifiers.Damage so future resistance/weakness logic can treat it
+// independently. Type must be a registered DamageType.
+type ItemElementalDamage struct {
+	Type   DamageType `json:"type"`
+	Amount int        `json:"amount"`
+}
+
+// ItemOnHitProc is a percent-chance on-hit effect: on each landed basic attack
+// the wielder rolls Chance against the seeded perk RNG and, on success, fires a
+// homing projectile (ProjectileID) dealing Damage of DamageType to the current
+// target. Damage is applied as its own instance and does NOT re-trigger on-hit
+// effects (no recursion).
+type ItemOnHitProc struct {
+	Chance       float64    `json:"chance"`
+	Damage       int        `json:"damage"`
+	DamageType   DamageType `json:"damageType"`
+	ProjectileID string     `json:"projectileID"`
+}
+
 // ConsumableEffect describes the instant or timed effect applied when a
 // consumable is used. Only "heal" is implemented in v1; future types (buffs,
 // mana, etc.) add cases to applyConsumableEffectLocked.
@@ -89,6 +111,8 @@ type ItemDef struct {
 	Effects          []string          `json:"effects,omitempty"`    // future: "lifesteal", "splash", etc.
 	Consumable       *ConsumableEffect `json:"consumable,omitempty"`
 	MaxStacks        int               `json:"maxStacks,omitempty"`  // consumables only; 0 treated as 1
+	OnHitElemental   []ItemElementalDamage `json:"onHitElemental,omitempty"`
+	OnHitProc        *ItemOnHitProc        `json:"onHitProc,omitempty"`
 }
 
 // itemCatalogSingleton is the package-level item catalog. Populated by a var
@@ -118,6 +142,9 @@ func loadItemCatalog() map[string]*ItemDef {
 		if def.ID == "" {
 			panic(path + `: missing "id" field`)
 		}
+		if err := validateItemDef(&def); err != nil {
+			panic(path + ": " + err.Error())
+		}
 		catalog[def.ID] = &def
 		return nil
 	})
@@ -132,6 +159,26 @@ func loadItemCatalog() map[string]*ItemDef {
 func getItemDef(id string) (*ItemDef, bool) {
 	def, ok := itemCatalogSingleton[id]
 	return def, ok
+}
+
+// validateItemDef checks the on-hit fields of an item def. Empty DamageType is
+// rejected here (unlike combat code that resolves it to physical) because a
+// typed elemental bonus with no explicit element is a content authoring error.
+func validateItemDef(def *ItemDef) error {
+	for i, e := range def.OnHitElemental {
+		if !IsValidDamageType(e.Type) {
+			return fmt.Errorf("item %q onHitElemental[%d]: unregistered damage type %q", def.ID, i, e.Type)
+		}
+	}
+	if p := def.OnHitProc; p != nil {
+		if p.Chance < 0 || p.Chance > 1 {
+			return fmt.Errorf("item %q onHitProc.chance %v out of range [0,1]", def.ID, p.Chance)
+		}
+		if !IsValidDamageType(p.DamageType) {
+			return fmt.Errorf("item %q onHitProc.damageType: unregistered damage type %q", def.ID, p.DamageType)
+		}
+	}
+	return nil
 }
 
 // ListItemDefs returns all item definitions as a deterministically sorted

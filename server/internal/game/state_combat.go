@@ -320,6 +320,8 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 	s.trackBattleDamageLocked(battleSourceFromUnit(attacker), target, damage)
 	s.onPerkAttackFiredLocked(attacker, target, damage, deadUnitIDs)
 	s.onPerkAttackDamageAppliedLocked(attacker, target, damage)
+	s.applyEquipmentOnHitElementalLocked(attacker, target)
+	s.rollEquipmentProcsLocked(attacker, target)
 
 	if target.HP <= 0 {
 		target.HP = 0
@@ -387,6 +389,47 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 			// melee branch — see comment in resolveAttackHitLocked.
 			s.rollDominionPointDropLocked(attacker.OwnerID, u)
 			*deadUnitIDs = append(*deadUnitIDs, u.ID)
+		}
+	}
+}
+
+// applyEquipmentOnHitElementalLocked applies the attacker's aggregated
+// per-element on-hit damage as SEPARATE typed damage instances against the
+// primary target, distinct from the physical hit that resolveAttackHitLocked
+// already landed. Iterates DamageTypes() (sorted) rather than ranging the map
+// directly so the order of damage events is deterministic. No-op when the
+// attacker has no elemental bonus. Must be called under s.mu.
+func (s *GameState) applyEquipmentOnHitElementalLocked(attacker, target *Unit) {
+	if attacker == nil || target == nil || len(attacker.EquipmentBonus.OnHitElemental) == 0 {
+		return
+	}
+	for _, dt := range DamageTypes() {
+		amt := attacker.EquipmentBonus.OnHitElemental[dt]
+		if amt <= 0 {
+			continue
+		}
+		s.applyUnitDamageWithSourceLocked(target, amt, DamageSource{
+			AttackerUnitID: attacker.ID,
+			Kind:           "item-elemental",
+			DamageType:     dt,
+		})
+	}
+}
+
+// rollEquipmentProcsLocked rolls each of the attacker's equipped on-hit procs
+// against the seeded perk RNG and fires an elemental bolt for each success at
+// the primary target. Must be called under s.mu. Determinism: rngPerks is the
+// shared seeded stream; OnHitProcs order is fixed by equip order.
+func (s *GameState) rollEquipmentProcsLocked(attacker, target *Unit) {
+	if attacker == nil || target == nil || len(attacker.EquipmentBonus.OnHitProcs) == 0 {
+		return
+	}
+	for _, proc := range attacker.EquipmentBonus.OnHitProcs {
+		if proc.Chance <= 0 || proc.Damage <= 0 {
+			continue
+		}
+		if s.rngPerks.Float64() < proc.Chance {
+			s.fireOnHitProcProjectileLocked(attacker, target, proc)
 		}
 	}
 }

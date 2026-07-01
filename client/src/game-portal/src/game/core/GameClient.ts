@@ -16,13 +16,14 @@ import type {
   WaveSnapshot,
   WaveUpgradeOfferSnapshot,
 } from '../network/protocol'
-import type { DebugSpawnConfig, NetStats, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification, ZoneInspectionInfo } from './GameState'
+import type { CraftCatalogEntry, DebugSpawnConfig, NetStats, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification, ZoneInspectionInfo } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs } from '../maps/perkDefs'
 import { initItemDefs } from '../maps/itemDefs'
+import { initRecipeDefs } from '../maps/recipeDefs'
 import {
   fetchBuildingDefs,
   fetchObstacleDefs,
@@ -30,6 +31,7 @@ import {
   fetchActionIcons,
   fetchPerkDefs,
   fetchItemDefs,
+  fetchRecipeDefs,
 } from '../maps/catalog'
 
 export type GameUiSnapshot = {
@@ -84,7 +86,6 @@ export type GameUiSnapshot = {
   selectedBuildingType: string | null
   // Vault contents for the local player.
   vault: VaultItemSnapshot[]
-  vaultCapacity: number
   vaultSelectedInstanceId: number | null
   // All local-player units (not just selected ones). Needed by VaultPanel to
   // show all units that can receive equipped items.
@@ -104,6 +105,11 @@ export type GameUiSnapshot = {
   /** Remaining merchant-reroll budget for the local player. Drives the
    *  per-shop refresh button (neutral-shop only) in the Shop menu. */
   shopRerollsRemaining: number
+  // Craft catalog for the MatchMenu Craft tab. One entry per known recipe.
+  craftCatalog: CraftCatalogEntry[]
+  // True when the local player owns at least one Artificer's Table, gating
+  // whether the Craft tab's craft actions are usable.
+  hasArtificer: boolean
   // Server-side pause flag. When true the client renders a paused overlay
   // and the wave-upgrade modal freezes its visible timer.
   paused: boolean
@@ -179,13 +185,14 @@ export class GameClient {
   }
 
   async start(options: { resume?: boolean } = {}) {
-    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs] = await Promise.all([
+    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs, recipeDefs] = await Promise.all([
       fetchBuildingDefs(),
       fetchObstacleDefs(),
       fetchUnitDefs(),
       fetchActionIcons(),
       fetchPerkDefs(),
       fetchItemDefs().catch(() => []),
+      fetchRecipeDefs().catch(() => []),
     ])
     initBuildingDefs(buildingDefs)
     initObstacleDefs(obstacleDefs)
@@ -195,6 +202,7 @@ export class GameClient {
     initActionIcons(actionIcons)
     initPerkDefs(perkDefs)
     initItemDefs(itemDefs)
+    initRecipeDefs(recipeDefs)
     window.addEventListener('keydown', this.handleDevHotkey)
     await this.network.connect(options)
     this.loop.start()
@@ -229,6 +237,10 @@ export class GameClient {
 
   setAcquiredAdvancementIds(ids: string[]) {
     this.network.setAcquiredAdvancementIds(ids)
+  }
+
+  setKnownRecipeIds(ids: string[]): void {
+    this.network.setKnownRecipeIds(ids)
   }
 
   async leaveStoredMatch() {
@@ -303,7 +315,6 @@ export class GameClient {
       townHallTier: this.state.townHallTier,
       selectedBuildingType: this.state.getSelectedBuildingType(),
       vault: this.state.localPlayerVault,
-      vaultCapacity: this.state.localPlayerVaultCapacity,
       vaultSelectedInstanceId: this.state.vaultSelectedInstanceId,
       allPlayerUnits: this.state.getLocalPlayerUnits(),
       waveUpgrade: this.state.waveUpgrade,
@@ -311,6 +322,8 @@ export class GameClient {
       commanderTargetingAbilityId: this.state.commanderTargetingAbilityId,
       shopCatalog: this.state.getShopCatalogSnapshot(),
       shopRerollsRemaining: this.state.localPlayerShopRerollsRemaining,
+      craftCatalog: this.state.getCraftCatalogSnapshot(),
+      hasArtificer: this.state.localPlayerHasArtificer(),
       paused: this.state.paused,
       pausedBy: this.state.pausedBy,
       pausedSinceMs: this.state.pausedSinceMs,
@@ -343,6 +356,14 @@ export class GameClient {
 
   sendRerollShop(buildingId: string): void {
     this.network.send({ type: 'reroll_shop', buildingId })
+  }
+
+  sendPurchaseRecipe(buildingId: string, recipeId: string): void {
+    this.network.send({ type: 'purchase_recipe', buildingId, recipeId })
+  }
+
+  sendCraftItem(recipeId: string): void {
+    this.network.send({ type: 'craft_item', recipeId })
   }
 
   sendEquipItem(unitId: number, slotIndex: number, instanceId: number): void {
@@ -393,18 +414,34 @@ export class GameClient {
     this.state.selectUnit(unitId)
   }
 
-  /** Select a single unit and pan the camera to center on it. Used by the
-   *  Vault unit cards so clicking a card both selects the unit (showing the
-   *  world selection ring) and brings it into view. */
-  focusUnit(unitId: number) {
+  /** Select a single unit and pan the camera to bring it into view. Used by
+   *  the Vault unit cards so clicking a card both selects the unit (showing
+   *  the world selection ring) and frames it.
+   *
+   *  The unit is always kept vertically centered. Horizontally, when the Vault
+   *  window's right edge is provided (`menuRightPx`, in viewport CSS px), the
+   *  unit is placed 200 screen px to the right of that edge so it stays clear
+   *  of the window regardless of screen size. Without it we fall back to a
+   *  small fixed left-nudge. */
+  focusUnit(unitId: number, menuRightPx?: number) {
     this.state.selectUnit(unitId)
     const units = this.state.getSelectedUnits()
     if (units.length === 0) return
     const u = units[0]
-    // The Vault window is anchored on the left, so nudge the framing to the
-    // left of the unit by ~100 screen px (converted to world units via zoom)
-    // so the unit lands slightly right of center, clear of the window.
-    const offsetWorldX = 100 / this.camera.zoom
+    // Desired on-canvas screen X (in CSS px; canvas.width === clientWidth) at
+    // which the unit should land.
+    const centerScreenX = this.canvas.width / 2
+    let targetScreenX: number
+    if (menuRightPx != null) {
+      const canvasRect = this.canvas.getBoundingClientRect()
+      targetScreenX = menuRightPx - canvasRect.left + 200
+    } else {
+      // Fallback: nudge slightly right of center, clear of a left-anchored window.
+      targetScreenX = centerScreenX + 100
+    }
+    // centerOn() places the given world point at the screen center, so offset
+    // the world point by the screen delta (converted to world units via zoom).
+    const offsetWorldX = (targetScreenX - centerScreenX) / this.camera.zoom
     this.camera.centerOn(
       u.x - offsetWorldX,
       u.y,
@@ -658,6 +695,20 @@ export class GameClient {
       if (selectedBuilding && selectedBuilding.buildingType === 'neutral-shop') {
         this.sendRerollShop(selectedBuilding.id)
       }
+      return
+    }
+
+    if (actionId.startsWith('buy-recipe-')) {
+      const recipeId = actionId.slice('buy-recipe-'.length)
+      if (selectedBuilding) {
+        this.sendPurchaseRecipe(selectedBuilding.id, recipeId)
+      }
+      return
+    }
+
+    if (actionId.startsWith('craft-')) {
+      const recipeId = actionId.slice('craft-'.length)
+      this.sendCraftItem(recipeId)
       return
     }
 

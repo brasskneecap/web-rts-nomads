@@ -151,6 +151,10 @@ func migrateProfile(p *PlayerProfile) {
 		p.LifetimeDominionPoints = *p.LegacyLifetimeLegendPoints
 		p.LegacyLifetimeLegendPoints = nil
 	}
+	// v7 -> v8: initialize KnownRecipeIDs (recipe crafting unlock ledger).
+	if p.KnownRecipeIDs == nil {
+		p.KnownRecipeIDs = []string{}
+	}
 	// Stamp current version so the next Save persists the new schema.
 	p.Version = CurrentVersion
 }

@@ -409,7 +409,7 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.AddClient(client)
 			log.Printf("join_match: player=%s\n", msg.PlayerID)
-			match.State.EnsurePlayerWithUpgrades(msg.PlayerID, msg.OwnedUpgradeRanks, msg.ActiveUpgradeIDs, msg.AcquiredAdvancementIDs)
+			match.State.EnsurePlayerWithUpgrades(msg.PlayerID, msg.OwnedUpgradeRanks, msg.ActiveUpgradeIDs, msg.AcquiredAdvancementIDs, msg.KnownRecipeIDs)
 
 			// Marshal welcome under the state RLock. WelcomeMessage embeds
 			// the live MapConfig, whose Buildings/Obstacles slices alias
@@ -1068,6 +1068,40 @@ func (h *Hub) readLoop(client *Client) {
 				continue
 			}
 			match.State.PurchaseItem(client.PlayerID(), msg.BuildingID, msg.ItemID)
+
+		case "purchase_recipe":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.PurchaseRecipeCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid purchase_recipe payload"})
+				continue
+			}
+			match.State.PurchaseRecipe(client.PlayerID(), msg.BuildingID, msg.RecipeID)
+
+		case "craft_item":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.CraftItemCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid craft_item payload"})
+				continue
+			}
+			match.State.CraftItem(client.PlayerID(), msg.RecipeID)
 
 		case "reroll_shop":
 			if client.MatchID() == "" {

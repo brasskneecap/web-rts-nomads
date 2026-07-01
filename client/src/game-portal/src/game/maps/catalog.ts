@@ -26,6 +26,7 @@ import type { UnitBounds, UnitDef } from './unitDefs'
 import type { ActionIconDef } from './actionIconDefs'
 import type { PerkDef } from './perkDefs'
 import type { ItemDef } from './itemDefs'
+import type { RecipeDef } from './recipeDefs'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -214,6 +215,17 @@ export async function fetchItemDefs(): Promise<ItemDef[]> {
 
   const data = (await response.json()) as { items: ItemDef[] }
   return data.items
+}
+
+export async function fetchRecipeDefs(): Promise<RecipeDef[]> {
+  const response = await fetch(`${API_BASE}/catalog/recipes`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to load recipe defs: ${response.status}`)
+  }
+
+  const data = (await response.json()) as { recipes: RecipeDef[] }
+  return data.recipes
 }
 
 export async function fetchNeutralGroups(): Promise<NeutralGroupTierSummary[]> {

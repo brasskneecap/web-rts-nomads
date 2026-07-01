@@ -52,5 +52,17 @@ export function buildItemTooltipBody(def: ItemDef): string {
     }
   }
 
+  if (def.onHitElemental?.length) {
+    for (const e of def.onHitElemental) {
+      const elem = e.type.charAt(0).toUpperCase() + e.type.slice(1)
+      parts.push(`+${e.amount} ${elem} damage on hit`)
+    }
+  }
+  if (def.onHitProc) {
+    const pct = Math.round(def.onHitProc.chance * 100)
+    const elem = def.onHitProc.damageType.charAt(0).toUpperCase() + def.onHitProc.damageType.slice(1)
+    parts.push(`${pct}% on hit: ${def.onHitProc.damage} ${elem} bolt`)
+  }
+
   return parts.join(', ')
 }

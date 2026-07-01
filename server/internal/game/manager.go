@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -17,11 +18,19 @@ type DominionPointCommitter interface {
 	CommitDominionPoints(playerID string, earned int) error
 }
 
+// RecipeRecorder persists a crafted recipe into a player's profile. Declared
+// in package game so the game package does not import profile (the
+// *profile.Manager satisfies it). Mirrors DominionPointCommitter.
+type RecipeRecorder interface {
+	RecordKnownRecipe(playerID, recipeID string) error
+}
+
 type MatchManager struct {
-	mu        sync.RWMutex
-	matches   map[string]*Match
-	nextID    int
-	committer DominionPointCommitter
+	mu             sync.RWMutex
+	matches        map[string]*Match
+	nextID         int
+	committer      DominionPointCommitter
+	recipeRecorder RecipeRecorder
 }
 
 func NewMatchManager() *MatchManager {
@@ -44,6 +53,21 @@ func (m *MatchManager) getCommitter() DominionPointCommitter {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.committer
+}
+
+// SetRecipeRecorder wires the recorder that persists a crafted recipe to a
+// player's profile. Passing nil disables recording (the default — tests do not
+// need persistence).
+func (m *MatchManager) SetRecipeRecorder(r RecipeRecorder) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.recipeRecorder = r
+}
+
+func (m *MatchManager) getRecipeRecorder() RecipeRecorder {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.recipeRecorder
 }
 
 func (m *MatchManager) NewMatch(mapID string) *Match {
@@ -74,6 +98,20 @@ func (m *MatchManager) newMatchLocked(mapID string) *Match {
 					matchID, playerID, amount, err)
 			}
 		}()
+	})
+
+	// Post-craft hook: records the crafted recipe to the player's persistent
+	// profile. The handler is already invoked via `go` inside
+	// handleCraftItemLocked, so this closure runs off-thread — no extra
+	// goroutine needed here. Captures only the two string args + recorder.
+	match.State.SetRecipeCraftedHandler(func(playerID, recipeID string) {
+		recorder := m.getRecipeRecorder()
+		if recorder == nil {
+			return
+		}
+		if err := recorder.RecordKnownRecipe(playerID, recipeID); err != nil {
+			slog.Warn("RecordKnownRecipe failed", "playerID", playerID, "recipeID", recipeID, "err", err)
+		}
 	})
 
 	match.loop.OnGameOver = func() {

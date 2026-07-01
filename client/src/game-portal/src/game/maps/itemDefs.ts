@@ -77,6 +77,10 @@ export type ItemDef = {
   modifiers?: ItemModifiers
   /** Named effect tags granted while held. Absent = no effects. */
   effects?: ItemEffect[]
+  /** Flat elemental damage applied as a separate typed instance on each hit. */
+  onHitElemental?: { type: string; amount: number }[]
+  /** Percent-chance on-hit proc: fires an elemental bolt for `damage`. */
+  onHitProc?: { chance: number; damage: number; damageType: string; projectileID: string }
   /** Stack ceiling — items above 1 are stackable. Defaults to 1 when absent. */
   maxStacks?: number
   /** Consumable-specific config. Only set when kind === 'consumable'. */

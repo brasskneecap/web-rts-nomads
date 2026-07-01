@@ -41,7 +41,7 @@ func TestAdvancement_SoldierSpawn_HPAndMaxHP(t *testing.T) {
 	wantHP := catalogDef.HP + advancementBonus
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1"})
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1"}, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -69,7 +69,7 @@ func TestAdvancement_NoAdvancement_SoldierHasBaseHP(t *testing.T) {
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -96,7 +96,7 @@ func TestAdvancement_NoAdvancement_SoldierHasBaseHP(t *testing.T) {
 // allocation on every spawn-path map lookup — we protect the hot path.
 func TestAdvancement_EffectiveUnitDefs_NilForNoAdvancements(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 99)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 
 	s.mu.RLock()
 	player := s.Players["p1"]
@@ -121,7 +121,7 @@ func TestAdvancement_EffectiveUnitDefs_NonNilForPlayerWithAdvancements(t *testin
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 99)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1"})
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1"}, nil)
 
 	s.mu.RLock()
 	player := s.Players["p1"]
@@ -289,7 +289,7 @@ func TestAdvancement_Determinism_SameAdvancementSameSeed_IdenticalSpawnHP(t *tes
 
 	runScenario := func() []spawnRecord {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-		s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1"})
+		s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1"}, nil)
 
 		s.mu.Lock()
 		var records []spawnRecord
@@ -334,13 +334,13 @@ func TestAdvancement_Determinism_AdvancedVsBase_HPDiffersByBonus(t *testing.T) {
 	const seed = int64(12345)
 
 	s1 := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-	s1.EnsurePlayerWithUpgrades("adv", nil, nil, []string{"soldier_hp_1"})
+	s1.EnsurePlayerWithUpgrades("adv", nil, nil, []string{"soldier_hp_1"}, nil)
 	s1.mu.Lock()
 	advSoldier := s1.spawnPlayerUnitLocked("soldier", "adv", "#aa0000", protocol.Vec2{X: 400, Y: 400})
 	s1.mu.Unlock()
 
 	s2 := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-	s2.EnsurePlayerWithUpgrades("base", nil, nil, nil)
+	s2.EnsurePlayerWithUpgrades("base", nil, nil, nil, nil)
 	s2.mu.Lock()
 	baseSoldier := s2.spawnPlayerUnitLocked("soldier", "base", "#0000aa", protocol.Vec2{X: 400, Y: 400})
 	s2.mu.Unlock()
@@ -618,7 +618,7 @@ func TestAdvancement_SoldierArmor1_BaseArmorSet(t *testing.T) {
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1", "soldier_armor_1"})
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1", "soldier_armor_1"}, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -653,7 +653,7 @@ func TestAdvancement_SoldierDamage1_BaseDamageSet(t *testing.T) {
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	// Purchase order: hp_1 → armor_1 → damage_1 (track order prerequisite chain).
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1", "soldier_armor_1", "soldier_damage_1"})
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1", "soldier_armor_1", "soldier_damage_1"}, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -681,7 +681,7 @@ func TestAdvancement_SoldierVeteranInitiates_XPSet(t *testing.T) {
 	// Full chain up to node 4.
 	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{
 		"soldier_hp_1", "soldier_armor_1", "soldier_damage_1", "soldier_veteran_initiates",
-	})
+	}, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -708,7 +708,7 @@ func TestAdvancement_SoldierHP1AndHP2_StackedHPBonus(t *testing.T) {
 	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{
 		"soldier_hp_1", "soldier_armor_1", "soldier_damage_1",
 		"soldier_veteran_initiates", "soldier_hp_2",
-	})
+	}, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -750,7 +750,7 @@ func TestAdvancement_SoldierFullTrack_AllBonusesStack(t *testing.T) {
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, allNodes)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, allNodes, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -815,7 +815,7 @@ func TestAdvancement_Determinism_FullTrack_SameSeedSameResult(t *testing.T) {
 
 	run := func() record {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-		s.EnsurePlayerWithUpgrades("p1", nil, nil, allNodes)
+		s.EnsurePlayerWithUpgrades("p1", nil, nil, allNodes, nil)
 		s.mu.Lock()
 		u := s.spawnPlayerUnitLocked("soldier", "p1", "#00ff00", protocol.Vec2{X: 400, Y: 400})
 		s.mu.Unlock()
@@ -846,7 +846,7 @@ func TestArmorPipeline_UnpathSoldier_BaseArmorFromCatalog(t *testing.T) {
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -874,7 +874,7 @@ func TestArmorPipeline_UnpathSoldier_Armor1_Correct(t *testing.T) {
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1", "soldier_armor_1"})
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"soldier_hp_1", "soldier_armor_1"}, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -902,7 +902,7 @@ func TestArmorPipeline_UnpathSoldier_BothArmorAdvancements_Correct(t *testing.T)
 	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{
 		"soldier_hp_1", "soldier_armor_1", "soldier_damage_1",
 		"soldier_veteran_initiates", "soldier_hp_2", "soldier_armor_2", "soldier_damage_2",
-	})
+	}, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -924,7 +924,7 @@ func TestArmorPipeline_UnpathSoldier_BothArmorAdvancements_Correct(t *testing.T)
 // added (the path fully overrides the base).
 func TestArmorPipeline_PathSoldier_NoAdvancement_PathArmorOnly(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -956,7 +956,7 @@ func TestArmorPipeline_PathSoldier_BothArmorAdvancements_PathPlusDelta(t *testin
 	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{
 		"soldier_hp_1", "soldier_armor_1", "soldier_damage_1",
 		"soldier_veteran_initiates", "soldier_hp_2", "soldier_armor_2", "soldier_damage_2",
-	})
+	}, nil)
 
 	s.mu.Lock()
 	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -988,7 +988,7 @@ func TestArmorPipeline_NonSoldierUnits_ZeroArmorUnchanged(t *testing.T) {
 	cases := []string{"archer", "acolyte", "adept", "worker"}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1039,7 +1039,7 @@ const goldXP = 750
 // each rank-up: 1 after bronze, 2 after silver, 3 after gold.
 func TestTwinBronze_AC1_BaselineNoPerk_SoldierGetsExactlyOnePerksPerTier(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1076,7 +1076,7 @@ func TestTwinBronze_AC1_BaselineNoPerk_SoldierGetsExactlyOnePerksPerTier(t *test
 // After silver rank-up the total is 3; after gold it is 4.
 func TestTwinBronze_AC2_OwnerGetsTwoDistinctBronzePerksAtBronzeRankUp(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1121,7 +1121,7 @@ func TestTwinBronze_AC3_DedupInvariant_100Seeds(t *testing.T) {
 	allNodes := twinBronzeFullChain
 	for seed := int64(1); seed <= 100; seed++ {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-		s.EnsurePlayerWithUpgrades("p1", nil, nil, allNodes)
+		s.EnsurePlayerWithUpgrades("p1", nil, nil, allNodes, nil)
 
 		s.mu.Lock()
 		soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
@@ -1153,7 +1153,7 @@ func TestTwinBronze_AC3_DedupInvariant_100Seeds(t *testing.T) {
 // is empty.
 func TestTwinBronze_AC4_BronzePoolSizeOne_SecondGrantSkipped(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1206,7 +1206,7 @@ func TestTwinBronze_AC5_Determinism_RngStreamOrdering(t *testing.T) {
 	for seed := int64(1); seed <= 20; seed++ {
 		// With Twin Bronze.
 		sw := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-		sw.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain)
+		sw.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain, nil)
 		sw.mu.Lock()
 		solW := sw.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
 		if solW == nil {
@@ -1235,7 +1235,7 @@ func TestTwinBronze_AC5_Determinism_RngStreamOrdering(t *testing.T) {
 
 		// Without Twin Bronze.
 		sn := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-		sn.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+		sn.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 		sn.mu.Lock()
 		solN := sn.spawnPlayerUnitLocked("soldier", "p1", "#ff0000", protocol.Vec2{X: 400, Y: 400})
 		if solN == nil {
@@ -1271,7 +1271,7 @@ func TestTwinBronze_AC5_Determinism_RngStreamOrdering(t *testing.T) {
 func TestTwinBronze_AC6_MidSessionPurchase_NoEffectOnInFlightMatch(t *testing.T) {
 	// Player joins WITHOUT Twin Bronze.
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
 
 	s.mu.RLock()
 	player := s.Players["p1"]
@@ -1326,7 +1326,7 @@ func TestTwinBronze_AC6_MidSessionPurchase_NoEffectOnInFlightMatch(t *testing.T)
 func TestTwinBronze_AC7_EnemyUnitNeverGetsExtraSlot(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	// Player "p1" owns Twin Bronze — must NOT affect enemy units.
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1447,7 +1447,7 @@ func TestTwinBronze_CatalogNode_LoadedCorrectly(t *testing.T) {
 func TestTwinBronze_ExtraPerkSlots_PopulatedAtMatchStart(t *testing.T) {
 	// With Twin Bronze.
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("owner", nil, nil, twinBronzeFullChain)
+	s.EnsurePlayerWithUpgrades("owner", nil, nil, twinBronzeFullChain, nil)
 
 	s.mu.RLock()
 	owner := s.Players["owner"]
@@ -1468,7 +1468,7 @@ func TestTwinBronze_ExtraPerkSlots_PopulatedAtMatchStart(t *testing.T) {
 
 	// Without Twin Bronze.
 	s2 := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s2.EnsurePlayerWithUpgrades("noowner", nil, nil, nil)
+	s2.EnsurePlayerWithUpgrades("noowner", nil, nil, nil, nil)
 
 	s2.mu.RLock()
 	noOwner := s2.Players["noowner"]
@@ -1490,7 +1490,7 @@ func TestTwinBronze_ExtraPerkSlots_PopulatedAtMatchStart(t *testing.T) {
 // "extraPerkSlots" key.
 func TestTwinBronze_UnitSnapshot_ExtraPerkSlots_TwinBronzeOwner(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("owner", nil, nil, twinBronzeFullChain)
+	s.EnsurePlayerWithUpgrades("owner", nil, nil, twinBronzeFullChain, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1533,7 +1533,7 @@ func TestTwinBronze_UnitSnapshot_ExtraPerkSlots_TwinBronzeOwner(t *testing.T) {
 // (enforced by the omitempty tag).
 func TestTwinBronze_UnitSnapshot_ExtraPerkSlots_NonOwner(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
-	s.EnsurePlayerWithUpgrades("noowner", nil, nil, nil)
+	s.EnsurePlayerWithUpgrades("noowner", nil, nil, nil, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1571,7 +1571,7 @@ func TestTwinBronze_UnitSnapshot_ExtraPerkSlots_NonOwner(t *testing.T) {
 func TestTwinBronze_UnitSnapshot_ExtraPerkSlots_EnemyUnit(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	// p1 owns Twin Bronze — must NOT bleed through to enemy unit snapshots.
-	s.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain, nil)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1616,7 +1616,7 @@ func TestPerkSelection_DeterministicAcrossGameStates(t *testing.T) {
 
 	rankSoldier := func(seed int64) []rankRecord {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-		s.EnsurePlayerWithUpgrades("p1", nil, nil, advancementSet)
+		s.EnsurePlayerWithUpgrades("p1", nil, nil, advancementSet, nil)
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -1675,7 +1675,7 @@ func TestPerkSelection_DeterministicAcrossGameStates(t *testing.T) {
 func TestPerkSelection_DeterministicAcrossGameStates_WithTwinBronze(t *testing.T) {
 	rankSoldier := func(seed int64) []string {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-		s.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain)
+		s.EnsurePlayerWithUpgrades("p1", nil, nil, twinBronzeFullChain, nil)
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -1717,7 +1717,7 @@ func TestPerkSelection_DeterministicAcrossGameStates_WithTwinBronze(t *testing.T
 func TestTwinBronze_AC5_Determinism_ExactPerkIDsAcrossInstances(t *testing.T) {
 	makeAndRank := func(seed int64, advancements []string) (afterBronze, afterSilver, afterGold []string) {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), seed)
-		s.EnsurePlayerWithUpgrades("p1", nil, nil, advancements)
+		s.EnsurePlayerWithUpgrades("p1", nil, nil, advancements, nil)
 
 		s.mu.Lock()
 		defer s.mu.Unlock()

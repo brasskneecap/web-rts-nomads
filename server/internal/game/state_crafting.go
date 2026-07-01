@@ -1,0 +1,92 @@
+package game
+
+// CraftItem is the public entry point for crafting a recipe at an Artificer.
+// Acquires s.mu, delegates, and returns whether the craft succeeded. The
+// recipe-crafted profile-record handler fires internally on success; the caller
+// does not need to take any action on true.
+func (s *GameState) CraftItem(playerID, recipeID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.handleCraftItemLocked(playerID, recipeID)
+}
+
+// handleCraftItemLocked validates and executes a craft. Returns true on success.
+// Validation failures are silent no-ops (return false). On success: consume one
+// of each input item from the vault, deduct gold, add the output item to the
+// vault. Must be called under s.mu.
+func (s *GameState) handleCraftItemLocked(playerID, recipeID string) bool {
+	player, ok := s.Players[playerID]
+	if !ok {
+		return false
+	}
+	// Must own a built Artificer.
+	if !s.playerOwnsBuiltCapabilityLocked(playerID, "crafting") {
+		return false
+	}
+	// Recipe must be unlocked this match.
+	if !s.playerKnowsRecipeLocked(playerID, recipeID) {
+		return false
+	}
+	def, ok := getRecipeDef(recipeID)
+	if !ok {
+		return false
+	}
+	outDef, ok := getItemDef(def.Output)
+	if !ok {
+		return false
+	}
+	// Afford gold.
+	if player.Resources["gold"] < def.CostGold {
+		return false
+	}
+	// Vault must contain every input, accounting for duplicates (e.g. a recipe
+	// that needs 2 of the same item).
+	needed := make(map[string]int, len(def.Inputs))
+	for _, in := range def.Inputs {
+		needed[in]++
+	}
+	for itemID, count := range needed {
+		if vaultItemCountLocked(player, itemID) < count {
+			return false
+		}
+	}
+	// Inputs are removed first, freeing slots before the output is added.
+	// We still guard addItemToVaultLocked's return below.
+
+	// Consume inputs.
+	for itemID, count := range needed {
+		for k := 0; k < count; k++ {
+			if !s.removeOneItemFromVaultByItemIDLocked(player, itemID) {
+				// Should never happen (counts were verified above); abort safely.
+				return false
+			}
+		}
+	}
+	// Deduct gold.
+	player.Resources["gold"] -= def.CostGold
+	// Produce output.
+	if !s.addItemToVaultLocked(player, outDef) {
+		// Extremely unlikely (we just freed >=2 slots). Refund to avoid losing
+		// the player's gold + items on a capacity edge case.
+		player.Resources["gold"] += def.CostGold
+		for itemID, count := range needed {
+			for k := 0; k < count; k++ {
+				inDef, _ := getItemDef(itemID)
+				s.addItemToVaultLocked(player, inDef)
+			}
+		}
+		return false
+	}
+	if s.recipeCraftedHandler != nil {
+		handler := s.recipeCraftedHandler
+		go handler(playerID, recipeID)
+	}
+	return true
+}
+
+// SetRecipeCraftedHandler installs the post-craft callback. Safe to call once
+// at match construction. Passing nil disables the hook (the default — tests
+// that do not exercise profile persistence do not need to set it).
+func (s *GameState) SetRecipeCraftedHandler(fn func(playerID, recipeID string)) {
+	s.recipeCraftedHandler = fn
+}

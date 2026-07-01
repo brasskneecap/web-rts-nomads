@@ -680,6 +680,11 @@ type Player struct {
 	// affect this field. Nil / empty means no advancements purchased.
 	AcquiredAdvancements []string
 
+	// UnlockedRecipeIDs is the in-match set of recipe IDs this player may craft
+	// at an Artificer. Seeded at join from the profile's KnownRecipeIDs and
+	// grown by purchase_recipe. Sorted, deduped.
+	UnlockedRecipeIDs []string
+
 	// EffectiveUnitDefs is a per-player map of unitType → modified UnitDef
 	// reflecting all owned advancements. Computed once at match start by
 	// applyAdvancementsToEffectiveDefsLocked. Only contains entries for unit
@@ -1060,6 +1065,12 @@ type GameState struct {
 	// Wired by MatchManager.newMatchLocked; nil in unit tests that do not
 	// exercise the immediate-commit path.
 	onDominionPointDropImmediate func(playerID string, amount int)
+
+	// recipeCraftedHandler is invoked (fire-and-forget) after a successful craft
+	// so the recipe can be recorded to the player's persistent profile. nil in
+	// tests that don't set it. Off the tick path by construction (craft is a
+	// command). Wired by MatchManager.newMatchLocked.
+	recipeCraftedHandler func(playerID, recipeID string)
 }
 
 const (
@@ -1179,6 +1190,7 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 	s.initNeutralCampsLocked()
 	s.initShopBuildingsLocked()
 	s.populateShopInventoriesLocked()
+	s.populateRecipeShopInventoriesLocked()
 	s.spawnShopGuardsLocked()
 
 	// Rebuild buildingsByID index from the freshly-cloned Buildings slice.
@@ -1831,7 +1843,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
 		isOwn := b.OwnerID != nil && *b.OwnerID == viewerID
-		isShop := hasItemPurchaseCapability(b)
+		isShop := isShopSnapshotBuilding(b)
 		_, knownToViewer := fow.KnownBuildings[b.ID]
 		if isOwn {
 			tile := *b
@@ -3188,7 +3200,7 @@ func (s *GameState) HumanPlayerMatchSummaries() []protocol.MatchSummary {
 }
 
 func (s *GameState) EnsurePlayer(playerID string) {
-	s.EnsurePlayerWithUpgrades(playerID, nil, nil, nil)
+	s.EnsurePlayerWithUpgrades(playerID, nil, nil, nil, nil)
 }
 
 // EnsurePlayerWithUpgrades is the full match-join path. It creates the Player
@@ -3200,7 +3212,9 @@ func (s *GameState) EnsurePlayer(playerID string) {
 // all owned upgrades are active (backwards-compatible default).
 // acquiredAdvancementIDs is the sorted list of advancement IDs the player owns
 // (from PlayerProfile.AcquiredAdvancements); nil / empty means no advancements.
-func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks map[string]int, activeUpgradeIDs []string, acquiredAdvancementIDs []string) {
+// knownRecipeIDs is the list of recipe IDs the player may craft this match,
+// seeded from the profile's KnownRecipeIDs; nil / empty means no recipes unlocked.
+func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks map[string]int, activeUpgradeIDs []string, acquiredAdvancementIDs []string, knownRecipeIDs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -3238,6 +3252,16 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		}
 	}
 
+	// Snapshot known recipe IDs. Defensive copy; nil -> empty slice. Sorted so
+	// playerKnowsRecipeLocked and unlockRecipeForPlayerLocked maintain invariant.
+	recipeIDs := make([]string, 0, len(knownRecipeIDs))
+	for _, id := range knownRecipeIDs {
+		if id != "" {
+			recipeIDs = append(recipeIDs, id)
+		}
+	}
+	sort.Strings(recipeIDs)
+
 	player := &Player{
 		ID:                            playerID,
 		Color:                         s.randomColor(),
@@ -3255,6 +3279,7 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		ExtraStartingUnits:            map[string]int{},
 		ShopRerollsRemaining:          defaultShopRerollsPerPlayer,
 		AcquiredAdvancements:          advancementIDs,
+		UnlockedRecipeIDs:             recipeIDs,
 		Metrics:                       NewMatchMetrics(),
 		ZoneStatModifiers:             newPlayerStatModifierSet(),
 	}

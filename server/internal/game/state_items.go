@@ -22,6 +22,16 @@ type EquippedItem struct {
 	Stacks     int    `json:"stacks"`
 }
 
+// EquipmentProc is a runtime copy of an item's ItemOnHitProc, aggregated onto a
+// unit's EquipmentBonus so the combat hook can roll it without re-reading the
+// catalog every hit.
+type EquipmentProc struct {
+	Chance       float64
+	Damage       int
+	DamageType   DamageType
+	ProjectileID string
+}
+
 // UnitEquipmentBonus accumulates the flat stat bonuses from all equipped items.
 // Recomputed by recomputeUnitEquipmentBonusLocked whenever the unit's loadout
 // changes. Applied inside applyRankModifiersLocked after path/rank multipliers.
@@ -33,26 +43,14 @@ type UnitEquipmentBonus struct {
 	MoveSpeed   float64
 	HealthRegen float64
 	MaxShield   int
+	// OnHitElemental sums per-element flat damage applied as a SEPARATE typed
+	// instance on each landed basic attack. nil when no equipped item grants any.
+	OnHitElemental map[DamageType]int
+	// OnHitProcs is one entry per equipped item that defines an onHitProc.
+	OnHitProcs []EquipmentProc
 }
 
 // ─── Capacity / presence helpers ─────────────────────────────────────────────
-
-// vaultCapacityForPlayerLocked returns the number of vault slots available to
-// a player, gated by their townhall tier. Default (no TH / tier 0) → 6,
-// Tier 1 → 5, Tier 2 → 10, Tier 3 → 15. Must be called under s.mu.
-func (s *GameState) vaultCapacityForPlayerLocked(playerID string) int {
-	tier := s.townhallTierForPlayerLocked(playerID)
-	switch tier {
-	case 1:
-		return 5
-	case 2:
-		return 10
-	case 3:
-		return 15
-	default:
-		return 6
-	}
-}
 
 // playerHasMarketplaceLocked returns true if the player owns at least one
 // fully-built (not under-construction) building with the "item-purchase"
@@ -97,16 +95,14 @@ func itemMaxStacks(def *ItemDef) int {
 	return 1
 }
 
-// addItemToVaultLocked attempts to add one unit of def to the player's vault.
-// Returns true on success, false if the vault is at capacity and no stack slot
-// is available.
+// addItemToVaultLocked adds one unit of def to the player's vault. The vault is
+// unbounded, so this always succeeds; the bool return is retained for callers
+// that branch on it (e.g. loot pickup) and is always true.
 //
 // Stacking rules:
-//   - Equipment: always creates a new VaultItem with a unique InstanceID; counts
-//     against capacity regardless of existing entries.
 //   - Consumable: if an existing entry with the same ItemID has room to stack,
-//     increment Stacks (no new entry, no capacity check). Otherwise, a new entry
-//     is created — that counts against capacity.
+//     increment Stacks. Otherwise a new entry is created.
+//   - Equipment: always creates a new VaultItem with a unique InstanceID.
 //
 // Must be called under s.mu.
 func (s *GameState) addItemToVaultLocked(player *Player, def *ItemDef) bool {
@@ -119,24 +115,8 @@ func (s *GameState) addItemToVaultLocked(player *Player, def *ItemDef) bool {
 				return true
 			}
 		}
-		// No stackable slot found; need a new entry — check capacity.
-		capacity := s.vaultCapacityForPlayerLocked(player.ID)
-		if len(player.Vault) >= capacity {
-			return false
-		}
-		player.Vault = append(player.Vault, &VaultItem{
-			InstanceID: s.allocItemInstanceIDLocked(),
-			ItemID:     def.ID,
-			Stacks:     1,
-		})
-		return true
 	}
 
-	// Equipment always needs a new slot.
-	capacity := s.vaultCapacityForPlayerLocked(player.ID)
-	if len(player.Vault) >= capacity {
-		return false
-	}
 	player.Vault = append(player.Vault, &VaultItem{
 		InstanceID: s.allocItemInstanceIDLocked(),
 		ItemID:     def.ID,
@@ -168,6 +148,36 @@ func (s *GameState) removeItemFromVaultByInstanceLocked(player *Player, instance
 		return vi, true
 	}
 	return nil, false
+}
+
+// vaultItemCountLocked returns the total number of units of itemID held in the
+// player's vault (summing stacks). Must be called under s.mu.
+func vaultItemCountLocked(player *Player, itemID string) int {
+	n := 0
+	for _, vi := range player.Vault {
+		if vi.ItemID == itemID {
+			n += vi.Stacks
+		}
+	}
+	return n
+}
+
+// removeOneItemFromVaultByItemIDLocked removes a single unit of itemID from the
+// player's vault: decrements a stack if one has Stacks>1, else drops the entry.
+// Returns false if no matching entry exists. Must be called under s.mu.
+func (s *GameState) removeOneItemFromVaultByItemIDLocked(player *Player, itemID string) bool {
+	for i, vi := range player.Vault {
+		if vi.ItemID != itemID {
+			continue
+		}
+		if vi.Stacks > 1 {
+			vi.Stacks--
+			return true
+		}
+		player.Vault = append(player.Vault[:i], player.Vault[i+1:]...)
+		return true
+	}
+	return false
 }
 
 // ─── Inventory size / bonus recomputation ────────────────────────────────────
@@ -211,16 +221,35 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 			continue
 		}
 		def, ok := s.itemCatalog[slot.ItemID]
-		if !ok || def.Modifiers == nil {
+		if !ok {
 			continue
 		}
-		unit.EquipmentBonus.Damage += def.Modifiers.Damage
-		unit.EquipmentBonus.HP += def.Modifiers.HP
-		unit.EquipmentBonus.Armor += def.Modifiers.Armor
-		unit.EquipmentBonus.AttackSpeed += def.Modifiers.AttackSpeed
-		unit.EquipmentBonus.MoveSpeed += def.Modifiers.MoveSpeed
-		unit.EquipmentBonus.HealthRegen += def.Modifiers.HealthRegen
-		unit.EquipmentBonus.MaxShield += def.Modifiers.MaxShield
+		if def.Modifiers != nil {
+			unit.EquipmentBonus.Damage += def.Modifiers.Damage
+			unit.EquipmentBonus.HP += def.Modifiers.HP
+			unit.EquipmentBonus.Armor += def.Modifiers.Armor
+			unit.EquipmentBonus.AttackSpeed += def.Modifiers.AttackSpeed
+			unit.EquipmentBonus.MoveSpeed += def.Modifiers.MoveSpeed
+			unit.EquipmentBonus.HealthRegen += def.Modifiers.HealthRegen
+			unit.EquipmentBonus.MaxShield += def.Modifiers.MaxShield
+		}
+		for _, e := range def.OnHitElemental {
+			if e.Amount == 0 {
+				continue
+			}
+			if unit.EquipmentBonus.OnHitElemental == nil {
+				unit.EquipmentBonus.OnHitElemental = make(map[DamageType]int)
+			}
+			unit.EquipmentBonus.OnHitElemental[e.Type.OrPhysical()] += e.Amount
+		}
+		if p := def.OnHitProc; p != nil {
+			unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, EquipmentProc{
+				Chance:       p.Chance,
+				Damage:       p.Damage,
+				DamageType:   p.DamageType.OrPhysical(),
+				ProjectileID: p.ProjectileID,
+			})
+		}
 	}
 
 	// Apply delta to HealthRegenPerSecond directly.
@@ -329,33 +358,6 @@ func (s *GameState) handlePurchaseItemLocked(playerID, buildingID, itemID string
 		return
 	}
 
-	// Capacity pre-check: if a new vault entry would be needed, verify room.
-	// addItemToVaultLocked handles both the stacking and the capacity guard, so
-	// we attempt the add first; if it returns false we abort before deducting.
-	// To avoid deducting gold before the vault check, we do a dry-run first.
-	if def.Kind == ItemKindConsumable {
-		maxSt := itemMaxStacks(def)
-		canStack := false
-		for _, vi := range player.Vault {
-			if vi.ItemID == def.ID && vi.Stacks < maxSt {
-				canStack = true
-				break
-			}
-		}
-		if !canStack {
-			capacity := s.vaultCapacityForPlayerLocked(playerID)
-			if len(player.Vault) >= capacity {
-				return
-			}
-		}
-	} else {
-		// Equipment always needs a new slot.
-		capacity := s.vaultCapacityForPlayerLocked(playerID)
-		if len(player.Vault) >= capacity {
-			return
-		}
-	}
-
 	player.Resources["gold"] -= def.CostGold
 	s.addItemToVaultLocked(player, def)
 	// Decrement the shop's stock for this item. The entry stays in the
@@ -455,36 +457,14 @@ func (s *GameState) handleUnequipItemLocked(playerID string, unitID int, slotIdx
 	}
 
 	slot := unit.Equipped[slotIdx]
-	def, ok := s.itemCatalog[slot.ItemID]
-	if !ok {
+	if _, ok := s.itemCatalog[slot.ItemID]; !ok {
 		// Unknown item — remove from slot silently, no vault add.
 		unit.Equipped[slotIdx] = nil
 		s.recomputeUnitEquipmentBonusLocked(unit)
 		return
 	}
 
-	// Verify vault has room to receive the item (same logic as addItemToVaultLocked).
-	if def.Kind == ItemKindConsumable {
-		maxSt := itemMaxStacks(def)
-		canStack := false
-		for _, vi := range player.Vault {
-			if vi.ItemID == def.ID && vi.Stacks < maxSt {
-				canStack = true
-				break
-			}
-		}
-		if !canStack {
-			capacity := s.vaultCapacityForPlayerLocked(playerID)
-			if len(player.Vault) >= capacity {
-				return
-			}
-		}
-	} else {
-		capacity := s.vaultCapacityForPlayerLocked(playerID)
-		if len(player.Vault) >= capacity {
-			return
-		}
-	}
+	// The vault is unbounded, so the item can always be returned — no room check.
 
 	// Move item from slot back to vault.
 	unit.Equipped[slotIdx] = nil

@@ -1,0 +1,16 @@
+{
+  "type": "recipe-shop",
+  "class": "neutral",
+  "buildable": false,
+  "width": 3,
+  "height": 3,
+  "maxHp": 0,
+  "buildSeconds": 0,
+  "resourceCost": {},
+  "capabilities": ["recipe-purchase"],
+  "spawnUnitTypes": [],
+  "metadata": {},
+  "color": "#b45309",
+  "label": "Recipe Trader",
+  "hotkey": ""
+}

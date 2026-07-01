@@ -41,12 +41,29 @@
         { "item": "potion_epic_heal",      "min": 86, "max": 95 },
         { "item": "potion_legendary_heal", "min": 96, "max": 100 }
       ]
+    },
+    "merchant_accessories": {
+      "kind": "item_subtable",
+      "entries": [
+        { "item": "fire_ring",      "min": 1,  "max": 33 },
+        { "item": "ice_ring",       "min": 34, "max": 67 },
+        { "item": "lightning_ring", "min": 68, "max": 100 }
+      ]
+    },
+    "basic_accessories": {
+      "kind": "item_subtable",
+      "entries": [
+        { "item": "fire_ring",      "min": 1,  "max": 33 },
+        { "item": "ice_ring",       "min": 34, "max": 67 },
+        { "item": "lightning_ring", "min": 68, "max": 100 }
+      ]
     }
   },
   "tables": {
     "raider_loot": [
       { "entry": "small_resource_bundle", "min": 1,  "max": 50 },
-      { "entry": "basic_weapons",         "min": 51, "max": 100 }
+      { "entry": "basic_weapons",         "min": 51, "max": 80 },
+      { "entry": "basic_accessories",     "min": 81, "max": 100 }
     ],
     "wildborne_loot": [
       { "entry": "small_resource_bundle", "min": 1,  "max": 25 },
@@ -54,8 +71,9 @@
       { "entry": "rare_weapons",         "min": 76, "max": 100 }
     ],
     "merchant_basic": [
-      { "entry": "merchant_weapons", "min": 1,  "max": 50 },
-      { "entry": "merchant_potions", "min": 51, "max": 100 }
+      { "entry": "merchant_weapons",     "min": 1,  "max": 40 },
+      { "entry": "merchant_potions",     "min": 41, "max": 75 },
+      { "entry": "merchant_accessories", "min": 76, "max": 100 }
     ]
   }
 }

@@ -1,0 +1,13 @@
+{
+  "id": "lightning_ring",
+  "displayName": "Lightning Ring",
+  "description": "+5 lightning damage on hit.",
+  "iconKey": "lightning_ring",
+  "kind": "equipment",
+  "tier": "common",
+  "category": "Accessory",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 75,
+  "onHitElemental": [ { "type": "lightning", "amount": 5 } ]
+}

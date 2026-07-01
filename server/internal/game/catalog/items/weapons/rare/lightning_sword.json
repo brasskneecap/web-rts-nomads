@@ -1,0 +1,15 @@
+{
+  "id": "lightning_sword",
+  "displayName": "Lightning Sword",
+  "description": "+5 damage. +5 lightning damage on hit. 5% chance on hit to launch a lightning bolt (25 lightning damage).",
+  "iconKey": "lightning_sword",
+  "kind": "equipment",
+  "tier": "rare",
+  "category": "Weapon",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 0,
+  "modifiers": { "damage": 5 },
+  "onHitElemental": [ { "type": "lightning", "amount": 5 } ],
+  "onHitProc": { "chance": 0.05, "damage": 25, "damageType": "lightning", "projectileID": "lightning_bolt" }
+}

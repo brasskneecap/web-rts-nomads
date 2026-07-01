@@ -49,6 +49,7 @@ func main() {
 	hub.SetVersion(version) // §17.1 build-mismatch handshake
 	profileManager := profile.NewManager("")
 	manager.SetDominionPointCommitter(profileManager)
+	manager.SetRecipeRecorder(profileManager)
 
 	spaHandler, err := newSPAHandler()
 	if err != nil {

@@ -1,0 +1,43 @@
+import { describe, expect, it, beforeEach } from 'vitest'
+import { getBuildingActions } from './GameState'
+import { initRecipeDefs } from '../maps/recipeDefs'
+import type { BuildingTile } from '../network/protocol'
+
+beforeEach(() => {
+  initRecipeDefs([
+    { id: 'fire_sword', name: 'Fire Sword', inputs: ['broad_sword', 'fire_ring'], costGold: 150, output: 'fire_sword' },
+    { id: 'frost_sword', name: 'Frost Sword', inputs: ['broad_sword', 'ice_ring'], costGold: 150, output: 'frost_sword' },
+  ])
+})
+
+function mkRecipeShop(over: Partial<BuildingTile> = {}): BuildingTile {
+  return {
+    id: 'rs-1', x: 0, y: 0, buildingType: 'recipe-shop', width: 3, height: 3,
+    occupied: true, visible: true, capabilities: ['recipe-purchase'],
+    recipeInventory: [
+      { recipeId: 'fire_sword', quantity: 1 },
+      { recipeId: 'frost_sword', quantity: 0 },
+    ],
+    ...over,
+  } as BuildingTile
+}
+
+describe('getBuildingActions — recipe shop', () => {
+  it('emits one buy-recipe action per stocked recipe, disabling sold-out slots', () => {
+    const actions = getBuildingActions(mkRecipeShop())
+    const fire = actions.find((a) => a.id === 'buy-recipe-fire_sword')
+    const frost = actions.find((a) => a.id === 'buy-recipe-frost_sword')
+    expect(fire).toBeTruthy()
+    expect(fire?.label).toBe('Fire Sword')
+    expect(fire?.cost).toEqual([{ resourceId: 'gold', amount: 150, accent: '#d4a84f' }])
+    expect(fire?.disabled).toBeFalsy()
+    expect(frost?.disabled).toBe(true) // quantity 0 → sold out
+  })
+
+  it('skips recipes with no catalog def', () => {
+    const actions = getBuildingActions(
+      mkRecipeShop({ recipeInventory: [{ recipeId: 'unknown_recipe', quantity: 1 }] }),
+    )
+    expect(actions.some((a) => a.id.startsWith('buy-recipe-'))).toBe(false)
+  })
+})

@@ -117,6 +117,13 @@ type Projectile struct {
 	// render a red circle behind the floating damage number. Pierce arrows
 	// propagate this flag to every victim along the line.
 	IsCrit bool
+
+	// SkipOnHitEffects marks a projectile that must NOT run the on-hit reaction
+	// hub when it lands — its damage is applied directly via
+	// applyUnitDamageWithSourceLocked. Set on equipment-proc bolts so a proc
+	// cannot trigger another proc (mirrors the non-recursion discipline of
+	// base-stat splash, which also bypasses resolveAttackHitLocked).
+	SkipOnHitEffects bool
 }
 
 func (s *GameState) fireProjectileLocked(attacker, target *Unit, damage int) {
@@ -190,6 +197,55 @@ func (s *GameState) fireHomingProjectileLocked(attacker, target *Unit, damage in
 		ImpactEffect:     impactEffect,
 		DamageType:       attacker.AttackDamageType,
 		Scale:            attacker.ProjectileScale,
+	})
+}
+
+// fireOnHitProcProjectileLocked spawns a homing projectile for an equipment
+// on-hit proc. Unlike fireHomingProjectileLocked it does not derive its damage
+// type from the attacker — it carries the proc's own Damage/DamageType — and it
+// sets SkipOnHitEffects so landing applies damage directly without re-entering
+// the on-hit hub. Must be called under s.mu.
+func (s *GameState) fireOnHitProcProjectileLocked(attacker, target *Unit, proc EquipmentProc) {
+	speed := defaultProjectileSpeed
+	var followEffect, impactEffect string
+	if def, ok := getProjectileDef(proc.ProjectileID); ok {
+		speed = def.Speed
+		followEffect = followEffectForProjectileDef(def)
+		impactEffect = impactEffectForProjectileDef(def)
+	}
+
+	dx := target.X - attacker.X
+	dy := target.Y - attacker.Y
+	travelTime := math.Sqrt(dx*dx+dy*dy) / speed
+	if travelTime < minProjectileFlightSeconds {
+		travelTime = minProjectileFlightSeconds
+	}
+
+	id := fmt.Sprintf("proj_%d", s.nextProjectileID)
+	s.nextProjectileID++
+
+	variant := proc.ProjectileID
+	if variant == "" {
+		variant = attacker.UnitType
+	}
+	s.Projectiles = append(s.Projectiles, &Projectile{
+		ID:               id,
+		OwnerUnitID:      attacker.ID,
+		OwnerPlayerID:    attacker.OwnerID,
+		TargetUnitID:     target.ID,
+		OriginX:          attacker.X,
+		OriginY:          attacker.Y,
+		TargetX:          target.X,
+		TargetY:          target.Y,
+		TotalSeconds:     travelTime,
+		RemainingSeconds: travelTime,
+		Damage:           proc.Damage,
+		Variant:          variant,
+		FollowEffect:     followEffect,
+		ImpactEffect:     impactEffect,
+		DamageType:       proc.DamageType,
+		Scale:            attacker.ProjectileScale,
+		SkipOnHitEffects: true,
 	})
 }
 
@@ -492,6 +548,21 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 	// regardless of whether the attacker survived the flight. No-op when the
 	// projectile carries no impact effect.
 	s.playProjectileImpactLocked(proj, target)
+
+	if proj.SkipOnHitEffects {
+		// Equipment-proc bolt: apply its typed damage directly. Bypasses the
+		// on-hit hub so it cannot trigger another proc or elemental instance.
+		s.applyUnitDamageWithSourceLocked(target, proj.Damage, DamageSource{
+			AttackerUnitID: proj.OwnerUnitID,
+			Kind:           "item-proc",
+			DamageType:     proj.DamageType,
+		})
+		if target.HP <= 0 {
+			target.HP = 0
+			*deadUnitIDs = append(*deadUnitIDs, target.ID)
+		}
+		return
+	}
 
 	attacker := s.getUnitByIDLocked(proj.OwnerUnitID)
 	if attacker == nil {

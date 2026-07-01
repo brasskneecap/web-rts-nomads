@@ -5,7 +5,7 @@
     aria-label="Match menu"
     :style="{ '--ui-icon-container-image': `url(${iconContainerUrl})` }"
   >
-    <div class="match-menu__panel">
+    <div ref="panelEl" class="match-menu__panel">
       <button
         type="button"
         class="match-menu__close"
@@ -104,7 +104,6 @@
             <VaultPanel
               embedded
               :vault="vault"
-              :vault-capacity="vaultCapacity"
               :vault-selected-instance-id="vaultSelectedInstanceId"
               :units="units"
               :on-select-vault-item="onSelectVaultItem"
@@ -112,8 +111,53 @@
               :on-unequip-item="onUnequipItem"
               :on-use-consumable="onUseConsumable"
               :on-transfer-item="onTransferItem"
-              :on-focus-unit="onFocusUnit"
+              :on-focus-unit="handleFocusUnit"
             />
+          </div>
+
+          <!-- Craft: one card per craftable recipe (recipes are unlocked via
+               Recipe Shop purchases, tracked server-side). Same card shell as
+               the Shop/Upgrades tabs. -->
+          <div v-else-if="activeTabId === 'craft'" class="match-menu__shop">
+            <div v-if="!hasArtificer" class="match-menu__shop-empty">
+              Build an Artificer to craft items.
+            </div>
+            <div v-else-if="craftCatalog.length === 0" class="match-menu__shop-empty">
+              Buy a recipe at a Recipe Shop to craft it here.
+            </div>
+            <template v-else>
+              <div
+                v-for="entry in craftCatalog"
+                :key="entry.recipeId"
+                class="shop-card"
+              >
+                <div class="shop-card__head">
+                  <div class="shop-card__icon">
+                    <ActionIcon
+                      class="shop-card__icon-img"
+                      :action="{ id: entry.output, label: entry.name, iconDef: { kind: 'item', type: entry.output } }"
+                    />
+                  </div>
+                  <div class="shop-card__name">{{ entry.name }}</div>
+                  <div class="craft-row__cost">{{ entry.costGold }} gold</div>
+                </div>
+                <ul class="craft-row__ingredients">
+                  <li
+                    v-for="ing in entry.ingredients"
+                    :key="ing.itemId"
+                    class="craft-row__ingredient"
+                    :class="{ 'craft-row__ingredient--short': ing.have < ing.need }"
+                  >{{ ing.itemId }} {{ ing.have }}/{{ ing.need }}</li>
+                </ul>
+                <button
+                  type="button"
+                  class="craft-row__btn"
+                  :disabled="!entry.craftable"
+                  :title="entry.craftable ? `Craft ${entry.name}` : 'Missing ingredients'"
+                  @click="entry.craftable ? emit('craft', entry.recipeId) : undefined"
+                >Craft</button>
+              </div>
+            </template>
           </div>
 
           <!-- Upgrades: one card per upgrade-providing building (currently the
@@ -167,7 +211,7 @@ import VaultPanel from '@/components/VaultPanel.vue'
 import UpgradeRow from '@/components/vault/UpgradeRow.vue'
 import UpgradeQueue from '@/components/vault/UpgradeQueue.vue'
 import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
-import type { ShopCatalogEntry, Unit } from '@/game/core/GameState'
+import type { ShopCatalogEntry, Unit, CraftCatalogEntry } from '@/game/core/GameState'
 import type { PlayerUpgradeSnapshot, VaultItemSnapshot } from '@/game/network/protocol'
 
 interface TabDef {
@@ -179,6 +223,7 @@ const TABS: TabDef[] = [
   { id: 'shop', label: 'Shop' },
   { id: 'upgrades', label: 'Upgrades' },
   { id: 'vault', label: 'Vault' },
+  { id: 'craft', label: 'Craft' },
 ]
 
 const TAB_ROW_SLOTS = 4
@@ -192,7 +237,6 @@ const props = withDefaults(defineProps<{
   onPurchaseUpgrade?: (track: string) => void
   onCancelUpgrade?: (buildingId: string) => void
   vault?: VaultItemSnapshot[]
-  vaultCapacity?: number
   vaultSelectedInstanceId?: number | null
   units?: Unit[]
   onSelectVaultItem?: (instanceId: number | null) => void
@@ -201,6 +245,9 @@ const props = withDefaults(defineProps<{
   onUseConsumable?: (unitId: number, slotIndex: number) => void
   onTransferItem?: (fromUnitId: number, fromSlotIdx: number, toUnitId: number, toSlotIdx: number) => void
   onFocusUnit?: (unitId: number) => void
+  craftCatalog?: CraftCatalogEntry[]
+  hasArtificer?: boolean
+  onFocusUnit?: (unitId: number, menuRightPx?: number) => void
 }>(), {
   shopCatalog: () => [],
   shopRerollsRemaining: 0,
@@ -208,7 +255,6 @@ const props = withDefaults(defineProps<{
   onPurchaseUpgrade: () => {},
   onCancelUpgrade: () => {},
   vault: () => [],
-  vaultCapacity: 0,
   vaultSelectedInstanceId: null,
   units: () => [],
   onSelectVaultItem: () => {},
@@ -217,7 +263,21 @@ const props = withDefaults(defineProps<{
   onUseConsumable: () => {},
   onTransferItem: () => {},
   onFocusUnit: () => {},
+  craftCatalog: () => [],
+  hasArtificer: false,
 })
+
+// The visible window element; measured so the camera can frame a focused unit
+// just clear of the window's right edge (see handleFocusUnit).
+const panelEl = ref<HTMLElement | null>(null)
+
+// Forward Vault unit focus to the parent, attaching the window's current
+// right edge (viewport CSS px) so the camera can place the unit a fixed gap
+// to its right regardless of screen size.
+function handleFocusUnit(unitId: number) {
+  const menuRightPx = panelEl.value?.getBoundingClientRect().right
+  props.onFocusUnit(unitId, menuRightPx)
+}
 
 const tabSlots = computed(() =>
   Array.from({ length: TAB_ROW_SLOTS }, (_, index) => ({
@@ -299,6 +359,7 @@ const emit = defineEmits<{
   close: []
   purchase: [payload: { itemId: string; buildingId: string }]
   reroll: [buildingId: string]
+  craft: [recipeId: string]
 }>()
 
 // Active tab is exposed as v-model so parents can drive it from hotkeys
@@ -538,6 +599,55 @@ function onPurchase(entry: ShopCatalogEntry) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 8px;
+}
+
+/* Craft card: cost sits at the right edge of the shop-card__head row
+   (mirrors .shop-tooltip__cost's gold color), then the ingredient list and
+   craft button stack below. */
+.craft-row__cost {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffe9a0;
+}
+
+.craft-row__ingredients {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  color: #d4b87a;
+}
+
+.craft-row__ingredient--short {
+  color: #f5a3a3;
+}
+
+.craft-row__btn {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(200, 164, 106, 0.35);
+  background: linear-gradient(180deg, rgba(113, 75, 39, 0.85), rgba(61, 39, 22, 0.95));
+  color: #f5ead2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-align: center;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.craft-row__btn:not(:disabled):hover {
+  background: linear-gradient(180deg, rgba(145, 96, 48, 0.95), rgba(83, 53, 28, 1));
+  border-color: rgba(220, 180, 110, 0.6);
+}
+
+.craft-row__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Body: the 12-slot grid with the refresh button to its right. */

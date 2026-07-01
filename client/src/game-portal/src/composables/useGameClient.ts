@@ -51,7 +51,6 @@ const emptyUiSnapshot: GameUiSnapshot = {
   townHallTier: 0,
   selectedBuildingType: null,
   vault: [],
-  vaultCapacity: 0,
   vaultSelectedInstanceId: null,
   allPlayerUnits: [],
   waveUpgrade: null,
@@ -59,6 +58,8 @@ const emptyUiSnapshot: GameUiSnapshot = {
   commanderTargetingAbilityId: null,
   shopCatalog: [],
   shopRerollsRemaining: 0,
+  craftCatalog: [],
+  hasArtificer: false,
   paused: false,
   pausedBy: '',
   pausedSinceMs: 0,
@@ -143,6 +144,7 @@ export function useGameClient() {
     client.setAcquiredAdvancementIds(
       (profile.value?.acquiredAdvancements ?? []).map((a) => a.id),
     )
+    client.setKnownRecipeIds(profile.value?.knownRecipeIds ?? [])
 
     // Wire the connection state callback. This runs outside the RAF loop so
     // connection state changes are never masked by the snapshot polling rhythm.
@@ -203,8 +205,8 @@ export function useGameClient() {
     client?.selectUnitOnly(unitId)
   }
 
-  function focusUnit(unitId: number) {
-    client?.focusUnit(unitId)
+  function focusUnit(unitId: number, menuRightPx?: number) {
+    client?.focusUnit(unitId, menuRightPx)
   }
 
   function deselectUnit(unitId: number) {
@@ -235,6 +237,10 @@ export function useGameClient() {
 
   function rerollShop(buildingId: string) {
     client?.sendRerollShop(buildingId)
+  }
+
+  function craftItem(recipeId: string) {
+    client?.sendCraftItem(recipeId)
   }
 
   function sendEquipItem(unitId: number, slotIndex: number, instanceId: number) {
@@ -299,6 +305,7 @@ export function useGameClient() {
     upgradeTownHall,
     sendPurchaseItem,
     rerollShop,
+    craftItem,
     sendEquipItem,
     sendUnequipItem,
     sendUseConsumable,

@@ -42,6 +42,7 @@ import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP, getUpgradeChain, townHallTie
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
+import { RECIPE_DEF_MAP } from '../maps/recipeDefs'
 import { buildItemTooltipBody } from '../items/itemRules'
 import { formatPerkTooltip } from './perkTooltip'
 import { getUnitBodyRect, isPointInUnitBody } from '../rendering/unitSprites'
@@ -567,6 +568,20 @@ export type ShopCatalogEntry = {
   purchaseBuildingName: string
 }
 
+export interface CraftCatalogIngredient {
+  itemId: string
+  have: number
+  need: number
+}
+export interface CraftCatalogEntry {
+  recipeId: string
+  name: string
+  output: string
+  costGold: number
+  ingredients: CraftCatalogIngredient[]
+  craftable: boolean
+}
+
 export class GameState {
   private resourceStocks: ResourceStock[] = [
     { id: 'gold', label: 'Gold', amount: 500, accent: '#d4a84f' },
@@ -638,13 +653,17 @@ export class GameState {
   // continue to drain it.
   pausedSinceMs = 0
 
-  // Vault state — populated from PlayerSnapshot each tick.
+  // Vault state — populated from PlayerSnapshot each tick. The vault is
+  // unbounded; there is no capacity to track.
   localPlayerVault: VaultItemSnapshot[] = []
-  localPlayerVaultCapacity = 0
 
   // Remaining merchant-reroll budget. Mirrored from PlayerSnapshot each tick.
   // Drives whether the reroll action on a neutral-shop building is enabled.
   localPlayerShopRerollsRemaining = 0
+
+  // Recipes the local player has unlocked (purchased from a Recipe Shop).
+  // Mirrored from PlayerSnapshot each tick. Drives craft-* actions at the Artificer.
+  localPlayerUnlockedRecipeIds: string[] = []
 
   // Commander abilities (player-level action bar). Populated from
   // PlayerSnapshot.commanderAbilities every tick.
@@ -2670,6 +2689,59 @@ export class GameState {
     return entries
   }
 
+  // localPlayerHasArtificer reports whether the local player owns at least one
+  // fully-built (not under-construction) building with the "crafting"
+  // capability — the client-side mirror of the server's craft gate. Used to
+  // gate the Craft tab's buttons + empty-state hint.
+  localPlayerHasArtificer(): boolean {
+    if (!this.localPlayerId) return false
+    for (const b of this.mapConfig.buildings) {
+      if (b.ownerId !== this.localPlayerId) continue
+      if (b.metadata?.['underConstruction'] === true) continue
+      if (b.capabilities?.includes('crafting')) return true
+    }
+    return false
+  }
+
+  // getCraftCatalogSnapshot builds the Craft tab's data from the player's
+  // unlocked recipes: per recipe, the ingredient have/need (have summed from the
+  // Vault, need counted from recipe.inputs incl. duplicates) and whether it is
+  // craftable right now. Server re-validates on craft_item — this is a UX hint.
+  getCraftCatalogSnapshot(): CraftCatalogEntry[] {
+    const hasArtificer = this.localPlayerHasArtificer()
+    const have = new Map<string, number>()
+    for (const vi of this.localPlayerVault) {
+      have.set(vi.itemId, (have.get(vi.itemId) ?? 0) + (vi.stacks ?? 1))
+    }
+    const entries: CraftCatalogEntry[] = []
+    // Deterministic order: iterate the sorted unlocked ids.
+    for (const recipeId of [...this.localPlayerUnlockedRecipeIds].sort()) {
+      const recipe = RECIPE_DEF_MAP.get(recipeId)
+      if (!recipe) continue
+      const need = new Map<string, number>()
+      for (const input of recipe.inputs) need.set(input, (need.get(input) ?? 0) + 1)
+      let allPresent = true
+      const ingredients: CraftCatalogIngredient[] = []
+      for (const input of recipe.inputs) {
+        if (ingredients.some((i) => i.itemId === input)) continue // dedup display
+        const needCount = need.get(input) ?? 0
+        const haveCount = have.get(input) ?? 0
+        if (haveCount < needCount) allPresent = false
+        ingredients.push({ itemId: input, have: haveCount, need: needCount })
+      }
+      entries.push({
+        recipeId: recipe.id,
+        name: recipe.name,
+        output: recipe.output,
+        costGold: recipe.costGold,
+        ingredients,
+        craftable: hasArtificer && allPresent,
+      })
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name) || a.recipeId.localeCompare(b.recipeId))
+    return entries
+  }
+
   getSelectedUnits(): Unit[] {
     const selectedIds = this.getOrderedSelectedUnitIds()
 
@@ -2813,13 +2885,10 @@ export class GameState {
           : getBuildingActions(
               selectedBuilding,
               this.playerUpgrades,
-              {
-                vault: this.localPlayerVault,
-                vaultCapacity: this.localPlayerVaultCapacity,
-              },
               this.townHallTier,
               new Set(this.lockedUnitTypes),
               this.localPlayerShopRerollsRemaining,
+              new Set(this.localPlayerUnlockedRecipeIds),
             ),
         production: activeProduction
           ? toProductionSummary(activeProduction)
@@ -2985,8 +3054,9 @@ export class GameState {
     return this.teamOf(ownerId) === this.teamOf(this.localPlayerId)
   }
 
-  /** Zone-capture requirement cards for zones my team currently occupies but
-   *  does not yet own. Drives ZoneCapturePanel. Empty when no zones qualify. */
+  /** Zone HUD cards: capture-requirement cards for zones my team is contesting,
+   *  plus an always-on card (with granted bonuses) for every zone my team owns.
+   *  Drives ZoneCapturePanel. Empty when no zones qualify. */
   getZoneCaptureCards(): ZoneCaptureCard[] {
     // Called every UI tick — skip all work on maps without zones (the common
     // case). buildZoneCaptureCards accepts BuildingTile (null owner ids) directly.
@@ -3086,10 +3156,8 @@ export class GameState {
     if (localPlayer.vault !== undefined) {
       this.localPlayerVault = localPlayer.vault ?? []
     }
-    if (localPlayer.vaultCapacity !== undefined) {
-      this.localPlayerVaultCapacity = localPlayer.vaultCapacity
-    }
     this.localPlayerShopRerollsRemaining = localPlayer.shopRerollsRemaining ?? 0
+    this.localPlayerUnlockedRecipeIds = localPlayer.unlockedRecipeIds ?? []
     this.localPlayerCommanderAbilities = localPlayer.commanderAbilities ?? []
   }
 }
@@ -3659,13 +3727,13 @@ function getUnderConstructionActions(building: BuildingTile): ActionItem[] {
   ]
 }
 
-function getBuildingActions(
+export function getBuildingActions(
   building: BuildingTile,
   upgrades: PlayerUpgradeSnapshot[] = [],
-  vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number },
   townHallTier: number = 0,
   lockedUnitTypes: ReadonlySet<string> = new Set(),
   shopRerollsRemaining: number = 0,
+  unlockedRecipeIds: ReadonlySet<string> = new Set(),
 ): ActionItem[] {
   const actions: ActionItem[] = []
 
@@ -3682,19 +3750,7 @@ function getBuildingActions(
       const itemDef = ITEM_DEF_MAP.get(slot.itemId)
       if (!itemDef) continue
       const soldOut = slot.quantity <= 0
-      // Vault capacity check: if vault is full and the item can't stack onto
-      // an existing entry, disable the purchase button.
-      const capacity = vaultState?.vaultCapacity ?? 0
-      const vault = vaultState?.vault ?? []
-      let atCapacity = false
-      if (capacity > 0 && vault.length >= capacity) {
-        const existingEntry = vault.find((v) => v.itemId === itemDef.id)
-        const maxStacks = itemDef.maxStacks ?? 1
-        const currentStacks = existingEntry?.stacks ?? (existingEntry ? 1 : 0)
-        if (!existingEntry || currentStacks >= maxStacks) {
-          atCapacity = true
-        }
-      }
+      // The vault is unbounded, so purchases are never blocked for lack of room.
       let tooltipBody = buildItemTooltipBody(itemDef)
       if (soldOut) {
         tooltipBody = `${tooltipBody}\n\nSold out at this shop.`
@@ -3710,7 +3766,7 @@ function getBuildingActions(
         cost: [{ resourceId: 'gold', amount: itemDef.costGold, accent: '#d4a84f' }],
         tooltipTitle: itemDef.displayName,
         tooltipBody,
-        disabled: atCapacity || shopLocked || soldOut,
+        disabled: shopLocked || soldOut,
       })
     }
 
@@ -3735,6 +3791,64 @@ function getBuildingActions(
         tooltipTitle: 'Reroll Merchant',
         tooltipBody: rerollTooltip,
         disabled: !canReroll,
+      })
+    }
+  }
+
+  if (building.capabilities?.includes('recipe-purchase')) {
+    // Recipe Shop: one buy action per stocked recipe. Quantity 0 = sold out
+    // (kept visible but disabled), mirroring item-purchase stock handling.
+    const shopLocked = building.shopLocked === true
+    for (const slot of building.recipeInventory ?? []) {
+      const recipe = RECIPE_DEF_MAP.get(slot.recipeId)
+      if (!recipe) continue
+      const soldOut = slot.quantity <= 0
+      const inputList = recipe.inputs.join(' + ')
+      let tooltipBody = `Unlocks crafting: ${recipe.name}.\nRequires: ${inputList}.`
+      if (soldOut) tooltipBody = `${tooltipBody}\n\nAlready purchased at this shop.`
+      else if (shopLocked) tooltipBody = `${tooltipBody}\n\nGuards remain — clear them to unlock this shop.`
+      actions.push({
+        id: `buy-recipe-${recipe.id}`,
+        label: recipe.name,
+        iconDef: { kind: 'item', type: recipe.output },
+        cost: [{ resourceId: 'gold', amount: recipe.costGold, accent: '#d4a84f' }],
+        tooltipTitle: recipe.name,
+        tooltipBody,
+        disabled: soldOut || shopLocked,
+      })
+    }
+  }
+
+  if (building.capabilities?.includes('crafting')) {
+    // Artificer: one craft action per unlocked recipe. Ingredient counts are
+    // computed from the Vault snapshot; a recipe is disabled (not hidden) when
+    // the vault lacks the required inputs so the player can see what to gather.
+    // Affordability (gold) is NOT gated client-side — the server rejects an
+    // unaffordable craft, matching how buy-item actions don't gate on gold.
+    const vault = vaultState?.vault ?? []
+    const have = new Map<string, number>()
+    for (const vi of vault) have.set(vi.itemId, (have.get(vi.itemId) ?? 0) + (vi.stacks ?? 1))
+    // Deterministic order: iterate the sorted unlocked ids.
+    for (const recipeId of [...unlockedRecipeIds].sort()) {
+      const recipe = RECIPE_DEF_MAP.get(recipeId)
+      if (!recipe) continue
+      const need = new Map<string, number>()
+      for (const input of recipe.inputs) need.set(input, (need.get(input) ?? 0) + 1)
+      let missing = false
+      const parts: string[] = []
+      for (const [itemId, count] of need) {
+        const owned = have.get(itemId) ?? 0
+        if (owned < count) missing = true
+        parts.push(`${itemId} ${owned}/${count}`)
+      }
+      actions.push({
+        id: `craft-${recipe.id}`,
+        label: recipe.name,
+        iconDef: { kind: 'item', type: recipe.output },
+        cost: [{ resourceId: 'gold', amount: recipe.costGold, accent: '#d4a84f' }],
+        tooltipTitle: recipe.name,
+        tooltipBody: `Craft ${recipe.name}.\nIngredients: ${parts.join(', ')}.` + (missing ? '\n\nMissing ingredients.' : ''),
+        disabled: missing,
       })
     }
   }

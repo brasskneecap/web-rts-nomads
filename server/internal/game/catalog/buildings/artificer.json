@@ -1,0 +1,19 @@
+{
+  "type": "artificer",
+  "class": "player",
+  "buildable": true,
+  "width": 3,
+  "height": 3,
+  "maxHp": 400,
+  "buildSeconds": 25,
+  "resourceCost": {
+    "gold": 200,
+    "wood": 150
+  },
+  "capabilities": ["crafting"],
+  "spawnUnitTypes": [],
+  "metadata": {},
+  "color": "#0e7490",
+  "label": "Artificer",
+  "hotkey": "a"
+}

@@ -601,6 +601,14 @@ type BuildingTile struct {
 	// from PlayerFOW.KnownBuildings[building.ID] != nil. True for any
 	// shop the viewer has ever revealed (including their own).
 	ShopDiscovered bool `json:"shopDiscovered,omitempty"`
+
+	// ─── Recipe Shop fields ───────────────────────────────────────────────
+	// RecipeInventory is the runtime list of recipes this building sells,
+	// with per-slot quantity remaining. Populated by
+	// populateRecipeShopInventoriesLocked at match start. Quantity 0 means
+	// sold out (entry kept in list so the client renders it disabled),
+	// mirroring ShopInventory behaviour.
+	RecipeInventory []RecipeStockEntry `json:"recipeInventory,omitempty"`
 }
 
 // ShopStockEntry is one item slot in a shop building's inventory.
@@ -609,6 +617,14 @@ type BuildingTile struct {
 // further purchases of that item from that shop are rejected.
 type ShopStockEntry struct {
 	ItemID   string `json:"itemId"`
+	Quantity int    `json:"quantity"`
+}
+
+// RecipeStockEntry is one purchasable recipe slot in a Recipe Shop's inventory.
+// Quantity decrements on purchase; 0 means sold out (kept in the list so the
+// client can render it disabled), mirroring ShopStockEntry.
+type RecipeStockEntry struct {
+	RecipeID string `json:"recipeId"`
 	Quantity int    `json:"quantity"`
 }
 
@@ -623,6 +639,10 @@ type JoinMatchMessage struct {
 	// player currently owns (extracted from PlayerProfile.AcquiredAdvancements
 	// by the client at join time). Nil / absent means no advancements.
 	AcquiredAdvancementIDs []string `json:"acquiredAdvancementIds,omitempty"`
+	// KnownRecipeIDs is the list of recipe IDs the player may craft this match,
+	// sourced from the profile's KnownRecipeIDs at join time. Nil / absent means
+	// no recipes are pre-unlocked.
+	KnownRecipeIDs []string `json:"knownRecipeIds,omitempty"`
 	// CachedMapHashes is the set of map contentHashes the client already holds
 	// locally for MapID (content-addressed map distribution). The server omits
 	// the (gzipped) map from the welcome when the match map's contentHash is in
@@ -851,6 +871,21 @@ type PurchaseItemCommandMessage struct {
 	ItemID     string `json:"itemId"`
 }
 
+// PurchaseRecipeCommandMessage buys one recipe from a Recipe Shop, unlocking it
+// for crafting this match.
+type PurchaseRecipeCommandMessage struct {
+	Type       string `json:"type"`
+	BuildingID string `json:"buildingId"`
+	RecipeID   string `json:"recipeId"`
+}
+
+// CraftItemCommandMessage crafts one recipe at the player's Artificer,
+// consuming the recipe's input items from the vault plus gold.
+type CraftItemCommandMessage struct {
+	Type     string `json:"type"`
+	RecipeID string `json:"recipeId"`
+}
+
 // RerollShopCommandMessage requests rerolling the inventory of a neutral
 // shop building. BuildingID must reference a building of type "neutral-shop".
 // The server validates that the requesting player has discovered and
@@ -998,7 +1033,6 @@ type PlayerSnapshot struct {
 	Upgrades      []PlayerUpgradeSnapshot `json:"upgrades,omitempty"`
 	TownHallTier  int                     `json:"townHallTier,omitempty"`
 	Vault         []VaultItemSnapshot     `json:"vault"`
-	VaultCapacity int                     `json:"vaultCapacity,omitempty"`
 	// LockedUnitTypes lists the unit types this player currently cannot
 	// train because their RequiresBuildings list is unsatisfied. Empty
 	// or omitted = no locks. The client uses this to grey out train
@@ -1013,6 +1047,10 @@ type PlayerSnapshot struct {
 	// budget for this match. Drives the reroll button on neutral-shop
 	// buildings (enabled when > 0).
 	ShopRerollsRemaining int `json:"shopRerollsRemaining,omitempty"`
+	// UnlockedRecipeIDs is the player's in-match set of recipe IDs they may
+	// craft at an Artificer. Seeded from profile KnownRecipeIDs at join and
+	// grown by purchase_recipe commands. Omitted when empty.
+	UnlockedRecipeIDs []string `json:"unlockedRecipeIds,omitempty"`
 	// Metrics carries this player's cumulative match metrics (gold earned,
 	// kills, buildings built, etc). Always present so every snapshot
 	// recipient can render the end-of-round per-player comparison columns

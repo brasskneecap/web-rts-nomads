@@ -1,0 +1,13 @@
+{
+  "id": "fire_ring",
+  "displayName": "Fire Ring",
+  "description": "+5 fire damage on hit.",
+  "iconKey": "fire_ring",
+  "kind": "equipment",
+  "tier": "common",
+  "category": "Accessory",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 75,
+  "onHitElemental": [ { "type": "fire", "amount": 5 } ]
+}

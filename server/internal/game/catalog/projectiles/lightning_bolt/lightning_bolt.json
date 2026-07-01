@@ -1,0 +1,6 @@
+{
+  "id": "lightning_bolt",
+  "speed": 500,
+  "followEffect": "",
+  "impactEffect": "fizzle"
+}
