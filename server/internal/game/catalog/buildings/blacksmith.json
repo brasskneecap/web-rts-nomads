@@ -9,6 +9,10 @@
     "width": 2.5,
     "height": 2.5
   },
+  "selectionRing": {
+    "radiusX": 1.3,
+    "radiusY": 0.9
+  },
   "maxHp": 500,
   "buildSeconds": 25,
   "resourceCost": {
@@ -22,5 +26,6 @@
   "metadata": {},
   "color": "#1e40af",
   "label": "Blacksmith",
-  "hotkey": "s"
+  "hotkey": "s"
+
 }

@@ -2885,6 +2885,7 @@ export class GameState {
           : getBuildingActions(
               selectedBuilding,
               this.playerUpgrades,
+              { vault: this.localPlayerVault },
               this.townHallTier,
               new Set(this.lockedUnitTypes),
               this.localPlayerShopRerollsRemaining,
@@ -3730,6 +3731,7 @@ function getUnderConstructionActions(building: BuildingTile): ActionItem[] {
 export function getBuildingActions(
   building: BuildingTile,
   upgrades: PlayerUpgradeSnapshot[] = [],
+  vaultState: { vault: VaultItemSnapshot[]; vaultCapacity?: number } = { vault: [] },
   townHallTier: number = 0,
   lockedUnitTypes: ReadonlySet<string> = new Set(),
   shopRerollsRemaining: number = 0,

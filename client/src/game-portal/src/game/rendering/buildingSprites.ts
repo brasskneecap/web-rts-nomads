@@ -32,8 +32,13 @@ export const TRAINING_FRAME_COUNT = 4
 const TRAINING_FPS = 6
 
 // Damaged animation spritesheets. A damaged.png is a DAMAGED_TIER_COUNT-row
-// × DAMAGED_FRAMES_PER_TIER-column grid. Each row is a damage tier that
-// animates through its 5 frames while HP is inside that tier's band.
+// × N-column grid. Each row is a damage tier (always 4 stages) that animates
+// through its columns while HP is inside that tier's band.
+//
+// The column count defaults to DAMAGED_FRAMES_PER_TIER (5). A building whose
+// damaged sheet uses a different number of frames per tier can override it with
+// a colocated damaged.json — e.g. a static (non-animated) sheet is 4 rows × 1
+// column, so its damaged.json is { "framesPerTier": 1 }. See getDamagedFramesPerTier.
 export const DAMAGED_TIER_COUNT = 4
 export const DAMAGED_FRAMES_PER_TIER = 5
 // Per-tier loop speed. 8 fps gives a ~625ms cycle per tier — fast enough to
@@ -89,6 +94,34 @@ for (const [path, url] of Object.entries(damagedUrls)) {
   const img = new Image()
   img.src = url
   damagedImages.set(key, img)
+}
+
+// Optional per-building override of the damaged sheet's column count. A
+// damaged.json colocated with damaged.png is { "framesPerTier": N } — the
+// number of animation frames (columns) in each of the 4 tier rows. Buildings
+// with no damaged.json fall back to DAMAGED_FRAMES_PER_TIER (5).
+type DamagedConfig = { framesPerTier?: number }
+
+const damagedConfigs = import.meta.glob('../../assets/buildings/*/damaged.json', {
+  eager: true,
+}) as Record<string, { default: DamagedConfig }>
+
+const damagedFramesPerTier = new Map<string, number>()
+
+for (const [path, mod] of Object.entries(damagedConfigs)) {
+  const match = path.match(/\/buildings\/([^/]+)\/damaged\.json$/)
+  if (!match) continue
+  const n = mod.default?.framesPerTier
+  if (typeof n === 'number' && n >= 1) {
+    damagedFramesPerTier.set(match[1].toLowerCase(), Math.floor(n))
+  }
+}
+
+// Returns the number of animation frames (columns) per damage tier for the
+// given building type: its damaged.json override, or DAMAGED_FRAMES_PER_TIER
+// when none is configured.
+export function getDamagedFramesPerTier(buildingType: string): number {
+  return damagedFramesPerTier.get(buildingType.toLowerCase()) ?? DAMAGED_FRAMES_PER_TIER
 }
 
 // Returns a loaded sprite for the given building type, or null if none is
@@ -214,12 +247,18 @@ export function getDamagedTier(hpRatio: number): number {
   return 3
 }
 
-// Returns the animated frame column [0, DAMAGED_FRAMES_PER_TIER) for a
-// given wall-clock time in ms. All buildings share a single phase so they
-// flicker in sync — cheap and avoids per-building animation state.
-export function getDamagedFrameIndex(timeMs: number): number {
+// Returns the animated frame column [0, framesPerTier) for a given wall-clock
+// time in ms. All buildings share a single phase so they flicker in sync —
+// cheap and avoids per-building animation state. framesPerTier defaults to
+// DAMAGED_FRAMES_PER_TIER; pass a building's getDamagedFramesPerTier() so a
+// single-column (static) sheet resolves to column 0 every frame.
+export function getDamagedFrameIndex(
+  timeMs: number,
+  framesPerTier: number = DAMAGED_FRAMES_PER_TIER,
+): number {
+  const cols = framesPerTier >= 1 ? framesPerTier : DAMAGED_FRAMES_PER_TIER
   const frame = Math.floor((timeMs / 1000) * DAMAGED_FPS)
-  return ((frame % DAMAGED_FRAMES_PER_TIER) + DAMAGED_FRAMES_PER_TIER) % DAMAGED_FRAMES_PER_TIER
+  return ((frame % cols) + cols) % cols
 }
 
 const damagedTintCache = new Map<string, HTMLCanvasElement>()

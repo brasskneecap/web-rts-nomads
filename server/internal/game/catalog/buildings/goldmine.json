@@ -8,6 +8,10 @@
   "buildSeconds": 0,
   "resourceType": "gold",
   "resourceAmount": 4000,
+  "selectionRing": {
+    "radiusX": 1.3,
+    "radiusY": 0.9
+  },
   "resourceCost": {},
   "capabilities": [
     "resource-source"

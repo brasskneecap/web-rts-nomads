@@ -13,13 +13,13 @@ import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual, resolveBuildingShado
 import { getBuildingFallbackRender } from '../maps/buildingFallbackRender'
 import {
   CONSTRUCTION_FRAME_COUNT,
-  DAMAGED_FRAMES_PER_TIER,
   DAMAGED_TIER_COUNT,
   TRAINING_FRAME_COUNT,
   getBuildingSprite,
   getConstructionFrameIndex,
   getConstructionSprite,
   getDamagedFrameIndex,
+  getDamagedFramesPerTier,
   getDamagedSprite,
   getDamagedTier,
   getTintedBuildingSprite,
@@ -1022,9 +1022,10 @@ export class CanvasRenderer {
         const source: CanvasImageSource = tinted ?? damagedSprite
         const sheetW = damagedSprite.naturalWidth
         const sheetH = damagedSprite.naturalHeight
-        const frameW = sheetW / DAMAGED_FRAMES_PER_TIER
+        const framesPerTier = getDamagedFramesPerTier(building.buildingType)
+        const frameW = sheetW / framesPerTier
         const tierH = sheetH / DAMAGED_TIER_COUNT
-        const frameCol = getDamagedFrameIndex(this.renderTime)
+        const frameCol = getDamagedFrameIndex(this.renderTime, framesPerTier)
         ctx.drawImage(
           source,
           frameCol * frameW,

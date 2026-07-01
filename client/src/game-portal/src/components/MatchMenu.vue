@@ -244,7 +244,6 @@ const props = withDefaults(defineProps<{
   onUnequipItem?: (unitId: number, slotIndex: number) => void
   onUseConsumable?: (unitId: number, slotIndex: number) => void
   onTransferItem?: (fromUnitId: number, fromSlotIdx: number, toUnitId: number, toSlotIdx: number) => void
-  onFocusUnit?: (unitId: number) => void
   craftCatalog?: CraftCatalogEntry[]
   hasArtificer?: boolean
   onFocusUnit?: (unitId: number, menuRightPx?: number) => void

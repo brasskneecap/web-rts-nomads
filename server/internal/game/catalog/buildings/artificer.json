@@ -6,6 +6,11 @@
   "height": 3,
   "maxHp": 400,
   "buildSeconds": 25,
+  "selectionRing": {
+    "radiusX": 1.8,
+    "radiusY": 1,
+    "offsetY": 2.1
+  },
   "resourceCost": {
     "gold": 200,
     "wood": 150

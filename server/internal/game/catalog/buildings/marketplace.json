@@ -5,6 +5,10 @@
   "height": 3,
   "maxHp": 400,
   "buildSeconds": 20,
+  "selectionRing": {
+    "radiusX": 1.5,
+    "radiusY": 1.1
+  },
   "resourceCost": {
     "gold": 200,
     "wood": 150
@@ -16,5 +20,6 @@
   "metadata": {},
   "color": "#7c3aed",
   "label": "Marketplace",
-  "hotkey": "k"
+  "hotkey": "k"
+
 }

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "startingResources": {
-    "gold": 500,
-    "wood": 180
+    "gold": 1500,
+    "wood": 1180
   }
 }
