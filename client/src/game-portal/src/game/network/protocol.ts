@@ -11,7 +11,7 @@ export type MapId = string
 export type TerrainType = 'dirt' | 'grass'
 
 export type ObstacleType = 'rock' | 'wall' | 'tree'
-export type BuildingType = 'goldmine' | 'townhall' | 'barracks' | 'farm' | 'enemy-spawnpoint' | 'spawn-point' | (string & {})
+export type BuildingType = 'goldmine' | 'townhall' | 'barracks' | 'farm' | 'enemy-spawnpoint' | 'spawn-point' | 'recipe-shop' | 'artificer' | (string & {})
 export type BuildingCapability =
   | 'resource-source'
   | 'unit-spawner'
@@ -23,6 +23,7 @@ export type BuildingCapability =
   | 'item-purchase'
   | 'recipe-purchase'
   | 'vault-access'
+  | 'crafting'
 export type ObstacleCapability = 'resource-source' | 'selectable'
 export type ResourceType = 'gold' | 'wood'
 export type UnitType = 'worker' | 'soldier' | (string & {})

@@ -647,6 +647,10 @@ export class GameState {
   // Drives whether the reroll action on a neutral-shop building is enabled.
   localPlayerShopRerollsRemaining = 0
 
+  // Recipes the local player has unlocked (purchased from a Recipe Shop).
+  // Mirrored from PlayerSnapshot each tick. Drives craft-* actions at the Artificer.
+  localPlayerUnlockedRecipeIds: string[] = []
+
   // Commander abilities (player-level action bar). Populated from
   // PlayerSnapshot.commanderAbilities every tick.
   localPlayerCommanderAbilities: CommanderAbilitySnapshot[] = []
@@ -2810,6 +2814,7 @@ export class GameState {
               this.townHallTier,
               new Set(this.lockedUnitTypes),
               this.localPlayerShopRerollsRemaining,
+              new Set(this.localPlayerUnlockedRecipeIds),
             ),
         production: activeProduction
           ? toProductionSummary(activeProduction)
@@ -3080,6 +3085,7 @@ export class GameState {
       this.localPlayerVaultCapacity = localPlayer.vaultCapacity
     }
     this.localPlayerShopRerollsRemaining = localPlayer.shopRerollsRemaining ?? 0
+    this.localPlayerUnlockedRecipeIds = localPlayer.unlockedRecipeIds ?? []
     this.localPlayerCommanderAbilities = localPlayer.commanderAbilities ?? []
   }
 }
@@ -3656,6 +3662,7 @@ export function getBuildingActions(
   townHallTier: number = 0,
   lockedUnitTypes: ReadonlySet<string> = new Set(),
   shopRerollsRemaining: number = 0,
+  unlockedRecipeIds: ReadonlySet<string> = new Set(),
 ): ActionItem[] {
   const actions: ActionItem[] = []
 
@@ -3749,6 +3756,40 @@ export function getBuildingActions(
         tooltipTitle: recipe.name,
         tooltipBody,
         disabled: soldOut || shopLocked,
+      })
+    }
+  }
+
+  if (building.capabilities?.includes('crafting')) {
+    // Artificer: one craft action per unlocked recipe. Ingredient counts are
+    // computed from the Vault snapshot; a recipe is disabled (not hidden) when
+    // the vault lacks the required inputs so the player can see what to gather.
+    // Affordability (gold) is NOT gated client-side — the server rejects an
+    // unaffordable craft, matching how buy-item actions don't gate on gold.
+    const vault = vaultState?.vault ?? []
+    const have = new Map<string, number>()
+    for (const vi of vault) have.set(vi.itemId, (have.get(vi.itemId) ?? 0) + (vi.stacks ?? 1))
+    // Deterministic order: iterate the sorted unlocked ids.
+    for (const recipeId of [...unlockedRecipeIds].sort()) {
+      const recipe = RECIPE_DEF_MAP.get(recipeId)
+      if (!recipe) continue
+      const need = new Map<string, number>()
+      for (const input of recipe.inputs) need.set(input, (need.get(input) ?? 0) + 1)
+      let missing = false
+      const parts: string[] = []
+      for (const [itemId, count] of need) {
+        const owned = have.get(itemId) ?? 0
+        if (owned < count) missing = true
+        parts.push(`${itemId} ${owned}/${count}`)
+      }
+      actions.push({
+        id: `craft-${recipe.id}`,
+        label: recipe.name,
+        iconDef: { kind: 'item', type: recipe.output },
+        cost: [{ resourceId: 'gold', amount: recipe.costGold, accent: '#d4a84f' }],
+        tooltipTitle: recipe.name,
+        tooltipBody: `Craft ${recipe.name}.\nIngredients: ${parts.join(', ')}.` + (missing ? '\n\nMissing ingredients.' : ''),
+        disabled: missing,
       })
     }
   }
