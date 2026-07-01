@@ -59,6 +59,8 @@ const emptyUiSnapshot: GameUiSnapshot = {
   commanderTargetingAbilityId: null,
   shopCatalog: [],
   shopRerollsRemaining: 0,
+  craftCatalog: [],
+  hasArtificer: false,
   paused: false,
   pausedBy: '',
   pausedSinceMs: 0,
@@ -238,6 +240,10 @@ export function useGameClient() {
     client?.sendRerollShop(buildingId)
   }
 
+  function craftItem(recipeId: string) {
+    client?.sendCraftItem(recipeId)
+  }
+
   function sendEquipItem(unitId: number, slotIndex: number, instanceId: number) {
     client?.sendEquipItem(unitId, slotIndex, instanceId)
   }
@@ -300,6 +306,7 @@ export function useGameClient() {
     upgradeTownHall,
     sendPurchaseItem,
     rerollShop,
+    craftItem,
     sendEquipItem,
     sendUnequipItem,
     sendUseConsumable,

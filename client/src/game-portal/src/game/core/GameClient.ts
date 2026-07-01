@@ -16,7 +16,7 @@ import type {
   WaveSnapshot,
   WaveUpgradeOfferSnapshot,
 } from '../network/protocol'
-import type { DebugSpawnConfig, NetStats, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification, ZoneInspectionInfo } from './GameState'
+import type { CraftCatalogEntry, DebugSpawnConfig, NetStats, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification, ZoneInspectionInfo } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
@@ -106,6 +106,11 @@ export type GameUiSnapshot = {
   /** Remaining merchant-reroll budget for the local player. Drives the
    *  per-shop refresh button (neutral-shop only) in the Shop menu. */
   shopRerollsRemaining: number
+  // Craft catalog for the MatchMenu Craft tab. One entry per known recipe.
+  craftCatalog: CraftCatalogEntry[]
+  // True when the local player owns at least one Artificer's Table, gating
+  // whether the Craft tab's craft actions are usable.
+  hasArtificer: boolean
   // Server-side pause flag. When true the client renders a paused overlay
   // and the wave-upgrade modal freezes its visible timer.
   paused: boolean
@@ -319,6 +324,8 @@ export class GameClient {
       commanderTargetingAbilityId: this.state.commanderTargetingAbilityId,
       shopCatalog: this.state.getShopCatalogSnapshot(),
       shopRerollsRemaining: this.state.localPlayerShopRerollsRemaining,
+      craftCatalog: this.state.getCraftCatalogSnapshot(),
+      hasArtificer: this.state.localPlayerHasArtificer(),
       paused: this.state.paused,
       pausedBy: this.state.pausedBy,
       pausedSinceMs: this.state.pausedSinceMs,
