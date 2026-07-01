@@ -206,6 +206,7 @@ export class NetworkClient {
   private activeUpgradeIds: string[] | null = null
   private ownedUpgradeRanks: Record<string, number> = {}
   private acquiredAdvancementIds: string[] = []
+  private knownRecipeIds: string[] = []
 
   // --- Content-addressed map gate -------------------------------------------
   // While the welcome map is being resolved (decompressed, loaded from cache,
@@ -250,6 +251,10 @@ export class NetworkClient {
 
   setAcquiredAdvancementIds(ids: string[]) {
     this.acquiredAdvancementIds = ids
+  }
+
+  setKnownRecipeIds(ids: string[]): void {
+    this.knownRecipeIds = ids
   }
 
   /** Provide the renderer so loot pickup events can spawn world-space
@@ -313,6 +318,7 @@ export class NetworkClient {
           activeUpgradeIds: shouldSendActiveUpgrades ? this.activeUpgradeIds! : undefined,
           ownedUpgradeRanks: hasUpgrades ? this.ownedUpgradeRanks : undefined,
           acquiredAdvancementIds: this.acquiredAdvancementIds,
+          knownRecipeIds: this.knownRecipeIds,
           cachedMapHashes: cachedMapHashes.length > 0 ? cachedMapHashes : undefined,
         }
         console.log('[join_match] activeUpgradeIds:', this.activeUpgradeIds, 'ownedUpgradeRanks:', this.ownedUpgradeRanks)

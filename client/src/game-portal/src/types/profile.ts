@@ -39,6 +39,7 @@ export type PlayerProfile = {
   activeUpgradeIds: string[]
   ownedUpgradeRanks: Record<string, number>
   acquiredAdvancements: AcquiredAdvancement[]
+  knownRecipeIds: string[]
   completedCampaignLevels: string[]
   /** Per-level union of objective IDs the player has ever completed.
    *  Keys are `"<campaignId>/<levelId>"`. Written by the §11

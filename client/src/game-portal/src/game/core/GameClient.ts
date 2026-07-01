@@ -235,6 +235,10 @@ export class GameClient {
     this.network.setAcquiredAdvancementIds(ids)
   }
 
+  setKnownRecipeIds(ids: string[]): void {
+    this.network.setKnownRecipeIds(ids)
+  }
+
   async leaveStoredMatch() {
     await this.network.leaveStoredMatch()
   }
