@@ -329,6 +329,22 @@
                     />
                     <span>Required <span class="field-hint">(gates victory)</span></span>
                   </label>
+                  <label class="campaign-objective__reward">
+                    <span>DP Reward <span class="field-hint">(first completion)</span></span>
+                    <input
+                      type="number" min="0"
+                      :value="obj.rewardDominionPoints ?? 0"
+                      @input="updateObjective(idx, { rewardDominionPoints: Math.max(0, Math.floor(+($event.target as HTMLInputElement).value || 0)) })"
+                    />
+                  </label>
+                  <label class="campaign-objective__reward">
+                    <span>Badge Reward <span class="field-hint">(first completion)</span></span>
+                    <input
+                      type="number" min="0"
+                      :value="obj.rewardConquestBadges ?? 0"
+                      @input="updateObjective(idx, { rewardConquestBadges: Math.max(0, Math.floor(+($event.target as HTMLInputElement).value || 0)) })"
+                    />
+                  </label>
                 </div>
 
                 <!-- Per-type config fields. Keys must match the server handler
@@ -1303,8 +1319,19 @@
                 <option v-for="vc in destroyBuildingObjectives" :key="vc.id" :value="vc.id">{{ vc.label || vc.id }}</option>
               </select>
             </div>
+            <div v-if="selectedEditBuilding.resourceType" class="edit-field">
+              <label>{{ selectedEditBuilding.resourceType === 'gold' ? 'Gold Amount' : 'Resource Amount' }}</label>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                :value="selectedEditBuilding.resourceAmount ?? 0"
+                @input="updateEditBuildingResourceAmount(+($event.target as HTMLInputElement).value)"
+              />
+              <span class="edit-field__hint">Starting stock workers can mine. 0 uses the building default.</span>
+            </div>
             <div
-              v-if="!isPlayerOwnableBuildingType(selectedEditBuilding.buildingType) && !destroyBuildingObjectives.length"
+              v-if="!isPlayerOwnableBuildingType(selectedEditBuilding.buildingType) && !destroyBuildingObjectives.length && !selectedEditBuilding.resourceType"
               class="edit-panel__empty"
             >No editable fields for this building type.</div>
           </template>
@@ -2610,6 +2637,8 @@ function addObjective() {
     description: '',
     scope: 'team',
     required: false,
+    rewardDominionPoints: 0,
+    rewardConquestBadges: 0,
     config: emptyObjectiveConfig(defaultType),
   })
   setCampaignField('objectives', objectives)
@@ -2740,6 +2769,22 @@ function updateEditMeta(key: string, value: JsonValue | undefined) {
       else meta[key] = value
       return { ...b, metadata: meta }
     }),
+  }
+}
+
+// Updates the selected building's top-level resourceAmount (the starting
+// resource stock for resource-source buildings like the goldmine). This is a
+// first-class BuildingTile field, not metadata, so it can't go through
+// updateEditMeta. Clamped to a non-negative integer; the server falls back to
+// the building def's default when a map leaves this unset.
+function updateEditBuildingResourceAmount(amount: number) {
+  if (!selectedEditBuildingId.value) return
+  const safe = Number.isFinite(amount) ? Math.max(0, Math.round(amount)) : 0
+  model.value = {
+    ...model.value,
+    buildings: model.value.buildings.map((b) =>
+      b.id === selectedEditBuildingId.value ? { ...b, resourceAmount: safe } : b,
+    ),
   }
 }
 
@@ -5361,10 +5406,34 @@ onBeforeUnmount(() => {
 }
 
 .campaign-objective__meta {
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  row-gap: 8px;
+}
+
+/* Keep the scope dropdown from growing to fill the row — otherwise it pushes
+   the reward fields (especially the last one, Badge Reward) off the right
+   edge and out of view. */
+.campaign-objective__meta > select {
+  flex: 0 0 auto;
+}
+
+/* Compact, fixed-width number inputs so both reward fields fit on the row
+   (and wrap cleanly to a second line on narrow panels). */
+.campaign-objective__reward input {
+  flex: 0 0 auto;
+  width: 64px;
 }
 
 .campaign-objective__required {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  user-select: none;
+}
+
+.campaign-objective__reward {
   display: flex;
   align-items: center;
   gap: 6px;

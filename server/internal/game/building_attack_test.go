@@ -92,6 +92,10 @@ func TestEnemyArcherProfile_TargetBuildingsEnabled(t *testing.T) {
 		{"raider", true},
 		// ranged_raider resolves to enemy_archer profile — was broken.
 		{"ranged_raider", true},
+		// raider_roc resolves to flyer_skirmisher profile — was broken (same
+		// omission as enemy_archer): the flyer could never auto-acquire a
+		// building and just circled it.
+		{"raider_roc", true},
 	} {
 		u := spawnBuildingAttackEnemy(t, s, tc.unitType, 800, 400)
 		profile := resolveCombatProfile(u)
@@ -101,6 +105,57 @@ func TestEnemyArcherProfile_TargetBuildingsEnabled(t *testing.T) {
 				tc.unitType, profile.Name, profile.TargetBuildings, tc.want)
 		}
 	}
+}
+
+// TestFlyerRaiderRoc_AcquiresAndDamagesBuilding spawns a raider_roc (flyer,
+// flyer_skirmisher profile) within its attack range of a player townhall with
+// no preset target. The AI must acquire the building and deal damage — the
+// reported bug was the roc circling the building without ever attacking,
+// because flyer_skirmisher was missing TargetBuildings:true.
+func TestFlyerRaiderRoc_AcquiresAndDamagesBuilding(t *testing.T) {
+	const (
+		cell        = 64.0
+		thRightEdge = 7 * cell        // 448 — right edge (grid cols 5+2=7)
+		spawnX      = thRightEdge + 100.0 // 548 — inside roc AttackRange (150)
+		unitY       = (5 + 1) * cell      // 384 — vertically centred on building
+		ticks       = 60
+	)
+
+	s, b := newBuildingAttackState(t)
+	unit := spawnBuildingAttackEnemy(t, s, "raider_roc", spawnX, unitY)
+	unitID := unit.ID
+
+	if !unit.Flyer {
+		t.Fatalf("raider_roc expected to be a flyer, Flyer=%v", unit.Flyer)
+	}
+	profile := resolveCombatProfile(unit)
+	t.Logf("[raider_roc] profile=%q TargetBuildings=%v AttackRange=%.0f DistToEdge=%.1f",
+		profile.Name, profile.TargetBuildings, unit.AttackRange,
+		s.distanceToBuilding(unit.X, unit.Y, b))
+
+	s.mu.Unlock()
+	tickN(s, ticks)
+	s.mu.Lock()
+
+	u := s.getUnitByIDLocked(unitID)
+	if u == nil {
+		t.Fatalf("unit disappeared after %d ticks", ticks)
+	}
+	hp, _, hpOK := getBuildingHP(b)
+	if !hpOK {
+		t.Fatalf("building HP metadata not readable")
+	}
+
+	t.Logf("[raider_roc] after %d ticks: Status=%q AttackBldgID=%q HP=%.0f/5000 damaged=%v",
+		ticks, u.Status, u.AttackBuildingTargetID, hp, hp < 5000.0)
+
+	if hp >= 5000.0 {
+		t.Errorf("raider_roc: building HP=%.0f after %d ticks — flyer never fired "+
+			"(profile=%q TargetBuildings=%v AttackBldgID=%q Status=%q)",
+			hp, ticks, profile.Name, profile.TargetBuildings,
+			u.AttackBuildingTargetID, u.Status)
+	}
+	s.mu.Unlock()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

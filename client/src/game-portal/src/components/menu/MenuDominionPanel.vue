@@ -2,21 +2,30 @@
   <div class="menu-dominion" role="status" aria-live="polite">
     <div class="menu-dominion__header">Dominion Points</div>
     <div class="menu-dominion__value">{{ formattedPoints }}</div>
+    <div class="menu-dominion__header menu-dominion__header--badges">Conquest Badges</div>
+    <div class="menu-dominion__value menu-dominion__value--badges">
+      {{ formattedBadges }}<img :src="badgeIconUrl" class="menu-dominion__badge-icon" alt="" aria-hidden="true" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useProfile } from '@/composables/useProfile'
+import badgeIconUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot.png'
 
 // Reads the app-wide profile singleton (initialized at startup in main.ts).
 // The same reactive ref is mutated by the advancement / profile-upgrade
 // purchase flows, so the displayed total live-updates when Dominion Points
-// are earned or spent in the menus — no extra wiring needed.
+// or Conquest Badges are earned or spent in the menus — no extra wiring needed.
 const { profile } = useProfile()
 
 const formattedPoints = computed(() =>
   (profile.value?.dominionPoints ?? 0).toLocaleString(),
+)
+
+const formattedBadges = computed(() =>
+  (profile.value?.conquestBadges ?? 0).toLocaleString(),
 )
 </script>
 
@@ -55,11 +64,31 @@ const formattedPoints = computed(() =>
   margin-bottom: 6px;
 }
 
+.menu-dominion__header--badges {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(212, 168, 71, 0.25);
+}
+
 .menu-dominion__value {
   font-size: 22px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   color: #f4d27a;
+}
+
+.menu-dominion__value--badges {
+  font-size: 18px;
+}
+
+.menu-dominion__badge-icon {
+  height: 18px;
+  width: 18px;
+  object-fit: contain;
+  vertical-align: middle;
+  margin-left: 6px;
+  position: relative;
+  top: -1px;
 }
 </style>

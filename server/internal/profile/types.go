@@ -17,6 +17,13 @@ type PlayerProfile struct {
 	UpdatedAtUnix          int64        `json:"updatedAtUnix"`
 	DominionPoints         int          `json:"dominionPoints"`
 	LifetimeDominionPoints int          `json:"lifetimeDominionPoints"`
+	// ConquestBadges is a persistent spendable currency earned by completing
+	// map objectives and consumed (1 each) when purchasing "major" unit
+	// advancements. Balance-only (no lifetime counter). A new int field
+	// defaults to 0 on load for existing profiles, which is the correct
+	// starting balance — no migration/version bump required (same reasoning
+	// as CreditedMatchIDs).
+	ConquestBadges         int          `json:"conquestBadges"`
 	OwnedCommanderIDs      []string     `json:"ownedCommanderIds"`
 	SelectedCommanderID    string       `json:"selectedCommanderId"`
 	Stats                  ProfileStats `json:"stats"`
@@ -85,6 +92,11 @@ type AcquiredAdvancement struct {
 	// that if the catalog cost changes after purchase, a refund-on-cost-change
 	// migration can issue the correct delta on next load.
 	CostPaid int `json:"costPaid"`
+	// BadgesPaid is the number of Conquest Badges consumed at purchase time
+	// (1 for major advancements, 0 for minor). Stored so reset / removal
+	// refunds return the correct badge count. omitempty keeps existing
+	// records unchanged on re-serialize.
+	BadgesPaid int `json:"badgesPaid,omitempty"`
 }
 
 // ProfileStats tracks lifetime match and combat statistics for a player.

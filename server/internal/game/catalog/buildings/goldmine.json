@@ -7,7 +7,7 @@
   "maxHp": 0,
   "buildSeconds": 0,
   "resourceType": "gold",
-  "resourceAmount": 15000,
+  "resourceAmount": 4000,
   "resourceCost": {},
   "capabilities": [
     "resource-source"

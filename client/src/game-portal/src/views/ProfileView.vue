@@ -68,6 +68,20 @@
                 >Reset Profile (dev)</button>
               </section>
 
+              <section class="profile-card" aria-label="Conquest Badges">
+                <div class="profile-card__label">Conquest Badges</div>
+                <div class="profile-card__value profile-card__value--badges">
+                  {{ profile.conquestBadges.toLocaleString() }}
+                </div>
+                <button
+                  type="button"
+                  class="profile-card__dev-grant"
+                  :disabled="isGrantingBadge"
+                  title="DEV: grant +1 Conquest Badge to this profile"
+                  @click="grantDevConquestBadge"
+                >+1 Badge (dev)</button>
+              </section>
+
               <section class="profile-card" aria-label="Commander">
                 <div class="profile-card__label">Commander</div>
                 <div class="profile-card__value profile-card__value--commander">
@@ -127,7 +141,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfile } from '@/composables/useProfile'
-import { devGrantDominionPoints, devResetProfile } from '@/services/profileApi'
+import { devGrantDominionPoints, devGrantConquestBadges, devResetProfile } from '@/services/profileApi'
 import ProfileUpgradeLoadoutPicker from '@/components/profile/ProfileUpgradeLoadoutPicker.vue'
 import ProfileUpgradesPanel from '@/components/profile/ProfileUpgradesPanel.vue'
 import MenuPanel from '@/components/menu/MenuPanel.vue'
@@ -148,6 +162,20 @@ async function grantDevDominionPoints() {
     await refresh()
   } finally {
     isGrantingLP.value = false
+  }
+}
+
+// DEV-only affordance: grants +1 Conquest Badge to this profile via the dev
+// endpoint and re-fetches so the displayed balance updates.
+const isGrantingBadge = ref(false)
+async function grantDevConquestBadge() {
+  if (isGrantingBadge.value) return
+  isGrantingBadge.value = true
+  try {
+    await devGrantConquestBadges(1)
+    await refresh()
+  } finally {
+    isGrantingBadge.value = false
   }
 }
 
@@ -347,6 +375,11 @@ const winRate = computed(() => {
 .profile-card__value--dominion {
   font-size: 32px;
   color: #f7d88e;
+}
+
+.profile-card__value--badges {
+  font-size: 28px;
+  color: #a8d4f0;
 }
 
 .profile-card__value--commander {

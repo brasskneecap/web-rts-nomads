@@ -66,17 +66,18 @@ async function onClose() {
   const session = campaignSession.value
   const snap = snapshot.value
   if (session && snap) {
-    const completedIDs = snap.objectives
+    const completedObjectives = snap.objectives
       .filter((o) => o.completed && !o.failed)
-      .map((o) => o.id)
+      .map((o) => ({ id: o.id, rewardDominionPoints: o.rewardDominionPoints ?? 0, rewardConquestBadges: o.rewardConquestBadges ?? 0 }))
     try {
       await markCampaignObjectivesComplete(
         session.campaignId,
         session.levelId,
-        completedIDs,
+        completedObjectives,
       )
-      // Refresh the profile so the Campaign panel's level-select rows
-      // pick up the new ✓ icons before the user navigates back in.
+      // Refresh the profile so the Campaign panel's level-select rows AND the
+      // Dominion Point balance pick up the first-completion reward before the
+      // user navigates back.
       await refreshProfile()
     } catch (err) {
       console.error('[Campaign] failed to record completed objectives:', err)

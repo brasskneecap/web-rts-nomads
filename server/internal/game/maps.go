@@ -42,6 +42,17 @@ func hydrateBuildings(buildings []protocol.BuildingTile) {
 		if len(def.Capabilities) > 0 {
 			b.Capabilities = append([]string(nil), def.Capabilities...)
 		}
+		// Resource type/amount fall back to the def when the map instance
+		// leaves them unset, mirroring hydrateObstacles. This makes the def
+		// the default starting stock (e.g. goldmine = 4000) while still
+		// letting a map override the amount per-instance (map editor writes an
+		// explicit resourceAmount onto each placed goldmine).
+		if b.ResourceType == "" && def.ResourceType != "" {
+			b.ResourceType = def.ResourceType
+		}
+		if b.ResourceAmount == 0 && def.ResourceAmount > 0 {
+			b.ResourceAmount = def.ResourceAmount
+		}
 	}
 }
 

@@ -308,21 +308,24 @@ func (s *GameState) claimSlotBuildableLocked(rt *zoneRuntime, cell gridPoint, bu
 // evaluateClaimCapture advances a per-point defend timer for every uncaptured
 // claim capture point that has a completed team tower standing on its 2x2 slot.
 // Each point captures independently once its timer reaches the shared
-// defendSeconds and stays captured (sticky). The zone flips to the team only
-// once EVERY point is captured. A point with no/destroyed tower resets its own
-// timer — the team must keep each tower alive for the full duration.
+// defendSeconds. The zone flips to the team only once EVERY point is captured.
+// A point with no/destroyed tower resets its own timer — the team must keep
+// each tower alive for the full duration.
+//
+// Claim ownership is NOT sticky: the tower must remain standing to hold the
+// zone. A captured point whose tower is later destroyed reverts to uncaptured,
+// and if that drops the zone below "all points captured" a previously team-owned
+// zone flips back to neutral — the team has to rebuild and re-defend to reclaim.
 //
 // rt.Progress is set to the max in-flight point fraction so the existing
 // top-of-screen "Defending" bar shows the most-progressed point; per-point
 // progress travels in the snapshot. rt.Capturing is set if any point advanced.
 func evaluateClaimCapture(s *GameState, rt *zoneRuntime, dt float64) {
-	if isHumanOwner(rt.Owner) {
-		return // already claimed (sticky)
-	}
 	cfg, ok := rt.captureCfg.(claimCaptureConfig)
 	if !ok || cfg.DefendSeconds <= 0 {
 		return
 	}
+	wasOwned := isHumanOwner(rt.Owner)
 	rt.Progress = 0 // recomputed below as the max in-flight point fraction (0..1)
 	points := claimPointCells(rt)
 	allCaptured := true
@@ -331,10 +334,19 @@ func evaluateClaimCapture(s *GameState, rt *zoneRuntime, dt float64) {
 			break // defensive: should not happen (sized at install)
 		}
 		ps := &rt.claimPoints[i]
+		tower := s.claimTowerAtPointLocked(p, cfg.TowerType)
 		if ps.Captured {
+			// A captured point is held only while its tower stands. Lose the
+			// tower and the point reverts to uncaptured — it must be re-defended.
+			// When this drops a fully-claimed zone below "all captured", the
+			// team loses it (reverted to neutral after the loop).
+			if tower == nil {
+				ps.Captured = false
+				ps.Progress = 0
+				allCaptured = false
+			}
 			continue
 		}
-		tower := s.claimTowerAtPointLocked(p, cfg.TowerType)
 		if tower == nil {
 			ps.Progress = 0 // no tower → restart this point's defend timer
 			allCaptured = false
@@ -359,5 +371,9 @@ func evaluateClaimCapture(s *GameState, rt *zoneRuntime, dt float64) {
 		s.setZoneOwnerLocked(rt, protocol.ZoneCaptureTeamOwner)
 		rt.Progress = 0
 		rt.Capturing = false
+	} else if wasOwned {
+		// A previously-claimed zone lost a tower — hand it back to neutral so the
+		// team must rebuild and re-defend to reclaim it.
+		s.setZoneOwnerLocked(rt, protocol.ZoneCaptureNeutralOwner)
 	}
 }

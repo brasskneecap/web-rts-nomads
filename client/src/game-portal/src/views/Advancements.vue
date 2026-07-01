@@ -47,13 +47,16 @@
                 nodeStateClass(row, idx),
               ]"
               :style="{ backgroundImage: nodeIcon(node, isAcquired(node.id)) }"
-              :disabled="isBusy || isAcquired(node.id) || !isAvailable(row, idx) || !canAfford(node.cost)"
+              :disabled="isBusy || isAcquired(node.id) || !isAvailable(row, idx) || !canAcquire(node)"
               :aria-label="`${node.name} (${nodeStateLabel(row, idx)})`"
               @click="purchase(node.id)"
             >
               <UiTooltip :title="node.name" :body="tooltipBody(node)" />
             </button>
             <span v-if="unitType" class="advancement-node__cost">{{ node.cost }} DP</span>
+            <span v-if="unitType && node.kind === 'major'" class="advancement-node__badge-cost">
+              1<img :src="medalSlotUrl" class="advancement-node__badge-icon" alt="Conquest Badge" />
+            </span>
           </div>
         </div>
 
@@ -132,7 +135,7 @@ const props = withDefaults(defineProps<{
   unitType: undefined,
 })
 
-const { catalog, acquiredIds, isBusy, error, isAcquired, canAfford, purchase, reset } =
+const { catalog, acquiredIds, isBusy, error, isAcquired, canAcquire, conquestBadges, purchase, reset } =
   useAdvancements()
 
 // Portrait lookup: unitType -> static import URL. Extended as new unit types
@@ -232,7 +235,7 @@ function nodeStateClass(track: UnitAdvancementTrack, idx: number): string {
   const node = track.nodes[idx]
   if (isAcquired(node.id)) return 'advancement-node--acquired'
   if (isAvailable(track, idx)) {
-    return canAfford(node.cost)
+    return canAcquire(node)
       ? 'advancement-node--available'
       : 'advancement-node--unaffordable'
   }
@@ -242,7 +245,13 @@ function nodeStateClass(track: UnitAdvancementTrack, idx: number): string {
 function nodeStateLabel(track: UnitAdvancementTrack, idx: number): string {
   const node = track.nodes[idx]
   if (isAcquired(node.id)) return 'acquired'
-  if (isAvailable(track, idx)) return canAfford(node.cost) ? 'available' : 'not enough Dominion Points'
+  if (isAvailable(track, idx)) {
+    return canAcquire(node)
+      ? 'available'
+      : (node.kind === 'major' && conquestBadges.value < 1
+          ? 'requires a Conquest Badge'
+          : 'not enough Dominion Points')
+  }
   return 'locked'
 }
 
@@ -252,6 +261,7 @@ function tooltipBody(node: UnitAdvancementNode): string {
   // In single-unit mode the cost is shown as a label under each node, so it's
   // omitted from the tooltip to avoid duplication.
   if (!props.unitType) lines.push(`Cost: ${node.cost} DP`)
+  if (node.kind === 'major') lines.push('Requires: 1 Conquest Badge')
   return lines.join('\n')
 }
 
@@ -319,6 +329,7 @@ function tooltipBody(node: UnitAdvancementNode): string {
 /* Node + its cost label stack vertically; bottom-aligned in the row so the
    cost labels line up regardless of node size. */
 .advancement-node-cell {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -332,6 +343,34 @@ function tooltipBody(node: UnitAdvancementNode): string {
   letter-spacing: 0.04em;
   color: #3a1f0a;
   white-space: nowrap;
+}
+
+/* Conquest Badge cost for major (medal) nodes. Absolutely positioned so it
+   hangs below the DP cost without adding to the cell's laid-out height — that
+   keeps every node's "DP" label on the same line across the bottom-aligned
+   row, with the badge dangling underneath only on major nodes. */
+.advancement-node__badge-cost {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: calc(var(--s) * 4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: calc(var(--s) * 5);
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-size: calc(var(--s) * 16);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #3a1f0a;
+  white-space: nowrap;
+}
+
+.advancement-node__badge-icon {
+  height: calc(var(--s) * 24);
+  width: calc(var(--s) * 24);
+  object-fit: contain;
 }
 
 .advancements--single .advancement-node {

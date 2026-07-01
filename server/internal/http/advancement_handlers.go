@@ -55,6 +55,7 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 
 		type purchaseResponse struct {
 			DominionPoints       int                           `json:"dominionPoints"`
+			ConquestBadges       int                           `json:"conquestBadges"`
 			AcquiredAdvancements []profile.AcquiredAdvancement `json:"acquiredAdvancements"`
 		}
 
@@ -87,10 +88,24 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 				writeJSONError(w, http.StatusBadRequest, "insufficient_dominion_points", "not enough dominion points to purchase this advancement")
 				return errAbort
 			}
+
+			// Major nodes also require 1 Conquest Badge. Check after DP-sufficiency
+			// so both deficits are reported in a consistent order.
+			badgesPaid := 0
+			if node.Kind == "major" {
+				if p.ConquestBadges < 1 {
+					writeJSONError(w, http.StatusBadRequest, "insufficient_conquest_badges", "a Conquest Badge is required to purchase a major advancement")
+					return errAbort
+				}
+				badgesPaid = 1
+			}
+
 			p.DominionPoints -= node.Cost
+			p.ConquestBadges -= badgesPaid
 			p.AcquiredAdvancements = append(p.AcquiredAdvancements, profile.AcquiredAdvancement{
-				ID:       node.ID,
-				CostPaid: node.Cost,
+				ID:         node.ID,
+				CostPaid:   node.Cost,
+				BadgesPaid: badgesPaid,
 			})
 			// Keep the list sorted by ID for deterministic iteration.
 			sort.Slice(p.AcquiredAdvancements, func(i, j int) bool {
@@ -98,6 +113,7 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 			})
 			resp = purchaseResponse{
 				DominionPoints:       p.DominionPoints,
+				ConquestBadges:       p.ConquestBadges,
 				AcquiredAdvancements: p.AcquiredAdvancements,
 			}
 			return nil
@@ -137,6 +153,7 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 
 		type resetResponse struct {
 			DominionPoints       int                           `json:"dominionPoints"`
+			ConquestBadges       int                           `json:"conquestBadges"`
 			AcquiredAdvancements []profile.AcquiredAdvancement `json:"acquiredAdvancements"`
 		}
 
@@ -144,11 +161,13 @@ func registerAdvancementRoutes(mux *http.ServeMux, pm *profile.Manager, mm match
 		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
 			for _, aa := range p.AcquiredAdvancements {
 				p.DominionPoints += aa.CostPaid
+				p.ConquestBadges += aa.BadgesPaid
 			}
 			// Empty (non-nil) slice so the JSON serializes as [] rather than null.
 			p.AcquiredAdvancements = []profile.AcquiredAdvancement{}
 			resp = resetResponse{
 				DominionPoints:       p.DominionPoints,
+				ConquestBadges:       p.ConquestBadges,
 				AcquiredAdvancements: p.AcquiredAdvancements,
 			}
 			return nil
@@ -182,8 +201,10 @@ func refundStaleAdvancementCosts(p *profile.PlayerProfile) bool {
 	for _, aa := range p.AcquiredAdvancements {
 		node, exists := game.GetAdvancementDef(aa.ID)
 		if !exists {
-			// Advancement removed from catalog — full refund of cost paid.
+			// Advancement removed from catalog — full refund of cost paid and
+			// any badges consumed at purchase time.
 			p.DominionPoints += aa.CostPaid
+			p.ConquestBadges += aa.BadgesPaid
 			modified = true
 			continue // drop from list
 		}

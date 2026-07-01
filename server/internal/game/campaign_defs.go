@@ -195,12 +195,14 @@ func convertMapCampaignBlockToLevel(mapID string, block protocol.MapCampaignBloc
 				`": duplicate objective id "` + raw.ID + `"`)
 		}
 		def := ObjectiveDef{
-			ID:          raw.ID,
-			Type:        raw.Type,
-			Description: raw.Description,
-			Scope:       ObjectiveScope(raw.Scope),
-			Required:    raw.Required,
-			Config:      raw.Config,
+			ID:                   raw.ID,
+			Type:                 raw.Type,
+			Description:          raw.Description,
+			Scope:                ObjectiveScope(raw.Scope),
+			Required:             raw.Required,
+			RewardDominionPoints: raw.RewardDominionPoints,
+			RewardConquestBadges: raw.RewardConquestBadges,
+			Config:               raw.Config,
 		}
 		// Reuse the existing parse+validate pipeline. The filename arg is
 		// the map id (not a campaign filename) so the panic message points

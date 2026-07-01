@@ -267,6 +267,46 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 		writeJSON(w, updated)
 	})
 
+	// DEV-ONLY: grant Conquest Badges to the caller for testing the major
+	// advancement purchase flow without completing campaign objectives.
+	// Body: `{amount: int}`. Negative/zero amounts are rejected.
+	// Returns the updated profile.
+	//
+	// TODO: gate behind a build tag or env var (e.g. WEBRTS_DEV=1) before
+	// shipping a production build.
+	mux.HandleFunc("/api/profile/dev/grant-conquest-badges", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		playerID := extractPlayerID(w, r)
+		if playerID == "" {
+			return
+		}
+		var body struct {
+			Amount int `json:"amount"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+			return
+		}
+		if body.Amount <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "invalid_amount", "amount must be > 0")
+			return
+		}
+		var updated *profile.PlayerProfile
+		err := pm.WithLocked(playerID, func(p *profile.PlayerProfile) error {
+			p.ConquestBadges += body.Amount
+			updated = p
+			return nil
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "profile_error", err.Error())
+			return
+		}
+		writeJSON(w, updated)
+	})
+
 	// DEV-ONLY: hard-reset the calling player's profile back to a fresh
 	// state — zeroes DP / lifetime DP / stats / wave-upgrade caps, empties
 	// owned & active upgrades, acquired advancements, completed campaign
@@ -442,7 +482,12 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 		var body struct {
 			CampaignID   string   `json:"campaignId"`
 			LevelID      string   `json:"levelId"`
-			ObjectiveIDs []string `json:"objectiveIds"`
+			ObjectiveIDs []string `json:"objectiveIds"` // legacy shape: IDs only, no reward
+			Objectives   []struct {
+				ID                   string `json:"id"`
+				RewardDominionPoints int    `json:"rewardDominionPoints"`
+				RewardConquestBadges int    `json:"rewardConquestBadges"`
+			} `json:"objectives"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
@@ -465,13 +510,55 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 				p.CompletedCampaignObjectives = map[string][]string{}
 			}
 			set := p.CompletedCampaignObjectives[key]
+			existing := make(map[string]bool, len(set))
+			for _, id := range set {
+				existing[id] = true
+			}
+
+			// Unify the legacy IDs-only shape with the new reward-carrying
+			// shape. Legacy entries carry zero rewards.
+			type incoming struct {
+				id     string
+				reward int
+				badges int
+			}
+			items := make([]incoming, 0, len(body.ObjectiveIDs)+len(body.Objectives))
 			for _, id := range body.ObjectiveIDs {
-				if id == "" {
-					continue
+				items = append(items, incoming{id: id})
+			}
+			for _, o := range body.Objectives {
+				items = append(items, incoming{id: o.ID, reward: o.RewardDominionPoints, badges: o.RewardConquestBadges})
+			}
+
+			earned := 0
+			earnedBadges := 0
+			for _, it := range items {
+				if it.id == "" || existing[it.id] {
+					continue // blank, or already completed on a prior play — no re-award
 				}
-				set = addToSortedSet(set, id)
+				existing[it.id] = true
+				set = addToSortedSet(set, it.id)
+				if it.reward > 0 {
+					earned += it.reward
+				}
+				if it.badges > 0 {
+					earnedBadges += it.badges
+				}
 			}
 			p.CompletedCampaignObjectives[key] = set
+
+			// First-completion Dominion Point reward. Credited in the SAME
+			// locked mutation as the set merge so the "is this ID new?"
+			// decision and the award are atomic — mirrors CommitDominionPoints.
+			if earned > 0 {
+				p.DominionPoints += earned
+				p.LifetimeDominionPoints += earned
+			}
+			// First-completion Conquest Badge reward, parallel to the DP award
+			// above. Idempotency is shared — badges only flow for newly-added IDs.
+			if earnedBadges > 0 {
+				p.ConquestBadges += earnedBadges
+			}
 			updated = p
 			return nil
 		})

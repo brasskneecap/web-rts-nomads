@@ -379,6 +379,12 @@ export type MapCampaignObjective = {
   description?: string
   scope?: 'team' | 'player'
   required?: boolean
+  /** DP reward granted the first time (ever, per player) this objective is
+   *  completed. Absent/0 = no reward. Mirrors `RewardDominionPoints` on the
+   *  server's `protocol.MapCampaignObjective`. */
+  rewardDominionPoints?: number
+  /** Conquest Badge reward granted on first-ever completion. Absent/0 = no reward. */
+  rewardConquestBadges?: number
   config?: Record<string, unknown>
 }
 
@@ -1244,6 +1250,12 @@ export type ObjectiveSnapshot = {
   completed: boolean
   /** Only set by time-boxed objectives that missed their deadline. Sticky. */
   failed?: boolean
+  /** DP reward this objective grants on first-ever completion. Echoed back to
+   *  the server with the match-end completion POST. Absent/0 = no reward. */
+  rewardDominionPoints?: number
+  /** Conquest Badge reward for first-ever completion. Echoed back to the server
+   *  with the match-end completion POST. Absent/0 = no reward. */
+  rewardConquestBadges?: number
 }
 
 export type VictorySnapshot = {

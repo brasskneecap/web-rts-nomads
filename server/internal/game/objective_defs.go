@@ -28,7 +28,14 @@ type ObjectiveDef struct {
 	Description string          `json:"description,omitempty"`
 	Scope       ObjectiveScope  `json:"scope,omitempty"`
 	Required    bool            `json:"required,omitempty"`
-	Config      json.RawMessage `json:"config"`
+	// RewardDominionPoints is the Dominion Point reward granted the first
+	// time (ever, per player) this objective is completed. 0 / omitted = no
+	// reward. Metadata only — it does not participate in evaluation.
+	RewardDominionPoints int `json:"rewardDominionPoints,omitempty"`
+	// RewardConquestBadges is the Conquest Badge reward granted the first time
+	// (ever, per player) this objective is completed. 0 / omitted = no reward.
+	RewardConquestBadges int             `json:"rewardConquestBadges,omitempty"`
+	Config               json.RawMessage `json:"config"`
 
 	// parsedConfig is the typed config struct produced by the handler's
 	// parseConfig hook. Not serialized; populated once at catalog load. Each
@@ -153,6 +160,15 @@ func parseAndValidateObjectiveDef(filename, levelID string, raw ObjectiveDef) Ob
 	// the field is absent, so nothing to do here — kept as a comment so the
 	// behaviour is documented in code.
 	// raw.Required is left at its JSON-decoded value.
+
+	if raw.RewardDominionPoints < 0 {
+		panic("catalog/campaigns/" + filename + ": level " + levelID +
+			": objective " + raw.ID + ": rewardDominionPoints must be >= 0")
+	}
+	if raw.RewardConquestBadges < 0 {
+		panic("catalog\\campaigns\\" + filename + ": level " + levelID +
+			": objective " + raw.ID + ": rewardConquestBadges must be >= 0")
+	}
 
 	handler, ok := objectiveRegistry[raw.Type]
 	if !ok {

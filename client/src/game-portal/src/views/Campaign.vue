@@ -107,7 +107,13 @@
                see Decision in design.md). Required objectives are marked
                with a small badge so the player knows which gate victory. -->
           <div class="campaign__objectives">
-            <div class="campaign__objectives-header">Objectives</div>
+            <div class="campaign__objectives-header">
+              <span class="campaign__objectives-header-title">Objectives</span>
+              <span
+                v-if="anyObjectiveReward"
+                class="campaign__objectives-header-rewards"
+              >Rewards</span>
+            </div>
             <div
               v-if="!selectedLevelObjectives.length"
               class="campaign__objectives-empty"
@@ -130,10 +136,24 @@
                   aria-hidden="true"
                 >{{ isObjectiveDone(obj.id) ? '✓' : '' }}</span>
                 <span class="campaign-objective__label">
-                  {{ obj.description || obj.id }}
+                  {{ obj.description || obj.id }}<span
+                    v-if="obj.required"
+                    class="campaign-objective__required-note"
+                  > (required)</span>
                 </span>
-                <span v-if="obj.required" class="campaign-objective__required-badge">
-                  Required
+                <span class="campaign-objective__reward-cell">
+                  <span
+                    v-if="(obj.rewardDominionPoints ?? 0) > 0"
+                    class="campaign-objective__reward"
+                    title="Dominion Points, awarded the first time you complete this objective"
+                  >{{ obj.rewardDominionPoints }} DP</span>
+                </span>
+                <span class="campaign-objective__reward-cell">
+                  <span
+                    v-if="(obj.rewardConquestBadges ?? 0) > 0"
+                    class="campaign-objective__reward campaign-objective__reward--badge"
+                    title="Conquest Badges, awarded the first time you complete this objective"
+                  >{{ obj.rewardConquestBadges }}<img :src="badgeIconUrl" class="campaign-objective__reward-icon" alt="Conquest Badges" /></span>
                 </span>
               </li>
             </ul>
@@ -174,6 +194,7 @@ import { useCampaign } from '@/composables/useCampaign'
 import { useProfile } from '@/composables/useProfile'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'
+import badgeIconUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot.png'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -232,6 +253,14 @@ const startError = ref<string>('')
 const selectedLevelObjectives = computed(() => {
   return selectedLevelView.value?.level.objectives ?? []
 })
+
+// True when at least one objective on the selected level pays out a reward, so
+// the "Rewards" column header only shows when there's something under it.
+const anyObjectiveReward = computed(() =>
+  selectedLevelObjectives.value.some(
+    (o) => (o.rewardDominionPoints ?? 0) > 0 || (o.rewardConquestBadges ?? 0) > 0,
+  ),
+)
 
 /** Is the given objective recorded as completed in the player profile?
  *  Reads via useCampaign so the lookup is reactive to profile refreshes
@@ -569,6 +598,12 @@ onMounted(() => {
    placeholder list for now; the checkbox is a CSS-drawn square with the
    same parchment-friendly palette as the level rows. */
 .campaign__objectives {
+  /* Shared grid tracks for the header row AND every objective row so the
+     reward columns (DP, badge) line up vertically down the list:
+     checkbox | label (flex) | DP | badge. The 1fr label column absorbs the
+     header's missing checkbox, so the reward columns still align. */
+  --obj-grid: auto minmax(0, 1fr) calc(var(--s) * 62) calc(var(--s) * 52);
+  --obj-col-gap: calc(var(--s) * 8);
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -576,12 +611,28 @@ onMounted(() => {
 }
 
 .campaign__objectives-header {
+  display: grid;
+  grid-template-columns: var(--obj-grid);
+  column-gap: var(--obj-col-gap);
+  align-items: end;
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
   font-size: calc(var(--s) * 14);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgba(58, 31, 10, 0.75);
+}
+
+.campaign__objectives-header-title {
+  grid-column: 1 / 3;
+}
+
+/* "REWARDS" heading, sitting above the DP + badge reward columns. */
+.campaign__objectives-header-rewards {
+  grid-column: 3 / 5;
+  font-size: calc(var(--s) * 10);
+  letter-spacing: 0.12em;
+  color: rgba(58, 31, 10, 0.6);
 }
 
 .campaign__objectives-list {
@@ -594,11 +645,21 @@ onMounted(() => {
 }
 
 .campaign-objective {
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--obj-grid);
+  column-gap: var(--obj-col-gap);
   align-items: center;
-  gap: calc(var(--s) * 8);
   font-size: calc(var(--s) * 13);
   color: #3a1f0a;
+}
+
+/* Reward columns. Always present (even when empty) so the DP and badge chips
+   occupy consistent grid tracks and line up down the list. Left-aligned so
+   the "150 DP" labels share a common left edge. */
+.campaign-objective__reward-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .campaign-objective__checkbox {
@@ -628,18 +689,37 @@ onMounted(() => {
 
 /* Required objectives get a small badge so the player knows which gate
    victory. Optional objectives have no badge — they read as bonus tasks. */
-.campaign-objective__required-badge {
-  margin-left: auto;
+/* Reward chips: "150 DP" and "<n> <badge icon>", shown as the first-completion
+   payout next to each objective. Warm gold-parchment treatment to read as a
+   prize distinct from the neutral Required badge. */
+.campaign-objective__reward {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--s) * 3);
+  flex: 0 0 auto;
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
-  font-size: calc(var(--s) * 9);
+  font-size: calc(var(--s) * 10);
   font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(58, 31, 10, 0.75);
-  border: 1px solid rgba(58, 31, 10, 0.4);
+  letter-spacing: 0.04em;
+  color: #5a3a12;
+  border: 1px solid rgba(180, 140, 60, 0.55);
   border-radius: calc(var(--s) * 2);
   padding: calc(var(--s) * 1) calc(var(--s) * 4);
-  background: rgba(245, 234, 210, 0.5);
+  background: rgba(246, 230, 188, 0.6);
+  white-space: nowrap;
+}
+
+.campaign-objective__reward-icon {
+  width: calc(var(--s) * 14);
+  height: calc(var(--s) * 14);
+  object-fit: contain;
+}
+
+/* "(required)" suffix appended to the objective text — a muted parenthetical
+   rather than a standalone badge. */
+.campaign-objective__required-note {
+  font-weight: 600;
+  color: rgba(58, 31, 10, 0.6);
 }
 
 .campaign-objective--required .campaign-objective__label {

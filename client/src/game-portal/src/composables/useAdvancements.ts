@@ -22,12 +22,20 @@ export function useAdvancements() {
 
   const dominionPoints = computed<number>(() => profile.value?.dominionPoints ?? 0)
 
+  const conquestBadges = computed<number>(() => profile.value?.conquestBadges ?? 0)
+
   function isAcquired(nodeId: string): boolean {
     return acquiredIds.value.has(nodeId)
   }
 
   function canAfford(cost: number): boolean {
     return dominionPoints.value >= cost
+  }
+
+  function canAcquire(node: UnitAdvancementTrack['nodes'][number]): boolean {
+    if (!canAfford(node.cost)) return false
+    if (node.kind === 'major' && conquestBadges.value < 1) return false
+    return true
   }
 
   // nextNodeFor returns the first unacquired node on a track, or null if the
@@ -46,6 +54,7 @@ export function useAdvancements() {
       const p = profile.value
       if (p) {
         p.dominionPoints = updated.dominionPoints
+        p.conquestBadges = updated.conquestBadges
         p.acquiredAdvancements = updated.acquiredAdvancements
       }
     } catch (err) {
@@ -66,6 +75,7 @@ export function useAdvancements() {
       const p = profile.value
       if (p) {
         p.dominionPoints = updated.dominionPoints
+        p.conquestBadges = updated.conquestBadges
         p.acquiredAdvancements = updated.acquiredAdvancements
       }
     } catch (err) {
@@ -79,10 +89,12 @@ export function useAdvancements() {
     catalog,
     acquiredIds,
     dominionPoints,
+    conquestBadges,
     isBusy,
     error,
     isAcquired,
     canAfford,
+    canAcquire,
     nextNodeFor,
     purchase,
     reset,

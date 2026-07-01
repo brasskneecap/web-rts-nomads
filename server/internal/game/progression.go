@@ -241,6 +241,12 @@ func (s *GameState) unitCanGainXPLocked(unit *Unit) bool {
 	if unit.OwnerID == enemyPlayerID || unit.OwnerID == neutralPlayerID {
 		return false
 	}
+	// Workers are non-combatants: XP is useless to them (no ranks/perks that
+	// matter) and, under split mode, an eligible worker standing near a fight
+	// would siphon a share of the kill's XP away from the units that earned it.
+	if unit.UnitType == "worker" {
+		return false
+	}
 	return true
 }
 

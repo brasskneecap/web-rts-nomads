@@ -651,6 +651,41 @@ func TestClaimCapture_BuildDefendAndReset(t *testing.T) {
 	}
 }
 
+// TestClaimCapture_LosesZoneWhenTowerDestroyed asserts that a claimed (captured)
+// zone is not permanently sticky: once the defending tower is destroyed the team
+// loses the zone (reverts to neutral) and must rebuild + re-defend to reclaim it.
+func TestClaimCapture_LosesZoneWhenTowerDestroyed(t *testing.T) {
+	seed := presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1")
+	claim := claimZone("claim", [2]int{6, 6}, rectCells(5, 5, 9, 9), "seed")
+	s := newZoneTestState([]protocol.Zone{seed, claim})
+
+	// Build a tower and defend the full duration (defendSeconds=3, dt=0.5) to
+	// capture the zone to the team.
+	tower := s.placeClaimTower("p1", 6, 6)
+	for i := 0; i < 6; i++ {
+		s.tickZonesLocked(0.5)
+	}
+	if got := zoneOwner(s, "claim"); got != protocol.ZoneCaptureTeamOwner {
+		t.Fatalf("precondition: claim should be team-owned after defending, got %q", got)
+	}
+
+	// Destroy the tower on the now-claimed zone → the team loses the zone.
+	tower.Visible = false
+	s.tickZonesLocked(0.5)
+	if got := zoneOwner(s, "claim"); got != protocol.ZoneCaptureNeutralOwner {
+		t.Fatalf("destroying the claim tower should revert the zone to neutral, got %q", got)
+	}
+
+	// Rebuild + re-defend the full duration → reclaim the zone.
+	tower.Visible = true
+	for i := 0; i < 6; i++ {
+		s.tickZonesLocked(0.5)
+	}
+	if got := zoneOwner(s, "claim"); got != protocol.ZoneCaptureTeamOwner {
+		t.Fatalf("rebuilding and re-defending should reclaim the zone, got %q", got)
+	}
+}
+
 func TestClaimCapture_CapturingFlag(t *testing.T) {
 	seed := presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1")
 	claim := claimZone("claim", [2]int{6, 6}, rectCells(5, 5, 9, 9), "seed")
@@ -954,9 +989,9 @@ func TestClaimMultiPoint_BuildGateAndTowerLookup(t *testing.T) {
 	}
 }
 
-// --- multi-point claim capture (per-point independent, sticky) --------------
+// --- multi-point claim capture (per-point independent, tower-held) ----------
 
-func TestClaimMultiPoint_AllPointsRequiredAndSticky(t *testing.T) {
+func TestClaimMultiPoint_AllPointsRequiredAndTowerHeld(t *testing.T) {
 	seed := presenceZone("seed", rectCells(0, 0, 4, 4), [2]int{2, 2}, "p1")
 	claim := multiPointClaimZone("claim", [][2]int{{6, 6}, {10, 6}}, rectCells(5, 5, 14, 9), "seed")
 	s := newZoneTestState([]protocol.Zone{seed, claim})
@@ -973,19 +1008,21 @@ func TestClaimMultiPoint_AllPointsRequiredAndSticky(t *testing.T) {
 	if !rt.claimPoints[0].Captured {
 		t.Fatal("point 1 should be captured")
 	}
-	// Point 1's tower is destroyed — it stays captured (sticky per point).
+	// Point 1's tower is destroyed — the point reverts (a point is held only
+	// while its tower stands) and must be re-defended.
 	t1.Visible = false
 	s.tickZonesLocked(0.5)
-	if !rt.claimPoints[0].Captured {
-		t.Fatal("a captured point must stay captured after its tower falls")
+	if rt.claimPoints[0].Captured {
+		t.Fatal("a captured point must revert once its tower falls")
 	}
-	// Now defend point 2 → the whole zone flips to the team.
+	// Keep BOTH towers standing and defend both → the whole zone flips to team.
+	t1.Visible = true
 	s.placeClaimTower("p1", 10, 6)
 	for i := 0; i < 7; i++ {
 		s.tickZonesLocked(0.5)
 	}
 	if got := zoneOwner(s, "claim"); got != protocol.ZoneCaptureTeamOwner {
-		t.Fatalf("zone should capture once BOTH points are held, got %q", got)
+		t.Fatalf("zone should capture once BOTH points are held with towers up, got %q", got)
 	}
 }
 

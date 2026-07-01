@@ -1509,16 +1509,27 @@ export class GameState {
     this.pausedBy = message.pausedBy ?? ''
 
     const validIds = new Set(this.units.map((u) => u.id))
+    const unitById = new Map(this.units.map((u) => [u.id, u]))
+
+    // Drop from the selection any unit that no longer exists, or that has just
+    // entered build mode. A worker that starts constructing is hidden inside
+    // the building footprint (Status "Building"); leaving it selected lets the
+    // player issue a move order that pulls it back out and wedges the build, so
+    // it must not remain commandable.
+    const isCommandable = (id: number): boolean => {
+      const u = unitById.get(id)
+      if (!u) return false
+      if (u.status === 'Building' || u.status === 'Building (Paused)') return false
+      return true
+    }
 
     for (const id of Array.from(this.selectedUnitIds)) {
-      if (!validIds.has(id)) {
+      if (!isCommandable(id)) {
         this.selectedUnitIds.delete(id)
       }
     }
 
-    this.selectedUnitOrder = this.selectedUnitOrder.filter((id) =>
-      validIds.has(id),
-    )
+    this.selectedUnitOrder = this.selectedUnitOrder.filter(isCommandable)
 
     if (this.selectedUnitOrder.length === 0) {
       this.unitTargetingMode = null

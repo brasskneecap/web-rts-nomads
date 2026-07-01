@@ -139,15 +139,17 @@ func (s *GameState) buildVictorySnapshotForViewerLocked(viewerID string) *protoc
 			}
 		}
 		objectives = append(objectives, protocol.ObjectiveSnapshot{
-			ID:            runtime.Def.ID,
-			Type:          runtime.Def.Type,
-			Description:   runtime.Def.Description,
-			Scope:         string(runtime.Def.Scope),
-			Required:      runtime.Def.Required,
-			Current:       state.Current,
-			RequiredCount: state.Required,
-			Completed:     state.Completed,
-			Failed:        state.Failed,
+			ID:                   runtime.Def.ID,
+			Type:                 runtime.Def.Type,
+			Description:          runtime.Def.Description,
+			Scope:                string(runtime.Def.Scope),
+			Required:             runtime.Def.Required,
+			Current:              state.Current,
+			RequiredCount:        state.Required,
+			Completed:            state.Completed,
+			Failed:               state.Failed,
+			RewardDominionPoints: runtime.Def.RewardDominionPoints,
+			RewardConquestBadges: runtime.Def.RewardConquestBadges,
 		})
 	}
 

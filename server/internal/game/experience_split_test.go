@@ -360,6 +360,32 @@ func TestSplit_EnemyBystander_NoXP(t *testing.T) {
 	}
 }
 
+// TestSplit_WorkerNotEligible verifies that workers are excluded from the split
+// XP pool: a worker standing next to a kill neither gains XP nor dilutes the
+// share of the eligible combat units (it previously "sapped" the pool).
+func TestSplit_WorkerNotEligible(t *testing.T) {
+	withExperienceTuning(t, splitTuning(500))
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dead := s.spawnPlayerUnitLocked("soldier", enemyPlayerID, "#e74c3c", protocol.Vec2{X: 1000, Y: 1000})
+	dead.XPValue = 10
+
+	soldier := s.spawnPlayerUnitLocked("soldier", "p1", "#3498db", protocol.Vec2{X: 1005, Y: 1000})
+	worker := s.spawnPlayerUnitLocked("worker", "p1", "#3498db", protocol.Vec2{X: 1010, Y: 1000})
+
+	s.awardSplitDeathXPLocked(dead)
+
+	// Only the soldier is eligible → it gets the full 10, not a diluted 5.
+	if soldier.XP != 10 {
+		t.Errorf("soldier.XP = %d, want 10 (worker must not split the pool)", soldier.XP)
+	}
+	if worker.XP != 0 || worker.XPProgressRemainder != 0 {
+		t.Errorf("worker gained XP (%d / %v); workers must not gain XP", worker.XP, worker.XPProgressRemainder)
+	}
+}
+
 // TestSplit_BuildingDestroy_NoXP verifies the payoutBuildingDamageDealtXPLocked
 // early-return guard: in split mode, units that damaged an enemy building
 // receive no XP when the building is destroyed.

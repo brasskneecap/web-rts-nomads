@@ -38,6 +38,11 @@ export interface Objective {
   scope?: ObjectiveScope
   /** When true, this objective gates victory via the §9 AND-rule. */
   required?: boolean
+  /** DP reward granted the first time (ever, per player) this objective is
+   *  completed. Absent/0 = no reward. */
+  rewardDominionPoints?: number
+  /** Conquest Badge reward granted on first-ever completion. Absent/0 = no reward. */
+  rewardConquestBadges?: number
   /** Opaque to the client — passed through to the server handler. */
   config?: Record<string, unknown>
 }
@@ -56,6 +61,10 @@ export interface ObjectiveProgress {
   requiredCount: number
   completed: boolean
   failed?: boolean
+  /** DP reward for first-ever completion; mirrors the server snapshot. */
+  rewardDominionPoints?: number
+  /** Conquest Badge reward for first-ever completion; mirrors the server snapshot. */
+  rewardConquestBadges?: number
 }
 
 export interface CampaignLevel {

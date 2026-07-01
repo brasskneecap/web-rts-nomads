@@ -92,6 +92,7 @@ export async function refundProfileUpgrade(upgradeId: string): Promise<PlayerPro
 
 export type PurchaseAdvancementResponse = {
   dominionPoints: number
+  conquestBadges: number
   acquiredAdvancements: AcquiredAdvancement[]
 }
 
@@ -133,23 +134,28 @@ export async function markCampaignLevelComplete(levelId: string): Promise<Player
 /**
  * Record which objectives the player completed during a specific campaign
  * level attempt. Batched at match end (§15 recap dismiss). The server merges
- * `objectiveIds` into the existing sorted set at
+ * the provided objective IDs into the existing sorted set at
  * `profile.completedCampaignObjectives["<campaignId>/<levelId>"]`. Idempotent:
  * repeat calls with the same payload leave state unchanged.
  *
- * Passing an empty `objectiveIds` array is intentionally valid (the recap
+ * Each entry carries an optional `rewardDominionPoints` amount. The server
+ * credits DP for objective IDs that are newly added to the persistent set
+ * (i.e. first-ever completion). Subsequent calls with the same ID are
+ * idempotent and do not re-award DP.
+ *
+ * Passing an empty `objectives` array is intentionally valid (the recap
  * dismiss handler always POSTs at match end, even for defeats with zero
  * completions). Returns the updated profile.
  */
 export async function markCampaignObjectivesComplete(
   campaignId: string,
   levelId: string,
-  objectiveIds: string[],
+  objectives: { id: string; rewardDominionPoints?: number; rewardConquestBadges?: number }[],
 ): Promise<PlayerProfile> {
   const res = await fetch(`${API_BASE}/api/profile/campaign/complete-objectives`, {
     method: 'POST',
     headers: playerHeaders(),
-    body: JSON.stringify({ campaignId, levelId, objectiveIds }),
+    body: JSON.stringify({ campaignId, levelId, objectives }),
   })
   return handleResponse<PlayerProfile>(res)
 }
@@ -161,6 +167,19 @@ export async function markCampaignObjectivesComplete(
  */
 export async function devGrantDominionPoints(amount: number): Promise<PlayerProfile> {
   const res = await fetch(`${API_BASE}/api/profile/dev/grant-dominion-points`, {
+    method: 'POST',
+    headers: playerHeaders(),
+    body: JSON.stringify({ amount }),
+  })
+  return handleResponse<PlayerProfile>(res)
+}
+
+/**
+ * DEV-ONLY: grant Conquest Badges to the calling player for testing. Returns
+ * the updated profile. Mirrors devGrantDominionPoints — label clearly as dev.
+ */
+export async function devGrantConquestBadges(amount: number): Promise<PlayerProfile> {
+  const res = await fetch(`${API_BASE}/api/profile/dev/grant-conquest-badges`, {
     method: 'POST',
     headers: playerHeaders(),
     body: JSON.stringify({ amount }),

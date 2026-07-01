@@ -39,6 +39,13 @@
               </div>
               <div class="selection-subtitle">{{ ui.selection.subtitle }}</div>
               <div
+                v-if="buildingResourceStock"
+                class="selection-resource"
+                :title="buildingResourceStock.label"
+              >
+                {{ buildingResourceStock.label }}: {{ buildingResourceStock.value }}
+              </div>
+              <div
                 v-if="focusTargetLabel"
                 class="selection-focus"
                 :title="focusTargetLabel"
@@ -510,6 +517,18 @@ const buildingDurability = computed(() => {
   const detail = props.ui.selection.details.find(
     (d) => d.id === 'durability' || d.id === 'construction-health',
   )
+  if (!detail || !detail.value) return null
+  return { label: detail.label, value: detail.value }
+})
+
+// Remaining resource stock (e.g. "Gold Remaining") for resource buildings
+// like the goldmine. The inline details row is suppressed for buildings
+// (see the `kind !== 'building'` guard on `.detail-inline`), so this detail
+// would otherwise never render — surface it in the header instead. Returns
+// null for non-buildings or buildings that carry no resource-stock detail.
+const buildingResourceStock = computed(() => {
+  if (props.ui.selection.kind !== 'building') return null
+  const detail = props.ui.selection.details.find((d) => d.id === 'resource-stock')
   if (!detail || !detail.value) return null
   return { label: detail.label, value: detail.value }
 })
@@ -1005,6 +1024,15 @@ button.inventory-slot:focus-visible {
   line-height: 1.35;
   overflow-wrap: anywhere;
   color: #9bd4ff;
+  font-weight: 600;
+}
+
+.selection-resource {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  color: #f2c94c;
   font-weight: 600;
 }
 

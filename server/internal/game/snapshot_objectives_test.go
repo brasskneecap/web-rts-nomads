@@ -157,6 +157,46 @@ func TestSnapshotVictory_CustomGameOmitsVictory(t *testing.T) {
 	}
 }
 
+// TestObjectiveSnapshot_CarriesRewardDominionPoints verifies that the per-tick
+// ObjectiveSnapshot wire type carries the RewardDominionPoints value from the
+// objective's Def. This is the §Task-2 acceptance test for the first-ever
+// map-objective DP reward surfacing feature.
+func TestObjectiveSnapshot_CarriesRewardDominionPoints(t *testing.T) {
+	s := NewGameState(protocol.MapConfig{ID: "test", Width: 100, Height: 100})
+	s.Players["p1"] = &Player{ID: "p1", TeamID: 0, Metrics: NewMatchMetrics(), Resources: map[string]int{}}
+
+	// Directly install an objectiveRuntime with RewardDominionPoints set on
+	// the Def. We bypass installObjective / parseAndValidateObjectiveDef
+	// intentionally: this test exercises snapshot projection only, not
+	// evaluation, so no handler or parsedConfig is needed.
+	s.Objectives = []objectiveRuntime{
+		{
+			Def: ObjectiveDef{
+				ID:                   "clear_camps",
+				Type:                 "kill_camps",
+				Scope:                ObjectiveScopeTeam,
+				RewardDominionPoints: 40,
+			},
+			TeamState: ObjectiveState{ObjectiveID: "clear_camps", Scope: ObjectiveScopeTeam},
+		},
+	}
+
+	snap := s.buildVictorySnapshotForViewerLocked("")
+	if snap == nil {
+		t.Fatal("expected a victory snapshot, got nil")
+	}
+	if len(snap.Objectives) == 0 {
+		t.Fatalf("expected at least one objective in snapshot, got none")
+	}
+	got := findObjective(snap.Objectives, "clear_camps")
+	if got.ID == "" {
+		t.Fatalf("clear_camps objective not found in snapshot")
+	}
+	if got.RewardDominionPoints != 40 {
+		t.Fatalf("RewardDominionPoints: want 40, got %d", got.RewardDominionPoints)
+	}
+}
+
 // TestSnapshotVictory_NewlyJoinedPlayerSeesInitialPlayerScopeState verifies
 // the lazy-init path for player-scope objectives: if a player joins after
 // the evaluator has already populated PlayerStates for OTHER players but

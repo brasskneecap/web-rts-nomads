@@ -361,12 +361,14 @@ type MapCampaignBlock struct {
 // per-field hand conversion. The `parsedConfig` cache field on ObjectiveDef
 // is unexported and does not appear here.
 type MapCampaignObjective struct {
-	ID          string          `json:"id"`
-	Type        string          `json:"type"`
-	Description string          `json:"description,omitempty"`
-	Scope       string          `json:"scope,omitempty"`
-	Required    bool            `json:"required,omitempty"`
-	Config      json.RawMessage `json:"config"`
+	ID                   string          `json:"id"`
+	Type                 string          `json:"type"`
+	Description          string          `json:"description,omitempty"`
+	Scope                string          `json:"scope,omitempty"`
+	Required             bool            `json:"required,omitempty"`
+	RewardDominionPoints int             `json:"rewardDominionPoints,omitempty"`
+	RewardConquestBadges int             `json:"rewardConquestBadges,omitempty"`
+	Config               json.RawMessage `json:"config"`
 }
 
 // MapDebugConfig is the container for per-map debug/telemetry opt-ins. It
@@ -1359,6 +1361,13 @@ type ObjectiveSnapshot struct {
 	// Failed is only set by time-boxed objectives (e.g. kill_camps_before_wave).
 	// Sticky once set. omitempty so the wire stays compact for the common case.
 	Failed bool `json:"failed,omitempty"`
+	// RewardDominionPoints is the DP reward this objective grants the first
+	// time (ever, per player) it is completed. The match-end client echoes it
+	// back with the completion POST so the server can credit it. 0 = no reward.
+	RewardDominionPoints int `json:"rewardDominionPoints,omitempty"`
+	// RewardConquestBadges is the Conquest Badge reward granted the first time
+	// (ever, per player) this objective is completed. 0 = no reward.
+	RewardConquestBadges int `json:"rewardConquestBadges,omitempty"`
 }
 
 // VictorySnapshot is included on every per-tick MatchSnapshot when the

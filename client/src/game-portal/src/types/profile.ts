@@ -1,6 +1,7 @@
 export type AcquiredAdvancement = {
   id: string
   costPaid: number
+  badgesPaid?: number
 }
 
 export type UnitAdvancementEffect =
@@ -34,6 +35,7 @@ export type PlayerProfile = {
   updatedAtUnix: number
   dominionPoints: number
   lifetimeDominionPoints: number
+  conquestBadges: number
   ownedCommanderIds: string[]
   selectedCommanderId: string
   activeUpgradeIds: string[]
