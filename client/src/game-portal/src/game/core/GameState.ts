@@ -42,6 +42,7 @@ import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP, getUpgradeChain, townHallTie
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
+import { RECIPE_DEF_MAP } from '../maps/recipeDefs'
 import { buildItemTooltipBody } from '../items/itemRules'
 import { formatPerkTooltip } from './perkTooltip'
 import { getUnitBodyRect, isPointInUnitBody } from '../rendering/unitSprites'
@@ -3648,7 +3649,7 @@ function getUnderConstructionActions(building: BuildingTile): ActionItem[] {
   ]
 }
 
-function getBuildingActions(
+export function getBuildingActions(
   building: BuildingTile,
   upgrades: PlayerUpgradeSnapshot[] = [],
   vaultState?: { vault: VaultItemSnapshot[]; vaultCapacity: number },
@@ -3724,6 +3725,30 @@ function getBuildingActions(
         tooltipTitle: 'Reroll Merchant',
         tooltipBody: rerollTooltip,
         disabled: !canReroll,
+      })
+    }
+  }
+
+  if (building.capabilities?.includes('recipe-purchase')) {
+    // Recipe Shop: one buy action per stocked recipe. Quantity 0 = sold out
+    // (kept visible but disabled), mirroring item-purchase stock handling.
+    const shopLocked = building.shopLocked === true
+    for (const slot of building.recipeInventory ?? []) {
+      const recipe = RECIPE_DEF_MAP.get(slot.recipeId)
+      if (!recipe) continue
+      const soldOut = slot.quantity <= 0
+      const inputList = recipe.inputs.join(' + ')
+      let tooltipBody = `Unlocks crafting: ${recipe.name}.\nRequires: ${inputList}.`
+      if (soldOut) tooltipBody = `${tooltipBody}\n\nAlready purchased at this shop.`
+      else if (shopLocked) tooltipBody = `${tooltipBody}\n\nGuards remain — clear them to unlock this shop.`
+      actions.push({
+        id: `buy-recipe-${recipe.id}`,
+        label: recipe.name,
+        iconDef: { kind: 'item', type: recipe.output },
+        cost: [{ resourceId: 'gold', amount: recipe.costGold, accent: '#d4a84f' }],
+        tooltipTitle: recipe.name,
+        tooltipBody,
+        disabled: soldOut || shopLocked,
       })
     }
   }

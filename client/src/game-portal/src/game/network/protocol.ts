@@ -21,6 +21,7 @@ export type BuildingCapability =
   | 'selectable'
   | 'upgrade-purchase'
   | 'item-purchase'
+  | 'recipe-purchase'
   | 'vault-access'
 export type ObstacleCapability = 'resource-source' | 'selectable'
 export type ResourceType = 'gold' | 'wood'
