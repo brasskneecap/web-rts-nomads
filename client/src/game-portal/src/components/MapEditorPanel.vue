@@ -3905,8 +3905,10 @@ function drawEditorMinimap() {
 
   const bounds = { x: 0, y: 0, width: w, height: h }
   drawMinimapBase(mctx, model.value, bounds, minimapTerrainSurface)
-  drawMinimapPOIs(mctx, model.value, bounds, null)
+  // Zones before POIs so a marker on a zone border (e.g. a shop between
+  // zones) stays readable — matches the in-game minimap layer order.
   drawMinimapZones(mctx, bounds)
+  drawMinimapPOIs(mctx, model.value, bounds, null)
 
   // Viewport rect tied to the editor camera. Clipped to the minimap rect
   // so it can't bleed past the frame when the camera overscans the map

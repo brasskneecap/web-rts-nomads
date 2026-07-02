@@ -9,7 +9,7 @@
 // rule, etc.) should happen here once; both renderers pick it up
 // automatically.
 
-import type { LootDropSnapshot, MapConfig, NeutralCampSnapshot } from '../network/protocol'
+import type { BuildingTile, LootDropSnapshot, MapConfig, NeutralCampSnapshot } from '../network/protocol'
 import {
   DEFAULT_GRASS_COLOR,
   getBuildingColor,
@@ -18,6 +18,7 @@ import {
   getTerrainColor,
 } from '../maps/mapConfig'
 import { drawAutoTiledTerrain, isTerrainTilesetReady } from './terrainTileset'
+import shopHouseUrl from '../../assets/minimap/shop-house.svg?url'
 
 export type MinimapRect = { x: number; y: number; width: number; height: number }
 
@@ -173,6 +174,83 @@ export function drawMinimapBase(
   ctx.strokeRect(x, y, width, height)
 }
 
+// A neutral shop's minimap point of interest: the building footprint (grid
+// cells) plus its type for color resolution. Captured from the full authored
+// map so it survives FOW filtering of the live building list.
+export type ShopPOI = Pick<BuildingTile, 'id' | 'buildingType' | 'x' | 'y' | 'width' | 'height'>
+
+// A building is a shop POI when it sells something. Capability-based (rather
+// than a building-type list) so a future shop kind is picked up for free —
+// tiles carry capabilities in both the authored catalog files and live
+// snapshots, so this works with or without building defs loaded.
+const SHOP_POI_CAPABILITIES = ['item-purchase', 'recipe-purchase']
+
+// One bright light-yellow for every shop kind — spotting "there's a shop
+// here" matters more at minimap scale than telling shop kinds apart. Keep in
+// sync with the fill in assets/minimap/shop-house.svg.
+export const SHOP_POI_COLOR = '#fef08a'
+const SHOP_POI_OUTLINE = '#3b2f0b'
+
+// The SVG house icon, lazily loaded on first draw. Until it finishes loading
+// (and in non-browser test environments where it never does) the fallback
+// path in drawShopHouseFallback draws an equivalent house silhouette so the
+// marker is never missing for a frame.
+let shopHouseIcon: HTMLImageElement | null = null
+let shopHouseIconReady = false
+
+function ensureShopHouseIcon(): HTMLImageElement | null {
+  if (!shopHouseIcon && typeof Image !== 'undefined') {
+    shopHouseIcon = new Image()
+    shopHouseIcon.onload = () => {
+      shopHouseIconReady = true
+    }
+    shopHouseIcon.src = shopHouseUrl
+  }
+  return shopHouseIconReady ? shopHouseIcon : null
+}
+
+// Path-drawn stand-in for the SVG: roof with eaves over a squat body, same
+// colors, same footprint as the drawImage call.
+function drawShopHouseFallback(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+): void {
+  const bodyHalfW = r * 0.62
+  ctx.fillStyle = SHOP_POI_COLOR
+  ctx.beginPath()
+  ctx.moveTo(cx, cy - r) // roof apex
+  ctx.lineTo(cx + r, cy - r * 0.05) // right eave
+  ctx.lineTo(cx + bodyHalfW, cy - r * 0.05)
+  ctx.lineTo(cx + bodyHalfW, cy + r) // body bottom-right
+  ctx.lineTo(cx - bodyHalfW, cy + r) // body bottom-left
+  ctx.lineTo(cx - bodyHalfW, cy - r * 0.05)
+  ctx.lineTo(cx - r, cy - r * 0.05) // left eave
+  ctx.closePath()
+  ctx.fill()
+  ctx.lineWidth = 1
+  ctx.strokeStyle = SHOP_POI_OUTLINE
+  ctx.stroke()
+}
+
+export function getShopPOIs(buildings: BuildingTile[] | null | undefined): ShopPOI[] {
+  const pois: ShopPOI[] = []
+  for (const b of buildings ?? []) {
+    if (b.visible === false) continue
+    if (!b.capabilities?.some((c) => SHOP_POI_CAPABILITIES.includes(c))) continue
+    pois.push({
+      id: b.id,
+      buildingType: b.buildingType,
+      x: b.x,
+      y: b.y,
+      width: b.width,
+      height: b.height,
+    })
+  }
+  return pois
+}
+
 // Paints neutral-camp POI markers (and any other authored POIs we add
 // later) into the given rect. Drawn ABOVE any FOW so they remain visible
 // regardless of scouting state.
@@ -192,6 +270,12 @@ export function drawMinimapPOIs(
   // Live ground-loot chests. Always-visible (no FOW gating). Pass null or
   // undefined in lobby/editor contexts where no live server data exists.
   lootDropsById?: Map<string, LootDropSnapshot> | null,
+  // Neutral shop markers. Omit (undefined) to derive from
+  // mapConfig.buildings — correct for the lobby preview and map editor,
+  // whose map models hold the full authored building list. The in-game
+  // renderer must pass GameState.neutralShopPOIs instead, because its live
+  // building list is FOW-filtered and unscouted shops are simply absent.
+  shopPOIs?: ShopPOI[],
 ): void {
   const spawns = mapConfig.neutralSpawns
   const { x, y, width, height } = bounds
@@ -218,6 +302,27 @@ export function drawMinimapPOIs(
       ctx.lineWidth = 0.75
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)'
       ctx.stroke()
+    }
+  }
+
+  // Neutral shop markers — a light-yellow house icon, larger than camp dots,
+  // so a "place to spend" reads differently from a "place to fight". Always
+  // visible regardless of FOW: shops are static map landmarks, same
+  // treatment as camp POIs above.
+  const shops = shopPOIs ?? getShopPOIs(mapConfig.buildings)
+  if (shops.length > 0) {
+    const cellMinimapW = width / gridCols
+    const cellMinimapH = height / gridRows
+    const r = 5.5 // half-size of the icon in minimap pixels
+    const icon = ensureShopHouseIcon()
+    for (const shop of shops) {
+      const cx = x + (shop.x + shop.width / 2) * cellMinimapW
+      const cy = y + (shop.y + shop.height / 2) * cellMinimapH
+      if (icon) {
+        ctx.drawImage(icon, cx - r, cy - r, r * 2, r * 2)
+      } else {
+        drawShopHouseFallback(ctx, cx, cy, r)
+      }
     }
   }
 

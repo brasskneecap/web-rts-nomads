@@ -4303,19 +4303,24 @@ export class CanvasRenderer {
       }
     }
 
-    // Neutral camp POIs and loot-drop chest dots. Both drawn AFTER fog of war
-    // so they remain visible regardless of scouting state.
+    // Zone perimeters, owner-coloured — drawn above fog so the player can read
+    // their territorial control across the whole map at a glance.
+    this.drawMinimapZones(bounds)
+
+    // Neutral camp POIs, shop markers, and loot-drop chest dots. All drawn
+    // AFTER fog of war so they remain visible regardless of scouting state,
+    // and AFTER the zone perimeters so a POI sitting on a zone border (e.g.
+    // the forest-1 merchant between the four zones) isn't obscured by the
+    // lines. Shop POIs come from the persisted welcome-time list — the live
+    // mapConfig.buildings is FOW-filtered and omits unscouted shops.
     drawMinimapPOIs(
       ctx,
       this.state.mapConfig,
       bounds,
       this.state.neutralCampSnapshotsById,
       this.state.lootDropsById,
+      this.state.neutralShopPOIs,
     )
-
-    // Zone perimeters, owner-coloured — drawn above fog so the player can read
-    // their territorial control across the whole map at a glance.
-    this.drawMinimapZones(bounds)
 
     const worldWidth = this.canvas.width / this.camera.zoom
     const worldHeight = this.canvas.height / this.camera.zoom

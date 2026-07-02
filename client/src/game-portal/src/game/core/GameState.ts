@@ -38,6 +38,7 @@ import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID, UNIT_ORDER_LABELS, ZONE_AURA_TYPE_S
 import { buildZoneCaptureCards, type ZoneCaptureCard } from '../zones/zoneCaptureCards'
 import { buildZoneCellIndex, cellKey } from '../maps/zoneGeometry'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
+import { getShopPOIs, type ShopPOI } from '../rendering/minimapLayers'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP, getUpgradeChain, townHallTierName } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
@@ -741,7 +742,12 @@ export class GameState {
     name: 'Loading Map',
     description: '',
   })
-  
+  // Neutral shop minimap POIs, captured once from the full authored map in
+  // setMapConfig. Snapshot merges must NOT touch this: per-tick building
+  // lists are FOW-filtered and simply omit unscouted shops, but the minimap
+  // shows shop markers regardless of scouting (same as neutral-camp dots).
+  neutralShopPOIs: ShopPOI[] = []
+
   selectedUnitIds = new Set<number>()
   selectedUnitOrder: number[] = []
   // RTS-style control groups. Keyed 1..10 (0 maps to 10 by convention).
@@ -2607,6 +2613,7 @@ export class GameState {
     this.mapConfig = sanitizeMapConfig(map)
     this.mapWidth = this.mapConfig.width
     this.mapHeight = this.mapConfig.height
+    this.neutralShopPOIs = getShopPOIs(this.mapConfig.buildings)
     this.invalidateBuildingSelection()
     this.invalidateZoneCellIndex()
   }
