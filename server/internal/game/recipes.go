@@ -24,13 +24,24 @@ type RecipeDef struct {
 
 var recipeCatalogSingleton = loadRecipeCatalog()
 
+// recipeListsSubdir is the catalog/recipes subdirectory that holds named recipe
+// lists (a different schema — see RecipeListDef). It is skipped by the recipe
+// def walk so list files are never parsed as recipe defs.
+const recipeListsSubdir = "catalog/recipes/lists"
+
 func loadRecipeCatalog() map[string]*RecipeDef {
 	catalog := make(map[string]*RecipeDef)
 	err := fs.WalkDir(recipeDefsFS, "catalog/recipes", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".json") {
+		if d.IsDir() {
+			if path == recipeListsSubdir {
+				return fs.SkipDir // recipe lists are loaded separately
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".json") {
 			return nil
 		}
 		data, err := recipeDefsFS.ReadFile(path)
@@ -86,6 +97,78 @@ func getRecipeDef(id string) (*RecipeDef, bool) {
 func ListRecipeDefs() []*RecipeDef {
 	defs := make([]*RecipeDef, 0, len(recipeCatalogSingleton))
 	for _, def := range recipeCatalogSingleton {
+		defs = append(defs, def)
+	}
+	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
+	return defs
+}
+
+// RecipeListDef is a named, curated set of recipe IDs. A Recipe Shop assigned a
+// list (via map metadata "recipeList") stocks from that list's recipes instead
+// of the global pool. Authored under catalog/recipes/lists/<id>.json.
+type RecipeListDef struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Recipes []string `json:"recipes"`
+}
+
+var recipeListCatalogSingleton = loadRecipeListCatalog()
+
+func loadRecipeListCatalog() map[string]*RecipeListDef {
+	catalog := make(map[string]*RecipeListDef)
+	entries, err := fs.ReadDir(recipeDefsFS, recipeListsSubdir)
+	if err != nil {
+		// No lists/ directory is valid — recipe lists are optional.
+		return catalog
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		path := recipeListsSubdir + "/" + e.Name()
+		data, err := recipeDefsFS.ReadFile(path)
+		if err != nil {
+			panic(path + ": " + err.Error())
+		}
+		var def RecipeListDef
+		if err := json.Unmarshal(data, &def); err != nil {
+			panic(path + ": " + err.Error())
+		}
+		if def.ID == "" {
+			panic(path + `: missing "id" field`)
+		}
+		if err := validateRecipeListDef(&def); err != nil {
+			panic(path + ": " + err.Error())
+		}
+		catalog[def.ID] = &def
+	}
+	return catalog
+}
+
+// validateRecipeListDef enforces: at least one recipe, and every referenced
+// recipe ID resolves to a real recipe def. Called at catalog load (fail-fast).
+func validateRecipeListDef(def *RecipeListDef) error {
+	if len(def.Recipes) == 0 {
+		return fmt.Errorf("recipe list %q: needs at least 1 recipe", def.ID)
+	}
+	for i, id := range def.Recipes {
+		if _, ok := getRecipeDef(id); !ok {
+			return fmt.Errorf("recipe list %q: recipes[%d] %q is not a known recipe", def.ID, i, id)
+		}
+	}
+	return nil
+}
+
+func getRecipeListDef(id string) (*RecipeListDef, bool) {
+	def, ok := recipeListCatalogSingleton[id]
+	return def, ok
+}
+
+// ListRecipeListDefs returns all recipe-list defs sorted by ID (for the HTTP
+// route and deterministic iteration).
+func ListRecipeListDefs() []*RecipeListDef {
+	defs := make([]*RecipeListDef, 0, len(recipeListCatalogSingleton))
+	for _, def := range recipeListCatalogSingleton {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })

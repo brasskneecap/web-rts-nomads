@@ -334,6 +334,7 @@ func registerProfileRoutes(mux *http.ServeMux, pm *profile.Manager, mm matchInAc
 			p.Version = profile.CurrentVersion
 			p.DominionPoints = 0
 			p.LifetimeDominionPoints = 0
+			p.ConquestBadges = 0
 			p.OwnedCommanderIDs = []string{profile.DefaultCommanderID}
 			p.SelectedCommanderID = profile.DefaultCommanderID
 			p.Stats = profile.ProfileStats{}

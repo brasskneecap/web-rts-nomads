@@ -1,0 +1,5 @@
+{
+  "id": "druid_recipes_1",
+  "name": "Druid Recipes I",
+  "recipes": ["fire_sword", "frost_sword", "lightning_sword"]
+}

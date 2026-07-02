@@ -83,14 +83,17 @@ func (s *GameState) populateRecipeShopInventoriesLocked() {
 		if len(b.RecipeInventory) > 0 {
 			continue
 		}
+		// Pool is the shop's assigned recipe list (metadata "recipeList") when
+		// set and valid, else the global recipe pool.
+		src := recipeShopPool(b, all)
 		count := defaultRecipeShopCount
-		if count > len(all) {
-			count = len(all)
+		if count > len(src) {
+			count = len(src)
 		}
-		// Partial Fisher-Yates over a copy of the sorted recipe list using the
-		// seeded loot RNG → deterministic per (seed, building order).
-		pool := make([]*RecipeDef, len(all))
-		copy(pool, all)
+		// Partial Fisher-Yates over a copy of the sorted pool using the seeded
+		// loot RNG → deterministic per (seed, building order).
+		pool := make([]*RecipeDef, len(src))
+		copy(pool, src)
 		for k := 0; k < count; k++ {
 			j := k + s.rngLoot.Intn(len(pool)-k)
 			pool[k], pool[j] = pool[j], pool[k]
@@ -101,4 +104,36 @@ func (s *GameState) populateRecipeShopInventoriesLocked() {
 		}
 		b.RecipeInventory = entries
 	}
+}
+
+// recipeShopPool returns the recipe pool a shop samples from: the recipes of its
+// assigned "recipeList" metadata (when set and valid), else the global pool
+// `all`. The returned slice is sorted by recipe ID for deterministic sampling.
+// Unknown recipe IDs in a list are skipped (validated at catalog load, so this
+// is defensive); an unknown list id falls back to the global pool.
+func recipeShopPool(b *protocol.BuildingTile, all []*RecipeDef) []*RecipeDef {
+	listID, ok := getMetadataString(b.Metadata, "recipeList")
+	if !ok || listID == "" {
+		return all
+	}
+	list, ok := getRecipeListDef(listID)
+	if !ok {
+		return all
+	}
+	pool := make([]*RecipeDef, 0, len(list.Recipes))
+	seen := make(map[string]bool, len(list.Recipes))
+	for _, id := range list.Recipes {
+		if seen[id] {
+			continue
+		}
+		if def, ok := getRecipeDef(id); ok {
+			pool = append(pool, def)
+			seen[id] = true
+		}
+	}
+	if len(pool) == 0 {
+		return all
+	}
+	sort.Slice(pool, func(i, j int) bool { return pool[i].ID < pool[j].ID })
+	return pool
 }

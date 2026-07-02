@@ -412,8 +412,18 @@ func (s *GameState) spawnShopGuardsLocked() {
 			continue
 		}
 
+		// Guards ring around (and anchor to) the shop footprint center by
+		// default. A map-editor-chosen spawn cell (guardSpawnX/Y metadata)
+		// overrides that center, letting the author place the squad off to one
+		// side of the shop. Both coordinates must be present for the override.
 		centerWX := (float64(b.X) + float64(b.Width)/2) * cellSize
 		centerWY := (float64(b.Y) + float64(b.Height)/2) * cellSize
+		if sx, okX := getMetadataFloat(b.Metadata, "guardSpawnX"); okX {
+			if sy, okY := getMetadataFloat(b.Metadata, "guardSpawnY"); okY {
+				spawnCenter := s.gridToWorldCenter(gridPoint{X: int(sx), Y: int(sy)})
+				centerWX, centerWY = spawnCenter.X, spawnCenter.Y
+			}
+		}
 		centerCell := s.worldToGrid(centerWX, centerWY)
 		placedOrderID := s.nextMovementOrderIDLocked()
 

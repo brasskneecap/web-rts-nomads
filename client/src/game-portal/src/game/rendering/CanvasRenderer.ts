@@ -22,6 +22,7 @@ import {
   getDamagedFramesPerTier,
   getDamagedSprite,
   getDamagedTier,
+  getRecipeShopStyleSprite,
   getTintedBuildingSprite,
   getTintedConstructionSprite,
   getTintedDamagedSprite,
@@ -861,7 +862,13 @@ export class CanvasRenderer {
 
       const playerFill = ownerColor ?? buildingDef?.color ?? getBuildingColor(building.buildingType, building.occupied, ownerColor)
 
-      const sprite = getBuildingSprite(building.buildingType)
+      // Recipe shops render a per-instance "shopStyle" art override when one is
+      // set (and loaded); otherwise the shared building-type sprite is used.
+      const styleSprite =
+        building.buildingType === 'recipe-shop'
+          ? getRecipeShopStyleSprite(building.metadata?.['shopStyle'] as string | undefined)
+          : null
+      const sprite = styleSprite ?? getBuildingSprite(building.buildingType)
       const isUnderConstruction = building.metadata?.['underConstruction'] === true
       // pendingStart: placed but no worker has arrived yet — render as a
       // transparent preview of the finished building. The construction
@@ -1039,7 +1046,9 @@ export class CanvasRenderer {
         )
       } else if (sprite) {
         ctx.imageSmoothingEnabled = false
-        const tinted = ownerColor
+        // A style override is drawn as-is; tinting keys by building type and
+        // would return the wrong (shared) sprite for a styled recipe shop.
+        const tinted = ownerColor && !styleSprite
           ? getTintedBuildingSprite(building.buildingType, ownerColor)
           : null
         ctx.drawImage(tinted ?? sprite, spriteX, spriteY, spriteW, spriteH)

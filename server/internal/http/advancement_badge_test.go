@@ -345,6 +345,25 @@ func TestDevGrantConquestBadges_Succeeds(t *testing.T) {
 	}
 }
 
+// TestDevResetProfile_ZeroesConquestBadges verifies the dev "Reset Profile"
+// endpoint wipes the Conquest Badge balance. Badges are a spendable currency
+// like Dominion Points, so a clean-slate reset must not leave stale badges
+// behind (regression guard: the reset predates the badge currency).
+func TestDevResetProfile_ZeroesConquestBadges(t *testing.T) {
+	mux, pm := newTestMux(t)
+	seedPlayer(t, pm, 0, nil)
+
+	// Give the player badges, then reset the profile.
+	postJSON(t, mux, "/api/profile/dev/grant-conquest-badges", testPlayerID, map[string]int{"amount": 4})
+	rec := postJSON(t, mux, "/api/profile/dev/reset", testPlayerID, map[string]any{})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset status: want 200, got %d — body: %s", rec.Code, rec.Body.String())
+	}
+	if p := readProfileBody(t, rec); p.ConquestBadges != 0 {
+		t.Errorf("ConquestBadges after reset: want 0, got %d", p.ConquestBadges)
+	}
+}
+
 // TestDevGrantConquestBadges_Accumulates verifies that multiple grant calls
 // accumulate (additive), not replace.
 func TestDevGrantConquestBadges_Accumulates(t *testing.T) {

@@ -228,6 +228,19 @@ export async function fetchRecipeDefs(): Promise<RecipeDef[]> {
   return data.recipes
 }
 
+export type RecipeListSummary = { id: string; name: string; recipes: string[] }
+
+export async function fetchRecipeLists(): Promise<RecipeListSummary[]> {
+  const response = await fetch(`${API_BASE}/catalog/recipe-lists`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to load recipe lists: ${response.status}`)
+  }
+
+  const data = (await response.json()) as { lists: RecipeListSummary[] }
+  return data.lists
+}
+
 export async function fetchNeutralGroups(): Promise<NeutralGroupTierSummary[]> {
   const response = await fetch(`${API_BASE}/api/catalog/neutral-groups`)
 

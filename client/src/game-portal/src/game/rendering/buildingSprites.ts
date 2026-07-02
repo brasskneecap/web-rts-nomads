@@ -124,6 +124,46 @@ export function getDamagedFramesPerTier(buildingType: string): number {
   return damagedFramesPerTier.get(buildingType.toLowerCase()) ?? DAMAGED_FRAMES_PER_TIER
 }
 
+// Recipe-shop style art. A recipe shop picks its sprite by a per-instance
+// "shopStyle" metadata (set in the map editor) rather than the shared
+// buildings/recipe-shop/sprite.png. Each style is a single image at
+// assets/buildings/recipe-shops/<style>.{png,jpg,jpeg}; the file stem is the
+// style name shown in the editor's Shop Style dropdown.
+const recipeShopStyleUrls = import.meta.glob(
+  '../../assets/buildings/recipe-shops/*.{png,jpg,jpeg}',
+  { eager: true, query: '?url', import: 'default' },
+) as Record<string, string>
+
+const recipeShopStyleImages = new Map<string, HTMLImageElement>()
+
+for (const [path, url] of Object.entries(recipeShopStyleUrls)) {
+  const match = path.match(/\/recipe-shops\/([^/]+)\.(?:png|jpe?g)$/)
+  if (!match) continue
+  const key = match[1].toLowerCase()
+  const img = new Image()
+  img.src = url
+  recipeShopStyleImages.set(key, img)
+}
+
+// Names of the available recipe-shop styles (file stems), sorted — used to
+// populate the map editor's Shop Style dropdown.
+export function listRecipeShopStyles(): string[] {
+  return [...recipeShopStyleImages.keys()].sort()
+}
+
+// Returns the loaded style sprite for a recipe shop's "shopStyle", or null when
+// no style is set / registered / finished decoding. Callers fall back to the
+// building-type sprite when this returns null.
+export function getRecipeShopStyleSprite(
+  style: string | null | undefined,
+): HTMLImageElement | null {
+  if (!style) return null
+  const img = recipeShopStyleImages.get(style.toLowerCase())
+  if (!img) return null
+  if (!img.complete || img.naturalWidth === 0) return null
+  return img
+}
+
 // Returns a loaded sprite for the given building type, or null if none is
 // registered or the image hasn't finished decoding yet. Callers should fall
 // back to the procedural render path when this returns null.

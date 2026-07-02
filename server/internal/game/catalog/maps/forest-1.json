@@ -697,6 +697,28 @@
           "targetPlayerLabel": "player1",
           "unitType": "raider_roc"
         }
+      },
+      {
+        "x": 21,
+        "y": 53,
+        "id": "recipe-shop-21-53",
+        "buildingType": "recipe-shop",
+        "width": 3,
+        "height": 3,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "recipe-purchase"
+        ],
+        "metadata": {
+          "guardAggroRange": 150,
+          "guardGroupId": "wildborne_spear_maidens",
+          "guardLeashRange": 250,
+          "guardSpawnX": 20,
+          "guardSpawnY": 55,
+          "guardStartingTier": 2,
+          "shopStyle": "druid-recipe-vendor"
+        }
       }
     ],
     "placedUnits": [
@@ -861,9 +883,9 @@
         "damageMultiplierPerWave": 1
       },
       {
-        "x": 22,
-        "y": 54,
-        "id": "neutral-spawn-22-54",
+        "x": 10,
+        "y": 56,
+        "id": "neutral-spawn-10-56",
         "groupId": "__random__",
         "startingTier": 1,
         "aggroRange": 150,

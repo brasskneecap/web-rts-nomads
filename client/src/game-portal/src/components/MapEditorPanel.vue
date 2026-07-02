@@ -1358,7 +1358,45 @@
                   <label>Leash Range</label>
                   <input type="number" min="0" step="10" :value="(selectedEditBuilding.metadata?.['guardLeashRange'] as number | undefined) ?? 0" @input="updateEditMeta('guardLeashRange', +($event.target as HTMLInputElement).value || undefined)" />
                 </div>
+                <div class="edit-field">
+                  <label>Guard Spawn</label>
+                  <div class="guard-spawn-controls">
+                    <button
+                      type="button"
+                      class="guard-spawn-btn"
+                      :class="{ 'guard-spawn-btn--active': placingGuardSpawn }"
+                      @click="togglePlaceGuardSpawn"
+                    >{{ placingGuardSpawn ? 'Click a map cell…' : 'Place Guard Spawn' }}</button>
+                    <button v-if="hasGuardSpawn" type="button" class="guard-spawn-btn" @click="clearGuardSpawn">Clear</button>
+                  </div>
+                  <span class="edit-field__hint">{{ guardSpawnLabel }}</span>
+                </div>
               </template>
+            </template>
+            <!-- Recipe Shop: art style + which recipe list the shop stocks from. -->
+            <template v-if="selectedEditBuilding.buildingType === 'recipe-shop'">
+              <div class="edit-field">
+                <label>Shop Style</label>
+                <select
+                  :value="(selectedEditBuilding.metadata?.['shopStyle'] as string | undefined) ?? ''"
+                  @change="updateEditMeta('shopStyle', ($event.target as HTMLSelectElement).value || undefined)"
+                >
+                  <option value="">Default</option>
+                  <option v-for="style in shopStyleOptions" :key="style" :value="style">{{ style }}</option>
+                </select>
+                <span class="edit-field__hint">Sprite art from assets/buildings/recipe-shops. Default uses the shared recipe-shop sprite.</span>
+              </div>
+              <div class="edit-field">
+                <label>Recipe List</label>
+                <select
+                  :value="(selectedEditBuilding.metadata?.['recipeList'] as string | undefined) ?? ''"
+                  @change="updateEditMeta('recipeList', ($event.target as HTMLSelectElement).value || undefined)"
+                >
+                  <option value="">All recipes</option>
+                  <option v-for="list in recipeListOptions" :key="list.id" :value="list.id">{{ list.name || list.id }}</option>
+                </select>
+                <span class="edit-field__hint">The shop stocks a random sample from this list. All recipes = draw from the global pool.</span>
+              </div>
             </template>
             <div
               v-if="!isPlayerOwnableBuildingType(selectedEditBuilding.buildingType) && !destroyBuildingObjectives.length && !selectedEditBuilding.resourceType && !isShopGuardableBuildingType(selectedEditBuilding.buildingType)"
@@ -1550,7 +1588,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchUnitDefs, saveMapCatalogFile, LevelConflictError } from '@/game/maps/catalog'
+import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchRecipeLists, fetchUnitDefs, saveMapCatalogFile, LevelConflictError, type RecipeListSummary } from '@/game/maps/catalog'
 import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
 import type {
@@ -1606,7 +1644,7 @@ import {
   isTerrainTilesetReady,
   onSheetReady,
 } from '@/game/rendering/terrainTileset'
-import { getBuildingSprite } from '@/game/rendering/buildingSprites'
+import { getBuildingSprite, getRecipeShopStyleSprite, listRecipeShopStyles } from '@/game/rendering/buildingSprites'
 import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { initObstacleDefs, OBSTACLE_DEF_MAP } from '@/game/maps/obstacleDefs'
@@ -1702,6 +1740,9 @@ const neutralHealthMultiplierPerWave = ref(0.0)
 const neutralDamageMultiplier = ref(1.0)
 const neutralDamageMultiplierPerWave = ref(0.0)
 const neutralGroupTiers = ref<NeutralGroupTierSummary[] | null>(null)
+// Recipe lists (from catalog/recipes/lists) for the recipe-shop Recipe List
+// dropdown. Empty until fetchRecipeLists resolves.
+const recipeLists = ref<RecipeListSummary[]>([])
 
 const groupsForCurrentTier = computed<NeutralGroupSummary[]>(() => {
   const tiers = neutralGroupTiers.value
@@ -1764,6 +1805,10 @@ const movingNeutralSpawn = ref<{ id: string; x: number; y: number } | null>(null
 // zone changes; movingClaimPoint resets on any sub-mode change (see watches).
 const selectedClaimPointIndex = ref<number | null>(null)
 const movingClaimPoint = ref(false)
+// Armed by the guard-shop edit panel: the next canvas click sets the selected
+// shop's guardSpawnX/Y (the cell its guards ring around). Cleared on commit,
+// on toggle-off, and when the selected building changes.
+const placingGuardSpawn = ref(false)
 
 const camera = new Camera()
 // Bump the top + left overscan so the user can pan the map's top-left
@@ -1960,6 +2005,17 @@ const selectedEditBuilding = computed(() =>
 // resolves; the mapper picks a squad + tier, the server resolves it at spawn.
 const guardGroupOptions = computed<NeutralGroupSummary[]>(() =>
   allGuardGroups(neutralGroupTiers.value),
+)
+
+// Recipe-shop edit panel options: art styles from the client asset glob, and
+// recipe lists from the server catalog (fetched on mount).
+// Disarm guard-spawn placement whenever the selected building changes, so a
+// stale armed click can't retarget the wrong shop.
+watch(selectedEditBuildingId, () => { placingGuardSpawn.value = false })
+
+const shopStyleOptions = computed<string[]>(() => listRecipeShopStyles())
+const recipeListOptions = computed<RecipeListSummary[]>(() =>
+  [...recipeLists.value].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)),
 )
 
 const selectedEditPlacedUnit = computed(() =>
@@ -2810,6 +2866,48 @@ function updateEditMeta(key: string, value: JsonValue | undefined) {
   }
 }
 
+// True when the selected building has an explicit guard spawn cell set.
+const hasGuardSpawn = computed(() => {
+  const m = selectedEditBuilding.value?.metadata
+  return typeof m?.['guardSpawnX'] === 'number' && typeof m?.['guardSpawnY'] === 'number'
+})
+
+// Human-readable description of the selected shop's guard spawn location.
+const guardSpawnLabel = computed(() => {
+  const m = selectedEditBuilding.value?.metadata
+  if (typeof m?.['guardSpawnX'] === 'number' && typeof m?.['guardSpawnY'] === 'number') {
+    return `Guards spawn at cell (${m['guardSpawnX']}, ${m['guardSpawnY']}).`
+  }
+  return 'Guards spawn at the shop center. Click Place to choose a cell.'
+})
+
+function togglePlaceGuardSpawn() {
+  placingGuardSpawn.value = !placingGuardSpawn.value
+}
+
+// Commits a guard spawn cell to the selected shop (armed via placingGuardSpawn).
+function commitGuardSpawn(cx: number, cy: number) {
+  placingGuardSpawn.value = false
+  const id = selectedEditBuildingId.value
+  if (!id) return
+  model.value = {
+    ...model.value,
+    buildings: model.value.buildings.map((b) => {
+      if (b.id !== id) return b
+      const meta: JsonObject = { ...(b.metadata ?? {}) }
+      meta['guardSpawnX'] = cx
+      meta['guardSpawnY'] = cy
+      return { ...b, metadata: meta }
+    }),
+  }
+}
+
+function clearGuardSpawn() {
+  placingGuardSpawn.value = false
+  updateEditMeta('guardSpawnX', undefined)
+  updateEditMeta('guardSpawnY', undefined)
+}
+
 // Updates the selected building's top-level resourceAmount (the starting
 // resource stock for resource-source buildings like the goldmine). This is a
 // first-class BuildingTile field, not metadata, so it can't go through
@@ -3442,6 +3540,12 @@ function onMouseDown(event: MouseEvent) {
     return
   }
 
+  if (placingGuardSpawn.value) {
+    const cell = getGridCellAtScreen(screen.x, screen.y)
+    if (cell) commitGuardSpawn(cell.x, cell.y)
+    return
+  }
+
   if (movingClaimPoint.value) {
     const cell = getGridCellAtScreen(screen.x, screen.y)
     if (cell) commitMoveClaimPoint(cell.x, cell.y)
@@ -3989,6 +4093,23 @@ function drawSelectionHighlight(ctx: CanvasRenderingContext2D) {
     ctx.strokeRect(b.x * cellSize, b.y * cellSize, b.width * cellSize, b.height * cellSize)
     ctx.restore()
   }
+  // Guard spawn marker: the cell the selected shop's guards ring around.
+  if (b && typeof b.metadata?.['guardSpawnX'] === 'number' && typeof b.metadata?.['guardSpawnY'] === 'number') {
+    const gx = (b.metadata['guardSpawnX'] as number + 0.5) * cellSize
+    const gy = (b.metadata['guardSpawnY'] as number + 0.5) * cellSize
+    ctx.save()
+    ctx.strokeStyle = '#f59e0b'
+    ctx.lineWidth = 2 / camera.zoom
+    ctx.setLineDash([])
+    ctx.beginPath()
+    ctx.arc(gx, gy, cellSize * 0.4, 0, Math.PI * 2)
+    ctx.moveTo(gx - cellSize * 0.55, gy)
+    ctx.lineTo(gx + cellSize * 0.55, gy)
+    ctx.moveTo(gx, gy - cellSize * 0.55)
+    ctx.lineTo(gx, gy + cellSize * 0.55)
+    ctx.stroke()
+    ctx.restore()
+  }
   const ns = selectedEditNeutralSpawn.value
   if (ns) {
     ctx.save()
@@ -4088,7 +4209,12 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
     const def = BUILDING_DEF_MAP.get(building.buildingType)
     const renderDef = getBuildingFallbackRender(building.buildingType)
     const spriteRenderDef = def?.spriteRender
-    const sprite = getBuildingSprite(building.buildingType)
+    // Recipe shops use a per-instance "shopStyle" art override when set.
+    const styleSprite =
+      building.buildingType === 'recipe-shop'
+        ? getRecipeShopStyleSprite(building.metadata?.['shopStyle'] as string | undefined)
+        : null
+    const sprite = styleSprite ?? getBuildingSprite(building.buildingType)
     // Sprite box may extend beyond the grid footprint (e.g. townhall's 3x3
     // sprite on a 3x2 footprint). Falls back to the footprint when no
     // override is set so unchanged buildings render identically.
@@ -4673,6 +4799,7 @@ onMounted(() => {
   void fetchBuildingDefs().then(initBuildingDefs).catch(() => {})
   void fetchObstacleDefs().then(initObstacleDefs).catch(() => {})
   void fetchNeutralGroups().then((tiers) => { neutralGroupTiers.value = tiers }).catch(() => {})
+  void fetchRecipeLists().then((lists) => { recipeLists.value = lists }).catch(() => {})
   void fetchUnitDefs()
     .then(({ units, paths, pathsByUnit }) => {
       initPathBounds(paths)
@@ -5658,6 +5785,26 @@ onBeforeUnmount(() => {
   color: #64748b;
   font-style: italic;
   margin-top: 2px;
+}
+
+.guard-spawn-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.guard-spawn-btn {
+  flex: 1;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 5px;
+  color: #e2e8f0;
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
+.guard-spawn-btn--active {
+  border-color: #f59e0b;
+  color: #f59e0b;
 }
 
 .edit-field input,
