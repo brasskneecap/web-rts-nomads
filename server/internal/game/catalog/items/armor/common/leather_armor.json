@@ -1,0 +1,13 @@
+{
+  "id": "leather_armor",
+  "displayName": "Leather Armor",
+  "description": "+5 armor.",
+  "iconKey": "leather_armor",
+  "kind": "equipment",
+  "tier": "common",
+  "category": "Armor",
+  "slotKind": "armor",
+  "allowedUnitTypes": [],
+  "costGold": 50,
+  "modifiers": { "armor": 5 }
+}

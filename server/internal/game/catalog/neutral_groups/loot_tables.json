@@ -57,6 +57,14 @@
         { "item": "ice_ring",       "min": 34, "max": 67 },
         { "item": "lightning_ring", "min": 68, "max": 100 }
       ]
+    },
+    "merchant_armor": {
+      "kind": "item_subtable",
+      "entries": [
+        { "item": "leather_armor", "min": 1,  "max": 50 },
+        { "item": "half_plate",    "min": 51, "max": 85 },
+        { "item": "plate_armor",   "min": 86, "max": 100 }
+      ]
     }
   },
   "tables": {
@@ -71,9 +79,10 @@
       { "entry": "rare_weapons",         "min": 76, "max": 100 }
     ],
     "merchant_basic": [
-      { "entry": "merchant_weapons",     "min": 1,  "max": 40 },
-      { "entry": "merchant_potions",     "min": 41, "max": 75 },
-      { "entry": "merchant_accessories", "min": 76, "max": 100 }
+      { "entry": "merchant_weapons",     "min": 1,  "max": 35 },
+      { "entry": "merchant_potions",     "min": 36, "max": 65 },
+      { "entry": "merchant_accessories", "min": 66, "max": 85 },
+      { "entry": "merchant_armor",       "min": 86, "max": 100 }
     ]
   }
 }

@@ -70,6 +70,13 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 		})
 	})
 
+	mux.HandleFunc("/catalog/item-lists", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"lists": game.ListItemListDefs(),
+		})
+	})
+
 	mux.HandleFunc("/catalog/recipes", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{

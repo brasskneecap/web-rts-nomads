@@ -4,7 +4,7 @@
   "description": "+5 lightning damage on hit.",
   "iconKey": "lightning_ring",
   "kind": "equipment",
-  "tier": "common",
+  "tier": "rare",
   "category": "Accessory",
   "slotKind": "any",
   "allowedUnitTypes": [],

@@ -135,8 +135,8 @@ func TestPopulateShopInventories_LootTableDeterministic(t *testing.T) {
 
 // TestPopulateShopInventories_MarketplaceFallback — Requirement 1, precedence 3.
 // A player-built marketplace with no authored shopFixedInventory or
-// shopLootTableId ships with the focused defaultMarketplaceStarterInventory
-// (currently broad_sword + minor healing potion), not the entire catalog.
+// shopLootTableId stocks the authored "marketplace" item list
+// (catalog/items/lists/marketplace.json), not the entire catalog.
 func TestPopulateShopInventories_MarketplaceFallback(t *testing.T) {
 	s := makeShopTestState(t, 1)
 	owner := "p1"
@@ -147,7 +147,11 @@ func TestPopulateShopInventories_MarketplaceFallback(t *testing.T) {
 	got := shopInventoryItemIDs(s.buildingsByID["ms-default"])
 	s.mu.Unlock()
 
-	want := defaultMarketplaceStarterInventory
+	marketplaceList, ok := getItemListDef("marketplace")
+	if !ok {
+		t.Fatal(`item list "marketplace" not found`)
+	}
+	want := marketplaceList.Items
 	if len(got) != len(want) {
 		t.Fatalf("marketplace fallback length: want %d, got %d (want=%v got=%v)", len(want), len(got), want, got)
 	}

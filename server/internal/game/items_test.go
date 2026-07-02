@@ -82,8 +82,8 @@ func spawnBronzeUnit(t *testing.T, s *GameState, playerID string) *Unit {
 // and that both equipment and consumable kinds are represented.
 func TestItemCatalog_AllItemsLoaded(t *testing.T) {
 	defs := ListItemDefs()
-	if len(defs) != 16 {
-		t.Fatalf("expected 16 item defs, got %d", len(defs))
+	if len(defs) != 20 {
+		t.Fatalf("expected 20 item defs, got %d", len(defs))
 	}
 
 	byID := make(map[string]*ItemDef, len(defs))
@@ -121,6 +121,34 @@ func TestItemCatalog_AllItemsLoaded(t *testing.T) {
 			}
 			if len(def.OnHitElemental) == 0 {
 				t.Errorf("%s: expected onHitElemental entries", id)
+			}
+		}
+	}
+
+	// Enchanted ring: a stat-modifier accessory (no on-hit elemental).
+	if def, ok := byID["enchanted_ring"]; !ok {
+		t.Error(`missing accessory "enchanted_ring"`)
+	} else {
+		if def.Kind != ItemKindEquipment {
+			t.Errorf("enchanted_ring: expected kind equipment, got %q", def.Kind)
+		}
+		if def.Modifiers == nil || def.Modifiers.Damage <= 0 || def.Modifiers.Armor <= 0 {
+			t.Errorf("enchanted_ring: expected positive damage and armor modifiers, got %+v", def.Modifiers)
+		}
+	}
+
+	// Armor: flat armor modifiers (ordering/shape invariants live in
+	// armor_items_test.go).
+	armors := []string{"leather_armor", "half_plate", "plate_armor"}
+	for _, id := range armors {
+		if def, ok := byID[id]; !ok {
+			t.Errorf("missing armor %q", id)
+		} else {
+			if def.Kind != ItemKindEquipment {
+				t.Errorf("%s: expected kind equipment, got %q", id, def.Kind)
+			}
+			if def.Modifiers == nil || def.Modifiers.Armor <= 0 {
+				t.Errorf("%s: expected positive armor modifier", id)
 			}
 		}
 	}

@@ -4,7 +4,7 @@
   "description": "+5 fire damage on hit.",
   "iconKey": "fire_ring",
   "kind": "equipment",
-  "tier": "common",
+  "tier": "rare",
   "category": "Accessory",
   "slotKind": "any",
   "allowedUnitTypes": [],

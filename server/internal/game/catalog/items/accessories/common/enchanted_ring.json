@@ -1,0 +1,13 @@
+{
+  "id": "enchanted_ring",
+  "displayName": "Enchanted Ring",
+  "description": "+10 Damage and Armor",
+  "iconKey": "enchanted_ring",
+  "kind": "equipment",
+  "tier": "common",
+  "category": "Accessory",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 75,
+  "modifiers": { "damage": 10, "armor": 10 }
+}

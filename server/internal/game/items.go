@@ -122,13 +122,25 @@ type ItemDef struct {
 // before they run.
 var itemCatalogSingleton = loadItemCatalog()
 
+// itemListsSubdir is the catalog/items subdirectory that holds named item
+// lists (a different schema — see ItemListDef). It is skipped by the item
+// def walk so list files are never parsed as item defs. Mirrors
+// recipeListsSubdir.
+const itemListsSubdir = "catalog/items/lists"
+
 func loadItemCatalog() map[string]*ItemDef {
 	catalog := make(map[string]*ItemDef)
 	err := fs.WalkDir(itemDefsFS, "catalog/items", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".json") {
+		if d.IsDir() {
+			if path == itemListsSubdir {
+				return fs.SkipDir // item lists are loaded separately
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".json") {
 			return nil
 		}
 		data, err := itemDefsFS.ReadFile(path)
@@ -186,6 +198,79 @@ func validateItemDef(def *ItemDef) error {
 func ListItemDefs() []*ItemDef {
 	defs := make([]*ItemDef, 0, len(itemCatalogSingleton))
 	for _, def := range itemCatalogSingleton {
+		defs = append(defs, def)
+	}
+	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
+	return defs
+}
+
+// ItemListDef is a named, curated set of item IDs, authored under
+// catalog/items/lists/<id>.json. Mirrors RecipeListDef: shops resolve a list
+// by ID to stock its items instead of hardcoding item IDs in Go (the
+// player-built marketplace stocks the "marketplace" list).
+type ItemListDef struct {
+	ID    string   `json:"id"`
+	Name  string   `json:"name"`
+	Items []string `json:"items"`
+}
+
+var itemListCatalogSingleton = loadItemListCatalog()
+
+func loadItemListCatalog() map[string]*ItemListDef {
+	catalog := make(map[string]*ItemListDef)
+	entries, err := fs.ReadDir(itemDefsFS, itemListsSubdir)
+	if err != nil {
+		// No lists/ directory is valid — item lists are optional.
+		return catalog
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		path := itemListsSubdir + "/" + e.Name()
+		data, err := itemDefsFS.ReadFile(path)
+		if err != nil {
+			panic(path + ": " + err.Error())
+		}
+		var def ItemListDef
+		if err := json.Unmarshal(data, &def); err != nil {
+			panic(path + ": " + err.Error())
+		}
+		if def.ID == "" {
+			panic(path + `: missing "id" field`)
+		}
+		if err := validateItemListDef(&def); err != nil {
+			panic(path + ": " + err.Error())
+		}
+		catalog[def.ID] = &def
+	}
+	return catalog
+}
+
+// validateItemListDef enforces: at least one item, and every referenced item
+// ID resolves to a real item def. Called at catalog load (fail-fast).
+func validateItemListDef(def *ItemListDef) error {
+	if len(def.Items) == 0 {
+		return fmt.Errorf("item list %q: needs at least 1 item", def.ID)
+	}
+	for i, id := range def.Items {
+		if _, ok := getItemDef(id); !ok {
+			return fmt.Errorf("item list %q: items[%d] %q is not a known item", def.ID, i, id)
+		}
+	}
+	return nil
+}
+
+func getItemListDef(id string) (*ItemListDef, bool) {
+	def, ok := itemListCatalogSingleton[id]
+	return def, ok
+}
+
+// ListItemListDefs returns all item-list defs sorted by ID (for the HTTP
+// route and deterministic iteration).
+func ListItemListDefs() []*ItemListDef {
+	defs := make([]*ItemListDef, 0, len(itemListCatalogSingleton))
+	for _, def := range itemListCatalogSingleton {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })

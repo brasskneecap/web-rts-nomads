@@ -35,12 +35,16 @@ func (s *GameState) shopItemTargetCountForPlayerLocked(playerID string) int {
 	return target
 }
 
-// defaultMarketplaceStarterInventory is the precedence-3 fallback list for
-// a player-built marketplace that the map author did not configure with a
-// shopFixedInventory or shopLootTableId. Intentionally small so the
-// marketplace ships as a focused "early game" shop; later progression
-// (tiered marketplaces, unlocks) can grow it by either authoring per-map
-// overrides or by extending this list.
+// defaultMarketplaceItemListID names the authored item list
+// (catalog/items/lists/<id>.json) a player-built marketplace stocks when the
+// map author did not configure a shopFixedInventory or shopLootTableId.
+// Growing the marketplace is a catalog edit, not a code change — mirrors how
+// recipe shops resolve recipe lists.
+const defaultMarketplaceItemListID = "marketplace"
+
+// defaultMarketplaceStarterInventory is the last-ditch fallback should the
+// "marketplace" item list ever be missing from the embedded catalog (it is
+// validated at load, so this is belt-and-braces, not an expected path).
 var defaultMarketplaceStarterInventory = []string{
 	"broad_sword",
 	"potion_common_heal",
@@ -195,11 +199,16 @@ func (s *GameState) populateShopInventoryForBuildingLocked(b *protocol.BuildingT
 	switch b.BuildingType {
 	case "marketplace":
 		// Player-built marketplace with no authored shopFixedInventory /
-		// shopLootTableId ships with defaultMarketplaceStarterInventory —
-		// a focused early-game list. The legacy "every item with
-		// RequiredBuilding == marketplace" behavior is intentionally
-		// retired; authors who want a richer marketplace declare it via
-		// shopFixedInventory on the map JSON.
+		// shopLootTableId stocks the authored "marketplace" item list.
+		// The legacy "every item with RequiredBuilding == marketplace"
+		// behavior is intentionally retired; authors who want a per-map
+		// marketplace declare it via shopFixedInventory on the map JSON.
+		if list, ok := getItemListDef(defaultMarketplaceItemListID); ok {
+			b.ShopInventory = makeShopStockEntries(list.Items, b.BuildingType)
+			return
+		}
+		slog.Warn("populateShopInventoryForBuildingLocked: marketplace item list missing; using starter fallback",
+			"listID", defaultMarketplaceItemListID)
 		b.ShopInventory = makeShopStockEntries(defaultMarketplaceStarterInventory, b.BuildingType)
 		return
 	case "neutral-shop":

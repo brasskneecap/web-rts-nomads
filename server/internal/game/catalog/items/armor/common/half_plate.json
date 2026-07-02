@@ -1,0 +1,13 @@
+{
+  "id": "half_plate",
+  "displayName": "Half Plate",
+  "description": "+10 armor.",
+  "iconKey": "half_plate",
+  "kind": "equipment",
+  "tier": "common",
+  "category": "Armor",
+  "slotKind": "armor",
+  "allowedUnitTypes": [],
+  "costGold": 100,
+  "modifiers": { "armor": 10 }
+}

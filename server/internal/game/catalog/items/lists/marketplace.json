@@ -1,0 +1,12 @@
+{
+  "id": "marketplace",
+  "name": "Marketplace",
+  "items": [
+    "broad_sword",
+    "leather_armor",
+    "half_plate",
+    "plate_armor",
+    "enchanted_ring",
+    "potion_common_heal"
+  ]
+}

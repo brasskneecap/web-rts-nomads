@@ -1,0 +1,13 @@
+{
+  "id": "plate_armor",
+  "displayName": "Plate Armor",
+  "description": "+20 armor.",
+  "iconKey": "plate_armor",
+  "kind": "equipment",
+  "tier": "common",
+  "category": "Armor",
+  "slotKind": "armor",
+  "allowedUnitTypes": [],
+  "costGold": 200,
+  "modifiers": { "armor": 20 }
+}
