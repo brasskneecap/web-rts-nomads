@@ -44,6 +44,12 @@ type WaveManager struct {
 	// for in continuous mode. tickNeutralCampsLocked resets all camps when this
 	// lags CurrentWave, giving "camps reset at the start of each new wave."
 	NeutralResetWave int
+	// SpawnedThisWave counts wave-gated enemy units (enemy faction, not
+	// ignoreWaveClear) spawned since the current wave activated. Reset on
+	// every wave activation (prep→active and the continuous upgrade→active
+	// rollover). Guards the clear-the-field transition: an empty field does
+	// NOT complete a wave whose spawns (commonly delayed) haven't fired yet.
+	SpawnedThisWave int
 }
 
 const enemyPlayerID = "__enemy__"
@@ -139,6 +145,7 @@ func (s *GameState) tickWaveLocked(dt float64) {
 			wm.CurrentWave++
 			wm.State = "active"
 			wm.Timer = 0
+			wm.SpawnedThisWave = 0
 			// Per-wave reset of pathing diagnostics + building strike count so the
 			// debug snapshot reflects only the current wave's behaviour and the
 			// escalation system doesn't carry forward stale memos.
@@ -183,9 +190,17 @@ func (s *GameState) tickWaveLocked(dt float64) {
 		// Discrete maps (and a continuous map's final wave): clear the field to
 		// progress. Allow clear once the wave has been active for at least 5
 		// seconds so spawners with 0-delay have had a chance to place enemies on
-		// the field. After that, transition as soon as all enemies are dead.
+		// the field. After that, transition as soon as all enemies are dead —
+		// but ONLY once this wave's spawns have actually fired. Spawn delays
+		// commonly exceed 5s, and without the guard an empty field completed
+		// the wave before a single one of its enemies existed (in the field:
+		// forest-1's final wave "cleared" six seconds after activating). A
+		// wave whose spawnpoints never fire (misconfigured map) still
+		// terminates once the spawn window closes.
 		const minActiveSeconds = 5.0
-		if wm.Timer >= minActiveSeconds && s.countEnemyUnitsLocked() == 0 {
+		spawnWindowClosed := wm.WaveDuration > 0 && wm.Timer >= wm.WaveDuration
+		canClear := wm.SpawnedThisWave > 0 || spawnWindowClosed || wm.WaveDuration <= 0
+		if wm.Timer >= minActiveSeconds && canClear && s.countEnemyUnitsLocked() == 0 {
 			// Metrics: credit every human player with a wave clear before the
 			// state actually transitions away from "active." Mirrors the camp
 			// clear hook: in single-team campaign play this is equivalent to
@@ -579,6 +594,14 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			if captureDest == nil {
 				s.seedEnemyObjectiveAtSpawnLocked(unit, targetPlayerLabel, spawnPos)
 			}
+		}
+
+		// Wave-clear guard bookkeeping: count enemy-faction spawns that gate
+		// the clear-the-field transition (neutral-alliance and ignoreWaveClear
+		// units are excluded from countEnemyUnitsLocked, so they don't count
+		// here either). See WaveManager.SpawnedThisWave.
+		if !spawnNeutral && !ignoreWaveClear {
+			s.WaveManager.SpawnedThisWave += len(spawnedUnits)
 		}
 
 		// Drop path requests whose objective is cached unreachable army-wide.

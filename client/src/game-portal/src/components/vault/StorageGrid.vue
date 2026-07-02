@@ -25,6 +25,8 @@
         @click="cell.item ? emit('select', cell.item.instanceId) : undefined"
         @dragstart="cell.item ? onCellDragStart($event, cell.item) : undefined"
         @dragend="emit('item-dragend')"
+        @mouseenter="cell.item ? onCellEnter($event, cell.item) : undefined"
+        @mouseleave="onCellLeave"
       >
         <template v-if="cell.item">
           <ActionIcon
@@ -36,11 +38,14 @@
       </button>
     </div>
   </div>
+
+  <ItemHoverTooltip :item="hoveredTooltip" :anchor="anchorRect" />
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import ActionIcon from '@/components/ActionIcon.vue'
+import ItemHoverTooltip, { type ItemTooltipData } from '@/components/ItemHoverTooltip.vue'
 import type { VaultStorageItem } from './types'
 
 const props = defineProps<{
@@ -59,7 +64,33 @@ const emit = defineEmits<{
   'storage-drop': []
 }>()
 
+// ── Floating tooltip (shared ItemHoverTooltip, teleported to body) ──────────
+const hoveredItem = ref<VaultStorageItem | null>(null)
+const anchorRect = ref<DOMRect | null>(null)
+
+const hoveredTooltip = computed<ItemTooltipData | null>(() => {
+  const item = hoveredItem.value
+  if (!item) return null
+  return {
+    displayName: item.displayName,
+    tier: item.tier,
+    tierColor: item.tierColor,
+    body: item.tooltipBody,
+  }
+})
+
+function onCellEnter(e: MouseEvent, item: VaultStorageItem) {
+  anchorRect.value = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  hoveredItem.value = item
+}
+
+function onCellLeave() {
+  hoveredItem.value = null
+}
+
 function onCellDragStart(e: DragEvent, item: VaultStorageItem) {
+  // Hide the tooltip while dragging — it would trail the pointer otherwise.
+  hoveredItem.value = null
   e.dataTransfer?.setData('text/plain', String(item.instanceId))
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
   // Drag just the item icon (the ActionIcon canvas), not the whole cell frame.

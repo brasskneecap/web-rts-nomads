@@ -107,7 +107,10 @@ function formatSeconds(s: number): string {
 
 const waveLabel = computed(() => {
   const w = props.ui.wave
-  if (w.state === 'complete') return 'Victory'
+  // "complete" only means the wave state machine finished — actual victory
+  // is gated server-side on required objectives too. Don't say "Victory"
+  // here; the real victory/defeat flow owns that word.
+  if (w.state === 'complete') return 'Waves Complete'
   if (w.state === 'prep') {
     const next = w.currentWave + 1
     return `Wave ${next}`

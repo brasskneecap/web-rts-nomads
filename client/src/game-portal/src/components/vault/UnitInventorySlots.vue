@@ -30,23 +30,13 @@
     </div>
   </div>
 
-  <!-- Tooltip is teleported to <body> so it floats above every panel and is
-       never clipped by the unit list's scroll container. Positioned over the
-       hovered slot via its captured viewport rect. -->
-  <Teleport to="body">
-    <div v-if="hovered" class="inv-tooltip" :style="tooltipStyle">
-      <div class="inv-tooltip__title">{{ hovered.item!.displayName }}</div>
-      <div v-if="hovered.item!.tier" class="inv-tooltip__tier" :style="{ color: hovered.item!.tierColor }">
-        {{ capitalize(hovered.item!.tier!) }}
-      </div>
-      <div v-if="hovered.item!.tooltipBody" class="inv-tooltip__body">{{ hovered.item!.tooltipBody }}</div>
-    </div>
-  </Teleport>
+  <ItemHoverTooltip :item="hoveredTooltip" :anchor="anchorRect" />
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import ActionIcon from '@/components/ActionIcon.vue'
+import ItemHoverTooltip, { type ItemTooltipData } from '@/components/ItemHoverTooltip.vue'
 import type { VaultInventorySlot } from './types'
 
 const props = defineProps<{
@@ -63,13 +53,20 @@ const emit = defineEmits<{
   'slot-drop': [slotIndex: number]
 }>()
 
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1)
-}
-
-// ── Floating tooltip (teleported to body) ───────────────────────────────────
+// ── Floating tooltip (shared ItemHoverTooltip, teleported to body) ──────────
 const hovered = ref<VaultInventorySlot | null>(null)
 const anchorRect = ref<DOMRect | null>(null)
+
+const hoveredTooltip = computed<ItemTooltipData | null>(() => {
+  const item = hovered.value?.item
+  if (!item) return null
+  return {
+    displayName: item.displayName,
+    tier: item.tier,
+    tierColor: item.tierColor,
+    body: item.tooltipBody,
+  }
+})
 
 function onSlotEnter(e: MouseEvent, slot: VaultInventorySlot) {
   if (!slot.item) {
@@ -83,17 +80,6 @@ function onSlotEnter(e: MouseEvent, slot: VaultInventorySlot) {
 function onSlotLeave() {
   hovered.value = null
 }
-
-const tooltipStyle = computed(() => {
-  const r = anchorRect.value
-  if (!r) return {}
-  // Centered above the slot; translate up by its own height via transform.
-  return {
-    left: `${r.left + r.width / 2}px`,
-    top: `${r.top - 8}px`,
-    transform: 'translate(-50%, -100%)',
-  }
-})
 
 function isDropTarget(slot: VaultInventorySlot): boolean {
   return props.acceptsDrop && !slot.locked && !slot.item
@@ -191,41 +177,4 @@ function onDrop(e: DragEvent, slot: VaultInventorySlot) {
   pointer-events: none;
 }
 
-/* Teleported to <body>: fixed to the viewport, positioned over the hovered
-   slot, floating above all panels. */
-.inv-tooltip {
-  position: fixed;
-  z-index: 1000;
-  min-width: 130px;
-  max-width: 220px;
-  background: rgba(10, 12, 20, 0.97);
-  border: 1px solid rgba(212, 168, 79, 0.4);
-  border-radius: 6px;
-  padding: 7px 10px;
-  pointer-events: none;
-  white-space: normal;
-  text-align: left;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-}
-
-.inv-tooltip__title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #f5e4c0;
-  margin-bottom: 2px;
-}
-
-.inv-tooltip__tier {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-bottom: 3px;
-}
-
-.inv-tooltip__body {
-  font-size: 11px;
-  color: rgba(232, 217, 184, 0.75);
-  line-height: 1.4;
-}
 </style>

@@ -40,6 +40,12 @@ type NeutralCamp struct {
 	// is on). When the camp's final unit dies, this gates loot: an enemy-wiped
 	// camp drops nothing (see maybeDropChestForCampLocked). Reset on (re)spawn.
 	LastKillerWasEnemy bool
+	// LastKillerWasPlayer records whether the most recent camp-unit kill was
+	// landed by a real player (not the enemy faction, not neutrals, not
+	// anonymous damage). When the camp's final unit dies, this gates the
+	// kill_camps objective metric: only a player-team wipe counts as "the
+	// team killed this camp." Reset on (re)spawn alongside LastKillerWasEnemy.
+	LastKillerWasPlayer bool
 
 	AggroRange              float64
 	LeashRange              float64
@@ -228,6 +234,8 @@ func (s *GameState) markCampKillerLocked(campID, killerOwnerID string) {
 	for i := range s.NeutralCamps {
 		if s.NeutralCamps[i].PlacementID == campID {
 			s.NeutralCamps[i].LastKillerWasEnemy = killerOwnerID == enemyPlayerID
+			s.NeutralCamps[i].LastKillerWasPlayer = killerOwnerID != "" &&
+				killerOwnerID != enemyPlayerID && killerOwnerID != neutralPlayerID
 			return
 		}
 	}
@@ -255,13 +263,19 @@ func (s *GameState) onUnitRemovedFromCampLocked(unitID int, campID string) {
 				// before invoking removeUnitLocked.
 				if len(camp.AliveUnitIDs) == 0 && camp.State == NeutralCampActive {
 					s.maybeDropChestForCampLocked(camp)
-					// Metrics: credit every human player on the team that
-					// cleared this camp. Phase 1 has a single shared team for
-					// campaign play (TeamID 0 across all human players), so
+					// Metrics: credit the camp clear ONLY when the killing blow
+					// came from a real player (LastKillerWasPlayer — set by the
+					// damage pipeline before removal). A camp wiped by the
+					// __enemy__ wave faction or by anonymous damage is nobody's
+					// objective progress; crediting it regardless silently
+					// completed kill_camps objectives the player never earned.
+					// Phase 1 has a single shared team for campaign play, so
 					// crediting all non-AI players is equivalent to "the team
 					// that landed the killing blow." When PvP campaign ships,
 					// this needs to thread the killer's TeamID through.
-					s.recordCampClearedMetricLocked(camp.CurrentTier)
+					if camp.LastKillerWasPlayer {
+						s.recordCampClearedMetricLocked(camp.CurrentTier)
+					}
 				}
 				return
 			}
@@ -311,8 +325,9 @@ func (s *GameState) spawnGroupForCampLocked(camp *NeutralCamp) {
 	}
 
 	camp.SpawnedGroupID = group.ID
-	// Fresh roster — clear any stale enemy-kill marker from the prior cycle.
+	// Fresh roster — clear any stale killer markers from the prior cycle.
 	camp.LastKillerWasEnemy = false
+	camp.LastKillerWasPlayer = false
 
 	s.ensureNeutralPlayerLocked()
 

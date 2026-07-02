@@ -293,13 +293,13 @@
         "resources": [
           {
             "accent": "#d4a84f",
-            "amount": 1500,
+            "amount": 500,
             "id": "NORM-STR",
             "label": "Gold"
           },
           {
             "accent": "#7a9a52",
-            "amount": 1180,
+            "amount": 180,
             "id": "NORM-STR",
             "label": "Wood"
           },

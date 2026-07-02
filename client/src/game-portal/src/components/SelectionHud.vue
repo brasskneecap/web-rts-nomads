@@ -271,10 +271,13 @@
               'inventory-slot--locked': slot.locked,
               'inventory-slot--equip-target': !slot.locked && !slot.occupied && ui.vaultSelectedInstanceId !== null,
             }"
-            :title="slot.title"
+            :title="slot.tooltip ? undefined : slot.title"
+            :aria-label="slot.title"
             :type="slot.locked ? undefined : 'button'"
             :disabled="slot.locked || undefined"
             @click="!slot.locked ? onInventorySlotClick(slot) : undefined"
+            @mouseenter="slot.tooltip ? onInventorySlotEnter($event, slot) : undefined"
+            @mouseleave="onInventorySlotLeave"
           >
             <img
               v-if="slot.iconUrl"
@@ -288,6 +291,9 @@
             </div>
           </component>
         </div>
+        <!-- Item hover tooltip for occupied inventory slots — the same styled
+             game tooltip used by the vault storage grid and unit cards. -->
+        <ItemHoverTooltip :item="hoveredInventoryTooltip" :anchor="inventoryAnchorRect" />
       </section>
 
       <section class="selection-panel selection-panel--actions">
@@ -350,6 +356,12 @@
               @contextmenu.prevent="$emit('action', 'autocast-toggle-' + ui.selection.actions[i - 1].id)"
             >
               <ActionIcon :action="ui.selection.actions[i - 1]" />
+              <!-- Remaining shop stock, bottom-right — same visual language
+                   as the Match Menu shop cards' corner badge. -->
+              <span
+                v-if="ui.selection.actions[i - 1].stockCount"
+                class="action-cell__stock"
+              >{{ ui.selection.actions[i - 1].stockCount }}</span>
               <!-- Ability cooldown clock-wipe overlay. Shares the same
                    conic-gradient + countdown-number visual language as the
                    perk cooldown overlay so cooldowns read consistently
@@ -429,6 +441,8 @@ import uiPanelUrl from '@/assets/ui/themes/default/footer_panel.png'
 import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
 import theme from '@/assets/ui/themes/default/theme.json'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
+import { TIER_COLORS, buildItemTooltipBody } from '@/game/items/itemRules'
+import ItemHoverTooltip, { type ItemTooltipData } from '@/components/ItemHoverTooltip.vue'
 import { getActionIconImage } from '@/game/rendering/actionIconSprites'
 import { getResourceIconUrl } from '@/game/rendering/resourceSprites'
 
@@ -634,6 +648,7 @@ const inventorySlots = computed(() => {
         title: 'Locked slot',
         instanceId: null as number | null,
         isConsumable: false,
+        tooltip: null as ItemTooltipData | null,
       }
     }
 
@@ -649,6 +664,7 @@ const inventorySlots = computed(() => {
         title: vaultId !== null ? 'Click to equip selected item' : 'Empty slot',
         instanceId: null as number | null,
         isConsumable: false,
+        tooltip: null as ItemTooltipData | null,
       }
     }
 
@@ -664,9 +680,33 @@ const inventorySlots = computed(() => {
       title: def ? `${def.displayName} — ${actionHint}` : held.itemId,
       instanceId: held.instanceId,
       isConsumable,
+      // Styled hover tooltip (replaces the native title for occupied slots).
+      tooltip: {
+        displayName: def?.displayName ?? held.itemId,
+        tier: def?.tier,
+        tierColor: def?.tier
+          ? (TIER_COLORS[def.tier as keyof typeof TIER_COLORS] ?? TIER_COLORS.common)
+          : undefined,
+        body: def ? buildItemTooltipBody(def) : '',
+        hint: actionHint,
+      } as ItemTooltipData,
     }
   })
 })
+
+// ── Inventory slot hover tooltip ────────────────────────────────────────────
+const hoveredInventoryTooltip = ref<ItemTooltipData | null>(null)
+const inventoryAnchorRect = ref<DOMRect | null>(null)
+
+function onInventorySlotEnter(e: MouseEvent, slot: { tooltip: ItemTooltipData | null }) {
+  if (!slot.tooltip) return
+  inventoryAnchorRect.value = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  hoveredInventoryTooltip.value = slot.tooltip
+}
+
+function onInventorySlotLeave() {
+  hoveredInventoryTooltip.value = null
+}
 
 function onInventorySlotClick(slot: {
   index: number
@@ -675,6 +715,9 @@ function onInventorySlotClick(slot: {
   instanceId: number | null
   isConsumable: boolean
 }) {
+  // The click may consume/unequip the hovered item — don't leave a tooltip
+  // describing a slot that just changed.
+  hoveredInventoryTooltip.value = null
   const unit = props.ui.selectedUnits[0]
   if (!unit) return
 
@@ -1519,6 +1562,21 @@ button.inventory-slot:focus-visible {
   padding: 0;
   cursor: pointer;
   image-rendering: pixelated;
+}
+
+/* Remaining shop stock in the button's bottom-right corner. Mirrors
+   MatchMenu's .shop-slot__stock so stock reads identically in the Match Menu
+   shop cards and the in-world building panel. */
+.action-cell__stock {
+  position: absolute;
+  bottom: 7px;
+  right: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  line-height: 1;
 }
 
 /* ── Action hover tooltip (move/attack/patrol/build/train) ───────────────── */

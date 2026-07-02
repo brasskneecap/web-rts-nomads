@@ -162,6 +162,7 @@ func (s *GameState) tickUpgradePhaseLocked() {
 			wm.CurrentWave++
 			wm.State = "active"
 			wm.Timer = 0
+			wm.SpawnedThisWave = 0
 			for _, u := range s.Units {
 				if u == nil {
 					continue

@@ -87,17 +87,37 @@ func (s *GameState) evaluateObjectivesLocked() {
 		runtime := &s.Objectives[i]
 		switch runtime.Def.Scope {
 		case ObjectiveScopeTeam:
+			prev := runtime.TeamState
 			EvaluateObjective(s, runtime.Def, &teamMetrics, &runtime.TeamState)
+			logObjectiveFlip(s.Tick, runtime.Def, "", prev, runtime.TeamState)
 		case ObjectiveScopePlayer:
 			for playerID, player := range s.Players {
 				if playerID == enemyPlayerID || playerID == neutralPlayerID {
 					continue
 				}
 				state := runtime.ensurePlayerState(playerID)
+				prev := *state
 				EvaluateObjective(s, runtime.Def, &player.Metrics, state)
+				logObjectiveFlip(s.Tick, runtime.Def, playerID, prev, *state)
 				runtime.storePlayerState(playerID, *state)
 			}
 		}
+	}
+}
+
+// logObjectiveFlip emits one log line when an objective transitions into its
+// completed or failed absorbing state. Discrete events only — never per-tick
+// data (see the diagnostics logging rules). playerID is empty for team-scope
+// objectives. These lines are what make an unexpected match end diagnosable
+// from the server console after the fact.
+func logObjectiveFlip(tick int, def ObjectiveDef, playerID string, prev, cur ObjectiveState) {
+	if cur.Completed && !prev.Completed {
+		log.Printf("[OBJECTIVE] completed id=%s scope=%s required=%t player=%s progress=%d/%d tick=%d",
+			def.ID, def.Scope, def.Required, playerID, cur.Current, cur.Required, tick)
+	}
+	if cur.Failed && !prev.Failed {
+		log.Printf("[OBJECTIVE] failed id=%s scope=%s required=%t player=%s progress=%d/%d tick=%d",
+			def.ID, def.Scope, def.Required, playerID, cur.Current, cur.Required, tick)
 	}
 }
 

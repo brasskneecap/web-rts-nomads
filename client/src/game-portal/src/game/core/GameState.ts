@@ -231,6 +231,11 @@ export type ActionItem = {
   /** Full cooldown duration corresponding to cooldownRemaining. Drives the
    *  clock-wipe fraction (remaining / total). */
   cooldownTotal?: number
+  /** Remaining purchasable stock for shop buy actions. Rendered as a
+   *  bottom-right corner number on the action button (same visual as the
+   *  Match Menu shop cards' badge), NOT as tooltip text. Absent for
+   *  non-shop actions and sold-out slots. */
+  stockCount?: number
 }
 
 export type DetailItem = {
@@ -3760,13 +3765,13 @@ export function getBuildingActions(
       if (!itemDef) continue
       const soldOut = slot.quantity <= 0
       // The vault is unbounded, so purchases are never blocked for lack of room.
+      // Remaining stock is NOT tooltip text — it rides stockCount and renders
+      // as the button's bottom-right corner number.
       let tooltipBody = buildItemTooltipBody(itemDef)
       if (soldOut) {
         tooltipBody = `${tooltipBody}\n\nSold out at this shop.`
       } else if (shopLocked) {
         tooltipBody = `${tooltipBody}\n\nGuards remain — clear them to unlock this shop.`
-      } else if (slot.quantity > 0) {
-        tooltipBody = `${tooltipBody}\n\nStock remaining: ${slot.quantity}`
       }
       actions.push({
         id: `buy-item-${itemDef.id}`,
@@ -3776,6 +3781,7 @@ export function getBuildingActions(
         tooltipTitle: itemDef.displayName,
         tooltipBody,
         disabled: shopLocked || soldOut,
+        ...(soldOut ? {} : { stockCount: slot.quantity }),
       })
     }
 

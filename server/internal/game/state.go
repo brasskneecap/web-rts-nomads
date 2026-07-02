@@ -3012,6 +3012,13 @@ func (s *GameState) checkVictoryLocked() {
 		return
 	}
 	s.victoryAchieved = true
+	// Game-over cause diagnostics: one line naming the trigger, so an
+	// unexpected match end is attributable from the console alone.
+	slog.Info("[GAME OVER] victory: wave gate + all required objectives complete",
+		"waveState", s.WaveManager.State,
+		"wave", s.WaveManager.CurrentWave,
+		"totalWaves", s.WaveManager.TotalWaves,
+		"tick", s.Tick)
 }
 
 // waveOrTownhallConditionMetLocked reports whether the legacy victory rule
@@ -3113,6 +3120,13 @@ func (s *GameState) checkPlayerLossLocked() {
 		team := s.playerTeamLocked(playerID)
 		if teamEverHad[team] && teamTownhalls[team] == 0 {
 			s.lostPlayerIDs[playerID] = true
+			// Game-over cause diagnostics — counterpart of the victory log in
+			// checkVictoryLocked.
+			slog.Info("[GAME OVER] defeat: player's team lost all townhalls",
+				"playerID", playerID,
+				"team", team,
+				"wave", s.WaveManager.CurrentWave,
+				"tick", s.Tick)
 		}
 	}
 }

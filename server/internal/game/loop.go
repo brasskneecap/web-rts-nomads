@@ -31,20 +31,28 @@ func (l *Loop) Start() {
 	go func() {
 		const dt = 1.0 / 20.0
 
+		// Once the game is over the simulation freezes (no more Update calls)
+		// but the loop KEEPS broadcasting the final state until Stop() —
+		// in production that's DeleteMatch at the end of OnGameOver's
+		// 15-second wind-down. Halting on the game-over tick would make the
+		// end screen depend on a single snapshot delivery; a client that
+		// missed that one packet froze with no end screen (see the frozen
+		// forest-1 match post-mortem).
+		gameOverFired := false
+
 		for {
 			select {
 			case <-l.ticker.C:
-				l.state.Update(dt)
-				l.broadcaster.BroadcastSnapshot()
-
-				if l.state.IsGameOver() {
-					l.ticker.Stop()
-					l.stopOnce.Do(func() { close(l.quit) })
-					if l.OnGameOver != nil {
-						l.OnGameOver()
+				if !gameOverFired {
+					l.state.Update(dt)
+					if l.state.IsGameOver() {
+						gameOverFired = true
+						if l.OnGameOver != nil {
+							l.OnGameOver()
+						}
 					}
-					return
 				}
+				l.broadcaster.BroadcastSnapshot()
 
 			case <-l.quit:
 				l.ticker.Stop()

@@ -17,8 +17,8 @@
     "effectLength": 30
   },
   "resourceCost": {
-    "gold": 250,
-    "wood": 200
+    "gold": 200,
+    "wood": 250
   },
   "selectionRing": {
     "radiusX": 1,

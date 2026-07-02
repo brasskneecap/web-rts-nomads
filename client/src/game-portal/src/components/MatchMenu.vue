@@ -79,7 +79,7 @@
                         class="shop-slot__icon"
                         :action="{ id: cell.entry.itemId, label: cell.entry.displayName, iconDef: { kind: 'item', type: cell.entry.itemId } }"
                       />
-                      <span v-if="cell.entry.quantity > 0 && cell.entry.quantity < 99" class="shop-slot__stock">{{ cell.entry.quantity }}</span>
+                      <span v-if="cell.entry.quantity > 0" class="shop-slot__stock">{{ cell.entry.quantity }}</span>
                     </template>
                   </button>
                 </div>
@@ -197,8 +197,9 @@
         <div class="shop-tooltip__title">{{ hoveredShopItem.displayName }}</div>
         <div v-if="hoveredShopItem.description" class="shop-tooltip__desc">{{ hoveredShopItem.description }}</div>
         <div class="shop-tooltip__cost">{{ hoveredShopItem.costGold }}g</div>
+        <!-- Remaining stock lives in the slot's corner badge (shop-slot__stock),
+             not here — the tooltip only calls out the sold-out state. -->
         <div v-if="hoveredShopItem.quantity <= 0" class="shop-tooltip__out">Sold out</div>
-        <div v-else-if="hoveredShopItem.quantity < 99" class="shop-tooltip__stock">Stock: {{ hoveredShopItem.quantity }}</div>
       </div>
     </Teleport>
   </div>
@@ -777,12 +778,6 @@ function onPurchase(entry: ShopCatalogEntry) {
   font-size: 12px;
   font-weight: 700;
   color: #ffe9a0;
-}
-
-.shop-tooltip__stock {
-  margin-top: 3px;
-  font-size: 11px;
-  color: #d4b87a;
 }
 
 .shop-tooltip__out {
