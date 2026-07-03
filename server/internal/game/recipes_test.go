@@ -47,8 +47,11 @@ func TestValidateRecipeDef_Rules(t *testing.T) {
 	if err := validateRecipeDef(&RecipeDef{ID: "r", Inputs: []string{"broad_sword", "fire_ring"}, Output: "no_such_item"}); err == nil {
 		t.Error("expected error for unknown output item")
 	}
-	if err := validateRecipeDef(&RecipeDef{ID: "r", Inputs: []string{"broad_sword", "fire_ring"}, CostGold: 0, Output: "fire_sword"}); err == nil {
-		t.Error("expected error for non-positive costGold")
+	if err := validateRecipeDef(&RecipeDef{ID: "r", Inputs: []string{"broad_sword", "fire_ring"}, CostGold: -1, Output: "fire_sword"}); err == nil {
+		t.Error("expected error for negative costGold")
+	}
+	if err := validateRecipeDef(&RecipeDef{ID: "r", Inputs: []string{"broad_sword", "fire_ring"}, CostGold: 0, Output: "fire_sword"}); err != nil {
+		t.Errorf("zero costGold should be allowed (ingredient-only recipe): %v", err)
 	}
 	if err := validateRecipeDef(&RecipeDef{ID: "r", Inputs: []string{"broad_sword", "fire_ring"}, CostGold: 150, Output: "fire_sword"}); err != nil {
 		t.Errorf("valid recipe rejected: %v", err)

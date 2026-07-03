@@ -20,6 +20,10 @@ type RecipeDef struct {
 	Inputs   []string `json:"inputs"`
 	CostGold int      `json:"costGold"`
 	Output   string   `json:"output"`
+	// Starter, when true, marks a recipe every player has unlocked at their
+	// Artificer from match start — no Recipe Shop purchase required. Seeded into
+	// Player.UnlockedRecipeIDs at join (see EnsurePlayerWithUpgrades).
+	Starter bool `json:"starter,omitempty"`
 }
 
 var recipeCatalogSingleton = loadRecipeCatalog()
@@ -81,10 +85,26 @@ func validateRecipeDef(def *RecipeDef) error {
 	if _, ok := getItemDef(def.Output); !ok {
 		return fmt.Errorf("recipe %q: output %q is not a known item", def.ID, def.Output)
 	}
-	if def.CostGold <= 0 {
-		return fmt.Errorf("recipe %q: costGold must be positive, got %d", def.ID, def.CostGold)
+	// Negative gold would grant the player gold on craft (an exploit); zero is
+	// allowed for recipes whose only cost is their ingredient items.
+	if def.CostGold < 0 {
+		return fmt.Errorf("recipe %q: costGold must not be negative, got %d", def.ID, def.CostGold)
 	}
 	return nil
+}
+
+// starterRecipeIDs returns the IDs of all recipes flagged Starter, sorted, so
+// they can be seeded into every player's unlocked set at match start. Order is
+// deterministic (sorted) so seeding never depends on map iteration order.
+func starterRecipeIDs() []string {
+	ids := make([]string, 0)
+	for id, def := range recipeCatalogSingleton {
+		if def.Starter {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func getRecipeDef(id string) (*RecipeDef, bool) {

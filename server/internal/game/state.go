@@ -3266,13 +3266,22 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		}
 	}
 
-	// Snapshot known recipe IDs. Defensive copy; nil -> empty slice. Sorted so
-	// playerKnowsRecipeLocked and unlockRecipeForPlayerLocked maintain invariant.
-	recipeIDs := make([]string, 0, len(knownRecipeIDs))
+	// Seed the in-match unlocked recipe set from the profile's known recipes
+	// plus every starter recipe (always available at an Artificer, no purchase).
+	// Deduped, empties dropped, sorted so playerKnowsRecipeLocked and
+	// unlockRecipeForPlayerLocked maintain their invariant.
+	recipeSet := make(map[string]struct{}, len(knownRecipeIDs))
 	for _, id := range knownRecipeIDs {
 		if id != "" {
-			recipeIDs = append(recipeIDs, id)
+			recipeSet[id] = struct{}{}
 		}
+	}
+	for _, id := range starterRecipeIDs() {
+		recipeSet[id] = struct{}{}
+	}
+	recipeIDs := make([]string, 0, len(recipeSet))
+	for id := range recipeSet {
+		recipeIDs = append(recipeIDs, id)
 	}
 	sort.Strings(recipeIDs)
 
