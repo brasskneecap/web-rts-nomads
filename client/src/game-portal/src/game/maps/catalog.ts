@@ -20,7 +20,7 @@ import {
   type TerrainGroups,
   type TileGroupWire,
 } from './terrainTileGroups'
-import type { BuildingDef } from './buildingDefs'
+import type { BuildingDef, BuildingStyleRenderDef } from './buildingDefs'
 import type { ObstacleDef } from './obstacleDefs'
 import type { UnitBounds, UnitDef } from './unitDefs'
 import type { ActionIconDef } from './actionIconDefs'
@@ -137,15 +137,21 @@ export async function saveMapCatalogFile(
   }
 }
 
-export async function fetchBuildingDefs(): Promise<BuildingDef[]> {
+export async function fetchBuildingDefs(): Promise<{
+  buildings: BuildingDef[]
+  buildingStyles: Record<string, Record<string, BuildingStyleRenderDef>>
+}> {
   const response = await fetch(`${API_BASE}/catalog/buildings`)
 
   if (!response.ok) {
     throw new Error(`Failed to load building defs: ${response.status}`)
   }
 
-  const data = (await response.json()) as { buildings: BuildingDef[] }
-  return data.buildings
+  const data = (await response.json()) as {
+    buildings: BuildingDef[]
+    buildingStyles?: Record<string, Record<string, BuildingStyleRenderDef>>
+  }
+  return { buildings: data.buildings, buildingStyles: data.buildingStyles ?? {} }
 }
 
 export async function fetchObstacleDefs(): Promise<ObstacleDef[]> {

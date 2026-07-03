@@ -1648,7 +1648,7 @@ import { getBuildingSprite, getRecipeShopStyleSprite, listRecipeShopStyles } fro
 import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { initObstacleDefs, OBSTACLE_DEF_MAP } from '@/game/maps/obstacleDefs'
-import { BUILDING_DEF_MAP, BUILDING_DEFS, initBuildingDefs } from '@/game/maps/buildingDefs'
+import { BUILDING_DEF_MAP, BUILDING_DEFS, getBuildingStyleRender, initBuildingDefs, initBuildingStyleRenders } from '@/game/maps/buildingDefs'
 import { getBuildingFallbackRender } from '@/game/maps/buildingFallbackRender'
 import { initPathBounds, initPathsByUnitType } from '@/game/maps/unitDefs'
 
@@ -4210,11 +4210,15 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
     const height = building.height * cellSize
     const def = BUILDING_DEF_MAP.get(building.buildingType)
     const renderDef = getBuildingFallbackRender(building.buildingType)
-    const spriteRenderDef = def?.spriteRender
-    // Recipe shops use a per-instance "shopStyle" art override when set.
+    // Recipe shops use a per-instance "shopStyle" art override when set; the
+    // matching per-style render config overrides the sprite bounds so the
+    // editor preview frames the art the same way the in-game renderer does.
+    const shopStyle = building.metadata?.['shopStyle'] as string | undefined
+    const styleRender = getBuildingStyleRender(building.buildingType, shopStyle)
+    const spriteRenderDef = styleRender?.spriteRender ?? def?.spriteRender
     const styleSprite =
       building.buildingType === 'recipe-shop'
-        ? getRecipeShopStyleSprite(building.metadata?.['shopStyle'] as string | undefined)
+        ? getRecipeShopStyleSprite(shopStyle)
         : null
     const sprite = styleSprite ?? getBuildingSprite(building.buildingType)
     // Sprite box may extend beyond the grid footprint (e.g. townhall's 3x3
@@ -4798,7 +4802,12 @@ onMounted(() => {
   targetCanvas.style.cursor = getCanvasCursor()
   void loadAvailableMaps()
   void loadCampaignCatalog()
-  void fetchBuildingDefs().then(initBuildingDefs).catch(() => {})
+  void fetchBuildingDefs()
+    .then(({ buildings, buildingStyles }) => {
+      initBuildingDefs(buildings)
+      initBuildingStyleRenders(buildingStyles)
+    })
+    .catch(() => {})
   void fetchObstacleDefs().then(initObstacleDefs).catch(() => {})
   void fetchNeutralGroups().then((tiers) => { neutralGroupTiers.value = tiers }).catch(() => {})
   void fetchRecipeLists().then((lists) => { recipeLists.value = lists }).catch(() => {})

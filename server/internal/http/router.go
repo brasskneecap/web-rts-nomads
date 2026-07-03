@@ -36,7 +36,8 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 	mux.HandleFunc("/catalog/buildings", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"buildings": game.ListBuildingDefs(),
+			"buildings":      game.ListBuildingDefs(),
+			"buildingStyles": game.ListBuildingStyleRenders(),
 		})
 	})
 

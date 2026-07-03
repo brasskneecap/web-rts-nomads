@@ -98,6 +98,18 @@ export type ResolvedBuildingAttackVisual = {
   effectLength: number
 }
 
+// BuildingStyleRenderDef is a per-art render override for a building that picks
+// its sprite per-instance (recipe-shop, via the shopStyle metadata) rather than
+// from a single shared sprite. Carries only the render fields that differ
+// between art variants; the base BuildingDef stays authoritative for footprint,
+// gameplay, etc. Mirrors the Go-side BuildingStyleRenderDef struct. Delivered by
+// /catalog/buildings keyed by buildingType → styleName. See getBuildingStyleRender.
+export type BuildingStyleRenderDef = {
+  spriteRender?: BuildingSpriteRenderDef
+  selectionRing?: BuildingSelectionRingDef
+  shadow?: BuildingShadowDef
+}
+
 export type BuildingClass = 'player' | 'neutral' | 'enemy'
 
 export type BuildingDef = {
@@ -153,6 +165,31 @@ export function initBuildingDefs(defs: BuildingDef[]): void {
   }))
   BUILDABLE_BUILDING_DEFS = BUILDING_DEFS.filter((def) => def.buildable !== false)
   BUILDING_DEF_MAP = new Map(BUILDING_DEFS.map((def) => [def.type, def]))
+}
+
+// Per-style render overrides keyed by buildingType → styleName. Populated from
+// /catalog/buildings alongside the building defs. Empty for building types
+// without per-sprite art.
+export let BUILDING_STYLE_RENDER_MAP: Record<string, Record<string, BuildingStyleRenderDef>> = {}
+
+export function initBuildingStyleRenders(
+  styles: Record<string, Record<string, BuildingStyleRenderDef>> | null | undefined,
+): void {
+  BUILDING_STYLE_RENDER_MAP = styles ?? {}
+}
+
+// Returns the render override for a building type + style (e.g. recipe-shop +
+// "druid-recipe-vendor"), or null when the type has no per-style config or the
+// style is unset/unknown. Callers fall back to the base BuildingDef's render
+// config. Style lookup is case-insensitive to match the sprite-stem keying.
+export function getBuildingStyleRender(
+  buildingType: string,
+  style: string | null | undefined,
+): BuildingStyleRenderDef | null {
+  if (!style) return null
+  const byStyle = BUILDING_STYLE_RENDER_MAP[buildingType]
+  if (!byStyle) return null
+  return byStyle[style] ?? byStyle[style.toLowerCase()] ?? null
 }
 
 // Resolves the tier chain rooted at rootType by following upgradesFrom links —

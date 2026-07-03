@@ -46,6 +46,7 @@ import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { RECIPE_DEF_MAP } from '../maps/recipeDefs'
 import { buildItemTooltipBody } from '../items/itemRules'
 import { formatPerkTooltip } from './perkTooltip'
+import { hasItemAsset } from '../rendering/itemAssets'
 import { getUnitBodyRect, isPointInUnitBody } from '../rendering/unitSprites'
 import { isTerrainCellBlocked } from '../rendering/terrainTileset'
 import { FogOfWar } from './FogOfWar'
@@ -3844,16 +3845,33 @@ export function getBuildingActions(
       const recipe = RECIPE_DEF_MAP.get(slot.recipeId)
       if (!recipe) continue
       const soldOut = slot.quantity <= 0
-      const inputList = recipe.inputs.join(' + ')
-      let tooltipBody = `Unlocks crafting: ${recipe.name}.\nRequires: ${inputList}.`
+      // List each required ingredient on its own line under "Requires:", using
+      // the item's display name (not raw id) and collapsing duplicates to a ×N
+      // count — matches how the Artificer renders ingredients.
+      const need = new Map<string, number>()
+      for (const input of recipe.inputs) need.set(input, (need.get(input) ?? 0) + 1)
+      const inputLines = [...need].map(([itemId, count]) => {
+        const name = ITEM_DEF_MAP.get(itemId)?.displayName ?? itemId
+        return count > 1 ? `${name} ×${count}` : name
+      })
+      let tooltipBody = `Unlocks crafting:\n${recipe.name}\n\nRequires:\n${inputLines.join('\n')}`
       if (soldOut) tooltipBody = `${tooltipBody}\n\nAlready purchased at this shop.`
       else if (shopLocked) tooltipBody = `${tooltipBody}\n\nGuards remain — clear them to unlock this shop.`
+      // Recipe Shop sells the *recipe* (not the item), so it renders a recipe
+      // scroll icon keyed by rarity rather than the output item's icon. Prefer a
+      // tier-specific asset (${rarity}_recipe) and fall back to rare_recipe when
+      // one hasn't been added yet — this lets epic_recipe/legendary_recipe drop
+      // in later with no code change. (The Artificer deliberately keeps showing
+      // the output item's icon, since it crafts that item.)
+      const rarity = recipe.rarity ?? 'common'
+      const rarityIconKey = `${rarity}_recipe`
+      const recipeIconKey = hasItemAsset(rarityIconKey) ? rarityIconKey : 'rare_recipe'
       actions.push({
         id: `buy-recipe-${recipe.id}`,
-        label: recipe.name,
-        iconDef: { kind: 'item', type: recipe.output },
+        label: `Recipe: ${recipe.name}`,
+        iconDef: { kind: 'item', type: recipeIconKey },
         cost: [{ resourceId: 'gold', amount: recipe.costGold, accent: '#d4a84f' }],
-        tooltipTitle: recipe.name,
+        tooltipTitle: `Recipe: ${recipe.name}`,
         tooltipBody,
         disabled: soldOut || shopLocked,
       })

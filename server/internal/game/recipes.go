@@ -20,6 +20,13 @@ type RecipeDef struct {
 	Inputs   []string `json:"inputs"`
 	CostGold int      `json:"costGold"`
 	Output   string   `json:"output"`
+	// Rarity is the recipe's quality tier, derived from the subdirectory it
+	// lives in under catalog/recipes (e.g. catalog/recipes/rare/*.json → "rare").
+	// A file directly under catalog/recipes/ defaults to "common". This mirrors
+	// how items organize by tier and drives the Recipe Shop's icon selection
+	// (see the client's ${rarity}_recipe asset lookup). It is populated at
+	// catalog load, not read from JSON.
+	Rarity ItemTier `json:"rarity"`
 	// Starter, when true, marks a recipe every player has unlocked at their
 	// Artificer from match start — no Recipe Shop purchase required. Seeded into
 	// Player.UnlockedRecipeIDs at join (see EnsurePlayerWithUpgrades).
@@ -59,6 +66,10 @@ func loadRecipeCatalog() map[string]*RecipeDef {
 		if def.ID == "" {
 			panic(path + `: missing "id" field`)
 		}
+		def.Rarity = recipeRarityFromPath(path)
+		if !validRecipeRarities[def.Rarity] {
+			panic(fmt.Sprintf("%s: rarity %q is not a known tier — put the recipe under a catalog/recipes/<tier>/ subdirectory (common/uncommon/rare/epic/legendary)", path, def.Rarity))
+		}
 		if err := validateRecipeDef(&def); err != nil {
 			panic(path + ": " + err.Error())
 		}
@@ -71,8 +82,35 @@ func loadRecipeCatalog() map[string]*RecipeDef {
 	return catalog
 }
 
+// recipeRarityFromPath derives a recipe's rarity tier from its catalog path:
+// the immediate parent directory under catalog/recipes (e.g.
+// "catalog/recipes/rare/fire_sword.json" → "rare"). A file directly under
+// catalog/recipes/ (no tier subdir) defaults to common. Embed paths always use
+// forward slashes.
+func recipeRarityFromPath(path string) ItemTier {
+	rel := strings.TrimPrefix(path, "catalog/recipes/")
+	parts := strings.Split(rel, "/")
+	if len(parts) < 2 {
+		return ItemTierCommon
+	}
+	return ItemTier(parts[len(parts)-2])
+}
+
+// validRecipeRarities is the set of tiers a recipe subdirectory may name. It is
+// the same tier vocabulary items use (see ItemTier), so a recipe organized by
+// the tier of its output item always has a valid folder.
+var validRecipeRarities = map[ItemTier]bool{
+	ItemTierCommon:    true,
+	ItemTierUncommon:  true,
+	ItemTierRare:      true,
+	ItemTierEpic:      true,
+	ItemTierLegendary: true,
+}
+
 // validateRecipeDef enforces: at least two inputs, and every input + the output
-// resolves to a real item def. Called at catalog load (fail-fast).
+// resolves to a real item def. Called at catalog load (fail-fast). Rarity is
+// validated separately in the loader since it is derived from the file path,
+// not the def's own content.
 func validateRecipeDef(def *RecipeDef) error {
 	if len(def.Inputs) < 2 {
 		return fmt.Errorf("recipe %q: needs at least 2 inputs, has %d", def.ID, len(def.Inputs))

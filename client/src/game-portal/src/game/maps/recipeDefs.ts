@@ -7,6 +7,13 @@ export type RecipeDef = {
   costGold: number
   /** Output item ID produced. */
   output: string
+  /**
+   * Quality tier, derived server-side from the recipe's catalog subdirectory
+   * (common/uncommon/rare/epic/legendary). Drives the Recipe Shop icon —
+   * `${rarity}_recipe`, falling back to `rare_recipe` when no tier-specific
+   * asset exists. Optional so hand-built defs (tests, fetch fallback) still type.
+   */
+  rarity?: string
 }
 
 export let RECIPE_DEFS: RecipeDef[] = []

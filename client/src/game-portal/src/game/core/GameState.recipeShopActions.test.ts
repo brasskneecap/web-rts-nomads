@@ -5,8 +5,8 @@ import type { BuildingTile } from '../network/protocol'
 
 beforeEach(() => {
   initRecipeDefs([
-    { id: 'fire_sword', name: 'Fire Sword', inputs: ['broad_sword', 'fire_ring'], costGold: 150, output: 'fire_sword' },
-    { id: 'frost_sword', name: 'Frost Sword', inputs: ['broad_sword', 'ice_ring'], costGold: 150, output: 'frost_sword' },
+    { id: 'fire_sword', name: 'Fire Sword', inputs: ['broad_sword', 'fire_ring'], costGold: 150, output: 'fire_sword', rarity: 'rare' },
+    { id: 'frost_sword', name: 'Frost Sword', inputs: ['broad_sword', 'ice_ring'], costGold: 150, output: 'frost_sword', rarity: 'rare' },
   ])
 })
 
@@ -28,7 +28,9 @@ describe('getBuildingActions — recipe shop', () => {
     const fire = actions.find((a) => a.id === 'buy-recipe-fire_sword')
     const frost = actions.find((a) => a.id === 'buy-recipe-frost_sword')
     expect(fire).toBeTruthy()
-    expect(fire?.label).toBe('Fire Sword')
+    expect(fire?.label).toBe('Recipe: Fire Sword')
+    // Recipe Shop renders a rarity-keyed recipe scroll icon, not the output item.
+    expect(fire?.iconDef).toEqual({ kind: 'item', type: 'rare_recipe' })
     expect(fire?.cost).toEqual([{ resourceId: 'gold', amount: 150, accent: '#d4a84f' }])
     expect(fire?.disabled).toBeFalsy()
     expect(frost?.disabled).toBe(true) // quantity 0 → sold out

@@ -9,7 +9,7 @@ import {
   getTerrainColor,
 } from '../maps/mapConfig'
 import { drawMinimapBase, drawMinimapPOIs } from './minimapLayers'
-import { BUILDING_DEF_MAP, getResolvedBuildingAttackVisual, resolveBuildingShadow } from '../maps/buildingDefs'
+import { BUILDING_DEF_MAP, getBuildingStyleRender, getResolvedBuildingAttackVisual, resolveBuildingShadow } from '../maps/buildingDefs'
 import { getBuildingFallbackRender } from '../maps/buildingFallbackRender'
 import {
   CONSTRUCTION_FRAME_COUNT,
@@ -849,7 +849,14 @@ export class CanvasRenderer {
 
       const buildingDef = BUILDING_DEF_MAP.get(building.buildingType)
       const renderDef = getBuildingFallbackRender(building.buildingType)
-      const spriteRenderDef = buildingDef?.spriteRender
+      // Buildings that pick their sprite per-instance (recipe-shop, via the
+      // shopStyle metadata) can carry a per-style render override for the
+      // selection ring / sprite bounds / shadow, since each art variant frames
+      // its subject differently. The override wins over the base def's render
+      // config; each field falls back to the base def independently.
+      const shopStyle = building.metadata?.['shopStyle'] as string | undefined
+      const styleRender = getBuildingStyleRender(building.buildingType, shopStyle)
+      const spriteRenderDef = styleRender?.spriteRender ?? buildingDef?.spriteRender
       const inset = renderDef ? renderDef.inset * cellSize : cellSize * 0.18
 
       // Sprite bounds may extend beyond the footprint when spriteRender
@@ -866,7 +873,7 @@ export class CanvasRenderer {
       // set (and loaded); otherwise the shared building-type sprite is used.
       const styleSprite =
         building.buildingType === 'recipe-shop'
-          ? getRecipeShopStyleSprite(building.metadata?.['shopStyle'] as string | undefined)
+          ? getRecipeShopStyleSprite(shopStyle)
           : null
       const sprite = styleSprite ?? getBuildingSprite(building.buildingType)
       const isUnderConstruction = building.metadata?.['underConstruction'] === true
@@ -941,7 +948,7 @@ export class CanvasRenderer {
       // optional `shadow` block in the building catalog tunes or disables it.
       if (!isPendingStart) {
         const shadow = resolveBuildingShadow(
-          buildingDef?.shadow,
+          styleRender?.shadow ?? buildingDef?.shadow,
           building.width,
           building.height,
           cellSize,
@@ -964,7 +971,7 @@ export class CanvasRenderer {
         this.state.hoveredInteractableBuildingId === building.id
       ) {
         const isSelected = this.state.selectedBuildingId === building.id
-        const ringDef = buildingDef?.selectionRing
+        const ringDef = styleRender?.selectionRing ?? buildingDef?.selectionRing
         const ringOverride = ringDef ? { ...ringDef, cellSize } : undefined
         this.drawFootprintSelectionEllipse(
           worldX, worldY, width, height,

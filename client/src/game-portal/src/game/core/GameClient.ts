@@ -17,7 +17,7 @@ import type {
   WaveUpgradeOfferSnapshot,
 } from '../network/protocol'
 import type { CraftCatalogEntry, DebugSpawnConfig, NetStats, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification, ZoneInspectionInfo } from './GameState'
-import { BUILDING_DEF_MAP, initBuildingDefs } from '../maps/buildingDefs'
+import { BUILDING_DEF_MAP, initBuildingDefs, initBuildingStyleRenders } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
@@ -197,7 +197,8 @@ export class GameClient {
       fetchItemDefs().catch(() => []),
       fetchRecipeDefs().catch(() => []),
     ])
-    initBuildingDefs(buildingDefs)
+    initBuildingDefs(buildingDefs.buildings)
+    initBuildingStyleRenders(buildingDefs.buildingStyles)
     initObstacleDefs(obstacleDefs)
     initUnitDefs(unitDefs.units)
     initPathBounds(unitDefs.paths)
@@ -224,7 +225,8 @@ export class GameClient {
         initUnitDefs(units)
         initPathBounds(paths)
         initPathsByUnitType(pathsByUnit)
-        initBuildingDefs(buildingDefs)
+        initBuildingDefs(buildingDefs.buildings)
+        initBuildingStyleRenders(buildingDefs.buildingStyles)
         console.log('[dev] reloaded unit defs + path bounds + building defs')
       })
       .catch((err) => console.error('[dev] catalog reload failed:', err))

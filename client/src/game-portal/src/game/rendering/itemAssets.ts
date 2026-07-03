@@ -21,6 +21,14 @@ export function getItemAssetImage(iconKey: string): HTMLImageElement | null {
   return images.get(iconKey.toLowerCase()) ?? null
 }
 
+// Whether a bundled item asset exists for the given icon key. Assets are globbed
+// eagerly at module init, so this is a reliable synchronous check — used to fall
+// back to a generic recipe icon when a tier-specific one (e.g. epic_recipe) has
+// not been added yet.
+export function hasItemAsset(iconKey: string): boolean {
+  return images.has(iconKey.toLowerCase())
+}
+
 // CSS cursor strings built from item art, used while an item is armed for
 // ground-AoE targeting so the cursor IS the item being aimed. The source art
 // is redrawn onto a 32×32 canvas (browsers reject/clip large cursor images)

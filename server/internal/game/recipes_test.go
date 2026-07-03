@@ -7,10 +7,11 @@ func TestRecipeCatalog_LoadsAndValidates(t *testing.T) {
 		id     string
 		inputs []string
 		output string
+		rarity ItemTier
 	}{
-		{"fire_sword", []string{"broad_sword", "fire_ring"}, "fire_sword"},
-		{"frost_sword", []string{"broad_sword", "ice_ring"}, "frost_sword"},
-		{"lightning_sword", []string{"broad_sword", "lightning_ring"}, "lightning_sword"},
+		{"fire_sword", []string{"broad_sword", "fire_ring"}, "fire_sword", ItemTierRare},
+		{"frost_sword", []string{"broad_sword", "ice_ring"}, "frost_sword", ItemTierRare},
+		{"lightning_sword", []string{"broad_sword", "lightning_ring"}, "lightning_sword", ItemTierRare},
 	}
 	for _, tc := range cases {
 		def, ok := getRecipeDef(tc.id)
@@ -19,6 +20,10 @@ func TestRecipeCatalog_LoadsAndValidates(t *testing.T) {
 		}
 		if def.Output != tc.output {
 			t.Errorf("%s: output = %q, want %q", tc.id, def.Output, tc.output)
+		}
+		// Rarity is derived from the catalog/recipes/<tier>/ subdirectory.
+		if def.Rarity != tc.rarity {
+			t.Errorf("%s: rarity = %q, want %q", tc.id, def.Rarity, tc.rarity)
 		}
 		if len(def.Inputs) != len(tc.inputs) {
 			t.Fatalf("%s: %d inputs, want %d", tc.id, len(def.Inputs), len(tc.inputs))

@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"io/fs"
 	"sort"
+	"strings"
 )
 
-//go:embed catalog/buildings/*.json
+//go:embed all:catalog/buildings
 var buildingDefsFS embed.FS
 
 // BuildingDef holds the configuration for a buildable building type.
@@ -130,6 +131,22 @@ type BuildingShadowDef struct {
 	Opacity float64 `json:"opacity,omitempty"`
 }
 
+// BuildingStyleRenderDef is a per-art render override for a building that
+// selects its sprite per-instance rather than from a single sprite.png
+// (currently only recipe-shop, via the shopStyle metadata set in the map
+// editor). It carries only the client-render fields that differ between art
+// variants — the gameplay def in <type>/<type>.json remains the single source
+// of truth for footprint, capabilities, HP, etc. Authored as one JSON per
+// sprite, colocated with the base def and keyed by the file stem (= style
+// name = the sprite's file stem under client assets/buildings/recipe-shops/).
+// The server never reads these fields; it passes them through to the client,
+// which prefers them over the base def's render config when a style is set.
+type BuildingStyleRenderDef struct {
+	SpriteRender  *BuildingSpriteRenderDef  `json:"spriteRender,omitempty"`
+	SelectionRing *BuildingSelectionRingDef `json:"selectionRing,omitempty"`
+	Shadow        *BuildingShadowDef        `json:"shadow,omitempty"`
+}
+
 // Class returns the building's class, defaulting to "player" when unspecified.
 func (d BuildingDef) ClassOrDefault() string {
 	if d.Class == "" {
@@ -146,38 +163,95 @@ func (d BuildingDef) HpPerSecond() float64 {
 	return d.MaxHp / d.BuildSeconds
 }
 
-// buildingDefsByType MUST be a var initializer (not init()) so that
-// Go's package-level dependency analysis can order it before any other
-// var initializer that calls getBuildingDef — most importantly
+// buildingCatalog / buildingDefsByType MUST be var initializers (not init())
+// so that Go's package-level dependency analysis can order them before any
+// other var initializer that calls getBuildingDef — most importantly
 // unitDefsByType's loader, which validates each unit's RequiresBuildings
 // against the building catalog. All package-level var initializers run
 // before any init() function, so converting this to init() would race
 // with unitDefsByType (and break maps.go's placedUnits hydration via
-// the `_ = unitDefsByType` dependency-injection marker).
-var buildingDefsByType = loadBuildingDefsByType()
+// the `_ = unitDefsByType` dependency-injection marker). Go orders these by
+// reference: unitDefsByType → getBuildingDef → buildingDefsByType →
+// buildingCatalog.
+var buildingCatalog = loadBuildingCatalog()
+var buildingDefsByType = buildingCatalog.defs
+var buildingStyleRenders = buildingCatalog.styles
 
-func loadBuildingDefsByType() map[string]BuildingDef {
-	// Each file under catalog/buildings/ is a single BuildingDef object.
-	entries, err := fs.ReadDir(buildingDefsFS, "catalog/buildings")
+type buildingCatalogData struct {
+	defs map[string]BuildingDef
+	// styles maps buildingType → styleName → per-style render override, for
+	// buildings authored as a subdirectory (see loadBuildingCatalog).
+	styles map[string]map[string]BuildingStyleRenderDef
+}
+
+// loadBuildingCatalog reads catalog/buildings. Two authoring layouts coexist:
+//
+//   - A flat <type>.json at the top level is a single BuildingDef (the common
+//     case — one building type, one shared sprite).
+//   - A subdirectory <type>/ groups a building that picks its sprite
+//     per-instance: <type>/<type>.json is the gameplay BuildingDef, and every
+//     other <type>/<style>.json is a BuildingStyleRenderDef keyed by its file
+//     stem (the style name). This lets each sprite variant carry its own
+//     selection ring / sprite bounds while sharing one gameplay def.
+func loadBuildingCatalog() buildingCatalogData {
+	const root = "catalog/buildings"
+	entries, err := fs.ReadDir(buildingDefsFS, root)
 	if err != nil {
-		panic("catalog/buildings: " + err.Error())
+		panic(root + ": " + err.Error())
 	}
-	result := make(map[string]BuildingDef, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		data, err := buildingDefsFS.ReadFile("catalog/buildings/" + entry.Name())
+	defs := make(map[string]BuildingDef, len(entries))
+	styles := make(map[string]map[string]BuildingStyleRenderDef)
+
+	loadDef := func(path string) {
+		data, err := buildingDefsFS.ReadFile(path)
 		if err != nil {
-			panic("catalog/buildings/" + entry.Name() + ": " + err.Error())
+			panic(path + ": " + err.Error())
 		}
 		var def BuildingDef
 		if err := json.Unmarshal(data, &def); err != nil {
-			panic("catalog/buildings/" + entry.Name() + ": " + err.Error())
+			panic(path + ": " + err.Error())
 		}
-		result[def.Type] = def
+		defs[def.Type] = def
 	}
-	return result
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() {
+			if strings.HasSuffix(name, ".json") {
+				loadDef(root + "/" + name)
+			}
+			continue
+		}
+		dir := root + "/" + name
+		subEntries, err := fs.ReadDir(buildingDefsFS, dir)
+		if err != nil {
+			panic(dir + ": " + err.Error())
+		}
+		baseFile := name + ".json"
+		for _, sub := range subEntries {
+			if sub.IsDir() || !strings.HasSuffix(sub.Name(), ".json") {
+				continue
+			}
+			path := dir + "/" + sub.Name()
+			if sub.Name() == baseFile {
+				loadDef(path)
+				continue
+			}
+			data, err := buildingDefsFS.ReadFile(path)
+			if err != nil {
+				panic(path + ": " + err.Error())
+			}
+			var style BuildingStyleRenderDef
+			if err := json.Unmarshal(data, &style); err != nil {
+				panic(path + ": " + err.Error())
+			}
+			if styles[name] == nil {
+				styles[name] = make(map[string]BuildingStyleRenderDef)
+			}
+			styles[name][strings.TrimSuffix(sub.Name(), ".json")] = style
+		}
+	}
+	return buildingCatalogData{defs: defs, styles: styles}
 }
 
 func getBuildingDef(buildingType string) (BuildingDef, bool) {
@@ -233,4 +307,13 @@ func ListBuildingDefs() []BuildingDef {
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Type < defs[j].Type })
 	return defs
+}
+
+// ListBuildingStyleRenders returns the per-style render overrides keyed by
+// buildingType → styleName. Consumed by the /catalog/buildings HTTP endpoint
+// and passed through to the client renderer, which prefers a style's override
+// over the base building def's render config when the instance has that style
+// set. Buildings without a subdirectory layout have no entry.
+func ListBuildingStyleRenders() map[string]map[string]BuildingStyleRenderDef {
+	return buildingStyleRenders
 }
