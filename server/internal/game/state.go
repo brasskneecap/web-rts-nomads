@@ -1684,8 +1684,15 @@ func (s *GameState) buildWaveUpgradeSnapshotLocked(viewerID string) *protocol.Wa
 			RequiresTargetUnit: def.RequiresTargetUnit(),
 		})
 	}
+	// The start-of-match bonus is offered at CurrentWave == 0 (before wave 1);
+	// display it as "Wave 1" so the modal header reads sensibly. During a real
+	// upgrade phase CurrentWave is always >= 1, so this is a no-op there.
+	displayWave := s.WaveManager.CurrentWave
+	if displayWave < 1 {
+		displayWave = 1
+	}
 	return &protocol.WaveUpgradeOfferSnapshot{
-		Wave:        s.WaveManager.CurrentWave,
+		Wave:        displayWave,
 		Offers:      offers,
 		RerollsLeft: player.UpgradeState.RerollsRemaining,
 		DeadlineMs:  player.UpgradeState.OfferDeadlineMs,
@@ -3336,6 +3343,11 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		s.spawnUnitsForPlayerAtSpawnPointLocked(player, ut, player.ExtraStartingUnits[ut])
 	}
 	s.ensurePlacedEnemiesSpawnedLocked()
+
+	// Testing / advancement hook: on wave-enabled maps, optionally present the
+	// wave-upgrade pick at match start (before wave 1). No-op unless the
+	// player.json toggle is on or the player owns a start-bonus advancement.
+	s.maybeGrantStartWaveBonusLocked(player)
 
 	// Seed this player's zone-aura aggregate from any zones their team already
 	// controls at join (home/team-locked zones, or zones with a StartingOwner of

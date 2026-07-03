@@ -924,6 +924,26 @@ type UseConsumableCommandMessage struct {
 	SlotIndex int    `json:"slotIndex"`
 }
 
+// UseItemAtCommandMessage uses a consumable from the player's vault as a
+// ground-targeted AoE at world point (X, Y): allied units within the item's
+// range are affected, with the effect amount split across them unless the
+// item def disables splitting.
+type UseItemAtCommandMessage struct {
+	Type       string  `json:"type"`
+	InstanceID int64   `json:"instanceId"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+}
+
+// UseItemOnUnitCommandMessage uses a consumable from the player's vault directly
+// on a single unit (the Vault "Items" drag-onto-a-unit-card path). The unit
+// receives the item's full effect (no AoE split) and one stack is consumed.
+type UseItemOnUnitCommandMessage struct {
+	Type       string `json:"type"`
+	InstanceID int64  `json:"instanceId"`
+	UnitID     int    `json:"unitId"`
+}
+
 // TransferItemCommandMessage moves an equipped item from one unit's slot to
 // another unit's slot (or a different slot on the same unit). Both units must
 // be owned by the player. The destination slot must be empty — no implicit
@@ -1028,11 +1048,11 @@ type PlayerSnapshot struct {
 	// TeamID is the player's alliance group. 0 = the default shared team
 	// (all players allied — current behavior). Same TeamID ⇒ allies. The
 	// client mirrors the server hostility predicate from this value.
-	TeamID        int                     `json:"teamId"`
-	Resources     []ResourceStock         `json:"resources"`
-	Upgrades      []PlayerUpgradeSnapshot `json:"upgrades,omitempty"`
-	TownHallTier  int                     `json:"townHallTier,omitempty"`
-	Vault         []VaultItemSnapshot     `json:"vault"`
+	TeamID       int                     `json:"teamId"`
+	Resources    []ResourceStock         `json:"resources"`
+	Upgrades     []PlayerUpgradeSnapshot `json:"upgrades,omitempty"`
+	TownHallTier int                     `json:"townHallTier,omitempty"`
+	Vault        []VaultItemSnapshot     `json:"vault"`
 	// LockedUnitTypes lists the unit types this player currently cannot
 	// train because their RequiresBuildings list is unsatisfied. Empty
 	// or omitted = no locks. The client uses this to grey out train

@@ -2555,7 +2555,11 @@ export class CanvasRenderer {
       if (commanderAoE) {
         const dx = unit.x - commanderAoE.centerX
         const dy = unit.y - commanderAoE.centerY
-        if (dx * dx + dy * dy <= commanderAoE.radiusSq && this.unitMatchesCommanderAoETeam(unit, commanderAoE.affectsTeam)) {
+        if (
+          dx * dx + dy * dy <= commanderAoE.radiusSq &&
+          this.unitMatchesCommanderAoETeam(unit, commanderAoE.affectsTeam) &&
+          (commanderAoE.eligible?.(unit) ?? true)
+        ) {
           ctx.save()
           ctx.strokeStyle = commanderAoE.unitRingColor
           ctx.lineWidth = 2.5 / this.camera.zoom
@@ -4107,11 +4111,21 @@ export class CanvasRenderer {
     },
   }
 
-  // Resolve the active commander targeting AoE if any. Returns the cursor
-  // center (in world space), the squared radius (so the per-unit hit-test
-  // can skip the sqrt), the affected team, and the ability-specific colors
-  // — or null when no commander targeting is active / the ability is
-  // unknown / has no usable radius.
+  // Theme for the consumable-item AoE preview. Items always target allies
+  // (heals, XP), so it reuses the friendly-green language of Blessing with a
+  // warmer gold ring to read as "item" rather than "ability".
+  private static readonly ITEM_AOE_THEME = {
+    affectsTeam: 'friendly' as const,
+    fill: 'rgba(250, 204, 21, 0.12)',
+    stroke: 'rgba(250, 204, 21, 0.85)',
+    unitRing: 'rgba(253, 224, 71, 0.95)',
+  }
+
+  // Resolve the active ground-target AoE (commander ability OR consumable
+  // item) if any. Returns the cursor center (in world space), the squared
+  // radius (so the per-unit hit-test can skip the sqrt), the affected team,
+  // and the mode-specific colors — or null when no AoE targeting is active /
+  // the ability is unknown / has no usable radius.
   private getActiveCommanderAoE():
     | {
         centerX: number
@@ -4122,8 +4136,33 @@ export class CanvasRenderer {
         fillColor: string
         strokeColor: string
         unitRingColor: string
+        // Optional per-unit eligibility on top of the team check. Mirrors
+        // the server's consumableTargetEligibleLocked so the preview rings
+        // only mark units that will actually receive (and split) the effect
+        // — e.g. workers are skipped for XP potions.
+        eligible?: (unit: { unitType?: string }) => boolean
       }
     | null {
+    const itemTargeting = this.state.itemTargeting
+    if (itemTargeting && itemTargeting.radius > 0) {
+      const theme = CanvasRenderer.ITEM_AOE_THEME
+      const effectType = ITEM_DEF_MAP.get(itemTargeting.itemId)?.consumable?.type
+      return {
+        centerX: this.state.cursorWorldX,
+        centerY: this.state.cursorWorldY,
+        radius: itemTargeting.radius,
+        radiusSq: itemTargeting.radius * itemTargeting.radius,
+        affectsTeam: theme.affectsTeam,
+        fillColor: theme.fill,
+        strokeColor: theme.stroke,
+        unitRingColor: theme.unitRing,
+        eligible:
+          effectType === 'grant_xp'
+            ? (unit) => unit.unitType !== 'worker'
+            : undefined,
+      }
+    }
+
     const abilityId = this.state.commanderTargetingAbilityId
     if (!abilityId) return null
     const ability = this.state.localPlayerCommanderAbilities.find((a) => a.id === abilityId)

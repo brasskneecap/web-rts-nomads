@@ -1,0 +1,15 @@
+{
+  "id": "experience_potion",
+  "displayName": "Experience Potion",
+  "description": "Grants 75 XP to the unit that drinks it.",
+  "iconKey": "experience_potion",
+  "kind": "consumable",
+  "tier": "rare",
+  "category": "Consumable",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 1,
+  "requiredBuilding": "marketplace",
+  "maxStacks": 99,
+  "consumable": { "type": "grant_xp", "amount": 75, "range": 100, "split": true }
+}

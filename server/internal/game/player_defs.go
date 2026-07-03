@@ -23,6 +23,12 @@ type PlayerConfig struct {
 	// keyed by resource type (e.g. "gold", "wood"). Profile upgrades add to
 	// these amounts after the player is created.
 	StartingResources map[string]int `json:"startingResources"`
+	// StartWaveBonus is a testing toggle: when true, every player is presented
+	// the wave-upgrade pick at match start (before wave 1) on wave-enabled maps.
+	// Optional (defaults false / absent). A player who owns a start-bonus
+	// advancement always gets the pick regardless of this flag — see
+	// startWaveBonusEnabled / playerHasStartWaveBonusAdvancement.
+	StartWaveBonus bool `json:"startWaveBonus"`
 }
 
 // playerConfigSingleton is initialized via a package-level var initializer
@@ -75,4 +81,23 @@ func (c PlayerConfig) newStartingResources() map[string]int {
 // should use the unexported playerConfig() accessor.
 func ExportedPlayerConfig() PlayerConfig {
 	return playerConfigSingleton
+}
+
+// SetStartWaveBonusForTest overrides the player.json StartWaveBonus toggle at
+// runtime and returns a restore func (call it, typically via t.Cleanup, to put
+// the committed value back).
+//
+// It exists so protocol/transport regression tests — notably the SP outbound
+// baseline in internal/ws — stay deterministic regardless of the committed
+// testing toggle. StartWaveBonus is a debug switch the user flips on and off;
+// when on, a match opens with an RNG-seeded start-of-match upgrade offer whose
+// card set differs every run, which would otherwise leak per-run randomness
+// into a golden snapshot and make the baseline unpinnable. Those tests force it
+// off so the guard reflects normal gameplay either way. NOT for production use.
+func SetStartWaveBonusForTest(enabled bool) (restore func()) {
+	prev := playerConfigSingleton
+	cfg := prev
+	cfg.StartWaveBonus = enabled
+	playerConfigSingleton = cfg
+	return func() { playerConfigSingleton = prev }
 }

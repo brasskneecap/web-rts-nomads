@@ -111,6 +111,7 @@
               :on-unequip-item="onUnequipItem"
               :on-use-consumable="onUseConsumable"
               :on-transfer-item="onTransferItem"
+              :on-use-item-on-unit="onUseItemOnUnit"
               :on-focus-unit="handleFocusUnit"
             />
           </div>
@@ -245,6 +246,7 @@ const props = withDefaults(defineProps<{
   onUnequipItem?: (unitId: number, slotIndex: number) => void
   onUseConsumable?: (unitId: number, slotIndex: number) => void
   onTransferItem?: (fromUnitId: number, fromSlotIdx: number, toUnitId: number, toSlotIdx: number) => void
+  onUseItemOnUnit?: (unitId: number, instanceId: number) => void
   craftCatalog?: CraftCatalogEntry[]
   hasArtificer?: boolean
   onFocusUnit?: (unitId: number, menuRightPx?: number) => void
@@ -262,6 +264,7 @@ const props = withDefaults(defineProps<{
   onUnequipItem: () => {},
   onUseConsumable: () => {},
   onTransferItem: () => {},
+  onUseItemOnUnit: () => {},
   onFocusUnit: () => {},
   craftCatalog: () => [],
   hasArtificer: false,
@@ -389,6 +392,12 @@ function onPurchase(entry: ShopCatalogEntry) {
   z-index: 30;
   pointer-events: auto;
   user-select: none;
+}
+
+/* Raise the menu while a shop slot's inline tooltip is showing so it paints
+   above MatchHud/overlays — see the tooltip layering convention in style.css. */
+.match-menu:has(.match-menu__slot--filled:hover) {
+  z-index: var(--z-panel-raised, 300);
 }
 
 /* Dark window matching the Vault mockup: near-black panel with a subtle warm

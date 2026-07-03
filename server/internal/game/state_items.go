@@ -275,22 +275,148 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 
 // ─── Consumable application ───────────────────────────────────────────────────
 
-// applyConsumableEffectLocked applies the effect described by def.Consumable to
-// unit. Always consumes even if the unit is already at full HP (by spec).
-// Must be called under s.mu.
-func (s *GameState) applyConsumableEffectLocked(unit *Unit, def *ItemDef) {
-	if def.Consumable == nil {
-		return
-	}
-	switch def.Consumable.Type {
+// applyConsumableToUnitLocked applies one consumable effect instance of the
+// given type and amount to unit. Amount is pre-computed by the caller (the
+// AoE use handler divides the def amount across targets when Split is on).
+// Applying is unconditional — a full-HP unit still "receives" a heal (by
+// spec, the item is consumed regardless). Must be called under s.mu.
+func (s *GameState) applyConsumableToUnitLocked(unit *Unit, effectType string, amount int) {
+	switch effectType {
 	case "heal":
-		healed := unit.HP + def.Consumable.Amount
+		healed := unit.HP + amount
 		if healed > unit.MaxHP {
 			healed = unit.MaxHP
 		}
 		unit.HP = healed
-	// Future consumable types: add cases here.
+	case "grant_xp":
+		// Runs the full XP pipeline: rank-up thresholds, path/perk/ability
+		// assignment, and stat rebake all apply exactly as combat XP would.
+		// Ineligible units never reach here — consumableTargetEligibleLocked
+		// excludes them from the target set (and therefore from the split).
+		s.addUnitXPLocked(unit, amount)
+		// Future consumable types: add cases here.
 	}
+}
+
+// consumableTargetEligibleLocked reports whether unit can actually benefit
+// from the given consumable effect type. Ineligible units are excluded from
+// the AoE target set entirely, so they neither receive the effect NOR count
+// toward the split — an XP potion dropped on two soldiers and a worker
+// splits between the two soldiers only. Future types follow the same rule
+// (e.g. a mana potion would require MaxMana > 0). Must be called under s.mu.
+func (s *GameState) consumableTargetEligibleLocked(unit *Unit, effectType string) bool {
+	switch effectType {
+	case "grant_xp":
+		return s.unitCanGainXPLocked(unit)
+	default:
+		// "heal" and unknown future types: any allied living unit qualifies.
+		return true
+	}
+}
+
+// handleUseItemAtLocked uses a consumable from the player's vault as a
+// ground-targeted AoE at world point (x, y): every allied living field unit
+// within the def's Range that can benefit from the effect (see
+// consumableTargetEligibleLocked) is affected. With Split on (the default)
+// the def's Amount is divided evenly across the eligible units hit (integer
+// division); with Split off every unit hit receives the full Amount.
+// Clicking with no eligible target in range is a no-op and does NOT consume
+// the item. Validation failures are silent no-ops. Must be called under s.mu.
+func (s *GameState) handleUseItemAtLocked(playerID string, instanceID int64, x, y float64) {
+	player, ok := s.Players[playerID]
+	if !ok {
+		return
+	}
+
+	// Resolve the vault entry and its def without removing it yet — the item
+	// is only consumed when at least one unit is actually hit.
+	var itemID string
+	for _, vi := range player.Vault {
+		if vi.InstanceID == instanceID {
+			itemID = vi.ItemID
+			break
+		}
+	}
+	if itemID == "" {
+		return
+	}
+	def, ok := s.itemCatalog[itemID]
+	if !ok || def.Kind != ItemKindConsumable || def.Consumable == nil {
+		return
+	}
+
+	radius := def.Consumable.EffectiveRange()
+	radiusSq := radius * radius
+	targets := make([]*Unit, 0, 8)
+	for _, u := range s.Units {
+		if u == nil || u.OwnerID != playerID || u.HP <= 0 || !u.Visible || u.MiningInside {
+			continue
+		}
+		if !s.consumableTargetEligibleLocked(u, def.Consumable.Type) {
+			continue
+		}
+		if distanceSquared(u.X, u.Y, x, y) <= radiusSq {
+			targets = append(targets, u)
+		}
+	}
+	if len(targets) == 0 {
+		return
+	}
+
+	amount := def.Consumable.Amount
+	if def.Consumable.SplitEnabled() {
+		amount /= len(targets)
+	}
+	for _, u := range targets {
+		s.applyConsumableToUnitLocked(u, def.Consumable.Type, amount)
+	}
+
+	s.removeItemFromVaultByInstanceLocked(player, instanceID)
+}
+
+// handleUseItemOnUnitLocked uses a consumable from the player's vault directly
+// on a single unit (the Vault "Items" drag-onto-a-unit-card path). Unlike the
+// ground-targeted AoE, there is no split: the unit receives the def's full
+// Amount. Validation failures — unknown/foreign/dead unit, non-consumable item,
+// or a unit that cannot benefit from the effect (see
+// consumableTargetEligibleLocked) — are silent no-ops that do NOT consume the
+// item. Must be called under s.mu.
+func (s *GameState) handleUseItemOnUnitLocked(playerID string, instanceID int64, unitID int) {
+	player, ok := s.Players[playerID]
+	if !ok {
+		return
+	}
+
+	unit := s.getUnitByIDLocked(unitID)
+	if unit == nil || unit.OwnerID != playerID || unit.HP <= 0 || !unit.Visible || unit.MiningInside {
+		return
+	}
+
+	// Resolve the vault entry + def without consuming yet — the item is only
+	// spent when the effect actually applies.
+	var itemID string
+	for _, vi := range player.Vault {
+		if vi.InstanceID == instanceID {
+			itemID = vi.ItemID
+			break
+		}
+	}
+	if itemID == "" {
+		return
+	}
+	def, ok := s.itemCatalog[itemID]
+	if !ok || def.Kind != ItemKindConsumable || def.Consumable == nil {
+		return
+	}
+
+	// The unit must be able to benefit (e.g. an XP potion on a max-rank or
+	// non-XP unit is a no-op and is not consumed) — same rule the AoE path uses.
+	if !s.consumableTargetEligibleLocked(unit, def.Consumable.Type) {
+		return
+	}
+
+	s.applyConsumableToUnitLocked(unit, def.Consumable.Type, def.Consumable.Amount)
+	s.removeItemFromVaultByInstanceLocked(player, instanceID)
 }
 
 // ─── Core action handlers ────────────────────────────────────────────────────
@@ -414,6 +540,12 @@ func (s *GameState) handleEquipItemLocked(playerID string, unitID int, slotIdx i
 	if !ok {
 		return
 	}
+	// Consumables are not equippable: they live in the player's item bar and
+	// are used as a ground-targeted AoE (handleUseItemAtLocked). Unit slots
+	// hold equipment only.
+	if def.Kind == ItemKindConsumable {
+		return
+	}
 
 	// AllowedUnitTypes restriction.
 	if len(def.AllowedUnitTypes) > 0 {
@@ -506,7 +638,14 @@ func (s *GameState) handleUseConsumableLocked(playerID string, unitID int, slotI
 		return
 	}
 
-	s.applyConsumableEffectLocked(unit, def)
+	if def.Consumable == nil {
+		return
+	}
+	// Legacy unit-slot use path: applies the full amount to the holder.
+	// Unreachable in practice since consumables can no longer be equipped
+	// (see handleEquipItemLocked) — consumables are used via
+	// handleUseItemAtLocked's ground-targeted AoE instead.
+	s.applyConsumableToUnitLocked(unit, def.Consumable.Type, def.Consumable.Amount)
 
 	slot.Stacks--
 	if slot.Stacks <= 0 {
@@ -546,6 +685,24 @@ func (s *GameState) UseConsumable(playerID string, unitID int, slotIdx int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.handleUseConsumableLocked(playerID, unitID, slotIdx)
+}
+
+// UseItemAt is the public entry point for using a consumable from the vault
+// as a ground-targeted AoE at world point (x, y). Acquires s.mu and delegates
+// to handleUseItemAtLocked.
+func (s *GameState) UseItemAt(playerID string, instanceID int64, x, y float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handleUseItemAtLocked(playerID, instanceID, x, y)
+}
+
+// UseItemOnUnit is the public entry point for using a consumable from the vault
+// directly on a single unit (the Vault "Items" drag-onto-a-unit-card path).
+// Acquires s.mu and delegates to handleUseItemOnUnitLocked.
+func (s *GameState) UseItemOnUnit(playerID string, instanceID int64, unitID int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handleUseItemOnUnitLocked(playerID, instanceID, unitID)
 }
 
 // TransferItem is the public entry point for moving an equipped item from one

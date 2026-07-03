@@ -22,6 +22,14 @@ func (s *GameState) generateUpgradeOffersLocked(playerID string) []UpgradeDef {
 	}
 	tuning := gameplayTuning().WaveUpgrade
 	wave := s.WaveManager.CurrentWave
+	if wave < 1 {
+		// Start-of-match bonus is generated before wave 1 (CurrentWave == 0). The
+		// per-wave weight/milestone math is defined from wave 1 up; clamp so the
+		// pre-wave-1 offer behaves like a wave-1 offer instead of underflowing the
+		// per-wave rarity scale. During a real upgrade phase CurrentWave is always
+		// >= 1, so this is a no-op there.
+		wave = 1
+	}
 
 	// Build weighted pool — exclude groups at/above the effective stack cap.
 	var pool []upgradeWeight
@@ -134,6 +142,62 @@ func (s *GameState) enterWaveUpgradePhaseLocked() {
 	}
 }
 
+// startWaveBonusEnabled reports whether player should be shown the wave-upgrade
+// pick at match start (before wave 1). The player.json "startWaveBonus" flag is
+// a testing toggle; a player who owns a start-bonus advancement always gets the
+// pick, overriding the toggle.
+func startWaveBonusEnabled(player *Player) bool {
+	if playerHasStartWaveBonusAdvancement(player) {
+		return true
+	}
+	return playerConfig().StartWaveBonus
+}
+
+// playerHasStartWaveBonusAdvancement reports whether the player owns an
+// advancement that grants the match-start wave bonus. No such advancement exists
+// yet, so this is the single extension point the future node hooks into: when it
+// is added (register its effect kind in advancementEffectRegistry and match on it
+// here — e.g. by scanning player.AcquiredAdvancements for that node's ID),
+// owning it will force the start bonus on even when the player.json toggle is
+// false. Until then it returns false and the toggle is the only source.
+func playerHasStartWaveBonusAdvancement(player *Player) bool {
+	return false
+}
+
+// maybeGrantStartWaveBonusLocked presents the wave-upgrade pick to a freshly
+// joined player at match start, when enabled. It only fires on wave-enabled maps
+// (the "upgrade" phase is only ticked/resolved when WaveManager.Enabled) and only
+// before wave 1 (CurrentWave == 0); a player joining after the first wave gets
+// nothing. It puts the wave manager into the "upgrade" phase so the normal
+// snapshot/resolution flow (buildWaveUpgradeSnapshotLocked drives the modal,
+// tickUpgradePhaseLocked resolves it) runs unchanged, and on resolution hands off
+// to the prep countdown for wave 1. Per-player: it only (re)generates offers for
+// the passed player, so a player who already picked is not reset when a later one
+// joins. Caller must hold s.mu.
+func (s *GameState) maybeGrantStartWaveBonusLocked(player *Player) {
+	if player == nil {
+		return
+	}
+	wm := &s.WaveManager
+	if !wm.Enabled || wm.CurrentWave != 0 {
+		return
+	}
+	// Only the pre-wave-1 window: "prep" is the fresh-match state; "upgrade"
+	// means an earlier-joining player already opened the start bonus.
+	if wm.State != "prep" && wm.State != "upgrade" {
+		return
+	}
+	if !startWaveBonusEnabled(player) {
+		return
+	}
+	tuning := gameplayTuning().WaveUpgrade
+	wm.State = "upgrade"
+	player.UpgradeState.RerollsRemaining = player.UpgradeState.MaxRerolls
+	player.UpgradeState.CurrentOffers = s.generateUpgradeOffersLocked(player.ID)
+	player.UpgradeState.OfferDeadlineMs = time.Now().UnixMilli() + int64(tuning.TimerSeconds*1000)
+	player.UpgradeState.Resolved = false
+}
+
 // tickUpgradePhaseLocked checks per-player deadlines and advances to "prep"
 // once all players have resolved. Caller must hold s.mu.
 func (s *GameState) tickUpgradePhaseLocked() {
@@ -152,7 +216,13 @@ func (s *GameState) tickUpgradePhaseLocked() {
 	}
 	if s.waveUpgradeAllResolvedLocked() {
 		wm := &s.WaveManager
-		if wm.Continuous {
+		// CurrentWave == 0 is the start-of-match bonus (see
+		// maybeGrantStartWaveBonusLocked), NOT a between-wave upgrade. It must
+		// hand back to the normal prep countdown for wave 1 — advancing here
+		// would skip prep and drop straight into wave 1. Only a real
+		// between-wave resolution (CurrentWave >= 1) uses the continuous
+		// advance-immediately path below.
+		if wm.Continuous && wm.CurrentWave >= 1 {
 			// Continuous mode: the upgrade pick WAS the between-wave pause, so
 			// release the next wave immediately rather than re-running a prep
 			// countdown. Enemies from prior waves persist and accumulate; the

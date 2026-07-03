@@ -157,6 +157,13 @@ void props
   backdrop-filter: blur(6px);
 }
 
+/* Standalone mode: raise the bar while an ability tooltip is showing so it
+   paints above coexisting panels — see the tooltip layering convention in
+   style.css. (Embedded mode is covered by the launcher's own raise rule.) */
+.commander-bar:not(.commander-bar--embedded):has(.ability-slot:hover) {
+  z-index: var(--z-panel-raised, 300);
+}
+
 /* Embedded inside another container (e.g. MatchMenuLauncher's action row):
    drop the floating panel so the host container handles framing/positioning.
    Slot sizing and cooldown styling are unchanged. */

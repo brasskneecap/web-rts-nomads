@@ -181,6 +181,23 @@ html {
    icon-container backgrounds — it triggers the bugs this rule replaces. */
 :root {
   --ui-hover-glow: inset 0 0 8px 1px rgba(255, 215, 110, 0.55);
+
+  /* Tooltip layering convention — tooltips always render above every other
+     UI element.
+
+     Two mechanisms, by tooltip type:
+     1. Teleported/fixed tooltips (ItemHoverTooltip, LootDropTooltip,
+        PerkIconRow) escape all stacking contexts already — they use
+        --z-tooltip, the top tier, above every panel and modal.
+     2. CSS-inline hover tooltips (menu launcher, commander bar,
+        SelectionHud, MatchMenu) CANNOT escape their panel's stacking
+        context, so their panel raises itself to --z-panel-raised via a
+        `:has(<trigger>:hover)` rule while a tooltip is showing. 300 sits
+        above every coexisting interactive panel (vault 50, match overlays
+        60, MatchHud 100); full-screen overlays (wave modal 200+) block the
+        pointer anyway, so no tooltip can be open under them. */
+  --z-tooltip: 10000;
+  --z-panel-raised: 300;
 }
 
 .ui-hover-glow:not(:disabled):not([aria-disabled='true']):hover {

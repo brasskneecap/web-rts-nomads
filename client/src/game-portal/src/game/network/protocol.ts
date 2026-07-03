@@ -807,6 +807,25 @@ export type UseConsumableCommand = {
   slotIndex: number
 }
 
+// Uses a consumable from the player's vault as a ground-targeted AoE at the
+// given world point. Allied units within the item's range are affected; the
+// effect amount is split across them unless the item def disables splitting.
+export type UseItemAtCommand = {
+  type: 'use_item_at'
+  instanceId: number
+  x: number
+  y: number
+}
+
+// Uses a consumable from the player's vault directly on a single unit (the
+// Vault "Items" section: drag a bag item onto a unit card). The unit receives
+// the item's full effect (no AoE split) and one stack is consumed.
+export type UseItemOnUnitCommand = {
+  type: 'use_item_on_unit'
+  instanceId: number
+  unitId: number
+}
+
 export type TransferItemCommand = {
   type: 'transfer_item'
   fromUnitId: number
@@ -867,6 +886,8 @@ export type ClientMessage =
   | EquipItemCommand
   | UnequipItemCommand
   | UseConsumableCommand
+  | UseItemAtCommand
+  | UseItemOnUnitCommand
   | TransferItemCommand
   | WaveUpgradeChoiceCommand
   | WaveUpgradeRerollCommand

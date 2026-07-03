@@ -4,12 +4,17 @@
        click never equips. -->
   <div
     class="ucard"
-    :class="{ 'ucard--ineligible': hasSelectedItem && !card.eligible }"
+    :class="{
+      'ucard--ineligible': hasSelectedItem && !card.eligible,
+      'ucard--consumable-target': acceptsConsumableDrop,
+    }"
     role="button"
     tabindex="0"
     @click="emit('focus', card.id)"
     @keydown.enter.prevent="emit('focus', card.id)"
     @keydown.space.prevent="emit('focus', card.id)"
+    @dragover="onCardDragOver"
+    @drop="onCardDrop"
   >
     <!-- Top row: portrait on the left, name + XP + perks stacked to its right. -->
     <div class="ucard__main">
@@ -48,6 +53,9 @@
 
       <div class="ucard__info">
         <div class="ucard__name">{{ card.specializationName }}</div>
+        <div v-if="card.maxHp != null" class="ucard__hp">
+          {{ Math.round(card.hp ?? 0) }} / {{ Math.round(card.maxHp) }} HP
+        </div>
         <XpProgressBar
           :xp-into="card.xpInto"
           :xp-to-next="card.xpToNext"
@@ -84,12 +92,15 @@ import PerkIconRow from './PerkIconRow.vue'
 import UnitInventorySlots from './UnitInventorySlots.vue'
 import type { VaultUnitCardData } from './types'
 
-defineProps<{
+const props = defineProps<{
   card: VaultUnitCardData
   /** A vault item is selected (drives the ineligible-dimming). */
   hasSelectedItem: boolean
-  /** A compatible item is being dragged and could land on this unit. */
+  /** A compatible equipment item is being dragged and could land on this unit. */
   acceptsDrop: boolean
+  /** A bag consumable is being dragged — the whole card is a valid drop target
+   *  (applies the consumable to this unit). */
+  acceptsConsumableDrop: boolean
   iconContainerUrl: string
 }>()
 
@@ -98,7 +109,22 @@ const emit = defineEmits<{
   'slot-dragstart': [payload: { unitId: number; slotIndex: number }]
   'slot-dragend': []
   'slot-drop': [payload: { unitId: number; slotIndex: number }]
+  /** A bag consumable was dropped anywhere on this card. */
+  'card-drop': [unitId: number]
 }>()
+
+// Allow drops anywhere on the card so a bag consumable can be released over any
+// part of it. Equipment continues to drop onto the specific inventory slots;
+// those slot drops bubble here too, but the parent only treats a drop as a
+// consumable application when the active drag is a bag item.
+function onCardDragOver(e: DragEvent) {
+  e.preventDefault()
+}
+
+function onCardDrop(e: DragEvent) {
+  e.preventDefault()
+  emit('card-drop', props.card.id)
+}
 </script>
 
 <style scoped>
@@ -130,6 +156,13 @@ const emit = defineEmits<{
 
 .ucard--ineligible {
   opacity: 0.4;
+}
+
+/* A bag consumable is being dragged: the whole card lights up as a drop target
+   (matches the blue drop-target language used by the inventory slots). */
+.ucard--consumable-target {
+  border-color: rgba(96, 165, 250, 0.9);
+  box-shadow: 0 0 12px rgba(96, 165, 250, 0.55);
 }
 
 .ucard__portrait {
@@ -193,6 +226,14 @@ const emit = defineEmits<{
   /* Full name, no truncation. */
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.ucard__hp {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(232, 217, 184, 0.75);
+  letter-spacing: 0.02em;
+  line-height: 1.1;
 }
 
 .ucard__section-label {

@@ -76,13 +76,40 @@ type ItemOnHitProc struct {
 	ProjectileID string     `json:"projectileID"`
 }
 
-// ConsumableEffect describes the instant or timed effect applied when a
-// consumable is used. Only "heal" is implemented in v1; future types (buffs,
-// mana, etc.) add cases to applyConsumableEffectLocked.
+// defaultConsumableRangeUnits is the AoE radius (world units) a consumable
+// covers when its def doesn't author an explicit "range".
+const defaultConsumableRangeUnits = 100.0
+
+// ConsumableEffect describes the effect applied when a consumable is used.
+// Consumables are used as a ground-targeted AoE: every friendly unit within
+// Range of the click point is affected. Implemented types: "heal" (restore
+// Amount HP, capped at MaxHP) and "grant_xp" (award Amount XP through the
+// normal rank-up pipeline). Future types (buffs, mana, etc.) add cases to
+// applyConsumableToUnitLocked.
 type ConsumableEffect struct {
-	Type            string  `json:"type"`                      // "heal" | future types
-	Amount          int     `json:"amount,omitempty"`
+	Type   string `json:"type"`             // "heal" | "grant_xp" | future types
+	Amount int    `json:"amount,omitempty"`
+	// Range is the AoE radius in world units around the click point. 0/absent
+	// falls back to defaultConsumableRangeUnits.
+	Range float64 `json:"range,omitempty"`
+	// Split controls how Amount is distributed across the units hit: true
+	// (the default when absent) divides Amount evenly between them; false
+	// gives the full Amount to every unit hit.
+	Split           *bool   `json:"split,omitempty"`
 	DurationSeconds float64 `json:"durationSeconds,omitempty"` // future: timed buffs
+}
+
+// EffectiveRange returns the authored AoE radius, falling back to the default.
+func (c *ConsumableEffect) EffectiveRange() float64 {
+	if c.Range > 0 {
+		return c.Range
+	}
+	return defaultConsumableRangeUnits
+}
+
+// SplitEnabled reports whether Amount is divided across targets (default true).
+func (c *ConsumableEffect) SplitEnabled() bool {
+	return c.Split == nil || *c.Split
 }
 
 // ItemDef is the catalog definition for one item type, loaded from

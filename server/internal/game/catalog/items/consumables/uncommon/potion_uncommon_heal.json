@@ -11,5 +11,5 @@
   "costGold": 1,
   "requiredBuilding": "marketplace",
   "maxStacks": 99,
-  "consumable": { "type": "heal", "amount": 100 }
+  "consumable": { "type": "heal", "amount": 100, "range": 100, "split": true }
 }

@@ -189,7 +189,9 @@
               :style="{ width: `${Math.max(0, Math.min(ui.selection.construction.progress * 100, 100))}%` }"
             />
             <div class="construction-bar__time">{{ ui.selection.construction.timeLabel }}</div>
-            <div class="construction-bar__builders">{{ ui.selection.construction.builderCount }}/3</div>
+          </div>
+          <div class="construction-workers">
+            Assigned Workers {{ ui.selection.construction.builderCount }}/3
           </div>
         </div>
 
@@ -821,6 +823,16 @@ function actionHotkey(action: { hotkey?: string; label: string }): string | null
   pointer-events: none;
 }
 
+/* Raise the HUD while one of its inline tooltips is showing (action cells,
+   perk cells, stat rows) so the tooltip paints above the launcher/ItemsBar
+   strip that overlaps the space above the panels — see the tooltip layering
+   convention in style.css. Scoped to the tooltip triggers, NOT a bare
+   :hover on the root: the raise must release the instant the pointer leaves
+   the trigger, or the raised HUD would shadow the launcher's buttons. */
+.selection-hud:has(.action-cell:hover, .stat-row--has-tooltip:hover) {
+  z-index: var(--z-panel-raised, 300);
+}
+
 .selection-main {
   position: relative;
   display: inline-block;
@@ -1359,8 +1371,10 @@ button.inventory-slot:focus-visible {
    container background used elsewhere in the HUD for consistency. */
 .production-leading {
   flex: 0 0 auto;
-  width: 56px;
-  height: 56px;
+  /* Nudge the current-unit image down so it sits 10px clear of the top. */
+  margin-top: 10px;
+  width: 70px;
+  height: 70px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1386,14 +1400,14 @@ button.inventory-slot:focus-visible {
   overflow: hidden;
   /* Shift the queue right so it visually aligns under the leading
      portrait + start of the progress bar above, rather than starting at
-     the panel's hard-left edge. */
-  margin-left: 110px;
+     the panel's hard-left edge. (Tracks the larger leading card.) */
+  margin-left: 124px;
 }
 
 .production-queue__slot {
-  flex: 0 1 44px;
-  width: 44px;
-  height: 44px;
+  flex: 0 1 55px;
+  width: 55px;
+  height: 55px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1496,6 +1510,9 @@ button.inventory-slot:focus-visible {
 
 .construction-card {
   margin-top: 2px;
+  /* Inset the progress bar 10px from each edge so it doesn't touch the
+     panel sides. */
+  padding: 0 10px;
 }
 
 .construction-bar {
@@ -1519,7 +1536,7 @@ button.inventory-slot:focus-visible {
 
 .construction-bar__time {
   position: absolute;
-  inset: 0 40px 0 0;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1531,15 +1548,15 @@ button.inventory-slot:focus-visible {
   pointer-events: none;
 }
 
-.construction-bar__builders {
-  position: absolute;
-  top: 50%;
-  right: 8px;
-  transform: translateY(-50%);
+/* Assigned-worker count on its own line below the bar, rather than crammed
+   into the bar's right edge. */
+.construction-workers {
+  margin-top: 6px;
+  text-align: center;
   color: rgba(255, 244, 220, 0.75);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  pointer-events: none;
+  letter-spacing: 0.03em;
 }
 
 .detail-entry {
@@ -1647,6 +1664,9 @@ button.inventory-slot:focus-visible {
   color: #d4b87a;
   line-height: 1.5;
   letter-spacing: 0.02em;
+  /* Preserve newlines so multi-line bodies (e.g. the Artificer recipe
+     ingredient list) render one item per line. */
+  white-space: pre-line;
 }
 
 .action-tooltip__row {
@@ -1751,8 +1771,16 @@ button.inventory-slot:focus-visible {
 }
 
 .action-cell:disabled {
-  opacity: 0.42;
   cursor: not-allowed;
+}
+
+/* Dim only the cell's content (icon, stock badge, cooldown overlay) when
+   disabled — NOT the hover tooltip. Parent `opacity` cascades to every
+   descendant and can't be undone by a child, so dimming the button as a
+   whole made the tooltip unreadable. Excluding the tooltip keeps it at full
+   opacity so a disabled action is still easy to read. */
+.action-cell:disabled > :not(.action-tooltip) {
+  opacity: 0.42;
 }
 
 /* Empty slots keep the icon-container background visible but contain no

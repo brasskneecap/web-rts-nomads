@@ -1,41 +1,30 @@
 <template>
-  <div class="storage" :style="{ '--ui-icon-container-image': `url(${iconContainerUrl})` }">
-    <div class="storage__label">Equipment {{ items.length }}</div>
-    <!-- The grid is also a drop zone: dragging an equipped item back here
-         unequips it into the vault. -->
-    <div
-      class="storage__grid"
-      :class="{ 'storage__grid--drop-active': dragActive }"
-      @dragover="onGridDragOver"
-      @drop="onGridDrop"
-    >
+  <div class="bag" :style="{ '--ui-icon-container-image': `url(${iconContainerUrl})` }">
+    <div class="bag__label">Items {{ totalCount }}</div>
+    <!-- Consumable "bag" items. Drag one onto a unit card to apply it directly
+         to that unit (full effect, one stack). Dropping anywhere else cancels
+         and the item stays here. Not a drop target itself. -->
+    <div class="bag__grid">
       <button
-        v-for="cell in cells"
-        :key="cell.key"
+        v-for="item in items"
+        :key="`bag-${item.instanceId}`"
         type="button"
-        class="storage__cell"
-        :class="{
-          'storage__cell--empty': !cell.item,
-          'storage__cell--selected': cell.item && cell.item.instanceId === selectedInstanceId,
-        }"
-        :style="cell.item ? { '--tier-color': cell.item.tierColor } : {}"
-        :disabled="!cell.item"
-        :draggable="!!cell.item"
-        :aria-label="cell.item ? cell.item.displayName : undefined"
-        @click="cell.item ? emit('select', cell.item.instanceId) : undefined"
-        @dragstart="cell.item ? onCellDragStart($event, cell.item) : undefined"
+        class="bag__cell"
+        :style="{ '--tier-color': item.tierColor }"
+        :aria-label="item.displayName"
+        draggable="true"
+        @dragstart="onCellDragStart($event, item)"
         @dragend="emit('item-dragend')"
-        @mouseenter="cell.item ? onCellEnter($event, cell.item) : undefined"
+        @mouseenter="onCellEnter($event, item)"
         @mouseleave="onCellLeave"
       >
-        <template v-if="cell.item">
-          <ActionIcon
-            class="storage__cell-icon"
-            :action="{ id: cell.item.itemId, label: cell.item.displayName, iconDef: { kind: 'item', type: cell.item.itemId } }"
-          />
-          <span v-if="(cell.item.stacks ?? 1) > 1" class="storage__cell-stack">{{ cell.item.stacks }}</span>
-        </template>
+        <ActionIcon
+          class="bag__cell-icon"
+          :action="{ id: item.itemId, label: item.displayName, iconDef: { kind: 'item', type: item.itemId } }"
+        />
+        <span v-if="(item.stacks ?? 1) > 1" class="bag__cell-stack">{{ item.stacks }}</span>
       </button>
+      <div v-if="items.length === 0" class="bag__empty">No consumables in your bag.</div>
     </div>
   </div>
 
@@ -50,19 +39,17 @@ import type { VaultStorageItem } from './types'
 
 const props = defineProps<{
   items: VaultStorageItem[]
-  selectedInstanceId: number | null
-  /** True while an equipped item is being dragged — the grid lights up as an
-   *  unequip drop target. */
-  dragActive: boolean
   iconContainerUrl: string
 }>()
 
 const emit = defineEmits<{
-  select: [instanceId: number]
   'item-dragstart': [instanceId: number, itemId: string]
   'item-dragend': []
-  'storage-drop': []
 }>()
+
+const totalCount = computed(() =>
+  props.items.reduce((sum, it) => sum + (it.stacks ?? 1), 0),
+)
 
 // ── Floating tooltip (shared ItemHoverTooltip, teleported to body) ──────────
 const hoveredItem = ref<VaultStorageItem | null>(null)
@@ -76,6 +63,7 @@ const hoveredTooltip = computed<ItemTooltipData | null>(() => {
     tier: item.tier,
     tierColor: item.tierColor,
     body: item.tooltipBody,
+    hint: 'Drag onto a unit to use',
   }
 })
 
@@ -101,38 +89,16 @@ function onCellDragStart(e: DragEvent, item: VaultStorageItem) {
   }
   emit('item-dragstart', item.instanceId, item.itemId)
 }
-
-function onGridDragOver(e: DragEvent) {
-  // Only relevant when unequipping (an equipped item dragged back here); the
-  // parent ignores the drop unless the drag source is a unit slot.
-  e.preventDefault()
-}
-
-function onGridDrop(e: DragEvent) {
-  e.preventDefault()
-  emit('storage-drop')
-}
-
-// The vault is unbounded, so the grid grows with the item count. Always keep at
-// least one trailing empty cell (a visible drop target for unequipping) and a
-// minimum of 6 cells so a near-empty vault still reads as a grid.
-const cells = computed(() => {
-  const total = Math.max(props.items.length + 1, 6)
-  return Array.from({ length: total }, (_, i) => {
-    const item = props.items[i] ?? null
-    return { key: item ? `item-${item.instanceId}` : `empty-${i}`, item }
-  })
-})
 </script>
 
 <style scoped>
-.storage {
+.bag {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.storage__label {
+.bag__label {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -140,19 +106,14 @@ const cells = computed(() => {
   color: rgba(212, 168, 79, 0.7);
 }
 
-.storage__grid {
+.bag__grid {
   display: grid;
   grid-template-columns: repeat(4, 64px);
   gap: 8px;
   border-radius: 6px;
 }
 
-.storage__grid--drop-active {
-  outline: 2px dashed rgba(96, 165, 250, 0.5);
-  outline-offset: 4px;
-}
-
-.storage__cell {
+.bag__cell {
   position: relative;
   width: 64px;
   height: 64px;
@@ -162,34 +123,17 @@ const cells = computed(() => {
   border-radius: 0;
   padding: 0;
   box-sizing: border-box;
+  box-shadow: inset 0 0 0 2px var(--tier-color, transparent);
   transition: box-shadow 0.15s;
 }
 
-.storage__cell:not(.storage__cell--empty) {
-  box-shadow: inset 0 0 0 2px var(--tier-color, transparent);
-}
-
-.storage__cell:not(.storage__cell--empty):hover {
+.bag__cell:hover {
   box-shadow:
     inset 0 0 0 2px var(--tier-color, transparent),
     var(--ui-hover-glow);
 }
 
-.storage__cell--selected {
-  box-shadow:
-    inset 0 0 0 2px var(--tier-color, #9ca3af),
-    0 0 10px var(--tier-color, #9ca3af);
-}
-
-.storage__cell--empty {
-  cursor: inherit;
-}
-
-.storage__cell:disabled {
-  opacity: 1;
-}
-
-.storage__cell-icon {
+.bag__cell-icon {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -199,7 +143,7 @@ const cells = computed(() => {
   pointer-events: none;
 }
 
-.storage__cell-stack {
+.bag__cell-stack {
   position: absolute;
   bottom: 2px;
   right: 3px;
@@ -211,4 +155,10 @@ const cells = computed(() => {
   line-height: 1;
 }
 
+.bag__empty {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: rgba(232, 217, 184, 0.5);
+  padding: 6px 0;
+}
 </style>

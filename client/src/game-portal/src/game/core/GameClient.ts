@@ -22,7 +22,7 @@ import { initObstacleDefs } from '../maps/obstacleDefs'
 import { UNIT_DEF_MAP, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs } from '../maps/perkDefs'
-import { initItemDefs } from '../maps/itemDefs'
+import { initItemDefs, ITEM_DEF_MAP, DEFAULT_CONSUMABLE_RANGE } from '../maps/itemDefs'
 import { initRecipeDefs } from '../maps/recipeDefs'
 import {
   fetchBuildingDefs,
@@ -98,6 +98,9 @@ export type GameUiSnapshot = {
   // (a slot was clicked, awaiting world click). Null when no commander
   // targeting is active.
   commanderTargetingAbilityId: string | null
+  // Active consumable-item AoE targeting (ItemsBar slot clicked, awaiting a
+  // world click). Null when no item targeting is active.
+  itemTargeting: { instanceId: number; itemId: string; radius: number } | null
   // Shop catalog for the MatchMenu Shop tab. One entry per item with a
   // RequiredBuilding declared; available=true when the gating building is
   // built and owned by the local player.
@@ -320,6 +323,7 @@ export class GameClient {
       waveUpgrade: this.state.waveUpgrade,
       commanderAbilities: this.state.localPlayerCommanderAbilities,
       commanderTargetingAbilityId: this.state.commanderTargetingAbilityId,
+      itemTargeting: this.state.itemTargeting,
       shopCatalog: this.state.getShopCatalogSnapshot(),
       shopRerollsRemaining: this.state.localPlayerShopRerollsRemaining,
       craftCatalog: this.state.getCraftCatalogSnapshot(),
@@ -376,6 +380,28 @@ export class GameClient {
 
   sendUseConsumable(unitId: number, slotIndex: number): void {
     this.network.send({ type: 'use_consumable', unitId, slotIndex })
+  }
+
+  // Arms consumable-item AoE targeting for the given vault entry: the next
+  // world click sends use_item_at there. The AoE radius comes from the item
+  // def (server-authored range, defaulting like the server does).
+  beginItemUse(instanceId: number, itemId: string): void {
+    const def = ITEM_DEF_MAP.get(itemId)
+    if (!def || def.kind !== 'consumable') return
+    const radius = def.consumable?.range ?? DEFAULT_CONSUMABLE_RANGE
+    this.state.beginItemTargeting(instanceId, itemId, radius)
+    this.input.refreshCursor()
+  }
+
+  cancelItemUse(): void {
+    this.state.cancelItemTargeting()
+    this.input.refreshCursor()
+  }
+
+  // Applies a consumable from the vault directly to one unit (Vault "Items"
+  // drag-onto-a-unit-card path). Full effect, one stack consumed server-side.
+  sendUseItemOnUnit(unitId: number, instanceId: number): void {
+    this.network.send({ type: 'use_item_on_unit', instanceId, unitId })
   }
 
   sendTransferItem(fromUnitId: number, fromSlotIdx: number, toUnitId: number, toSlotIdx: number): void {
@@ -733,6 +759,21 @@ export class GameClient {
   }
 
   tryHandleWorldClick(x: number, y: number) {
+    // Consumable-item AoE use: player-level like commander abilities, so it
+    // also resolves before the build/unit-targeting branches. The server
+    // only consumes the item when at least one allied unit is hit, so a
+    // missed click keeps the item; targeting ends either way (re-click the
+    // slot to aim again).
+    if (this.state.isItemTargetingActive()) {
+      const targeting = this.state.itemTargeting
+      if (targeting) {
+        this.network.send({ type: 'use_item_at', instanceId: targeting.instanceId, x, y })
+      }
+      this.state.cancelItemTargeting()
+      this.input.refreshCursor()
+      return true
+    }
+
     // Commander abilities are player-level (no unit selection needed) and
     // resolve at the click point. Handle BEFORE the build/unit-targeting
     // branches so a click during commander targeting commits the cast even
@@ -914,6 +955,7 @@ export class GameClient {
     this.state.cancelBuildingTargeting()
     this.state.cancelUnitTargeting()
     this.state.cancelCommanderTargeting()
+    this.state.cancelItemTargeting()
     this.state.cancelBuildPlacement()
     // Same rationale as finishUnitTargeting: refresh the cursor right now
     // (right-click / Escape cancel path) so the reticle reverts on the same

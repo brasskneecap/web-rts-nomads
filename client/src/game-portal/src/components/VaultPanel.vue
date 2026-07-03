@@ -39,8 +39,14 @@
 
     <div v-if="embedded || !collapsed" class="vault-body">
       <div class="vault-layout">
-        <!-- Left: storage grid + selected-item details -->
+        <!-- Left: bag items (consumables) + equipment grid + selected-item details -->
         <div class="vault-left">
+          <BagItemsRow
+            :items="bagItems"
+            :icon-container-url="iconContainerUrl"
+            @item-dragstart="onBagDragStart"
+            @item-dragend="onDragEnd"
+          />
           <StorageGrid
             :items="storageItems"
             :selected-instance-id="vaultSelectedInstanceId"
@@ -83,11 +89,13 @@
               :card="card"
               :has-selected-item="vaultSelectedInstanceId !== null"
               :accepts-drop="acceptsDropForUnit(card.id)"
+              :accepts-consumable-drop="dragSource?.kind === 'bag-consumable'"
               :icon-container-url="iconContainerUrl"
               @focus="onCardFocus"
               @slot-dragstart="onCardSlotDragStart"
               @slot-dragend="onDragEnd"
               @slot-drop="onCardSlotDrop"
+              @card-drop="onCardConsumableDrop"
             />
             <div v-if="unitCards.length === 0" class="vault-right__empty">
               No units can hold items.
@@ -112,6 +120,7 @@ import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 import { getRankToneColor } from '@/game/rendering/rankColors'
 import { useDraggablePanel } from '@/composables/useDraggablePanel'
 import StorageGrid from '@/components/vault/StorageGrid.vue'
+import BagItemsRow from '@/components/vault/BagItemsRow.vue'
 import SelectedItemPanel from '@/components/vault/SelectedItemPanel.vue'
 import EligibleUnitCard from '@/components/vault/EligibleUnitCard.vue'
 import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
@@ -133,6 +142,7 @@ const props = withDefaults(defineProps<{
   onEquipItem: (unitId: number, slotIndex: number, instanceId: number) => void
   onUseConsumable: (unitId: number, slotIndex: number) => void
   onTransferItem: (fromUnitId: number, fromSlotIdx: number, toUnitId: number, toSlotIdx: number) => void
+  onUseItemOnUnit: (unitId: number, instanceId: number) => void
   onFocusUnit?: (unitId: number) => void
   onClose?: () => void
   /**
@@ -177,20 +187,45 @@ const unitsById = computed(() => {
   return m
 })
 
-// ── Storage items ───────────────────────────────────────────────────────────
+// ── Equipment items ──────────────────────────────────────────────────────────
+// Equipment only (the "Equipment" grid). Consumables are excluded here — they
+// appear in the "Items" bag section above (bagItems) and, separately, in the
+// floating ItemsBar for ground-targeted AoE use. They are never equipped.
 const storageItems = computed<VaultStorageItem[]>(() =>
-  props.vault.map((snap) => {
-    const def = ITEM_DEF_MAP.get(snap.itemId)
-    return {
-      instanceId: snap.instanceId,
-      itemId: snap.itemId,
-      displayName: def?.displayName ?? snap.itemId,
-      tier: def?.tier,
-      tierColor: tierColor(def?.tier),
-      tooltipBody: def ? buildItemTooltipBody(def) : '',
-      stacks: snap.stacks,
-    }
-  }),
+  props.vault
+    .filter((snap) => ITEM_DEF_MAP.get(snap.itemId)?.kind !== 'consumable')
+    .map((snap) => {
+      const def = ITEM_DEF_MAP.get(snap.itemId)
+      return {
+        instanceId: snap.instanceId,
+        itemId: snap.itemId,
+        displayName: def?.displayName ?? snap.itemId,
+        tier: def?.tier,
+        tierColor: tierColor(def?.tier),
+        tooltipBody: def ? buildItemTooltipBody(def) : '',
+        stacks: snap.stacks,
+      }
+    }),
+)
+
+// ── Bag items (consumables) ──────────────────────────────────────────────────
+// The "Items" section above the equipment grid. These are dragged directly onto
+// a unit card to apply the consumable to that unit (see onCardConsumableDrop).
+const bagItems = computed<VaultStorageItem[]>(() =>
+  props.vault
+    .filter((snap) => ITEM_DEF_MAP.get(snap.itemId)?.kind === 'consumable')
+    .map((snap) => {
+      const def = ITEM_DEF_MAP.get(snap.itemId)
+      return {
+        instanceId: snap.instanceId,
+        itemId: snap.itemId,
+        displayName: def?.displayName ?? snap.itemId,
+        tier: def?.tier,
+        tierColor: tierColor(def?.tier),
+        tooltipBody: def ? buildItemTooltipBody(def) : '',
+        stacks: snap.stacks,
+      }
+    }),
 )
 
 // ── Selected item (details panel + eligibility source) ──────────────────────
@@ -341,6 +376,8 @@ const unitCards = computed<VaultUnitCardData[]>(() => {
         rank: u.rank ?? '',
         rankChevrons,
         rankColor: getRankToneColor(u.rank, 'light'),
+        hp: u.hp ?? null,
+        maxHp: u.maxHp ?? null,
         xpInto: u.xpIntoCurrentRank ?? null,
         xpToNext: u.xpToNextRank ?? null,
         isMaxRank: u.rank === 'gold',
@@ -371,6 +408,7 @@ const unitCards = computed<VaultUnitCardData[]>(() => {
 type DragSource =
   | { kind: 'vault'; instanceId: number; itemId: string }
   | { kind: 'unit-slot'; unitId: number; slotIndex: number; itemId: string }
+  | { kind: 'bag-consumable'; instanceId: number; itemId: string }
 
 const dragSource = ref<DragSource | null>(null)
 
@@ -411,6 +449,10 @@ function onStorageDragStart(instanceId: number, itemId: string) {
   dragSource.value = { kind: 'vault', instanceId, itemId }
 }
 
+function onBagDragStart(instanceId: number, itemId: string) {
+  dragSource.value = { kind: 'bag-consumable', instanceId, itemId }
+}
+
 function onCardSlotDragStart(payload: { unitId: number; slotIndex: number }) {
   const unit = unitsById.value.get(payload.unitId)
   const held = unit?.inventory?.slots?.[payload.slotIndex] ?? null
@@ -431,8 +473,11 @@ function onDragEnd() {
 // another unit slot. Occupied targets are never overwritten.
 function onCardSlotDrop(payload: { unitId: number; slotIndex: number }) {
   const src = dragSource.value
-  dragSource.value = null
   if (!src) return
+  // A bag consumable dropped on a slot is not an equip — leave dragSource intact
+  // so the card-level drop handler (which this event bubbles up to) applies it.
+  if (src.kind === 'bag-consumable') return
+  dragSource.value = null
 
   const unit = unitsById.value.get(payload.unitId)
   if (!unit) return
@@ -451,6 +496,18 @@ function onCardSlotDrop(payload: { unitId: number; slotIndex: number }) {
     if (src.unitId === unit.id && src.slotIndex === payload.slotIndex) return
     props.onTransferItem(src.unitId, src.slotIndex, unit.id, payload.slotIndex)
   }
+}
+
+// Drop a bag consumable anywhere on a unit card: apply it to that unit. A drop
+// released outside any card just fires dragend (onDragEnd) and clears the
+// source, so the item stays in the Items section — nothing is consumed.
+function onCardConsumableDrop(unitId: number) {
+  const src = dragSource.value
+  dragSource.value = null
+  if (!src || src.kind !== 'bag-consumable') return
+  const unit = unitsById.value.get(unitId)
+  if (!unit) return
+  props.onUseItemOnUnit(unit.id, src.instanceId)
 }
 
 // Drop onto the storage grid: unequip an item dragged out of a unit slot.

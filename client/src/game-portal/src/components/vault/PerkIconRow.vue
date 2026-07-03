@@ -91,7 +91,7 @@ const tooltipStyle = computed(() => {
    perk, floating above all panels (mirrors the SelectionHud perk tooltip). */
 .perk-tooltip {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-tooltip, 10000);
   min-width: 150px;
   max-width: 240px;
   padding: 7px 10px;

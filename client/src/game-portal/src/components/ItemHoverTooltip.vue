@@ -58,7 +58,7 @@ const style = computed(() => {
 <style scoped>
 .item-tooltip {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-tooltip, 10000);
   min-width: 130px;
   max-width: 220px;
   background: rgba(10, 12, 20, 0.97);

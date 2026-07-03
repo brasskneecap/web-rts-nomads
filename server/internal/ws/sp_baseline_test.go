@@ -42,6 +42,14 @@ var updateBaseline = flag.Bool("update", false, "regenerate the SP baseline file
 // TestClient_WriteJSON_BytesEqualJSONMarshal). This baseline guards against
 // future protocol changes slipping in unannounced.
 func TestSPBaseline_StructuralShape(t *testing.T) {
+	// Force the StartWaveBonus testing toggle off for this scenario. It is a
+	// debug switch the user flips on/off; when on, the match opens with an
+	// RNG-seeded start-of-match upgrade offer whose card set varies every run,
+	// which would leak per-run randomness into this golden snapshot. Pinning it
+	// off keeps the transport/protocol shape guard deterministic regardless of
+	// the committed toggle value.
+	t.Cleanup(game.SetStartWaveBonusForTest(false))
+
 	mm := game.NewMatchManager()
 	lm := game.NewLobbyManager()
 	hub := NewHub(mm, lm)

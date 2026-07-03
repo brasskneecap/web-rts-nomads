@@ -2,9 +2,9 @@
   "id": "battlefield_wisdom_common",
   "group": "battlefield_wisdom",
   "name": "Battlefield Wisdom",
-  "description": "Grant 75 XP to a unit of your choice",
+  "description": "Receive an Experience Potion in your vault (grants 75 XP when consumed)",
   "rarity": "common",
-  "scope": "xp",
-  "effect": { "type": "xp", "amount": 75 },
+  "scope": "equipment",
+  "effect": { "type": "equipment", "itemID": "experience_potion" },
   "unlimited": true
 }

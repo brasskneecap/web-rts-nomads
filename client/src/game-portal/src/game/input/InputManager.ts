@@ -7,6 +7,8 @@ import { getMinimapBounds } from '../rendering/CanvasRenderer'
 import { NetworkClient } from '../network/NetworkClient'
 import { BUILDABLE_BUILDING_DEFS } from '../maps/buildingDefs'
 import { resolveCursor } from '../rendering/cursors'
+import { getItemCursorCss } from '../rendering/itemAssets'
+import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { playBuildingSelectSound, playSelectSound } from '../../composables/useSfx'
 
 export class InputManager {
@@ -980,6 +982,22 @@ export class InputManager {
       this.state.setHoveredEnemyUnit(null)
       this.state.setHoveredFriendlyUnit(null)
       this.canvas.style.cursor = resolveCursor('target', 'crosshair')
+      return
+    }
+
+    // Consumable-item AoE targeting mirrors commander targeting: suppress the
+    // interactable hover states. The cursor becomes the armed item's icon
+    // (hotspot centered, where the AoE resolves); the reticle is only the
+    // fallback while the item art hasn't finished loading.
+    if (this.state.isItemTargetingActive()) {
+      this.state.setHoveredInteractableBuilding(null)
+      this.state.setHoveredInteractableObstacle(null)
+      this.state.setHoveredEnemyUnit(null)
+      this.state.setHoveredFriendlyUnit(null)
+      const itemId = this.state.itemTargeting?.itemId
+      const iconKey = itemId ? (ITEM_DEF_MAP.get(itemId)?.iconKey ?? itemId) : null
+      const itemCursor = iconKey ? getItemCursorCss(iconKey) : null
+      this.canvas.style.cursor = itemCursor ?? resolveCursor('target', 'crosshair')
       return
     }
 

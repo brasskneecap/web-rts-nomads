@@ -56,6 +56,7 @@ const emptyUiSnapshot: GameUiSnapshot = {
   waveUpgrade: null,
   commanderAbilities: [],
   commanderTargetingAbilityId: null,
+  itemTargeting: null,
   shopCatalog: [],
   shopRerollsRemaining: 0,
   craftCatalog: [],
@@ -259,6 +260,10 @@ export function useGameClient() {
     client?.sendTransferItem(fromUnitId, fromSlotIdx, toUnitId, toSlotIdx)
   }
 
+  function sendUseItemOnUnit(unitId: number, instanceId: number) {
+    client?.sendUseItemOnUnit(unitId, instanceId)
+  }
+
   function setVaultSelectedInstanceId(instanceId: number | null) {
     client?.setVaultSelectedInstanceId(instanceId)
   }
@@ -281,6 +286,14 @@ export function useGameClient() {
 
   function cancelCommanderAbility() {
     client?.cancelCommanderAbility()
+  }
+
+  function beginItemUse(instanceId: number, itemId: string) {
+    client?.beginItemUse(instanceId, itemId)
+  }
+
+  function cancelItemUse() {
+    client?.cancelItemUse()
   }
 
   onBeforeUnmount(() => {
@@ -310,12 +323,15 @@ export function useGameClient() {
     sendUnequipItem,
     sendUseConsumable,
     sendTransferItem,
+    sendUseItemOnUnit,
     setVaultSelectedInstanceId,
     sendWaveUpgradeChoice,
     sendWaveUpgradeReroll,
     sendSetPause,
     beginCommanderAbility,
     cancelCommanderAbility,
+    beginItemUse,
+    cancelItemUse,
     ui,
     connectionState,
     currentMatchId,

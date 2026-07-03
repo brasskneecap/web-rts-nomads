@@ -87,7 +87,7 @@ const itemRows = computed(() => {
 <style scoped>
 .loot-tooltip {
   position: fixed;
-  z-index: 9999;
+  z-index: var(--z-tooltip, 10000);
   pointer-events: none;
   background: rgba(20, 15, 5, 0.92);
   border: 1px solid rgba(245, 180, 0, 0.65);

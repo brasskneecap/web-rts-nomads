@@ -140,9 +140,17 @@
         :active-tab="matchMenuOpen ? matchMenuTab : null"
         :abilities="ui.commanderAbilities"
         :active-ability-id="ui.commanderTargetingAbilityId"
+        :items-bar-visible="itemsBarVisible"
         @open="openMenuTab"
         @cast-ability="onCommanderCast"
+        @toggle-items="itemsBarVisible = !itemsBarVisible"
         @settings="matchSettingsOpen = !matchSettingsOpen"
+      />
+      <ItemsBar
+        v-if="hasStarted && itemsBarVisible"
+        :vault="ui.vault"
+        :active-instance-id="ui.itemTargeting?.instanceId ?? null"
+        @use="onItemUse"
       />
       <MatchSettingsModal
         v-if="hasStarted && matchSettingsOpen"
@@ -166,6 +174,7 @@
         :on-unequip-item="sendUnequipItem"
         :on-use-consumable="sendUseConsumable"
         :on-transfer-item="sendTransferItem"
+        :on-use-item-on-unit="sendUseItemOnUnit"
         :on-focus-unit="focusUnit"
         :craft-catalog="ui.craftCatalog"
         :has-artificer="ui.hasArtificer"
@@ -205,6 +214,7 @@ import DebugSpawnPanel from '@/components/DebugSpawnPanel.vue'
 import WaveUpgradeModal from '@/components/WaveUpgradeModal.vue'
 import MatchMenu from '@/components/MatchMenu.vue'
 import MatchMenuLauncher from '@/components/MatchMenuLauncher.vue'
+import ItemsBar from '@/components/ItemsBar.vue'
 import MatchSettingsModal from '@/components/MatchSettingsModal.vue'
 import LootDropTooltip from '@/components/LootDropTooltip.vue'
 import DebugHud from '@/components/DebugHud.vue'
@@ -268,12 +278,15 @@ const {
   sendUnequipItem,
   sendUseConsumable,
   sendTransferItem,
+  sendUseItemOnUnit,
   setVaultSelectedInstanceId,
   sendWaveUpgradeChoice,
   sendWaveUpgradeReroll,
   sendSetPause,
   beginCommanderAbility,
   cancelCommanderAbility,
+  beginItemUse,
+  cancelItemUse,
   ui,
   connectionState,
   currentMatchId,
@@ -301,6 +314,20 @@ function onCommanderCast(abilityId: string) {
     return
   }
   beginCommanderAbility(abilityId)
+}
+
+// Consumable items row (ItemsBar). Shown by default; the launcher's Items
+// button toggles it.
+const itemsBarVisible = ref(true)
+
+function onItemUse(instanceId: number, itemId: string) {
+  // Same toggle ergonomic as commander abilities: re-clicking the armed
+  // item cancels targeting instead of re-arming it.
+  if (ui.value.itemTargeting?.instanceId === instanceId) {
+    cancelItemUse()
+    return
+  }
+  beginItemUse(instanceId, itemId)
 }
 
 function clearStaleSession() {
@@ -622,7 +649,9 @@ function selectionWouldHandleKey(letter: string): boolean {
 
 function onMatchMenuHotkey(e: KeyboardEvent) {
   if (!hasStarted.value) return
-  if (!(e.code in MATCH_MENU_HOTKEYS)) return
+  // KeyI toggles the ItemsBar (not a menu tab, so not in MATCH_MENU_HOTKEYS).
+  const isItemsBarKey = e.code === 'KeyI'
+  if (!(e.code in MATCH_MENU_HOTKEYS) && !isItemsBarKey) return
   if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return
   if (isTextInputFocused()) return
 
@@ -632,6 +661,12 @@ function onMatchMenuHotkey(e: KeyboardEvent) {
   // open the menu, regardless of whether anything is selected.
   const letter = e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : ''
   if (letter && selectionWouldHandleKey(letter)) return
+
+  if (isItemsBarKey) {
+    itemsBarVisible.value = !itemsBarVisible.value
+    e.preventDefault()
+    return
+  }
 
   const targetTab = MATCH_MENU_HOTKEYS[e.code]
   if (matchMenuOpen.value && matchMenuTab.value === targetTab) {

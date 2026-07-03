@@ -33,6 +33,31 @@
       </div>
     </button>
 
+    <!-- Items row toggle: sits to the right of the Vault button, using the
+         same icon-container slot style as Shop/Upgrades/Vault. Not a menu
+         tab — it shows/hides the ItemsBar (consumables row above the
+         commander abilities). Pressed styling while the bar is visible. -->
+    <button
+      type="button"
+      class="menu-launcher__btn menu-launcher__btn--icon"
+      :class="{ 'menu-launcher__btn--active': itemsBarVisible }"
+      :aria-pressed="itemsBarVisible"
+      aria-label="Items — Show or hide your consumable items row. (hotkey I)"
+      @click="emit('toggle-items')"
+    >
+      <img
+        :src="itemBagIconUrl"
+        alt="Items"
+        class="menu-launcher__icon"
+        draggable="false"
+      />
+      <div class="menu-launcher__tooltip" role="tooltip">
+        <div class="menu-launcher__tooltip-title">Items</div>
+        <div class="menu-launcher__tooltip-desc">Show or hide your consumable items row. Click an item, then click on your units to use it.</div>
+        <div class="menu-launcher__tooltip-hotkey">Hotkey: <kbd>I</kbd></div>
+      </div>
+    </button>
+
     <!-- Centered group: commander abilities centered on the launcher /
          details-panel midline. Floats above the left-anchored
          Shop/Upgrades/Vault row. -->
@@ -74,6 +99,7 @@ import type { CommanderAbilitySnapshot } from '@/game/network/protocol'
 import shopIconUrl from '@/assets/ui/buttons/shop.png'
 import upgradesIconUrl from '@/assets/ui/buttons/upgrades.png'
 import vaultIconUrl from '@/assets/ui/buttons/vault.png'
+import itemBagIconUrl from '@/assets/ui/buttons/item_bag.png'
 import settingsIconUrl from '@/assets/ui/buttons/settings.png'
 import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
 
@@ -119,14 +145,19 @@ withDefaults(defineProps<{
   abilities?: CommanderAbilitySnapshot[]
   /** Id of the commander ability currently in targeting mode, or null. */
   activeAbilityId?: string | null
+  /** Whether the consumable ItemsBar is currently shown — drives the Items
+   *  button's pressed styling. */
+  itemsBarVisible?: boolean
 }>(), {
   abilities: () => [],
   activeAbilityId: null,
+  itemsBarVisible: true,
 })
 
 const emit = defineEmits<{
   open: [tabId: string]
   'cast-ability': [abilityId: string]
+  'toggle-items': []
   settings: []
 }>()
 </script>
@@ -161,6 +192,16 @@ const emit = defineEmits<{
   box-sizing: border-box;
   pointer-events: auto;
   user-select: none;
+}
+
+/* While any launcher button (or embedded commander ability slot) is hovered,
+   raise the whole launcher so its tooltip paints above every coexisting
+   panel (ItemsBar, vault, MatchMenu, MatchHud). Inline tooltips cannot
+   escape this element's stacking context, so the context itself moves up.
+   Only overlap-safe while hovered: the pointer is over a launcher button,
+   so nothing covered by the raise was clickable under the cursor anyway. */
+.menu-launcher:has(button:hover) {
+  z-index: var(--z-panel-raised, 300);
 }
 
 /* Pill button styled to match the "Exit Game" item in MatchHud's settings
@@ -239,12 +280,13 @@ const emit = defineEmits<{
 /* Icon-mode buttons (Shop, Upgrades) use the shared icon-container frame
    as their background instead of the warm-brown pill, with the action
    artwork centered inside at 70% — same idiom as inventory/action slots
-   in SelectionHud. */
+   in SelectionHud. 56px = the original 45px slot +25%, sized up so the
+   launcher actions read better at 100% zoom. */
 .menu-launcher__btn--icon,
 .menu-launcher__btn--icon:hover,
 .menu-launcher__btn--icon.menu-launcher__btn--active {
-  width: 45px;
-  height: 45px;
+  width: 56px;
+  height: 56px;
   padding: 0;
   border: 0;
   border-radius: 0;

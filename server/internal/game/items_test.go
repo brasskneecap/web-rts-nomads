@@ -82,8 +82,8 @@ func spawnBronzeUnit(t *testing.T, s *GameState, playerID string) *Unit {
 // and that both equipment and consumable kinds are represented.
 func TestItemCatalog_AllItemsLoaded(t *testing.T) {
 	defs := ListItemDefs()
-	if len(defs) != 20 {
-		t.Fatalf("expected 20 item defs, got %d", len(defs))
+	if len(defs) != 21 {
+		t.Fatalf("expected 21 item defs, got %d", len(defs))
 	}
 
 	byID := make(map[string]*ItemDef, len(defs))
@@ -93,7 +93,7 @@ func TestItemCatalog_AllItemsLoaded(t *testing.T) {
 
 	weapons := []string{
 		"broad_sword", "scimitar", "flame_sword",
-		"ice_sword", "shadow_blade", "fire_sword",
+		"frost_scimitar", "shadow_blade", "fire_sword",
 		"lightning_sword", "frost_sword",
 	}
 	for _, id := range weapons {
@@ -173,6 +173,18 @@ func TestItemCatalog_AllItemsLoaded(t *testing.T) {
 		// value (maxStacks), so assert the invariant, not the literal.
 		if def.MaxStacks <= 1 {
 			t.Errorf("%s: expected stackable consumable (MaxStacks > 1), got %d", id, def.MaxStacks)
+		}
+	}
+
+	// Experience potion: a grant_xp consumable with a positive amount.
+	if def, ok := byID["experience_potion"]; !ok {
+		t.Error(`missing consumable "experience_potion"`)
+	} else {
+		if def.Kind != ItemKindConsumable {
+			t.Errorf("experience_potion: expected kind consumable, got %q", def.Kind)
+		}
+		if def.Consumable == nil || def.Consumable.Type != "grant_xp" || def.Consumable.Amount <= 0 {
+			t.Errorf("experience_potion: expected grant_xp consumable with positive amount, got %+v", def.Consumable)
 		}
 	}
 }
@@ -429,87 +441,317 @@ func TestUnequipItem_ReturnsItemToVault(t *testing.T) {
 	}
 }
 
-// ─── Consumable use ───────────────────────────────────────────────────────────
+// ─── Consumable use (ground-targeted AoE) ─────────────────────────────────────
 
-// TestUseConsumable_HealRestoresHP verifies the heal effect adds HP up to MaxHP.
-func TestUseConsumable_HealRestoresHP(t *testing.T) {
-	s, playerID := newItemTestState(t)
-	unit := spawnBronzeUnit(t, s, playerID)
-
+// addVaultConsumable adds itemID to the player's vault via the standard
+// helper and returns its InstanceID.
+func addVaultConsumable(t *testing.T, s *GameState, playerID, itemID string) int64 {
+	t.Helper()
 	s.mu.Lock()
-	unit.HP = unit.MaxHP/2
-	s.mu.Unlock()
-
-	s.PurchaseItem(playerID, "bs-1", "potion_common_heal")
-	s.mu.RLock()
-	iid := s.Players[playerID].Vault[0].InstanceID
-	s.mu.RUnlock()
-	s.EquipItem(playerID, unit.ID, 0, iid)
-
-	s.mu.RLock()
-	hpBefore := unit.HP
-	s.mu.RUnlock()
-
-	healAmount := itemDef(t, "potion_common_heal").Consumable.Amount
-
-	s.UseConsumable(playerID, unit.ID, 0)
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	expected := hpBefore + healAmount
-	if expected > unit.MaxHP {
-		expected = unit.MaxHP
+	defer s.mu.Unlock()
+	def, ok := s.itemCatalog[itemID]
+	if !ok {
+		t.Fatalf("item %s not in catalog", itemID)
 	}
-	if unit.HP != expected {
-		t.Errorf("expected HP %d after heal, got %d", expected, unit.HP)
+	if !s.addItemToVaultLocked(s.Players[playerID], def) {
+		t.Fatalf("failed to add %s to vault", itemID)
 	}
+	vault := s.Players[playerID].Vault
+	return vault[len(vault)-1].InstanceID
 }
 
-// TestUseConsumable_ClearsSlotWhenLastStack verifies that using the last stack
-// of a consumable nils out the slot.
-func TestUseConsumable_ClearsSlotWhenLastStack(t *testing.T) {
+// spawnCombatUnitAt spawns a soldier for playerID at the given world position.
+func spawnCombatUnitAt(t *testing.T, s *GameState, playerID string, x, y float64) *Unit {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	unit := s.spawnPlayerUnitLocked("soldier", playerID, s.Players[playerID].Color, protocol.Vec2{X: x, Y: y})
+	if unit == nil {
+		t.Fatal("failed to spawn soldier")
+	}
+	// Pin the exact position: spawn may nudge to a walkable cell center.
+	unit.X, unit.Y = x, y
+	return unit
+}
+
+// TestEquipItem_RejectsConsumable: consumables live in the item bar and are
+// used as a ground AoE — they must never occupy a unit equipment slot.
+func TestEquipItem_RejectsConsumable(t *testing.T) {
 	s, playerID := newItemTestState(t)
 	unit := spawnBronzeUnit(t, s, playerID)
 
-	s.PurchaseItem(playerID, "bs-1", "potion_common_heal")
-	s.mu.RLock()
-	iid := s.Players[playerID].Vault[0].InstanceID
-	s.mu.RUnlock()
+	iid := addVaultConsumable(t, s, playerID, "potion_common_heal")
 	s.EquipItem(playerID, unit.ID, 0, iid)
-
-	s.UseConsumable(playerID, unit.ID, 0)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if unit.Equipped[0] != nil {
-		t.Error("expected slot 0 nil after using last potion stack")
+		t.Error("consumable must not be equippable into a unit slot")
+	}
+	if got := vaultItemCountLocked(s.Players[playerID], "potion_common_heal"); got != 1 {
+		t.Errorf("rejected equip must leave the potion in the vault; count=%d", got)
 	}
 }
 
-// TestUseConsumable_FullHP_StillConsumes verifies the potion is consumed even
-// when the unit is already at full HP.
-func TestUseConsumable_FullHP_StillConsumes(t *testing.T) {
+// TestUseItemAt_HealSplitsAcrossTargets: the catalog heal potions default to
+// split=true, so two units inside the AoE each receive amount/2, and one
+// stack is consumed from the vault.
+func TestUseItemAt_HealSplitsAcrossTargets(t *testing.T) {
 	s, playerID := newItemTestState(t)
-	unit := spawnBronzeUnit(t, s, playerID)
+	def := itemDef(t, "potion_common_heal")
+	if !def.Consumable.SplitEnabled() {
+		t.Fatal("catalog heal potions are expected to split")
+	}
+	amount := def.Consumable.Amount
+	radius := def.Consumable.EffectiveRange()
 
-	// Force unit to full HP for this test.
+	center := protocol.Vec2{X: 800, Y: 800}
+	u1 := spawnCombatUnitAt(t, s, playerID, center.X-radius/4, center.Y)
+	u2 := spawnCombatUnitAt(t, s, playerID, center.X+radius/4, center.Y)
 	s.mu.Lock()
-	unit.HP = unit.MaxHP
+	u1.HP = 1
+	u2.HP = 1
 	s.mu.Unlock()
 
-	s.PurchaseItem(playerID, "bs-1", "potion_common_heal")
-	s.mu.RLock()
-	iid := s.Players[playerID].Vault[0].InstanceID
-	s.mu.RUnlock()
-	s.EquipItem(playerID, unit.ID, 0, iid)
-
-	s.UseConsumable(playerID, unit.ID, 0)
+	iid := addVaultConsumable(t, s, playerID, "potion_common_heal")
+	s.UseItemAt(playerID, iid, center.X, center.Y)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	// Slot should be nil (consumed even at full HP).
-	if unit.Equipped[0] != nil {
-		t.Error("expected slot 0 nil after consuming at full HP")
+	per := amount / 2
+	for i, u := range []*Unit{u1, u2} {
+		want := 1 + per
+		if want > u.MaxHP {
+			want = u.MaxHP
+		}
+		if u.HP != want {
+			t.Errorf("unit %d: want HP %d (1 + %d split), got %d", i+1, want, per, u.HP)
+		}
+	}
+	if got := vaultItemCountLocked(s.Players[playerID], "potion_common_heal"); got != 0 {
+		t.Errorf("potion must be consumed; vault count=%d", got)
+	}
+}
+
+// TestUseItemAt_GrantXPSplitsAcrossTargets mirrors the design example: an
+// experience potion used on a cluster of N units gives each amount/N XP.
+func TestUseItemAt_GrantXPSplitsAcrossTargets(t *testing.T) {
+	s, playerID := newItemTestState(t)
+	def := itemDef(t, "experience_potion")
+	amount := def.Consumable.Amount
+	radius := def.Consumable.EffectiveRange()
+
+	center := protocol.Vec2{X: 800, Y: 800}
+	units := []*Unit{
+		spawnCombatUnitAt(t, s, playerID, center.X-radius/4, center.Y),
+		spawnCombatUnitAt(t, s, playerID, center.X+radius/4, center.Y),
+		spawnCombatUnitAt(t, s, playerID, center.X, center.Y+radius/4),
+	}
+
+	iid := addVaultConsumable(t, s, playerID, "experience_potion")
+	s.UseItemAt(playerID, iid, center.X, center.Y)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	per := amount / len(units)
+	for i, u := range units {
+		if u.XP != per {
+			t.Errorf("unit %d: want %d XP (=%d/%d), got %d", i+1, per, amount, len(units), u.XP)
+		}
+	}
+}
+
+// TestUseItemAt_SplitFalseGivesFullAmountToEach: an item authored with
+// split=false gives every unit hit the full amount.
+func TestUseItemAt_SplitFalseGivesFullAmountToEach(t *testing.T) {
+	s, playerID := newItemTestState(t)
+
+	// Clone the per-state catalog and add a synthetic no-split test item so
+	// the shared singleton is never mutated.
+	noSplit := false
+	testDef := &ItemDef{
+		ID: "test_nosplit_xp", DisplayName: "test", IconKey: "test",
+		Kind: ItemKindConsumable, Tier: ItemTierCommon, SlotKind: "any",
+		MaxStacks:  9,
+		Consumable: &ConsumableEffect{Type: "grant_xp", Amount: 30, Range: 100, Split: &noSplit},
+	}
+	s.mu.Lock()
+	cloned := make(map[string]*ItemDef, len(s.itemCatalog)+1)
+	for k, v := range s.itemCatalog {
+		cloned[k] = v
+	}
+	cloned[testDef.ID] = testDef
+	s.itemCatalog = cloned
+	s.mu.Unlock()
+
+	center := protocol.Vec2{X: 800, Y: 800}
+	u1 := spawnCombatUnitAt(t, s, playerID, center.X-20, center.Y)
+	u2 := spawnCombatUnitAt(t, s, playerID, center.X+20, center.Y)
+
+	iid := addVaultConsumable(t, s, playerID, "test_nosplit_xp")
+	s.UseItemAt(playerID, iid, center.X, center.Y)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i, u := range []*Unit{u1, u2} {
+		if u.XP != testDef.Consumable.Amount {
+			t.Errorf("unit %d: split=false must grant the full %d XP, got %d",
+				i+1, testDef.Consumable.Amount, u.XP)
+		}
+	}
+}
+
+// spawnWorkerAt spawns a worker for playerID at the given world position.
+func spawnWorkerAt(t *testing.T, s *GameState, playerID string, x, y float64) *Unit {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	unit := s.spawnPlayerUnitLocked("worker", playerID, s.Players[playerID].Color, protocol.Vec2{X: x, Y: y})
+	if unit == nil {
+		t.Fatal("failed to spawn worker")
+	}
+	unit.X, unit.Y = x, y
+	return unit
+}
+
+// TestUseItemAt_GrantXP_IneligibleExcludedFromSplit: units that cannot gain
+// XP (workers) neither receive a share nor count toward the split — two
+// soldiers and a worker in range means each soldier gets amount/2, not /3.
+func TestUseItemAt_GrantXP_IneligibleExcludedFromSplit(t *testing.T) {
+	s, playerID := newItemTestState(t)
+	def := itemDef(t, "experience_potion")
+	amount := def.Consumable.Amount
+
+	center := protocol.Vec2{X: 800, Y: 800}
+	s1 := spawnCombatUnitAt(t, s, playerID, center.X-20, center.Y)
+	s2 := spawnCombatUnitAt(t, s, playerID, center.X+20, center.Y)
+	w := spawnWorkerAt(t, s, playerID, center.X, center.Y+20)
+
+	iid := addVaultConsumable(t, s, playerID, "experience_potion")
+	s.UseItemAt(playerID, iid, center.X, center.Y)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	per := amount / 2
+	for i, u := range []*Unit{s1, s2} {
+		if u.XP != per {
+			t.Errorf("soldier %d: want %d XP (split between the 2 eligible units), got %d", i+1, per, u.XP)
+		}
+	}
+	if w.XP != 0 {
+		t.Errorf("worker must be excluded from an XP potion entirely, got %d XP", w.XP)
+	}
+}
+
+// TestUseItemAt_GrantXP_OnlyIneligibleTargets_NoConsume: an XP potion dropped
+// where only workers stand has no eligible target — nothing happens and the
+// item is kept.
+func TestUseItemAt_GrantXP_OnlyIneligibleTargets_NoConsume(t *testing.T) {
+	s, playerID := newItemTestState(t)
+
+	center := protocol.Vec2{X: 800, Y: 800}
+	spawnWorkerAt(t, s, playerID, center.X, center.Y)
+
+	iid := addVaultConsumable(t, s, playerID, "experience_potion")
+	s.UseItemAt(playerID, iid, center.X, center.Y)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if got := vaultItemCountLocked(s.Players[playerID], "experience_potion"); got != 1 {
+		t.Errorf("potion must not be consumed with only ineligible targets; vault count=%d", got)
+	}
+}
+
+// TestUseItemAt_HealIncludesWorkers: workers CAN benefit from a heal, so they
+// are valid targets and count toward the split.
+func TestUseItemAt_HealIncludesWorkers(t *testing.T) {
+	s, playerID := newItemTestState(t)
+	def := itemDef(t, "potion_common_heal")
+	amount := def.Consumable.Amount
+
+	center := protocol.Vec2{X: 800, Y: 800}
+	soldier := spawnCombatUnitAt(t, s, playerID, center.X-20, center.Y)
+	worker := spawnWorkerAt(t, s, playerID, center.X+20, center.Y)
+	s.mu.Lock()
+	soldier.HP = 1
+	worker.HP = 1
+	s.mu.Unlock()
+
+	iid := addVaultConsumable(t, s, playerID, "potion_common_heal")
+	s.UseItemAt(playerID, iid, center.X, center.Y)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	per := amount / 2
+	for _, tc := range []struct {
+		name string
+		u    *Unit
+	}{{"soldier", soldier}, {"worker", worker}} {
+		want := 1 + per
+		if want > tc.u.MaxHP {
+			want = tc.u.MaxHP
+		}
+		if tc.u.HP != want {
+			t.Errorf("%s: want HP %d (heal split across both), got %d", tc.name, want, tc.u.HP)
+		}
+	}
+}
+
+// TestUseItemAt_NoTargetsDoesNotConsume: clicking empty ground (no allied
+// unit within range) must not waste the item.
+func TestUseItemAt_NoTargetsDoesNotConsume(t *testing.T) {
+	s, playerID := newItemTestState(t)
+	def := itemDef(t, "potion_common_heal")
+	radius := def.Consumable.EffectiveRange()
+
+	// A unit well outside the AoE.
+	u := spawnCombatUnitAt(t, s, playerID, 800+radius*3, 800)
+	s.mu.Lock()
+	u.HP = 1
+	s.mu.Unlock()
+
+	iid := addVaultConsumable(t, s, playerID, "potion_common_heal")
+	s.UseItemAt(playerID, iid, 800, 800)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if u.HP != 1 {
+		t.Errorf("out-of-range unit must be unaffected; HP=%d", u.HP)
+	}
+	if got := vaultItemCountLocked(s.Players[playerID], "potion_common_heal"); got != 1 {
+		t.Errorf("item must not be consumed with no targets; vault count=%d", got)
+	}
+}
+
+// TestUseItemAt_GrantXP_TriggersRankUp: an XP potion whose split share pushes
+// a unit past a rank threshold runs the full rank-up pipeline.
+func TestUseItemAt_GrantXP_TriggersRankUp(t *testing.T) {
+	s, playerID := newItemTestState(t)
+	def := itemDef(t, "experience_potion")
+	amount := def.Consumable.Amount
+
+	unit := spawnCombatUnitAt(t, s, playerID, 800, 800)
+	next, ok := nextRankDef(unit.Rank)
+	if !ok {
+		t.Fatal("base must have a next rank")
+	}
+	s.mu.Lock()
+	unit.XP = next.XPThreshold - 1
+	s.mu.Unlock()
+
+	iid := addVaultConsumable(t, s, playerID, "experience_potion")
+	s.UseItemAt(playerID, iid, 800, 800) // sole target — receives the full amount
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if unit.XP != next.XPThreshold-1+amount {
+		t.Errorf("want XP %d, got %d", next.XPThreshold-1+amount, unit.XP)
+	}
+	if want := rankDefForXP(unit.XP).Rank; unit.Rank != want {
+		t.Errorf("expected rank %q for XP %d, got %q", want, unit.XP, unit.Rank)
+	}
+	if unit.Rank == unitRankBase {
+		t.Fatal("potion from threshold-1 must have ranked the unit up")
 	}
 }
 

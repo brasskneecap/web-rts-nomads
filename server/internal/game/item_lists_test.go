@@ -3,10 +3,13 @@ package game
 import "testing"
 
 // TestItemLists_MarketplaceList asserts the "marketplace" item list —
-// catalog/items/lists/marketplace.json — exists and contains exactly the set
-// of common-tier items in the catalog. The expected set is derived from the
-// live item catalog rather than pinned, so adding a new common item without
-// updating the marketplace list fails here, loudly, at the right place.
+// catalog/items/lists/marketplace.json — exists, references only real items
+// with no duplicates, and contains AT LEAST every common-tier item in the
+// catalog. Higher-tier items may be added by hand (e.g. the rare
+// experience_potion is deliberately marketplace-stocked); the baseline set is
+// derived from the live item catalog rather than pinned, so adding a new
+// common item without updating the marketplace list fails here, loudly, at
+// the right place.
 func TestItemLists_MarketplaceList(t *testing.T) {
 	list, ok := getItemListDef("marketplace")
 	if !ok {
@@ -19,13 +22,8 @@ func TestItemLists_MarketplaceList(t *testing.T) {
 			t.Errorf("items[%d] %q appears more than once", i, id)
 		}
 		inList[id] = true
-		def, ok := getItemDef(id)
-		if !ok {
+		if _, ok := getItemDef(id); !ok {
 			t.Errorf("items[%d] %q is not a known item", i, id)
-			continue
-		}
-		if def.Tier != ItemTierCommon {
-			t.Errorf("items[%d] %q is tier %q — the marketplace list is common items only", i, id, def.Tier)
 		}
 	}
 

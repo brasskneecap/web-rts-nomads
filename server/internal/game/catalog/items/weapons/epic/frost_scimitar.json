@@ -1,8 +1,8 @@
 {
-  "id": "ice_sword",
-  "displayName": "Ice Sword",
+  "id": "frost_scimitar",
+  "displayName": "Frost Scimitar",
   "description": "+50 damage.",
-  "iconKey": "ice_sword",
+  "iconKey": "frost_scimitar",
   "kind": "equipment",
   "tier": "epic",
   "category": "Weapon",

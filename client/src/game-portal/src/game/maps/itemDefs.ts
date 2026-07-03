@@ -83,13 +83,23 @@ export type ItemDef = {
   onHitProc?: { chance: number; damage: number; damageType: string; projectileID: string }
   /** Stack ceiling — items above 1 are stackable. Defaults to 1 when absent. */
   maxStacks?: number
-  /** Consumable-specific config. Only set when kind === 'consumable'. */
+  /** Consumable-specific config. Only set when kind === 'consumable'.
+   *  Consumables are used as a ground-targeted AoE: `range` is the radius in
+   *  world units (default 100 when absent); `split` (default true) divides
+   *  `amount` evenly across the units hit instead of giving each the full
+   *  amount. */
   consumable?: {
     type: string
     amount?: number
+    range?: number
+    split?: boolean
     durationSeconds?: number
   }
 }
+
+/** Fallback AoE radius (world units) when a consumable def authors no range.
+ *  Mirrors the server's defaultConsumableRangeUnits. */
+export const DEFAULT_CONSUMABLE_RANGE = 100
 
 export let ITEM_DEFS: ItemDef[] = []
 

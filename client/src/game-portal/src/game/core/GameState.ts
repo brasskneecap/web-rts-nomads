@@ -679,6 +679,10 @@ export class GameState {
   // unitTargetingMode because the cast is player-level, not unit-level,
   // and must work with no units selected.
   commanderTargetingAbilityId: string | null = null
+  // Active consumable-item targeting — set when the player clicks an item in
+  // the ItemsBar; the next world click uses the item as a ground AoE there.
+  // Null when no item targeting is active.
+  itemTargeting: { instanceId: number; itemId: string; radius: number } | null = null
   // Currently selected vault item (for click-to-equip flow). Set by
   // VaultPanel; cleared when the user deselects or closes the panel.
   vaultSelectedInstanceId: number | null = null
@@ -2262,6 +2266,27 @@ export class GameState {
     return abilityId ? this.commanderTargetingAbilityId === abilityId : true
   }
 
+  // Enter consumable-item targeting: the next world click uses the vault item
+  // as a ground AoE at that position. Player-level, like commander abilities
+  // — no unit selection needed. Radius is carried here so the renderer can
+  // draw the AoE preview without an item-def lookup per frame.
+  beginItemTargeting(instanceId: number, itemId: string, radius: number) {
+    this.buildingTargetingMode = null
+    this.unitTargetingMode = null
+    this.castAbilityId = null
+    this.buildPlacement = null
+    this.commanderTargetingAbilityId = null
+    this.itemTargeting = { instanceId, itemId, radius }
+  }
+
+  cancelItemTargeting() {
+    this.itemTargeting = null
+  }
+
+  isItemTargetingActive(): boolean {
+    return this.itemTargeting !== null
+  }
+
   isUnitTargetingActive(mode?: UnitTargetingMode) {
     if (!this.unitTargetingMode) return false
     return mode ? this.unitTargetingMode === mode : true
@@ -2272,6 +2297,7 @@ export class GameState {
       this.isBuildingTargetingActive() ||
       this.isUnitTargetingActive() ||
       this.isCommanderTargetingActive() ||
+      this.isItemTargetingActive() ||
       this.buildPlacement !== null
     )
   }
@@ -3854,7 +3880,8 @@ export function getBuildingActions(
       for (const [itemId, count] of need) {
         const owned = have.get(itemId) ?? 0
         if (owned < count) missing = true
-        parts.push(`${itemId} ${owned}/${count}`)
+        const itemName = ITEM_DEF_MAP.get(itemId)?.displayName ?? itemId
+        parts.push(`${itemName} ${owned}/${count}`)
       }
       actions.push({
         id: `craft-${recipe.id}`,
@@ -3862,7 +3889,10 @@ export function getBuildingActions(
         iconDef: { kind: 'item', type: recipe.output },
         cost: [{ resourceId: 'gold', amount: recipe.costGold, accent: '#d4a84f' }],
         tooltipTitle: recipe.name,
-        tooltipBody: `Craft ${recipe.name}.\nIngredients: ${parts.join(', ')}.` + (missing ? '\n\nMissing ingredients.' : ''),
+        // Name + cost are rendered by the tooltip frame (title + cost rows);
+        // the body just lists the ingredients, one per line. The disabled /
+        // greyed-out state already signals when ingredients are missing.
+        tooltipBody: `Ingredients:\n${parts.join('\n')}`,
         disabled: missing,
       })
     }

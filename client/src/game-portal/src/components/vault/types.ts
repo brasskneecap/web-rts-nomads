@@ -67,6 +67,9 @@ export interface VaultUnitCardData {
   rank: string
   rankChevrons: number
   rankColor: string
+  /** Current and max HP, shown under the unit name. Null when unknown. */
+  hp: number | null
+  maxHp: number | null
   /** XP into the current rank and the threshold for the next, or null. */
   xpInto: number | null
   xpToNext: number | null

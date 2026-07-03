@@ -55,21 +55,39 @@ func TestApplyUpgrade_IncrementsStackCounter(t *testing.T) {
 	}
 }
 
-func TestApplyUpgrade_XPGrantReachesTargetUnit(t *testing.T) {
+// TestApplyUpgrade_BattlefieldWisdomGrantsExperiencePotion: the Battlefield
+// Wisdom wave reward delivers an experience_potion to the player's vault (the
+// old direct-XP grant was replaced — the player equips and drinks the potion
+// on a unit of their choice instead). No unit target is required, so the
+// client must not show the target picker for this offer.
+func TestApplyUpgrade_BattlefieldWisdomGrantsExperiencePotion(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	s.Players["p1"] = &Player{
 		ID:           "p1",
 		Resources:    map[string]int{},
+		Vault:        []*VaultItem{},
 		UpgradeState: newPlayerUpgradeState(1, 3),
 	}
-	unit := s.spawnPlayerUnitLocked("soldier", "p1", "#fff", s.gridToWorldCenter(s.worldToGrid(200, 200)))
-	if unit == nil {
-		t.Skip("soldier unit type not available in test map")
+
+	def, ok := getUpgradeDef("battlefield_wisdom_common")
+	if !ok {
+		t.Fatal("battlefield_wisdom_common missing from upgrade catalog")
 	}
-	startXP := unit.XP
-	s.applyUpgradeLocked("p1", "battlefield_wisdom_common", unit.ID)
-	if unit.XP <= startXP {
-		t.Errorf("XP did not increase: before %d, after %d", startXP, unit.XP)
+	if def.RequiresTargetUnit() {
+		t.Error("battlefield_wisdom_common must not require a target unit (potion goes to the vault)")
+	}
+
+	s.applyUpgradeLocked("p1", "battlefield_wisdom_common", 0)
+
+	vault := s.Players["p1"].Vault
+	if len(vault) != 1 || vault[0].ItemID != "experience_potion" {
+		t.Fatalf("expected exactly one experience_potion in the vault, got %+v", vault)
+	}
+	// The delivered item must be the grant_xp consumable (guards against the
+	// upgrade pointing at a renamed/removed item).
+	itemDef, ok := getItemDef(vault[0].ItemID)
+	if !ok || itemDef.Consumable == nil || itemDef.Consumable.Type != "grant_xp" {
+		t.Errorf("vault item %q must be a grant_xp consumable", vault[0].ItemID)
 	}
 }
 

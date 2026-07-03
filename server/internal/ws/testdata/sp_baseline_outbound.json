@@ -293,13 +293,13 @@
         "resources": [
           {
             "accent": "#d4a84f",
-            "amount": 500,
+            "amount": 1500,
             "id": "NORM-STR",
             "label": "Gold"
           },
           {
             "accent": "#7a9a52",
-            "amount": 180,
+            "amount": 1180,
             "id": "NORM-STR",
             "label": "Wood"
           },
@@ -314,6 +314,9 @@
         "shopRerollsRemaining": 1,
         "teamId": 0,
         "townHallTier": 1,
+        "unlockedRecipeIds": [
+          "scimitar"
+        ],
         "upgrades": [
           {
             "armorPerLevel": 1,

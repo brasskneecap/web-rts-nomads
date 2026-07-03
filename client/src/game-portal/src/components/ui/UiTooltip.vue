@@ -37,7 +37,7 @@ defineProps<{
   visibility: hidden;
   transition: opacity 0.12s ease-out;
   pointer-events: none;
-  z-index: 10;
+  z-index: var(--z-tooltip, 10000);
   white-space: normal;
 }
 

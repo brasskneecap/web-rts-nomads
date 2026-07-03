@@ -28,7 +28,7 @@
         { "item": "broad_sword",  "min": 1,  "max": 40 },
         { "item": "scimitar",     "min": 41, "max": 65 },
         { "item": "flame_sword",  "min": 66, "max": 85 },
-        { "item": "ice_sword",    "min": 86, "max": 95 },
+        { "item": "frost_scimitar",    "min": 86, "max": 95 },
         { "item": "shadow_blade", "min": 96, "max": 100 }
       ]
     },
@@ -37,7 +37,8 @@
       "entries": [
         { "item": "potion_common_heal",    "min": 1,  "max": 40 },
         { "item": "potion_uncommon_heal",  "min": 41, "max": 65 },
-        { "item": "potion_rare_heal",      "min": 66, "max": 85 },
+        { "item": "potion_rare_heal",      "min": 66, "max": 75 },
+        { "item": "experience_potion",     "min": 76, "max": 85 },
         { "item": "potion_epic_heal",      "min": 86, "max": 95 },
         { "item": "potion_legendary_heal", "min": 96, "max": 100 }
       ]

@@ -147,6 +147,23 @@
         }
       },
       {
+        "x": 11,
+        "y": 13,
+        "id": "recipe-shop-11-13",
+        "buildingType": "recipe-shop",
+        "width": 3,
+        "height": 3,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "recipe-purchase"
+        ],
+        "metadata": {
+          "recipeList": "druid_recipes_1",
+          "shopStyle": "druid-recipe-vendor"
+        }
+      },
+      {
         "x": 45,
         "y": 14,
         "id": "enemy-spawnpoint-45-14",

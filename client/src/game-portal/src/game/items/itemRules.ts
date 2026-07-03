@@ -20,6 +20,8 @@ export function buildItemTooltipBody(def: ItemDef): string {
     const c = def.consumable
     if (c.type === 'heal' && c.amount !== undefined) {
       parts.push(`Heals ${c.amount} HP`)
+    } else if (c.type === 'grant_xp' && c.amount !== undefined) {
+      parts.push(`Grants ${c.amount} XP`)
     } else if (c.type === 'shield' && c.amount !== undefined) {
       parts.push(`Grants ${c.amount} Shield`)
     } else if (c.type === 'buff' && c.durationSeconds !== undefined) {
@@ -27,6 +29,9 @@ export function buildItemTooltipBody(def: ItemDef): string {
     } else {
       parts.push(c.type.charAt(0).toUpperCase() + c.type.slice(1))
     }
+    // Consumables are used as a ground-targeted AoE; say how the amount is
+    // distributed so "Heals 100 HP" isn't read as per-unit when it splits.
+    parts.push(c.split !== false ? 'split between units in the area' : 'to every unit in the area')
   }
 
   const m = def.modifiers

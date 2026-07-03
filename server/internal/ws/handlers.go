@@ -1217,6 +1217,40 @@ func (h *Hub) readLoop(client *Client) {
 			}
 			match.State.UseConsumable(client.PlayerID(), msg.UnitID, msg.SlotIndex)
 
+		case "use_item_at":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.UseItemAtCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid use_item_at payload"})
+				continue
+			}
+			match.State.UseItemAt(client.PlayerID(), msg.InstanceID, msg.X, msg.Y)
+
+		case "use_item_on_unit":
+			if client.MatchID() == "" {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
+				continue
+			}
+			match, ok := h.manager.GetMatch(client.MatchID())
+			if !ok {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
+				continue
+			}
+			var msg protocol.UseItemOnUnitCommandMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid use_item_on_unit payload"})
+				continue
+			}
+			match.State.UseItemOnUnit(client.PlayerID(), msg.InstanceID, msg.UnitID)
+
 		case "transfer_item":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
