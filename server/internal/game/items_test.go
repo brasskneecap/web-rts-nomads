@@ -515,14 +515,15 @@ func TestUseConsumable_FullHP_StillConsumes(t *testing.T) {
 
 // ─── Inventory size by rank ──────────────────────────────────────────────────
 
-// TestSetInventorySizeForRank_GrowsByRank verifies slot count is 0/1/2/3 for
-// base/bronze/silver/gold respectively.
+// TestSetInventorySizeForRank_GrowsByRank verifies slot count is 1/1/2/3 for
+// base/bronze/silver/gold respectively: combat units carry a slot from spawn,
+// then gain more at silver and gold.
 func TestSetInventorySizeForRank_GrowsByRank(t *testing.T) {
 	cases := []struct {
 		rank     string
 		wantSize int
 	}{
-		{unitRankBase, 0},
+		{unitRankBase, 1},
 		{unitRankBronze, 1},
 		{unitRankSilver, 2},
 		{unitRankGold, 3},
@@ -554,6 +555,28 @@ func TestSetInventorySizeForRank_GrowsByRank(t *testing.T) {
 	}
 }
 
+// TestSetInventorySizeForRank_WorkersCarryNoInventory: workers are
+// non-combatants (no XP, no ranks) and must never be granted item slots —
+// this is also what keeps them out of the vault's unit list.
+func TestSetInventorySizeForRank_WorkersCarryNoInventory(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 7)
+	s.EnsurePlayer("p1")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	player := s.Players["p1"]
+	unit := s.spawnPlayerUnitLocked("worker", "p1", player.Color, protocol.Vec2{X: 100, Y: 100})
+	if unit == nil {
+		t.Fatal("failed to spawn worker")
+	}
+	if unit.InventorySize != 0 {
+		t.Errorf("worker InventorySize want 0 got %d", unit.InventorySize)
+	}
+	if s.unitInventorySnapshotLocked(unit) != nil {
+		t.Error("worker must have a nil inventory snapshot")
+	}
+}
+
 // ─── Snapshot helpers ─────────────────────────────────────────────────────────
 
 // TestPlayerVaultSnapshot_MatchesVaultContents verifies vault snapshot output
@@ -579,9 +602,11 @@ func TestPlayerVaultSnapshot_MatchesVaultContents(t *testing.T) {
 	}
 }
 
-// TestUnitInventorySnapshot_NilForBaseRankUnit verifies that units at base rank
-// (no inventory) return nil from unitInventorySnapshotLocked.
-func TestUnitInventorySnapshot_NilForBaseRankUnit(t *testing.T) {
+// TestUnitInventorySnapshot_BaseRankUnitHasOneSlot verifies that a freshly
+// spawned base-rank combat unit already carries its one rank-granted slot in
+// the snapshot (the nil-snapshot case is workers — see
+// TestSetInventorySizeForRank_WorkersCarryNoInventory).
+func TestUnitInventorySnapshot_BaseRankUnitHasOneSlot(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 3)
 	s.EnsurePlayer("p1")
 
@@ -591,8 +616,15 @@ func TestUnitInventorySnapshot_NilForBaseRankUnit(t *testing.T) {
 	snap := s.unitInventorySnapshotLocked(unit)
 	s.mu.Unlock()
 
-	if snap != nil {
-		t.Errorf("expected nil inventory for base-rank unit, got size=%d", snap.Size)
+	if snap == nil {
+		t.Fatal("expected a non-nil inventory snapshot for a base-rank combat unit")
+	}
+	if snap.Size != 1 || len(snap.Slots) != 1 {
+		t.Errorf("base-rank unit snapshot: want size=1 slots=1, got size=%d slots=%d",
+			snap.Size, len(snap.Slots))
+	}
+	if snap.Slots[0] != nil {
+		t.Error("freshly spawned unit's slot must be empty")
 	}
 }
 

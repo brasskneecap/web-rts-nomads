@@ -184,11 +184,17 @@ func (s *GameState) removeOneItemFromVaultByItemIDLocked(player *Player, itemID 
 
 // setInventorySizeForRankLocked sets unit.InventorySize based on rank and
 // grows unit.Equipped to match if it has grown. Never shrinks (rank can't
-// decrease). Must be called under s.mu.
+// decrease). Combat units carry 1 slot from the moment they spawn (base and
+// bronze), 2 at silver, 3 at gold. Workers are non-combatants — they never
+// gain XP or rank (see unitCanGainXPLocked) and carry no inventory, which
+// also keeps them out of the vault's unit list. Must be called under s.mu.
 func (s *GameState) setInventorySizeForRankLocked(unit *Unit) {
+	if unit.UnitType == "worker" {
+		return
+	}
 	var size int
 	switch unit.Rank {
-	case unitRankBronze:
+	case unitRankBase, unitRankBronze:
 		size = 1
 	case unitRankSilver:
 		size = 2

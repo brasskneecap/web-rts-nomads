@@ -2,7 +2,7 @@
 // builds these from raw game state and passes them into the presentational
 // child components by props, so the cards never reach into global state.
 
-export type VaultRank = 'bronze' | 'silver' | 'gold'
+export type VaultRank = 'base' | 'silver' | 'gold'
 
 /** A single granted perk rendered on a unit card. `iconId` is the ActionIcon
  *  lookup id (the perk def's icon key); title/body feed the existing perk
@@ -25,7 +25,8 @@ export interface VaultSlotItem {
   isConsumable: boolean
 }
 
-/** One rank-tied inventory slot. Exactly three per unit: bronze, silver, gold.
+/** One rank-tied inventory slot. Exactly three per unit: the first is
+ *  unlocked from base rank, the second at silver, the third at gold.
  *  `locked` means the unit has not yet reached the rank that unlocks the slot. */
 export interface VaultInventorySlot {
   rank: VaultRank

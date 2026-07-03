@@ -251,14 +251,15 @@
         </div>
 
         <!-- Right side: inventory slots for items the unit can hold. Only
-             rendered when exactly one unit is selected — multi-select and
-             building selections hide the panel entirely. Slot count is
-             data-driven from unit.inventory.size. Locked slots overlay the
-             lock icon; occupied slots are interactive (click to unequip or
+             rendered when exactly one unit with an inventory is selected —
+             multi-select, building selections, and inventory-less units
+             (workers) hide the strip entirely. All possible slots render;
+             ones above unit.inventory.size overlay the lock icon with their
+             unlock rank. Occupied slots are interactive (click to unequip or
              use consumable); empty unlocked slots are interactive when a
              vault item is selected (click to equip). -->
         <div
-          v-if="ui.selectedUnits.length === 1"
+          v-if="ui.selectedUnits.length === 1 && inventorySlots.length > 0"
           class="details-inventory"
           aria-label="Inventory"
         >
@@ -618,12 +619,18 @@ const unitCards = computed(() => {
   })
 })
 
-// Inventory display is fully data-driven from unit.inventory. `size` slots
-// are unlocked; any index >= size renders the lock icon. Held items render
-// their icon and are interactive — click to use (consumable) or unequip
-// (equipment). Empty unlocked slots glow as equip targets when a vault item
-// is selected.
-const INVENTORY_DISPLAY_SLOTS = 2
+// Inventory display is fully data-driven from unit.inventory. Every unit
+// that has an inventory shows all MAX_INVENTORY_SLOTS frames (mirroring the
+// vault panel) so the total possible is always visible: `size` slots are
+// unlocked, the rest overlay the lock icon with the rank that unlocks them.
+// Units with no inventory at all (workers) render no slot strip. Held items
+// are interactive — click to use (consumable) or unequip (equipment). Empty
+// unlocked slots glow as equip targets when a vault item is selected.
+const MAX_INVENTORY_SLOTS = 3
+
+// Index → rank that unlocks the slot; mirrors the server's
+// setInventorySizeForRankLocked (1 at base, 2 at silver, 3 at gold).
+const SLOT_UNLOCK_RANK = ['Base', 'Silver', 'Gold']
 
 const inventorySlots = computed(() => {
   // Inventory only shows for single-unit selections.
@@ -631,21 +638,20 @@ const inventorySlots = computed(() => {
   const inventory = unit?.inventory
   const size = inventory?.size ?? 0
   const slots = inventory?.slots ?? []
-  // Show at least INVENTORY_DISPLAY_SLOTS cells so the panel has a stable
-  // shape even before the server sends inventory data; show more if the
-  // unit has more unlocked slots.
-  const displayCount = Math.max(INVENTORY_DISPLAY_SLOTS, size)
+  if (size === 0) return []
+  const displayCount = Math.max(MAX_INVENTORY_SLOTS, size)
 
   return Array.from({ length: displayCount }, (_, index) => {
     const locked = index >= size
     if (locked) {
+      const unlockRank = SLOT_UNLOCK_RANK[index]
       return {
         index,
         locked: true,
         occupied: false,
         iconUrl: getActionIconImage('lock')?.src ?? null,
         itemId: null as string | null,
-        title: 'Locked slot',
+        title: unlockRank ? `Locked — unlocks at ${unlockRank} rank` : 'Locked slot',
         instanceId: null as number | null,
         isConsumable: false,
         tooltip: null as ItemTooltipData | null,

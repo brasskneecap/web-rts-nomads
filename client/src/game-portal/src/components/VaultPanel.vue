@@ -155,9 +155,10 @@ const rootStyle = computed(() => {
   return drag.style.value
 })
 
-// Rank slots are positional: index 0 = bronze, 1 = silver, 2 = gold. Mirrors
-// the perk-rank ordering used by getPerkActionItems.
-const RANK_SLOTS: VaultRank[] = ['bronze', 'silver', 'gold']
+// Rank slots are positional: index 0 unlocks at base rank, 1 at silver,
+// 2 at gold. The unlocked count itself is data-driven from the server's
+// inventory.size — these labels only key/annotate the three slot frames.
+const RANK_SLOTS: VaultRank[] = ['base', 'silver', 'gold']
 
 function tierColor(tier: string | undefined): string {
   if (!tier) return TIER_COLORS.common
