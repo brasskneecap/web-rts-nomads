@@ -4,6 +4,7 @@ import App from './App.vue'
 import { router } from './router'
 import { useProfile } from './composables/useProfile'
 import { resolveCursor, onCursorChange } from './game/rendering/cursors'
+import { installGlobalErrorReporting } from './services/errorReporting'
 
 const { initialize } = useProfile()
 void initialize()
@@ -62,4 +63,8 @@ document.addEventListener('dragstart', (event) => {
   event.preventDefault()
 })
 
-createApp(App).use(router).mount('#app')
+const app = createApp(App)
+// Install before mount so a crash during the first render is captured to the
+// SPA log instead of silently white-screening the WebView.
+installGlobalErrorReporting(app)
+app.use(router).mount('#app')

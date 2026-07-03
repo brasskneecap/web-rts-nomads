@@ -631,6 +631,117 @@ func sanitizeMapFilename(id string) string {
 	return b.String()
 }
 
+// LoadPersistedMapsIntoOverlay overlays every map found in the writable map dir
+// (MAP_CATALOG_DIR, else the cwd fallback) on top of the compile-time embedded
+// catalog at startup. Without this, an editor save only ever lives in the
+// non-persistent in-memory overlay of the process that made it: the server
+// loads maps solely from the embedded catalog, so a restart silently reverts
+// every edit (and a joiner never persists a received map at all). Calling this
+// once during startup makes the writable dir the source of truth for edited /
+// received maps, so they survive a restart.
+//
+// Best-effort and non-fatal: a missing dir or a malformed file is logged and
+// skipped, never panicked — the server must always start.
+func LoadPersistedMapsIntoOverlay() {
+	dir, err := resolveMapsDir()
+	if err != nil {
+		// No writable map dir (e.g. a build distributed without the repo): the
+		// embedded catalog stands alone. Reads still work; saves are unavailable.
+		slog.Info("persisted maps: no writable map dir; using embedded catalog only", "err", err)
+		return
+	}
+	if n := loadPersistedMapsFromDir(dir); n > 0 {
+		slog.Info("persisted maps: overlaid on embedded catalog", "count", n, "dir", dir)
+	}
+}
+
+// loadPersistedMapsFromDir reads every *.json map file from dir and registers it
+// in the runtime overlay (runtimeMaps). Returns the number of maps successfully
+// loaded. Each file is processed best-effort: an unreadable, malformed, or
+// invalid map is skipped with a warning rather than crashing startup — the
+// opposite discipline from mustLoadMapCatalog, whose embedded input is a
+// build-time invariant.
+func loadPersistedMapsFromDir(dir string) int {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+
+	loaded := 0
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(strings.ToLower(file.Name()), ".json") {
+			continue
+		}
+		entry, perr := parsePersistedMapFile(dir, file.Name())
+		if perr != nil {
+			slog.Warn("persisted maps: skipped file", "file", file.Name(), "err", perr)
+			continue
+		}
+		runtimeMapsMu.Lock()
+		runtimeMaps[entry.ID] = entry
+		runtimeMapsMu.Unlock()
+		loaded++
+	}
+	return loaded
+}
+
+// parsePersistedMapFile reads and fully hydrates+validates one on-disk map file.
+// It mirrors the per-file pipeline in mustLoadMapCatalog, but recovers any
+// validation panic into an error so a single bad file cannot crash startup.
+func parsePersistedMapFile(dir, name string) (entry MapCatalogEntry, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			entry = MapCatalogEntry{}
+			err = fmt.Errorf("invalid map: %v", r)
+		}
+	}()
+
+	raw, rerr := os.ReadFile(filepath.Join(dir, name))
+	if rerr != nil {
+		return MapCatalogEntry{}, rerr
+	}
+
+	entry, err = parseMapCatalogEntry(name, raw)
+	if err != nil {
+		return MapCatalogEntry{}, err
+	}
+
+	if entry.Map.ID == "" {
+		entry.Map.ID = entry.ID
+	}
+	if entry.Map.Name == "" {
+		entry.Map.Name = entry.Name
+	}
+	if entry.Map.Description == "" {
+		entry.Map.Description = entry.Description
+	}
+	if entry.Map.Size == "" {
+		entry.Map.Size = entry.ID
+	}
+	if entry.Map.Terrain == nil {
+		entry.Map.Terrain = []protocol.TerrainTile{}
+	}
+	if entry.Map.Obstacles == nil {
+		entry.Map.Obstacles = []protocol.ObstacleTile{}
+	}
+	if entry.Map.Buildings == nil {
+		entry.Map.Buildings = []protocol.BuildingTile{}
+	}
+
+	hydrateObstacles(entry.Map.Obstacles)
+	hydrateBuildings(entry.Map.Buildings)
+	entry.Map.PlacedUnits = hydratePlacedUnits(entry.Map.PlacedUnits, entry.Map)
+	entry.Map.Zones = normalizeZones(entry.Map.Zones)
+	validateZones(name, entry.Map.Zones)
+	validateZoneTriggers(name, entry.Map.Buildings, entry.Map.Zones)
+	attachMapContentHash(&entry)
+
+	if entry.ID == "" {
+		return MapCatalogEntry{}, fmt.Errorf("map has empty id")
+	}
+	return entry, nil
+}
+
 func mustLoadMapCatalog() []MapCatalogEntry {
 	files, err := mapCatalogFS.ReadDir("catalog/maps")
 	if err != nil {

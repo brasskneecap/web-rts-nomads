@@ -43,6 +43,13 @@ func main() {
 		corsOrigin = "http://localhost:5173"
 	}
 
+	// Overlay any editor-saved / joiner-received maps from the writable map dir
+	// on top of the embedded catalog so edits survive a restart. Without this,
+	// an edit only lives in the non-persistent in-memory overlay of the process
+	// that made it, and the server reverts to the embedded map on the next
+	// launch. Best-effort: never fatal.
+	game.LoadPersistedMapsIntoOverlay()
+
 	manager := game.NewMatchManager()
 	lobbyManager := game.NewLobbyManager()
 	hub := ws.NewHub(manager, lobbyManager)
