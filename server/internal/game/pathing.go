@@ -438,7 +438,13 @@ const unitPathSubCellSize = 16.0
 // but genuinely reachable routes (debug-path `budgetHit` climbing on open
 // maps is the regression signal). Raise → safer reachability, larger residual
 // worst case. Re-measure with WEBRTS_TICK_PROFILE after changing.
-const unitPathExpansionFactor = 16
+//
+// 16 was too low for forest-1: the terrain-only route from the player-2 wave
+// spawnpoints (grid 56-64,19) around the tree wall to townhall-38-6 needs
+// 9.5k-13.3k expansions vs the 9.2k budget, so every wave marked the townhall
+// unreachable army-wide and pooled on the nearest-hostile fallback instead of
+// attacking the base. 32 covers the worst measured route with ~38% headroom.
+const unitPathExpansionFactor = 32
 
 func (s *GameState) worldToUnitPathSubGrid(x, y float64) gridPoint {
 	return gridPoint{
