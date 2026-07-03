@@ -281,7 +281,12 @@ func (s *GameState) getProductionSpawnPositionLocked(building protocol.BuildingT
 	}
 
 	rallyPoint := s.getTownhallSpawnOriginLocked(building)
-	spawnCell, ok := s.findNearestWalkable(s.worldToGrid(rallyPoint.X, rallyPoint.Y), blocked)
+	rallyCell := s.worldToGrid(rallyPoint.X, rallyPoint.Y)
+	// Anchor the nearest-walkable search to the rally cell's region so the
+	// fallback can't tunnel across a wall into a sealed pocket. Region 0
+	// (rally cell itself blocked, e.g. the default building-center origin)
+	// degrades to the unconstrained search.
+	spawnCell, ok := s.findNearestWalkableInRegionLocked(rallyCell, s.walkableRegionAtLocked(rallyCell), blocked, nil)
 	if !ok {
 		return protocol.Vec2{}, false
 	}

@@ -540,7 +540,11 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 			if i < len(spawnPositions) {
 				spawnPos = spawnPositions[i]
 			} else {
-				cell, ok := s.findNearestWalkable(s.worldToGrid(center.X, center.Y), blocked)
+				// Overflow beyond the perimeter slots: constrain to the
+				// spawnpoint cell's own region so the extra units can't be
+				// dropped into a sealed pocket across a tree line.
+				centerCell := s.worldToGrid(center.X, center.Y)
+				cell, ok := s.findNearestWalkableInRegionLocked(centerCell, s.walkableRegionAtLocked(centerCell), blocked, nil)
 				if !ok {
 					break
 				}

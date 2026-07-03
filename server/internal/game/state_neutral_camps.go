@@ -365,15 +365,20 @@ func (s *GameState) spawnGroupForCampLocked(camp *NeutralCamp) {
 	placedOrderID := s.nextMovementOrderIDLocked()
 	blocked := s.getBlockedCellsLocked()
 	centerCell := s.worldToGrid(centerWX, centerWY)
+	// Ring guards anchor to the camp center's region: a ring offset that lands
+	// in a sealed pocket next to the camp must displace to a connected cell,
+	// not strand the guard. Region 0 (center itself blocked) degrades to the
+	// unconstrained search.
+	centerRegion := s.walkableRegionAtLocked(centerCell)
 
 	spawnIdx := 0
 	for _, entry := range group.Composition {
 		for i := 0; i < entry.Count; i++ {
 			offsetCell := neutralCampRingOffset(centerCell, spawnIdx)
-			spawnCell, found := s.findNearestWalkable(offsetCell, blocked)
+			spawnCell, found := s.findNearestWalkableInRegionLocked(offsetCell, centerRegion, blocked, nil)
 			if !found {
 				// Fallback to center cell.
-				spawnCell, found = s.findNearestWalkable(centerCell, blocked)
+				spawnCell, found = s.findNearestWalkableInRegionLocked(centerCell, centerRegion, blocked, nil)
 				if !found {
 					slog.Warn("spawnGroupForCampLocked: no walkable cell found; skipping unit",
 						"campID", camp.PlacementID, "unitType", entry.UnitType, "spawnIdx", spawnIdx)

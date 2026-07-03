@@ -230,6 +230,23 @@ func (s *GameState) getTownhallSpawnPositionsLocked(home protocol.BuildingTile, 
 		}
 	}
 
+	// Connectivity guard: a perimeter cell can be walkable yet sealed off
+	// (wedged between the building and trees). Constrain the batch to the
+	// best-connected region represented among the candidates so a released
+	// unit is never trapped. Keeping the filter candidate-relative (rather
+	// than "must reach the map's largest region") preserves intentional
+	// enclosures: inside a fully-walled base the interior IS the best
+	// represented region, so units still spawn there.
+	if bestRegion := s.bestSpawnRegionLocked(candidates); bestRegion != 0 {
+		connected := candidates[:0]
+		for _, cell := range candidates {
+			if s.walkableRegionAtLocked(cell) == bestRegion {
+				connected = append(connected, cell)
+			}
+		}
+		candidates = connected
+	}
+
 	sort.Slice(candidates, func(i, j int) bool {
 		a := s.gridToWorldCenter(candidates[i])
 		b := s.gridToWorldCenter(candidates[j])

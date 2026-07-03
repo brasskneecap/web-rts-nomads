@@ -834,6 +834,12 @@ type GameState struct {
 	blockedCellsCache map[gridPoint]bool
 	blockedCellsValid bool
 
+	// walkableRegionsCache labels each walkable cell with its 4-connected
+	// component so spawn placement can reject sealed pockets (see
+	// pathing_regions.go). Derived from blockedCellsCache; invalidated by the
+	// same hook. Guarded by s.mu.
+	walkableRegionsCache *walkableRegions
+
 	// visionBlockingCache holds cells that block line-of-sight: obstacles
 	// (trees, rocks, walls) and terrain cliff transitions. Unlike
 	// blockedCellsCache it does NOT include buildings — buildings don't
@@ -1235,6 +1241,7 @@ func (s *GameState) setMapConfigLocked(mapConfig protocol.MapConfig) {
 func (s *GameState) invalidateBlockedCellsLocked() {
 	s.blockedCellsValid = false
 	s.visionBlockingCache = nil
+	s.walkableRegionsCache = nil
 }
 
 // getBlockedCellsLocked returns the cached blocked-cells map, rebuilding it

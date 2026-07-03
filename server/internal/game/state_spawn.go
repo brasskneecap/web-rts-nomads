@@ -276,7 +276,11 @@ func (s *GameState) spawnPlacedUnitsForPlayerLocked(playerID, color string) {
 		worldX := float64(entry.X)*cellSize + cellSize/2
 		worldY := float64(entry.Y)*cellSize + cellSize/2
 		cell := s.worldToGrid(worldX, worldY)
-		spawnCell, ok := s.findNearestWalkable(cell, blocked)
+		// Anchor to the authored cell's region so displacement (authored cell
+		// occupied/blocked at spawn time) can't relocate the unit into a
+		// sealed pocket. Region 0 (authored cell itself blocked) degrades to
+		// the unconstrained search.
+		spawnCell, ok := s.findNearestWalkableInRegionLocked(cell, s.walkableRegionAtLocked(cell), blocked, nil)
 		if !ok {
 			slog.Warn("spawnPlacedUnitsForPlayerLocked: no walkable cell found for placed unit; skipping",
 				"playerID", playerID, "unitType", entry.UnitType, "gridX", entry.X, "gridY", entry.Y)
@@ -311,7 +315,8 @@ func (s *GameState) spawnPlacedEnemyUnitsLocked() {
 		worldX := float64(entry.X)*cellSize + cellSize/2
 		worldY := float64(entry.Y)*cellSize + cellSize/2
 		cell := s.worldToGrid(worldX, worldY)
-		spawnCell, ok := s.findNearestWalkable(cell, blocked)
+		// Same region anchoring as player placed units — see above.
+		spawnCell, ok := s.findNearestWalkableInRegionLocked(cell, s.walkableRegionAtLocked(cell), blocked, nil)
 		if !ok {
 			slog.Warn("spawnPlacedEnemyUnitsLocked: no walkable cell found for placed enemy; skipping",
 				"unitType", entry.UnitType, "gridX", entry.X, "gridY", entry.Y)
@@ -413,9 +418,13 @@ func (s *GameState) spawnUnitsForPlayerAtSpawnPointLocked(player *Player, unitTy
 	centerY := (float64(sp.Y) + float64(sp.Height)/2) * cellSize
 	blocked := s.getBlockedCellsLocked()
 
+	center := s.worldToGrid(centerX, centerY)
+	// Anchor to the spawn-point cell's region (spawn-points don't block, so
+	// the cell is normally walkable) — extra starting units must land where
+	// the rest of the player's units are, not in an adjacent sealed pocket.
+	centerRegion := s.walkableRegionAtLocked(center)
 	for i := 0; i < count; i++ {
-		center := s.worldToGrid(centerX, centerY)
-		spawnCell, ok := s.findNearestWalkable(center, blocked)
+		spawnCell, ok := s.findNearestWalkableInRegionLocked(center, centerRegion, blocked, nil)
 		if !ok {
 			slog.Warn("spawnUnitsForPlayerAtSpawnPointLocked: no walkable cell found near spawn-point; skipping",
 				"playerID", player.ID, "unitType", unitType, "index", i)

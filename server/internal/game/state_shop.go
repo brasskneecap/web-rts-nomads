@@ -435,14 +435,19 @@ func (s *GameState) spawnShopGuardsLocked() {
 		}
 		centerCell := s.worldToGrid(centerWX, centerWY)
 		placedOrderID := s.nextMovementOrderIDLocked()
+		// Guards anchor to the spawn center's region so ring displacement
+		// can't strand one in a sealed pocket beside the shop. When the
+		// center sits inside the shop footprint (blocked, region 0) this
+		// degrades to the unconstrained search.
+		centerRegion := s.walkableRegionAtLocked(centerCell)
 
 		spawnIdx := 0
 		for _, entry := range group.Composition {
 			for i := 0; i < entry.Count; i++ {
 				offsetCell := neutralCampRingOffset(centerCell, spawnIdx)
-				spawnCell, found := s.findNearestWalkable(offsetCell, blocked)
+				spawnCell, found := s.findNearestWalkableInRegionLocked(offsetCell, centerRegion, blocked, nil)
 				if !found {
-					spawnCell, found = s.findNearestWalkable(centerCell, blocked)
+					spawnCell, found = s.findNearestWalkableInRegionLocked(centerCell, centerRegion, blocked, nil)
 					if !found {
 						slog.Warn("spawnShopGuardsLocked: no walkable cell; skipping unit",
 							"buildingID", b.ID, "unitType", entry.UnitType, "spawnIdx", spawnIdx)
