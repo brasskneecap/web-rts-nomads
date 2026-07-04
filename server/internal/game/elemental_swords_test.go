@@ -16,7 +16,7 @@ func TestCraftedSwords_LoadAllThree(t *testing.T) {
 		wantProjectile  string
 	}{
 		{"fire_sword", DamageFire, "fire_bolt"},
-		{"frost_sword", DamageFrost, "frost_bolt"},
+		{"frost_sword", DamageCold, "frost_bolt"},
 		{"lightning_sword", DamageLightning, "lightning_bolt"},
 	}
 
@@ -100,13 +100,16 @@ func TestFireSword_EndToEnd(t *testing.T) {
 	s.addUnitLocked(target)
 
 	s.resetDamageTypeHintsThisTickLocked()
+	s.resetMinorDamageEventsThisTickLocked()
 	deadUnitIDs := []int{}
 	// Physical 10 + 5 fire separate instance → HP 85.
 	s.resolveAttackHitLocked(attacker, target, 10, &deadUnitIDs)
 	if target.HP != 85 {
 		t.Fatalf("expected HP 85 (100 - 10 physical - 5 fire), got %d", target.HP)
 	}
-	if hint := findHint(s, target.ID, "fire"); hint == nil {
-		t.Fatalf("expected a fire damage-type hint from the sword's elemental instance")
+	// The sword's flat fire component renders as its own side-popup (minor
+	// event), not a tint on the main number.
+	if e := findMinorEvent(s, target.ID, "fire"); e == nil || e.Damage != 5 {
+		t.Fatalf("expected a fire minor (side) popup of 5 from the sword's elemental instance; queue: %+v", s.minorDamageEventsThisTick)
 	}
 }

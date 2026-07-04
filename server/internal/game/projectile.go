@@ -228,6 +228,12 @@ func (s *GameState) fireOnHitProcProjectileLocked(attacker, target *Unit, proc E
 	if variant == "" {
 		variant = attacker.UnitType
 	}
+	// Proc-authored scale wins when set; otherwise inherit the firing unit's
+	// scale (the prior behavior). Both are "0 ⇒ client default 1×".
+	scale := attacker.ProjectileScale
+	if proc.ProjectileScale > 0 {
+		scale = proc.ProjectileScale
+	}
 	s.Projectiles = append(s.Projectiles, &Projectile{
 		ID:               id,
 		OwnerUnitID:      attacker.ID,
@@ -244,7 +250,7 @@ func (s *GameState) fireOnHitProcProjectileLocked(attacker, target *Unit, proc E
 		FollowEffect:     followEffect,
 		ImpactEffect:     impactEffect,
 		DamageType:       proc.DamageType,
-		Scale:            attacker.ProjectileScale,
+		Scale:            scale,
 		SkipOnHitEffects: true,
 	})
 }
@@ -349,9 +355,19 @@ func (s *GameState) tickProjectilesLocked(dt float64) {
 	}
 
 	var deadUnitIDs []int
-	kept := s.Projectiles[:0]
+	// Landing a projectile can spawn NEW projectiles by appending to
+	// s.Projectiles — equipment on-hit proc bolts fire from
+	// landProjectileLocked → resolveAttackHitLocked → rollEquipmentProcsLocked.
+	// Snapshot this tick's set into `active` and reset s.Projectiles so those
+	// mid-loop appends accumulate cleanly on their own; we merge them back with
+	// this tick's survivors after the loop. Without this the closing
+	// reassignment discarded any bolt spawned while landing another projectile,
+	// which silently ate every ranged attacker's proc shot.
+	active := s.Projectiles
+	s.Projectiles = nil
+	kept := active[:0]
 
-	for _, proj := range s.Projectiles {
+	for _, proj := range active {
 		// Pierce arrows traverse independently of any single target.
 		if proj.Pierce {
 			if survived := s.tickPierceProjectileLocked(proj, dt, &deadUnitIDs); survived {
@@ -377,7 +393,9 @@ func (s *GameState) tickProjectilesLocked(dt float64) {
 
 		s.landProjectileLocked(proj, target, &deadUnitIDs)
 	}
-	s.Projectiles = kept
+	// kept = survivors of this tick (compacted into active's array); s.Projectiles
+	// = only the bolts spawned during landings above. Merge so both persist.
+	s.Projectiles = append(kept, s.Projectiles...)
 
 	for _, id := range deadUnitIDs {
 		s.removeUnitLocked(id)

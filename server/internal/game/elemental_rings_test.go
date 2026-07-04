@@ -8,7 +8,7 @@ func TestElementalRings_Load(t *testing.T) {
 		elem DamageType
 	}{
 		{"fire_ring", DamageFire},
-		{"ice_ring", DamageFrost},
+		{"ice_ring", DamageCold},
 		{"lightning_ring", DamageLightning},
 	}
 	for _, tc := range cases {

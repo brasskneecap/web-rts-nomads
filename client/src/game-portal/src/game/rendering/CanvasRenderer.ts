@@ -170,6 +170,8 @@ function colorForDamageVariant(variant: string | undefined, fallback: string): s
       return '#7e22ce' // tailwind purple-700 — dark, necrotic
     case 'fire':
       return '#fb923c' // tailwind orange-400
+    case 'cold':
+      return '#7dd3fc' // tailwind sky-300 — icy light blue
     default:
       return fallback
   }
@@ -2596,10 +2598,6 @@ export class CanvasRenderer {
       this.drawSelectedUnitHealthBar(unit, isEnemy, allyColor, headTopY)
       this.drawUnitRankChevrons(unit, headTopY)
 
-      if (unit.status === 'Attacking') {
-        this.drawConfiguredUnitAttackEffect(unit)
-      }
-
       this.drawUnitRankUpBurst(unit, headTopY)
 
       // Active-buff indicators (momentum, relentless, whirlwind, berserk_state, …).
@@ -2732,22 +2730,6 @@ export class CanvasRenderer {
     for (const id of this.unitAttackFacingCache.keys()) {
       if (!activeUnitIds.has(id)) this.unitAttackFacingCache.delete(id)
     }
-  }
-
-  private drawConfiguredUnitAttackEffect(unit: {
-    id: number
-    x: number
-    y: number
-    unitType?: string
-    ownerId?: string
-  }) {
-    const unitDef = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType) : undefined
-    const attackVisual = getResolvedUnitAttackVisual(unitDef)
-    // Ranged shots are rendered by drawProjectiles.
-    if (attackVisual.kind === 'projectile') {
-      return
-    }
-    this.drawMeleeAttackEffect(unit, attackVisual)
   }
 
   // Aim 30% down from the visible top of a unit — lands at chest/upper-torso
@@ -3540,50 +3522,6 @@ export class CanvasRenderer {
     }
   }
 
-  private drawMeleeAttackEffect(
-    unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string },
-    attackVisual: { originX: number; originY: number; effectLength: number },
-  ) {
-    const ctx = this.ctx
-    const direction = this.getAttackDirection(unit) ?? { x: 1, y: 0 }
-    const isEnemy = this.state.isHostileToLocalPlayer(unit.ownerId)
-    const beamColor = isEnemy
-      ? '#ef4444'
-      : unit.ownerId
-        ? (this.state.getPlayerColor(unit.ownerId) ?? '#ffffff')
-        : '#ffffff'
-    const unitDef = unit.unitType ? UNIT_DEF_MAP.get(unit.unitType) : undefined
-    const attackSpeed = Math.max(unitDef?.attackSpeed ?? 1, 0.1)
-    const cycleMs = 1000 / attackSpeed
-    const t = (this.renderTime % cycleMs) / cycleMs
-    const alpha = 1 - t
-    const originX = unit.x + attackVisual.originX
-    const originY = unit.y + attackVisual.originY
-    const centerX = originX + direction.x * (attackVisual.effectLength + t * 4)
-    const centerY = originY + direction.y * (attackVisual.effectLength + t * 4)
-    const majorAngle = Math.atan2(direction.y, direction.x)
-    const arcRadius = attackVisual.effectLength + t * 5
-    const arcWidth = 0.95
-
-    ctx.save()
-    ctx.strokeStyle = this.withAlpha(beamColor, 0.95 * alpha)
-    ctx.lineWidth = 3.5 / this.camera.zoom
-    ctx.lineCap = 'round'
-    ctx.beginPath()
-    ctx.arc(centerX, centerY, arcRadius, majorAngle - arcWidth, majorAngle + arcWidth)
-    ctx.stroke()
-
-    if (t < 0.25) {
-      const flashAlpha = (1 - t / 0.25) * 0.8
-      ctx.fillStyle = this.withAlpha(beamColor, flashAlpha)
-      ctx.beginPath()
-      ctx.arc(centerX, centerY, 3 + t * 5, 0, Math.PI * 2)
-      ctx.fill()
-    }
-
-    ctx.restore()
-  }
-
   private drawBuildingAttackEffect(building: BuildingTile) {
     const buildingDef = BUILDING_DEF_MAP.get(building.buildingType)
     const attackSpeed = Math.max(buildingDef?.attackSpeed ?? 0, 0)
@@ -3676,51 +3614,6 @@ export class CanvasRenderer {
       const dy = target.y - originY
       const distanceSq = dx * dx + dy * dy
       if (distanceSq === 0 || distanceSq > bestDistanceSq) continue
-
-      const distance = Math.sqrt(distanceSq)
-      bestDistanceSq = distanceSq
-      bestDirection = { x: dx / distance, y: dy / distance }
-    }
-
-    return bestDirection
-  }
-
-  private getAttackDirection(
-    unit: { id: number; x: number; y: number; unitType?: string; ownerId?: string },
-    maxRange?: number,
-  ) {
-    const attackRange = maxRange ?? (unit.unitType ? UNIT_DEF_MAP.get(unit.unitType)?.attackRange ?? 0 : 0)
-    if (attackRange <= 0) return null
-
-    let bestDirection: { x: number; y: number } | null = null
-    let bestDistanceSq = Infinity
-
-    for (const target of this.state.units) {
-      if (!target.visible) continue
-      if (target.id === unit.id) continue
-      if (!this.state.ownersAreHostile(target.ownerId, unit.ownerId)) continue
-
-      const dx = target.x - unit.x
-      const dy = target.y - unit.y
-      const distanceSq = dx * dx + dy * dy
-      if (distanceSq > attackRange * attackRange || distanceSq >= bestDistanceSq || distanceSq === 0) continue
-
-      const distance = Math.sqrt(distanceSq)
-      bestDistanceSq = distanceSq
-      bestDirection = { x: dx / distance, y: dy / distance }
-    }
-
-    for (const building of this.state.mapConfig.buildings) {
-      if (!building.visible) continue
-      if (!this.state.ownersAreHostile(building.ownerId, unit.ownerId)) continue
-
-      const cellSize = this.state.mapConfig.cellSize
-      const centerX = building.x * cellSize + (building.width * cellSize) / 2
-      const centerY = building.y * cellSize + (building.height * cellSize) / 2
-      const dx = centerX - unit.x
-      const dy = centerY - unit.y
-      const distanceSq = dx * dx + dy * dy
-      if (distanceSq > attackRange * attackRange || distanceSq >= bestDistanceSq || distanceSq === 0) continue
 
       const distance = Math.sqrt(distanceSq)
       bestDistanceSq = distanceSq

@@ -67,6 +67,84 @@ func TestOnHitProc_ProjectileDoesNotReProc(t *testing.T) {
 	}
 }
 
+// TestOnHitProc_RangedArrowLandingPersistsBolt drives the FULL ranged path: an
+// in-flight arrow reaches its target inside tickProjectilesLocked, whose
+// landing fires the on-hit proc. The spawned proc bolt is appended to
+// s.Projectiles DURING that tick's compaction loop, so it must survive the
+// final list rebuild. Regression for the bug where `s.Projectiles = kept`
+// discarded any projectile appended while landing another — which made ranged
+// attackers (archers) never emit their frost/fire/lightning proc bolts even
+// though the roll succeeded.
+func TestOnHitProc_RangedArrowLandingPersistsBolt(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0x9C2)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}
+
+	target := &Unit{ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier", Visible: true, HP: 500, MaxHP: 500, X: 50, Y: 0}
+	s.nextUnitID++
+	s.addUnitLocked(target)
+
+	// One in-flight arrow that reaches the target this tick (RemainingSeconds
+	// goes <= 0 after the dt decrement, so tickProjectilesLocked lands it).
+	s.Projectiles = append(s.Projectiles, &Projectile{
+		ID:               "arrow_test",
+		OwnerUnitID:      attacker.ID,
+		OwnerPlayerID:    attacker.OwnerID,
+		TargetUnitID:     target.ID,
+		Damage:           5,
+		RemainingSeconds: 0.01,
+		TotalSeconds:     1,
+	})
+
+	s.tickProjectilesLocked(0.1) // arrow lands → on-hit proc fires
+
+	boltCount := 0
+	for _, p := range s.Projectiles {
+		if p.SkipOnHitEffects && p.DamageType == DamageFire {
+			boltCount++
+		}
+	}
+	if boltCount != 1 {
+		t.Fatalf("the on-hit proc bolt must persist after the arrow landed in tickProjectilesLocked; found %d proc bolts, s.Projectiles has %d total", boltCount, len(s.Projectiles))
+	}
+}
+
+// TestOnHitProc_ProjectileScale verifies the proc-authored ProjectileScale
+// controls the fired bolt's render size, and that omitting it (0) falls back to
+// the firing unit's ProjectileScale — the prior behavior.
+func TestOnHitProc_ProjectileScale(t *testing.T) {
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0x9C3)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
+	attacker.ProjectileScale = 1.0
+	target := &Unit{ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier", Visible: true, HP: 500, MaxHP: 500, X: 50}
+	s.nextUnitID++
+	s.addUnitLocked(target)
+
+	// Explicit proc scale overrides the attacker's.
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt", ProjectileScale: 3}}
+	s.rollEquipmentProcsLocked(attacker, target)
+	if len(s.Projectiles) != 1 {
+		t.Fatalf("expected 1 proc bolt, got %d", len(s.Projectiles))
+	}
+	if got := s.Projectiles[0].Scale; got != 3 {
+		t.Fatalf("proc-authored scale should win: want 3, got %v", got)
+	}
+
+	// Omitted proc scale (0) inherits the firing unit's ProjectileScale.
+	s.Projectiles = nil
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}
+	s.rollEquipmentProcsLocked(attacker, target)
+	if got := s.Projectiles[0].Scale; got != 1.0 {
+		t.Fatalf("omitted proc scale should inherit attacker scale 1.0, got %v", got)
+	}
+}
+
 func TestOnHitProc_Deterministic(t *testing.T) {
 	run := func() int {
 		s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0x5EED)

@@ -1,12 +1,12 @@
 // Loader for projectile sprites.
 //
-// Each projectile lives under assets/projectiles/<id>/sprite.png — a single
-// flat frame that points along +x ("east") in its art. The server tags a
-// projectile with `variant` = the projectile id (e.g. "fire_bolt", see
-// ProjectileDef / Part 7); projectileSprites.ts looks the loaded image up by
-// that id and draws it, letting the renderer's existing canvas rotation orient
-// it to the flight direction. Drop a sprite.png into a new <id>/ folder and it
-// "just works" — no manifest, no per-direction art.
+// Each projectile lives at assets/projectiles/<id>.png — a single flat frame
+// that points along +x ("east") in its art. The server tags a projectile with
+// `variant` = the projectile id (e.g. "fire_bolt", see ProjectileDef / Part 7);
+// projectileSprites.ts looks the loaded image up by that id and draws it,
+// letting the renderer's existing canvas rotation orient it to the flight
+// direction. Drop a <id>.png into assets/projectiles/ and it "just works" — no
+// manifest, no per-direction art.
 //
 // Loading is fire-and-forget (like effectSprites.ts): the Image is created
 // immediately and the draw path skips it until its pixels have decoded
@@ -18,14 +18,14 @@ export interface ProjectileSpriteSet {
 }
 
 const spriteGlob = import.meta.glob<string>(
-  '../../assets/projectiles/*/sprite.png',
+  '../../assets/projectiles/*.png',
   { eager: true, query: '?url', import: 'default' },
 )
 
 const registry = new Map<string, ProjectileSpriteSet>()
 
 for (const [path, url] of Object.entries(spriteGlob)) {
-  const match = path.match(/\/assets\/projectiles\/([^/]+)\/sprite\.png$/)
+  const match = path.match(/\/assets\/projectiles\/([^/]+)\.png$/)
   if (!match || !url) continue
   const img = new Image()
   img.src = url

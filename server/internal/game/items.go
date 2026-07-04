@@ -74,6 +74,12 @@ type ItemOnHitProc struct {
 	Damage       int        `json:"damage"`
 	DamageType   DamageType `json:"damageType"`
 	ProjectileID string     `json:"projectileID"`
+	// ProjectileScale is a render-size multiplier for the fired proc bolt's
+	// sprite (purely visual, mirrors UnitDef.ProjectileScale semantics).
+	// 0/omitted ⇒ fall back to the firing unit's ProjectileScale (the prior
+	// behavior). Lives here on the proc so if on-hit procs move to a different
+	// owner later, the sizing travels with them.
+	ProjectileScale float64 `json:"projectileScale,omitempty"`
 }
 
 // defaultConsumableRangeUnits is the AoE radius (world units) a consumable
@@ -215,6 +221,9 @@ func validateItemDef(def *ItemDef) error {
 		}
 		if !IsValidDamageType(p.DamageType) {
 			return fmt.Errorf("item %q onHitProc.damageType: unregistered damage type %q", def.ID, p.DamageType)
+		}
+		if p.ProjectileScale < 0 {
+			return fmt.Errorf("item %q onHitProc.projectileScale %v must be >= 0 (0/omitted ⇒ fall back to the firing unit's scale)", def.ID, p.ProjectileScale)
 		}
 	}
 	return nil

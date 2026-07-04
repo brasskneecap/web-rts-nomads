@@ -155,10 +155,13 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	// shield-only-absorb / invuln / aegis paths above already returned
 	// without recording, which is correct because no popup will appear
 	// for them. damageTypeColorVariant returns "" for damage types we
-	// don't paint (physical / arcane / frost today), in which case
+	// don't paint (physical / arcane today), in which case
 	// recordDamageTypeHintLocked no-ops and the popup keeps the default
-	// white/red.
-	s.recordDamageTypeHintLocked(target, damage, damageTypeColorVariant(src.DamageType))
+	// white/red. Callers that render their own separate popup for this
+	// instance set SuppressTypeHint so the main number isn't mis-tinted.
+	if !src.SuppressTypeHint {
+		s.recordDamageTypeHintLocked(target, damage, damageTypeColorVariant(src.DamageType))
+	}
 	// Overkill: damage exceeded what was on HP. The client derives its floating
 	// damage numbers from HP-diffs, which clamp to prevHP for the killing blow.
 	// Record the pre-clamp value so the client can show the real damage instead

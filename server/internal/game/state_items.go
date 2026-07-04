@@ -30,6 +30,9 @@ type EquipmentProc struct {
 	Damage       int
 	DamageType   DamageType
 	ProjectileID string
+	// ProjectileScale mirrors ItemOnHitProc.ProjectileScale — render-size
+	// multiplier for the proc bolt. 0 ⇒ fall back to the firing unit's scale.
+	ProjectileScale float64
 }
 
 // UnitEquipmentBonus accumulates the flat stat bonuses from all equipped items.
@@ -250,10 +253,11 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 		}
 		if p := def.OnHitProc; p != nil {
 			unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, EquipmentProc{
-				Chance:       p.Chance,
-				Damage:       p.Damage,
-				DamageType:   p.DamageType.OrPhysical(),
-				ProjectileID: p.ProjectileID,
+				Chance:          p.Chance,
+				Damage:          p.Damage,
+				DamageType:      p.DamageType.OrPhysical(),
+				ProjectileID:    p.ProjectileID,
+				ProjectileScale: p.ProjectileScale,
 			})
 		}
 	}

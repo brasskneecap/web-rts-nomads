@@ -336,6 +336,17 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 		// skipped. Mirror the call site in drainPendingDeathsLocked so kills
 		// landed via this legacy direct-remove path still roll for drops.
 		s.rollDominionPointDropLocked(attacker.OwnerID, target)
+		// Neutral-camp kill attribution: this legacy direct-remove path removes
+		// the unit synchronously (deadUnitIDs → removeUnitLocked) before
+		// drainPendingDeathsLocked runs, so the drain's markCampKillerLocked at
+		// the camp's 0-units hook is skipped (unit already gone). Mirror it here
+		// — same reason rollDominionPointDropLocked is mirrored above — so a
+		// camp cleared by real combat records who landed the final blow. Without
+		// this the kill_camps objective is never credited: LastKillerWasPlayer
+		// stays false and onUnitRemovedFromCampLocked's gate denies the clear.
+		if target.NeutralCampID != "" {
+			s.markCampKillerLocked(target.NeutralCampID, attacker.OwnerID)
+		}
 		*deadUnitIDs = append(*deadUnitIDs, target.ID)
 		// Legacy markObjectiveKillLocked(target.ObjectiveID) call removed in
 		// §9 of campaign-objectives-and-metrics; kill counters now feed the
@@ -399,6 +410,11 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 // already landed. Iterates DamageTypes() (sorted) rather than ranging the map
 // directly so the order of damage events is deterministic. No-op when the
 // attacker has no elemental bonus. Must be called under s.mu.
+//
+// Each element renders as its OWN colored side-popup (like trap DoT / splash),
+// not as a tint on the main number: the instance suppresses the auto damage-
+// type hint and instead records a minor damage event for the landed amount, so
+// the client peels it off the combined HP-diff and floats it out to the side.
 func (s *GameState) applyEquipmentOnHitElementalLocked(attacker, target *Unit) {
 	if attacker == nil || target == nil || len(attacker.EquipmentBonus.OnHitElemental) == 0 {
 		return
@@ -408,11 +424,15 @@ func (s *GameState) applyEquipmentOnHitElementalLocked(attacker, target *Unit) {
 		if amt <= 0 {
 			continue
 		}
-		s.applyUnitDamageWithSourceLocked(target, amt, DamageSource{
-			AttackerUnitID: attacker.ID,
-			Kind:           "item-elemental",
-			DamageType:     dt,
+		landed := s.applyUnitDamageWithSourceLocked(target, amt, DamageSource{
+			AttackerUnitID:   attacker.ID,
+			Kind:             "item-elemental",
+			DamageType:       dt,
+			SuppressTypeHint: true,
 		})
+		// Show the element as a separate side-falling popup, colored by its
+		// variant (fire/orange, cold/light-blue, electric/purple, …).
+		s.recordMinorDamageHitLocked(target, landed, damageTypeColorVariant(dt))
 	}
 }
 

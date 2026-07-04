@@ -1,7 +1,7 @@
 {
   "id": "ice_ring",
   "displayName": "Ice Ring",
-  "description": "+5 frost damage on hit.",
+  "description": "+5 cold damage on hit.",
   "iconKey": "ice_ring",
   "kind": "equipment",
   "tier": "rare",
@@ -9,5 +9,5 @@
   "slotKind": "any",
   "allowedUnitTypes": [],
   "costGold": 75,
-  "onHitElemental": [ { "type": "frost", "amount": 5 } ]
+  "onHitElemental": [ { "type": "cold", "amount": 5 } ]
 }

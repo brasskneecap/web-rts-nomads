@@ -66,6 +66,13 @@ type DamageSource struct {
 	// behaving as physical with no edits. Flavor/metadata only today —
 	// see damage_type.go.
 	DamageType DamageType
+	// SuppressTypeHint stops applyUnitDamageWithSourceLocked from auto-emitting
+	// the major-popup color hint for this instance. Set by callers that render
+	// their own SEPARATE popup for the damage (e.g. equipment on-hit elemental,
+	// which sprays a minor side-popup instead of tinting the main number). If
+	// the hint were still emitted, its (unitID, amount) entry would mis-color
+	// the physical remainder of the same-tick HP-diff.
+	SuppressTypeHint bool
 }
 
 // ResolvedDamageType returns the damage event's element, defaulting an unset

@@ -18,7 +18,7 @@ import "sort"
 // damage event but does not change any damage numbers.
 //
 // TODO: Future support for resistances, weaknesses, and damage type modifiers
-// per unit (e.g. a frost-resistant unit takes reduced DamageFrost). When that
+// per unit (e.g. a cold-resistant unit takes reduced DamageCold). When that
 // lands, mitigation in the damage pipeline should branch on
 // DamageSource.ResolvedDamageType(); no call site that merely *tags* damage
 // should need to change.
@@ -31,7 +31,10 @@ const (
 	// as physical with zero edits.
 	DamagePhysical  DamageType = "physical"
 	DamageFire      DamageType = "fire"
-	DamageFrost     DamageType = "frost"
+	// DamageCold is the ice/frost school. Rendered light-blue on damage
+	// popups. "Frost"/"Ice" themed items (Frost Sword, Ice Ring) deal this
+	// element — the flavor names are kept, the element itself is "cold".
+	DamageCold      DamageType = "cold"
 	DamageLightning DamageType = "lightning"
 	DamageArcane    DamageType = "arcane"
 	DamageHoly      DamageType = "holy"
@@ -49,7 +52,7 @@ const (
 var damageTypeRegistry = map[DamageType]struct{}{
 	DamagePhysical:  {},
 	DamageFire:      {},
-	DamageFrost:     {},
+	DamageCold:      {},
 	DamageLightning: {},
 	DamageArcane:    {},
 	DamageHoly:      {},

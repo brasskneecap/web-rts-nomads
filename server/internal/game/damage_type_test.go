@@ -66,7 +66,7 @@ func TestDamageType_AttachesToDamageEvent(t *testing.T) {
 
 func TestDamageType_RegistryRecognisesBuiltins(t *testing.T) {
 	for _, dt := range []DamageType{
-		DamagePhysical, DamageFire, DamageFrost, DamageLightning, DamageArcane, DamageHoly,
+		DamagePhysical, DamageFire, DamageCold, DamageLightning, DamageArcane, DamageHoly,
 	} {
 		if !IsValidDamageType(dt) {
 			t.Errorf("IsValidDamageType(%q) = false; want true (builtin)", dt)

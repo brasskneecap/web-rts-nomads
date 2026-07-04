@@ -4,5 +4,5 @@
     "gold": 500,
     "wood": 180
   },
-  "startWaveBonus": true
+  "startWaveBonus": false
 }
