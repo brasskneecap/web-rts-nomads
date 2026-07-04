@@ -4,7 +4,7 @@
   "description": "+20 armor.",
   "iconKey": "plate_armor",
   "kind": "equipment",
-  "tier": "common",
+  "tier": "uncommon",
   "category": "Armor",
   "slotKind": "armor",
   "allowedUnitTypes": [],
