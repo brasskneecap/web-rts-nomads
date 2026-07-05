@@ -125,9 +125,11 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		}
 	}
 	s.applyRankModifiersLocked(unit, false)
-	// Initialise inventory slots for player-owned units. Base-rank combat
-	// units start with 1 slot (workers get none); higher spawn ranks (e.g.
-	// debug_spawn) get their rank's full size.
+	// Initialise inventory slots for player-owned units from the unit's
+	// current rank. Normal spawns are base rank → 1 slot (workers get none).
+	// Callers that override the rank AFTER spawn (e.g. DebugSpawnUnit) must
+	// re-run setInventorySizeForRankLocked themselves — this pass only sees
+	// the rank the unit has at spawn time.
 	if playerID != enemyPlayerID && playerID != neutralPlayerID {
 		s.setInventorySizeForRankLocked(unit)
 		unit.Equipped = make([]*EquippedItem, unit.InventorySize)

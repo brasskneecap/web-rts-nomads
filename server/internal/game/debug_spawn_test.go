@@ -70,6 +70,56 @@ func TestDebugSpawn_AppliesArcherAdvancements(t *testing.T) {
 	}
 }
 
+// TestDebugSpawn_SpawnRank_SizesInventory guards that a unit spawned directly at
+// a rank (not by earning XP) receives that rank's full inventory. Inventory size
+// must follow rank STATE, not the rank-up event — otherwise a Gold debug spawn
+// keeps the base-rank single slot. Regression for the "3 slots on gold" report.
+func TestDebugSpawn_SpawnRank_SizesInventory(t *testing.T) {
+	if _, ok := getUnitDef("archer"); !ok {
+		t.Skip("archer not in unit catalog")
+	}
+
+	cases := []struct {
+		rank     string
+		wantSize int
+	}{
+		{unitRankBronze, 1},
+		{unitRankSilver, 2},
+		{unitRankGold, 3},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.rank, func(t *testing.T) {
+			s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 33)
+			s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
+
+			s.mu.Lock()
+			s.MapConfig.Debug = &protocol.MapDebugConfig{DebugSpawn: true}
+			s.mu.Unlock()
+
+			if !s.DebugSpawnUnit(protocol.DebugSpawnUnitMessage{
+				Type: "debug_spawn_unit", UnitType: "archer", Team: "mine",
+				Rank: tc.rank, X: 400, Y: 400,
+			}, "p1") {
+				t.Fatal("DebugSpawnUnit returned false")
+			}
+
+			s.mu.Lock()
+			u := s.findOwnedUnitLocked("p1", "archer")
+			s.mu.Unlock()
+			if u == nil {
+				t.Fatal("debug-spawned archer not found")
+			}
+			if u.InventorySize != tc.wantSize {
+				t.Errorf("%s debug archer InventorySize = %d, want %d", tc.rank, u.InventorySize, tc.wantSize)
+			}
+			if len(u.Equipped) != tc.wantSize {
+				t.Errorf("%s debug archer len(Equipped) = %d, want %d", tc.rank, len(u.Equipped), tc.wantSize)
+			}
+		})
+	}
+}
+
 // TestDebugSpawn_EnemyTeam_NoAdvancements is the companion guard: an enemy-team
 // debug spawn (no advancements on the NPC player) gets stock catalog stats, so
 // the routing change doesn't accidentally buff enemy units.

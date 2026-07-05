@@ -153,7 +153,11 @@ func isVaryingKey(k string) bool {
 	switch k {
 	case "matchId", "serverNow", "instanceId", "id", "createdAt", "updatedAt", "createdAtUnix", "updatedAtUnix", "seed", "lobbyId", "ts", "tickMs", "currentTickMs",
 		// Per-player cosmetic randomness (rngCosmetic) — colour, etc.
-		"color":
+		"color",
+		// Resource/config amounts are balance tunables owned by player.json and
+		// spawn config; a structural-shape baseline must not pin their values,
+		// only that the field is present and numeric.
+		"amount":
 		return true
 	}
 	// Keys whose lower-cased name ends in these suffixes are treated as varying

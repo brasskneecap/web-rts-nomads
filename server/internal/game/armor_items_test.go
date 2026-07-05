@@ -5,13 +5,27 @@ import "testing"
 // armorItemIDs is the common armor line, in ascending power order.
 var armorItemIDs = []string{"leather_armor", "half_plate", "plate_armor"}
 
-// TestArmorItems_Load asserts the common armor line exists in the catalog and
-// is shaped correctly: equipment, common tier, armor slot, Armor category,
-// and a positive armor modifier that strictly ascends leather → half plate →
-// plate. Exact armor values are balance tunables owned by the catalog JSON,
-// so the test checks the ordering invariant rather than pinning numbers.
+// itemTierRank orders the ItemTier vocabulary from weakest to strongest so
+// tests can assert tier *relationships* without pinning any item to a specific
+// tier (tiers are catalog-owned and get rebalanced). Unknown tiers rank -1 so
+// they fail the "known tier" check below.
+var itemTierRank = map[ItemTier]int{
+	ItemTierCommon:    0,
+	ItemTierUncommon:  1,
+	ItemTierRare:      2,
+	ItemTierEpic:      3,
+	ItemTierLegendary: 4,
+}
+
+// TestArmorItems_Load asserts the armor line exists in the catalog and is
+// shaped correctly: equipment, armor slot, Armor category, and a positive armor
+// modifier that strictly ascends leather → half plate → plate. Tier and armor
+// values are balance tunables owned by the catalog JSON, so the test checks
+// ordering invariants (armor strictly ascends, tier never descends) rather than
+// pinning each item to a specific tier or number.
 func TestArmorItems_Load(t *testing.T) {
 	prevArmor := 0
+	prevTierRank := -1
 	for _, id := range armorItemIDs {
 		def, ok := getItemDef(id)
 		if !ok {
@@ -20,8 +34,11 @@ func TestArmorItems_Load(t *testing.T) {
 		if def.Kind != ItemKindEquipment {
 			t.Errorf("%s: kind = %q, want equipment", id, def.Kind)
 		}
-		if def.Tier != ItemTierCommon {
-			t.Errorf("%s: tier = %q, want common", id, def.Tier)
+		tierRank, known := itemTierRank[def.Tier]
+		if !known {
+			t.Errorf("%s: tier = %q is not a known tier", id, def.Tier)
+		} else if tierRank < prevTierRank {
+			t.Errorf("%s: tier %q ranks below the previous item in the line — a stronger armor item must not be a lower tier", id, def.Tier)
 		}
 		if def.SlotKind != ItemSlotKindArmor {
 			t.Errorf("%s: slotKind = %q, want armor", id, def.SlotKind)
@@ -36,6 +53,7 @@ func TestArmorItems_Load(t *testing.T) {
 			t.Errorf("%s: armor %d not greater than previous tier's %d — the line must strictly ascend", id, def.Modifiers.Armor, prevArmor)
 		}
 		prevArmor = def.Modifiers.Armor
+		prevTierRank = tierRank
 	}
 }
 

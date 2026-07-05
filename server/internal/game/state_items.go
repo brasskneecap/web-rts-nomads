@@ -33,6 +33,12 @@ type EquipmentProc struct {
 	// ProjectileScale mirrors ItemOnHitProc.ProjectileScale — render-size
 	// multiplier for the proc bolt. 0 ⇒ fall back to the firing unit's scale.
 	ProjectileScale float64
+	// Bounce/chain config for beam-emitter procs (mirrors ItemOnHitProc). When
+	// BounceCount > 0 and BounceRange > 0 the beam arcs to further enemies,
+	// losing BounceDamageFalloff damage per hop. Zero for non-chaining procs.
+	BounceCount         int
+	BounceRange         float64
+	BounceDamageFalloff int
 }
 
 // UnitEquipmentBonus accumulates the flat stat bonuses from all equipped items.
@@ -253,11 +259,14 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 		}
 		if p := def.OnHitProc; p != nil {
 			unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, EquipmentProc{
-				Chance:          p.Chance,
-				Damage:          p.Damage,
-				DamageType:      p.DamageType.OrPhysical(),
-				ProjectileID:    p.ProjectileID,
-				ProjectileScale: p.ProjectileScale,
+				Chance:              p.Chance,
+				Damage:              p.Damage,
+				DamageType:          p.DamageType.OrPhysical(),
+				ProjectileID:        p.ProjectileID,
+				ProjectileScale:     p.ProjectileScale,
+				BounceCount:         p.BounceCount,
+				BounceRange:         p.BounceRange,
+				BounceDamageFalloff: p.BounceDamageFalloff,
 			})
 		}
 	}

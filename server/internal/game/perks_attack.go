@@ -172,12 +172,13 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, prima
 
 		case "whirlwind_core":
 			// Each normal attack rolls against procChance. On proc, fire a bonus
-			// AoE hit (full damage to every visible enemy within radius) and
-			// queue the effect so the client overlays the spin animation.
-			// The regular attack flow is NOT interrupted — this is strictly
-			// additive; the primary target already took its hit before this
-			// hook ran, and the unit's attack cooldown continues on its normal
-			// cadence.
+			// AoE hit (full damage to every visible enemy within radius,
+			// INCLUDING the primary target — so the unit that triggered the
+			// whirlwind takes a second hit) and queue the effect so the client
+			// overlays the spin animation. The regular attack flow is NOT
+			// interrupted — this is strictly additive; the primary already took
+			// its normal hit before this hook ran, and the unit's attack
+			// cooldown continues on its normal cadence.
 			if s.rngPerks.Float64() < def.Config["procChance"] {
 				s.applyWhirlwindHitLocked(attacker, primaryTarget, def.Config["radius"], deadUnitIDs)
 				s.applyPerkEffectLocked(def.Effect, attacker, primaryTarget)
@@ -204,9 +205,16 @@ func (s *GameState) onPerkAttackFiredLocked(attacker, primaryTarget *Unit, prima
 }
 
 // applyWhirlwindHitLocked deals full attacker damage to every visible enemy
-// (other than primaryTarget) within radius of the attacker. Routes through the
-// same shield/on-hit/XP pipeline as a normal attack so lifesteal, damage XP,
-// and kill XP all work transparently.
+// within radius of the attacker — INCLUDING primaryTarget, which therefore
+// takes a second hit (its normal swing plus this whirlwind hit). Routes through
+// the same shield/on-hit/XP pipeline as a normal attack so lifesteal, damage
+// XP, on-hit gear, and kill XP all work transparently on each hit.
+//
+// Death handling differs for the primary: its death is owned by the calling
+// resolveAttackHitLocked's post-hit check (a fuller handler — DP drops, camp
+// kill attribution), so this function applies damage + on-hit effects to the
+// primary but does NOT award its kill or append it to deadUnitIDs. Swept
+// (non-primary) victims are killed here as before.
 func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radius float64, deadUnitIDs *[]int) {
 	if attacker == nil || radius <= 0 {
 		return
@@ -217,7 +225,7 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		primaryID = primaryTarget.ID
 	}
 	for _, candidate := range s.Units {
-		if candidate == nil || candidate.ID == primaryID {
+		if candidate == nil {
 			continue
 		}
 		if !s.playersAreHostileLocked(candidate.OwnerID, attacker.OwnerID) {
@@ -241,7 +249,19 @@ func (s *GameState) applyWhirlwindHitLocked(attacker, primaryTarget *Unit, radiu
 		s.recordDamageDealtLocked(attacker, candidate, damage)
 		s.trackBattleDamageLocked(battleSourceFromUnit(attacker), candidate, damage)
 		s.onPerkAttackDamageAppliedLocked(attacker, candidate, damage)
+		// Every whirlwind sweep hit is its own hit — fire the attacker's
+		// equipment on-hit effects (procs / elemental) on it, just like the
+		// primary swing does. Before the HP<=0 check so an elemental instance
+		// can contribute to the kill (matches resolveAttackHitLocked ordering).
+		s.applyEquipmentOnHitEffectsLocked(attacker, candidate)
 		if candidate.HP <= 0 {
+			// The primary's death is resolved by resolveAttackHitLocked after
+			// this perk hook returns. Applying its whirlwind damage here is
+			// correct, but double-handling the kill (XP, deadUnitIDs) is not —
+			// so defer it. HP is already clamped to 0 by the damage pipeline.
+			if candidate.ID == primaryID {
+				continue
+			}
 			candidate.HP = 0
 			s.awardUnitDeathXPLocked(candidate, attacker)
 			s.awardSoldierTankKillXPLocked(candidate.ID)
@@ -319,6 +339,10 @@ func (s *GameState) applyCleaveHitLocked(attacker, primaryTarget *Unit, splashRa
 	s.trackBattleDamageLocked(battleSourceFromUnit(attacker), secondary, damage)
 	// Let on-damage perks (blood_sustain) react to cleave hits.
 	s.onPerkAttackDamageAppliedLocked(attacker, secondary, damage)
+	// The cleave hit is a distinct hit — fire the attacker's equipment on-hit
+	// effects (procs / elemental) on the secondary too, so a Berserker's
+	// lightning_sword etc. can proc off the cleave, matching the primary swing.
+	s.applyEquipmentOnHitEffectsLocked(attacker, secondary)
 	if secondary.HP <= 0 {
 		secondary.HP = 0
 		s.awardUnitDeathXPLocked(secondary, attacker)

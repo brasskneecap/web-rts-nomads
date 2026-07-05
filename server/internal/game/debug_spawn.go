@@ -134,6 +134,16 @@ func (s *GameState) DebugSpawnUnit(msg protocol.DebugSpawnUnitMessage, callerPla
 	// spawn is fresh (HP == MaxHP at this point).
 	s.applyRankModifiersLocked(unit, false)
 
+	// Re-derive inventory size from the debug-set rank. spawnPlayerUnitLocked
+	// already sized the inventory, but it ran while the unit was still base
+	// rank (the rank override above happens afterward), and applyRankModifiers
+	// Locked does not touch inventory. Without this a Gold debug spawn keeps
+	// the base-rank single slot. Guarded to player-owned units to mirror the
+	// spawn-time guard — enemy units carry no inventory.
+	if ownerPlayerID != enemyPlayerID && ownerPlayerID != neutralPlayerID {
+		s.setInventorySizeForRankLocked(unit)
+	}
+
 	// Custom HP override (after rank scaling so e.g. "spawn a Bronze at 50
 	// HP for last_stand testing" works even when the rank multiplied MaxHP).
 	if msg.CustomHP > 0 {

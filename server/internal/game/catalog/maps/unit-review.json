@@ -25,14 +25,83 @@
         "visible": false,
         "capabilities": [],
         "metadata": {
-          "fillOrder": 0,
+          "fillOrder": 1,
           "playerLabel": "player1",
-          "townhallId": null
+          "townhallId": "townhall-1-5"
+        }
+      },
+      {
+        "x": 1,
+        "y": 5,
+        "id": "townhall-1-5",
+        "buildingType": "townhall",
+        "width": 3,
+        "height": 2,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "unit-spawner",
+          "occupiable",
+          "deposit-point",
+          "vault-access"
+        ],
+        "spawnUnitTypes": [
+          "worker"
+        ],
+        "metadata": {
+          "foodSupply": 10
+        }
+      },
+      {
+        "x": 2,
+        "y": 7,
+        "id": "artificer-2-7",
+        "buildingType": "artificer",
+        "width": 3,
+        "height": 3,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "crafting"
+        ],
+        "metadata": {
+          "playerLabel": "player1"
+        }
+      },
+      {
+        "x": 2,
+        "y": 11,
+        "id": "recipe-shop-2-11",
+        "buildingType": "recipe-shop",
+        "width": 3,
+        "height": 3,
+        "occupied": true,
+        "visible": true,
+        "capabilities": [
+          "recipe-purchase"
+        ],
+        "metadata": {
+          "shopStyle": "druid-recipe-vendor"
+        }
+      },
+      {
+        "x": 6,
+        "y": 11,
+        "id": "marketplace-6-11",
+        "buildingType": "marketplace",
+        "width": 3,
+        "height": 3,
+        "occupied": false,
+        "visible": false,
+        "capabilities": [
+          "item-purchase"
+        ],
+        "metadata": {
+          "playerLabel": "player1"
         }
       }
     ],
     "debug": {
-      "battleTracker": true,
       "debugSpawn": true
     },
     "terrain": {},

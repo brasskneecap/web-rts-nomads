@@ -2750,6 +2750,14 @@ export class CanvasRenderer {
   private static readonly TARGET_BODY_CENTER_FRACTION = 0.3
   // Fallback body-center lift when the referenced unit is not in client state.
   private static readonly DEFAULT_BODY_CENTER_OFFSET_Y = -16
+  // Momentary proc beams (lightning zap) anchor lower than the 0.3 head/neck
+  // point projectiles use — ~half-way down the visible body reads as upper
+  // chest, which is where a hand-thrown bolt should leave from and land.
+  private static readonly BEAM_BODY_ANCHOR_FRACTION = 0.5
+  // Fallback beam anchor when the referenced unit has already left client
+  // state (e.g. killed by the same hit). Shallower than the projectile default
+  // so the frozen flash still sits around chest height, not the head.
+  private static readonly DEFAULT_BEAM_ANCHOR_OFFSET_Y = -11
 
   /**
    * Draw transient AoE explosion VFX from server snapshots. Marksman gold
@@ -3009,29 +3017,59 @@ export class CanvasRenderer {
 
     const originLiftCache = new Map<string, { x: number; y: number }>()
     const targetLiftCache = new Map<string, { x: number; y: number }>()
+    // Separate cache: momentary beams anchor lower (upper chest) than the
+    // projectile/channel lift, so they must not share the caches above (same
+    // unit-type key, different value).
+    const beamAnchorCache = new Map<string, { x: number; y: number }>()
 
     for (const beam of beams) {
-      const caster = unitsById.get(beam.casterUnitId)
-      const target = unitsById.get(beam.targetUnitId)
-      // Defensive: skip if either unit is missing from the current frame.
-      if (!caster || !target) continue
+      let originX: number
+      let originY: number
+      let endX: number
+      let endY: number
 
-      const originLift = this.getProjectileOriginLift(caster, originLiftCache)
-      const targetLift = this.getProjectileTargetLift(target, targetLiftCache)
+      if (beam.momentary) {
+        // One-shot proc zap: the base endpoints are frozen server-side at the
+        // participants' FOOT positions (the participants may have died from the
+        // hit). Lift both ends to upper-chest height so the zap leaves from the
+        // chest instead of the feet or head, no matter where the units stand.
+        // The lift is sprite-derived and looked up by unit type; if a
+        // participant is already gone it falls back to a sane default offset, so
+        // the frozen base still renders correctly.
+        const caster = unitsById.get(beam.casterUnitId)
+        const target = unitsById.get(beam.targetUnitId)
+        const originLift = this.beamEndpointLift(caster, beamAnchorCache)
+        const targetLift = this.beamEndpointLift(target, beamAnchorCache)
+        originX = (beam.originX ?? 0) + originLift.x
+        originY = (beam.originY ?? 0) + originLift.y
+        endX = (beam.targetX ?? 0) + targetLift.x
+        endY = (beam.targetY ?? 0) + targetLift.y
+      } else {
+        const caster = unitsById.get(beam.casterUnitId)
+        const target = unitsById.get(beam.targetUnitId)
+        // Defensive: skip if either unit is missing from the current frame.
+        if (!caster || !target) continue
 
-      // Per-unit nudge for the beam source — sprites whose chest anchor
-      // doesn't fit (tall hood lands the default on the head; staff hand is
-      // off to one side) declare a `beamOrigin` in their sprites.json.
-      // Screen-space delta — does not rotate with facing.
-      const casterSpriteSet = getUnitSpriteSet(caster.path, caster.unitType)
-      const beamOrigin = casterSpriteSet?.beamOrigin ?? { x: 0, y: 0 }
+        const originLift = this.getProjectileOriginLift(caster, originLiftCache)
+        const targetLift = this.getProjectileTargetLift(target, targetLiftCache)
 
-      const originX = caster.x + originLift.x + beamOrigin.x
-      const originY = caster.y + originLift.y + beamOrigin.y
-      const endX = target.x + targetLift.x
-      const endY = target.y + targetLift.y
+        // Per-unit nudge for the beam source — sprites whose chest anchor
+        // doesn't fit (tall hood lands the default on the head; staff hand is
+        // off to one side) declare a `beamOrigin` in their sprites.json.
+        // Screen-space delta — does not rotate with facing.
+        const casterSpriteSet = getUnitSpriteSet(caster.path, caster.unitType)
+        const beamOrigin = casterSpriteSet?.beamOrigin ?? { x: 0, y: 0 }
+
+        originX = caster.x + originLift.x + beamOrigin.x
+        originY = caster.y + originLift.y + beamOrigin.y
+        endX = target.x + targetLift.x
+        endY = target.y + targetLift.y
+      }
 
       switch (beam.variant) {
+        case 'lightning_bolt':
+          this.drawLightningBoltBeam(originX, originY, endX, endY)
+          break
         case 'siphon_life':
           this.drawSiphonLifeBeam(originX, originY, endX, endY)
           break
@@ -3076,35 +3114,12 @@ export class CanvasRenderer {
     const dy = endY - originY
     const length = Math.hypot(dx, dy)
     if (length < 0.5) return // caster and target coincident — nothing meaningful to draw
-    const angle = Math.atan2(dy, dx)
 
     // Pulse used by the end-glows so they breathe in time with the channel.
     const pulseT = (Math.sin((performance.now() / 700) * Math.PI * 2) + 1) / 2 // 0..1
     const pulseFactor = 0.85 + 0.15 * pulseT
 
-    const sprite = getBeamSprite('siphon_life')
-    if (sprite && sprite.image && sprite.image.complete && sprite.image.naturalWidth > 0) {
-      const { image, frameWidth, frameHeight, frames, frameDurationMs, axisRotation, headOnRight, displayHeight } = sprite
-      const frameIndex = Math.floor(performance.now() / frameDurationMs) % frames
-      const sx = frameIndex * frameWidth
-      const axisRad = (axisRotation * Math.PI) / 180
-
-      ctx.save()
-      const prevSmoothing = ctx.imageSmoothingEnabled
-      ctx.imageSmoothingEnabled = false
-      ctx.translate(originX, originY)
-      // Rotate so the painted axis ends up parallel to caster→target.
-      ctx.rotate(angle - axisRad)
-      if (!headOnRight) {
-        // Mirror horizontally so the painted "head" (impact end) lands on the
-        // target side after the stretch.
-        ctx.translate(length, 0)
-        ctx.scale(-1, 1)
-      }
-      ctx.drawImage(image, sx, 0, frameWidth, frameHeight, 0, -displayHeight / 2, length, displayHeight)
-      ctx.imageSmoothingEnabled = prevSmoothing
-      ctx.restore()
-    }
+    this.stretchBeamSprite('siphon_life', originX, originY, endX, endY)
 
     // Caster-side puff: soft green radial gradient at the origin.
     const puffRadius = Math.max(3, 5 / this.camera.zoom)
@@ -3135,11 +3150,96 @@ export class CanvasRenderer {
     ctx.restore()
   }
 
+  /**
+   * Blit an animated beam sprite stretched along origin→end. Shared by every
+   * beam variant (siphon_life, lightning_bolt, …): reads the beam manifest from
+   * assets/beams/<spriteName>/, advances the frame from performance.now(), and
+   * rotates/mirrors so the painted axis aligns with the origin→target vector.
+   * No-op (returns false) if the sheet hasn't decoded yet or the endpoints are
+   * coincident, so callers can still draw their own end-glows as a fallback.
+   */
+  private stretchBeamSprite(
+    spriteName: string,
+    originX: number,
+    originY: number,
+    endX: number,
+    endY: number,
+  ): boolean {
+    const dx = endX - originX
+    const dy = endY - originY
+    const length = Math.hypot(dx, dy)
+    if (length < 0.5) return false
+    const sprite = getBeamSprite(spriteName)
+    if (!sprite || !sprite.image || !sprite.image.complete || sprite.image.naturalWidth === 0) {
+      return false
+    }
+    const ctx = this.ctx
+    const angle = Math.atan2(dy, dx)
+    const { image, frameWidth, frameHeight, frames, frameDurationMs, axisRotation, headOnRight, displayHeight } = sprite
+    const frameIndex = Math.floor(performance.now() / frameDurationMs) % frames
+    const sx = frameIndex * frameWidth
+    const axisRad = (axisRotation * Math.PI) / 180
+
+    ctx.save()
+    const prevSmoothing = ctx.imageSmoothingEnabled
+    ctx.imageSmoothingEnabled = false
+    ctx.translate(originX, originY)
+    // Rotate so the painted axis ends up parallel to origin→target.
+    ctx.rotate(angle - axisRad)
+    if (!headOnRight) {
+      // Mirror horizontally so the painted "head" (impact end) lands on the
+      // target side after the stretch.
+      ctx.translate(length, 0)
+      ctx.scale(-1, 1)
+    }
+    ctx.drawImage(image, sx, 0, frameWidth, frameHeight, 0, -displayHeight / 2, length, displayHeight)
+    ctx.imageSmoothingEnabled = prevSmoothing
+    ctx.restore()
+    return true
+  }
+
+  /**
+   * Draw a lightning_bolt beam — a fast electric zap from origin to target.
+   * Hybrid render mirroring drawSiphonLifeBeam: the animated sprite body from
+   * assets/beams/lightning_bolt/ stretched along the vector, plus small
+   * electric-blue/white end sparks so the zap reads even before the sheet
+   * decodes. Used by momentary proc beams (e.g. the lightning_sword proc).
+   */
+  private drawLightningBoltBeam(originX: number, originY: number, endX: number, endY: number) {
+    const ctx = this.ctx
+    const length = Math.hypot(endX - originX, endY - originY)
+    if (length < 0.5) return
+
+    this.stretchBeamSprite('lightning_bolt', originX, originY, endX, endY)
+
+    // End sparks: bright electric-blue radial flashes at both ends so the zap
+    // has visible anchor points (source hand + impact) independent of the
+    // sprite. Brighter/whiter core fading to transparent electric blue.
+    const spark = (x: number, y: number, radius: number, alpha: number) => {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, radius)
+      g.addColorStop(0, `rgba(235, 250, 255, ${alpha})`)
+      g.addColorStop(0.4, `rgba(120, 190, 255, ${0.6 * alpha})`)
+      g.addColorStop(1, 'rgba(40, 90, 200, 0)')
+      ctx.save()
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.arc(x, y, radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
+    spark(originX, originY, Math.max(3, 5 / this.camera.zoom), 0.85)
+    spark(endX, endY, Math.max(3.5, 6.5 / this.camera.zoom), 0.95)
+  }
+
   // spriteBodyCenterLift back-computes the visible body from the sprite draw
   // math (see sprite blit at drawImage call above): the sprite's bottom edge
   // sits at unit.y + bottomOffset, with transparent pads trimming both ends.
   // Returns null for procedural-only units so callers can fall back.
-  private spriteBodyCenterLift(unitType: string, path: string | undefined): { x: number; y: number } | null {
+  private spriteBodyCenterLift(
+    unitType: string,
+    path: string | undefined,
+    fraction: number = CanvasRenderer.TARGET_BODY_CENTER_FRACTION,
+  ): { x: number; y: number } | null {
     const spriteSet = getUnitSpriteSet(path, unitType)
     if (!spriteSet) return null
     const bounds = getUnitBoundsFor({ path, unitType })
@@ -3149,8 +3249,36 @@ export class CanvasRenderer {
     const visibleTop = bottomOffset - h * (1 - UNIT_SPRITE_TOP_PADDING)
     return {
       x: 0,
-      y: visibleTop + (visibleBottom - visibleTop) * CanvasRenderer.TARGET_BODY_CENTER_FRACTION,
+      y: visibleTop + (visibleBottom - visibleTop) * fraction,
     }
+  }
+
+  // Beam endpoint lift: anchors a momentary beam's end at upper-chest height
+  // (BEAM_BODY_ANCHOR_FRACTION) rather than the 0.3 head/neck point projectiles
+  // use. Mirrors getProjectileTargetLift's sprite→procedural→default fallback
+  // chain so it works for any unit and even when the unit has left client state.
+  private beamEndpointLift(
+    unit: Unit | undefined,
+    cache: Map<string, { x: number; y: number }>,
+  ): { x: number; y: number } {
+    if (!unit?.unitType) return { x: 0, y: CanvasRenderer.DEFAULT_BEAM_ANCHOR_OFFSET_Y }
+    const key = `${unit.unitType}|${unit.path ?? ''}`
+    const cached = cache.get(key)
+    if (cached) return cached
+
+    const sprite = this.spriteBodyCenterLift(unit.unitType, unit.path, CanvasRenderer.BEAM_BODY_ANCHOR_FRACTION)
+    let lift: { x: number; y: number }
+    if (sprite) {
+      lift = sprite
+    } else {
+      const bounds = getUnitBoundsFor({ path: unit.path, unitType: unit.unitType })
+      lift = {
+        x: 0,
+        y: bounds.top + (bounds.bottom - bounds.top) * CanvasRenderer.BEAM_BODY_ANCHOR_FRACTION,
+      }
+    }
+    cache.set(key, lift)
+    return lift
   }
 
   // Origin lift: bow position for sprite-rendered units (same chest anchor as

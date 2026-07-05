@@ -500,10 +500,17 @@ type AbilitySnapshot struct {
 	Channeling bool `json:"channeling,omitempty"`
 }
 
-// BeamSnapshot carries one active channeled-beam visual to the client.
-// The beam is rendered as a persistent line/effect between caster and target
-// for the duration of the channel. FOW-filtered: only included when the
-// caster or target is visible to the viewer.
+// BeamSnapshot carries one active beam visual to the client. Two flavors:
+//
+//   - Channeled (Momentary omitted/false): a persistent line between caster and
+//     target for the duration of a channel. The client derives endpoints from
+//     the LIVE unit positions each frame; Origin/Target coords are not sent.
+//
+//   - Momentary (Momentary == true): a one-shot proc "zap" that decays quickly.
+//     Its endpoints are FROZEN server-side (the participants may have died) and
+//     sent as OriginX/Y → TargetX/Y so the client renders it from coords.
+//
+// FOW-filtered: only included when either endpoint is visible to the viewer.
 type BeamSnapshot struct {
 	ID           string `json:"id"`
 	CasterUnitId int    `json:"casterUnitId"`
@@ -511,6 +518,15 @@ type BeamSnapshot struct {
 	OwnerId      string `json:"ownerId"`
 	AbilityId    string `json:"abilityId,omitempty"`
 	Variant      string `json:"variant,omitempty"`
+	// Momentary marks a self-contained one-shot beam flash rendered from the
+	// frozen coords below rather than live unit positions.
+	Momentary bool `json:"momentary,omitempty"`
+	// OriginX/Y and TargetX/Y are the frozen world endpoints of a momentary
+	// beam. Only meaningful (and only sent) when Momentary is true.
+	OriginX float64 `json:"originX,omitempty"`
+	OriginY float64 `json:"originY,omitempty"`
+	TargetX float64 `json:"targetX,omitempty"`
+	TargetY float64 `json:"targetY,omitempty"`
 }
 
 type TerrainTile struct {

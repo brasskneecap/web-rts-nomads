@@ -255,6 +255,60 @@ func (s *GameState) fireOnHitProcProjectileLocked(attacker, target *Unit, proc E
 	})
 }
 
+// fireOnHitProcBeamLocked handles an equipment on-hit proc whose emitter def is
+// EmitterKindBeam (e.g. the lightning_sword's "lightning_bolt"). It spawns the
+// momentary beam flash NOW (frozen endpoints let it render even if the target
+// later dies) but DEFERS the proc's damage by beamProcDamageDelaySeconds: a beam
+// is otherwise instantaneous, so applying damage this tick would merge its
+// number into the triggering hit's number. tickBeamsLocked lands the damage a
+// beat later — bypassing the on-hit hub, so a proc can't trigger another proc —
+// which pops it as its own floating number, the same separation the projectile
+// version got by traveling.
+//
+// Caller holds s.mu write lock.
+func (s *GameState) fireOnHitProcBeamLocked(attacker, target *Unit, proc EquipmentProc, def ProjectileDef) {
+	variant := proc.ProjectileID
+	if variant == "" {
+		variant = def.ID
+	}
+	impact := impactEffectForProjectileDef(def)
+
+	// Primary hit: attacker → target. Damage is deferred (see the helper) so it
+	// pops as its own number instead of merging into the triggering attack.
+	s.spawnMomentaryDamageBeamLocked(attacker, attacker, target, variant, proc.Damage, proc.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
+
+	// Optional chain: the bolt arcs to up to BounceCount further enemies. Each
+	// hop leaps off the PREVIOUS victim to the nearest not-yet-hit hostile
+	// within BounceRange, losing BounceDamageFalloff damage per hop (25 → 20 →
+	// 15 with count=2, falloff=5). Kill credit always stays with `attacker`.
+	// Reuses the generic bounce picker shared with chain_siphon.
+	if proc.BounceCount <= 0 || proc.BounceRange <= 0 {
+		return
+	}
+	rangeSq := proc.BounceRange * proc.BounceRange
+	// Exclude the primary target and the attacker from every hop so the chain
+	// can't oscillate back onto an already-hit unit or the wielder.
+	excluded := make(map[int]struct{}, proc.BounceCount+2)
+	excluded[target.ID] = struct{}{}
+	excluded[attacker.ID] = struct{}{}
+	cursor := target
+	for hop := 1; hop <= proc.BounceCount; hop++ {
+		next := s.nearestChainBounceTargetLocked(attacker, cursor, rangeSq, excluded)
+		if next == nil {
+			break // chain fizzles: nothing eligible within range of the last victim
+		}
+		dmg := proc.Damage - proc.BounceDamageFalloff*hop
+		if dmg <= 0 {
+			break // fully attenuated — stop arcing
+		}
+		// Beam leaves the previous victim (cursor) but the hit still credits
+		// the original attacker.
+		s.spawnMomentaryDamageBeamLocked(attacker, cursor, next, variant, dmg, proc.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
+		excluded[next.ID] = struct{}{}
+		cursor = next
+	}
+}
+
 // firePierceProjectileLocked spawns a fixed-line piercing projectile that
 // travels from the attacker outward in the direction of `target`, all the way
 // to attacker.AttackRange. The projectile damages enemies as it physically

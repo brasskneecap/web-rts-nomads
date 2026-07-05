@@ -1,6 +1,6 @@
 {
   "id": "lightning_bolt",
-  "speed": 500,
-  "followEffect": "",
+  "kind": "beam",
+  "durationMs": 260,
   "impactEffect": "fizzle"
 }

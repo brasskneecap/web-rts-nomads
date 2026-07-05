@@ -1,0 +1,10 @@
+{
+  "frameWidth": 256,
+  "frameHeight": 64,
+  "frames": 5,
+  "frameDurationMs": 90,
+  "axisRotation": 0,
+  "headOnRight": true,
+  "displayHeight": 25,
+  "sheet": "sheet.png"
+}

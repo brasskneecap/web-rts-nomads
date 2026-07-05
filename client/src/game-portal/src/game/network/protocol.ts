@@ -952,12 +952,17 @@ export type AbilitySnapshot = {
 }
 
 /**
- * BeamSnapshot carries one active channeled-beam visual to the client.
- * The beam is rendered as a persistent line/effect from the caster to the
- * target for the duration of the channel. Position data is intentionally
- * absent — the beam stretches dynamically between the current positions of
- * casterUnitId and targetUnitId, both of which are in the unit list each frame.
- * FOW-filtered: only included when the caster or target is visible to the viewer.
+ * BeamSnapshot carries one active beam visual to the client. Two flavors:
+ *
+ *   - Channeled (momentary omitted/false): a persistent line for the duration
+ *     of a channel. Position data is absent — the beam stretches dynamically
+ *     between the current positions of casterUnitId and targetUnitId, both in
+ *     the unit list each frame.
+ *   - Momentary (momentary === true): a one-shot proc "zap" that decays fast.
+ *     Its endpoints are FROZEN server-side (the participants may have died) and
+ *     arrive as originX/Y → targetX/Y, which the client renders from directly.
+ *
+ * FOW-filtered: only included when either endpoint is visible to the viewer.
  */
 export type BeamSnapshot = {
   id: string
@@ -965,8 +970,17 @@ export type BeamSnapshot = {
   targetUnitId: number
   ownerId: string
   abilityId?: string
-  /** Visual variant tag. "siphon_life" = necrotic green drain beam. */
+  /** Visual variant tag. "siphon_life" = necrotic green drain beam,
+   *  "lightning_bolt" = electric zap. Selects assets/beams/<variant>/. */
   variant?: string
+  /** True for a self-contained one-shot beam flash rendered from the frozen
+   *  coords below rather than live unit positions. */
+  momentary?: boolean
+  /** Frozen world endpoints of a momentary beam. Only present when momentary. */
+  originX?: number
+  originY?: number
+  targetX?: number
+  targetY?: number
 }
 
 /** A single item held in an inventory slot. */

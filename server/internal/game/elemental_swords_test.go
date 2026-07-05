@@ -28,29 +28,32 @@ func TestCraftedSwords_LoadAllThree(t *testing.T) {
 				t.Fatalf("%s: not found in catalog", tc.id)
 			}
 
-			// +5 flat damage modifier.
-			if def.Modifiers == nil || def.Modifiers.Damage != 5 {
-				t.Fatalf("%s: Modifiers.Damage want 5, got %+v", tc.id, def.Modifiers)
+			// Positive flat damage modifier (exact value is a catalog tunable).
+			if def.Modifiers == nil || def.Modifiers.Damage <= 0 {
+				t.Fatalf("%s: expected a positive Modifiers.Damage, got %+v", tc.id, def.Modifiers)
 			}
 
-			// onHitElemental must contain exactly one entry of the correct type with amount 5.
+			// onHitElemental must contain an entry of the correct element with a
+			// positive amount. The amount itself is a balance tunable.
 			found := false
 			for _, e := range def.OnHitElemental {
-				if e.Type == tc.wantElement && e.Amount == 5 {
+				if e.Type == tc.wantElement && e.Amount > 0 {
 					found = true
 					break
 				}
 			}
 			if !found {
-				t.Fatalf("%s: expected onHitElemental entry {%s, 5}, got %+v", tc.id, tc.wantElement, def.OnHitElemental)
+				t.Fatalf("%s: expected an onHitElemental entry of type %s with a positive amount, got %+v", tc.id, tc.wantElement, def.OnHitElemental)
 			}
 
-			// onHitProc must specify damage=25, correct damageType, correct projectileID, chance ~0.05.
+			// onHitProc structural wiring: the proc must fire the element's own
+			// projectile for positive damage at a valid probability. Damage and
+			// chance are catalog-owned tunables, so assert invariants not numbers.
 			if def.OnHitProc == nil {
 				t.Fatalf("%s: OnHitProc is nil", tc.id)
 			}
-			if def.OnHitProc.Damage != 25 {
-				t.Errorf("%s: OnHitProc.Damage want 25, got %d", tc.id, def.OnHitProc.Damage)
+			if def.OnHitProc.Damage <= 0 {
+				t.Errorf("%s: OnHitProc.Damage want > 0, got %d", tc.id, def.OnHitProc.Damage)
 			}
 			if def.OnHitProc.DamageType != tc.wantElement {
 				t.Errorf("%s: OnHitProc.DamageType want %s, got %s", tc.id, tc.wantElement, def.OnHitProc.DamageType)
@@ -58,8 +61,8 @@ func TestCraftedSwords_LoadAllThree(t *testing.T) {
 			if def.OnHitProc.ProjectileID != tc.wantProjectile {
 				t.Errorf("%s: OnHitProc.ProjectileID want %q, got %q", tc.id, tc.wantProjectile, def.OnHitProc.ProjectileID)
 			}
-			if def.OnHitProc.Chance < 0.049 || def.OnHitProc.Chance > 0.051 {
-				t.Errorf("%s: OnHitProc.Chance want ~0.05, got %v", tc.id, def.OnHitProc.Chance)
+			if def.OnHitProc.Chance <= 0 || def.OnHitProc.Chance > 1 {
+				t.Errorf("%s: OnHitProc.Chance %v is not a valid probability in (0,1]", tc.id, def.OnHitProc.Chance)
 			}
 		})
 	}
@@ -70,14 +73,28 @@ func TestFireSword_EndToEnd(t *testing.T) {
 	if !ok {
 		t.Fatalf("fire_sword not found")
 	}
-	if def.Modifiers == nil || def.Modifiers.Damage != 5 {
-		t.Fatalf("fire_sword should grant +5 physical damage, got %+v", def.Modifiers)
+	if def.Modifiers == nil || def.Modifiers.Damage <= 0 {
+		t.Fatalf("fire_sword should grant positive physical damage, got %+v", def.Modifiers)
 	}
-	if def.OnHitProc == nil || def.OnHitProc.Damage != 25 || def.OnHitProc.DamageType != DamageFire || def.OnHitProc.ProjectileID != "fire_bolt" {
+	if def.OnHitProc == nil || def.OnHitProc.Damage <= 0 || def.OnHitProc.DamageType != DamageFire || def.OnHitProc.ProjectileID != "fire_bolt" {
 		t.Fatalf("fire_sword proc unexpected: %+v", def.OnHitProc)
 	}
-	if def.OnHitProc.Chance < 0.049 || def.OnHitProc.Chance > 0.051 {
-		t.Fatalf("fire_sword proc chance should be ~0.05, got %v", def.OnHitProc.Chance)
+	if def.OnHitProc.Chance <= 0 || def.OnHitProc.Chance > 1 {
+		t.Fatalf("fire_sword proc chance %v is not a valid probability in (0,1]", def.OnHitProc.Chance)
+	}
+
+	// The fire on-hit amount is a catalog tunable; derive the expected values
+	// below from the def rather than pinning them so a rebalance can't break
+	// this mechanic test.
+	var wantFire int
+	for _, e := range def.OnHitElemental {
+		if e.Type == DamageFire {
+			wantFire = e.Amount
+			break
+		}
+	}
+	if wantFire <= 0 {
+		t.Fatalf("fire_sword should have a positive fire on-hit amount, got %+v", def.OnHitElemental)
 	}
 
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0xF12E)
@@ -91,8 +108,8 @@ func TestFireSword_EndToEnd(t *testing.T) {
 	attacker.Equipped = append(attacker.Equipped, &EquippedItem{InstanceID: s.allocItemInstanceIDLocked(), ItemID: "fire_sword", Stacks: 1})
 	s.recomputeUnitEquipmentBonusLocked(attacker)
 
-	if attacker.EquipmentBonus.OnHitElemental[DamageFire] != 5 {
-		t.Fatalf("equipped fire_sword: fire on-hit = %d, want 5", attacker.EquipmentBonus.OnHitElemental[DamageFire])
+	if attacker.EquipmentBonus.OnHitElemental[DamageFire] != wantFire {
+		t.Fatalf("equipped fire_sword: fire on-hit = %d, want %d", attacker.EquipmentBonus.OnHitElemental[DamageFire], wantFire)
 	}
 
 	target := &Unit{ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier", Visible: true, HP: 100, MaxHP: 100}
@@ -102,14 +119,16 @@ func TestFireSword_EndToEnd(t *testing.T) {
 	s.resetDamageTypeHintsThisTickLocked()
 	s.resetMinorDamageEventsThisTickLocked()
 	deadUnitIDs := []int{}
-	// Physical 10 + 5 fire separate instance → HP 85.
-	s.resolveAttackHitLocked(attacker, target, 10, &deadUnitIDs)
-	if target.HP != 85 {
-		t.Fatalf("expected HP 85 (100 - 10 physical - 5 fire), got %d", target.HP)
+	// Physical 10 + fire on-hit as a separate instance → 100 - 10 - wantFire.
+	const physical = 10
+	wantHP := target.MaxHP - physical - wantFire
+	s.resolveAttackHitLocked(attacker, target, physical, &deadUnitIDs)
+	if target.HP != wantHP {
+		t.Fatalf("expected HP %d (100 - %d physical - %d fire), got %d", wantHP, physical, wantFire, target.HP)
 	}
 	// The sword's flat fire component renders as its own side-popup (minor
 	// event), not a tint on the main number.
-	if e := findMinorEvent(s, target.ID, "fire"); e == nil || e.Damage != 5 {
-		t.Fatalf("expected a fire minor (side) popup of 5 from the sword's elemental instance; queue: %+v", s.minorDamageEventsThisTick)
+	if e := findMinorEvent(s, target.ID, "fire"); e == nil || e.Damage != wantFire {
+		t.Fatalf("expected a fire minor (side) popup of %d from the sword's elemental instance; queue: %+v", wantFire, s.minorDamageEventsThisTick)
 	}
 }

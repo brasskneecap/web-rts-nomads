@@ -2586,6 +2586,9 @@ func (s *GameState) Update(dt float64) {
 	// Projectiles tick after combat resolution so shots fired this tick wait
 	// a full dt before decaying on the next Update pass.
 	profileSection("projectiles", func() { s.tickProjectilesLocked(dt) })
+	// Momentary proc beams (one-shot zaps) decay on their own timer; channel
+	// beams are owned by the channel state machine and untouched here.
+	profileSection("beams", func() { s.tickBeamsLocked(dt) })
 	profileSection("effects", func() { s.tickEffectsLocked() })
 	profileSection("enemySpawnpoints", func() { s.tickEnemySpawnpointsLocked(dt, blocked) })
 	profileSection("trapEffects", func() { s.tickTrapEffectsLocked(dt) })                   // zone effects + trigger detection

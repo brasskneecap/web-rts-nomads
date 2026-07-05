@@ -320,8 +320,7 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 	s.trackBattleDamageLocked(battleSourceFromUnit(attacker), target, damage)
 	s.onPerkAttackFiredLocked(attacker, target, damage, deadUnitIDs)
 	s.onPerkAttackDamageAppliedLocked(attacker, target, damage)
-	s.applyEquipmentOnHitElementalLocked(attacker, target)
-	s.rollEquipmentProcsLocked(attacker, target)
+	s.applyEquipmentOnHitEffectsLocked(attacker, target)
 
 	if target.HP <= 0 {
 		target.HP = 0
@@ -436,6 +435,26 @@ func (s *GameState) applyEquipmentOnHitElementalLocked(attacker, target *Unit) {
 	}
 }
 
+// applyEquipmentOnHitEffectsLocked runs an attacker's EQUIPMENT on-hit effects
+// (flat elemental instances + rolled procs) against a single target. It is
+// deliberately scoped to equipment effects and does NOT re-run the on-ATTACK
+// perk hub (savage_strikes, cleaving_rage, whirlwind_core, …).
+//
+// This is the seam that lets hits which are not the primary swing still trigger
+// on-hit gear: cleaving_rage's secondary and every whirlwind_core sweep hit call
+// it so a Berserker's lightning_sword (or any proc/elemental item) fires per hit
+// — matching Marksman split-shot, whose arrows each resolve a full hit. Routing
+// those hits through resolveAttackHitLocked instead would re-enter the attack
+// hub and recursively spawn more cleaves/whirlwinds, so only the equipment
+// effects are replayed here. Procs themselves apply damage with SkipOnHitEffects
+// semantics, so this cannot recurse.
+//
+// Caller holds s.mu write lock.
+func (s *GameState) applyEquipmentOnHitEffectsLocked(attacker, target *Unit) {
+	s.applyEquipmentOnHitElementalLocked(attacker, target)
+	s.rollEquipmentProcsLocked(attacker, target)
+}
+
 // rollEquipmentProcsLocked rolls each of the attacker's equipped on-hit procs
 // against the seeded perk RNG and fires an elemental bolt for each success at
 // the primary target. Must be called under s.mu. Determinism: rngPerks is the
@@ -449,7 +468,16 @@ func (s *GameState) rollEquipmentProcsLocked(attacker, target *Unit) {
 			continue
 		}
 		if s.rngPerks.Float64() < proc.Chance {
-			s.fireOnHitProcProjectileLocked(attacker, target, proc)
+			// Route by the emitted effect's declared kind: a beam-kind def zaps
+			// the target instantly (damage applied here), a projectile-kind def
+			// (the default, incl. unknown ids) fires a flying bolt that lands
+			// later. The chance roll above is identical either way so
+			// determinism is unaffected by the branch.
+			if def, ok := getProjectileDef(proc.ProjectileID); ok && def.IsBeam() {
+				s.fireOnHitProcBeamLocked(attacker, target, proc, def)
+			} else {
+				s.fireOnHitProcProjectileLocked(attacker, target, proc)
+			}
 		}
 	}
 }

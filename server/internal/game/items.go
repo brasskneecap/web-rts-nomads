@@ -80,6 +80,22 @@ type ItemOnHitProc struct {
 	// behavior). Lives here on the proc so if on-hit procs move to a different
 	// owner later, the sizing travels with them.
 	ProjectileScale float64 `json:"projectileScale,omitempty"`
+
+	// ── Bounce / chain (beam-emitter procs only) ────────────────────────────
+	// When BounceCount > 0 and the emitter (ProjectileID) is a beam, the proc
+	// arcs to further enemies after the primary hit: each hop leaps off the
+	// PREVIOUS victim to the nearest not-yet-hit hostile within BounceRange,
+	// losing BounceDamageFalloff damage per hop (e.g. 25 → 20 → 15 with
+	// count=2, falloff=5). Kill credit stays with the original wielder. All
+	// three fields are omitempty so non-chaining procs (and all projectile
+	// procs, which ignore these) stay unchanged.
+	BounceCount int `json:"bounceCount,omitempty"`
+	// BounceRange is the max world-space distance from one victim to the next.
+	// <= 0 disables bouncing regardless of BounceCount.
+	BounceRange float64 `json:"bounceRange,omitempty"`
+	// BounceDamageFalloff is the flat damage lost per hop. A hop whose damage
+	// would drop to <= 0 ends the chain.
+	BounceDamageFalloff int `json:"bounceDamageFalloff,omitempty"`
 }
 
 // defaultConsumableRangeUnits is the AoE radius (world units) a consumable

@@ -20,24 +20,73 @@ import (
 //go:embed catalog/projectiles
 var projectileDefsFS embed.FS
 
-// ProjectileDef is the authoritative, server-owned definition of a projectile
-// type. The server uses it for flight speed and (future) flight behavior; the
-// client owns the visuals separately via a mirrored sprites.json under
-// client/.../assets/projectiles/<id>/ (same split as units, whose UnitDef
-// carries no sprite paths).
+// EmitterKind discriminates the two ways a source can throw an effect at a
+// target. It is the single declarative switch the spawn code branches on so a
+// content author states "beam" or "projectile" once, on the def, and every
+// reference (unit shots, item on-hit procs) routes to the right entity and the
+// right client asset folder automatically.
+type EmitterKind string
+
+const (
+	// EmitterKindProjectile is a flying, homing entity that travels from the
+	// source to the target and lands damage on impact. Client art lives under
+	// client/.../assets/projectiles/<id>/. This is the default when a def omits
+	// "kind", so every pre-existing projectile def stays valid untouched.
+	EmitterKindProjectile EmitterKind = "projectile"
+	// EmitterKindBeam is an instantaneous line from source to target: no flight,
+	// damage applied the moment it fires, rendered as a short-lived beam flash.
+	// Client art lives under client/.../assets/beams/<id>/.
+	EmitterKindBeam EmitterKind = "beam"
+)
+
+// defaultBeamDurationMs is how long a momentary (proc-fired) beam flash stays
+// on screen when a beam def omits "durationMs". ~260ms reads as a snappy zap
+// while still showing a few frames of the beam's animation.
+const defaultBeamDurationMs = 260
+
+// beamProcDamageDelaySeconds is how long a momentary proc beam waits before it
+// lands its damage. A beam is instantaneous, so applying damage immediately
+// would merge its number into the triggering hit's number (same tick). A short
+// delay (well under the flash's lifetime) drops the damage onto a LATER tick so
+// it reads as its own floating number — the same separation the old projectile
+// version got for free by traveling. Kept < defaultBeamDurationMs so the number
+// pops while the zap is still visible.
+const beamProcDamageDelaySeconds = 0.12
+
+// ProjectileDef is the authoritative, server-owned definition of an *emitted
+// effect* — a projectile OR a beam (see Kind). The server uses it for flight
+// speed / beam duration and (future) behavior; the client owns the visuals
+// separately via a mirrored sprites.json under client/.../assets/<projectiles
+// or beams>/<id>/ (same split as units, whose UnitDef carries no sprite paths).
 //
-// Hit/miss and damage rules for projectiles are NOT data on this struct —
+// The type is still named ProjectileDef (and lives under catalog/projectiles)
+// for continuity; "beam" is an opt-in Kind rather than a separate catalog so a
+// single reference by id resolves to whichever the author declared.
+//
+// Hit/miss and damage rules for PROJECTILES are NOT data on this struct —
 // they are fixed behavior (see projectileHitsLocked / applyProjectileDamageLocked):
 //   - A projectile hits or misses based on the *target's* dodge/block stats
 //     if it has any; a target with no evasion stats is always hit.
 //   - On hit it damages only the resolved target — no AoE, no pass-through.
+//
+// Beams are instantaneous and always connect (no evasion roll) — their damage
+// is applied by the spawn site at fire time, not by a flight/land pipeline.
 type ProjectileDef struct {
 	// ID is the stable string identifier other code references (e.g.
 	// "fire_bolt"). Must match the containing directory name.
 	ID string `json:"id"`
+	// Kind declares whether this effect is a flying projectile or an
+	// instantaneous beam. Empty ⇒ EmitterKindProjectile (back-compat: existing
+	// defs that predate this field are projectiles). Validated at load.
+	Kind EmitterKind `json:"kind,omitempty"`
+	// DurationMs is the on-screen lifetime of a beam flash in milliseconds.
+	// Ignored for projectiles. When omitted or <= 0 on a beam def the loader
+	// defaults it to defaultBeamDurationMs.
+	DurationMs int `json:"durationMs,omitempty"`
 	// Speed is world-space travel speed in pixels/second. When omitted or
 	// <= 0 the loader defaults it to defaultProjectileSpeed so a def can opt
-	// into "the standard speed" by simply leaving the field out.
+	// into "the standard speed" by simply leaving the field out. Ignored for
+	// beams (they don't travel).
 	Speed float64 `json:"speed"`
 	// FollowEffect is the optional id of an effect (see the effect asset
 	// system) that plays continuously on the projectile while it travels.
@@ -89,6 +138,17 @@ func loadProjectileDefs() map[string]ProjectileDef {
 		if def.ID != idKey {
 			panic(rel + ": def.ID " + def.ID + " does not match directory name " + idKey)
 		}
+		// Normalize + validate the emitter kind. Empty means "projectile" so
+		// defs authored before the field existed stay valid.
+		if def.Kind == "" {
+			def.Kind = EmitterKindProjectile
+		}
+		if def.Kind != EmitterKindProjectile && def.Kind != EmitterKindBeam {
+			panic(rel + `: invalid "kind" ` + string(def.Kind) + ` — must be "projectile" or "beam"`)
+		}
+		if def.Kind == EmitterKindBeam && def.DurationMs <= 0 {
+			def.DurationMs = defaultBeamDurationMs
+		}
 		if def.Speed <= 0 {
 			def.Speed = defaultProjectileSpeed
 		}
@@ -99,6 +159,10 @@ func loadProjectileDefs() map[string]ProjectileDef {
 	}
 	return result
 }
+
+// IsBeam reports whether this def is emitted as an instantaneous beam rather
+// than a flying projectile. The single point spawn code branches on.
+func (d ProjectileDef) IsBeam() bool { return d.Kind == EmitterKindBeam }
 
 // getProjectileDef looks up a projectile definition by id. The bool is false
 // when no projectile with that id is registered. Callers that resolve a
