@@ -96,6 +96,16 @@ type ItemOnHitProc struct {
 	// BounceDamageFalloff is the flat damage lost per hop. A hop whose damage
 	// would drop to <= 0 ends the chain.
 	BounceDamageFalloff int `json:"bounceDamageFalloff,omitempty"`
+
+	// ── On-hit slow (chill) ─────────────────────────────────────────────────
+	// When SlowMultiplier is in (0,1) and SlowDurationSeconds > 0, a landed
+	// proc also slows the unit it hits: its attack speed AND move speed are
+	// scaled by SlowMultiplier for SlowDurationSeconds (e.g. 0.75 = 25% slower
+	// on both). Routes through the shared slow system (ApplySlowLocked), so it
+	// stacks refresh-stronger / refresh-longer with every other slow source.
+	// Applies for both projectile and beam procs, on the unit each hit reaches.
+	SlowMultiplier      float64 `json:"slowMultiplier,omitempty"`
+	SlowDurationSeconds float64 `json:"slowDurationSeconds,omitempty"`
 }
 
 // defaultConsumableRangeUnits is the AoE radius (world units) a consumable

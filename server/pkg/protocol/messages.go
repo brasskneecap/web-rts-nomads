@@ -1215,6 +1215,11 @@ type UnitSnapshot struct {
 	StunnedRemaining float64 `json:"stunnedRemaining,omitempty"`
 	SlowedRemaining  float64 `json:"slowedRemaining,omitempty"`
 	SlowedMultiplier float64 `json:"slowedMultiplier,omitempty"`
+	// ColdSlowedRemaining / ColdSlowedMultiplier are the cold (chill) slow track,
+	// separate from the physical slow above. The client paints an icy overlay
+	// while ColdSlowedRemaining > 0. Absent (omitempty) when no chill is active.
+	ColdSlowedRemaining  float64 `json:"coldSlowedRemaining,omitempty"`
+	ColdSlowedMultiplier float64 `json:"coldSlowedMultiplier,omitempty"`
 	// ChannelLoopStart / ChannelLoopEnd are the inclusive frame range the
 	// client loops through (one-way, forward) on the unit's casting sprite
 	// sheet while it is channeling a beam ability (Siphon Life). Set only

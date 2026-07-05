@@ -1035,6 +1035,18 @@ export type UnitSnapshot = {
   maxHp: number
   damage?: number
   attackSpeed?: number
+  /** Remaining seconds on a PHYSICAL/generic slow (traps, concussive perks).
+   *  Scales attack + move speed by slowedMultiplier. Not visualized today.
+   *  Omitted when not slowed. */
+  slowedRemaining?: number
+  /** Effective speed fraction while physically slowed (e.g. 0.7 = 30% slower). */
+  slowedMultiplier?: number
+  /** Remaining seconds on a COLD (chill) slow — a separate track from the
+   *  physical slow above. > 0 ⇒ the renderer paints an icy overlay. Omitted when
+   *  not chilled. */
+  coldSlowedRemaining?: number
+  /** Effective speed fraction while chilled (e.g. 0.75 = 25% slower). */
+  coldSlowedMultiplier?: number
   /** Effective attack range in world pixels — base catalog range × any
    *  perk range multipliers (eagle_spirit, bullseye). Omitted for melee. */
   attackRange?: number

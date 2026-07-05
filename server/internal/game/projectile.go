@@ -85,11 +85,11 @@ type Projectile struct {
 	// When true the arrow flies in a fixed straight line and damages enemies
 	// as it passes through them rather than homing on a single target. All
 	// pierce fields are zero on regular projectiles.
-	Pierce              bool
+	Pierce bool
 	// PierceMaxHits caps how many distinct enemies the arrow can damage
 	// (primary + secondaries) before despawning. Prevents runaway DPS through
 	// a packed line of enemies.
-	PierceMaxHits       int
+	PierceMaxHits int
 	// PierceSecondaryMult scales damage on enemies other than the original
 	// targeted unit. The original target takes full Damage.
 	PierceSecondaryMult float64
@@ -97,7 +97,7 @@ type Projectile struct {
 	// that counts as "in the line of fire" for hit detection.
 	PierceCorridorWidth float64
 	// PierceLength is the total length of the line in world px.
-	PierceLength        float64
+	PierceLength float64
 	// PierceDirX/PierceDirY is the unit-vector direction of the arrow.
 	PierceDirX, PierceDirY float64
 	// PierceHits records unit IDs already damaged by this arrow so the same
@@ -124,6 +124,13 @@ type Projectile struct {
 	// cannot trigger another proc (mirrors the non-recursion discipline of
 	// base-stat splash, which also bypasses resolveAttackHitLocked).
 	SkipOnHitEffects bool
+
+	// SlowMultiplier / SlowDurationSeconds: an on-hit chill carried from a
+	// proc's config (see ItemOnHitProc). When both are set, landing this bolt
+	// slows the unit it hits (attack + move speed × SlowMultiplier for the
+	// duration) via ApplySlowLocked. Zero on ordinary projectiles.
+	SlowMultiplier      float64
+	SlowDurationSeconds float64
 }
 
 func (s *GameState) fireProjectileLocked(attacker, target *Unit, damage int) {
@@ -235,23 +242,25 @@ func (s *GameState) fireOnHitProcProjectileLocked(attacker, target *Unit, proc E
 		scale = proc.ProjectileScale
 	}
 	s.Projectiles = append(s.Projectiles, &Projectile{
-		ID:               id,
-		OwnerUnitID:      attacker.ID,
-		OwnerPlayerID:    attacker.OwnerID,
-		TargetUnitID:     target.ID,
-		OriginX:          attacker.X,
-		OriginY:          attacker.Y,
-		TargetX:          target.X,
-		TargetY:          target.Y,
-		TotalSeconds:     travelTime,
-		RemainingSeconds: travelTime,
-		Damage:           proc.Damage,
-		Variant:          variant,
-		FollowEffect:     followEffect,
-		ImpactEffect:     impactEffect,
-		DamageType:       proc.DamageType,
-		Scale:            scale,
-		SkipOnHitEffects: true,
+		ID:                  id,
+		OwnerUnitID:         attacker.ID,
+		OwnerPlayerID:       attacker.OwnerID,
+		TargetUnitID:        target.ID,
+		OriginX:             attacker.X,
+		OriginY:             attacker.Y,
+		TargetX:             target.X,
+		TargetY:             target.Y,
+		TotalSeconds:        travelTime,
+		RemainingSeconds:    travelTime,
+		Damage:              proc.Damage,
+		Variant:             variant,
+		FollowEffect:        followEffect,
+		ImpactEffect:        impactEffect,
+		DamageType:          proc.DamageType,
+		Scale:               scale,
+		SkipOnHitEffects:    true,
+		SlowMultiplier:      proc.SlowMultiplier,
+		SlowDurationSeconds: proc.SlowDurationSeconds,
 	})
 }
 
@@ -275,7 +284,9 @@ func (s *GameState) fireOnHitProcBeamLocked(attacker, target *Unit, proc Equipme
 
 	// Primary hit: attacker → target. Damage is deferred (see the helper) so it
 	// pops as its own number instead of merging into the triggering attack.
-	s.spawnMomentaryDamageBeamLocked(attacker, attacker, target, variant, proc.Damage, proc.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
+	primary := s.spawnMomentaryDamageBeamLocked(attacker, attacker, target, variant, proc.Damage, proc.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
+	primary.SlowMultiplier = proc.SlowMultiplier
+	primary.SlowDurationSeconds = proc.SlowDurationSeconds
 
 	// Optional chain: the bolt arcs to up to BounceCount further enemies. Each
 	// hop leaps off the PREVIOUS victim to the nearest not-yet-hit hostile
@@ -302,8 +313,10 @@ func (s *GameState) fireOnHitProcBeamLocked(attacker, target *Unit, proc Equipme
 			break // fully attenuated — stop arcing
 		}
 		// Beam leaves the previous victim (cursor) but the hit still credits
-		// the original attacker.
-		s.spawnMomentaryDamageBeamLocked(attacker, cursor, next, variant, dmg, proc.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
+		// the original attacker. The chill rides each hop too.
+		bounce := s.spawnMomentaryDamageBeamLocked(attacker, cursor, next, variant, dmg, proc.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
+		bounce.SlowMultiplier = proc.SlowMultiplier
+		bounce.SlowDurationSeconds = proc.SlowDurationSeconds
 		excluded[next.ID] = struct{}{}
 		cursor = next
 	}
@@ -364,20 +377,20 @@ func (s *GameState) firePierceProjectileLocked(attacker, target *Unit, damage in
 	s.nextProjectileID++
 
 	s.Projectiles = append(s.Projectiles, &Projectile{
-		ID:                  id,
-		OwnerUnitID:         attacker.ID,
-		OwnerPlayerID:       attacker.OwnerID,
-		TargetUnitID:        target.ID,
-		OriginX:             attacker.X,
-		OriginY:             attacker.Y,
+		ID:            id,
+		OwnerUnitID:   attacker.ID,
+		OwnerPlayerID: attacker.OwnerID,
+		TargetUnitID:  target.ID,
+		OriginX:       attacker.X,
+		OriginY:       attacker.Y,
 		// TargetX/Y on a pierce projectile is the END of the line, not the
 		// primary target's position. The client renders straight-line flight
 		// from origin to endpoint with no homing.
-		TargetX:             endX,
-		TargetY:             endY,
-		TotalSeconds:        travelTime,
-		RemainingSeconds:    travelTime,
-		Damage:              damage,
+		TargetX:          endX,
+		TargetY:          endY,
+		TotalSeconds:     travelTime,
+		RemainingSeconds: travelTime,
+		Damage:           damage,
 		// Distinct variant string so the client renderer can dispatch a
 		// custom green-wind visual instead of the default unit-type arrow.
 		Variant:             "wind_pierce",
@@ -629,6 +642,9 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 			Kind:           "item-proc",
 			DamageType:     proj.DamageType,
 		})
+		// On-hit slow: routed to the cold (chill) or physical track by the
+		// bolt's damage type. No-op when the proc carries no slow (zero fields).
+		s.applyProcSlowLocked(target.ID, proj.SlowMultiplier, proj.SlowDurationSeconds, proj.DamageType)
 		if target.HP <= 0 {
 			target.HP = 0
 			*deadUnitIDs = append(*deadUnitIDs, target.ID)

@@ -91,6 +91,16 @@ export type Unit = {
   maxHp?: number
   damage?: number
   attackSpeed?: number
+  /** Remaining seconds on a PHYSICAL/generic slow (traps, concussive perks).
+   *  Not visualized today. Mirrors UnitSnapshot.slowedRemaining. */
+  slowedRemaining?: number
+  /** Effective speed fraction while physically slowed (0.7 = 30% slower). */
+  slowedMultiplier?: number
+  /** Remaining seconds on a COLD (chill) slow. > 0 ⇒ the renderer paints an icy
+   *  overlay on the unit. Mirrors UnitSnapshot.coldSlowedRemaining. */
+  coldSlowedRemaining?: number
+  /** Effective speed fraction while chilled (0.75 = 25% slower). */
+  coldSlowedMultiplier?: number
   /** Effective attack range in world pixels. Reflects perk-driven range
    *  multipliers (eagle_spirit, bullseye); absent for melee units. */
   attackRange?: number
@@ -1047,6 +1057,10 @@ export class GameState {
         maxHp: unit.maxHp,
         damage: unit.damage,
         attackSpeed: unit.attackSpeed,
+        slowedRemaining: unit.slowedRemaining,
+        slowedMultiplier: unit.slowedMultiplier,
+        coldSlowedRemaining: unit.coldSlowedRemaining,
+        coldSlowedMultiplier: unit.coldSlowedMultiplier,
         attackRange: unit.attackRange,
         moveSpeed: unit.moveSpeed,
         armor: unit.armor,

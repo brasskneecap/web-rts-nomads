@@ -2322,6 +2322,7 @@ export class CanvasRenderer {
       mana?: number
       maxMana?: number
       attackSpeed?: number
+      coldSlowedRemaining?: number
       activeBuffs?: { id: string; stacks?: number }[]
       activeDebuffs?: { id: string; stacks?: number }[]
       color?: string
@@ -2720,6 +2721,12 @@ export class CanvasRenderer {
             dx, dy, w, h,
           )
           ctx.imageSmoothingEnabled = prevSmoothing
+          // Chill overlay: a gently-pulsing icy-blue tint masked to the sprite
+          // silhouette while the unit carries a COLD slow (frost_sword proc,
+          // etc.). Physical/trap slows use a separate track and get no overlay.
+          if ((unit.coldSlowedRemaining ?? 0) > 0) {
+            this.drawChillOverlay(frame, dx, dy, w, h)
+          }
           continue
         }
       }
@@ -2743,6 +2750,63 @@ export class CanvasRenderer {
     for (const id of this.unitAttackFacingCache.keys()) {
       if (!activeUnitIds.has(id)) this.unitAttackFacingCache.delete(id)
     }
+  }
+
+  // Offscreen scratch canvas for masked sprite tints (chill overlay). Grown on
+  // demand and reused across units/frames so we never allocate per draw.
+  private chillTintCanvas: HTMLCanvasElement | null = null
+  private chillTintCtx: CanvasRenderingContext2D | null = null
+
+  /**
+   * Paint an icy-blue tint masked to a unit sprite frame's silhouette, over the
+   * unit at (dx,dy,w,h) — the "this unit is chilled/slowed" indicator. Renders
+   * the frame into a scratch canvas, fills only its opaque pixels via
+   * 'source-atop' (so the tint hugs the silhouette instead of a box), then blits
+   * the result at a low, gently-pulsing alpha so the sprite reads as frosted
+   * rather than solid blue.
+   */
+  private drawChillOverlay(
+    frame: { image: CanvasImageSource; srcX: number; srcY: number; srcW: number; srcH: number },
+    dx: number,
+    dy: number,
+    w: number,
+    h: number,
+  ) {
+    const srcW = Math.max(1, Math.round(frame.srcW))
+    const srcH = Math.max(1, Math.round(frame.srcH))
+    if (!this.chillTintCanvas) {
+      this.chillTintCanvas = document.createElement('canvas')
+      this.chillTintCanvas.width = 128
+      this.chillTintCanvas.height = 128
+      this.chillTintCtx = this.chillTintCanvas.getContext('2d')
+    }
+    const off = this.chillTintCanvas
+    const octx = this.chillTintCtx
+    if (!octx) return
+    if (off.width < srcW || off.height < srcH) {
+      off.width = Math.max(off.width, srcW)
+      off.height = Math.max(off.height, srcH)
+    }
+    octx.clearRect(0, 0, off.width, off.height)
+    octx.imageSmoothingEnabled = false
+    // 1) The sprite frame at native size.
+    octx.globalCompositeOperation = 'source-over'
+    octx.drawImage(frame.image, frame.srcX, frame.srcY, frame.srcW, frame.srcH, 0, 0, srcW, srcH)
+    // 2) Fill icy blue only where the sprite is opaque (mask to silhouette).
+    octx.globalCompositeOperation = 'source-atop'
+    octx.fillStyle = 'rgb(150, 214, 255)'
+    octx.fillRect(0, 0, srcW, srcH)
+    octx.globalCompositeOperation = 'source-over'
+    // 3) Blit the tinted silhouette over the unit at low, pulsing alpha.
+    const pulse = 0.3 + 0.12 * ((Math.sin(this.renderTime / 300) + 1) / 2)
+    const ctx = this.ctx
+    const prevAlpha = ctx.globalAlpha
+    const prevSmoothing = ctx.imageSmoothingEnabled
+    ctx.imageSmoothingEnabled = false
+    ctx.globalAlpha = prevAlpha * pulse
+    ctx.drawImage(off, 0, 0, srcW, srcH, dx, dy, w, h)
+    ctx.globalAlpha = prevAlpha
+    ctx.imageSmoothingEnabled = prevSmoothing
   }
 
   // Aim 30% down from the visible top of a unit — lands at chest/upper-torso

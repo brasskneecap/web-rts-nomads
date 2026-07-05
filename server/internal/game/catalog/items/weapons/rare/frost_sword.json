@@ -1,7 +1,7 @@
 {
   "id": "frost_sword",
   "displayName": "Frost Sword",
-  "description": "+5 damage. +5 cold damage on hit. 10% chance on hit to launch a frostbolt (25 cold damage).",
+  "description": "+5 damage. +5 cold damage on hit. 10% chance on hit to launch a frostbolt (25 cold damage) that chills the target, lowering its attack and move speed by 25% for 2s.",
   "iconKey": "frost_sword",
   "kind": "equipment",
   "tier": "rare",
@@ -11,5 +11,5 @@
   "costGold": 0,
   "modifiers": { "damage": 5 },
   "onHitElemental": [ { "type": "cold", "amount": 5 } ],
-  "onHitProc": { "chance": 0.1, "damage": 25, "damageType": "cold", "projectileID": "frost_bolt", "projectileScale": 2 }
+  "onHitProc": { "chance": 0.1, "damage": 25, "damageType": "cold", "projectileID": "frost_bolt", "projectileScale": 2, "slowMultiplier": 0.75, "slowDurationSeconds": 2 }
 }

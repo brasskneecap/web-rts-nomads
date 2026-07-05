@@ -78,6 +78,11 @@ type Beam struct {
 	// victim, but the kill must still credit the original wielder. Defaults to
 	// CasterUnitID for the primary hit (attacker == visual origin).
 	AttackerUnitID int
+	// SlowMultiplier / SlowDurationSeconds: an on-hit chill carried from the
+	// proc config, applied to TargetUnitID when the deferred damage lands (via
+	// ApplySlowLocked). Zero ⇒ no slow.
+	SlowMultiplier      float64
+	SlowDurationSeconds float64
 }
 
 // spawnBeamLocked creates a new Beam entity, appends it to s.Beams, and
@@ -215,6 +220,9 @@ func (s *GameState) applyBeamPendingDamageLocked(b *Beam, deadUnitIDs *[]int) {
 		Kind:           "item-proc",
 		DamageType:     b.DamageType,
 	})
+	// On-hit slow: routed to the cold (chill) or physical track by the beam's
+	// damage type. No-op on zero / out-of-range values.
+	s.applyProcSlowLocked(target.ID, b.SlowMultiplier, b.SlowDurationSeconds, b.DamageType)
 	if b.ImpactEffect != "" {
 		s.playEffectOnUnitLocked(target, b.ImpactEffect)
 	}

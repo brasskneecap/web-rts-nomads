@@ -39,6 +39,11 @@ type EquipmentProc struct {
 	BounceCount         int
 	BounceRange         float64
 	BounceDamageFalloff int
+	// On-hit slow (mirrors ItemOnHitProc): a landed proc scales the hit unit's
+	// attack + move speed by SlowMultiplier for SlowDurationSeconds. Zero ⇒ no
+	// slow.
+	SlowMultiplier      float64
+	SlowDurationSeconds float64
 }
 
 // UnitEquipmentBonus accumulates the flat stat bonuses from all equipped items.
@@ -267,6 +272,8 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 				BounceCount:         p.BounceCount,
 				BounceRange:         p.BounceRange,
 				BounceDamageFalloff: p.BounceDamageFalloff,
+				SlowMultiplier:      p.SlowMultiplier,
+				SlowDurationSeconds: p.SlowDurationSeconds,
 			})
 		}
 	}
