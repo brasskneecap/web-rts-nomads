@@ -72,6 +72,13 @@
         </section>
       </template>
       <div v-else class="bt-empty">No combat data yet.</div>
+
+      <div v-if="liveCombatEvents.length > 0" class="bt-combat-summary">
+        <span>Combat log: {{ liveCombatEvents.length.toLocaleString() }} hits</span>
+        <span :class="{ 'bt-warn': liveOutOfRange.length > 0 }">
+          {{ liveOutOfRange.length }} out-of-range · {{ liveOutOfRangeLethal }} lethal
+        </span>
+      </div>
     </div>
 
     <!-- Review modal — overlays whole screen, shows saved runs. -->
@@ -121,6 +128,39 @@
                   </tbody>
                 </table>
               </section>
+
+              <section
+                v-if="outOfRangeEvents(log.data.combatEvents).length > 0"
+                class="bt-oor"
+              >
+                <div class="bt-oor-head">
+                  ⚠ Out-of-range melee hits ({{ outOfRangeEvents(log.data.combatEvents).length }})
+                </div>
+                <table class="bt-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Attacker</th>
+                      <th>Target</th>
+                      <th class="bt-col-num">Dist</th>
+                      <th class="bt-col-num">Range</th>
+                      <th class="bt-col-num">Dmg</th>
+                      <th class="bt-col-kill"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(e, i) in outOfRangeEvents(log.data.combatEvents)" :key="i">
+                      <td>{{ e.t.toFixed(1) }}s</td>
+                      <td>{{ e.atkType || e.atkId }}</td>
+                      <td>{{ e.tgtType || e.tgtId }}</td>
+                      <td class="bt-col-num bt-warn">{{ round(e.dist) }}</td>
+                      <td class="bt-col-num">{{ round(e.atkRange) }}</td>
+                      <td class="bt-col-num">{{ e.dmg }}</td>
+                      <td class="bt-col-kill">{{ e.lethal ? '☠' : '' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
             </div>
           </li>
         </ul>
@@ -132,7 +172,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
-import type { BattleTrackerSnapshot } from '@/game/network/protocol'
+import type { BattleCombatEvent, BattleTrackerSnapshot } from '@/game/network/protocol'
 import { useDraggablePanel } from '@/composables/useDraggablePanel'
 
 const props = defineProps<{
@@ -266,6 +306,32 @@ const elapsedText = computed(() => {
   const e = props.ui.battleTracker?.elapsedSeconds ?? 0
   return formatElapsed(e)
 })
+
+// ── Combat-event forensics ────────────────────────────────────────────────
+// An "out-of-range" hit is a MELEE attack that landed while its target sat
+// beyond the attacker's AttackRange — the exact symptom under investigation
+// (a spear maiden hitting an archer it can't reach). Projectiles are excluded:
+// an arrow legitimately lands past the firer's current distance. A small
+// epsilon absorbs float / sub-pixel center-to-center jitter.
+const OOR_EPSILON = 1
+function outOfRangeEvents(events: BattleCombatEvent[] | undefined): BattleCombatEvent[] {
+  if (!events) return []
+  return events.filter(
+    (e) => e.kind === 'melee' && e.atkRange > 0 && e.dist > e.atkRange + OOR_EPSILON,
+  )
+}
+
+function round(n: number): string {
+  return Math.round(n).toString()
+}
+
+const liveCombatEvents = computed<BattleCombatEvent[]>(
+  () => props.ui.battleTracker?.combatEvents ?? [],
+)
+const liveOutOfRange = computed(() => outOfRangeEvents(liveCombatEvents.value))
+const liveOutOfRangeLethal = computed(
+  () => liveOutOfRange.value.filter((e) => e.lethal).length,
+)
 </script>
 
 <style scoped>
@@ -482,6 +548,43 @@ const elapsedText = computed(() => {
   padding: 12px;
   color: #b89a6a;
   font-size: 12px;
+  text-align: center;
+}
+
+.bt-combat-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(200, 164, 106, 0.16);
+  background: rgba(20, 12, 7, 0.5);
+  font-size: 11px;
+  color: #d7bb84;
+  font-variant-numeric: tabular-nums;
+}
+
+.bt-warn {
+  color: #f0a35a;
+  font-weight: 700;
+}
+
+.bt-oor {
+  border-radius: 8px;
+  border: 1px solid rgba(240, 130, 60, 0.35);
+  padding: 6px 8px;
+  background: rgba(60, 28, 12, 0.4);
+}
+
+.bt-oor-head {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f0a35a;
+  margin-bottom: 4px;
+}
+
+.bt-col-kill {
+  width: 24px;
   text-align: center;
 }
 

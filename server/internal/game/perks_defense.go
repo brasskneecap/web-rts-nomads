@@ -162,6 +162,22 @@ func (s *GameState) applyUnitDamageWithSourceLocked(target *Unit, damage int, sr
 	if !src.SuppressTypeHint {
 		s.recordDamageTypeHintLocked(target, damage, damageTypeColorVariant(src.DamageType))
 	}
+	// Per-hit record so the client can split simultaneous hits into separate
+	// floating numbers instead of one summed HP-diff popup. `damage` here is
+	// the post-mitigation HP loss — exactly what the client's HP-delta sees —
+	// so the client can reconcile the per-hit entries against the delta.
+	// Ancillary/minor instances (splash, DoT) route through here too; the
+	// client only splits when the entries reconcile with the MAJOR remainder,
+	// so mixed-in minors just fall back to the single number.
+	s.recordHitDamageLocked(target, damage)
+	// Forensic combat-event log (debug-only; gated inside the helper on the map's
+	// battle-tracker flag): capture attacker + target positions, center-to-center
+	// distance, and the attacker's range at the instant this hit lands, plus
+	// whether it was lethal. Lets a saved battle log show whether a swing
+	// connected beyond the attacker's AttackRange and what killed the victim.
+	// Placed here — the single canonical HP-loss point — so every unit-sourced
+	// hit (melee, projectile, pierce) is captured uniformly.
+	s.recordBattleCombatEventLocked(target, damage, src)
 	// Overkill: damage exceeded what was on HP. The client derives its floating
 	// damage numbers from HP-diffs, which clamp to prevHP for the killing blow.
 	// Record the pre-clamp value so the client can show the real damage instead

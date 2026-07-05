@@ -482,8 +482,24 @@ func (s *GameState) applyDelayedAttackLocked(unit *Unit, deadUnitIDs *[]int, des
 	}
 
 	// ── Unit-vs-unit ─────────────────────────────────────────────────────
-	if unit.AttackTargetID != 0 {
-		target := s.getUnitByIDLocked(unit.AttackTargetID)
+	// Resolve against the target the swing was COMMITTED to at windup start
+	// (AttackWindupTargetID), NOT the live AttackTargetID. A mid-swing retarget
+	// — camp aggro broadcast, a player re-issuing AttackWithUnits, taunt, etc. —
+	// changes AttackTargetID but must not redirect an already-committed swing
+	// onto a different (possibly out-of-range) enemy. The live retarget applies
+	// on the next swing. Falls back to AttackTargetID only if no committed id was
+	// recorded (defensive: pre-existing swings across a hot reload).
+	committedTargetID := unit.AttackWindupTargetID
+	// Defensive fallback for a unit swing whose committed id was never recorded
+	// (a swing already in flight across a hot reload, or a test that hand-sets
+	// AttackWindupRemaining). Gated on "no building swing in flight" so it can
+	// NEVER route a building swing into the unit branch — a mid-swing player
+	// retarget from a building to an out-of-range unit must not connect.
+	if committedTargetID == 0 && unit.AttackBuildingTargetID == "" {
+		committedTargetID = unit.AttackTargetID
+	}
+	if committedTargetID != 0 {
+		target := s.getUnitByIDLocked(committedTargetID)
 		if !s.combatTargetIsValidLocked(unit, target) {
 			return // target gone / dead / allied — whiff
 		}
@@ -677,6 +693,10 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 							effectiveSpeed = math.Max(0.1, effectiveSpeed*slowFactorLocked(unit)*lingeringHexAttackSpeedFactorLocked(unit))
 							animDur := math.Min(1.0, 1.0/effectiveSpeed)
 							unit.AttackWindupRemaining = animDur * attackDamageDeliveryFraction
+							// Commit this swing to the target it started against. A
+							// later mid-swing retarget of AttackTargetID won't redirect
+							// the damage (see applyDelayedAttackLocked).
+							unit.AttackWindupTargetID = unit.AttackTargetID
 						}
 					}
 				} else {
@@ -758,6 +778,10 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 							buildingAttackSpeed := math.Max(0.1, unit.AttackSpeed*slowFactorLocked(unit)*lingeringHexAttackSpeedFactorLocked(unit))
 							animDur := math.Min(1.0, 1.0/buildingAttackSpeed)
 							unit.AttackWindupRemaining = animDur * attackDamageDeliveryFraction
+							// This swing targets a building — clear any committed unit
+							// target so applyDelayedAttackLocked resolves the building
+							// branch and a stale unit id can't hijack it.
+							unit.AttackWindupTargetID = 0
 						}
 					}
 				} else {

@@ -61,6 +61,51 @@ func tickN(s *GameState, n int) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 0. Committed swing resolves against its committed target
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestCommittedSwing_ResolvesAgainstCommittedTarget is the resolution-layer
+// guard for the "melee hit lands on a far enemy" bug. When a unit's
+// AttackTargetID is changed mid-swing by a DIRECT reassignment that does not
+// cancel the windup (the neutral-camp aggro broadcast today; any future path),
+// the committed swing must still resolve against the target it started against
+// (AttackWindupTargetID) — never the newly-injected, possibly out-of-range
+// target. applyDelayedAttackLocked applies damage with no fire-time distance
+// check, so without this the redirected swing lands full damage far outside the
+// attacker's range.
+func TestCommittedSwing_ResolvesAgainstCommittedTarget(t *testing.T) {
+	s, unit := newOrderTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	unit.AttackRange = 80
+	unit.Damage = 25
+
+	near := spawnOrderEnemy(t, s, unit.X+50, unit.Y) // committed target, in range
+	far := spawnOrderEnemy(t, s, unit.X+400, unit.Y) // hijacked target, far out of range
+	near.MoveSpeed, near.Capabilities = 0, nil
+	far.MoveSpeed, far.Capabilities = 0, nil
+
+	// Simulate a mid-swing hijack: the swing committed to `near`, but a direct
+	// retarget that did NOT reset the windup has since pointed AttackTargetID at
+	// the far enemy (exactly what broadcastNeutralCampAggroLocked did).
+	unit.AttackWindupTargetID = near.ID
+	unit.AttackTargetID = far.ID
+
+	var dead []int
+	var destroyed []string
+	s.applyDelayedAttackLocked(unit, &dead, &destroyed)
+
+	if far.HP < 500 {
+		t.Errorf("committed swing hit the hijacked far target (HP=%d/500) — damage must stay "+
+			"on the committed target, not the mid-swing retarget", far.HP)
+	}
+	if near.HP >= 500 {
+		t.Errorf("committed swing did not land on its committed target `near` (HP=%d/500)", near.HP)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 1. OrderHold does not chase out-of-range enemies
 // ─────────────────────────────────────────────────────────────────────────────
 

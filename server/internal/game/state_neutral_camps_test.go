@@ -307,6 +307,51 @@ func TestNeutralCamp_BroadcastAggro(t *testing.T) {
 	}
 }
 
+// TestNeutralCamp_BroadcastAggro_SkipsMidSwingMate is the regression for the
+// "stationary spear maiden hits a stationary archer 200px away" bug. A camp
+// aggro broadcast must NOT overwrite the AttackTargetID of a mate that is
+// mid-windup: doing so redirects the committed melee swing onto the broadcast
+// target, and applyDelayedAttackLocked applies that damage with no fire-time
+// distance check — landing a hit far outside the mate's AttackRange on an enemy
+// it never reached. The mate must keep its in-flight swing target until the
+// windup resolves (it still receives threat, so it retargets afterward).
+func TestNeutralCamp_BroadcastAggro_SkipsMidSwingMate(t *testing.T) {
+	s := newTestStateWithNeutralCamp(t)
+	enableWavesForTest(t, s)
+	s.tickNeutralCampsLocked()
+	camp := &s.NeutralCamps[0]
+	if len(camp.AliveUnitIDs) < 2 {
+		t.Fatalf("test requires camp with >= 2 units; got %d", len(camp.AliveUnitIDs))
+	}
+
+	nearTarget := spawnFakePlayerUnitForTest(t, s, "player1") // the mate's current swing target
+	farTarget := spawnFakePlayerUnitForTest(t, s, "player1")  // the newly-broadcast target
+
+	acquirer := s.getUnitByIDLocked(camp.AliveUnitIDs[0])
+	midSwingMate := s.getUnitByIDLocked(camp.AliveUnitIDs[1])
+
+	// The mate is mid-windup, committed to swinging at nearTarget, when the camp
+	// broadcasts farTarget (e.g. an archer that just poked another camp guard).
+	midSwingMate.AttackTargetID = nearTarget.ID
+	midSwingMate.AttackWindupRemaining = 0.35
+
+	acquirer.AttackTargetID = farTarget.ID
+	s.broadcastNeutralCampAggroLocked(acquirer, farTarget.ID)
+
+	if midSwingMate.AttackTargetID != nearTarget.ID {
+		t.Errorf("mid-swing mate was hijacked mid-windup: AttackTargetID = %d, want %d "+
+			"(its in-flight swing target). The committed swing would land on the broadcast "+
+			"target with no distance check.", midSwingMate.AttackTargetID, nearTarget.ID)
+	}
+
+	// A mate that is NOT mid-swing must still pick up the broadcast target — the
+	// guard only defers the overwrite, it doesn't disable camp aggro sharing.
+	if acquirer.AttackWindupRemaining == 0 && acquirer.AttackTargetID != farTarget.ID {
+		t.Errorf("non-windup acquirer lost its broadcast target: AttackTargetID = %d, want %d",
+			acquirer.AttackTargetID, farTarget.ID)
+	}
+}
+
 // TestNeutralCamp_BroadcastAggro_DeadTargetNoOp: broadcasting a dead
 // target must not modify camp-mates' AttackTargetID. Validates the
 // canonical guard (target.HP > 0).

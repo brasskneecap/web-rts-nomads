@@ -267,8 +267,20 @@ type Unit struct {
 	// Paused while stunned. Decoupled from AttackCooldown: cooldown ticks the
 	// idle gap AFTER the swing lands; windup ticks the animation window
 	// BEFORE damage. Total cycle = windup + cooldown = 1/effectiveAttackSpeed.
-	AttackWindupRemaining  float64
-	AttackTargetID         int
+	AttackWindupRemaining float64
+	AttackTargetID        int
+	// AttackWindupTargetID is the unit target the CURRENT in-flight swing was
+	// committed against — snapshotted from AttackTargetID at the instant the
+	// windup begins (0 for a building swing). applyDelayedAttackLocked resolves
+	// damage against THIS id, not the live AttackTargetID, so a mid-swing
+	// retarget (camp aggro broadcast, a player re-issuing AttackWithUnits, any
+	// future path) can't redirect an already-committed swing onto a different —
+	// possibly out-of-range — enemy. Without this, the committed swing read the
+	// live AttackTargetID at impact and applied full damage to whatever it had
+	// become, landing hits far outside the attacker's range. The live retarget
+	// still takes effect on the NEXT swing. Reset each windup start so it never
+	// carries a stale value between swings or into a building swing.
+	AttackWindupTargetID   int
 	AttackBuildingTargetID string
 	Attacking              bool
 	// Casting mirrors Attacking for the spell-cast animation slot: true while
@@ -889,6 +901,12 @@ type GameState struct {
 	// damage hits that should render as a smaller orange floating number
 	// (Reactive Flames splash, etc.). See minor_damage_events.go.
 	minorDamageEventsThisTick []minorDamageEvent
+
+	// hitDamageEventsThisTick mirrors critEventsThisTick for individual landed
+	// hits. Lets the client split its HP-diff popup into per-hit numbers so
+	// two simultaneous strikes read as "12" "12" instead of one "24". See
+	// hit_damage_events.go.
+	hitDamageEventsThisTick []hitDamageEvent
 
 	// damageTypeHintsThisTick is the parallel channel for COLORING the
 	// regular floating-up popup (not a separate popup like minor events).
@@ -1625,6 +1643,7 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 		Effects:            s.effectSnapshotsLocked(),
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
 		HealEvents:         s.snapshotHealEventsLocked(),
@@ -2000,6 +2019,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 		Effects:            effects,
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
 		HealEvents:         s.snapshotHealEventsLocked(),
@@ -2465,6 +2485,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		Effects:            s.effectSnapshotsLocked(),
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
 		HealEvents:         s.snapshotHealEventsLocked(),
@@ -2526,6 +2547,7 @@ func (s *GameState) Update(dt float64) {
 	// client can match against its HP-diff damage events.
 	s.resetCritEventsThisTickLocked()
 	s.resetMinorDamageEventsThisTickLocked()
+	s.resetHitDamageEventsThisTickLocked()
 	s.resetDamageTypeHintsThisTickLocked()
 	s.resetLethalDamageEventsThisTickLocked()
 	s.resetHealEventsThisTickLocked()

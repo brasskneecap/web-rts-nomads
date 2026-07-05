@@ -296,6 +296,10 @@ export class CanvasRenderer {
   // when interleaved with regular popups.
   private readonly FLOATING_DAMAGE_MINOR_X_PX = 28
   private readonly FLOATING_DAMAGE_MINOR_FALL_PX = 26
+  // Horizontal gap between per-hit split popups (two simultaneous hits on one
+  // unit). Screen-space px; divided by zoom at spawn so the fan-out reads the
+  // same at any zoom level. Half this to each side for a 2-hit split.
+  private readonly FLOATING_DAMAGE_SPREAD_PX = 18
 
   // Floating resource numbers — spawned when a worker deposits at the
   // townhall (carriedAmount drops to 0). Mirrors the damage-number lifecycle
@@ -396,8 +400,17 @@ export class CanvasRenderer {
         // Minor popups spray left/right + fall. Random sign per popup so a
         // burst of minor hits on the same unit fans out instead of stacking.
         const xDriftSign = kind === 'minor' ? (Math.random() < 0.5 ? -1 : 1) : undefined
+        // Per-hit split popups (two simultaneous strikes on one unit) fan out
+        // horizontally so both numbers are legible side-by-side even while
+        // their startedAt stagger sequences them in. Offset is screen-constant
+        // (÷ zoom) to match the font sizing; centered around the impact point.
+        let spreadX = 0
+        if (evt.spreadCount && evt.spreadCount > 1) {
+          const centered = (evt.spreadIndex ?? 0) - (evt.spreadCount - 1) / 2
+          spreadX = (centered * this.FLOATING_DAMAGE_SPREAD_PX) / this.camera.zoom
+        }
         this.floatingDamageNumbers.push({
-          x: evt.x,
+          x: evt.x + spreadX,
           y: evt.y + yOffset,
           amount: evt.amount,
           isFriendly: evt.isFriendly,
@@ -3209,6 +3222,13 @@ export class CanvasRenderer {
     for (const num of this.floatingDamageNumbers) {
       const elapsed = renderTime - num.startedAt
       if (elapsed >= this.FLOATING_DAMAGE_DURATION_MS) continue
+      // startedAt can be in the future for staggered per-hit split popups —
+      // hold (don't draw yet, but keep) until its start time arrives so the
+      // second hit genuinely pops in after the first.
+      if (elapsed < 0) {
+        kept.push(num)
+        continue
+      }
       const t = elapsed / this.FLOATING_DAMAGE_DURATION_MS
 
       // Minor popups: horizontal drift (linear) + accelerating downward

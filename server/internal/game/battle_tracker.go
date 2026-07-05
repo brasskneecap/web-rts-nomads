@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math"
 	"sort"
 
 	"webrts/server/pkg/protocol"
@@ -66,12 +67,23 @@ type battleTrackerPlayer struct {
 	Total   battleBucketStats
 }
 
+// battleCombatEventCap bounds the forensic combat-event log so a long debug
+// session can't grow the per-match tracker (and the snapshot it ships each
+// tick) without limit. Only the most recent entries are retained.
+const battleCombatEventCap = 2000
+
 // BattleTracker owns the running totals for one match. Methods are
 // Locked-suffixed and must be called under GameState.mu write lock.
 type BattleTracker struct {
 	enabled        bool
 	elapsedSeconds float64
 	players        map[string]*battleTrackerPlayer
+	// combatEvents is a bounded, append-only forensic log of individual landed
+	// hits (attacker + target positions, distance, range, lethality). Populated
+	// by recordBattleCombatEventLocked at the damage choke point; capped to the
+	// most recent battleCombatEventCap entries. Stored directly in wire form so
+	// the snapshot builder just copies the slice.
+	combatEvents []protocol.BattleCombatEvent
 }
 
 // newBattleTracker constructs a tracker with its on/off flag set from the
@@ -158,6 +170,73 @@ func (s *GameState) trackBattleKillLocked(src BattleSource, _ *Unit) {
 	player.Total.Kills++
 }
 
+// recordBattleCombatEventLocked appends a forensic combat-event record for a
+// single landed hit. No-op unless the battle tracker is armed (map debug flag)
+// and the damage came from a unit attacker (src.AttackerUnitID != 0) — trap /
+// building / unattributed damage is skipped to keep the log focused on
+// unit-vs-unit combat, which is where range/target questions arise. Captures
+// both units' positions at the instant damage applied, plus the attacker's
+// AttackRange and the center-to-center distance, so an out-of-range or
+// wrong-target hit is visible directly in a saved log.
+//
+// Called from applyUnitDamageWithSourceLocked at the HP-loss point, where
+// `damage` is the post-mitigation HP loss and target.HP has already been
+// decremented (so target.HP <= 0 correctly marks a lethal hit).
+//
+// Must be called under s.mu write lock.
+func (s *GameState) recordBattleCombatEventLocked(target *Unit, damage int, src DamageSource) {
+	if s.battleTracker == nil || !s.battleTracker.enabled {
+		return
+	}
+	if target == nil || damage <= 0 || src.AttackerUnitID == 0 {
+		return
+	}
+	ev := protocol.BattleCombatEvent{
+		Tick:           s.Tick,
+		ElapsedSeconds: s.battleTracker.elapsedSeconds,
+		AttackerID:     src.AttackerUnitID,
+		TargetID:       target.ID,
+		TargetType:     target.UnitType,
+		TargetOwner:    target.OwnerID,
+		TargetX:        target.X,
+		TargetY:        target.Y,
+		Damage:         damage,
+		Kind:           src.Kind,
+		Lethal:         target.HP <= 0,
+	}
+	// Resolve the attacker for its position + range. May be nil when a
+	// projectile outlives its firer — the event still records target-side data
+	// and a zero attacker position (Distance stays 0, AttackRange 0) rather than
+	// being dropped.
+	if attacker := s.getUnitByIDLocked(src.AttackerUnitID); attacker != nil {
+		ev.AttackerType = attacker.UnitType
+		ev.AttackerOwner = attacker.OwnerID
+		ev.AttackerX = attacker.X
+		ev.AttackerY = attacker.Y
+		ev.AttackRange = attacker.AttackRange
+		dx := target.X - attacker.X
+		dy := target.Y - attacker.Y
+		ev.Distance = math.Sqrt(dx*dx + dy*dy)
+		// Disambiguate the label. resolveAttackHitLocked tags both melee swings
+		// and landed projectiles as "melee" in the DamageSource, so refine the
+		// generic "melee" using the attacker's combat profile — a ranged unit's
+		// hit is a "projectile", which matters when reading "what killed them"
+		// (and keeps the dist-vs-range read honest: a projectile legitimately
+		// lands beyond the firer's current distance, a melee swing should not).
+		if ev.Kind == "melee" && !resolveCombatProfile(attacker).Melee {
+			ev.Kind = "projectile"
+		}
+	}
+	t := s.battleTracker
+	t.combatEvents = append(t.combatEvents, ev)
+	if len(t.combatEvents) > battleCombatEventCap {
+		// Trim to the most recent cap entries. Overlapping copy into the front
+		// of the same backing array is safe here (dst index < src index for
+		// every element), and reuses the allocation.
+		t.combatEvents = append(t.combatEvents[:0], t.combatEvents[len(t.combatEvents)-battleCombatEventCap:]...)
+	}
+}
+
 // battleTrackerSnapshotLocked serializes the tracker into the wire format for
 // inclusion in MatchSnapshotMessage. Returns nil when the tracker is disabled
 // so the field is omitted from the JSON entirely.
@@ -203,9 +282,19 @@ func (s *GameState) battleTrackerSnapshotLocked() *protocol.BattleTrackerSnapsho
 		return players[i].PlayerID < players[j].PlayerID
 	})
 
+	// Copy the forensic combat-event log into the wire snapshot. Copied (not
+	// aliased) so a later append/trim on the live tracker can't mutate a
+	// snapshot the transport layer is still serializing.
+	var combatEvents []protocol.BattleCombatEvent
+	if n := len(s.battleTracker.combatEvents); n > 0 {
+		combatEvents = make([]protocol.BattleCombatEvent, n)
+		copy(combatEvents, s.battleTracker.combatEvents)
+	}
+
 	return &protocol.BattleTrackerSnapshot{
 		ElapsedSeconds: s.battleTracker.elapsedSeconds,
 		Players:        players,
+		CombatEvents:   combatEvents,
 	}
 }
 

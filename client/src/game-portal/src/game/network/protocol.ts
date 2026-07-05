@@ -1405,6 +1405,22 @@ export type DamageTypeHintSnapshot = {
 }
 
 /**
+ * DamageHitSnapshot records one individual landed hit's HP loss. The client
+ * derives floating damage numbers from HP-diff, so two hits landing on one
+ * unit in a single snapshot collapse into one number equal to their sum
+ * (12+12 → "24", 25+25 → "50"). These entries restore the per-hit
+ * granularity: the client sums them for a unit and, when they reconcile with
+ * the major (post-minor-peel) HP delta AND there are 2+ of them, splits the
+ * popup into one staggered number per hit. When they don't reconcile
+ * (passive regen, mixed-in minor/DoT damage) the client ignores this channel
+ * and keeps the single combined number — the split is purely additive.
+ */
+export type DamageHitSnapshot = {
+  unitId: number
+  damage: number
+}
+
+/**
  * LethalDamageEventSnapshot carries the pre-clamp damage value for an overkill
  * killing blow. The client's killing-blow synthesis would otherwise show only
  * the victim's remaining HP (capped) because dead units are stripped from the
@@ -1500,6 +1516,7 @@ export type MatchSnapshotMessage = {
   effects?: EffectSnapshot[]
   critEvents?: CritEventSnapshot[]
   minorDamageEvents?: MinorDamageEventSnapshot[]
+  hitDamageEvents?: DamageHitSnapshot[]
   damageTypeHints?: DamageTypeHintSnapshot[]
   lethalDamageEvents?: LethalDamageEventSnapshot[]
   healEvents?: HealEventSnapshot[]
@@ -1562,11 +1579,41 @@ export type BattlePlayerStats = {
   total: BattleStats
 }
 
+// BattleCombatEvent is one landed damage instance captured for forensic debug.
+// Records where both units were at the instant damage applied, the attacker's
+// range, the center-to-center distance, and whether the hit was lethal — so a
+// saved battle log can answer "did this swing connect beyond the attacker's
+// range, and what killed the victim?". Positions are world pixels; `kind`
+// mirrors the server DamageSource kind ("melee", "projectile", "trap_dot", …).
+export type BattleCombatEvent = {
+  tick: number
+  t: number // match-elapsed seconds
+  atkId: number
+  atkType: string
+  atkOwner: string
+  atkX: number
+  atkY: number
+  atkRange: number
+  tgtId: number
+  tgtType: string
+  tgtOwner: string
+  tgtX: number
+  tgtY: number
+  dist: number
+  dmg: number
+  kind: string
+  lethal: boolean
+}
+
 export type BattleTrackerSnapshot = {
   // Match-elapsed seconds since the tracker was armed. Shown as the "duration"
   // header in the debug panel.
   elapsedSeconds: number
   players: BattlePlayerStats[]
+  // Bounded forensic log of individual landed hits (debug-only; present only
+  // when the map arms the tracker). Deep-copied into saved battle logs so the
+  // geometry of each kill can be inspected offline.
+  combatEvents?: BattleCombatEvent[]
 }
 
 export type PingMessage = {

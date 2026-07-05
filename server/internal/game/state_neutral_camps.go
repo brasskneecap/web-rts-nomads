@@ -471,6 +471,20 @@ func (s *GameState) broadcastNeutralCampAggroLocked(acquirer *Unit, targetID int
 		if mate.AttackTargetID == targetID {
 			continue // already on the same target; idempotent
 		}
+		// Never hijack a mate that is mid-swing. Overwriting AttackTargetID while
+		// a windup is in flight redirects the committed swing onto the broadcast
+		// target — and applyDelayedAttackLocked resolves melee damage with NO
+		// fire-time distance check, so the swing lands on an enemy the mate never
+		// reached. Observed: a stationary spear maiden meleeing an in-range
+		// soldier gets its swing redirected onto an archer ~200px away the instant
+		// the camp aggros the archer (a ranged unit poking the camp), landing full
+		// damage far outside the maiden's 90 range. The threat conferred above
+		// still routes the mate onto the shared target once its swing resolves and
+		// the normal AI re-evaluates. Mirrors the mid-windup lock in
+		// tickCombatAILocked's evaluate pass (combat_ai.go).
+		if mate.AttackWindupRemaining > 0 {
+			continue
+		}
 		mate.AttackTargetID = targetID
 	}
 }

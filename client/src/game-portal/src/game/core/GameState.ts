@@ -476,6 +476,16 @@ export type DamageEvent = {
    * purple). Absent ⇒ default white/red.
    */
   damageType?: string
+  /**
+   * Per-hit split metadata. When a unit takes multiple simultaneous hits in
+   * one snapshot (two soldier strikes, two frostbolts) the HP-diff popup is
+   * split into one event per hit, using the server's hitDamageEvents. Each
+   * split event carries its index and the total count so the renderer can
+   * fan the numbers out horizontally; createdAt is also staggered so they
+   * pop in sequence. Absent / count<=1 ⇒ ordinary single popup.
+   */
+  spreadIndex?: number
+  spreadCount?: number
 }
 
 export type Vec2 = {
@@ -860,6 +870,13 @@ export class GameState {
   private recentDamageByUnit = new Map<number, Array<{ amount: number; at: number }>>()
   private readonly RECENT_DAMAGE_WINDOW_MS = 500
 
+  // Time gap between successive floating numbers when one snapshot's HP loss is
+  // split into per-hit popups (see emitDamageEvent / hitDamageEvents). Each
+  // split hit's popup startedAt is pushed this many ms into the future so they
+  // pop in sequence — combined with the horizontal fan-out in the renderer,
+  // two simultaneous hits read as two distinct numbers instead of one sum.
+  private static readonly HIT_SPLIT_STAGGER_MS = 70
+
   // Drained each render by CanvasRenderer to spawn floating resource numbers.
   // Populated by applySnapshot from carriedAmount deltas (drop to 0 = deposit).
   resourceDepositEvents: ResourceDepositEvent[] = []
@@ -1136,6 +1153,23 @@ export class GameState {
       pool.push({ damage: evt.damage, variant: evt.variant })
     }
 
+    // Per-hit pool: the individual landed-hit amounts the server reports so we
+    // can split a single HP-diff popup into one number per hit (two 12-damage
+    // soldier strikes → "12" "12" instead of "24"). Only used when the entries
+    // reconcile exactly with the major (post-minor-peel) remainder — see
+    // emitDamageEvent — so mixed-in minor/regen ticks safely fall back to the
+    // combined number.
+    const hitPool = new Map<number, number[]>()
+    for (const evt of message.hitDamageEvents ?? []) {
+      if (evt.damage <= 0) continue
+      let pool = hitPool.get(evt.unitId)
+      if (!pool) {
+        pool = []
+        hitPool.set(evt.unitId, pool)
+      }
+      pool.push(evt.damage)
+    }
+
     // Helper: emit a damage event with crit-pool matching and rolling
     // history mirror, shared by the surviving-unit HP-diff loop and the
     // killing-blow synthesis below. Pass-through `amount`, `unit info`, etc.
@@ -1180,104 +1214,131 @@ export class GameState {
       }
       if (remainder <= 0) return
 
-      // Damage-type color hint: peel a matching entry off the pool to
-      // color the major popup. Two-phase matching:
-      //
-      //   1. EXACT amount first. In the common single-source tick the
-      //      server's hint equals the HP-diff exactly and this wins.
-      //
-      //   2. FALLBACK to the first hint when no exact match exists. This
-      //      catches the cases where HP-diff doesn't match any single
-      //      hint cleanly: passive HP regen landing in the same tick
-      //      (prev.hp - damage + 1 regen ≠ hint.damage), two siphoner
-      //      beams stacking on one enemy, future shield-decay perks, etc.
-      //      The cost of the fallback: if a unit takes mixed damage
-      //      types in one tick (e.g. shadow Siphon + physical sword
-      //      strike), the popup colors with the typed hint even though
-      //      part of the HP loss was physical. We accept that edge — the
-      //      user-facing rule "my Siphoner's damage looks shadow" reads
-      //      cleanly, and physical attacks emit no hint so they can't
-      //      compete in practice today.
-      //
-      // Consumed entries are removed so a second damage event on the
-      // same unit this tick can't re-use the same hint (one popup per
-      // hint, not infinite re-use).
-      let damageType: string | undefined
-      const typeList = damageTypePool.get(unitId)
-      if (typeList && typeList.length > 0) {
-        const exactIdx = typeList.findIndex((t) => t.damage === remainder)
-        if (exactIdx >= 0) {
-          damageType = typeList[exactIdx].variant
-          typeList.splice(exactIdx, 1)
-        } else {
-          damageType = typeList[0].variant
-          typeList.shift()
-        }
-      }
-
-      let kind: 'normal' | 'crit' = 'normal'
-      const pool = critPool.get(unitId)
-      if (pool && pool.length > 0) {
-        const exactIdx = pool.indexOf(remainder)
-        if (exactIdx >= 0) {
-          pool.splice(exactIdx, 1)
-          kind = 'crit'
-        } else if (critTargetsThisTick && critTargetsThisTick.has(unitId)) {
-          // Consume the closest entry to avoid re-using it on a
-          // subsequent same-tick same-target damage event.
-          pool.shift()
-          kind = 'crit'
-        }
-      }
-      this.damageEvents.push({
-        unitId,
-        unitType,
-        x,
-        y,
-        amount: remainder,
-        isFriendly,
-        createdAt: now,
-        kind,
-        damageType,
-      })
-      // Debug: pair with the [atk-timing] anim-start logs from unitAnimation
-      // to verify swing-vs-damage alignment. The filter trio mirrors the
-      // one in unitAnimation so the same toggles apply on both ends:
-      //   window.debugAttackTiming         — master enable
-      //   window.debugAttackTimingMineOnly — skip enemy-owned victims
-      //   window.debugAttackTimingUnitType — only log victims of this type
-      // Note: damage events filter on the VICTIM's type/owner, not the
-      // attacker (the HP-diff derivation has no attacker attribution).
-      const dbg = globalThis as {
-        debugAttackTiming?: boolean
-        debugAttackTimingMineOnly?: boolean
-        debugAttackTimingUnitType?: string
-      }
-      if (dbg.debugAttackTiming) {
-        let allow = true
-        if (dbg.debugAttackTimingMineOnly) {
-          if (this.localPlayerId) {
-            allow = ownerId === this.localPlayerId
+      // pushMajorHit renders ONE major (floating-up) popup for a sub-amount of
+      // this tick's post-minor-peel HP loss, running the per-popup damage-type
+      // and crit matching against the server pools. `index`/`count` drive the
+      // horizontal fan-out + time stagger when a single HP delta is split into
+      // multiple simultaneous hits (count === 1 ⇒ ordinary single popup).
+      const pushMajorHit = (hitAmount: number, index: number, count: number) => {
+        // Damage-type color hint: peel a matching entry off the pool to
+        // color the major popup. Two-phase matching:
+        //
+        //   1. EXACT amount first. In the common single-source tick the
+        //      server's hint equals this hit's amount and this wins.
+        //
+        //   2. FALLBACK to the first hint when no exact match exists. This
+        //      catches the cases where the amount doesn't match any single
+        //      hint cleanly: passive HP regen landing in the same tick
+        //      (prev.hp - damage + 1 regen ≠ hint.damage), two siphoner
+        //      beams stacking on one enemy, future shield-decay perks, etc.
+        //      The cost of the fallback: if a unit takes mixed damage
+        //      types in one tick (e.g. shadow Siphon + physical sword
+        //      strike), the popup colors with the typed hint even though
+        //      part of the HP loss was physical. We accept that edge — the
+        //      user-facing rule "my Siphoner's damage looks shadow" reads
+        //      cleanly, and physical attacks emit no hint so they can't
+        //      compete in practice today.
+        //
+        // Consumed entries are removed so a second damage event on the
+        // same unit this tick can't re-use the same hint (one popup per
+        // hint, not infinite re-use).
+        let damageType: string | undefined
+        const typeList = damageTypePool.get(unitId)
+        if (typeList && typeList.length > 0) {
+          const exactIdx = typeList.findIndex((t) => t.damage === hitAmount)
+          if (exactIdx >= 0) {
+            damageType = typeList[exactIdx].variant
+            typeList.splice(exactIdx, 1)
           } else {
-            allow = ownerId !== '__enemy__'
+            damageType = typeList[0].variant
+            typeList.shift()
           }
         }
-        if (allow && dbg.debugAttackTimingUnitType && unitType !== dbg.debugAttackTimingUnitType) {
-          allow = false
+
+        let kind: 'normal' | 'crit' = 'normal'
+        const pool = critPool.get(unitId)
+        if (pool && pool.length > 0) {
+          const exactIdx = pool.indexOf(hitAmount)
+          if (exactIdx >= 0) {
+            pool.splice(exactIdx, 1)
+            kind = 'crit'
+          } else if (critTargetsThisTick && critTargetsThisTick.has(unitId)) {
+            // Consume the closest entry to avoid re-using it on a
+            // subsequent same-tick same-target damage event.
+            pool.shift()
+            kind = 'crit'
+          }
         }
-        if (allow) {
-          // eslint-disable-next-line no-console
-          console.log(
-            `[atk-timing] damage  unit=${unitId} type=${unitType} amount=${remainder} kind=${kind} t=${now.toFixed(0)}ms`,
-          )
+        this.damageEvents.push({
+          unitId,
+          unitType,
+          x,
+          y,
+          amount: hitAmount,
+          isFriendly,
+          // Stagger split hits into the near future so they pop in sequence
+          // rather than all at once (the renderer holds a popup until its
+          // startedAt is reached). The first hit fires immediately.
+          createdAt: now + index * GameState.HIT_SPLIT_STAGGER_MS,
+          kind,
+          damageType,
+          spreadIndex: count > 1 ? index : undefined,
+          spreadCount: count > 1 ? count : undefined,
+        })
+        // Debug: pair with the [atk-timing] anim-start logs from unitAnimation
+        // to verify swing-vs-damage alignment. The filter trio mirrors the
+        // one in unitAnimation so the same toggles apply on both ends:
+        //   window.debugAttackTiming         — master enable
+        //   window.debugAttackTimingMineOnly — skip enemy-owned victims
+        //   window.debugAttackTimingUnitType — only log victims of this type
+        // Note: damage events filter on the VICTIM's type/owner, not the
+        // attacker (the HP-diff derivation has no attacker attribution).
+        const dbg = globalThis as {
+          debugAttackTiming?: boolean
+          debugAttackTimingMineOnly?: boolean
+          debugAttackTimingUnitType?: string
         }
+        if (dbg.debugAttackTiming) {
+          let allow = true
+          if (dbg.debugAttackTimingMineOnly) {
+            if (this.localPlayerId) {
+              allow = ownerId === this.localPlayerId
+            } else {
+              allow = ownerId !== '__enemy__'
+            }
+          }
+          if (allow && dbg.debugAttackTimingUnitType && unitType !== dbg.debugAttackTimingUnitType) {
+            allow = false
+          }
+          if (allow) {
+            // eslint-disable-next-line no-console
+            console.log(
+              `[atk-timing] damage  unit=${unitId} type=${unitType} amount=${hitAmount} kind=${kind} t=${now.toFixed(0)}ms`,
+            )
+          }
+        }
+        let history = this.recentDamageByUnit.get(unitId)
+        if (!history) {
+          history = []
+          this.recentDamageByUnit.set(unitId, history)
+        }
+        history.push({ amount: hitAmount, at: now })
       }
-      let history = this.recentDamageByUnit.get(unitId)
-      if (!history) {
-        history = []
-        this.recentDamageByUnit.set(unitId, history)
+
+      // Split the major remainder into per-hit popups when the server's
+      // individual landed-hit amounts reconcile with it EXACTLY and there are
+      // 2+ of them (two soldier strikes, two frostbolts landing the same
+      // snapshot). Reconciliation is the safety valve: if a minor/DoT tick or
+      // passive regen also landed this tick the sum won't match the major
+      // remainder, so we fall back to the single combined popup — never a
+      // wrong split. Consume the pool so killing-blow synthesis can't re-split.
+      const hits = hitPool.get(unitId)
+      if (hits && hits.length >= 2 && hits.reduce((a, b) => a + b, 0) === remainder) {
+        hitPool.delete(unitId)
+        hits.forEach((hitAmount, index) => pushMajorHit(hitAmount, index, hits.length))
+      } else {
+        pushMajorHit(remainder, 0, 1)
       }
-      history.push({ amount: remainder, at: now })
     }
 
     // Derive damage events by diffing HP against the previous snapshot. Any

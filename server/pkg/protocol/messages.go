@@ -1535,6 +1535,20 @@ type DamageTypeHintSnapshot struct {
 	Variant string `json:"variant,omitempty"`
 }
 
+// DamageHitSnapshot records one individual landed hit's HP loss so the client
+// can split its HP-diff popup into per-hit numbers. Without this the client
+// only sees the net HP delta per snapshot and renders two simultaneous
+// soldier strikes (12 + 12) as a single "24". Auto-emitted at the HP-loss
+// point of applyUnitDamageWithSourceLocked for every hit — the client sums
+// the entries for a unit and, when they reconcile with the (post-minor-peel)
+// HP delta and there are 2+ of them, draws one staggered popup per hit
+// instead of one combined number. Purely visual; gameplay reads nothing
+// here, and unmatched entries safely fall back to the single-number popup.
+type DamageHitSnapshot struct {
+	UnitID int `json:"unitId"`
+	Damage int `json:"damage"`
+}
+
 // LethalDamageEventSnapshot carries the pre-clamp damage value for an overkill
 // killing blow. HP-deltas on the wire clamp to remaining HP, so the client's
 // HP-diff popup would otherwise show only the leftover HP. Each entry tells
@@ -1706,6 +1720,7 @@ type MatchSnapshotMessage struct {
 	Effects            []EffectSnapshot            `json:"effects,omitempty"`
 	CritEvents         []CritEventSnapshot         `json:"critEvents,omitempty"`
 	MinorDamageEvents  []MinorDamageEventSnapshot  `json:"minorDamageEvents,omitempty"`
+	HitDamageEvents    []DamageHitSnapshot         `json:"hitDamageEvents,omitempty"`
 	DamageTypeHints    []DamageTypeHintSnapshot    `json:"damageTypeHints,omitempty"`
 	LethalDamageEvents []LethalDamageEventSnapshot `json:"lethalDamageEvents,omitempty"`
 	HealEvents         []HealEventSnapshot         `json:"healEvents,omitempty"`
@@ -1771,6 +1786,39 @@ type BattlePlayerStats struct {
 type BattleTrackerSnapshot struct {
 	ElapsedSeconds float64             `json:"elapsedSeconds"`
 	Players        []BattlePlayerStats `json:"players"`
+	// CombatEvents is a bounded, append-only forensic log of individual landed
+	// hits — attacker + target positions, distance, attacker range, and
+	// lethality at the instant damage applied. Debug-only; present only when
+	// the map arms the battle tracker and capped to the most recent entries
+	// server-side. Omitted when empty. Lets a saved battle log answer "did this
+	// hit land outside the attacker's range, and what killed the victim?".
+	CombatEvents []BattleCombatEvent `json:"combatEvents,omitempty"`
+}
+
+// BattleCombatEvent is one landed damage instance captured for forensic debug.
+// It records WHERE both units were at the moment damage applied, so an
+// investigator can see whether a swing connected beyond the attacker's
+// AttackRange, who killed whom, and with what kind of attack. All positions are
+// world pixels. Kind mirrors DamageSource.Kind ("melee", "projectile",
+// "trap_dot", …). Lethal is true when the victim's HP hit 0 on this hit.
+type BattleCombatEvent struct {
+	Tick           int     `json:"tick"`
+	ElapsedSeconds float64 `json:"t"`
+	AttackerID     int     `json:"atkId"`
+	AttackerType   string  `json:"atkType"`
+	AttackerOwner  string  `json:"atkOwner"`
+	AttackerX      float64 `json:"atkX"`
+	AttackerY      float64 `json:"atkY"`
+	AttackRange    float64 `json:"atkRange"`
+	TargetID       int     `json:"tgtId"`
+	TargetType     string  `json:"tgtType"`
+	TargetOwner    string  `json:"tgtOwner"`
+	TargetX        float64 `json:"tgtX"`
+	TargetY        float64 `json:"tgtY"`
+	Distance       float64 `json:"dist"`
+	Damage         int     `json:"dmg"`
+	Kind           string  `json:"kind"`
+	Lethal         bool    `json:"lethal"`
 }
 
 type PingMessage struct {

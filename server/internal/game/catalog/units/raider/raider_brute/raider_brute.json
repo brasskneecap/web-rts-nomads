@@ -21,10 +21,10 @@
   ],
   "trainLabel": "",
   "bounds": {
-    "halfWidth": 14,
+    "halfWidth": 30,
     "top": -60,
-    "bottom": 10,
+    "bottom": 20,
     "ringOffsetX": 0,
-    "ringOffsetY": -8
+    "ringOffsetY": -20
   }
 }
