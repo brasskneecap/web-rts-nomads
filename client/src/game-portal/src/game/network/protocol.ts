@@ -19,7 +19,7 @@ export type BuildingCapability =
   | 'deposit-point'
   | 'enemy-spawner'
   | 'selectable'
-  | 'upgrade-purchase'
+  | 'blacksmith-upgrade'
   | 'item-purchase'
   | 'recipe-purchase'
   | 'vault-access'
@@ -103,6 +103,10 @@ export type BuildingTile = GridCoord & {
   shopGuardUnitIds?: number[]
   shopLocked?: boolean
   shopDiscovered?: boolean
+  /** Computed shop label from the assigned item list (e.g. "Wandering
+   *  Merchant"); absent when the shop has no list, so callers fall back to the
+   *  building type label. */
+  shopDisplayName?: string
   recipeInventory?: RecipeStockEntry[]
 }
 
@@ -692,38 +696,70 @@ export type ResourceStockSnapshot = {
   accent: string
 }
 
+/** One stat bonus granted by an upgrade tier (e.g. { stat: 'maxHp', amount: 25 }). */
+export type UpgradeStatDelta = {
+  stat: string
+  amount: number
+}
+
+/** Short label per upgrade stat, matched to the server's effect stat names. */
+const UPGRADE_STAT_LABELS: Record<string, string> = {
+  maxHp: 'HP',
+  damage: 'DMG',
+  armor: 'ARM',
+  attackSpeed: 'AS',
+  moveSpeed: 'MS',
+}
+
+/** Formats one upgrade stat delta as e.g. "+25 HP" / "+0.05 AS" for the UI.
+ *  attackSpeed shows two decimals; other stats are whole numbers. Unknown stats
+ *  fall back to the raw stat name. */
+export function formatUpgradeStatDelta(delta: UpgradeStatDelta): string {
+  const label = UPGRADE_STAT_LABELS[delta.stat] ?? delta.stat
+  const amount = delta.stat === 'attackSpeed' ? delta.amount.toFixed(2) : String(delta.amount)
+  return `+${amount} ${label}`
+}
+
 export type PlayerUpgradeSnapshot = {
   track: string
   displayName: string
+  /** Building capability that offers this track (e.g. 'blacksmith-upgrade'). A
+   *  selected building shows the track when its capabilities include this. */
+  capability: BuildingCapability
   level: number
-  cap: number              // 0/3/6/9
+  /** Absolute max level (total tiers). purchasableCap is the highest level
+   *  currently unlocked given the player's buildings; when it is below cap,
+   *  nextRequirement names what unlocks the next tier. */
+  cap: number
+  purchasableCap: number
   /** How many of this track are queued (in progress + waiting). 0 when idle.
    *  level + queuedCount is the level the queue will reach; the next purchase
    *  stacks above it. */
   queuedCount?: number
   nextCostGold: number     // cost of the next stackable level; 0 if at cap
-  nextCostWood: number     // mirrors nextCostGold; 0 if at cap
+  nextCostWood: number     // wood cost of the next level; 0 if at cap
+  /** Stat bonuses the next purchasable tier grants (for the tooltip). Absent
+   *  when the track is fully maxed. */
+  nextStats?: UpgradeStatDelta[]
+  /** Display label for the building that unlocks the next tier when it is gated
+   *  out (e.g. 'Keep', 'Castle'). Absent when the next tier is available. */
+  nextRequirement?: string
   canAfford: boolean
-  /** True when this upgrade can be started OR queued: below the projected cap,
-   *  affordable, and a blacksmith exists to host it. */
+  /** True when this upgrade can be started OR queued: below the purchasable cap,
+   *  affordable, and a building exists to host it. */
   canStart: boolean
   hasBlacksmith: boolean
   /** In-progress research for this track — only populated while the track is at
-   *  the HEAD of its blacksmith's queue. researchTotal is the full duration in
+   *  the HEAD of its building's queue. researchTotal is the full duration in
    *  seconds (0/absent when not actively researching); researchRemaining counts
-   *  down to 0; researchBuildingId is the blacksmith performing the work. */
+   *  down to 0; researchBuildingId is the building performing the work. */
   researchTotal?: number
   researchRemaining?: number
   researchBuildingId?: string
-  /** Blacksmith holding this track's queue (in progress or merely queued); the
+  /** Building holding this track's queue (in progress or merely queued); the
    *  cancel/queue target. Equals researchBuildingId when at the head. Empty when
    *  the track is idle. */
   queueBuildingId?: string
-  hpPerLevel: number
-  damagePerLevel: number
-  armorPerLevel: number
-  attackSpeedPerLevel: number
-  moveSpeedPerLevel: number
 }
 
 /** Commander ability slot — player-level ability with a live cooldown. */
@@ -756,6 +792,12 @@ export type PlayerSnapshot = {
   /** Unit types this player cannot train because their server-side
    *  RequiresBuildings list is unsatisfied. Absent/empty = no locks. */
   lockedUnitTypes?: string[]
+  /** Effective training costs for unit types whose cost differs from the
+   *  static catalog because of this player's advancements (e.g. the worker
+   *  goldCost reduction). Only differing types are sent; absent/empty = use
+   *  catalog costs. The client overlays these on the build-menu price so it
+   *  matches what the server charges. */
+  unitCostOverrides?: UnitCostOverride[]
   /** Commander abilities slotted in the bottom action bar. Always present
    *  for the local player; absent / empty for older servers. */
   commanderAbilities?: CommanderAbilitySnapshot[]
@@ -767,6 +809,16 @@ export type PlayerSnapshot = {
    *  regardless of who is viewing. Older servers omit this; consumers
    *  should default-coalesce. */
   metrics?: MatchMetricsSnapshot
+}
+
+/** A single unit type's effective training cost when it differs from the
+ *  static catalog because of advancements. resourceCost and meatCost are the
+ *  full effective values (not deltas), so the client replaces the catalog cost
+ *  outright for that unit type. */
+export type UnitCostOverride = {
+  unitType: string
+  resourceCost: Record<string, number>
+  meatCost: number
 }
 
 export type PurchaseItemCommand = {

@@ -319,36 +319,70 @@
         ],
         "upgrades": [
           {
-            "armorPerLevel": 1,
-            "attackSpeedPerLevel": 0.05,
             "canAfford": false,
             "canStart": false,
-            "cap": 3,
-            "damagePerLevel": 2,
-            "displayName": "Soldier",
-            "hasBlacksmith": false,
-            "hpPerLevel": 25,
-            "level": 0,
-            "moveSpeedPerLevel": 3,
-            "nextCostGold": 150,
-            "nextCostWood": 150,
-            "track": "soldier"
-          },
-          {
-            "armorPerLevel": 0,
-            "attackSpeedPerLevel": 0.1,
-            "canAfford": false,
-            "canStart": false,
-            "cap": 3,
-            "damagePerLevel": 2,
+            "cap": 9,
+            "capability": "blacksmith-upgrade",
             "displayName": "Archer",
             "hasBlacksmith": false,
-            "hpPerLevel": 8,
             "level": 0,
-            "moveSpeedPerLevel": 5,
             "nextCostGold": 175,
             "nextCostWood": 175,
+            "nextStats": [
+              {
+                "amount": 0,
+                "stat": "maxHp"
+              },
+              {
+                "amount": 0,
+                "stat": "damage"
+              },
+              {
+                "amount": 0,
+                "stat": "attackSpeed"
+              },
+              {
+                "amount": 0,
+                "stat": "moveSpeed"
+              }
+            ],
+            "purchasableCap": 3,
             "track": "archer"
+          },
+          {
+            "canAfford": false,
+            "canStart": false,
+            "cap": 9,
+            "capability": "blacksmith-upgrade",
+            "displayName": "Soldier",
+            "hasBlacksmith": false,
+            "level": 0,
+            "nextCostGold": 150,
+            "nextCostWood": 150,
+            "nextStats": [
+              {
+                "amount": 0,
+                "stat": "maxHp"
+              },
+              {
+                "amount": 0,
+                "stat": "damage"
+              },
+              {
+                "amount": 0,
+                "stat": "armor"
+              },
+              {
+                "amount": 0,
+                "stat": "attackSpeed"
+              },
+              {
+                "amount": 0,
+                "stat": "moveSpeed"
+              }
+            ],
+            "purchasableCap": 3,
+            "track": "soldier"
           }
         ],
         "vault": []

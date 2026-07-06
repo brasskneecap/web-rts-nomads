@@ -18,8 +18,10 @@
     "rare_weapons": {
       "kind": "item_subtable",
       "entries": [
-        { "item": "scimitar",    "min": 1, "max": 15 },
-        { "item": "flame_sword", "min": 16, "max": 20 }
+        { "item": "scimitar",    "min": 1, "max": 14 },
+        { "item": "fire_sword", "min": 15, "max": 16 },
+        { "item": "frost_sword", "min": 17, "max": 18 },
+        { "item": "lightning_sword", "min": 19, "max": 20 }
       ]
     },
     "merchant_weapons": {
@@ -71,8 +73,8 @@
   "tables": {
     "raider_loot": [
       { "entry": "small_resource_bundle", "min": 1,  "max": 50 },
-      { "entry": "basic_weapons",         "min": 51, "max": 80 },
-      { "entry": "basic_accessories",     "min": 81, "max": 100 }
+      { "entry": "basic_weapons",         "min": 61, "max": 90 },
+      { "entry": "basic_accessories",     "min": 91, "max": 100 }
     ],
     "wildborne_loot": [
       { "entry": "small_resource_bundle", "min": 1,  "max": 25 },

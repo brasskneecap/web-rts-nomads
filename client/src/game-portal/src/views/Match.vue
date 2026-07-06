@@ -180,6 +180,7 @@
         :has-artificer="ui.hasArtificer"
         @close="matchMenuOpen = false"
         @purchase="({ itemId, buildingId }) => sendPurchaseItem(buildingId, itemId)"
+        @purchase-recipe="({ recipeId, buildingId }) => sendPurchaseRecipe(buildingId, recipeId)"
         @reroll="(buildingId) => rerollShop(buildingId)"
         @craft="craftItem"
       />
@@ -270,6 +271,7 @@ const {
   deselectUnit,
   setMinimapPanelRect,
   sendPurchaseItem,
+  sendPurchaseRecipe,
   rerollShop,
   craftItem,
   purchaseUpgrade,

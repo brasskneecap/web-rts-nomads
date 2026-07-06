@@ -1,0 +1,116 @@
+{
+  "unitType": "soldier",
+  "capability": "blacksmith-upgrade",
+  "displayName": "Soldier",
+  "researchSeconds": 15,
+  "tiers": [
+    {
+      "level": 1,
+      "cost": { "gold": 150, "wood": 150 },
+      "requiresBuilding": "townhall",
+      "effects": [
+        { "kind": "unitStatAdd", "stat": "maxHp", "amount": 25 },
+        { "kind": "unitStatAdd", "stat": "damage", "amount": 2 },
+        { "kind": "unitStatAdd", "stat": "armor", "amount": 1 },
+        { "kind": "unitStatAdd", "stat": "attackSpeed", "amount": 0.05 },
+        { "kind": "unitStatAdd", "stat": "moveSpeed", "amount": 3 }
+      ]
+    },
+    {
+      "level": 2,
+      "cost": { "gold": 240, "wood": 240 },
+      "requiresBuilding": "townhall",
+      "effects": [
+        { "kind": "unitStatAdd", "stat": "maxHp", "amount": 25 },
+        { "kind": "unitStatAdd", "stat": "damage", "amount": 2 },
+        { "kind": "unitStatAdd", "stat": "armor", "amount": 1 },
+        { "kind": "unitStatAdd", "stat": "attackSpeed", "amount": 0.05 },
+        { "kind": "unitStatAdd", "stat": "moveSpeed", "amount": 3 }
+      ]
+    },
+    {
+      "level": 3,
+      "cost": { "gold": 384, "wood": 384 },
+      "requiresBuilding": "townhall",
+      "effects": [
+        { "kind": "unitStatAdd", "stat": "maxHp", "amount": 25 },
+        { "kind": "unitStatAdd", "stat": "damage", "amount": 2 },
+        { "kind": "unitStatAdd", "stat": "armor", "amount": 1 },
+        { "kind": "unitStatAdd", "stat": "attackSpeed", "amount": 0.05 },
+        { "kind": "unitStatAdd", "stat": "moveSpeed", "amount": 3 }
+      ]
+    },
+    {
+      "level": 4,
+      "cost": { "gold": 614, "wood": 614 },
+      "requiresBuilding": "keep",
+      "effects": [
+        { "kind": "unitStatAdd", "stat": "maxHp", "amount": 25 },
+        { "kind": "unitStatAdd", "stat": "damage", "amount": 2 },
+        { "kind": "unitStatAdd", "stat": "armor", "amount": 1 },
+        { "kind": "unitStatAdd", "stat": "attackSpeed", "amount": 0.05 },
+        { "kind": "unitStatAdd", "stat": "moveSpeed", "amount": 3 }
+      ]
+    },
+    {
+      "level": 5,
+      "cost": { "gold": 983, "wood": 983 },
+      "requiresBuilding": "keep",
+      "effects": [
+        { "kind": "unitStatAdd", "stat": "maxHp", "amount": 25 },
+        { "kind": "unitStatAdd", "stat": "damage", "amount": 2 },
+        { "kind": "unitStatAdd", "stat": "armor", "amount": 1 },
+        { "kind": "unitStatAdd", "stat": "attackSpeed", "amount": 0.05 },
+        { "kind": "unitStatAdd", "stat": "moveSpeed", "amount": 3 }
+      ]
+    },
+    {
+      "level": 6,
+      "cost": { "gold": 1573, "wood": 1573 },
+      "requiresBuilding": "keep",
+      "effects": [
+        { "kind": "unitStatAdd", "stat": "maxHp", "amount": 25 },
+        { "kind": "unitStatAdd", "stat": "damage", "amount": 2 },
+        { "kind": "unitStatAdd", "stat": "armor", "amount": 1 },
+        { "kind": "unitStatAdd", "stat": "attackSpeed", "amount": 0.05 },
+        { "kind": "unitStatAdd", "stat": "moveSpeed", "amount": 3 }
+      ]
+    },
+    {
+      "level": 7,
+      "cost": { "gold": 2517, "wood": 2517 },
+      "requiresBuilding": "castle",
+      "effects": [
+        { "kind": "unitStatAdd", "stat": "maxHp", "amount": 25 },
+        { "kind": "unitStatAdd", "stat": "damage", "amount": 2 },
+        { "kind": "unitStatAdd", "stat": "armor", "amount": 1 },
+        { "kind": "unitStatAdd", "stat": "attackSpeed", "amount": 0.05 },
+        { "kind": "unitStatAdd", "stat": "moveSpeed", "amount": 3 }
+      ]
+    },
+    {
+      "level": 8,
+      "cost": { "gold": 4027, "wood": 4027 },
+      "requiresBuilding": "castle",
+      "effects": [
+        { "kind": "unitStatAdd", "stat": "maxHp", "amount": 25 },
+        { "kind": "unitStatAdd", "stat": "damage", "amount": 2 },
+        { "kind": "unitStatAdd", "stat": "armor", "amount": 1 },
+        { "kind": "unitStatAdd", "stat": "attackSpeed", "amount": 0.05 },
+        { "kind": "unitStatAdd", "stat": "moveSpeed", "amount": 3 }
+      ]
+    },
+    {
+      "level": 9,
+      "cost": { "gold": 6442, "wood": 6442 },
+      "requiresBuilding": "castle",
+      "effects": [
+        { "kind": "unitStatAdd", "stat": "maxHp", "amount": 25 },
+        { "kind": "unitStatAdd", "stat": "damage", "amount": 2 },
+        { "kind": "unitStatAdd", "stat": "armor", "amount": 1 },
+        { "kind": "unitStatAdd", "stat": "attackSpeed", "amount": 0.05 },
+        { "kind": "unitStatAdd", "stat": "moveSpeed", "amount": 3 }
+      ]
+    }
+  ]
+}

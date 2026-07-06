@@ -50,7 +50,15 @@
             >
               <div class="shop-card__head">
                 <div class="shop-card__icon">
+                  <img
+                    v-if="shopArtUrl(group)"
+                    class="shop-card__icon-img"
+                    :src="shopArtUrl(group)!"
+                    :alt="group.buildingName"
+                    draggable="false"
+                  />
                   <ActionIcon
+                    v-else
                     class="shop-card__icon-img"
                     :action="{ id: group.buildingType, label: group.buildingName, iconDef: { kind: 'building', type: group.buildingType } }"
                   />
@@ -66,18 +74,18 @@
                     class="shop-slot"
                     :class="{
                       'shop-slot--filled': !!cell.entry,
-                      'shop-slot--sold-out': !!cell.entry && cell.entry.quantity <= 0,
+                      'shop-slot--sold-out': !!cell.entry && (cell.entry.quantity <= 0 || isRecipeKnown(cell.entry)),
                     }"
-                    :disabled="!cell.entry || cell.entry.quantity <= 0"
-                    :aria-label="cell.entry ? (cell.entry.quantity > 0 ? `Buy ${cell.entry.displayName} for ${cell.entry.costGold} gold` : `${cell.entry.displayName} (sold out)`) : undefined"
-                    @click="cell.entry && cell.entry.quantity > 0 ? onPurchase(cell.entry) : undefined"
+                    :disabled="slotDisabled(cell.entry)"
+                    :aria-label="cell.entry ? slotAriaLabel(cell.entry) : undefined"
+                    @click="cell.entry && !slotDisabled(cell.entry) ? onPurchase(cell.entry) : undefined"
                     @mouseenter="cell.entry ? onSlotEnter($event, cell.entry) : undefined"
                     @mouseleave="onSlotLeave"
                   >
                     <template v-if="cell.entry">
                       <ActionIcon
                         class="shop-slot__icon"
-                        :action="{ id: cell.entry.itemId, label: cell.entry.displayName, iconDef: { kind: 'item', type: cell.entry.itemId } }"
+                        :action="{ id: cell.entry.itemId, label: cell.entry.displayName, iconDef: { kind: 'item', type: slotIconType(cell.entry) } }"
                       />
                       <span v-if="cell.entry.quantity > 0" class="shop-slot__stock">{{ cell.entry.quantity }}</span>
                     </template>
@@ -199,8 +207,9 @@
         <div v-if="hoveredShopItem.description" class="shop-tooltip__desc">{{ hoveredShopItem.description }}</div>
         <div class="shop-tooltip__cost">{{ hoveredShopItem.costGold }}g</div>
         <!-- Remaining stock lives in the slot's corner badge (shop-slot__stock),
-             not here — the tooltip only calls out the sold-out state. -->
-        <div v-if="hoveredShopItem.quantity <= 0" class="shop-tooltip__out">Sold out</div>
+             not here — the tooltip only calls out the sold-out / known state. -->
+        <div v-if="isRecipeKnown(hoveredShopItem)" class="shop-tooltip__out">Recipe already known</div>
+        <div v-else-if="hoveredShopItem.quantity <= 0" class="shop-tooltip__out">Sold out</div>
       </div>
     </Teleport>
   </div>
@@ -209,6 +218,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import ActionIcon from '@/components/ActionIcon.vue'
+import { getNeutralShopStyleUrl, getRecipeShopStyleUrl } from '@/game/rendering/buildingSprites'
 import VaultPanel from '@/components/VaultPanel.vue'
 import UpgradeRow from '@/components/vault/UpgradeRow.vue'
 import UpgradeQueue from '@/components/vault/UpgradeQueue.vue'
@@ -299,17 +309,19 @@ interface ShopGroup {
   buildingId: string
   buildingType: string
   buildingName: string
+  /** Neutral-shop sprite style (metadata "shopStyle"); drives the merchant art. */
+  shopStyle?: string
   cells: ShopCell[]
   /** Whether this shop can be refreshed right now (neutral-shop with rerolls). */
   canReroll: boolean
 }
 
 const shopGroups = computed<ShopGroup[]>(() => {
-  const byBuilding = new Map<string, { type: string; name: string; items: ShopCatalogEntry[] }>()
+  const byBuilding = new Map<string, { type: string; name: string; style?: string; items: ShopCatalogEntry[] }>()
   for (const entry of props.shopCatalog) {
     let group = byBuilding.get(entry.purchaseBuildingId)
     if (!group) {
-      group = { type: entry.purchaseBuildingType, name: entry.purchaseBuildingName, items: [] }
+      group = { type: entry.purchaseBuildingType, name: entry.purchaseBuildingName, style: entry.purchaseBuildingStyle, items: [] }
       byBuilding.set(entry.purchaseBuildingId, group)
     }
     group.items.push(entry)
@@ -326,9 +338,19 @@ const shopGroups = computed<ShopGroup[]>(() => {
     }
     // Refresh only applies to neutral-shop buildings and needs reroll budget.
     const canReroll = g.type === 'neutral-shop' && props.shopRerollsRemaining > 0
-    return { buildingId, buildingType: g.type, buildingName: g.name, cells, canReroll }
+    return { buildingId, buildingType: g.type, buildingName: g.name, shopStyle: g.style, cells, canReroll }
   })
 })
+
+// Style-aware art for a shop card. Neutral-shop and recipe-shop cards render
+// their per-instance "shopStyle" sprite (falling back to the shop's default
+// sprite) so the card matches the in-world building; other shop types use the
+// ActionIcon building-icon path.
+function shopArtUrl(group: ShopGroup): string | null {
+  if (group.buildingType === 'neutral-shop') return getNeutralShopStyleUrl(group.shopStyle)
+  if (group.buildingType === 'recipe-shop') return getRecipeShopStyleUrl(group.shopStyle)
+  return null
+}
 
 // A blacksmith (the upgrade-providing building) exists for the local player.
 // hasBlacksmith is per-track but reflects the player-level "a blacksmith
@@ -361,6 +383,7 @@ const shopTooltipStyle = computed(() => {
 const emit = defineEmits<{
   close: []
   purchase: [payload: { itemId: string; buildingId: string }]
+  purchaseRecipe: [payload: { recipeId: string; buildingId: string }]
   reroll: [buildingId: string]
   craft: [recipeId: string]
 }>()
@@ -376,8 +399,36 @@ function setActiveTab(id: string) {
   activeTabId.value = id
 }
 
+// A recipe the local player already knows: greyed-out, non-purchasable.
+function isRecipeKnown(entry: ShopCatalogEntry): boolean {
+  return entry.entryType === 'recipe' && entry.recipeKnown === true
+}
+
+// A slot is un-buyable when empty, sold out, or (for recipes) already known.
+function slotDisabled(entry: ShopCatalogEntry | null): boolean {
+  return !entry || entry.quantity <= 0 || isRecipeKnown(entry)
+}
+
+// Recipe entries render the rarity recipe-scroll icon (iconKey); item entries
+// render the item's own icon (keyed by itemId, matching the SelectionHud grid).
+function slotIconType(entry: ShopCatalogEntry): string {
+  return entry.entryType === 'recipe' ? entry.iconKey : entry.itemId
+}
+
+function slotAriaLabel(entry: ShopCatalogEntry): string {
+  if (isRecipeKnown(entry)) return `${entry.displayName} (already known)`
+  if (entry.quantity <= 0) return `${entry.displayName} (sold out)`
+  return `Buy ${entry.displayName} for ${entry.costGold} gold`
+}
+
 function onPurchase(entry: ShopCatalogEntry) {
-  if (!entry.purchaseBuildingId || entry.quantity <= 0) return
+  if (slotDisabled(entry)) return
+  if (entry.entryType === 'recipe') {
+    // Recipe Shops sell knowledge — dispatched via purchase_recipe, keyed by
+    // recipe id (stored in itemId for recipe entries).
+    emit('purchaseRecipe', { recipeId: entry.itemId, buildingId: entry.purchaseBuildingId })
+    return
+  }
   emit('purchase', { itemId: entry.itemId, buildingId: entry.purchaseBuildingId })
 }
 </script>

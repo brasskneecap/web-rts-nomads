@@ -10,7 +10,7 @@
           :style="{ width: `${fraction * 100}%`, background: rankColor }"
         />
       </div>
-      <span class="xp__label">XP: {{ xpInto ?? 0 }} / {{ xpToNext }}</span>
+      <span class="xp__label">XP: {{ xpInto ?? 0 }} / {{ bandTotal }}</span>
     </template>
     <template v-else>
       <span class="xp__label">XP: —</span>
@@ -31,9 +31,14 @@ const props = withDefaults(defineProps<{
   rankColor: '#fbbf24',
 })
 
+// xpToNext is the XP REMAINING to the next rank, so the full rank band is
+// (into + remaining). Dividing by xpToNext alone made the bar hit 100% at the
+// band midpoint (into == remaining). Mirrors GameState.ts getUnitXpLabel.
+const bandTotal = computed(() => (props.xpInto ?? 0) + (props.xpToNext ?? 0))
+
 const fraction = computed(() => {
   const into = props.xpInto ?? 0
-  const total = props.xpToNext ?? 0
+  const total = bandTotal.value
   if (total <= 0) return 0
   return Math.max(0, Math.min(1, into / total))
 })

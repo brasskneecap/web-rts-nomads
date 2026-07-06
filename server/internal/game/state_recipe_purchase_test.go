@@ -100,6 +100,25 @@ func TestPurchaseRecipe_RejectsWhenSoldOut(t *testing.T) {
 	}
 }
 
+func TestPurchaseRecipe_RejectsWhenAlreadyKnown(t *testing.T) {
+	s, p := setupRecipePurchase(t)
+	// Pre-unlock the recipe so the buyer already knows it. Buying again must be
+	// a no-op: no gold spent and the shop stock left untouched (the client greys
+	// these out, but the server must not charge for a redundant purchase).
+	s.mu.Lock()
+	s.unlockRecipeForPlayerLocked(p, "fire_sword")
+	s.mu.Unlock()
+	s.PurchaseRecipe("p1", "rs-1", "fire_sword")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p.Resources["gold"] != 1000 {
+		t.Fatalf("gold should be unchanged for an already-known recipe, got %d", p.Resources["gold"])
+	}
+	if s.buildingsByID["rs-1"].RecipeInventory[0].Quantity != 1 {
+		t.Fatalf("shop stock should be unchanged, got %d", s.buildingsByID["rs-1"].RecipeInventory[0].Quantity)
+	}
+}
+
 func TestPurchaseRecipe_RejectsUndiscovered(t *testing.T) {
 	s, _ := setupRecipePurchase(t)
 	s.mu.Lock()

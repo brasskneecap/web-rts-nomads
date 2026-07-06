@@ -1383,6 +1383,40 @@
                 </div>
               </template>
             </template>
+            <!-- Neutral Shop (merchant): art style + which item list the shop stocks from. -->
+            <template v-if="selectedEditBuilding.buildingType === 'neutral-shop'">
+              <div class="edit-field">
+                <label>Shop Style</label>
+                <select
+                  :value="(selectedEditBuilding.metadata?.['shopStyle'] as string | undefined) ?? ''"
+                  @change="updateEditMeta('shopStyle', ($event.target as HTMLSelectElement).value || undefined)"
+                >
+                  <option value="">Default</option>
+                  <option v-for="style in neutralShopStyleOptions" :key="style" :value="style">{{ style }}</option>
+                </select>
+                <span class="edit-field__hint">Sprite art from assets/buildings/neutral-shops. Default uses neutral-shops/sprite.png.</span>
+              </div>
+              <div class="edit-field">
+                <label>Item List</label>
+                <select
+                  :value="(selectedEditBuilding.metadata?.['itemList'] as string | undefined) ?? ''"
+                  @change="updateEditMeta('itemList', ($event.target as HTMLSelectElement).value || undefined)"
+                >
+                  <option value="">Default (merchant loot)</option>
+                  <option v-for="list in itemListOptions" :key="list.id" :value="list.id">{{ list.name || list.id }}</option>
+                </select>
+                <span class="edit-field__hint">A pool the shop samples a few items from. Default rolls the merchant loot table.</span>
+              </div>
+              <div class="edit-field">
+                <label>Reroll Every (waves)</label>
+                <input
+                  type="number" min="0"
+                  :value="(selectedEditBuilding.metadata?.['rerollWaves'] as number | undefined) ?? ''"
+                  @input="updateEditMeta('rerollWaves', ($event.target as HTMLInputElement).value === '' ? undefined : Math.max(0, Math.floor(+($event.target as HTMLInputElement).value || 0)))"
+                />
+                <span class="edit-field__hint">Auto-refresh cadence for this shop's stock. Blank = tuning default; 0 disables.</span>
+              </div>
+            </template>
             <!-- Recipe Shop: art style + which recipe list the shop stocks from. -->
             <template v-if="selectedEditBuilding.buildingType === 'recipe-shop'">
               <div class="edit-field">
@@ -1598,7 +1632,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchRecipeLists, fetchUnitDefs, saveMapCatalogFile, LevelConflictError, type RecipeListSummary } from '@/game/maps/catalog'
+import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchRecipeLists, fetchItemLists, fetchUnitDefs, saveMapCatalogFile, LevelConflictError, type RecipeListSummary, type ItemListSummary } from '@/game/maps/catalog'
 import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
 import type {
@@ -1654,7 +1688,7 @@ import {
   isTerrainTilesetReady,
   onSheetReady,
 } from '@/game/rendering/terrainTileset'
-import { getBuildingSprite, getRecipeShopStyleSprite, listRecipeShopStyles } from '@/game/rendering/buildingSprites'
+import { getBuildingSprite, getRecipeShopStyleSprite, listRecipeShopStyles, getNeutralShopStyleSprite, listNeutralShopStyles } from '@/game/rendering/buildingSprites'
 import { getObstacleSprite } from '@/game/rendering/obstacleSprites'
 import { getUnitSpriteSet } from '@/game/rendering/unitSprites'
 import { initObstacleDefs, OBSTACLE_DEF_MAP } from '@/game/maps/obstacleDefs'
@@ -1753,6 +1787,10 @@ const neutralGroupTiers = ref<NeutralGroupTierSummary[] | null>(null)
 // Recipe lists (from catalog/recipes/lists) for the recipe-shop Recipe List
 // dropdown. Empty until fetchRecipeLists resolves.
 const recipeLists = ref<RecipeListSummary[]>([])
+
+// Item lists (from catalog/items/lists) for the neutral-shop Item List
+// dropdown. Empty until fetchItemLists resolves.
+const itemLists = ref<ItemListSummary[]>([])
 
 const groupsForCurrentTier = computed<NeutralGroupSummary[]>(() => {
   const tiers = neutralGroupTiers.value
@@ -2026,6 +2064,10 @@ watch(selectedEditBuildingId, () => { placingGuardSpawn.value = false })
 const shopStyleOptions = computed<string[]>(() => listRecipeShopStyles())
 const recipeListOptions = computed<RecipeListSummary[]>(() =>
   [...recipeLists.value].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)),
+)
+const neutralShopStyleOptions = computed<string[]>(() => listNeutralShopStyles())
+const itemListOptions = computed<ItemListSummary[]>(() =>
+  [...itemLists.value].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)),
 )
 
 const selectedEditPlacedUnit = computed(() =>
@@ -4227,16 +4269,19 @@ function drawMapBackground(ctx: CanvasRenderingContext2D) {
     const height = building.height * cellSize
     const def = BUILDING_DEF_MAP.get(building.buildingType)
     const renderDef = getBuildingFallbackRender(building.buildingType)
-    // Recipe shops use a per-instance "shopStyle" art override when set; the
-    // matching per-style render config overrides the sprite bounds so the
-    // editor preview frames the art the same way the in-game renderer does.
+    // Recipe shops and neutral-shop merchants use a per-instance "shopStyle" art
+    // override when set; the matching per-style render config overrides the
+    // sprite bounds so the editor preview frames the art the same way the
+    // in-game renderer does.
     const shopStyle = building.metadata?.['shopStyle'] as string | undefined
     const styleRender = getBuildingStyleRender(building.buildingType, shopStyle)
     const spriteRenderDef = styleRender?.spriteRender ?? def?.spriteRender
     const styleSprite =
       building.buildingType === 'recipe-shop'
         ? getRecipeShopStyleSprite(shopStyle)
-        : null
+        : building.buildingType === 'neutral-shop'
+          ? getNeutralShopStyleSprite(shopStyle)
+          : null
     const sprite = styleSprite ?? getBuildingSprite(building.buildingType)
     // Sprite box may extend beyond the grid footprint (e.g. townhall's 3x3
     // sprite on a 3x2 footprint). Falls back to the footprint when no
@@ -4828,6 +4873,7 @@ onMounted(() => {
   void fetchObstacleDefs().then(initObstacleDefs).catch(() => {})
   void fetchNeutralGroups().then((tiers) => { neutralGroupTiers.value = tiers }).catch(() => {})
   void fetchRecipeLists().then((lists) => { recipeLists.value = lists }).catch(() => {})
+  void fetchItemLists().then((lists) => { itemLists.value = lists }).catch(() => {})
   void fetchUnitDefs()
     .then(({ units, paths, pathsByUnit }) => {
       initPathBounds(paths)

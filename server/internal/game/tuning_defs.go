@@ -17,6 +17,21 @@ type GameplayTuning struct {
 	WaveUpgrade    WaveUpgradeTuning                    `json:"waveUpgrade"`
 	UnitOverrides  map[string]UnitDominionPointOverride `json:"unitOverrides"`
 	Experience     ExperienceTuning                     `json:"experience"`
+	NeutralShop    NeutralShopTuning                    `json:"neutralShop"`
+}
+
+// NeutralShopTuning controls neutral merchant stocking: how many items a shop
+// shows at once and how often it auto-refreshes its stock.
+type NeutralShopTuning struct {
+	// BaseItemCount is the number of items a neutral shop displays before any
+	// per-player ShopItemCountBonus upgrade. Clamped to >= 1 at use
+	// (neutralShopBaseItemCount); a missing/zero value defaults to 2.
+	BaseItemCount int `json:"baseItemCount"`
+	// RerollEveryWaves is the default wave cadence for auto-refreshing a neutral
+	// shop's stock (re-sampling its item list / loot table). 0 disables
+	// auto-reroll. A neutral-shop instance overrides this via map metadata
+	// "rerollWaves".
+	RerollEveryWaves int `json:"rerollEveryWaves"`
 }
 
 // DominionPointsTuning holds all dominion-point earning rates.
@@ -136,6 +151,12 @@ func init() {
 	}
 	if t.Experience.SplitEligibilityRadius <= 0 {
 		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: experience.splitEligibilityRadius must be > 0, got %v", t.Experience.SplitEligibilityRadius))
+	}
+	if t.NeutralShop.BaseItemCount < 0 {
+		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: neutralShop.baseItemCount must be >= 0, got %d", t.NeutralShop.BaseItemCount))
+	}
+	if t.NeutralShop.RerollEveryWaves < 0 {
+		panic(fmt.Sprintf("catalog/tuning/gameplay_tuning.json: neutralShop.rerollEveryWaves must be >= 0, got %d", t.NeutralShop.RerollEveryWaves))
 	}
 	gameplayTuningSingleton = t
 }

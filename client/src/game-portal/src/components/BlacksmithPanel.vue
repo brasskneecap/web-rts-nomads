@@ -48,13 +48,14 @@
             </div>
           </div>
 
-          <!-- Stat preview strip for the next level purchase -->
+          <!-- Stat preview strip for the next tier purchase -->
           <div class="uc-row__preview">
-            <span class="uc-stat uc-stat--hp">+{{ upgrade.hpPerLevel }} HP</span>
-            <span class="uc-stat uc-stat--dmg">+{{ upgrade.damagePerLevel }} DMG</span>
-            <span v-if="upgrade.armorPerLevel !== 0" class="uc-stat uc-stat--arm">+{{ upgrade.armorPerLevel }} ARM</span>
-            <span class="uc-stat uc-stat--as">+{{ upgrade.attackSpeedPerLevel.toFixed(2) }} AS</span>
-            <span class="uc-stat uc-stat--ms">+{{ upgrade.moveSpeedPerLevel }} MS</span>
+            <span v-for="stat in nextStats(upgrade)" :key="stat" class="uc-stat">{{ stat }}</span>
+          </div>
+
+          <!-- Requirement note when the next tier is gated behind a building. -->
+          <div v-if="requirementLocked(upgrade)" class="uc-row__locked">
+            Requires a {{ upgrade.nextRequirement }}
           </div>
 
           <!-- Research progress + cancel while the head upgrade is in flight.
@@ -102,6 +103,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { PlayerUpgradeSnapshot } from '@/game/network/protocol'
+import { formatUpgradeStatDelta } from '@/game/network/protocol'
 import { useDraggablePanel } from '@/composables/useDraggablePanel'
 import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 
@@ -140,9 +142,25 @@ function projectedLevel(upgrade: PlayerUpgradeSnapshot): number {
   return upgrade.level + queuedCount(upgrade)
 }
 
-// Whether there is another level left to buy or stack onto the queue.
+// Whether there is another level left to buy or stack onto the queue (cap is
+// the absolute max across all tiers).
 function canQueueMore(upgrade: PlayerUpgradeSnapshot): boolean {
   return projectedLevel(upgrade) < upgrade.cap
+}
+
+// Stat bonuses granted by the next purchasable tier (formatted for display).
+function nextStats(upgrade: PlayerUpgradeSnapshot): string[] {
+  return (upgrade.nextStats ?? []).map(formatUpgradeStatDelta)
+}
+
+// True when the next tier is blocked by an unmet building prerequisite
+// (e.g. needs a Keep/Castle) rather than resources.
+function requirementLocked(upgrade: PlayerUpgradeSnapshot): boolean {
+  return (
+    canQueueMore(upgrade) &&
+    projectedLevel(upgrade) >= upgrade.purchasableCap &&
+    !!upgrade.nextRequirement
+  )
 }
 
 // Button label: "Upgrade <name>" for the first level, "Queue Lv N" once one is
@@ -176,8 +194,8 @@ function isUpgradeDisabled(upgrade: PlayerUpgradeSnapshot): boolean {
 function upgradeDisabledReason(upgrade: PlayerUpgradeSnapshot): string {
   if (upgrade.canStart) return ''
   if (!upgrade.hasBlacksmith) return 'Build a Blacksmith first'
-  if (upgrade.cap === 0) return 'Town Hall required'
-  if (projectedLevel(upgrade) >= upgrade.cap) return 'Requires a higher tier Town Hall'
+  if (upgrade.purchasableCap === 0) return 'Town Hall required'
+  if (requirementLocked(upgrade)) return `Requires a ${upgrade.nextRequirement}`
   if (!upgrade.canAfford) return 'Not enough gold or wood'
   return ''
 }
@@ -358,6 +376,14 @@ function upgradeDisabledReason(upgrade: PlayerUpgradeSnapshot): string {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 8px;
+  margin: 2px 0;
+}
+
+.uc-row__locked {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #d98b5f;
   margin: 2px 0;
 }
 

@@ -552,7 +552,12 @@
         "visible": true,
         "capabilities": [
           "item-purchase"
-        ]
+        ],
+        "metadata": {
+          "itemList": "wandering_merchant",
+          "rerollWaves": 2,
+          "shopStyle": "wildeborne-market"
+        }
       },
       {
         "x": 12,
@@ -1308,7 +1313,7 @@
     "waveConfig": {
       "totalWaves": 8,
       "initialPrepDuration": 180,
-      "prepDuration": 30,
+      "prepDuration": 60,
       "waveDuration": 120
     },
     "campaign": {
@@ -1384,7 +1389,7 @@
           "rewardDominionPoints": 50,
           "rewardConquestBadges": 1,
           "config": {
-            "wavesToSurvive": 6
+            "wavesToSurvive": 5
           }
         }
       ]

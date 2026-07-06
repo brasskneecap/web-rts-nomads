@@ -685,14 +685,24 @@ type Player struct {
 	ShopRerollsRemaining int
 
 	// ShopItemCountBonus adds to the number of distinct items a neutral
-	// merchant rolls into its inventory when this player rerolls it. The
-	// effective roll target is defaultShopLootTargetCount + bonus (see
+	// merchant rolls into this player's independent view of the shop. The
+	// effective count is neutralShopBaseItemCount() + bonus (see
 	// shopItemTargetCountForPlayerLocked). Initialised to 0 at match-join;
 	// future dominion-point profile upgrades (e.g. "Merchant Expanded
 	// Selection: +1 item per rank") bump this via the same
 	// applyProfileUpgradesToPlayerLocked registry pattern used by
 	// PhysicalDamageMultiplier and ExtraStartingUnits.
 	ShopItemCountBonus int
+
+	// NeutralShopInventories is this player's INDEPENDENT view of every neutral
+	// shop, keyed by building ID. Neutral shops are per-player: each player
+	// samples their own stock (sized to their ShopItemCountBonus) and decrements
+	// their own quantities on purchase, so one player's buying / rerolling never
+	// affects another's. Populated at join by populatePlayerNeutralShopViewsLocked
+	// and refreshed by player-initiated and wave-based rerolls. Owned shops
+	// (marketplace) and fixed-inventory player shops are NOT stored here — they
+	// stay on the shared BuildingTile.ShopInventory.
+	NeutralShopInventories map[string][]protocol.ShopStockEntry
 
 	// CommanderAbilityCooldowns tracks wall-clock seconds remaining on each
 	// commander ability (see commander_abilities.go). Keyed by ability id;
@@ -1910,6 +1920,23 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 	obstaclesRemoved, obstacleMetadata := s.snapshotObstacleDeltasLocked()
 
 	// Filter buildings: own→always, clear→as-is, known→ghost, else drop.
+	// Viewer's independent per-player neutral-shop views (buildingID → stock).
+	// A neutral shop's snapshot ShopInventory is replaced with the viewer's own
+	// view so each player sees (and spends from) their own stock; the shared
+	// BuildingTile.ShopInventory remains only as a fallback when a view is absent.
+	var viewerShopViews map[string][]protocol.ShopStockEntry
+	if vp, ok := s.Players[viewerID]; ok {
+		viewerShopViews = vp.NeutralShopInventories
+	}
+	applyNeutralShopView := func(tile *protocol.BuildingTile) {
+		if tile.OwnerID == nil || *tile.OwnerID != neutralPlayerID {
+			return
+		}
+		if view, has := viewerShopViews[tile.ID]; has {
+			tile.ShopInventory = view
+		}
+	}
+
 	buildings := make([]protocol.BuildingTile, 0, len(s.MapConfig.Buildings))
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
@@ -1921,6 +1948,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 			if isShop {
 				tile.ShopLocked = s.shopLockedLocked(b)
 				tile.ShopDiscovered = true
+				tile.ShopDisplayName = shopDisplayNameFor(b)
 			}
 			buildings = append(buildings, tile)
 			continue
@@ -1930,6 +1958,8 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 			if isShop {
 				tile.ShopLocked = s.shopLockedLocked(b)
 				tile.ShopDiscovered = knownToViewer || true // currently visible ⇒ discovered
+				tile.ShopDisplayName = shopDisplayNameFor(b)
+				applyNeutralShopView(&tile)
 			}
 			buildings = append(buildings, tile)
 			continue
@@ -1941,6 +1971,8 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 			if isShop {
 				ghost.ShopLocked = s.shopLockedLocked(b)
 				ghost.ShopDiscovered = true
+				ghost.ShopDisplayName = shopDisplayNameFor(b)
+				applyNeutralShopView(&ghost)
 			}
 			buildings = append(buildings, ghost)
 		}
@@ -2625,6 +2657,7 @@ func (s *GameState) Update(dt float64) {
 	profileSection("buildingCombat", func() { s.tickBuildingCombatLocked(dt) })
 	profileSection("wave", func() { s.tickWaveLocked(dt) })
 	profileSection("neutralCamps", func() { s.tickNeutralCampsLocked() })
+	profileSection("shopReroll", func() { s.tickShopRerollLocked() })
 	profileSection("guardianAuraCache", func() { s.rebuildGuardianAuraCacheLocked() })
 	profileSection("combatAI", func() { s.tickCombatAILocked(dt, blocked) })
 	profileSection("unitCombat", func() { s.tickUnitCombatLocked(dt, blocked) })
@@ -3440,6 +3473,7 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		MagicDamageMultiplier:         1.0,
 		ExtraStartingUnits:            map[string]int{},
 		ShopRerollsRemaining:          defaultShopRerollsPerPlayer,
+		NeutralShopInventories:        map[string][]protocol.ShopStockEntry{},
 		AcquiredAdvancements:          advancementIDs,
 		UnlockedRecipeIDs:             recipeIDs,
 		Metrics:                       NewMatchMetrics(),
@@ -3452,6 +3486,10 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 	// before the first unit spawns below.
 	applyAdvancementsToEffectiveDefsLocked(player)
 	s.Players[playerID] = player
+	// Sample this player's independent view of every neutral shop, at their
+	// effective item count (now that ShopItemCountBonus is applied). Runs after
+	// the player is in s.Players so the stocking helper can resolve it.
+	s.populatePlayerNeutralShopViewsLocked(playerID)
 	color := player.Color
 
 	townhall, _ := s.claimPlayerStartLocked(playerID)

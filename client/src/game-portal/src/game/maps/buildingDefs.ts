@@ -216,6 +216,29 @@ export function townHallTierName(tier: number): string {
   return chain[tier - 1]?.label ?? `Tier ${tier}`
 }
 
+// Resolves the sprite/asset folder type for a placed building at a given 1-based
+// tier. A placed building keeps its base (root) buildingType and carries a
+// numeric `tier` in metadata; each higher tier renders with the art of the next
+// link in its upgrade chain (townhall → keep → castle). Tier <= 1, an unknown
+// root, or a chain shorter than the tier all fall back to rootType, so
+// non-tiered buildings and unconfigured tiers keep their own art. Cached per
+// (rootType, tier) since the catalog is static after load.
+const tierSpriteTypeCache = new Map<string, string>()
+
+export function spriteTypeForTier(rootType: string, tier: number): string {
+  if (tier <= 1) return rootType
+  const key = `${rootType}:${tier}`
+  const cached = tierSpriteTypeCache.get(key)
+  if (cached !== undefined) return cached
+  const chain = getUpgradeChain(rootType)
+  // Don't cache before the catalog has loaded (empty chain) — a later call once
+  // BUILDING_DEFS is populated must be able to resolve the real tier art.
+  if (chain.length === 0) return rootType
+  const resolved = chain[tier - 1]?.type ?? rootType
+  tierSpriteTypeCache.set(key, resolved)
+  return resolved
+}
+
 // Footprint-derived shadow defaults (cell units), used when a building has no
 // `shadow` block or leaves individual fields at zero. Mirrors the comment on
 // the Go-side BuildingShadowDef.

@@ -30,5 +30,9 @@
     "mode": "split",
     "splitDefaultXP": 10,
     "splitEligibilityRadius": 700
+  },
+  "neutralShop": {
+    "baseItemCount": 2,
+    "rerollEveryWaves": 2
   }
 }

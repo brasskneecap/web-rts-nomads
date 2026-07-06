@@ -51,6 +51,11 @@ type WaveManager struct {
 	// the end of each wave." Camps persist through active waves on all maps (see
 	// tickNeutralCampsLocked).
 	NeutralResetWave int
+	// ShopRerollWave is the wave number whose end-of-wave neutral-shop reroll
+	// check has already fired. tickShopRerollLocked re-samples each neutral shop
+	// due for a refresh once when a wave leaves "active" and this still lags
+	// CurrentWave (edge-detected exactly like NeutralResetWave).
+	ShopRerollWave int
 	// SpawnedThisWave counts wave-gated enemy units (enemy faction, not
 	// ignoreWaveClear) spawned since the current wave activated. Reset on
 	// every wave activation (prep→active and the continuous upgrade→active
