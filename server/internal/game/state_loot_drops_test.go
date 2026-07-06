@@ -142,19 +142,23 @@ func TestLootDrop_WipeTriggersDrop(t *testing.T) {
 	}
 }
 
-// TestLootDrop_WaveStartDoesNotDrop: state flip to WaveHidden before
-// the per-unit removals means the wipe hook does NOT fire on wave-start
-// despawn. This is the core determinism invariant for the trigger.
-func TestLootDrop_WaveStartDoesNotDrop(t *testing.T) {
+// TestLootDrop_WaveResetDoesNotDrop: when a wave ends and resets a living camp
+// (despawn + respawn), the state flip to WaveHidden before the per-unit
+// removals means the wipe hook does NOT fire — only a player kill drops loot.
+// This is the core determinism invariant for the trigger.
+func TestLootDrop_WaveResetDoesNotDrop(t *testing.T) {
 	s := newTestStateForLootDrops(t, 1)
 	enableWavesForTest(t, s)
-	s.tickNeutralCampsLocked() // initial spawn
+	s.tickNeutralCampsLocked() // initial spawn (wave 0)
 
-	s.WaveManager.State = "active"
-	s.tickNeutralCampsLocked() // triggers despawnNeutralCampLocked
+	// Wave 1 ends → the reset wipes the living camp (despawnNeutralCampLocked
+	// then respawn).
+	s.WaveManager.CurrentWave = 1
+	s.WaveManager.State = "upgrade"
+	s.tickNeutralCampsLocked()
 
 	if got := len(s.LootDrops); got != 0 {
-		t.Errorf("LootDrops after wave-start despawn: got %d, want 0", got)
+		t.Errorf("LootDrops after wave-end reset: got %d, want 0", got)
 	}
 }
 

@@ -19,7 +19,7 @@
       "name": "Quick Feet",
       "description": "Workers move 20 faster.",
       "kind": "minor",
-      "cost": 50,
+      "cost": 100,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -33,7 +33,7 @@
       "name": "Thrifty Hire",
       "description": "Workers cost 15 less gold to train.",
       "kind": "minor",
-      "cost": 50,
+      "cost": 150,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -47,7 +47,7 @@
       "name": "Gold Rush",
       "description": "Workers gather 5 more gold per trip.",
       "kind": "major",
-      "cost": 150,
+      "cost": 200,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -61,7 +61,7 @@
       "name": "Quick Feet II",
       "description": "Workers move an additional 20 faster.",
       "kind": "minor",
-      "cost": 100,
+      "cost": 250,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -75,7 +75,7 @@
       "name": "Thrifty Hire II",
       "description": "Workers cost an additional 15 less gold to train.",
       "kind": "minor",
-      "cost": 100,
+      "cost": 300,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -89,7 +89,7 @@
       "name": "Extra Hand II",
       "description": "Start each match with another additional worker.",
       "kind": "minor",
-      "cost": 100,
+      "cost": 350,
       "effects": [
         {
           "kind": "unitExtraStartingUnit",
@@ -102,7 +102,7 @@
       "name": "Seasoned Lumberjacks",
       "description": "Workers gather 4 more wood per trip.",
       "kind": "major",
-      "cost": 150,
+      "cost": 400,
       "effects": [
         {
           "kind": "unitStatAdd",

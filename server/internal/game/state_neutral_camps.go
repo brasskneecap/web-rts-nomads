@@ -14,7 +14,7 @@ type NeutralCampState int
 
 const (
 	NeutralCampActive     NeutralCampState = iota // group is alive at the camp; passive guard mode
-	NeutralCampWaveHidden                         // wave is active; no neutrals exist; respawn on next wave clear
+	NeutralCampWaveHidden                         // camp not spawned (pre-first-spawn or wiped by a wave reset); respawns on the next new wave
 )
 
 // NeutralCamp is the runtime state for one map-authored NeutralSpawn.
@@ -99,70 +99,51 @@ func (s *GameState) initNeutralCampsLocked() {
 	s.NeutralCamps = camps
 }
 
-// tickNeutralCampsLocked is edge-triggered off WaveManager.State. Does no
-// per-tick work in the steady state. Lifecycle transitions:
+// tickNeutralCampsLocked drives the neutral-camp lifecycle. Camps spawn as soon
+// as they exist (during the initial prep, before wave 1) and persist on the
+// field through every wave — they are NOT despawned when a wave is active. At
+// the END of each wave (the moment the wave leaves the "active" state) every
+// still-living camp is reset: wiped via despawnNeutralCampLocked (which flips
+// state to WaveHidden first, so the reset drops NO loot) and respawned with a
+// fresh full roster at the current tier, so the interlude before the next wave
+// presents full camps. A camp the players fully cleared mid-wave stays cleared
+// until that end-of-wave reset.
 //
-//   - Game start / wave clear (camp WaveHidden, wave NOT active) →
-//     recompute CurrentTier, then spawnGroupForCampLocked.
-//   - Wave starts (camp Active, wave active) → despawnNeutralCampLocked.
-//   - Wave active + camp WaveHidden (steady mid-wave) → nothing.
-//   - Wave inactive + camp Active (steady between waves) → nothing.
+// Edge-detected via NeutralResetWave so the reset fires exactly once per wave.
+// The reset lands on the same tick tickWaveLocked flips the state out of
+// "active" (the neutral tick runs after tickWaveLocked, and Update's
+// upgrade-phase early-return reads the state from the top of the tick, before
+// that flip). This works for both discrete (active→upgrade→prep) and continuous
+// (active→upgrade→active) flows. The final-wave "complete" transition is
+// excluded — there is no next interlude to populate.
+//
+// This persist-and-reset behaviour applies to all maps (previously only
+// continuous-wave maps persisted camps at all; discrete maps despawned camps
+// for the duration of every active wave). On non-wave maps CurrentWave never
+// leaves 0, so camps simply spawn once and persist.
 //
 // Must be called under s.mu write lock.
 func (s *GameState) tickNeutralCampsLocked() {
 	if len(s.NeutralCamps) == 0 {
 		return
 	}
-
-	// Continuous-wave maps keep camps on the field through every wave and reset
-	// them (full roster respawn) at each new wave instead of despawning while a
-	// wave is active. Handled separately so the discrete lifecycle below is
-	// untouched.
-	if s.WaveManager.Continuous {
-		s.tickNeutralCampsContinuousLocked()
-		return
-	}
-
-	waveActive := s.WaveManager.Enabled && s.WaveManager.State == "active"
-
-	for i := range s.NeutralCamps {
-		camp := &s.NeutralCamps[i]
-		switch camp.State {
-		case NeutralCampWaveHidden:
-			if !waveActive {
-				camp.CurrentTier = computeNeutralCurrentTier(s.WaveManager.CurrentWave, camp.StartingTier, camp.TierUpEveryN)
-				s.spawnGroupForCampLocked(camp)
-			}
-		case NeutralCampActive:
-			if waveActive {
+	wm := &s.WaveManager
+	// A wave has ended when it is no longer active (but has begun, CurrentWave
+	// >= 1) and has not reached the terminal "complete" state.
+	waveEnded := wm.CurrentWave >= 1 && wm.State != "active" && wm.State != "complete"
+	if waveEnded && wm.NeutralResetWave < wm.CurrentWave {
+		wm.NeutralResetWave = wm.CurrentWave
+		for i := range s.NeutralCamps {
+			camp := &s.NeutralCamps[i]
+			if camp.State == NeutralCampActive {
 				s.despawnNeutralCampLocked(camp)
 			}
 		}
 	}
-}
-
-// tickNeutralCampsContinuousLocked is the continuous-mode neutral-camp
-// lifecycle. Camps spawn as soon as they exist (during the initial prep, before
-// wave 1) and persist through active waves — they are NOT despawned when a wave
-// is active. At the start of each new wave (CurrentWave advances past
-// NeutralResetWave) every still-living camp is reset: wiped via
-// despawnNeutralCampLocked (which flips state to WaveHidden first, so the reset
-// drops NO loot) and respawned with a fresh full roster at the new tier. A camp
-// the players fully cleared mid-wave stays cleared until the next wave reset.
-//
-// Must be called under s.mu write lock.
-func (s *GameState) tickNeutralCampsContinuousLocked() {
-	wm := &s.WaveManager
-	newWave := wm.CurrentWave > wm.NeutralResetWave
-	if newWave {
-		wm.NeutralResetWave = wm.CurrentWave
-	}
+	// Spawn any camp lacking a roster: the initial spawn (WaveHidden at game
+	// start) and the respawn following the end-of-wave reset above.
 	for i := range s.NeutralCamps {
 		camp := &s.NeutralCamps[i]
-		// New wave → wipe living camps so the spawn below brings a fresh roster.
-		if newWave && camp.State == NeutralCampActive {
-			s.despawnNeutralCampLocked(camp)
-		}
 		if camp.State == NeutralCampWaveHidden {
 			camp.CurrentTier = computeNeutralCurrentTier(wm.CurrentWave, camp.StartingTier, camp.TierUpEveryN)
 			s.spawnGroupForCampLocked(camp)

@@ -20,7 +20,7 @@
       "name": "Honed Arrowheads",
       "description": "Archers gain +5 base damage.",
       "kind": "minor",
-      "cost": 50,
+      "cost": 100,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -34,7 +34,7 @@
       "name": "Quick Nock",
       "description": "Archers attack 10% faster.",
       "kind": "minor",
-      "cost": 50,
+      "cost": 150,
       "effects": [
         {
           "kind": "unitStatMul",
@@ -48,7 +48,7 @@
       "name": "Keen Recruits",
       "description": "Archers spawn with 50 EXP.",
       "kind": "major",
-      "cost": 150,
+      "cost": 200,
       "effects": [
         {
           "kind": "unitSpawnExp",
@@ -61,7 +61,7 @@
       "name": "Seasoned Scout II",
       "description": "Archers gain an additional +25 maximum HP.",
       "kind": "minor",
-      "cost": 100,
+      "cost": 250,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -75,7 +75,7 @@
       "name": "Honed Arrowheads II",
       "description": "Archers gain an additional +5 base damage.",
       "kind": "minor",
-      "cost": 100,
+      "cost": 300,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -89,7 +89,7 @@
       "name": "Quick Nock II",
       "description": "Archers attack an additional 10% faster.",
       "kind": "minor",
-      "cost": 100,
+      "cost": 350,
       "effects": [
         {
           "kind": "unitStatMul",
@@ -103,7 +103,7 @@
       "name": "Master Huntsman",
       "description": "Every archer fires one additional arrow each attack (stacking with Split Shot for a third). Traps deal double damage and cover twice the radius.",
       "kind": "major",
-      "cost": 300,
+      "cost": 400,
       "effects": [
         {
           "kind": "unitBonusArrows",

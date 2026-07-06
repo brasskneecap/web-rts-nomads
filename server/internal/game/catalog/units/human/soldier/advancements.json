@@ -20,7 +20,7 @@
       "name": "Hardened Plate",
       "description": "Soldiers gain +25 base armor.",
       "kind": "minor",
-      "cost": 50,
+      "cost": 100,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -34,7 +34,7 @@
       "name": "Whetted Steel",
       "description": "Soldiers gain +5 base damage.",
       "kind": "minor",
-      "cost": 50,
+      "cost": 150,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -48,7 +48,7 @@
       "name": "Veteran Initiates",
       "description": "Soldiers spawn with 50 EXP.",
       "kind": "major",
-      "cost": 150,
+      "cost": 200,
       "effects": [
         {
           "kind": "unitSpawnExp",
@@ -61,7 +61,7 @@
       "name": "Hardened Veteran II",
       "description": "Soldiers gain an additional +50 maximum HP.",
       "kind": "minor",
-      "cost": 100,
+      "cost": 250,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -75,7 +75,7 @@
       "name": "Hardened Plate II",
       "description": "Soldiers gain an additional +25 base armor.",
       "kind": "minor",
-      "cost": 100,
+      "cost": 300,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -89,7 +89,7 @@
       "name": "Whetted Steel II",
       "description": "Soldiers gain an additional +5 base damage.",
       "kind": "minor",
-      "cost": 100,
+      "cost": 350,
       "effects": [
         {
           "kind": "unitStatAdd",
@@ -103,7 +103,7 @@
       "name": "Twin Bronze",
       "description": "Soldiers gain a second Bronze perk at promotion. The two perks are drawn from the same path's Bronze pool and are always distinct.",
       "kind": "major",
-      "cost": 300,
+      "cost": 400,
       "effects": [
         {
           "kind": "unitExtraPerkSlot",

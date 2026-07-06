@@ -161,54 +161,73 @@ func histogramsEqualForTest(a, b map[string]int) bool {
 	return true
 }
 
-// TestNeutralCamp_DespawnsOnWaveStart: when prep → active, all neutrals
-// are removed from s.Units and AliveUnitIDs is cleared.
-func TestNeutralCamp_DespawnsOnWaveStart(t *testing.T) {
+// TestNeutralCamp_PersistsWhileWaveActive: camps are NOT despawned or reset
+// while a wave is active. Regression against the old discrete lifecycle, which
+// wiped every camp for the duration of an active wave.
+func TestNeutralCamp_PersistsWhileWaveActive(t *testing.T) {
 	s := newTestStateWithNeutralCamp(t)
 	enableWavesForTest(t, s)
-	s.tickNeutralCampsLocked() // spawn-on-game-start (wave is in prep, not active)
+	s.tickNeutralCampsLocked() // spawn-on-game-start (wave is in prep)
 	camp := &s.NeutralCamps[0]
 	if len(camp.AliveUnitIDs) == 0 {
 		t.Fatalf("setup: expected initial spawn to populate AliveUnitIDs")
 	}
 	spawned := append([]int(nil), camp.AliveUnitIDs...)
 
+	// Wave 1 is running: the roster must be untouched (no mid-wave reset).
+	s.WaveManager.CurrentWave = 1
 	s.WaveManager.State = "active"
 	s.tickNeutralCampsLocked()
 
-	if got := len(camp.AliveUnitIDs); got != 0 {
-		t.Errorf("AliveUnitIDs after wave start: got %d, want 0", got)
+	if got := len(camp.AliveUnitIDs); got != len(spawned) {
+		t.Errorf("AliveUnitIDs during active wave: got %d, want %d (camp must persist)", got, len(spawned))
+	}
+	if camp.State != NeutralCampActive {
+		t.Errorf("camp.State during active wave: got %v, want Active", camp.State)
 	}
 	for _, id := range spawned {
-		if u := s.getUnitByIDLocked(id); u != nil {
-			t.Errorf("unit %d should be removed from s.Units but is still present", id)
+		if u := s.getUnitByIDLocked(id); u == nil {
+			t.Errorf("unit %d should still be on the field (no mid-wave despawn)", id)
 		}
-	}
-	if camp.State != NeutralCampWaveHidden {
-		t.Errorf("camp.State after wave start: got %v, want WaveHidden", camp.State)
 	}
 }
 
-// TestNeutralCamp_RespawnsOnWaveEnd: when active → upgrade/prep, the camp
-// respawns with a fresh group.
-func TestNeutralCamp_RespawnsOnWaveEnd(t *testing.T) {
+// TestNeutralCamp_ResetsAtWaveEnd: a living camp is reset to a fresh roster when
+// the wave ENDS (the state leaves "active"), not while it is running. The prior
+// roster's unit IDs are gone and new ones take their place, at the same camp,
+// still Active — ready for the interlude before the next wave.
+func TestNeutralCamp_ResetsAtWaveEnd(t *testing.T) {
 	s := newTestStateWithNeutralCamp(t)
 	enableWavesForTest(t, s)
-	s.tickNeutralCampsLocked() // initial spawn
-	s.WaveManager.State = "active"
-	s.tickNeutralCampsLocked() // despawn
+	s.tickNeutralCampsLocked() // initial spawn (prep, wave 0)
 	camp := &s.NeutralCamps[0]
-	if len(camp.AliveUnitIDs) != 0 {
-		t.Fatalf("setup: camp must be empty after wave start, got %d", len(camp.AliveUnitIDs))
+	preIDs := append([]int(nil), camp.AliveUnitIDs...)
+	if len(preIDs) == 0 {
+		t.Fatalf("setup: expected initial spawn")
 	}
+
+	// Wave 1 running: no reset yet.
+	s.WaveManager.CurrentWave = 1
+	s.WaveManager.State = "active"
+	s.tickNeutralCampsLocked()
+	if len(camp.AliveUnitIDs) != len(preIDs) {
+		t.Fatalf("camp must not reset mid-wave: got %d, want %d", len(camp.AliveUnitIDs), len(preIDs))
+	}
+
+	// Wave 1 ends → state leaves "active"; the camp resets to a fresh roster.
 	s.WaveManager.State = "upgrade"
 	s.tickNeutralCampsLocked()
 
 	if got := len(camp.AliveUnitIDs); got == 0 {
-		t.Errorf("AliveUnitIDs after wave end: got 0, want > 0 (camp should respawn)")
+		t.Errorf("AliveUnitIDs after wave-end reset: got 0, want > 0 (fresh roster)")
 	}
 	if camp.State != NeutralCampActive {
-		t.Errorf("camp.State after wave end: got %v, want Active", camp.State)
+		t.Errorf("camp.State after wave-end reset: got %v, want Active", camp.State)
+	}
+	for _, oldID := range preIDs {
+		if u := s.getUnitByIDLocked(oldID); u != nil {
+			t.Errorf("wave-1 unit %d should be replaced on the wave-end reset", oldID)
+		}
 	}
 }
 

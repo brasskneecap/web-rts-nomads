@@ -49,10 +49,10 @@ func TestEnemiesFightNeutrals_HostilityToggle(t *testing.T) {
 	}
 }
 
-// TestNeutralCamp_Continuous_PersistsAndResetsEachWave: in continuous mode camps
-// stay on the field through an active wave (not despawned like discrete) and are
-// reset (fresh roster, new unit IDs) when a new wave begins.
-func TestNeutralCamp_Continuous_PersistsAndResetsEachWave(t *testing.T) {
+// TestNeutralCamp_Continuous_PersistsAndResetsAtWaveEnd: in continuous mode camps
+// stay on the field through an active wave and are reset (fresh roster, new unit
+// IDs) at the end of the wave — the active→upgrade transition — same as discrete.
+func TestNeutralCamp_Continuous_PersistsAndResetsAtWaveEnd(t *testing.T) {
 	s := newTestStateWithNeutralCamp(t)
 	enableWavesForTest(t, s)
 	s.WaveManager.Continuous = true
@@ -64,7 +64,7 @@ func TestNeutralCamp_Continuous_PersistsAndResetsEachWave(t *testing.T) {
 		t.Fatal("setup: expected initial spawn during prep")
 	}
 
-	// Wave 1 active: camp must remain Active with a roster (discrete would wipe).
+	// Wave 1 active: camp must remain Active with a roster (no mid-wave reset).
 	s.WaveManager.CurrentWave = 1
 	s.WaveManager.State = "active"
 	s.tickNeutralCampsLocked()
@@ -74,15 +74,16 @@ func TestNeutralCamp_Continuous_PersistsAndResetsEachWave(t *testing.T) {
 	}
 	wave1IDs := append([]int(nil), camp.AliveUnitIDs...)
 
-	// Advance to wave 2 → reset: the wave-1 units are gone, replaced by a fresh roster.
-	s.WaveManager.CurrentWave = 2
+	// Wave 1 ends (continuous active→upgrade) → reset: the wave-1 units are gone,
+	// replaced by a fresh roster.
+	s.WaveManager.State = "upgrade"
 	s.tickNeutralCampsLocked()
 	if len(camp.AliveUnitIDs) == 0 {
-		t.Fatal("continuous: camp should have a fresh roster after the wave-2 reset")
+		t.Fatal("continuous: camp should have a fresh roster after the wave-end reset")
 	}
 	for _, oldID := range wave1IDs {
 		if s.getUnitByIDLocked(oldID) != nil {
-			t.Errorf("continuous: wave-1 unit %d should be removed on the wave-2 reset", oldID)
+			t.Errorf("continuous: wave-1 unit %d should be removed on the wave-end reset", oldID)
 		}
 	}
 }

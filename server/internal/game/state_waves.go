@@ -41,12 +41,15 @@ type WaveManager struct {
 	// Continuous, when true, runs the map in continuous-wave mode: the active
 	// phase advances to the next wave on the WaveDuration timer instead of
 	// waiting for the field to clear (see tickWaveLocked). Enemies persist and
-	// accumulate across waves; neutral camps reset each wave instead of
-	// despawning. Derived from MapConfig.WaveConfig.ContinuousWaves.
+	// accumulate across waves. Derived from MapConfig.WaveConfig.ContinuousWaves.
+	// (Neutral camps persist-and-reset each wave on all maps regardless of this
+	// flag — see tickNeutralCampsLocked.)
 	Continuous bool
-	// NeutralResetWave is the CurrentWave value the neutral camps were last reset
-	// for in continuous mode. tickNeutralCampsLocked resets all camps when this
-	// lags CurrentWave, giving "camps reset at the start of each new wave."
+	// NeutralResetWave is the wave number whose end-of-wave neutral-camp reset
+	// has already fired. tickNeutralCampsLocked resets all camps once when a wave
+	// leaves "active" and this still lags CurrentWave, giving "camps refresh at
+	// the end of each wave." Camps persist through active waves on all maps (see
+	// tickNeutralCampsLocked).
 	NeutralResetWave int
 	// SpawnedThisWave counts wave-gated enemy units (enemy faction, not
 	// ignoreWaveClear) spawned since the current wave activated. Reset on
