@@ -125,6 +125,9 @@ export type FogOfWarSnapshot = {
 
 export type WaveConfig = {
   totalWaves?: number
+  // Prep countdown before wave 1 (seconds). When 0/absent it falls back to
+  // prepDuration.
+  initialPrepDuration?: number
   prepDuration?: number
   waveDuration?: number
   // Continuous mode: waves keep releasing on the waveDuration timer instead of

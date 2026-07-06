@@ -31,7 +31,11 @@ type WaveManager struct {
 	// Timer meaning differs by state:
 	//   "prep"   → seconds remaining until wave starts
 	//   "active" → seconds elapsed since wave started
-	Timer        float64
+	Timer float64
+	// InitialPrepDuration is the prep countdown before wave 1. Falls back to
+	// PrepDuration when the map does not configure it separately.
+	InitialPrepDuration float64
+	// PrepDuration is the prep countdown between subsequent waves.
 	PrepDuration float64
 	WaveDuration float64 // 0 means no automatic timeout; wave must be ended externally
 	// Continuous, when true, runs the map in continuous-wave mode: the active
@@ -101,6 +105,7 @@ func (s *GameState) initWaveManagerLocked() {
 	}
 
 	prepDuration := wavePrepDuration
+	initialPrep := 0.0 // 0 ⇒ fall back to prepDuration below
 	waveDuration := waveActiveDuration
 	totalWaves := maxWave
 	continuous := false
@@ -108,6 +113,9 @@ func (s *GameState) initWaveManagerLocked() {
 	if cfg := s.MapConfig.WaveConfig; cfg != nil {
 		if cfg.PrepDuration > 0 {
 			prepDuration = cfg.PrepDuration
+		}
+		if cfg.InitialPrepDuration > 0 {
+			initialPrep = cfg.InitialPrepDuration
 		}
 		if cfg.WaveDuration > 0 {
 			waveDuration = cfg.WaveDuration
@@ -118,15 +126,22 @@ func (s *GameState) initWaveManagerLocked() {
 		continuous = cfg.ContinuousWaves
 	}
 
+	// Unconfigured initial prep uses the between-wave value, preserving the
+	// legacy single-timer behaviour.
+	if initialPrep <= 0 {
+		initialPrep = prepDuration
+	}
+
 	s.WaveManager = WaveManager{
-		Enabled:      true,
-		CurrentWave:  0, // 0 means "prep before wave 1"
-		TotalWaves:   totalWaves,
-		State:        "prep",
-		Timer:        prepDuration,
-		PrepDuration: prepDuration,
-		WaveDuration: waveDuration,
-		Continuous:   continuous,
+		Enabled:             true,
+		CurrentWave:         0, // 0 means "prep before wave 1"
+		TotalWaves:          totalWaves,
+		State:               "prep",
+		Timer:               initialPrep,
+		InitialPrepDuration: initialPrep,
+		PrepDuration:        prepDuration,
+		WaveDuration:        waveDuration,
+		Continuous:          continuous,
 	}
 }
 

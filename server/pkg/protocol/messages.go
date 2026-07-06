@@ -32,7 +32,14 @@ type Vec2 struct {
 // back to server defaults (60 s prep, 120 s active, totalWaves derived from
 // the highest waveNumber found on spawn points).
 type WaveConfig struct {
-	TotalWaves   int     `json:"totalWaves,omitempty"`
+	TotalWaves int `json:"totalWaves,omitempty"`
+	// InitialPrepDuration is the prep countdown before wave 1 (seconds). When
+	// 0 it falls back to PrepDuration, preserving the legacy single-timer
+	// behaviour. Lets a map open with a long build-up (e.g. 180s) while keeping
+	// short between-wave breaks.
+	InitialPrepDuration float64 `json:"initialPrepDuration,omitempty"`
+	// PrepDuration is the prep countdown between subsequent waves (seconds; 0 =
+	// default 60). Also used before wave 1 when InitialPrepDuration is unset.
 	PrepDuration float64 `json:"prepDuration,omitempty"`
 	WaveDuration float64 `json:"waveDuration,omitempty"`
 	// ContinuousWaves switches the map to continuous mode: once a wave starts

@@ -245,7 +245,14 @@ func (s *GameState) tickUpgradePhaseLocked() {
 		} else {
 			log.Printf("[UPGRADE] all resolved → prep")
 			wm.State = "prep"
-			wm.Timer = wm.PrepDuration
+			// CurrentWave == 0 is the pre-wave-1 window (start bonus just
+			// resolved), so honour the longer initial prep; between-wave
+			// resolutions use the standard prep countdown.
+			if wm.CurrentWave == 0 {
+				wm.Timer = wm.InitialPrepDuration
+			} else {
+				wm.Timer = wm.PrepDuration
+			}
 		}
 	}
 }

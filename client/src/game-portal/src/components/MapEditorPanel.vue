@@ -46,7 +46,17 @@
               />
             </div>
             <div class="control-group">
-              <label for="wave-prep">Prep Duration <span class="field-hint">(sec, 0 = default 60)</span></label>
+              <label for="wave-initial-prep">Initial Prep <span class="field-hint">(sec before wave 1, 0 = use Prep Duration)</span></label>
+              <input
+                id="wave-initial-prep"
+                :value="model.waveConfig?.initialPrepDuration ?? 0"
+                @input="setWaveConfig('initialPrepDuration', +($event.target as HTMLInputElement).value)"
+                type="number"
+                min="0"
+              />
+            </div>
+            <div class="control-group">
+              <label for="wave-prep">Prep Duration <span class="field-hint">(sec between waves, 0 = default 60)</span></label>
               <input
                 id="wave-prep"
                 :value="model.waveConfig?.prepDuration ?? 0"
@@ -2788,7 +2798,13 @@ function objectiveConfigValue(obj: MapCampaignObjective, key: string): unknown {
 // the same reason. Per-level objectives are now hand-authored in campaign JSON.
 
 function setWaveConfig(
-  field: 'totalWaves' | 'prepDuration' | 'waveDuration' | 'continuousWaves' | 'enemiesFightNeutrals',
+  field:
+    | 'totalWaves'
+    | 'initialPrepDuration'
+    | 'prepDuration'
+    | 'waveDuration'
+    | 'continuousWaves'
+    | 'enemiesFightNeutrals',
   value: number | boolean,
 ) {
   const current = model.value.waveConfig ?? {}
@@ -2796,6 +2812,7 @@ function setWaveConfig(
   // Drop waveConfig entirely if every field is zero/absent/false — keeps the export clean
   const hasAny =
     (updated.totalWaves ?? 0) > 0 ||
+    (updated.initialPrepDuration ?? 0) > 0 ||
     (updated.prepDuration ?? 0) > 0 ||
     (updated.waveDuration ?? 0) > 0 ||
     !!updated.continuousWaves ||
