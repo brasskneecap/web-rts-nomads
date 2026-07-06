@@ -224,6 +224,19 @@ type Unit struct {
 	StuckSampleY     float64
 	StuckSampleAccum float64
 
+	// Repath-blocked retry state. A moving unit whose forced repath finds no
+	// route (transient crowd, an obstacle dropped into its path, or the fine
+	// A* node-budget cutoff) does NOT abandon its order. Instead RepathBlocked
+	// is set and it holds the order, retrying pathing every
+	// repathBlockedRetryInterval seconds for up to repathBlockedGiveUpSeconds
+	// before finally stopping. RepathBlockedAccum measures seconds elapsed in
+	// that state and drives both the retry cadence and the give-up deadline.
+	// Cleared on every successful assignUnitPath and on resetUnitMovementLocked.
+	// This is what lets a unit that snags on a building/tree corner redirect
+	// itself once the way clears, instead of sitting wedged forever.
+	RepathBlocked      bool
+	RepathBlockedAccum float64
+
 	// NonCombat marks the unit as passive: combat AI never auto-acquires
 	// targets for it. The unit only engages when the player issues an
 	// explicit OrderAttackTarget (sticky attack). Workers are the canonical
@@ -606,6 +619,18 @@ const (
 	// back-and-forth loop without any net progress toward its destination.
 	stuckSampleInterval      = 0.6
 	stuckProgressThresholdSq = 6.0 * 6.0
+
+	// Repath-blocked retry. When a moving unit's forced repath finds no route,
+	// it holds its order and retries pathing every repathBlockedRetryInterval
+	// seconds for up to repathBlockedGiveUpSeconds before finally stopping.
+	// Most "no route" results are transient (a passing crowd closes the fine
+	// sub-cell corridor for a few ticks, an obstacle is dropped into the path,
+	// or the A* node-budget cutoff fires mid-battle), so abandoning the order
+	// on the first failure left units wedged against buildings/trees forever.
+	// Retrying on a bounded cadence recovers them without an every-tick A*
+	// storm and without spinning indefinitely on a truly unreachable goal.
+	repathBlockedRetryInterval = 0.5
+	repathBlockedGiveUpSeconds = 3.0
 )
 
 type Player struct {
@@ -2916,8 +2941,9 @@ func (s *GameState) Update(dt float64) {
 		// placed while the unit was stunned.
 		if wasStunned && unit.StunnedRemaining <= 0 && unit.Moving && len(unit.Path) > 0 {
 			if !s.repathUnitLocked(unit, blocked) {
-				unit.Moving = false
-				unit.Path = nil
+				// Route momentarily gone (a building may have been placed while
+				// stunned) — hold the order and retry rather than abandon it.
+				s.enterRepathBlockedLocked(unit)
 			}
 		}
 		if unit.StunnedRemaining > 0 {
@@ -2933,12 +2959,25 @@ func (s *GameState) Update(dt float64) {
 		}
 
 		if !unit.Moving {
-			// Force-move order is complete when the unit stops moving.
-			if unit.Order.Type == OrderMove {
-				unit.Order = OrderState{Type: OrderIdle}
+			if unit.RepathBlocked {
+				// Unit is holding a movement order it currently can't path.
+				// Retry on a bounded cadence before giving up, instead of
+				// abandoning the order (which wedged units against buildings/
+				// trees forever). A successful retry sets Moving again; fall
+				// through and advance the unit this tick.
+				s.tickRepathBlockedRetryLocked(unit, dt, blocked)
+				if !unit.Moving {
+					unit.AttackDrifting = false
+					continue
+				}
+			} else {
+				// Force-move order is complete when the unit stops moving.
+				if unit.Order.Type == OrderMove {
+					unit.Order = OrderState{Type: OrderIdle}
+				}
+				unit.AttackDrifting = false
+				continue
 			}
-			unit.AttackDrifting = false
-			continue
 		}
 
 		// Capture perk speed multiplier once for both the stuck watchdog and the
@@ -3014,7 +3053,11 @@ func (s *GameState) Update(dt float64) {
 				unit.PathDiagnostics.LastStuckTick = s.Tick
 				if s.combatApproachBudgetRemaining > 0 {
 					s.combatApproachBudgetRemaining--
-					s.repathUnitLocked(unit, blocked)
+					if !s.repathUnitLocked(unit, blocked) {
+						// No route right now — hold the order and retry on the
+						// bounded cadence instead of grinding in place forever.
+						s.enterRepathBlockedLocked(unit)
+					}
 				} else if unit.AttackTargetID != 0 {
 					// Over budget and chasing a target → drift instead of A*.
 					if target := s.getUnitByIDLocked(unit.AttackTargetID); target != nil && target.HP > 0 && target.Visible {
@@ -3068,8 +3111,10 @@ func (s *GameState) Update(dt float64) {
 			nextCell := s.worldToGrid(nextX, nextY)
 			if !s.isWalkable(nextCell, blocked) {
 				if !s.repathUnitLocked(unit, blocked) {
-					unit.Path = nil
-					unit.Moving = false
+					// The path stepped into newly-blocked terrain and no route
+					// is available this tick — hold the order and retry on the
+					// bounded cadence instead of abandoning it at the obstacle.
+					s.enterRepathBlockedLocked(unit)
 				}
 				continue
 			}

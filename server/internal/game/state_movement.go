@@ -521,6 +521,14 @@ func (s *GameState) assignUnitPathWithSubBlocked(unit *Unit, dest protocol.Vec2,
 	unit.Path = path
 	unit.Moving = len(path) > 0
 
+	// A successful route clears any pending repath-blocked retry state — the
+	// unit has found its way, whether this call came from a fresh order, a
+	// mid-movement repath, or the bounded-retry watchdog.
+	if unit.Moving {
+		unit.RepathBlocked = false
+		unit.RepathBlockedAccum = 0
+	}
+
 	// Fresh path → restart the stuck-progress window from the unit's current
 	// position so the watchdog measures progress against the new route.
 	unit.StuckSampleX = unit.X
@@ -537,6 +545,54 @@ func (s *GameState) repathUnitLocked(unit *Unit, blocked map[gridPoint]bool) boo
 	dest := protocol.Vec2{X: unit.TargetX, Y: unit.TargetY}
 	s.assignUnitPath(unit, dest, blocked, nil)
 	return unit.Moving
+}
+
+// enterRepathBlockedLocked is called when a moving unit's forced repath found
+// no route. Rather than abandoning the order (which left units wedged against
+// buildings/trees forever), the unit holds its order and is retried on a
+// bounded cadence by tickRepathBlockedRetryLocked. assignUnitPath has already
+// cleared Moving/Path on the failed route; this only stamps the retry state.
+// An already-blocked unit keeps its running deadline so repeated failures do
+// not reset the give-up clock.
+func (s *GameState) enterRepathBlockedLocked(unit *Unit) {
+	unit.Moving = false
+	unit.Path = nil
+	if !unit.RepathBlocked {
+		unit.RepathBlocked = true
+		unit.RepathBlockedAccum = 0
+	}
+}
+
+// tickRepathBlockedRetryLocked advances a unit that is holding a movement order
+// it currently cannot path. It retries pathing once per
+// repathBlockedRetryInterval and gives up (stops, clears a Move order) once
+// repathBlockedGiveUpSeconds elapse without a route. On a successful retry
+// assignUnitPath sets Moving/Path and clears the blocked state, so the caller
+// can fall through and advance the unit this tick. Caller holds s.mu.
+func (s *GameState) tickRepathBlockedRetryLocked(unit *Unit, dt float64, blocked map[gridPoint]bool) {
+	prev := unit.RepathBlockedAccum
+	unit.RepathBlockedAccum += dt
+
+	// Deadline reached — the goal is (still) unreachable; finally stop.
+	if unit.RepathBlockedAccum >= repathBlockedGiveUpSeconds {
+		unit.RepathBlocked = false
+		unit.RepathBlockedAccum = 0
+		if unit.Order.Type == OrderMove {
+			unit.Order = OrderState{Type: OrderIdle}
+		}
+		return
+	}
+
+	// Only retry on a cadence boundary — an every-tick A* on a genuinely blocked
+	// unit is exactly the repath storm the movement budget guards against.
+	if int(unit.RepathBlockedAccum/repathBlockedRetryInterval) == int(prev/repathBlockedRetryInterval) {
+		return
+	}
+
+	// Retry toward the last resolved target. assignUnitPath (not
+	// repathUnitLocked, which early-returns on !Moving) clears RepathBlocked on
+	// success.
+	s.assignUnitPath(unit, protocol.Vec2{X: unit.TargetX, Y: unit.TargetY}, blocked, nil)
 }
 
 func (s *GameState) clampPointToCell(point protocol.Vec2, cell gridPoint) protocol.Vec2 {
@@ -681,6 +737,8 @@ func (s *GameState) resetUnitMovementLocked(unit *Unit, orderID int64) {
 	unit.StuckSampleX = unit.X
 	unit.StuckSampleY = unit.Y
 	unit.StuckSampleAccum = 0
+	unit.RepathBlocked = false
+	unit.RepathBlockedAccum = 0
 	// Decrement the workersInsideResource counter BEFORE GatherTargetID is
 	// cleared — the helper keys on the current target ID. setUnit-
 	// MiningInsideLocked is a no-op when MiningInside was already false.
