@@ -3161,6 +3161,14 @@ func (s *GameState) allRequiredObjectivesCompletedLocked() bool {
 // least one townhall — this prevents marking players as "lost" before they
 // have even claimed a starting position.
 func (s *GameState) checkPlayerLossLocked() {
+	// Once a continue-play-eligible match has been won, it becomes unlosable:
+	// the player banked the victory and chose to keep playing, so a later base
+	// loss must not flip the match to defeat (which would freeze the sim and
+	// tear the match down out from under them). Matches without required
+	// objectives, and all pre-victory ticks, fall through to normal detection.
+	if s.victoryAchieved && s.continuePlayEligibleLocked() {
+		return
+	}
 	if s.playersWithTownhall == nil {
 		s.playersWithTownhall = map[string]bool{}
 	}
@@ -3211,12 +3219,53 @@ func (s *GameState) checkPlayerLossLocked() {
 	}
 }
 
-// IsGameOver returns true once the match has ended — either a player has lost
-// all their townhalls, or all victory objectives have been completed.
+// IsGameOver returns true once the match has reached a terminal outcome —
+// either a player has lost all their townhalls, or all victory objectives
+// have been completed. This drives the one-shot game-over side effects
+// (dominion-point commit, end-screen payload). It is deliberately distinct
+// from IsSimulationHalted: a continue-play match keeps simulating after
+// victory even though IsGameOver reports the win.
 func (s *GameState) IsGameOver() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.lostPlayerIDs) > 0 || s.victoryAchieved
+}
+
+// continuePlayEligibleLocked reports whether this match should keep running
+// after victory instead of freezing on the game-over tick. True exactly when
+// the match carries at least one required objective — i.e. the campaign
+// matches whose client offers the "Continue Playing" popup. Custom Game /
+// find-game matches (no required objectives) have no such affordance and
+// freeze + tear down on victory as before.
+func (s *GameState) continuePlayEligibleLocked() bool {
+	for i := range s.Objectives {
+		if s.Objectives[i].Def.Required {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSimulationHalted reports whether the tick loop should STOP advancing the
+// simulation. This is distinct from IsGameOver: a continue-play-eligible match
+// (campaign match with required objectives) keeps ticking after victory so the
+// player can pick "Continue Playing" and actually keep playing — otherwise the
+// win instantly freezes every unit. The sim halts only on a genuine defeat (a
+// player/team lost their townhalls) or on victory in a non-continue match.
+//
+// The match manager also uses this to decide whether to schedule the 15-second
+// teardown: a halted match winds down; a still-running continue-play match is
+// kept alive until the player explicitly exits.
+func (s *GameState) IsSimulationHalted() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.lostPlayerIDs) > 0 {
+		return true
+	}
+	if s.victoryAchieved && !s.continuePlayEligibleLocked() {
+		return true
+	}
+	return false
 }
 
 // MatchSummaryForPlayer returns the end-of-match dominion-point summary for

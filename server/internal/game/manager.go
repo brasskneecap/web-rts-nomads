@@ -126,6 +126,15 @@ func (m *MatchManager) newMatchLocked(mapID string) *Match {
 				}
 			}
 		}
+		// A continue-play match that ended in VICTORY keeps simulating so the
+		// player can pick "Continue Playing" — it must NOT auto-tear-down here.
+		// It is cleaned up when the player explicitly exits (leave_match →
+		// DeleteMatch) or fully disconnects. A defeat (or a non-continue match)
+		// leaves the sim halted, so it still gets the 15s end-screen wind-down.
+		if !match.State.IsSimulationHalted() {
+			log.Printf("game over (continue-play): match id=%s kept alive until player exits\n", matchID)
+			return
+		}
 		log.Printf("game over: scheduling match deletion id=%s\n", matchID)
 		time.AfterFunc(15*time.Second, func() {
 			m.DeleteMatch(matchID)

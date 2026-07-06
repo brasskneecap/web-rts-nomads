@@ -9,5 +9,5 @@
   "slotKind": "armor",
   "allowedUnitTypes": [],
   "costGold": 100,
-  "modifiers": { "armor": 10 }
+  "modifiers": { "armor": 20 }
 }

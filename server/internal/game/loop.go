@@ -31,25 +31,36 @@ func (l *Loop) Start() {
 	go func() {
 		const dt = 1.0 / 20.0
 
-		// Once the game is over the simulation freezes (no more Update calls)
-		// but the loop KEEPS broadcasting the final state until Stop() —
-		// in production that's DeleteMatch at the end of OnGameOver's
-		// 15-second wind-down. Halting on the game-over tick would make the
-		// end screen depend on a single snapshot delivery; a client that
-		// missed that one packet froze with no end screen (see the frozen
-		// forest-1 match post-mortem).
+		// gameOverFired gates the one-shot terminal side effects (dominion-point
+		// commit, teardown scheduling). It fires the tick the match first reaches
+		// a terminal outcome — victory OR defeat.
 		gameOverFired := false
+
+		// simHalted freezes the simulation (no more Update calls). It is
+		// DECOUPLED from game-over: a continue-play match (campaign with required
+		// objectives) reaches victory — firing OnGameOver once to bank the win —
+		// but keeps ticking so the player can "Continue Playing". The sim halts
+		// only on a real defeat, or on victory in a non-continue match.
+		//
+		// Even once halted the loop KEEPS broadcasting the frozen final state
+		// until Stop(). Halting on the game-over tick would make the end screen
+		// depend on a single snapshot delivery; a client that missed that one
+		// packet froze with no end screen (see the frozen forest-1 post-mortem).
+		simHalted := false
 
 		for {
 			select {
 			case <-l.ticker.C:
-				if !gameOverFired {
+				if !simHalted {
 					l.state.Update(dt)
-					if l.state.IsGameOver() {
+					if !gameOverFired && l.state.IsGameOver() {
 						gameOverFired = true
 						if l.OnGameOver != nil {
 							l.OnGameOver()
 						}
+					}
+					if l.state.IsSimulationHalted() {
+						simHalted = true
 					}
 				}
 				l.broadcaster.BroadcastSnapshot()

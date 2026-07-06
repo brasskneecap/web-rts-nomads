@@ -7,9 +7,6 @@
     "half_plate",
     "plate_armor",
     "enchanted_ring",
-    "potion_common_heal",
-    "fire_ring",
-    "ice_ring",
-    "lightning_ring"
+    "potion_common_heal"
   ]
 }
