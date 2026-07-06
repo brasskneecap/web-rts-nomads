@@ -545,6 +545,7 @@ func (s *GameState) tickTrapEffectsLocked(dt float64) {
 						trap.LastingFlamesBurnDuration,
 						trap.InfusionReactiveFlamesRadius,
 						trap.InfusionReactiveFlamesDamage,
+						burnSourceTrap,
 					)
 					// Damage is delivered by the burn tick in
 					// tickTrapperSilverDebuffsLocked — SKIP inline DoT here.
@@ -836,35 +837,50 @@ func (s *GameState) tickTrapperSilverDebuffsLocked(dt float64) {
 				if owner != nil && owner.HP <= 0 {
 					owner = nil
 				}
-				// Burn stacks come from lasting_flames / Flame Collapse, both
-				// fire_pit-sourced — tag DamageFire directly rather than
-				// looking up the trap by stack.SourceID (which would be one
-				// O(n) Traps scan per burn tick per stack).
-				s.applyUnitDamageWithSourceLocked(unit, dmg, DamageSource{AttackerTrapID: stack.SourceID, Kind: "trap_silver_stack", DamageType: DamageFire})
+				// Attribution differs by burn origin. Weapon burns (fire_sword
+				// proc) credit the wielding UNIT directly; trap burns
+				// (lasting_flames / Flame Collapse) credit the parent trap. Both
+				// tag DamageFire directly rather than resolving the trap by
+				// stack.SourceID (which would be one O(n) Traps scan per stack
+				// per tick — and for a weapon burn SourceID isn't a trap ID).
+				var dmgSrc DamageSource
+				if stack.SourceKind == burnSourceWeapon {
+					dmgSrc = DamageSource{AttackerUnitID: stack.OwnerUnitID, Kind: "item-proc-burn", DamageType: DamageFire}
+				} else {
+					dmgSrc = DamageSource{AttackerTrapID: stack.SourceID, Kind: "trap_silver_stack", DamageType: DamageFire}
+				}
+				s.applyUnitDamageWithSourceLocked(unit, dmg, dmgSrc)
 				// Tag the burn tick as "fire" minor damage so the client
 				// renders it as a small orange floating popup (matches
-				// Reactive Flames). lasting_flames + Flame Collapse both
-				// route through this stack, so both render the same way.
+				// Reactive Flames). Every burn source routes through this
+				// stack, so they all render the same way.
 				s.recordMinorDamageHitLocked(unit, dmg, "fire")
 				if owner != nil {
 					s.recordDamageDealtLocked(owner, unit, dmg)
-				}
-				// Debug: burn damage attributes to fire_pit for this owner.
-				// Requires a live owner so we can read their PlayerID —
-				// minor attribution gap when the trapper dies mid-burn.
-				if owner != nil {
-					s.trackBattleDamageLocked(
-						BattleSource{PlayerID: owner.OwnerID, Kind: "trap", Subtype: "fire_pit"},
-						unit, dmg,
-					)
+					// Battle telemetry: a weapon burn belongs to the wielding
+					// unit; a trap burn to the fire_pit. Requires a live owner
+					// so we can read its identity — minor attribution gap when
+					// the source unit/trapper dies mid-burn.
+					if stack.SourceKind == burnSourceWeapon {
+						s.trackBattleDamageLocked(battleSourceFromUnit(owner), unit, dmg)
+					} else {
+						s.trackBattleDamageLocked(
+							BattleSource{PlayerID: owner.OwnerID, Kind: "trap", Subtype: "fire_pit"},
+							unit, dmg,
+						)
+					}
 				}
 				if unit.HP <= 0 {
 					if owner != nil {
 						s.awardUnitDeathXPLocked(unit, owner)
-						s.trackBattleKillLocked(
-							BattleSource{PlayerID: owner.OwnerID, Kind: "trap", Subtype: "fire_pit"},
-							unit,
-						)
+						if stack.SourceKind == burnSourceWeapon {
+							s.trackBattleKillLocked(battleSourceFromUnit(owner), unit)
+						} else {
+							s.trackBattleKillLocked(
+								BattleSource{PlayerID: owner.OwnerID, Kind: "trap", Subtype: "fire_pit"},
+								unit,
+							)
+						}
 					}
 					deadUnitIDs = append(deadUnitIDs, unit.ID)
 					// Victim is dead — no point ticking the remaining
@@ -1709,6 +1725,7 @@ func (s *GameState) fireTrapOverloadOnExitLocked(trap *Trap, ownerUnit, victim *
 				trap.OverloadFlameCollapseBurnDPS,
 				trap.OverloadFlameCollapseBurnSeconds,
 				0, 0,
+				burnSourceTrap,
 			)
 		}
 		if victim.HP <= 0 {

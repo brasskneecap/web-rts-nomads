@@ -1,5 +1,7 @@
 package game
 
+import "strconv"
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CC (crowd-control) primitives — Stun and Slow
 //
@@ -114,6 +116,38 @@ func (s *GameState) applyProcSlowLocked(targetID int, multiplier, duration float
 	} else {
 		s.ApplySlowLocked(targetID, multiplier, duration)
 	}
+}
+
+// applyProcBurnLocked ignites an equipment proc's target with a fire
+// damage-over-time stack (fire_sword). It reuses the shared burn system that
+// backs the Trapper fire_pit perks (UnitPerkState.BurnStacks) so a weapon burn
+// ticks through the same tickTrapperSilverDebuffsLocked loop and lights up the
+// same client burning overlay. The stack is keyed per attacker
+// ("weaponburn:<attackerID>") so the same wielder refreshes its stack
+// (refresh-stronger DPS / refresh-longer duration) rather than piling up
+// infinite stacks, while different wielders ignite independent stacks. Tagged
+// burnSourceWeapon so the burn tick credits the wielding unit, not a trap.
+// No-op on zero / non-positive values, or when the target is gone. The shared
+// seam both the projectile and beam proc-land paths call.
+//
+// Must be called under s.mu write lock.
+func (s *GameState) applyProcBurnLocked(targetID int, dps, duration float64, attackerUnitID int) {
+	if dps <= 0 || duration <= 0 {
+		return
+	}
+	target := s.getUnitByIDLocked(targetID)
+	if target == nil || target.HP <= 0 || !target.Visible {
+		return
+	}
+	target.PerkState.applyBurnStack(
+		"weaponburn:"+strconv.Itoa(attackerUnitID),
+		"", // ungrouped: shares the global per-victim cap with other non-trap burns
+		attackerUnitID,
+		dps,
+		duration,
+		0, 0, // no Reactive Flames — that's a Trapper-gold trap effect only
+		burnSourceWeapon,
+	)
 }
 
 // slowFactorLocked returns the effective speed fraction for unit from ALL active

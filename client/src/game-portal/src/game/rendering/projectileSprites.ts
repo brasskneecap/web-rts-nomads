@@ -189,6 +189,19 @@ for (const id of registeredProjectileSpriteIds()) {
 }
 
 /**
+ * True when a projectile renders as the default arrow — i.e. its variant has no
+ * registered draw fn and therefore falls back to `drawDefaultProjectile`. This
+ * is the single source of truth for "is this an arrow", shared by the renderer
+ * and the arrow-shot SFX so the two never disagree. Magic bolts (fire_bolt,
+ * frost_bolt, ...) ship art and are registered, so they return false; archers,
+ * towers, and ranged raiders emit unregistered unit-type variants and render —
+ * and therefore sound — as arrows.
+ */
+export function projectileRendersAsArrow(variant?: string): boolean {
+  return !(variant && PROJECTILE_DRAW_REGISTRY[variant])
+}
+
+/**
  * Resolve + invoke the right draw fn for a projectile. The caller must have
  * already applied translate/rotate so that drawing along the +x axis at the
  * origin renders correctly in world space.

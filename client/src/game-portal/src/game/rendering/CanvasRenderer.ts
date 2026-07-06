@@ -383,6 +383,17 @@ export class CanvasRenderer {
     const ctx = this.ctx
     const renderTime = performance.now()
     this.renderTime = renderTime
+
+    // Publish the camera's visible world rect so GameState (which plays
+    // positional combat SFX in applySnapshot, off the render thread, with no
+    // camera of its own) can suppress sounds for fighting that's off-screen.
+    this.state.setViewBounds({
+      left: this.camera.x,
+      top: this.camera.y,
+      right: this.camera.x + this.canvas.width / this.camera.zoom,
+      bottom: this.camera.y + this.canvas.height / this.camera.zoom,
+    })
+
     const units = this.state.getInterpolatedUnits(renderTime)
 
     // Drain new damage events (populated in GameState.applySnapshot) into
@@ -2323,6 +2334,8 @@ export class CanvasRenderer {
       maxMana?: number
       attackSpeed?: number
       coldSlowedRemaining?: number
+      burningRemaining?: number
+      burningAnchor?: string
       activeBuffs?: { id: string; stacks?: number }[]
       activeDebuffs?: { id: string; stacks?: number }[]
       color?: string
@@ -2727,6 +2740,13 @@ export class CanvasRenderer {
           if ((unit.coldSlowedRemaining ?? 0) > 0) {
             this.drawChillOverlay(frame, dx, dy, w, h)
           }
+          // Burning overlay: an animated flame drawn over the unit while it
+          // carries a fire DoT (fire_sword proc or Trapper fire_pit burn). Both
+          // populate the server's burn stacks → burningRemaining, so a single
+          // gate covers every burn source.
+          if ((unit.burningRemaining ?? 0) > 0) {
+            this.drawBurningOverlay(dx, dy, w, h, unit.burningAnchor)
+          }
           continue
         }
       }
@@ -2805,6 +2825,71 @@ export class CanvasRenderer {
     ctx.imageSmoothingEnabled = false
     ctx.globalAlpha = prevAlpha * pulse
     ctx.drawImage(off, 0, 0, srcW, srcH, dx, dy, w, h)
+    ctx.globalAlpha = prevAlpha
+    ctx.imageSmoothingEnabled = prevSmoothing
+  }
+
+  // Burning overlay animation cadence: milliseconds per flame frame. The strip
+  // loops continuously (independent of any server progress) for the whole time
+  // the unit is on fire, so the flame reads as a living blaze rather than a
+  // one-shot puff.
+  private static readonly BURN_FRAME_MS = 90
+
+  /**
+   * Draw the animated "burning" flame over a unit at its sprite rect (dx,dy,w,h)
+   * while it carries a fire DoT. Reuses the shared effect sprite sheet
+   * (assets/effects/burning) loaded by getEffectSprite; the strip loops on a
+   * wall-clock timer so the flame animates for the burn's full duration.
+   *
+   * Size comes from the client manifest's displayScale (fraction of body
+   * height); vertical placement comes from the server-authored `anchor`
+   * (catalog/effects/burning/burning.json), sent per burning unit:
+   *   - "feet"   → flame's bottom sits at the unit's feet (rises up the body)
+   *   - "center" → flame vertically centered on the body
+   *   - "head"   → flame's top aligns to the unit's head (sits over the head)
+   * Absent/unknown falls back to "feet". No-op until the sheet decodes.
+   */
+  private drawBurningOverlay(dx: number, dy: number, w: number, h: number, anchor?: string) {
+    const sprite = getEffectSprite('burning')
+    if (!sprite) return
+    const { image, frameWidth, frameHeight, frames } = sprite
+    if (!image || !image.complete || image.naturalWidth === 0 || frames <= 0) return
+
+    // Loop the strip on wall-clock time (not server progress) so the blaze
+    // animates continuously while the unit burns.
+    const frameIndex = Math.floor(this.renderTime / CanvasRenderer.BURN_FRAME_MS) % frames
+    const sx = frameIndex * frameWidth
+    const sy = 0
+
+    // Size the flame relative to the unit's rendered body height via the effect
+    // manifest's displayScale (assets/effects/burning/sprites.json) so artists
+    // tune the size without touching code. Kept square to preserve the sheet's
+    // aspect and centered horizontally on the unit.
+    const size = h * sprite.displayScale
+    const fx = dx + w / 2 - size / 2
+    // Vertical placement from the server-authored anchor.
+    let fy: number
+    switch (anchor) {
+      case 'head':
+        fy = dy
+        break
+      case 'center':
+        fy = dy + h / 2 - size / 2
+        break
+      case 'feet':
+      default:
+        fy = dy + h - size
+        break
+    }
+
+    const ctx = this.ctx
+    const prevSmoothing = ctx.imageSmoothingEnabled
+    const prevAlpha = ctx.globalAlpha
+    ctx.imageSmoothingEnabled = false
+    // Gentle flicker so the fire feels alive; stays high enough that the flame
+    // always reads clearly over the sprite.
+    ctx.globalAlpha = prevAlpha * (0.82 + 0.18 * ((Math.sin(this.renderTime / 110) + 1) / 2))
+    ctx.drawImage(image, sx, sy, frameWidth, frameHeight, fx, fy, size, size)
     ctx.globalAlpha = prevAlpha
     ctx.imageSmoothingEnabled = prevSmoothing
   }

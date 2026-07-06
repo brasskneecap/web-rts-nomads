@@ -12,6 +12,7 @@
   "attackSpeed": 0.5,
   "moveSpeed": 80,
   "splashRadius": 50,
+  "attackType": "swing",
   "resourceCost": {},
   "meatCost": 0,
   "spawnSeconds": 0,

@@ -41,6 +41,7 @@ import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
 import { getShopPOIs, type ShopPOI } from '../rendering/minimapLayers'
 import { BUILDABLE_BUILDING_DEFS, BUILDING_DEF_MAP, getUpgradeChain, townHallTierName } from '../maps/buildingDefs'
 import { UNIT_DEF_MAP } from '../maps/unitDefs'
+import { playSfx } from '../../composables/useSfx'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { RECIPE_DEF_MAP } from '../maps/recipeDefs'
@@ -49,6 +50,7 @@ import { formatPerkTooltip } from './perkTooltip'
 import { hasItemAsset } from '../rendering/itemAssets'
 import { getUnitBodyRect, isPointInUnitBody } from '../rendering/unitSprites'
 import { isTerrainCellBlocked } from '../rendering/terrainTileset'
+import { projectileRendersAsArrow } from '../rendering/projectileSprites'
 import { FogOfWar } from './FogOfWar'
 
 /**
@@ -101,6 +103,13 @@ export type Unit = {
   coldSlowedRemaining?: number
   /** Effective speed fraction while chilled (0.75 = 25% slower). */
   coldSlowedMultiplier?: number
+  /** Remaining seconds on a burn (fire DoT) — fire_sword proc or Trapper
+   *  fire_pit. > 0 ⇒ the renderer paints an animated burning overlay.
+   *  Mirrors UnitSnapshot.burningRemaining. */
+  burningRemaining?: number
+  /** Where the burning overlay anchors on the unit ("feet" | "center" | "head").
+   *  Mirrors UnitSnapshot.burningAnchor; absent ⇒ "feet". */
+  burningAnchor?: string
   /** Effective attack range in world pixels. Reflects perk-driven range
    *  multipliers (eagle_spirit, bullseye); absent for melee units. */
   attackRange?: number
@@ -880,6 +889,47 @@ export class GameState {
   private recentDamageByUnit = new Map<number, Array<{ amount: number; at: number }>>()
   private readonly RECENT_DAMAGE_WINDOW_MS = 500
 
+  // Rate cap for melee attack (swing/stab) SFX. In a sustained melee a swing
+  // starts almost every tick, which would machine-gun the same sound; here we
+  // allow at most MELEE_SOUND_MAX_PER_WINDOW plays of a given attackType within
+  // MELEE_SOUND_WINDOW_MS and drop the rest. That conveys a busy fight without
+  // the loudness scaling with unit count. recentMeleeSoundPlays holds, per
+  // attackType, the performance.now() timestamps of recent plays, pruned to the
+  // window on each use (keys are a tiny fixed set — "swing", "stab", ... — so it
+  // never grows unbounded). Tune the two constants to taste.
+  private readonly MELEE_SOUND_WINDOW_MS = 300
+  private readonly MELEE_SOUND_MAX_PER_WINDOW = 3
+  private recentMeleeSoundPlays = new Map<string, number[]>()
+
+  // Current camera view in world coords, pushed every render frame by the
+  // renderer (which owns the camera; applySnapshot runs on the network thread
+  // and has no camera of its own). Positional combat SFX — arrow shots, melee
+  // swings — are suppressed when their world position falls outside this rect,
+  // so fighting off-screen doesn't add to the mix. Null until the first frame
+  // sets it; treated as "in view" so we never go silent before the camera is
+  // known.
+  private currentViewBounds:
+    | { left: number; top: number; right: number; bottom: number }
+    | null = null
+
+  // Called by the renderer each frame with the camera's visible world rect.
+  setViewBounds(bounds: {
+    left: number
+    top: number
+    right: number
+    bottom: number
+  }): void {
+    this.currentViewBounds = bounds
+  }
+
+  // True when a world point is inside the current camera view (or the view is
+  // not yet known). Gates positional combat SFX in applySnapshot.
+  private isWorldPointInView(x: number, y: number): boolean {
+    const b = this.currentViewBounds
+    if (!b) return true
+    return x >= b.left && x <= b.right && y >= b.top && y <= b.bottom
+  }
+
   // Time gap between successive floating numbers when one snapshot's HP loss is
   // split into per-hit popups (see emitDamageEvent / hitDamageEvents). Each
   // split hit's popup startedAt is pushed this many ms into the future so they
@@ -1061,6 +1111,8 @@ export class GameState {
         slowedMultiplier: unit.slowedMultiplier,
         coldSlowedRemaining: unit.coldSlowedRemaining,
         coldSlowedMultiplier: unit.coldSlowedMultiplier,
+        burningRemaining: unit.burningRemaining,
+        burningAnchor: unit.burningAnchor,
         attackRange: unit.attackRange,
         moveSpeed: unit.moveSpeed,
         armor: unit.armor,
@@ -1497,6 +1549,77 @@ export class GameState {
         kind: 'combined',
       })
     }
+    // Arrow-shot SFX. A projectile that appears this tick but was not in flight
+    // last tick means a shot was just loosed; if it renders as an arrow (any
+    // shooter whose projectile falls back to the default arrow draw — archers,
+    // towers, ranged raiders — as opposed to a magic-bolt sprite) we play the
+    // arrow-shot effect. Gating on low `progress` keeps arrows that were already
+    // mid-flight when we joined a match (all "new" to us on the first snapshot)
+    // from retriggering the sound. Uses prevProjectiles before it is refreshed
+    // below.
+    for (const proj of message.projectiles ?? []) {
+      if (this.prevProjectiles.has(proj.id)) continue
+      if (proj.progress > 0.15) continue
+      // Suppress the shot sound when it's loosed off-screen (origin = the
+      // shooter's position at fire time).
+      if (!this.isWorldPointInView(proj.originX, proj.originY)) continue
+      if (projectileRendersAsArrow(proj.variant)) {
+        // Anything whose shot draws as the default arrow — archers, towers,
+        // ranged raiders.
+        playSfx('arrow_shot.mp3')
+      } else {
+        // A magic-bolt sprite. Play the spell-cast sound only when the shooter
+        // is a caster-archetype unit (its normal attack). Other sources of
+        // sprite projectiles — e.g. a melee unit's frost_sword item proc firing
+        // a frost_bolt — are NOT caster attacks, so they stay silent here.
+        const owner = frame.units.find((u) => u.id === proj.ownerUnitId)
+        if (owner && UNIT_DEF_MAP.get(owner.unitType)?.archetype === 'caster') {
+          playSfx('spell_attack.mp3')
+        }
+      }
+    }
+
+    // Melee attack SFX — the swing counterpart of the arrow sound above. The
+    // server pushes one event per melee swing that started this tick, carrying
+    // the attackType sound key it resolved from the unit def / promotion path
+    // ("swing", "stab", ...). Two throttles keep a big melee from drowning in
+    // identical sounds:
+    //   1. Per tick, collapse identical keys to a single candidate — dozens of
+    //      units swinging the same instant would just clip into noise, not read
+    //      as distinct hits.
+    //   2. Rolling-window rate cap — at most MELEE_SOUND_MAX_PER_WINDOW plays of
+    //      a key within MELEE_SOUND_WINDOW_MS; further swings are dropped. You
+    //      still hear a steady stream (the fight reads as busy) but the loudness
+    //      no longer scales with unit count.
+    // Unknown/absent keys resolve to no sound file and no-op in playSfx.
+    if (message.meleeAttackEvents && message.meleeAttackEvents.length > 0) {
+      const consideredThisTick = new Set<string>()
+      const cutoff = now - this.MELEE_SOUND_WINDOW_MS
+      for (const evt of message.meleeAttackEvents) {
+        const key = evt.attackType
+        if (!key) continue
+        // Off-screen swings make no sound — checked per event (before the
+        // per-tick dedup) so an in-view swing still fires even when an
+        // off-view one of the same type arrived first this tick.
+        if (!this.isWorldPointInView(evt.x, evt.y)) continue
+        if (consideredThisTick.has(key)) continue
+        consideredThisTick.add(key)
+        let times = this.recentMeleeSoundPlays.get(key)
+        if (!times) {
+          times = []
+          this.recentMeleeSoundPlays.set(key, times)
+        }
+        // Drop plays that have aged out of the window (timestamps are pushed in
+        // increasing order, so expired ones are always at the front).
+        let expired = 0
+        while (expired < times.length && times[expired] < cutoff) expired++
+        if (expired > 0) times.splice(0, expired)
+        if (times.length >= this.MELEE_SOUND_MAX_PER_WINDOW) continue
+        times.push(now)
+        playSfx(`${key}.mp3`)
+      }
+    }
+
     // Refresh prevProjectiles for next tick's diff.
     this.prevProjectiles.clear()
     for (const proj of message.projectiles ?? []) {

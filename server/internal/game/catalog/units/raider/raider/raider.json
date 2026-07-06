@@ -11,6 +11,7 @@
   "attackRange": 60,
   "attackSpeed": 1,
   "moveSpeed": 100,
+  "attackType": "stab",
   "resourceCost": {},
   "meatCost": 0,
   "spawnSeconds": 0,

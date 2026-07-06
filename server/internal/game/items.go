@@ -106,6 +106,18 @@ type ItemOnHitProc struct {
 	// Applies for both projectile and beam procs, on the unit each hit reaches.
 	SlowMultiplier      float64 `json:"slowMultiplier,omitempty"`
 	SlowDurationSeconds float64 `json:"slowDurationSeconds,omitempty"`
+
+	// ── On-hit burn (fire DoT) ──────────────────────────────────────────────
+	// When BurnDamagePerSecond > 0 and BurnDurationSeconds > 0, a landed proc
+	// also ignites the unit it hits: a fire damage-over-time stack that ticks
+	// for BurnDamagePerSecond over BurnDurationSeconds. Reuses the same burn
+	// system as the Trapper fire_pit perks (UnitPerkState.BurnStacks), so the
+	// client's burning overlay lights up for weapon burns and trap burns alike.
+	// The same wielder refreshes its own stack (refresh-stronger/longer) rather
+	// than stacking infinitely; different wielders stack independently.
+	// Applies for both projectile and beam procs, on each unit a hit reaches.
+	BurnDamagePerSecond float64 `json:"burnDamagePerSecond,omitempty"`
+	BurnDurationSeconds float64 `json:"burnDurationSeconds,omitempty"`
 }
 
 // defaultConsumableRangeUnits is the AoE radius (world units) a consumable

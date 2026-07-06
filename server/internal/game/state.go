@@ -296,6 +296,12 @@ type Unit struct {
 	// flavor/metadata; empty ⇒ physical). Set at spawn from the unit def.
 	ProjectileID     string
 	AttackDamageType DamageType
+	// AttackType is the melee attack-sound key for this unit (from
+	// UnitDef.AttackType, optionally overridden by the promotion path in
+	// applyRankModifiersLocked). Seeded at spawn; empty for ranged units and
+	// workers. Read only at swing resolution (applyDelayedAttackLocked) to emit
+	// a meleeAttackEvent. Purely presentational.
+	AttackType string
 	// ProjectileScale is a per-unit render-size multiplier for this unit's
 	// projectile sprite (from UnitDef.ProjectileScale, optionally overridden
 	// by the promotion path). It is copied onto every projectile this unit
@@ -904,6 +910,12 @@ type GameState struct {
 	// crits applied during that tick. See crit_events.go.
 	critEventsThisTick []critEvent
 
+	// meleeAttackEventsThisTick is the per-tick queue of melee swings that
+	// resolved this tick, each carrying the swing's AttackType sound key.
+	// Drained by Snapshot() and truncated immediately after, like
+	// critEventsThisTick. See melee_attack_events.go.
+	meleeAttackEventsThisTick []meleeAttackEvent
+
 	// minorDamageEventsThisTick mirrors critEventsThisTick for ancillary
 	// damage hits that should render as a smaller orange floating number
 	// (Reactive Flames splash, etc.). See minor_damage_events.go.
@@ -1503,6 +1515,8 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 			SlowedMultiplier:     unit.SlowedMultiplier,
 			ColdSlowedRemaining:  unit.ColdSlowedRemaining,
 			ColdSlowedMultiplier: unit.ColdSlowedMultiplier,
+			BurningRemaining:     unit.PerkState.maxBurnRemaining(),
+			BurningAnchor:        s.burningOverlayAnchorLocked(unit),
 			ChannelLoopStart:     s.channelLoopStartForUnitLocked(unit),
 			ChannelLoopEnd:       s.channelLoopEndForUnitLocked(unit),
 			CarriedResourceType:  unit.CarriedResourceType,
@@ -1651,6 +1665,7 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 		Beams:              beams,
 		Effects:            s.effectSnapshotsLocked(),
 		CritEvents:         s.snapshotCritEventsLocked(),
+		MeleeAttackEvents:  s.snapshotMeleeAttackEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
 		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
@@ -1844,6 +1859,8 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 			SlowedMultiplier:     unit.SlowedMultiplier,
 			ColdSlowedRemaining:  unit.ColdSlowedRemaining,
 			ColdSlowedMultiplier: unit.ColdSlowedMultiplier,
+			BurningRemaining:     unit.PerkState.maxBurnRemaining(),
+			BurningAnchor:        s.burningOverlayAnchorLocked(unit),
 			ChannelLoopStart:     s.channelLoopStartForUnitLocked(unit),
 			ChannelLoopEnd:       s.channelLoopEndForUnitLocked(unit),
 			CarriedResourceType:  unit.CarriedResourceType,
@@ -2029,6 +2046,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 		Beams:              beams,
 		Effects:            effects,
 		CritEvents:         s.snapshotCritEventsLocked(),
+		MeleeAttackEvents:  s.snapshotMeleeAttackEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
 		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
@@ -2364,6 +2382,8 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			SlowedMultiplier:     unit.SlowedMultiplier,
 			ColdSlowedRemaining:  unit.ColdSlowedRemaining,
 			ColdSlowedMultiplier: unit.ColdSlowedMultiplier,
+			BurningRemaining:     unit.PerkState.maxBurnRemaining(),
+			BurningAnchor:        s.burningOverlayAnchorLocked(unit),
 			ChannelLoopStart:     s.channelLoopStartForUnitLocked(unit),
 			ChannelLoopEnd:       s.channelLoopEndForUnitLocked(unit),
 			CarriedResourceType:  unit.CarriedResourceType,
@@ -2497,6 +2517,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		Beams:              beams,
 		Effects:            s.effectSnapshotsLocked(),
 		CritEvents:         s.snapshotCritEventsLocked(),
+		MeleeAttackEvents:  s.snapshotMeleeAttackEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
 		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
@@ -2559,6 +2580,7 @@ func (s *GameState) Update(dt float64) {
 	// list scoped exactly to "crits that landed during this tick" so the
 	// client can match against its HP-diff damage events.
 	s.resetCritEventsThisTickLocked()
+	s.resetMeleeAttackEventsThisTickLocked()
 	s.resetMinorDamageEventsThisTickLocked()
 	s.resetHitDamageEventsThisTickLocked()
 	s.resetDamageTypeHintsThisTickLocked()

@@ -83,6 +83,11 @@ type Beam struct {
 	// ApplySlowLocked). Zero ⇒ no slow.
 	SlowMultiplier      float64
 	SlowDurationSeconds float64
+	// BurnDamagePerSecond / BurnDurationSeconds: an on-hit burn carried from the
+	// proc config, igniting TargetUnitID when the deferred damage lands. Credit
+	// goes to AttackerUnitID (the original wielder). Zero ⇒ no burn.
+	BurnDamagePerSecond float64
+	BurnDurationSeconds float64
 }
 
 // spawnBeamLocked creates a new Beam entity, appends it to s.Beams, and
@@ -223,6 +228,9 @@ func (s *GameState) applyBeamPendingDamageLocked(b *Beam, deadUnitIDs *[]int) {
 	// On-hit slow: routed to the cold (chill) or physical track by the beam's
 	// damage type. No-op on zero / out-of-range values.
 	s.applyProcSlowLocked(target.ID, b.SlowMultiplier, b.SlowDurationSeconds, b.DamageType)
+	// On-hit burn: ignite the target with a fire DoT, credited to the original
+	// wielder (AttackerUnitID). No-op when the proc carries no burn.
+	s.applyProcBurnLocked(target.ID, b.BurnDamagePerSecond, b.BurnDurationSeconds, b.AttackerUnitID)
 	if b.ImpactEffect != "" {
 		s.playEffectOnUnitLocked(target, b.ImpactEffect)
 	}

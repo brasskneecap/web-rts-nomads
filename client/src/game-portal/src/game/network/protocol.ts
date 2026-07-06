@@ -1047,6 +1047,14 @@ export type UnitSnapshot = {
   coldSlowedRemaining?: number
   /** Effective speed fraction while chilled (e.g. 0.75 = 25% slower). */
   coldSlowedMultiplier?: number
+  /** Greatest remaining seconds across the unit's active burn (fire DoT) stacks
+   *  — from a fire_sword proc or a Trapper fire_pit perk. > 0 ⇒ the renderer
+   *  paints an animated burning overlay. Omitted when the unit is not on fire. */
+  burningRemaining?: number
+  /** Where the burning overlay sits on the unit ("feet" | "center" | "head"),
+   *  authored server-side in catalog/effects/burning/burning.json. Sent only
+   *  while burning; absent ⇒ the renderer falls back to "feet". */
+  burningAnchor?: string
   /** Effective attack range in world pixels — base catalog range × any
    *  perk range multipliers (eagle_spirit, bullseye). Omitted for melee. */
   attackRange?: number
@@ -1393,6 +1401,22 @@ export type CritEventSnapshot = {
 }
 
 /**
+ * MeleeAttackSnapshot is a per-tick record that a melee unit's swing resolved.
+ * `attackType` is the sound key resolved server-side from the unit def / its
+ * promotion path ("swing", "stab", ...); the client plays the matching effect
+ * from assets/audio/sfx/combat. Ranged attacks don't appear here — their sound
+ * is driven by the projectile they spawn. Omitted from JSON when no melee
+ * swings land in a tick.
+ */
+export type MeleeAttackSnapshot = {
+  attackType: string
+  /** Attacker world position at swing time — the client suppresses the sound
+   *  when this point is outside the camera view. */
+  x: number
+  y: number
+}
+
+/**
  * MinorDamageEventSnapshot tags a portion of a unit's HP-delta as ancillary
  * damage (Reactive Flames splash, Electrified Caltrops bonus damage, etc.).
  * The client peels matching amounts off the floating-number popup and renders
@@ -1541,6 +1565,7 @@ export type MatchSnapshotMessage = {
   beams?: BeamSnapshot[]
   effects?: EffectSnapshot[]
   critEvents?: CritEventSnapshot[]
+  meleeAttackEvents?: MeleeAttackSnapshot[]
   minorDamageEvents?: MinorDamageEventSnapshot[]
   hitDamageEvents?: DamageHitSnapshot[]
   damageTypeHints?: DamageTypeHintSnapshot[]

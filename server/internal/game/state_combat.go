@@ -493,6 +493,7 @@ func (s *GameState) rollEquipmentProcsLocked(attacker, target *Unit) {
 // contract). Must be called under s.mu while AttackWindupRemaining has just
 // reached 0.
 func (s *GameState) applyDelayedAttackLocked(unit *Unit, deadUnitIDs *[]int, destroyedBuildingIDs *[]string) {
+
 	// Effective speed at fire time — slow / haste landing during the windup
 	// window is reflected in the post-swing idle gap, not in the already-
 	// committed animation length. Cooldown spans both the animation's
@@ -725,6 +726,17 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 							// later mid-swing retarget of AttackTargetID won't redirect
 							// the damage (see applyDelayedAttackLocked).
 							unit.AttackWindupTargetID = unit.AttackTargetID
+							// Melee swing sound — emitted here, at the START of the
+							// swing animation (windup begin), so the whoosh leads the
+							// strike rather than landing on the ~0.7 impact frame. This
+							// begin path runs exactly once per swing: the windup block
+							// above `continue`s every tick until the swing resolves, so
+							// it is never re-entered mid-swing. Gated on a melee profile
+							// so ranged units (whose windup fires a projectile at impact)
+							// never emit it; AttackType is empty on them regardless.
+							if resolveCombatProfile(unit).Melee {
+								s.recordMeleeAttackLocked(unit.AttackType, unit.X, unit.Y)
+							}
 						}
 					}
 				} else {
@@ -810,6 +822,12 @@ func (s *GameState) tickUnitCombatLocked(dt float64, blocked map[gridPoint]bool)
 							// target so applyDelayedAttackLocked resolves the building
 							// branch and a stale unit id can't hijack it.
 							unit.AttackWindupTargetID = 0
+							// Swing-start melee sound (see the unit-vs-unit branch above
+							// for the once-per-swing / melee-gate rationale). A melee
+							// unit hammering a building still gets its swing whoosh.
+							if resolveCombatProfile(unit).Melee {
+								s.recordMeleeAttackLocked(unit.AttackType, unit.X, unit.Y)
+							}
 						}
 					}
 				} else {

@@ -3,5 +3,6 @@
   "frameHeight": 48,
   "offsetY": -20,
   "frames": 5,
-  "sheet": "sheet.png"
+  "sheet": "sheet.png",
+  "displayScale": 0.4
 }

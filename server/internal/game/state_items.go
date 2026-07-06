@@ -44,6 +44,11 @@ type EquipmentProc struct {
 	// slow.
 	SlowMultiplier      float64
 	SlowDurationSeconds float64
+	// On-hit burn (mirrors ItemOnHitProc): a landed proc ignites the hit unit
+	// with a fire DoT ticking BurnDamagePerSecond over BurnDurationSeconds via
+	// the shared burn system. Zero ⇒ no burn.
+	BurnDamagePerSecond float64
+	BurnDurationSeconds float64
 }
 
 // UnitEquipmentBonus accumulates the flat stat bonuses from all equipped items.
@@ -274,6 +279,8 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 				BounceDamageFalloff: p.BounceDamageFalloff,
 				SlowMultiplier:      p.SlowMultiplier,
 				SlowDurationSeconds: p.SlowDurationSeconds,
+				BurnDamagePerSecond: p.BurnDamagePerSecond,
+				BurnDurationSeconds: p.BurnDurationSeconds,
 			})
 		}
 	}

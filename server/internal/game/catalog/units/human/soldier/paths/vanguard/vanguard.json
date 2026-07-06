@@ -1,5 +1,6 @@
 {
   "path": "vanguard",
+  "attackType": "stab",
   "visionRange": 288,
   "description": "Sturdy frontliner: more HP, high armor, slight attack-speed cost early. Armor 54 produces ~35% damage reduction via the diminishing-returns curve in armorDamageReduction.",
   "bounds": {

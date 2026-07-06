@@ -11,5 +11,5 @@
   "costGold": 0,
   "modifiers": { "damage": 5 },
   "onHitElemental": [ { "type": "lightning", "amount": 5 } ],
-  "onHitProc": { "chance": 1, "damage": 25, "damageType": "lightning", "projectileID": "lightning_bolt", "bounceCount": 2, "bounceRange": 200, "bounceDamageFalloff": 5 }
+  "onHitProc": { "chance": 0.1, "damage": 25, "damageType": "lightning", "projectileID": "lightning_bolt", "bounceCount": 2, "bounceRange": 200, "bounceDamageFalloff": 5 }
 }

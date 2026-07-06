@@ -17,6 +17,12 @@ interface EffectManifest {
   // scaled by the effect's sizeScale at draw time. Both default to 0.
   offsetX?: number
   offsetY?: number
+  // displayScale sizes a unit-anchored *overlay* effect (e.g. the burning
+  // flame) relative to the unit's rendered body height: 1.0 = exactly the
+  // unit's height, 0.8 = 80% of it, 1.2 = spills past the silhouette. Only the
+  // burning overlay reads this today; one-shot effects driven by drawEffects
+  // ignore it (they use the server-supplied sizeScale). Defaults to 1.0.
+  displayScale?: number
 }
 
 export interface EffectSpriteSet {
@@ -26,6 +32,7 @@ export interface EffectSpriteSet {
   frames: number
   offsetX: number
   offsetY: number
+  displayScale: number
   loaded: boolean
 }
 
@@ -65,6 +72,7 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
     frames: manifest.frames,
     offsetX: manifest.offsetX ?? 0,
     offsetY: manifest.offsetY ?? 0,
+    displayScale: manifest.displayScale ?? 1,
     // `loaded` is checked lazily at draw time via imageReady(); the flag here
     // is a quick "did we even find a sheet URL?" sentinel.
     loaded: !!sheetUrl,

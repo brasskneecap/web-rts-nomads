@@ -1,8 +1,8 @@
 {
   "version": 1,
   "startingResources": {
-    "gold": 11500,
-    "wood": 11180
+    "gold": 500,
+    "wood": 180
   },
   "startWaveBonus": false
 }

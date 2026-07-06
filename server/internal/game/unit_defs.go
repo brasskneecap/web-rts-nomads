@@ -77,6 +77,14 @@ type UnitDef struct {
 	// mapping. Validated against combatProfiles at init; unknown names panic.
 	CombatProfile string          `json:"combatProfile,omitempty"`
 	AttackVisual  json.RawMessage `json:"attackVisual,omitempty"`
+	// AttackType names the melee attack sound the client plays when this unit's
+	// swing resolves — "swing", "stab", etc. (keyed to a file in the client's
+	// audio/sfx/combat folder). Melee-only: ranged units leave this empty and
+	// get their sound from the projectile they fire. A promotion path may
+	// override it (see pathCatalogFile.AttackType), e.g. a soldier ("swing")
+	// promoting to the vanguard path ("stab"). Purely presentational — the
+	// simulation never reads it.
+	AttackType string `json:"attackType,omitempty"`
 	// Bounds describes the unit's visual footprint (halfWidth, top, bottom
 	// offsets from unit.x/unit.y). Client uses it to anchor the sprite's
 	// feet, size the selection ring, and compute hit-test rects. Passed

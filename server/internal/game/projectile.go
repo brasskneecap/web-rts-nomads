@@ -131,6 +131,12 @@ type Projectile struct {
 	// duration) via ApplySlowLocked. Zero on ordinary projectiles.
 	SlowMultiplier      float64
 	SlowDurationSeconds float64
+	// BurnDamagePerSecond / BurnDurationSeconds: an on-hit burn carried from a
+	// proc bolt (fire_sword). On land (SkipOnHitEffects branch) the bolt
+	// ignites the unit it hits with a fire DoT for BurnDurationSeconds. Zero ⇒
+	// no burn.
+	BurnDamagePerSecond float64
+	BurnDurationSeconds float64
 }
 
 func (s *GameState) fireProjectileLocked(attacker, target *Unit, damage int) {
@@ -261,6 +267,8 @@ func (s *GameState) fireOnHitProcProjectileLocked(attacker, target *Unit, proc E
 		SkipOnHitEffects:    true,
 		SlowMultiplier:      proc.SlowMultiplier,
 		SlowDurationSeconds: proc.SlowDurationSeconds,
+		BurnDamagePerSecond: proc.BurnDamagePerSecond,
+		BurnDurationSeconds: proc.BurnDurationSeconds,
 	})
 }
 
@@ -287,6 +295,8 @@ func (s *GameState) fireOnHitProcBeamLocked(attacker, target *Unit, proc Equipme
 	primary := s.spawnMomentaryDamageBeamLocked(attacker, attacker, target, variant, proc.Damage, proc.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
 	primary.SlowMultiplier = proc.SlowMultiplier
 	primary.SlowDurationSeconds = proc.SlowDurationSeconds
+	primary.BurnDamagePerSecond = proc.BurnDamagePerSecond
+	primary.BurnDurationSeconds = proc.BurnDurationSeconds
 
 	// Optional chain: the bolt arcs to up to BounceCount further enemies. Each
 	// hop leaps off the PREVIOUS victim to the nearest not-yet-hit hostile
@@ -317,6 +327,8 @@ func (s *GameState) fireOnHitProcBeamLocked(attacker, target *Unit, proc Equipme
 		bounce := s.spawnMomentaryDamageBeamLocked(attacker, cursor, next, variant, dmg, proc.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
 		bounce.SlowMultiplier = proc.SlowMultiplier
 		bounce.SlowDurationSeconds = proc.SlowDurationSeconds
+		bounce.BurnDamagePerSecond = proc.BurnDamagePerSecond
+		bounce.BurnDurationSeconds = proc.BurnDurationSeconds
 		excluded[next.ID] = struct{}{}
 		cursor = next
 	}
@@ -645,6 +657,9 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 		// On-hit slow: routed to the cold (chill) or physical track by the
 		// bolt's damage type. No-op when the proc carries no slow (zero fields).
 		s.applyProcSlowLocked(target.ID, proj.SlowMultiplier, proj.SlowDurationSeconds, proj.DamageType)
+		// On-hit burn: ignite the target with a fire DoT. No-op when the proc
+		// carries no burn. Credited to the firing unit (proj.OwnerUnitID).
+		s.applyProcBurnLocked(target.ID, proj.BurnDamagePerSecond, proj.BurnDurationSeconds, proj.OwnerUnitID)
 		if target.HP <= 0 {
 			target.HP = 0
 			*deadUnitIDs = append(*deadUnitIDs, target.ID)

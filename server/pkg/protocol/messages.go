@@ -1220,6 +1220,16 @@ type UnitSnapshot struct {
 	// while ColdSlowedRemaining > 0. Absent (omitempty) when no chill is active.
 	ColdSlowedRemaining  float64 `json:"coldSlowedRemaining,omitempty"`
 	ColdSlowedMultiplier float64 `json:"coldSlowedMultiplier,omitempty"`
+	// BurningRemaining is the greatest remaining duration across the unit's
+	// active burn (fire DoT) stacks — from a fire_sword proc or a Trapper
+	// fire_pit perk. The client paints an animated burning overlay while it is
+	// > 0. Absent (omitempty) when the unit is not on fire.
+	BurningRemaining float64 `json:"burningRemaining,omitempty"`
+	// BurningAnchor is where the burning overlay sits on the unit
+	// ("feet" | "center" | "head"), authored server-side in
+	// catalog/effects/burning/burning.json. Sent only while burning; absent
+	// (omitempty) otherwise, in which case the client falls back to "feet".
+	BurningAnchor string `json:"burningAnchor,omitempty"`
 	// ChannelLoopStart / ChannelLoopEnd are the inclusive frame range the
 	// client loops through (one-way, forward) on the unit's casting sprite
 	// sheet while it is channeling a beam ability (Siphon Life). Set only
@@ -1531,6 +1541,19 @@ type CritEventSnapshot struct {
 	Damage int `json:"damage"`
 }
 
+// MeleeAttackSnapshot is a per-tick record that a melee unit's swing resolved.
+// AttackType is the sound key authored on the unit def (or its promotion path)
+// — "swing", "stab", etc. — resolved server-side so the client just plays the
+// matching effect. X/Y is the attacker's world position at swing time so the
+// client can suppress the sound when the swing is off-screen. Drained per tick
+// like CritEventSnapshot. Ranged attacks don't push here; their sound is driven
+// by the projectile they spawn.
+type MeleeAttackSnapshot struct {
+	AttackType string  `json:"attackType"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+}
+
 // MinorDamageEventSnapshot tags a portion of a unit's HP-delta as ancillary
 // damage (e.g. ascendant_infusion's Reactive Flames AoE, Electrified Caltrops
 // bonus damage). The client renders the matching portion of its floating-
@@ -1740,6 +1763,7 @@ type MatchSnapshotMessage struct {
 	Beams              []BeamSnapshot              `json:"beams,omitempty"`
 	Effects            []EffectSnapshot            `json:"effects,omitempty"`
 	CritEvents         []CritEventSnapshot         `json:"critEvents,omitempty"`
+	MeleeAttackEvents  []MeleeAttackSnapshot       `json:"meleeAttackEvents,omitempty"`
 	MinorDamageEvents  []MinorDamageEventSnapshot  `json:"minorDamageEvents,omitempty"`
 	HitDamageEvents    []DamageHitSnapshot         `json:"hitDamageEvents,omitempty"`
 	DamageTypeHints    []DamageTypeHintSnapshot    `json:"damageTypeHints,omitempty"`

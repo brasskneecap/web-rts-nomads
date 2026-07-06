@@ -46,6 +46,12 @@ type pathCatalogFile struct {
 	// same as UnitDef.DamageType; empty ⇒ keep the unit def's type. Validated
 	// at load when non-empty.
 	DamageType DamageType `json:"damageType,omitempty"`
+	// AttackType overrides the unit def's AttackType (the melee attack-sound
+	// key) for units promoted onto this path — e.g. a soldier ("swing")
+	// becoming a vanguard ("stab"). Empty ⇒ keep whatever the unit def set at
+	// spawn (so the berserker path, which also swings, simply omits it and
+	// inherits the soldier's "swing"). Purely presentational.
+	AttackType string `json:"attackType,omitempty"`
 	// ProjectileScale overrides the unit def's ProjectileScale (the per-unit
 	// projectile-sprite render multiplier) for units promoted onto this path,
 	// so two paths of the same base unit (e.g. Acolyte → Cleric vs Arch
@@ -121,6 +127,12 @@ var pathVisionRangeByPath = map[string]float64{}
 // unknown damage type fails loud at startup, same as UnitDef.
 var pathProjectileByPath = map[string]string{}
 var pathDamageTypeByPath = map[string]DamageType{}
+
+// pathAttackTypeByPath holds the optional per-path override of the unit def's
+// melee attack-sound key, keyed by path id (e.g. "vanguard": "stab"). A path
+// absent from the map means "no override — keep the unit def's AttackType set
+// at spawn". Applied in applyRankModifiersLocked once ProgressionPath is set.
+var pathAttackTypeByPath = map[string]string{}
 
 // pathProjectileScaleByPath holds the optional per-path projectile-sprite
 // render multiplier override, keyed by path id (e.g. "cleric": 1.5). A path
@@ -296,6 +308,9 @@ func init() {
 						panic(rel + `: damageType "` + string(file.DamageType) + `" is not a registered damage type`)
 					}
 					pathDamageTypeByPath[file.Path] = file.DamageType
+				}
+				if file.AttackType != "" {
+					pathAttackTypeByPath[file.Path] = file.AttackType
 				}
 				if file.ProjectileScale < 0 {
 					panic(rel + `: projectileScale must be >= 0 (0/omitted ⇒ keep the unit def value)`)

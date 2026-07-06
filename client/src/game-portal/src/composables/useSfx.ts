@@ -6,7 +6,9 @@ import { useAudioSettings } from '@/composables/useAudioSettings'
 // discovered automatically — no manual registry.
 //
 // Two sources are globbed:
-//   - assets/audio/sfx/*.{mp3,wav,ogg}      → the actual sound files
+//   - assets/audio/sfx/**/*.{mp3,wav,ogg}   → the actual sound files (recursive:
+//     subfolders like combat/ group related effects; files are still keyed by
+//     bare filename, so names must stay unique across subfolders)
 //   - assets/buildings/<type>/sounds.json   → which file plays for which event
 //
 // A building's sounds.json is a flat map of event name → filename, e.g.
@@ -16,7 +18,7 @@ import { useAudioSettings } from '@/composables/useAudioSettings'
 
 const { effectiveSfxVolume } = useAudioSettings()
 
-const sfxUrls = import.meta.glob('@/assets/audio/sfx/*.{mp3,wav,ogg}', {
+const sfxUrls = import.meta.glob('@/assets/audio/sfx/**/*.{mp3,wav,ogg}', {
   eager: true,
   query: '?url',
   import: 'default',

@@ -460,6 +460,9 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	if pathDamageType, ok := pathDamageTypeByPath[unit.ProgressionPath]; ok {
 		unit.AttackDamageType = pathDamageType
 	}
+	if pathAttackType, ok := pathAttackTypeByPath[unit.ProgressionPath]; ok {
+		unit.AttackType = pathAttackType
+	}
 	if pathProjectileScale, ok := pathProjectileScaleByPath[unit.ProgressionPath]; ok {
 		unit.ProjectileScale = pathProjectileScale
 	}

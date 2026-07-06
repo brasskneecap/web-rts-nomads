@@ -188,6 +188,26 @@ func (s *GameState) playEffectOnUnitLocked(unit *Unit, effectID string) bool {
 	return true
 }
 
+// burningOverlayAnchorLocked returns the client-render anchor for a unit's
+// persistent burning overlay, or "" when the unit is not on fire. The anchor is
+// authored once, server-side, in catalog/effects/burning/burning.json — this is
+// the seam that lets that def drive where the flame sits (feet / center / head)
+// even though the overlay itself is rendered client-side from unit state rather
+// than through the one-shot EffectSnapshot pipeline. Empty (not burning) is
+// omitted from the wire via omitempty.
+//
+// Caller holds s.mu.
+func (s *GameState) burningOverlayAnchorLocked(unit *Unit) string {
+	if unit == nil || unit.PerkState.maxBurnRemaining() <= 0 {
+		return ""
+	}
+	def, ok := getEffectDef("burning")
+	if !ok {
+		return ""
+	}
+	return string(def.Anchor.OrCenter())
+}
+
 // followEffectForProjectileDef returns the validated follow-effect id a
 // projectile spawned from def should carry while in flight, or "" when the
 // def specifies none or names an unregistered effect. Fail-safe by design: a

@@ -210,7 +210,23 @@ type burnStack struct {
 	// don't count toward the first trap's cap. Empty string = ungrouped
 	// (legacy / hypothetical non-trap sources).
 	TrapKey string
+	// SourceKind tags where the burn came from so the burn tick attributes
+	// damage/telemetry correctly. burnSourceTrap (the default) credits the
+	// parent trap via AttackerTrapID + a "fire_pit" battle source (fire_pit
+	// lasting_flames / Flame Collapse). burnSourceWeapon credits the wielding
+	// unit directly via AttackerUnitID + battleSourceFromUnit (fire_sword
+	// proc, etc.) — a sword burn must not masquerade as a trap in kill stats.
+	SourceKind burnSource
 }
+
+// burnSource identifies the origin of a burn stack for attribution in the burn
+// DoT tick (see UnitPerkState.BurnStacks and tickTrapperSilverDebuffsLocked).
+type burnSource string
+
+const (
+	burnSourceTrap   burnSource = ""       // fire_pit lasting_flames / Flame Collapse (default)
+	burnSourceWeapon burnSource = "weapon" // equipment on-hit proc (fire_sword)
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Unit perk state
@@ -779,7 +795,7 @@ func (ps *UnitPerkState) applyMarkStack(sourceID string, ownerUnitID int, multip
 // than globally, so two different fire_pits each get their own pair of
 // stacks (lasting_flames + Flame Collapse) instead of fighting over the cap.
 // Pass "" for trapKey to keep legacy global cap semantics.
-func (ps *UnitPerkState) applyBurnStack(sourceID string, trapKey string, ownerUnitID int, dps, duration, reactiveRadius float64, reactiveDamage int) bool {
+func (ps *UnitPerkState) applyBurnStack(sourceID string, trapKey string, ownerUnitID int, dps, duration, reactiveRadius float64, reactiveDamage int, sourceKind burnSource) bool {
 	if dps <= 0 || duration <= 0 || sourceID == "" {
 		return false
 	}
@@ -799,6 +815,7 @@ func (ps *UnitPerkState) applyBurnStack(sourceID string, trapKey string, ownerUn
 			}
 			ps.BurnStacks[i].OwnerUnitID = ownerUnitID
 			ps.BurnStacks[i].TrapKey = trapKey
+			ps.BurnStacks[i].SourceKind = sourceKind
 			return true
 		}
 	}
@@ -822,6 +839,7 @@ func (ps *UnitPerkState) applyBurnStack(sourceID string, trapKey string, ownerUn
 		ReactiveRadius: reactiveRadius,
 		ReactiveDamage: reactiveDamage,
 		TrapKey:        trapKey,
+		SourceKind:     sourceKind,
 	})
 	return true
 }

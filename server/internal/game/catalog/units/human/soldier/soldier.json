@@ -27,6 +27,7 @@
     "attack"
   ],
   "trainLabel": "Train Soldier",
+  "attackType": "swing",
   "metadata": {},
   "attackVisual": {
     "kind": "melee",
