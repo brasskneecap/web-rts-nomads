@@ -1071,7 +1071,6 @@
         "id": "neutral-spawn-41-12",
         "groupId": "__random__",
         "startingTier": 1,
-        "tierUpEveryNWaves": 4,
         "aggroRange": 150,
         "leashRange": 200,
         "healthMultiplier": 1,
@@ -1124,7 +1123,6 @@
         "id": "neutral-spawn-26-45",
         "groupId": "__random__",
         "startingTier": 1,
-        "tierUpEveryNWaves": 4,
         "aggroRange": 150,
         "leashRange": 200,
         "healthMultiplier": 1,
@@ -1330,7 +1328,7 @@
           "rewardDominionPoints": 50,
           "rewardConquestBadges": 1,
           "config": {
-            "wavesToSurvive": 10
+            "wavesToSurvive": 8
           }
         },
         {

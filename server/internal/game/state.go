@@ -1023,6 +1023,15 @@ type GameState struct {
 	// Once set, it is never cleared for the duration of the match.
 	lostPlayerIDs map[string]bool
 
+	// joinedTargetLabels is the set of authored player-slot labels (e.g.
+	// "player1", "player2") that a real player actually joined into. Recorded
+	// once at join time in EnsurePlayerWithUpgrades and never cleared. Used by
+	// tickEnemySpawnpointsLocked to distinguish a target-labeled enemy
+	// spawnpoint whose player never joined (stay dormant) from one whose
+	// player joined and later lost their base (keep firing, re-route to the
+	// nearest surviving base). See state_spawn.go's targetPlayerLabel gate.
+	joinedTargetLabels map[string]bool
+
 	// victoryAchieved is true once the legacy wave/townhall rule is satisfied
 	// AND every required objective in `s.Objectives` is completed. See
 	// checkVictoryLocked for the AND-gate. Once set, never cleared for the
@@ -1188,6 +1197,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		itemCatalog:               itemCatalogSingleton,
 		FOW:                       map[string]*PlayerFOW{},
 		workersInsideResource:     map[string]int{},
+		joinedTargetLabels:        map[string]bool{},
 		// -1 sentinel: no Update tick has run yet, so any helper that checks
 		// "is the predicate cache fresh?" (cacheTick == s.Tick) falls back
 		// to a live scan. After the first Update, perkPredicateCacheTick is
@@ -3474,6 +3484,16 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 	// authored player1/player2 labels and the caller wants to know which
 	// side they were assigned to. Logged once per fresh join.
 	label := s.findPlayerLabelLocked(playerID)
+	// Record this slot label as ever-joined so target-labeled enemy spawnpoints
+	// keep firing at the surviving base after this player later loses their
+	// townhall (which removes it from the map, breaking label→player resolution).
+	// See the targetPlayerLabel gate in tickEnemySpawnpointsLocked.
+	if label != "" {
+		if s.joinedTargetLabels == nil {
+			s.joinedTargetLabels = map[string]bool{}
+		}
+		s.joinedTargetLabels[label] = true
+	}
 	var townhallID string
 	if townhall != nil {
 		townhallID = townhall.ID

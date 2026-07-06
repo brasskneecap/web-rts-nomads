@@ -434,9 +434,18 @@ func (s *GameState) tickEnemySpawnpointsLocked(dt float64, blocked map[gridPoint
 		s.ensureEnemyPlayerLocked()
 
 		// Inactive spawnpoint check: if targetPlayerLabel names a real label (not
-		// "__none__") but no matching player has joined yet, skip this spawnpoint.
+		// "__none__") but no matching player has ever joined, skip this spawnpoint.
+		//
+		// Only "never joined" suppresses the spawnpoint. Once the label's player
+		// has joined (recorded in joinedTargetLabels at EnsurePlayer time), losing
+		// their townhall must NOT re-dormant the spawnpoint: the townhall is
+		// removed from the map on destruction, so findPlayerIDByLabelLocked can no
+		// longer resolve the label — but with any player base still standing the
+		// wave should keep coming. It fires and re-routes to the nearest surviving
+		// base (enemySpawnPathDestinationLocked / seedEnemyObjectiveAtSpawnLocked
+		// fall back to nearest when TargetPlayerID resolves empty).
 		if tpl, ok := getMetadataString(building.Metadata, "targetPlayerLabel"); ok && tpl != "" && tpl != "__none__" {
-			if s.findPlayerIDByLabelLocked(tpl) == "" {
+			if s.findPlayerIDByLabelLocked(tpl) == "" && !s.joinedTargetLabels[tpl] {
 				continue
 			}
 		}
