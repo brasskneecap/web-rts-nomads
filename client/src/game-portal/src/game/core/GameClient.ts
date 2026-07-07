@@ -352,8 +352,8 @@ export class GameClient {
     this.network.sendCancelUpgrade(buildingId, queueIndex)
   }
 
-  upgradeTownHall(buildingId: string): void {
-    this.network.sendUpgradeTownHall(buildingId)
+  upgradeBuilding(buildingId: string): void {
+    this.network.sendUpgradeBuilding(buildingId)
   }
 
   sendPurchaseItem(buildingId: string, itemId: string): void {
@@ -689,8 +689,8 @@ export class GameClient {
       return
     }
 
-    if (selectedBuilding && actionId === 'upgrade-townhall') {
-      this.network.sendUpgradeTownHall(selectedBuilding.id)
+    if (selectedBuilding && actionId === 'upgrade-building') {
+      this.network.sendUpgradeBuilding(selectedBuilding.id)
       return
     }
 

@@ -1,0 +1,73 @@
+{
+  "key": "adept",
+  "size": {
+    "width": 108,
+    "height": 108
+  },
+  "rotations": {
+    "sheet": "packed/rotations.png",
+    "rowOrder": [
+      "north",
+      "south",
+      "east",
+      "west",
+      "north-east",
+      "south-east",
+      "south-west",
+      "north-west"
+    ],
+    "frameWidth": 108,
+    "frameHeight": 108
+  },
+  "animations": {
+    "attacking": {
+      "frameCount": 5,
+      "frameWidth": 108,
+      "frameHeight": 108,
+      "sheet": "packed/attacking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    },
+    "attacking2": {
+      "frameCount": 5,
+      "frameWidth": 108,
+      "frameHeight": 108,
+      "sheet": "packed/attacking2.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    },
+    "walking": {
+      "frameCount": 4,
+      "frameWidth": 108,
+      "frameHeight": 108,
+      "sheet": "packed/walking.png",
+      "rowOrder": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "north-east",
+        "south-east",
+        "south-west",
+        "north-west"
+      ]
+    }
+  },
+  "packedAt": "2026-07-07T16:35:40.812Z"
+}

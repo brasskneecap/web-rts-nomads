@@ -5,20 +5,18 @@
   "archetype": "caster",
   "combatProfile": "caster",
   "visionRange": 400,
-  "hp": 75,
+  "hp": 125,
   "armor": 0,
-  "damage": 8,
+  "damage": 20,
   "attackRange": 220,
-  "attackSpeed": 1.5,
+  "attackSpeed": 1,
   "moveSpeed": 100,
-  "goldGatherAmount": 20,
-  "woodGatherAmount": 15,
   "resourceCost": {
-    "gold": 175,
-    "wood": 75
+    "gold": 275,
+    "wood": 175
   },
-  "meatCost": 3,
-  "requiresBuildings": ["chapel"],
+  "meatCost": 4,
+  "requiresBuildings": ["temple"],
   "spawnSeconds": 10,
   "pathChances": {
     "arch_mage": 1
@@ -34,7 +32,7 @@
   "damageType": "fire",
   "projectileScale": 1.5,
   "abilities": [
-    "heal"
+    "arcane_bolt"
   ],
   "metadata": {
     "todo": "Placeholder — copied verbatim from acolyte.json so the catalog loader accepts the dir. Author real Adept stats (HP/damage/range/cost/abilities/etc.) before this unit ships."

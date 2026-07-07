@@ -8,8 +8,8 @@
   "category": "Consumable",
   "slotKind": "any",
   "allowedUnitTypes": [],
-  "costGold": 25,
+  "costGold": 50,
   "requiredBuilding": "marketplace",
   "maxStacks": 99,
-  "consumable": { "type": "heal", "amount": 250, "range": 100, "split": true }
+  "consumable": { "type": "heal", "amount": 500, "range": 100, "split": true }
 }

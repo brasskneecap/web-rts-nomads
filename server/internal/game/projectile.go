@@ -122,8 +122,15 @@ type Projectile struct {
 	// hub when it lands — its damage is applied directly via
 	// applyUnitDamageWithSourceLocked. Set on equipment-proc bolts so a proc
 	// cannot trigger another proc (mirrors the non-recursion discipline of
-	// base-stat splash, which also bypasses resolveAttackHitLocked).
+	// base-stat splash, which also bypasses resolveAttackHitLocked). Also set on
+	// ability bolts (arcane_bolt) so the spell's damage is self-contained.
 	SkipOnHitEffects bool
+
+	// SourceKind overrides the DamageSource.Kind used when a SkipOnHitEffects
+	// bolt lands. Empty ⇒ "item-proc" (the original equipment-proc behaviour).
+	// Ability bolts set "ability" so battle-tracker metrics and attribution
+	// classify the damage as spell damage, matching the instant-cast path.
+	SourceKind string
 
 	// SlowMultiplier / SlowDurationSeconds: an on-hit chill carried from a
 	// proc's config (see ItemOnHitProc). When both are set, landing this bolt
@@ -276,6 +283,56 @@ func (s *GameState) fireProcProjectileLocked(src ProcSource, target *Unit, p Pro
 		SlowDurationSeconds: p.SlowDurationSeconds,
 		BurnDamagePerSecond: p.BurnDamagePerSecond,
 		BurnDurationSeconds: p.BurnDurationSeconds,
+	})
+}
+
+// fireAbilityProjectileLocked spawns a homing bolt that delivers an offensive
+// ability's damage on impact instead of instantly. It carries the ability's own
+// DamageAmount + DamageType and the caster's kill credit (OwnerUnitID), uses the
+// ability's projectile def for speed/follow/impact visuals, and sets
+// SkipOnHitEffects so the spell's damage is self-contained — landing it applies
+// the typed damage directly (Kind "ability") without re-entering the attack
+// on-hit hub (no accidental item-proc / elemental re-trigger). Mirrors
+// fireProcProjectileLocked but sourced from a live caster and an AbilityDef.
+// Caller holds s.mu write lock.
+func (s *GameState) fireAbilityProjectileLocked(caster, target *Unit, def AbilityDef) {
+	speed := defaultProjectileSpeed
+	var followEffect, impactEffect string
+	if pdef, ok := getProjectileDef(def.Projectile); ok {
+		speed = pdef.Speed
+		followEffect = followEffectForProjectileDef(pdef)
+		impactEffect = impactEffectForProjectileDef(pdef)
+	}
+
+	dx := target.X - caster.X
+	dy := target.Y - caster.Y
+	travelTime := math.Sqrt(dx*dx+dy*dy) / speed
+	if travelTime < minProjectileFlightSeconds {
+		travelTime = minProjectileFlightSeconds
+	}
+
+	id := fmt.Sprintf("proj_%d", s.nextProjectileID)
+	s.nextProjectileID++
+
+	s.Projectiles = append(s.Projectiles, &Projectile{
+		ID:               id,
+		OwnerUnitID:      caster.ID,
+		OwnerPlayerID:    caster.OwnerID,
+		TargetUnitID:     target.ID,
+		OriginX:          caster.X,
+		OriginY:          caster.Y,
+		TargetX:          target.X,
+		TargetY:          target.Y,
+		TotalSeconds:     travelTime,
+		RemainingSeconds: travelTime,
+		Damage:           def.DamageAmount,
+		Variant:          def.Projectile, // client renders the projectile sprite by id
+		FollowEffect:     followEffect,
+		ImpactEffect:     impactEffect,
+		DamageType:       def.DamageType.OrPhysical(),
+		Scale:            caster.ProjectileScale,
+		SkipOnHitEffects: true,
+		SourceKind:       "ability",
 	})
 }
 
@@ -659,11 +716,17 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 	s.playProjectileImpactLocked(proj, target)
 
 	if proj.SkipOnHitEffects {
-		// Equipment-proc bolt: apply its typed damage directly. Bypasses the
-		// on-hit hub so it cannot trigger another proc or elemental instance.
+		// Equipment-proc / ability bolt: apply its typed damage directly.
+		// Bypasses the on-hit hub so it cannot trigger another proc or
+		// elemental instance. Kind defaults to "item-proc" (the original proc
+		// bolt); ability bolts override it via SourceKind (e.g. "ability").
+		kind := proj.SourceKind
+		if kind == "" {
+			kind = "item-proc"
+		}
 		s.applyUnitDamageWithSourceLocked(target, proj.Damage, DamageSource{
 			AttackerUnitID: proj.OwnerUnitID,
-			Kind:           "item-proc",
+			Kind:           kind,
 			DamageType:     proj.DamageType,
 		})
 		// On-hit slow: routed to the cold (chill) or physical track by the
@@ -674,7 +737,14 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 		s.applyProcBurnLocked(target.ID, proj.BurnDamagePerSecond, proj.BurnDurationSeconds, proj.OwnerUnitID)
 		if target.HP <= 0 {
 			target.HP = 0
-			*deadUnitIDs = append(*deadUnitIDs, target.ID)
+			// Ability bolts defer removal + kill-XP to the attributed pending-death
+			// drain that applyUnitDamageWithSourceLocked already enqueued (matching
+			// the instant-cast path) — the raw removeUnitLocked below would strip
+			// the unit before the drain can award XP to the caster. Proc bolts keep
+			// their legacy immediate removal.
+			if proj.SourceKind != "ability" {
+				*deadUnitIDs = append(*deadUnitIDs, target.ID)
+			}
 		}
 		return
 	}

@@ -1,6 +1,13 @@
 {
-  "type": "chapel",
+  "type": "temple",
   "class": "player",
+  "buildable": false,
+  "upgradesFrom": "chapel",
+  "upgradeCost": {
+    "gold": 400,
+    "wood": 500
+  },
+  "upgradeSeconds": 25,
   "width": 2,
   "height": 2,
   "spriteRender": {
@@ -15,11 +22,7 @@
     "offsetY": 1.4
   },
   "maxHp": 450,
-  "buildSeconds": 20,
-  "resourceCost": {
-    "gold": 200,
-    "wood": 100
-  },
+  "buildSeconds": 25,
   "capabilities": [
     "unit-spawner"
   ],
@@ -27,10 +30,8 @@
     "acolyte",
     "adept"
   ],
-  "requiresTownhallTier": 2,
   "metadata": {},
-  "color": "#7c3aed",
-  "label": "Chapel",
-  "hotkey": "c"
-
+  "color": "#6d28d9",
+  "label": "Temple",
+  "hotkey": ""
 }

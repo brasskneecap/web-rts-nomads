@@ -1,0 +1,203 @@
+{
+  "group_id": null,
+  "states": [
+    {
+      "character": {
+        "id": "095a32ea-fdb0-44ef-a5d3-697b944dee74",
+        "name": "Adept",
+        "prompt": "pixel art, top-down 3/4 perspective, 48x48 sprite, chunky dark outlines, limited earthy palette (muted greens, browns, grays, steel blue accents), 16-bit SNES era RTS, Warcraft 2 inspired, hand-pixeled look, no anti-aliasing, clean pixel edges, single character centered on transparent background, idle pose facing southeast, cute human female caster, slender feminine figure in flowing slate blue mage robes with cream trim and visible cleavage, ornate cream and slate blue heraldic emblem on chest matching faction soldiers, long dark hair tied back, wooden staff held vertically in right hand topped with glowing cream crystal orb, small spellbook hanging from belt, leather satchel with potion vials at hip, focused mystical stance, faint magical aura at hands, slate blue cloth and steel accents palette",
+        "size": {
+          "width": 108,
+          "height": 108
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-04-28T03:25:06.776588+00:00"
+      },
+      "folder": "Adept",
+      "frames": {
+        "rotations": {
+          "south": "Adept/rotations/south.png",
+          "south-east": "Adept/rotations/south-east.png",
+          "east": "Adept/rotations/east.png",
+          "north-east": "Adept/rotations/north-east.png",
+          "north": "Adept/rotations/north.png",
+          "north-west": "Adept/rotations/north-west.png",
+          "west": "Adept/rotations/west.png",
+          "south-west": "Adept/rotations/south-west.png"
+        },
+        "animations": {
+          "Attacking": {
+            "east": [
+              "Adept/animations/Attacking/east/frame_000.png",
+              "Adept/animations/Attacking/east/frame_001.png",
+              "Adept/animations/Attacking/east/frame_002.png",
+              "Adept/animations/Attacking/east/frame_003.png",
+              "Adept/animations/Attacking/east/frame_004.png"
+            ],
+            "north": [
+              "Adept/animations/Attacking/north/frame_000.png",
+              "Adept/animations/Attacking/north/frame_001.png",
+              "Adept/animations/Attacking/north/frame_002.png",
+              "Adept/animations/Attacking/north/frame_003.png",
+              "Adept/animations/Attacking/north/frame_004.png"
+            ],
+            "west": [
+              "Adept/animations/Attacking/west/frame_000.png",
+              "Adept/animations/Attacking/west/frame_001.png",
+              "Adept/animations/Attacking/west/frame_002.png",
+              "Adept/animations/Attacking/west/frame_003.png",
+              "Adept/animations/Attacking/west/frame_004.png"
+            ],
+            "north-west": [
+              "Adept/animations/Attacking/north-west/frame_000.png",
+              "Adept/animations/Attacking/north-west/frame_001.png",
+              "Adept/animations/Attacking/north-west/frame_002.png",
+              "Adept/animations/Attacking/north-west/frame_003.png",
+              "Adept/animations/Attacking/north-west/frame_004.png"
+            ],
+            "south": [
+              "Adept/animations/Attacking/south/frame_000.png",
+              "Adept/animations/Attacking/south/frame_001.png",
+              "Adept/animations/Attacking/south/frame_002.png",
+              "Adept/animations/Attacking/south/frame_003.png",
+              "Adept/animations/Attacking/south/frame_004.png"
+            ],
+            "north-east": [
+              "Adept/animations/Attacking/north-east/frame_000.png",
+              "Adept/animations/Attacking/north-east/frame_001.png",
+              "Adept/animations/Attacking/north-east/frame_002.png",
+              "Adept/animations/Attacking/north-east/frame_003.png",
+              "Adept/animations/Attacking/north-east/frame_004.png"
+            ],
+            "south-east": [
+              "Adept/animations/Attacking/south-east/frame_000.png",
+              "Adept/animations/Attacking/south-east/frame_001.png",
+              "Adept/animations/Attacking/south-east/frame_002.png",
+              "Adept/animations/Attacking/south-east/frame_003.png",
+              "Adept/animations/Attacking/south-east/frame_004.png"
+            ],
+            "south-west": [
+              "Adept/animations/Attacking/south-west/frame_000.png",
+              "Adept/animations/Attacking/south-west/frame_001.png",
+              "Adept/animations/Attacking/south-west/frame_002.png",
+              "Adept/animations/Attacking/south-west/frame_003.png",
+              "Adept/animations/Attacking/south-west/frame_004.png"
+            ]
+          },
+          "Attacking2": {
+            "west": [
+              "Adept/animations/Attacking2/west/frame_000.png",
+              "Adept/animations/Attacking2/west/frame_001.png",
+              "Adept/animations/Attacking2/west/frame_002.png",
+              "Adept/animations/Attacking2/west/frame_003.png",
+              "Adept/animations/Attacking2/west/frame_004.png"
+            ],
+            "south-west": [
+              "Adept/animations/Attacking2/south-west/frame_000.png",
+              "Adept/animations/Attacking2/south-west/frame_001.png",
+              "Adept/animations/Attacking2/south-west/frame_002.png",
+              "Adept/animations/Attacking2/south-west/frame_003.png",
+              "Adept/animations/Attacking2/south-west/frame_004.png"
+            ],
+            "east": [
+              "Adept/animations/Attacking2/east/frame_000.png",
+              "Adept/animations/Attacking2/east/frame_001.png",
+              "Adept/animations/Attacking2/east/frame_002.png",
+              "Adept/animations/Attacking2/east/frame_003.png",
+              "Adept/animations/Attacking2/east/frame_004.png"
+            ],
+            "north-east": [
+              "Adept/animations/Attacking2/north-east/frame_000.png",
+              "Adept/animations/Attacking2/north-east/frame_001.png",
+              "Adept/animations/Attacking2/north-east/frame_002.png",
+              "Adept/animations/Attacking2/north-east/frame_003.png",
+              "Adept/animations/Attacking2/north-east/frame_004.png"
+            ],
+            "south": [
+              "Adept/animations/Attacking2/south/frame_000.png",
+              "Adept/animations/Attacking2/south/frame_001.png",
+              "Adept/animations/Attacking2/south/frame_002.png",
+              "Adept/animations/Attacking2/south/frame_003.png",
+              "Adept/animations/Attacking2/south/frame_004.png"
+            ],
+            "north-west": [
+              "Adept/animations/Attacking2/north-west/frame_000.png",
+              "Adept/animations/Attacking2/north-west/frame_001.png",
+              "Adept/animations/Attacking2/north-west/frame_002.png",
+              "Adept/animations/Attacking2/north-west/frame_003.png",
+              "Adept/animations/Attacking2/north-west/frame_004.png"
+            ],
+            "south-east": [
+              "Adept/animations/Attacking2/south-east/frame_000.png",
+              "Adept/animations/Attacking2/south-east/frame_001.png",
+              "Adept/animations/Attacking2/south-east/frame_002.png",
+              "Adept/animations/Attacking2/south-east/frame_003.png",
+              "Adept/animations/Attacking2/south-east/frame_004.png"
+            ],
+            "north": [
+              "Adept/animations/Attacking2/north/frame_000.png",
+              "Adept/animations/Attacking2/north/frame_001.png",
+              "Adept/animations/Attacking2/north/frame_002.png",
+              "Adept/animations/Attacking2/north/frame_003.png",
+              "Adept/animations/Attacking2/north/frame_004.png"
+            ]
+          },
+          "Walking": {
+            "south-west": [
+              "Adept/animations/Walking/south-west/frame_000.png",
+              "Adept/animations/Walking/south-west/frame_001.png",
+              "Adept/animations/Walking/south-west/frame_002.png",
+              "Adept/animations/Walking/south-west/frame_003.png"
+            ],
+            "north-west": [
+              "Adept/animations/Walking/north-west/frame_000.png",
+              "Adept/animations/Walking/north-west/frame_001.png",
+              "Adept/animations/Walking/north-west/frame_002.png",
+              "Adept/animations/Walking/north-west/frame_003.png"
+            ],
+            "south-east": [
+              "Adept/animations/Walking/south-east/frame_000.png",
+              "Adept/animations/Walking/south-east/frame_001.png",
+              "Adept/animations/Walking/south-east/frame_002.png",
+              "Adept/animations/Walking/south-east/frame_003.png"
+            ],
+            "south": [
+              "Adept/animations/Walking/south/frame_000.png",
+              "Adept/animations/Walking/south/frame_001.png",
+              "Adept/animations/Walking/south/frame_002.png",
+              "Adept/animations/Walking/south/frame_003.png"
+            ],
+            "west": [
+              "Adept/animations/Walking/west/frame_000.png",
+              "Adept/animations/Walking/west/frame_001.png",
+              "Adept/animations/Walking/west/frame_002.png",
+              "Adept/animations/Walking/west/frame_003.png"
+            ],
+            "north": [
+              "Adept/animations/Walking/north/frame_000.png",
+              "Adept/animations/Walking/north/frame_001.png",
+              "Adept/animations/Walking/north/frame_002.png",
+              "Adept/animations/Walking/north/frame_003.png"
+            ],
+            "north-east": [
+              "Adept/animations/Walking/north-east/frame_000.png",
+              "Adept/animations/Walking/north-east/frame_001.png",
+              "Adept/animations/Walking/north-east/frame_002.png",
+              "Adept/animations/Walking/north-east/frame_003.png"
+            ],
+            "east": [
+              "Adept/animations/Walking/east/frame_000.png",
+              "Adept/animations/Walking/east/frame_001.png",
+              "Adept/animations/Walking/east/frame_002.png",
+              "Adept/animations/Walking/east/frame_003.png"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "export_version": "3.0",
+  "export_date": "2026-07-07T16:33:18.828407"
+}

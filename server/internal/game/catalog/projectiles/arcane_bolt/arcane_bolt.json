@@ -1,0 +1,6 @@
+{
+  "id": "arcane_bolt",
+  "speed": 500,
+  "followEffect": "",
+  "impactEffect": "fizzle"
+}

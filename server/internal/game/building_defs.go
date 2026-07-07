@@ -44,7 +44,7 @@ type BuildingDef struct {
 	// at least one fully-built townhall whose tier is ≥ this value before
 	// BuildBuilding accepts the placement. Zero/omitted ⇒ no requirement.
 	// Tiers: 1 = Town Hall, 2 = Keep, 3 = Castle (mirrors the upgrade chain
-	// in state_upgrades.go's handleUpgradeTownHallLocked).
+	// in state_upgrades.go's handleUpgradeBuildingTierLocked).
 	RequiresTownhallTier int `json:"requiresTownhallTier,omitempty"`
 	// UpgradesFrom names the building type this one is a tier-up of (e.g. keep
 	// upgradesFrom townhall, castle upgradesFrom keep). Empty for base/standalone
@@ -294,6 +294,37 @@ func upgradeChainFor(rootType string) []BuildingDef {
 		chain = append(chain, next)
 	}
 	return chain
+}
+
+// buildingRequirementTier resolves a unit RequiresBuildings entry to the root
+// building type and the minimum tier a placed building of that root must reach
+// to satisfy it. A tier link (temple, keep, castle) resolves to its chain root
+// and 1-based position — "temple" → ("chapel", 2), "keep" → ("townhall", 2). A
+// plain type (blacksmith, chapel) or an unknown type resolves to (itself, 1),
+// preserving the exact pre-tier behaviour. This exists because a placed
+// building keeps its ROOT BuildingType and records progress only in
+// metadata["tier"]: a "temple" requirement is really "a chapel at tier ≥ 2".
+func buildingRequirementTier(requiredType string) (rootType string, tier int) {
+	def, ok := buildingDefsByType[requiredType]
+	if !ok {
+		return requiredType, 1
+	}
+	// Walk upgradesFrom back to the chain root (bounded against a malformed cycle).
+	root := def
+	for i := 0; root.UpgradesFrom != "" && i < len(buildingDefsByType); i++ {
+		parent, ok := buildingDefsByType[root.UpgradesFrom]
+		if !ok {
+			break
+		}
+		root = parent
+	}
+	chain := upgradeChainFor(root.Type)
+	for i, d := range chain {
+		if d.Type == requiredType {
+			return root.Type, i + 1
+		}
+	}
+	return requiredType, 1
 }
 
 func (d BuildingDef) IsBuildable() bool {

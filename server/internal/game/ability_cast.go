@@ -235,16 +235,24 @@ func (s *GameState) resolveAbilityCastOnTargetLocked(caster *Unit, def AbilityDe
 		s.applyClericHealLocked(caster, target, amount, healMetaPrimaryAbility())
 	}
 
-	// Offensive resolve step (symmetric to HealAmount). Routes through the
-	// shared authoritative damage pipeline — the same entrypoint melee/splash
-	// use — so mitigation, the death pipeline, threat, and determinism all
-	// apply. 0 / absent ⇒ no damage (inert for non-offensive abilities).
+	// Offensive resolve step (symmetric to HealAmount). Two delivery modes:
+	//   - Projectile abilities (def.Projectile set) launch a homing bolt that
+	//     carries the damage and applies it ON IMPACT (arcane_bolt). The bolt
+	//     rides the same pipeline basic-attack shots use, so mitigation, the
+	//     death pipeline, threat, and determinism all apply at landing.
+	//   - Otherwise the damage is applied INSTANTLY (hitscan) through the shared
+	//     authoritative pipeline — the prior behaviour.
+	// 0 / absent DamageAmount ⇒ no damage (inert for non-offensive abilities).
 	if def.DamageAmount > 0 && target.HP > 0 {
-		s.applyUnitDamageWithSourceLocked(target, def.DamageAmount, DamageSource{
-			AttackerUnitID: caster.ID,
-			Kind:           "ability",
-			DamageType:     def.DamageType.OrPhysical(),
-		})
+		if def.Projectile != "" {
+			s.fireAbilityProjectileLocked(caster, target, def)
+		} else {
+			s.applyUnitDamageWithSourceLocked(target, def.DamageAmount, DamageSource{
+				AttackerUnitID: caster.ID,
+				Kind:           "ability",
+				DamageType:     def.DamageType.OrPhysical(),
+			})
+		}
 	}
 
 	if def.EffectOnTarget != "" {

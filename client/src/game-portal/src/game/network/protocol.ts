@@ -683,8 +683,8 @@ export type CancelUpgradeCommand = {
   queueIndex?: number
 }
 
-export type UpgradeTownHallCommand = {
-  type: 'upgrade_townhall'
+export type UpgradeBuildingCommand = {
+  type: 'upgrade_building'
   buildingId: string
 }
 
@@ -933,7 +933,7 @@ export type ClientMessage =
   | GuardCommandMessage
   | PurchaseUpgradeCommand
   | CancelUpgradeCommand
-  | UpgradeTownHallCommand
+  | UpgradeBuildingCommand
   | PurchaseItemCommand
   | RerollShopCommand
   | PurchaseRecipeCommand

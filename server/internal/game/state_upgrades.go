@@ -650,25 +650,27 @@ func (s *GameState) CancelUpgradeAt(playerID, buildingID string, queueIndex int)
 	s.handleCancelUpgradeAtLocked(playerID, buildingID, queueIndex)
 }
 
-// handleUpgradeTownHallLocked validates and begins a town hall tier-up.
+// handleUpgradeBuildingTierLocked validates and begins a building tier-up. The
+// mechanism is generic: it works for any placed building whose type is the root
+// of an upgradesFrom chain (townhall → keep → castle, chapel → temple, …).
 // Requirements:
-//   - Building exists, is type "townhall", owned by playerID, fully built.
+//   - Building exists, owned by playerID, fully built.
+//   - Its type roots a tier chain longer than one link (i.e. it can tier up).
 //   - No active tier-up already in progress (no "tierUpRemaining" key).
-//   - Current tier below the max (the townhall upgrade chain length).
+//   - Current tier below the max (the chain length).
 //   - Player can afford the upgrade.
 //
-// Cost and duration for each transition come from the next tier's catalog def
-// (keep.json, castle.json) via its upgradeCost / upgradeSeconds fields — the
-// chain is resolved by upgradeChainFor("townhall").
+// A placed building never changes its BuildingType on upgrade — only its
+// metadata["tier"] advances — so upgradeChainFor(building.BuildingType) always
+// resolves the full chain from the root. Cost and duration for each transition
+// come from the next tier's catalog def (keep.json, temple.json, …) via its
+// upgradeCost / upgradeSeconds fields.
 //
 // On success: deduct resources, stamp tierUpRemaining/tierUpTotal/tierTargetLevel
 // into building metadata. Must be called under s.mu.
-func (s *GameState) handleUpgradeTownHallLocked(playerID string, buildingID string) {
+func (s *GameState) handleUpgradeBuildingTierLocked(playerID string, buildingID string) {
 	building := s.getBuildingByIDLocked(buildingID)
 	if building == nil || !building.Visible {
-		return
-	}
-	if building.BuildingType != "townhall" {
 		return
 	}
 	if building.OwnerID == nil || *building.OwnerID != playerID {
@@ -687,10 +689,14 @@ func (s *GameState) handleUpgradeTownHallLocked(playerID string, buildingID stri
 		currentTier = int(v)
 	}
 
-	// Walk the catalog-defined tier chain (townhall → keep → castle). The chain
-	// length is the max tier; the def at index currentTier is the next tier and
-	// carries the cost + duration for this transition.
-	chain := upgradeChainFor("townhall")
+	// Walk the catalog-defined tier chain rooted at this building's type. The
+	// chain length is the max tier; the def at index currentTier is the next tier
+	// and carries the cost + duration for this transition. A chain of length ≤ 1
+	// means the type is not upgradeable.
+	chain := upgradeChainFor(building.BuildingType)
+	if len(chain) <= 1 {
+		return // not a tier-upgradeable building
+	}
 	if currentTier >= len(chain) {
 		return // already at max tier
 	}
@@ -725,20 +731,22 @@ func (s *GameState) handleUpgradeTownHallLocked(playerID string, buildingID stri
 	building.Metadata["tierTargetLevel"] = float64(currentTier + 1)
 }
 
-// UpgradeTownHall is the public entry point for town hall tier-up commands.
-func (s *GameState) UpgradeTownHall(playerID string, buildingID string) {
+// UpgradeBuildingTier is the public entry point for building tier-up commands
+// (townhall → keep → castle, chapel → temple, …).
+func (s *GameState) UpgradeBuildingTier(playerID string, buildingID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.handleUpgradeTownHallLocked(playerID, buildingID)
+	s.handleUpgradeBuildingTierLocked(playerID, buildingID)
 }
 
-// tickTownHallTierUpsLocked advances all in-progress town hall tier-ups by dt.
+// tickBuildingTierUpsLocked advances all in-progress building tier-ups by dt.
 // When a tier-up completes (tierUpRemaining reaches 0): set metadata["tier"]
-// to tierTargetLevel and remove the three tierUp* keys. Must be called under s.mu.
-func (s *GameState) tickTownHallTierUpsLocked(dt float64) {
+// to tierTargetLevel and remove the three tierUp* keys. Type-agnostic — any
+// building carrying tierUpRemaining is advanced. Must be called under s.mu.
+func (s *GameState) tickBuildingTierUpsLocked(dt float64) {
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
-		if b.BuildingType != "townhall" || b.Metadata == nil {
+		if b.Metadata == nil {
 			continue
 		}
 		remaining, ok := getMetadataFloat(b.Metadata, "tierUpRemaining")

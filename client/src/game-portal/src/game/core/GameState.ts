@@ -4063,7 +4063,10 @@ export function getBuildingActions(
   building: BuildingTile,
   upgrades: PlayerUpgradeSnapshot[] = [],
   vaultState: { vault: VaultItemSnapshot[]; vaultCapacity?: number } = { vault: [] },
-  townHallTier: number = 0,
+  // Retained for call-site positional compatibility; the tier-up action now
+  // reads each building's own metadata["tier"] rather than the player-wide
+  // town-hall tier, so this is no longer consulted here.
+  _townHallTier: number = 0,
   lockedUnitTypes: ReadonlySet<string> = new Set(),
   shopRerollsRemaining: number = 0,
   unlockedRecipeIds: ReadonlySet<string> = new Set(),
@@ -4312,29 +4315,32 @@ export function getBuildingActions(
     }
   }
 
-  // Town hall upgrade pinned to slot 9 (bottom-left of the 4×3 action grid)
-  // by padding regular actions out to length 8. Mirrors the unit-action
-  // layout where perks always start at slot 9.
-  if (building.buildingType === 'townhall') {
+  // Building tier-up pinned to slot 9 (bottom-left of the 4×3 action grid) by
+  // padding regular actions out to length 8. Mirrors the unit-action layout
+  // where perks always start at slot 9. Generic across any building whose type
+  // roots an upgradesFrom chain (townhall → keep → castle, chapel → temple, …).
+  const upgradeChain = getUpgradeChain(building.buildingType)
+  if (upgradeChain.length > 1) {
     while (actions.length < 8) {
       actions.push({ id: '', label: '', disabled: true })
     }
-    // Tier chain (townhall → keep → castle) drives the label, cost, and max
-    // tier — all sourced from the catalog rather than hardcoded here.
-    const chain = getUpgradeChain('townhall')
-    const tier = townHallTier || 1
+    // The chain drives the label, cost, and max tier — all sourced from the
+    // catalog rather than hardcoded here. Read this building's own tier
+    // (default 1) so each building tracks its upgrade state independently.
+    const tier = getBuildingMetadataNumber(building, 'tier') ?? 1
     const tierUpRemaining = getBuildingMetadataNumber(building, 'tierUpRemaining')
     const inProgress = tierUpRemaining !== undefined
-    const atMax = tier >= chain.length
+    const atMax = tier >= upgradeChain.length
 
-    let label = `${chain[tier - 1]?.label ?? 'Town Hall'} (Max)`
+    const currentLabel = upgradeChain[tier - 1]?.label ?? building.buildingType
+    let label = `${currentLabel} (Max)`
     let cost: ActionCost[] | undefined
     // Icon shows what the action produces: the target tier's sprite while an
     // upgrade is available (e.g. the Keep sprite for "Upgrade to Keep"), falling
     // back to the current tier's sprite at max.
-    let iconType = chain[tier - 1]?.type ?? 'townhall'
+    let iconType = upgradeChain[tier - 1]?.type ?? building.buildingType
     if (!atMax) {
-      const nextDef = chain[tier] // tier is 1-based; index tier = next tier def
+      const nextDef = upgradeChain[tier] // tier is 1-based; index tier = next tier def
       label = `Upgrade to ${nextDef?.label ?? 'next tier'}`
       iconType = nextDef?.type ?? iconType
       cost = Object.entries(nextDef?.upgradeCost ?? {})
@@ -4343,7 +4349,7 @@ export function getBuildingActions(
     }
 
     actions.push({
-      id: 'upgrade-townhall',
+      id: 'upgrade-building',
       label,
       iconDef: { kind: 'building', type: iconType },
       cost,
@@ -4352,7 +4358,7 @@ export function getBuildingActions(
       tooltipBody: inProgress
         ? 'Upgrade in progress…'
         : atMax
-          ? 'Town Hall is at max tier.'
+          ? `${currentLabel} is at max tier.`
           : undefined,
     })
   }
@@ -4506,7 +4512,14 @@ function appendTierUpDetails(building: BuildingTile, details: DetailItem[]): voi
   const tierUpTotal = getBuildingMetadataNumber(building, 'tierUpTotal')
   const tierTargetLevel = getBuildingMetadataNumber(building, 'tierTargetLevel')
   if (tierUpRemaining === undefined || tierUpTotal === undefined || tierUpTotal <= 0) return
-  const targetName = tierTargetLevel !== undefined ? townHallTierName(Math.round(tierTargetLevel)) : 'next tier'
+  // Name the target tier from THIS building's own upgrade chain (townhall →
+  // keep → castle, chapel → temple, …) so a chapel reads "Temple", not a
+  // townhall-chain name.
+  const chain = getUpgradeChain(building.buildingType)
+  const targetName =
+    tierTargetLevel !== undefined
+      ? (chain[Math.round(tierTargetLevel) - 1]?.label ?? 'next tier')
+      : 'next tier'
   const progress = Math.max(0, Math.min(1, 1 - tierUpRemaining / tierUpTotal))
   details.push({ id: 'tierup-remaining', label: 'Upgrading to', value: targetName })
   details.push({ id: 'tierup-progress', label: 'Progress', value: String(progress) })

@@ -228,8 +228,8 @@ export function useGameClient() {
     client?.cancelUpgrade(buildingId)
   }
 
-  function upgradeTownHall(buildingId: string) {
-    client?.upgradeTownHall(buildingId)
+  function upgradeBuilding(buildingId: string) {
+    client?.upgradeBuilding(buildingId)
   }
 
   function sendPurchaseItem(buildingId: string, itemId: string) {
@@ -319,7 +319,7 @@ export function useGameClient() {
     setMinimapPanelRect,
     purchaseUpgrade,
     cancelUpgrade,
-    upgradeTownHall,
+    upgradeBuilding,
     sendPurchaseItem,
     sendPurchaseRecipe,
     rerollShop,

@@ -428,15 +428,22 @@ func joinProductionUnitTypes(queue []*UnitProduction) string {
 }
 
 // playerHasBuildingTypeLocked returns true if the player owns at least
-// one Visible, fully-built (not underConstruction) building of the
-// given type. Must be called under s.mu.
+// one Visible, fully-built (not underConstruction) building satisfying
+// the required type. The requirement is tier-aware: a tier link (e.g.
+// "temple", "keep") is satisfied by a fully-built building of the chain
+// ROOT type at the corresponding tier or higher — a placed building keeps
+// its root BuildingType and records tier only in metadata["tier"], so a
+// "temple" requirement means "a chapel at tier ≥ 2". Plain types resolve
+// to (themselves, tier 1) and behave exactly as before. Must be called
+// under s.mu.
 func (s *GameState) playerHasBuildingTypeLocked(playerID, buildingType string) bool {
+	rootType, needTier := buildingRequirementTier(buildingType)
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
 		if !b.Visible {
 			continue
 		}
-		if b.BuildingType != buildingType {
+		if b.BuildingType != rootType {
 			continue
 		}
 		if b.OwnerID == nil || *b.OwnerID != playerID {
@@ -444,6 +451,15 @@ func (s *GameState) playerHasBuildingTypeLocked(playerID, buildingType string) b
 		}
 		if getMetadataBool(b.Metadata, "underConstruction") {
 			continue
+		}
+		if needTier > 1 {
+			tier := 1
+			if v, ok := getMetadataFloat(b.Metadata, "tier"); ok && v >= 1 {
+				tier = int(v)
+			}
+			if tier < needTier {
+				continue
+			}
 		}
 		return true
 	}

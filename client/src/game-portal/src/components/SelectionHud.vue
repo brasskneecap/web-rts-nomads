@@ -195,20 +195,21 @@
           </div>
         </div>
 
-        <!-- Townhall in-progress bar. The upgrade button itself lives in the
-             action grid (bottom-left slot); this section only shows progress
-             while an upgrade is underway. -->
+        <!-- Building tier-up in-progress bar. Generic across any tier building
+             (townhall → keep → castle, chapel → temple, …). The upgrade button
+             itself lives in the action grid (bottom-left slot); this section
+             only shows progress while an upgrade is underway. -->
         <div
-          v-if="ui.selection.kind === 'building' && ui.selectedBuildingType === 'townhall' && townhallUpgradeInProgress"
+          v-if="ui.selection.kind === 'building' && buildingUpgradeInProgress"
           class="townhall-tier"
         >
           <div class="townhall-upgrade-bar">
             <div
               class="townhall-upgrade-bar__fill"
-              :style="{ width: `${townhallUpgradeProgress * 100}%` }"
+              :style="{ width: `${buildingUpgradeProgress * 100}%` }"
             />
             <div class="townhall-upgrade-bar__label">
-              {{ (ui.townHallTier || 1) === 1 ? 'Upgrading to Keep...' : 'Upgrading to Castle...' }}
+              Upgrading to {{ buildingUpgradeTargetName }}...
             </div>
           </div>
         </div>
@@ -571,11 +572,21 @@ const focusTargetLabel = computed(() => {
 })
 
 // True when the server has set tierUpRemaining on the selected building's
-// metadata, indicating an upgrade is in progress.
-const townhallUpgradeInProgress = computed(() => {
+// metadata, indicating a tier-up is in progress. Generic across any tier
+// building (townhall, chapel, …) — driven purely by the tierup detail items.
+const buildingUpgradeInProgress = computed(() => {
   if (props.ui.selection.kind !== 'building') return false
   const detail = props.ui.selection.details.find((d) => d.id === 'tierup-remaining')
   return !!detail
+})
+
+// Name of the tier being upgraded into (e.g. "Keep", "Temple"), sourced from
+// the tierup-remaining detail's value that appendTierUpDetails computes from the
+// building's own upgrade chain. Falls back to a generic label.
+const buildingUpgradeTargetName = computed(() => {
+  if (props.ui.selection.kind !== 'building') return 'next tier'
+  const detail = props.ui.selection.details.find((d) => d.id === 'tierup-remaining')
+  return detail?.value || 'next tier'
 })
 
 // Progress fraction (0..1) for the in-progress tier-up bar.
@@ -584,7 +595,7 @@ const townhallUpgradeInProgress = computed(() => {
 // tierUpRemaining and tierUpTotal are expected in the building metadata, which
 // SelectionHud doesn't currently receive directly. As a fallback, if the
 // detail carries a numeric value it is treated as the remaining fraction.
-const townhallUpgradeProgress = computed(() => {
+const buildingUpgradeProgress = computed(() => {
   if (props.ui.selection.kind !== 'building') return 0
   const detail = props.ui.selection.details.find((d) => d.id === 'tierup-progress')
   if (!detail?.value) return 0

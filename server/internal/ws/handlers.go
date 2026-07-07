@@ -1035,7 +1035,7 @@ func (h *Hub) readLoop(client *Client) {
 			}
 			match.State.CancelUpgradeAt(client.PlayerID(), msg.BuildingID, msg.QueueIndex)
 
-		case "upgrade_townhall":
+		case "upgrade_building":
 			if client.MatchID() == "" {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "must join a match before sending commands"})
 				continue
@@ -1045,12 +1045,12 @@ func (h *Hub) readLoop(client *Client) {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "match not found"})
 				continue
 			}
-			var msg protocol.UpgradeTownHallCommandMessage
+			var msg protocol.UpgradeBuildingCommandMessage
 			if err := json.Unmarshal(data, &msg); err != nil {
-				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid upgrade_townhall payload"})
+				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid upgrade_building payload"})
 				continue
 			}
-			match.State.UpgradeTownHall(client.PlayerID(), msg.BuildingID)
+			match.State.UpgradeBuildingTier(client.PlayerID(), msg.BuildingID)
 
 		case "purchase_item":
 			if client.MatchID() == "" {

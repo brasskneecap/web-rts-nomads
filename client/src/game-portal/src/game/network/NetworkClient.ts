@@ -30,7 +30,7 @@ import type {
   SetStanceCommandMessage,
   ServerMessage,
   TrainUnitCommandMessage,
-  UpgradeTownHallCommand,
+  UpgradeBuildingCommand,
 } from './protocol'
 import { GameState } from '../core/GameState'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
@@ -720,9 +720,9 @@ export class NetworkClient {
     this.send(message)
   }
 
-  sendUpgradeTownHall(buildingId: string) {
-    const message: UpgradeTownHallCommand = {
-      type: 'upgrade_townhall',
+  sendUpgradeBuilding(buildingId: string) {
+    const message: UpgradeBuildingCommand = {
+      type: 'upgrade_building',
       buildingId,
     }
     this.send(message)

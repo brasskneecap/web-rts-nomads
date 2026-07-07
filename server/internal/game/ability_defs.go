@@ -234,6 +234,15 @@ type AbilityDef struct {
 	// ability resolves (e.g. "healing_glow"). Empty = none. Resolved
 	// fail-safe at use time (an unknown id just means "no effect").
 	EffectOnTarget string `json:"effectOnTarget,omitempty"`
+
+	// Projectile is the optional projectile-def id (catalog/projectiles/<id>)
+	// an offensive ability launches at its target on resolve. When set (and
+	// DamageAmount > 0) the ability's damage is DEFERRED and delivered by a
+	// homing bolt that travels to the target and applies the damage on impact —
+	// the same pipeline basic-attack shots use — instead of being applied
+	// instantly. Empty ⇒ instant (hitscan) damage, the prior behaviour. Inert
+	// for abilities with no DamageAmount.
+	Projectile string `json:"projectile,omitempty"`
 }
 
 // CasterAnimationOrCasting returns the caster animation status, defaulting an

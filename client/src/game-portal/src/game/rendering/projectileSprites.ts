@@ -124,9 +124,32 @@ export const PROJECTILE_DRAW_REGISTRY: Record<string, ProjectileDrawFn> = {}
 //
 // The renderer has already applied translate(x,y) + rotate(headingAngle)
 // before calling the draw fn, so a sprite that points along +x in its art is
-// oriented to the flight direction "for free". Each projectile is a single
-// flat sprite.png (authored pointing +x / "east"); we just blit it centered
-// and let that existing rotation do the work.
+// oriented to the flight direction "for free". We blit the sprite centered and
+// let that existing rotation do the work.
+//
+// A projectile PNG may be EITHER a single flat frame (the common case — e.g.
+// fire_bolt.png is 48×48) OR a horizontal strip of N equal square frames that
+// animate (e.g. arcane_bolt.png is 96×48 = two 48×48 frames). The frame count
+// is inferred from the aspect ratio: a width that is an exact integer multiple
+// of the height ⇒ that many frames laid left→right, each pointing +x. This
+// keeps the zero-config "just drop a png in" convention — no manifest — while a
+// square (or non-integer-ratio) sprite stays a single static frame, unchanged.
+// Frames cycle on a wall-clock timer; this is render-only and never touches the
+// deterministic simulation.
+
+// Per-frame duration for animated projectile strips (~11 fps). Visual-only.
+const PROJECTILE_ANIM_FRAME_MS = 90
+
+// Infers the number of equal, square frames in a horizontal sprite strip from
+// its pixel dimensions. Returns 1 (static) unless the width is (within a small
+// tolerance) an integer ≥ 2 multiple of the height, so only art explicitly
+// authored as an N-wide strip animates.
+function inferProjectileFrameCount(naturalWidth: number, naturalHeight: number): number {
+  if (naturalHeight <= 0) return 1
+  const ratio = naturalWidth / naturalHeight
+  const nearest = Math.round(ratio)
+  return nearest >= 2 && Math.abs(ratio - nearest) < 0.02 ? nearest : 1
+}
 
 // TODO(tune, visual-only — no client test runner): world-pixel scale applied
 // to a projectile sprite's native frame size. fire_bolt art is 48×48; 0.5 ≈
@@ -138,10 +161,6 @@ const PROJECTILE_SPRITE_SCALE = 0.5
 // point +x already, so 0 should be correct — bump by ±Math.PI/2 etc. only if
 // it visually points the wrong way in-game.
 const PROJECTILE_SPRITE_ANGLE_OFFSET = 0
-
-// Fallback native frame size used until the image has decoded (naturalWidth
-// reads 0 before then). Matches the historical fire_bolt art dimensions.
-const PROJECTILE_SPRITE_FALLBACK_SIZE = 48
 
 // Builds a ProjectileDrawFn that blits a loaded projectile sprite centered at
 // the origin. Falls back to the procedural arrow until the image has decoded
@@ -166,14 +185,24 @@ function makeSpriteProjectileDraw(spriteId: string): ProjectileDrawFn {
       shotScale && shotScale > 0
         ? PROJECTILE_SPRITE_SCALE * shotScale
         : PROJECTILE_SPRITE_SCALE
-    const w = (img.naturalWidth || PROJECTILE_SPRITE_FALLBACK_SIZE) * scale
-    const h = (img.naturalHeight || PROJECTILE_SPRITE_FALLBACK_SIZE) * scale
+    // projectileImageReady guarantees naturalWidth/Height > 0 here. A strip of
+    // N frames draws ONE frame (frameW = full width / N); a single-frame sprite
+    // draws the whole image (frames = 1, frameW = full width) — identical to the
+    // prior behaviour.
+    const frames = inferProjectileFrameCount(img.naturalWidth, img.naturalHeight)
+    const frameW = img.naturalWidth / frames
+    const frameH = img.naturalHeight
+    const frameIdx =
+      frames > 1 ? Math.floor(performance.now() / PROJECTILE_ANIM_FRAME_MS) % frames : 0
+    const sx = frameIdx * frameW
+    const w = frameW * scale
+    const h = frameH * scale
     const prevSmoothing = ctx.imageSmoothingEnabled
     ctx.imageSmoothingEnabled = false // pixel art — keep crisp
     if (PROJECTILE_SPRITE_ANGLE_OFFSET !== 0) {
       ctx.rotate(PROJECTILE_SPRITE_ANGLE_OFFSET)
     }
-    ctx.drawImage(img, -w / 2, -h / 2, w, h)
+    ctx.drawImage(img, sx, 0, frameW, frameH, -w / 2, -h / 2, w, h)
     ctx.imageSmoothingEnabled = prevSmoothing
   }
 }

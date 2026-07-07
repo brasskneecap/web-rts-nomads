@@ -883,9 +883,10 @@ type CancelUpgradeCommandMessage struct {
 	QueueIndex int    `json:"queueIndex,omitempty"`
 }
 
-// UpgradeTownHallCommandMessage requests a tier-up on the specified town hall.
-// BuildingID must be the ID of a townhall the player owns.
-type UpgradeTownHallCommandMessage struct {
+// UpgradeBuildingCommandMessage requests a tier-up on the specified building
+// (townhall → keep → castle, chapel → temple, …). BuildingID must be the ID of
+// a tier-upgradeable building the player owns.
+type UpgradeBuildingCommandMessage struct {
 	Type       string `json:"type"`
 	BuildingID string `json:"buildingId"`
 }

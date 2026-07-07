@@ -2674,7 +2674,7 @@ func (s *GameState) Update(dt float64) {
 	profileSection("battleTracker", func() { s.battleTracker.tickLocked(dt) })
 	profileSection("unitProductions", func() { s.updateUnitProductionsLocked(dt) })
 	profileSection("orphanedPendingBuildings", func() { s.cancelOrphanedPendingBuildingsLocked() })
-	profileSection("townhallTierUps", func() { s.tickTownHallTierUpsLocked(dt) })
+	profileSection("buildingTierUps", func() { s.tickBuildingTierUpsLocked(dt) })
 	profileSection("blacksmithUpgrades", func() { s.tickBlacksmithUpgradesLocked(dt) })
 	profileSection("buildingRepairs", func() { s.tickBuildingRepairsLocked(dt) })
 	var blocked map[gridPoint]bool

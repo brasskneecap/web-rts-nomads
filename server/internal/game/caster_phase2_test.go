@@ -1000,11 +1000,12 @@ func TestPhase2_PathAbilityLoader_UnknownRankPanics(t *testing.T) {
 // 7.9a  DamageAmount primitive
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestPhase2_DamageAmount_DamagesTargetOnResolve verifies that resolving an
-// ability with DamageAmount > 0 reduces the target's HP via the authoritative
-// pipeline, attributed to the caster with the ability's DamageType.
-// Derives the damage amount from the catalog def — never hardcodes it.
-func TestPhase2_DamageAmount_DamagesTargetOnResolve(t *testing.T) {
+// TestPhase2_DamageAmount_DamagesTargetOnImpact verifies that resolving a
+// projectile ability with DamageAmount > 0 launches a bolt carrying the
+// ability's damage + type + caster credit, and that the target loses exactly
+// DamageAmount HP when the bolt lands (deferred delivery — not instant). Derives
+// the damage amount from the catalog def — never hardcodes it.
+func TestPhase2_DamageAmount_DamagesTargetOnImpact(t *testing.T) {
 	arcaneDef, ok := getAbilityDef("arcane_bolt")
 	if !ok {
 		t.Fatal(`getAbilityDef("arcane_bolt") = _, false; arcane_bolt must be registered`)
@@ -1012,60 +1013,77 @@ func TestPhase2_DamageAmount_DamagesTargetOnResolve(t *testing.T) {
 	if arcaneDef.DamageAmount <= 0 {
 		t.Fatalf("arcane_bolt.DamageAmount = %d; must be > 0 for this test to be meaningful", arcaneDef.DamageAmount)
 	}
+	if arcaneDef.Projectile == "" {
+		t.Fatal("arcane_bolt.Projectile is empty; this test assumes projectile delivery")
+	}
 
 	s := newProjectileTestState(t)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	caster.Abilities = append(caster.Abilities, "arcane_bolt")
-	// Ensure plenty of mana.
 	caster.CurrentMana = arcaneDef.ManaCost + 200
+	// Isolate the bolt: zero the caster's basic-attack damage and clear autocast
+	// so no fire_bolt / second arcane_bolt confounds the exact HP assertion while
+	// the projectile is in flight.
+	caster.Damage = 0
+	caster.AutoCastEnabled = nil
 
-	// Enemy target within range.
+	// Enemy target within range, no armor so HP loss equals DamageAmount exactly.
 	target := spawnProjTestUnit(t, s, enemyPlayerID, 430, 400)
-	target.Armor = 0 // isolate: no mitigation so HP reduction equals damage amount exactly
+	target.Armor = 0
 	startHP := target.HP
 	targetID := target.ID
 
-	// Resolve the ability directly (synchronous — CastTime = 0 would instant-resolve;
-	// use resolveAbilityCastLocked directly to test the resolve step in isolation,
-	// bypassing the cast timer).
+	// Resolve spawns the arcane_bolt projectile (damage deferred to impact).
 	s.resolveAbilityCastLocked(caster, arcaneDef, []*Unit{target})
 
+	// The bolt must carry the ability's damage, type, sprite, and caster credit.
+	if n := len(s.Projectiles); n != 1 {
+		s.mu.Unlock()
+		t.Fatalf("expected exactly 1 arcane_bolt projectile after resolve; got %d", n)
+	}
+	proj := s.Projectiles[0]
+	if proj.Variant != arcaneDef.Projectile || proj.Damage != arcaneDef.DamageAmount ||
+		proj.DamageType != arcaneDef.DamageType || proj.OwnerUnitID != caster.ID {
+		s.mu.Unlock()
+		t.Fatalf("arcane_bolt projectile mismatch: variant=%q damage=%d type=%q owner=%d (want variant=%q damage=%d type=%q owner=%d)",
+			proj.Variant, proj.Damage, proj.DamageType, proj.OwnerUnitID,
+			arcaneDef.Projectile, arcaneDef.DamageAmount, arcaneDef.DamageType, caster.ID)
+	}
+	// Mana is deducted at resolve (cast completion), before the bolt lands.
+	wantMana := (arcaneDef.ManaCost + 200) - arcaneDef.ManaCost
+	if caster.CurrentMana != wantMana {
+		s.mu.Unlock()
+		t.Errorf("caster mana after resolve: got %d, want %d", caster.CurrentMana, wantMana)
+	}
+	s.mu.Unlock()
+
+	// Fast-forward until the bolt lands and applies its damage.
+	landed := advanceTicksUntil(s, 40, func() bool {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		lt := s.unitsByID[targetID]
+		return lt == nil || lt.HP < startHP
+	})
+	if !landed {
+		t.Fatal("arcane_bolt projectile never landed within 40 ticks")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	liveTarget := s.unitsByID[targetID]
 	if liveTarget == nil {
-		// Target was killed and removed — that's a valid path (death pipeline ran).
-		// Verify the kill was registered via the death pipeline (not a silent disappearance).
-		// We can't check HP of a removed unit, but we verify the caster's mana was spent.
-		wantMana := caster.CurrentMana
-		if wantMana > arcaneDef.ManaCost+200-arcaneDef.ManaCost {
-			// Mana was deducted → resolve ran.
-			_ = wantMana
-		}
-		t.Logf("target was killed by arcane_bolt (damage %d ≥ startHP %d); death pipeline ran",
-			arcaneDef.DamageAmount, startHP)
+		t.Logf("target killed by arcane_bolt (damage %d ≥ startHP %d)", arcaneDef.DamageAmount, startHP)
 		return
 	}
-	if liveTarget.HP >= startHP {
-		t.Errorf("arcane_bolt resolve: target HP %d → %d; expected a reduction of ~%d (DamageAmount from catalog)",
-			startHP, liveTarget.HP, arcaneDef.DamageAmount)
-	}
-	// HP should have decreased by approximately DamageAmount (no armor here).
 	expectedHP := startHP - arcaneDef.DamageAmount
 	if expectedHP < 0 {
 		expectedHP = 0
 	}
 	if liveTarget.HP != expectedHP {
-		t.Errorf("arcane_bolt HP reduction: got HP=%d, want %d (startHP %d - DamageAmount %d, no armor)",
+		t.Errorf("arcane_bolt on-impact HP: got %d, want %d (startHP %d - DamageAmount %d, no armor)",
 			liveTarget.HP, expectedHP, startHP, arcaneDef.DamageAmount)
-	}
-
-	// Mana must have been deducted (resolve deducts on completion).
-	wantMana := (arcaneDef.ManaCost + 200) - arcaneDef.ManaCost
-	if caster.CurrentMana != wantMana {
-		t.Errorf("caster mana after resolve: got %d, want %d (%d - %d ManaCost)",
-			caster.CurrentMana, wantMana, arcaneDef.ManaCost+200, arcaneDef.ManaCost)
 	}
 }
 
@@ -1130,6 +1148,9 @@ func TestPhase2_DamageAmount_LethalCastRunsDeathPipeline(t *testing.T) {
 	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 400, Y: 400})
 	caster.Abilities = append(caster.Abilities, "arcane_bolt")
 	caster.CurrentMana = arcaneDef.ManaCost + 200
+	// Only the arcane_bolt projectile should be lethal — zero the basic attack.
+	caster.Damage = 0
+	caster.AutoCastEnabled = nil
 
 	// Target with exactly 1 HP — guaranteed lethal.
 	target := spawnProjTestUnit(t, s, enemyPlayerID, 430, 400)
@@ -1140,15 +1161,14 @@ func TestPhase2_DamageAmount_LethalCastRunsDeathPipeline(t *testing.T) {
 	s.resolveAbilityCastLocked(caster, arcaneDef, []*Unit{target})
 	s.mu.Unlock()
 
-	// Run one tick to drain the pending death queue.
-	s.Update(0.05)
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	// After draining, the target must be removed from the unit registry.
-	if s.unitsByID[targetID] != nil {
-		t.Errorf("lethal arcane_bolt: target (HP=1) should have been removed by the death pipeline after one tick; still present with HP=%d",
-			s.unitsByID[targetID].HP)
+	// Fast-forward until the bolt lands and the pending death drains.
+	removed := advanceTicksUntil(s, 40, func() bool {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.unitsByID[targetID] == nil
+	})
+	if !removed {
+		t.Errorf("lethal arcane_bolt: target (HP=1) should have been removed by the death pipeline once the bolt lands")
 	}
 }
 
@@ -1174,6 +1194,9 @@ func TestPhase2_DamageAmount_AttributedToCaster(t *testing.T) {
 	caster.Visible = true
 	caster.Abilities = append(caster.Abilities, "arcane_bolt")
 	caster.CurrentMana = arcaneDef.ManaCost + 200
+	// Ensure the kill is credited to the arcane_bolt projectile, not a basic attack.
+	caster.Damage = 0
+	caster.AutoCastEnabled = nil
 	casterID := caster.ID
 	startXP := caster.XP
 
@@ -1182,15 +1205,20 @@ func TestPhase2_DamageAmount_AttributedToCaster(t *testing.T) {
 	target.HP = 1
 	target.Armor = 0
 	target.Visible = true
+	targetID := target.ID
 
-	// resolveAbilityCastLocked calls applyUnitDamageWithSourceLocked with
-	// DamageSource{AttackerUnitID: caster.ID, Kind: "ability", DamageType: ...}
-	// which enqueues the target's death attributed to the caster.
+	// resolveAbilityCastLocked launches an arcane_bolt projectile owned by the
+	// caster; on impact its damage enqueues the target's death attributed to the
+	// caster (proj.OwnerUnitID → DamageSource.AttackerUnitID).
 	s.resolveAbilityCastLocked(caster, arcaneDef, []*Unit{target})
 	s.mu.Unlock()
 
-	// Run a tick to drain the pending death queue → awardKillXPLocked fires.
-	s.Update(0.05)
+	// Fast-forward until the bolt lands and the pending death drains → kill XP.
+	advanceTicksUntil(s, 40, func() bool {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.unitsByID[targetID] == nil
+	})
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
