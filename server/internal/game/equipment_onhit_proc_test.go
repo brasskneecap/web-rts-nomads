@@ -17,7 +17,7 @@ func TestOnHitProc_FiresBoltDeterministically(t *testing.T) {
 	s.addUnitLocked(target)
 
 	// chance 1.0 → a proc projectile must spawn on every hit.
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
 	before := len(s.Projectiles)
 	deadUnitIDs := []int{}
 	s.resolveAttackHitLocked(attacker, target, 1, &deadUnitIDs)
@@ -30,7 +30,7 @@ func TestOnHitProc_FiresBoltDeterministically(t *testing.T) {
 	}
 
 	// chance 0.0 → never spawns.
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 0.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 0.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
 	before = len(s.Projectiles)
 	s.resolveAttackHitLocked(attacker, target, 1, &deadUnitIDs)
 	if len(s.Projectiles) != before {
@@ -44,7 +44,7 @@ func TestOnHitProc_ProjectileDoesNotReProc(t *testing.T) {
 	defer s.mu.Unlock()
 
 	attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
 	target := &Unit{ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier", Visible: true, HP: 500, MaxHP: 500}
 	s.nextUnitID++
 	s.addUnitLocked(target)
@@ -81,7 +81,7 @@ func TestOnHitProc_RangedArrowLandingPersistsBolt(t *testing.T) {
 	defer s.mu.Unlock()
 
 	attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
 
 	target := &Unit{ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier", Visible: true, HP: 500, MaxHP: 500, X: 50, Y: 0}
 	s.nextUnitID++
@@ -127,7 +127,7 @@ func TestOnHitProc_ProjectileScale(t *testing.T) {
 	s.addUnitLocked(target)
 
 	// Explicit proc scale overrides the attacker's.
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt", ProjectileScale: 3}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt", ProjectileScale: 3}}}
 	s.rollEquipmentProcsLocked(attacker, target)
 	if len(s.Projectiles) != 1 {
 		t.Fatalf("expected 1 proc bolt, got %d", len(s.Projectiles))
@@ -138,7 +138,7 @@ func TestOnHitProc_ProjectileScale(t *testing.T) {
 
 	// Omitted proc scale (0) inherits the firing unit's ProjectileScale.
 	s.Projectiles = nil
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
 	s.rollEquipmentProcsLocked(attacker, target)
 	if got := s.Projectiles[0].Scale; got != 1.0 {
 		t.Fatalf("omitted proc scale should inherit attacker scale 1.0, got %v", got)
@@ -151,7 +151,7 @@ func TestOnHitProc_Deterministic(t *testing.T) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
-		attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 0.5, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}
+		attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 0.5, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
 		target := &Unit{ID: s.nextUnitID, OwnerID: enemyPlayerID, UnitType: "soldier", Visible: true, HP: 1_000_000, MaxHP: 1_000_000}
 		s.nextUnitID++
 		s.addUnitLocked(target)

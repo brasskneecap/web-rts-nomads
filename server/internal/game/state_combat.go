@@ -466,25 +466,11 @@ func (s *GameState) rollEquipmentProcsLocked(attacker, target *Unit) {
 		return
 	}
 	for _, proc := range attacker.EquipmentBonus.OnHitProcs {
-		if proc.Chance <= 0 || proc.Damage <= 0 {
+		if proc.Chance <= 0 || proc.Params.Damage <= 0 {
 			continue
 		}
 		if s.rngPerks.Float64() < proc.Chance {
-			// TEMPORARY shim (removed when EquipmentProc carries resolved
-			// ProcEffectParams): copy the legacy flat fields into params.
-			s.executeProcEffectLocked(procSourceFromUnit(attacker), target, ProcEffectParams{
-				Damage:              proc.Damage,
-				DamageType:          proc.DamageType,
-				ProjectileID:        proc.ProjectileID,
-				ProjectileScale:     proc.ProjectileScale,
-				BounceCount:         proc.BounceCount,
-				BounceRange:         proc.BounceRange,
-				BounceDamageFalloff: proc.BounceDamageFalloff,
-				SlowMultiplier:      proc.SlowMultiplier,
-				SlowDurationSeconds: proc.SlowDurationSeconds,
-				BurnDamagePerSecond: proc.BurnDamagePerSecond,
-				BurnDurationSeconds: proc.BurnDurationSeconds,
-			})
+			s.executeProcEffectLocked(procSourceFromUnit(attacker), target, proc.Params)
 		}
 	}
 }

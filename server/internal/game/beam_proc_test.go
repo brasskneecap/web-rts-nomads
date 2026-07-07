@@ -36,7 +36,7 @@ func TestOnHitProc_BeamKindFiresBeamNotProjectile(t *testing.T) {
 	attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
 	target := beamProcTarget(t, s)
 
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageLightning, ProjectileID: "lightning_bolt"}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageLightning, ProjectileID: "lightning_bolt"}}}
 	proc := attacker.EquipmentBonus.OnHitProcs[0]
 
 	hpBefore := target.HP
@@ -72,8 +72,8 @@ func TestOnHitProc_BeamKindFiresBeamNotProjectile(t *testing.T) {
 	if target.HP != hpBefore {
 		t.Errorf("beam proc damage must be deferred, but HP changed %d→%d at fire time", hpBefore, target.HP)
 	}
-	if b.PendingDamage != proc.Damage {
-		t.Errorf("beam should carry the deferred proc damage: PendingDamage=%d, want %d", b.PendingDamage, proc.Damage)
+	if b.PendingDamage != proc.Params.Damage {
+		t.Errorf("beam should carry the deferred proc damage: PendingDamage=%d, want %d", b.PendingDamage, proc.Params.Damage)
 	}
 	if b.DamageDelayRemaining <= 0 {
 		t.Errorf("beam should carry a positive damage delay, got %v", b.DamageDelayRemaining)
@@ -90,7 +90,7 @@ func TestOnHitProc_BeamDamageLandsAfterDelay(t *testing.T) {
 
 	attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
 	target := beamProcTarget(t, s)
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageLightning, ProjectileID: "lightning_bolt"}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageLightning, ProjectileID: "lightning_bolt"}}}
 	proc := attacker.EquipmentBonus.OnHitProcs[0]
 
 	hpBefore := target.HP
@@ -103,8 +103,8 @@ func TestOnHitProc_BeamDamageLandsAfterDelay(t *testing.T) {
 	}
 	// Ticking past the remaining delay lands the proc's damage exactly once.
 	s.tickBeamsLocked(beamProcDamageDelaySeconds)
-	if got := hpBefore - target.HP; got != proc.Damage {
-		t.Fatalf("after the delay the beam should deal its damage once: HP dropped %d, want %d", got, proc.Damage)
+	if got := hpBefore - target.HP; got != proc.Params.Damage {
+		t.Fatalf("after the delay the beam should deal its damage once: HP dropped %d, want %d", got, proc.Params.Damage)
 	}
 	// Further ticks must not re-apply it.
 	hpAfter := target.HP
@@ -194,10 +194,10 @@ func TestOnHitProc_BeamBouncesToAdditionalTargets(t *testing.T) {
 	e1 := spawnBeamEnemyAt(t, s, 120, 0) // nearest to t0
 	e2 := spawnBeamEnemyAt(t, s, 200, 0) // nearest to e1
 
-	proc := EquipmentProc{
-		Chance: 1.0, Damage: 25, DamageType: DamageLightning, ProjectileID: "lightning_bolt",
+	proc := EquipmentProc{Chance: 1.0, Params: ProcEffectParams{
+		Damage: 25, DamageType: DamageLightning, ProjectileID: "lightning_bolt",
 		BounceCount: 2, BounceRange: 200, BounceDamageFalloff: 5,
-	}
+	}}
 	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{proc}
 
 	hp0, hp1, hp2 := t0.HP, e1.HP, e2.HP
@@ -224,9 +224,9 @@ func TestOnHitProc_BeamBouncesToAdditionalTargets(t *testing.T) {
 		wantDamage   int
 	}
 	hops := []hop{
-		{t0, attacker.ID, proc.Damage},                        // 25
-		{e1, t0.ID, proc.Damage - proc.BounceDamageFalloff},   // 20
-		{e2, e1.ID, proc.Damage - proc.BounceDamageFalloff*2}, // 15
+		{t0, attacker.ID, proc.Params.Damage},                                     // 25
+		{e1, t0.ID, proc.Params.Damage - proc.Params.BounceDamageFalloff},         // 20
+		{e2, e1.ID, proc.Params.Damage - proc.Params.BounceDamageFalloff*2},       // 15
 	}
 	for i, h := range hops {
 		b := byTarget[h.target.ID]
@@ -246,14 +246,14 @@ func TestOnHitProc_BeamBouncesToAdditionalTargets(t *testing.T) {
 
 	// After the shared delay every hop's damage lands on its own target.
 	s.tickBeamsLocked(beamProcDamageDelaySeconds)
-	if got := hp0 - t0.HP; got != proc.Damage {
-		t.Errorf("primary took %d, want %d", got, proc.Damage)
+	if got := hp0 - t0.HP; got != proc.Params.Damage {
+		t.Errorf("primary took %d, want %d", got, proc.Params.Damage)
 	}
-	if got := hp1 - e1.HP; got != proc.Damage-proc.BounceDamageFalloff {
-		t.Errorf("bounce 1 took %d, want %d", got, proc.Damage-proc.BounceDamageFalloff)
+	if got := hp1 - e1.HP; got != proc.Params.Damage-proc.Params.BounceDamageFalloff {
+		t.Errorf("bounce 1 took %d, want %d", got, proc.Params.Damage-proc.Params.BounceDamageFalloff)
 	}
-	if got := hp2 - e2.HP; got != proc.Damage-proc.BounceDamageFalloff*2 {
-		t.Errorf("bounce 2 took %d, want %d", got, proc.Damage-proc.BounceDamageFalloff*2)
+	if got := hp2 - e2.HP; got != proc.Params.Damage-proc.Params.BounceDamageFalloff*2 {
+		t.Errorf("bounce 2 took %d, want %d", got, proc.Params.Damage-proc.Params.BounceDamageFalloff*2)
 	}
 }
 
@@ -272,8 +272,10 @@ func TestOnHitProc_BeamBounceStopsWhenAttenuated(t *testing.T) {
 	// Damage 8, falloff 5: hop1 = 3 (fires), hop2 = -2 (stops). So primary + 1
 	// bounce = 2 beams, even though BounceCount allows 2.
 	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{
-		Chance: 1.0, Damage: 8, DamageType: DamageLightning, ProjectileID: "lightning_bolt",
-		BounceCount: 2, BounceRange: 200, BounceDamageFalloff: 5,
+		Chance: 1.0, Params: ProcEffectParams{
+			Damage: 8, DamageType: DamageLightning, ProjectileID: "lightning_bolt",
+			BounceCount: 2, BounceRange: 200, BounceDamageFalloff: 5,
+		},
 	}}
 	s.rollEquipmentProcsLocked(attacker, t0)
 
@@ -320,7 +322,7 @@ func TestOnHitProc_ProjectileKindStillFiresProjectile(t *testing.T) {
 	attacker := s.spawnPlayerUnitLocked("acolyte", "p1", "#fff", protocol.Vec2{X: 0, Y: 0})
 	target := beamProcTarget(t, s)
 
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
 	s.rollEquipmentProcsLocked(attacker, target)
 
 	if len(s.Projectiles) != 1 {

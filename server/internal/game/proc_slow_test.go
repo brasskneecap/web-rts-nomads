@@ -21,10 +21,10 @@ func TestOnHitProc_ChillSlowsOnLand(t *testing.T) {
 	s.nextUnitID++
 	s.addUnitLocked(target)
 
-	proc := EquipmentProc{
-		Chance: 1.0, Damage: 25, DamageType: DamageCold, ProjectileID: "frost_bolt",
+	proc := EquipmentProc{Chance: 1.0, Params: ProcEffectParams{
+		Damage: 25, DamageType: DamageCold, ProjectileID: "frost_bolt",
 		SlowMultiplier: 0.75, SlowDurationSeconds: 2,
-	}
+	}}
 	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{proc}
 
 	// Fire the proc, then land the bolt (its own projectile).
@@ -41,11 +41,11 @@ func TestOnHitProc_ChillSlowsOnLand(t *testing.T) {
 	s.landProjectileLocked(s.Projectiles[0], target, &dead)
 
 	// A cold-typed proc lands on the COLD track, not the physical one.
-	if target.ColdSlowedMultiplier != proc.SlowMultiplier {
-		t.Errorf("ColdSlowedMultiplier = %v, want %v (25%% slower on attack + move speed)", target.ColdSlowedMultiplier, proc.SlowMultiplier)
+	if target.ColdSlowedMultiplier != proc.Params.SlowMultiplier {
+		t.Errorf("ColdSlowedMultiplier = %v, want %v (25%% slower on attack + move speed)", target.ColdSlowedMultiplier, proc.Params.SlowMultiplier)
 	}
-	if target.ColdSlowedRemaining != proc.SlowDurationSeconds {
-		t.Errorf("ColdSlowedRemaining = %v, want %v", target.ColdSlowedRemaining, proc.SlowDurationSeconds)
+	if target.ColdSlowedRemaining != proc.Params.SlowDurationSeconds {
+		t.Errorf("ColdSlowedRemaining = %v, want %v", target.ColdSlowedRemaining, proc.Params.SlowDurationSeconds)
 	}
 	// The physical track must stay untouched — the chill is separate.
 	if target.SlowedRemaining != 0 {
@@ -53,8 +53,8 @@ func TestOnHitProc_ChillSlowsOnLand(t *testing.T) {
 	}
 	// slowFactorLocked is the single seam both movement and attack cadence read,
 	// so confirming it reflects the chill proves both speeds are reduced.
-	if got := slowFactorLocked(target); got != proc.SlowMultiplier {
-		t.Errorf("effective slow factor = %v, want %v", got, proc.SlowMultiplier)
+	if got := slowFactorLocked(target); got != proc.Params.SlowMultiplier {
+		t.Errorf("effective slow factor = %v, want %v", got, proc.Params.SlowMultiplier)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestOnHitProc_NoChillWhenUnset(t *testing.T) {
 	s.nextUnitID++
 	s.addUnitLocked(target)
 
-	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}
+	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{{Chance: 1.0, Params: ProcEffectParams{Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt"}}}
 	s.rollEquipmentProcsLocked(attacker, target)
 	dead := []int{}
 	s.landProjectileLocked(s.Projectiles[0], target, &dead)

@@ -22,33 +22,12 @@ type EquippedItem struct {
 	Stacks     int    `json:"stacks"`
 }
 
-// EquipmentProc is a runtime copy of an item's ItemOnHitProc, aggregated onto a
-// unit's EquipmentBonus so the combat hook can roll it without re-reading the
-// catalog every hit.
+// EquipmentProc is one equipped on-hit proc, resolved at equip time so the
+// per-hit path never re-reads catalogs: Chance is the trigger's roll (against
+// the seeded perk RNG) and Params is the fully-resolved effect payload.
 type EquipmentProc struct {
-	Chance       float64
-	Damage       int
-	DamageType   DamageType
-	ProjectileID string
-	// ProjectileScale mirrors ItemOnHitProc.ProjectileScale — render-size
-	// multiplier for the proc bolt. 0 ⇒ fall back to the firing unit's scale.
-	ProjectileScale float64
-	// Bounce/chain config for beam-emitter procs (mirrors ItemOnHitProc). When
-	// BounceCount > 0 and BounceRange > 0 the beam arcs to further enemies,
-	// losing BounceDamageFalloff damage per hop. Zero for non-chaining procs.
-	BounceCount         int
-	BounceRange         float64
-	BounceDamageFalloff int
-	// On-hit slow (mirrors ItemOnHitProc): a landed proc scales the hit unit's
-	// attack + move speed by SlowMultiplier for SlowDurationSeconds. Zero ⇒ no
-	// slow.
-	SlowMultiplier      float64
-	SlowDurationSeconds float64
-	// On-hit burn (mirrors ItemOnHitProc): a landed proc ignites the hit unit
-	// with a fire DoT ticking BurnDamagePerSecond over BurnDurationSeconds via
-	// the shared burn system. Zero ⇒ no burn.
-	BurnDamagePerSecond float64
-	BurnDurationSeconds float64
+	Chance float64
+	Params ProcEffectParams
 }
 
 // UnitEquipmentBonus accumulates the flat stat bonuses from all equipped items.
@@ -269,18 +248,20 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 		}
 		if p := def.OnHitProc; p != nil {
 			unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, EquipmentProc{
-				Chance:              p.Chance,
-				Damage:              p.Damage,
-				DamageType:          p.DamageType.OrPhysical(),
-				ProjectileID:        p.ProjectileID,
-				ProjectileScale:     p.ProjectileScale,
-				BounceCount:         p.BounceCount,
-				BounceRange:         p.BounceRange,
-				BounceDamageFalloff: p.BounceDamageFalloff,
-				SlowMultiplier:      p.SlowMultiplier,
-				SlowDurationSeconds: p.SlowDurationSeconds,
-				BurnDamagePerSecond: p.BurnDamagePerSecond,
-				BurnDurationSeconds: p.BurnDurationSeconds,
+				Chance: p.Chance,
+				Params: ProcEffectParams{
+					Damage:              p.Damage,
+					DamageType:          p.DamageType.OrPhysical(),
+					ProjectileID:        p.ProjectileID,
+					ProjectileScale:     p.ProjectileScale,
+					BounceCount:         p.BounceCount,
+					BounceRange:         p.BounceRange,
+					BounceDamageFalloff: p.BounceDamageFalloff,
+					SlowMultiplier:      p.SlowMultiplier,
+					SlowDurationSeconds: p.SlowDurationSeconds,
+					BurnDamagePerSecond: p.BurnDamagePerSecond,
+					BurnDurationSeconds: p.BurnDurationSeconds,
+				},
 			})
 		}
 	}

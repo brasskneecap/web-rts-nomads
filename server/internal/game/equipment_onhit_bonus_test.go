@@ -40,7 +40,7 @@ func TestEquipmentBonus_AggregatesElementalAndProc(t *testing.T) {
 		t.Fatalf("fire_sword should carry exactly one proc, got %d", len(u.EquipmentBonus.OnHitProcs))
 	}
 	p := u.EquipmentBonus.OnHitProcs[0]
-	if p.Damage != 25 || p.DamageType != DamageFire || p.ProjectileID != "fire_bolt" || p.Chance <= 0 {
+	if p.Params.Damage != 25 || p.Params.DamageType != DamageFire || p.Params.ProjectileID != "fire_bolt" || p.Chance <= 0 {
 		t.Fatalf("fire_sword proc unexpected: %+v", p)
 	}
 }

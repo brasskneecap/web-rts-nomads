@@ -20,10 +20,10 @@ func TestOnHitProc_BurnIgnitesOnLand(t *testing.T) {
 	s.nextUnitID++
 	s.addUnitLocked(target)
 
-	proc := EquipmentProc{
-		Chance: 1.0, Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt",
+	proc := EquipmentProc{Chance: 1.0, Params: ProcEffectParams{
+		Damage: 25, DamageType: DamageFire, ProjectileID: "fire_bolt",
 		BurnDamagePerSecond: 8, BurnDurationSeconds: 3,
-	}
+	}}
 	attacker.EquipmentBonus.OnHitProcs = []EquipmentProc{proc}
 
 	// Fire the proc, then land the bolt (its own projectile).
@@ -48,19 +48,19 @@ func TestOnHitProc_BurnIgnitesOnLand(t *testing.T) {
 	if stack.SourceKind != burnSourceWeapon {
 		t.Errorf("burn SourceKind = %q, want %q (weapon, not trap)", stack.SourceKind, burnSourceWeapon)
 	}
-	if stack.DPS != proc.BurnDamagePerSecond {
-		t.Errorf("burn DPS = %v, want %v", stack.DPS, proc.BurnDamagePerSecond)
+	if stack.DPS != proc.Params.BurnDamagePerSecond {
+		t.Errorf("burn DPS = %v, want %v", stack.DPS, proc.Params.BurnDamagePerSecond)
 	}
-	if stack.Remaining != proc.BurnDurationSeconds {
-		t.Errorf("burn Remaining = %v, want %v", stack.Remaining, proc.BurnDurationSeconds)
+	if stack.Remaining != proc.Params.BurnDurationSeconds {
+		t.Errorf("burn Remaining = %v, want %v", stack.Remaining, proc.Params.BurnDurationSeconds)
 	}
 	if stack.OwnerUnitID != attacker.ID {
 		t.Errorf("burn OwnerUnitID = %d, want %d (the wielder)", stack.OwnerUnitID, attacker.ID)
 	}
 
 	// maxBurnRemaining feeds the client's burningRemaining → burning overlay.
-	if got := target.PerkState.maxBurnRemaining(); got != proc.BurnDurationSeconds {
-		t.Errorf("maxBurnRemaining = %v, want %v", got, proc.BurnDurationSeconds)
+	if got := target.PerkState.maxBurnRemaining(); got != proc.Params.BurnDurationSeconds {
+		t.Errorf("maxBurnRemaining = %v, want %v", got, proc.Params.BurnDurationSeconds)
 	}
 
 	// Tick the burn system to completion. The DoT deals fire damage over its
@@ -68,7 +68,7 @@ func TestOnHitProc_BurnIgnitesOnLand(t *testing.T) {
 	// a wiring regression can't hang the test.
 	const dt = 1.0 / gameTicksPerSecond
 	hpBefore := target.HP
-	ticks := int((proc.BurnDurationSeconds+1.0)/dt) + 1
+	ticks := int((proc.Params.BurnDurationSeconds+1.0)/dt) + 1
 	for i := 0; i < ticks && len(target.PerkState.BurnStacks) > 0; i++ {
 		s.tickTrapperSilverDebuffsLocked(dt)
 	}
@@ -79,9 +79,9 @@ func TestOnHitProc_BurnIgnitesOnLand(t *testing.T) {
 	if lost <= 0 {
 		t.Errorf("burn dealt no damage over its duration (HP unchanged)")
 	}
-	maxTotal := int(proc.BurnDamagePerSecond*proc.BurnDurationSeconds) + 1
+	maxTotal := int(proc.Params.BurnDamagePerSecond*proc.Params.BurnDurationSeconds) + 1
 	if lost > maxTotal {
-		t.Errorf("burn dealt %d damage, exceeds authored total ~%d (DPS %v × %vs)", lost, maxTotal, proc.BurnDamagePerSecond, proc.BurnDurationSeconds)
+		t.Errorf("burn dealt %d damage, exceeds authored total ~%d (DPS %v × %vs)", lost, maxTotal, proc.Params.BurnDamagePerSecond, proc.Params.BurnDurationSeconds)
 	}
 	// The burn stack expires — a unit doesn't burn forever.
 	if len(target.PerkState.BurnStacks) != 0 {
