@@ -963,6 +963,11 @@ type GameState struct {
 	// (Reactive Flames splash, etc.). See minor_damage_events.go.
 	minorDamageEventsThisTick []minorDamageEvent
 
+	// evadeEventsThisTick mirrors minorDamageEventsThisTick for avoided basic
+	// attacks (dodge/block) — one entry per whiffed melee/projectile/pierce
+	// hit this tick. See evade_events.go.
+	evadeEventsThisTick []evadeEvent
+
 	// hitDamageEventsThisTick mirrors critEventsThisTick for individual landed
 	// hits. Lets the client split its HP-diff popup into per-hit numbers so
 	// two simultaneous strikes read as "12" "12" instead of one "24". See
@@ -1719,6 +1724,7 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MeleeAttackEvents:  s.snapshotMeleeAttackEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		EvadeEvents:        s.snapshotEvadeEventsLocked(),
 		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
@@ -2122,6 +2128,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MeleeAttackEvents:  s.snapshotMeleeAttackEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		EvadeEvents:        s.snapshotEvadeEventsLocked(),
 		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
@@ -2593,6 +2600,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MeleeAttackEvents:  s.snapshotMeleeAttackEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		EvadeEvents:        s.snapshotEvadeEventsLocked(),
 		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
@@ -2656,6 +2664,7 @@ func (s *GameState) Update(dt float64) {
 	s.resetCritEventsThisTickLocked()
 	s.resetMeleeAttackEventsThisTickLocked()
 	s.resetMinorDamageEventsThisTickLocked()
+	s.evadeEventsThisTick = s.evadeEventsThisTick[:0]
 	s.resetHitDamageEventsThisTickLocked()
 	s.resetDamageTypeHintsThisTickLocked()
 	s.resetLethalDamageEventsThisTickLocked()

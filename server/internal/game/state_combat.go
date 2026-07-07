@@ -572,6 +572,14 @@ func (s *GameState) applyDelayedAttackLocked(unit *Unit, deadUnitIDs *[]int, des
 			s.logAttackTiming("projectile-fire", unit, target.ID, target.UnitType, damage)
 			return
 		}
+		// Evasion: the committed swing connects visually, but the defender may
+		// dodge/block it — a full whiff (no damage, no on-hit effects). Rolled
+		// here for melee only; ranged attacks roll when the projectile LANDS
+		// (landProjectileLocked), so a dodge happens when the arrow arrives.
+		if hit, avoidedBy := s.attackHitsLocked(evasionForUnit(target)); !hit {
+			s.recordEvadeEventLocked(target, avoidedBy)
+			return
+		}
 		s.logAttackTiming("melee-land", unit, target.ID, target.UnitType, damage)
 		if s.resolveAttackHitLocked(unit, target, damage, deadUnitIDs) {
 			return
