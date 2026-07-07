@@ -116,7 +116,7 @@ export function useCampaign() {
   /** Shared setup for both Start and Lobby paths: validate that the level
    *  belongs to a known campaign, seed the campaign session, and create the
    *  lobby. Returns the new lobby id; the caller decides whether to
-   *  auto-start (Start button) or route to the lobby view (Lobby button).
+   *  auto-start (Start button) or host the lobby in-panel (Lobby button).
    *
    *  Throws on lobby-creation failure; the campaign session is cleared
    *  before the throw so a later retry doesn't inherit a stale tag. */
@@ -196,6 +196,10 @@ export function useCampaign() {
     loadError,
     initialize: ensureCatalogLoaded,
     startCampaignLevel,
+    // Creates the campaign lobby (seeding the campaign session) and returns its
+    // id WITHOUT navigating, so the Campaign panel can host the lobby inline in
+    // the parchment panel instead of routing to /lobby/:id.
+    createCampaignLobby,
     openCampaignLobby,
     completeLevel,
   }

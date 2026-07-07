@@ -1,10 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import MainMenu from '@/views/MainMenu.vue'
-import CustomGame from '@/views/CustomGame.vue'
-import CreateGame from '@/views/CreateGame.vue'
-import DirectConnect from '@/views/DirectConnect.vue'
 import Lobby from '@/views/Lobby.vue'
-import FindGame from '@/views/FindGame.vue'
 import Match from '@/views/Match.vue'
 import MatchEnd from '@/views/MatchEnd.vue'
 import Editor from '@/views/Editor.vue'
@@ -19,19 +15,24 @@ import MarketplaceView from '@/views/MarketplaceView.vue'
 import BlacksmithView from '@/views/BlacksmithView.vue'
 
 // /steam-mp removed as of §14R-E. Steam friend MP is now integrated into
-// /create-game (Steam lobby created in parallel with the local one) and
-// /find-game (friends' Steam lobbies merged into the lobby list). The
-// previous standalone Steam Multiplayer view is gone — the paste-lobby-ID
-// fallback that view offered no longer has a purpose.
+// the Custom Game panel's Start Game tab (Steam lobby created in parallel
+// with the local one) and its Find Game tab (friends' Steam lobbies merged
+// into the lobby list). The previous standalone Steam Multiplayer view is
+// gone — the paste-lobby-ID fallback that view offered no longer has a purpose.
+//
+// Custom Game and its sub-flows are no longer standalone routes: they live as
+// tabs inside the war-room parchment panel (see WarRoom.vue / CustomGame.vue).
+// The old paths redirect into /war-room with the matching `?tab=custom&sub=`
+// query so existing deep-links and the leave-lobby flow still land correctly.
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', component: MainMenu },
-    { path: '/custom', component: CustomGame },
-    { path: '/create-game', component: CreateGame },
-    { path: '/direct-connect', component: DirectConnect },
+    { path: '/custom', redirect: '/war-room?tab=custom' },
+    { path: '/create-game', redirect: '/war-room?tab=custom&sub=start' },
+    { path: '/direct-connect', redirect: '/war-room?tab=custom&sub=direct' },
     { path: '/lobby/:id', component: Lobby },
-    { path: '/find-game', component: FindGame },
+    { path: '/find-game', redirect: '/war-room?tab=custom&sub=find' },
     { path: '/starting', component: Match, meta: { hideMenuChrome: true, silenceMusic: true } },
     { path: '/match/:matchId', component: Match, meta: { hideMenuChrome: true, silenceMusic: true } },
     { path: '/match-end', component: MatchEnd, meta: { hideMenuChrome: true, silenceMusic: true } },

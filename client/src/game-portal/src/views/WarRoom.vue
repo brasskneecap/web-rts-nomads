@@ -38,7 +38,7 @@
             :class="{ 'war-room__hotspot--selected': isSelected('custom') }"
             :style="{ backgroundImage: `url(${customGameUrl})` }"
             aria-label="Custom Game"
-            @click="router.push('/custom')"
+            @click="selectTab('custom')"
           >
             <span class="war-room__label">Custom Game</span>
           </button>
@@ -46,9 +46,17 @@
 
         <div
           class="war-room__page"
-          :class="{ 'war-room__page--campaign': activeTab === 'campaign' }"
+          :class="{
+            'war-room__page--campaign': activeTab === 'campaign',
+            'war-room__page--custom': activeTab === 'custom',
+          }"
         >
           <Campaign v-if="activeTab === 'campaign'" @close="activeTab = null" />
+          <CustomGame
+            v-else-if="activeTab === 'custom'"
+            :initial-tab="customSubTab"
+            @close="activeTab = null"
+          />
         </div>
       </div>
     </div>
@@ -57,21 +65,40 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import ExitButton from '@/components/ui/ExitButton.vue'
 import Campaign from '@/views/Campaign.vue'
+import CustomGame from '@/views/CustomGame.vue'
 import warRoomBgUrl from '@/assets/background-images/war_room_bg.png'
 import campaignUrl from '@/assets/ui/buttons/war_room/campaign.png'
 import customGameUrl from '@/assets/ui/buttons/war_room/custom_game.png'
 import kingdomUrl from '@/assets/ui/buttons/war_room/kingdom.png'
 
 const router = useRouter()
+const route = useRoute()
 
 // In-room tab state. The hotspots act as a tab bar: selecting one renders its
 // content inline in the parchment slot instead of pushing a nested route, so
 // Back always returns to the main menu rather than a /war-room/* sub-route.
 // `null` means no tab open (bare room with just the hotspots showing).
 const activeTab = ref<string | null>(null)
+
+// Which Custom Game sub-tab to open when the custom panel mounts. Seeded from
+// the `?sub=` query so lobby-return / deep-link flows can land directly on
+// Find Game or Direct Connect (the old standalone routes now redirect here).
+type CustomSubTab = 'start' | 'find' | 'direct'
+const customSubTab = ref<CustomSubTab>('start')
+
+// Honor `?tab=custom&sub=<start|find|direct>` on mount so redirects from the
+// removed /custom, /create-game, /find-game and /direct-connect routes (and
+// the leave-lobby flow) open the right panel/sub-tab.
+if (route.query.tab === 'custom') {
+  activeTab.value = 'custom'
+  const sub = route.query.sub
+  if (sub === 'find' || sub === 'direct' || sub === 'start') {
+    customSubTab.value = sub
+  }
+}
 
 function isSelected(tab: string): boolean {
   return activeTab.value === tab
@@ -167,11 +194,12 @@ function onBack() {
   container-type: size;
 }
 
-/* Campaign uses a taller slot — it lists levels vertically and needs more
-   headroom than Advancements' single-row layout. Top is raised; the bottom
-   edge is pushed 50px lower than the default slot so the panel extends
-   further down while keeping the same horizontal bounds. */
-.war-room__page--campaign {
+/* Campaign and Custom Game use a taller slot — they list content vertically
+   and need more headroom than Advancements' single-row layout. Top is raised;
+   the bottom edge is pushed 50px lower than the default slot so the panel
+   extends further down while keeping the same horizontal bounds. */
+.war-room__page--campaign,
+.war-room__page--custom {
   top: calc(18% + 50px);
   bottom: calc(26% - 50px);
 }

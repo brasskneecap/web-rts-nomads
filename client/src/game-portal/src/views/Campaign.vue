@@ -9,6 +9,16 @@
       &times;
     </button>
     <div class="campaign__inner">
+      <!-- In-panel lobby view. When the player clicks Lobby on a level, the
+           campaign lobby is hosted here inside the same parchment panel; its
+           Back button pops back to the level list (@back → view = 'levels'). -->
+      <CampaignLobby
+        v-if="view === 'lobby'"
+        :lobby-id="activeLobbyId"
+        @back="view = 'levels'"
+      />
+
+      <template v-else>
       <div class="campaign__header">
         <h1 class="campaign__title">Campaigns</h1>
       </div>
@@ -181,6 +191,7 @@
           </div>
         </div>
       </div>
+      </template>
     </div>
   </UiPanel>
 </template>
@@ -194,6 +205,7 @@ import { useCampaign } from '@/composables/useCampaign'
 import { useProfile } from '@/composables/useProfile'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'
+import CampaignLobby from '@/components/menu/CampaignLobby.vue'
 import badgeIconUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot.png'
 
 const emit = defineEmits<{
@@ -206,9 +218,16 @@ const {
   loadError: catalogLoadError,
   initialize: initCampaigns,
   startCampaignLevel,
-  openCampaignLobby,
+  createCampaignLobby,
   isObjectiveCompletedForLevel,
 } = useCampaign()
+
+// Which sub-view the parchment panel is showing. 'levels' is the campaign
+// level list; 'lobby' hosts the created lobby inline (CampaignLobby) so the
+// Lobby button never leaves the war-room. `activeLobbyId` is the lobby the
+// in-panel view polls while `view === 'lobby'`.
+const view = ref<'levels' | 'lobby'>('levels')
+const activeLobbyId = ref<string>('')
 const { initialize: initProfile } = useProfile()
 
 // Currently-selected campaign id. Empty until the catalog arrives from the
@@ -344,8 +363,22 @@ function onStart() {
   void runSelectedAction(startCampaignLevel, 'Failed to start level.')
 }
 
-function onLobby() {
-  void runSelectedAction(openCampaignLobby, 'Failed to open lobby.')
+/** Lobby button: create the campaign lobby and host it inline in this
+ *  parchment panel (view = 'lobby') instead of routing to /lobby/:id. The
+ *  in-panel lobby's Back button pops back to the level list. */
+async function onLobby() {
+  const level = selectedLevelView.value?.level
+  if (!level || isStarting.value) return
+  isStarting.value = true
+  startError.value = ''
+  try {
+    activeLobbyId.value = await createCampaignLobby(level)
+    view.value = 'lobby'
+  } catch (err) {
+    startError.value = err instanceof Error ? err.message : 'Failed to open lobby.'
+  } finally {
+    isStarting.value = false
+  }
 }
 
 async function loadMapCatalog() {

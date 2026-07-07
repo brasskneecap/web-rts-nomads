@@ -55,15 +55,18 @@ const emit = defineEmits<{
   gap: 2px;
 }
 
+/* Parchment palette — this list lives only inside the war-room Custom Game
+   panel, so it's themed to match the parchment surface (dark ink on warm
+   paper) rather than the dark UI panels. */
 .map-list__item {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
   border-radius: 6px;
-  border: 1px solid rgba(200, 164, 106, 0.16);
-  background: rgba(255, 255, 255, 0.04);
-  color: #cbb893;
+  border: 1px solid rgba(58, 31, 10, 0.25);
+  background: rgba(245, 234, 210, 0.45);
+  color: #3a1f0a;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -72,27 +75,28 @@ const emit = defineEmits<{
 }
 
 .map-list__item:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(200, 164, 106, 0.35);
-  color: #f5ead2;
+  background: rgba(230, 214, 178, 0.6);
+  border-color: rgba(58, 31, 10, 0.4);
+  color: #2a1505;
 }
 
 .map-list__item--selected {
-  background: rgba(200, 164, 106, 0.15);
-  border-color: rgba(200, 164, 106, 0.5);
-  color: #f7d88e;
+  background: rgba(200, 180, 110, 0.55);
+  border-color: #8a5a2a;
+  color: #2a1505;
+  box-shadow: 0 0 0 1px rgba(138, 90, 42, 0.45);
 }
 
 .map-list__size {
   font-size: 11px;
-  opacity: 0.65;
+  opacity: 0.7;
   font-weight: 500;
 }
 
 .map-list__empty {
   padding: 20px;
   text-align: center;
-  color: #8899bb;
+  color: rgba(58, 31, 10, 0.55);
   font-size: 13px;
 }
 </style>

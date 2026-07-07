@@ -1,17 +1,14 @@
 <template>
-  <div class="find-game">
-    <div class="find-game__layout">
-      <header class="find-game__header">
-        <ExitButton @click="router.push('/custom')" />
-        <h1 class="find-game__title">Find Game</h1>
-        <span v-if="refreshError" class="find-game__refresh-error">Couldn't refresh</span>
-      </header>
+  <div class="cg-find">
+    <div class="cg-find__header">
+      <span class="cg-find__label">Open Lobbies</span>
+      <span v-if="refreshError" class="cg-find__refresh-error">Couldn't refresh</span>
+    </div>
 
-      <UiPanel class="find-game__list-panel" :padding="16">
-        <GameScrollArea class="find-game__scroll">
-          <LobbyList :lobbies="lobbies" @join="onJoin" />
-        </GameScrollArea>
-      </UiPanel>
+    <div class="cg-find__list">
+      <GameScrollArea class="cg-find__scroll">
+        <LobbyList :lobbies="lobbies" @join="onJoin" />
+      </GameScrollArea>
     </div>
   </div>
 </template>
@@ -28,8 +25,6 @@ import {
 } from '@/game/network/NetworkClient'
 import { hasMapVersion } from '@/services/mapVersionCache'
 import type { Lobby } from '@/game/network/protocol'
-import UiPanel from '@/components/ui/UiPanel.vue'
-import ExitButton from '@/components/ui/ExitButton.vue'
 import GameScrollArea from '@/components/ui/GameScrollArea.vue'
 import LobbyList from '@/components/menu/LobbyList.vue'
 
@@ -42,7 +37,7 @@ const steamLobbies = ref<readonly Lobby[]>([])
 let pollInterval: ReturnType<typeof setInterval> | null = null
 
 // §14R-C: distinguish a local-lobby id from a Steam-lobby id by prefix.
-// Steam entries surface in /find-game as `steam:<steamLobbyId>` so the
+// Steam entries surface in Find Game as `steam:<steamLobbyId>` so the
 // click handler can dispatch to the right join path. The local Lobby
 // shape has no source-discriminator field; encoding it in the id keeps
 // the LobbyList component generic.
@@ -157,57 +152,51 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.find-game {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
+.cg-find {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%);
-  padding: 32px;
-  box-sizing: border-box;
+  gap: calc(var(--s) * 8);
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
-.find-game__layout {
+.cg-find__header {
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
-  gap: 24px;
-  width: 100%;
-  max-width: 720px;
+  align-items: baseline;
+  gap: calc(var(--s) * 12);
 }
 
-.find-game__header {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.find-game__title {
-  font-size: 24px;
+.cg-find__label {
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-size: calc(var(--s) * 14);
   font-weight: 700;
-  color: #f5ead2;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin: 0;
+  color: rgba(58, 31, 10, 0.75);
 }
 
-.find-game__refresh-error {
-  font-size: 12px;
-  color: #f07070;
+.cg-find__refresh-error {
+  font-size: calc(var(--s) * 12);
+  color: #7a1a1a;
   margin-left: auto;
 }
 
-.find-game__list-panel {
-  max-height: 500px;
+/* Bordered well framing the lobby list — matches the parchment level rows
+   so the scroll region reads as an inset panel rather than floating text. */
+.cg-find__list {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  border: 1px solid rgba(58, 31, 10, 0.25);
+  border-radius: calc(var(--s) * 4);
+  background: rgba(245, 234, 210, 0.35);
+  padding: calc(var(--s) * 8);
+  box-sizing: border-box;
 }
 
-.find-game__scroll {
+.cg-find__scroll {
   flex: 1 1 auto;
   min-height: 0;
 }

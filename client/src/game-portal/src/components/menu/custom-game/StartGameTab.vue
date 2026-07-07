@@ -1,37 +1,36 @@
 <template>
-  <div class="create-game">
-    <div class="create-game__layout">
-      <header class="create-game__header">
-        <ExitButton @click="router.push('/custom')" />
-        <h1 class="create-game__title">Create Lobby</h1>
-      </header>
-
-      <div class="create-game__body">
-        <UiPanel class="create-game__left" :padding="16">
-          <div class="create-game__section-label">Select Map</div>
-          <MapList
-            :maps="mapCatalog"
-            :selected-map-id="selectedMapId"
-            :loading="isLoadingMaps"
-            @update:selected-map-id="onMapSelected"
-          />
-          <div v-if="mapsLoadError" class="create-game__error">{{ mapsLoadError }}</div>
-        </UiPanel>
-
-        <div class="create-game__right">
-          <MinimapPreview :map="selectedMap" />
-        </div>
+  <div class="cg-start">
+    <div class="cg-start__body">
+      <div class="cg-start__left">
+        <div class="cg-start__section-label">Select Map</div>
+        <MapList
+          class="cg-start__maps"
+          :maps="mapCatalog"
+          :selected-map-id="selectedMapId"
+          :loading="isLoadingMaps"
+          @update:selected-map-id="onMapSelected"
+        />
+        <div v-if="mapsLoadError" class="cg-start__error">{{ mapsLoadError }}</div>
       </div>
 
-      <footer class="create-game__footer">
-        <UiButton
-          size="lg"
+      <div class="cg-start__right">
+        <div class="cg-start__preview">
+          <MinimapPreview
+            :map="selectedMap"
+            :show-metadata="false"
+            :max-display-size="220"
+          />
+        </div>
+
+        <button
+          type="button"
+          class="cg-action cg-action--start"
           :disabled="!selectedMapId || isLoadingMaps || isCreating"
           @click="createLobbyAndNavigate"
         >
           {{ isCreating ? 'Creating lobby…' : 'Create Lobby' }}
-        </UiButton>
-      </footer>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -44,9 +43,6 @@ import type { MapCatalogEntry } from '@/game/network/protocol'
 import { usePlayer } from '@/composables/usePlayer'
 import { createMultiplayerLobby } from '@/composables/useLobbyCreation'
 import { putMapVersion } from '@/services/mapVersionCache'
-import UiButton from '@/components/ui/UiButton.vue'
-import ExitButton from '@/components/ui/ExitButton.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
 import MapList from '@/components/menu/MapList.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'
 
@@ -135,80 +131,124 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.create-game {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
+.cg-start {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* Two-column body: map list left, preview + action right — mirrors the
+   Campaign panel's two-column detail layout so both parchment panels share
+   the same proportions at the same slot size. */
+.cg-start__body {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns:
+    minmax(0, calc(var(--s) * 420))
+    minmax(0, calc(var(--s) * 360));
+  /* Single row that fills the panel height so the left column (and the map
+     list inside it) can flex to the full available space before scrolling,
+     rather than collapsing to content height. */
+  grid-template-rows: minmax(0, 1fr);
+  gap: calc(var(--s) * 18);
   justify-content: center;
-  background: radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%);
-  padding: 32px;
+  min-height: 0;
+}
+
+.cg-start__left {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s) * 8);
+  min-height: 0;
+}
+
+.cg-start__section-label {
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-size: calc(var(--s) * 14);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(58, 31, 10, 0.75);
+}
+
+/* Let the map list grow to fill the whole left column instead of MapList's
+   default fixed 360px cap, so the parchment slot's headroom is used before a
+   scrollbar appears. The :deep override releases the component's max-height
+   and lets its inner scroll area flex to the available height. */
+.cg-start__maps {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cg-start__maps :deep(.map-list__scroll) {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
+}
+
+.cg-start__right {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s) * 12);
+  min-height: 0;
+}
+
+.cg-start__preview {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s) * 6);
+}
+
+/* Frame the bare minimap the same way the Campaign panel does, so the
+   preview reads as part of the parchment surface. */
+.cg-start__preview :deep(.minimap-preview--bare) {
+  align-self: flex-start;
+  width: fit-content;
+  height: auto;
+  min-height: 0;
+  border: 1px solid #8a5a2a;
+  border-radius: calc(var(--s) * 4);
+  background: rgba(245, 234, 210, 0.45);
+  padding: 8px;
   box-sizing: border-box;
 }
 
-.create-game__layout {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  width: 100%;
-  max-width: 900px;
-  height: 100%;
-  max-height: 700px;
+.cg-start__preview :deep(.minimap-preview__empty--bare) {
+  color: rgba(58, 31, 10, 0.55);
 }
 
-.create-game__header {
-  display: flex;
-  align-items: center;
-  gap: 20px;
+.cg-start__error {
+  font-size: calc(var(--s) * 13);
+  color: #7a1a1a;
 }
 
-.create-game__title {
-  font-size: 24px;
+.cg-action {
+  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-size: calc(var(--s) * 14);
   font-weight: 700;
-  color: #f5ead2;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin: 0;
+  padding: calc(var(--s) * 8) calc(var(--s) * 18);
+  border-radius: calc(var(--s) * 4);
+  border: 1px solid rgba(58, 31, 10, 0.55);
+  color: #2a1505;
+  align-self: flex-start;
+  min-width: calc(var(--s) * 160);
 }
 
-.create-game__body {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  flex: 1 1 auto;
-  min-height: 0;
+.cg-action--start {
+  background: linear-gradient(180deg, #d8b06a 0%, #a87a36 100%);
 }
 
-.create-game__left {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-}
-
-.create-game__right {
-  min-height: 0;
-}
-
-.create-game__section-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #d7bb84;
-}
-
-.create-game__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-.create-game__error {
-  font-size: 13px;
-  color: #f07070;
+.cg-action:disabled {
+  background: rgba(180, 160, 110, 0.4);
+  color: rgba(58, 31, 10, 0.45);
+  /* `cursor: not-allowed` is the system semantic for "forbidden action" — the
+     project rule (CLAUDE.md → AI_RULES.md) allows it on disabled states. */
+  cursor: not-allowed;
 }
 </style>
