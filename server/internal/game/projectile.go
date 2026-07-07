@@ -213,22 +213,22 @@ func (s *GameState) fireHomingProjectileLocked(attacker, target *Unit, damage in
 	})
 }
 
-// fireOnHitProcProjectileLocked spawns a homing projectile for an equipment
-// on-hit proc. Unlike fireHomingProjectileLocked it does not derive its damage
-// type from the attacker — it carries the proc's own Damage/DamageType — and it
-// sets SkipOnHitEffects so landing applies damage directly without re-entering
-// the on-hit hub. Must be called under s.mu.
-func (s *GameState) fireOnHitProcProjectileLocked(attacker, target *Unit, proc EquipmentProc) {
+// fireProcProjectileLocked spawns a homing projectile for a proc effect fired
+// from src. It carries the effect's own Damage/DamageType (not a unit's
+// attack type) and sets SkipOnHitEffects so landing applies damage directly
+// without re-entering the on-hit hub. Non-unit sources (src.OwnerUnitID == 0)
+// launch from src.OriginX/Y with no kill credit. Must be called under s.mu.
+func (s *GameState) fireProcProjectileLocked(src ProcSource, target *Unit, p ProcEffectParams) {
 	speed := defaultProjectileSpeed
 	var followEffect, impactEffect string
-	if def, ok := getProjectileDef(proc.ProjectileID); ok {
+	if def, ok := getProjectileDef(p.ProjectileID); ok {
 		speed = def.Speed
 		followEffect = followEffectForProjectileDef(def)
 		impactEffect = impactEffectForProjectileDef(def)
 	}
 
-	dx := target.X - attacker.X
-	dy := target.Y - attacker.Y
+	dx := target.X - src.OriginX
+	dy := target.Y - src.OriginY
 	travelTime := math.Sqrt(dx*dx+dy*dy) / speed
 	if travelTime < minProjectileFlightSeconds {
 		travelTime = minProjectileFlightSeconds
@@ -237,98 +237,110 @@ func (s *GameState) fireOnHitProcProjectileLocked(attacker, target *Unit, proc E
 	id := fmt.Sprintf("proj_%d", s.nextProjectileID)
 	s.nextProjectileID++
 
-	variant := proc.ProjectileID
-	if variant == "" {
-		variant = attacker.UnitType
-	}
-	// Proc-authored scale wins when set; otherwise inherit the firing unit's
-	// scale (the prior behavior). Both are "0 ⇒ client default 1×".
-	scale := attacker.ProjectileScale
-	if proc.ProjectileScale > 0 {
-		scale = proc.ProjectileScale
+	// Params-authored scale wins when set; otherwise inherit the firing
+	// unit's scale (the prior behavior — resolved at point of use, within
+	// this tick). Both are "0 ⇒ client default 1×". The variant falls back to
+	// the firing unit's type only for hand-built params with no ProjectileID;
+	// catalog-loaded effects always name one (validated at load).
+	variant := p.ProjectileID
+	scale := p.ProjectileScale
+	if scale <= 0 || variant == "" {
+		if owner := s.getUnitByIDLocked(src.OwnerUnitID); owner != nil {
+			if scale <= 0 {
+				scale = owner.ProjectileScale
+			}
+			if variant == "" {
+				variant = owner.UnitType
+			}
+		}
 	}
 	s.Projectiles = append(s.Projectiles, &Projectile{
 		ID:                  id,
-		OwnerUnitID:         attacker.ID,
-		OwnerPlayerID:       attacker.OwnerID,
+		OwnerUnitID:         src.OwnerUnitID,
+		OwnerPlayerID:       src.OwnerPlayerID,
 		TargetUnitID:        target.ID,
-		OriginX:             attacker.X,
-		OriginY:             attacker.Y,
+		OriginX:             src.OriginX,
+		OriginY:             src.OriginY,
 		TargetX:             target.X,
 		TargetY:             target.Y,
 		TotalSeconds:        travelTime,
 		RemainingSeconds:    travelTime,
-		Damage:              proc.Damage,
+		Damage:              p.Damage,
 		Variant:             variant,
 		FollowEffect:        followEffect,
 		ImpactEffect:        impactEffect,
-		DamageType:          proc.DamageType,
+		DamageType:          p.DamageType,
 		Scale:               scale,
 		SkipOnHitEffects:    true,
-		SlowMultiplier:      proc.SlowMultiplier,
-		SlowDurationSeconds: proc.SlowDurationSeconds,
-		BurnDamagePerSecond: proc.BurnDamagePerSecond,
-		BurnDurationSeconds: proc.BurnDurationSeconds,
+		SlowMultiplier:      p.SlowMultiplier,
+		SlowDurationSeconds: p.SlowDurationSeconds,
+		BurnDamagePerSecond: p.BurnDamagePerSecond,
+		BurnDurationSeconds: p.BurnDurationSeconds,
 	})
 }
 
-// fireOnHitProcBeamLocked handles an equipment on-hit proc whose emitter def is
-// EmitterKindBeam (e.g. the lightning_sword's "lightning_bolt"). It spawns the
+// fireProcBeamLocked handles a proc effect whose emitter def is
+// EmitterKindBeam (e.g. lightning_chain's "lightning_bolt"). It spawns the
 // momentary beam flash NOW (frozen endpoints let it render even if the target
-// later dies) but DEFERS the proc's damage by beamProcDamageDelaySeconds: a beam
-// is otherwise instantaneous, so applying damage this tick would merge its
+// later dies) but DEFERS the damage by beamProcDamageDelaySeconds — a beam is
+// otherwise instantaneous, so applying damage this tick would merge its
 // number into the triggering hit's number. tickBeamsLocked lands the damage a
-// beat later — bypassing the on-hit hub, so a proc can't trigger another proc —
-// which pops it as its own floating number, the same separation the projectile
-// version got by traveling.
+// beat later, bypassing the on-hit hub, so a proc can't trigger another proc.
+//
+// Non-unit sources: the primary flash leaves src.OriginX/Y with no caster
+// unit; hostility for chain hops keys off src.OwnerPlayerID.
 //
 // Caller holds s.mu write lock.
-func (s *GameState) fireOnHitProcBeamLocked(attacker, target *Unit, proc EquipmentProc, def ProjectileDef) {
-	variant := proc.ProjectileID
+func (s *GameState) fireProcBeamLocked(src ProcSource, target *Unit, p ProcEffectParams, def ProjectileDef) {
+	variant := p.ProjectileID
 	if variant == "" {
 		variant = def.ID
 	}
 	impact := impactEffectForProjectileDef(def)
 
-	// Primary hit: attacker → target. Damage is deferred (see the helper) so it
+	// Primary hit: source → target. Damage is deferred (see the helper) so it
 	// pops as its own number instead of merging into the triggering attack.
-	primary := s.spawnMomentaryDamageBeamLocked(attacker, attacker, target, variant, proc.Damage, proc.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
-	primary.SlowMultiplier = proc.SlowMultiplier
-	primary.SlowDurationSeconds = proc.SlowDurationSeconds
-	primary.BurnDamagePerSecond = proc.BurnDamagePerSecond
-	primary.BurnDurationSeconds = proc.BurnDurationSeconds
+	primary := s.spawnMomentaryDamageBeamLocked(src, src.OwnerUnitID, src.OriginX, src.OriginY, target, variant, p.Damage, p.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
+	primary.SlowMultiplier = p.SlowMultiplier
+	primary.SlowDurationSeconds = p.SlowDurationSeconds
+	primary.BurnDamagePerSecond = p.BurnDamagePerSecond
+	primary.BurnDurationSeconds = p.BurnDurationSeconds
 
-	// Optional chain: the bolt arcs to up to BounceCount further enemies. Each
-	// hop leaps off the PREVIOUS victim to the nearest not-yet-hit hostile
-	// within BounceRange, losing BounceDamageFalloff damage per hop (25 → 20 →
-	// 15 with count=2, falloff=5). Kill credit always stays with `attacker`.
-	// Reuses the generic bounce picker shared with chain_siphon.
-	if proc.BounceCount <= 0 || proc.BounceRange <= 0 {
+	// Optional chain: the bolt arcs to up to BounceCount further enemies.
+	// Each hop leaps off the PREVIOUS victim to the nearest not-yet-hit
+	// hostile within BounceRange, losing BounceDamageFalloff damage per hop
+	// (25 → 20 → 15 with count=2, falloff=5). Kill credit always stays with
+	// the source. Reuses the generic bounce picker shared with chain_siphon.
+	if p.BounceCount <= 0 || p.BounceRange <= 0 {
 		return
 	}
-	rangeSq := proc.BounceRange * proc.BounceRange
-	// Exclude the primary target and the attacker from every hop so the chain
-	// can't oscillate back onto an already-hit unit or the wielder.
-	excluded := make(map[int]struct{}, proc.BounceCount+2)
+	rangeSq := p.BounceRange * p.BounceRange
+	// Exclude the primary target and the source unit from every hop so the
+	// chain can't oscillate back onto an already-hit unit or the wielder.
+	// A non-unit source (OwnerUnitID 0) matches no unit, so nothing extra is
+	// excluded for it.
+	excluded := make(map[int]struct{}, p.BounceCount+2)
 	excluded[target.ID] = struct{}{}
-	excluded[attacker.ID] = struct{}{}
+	if src.OwnerUnitID != 0 {
+		excluded[src.OwnerUnitID] = struct{}{}
+	}
 	cursor := target
-	for hop := 1; hop <= proc.BounceCount; hop++ {
-		next := s.nearestChainBounceTargetLocked(attacker, cursor, rangeSq, excluded)
+	for hop := 1; hop <= p.BounceCount; hop++ {
+		next := s.nearestChainBounceTargetLocked(src.OwnerPlayerID, cursor, rangeSq, excluded)
 		if next == nil {
 			break // chain fizzles: nothing eligible within range of the last victim
 		}
-		dmg := proc.Damage - proc.BounceDamageFalloff*hop
+		dmg := p.Damage - p.BounceDamageFalloff*hop
 		if dmg <= 0 {
 			break // fully attenuated — stop arcing
 		}
 		// Beam leaves the previous victim (cursor) but the hit still credits
-		// the original attacker. The chill rides each hop too.
-		bounce := s.spawnMomentaryDamageBeamLocked(attacker, cursor, next, variant, dmg, proc.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
-		bounce.SlowMultiplier = proc.SlowMultiplier
-		bounce.SlowDurationSeconds = proc.SlowDurationSeconds
-		bounce.BurnDamagePerSecond = proc.BurnDamagePerSecond
-		bounce.BurnDurationSeconds = proc.BurnDurationSeconds
+		// the original source. The chill/burn rides each hop too.
+		bounce := s.spawnMomentaryDamageBeamLocked(src, cursor.ID, cursor.X, cursor.Y, next, variant, dmg, p.DamageType, impact, def.DurationMs, beamProcDamageDelaySeconds)
+		bounce.SlowMultiplier = p.SlowMultiplier
+		bounce.SlowDurationSeconds = p.SlowDurationSeconds
+		bounce.BurnDamagePerSecond = p.BurnDamagePerSecond
+		bounce.BurnDurationSeconds = p.BurnDurationSeconds
 		excluded[next.ID] = struct{}{}
 		cursor = next
 	}

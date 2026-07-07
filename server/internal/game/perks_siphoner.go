@@ -631,7 +631,7 @@ func (s *GameState) chainSiphonTargetsLocked(caster, primary *Unit) []*Unit {
 	cursor := primary
 	out := make([]*Unit, 0, maxCount)
 	for i := 0; i < maxCount; i++ {
-		next := s.nearestChainBounceTargetLocked(caster, cursor, rangeSq, excluded)
+		next := s.nearestChainBounceTargetLocked(caster.OwnerID, cursor, rangeSq, excluded)
 		if next == nil {
 			break // chain breaks: no eligible enemy within chainRange of the last link
 		}
@@ -645,16 +645,16 @@ func (s *GameState) chainSiphonTargetsLocked(caster, primary *Unit) []*Unit {
 	return out
 }
 
-// nearestChainBounceTargetLocked returns the nearest hostile (to `caster`)
-// that is alive, visible, within `rangeSq` of `from`, and not in the
-// `excluded` set. Ties on squared distance break by ascending unit.ID for
-// deterministic tick replay.
+// nearestChainBounceTargetLocked returns the nearest hostile (to
+// casterOwnerID) that is alive, visible, within `rangeSq` of `from`, and not
+// in the `excluded` set. Ties on squared distance break by ascending unit.ID
+// for deterministic tick replay.
 //
 // Returns nil when no candidate exists — that's how the bounce loop knows
 // the chain has hit a dead end.
 //
 // Caller holds s.mu (read or write).
-func (s *GameState) nearestChainBounceTargetLocked(caster, from *Unit, rangeSq float64, excluded map[int]struct{}) *Unit {
+func (s *GameState) nearestChainBounceTargetLocked(casterOwnerID string, from *Unit, rangeSq float64, excluded map[int]struct{}) *Unit {
 	var best *Unit
 	var bestSq float64
 	for _, u := range s.Units {
@@ -664,7 +664,7 @@ func (s *GameState) nearestChainBounceTargetLocked(caster, from *Unit, rangeSq f
 		if _, skip := excluded[u.ID]; skip {
 			continue
 		}
-		if !s.playersAreHostileLocked(caster.OwnerID, u.OwnerID) {
+		if !s.playersAreHostileLocked(casterOwnerID, u.OwnerID) {
 			continue
 		}
 		dx := u.X - from.X

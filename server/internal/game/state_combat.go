@@ -459,6 +459,8 @@ func (s *GameState) applyEquipmentOnHitEffectsLocked(attacker, target *Unit) {
 // against the seeded perk RNG and fires an elemental bolt for each success at
 // the primary target. Must be called under s.mu. Determinism: rngPerks is the
 // shared seeded stream; OnHitProcs order is fixed by equip order.
+// Firing routes through executeProcEffectLocked — this function owns ONLY the
+// chance roll.
 func (s *GameState) rollEquipmentProcsLocked(attacker, target *Unit) {
 	if attacker == nil || target == nil || len(attacker.EquipmentBonus.OnHitProcs) == 0 {
 		return
@@ -468,16 +470,21 @@ func (s *GameState) rollEquipmentProcsLocked(attacker, target *Unit) {
 			continue
 		}
 		if s.rngPerks.Float64() < proc.Chance {
-			// Route by the emitted effect's declared kind: a beam-kind def zaps
-			// the target instantly (damage applied here), a projectile-kind def
-			// (the default, incl. unknown ids) fires a flying bolt that lands
-			// later. The chance roll above is identical either way so
-			// determinism is unaffected by the branch.
-			if def, ok := getProjectileDef(proc.ProjectileID); ok && def.IsBeam() {
-				s.fireOnHitProcBeamLocked(attacker, target, proc, def)
-			} else {
-				s.fireOnHitProcProjectileLocked(attacker, target, proc)
-			}
+			// TEMPORARY shim (removed when EquipmentProc carries resolved
+			// ProcEffectParams): copy the legacy flat fields into params.
+			s.executeProcEffectLocked(procSourceFromUnit(attacker), target, ProcEffectParams{
+				Damage:              proc.Damage,
+				DamageType:          proc.DamageType,
+				ProjectileID:        proc.ProjectileID,
+				ProjectileScale:     proc.ProjectileScale,
+				BounceCount:         proc.BounceCount,
+				BounceRange:         proc.BounceRange,
+				BounceDamageFalloff: proc.BounceDamageFalloff,
+				SlowMultiplier:      proc.SlowMultiplier,
+				SlowDurationSeconds: proc.SlowDurationSeconds,
+				BurnDamagePerSecond: proc.BurnDamagePerSecond,
+				BurnDurationSeconds: proc.BurnDurationSeconds,
+			})
 		}
 	}
 }

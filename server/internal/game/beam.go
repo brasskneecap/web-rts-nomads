@@ -138,22 +138,39 @@ func (s *GameState) spawnMomentaryBeamLocked(attacker, target *Unit, variant str
 	return b
 }
 
-// spawnMomentaryDamageBeamLocked spawns a one-shot beam flash from `from` to
-// `to` and schedules `damage` (typed) to land on `to` after `delaySec`,
-// credited to `attacker`. `from` is the VISUAL origin (its position freezes the
-// beam's start and its sprite drives the client lift), while `attacker` owns the
-// kill credit — the two differ on a bounce hop, where the beam leaps off a
-// victim but the original wielder still gets the kill.
+// spawnMomentaryDamageBeamLocked spawns a one-shot beam flash from a frozen
+// origin point to `to` and schedules `damage` (typed) to land on `to` after
+// `delaySec`, credited to src.OwnerUnitID. fromUnitID is the VISUAL origin
+// unit (drives the client's origin-lift sprite lookup; 0 when the beam leaves
+// a non-unit source) and fromX/Y freeze the beam's start — the visual origin
+// and the kill credit differ on a bounce hop, where the beam leaps off a
+// victim but the original source still gets the kill.
 //
 // Caller holds s.mu write lock.
-func (s *GameState) spawnMomentaryDamageBeamLocked(attacker, from, to *Unit, variant string, damage int, dmgType DamageType, impactEffect string, durationMs int, delaySec float64) *Beam {
-	b := s.spawnMomentaryBeamLocked(from, to, variant, durationMs)
-	b.AttackerUnitID = attacker.ID
-	b.OwnerPlayerID = attacker.OwnerID
-	b.PendingDamage = damage
-	b.DamageType = dmgType
-	b.DamageDelayRemaining = delaySec
-	b.ImpactEffect = impactEffect
+func (s *GameState) spawnMomentaryDamageBeamLocked(src ProcSource, fromUnitID int, fromX, fromY float64, to *Unit, variant string, damage int, dmgType DamageType, impactEffect string, durationMs int, delaySec float64) *Beam {
+	if durationMs <= 0 {
+		durationMs = defaultBeamDurationMs
+	}
+	b := &Beam{
+		ID:                   fmt.Sprintf("beam-%d", s.nextBeamID),
+		CasterUnitID:         fromUnitID,
+		AttackerUnitID:       src.OwnerUnitID,
+		TargetUnitID:         to.ID,
+		OwnerPlayerID:        src.OwnerPlayerID,
+		Variant:              variant,
+		Momentary:            true,
+		RemainingSeconds:     float64(durationMs) / 1000.0,
+		OriginX:              fromX,
+		OriginY:              fromY,
+		TargetX:              to.X,
+		TargetY:              to.Y,
+		PendingDamage:        damage,
+		DamageType:           dmgType,
+		DamageDelayRemaining: delaySec,
+		ImpactEffect:         impactEffect,
+	}
+	s.nextBeamID++
+	s.Beams = append(s.Beams, b)
 	return b
 }
 

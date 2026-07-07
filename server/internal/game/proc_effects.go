@@ -58,3 +58,38 @@ func resolveProcEffectParams(def ProcEffectDef, o ProcEffectOverrides) ProcEffec
 	}
 	return p
 }
+
+// ProcSource identifies who/where a proc effect fires from. IDs, never
+// pointers (AI_RULES §Target References). Non-unit sources — traps,
+// buildings, world events — leave OwnerUnitID 0: no kill credit or XP is
+// attributed and the effect originates at OriginX/Y.
+type ProcSource struct {
+	OwnerUnitID   int
+	OwnerPlayerID string
+	OriginX       float64
+	OriginY       float64
+}
+
+// procSourceFromUnit is the common-case constructor: the effect fires from
+// the unit's current position with kill credit to that unit.
+func procSourceFromUnit(u *Unit) ProcSource {
+	return ProcSource{OwnerUnitID: u.ID, OwnerPlayerID: u.OwnerID, OriginX: u.X, OriginY: u.Y}
+}
+
+// executeProcEffectLocked fires one proc effect from src at target. Routes by
+// the emitted effect's declared kind: a beam-kind def zaps the target
+// instantly (damage deferred a beat so it pops as its own number), a
+// projectile-kind def (the default, incl. unknown ids) fires a flying bolt
+// that lands later. Contains NO RNG — whether an effect fires is the
+// trigger's business (equipment rolls its chance against rngPerks; an ability
+// or trap calls this directly). Caller holds s.mu write lock.
+func (s *GameState) executeProcEffectLocked(src ProcSource, target *Unit, p ProcEffectParams) {
+	if target == nil || p.Damage <= 0 {
+		return
+	}
+	if def, ok := getProjectileDef(p.ProjectileID); ok && def.IsBeam() {
+		s.fireProcBeamLocked(src, target, p, def)
+	} else {
+		s.fireProcProjectileLocked(src, target, p)
+	}
+}
