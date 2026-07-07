@@ -64,60 +64,30 @@ type ItemElementalDamage struct {
 	Amount int        `json:"amount"`
 }
 
-// ItemOnHitProc is a percent-chance on-hit effect: on each landed basic attack
-// the wielder rolls Chance against the seeded perk RNG and, on success, fires a
-// homing projectile (ProjectileID) dealing Damage of DamageType to the current
-// target. Damage is applied as its own instance and does NOT re-trigger on-hit
-// effects (no recursion).
+// ItemOnHitProc is a percent-chance on-hit trigger: on each landed basic
+// attack the wielder rolls Chance against the seeded perk RNG and, on
+// success, fires the referenced proc effect (catalog/procs) at the current
+// target. Effect names the ProcEffectDef (required); the embedded
+// ProcEffectOverrides let this item re-tune the effect's numbers (damage,
+// scale, bounce, slow, burn) without authoring a new def — the effect's
+// element and emitter are fixed by the def. Damage is applied as its own
+// instance and does NOT re-trigger on-hit effects (no recursion).
 type ItemOnHitProc struct {
-	Chance       float64    `json:"chance"`
-	Damage       int        `json:"damage"`
-	DamageType   DamageType `json:"damageType"`
-	ProjectileID string     `json:"projectileID"`
-	// ProjectileScale is a render-size multiplier for the fired proc bolt's
-	// sprite (purely visual, mirrors UnitDef.ProjectileScale semantics).
-	// 0/omitted ⇒ fall back to the firing unit's ProjectileScale (the prior
-	// behavior). Lives here on the proc so if on-hit procs move to a different
-	// owner later, the sizing travels with them.
-	ProjectileScale float64 `json:"projectileScale,omitempty"`
+	Chance float64 `json:"chance"`
+	Effect string  `json:"effect"`
+	ProcEffectOverrides
+}
 
-	// ── Bounce / chain (beam-emitter procs only) ────────────────────────────
-	// When BounceCount > 0 and the emitter (ProjectileID) is a beam, the proc
-	// arcs to further enemies after the primary hit: each hop leaps off the
-	// PREVIOUS victim to the nearest not-yet-hit hostile within BounceRange,
-	// losing BounceDamageFalloff damage per hop (e.g. 25 → 20 → 15 with
-	// count=2, falloff=5). Kill credit stays with the original wielder. All
-	// three fields are omitempty so non-chaining procs (and all projectile
-	// procs, which ignore these) stay unchanged.
-	BounceCount int `json:"bounceCount,omitempty"`
-	// BounceRange is the max world-space distance from one victim to the next.
-	// <= 0 disables bouncing regardless of BounceCount.
-	BounceRange float64 `json:"bounceRange,omitempty"`
-	// BounceDamageFalloff is the flat damage lost per hop. A hop whose damage
-	// would drop to <= 0 ends the chain.
-	BounceDamageFalloff int `json:"bounceDamageFalloff,omitempty"`
-
-	// ── On-hit slow (chill) ─────────────────────────────────────────────────
-	// When SlowMultiplier is in (0,1) and SlowDurationSeconds > 0, a landed
-	// proc also slows the unit it hits: its attack speed AND move speed are
-	// scaled by SlowMultiplier for SlowDurationSeconds (e.g. 0.75 = 25% slower
-	// on both). Routes through the shared slow system (ApplySlowLocked), so it
-	// stacks refresh-stronger / refresh-longer with every other slow source.
-	// Applies for both projectile and beam procs, on the unit each hit reaches.
-	SlowMultiplier      float64 `json:"slowMultiplier,omitempty"`
-	SlowDurationSeconds float64 `json:"slowDurationSeconds,omitempty"`
-
-	// ── On-hit burn (fire DoT) ──────────────────────────────────────────────
-	// When BurnDamagePerSecond > 0 and BurnDurationSeconds > 0, a landed proc
-	// also ignites the unit it hits: a fire damage-over-time stack that ticks
-	// for BurnDamagePerSecond over BurnDurationSeconds. Reuses the same burn
-	// system as the Trapper fire_pit perks (UnitPerkState.BurnStacks), so the
-	// client's burning overlay lights up for weapon burns and trap burns alike.
-	// The same wielder refreshes its own stack (refresh-stronger/longer) rather
-	// than stacking infinitely; different wielders stack independently.
-	// Applies for both projectile and beam procs, on each unit a hit reaches.
-	BurnDamagePerSecond float64 `json:"burnDamagePerSecond,omitempty"`
-	BurnDurationSeconds float64 `json:"burnDurationSeconds,omitempty"`
+// ResolveParams returns the proc's effective payload: the referenced effect
+// def with this item's non-zero overrides applied. ok is false when Effect
+// names no registered proc effect — validateItemDef rejects that at load, so
+// a false here can only come from a hand-built def in tests.
+func (p *ItemOnHitProc) ResolveParams() (ProcEffectParams, bool) {
+	def, ok := getProcEffectDef(p.Effect)
+	if !ok {
+		return ProcEffectParams{}, false
+	}
+	return resolveProcEffectParams(def, p.ProcEffectOverrides), true
 }
 
 // defaultConsumableRangeUnits is the AoE radius (world units) a consumable
@@ -257,11 +227,17 @@ func validateItemDef(def *ItemDef) error {
 		if p.Chance < 0 || p.Chance > 1 {
 			return fmt.Errorf("item %q onHitProc.chance %v out of range [0,1]", def.ID, p.Chance)
 		}
-		if !IsValidDamageType(p.DamageType) {
-			return fmt.Errorf("item %q onHitProc.damageType: unregistered damage type %q", def.ID, p.DamageType)
+		if p.Effect == "" {
+			return fmt.Errorf("item %q onHitProc.effect is required (a catalog/procs id)", def.ID)
+		}
+		if _, ok := getProcEffectDef(p.Effect); !ok {
+			return fmt.Errorf("item %q onHitProc.effect %q is not a registered proc effect", def.ID, p.Effect)
+		}
+		if p.Damage < 0 {
+			return fmt.Errorf("item %q onHitProc.damage override %v must be >= 0", def.ID, p.Damage)
 		}
 		if p.ProjectileScale < 0 {
-			return fmt.Errorf("item %q onHitProc.projectileScale %v must be >= 0 (0/omitted ⇒ fall back to the firing unit's scale)", def.ID, p.ProjectileScale)
+			return fmt.Errorf("item %q onHitProc.projectileScale override %v must be >= 0", def.ID, p.ProjectileScale)
 		}
 	}
 	return nil

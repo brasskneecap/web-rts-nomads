@@ -123,10 +123,14 @@ func TestFrostSword_ProcIsWiredToChill(t *testing.T) {
 	if p == nil {
 		t.Fatal("frost_sword has no onHitProc")
 	}
-	if !(p.SlowMultiplier > 0 && p.SlowMultiplier < 1) {
-		t.Errorf("frost_sword chill needs a slow multiplier in (0,1), got %v", p.SlowMultiplier)
+	params, ok := p.ResolveParams()
+	if !ok {
+		t.Fatalf("frost_sword onHitProc.effect %q is not a registered proc effect", p.Effect)
 	}
-	if p.SlowDurationSeconds <= 0 {
-		t.Errorf("frost_sword chill needs a positive duration, got %v", p.SlowDurationSeconds)
+	if !(params.SlowMultiplier > 0 && params.SlowMultiplier < 1) {
+		t.Errorf("frost_sword chill needs a slow multiplier in (0,1), got %v", params.SlowMultiplier)
+	}
+	if params.SlowDurationSeconds <= 0 {
+		t.Errorf("frost_sword chill needs a positive duration, got %v", params.SlowDurationSeconds)
 	}
 }

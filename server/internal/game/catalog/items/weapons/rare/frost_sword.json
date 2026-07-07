@@ -11,5 +11,5 @@
   "costGold": 0,
   "modifiers": { "damage": 5 },
   "onHitElemental": [ { "type": "cold", "amount": 5 } ],
-  "onHitProc": { "chance": 0.1, "damage": 25, "damageType": "cold", "projectileID": "frost_bolt", "projectileScale": 2, "slowMultiplier": 0.75, "slowDurationSeconds": 2 }
+  "onHitProc": { "chance": 0.1, "effect": "frost_bolt_chill" }
 }

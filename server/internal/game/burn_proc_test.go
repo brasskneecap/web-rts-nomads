@@ -144,10 +144,14 @@ func TestFireSword_ProcIsWiredToBurn(t *testing.T) {
 	if p == nil {
 		t.Fatal("fire_sword has no onHitProc")
 	}
-	if p.BurnDamagePerSecond <= 0 {
-		t.Errorf("fire_sword burn needs a positive DPS, got %v", p.BurnDamagePerSecond)
+	params, ok := p.ResolveParams()
+	if !ok {
+		t.Fatalf("fire_sword onHitProc.effect %q is not a registered proc effect", p.Effect)
 	}
-	if p.BurnDurationSeconds <= 0 {
-		t.Errorf("fire_sword burn needs a positive duration, got %v", p.BurnDurationSeconds)
+	if params.BurnDamagePerSecond <= 0 {
+		t.Errorf("fire_sword burn needs a positive DPS, got %v", params.BurnDamagePerSecond)
+	}
+	if params.BurnDurationSeconds <= 0 {
+		t.Errorf("fire_sword burn needs a positive duration, got %v", params.BurnDurationSeconds)
 	}
 }

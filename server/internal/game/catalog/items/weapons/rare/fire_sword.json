@@ -11,5 +11,5 @@
   "costGold": 0,
   "modifiers": { "damage": 5 },
   "onHitElemental": [ { "type": "fire", "amount": 5 } ],
-  "onHitProc": { "chance": 0.1, "damage": 25, "damageType": "fire", "projectileID": "fire_bolt", "burnDamagePerSecond": 8, "burnDurationSeconds": 3 }
+  "onHitProc": { "chance": 0.1, "effect": "fire_bolt_ignite" }
 }

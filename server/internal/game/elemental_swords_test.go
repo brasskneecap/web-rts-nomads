@@ -52,14 +52,18 @@ func TestCraftedSwords_LoadAllThree(t *testing.T) {
 			if def.OnHitProc == nil {
 				t.Fatalf("%s: OnHitProc is nil", tc.id)
 			}
-			if def.OnHitProc.Damage <= 0 {
-				t.Errorf("%s: OnHitProc.Damage want > 0, got %d", tc.id, def.OnHitProc.Damage)
+			params, ok := def.OnHitProc.ResolveParams()
+			if !ok {
+				t.Fatalf("%s: onHitProc.effect %q is not a registered proc effect", tc.id, def.OnHitProc.Effect)
 			}
-			if def.OnHitProc.DamageType != tc.wantElement {
-				t.Errorf("%s: OnHitProc.DamageType want %s, got %s", tc.id, tc.wantElement, def.OnHitProc.DamageType)
+			if params.Damage <= 0 {
+				t.Errorf("%s: OnHitProc.Damage want > 0, got %d", tc.id, params.Damage)
 			}
-			if def.OnHitProc.ProjectileID != tc.wantProjectile {
-				t.Errorf("%s: OnHitProc.ProjectileID want %q, got %q", tc.id, tc.wantProjectile, def.OnHitProc.ProjectileID)
+			if params.DamageType != tc.wantElement {
+				t.Errorf("%s: OnHitProc.DamageType want %s, got %s", tc.id, tc.wantElement, params.DamageType)
+			}
+			if params.ProjectileID != tc.wantProjectile {
+				t.Errorf("%s: OnHitProc.ProjectileID want %q, got %q", tc.id, tc.wantProjectile, params.ProjectileID)
 			}
 			if def.OnHitProc.Chance <= 0 || def.OnHitProc.Chance > 1 {
 				t.Errorf("%s: OnHitProc.Chance %v is not a valid probability in (0,1]", tc.id, def.OnHitProc.Chance)
@@ -76,8 +80,12 @@ func TestFireSword_EndToEnd(t *testing.T) {
 	if def.Modifiers == nil || def.Modifiers.Damage <= 0 {
 		t.Fatalf("fire_sword should grant positive physical damage, got %+v", def.Modifiers)
 	}
-	if def.OnHitProc == nil || def.OnHitProc.Damage <= 0 || def.OnHitProc.DamageType != DamageFire || def.OnHitProc.ProjectileID != "fire_bolt" {
-		t.Fatalf("fire_sword proc unexpected: %+v", def.OnHitProc)
+	if def.OnHitProc == nil {
+		t.Fatalf("fire_sword has no onHitProc")
+	}
+	params, ok := def.OnHitProc.ResolveParams()
+	if !ok || params.Damage <= 0 || params.DamageType != DamageFire || params.ProjectileID != "fire_bolt" {
+		t.Fatalf("fire_sword proc unexpected: resolved=%+v ok=%v", params, ok)
 	}
 	if def.OnHitProc.Chance <= 0 || def.OnHitProc.Chance > 1 {
 		t.Fatalf("fire_sword proc chance %v is not a valid probability in (0,1]", def.OnHitProc.Chance)

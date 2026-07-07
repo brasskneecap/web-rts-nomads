@@ -296,18 +296,22 @@ func TestLightningSword_ProcIsWiredToChain(t *testing.T) {
 	if p == nil {
 		t.Fatal("lightning_sword has no onHitProc")
 	}
-	emitter, ok := getProjectileDef(p.ProjectileID)
+	params, ok := p.ResolveParams()
+	if !ok {
+		t.Fatalf("lightning_sword onHitProc.effect %q is not a registered proc effect", p.Effect)
+	}
+	emitter, ok := getProjectileDef(params.ProjectileID)
 	if !ok || !emitter.IsBeam() {
-		t.Errorf("lightning_sword proc should emit a beam, got id %q isBeam=%v", p.ProjectileID, emitter.IsBeam())
+		t.Errorf("lightning_sword proc should emit a beam, got id %q isBeam=%v", params.ProjectileID, emitter.IsBeam())
 	}
-	if p.BounceCount <= 0 {
-		t.Errorf("lightning_sword proc should bounce (BounceCount > 0), got %d", p.BounceCount)
+	if params.BounceCount <= 0 {
+		t.Errorf("lightning_sword proc should bounce (BounceCount > 0), got %d", params.BounceCount)
 	}
-	if p.BounceRange <= 0 {
-		t.Errorf("lightning_sword bounce needs a positive range, got %v", p.BounceRange)
+	if params.BounceRange <= 0 {
+		t.Errorf("lightning_sword bounce needs a positive range, got %v", params.BounceRange)
 	}
-	if p.BounceDamageFalloff <= 0 {
-		t.Errorf("lightning_sword bounce should attenuate per hop (falloff > 0), got %d", p.BounceDamageFalloff)
+	if params.BounceDamageFalloff <= 0 {
+		t.Errorf("lightning_sword bounce should attenuate per hop (falloff > 0), got %d", params.BounceDamageFalloff)
 	}
 }
 

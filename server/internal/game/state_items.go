@@ -247,22 +247,9 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 			unit.EquipmentBonus.OnHitElemental[e.Type.OrPhysical()] += e.Amount
 		}
 		if p := def.OnHitProc; p != nil {
-			unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, EquipmentProc{
-				Chance: p.Chance,
-				Params: ProcEffectParams{
-					Damage:              p.Damage,
-					DamageType:          p.DamageType.OrPhysical(),
-					ProjectileID:        p.ProjectileID,
-					ProjectileScale:     p.ProjectileScale,
-					BounceCount:         p.BounceCount,
-					BounceRange:         p.BounceRange,
-					BounceDamageFalloff: p.BounceDamageFalloff,
-					SlowMultiplier:      p.SlowMultiplier,
-					SlowDurationSeconds: p.SlowDurationSeconds,
-					BurnDamagePerSecond: p.BurnDamagePerSecond,
-					BurnDurationSeconds: p.BurnDurationSeconds,
-				},
-			})
+			if params, ok := p.ResolveParams(); ok {
+				unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, EquipmentProc{Chance: p.Chance, Params: params})
+			}
 		}
 	}
 
