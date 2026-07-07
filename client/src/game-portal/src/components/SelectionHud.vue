@@ -1935,6 +1935,9 @@ button.inventory-slot:focus-visible {
   flex-direction: column;
   gap: 6px;
   margin-top: 2px;
+  /* Inset the progress bar 10px from each edge so it doesn't touch the
+     panel sides — matches the construction card. */
+  padding: 0 10px;
 }
 
 /* In-progress upgrade bar — same visual language as the construction bar */

@@ -438,13 +438,17 @@ func (s *GameState) handlePurchaseItemLocked(playerID, buildingID, itemID string
 		return
 	}
 
-	// Ownership / discovery / lock gates.
-	//   - Neutral shops: purchaser must have discovered the building (FOW
-	//     KnownBuildings cache) AND the building must not be guard-locked.
-	//   - Player-owned shops: purchaser must equal the owner.
+	// Ownership / discovery / lock gates, and select which inventory this
+	// purchase draws from:
+	//   - Neutral shops are PER-PLAYER: purchaser must have discovered the
+	//     building (FOW KnownBuildings cache) AND it must not be guard-locked;
+	//     the stock comes from the buyer's own Player.NeutralShopInventories.
+	//   - Player-owned shops share BuildingTile.ShopInventory: purchaser must be
+	//     the owner.
 	if building.OwnerID == nil {
 		return
 	}
+	var inv []protocol.ShopStockEntry
 	if *building.OwnerID == neutralPlayerID {
 		fow := s.FOW[playerID]
 		if fow == nil {
@@ -456,21 +460,24 @@ func (s *GameState) handlePurchaseItemLocked(playerID, buildingID, itemID string
 		if s.shopLockedLocked(building) {
 			return
 		}
-	} else if *building.OwnerID != playerID {
+		inv = player.NeutralShopInventories[building.ID]
+	} else if *building.OwnerID == playerID {
+		inv = building.ShopInventory
+	} else {
 		return
 	}
 
-	// Item must be in this building's current ShopInventory with quantity
-	// remaining. An entry with quantity 0 stays in the inventory list so
-	// the client can render it greyed-out, but the purchase is rejected.
+	// Item must be in the resolved inventory with quantity remaining. An entry
+	// with quantity 0 stays in the list so the client can render it greyed-out,
+	// but the purchase is rejected.
 	stockIdx := -1
-	for i, entry := range building.ShopInventory {
+	for i, entry := range inv {
 		if entry.ItemID == itemID {
 			stockIdx = i
 			break
 		}
 	}
-	if stockIdx < 0 || building.ShopInventory[stockIdx].Quantity <= 0 {
+	if stockIdx < 0 || inv[stockIdx].Quantity <= 0 {
 		return
 	}
 
@@ -487,10 +494,11 @@ func (s *GameState) handlePurchaseItemLocked(playerID, buildingID, itemID string
 
 	player.Resources["gold"] -= def.CostGold
 	s.addItemToVaultLocked(player, def)
-	// Decrement the shop's stock for this item. The entry stays in the
-	// inventory list at quantity 0 so the client can render it greyed-out
-	// rather than removing the slot entirely.
-	building.ShopInventory[stockIdx].Quantity--
+	// Decrement the resolved inventory's stock for this item. The entry stays in
+	// the list at quantity 0 so the client can render it greyed-out rather than
+	// removing the slot entirely. `inv` aliases either the per-player slice
+	// (map value) or the building's slice, so the element mutation persists.
+	inv[stockIdx].Quantity--
 }
 
 // handleEquipItemLocked validates and moves an item from the player's vault

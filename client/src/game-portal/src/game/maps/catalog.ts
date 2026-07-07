@@ -247,6 +247,21 @@ export async function fetchRecipeLists(): Promise<RecipeListSummary[]> {
   return data.lists
 }
 
+export type ItemListSummary = { id: string; name: string; items: string[] }
+
+// Named item lists (catalog/items/lists/<id>.json) a shop can stock from,
+// selected per-instance in the map editor. Mirrors fetchRecipeLists.
+export async function fetchItemLists(): Promise<ItemListSummary[]> {
+  const response = await fetch(`${API_BASE}/catalog/item-lists`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to load item lists: ${response.status}`)
+  }
+
+  const data = (await response.json()) as { lists: ItemListSummary[] }
+  return data.lists
+}
+
 export async function fetchNeutralGroups(): Promise<NeutralGroupTierSummary[]> {
   const response = await fetch(`${API_BASE}/api/catalog/neutral-groups`)
 

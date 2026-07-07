@@ -65,6 +65,13 @@ func (s *GameState) handlePurchaseRecipeLocked(playerID, buildingID, recipeID st
 		return
 	}
 
+	// Already-known recipes are a no-op: unlockRecipeForPlayerLocked is
+	// idempotent, so without this guard the player would spend gold and burn
+	// shop stock for nothing. The client greys these out; this backstops it.
+	if s.playerKnowsRecipeLocked(playerID, recipeID) {
+		return
+	}
+
 	// Afford check.
 	if player.Resources["gold"] < def.CostGold {
 		return

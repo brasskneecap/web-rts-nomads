@@ -18,53 +18,15 @@ const (
 	UpgradeTrackArcher  UpgradeTrack = "archer"
 )
 
-// UpgradeTrackDef describes one upgrade line: per-level stat bonuses and cost
-// scaling. BaseCostGold × CostGrowth^(nextLevel-1) gives the cost to purchase
-// level nextLevel.
-type UpgradeTrackDef struct {
-	Track               UpgradeTrack
-	DisplayName         string
-	BaseCostGold        int
-	CostGrowth          float64
-	HPPerLevel          int
-	DamagePerLevel      int
-	ArmorPerLevel       int
-	AttackSpeedPerLevel float64
-	MoveSpeedPerLevel   float64
-}
+// Upgrade track definitions (per-tier stat bonuses, cost, and building
+// prerequisites) now live in catalog/units/<faction>/<unit>/upgrades.json and
+// are loaded by unit_upgrade_defs.go into unitUpgradeTracksByUnitType. The
+// track key equals the unit type. See UnitUpgradeTrack.
 
-// upgradeTrackDefs is the authoritative list of all upgrade tracks shipped in
-// v1. Two tracks: soldier and archer. Appending to this slice adds a new track
-// to all downstream functions automatically (snapshots, cap checks, etc.).
-var upgradeTrackDefs = []UpgradeTrackDef{
-	{
-		Track:               UpgradeTrackSoldier,
-		DisplayName:         "Soldier",
-		BaseCostGold:        150,
-		CostGrowth:          1.6,
-		HPPerLevel:          25,
-		DamagePerLevel:      2,
-		ArmorPerLevel:       1,
-		AttackSpeedPerLevel: 0.05,
-		MoveSpeedPerLevel:   3.0,
-	},
-	{
-		Track:               UpgradeTrackArcher,
-		DisplayName:         "Archer",
-		BaseCostGold:        175,
-		CostGrowth:          1.6,
-		HPPerLevel:          8,
-		DamagePerLevel:      2,
-		ArmorPerLevel:       0,
-		AttackSpeedPerLevel: 0.10,
-		MoveSpeedPerLevel:   5.0,
-	},
-}
-
-// blacksmithUpgradeResearchSeconds is how long a blacksmith upgrade takes to
-// complete after purchase. Resources are deducted up front; the level only
-// advances once this many seconds have elapsed (see
-// tickBlacksmithUpgradesLocked). Flat for now across all tracks and levels.
+// blacksmithUpgradeResearchSeconds is the DEFAULT per-level research duration,
+// used when a track's upgrades.json omits researchSeconds. Resources are
+// deducted up front; the level only advances once the timer elapses (see
+// tickBlacksmithUpgradesLocked). A track may override this via its JSON.
 const blacksmithUpgradeResearchSeconds = 15.0
 
 // blacksmithUpgradeMaxQueue caps how many upgrades a single blacksmith can have
@@ -137,10 +99,11 @@ func (s *GameState) playerTrackResearchLocked(playerID string, track UpgradeTrac
 	return "", nil, false
 }
 
-// isUpgradePurchaseBuildingLocked reports whether b is a finished, owned
-// (by playerID), upgrade-purchase building eligible to research upgrades.
+// buildingOffersUpgradeCapabilityLocked reports whether b is a finished, owned
+// (by playerID) building whose capabilities include the given upgrade
+// capability (e.g. "blacksmith-upgrade") — i.e. it can research that track.
 // Must be called under s.mu.
-func isUpgradePurchaseBuildingLocked(b *protocol.BuildingTile, playerID string) bool {
+func buildingOffersUpgradeCapabilityLocked(b *protocol.BuildingTile, playerID, capability string) bool {
 	if b == nil || !b.Visible {
 		return false
 	}
@@ -151,23 +114,23 @@ func isUpgradePurchaseBuildingLocked(b *protocol.BuildingTile, playerID string) 
 		return false
 	}
 	for _, cap := range b.Capabilities {
-		if cap == "upgrade-purchase" {
+		if cap == capability {
 			return true
 		}
 	}
 	return false
 }
 
-// findIdleUpgradeBuildingLocked returns the lowest-ID finished blacksmith owned
-// by playerID that is NOT currently researching anything, or ("", false) when
-// every blacksmith is busy (or the player owns none). Deterministic. Used by
-// the global Blacksmith panel's auto-assign purchase path. Must be called
-// under s.mu.
-func (s *GameState) findIdleUpgradeBuildingLocked(playerID string) (string, bool) {
+// findIdleUpgradeBuildingLocked returns the lowest-ID finished building owned by
+// playerID that offers the given upgrade capability and is NOT currently
+// researching anything, or ("", false) when every such building is busy (or the
+// player owns none). Deterministic. Used by the global panel's auto-assign
+// purchase path. Must be called under s.mu.
+func (s *GameState) findIdleUpgradeBuildingLocked(playerID, capability string) (string, bool) {
 	candidates := make([]string, 0)
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
-		if !isUpgradePurchaseBuildingLocked(b, playerID) {
+		if !buildingOffersUpgradeCapabilityLocked(b, playerID, capability) {
 			continue
 		}
 		if len(s.ActiveUpgrades[b.ID]) > 0 {
@@ -182,17 +145,17 @@ func (s *GameState) findIdleUpgradeBuildingLocked(playerID string) (string, bool
 	return candidates[0], true
 }
 
-// findAnyUpgradeBuildingLocked returns the lowest-ID finished blacksmith owned
-// by playerID regardless of whether it is busy. Used as the global panel's
-// fallback target when every blacksmith already has a queue: a new track still
-// needs a home, so it stacks behind the lowest-ID blacksmith's queue. Returns
-// ("", false) when the player owns no blacksmith. Deterministic. Must be called
-// under s.mu.
-func (s *GameState) findAnyUpgradeBuildingLocked(playerID string) (string, bool) {
+// findAnyUpgradeBuildingLocked returns the lowest-ID finished building owned by
+// playerID that offers the given upgrade capability, regardless of whether it is
+// busy. Used as the global panel's fallback target when every such building
+// already has a queue: a new track still needs a home, so it stacks behind the
+// lowest-ID one. Returns ("", false) when the player owns none. Deterministic.
+// Must be called under s.mu.
+func (s *GameState) findAnyUpgradeBuildingLocked(playerID, capability string) (string, bool) {
 	candidates := make([]string, 0)
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
-		if !isUpgradePurchaseBuildingLocked(b, playerID) {
+		if !buildingOffersUpgradeCapabilityLocked(b, playerID, capability) {
 			continue
 		}
 		candidates = append(candidates, b.ID)
@@ -204,52 +167,47 @@ func (s *GameState) findAnyUpgradeBuildingLocked(playerID string) (string, bool)
 	return candidates[0], true
 }
 
-// upgradeTrackDefByID returns the UpgradeTrackDef for the given track, and
-// whether it was found.
-func upgradeTrackDefByID(track UpgradeTrack) (UpgradeTrackDef, bool) {
-	for _, def := range upgradeTrackDefs {
-		if def.Track == track {
-			return def, true
+// upgradeRequirementMetLocked reports whether a tier's requiresBuilding gate is
+// satisfied for playerID. "" is always met. A value naming a building in the
+// townhall upgrade chain (townhall/keep/castle) maps to a townhall-tier check
+// (a Keep is a townhall at tier 2, a Castle tier 3 — placed buildings never
+// change type). Any other value requires owning a fully-built building of that
+// exact type. Must be called under s.mu.
+func (s *GameState) upgradeRequirementMetLocked(playerID, requiresBuilding string) bool {
+	if requiresBuilding == "" {
+		return true
+	}
+	if chain := upgradeChainFor("townhall"); chain != nil {
+		for i, def := range chain {
+			if def.Type == requiresBuilding {
+				return s.townhallTierForPlayerLocked(playerID) >= i+1
+			}
 		}
 	}
-	return UpgradeTrackDef{}, false
+	return s.playerOwnsBuiltBuildingOfTypeLocked(playerID, requiresBuilding)
 }
 
-// upgradeCostForLevel returns the gold cost to purchase nextLevel
-// (= currentLevel + 1). Formula: round(baseCostGold × CostGrowth^(nextLevel-1)).
-func upgradeCostForLevel(def UpgradeTrackDef, nextLevel int) int {
-	if nextLevel <= 0 {
-		return 0
-	}
-	raw := float64(def.BaseCostGold) * math.Pow(def.CostGrowth, float64(nextLevel-1))
-	return int(math.Round(raw))
-}
-
-// upgradeCapForPlayerLocked returns the maximum upgrade level a player may
-// purchase, based on the highest fully-built town hall tier they own.
-// Tier 1 → cap 3, Tier 2 → cap 6, Tier 3 → cap 9, no townhall → cap 0.
+// purchasableUpgradeCapLocked returns the highest level of a track the player
+// may currently purchase: the last contiguous tier (from level 1) whose
+// requiresBuilding gate is satisfied. Returns 0 when even tier 1 is gated out.
 // Must be called under s.mu.
-func (s *GameState) upgradeCapForPlayerLocked(playerID string) int {
-	tier := s.townhallTierForPlayerLocked(playerID)
-	switch tier {
-	case 1:
-		return 3
-	case 2:
-		return 6
-	case 3:
-		return 9
-	default:
-		return 0
+func (s *GameState) purchasableUpgradeCapLocked(playerID string, track UnitUpgradeTrack) int {
+	cap := 0
+	for _, tier := range track.Tiers {
+		if !s.upgradeRequirementMetLocked(playerID, tier.RequiresBuilding) {
+			break
+		}
+		cap = tier.Level
 	}
+	return cap
 }
 
-// playerHasBlacksmithLocked returns true if the player owns at least one
-// fully-built (not under-construction) building with the "upgrade-purchase"
-// capability. Must be called under s.mu.
-func (s *GameState) playerHasBlacksmithLocked(playerID string) bool {
+// playerOwnsBuiltBuildingOfTypeLocked reports whether playerID owns at least one
+// live, fully-built building of the given type. Must be called under s.mu.
+func (s *GameState) playerOwnsBuiltBuildingOfTypeLocked(playerID, buildingType string) bool {
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
-		if !b.Visible {
+		if !b.Visible || b.BuildingType != buildingType {
 			continue
 		}
 		if b.OwnerID == nil || *b.OwnerID != playerID {
@@ -258,10 +216,19 @@ func (s *GameState) playerHasBlacksmithLocked(playerID string) bool {
 		if getMetadataBool(b.Metadata, "underConstruction") {
 			continue
 		}
-		for _, cap := range b.Capabilities {
-			if cap == "upgrade-purchase" {
-				return true
-			}
+		return true
+	}
+	return false
+}
+
+// playerHasUpgradeBuildingLocked returns true if the player owns at least one
+// fully-built (not under-construction) building offering the given upgrade
+// capability. Must be called under s.mu.
+func (s *GameState) playerHasUpgradeBuildingLocked(playerID, capability string) bool {
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if buildingOffersUpgradeCapabilityLocked(b, playerID, capability) {
+			return true
 		}
 	}
 	return false
@@ -308,20 +275,23 @@ func (s *GameState) applyPlayerUpgradesAtSpawnLocked(unit *Unit) {
 	if !ok {
 		return
 	}
-	// Per-unit-type upgrade tracks (workshop / armoury). Guard on the
-	// Upgrades map being non-nil — wave-upgrade buffs and the profile
-	// damage multiplier below run regardless.
+	// Per-unit-type upgrade tracks (blacksmith etc.). Guard on the Upgrades map
+	// being non-nil — wave-upgrade buffs and the profile damage multiplier below
+	// run regardless. Sum every purchased tier's effects into the fresh unit's
+	// base stats (the unit starts at catalog values, so the full 1..level
+	// accumulation is correct).
 	if player.Upgrades != nil {
 		track := UpgradeTrack(unit.UnitType)
-		trackDef, hasDef := upgradeTrackDefByID(track)
-		if hasDef {
+		if trackDef, hasDef := upgradeTrackDefByID(track); hasDef {
 			level := player.Upgrades[track]
-			if level > 0 {
-				unit.BaseMaxHP += trackDef.HPPerLevel * level
-				unit.BaseDamage += trackDef.DamagePerLevel * level
-				unit.BaseArmor += trackDef.ArmorPerLevel * level
-				unit.BaseAttackSpeed += trackDef.AttackSpeedPerLevel * float64(level)
-				unit.BaseMoveSpeed += trackDef.MoveSpeedPerLevel * float64(level)
+			for lvl := 1; lvl <= level; lvl++ {
+				tier, ok := trackDef.tierByLevel(lvl)
+				if !ok {
+					break
+				}
+				for _, eff := range tier.Effects {
+					applyUpgradeStatDeltaToUnit(unit, eff.Stat, eff.Amount)
+				}
 			}
 		}
 	}
@@ -354,16 +324,39 @@ func (s *GameState) applyPlayerUpgradesAtSpawnLocked(unit *Unit) {
 	}
 }
 
-// reapplyUpgradesToOwnedUnitsByTypeLocked retroactively applies ONE additional
-// level's worth of stat bonuses to all alive units owned by playerID whose
-// UnitType matches track. Called immediately after Player.Upgrades[track] is
-// incremented by 1, so exactly one PerLevel delta is added to each unit's base
-// stats. applyRankModifiersLocked then rebakes derived stats.
+// applyUpgradeStatDeltaToUnit adds an upgrade effect's stat delta to a unit's
+// base stats. Integer stats round the (possibly fractional) amount; float stats
+// add it directly. Unknown stats are ignored (the loader already rejects them,
+// so this is defence-in-depth). Callers must rebake via applyRankModifiersLocked.
+func applyUpgradeStatDeltaToUnit(unit *Unit, stat string, amount float64) {
+	switch stat {
+	case "maxHp":
+		unit.BaseMaxHP += int(math.Round(amount))
+	case "damage":
+		unit.BaseDamage += int(math.Round(amount))
+	case "armor":
+		unit.BaseArmor += int(math.Round(amount))
+	case "attackSpeed":
+		unit.BaseAttackSpeed += amount
+	case "moveSpeed":
+		unit.BaseMoveSpeed += amount
+	}
+}
+
+// reapplyUpgradesToOwnedUnitsByTypeLocked retroactively applies the effects of a
+// single newly-reached tier (level) to all alive units owned by playerID whose
+// UnitType matches track. Called immediately after Player.Upgrades[track] is set
+// to level, so exactly that tier's delta is added to each unit's base stats.
+// applyRankModifiersLocked then rebakes derived stats.
 //
 // HP percentage is preserved: the existing HP fraction before the max HP
 // increase is maintained after rebaking. Must be called under s.mu.
-func (s *GameState) reapplyUpgradesToOwnedUnitsByTypeLocked(playerID string, track UpgradeTrack) {
+func (s *GameState) reapplyUpgradesToOwnedUnitsByTypeLocked(playerID string, track UpgradeTrack, level int) {
 	def, ok := upgradeTrackDefByID(track)
+	if !ok {
+		return
+	}
+	tier, ok := def.tierByLevel(level)
 	if !ok {
 		return
 	}
@@ -380,12 +373,10 @@ func (s *GameState) reapplyUpgradesToOwnedUnitsByTypeLocked(playerID string, tra
 			hpFrac = float64(unit.HP) / float64(unit.MaxHP)
 		}
 
-		// Add one level's worth of deltas to base stats.
-		unit.BaseMaxHP += def.HPPerLevel
-		unit.BaseDamage += def.DamagePerLevel
-		unit.BaseArmor += def.ArmorPerLevel
-		unit.BaseAttackSpeed += def.AttackSpeedPerLevel
-		unit.BaseMoveSpeed += def.MoveSpeedPerLevel
+		// Add this tier's deltas to base stats.
+		for _, eff := range tier.Effects {
+			applyUpgradeStatDeltaToUnit(unit, eff.Stat, eff.Amount)
+		}
 
 		// Rebake derived stats (Damage, MaxHP, AttackSpeed, MoveSpeed, Armor).
 		s.applyRankModifiersLocked(unit, false)
@@ -404,27 +395,26 @@ func (s *GameState) reapplyUpgradesToOwnedUnitsByTypeLocked(playerID string, tra
 // handlePurchaseUpgradeLocked validates and enqueues a single upgrade purchase.
 // Validation failures are silent no-ops.
 //
-//  1. A target blacksmith is resolved:
-//     - If the track already lives at one of the player's blacksmiths (in
+//  1. A target building (one offering the track's capability) is resolved:
+//     - If the track already lives at one of the player's upgrade buildings (in
 //       progress or queued), it stays there: the new level stacks behind it.
-//       This enforces the cross-blacksmith lock — a track is confined to one
-//       blacksmith. An explicit buildingID that names a DIFFERENT blacksmith is
+//       This enforces the cross-building lock — a track is confined to one
+//       building. An explicit buildingID that names a DIFFERENT building is
 //       rejected (the track is locked elsewhere).
-//     - Otherwise an explicit buildingID (action bar / selected blacksmith) must
-//       be a finished, owned upgrade-purchase building.
+//     - Otherwise an explicit buildingID (action bar / selected building) must
+//       be a finished, owned building offering the track's capability.
 //     - Otherwise (empty buildingID, global panel) auto-assign to the lowest-ID
-//       idle blacksmith, falling back to the lowest-ID blacksmith overall.
-//  2. The blacksmith's queue must be below blacksmithUpgradeMaxQueue.
+//       idle qualifying building, falling back to the lowest-ID one overall.
+//  2. The building's queue must be below blacksmithUpgradeMaxQueue.
 //  3. The PROJECTED level (current + already-queued of this track + 1) must be
-//     at or below the tier-gated cap.
-//  4. Player must have enough gold AND wood (wood cost == gold cost) for the
-//     projected level.
+//     at or below the per-tier purchasable cap (requiresBuilding gates).
+//  4. Player must have enough of every resource in the tier's cost.
 //
-// On success: deduct gold and wood and append an ActiveUpgrade to the target
-// blacksmith's queue with a blacksmithUpgradeResearchSeconds timer. The level is
-// NOT applied here — it advances (and existing units are retro-buffed) only when
-// this entry reaches the queue head and its timer completes in
-// tickBlacksmithUpgradesLocked. Must be called under s.mu.
+// On success: deduct the tier cost and append an ActiveUpgrade to the target
+// building's queue with the track's research timer. The level is NOT applied
+// here — it advances (and existing units are retro-buffed) only when this entry
+// reaches the queue head and its timer completes in tickBlacksmithUpgradesLocked.
+// Must be called under s.mu.
 func (s *GameState) handlePurchaseUpgradeLocked(playerID, buildingID string, track UpgradeTrack) {
 	player, ok := s.Players[playerID]
 	if !ok {
@@ -435,32 +425,34 @@ func (s *GameState) handlePurchaseUpgradeLocked(playerID, buildingID string, tra
 		return
 	}
 
-	cap := s.upgradeCapForPlayerLocked(playerID)
+	cap := s.purchasableUpgradeCapLocked(playerID, def)
 	if cap <= 0 {
 		return
 	}
 
-	// Resolve the target blacksmith, honouring the cross-blacksmith track lock.
+	// Resolve the target building, honouring the cross-building track lock. Only
+	// buildings offering this track's capability qualify.
 	homeID, queuedOfTrack, hasHome := s.playerTrackBuildingLocked(playerID, track)
 	switch {
 	case hasHome:
-		// The track is locked to its home blacksmith; stack there. An explicit
-		// request to research it at a different blacksmith is rejected.
+		// The track is locked to its home building; stack there. An explicit
+		// request to research it at a different building is rejected.
 		if buildingID != "" && buildingID != homeID {
 			return
 		}
 		buildingID = homeID
 	case buildingID != "":
-		// Action bar: the named building must be a valid blacksmith.
+		// Action bar: the named building must offer this track's capability.
 		b := s.getBuildingByIDLocked(buildingID)
-		if !isUpgradePurchaseBuildingLocked(b, playerID) {
+		if !buildingOffersUpgradeCapabilityLocked(b, playerID, def.Capability) {
 			return
 		}
 	default:
-		// Global panel: prefer an idle blacksmith, else stack at the lowest-ID one.
-		id, found := s.findIdleUpgradeBuildingLocked(playerID)
+		// Global panel: prefer an idle qualifying building, else stack at the
+		// lowest-ID one.
+		id, found := s.findIdleUpgradeBuildingLocked(playerID, def.Capability)
 		if !found {
-			id, found = s.findAnyUpgradeBuildingLocked(playerID)
+			id, found = s.findAnyUpgradeBuildingLocked(playerID, def.Capability)
 			if !found {
 				return
 			}
@@ -477,25 +469,25 @@ func (s *GameState) handlePurchaseUpgradeLocked(playerID, buildingID string, tra
 	if nextLevel > cap {
 		return
 	}
-	cost := upgradeCostForLevel(def, nextLevel)
-	// Upgrades cost equal amounts of gold and wood.
-	if player.Resources["gold"] < cost || player.Resources["wood"] < cost {
+	goldCost, woodCost := upgradeTierCost(def, nextLevel)
+	if player.Resources["gold"] < goldCost || player.Resources["wood"] < woodCost {
 		return
 	}
 
-	player.Resources["gold"] -= cost
-	player.Resources["wood"] -= cost
+	player.Resources["gold"] -= goldCost
+	player.Resources["wood"] -= woodCost
 	if s.ActiveUpgrades == nil {
 		s.ActiveUpgrades = map[string][]*ActiveUpgrade{}
 	}
+	research := def.resolvedResearchSeconds()
 	s.ActiveUpgrades[buildingID] = append(s.ActiveUpgrades[buildingID], &ActiveUpgrade{
 		PlayerID:    playerID,
 		Track:       track,
-		Remaining:   blacksmithUpgradeResearchSeconds,
-		Total:       blacksmithUpgradeResearchSeconds,
+		Remaining:   research,
+		Total:       research,
 		TargetLevel: nextLevel,
-		GoldPaid:    cost,
-		WoodPaid:    cost,
+		GoldPaid:    goldCost,
+		WoodPaid:    woodCost,
 	})
 }
 
@@ -568,14 +560,15 @@ func (s *GameState) reconcileUpgradeQueueLocked(playerID, buildingID string) {
 			continue
 		}
 		au.TargetLevel = level
-		correctCost := upgradeCostForLevel(def, level)
-		rebate := au.GoldPaid - correctCost
-		if rebate != 0 {
+		correctGold, correctWood := upgradeTierCost(def, level)
+		if rebate := au.GoldPaid - correctGold; rebate != 0 {
 			player.Resources["gold"] += rebate
+		}
+		if rebate := au.WoodPaid - correctWood; rebate != 0 {
 			player.Resources["wood"] += rebate
 		}
-		au.GoldPaid = correctCost
-		au.WoodPaid = correctCost
+		au.GoldPaid = correctGold
+		au.WoodPaid = correctWood
 	}
 }
 
@@ -613,7 +606,7 @@ func (s *GameState) tickBlacksmithUpgradesLocked(dt float64) {
 				player.Upgrades = map[UpgradeTrack]int{}
 			}
 			player.Upgrades[au.Track] = au.TargetLevel
-			s.reapplyUpgradesToOwnedUnitsByTypeLocked(au.PlayerID, au.Track)
+			s.reapplyUpgradesToOwnedUnitsByTypeLocked(au.PlayerID, au.Track, au.TargetLevel)
 		}
 		s.popUpgradeQueueHeadLocked(id)
 	}
@@ -828,34 +821,50 @@ func joinUpgradeLevels(queue []*ActiveUpgrade) string {
 	return strings.Join(parts, ",")
 }
 
+// upgradeRequirementLabel maps a tier's requiresBuilding type to a display
+// label (the building def's Label, falling back to the raw type string). Empty
+// input yields "".
+func upgradeRequirementLabel(requiresBuilding string) string {
+	if requiresBuilding == "" {
+		return ""
+	}
+	if def, ok := getBuildingDef(requiresBuilding); ok && def.Label != "" {
+		return def.Label
+	}
+	return requiresBuilding
+}
+
 // playerUpgradeSnapshotsLocked builds the []protocol.PlayerUpgradeSnapshot for
-// a player. Emits one entry per upgradeTrackDef entry (always 2 for v1).
-// Must be called under s.mu (read lock is sufficient).
+// a player — one entry per loaded upgrade track. Must be called under s.mu (read
+// lock is sufficient).
 func (s *GameState) playerUpgradeSnapshotsLocked(playerID string) []protocol.PlayerUpgradeSnapshot {
 	player, ok := s.Players[playerID]
 	if !ok {
 		return nil
 	}
-	cap := s.upgradeCapForPlayerLocked(playerID)
-	hasBlacksmith := s.playerHasBlacksmithLocked(playerID)
 
-	snapshots := make([]protocol.PlayerUpgradeSnapshot, 0, len(upgradeTrackDefs))
-	for _, def := range upgradeTrackDefs {
+	snapshots := make([]protocol.PlayerUpgradeSnapshot, 0, len(unitUpgradeTracks))
+	for _, def := range unitUpgradeTracks {
+		track := UpgradeTrack(def.UnitType)
+		absoluteCap := len(def.Tiers)
+		purchasableCap := s.purchasableUpgradeCapLocked(playerID, def)
+		hasBuilding := s.playerHasUpgradeBuildingLocked(playerID, def.Capability)
+
 		level := 0
 		if player.Upgrades != nil {
-			level = player.Upgrades[def.Track]
+			level = player.Upgrades[track]
 		}
 
 		// How many of this track are queued (in progress + waiting), and which
-		// blacksmith owns the track's line. Queuing more stacks at that home.
-		homeID, queuedCount, _ := s.playerTrackBuildingLocked(playerID, def.Track)
+		// building owns the track's line. Queuing more stacks at that home.
+		homeID, queuedCount, _ := s.playerTrackBuildingLocked(playerID, track)
 
 		// Live research progress: only when this track is at the head of its
-		// home blacksmith's queue (a track queued behind another is not yet
+		// home building's queue (a track queued behind another is not yet
 		// researching, so its progress bar reads empty).
 		var researchTotal, researchRemaining float64
 		researchBuildingID := ""
-		if bid, au, ok := s.playerTrackResearchLocked(playerID, def.Track); ok {
+		if bid, au, ok := s.playerTrackResearchLocked(playerID, track); ok {
 			researchTotal = au.Total
 			researchRemaining = au.Remaining
 			researchBuildingID = bid
@@ -866,41 +875,57 @@ func (s *GameState) playerUpgradeSnapshotsLocked(playerID string) []protocol.Pla
 		projectedLevel := level + queuedCount
 		nextLevel := projectedLevel + 1
 
-		nextCost := 0
-		canAfford := false
-		if projectedLevel < cap {
-			nextCost = upgradeCostForLevel(def, nextLevel)
-			// Upgrades cost equal gold and wood.
-			canAfford = hasBlacksmith &&
-				player.Resources["gold"] >= nextCost &&
-				player.Resources["wood"] >= nextCost
+		nextCostGold, nextCostWood := 0, 0
+		var nextStats []protocol.UpgradeStatDelta
+		if nextLevel <= absoluteCap {
+			nextCostGold, nextCostWood = upgradeTierCost(def, nextLevel)
+			if tier, ok := def.tierByLevel(nextLevel); ok {
+				nextStats = make([]protocol.UpgradeStatDelta, 0, len(tier.Effects))
+				for _, eff := range tier.Effects {
+					nextStats = append(nextStats, protocol.UpgradeStatDelta{Stat: eff.Stat, Amount: eff.Amount})
+				}
+			}
 		}
-		// canStart gates the purchase/queue button: affordable and a target
-		// blacksmith exists. The track's home (if any) always accepts another;
-		// otherwise any owned blacksmith does. The per-blacksmith queue cap is
-		// enforced at purchase time, not surfaced here.
+
+		// canAfford/canStart require an available building, room below the
+		// purchasable cap, and the resources for the next tier. The per-building
+		// queue cap is enforced at purchase time, not surfaced here.
+		canAfford := false
+		if projectedLevel < purchasableCap {
+			canAfford = hasBuilding &&
+				player.Resources["gold"] >= nextCostGold &&
+				player.Resources["wood"] >= nextCostWood
+		}
 		canStart := canAfford
 
+		// When more tiers exist but the next one is gated out, surface the
+		// requirement label blocking further purchases (e.g. "Keep"/"Castle").
+		nextRequirement := ""
+		if projectedLevel >= purchasableCap && purchasableCap < absoluteCap {
+			if blockTier, ok := def.tierByLevel(purchasableCap + 1); ok {
+				nextRequirement = upgradeRequirementLabel(blockTier.RequiresBuilding)
+			}
+		}
+
 		snapshots = append(snapshots, protocol.PlayerUpgradeSnapshot{
-			Track:               string(def.Track),
-			DisplayName:         def.DisplayName,
-			Level:               level,
-			Cap:                 cap,
-			QueuedCount:         queuedCount,
-			NextCostGold:        nextCost,
-			NextCostWood:        nextCost,
-			CanAfford:           canAfford,
-			CanStart:            canStart,
-			HasBlacksmith:       hasBlacksmith,
-			ResearchTotal:       researchTotal,
-			ResearchRemaining:   researchRemaining,
-			ResearchBuildingID:  researchBuildingID,
-			QueueBuildingID:     homeID,
-			HPPerLevel:          def.HPPerLevel,
-			DamagePerLevel:      def.DamagePerLevel,
-			ArmorPerLevel:       def.ArmorPerLevel,
-			AttackSpeedPerLevel: def.AttackSpeedPerLevel,
-			MoveSpeedPerLevel:   def.MoveSpeedPerLevel,
+			Track:              string(track),
+			DisplayName:        def.DisplayName,
+			Capability:         def.Capability,
+			Level:              level,
+			Cap:                absoluteCap,
+			PurchasableCap:     purchasableCap,
+			QueuedCount:        queuedCount,
+			NextCostGold:       nextCostGold,
+			NextCostWood:       nextCostWood,
+			NextStats:          nextStats,
+			NextRequirement:    nextRequirement,
+			CanAfford:          canAfford,
+			CanStart:           canStart,
+			HasBlacksmith:      hasBuilding,
+			ResearchTotal:      researchTotal,
+			ResearchRemaining:  researchRemaining,
+			ResearchBuildingID: researchBuildingID,
+			QueueBuildingID:    homeID,
 		})
 	}
 	return snapshots

@@ -9,7 +9,7 @@ import {
   getTerrainColor,
 } from '../maps/mapConfig'
 import { drawMinimapBase, drawMinimapPOIs } from './minimapLayers'
-import { BUILDING_DEF_MAP, getBuildingStyleRender, getResolvedBuildingAttackVisual, resolveBuildingShadow } from '../maps/buildingDefs'
+import { BUILDING_DEF_MAP, getBuildingStyleRender, getResolvedBuildingAttackVisual, resolveBuildingShadow, spriteTypeForTier } from '../maps/buildingDefs'
 import { getBuildingFallbackRender } from '../maps/buildingFallbackRender'
 import {
   CONSTRUCTION_FRAME_COUNT,
@@ -23,6 +23,7 @@ import {
   getDamagedSprite,
   getDamagedTier,
   getRecipeShopStyleSprite,
+  getNeutralShopStyleSprite,
   getTintedBuildingSprite,
   getTintedConstructionSprite,
   getTintedDamagedSprite,
@@ -895,13 +896,24 @@ export class CanvasRenderer {
 
       const playerFill = ownerColor ?? buildingDef?.color ?? getBuildingColor(building.buildingType, building.occupied, ownerColor)
 
-      // Recipe shops render a per-instance "shopStyle" art override when one is
-      // set (and loaded); otherwise the shared building-type sprite is used.
+      // Tier art: a placed town hall keeps buildingType 'townhall' and carries a
+      // numeric `tier` in metadata (2 = Keep, 3 = Castle). Resolve the sprite/
+      // asset folder for the current tier so an upgraded town hall renders — and
+      // takes damage — with its tier's art (keep/, castle/). Non-tiered buildings
+      // resolve to their own type.
+      const tier = (building.metadata?.['tier'] as number | undefined) ?? 1
+      const spriteType = spriteTypeForTier(building.buildingType, tier)
+
+      // Recipe shops and neutral-shop merchants render a per-instance "shopStyle"
+      // art override when one is set (and loaded); otherwise the shared
+      // building-type sprite is used.
       const styleSprite =
         building.buildingType === 'recipe-shop'
           ? getRecipeShopStyleSprite(shopStyle)
-          : null
-      const sprite = styleSprite ?? getBuildingSprite(building.buildingType)
+          : building.buildingType === 'neutral-shop'
+            ? getNeutralShopStyleSprite(shopStyle)
+            : null
+      const sprite = styleSprite ?? getBuildingSprite(spriteType)
       const isUnderConstruction = building.metadata?.['underConstruction'] === true
       // pendingStart: placed but no worker has arrived yet — render as a
       // transparent preview of the finished building. The construction
@@ -914,8 +926,32 @@ export class CanvasRenderer {
         hp !== undefined && maxHp !== undefined && maxHp > 0
           ? Math.max(0, Math.min(1, hp / maxHp))
           : 0
-      const constructionSprite =
-        isUnderConstruction && !isPendingStart ? getConstructionSprite(building.buildingType) : null
+
+      // Tier-up in progress: the server stamps tierUpRemaining/tierUpTotal/
+      // tierTargetLevel on the town hall while it upgrades to the next tier.
+      // We play the TARGET tier's construction.png just like a normal build,
+      // then swap to the finished tier art on completion (the server bumps
+      // `tier` and clears these keys). tier-up wins over training/damage.
+      const tierUpRemaining = building.metadata?.['tierUpRemaining'] as number | undefined
+      const tierUpTotal = building.metadata?.['tierUpTotal'] as number | undefined
+      const tierTargetLevel = building.metadata?.['tierTargetLevel'] as number | undefined
+      const isTieringUp = typeof tierUpRemaining === 'number' && tierUpRemaining > 0
+      const tierUpProgress =
+        isTieringUp && typeof tierUpTotal === 'number' && tierUpTotal > 0
+          ? Math.max(0, Math.min(1, (tierUpTotal - tierUpRemaining) / tierUpTotal))
+          : 0
+      const tierUpSpriteType =
+        isTieringUp && typeof tierTargetLevel === 'number'
+          ? spriteTypeForTier(building.buildingType, tierTargetLevel)
+          : spriteType
+
+      // Unified construction animation for both the initial build and a tier-up:
+      // which spritesheet + which progress. Tier-up plays the target tier's
+      // frames; the initial build plays the building's own frames driven by HP.
+      const showConstruction = (isUnderConstruction && !isPendingStart) || isTieringUp
+      const constructionSpriteType = isTieringUp ? tierUpSpriteType : spriteType
+      const constructionAnimProgress = isTieringUp ? tierUpProgress : constructionProgress
+      const constructionSprite = showConstruction ? getConstructionSprite(constructionSpriteType) : null
       // Training animation plays only on finished, owned, non-preview buildings
       // that are actively producing a unit. Server sets producingUnitType in
       // metadata while the head of the production queue is in flight. A
@@ -924,27 +960,28 @@ export class CanvasRenderer {
       const isTraining =
         !isUnderConstruction &&
         !isPendingStart &&
+        !isTieringUp &&
         ((typeof building.metadata?.['producingUnitType'] === 'string' &&
           (building.metadata?.['producingUnitType'] as string).length > 0) ||
           building.metadata?.['upgradeInProgress'] === true)
-      const trainingSprite = isTraining ? getTrainingSprite(building.buildingType) : null
-      // Damage tier only applies to finished, non-preview buildings. Under
-      // 90% HP picks a row from damaged.png (tier 0..3); above that the
-      // normal sprite.png is used unchanged.
+      const trainingSprite = isTraining ? getTrainingSprite(spriteType) : null
+      // Damage tier only applies to finished, non-preview buildings that aren't
+      // mid-tier-up. Under 90% HP picks a row from damaged.png (tier 0..3); above
+      // that the normal sprite.png is used unchanged.
       const damagedTier =
-        isUnderConstruction || isPendingStart ? -1 : getDamagedTier(constructionProgress)
+        isUnderConstruction || isPendingStart || isTieringUp ? -1 : getDamagedTier(constructionProgress)
       const damagedSprite =
-        damagedTier >= 0 && !trainingSprite ? getDamagedSprite(building.buildingType) : null
+        damagedTier >= 0 && !trainingSprite ? getDamagedSprite(spriteType) : null
 
       if (building.ghost) {
         ctx.save()
         ctx.globalAlpha = 0.5
         if (constructionSprite) {
           const tinted = ownerColor
-            ? getTintedConstructionSprite(building.buildingType, ownerColor)
+            ? getTintedConstructionSprite(constructionSpriteType, ownerColor)
             : null
           const source: CanvasImageSource = tinted ?? constructionSprite
-          const frameIndex = getConstructionFrameIndex(constructionProgress)
+          const frameIndex = getConstructionFrameIndex(constructionAnimProgress)
           const sheetW = constructionSprite.naturalWidth
           const sheetH = constructionSprite.naturalHeight
           const frameW = sheetW / CONSTRUCTION_FRAME_COUNT
@@ -952,7 +989,7 @@ export class CanvasRenderer {
           ctx.drawImage(source, frameIndex * frameW, 0, frameW, sheetH, spriteX, spriteY, spriteW, spriteH)
         } else if (sprite) {
           const tinted = ownerColor
-            ? getTintedBuildingSprite(building.buildingType, ownerColor)
+            ? getTintedBuildingSprite(spriteType, ownerColor)
             : null
           ctx.imageSmoothingEnabled = false
           ctx.drawImage(tinted ?? sprite, spriteX, spriteY, spriteW, spriteH)
@@ -1015,10 +1052,10 @@ export class CanvasRenderer {
       if (constructionSprite) {
         ctx.imageSmoothingEnabled = false
         const tinted = ownerColor
-          ? getTintedConstructionSprite(building.buildingType, ownerColor)
+          ? getTintedConstructionSprite(constructionSpriteType, ownerColor)
           : null
         const source: CanvasImageSource = tinted ?? constructionSprite
-        const frameIndex = getConstructionFrameIndex(constructionProgress)
+        const frameIndex = getConstructionFrameIndex(constructionAnimProgress)
         const sheetW = constructionSprite.naturalWidth
         const sheetH = constructionSprite.naturalHeight
         const frameW = sheetW / CONSTRUCTION_FRAME_COUNT
@@ -1036,7 +1073,7 @@ export class CanvasRenderer {
       } else if (trainingSprite) {
         ctx.imageSmoothingEnabled = false
         const tinted = ownerColor
-          ? getTintedTrainingSprite(building.buildingType, ownerColor)
+          ? getTintedTrainingSprite(spriteType, ownerColor)
           : null
         const source: CanvasImageSource = tinted ?? trainingSprite
         const sheetW = trainingSprite.naturalWidth
@@ -1057,12 +1094,12 @@ export class CanvasRenderer {
       } else if (damagedSprite) {
         ctx.imageSmoothingEnabled = false
         const tinted = ownerColor
-          ? getTintedDamagedSprite(building.buildingType, ownerColor)
+          ? getTintedDamagedSprite(spriteType, ownerColor)
           : null
         const source: CanvasImageSource = tinted ?? damagedSprite
         const sheetW = damagedSprite.naturalWidth
         const sheetH = damagedSprite.naturalHeight
-        const framesPerTier = getDamagedFramesPerTier(building.buildingType)
+        const framesPerTier = getDamagedFramesPerTier(spriteType)
         const frameW = sheetW / framesPerTier
         const tierH = sheetH / DAMAGED_TIER_COUNT
         const frameCol = getDamagedFrameIndex(this.renderTime, framesPerTier)
@@ -1082,7 +1119,7 @@ export class CanvasRenderer {
         // A style override is drawn as-is; tinting keys by building type and
         // would return the wrong (shared) sprite for a styled recipe shop.
         const tinted = ownerColor && !styleSprite
-          ? getTintedBuildingSprite(building.buildingType, ownerColor)
+          ? getTintedBuildingSprite(spriteType, ownerColor)
           : null
         ctx.drawImage(tinted ?? sprite, spriteX, spriteY, spriteW, spriteH)
       } else if (!renderDef) {
@@ -1129,7 +1166,7 @@ export class CanvasRenderer {
         ctx.restore()
       }
 
-      if (isUnderConstruction && !isPendingStart) {
+      if (showConstruction && !isPendingStart) {
         // No construction spritesheet yet for this building type → fall back
         // to the procedural "dark overlay + dashed yellow border" treatment
         // so the under-construction state is still legible.
@@ -1148,8 +1185,13 @@ export class CanvasRenderer {
           ctx.restore()
         }
 
-        // Construction progress bar above the building
-        if (hp !== undefined && maxHp !== undefined && maxHp > 0) {
+        // Progress bar above the building — construction HP for a fresh build,
+        // tier-up timer for an in-progress upgrade.
+        const barProgress = isTieringUp ? tierUpProgress : constructionProgress
+        const hasBarProgress = isTieringUp
+          ? typeof tierUpTotal === 'number' && tierUpTotal > 0
+          : hp !== undefined && maxHp !== undefined && maxHp > 0
+        if (hasBarProgress) {
           const barH = 6 / this.camera.zoom
           const barX = worldX + inset
           const barY = worldY + inset - barH - 4 / this.camera.zoom
@@ -1159,7 +1201,7 @@ export class CanvasRenderer {
           ctx.fillStyle = '#1e293b'
           ctx.fillRect(barX, barY, barW, barH)
           ctx.fillStyle = '#fbbf24'
-          ctx.fillRect(barX, barY, barW * constructionProgress, barH)
+          ctx.fillRect(barX, barY, barW * barProgress, barH)
           ctx.strokeStyle = 'rgba(251,191,36,0.5)'
           ctx.lineWidth = 1 / this.camera.zoom
           ctx.setLineDash([])

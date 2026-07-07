@@ -7,6 +7,9 @@ const spriteUrls = import.meta.glob('../../assets/buildings/*/sprite.png', {
 }) as Record<string, string>
 
 const images = new Map<string, HTMLImageElement>()
+// Building-type → default sprite URL (for DOM <img> consumers that need a src,
+// e.g. the Shop menu card falling back to a shop's singular default sprite).
+const spriteUrlByType = new Map<string, string>()
 
 for (const [path, url] of Object.entries(spriteUrls)) {
   const match = path.match(/\/buildings\/([^/]+)\/sprite\.png$/)
@@ -15,6 +18,7 @@ for (const [path, url] of Object.entries(spriteUrls)) {
   const img = new Image()
   img.src = url
   images.set(key, img)
+  spriteUrlByType.set(key, url)
 }
 
 // Construction animation spritesheets. A construction.png is a horizontal
@@ -135,6 +139,7 @@ const recipeShopStyleUrls = import.meta.glob(
 ) as Record<string, string>
 
 const recipeShopStyleImages = new Map<string, HTMLImageElement>()
+const recipeShopStyleUrlByKey = new Map<string, string>()
 
 for (const [path, url] of Object.entries(recipeShopStyleUrls)) {
   const match = path.match(/\/recipe-shops\/([^/]+)\.(?:png|jpe?g)$/)
@@ -143,12 +148,94 @@ for (const [path, url] of Object.entries(recipeShopStyleUrls)) {
   const img = new Image()
   img.src = url
   recipeShopStyleImages.set(key, img)
+  recipeShopStyleUrlByKey.set(key, url)
+}
+
+// Returns the asset URL for a recipe-shop's "shopStyle": the per-instance style
+// art when one is set and registered. Used by DOM <img> consumers (the Shop menu
+// card) that need a src rather than a decoded HTMLImageElement — mirrors
+// getNeutralShopStyleUrl. Unlike neutral-shops, recipe-shops ship no built-in
+// default sprite (no "sprite" stem in recipe-shops/, no singular recipe-shop/
+// folder), so a styleless shop returns null here and the card falls back to its
+// ActionIcon building icon — matching the in-world procedural render. The
+// fallbacks below activate automatically if a default asset is added later.
+export function getRecipeShopStyleUrl(style: string | null | undefined): string | null {
+  if (style && style.trim()) {
+    const url = recipeShopStyleUrlByKey.get(style.toLowerCase())
+    if (url) return url
+  }
+  return recipeShopStyleUrlByKey.get('sprite') ?? spriteUrlByType.get('recipe-shop') ?? null
 }
 
 // Names of the available recipe-shop styles (file stems), sorted — used to
 // populate the map editor's Shop Style dropdown.
 export function listRecipeShopStyles(): string[] {
   return [...recipeShopStyleImages.keys()].sort()
+}
+
+// Neutral-shop (merchant) style art. All neutral-shop sprites live in
+// assets/buildings/neutral-shops/<style>.{png,jpg,jpeg} (there is no singular
+// neutral-shop/ folder). The file stem is the style name; a neutral-shop picks
+// one via per-instance "shopStyle" metadata set in the map editor. The special
+// stem "sprite" is the built-in default used when no style is chosen — it is
+// NOT offered as a named option (the editor's "Default" entry represents it).
+const NEUTRAL_SHOP_DEFAULT_STYLE = 'sprite'
+
+const neutralShopStyleUrls = import.meta.glob(
+  '../../assets/buildings/neutral-shops/*.{png,jpg,jpeg}',
+  { eager: true, query: '?url', import: 'default' },
+) as Record<string, string>
+
+const neutralShopStyleImages = new Map<string, HTMLImageElement>()
+const neutralShopStyleUrlByKey = new Map<string, string>()
+
+for (const [path, url] of Object.entries(neutralShopStyleUrls)) {
+  const match = path.match(/\/neutral-shops\/([^/]+)\.(?:png|jpe?g)$/)
+  if (!match) continue
+  const key = match[1].toLowerCase()
+  const img = new Image()
+  img.src = url
+  neutralShopStyleImages.set(key, img)
+  neutralShopStyleUrlByKey.set(key, url)
+}
+
+// Returns the asset URL for a neutral-shop style (default "sprite" when the
+// style is empty/unset), or null when no matching art exists. Used by DOM
+// <img> consumers (e.g. the Shop menu card) that need a src rather than a
+// decoded HTMLImageElement.
+export function getNeutralShopStyleUrl(style: string | null | undefined): string | null {
+  const key = style && style.trim() ? style.toLowerCase() : NEUTRAL_SHOP_DEFAULT_STYLE
+  return neutralShopStyleUrlByKey.get(key) ?? null
+}
+
+// Register the default neutral-shop sprite under the building-type key so any
+// consumer resolving by type (getBuildingSprite/Image('neutral-shop') — action
+// icons, selection panel) still finds art now that the singular neutral-shop/
+// asset folder is gone. Style-aware consumers use the style helpers above.
+const neutralShopDefaultSprite = neutralShopStyleImages.get(NEUTRAL_SHOP_DEFAULT_STYLE)
+if (neutralShopDefaultSprite && !images.has('neutral-shop')) {
+  images.set('neutral-shop', neutralShopDefaultSprite)
+}
+
+// Names of the available neutral-shop styles (file stems), sorted — populates
+// the map editor's Shop Style dropdown for merchants. Excludes the default
+// "sprite" stem, which the editor surfaces as the "Default" option instead.
+export function listNeutralShopStyles(): string[] {
+  return [...neutralShopStyleImages.keys()].filter((k) => k !== NEUTRAL_SHOP_DEFAULT_STYLE).sort()
+}
+
+// Returns the loaded sprite for a neutral-shop's "shopStyle", or null when it
+// hasn't finished decoding / isn't registered. An empty/unset style resolves the
+// built-in default (neutral-shops/sprite.png); callers fall back to the
+// procedural render only if even the default is unavailable.
+export function getNeutralShopStyleSprite(
+  style: string | null | undefined,
+): HTMLImageElement | null {
+  const key = style && style.trim() ? style.toLowerCase() : NEUTRAL_SHOP_DEFAULT_STYLE
+  const img = neutralShopStyleImages.get(key)
+  if (!img) return null
+  if (!img.complete || img.naturalWidth === 0) return null
+  return img
 }
 
 // Returns the loaded style sprite for a recipe shop's "shopStyle", or null when

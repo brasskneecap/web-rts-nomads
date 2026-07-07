@@ -356,8 +356,27 @@ func (s *GameState) CanAffordBuilding(playerID, buildingType string) bool {
 	return true
 }
 
-func (s *GameState) canAffordUnitCostLocked(player *Player, unitType string) bool {
+// unitCostDefLocked resolves the UnitDef a player is actually charged for when
+// training unitType: the per-player EffectiveUnitDefs copy (advancement deltas
+// such as the worker goldCost reduction baked in) when one exists, otherwise
+// the raw catalog def. Mirrors spawnPlayerUnitLocked and
+// gatherAmountForUnitResourceLocked so the cost path honors the same
+// advancements as the spawn and gather paths. Must hold s.mu.
+func (s *GameState) unitCostDefLocked(player *Player, unitType string) (UnitDef, bool) {
 	def, ok := getUnitDef(unitType)
+	if !ok {
+		return UnitDef{}, false
+	}
+	if player != nil {
+		if effective, hasOverride := player.EffectiveUnitDefs[unitType]; hasOverride {
+			def = effective
+		}
+	}
+	return def, true
+}
+
+func (s *GameState) canAffordUnitCostLocked(player *Player, unitType string) bool {
+	def, ok := s.unitCostDefLocked(player, unitType)
 	if !ok {
 		return false
 	}
@@ -370,7 +389,7 @@ func (s *GameState) canAffordUnitCostLocked(player *Player, unitType string) boo
 }
 
 func (s *GameState) payUnitCostLocked(player *Player, unitType string) {
-	def, ok := getUnitDef(unitType)
+	def, ok := s.unitCostDefLocked(player, unitType)
 	if !ok {
 		return
 	}
@@ -380,7 +399,7 @@ func (s *GameState) payUnitCostLocked(player *Player, unitType string) {
 }
 
 func (s *GameState) refundUnitCostLocked(player *Player, unitType string) {
-	def, ok := getUnitDef(unitType)
+	def, ok := s.unitCostDefLocked(player, unitType)
 	if !ok {
 		return
 	}
@@ -463,6 +482,7 @@ func (s *GameState) buildPlayerSnapshotLocked(player *Player) protocol.PlayerSna
 		TownHallTier:         s.townhallTierForPlayerLocked(player.ID),
 		Vault:                s.playerVaultSnapshotsLocked(player.ID),
 		LockedUnitTypes:      s.lockedUnitTypesForPlayerLocked(player.ID),
+		UnitCostOverrides:    unitCostOverridesForPlayer(player),
 		ShopRerollsRemaining: player.ShopRerollsRemaining,
 		UnlockedRecipeIDs:    append([]string(nil), player.UnlockedRecipeIDs...),
 		// Per-player match metrics for the end-of-round comparison columns
@@ -473,6 +493,64 @@ func (s *GameState) buildPlayerSnapshotLocked(player *Player) protocol.PlayerSna
 	}
 	snap.CommanderAbilities = s.commanderAbilitySnapshotsLocked(player)
 	return snap
+}
+
+// unitCostOverridesForPlayer returns the effective training costs for every
+// unit type whose cost differs from the static catalog because of this
+// player's advancements (e.g. worker goldCost). Only differing types are
+// emitted, so a player with no cost advancements produces nil and the wire
+// field is omitted. Deterministic (sorted by unit type) for stable snapshots.
+// EffectiveUnitDefs is computed once at match start and never mutated, so this
+// is a cheap read; no lock semantics beyond the snapshot builder's own hold.
+func unitCostOverridesForPlayer(player *Player) []protocol.UnitCostOverride {
+	if len(player.EffectiveUnitDefs) == 0 {
+		return nil
+	}
+
+	unitTypes := make([]string, 0, len(player.EffectiveUnitDefs))
+	for unitType := range player.EffectiveUnitDefs {
+		unitTypes = append(unitTypes, unitType)
+	}
+	sort.Strings(unitTypes)
+
+	var overrides []protocol.UnitCostOverride
+	for _, unitType := range unitTypes {
+		eff := player.EffectiveUnitDefs[unitType]
+		catalog, ok := getUnitDef(unitType)
+		if !ok {
+			continue
+		}
+		if eff.MeatCost == catalog.MeatCost && resourceCostsEqual(eff.ResourceCost, catalog.ResourceCost) {
+			continue
+		}
+		cost := make(map[string]int, len(eff.ResourceCost))
+		for resource, amount := range eff.ResourceCost {
+			cost[resource] = amount
+		}
+		overrides = append(overrides, protocol.UnitCostOverride{
+			UnitType:     unitType,
+			ResourceCost: cost,
+			MeatCost:     eff.MeatCost,
+		})
+	}
+	return overrides
+}
+
+// resourceCostsEqual reports whether two resource-cost maps hold the same
+// non-zero amounts. Zero-valued entries are treated as absent so a map that
+// spells out {"wood": 0} compares equal to one that omits wood.
+func resourceCostsEqual(a, b map[string]int) bool {
+	for resource, amount := range a {
+		if amount != b[resource] {
+			return false
+		}
+	}
+	for resource, amount := range b {
+		if amount != a[resource] {
+			return false
+		}
+	}
+	return true
 }
 
 // lockedUnitTypesForPlayerLocked returns the set of unit types the

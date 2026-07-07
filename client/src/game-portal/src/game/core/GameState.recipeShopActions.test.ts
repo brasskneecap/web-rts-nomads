@@ -36,6 +36,15 @@ describe('getBuildingActions — recipe shop', () => {
     expect(frost?.disabled).toBe(true) // quantity 0 → sold out
   })
 
+  it('greys out recipes the player already knows, with an explanatory tooltip', () => {
+    // 7th positional arg is unlockedRecipeIds.
+    const known = new Set(['fire_sword'])
+    const actions = getBuildingActions(mkRecipeShop(), [], { vault: [] }, 0, new Set(), 0, known)
+    const fire = actions.find((a) => a.id === 'buy-recipe-fire_sword')
+    expect(fire?.disabled).toBe(true)
+    expect(fire?.tooltipBody).toContain('Recipe already known')
+  })
+
   it('skips recipes with no catalog def', () => {
     const actions = getBuildingActions(
       mkRecipeShop({ recipeInventory: [{ recipeId: 'unknown_recipe', quantity: 1 }] }),

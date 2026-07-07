@@ -624,6 +624,11 @@ type BuildingTile struct {
 	// from PlayerFOW.KnownBuildings[building.ID] != nil. True for any
 	// shop the viewer has ever revealed (including their own).
 	ShopDiscovered bool `json:"shopDiscovered,omitempty"`
+	// ShopDisplayName is a computed, snapshot-only label for a shop. When the
+	// shop is stocked from a named item list (metadata "itemList"), it is that
+	// list's Name (e.g. "Wandering Merchant"); empty otherwise, so the client
+	// falls back to the building's type label. Set by the snapshot filter.
+	ShopDisplayName string `json:"shopDisplayName,omitempty"`
 
 	// ─── Recipe Shop fields ───────────────────────────────────────────────
 	// RecipeInventory is the runtime list of recipes this building sells,
@@ -979,46 +984,67 @@ type TransferItemCommandMessage struct {
 	ToSlotIdx   int    `json:"toSlotIdx"`
 }
 
+// UpgradeStatDelta is one stat bonus granted by an upgrade tier (e.g.
+// {stat:"maxHp", amount:25}). Emitted in PlayerUpgradeSnapshot.NextStats so the
+// client can render the *next* tier's bonuses (which vary per tier).
+type UpgradeStatDelta struct {
+	Stat   string  `json:"stat"`
+	Amount float64 `json:"amount"`
+}
+
 // PlayerUpgradeSnapshot describes the current state of one upgrade track for a
 // player. Emitted per-player in every MatchSnapshotMessage.Players entry.
 type PlayerUpgradeSnapshot struct {
 	Track       string `json:"track"`
 	DisplayName string `json:"displayName"`
-	Level       int    `json:"level"`
-	Cap         int    `json:"cap"`
-	// QueuedCount is how many of this track are queued at the player's blacksmith
+	// Capability is the building capability that offers this track (e.g.
+	// "blacksmith-upgrade"). The client shows the track in a selected building's
+	// panel when the building holds this capability.
+	Capability string `json:"capability"`
+	Level      int    `json:"level"`
+	// Cap is the absolute max level (total tiers defined). PurchasableCap is the
+	// highest level currently unlocked given the player's buildings (per-tier
+	// requiresBuilding gates). PurchasableCap <= Cap; when it is strictly less,
+	// NextRequirement names what unlocks the next tier.
+	Cap            int `json:"cap"`
+	PurchasableCap int `json:"purchasableCap"`
+	// QueuedCount is how many of this track are queued at the player's building
 	// (in progress + waiting). 0 when idle. Level + QueuedCount is the level the
 	// player will reach once the queue drains; the next purchase stacks above it.
 	QueuedCount  int `json:"queuedCount,omitempty"`
 	NextCostGold int `json:"nextCostGold"`
-	// NextCostWood is the wood cost of the next level. It currently mirrors
-	// NextCostGold (upgrades cost equal gold and wood). 0 at cap.
-	NextCostWood int  `json:"nextCostWood"`
-	CanAfford    bool `json:"canAfford"`
+	// NextCostWood is the wood cost of the next level. 0 at cap.
+	NextCostWood int `json:"nextCostWood"`
+	// NextStats is the stat bonuses the next purchasable tier grants (for the UI
+	// tooltip). Empty when the track is fully maxed.
+	NextStats []UpgradeStatDelta `json:"nextStats,omitempty"`
+	// NextRequirement is a display label for the building that unlocks the next
+	// tier when it is gated out (e.g. "Keep", "Castle"). Empty when the next tier
+	// is already available or the track is fully maxed.
+	NextRequirement string `json:"nextRequirement,omitempty"`
+	CanAfford       bool   `json:"canAfford"`
 	// CanStart is true when the player can start this upgrade via the global
-	// panel's auto-assign path: affordable, below cap, not already researching,
-	// and at least one idle blacksmith is available.
-	CanStart      bool `json:"canStart"`
+	// panel's auto-assign path: affordable, below the purchasable cap, and at
+	// least one qualifying building is available.
+	CanStart bool `json:"canStart"`
+	// HasBlacksmith is true when the player owns a fully-built building offering
+	// this track's capability. (Name retained for wire compatibility; applies to
+	// any upgrade building, not only the blacksmith.)
 	HasBlacksmith bool `json:"hasBlacksmith"`
 	// ResearchTotal / ResearchRemaining describe an in-progress upgrade for
-	// this track (this player, at any blacksmith). ResearchTotal is the full
+	// this track (this player, at any building). ResearchTotal is the full
 	// duration in seconds (0 when idle); ResearchRemaining counts down to 0.
 	// ResearchBuildingID is the source building performing the research (used to
-	// target a cancel and to tell a selected blacksmith whether it is the one
+	// target a cancel and to tell a selected building whether it is the one
 	// doing the work). While ResearchTotal > 0 the track is locked everywhere.
 	ResearchTotal      float64 `json:"researchTotal,omitempty"`
 	ResearchRemaining  float64 `json:"researchRemaining,omitempty"`
 	ResearchBuildingID string  `json:"researchBuildingId,omitempty"`
-	// QueueBuildingID is the blacksmith holding this track's queue (in progress
+	// QueueBuildingID is the building holding this track's queue (in progress
 	// or merely queued). Equals ResearchBuildingID when the track is at the head;
 	// set even when the track waits behind another. Empty when the track is idle.
 	// The cancel/queue target for this track.
-	QueueBuildingID     string  `json:"queueBuildingId,omitempty"`
-	HPPerLevel          int     `json:"hpPerLevel"`
-	DamagePerLevel      int     `json:"damagePerLevel"`
-	ArmorPerLevel       int     `json:"armorPerLevel"`
-	AttackSpeedPerLevel float64 `json:"attackSpeedPerLevel"`
-	MoveSpeedPerLevel   float64 `json:"moveSpeedPerLevel"`
+	QueueBuildingID string `json:"queueBuildingId,omitempty"`
 }
 
 // VaultItemSnapshot carries one vault entry to the client each tick.
@@ -1080,8 +1106,15 @@ type PlayerSnapshot struct {
 	// train because their RequiresBuildings list is unsatisfied. Empty
 	// or omitted = no locks. The client uses this to grey out train
 	// actions in the building action panel.
-	LockedUnitTypes []string           `json:"lockedUnitTypes,omitempty"`
-	ActiveBuffs     []ActiveEffectIcon `json:"activeBuffs,omitempty"`
+	LockedUnitTypes []string `json:"lockedUnitTypes,omitempty"`
+	// UnitCostOverrides carries this player's effective training costs for
+	// unit types whose cost differs from the static catalog because of
+	// advancements (e.g. the worker goldCost reduction). Only unit types
+	// that actually differ are sent; the client overlays these on the
+	// catalog cost so the build-menu price matches what the server charges.
+	// Owner-relevant only, but harmless on other players' snapshots.
+	UnitCostOverrides []UnitCostOverride `json:"unitCostOverrides,omitempty"`
+	ActiveBuffs       []ActiveEffectIcon `json:"activeBuffs,omitempty"`
 	// CommanderAbilities are the player-level abilities surfaced on the
 	// action bar (Smite, Blessing). Always populated for the snapshot's
 	// owner so the HUD can render slots even when every ability is ready.
@@ -1100,6 +1133,17 @@ type PlayerSnapshot struct {
 	// (§15). For team-scope objectives, the evaluator aggregates these per
 	// tick — but the wire still carries the per-player breakdown.
 	Metrics MatchMetricsSnapshot `json:"metrics"`
+}
+
+// UnitCostOverride is a single unit type's effective training cost when it
+// differs from the static catalog def (advancement deltas baked in). Sent on
+// PlayerSnapshot.UnitCostOverrides. ResourceCost and MeatCost are the full
+// effective values (not deltas), so the client replaces the catalog cost
+// outright for that unit type.
+type UnitCostOverride struct {
+	UnitType     string         `json:"unitType"`
+	ResourceCost map[string]int `json:"resourceCost"`
+	MeatCost     int            `json:"meatCost"`
 }
 
 type UnitSnapshot struct {

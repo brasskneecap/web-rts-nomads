@@ -7,6 +7,10 @@
     "offsetY": -1,
     "height": 3
   },
+  "selectionRing": {
+    "radiusX": 1.5,
+    "radiusY": 0.8
+  },
   "visionRange": 960,
   "maxHp": 1000,
   "buildSeconds": 30,
@@ -28,5 +32,6 @@
   },
   "color": "#b45309",
   "label": "Townhall",
-  "hotkey": "t"
+  "hotkey": "t"
+
 }

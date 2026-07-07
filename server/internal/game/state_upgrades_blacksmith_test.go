@@ -49,7 +49,7 @@ func newBlacksmithUpgradeTestState(t *testing.T) (s *GameState, playerID, blacks
 	return s, "p1", blacksmithID
 }
 
-// addBlacksmithLocked places a fully-built blacksmith (upgrade-purchase) owned
+// addBlacksmithLocked places a fully-built blacksmith (blacksmith-upgrade) owned
 // by playerID at the given grid coord and returns its ID. Caller holds s.mu.
 func addBlacksmithLocked(s *GameState, playerID string, x, y int) string {
 	owner := playerID
@@ -64,7 +64,7 @@ func addBlacksmithLocked(s *GameState, playerID string, x, y int) string {
 		Occupied:     true,
 		Visible:      true,
 		OwnerID:      &owner,
-		Capabilities: []string{"upgrade-purchase"},
+		Capabilities: []string{"blacksmith-upgrade"},
 		Metadata:     map[string]interface{}{},
 	})
 	return id
@@ -458,6 +458,99 @@ func TestBlacksmithUpgrade_CancelMidQueueReconcilesLevels(t *testing.T) {
 	wantGold := goldBeforeCancel + cancelledRefund + rebate
 	if g := s.Players[pid].Resources["gold"]; g != wantGold {
 		t.Errorf("gold after reconciled cancel: want %d, got %d", wantGold, g)
+	}
+}
+
+// setTownhallTierLocked stamps the given tier onto the player's townhall so
+// tests can exercise keep/castle (tier 2/3) gated upgrade tiers. Caller holds s.mu.
+func setTownhallTierLocked(s *GameState, playerID string, tier int) {
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType != "townhall" || b.OwnerID == nil || *b.OwnerID != playerID {
+			continue
+		}
+		if b.Metadata == nil {
+			b.Metadata = map[string]interface{}{}
+		}
+		b.Metadata["tier"] = float64(tier)
+	}
+}
+
+// firstTierRequiring returns the first level in a track gated by requiresBuilding.
+func firstTierRequiring(track UnitUpgradeTrack, requiresBuilding string) (int, bool) {
+	for _, tier := range track.Tiers {
+		if tier.RequiresBuilding == requiresBuilding {
+			return tier.Level, true
+		}
+	}
+	return 0, false
+}
+
+// TestBlacksmithUpgrade_PerTierBuildingRequirementGate verifies a tier gated by
+// requiresBuilding "keep" is blocked with a tier-1 town hall and unlocks once the
+// town hall reaches tier 2. Expected levels are derived from the catalog, not
+// hardcoded, so a rebalance of the JSON does not break the test.
+func TestBlacksmithUpgrade_PerTierBuildingRequirementGate(t *testing.T) {
+	s, pid, bid := newBlacksmithUpgradeTestState(t)
+
+	def, ok := upgradeTrackDefByID(UpgradeTrackSoldier)
+	if !ok {
+		t.Fatal("soldier upgrade track not loaded")
+	}
+	keepLevel, ok := firstTierRequiring(def, "keep")
+	if !ok {
+		t.Skip("soldier track has no keep-gated tier; nothing to verify")
+	}
+	// The purchasable cap with only a tier-1 town hall must stop just below the
+	// first keep-gated tier.
+	wantCapT1 := keepLevel - 1
+
+	s.mu.RLock()
+	capT1 := s.purchasableUpgradeCapLocked(pid, def)
+	s.mu.RUnlock()
+	if capT1 != wantCapT1 {
+		t.Fatalf("purchasable cap with tier-1 town hall: want %d, got %d", wantCapT1, capT1)
+	}
+
+	// Queue up to the cap, then attempt one more — it must be rejected (gated).
+	for i := 0; i < capT1; i++ {
+		s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier))
+	}
+	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier)) // keep-gated: no-op
+
+	s.mu.RLock()
+	queued := len(s.ActiveUpgrades[bid])
+	snap := findTrackSnapshot(s.playerUpgradeSnapshotsLocked(pid), UpgradeTrackSoldier)
+	s.mu.RUnlock()
+	if queued != capT1 {
+		t.Fatalf("expected %d queued (capped by keep gate), got %d", capT1, queued)
+	}
+	if snap == nil {
+		t.Fatal("no soldier snapshot")
+	}
+	if snap.NextRequirement == "" {
+		t.Error("snapshot should surface the keep requirement blocking the next tier")
+	}
+
+	// Upgrade the town hall to tier 2 (a Keep) and confirm the cap extends.
+	s.mu.Lock()
+	setTownhallTierLocked(s, pid, 2)
+	capT2 := s.purchasableUpgradeCapLocked(pid, def)
+	s.mu.Unlock()
+	if capT2 <= capT1 {
+		t.Errorf("keep should raise the purchasable cap above %d, got %d", capT1, capT2)
+	}
+	if capT2 < keepLevel {
+		t.Errorf("keep should unlock level %d, but cap is only %d", keepLevel, capT2)
+	}
+
+	// The previously-rejected purchase now succeeds.
+	s.PurchaseUpgrade(pid, bid, string(UpgradeTrackSoldier))
+	s.mu.RLock()
+	queuedAfter := len(s.ActiveUpgrades[bid])
+	s.mu.RUnlock()
+	if queuedAfter != capT1+1 {
+		t.Errorf("purchase should succeed once keep is owned: want %d queued, got %d", capT1+1, queuedAfter)
 	}
 }
 

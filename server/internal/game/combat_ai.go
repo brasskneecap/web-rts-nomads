@@ -295,7 +295,14 @@ func (s *GameState) tickCombatAILocked(dt float64, blocked map[gridPoint]bool) {
 			if !s.unitUsesCombatAI(unit) {
 				continue
 			}
-			if unit.Order.Type == OrderMove && unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == "" {
+			// OrderMove and OrderPickupLoot both walk to a destination without
+			// picking a fight en route (see the OrderPickupLoot enum doc in
+			// state.go: "Combat AI does NOT engage on the way — matches
+			// OrderMove semantics"). Skip auto-acquisition for both while they
+			// have no target; without this a pickup-bound unit grabs a nearby
+			// enemy and abandons the chest.
+			if (unit.Order.Type == OrderMove || unit.Order.Type == OrderPickupLoot) &&
+				unit.AttackTargetID == 0 && unit.AttackBuildingTargetID == "" {
 				continue
 			}
 			// Committed swing: once the windup begins the target is locked

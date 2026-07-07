@@ -236,6 +236,10 @@ export function useGameClient() {
     client?.sendPurchaseItem(buildingId, itemId)
   }
 
+  function sendPurchaseRecipe(buildingId: string, recipeId: string) {
+    client?.sendPurchaseRecipe(buildingId, recipeId)
+  }
+
   function rerollShop(buildingId: string) {
     client?.sendRerollShop(buildingId)
   }
@@ -317,6 +321,7 @@ export function useGameClient() {
     cancelUpgrade,
     upgradeTownHall,
     sendPurchaseItem,
+    sendPurchaseRecipe,
     rerollShop,
     craftItem,
     sendEquipItem,

@@ -15,8 +15,9 @@
       </div>
 
       <!-- Next-level cost, shown horizontally below the stats with resource
-           icons (gold / wood) instead of letters. -->
-      <div v-if="canQueueMore" class="urow__cost">
+           icons (gold / wood) instead of letters. Hidden when the next tier is
+           gated behind a building requirement (cost is irrelevant until unlocked). -->
+      <div v-if="canQueueMore && !requirementLocked" class="urow__cost">
         <span v-if="upgrade.nextCostGold > 0" class="urow__cost-item">
           <img v-if="goldIcon" :src="goldIcon" class="urow__cost-icon" alt="gold" draggable="false" />
           <span>{{ upgrade.nextCostGold }}</span>
@@ -25,6 +26,10 @@
           <img v-if="woodIcon" :src="woodIcon" class="urow__cost-icon" alt="wood" draggable="false" />
           <span>{{ upgrade.nextCostWood }}</span>
         </span>
+      </div>
+
+      <div v-if="canQueueMore && requirementLocked" class="urow__locked">
+        Requires a {{ upgrade.nextRequirement }}
       </div>
 
       <button
@@ -45,6 +50,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PlayerUpgradeSnapshot } from '@/game/network/protocol'
+import { formatUpgradeStatDelta } from '@/game/network/protocol'
 import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 import { getResourceIconUrl } from '@/game/rendering/resourceSprites'
 
@@ -59,17 +65,18 @@ const props = defineProps<{
 const portraitUrl = computed(() => getUnitPortraitUrl(undefined, props.upgrade.track) ?? '')
 const queuedCount = computed(() => props.upgrade.queuedCount ?? 0)
 const projectedLevel = computed(() => props.upgrade.level + queuedCount.value)
+// cap is the absolute max (total tiers); more can be queued until fully maxed.
 const canQueueMore = computed(() => projectedLevel.value < props.upgrade.cap)
+// Blocked by an unmet building prerequisite (e.g. needs a Keep/Castle).
+const requirementLocked = computed(
+  () =>
+    canQueueMore.value &&
+    projectedLevel.value >= props.upgrade.purchasableCap &&
+    !!props.upgrade.nextRequirement,
+)
 
-// Per-level stat increases.
-const statsList = computed(() => {
-  const u = props.upgrade
-  const parts = [`+${u.hpPerLevel} HP`, `+${u.damagePerLevel} DMG`]
-  if (u.armorPerLevel !== 0) parts.push(`+${u.armorPerLevel} ARM`)
-  parts.push(`+${u.attackSpeedPerLevel.toFixed(2)} AS`)
-  parts.push(`+${u.moveSpeedPerLevel} MS`)
-  return parts
-})
+// Stat increases granted by the next purchasable tier.
+const statsList = computed(() => (props.upgrade.nextStats ?? []).map(formatUpgradeStatDelta))
 
 const buttonLabel = computed(() =>
   queuedCount.value > 0 ? `Queue Lv ${projectedLevel.value + 1}` : `Upgrade ${props.upgrade.displayName}`,
@@ -79,8 +86,8 @@ const disabledReason = computed(() => {
   const u = props.upgrade
   if (u.canStart) return ''
   if (!u.hasBlacksmith) return 'Build a Blacksmith first'
-  if (u.cap === 0) return 'Town Hall required'
-  if (projectedLevel.value >= u.cap) return 'Requires a higher tier Town Hall'
+  if (u.purchasableCap === 0) return 'Town Hall required'
+  if (requirementLocked.value) return `Requires a ${u.nextRequirement}`
   if (!u.canAfford) return 'Not enough gold or wood'
   return ''
 })
@@ -199,5 +206,12 @@ const disabledReason = computed(() => {
   font-weight: 700;
   letter-spacing: 0.04em;
   color: rgba(240, 216, 142, 0.7);
+}
+
+.urow__locked {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #d98b5f;
 }
 </style>

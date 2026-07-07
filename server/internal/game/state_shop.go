@@ -15,20 +15,40 @@ import (
 // point upgrade can ship by writing to that field alone.
 const defaultShopLootTargetCount = 3
 
+// neutralShopBaseItemCount is the number of items a neutral shop shows before
+// any per-player ShopItemCountBonus. Sourced from gameplay_tuning.json
+// (neutralShop.baseItemCount); a missing/invalid value defaults to 2.
+func neutralShopBaseItemCount() int {
+	v := gameplayTuning().NeutralShop.BaseItemCount
+	if v < 1 {
+		return 2
+	}
+	return v
+}
+
+// neutralShopDefaultRerollWaves is the default wave cadence for auto-refreshing
+// a neutral shop's stock (0 = disabled). A neutral-shop instance overrides it
+// via map metadata "rerollWaves". Sourced from gameplay_tuning.json.
+func neutralShopDefaultRerollWaves() int {
+	v := gameplayTuning().NeutralShop.RerollEveryWaves
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
 // shopItemTargetCountForPlayerLocked returns the effective number of
-// distinct items a player's reroll should produce — the base count plus
-// any ShopItemCountBonus on the player. Returns the base unmodified
+// distinct items a player's reroll should produce — the neutral-shop base
+// count plus any ShopItemCountBonus on the player. Returns the base unmodified
 // when playerID is empty or the player is missing. Must be called under
 // s.mu.
 func (s *GameState) shopItemTargetCountForPlayerLocked(playerID string) int {
-	if playerID == "" {
-		return defaultShopLootTargetCount
-	}
+	base := neutralShopBaseItemCount()
 	player, ok := s.Players[playerID]
-	if !ok {
-		return defaultShopLootTargetCount
+	if playerID == "" || !ok {
+		return base
 	}
-	target := defaultShopLootTargetCount + player.ShopItemCountBonus
+	target := base + player.ShopItemCountBonus
 	if target < 1 {
 		target = 1
 	}
@@ -148,9 +168,10 @@ func (s *GameState) initShopBuildingsLocked() {
 //
 //  1. ShopFixedInventory (authored list, copied verbatim)
 //  2. ShopLootTableID (rolled via the seeded loot RNG)
-//  3. For marketplaces only: the legacy "all items with
-//     RequiredBuilding == 'marketplace'" filter
-//  4. Otherwise: leave nil and log a warning
+//  3. "itemList" metadata (a named catalog/items/lists entry, copied verbatim)
+//  4. Per-building-type defaults (marketplace stocks the "marketplace" list;
+//     a neutral-shop rolls the default merchant loot table)
+//  5. Otherwise: leave nil and log a warning
 //
 // Must be called under s.mu write lock. Iteration order is sorted by
 // building ID so loot-table rolls are deterministic across runs.
@@ -180,12 +201,20 @@ func (s *GameState) populateShopInventoryForBuildingLocked(b *protocol.BuildingT
 	if b == nil || !hasItemPurchaseCapability(b) {
 		return
 	}
-	// Precedence 1: explicit fixed inventory.
+	// Precedence 1: explicit fixed inventory (all shop types, copied verbatim).
+	// A fixed-inventory shop is never rerollable — the author committed to a list.
 	if len(b.ShopFixedInventory) > 0 {
 		b.ShopInventory = makeShopStockEntries(b.ShopFixedInventory, b.BuildingType)
 		return
 	}
-	// Precedence 2: loot-table roll.
+	// Neutral-shop merchants sample their source (an assigned item-list POOL, or
+	// a loot table) down to the base item count and re-sample every few waves.
+	// stockNeutralShopLocked owns that logic; a failed roll leaves inventory nil.
+	if b.BuildingType == "neutral-shop" {
+		s.stockNeutralShopLocked(b, neutralShopBaseItemCount())
+		return
+	}
+	// Precedence 2: loot-table roll (non-neutral shops).
 	if b.ShopLootTableID != "" {
 		rolled, ok := s.rollShopLootTableLocked(b.ID, b.ShopLootTableID, defaultShopLootTargetCount)
 		if !ok {
@@ -195,7 +224,18 @@ func (s *GameState) populateShopInventoryForBuildingLocked(b *protocol.BuildingT
 		b.ShopInventory = makeShopStockEntries(rolled, b.BuildingType)
 		return
 	}
-	// Precedence 3: per-building-type defaults.
+	// Precedence 3: authored item list (map metadata "itemList"), stocked
+	// verbatim for non-neutral shops (e.g. a marketplace pointed at a curated
+	// list). Neutral shops handle their list above (as a sampled pool).
+	if listID, ok := getMetadataString(b.Metadata, "itemList"); ok && listID != "" {
+		if list, ok := getItemListDef(listID); ok {
+			b.ShopInventory = makeShopStockEntries(list.Items, b.BuildingType)
+			return
+		}
+		slog.Warn("populateShopInventoryForBuildingLocked: itemList metadata references unknown list; falling back to defaults",
+			"buildingID", b.ID, "itemList", listID)
+	}
+	// Precedence 4: per-building-type defaults.
 	switch b.BuildingType {
 	case "marketplace":
 		// Player-built marketplace with no authored shopFixedInventory /
@@ -211,21 +251,149 @@ func (s *GameState) populateShopInventoryForBuildingLocked(b *protocol.BuildingT
 			"listID", defaultMarketplaceItemListID)
 		b.ShopInventory = makeShopStockEntries(defaultMarketplaceStarterInventory, b.BuildingType)
 		return
-	case "neutral-shop":
-		// Authored neutral-shop with no override → roll the default
-		// merchant loot table for a small randomized stock. Authors can
-		// still set shopFixedInventory or shopLootTableId in the editor
-		// metadata to override.
-		rolled, ok := s.rollShopLootTableLocked(b.ID, defaultNeutralShopLootTableID, defaultShopLootTargetCount)
-		if !ok {
-			return
-		}
-		b.ShopInventory = makeShopStockEntries(rolled, b.BuildingType)
-		return
 	}
-	// Precedence 4: nothing to sell.
+	// Precedence 5: nothing to sell.
 	slog.Warn("populateShopInventoryForBuildingLocked: shop building has no inventory source",
 		"buildingID", b.ID, "buildingType", b.BuildingType)
+}
+
+// rollNeutralShopStockIDsLocked samples the item IDs for a neutral shop's stock
+// from its configured source, sampling `count` items: an assigned item list
+// (map metadata "itemList", treated as a POOL) when set and valid, else its
+// loot table (b.ShopLootTableID or the default merchant table). Returns (ids,
+// true) or (nil, false) on a failed roll (unknown loot table); an unknown item
+// list falls through to the loot table. When both an item list and a loot table
+// are set the item list wins. Must be called under s.mu write lock (advances
+// s.rngLoot).
+func (s *GameState) rollNeutralShopStockIDsLocked(b *protocol.BuildingTile, count int) ([]string, bool) {
+	if listID, ok := getMetadataString(b.Metadata, "itemList"); ok && listID != "" {
+		if list, ok := getItemListDef(listID); ok {
+			return s.sampleItemsFromListLocked(list.Items, count), true
+		}
+		slog.Warn("rollNeutralShopStockIDsLocked: itemList metadata references unknown list; falling back to loot table",
+			"buildingID", b.ID, "itemList", listID)
+	}
+	tableID := b.ShopLootTableID
+	if tableID == "" {
+		tableID = defaultNeutralShopLootTableID
+	}
+	return s.rollShopLootTableLocked(b.ID, tableID, count)
+}
+
+// stockNeutralShopLocked (re)stocks the SHARED BuildingTile.ShopInventory for a
+// neutral shop, sampling `count` items. This shared list is only a display
+// fallback (e.g. the one-time join snapshot); the authoritative per-player views
+// live in Player.NeutralShopInventories. Returns false without mutating on a
+// failed roll. Must be called under s.mu write lock.
+func (s *GameState) stockNeutralShopLocked(b *protocol.BuildingTile, count int) bool {
+	ids, ok := s.rollNeutralShopStockIDsLocked(b, count)
+	if !ok {
+		return false
+	}
+	b.ShopInventory = makeShopStockEntries(ids, b.BuildingType)
+	return true
+}
+
+// stockNeutralShopForPlayerLocked (re)samples a single player's INDEPENDENT view
+// of a neutral shop into player.NeutralShopInventories[b.ID]. A fixed-inventory
+// shop copies the authored list verbatim (per-player quantities); others sample
+// their pool / loot table at `count`. No-op on a failed roll or unknown player.
+// Returns true when the view was (re)stocked. Must be called under s.mu write
+// lock.
+func (s *GameState) stockNeutralShopForPlayerLocked(playerID string, b *protocol.BuildingTile, count int) bool {
+	player, ok := s.Players[playerID]
+	if !ok {
+		return false
+	}
+	var ids []string
+	if len(b.ShopFixedInventory) > 0 {
+		ids = b.ShopFixedInventory
+	} else {
+		rolled, rolledOK := s.rollNeutralShopStockIDsLocked(b, count)
+		if !rolledOK {
+			return false
+		}
+		ids = rolled
+	}
+	if player.NeutralShopInventories == nil {
+		player.NeutralShopInventories = map[string][]protocol.ShopStockEntry{}
+	}
+	player.NeutralShopInventories[b.ID] = makeShopStockEntries(ids, b.BuildingType)
+	return true
+}
+
+// populatePlayerNeutralShopViewsLocked samples this player's independent view of
+// every neutral shop on the map, at the player's effective item count (base +
+// their ShopItemCountBonus). Called once when the player joins. Deterministic
+// (sorted building order). Must be called under s.mu write lock.
+func (s *GameState) populatePlayerNeutralShopViewsLocked(playerID string) {
+	count := s.shopItemTargetCountForPlayerLocked(playerID)
+	for _, idx := range s.sortedNeutralShopIndicesLocked() {
+		s.stockNeutralShopForPlayerLocked(playerID, &s.MapConfig.Buildings[idx], count)
+	}
+}
+
+// sortedNeutralShopIndicesLocked returns the indices of every neutral-shop
+// item-purchase building in MapConfig.Buildings, sorted by building ID so
+// re-sample rolls are deterministic across runs. Must be called under s.mu.
+func (s *GameState) sortedNeutralShopIndicesLocked() []int {
+	indices := make([]int, 0)
+	for i := range s.MapConfig.Buildings {
+		b := &s.MapConfig.Buildings[i]
+		if b.BuildingType == "neutral-shop" && hasItemPurchaseCapability(b) {
+			indices = append(indices, i)
+		}
+	}
+	sort.Slice(indices, func(i, j int) bool {
+		return s.MapConfig.Buildings[indices[i]].ID < s.MapConfig.Buildings[indices[j]].ID
+	})
+	return indices
+}
+
+// sortedRealPlayerIDsLocked returns the IDs of all human/AI players (excluding
+// the enemy and neutral pseudo-players), sorted for deterministic iteration.
+// Must be called under s.mu.
+func (s *GameState) sortedRealPlayerIDsLocked() []string {
+	ids := make([]string, 0, len(s.Players))
+	for id := range s.Players {
+		if id == enemyPlayerID || id == neutralPlayerID {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// sampleItemsFromListLocked returns up to `count` distinct items chosen at
+// random from the pool using the seeded loot RNG (deterministic). Duplicates in
+// the pool are collapsed first; fewer than `count` results only when the pool is
+// smaller. Order is randomized (a partial Fisher–Yates shuffle). Must be called
+// under s.mu write lock (advances s.rngLoot).
+func (s *GameState) sampleItemsFromListLocked(pool []string, count int) []string {
+	if count <= 0 || len(pool) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(pool))
+	uniq := make([]string, 0, len(pool))
+	for _, id := range pool {
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniq = append(uniq, id)
+	}
+	n := count
+	if n > len(uniq) {
+		n = len(uniq)
+	}
+	for i := 0; i < n; i++ {
+		j := i + s.rngLoot.Intn(len(uniq)-i)
+		uniq[i], uniq[j] = uniq[j], uniq[i]
+	}
+	out := make([]string, n)
+	copy(out, uniq[:n])
+	return out
 }
 
 // handleRerollShopLocked re-rolls the named building's inventory and
@@ -267,23 +435,80 @@ func (s *GameState) handleRerollShopLocked(playerID, buildingID string) {
 	if s.shopLockedLocked(building) {
 		return
 	}
-	// Determine which loot table to roll. Fixed-inventory shops are not
-	// rerollable (the author committed to a specific list).
+	// Fixed-inventory shops are not rerollable (the author committed to a list).
 	if len(building.ShopFixedInventory) > 0 {
 		return
 	}
-	tableID := building.ShopLootTableID
-	if tableID == "" {
-		tableID = defaultNeutralShopLootTableID
-	}
+	// Re-sample only THIS player's independent view of the shop, at their
+	// effective count (base + their ShopItemCountBonus upgrade). Other players'
+	// views are untouched.
 	targetCount := s.shopItemTargetCountForPlayerLocked(playerID)
-	rolled, ok := s.rollShopLootTableLocked(building.ID, tableID, targetCount)
-	if !ok {
+	if !s.stockNeutralShopForPlayerLocked(playerID, building, targetCount) {
 		// Helper already logged. Don't charge the player for a failed roll.
 		return
 	}
-	building.ShopInventory = makeShopStockEntries(rolled, building.BuildingType)
 	player.ShopRerollsRemaining--
+}
+
+// shopDisplayNameFor returns a shop's display label from its assigned item list
+// (metadata "itemList") — e.g. "Wandering Merchant" — or "" when it has no list
+// or the list is unknown (the client then falls back to the building type
+// label). Used to populate the snapshot-only BuildingTile.ShopDisplayName.
+func shopDisplayNameFor(b *protocol.BuildingTile) string {
+	if listID, ok := getMetadataString(b.Metadata, "itemList"); ok && listID != "" {
+		if list, ok := getItemListDef(listID); ok {
+			return list.Name
+		}
+	}
+	return ""
+}
+
+// neutralShopRerollWavesFor returns a neutral shop's auto-reroll wave cadence:
+// its per-instance map metadata "rerollWaves" override when present, else the
+// gameplay-tuning default (neutralShopDefaultRerollWaves). 0 disables auto-
+// reroll for the shop. Must be called under s.mu.
+func neutralShopRerollWavesFor(b *protocol.BuildingTile) int {
+	if v, ok := getMetadataFloat(b.Metadata, "rerollWaves"); ok {
+		if v < 0 {
+			return 0
+		}
+		return int(v)
+	}
+	return neutralShopDefaultRerollWaves()
+}
+
+// tickShopRerollLocked auto-refreshes neutral-shop stock on a wave cadence. Once
+// per wave-end (edge-detected via WaveManager.ShopRerollWave, exactly like the
+// neutral-camp reset), every neutral shop whose reroll interval divides the
+// just-completed wave number is re-sampled for EVERY player independently, each
+// at their own effective item count. Fixed-inventory shops are skipped
+// (author-committed, not rerollable). On non-wave maps CurrentWave stays 0 so
+// this never fires. Iteration is sorted (shops by ID, players by ID) so
+// re-sample rolls are deterministic. Must be called under s.mu write lock.
+func (s *GameState) tickShopRerollLocked() {
+	wm := &s.WaveManager
+	// A wave has ended when it left "active" (but has begun and is not terminal).
+	// Mirrors tickNeutralCampsLocked's edge condition.
+	waveEnded := wm.CurrentWave >= 1 && wm.State != "active" && wm.State != "complete"
+	if !waveEnded || wm.ShopRerollWave >= wm.CurrentWave {
+		return
+	}
+	wm.ShopRerollWave = wm.CurrentWave
+
+	playerIDs := s.sortedRealPlayerIDsLocked()
+	for _, idx := range s.sortedNeutralShopIndicesLocked() {
+		b := &s.MapConfig.Buildings[idx]
+		if len(b.ShopFixedInventory) > 0 {
+			continue
+		}
+		interval := neutralShopRerollWavesFor(b)
+		if interval <= 0 || wm.CurrentWave%interval != 0 {
+			continue
+		}
+		for _, pid := range playerIDs {
+			s.stockNeutralShopForPlayerLocked(pid, b, s.shopItemTargetCountForPlayerLocked(pid))
+		}
+	}
 }
 
 // RerollShop is the public entry point for rerolling a neutral shop's

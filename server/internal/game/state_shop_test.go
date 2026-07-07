@@ -33,7 +33,28 @@ func reindexShopTestState(s *GameState) {
 	}
 	s.initShopBuildingsLocked()
 	s.populateShopInventoriesLocked()
+	// Neutral shops are per-player: sample each joined player's independent view
+	// (mirrors what EnsurePlayerWithUpgrades does at match join).
+	for _, pid := range s.sortedRealPlayerIDsLocked() {
+		s.populatePlayerNeutralShopViewsLocked(pid)
+	}
 	s.spawnShopGuardsLocked()
+}
+
+// playerShopInventoryItemIDs flattens a player's independent view of a neutral
+// shop into item IDs (slot order), for assertions that only care about which
+// items are stocked.
+func playerShopInventoryItemIDs(s *GameState, playerID, buildingID string) []string {
+	p, ok := s.Players[playerID]
+	if !ok {
+		return nil
+	}
+	entries := p.NeutralShopInventories[buildingID]
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.ItemID)
+	}
+	return out
 }
 
 // addShopBuilding appends a shop building of the given type with optional
@@ -90,6 +111,217 @@ func TestPopulateShopInventories_FixedList(t *testing.T) {
 
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("ShopInventory item ids: want %v, got %v", want, got)
+	}
+}
+
+// TestPopulateShopInventories_ItemListMetadata verifies a neutral-shop with an
+// "itemList" metadata treats the list as a POOL and stocks a sampled subset
+// sized to the base item count — every stocked item drawn from the list, no
+// duplicates. Counts/expectations derive from the catalog + tuning, not literals.
+func TestPopulateShopInventories_ItemListMetadata(t *testing.T) {
+	const listID = "marketplace"
+	list, ok := getItemListDef(listID)
+	if !ok {
+		t.Fatalf("expected item list %q in catalog", listID)
+	}
+	inList := map[string]bool{}
+	for _, id := range list.Items {
+		inList[id] = true
+	}
+
+	s := makeShopTestState(t, 1)
+	neutral := neutralPlayerID
+
+	s.mu.Lock()
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
+		ID:           "merchant-listed",
+		BuildingType: "neutral-shop",
+		Width:        3,
+		Height:       3,
+		Visible:      true,
+		Occupied:     true,
+		OwnerID:      &neutral,
+		Capabilities: []string{"item-purchase"},
+		Metadata:     map[string]interface{}{"itemList": listID},
+	})
+	reindexShopTestState(s)
+	got := playerShopInventoryItemIDs(s, "p1", "merchant-listed")
+	s.mu.Unlock()
+
+	wantCount := neutralShopBaseItemCount()
+	if len(list.Items) < wantCount {
+		wantCount = len(list.Items)
+	}
+	if len(got) != wantCount {
+		t.Fatalf("sampled %d items from the pool, want %d (pool=%v)", len(got), wantCount, list.Items)
+	}
+	seen := map[string]bool{}
+	for _, id := range got {
+		if !inList[id] {
+			t.Errorf("stocked item %q is not in the pool %v", id, list.Items)
+		}
+		if seen[id] {
+			t.Errorf("stocked item %q sampled more than once", id)
+		}
+		seen[id] = true
+	}
+}
+
+// TestShopWaveReroll_ResamplesOnCadenceRespectsPerShopOverride verifies the
+// wave-based auto-reroll: a shop re-samples its item-list pool when the
+// just-completed wave is a multiple of its interval, a shop with rerollWaves=0
+// is never touched, and the edge marker fires the check once per wave.
+func TestShopWaveReroll_ResamplesOnCadenceRespectsPerShopOverride(t *testing.T) {
+	const listID = "wandering_merchant"
+	list, ok := getItemListDef(listID)
+	if !ok {
+		t.Skipf("item list %q not present", listID)
+	}
+	// Sentinel item NOT in the pool, so any re-sample provably replaces it.
+	sentinel := "broad_sword"
+	for _, id := range list.Items {
+		if id == sentinel {
+			t.Fatalf("test sentinel %q must not be in pool %v", sentinel, list.Items)
+		}
+	}
+
+	s := makeShopTestState(t, 3)
+	neutral := neutralPlayerID
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Shop A: default cadence (tuning rerollEveryWaves). Shop B: disabled (0).
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings,
+		protocol.BuildingTile{
+			ID: "merchant-A", BuildingType: "neutral-shop", Width: 3, Height: 3,
+			Visible: true, Occupied: true, OwnerID: &neutral,
+			Capabilities: []string{"item-purchase"},
+			Metadata:     map[string]interface{}{"itemList": listID},
+		},
+		protocol.BuildingTile{
+			ID: "merchant-B", BuildingType: "neutral-shop", Width: 3, Height: 3,
+			Visible: true, Occupied: true, OwnerID: &neutral,
+			Capabilities: []string{"item-purchase"},
+			Metadata:     map[string]interface{}{"itemList": listID, "rerollWaves": float64(0)},
+		},
+	)
+	reindexShopTestState(s)
+
+	// Overwrite p1's views with the sentinel so a re-sample is observable.
+	setSentinel := func() {
+		s.Players["p1"].NeutralShopInventories["merchant-A"] = makeShopStockEntries([]string{sentinel}, "neutral-shop")
+		s.Players["p1"].NeutralShopInventories["merchant-B"] = makeShopStockEntries([]string{sentinel}, "neutral-shop")
+	}
+	setSentinel()
+
+	interval := neutralShopDefaultRerollWaves()
+	if interval <= 0 {
+		t.Skip("default reroll cadence disabled; nothing to verify")
+	}
+
+	// Odd wave (not a multiple of interval, for interval>=2): shop A is NOT
+	// rerolled. Use interval-1 which is guaranteed non-divisible for interval>=2.
+	nonMultiple := interval - 1
+	if nonMultiple >= 1 && nonMultiple%interval != 0 {
+		s.WaveManager.CurrentWave = nonMultiple
+		s.WaveManager.State = "upgrade"
+		s.tickShopRerollLocked()
+		if got := playerShopInventoryItemIDs(s, "p1", "merchant-A"); len(got) != 1 || got[0] != sentinel {
+			t.Errorf("wave %d (not a multiple of %d): shop A should not reroll, got %v", nonMultiple, interval, got)
+		}
+	}
+
+	// Multiple-of-interval wave: shop A re-samples (sentinel replaced), shop B
+	// (disabled) stays put.
+	setSentinel()
+	s.WaveManager.ShopRerollWave = 0
+	s.WaveManager.CurrentWave = interval // interval % interval == 0
+	s.WaveManager.State = "upgrade"
+	s.tickShopRerollLocked()
+
+	gotA := playerShopInventoryItemIDs(s, "p1", "merchant-A")
+	if len(gotA) == 1 && gotA[0] == sentinel {
+		t.Errorf("wave %d (multiple of %d): shop A should have re-sampled, still sentinel %v", interval, interval, gotA)
+	}
+	if len(gotA) != neutralShopBaseItemCount() {
+		t.Errorf("shop A re-sample count: want %d, got %d (%v)", neutralShopBaseItemCount(), len(gotA), gotA)
+	}
+	if gotB := playerShopInventoryItemIDs(s, "p1", "merchant-B"); len(gotB) != 1 || gotB[0] != sentinel {
+		t.Errorf("shop B (rerollWaves=0) must never auto-reroll, got %v", gotB)
+	}
+
+	// Edge marker: a second tick at the same wave is a no-op (re-set sentinel,
+	// tick, expect it untouched because ShopRerollWave already == CurrentWave).
+	s.Players["p1"].NeutralShopInventories["merchant-A"] = makeShopStockEntries([]string{sentinel}, "neutral-shop")
+	s.tickShopRerollLocked()
+	if got := playerShopInventoryItemIDs(s, "p1", "merchant-A"); len(got) != 1 || got[0] != sentinel {
+		t.Errorf("second tick at same wave should be a no-op (edge marker), but shop A changed: %v", got)
+	}
+}
+
+// TestNeutralShop_PerPlayerIndependentViews verifies neutral shops are
+// per-player: each player's view is sized to their own ShopItemCountBonus, and
+// one player's purchase never affects another's stock.
+func TestNeutralShop_PerPlayerIndependentViews(t *testing.T) {
+	const listID = "wandering_merchant"
+	list, ok := getItemListDef(listID)
+	if !ok {
+		t.Skipf("item list %q not present", listID)
+	}
+	base := neutralShopBaseItemCount()
+	if len(list.Items) < base+1 {
+		t.Skipf("pool too small (%d) to distinguish per-player counts", len(list.Items))
+	}
+
+	s := makeShopTestState(t, 5)
+	s.mu.Lock()
+	// A second player with a +1 "expanded selection" upgrade (constructed
+	// directly to avoid the spawn/claim machinery — we only need its shop view).
+	s.Players["p2"] = &Player{ID: "p2", ShopItemCountBonus: 1}
+	neutral := neutralPlayerID
+	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
+		ID: "merchant", BuildingType: "neutral-shop", Width: 3, Height: 3,
+		Visible: true, Occupied: true, OwnerID: &neutral,
+		Capabilities: []string{"item-purchase"},
+		Metadata:     map[string]interface{}{"itemList": listID},
+	})
+	reindexShopTestState(s)
+	p1View := playerShopInventoryItemIDs(s, "p1", "merchant")
+	p2View := playerShopInventoryItemIDs(s, "p2", "merchant")
+	s.mu.Unlock()
+
+	// Each player's view is sized to their own count.
+	if len(p1View) != base {
+		t.Errorf("p1 view count: want %d, got %d (%v)", base, len(p1View), p1View)
+	}
+	if len(p2View) != base+1 {
+		t.Errorf("p2 view count (with +1 bonus): want %d, got %d (%v)", base+1, len(p2View), p2View)
+	}
+
+	// Independence: p1 buying from their own view leaves p2's view untouched.
+	s.mu.Lock()
+	b := s.buildingsByID["merchant"]
+	clone := *b
+	s.FOW["p1"].KnownBuildings[b.ID] = &clone
+	s.Players["p1"].Resources["gold"] = 1000000
+	buyItem := s.Players["p1"].NeutralShopInventories["merchant"][0].ItemID
+	p2Before := append([]protocol.ShopStockEntry(nil), s.Players["p2"].NeutralShopInventories["merchant"]...)
+	s.mu.Unlock()
+
+	s.PurchaseItem("p1", "merchant", buyItem)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if q := s.Players["p1"].NeutralShopInventories["merchant"][0].Quantity; q != 0 {
+		t.Errorf("after p1 buys %q, p1's own view qty: want 0, got %d", buyItem, q)
+	}
+	p2After := s.Players["p2"].NeutralShopInventories["merchant"]
+	if len(p2After) != len(p2Before) {
+		t.Fatalf("p2 view length changed by p1's purchase: %d → %d", len(p2Before), len(p2After))
+	}
+	for i := range p2Before {
+		if p2Before[i] != p2After[i] {
+			t.Errorf("p1's purchase mutated p2's view at slot %d: %+v → %+v", i, p2Before[i], p2After[i])
+		}
 	}
 }
 
@@ -353,9 +585,9 @@ func TestNeutralShopDefault_RollsMerchantBasic(t *testing.T) {
 	got := shopInventoryItemIDs(s.buildingsByID["ms-default-neutral"])
 	s.mu.Unlock()
 
-	if len(got) != defaultShopLootTargetCount {
+	if len(got) != neutralShopBaseItemCount() {
 		t.Errorf("neutral-shop default: want %d items, got %d (%v)",
-			defaultShopLootTargetCount, len(got), got)
+			neutralShopBaseItemCount(), len(got), got)
 	}
 	// Every rolled item ID must resolve in the catalog.
 	for _, id := range got {
@@ -402,28 +634,28 @@ func TestPurchase_DecrementsStockAndRejectsAtZero(t *testing.T) {
 	s.Players["p1"].Resources["gold"] = 10000
 	s.mu.Unlock()
 
-	// First purchase: succeeds, quantity drops from 1 to 0.
+	// First purchase: succeeds, the buyer's own view quantity drops from 1 to 0.
 	s.PurchaseItem("p1", "ms-stock", "broad_sword")
 	s.mu.RLock()
 	if got := len(s.Players["p1"].Vault); got != 1 {
 		s.mu.RUnlock()
 		t.Fatalf("first purchase: want 1 vault item, got %d", got)
 	}
-	if q := s.buildingsByID["ms-stock"].ShopInventory[0].Quantity; q != 0 {
+	if q := s.Players["p1"].NeutralShopInventories["ms-stock"][0].Quantity; q != 0 {
 		s.mu.RUnlock()
-		t.Errorf("after purchase: want Quantity 0, got %d", q)
+		t.Errorf("after purchase: want Quantity 0 in buyer's view, got %d", q)
 	}
 	s.mu.RUnlock()
 
-	// Second purchase attempt: rejected, entry stays in inventory.
+	// Second purchase attempt: rejected, entry stays in the buyer's view.
 	s.PurchaseItem("p1", "ms-stock", "broad_sword")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if got := len(s.Players["p1"].Vault); got != 1 {
 		t.Errorf("second purchase should be rejected; vault: want 1, got %d", got)
 	}
-	if got := len(s.buildingsByID["ms-stock"].ShopInventory); got != 1 {
-		t.Errorf("entry should remain in inventory greyed-out; len: want 1, got %d", got)
+	if got := len(s.Players["p1"].NeutralShopInventories["ms-stock"]); got != 1 {
+		t.Errorf("entry should remain in buyer's view greyed-out; len: want 1, got %d", got)
 	}
 }
 
@@ -449,10 +681,10 @@ func TestRerollShop_AppliesPlayerItemCountBonus(t *testing.T) {
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	got := shopInventoryItemIDs(s.buildingsByID["ms-bonus"])
-	want := defaultShopLootTargetCount + 2
+	got := playerShopInventoryItemIDs(s, "p1", "ms-bonus")
+	want := neutralShopBaseItemCount() + 2
 	if len(got) != want {
-		t.Errorf("rerolled inventory length with +2 bonus: want %d, got %d (%v)", want, len(got), got)
+		t.Errorf("rerolled view length with +2 bonus: want %d, got %d (%v)", want, len(got), got)
 	}
 }
 
@@ -470,7 +702,7 @@ func TestRerollShop_RegeneratesInventoryAndDecrementsBudget(t *testing.T) {
 	s.FOW["p1"].KnownBuildings[b.ID] = &clone
 	// EnsurePlayer set ShopRerollsRemaining to defaultShopRerollsPerPlayer.
 	startingBudget := s.Players["p1"].ShopRerollsRemaining
-	beforeIDs := shopInventoryItemIDs(s.buildingsByID["ms-reroll"])
+	beforeIDs := playerShopInventoryItemIDs(s, "p1", "ms-reroll")
 	s.mu.Unlock()
 
 	if startingBudget <= 0 {
@@ -484,13 +716,13 @@ func TestRerollShop_RegeneratesInventoryAndDecrementsBudget(t *testing.T) {
 	if got := s.Players["p1"].ShopRerollsRemaining; got != startingBudget-1 {
 		t.Errorf("reroll budget: want %d, got %d", startingBudget-1, got)
 	}
-	// Inventory should still have defaultShopLootTargetCount items (may
-	// or may not be identical to beforeIDs depending on the RNG state —
-	// we just assert the length and that every ID is in the catalog).
-	got := shopInventoryItemIDs(s.buildingsByID["ms-reroll"])
-	if len(got) != defaultShopLootTargetCount {
-		t.Errorf("rerolled inventory length: want %d, got %d (before=%v after=%v)",
-			defaultShopLootTargetCount, len(got), beforeIDs, got)
+	// The buyer's view should still have base-count items (may or may not be
+	// identical to beforeIDs depending on RNG — we just assert the length and
+	// that every ID is in the catalog).
+	got := playerShopInventoryItemIDs(s, "p1", "ms-reroll")
+	if len(got) != neutralShopBaseItemCount() {
+		t.Errorf("rerolled view length: want %d, got %d (before=%v after=%v)",
+			neutralShopBaseItemCount(), len(got), beforeIDs, got)
 	}
 	for _, id := range got {
 		if _, ok := getItemDef(id); !ok {
@@ -498,12 +730,12 @@ func TestRerollShop_RegeneratesInventoryAndDecrementsBudget(t *testing.T) {
 		}
 	}
 
-	// Attempt a second reroll with budget at 0: no-op, inventory unchanged.
-	beforeSecond := shopInventoryItemIDs(s.buildingsByID["ms-reroll"])
+	// Attempt a second reroll with budget at 0: no-op, view unchanged.
+	beforeSecond := playerShopInventoryItemIDs(s, "p1", "ms-reroll")
 	s.mu.RUnlock()
 	s.RerollShop("p1", "ms-reroll")
 	s.mu.RLock()
-	afterSecond := shopInventoryItemIDs(s.buildingsByID["ms-reroll"])
+	afterSecond := playerShopInventoryItemIDs(s, "p1", "ms-reroll")
 	if len(beforeSecond) != len(afterSecond) {
 		t.Errorf("second reroll on empty budget should be no-op; len differs %d→%d", len(beforeSecond), len(afterSecond))
 	} else {

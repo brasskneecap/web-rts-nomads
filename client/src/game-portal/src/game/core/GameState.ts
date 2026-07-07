@@ -12,6 +12,7 @@ import type {
   LootDropSnapshot,
   ObjectiveSnapshot,
   PlayerUpgradeSnapshot,
+  UnitCostOverride,
   VaultItemSnapshot,
   VictorySnapshot,
   MapConfig,
@@ -34,7 +35,7 @@ import type {
   Zone,
   ZoneSnapshot,
 } from '../network/protocol'
-import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID, UNIT_ORDER_LABELS, ZONE_AURA_TYPE_STAT_MODIFIER, ZONE_TEAM_OWNER } from '../network/protocol'
+import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID, UNIT_ORDER_LABELS, ZONE_AURA_TYPE_STAT_MODIFIER, ZONE_TEAM_OWNER, formatUpgradeStatDelta } from '../network/protocol'
 import { buildZoneCaptureCards, type ZoneCaptureCard } from '../zones/zoneCaptureCards'
 import { buildZoneCellIndex, cellKey } from '../maps/zoneGeometry'
 import { createEditorMapConfig, sanitizeMapConfig } from '../maps/mapConfig'
@@ -583,10 +584,19 @@ export type ZoneInspectionInfo = {
 }
 
 export type ShopCatalogEntry = {
+  /** Discriminates item slots from recipe slots on the Shop tab. Absent =
+   *  'item' (the overwhelming majority; left unset so item entries are
+   *  unchanged). Recipe Shops emit 'recipe' entries that buy *knowledge*,
+   *  dispatched via purchase_recipe rather than purchase_item. */
+  entryType?: 'item' | 'recipe'
+  /** For item entries this is the item id; for recipe entries it is the
+   *  recipe id (used for keying + as the purchase argument). */
   itemId: string
   displayName: string
   description?: string
   iconKey: string
+  /** Item category. Not meaningful for recipe entries (filled with a
+   *  placeholder); the Shop tab keys recipe rendering off entryType instead. */
   kind: 'equipment' | 'consumable'
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
   costGold: number
@@ -600,8 +610,16 @@ export type ShopCatalogEntry = {
   /** Building type of the shop (e.g. 'marketplace', 'neutral-shop') — drives
    *  the shop-card icon. */
   purchaseBuildingType: string
-  /** Human-readable shop name shown on the shop card. */
+  /** Per-instance sprite style (metadata "shopStyle"), used to pick the
+   *  neutral-shop merchant art on the shop card. Undefined = default sprite. */
+  purchaseBuildingStyle?: string
+  /** Human-readable shop name shown on the shop card — the assigned item
+   *  list's name when set, else the building type label. */
   purchaseBuildingName: string
+  /** Recipe entries only: true when the local player already knows this
+   *  recipe. The slot stays visible but is greyed-out and non-purchasable
+   *  ("Recipe already known"), mirroring the sold-out treatment. */
+  recipeKnown?: boolean
 }
 
 export interface CraftCatalogIngredient {
@@ -700,6 +718,13 @@ export class GameState {
   // Recipes the local player has unlocked (purchased from a Recipe Shop).
   // Mirrored from PlayerSnapshot each tick. Drives craft-* actions at the Artificer.
   localPlayerUnlockedRecipeIds: string[] = []
+
+  // Effective per-unit training costs for the local player, keyed by unit
+  // type. Populated from PlayerSnapshot.unitCostOverrides every tick — only
+  // unit types whose cost the player's advancements changed appear here. The
+  // build menu overlays these on the catalog cost so the displayed price
+  // matches what the server charges. Empty = every unit uses catalog cost.
+  localPlayerUnitCostOverrides: Map<string, UnitCostOverride> = new Map()
 
   // Commander abilities (player-level action bar). Populated from
   // PlayerSnapshot.commanderAbilities every tick.
@@ -2917,7 +2942,61 @@ export class GameState {
           quantity: slot.quantity,
           purchaseBuildingId: b.id,
           purchaseBuildingType: b.buildingType,
-          purchaseBuildingName: formatBuildingName(b.buildingType),
+          purchaseBuildingStyle: b.metadata?.['shopStyle'] as string | undefined,
+          // Prefer the assigned item list's name (e.g. "Wandering Merchant");
+          // fall back to the building type label.
+          purchaseBuildingName: b.shopDisplayName || formatBuildingName(b.buildingType),
+        })
+      }
+    }
+
+    // Recipe Shops sell *knowledge*, not items — a separate capability
+    // ('recipe-purchase') and a separate purchase command. They surface on the
+    // same Shop tab once their contents are available, gated identically to
+    // neutral item shops: discovered in FOW and not guard-locked.
+    const knownRecipes = new Set(this.localPlayerUnlockedRecipeIds)
+    for (const b of this.mapConfig.buildings) {
+      if (!b.capabilities?.includes('recipe-purchase')) continue
+      if (b.metadata?.['underConstruction'] === true) continue
+      // Recipe shops are always neutral-owned; require discovery + unlocked.
+      if (b.ownerId === this.localPlayerId) continue
+      if (b.shopDiscovered !== true) continue
+      if (b.shopLocked === true) continue
+
+      const seenRecipes = new Set<string>()
+      for (const slot of b.recipeInventory ?? []) {
+        if (seenRecipes.has(slot.recipeId)) continue
+        const recipe = RECIPE_DEF_MAP.get(slot.recipeId)
+        if (!recipe) continue
+        seenRecipes.add(slot.recipeId)
+        // Rarity-keyed recipe scroll icon (matching the in-world panel): prefer
+        // ${rarity}_recipe, fall back to rare_recipe when the tier asset is absent.
+        const rarity = recipe.rarity ?? 'common'
+        const rarityIconKey = `${rarity}_recipe`
+        const recipeIconKey = hasItemAsset(rarityIconKey) ? rarityIconKey : 'rare_recipe'
+        const need = new Map<string, number>()
+        for (const input of recipe.inputs) need.set(input, (need.get(input) ?? 0) + 1)
+        const inputLines = [...need].map(([itemId, count]) => {
+          const name = ITEM_DEF_MAP.get(itemId)?.displayName ?? itemId
+          return count > 1 ? `${name} ×${count}` : name
+        })
+        entries.push({
+          entryType: 'recipe',
+          itemId: recipe.id,
+          displayName: `Recipe: ${recipe.name}`,
+          description: `Requires: ${inputLines.join(', ')}`,
+          iconKey: recipeIconKey,
+          kind: 'equipment', // placeholder — recipe entries render via entryType
+          // recipe.rarity is a loose string from the catalog; it is always one
+          // of the tier folders, so narrow it to the ShopCatalogEntry union.
+          tier: rarity as ShopCatalogEntry['tier'],
+          costGold: recipe.costGold,
+          quantity: slot.quantity,
+          recipeKnown: knownRecipes.has(recipe.id),
+          purchaseBuildingId: b.id,
+          purchaseBuildingType: b.buildingType,
+          purchaseBuildingStyle: b.metadata?.['shopStyle'] as string | undefined,
+          purchaseBuildingName: b.shopDisplayName || formatBuildingName(b.buildingType),
         })
       }
     }
@@ -3087,7 +3166,8 @@ export class GameState {
 
     const selectedBuilding = this.getSelectedBuilding()
     if (selectedBuilding) {
-      const title = formatBuildingName(selectedBuilding.buildingType)
+      const buildingTier = getBuildingMetadataNumber(selectedBuilding, 'tier') ?? 1
+      const title = formatBuildingName(selectedBuilding.buildingType, buildingTier)
       const activeProduction = getBuildingProductionState(selectedBuilding)
       // A blacksmith researching an upgrade shows the same production card as a
       // training building (track portrait + progress + countdown), but cannot
@@ -3127,6 +3207,7 @@ export class GameState {
               new Set(this.lockedUnitTypes),
               this.localPlayerShopRerollsRemaining,
               new Set(this.localPlayerUnlockedRecipeIds),
+              this.localPlayerUnitCostOverrides,
             ),
         production: activeProduction
           ? toProductionSummary(activeProduction)
@@ -3388,6 +3469,12 @@ export class GameState {
     } else {
       this.lockedUnitTypes = []
     }
+    // Like lockedUnitTypes, the server omits this when empty, so undefined
+    // means "no cost overrides", not "no data yet" — always rebuild the map so
+    // a refund/reset that removes an advancement mid-match clears stale prices.
+    this.localPlayerUnitCostOverrides = new Map(
+      (localPlayer.unitCostOverrides ?? []).map((o) => [o.unitType, o]),
+    )
     if (localPlayer.townHallTier !== undefined) {
       this.townHallTier = localPlayer.townHallTier
     }
@@ -3507,7 +3594,14 @@ function formatUnitOrder(order: string): string {
   return UNIT_ORDER_LABELS[order as UnitOrder] ?? order
 }
 
-function formatBuildingName(buildingType: string): string {
+function formatBuildingName(buildingType: string, tier?: number): string {
+  // Tiered buildings (townhall → keep → castle) display their current tier's
+  // label. A placed building keeps its base buildingType plus a numeric `tier`
+  // in metadata, so resolve the tier's label from the upgrade chain.
+  if (tier !== undefined && tier > 1) {
+    const tierLabel = getUpgradeChain(buildingType)[tier - 1]?.label
+    if (tierLabel) return tierLabel
+  }
   // Prefer the display label from the building def map (covers buildable types
   // including those referenced by RequiresBuildings).
   const defLabel = BUILDING_DEF_MAP.get(buildingType)?.label
@@ -3973,6 +4067,7 @@ export function getBuildingActions(
   lockedUnitTypes: ReadonlySet<string> = new Set(),
   shopRerollsRemaining: number = 0,
   unlockedRecipeIds: ReadonlySet<string> = new Set(),
+  unitCostOverrides: ReadonlyMap<string, UnitCostOverride> = new Map(),
 ): ActionItem[] {
   const actions: ActionItem[] = []
 
@@ -4043,6 +4138,10 @@ export function getBuildingActions(
       const recipe = RECIPE_DEF_MAP.get(slot.recipeId)
       if (!recipe) continue
       const soldOut = slot.quantity <= 0
+      // Recipes the player already knows are greyed out with an explanatory
+      // tooltip — buying again would spend gold for nothing (the server also
+      // no-ops these). Takes precedence over the sold-out / locked reasons.
+      const known = unlockedRecipeIds.has(recipe.id)
       // List each required ingredient on its own line under "Requires:", using
       // the item's display name (not raw id) and collapsing duplicates to a ×N
       // count — matches how the Artificer renders ingredients.
@@ -4053,7 +4152,8 @@ export function getBuildingActions(
         return count > 1 ? `${name} ×${count}` : name
       })
       let tooltipBody = `Unlocks crafting:\n${recipe.name}\n\nRequires:\n${inputLines.join('\n')}`
-      if (soldOut) tooltipBody = `${tooltipBody}\n\nAlready purchased at this shop.`
+      if (known) tooltipBody = `${tooltipBody}\n\nRecipe already known.`
+      else if (soldOut) tooltipBody = `${tooltipBody}\n\nAlready purchased at this shop.`
       else if (shopLocked) tooltipBody = `${tooltipBody}\n\nGuards remain — clear them to unlock this shop.`
       // Recipe Shop sells the *recipe* (not the item), so it renders a recipe
       // scroll icon keyed by rarity rather than the output item's icon. Prefer a
@@ -4071,7 +4171,7 @@ export function getBuildingActions(
         cost: [{ resourceId: 'gold', amount: recipe.costGold, accent: '#d4a84f' }],
         tooltipTitle: `Recipe: ${recipe.name}`,
         tooltipBody,
-        disabled: soldOut || shopLocked,
+        disabled: known || soldOut || shopLocked,
       })
     }
   }
@@ -4119,13 +4219,19 @@ export function getBuildingActions(
     for (const unitType of building.spawnUnitTypes ?? []) {
       const def = UNIT_DEF_MAP.get(unitType)
       if (def) {
-        const cost = Object.entries(def.resourceCost ?? {})
+        // Prefer the player's effective cost (advancement discounts baked in)
+        // over the static catalog cost so the displayed price matches what the
+        // server actually charges. Absent override ⇒ catalog cost.
+        const override = unitCostOverrides.get(unitType)
+        const resourceCost = override?.resourceCost ?? def.resourceCost ?? {}
+        const meatCost = override?.meatCost ?? def.meatCost
+        const cost = Object.entries(resourceCost)
           .filter(([, amount]) => amount > 0)
           .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' }))
         // Food (meat) is tracked separately from resourceCost on the unit def,
         // so append it as its own cost row when the unit consumes any.
-        if (def.meatCost > 0) {
-          cost.push({ resourceId: 'food', amount: def.meatCost, accent: RESOURCE_ACCENT.food ?? '#c96e43' })
+        if (meatCost > 0) {
+          cost.push({ resourceId: 'food', amount: meatCost, accent: RESOURCE_ACCENT.food ?? '#c96e43' })
         }
         const isLocked = lockedUnitTypes.has(unitType)
         const requires = def.requiresBuildings ?? []
@@ -4151,28 +4257,29 @@ export function getBuildingActions(
     }
   }
 
-  if (building.capabilities.includes('upgrade-purchase')) {
-    // Per-blacksmith queue model: a blacksmith can stack multiple upgrades, so a
+  {
+    // Per-building queue model: a building can stack multiple upgrades, so a
     // track already in flight here does NOT block a different track — clicking
     // it queues behind the active one. A track is only blocked when it is locked
-    // to a DIFFERENT blacksmith (its queueBuildingId is some other building).
+    // to a DIFFERENT building (its queueBuildingId is some other building). Which
+    // tracks a building offers is driven by capability: the building shows a
+    // track only when its capabilities include the track's capability (e.g. a
+    // blacksmith offers 'blacksmith-upgrade' tracks; a chapel would offer its own).
     for (const upgrade of upgrades) {
+      if (!building.capabilities.includes(upgrade.capability)) continue
       const homeId = upgrade.queueBuildingId
       const lockedElsewhere = !!homeId && homeId !== building.id
       const queued = upgrade.queuedCount ?? 0
       // The level the queue will reach; the next purchase stacks one above it.
       const projectedLevel = upgrade.level + queued
       const atCap = projectedLevel >= upgrade.cap
-      const statParts = [
-        `+${upgrade.hpPerLevel} HP`,
-        `+${upgrade.damagePerLevel} DMG`,
-        ...(upgrade.armorPerLevel ? [`+${upgrade.armorPerLevel} ARM`] : []),
-        `+${upgrade.attackSpeedPerLevel.toFixed(2)} AS`,
-        `+${upgrade.moveSpeedPerLevel} MS`,
-      ]
+      // Blocked by an unmet building prerequisite (e.g. needs a Keep/Castle).
+      const requirementLocked =
+        !atCap && projectedLevel >= upgrade.purchasableCap && !!upgrade.nextRequirement
+      const statParts = (upgrade.nextStats ?? []).map(formatUpgradeStatDelta)
 
-      // canStart (server) folds in: below the projected cap, affordable, and a
-      // blacksmith exists. The cross-blacksmith track lock is layered on here.
+      // canStart (server) folds in: below the purchasable cap, affordable, and a
+      // building exists. The cross-building track lock is layered on here.
       const disabled = lockedElsewhere || !upgrade.canStart
       const nextLevel = projectedLevel + 1
       const levelLabel = atCap
@@ -4181,20 +4288,23 @@ export function getBuildingActions(
           ? `${upgrade.displayName} Lv ${projectedLevel} (+${queued}) → ${nextLevel}`
           : `${upgrade.displayName} Lv ${upgrade.level} → ${nextLevel}`
       const tooltipBody = lockedElsewhere
-        ? 'This track is queued at another blacksmith'
+        ? 'This track is queued at another building'
         : atCap
           ? 'Maximum level reached'
-          : statParts.join('  ')
+          : requirementLocked
+            ? `Requires a ${upgrade.nextRequirement}`
+            : statParts.join('  ')
       actions.push({
         id: `upgrade-${upgrade.track}`,
         label: levelLabel,
         iconDef: { kind: 'unit', type: upgrade.track },
-        cost: atCap
-          ? undefined
-          : [
-              { resourceId: 'gold', amount: upgrade.nextCostGold, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' },
-              { resourceId: 'wood', amount: upgrade.nextCostWood, accent: RESOURCE_ACCENT.wood ?? '#7a9a52' },
-            ],
+        cost:
+          atCap || requirementLocked
+            ? undefined
+            : [
+                { resourceId: 'gold', amount: upgrade.nextCostGold, accent: RESOURCE_ACCENT.gold ?? '#d4a84f' },
+                { resourceId: 'wood', amount: upgrade.nextCostWood, accent: RESOURCE_ACCENT.wood ?? '#7a9a52' },
+              ],
         disabled,
         tooltipTitle: levelLabel,
         tooltipBody,
@@ -4219,9 +4329,14 @@ export function getBuildingActions(
 
     let label = `${chain[tier - 1]?.label ?? 'Town Hall'} (Max)`
     let cost: ActionCost[] | undefined
+    // Icon shows what the action produces: the target tier's sprite while an
+    // upgrade is available (e.g. the Keep sprite for "Upgrade to Keep"), falling
+    // back to the current tier's sprite at max.
+    let iconType = chain[tier - 1]?.type ?? 'townhall'
     if (!atMax) {
       const nextDef = chain[tier] // tier is 1-based; index tier = next tier def
       label = `Upgrade to ${nextDef?.label ?? 'next tier'}`
+      iconType = nextDef?.type ?? iconType
       cost = Object.entries(nextDef?.upgradeCost ?? {})
         .filter(([, amount]) => amount > 0)
         .map(([id, amount]) => ({ resourceId: id, amount, accent: RESOURCE_ACCENT[id] ?? '#94a3b8' }))
@@ -4230,7 +4345,7 @@ export function getBuildingActions(
     actions.push({
       id: 'upgrade-townhall',
       label,
-      iconDef: { kind: 'building', type: 'townhall' },
+      iconDef: { kind: 'building', type: iconType },
       cost,
       disabled: atMax || inProgress,
       tooltipTitle: label,

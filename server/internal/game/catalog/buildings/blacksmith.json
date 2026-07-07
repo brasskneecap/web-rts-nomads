@@ -20,7 +20,7 @@
     "wood": 200
   },
   "capabilities": [
-    "upgrade-purchase"
+    "blacksmith-upgrade"
   ],
   "spawnUnitTypes": [],
   "metadata": {},

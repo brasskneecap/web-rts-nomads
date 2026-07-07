@@ -810,7 +810,7 @@ func (s *GameState) refreshBuildingRuntimeMetadataLocked() {
 		}
 
 		// Blacksmith upgrade-in-progress visual. Upgrade research is per-player
-		// (not per-building), so mirror it onto every upgrade-purchase building
+		// (not per-building), so mirror it onto every upgrade-capable building
 		// the owner holds: stamp the track nearest completion so the building
 		// plays its training animation and shows a training-style progress card
 		// while an upgrade is being researched. Cleared when nothing is in

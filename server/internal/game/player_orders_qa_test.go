@@ -133,6 +133,74 @@ func TestNonCombatWorker_AttacksWhenExplicitlyOrdered(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// OrderPickupLoot — pickup-bound units ignore enemies en route (like OrderMove)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestOrderPickupLoot_DoesNotAutoAcquireEnemy pins the contract documented on
+// the OrderPickupLoot enum (state.go): "Combat AI does NOT engage on the way
+// (matches OrderMove semantics — the player wants the chest, not a fight)."
+//
+// Reproduces the reported bug: a unit commanded to pick up a chest, with an
+// enemy standing next to its path, auto-acquires the enemy and abandons the
+// pickup order. The pickup-bound unit must keep OrderPickupLoot / PickupLootID
+// and never set AttackTargetID.
+func TestOrderPickupLoot_DoesNotAutoAcquireEnemy(t *testing.T) {
+	s, unit := newOrderTestState(t)
+
+	s.mu.Lock()
+	unitID := unit.ID
+
+	// newOrderTestState spawns the unit but registers no Player; without a
+	// Players["p1"] entry tickLootDropsLocked cancels the pickup order via its
+	// player-nil guard, masking the combat-acquisition behavior under test.
+	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
+
+	// A chest far to the east so the unit is still walking toward it (order
+	// stays active) for the whole test window.
+	drop := &LootDrop{
+		ID:             "loot-test-pickup",
+		X:              unit.X + 1200,
+		Y:              unit.Y,
+		ResourceGrants: map[string]int{"gold": 10},
+		IconKey:        chestIconKeyDefault,
+	}
+	s.LootDrops = map[string]*LootDrop{drop.ID: drop}
+
+	// Stationary, inert enemy right next to the unit's start — squarely inside
+	// acquisition range. Capabilities nil keeps it from moving/attacking so the
+	// test isolates our unit's auto-acquisition behavior.
+	enemy := spawnOrderEnemy(t, s, unit.X+30, unit.Y)
+	enemy.MoveSpeed = 0
+	enemy.Capabilities = nil
+	enemyID := enemy.ID
+	s.mu.Unlock()
+
+	// Issue the real player pickup command (acquires its own lock).
+	s.PickupLootWithUnits("p1", []int{unitID}, drop.ID)
+
+	tickN(s, 40)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	u := s.unitsByID[unitID]
+	if u == nil {
+		t.Fatal("unit removed unexpectedly")
+	}
+	if u.AttackTargetID != 0 {
+		t.Errorf("pickup-bound unit auto-acquired enemy %d; AttackTargetID must stay 0", u.AttackTargetID)
+	}
+	if u.Order.Type != OrderPickupLoot {
+		t.Errorf("Order.Type = %v, want OrderPickupLoot (pickup order was overwritten by combat)", u.Order.Type)
+	}
+	if u.PickupLootID != drop.ID {
+		t.Errorf("PickupLootID = %q, want %q (pickup intent lost)", u.PickupLootID, drop.ID)
+	}
+	if e := s.unitsByID[enemyID]; e != nil && e.HP < e.MaxHP {
+		t.Errorf("pickup-bound unit attacked the enemy (HP=%d/%d); it should have walked past", e.HP, e.MaxHP)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Retaliation — idle unit fights back when shot from beyond detection range
 // ─────────────────────────────────────────────────────────────────────────────
 

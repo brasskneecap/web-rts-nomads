@@ -1,6 +1,10 @@
 package game
 
-import "testing"
+import (
+	"testing"
+
+	"webrts/server/pkg/protocol"
+)
 
 // workerAdvancementIDs is the full worker track, in purchase order. Kept in one
 // place so the tests below acquire the whole track without pinning node order
@@ -121,6 +125,98 @@ func TestWorkerAdvancements_GatherUsesEffectiveDef(t *testing.T) {
 	}
 	if got := s.gatherAmountForUnitResourceLocked("worker", "baseline", "wood"); got != base.WoodGatherAmount {
 		t.Errorf("baseline worker wood gather: want catalog %d, got %d", base.WoodGatherAmount, got)
+	}
+}
+
+// TestWorkerAdvancements_GoldCostChargedAtProduction verifies that the
+// goldCost advancement actually reduces what the player is charged when
+// training a worker — i.e. the production cost path resolves the effective
+// def, not just the spawn/gather paths. Regression guard for the bug where
+// canAfford/pay/refund read the raw catalog def and ignored the discount.
+func TestWorkerAdvancements_GoldCostChargedAtProduction(t *testing.T) {
+	base, ok := getUnitDef("worker")
+	if !ok {
+		t.Skip("worker not in unit catalog, skip")
+	}
+	node, found := GetAdvancementDef("worker_goldcost_1")
+	if !found {
+		t.Skip("worker_goldcost_1 not in catalog, skip")
+	}
+	// Derived, not hardcoded: base gold + the (negative) node amount.
+	wantGold := base.ResourceCost["gold"] + node.Effects[0].Amount
+
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"worker_goldcost_1"}, nil)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	player := s.Players["p1"]
+	// Fund the player with exactly the discounted gold cost (plus enough of
+	// every other resource) so canAfford is true iff the discount applies.
+	for resource, amount := range base.ResourceCost {
+		player.Resources[resource] = amount
+	}
+	player.Resources["gold"] = wantGold
+
+	if !s.canAffordUnitCostLocked(player, "worker") {
+		t.Fatalf("canAffordUnitCostLocked: player with %d gold cannot afford discounted worker (want cost %d, catalog charged %d)",
+			wantGold, wantGold, base.ResourceCost["gold"])
+	}
+
+	s.payUnitCostLocked(player, "worker")
+	if got := player.Resources["gold"]; got != 0 {
+		t.Errorf("gold after paying discounted worker: want 0, got %d (charged more than the discounted cost)", got)
+	}
+
+	s.refundUnitCostLocked(player, "worker")
+	if got := player.Resources["gold"]; got != wantGold {
+		t.Errorf("gold after refunding discounted worker: want %d, got %d", wantGold, got)
+	}
+}
+
+// TestWorkerAdvancements_CostOverrideOnSnapshot verifies the player snapshot
+// carries the effective (discounted) worker cost so the client can render it,
+// and that a baseline player with no cost advancements sends no override.
+func TestWorkerAdvancements_CostOverrideOnSnapshot(t *testing.T) {
+	base, ok := getUnitDef("worker")
+	if !ok {
+		t.Skip("worker not in unit catalog, skip")
+	}
+	node, found := GetAdvancementDef("worker_goldcost_1")
+	if !found {
+		t.Skip("worker_goldcost_1 not in catalog, skip")
+	}
+	wantGold := base.ResourceCost["gold"] + node.Effects[0].Amount
+
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 1)
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, []string{"worker_goldcost_1"}, nil)
+	s.EnsurePlayer("baseline")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	snap := s.buildPlayerSnapshotLocked(s.Players["p1"])
+	var workerOverride *protocol.UnitCostOverride
+	for i := range snap.UnitCostOverrides {
+		if snap.UnitCostOverrides[i].UnitType == "worker" {
+			workerOverride = &snap.UnitCostOverrides[i]
+		}
+	}
+	if workerOverride == nil {
+		t.Fatal("player with worker_goldcost_1 has no worker cost override on snapshot")
+	}
+	if got := workerOverride.ResourceCost["gold"]; got != wantGold {
+		t.Errorf("override worker gold cost: want %d, got %d", wantGold, got)
+	}
+	if got := workerOverride.MeatCost; got != base.MeatCost {
+		t.Errorf("override worker meat cost: want catalog %d, got %d", base.MeatCost, got)
+	}
+
+	// A player with no cost advancements sends nothing.
+	baselineSnap := s.buildPlayerSnapshotLocked(s.Players["baseline"])
+	if len(baselineSnap.UnitCostOverrides) != 0 {
+		t.Errorf("baseline player: want no cost overrides, got %v", baselineSnap.UnitCostOverrides)
 	}
 }
 
