@@ -139,6 +139,10 @@ func (s *GameState) applyProcBurnLocked(targetID int, dps, duration float64, att
 	if target == nil || target.HP <= 0 || !target.Visible {
 		return
 	}
+	// TODO(non-unit source): every ProcSource with OwnerUnitID == 0 (future
+	// trap/building proc emitters) collides on the "weaponburn:0" key, sharing
+	// one stack per victim. Extend the key with a source discriminator (e.g.
+	// owner player ID) when the first non-unit burn caller lands.
 	target.PerkState.applyBurnStack(
 		"weaponburn:"+strconv.Itoa(attackerUnitID),
 		"", // ungrouped: shares the global per-victim cap with other non-trap burns

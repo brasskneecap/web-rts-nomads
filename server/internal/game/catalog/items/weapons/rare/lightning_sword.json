@@ -1,7 +1,7 @@
 {
   "id": "lightning_sword",
   "displayName": "Lightning Sword",
-  "description": "+5 damage. +5 lightning damage on hit. 5% chance on hit to launch a lightning bolt (25 lightning damage) that arcs to 2 nearby enemies for 5 less each (25 → 20 → 15).",
+  "description": "+5 damage. +5 lightning damage on hit. 10% chance on hit to launch a lightning bolt (25 lightning damage) that arcs to 2 nearby enemies for 5 less each (25 → 20 → 15).",
   "iconKey": "lightning_sword",
   "kind": "equipment",
   "tier": "rare",
