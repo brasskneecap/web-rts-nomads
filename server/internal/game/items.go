@@ -146,7 +146,7 @@ const defaultConsumableRangeUnits = 100.0
 // normal rank-up pipeline). Future types (buffs, mana, etc.) add cases to
 // applyConsumableToUnitLocked.
 type ConsumableEffect struct {
-	Type   string `json:"type"`             // "heal" | "grant_xp" | future types
+	Type   string `json:"type"` // "heal" | "grant_xp" | future types
 	Amount int    `json:"amount,omitempty"`
 	// Range is the AoE radius in world units around the click point. 0/absent
 	// falls back to defaultConsumableRangeUnits.
@@ -176,27 +176,27 @@ func (c *ConsumableEffect) SplitEnabled() bool {
 // display fields (DisplayName, Description, IconKey) are passed through
 // unchanged via the /catalog/items HTTP route.
 type ItemDef struct {
-	ID               string            `json:"id"`
-	DisplayName      string            `json:"displayName"`
-	Description      string            `json:"description,omitempty"`
-	IconKey          string            `json:"iconKey"`
-	Kind             ItemKind          `json:"kind"`
-	Tier             ItemTier          `json:"tier"`
-	Category         string            `json:"category,omitempty"`
-	SlotKind         ItemSlotKind      `json:"slotKind"`
-	AllowedUnitTypes []string          `json:"allowedUnitTypes,omitempty"`
-	CostGold         int               `json:"costGold"`
+	ID               string       `json:"id"`
+	DisplayName      string       `json:"displayName"`
+	Description      string       `json:"description,omitempty"`
+	IconKey          string       `json:"iconKey"`
+	Kind             ItemKind     `json:"kind"`
+	Tier             ItemTier     `json:"tier"`
+	Category         string       `json:"category,omitempty"`
+	SlotKind         ItemSlotKind `json:"slotKind"`
+	AllowedUnitTypes []string     `json:"allowedUnitTypes,omitempty"`
+	CostGold         int          `json:"costGold"`
 	// RequiredBuilding was historically the building type that gated an
 	// item's purchase. As of per-building-shop-inventories it is preserved
 	// for backward display only and no longer participates in purchase
 	// validation — the authoritative inventory is BuildingTile.ShopInventory,
 	// populated per-building from shopFixedInventory / shopLootTableId, or
 	// from the small defaultMarketplaceStarterInventory fallback.
-	RequiredBuilding string            `json:"requiredBuilding,omitempty"`
-	Modifiers        *ItemModifiers    `json:"modifiers,omitempty"`
-	Effects          []string          `json:"effects,omitempty"`    // future: "lifesteal", "splash", etc.
-	Consumable       *ConsumableEffect `json:"consumable,omitempty"`
-	MaxStacks        int               `json:"maxStacks,omitempty"`  // consumables only; 0 treated as 1
+	RequiredBuilding string                `json:"requiredBuilding,omitempty"`
+	Modifiers        *ItemModifiers        `json:"modifiers,omitempty"`
+	Effects          []string              `json:"effects,omitempty"` // future: "lifesteal", "splash", etc.
+	Consumable       *ConsumableEffect     `json:"consumable,omitempty"`
+	MaxStacks        int                   `json:"maxStacks,omitempty"` // consumables only; 0 treated as 1
 	OnHitElemental   []ItemElementalDamage `json:"onHitElemental,omitempty"`
 	OnHitProc        *ItemOnHitProc        `json:"onHitProc,omitempty"`
 }

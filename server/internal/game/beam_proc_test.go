@@ -224,9 +224,9 @@ func TestOnHitProc_BeamBouncesToAdditionalTargets(t *testing.T) {
 		wantDamage   int
 	}
 	hops := []hop{
-		{t0, attacker.ID, proc.Params.Damage},                                     // 25
-		{e1, t0.ID, proc.Params.Damage - proc.Params.BounceDamageFalloff},         // 20
-		{e2, e1.ID, proc.Params.Damage - proc.Params.BounceDamageFalloff*2},       // 15
+		{t0, attacker.ID, proc.Params.Damage},                               // 25
+		{e1, t0.ID, proc.Params.Damage - proc.Params.BounceDamageFalloff},   // 20
+		{e2, e1.ID, proc.Params.Damage - proc.Params.BounceDamageFalloff*2}, // 15
 	}
 	for i, h := range hops {
 		b := byTarget[h.target.ID]

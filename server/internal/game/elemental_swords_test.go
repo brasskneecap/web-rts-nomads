@@ -11,9 +11,9 @@ import (
 // on-hit elemental bonus, and proc definition.
 func TestCraftedSwords_LoadAllThree(t *testing.T) {
 	cases := []struct {
-		id              string
-		wantElement     DamageType
-		wantProjectile  string
+		id             string
+		wantElement    DamageType
+		wantProjectile string
 	}{
 		{"fire_sword", DamageFire, "fire_bolt"},
 		{"frost_sword", DamageCold, "frost_bolt"},

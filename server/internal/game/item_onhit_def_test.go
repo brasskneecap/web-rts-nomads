@@ -7,8 +7,8 @@ import (
 
 func TestValidateItemDef_OnHitFields(t *testing.T) {
 	good := &ItemDef{
-		ID:   "fire_ring",
-		Kind: ItemKindEquipment,
+		ID:             "fire_ring",
+		Kind:           ItemKindEquipment,
 		OnHitElemental: []ItemElementalDamage{{Type: DamageFire, Amount: 5}},
 	}
 	if err := validateItemDef(good); err != nil {
@@ -92,6 +92,15 @@ func TestItemOnHitProc_MarshalEmitsResolvedPayload(t *testing.T) {
 	if !ok {
 		t.Fatal("fire_sword not in catalog")
 	}
+	resolved, ok := def.OnHitProc.ResolveParams()
+	if !ok {
+		t.Fatalf("fire_sword onHitProc effect %q must resolve", def.OnHitProc.Effect)
+	}
+	procDef, ok := getProcEffectDef(def.OnHitProc.Effect)
+	if !ok {
+		t.Fatalf("proc effect %q not in catalog", def.OnHitProc.Effect)
+	}
+
 	data, err := json.Marshal(def.OnHitProc)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -100,24 +109,25 @@ func TestItemOnHitProc_MarshalEmitsResolvedPayload(t *testing.T) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		t.Fatalf("unmarshal wire: %v", err)
 	}
-	if wire["effect"] != "fire_bolt_ignite" {
-		t.Errorf("wire effect = %v, want fire_bolt_ignite", wire["effect"])
+	if wire["effect"] != procDef.ID {
+		t.Errorf("wire effect = %v, want %v", wire["effect"], procDef.ID)
 	}
-	if wire["chance"] != 0.1 {
-		t.Errorf("wire chance = %v, want 0.1", wire["chance"])
+	if wire["chance"] != def.OnHitProc.Chance {
+		t.Errorf("wire chance = %v, want %v", wire["chance"], def.OnHitProc.Chance)
 	}
-	// The legacy client contract fields must be present and RESOLVED.
-	if wire["damage"] != float64(25) {
-		t.Errorf("wire damage = %v, want 25", wire["damage"])
+	// The legacy client contract fields must be present and equal the
+	// RESOLVED (def + overrides) payload, not the raw def.
+	if wire["damage"] != float64(resolved.Damage) {
+		t.Errorf("wire damage = %v, want %v", wire["damage"], resolved.Damage)
 	}
-	if wire["damageType"] != "fire" {
-		t.Errorf("wire damageType = %v, want fire", wire["damageType"])
+	if wire["damageType"] != string(resolved.DamageType) {
+		t.Errorf("wire damageType = %v, want %v", wire["damageType"], resolved.DamageType)
 	}
-	if wire["projectileID"] != "fire_bolt" {
-		t.Errorf("wire projectileID = %v, want fire_bolt", wire["projectileID"])
+	if wire["projectileID"] != resolved.ProjectileID {
+		t.Errorf("wire projectileID = %v, want %v", wire["projectileID"], resolved.ProjectileID)
 	}
-	if wire["burnDamagePerSecond"] != float64(8) {
-		t.Errorf("wire burnDamagePerSecond = %v, want 8", wire["burnDamagePerSecond"])
+	if wire["burnDamagePerSecond"] != resolved.BurnDamagePerSecond {
+		t.Errorf("wire burnDamagePerSecond = %v, want %v", wire["burnDamagePerSecond"], resolved.BurnDamagePerSecond)
 	}
 	// Zero-valued optionals stay off the wire.
 	if _, present := wire["bounceCount"]; present {
