@@ -64,7 +64,7 @@ const beamProcDamageDelaySeconds = 0.12
 // single reference by id resolves to whichever the author declared.
 //
 // Hit/miss and damage rules for PROJECTILES are NOT data on this struct —
-// they are fixed behavior (see projectileHitsLocked / applyProjectileDamageLocked):
+// they are fixed behavior (see attackHitsLocked / applyProjectileDamageLocked):
 //   - A projectile hits or misses based on the *target's* dodge/block stats
 //     if it has any; a target with no evasion stats is always hit.
 //   - On hit it damages only the resolved target — no AoE, no pass-through.
@@ -217,24 +217,43 @@ func evasionForUnit(u *Unit) TargetEvasion {
 	}
 }
 
-// projectileHitsLocked decides whether a projectile that reaches its target
-// connects. Hit/miss is driven entirely by the *target's* evasion: a target
-// with no dodge/block always gets hit; otherwise a single deterministic roll
-// is taken against s.rngCombat (seeded per-match, isolated from every other
-// RNG stream so this never perturbs perk/loot/cosmetic determinism). RNG is
-// only consumed when the target actually has evasion, so today — when no
-// unit defines dodge/block — no combat roll is ever taken.
+// evasionCapTotal is the ceiling on a unit's combined dodge+block avoidance:
+// however stacked its gear, every unit is hittable at least 1-in-4. Applied
+// at roll time only — stored/displayed stats stay uncapped and honest.
+const evasionCapTotal = 0.75
+
+// attackHitsLocked decides whether a basic attack connecting with a target
+// lands. Hit/miss is driven entirely by the *target's* evasion: a single
+// deterministic roll is taken against s.rngCombat (seeded per-match,
+// isolated from every other RNG stream so this never perturbs
+// perk/loot/cosmetic determinism). The roll space is partitioned block-first
+// — an avoided roll below the block portion reports "block", the remainder
+// "dodge" — so shields read as active in the popup. RNG is only consumed
+// when the target actually has evasion; every real unit does (base dodge),
+// but zero-evasion profiles (tests, effects) skip the draw.
 //
+// Returns (true, "") on a landed hit, (false, "block"|"dodge") on an avoid.
 // Caller holds s.mu.
-func (s *GameState) projectileHitsLocked(ev TargetEvasion) bool {
+func (s *GameState) attackHitsLocked(ev TargetEvasion) (bool, string) {
 	if !ev.HasEvasion() {
-		return true
+		return true, ""
 	}
 	avoid := ev.DodgeChance + ev.BlockChance
-	if avoid >= 1.0 {
-		return false
+	if avoid > evasionCapTotal {
+		avoid = evasionCapTotal
 	}
-	return s.rngCombat.Float64() >= avoid
+	roll := s.rngCombat.Float64()
+	if roll >= avoid {
+		return true, ""
+	}
+	blockPortion := ev.BlockChance
+	if blockPortion > avoid {
+		blockPortion = avoid
+	}
+	if roll < blockPortion {
+		return false, "block"
+	}
+	return false, "dodge"
 }
 
 // applyProjectileDamageLocked applies a projectile's damage to exactly one
