@@ -266,9 +266,10 @@ export class CanvasRenderer {
      * number to mark a critical hit. 'minor' renders smaller and orange to
      * communicate ancillary splash damage (Reactive Flames etc.) without
      * dominating the main damage popup. 'heal' renders a light-green "+N"
-     * floating up (intentional healing, e.g. the heal ability).
+     * floating up (intentional healing, e.g. the heal ability). 'evade'
+     * renders "Dodged!"/"Blocked!" text (no number) for a fully-avoided hit.
      */
-    kind: 'normal' | 'combined' | 'crit' | 'minor' | 'heal' | 'manaRestore'
+    kind: 'normal' | 'combined' | 'crit' | 'minor' | 'heal' | 'manaRestore' | 'evade'
     /**
      * Horizontal drift direction (±1) for 'minor' popups so they spray out
      * sideways and fall, distinguishing them from the upward-drifting normal
@@ -289,6 +290,12 @@ export class CanvasRenderer {
      * DamageTypeHintSnapshot.variant.
      */
     damageType?: string
+    /**
+     * Sub-flavour for 'evade' popups: 'block' → "Blocked!" (slate-300),
+     * 'dodge' → "Dodged!" (amber-200). Mirrors the server
+     * EvadeEventSnapshot.kind. Unused by other kinds.
+     */
+    evadeKind?: 'dodge' | 'block'
   }> = []
   private readonly FLOATING_DAMAGE_DURATION_MS = 900
   private readonly FLOATING_DAMAGE_RISE_PX = 32
@@ -431,6 +438,7 @@ export class CanvasRenderer {
           xDriftSign,
           minorVariant: evt.minorVariant,
           damageType: evt.damageType,
+          evadeKind: evt.evadeKind,
         })
       }
       this.state.damageEvents.length = 0
@@ -3563,7 +3571,9 @@ export class CanvasRenderer {
         drawY = num.y - this.FLOATING_DAMAGE_RISE_PX * t
       }
       ctx.globalAlpha = Math.max(0, 1 - t)
-      const text = String(num.amount)
+      const text = num.kind === 'evade'
+        ? (num.evadeKind === 'block' ? 'Blocked!' : 'Dodged!')
+        : String(num.amount)
 
       if (num.kind === 'combined') {
         // Combined Double Shot total — drawn larger and yellow/gold.
@@ -3633,6 +3643,14 @@ export class CanvasRenderer {
         ctx.strokeText(manaText, drawX, drawY)
         ctx.fillStyle = '#60a5fa' // tailwind blue-400
         ctx.fillText(manaText, drawX, drawY)
+      } else if (num.kind === 'evade') {
+        // Fully-avoided hit — no damage number, just an acknowledgement of
+        // which defensive stat saved the unit. Neutral colors so it doesn't
+        // compete visually with real damage/heal numbers.
+        ctx.font = `bold ${baseFontPx}px sans-serif`
+        ctx.strokeText(text, drawX, drawY)
+        ctx.fillStyle = num.evadeKind === 'block' ? '#cbd5e1' : '#fde68a' // slate-300 / amber-200
+        ctx.fillText(text, drawX, drawY)
       } else {
         // Major (floating-up) popup — color by damage type when the server
         // has tagged this HP-loss via damageTypeHints; otherwise default

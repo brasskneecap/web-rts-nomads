@@ -598,6 +598,14 @@ func (s *GameState) tickPierceProjectileLocked(proj *Projectile, dt float64, dea
 		}
 		proj.PierceHits = append(proj.PierceHits, target.ID)
 
+		// Evasion: each pierce victim rolls independently. Appended to
+		// PierceHits above regardless, so an evaded victim is spent — the
+		// arrow doesn't retry them next tick.
+		if hitRoll, avoidedBy := s.attackHitsLocked(evasionForUnit(target)); !hitRoll {
+			s.recordEvadeEventLocked(target, avoidedBy)
+			return
+		}
+
 		damage := proj.Damage
 		if !isPrimary {
 			damage = maxInt(0, int(math.Round(float64(proj.Damage)*proj.PierceSecondaryMult)))
@@ -746,6 +754,14 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 				*deadUnitIDs = append(*deadUnitIDs, target.ID)
 			}
 		}
+		return
+	}
+
+	// Evasion: a basic-attack projectile can be dodged/blocked at LANDING —
+	// full whiff. Proc bolts took the SkipOnHitEffects return above and are
+	// never evaded (effects always land).
+	if hit, avoidedBy := s.attackHitsLocked(evasionForUnit(target)); !hit {
+		s.recordEvadeEventLocked(target, avoidedBy)
 		return
 	}
 

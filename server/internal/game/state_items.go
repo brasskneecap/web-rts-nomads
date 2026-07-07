@@ -41,11 +41,18 @@ type UnitEquipmentBonus struct {
 	MoveSpeed   float64
 	HealthRegen float64
 	MaxShield   int
+	// DodgeChance / BlockChance sum the equipped items' additive evasion
+	// contributions (see ItemModifiers). Read by evasionForUnit.
+	DodgeChance float64
+	BlockChance float64
 	// OnHitElemental sums per-element flat damage applied as a SEPARATE typed
 	// instance on each landed basic attack. nil when no equipped item grants any.
 	OnHitElemental map[DamageType]int
 	// OnHitProcs is one entry per equipped item that defines an onHitProc.
 	OnHitProcs []EquipmentProc
+	// OnStruckProcs is one entry per equipped item that defines an
+	// onStruckProc — rolled when a basic attack lands ON the wearer.
+	OnStruckProcs []EquipmentProc
 }
 
 // ─── Capacity / presence helpers ─────────────────────────────────────────────
@@ -236,6 +243,8 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 			unit.EquipmentBonus.MoveSpeed += def.Modifiers.MoveSpeed
 			unit.EquipmentBonus.HealthRegen += def.Modifiers.HealthRegen
 			unit.EquipmentBonus.MaxShield += def.Modifiers.MaxShield
+			unit.EquipmentBonus.DodgeChance += def.Modifiers.DodgeChance
+			unit.EquipmentBonus.BlockChance += def.Modifiers.BlockChance
 		}
 		for _, e := range def.OnHitElemental {
 			if e.Amount == 0 {
@@ -249,6 +258,11 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 		if p := def.OnHitProc; p != nil {
 			if params, ok := p.ResolveParams(); ok {
 				unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, EquipmentProc{Chance: p.Chance, Params: params})
+			}
+		}
+		if p := def.OnStruckProc; p != nil {
+			if params, ok := p.ResolveParams(); ok {
+				unit.EquipmentBonus.OnStruckProcs = append(unit.EquipmentBonus.OnStruckProcs, EquipmentProc{Chance: p.Chance, Params: params})
 			}
 		}
 	}

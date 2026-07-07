@@ -82,25 +82,18 @@ func TestProjectileHit_WithEvasionStats(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Certain dodge / certain block / summed-to-certain all force a miss.
-	for _, ev := range []TargetEvasion{
-		{DodgeChance: 1.0},
-		{BlockChance: 1.0},
-		{DodgeChance: 0.5, BlockChance: 0.5},
-		{DodgeChance: 2.0}, // clamps via >= 1.0 guard
-	} {
-		if s.projectileHitsLocked(ev) {
-			t.Errorf("projectileHitsLocked(%+v) = true; want false (guaranteed avoid)", ev)
-		}
-	}
+	// Note: the old "avoid >= 1.0 always misses" sub-case is gone — under the
+	// 75% cap (see evasionCapTotal), total avoidance is impossible by design.
+	// TestAttackHits_CapGuaranteesHits (evasion_stats_test.go) covers that
+	// cap behavior directly.
 
 	// A partial chance must be a single deterministic roll against the
 	// per-match combat RNG: same seed → same outcome sequence.
 	s2 := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 42)
 	ev := TargetEvasion{DodgeChance: 0.5}
 	for i := 0; i < 20; i++ {
-		a := s.projectileHitsLocked(ev)
-		b := s2.projectileHitsLocked(ev)
+		a, _ := s.attackHitsLocked(ev)
+		b, _ := s2.attackHitsLocked(ev)
 		if a != b {
 			t.Fatalf("partial-evasion roll #%d not deterministic for equal seeds: %v vs %v", i, a, b)
 		}
@@ -115,16 +108,16 @@ func TestProjectileHit_NoEvasionStatsAlwaysHits(t *testing.T) {
 	defer s.mu.Unlock()
 
 	for i := 0; i < 100; i++ {
-		if !s.projectileHitsLocked(TargetEvasion{}) {
-			t.Fatalf("projectileHitsLocked(zero evasion) = false on iter %d; want always-hit when target has no dodge/block", i)
+		if hit, _ := s.attackHitsLocked(TargetEvasion{}); !hit {
+			t.Fatalf("attackHitsLocked(zero evasion) = false on iter %d; want always-hit when target has no dodge/block", i)
 		}
 	}
 
-	// No current unit type defines evasion, so resolving evasion for a real
-	// spawned unit must yield the always-hit (zero) profile.
+	// Every unit now carries the game-wide base dodge, so a real spawned
+	// unit's profile is non-zero by design.
 	u := spawnProjTestUnit(t, s, "p1", 400, 400)
-	if ev := evasionForUnit(u); ev.HasEvasion() {
-		t.Errorf("evasionForUnit(spawned soldier) = %+v; want zero (no unit defines dodge/block yet)", ev)
+	if ev := evasionForUnit(u); ev.DodgeChance != baseUnitDodgeChance || ev.BlockChance != 0 {
+		t.Errorf("evasionForUnit(spawned soldier) = %+v; want base dodge %v / block 0", ev, baseUnitDodgeChance)
 	}
 }
 
@@ -137,7 +130,7 @@ func TestProjectileHit_NoEvasionDoesNotConsumeRNG(t *testing.T) {
 	defer s.mu.Unlock()
 
 	for i := 0; i < 50; i++ {
-		s.projectileHitsLocked(TargetEvasion{})
+		s.attackHitsLocked(TargetEvasion{})
 	}
 	got := s.rngCombat.Float64()
 

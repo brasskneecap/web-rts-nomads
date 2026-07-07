@@ -82,8 +82,8 @@ func spawnBronzeUnit(t *testing.T, s *GameState, playerID string) *Unit {
 // and that both equipment and consumable kinds are represented.
 func TestItemCatalog_AllItemsLoaded(t *testing.T) {
 	defs := ListItemDefs()
-	if len(defs) != 21 {
-		t.Fatalf("expected 21 item defs, got %d", len(defs))
+	if len(defs) != 27 {
+		t.Fatalf("expected 27 item defs, got %d", len(defs))
 	}
 
 	byID := make(map[string]*ItemDef, len(defs))

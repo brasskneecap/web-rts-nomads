@@ -7,6 +7,9 @@
     "half_plate",
     "plate_armor",
     "enchanted_ring",
-    "potion_common_heal"
+    "potion_common_heal",
+    "rusty_shield",
+    "steel_shield",
+    "elven_cloak"
   ]
 }
