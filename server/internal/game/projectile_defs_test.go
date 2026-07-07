@@ -120,11 +120,11 @@ func TestProjectileHit_NoEvasionStatsAlwaysHits(t *testing.T) {
 		}
 	}
 
-	// No current unit type defines evasion, so resolving evasion for a real
-	// spawned unit must yield the always-hit (zero) profile.
+	// Every unit now carries the game-wide base dodge, so a real spawned
+	// unit's profile is non-zero by design.
 	u := spawnProjTestUnit(t, s, "p1", 400, 400)
-	if ev := evasionForUnit(u); ev.HasEvasion() {
-		t.Errorf("evasionForUnit(spawned soldier) = %+v; want zero (no unit defines dodge/block yet)", ev)
+	if ev := evasionForUnit(u); ev.DodgeChance != baseUnitDodgeChance || ev.BlockChance != 0 {
+		t.Errorf("evasionForUnit(spawned soldier) = %+v; want base dodge %v / block 0", ev, baseUnitDodgeChance)
 	}
 }
 

@@ -53,6 +53,12 @@ type ItemModifiers struct {
 	MoveSpeed   float64 `json:"moveSpeed,omitempty"`
 	HealthRegen float64 `json:"healthRegen,omitempty"`
 	MaxShield   int     `json:"maxShield,omitempty"`
+	// DodgeChance / BlockChance are additive probability contributions to the
+	// wearer's evasion stats (0.15 = +15%). Validated to [0,1) at load; the
+	// combined dodge+block total is capped at evasionCapTotal at roll time,
+	// not here, so stacked items display honestly.
+	DodgeChance float64 `json:"dodgeChance,omitempty"`
+	BlockChance float64 `json:"blockChance,omitempty"`
 }
 
 // ItemElementalDamage is a flat typed damage amount an equipment item adds as
@@ -263,6 +269,14 @@ func getItemDef(id string) (*ItemDef, bool) {
 // rejected here (unlike combat code that resolves it to physical) because a
 // typed elemental bonus with no explicit element is a content authoring error.
 func validateItemDef(def *ItemDef) error {
+	if m := def.Modifiers; m != nil {
+		if m.DodgeChance < 0 || m.DodgeChance >= 1 {
+			return fmt.Errorf("item %q modifiers.dodgeChance %v out of range [0,1)", def.ID, m.DodgeChance)
+		}
+		if m.BlockChance < 0 || m.BlockChance >= 1 {
+			return fmt.Errorf("item %q modifiers.blockChance %v out of range [0,1)", def.ID, m.BlockChance)
+		}
+	}
 	for i, e := range def.OnHitElemental {
 		if !IsValidDamageType(e.Type) {
 			return fmt.Errorf("item %q onHitElemental[%d]: unregistered damage type %q", def.ID, i, e.Type)

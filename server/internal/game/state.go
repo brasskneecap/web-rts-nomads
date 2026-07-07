@@ -135,6 +135,13 @@ type Unit struct {
 	RankUpFxRemaining    float64
 	ProgressionPath      string
 	Armor                int
+	// PathDodgeChance / PathBlockChance are the progression path's per-rank
+	// additive evasion contributions, assigned by applyRankModifiersLocked
+	// (zero for pathless units). Combined with the game-wide base and the
+	// equipment bonus at read time by evasionForUnit — mirroring how Armor
+	// is path-assigned here and equipment-extended in effectiveArmorLocked.
+	PathDodgeChance float64
+	PathBlockChance float64
 	PerkIDs              []string // assigned perk ids, in rank-up order. Length is typically
 	// 3 (one per tier). Length 4 indicates the owner had a
 	// unitExtraPerkSlot advancement granting a second pick at

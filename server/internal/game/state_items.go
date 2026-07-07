@@ -41,6 +41,10 @@ type UnitEquipmentBonus struct {
 	MoveSpeed   float64
 	HealthRegen float64
 	MaxShield   int
+	// DodgeChance / BlockChance sum the equipped items' additive evasion
+	// contributions (see ItemModifiers). Read by evasionForUnit.
+	DodgeChance float64
+	BlockChance float64
 	// OnHitElemental sums per-element flat damage applied as a SEPARATE typed
 	// instance on each landed basic attack. nil when no equipped item grants any.
 	OnHitElemental map[DamageType]int
@@ -236,6 +240,8 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 			unit.EquipmentBonus.MoveSpeed += def.Modifiers.MoveSpeed
 			unit.EquipmentBonus.HealthRegen += def.Modifiers.HealthRegen
 			unit.EquipmentBonus.MaxShield += def.Modifiers.MaxShield
+			unit.EquipmentBonus.DodgeChance += def.Modifiers.DodgeChance
+			unit.EquipmentBonus.BlockChance += def.Modifiers.BlockChance
 		}
 		for _, e := range def.OnHitElemental {
 			if e.Amount == 0 {

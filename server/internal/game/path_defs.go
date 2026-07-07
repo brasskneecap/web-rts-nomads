@@ -99,6 +99,11 @@ type pathRankStatsJSON struct {
 	AttackRange           float64 `json:"attackRange"`
 	AttackRangeMultiplier float64 `json:"attackRangeMultiplier"`
 	Armor                 int     `json:"armor"`
+	// DodgeChance / BlockChance are per-rank ADDITIVE evasion contributions
+	// (0.10 = +10%). Absent (0) means the path contributes nothing; the
+	// game-wide base (baseUnitDodgeChance) always applies on top.
+	DodgeChance float64 `json:"dodgeChance"`
+	BlockChance float64 `json:"blockChance"`
 }
 
 // pathModifiersByKey is the loaded lookup map. Key is path + "/" + rank (e.g.
@@ -386,6 +391,8 @@ func init() {
 						AttackRange:           stats.AttackRange,
 						AttackRangeMultiplier: attackRangeMult,
 						Armor:                 stats.Armor,
+						DodgeChance:           stats.DodgeChance,
+						BlockChance:           stats.BlockChance,
 					}
 				}
 			}

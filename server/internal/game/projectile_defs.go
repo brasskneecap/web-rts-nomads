@@ -201,16 +201,20 @@ func (e TargetEvasion) HasEvasion() bool {
 	return e.DodgeChance > 0 || e.BlockChance > 0
 }
 
-// evasionForUnit returns the evasion profile for a unit. No unit type defines
-// dodge or block today, so this is always the zero value (always-hit). It is
-// the single place a real evasion system would be wired in.
-//
-// TODO: source real dodge/block from UnitDef / perks / equipment when an
-// evasion system is added. Keep the always-hit default for units that opt
-// out so existing combat math is unchanged.
+// baseUnitDodgeChance is the game-wide innate dodge probability every unit
+// has before path and equipment contributions. Base block is 0 — block comes
+// only from paths (Vanguard) and items (shields).
+const baseUnitDodgeChance = 0.05
+
+// evasionForUnit returns a unit's live evasion totals: game-wide base +
+// progression-path rank contribution + equipped-item bonus, each additive.
+// The combined cap is NOT applied here (attackHitsLocked clamps at roll
+// time) so displayed stats stay honest.
 func evasionForUnit(u *Unit) TargetEvasion {
-	_ = u
-	return TargetEvasion{}
+	return TargetEvasion{
+		DodgeChance: baseUnitDodgeChance + u.PathDodgeChance + u.EquipmentBonus.DodgeChance,
+		BlockChance: u.PathBlockChance + u.EquipmentBonus.BlockChance,
+	}
 }
 
 // projectileHitsLocked decides whether a projectile that reaches its target
