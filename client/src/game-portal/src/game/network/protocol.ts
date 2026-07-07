@@ -1564,6 +1564,18 @@ export type ManaRestoreEventSnapshot = {
 }
 
 /**
+ * EvadeEventSnapshot is a per-tick record of an incoming hit that a unit
+ * fully avoided via its dodge/block chance (item modifiers.dodgeChance /
+ * blockChance). No damage occurred, so there is no HP-diff to derive a
+ * popup from — the client spawns a "Dodged!"/"Blocked!" popup directly over
+ * the unit, mirroring HealEventSnapshot's direct-spawn pattern.
+ */
+export type EvadeEventSnapshot = {
+  unitId: number
+  kind: 'dodge' | 'block'
+}
+
+/**
  * EffectSnapshot is a transient sprite-sheet VFX anchored to a unit or world
  * position. The server owns the lifecycle; the client renders sprite frames
  * driven by `progress` (0 = first frame, 1 = last frame). `anchorUnitId`
@@ -1627,6 +1639,7 @@ export type MatchSnapshotMessage = {
   lethalDamageEvents?: LethalDamageEventSnapshot[]
   healEvents?: HealEventSnapshot[]
   manaRestoreEvents?: ManaRestoreEventSnapshot[]
+  evadeEvents?: EvadeEventSnapshot[]
   // Present only when the active map has debug.battleTracker=true. Absent
   // otherwise — the client treats absence as "debug tracker disabled".
   battleTracker?: BattleTrackerSnapshot

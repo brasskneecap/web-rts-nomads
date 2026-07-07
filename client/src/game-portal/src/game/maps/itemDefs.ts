@@ -31,6 +31,9 @@ export type ItemModifiers = {
   healthRegen?: number
   shield?: number
   maxShield?: number
+  /** Additive dodge/block probability (0.15 = +15%). */
+  dodgeChance?: number
+  blockChance?: number
 }
 
 /**
@@ -85,6 +88,10 @@ export type ItemDef = {
    *  (`effect` is the reference id, included for display/debugging only —
    *  the client never needs proc-catalog knowledge of its own). */
   onHitProc?: { chance: number; effect?: string; damage: number; damageType: string; projectileID: string }
+  /** Percent-chance proc when the holder is struck: fires an elemental bolt
+   *  at the attacker for `damage`. Same wire shape as `onHitProc` — the
+   *  server always marshals the resolved payload. */
+  onStruckProc?: { chance: number; effect?: string; damage: number; damageType: string; projectileID: string }
   /** Stack ceiling — items above 1 are stackable. Defaults to 1 when absent. */
   maxStacks?: number
   /** Consumable-specific config. Only set when kind === 'consumable'.
