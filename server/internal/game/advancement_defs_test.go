@@ -32,8 +32,9 @@ func TestListUnitAdvancementTracks_SoldierTrackPresent(t *testing.T) {
 	if node.Kind != "minor" {
 		t.Errorf("node[0].kind: want %q, got %q", "minor", node.Kind)
 	}
-	if node.Cost != 50 {
-		t.Errorf("node[0].cost: want 50, got %d", node.Cost)
+	// Cost is a balance tunable owned by the catalog JSON; assert it is set, not its value.
+	if node.Cost <= 0 {
+		t.Errorf("node[0].cost: want > 0, got %d", node.Cost)
 	}
 	if len(node.Effects) == 0 {
 		t.Fatal("node[0].effects must be non-empty")
@@ -45,8 +46,9 @@ func TestListUnitAdvancementTracks_SoldierTrackPresent(t *testing.T) {
 	if eff.Stat != "maxHp" {
 		t.Errorf("effects[0].stat: want %q, got %q", "maxHp", eff.Stat)
 	}
-	if eff.Amount != 50 {
-		t.Errorf("effects[0].amount: want 50, got %d", eff.Amount)
+	// Amount is a balance tunable owned by the catalog JSON; assert it is set, not its value.
+	if eff.Amount <= 0 {
+		t.Errorf("effects[0].amount: want > 0, got %d", eff.Amount)
 	}
 }
 
@@ -139,7 +141,7 @@ func TestApplyAdvancementsToEffectiveDefs_SingleEffectApplied(t *testing.T) {
 	if !found {
 		t.Fatal("EffectiveUnitDefs: soldier entry not created after applying advancement")
 	}
-	wantHP := baseHP + 50
+	wantHP := baseHP + advNodeAmount(t, "soldier_hp_1")
 	if effectiveDef.HP != wantHP {
 		t.Errorf("effective soldier HP: want %d, got %d", wantHP, effectiveDef.HP)
 	}

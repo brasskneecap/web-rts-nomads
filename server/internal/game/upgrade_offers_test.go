@@ -65,34 +65,47 @@ func TestGenerateUpgradeOffers_FiltersMaxedGroup(t *testing.T) {
 	}
 }
 
-func TestMilestoneWave_GuaranteesEpicOrBetter(t *testing.T) {
+func TestMilestoneWave_GuaranteesMinRarityOrBetter(t *testing.T) {
+	// Derive the milestone wave and the guaranteed rarity floor from tuning so
+	// this test survives retuning waveUpgrade.milestoneWaves / milestoneMinRarity
+	// in the catalog JSON.
+	waveTuning := gameplayTuning().WaveUpgrade
+	if len(waveTuning.MilestoneWaves) == 0 {
+		t.Skip("no milestone waves configured in tuning")
+	}
+	minRarityRank, ok := upgradeRarityOrder[waveTuning.MilestoneMinRarity]
+	if !ok {
+		t.Fatalf("milestoneMinRarity %q not in rarity order", waveTuning.MilestoneMinRarity)
+	}
+
 	s := newTestStateForUpgrades(t)
-	s.WaveManager.CurrentWave = 5 // first milestone
+	s.WaveManager.CurrentWave = waveTuning.MilestoneWaves[0] // first milestone
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Need an epic+ upgrade in catalog for this test to be meaningful.
-	// If none exist in the seed catalog, skip.
-	hasEpicInCatalog := false
+	// Need an upgrade at or above the guaranteed floor in the catalog for this
+	// test to be meaningful. If none exist in the seed catalog, skip.
+	hasFloorInCatalog := false
 	for _, def := range listUpgradeDefs() {
-		if upgradeRarityOrder[def.Rarity] >= upgradeRarityOrder[upgradeRarityEpic] {
-			hasEpicInCatalog = true
+		if upgradeRarityOrder[def.Rarity] >= minRarityRank {
+			hasFloorInCatalog = true
 			break
 		}
 	}
-	if !hasEpicInCatalog {
-		t.Skip("no epic+ upgrades in seed catalog — add one to test milestone guarantee")
+	if !hasFloorInCatalog {
+		t.Skipf("no %s+ upgrades in seed catalog — add one to test milestone guarantee", waveTuning.MilestoneMinRarity)
 	}
 	// Run 20 times to rule out luck.
 	for i := 0; i < 20; i++ {
 		offers := s.generateUpgradeOffersLocked("p1")
-		hasEpicOrBetter := false
+		hasFloorOrBetter := false
 		for _, o := range offers {
-			if upgradeRarityOrder[o.Rarity] >= upgradeRarityOrder[upgradeRarityEpic] {
-				hasEpicOrBetter = true
+			if upgradeRarityOrder[o.Rarity] >= minRarityRank {
+				hasFloorOrBetter = true
 			}
 		}
-		if !hasEpicOrBetter {
-			t.Errorf("milestone wave 5 offer set %d had no epic+ card: %v", i, offers)
+		if !hasFloorOrBetter {
+			t.Errorf("milestone wave %d offer set %d had no %s+ card: %v",
+				waveTuning.MilestoneWaves[0], i, waveTuning.MilestoneMinRarity, offers)
 		}
 	}
 }

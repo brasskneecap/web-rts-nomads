@@ -23,13 +23,19 @@ func TestElementalRings_Load(t *testing.T) {
 			t.Errorf("%s: slotKind = %q, want any", tc.id, def.SlotKind)
 		}
 		var amount int
+		var found bool
 		for _, e := range def.OnHitElemental {
 			if e.Type == tc.elem {
 				amount = e.Amount
+				found = true
 			}
 		}
-		if amount != 5 {
-			t.Errorf("%s: onHitElemental %v = %d, want 5", tc.id, tc.elem, amount)
+		// The magnitude is a balance tunable owned by the item JSON; assert the
+		// ring carries a positive on-hit bonus of the right element, not its value.
+		if !found {
+			t.Errorf("%s: missing onHitElemental of type %v", tc.id, tc.elem)
+		} else if amount <= 0 {
+			t.Errorf("%s: onHitElemental %v = %d, want > 0", tc.id, tc.elem, amount)
 		}
 	}
 }

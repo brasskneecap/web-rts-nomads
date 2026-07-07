@@ -56,7 +56,11 @@ func TestPurchaseRecipe_Success(t *testing.T) {
 	if !s.playerKnowsRecipeLocked("p1", "fire_sword") {
 		t.Fatal("recipe should be unlocked after purchase")
 	}
-	cost := 150
+	fireSwordDef, ok := getRecipeDef("fire_sword")
+	if !ok {
+		t.Fatal("fire_sword recipe not found in catalog")
+	}
+	cost := fireSwordDef.CostGold
 	if p.Resources["gold"] != 1000-cost {
 		t.Fatalf("gold = %d, want %d", p.Resources["gold"], 1000-cost)
 	}

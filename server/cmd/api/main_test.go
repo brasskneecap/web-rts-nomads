@@ -40,7 +40,11 @@ func TestServerReadyLineAndStdinShutdown(t *testing.T) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binPath)
-	cmd.Env = append(os.Environ(), "WEBRTS_PORT=0")
+	// NOMADS_SHELL_MANAGED=1 opts into the stdin-EOF shutdown path (main.go gates
+	// watchStdin on this so a standalone run — where stdin reads EOF immediately —
+	// isn't killed on startup). This test simulates the Tauri shell, which sets
+	// the flag and then closes stdin to request shutdown, so it must set it too.
+	cmd.Env = append(os.Environ(), "WEBRTS_PORT=0", "NOMADS_SHELL_MANAGED=1")
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

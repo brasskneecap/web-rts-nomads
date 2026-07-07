@@ -46,8 +46,13 @@ func TestCraftItem_Success(t *testing.T) {
 	if vaultItemCountLocked(p, "fire_sword") != 1 {
 		t.Fatal("output should be added to vault")
 	}
-	if p.Resources["gold"] != 1000-150 {
-		t.Fatalf("gold = %d, want %d", p.Resources["gold"], 850)
+	fireSwordDef, ok := getRecipeDef("fire_sword")
+	if !ok {
+		t.Fatal("fire_sword recipe not found in catalog")
+	}
+	wantGold := 1000 - fireSwordDef.CostGold
+	if p.Resources["gold"] != wantGold {
+		t.Fatalf("gold = %d, want %d (%d charged)", p.Resources["gold"], wantGold, fireSwordDef.CostGold)
 	}
 }
 

@@ -396,15 +396,17 @@ func TestTargetCount_DefaultsToOne(t *testing.T) {
 	}
 }
 
-// TestTargetCount_GreaterHealHasThree confirms greater_heal.json sets
-// targetCount == 3.
-func TestTargetCount_GreaterHealHasThree(t *testing.T) {
+// TestTargetCount_GreaterHealIsMultiTarget confirms greater_heal is a
+// multi-target ability. The exact target count is a balance tunable owned by
+// greater_heal.json, so this asserts the multi-target invariant (>= 2) rather
+// than pinning the number.
+func TestTargetCount_GreaterHealIsMultiTarget(t *testing.T) {
 	def, ok := getAbilityDef("greater_heal")
 	if !ok {
 		t.Fatal(`getAbilityDef("greater_heal") returned false`)
 	}
-	if def.TargetCount != 3 {
-		t.Errorf("greater_heal.TargetCount = %d, want 3", def.TargetCount)
+	if def.TargetCount < 2 {
+		t.Errorf("greater_heal.TargetCount = %d, want >= 2 (multi-target)", def.TargetCount)
 	}
 }
 

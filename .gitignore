@@ -3,6 +3,13 @@ node_modules/
 dist/
 .env
 
+# Exception: the embedded package ships a checked-in dist/ test fixture (a fake
+# SPA bundle) that internal/embedded/handler_test.go embeds via //go:embed. The
+# blanket dist/ rule above would swallow it and break the package build on a
+# clean checkout, so re-include it explicitly.
+!server/internal/embedded/testdata/dist/
+!server/internal/embedded/testdata/dist/**
+
 # Go
 bin/
 *.exe

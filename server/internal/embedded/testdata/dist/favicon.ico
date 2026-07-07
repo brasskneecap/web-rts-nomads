@@ -1,0 +1,2 @@
+nomads spa test fixture favicon — a top-level embedded asset used to assert the
+one-hour cache header applied to non-fingerprinted files at the dist root.

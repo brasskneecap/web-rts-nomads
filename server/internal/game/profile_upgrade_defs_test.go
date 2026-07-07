@@ -5,29 +5,18 @@ import (
 )
 
 // TestProfileUpgradeDefs_InitialDefsLoaded verifies the initial catalog files
-// load with the expected IDs, maxRanks, and cost arrays.
+// load with the expected IDs and effect wiring, and that their cost arrays are
+// structurally well-formed. maxRanks and the individual per-rank costs are
+// balance tunables owned by the catalog JSON, so this asserts invariants
+// (positive ranks, cost length matches maxRanks, positive non-decreasing costs)
+// rather than pinning the exact numbers.
 func TestProfileUpgradeDefs_InitialDefsLoaded(t *testing.T) {
 	cases := []struct {
-		id          string
-		maxRanks    int
-		firstCost   int
-		lastCost    int
-		effectType  string
+		id         string
+		effectType string
 	}{
-		{
-			id:         "physical_power",
-			maxRanks:   10,
-			firstCost:  10,
-			lastCost:   100,
-			effectType: "damageMultiplierByType",
-		},
-		{
-			id:         "magic_power",
-			maxRanks:   10,
-			firstCost:  10,
-			lastCost:   100,
-			effectType: "damageMultiplierByType",
-		},
+		{id: "physical_power", effectType: "damageMultiplierByType"},
+		{id: "magic_power", effectType: "damageMultiplierByType"},
 	}
 
 	for _, tc := range cases {
@@ -36,17 +25,20 @@ func TestProfileUpgradeDefs_InitialDefsLoaded(t *testing.T) {
 			if !ok {
 				t.Fatalf("upgrade %q not found in catalog", tc.id)
 			}
-			if def.MaxRanks != tc.maxRanks {
-				t.Errorf("maxRanks: want %d, got %d", tc.maxRanks, def.MaxRanks)
+			if def.MaxRanks <= 0 {
+				t.Errorf("maxRanks: want > 0, got %d", def.MaxRanks)
 			}
-			if len(def.CostPerRank) != tc.maxRanks {
-				t.Fatalf("costPerRank length: want %d, got %d", tc.maxRanks, len(def.CostPerRank))
+			if len(def.CostPerRank) != def.MaxRanks {
+				t.Fatalf("costPerRank length: want %d (== maxRanks), got %d", def.MaxRanks, len(def.CostPerRank))
 			}
-			if def.CostPerRank[0] != tc.firstCost {
-				t.Errorf("costPerRank[0]: want %d, got %d", tc.firstCost, def.CostPerRank[0])
-			}
-			if def.CostPerRank[tc.maxRanks-1] != tc.lastCost {
-				t.Errorf("costPerRank[last]: want %d, got %d", tc.lastCost, def.CostPerRank[tc.maxRanks-1])
+			for i, cost := range def.CostPerRank {
+				if cost <= 0 {
+					t.Errorf("costPerRank[%d]: want > 0, got %d", i, cost)
+				}
+				if i > 0 && cost < def.CostPerRank[i-1] {
+					t.Errorf("costPerRank must be non-decreasing: costPerRank[%d]=%d < costPerRank[%d]=%d",
+						i, cost, i-1, def.CostPerRank[i-1])
+				}
 			}
 			if def.Effect.Type != tc.effectType {
 				t.Errorf("effect type: want %q, got %q", tc.effectType, def.Effect.Type)
@@ -64,8 +56,10 @@ func TestProfileUpgradeDefs_PhysicalPowerEffect(t *testing.T) {
 	if def.Effect.DamageTypeClass != "physical" {
 		t.Errorf("damageTypeClass: want %q, got %q", "physical", def.Effect.DamageTypeClass)
 	}
-	if def.Effect.MultiplierPerRank != 0.10 {
-		t.Errorf("multiplierPerRank: want 0.10, got %v", def.Effect.MultiplierPerRank)
+	// MultiplierPerRank is a balance tunable owned by the catalog JSON; assert it
+	// is a positive scaling factor, not its exact value.
+	if def.Effect.MultiplierPerRank <= 0 {
+		t.Errorf("multiplierPerRank: want > 0, got %v", def.Effect.MultiplierPerRank)
 	}
 }
 
@@ -78,8 +72,10 @@ func TestProfileUpgradeDefs_MagicPowerEffect(t *testing.T) {
 	if def.Effect.DamageTypeClass != "nonPhysical" {
 		t.Errorf("damageTypeClass: want %q, got %q", "nonPhysical", def.Effect.DamageTypeClass)
 	}
-	if def.Effect.MultiplierPerRank != 0.10 {
-		t.Errorf("multiplierPerRank: want 0.10, got %v", def.Effect.MultiplierPerRank)
+	// MultiplierPerRank is a balance tunable owned by the catalog JSON; assert it
+	// is a positive scaling factor, not its exact value.
+	if def.Effect.MultiplierPerRank <= 0 {
+		t.Errorf("multiplierPerRank: want > 0, got %v", def.Effect.MultiplierPerRank)
 	}
 }
 

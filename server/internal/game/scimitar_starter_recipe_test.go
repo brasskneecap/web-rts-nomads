@@ -79,7 +79,12 @@ func TestCraftScimitar_ConsumesThreeBroadSwords(t *testing.T) {
 	if got := vaultItemCountLocked(p, "scimitar"); got != 1 {
 		t.Errorf("scimitar count = %d, want 1", got)
 	}
-	if got := p.Resources["gold"]; got != 1000-25 {
-		t.Errorf("gold = %d, want %d (25 charged)", got, 1000-25)
+	scimitarDef, ok := getRecipeDef("scimitar")
+	if !ok {
+		t.Fatal("scimitar recipe not found in catalog")
+	}
+	wantGold := 1000 - scimitarDef.CostGold
+	if got := p.Resources["gold"]; got != wantGold {
+		t.Errorf("gold = %d, want %d (%d charged)", got, wantGold, scimitarDef.CostGold)
 	}
 }
