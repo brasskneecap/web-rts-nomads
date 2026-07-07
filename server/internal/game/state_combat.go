@@ -321,6 +321,11 @@ func (s *GameState) resolveAttackHitLocked(attacker, target *Unit, damage int, d
 	s.onPerkAttackFiredLocked(attacker, target, damage, deadUnitIDs)
 	s.onPerkAttackDamageAppliedLocked(attacker, target, damage)
 	s.applyEquipmentOnHitEffectsLocked(attacker, target)
+	// On-being-struck retaliation: the DEFENDER's gear answers a landed
+	// basic attack (elemental shields). Runs after the attacker-side on-hit
+	// effects so rngPerks stream order is stable and a lethal hit (target
+	// now dead) correctly fails the alive-guard inside.
+	s.rollEquipmentStruckProcsLocked(target, attacker)
 
 	if target.HP <= 0 {
 		target.HP = 0
@@ -471,6 +476,31 @@ func (s *GameState) rollEquipmentProcsLocked(attacker, target *Unit) {
 		}
 		if s.rngPerks.Float64() < proc.Chance {
 			s.executeProcEffectLocked(procSourceFromUnit(attacker), target, proc.Params)
+		}
+	}
+}
+
+// rollEquipmentStruckProcsLocked rolls the DEFENDER's on-being-struck procs
+// after a basic attack lands on them, firing each success back at the
+// attacker (the defender is the ProcSource — kill credit and origin are
+// theirs). Guards: both units alive (a killing blow doesn't retaliate; a
+// dead attacker can't be retaliated against), and proc damage never reaches
+// here (SkipOnHitEffects paths bypass resolveAttackHitLocked), so no loops.
+// Rolls consume rngPerks AFTER the attacker's on-hit rolls at the same site,
+// keeping the stream order deterministic. Caller holds s.mu.
+func (s *GameState) rollEquipmentStruckProcsLocked(defender, attacker *Unit) {
+	if defender == nil || attacker == nil || len(defender.EquipmentBonus.OnStruckProcs) == 0 {
+		return
+	}
+	if defender.HP <= 0 || attacker.HP <= 0 || !attacker.Visible {
+		return
+	}
+	for _, proc := range defender.EquipmentBonus.OnStruckProcs {
+		if proc.Chance <= 0 || proc.Params.Damage <= 0 {
+			continue
+		}
+		if s.rngPerks.Float64() < proc.Chance {
+			s.executeProcEffectLocked(procSourceFromUnit(defender), attacker, proc.Params)
 		}
 	}
 }

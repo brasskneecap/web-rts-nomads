@@ -50,6 +50,9 @@ type UnitEquipmentBonus struct {
 	OnHitElemental map[DamageType]int
 	// OnHitProcs is one entry per equipped item that defines an onHitProc.
 	OnHitProcs []EquipmentProc
+	// OnStruckProcs is one entry per equipped item that defines an
+	// onStruckProc — rolled when a basic attack lands ON the wearer.
+	OnStruckProcs []EquipmentProc
 }
 
 // ─── Capacity / presence helpers ─────────────────────────────────────────────
@@ -255,6 +258,11 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 		if p := def.OnHitProc; p != nil {
 			if params, ok := p.ResolveParams(); ok {
 				unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, EquipmentProc{Chance: p.Chance, Params: params})
+			}
+		}
+		if p := def.OnStruckProc; p != nil {
+			if params, ok := p.ResolveParams(); ok {
+				unit.EquipmentBonus.OnStruckProcs = append(unit.EquipmentBonus.OnStruckProcs, EquipmentProc{Chance: p.Chance, Params: params})
 			}
 		}
 	}

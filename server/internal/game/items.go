@@ -205,6 +205,12 @@ type ItemDef struct {
 	MaxStacks        int                   `json:"maxStacks,omitempty"` // consumables only; 0 treated as 1
 	OnHitElemental   []ItemElementalDamage `json:"onHitElemental,omitempty"`
 	OnHitProc        *ItemOnHitProc        `json:"onHitProc,omitempty"`
+	// OnStruckProc is the on-BEING-hit mirror of OnHitProc: when a basic
+	// attack LANDS on the wearer (post-evasion — dodged/blocked hits never
+	// trigger it), the wearer rolls Chance and, on success, fires the
+	// referenced proc effect back at the attacker. Same schema, validation,
+	// resolution, and wire marshaling as OnHitProc.
+	OnStruckProc *ItemOnHitProc `json:"onStruckProc,omitempty"`
 }
 
 // itemCatalogSingleton is the package-level item catalog. Populated by a var
@@ -282,22 +288,36 @@ func validateItemDef(def *ItemDef) error {
 			return fmt.Errorf("item %q onHitElemental[%d]: unregistered damage type %q", def.ID, i, e.Type)
 		}
 	}
-	if p := def.OnHitProc; p != nil {
-		if p.Chance < 0 || p.Chance > 1 {
-			return fmt.Errorf("item %q onHitProc.chance %v out of range [0,1]", def.ID, p.Chance)
-		}
-		if p.Effect == "" {
-			return fmt.Errorf("item %q onHitProc.effect is required (a catalog/procs id)", def.ID)
-		}
-		if _, ok := getProcEffectDef(p.Effect); !ok {
-			return fmt.Errorf("item %q onHitProc.effect %q is not a registered proc effect", def.ID, p.Effect)
-		}
-		if p.Damage < 0 {
-			return fmt.Errorf("item %q onHitProc.damage override %v must be >= 0", def.ID, p.Damage)
-		}
-		if p.ProjectileScale < 0 {
-			return fmt.Errorf("item %q onHitProc.projectileScale override %v must be >= 0", def.ID, p.ProjectileScale)
-		}
+	if err := validateItemProcRef(def.ID, "onHitProc", def.OnHitProc); err != nil {
+		return err
+	}
+	if err := validateItemProcRef(def.ID, "onStruckProc", def.OnStruckProc); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateItemProcRef checks one proc trigger reference (onHitProc or
+// onStruckProc — both share the ItemOnHitProc schema) against the proc
+// catalog and the override sanity rules.
+func validateItemProcRef(itemID, field string, p *ItemOnHitProc) error {
+	if p == nil {
+		return nil
+	}
+	if p.Chance < 0 || p.Chance > 1 {
+		return fmt.Errorf("item %q %s.chance %v out of range [0,1]", itemID, field, p.Chance)
+	}
+	if p.Effect == "" {
+		return fmt.Errorf("item %q %s.effect is required (a catalog/procs id)", itemID, field)
+	}
+	if _, ok := getProcEffectDef(p.Effect); !ok {
+		return fmt.Errorf("item %q %s.effect %q is not a registered proc effect", itemID, field, p.Effect)
+	}
+	if p.Damage < 0 {
+		return fmt.Errorf("item %q %s.damage override %v must be >= 0", itemID, field, p.Damage)
+	}
+	if p.ProjectileScale < 0 {
+		return fmt.Errorf("item %q %s.projectileScale override %v must be >= 0", itemID, field, p.ProjectileScale)
 	}
 	return nil
 }
