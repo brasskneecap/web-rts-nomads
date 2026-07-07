@@ -1,0 +1,14 @@
+{
+  "id": "lightning_shield",
+  "displayName": "Lightning Shield",
+  "description": "+35 armor. +15% block chance. 10% chance when hit to zap the attacker with a lightning bolt (25 lightning damage) that arcs to 2 nearby enemies for 5 less each.",
+  "iconKey": "lightning_shield",
+  "kind": "equipment",
+  "tier": "rare",
+  "category": "Shield",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 0,
+  "modifiers": { "armor": 35, "blockChance": 0.15 },
+  "onStruckProc": { "chance": 0.1, "effect": "lightning_chain" }
+}
