@@ -90,6 +90,51 @@ func (p *ItemOnHitProc) ResolveParams() (ProcEffectParams, bool) {
 	return resolveProcEffectParams(def, p.ProcEffectOverrides), true
 }
 
+// itemOnHitProcWire is the JSON shape emitted for ItemOnHitProc. See
+// MarshalJSON for why this exists.
+type itemOnHitProcWire struct {
+	Chance float64 `json:"chance"`
+	Effect string  `json:"effect"`
+
+	Damage              int        `json:"damage,omitempty"`
+	DamageType          DamageType `json:"damageType,omitempty"`
+	ProjectileID        string     `json:"projectileID,omitempty"`
+	ProjectileScale     float64    `json:"projectileScale,omitempty"`
+	BounceCount         int        `json:"bounceCount,omitempty"`
+	BounceRange         float64    `json:"bounceRange,omitempty"`
+	BounceDamageFalloff int        `json:"bounceDamageFalloff,omitempty"`
+	SlowMultiplier      float64    `json:"slowMultiplier,omitempty"`
+	SlowDurationSeconds float64    `json:"slowDurationSeconds,omitempty"`
+	BurnDamagePerSecond float64    `json:"burnDamagePerSecond,omitempty"`
+	BurnDurationSeconds float64    `json:"burnDurationSeconds,omitempty"`
+}
+
+// MarshalJSON exists for ONE reason: the /catalog/items route serves ItemDef
+// to the SPA, and the client tooltip contract predates the effect-reference
+// schema — it reads resolved payload fields (damage, damageType,
+// projectileID) directly off onHitProc. Marshal therefore emits the RESOLVED
+// params (def + overrides, via ResolveParams) alongside the effect
+// reference, so the client stays a dumb view with no proc-catalog knowledge
+// of its own. There is deliberately no UnmarshalJSON: catalog files keep
+// unmarshaling into Effect + the embedded ProcEffectOverrides untouched.
+func (p ItemOnHitProc) MarshalJSON() ([]byte, error) {
+	wire := itemOnHitProcWire{Chance: p.Chance, Effect: p.Effect}
+	if params, ok := p.ResolveParams(); ok {
+		wire.Damage = params.Damage
+		wire.DamageType = params.DamageType
+		wire.ProjectileID = params.ProjectileID
+		wire.ProjectileScale = params.ProjectileScale
+		wire.BounceCount = params.BounceCount
+		wire.BounceRange = params.BounceRange
+		wire.BounceDamageFalloff = params.BounceDamageFalloff
+		wire.SlowMultiplier = params.SlowMultiplier
+		wire.SlowDurationSeconds = params.SlowDurationSeconds
+		wire.BurnDamagePerSecond = params.BurnDamagePerSecond
+		wire.BurnDurationSeconds = params.BurnDurationSeconds
+	}
+	return json.Marshal(wire)
+}
+
 // defaultConsumableRangeUnits is the AoE radius (world units) a consumable
 // covers when its def doesn't author an explicit "range".
 const defaultConsumableRangeUnits = 100.0

@@ -79,8 +79,12 @@ export type ItemDef = {
   effects?: ItemEffect[]
   /** Flat elemental damage applied as a separate typed instance on each hit. */
   onHitElemental?: { type: string; amount: number }[]
-  /** Percent-chance on-hit proc: fires an elemental bolt for `damage`. */
-  onHitProc?: { chance: number; damage: number; damageType: string; projectileID: string }
+  /** Percent-chance on-hit proc: fires an elemental bolt for `damage`.
+   *  Server-side this references a catalog proc effect (+ optional
+   *  overrides); the wire always carries the RESOLVED payload below
+   *  (`effect` is the reference id, included for display/debugging only —
+   *  the client never needs proc-catalog knowledge of its own). */
+  onHitProc?: { chance: number; effect?: string; damage: number; damageType: string; projectileID: string }
   /** Stack ceiling — items above 1 are stackable. Defaults to 1 when absent. */
   maxStacks?: number
   /** Consumable-specific config. Only set when kind === 'consumable'.

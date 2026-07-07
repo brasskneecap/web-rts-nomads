@@ -1,6 +1,9 @@
 package game
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestValidateItemDef_OnHitFields(t *testing.T) {
 	good := &ItemDef{
@@ -77,5 +80,47 @@ func TestItemOnHitProc_ResolveParams(t *testing.T) {
 	missing := &ItemOnHitProc{Chance: 0.1, Effect: "no_such_effect"}
 	if _, ok := missing.ResolveParams(); ok {
 		t.Error("unknown effect must resolve ok=false")
+	}
+}
+
+// TestItemOnHitProc_MarshalEmitsResolvedPayload guards the client wire
+// contract: the SPA tooltip reads onHitProc.damage / damageType /
+// projectileID off /catalog/items, so marshaling must emit the RESOLVED
+// payload alongside the effect reference.
+func TestItemOnHitProc_MarshalEmitsResolvedPayload(t *testing.T) {
+	def, ok := getItemDef("fire_sword")
+	if !ok {
+		t.Fatal("fire_sword not in catalog")
+	}
+	data, err := json.Marshal(def.OnHitProc)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("unmarshal wire: %v", err)
+	}
+	if wire["effect"] != "fire_bolt_ignite" {
+		t.Errorf("wire effect = %v, want fire_bolt_ignite", wire["effect"])
+	}
+	if wire["chance"] != 0.1 {
+		t.Errorf("wire chance = %v, want 0.1", wire["chance"])
+	}
+	// The legacy client contract fields must be present and RESOLVED.
+	if wire["damage"] != float64(25) {
+		t.Errorf("wire damage = %v, want 25", wire["damage"])
+	}
+	if wire["damageType"] != "fire" {
+		t.Errorf("wire damageType = %v, want fire", wire["damageType"])
+	}
+	if wire["projectileID"] != "fire_bolt" {
+		t.Errorf("wire projectileID = %v, want fire_bolt", wire["projectileID"])
+	}
+	if wire["burnDamagePerSecond"] != float64(8) {
+		t.Errorf("wire burnDamagePerSecond = %v, want 8", wire["burnDamagePerSecond"])
+	}
+	// Zero-valued optionals stay off the wire.
+	if _, present := wire["bounceCount"]; present {
+		t.Error("bounceCount should be omitted for a non-chaining effect")
 	}
 }
