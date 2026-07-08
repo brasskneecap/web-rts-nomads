@@ -23,6 +23,37 @@ interface EffectManifest {
   // burning overlay reads this today; one-shot effects driven by drawEffects
   // ignore it (they use the server-supplied sizeScale). Defaults to 1.0.
   displayScale?: number
+  /**
+   * Optional per-frame render-layer split. Frames with index < (impactFrame-1)
+   * render ABOVE units (e.g. a meteor falling through the air); frames from
+   * (impactFrame-1) onward render BELOW units (on the ground layer). 1-based to
+   * match how animators count frames. Omit for effects that render entirely on
+   * the default (above-units) layer — existing behavior is unchanged.
+   *
+   * EXTENSION POINT: any effect can opt into per-frame layering by setting this.
+   */
+  impactFrame?: number
+  /**
+   * Optional origin offset (world px) the sprite visually falls FROM during the
+   * pre-impact frames. The effect is anchored at its impact point; during frames
+   * 1..(impactFrame-1) it is drawn at (anchor + offset), interpolated to (anchor)
+   * by impact. +X = right, -Y = up. Omit for effects that don't travel.
+   *
+   * EXTENSION POINT: reusable "offset-origin" for any future sky-drop effect.
+   */
+  originOffsetX?: number
+  originOffsetY?: number
+  /**
+   * When true the frame strip LOOPS continuously on a wall clock instead of
+   * playing once over the effect's progress 0→1. The effect's lifetime is still
+   * governed by the server (it stays in the snapshot until its duration
+   * elapses), so this is for effects that persist for a gameplay window and
+   * should keep animating — e.g. a burning crater that smolders for a burn
+   * duration. Omit/false for the default play-once behavior.
+   *
+   * EXTENSION POINT: any persistent looping ground/aura effect sets this.
+   */
+  loop?: boolean
 }
 
 export interface EffectSpriteSet {
@@ -34,6 +65,10 @@ export interface EffectSpriteSet {
   offsetY: number
   displayScale: number
   loaded: boolean
+  impactFrame?: number
+  originOffsetX?: number
+  originOffsetY?: number
+  loop?: boolean
 }
 
 const manifestGlob = import.meta.glob<EffectManifest>(
@@ -76,6 +111,10 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
     // `loaded` is checked lazily at draw time via imageReady(); the flag here
     // is a quick "did we even find a sheet URL?" sentinel.
     loaded: !!sheetUrl,
+    impactFrame: manifest.impactFrame,
+    originOffsetX: manifest.originOffsetX,
+    originOffsetY: manifest.originOffsetY,
+    loop: manifest.loop,
   })
 }
 

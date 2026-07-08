@@ -1,0 +1,8 @@
+{
+  "frameWidth": 64,
+  "frameHeight": 64,
+  "frames": 4,
+  "sheet": "sheet.png",
+  "impactFrame": 1,
+  "loop": true
+}

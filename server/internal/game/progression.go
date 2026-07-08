@@ -90,6 +90,7 @@ type pathModifierDef struct {
 	Path                  string
 	Rank                  string
 	MaxHPMultiplier       float64
+	MaxMPMultiplier       float64
 	DamageMultiplier      float64
 	AttackSpeedMultiplier float64
 	MoveSpeedMultiplier   float64
@@ -119,7 +120,7 @@ const (
 
 // identityPathModifier is returned for units with no path or unknown path/rank combos.
 var identityPathModifier = pathModifierDef{
-	MaxHPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, AttackRangeMultiplier: 1.0, Armor: 0,
+	MaxHPMultiplier: 1.0, MaxMPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, AttackRangeMultiplier: 1.0, Armor: 0,
 }
 
 // Per-path stat multipliers live in JSON — one file per path under
@@ -543,7 +544,10 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	// zone reverts the pool; mana fraction is preserved across the change.
 	if def, ok := getUnitDef(unit.UnitType); ok && def.MaxMana > 0 {
 		mnAdd, mnMul := s.playerStatModifierLocked(unit.OwnerID, statMaxMana)
-		newMaxMana := maxInt(0, int(math.Round((float64(def.MaxMana)+mnAdd)*mnMul)))
+		// Path/rank max-mana multiplier scales the catalog base first (mirrors the
+		// MaxHP path multiplier above), then zone-aura add/mul apply on top.
+		baseMana := float64(def.MaxMana) * pathDef.MaxMPMultiplier
+		newMaxMana := maxInt(0, int(math.Round((baseMana+mnAdd)*mnMul)))
 		if newMaxMana != unit.MaxMana {
 			manaFraction := 1.0
 			if unit.MaxMana > 0 {

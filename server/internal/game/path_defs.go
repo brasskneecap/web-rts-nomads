@@ -93,6 +93,10 @@ type pathCatalogFile struct {
 // override wins — see applyRankModifiersLocked for the resolution order.
 type pathRankStatsJSON struct {
 	MaxHPMultiplier       float64 `json:"maxHPMultiplier"`
+	// MaxMPMultiplier scales the unit def's catalog MaxMana for this (path, rank).
+	// Optional: omitted / zero defaults to 1.0 at load (so non-caster paths that
+	// never author it don't zero a caster's pool). Applied in applyRankModifiersLocked.
+	MaxMPMultiplier       float64 `json:"maxMPMultiplier"`
 	DamageMultiplier      float64 `json:"damageMultiplier"`
 	AttackSpeedMultiplier float64 `json:"attackSpeedMultiplier"`
 	MoveSpeedMultiplier   float64 `json:"moveSpeedMultiplier"`
@@ -214,9 +218,9 @@ func ListPathsByUnitType() map[string][]string {
 // If you want the Vanguard or Berserker curve tuned instead, edit the file
 // under catalog/units/<faction>/<unit>/paths/ — those ARE JSON-configurable.
 var defaultRankCurve = map[string]pathModifierDef{
-	unitRankBronze: {Path: unitPathNone, Rank: unitRankBronze, MaxHPMultiplier: 1.10, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},
-	unitRankSilver: {Path: unitPathNone, Rank: unitRankSilver, MaxHPMultiplier: 1.20, DamageMultiplier: 1.25, AttackSpeedMultiplier: 1.10, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},
-	unitRankGold:   {Path: unitPathNone, Rank: unitRankGold, MaxHPMultiplier: 1.35, DamageMultiplier: 1.50, AttackSpeedMultiplier: 1.25, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},
+	unitRankBronze: {Path: unitPathNone, Rank: unitRankBronze, MaxHPMultiplier: 1.10, MaxMPMultiplier: 1.0, DamageMultiplier: 1.10, AttackSpeedMultiplier: 1.00, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},
+	unitRankSilver: {Path: unitPathNone, Rank: unitRankSilver, MaxHPMultiplier: 1.20, MaxMPMultiplier: 1.0, DamageMultiplier: 1.25, AttackSpeedMultiplier: 1.10, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},
+	unitRankGold:   {Path: unitPathNone, Rank: unitRankGold, MaxHPMultiplier: 1.35, MaxMPMultiplier: 1.0, DamageMultiplier: 1.50, AttackSpeedMultiplier: 1.25, MoveSpeedMultiplier: 1.00, AttackRangeMultiplier: 1.0, Armor: 0},
 }
 
 func pathModifierKey(path, rank string) string {
@@ -381,10 +385,18 @@ func init() {
 					if attackRangeMult <= 0 {
 						attackRangeMult = 1.0
 					}
+					// Max-mana multiplier is optional: omitted / zero ⇒ 1.0, so a
+					// non-caster path that never authors it does not zero a caster's
+					// pool (and casters that don't tune mana keep the catalog value).
+					maxMPMult := stats.MaxMPMultiplier
+					if maxMPMult <= 0 {
+						maxMPMult = 1.0
+					}
 					pathModifiersByKey[key] = pathModifierDef{
 						Path:                  file.Path,
 						Rank:                  rankName,
 						MaxHPMultiplier:       stats.MaxHPMultiplier,
+						MaxMPMultiplier:       maxMPMult,
 						DamageMultiplier:      stats.DamageMultiplier,
 						AttackSpeedMultiplier: stats.AttackSpeedMultiplier,
 						MoveSpeedMultiplier:   stats.MoveSpeedMultiplier,

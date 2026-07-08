@@ -11,11 +11,12 @@ func containsStr(xs []string, want string) bool {
 	return false
 }
 
-// The real embedded bronze pool contains exactly the authored spells;
-// silver/gold are empty.
+// The real embedded bronze pool contains exactly the authored spells. Silver
+// shares the same pool (cumulative Bronze∪Silver); Gold is the perk tier and
+// grants no pool spell (empty).
 func TestArchMageBronzePool_Contents(t *testing.T) {
 	bronze := spellPoolFor("arch_mage", "bronze")
-	want := []string{"fireball", "chain_lightning", "arcane_orb", "shatter"}
+	want := []string{"fireball", "chain_lightning", "arcane_orb", "shatter", "meteor"}
 	if len(bronze) != len(want) {
 		t.Fatalf("bronze pool = %v; want %v", bronze, want)
 	}
@@ -27,11 +28,13 @@ func TestArchMageBronzePool_Contents(t *testing.T) {
 			t.Errorf("bronze pool spell %q has no registered AbilityDef", id)
 		}
 	}
-	if got := spellPoolFor("arch_mage", "silver"); len(got) != 0 {
-		t.Errorf("silver pool = %v; want empty", got)
+	// Silver shares the pool — it inherits the full bronze list (Bronze∪Silver).
+	if silver := spellPoolFor("arch_mage", "silver"); len(silver) != len(want) {
+		t.Errorf("silver pool = %v; want the shared bronze list %v", silver, want)
 	}
-	if got := spellPoolFor("arch_mage", "gold"); got != nil {
-		t.Errorf("gold pool = %v; want nil (unauthored)", got)
+	// Gold grants no pool spell (perk tier).
+	if gold := spellPoolFor("arch_mage", "gold"); len(gold) != 0 {
+		t.Errorf("gold pool = %v; want empty (Gold is the perk tier)", gold)
 	}
 }
 

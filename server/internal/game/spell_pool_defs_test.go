@@ -37,14 +37,15 @@ func TestSpellPools_UnknownRankRejected(t *testing.T) {
 	}
 }
 
-// A missing archetype/rank cell resolves to an empty pool via spellPoolFor
-// (exercised against the real embedded catalog).
+// A missing archetype resolves to a nil pool via spellPoolFor. Gold resolves to
+// an empty pool for arch_mage: it is the perk tier and grants no pool spell
+// (the shared pool spans Bronze+Silver only).
 func TestSpellPools_MissingCellEmpty(t *testing.T) {
 	if got := spellPoolFor("no_such_archetype", "bronze"); got != nil {
 		t.Errorf("missing archetype = %v; want nil", got)
 	}
-	if got := spellPoolFor("arch_mage", "gold"); got != nil {
-		t.Errorf("missing rank cell = %v; want nil", got)
+	if got := spellPoolFor("arch_mage", "gold"); len(got) != 0 {
+		t.Errorf("gold pool = %v; want empty (Gold is the perk tier, grants no spell)", got)
 	}
 }
 

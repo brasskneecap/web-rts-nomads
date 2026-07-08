@@ -365,6 +365,22 @@ type Unit struct {
 	CastTimeRemaining float64
 	LastCastFailure   string
 
+	// GlobalCooldownRemaining is the shared "global cooldown" (GCD): initiating
+	// ANY ability sets it to abilityGlobalCooldownSeconds, and no ability (manual
+	// or auto-cast, including the same one) may be initiated until it decays to 0.
+	// This spaces out a unit's abilities so a caster with several ready spells
+	// uses them one after another rather than simultaneously. Ticked down in
+	// tickUnitAbilityCooldownsLocked.
+	GlobalCooldownRemaining float64
+
+	// Point (ground-target) cast in progress. When CastIsPoint is true the cast
+	// resolves at a world point (CastPointX/Y) rather than a unit target — see
+	// tickUnitCastLocked. Set by beginAbilityCastAtPointLocked for timed point
+	// casts; cleared by clearUnitCastLocked.
+	CastIsPoint bool
+	CastPointX  float64
+	CastPointY  float64
+
 	// Active channel state (channeled abilities — first in-game: siphon_life).
 	// ChannelAbilityID == "" ⇒ not channeling. Channels and one-shot casts
 	// are mutually exclusive: a unit with ChannelAbilityID set has no
@@ -956,6 +972,14 @@ type GameState struct {
 	Traps      []*Trap
 	nextTrapID int
 
+	// GroundHazards is the set of active delayed-impact / lingering-burn ground
+	// zones (Meteor and future sky-drop spells). Server-only: never serialized —
+	// the visual is a client effect and damage rides the authoritative pipeline.
+	// Spawned by spawnGroundHazardLocked; ticked by tickGroundHazardsLocked in
+	// Update (after traps, before drainPendingDeaths).
+	GroundHazards      []*GroundHazard
+	nextGroundHazardID int
+
 	// Projectiles is the set of in-flight ranged attacks. Ticked once per
 	// Update() after tickUnitCombatLocked so freshly-fired shots decay on the
 	// next tick, not their birth tick. Damage and all on-hit perk triggers
@@ -1265,6 +1289,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		nextUnitID:                1,
 		nextBannerID:              1,
 		nextTrapID:                1,
+		nextGroundHazardID:        1,
 		nextProjectileID:          1,
 		matchSeed:                 seed,
 		rngPerks:                  mrand.New(mrand.NewSource(seed ^ saltPerks)),
@@ -2757,7 +2782,8 @@ func (s *GameState) Update(dt float64) {
 	profileSection("trapEffects", func() { s.tickTrapEffectsLocked(dt) })                   // zone effects + trigger detection
 	profileSection("trapperSilverDebuffs", func() { s.tickTrapperSilverDebuffsLocked(dt) }) // barbed ramp, lasting_flames exit, burn DoT
 	profileSection("banners", func() { s.tickBannersLocked(dt) })
-	profileSection("traps", func() { s.tickTrapsLocked(dt) }) // lifetime decay + triggered cull
+	profileSection("traps", func() { s.tickTrapsLocked(dt) })                 // lifetime decay + triggered cull
+	profileSection("groundHazards", func() { s.tickGroundHazardsLocked(dt) }) // delayed-impact + lingering burn zones
 	// Drain the per-tick death queue. Must run AFTER all combat/trap/projectile
 	// ticks have finished so every HP=0 unit from indirect damage paths (Shared
 	// Pain, pain_share redirect, retaliation) is cleaned up before the per-unit

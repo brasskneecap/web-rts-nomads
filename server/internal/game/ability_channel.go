@@ -70,6 +70,9 @@ func (s *GameState) beginAbilityChannelLocked(caster *Unit, abilityID string, ta
 	if caster.CastAbilityID != "" || caster.ChannelAbilityID != "" {
 		return s.failCastLocked(caster, castFailAlreadyCasting)
 	}
+	if caster.GlobalCooldownRemaining > 0 {
+		return s.failCastLocked(caster, castFailGlobalCooldown)
+	}
 	if !s.canAbilityTargetUnitLocked(def, caster, target) {
 		return s.failCastLocked(caster, castFailInvalidTarget)
 	}
@@ -97,6 +100,7 @@ func (s *GameState) beginAbilityChannelLocked(caster *Unit, abilityID string, ta
 		}
 		caster.AbilityCooldowns[abilityID] = cdDuration
 	}
+	armAbilityGlobalCooldownLocked(caster)
 
 	// Set channel state. ChannelNextTickIn starts at TickIntervalSeconds so
 	// the first effect tick fires after one full interval has elapsed. This

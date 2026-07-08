@@ -91,7 +91,18 @@ func (s *GameState) seedDefaultAutoCastLocked(unit *Unit) {
 //
 // Caller holds s.mu.
 func (s *GameState) tickUnitAbilityCooldownsLocked(unit *Unit, dt float64) {
-	if unit == nil || len(unit.AbilityCooldowns) == 0 {
+	if unit == nil {
+		return
+	}
+	// Global cooldown decays independently of the per-ability cooldown map (a
+	// unit can be on GCD with no per-ability cooldown running, e.g. after an
+	// instant zero-cooldown ability).
+	if unit.GlobalCooldownRemaining > 0 {
+		if unit.GlobalCooldownRemaining -= dt; unit.GlobalCooldownRemaining < 0 {
+			unit.GlobalCooldownRemaining = 0
+		}
+	}
+	if len(unit.AbilityCooldowns) == 0 {
 		return
 	}
 	for _, id := range unit.Abilities {
@@ -136,6 +147,11 @@ func (s *GameState) tickUnitAutoCastLocked(unit *Unit) {
 	}
 	// A cast in progress blocks auto-cast — don't queue/stack another.
 	if unit.CastAbilityID != "" {
+		return
+	}
+	// Global cooldown from a recent cast blocks auto-cast, so a unit with
+	// several ready abilities fires them spaced out rather than simultaneously.
+	if unit.GlobalCooldownRemaining > 0 {
 		return
 	}
 	// A player-issued Move command suppresses auto-cast for the duration of
@@ -235,6 +251,19 @@ func (s *GameState) abilityStatesLocked(unit *Unit) []protocol.AbilitySnapshot {
 		if !ok {
 			continue
 		}
+		// Cooldown shown to the client = the ability's own cooldown, but with the
+		// global cooldown folded in so EVERY castable ability shows a brief
+		// clock-wipe during the ~1s GCD after any cast (otherwise a GCD-blocked
+		// click looks like it does nothing). The own cooldown wins when it is
+		// longer; otherwise the GCD drives a short shared wipe of length
+		// abilityGlobalCooldownSeconds. Passives are never castable (and are
+		// hidden from the castable row), so they don't take the GCD wipe.
+		cdRemaining := unit.AbilityCooldowns[id]
+		cdTotal := def.EffectiveCooldown()
+		if !def.IsPassive() && unit.GlobalCooldownRemaining > cdRemaining {
+			cdRemaining = unit.GlobalCooldownRemaining
+			cdTotal = abilityGlobalCooldownSeconds
+		}
 		snap := protocol.AbilitySnapshot{
 			ID:               def.ID,
 			DisplayName:      def.DisplayName,
@@ -247,8 +276,9 @@ func (s *GameState) abilityStatesLocked(unit *Unit) []protocol.AbilitySnapshot {
 			// the client's wipe fraction (remaining / total) is consistent with
 			// the actual decay. For Heal (cast=1, cd=0) this surfaces 1s of
 			// visible cooldown that doubles as a "you're casting" indicator.
-			CooldownRemaining: unit.AbilityCooldowns[id],
-			CooldownTotal:     def.EffectiveCooldown(),
+			// GCD is folded in above so it shows on every ability.
+			CooldownRemaining: cdRemaining,
+			CooldownTotal:     cdTotal,
 			// Channeling is true when this ability is the unit's active channel.
 			// The action bar uses this to render the "channeling in progress" state.
 			Channeling: unit.ChannelAbilityID == id,

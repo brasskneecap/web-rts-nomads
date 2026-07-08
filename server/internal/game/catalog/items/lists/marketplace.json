@@ -10,6 +10,9 @@
     "potion_common_heal",
     "rusty_shield",
     "steel_shield",
-    "elven_cloak"
+    "elven_cloak",
+    "fire_ring",
+    "ice_ring",
+    "lightning_ring"
   ]
 }

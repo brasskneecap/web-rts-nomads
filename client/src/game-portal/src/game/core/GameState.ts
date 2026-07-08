@@ -3938,11 +3938,19 @@ function getPerkActionItems(
   if (extraBronze === 0) {
     // Standard 3-cell layout: bronze, silver, gold. A rank with a learned
     // spell-slot spell shows that castable spell; otherwise the granted perk
-    // (perkIds[i]) or a locked placeholder.
-    return PERK_RANKS.map((rank, i) => {
+    // for that rank, or a locked placeholder.
+    //
+    // The perk for a cell is found by its DEFINITION rank, not by slot index:
+    // a unit whose earlier tiers grant no perk (e.g. the Arch Mage, whose
+    // bronze/silver tiers are spell slots and only gold grants a perk) has that
+    // perk appended at perkIds[0], not perkIds[2]. Matching by rank keeps the
+    // perk in its correct cell regardless of how many earlier tiers were empty,
+    // and is consistent with how spell slots are placed (spellSlotByRank).
+    return PERK_RANKS.map((rank) => {
       const slot = slots.get(rank)
       if (slot) return buildSpellSlotCell(slot, rank, activeMode, castAbilityId)
-      return buildPerkSlot(unit, unit.perkIds?.[i], rank, rank)
+      const perkId = unit.perkIds?.find((id) => PERK_DEF_MAP.get(id)?.rank === rank)
+      return buildPerkSlot(unit, perkId, rank, rank)
     })
   }
 

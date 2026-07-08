@@ -81,15 +81,44 @@ func mustLoadSpellPools(data []byte) map[string]map[string][]string {
 	return pools
 }
 
-// spellPoolFor returns the ordered candidate ability ids for (archetype, rank),
-// or nil when that cell has no pool. The returned slice is the loader's backing
-// array — callers MUST NOT mutate it.
+// spellPoolFor returns the candidate ability ids an archetype may roll at `rank`.
+// The shared spell pool spans BRONZE and SILVER only, cumulatively: Bronze rolls
+// from the Bronze list; Silver rolls from Bronze ∪ Silver (so the two ranks
+// share one pool). A single authored list under "bronze" is therefore rolled at
+// both promotions, and the no-duplicate logic in spell_pool_roll.go ensures each
+// rank grants a distinct spell.
+//
+// GOLD intentionally grants NO pool spell (resolves to an empty pool ⇒ rolls
+// nothing): Gold is the Arch Mage's PERK tier — a set of perks that buff spells
+// and the caster — not a third learnable spell. Returns a freshly built,
+// deduped, order-stable slice (bronze order, then any new silver ids); callers
+// may sort it (the roll does). nil when the archetype has no pool, or for Gold /
+// any unknown rank.
 func spellPoolFor(archetype, rank string) []string {
 	byRank, ok := spellPoolsByArchetype[archetype]
 	if !ok {
 		return nil
 	}
-	return byRank[rank]
+	var order []string
+	switch rank {
+	case unitRankBronze:
+		order = []string{unitRankBronze}
+	case unitRankSilver:
+		order = []string{unitRankBronze, unitRankSilver}
+	default:
+		return nil // Gold (perk tier) and any unknown rank grant no pool spell.
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, r := range order {
+		for _, id := range byRank[r] {
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	return out
 }
 
 // ListSpellPools returns a deep copy of every pool, sorted-key stable, for

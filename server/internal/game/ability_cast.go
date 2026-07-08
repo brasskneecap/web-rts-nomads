@@ -35,7 +35,23 @@ const (
 	castFailOutOfRange     = "Target is out of range."
 	castFailNotEnoughMana  = "Not enough mana."
 	castFailTargetLost     = "Target lost." // async: target died / left range mid-cast
+	castFailGlobalCooldown = "Not ready yet." // global cooldown from a recent cast still active
 )
+
+// abilityGlobalCooldownSeconds is the global cooldown (GCD) applied to a unit
+// the instant it initiates ANY ability cast: no other ability — nor the same
+// one — can be initiated until it elapses. This spaces a unit's abilities out so
+// one with several ready spells casts them one after another instead of
+// simultaneously. Applies to both manual and auto-cast. It is a floor, not a
+// replacement for per-ability cooldowns (which are usually longer).
+const abilityGlobalCooldownSeconds = 1.0
+
+// armAbilityGlobalCooldownLocked starts the caster's global cooldown. Called at
+// the commit point of every cast entry (one-shot, point, channel), parallel to
+// where the per-ability cooldown is armed. Caller holds s.mu.
+func armAbilityGlobalCooldownLocked(caster *Unit) {
+	caster.GlobalCooldownRemaining = abilityGlobalCooldownSeconds
+}
 
 // containsAbility reports whether the unit has abilityID in its ability list.
 func containsAbility(u *Unit, abilityID string) bool {
@@ -88,6 +104,9 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 	if caster.CastAbilityID != "" {
 		return s.failCastLocked(caster, castFailAlreadyCasting)
 	}
+	if caster.GlobalCooldownRemaining > 0 {
+		return s.failCastLocked(caster, castFailGlobalCooldown)
+	}
 	if !s.canAbilityTargetUnitLocked(def, caster, target) {
 		return s.failCastLocked(caster, castFailInvalidTarget)
 	}
@@ -126,6 +145,7 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 		}
 		caster.AbilityCooldowns[abilityID] = cdDuration
 	}
+	armAbilityGlobalCooldownLocked(caster)
 
 	// Zero / negative cast time ⇒ instant ability (no lock, resolve now).
 	if eff.CastTime <= 0 {
@@ -143,9 +163,12 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 
 // beginAbilityCastAtPointLocked casts a GROUND/POINT-targeted ability
 // (TargetsPoint) toward world point (x,y). Unlike the unit-target path there is
-// no target unit to re-resolve — the direction is fixed at cast time. This pass
-// resolves point casts immediately (arcane_orb has castTime 0); a non-zero cast
-// time would need mid-cast point storage, which no point ability uses yet.
+// no target unit to re-resolve — the direction is fixed at cast time. A
+// zero cast-time ability (arcane_orb, shatter) resolves immediately, same as
+// before. A non-zero cast-time ability (meteor) locks the caster and stores
+// the point (CastIsPoint/CastPointX/Y); tickUnitCastLocked resolves it when
+// the timer elapses, mirroring the unit-target lifecycle in
+// beginAbilityCastLocked.
 //
 // Caller holds s.mu.
 func (s *GameState) beginAbilityCastAtPointLocked(caster *Unit, abilityID string, x, y float64) (bool, string) {
@@ -165,6 +188,9 @@ func (s *GameState) beginAbilityCastAtPointLocked(caster *Unit, abilityID string
 	if caster.CastAbilityID != "" {
 		return s.failCastLocked(caster, castFailAlreadyCasting)
 	}
+	if caster.GlobalCooldownRemaining > 0 {
+		return s.failCastLocked(caster, castFailGlobalCooldown)
+	}
 	eff := s.effectiveSpellLocked(caster, def)
 	if caster.CurrentMana < eff.ManaCost {
 		return s.failCastLocked(caster, castFailNotEnoughMana)
@@ -176,13 +202,31 @@ func (s *GameState) beginAbilityCastAtPointLocked(caster *Unit, abilityID string
 		}
 		caster.AbilityCooldowns[abilityID] = cd
 	}
+	armAbilityGlobalCooldownLocked(caster)
+	// Timed point cast: lock the caster and store the target point; resolution
+	// happens in tickUnitCastLocked when the timer elapses. Zero cast time keeps
+	// the prior behavior (resolve now). Mana is spent on completion, so an
+	// interrupted wind-up costs nothing (matches the unit-target path).
+	if eff.CastTime > 0 {
+		caster.CastAbilityID = abilityID
+		caster.CastIsPoint = true
+		caster.CastPointX = x
+		caster.CastPointY = y
+		caster.CastTimeRemaining = eff.CastTime
+		s.beginUnitCastingLocked(caster) // lock + "Casting" animation slot
+		return true, ""
+	}
 	s.resolveAbilityCastAtPointLocked(caster, def, eff, x, y)
 	return true, ""
 }
 
 // resolveAbilityCastAtPointLocked applies a completed point cast: spends mana
-// once, then fires the ability's point effect toward (x,y). Today the only
-// point ability is arcane_orb (a projectile + pull ⇒ traveling vortex).
+// once, then fires the ability's point effect toward (x,y). Three point
+// abilities exist today: arcane_orb (a projectile + pull ⇒ traveling vortex),
+// meteor (a delayed-impact GroundHazard ⇒ falling AoE + lingering burn), and
+// shatter (an instant hitscan AoE burst). The branches are mutually exclusive
+// and ordered so meteor's delayed-impact check runs before shatter's instant
+// AoE, since both match `Projectile=="" && Radius>0`.
 //
 // Caller holds s.mu.
 func (s *GameState) resolveAbilityCastAtPointLocked(caster *Unit, def AbilityDef, eff EffectiveSpell, x, y float64) {
@@ -197,6 +241,29 @@ func (s *GameState) resolveAbilityCastAtPointLocked(caster *Unit, def AbilityDef
 	// the clicked point, up to the ability's full cast-range distance.
 	if eff.PullStrength > 0 && def.Projectile != "" {
 		s.spawnArcaneOrbLocked(caster, x, y, def, eff, def.CastRange.Resolve(caster))
+	}
+
+	// Delayed-impact ground hazard (Meteor and future sky-drop spells). A point
+	// cast that declares an impact delay does NOT resolve its AoE instantly:
+	// instead it spawns a GroundHazard that falls, impacts once after
+	// ImpactDelaySeconds, then leaves a lingering burn. Data-driven off the def
+	// (no per-spell branch) — any ability with impactDelaySeconds > 0 and no
+	// projectile reuses this. The visual is a world-anchored effect whose sprite
+	// metadata drives the fall animation + per-frame render layering (client).
+	// Checked BEFORE the instant-AoE (Shatter) branch below since Meteor also
+	// matches `Projectile=="" && Radius>0` — the return keeps the two mutually
+	// exclusive.
+	//
+	// EXTENSION POINT: to add another delayed-AoE spell, author its ability JSON
+	// with impactDelay/burn fields + an effectAtPoint effect — nothing here changes.
+	if def.ImpactDelaySeconds > 0 && def.Projectile == "" {
+		cx, cy := clampPointToRange(caster.X, caster.Y, x, y, def.CastRange.Resolve(caster))
+		s.spawnGroundHazardLocked(caster, def, eff, cx, cy)
+		// World-anchored VFX at the impact point. Duration comes from the meteor
+		// EffectDef; impactDelay is authored to line up with the sprite's impact
+		// frame. Plays regardless of hits so a whiffed ground cast still reads.
+		s.playEffectAtPointLocked(def.EffectAtPoint, cx, cy, def.EffectScale)
+		return
 	}
 
 	// Instant point AoE (Shatter): a hitscan area burst at the clicked
@@ -233,6 +300,31 @@ func (s *GameState) playEffectAtPointLocked(effectID string, x, y, scale float64
 		scale = 1.0
 	}
 	s.queueEffectLocked(effectID, 0, x, y, scale, def.Duration, "")
+}
+
+// playEffectAtPointForDurationLocked is playEffectAtPointLocked with an explicit
+// duration override instead of the EffectDef's authored Duration. Use it when an
+// effect's lifetime must match a gameplay window rather than a fixed animation
+// length — e.g. Meteor's burning crater, which must persist exactly as long as
+// the GroundHazard's burn phase (authored on the ability, not the effect). The
+// EffectDef must still exist (fail-safe no-op otherwise, matching
+// playEffectAtPointLocked); its authored Duration is ignored here.
+//
+// Caller holds s.mu.
+func (s *GameState) playEffectAtPointForDurationLocked(effectID string, x, y, scale, duration float64) {
+	if effectID == "" {
+		return
+	}
+	if _, ok := getEffectDef(effectID); !ok {
+		return
+	}
+	if scale <= 0 {
+		scale = 1.0
+	}
+	if duration <= 0 {
+		duration = 1.0
+	}
+	s.queueEffectLocked(effectID, 0, x, y, scale, duration, "")
 }
 
 // clampPointToRange returns (px,py) moved to lie within `maxRange` of the
@@ -323,6 +415,18 @@ func (s *GameState) tickUnitCastLocked(unit *Unit, dt float64) {
 	if unit.HP <= 0 {
 		// Caster died mid-cast — just clear the cast bookkeeping (the unit is
 		// being removed anyway).
+		s.clearUnitCastLocked(unit)
+		return
+	}
+	// Point (ground) casts have no target unit to re-resolve — the aim point was
+	// fixed at cast start. Count down and resolve at the stored world point.
+	if unit.CastIsPoint {
+		unit.CastTimeRemaining -= dt
+		if unit.CastTimeRemaining > 0 {
+			return // still casting; Part 5 guard keeps Status pinned to "Casting"
+		}
+		eff := s.effectiveSpellLocked(unit, def)
+		s.resolveAbilityCastAtPointLocked(unit, def, eff, unit.CastPointX, unit.CastPointY)
 		s.clearUnitCastLocked(unit)
 		return
 	}
@@ -507,5 +611,8 @@ func (s *GameState) clearUnitCastLocked(unit *Unit) {
 	unit.CastAbilityID = ""
 	unit.CastTargetID = 0
 	unit.CastTimeRemaining = 0
+	unit.CastIsPoint = false
+	unit.CastPointX = 0
+	unit.CastPointY = 0
 	s.endUnitCastingLocked(unit)
 }

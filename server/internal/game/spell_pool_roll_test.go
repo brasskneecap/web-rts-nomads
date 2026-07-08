@@ -141,6 +141,42 @@ func TestSpellPoolRoll_ExhaustedPoolAssignsNothing(t *testing.T) {
 	}
 }
 
+// The Arch Mage pool is shared across ranks: Silver rolls from the same set as
+// Bronze (cumulative), so Bronze and Silver together grant two DISTINCT spells
+// drawn from one pool.
+func TestArchMagePool_SharedAcrossBronzeAndSilver(t *testing.T) {
+	bronze := spellPoolFor("arch_mage", "bronze")
+	silver := spellPoolFor("arch_mage", "silver")
+	if len(silver) < len(bronze) {
+		t.Fatalf("silver pool (%v) must include the whole bronze pool (%v)", silver, bronze)
+	}
+	for _, id := range bronze {
+		if !containsStr(silver, id) {
+			t.Errorf("shared pool: silver missing bronze spell %q (silver=%v)", id, silver)
+		}
+	}
+	if !containsStr(bronze, "meteor") {
+		t.Errorf("meteor should be in the shared pool; bronze=%v", bronze)
+	}
+
+	// A unit promoted to silver gets two distinct pool spells (one per rank).
+	s := newProjectileTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := spawnProjTestUnit(t, s, "p1", 100, 100)
+	u.ProgressionPath = "arch_mage"
+	u.Rank = "silver"
+	u.Abilities = nil
+	s.rollUnitPoolSpellsLocked(u)
+	b, s2 := u.PoolSpellsByRank["bronze"], u.PoolSpellsByRank["silver"]
+	if b == "" || s2 == "" {
+		t.Fatalf("expected a bronze AND a silver pool pick; got bronze=%q silver=%q", b, s2)
+	}
+	if b == s2 {
+		t.Errorf("bronze and silver picks must be distinct; both = %q", b)
+	}
+}
+
 // An empty/exhausted pool must consume NO RNG (determinism: it must not perturb
 // the rngPerks stream). Roll with an empty pool then draw; compare to a control
 // state that only draws.

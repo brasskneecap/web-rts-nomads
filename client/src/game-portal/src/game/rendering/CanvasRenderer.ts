@@ -143,6 +143,10 @@ export function getMinimapBounds(
 // overlapping the map. The map insets by the thin rail so the rail stays
 // visible around it.
 const MINIMAP_FRAME_RAIL = 12
+// Milliseconds per frame for looping effects (manifest `loop: true`). Wall-clock
+// paced (like projectile sprites) so a persistent effect keeps animating for its
+// whole server-governed lifetime.
+const EFFECT_LOOP_FRAME_MS = 120
 const minimapFrameImage: HTMLImageElement | null =
   typeof Image !== 'undefined' ? Object.assign(new Image(), { src: mainWindowPanelUrl }) : null
 
@@ -506,10 +510,15 @@ export class CanvasRenderer {
     // Loot-drop chests render after banners but before units so the collecting
     // unit visually passes over the chest (unit z-order wins).
     this.drawLootDrops()
+    // Ground-layer effects: frames a per-frame manifest marks as "below units"
+    // (e.g. a meteor's impact + burning crater) render here, beneath the
+    // Y-sorted unit/building band, so they read as on-the-ground. Effects with
+    // no per-frame layering are skipped here and drawn in the above-units pass.
+    this.drawEffects(this.state.effects, units, 'below')
     this.drawUnits(units)
     // Effects sit on top of the caster body but underneath projectiles so
     // arrows and bolts always read clearly over the VFX layer.
-    this.drawEffects(this.state.effects, units)
+    this.drawEffects(this.state.effects, units, 'above')
     // Drawn after units so arrows render on top of the firing unit's body.
     this.drawProjectiles(this.state.projectiles)
     // Channeled beams render at the same z-layer as projectiles so they sit
@@ -3036,7 +3045,11 @@ export class CanvasRenderer {
    * with a sprite-sheet animation later. Variant-keyed so future perks
    * (frost, holy, etc.) can override colours without changing this loop.
    */
-  private drawEffects(effects: EffectSnapshot[], interpolatedUnits: Unit[]) {
+  private drawEffects(
+    effects: EffectSnapshot[],
+    interpolatedUnits: Unit[],
+    pass: 'above' | 'below' = 'above',
+  ) {
     if (effects.length === 0) return
 
     // Build a per-frame id→unit index so anchor lookups are O(1).
@@ -3074,19 +3087,59 @@ export class CanvasRenderer {
         wy = effect.y
       }
 
-      // Effects play once from frame 0 to frames-1 as progress goes 0→1.
-      const frameIndex = Math.min(frames - 1, Math.floor(effect.progress * frames))
+      // Frame selection. Looping effects (e.g. a burning crater that persists
+      // for a burn window) cycle their frames on a wall clock, decoupled from
+      // progress — the effect's LIFETIME is still governed by the server (it
+      // stays in the snapshot until its duration elapses). Non-looping effects
+      // play once, frame 0→frames-1 as progress goes 0→1.
+      const frameIndex = sprite.loop
+        ? Math.floor(performance.now() / EFFECT_LOOP_FRAME_MS) % frames
+        : Math.min(frames - 1, Math.floor(effect.progress * frames))
       const sx = frameIndex * frameWidth
       const sy = 0
+
+      // Per-frame render layer (data-driven via the manifest's impactFrame).
+      // Frames before the impact frame are "above units" (in the air); the
+      // impact frame onward is "below units" (on the ground). Effects without
+      // impactFrame are always "above" — legacy behavior preserved.
+      // EXTENSION POINT: the only place frame→layer is decided.
+      const impactIdx =
+        sprite.impactFrame && sprite.impactFrame > 0
+          ? sprite.impactFrame - 1
+          : Infinity
+      const frameLayer = frameIndex >= impactIdx ? 'below' : 'above'
+      if (frameLayer !== pass) {
+        continue
+      }
+
+      // Offset-origin fall: during pre-impact frames the sprite is drawn offset
+      // toward its spawn point (upper-right sky) and slides to the anchor by
+      // impact. Zero when the effect declares no origin offset.
+      // EXTENSION POINT: reusable for any "falls from an offset" effect.
+      let fallDX = 0
+      let fallDY = 0
+      if (
+        impactIdx !== Infinity &&
+        (sprite.originOffsetX || sprite.originOffsetY)
+      ) {
+        const impactProgress = impactIdx / frames // fraction of anim spent falling
+        const fallT =
+          impactProgress > 0
+            ? Math.min(1, Math.max(0, effect.progress / impactProgress))
+            : 1
+        fallDX = (sprite.originOffsetX ?? 0) * (1 - fallT)
+        fallDY = (sprite.originOffsetY ?? 0) * (1 - fallT)
+      }
 
       const scale = effect.sizeScale ?? 1.0
       const dw = frameWidth * scale
       const dh = frameHeight * scale
       // Center the frame on the anchor world position, then nudge by the
       // sprite-authored offset (scaled by sizeScale so the visual relationship
-      // holds when a perk over/undersizes the effect).
-      const dx = wx - dw / 2 + sprite.offsetX * scale
-      const dy = wy - dh / 2 + sprite.offsetY * scale
+      // holds when a perk over/undersizes the effect), plus the fall-offset
+      // delta for effects that visually travel from a sky origin.
+      const dx = wx - dw / 2 + sprite.offsetX * scale + fallDX
+      const dy = wy - dh / 2 + sprite.offsetY * scale + fallDY
 
       const prevSmoothing = ctx.imageSmoothingEnabled
       ctx.imageSmoothingEnabled = false

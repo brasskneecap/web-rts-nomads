@@ -15,6 +15,7 @@
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.10,
+      "maxMPMultiplier": 1.20,
       "damageMultiplier": 1.10,
       "attackSpeedMultiplier": 1.00,
       "moveSpeedMultiplier": 1.00,
@@ -23,6 +24,7 @@
     },
     "silver": {
       "maxHPMultiplier": 1.20,
+      "maxMPMultiplier": 1.20,
       "damageMultiplier": 1.25,
       "attackSpeedMultiplier": 1.10,
       "moveSpeedMultiplier": 1.00,
@@ -31,6 +33,7 @@
     },
     "gold": {
       "maxHPMultiplier": 1.35,
+      "maxMPMultiplier": 1.35,
       "damageMultiplier": 1.50,
       "attackSpeedMultiplier": 1.25,
       "moveSpeedMultiplier": 1.00,

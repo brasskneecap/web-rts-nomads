@@ -8,7 +8,7 @@
   "chainCount": 2,
   "bounceRange": 220,
   "bounceDamageFalloff": 5,
-  "castRange": "match_attack_range",
+  "castRange": 400,
   "castTime": 0.5,
   "cooldown": 5,
   "damageType": "lightning",

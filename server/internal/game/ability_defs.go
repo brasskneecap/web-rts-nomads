@@ -286,6 +286,12 @@ type AbilityDef struct {
 	// burst can be matched to the spell's area radius (the effect art is a
 	// fixed-size sheet). 0 / absent ⇒ 1× (the sheet's native size). Visual only.
 	EffectScale float64 `json:"effectScale,omitempty"`
+	// BurnEffectAtPoint is a SECOND, looping ground effect played at the impact
+	// point for the burn duration (in addition to EffectAtPoint's fall/impact
+	// animation) — e.g. Meteor's smoldering crater. Queued by the GroundHazard at
+	// impact (not at cast) and sized with EffectScale so it lines up with the
+	// meteor's own impact frames. Empty ⇒ no lingering VFX. Visual only.
+	BurnEffectAtPoint string `json:"burnEffectAtPoint,omitempty"`
 
 	// Projectile is the optional projectile-def id (catalog/projectiles/<id>)
 	// an offensive ability launches at its target on resolve. When set (and
@@ -346,6 +352,22 @@ type AbilityDef struct {
 	// modifier-eligible today (same discipline as BounceRange).
 	SlowMultiplier      float64 `json:"slowMultiplier,omitempty"`
 	SlowDurationSeconds float64 `json:"slowDurationSeconds,omitempty"`
+
+	// ── Delayed-impact ground hazard (Meteor and future "sky-drop" spells) ──────
+	// These drive the generic GroundHazard entity (ground_hazard.go), spawned by
+	// resolveAbilityCastAtPointLocked when ImpactDelaySeconds > 0. Impact damage
+	// reuses DamageAmount; impact radius reuses Radius. Any future delayed-AoE +
+	// lingering-DoT spell reuses these without new code.
+	//
+	// ImpactDelaySeconds is the "fall time": seconds between cast resolution and
+	// the one-time impact AoE. Keep it ≈ effectDuration × (impactFrame-1)/frames
+	// so the falling sprite lands when damage lands (see the meteor effect).
+	ImpactDelaySeconds float64 `json:"impactDelaySeconds"`
+	// Burn (lingering ground zone) knobs. Active only when BurnDurationSeconds > 0.
+	BurnDurationSeconds     float64 `json:"burnDurationSeconds"`
+	BurnDamagePerTick       int     `json:"burnDamagePerTick"`
+	BurnTickIntervalSeconds float64 `json:"burnTickIntervalSeconds"`
+	BurnRadius              float64 `json:"burnRadius"`
 
 	// ── Passive charge-fire (arcane_missiles) ──────────────────────────────
 	// When Type == AbilityPassive and ChargeRequired > 0 this is an auto-firing
@@ -510,6 +532,15 @@ func loadAbilityDefs() map[string]AbilityDef {
 		}
 		if def.Category != "" && !IsValidAbilityCategory(def.Category) {
 			panic(rel + `: category "` + string(def.Category) + `" is not a registered ability category`)
+		}
+		// Delayed-impact spells: a configured burn needs a positive tick interval
+		// (else tickGroundHazardsLocked would advance its tick timer by 0 and loop)
+		// and an impact delay (there is no hazard to carry the burn otherwise).
+		if def.BurnDurationSeconds > 0 && def.ImpactDelaySeconds <= 0 {
+			panic(rel + ": burnDurationSeconds requires impactDelaySeconds > 0")
+		}
+		if def.BurnDurationSeconds > 0 && def.BurnTickIntervalSeconds <= 0 {
+			panic(rel + ": burnDurationSeconds requires burnTickIntervalSeconds > 0")
 		}
 		if _, dup := result[def.ID]; dup {
 			panic(rel + `: duplicate ability id "` + def.ID + `"`)

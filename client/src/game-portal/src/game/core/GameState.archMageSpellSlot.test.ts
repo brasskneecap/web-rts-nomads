@@ -83,3 +83,30 @@ describe('Arch Mage spell slots', () => {
     expect(perkCells.length).toBe(2)
   })
 })
+
+describe('Arch Mage gold perk cell', () => {
+  const GOLD_PERK = {
+    id: 'arcane_feedback',
+    displayName: 'Arcane Feedback',
+    icon: 'perk-arcane-feedback',
+    rank: 'gold',
+    config: {},
+  }
+
+  it('renders the granted gold perk in the GOLD cell even though it is the unit\'s only perk (perkIds[0])', () => {
+    // The Arch Mage learns spells at bronze/silver (spell slots) and has EMPTY
+    // bronze/silver perk pools, so its only perk is granted at gold rank — the
+    // server appends it at perkIds[0], not perkIds[2]. The gold perk cell must
+    // find it by its rank, not by slot index (which would look at perkIds[2]
+    // and wrongly render a locked placeholder).
+    initPerkDefs([GOLD_PERK])
+    const unit = makeArchMage([PASSIVE, BRONZE_SLOT])
+    unit.perkIds = ['arcane_feedback']
+
+    const actions = stateWith(unit).getSelectionSummary().actions
+    const goldCell = actions.find((a: ActionItem) => a.kind === 'perk' && a.perkRank === 'gold')
+    expect(goldCell).toBeTruthy()
+    expect(goldCell!.id).toBe('perk-arcane-feedback') // the perk icon, NOT the 'lock' placeholder
+    expect(goldCell!.tooltipTitle).toContain('Arcane Feedback')
+  })
+})

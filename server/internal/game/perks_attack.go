@@ -501,6 +501,13 @@ func (s *GameState) onPerkAttackDamageAppliedLocked(attacker, target *Unit, dama
 				s.healUnitLocked(attacker, heal)
 			}
 
+		case "arcane_feedback":
+			// Arch Mage gold: basic attacks restore a small amount of mana on a
+			// landed hit (the larger Arcane Missile on-hit restore lives in
+			// onArcaneMissileHitLocked). Routed through the shared restore entry
+			// point; feeds the same Arcane Charge loop as any mana gain.
+			s.addUnitManaLocked(attacker, int(def.Config["manaPerBasicAttack"]))
+
 		case "shield_bash":
 			// RNG-proc stun + slow + taunt on the target. onPerkAttackDamageAppliedLocked
 			// is only reached from the unit-vs-unit combat path (not building

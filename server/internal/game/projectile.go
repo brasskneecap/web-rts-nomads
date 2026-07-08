@@ -132,6 +132,13 @@ type Projectile struct {
 	// classify the damage as spell damage, matching the instant-cast path.
 	SourceKind string
 
+	// SourceAbilityID names the ability that spawned an ability bolt (set by
+	// fireAbilityProjectileLocked = def.ID). Empty on basic-attack and proc
+	// bolts. Used on land to identify which spell landed — e.g. Arcane Missile
+	// bolts (a charge-fire passive) route through the Arch Mage on-hit perk
+	// hooks. Informational only; does not affect damage.
+	SourceAbilityID string
+
 	// MinorDamage: when set on a SkipOnHitEffects (ability) bolt, its landed
 	// damage renders as a smaller side-falling popup (colored by DamageType)
 	// instead of the main floating number — see Arcane Missiles. The major
@@ -388,6 +395,7 @@ func (s *GameState) fireAbilityProjectileLocked(caster, target *Unit, def Abilit
 		Scale:               scale,
 		SkipOnHitEffects:    true,
 		SourceKind:          "ability",
+		SourceAbilityID:     def.ID,
 		MinorDamage:         def.MinorDamage,
 	})
 }
@@ -924,6 +932,19 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 		// On-hit burn: ignite the target with a fire DoT. No-op when the proc
 		// carries no burn. Credited to the firing unit (proj.OwnerUnitID).
 		s.applyProcBurnLocked(target.ID, proj.BurnDamagePerSecond, proj.BurnDurationSeconds, proj.OwnerUnitID)
+		// Arch Mage Gold perks trigger on an Arcane Missile hit. Gated to
+		// charge-fire passive bolts (Arcane Missiles) so ordinary ability bolts
+		// (fireball, arcane_bolt) don't fire the hooks; the per-perk reactions
+		// (mana feedback, item on-hit procs, Unstable Magic) each self-gate on
+		// the caster owning the perk. Fires whether or not this hit is lethal —
+		// a killing missile is still a hit.
+		if proj.SourceKind == "ability" && proj.SourceAbilityID != "" {
+			if adef, ok := getAbilityDef(proj.SourceAbilityID); ok && adef.IsChargeFirePassive() {
+				if caster := s.getUnitByIDLocked(proj.OwnerUnitID); caster != nil {
+					s.onArcaneMissileHitLocked(caster, target)
+				}
+			}
+		}
 		if target.HP <= 0 {
 			target.HP = 0
 			// Ability bolts defer removal + kill-XP to the attributed pending-death

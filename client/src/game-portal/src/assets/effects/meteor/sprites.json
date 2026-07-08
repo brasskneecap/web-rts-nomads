@@ -1,0 +1,10 @@
+{
+  "frameWidth": 64,
+  "frameHeight": 64,
+  "frames": 16,
+  "sheet": "sheet.png",
+  "displayScale": 1.6,
+  "impactFrame": 7,
+  "originOffsetX": 280,
+  "originOffsetY": -380
+}

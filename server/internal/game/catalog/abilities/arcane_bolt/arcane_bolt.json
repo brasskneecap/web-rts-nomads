@@ -5,7 +5,7 @@
   "category": "offensive",
   "manaCost": 8,
   "damageAmount": 50,
-  "castRange": "match_attack_range",
+  "castRange": 400,
   "castTime": 0.5,
   "cooldown": 2,
   "damageType": "arcane",

@@ -1,1 +1,25 @@
-[]
+[
+  {
+    "id": "arcane_feedback",
+    "displayName": "Arcane Feedback",
+    "icon": "perk-arcane-feedback",
+    "description": "Your Arcane Missiles and basic attacks restore mana to you when they hit an enemy.",
+    "tooltipTemplate": "Each Arcane Missile hit restores {manaPerHit} mana; each basic attack restores {manaPerBasicAttack}.",
+    "config": { "manaPerHit": 5, "manaPerBasicAttack": 2 }
+  },
+  {
+    "id": "arcane_conduit",
+    "displayName": "Arcane Conduit",
+    "icon": "perk-arcane-conduit",
+    "description": "Your Arcane Missiles can trigger your equipped items' on-hit effects.",
+    "tooltipTemplate": "Arcane Missiles can trigger your items' on-hit effects."
+  },
+  {
+    "id": "unstable_magic",
+    "displayName": "Unstable Magic",
+    "icon": "perk-unstable-magic",
+    "description": "Your Arcane Missiles have a chance to unleash one of your learned spells at reduced power.",
+    "tooltipTemplate": "{procChance%} chance on an Arcane Missile hit to cast a random learned spell at {effectiveness%} effectiveness.",
+    "config": { "procChance": 0.2, "effectiveness": 0.4 }
+  }
+]

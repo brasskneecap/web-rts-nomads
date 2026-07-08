@@ -20,5 +20,8 @@
   "casterAnimation": "Attacking",
   "effectAtPoint": "shatter",
   "effectScale": 1.8,
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "closest_enemy_in_range",
+  "defaultAutoCast": true,
   "icon": "TODO/abilities/shatter.png"
 }

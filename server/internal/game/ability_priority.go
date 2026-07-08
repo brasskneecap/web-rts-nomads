@@ -55,6 +55,26 @@ var abilityCategoryWeights = map[AbilityCategory]float64{
 	AbilityCategorySummon:    3.0,
 }
 
+// spellSlotRankAutoCastPriority is a small additive priority so that when a
+// caster has more than one auto-cast POOL spell ready in the same tick, the
+// higher-rank spell is preferred — for the Arch Mage, Silver over Bronze. Pool
+// spells commonly share a selector (closest_enemy_in_range) and thus resolve the
+// same target and score identically, so this is what actually breaks that tie.
+// Bounded and applied only above the activation floor (see caller), so it never
+// lifts a "not useful" (0-scored) buff/summon into a cast. Returns 0 for a
+// Bronze spell or any ability that isn't a learned pool spell (leaving prior
+// behaviour unchanged for single-spell casters).
+func spellSlotRankAutoCastPriority(unit *Unit, abilityID string) float64 {
+	switch spellSlotRankForAbilityLocked(unit, abilityID) {
+	case unitRankGold:
+		return 1.0
+	case unitRankSilver:
+		return 0.5
+	default:
+		return 0 // Bronze, or not a learned pool spell.
+	}
+}
+
 // scoreAutoCastCandidateLocked returns the priority score for casting def at
 // target. Caller holds s.mu; target is the non-nil within-tick unit the
 // ability's selector resolved.
@@ -62,21 +82,30 @@ func (s *GameState) scoreAutoCastCandidateLocked(unit *Unit, def AbilityDef, tar
 	if unit == nil || target == nil {
 		return 0
 	}
+	var score float64
 	switch def.Category {
 	case AbilityCategoryHeal:
-		return s.scoreHealCandidateLocked(unit, def, target)
+		score = s.scoreHealCandidateLocked(unit, def, target)
 	case AbilityCategoryOffensive:
-		return s.scoreOffensiveCandidateLocked(unit, def, target)
+		score = s.scoreOffensiveCandidateLocked(unit, def, target)
 	case AbilityCategoryBuffAlly:
-		return s.scoreBuffAllyCandidateLocked(unit, def, target)
+		score = s.scoreBuffAllyCandidateLocked(unit, def, target)
 	case AbilityCategorySummon:
-		return s.scoreSummonCandidateLocked(unit, def, target)
+		score = s.scoreSummonCandidateLocked(unit, def, target)
 	default:
 		// Empty / unregistered category: a defined conservative fallback that
 		// still clears minActivationScore for a lone valid-target candidate, so
 		// an uncategorised autocast ability behaves exactly as first-ready did.
-		return candidateBaseScore
+		score = candidateBaseScore
 	}
+	// Higher-rank pool spells win when several are ready at once (Silver over
+	// Bronze). Only applied above the activation floor so a "not useful"
+	// buff_ally/summon (score 0) is never lifted into a cast, preserving the
+	// no-regression invariant.
+	if score > minActivationScore {
+		score += spellSlotRankAutoCastPriority(unit, def.ID)
+	}
+	return score
 }
 
 // scoreHealCandidateLocked: base + weight·(missing-HP fraction of the picked
