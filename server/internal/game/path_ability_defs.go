@@ -195,6 +195,19 @@ func (s *GameState) assignUnitPathAbilitiesLocked(unit *Unit) {
 		}
 	}
 
+	// Step 3b: recorded spell-pool picks (arch-mage-spell-system §11). The
+	// random roll already happened at rank-up (rollUnitPoolSpellsLocked) and
+	// recorded its choice on unit.PoolSpellsByRank; here we only READ it, so
+	// this recompute stays RNG-free and idempotent. Appended additively (de-
+	// duped) in rank order, composing on top of the path override + rank grants.
+	if unit.Rank != unitRankBase && unit.ProgressionPath != unitPathNone {
+		for _, rank := range ranksUpToInclusive(unit.Rank) {
+			if pick := unit.PoolSpellsByRank[rank]; pick != "" && !containsString(newAbilities, pick) {
+				newAbilities = append(newAbilities, pick)
+			}
+		}
+	}
+
 	// Step 4: per-perk ability grants. A perk's PerkDef.GrantsAbilities lists
 	// ability ids that should appear on the unit's action bar when the perk is
 	// owned. Used by ability-granting perks (e.g. Siphoner bronze:

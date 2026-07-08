@@ -13,7 +13,7 @@ import "webrts/server/pkg/protocol"
 // Pipeline:
 //   1. applyUnitDamageWithSourceLocked auto-emits a hint at the HP-loss point
 //      whenever the DamageSource carries a typed damage type recognised by
-//      damageTypeColorVariant (shadow / fire / holy / lightning / cold today).
+//      damageTypeColorVariant (shadow / fire / holy / lightning / cold / arcane today).
 //   2. The hint travels to the client on the snapshot.
 //   3. Client matches (UnitID, Damage) and tags the corresponding HP-diff
 //      popup with the variant. Renderer paints the major popup the variant's
@@ -59,6 +59,8 @@ func damageTypeColorVariant(dt DamageType) string {
 		return "electric"
 	case DamageCold:
 		return "cold"
+	case DamageArcane:
+		return "arcane"
 	// ── add cases here as new damage schools get a dedicated color ──
 	}
 	return ""

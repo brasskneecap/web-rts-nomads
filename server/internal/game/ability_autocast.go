@@ -209,7 +209,13 @@ func (s *GameState) tickUnitAutoCastLocked(unit *Unit) {
 
 	// beginAbilityCastLocked arms the ability cooldown itself, so both manual
 	// and auto-cast paths share one source of truth — no double-arming here.
-	s.beginAbilityCastLocked(unit, bestID, bestTgt)
+	// Point-targeted abilities (arcane_orb) aim toward the chosen enemy's
+	// current position instead of casting at the unit.
+	if bestDef, ok := getAbilityDef(bestID); ok && bestDef.TargetsPoint {
+		s.beginAbilityCastAtPointLocked(unit, bestID, bestTgt.X, bestTgt.Y)
+	} else {
+		s.beginAbilityCastLocked(unit, bestID, bestTgt)
+	}
 	// one auto-cast initiation per unit per tick (single return path)
 }
 
@@ -229,7 +235,7 @@ func (s *GameState) abilityStatesLocked(unit *Unit) []protocol.AbilitySnapshot {
 		if !ok {
 			continue
 		}
-		out = append(out, protocol.AbilitySnapshot{
+		snap := protocol.AbilitySnapshot{
 			ID:               def.ID,
 			DisplayName:      def.DisplayName,
 			Icon:             def.Icon,
@@ -246,7 +252,19 @@ func (s *GameState) abilityStatesLocked(unit *Unit) []protocol.AbilitySnapshot {
 			// Channeling is true when this ability is the unit's active channel.
 			// The action bar uses this to render the "channeling in progress" state.
 			Channeling: unit.ChannelAbilityID == id,
-		})
+			// Passive / spell-slot metadata (arch-mage-spell-system): the client
+			// hides passives from the castable row and renders spell-slot spells
+			// in their rank's perk cell.
+			Passive:       def.IsPassive(),
+			SpellSlotRank: spellSlotRankForAbilityLocked(unit, id),
+			Projectile:    def.Projectile,
+			TargetsPoint:  def.TargetsPoint,
+		}
+		if def.IsChargeFirePassive() {
+			snap.ChargeCurrent = unit.ArcaneCharge
+			snap.ChargeRequired = def.ChargeRequired
+		}
+		out = append(out, snap)
 	}
 	if len(out) == 0 {
 		return nil
@@ -261,12 +279,17 @@ func (s *GameState) abilityStatesLocked(unit *Unit) []protocol.AbilitySnapshot {
 // Part 8 cast lifecycle. Returns (false, reason) on failure so the WS layer
 // can surface `reason` via protocol.NotificationMessage (same pattern as
 // "Not enough resources" on train_unit_command).
-func (s *GameState) RequestAbilityCast(playerID string, casterUnitID int, abilityID string, targetUnitID int) (bool, string) {
+func (s *GameState) RequestAbilityCast(playerID string, casterUnitID int, abilityID string, targetUnitID int, targetX, targetY float64) (bool, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	caster := s.getUnitByIDLocked(casterUnitID)
 	if caster == nil || caster.OwnerID != playerID {
 		return false, castFailNotOwned
+	}
+	// Point-targeted abilities (arcane_orb) fire toward the clicked world
+	// location; unit-targeted abilities resolve against the target unit.
+	if def, ok := getAbilityDef(abilityID); ok && def.TargetsPoint {
+		return s.beginAbilityCastAtPointLocked(caster, abilityID, targetX, targetY)
 	}
 	target := s.getUnitByIDLocked(targetUnitID)
 	return s.beginAbilityCastLocked(caster, abilityID, target)

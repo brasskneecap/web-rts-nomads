@@ -539,6 +539,10 @@ export type CastAbilityCommandMessage = {
   casterUnitId: number
   abilityId: string
   targetUnitId: number
+  /** Clicked world point for ground/point-targeted abilities (arcane_orb).
+   *  Ignored by the server for unit-targeted abilities. */
+  targetX?: number
+  targetY?: number
 }
 
 /** Action-bar "focus target" assignment (player-issued sticky support
@@ -1004,6 +1008,22 @@ export type AbilitySnapshot = {
    *  renders a distinct "channeling in progress" state (pulsing green border)
    *  when this is set. Omitted/false when not channeling. */
   channeling?: boolean
+  /** Passive ability (arcane_missiles): never manually/auto cast. Hidden from
+   *  the castable action row; may surface as a passive/charge indicator. */
+  passive?: boolean
+  /** When set (bronze/silver/gold), this ability is a learnable spell-slot
+   *  spell gained at that rank — rendered in the matching perk cell as a
+   *  CASTABLE slot rather than in the normal ability row. */
+  spellSlotRank?: 'bronze' | 'silver' | 'gold'
+  /** Charge-fire passive progress (arcane_missiles): current / required. */
+  chargeCurrent?: number
+  chargeRequired?: number
+  /** The ability's projectile-def id, used as the action-icon fallback when no
+   *  bespoke ability art exists. Empty for instant/non-projectile abilities. */
+  projectile?: string
+  /** Ground/point-targeted ability (arcane_orb): the client sends the clicked
+   *  world point (targetX/targetY) instead of a target unit id. */
+  targetsPoint?: boolean
 }
 
 /**
@@ -1106,6 +1126,10 @@ export type UnitSnapshot = {
    *  — from a fire_sword proc or a Trapper fire_pit perk. > 0 ⇒ the renderer
    *  paints an animated burning overlay. Omitted when the unit is not on fire. */
   burningRemaining?: number
+  /** Accumulated Arcane Charge on a unit with the arcane_missiles passive
+   *  (Arch Mage). The renderer floats one rotating purple orb per 10 charge
+   *  above the unit. 0/absent for every other unit. */
+  arcaneCharge?: number
   /** Where the burning overlay sits on the unit ("feet" | "center" | "head"),
    *  authored server-side in catalog/effects/burning/burning.json. Sent only
    *  while burning; absent ⇒ the renderer falls back to "feet". */

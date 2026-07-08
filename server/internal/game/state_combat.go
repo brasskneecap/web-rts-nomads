@@ -403,6 +403,51 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 	}
 }
 
+// applyAbilitySplashDamageLocked is the ability-cast counterpart of
+// applySplashDamageLocked (base-stat splash): it deals `damage` of `dmgType` to
+// every hostile (relative to ownerPlayerID) within `radius` of the impact point
+// (cx,cy), EXCLUDING the primary target (primaryID, already hit by the bolt's
+// direct impact) and the caster itself.
+//
+// It differs from base-stat splash only in bookkeeping discipline, matching the
+// ability-bolt path in landProjectileLocked: damage routes through the shared
+// authoritative pipeline (applyUnitDamageWithSourceLocked, Kind "ability"), so
+// mitigation, the attributed pending-death drain (kill + XP), threat, and
+// determinism are all inherited — it does NOT hand-roll death/XP or a parallel
+// death path, and does NOT append to a deadUnitIDs slice (the drain owns
+// removal, exactly like a single-target ability hit). Bypassing the on-hit hub
+// keeps a fireball from chaining item procs. Iterates s.Units in slice order
+// (deterministic); the radius test is pure geometry.
+//
+// Caller holds s.mu write lock.
+func (s *GameState) applyAbilitySplashDamageLocked(ownerUnitID int, ownerPlayerID string, cx, cy, radius float64, damage int, dmgType DamageType, primaryID int) {
+	if radius <= 0 || damage <= 0 {
+		return
+	}
+	radSq := radius * radius
+	for _, u := range s.Units {
+		if u == nil || u.ID == primaryID || u.ID == ownerUnitID {
+			continue
+		}
+		if u.HP <= 0 || !u.Visible {
+			continue
+		}
+		if !s.playersAreHostileLocked(u.OwnerID, ownerPlayerID) {
+			continue
+		}
+		dx := u.X - cx
+		dy := u.Y - cy
+		if dx*dx+dy*dy > radSq {
+			continue
+		}
+		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{
+			AttackerUnitID: ownerUnitID,
+			Kind:           "ability",
+			DamageType:     dmgType,
+		})
+	}
+}
+
 // applyEquipmentOnHitElementalLocked applies the attacker's aggregated
 // per-element on-hit damage as SEPARATE typed damage instances against the
 // primary target, distinct from the physical hit that resolveAttackHitLocked

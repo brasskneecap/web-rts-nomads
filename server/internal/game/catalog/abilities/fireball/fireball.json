@@ -1,0 +1,23 @@
+{
+  "id": "fireball",
+  "displayName": "Fireball",
+  "type": "spell",
+  "category": "offensive",
+  "manaCost": 18,
+  "damageAmount": 90,
+  "radius": 100,
+  "castRange": "match_attack_range",
+  "castTime": 0.6,
+  "cooldown": 6,
+  "damageType": "fire",
+  "projectile": "fire_bolt",
+  "tags": ["aoe", "projectile", "damage"],
+  "canTargetSelf": false,
+  "canTargetAllies": false,
+  "canTargetEnemies": true,
+  "casterAnimation": "Attacking",
+  "icon": "TODO/abilities/fireball.png",
+  "supportsAutoCast": true,
+  "autoCastTargetSelector": "closest_enemy_in_range",
+  "defaultAutoCast": true
+}

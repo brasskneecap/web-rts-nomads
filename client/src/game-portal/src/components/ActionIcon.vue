@@ -16,6 +16,8 @@ import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
 import { getUnitSpriteSet, getUnitPortraitImage } from '@/game/rendering/unitSprites'
 import { getActionIconImage } from '@/game/rendering/actionIconSprites'
 import { getItemAssetImage } from '@/game/rendering/itemAssets'
+import { resolveAbilityIconImage, getAbilityAssetImage, getProjectileAssetImage } from '@/game/rendering/abilityAssets'
+import { inferProjectileFrameCount } from '@/game/rendering/projectileSprites'
 
 const props = defineProps<{
   action: ActionItem
@@ -133,9 +135,42 @@ function drawActionSprite(ctx: CanvasRenderingContext2D, img: HTMLImageElement) 
   ctx.drawImage(img, x, y, w, h)
 }
 
+// Extra inset (in the 64px canvas space) for ability icons so bespoke spell art
+// doesn't touch / overhang the action-cell container frame. The canvas is shown
+// at ~90% of a fluid cell, so ~3 canvas px reads as roughly 2 display px.
+const ABILITY_ICON_PADDING = 3
+
+// Draws ONLY the first frame of a (possibly multi-frame) horizontal sprite
+// strip as the icon — used for both bespoke ability art and projectile art,
+// which are authored as N-wide animation strips (e.g. chain_lightning is
+// 1280×64 = twenty 64×64 frames). A single-frame sprite (frames === 1) draws
+// whole; a strip shows just the leftmost frame instead of the squished sheet.
+// Applies ABILITY_ICON_PADDING so ability art sits inside the container.
+function drawActionSpriteFirstFrame(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
+  ctx.imageSmoothingEnabled = false
+  const frames = inferProjectileFrameCount(img.naturalWidth, img.naturalHeight)
+  const sw = img.naturalWidth / frames
+  const sh = img.naturalHeight
+  const spritePadding = ABILITY_ICON_PADDING
+  const boxSize = CANVAS_SIZE - spritePadding * 2
+  const scale = boxSize / Math.max(sw, sh)
+  const w = sw * scale
+  const h = sh * scale
+  const x = spritePadding + (boxSize - w) / 2
+  const y = spritePadding + (boxSize - h) / 2
+  ctx.drawImage(img, 0, 0, sw, sh, x, y, w, h)
+}
+
 const useCanvas = computed(() => {
-  if (props.action.iconDef) return true
+  const { iconDef } = props.action
   const lookupId = props.action.iconId ?? props.action.id
+  // An ability icon uses the canvas when bespoke ability art, its projectile
+  // image, OR a bundled action sprite exists; otherwise it renders the SVG
+  // generic icon. (Ability art takes priority — see draw().)
+  if (iconDef?.kind === 'ability') {
+    return !!resolveAbilityIconImage(iconDef.type, iconDef.projectile) || !!getActionIconImage(lookupId)
+  }
+  if (iconDef) return true
   return !!getActionIconImage(lookupId)
 })
 
@@ -148,6 +183,33 @@ function draw() {
   ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
 
   const lookupId = props.action.iconId ?? props.action.id
+
+  // Ability cells resolve their icon FIRST so bespoke spell art wins over the
+  // shared action-sprite atlas. Order: bespoke ability art → projectile image.
+  // BOTH are authored as horizontal multi-frame strips, so only the first frame
+  // is drawn. When neither exists, fall through to the generic path.
+  if (props.action.iconDef?.kind === 'ability') {
+    const { type, projectile } = props.action.iconDef
+    const abilityImg = getAbilityAssetImage(type)
+    if (abilityImg) {
+      if (abilityImg.complete && abilityImg.naturalWidth > 0) {
+        drawActionSpriteFirstFrame(ctx, abilityImg)
+        return
+      }
+      abilityImg.addEventListener('load', () => draw(), { once: true })
+      return
+    }
+    const projImg = projectile ? getProjectileAssetImage(projectile) : null
+    if (projImg) {
+      if (projImg.complete && projImg.naturalWidth > 0) {
+        drawActionSpriteFirstFrame(ctx, projImg)
+        return
+      }
+      projImg.addEventListener('load', () => draw(), { once: true })
+      return
+    }
+  }
+
   const sprite = getActionIconImage(lookupId)
   if (sprite) {
     if (sprite.complete && sprite.naturalWidth > 0) {

@@ -116,7 +116,9 @@ const drawDefaultProjectile: ProjectileDrawFn = (ctx, { zoom }) => {
 /**
  * Registry mapping a projectile `variant` (unit type by default, or a
  * perk-override tag) to its draw fn. Unregistered variants fall back to the
- * default procedural arrow.
+ * default procedural arrow. Projectiles that ship art (assets/projectiles/
+ * <id>.png — including arcane_orb) are auto-registered below to a sprite draw
+ * fn, so their bespoke image "just works".
  */
 export const PROJECTILE_DRAW_REGISTRY: Record<string, ProjectileDrawFn> = {}
 
@@ -143,8 +145,9 @@ const PROJECTILE_ANIM_FRAME_MS = 90
 // Infers the number of equal, square frames in a horizontal sprite strip from
 // its pixel dimensions. Returns 1 (static) unless the width is (within a small
 // tolerance) an integer ≥ 2 multiple of the height, so only art explicitly
-// authored as an N-wide strip animates.
-function inferProjectileFrameCount(naturalWidth: number, naturalHeight: number): number {
+// authored as an N-wide strip animates. Exported so the action-icon renderer
+// can crop a multi-frame projectile sheet down to its first frame.
+export function inferProjectileFrameCount(naturalWidth: number, naturalHeight: number): number {
   if (naturalHeight <= 0) return 1
   const ratio = naturalWidth / naturalHeight
   const nearest = Math.round(ratio)

@@ -11,6 +11,7 @@
   "projectile": "shadow_bolt",
   "damageType": "shadow",
   "projectileScale": 2.5,
+  "abilities": ["arcane_missiles"],
   "ranks": {
     "bronze": {
       "maxHPMultiplier": 1.10,

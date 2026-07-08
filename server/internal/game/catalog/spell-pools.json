@@ -1,0 +1,6 @@
+{
+  "arch_mage": {
+    "bronze": ["fireball", "chain_lightning", "arcane_orb"],
+    "silver": []
+  }
+}

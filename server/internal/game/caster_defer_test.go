@@ -52,11 +52,12 @@ func abilitiesContain(abilities []string, id string) bool {
 // asserts: granted ids are appended in catalog order; a second invocation is
 // idempotent.
 //
-// Uses unitPathArchMage to exercise the rank-grant engine independently of
-// any path-level "abilities" override (cleric.json's override would replace
-// the base ability list, masking the "appended after base" assertion). The
-// arch_mage path has no override, so its grant behavior matches the test's
-// "base preserved as prefix" expectation.
+// Uses unitPathVanguard to exercise the rank-grant engine independently of
+// any path-level "abilities" override (cleric/siphoner/arch_mage overrides
+// would replace the base ability list, masking the "appended after base"
+// assertion). Vanguard declares no override, so its grant behavior matches the
+// test's "base preserved as prefix" expectation. (arch_mage was used here
+// before it gained its arcane_missiles override in arch-mage-spell-system.)
 func TestDefer_GrantEngine_AppendsInOrderAndIdempotent(t *testing.T) {
 	s := newProjectileTestState(t)
 	s.mu.Lock()
@@ -68,8 +69,8 @@ func TestDefer_GrantEngine_AppendsInOrderAndIdempotent(t *testing.T) {
 	}
 	base := append([]string(nil), app.Abilities...)
 
-	withSyntheticPathGrant(t, unitPathArchMage, unitRankSilver, []string{"synth_grant_a", "synth_grant_b"})
-	app.ProgressionPath = unitPathArchMage
+	withSyntheticPathGrant(t, unitPathVanguard, unitRankSilver, []string{"synth_grant_a", "synth_grant_b"})
+	app.ProgressionPath = unitPathVanguard
 	app.Rank = unitRankSilver
 
 	s.assignUnitPathAbilitiesLocked(app)

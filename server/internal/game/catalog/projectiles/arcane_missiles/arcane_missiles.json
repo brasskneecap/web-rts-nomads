@@ -1,0 +1,6 @@
+{
+  "id": "arcane_missiles",
+  "speed": 600,
+  "followEffect": "",
+  "impactEffect": "fizzle"
+}

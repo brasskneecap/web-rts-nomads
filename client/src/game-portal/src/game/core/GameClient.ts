@@ -867,13 +867,27 @@ export class GameClient {
       }
 
       if (this.state.isUnitTargetingActive('cast-ability') && unitIds.length > 0) {
-        // The selected unit is the caster; the click resolves the target
-        // (own/visible unit — covers self & allies). The server validates
-        // ownership, targeting rules, range, and mana.
-        const target = this.state.getUnitAtPosition(x, y)
+        // The selected unit is the caster. Two flavors:
+        //  - Point-targeted (arcane_orb): the click is a world LOCATION. Clicking
+        //    the ground OR a unit both fire toward that point (a clicked unit
+        //    just supplies its position). This is how the orb is aimed.
+        //  - Unit-targeted (heal, etc.): the click resolves a target unit.
+        // The server validates ownership, targeting, range, and mana.
         const abilityId = this.state.castAbilityId
-        if (target && abilityId) {
-          this.network.sendCastAbilityCommand(unitIds[0], abilityId, target.id)
+        const caster = this.state.units.find((u) => u.id === unitIds[0])
+        const ability = abilityId
+          ? caster?.abilities?.find((a) => a.id === abilityId)
+          : undefined
+        if (abilityId && ability?.targetsPoint) {
+          const clicked = this.state.getUnitAtPosition(x, y)
+          const px = clicked ? clicked.x : x
+          const py = clicked ? clicked.y : y
+          this.network.sendCastAbilityCommand(unitIds[0], abilityId, 0, px, py)
+        } else {
+          const target = this.state.getUnitAtPosition(x, y)
+          if (target && abilityId) {
+            this.network.sendCastAbilityCommand(unitIds[0], abilityId, target.id)
+          }
         }
         this.finishUnitTargeting()
         return true

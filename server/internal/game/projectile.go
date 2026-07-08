@@ -132,6 +132,12 @@ type Projectile struct {
 	// classify the damage as spell damage, matching the instant-cast path.
 	SourceKind string
 
+	// MinorDamage: when set on a SkipOnHitEffects (ability) bolt, its landed
+	// damage renders as a smaller side-falling popup (colored by DamageType)
+	// instead of the main floating number — see Arcane Missiles. The major
+	// color hint is suppressed and a minor damage event is recorded on land.
+	MinorDamage bool
+
 	// SlowMultiplier / SlowDurationSeconds: an on-hit chill carried from a
 	// proc's config (see ItemOnHitProc). When both are set, landing this bolt
 	// slows the unit it hits (attack + move speed × SlowMultiplier for the
@@ -144,6 +150,36 @@ type Projectile struct {
 	// no burn.
 	BurnDamagePerSecond float64
 	BurnDurationSeconds float64
+
+	// AbilitySplashRadius: when > 0, this (ability) bolt deals its Damage as
+	// AREA splash on impact — every hostile within the radius of the impact
+	// point is damaged, reusing the base-stat splash payload
+	// (applyAbilitySplashDamageLocked). Set from the effective spell's Radius
+	// (fireball). 0 ⇒ single-target impact (the prior behaviour). Only honoured
+	// on SkipOnHitEffects ability bolts.
+	AbilitySplashRadius float64
+
+	// ── Arcane Orb (arch-mage-spell-system) ────────────────────────────────
+	// When ArcaneOrb is true this projectile is a slow-moving vortex: it flies
+	// a straight line (like a pierce arrow — PierceLength / PierceDirX/Y / Origin
+	// drive the path) but deals NO impact damage. Instead, each tick it drags
+	// every hostile within ArcaneOrbRadius of its CURRENT position toward the
+	// orb at ArcaneOrbPullStrength (a moving vortex — see
+	// tickArcaneOrbProjectileLocked). It despawns when it reaches the end of its
+	// path. Fired unit-targeted; the direction is caster→target at cast time.
+	ArcaneOrb             bool
+	ArcaneOrbRadius       float64
+	ArcaneOrbPullStrength float64
+	// ArcaneOrbDamagePerSecond is the DoT rate dealt to hostiles within the
+	// orb's radius as it travels. Applied on a fixed cadence
+	// (arcaneOrbDamageIntervalSeconds) so the per-second total is exactly the
+	// authored value regardless of tick rate — a moving damage-over-time vortex.
+	// 0 ⇒ pure CC. ArcaneOrbDamageTickTimer accumulates elapsed time toward the
+	// next damage tick.
+	ArcaneOrbDamagePerSecond float64
+	ArcaneOrbDamageTickTimer float64
+	// ArcaneOrbDamageType is the school of the orb's vortex damage.
+	ArcaneOrbDamageType DamageType
 }
 
 func (s *GameState) fireProjectileLocked(attacker, target *Unit, damage int) {
@@ -295,13 +331,18 @@ func (s *GameState) fireProcProjectileLocked(src ProcSource, target *Unit, p Pro
 // on-hit hub (no accidental item-proc / elemental re-trigger). Mirrors
 // fireProcProjectileLocked but sourced from a live caster and an AbilityDef.
 // Caller holds s.mu write lock.
-func (s *GameState) fireAbilityProjectileLocked(caster, target *Unit, def AbilityDef) {
+func (s *GameState) fireAbilityProjectileLocked(caster, target *Unit, def AbilityDef, eff EffectiveSpell) {
 	speed := defaultProjectileSpeed
 	var followEffect, impactEffect string
 	if pdef, ok := getProjectileDef(def.Projectile); ok {
 		speed = pdef.Speed
 		followEffect = followEffectForProjectileDef(pdef)
 		impactEffect = impactEffectForProjectileDef(pdef)
+	}
+	// A modifier-supplied projectile speed overrides the def's speed (0 ⇒ keep
+	// the projectile def's own speed).
+	if eff.ProjectileSpeed > 0 {
+		speed = eff.ProjectileSpeed
 	}
 
 	dx := target.X - caster.X
@@ -314,25 +355,40 @@ func (s *GameState) fireAbilityProjectileLocked(caster, target *Unit, def Abilit
 	id := fmt.Sprintf("proj_%d", s.nextProjectileID)
 	s.nextProjectileID++
 
+	// Render scale: start from the caster's projectile scale, then apply the
+	// ability's optional per-projectile multiplier (e.g. arcane_missiles at 0.5
+	// for smaller bolts). A caster with no scale is treated as 1× so the
+	// multiplier still bites.
+	scale := caster.ProjectileScale
+	if def.ProjectileScale > 0 {
+		base := scale
+		if base <= 0 {
+			base = 1
+		}
+		scale = base * def.ProjectileScale
+	}
+
 	s.Projectiles = append(s.Projectiles, &Projectile{
-		ID:               id,
-		OwnerUnitID:      caster.ID,
-		OwnerPlayerID:    caster.OwnerID,
-		TargetUnitID:     target.ID,
-		OriginX:          caster.X,
-		OriginY:          caster.Y,
-		TargetX:          target.X,
-		TargetY:          target.Y,
-		TotalSeconds:     travelTime,
-		RemainingSeconds: travelTime,
-		Damage:           def.DamageAmount,
-		Variant:          def.Projectile, // client renders the projectile sprite by id
-		FollowEffect:     followEffect,
-		ImpactEffect:     impactEffect,
-		DamageType:       def.DamageType.OrPhysical(),
-		Scale:            caster.ProjectileScale,
-		SkipOnHitEffects: true,
-		SourceKind:       "ability",
+		ID:                  id,
+		OwnerUnitID:         caster.ID,
+		OwnerPlayerID:       caster.OwnerID,
+		TargetUnitID:        target.ID,
+		OriginX:             caster.X,
+		OriginY:             caster.Y,
+		TargetX:             target.X,
+		TargetY:             target.Y,
+		TotalSeconds:        travelTime,
+		RemainingSeconds:    travelTime,
+		Damage:              eff.Damage,     // effective (modifier-folded) damage
+		AbilitySplashRadius: eff.Radius,     // fireball splash; 0 ⇒ single-target impact
+		Variant:             def.Projectile, // client renders the projectile sprite by id
+		FollowEffect:        followEffect,
+		ImpactEffect:        impactEffect,
+		DamageType:          def.DamageType.OrPhysical(),
+		Scale:               scale,
+		SkipOnHitEffects:    true,
+		SourceKind:          "ability",
+		MinorDamage:         def.MinorDamage,
 	})
 }
 
@@ -410,6 +466,111 @@ func (s *GameState) fireProcBeamLocked(src ProcSource, target *Unit, p ProcEffec
 // tickProjectilesLocked). Primary target (the one targeted at fire time)
 // takes full damage; other enemies caught in the corridor take secondary
 // damage scaled by the pierce perk's secondaryDamageMultiplier.
+// arcaneOrbPullRefreshSeconds is the per-tick pull duration the orb re-applies
+// to hostiles within its radius. Long enough to persist across a couple of
+// ticks (so a dragged enemy keeps moving between refreshes) but short enough
+// that the pull lapses quickly once the orb moves past and the enemy leaves the
+// radius — producing the "dragged only while near the orb" moving-vortex feel.
+const arcaneOrbPullRefreshSeconds = 0.2
+
+// arcaneOrbDefaultSpeed is the fallback travel speed (world px/sec) when the
+// ability declares no projectileSpeed. Deliberately slow — the orb is a
+// drifting vortex, not a bolt.
+const arcaneOrbDefaultSpeed = 150.0
+
+// arcaneOrbDamageIntervalSeconds is the DoT cadence: every interval the orb
+// deals (DamagePerSecond * interval) to hostiles in radius. A fixed cadence
+// keeps the per-second total exact (no per-tick rounding drift) and reads as a
+// pulsing vortex. 0.25s ⇒ 4 damage ticks/sec.
+const arcaneOrbDamageIntervalSeconds = 0.25
+
+// spawnArcaneOrbLocked launches an Arcane Orb from caster in the direction of
+// target (unit-targeted, but the orb then travels the ground independently). It
+// flies a straight line of length `distance` at `speed`, dealing no impact
+// damage; tickArcaneOrbProjectileLocked drives the moving-vortex pull. Degenerate
+// caster-on-target geometry falls back to firing along +X. Caller holds s.mu.
+func (s *GameState) spawnArcaneOrbLocked(caster *Unit, targetX, targetY float64, def AbilityDef, eff EffectiveSpell, distance float64) {
+	dx := targetX - caster.X
+	dy := targetY - caster.Y
+	dist := math.Sqrt(dx*dx + dy*dy)
+	dirX, dirY := 1.0, 0.0
+	if dist > 0 {
+		dirX, dirY = dx/dist, dy/dist
+	}
+	if distance <= 0 {
+		distance = dist
+	}
+	speed := eff.ProjectileSpeed
+	if speed <= 0 {
+		speed = arcaneOrbDefaultSpeed
+	}
+	travelTime := distance / speed
+	if travelTime < minProjectileFlightSeconds {
+		travelTime = minProjectileFlightSeconds
+	}
+	id := fmt.Sprintf("proj_%d", s.nextProjectileID)
+	s.nextProjectileID++
+	s.Projectiles = append(s.Projectiles, &Projectile{
+		ID:            id,
+		OwnerUnitID:   caster.ID,
+		OwnerPlayerID: caster.OwnerID,
+		// No homing target — the orb flies to the fixed endpoint.
+		TargetUnitID:             0,
+		OriginX:                  caster.X,
+		OriginY:                  caster.Y,
+		TargetX:                  caster.X + dirX*distance,
+		TargetY:                  caster.Y + dirY*distance,
+		TotalSeconds:             travelTime,
+		RemainingSeconds:         travelTime,
+		Variant:                  def.Projectile, // client renders the orb sprite by id
+		Scale:                    caster.ProjectileScale,
+		ArcaneOrb:                true,
+		ArcaneOrbRadius:          eff.Radius,
+		ArcaneOrbPullStrength:    eff.PullStrength,
+		ArcaneOrbDamagePerSecond: eff.DamagePerSecond,
+		ArcaneOrbDamageType:      def.DamageType.OrPhysical(),
+		// Straight-line path fields (shared with pierce flight math).
+		PierceLength: distance,
+		PierceDirX:   dirX,
+		PierceDirY:   dirY,
+	})
+}
+
+// tickArcaneOrbProjectileLocked advances the orb along its straight path and,
+// from its CURRENT position, drags nearby hostiles toward it (moving vortex).
+// Returns true while the orb is still travelling; false when it reaches the end
+// of its path (caller drops it — no impact). Caller holds s.mu write lock.
+func (s *GameState) tickArcaneOrbProjectileLocked(proj *Projectile, dt float64) bool {
+	if proj.PierceLength <= 0 || proj.TotalSeconds <= 0 {
+		return false
+	}
+	proj.RemainingSeconds = math.Max(0, proj.RemainingSeconds-dt)
+	along := proj.PierceLength * (1.0 - proj.RemainingSeconds/proj.TotalSeconds)
+	curX := proj.OriginX + proj.PierceDirX*along
+	curY := proj.OriginY + proj.PierceDirY*along
+	// Moving vortex: re-apply the pull toward the orb's live position each tick
+	// AND deal this tick's share of vortex damage to hostiles in radius. A
+	// dead/gone owner means no pull/damage this tick (hostility is owner-
+	// relative); the orb keeps drifting so its visual finishes cleanly.
+	if owner := s.getUnitByIDLocked(proj.OwnerUnitID); owner != nil {
+		s.applyPullInRadiusLocked(owner, curX, curY, proj.ArcaneOrbRadius, proj.ArcaneOrbPullStrength, arcaneOrbPullRefreshSeconds)
+		// Damage-over-time on a fixed cadence so the per-second total is exactly
+		// ArcaneOrbDamagePerSecond regardless of tick rate. Loop in case a large
+		// dt spans multiple intervals.
+		if proj.ArcaneOrbDamagePerSecond > 0 {
+			proj.ArcaneOrbDamageTickTimer += dt
+			for proj.ArcaneOrbDamageTickTimer >= arcaneOrbDamageIntervalSeconds {
+				proj.ArcaneOrbDamageTickTimer -= arcaneOrbDamageIntervalSeconds
+				dmg := int(math.Round(proj.ArcaneOrbDamagePerSecond * arcaneOrbDamageIntervalSeconds))
+				if dmg > 0 {
+					s.applyAbilitySplashDamageLocked(proj.OwnerUnitID, proj.OwnerPlayerID, curX, curY, proj.ArcaneOrbRadius, dmg, proj.ArcaneOrbDamageType, 0)
+				}
+			}
+		}
+	}
+	return proj.RemainingSeconds > 0
+}
+
 func (s *GameState) firePierceProjectileLocked(attacker, target *Unit, damage int) {
 	def := perkDefByID("pierce")
 	corridorWidth := 28.0
@@ -519,6 +680,13 @@ func (s *GameState) tickProjectilesLocked(dt float64) {
 		// Pierce arrows traverse independently of any single target.
 		if proj.Pierce {
 			if survived := s.tickPierceProjectileLocked(proj, dt, &deadUnitIDs); survived {
+				kept = append(kept, proj)
+			}
+			continue
+		}
+		// Arcane Orb: a slow straight-line vortex — no impact, pulls as it flies.
+		if proj.ArcaneOrb {
+			if survived := s.tickArcaneOrbProjectileLocked(proj, dt); survived {
 				kept = append(kept, proj)
 			}
 			continue
@@ -724,11 +892,24 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 		if kind == "" {
 			kind = "item-proc"
 		}
-		s.applyUnitDamageWithSourceLocked(target, proj.Damage, DamageSource{
+		landed := s.applyUnitDamageWithSourceLocked(target, proj.Damage, DamageSource{
 			AttackerUnitID: proj.OwnerUnitID,
 			Kind:           kind,
 			DamageType:     proj.DamageType,
+			// Minor bolts (Arcane Missiles) suppress the main color hint and
+			// render as a small side-falling popup instead of the big number.
+			SuppressTypeHint: proj.MinorDamage,
 		})
+		if proj.MinorDamage {
+			s.recordMinorDamageHitLocked(target, landed, damageTypeColorVariant(proj.DamageType))
+		}
+		// Ability AoE (fireball): deal the same damage to every other hostile
+		// within the effective radius of the impact point. Reuses the shared
+		// authoritative damage entry point (no parallel death path); inert
+		// when AbilitySplashRadius == 0 (single-target bolts, e.g. arcane_bolt).
+		if proj.AbilitySplashRadius > 0 {
+			s.applyAbilitySplashDamageLocked(proj.OwnerUnitID, proj.OwnerPlayerID, target.X, target.Y, proj.AbilitySplashRadius, proj.Damage, proj.DamageType, target.ID)
+		}
 		// On-hit slow: routed to the cold (chill) or physical track by the
 		// bolt's damage type. No-op when the proc carries no slow (zero fields).
 		s.applyProcSlowLocked(target.ID, proj.SlowMultiplier, proj.SlowDurationSeconds, proj.DamageType)

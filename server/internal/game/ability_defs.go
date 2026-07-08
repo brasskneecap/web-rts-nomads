@@ -31,6 +31,11 @@ const (
 	// AbilitySpell is a magical ability. Casting one drives the unit's
 	// "Casting" animation slot (distinct from a basic attack).
 	AbilitySpell AbilityType = "spell"
+	// AbilityPassive is an ability that is NEVER manually or auto-cast and
+	// never occupies the castable action row. Its effect is driven by its own
+	// system (e.g. arcane_missiles auto-fires from Arcane Charge — see
+	// spell_charge.go). It is still a catalog AbilityDef the unit "knows".
+	AbilityPassive AbilityType = "passive"
 )
 
 // CastRangeMatchAttackRange is the sentinel value of a CastRange that means
@@ -107,6 +112,12 @@ type AbilityDef struct {
 	CanTargetSelf    bool `json:"canTargetSelf,omitempty"`
 	CanTargetAllies  bool `json:"canTargetAllies,omitempty"`
 	CanTargetEnemies bool `json:"canTargetEnemies,omitempty"`
+	// TargetsPoint marks a GROUND/POINT-targeted ability (arcane_orb): the
+	// player clicks a world location (ground or a unit's position) and the
+	// ability fires toward that point rather than at a unit. Point casts route
+	// through beginAbilityCastAtPointLocked. Mutually exclusive with the
+	// CanTarget* unit flags in practice.
+	TargetsPoint bool `json:"targetsPoint,omitempty"`
 
 	// CastRange: number (world px) or "match_attack_range". See CastRange.
 	CastRange CastRange `json:"castRange"`
@@ -118,7 +129,18 @@ type AbilityDef struct {
 
 	// DamageType is the optional element/school of the ability (Part 2).
 	// Empty = unspecified (resolves to physical via DamageType.OrPhysical()).
+	// It ALSO doubles as the spell's "school" for the spell-modifier pipeline
+	// (spell_modifier.go): a modifier targeting `{school: "fire"}` matches any
+	// ability whose DamageType is "fire". There is deliberately no separate
+	// School field — element and school are one concept here.
 	DamageType DamageType `json:"damageType,omitempty"`
+
+	// Tags are free-form authored classifiers (e.g. "aoe", "projectile",
+	// "chain", "cc") used purely as targeting keys for the spell-modifier
+	// pipeline — a modifier targeting `{tag: "aoe"}` applies to any ability
+	// whose Tags contains "aoe". Absent ⇒ empty; a tag has NO effect on base
+	// cast behaviour on its own. See spell_modifier.go.
+	Tags []string `json:"tags,omitempty"`
 
 	// Category classifies what the ability is for (heal / buff_ally / summon /
 	// offensive). Optional; empty = unspecified. INERT in Phase 1 — populated
@@ -142,6 +164,23 @@ type AbilityDef struct {
 	// path. HealAmount and DamageAmount are independent resolve steps; an
 	// ability may declare either, both, or neither.
 	DamageAmount int `json:"damageAmount,omitempty"`
+
+	// MinorDamage marks an ability's damage as "minor": it renders as a smaller
+	// side-falling popup (colored by damage school) rather than the main
+	// floating damage number. Used by rapid-fire, ancillary hits like Arcane
+	// Missiles so a volley reads as spray, not one big number. 0/false ⇒ normal
+	// major popup.
+	MinorDamage bool `json:"minorDamage,omitempty"`
+
+	// DamagePerSecond is the damage-over-time RATE (HP per second) an ability
+	// applies while its effect persists, as opposed to DamageAmount's one-shot
+	// hit. Used by the arcane_orb vortex, which deals DamagePerSecond to hostiles
+	// in its radius on a fixed cadence as it travels. The field name is the
+	// contract: authors set a per-second number, not a per-hit one. 0 ⇒ no DoT.
+	// Modifier-eligible via the same `damage` SpellModField (a "+X% damage" perk
+	// scales the DoT too); a spell uses either DamageAmount or DamagePerSecond,
+	// never both, so they never collide under one modifier.
+	DamagePerSecond float64 `json:"damagePerSecond,omitempty"`
 
 	// TargetCount is the number of targets this ability can affect per cast.
 	// Default (0 or absent) normalises to 1 (single-target). Values > 1 drive
@@ -173,7 +212,7 @@ type AbilityDef struct {
 	// targeting strategy in the auto-cast selector registry (built in a later
 	// part); it is just a string here — resolution/validation is the
 	// registry's job.
-	SupportsAutoCast      bool   `json:"supportsAutoCast,omitempty"`
+	SupportsAutoCast       bool   `json:"supportsAutoCast,omitempty"`
 	AutoCastTargetSelector string `json:"autoCastTargetSelector,omitempty"`
 	// DefaultAutoCast controls whether the ability's auto-cast toggle starts
 	// in the ENABLED state at unit spawn / ability grant. Only applies when
@@ -243,6 +282,89 @@ type AbilityDef struct {
 	// instantly. Empty ⇒ instant (hitscan) damage, the prior behaviour. Inert
 	// for abilities with no DamageAmount.
 	Projectile string `json:"projectile,omitempty"`
+
+	// ── Spell mechanic parameters (arch-mage-spell-system) ─────────────────
+	// These are additive, inert-when-zero knobs read by the specific spell
+	// mechanics that need them (fireball splash, chain_lightning bounce,
+	// arcane_orb pull). Each is also a base value the spell-modifier pipeline
+	// (spell_modifier.go) can resolve an effective value from at cast time —
+	// see EffectiveSpell and the SpellModField enum. Omitting a field leaves it
+	// 0 and inert for every ability that does not use it (same discipline as
+	// HealAmount / DamageAmount / the channel fields above).
+
+	// Radius is the world-pixel radius of an ability's area effect: fireball's
+	// splash radius, arcane_orb's pull radius. 0 ⇒ single-target / no area.
+	Radius float64 `json:"radius,omitempty"`
+	// ProjectileSpeed optionally overrides the launched projectile's speed for
+	// modifier purposes. 0 ⇒ use the projectile def's own speed.
+	ProjectileSpeed float64 `json:"projectileSpeed,omitempty"`
+	// ProjectileScale multiplies the caster's projectile render size for this
+	// ability's bolts (e.g. 0.5 ⇒ arcane_missiles render at half the caster's
+	// scale). 0/absent ⇒ 1× (use the caster's scale unchanged). Visual only.
+	ProjectileScale float64 `json:"projectileScale,omitempty"`
+	// Duration is how long a timed effect this ability applies lasts, in
+	// seconds (arcane_orb's pull duration). 0 ⇒ no timed effect.
+	Duration float64 `json:"duration,omitempty"`
+	// ChainCount is the number of extra targets a chaining ability arcs to
+	// after the primary (chain_lightning). Maps to the bounce mechanic's
+	// bounceCount. 0 ⇒ no chaining.
+	ChainCount int `json:"chainCount,omitempty"`
+	// BounceRange is the max world-pixel leap distance between chain hops.
+	// Read directly by the chain mechanic; NOT modifier-eligible. 0 ⇒ mechanic
+	// default. Inert unless ChainCount > 0.
+	BounceRange float64 `json:"bounceRange,omitempty"`
+	// BounceDamageFalloff is the flat damage lost per chain hop. Read directly
+	// by the chain mechanic; NOT modifier-eligible. Inert unless ChainCount > 0.
+	BounceDamageFalloff int `json:"bounceDamageFalloff,omitempty"`
+	// PullStrength is the forced-displacement pull rate (world px per second)
+	// applied by a pulling ability (arcane_orb). 0 ⇒ no pull. Modifier-eligible.
+	PullStrength float64 `json:"pullStrength,omitempty"`
+
+	// ── Passive charge-fire (arcane_missiles) ──────────────────────────────
+	// When Type == AbilityPassive and ChargeRequired > 0 this is an auto-firing
+	// passive: the owning unit accumulates Arcane Charge as it spends mana
+	// (ManaToChargeRatio charge per mana point) and, once charge reaches
+	// ChargeRequired, automatically fires MissileCount projectiles at random
+	// in-range enemies (DamagePerMissile each), then resets charge. Never
+	// manually/auto cast. All fields configurable; see spell_charge.go.
+	ChargeRequired        float64 `json:"chargeRequired,omitempty"`
+	ManaToChargeRatio     float64 `json:"manaToChargeRatio,omitempty"` // 0 ⇒ normalised to 1.0 at load for a charge-fire passive
+	MissileCount          int     `json:"missileCount,omitempty"`
+	DamagePerMissile      int     `json:"damagePerMissile,omitempty"`
+	Targeting             string  `json:"targeting,omitempty"` // e.g. "random_enemy_in_range"
+	AllowDuplicateTargets bool    `json:"allowDuplicateTargets,omitempty"`
+	// MissileDelayMs is the delay in MILLISECONDS between successive bolts of one
+	// volley (the rat-a-tat stagger). 0/absent ⇒ the default
+	// (arcaneMissileStaggerSeconds). Authored in ms for readability; the roller
+	// converts to seconds.
+	MissileDelayMs float64 `json:"missileDelayMs,omitempty"`
+}
+
+// IsPassive reports whether this ability is a passive (never manually or
+// auto-cast, never on the castable action row).
+func (a AbilityDef) IsPassive() bool { return a.Type == AbilityPassive }
+
+// IsChargeFirePassive reports whether this ability is an Arcane-Charge-driven
+// auto-firing passive (arcane_missiles): a passive with a positive charge
+// threshold.
+func (a AbilityDef) IsChargeFirePassive() bool {
+	return a.IsPassive() && a.ChargeRequired > 0
+}
+
+// HasTag reports whether this ability declares the given tag. Used by the
+// spell-modifier pipeline's tag-targeted matching (spell_modifier.go). Empty
+// tag never matches (an empty target field is a wildcard handled by the
+// matcher, not by this method).
+func (a AbilityDef) HasTag(tag string) bool {
+	if tag == "" {
+		return false
+	}
+	for _, t := range a.Tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
 }
 
 // CasterAnimationOrCasting returns the caster animation status, defaulting an
@@ -290,7 +412,10 @@ func (s *GameState) canAbilityTargetUnitLocked(a AbilityDef, caster, target *Uni
 	case s.unitsFriendlyLocked(caster, target):
 		return a.CanTargetAllies
 	default:
-		return a.CanTargetEnemies
+		// Point-targeted offensive abilities (arcane_orb) don't target a unit
+		// when cast, but auto-cast selection still needs to "see" enemies to
+		// aim the point at one — so treat enemies as valid candidates here.
+		return a.CanTargetEnemies || a.TargetsPoint
 	}
 }
 
@@ -380,6 +505,12 @@ func loadAbilityDefs() map[string]AbilityDef {
 		// this normalisation is a harmless no-op.
 		if def.ChannelType != "" && def.HealingMultiplier == 0 {
 			def.HealingMultiplier = 1.0
+		}
+		// Normalise a charge-fire passive's mana→charge ratio: omitting the
+		// field yields a lossless 1.0 (one charge per mana point), matching the
+		// documented default. Inert for every non-passive ability.
+		if def.IsChargeFirePassive() && def.ManaToChargeRatio == 0 {
+			def.ManaToChargeRatio = 1.0
 		}
 		result[def.ID] = def
 	}

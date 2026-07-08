@@ -366,6 +366,12 @@
                 v-if="ui.selection.actions[i - 1].stockCount"
                 class="action-cell__stock"
               >{{ ui.selection.actions[i - 1].stockCount }}</span>
+              <!-- Charge readout over the icon for a charge-fire passive
+                   (Arcane Missiles): live "current/required" toward auto-fire. -->
+              <span
+                v-if="ui.selection.actions[i - 1].chargeText"
+                class="action-cell__charge"
+              >{{ ui.selection.actions[i - 1].chargeText }}</span>
               <!-- Ability cooldown clock-wipe overlay. Shares the same
                    conic-gradient + countdown-number visual language as the
                    perk cooldown overlay so cooldowns read consistently
@@ -1613,6 +1619,28 @@ button.inventory-slot:focus-visible {
   line-height: 1;
 }
 
+/* Arcane-charge readout centered over a charge-fire passive's icon (Arcane
+   Missiles). A pill so the number stays legible over the sprite; updates live
+   from the snapshot as mana is spent. pointer-events none so it never eats a
+   hover/click on the cell. */
+.action-cell__charge {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: rgba(24, 14, 48, 0.82);
+  border: 1px solid rgba(170, 130, 255, 0.75);
+  font-size: 11px;
+  font-weight: 700;
+  color: #e6d8ff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 /* ── Action hover tooltip (move/attack/patrol/build/train) ───────────────── */
 /* Shares the stat-tooltip visual language: appears above the cell on hover, */
 /* shows the action label as the title, optionally lists resource costs as a */
@@ -1789,8 +1817,9 @@ button.inventory-slot:focus-visible {
    disabled — NOT the hover tooltip. Parent `opacity` cascades to every
    descendant and can't be undone by a child, so dimming the button as a
    whole made the tooltip unreadable. Excluding the tooltip keeps it at full
-   opacity so a disabled action is still easy to read. */
-.action-cell:disabled > :not(.action-tooltip) {
+   opacity so a disabled action is still easy to read. The charge readout is
+   also excluded so a passive's live charge stays bright over its dimmed icon. */
+.action-cell:disabled > :not(.action-tooltip):not(.action-cell__charge) {
   opacity: 0.42;
 }
 

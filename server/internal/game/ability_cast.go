@@ -70,6 +70,18 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 	if def.ChannelType != "" {
 		return s.beginAbilityChannelLocked(caster, abilityID, target)
 	}
+	// Passive abilities (arcane_missiles) are never manually or auto-cast —
+	// their effect is driven by their own system. Reject any cast attempt.
+	if def.IsPassive() {
+		return s.failCastLocked(caster, castFailNotOwned)
+	}
+	// Point-targeted abilities (arcane_orb) must go through the point-cast path
+	// (beginAbilityCastAtPointLocked) — never the unit-target path, whose damage
+	// step would mis-fire a homing bolt. RequestAbilityCast / auto-cast route
+	// them correctly; this guards any stray unit-target call.
+	if def.TargetsPoint {
+		return s.failCastLocked(caster, castFailInvalidTarget)
+	}
 	if !containsAbility(caster, abilityID) {
 		return s.failCastLocked(caster, castFailNotOwned)
 	}
@@ -82,7 +94,12 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 	if !def.WithinCastRange(caster, target) {
 		return s.failCastLocked(caster, castFailOutOfRange)
 	}
-	if caster.CurrentMana < def.ManaCost {
+	// Resolve the effective (modifier-folded) values for this cast. Mana,
+	// cooldown, and cast time are all read from the EffectiveSpell, never the
+	// raw def — so a perk/buff/item that reduces mana cost or cast time takes
+	// effect here without any change to this gate. The base def is untouched.
+	eff := s.effectiveSpellLocked(caster, def)
+	if caster.CurrentMana < eff.ManaCost {
 		return s.failCastLocked(caster, castFailNotEnoughMana)
 	}
 
@@ -102,7 +119,7 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 	// visible 1s wipe while the unit is locked in place mid-cast — without
 	// the clamp, the action button would silently flash with no countdown
 	// even though the player can see the cast animation playing.
-	cdDuration := def.EffectiveCooldown()
+	cdDuration := eff.EffectiveCooldown()
 	if cdDuration > 0 {
 		if caster.AbilityCooldowns == nil {
 			caster.AbilityCooldowns = make(map[string]float64, 1)
@@ -111,7 +128,7 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 	}
 
 	// Zero / negative cast time ⇒ instant ability (no lock, resolve now).
-	if def.CastTime <= 0 {
+	if eff.CastTime <= 0 {
 		targets := s.buildCastTargetSetLocked(caster, def, target)
 		s.resolveAbilityCastLocked(caster, def, targets)
 		return true, ""
@@ -119,9 +136,68 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 
 	caster.CastAbilityID = abilityID
 	caster.CastTargetID = target.ID
-	caster.CastTimeRemaining = def.CastTime
+	caster.CastTimeRemaining = eff.CastTime
 	s.beginUnitCastingLocked(caster) // Part 5: lock + "Casting" animation slot
 	return true, ""
+}
+
+// beginAbilityCastAtPointLocked casts a GROUND/POINT-targeted ability
+// (TargetsPoint) toward world point (x,y). Unlike the unit-target path there is
+// no target unit to re-resolve — the direction is fixed at cast time. This pass
+// resolves point casts immediately (arcane_orb has castTime 0); a non-zero cast
+// time would need mid-cast point storage, which no point ability uses yet.
+//
+// Caller holds s.mu.
+func (s *GameState) beginAbilityCastAtPointLocked(caster *Unit, abilityID string, x, y float64) (bool, string) {
+	if caster == nil || caster.HP <= 0 {
+		return false, castFailInvalidTarget
+	}
+	def, ok := getAbilityDef(abilityID)
+	if !ok {
+		return s.failCastLocked(caster, castFailUnknownAbility)
+	}
+	if def.IsPassive() || !def.TargetsPoint {
+		return s.failCastLocked(caster, castFailNotOwned)
+	}
+	if !containsAbility(caster, abilityID) {
+		return s.failCastLocked(caster, castFailNotOwned)
+	}
+	if caster.CastAbilityID != "" {
+		return s.failCastLocked(caster, castFailAlreadyCasting)
+	}
+	eff := s.effectiveSpellLocked(caster, def)
+	if caster.CurrentMana < eff.ManaCost {
+		return s.failCastLocked(caster, castFailNotEnoughMana)
+	}
+	caster.LastCastFailure = ""
+	if cd := eff.EffectiveCooldown(); cd > 0 {
+		if caster.AbilityCooldowns == nil {
+			caster.AbilityCooldowns = make(map[string]float64, 1)
+		}
+		caster.AbilityCooldowns[abilityID] = cd
+	}
+	s.resolveAbilityCastAtPointLocked(caster, def, eff, x, y)
+	return true, ""
+}
+
+// resolveAbilityCastAtPointLocked applies a completed point cast: spends mana
+// once, then fires the ability's point effect toward (x,y). Today the only
+// point ability is arcane_orb (a projectile + pull ⇒ traveling vortex).
+//
+// Caller holds s.mu.
+func (s *GameState) resolveAbilityCastAtPointLocked(caster *Unit, def AbilityDef, eff EffectiveSpell, x, y float64) {
+	if caster == nil {
+		return
+	}
+	if !s.spendUnitManaLocked(caster, eff.ManaCost) {
+		caster.LastCastFailure = castFailNotEnoughMana
+		return
+	}
+	// Traveling orb: launch a slow straight-line vortex from the caster toward
+	// the clicked point, up to the ability's full cast-range distance.
+	if eff.PullStrength > 0 && def.Projectile != "" {
+		s.spawnArcaneOrbLocked(caster, x, y, def, eff, def.CastRange.Resolve(caster))
+	}
 }
 
 // failCastLocked records the failure reason on the unit (for async/UI
@@ -193,10 +269,15 @@ func (s *GameState) resolveAbilityCastLocked(caster *Unit, def AbilityDef, targe
 	if caster == nil || len(targets) == 0 {
 		return
 	}
+	// Resolve effective values once at resolution time (a modifier that
+	// changed since cast-start is honoured here — resolution reflects the
+	// spell as it fires). Mana spend and every per-target magnitude read from
+	// this EffectiveSpell, never the raw def.
+	eff := s.effectiveSpellLocked(caster, def)
 	// Mana is paid here (on completion). spendUnitManaLocked is the single
 	// authoritative spend; a false return (shouldn't happen post-init-check)
 	// fails the cast gracefully with no effect.
-	if !s.spendUnitManaLocked(caster, def.ManaCost) {
+	if !s.spendUnitManaLocked(caster, eff.ManaCost) {
 		caster.LastCastFailure = castFailNotEnoughMana
 		return
 	}
@@ -205,7 +286,7 @@ func (s *GameState) resolveAbilityCastLocked(caster *Unit, def AbilityDef, targe
 		if target == nil {
 			continue
 		}
-		s.resolveAbilityCastOnTargetLocked(caster, def, target)
+		s.resolveAbilityCastOnTargetLocked(caster, def, eff, target)
 	}
 }
 
@@ -214,7 +295,7 @@ func (s *GameState) resolveAbilityCastLocked(caster *Unit, def AbilityDef, targe
 // here — it is deducted once by resolveAbilityCastLocked before this is called.
 //
 // Caller holds s.mu.
-func (s *GameState) resolveAbilityCastOnTargetLocked(caster *Unit, def AbilityDef, target *Unit) {
+func (s *GameState) resolveAbilityCastOnTargetLocked(caster *Unit, def AbilityDef, eff EffectiveSpell, target *Unit) {
 	if target == nil {
 		return
 	}
@@ -243,16 +324,32 @@ func (s *GameState) resolveAbilityCastOnTargetLocked(caster *Unit, def AbilityDe
 	//   - Otherwise the damage is applied INSTANTLY (hitscan) through the shared
 	//     authoritative pipeline — the prior behaviour.
 	// 0 / absent DamageAmount ⇒ no damage (inert for non-offensive abilities).
-	if def.DamageAmount > 0 && target.HP > 0 {
-		if def.Projectile != "" {
-			s.fireAbilityProjectileLocked(caster, target, def)
-		} else {
-			s.applyUnitDamageWithSourceLocked(target, def.DamageAmount, DamageSource{
+	if eff.Damage > 0 && target.HP > 0 {
+		switch {
+		case eff.ChainCount > 0:
+			// Chaining ability (chain_lightning): the bolt hits the primary
+			// target then arcs to further enemies. Reuses the existing beam-
+			// bounce mechanic (executeProcEffectLocked → fireProcBeamLocked),
+			// so bounce selection, falloff, and determinism are inherited.
+			s.fireAbilityChainLocked(caster, target, def, eff)
+		case def.Projectile != "":
+			s.fireAbilityProjectileLocked(caster, target, def, eff)
+		default:
+			s.applyUnitDamageWithSourceLocked(target, eff.Damage, DamageSource{
 				AttackerUnitID: caster.ID,
 				Kind:           "ability",
 				DamageType:     def.DamageType.OrPhysical(),
 			})
 		}
+	}
+
+	// Instant area pull resolve step for UNIT-targeted pull abilities: drag
+	// hostiles within radius of the target's position for the effective
+	// duration (allies/caster never displaced; inert when PullStrength == 0).
+	// The traveling-orb variant (arcane_orb) is point-targeted and resolves via
+	// resolveAbilityCastAtPointLocked instead — not here.
+	if eff.PullStrength > 0 && eff.Radius > 0 && eff.Duration > 0 {
+		s.applyPullInRadiusLocked(caster, target.X, target.Y, eff.Radius, eff.PullStrength, eff.Duration)
 	}
 
 	if def.EffectOnTarget != "" {
@@ -266,6 +363,34 @@ func (s *GameState) resolveAbilityCastOnTargetLocked(caster *Unit, def AbilityDe
 	// Perk hook: fire once per resolved target so perks like battle_prayer
 	// can stamp cross-unit buffs on every ally the ability touches.
 	s.onPerkAbilityResolvedLocked(caster, def, target)
+}
+
+// fireAbilityChainLocked delivers a chaining offensive ability (chain_lightning)
+// through the existing beam-bounce mechanic. It builds a ProcEffectParams from
+// the ability's EFFECTIVE values (damage, chain count) plus the def's bounce
+// tuning and fires it via executeProcEffectLocked — the same path equipment's
+// lightning_chain proc uses. That reuse means the primary hit, the up-to-
+// ChainCount deterministic hops, per-hop falloff, kill credit, and the
+// no-recurse discipline are all inherited; nothing about chaining is
+// reimplemented here.
+//
+// The emitter defaults to the beam projectile def "lightning_bolt" (what the
+// lightning_chain proc arcs on) when the ability names no projectile.
+//
+// Caller holds s.mu.
+func (s *GameState) fireAbilityChainLocked(caster, target *Unit, def AbilityDef, eff EffectiveSpell) {
+	emitter := def.Projectile
+	if emitter == "" {
+		emitter = "lightning_bolt"
+	}
+	s.executeProcEffectLocked(procSourceFromUnit(caster), target, ProcEffectParams{
+		Damage:              eff.Damage,
+		DamageType:          def.DamageType.OrPhysical(),
+		ProjectileID:        emitter,
+		BounceCount:         eff.ChainCount,
+		BounceRange:         def.BounceRange,
+		BounceDamageFalloff: def.BounceDamageFalloff,
+	})
 }
 
 // cancelUnitCastLocked aborts an in-progress cast (target lost, etc.): no

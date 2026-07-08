@@ -275,9 +275,16 @@ func (s *GameState) addUnitXPLocked(unit *Unit, amount int) {
 		// Perk definitions: catalog/perks/<unit>/<path>/<rank>.json
 		// Perk runtime/handlers + assignment rules: perks.go
 		s.assignUnitPerkLocked(unit)
+		// Roll this unit's archetype spell-pool pick for the new rank (§11)
+		// BEFORE the ability recompute reads it. This is the one-time RNG draw;
+		// it records onto unit.PoolSpellsByRank. No-op for units whose archetype
+		// has no pool for the rank (draws no RNG), so non-caster progression is
+		// byte-for-byte unchanged.
+		s.rollUnitPoolSpellsLocked(unit)
 		// Grant path-specific abilities for the new (path, rank) after the perk
 		// (same ordering rationale: path is already assigned). Idempotent,
-		// ordered, RNG-free — see assignUnitPathAbilitiesLocked.
+		// ordered, RNG-free — see assignUnitPathAbilitiesLocked (reads the pick
+		// rolled just above).
 		s.assignUnitPathAbilitiesLocked(unit)
 		s.applyRankModifiersLocked(unit, true)
 		s.onUnitRankUpLocked(unit)

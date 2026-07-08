@@ -316,10 +316,10 @@ func TestAutoCast_SnapshotAndRequestCast(t *testing.T) {
 
 	// Public standard-cast entrypoint: ownership enforced, then delegates to
 	// the Part 8 lifecycle.
-	if ok, reason := s.RequestAbilityCast("someone_else", app.ID, "heal", ally.ID); ok || reason != castFailNotOwned {
+	if ok, reason := s.RequestAbilityCast("someone_else", app.ID, "heal", ally.ID, 0, 0); ok || reason != castFailNotOwned {
 		t.Errorf("non-owner cast must fail with %q; got (%v,%q)", castFailNotOwned, ok, reason)
 	}
-	if ok, reason := s.RequestAbilityCast("p1", app.ID, "heal", ally.ID); !ok {
+	if ok, reason := s.RequestAbilityCast("p1", app.ID, "heal", ally.ID, 0, 0); !ok {
 		t.Errorf("owner cast should start: %q", reason)
 	}
 }

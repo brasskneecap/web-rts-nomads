@@ -98,6 +98,11 @@ func (s *GameState) DebugSpawnUnit(msg protocol.DebugSpawnUnitMessage, callerPla
 		unit.Rank = msg.Rank
 	}
 
+	// Roll archetype spell-pool picks for the debug-set rank (§11) before the
+	// recompute reads them — debug spawn can jump straight to gold, so this
+	// rolls every reached rank once. No-op when the archetype has no pool.
+	s.rollUnitPoolSpellsLocked(unit)
+
 	// Fire path-ability grants for the chosen (path, rank). The natural
 	// rank-up path runs this from addUnitXPLocked, but debug spawn sets the
 	// rank directly without going through XP, so the grant has to be invoked

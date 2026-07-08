@@ -1,0 +1,18 @@
+{
+  "id": "arcane_missiles",
+  "displayName": "Arcane Missiles",
+  "type": "passive",
+  "chargeRequired": 30,
+  "manaToChargeRatio": 1.0,
+  "missileCount": 3,
+  "damagePerMissile": 25,
+  "missileDelayMs": 100,
+  "minorDamage": true,
+  "projectile": "arcane_missiles",
+  "projectileScale": 0.5,
+  "projectileSpeed": 280,
+  "damageType": "arcane",
+  "targeting": "random_enemy_in_range",
+  "allowDuplicateTargets": true,
+  "icon": "TODO/abilities/arcane_missiles.png"
+}

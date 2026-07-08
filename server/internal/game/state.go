@@ -124,18 +124,23 @@ type Unit struct {
 	CurrentMana          int
 	ManaRegenPerSecond   float64
 	ManaRegenAccumulator float64
-	BaseDamage           int
-	BaseArmor            int
-	BaseAttackSpeed      float64
-	BaseMoveSpeed        float64
-	XP                   int
-	XPValue              int // raw XP yielded when killed in "split" mode; seeded at spawn
-	XPProgressRemainder  float64
-	Rank                 string
-	RankUpFxRemaining    float64
-	ProgressionPath      string
-	Armor                int
-	PerkIDs              []string // assigned perk ids, in rank-up order. Length is typically
+	// ArcaneCharge accumulates as a unit with the arcane_missiles charge-fire
+	// passive spends mana (arch-mage-spell-system). At the passive's
+	// ChargeRequired it auto-fires missiles and resets (see spell_charge.go).
+	// 0 for every unit without the passive.
+	ArcaneCharge        float64
+	BaseDamage          int
+	BaseArmor           int
+	BaseAttackSpeed     float64
+	BaseMoveSpeed       float64
+	XP                  int
+	XPValue             int // raw XP yielded when killed in "split" mode; seeded at spawn
+	XPProgressRemainder float64
+	Rank                string
+	RankUpFxRemaining   float64
+	ProgressionPath     string
+	Armor               int
+	PerkIDs             []string // assigned perk ids, in rank-up order. Length is typically
 	// 3 (one per tier). Length 4 indicates the owner had a
 	// unitExtraPerkSlot advancement granting a second pick at
 	// the same rank as one of the existing tiers (see advancement
@@ -326,6 +331,22 @@ type Unit struct {
 	// from UnitDef.Abilities). Per-instance auto-cast / cooldown state is
 	// layered on in the action-bar part. Nil for non-caster units.
 	Abilities []string
+	// PoolSpellsByRank records the spell rolled from this unit's archetype spell
+	// pool at each rank (arch-mage-spell-system §11), keyed by rank slug
+	// (bronze/silver/gold). The roll is RNG and happens ONCE at rank-up
+	// (rollUnitPoolSpellsLocked); assignUnitPathAbilitiesLocked then READS this
+	// map to include the pick in unit.Abilities, keeping that recompute
+	// idempotent and RNG-free (the split mirrors how ProgressionPath records the
+	// path roll). Stores ability id strings, never pointers. Nil ⇒ no pool picks.
+	PoolSpellsByRank map[string]string
+	// SpellModifiers are active per-unit spell modifiers (spell_modifier.go) —
+	// the concrete attachment point buffs / items / future perks use to tune a
+	// unit's spells. They are FOLDED at cast time into an EffectiveSpell and
+	// never mutate the base AbilityDef. Nil ⇒ the unit's spells resolve to
+	// their base values. Value data (no pointers), so it is determinism- and
+	// snapshot-safe. The collector (collectSpellModifiersLocked) reads this
+	// slice alongside any source-method seams.
+	SpellModifiers []SpellModifier
 	// Active ability cast (mirrors the AttackWindup* timed-state pattern).
 	// CastAbilityID == "" ⇒ not casting. CastTimeRemaining counts down in
 	// tickUnitCastLocked; on reaching 0 the ability resolves. Target is held
@@ -451,6 +472,17 @@ type Unit struct {
 	// While > 0 the unit cannot attack or move along its path, but
 	// AttackTargetID and Path are preserved so it resumes cleanly when it expires.
 	StunnedRemaining float64
+	// ── Forced displacement / pull CC (arch-mage-spell-system) ─────────────
+	// PullRemaining > 0 marks a unit under forced displacement (arcane_orb):
+	// each tick it is dragged toward (PullCenterX, PullCenterY) at PullStrength
+	// world-px/sec, and normal path advancement is skipped for that tick
+	// (displacement wins). On expiry the unit's stale path is dropped so it
+	// re-plans from its displaced position (no snap-back). Pure-math, seed-safe.
+	// See spell_pull.go. All zero ⇒ not being pulled.
+	PullRemaining float64
+	PullCenterX   float64
+	PullCenterY   float64
+	PullStrength  float64
 	// SlowedRemaining is seconds left on the PHYSICAL/generic slow CC (traps,
 	// concussive perks) applied by ApplySlowLocked. Decays in state.go Update();
 	// when it reaches 0, SlowedMultiplier is also cleared.
@@ -955,6 +987,12 @@ type GameState struct {
 	// damage hits that should render as a smaller orange floating number
 	// (Reactive Flames splash, etc.). See minor_damage_events.go.
 	minorDamageEventsThisTick []minorDamageEvent
+
+	// pendingArcaneMissiles are queued Arcane Missiles awaiting their staggered
+	// launch: a volley fires one bolt every arcaneMissileStaggerSeconds instead
+	// of all at once, for a better rat-a-tat feel. Drained in
+	// tickArcaneMissilesLocked. See spell_charge.go.
+	pendingArcaneMissiles []pendingArcaneMissile
 
 	// hitDamageEventsThisTick mirrors critEventsThisTick for individual landed
 	// hits. Lets the client split its HP-diff popup into per-hit numbers so
@@ -1560,6 +1598,7 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 			SlowedMultiplier:     unit.SlowedMultiplier,
 			ColdSlowedRemaining:  unit.ColdSlowedRemaining,
 			ColdSlowedMultiplier: unit.ColdSlowedMultiplier,
+			ArcaneCharge:         unit.ArcaneCharge,
 			BurningRemaining:     unit.PerkState.maxBurnRemaining(),
 			BurningAnchor:        s.burningOverlayAnchorLocked(unit),
 			ChannelLoopStart:     s.channelLoopStartForUnitLocked(unit),
@@ -1904,6 +1943,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 			SlowedMultiplier:     unit.SlowedMultiplier,
 			ColdSlowedRemaining:  unit.ColdSlowedRemaining,
 			ColdSlowedMultiplier: unit.ColdSlowedMultiplier,
+			ArcaneCharge:         unit.ArcaneCharge,
 			BurningRemaining:     unit.PerkState.maxBurnRemaining(),
 			BurningAnchor:        s.burningOverlayAnchorLocked(unit),
 			ChannelLoopStart:     s.channelLoopStartForUnitLocked(unit),
@@ -2449,6 +2489,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 			SlowedMultiplier:     unit.SlowedMultiplier,
 			ColdSlowedRemaining:  unit.ColdSlowedRemaining,
 			ColdSlowedMultiplier: unit.ColdSlowedMultiplier,
+			ArcaneCharge:         unit.ArcaneCharge,
 			BurningRemaining:     unit.PerkState.maxBurnRemaining(),
 			BurningAnchor:        s.burningOverlayAnchorLocked(unit),
 			ChannelLoopStart:     s.channelLoopStartForUnitLocked(unit),
@@ -2686,6 +2727,9 @@ func (s *GameState) Update(dt float64) {
 	profileSection("guardianAuraCache", func() { s.rebuildGuardianAuraCacheLocked() })
 	profileSection("combatAI", func() { s.tickCombatAILocked(dt, blocked) })
 	profileSection("unitCombat", func() { s.tickUnitCombatLocked(dt, blocked) })
+	// Arcane Missiles: auto-fire from accumulated Arcane Charge. After combat so
+	// this tick's mana spends (spell resolves) are already reflected in charge.
+	profileSection("arcaneMissiles", func() { s.tickArcaneMissilesLocked(dt) })
 	// Projectiles tick after combat resolution so shots fired this tick wait
 	// a full dt before decaying on the next Update pass.
 	profileSection("projectiles", func() { s.tickProjectilesLocked(dt) })
@@ -2932,6 +2976,14 @@ func (s *GameState) Update(dt float64) {
 		// tickUnitCastLocked so the tick a cast completes (Casting cleared)
 		// movement resumes immediately. Mirrors the stun pathing gate below.
 		if unit.Casting {
+			continue
+		}
+
+		// Forced displacement (pull) wins the tick over normal path advancement:
+		// the unit is dragged toward the pull center and does NOT path this tick.
+		// Runs before the stun/movement gates so a stunned unit is still pulled.
+		if unit.PullRemaining > 0 {
+			s.tickUnitPullLocked(unit, dt)
 			continue
 		}
 

@@ -505,6 +505,28 @@ type AbilitySnapshot struct {
 	// The action bar uses this to render the "channeling in progress" state
 	// (e.g. a pulsing overlay instead of the cooldown wipe).
 	Channeling bool `json:"channeling,omitempty"`
+	// Passive marks an ability that is never manually/auto cast (arcane_missiles).
+	// The client hides it from the castable action row (it may surface it as a
+	// passive/charge indicator instead).
+	Passive bool `json:"passive,omitempty"`
+	// SpellSlotRank, when set (bronze/silver/gold), marks this ability as a
+	// learnable spell-slot spell the unit gained at that rank
+	// (arch-mage-spell-system). The client renders it in the matching perk cell
+	// as a CASTABLE slot instead of in the normal ability row.
+	SpellSlotRank string `json:"spellSlotRank,omitempty"`
+	// ChargeCurrent / ChargeRequired surface a charge-fire passive's progress
+	// (arcane_missiles) so the client can draw a charge meter. Both 0 for
+	// non-charge abilities.
+	ChargeCurrent  float64 `json:"chargeCurrent,omitempty"`
+	ChargeRequired float64 `json:"chargeRequired,omitempty"`
+	// Projectile is the ability's projectile-def id, if any. The client uses it
+	// as the action-icon fallback: an ability with no bundled ability art
+	// (assets/abilities/<id>) renders its projectile image instead. Empty for
+	// instant/non-projectile abilities.
+	Projectile string `json:"projectile,omitempty"`
+	// TargetsPoint marks a ground/point-targeted ability (arcane_orb): the
+	// client arms a ground-target cursor and sends the clicked world point.
+	TargetsPoint bool `json:"targetsPoint,omitempty"`
 }
 
 // BeamSnapshot carries one active beam visual to the client. Two flavors:
@@ -750,6 +772,10 @@ type CastAbilityCommandMessage struct {
 	CasterUnitID int    `json:"casterUnitId"`
 	AbilityID    string `json:"abilityId"`
 	TargetUnitID int    `json:"targetUnitId"`
+	// TargetX / TargetY are the clicked world point for GROUND/POINT-targeted
+	// abilities (arcane_orb). Ignored for unit-targeted abilities.
+	TargetX float64 `json:"targetX,omitempty"`
+	TargetY float64 `json:"targetY,omitempty"`
 }
 
 // SetFocusTargetCommandMessage sets or clears a Cleric's sticky focus target.
@@ -1277,6 +1303,10 @@ type UnitSnapshot struct {
 	// fire_pit perk. The client paints an animated burning overlay while it is
 	// > 0. Absent (omitempty) when the unit is not on fire.
 	BurningRemaining float64 `json:"burningRemaining,omitempty"`
+	// ArcaneCharge is the accumulated Arcane Charge on a unit with the
+	// arcane_missiles passive (Arch Mage). The client renders one rotating
+	// purple orb above the unit per 10 charge. 0/absent for every other unit.
+	ArcaneCharge float64 `json:"arcaneCharge,omitempty"`
 	// BurningAnchor is where the burning overlay sits on the unit
 	// ("feet" | "center" | "head"), authored server-side in
 	// catalog/effects/burning/burning.json. Sent only while burning; absent

@@ -103,6 +103,10 @@ func (s *GameState) spendUnitManaLocked(unit *Unit, cost int) bool {
 	if unit.CurrentMana < 0 {
 		unit.CurrentMana = 0
 	}
+	// Feed the Arcane Charge loop: every mana point spent by a unit with the
+	// arcane_missiles charge-fire passive builds toward its next auto-volley.
+	// No-op for every unit without the passive (arch-mage-spell-system).
+	s.accrueArcaneChargeLocked(unit, cost)
 	return true
 }
 

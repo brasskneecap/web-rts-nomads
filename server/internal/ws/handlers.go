@@ -759,7 +759,7 @@ func (h *Hub) readLoop(client *Client) {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid cast_ability_command payload"})
 				continue
 			}
-			if ok, reason := match.State.RequestAbilityCast(client.PlayerID(), msg.CasterUnitID, msg.AbilityID, msg.TargetUnitID); !ok {
+			if ok, reason := match.State.RequestAbilityCast(client.PlayerID(), msg.CasterUnitID, msg.AbilityID, msg.TargetUnitID, msg.TargetX, msg.TargetY); !ok {
 				_ = client.WriteJSON(protocol.NotificationMessage{Type: "notification", Message: reason})
 			}
 

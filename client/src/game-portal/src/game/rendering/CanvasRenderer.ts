@@ -173,6 +173,8 @@ function colorForDamageVariant(variant: string | undefined, fallback: string): s
       return '#fb923c' // tailwind orange-400
     case 'cold':
       return '#7dd3fc' // tailwind sky-300 — icy light blue
+    case 'arcane':
+      return '#2563eb' // tailwind blue-600 — dark blue
     default:
       return fallback
   }
@@ -2378,6 +2380,7 @@ export class CanvasRenderer {
       coldSlowedRemaining?: number
       burningRemaining?: number
       burningAnchor?: string
+      arcaneCharge?: number
       activeBuffs?: { id: string; stacks?: number }[]
       activeDebuffs?: { id: string; stacks?: number }[]
       color?: string
@@ -2789,6 +2792,11 @@ export class CanvasRenderer {
           if ((unit.burningRemaining ?? 0) > 0) {
             this.drawBurningOverlay(dx, dy, w, h, unit.burningAnchor)
           }
+          // Arcane Charge halo: one rotating purple orb per 10 charge floats
+          // above an Arch Mage building toward its next Arcane Missiles volley.
+          if ((unit.arcaneCharge ?? 0) >= 10) {
+            this.drawArcaneChargeOrbs(unit.x, dy, w, unit.arcaneCharge ?? 0)
+          }
           continue
         }
       }
@@ -2891,6 +2899,44 @@ export class CanvasRenderer {
    *   - "head"   → flame's top aligns to the unit's head (sits over the head)
    * Absent/unknown falls back to "feet". No-op until the sheet decodes.
    */
+  /**
+   * Arcane Charge halo: floats `floor(charge / 10)` glowing purple orbs in a
+   * ring above the unit's head, rotating clockwise. Drawn in world space (the
+   * caller's ctx is camera-transformed). `topY` is the sprite's top edge; the
+   * ring sits just above it. Purely cosmetic, driven by the animation clock.
+   */
+  private drawArcaneChargeOrbs(cx: number, topY: number, spriteW: number, charge: number) {
+    const count = Math.min(8, Math.floor(charge / 10))
+    if (count <= 0) return
+    const ctx = this.ctx
+    const rx = Math.max(8, spriteW * 0.18) // horizontal orbit radius (tighter ring)
+    const ry = rx * 0.4 // squashed → reads as a ring viewed at an angle
+    const cy = topY - ry - 2 // float the ring just above the sprite top
+    const baseR = Math.max(1.8, spriteW * 0.042)
+    const spin = (this.renderTime / 1000) * 2.0 // rad/s; +angle with y-down = clockwise
+    for (let i = 0; i < count; i++) {
+      const a = spin + (i / count) * Math.PI * 2
+      const ox = cx + Math.cos(a) * rx
+      const oy = cy + Math.sin(a) * ry
+      // Depth cue: orbs at the back of the ring (higher on screen) render a
+      // touch smaller and dimmer so the ring reads as 3D.
+      const depth = 0.7 + 0.3 * ((Math.sin(a) + 1) / 2)
+      const r = baseR * depth
+      const glow = ctx.createRadialGradient(ox, oy, 0, ox, oy, r * 2.4)
+      glow.addColorStop(0, `rgba(221, 190, 255, ${0.95 * depth})`)
+      glow.addColorStop(0.5, `rgba(168, 85, 247, ${0.8 * depth})`)
+      glow.addColorStop(1, 'rgba(147, 51, 234, 0)')
+      ctx.fillStyle = glow
+      ctx.beginPath()
+      ctx.arc(ox, oy, r * 2.4, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = `rgba(245, 235, 255, ${0.95 * depth})`
+      ctx.beginPath()
+      ctx.arc(ox, oy, r * 0.45, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
   private drawBurningOverlay(dx: number, dy: number, w: number, h: number, anchor?: string) {
     const sprite = getEffectSprite('burning')
     if (!sprite) return

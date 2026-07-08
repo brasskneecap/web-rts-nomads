@@ -108,6 +108,10 @@ export type Unit = {
    *  fire_pit. > 0 ⇒ the renderer paints an animated burning overlay.
    *  Mirrors UnitSnapshot.burningRemaining. */
   burningRemaining?: number
+  /** Accumulated Arcane Charge (Arch Mage arcane_missiles passive). The
+   *  renderer floats one rotating purple orb per 10 charge. Mirrors
+   *  UnitSnapshot.arcaneCharge. */
+  arcaneCharge?: number
   /** Where the burning overlay anchors on the unit ("feet" | "center" | "head").
    *  Mirrors UnitSnapshot.burningAnchor; absent ⇒ "feet". */
   burningAnchor?: string
@@ -246,7 +250,11 @@ export type ActionItem = {
    *  is a compound slug (e.g. "buy-item-weapon_common_sword") but the visual
    *  should reuse an existing icon (e.g. "attack"). */
   iconId?: string
-  iconDef?: { kind: 'building'; type: string } | { kind: 'unit'; type: string } | { kind: 'item'; type: string }
+  iconDef?:
+    | { kind: 'building'; type: string }
+    | { kind: 'unit'; type: string }
+    | { kind: 'item'; type: string }
+    | { kind: 'ability'; type: string; projectile?: string }
   /** Seconds remaining on this perk's next activation. 0/undefined = ready. */
   cooldownRemaining?: number
   /** Full cooldown duration corresponding to cooldownRemaining. Drives the
@@ -257,6 +265,10 @@ export type ActionItem = {
    *  Match Menu shop cards' badge), NOT as tooltip text. Absent for
    *  non-shop actions and sold-out slots. */
   stockCount?: number
+  /** Accumulated-charge readout (e.g. "12/30") drawn OVER the icon for a
+   *  charge-fire passive (Arcane Missiles). Updates live from the snapshot so
+   *  the player watches it build toward the auto-fire. Absent otherwise. */
+  chargeText?: string
 }
 
 export type DetailItem = {
@@ -1137,6 +1149,7 @@ export class GameState {
         coldSlowedRemaining: unit.coldSlowedRemaining,
         coldSlowedMultiplier: unit.coldSlowedMultiplier,
         burningRemaining: unit.burningRemaining,
+        arcaneCharge: unit.arcaneCharge,
         burningAnchor: unit.burningAnchor,
         attackRange: unit.attackRange,
         moveSpeed: unit.moveSpeed,
@@ -3256,7 +3269,7 @@ export class GameState {
           : []
       const topActions = [...regularActions, ...abilityActions, ...focusActions]
       const emptySlot: ActionItem = { id: '', label: '', disabled: true }
-      const perkActions = getPerkActionItems(unit)
+      const perkActions = getPerkActionItems(unit, this.unitTargetingMode, this.castAbilityId)
       const actions = buildMenuOpen
         ? regularActions
         : [
@@ -3738,24 +3751,57 @@ function getAbilityActionItems(
   castAbilityId: string | null,
 ): ActionItem[] {
   if (!unit.abilities || unit.abilities.length === 0) return []
-  return unit.abilities.map((a) => {
-    const name = a.displayName ?? a.id
-    return {
-      id: `cast-ability-${a.id}`,
-      label: name,
-      kind: 'ability' as const,
-      active: activeMode === 'cast-ability' && castAbilityId === a.id,
-      autoCast: !!a.autoCast,
-      supportsAutoCast: !!a.supportsAutoCast,
-      channeling: !!a.channeling,
-      cooldownRemaining: a.cooldownRemaining,
-      cooldownTotal: a.cooldownTotal,
-      tooltipTitle: name,
-      tooltipBody: a.supportsAutoCast
-        ? 'Left-click: cast. Right-click: toggle auto-cast.'
-        : 'Left-click: cast.',
-    }
-  })
+  return unit.abilities
+    // Spell-slot spells render in their rank's perk cell (see
+    // getPerkActionItems), so they never appear in the ability row. Passives
+    // DO appear here — as a non-castable info cell (see buildPassiveAbilityCell).
+    .filter((a) => !a.spellSlotRank)
+    .map((a) => {
+      if (a.passive) return buildPassiveAbilityCell(a)
+      const name = a.displayName ?? a.id
+      return {
+        id: `cast-ability-${a.id}`,
+        label: name,
+        kind: 'ability' as const,
+        // Draw the ability's bundled art if present, else its projectile image.
+        iconDef: { kind: 'ability' as const, type: a.id, projectile: a.projectile },
+        active: activeMode === 'cast-ability' && castAbilityId === a.id,
+        autoCast: !!a.autoCast,
+        supportsAutoCast: !!a.supportsAutoCast,
+        channeling: !!a.channeling,
+        cooldownRemaining: a.cooldownRemaining,
+        cooldownTotal: a.cooldownTotal,
+        tooltipTitle: name,
+        tooltipBody: a.supportsAutoCast
+          ? 'Left-click: cast. Right-click: toggle auto-cast.'
+          : 'Left-click: cast.',
+      }
+    })
+}
+
+// buildPassiveAbilityCell renders a passive (never-cast) ability such as
+// Arcane Missiles as a NON-clickable info cell: it shows the ability art, a
+// tooltip explaining how the passive triggers, and — for a charge-fire passive
+// — the accumulated charge as a "current/required" badge over the icon so the
+// player can watch it build toward its auto-fire.
+function buildPassiveAbilityCell(a: AbilitySnapshot): ActionItem {
+  const name = a.displayName ?? a.id
+  const required = a.chargeRequired ?? 0
+  const current = Math.floor(a.chargeCurrent ?? 0)
+  const hasCharge = required > 0
+  const tooltipBody = hasCharge
+    ? `Passive. Spend mana to build Arcane Charge (1 per mana). At ${required} charge it automatically fires a volley of Arcane Missiles at nearby enemies, then resets. Charge: ${current}/${required}.`
+    : 'Passive ability.'
+  return {
+    id: `passive-${a.id}`,
+    label: name,
+    kind: 'ability' as const,
+    iconDef: { kind: 'ability' as const, type: a.id, projectile: a.projectile },
+    disabled: true, // passive — not castable
+    chargeText: hasCharge ? `${current}/${required}` : undefined,
+    tooltipTitle: `${name} (Passive)`,
+    tooltipBody,
+  }
 }
 
 // buildPerkSlot renders a single perk cell in the HUD action grid.
@@ -3798,7 +3844,56 @@ function buildPerkSlot(
   }
 }
 
-function getPerkActionItems(unit: Unit): ActionItem[] {
+// buildSpellSlotCell renders a learned spell-slot spell (arch-mage-spell-system)
+// in its rank's bottom-row cell. Unlike a perk cell it is a CASTABLE 'ability'
+// cell (clickable, autocast, cooldown) — the Arch Mage learns spells in place of
+// passive perks. It carries perkRank so it sits in the perk row with the
+// rank-colored border.
+function buildSpellSlotCell(
+  ability: AbilitySnapshot,
+  rank: 'bronze' | 'silver' | 'gold',
+  activeMode: UnitTargetingMode | null,
+  castAbilityId: string | null,
+): ActionItem {
+  const name = ability.displayName ?? ability.id
+  return {
+    id: `cast-ability-${ability.id}`,
+    label: name,
+    kind: 'ability' as const,
+    perkRank: rank,
+    iconDef: { kind: 'ability' as const, type: ability.id, projectile: ability.projectile },
+    active: activeMode === 'cast-ability' && castAbilityId === ability.id,
+    autoCast: !!ability.autoCast,
+    supportsAutoCast: !!ability.supportsAutoCast,
+    channeling: !!ability.channeling,
+    cooldownRemaining: ability.cooldownRemaining,
+    cooldownTotal: ability.cooldownTotal,
+    tooltipTitle: `${name} (${rank.charAt(0).toUpperCase() + rank.slice(1)} Spell)`,
+    tooltipBody: ability.supportsAutoCast
+      ? 'Left-click: cast. Right-click: toggle auto-cast.'
+      : 'Left-click: cast.',
+  }
+}
+
+// spellSlotByRank indexes the unit's learned spell-slot spells by the rank they
+// were learned at (from AbilitySnapshot.spellSlotRank).
+function spellSlotByRank(unit: Unit): Map<string, AbilitySnapshot> {
+  const m = new Map<string, AbilitySnapshot>()
+  for (const a of unit.abilities ?? []) {
+    if (a.spellSlotRank) m.set(a.spellSlotRank, a)
+  }
+  return m
+}
+
+function getPerkActionItems(
+  unit: Unit,
+  activeMode: UnitTargetingMode | null,
+  castAbilityId: string | null,
+): ActionItem[] {
+  // Spell-slot spells (Arch Mage) replace the perk cell at their rank with a
+  // castable slot. A rank with no learned slot spell falls back to the normal
+  // perk-slot rendering.
+  const slots = spellSlotByRank(unit)
   // The 4th cell (slot 12, right of gold) is an EXTRA perk slot reserved by
   // an advancement on the unit's owner (e.g. Twin Bronze). It exists as a
   // locked placeholder from the moment the advancement is owned, mirroring
@@ -3808,11 +3903,14 @@ function getPerkActionItems(unit: Unit): ActionItem[] {
   const extraBronze = unit.extraPerkSlots?.bronze ?? 0
 
   if (extraBronze === 0) {
-    // Standard 3-cell layout: bronze, silver, gold. Each cell shows the
-    // granted perk (perkIds[i]) or a locked placeholder.
-    return PERK_RANKS.map((rank, i) =>
-      buildPerkSlot(unit, unit.perkIds?.[i], rank, rank),
-    )
+    // Standard 3-cell layout: bronze, silver, gold. A rank with a learned
+    // spell-slot spell shows that castable spell; otherwise the granted perk
+    // (perkIds[i]) or a locked placeholder.
+    return PERK_RANKS.map((rank, i) => {
+      const slot = slots.get(rank)
+      if (slot) return buildSpellSlotCell(slot, rank, activeMode, castAbilityId)
+      return buildPerkSlot(unit, unit.perkIds?.[i], rank, rank)
+    })
   }
 
   // Twin Bronze layout. Server grant order is:

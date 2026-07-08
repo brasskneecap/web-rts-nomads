@@ -1,0 +1,254 @@
+package game
+
+import (
+	"fmt"
+	"math"
+	"sort"
+)
+
+// Spell modifier pipeline (arch-mage-spell-system, §10).
+//
+// A spell's base definition (AbilityDef) is IMMUTABLE. Perks, buffs, items,
+// and future systems tune spells by contributing SpellModifiers, which are
+// FOLDED at cast time into an EffectiveSpell. The base def is never mutated —
+// two casts of the same spell under different modifiers each start from the
+// same base.
+//
+// Determinism: for each field, all `add` operations are applied first (a sum),
+// then all `multiply` operations (a product). Sum and product are each
+// order-independent, so the resolved value never depends on the order in which
+// modifiers were collected (or on map-iteration order). This is why fold order
+// is pinned this way — it removes any need to sort modifiers for correctness.
+
+// SpellModField is the typed, load-validated enum of spell values a modifier
+// may target. Extensible-enum idiom, mirroring DamageType / AbilityCategory.
+// The empty value is not valid (a modifier must name a field).
+type SpellModField string
+
+const (
+	SpellModFieldManaCost        SpellModField = "manaCost"
+	SpellModFieldCooldown        SpellModField = "cooldown"
+	SpellModFieldCastTime        SpellModField = "castTime"
+	SpellModFieldDamage          SpellModField = "damage"
+	SpellModFieldRadius          SpellModField = "radius"
+	SpellModFieldProjectileSpeed SpellModField = "projectileSpeed"
+	SpellModFieldDuration        SpellModField = "duration"
+	SpellModFieldChainCount      SpellModField = "chainCount"
+	SpellModFieldPullStrength    SpellModField = "pullStrength"
+)
+
+// spellModFieldRegistry is the recognised modifier-field set. Never mutated
+// from the tick loop, so it adds no determinism/concurrency concern.
+var spellModFieldRegistry = map[SpellModField]struct{}{
+	SpellModFieldManaCost:        {},
+	SpellModFieldCooldown:        {},
+	SpellModFieldCastTime:        {},
+	SpellModFieldDamage:          {},
+	SpellModFieldRadius:          {},
+	SpellModFieldProjectileSpeed: {},
+	SpellModFieldDuration:        {},
+	SpellModFieldChainCount:      {},
+	SpellModFieldPullStrength:    {},
+}
+
+// IsValidSpellModField reports whether f is a recognised modifier field.
+func IsValidSpellModField(f SpellModField) bool {
+	_, ok := spellModFieldRegistry[f]
+	return ok
+}
+
+// SpellModFields returns every registered field, sorted, for stable output in
+// APIs and tests.
+func SpellModFields() []SpellModField {
+	out := make([]SpellModField, 0, len(spellModFieldRegistry))
+	for f := range spellModFieldRegistry {
+		out = append(out, f)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+// SpellModOperation is how a modifier combines with the running value. The
+// empty value defaults to add (SpellModAdd) so authoring "operation" is
+// optional and the common case (additive) needs no field.
+type SpellModOperation string
+
+const (
+	SpellModAdd      SpellModOperation = "add"
+	SpellModMultiply SpellModOperation = "multiply"
+)
+
+// SpellModTarget selects which spells a modifier applies to. A modifier
+// applies when EVERY specified field matches (unspecified fields are
+// wildcards). An entirely-empty target matches nothing and is an authoring
+// error (see Validate) — "modify every spell" is never expressible by accident.
+type SpellModTarget struct {
+	SpellID string `json:"spellId,omitempty"` // matches AbilityDef.ID
+	School  string `json:"school,omitempty"`  // matches AbilityDef.DamageType
+	Tag     string `json:"tag,omitempty"`     // matches AbilityDef.Tags membership
+}
+
+// SpellModifier is one contribution to a spell's effective values. It is pure
+// value data (determinism- and snapshot-safe) so buffs/items/perks can
+// construct or store them freely.
+type SpellModifier struct {
+	Target    SpellModTarget    `json:"target"`
+	Field     SpellModField     `json:"field"`
+	Operation SpellModOperation `json:"operation,omitempty"` // "" ⇒ add
+	Value     float64           `json:"value"`
+}
+
+// Validate reports an authoring error in a modifier: an empty target (matches
+// nothing), an unrecognised field, or an unknown operation.
+func (m SpellModifier) Validate() error {
+	if m.Target.SpellID == "" && m.Target.School == "" && m.Target.Tag == "" {
+		return fmt.Errorf("spell modifier target must specify at least one of spellId/school/tag")
+	}
+	if !IsValidSpellModField(m.Field) {
+		return fmt.Errorf("spell modifier field %q is not a recognised SpellModField", m.Field)
+	}
+	if m.Operation != "" && m.Operation != SpellModAdd && m.Operation != SpellModMultiply {
+		return fmt.Errorf("spell modifier operation %q must be %q or %q", m.Operation, SpellModAdd, SpellModMultiply)
+	}
+	return nil
+}
+
+// appliesTo reports whether this modifier targets the given ability. All
+// specified target fields must match; unspecified fields are wildcards. An
+// empty target never applies (guarded here as well as in Validate, so a
+// malformed modifier that slipped through is inert rather than universal).
+func (m SpellModifier) appliesTo(def AbilityDef) bool {
+	t := m.Target
+	if t.SpellID == "" && t.School == "" && t.Tag == "" {
+		return false
+	}
+	if t.SpellID != "" && t.SpellID != def.ID {
+		return false
+	}
+	if t.School != "" && string(def.DamageType) != t.School {
+		return false
+	}
+	if t.Tag != "" && !def.HasTag(t.Tag) {
+		return false
+	}
+	return true
+}
+
+// EffectiveSpell is the resolved, tick-local view of a spell's modifier-eligible
+// values after folding active modifiers over the base def. Cast code reads
+// THIS, never the raw AbilityDef fields, for anything a modifier can touch.
+type EffectiveSpell struct {
+	ManaCost        int
+	Cooldown        float64
+	CastTime        float64
+	Damage          int
+	DamagePerSecond float64
+	Radius          float64
+	ProjectileSpeed float64
+	Duration        float64
+	ChainCount      int
+	PullStrength    float64
+}
+
+// EffectiveCooldown mirrors AbilityDef.EffectiveCooldown on the resolved
+// values: the armed cooldown is at least the cast time so the action-bar wipe
+// is always visible while the cast is in flight.
+func (e EffectiveSpell) EffectiveCooldown() float64 {
+	if e.CastTime > e.Cooldown {
+		return e.CastTime
+	}
+	return e.Cooldown
+}
+
+// resolveEffectiveSpell folds mods over def and returns the effective values.
+// Pure and deterministic: no lock, no RNG, no clock; result is independent of
+// the order of mods. The base def is not mutated. Modifiers that do not apply
+// to def are skipped; a modifier naming a field the spell does not use is
+// harmless (it adjusts an EffectiveSpell field the spell's mechanic ignores).
+// Resolved values are floored at 0 (a negative mana cost / damage / radius is
+// meaningless) and int-valued fields are rounded.
+func resolveEffectiveSpell(def AbilityDef, mods []SpellModifier) EffectiveSpell {
+	// Per-field accumulators: sum of adds, product of multiplies.
+	adds := map[SpellModField]float64{}
+	muls := map[SpellModField]float64{}
+	for _, m := range mods {
+		if !m.appliesTo(def) {
+			continue
+		}
+		switch m.Operation {
+		case SpellModMultiply:
+			cur, ok := muls[m.Field]
+			if !ok {
+				cur = 1
+			}
+			muls[m.Field] = cur * m.Value
+		default: // SpellModAdd or "" (default additive)
+			adds[m.Field] += m.Value
+		}
+	}
+	apply := func(field SpellModField, base float64) float64 {
+		v := base + adds[field]
+		if mul, ok := muls[field]; ok {
+			v *= mul
+		}
+		if v < 0 {
+			return 0
+		}
+		return v
+	}
+	return EffectiveSpell{
+		ManaCost: int(math.Round(apply(SpellModFieldManaCost, float64(def.ManaCost)))),
+		Cooldown: apply(SpellModFieldCooldown, def.Cooldown),
+		CastTime: apply(SpellModFieldCastTime, def.CastTime),
+		Damage:   int(math.Round(apply(SpellModFieldDamage, float64(def.DamageAmount)))),
+		// DamagePerSecond reuses the `damage` field so a "+X% damage" perk scales
+		// a DoT too. A spell declares DamageAmount OR DamagePerSecond, never both,
+		// so the shared field never double-applies within one spell.
+		DamagePerSecond: apply(SpellModFieldDamage, def.DamagePerSecond),
+		Radius:          apply(SpellModFieldRadius, def.Radius),
+		ProjectileSpeed: apply(SpellModFieldProjectileSpeed, def.ProjectileSpeed),
+		Duration:        apply(SpellModFieldDuration, def.Duration),
+		ChainCount:      int(math.Round(apply(SpellModFieldChainCount, float64(def.ChainCount)))),
+		PullStrength:    apply(SpellModFieldPullStrength, def.PullStrength),
+	}
+}
+
+// collectSpellModifiersLocked gathers every active modifier for (caster, def)
+// from all sources. This is the single documented plug-in point where future
+// spell-modifying content is wired in: add a source below and it flows into
+// every cast automatically. Collection is deterministic — it reads only stable
+// unit/perk/item state, no clock or unseeded RNG. Matching against def is done
+// later by resolveEffectiveSpell, so a source may return a superset.
+//
+// Caller holds s.mu.
+func (s *GameState) collectSpellModifiersLocked(caster *Unit, def AbilityDef) []SpellModifier {
+	if caster == nil {
+		return nil
+	}
+	var mods []SpellModifier
+	// Source 1: per-unit modifiers (the concrete buff/item attachment point).
+	mods = append(mods, caster.SpellModifiers...)
+	// Source 2+: perk/other seams. Empty today — the place future passive
+	// spell-tuning perks plug in without touching the cast path.
+	mods = append(mods, s.perkSpellModifiersLocked(caster, def)...)
+	return mods
+}
+
+// perkSpellModifiersLocked is the seam for perks that tune spells. No perk
+// contributes spell modifiers yet; this returns nil and exists so the wiring
+// is present and obvious for future Arch Mage perks (which will read
+// caster.PerkState / PerkIDs and emit SpellModifiers here).
+//
+// Caller holds s.mu.
+func (s *GameState) perkSpellModifiersLocked(caster *Unit, def AbilityDef) []SpellModifier {
+	return nil
+}
+
+// effectiveSpellLocked resolves the cast-time effective values for caster's
+// use of def: collect all active modifiers, then fold. The base def is never
+// mutated.
+//
+// Caller holds s.mu.
+func (s *GameState) effectiveSpellLocked(caster *Unit, def AbilityDef) EffectiveSpell {
+	return resolveEffectiveSpell(def, s.collectSpellModifiersLocked(caster, def))
+}

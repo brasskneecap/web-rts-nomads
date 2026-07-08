@@ -569,12 +569,19 @@ export class NetworkClient {
     this.send(message)
   }
 
-  sendCastAbilityCommand(casterUnitId: number, abilityId: string, targetUnitId: number) {
+  sendCastAbilityCommand(
+    casterUnitId: number,
+    abilityId: string,
+    targetUnitId: number,
+    targetX?: number,
+    targetY?: number,
+  ) {
     const message: CastAbilityCommandMessage = {
       type: 'cast_ability_command',
       casterUnitId,
       abilityId,
       targetUnitId,
+      ...(targetX !== undefined ? { targetX, targetY } : {}),
     }
 
     this.send(message)
