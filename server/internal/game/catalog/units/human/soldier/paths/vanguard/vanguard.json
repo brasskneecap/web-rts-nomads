@@ -16,21 +16,24 @@
       "damageMultiplier": 1.10,
       "attackSpeedMultiplier": 1,
       "moveSpeedMultiplier": 1.00,
-      "armor": 100
+      "armor": 100,
+      "blockChance": 0.10
     },
     "silver": {
       "maxHPMultiplier": 2.25,
       "damageMultiplier": 1.25,
       "attackSpeedMultiplier": 1.100,
       "moveSpeedMultiplier": 1.00,
-      "armor": 150
+      "armor": 150,
+      "blockChance": 0.125
     },
     "gold": {
       "maxHPMultiplier": 2.5,
       "damageMultiplier": 1.45,
       "attackSpeedMultiplier": 1.250,
       "moveSpeedMultiplier": 1.00,
-      "armor": 200
+      "armor": 200,
+      "blockChance": 0.15
     }
   }
 }

@@ -1,0 +1,1 @@
+{ "id": "frost_shield", "name": "Frost Shield", "inputs": ["steel_shield", "ice_ring"], "costGold": 150, "output": "frost_shield" }

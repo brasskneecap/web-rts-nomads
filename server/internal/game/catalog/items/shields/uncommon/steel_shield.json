@@ -1,0 +1,13 @@
+{
+  "id": "steel_shield",
+  "displayName": "Steel Shield",
+  "description": "+25 armor. +10% block chance.",
+  "iconKey": "steel_shield",
+  "kind": "equipment",
+  "tier": "uncommon",
+  "category": "Shield",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 150,
+  "modifiers": { "armor": 25, "blockChance": 0.10 }
+}

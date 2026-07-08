@@ -140,7 +140,14 @@ type Unit struct {
 	RankUpFxRemaining   float64
 	ProgressionPath     string
 	Armor               int
-	PerkIDs             []string // assigned perk ids, in rank-up order. Length is typically
+	// PathDodgeChance / PathBlockChance are the progression path's per-rank
+	// additive evasion contributions, assigned by applyRankModifiersLocked
+	// (zero for pathless units). Combined with the game-wide base and the
+	// equipment bonus at read time by evasionForUnit — mirroring how Armor
+	// is path-assigned here and equipment-extended in effectiveArmorLocked.
+	PathDodgeChance float64
+	PathBlockChance float64
+	PerkIDs         []string // assigned perk ids, in rank-up order. Length is typically
 	// 3 (one per tier). Length 4 indicates the owner had a
 	// unitExtraPerkSlot advancement granting a second pick at
 	// the same rank as one of the existing tiers (see advancement
@@ -994,6 +1001,11 @@ type GameState struct {
 	// tickArcaneMissilesLocked. See spell_charge.go.
 	pendingArcaneMissiles []pendingArcaneMissile
 
+	// evadeEventsThisTick mirrors minorDamageEventsThisTick for avoided basic
+	// attacks (dodge/block) — one entry per whiffed melee/projectile/pierce
+	// hit this tick. See evade_events.go.
+	evadeEventsThisTick []evadeEvent
+
 	// hitDamageEventsThisTick mirrors critEventsThisTick for individual landed
 	// hits. Lets the client split its HP-diff popup into per-hit numbers so
 	// two simultaneous strikes read as "12" "12" instead of one "24". See
@@ -1751,6 +1763,7 @@ func (s *GameState) snapshotLocked() protocol.MatchSnapshotMessage {
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MeleeAttackEvents:  s.snapshotMeleeAttackEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		EvadeEvents:        s.snapshotEvadeEventsLocked(),
 		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
@@ -2155,6 +2168,7 @@ func (s *GameState) snapshotForPlayerLocked(viewerID string) protocol.MatchSnaps
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MeleeAttackEvents:  s.snapshotMeleeAttackEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		EvadeEvents:        s.snapshotEvadeEventsLocked(),
 		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
@@ -2627,6 +2641,7 @@ func (s *GameState) snapshotUnfilteredLocked() protocol.MatchSnapshotMessage {
 		CritEvents:         s.snapshotCritEventsLocked(),
 		MeleeAttackEvents:  s.snapshotMeleeAttackEventsLocked(),
 		MinorDamageEvents:  s.snapshotMinorDamageEventsLocked(),
+		EvadeEvents:        s.snapshotEvadeEventsLocked(),
 		HitDamageEvents:    s.snapshotHitDamageEventsLocked(),
 		DamageTypeHints:    s.snapshotDamageTypeHintsLocked(),
 		LethalDamageEvents: s.snapshotLethalDamageEventsLocked(),
@@ -2690,6 +2705,7 @@ func (s *GameState) Update(dt float64) {
 	s.resetCritEventsThisTickLocked()
 	s.resetMeleeAttackEventsThisTickLocked()
 	s.resetMinorDamageEventsThisTickLocked()
+	s.evadeEventsThisTick = s.evadeEventsThisTick[:0]
 	s.resetHitDamageEventsThisTickLocked()
 	s.resetDamageTypeHintsThisTickLocked()
 	s.resetLethalDamageEventsThisTickLocked()

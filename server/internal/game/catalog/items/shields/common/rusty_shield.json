@@ -1,0 +1,13 @@
+{
+  "id": "rusty_shield",
+  "displayName": "Rusty Shield",
+  "description": "+10 armor. +5% block chance.",
+  "iconKey": "rusty_shield",
+  "kind": "equipment",
+  "tier": "common",
+  "category": "Shield",
+  "slotKind": "any",
+  "allowedUnitTypes": [],
+  "costGold": 75,
+  "modifiers": { "armor": 10, "blockChance": 0.05 }
+}

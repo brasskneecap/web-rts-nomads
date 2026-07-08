@@ -96,6 +96,8 @@ type pathModifierDef struct {
 	AttackRange           float64
 	AttackRangeMultiplier float64
 	Armor                 int
+	DodgeChance           float64
+	BlockChance           float64
 }
 
 // Armor tuning. Damage reduction follows reduction = armor / (armor + armorMitigationK).
@@ -423,6 +425,8 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	unit.AttackSpeed = math.Max(0.1, unit.BaseAttackSpeed*pathDef.AttackSpeedMultiplier)
 	unit.MoveSpeed = math.Max(1.0, unit.BaseMoveSpeed*pathDef.MoveSpeedMultiplier)
 	unit.Armor = pathDef.Armor
+	unit.PathDodgeChance = pathDef.DodgeChance
+	unit.PathBlockChance = pathDef.BlockChance
 	// Bake path × perk attack-range adjustments back onto unit.AttackRange so
 	// every consumer (target acquisition, combat scoring, projectile flight,
 	// pierce length, snapshot HUD) reads the effective range without a getter.

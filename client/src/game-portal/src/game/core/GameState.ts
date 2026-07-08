@@ -493,8 +493,18 @@ export type DamageEvent = {
    *                  light-green "+N" floating up. Sourced from server
    *                  HealEventSnapshot, not from HP-diff (HP going up is
    *                  not tracked as a damage event).
+   *   - 'evade'    : an incoming hit was fully dodged or blocked (no damage
+   *                  landed). Renderer draws "Dodged!"/"Blocked!" text
+   *                  instead of a number. Sourced from server
+   *                  EvadeEventSnapshot, spawned directly like 'heal' —
+   *                  there is no HP-diff to derive it from.
    */
-  kind?: 'normal' | 'combined' | 'crit' | 'minor' | 'heal' | 'manaRestore'
+  kind?: 'normal' | 'combined' | 'crit' | 'minor' | 'heal' | 'manaRestore' | 'evade'
+  /**
+   * Sub-flavour for kind='evade': selects the popup text ("Blocked!" vs
+   * "Dodged!") and color. Mirrors server EvadeEventSnapshot.kind.
+   */
+  evadeKind?: 'dodge' | 'block'
   /**
    * Sub-flavour for kind='minor', mirroring MinorDamageEventSnapshot.variant.
    * "fire" → orange, "electric" → purple, omitted defaults to fire/orange.
@@ -1526,6 +1536,29 @@ export class GameState {
           isFriendly: !!this.localPlayerId && u.ownerId === this.localPlayerId,
           createdAt: now,
           kind: 'manaRestore',
+        })
+      }
+    }
+
+    // Evade popups — a hit was fully dodged/blocked, so no HP changed and
+    // there is nothing to peel off an HP-diff. Spawn directly over the unit,
+    // mirroring the heal/mana-restore loops above rather than the minor-pool
+    // peel used for HP-diff-derived popups.
+    if (message.evadeEvents && message.evadeEvents.length > 0) {
+      const unitById = new Map(frame.units.map((u) => [u.id, u]))
+      for (const evt of message.evadeEvents) {
+        const u = unitById.get(evt.unitId)
+        if (!u) continue
+        this.damageEvents.push({
+          unitId: u.id,
+          unitType: u.unitType,
+          x: u.x,
+          y: u.y,
+          amount: 0,
+          isFriendly: !!this.localPlayerId && u.ownerId === this.localPlayerId,
+          createdAt: now,
+          kind: 'evade',
+          evadeKind: evt.kind,
         })
       }
     }

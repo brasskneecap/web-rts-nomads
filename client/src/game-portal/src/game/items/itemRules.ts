@@ -43,6 +43,8 @@ export function buildItemTooltipBody(def: ItemDef): string {
     if (m.moveSpeed)   parts.push(`+${m.moveSpeed} Move Speed`)
     if (m.healthRegen) parts.push(`+${m.healthRegen} HP/s`)
     if (m.maxShield)   parts.push(`+${m.maxShield} Max Shield`)
+    if (m.dodgeChance) parts.push(`+${Math.round(m.dodgeChance * 100)}% Dodge Chance`)
+    if (m.blockChance) parts.push(`+${Math.round(m.blockChance * 100)}% Block Chance`)
   }
 
   if (def.effects && def.effects.length > 0) {
@@ -67,6 +69,11 @@ export function buildItemTooltipBody(def: ItemDef): string {
     const pct = Math.round(def.onHitProc.chance * 100)
     const elem = def.onHitProc.damageType.charAt(0).toUpperCase() + def.onHitProc.damageType.slice(1)
     parts.push(`${pct}% on hit: ${def.onHitProc.damage} ${elem} bolt`)
+  }
+  if (def.onStruckProc) {
+    const pct = Math.round(def.onStruckProc.chance * 100)
+    const elem = def.onStruckProc.damageType.charAt(0).toUpperCase() + def.onStruckProc.damageType.slice(1)
+    parts.push(`${pct}% when hit: ${def.onStruckProc.damage} ${elem} bolt at the attacker`)
   }
 
   return parts.join(', ')

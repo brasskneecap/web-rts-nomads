@@ -1,0 +1,1 @@
+{ "id": "lightning_shield", "name": "Lightning Shield", "inputs": ["steel_shield", "lightning_ring"], "costGold": 150, "output": "lightning_shield" }

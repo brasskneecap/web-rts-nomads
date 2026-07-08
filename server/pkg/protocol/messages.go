@@ -1649,6 +1649,14 @@ type MinorDamageEventSnapshot struct {
 	Variant string `json:"variant,omitempty"`
 }
 
+// EvadeEventSnapshot is a one-tick "the defender avoided a basic attack"
+// event: the client floats "Dodged!" / "Blocked!" over the unit. Kind is
+// "dodge" or "block".
+type EvadeEventSnapshot struct {
+	UnitID int    `json:"unitId"`
+	Kind   string `json:"kind"`
+}
+
 // DamageTypeHintSnapshot carries a server-side hint that one chunk of HP
 // loss this tick has a specific damage type. Used by the client to COLOR
 // the existing major (floating-up) damage popup it derives from HP-diff —
@@ -1847,6 +1855,7 @@ type MatchSnapshotMessage struct {
 	CritEvents         []CritEventSnapshot         `json:"critEvents,omitempty"`
 	MeleeAttackEvents  []MeleeAttackSnapshot       `json:"meleeAttackEvents,omitempty"`
 	MinorDamageEvents  []MinorDamageEventSnapshot  `json:"minorDamageEvents,omitempty"`
+	EvadeEvents        []EvadeEventSnapshot        `json:"evadeEvents,omitempty"`
 	HitDamageEvents    []DamageHitSnapshot         `json:"hitDamageEvents,omitempty"`
 	DamageTypeHints    []DamageTypeHintSnapshot    `json:"damageTypeHints,omitempty"`
 	LethalDamageEvents []LethalDamageEventSnapshot `json:"lethalDamageEvents,omitempty"`
