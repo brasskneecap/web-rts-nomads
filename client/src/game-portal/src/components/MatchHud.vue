@@ -1,40 +1,11 @@
 <template>
   <header
     class="hud"
-    :style="{
-      '--ui-panel-image': `url(${uiPanelUrl})`,
-      '--ui-panel-slice': String(theme.uiPanel.slice),
-    }"
+    :style="{ '--hud-header-image': `url(${headerPanelUrl})` }"
   >
-    <div class="hud-crest">
-      <button
-        class="crest-button"
-        type="button"
-        :aria-expanded="settingsOpen"
-        aria-haspopup="menu"
-        title="Open Settings"
-        @click="toggleSettings"
-      >
-        <div class="crest-mark"></div>
-      </button>
-      <div class="crest-copy">
-        <div class="player-row">
-          <span
-            v-if="ui.player.color"
-            class="player-color"
-            :style="{ backgroundColor: ui.player.color }"
-          ></span>
-          <span class="player-name">{{ ui.player.playerId ? 'You' : 'Connecting...' }}</span>
-        </div>
-      </div>
-
-      <div v-if="settingsOpen" class="settings-menu" role="menu" aria-label="Settings">
-        <div class="settings-title">Settings</div>
-        <button class="settings-item" type="button" role="menuitem" @click="exitGame">
-          Exit Game
-        </button>
-      </div>
-    </div>
+    <!-- Heraldic banner: purely decorative, overhangs the bar's left end.
+         pointer-events disabled so it never blocks the battlefield beneath it. -->
+    <img class="hud-banner" :src="bannerFlagUrl" alt="" draggable="false" />
 
     <!-- Wave indicator — only rendered when the server has wave mode enabled -->
     <section v-if="ui.wave.enabled" class="wave-panel" aria-label="Wave status">
@@ -82,21 +53,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import type { GameUiSnapshot } from '@/game/core/GameClient'
-import uiPanelUrl from '@/assets/ui/themes/default/ui_panel.png'
-import theme from '@/assets/ui/themes/default/theme.json'
+import headerPanelUrl from '@/assets/ui/themes/updated/header-panel.png'
+import bannerFlagUrl from '@/assets/ui/themes/updated/banner-flag.png'
 import { getResourceIconUrl } from '@/game/rendering/resourceSprites'
-
-const emit = defineEmits<{
-  exit: []
-}>()
 
 const props = defineProps<{
   ui: GameUiSnapshot
 }>()
-
-const settingsOpen = ref(false)
 
 function formatSeconds(s: number): string {
   const total = Math.max(0, Math.ceil(s))
@@ -128,15 +93,6 @@ const waveTimerText = computed(() => {
   }
   return ''
 })
-
-function toggleSettings() {
-  settingsOpen.value = !settingsOpen.value
-}
-
-function exitGame() {
-  settingsOpen.value = false
-  emit('exit')
-}
 </script>
 
 <style scoped>
@@ -148,86 +104,37 @@ function exitGame() {
      other UI, so elevating the whole bar is harmless. */
   z-index: 20;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: 18px;
-  padding: 0 18px;
 
-  /* 9-slice panel: shared 56×56 source, 16px corners. */
+  /* Header-bar art: 264×58 with ornamental 54px metal ends and a stretchable
+     wood middle. Horizontal 3-slice — freeze the 54px ends, stretch the middle
+     across whatever width the bar takes. Height is pinned to the native 58px so
+     the ends never distort vertically. The 54px side borders also keep content
+     (crest, resources) clear of the corner brackets, so no extra side padding. */
+  height: 58px;
+  box-sizing: border-box;
   background: none;
-  border: calc(var(--ui-panel-slice) * 1px) solid transparent;
-  border-image-source: var(--ui-panel-image);
-  border-image-slice: var(--ui-panel-slice) fill;
-  border-image-width: calc(var(--ui-panel-slice) * 1px);
-  border-image-repeat: round;
-  image-rendering: pixelated;
+  border-style: solid;
+  border-width: 0 54px;
+  border-image-source: var(--hud-header-image);
+  border-image-slice: 0 54 fill;
+  border-image-width: 0 54px;
+  border-image-repeat: stretch;
+  /* No image-rendering: pixelated here — this is detailed art, not a pixel tile. */
 }
 
-.hud-crest {
-  position: relative;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 0 1 280px;
-}
-
-.crest-button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-
-.crest-button:focus-visible {
-  outline: 2px solid rgba(247, 216, 142, 0.9);
-  outline-offset: 3px;
-  border-radius: 12px;
-}
-
-.crest-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background:
-    radial-gradient(circle at 30% 30%, rgba(255, 225, 152, 0.8), transparent 35%),
-    linear-gradient(180deg, #9a6937, #5f3c1d);
-  border: 1px solid rgba(227, 194, 132, 0.4);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 214, 0.2),
-    0 3px 10px rgba(0, 0, 0, 0.25);
-}
-
-.crest-button:hover .crest-mark {
-  filter: brightness(1.08);
-}
-
-.crest-copy {
-  min-width: 0;
-}
-
-.player-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.player-name {
-  font-size: 16px;
-  font-weight: 700;
-  color: #f5ead2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.player-color {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  flex: 0 0 auto;
-  box-shadow: 0 0 0 2px rgba(245, 234, 210, 0.16);
+.hud-banner {
+  position: absolute;
+  top: -8px;
+  left: 4px;
+  width: 84px;
+  height: auto;
+  z-index: 2;
+  /* Decorative overhang — must not intercept clicks meant for the battlefield. */
+  pointer-events: none;
+  filter: drop-shadow(0 5px 7px rgba(0, 0, 0, 0.5));
 }
 
 .resource-tray {
@@ -237,51 +144,6 @@ function exitGame() {
   justify-content: flex-end;
   flex-wrap: nowrap;
   gap: 10px;
-}
-
-.settings-menu {
-  position: absolute;
-  top: calc(100% + 10px);
-  left: 0;
-  min-width: 180px;
-  padding: 10px;
-
-  /* 9-slice panel frame */
-  background: none;
-  border: calc(var(--ui-panel-slice) * 1px) solid transparent;
-  border-image-source: var(--ui-panel-image);
-  border-image-slice: var(--ui-panel-slice) fill;
-  border-image-width: calc(var(--ui-panel-slice) * 1px);
-  border-image-repeat: round;
-  image-rendering: pixelated;
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.34);
-}
-
-.settings-title {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #d7bb84;
-}
-
-.settings-item {
-  width: 100%;
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(200, 164, 106, 0.24);
-  background: linear-gradient(180deg, rgba(113, 75, 39, 0.85), rgba(61, 39, 22, 0.95));
-  color: #f5ead2;
-  font-size: 13px;
-  font-weight: 700;
-  text-align: left;
-  cursor: pointer;
-}
-
-.settings-item:hover {
-  background: linear-gradient(180deg, rgba(145, 96, 48, 0.95), rgba(83, 53, 28, 0.98));
-  border-color: rgba(220, 180, 110, 0.5);
 }
 
 .resource-card {
@@ -385,15 +247,6 @@ function exitGame() {
 @media (max-width: 900px) {
   .hud {
     gap: 10px;
-    padding: 8px 12px;
-  }
-
-  .hud-command {
-    display: none;
-  }
-
-  .hud-crest {
-    flex: 0 0 auto;
   }
 
   .resource-tray {
@@ -412,16 +265,6 @@ function exitGame() {
 @media (max-width: 600px) {
   .hud {
     gap: 8px;
-    padding: 6px 10px;
-  }
-
-  .crest-mark {
-    width: 26px;
-    height: 26px;
-  }
-
-  .player-name {
-    font-size: 13px;
   }
 
   .resource-card {

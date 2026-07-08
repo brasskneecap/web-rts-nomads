@@ -4,9 +4,13 @@
     role="dialog"
     aria-modal="true"
     aria-label="Settings"
+    :style="{
+      '--ui-window-image': `url(${mainWindowPanelUrl})`,
+      '--ui-button-image': `url(${buttonUrl})`,
+    }"
   >
     <div class="match-settings__panel-wrap">
-      <UiPanel class="match-settings__panel" :padding="28">
+      <div class="match-settings__panel">
         <button
           type="button"
           class="match-settings__close"
@@ -26,19 +30,24 @@
               {{ paused ? 'Resume Game' : 'Pause Game' }}
             </UiButton>
           </div>
+          <div class="match-settings__row">
+            <span class="match-settings__label">Leave this match</span>
+            <UiButton size="sm" @click="emit('exit-game')">Exit Game</UiButton>
+          </div>
         </section>
 
         <SettingsPanel />
-      </UiPanel>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount } from 'vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import SettingsPanel from '@/components/menu/SettingsPanel.vue'
+import mainWindowPanelUrl from '@/assets/ui/themes/updated/main-window-panel.png'
+import buttonUrl from '@/assets/ui/themes/updated/button.png'
 
 const props = defineProps<{
   paused: boolean
@@ -47,6 +56,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   'toggle-pause': [next: boolean]
+  'exit-game': []
 }>()
 
 function onTogglePause() {
@@ -92,6 +102,31 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   box-sizing: border-box;
+  padding: 18px;
+  /* Main-window-panel frame with `fill` (wood interior backs the content).
+     Slice keeps the full 44px corner art; rendered at 40px so it fits this
+     smaller modal. Detailed art → smooth rendering. */
+  border: 40px solid transparent;
+  border-image-source: var(--ui-window-image);
+  border-image-slice: 44 fill;
+  border-image-width: 40px;
+  border-image-repeat: round;
+  image-rendering: auto;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.65);
+}
+
+/* All buttons in the settings popup (Pause/Exit + the SettingsPanel's Fullscreen
+   toggle) use the button.png art. Only actual UiButtons match — the audio
+   sliders aren't affected. Sized to the button aspect so the corner brackets and
+   top diamond don't distort. UiButton's own hover/active filters still apply. */
+.match-settings :deep(.ui-button) {
+  border: 0;
+  padding: 0 16px;
+  min-width: 168px;
+  min-height: 60px;
+  background: var(--ui-button-image) center / 100% 100% no-repeat;
+  image-rendering: auto;
+  color: #f6ecd2;
 }
 
 .match-settings__close {

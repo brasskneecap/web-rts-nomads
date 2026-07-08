@@ -261,21 +261,23 @@ export class GameClient {
    *  top-right corner placement. The rect is converted into canvas-pixel
    *  space here so callers (HUD components) can pass raw DOMRects.
    *
-   *  The rect is inset by MINIMAP_FRAME_INSET on each side so the minimap
-   *  draws inside the visible interior of the panel rather than being clipped
-   *  by the 9-slice frame border that overlays it. */
+   *  The FULL panel rect is used — the minimap frame is now painted on the
+   *  canvas at this rect (CanvasRenderer.drawMinimap) and the map is inset from
+   *  it there by the frame's rail. Insetting here too would shrink the whole
+   *  frame (it used to, back when the frame was a DOM border-image overlay and
+   *  the map had to draw inside it), leaving the minimap shorter than the
+   *  adjacent panels. */
   setMinimapPanelRect(rect: DOMRect | null) {
     if (!rect || rect.width <= 0 || rect.height <= 0) {
       this.state.minimapPanelRect = null
       return
     }
-    const inset = 17
     const canvasRect = this.canvas.getBoundingClientRect()
     this.state.minimapPanelRect = {
-      x: rect.left - canvasRect.left + inset,
-      y: rect.top - canvasRect.top + inset,
-      width: Math.max(0, rect.width - inset * 2),
-      height: Math.max(0, rect.height - inset * 2),
+      x: rect.left - canvasRect.left,
+      y: rect.top - canvasRect.top,
+      width: rect.width,
+      height: rect.height,
     }
   }
 

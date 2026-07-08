@@ -9,6 +9,7 @@ import {
   getTerrainColor,
 } from '../maps/mapConfig'
 import { drawMinimapBase, drawMinimapPOIs } from './minimapLayers'
+import mainWindowPanelUrl from '../../assets/ui/themes/updated/main-window-panel.png'
 import { BUILDING_DEF_MAP, getBuildingStyleRender, getResolvedBuildingAttackVisual, resolveBuildingShadow, spriteTypeForTier } from '../maps/buildingDefs'
 import { getBuildingFallbackRender } from '../maps/buildingFallbackRender'
 import {
@@ -134,6 +135,46 @@ export function getMinimapBounds(
     width,
     height,
   }
+}
+
+// Minimap panel frame. Painted on the game canvas *under* the minimap so the
+// map fills the frame's wood interior (content sits on top of the frame), then
+// the brass corners are re-stamped on top. 44px is the art's corner slice; the
+// map insets by the thin rail so the rail stays visible around it.
+const MINIMAP_FRAME_CORNER_SRC = 44
+const MINIMAP_FRAME_RAIL = 12
+const minimapFrameImage: HTMLImageElement | null =
+  typeof Image !== 'undefined' ? Object.assign(new Image(), { src: mainWindowPanelUrl }) : null
+
+function minimapFrameReady(): boolean {
+  return !!minimapFrameImage && minimapFrameImage.complete && minimapFrameImage.naturalWidth > 0
+}
+
+type RectXYWH = { x: number; y: number; width: number; height: number }
+
+function drawMinimapFrameBackdrop(ctx: CanvasRenderingContext2D, rect: RectXYWH): void {
+  if (!minimapFrameReady()) return
+  const prev = ctx.imageSmoothingEnabled
+  ctx.imageSmoothingEnabled = true
+  ctx.drawImage(minimapFrameImage!, rect.x, rect.y, rect.width, rect.height)
+  ctx.imageSmoothingEnabled = prev
+}
+
+function drawMinimapFrameCorners(ctx: CanvasRenderingContext2D, rect: RectXYWH): void {
+  if (!minimapFrameReady()) return
+  const img = minimapFrameImage!
+  const s = MINIMAP_FRAME_CORNER_SRC
+  const nw = img.naturalWidth
+  const nh = img.naturalHeight
+  const cw = s * (rect.width / nw)
+  const ch = s * (rect.height / nh)
+  const prev = ctx.imageSmoothingEnabled
+  ctx.imageSmoothingEnabled = true
+  ctx.drawImage(img, 0, 0, s, s, rect.x, rect.y, cw, ch)
+  ctx.drawImage(img, nw - s, 0, s, s, rect.x + rect.width - cw, rect.y, cw, ch)
+  ctx.drawImage(img, 0, nh - s, s, s, rect.x, rect.y + rect.height - ch, cw, ch)
+  ctx.drawImage(img, nw - s, nh - s, s, s, rect.x + rect.width - cw, rect.y + rect.height - ch, cw, ch)
+  ctx.imageSmoothingEnabled = prev
 }
 
 // Path2D objects require SVG string parsing on construction. Since all icon
@@ -4578,26 +4619,63 @@ export class CanvasRenderer {
     }>,
   ) {
     const ctx = this.ctx
-    const bounds = getMinimapBounds(
-      this.canvas.width,
-      this.canvas.height,
-      this.state.mapWidth,
-      this.state.mapHeight,
-      this.state.minimapPanelRect,
-    )
-    const { x, y, width: minimapWidth, height: minimapHeight } = bounds
+    const panelRect = this.state.minimapPanelRect
 
     ctx.save()
 
-    // Fill the full panel interior black first so the letterbox area (the
-    // space inside the panel that the aspect-fit minimap doesn't cover) is
-    // opaque. Without this, the canvas world view shows through the gap
-    // between the minimap and the panel frame on the top/bottom (or sides).
-    const panelRect = this.state.minimapPanelRect
-    if (panelRect) {
+    // When the HUD supplies a panel rect, paint the frame art on THIS canvas as
+    // a backdrop, then fill the map over its wood interior (inset only by the
+    // rail) and re-stamp the brass corners on top afterwards. That puts the map
+    // on top of the frame instead of peeking through a hole in it. Falls back to
+    // the old aspect-fit-in-rect behaviour when there's no panel frame.
+    let inner: RectXYWH | null = null
+    let bounds: MinimapBounds
+    if (panelRect && panelRect.width > 0 && panelRect.height > 0) {
+      drawMinimapFrameBackdrop(ctx, panelRect)
+      inner = {
+        x: panelRect.x + MINIMAP_FRAME_RAIL,
+        y: panelRect.y + MINIMAP_FRAME_RAIL,
+        width: panelRect.width - MINIMAP_FRAME_RAIL * 2,
+        height: panelRect.height - MINIMAP_FRAME_RAIL * 2,
+      }
+      // Opaque base so no world-canvas bleed shows under any sub-pixel gap.
       ctx.fillStyle = '#000'
-      ctx.fillRect(panelRect.x, panelRect.y, panelRect.width, panelRect.height)
+      ctx.fillRect(inner.x, inner.y, inner.width, inner.height)
+      // COVER fit: fill the opening (cropping overflow) so there's no letterbox
+      // gap between the map and the frame.
+      const aspect = this.state.mapWidth / this.state.mapHeight
+      const innerAspect = inner.width / inner.height
+      let w: number
+      let h: number
+      if (innerAspect > aspect) {
+        w = inner.width
+        h = w / aspect
+      } else {
+        h = inner.height
+        w = h * aspect
+      }
+      bounds = {
+        x: inner.x + (inner.width - w) / 2,
+        y: inner.y + (inner.height - h) / 2,
+        width: w,
+        height: h,
+      }
+      // Clip the map to the opening so the COVER overflow can't spill over the
+      // rail, corners, or neighbouring panels.
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(inner.x, inner.y, inner.width, inner.height)
+      ctx.clip()
+    } else {
+      bounds = getMinimapBounds(
+        this.canvas.width,
+        this.canvas.height,
+        this.state.mapWidth,
+        this.state.mapHeight,
+        null,
+      )
     }
+    const { x, y, width: minimapWidth, height: minimapHeight } = bounds
 
     // Static base layer (terrain + obstacles + buildings + border) — shared
     // with the lobby minimap preview via minimapLayers.ts so a new map
@@ -4682,6 +4760,13 @@ export class CanvasRenderer {
     ctx.lineWidth = 1.5
     ctx.strokeRect(viewX, viewY, viewWidth, viewHeight)
     ctx.restore()
+
+    // End the interior clip, then re-stamp the brass corners over the map so
+    // they sit on top of it (the map fills the wood; only rail + corners frame).
+    if (inner) {
+      ctx.restore()
+      if (panelRect) drawMinimapFrameCorners(ctx, panelRect)
+    }
 
     ctx.restore()
   }

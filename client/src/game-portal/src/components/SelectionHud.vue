@@ -4,6 +4,8 @@
     :style="{
       '--ui-panel-image': `url(${uiPanelUrl})`,
       '--ui-panel-slice': String(theme.footerPanel.slice),
+      '--ui-window-image': `url(${mainWindowPanelUrl})`,
+      '--ui-flair-image': `url(${panelFlairUrl})`,
       '--ui-icon-container-image': `url(${iconContainerUrl})`,
     }"
   >
@@ -448,6 +450,8 @@ import { getUnitPortraitUrl } from '@/game/rendering/unitSprites'
 import { getRankToneColor } from '@/game/rendering/rankColors'
 import ActionIcon from '@/components/ActionIcon.vue'
 import uiPanelUrl from '@/assets/ui/themes/default/footer_panel.png'
+import mainWindowPanelUrl from '@/assets/ui/themes/updated/main-window-panel.png'
+import panelFlairUrl from '@/assets/ui/themes/updated/panel-flair.png'
 import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
 import theme from '@/assets/ui/themes/default/theme.json'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
@@ -813,7 +817,12 @@ function actionHotkey(action: { hotkey?: string; label: string }): string | null
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 5;
+  /* Above the MatchMenuLauncher (z-index 6) so the lion-crest flair, which
+     overhangs the details panel's top edge into the launcher's zone, sits in
+     front of the commander ability icons. The rest of the HUD doesn't overlap
+     the launcher (side panels stand off it; the details body meets it at 210px
+     without overlapping), so only the flair is affected. */
+  z-index: 7;
   /* Standardized fixed sizes — no clamp(), no flex distribution. The HUD
      stays a constant size regardless of viewport changes. text-align +
      inline-block on children is the non-flex equivalent of justify-content
@@ -891,10 +900,13 @@ function actionHotkey(action: { hotkey?: string; label: string }): string | null
   width: var(--minimap-panel-width);
   height: var(--main-panel-height);
   font-size: 13px;
-  /* No `fill` on the slice: the panel's interior must be transparent so the
-     canvas-rendered minimap (which sits behind the HUD) shows through. The
-     other panels keep `fill` because they have no canvas content underneath. */
-  border-image-slice: var(--ui-panel-slice);
+  /* The frame AND the map are painted on the game canvas beneath this panel
+     (see CanvasRenderer.drawMinimap) so the map can sit on top of the frame's
+     wood, not peek through a hole in it. This element is just the transparent
+     measurement/hit slot — no DOM frame of its own. */
+  border: 0;
+  border-image: none;
+  padding: 0;
   pointer-events: none;
 }
 
@@ -921,6 +933,36 @@ function actionHotkey(action: { hotkey?: string; label: string }): string | null
   align-items: stretch;
   gap: 12px;
   pointer-events: auto;
+  /* Main-window-panel frame with `fill` so the wood interior backs the
+     unit-info content. Slice keeps the full 44px brass corner art; we render
+     the border thin (16px) so the content sits close to the brass edge instead
+     of floating in a wide wood margin — border-image scales the corners to fit.
+     (Content panels can't keep the map's chunky 44px corners: those would
+     overlap the title/stats. Thinner frame = content closer to the edge.)
+     Detailed art → smooth rendering (override the base's pixelated tile). */
+  border-width: 16px;
+  border-image-source: var(--ui-window-image);
+  border-image-slice: 44 fill;
+  border-image-width: 16px;
+  border-image-repeat: round;
+  image-rendering: auto;
+  padding: 8px 10px;
+}
+
+/* Lion-crest flourish, centred over the top edge of the selection panel. Purely
+   decorative — overhangs above the frame and never intercepts clicks. */
+.selection-panel--details::before {
+  content: "";
+  position: absolute;
+  top: -34px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 78px;
+  height: 55px;
+  background: var(--ui-flair-image) center / contain no-repeat;
+  pointer-events: none;
+  z-index: 3;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.5));
 }
 
 /* Left side of the details panel — owns all the existing details content
@@ -1073,7 +1115,17 @@ button.inventory-slot:focus-visible {
   /* overflow: visible so perk hover tooltips can extend above the panel. */
   overflow: visible;
   pointer-events: auto;
-  padding: 0;
+  /* Main-window-panel frame, matching the details panel: `fill` wood backdrop,
+     thin 16px border so the button grid sits close to the brass edge (the full
+     44px corner art is kept via the slice and scaled down by border-image).
+     Detailed art → smooth rendering (override the base's pixelated tile). */
+  border-width: 16px;
+  border-image-source: var(--ui-window-image);
+  border-image-slice: 44 fill;
+  border-image-width: 16px;
+  border-image-repeat: round;
+  image-rendering: auto;
+  padding: 8px;
 }
 
 .selection-title {

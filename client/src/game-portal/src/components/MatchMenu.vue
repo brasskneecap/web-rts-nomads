@@ -3,7 +3,11 @@
     class="match-menu"
     role="dialog"
     aria-label="Match menu"
-    :style="{ '--ui-icon-container-image': `url(${iconContainerUrl})` }"
+    :style="{
+      '--ui-icon-container-image': `url(${iconContainerUrl})`,
+      '--ui-window-image': `url(${mainWindowPanelUrl})`,
+      '--ui-button-image': `url(${buttonUrl})`,
+    }"
   >
     <div ref="panelEl" class="match-menu__panel">
       <button
@@ -223,6 +227,8 @@ import VaultPanel from '@/components/VaultPanel.vue'
 import UpgradeRow from '@/components/vault/UpgradeRow.vue'
 import UpgradeQueue from '@/components/vault/UpgradeQueue.vue'
 import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
+import mainWindowPanelUrl from '@/assets/ui/themes/updated/main-window-panel.png'
+import buttonUrl from '@/assets/ui/themes/updated/button.png'
 import type { ShopCatalogEntry, Unit, CraftCatalogEntry } from '@/game/core/GameState'
 import type { PlayerUpgradeSnapshot, VaultItemSnapshot } from '@/game/network/protocol'
 
@@ -451,9 +457,9 @@ function onPurchase(entry: ShopCatalogEntry) {
   z-index: var(--z-panel-raised, 300);
 }
 
-/* Dark window matching the Vault mockup: near-black panel with a subtle warm
-   top glow, a thin gold rim, rounded corners and a deep drop shadow. Replaces
-   the old parchment 9-slice frame. */
+/* Main-window-panel frame: full 9-slice (308×274 art, 44px brass corners) with
+   `fill` so the wood interior backs the menu content. Detailed art, so smooth
+   rendering (not the pixelated default tiles). Deep drop shadow kept for depth. */
 .match-menu__panel {
   position: relative;
   width: 890px;
@@ -461,15 +467,14 @@ function onPurchase(entry: ShopCatalogEntry) {
   height: 760px;
   max-height: 92vh;
   box-sizing: border-box;
-  padding: 24px;
-  background:
-    radial-gradient(120% 60% at 50% 0%, rgba(196, 158, 62, 0.12), transparent 60%),
-    linear-gradient(180deg, rgba(26, 19, 11, 0.98), rgba(13, 9, 5, 0.99));
-  border: 1px solid rgba(212, 168, 79, 0.45);
-  border-radius: 12px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 200, 0.08),
-    0 18px 48px rgba(0, 0, 0, 0.7);
+  padding: 18px;
+  border: 44px solid transparent;
+  border-image-source: var(--ui-window-image);
+  border-image-slice: 44 fill;
+  border-image-width: 44px;
+  border-image-repeat: round;
+  image-rendering: auto;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.7);
 }
 
 .match-menu__close {
@@ -518,12 +523,13 @@ function onPurchase(entry: ShopCatalogEntry) {
   flex-shrink: 0;
 }
 
-/* CSS tab buttons (replacing the header-UI 9-slice button) styled to sit on
-   the parchment panel: a warm wood-toned chip with a gold rim so the cream
-   label stays readable on the lighter parchment background. */
+/* Tab buttons use the button.png frame art (198×84) scaled as a background.
+   The tab matches its aspect (150×64) so the corner brackets and top diamond
+   don't distort. One art for all states — hover/active use filters (a gold
+   drop-shadow glow that follows the button's shape, not a rectangle). */
 .match-menu__tab {
   width: 150px;
-  height: 56px;
+  height: 64px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -533,33 +539,33 @@ function onPurchase(entry: ShopCatalogEntry) {
   letter-spacing: 0.06em;
   color: #f3e6c8;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-  background: linear-gradient(180deg, rgba(74, 50, 26, 0.96), rgba(46, 30, 14, 0.96));
-  border: 1px solid rgba(120, 86, 44, 0.9);
-  border-radius: 6px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 200, 0.12),
-    0 2px 4px rgba(0, 0, 0, 0.35);
-  transition: filter 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  /* Reset the user-agent button chrome — without this its default bevel border
+     shows as a gray/black outline around the art. */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  padding: 0;
+  background: var(--ui-button-image) center / 100% 100% no-repeat;
+  image-rendering: auto;
+  transition: filter 0.12s ease;
 }
 
 .match-menu__tab:hover {
   filter: brightness(1.12);
-  border-color: rgba(214, 178, 110, 0.95);
 }
 
 .match-menu__tab:active {
   filter: brightness(0.9);
 }
 
-/* Selected tab: brighter fill, gold rim and a soft glow so the active section
-   reads at a glance. */
-.match-menu__tab--active {
-  background: linear-gradient(180deg, rgba(150, 110, 52, 0.98), rgba(108, 76, 33, 0.98));
-  border-color: rgba(247, 216, 142, 0.95);
+/* Selected tab: brighter, with a gold glow that hugs the button's shape. The
+   :hover variant is listed so the glow persists while hovering the active tab —
+   without it, .match-menu__tab:hover (equal specificity, earlier in source)
+   would win and drop the glow. */
+.match-menu__tab--active,
+.match-menu__tab--active:hover {
   color: #fff6dd;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 200, 0.2),
-    0 0 10px rgba(247, 216, 142, 0.35);
+  filter: brightness(1.18) drop-shadow(0 0 5px rgba(247, 216, 142, 0.7));
 }
 
 .match-menu__tab:focus-visible {
@@ -569,7 +575,7 @@ function onPurchase(entry: ShopCatalogEntry) {
 
 .match-menu__tab-spacer {
   width: 150px;
-  height: 56px;
+  height: 64px;
 }
 
 .match-menu__tab-content {

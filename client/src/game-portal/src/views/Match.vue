@@ -13,7 +13,7 @@
       </div>
     </div>
 
-    <MatchHud v-if="hasStarted" :ui="ui" @exit="requestForfeit" />
+    <MatchHud v-if="hasStarted" :ui="ui" />
 
     <!-- Campaign objectives panel: top-right under the resource tray.
          Mounted only when this match was launched from the Campaign panel
@@ -157,6 +157,7 @@
         :paused="ui.paused"
         @close="matchSettingsOpen = false"
         @toggle-pause="(next) => sendSetPause(next)"
+        @exit-game="() => { matchSettingsOpen = false; requestForfeit() }"
       />
       <MatchMenu
         v-if="hasStarted && matchMenuOpen"
