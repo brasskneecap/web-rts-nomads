@@ -244,7 +244,7 @@ function onBack() {
   z-index: 1;
   transform: translateX(-50%);
   margin-bottom: 8px;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: clamp(12px, 1.2vw, 20px);
   font-weight: 700;
   letter-spacing: 0.06em;

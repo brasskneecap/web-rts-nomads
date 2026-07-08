@@ -55,8 +55,8 @@ function onClick() {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-family: inherit;
-  font-weight: 700;
+  font-family: var(--font-button);
+  font-weight: 600;
   letter-spacing: 0.06em;
   color: #f5ead2;
   text-align: center;

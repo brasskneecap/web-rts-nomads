@@ -196,7 +196,7 @@ function selectUnit(id: string) {
   padding: 0;
   border: 0;
   background: transparent;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 26px;
   line-height: 1;
   color: #3a1f0a;

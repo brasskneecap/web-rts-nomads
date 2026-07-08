@@ -208,7 +208,7 @@ onMounted(() => {
 }
 
 .cg-direct__section-title {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 16);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -337,7 +337,7 @@ onMounted(() => {
 /* Shared parchment action button — mirrors the Campaign panel's action
    buttons so the whole Custom Game panel reads as one surface. */
 .cg-action {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 13);
   font-weight: 700;
   letter-spacing: 0.06em;

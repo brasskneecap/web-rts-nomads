@@ -130,7 +130,7 @@ function onDismiss() {
   border: 0;
   border-image: none;
   background: none;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   letter-spacing: 0.06em;
   color: #f4d27a;
   text-decoration: none;

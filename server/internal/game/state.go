@@ -3571,8 +3571,10 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 	sort.Strings(recipeIDs)
 
 	player := &Player{
-		ID:                            playerID,
-		Color:                         s.randomColor(),
+		ID: playerID,
+		// Color is a fixed per-slot team color, assigned below once the player
+		// has claimed a starting townhall (which determines their slot).
+		Color:                         "",
 		Resources:                     playerConfig().newStartingResources(),
 		GlobalUnitSpawnTimeMultiplier: 1,
 		UnitSpawnTimeMultipliers:      map[string]float64{},
@@ -3603,9 +3605,12 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 	// effective item count (now that ShopItemCountBonus is applied). Runs after
 	// the player is in s.Players so the stocking helper can resolve it.
 	s.populatePlayerNeutralShopViewsLocked(playerID)
-	color := player.Color
 
 	townhall, _ := s.claimPlayerStartLocked(playerID)
+	// Now that the slot (townhall/spawn-point label) is known, assign the fixed
+	// per-slot team color. Placed unit spawns below stamp this color onto units.
+	player.Color = s.slotColorForPlayerLocked(playerID)
+	color := player.Color
 	s.claimLabeledBuildingsForPlayerLocked(playerID)
 	s.spawnPlacedUnitsForPlayerLocked(playerID, color)
 	// Spawn upgrade-granted starting units at the player's spawn-point.

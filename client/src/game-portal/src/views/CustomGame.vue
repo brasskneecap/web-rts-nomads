@@ -120,7 +120,7 @@ function onLobbyCreated(lobbyId: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 30);
   font-weight: 700;
   line-height: 1;
@@ -161,7 +161,7 @@ function onLobbyCreated(lobbyId: string) {
 }
 
 .custom-game__title {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 28);
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -177,7 +177,7 @@ function onLobbyCreated(lobbyId: string) {
 }
 
 .custom-game__tab {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 16);
   font-weight: 700;
   letter-spacing: 0.05em;

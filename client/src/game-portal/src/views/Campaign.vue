@@ -425,7 +425,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 30);
   font-weight: 700;
   line-height: 1;
@@ -468,7 +468,7 @@ onMounted(() => {
 }
 
 .campaign__title {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 28);
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -484,7 +484,7 @@ onMounted(() => {
 }
 
 .campaign__tab {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 16);
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -530,7 +530,7 @@ onMounted(() => {
 }
 
 .campaign__active-name {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 20);
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -648,7 +648,7 @@ onMounted(() => {
   grid-template-columns: var(--obj-grid);
   column-gap: var(--obj-col-gap);
   align-items: end;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 14);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -730,7 +730,7 @@ onMounted(() => {
   align-items: center;
   gap: calc(var(--s) * 3);
   flex: 0 0 auto;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 10);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -815,7 +815,7 @@ onMounted(() => {
 }
 
 .campaign-level__index {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 22);
   font-weight: 700;
   text-align: center;
@@ -837,7 +837,7 @@ onMounted(() => {
 }
 
 .campaign-level__name {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 18);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -862,7 +862,7 @@ onMounted(() => {
 }
 
 .campaign-level__action {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 13);
   font-weight: 700;
   letter-spacing: 0.06em;

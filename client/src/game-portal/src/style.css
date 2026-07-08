@@ -1,3 +1,36 @@
+/* ── Fonts (self-hosted, OFL) ─────────────────────────────────
+   Cinzel & Source Sans 3 are variable fonts: one file each covers
+   the whole weight range, so 600/700 render at TRUE weights (no
+   faux-bold — required because font-synthesis is off below). */
+@font-face {
+  font-family: 'Cinzel';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('./assets/fonts/cinzel-var.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Cinzel Decorative';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./assets/fonts/cinzel-decorative-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Alegreya SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/alegreya-sc-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Source Sans 3';
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url('./assets/fonts/source-sans-3-var.woff2') format('woff2');
+}
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;
@@ -11,8 +44,17 @@
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* Type system — semantic tokens map to the purposes above.
+     Weight is chosen per-element (title 700, button 600, etc.);
+     these tokens carry the family only. */
+  --font-logo: 'Cinzel Decorative', 'Cinzel', 'Trajan Pro', serif;
+  --font-title: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  --font-button: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  --font-unit: 'Alegreya SC', 'Cinzel', 'Times New Roman', serif;
+  --font-body: 'Source Sans 3', 'Trebuchet MS', 'Lucida Sans Unicode', system-ui, sans-serif;
+
+  --sans: var(--font-body);
+  --heading: var(--font-title);
   --mono: ui-monospace, Consolas, monospace;
 
   font: 18px/145% var(--sans);

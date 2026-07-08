@@ -43,7 +43,7 @@ const formattedBadges = computed(() =>
   z-index: 40;
   min-width: 150px;
   pointer-events: none;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   color: #f4d27a;
   background: rgba(28, 18, 8, 0.78);
   border: 1px solid rgba(212, 168, 71, 0.45);

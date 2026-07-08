@@ -138,10 +138,10 @@ export function getMinimapBounds(
 }
 
 // Minimap panel frame. Painted on the game canvas *under* the minimap so the
-// map fills the frame's wood interior (content sits on top of the frame), then
-// the brass corners are re-stamped on top. 44px is the art's corner slice; the
-// map insets by the thin rail so the rail stays visible around it.
-const MINIMAP_FRAME_CORNER_SRC = 44
+// map fills the frame's wood interior and sits ON TOP of the frame — including
+// its brass corners, which therefore tuck behind the canvas rather than
+// overlapping the map. The map insets by the thin rail so the rail stays
+// visible around it.
 const MINIMAP_FRAME_RAIL = 12
 const minimapFrameImage: HTMLImageElement | null =
   typeof Image !== 'undefined' ? Object.assign(new Image(), { src: mainWindowPanelUrl }) : null
@@ -157,23 +157,6 @@ function drawMinimapFrameBackdrop(ctx: CanvasRenderingContext2D, rect: RectXYWH)
   const prev = ctx.imageSmoothingEnabled
   ctx.imageSmoothingEnabled = true
   ctx.drawImage(minimapFrameImage!, rect.x, rect.y, rect.width, rect.height)
-  ctx.imageSmoothingEnabled = prev
-}
-
-function drawMinimapFrameCorners(ctx: CanvasRenderingContext2D, rect: RectXYWH): void {
-  if (!minimapFrameReady()) return
-  const img = minimapFrameImage!
-  const s = MINIMAP_FRAME_CORNER_SRC
-  const nw = img.naturalWidth
-  const nh = img.naturalHeight
-  const cw = s * (rect.width / nw)
-  const ch = s * (rect.height / nh)
-  const prev = ctx.imageSmoothingEnabled
-  ctx.imageSmoothingEnabled = true
-  ctx.drawImage(img, 0, 0, s, s, rect.x, rect.y, cw, ch)
-  ctx.drawImage(img, nw - s, 0, s, s, rect.x + rect.width - cw, rect.y, cw, ch)
-  ctx.drawImage(img, 0, nh - s, s, s, rect.x, rect.y + rect.height - ch, cw, ch)
-  ctx.drawImage(img, nw - s, nh - s, s, s, rect.x + rect.width - cw, rect.y + rect.height - ch, cw, ch)
   ctx.imageSmoothingEnabled = prev
 }
 
@@ -4761,11 +4744,13 @@ export class CanvasRenderer {
     ctx.strokeRect(viewX, viewY, viewWidth, viewHeight)
     ctx.restore()
 
-    // End the interior clip, then re-stamp the brass corners over the map so
-    // they sit on top of it (the map fills the wood; only rail + corners frame).
+    // End the interior clip. The brass corners live in the backdrop drawn UNDER
+    // the map, and we deliberately do NOT re-stamp them on top — that would
+    // overlap and block the map content near the corners. Leaving them behind
+    // the canvas lets the map fill its opening fully; only the outer corner art
+    // (in the rail) shows around it.
     if (inner) {
       ctx.restore()
-      if (panelRect) drawMinimapFrameCorners(ctx, panelRect)
     }
 
     ctx.restore()

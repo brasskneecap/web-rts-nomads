@@ -44,7 +44,7 @@ defineEmits<{
   background: rgba(0, 0, 0, 0.55);
   z-index: 1000;
   color: #3a1f0a;
-  font-family: 'Trebuchet MS', 'Lucida Sans Unicode', system-ui, sans-serif;
+  font-family: var(--font-body);
 }
 
 .campaign-victory__card {
@@ -61,7 +61,7 @@ defineEmits<{
 }
 
 .campaign-victory__title {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 42px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -72,7 +72,7 @@ defineEmits<{
 }
 
 .campaign-victory__subtitle {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 16px;
   letter-spacing: 0.08em;
   text-align: center;
@@ -88,7 +88,7 @@ defineEmits<{
 }
 
 .campaign-victory__btn {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.08em;

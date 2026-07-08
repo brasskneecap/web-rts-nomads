@@ -1,6 +1,6 @@
 <template>
   <div class="match-end-recap" role="dialog" aria-modal="true" :aria-labelledby="`match-recap-${outcome}-title`">
-    <UiPanel variant="parchment" :padding="0" class="match-end-recap__card">
+    <div class="match-end-recap__card" :style="{ '--ui-window-image': `url(${mainWindowPanelUrl})` }">
       <div class="match-end-recap__inner">
       <div :id="`match-recap-${outcome}-title`" class="match-end-recap__title" :class="`match-end-recap__title--${titleVariant}`">
         {{ outcomeTitle }}
@@ -73,10 +73,12 @@
       <button
         type="button"
         class="match-end-recap__return"
+        aria-label="Return to Menu"
+        :style="{ backgroundImage: `url(${menuReturnButtonUrl})` }"
         @click="$emit('close')"
-      >Return to Menu</button>
+      ></button>
       </div>
-    </UiPanel>
+    </div>
   </div>
 </template>
 
@@ -86,7 +88,8 @@ import type { MatchMetricsSnapshot, ObjectiveSnapshot, PlayerSnapshot } from '@/
 import { ENEMY_PLAYER_ID, NEUTRAL_PLAYER_ID } from '@/game/network/protocol'
 import { formatDisplayName } from '@/composables/usePlayer'
 import type { MatchEndOutcome } from '@/components/match/matchEndOutcome'
-import UiPanel from '@/components/ui/UiPanel.vue'
+import mainWindowPanelUrl from '@/assets/ui/themes/updated/main-window-panel-lg.png'
+import menuReturnButtonUrl from '@/assets/ui/buttons/menu-return-button.png'
 
 const props = defineProps<{
   outcome: MatchEndOutcome
@@ -211,9 +214,10 @@ function playerNameOf(playerId: string): string {
 </script>
 
 <style scoped>
-/* Full-screen route layout. The host route (/match-end) paints the dark
-   page background outside the parchment; this component centres the
-   parchment panel both axes within that background. */
+/* Full-screen route layout. The host route (/match-end) paints the
+   match-end wood backdrop behind this component; this centres the wood
+   panel both axes within that backdrop, leaving a margin so the ornate
+   frame of the backdrop shows around it. */
 .match-end-recap {
   width: 100%;
   min-height: 100dvh;
@@ -221,37 +225,42 @@ function playerNameOf(playerId: string): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #3a1f0a;
-  font-family: 'Trebuchet MS', 'Lucida Sans Unicode', system-ui, sans-serif;
+  color: #e6d5ac;
+  font-family: var(--font-body);
 }
 
-/* Parchment panel — UiPanel variant="parchment" renders a 9-slice
-   border-image on this element. Takes 80% of the viewport on both
-   axes so the recap dominates the screen as a destination layout,
-   not a small framed card. */
+/* Wood panel — main-window-panel-lg drawn as a single full-stretch
+   background image (NOT a 9-slice), so the thick brass frame doesn't push
+   the content box inward. The frame scales with the panel; percentage
+   padding on __inner keeps the content clear of the frame at any size.
+   Large source art, so it stretches without looking pixelated. */
 .match-end-recap__card {
-  width: 100vw;
-  height: 100vh;
+  width: 90vw;
+  max-width: 1400px;
+  height: 86vh;
   box-sizing: border-box;
+  background: var(--ui-window-image) center / 100% 100% no-repeat;
+  image-rendering: auto;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.7);
 }
 
-/* Inner content sits a step inside the parchment border so the section
-   layout doesn't paint on top of the 9-slice frame. height:100% +
-   overflow scroll lets the content scroll independently of the parchment
-   on shorter viewports / longer recaps. */
+/* Inner content sits inside the painted frame. Percentage padding tracks
+   the frame thickness as the panel scales, so content never rides onto the
+   brass border. height:100% + overflow scroll lets the content scroll
+   independently on shorter viewports / longer recaps. */
 .match-end-recap__inner {
   height: 100%;
   box-sizing: border-box;
-  padding: 56px 72px;
+  padding: 7% 6%;
   display: flex;
   flex-direction: column;
   gap: 32px;
-  color: #3a1f0a;
+  color: #e6d5ac;
   overflow-y: auto;
 }
 
 .match-end-recap__title {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 56px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -262,22 +271,22 @@ function playerNameOf(playerId: string): string {
 /* Victory: deep gold/amber that sings on the parchment without going
    gaudy. The text-shadow gives a soft halo without losing legibility. */
 .match-end-recap__title--victory {
-  color: #8a5a2a;
-  text-shadow: 0 0 18px rgba(212, 168, 71, 0.45);
+  color: #e2b74e;
+  text-shadow: 0 0 18px rgba(212, 168, 71, 0.5);
 }
 
-/* Defeat: rich brick red. Distinguishes from victory while still being
-   tonal with the parchment's warm palette. */
+/* Defeat: warm brick red, brightened so it reads against the dark wood
+   while staying tonal with the brass frame. */
 .match-end-recap__title--defeat {
-  color: #7a2a1a;
+  color: #c85440;
 }
 
 .match-end-recap__subtitle {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 18px;
   letter-spacing: 0.08em;
   text-align: center;
-  color: rgba(58, 31, 10, 0.7);
+  color: rgba(230, 213, 172, 0.75);
   margin-top: -16px;
 }
 
@@ -288,13 +297,14 @@ function playerNameOf(playerId: string): string {
 }
 
 .match-end-recap__section-title {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 18px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(58, 31, 10, 0.85);
+  text-align: center;
+  color: #c9a24a;
   margin: 0;
-  border-bottom: 1px solid rgba(58, 31, 10, 0.25);
+  border-bottom: 1px solid rgba(201, 162, 74, 0.3);
   padding-bottom: 8px;
 }
 
@@ -313,33 +323,32 @@ function playerNameOf(playerId: string): string {
   align-items: center;
   gap: 14px;
   font-size: 16px;
-  color: #3a1f0a;
+  color: #e6d5ac;
 }
 
 .recap-objective__icon {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-weight: 700;
   text-align: center;
   font-size: 20px;
-  color: rgba(58, 31, 10, 0.5);
+  color: rgba(230, 213, 172, 0.55);
 }
 
-/* Completed objectives: forest green that reads as "achievement" on the
-   parchment palette. Failed objectives: brick red, matching the defeat
-   title for consistency. */
-.recap-objective--completed .recap-objective__icon { color: #4a6f1f; }
-.recap-objective--failed .recap-objective__icon { color: #7a2a1a; }
+/* Completed objectives: bright green that reads as "achievement" on the
+   dark wood. Failed objectives: brick red, matching the defeat title. */
+.recap-objective--completed .recap-objective__icon { color: #8fbf4a; }
+.recap-objective--failed .recap-objective__icon { color: #c85440; }
 
 .recap-objective__progress {
   font-size: 14px;
   font-variant-numeric: tabular-nums;
-  color: rgba(58, 31, 10, 0.7);
+  color: rgba(230, 213, 172, 0.7);
 }
 
 .recap-objective--required .recap-objective__label { font-weight: 700; }
 .recap-objective--failed .recap-objective__label {
   text-decoration: line-through;
-  color: rgba(58, 31, 10, 0.45);
+  color: rgba(230, 213, 172, 0.45);
 }
 
 /* Metrics table. Real HTML table — labels in the first column, one column
@@ -356,8 +365,8 @@ function playerNameOf(playerId: string): string {
 .recap-metrics-table td {
   padding: 10px 18px;
   text-align: right;
-  color: #3a1f0a;
-  border-bottom: 1px solid rgba(58, 31, 10, 0.12);
+  color: #e6d5ac;
+  border-bottom: 1px solid rgba(201, 162, 74, 0.14);
 }
 
 .recap-metrics-table tbody tr:last-child th,
@@ -369,26 +378,31 @@ function playerNameOf(playerId: string): string {
    These are secondary descriptive labels, so they read a bit lighter and
    smaller than the player-name row headers below. */
 .recap-metrics-table thead th {
-  font-family: 'Trebuchet MS', 'Lucida Sans Unicode', system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: rgba(58, 31, 10, 0.65);
-  border-bottom: 1px solid rgba(58, 31, 10, 0.35);
+  color: #c9a24a;
+  border-bottom: 1px solid rgba(201, 162, 74, 0.4);
   padding-top: 4px;
   padding-bottom: 12px;
   white-space: nowrap;
+  /* Bottom-align so every metric label sits on the same baseline row.
+     The "Unit Ranks" column carries a group label stacked above it,
+     making that cell two lines tall; without this, the single-line
+     labels (Waves Cleared, etc.) center against it and drift upward. */
+  vertical-align: bottom;
 }
 
 .recap-metrics-table__group-label {
   display: block;
   text-align: center;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(58, 31, 10, 0.55);
+  color: rgba(201, 162, 74, 0.75);
   margin-bottom: 2px;
 }
 
@@ -397,39 +411,55 @@ function playerNameOf(playerId: string): string {
    victory-gold accent so they can spot their own line at a glance. */
 .recap-metrics-table tbody th {
   text-align: left;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: #3a1f0a;
+  color: #e6d5ac;
   padding-right: 24px;
 }
 
 .recap-metrics-table__row--viewer th,
 .recap-metrics-table__row--viewer td {
-  color: #8a5a2a;
+  color: #e2b74e;
 }
 
 .recap-player-name__you {
   font-weight: 400;
   font-style: italic;
-  color: rgba(58, 31, 10, 0.55);
+  color: rgba(230, 213, 172, 0.6);
   text-transform: none;
 }
 
+/* Return button — the label + lion crest are baked into the PNG art
+   (menu-return-button.png, 503×128), so the button is the image itself.
+   The text lives on aria-label for screen readers. aspect-ratio keeps
+   it proportional as the width scales with the card. */
 .match-end-recap__return {
-  margin-top: 16px;
+  /* Pin toward the bottom of the panel: margin-top:auto pushes it to the
+     end of the flex column (absorbing free space when the recap is short),
+     and margin-bottom + the inner's 40px padding leaves ~100px above the
+     panel's bottom edge. If the recap overflows, the auto margin collapses
+     and the button flows after the scrolling content instead of overlapping. */
+  margin-top: auto;
+  margin-bottom: 60px;
   align-self: center;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: linear-gradient(180deg, #d8b06a 0%, #a87a36 100%);
-  color: #2a1505;
-  border: 1px solid rgba(58, 31, 10, 0.55);
-  border-radius: 4px;
-  padding: 14px 36px;
-  min-width: 260px;
+  width: clamp(260px, 32%, 420px);
+  aspect-ratio: 503 / 128;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  transition: filter 120ms ease;
+}
+
+.match-end-recap__return:hover {
+  filter: brightness(1.15);
+}
+
+.match-end-recap__return:active {
+  filter: brightness(1.05);
 }
 </style>

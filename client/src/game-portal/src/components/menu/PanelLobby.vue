@@ -133,7 +133,7 @@ const {
 }
 
 .panel-lobby__back {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 14);
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -151,7 +151,7 @@ const {
 }
 
 .panel-lobby__title {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 22);
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -183,7 +183,7 @@ const {
 }
 
 .panel-lobby__section-label {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 14);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -268,7 +268,7 @@ const {
 /* Shared parchment action button — matches the Campaign panel's action
    buttons so the lobby reads as part of the same parchment surface. */
 .cg-action {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 14);
   font-weight: 700;
   letter-spacing: 0.06em;

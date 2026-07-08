@@ -168,7 +168,7 @@ onUnmounted(() => {
 }
 
 .cg-find__label {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 14);
   font-weight: 700;
   letter-spacing: 0.08em;

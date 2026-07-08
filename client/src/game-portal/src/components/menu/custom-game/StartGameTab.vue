@@ -169,7 +169,7 @@ onMounted(() => {
 }
 
 .cg-start__section-label {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 14);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -232,7 +232,7 @@ onMounted(() => {
 }
 
 .cg-action {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 14);
   font-weight: 700;
   letter-spacing: 0.06em;

@@ -1,5 +1,5 @@
 <template>
-  <div class="match-end-view">
+  <div class="match-end-view" :style="{ backgroundImage: `url(${matchEndBgUrl})` }">
     <MatchEndRecap
       v-if="snapshot"
       :outcome="snapshot.outcome"
@@ -16,6 +16,7 @@
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import MatchEndRecap from '@/components/match/MatchEndRecap.vue'
+import matchEndBgUrl from '@/assets/background-images/match-end.png'
 import { matchEndSnapshot, clearMatchEndSnapshot, matchEndDpPersisted } from '@/state/matchEndState'
 import { campaignSession, clearCampaignSession } from '@/state/campaignSession'
 import { markCampaignObjectivesComplete, awardMatchDominionPoints, isRemoteProxyClient } from '@/services/profileApi'
@@ -98,8 +99,9 @@ async function onClose() {
   width: 100%;
   min-height: 100dvh;
   overflow-y: auto;
-  background:
-    radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%),
-    #05080d;
+  background-color: #05080d;
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 </style>

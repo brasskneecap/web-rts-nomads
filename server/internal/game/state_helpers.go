@@ -2,6 +2,7 @@ package game
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"webrts/server/pkg/protocol"
 )
@@ -27,34 +28,65 @@ func (s *GameState) isUnitNearBuildingLocked(unit *Unit, building protocol.Build
 	return unit.X >= left-padding && unit.X <= right+padding && unit.Y >= top-padding && unit.Y <= bottom+padding
 }
 
-func (s *GameState) randomColor() string {
-	palette := []string{
-		"#3498db",
-		"#2ecc71",
-		"#f1c40f",
-		"#9b59b6",
-		"#e67e22",
-		"#1abc9c",
-		"#ec4899",
-	}
+// playerSlotColors assigns a fixed team color per player slot (0-based). These
+// are deliberate, not randomized, so a given slot always renders the same color
+// across matches and no player's color collides with the enemy-red or neutral
+// (#9b59b6) health-bar colors used to tell friend from foe — the color of a
+// unit's health bar is how a player identifies which units are theirs. Slots
+// beyond this list wrap around to keep a stable, deterministic color.
+var playerSlotColors = []string{
+	"#3498db", // player 1 — blue
+	"#e67e22", // player 2 — orange
+	"#8e44ad", // player 3 — purple (distinct from the neutral purple #9b59b6)
+	"#f1c40f", // player 4 — yellow
+	"#2ecc71", // player 5 — green
+	"#1abc9c", // player 6 — teal
+	"#ec4899", // player 7 — pink
+}
 
-	used := make(map[string]bool)
-	for _, player := range s.Players {
-		used[player.Color] = true
-	}
+// slotColorForPlayerLocked returns the fixed team color for playerID's slot. The
+// slot comes from the map's authored spawn-point playerLabel ("player1"..); on
+// maps without labeled slots it falls back to join order. Deterministic and
+// stable for the life of the slot. Must be called after the player has claimed
+// their starting townhall (so findPlayerLabelLocked can resolve the label).
+func (s *GameState) slotColorForPlayerLocked(playerID string) string {
+	idx := s.playerSlotIndexLocked(playerID)
+	n := len(playerSlotColors)
+	return playerSlotColors[((idx%n)+n)%n]
+}
 
-	available := make([]string, 0, len(palette))
-	for _, color := range palette {
-		if !used[color] {
-			available = append(available, color)
+// playerSlotIndexLocked resolves a 0-based slot index for playerID. Prefers the
+// authored spawn-point label (player1 -> 0); falls back to join order (count of
+// other human players already present) when the map has no labeled slot.
+func (s *GameState) playerSlotIndexLocked(playerID string) int {
+	if label := s.findPlayerLabelLocked(playerID); label != "" {
+		if n, ok := playerLabelIndex(label); ok {
+			return n
 		}
 	}
-
-	if len(available) > 0 {
-		return available[s.rngCosmetic.Intn(len(available))]
+	// Fallback: join order. s.Players already contains this player, so count the
+	// other humans that joined before it.
+	idx := 0
+	for id := range s.Players {
+		if id == playerID || id == enemyPlayerID || id == neutralPlayerID {
+			continue
+		}
+		idx++
 	}
+	return idx
+}
 
-	return palette[s.rngCosmetic.Intn(len(palette))]
+// playerLabelIndex parses a "playerN" slot label into a 0-based index.
+func playerLabelIndex(label string) (int, bool) {
+	const prefix = "player"
+	if !strings.HasPrefix(label, prefix) {
+		return 0, false
+	}
+	n, err := strconv.Atoi(label[len(prefix):])
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n - 1, true
 }
 
 func clampFloat(v, min, max float64) float64 {

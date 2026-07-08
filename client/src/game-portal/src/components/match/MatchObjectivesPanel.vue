@@ -59,7 +59,7 @@ void props
   width: 280px;
   max-width: 90vw;
   pointer-events: auto;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   color: #f4d27a;
   background: rgba(28, 18, 8, 0.78);
   border: 1px solid rgba(212, 168, 71, 0.45);
@@ -94,14 +94,14 @@ void props
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  font-family: 'Trebuchet MS', 'Lucida Sans Unicode', system-ui, sans-serif;
+  font-family: var(--font-body);
   line-height: 1.3;
   color: #f4d27a;
 }
 
 .match-objective__icon {
   text-align: center;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 14px;
   font-weight: 700;
   color: rgba(244, 210, 122, 0.75);

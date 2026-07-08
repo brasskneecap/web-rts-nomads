@@ -337,7 +337,7 @@ function tooltipBody(node: UnitAdvancementNode): string {
 }
 
 .advancement-node__cost {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 14);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -359,7 +359,7 @@ function tooltipBody(node: UnitAdvancementNode): string {
   justify-content: center;
   align-items: center;
   gap: calc(var(--s) * 5);
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 16);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -386,7 +386,7 @@ function tooltipBody(node: UnitAdvancementNode): string {
 .advancements__title {
   margin: 0;
   text-align: left;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 18);
   font-weight: 700;
   letter-spacing: 0.18em;
@@ -400,7 +400,7 @@ function tooltipBody(node: UnitAdvancementNode): string {
   border: 1px solid #9a4a2a;
   border-radius: 4px;
   background-color: rgba(150, 50, 30, 0.16);
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 11);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -424,7 +424,7 @@ function tooltipBody(node: UnitAdvancementNode): string {
   border-radius: 4px;
   background-color: rgba(180, 40, 20, 0.15);
   border: 1px solid rgba(180, 40, 20, 0.4);
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 11);
   color: #7a1a0a;
 }
@@ -459,7 +459,7 @@ function tooltipBody(node: UnitAdvancementNode): string {
 }
 
 .advancement-row__name {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 13);
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -620,7 +620,7 @@ function tooltipBody(node: UnitAdvancementNode): string {
 }
 
 .advancements__pager-label {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: calc(var(--s) * 11);
   font-weight: 700;
   letter-spacing: 0.08em;

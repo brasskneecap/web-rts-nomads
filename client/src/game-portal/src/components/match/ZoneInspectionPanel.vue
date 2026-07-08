@@ -44,7 +44,7 @@ void props
   width: 240px;
   max-width: 90vw;
   pointer-events: auto;
-  font-family: 'Trebuchet MS', 'Lucida Sans Unicode', system-ui, sans-serif;
+  font-family: var(--font-body);
   color: #f4d27a;
   background: rgba(28, 18, 8, 0.78);
   border: 1px solid rgba(212, 168, 71, 0.45);
@@ -54,7 +54,7 @@ void props
 }
 
 .zone-inspection__name {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -97,7 +97,7 @@ void props
 }
 
 .zone-inspection__bonuses-header {
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;

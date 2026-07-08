@@ -276,7 +276,7 @@ function onBack() {
   left: 50%;
   transform: translateX(-50%);
   margin-bottom: 6px;
-  font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
+  font-family: var(--font-title);
   font-size: clamp(11px, 1.1vw, 18px);
   font-weight: 700;
   letter-spacing: 0.06em;

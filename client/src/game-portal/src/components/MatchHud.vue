@@ -85,7 +85,13 @@ const waveLabel = computed(() => {
 
 const waveTimerText = computed(() => {
   const w = props.ui.wave
-  if (w.state === 'prep') return `Next Wave In: ${formatSeconds(w.timer)}`
+  if (w.state === 'prep') {
+    // Before wave 1 (pregame), the upcoming wave is currentWave + 1 === 1, so
+    // there is no "previous" wave — call it the First Wave to avoid the
+    // confusing "Next Wave In" while the label still reads "Wave 1".
+    const prefix = w.currentWave === 0 ? 'First Wave In' : 'Next Wave In'
+    return `${prefix}: ${formatSeconds(w.timer)}`
+  }
   if (w.state === 'active') {
     const timerExpired = w.waveDuration > 0 && w.timer >= w.waveDuration
     if (timerExpired) return 'Finish them!'
@@ -202,30 +208,52 @@ const waveTimerText = computed(() => {
   color: #fff2d6;
 }
 
+/* Wave status sits in its own header-panel plaque, absolutely centered in the
+   top bar so it stays dead-center regardless of the banner (left) and the
+   resource tray (right). Reuses the header-panel art as a horizontal 3-slice:
+   frozen 28px metal ends, stretchable wood middle. */
 .wave-panel {
-  flex: 1 1 220px;
-  min-width: 0;
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  z-index: 1;
+  /* Taller than the 58px bar but top-aligned to it, so the plaque hangs below
+     the bar's bottom edge — giving the top bar some shape without protruding
+     above the frame. */
+  height: 73px;
+  min-width: 200px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 1px;
+  padding: 0 4px;
+
+  border-style: solid;
+  border-width: 0 28px;
+  border-image-source: var(--hud-header-image);
+  border-image-slice: 0 54 fill;
+  border-image-width: 0 28px;
+  border-image-repeat: stretch;
 }
 
 .wave-label {
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #d7bb84;
   white-space: nowrap;
-  line-height: 1.1;
+  line-height: 1.15;
 }
 
 .wave-timer {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
   color: #cbb893;
-  line-height: 1.1;
+  line-height: 1.15;
   letter-spacing: 0.06em;
   white-space: nowrap;
 }
