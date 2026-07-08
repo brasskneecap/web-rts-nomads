@@ -63,7 +63,7 @@
 
 <script setup lang="ts">
 import type { CommanderAbilitySnapshot } from '@/game/network/protocol'
-import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
+import iconContainerUrl from '@/assets/ui/themes/updated/icon_container.png'
 
 // Eagerly resolve all PNGs in `assets/ui/abilities/`. The key is the file
 // stem (e.g. `blessing.png` -> `blessing`); ability ids are matched after

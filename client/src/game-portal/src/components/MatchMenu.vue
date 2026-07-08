@@ -7,6 +7,8 @@
       '--ui-icon-container-image': `url(${iconContainerUrl})`,
       '--ui-window-image': `url(${mainWindowPanelUrl})`,
       '--ui-button-image': `url(${buttonUrl})`,
+      '--ui-inner-panel-image': `url(${innerPanelUrl})`,
+      '--ui-craft-button-image': `url(${craftButtonUrl})`,
     }"
   >
     <div ref="panelEl" class="match-menu__panel">
@@ -131,7 +133,7 @@
           <!-- Craft: one card per craftable recipe (recipes are unlocked via
                Recipe Shop purchases, tracked server-side). Same card shell as
                the Shop/Upgrades tabs. -->
-          <div v-else-if="activeTabId === 'craft'" class="match-menu__shop">
+          <div v-else-if="activeTabId === 'craft'" class="match-menu__shop match-menu__craft">
             <div v-if="!hasArtificer" class="match-menu__shop-empty">
               Build an Artificer to craft items.
             </div>
@@ -142,33 +144,53 @@
               <div
                 v-for="entry in craftCatalog"
                 :key="entry.recipeId"
-                class="shop-card"
+                class="shop-card craft-card"
+                :style="{ '--rarity': rarityColor(entry.output) }"
               >
-                <div class="shop-card__head">
-                  <div class="shop-card__icon">
+                <div class="craft-card__top">
+                  <div class="craft-card__icon">
                     <ActionIcon
-                      class="shop-card__icon-img"
+                      class="craft-card__icon-img"
                       :action="{ id: entry.output, label: entry.name, iconDef: { kind: 'item', type: entry.output } }"
                     />
                   </div>
-                  <div class="shop-card__name">{{ entry.name }}</div>
-                  <div class="craft-row__cost">{{ entry.costGold }} gold</div>
+                  <div class="craft-card__headings">
+                    <div class="craft-card__name">{{ entry.name }}</div>
+                    <div class="craft-card__rarity">{{ rarityLabel(entry.output) }}</div>
+                  </div>
+                  <div class="craft-card__cost">
+                    <img :src="goldIconUrl" alt="" class="craft-card__coin" draggable="false" />
+                    <span>{{ entry.costGold }}</span>
+                  </div>
                 </div>
-                <ul class="craft-row__ingredients">
-                  <li
-                    v-for="ing in entry.ingredients"
-                    :key="ing.itemId"
-                    class="craft-row__ingredient"
-                    :class="{ 'craft-row__ingredient--short': ing.have < ing.need }"
-                  >{{ ing.itemId }} {{ ing.have }}/{{ ing.need }}</li>
-                </ul>
-                <button
-                  type="button"
-                  class="craft-row__btn"
-                  :disabled="!entry.craftable"
-                  :title="entry.craftable ? `Craft ${entry.name}` : 'Missing ingredients'"
-                  @click="entry.craftable ? emit('craft', entry.recipeId) : undefined"
-                >Craft</button>
+
+                <div class="craft-card__requires">Requires:</div>
+                <div class="craft-card__actions">
+                  <div class="craft-card__ingredients">
+                    <div
+                      v-for="ing in entry.ingredients"
+                      :key="ing.itemId"
+                      class="craft-card__ing"
+                      :class="{ 'craft-card__ing--short': ing.have < ing.need }"
+                      @mouseenter="onIngredientEnter($event, ing.itemId)"
+                      @mouseleave="onIngredientLeave"
+                    >
+                      <ActionIcon
+                        class="craft-card__ing-icon"
+                        :action="{ id: ing.itemId, label: ing.itemId, iconDef: { kind: 'item', type: ing.itemId } }"
+                      />
+                      <span class="craft-card__ing-count">{{ ing.have }}/{{ ing.need }}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    class="craft-card__btn"
+                    :disabled="!entry.craftable"
+                    :aria-label="`Craft ${entry.name}`"
+                    :title="entry.craftable ? `Craft ${entry.name}` : 'Missing ingredients'"
+                    @click="entry.craftable ? emit('craft', entry.recipeId) : undefined"
+                  ></button>
+                </div>
               </div>
             </template>
           </div>
@@ -216,6 +238,9 @@
         <div v-else-if="hoveredShopItem.quantity <= 0" class="shop-tooltip__out">Sold out</div>
       </div>
     </Teleport>
+
+    <!-- Craft ingredient tooltip (self-teleports to body). -->
+    <ItemHoverTooltip :item="hoveredIngredient" :anchor="ingredientAnchor" />
   </div>
 </template>
 
@@ -226,9 +251,15 @@ import { getNeutralShopStyleUrl, getRecipeShopStyleUrl } from '@/game/rendering/
 import VaultPanel from '@/components/VaultPanel.vue'
 import UpgradeRow from '@/components/vault/UpgradeRow.vue'
 import UpgradeQueue from '@/components/vault/UpgradeQueue.vue'
-import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
+import iconContainerUrl from '@/assets/ui/themes/updated/icon_container.png'
 import mainWindowPanelUrl from '@/assets/ui/themes/updated/main-window-panel.png'
 import buttonUrl from '@/assets/ui/themes/updated/button.png'
+import innerPanelUrl from '@/assets/ui/themes/updated/inner-panel.png'
+import craftButtonUrl from '@/assets/ui/themes/updated/craft-button.png'
+import goldIconUrl from '@/assets/resources/gold.png'
+import ItemHoverTooltip from '@/components/ItemHoverTooltip.vue'
+import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
+import { TIER_COLORS, buildItemTooltipBody } from '@/game/items/itemRules'
 import type { ShopCatalogEntry, Unit, CraftCatalogEntry } from '@/game/core/GameState'
 import type { PlayerUpgradeSnapshot, VaultItemSnapshot } from '@/game/network/protocol'
 
@@ -374,6 +405,42 @@ function onSlotEnter(e: MouseEvent, entry: ShopCatalogEntry) {
 
 function onSlotLeave() {
   hoveredShopItem.value = null
+}
+
+// ── Craft card rarity + ingredient hover ─────────────────────────────────────
+function rarityColor(itemId: string): string {
+  const tier = ITEM_DEF_MAP.get(itemId)?.tier
+  return tier ? TIER_COLORS[tier] : '#9ca3af'
+}
+
+function rarityLabel(itemId: string): string {
+  const tier = ITEM_DEF_MAP.get(itemId)?.tier
+  return tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : ''
+}
+
+const hoveredIngredient = ref<{
+  displayName: string
+  tier?: string
+  tierColor?: string
+  body?: string
+} | null>(null)
+const ingredientAnchor = ref<DOMRect | null>(null)
+
+function onIngredientEnter(e: MouseEvent, itemId: string) {
+  ingredientAnchor.value = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const def = ITEM_DEF_MAP.get(itemId)
+  hoveredIngredient.value = def
+    ? {
+        displayName: def.displayName,
+        tier: def.tier,
+        tierColor: TIER_COLORS[def.tier],
+        body: buildItemTooltipBody(def),
+      }
+    : { displayName: itemId }
+}
+
+function onIngredientLeave() {
+  hoveredIngredient.value = null
 }
 
 const shopTooltipStyle = computed(() => {
@@ -620,11 +687,174 @@ function onPurchase(entry: ShopCatalogEntry) {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(212, 168, 79, 0.22);
-  border-radius: 8px;
   box-sizing: border-box;
+  padding: 8px;
+  /* inner-panel 9-slice (314×236 art, 17px corners) with `fill` so the wood
+     backs the card. Detailed art → smooth rendering. */
+  border: 17px solid transparent;
+  border-image-source: var(--ui-inner-panel-image);
+  border-image-slice: 17 fill;
+  border-image-width: 17px;
+  border-image-repeat: stretch;
+  image-rendering: auto;
+}
+
+/* ── Craft: two compact cards per row ─────────────────────────────────────── */
+.match-menu__craft {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+}
+
+/* Craft card: vertical stack, rarity-tinted (--rarity set inline). */
+.craft-card {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* Top row: big icon top-aligned with the name/rarity/requires; cost pinned right. */
+.craft-card__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.craft-card__icon {
+  flex: 0 0 88px;
+  width: 88px;
+  height: 88px;
+  display: grid;
+  place-items: center;
+  background: var(--ui-icon-container-image) center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  /* Rarity highlight now lives around the item icon, not the whole card. The
+     small radius rounds the rim to the frame art so no corner gap shows. */
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 2px var(--rarity, #9ca3af),
+    0 0 9px -1px var(--rarity, #9ca3af);
+}
+
+.craft-card__icon-img {
+  width: 72px;
+  height: 72px;
+}
+
+.craft-card__headings {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.craft-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--rarity, #f5ead2);
+  overflow-wrap: anywhere;
+}
+
+.craft-card__rarity {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--rarity, #9ca3af);
+}
+
+.craft-card__cost {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f7d88e;
+  font-variant-numeric: tabular-nums;
+}
+
+.craft-card__coin {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+}
+
+/* "Requires:" label — own line, below the icon/name, above the ingredient row. */
+.craft-card__requires {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(232, 217, 184, 0.5);
+}
+
+/* Ingredients + Craft button share one full-width row (button hard-right).
+   flex-wrap keeps it graceful if a recipe ever has more than ~3 ingredients. */
+.craft-card__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.craft-card__ingredients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.craft-card__ing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 3px;
+  background: rgba(0, 0, 0, 0.34);
+  border: 1px solid rgba(200, 164, 106, 0.28);
+  border-radius: 4px;
+}
+
+.craft-card__ing-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+}
+
+.craft-card__ing-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e8d9b8;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Missing ingredient: red count so shortfalls read at a glance. */
+.craft-card__ing--short .craft-card__ing-count {
+  color: #e0796a;
+}
+
+/* Craft button — hard-right on the ingredients row. */
+.craft-card__btn {
+  margin-left: auto;
+  width: 100px;
+  height: 36px;
+  border: 0;
+  padding: 0;
+  background: var(--ui-craft-button-image) center / 100% 100% no-repeat;
+  image-rendering: auto;
+  transition: filter 0.12s ease;
+}
+
+.craft-card__btn:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.craft-card__btn:active:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.craft-card__btn:disabled {
+  filter: grayscale(0.6) brightness(0.5);
+  cursor: not-allowed;
 }
 
 .shop-card__head {

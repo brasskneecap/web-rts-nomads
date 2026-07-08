@@ -101,7 +101,7 @@ import upgradesIconUrl from '@/assets/ui/buttons/upgrades.png'
 import vaultIconUrl from '@/assets/ui/buttons/vault.png'
 import itemBagIconUrl from '@/assets/ui/buttons/item_bag.png'
 import settingsIconUrl from '@/assets/ui/buttons/settings.png'
-import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
+import iconContainerUrl from '@/assets/ui/themes/updated/icon_container.png'
 
 interface LauncherEntry {
   tabId: string

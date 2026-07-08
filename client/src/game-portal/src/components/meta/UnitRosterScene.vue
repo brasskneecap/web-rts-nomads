@@ -65,7 +65,7 @@ import { ref } from 'vue'
 import MetaSceneView from '@/components/meta/MetaSceneView.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import Advancements from '@/views/Advancements.vue'
-import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
+import iconContainerUrl from '@/assets/ui/themes/updated/icon_container.png'
 
 defineProps<{
   bg: string

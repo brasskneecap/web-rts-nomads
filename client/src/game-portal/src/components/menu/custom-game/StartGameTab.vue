@@ -26,7 +26,7 @@
           type="button"
           class="cg-action cg-action--start"
           :disabled="!selectedMapId || isLoadingMaps || isCreating"
-          @click="createLobbyAndNavigate"
+          @click="onCreateLobby"
         >
           {{ isCreating ? 'Creating lobby…' : 'Create Lobby' }}
         </button>
@@ -37,7 +37,6 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { fetchMapCatalog } from '@/game/maps/catalog'
 import type { MapCatalogEntry } from '@/game/network/protocol'
 import { usePlayer } from '@/composables/usePlayer'
@@ -46,7 +45,13 @@ import { putMapVersion } from '@/services/mapVersionCache'
 import MapList from '@/components/menu/MapList.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'
 
-const router = useRouter()
+// Emits the newly-created lobby id up to CustomGame so it can host the lobby
+// inline in the same parchment panel (mirrors the Campaign panel's Lobby
+// flow) instead of routing to the standalone /lobby/:id page.
+const emit = defineEmits<{
+  (e: 'lobby-created', lobbyId: string): void
+}>()
+
 const { playerId } = usePlayer()
 
 const mapCatalog = ref<MapCatalogEntry[]>([])
@@ -54,7 +59,7 @@ const isLoadingMaps = ref(true)
 const mapsLoadError = ref('')
 const selectedMapId = ref('')
 
-// Guards against double-clicks while createLobbyAndNavigate is in flight.
+// Guards against double-clicks while onCreateLobby is in flight.
 // Steam's LobbyCreated_t callback can take 1–2s; without this guard the
 // user clicks repeatedly thinking nothing happened and ends up creating
 // N stale lobbies that linger until they quit Steam.
@@ -106,7 +111,7 @@ async function loadMapCatalog() {
   }
 }
 
-async function createLobbyAndNavigate() {
+async function onCreateLobby() {
   if (!selectedMapId.value || isCreating.value) return
   isCreating.value = true
   try {
@@ -117,7 +122,7 @@ async function createLobbyAndNavigate() {
       mapHash: mapEntry?.contentHash,
       mapVersion: mapEntry?.version,
     })
-    void router.push(`/lobby/${created.id}`)
+    emit('lobby-created', created.id)
   } catch (err) {
     mapsLoadError.value = err instanceof Error ? err.message : 'Failed to create lobby.'
   } finally {

@@ -9,6 +9,17 @@
       &times;
     </button>
     <div class="custom-game__inner">
+      <!-- In-panel lobby view. When the host creates a lobby from Start Game,
+           the lobby is hosted here inside the same parchment panel (mirrors
+           the Campaign panel); its Back button pops back to the tab strip
+           (@back → view = 'tabs'). -->
+      <PanelLobby
+        v-if="view === 'lobby'"
+        :lobby-id="activeLobbyId"
+        @back="view = 'tabs'"
+      />
+
+      <template v-else>
       <div class="custom-game__header">
         <h1 class="custom-game__title">Custom Game</h1>
       </div>
@@ -31,10 +42,11 @@
       </div>
 
       <div class="custom-game__body">
-        <StartGameTab v-if="activeTab === 'start'" />
+        <StartGameTab v-if="activeTab === 'start'" @lobby-created="onLobbyCreated" />
         <FindGameTab v-else-if="activeTab === 'find'" />
         <DirectConnectTab v-else-if="activeTab === 'direct'" />
       </div>
+      </template>
     </div>
   </UiPanel>
 </template>
@@ -45,6 +57,7 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 import StartGameTab from '@/components/menu/custom-game/StartGameTab.vue'
 import FindGameTab from '@/components/menu/custom-game/FindGameTab.vue'
 import DirectConnectTab from '@/components/menu/custom-game/DirectConnectTab.vue'
+import PanelLobby from '@/components/menu/PanelLobby.vue'
 
 type CustomTab = 'start' | 'find' | 'direct'
 
@@ -68,6 +81,21 @@ const TABS: { id: CustomTab; label: string }[] = [
 ]
 
 const activeTab = ref<CustomTab>(props.initialTab)
+
+// Which sub-view the parchment panel is showing. 'tabs' is the Start/Find/
+// Direct tab strip; 'lobby' hosts the created lobby inline (PanelLobby) so
+// creating a lobby never leaves the war-room. `activeLobbyId` is the lobby
+// the in-panel view polls while `view === 'lobby'`. Mirrors Campaign.vue.
+const view = ref<'tabs' | 'lobby'>('tabs')
+const activeLobbyId = ref<string>('')
+
+/** StartGameTab created a lobby: host it inline in this parchment panel
+ *  (view = 'lobby') instead of routing to /lobby/:id. The in-panel lobby's
+ *  Back button pops back to the tab strip (Start Game stays selected). */
+function onLobbyCreated(lobbyId: string) {
+  activeLobbyId.value = lobbyId
+  view.value = 'lobby'
+}
 </script>
 
 <style scoped>

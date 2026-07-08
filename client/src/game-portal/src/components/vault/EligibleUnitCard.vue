@@ -129,15 +129,37 @@ function onCardDrop(e: DragEvent) {
 
 <style scoped>
 .ucard {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 10px;
-  padding: 10px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(212, 168, 79, 0.22);
-  border-radius: 8px;
-  transition: border-color 0.12s ease, background 0.12s ease, filter 0.12s ease;
+  box-sizing: border-box;
+  /* Small offset only — the inner-panel frame is drawn at FULL 17px size on
+     ::before (below), so its corners stay intact no matter how close the content
+     sits to the edge. Tune this padding for content offset. */
+  padding: 12px;
+  transition: filter 0.12s ease;
+}
+
+/* Full-size inner-panel frame behind the content (corners never scale). */
+.ucard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border: 17px solid transparent;
+  border-image-source: var(--ui-inner-panel-image);
+  border-image-slice: 17 fill;
+  border-image-width: 17px;
+  border-image-repeat: stretch;
+  image-rendering: auto;
+}
+
+.ucard > * {
+  position: relative;
+  z-index: 1;
 }
 
 .ucard__main {
@@ -148,9 +170,7 @@ function onCardDrop(e: DragEvent) {
 
 .ucard:hover,
 .ucard:focus-visible {
-  border-color: rgba(214, 178, 110, 0.7);
-  background: rgba(20, 14, 6, 0.45);
-  filter: brightness(1.08);
+  filter: brightness(1.1);
   outline: none;
 }
 
@@ -161,8 +181,8 @@ function onCardDrop(e: DragEvent) {
 /* A bag consumable is being dragged: the whole card lights up as a drop target
    (matches the blue drop-target language used by the inventory slots). */
 .ucard--consumable-target {
-  border-color: rgba(96, 165, 250, 0.9);
-  box-shadow: 0 0 12px rgba(96, 165, 250, 0.55);
+  /* Blue drop-target ring — outer so it sits outside the ::before frame. */
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.9), 0 0 14px rgba(96, 165, 250, 0.55);
 }
 
 .ucard__portrait {

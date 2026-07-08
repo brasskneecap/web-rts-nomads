@@ -48,7 +48,7 @@ import ItemHoverTooltip, { type ItemTooltipData } from '@/components/ItemHoverTo
 import type { VaultItemSnapshot } from '@/game/network/protocol'
 import { ITEM_DEF_MAP } from '@/game/maps/itemDefs'
 import { TIER_COLORS, buildItemTooltipBody } from '@/game/items/itemRules'
-import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
+import iconContainerUrl from '@/assets/ui/themes/updated/icon_container.png'
 
 const ITEMS_BAR_SLOTS = 12
 

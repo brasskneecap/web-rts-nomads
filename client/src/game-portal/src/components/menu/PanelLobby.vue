@@ -1,60 +1,60 @@
 <template>
-  <div class="campaign-lobby">
-    <div class="campaign-lobby__header">
+  <div class="panel-lobby">
+    <div class="panel-lobby__header">
       <button
         type="button"
-        class="campaign-lobby__back"
-        aria-label="Back to campaign levels"
+        class="panel-lobby__back"
+        aria-label="Back"
         @click="leaveAndGoBack"
       >
         &larr; Back
       </button>
-      <div class="campaign-lobby__header-info">
-        <span class="campaign-lobby__title">{{ lobby?.mapName ?? 'Lobby' }}</span>
-        <span class="campaign-lobby__slots">
+      <div class="panel-lobby__header-info">
+        <span class="panel-lobby__title">{{ lobby?.mapName ?? 'Lobby' }}</span>
+        <span class="panel-lobby__slots">
           {{ lobby?.players.length ?? 0 }} / {{ lobby?.maxPlayers ?? 4 }} Players
         </span>
-        <span v-if="showMapVersionPlaceholder" class="campaign-lobby__map-version-hint">
+        <span v-if="showMapVersionPlaceholder" class="panel-lobby__map-version-hint">
           Host's custom map — loads at start
         </span>
       </div>
     </div>
 
-    <div v-if="lobby" class="campaign-lobby__body">
-      <div class="campaign-lobby__section-label">Players</div>
-      <div class="campaign-lobby__players">
+    <div v-if="lobby" class="panel-lobby__body">
+      <div class="panel-lobby__section-label">Players</div>
+      <div class="panel-lobby__players">
         <div
           v-for="i in lobby.maxPlayers"
           :key="i"
-          class="campaign-lobby__slot"
-          :class="{ 'campaign-lobby__slot--filled': lobby.players[i - 1] }"
+          class="panel-lobby__slot"
+          :class="{ 'panel-lobby__slot--filled': lobby.players[i - 1] }"
         >
           <template v-if="lobby.players[i - 1]">
-            <span class="campaign-lobby__player-id">{{ formatDisplayName(lobby.players[i - 1]) }}</span>
+            <span class="panel-lobby__player-id">{{ formatDisplayName(lobby.players[i - 1]) }}</span>
             <span
               v-if="lobby.players[i - 1] === lobby.hostPlayerId"
-              class="campaign-lobby__player-tag"
+              class="panel-lobby__player-tag"
             >(host)</span>
           </template>
-          <span v-else class="campaign-lobby__player-empty">— empty —</span>
+          <span v-else class="panel-lobby__player-empty">— empty —</span>
         </div>
       </div>
 
-      <div v-if="!isHost" class="campaign-lobby__waiting">
+      <div v-if="!isHost" class="panel-lobby__waiting">
         Waiting for the host to start the game…
       </div>
-      <div v-if="startError" class="campaign-lobby__error">{{ startError }}</div>
-      <div v-if="inviteError" class="campaign-lobby__error">{{ inviteError }}</div>
+      <div v-if="startError" class="panel-lobby__error">{{ startError }}</div>
+      <div v-if="inviteError" class="panel-lobby__error">{{ inviteError }}</div>
     </div>
 
-    <div v-else class="campaign-lobby__not-found">
+    <div v-else class="panel-lobby__not-found">
       Lobby not found.
     </div>
 
-    <div class="campaign-lobby__footer">
+    <div class="panel-lobby__footer">
       <span
         v-if="isHost && steamLobbyPending && !steamLobbyId"
-        class="campaign-lobby__steam-pending"
+        class="panel-lobby__steam-pending"
       >
         Setting up Steam invite…
       </span>
@@ -93,9 +93,10 @@ const emit = defineEmits<{
   (e: 'back'): void
 }>()
 
-// In-panel campaign lobby. Leaving / the lobby vanishing pops back to the
-// campaign level list (the caller listens on @back). Match-start navigation
-// is handled inside the composable (→ /match/:id).
+// Shared in-panel lobby, hosted inside a parchment panel (Campaign level
+// list and Custom Game → Start Game). Leaving / the lobby vanishing pops
+// back to whatever the host panel was showing (the caller listens on @back).
+// Match-start navigation is handled inside the composable (→ /match/:id).
 const {
   lobby,
   isHost,
@@ -115,7 +116,7 @@ const {
 </script>
 
 <style scoped>
-.campaign-lobby {
+.panel-lobby {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -124,14 +125,14 @@ const {
   color: #3a1f0a;
 }
 
-.campaign-lobby__header {
+.panel-lobby__header {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: calc(var(--s) * 16);
 }
 
-.campaign-lobby__back {
+.panel-lobby__back {
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
   font-size: calc(var(--s) * 14);
   font-weight: 700;
@@ -143,13 +144,13 @@ const {
   background: linear-gradient(180deg, #c0a98a 0%, #8a7350 100%);
 }
 
-.campaign-lobby__header-info {
+.panel-lobby__header-info {
   display: flex;
   flex-direction: column;
   gap: calc(var(--s) * 2);
 }
 
-.campaign-lobby__title {
+.panel-lobby__title {
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
   font-size: calc(var(--s) * 22);
   font-weight: 700;
@@ -157,7 +158,7 @@ const {
   text-transform: uppercase;
 }
 
-.campaign-lobby__slots {
+.panel-lobby__slots {
   font-size: calc(var(--s) * 12);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -165,14 +166,14 @@ const {
   color: rgba(58, 31, 10, 0.7);
 }
 
-.campaign-lobby__map-version-hint {
+.panel-lobby__map-version-hint {
   font-size: calc(var(--s) * 11);
   font-style: italic;
   color: rgba(122, 80, 20, 0.85);
   letter-spacing: 0.04em;
 }
 
-.campaign-lobby__body {
+.panel-lobby__body {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -181,7 +182,7 @@ const {
   overflow-y: auto;
 }
 
-.campaign-lobby__section-label {
+.panel-lobby__section-label {
   font-family: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
   font-size: calc(var(--s) * 14);
   font-weight: 700;
@@ -190,13 +191,13 @@ const {
   color: rgba(58, 31, 10, 0.75);
 }
 
-.campaign-lobby__players {
+.panel-lobby__players {
   display: flex;
   flex-direction: column;
   gap: calc(var(--s) * 6);
 }
 
-.campaign-lobby__slot {
+.panel-lobby__slot {
   display: flex;
   align-items: center;
   gap: calc(var(--s) * 10);
@@ -207,18 +208,18 @@ const {
   min-height: calc(var(--s) * 40);
 }
 
-.campaign-lobby__slot--filled {
+.panel-lobby__slot--filled {
   border-color: #8a5a2a;
   background: rgba(200, 180, 110, 0.5);
 }
 
-.campaign-lobby__player-id {
+.panel-lobby__player-id {
   font-size: calc(var(--s) * 14);
   font-weight: 600;
   color: #2a1505;
 }
 
-.campaign-lobby__player-tag {
+.panel-lobby__player-tag {
   font-size: calc(var(--s) * 11);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -226,30 +227,30 @@ const {
   color: #7a3a10;
 }
 
-.campaign-lobby__player-empty {
+.panel-lobby__player-empty {
   font-size: calc(var(--s) * 12);
   color: rgba(58, 31, 10, 0.4);
 }
 
-.campaign-lobby__waiting {
+.panel-lobby__waiting {
   font-size: calc(var(--s) * 13);
   font-style: italic;
   color: rgba(58, 31, 10, 0.7);
 }
 
-.campaign-lobby__error {
+.panel-lobby__error {
   font-size: calc(var(--s) * 13);
   color: #7a1a1a;
 }
 
-.campaign-lobby__not-found {
+.panel-lobby__not-found {
   color: rgba(58, 31, 10, 0.55);
   font-size: calc(var(--s) * 14);
   text-align: center;
   padding: calc(var(--s) * 40) 0;
 }
 
-.campaign-lobby__footer {
+.panel-lobby__footer {
   flex: 0 0 auto;
   display: flex;
   gap: calc(var(--s) * 10);
@@ -257,7 +258,7 @@ const {
   align-items: center;
 }
 
-.campaign-lobby__steam-pending {
+.panel-lobby__steam-pending {
   font-size: calc(var(--s) * 12);
   font-style: italic;
   color: rgba(58, 31, 10, 0.65);

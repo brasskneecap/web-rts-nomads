@@ -12,7 +12,7 @@
       <!-- In-panel lobby view. When the player clicks Lobby on a level, the
            campaign lobby is hosted here inside the same parchment panel; its
            Back button pops back to the level list (@back → view = 'levels'). -->
-      <CampaignLobby
+      <PanelLobby
         v-if="view === 'lobby'"
         :lobby-id="activeLobbyId"
         @back="view = 'levels'"
@@ -205,7 +205,7 @@ import { useCampaign } from '@/composables/useCampaign'
 import { useProfile } from '@/composables/useProfile'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'
-import CampaignLobby from '@/components/menu/CampaignLobby.vue'
+import PanelLobby from '@/components/menu/PanelLobby.vue'
 import badgeIconUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot.png'
 
 const emit = defineEmits<{
@@ -223,7 +223,7 @@ const {
 } = useCampaign()
 
 // Which sub-view the parchment panel is showing. 'levels' is the campaign
-// level list; 'lobby' hosts the created lobby inline (CampaignLobby) so the
+// level list; 'lobby' hosts the created lobby inline (PanelLobby) so the
 // Lobby button never leaves the war-room. `activeLobbyId` is the lobby the
 // in-panel view polls while `view === 'lobby'`.
 const view = ref<'levels' | 'lobby'>('levels')

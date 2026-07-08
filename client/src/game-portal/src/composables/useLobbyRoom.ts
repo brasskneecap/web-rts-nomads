@@ -2,8 +2,9 @@
 // the start / invite / leave handlers for a single lobby. Extracted from the
 // former Lobby.vue so the same behavior can back two presentations:
 //   1. The routed dark full-page lobby (Lobby.vue, Custom Game flow).
-//   2. The parchment in-panel lobby embedded in the Campaign panel
-//      (CampaignLobby.vue), which stays inside the war-room parchment.
+//   2. The parchment in-panel lobby embedded in the Campaign and Custom
+//      Game panels (PanelLobby.vue), which stays inside the war-room
+//      parchment.
 //
 // The caller supplies the lobby id (route param or prop) and an `onLeave`
 // callback. `onLeave` fires for every "we're done here" outcome — the user

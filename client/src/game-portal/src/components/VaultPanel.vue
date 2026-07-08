@@ -123,7 +123,8 @@ import StorageGrid from '@/components/vault/StorageGrid.vue'
 import BagItemsRow from '@/components/vault/BagItemsRow.vue'
 import SelectedItemPanel from '@/components/vault/SelectedItemPanel.vue'
 import EligibleUnitCard from '@/components/vault/EligibleUnitCard.vue'
-import iconContainerUrl from '@/assets/ui/themes/default/icon-container.png'
+import iconContainerUrl from '@/assets/ui/themes/updated/icon_container.png'
+import innerPanelUrl from '@/assets/ui/themes/updated/inner-panel.png'
 import type {
   VaultInventorySlot,
   VaultPerkChip,
@@ -161,8 +162,11 @@ const collapsed = ref(false)
 const drag = useDraggablePanel('vault-panel')
 
 const rootStyle = computed(() => {
-  if (props.embedded) return {}
-  return drag.style.value
+  // Expose the inner-panel art so .vault-left's frame works whether the vault
+  // is embedded in the MatchMenu (which also sets it) or standalone/draggable.
+  const base = { '--ui-inner-panel-image': `url(${innerPanelUrl})` }
+  if (props.embedded) return base
+  return { ...base, ...drag.style.value }
 })
 
 // Rank slots are positional: index 0 unlocks at base rank, 1 at silver,
@@ -648,12 +652,22 @@ function onStorageDrop() {
    left column never resizes between the empty and populated selected-item
    states — keeping the unit cards from shifting. */
 .vault-left {
-  flex: 0 0 280px;
+  flex: 0 0 auto;
+  /* content-box so the 17px inner-panel frame + padding sit OUTSIDE the 280px
+     storage-grid width (4×64 + 3×8) — the grid still fits exactly. */
+  box-sizing: content-box;
   width: 280px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+  padding: 12px;
+  border: 17px solid transparent;
+  border-image-source: var(--ui-inner-panel-image);
+  border-image-slice: 17 fill;
+  border-image-width: 17px;
+  border-image-repeat: stretch;
+  image-rendering: auto;
 }
 
 /* Right column: scrollable eligible unit list. */
