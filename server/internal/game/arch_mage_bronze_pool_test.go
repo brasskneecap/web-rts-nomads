@@ -11,11 +11,11 @@ func containsStr(xs []string, want string) bool {
 	return false
 }
 
-// The real embedded bronze pool contains exactly the three authored spells;
+// The real embedded bronze pool contains exactly the authored spells;
 // silver/gold are empty.
 func TestArchMageBronzePool_Contents(t *testing.T) {
 	bronze := spellPoolFor("arch_mage", "bronze")
-	want := []string{"fireball", "chain_lightning", "arcane_orb"}
+	want := []string{"fireball", "chain_lightning", "arcane_orb", "shatter"}
 	if len(bronze) != len(want) {
 		t.Fatalf("bronze pool = %v; want %v", bronze, want)
 	}

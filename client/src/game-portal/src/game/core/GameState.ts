@@ -4143,6 +4143,10 @@ function getSharedAbilityActionItems(
         id: `cast-ability-${a.id}`,
         label: name,
         kind: 'ability' as const,
+        // Draw the ability's bundled art if present, else its projectile image
+        // — matches the single-select button so multi-select shows real art
+        // instead of the generic placeholder icon.
+        iconDef: { kind: 'ability' as const, type: a.id, projectile: a.projectile },
         active: activeMode === 'cast-ability' && castAbilityId === a.id,
         autoCast: allAutoCast,
         supportsAutoCast,

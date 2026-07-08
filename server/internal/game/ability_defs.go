@@ -274,6 +274,19 @@ type AbilityDef struct {
 	// fail-safe at use time (an unknown id just means "no effect").
 	EffectOnTarget string `json:"effectOnTarget,omitempty"`
 
+	// EffectAtPoint is a registered effect id (catalog/effects/<id>) played at
+	// a POINT ability's cast LOCATION on resolve — the ground burst for an
+	// instant point-AoE (Shatter). It is world-anchored (not tied to any unit),
+	// so it plays even when the cast lands on empty ground with no enemies in
+	// range. Empty ⇒ no ground effect. Resolved fail-safe (an unregistered id
+	// just means "no effect"), same discipline as EffectOnTarget. Inert for
+	// unit-target abilities.
+	EffectAtPoint string `json:"effectAtPoint,omitempty"`
+	// EffectScale multiplies the EffectAtPoint sprite's rendered size so the
+	// burst can be matched to the spell's area radius (the effect art is a
+	// fixed-size sheet). 0 / absent ⇒ 1× (the sheet's native size). Visual only.
+	EffectScale float64 `json:"effectScale,omitempty"`
+
 	// Projectile is the optional projectile-def id (catalog/projectiles/<id>)
 	// an offensive ability launches at its target on resolve. When set (and
 	// DamageAmount > 0) the ability's damage is DEFERRED and delivered by a
@@ -319,6 +332,20 @@ type AbilityDef struct {
 	// PullStrength is the forced-displacement pull rate (world px per second)
 	// applied by a pulling ability (arcane_orb). 0 ⇒ no pull. Modifier-eligible.
 	PullStrength float64 `json:"pullStrength,omitempty"`
+
+	// SlowMultiplier / SlowDurationSeconds declare an on-hit SLOW an ability
+	// stamps on every enemy it damages (Shatter's chill). They are routed
+	// through the shared proc-slow seam (applyProcSlowLocked) by the ability's
+	// DamageType: a "cold" ability lands the Chilled cold-slow track (icy
+	// overlay + reduced move AND attack speed), any other school lands the
+	// physical/generic slow track — so no ability re-implements slowing logic.
+	// SlowMultiplier is the speed fraction (e.g. 0.5 ⇒ 50% speed); a value not
+	// in (0,1) is inert (slowTargetLocked rejects it). SlowDurationSeconds is
+	// how long it lasts. Both 0 / absent ⇒ the ability applies no slow (inert
+	// for every ability that omits them). Read directly off the def — NOT
+	// modifier-eligible today (same discipline as BounceRange).
+	SlowMultiplier      float64 `json:"slowMultiplier,omitempty"`
+	SlowDurationSeconds float64 `json:"slowDurationSeconds,omitempty"`
 
 	// ── Passive charge-fire (arcane_missiles) ──────────────────────────────
 	// When Type == AbilityPassive and ChargeRequired > 0 this is an auto-firing

@@ -198,6 +198,101 @@ func (s *GameState) resolveAbilityCastAtPointLocked(caster *Unit, def AbilityDef
 	if eff.PullStrength > 0 && def.Projectile != "" {
 		s.spawnArcaneOrbLocked(caster, x, y, def, eff, def.CastRange.Resolve(caster))
 	}
+
+	// Instant point AoE (Shatter): a hitscan area burst at the clicked
+	// location — no traveling projectile. Fires for any point ability that has
+	// an area radius and no projectile, so it stays generic (data-driven off
+	// the def, no spell-specific branch). The effect centre is clamped to the
+	// caster's cast range so a far click lands at max reach, mirroring how the
+	// orb caps its travel at CastRange.
+	if def.Projectile == "" && eff.Radius > 0 {
+		cx, cy := clampPointToRange(caster.X, caster.Y, x, y, def.CastRange.Resolve(caster))
+		s.resolveAbilityAoeAtPointLocked(caster, def, eff, cx, cy)
+		// Ground burst VFX at the (clamped) cast point. Plays regardless of
+		// whether any enemy was caught, so a whiffed ground cast still reads.
+		s.playEffectAtPointLocked(def.EffectAtPoint, cx, cy, def.EffectScale)
+	}
+}
+
+// playEffectAtPointLocked queues a registered effect at a WORLD position
+// (anchorUnitID 0) through the shared transient-effect pipeline, so it renders
+// via the same path unit/perk effects use. No-op for an empty id or an
+// unregistered effect (fail-safe, matching playEffectOnUnitLocked). The
+// effect's duration comes from its EffectDef; scale <= 0 defaults to 1×.
+//
+// Caller holds s.mu.
+func (s *GameState) playEffectAtPointLocked(effectID string, x, y, scale float64) {
+	if effectID == "" {
+		return
+	}
+	def, ok := getEffectDef(effectID)
+	if !ok {
+		return
+	}
+	if scale <= 0 {
+		scale = 1.0
+	}
+	s.queueEffectLocked(effectID, 0, x, y, scale, def.Duration, "")
+}
+
+// clampPointToRange returns (px,py) moved to lie within `maxRange` of the
+// origin (ox,oy): if it is already within range, or maxRange <= 0 (no limit),
+// it is returned unchanged; otherwise it is pulled back along the origin→point
+// ray to exactly maxRange. Pure geometry — no lock, no state.
+func clampPointToRange(ox, oy, px, py, maxRange float64) (float64, float64) {
+	if maxRange <= 0 {
+		return px, py
+	}
+	dx, dy := px-ox, py-oy
+	d2 := dx*dx + dy*dy
+	if d2 <= maxRange*maxRange {
+		return px, py
+	}
+	d := math.Sqrt(d2)
+	return ox + dx/d*maxRange, oy + dy/d*maxRange
+}
+
+// resolveAbilityAoeAtPointLocked applies an instant (hitscan) area effect
+// centred on (cx,cy): every hostile, living, visible unit within eff.Radius
+// takes eff.Damage (when > 0) and, when the ability declares a slow, is
+// slowed via the shared proc-slow seam — a "cold" ability chills (cold-slow
+// track / icy overlay), any other school lands a physical slow. Fully
+// data-driven off the def; there is no per-spell branch, so any future
+// instant point-AoE spell reuses it unchanged. Damage rides the authoritative
+// pipeline (mitigation, death, threat, determinism), matching
+// applyAbilitySplashDamageLocked. A unit killed by the damage is skipped by
+// applyProcSlowLocked's dead-target guard, so no chill is wasted on a corpse.
+//
+// Caller holds s.mu.
+func (s *GameState) resolveAbilityAoeAtPointLocked(caster *Unit, def AbilityDef, eff EffectiveSpell, cx, cy float64) {
+	if caster == nil || eff.Radius <= 0 {
+		return
+	}
+	radSq := eff.Radius * eff.Radius
+	dmgType := def.DamageType.OrPhysical()
+	for _, u := range s.Units {
+		if u == nil || u.ID == caster.ID || u.HP <= 0 || !u.Visible {
+			continue
+		}
+		if !s.playersAreHostileLocked(u.OwnerID, caster.OwnerID) {
+			continue
+		}
+		dx := u.X - cx
+		dy := u.Y - cy
+		if dx*dx+dy*dy > radSq {
+			continue
+		}
+		if eff.Damage > 0 {
+			s.applyUnitDamageWithSourceLocked(u, eff.Damage, DamageSource{
+				AttackerUnitID: caster.ID,
+				Kind:           "ability",
+				DamageType:     dmgType,
+			})
+		}
+		// Chill / slow every unit in the burst. No-op when the ability declares
+		// no slow, or the value is out of range, or the unit just died.
+		s.applyProcSlowLocked(u.ID, def.SlowMultiplier, def.SlowDurationSeconds, dmgType)
+	}
 }
 
 // failCastLocked records the failure reason on the unit (for async/UI
