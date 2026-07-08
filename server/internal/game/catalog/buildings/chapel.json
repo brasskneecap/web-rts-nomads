@@ -15,7 +15,7 @@
     "offsetY": 1.4
   },
   "maxHp": 450,
-  "buildSeconds": 1,
+  "buildSeconds": 25,
   "resourceCost": {
     "gold": 200,
     "wood": 100
@@ -27,7 +27,7 @@
     "acolyte",
     "adept"
   ],
-  "requiresTownhallTier": 1,
+  "requiresTownhallTier": 2,
   "metadata": {},
   "color": "#7c3aed",
   "label": "Chapel",

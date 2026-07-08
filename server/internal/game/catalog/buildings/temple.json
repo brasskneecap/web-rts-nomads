@@ -7,7 +7,7 @@
     "gold": 400,
     "wood": 500
   },
-  "upgradeSeconds": 1,
+  "upgradeSeconds": 25,
   "width": 2,
   "height": 2,
   "spriteRender": {
