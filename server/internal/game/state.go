@@ -3044,6 +3044,39 @@ func (s *GameState) Update(dt float64) {
 			continue
 		}
 
+		// Obstacle-escape hatch. A ground unit standing inside a blocked cell
+		// (shoved in by knockback / pull / separation, or a building/tree
+		// dropped on it) cannot move via normal path advancement: every step's
+		// coarse walkability check fails because its OWN cell is blocked, so it
+		// repath-storms in place. Step it straight toward the nearest walkable
+		// cell centre — ignoring the walkability gate that would otherwise trap
+		// it — until it is back on open ground, where normal movement resumes.
+		// Flyers ignore terrain entirely, so they can never be embedded. Only
+		// eject live, on-field units that are actually trying to move — the
+		// repath storm this fixes only afflicts moving units, and gating on
+		// motion leaves intentional placements alone (e.g. a unit yanked onto a
+		// blocked cell by a Pull and then left idle must stay where it landed,
+		// not bounce out). An InsideBuilder worker (Visible=false) legitimately
+		// stands on its under-construction footprint; MiningInside gatherers
+		// already `continue` above; dead units never move.
+		if !unit.Flyer && unit.HP > 0 && unit.Visible && (unit.Moving || unit.RepathBlocked) &&
+			!s.isWalkable(s.worldToGrid(unit.X, unit.Y), blocked) {
+			if escapeCell, ok := s.findNearestWalkable(s.worldToGrid(unit.X, unit.Y), blocked); ok {
+				dest := s.gridToWorldCenter(escapeCell)
+				dx := dest.X - unit.X
+				dy := dest.Y - unit.Y
+				if d := math.Hypot(dx, dy); d > 0 {
+					step := unit.MoveSpeed * s.perkMoveSpeedMultiplierLocked(unit) * slowFactorLocked(unit) * dt
+					if step > d {
+						step = d
+					}
+					unit.X = clampFloat(unit.X+(dx/d)*step, unitRadius, s.MapWidth-unitRadius)
+					unit.Y = clampFloat(unit.Y+(dy/d)*step, unitRadius, s.MapHeight-unitRadius)
+				}
+				continue
+			}
+		}
+
 		// Focus follow: when the Cleric has an active focus target, drive its
 		// path toward the follow destination each tick (with repath debouncing).
 		// Must run before the !unit.Moving check so a stationary Cleric that
@@ -3204,10 +3237,26 @@ func (s *GameState) Update(dt float64) {
 		if !unit.Flyer {
 			nextCell := s.worldToGrid(nextX, nextY)
 			if !s.isWalkable(nextCell, blocked) {
+				// The straight step toward the waypoint hits a blocked cell.
+				// Before giving up to a repath, wall-slide: move along whichever
+				// single axis stays walkable so the unit grazes past the obstacle
+				// corner and keeps making progress. This is what breaks the
+				// "stuck walking into a tree" repath storm — a waypoint whose
+				// approach clips an obstacle the sub-cell A* buffered around but
+				// the coarse movement check rejects. Without sliding the unit
+				// repaths to the same clipping path every tick and never moves.
+				if s.isWalkable(s.worldToGrid(nextX, unit.Y), blocked) {
+					unit.X = nextX
+					continue
+				}
+				if s.isWalkable(s.worldToGrid(unit.X, nextY), blocked) {
+					unit.Y = nextY
+					continue
+				}
+				// Boxed in on both axes — the path stepped into newly-blocked
+				// terrain and no slide is available this tick. Hold the order and
+				// retry on the bounded cadence instead of abandoning it.
 				if !s.repathUnitLocked(unit, blocked) {
-					// The path stepped into newly-blocked terrain and no route
-					// is available this tick — hold the order and retry on the
-					// bounded cadence instead of abandoning it at the obstacle.
 					s.enterRepathBlockedLocked(unit)
 				}
 				continue

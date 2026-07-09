@@ -470,16 +470,28 @@ func (s *GameState) assignUnitPathWithSubBlocked(unit *Unit, dest protocol.Vec2,
 	// moving and sits anywhere between two sub-cell centres, path[0] is
 	// behind it — walking to it before going forward reads as a jarring
 	// "step back," especially when re-issuing a move while already moving.
-	// simplifyUnitPath has already verified line-of-sight between each
-	// consecutive pair, so a waypoint the unit has projected past is safe to
-	// drop. Test: forward = path[0]→path[1]; if unit-from-path[0] dot
-	// forward > 0, the unit is past path[0] along the route.
+	// Test: forward = path[0]→path[1]; if unit-from-path[0] dot forward > 0,
+	// the unit is past path[0] along the route.
+	//
+	// BUT the "path starts at the unit" assumption breaks when the unit stands
+	// inside a static obstacle's sub-cell buffer: findNearestUnitPathSubWalkable
+	// relocates the A* start off the unit's real position, so path[0] can be
+	// the pivot that keeps the route clear of the obstacle. Culling it by the
+	// dot-product test alone then leaves a straight shot that clips the
+	// obstacle's coarse cell — which the movement loop's walkability check
+	// rejects every tick, pinning the unit in a repath storm (units "stuck
+	// walking into trees"). So only drop path[0] when the unit actually has a
+	// clear line to path[1], using the same coarse walkability test the
+	// movement loop applies.
 	for len(path) >= 2 {
 		fx := path[1].X - path[0].X
 		fy := path[1].Y - path[0].Y
 		ux := unit.X - path[0].X
 		uy := unit.Y - path[0].Y
 		if fx*ux+fy*uy <= 0 {
+			break
+		}
+		if !s.lineWalkableLocked(unit.X, unit.Y, path[1].X, path[1].Y, blocked, unit.Flyer) {
 			break
 		}
 		path = path[1:]

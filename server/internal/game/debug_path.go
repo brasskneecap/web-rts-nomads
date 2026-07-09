@@ -174,6 +174,13 @@ type suspicious struct {
 	moved                  float64
 	targDist               float64
 	pathLen                int
+	// Wedge diagnostics: distinguishes a friendly-crowd-against-a-static-block
+	// wedge (allyCrowd high AND staticAdj true) from other no-progress causes.
+	// posX/posY locate the unit so it can be found on the map.
+	posX      float64
+	posY      float64
+	allyCrowd int  // friendly units within 2× separation distance
+	staticAdj bool // a static blocked cell (terrain/obstacle/building) is adjacent
 }
 
 // reportPathDebugLocked prints a one-line summary every ~1 second (20 ticks)
@@ -218,6 +225,40 @@ func (s *GameState) reportPathDebugLocked() {
 					targDist = math.Hypot(unit.X-target.X, unit.Y-target.Y)
 				}
 			}
+
+			// Count friendly units crowding this one (2× separation distance) —
+			// the invisible-to-pathing blockers that separation can't push
+			// through when a static obstacle removes the escape route.
+			allyCrowd := 0
+			for _, other := range s.Units {
+				if other == nil || other == unit || other.HP <= 0 || !other.Visible {
+					continue
+				}
+				if !s.unitsFriendlyLocked(unit, other) {
+					continue
+				}
+				if math.Hypot(unit.X-other.X, unit.Y-other.Y) <= 2*unitSeparationDistance {
+					allyCrowd++
+				}
+			}
+
+			// Is a static blocked cell (terrain / obstacle / building) adjacent?
+			// That's the hard wall the crowd wedges the unit against.
+			blocked := s.getBlockedCellsLocked()
+			cell := s.worldToGrid(unit.X, unit.Y)
+			staticAdj := false
+			for dy := -1; dy <= 1 && !staticAdj; dy++ {
+				for dx := -1; dx <= 1; dx++ {
+					if dx == 0 && dy == 0 {
+						continue
+					}
+					if blocked[gridPoint{X: cell.X + dx, Y: cell.Y + dy}] {
+						staticAdj = true
+						break
+					}
+				}
+			}
+
 			suspects = append(suspects, suspicious{
 				unitID:                 unit.ID,
 				ownerID:                unit.OwnerID,
@@ -229,6 +270,10 @@ func (s *GameState) reportPathDebugLocked() {
 				moved:                  moved,
 				targDist:               targDist,
 				pathLen:                len(unit.Path),
+				posX:                   unit.X,
+				posY:                   unit.Y,
+				allyCrowd:              allyCrowd,
+				staticAdj:              staticAdj,
 			})
 		}
 	}
@@ -262,9 +307,9 @@ func (s *GameState) reportPathDebugLocked() {
 		limit = 5
 	}
 	for _, su := range suspects[:limit] {
-		log.Printf("  unit=%d owner=%s order=%d formID=%d targetUnit=%d targetBldg=%q repaths=%d moved=%.0fpx targDist=%.0f pathLen=%d",
+		log.Printf("  unit=%d owner=%s order=%d formID=%d targetUnit=%d targetBldg=%q repaths=%d moved=%.0fpx targDist=%.0f pathLen=%d pos=(%.0f,%.0f) allyCrowd=%d staticAdj=%v",
 			su.unitID, su.ownerID, su.orderType, su.formationOrderID, su.attackTargetID, su.attackBuildingTargetID,
-			su.repathCount, su.moved, su.targDist, su.pathLen)
+			su.repathCount, su.moved, su.targDist, su.pathLen, su.posX, su.posY, su.allyCrowd, su.staticAdj)
 	}
 
 	// Reset counters and advance the window for all tracked units. Drop entries
