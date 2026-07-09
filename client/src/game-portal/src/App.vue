@@ -20,9 +20,12 @@ const splashDismissed = ref(false)
 const showMenuChrome = computed(() => !route.meta.hideMenuChrome)
 
 // Persistent Dominion Points readout shows on every out-of-game screen. It is
-// hidden only once an actual match (or the match-end recap) is active — those
-// routes are flagged `silenceMusic`, the same flag that marks "in a match".
-const showDominionPanel = computed(() => !route.meta.silenceMusic)
+// hidden once an actual match (or the match-end recap) is active — those routes
+// are flagged `silenceMusic`, the same flag that marks "in a match" — and also
+// on the main menu, whose sign-based layout owns the whole screen.
+const showDominionPanel = computed(
+  () => !route.meta.silenceMusic && !route.meta.hideDominionPanel,
+)
 
 // Music plays across the menu, war-room, kingdom and meta views. It is only
 // silenced once an actual match starts (routes flagged `silenceMusic`), so it

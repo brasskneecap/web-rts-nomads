@@ -27,7 +27,7 @@ import BlacksmithView from '@/views/BlacksmithView.vue'
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/', component: MainMenu },
+    { path: '/', component: MainMenu, meta: { hideDominionPanel: true } },
     { path: '/custom', redirect: '/war-room?tab=custom' },
     { path: '/create-game', redirect: '/war-room?tab=custom&sub=start' },
     { path: '/direct-connect', redirect: '/war-room?tab=custom&sub=direct' },
