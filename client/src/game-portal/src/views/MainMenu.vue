@@ -96,15 +96,15 @@ const { selectedMapName, selectedMapId } = useMapSelection()
 // live so new values can be dialled in, then pasted back here.
 type Entry = { label: string; to: string; top: number }
 const DEFAULTS = {
-  left: 51.6,
-  width: 20.2,
-  fontCqh: 3.5,
+  left: 52.6,
+  width: 21,
+  fontCqh: 3.2,
   fontCqw: 2.9,
   entries: [
-    { label: 'Start Game', to: '/war-room', top: 51.75 },
-    { label: 'Profile', to: '/profile', top: 58.68 },
-    { label: 'Map Editor', to: '/editor', top: 65.72 },
-    { label: 'Settings', to: '/options', top: 72.94 },
+    { label: 'Start Game', to: '/war-room', top: 55.97 },
+    { label: 'Profile', to: '/profile', top: 62.34 },
+    { label: 'Map Editor', to: '/editor', top: 68.79 },
+    { label: 'Settings', to: '/options', top: 75.25 },
   ] as Entry[],
 }
 const tune = reactive(structuredClone(DEFAULTS))
@@ -117,15 +117,8 @@ const tune = reactive(structuredClone(DEFAULTS))
 //   localStorage.setItem('webrts.signTuner', '1')
 // and to switch it off again:
 //   localStorage.removeItem('webrts.signTuner')
-const SIGN_TUNER_FLAG = 'webrts.signTuner'
-function readTunerFlag(): boolean {
-  try {
-    return localStorage.getItem(SIGN_TUNER_FLAG) === '1'
-  } catch {
-    return false
-  }
-}
-const tunerEnabled = import.meta.env.DEV && readTunerFlag()
+const tunerEnabled =
+  import.meta.env.DEV && localStorage.getItem('webrts.signTuner') === '1'
 const tuning = ref(false)
 const selected = ref(-1)
 const copied = ref(false)
@@ -255,9 +248,9 @@ function onDismiss() {
 
 /*
  * `.menu-sign__frame` mirrors MenuChrome's `background-size: cover` geometry:
- * the sign image is 1504x1046 (aspect 1.43786). Cover renders it at
- * width  = max(100vw, 100vh * 1.43786)
- * height = max(100vh, 100vw * 0.69548)
+ * the sign image is 1502x1047 (aspect 1.43457). Cover renders it at
+ * width  = max(100vw, 100vh * 1.43457)
+ * height = max(100vh, 100vw * 0.69707)
  * centred in the viewport. Reproducing that here means percentage-positioned
  * children land on the same pixels as the painted background at every size.
  */
@@ -273,8 +266,8 @@ function onDismiss() {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: max(100vw, 100vh * 1.43786);
-  height: max(100vh, 100vw * 0.69548);
+  width: max(100vw, 100vh * 1.43457);
+  height: max(100vh, 100vw * 0.69707);
   /* Establish a size container so entries can be sized in cqh/cqw units that
      track the sign's on-screen scale (a plank is ~6.3% of the frame height). */
   container-type: size;
@@ -296,31 +289,62 @@ function onDismiss() {
   background: none;
   pointer-events: auto;
   font-family: var(--font-title);
-  font-weight: 600;
+  font-weight: 600; /* Cinzel SemiBold */
   line-height: 1;
-  letter-spacing: 0.04em;
+  letter-spacing: 4px;
+  text-transform: uppercase;
   white-space: nowrap;
-  color: #f4d27a;
+  color: #c8a85a; /* aged gold — sits on the wood rather than glowing */
   text-decoration: none;
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.95),
-    0 0 6px rgba(0, 0, 0, 0.85),
-    0 0 12px rgba(255, 200, 100, 0.3);
-  transition: color 120ms ease, text-shadow 120ms ease, transform 120ms ease;
+  -webkit-text-stroke: 1px #2a1a10; /* 1px dark outline, painted behind the fill */
+  paint-order: stroke fill;
+  text-shadow: 0 2px 2px rgba(0, 0, 0, 0.42); /* subtle 2px downward shadow */
+  transition: color 120ms ease;
+}
+
+/*
+ * Soft pool of light on the plank behind the text. It can't move the plank
+ * (that's baked into the background art), so a warm, soft-edged glow that fades
+ * in on hover reads as light catching the wood; on press it flips to a subtle
+ * darkening. Sits behind the text via the entry's transform stacking context.
+ */
+.menu-sign__frame :deep(.menu-sign__entry)::before {
+  content: '';
+  position: absolute;
+  inset: -35% -6%;
+  z-index: -1;
+  border-radius: 45% / 60%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 231, 176, 0.16),
+    rgba(255, 231, 176, 0) 70%
+  );
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+  pointer-events: none;
 }
 
 .menu-sign__frame :deep(.menu-sign__entry:hover:not(:disabled)) {
   filter: none;
-  color: #ffe9a8;
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.95),
-    0 0 6px rgba(0, 0, 0, 0.85),
-    0 0 14px rgba(255, 220, 140, 0.6);
+  color: #f2d88a; /* bright gold — clear, non-neon hover jump */
+}
+
+.menu-sign__frame :deep(.menu-sign__entry:hover:not(:disabled))::before {
+  opacity: 1;
 }
 
 .menu-sign__frame :deep(.menu-sign__entry:active:not(:disabled)) {
   filter: none;
-  transform: translate(-50%, calc(-50% + 1px));
+  color: #b08f48; /* slightly darker gold on press */
+}
+
+.menu-sign__frame :deep(.menu-sign__entry:active:not(:disabled))::before {
+  opacity: 1;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.22),
+    rgba(0, 0, 0, 0) 72%
+  );
 }
 
 /* Tuning affordances (dev only) */
