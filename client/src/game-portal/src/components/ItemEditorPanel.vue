@@ -311,14 +311,14 @@
               <label for="ie-crafting-input-a">Input A</label>
               <select id="ie-crafting-input-a" v-model="form.crafting.inputA">
                 <option value="" disabled>Select an item…</option>
-                <option v-for="d in equipmentItems" :key="d.id" :value="d.id">{{ d.displayName }} ({{ d.id }})</option>
+                <option v-for="d in allEquipmentItems" :key="d.id" :value="d.id">{{ d.displayName }} ({{ d.id }})</option>
               </select>
             </div>
             <div class="control-group">
               <label for="ie-crafting-input-b">Input B</label>
               <select id="ie-crafting-input-b" v-model="form.crafting.inputB">
                 <option value="" disabled>Select an item…</option>
-                <option v-for="d in equipmentItems" :key="d.id" :value="d.id">{{ d.displayName }} ({{ d.id }})</option>
+                <option v-for="d in allEquipmentItems" :key="d.id" :value="d.id">{{ d.displayName }} ({{ d.id }})</option>
               </select>
             </div>
             <div class="control-group">
@@ -406,6 +406,10 @@ const PROC_OVERRIDE_FIELDS: { key: ProcNullableKey; label: string }[] = [
 const equipmentItems = computed(() =>
   items.value.filter((d) => d.kind === 'equipment' &&
     (search.value === '' || d.id.includes(search.value.toLowerCase()) || d.displayName.toLowerCase().includes(search.value.toLowerCase()))))
+
+// All equipment items regardless of the sidebar search — the crafting
+// dropdowns must never be constrained by the list filter.
+const allEquipmentItems = computed(() => items.value.filter((d) => d.kind === 'equipment'))
 
 // group by tier for the sidebar; TIER_COLORS drives the badge color.
 const groupedItems = computed(() => {
