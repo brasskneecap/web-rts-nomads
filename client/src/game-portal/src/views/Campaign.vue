@@ -1,206 +1,203 @@
 <template>
-  <!-- Outer world-menu frame: black chrome with a brass title bar. The actual
-       content sits on the nested world-inner (tan) panel — mirrors the base
-       menu panel system (see world-menu-panel / world-inner-panel assets). -->
-  <UiPanel variant="worldMenu" :padding="0" class="campaign">
+  <!-- Outer world-menu frame (black chrome), mirroring Custom Game: brass
+       header bar, button-art tabs, dark inner panels, footer with Back. -->
+  <UiPanel variant="worldMenu" :padding="0" class="campaign" :style="assetVars">
     <div class="campaign__frame">
-      <!-- Brass title bar across the top of the black frame. -->
       <header class="campaign__titlebar">
-        <h1 class="campaign__title">Campaigns</h1>
-        <button
-          type="button"
-          class="campaign__close"
-          aria-label="Close campaign panel"
-          @click="emit('close')"
-        >
-          &times;
-        </button>
+        <span class="campaign__title">Campaigns</span>
       </header>
 
-      <!-- Inner tan content panel, inset within the black frame. -->
-      <UiPanel variant="worldInner" :padding="0" class="campaign__panel">
-        <div class="campaign__inner">
       <!-- In-panel lobby view. When the player clicks Lobby on a level, the
-           campaign lobby is hosted here inside the same content panel; its
-           Back button pops back to the level list (@back → view = 'levels'). -->
+           campaign lobby is hosted here inline; its Back button pops back to
+           the level list (@back → view = 'levels'). -->
       <PanelLobby
         v-if="view === 'lobby'"
+        class="campaign__lobby"
         :lobby-id="activeLobbyId"
         @back="view = 'levels'"
       />
 
       <template v-else>
-      <!-- Campaign tabs. One tab per campaign in CAMPAIGNS (see
-           @/data/campaigns). Always rendered so a single shipped campaign
-           still reads as a tab strip, and so locked placeholder campaigns
-           (e.g. Swamp) advertise upcoming content. -->
-      <div class="campaign__tabs" role="tablist">
-        <button
-          v-for="entry in campaignsView"
-          :key="entry.campaign.id"
-          type="button"
-          role="tab"
-          :aria-selected="entry.campaign.id === activeCampaignId"
-          :aria-disabled="entry.campaign.locked ? 'true' : 'false'"
-          class="campaign__tab"
-          :class="{
-            'campaign__tab--active': entry.campaign.id === activeCampaignId,
-            'campaign__tab--locked': entry.campaign.locked,
-          }"
-          @click="selectCampaign(entry.campaign.id)"
-        >
-          <span class="campaign__tab-label">{{ entry.campaign.displayName }}</span>
-          <span
-            v-if="entry.campaign.locked"
-            class="campaign__tab-lock"
-            aria-hidden="true"
-          >&#x1f512;</span>
-        </button>
-      </div>
-
-      <!-- Active campaign banner. With a single campaign there's no tab strip,
-           so the name lives in the panel header instead. -->
-      <div v-if="activeCampaign" class="campaign__active-header">
-        <div class="campaign__active-name">{{ activeCampaign.campaign.displayName }}</div>
-        <div v-if="activeCampaign.campaign.description" class="campaign__active-desc">
-          {{ activeCampaign.campaign.description }}
-        </div>
-      </div>
-
-      <div v-if="startError" class="campaign__error" role="alert">{{ startError }}</div>
-      <div v-if="catalogLoadError" class="campaign__error" role="alert">{{ catalogLoadError }}</div>
-      <div
-        v-if="isCatalogLoading && campaignsView.length === 0"
-        class="campaign__loading"
-      >
-        Loading campaigns…
-      </div>
-
-      <div v-if="activeCampaign" class="campaign__body">
-        <ul class="campaign__levels">
-          <li
-            v-for="(entry, idx) in activeCampaign.levels"
-            :key="entry.level.id"
+        <!-- Campaign tabs. Active tab uses the blue war-room button art, others
+             the dark art. Locked campaigns advertise upcoming content. -->
+        <div class="campaign__tabs" role="tablist">
+          <button
+            v-for="entry in campaignsView"
+            :key="entry.campaign.id"
+            type="button"
+            role="tab"
+            :aria-selected="entry.campaign.id === activeCampaignId"
+            :aria-disabled="entry.campaign.locked ? 'true' : 'false'"
+            class="campaign__tab"
+            :class="{
+              'campaign__tab--active': entry.campaign.id === activeCampaignId,
+              'campaign__tab--locked': entry.campaign.locked,
+            }"
+            @click="selectCampaign(entry.campaign.id)"
           >
-            <button
-              type="button"
-              class="campaign-level"
-              :class="[
-                `campaign-level--${entry.status}`,
-                { 'campaign-level--selected': entry.level.id === selectedLevelId },
-              ]"
-              :aria-pressed="entry.level.id === selectedLevelId"
-              @click="selectedLevelId = entry.level.id"
-            >
-              <div class="campaign-level__index">{{ idx + 1 }}</div>
-              <div class="campaign-level__body">
-                <div class="campaign-level__name-row">
-                  <span class="campaign-level__name">{{ entry.level.displayName }}</span>
-                  <span class="campaign-level__status">{{ statusLabel(entry.status) }}</span>
-                </div>
-                <div v-if="entry.level.description" class="campaign-level__desc">
-                  {{ entry.level.description }}
-                </div>
+            <span class="campaign__tab-label">{{ entry.campaign.displayName }}</span>
+            <span
+              v-if="entry.campaign.locked"
+              class="campaign__tab-lock"
+              aria-hidden="true"
+            >&#x1f512;</span>
+          </button>
+        </div>
+
+        <div class="campaign__content">
+          <div v-if="startError" class="campaign__error" role="alert">{{ startError }}</div>
+          <div v-if="catalogLoadError" class="campaign__error" role="alert">{{ catalogLoadError }}</div>
+          <div
+            v-if="isCatalogLoading && campaignsView.length === 0"
+            class="campaign__loading"
+          >
+            Loading campaigns…
+          </div>
+
+          <UiPanel
+            v-if="activeCampaign"
+            variant="warRoomInner"
+            :padding="0"
+            class="campaign__panel"
+          >
+            <div class="campaign__body">
+              <!-- Left: level list (the active campaign is named by its tab). -->
+              <div class="campaign__left">
+                <UiPanel variant="innerPanel" :padding="0" class="campaign__levels-panel">
+                  <GameScrollArea class="campaign__levels-scroll">
+                    <ul class="campaign__levels">
+                      <li
+                        v-for="(entry, idx) in activeCampaign.levels"
+                        :key="entry.level.id"
+                      >
+                        <button
+                          type="button"
+                          class="campaign-level"
+                          :class="[
+                            `campaign-level--${entry.status}`,
+                            { 'campaign-level--selected': entry.level.id === selectedLevelId },
+                          ]"
+                          :aria-pressed="entry.level.id === selectedLevelId"
+                          @click="selectedLevelId = entry.level.id"
+                        >
+                          <div class="campaign-level__index">{{ idx + 1 }}</div>
+                          <div class="campaign-level__body">
+                            <div class="campaign-level__name-row">
+                              <span class="campaign-level__name">{{ entry.level.displayName }}</span>
+                              <span class="campaign-level__status">{{ statusLabel(entry.status) }}</span>
+                            </div>
+                            <div v-if="entry.level.description" class="campaign-level__desc">
+                              {{ entry.level.description }}
+                            </div>
+                          </div>
+                        </button>
+                      </li>
+                    </ul>
+                  </GameScrollArea>
+                </UiPanel>
               </div>
-            </button>
-          </li>
-        </ul>
 
-        <div class="campaign__detail">
-          <div class="campaign__preview">
-            <MinimapPreview
-              :map="selectedMap"
-              :show-metadata="false"
-              :max-display-size="200"
-            />
-            <div v-if="mapCatalogLoadError" class="campaign__preview-error">
-              {{ mapCatalogLoadError }}
-            </div>
-          </div>
+              <!-- Right: map preview (left) with objectives beside it (right). -->
+              <div class="campaign__right">
+                <div class="campaign__preview-col">
+                  <UiPanel variant="worldInner" :padding="0" class="campaign__preview-panel">
+                    <div class="campaign__preview">
+                      <MinimapPreview
+                        :map="selectedMap"
+                        :show-metadata="false"
+                        :max-display-size="200"
+                      />
+                    </div>
+                  </UiPanel>
+                  <div v-if="mapCatalogLoadError" class="campaign__preview-error">
+                    {{ mapCatalogLoadError }}
+                  </div>
+                </div>
 
-          <!-- Objectives — real per-level data. Each row shows whether the
-               profile has ever recorded a completion of this objective,
-               regardless of how many attempts it took (achievement mode,
-               see Decision in design.md). Required objectives are marked
-               with a small badge so the player knows which gate victory. -->
-          <div class="campaign__objectives">
-            <div class="campaign__objectives-header">
-              <span class="campaign__objectives-header-title">Objectives</span>
-              <span
-                v-if="anyObjectiveReward"
-                class="campaign__objectives-header-rewards"
-              >Rewards</span>
+                <UiPanel variant="innerPanel" :padding="0" class="campaign__objectives-panel">
+                  <div class="campaign__objectives">
+                    <div class="campaign__objectives-header">
+                      <span class="campaign__objectives-header-title">Objectives</span>
+                      <span
+                        v-if="anyObjectiveReward"
+                        class="campaign__objectives-header-rewards"
+                      >Rewards</span>
+                    </div>
+                    <div
+                      v-if="!selectedLevelObjectives.length"
+                      class="campaign__objectives-empty"
+                    >
+                      No objectives for this level.
+                    </div>
+                    <ul v-else class="campaign__objectives-list">
+                      <li
+                        v-for="obj in selectedLevelObjectives"
+                        :key="obj.id"
+                        class="campaign-objective"
+                        :class="{
+                          'campaign-objective--completed': isObjectiveDone(obj.id),
+                          'campaign-objective--required': obj.required,
+                        }"
+                      >
+                        <span
+                          class="campaign-objective__checkbox"
+                          :class="{ 'campaign-objective__checkbox--checked': isObjectiveDone(obj.id) }"
+                          aria-hidden="true"
+                        >{{ isObjectiveDone(obj.id) ? '✓' : '' }}</span>
+                        <span class="campaign-objective__label">
+                          {{ obj.description || obj.id }}<span
+                            v-if="obj.required"
+                            class="campaign-objective__required-note"
+                          > (required)</span>
+                        </span>
+                        <span class="campaign-objective__reward-cell">
+                          <span
+                            v-if="(obj.rewardDominionPoints ?? 0) > 0"
+                            class="campaign-objective__reward"
+                            title="Dominion Points, awarded the first time you complete this objective"
+                          >{{ obj.rewardDominionPoints }} DP</span>
+                        </span>
+                        <span class="campaign-objective__reward-cell">
+                          <span
+                            v-if="(obj.rewardConquestBadges ?? 0) > 0"
+                            class="campaign-objective__reward campaign-objective__reward--badge"
+                            title="Conquest Badges, awarded the first time you complete this objective"
+                          >{{ obj.rewardConquestBadges }}<img :src="badgeIconUrl" class="campaign-objective__reward-icon" alt="Conquest Badges" /></span>
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+                </UiPanel>
+              </div>
             </div>
-            <div
-              v-if="!selectedLevelObjectives.length"
-              class="campaign__objectives-empty"
-            >
-              No objectives for this level.
-            </div>
-            <ul v-else class="campaign__objectives-list">
-              <li
-                v-for="obj in selectedLevelObjectives"
-                :key="obj.id"
-                class="campaign-objective"
-                :class="{
-                  'campaign-objective--completed': isObjectiveDone(obj.id),
-                  'campaign-objective--required': obj.required,
-                }"
-              >
-                <span
-                  class="campaign-objective__checkbox"
-                  :class="{ 'campaign-objective__checkbox--checked': isObjectiveDone(obj.id) }"
-                  aria-hidden="true"
-                >{{ isObjectiveDone(obj.id) ? '✓' : '' }}</span>
-                <span class="campaign-objective__label">
-                  {{ obj.description || obj.id }}<span
-                    v-if="obj.required"
-                    class="campaign-objective__required-note"
-                  > (required)</span>
-                </span>
-                <span class="campaign-objective__reward-cell">
-                  <span
-                    v-if="(obj.rewardDominionPoints ?? 0) > 0"
-                    class="campaign-objective__reward"
-                    title="Dominion Points, awarded the first time you complete this objective"
-                  >{{ obj.rewardDominionPoints }} DP</span>
-                </span>
-                <span class="campaign-objective__reward-cell">
-                  <span
-                    v-if="(obj.rewardConquestBadges ?? 0) > 0"
-                    class="campaign-objective__reward campaign-objective__reward--badge"
-                    title="Conquest Badges, awarded the first time you complete this objective"
-                  >{{ obj.rewardConquestBadges }}<img :src="badgeIconUrl" class="campaign-objective__reward-icon" alt="Conquest Badges" /></span>
-                </span>
-              </li>
-            </ul>
-          </div>
+          </UiPanel>
+        </div>
 
-          <div class="campaign__actions">
+        <!-- Footer: Back (left) + level actions (right). -->
+        <div class="campaign__footer">
+          <BackButton @click="emit('close')" />
+          <div class="campaign__footer-right">
             <button
               type="button"
-              class="campaign-level__action campaign-level__action--start"
-              :disabled="!selectedLevelView || selectedLevelView.status === 'locked' || isStarting"
-              :aria-label="selectedLevelView ? `Start ${selectedLevelView.level.displayName}` : 'Start'"
-              @click="onStart"
-            >
-              Start
-            </button>
-            <button
-              type="button"
-              class="campaign-level__action campaign-level__action--lobby"
+              class="cg-btn cg-btn--lobby"
               :disabled="!selectedLevelView || selectedLevelView.status === 'locked' || isStarting"
               :aria-label="selectedLevelView ? `Open lobby for ${selectedLevelView.level.displayName}` : 'Lobby'"
               @click="onLobby"
             >
-              Lobby
+              <span class="cg-btn__label">Lobby</span>
+            </button>
+            <button
+              type="button"
+              class="cg-btn cg-btn--start"
+              :disabled="!selectedLevelView || selectedLevelView.status === 'locked' || isStarting"
+              :aria-label="selectedLevelView ? `Start ${selectedLevelView.level.displayName}` : 'Start'"
+              @click="onStart"
+            >
+              <span class="cg-btn__label">{{ isStarting ? 'Starting…' : 'Start' }}</span>
             </button>
           </div>
         </div>
-      </div>
       </template>
-        </div>
-      </UiPanel>
     </div>
   </UiPanel>
 </template>
@@ -213,13 +210,27 @@ import { fetchMapCatalog } from '@/game/maps/catalog'
 import { useCampaign } from '@/composables/useCampaign'
 import { useProfile } from '@/composables/useProfile'
 import UiPanel from '@/components/ui/UiPanel.vue'
+import GameScrollArea from '@/components/ui/GameScrollArea.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'
 import PanelLobby from '@/components/menu/PanelLobby.vue'
+import BackButton from '@/components/menu/custom-game/BackButton.vue'
 import badgeIconUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot.png'
+import activeBtnUrl from '@/assets/ui/themes/updated/war-room/war-room-active-button.png'
+import inactiveBtnUrl from '@/assets/ui/themes/updated/war-room/war-room-inactive-button.png'
+import headerUrl from '@/assets/ui/themes/updated/world-panel-header.png'
+import levelRowUrl from '@/assets/ui/themes/updated/war-room/war-room-inner-panel.png'
 
 const emit = defineEmits<{
   (e: 'close'): void
 }>()
+
+// Asset URLs exposed to scoped CSS as custom properties.
+const assetVars = computed(() => ({
+  '--cg-header': `url(${headerUrl})`,
+  '--camp-active': `url(${activeBtnUrl})`,
+  '--camp-inactive': `url(${inactiveBtnUrl})`,
+  '--camp-level': `url(${levelRowUrl})`,
+}))
 
 const {
   campaignsView,
@@ -231,10 +242,10 @@ const {
   isObjectiveCompletedForLevel,
 } = useCampaign()
 
-// Which sub-view the parchment panel is showing. 'levels' is the campaign
-// level list; 'lobby' hosts the created lobby inline (PanelLobby) so the
-// Lobby button never leaves the war-room. `activeLobbyId` is the lobby the
-// in-panel view polls while `view === 'lobby'`.
+// Which sub-view the panel is showing. 'levels' is the campaign level list;
+// 'lobby' hosts the created lobby inline (PanelLobby) so the Lobby button never
+// leaves the war-room. `activeLobbyId` is the lobby the in-panel view polls
+// while `view === 'lobby'`.
 const view = ref<'levels' | 'lobby'>('levels')
 const activeLobbyId = ref<string>('')
 const { initialize: initProfile } = useProfile()
@@ -372,9 +383,9 @@ function onStart() {
   void runSelectedAction(startCampaignLevel, 'Failed to start level.')
 }
 
-/** Lobby button: create the campaign lobby and host it inline in this
- *  parchment panel (view = 'lobby') instead of routing to /lobby/:id. The
- *  in-panel lobby's Back button pops back to the level list. */
+/** Lobby button: create the campaign lobby and host it inline in this panel
+ *  (view = 'lobby') instead of routing to /lobby/:id. The in-panel lobby's
+ *  Back button pops back to the level list. */
 async function onLobby() {
   const level = selectedLevelView.value?.level
   if (!level || isStarting.value) return
@@ -410,10 +421,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* Parchment-panel wrapper. Fills the war-room parchment slot; the UiPanel
-   itself draws the 9-slice parchment border-image via its own scoped CSS.
-   `inset: 0` makes it cover the slot, and `display: flex` lets the inner
-   content stretch to the available space inside the border. */
 .campaign {
   position: absolute;
   inset: 0;
@@ -421,133 +428,123 @@ onMounted(() => {
   box-sizing: border-box;
 }
 
-/* Frame fills the black outer panel and stacks the brass title bar over the
-   inner tan content panel. --s (the container-query scale unit) is declared
-   here so the title bar, close button and inner content all share one scale. */
+/* Frame stacks the header bar, tab strip, content and footer. --s (the
+   container-query scale unit) is declared here so all children share one
+   scale, matching Custom Game. */
 .campaign__frame {
+  position: relative;
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   min-height: 0;
   min-width: 0;
   --s: 0.0929cqw;
-  gap: calc(var(--s) * 8);
+  gap: calc(var(--s) * 12);
+  color: #e9dbb8;
 }
 
-/* Brass title bar across the top of the black frame. */
+/* Header bar — the world-panel-header art (shield + wood plaque), raised so it
+   straddles the panel's top edge (same as Custom Game). */
 .campaign__titlebar {
   position: relative;
+  align-self: center;
   flex: 0 0 auto;
+  width: min(100%, calc(var(--s) * 760));
+  aspect-ratio: 740 / 140;
+  background: var(--cg-header) center / 100% 100% no-repeat;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: calc(var(--s) * 6) calc(var(--s) * 44);
+  margin-top: calc(var(--s) * -44 - 40px);
+  z-index: 2;
 }
 
 .campaign__title {
   font-family: var(--font-title);
-  font-size: calc(var(--s) * 26);
+  font-size: calc(var(--s) * 34);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin: 0;
   color: #e7c88a;
   text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.8),
-    0 0 10px rgba(212, 168, 71, 0.25);
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    0 0 12px rgba(212, 168, 71, 0.3);
+  transform: translate(25px, calc(var(--s) * 8));
 }
 
-/* Close X — brass, pinned to the top-right of the title bar. */
-.campaign__close {
-  position: absolute;
-  top: 50%;
-  right: calc(var(--s) * 6);
-  transform: translateY(-50%);
-  z-index: 2;
-  width: calc(var(--s) * 36);
-  height: calc(var(--s) * 36);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-title);
-  font-size: calc(var(--s) * 30);
-  font-weight: 700;
-  line-height: 1;
-  color: #c9a765;
-  background: transparent;
-  border: 0;
-  padding: 0;
-}
-
-.campaign__close:hover,
-.campaign__close:focus-visible {
-  color: #f0d69a;
-  outline: none;
-}
-
-/* Inner tan content panel (world-inner-panel). Fills the frame below the
-   title bar; the content scrolls inside it. */
-.campaign__panel {
-  flex: 1 1 auto;
-  min-height: 0;
-  min-width: 0;
-  display: flex;
-}
-
-/* Inner content sits on the tan inner panel. */
-.campaign__inner {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  padding: 2.5% 3%;
-  box-sizing: border-box;
-  /* Darkened a touch from the old parchment #3a1f0a for crisper contrast on
-     the warmer, more saturated tan of the inner panel. */
-  color: #2c1608;
-  --s: 0.0929cqw;
-  gap: calc(var(--s) * 12);
-  overflow-y: auto;
-  min-height: 0;
-}
-
+/* Tab strip — button-art plaques (border-image keeps the brass frame crisp). */
 .campaign__tabs {
   flex: 0 0 auto;
   display: flex;
-  gap: calc(var(--s) * 8);
-  border-bottom: 1px solid rgba(58, 31, 10, 0.25);
+  gap: calc(var(--s) * 10);
+  justify-content: flex-start;
+  padding: 0 calc(var(--s) * 6);
+  flex-wrap: wrap;
 }
 
 .campaign__tab {
+  flex: 0 0 auto;
+  min-width: calc(var(--s) * 150);
+  padding: calc(var(--s) * 6) calc(var(--s) * 20);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--s) * 6);
+  background: none;
+  border: calc(var(--s) * 14) solid transparent;
+  border-image-source: var(--camp-inactive);
+  border-image-slice: 14 fill;
+  border-image-width: calc(var(--s) * 14);
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  transition:
+    filter 120ms ease,
+    transform 80ms ease;
+}
+
+.campaign__tab-label {
   font-family: var(--font-title);
   font-size: calc(var(--s) * 16);
   font-weight: 700;
   letter-spacing: 0.05em;
-  padding: calc(var(--s) * 6) calc(var(--s) * 12);
-  background: transparent;
-  border: 0;
-  color: rgba(58, 31, 10, 0.6);
-  border-bottom: 2px solid transparent;
-  display: inline-flex;
-  align-items: center;
-  gap: calc(var(--s) * 6);
+  text-transform: uppercase;
+  color: rgba(233, 219, 184, 0.6);
+  white-space: nowrap;
+}
+
+.campaign__tab:not(.campaign__tab--active):not(.campaign__tab--locked):hover {
+  filter: brightness(1.15);
+}
+
+.campaign__tab:not(.campaign__tab--active):not(.campaign__tab--locked):active {
+  filter: brightness(0.9);
+  transform: translateY(1px);
+}
+
+.campaign__tab:hover .campaign__tab-label {
+  color: #e9dbb8;
 }
 
 .campaign__tab--active {
-  color: #3a1f0a;
-  border-bottom-color: #8a5a2a;
+  border-image-source: var(--camp-active);
 }
 
-/* Locked: shown but not selectable. Greyed out + a small padlock glyph so
-   the user sees "more campaigns coming" without being able to click in. */
+.campaign__tab--active .campaign__tab-label {
+  color: #f4e3b6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* Locked: shown but not selectable. */
 .campaign__tab--locked {
-  color: rgba(58, 31, 10, 0.35);
+  filter: grayscale(0.5) brightness(0.7);
   /* `cursor: not-allowed` is the system semantic for "forbidden action" —
      allowed by the project's cursor rules on locked states. */
   cursor: not-allowed;
 }
 
-.campaign__tab--locked:hover {
-  border-bottom-color: transparent;
+.campaign__tab--locked .campaign__tab-label {
+  color: rgba(233, 219, 184, 0.4);
 }
 
 .campaign__tab-lock {
@@ -555,56 +552,70 @@ onMounted(() => {
   line-height: 1;
 }
 
-.campaign__active-header {
-  flex: 0 0 auto;
+/* Content region fills the frame between the tabs and the footer. */
+.campaign__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: calc(var(--s) * 4);
-}
-
-.campaign__active-name {
-  font-family: var(--font-title);
-  font-size: calc(var(--s) * 20);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-
-.campaign__active-desc {
-  font-size: calc(var(--s) * 13);
-  font-style: italic;
-  opacity: 0.85;
+  gap: calc(var(--s) * 6);
+  padding: 0 calc(var(--s) * 6);
 }
 
 .campaign__error {
   font-size: calc(var(--s) * 13);
-  color: #7a1a1a;
+  color: #e88a6a;
   text-align: center;
 }
 
 .campaign__loading {
   font-size: calc(var(--s) * 13);
   font-style: italic;
-  color: rgba(58, 31, 10, 0.7);
+  color: rgba(233, 219, 184, 0.7);
   text-align: center;
 }
 
-/* Two-column body: levels left, map + actions right. Both columns are sized
-   in scale units so the layout matches CreateGame's lobby view — the right
-   column is wide enough to frame the 240px minimap canvas the same way the
-   custom-game lobby does, and the left column is narrowed so the level
-   rows don't sprawl across the parchment. `justify-content: center` keeps
-   the pair centered if the parchment slot is wider than the two columns
-   plus gap. */
+/* Dark inner panel wrapping the two-column body. */
+.campaign__panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+
 .campaign__body {
   flex: 1 1 auto;
   display: grid;
   grid-template-columns:
-    minmax(0, calc(var(--s) * 360))
-    minmax(0, calc(var(--s) * 480));
-  gap: calc(var(--s) * 18);
-  justify-content: center;
+    minmax(0, calc(var(--s) * 320))
+    minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: calc(var(--s) * 16);
+  padding: calc(var(--s) * 14) calc(var(--s) * 16);
   min-height: 0;
+}
+
+/* Left column — campaign intro + level list. */
+.campaign__left {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s) * 6);
+  min-height: 0;
+  min-width: 0;
+}
+
+.campaign__levels-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.campaign__levels-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: calc(var(--s) * 6);
+  box-sizing: border-box;
 }
 
 .campaign__levels {
@@ -613,247 +624,49 @@ onMounted(() => {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--s) * 10);
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.campaign__detail {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--s) * 8);
-  min-height: 0;
-}
-
-/* `flex: 0 0 auto` keeps the preview wrapper from claiming leftover vertical
-   space; without this it grew to fill the column and pushed the objectives
-   list down. Now the map frame's natural height defines the wrapper. */
-.campaign__preview {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
   gap: calc(var(--s) * 6);
 }
 
-/* Style the bare MinimapPreview with the same accent border the selected
-   level row uses (`#8a5a2a`). The frame stays snug to the canvas in both
-   axes — `width: fit-content` + `align-self: flex-start` shrink it
-   horizontally, and `height: auto` + `min-height: 0` undo the
-   `height: 100%` baked into the base `.minimap-preview` rule so it
-   doesn't stretch vertically inside the flex column. Vertical padding is
-   fixed at 8px so the frame sits tight around the map; horizontal padding
-   mirrors that. */
-.campaign__preview :deep(.minimap-preview--bare) {
-  align-self: flex-start;
-  width: fit-content;
-  height: auto;
-  min-height: 0;
-  border: 1px solid #8a5a2a;
-  border-radius: calc(var(--s) * 4);
-  background: rgba(245, 234, 210, 0.45);
-  padding: 8px;
-  box-sizing: border-box;
-}
-
-.campaign__preview-error {
-  font-size: calc(var(--s) * 11);
-  color: #7a1a1a;
-  text-align: center;
-}
-
-/* Objectives — sits between the map and the action buttons. Static
-   placeholder list for now; the checkbox is a CSS-drawn square with the
-   same parchment-friendly palette as the level rows. */
-.campaign__objectives {
-  /* Shared grid tracks for the header row AND every objective row so the
-     reward columns (DP, badge) line up vertically down the list:
-     checkbox | label (flex) | DP | badge. The 1fr label column absorbs the
-     header's missing checkbox, so the reward columns still align. */
-  --obj-grid: auto minmax(0, 1fr) calc(var(--s) * 62) calc(var(--s) * 52);
-  --obj-col-gap: calc(var(--s) * 8);
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--s) * 4);
-}
-
-.campaign__objectives-header {
-  display: grid;
-  grid-template-columns: var(--obj-grid);
-  column-gap: var(--obj-col-gap);
-  align-items: end;
-  font-family: var(--font-title);
-  font-size: calc(var(--s) * 14);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(58, 31, 10, 0.75);
-}
-
-.campaign__objectives-header-title {
-  grid-column: 1 / 3;
-}
-
-/* "REWARDS" heading, sitting above the DP + badge reward columns. */
-.campaign__objectives-header-rewards {
-  grid-column: 3 / 5;
-  font-size: calc(var(--s) * 10);
-  letter-spacing: 0.12em;
-  color: rgba(58, 31, 10, 0.6);
-}
-
-.campaign__objectives-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--s) * 4);
-}
-
-.campaign-objective {
-  display: grid;
-  grid-template-columns: var(--obj-grid);
-  column-gap: var(--obj-col-gap);
-  align-items: center;
-  font-size: calc(var(--s) * 13);
-  color: #3a1f0a;
-}
-
-/* Reward columns. Always present (even when empty) so the DP and badge chips
-   occupy consistent grid tracks and line up down the list. Left-aligned so
-   the "150 DP" labels share a common left edge. */
-.campaign-objective__reward-cell {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.campaign-objective__checkbox {
-  flex: 0 0 auto;
-  width: calc(var(--s) * 14);
-  height: calc(var(--s) * 14);
-  border: 1px solid rgba(58, 31, 10, 0.7);
-  background: rgba(245, 234, 210, 0.4);
-  border-radius: calc(var(--s) * 2);
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(var(--s) * 12);
-  font-weight: 700;
-  line-height: 1;
-  color: transparent;
-}
-
-/* Completed: bronze ✓ on a slightly darker background so the row reads as
-   "done". Mirrors the level-row completed treatment. */
-.campaign-objective__checkbox--checked {
-  background: rgba(200, 180, 110, 0.55);
-  border-color: rgba(58, 31, 10, 0.85);
-  color: #3a1f0a;
-}
-
-/* Required objectives get a small badge so the player knows which gate
-   victory. Optional objectives have no badge — they read as bonus tasks. */
-/* Reward chips: "150 DP" and "<n> <badge icon>", shown as the first-completion
-   payout next to each objective. Warm gold-parchment treatment to read as a
-   prize distinct from the neutral Required badge. */
-.campaign-objective__reward {
-  display: inline-flex;
-  align-items: center;
-  gap: calc(var(--s) * 3);
-  flex: 0 0 auto;
-  font-family: var(--font-title);
-  font-size: calc(var(--s) * 10);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #5a3a12;
-  border: 1px solid rgba(180, 140, 60, 0.55);
-  border-radius: calc(var(--s) * 2);
-  padding: calc(var(--s) * 1) calc(var(--s) * 4);
-  background: rgba(246, 230, 188, 0.6);
-  white-space: nowrap;
-}
-
-.campaign-objective__reward-icon {
-  width: calc(var(--s) * 14);
-  height: calc(var(--s) * 14);
-  object-fit: contain;
-}
-
-/* "(required)" suffix appended to the objective text — a muted parenthetical
-   rather than a standalone badge. */
-.campaign-objective__required-note {
-  font-weight: 600;
-  color: rgba(58, 31, 10, 0.6);
-}
-
-.campaign-objective--required .campaign-objective__label {
-  font-weight: 600;
-}
-
-/* Empty-state hint when a level has no objectives authored. */
-.campaign__objectives-empty {
-  font-size: calc(var(--s) * 12);
-  font-style: italic;
-  color: rgba(58, 31, 10, 0.55);
-}
-
-.campaign__actions {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: row;
-  gap: calc(var(--s) * 8);
-  align-items: stretch;
-}
-
-/* Each button claims an equal share of the row. `flex: 1 1 0` plus the
-   existing `min-width` on the action style keeps them from collapsing
-   below a readable width even when the right column is tight. */
-.campaign__actions .campaign-level__action {
-  flex: 1 1 0;
-}
-
+/* Each level row is its own war-room-inner-panel plaque (border-image keeps the
+   brass corner brackets crisp; the dark wood fills the row). */
 .campaign-level {
   width: 100%;
   display: grid;
-  grid-template-columns: calc(var(--s) * 40) 1fr;
-  gap: calc(var(--s) * 14);
+  grid-template-columns: calc(var(--s) * 36) 1fr;
+  gap: calc(var(--s) * 12);
   align-items: center;
   text-align: left;
-  padding: calc(var(--s) * 10) calc(var(--s) * 14);
-  background: rgba(245, 234, 210, 0.45);
-  border: 1px solid rgba(58, 31, 10, 0.25);
-  border-radius: calc(var(--s) * 4);
+  padding: calc(var(--s) * 2) calc(var(--s) * 6);
+  background: none;
+  border: calc(var(--s) * 14) solid transparent;
+  border-image-source: var(--camp-level);
+  border-image-slice: 24 fill;
+  border-image-width: calc(var(--s) * 14);
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
   color: inherit;
   font: inherit;
+  transition: filter 120ms ease;
+}
+
+.campaign-level:hover {
+  filter: brightness(1.12);
 }
 
 .campaign-level--selected {
-  border-color: #8a5a2a;
-  box-shadow: 0 0 0 2px rgba(138, 90, 42, 0.45);
-}
-
-.campaign-level--completed {
-  background: rgba(200, 180, 110, 0.55);
-  border-color: rgba(58, 31, 10, 0.45);
-}
-
-.campaign-level--completed.campaign-level--selected {
-  border-color: #8a5a2a;
+  filter: brightness(1.3);
 }
 
 .campaign-level--locked {
-  opacity: 0.6;
+  opacity: 0.55;
 }
 
 .campaign-level__index {
   font-family: var(--font-title);
-  font-size: calc(var(--s) * 22);
+  font-size: calc(var(--s) * 20);
   font-weight: 700;
   text-align: center;
-  color: rgba(58, 31, 10, 0.65);
+  color: rgba(224, 189, 127, 0.75);
 }
 
 .campaign-level__body {
@@ -872,56 +685,279 @@ onMounted(() => {
 
 .campaign-level__name {
   font-family: var(--font-title);
-  font-size: calc(var(--s) * 18);
+  font-size: calc(var(--s) * 16);
   font-weight: 700;
   letter-spacing: 0.04em;
+  color: #f0e2c0;
 }
 
 .campaign-level__status {
-  font-size: calc(var(--s) * 11);
+  font-size: calc(var(--s) * 10);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  opacity: 0.7;
+  color: rgba(233, 219, 184, 0.6);
 }
 
 .campaign-level--completed .campaign-level__status {
-  color: #2d4a16;
-  opacity: 1;
+  color: #a8d08a;
 }
 
 .campaign-level__desc {
-  font-size: calc(var(--s) * 13);
-  opacity: 0.85;
+  font-size: calc(var(--s) * 12);
+  color: rgba(233, 219, 184, 0.75);
 }
 
-.campaign-level__action {
+/* Right area — map preview (left) with objectives beside it (right). */
+.campaign__right {
+  display: flex;
+  flex-direction: row;
+  gap: calc(var(--s) * 12);
+  min-height: 0;
+  min-width: 0;
+}
+
+.campaign__preview-col {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s) * 6);
+  min-height: 0;
+}
+
+.campaign__preview-panel {
+  flex: 0 0 auto;
+  display: flex;
+}
+
+.campaign__preview {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.campaign__preview :deep(.minimap-preview--bare) {
+  width: fit-content;
+  height: auto;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.campaign__preview :deep(.minimap-preview__empty--bare) {
+  color: rgba(233, 219, 184, 0.5);
+}
+
+.campaign__preview-error {
+  font-size: calc(var(--s) * 11);
+  color: #e88a6a;
+  text-align: center;
+}
+
+.campaign__objectives-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+
+/* Objectives — gold labels, cream values on the dark panel. */
+.campaign__objectives {
+  --obj-grid: auto minmax(0, 1fr) calc(var(--s) * 58) calc(var(--s) * 48);
+  --obj-col-gap: calc(var(--s) * 8);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s) * 4);
+  padding: calc(var(--s) * 10) calc(var(--s) * 12);
+}
+
+.campaign__objectives-header {
+  display: grid;
+  grid-template-columns: var(--obj-grid);
+  column-gap: var(--obj-col-gap);
+  align-items: end;
   font-family: var(--font-title);
-  font-size: calc(var(--s) * 13);
+  font-size: calc(var(--s) * 12);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #c7a768;
+}
+
+.campaign__objectives-header-title {
+  grid-column: 1 / 3;
+}
+
+.campaign__objectives-header-rewards {
+  grid-column: 3 / 5;
+  font-size: calc(var(--s) * 10);
+  letter-spacing: 0.12em;
+  color: rgba(199, 167, 104, 0.75);
+}
+
+.campaign__objectives-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s) * 4);
+}
+
+.campaign-objective {
+  display: grid;
+  grid-template-columns: var(--obj-grid);
+  column-gap: var(--obj-col-gap);
+  align-items: center;
+  font-size: calc(var(--s) * 12);
+  color: #e9dbb8;
+}
+
+.campaign-objective__reward-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.campaign-objective__checkbox {
+  flex: 0 0 auto;
+  width: calc(var(--s) * 14);
+  height: calc(var(--s) * 14);
+  border: 1px solid rgba(198, 158, 90, 0.6);
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: calc(var(--s) * 2);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--s) * 11);
+  font-weight: 700;
+  line-height: 1;
+  color: transparent;
+}
+
+.campaign-objective__checkbox--checked {
+  background: rgba(160, 120, 50, 0.6);
+  border-color: rgba(224, 189, 127, 0.9);
+  color: #f4e3b6;
+}
+
+.campaign-objective__reward {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--s) * 3);
+  flex: 0 0 auto;
+  font-family: var(--font-title);
+  font-size: calc(var(--s) * 10);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #e6d3a3;
+  border: 1px solid rgba(198, 158, 90, 0.45);
+  border-radius: calc(var(--s) * 2);
+  padding: calc(var(--s) * 1) calc(var(--s) * 4);
+  background: rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+
+.campaign-objective__reward-icon {
+  width: calc(var(--s) * 14);
+  height: calc(var(--s) * 14);
+  object-fit: contain;
+}
+
+.campaign-objective__required-note {
+  font-weight: 600;
+  color: rgba(233, 219, 184, 0.6);
+}
+
+.campaign-objective--required .campaign-objective__label {
+  font-weight: 600;
+}
+
+.campaign__objectives-empty {
+  font-size: calc(var(--s) * 12);
+  font-style: italic;
+  color: rgba(233, 219, 184, 0.55);
+}
+
+/* Footer — Back (left) + level actions (right). Matches the Custom Game
+   footer geometry so the Back button stays put. */
+.campaign__footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--s) * 12);
+  padding: calc(var(--s) * 12) calc(var(--s) * 6) calc(var(--s) * 6);
+}
+
+.campaign__footer-right {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--s) * 12);
+}
+
+/* Footer action buttons use the war-room button art. */
+.cg-btn {
+  flex: 0 0 auto;
+  min-width: calc(var(--s) * 130);
+  padding: calc(var(--s) * 4) calc(var(--s) * 16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: calc(var(--s) * 16) solid transparent;
+  border-image-slice: 14 fill;
+  border-image-width: calc(var(--s) * 16);
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  transition:
+    filter 120ms ease,
+    transform 80ms ease;
+}
+
+.cg-btn--start {
+  border-image-source: var(--camp-active);
+}
+
+.cg-btn--lobby {
+  border-image-source: var(--camp-inactive);
+}
+
+.cg-btn__label {
+  font-family: var(--font-title);
+  font-size: calc(var(--s) * 15);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: calc(var(--s) * 6) calc(var(--s) * 18);
-  border-radius: calc(var(--s) * 4);
-  border: 1px solid rgba(58, 31, 10, 0.55);
-  color: #2a1505;
-  min-width: calc(var(--s) * 110);
+  color: #f4e3b6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
-.campaign-level__action--start {
-  background: linear-gradient(180deg, #d8b06a 0%, #a87a36 100%);
+.cg-btn:hover:not(:disabled) {
+  filter: brightness(1.12);
 }
 
-.campaign-level__action--lobby {
-  background: linear-gradient(180deg, #c0a98a 0%, #8a7350 100%);
+.cg-btn:active:not(:disabled) {
+  filter: brightness(0.9);
+  transform: translateY(1px);
 }
 
-.campaign-level__action:disabled {
-  background: rgba(180, 160, 110, 0.4);
-  color: rgba(58, 31, 10, 0.45);
+.cg-btn:disabled {
   /* `cursor: not-allowed` is the system semantic for "forbidden action" — the
-     project rule (CLAUDE.md → AI_RULES.md) allows it on locked states.
-     Other cursor literals are disallowed here. */
+     project rule (CLAUDE.md → AI_RULES.md) allows it on disabled states. */
   cursor: not-allowed;
+  filter: grayscale(0.4) brightness(0.8);
+}
+
+.cg-btn:disabled .cg-btn__label {
+  color: rgba(244, 227, 182, 0.4);
 }
 </style>
