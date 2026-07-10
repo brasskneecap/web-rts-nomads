@@ -9,11 +9,15 @@ import { computed } from 'vue'
 import uiPanelUrl from '@/assets/ui/themes/default/ui_panel.png'
 import parchmentPanelUrl from '@/assets/ui/themes/default/ui_parchment_panel.png'
 import footerPanelUrl from '@/assets/ui/themes/default/footer_panel.png'
+import worldMenuPanelUrl from '@/assets/ui/themes/updated/world-menu-panel.png'
+import worldInnerPanelUrl from '@/assets/ui/themes/updated/world-inner-panel.png'
+import warRoomInnerPanelUrl from '@/assets/ui/themes/updated/war-room/war-room-inner-panel.png'
+import innerPanelUrl from '@/assets/ui/themes/updated/inner-panel.png'
 import theme from '@/assets/ui/themes/default/theme.json'
 
 const props = withDefaults(defineProps<{
   padding?: number
-  variant?: 'default' | 'parchment' | 'footer'
+  variant?: 'default' | 'parchment' | 'footer' | 'worldMenu' | 'worldInner' | 'warRoomInner' | 'innerPanel'
 }>(), {
   padding: 12,
   variant: 'default',
@@ -23,6 +27,10 @@ const variants = {
   default: { image: uiPanelUrl, slice: theme.uiPanel.slice },
   parchment: { image: parchmentPanelUrl, slice: theme.parchmentPanel.slice },
   footer: { image: footerPanelUrl, slice: theme.footerPanel.slice },
+  worldMenu: { image: worldMenuPanelUrl, slice: theme.worldMenuPanel.slice },
+  worldInner: { image: worldInnerPanelUrl, slice: theme.worldInnerPanel.slice },
+  warRoomInner: { image: warRoomInnerPanelUrl, slice: theme.warRoomInnerPanel.slice },
+  innerPanel: { image: innerPanelUrl, slice: theme.innerPanel.slice },
 }
 
 const panelStyle = computed(() => {

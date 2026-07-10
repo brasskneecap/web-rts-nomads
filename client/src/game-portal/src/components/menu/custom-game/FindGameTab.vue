@@ -5,17 +5,20 @@
       <span v-if="refreshError" class="cg-find__refresh-error">Couldn't refresh</span>
     </div>
 
-    <div class="cg-find__list">
+    <UiPanel variant="innerPanel" :padding="0" class="cg-find__list">
       <GameScrollArea class="cg-find__scroll">
         <LobbyList :lobbies="lobbies" @join="onJoin" />
       </GameScrollArea>
+    </UiPanel>
+
+    <div class="cg-find__footer">
+      <BackButton @click="emit('back')" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useLobbies } from '@/composables/useLobbies'
 import { usePlayer } from '@/composables/usePlayer'
 import { joinLobby as steamJoinLobby, listSteamLobbies } from '@/services/desktopBridge'
@@ -27,10 +30,20 @@ import { hasMapVersion } from '@/services/mapVersionCache'
 import type { Lobby } from '@/game/network/protocol'
 import GameScrollArea from '@/components/ui/GameScrollArea.vue'
 import LobbyList from '@/components/menu/LobbyList.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
+import BackButton from '@/components/menu/custom-game/BackButton.vue'
 
-const router = useRouter()
 const { lobbies: localLobbies, refreshList, joinLobby: joinLocalLobby } = useLobbies()
 const { playerId } = usePlayer()
+
+// Opens the joined lobby in-panel (CustomGame hosts PanelLobby inline) instead
+// of routing to /lobby/:id — so the joiner stays in the war room exactly like
+// the host, with no page/background change. `back` closes the Custom Game
+// popup (mirrors the Start Game tab's Back button).
+const emit = defineEmits<{
+  (e: 'lobby-joined', lobbyId: string): void
+  (e: 'back'): void
+}>()
 
 const refreshError = ref(false)
 const steamLobbies = ref<readonly Lobby[]>([])
@@ -119,8 +132,8 @@ async function onJoin(id: string) {
       } catch {
         /* sessionStorage may be sandboxed */
       }
-      // Navigate to the same /lobby/<id> the host's view uses.
-      void router.push(`/lobby/${result.localLobbyId || steamLobbyId}`)
+      // Open the lobby in-panel (same PanelLobby the host sees).
+      emit('lobby-joined', result.localLobbyId || steamLobbyId)
     } catch (e) {
       console.error('Steam joinLobby failed:', e)
       refreshError.value = true
@@ -132,10 +145,10 @@ async function onJoin(id: string) {
   try {
     await joinLocalLobby({ id, playerId: playerId.value })
   } catch {
-    // If join fails (e.g. 409 already in lobby), still navigate — the lobby
-    // polling will surface the real state.
+    // If join fails (e.g. 409 already in lobby), still open the lobby — the
+    // lobby polling will surface the real state.
   }
-  void router.push(`/lobby/${id}`)
+  emit('lobby-joined', id)
 }
 
 onMounted(() => {
@@ -155,7 +168,6 @@ onUnmounted(() => {
 .cg-find {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--s) * 8);
   min-height: 0;
   flex: 1 1 auto;
 }
@@ -165,39 +177,57 @@ onUnmounted(() => {
   display: flex;
   align-items: baseline;
   gap: calc(var(--s) * 12);
+  margin-bottom: calc(var(--s) * 8);
 }
 
+/* Gold section label flanked by short rules — matches the Start Game tab. */
 .cg-find__label {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--s) * 8);
   font-family: var(--font-title);
-  font-size: calc(var(--s) * 14);
+  font-size: calc(var(--s) * 15);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(58, 31, 10, 0.75);
+  color: #e0bd7f;
+}
+
+.cg-find__label::before,
+.cg-find__label::after {
+  content: '';
+  height: 1px;
+  width: calc(var(--s) * 16);
+  background: rgba(224, 189, 127, 0.6);
 }
 
 .cg-find__refresh-error {
   font-size: calc(var(--s) * 12);
-  color: #7a1a1a;
+  color: #e88a6a;
   margin-left: auto;
 }
 
-/* Bordered well framing the lobby list — matches the parchment level rows
-   so the scroll region reads as an inset panel rather than floating text. */
+/* Inner-panel well framing the lobby list (matches the map list). */
 .cg-find__list {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(58, 31, 10, 0.25);
-  border-radius: calc(var(--s) * 4);
-  background: rgba(245, 234, 210, 0.35);
-  padding: calc(var(--s) * 8);
-  box-sizing: border-box;
 }
 
 .cg-find__scroll {
   flex: 1 1 auto;
   min-height: 0;
+  padding: calc(var(--s) * 6);
+  box-sizing: border-box;
+}
+
+/* Footer with the Back button (bottom-left) that closes the popup. Matches the
+   Start Game footer geometry so the Back button stays put across tabs. */
+.cg-find__footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding-top: calc(var(--s) * 12);
 }
 </style>

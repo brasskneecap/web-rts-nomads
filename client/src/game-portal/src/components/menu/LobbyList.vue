@@ -50,35 +50,36 @@ const emit = defineEmits<{
   padding: 6px 14px;
 }
 
-/* Parchment palette — this list lives only inside the war-room Custom Game
-   panel, so it's themed to match the parchment surface (dark ink on warm
-   paper) rather than the dark UI panels. */
+/* Dark war-room palette — this list lives inside the Custom Game panel's dark
+   inner panels, so cream/gold text on dark rows with a brass edge (matches the
+   map list). */
 .lobby-list__row {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
   padding: 10px 14px;
   border-radius: 6px;
-  border: 1px solid rgba(58, 31, 10, 0.25);
-  background: rgba(245, 234, 210, 0.45);
+  border: 1px solid rgba(198, 158, 90, 0.3);
+  background: rgba(0, 0, 0, 0.28);
   cursor: pointer;
   text-align: left;
-  transition: background 0.1s, border-color 0.1s;
+  transition: background 0.1s, border-color 0.1s, filter 0.1s;
 }
 
 .lobby-list__row:hover {
-  background: rgba(230, 214, 178, 0.6);
-  border-color: rgba(58, 31, 10, 0.4);
+  background: rgba(0, 0, 0, 0.42);
+  border-color: rgba(198, 158, 90, 0.55);
+  filter: brightness(1.1);
 }
 
 .lobby-list__row:focus-visible {
-  outline: 2px solid #8a5a2a;
+  outline: 2px solid #c9a765;
   outline-offset: 2px;
   border-radius: 6px;
 }
 
 .lobby-list__cell {
   font-size: 13px;
-  color: #3a1f0a;
+  color: #e9dbb8;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -91,13 +92,13 @@ const emit = defineEmits<{
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(58, 31, 10, 0.75);
+  color: #e0bd7f;
 }
 
 .lobby-list__empty {
   padding: 24px;
   text-align: center;
-  color: rgba(58, 31, 10, 0.55);
+  color: rgba(233, 219, 184, 0.55);
   font-size: 13px;
 }
 </style>

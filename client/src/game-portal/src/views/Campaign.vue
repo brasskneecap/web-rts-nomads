@@ -1,16 +1,27 @@
 <template>
-  <UiPanel variant="parchment" :padding="0" class="campaign">
-    <button
-      type="button"
-      class="campaign__close"
-      aria-label="Close campaign panel"
-      @click="emit('close')"
-    >
-      &times;
-    </button>
-    <div class="campaign__inner">
+  <!-- Outer world-menu frame: black chrome with a brass title bar. The actual
+       content sits on the nested world-inner (tan) panel — mirrors the base
+       menu panel system (see world-menu-panel / world-inner-panel assets). -->
+  <UiPanel variant="worldMenu" :padding="0" class="campaign">
+    <div class="campaign__frame">
+      <!-- Brass title bar across the top of the black frame. -->
+      <header class="campaign__titlebar">
+        <h1 class="campaign__title">Campaigns</h1>
+        <button
+          type="button"
+          class="campaign__close"
+          aria-label="Close campaign panel"
+          @click="emit('close')"
+        >
+          &times;
+        </button>
+      </header>
+
+      <!-- Inner tan content panel, inset within the black frame. -->
+      <UiPanel variant="worldInner" :padding="0" class="campaign__panel">
+        <div class="campaign__inner">
       <!-- In-panel lobby view. When the player clicks Lobby on a level, the
-           campaign lobby is hosted here inside the same parchment panel; its
+           campaign lobby is hosted here inside the same content panel; its
            Back button pops back to the level list (@back → view = 'levels'). -->
       <PanelLobby
         v-if="view === 'lobby'"
@@ -19,10 +30,6 @@
       />
 
       <template v-else>
-      <div class="campaign__header">
-        <h1 class="campaign__title">Campaigns</h1>
-      </div>
-
       <!-- Campaign tabs. One tab per campaign in CAMPAIGNS (see
            @/data/campaigns). Always rendered so a single shipped campaign
            still reads as a tab strip, and so locked placeholder campaigns
@@ -192,6 +199,8 @@
         </div>
       </div>
       </template>
+        </div>
+      </UiPanel>
     </div>
   </UiPanel>
 </template>
@@ -412,13 +421,48 @@ onMounted(() => {
   box-sizing: border-box;
 }
 
-/* Close X — sits in the top-right of the parchment frame. Anchored to the
-   panel root so it floats over the inner scroll content and stays visible
-   while the level list scrolls. */
+/* Frame fills the black outer panel and stacks the brass title bar over the
+   inner tan content panel. --s (the container-query scale unit) is declared
+   here so the title bar, close button and inner content all share one scale. */
+.campaign__frame {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  --s: 0.0929cqw;
+  gap: calc(var(--s) * 8);
+}
+
+/* Brass title bar across the top of the black frame. */
+.campaign__titlebar {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--s) * 6) calc(var(--s) * 44);
+}
+
+.campaign__title {
+  font-family: var(--font-title);
+  font-size: calc(var(--s) * 26);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0;
+  color: #e7c88a;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.8),
+    0 0 10px rgba(212, 168, 71, 0.25);
+}
+
+/* Close X — brass, pinned to the top-right of the title bar. */
 .campaign__close {
   position: absolute;
-  top: calc(var(--s) * 18);
-  right: calc(var(--s) * 22);
+  top: 50%;
+  right: calc(var(--s) * 6);
+  transform: translateY(-50%);
   z-index: 2;
   width: calc(var(--s) * 36);
   height: calc(var(--s) * 36);
@@ -429,51 +473,41 @@ onMounted(() => {
   font-size: calc(var(--s) * 30);
   font-weight: 700;
   line-height: 1;
-  color: #3a1f0a;
+  color: #c9a765;
   background: transparent;
   border: 0;
   padding: 0;
-  /* Inherits --s from .campaign__inner via the cascade — but the close
-     button is a sibling, not a descendant, so we redeclare it here. */
-  --s: 0.0929cqw;
 }
 
 .campaign__close:hover,
 .campaign__close:focus-visible {
-  color: #7a3a10;
+  color: #f0d69a;
   outline: none;
 }
 
-/* Inner content. The previous .campaign rules live here so the parchment
-   image surrounds the layout without inheriting the absolute positioning. */
+/* Inner tan content panel (world-inner-panel). Fills the frame below the
+   title bar; the content scrolls inside it. */
+.campaign__panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+
+/* Inner content sits on the tan inner panel. */
 .campaign__inner {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  padding: 2% 3%;
+  padding: 2.5% 3%;
   box-sizing: border-box;
-  color: #3a1f0a;
-  /* Single scale unit driving sizes below. Matches the Advancements panel
-     so both content slots share visual scale at the same parchment size. */
+  /* Darkened a touch from the old parchment #3a1f0a for crisper contrast on
+     the warmer, more saturated tan of the inner panel. */
+  color: #2c1608;
   --s: 0.0929cqw;
   gap: calc(var(--s) * 12);
   overflow-y: auto;
   min-height: 0;
-}
-
-.campaign__header {
-  flex: 0 0 auto;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.campaign__title {
-  font-family: var(--font-title);
-  font-size: calc(var(--s) * 28);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin: 0;
 }
 
 .campaign__tabs {

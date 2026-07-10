@@ -1,99 +1,48 @@
 <template>
-  <div class="lobby">
-    <div class="lobby__layout">
-      <header class="lobby__header">
-        <ExitButton @click="leaveAndGoBack" />
-        <div class="lobby__header-info">
-          <h1 class="lobby__title">{{ lobby?.mapName ?? 'Lobby' }}</h1>
-          <span class="lobby__slots">{{ lobby?.players.length ?? 0 }} / {{ lobby?.maxPlayers ?? 4 }} Players</span>
-          <span v-if="showMapVersionPlaceholder" class="lobby__map-version-hint">
-            Host's custom map — loads at start
-          </span>
-        </div>
-      </header>
-
-      <div v-if="lobby" class="lobby__body">
-        <UiPanel class="lobby__players-panel" :padding="16">
-          <div class="lobby__section-label">Players</div>
-          <LobbyPlayerList
-            :players="lobby.players"
-            :host-player-id="lobby.hostPlayerId"
-            :max-players="lobby.maxPlayers"
-          />
-        </UiPanel>
-        <div v-if="!isHost" class="lobby__waiting">
-          Waiting for the host to start the game…
-        </div>
-        <div v-if="startError" class="lobby__error">{{ startError }}</div>
-        <div v-if="inviteError" class="lobby__error">{{ inviteError }}</div>
+  <div class="lobby" :style="rootVars">
+    <UiPanel variant="worldMenu" :padding="0" class="lobby__panel" :style="assetVars">
+      <div class="lobby__frame">
+        <header class="lobby__titlebar">
+          <span class="lobby__title">Lobby</span>
+        </header>
+        <PanelLobby :lobby-id="lobbyId" class="lobby__content" @back="onBack" />
       </div>
-
-      <div v-else class="lobby__not-found">
-        Lobby not found.
-      </div>
-
-      <footer class="lobby__footer">
-        <span
-          v-if="isHost && steamLobbyPending && !steamLobbyId"
-          class="lobby__steam-pending"
-        >
-          Setting up Steam invite…
-        </span>
-        <UiButton
-          v-if="isHost && steamLobbyId"
-          size="md"
-          :disabled="inviteBusy"
-          @click="onInvite"
-        >
-          {{ inviteBusy ? 'Opening overlay…' : 'Invite Friend' }}
-        </UiButton>
-        <UiButton
-          v-if="isHost"
-          size="lg"
-          :disabled="!lobby || isStarting"
-          @click="startGame"
-        >
-          {{ isStarting ? 'Starting…' : 'Start Game' }}
-        </UiButton>
-        <UiButton size="md" @click="leaveAndGoBack">Leave</UiButton>
-      </footer>
-    </div>
+    </UiPanel>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useLobbyRoom } from '@/composables/useLobbyRoom'
 import UiPanel from '@/components/ui/UiPanel.vue'
-import UiButton from '@/components/ui/UiButton.vue'
-import ExitButton from '@/components/ui/ExitButton.vue'
-import LobbyPlayerList from '@/components/menu/LobbyPlayerList.vue'
+import PanelLobby from '@/components/menu/PanelLobby.vue'
+import headerUrl from '@/assets/ui/themes/updated/world-panel-header.png'
+import warRoomBgUrl from '@/assets/background-images/war_room_bg.png'
 
 const router = useRouter()
 const route = useRoute()
 
 const lobbyId = computed(() => route.params.id as string)
 
-// Routed lobby (Custom Game flow). Leaving / the lobby vanishing routes back
-// to the war-room's Find Game tab. Match-start navigation is handled inside
-// the composable.
-const {
-  lobby,
-  isHost,
-  isStarting,
-  startError,
-  inviteError,
-  inviteBusy,
-  steamLobbyId,
-  steamLobbyPending,
-  showMapVersionPlaceholder,
-  startGame,
-  onInvite,
-  leaveAndGoBack,
-} = useLobbyRoom(lobbyId, {
-  onLeave: () => { void router.push('/war-room?tab=custom&sub=find') },
-})
+// Header art exposed to scoped CSS (mirrors CustomGame's title bar) so the
+// joiner's lobby frame matches the host's.
+const assetVars = computed(() => ({
+  '--cg-header': `url(${headerUrl})`,
+}))
+
+// Same war-room scene behind the panel as the host sees, so landing here
+// doesn't read as a blank screen change.
+const rootVars = computed(() => ({
+  '--lobby-bg': `url(${warRoomBgUrl})`,
+}))
+
+// Routed lobby (joiner). Renders the same PanelLobby the host sees, framed by
+// the same world-menu chrome. Leaving / the lobby vanishing routes back to the
+// war-room's Find Game tab; match-start navigation is handled in the composable
+// (inside PanelLobby's useLobbyRoom).
+function onBack() {
+  void router.push('/war-room?tab=custom&sub=find')
+}
 </script>
 
 <style scoped>
@@ -103,107 +52,67 @@ const {
   width: 100%;
   height: 100%;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%);
+  background:
+    var(--lobby-bg) center / cover no-repeat,
+    #05080d;
   padding: 32px;
   box-sizing: border-box;
 }
 
-.lobby__layout {
+/* The world-menu frame. `container-type: size` gives the nested --s (used by
+   PanelLobby and the title bar) a definite basis, mirroring the war-room slot. */
+.lobby__panel {
+  width: min(92vw, 1000px);
+  height: min(88vh, 760px);
   display: flex;
-  flex-direction: column;
-  gap: 24px;
-  width: 100%;
-  max-width: 600px;
+  container-type: size;
 }
 
-.lobby__header {
+.lobby__frame {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  --s: 0.093cqw;
+  gap: calc(var(--s) * 12);
+  padding: 0 calc(var(--s) * 6) calc(var(--s) * 6);
+  color: #e9dbb8;
+}
+
+/* Header bar — same world-panel-header art + centered title as CustomGame. */
+.lobby__titlebar {
+  position: relative;
+  align-self: center;
+  flex: 0 0 auto;
+  width: min(100%, calc(var(--s) * 760));
+  aspect-ratio: 740 / 140;
+  background: var(--cg-header) center / 100% 100% no-repeat;
   display: flex;
   align-items: center;
-  gap: 20px;
-}
-
-.lobby__header-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  justify-content: center;
+  margin-top: calc(var(--s) * -44 - 40px);
+  z-index: 2;
 }
 
 .lobby__title {
-  font-size: 22px;
+  font-family: var(--font-title);
+  font-size: calc(var(--s) * 34);
   font-weight: 700;
-  color: #f5ead2;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin: 0;
-}
-
-.lobby__slots {
-  font-size: 12px;
-  font-weight: 600;
   letter-spacing: 0.08em;
-  color: #d7bb84;
   text-transform: uppercase;
+  color: #e7c88a;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    0 0 12px rgba(212, 168, 71, 0.3);
+  /* Match CustomGame: centered on the wood bar and nudged 25px right. */
+  transform: translate(25px, calc(var(--s) * 8));
 }
 
-.lobby__body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.lobby__players-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.lobby__section-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #d7bb84;
-}
-
-.lobby__footer {
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-}
-
-.lobby__not-found {
-  color: #8899bb;
-  font-size: 14px;
-  text-align: center;
-  padding: 40px 0;
-}
-
-.lobby__error {
-  font-size: 13px;
-  color: #f07070;
-}
-
-.lobby__waiting {
-  font-size: 13px;
-  font-style: italic;
-  color: rgba(245, 234, 210, 0.75);
-}
-
-.lobby__steam-pending {
-  font-size: 12px;
-  font-style: italic;
-  color: rgba(245, 234, 210, 0.65);
-  align-self: center;
-  padding-right: 8px;
-}
-
-.lobby__map-version-hint {
-  font-size: 11px;
-  font-style: italic;
-  color: rgba(215, 187, 132, 0.7);
-  letter-spacing: 0.04em;
+.lobby__content {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 </style>

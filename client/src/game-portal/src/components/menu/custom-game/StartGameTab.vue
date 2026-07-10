@@ -1,36 +1,67 @@
 <template>
-  <div class="cg-start">
-    <div class="cg-start__body">
-      <div class="cg-start__left">
-        <div class="cg-start__section-label">Select Map</div>
-        <MapList
-          class="cg-start__maps"
-          :maps="mapCatalog"
-          :selected-map-id="selectedMapId"
-          :loading="isLoadingMaps"
-          @update:selected-map-id="onMapSelected"
-        />
-        <div v-if="mapsLoadError" class="cg-start__error">{{ mapsLoadError }}</div>
-      </div>
-
-      <div class="cg-start__right">
-        <div class="cg-start__preview">
-          <MinimapPreview
-            :map="selectedMap"
-            :show-metadata="false"
-            :max-display-size="220"
-          />
+  <div class="cg-start" :style="assetVars">
+    <!-- The whole map-selection area (Select Map list + map preview/detail)
+         sits on a single dark inner panel (war-room-inner-panel art). -->
+    <UiPanel variant="warRoomInner" :padding="0" class="cg-start__panel">
+      <div class="cg-start__body">
+        <!-- Left: Select Map list, on an inner-panel with the label above it. -->
+        <div class="cg-start__left">
+          <div class="cg-start__section-label">Select Map</div>
+          <UiPanel variant="innerPanel" :padding="0" class="cg-start__list-panel">
+            <MapList
+              class="cg-start__maps"
+              :maps="mapCatalog"
+              :selected-map-id="selectedMapId"
+              :loading="isLoadingMaps"
+              @update:selected-map-id="onMapSelected"
+            />
+          </UiPanel>
+          <div v-if="mapsLoadError" class="cg-start__error">{{ mapsLoadError }}</div>
         </div>
 
-        <button
-          type="button"
-          class="cg-action cg-action--start"
-          :disabled="!selectedMapId || isLoadingMaps || isCreating"
-          @click="onCreateLobby"
-        >
-          {{ isCreating ? 'Creating lobby…' : 'Create Lobby' }}
-        </button>
+        <!-- Right: map preview on a world-inner panel, detail on an inner-panel. -->
+        <div class="cg-start__right">
+          <UiPanel variant="worldInner" :padding="0" class="cg-start__preview-panel">
+            <div class="cg-start__preview">
+              <MinimapPreview
+                :map="selectedMap"
+                :show-metadata="false"
+                :max-display-size="240"
+              />
+            </div>
+          </UiPanel>
+
+          <UiPanel variant="innerPanel" :padding="0" class="cg-start__detail-panel">
+            <div class="cg-start__detail">
+              <div class="cg-start__detail-title">
+                {{ selectedMap ? selectedMap.name : 'No map selected' }}
+              </div>
+              <dl v-if="selectedMap" class="cg-start__detail-grid">
+                <dt>Size:</dt>
+                <dd>{{ selectedMap.gridCols }} x {{ selectedMap.gridRows }}</dd>
+                <dt>Players:</dt>
+                <dd>1 - {{ Math.max(1, selectedMap.spawnPointCount) }}</dd>
+                <dt>Description:</dt>
+                <dd>{{ selectedMap.description || '—' }}</dd>
+              </dl>
+            </div>
+          </UiPanel>
+        </div>
       </div>
+    </UiPanel>
+
+    <!-- Footer, below the panel: Back (dark button art) on the left, then a
+         smaller Create Lobby (blue button art). Back replaces the old close X. -->
+    <div class="cg-start__footer">
+      <BackButton @click="emit('back')" />
+      <button
+        type="button"
+        class="cg-btn cg-btn--create"
+        :disabled="!selectedMapId || isLoadingMaps || isCreating"
+        @click="onCreateLobby"
+      >
+        <span class="cg-btn__label">{{ isCreating ? 'Creating lobby…' : 'Create Lobby' }}</span>
+      </button>
     </div>
   </div>
 </template>
@@ -44,12 +75,17 @@ import { createMultiplayerLobby } from '@/composables/useLobbyCreation'
 import { putMapVersion } from '@/services/mapVersionCache'
 import MapList from '@/components/menu/MapList.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
+import BackButton from '@/components/menu/custom-game/BackButton.vue'
+import createBtnUrl from '@/assets/ui/themes/updated/war-room/war-room-active-button.png'
 
 // Emits the newly-created lobby id up to CustomGame so it can host the lobby
-// inline in the same parchment panel (mirrors the Campaign panel's Lobby
-// flow) instead of routing to the standalone /lobby/:id page.
+// inline in the same panel (mirrors the Campaign panel's Lobby flow) instead
+// of routing to the standalone /lobby/:id page. `back` asks CustomGame to
+// close the panel (the footer Back button replaces the old close X).
 const emit = defineEmits<{
   (e: 'lobby-created', lobbyId: string): void
+  (e: 'back'): void
 }>()
 
 const { playerId } = usePlayer()
@@ -58,6 +94,11 @@ const mapCatalog = ref<MapCatalogEntry[]>([])
 const isLoadingMaps = ref(true)
 const mapsLoadError = ref('')
 const selectedMapId = ref('')
+
+// Create-Lobby button art, exposed to scoped CSS as a custom property.
+const assetVars = computed(() => ({
+  '--cg-create-btn': `url(${createBtnUrl})`,
+}))
 
 // Guards against double-clicks while onCreateLobby is in flight.
 // Steam's LobbyCreated_t callback can take 1–2s; without this guard the
@@ -143,49 +184,89 @@ onMounted(() => {
   flex: 1 1 auto;
 }
 
-/* Two-column body: map list left, preview + action right — mirrors the
-   Campaign panel's two-column detail layout so both parchment panels share
-   the same proportions at the same slot size. */
+/* Single dark inner panel (war-room-inner-panel art) wrapping the whole
+   map-selection area. */
+.cg-start__panel {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Two-column body inside the panel: map list left, preview + detail + action
+   right. Padding sits here (the panel itself renders with padding 0). */
 .cg-start__body {
   flex: 1 1 auto;
   display: grid;
   grid-template-columns:
-    minmax(0, calc(var(--s) * 420))
-    minmax(0, calc(var(--s) * 360));
-  /* Single row that fills the panel height so the left column (and the map
-     list inside it) can flex to the full available space before scrolling,
-     rather than collapsing to content height. */
+    minmax(0, calc(var(--s) * 460))
+    minmax(0, calc(var(--s) * 380));
   grid-template-rows: minmax(0, 1fr);
-  gap: calc(var(--s) * 18);
-  justify-content: center;
+  gap: calc(var(--s) * 20);
+  padding: calc(var(--s) * 14) calc(var(--s) * 16);
   min-height: 0;
+  min-width: 0;
 }
 
+/* Left column — Select Map list. Lifted by the same amount as the preview
+   panel so the "Select Map" label lines up with the top of the map container. */
 .cg-start__left {
   display: flex;
   flex-direction: column;
   gap: calc(var(--s) * 8);
+  margin-top: calc(var(--s) * -10);
+  min-height: 0;
+  min-width: 0;
+}
+
+/* World-inner panel wrapping the map list. */
+.cg-start__list-panel {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+.cg-start__right {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s) * 14);
   min-height: 0;
 }
 
+/* Section label — gold, flanked by short rules like the mockup. */
 .cg-start__section-label {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--s) * 8);
   font-family: var(--font-title);
-  font-size: calc(var(--s) * 14);
+  font-size: calc(var(--s) * 15);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(58, 31, 10, 0.75);
+  color: #e0bd7f;
 }
 
-/* Let the map list grow to fill the whole left column instead of MapList's
-   default fixed 360px cap, so the parchment slot's headroom is used before a
-   scrollbar appears. The :deep override releases the component's max-height
-   and lets its inner scroll area flex to the available height. */
+.cg-start__section-label::before,
+.cg-start__section-label::after {
+  content: '';
+  height: 1px;
+  width: calc(var(--s) * 16);
+  background: rgba(224, 189, 127, 0.6);
+}
+
+.cg-start__section-label::after {
+  flex: 1 1 auto;
+}
+
 .cg-start__maps {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  padding: calc(var(--s) * 6);
+  box-sizing: border-box;
 }
 
 .cg-start__maps :deep(.map-list__scroll) {
@@ -194,66 +275,158 @@ onMounted(() => {
   min-height: 0;
 }
 
-.cg-start__right {
+/* World-inner panel around the map preview. Lifted a little and sized to its
+   content so the details panel below can take the rest of the height. */
+.cg-start__preview-panel {
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
-  gap: calc(var(--s) * 12);
+  margin-top: calc(var(--s) * -10);
+}
+
+/* No padding so the map sits flush against the world-inner frame's edges. */
+.cg-start__preview {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 0;
 }
 
-.cg-start__preview {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--s) * 6);
-}
-
-/* Frame the bare minimap the same way the Campaign panel does, so the
-   preview reads as part of the parchment surface. */
+/* Bare minimap with no border/padding so it touches the panel's inner edges. */
 .cg-start__preview :deep(.minimap-preview--bare) {
-  align-self: flex-start;
   width: fit-content;
   height: auto;
   min-height: 0;
-  border: 1px solid #8a5a2a;
-  border-radius: calc(var(--s) * 4);
-  background: rgba(245, 234, 210, 0.45);
-  padding: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0;
   box-sizing: border-box;
 }
 
 .cg-start__preview :deep(.minimap-preview__empty--bare) {
-  color: rgba(58, 31, 10, 0.55);
+  color: rgba(233, 219, 184, 0.5);
+}
+
+/* Inner-panel frame around the map details. Grows to fill the space below the
+   preview, and won't shrink below its content (so all detail rows fit). */
+.cg-start__detail-panel {
+  flex: 1 1 auto;
+  display: flex;
+}
+
+/* Detail block — gold labels, cream values on the dark panel. Text sized down
+   so it fits cleanly inside the panel; content pulled up ~10px. */
+.cg-start__detail {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s) * 2);
+  padding: calc(var(--s) * 8) calc(var(--s) * 10);
+  margin-top: -10px;
+  min-width: 0;
+}
+
+.cg-start__detail-title {
+  font-family: var(--font-title);
+  font-size: calc(var(--s) * 15);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #e7c88a;
+}
+
+.cg-start__detail-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: calc(var(--s) * 10);
+  row-gap: calc(var(--s) * 1);
+  margin: 0;
+}
+
+.cg-start__detail-grid dt {
+  font-family: var(--font-title);
+  font-size: calc(var(--s) * 10);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #c7a768;
+}
+
+.cg-start__detail-grid dd {
+  margin: 0;
+  font-size: calc(var(--s) * 11);
+  color: #e9dbb8;
 }
 
 .cg-start__error {
   font-size: calc(var(--s) * 13);
-  color: #7a1a1a;
+  color: #e88a6a;
 }
 
-.cg-action {
+/* Footer below the panel: Back on the left, then a smaller Create Lobby. */
+/* Shared footer geometry across all tabs so the Back button never shifts when
+   switching tabs: pinned to the bottom, same top padding, no bottom padding. */
+.cg-start__footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--s) * 12);
+  padding-top: calc(var(--s) * 12);
+}
+
+/* Footer buttons use the war-room button art via border-image (frame stays
+   crisp). ~50% narrower than the old full-width Create Lobby. */
+.cg-btn {
+  flex: 0 0 auto;
+  min-width: calc(var(--s) * 150);
+  padding: calc(var(--s) * 4) calc(var(--s) * 16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: calc(var(--s) * 16) solid transparent;
+  border-image-slice: 16 fill;
+  border-image-width: calc(var(--s) * 16);
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  transition:
+    filter 120ms ease,
+    transform 80ms ease;
+}
+
+/* Hover: brighten the button art. Active (click): dim + press down 1px. */
+.cg-btn:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.cg-btn:active:not(:disabled) {
+  filter: brightness(0.9);
+  transform: translateY(1px);
+}
+
+.cg-btn--create {
+  border-image-source: var(--cg-create-btn);
+  /* Push Create Lobby to the right edge of the footer; Back stays left. */
+  margin-left: auto;
+}
+
+.cg-btn__label {
   font-family: var(--font-title);
-  font-size: calc(var(--s) * 14);
+  font-size: calc(var(--s) * 15);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: calc(var(--s) * 8) calc(var(--s) * 18);
-  border-radius: calc(var(--s) * 4);
-  border: 1px solid rgba(58, 31, 10, 0.55);
-  color: #2a1505;
-  align-self: flex-start;
-  min-width: calc(var(--s) * 160);
+  color: #f4e3b6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
-.cg-action--start {
-  background: linear-gradient(180deg, #d8b06a 0%, #a87a36 100%);
+.cg-btn:disabled .cg-btn__label {
+  color: rgba(244, 227, 182, 0.4);
 }
 
-.cg-action:disabled {
-  background: rgba(180, 160, 110, 0.4);
-  color: rgba(58, 31, 10, 0.45);
+.cg-btn:disabled {
   /* `cursor: not-allowed` is the system semantic for "forbidden action" — the
      project rule (CLAUDE.md → AI_RULES.md) allows it on disabled states. */
   cursor: not-allowed;
+  filter: grayscale(0.4) brightness(0.8);
 }
 </style>

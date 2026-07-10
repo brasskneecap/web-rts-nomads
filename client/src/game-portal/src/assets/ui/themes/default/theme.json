@@ -7,5 +7,17 @@
   },
   "parchmentPanel": {
     "slice": 24
+  },
+  "worldMenuPanel": {
+    "slice": 26
+  },
+  "worldInnerPanel": {
+    "slice": 22
+  },
+  "warRoomInnerPanel": {
+    "slice": 24
+  },
+  "innerPanel": {
+    "slice": 16
   }
 }
