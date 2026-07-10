@@ -1,5 +1,10 @@
+// Bundled icon sources: the authored item catalog art AND the misc art library
+// (assets/misc/**). Both feed the same keyed maps so a misc icon is selectable
+// in the item editor's gallery AND resolves at render time when assigned to an
+// item. Keys are lowercased basenames; item and misc basenames are disjoint, so
+// neither shadows the other.
 const itemGlob = import.meta.glob<string>(
-  '../../assets/items/**/*.png',
+  ['../../assets/items/**/*.png', '../../assets/misc/**/*.png'],
   { eager: true, query: '?url', import: 'default' },
 )
 

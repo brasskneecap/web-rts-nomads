@@ -12,6 +12,11 @@ describe('itemAssets gallery + fallback', () => {
     expect(getItemImageSourceUrl('fire_sword')).not.toContain('/catalog/items/')
     expect(getItemImageSourceUrl('brand_new_upload')).toBe('/catalog/items/brand_new_upload/image')
   })
+  it('includes misc art library icons (selectable in the editor gallery)', () => {
+    const keys = listItemAssetKeys()
+    expect(keys).toContain('shield_fire_0001') // from assets/misc/shield/
+    expect(getItemImageSourceUrl('shield_fire_0001')).not.toContain('/catalog/items/')
+  })
   it('returns null for keys whose server fetch has failed (placeholder path restored)', () => {
     const img = getItemAssetImage('definitely_missing_everywhere')
     expect(img).not.toBeNull()
