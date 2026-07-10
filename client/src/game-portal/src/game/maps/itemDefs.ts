@@ -68,6 +68,10 @@ export type ItemDef = {
   allowedUnitTypes?: string[]
   /** Gold cost to purchase from a shop building. */
   costGold: number
+  /** True when the item is craftable at the Artificer (a recipe unlocks it). */
+  isRecipe?: boolean
+  /** Gold cost to craft, when isRecipe. */
+  recipeCost?: number
   /**
    * Building type that must be built and owned for this item to be purchasable.
    * Empty/undefined means no building gate. Drives Shop UI availability and

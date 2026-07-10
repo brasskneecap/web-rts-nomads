@@ -294,65 +294,26 @@
         </div>
       </section>
 
-      <!-- Section 6: Cost & Availability -->
-      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'availability' }">
+      <!-- Section 6: Cost -->
+      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'cost' }">
         <button
           class="editor-section__summary"
           type="button"
-          :aria-expanded="openSection === 'availability'"
-          @click="toggleSection('availability')"
+          :aria-expanded="openSection === 'cost'"
+          @click="toggleSection('cost')"
         >
-          Cost &amp; Availability
+          Cost
         </button>
-        <div v-if="openSection === 'availability'" class="editor-section__body">
+        <div v-if="openSection === 'cost'" class="editor-section__body">
           <div class="control-group">
-            <label for="ie-cost-gold">Cost (Gold)</label>
+            <label for="ie-cost-gold">Purchase Cost (Gold) <span class="field-hint">(where it sells is set at the shop level)</span></label>
             <input id="ie-cost-gold" v-model.number="form.costGold" type="number" min="0" />
-          </div>
-          <div class="control-group control-group--checkbox">
-            <label for="ie-avail-marketplace">
-              <input id="ie-avail-marketplace" v-model="form.availability.marketplace" type="checkbox" />
-              Marketplace
-            </label>
-          </div>
-          <div class="control-group control-group--checkbox">
-            <label for="ie-avail-wandering">
-              <input id="ie-avail-wandering" v-model="form.availability.wanderingMerchant" type="checkbox" />
-              Wandering Merchant
-            </label>
-          </div>
-          <div class="control-group control-group--checkbox">
-            <label for="ie-avail-loot">
-              <input id="ie-avail-loot" v-model="form.availability.lootTable.enabled" type="checkbox" />
-              Loot Table
-            </label>
-          </div>
-          <div v-if="form.availability.lootTable.enabled" class="control-group">
-            <label for="ie-avail-loot-weight">Weight <span class="field-hint">(share of the merchant roll, 1-90)</span></label>
-            <input
-              id="ie-avail-loot-weight"
-              v-model.number="form.availability.lootTable.weight"
-              type="number"
-              min="1"
-              max="90"
-            />
-          </div>
-          <div class="control-group control-group--checkbox">
-            <label for="ie-avail-recipe-list">
-              <input
-                id="ie-avail-recipe-list"
-                v-model="form.availability.recipeList"
-                type="checkbox"
-                :disabled="!form.crafting.enabled"
-              />
-              Recipe List <span class="field-hint">(requires crafting)</span>
-            </label>
           </div>
         </div>
       </section>
 
-      <!-- Section 7: Crafting (equipment only) -->
-      <section v-if="form.kind === 'equipment'" class="editor-section" :class="{ 'editor-section--open': openSection === 'crafting' }">
+      <!-- Section 7: Crafting — an item is craftable when a recipe unlocks it -->
+      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'crafting' }">
         <button
           class="editor-section__summary"
           type="button"
@@ -364,14 +325,18 @@
         <div v-if="openSection === 'crafting'" class="editor-section__body">
           <div class="control-group control-group--checkbox">
             <label for="ie-crafting-enabled">
-              <input id="ie-crafting-enabled" v-model="form.crafting.enabled" type="checkbox" />
-              Craftable
+              <input id="ie-crafting-enabled" v-model="form.crafting.isRecipe" type="checkbox" />
+              Craftable at the Artificer <span class="field-hint">(a recipe unlocks this item)</span>
             </label>
           </div>
-          <template v-if="form.crafting.enabled">
+          <template v-if="form.crafting.isRecipe">
+            <div class="control-group">
+              <label for="ie-recipe-cost">Craft Cost (Gold)</label>
+              <input id="ie-recipe-cost" v-model.number="form.crafting.recipeCost" type="number" min="0" />
+            </div>
             <div v-for="(_input, idx) in form.crafting.inputs" :key="idx" class="crafting-input-row">
               <div class="control-group">
-                <label :for="`ie-crafting-input-${idx}`">Input {{ idx + 1 }}</label>
+                <label :for="`ie-crafting-input-${idx}`">Ingredient {{ idx + 1 }}</label>
                 <select :id="`ie-crafting-input-${idx}`" v-model="form.crafting.inputs[idx]">
                   <option value="" disabled>Select an item…</option>
                   <option v-for="d in allEquipmentItems" :key="d.id" :value="d.id">{{ d.displayName }} ({{ d.id }})</option>
@@ -386,10 +351,6 @@
               </UiButton>
             </div>
             <UiButton size="sm" @click="form.crafting.inputs.push('')">Add ingredient</UiButton>
-            <div class="control-group">
-              <label for="ie-crafting-cost">Craft Cost (Gold)</label>
-              <input id="ie-crafting-cost" v-model.number="form.crafting.costGold" type="number" min="0" />
-            </div>
           </template>
         </div>
       </section>
@@ -414,7 +375,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import { fetchItemDefs, fetchRecipeDefs } from '@/game/maps/catalog'
 import type { ItemDef, ItemTier } from '@/game/maps/itemDefs'
-import { EditorValidationError, deleteEditorItem, fetchItemAvailability, fetchProcEffectDefs, uploadItemIcon, saveEditorItem } from '@/game/items/itemEditorApi'
+import { EditorValidationError, deleteEditorItem, fetchProcEffectDefs, uploadItemIcon, saveEditorItem } from '@/game/items/itemEditorApi'
 import type { ProcEffectDef } from '@/game/items/itemEditorApi'
 import { createBlankForm, formFromDef, saveRequestFromForm } from '@/game/items/itemEditorForm'
 import type { ItemEditorForm, ProcForm } from '@/game/items/itemEditorForm'
@@ -545,16 +506,14 @@ onMounted(async () => {
   }
 })
 
-async function selectItem(id: string) {
+function selectItem(id: string) {
   const def = items.value.find((d) => d.id === id)
   if (!def) return
   selectedId.value = id
   saveError.value = ''
   saveOk.value = false
   deleteStatus.value = ''
-  const availability = await fetchItemAvailability(id).catch(() => ({
-    marketplace: false, wanderingMerchant: false, lootTable: { enabled: false, weight: 10 }, recipeList: false }))
-  form.value = formFromDef(def, availability, recipesByOutput.value.get(id) ?? null)
+  form.value = formFromDef(def, recipesByOutput.value.get(id) ?? null)
 }
 
 function newItem() {
@@ -597,7 +556,7 @@ async function removeOrReset() {
       newItem()
       deleteStatus.value = 'Item deleted.'
     } else {
-      await selectItem(form.value.id) // reset: reload the embedded version
+      selectItem(form.value.id) // reset: reload the embedded version
       deleteStatus.value = 'Reset to catalog default.'
     }
   } catch (err) {
@@ -638,7 +597,7 @@ function toggleSection(key: string) {
 // consumables default to the Consumable category (drives the consumables/
 // catalog subdir + merchant_potions loot bucket) and open the Consumable
 // section; switching back to equipment clears the Consumable category.
-const EQUIPMENT_ONLY_SECTIONS = ['stats', 'elemental', 'procs', 'crafting']
+const EQUIPMENT_ONLY_SECTIONS = ['stats', 'elemental', 'procs']
 function onKindChanged() {
   if (!form.value) return
   if (form.value.kind === 'consumable') {
