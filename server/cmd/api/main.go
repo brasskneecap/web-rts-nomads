@@ -50,6 +50,11 @@ func main() {
 	// launch. Best-effort: never fatal.
 	game.LoadPersistedMapsIntoOverlay()
 
+	// Same restart-survival contract for the item editor's catalogs.
+	game.LoadPersistedItemsIntoOverlay()
+	game.LoadPersistedRecipesIntoOverlay()
+	game.LoadPersistedLootTablesIntoOverlay()
+
 	manager := game.NewMatchManager()
 	lobbyManager := game.NewLobbyManager()
 	hub := ws.NewHub(manager, lobbyManager)

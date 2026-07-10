@@ -1,0 +1,156 @@
+package game
+
+import (
+	"os"
+	"testing"
+)
+
+// editorEnv points every writable dir at temp dirs and cleans all overlays.
+func editorEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("ITEM_CATALOG_DIR", t.TempDir())
+	t.Setenv("RECIPE_CATALOG_DIR", t.TempDir())
+	t.Setenv("NEUTRAL_GROUPS_DIR", t.TempDir())
+	t.Cleanup(func() {
+		runtimeItemsMu.Lock()
+		runtimeItems = map[string]*ItemDef{}
+		runtimeItemsMu.Unlock()
+		runtimeRecipesMu.Lock()
+		runtimeRecipes = map[string]*RecipeDef{}
+		runtimeRecipesMu.Unlock()
+		runtimeItemListsMu.Lock()
+		runtimeItemLists = map[string]*ItemListDef{}
+		runtimeItemListsMu.Unlock()
+		runtimeRecipeListsMu.Lock()
+		runtimeRecipeLists = map[string]*RecipeListDef{}
+		runtimeRecipeListsMu.Unlock()
+		runtimeLootCatalogMu.Lock()
+		runtimeLootCatalog, runtimePackagedItems, runtimeLootTables = nil, nil, nil
+		runtimeLootCatalogMu.Unlock()
+	})
+	_ = os.Getenv // silence unused import if not otherwise used
+}
+
+// TestSaveEditorItem_FullSurface: item + recipe + all four availability
+// surfaces round-trip through every reader.
+func TestSaveEditorItem_FullSurface(t *testing.T) {
+	editorEnv(t)
+	req := EditorItemSaveRequest{
+		Item: ItemDef{ID: "editor_test_blade", DisplayName: "Editor Blade", IconKey: "editor_test_blade",
+			Kind: ItemKindEquipment, Tier: ItemTierRare, Category: "Weapon", SlotKind: "any",
+			CostGold: 120, Modifiers: &ItemModifiers{Damage: 9},
+			OnHitProc: &ItemOnHitProc{Chance: 0.1, Effect: "fire_bolt_ignite"}},
+		Recipe: &EditorRecipeSpec{Inputs: []string{"broad_sword", "fire_ring"}, CostGold: 150},
+		Availability: EditorAvailability{
+			Marketplace: true, WanderingMerchant: true,
+			LootTable:  EditorLootAvailability{Enabled: true, Weight: 15},
+			RecipeList: true,
+		},
+	}
+	if err := SaveEditorItem(req); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if def, ok := getItemDef("editor_test_blade"); !ok || !def.Overridden || def.CostGold != 120 {
+		t.Fatalf("item not registered: ok=%v %+v", ok, def)
+	}
+	if rec, ok := getRecipeDef("editor_test_blade"); !ok || rec.Output != "editor_test_blade" || rec.CostGold != 150 {
+		t.Fatalf("recipe not registered: ok=%v %+v", ok, rec)
+	}
+	mkt, _ := getItemListDef("marketplace")
+	if !containsString(mkt.Items, "editor_test_blade") {
+		t.Error("missing from marketplace list")
+	}
+	wm, _ := getItemListDef("wandering_merchant")
+	if !containsString(wm.Items, "editor_test_blade") {
+		t.Error("missing from wandering_merchant list")
+	}
+	if pi, ok := getPackagedItem("merchant_weapons"); ok {
+		found := false
+		for _, e := range pi.Entries {
+			if e.Item == "editor_test_blade" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("missing from merchant_weapons subtable")
+		}
+	} else {
+		t.Error("merchant_weapons subtable missing")
+	}
+	dr, _ := getRecipeListDef("druid_recipes_1")
+	if !containsString(dr.Recipes, "editor_test_blade") {
+		t.Error("recipe missing from druid_recipes_1")
+	}
+}
+
+// TestSaveEditorItem_ValidationRejectsBeforeAnyWrite: an invalid proc effect
+// reference fails without touching any availability file.
+func TestSaveEditorItem_ValidationRejectsBeforeAnyWrite(t *testing.T) {
+	editorEnv(t)
+	req := EditorItemSaveRequest{
+		Item: ItemDef{ID: "bad_item", DisplayName: "Bad", IconKey: "x", Kind: ItemKindEquipment,
+			Tier: ItemTierCommon, SlotKind: "any",
+			OnHitProc: &ItemOnHitProc{Chance: 0.1, Effect: "no_such_effect"}},
+		Availability: EditorAvailability{Marketplace: true},
+	}
+	err := SaveEditorItem(req)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !IsEditorValidationError(err) {
+		t.Errorf("expected validation-class error, got %v", err)
+	}
+	if _, ok := getItemDef("bad_item"); ok {
+		t.Error("invalid item must not register")
+	}
+	mkt, _ := getItemListDef("marketplace")
+	if containsString(mkt.Items, "bad_item") {
+		t.Error("availability must not change on failed save")
+	}
+}
+
+// TestSaveEditorItem_SelfRecipeRejected.
+func TestSaveEditorItem_SelfRecipeRejected(t *testing.T) {
+	editorEnv(t)
+	req := EditorItemSaveRequest{
+		Item:   ItemDef{ID: "selfy", DisplayName: "Selfy", IconKey: "x", Kind: ItemKindEquipment, Tier: ItemTierCommon, SlotKind: "any"},
+		Recipe: &EditorRecipeSpec{Inputs: []string{"selfy", "fire_ring"}, CostGold: 10},
+	}
+	if err := SaveEditorItem(req); err == nil {
+		t.Fatal("self-referencing recipe must be rejected")
+	}
+}
+
+// TestDeleteEditorItem_CleansEverythingForEditorCreated.
+func TestDeleteEditorItem_CleansEverythingForEditorCreated(t *testing.T) {
+	editorEnv(t)
+	req := EditorItemSaveRequest{
+		Item:   ItemDef{ID: "doomed_item", DisplayName: "Doomed", IconKey: "doomed_item", Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon", SlotKind: "any"},
+		Recipe: &EditorRecipeSpec{Inputs: []string{"broad_sword", "fire_ring"}, CostGold: 10},
+		Availability: EditorAvailability{Marketplace: true, LootTable: EditorLootAvailability{Enabled: true, Weight: 10}, RecipeList: true},
+	}
+	if err := SaveEditorItem(req); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	existed, err := DeleteEditorItem("doomed_item")
+	if err != nil || !existed {
+		t.Fatalf("delete: existed=%v err=%v", existed, err)
+	}
+	if _, ok := getItemDef("doomed_item"); ok {
+		t.Error("item still visible")
+	}
+	if _, ok := getRecipeDef("doomed_item"); ok {
+		t.Error("recipe still visible")
+	}
+	mkt, _ := getItemListDef("marketplace")
+	if containsString(mkt.Items, "doomed_item") {
+		t.Error("still in marketplace list")
+	}
+	if pi, _ := getPackagedItem("merchant_weapons"); pi.Entries != nil {
+		for _, e := range pi.Entries {
+			if e.Item == "doomed_item" {
+				t.Error("still in merchant subtable")
+			}
+		}
+	}
+}

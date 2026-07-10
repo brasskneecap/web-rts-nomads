@@ -52,6 +52,7 @@ export default defineConfig(({ mode }) => ({
       '/api': { target: GO_SERVER, changeOrigin: true },
       '/catalog': { target: GO_SERVER, changeOrigin: true },
       '/maps': { target: GO_SERVER, changeOrigin: true },
+      '/items': { target: GO_SERVER, changeOrigin: true },
       '/matches': { target: GO_SERVER, changeOrigin: true },
       '/lobbies': { target: GO_SERVER, changeOrigin: true },
     },

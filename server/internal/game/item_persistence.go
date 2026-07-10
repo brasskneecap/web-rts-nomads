@@ -139,8 +139,8 @@ func SaveItemDef(def *ItemDef) error {
 	return nil
 }
 
-// itemIsEmbedded reports whether id ships in the embedded catalog.
-func itemIsEmbedded(id string) bool {
+// ItemIsEmbedded reports whether id ships in the embedded catalog.
+func ItemIsEmbedded(id string) bool {
 	_, ok := itemCatalogSingleton[id]
 	return ok
 }
