@@ -39,6 +39,15 @@ func TestValidateItemDef_OnHitFields(t *testing.T) {
 		t.Fatalf("expected error for unregistered elemental damage type, got nil")
 	}
 
+	goodConsumable := &ItemDef{ID: "heal_potion", Kind: ItemKindConsumable, Consumable: &ConsumableEffect{Type: "heal", Amount: 50}}
+	if err := validateItemDef(goodConsumable); err != nil {
+		t.Fatalf("valid consumable rejected: %v", err)
+	}
+	badConsumable := &ItemDef{ID: "bad_potion", Kind: ItemKindConsumable, Consumable: &ConsumableEffect{Amount: 50}}
+	if err := validateItemDef(badConsumable); err == nil {
+		t.Fatalf("expected error for consumable with empty type, got nil")
+	}
+
 	badChance := &ItemDef{ID: "bad2", OnHitProc: &ItemOnHitProc{Chance: 1.5, Effect: "fire_bolt_ignite"}}
 	if err := validateItemDef(badChance); err == nil {
 		t.Fatalf("expected error for proc chance > 1, got nil")

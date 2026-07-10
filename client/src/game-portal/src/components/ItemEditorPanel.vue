@@ -57,6 +57,13 @@
             <textarea id="ie-description" v-model.trim="form.description" rows="3"></textarea>
           </div>
           <div class="control-group">
+            <label for="ie-kind">Kind</label>
+            <select id="ie-kind" v-model="form.kind" @change="onKindChanged">
+              <option value="equipment">Equipment</option>
+              <option value="consumable">Consumable</option>
+            </select>
+          </div>
+          <div class="control-group">
             <label for="ie-tier">Tier</label>
             <select id="ie-tier" v-model="form.tier">
               <option v-for="t in TIER_OPTIONS" :key="t" :value="t">{{ t }}</option>
@@ -131,8 +138,54 @@
         </div>
       </section>
 
-      <!-- Section 3: Stats -->
-      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'stats' }">
+      <!-- Consumable (only for kind === 'consumable') -->
+      <section
+        v-if="form.kind === 'consumable'"
+        class="editor-section"
+        :class="{ 'editor-section--open': openSection === 'consumable' }"
+      >
+        <button
+          class="editor-section__summary"
+          type="button"
+          :aria-expanded="openSection === 'consumable'"
+          @click="toggleSection('consumable')"
+        >
+          Consumable
+        </button>
+        <div v-if="openSection === 'consumable'" class="editor-section__body">
+          <div class="control-group">
+            <label for="ie-consumable-type">Effect Type</label>
+            <select id="ie-consumable-type" v-model="form.consumable.type">
+              <option v-for="t in CONSUMABLE_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="ie-consumable-amount">Amount <span class="field-hint">(HP restored / XP granted)</span></label>
+            <input id="ie-consumable-amount" v-model.number="form.consumable.amount" type="number" min="0" />
+          </div>
+          <div class="control-group">
+            <label for="ie-consumable-range">AoE Range <span class="field-hint">(world units; 0 = default 100)</span></label>
+            <input id="ie-consumable-range" v-model.number="form.consumable.range" type="number" min="0" />
+          </div>
+          <div class="control-group control-group--checkbox">
+            <label for="ie-consumable-split">
+              <input id="ie-consumable-split" v-model="form.consumable.split" type="checkbox" />
+              Split amount across affected units <span class="field-hint">(unchecked = full amount each)</span>
+            </label>
+          </div>
+          <div class="control-group">
+            <label for="ie-consumable-duration">Duration (s) <span class="field-hint">(0 = instant)</span></label>
+            <input id="ie-consumable-duration" v-model.number="form.consumable.durationSeconds" type="number" min="0" />
+          </div>
+          <div class="control-group">
+            <label for="ie-max-stacks">Max Stacks <span class="field-hint">(per inventory slot; 0/1 = single)</span></label>
+            <input id="ie-max-stacks" v-model.number="form.maxStacks" type="number" min="0" />
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 3: Stats (equipment only) -->
+      <section v-if="form.kind === 'equipment'" class="editor-section" :class="{ 'editor-section--open': openSection === 'stats' }">
         <button
           class="editor-section__summary"
           type="button"
@@ -157,8 +210,8 @@
         </div>
       </section>
 
-      <!-- Section 4: Elemental -->
-      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'elemental' }">
+      <!-- Section 4: Elemental (equipment only) -->
+      <section v-if="form.kind === 'equipment'" class="editor-section" :class="{ 'editor-section--open': openSection === 'elemental' }">
         <button
           class="editor-section__summary"
           type="button"
@@ -179,8 +232,8 @@
         </div>
       </section>
 
-      <!-- Section 5: Procs -->
-      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'procs' }">
+      <!-- Section 5: Procs (equipment only) -->
+      <section v-if="form.kind === 'equipment'" class="editor-section" :class="{ 'editor-section--open': openSection === 'procs' }">
         <button
           class="editor-section__summary"
           type="button"
@@ -298,8 +351,8 @@
         </div>
       </section>
 
-      <!-- Section 7: Crafting -->
-      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'crafting' }">
+      <!-- Section 7: Crafting (equipment only) -->
+      <section v-if="form.kind === 'equipment'" class="editor-section" :class="{ 'editor-section--open': openSection === 'crafting' }">
         <button
           class="editor-section__summary"
           type="button"
@@ -385,8 +438,15 @@ const galleryKeys = listItemAssetKeys()
 const overridesOpen = reactive<{ onHit: boolean; onStruck: boolean }>({ onHit: false, onStruck: false })
 
 const TIER_OPTIONS: ItemTier[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
-const CATEGORY_OPTIONS = ['Weapon', 'Armor', 'Shield', 'Accessory']
+const CATEGORY_OPTIONS = ['Weapon', 'Armor', 'Shield', 'Accessory', 'Consumable']
 const SLOT_KIND_OPTIONS = ['any', 'weapon', 'armor', 'accessory']
+// Only the consumable effect types the server actually implements
+// (applyConsumableToUnitLocked). Future types (buffs, mana) add cases there
+// first, then an option here.
+const CONSUMABLE_TYPES = [
+  { value: 'heal', label: 'Heal (restore HP)' },
+  { value: 'grant_xp', label: 'Grant XP' },
+]
 const ELEMENTAL_TYPES = ['fire', 'cold', 'lightning', 'holy', 'shadow', 'physical']
 
 const FLAT_MOD_FIELDS: { key: keyof ItemEditorForm['mods']; label: string }[] = [
@@ -415,19 +475,20 @@ const PROC_OVERRIDE_FIELDS: { key: ProcNullableKey; label: string }[] = [
   { key: 'burnDurationSeconds', label: 'Burn Duration (s)' },
 ]
 
-const equipmentItems = computed(() =>
-  items.value.filter((d) => d.kind === 'equipment' &&
-    (search.value === '' || d.id.includes(search.value.toLowerCase()) || d.displayName.toLowerCase().includes(search.value.toLowerCase()))))
+// Sidebar list: every item (equipment AND consumable), search-filtered.
+const filteredItems = computed(() =>
+  items.value.filter((d) =>
+    search.value === '' || d.id.includes(search.value.toLowerCase()) || d.displayName.toLowerCase().includes(search.value.toLowerCase())))
 
-// All equipment items regardless of the sidebar search — the crafting
-// dropdowns must never be constrained by the list filter.
+// Crafting inputs stay equipment-only and are never constrained by the
+// sidebar search (a leftover search term must not truncate the dropdown).
 const allEquipmentItems = computed(() => items.value.filter((d) => d.kind === 'equipment'))
 
 // group by tier for the sidebar; TIER_COLORS drives the badge color.
 const groupedItems = computed(() => {
   const groups = new Map<ItemTier, ItemDef[]>()
   for (const t of TIER_OPTIONS) groups.set(t, [])
-  for (const d of equipmentItems.value) {
+  for (const d of filteredItems.value) {
     const list = groups.get(d.tier)
     if (list) list.push(d)
   }
@@ -571,6 +632,22 @@ function pickGalleryIcon(key: string) {
 
 function toggleSection(key: string) {
   openSection.value = openSection.value === key ? '' : key
+}
+
+// When the item's kind flips, keep category and the open accordion coherent:
+// consumables default to the Consumable category (drives the consumables/
+// catalog subdir + merchant_potions loot bucket) and open the Consumable
+// section; switching back to equipment clears the Consumable category.
+const EQUIPMENT_ONLY_SECTIONS = ['stats', 'elemental', 'procs', 'crafting']
+function onKindChanged() {
+  if (!form.value) return
+  if (form.value.kind === 'consumable') {
+    form.value.category = 'Consumable'
+    if (EQUIPMENT_ONLY_SECTIONS.includes(openSection.value)) openSection.value = 'consumable'
+  } else if (form.value.category === 'Consumable') {
+    form.value.category = 'Weapon'
+    if (openSection.value === 'consumable') openSection.value = 'identity'
+  }
 }
 
 // Comma-separated text input <-> string[] binding for allowedUnitTypes —

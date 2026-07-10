@@ -87,4 +87,54 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     expect(item.onHitProc).toEqual({ chance: 0.1, effect: 'fire_bolt_ignite' })
     expect(item.overridden).toBeUndefined()
   })
+
+  it('equipment save still emits kind:equipment and no consumable block', () => {
+    const form = createBlankForm()
+    form.id = 'x'
+    const item = saveRequestFromForm(form).item as Record<string, any>
+    expect(item.kind).toBe('equipment')
+    expect(item.consumable).toBeUndefined()
+    expect(item.maxStacks).toBeUndefined()
+  })
+})
+
+describe('consumable items', () => {
+  it('round-trips a consumable def and omits every equipment-only field', () => {
+    const potion: ItemDef = {
+      id: 'big_heal', displayName: 'Big Heal', iconKey: 'potion_0001', kind: 'consumable',
+      tier: 'rare', slotKind: 'any', costGold: 40, category: 'Consumable',
+      consumable: { type: 'heal', amount: 120, range: 150, split: false, durationSeconds: 0 },
+      maxStacks: 5,
+    }
+    const form = formFromDef(potion, { marketplace: true, wanderingMerchant: false, lootTable: { enabled: false, weight: 0 }, recipeList: false }, null)
+    expect(form.kind).toBe('consumable')
+    expect(form.consumable.type).toBe('heal')
+    expect(form.consumable.amount).toBe(120)
+    expect(form.consumable.split).toBe(false)
+    expect(form.maxStacks).toBe(5)
+
+    const req = saveRequestFromForm(form)
+    const item = req.item as Record<string, any>
+    expect(item.kind).toBe('consumable')
+    // durationSeconds 0 dropped; split always sent (default-true differs from false)
+    expect(item.consumable).toEqual({ type: 'heal', amount: 120, range: 150, split: false })
+    expect(item.maxStacks).toBe(5)
+    expect(item.modifiers).toBeUndefined()
+    expect(item.onHitProc).toBeUndefined()
+    expect(item.onStruckProc).toBeUndefined()
+    expect(item.onHitElemental).toBeUndefined()
+    expect(req.recipe).toBeNull()
+    expect(req.availability.recipeList).toBe(false)
+  })
+
+  it('a new consumable sends split:true by default and omits maxStacks when 0', () => {
+    const form = createBlankForm()
+    form.id = 'quick_heal'
+    form.kind = 'consumable'
+    form.consumable.type = 'heal'
+    form.consumable.amount = 50
+    const item = saveRequestFromForm(form).item as Record<string, any>
+    expect(item.consumable).toEqual({ type: 'heal', amount: 50, split: true })
+    expect(item.maxStacks).toBeUndefined()
+  })
 })

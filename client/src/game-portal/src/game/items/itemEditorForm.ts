@@ -21,9 +21,19 @@ export type ProcForm = {
   burnDurationSeconds: number | null
 }
 
+export type ConsumableForm = {
+  type: string
+  amount: number
+  range: number
+  split: boolean
+  durationSeconds: number
+}
+
 export type ItemEditorForm = {
   id: string
   isNew: boolean
+  /** 'equipment' (stat/proc gear) or 'consumable' (used-item effect). */
+  kind: 'equipment' | 'consumable'
   displayName: string
   description: string
   iconKey: string
@@ -31,6 +41,9 @@ export type ItemEditorForm = {
   category: string
   slotKind: string
   costGold: number
+  /** Consumable effect + stack count. Emitted only when kind === 'consumable'. */
+  consumable: ConsumableForm
+  maxStacks: number
   mods: {
     hp: number
     damage: number
@@ -59,8 +72,13 @@ export type ItemEditorForm = {
 
 // Fields the editor does not model but must survive an edit round-trip.
 // Explicit allowlist — never spread the raw def (its proc fields carry
-// RESOLVED wire values that would re-save as frozen overrides).
-const UNMODELED_KEYS = ['requiredBuilding', 'effects', 'maxStacks'] as const
+// RESOLVED wire values that would re-save as frozen overrides). maxStacks and
+// consumable are now MODELED (see ConsumableForm), so they are not here.
+const UNMODELED_KEYS = ['requiredBuilding', 'effects'] as const
+
+const blankConsumable = (): ConsumableForm => ({
+  type: 'heal', amount: 50, range: 0, split: true, durationSeconds: 0,
+})
 
 const blankProc = (): ProcForm => ({
   enabled: false, effect: '', chancePct: 10,
@@ -70,8 +88,9 @@ const blankProc = (): ProcForm => ({
 
 export function createBlankForm(): ItemEditorForm {
   return {
-    id: '', isNew: true, displayName: '', description: '', iconKey: '', tier: 'common',
+    id: '', isNew: true, kind: 'equipment', displayName: '', description: '', iconKey: '', tier: 'common',
     category: 'Weapon', slotKind: 'any', costGold: 0,
+    consumable: blankConsumable(), maxStacks: 0,
     mods: { hp: 0, damage: 0, armor: 0, attackSpeed: 0, moveSpeed: 0, healthRegen: 0, maxShield: 0, dodgePct: 0, blockPct: 0 },
     elemental: [],
     onHit: blankProc(), onStruck: blankProc(),
@@ -101,9 +120,15 @@ export function formFromDef(
   recipe: { inputs: string[]; costGold: number } | null,
 ): ItemEditorForm {
   const m = def.modifiers ?? {}
+  const c = def.consumable
   return {
-    id: def.id, isNew: false, displayName: def.displayName, description: def.description ?? '',
+    id: def.id, isNew: false, kind: def.kind === 'consumable' ? 'consumable' : 'equipment',
+    displayName: def.displayName, description: def.description ?? '',
     iconKey: def.iconKey, tier: def.tier, category: def.category ?? 'Weapon', slotKind: def.slotKind, costGold: def.costGold,
+    consumable: c
+      ? { type: c.type, amount: c.amount ?? 0, range: c.range ?? 0, split: c.split ?? true, durationSeconds: c.durationSeconds ?? 0 }
+      : blankConsumable(),
+    maxStacks: def.maxStacks ?? 0,
     mods: {
       hp: m.hp ?? 0, damage: m.damage ?? 0, armor: m.armor ?? 0, attackSpeed: m.attackSpeed ?? 0,
       moveSpeed: m.moveSpeed ?? 0, healthRegen: m.healthRegen ?? 0, maxShield: m.maxShield ?? 0,
@@ -146,6 +171,34 @@ function procWireFromForm(p: ProcForm): Record<string, unknown> | undefined {
 }
 
 export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
+  // Fields common to both kinds. `unmodeled` (requiredBuilding/effects) is
+  // preserved for either kind; equipment- and consumable-specific blocks are
+  // added below so a consumable never carries stat/proc data and vice versa.
+  const item: Record<string, unknown> = {
+    ...form.unmodeled,
+    id: form.id, displayName: form.displayName, iconKey: form.iconKey || form.id,
+    kind: form.kind, tier: form.tier, category: form.category, slotKind: form.slotKind,
+    costGold: form.costGold,
+  }
+  if (form.description) item.description = form.description
+  if (form.allowedUnitTypes.length > 0) item.allowedUnitTypes = form.allowedUnitTypes
+
+  if (form.kind === 'consumable') {
+    const c = form.consumable
+    const consumable: Record<string, unknown> = { type: c.type }
+    if (c.amount) consumable.amount = c.amount
+    if (c.range) consumable.range = c.range
+    // split is always sent: absent defaults to true server-side, so an
+    // unchecked (false) box would be indistinguishable from "not set".
+    consumable.split = c.split
+    if (c.durationSeconds) consumable.durationSeconds = c.durationSeconds
+    item.consumable = consumable
+    if (form.maxStacks > 0) item.maxStacks = form.maxStacks
+    // Consumables carry no recipe and never join the recipe list.
+    return { item, recipe: null, availability: { ...form.availability, recipeList: false } }
+  }
+
+  // Equipment: stat modifiers, on-hit elemental, and procs.
   const m = form.mods
   const modifiers: Record<string, number> = {}
   if (m.hp) modifiers.hp = m.hp
@@ -160,16 +213,8 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
 
   const elemental = form.elemental.filter((e) => e.amount > 0 && e.type)
 
-  const item: Record<string, unknown> = {
-    ...form.unmodeled,
-    id: form.id, displayName: form.displayName, iconKey: form.iconKey || form.id,
-    kind: 'equipment', tier: form.tier, category: form.category, slotKind: form.slotKind,
-    costGold: form.costGold,
-  }
-  if (form.description) item.description = form.description
   if (Object.keys(modifiers).length > 0) item.modifiers = modifiers
   if (elemental.length > 0) item.onHitElemental = elemental
-  if (form.allowedUnitTypes.length > 0) item.allowedUnitTypes = form.allowedUnitTypes
   const onHit = procWireFromForm(form.onHit)
   if (onHit) item.onHitProc = onHit
   const onStruck = procWireFromForm(form.onStruck)

@@ -306,6 +306,12 @@ func validateItemDef(def *ItemDef) error {
 	if err := validateItemProcRef(def.ID, "onStruckProc", def.OnStruckProc); err != nil {
 		return err
 	}
+	// A consumable's effect must name a type; an empty type is a silent no-op
+	// in applyConsumableToUnitLocked. Unknown types are left to that switch —
+	// validating them here would couple this loader to the effect list.
+	if def.Consumable != nil && def.Consumable.Type == "" {
+		return fmt.Errorf("item %q consumable.type is required", def.ID)
+	}
 	return nil
 }
 
