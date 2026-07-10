@@ -27,13 +27,25 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 // safe to return.
 const serverIconCache = new Map<string, HTMLImageElement>()
 
+// Keys whose server-icon fetch 404'd/errored: getItemAssetImage returns null
+// for these (restoring the caller's placeholder fallback), and the cache entry
+// is evicted so a later successful upload can be picked up after the entry is
+// cleared (page reload, or a future explicit invalidation hook).
+const serverIconFailed = new Set<string>()
+
 export function getItemAssetImage(iconKey: string): HTMLImageElement | null {
   const key = iconKey.toLowerCase()
   const bundled = images.get(key)
   if (bundled) return bundled
+  if (serverIconFailed.has(key)) return null
   const cached = serverIconCache.get(key)
   if (cached) return cached
-  const img = loadImage(`${API_BASE}/catalog/items/${encodeURIComponent(key)}/image`)
+  const img = new Image()
+  img.addEventListener('error', () => {
+    serverIconFailed.add(key)
+    serverIconCache.delete(key)
+  })
+  img.src = `${API_BASE}/catalog/items/${encodeURIComponent(key)}/image`
   serverIconCache.set(key, img)
   return img
 }
