@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -36,7 +37,21 @@ func registerEditorRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/items/", func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/items/")
-		// Task 6 adds POST /items/{id}/image here via a suffix check.
+		if rest, isImage := strings.CutSuffix(id, "/image"); isImage && r.Method == http.MethodPost {
+			data, rerr := io.ReadAll(http.MaxBytesReader(w, r.Body, 256*1024+1))
+			if rerr != nil {
+				writeJSONError(w, http.StatusBadRequest, "read_failed", rerr.Error())
+				return
+			}
+			if err := game.SaveItemIcon(rest, data); err != nil {
+				writeJSONError(w, http.StatusBadRequest, "icon_rejected", err.Error())
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": rest, "status": "icon_saved"})
+			return
+		}
 		if r.Method != http.MethodDelete {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "DELETE only")
 			return

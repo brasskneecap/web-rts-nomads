@@ -71,6 +71,22 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 		})
 	})
 
+	mux.HandleFunc("/catalog/items/", func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/catalog/items/")
+		id, suffix, ok := strings.Cut(rest, "/")
+		if !ok || suffix != "image" || r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		data, found := game.ReadItemIcon(id)
+		if !found {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(data)
+	})
+
 	mux.HandleFunc("/catalog/item-lists", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{

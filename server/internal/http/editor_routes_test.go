@@ -1,7 +1,10 @@
 package httpserver
 
 import (
+	"bytes"
 	"encoding/json"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -104,5 +107,46 @@ func TestItemsRoute_SaveAndDelete(t *testing.T) {
 	defer resp4.Body.Close()
 	if resp4.StatusCode != 404 {
 		t.Fatalf("re-delete expected 404, got %d", resp4.StatusCode)
+	}
+}
+
+func TestItemImageRoutes(t *testing.T) {
+	t.Setenv("ITEM_CATALOG_DIR", t.TempDir())
+	t.Setenv("RECIPE_CATALOG_DIR", t.TempDir())
+	t.Setenv("NEUTRAL_GROUPS_DIR", t.TempDir())
+	srv := newTestRouter(t)
+
+	// Create the item first.
+	body := `{"item":{"id":"img_item","displayName":"Img","iconKey":"img_item","kind":"equipment","tier":"common","slotKind":"any","costGold":1},"recipe":null,"availability":{}}`
+	resp, _ := srv.Client().Post(srv.URL+"/items", "application/json", strings.NewReader(body))
+	resp.Body.Close()
+
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 4, 4)))
+	up, err := srv.Client().Post(srv.URL+"/items/img_item/image", "image/png", bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	defer up.Body.Close()
+	if up.StatusCode != 201 {
+		raw, _ := io.ReadAll(up.Body)
+		t.Fatalf("upload status %d: %s", up.StatusCode, raw)
+	}
+	got, err := srv.Client().Get(srv.URL + "/catalog/items/img_item/image")
+	if err != nil {
+		t.Fatalf("GET image: %v", err)
+	}
+	defer got.Body.Close()
+	if got.StatusCode != 200 || got.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("serve: status %d type %s", got.StatusCode, got.Header.Get("Content-Type"))
+	}
+	// Missing icon → 404.
+	miss, err := srv.Client().Get(srv.URL + "/catalog/items/never_uploaded/image")
+	if err != nil {
+		t.Fatalf("GET missing image: %v", err)
+	}
+	defer miss.Body.Close()
+	if miss.StatusCode != 404 {
+		t.Fatalf("missing icon expected 404, got %d", miss.StatusCode)
 	}
 }

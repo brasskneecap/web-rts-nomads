@@ -1,8 +1,10 @@
 package game
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"image/png"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -139,6 +141,58 @@ func SaveItemDef(def *ItemDef) error {
 	return nil
 }
 
+// maxItemIconBytes caps uploaded icon size (item icons are ~32-64px sprites).
+const maxItemIconBytes = 256 * 1024
+
+// SaveItemIcon validates and stores an uploaded PNG for the item, and forces
+// the item's iconKey to its id so the client's server-URL fallback resolves
+// unambiguously (spec: upload ALWAYS sets iconKey to the item id).
+func SaveItemIcon(id string, data []byte) error {
+	def, ok := getItemDef(id)
+	if !ok {
+		return fmt.Errorf("item %q not found", id)
+	}
+	if len(data) > maxItemIconBytes {
+		return fmt.Errorf("icon exceeds %d bytes", maxItemIconBytes)
+	}
+	if _, err := png.DecodeConfig(bytes.NewReader(data)); err != nil {
+		return fmt.Errorf("icon is not a valid PNG: %w", err)
+	}
+	dir, err := resolveItemsDir()
+	if err != nil {
+		return err
+	}
+	iconDir := filepath.Join(dir, itemIconsSubdirName)
+	if err := os.MkdirAll(iconDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(iconDir, id+".png"), data, 0o644); err != nil {
+		return err
+	}
+	if def.IconKey != id {
+		updated := *def
+		updated.IconKey = id
+		return SaveItemDef(&updated)
+	}
+	return nil
+}
+
+// ReadItemIcon returns the uploaded PNG for id, if any.
+func ReadItemIcon(id string) ([]byte, bool) {
+	if !itemIDPattern.MatchString(id) {
+		return nil, false // also blocks path traversal
+	}
+	dir, err := resolveItemsDir()
+	if err != nil {
+		return nil, false
+	}
+	data, err := os.ReadFile(filepath.Join(dir, itemIconsSubdirName, id+".png"))
+	if err != nil {
+		return nil, false
+	}
+	return data, true
+}
+
 // ItemIsEmbedded reports whether id ships in the embedded catalog.
 func ItemIsEmbedded(id string) bool {
 	_, ok := itemCatalogSingleton[id]
@@ -154,6 +208,12 @@ func DeleteItemOverride(id string) (existed bool, err error) {
 		return false, derr
 	}
 	removed := removeItemOverrideFiles(dir, id)
+	iconErr := os.Remove(filepath.Join(dir, itemIconsSubdirName, id+".png"))
+	if iconErr == nil {
+		removed = true
+	} else if !os.IsNotExist(iconErr) {
+		return removed, iconErr
+	}
 	runtimeItemsMu.Lock()
 	_, inOverlay := runtimeItems[id]
 	delete(runtimeItems, id)

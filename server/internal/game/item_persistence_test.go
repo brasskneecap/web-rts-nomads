@@ -1,7 +1,10 @@
 package game
 
 import (
+	"bytes"
 	"encoding/json"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,5 +204,52 @@ func TestDeleteItemOverride_RemovesFileAndOverlay(t *testing.T) {
 	}
 	if existed, _ := DeleteItemOverride(id); existed {
 		t.Fatal("second delete must report not-existed")
+	}
+}
+
+// tinyPNG renders a 4x4 PNG in memory.
+func tinyPNG(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// TestSaveItemIcon_RoundTripAndIconKeyForce.
+func TestSaveItemIcon_RoundTripAndIconKeyForce(t *testing.T) {
+	const id = "test_icon_item"
+	itemOverlayCleanup(t, id)
+	dir := t.TempDir()
+	t.Setenv("ITEM_CATALOG_DIR", dir)
+	def := &ItemDef{ID: id, DisplayName: "Icon", IconKey: "something_else", Kind: ItemKindEquipment, Tier: ItemTierCommon, SlotKind: "any"}
+	if err := SaveItemDef(def); err != nil {
+		t.Fatalf("save def: %v", err)
+	}
+	data := tinyPNG(t)
+	if err := SaveItemIcon(id, data); err != nil {
+		t.Fatalf("save icon: %v", err)
+	}
+	back, ok := ReadItemIcon(id)
+	if !ok || !bytes.Equal(back, data) {
+		t.Fatalf("icon round-trip failed: ok=%v len=%d", ok, len(back))
+	}
+	// IconKey forced to the item id so the URL mapping is unambiguous.
+	if got, _ := getItemDef(id); got.IconKey != id {
+		t.Errorf("iconKey = %q, want %q", got.IconKey, id)
+	}
+	// Non-PNG rejected.
+	if err := SaveItemIcon(id, []byte("not a png")); err == nil {
+		t.Error("expected PNG validation error")
+	}
+	// Oversize rejected.
+	if err := SaveItemIcon(id, make([]byte, 300*1024)); err == nil {
+		t.Error("expected size-cap error")
+	}
+	// Unknown item rejected.
+	if err := SaveItemIcon("no_such_item_xyz", data); err == nil {
+		t.Error("expected unknown-item error")
 	}
 }
