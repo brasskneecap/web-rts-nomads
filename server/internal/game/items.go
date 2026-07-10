@@ -211,6 +211,11 @@ type ItemDef struct {
 	// referenced proc effect back at the attacker. Same schema, validation,
 	// resolution, and wire marshaling as OnHitProc.
 	OnStruckProc *ItemOnHitProc `json:"onStruckProc,omitempty"`
+
+	// Overridden marks a def sourced from the writable editor overlay rather
+	// than the embedded catalog. Runtime-only provenance for the editor UI —
+	// never authored in embed files (the disk writer always strips it).
+	Overridden bool `json:"overridden,omitempty"`
 }
 
 // itemCatalogSingleton is the package-level item catalog. Populated by a var
@@ -233,8 +238,8 @@ func loadItemCatalog() map[string]*ItemDef {
 			return err
 		}
 		if d.IsDir() {
-			if path == itemListsSubdir {
-				return fs.SkipDir // item lists are loaded separately
+			if path == itemListsSubdir || d.Name() == itemIconsSubdirName {
+				return fs.SkipDir // lists load separately; _icons holds uploaded PNGs
 			}
 			return nil
 		}
@@ -265,8 +270,15 @@ func loadItemCatalog() map[string]*ItemDef {
 }
 
 // getItemDef returns the item definition for the given id, or (nil, false)
-// when the id is not in the catalog. Safe to call after package init.
+// when the id is not in the catalog. Safe to call after package init. The
+// writable editor overlay (runtimeItems) wins over the embedded catalog.
 func getItemDef(id string) (*ItemDef, bool) {
+	runtimeItemsMu.RLock()
+	if def, ok := runtimeItems[id]; ok {
+		runtimeItemsMu.RUnlock()
+		return def, true
+	}
+	runtimeItemsMu.RUnlock()
 	def, ok := itemCatalogSingleton[id]
 	return def, ok
 }
@@ -323,10 +335,21 @@ func validateItemProcRef(itemID, field string, p *ItemOnHitProc) error {
 }
 
 // ListItemDefs returns all item definitions as a deterministically sorted
-// slice (alphabetical by ID). Used by the /catalog/items HTTP route.
+// slice (alphabetical by ID), merging the writable editor overlay
+// (runtimeItems) on top of the embedded catalog. Used by the /catalog/items
+// HTTP route.
 func ListItemDefs() []*ItemDef {
-	defs := make([]*ItemDef, 0, len(itemCatalogSingleton))
-	for _, def := range itemCatalogSingleton {
+	merged := make(map[string]*ItemDef, len(itemCatalogSingleton))
+	for id, def := range itemCatalogSingleton {
+		merged[id] = def
+	}
+	runtimeItemsMu.RLock()
+	for id, def := range runtimeItems {
+		merged[id] = def
+	}
+	runtimeItemsMu.RUnlock()
+	defs := make([]*ItemDef, 0, len(merged))
+	for _, def := range merged {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
