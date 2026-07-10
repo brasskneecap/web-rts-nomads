@@ -4,6 +4,7 @@ const itemGlob = import.meta.glob<string>(
 )
 
 const images = new Map<string, HTMLImageElement>()
+const urlsByKey = new Map<string, string>()
 
 function loadImage(url: string): HTMLImageElement {
   const img = new Image()
@@ -15,10 +16,42 @@ for (const [path, url] of Object.entries(itemGlob)) {
   const match = path.match(/\/([^/]+)\.png$/)
   if (!match) continue
   images.set(match[1].toLowerCase(), loadImage(url))
+  urlsByKey.set(match[1].toLowerCase(), url)
 }
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
+
+// serverIconCache holds lazily-created Images for iconKeys with no bundled
+// asset (editor-uploaded icons served by the Go server). Canvas callers
+// already guard on img.complete/naturalWidth, so a still-loading image is
+// safe to return.
+const serverIconCache = new Map<string, HTMLImageElement>()
+
 export function getItemAssetImage(iconKey: string): HTMLImageElement | null {
-  return images.get(iconKey.toLowerCase()) ?? null
+  const key = iconKey.toLowerCase()
+  const bundled = images.get(key)
+  if (bundled) return bundled
+  const cached = serverIconCache.get(key)
+  if (cached) return cached
+  const img = loadImage(`${API_BASE}/catalog/items/${encodeURIComponent(key)}/image`)
+  serverIconCache.set(key, img)
+  return img
+}
+
+// listItemAssetKeys returns every bundled icon key, sorted — the item
+// editor's gallery picker enumerates these.
+export function listItemAssetKeys(): string[] {
+  return [...images.keys()].sort()
+}
+
+// getItemImageSourceUrl resolves an iconKey to an <img src>: the bundled
+// asset URL when the build contains it, else the server-served uploaded-icon
+// route (finishing the orphaned itemCatalogImages.ts stub, now deleted).
+export function getItemImageSourceUrl(iconKey: string): string {
+  const key = iconKey.toLowerCase()
+  const bundled = urlsByKey.get(key)
+  if (bundled) return bundled
+  return `${API_BASE}/catalog/items/${encodeURIComponent(key)}/image`
 }
 
 // Whether a bundled item asset exists for the given icon key. Assets are globbed
