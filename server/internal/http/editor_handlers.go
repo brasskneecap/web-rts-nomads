@@ -37,6 +37,15 @@ func registerEditorRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/items/", func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/items/")
+		if rest, isAvail := strings.CutSuffix(id, "/availability"); isAvail && r.Method == http.MethodGet {
+			av, found := game.GetItemAvailability(rest)
+			if !found {
+				writeJSONError(w, http.StatusNotFound, "not_found", "no item "+rest)
+				return
+			}
+			writeJSON(w, av)
+			return
+		}
 		if rest, isImage := strings.CutSuffix(id, "/image"); isImage && r.Method == http.MethodPost {
 			data, rerr := io.ReadAll(http.MaxBytesReader(w, r.Body, 256*1024+1))
 			if rerr != nil {

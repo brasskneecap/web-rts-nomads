@@ -202,3 +202,44 @@ func TestDeleteEditorItem_CleansEverythingForEditorCreated(t *testing.T) {
 		}
 	}
 }
+
+// TestGetItemAvailability_ReflectsAllFourSurfaces: after a full-surface save,
+// availability reads back exactly what was requested (weight ≈ requested,
+// rounding tolerance from renormalization).
+func TestGetItemAvailability_ReflectsAllFourSurfaces(t *testing.T) {
+	editorEnv(t)
+	req := EditorItemSaveRequest{
+		Item: ItemDef{ID: "avail_probe", DisplayName: "Probe", IconKey: "avail_probe",
+			Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon", SlotKind: "any", CostGold: 5},
+		Recipe: &EditorRecipeSpec{Inputs: []string{"broad_sword", "fire_ring"}, CostGold: 10},
+		Availability: EditorAvailability{
+			Marketplace: true, WanderingMerchant: false,
+			LootTable:  EditorLootAvailability{Enabled: true, Weight: 20},
+			RecipeList: true,
+		},
+	}
+	if err := SaveEditorItem(req); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, ok := GetItemAvailability("avail_probe")
+	if !ok {
+		t.Fatal("item exists, availability must resolve")
+	}
+	if !got.Marketplace || got.WanderingMerchant {
+		t.Errorf("list flags wrong: %+v", got)
+	}
+	if !got.LootTable.Enabled || got.LootTable.Weight < 15 || got.LootTable.Weight > 25 {
+		t.Errorf("loot flag/weight wrong (want enabled, ~20): %+v", got.LootTable)
+	}
+	if !got.RecipeList {
+		t.Errorf("recipeList flag wrong: %+v", got)
+	}
+	// Unknown item → ok=false.
+	if _, ok := GetItemAvailability("no_such_item_at_all"); ok {
+		t.Error("unknown item must report ok=false")
+	}
+	// A shipped item with no placements reports all-false without error.
+	if av, ok := GetItemAvailability("frost_sword"); !ok || av.Marketplace {
+		t.Errorf("frost_sword: ok=%v av=%+v (crafted-only item, not in marketplace)", ok, av)
+	}
+}

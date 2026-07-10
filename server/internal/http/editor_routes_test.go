@@ -150,3 +150,36 @@ func TestItemImageRoutes(t *testing.T) {
 		t.Fatalf("missing icon expected 404, got %d", miss.StatusCode)
 	}
 }
+
+func TestItemAvailabilityRoute(t *testing.T) {
+	t.Setenv("ITEM_CATALOG_DIR", t.TempDir())
+	t.Setenv("RECIPE_CATALOG_DIR", t.TempDir())
+	t.Setenv("NEUTRAL_GROUPS_DIR", t.TempDir())
+	srv := newTestRouter(t)
+	resp, err := srv.Client().Get(srv.URL + "/items/frost_sword/availability")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	var av struct {
+		Marketplace bool `json:"marketplace"`
+		LootTable   struct {
+			Enabled bool `json:"enabled"`
+			Weight  int  `json:"weight"`
+		} `json:"lootTable"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&av); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	miss, err := srv.Client().Get(srv.URL + "/items/no_such_item/availability")
+	if err != nil {
+		t.Fatalf("GET miss: %v", err)
+	}
+	defer miss.Body.Close()
+	if miss.StatusCode != 404 {
+		t.Fatalf("unknown item expected 404, got %d", miss.StatusCode)
+	}
+}

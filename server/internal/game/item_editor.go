@@ -118,6 +118,37 @@ func SaveEditorItem(req EditorItemSaveRequest) error {
 	return nil
 }
 
+// GetItemAvailability reports where an item is currently placed across the
+// four editor-managed surfaces. ok is false when the item id resolves to no
+// def. Loot weight is the row's current d100 width in the item's
+// category-mapped merchant subtable.
+func GetItemAvailability(id string) (EditorAvailability, bool) {
+	def, ok := getItemDef(id)
+	if !ok {
+		return EditorAvailability{}, false
+	}
+	var av EditorAvailability
+	if list, ok := getItemListDef("marketplace"); ok {
+		av.Marketplace = containsString(list.Items, id)
+	}
+	if list, ok := getItemListDef("wandering_merchant"); ok {
+		av.WanderingMerchant = containsString(list.Items, id)
+	}
+	if sub, ok := getPackagedItem(merchantSubtableForCategory(def.Category)); ok {
+		for _, e := range sub.Entries {
+			if e.Item == id {
+				av.LootTable.Enabled = true
+				av.LootTable.Weight = e.Max - e.Min + 1
+				break
+			}
+		}
+	}
+	if list, ok := getRecipeListDef("druid_recipes_1"); ok {
+		av.RecipeList = containsString(list.Recipes, id)
+	}
+	return av, true
+}
+
 // DeleteEditorItem removes the item override. For editor-created items (not
 // in the embed) it also strips the recipe, list memberships, and loot rows so
 // no dangling references survive (list/recipe validators would reject them at
