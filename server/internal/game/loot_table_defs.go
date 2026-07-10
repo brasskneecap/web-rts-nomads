@@ -50,7 +50,7 @@ type LootSubtableEntry struct {
 // populated; the other slot is its zero value.
 type PackagedItem struct {
 	Kind      PackagedItemKind
-	Resources map[string]int     // resource_bundle only
+	Resources map[string]int      // resource_bundle only
 	Entries   []LootSubtableEntry // item_subtable only
 }
 
@@ -59,8 +59,8 @@ type LootTableDef = []LootTableEntry
 
 // rawPackagedItem mirrors the JSON shape before validation.
 type rawPackagedItem struct {
-	Kind      PackagedItemKind   `json:"kind"`
-	Resources map[string]int     `json:"resources"`
+	Kind      PackagedItemKind    `json:"kind"`
+	Resources map[string]int      `json:"resources"`
 	Entries   []LootSubtableEntry `json:"entries"`
 }
 
@@ -205,14 +205,34 @@ func validateTableRanges(rel, tableID string, entries []LootTableEntry) {
 	}
 }
 
-// getLootTable returns the named top-level loot table, or (nil, false) on miss.
+// getLootTable returns the named top-level loot table, or (nil, false) on
+// miss. Overlay-aware: checks the writable loot-table overlay (see
+// loot_table_persistence.go) before falling back to the embedded catalog.
 func getLootTable(id string) (LootTableDef, bool) {
+	runtimeLootCatalogMu.RLock()
+	if runtimeLootTables != nil {
+		if t, ok := runtimeLootTables[id]; ok {
+			runtimeLootCatalogMu.RUnlock()
+			return t, true
+		}
+	}
+	runtimeLootCatalogMu.RUnlock()
 	t, ok := lootTablesByID[id]
 	return t, ok
 }
 
 // getPackagedItem returns the named packaged item, or (zero, false) on miss.
+// Overlay-aware: checks the writable loot-table overlay before falling back
+// to the embedded catalog.
 func getPackagedItem(id string) (PackagedItem, bool) {
+	runtimeLootCatalogMu.RLock()
+	if runtimePackagedItems != nil {
+		if p, ok := runtimePackagedItems[id]; ok {
+			runtimeLootCatalogMu.RUnlock()
+			return p, true
+		}
+	}
+	runtimeLootCatalogMu.RUnlock()
 	p, ok := packagedItemsByID[id]
 	return p, ok
 }
