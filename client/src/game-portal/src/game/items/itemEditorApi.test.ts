@@ -22,6 +22,11 @@ describe('itemEditorApi', () => {
     await expect(saveEditorItem({ item: { id: 'X' }, recipe: null, availability: { marketplace: false, wanderingMerchant: false, lootTable: { enabled: false, weight: 0 }, recipeList: false } }))
       .rejects.toSatisfy((e: unknown) => e instanceof EditorValidationError && (e as EditorValidationError).serverMessage.includes('must match'))
   })
+  it('saveEditorItem throws a generic Error on non-validation 400s', async () => {
+    stubFetch(400, { error: 'invalid_json', message: 'unexpected end of JSON input' })
+    await expect(saveEditorItem({ item: { id: 'x' }, recipe: null, availability: { marketplace: false, wanderingMerchant: false, lootTable: { enabled: false, weight: 0 }, recipeList: false } }))
+      .rejects.toSatisfy((e: unknown) => e instanceof Error && !(e instanceof EditorValidationError))
+  })
   it('deleteEditorItem returns the status field', async () => {
     stubFetch(200, { id: 'x', status: 'reset' })
     await expect(deleteEditorItem('x')).resolves.toBe('reset')

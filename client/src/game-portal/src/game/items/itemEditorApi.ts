@@ -59,8 +59,11 @@ export async function saveEditorItem(req: EditorSaveRequest): Promise<void> {
     body: JSON.stringify(req),
   })
   if (response.status === 400) {
-    const body = (await response.json().catch(() => null)) as { message?: string } | null
-    throw new EditorValidationError(body?.message ?? 'Validation failed')
+    const body = (await response.json().catch(() => null)) as { error?: string; message?: string } | null
+    if (body?.error === 'validation_failed') {
+      throw new EditorValidationError(body.message ?? 'Validation failed')
+    }
+    throw new Error(body?.message ?? `Bad request (400)`)
   }
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText)
