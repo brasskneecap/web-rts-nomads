@@ -40,7 +40,7 @@ func TestSaveEditorItem_CraftableSyncsRecipe(t *testing.T) {
 	req := EditorItemSaveRequest{
 		Item: ItemDef{ID: "editor_test_blade", DisplayName: "Editor Blade", IconKey: "editor_test_blade",
 			Kind: ItemKindEquipment, Tier: ItemTierRare, Category: "Weapon", SlotKind: "any",
-			CostGold: 120, IsRecipe: true, RecipeCost: 150, Modifiers: &ItemModifiers{Damage: 9},
+			CostGold: 120, IsRecipe: true, RecipeCost: 150, RecipeStarter: true, Modifiers: &ItemModifiers{Damage: 9},
 			OnHitProc: &ItemOnHitProc{Chance: 0.1, Effect: "fire_bolt_ignite"}},
 		Inputs: []string{"broad_sword", "fire_ring"},
 	}
@@ -52,8 +52,8 @@ func TestSaveEditorItem_CraftableSyncsRecipe(t *testing.T) {
 		t.Fatalf("item not registered with craft fields: ok=%v %+v", ok, def)
 	}
 	rec, ok := getRecipeDef("editor_test_blade")
-	if !ok || rec.Output != "editor_test_blade" || rec.CostGold != 150 {
-		t.Fatalf("recipe not synced: ok=%v %+v", ok, rec)
+	if !ok || rec.Output != "editor_test_blade" || rec.CostGold != 150 || !rec.Starter {
+		t.Fatalf("recipe not synced (incl. starter): ok=%v %+v", ok, rec)
 	}
 	if len(rec.Inputs) != 2 || rec.Inputs[0] != "broad_sword" || rec.Inputs[1] != "fire_ring" {
 		t.Errorf("recipe inputs = %v, want [broad_sword fire_ring]", rec.Inputs)

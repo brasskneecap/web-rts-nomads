@@ -200,6 +200,10 @@ type ItemDef struct {
 	// recipe def in sync with this flag.
 	IsRecipe   bool `json:"isRecipe,omitempty"`
 	RecipeCost int  `json:"recipeCost,omitempty"`
+	// RecipeStarter, when the item is craftable, marks its recipe as one every
+	// player has already learned at match start (no shop/unlock needed). Synced
+	// to RecipeDef.Starter by the item editor.
+	RecipeStarter bool `json:"recipeStarter,omitempty"`
 	// RequiredBuilding was historically the building type that gated an
 	// item's purchase. As of per-building-shop-inventories it is preserved
 	// for backward display only and no longer participates in purchase

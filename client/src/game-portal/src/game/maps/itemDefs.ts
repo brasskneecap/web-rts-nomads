@@ -72,6 +72,8 @@ export type ItemDef = {
   isRecipe?: boolean
   /** Gold cost to craft, when isRecipe. */
   recipeCost?: number
+  /** When craftable, whether the recipe is auto-learned by every player. */
+  recipeStarter?: boolean
   /**
    * Building type that must be built and owned for this item to be purchasable.
    * Empty/undefined means no building gate. Drives Shop UI availability and

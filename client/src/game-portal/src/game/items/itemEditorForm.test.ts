@@ -10,13 +10,14 @@ const fireShield: ItemDef = {
 }
 describe('formFromDef / saveRequestFromForm round-trip', () => {
   it('converts fractions to percents and back, and carries craft fields', () => {
-    const form = formFromDef(fireShield, { inputs: ['steel_shield', 'fire_ring'], costGold: 150 })
+    const form = formFromDef(fireShield, { inputs: ['steel_shield', 'fire_ring'], costGold: 150, starter: true })
     expect(form.mods.blockPct).toBe(15)
     expect(form.onStruck.enabled).toBe(true)
     expect(form.onStruck.chancePct).toBe(10)
     expect(form.onStruck.effect).toBe('fire_bolt_ignite')
     expect(form.crafting.isRecipe).toBe(true)
     expect(form.crafting.recipeCost).toBe(150)
+    expect(form.crafting.starter).toBe(true)
     expect(form.crafting.inputs).toEqual(['steel_shield', 'fire_ring'])
     expect(form.isNew).toBe(false)
 
@@ -29,6 +30,7 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     expect(item.onHitProc).toBeUndefined() // disabled proc omitted
     expect(item.isRecipe).toBe(true)
     expect(item.recipeCost).toBe(150)
+    expect(item.recipeStarter).toBe(true)
     expect(req.inputs).toEqual(['steel_shield', 'fire_ring'])
   })
 

@@ -7,6 +7,8 @@ export type RecipeDef = {
   costGold: number
   /** Output item ID produced. */
   output: string
+  /** When true, every player has already learned this recipe at match start. */
+  starter?: boolean
   /**
    * Quality tier, derived server-side from the recipe's catalog subdirectory
    * (common/uncommon/rare/epic/legendary). Drives the Recipe Shop icon —

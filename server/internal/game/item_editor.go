@@ -76,6 +76,7 @@ func SaveEditorItem(req EditorItemSaveRequest) error {
 			Inputs:   req.Inputs,
 			CostGold: item.RecipeCost,
 			Output:   item.ID,
+			Starter:  item.RecipeStarter,
 		}
 		return SaveRecipeDef(recipe)
 	}

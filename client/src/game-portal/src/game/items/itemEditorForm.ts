@@ -64,7 +64,7 @@ export type ItemEditorForm = {
    * Availability (which shops stock it, loot tables) is NOT modeled here — a
    * shop-level concern edited elsewhere; the item only owns its own costs.
    */
-  crafting: { isRecipe: boolean; recipeCost: number; inputs: string[] }
+  crafting: { isRecipe: boolean; recipeCost: number; inputs: string[]; starter: boolean }
   /** Unit types allowed to equip this item. Empty = all unit types. */
   allowedUnitTypes: string[]
   /**
@@ -99,7 +99,7 @@ export function createBlankForm(): ItemEditorForm {
     mods: { hp: 0, damage: 0, armor: 0, attackSpeed: 0, moveSpeed: 0, healthRegen: 0, maxShield: 0, dodgePct: 0, blockPct: 0 },
     elemental: [],
     onHit: blankProc(), onStruck: blankProc(),
-    crafting: { isRecipe: false, recipeCost: 150, inputs: ['', ''] },
+    crafting: { isRecipe: false, recipeCost: 150, inputs: ['', ''], starter: false },
     allowedUnitTypes: [],
     unmodeled: {},
   }
@@ -120,7 +120,7 @@ function procFormFromWire(p: ItemDef['onHitProc']): ProcForm {
 
 export function formFromDef(
   def: ItemDef,
-  recipe: { inputs: string[]; costGold: number } | null,
+  recipe: { inputs: string[]; costGold: number; starter?: boolean } | null,
 ): ItemEditorForm {
   const m = def.modifiers ?? {}
   const c = def.consumable
@@ -147,6 +147,7 @@ export function formFromDef(
       isRecipe: craftable,
       recipeCost: recipe?.costGold ?? def.recipeCost ?? 150,
       inputs: recipe ? [...recipe.inputs] : ['', ''],
+      starter: recipe?.starter ?? def.recipeStarter ?? false,
     },
     allowedUnitTypes: [...(def.allowedUnitTypes ?? [])],
     unmodeled: pickUnmodeled(def),
@@ -197,6 +198,7 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
   if (form.crafting.isRecipe) {
     item.isRecipe = true
     if (form.crafting.recipeCost) item.recipeCost = form.crafting.recipeCost
+    if (form.crafting.starter) item.recipeStarter = true
   }
 
   if (form.kind === 'consumable') {

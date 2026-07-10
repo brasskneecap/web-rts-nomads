@@ -336,6 +336,12 @@
               <label for="ie-recipe-cost">Craft Cost (Gold)</label>
               <input id="ie-recipe-cost" v-model.number="form.crafting.recipeCost" type="number" min="0" />
             </div>
+            <div class="control-group control-group--checkbox">
+              <label for="ie-recipe-starter">
+                <input id="ie-recipe-starter" v-model="form.crafting.starter" type="checkbox" />
+                Automatically learned by every player <span class="field-hint">(no shop unlock needed)</span>
+              </label>
+            </div>
             <div v-for="(_input, idx) in form.crafting.inputs" :key="idx" class="crafting-input-row">
               <div class="control-group">
                 <label :for="`ie-crafting-input-${idx}`">Ingredient {{ idx + 1 }}</label>
@@ -385,7 +391,7 @@ import { getItemImageSourceUrl, listItemAssetKeys } from '@/game/rendering/itemA
 import { TIER_COLORS } from '@/game/items/itemRules'
 
 const items = ref<ItemDef[]>([])            // full catalog, refreshed after saves
-const recipesByOutput = ref(new Map<string, { inputs: string[]; costGold: number }>())
+const recipesByOutput = ref(new Map<string, { inputs: string[]; costGold: number; starter?: boolean }>())
 const procEffects = ref<ProcEffectDef[]>([])
 const loadError = ref('')
 const search = ref('')
@@ -504,8 +510,8 @@ function bindNullable(proc: ProcForm, key: ProcNullableKey, ev: Event) {
 async function reloadCatalog() {
   const [defs, recipes] = await Promise.all([fetchItemDefs(), fetchRecipeDefs().catch(() => [])])
   items.value = defs
-  const map = new Map<string, { inputs: string[]; costGold: number }>()
-  for (const r of recipes) map.set(r.output, { inputs: r.inputs, costGold: r.costGold })
+  const map = new Map<string, { inputs: string[]; costGold: number; starter?: boolean }>()
+  for (const r of recipes) map.set(r.output, { inputs: r.inputs, costGold: r.costGold, starter: r.starter })
   recipesByOutput.value = map
 }
 
