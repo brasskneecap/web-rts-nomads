@@ -74,6 +74,15 @@
               <option v-for="s in SLOT_KIND_OPTIONS" :key="s" :value="s">{{ s }}</option>
             </select>
           </div>
+          <div class="control-group">
+            <label for="ie-allowed-unit-types">Allowed unit types <span class="field-hint">(empty = all units)</span></label>
+            <input
+              id="ie-allowed-unit-types"
+              :value="form.allowedUnitTypes.join(', ')"
+              type="text"
+              @change="onAllowedUnitTypesChanged"
+            />
+          </div>
         </div>
       </section>
 
@@ -307,20 +316,23 @@
             </label>
           </div>
           <template v-if="form.crafting.enabled">
-            <div class="control-group">
-              <label for="ie-crafting-input-a">Input A</label>
-              <select id="ie-crafting-input-a" v-model="form.crafting.inputA">
-                <option value="" disabled>Select an item…</option>
-                <option v-for="d in allEquipmentItems" :key="d.id" :value="d.id">{{ d.displayName }} ({{ d.id }})</option>
-              </select>
+            <div v-for="(_input, idx) in form.crafting.inputs" :key="idx" class="crafting-input-row">
+              <div class="control-group">
+                <label :for="`ie-crafting-input-${idx}`">Input {{ idx + 1 }}</label>
+                <select :id="`ie-crafting-input-${idx}`" v-model="form.crafting.inputs[idx]">
+                  <option value="" disabled>Select an item…</option>
+                  <option v-for="d in allEquipmentItems" :key="d.id" :value="d.id">{{ d.displayName }} ({{ d.id }})</option>
+                </select>
+              </div>
+              <UiButton
+                size="sm"
+                :disabled="form.crafting.inputs.length <= 2"
+                @click="form.crafting.inputs.splice(idx, 1)"
+              >
+                Remove
+              </UiButton>
             </div>
-            <div class="control-group">
-              <label for="ie-crafting-input-b">Input B</label>
-              <select id="ie-crafting-input-b" v-model="form.crafting.inputB">
-                <option value="" disabled>Select an item…</option>
-                <option v-for="d in allEquipmentItems" :key="d.id" :value="d.id">{{ d.displayName }} ({{ d.id }})</option>
-              </select>
-            </div>
+            <UiButton size="sm" @click="form.crafting.inputs.push('')">Add ingredient</UiButton>
             <div class="control-group">
               <label for="ie-crafting-cost">Craft Cost (Gold)</label>
               <input id="ie-crafting-cost" v-model.number="form.crafting.costGold" type="number" min="0" />
@@ -560,6 +572,15 @@ function pickGalleryIcon(key: string) {
 function toggleSection(key: string) {
   openSection.value = openSection.value === key ? '' : key
 }
+
+// Comma-separated text input <-> string[] binding for allowedUnitTypes —
+// mirrors the nullable-override idiom (:value + @change) instead of v-model
+// since the model is an array, not a scalar.
+function onAllowedUnitTypesChanged(ev: Event) {
+  if (!form.value) return
+  const raw = (ev.target as HTMLInputElement).value
+  form.value.allowedUnitTypes = raw.split(',').map((s) => s.trim()).filter(Boolean)
+}
 </script>
 
 <style scoped>
@@ -775,6 +796,16 @@ function toggleSection(key: string) {
   color: #f8fafc;
   padding: 7px 9px;
   font-size: 0.78rem;
+}
+
+.crafting-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.crafting-input-row .control-group {
+  flex: 1;
 }
 
 .proc-block {

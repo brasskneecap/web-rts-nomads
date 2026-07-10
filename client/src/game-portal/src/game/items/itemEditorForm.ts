@@ -45,9 +45,22 @@ export type ItemEditorForm = {
   elemental: { type: string; amount: number }[]
   onHit: ProcForm
   onStruck: ProcForm
-  crafting: { enabled: boolean; inputA: string; inputB: string; costGold: number }
+  crafting: { enabled: boolean; inputs: string[]; costGold: number }
   availability: ItemAvailability
+  /** Unit types allowed to equip this item. Empty = all unit types. */
+  allowedUnitTypes: string[]
+  /**
+   * Fields the editor does not model but must survive an edit round-trip.
+   * Explicit allowlist — never spread the raw def (its proc fields carry
+   * RESOLVED wire values that would re-save as frozen overrides).
+   */
+  unmodeled: Record<string, unknown>
 }
+
+// Fields the editor does not model but must survive an edit round-trip.
+// Explicit allowlist — never spread the raw def (its proc fields carry
+// RESOLVED wire values that would re-save as frozen overrides).
+const UNMODELED_KEYS = ['requiredBuilding', 'effects', 'maxStacks'] as const
 
 const blankProc = (): ProcForm => ({
   enabled: false, effect: '', chancePct: 10,
@@ -62,8 +75,10 @@ export function createBlankForm(): ItemEditorForm {
     mods: { hp: 0, damage: 0, armor: 0, attackSpeed: 0, moveSpeed: 0, healthRegen: 0, maxShield: 0, dodgePct: 0, blockPct: 0 },
     elemental: [],
     onHit: blankProc(), onStruck: blankProc(),
-    crafting: { enabled: false, inputA: '', inputB: '', costGold: 150 },
+    crafting: { enabled: false, inputs: ['', ''], costGold: 150 },
     availability: { marketplace: false, wanderingMerchant: false, lootTable: { enabled: false, weight: 10 }, recipeList: false },
+    allowedUnitTypes: [],
+    unmodeled: {},
   }
 }
 
@@ -97,10 +112,22 @@ export function formFromDef(
     elemental: (def.onHitElemental ?? []).map((e) => ({ ...e })),
     onHit: procFormFromWire(def.onHitProc), onStruck: procFormFromWire(def.onStruckProc),
     crafting: recipe
-      ? { enabled: true, inputA: recipe.inputs[0] ?? '', inputB: recipe.inputs[1] ?? '', costGold: recipe.costGold }
-      : { enabled: false, inputA: '', inputB: '', costGold: 150 },
+      ? { enabled: true, inputs: [...recipe.inputs], costGold: recipe.costGold }
+      : { enabled: false, inputs: ['', ''], costGold: 150 },
     availability: { ...availability, lootTable: { ...availability.lootTable, weight: availability.lootTable.weight || 10 } },
+    allowedUnitTypes: [...(def.allowedUnitTypes ?? [])],
+    unmodeled: pickUnmodeled(def),
   }
+}
+
+// Picks the ALLOWLISTED unmodeled keys present on the def. Never a blind
+// spread — see UNMODELED_KEYS comment.
+function pickUnmodeled(def: ItemDef): Record<string, unknown> {
+  const picked: Record<string, unknown> = {}
+  for (const key of UNMODELED_KEYS) {
+    if (def[key] !== undefined) picked[key] = def[key]
+  }
+  return picked
 }
 
 function procWireFromForm(p: ProcForm): Record<string, unknown> | undefined {
@@ -134,6 +161,7 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
   const elemental = form.elemental.filter((e) => e.amount > 0 && e.type)
 
   const item: Record<string, unknown> = {
+    ...form.unmodeled,
     id: form.id, displayName: form.displayName, iconKey: form.iconKey || form.id,
     kind: 'equipment', tier: form.tier, category: form.category, slotKind: form.slotKind,
     costGold: form.costGold,
@@ -141,6 +169,7 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
   if (form.description) item.description = form.description
   if (Object.keys(modifiers).length > 0) item.modifiers = modifiers
   if (elemental.length > 0) item.onHitElemental = elemental
+  if (form.allowedUnitTypes.length > 0) item.allowedUnitTypes = form.allowedUnitTypes
   const onHit = procWireFromForm(form.onHit)
   if (onHit) item.onHitProc = onHit
   const onStruck = procWireFromForm(form.onStruck)
@@ -149,7 +178,7 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
   return {
     item,
     recipe: form.crafting.enabled
-      ? { inputs: [form.crafting.inputA, form.crafting.inputB], costGold: form.crafting.costGold }
+      ? { inputs: form.crafting.inputs.filter(Boolean), costGold: form.crafting.costGold }
       : null,
     availability: {
       ...form.availability,

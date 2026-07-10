@@ -18,7 +18,7 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     expect(form.onStruck.chancePct).toBe(10)
     expect(form.onStruck.effect).toBe('fire_bolt_ignite')
     expect(form.crafting.enabled).toBe(true)
-    expect(form.crafting.inputA).toBe('steel_shield')
+    expect(form.crafting.inputs).toEqual(['steel_shield', 'fire_ring'])
     expect(form.isNew).toBe(false)
 
     const req = saveRequestFromForm(form)
@@ -59,5 +59,32 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     form.elemental = [{ type: 'fire', amount: 5 }, { type: 'cold', amount: 0 }]
     const item = saveRequestFromForm(form).item as Record<string, any>
     expect(item.onHitElemental).toEqual([{ type: 'fire', amount: 5 }])
+  })
+
+  it('preserves unmodeled fields and 3-input recipes through an edit round-trip', () => {
+    const scimitarish: ItemDef = {
+      id: 'scim', displayName: 'Scim', iconKey: 'scim', kind: 'equipment', tier: 'uncommon',
+      slotKind: 'any', costGold: 0, requiredBuilding: 'marketplace', allowedUnitTypes: ['soldier'],
+    }
+    const form = formFromDef(scimitarish, { marketplace: false, wanderingMerchant: false, lootTable: { enabled: false, weight: 0 }, recipeList: false },
+      { inputs: ['broad_sword', 'broad_sword', 'broad_sword'], costGold: 100 })
+    expect(form.crafting.inputs).toEqual(['broad_sword', 'broad_sword', 'broad_sword'])
+    expect(form.allowedUnitTypes).toEqual(['soldier'])
+    const req = saveRequestFromForm(form)
+    const item = req.item as Record<string, any>
+    expect(item.requiredBuilding).toBe('marketplace')
+    expect(item.allowedUnitTypes).toEqual(['soldier'])
+    expect(req.recipe?.inputs).toEqual(['broad_sword', 'broad_sword', 'broad_sword'])
+  })
+
+  it('never leaks resolved proc wire fields through preservation', () => {
+    const withProc: ItemDef = {
+      id: 'p', displayName: 'P', iconKey: 'p', kind: 'equipment', tier: 'rare', slotKind: 'any', costGold: 0,
+      onHitProc: { chance: 0.1, effect: 'fire_bolt_ignite', damage: 25, damageType: 'fire', projectileID: 'fire_bolt' },
+    }
+    const form = formFromDef(withProc, { marketplace: false, wanderingMerchant: false, lootTable: { enabled: false, weight: 0 }, recipeList: false }, null)
+    const item = saveRequestFromForm(form).item as Record<string, any>
+    expect(item.onHitProc).toEqual({ chance: 0.1, effect: 'fire_bolt_ignite' })
+    expect(item.overridden).toBeUndefined()
   })
 })
