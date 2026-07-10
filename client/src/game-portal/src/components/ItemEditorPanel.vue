@@ -121,7 +121,24 @@
                 <span>Choose an icon</span>
                 <UiButton size="sm" @click="galleryOpen = false">Close</UiButton>
               </div>
-              <div class="icon-gallery__grid">
+              <div class="icon-gallery__filter">
+                <span class="icon-gallery__filter-label">Groups</span>
+                <button
+                  v-for="group in iconGroups"
+                  :key="group.name"
+                  type="button"
+                  class="icon-gallery__chip"
+                  :class="{ 'icon-gallery__chip--on': selectedGroups.has(group.name) }"
+                  @click="toggleGroup(group.name)"
+                >
+                  {{ group.name }} <span class="icon-gallery__chip-count">{{ group.keys.length }}</span>
+                </button>
+                <span class="icon-gallery__filter-actions">
+                  <button type="button" class="icon-gallery__chip" @click="setAllGroups(true)">All</button>
+                  <button type="button" class="icon-gallery__chip" @click="setAllGroups(false)">None</button>
+                </span>
+              </div>
+              <div v-if="galleryKeys.length" class="icon-gallery__grid">
                 <button
                   v-for="key in galleryKeys"
                   :key="key"
@@ -133,6 +150,7 @@
                   <span>{{ key }}</span>
                 </button>
               </div>
+              <p v-else class="icon-gallery__empty">No icon groups selected.</p>
             </div>
           </div>
         </div>
@@ -418,7 +436,7 @@ import { EditorValidationError, deleteEditorItem, fetchItemAvailability, fetchPr
 import type { ProcEffectDef } from '@/game/items/itemEditorApi'
 import { createBlankForm, formFromDef, saveRequestFromForm } from '@/game/items/itemEditorForm'
 import type { ItemEditorForm, ProcForm } from '@/game/items/itemEditorForm'
-import { getItemImageSourceUrl, listItemAssetKeys } from '@/game/rendering/itemAssets'
+import { getItemImageSourceUrl, listIconGroups } from '@/game/rendering/itemAssets'
 import { TIER_COLORS } from '@/game/items/itemRules'
 
 const items = ref<ItemDef[]>([])            // full catalog, refreshed after saves
@@ -434,7 +452,21 @@ const saveError = ref('')                   // EditorValidationError message sho
 const saveOk = ref(false)
 const deleteStatus = ref('')                // transient feedback after removeOrReset
 const galleryOpen = ref(false)
-const galleryKeys = listItemAssetKeys()
+// The icon gallery only surfaces the icon library (assets/icons/**), grouped by
+// subdirectory. Groups start all-selected; toggling a group filters the grid.
+const iconGroups = listIconGroups()
+const selectedGroups = reactive(new Set<string>(iconGroups.map((g) => g.name)))
+const galleryKeys = computed<string[]>(() =>
+  iconGroups.filter((g) => selectedGroups.has(g.name)).flatMap((g) => g.keys),
+)
+function toggleGroup(name: string) {
+  if (selectedGroups.has(name)) selectedGroups.delete(name)
+  else selectedGroups.add(name)
+}
+function setAllGroups(on: boolean) {
+  selectedGroups.clear()
+  if (on) for (const g of iconGroups) selectedGroups.add(g.name)
+}
 const overridesOpen = reactive<{ onHit: boolean; onStruck: boolean }>({ onHit: false, onStruck: false })
 
 const TIER_OPTIONS: ItemTier[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
@@ -827,6 +859,58 @@ function onAllowedUnitTypesChanged(ev: Event) {
   margin-bottom: 10px;
   color: #f8fafc;
   font-weight: 700;
+}
+
+.icon-gallery__filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.icon-gallery__filter-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(148, 163, 184, 0.9);
+  margin-right: 2px;
+}
+
+.icon-gallery__filter-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.icon-gallery__chip {
+  font-size: 0.68rem;
+  color: rgba(226, 232, 240, 0.82);
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.icon-gallery__chip--on {
+  color: #f8fafc;
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
+.icon-gallery__chip-count {
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.icon-gallery__empty {
+  color: rgba(148, 163, 184, 0.9);
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 24px 0;
 }
 
 .icon-gallery__grid {

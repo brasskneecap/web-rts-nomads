@@ -1,12 +1,21 @@
-// Bundled icon sources: the authored item catalog art AND the misc art library
-// (assets/misc/**). Both feed the same keyed maps so a misc icon is selectable
-// in the item editor's gallery AND resolves at render time when assigned to an
-// item. Keys are lowercased basenames; item and misc basenames are disjoint, so
-// neither shadows the other.
-const itemGlob = import.meta.glob<string>(
-  ['../../assets/items/**/*.png', '../../assets/misc/**/*.png'],
-  { eager: true, query: '?url', import: 'default' },
-)
+// Bundled icon sources: the authored item catalog art AND the icon art library
+// (assets/icons/**). Both feed the same keyed maps so an icon-library asset is
+// selectable in the item editor's gallery AND resolves at render time when
+// assigned to an item. Keys are lowercased basenames; item and icon-library
+// basenames are disjoint, so neither shadows the other.
+const itemArtGlob = import.meta.glob<string>(['../../assets/items/**/*.png'], {
+  eager: true,
+  query: '?url',
+  import: 'default',
+})
+// The icon library is organized into groups by top-level subdirectory
+// (assets/icons/<group>/*.png). The editor gallery both enumerates and filters
+// by group, so we keep this glob separate to recover each icon's group.
+const iconLibraryGlob = import.meta.glob<string>(['../../assets/icons/**/*.png'], {
+  eager: true,
+  query: '?url',
+  import: 'default',
+})
 
 const images = new Map<string, HTMLImageElement>()
 const urlsByKey = new Map<string, string>()
@@ -17,11 +26,25 @@ function loadImage(url: string): HTMLImageElement {
   return img
 }
 
-for (const [path, url] of Object.entries(itemGlob)) {
+for (const [path, url] of [...Object.entries(itemArtGlob), ...Object.entries(iconLibraryGlob)]) {
   const match = path.match(/\/([^/]+)\.png$/)
   if (!match) continue
   images.set(match[1].toLowerCase(), loadImage(url))
   urlsByKey.set(match[1].toLowerCase(), url)
+}
+
+// Icon-library keys grouped by their top-level subdirectory under assets/icons/.
+// The editor gallery reads this to offer a per-group filter; item catalog art is
+// intentionally excluded so the gallery only surfaces the icon library.
+const iconKeysByGroup = new Map<string, Set<string>>()
+for (const path of Object.keys(iconLibraryGlob)) {
+  const groupMatch = path.match(/\/assets\/icons\/([^/]+)\//)
+  const nameMatch = path.match(/\/([^/]+)\.png$/)
+  if (!groupMatch || !nameMatch) continue
+  const group = groupMatch[1]
+  const keys = iconKeysByGroup.get(group) ?? new Set<string>()
+  keys.add(nameMatch[1].toLowerCase())
+  iconKeysByGroup.set(group, keys)
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -55,10 +78,26 @@ export function getItemAssetImage(iconKey: string): HTMLImageElement | null {
   return img
 }
 
-// listItemAssetKeys returns every bundled icon key, sorted — the item
-// editor's gallery picker enumerates these.
+// listItemAssetKeys returns every bundled icon key, sorted — both item catalog
+// art and icon-library assets. Used for render-time enumeration and tests.
 export function listItemAssetKeys(): string[] {
   return [...images.keys()].sort()
+}
+
+export interface IconGroup {
+  /** Top-level subdirectory name under assets/icons/ (e.g. "sword", "helm"). */
+  name: string
+  /** Lowercased icon keys in this group, sorted. */
+  keys: string[]
+}
+
+// listIconGroups returns the icon library grouped by subdirectory, sorted by
+// group name with sorted keys. The item editor gallery enumerates these and
+// lets the user filter which groups are shown. Item catalog art is excluded.
+export function listIconGroups(): IconGroup[] {
+  return [...iconKeysByGroup.entries()]
+    .map(([name, keys]) => ({ name, keys: [...keys].sort() }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 // getItemImageSourceUrl resolves an iconKey to an <img src>: the bundled
