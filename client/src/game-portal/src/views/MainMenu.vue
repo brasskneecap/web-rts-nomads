@@ -93,14 +93,15 @@ export const DEFAULTS = {
   fontCqh: 3.2,
   fontCqw: 2.9,
   entries: [
-    // Five entries respaced across the four-plank sign art: labels no longer
-    // align 1:1 with planks until main-menu.png gains a fifth plank. Re-tune
-    // with the sign tuner (localStorage 'webrts.signTuner'='1' + backtick).
+    // The sign art (main-menu.png) has FIVE plank rows at ~6.42% intervals;
+    // the original four tops sat on planks 1-4, so Item Editor takes plank 4
+    // and Settings moves down to plank 5 (75.25 + 6.43). Fine-tune with the
+    // sign tuner (localStorage 'webrts.signTuner'='1' + backtick).
     { label: 'Start Game', to: '/war-room', top: 55.97 },
-    { label: 'Profile', to: '/profile', top: 60.79 },
-    { label: 'Map Editor', to: '/editor', top: 65.61 },
-    { label: 'Item Editor', to: '/item-editor', top: 70.43 },
-    { label: 'Settings', to: '/options', top: 75.25 },
+    { label: 'Profile', to: '/profile', top: 62.34 },
+    { label: 'Map Editor', to: '/editor', top: 68.79 },
+    { label: 'Item Editor', to: '/item-editor', top: 75.25 },
+    { label: 'Settings', to: '/options', top: 81.68 },
   ] as Entry[],
 }
 export const MENU_ENTRIES = DEFAULTS.entries

@@ -11,6 +11,7 @@ describe('main menu entries', () => {
     const tops = MENU_ENTRIES.map((e) => e.top)
     expect([...tops].sort((a, b) => a - b)).toEqual(tops)
     expect(tops[0]).toBeCloseTo(55.97, 1)
-    expect(tops[4]).toBeCloseTo(75.25, 1)
+    // Settings sits on the fifth plank (plank pitch ~6.42%: 75.25 + 6.43).
+    expect(tops[4]).toBeCloseTo(81.68, 1)
   })
 })
