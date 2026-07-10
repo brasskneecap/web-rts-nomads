@@ -75,3 +75,19 @@ func TestValidateProcEffectDef(t *testing.T) {
 		t.Error("expected error for negative projectileScale, got nil")
 	}
 }
+
+// TestListProcEffectDefs_SortedAndComplete.
+func TestListProcEffectDefs_SortedAndComplete(t *testing.T) {
+	defs := ListProcEffectDefs()
+	if len(defs) < 3 {
+		t.Fatalf("expected >=3 shipped proc effects, got %d", len(defs))
+	}
+	for i := 1; i < len(defs); i++ {
+		if defs[i-1].ID >= defs[i].ID {
+			t.Fatalf("not sorted: %q before %q", defs[i-1].ID, defs[i].ID)
+		}
+	}
+	if _, ok := getProcEffectDef(defs[0].ID); !ok {
+		t.Error("listed def not resolvable")
+	}
+}

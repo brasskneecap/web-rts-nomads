@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"sort"
 	"strings"
 )
 
@@ -135,4 +136,15 @@ func validateProcEffectDef(def *ProcEffectDef) error {
 func getProcEffectDef(id string) (ProcEffectDef, bool) {
 	def, ok := procEffectDefsByID[id]
 	return def, ok
+}
+
+// ListProcEffectDefs returns every registered proc effect sorted by id —
+// consumed by the /catalog/procs route for the item editor's effect picker.
+func ListProcEffectDefs() []ProcEffectDef {
+	defs := make([]ProcEffectDef, 0, len(procEffectDefsByID))
+	for _, def := range procEffectDefsByID {
+		defs = append(defs, def)
+	}
+	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
+	return defs
 }
