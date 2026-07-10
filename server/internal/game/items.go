@@ -414,6 +414,12 @@ func validateItemListDef(def *ItemListDef) error {
 }
 
 func getItemListDef(id string) (*ItemListDef, bool) {
+	runtimeItemListsMu.RLock()
+	if def, ok := runtimeItemLists[id]; ok {
+		runtimeItemListsMu.RUnlock()
+		return def, true
+	}
+	runtimeItemListsMu.RUnlock()
 	def, ok := itemListCatalogSingleton[id]
 	return def, ok
 }
@@ -421,8 +427,17 @@ func getItemListDef(id string) (*ItemListDef, bool) {
 // ListItemListDefs returns all item-list defs sorted by ID (for the HTTP
 // route and deterministic iteration).
 func ListItemListDefs() []*ItemListDef {
-	defs := make([]*ItemListDef, 0, len(itemListCatalogSingleton))
-	for _, def := range itemListCatalogSingleton {
+	merged := make(map[string]*ItemListDef, len(itemListCatalogSingleton))
+	for id, def := range itemListCatalogSingleton {
+		merged[id] = def
+	}
+	runtimeItemListsMu.RLock()
+	for id, def := range runtimeItemLists {
+		merged[id] = def
+	}
+	runtimeItemListsMu.RUnlock()
+	defs := make([]*ItemListDef, 0, len(merged))
+	for _, def := range merged {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })

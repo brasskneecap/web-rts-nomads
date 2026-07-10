@@ -146,6 +146,12 @@ func starterRecipeIDs() []string {
 }
 
 func getRecipeDef(id string) (*RecipeDef, bool) {
+	runtimeRecipesMu.RLock()
+	if def, ok := runtimeRecipes[id]; ok {
+		runtimeRecipesMu.RUnlock()
+		return def, true
+	}
+	runtimeRecipesMu.RUnlock()
 	def, ok := recipeCatalogSingleton[id]
 	return def, ok
 }
@@ -153,8 +159,17 @@ func getRecipeDef(id string) (*RecipeDef, bool) {
 // ListRecipeDefs returns all recipe defs sorted by ID (for the HTTP route and
 // deterministic iteration).
 func ListRecipeDefs() []*RecipeDef {
-	defs := make([]*RecipeDef, 0, len(recipeCatalogSingleton))
-	for _, def := range recipeCatalogSingleton {
+	merged := make(map[string]*RecipeDef, len(recipeCatalogSingleton))
+	for id, def := range recipeCatalogSingleton {
+		merged[id] = def
+	}
+	runtimeRecipesMu.RLock()
+	for id, def := range runtimeRecipes {
+		merged[id] = def
+	}
+	runtimeRecipesMu.RUnlock()
+	defs := make([]*RecipeDef, 0, len(merged))
+	for _, def := range merged {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
@@ -218,6 +233,12 @@ func validateRecipeListDef(def *RecipeListDef) error {
 }
 
 func getRecipeListDef(id string) (*RecipeListDef, bool) {
+	runtimeRecipeListsMu.RLock()
+	if def, ok := runtimeRecipeLists[id]; ok {
+		runtimeRecipeListsMu.RUnlock()
+		return def, true
+	}
+	runtimeRecipeListsMu.RUnlock()
 	def, ok := recipeListCatalogSingleton[id]
 	return def, ok
 }
@@ -225,8 +246,17 @@ func getRecipeListDef(id string) (*RecipeListDef, bool) {
 // ListRecipeListDefs returns all recipe-list defs sorted by ID (for the HTTP
 // route and deterministic iteration).
 func ListRecipeListDefs() []*RecipeListDef {
-	defs := make([]*RecipeListDef, 0, len(recipeListCatalogSingleton))
-	for _, def := range recipeListCatalogSingleton {
+	merged := make(map[string]*RecipeListDef, len(recipeListCatalogSingleton))
+	for id, def := range recipeListCatalogSingleton {
+		merged[id] = def
+	}
+	runtimeRecipeListsMu.RLock()
+	for id, def := range runtimeRecipeLists {
+		merged[id] = def
+	}
+	runtimeRecipeListsMu.RUnlock()
+	defs := make([]*RecipeListDef, 0, len(merged))
+	for _, def := range merged {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
