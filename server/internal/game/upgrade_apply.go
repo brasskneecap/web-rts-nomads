@@ -25,7 +25,7 @@ func (s *GameState) applyUpgradeLocked(playerID, upgradeID string, targetUnitID 
 			s.addUnitXPLocked(unit, def.Effect.Amount)
 		}
 	case upgradeEffectTypeEquipment:
-		if itemDef, ok := itemCatalogSingleton[def.Effect.ItemID]; ok {
+		if itemDef, ok := getItemDef(def.Effect.ItemID); ok {
 			s.addItemToVaultLocked(player, itemDef)
 		}
 	case upgradeEffectTypeResources:

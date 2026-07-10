@@ -911,9 +911,10 @@ type GameState struct {
 	nextOrderID        int64
 	nextItemInstanceID int64
 
-	// itemCatalog is the per-match copy of the item definitions, pointing at
-	// the package-level itemCatalogSingleton loaded at init time. Never mutated
-	// after assignment in NewGameStateWithSeed.
+	// itemCatalog is the per-match snapshot of the item definitions, built by
+	// newMatchItemCatalog() from the merged embed+editor-overlay view at match
+	// creation. Never mutated after assignment in NewGameStateWithSeed — a
+	// running match deliberately does not see mid-match editor saves.
 	itemCatalog map[string]*ItemDef
 
 	// matchSeed is the root seed for all per-match RNG streams. Log it on match
@@ -1268,6 +1269,19 @@ func NewGameState(mapConfig protocol.MapConfig) *GameState {
 	return NewGameStateWithSeed(mapConfig, newMatchSeed())
 }
 
+// newMatchItemCatalog builds the per-match item catalog snapshot from the
+// merged view (embed + editor overlay) at match-creation time. A running
+// match never sees mid-match editor saves (the map is copied once here and
+// never mutated again), but new matches see everything the editor has
+// registered so far — editor-authored items are equippable/purchasable.
+func newMatchItemCatalog() map[string]*ItemDef {
+	catalog := make(map[string]*ItemDef, 64)
+	for _, def := range ListItemDefs() {
+		catalog[def.ID] = def
+	}
+	return catalog
+}
+
 // NewGameStateWithSeed creates a GameState whose RNG streams are derived from
 // seed. Use seed == 0 only in tests where you intentionally want the zero seed.
 // Each stream gets a distinct salt so they advance independently.
@@ -1304,7 +1318,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		guardianAuraCache:         map[int]guardianAuraValue{},
 		objectiveUnreachableUntil: map[string]int{},
 		pendingDeathsSet:          map[int]bool{},
-		itemCatalog:               itemCatalogSingleton,
+		itemCatalog:               newMatchItemCatalog(),
 		FOW:                       map[string]*PlayerFOW{},
 		workersInsideResource:     map[string]int{},
 		joinedTargetLabels:        map[string]bool{},

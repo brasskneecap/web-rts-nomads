@@ -162,6 +162,26 @@ func TestSaveItemDef_WritesTierPathAndRegistersLive(t *testing.T) {
 	}
 }
 
+// TestItemOverlay_VisibleToNewMatchCatalog: an overlay item registered before
+// GameState construction appears in the per-match item catalog snapshot, so
+// it is equippable/purchasable in NEW matches (running matches keep their
+// snapshot — that semantics is deliberate and unchanged).
+func TestItemOverlay_VisibleToNewMatchCatalog(t *testing.T) {
+	const id = "test_match_visible_item"
+	itemOverlayCleanup(t, id)
+	reg := &ItemDef{ID: id, DisplayName: "Match Visible", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon, SlotKind: "any", Overridden: true}
+	runtimeItemsMu.Lock()
+	runtimeItems[id] = reg
+	runtimeItemsMu.Unlock()
+
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0x17E4)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.itemCatalog[id]; !ok {
+		t.Fatal("overlay item missing from the per-match catalog snapshot — editor items would be unusable in matches")
+	}
+}
+
 // TestDeleteItemOverride_RemovesFileAndOverlay.
 func TestDeleteItemOverride_RemovesFileAndOverlay(t *testing.T) {
 	const id = "test_delete_item"
