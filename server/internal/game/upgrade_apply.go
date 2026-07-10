@@ -25,7 +25,10 @@ func (s *GameState) applyUpgradeLocked(playerID, upgradeID string, targetUnitID 
 			s.addUnitXPLocked(unit, def.Effect.Amount)
 		}
 	case upgradeEffectTypeEquipment:
-		if itemDef, ok := getItemDef(def.Effect.ItemID); ok {
+		// Read the per-match snapshot (not the live overlay) like every other
+		// in-match item lookup: a running match must never see editor saves
+		// that landed after match creation.
+		if itemDef, ok := s.itemCatalog[def.Effect.ItemID]; ok {
 			s.addItemToVaultLocked(player, itemDef)
 		}
 	case upgradeEffectTypeResources:

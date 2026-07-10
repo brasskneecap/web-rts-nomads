@@ -1,6 +1,7 @@
 package game
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -109,6 +110,53 @@ func TestLootOverlay_LoadFromFileOverridesEmbed(t *testing.T) {
 	widths := subtableWidths(t, "merchant_armor")
 	if _, present := widths["elven_cloak"]; !present {
 		t.Error("persisted membership lost across simulated restart")
+	}
+}
+
+// TestSetMerchantItemAvailability_RefusesToEmptyLastItem: removing the final
+// entry of a subtable must fail validation-style before any write, never
+// producing an empty (broken) subtable. Constructed by draining a real
+// shipped subtable (merchant_accessories, 3 entries) down to one via the
+// public API, so this exercises the actual guard path, not just a synthetic
+// struct.
+func TestSetMerchantItemAvailability_RefusesToEmptyLastItem(t *testing.T) {
+	lootOverlayCleanup(t)
+	dir := t.TempDir()
+	t.Setenv("NEUTRAL_GROUPS_DIR", dir)
+
+	before := subtableWidths(t, "merchant_accessories")
+	items := make([]string, 0, len(before))
+	for item := range before {
+		items = append(items, item)
+	}
+	if len(items) < 2 {
+		t.Fatalf("setup expects merchant_accessories to start with >=2 entries, got %d", len(items))
+	}
+	// Drain down to a single entry.
+	for _, item := range items[1:] {
+		if err := SetMerchantItemAvailability(item, "Accessory", false, 0); err != nil {
+			t.Fatalf("drain %q: %v", item, err)
+		}
+	}
+	last := items[0]
+	widths := subtableWidths(t, "merchant_accessories")
+	if len(widths) != 1 {
+		t.Fatalf("setup: expected subtable drained to 1 entry, got %d (%v)", len(widths), widths)
+	}
+	err := SetMerchantItemAvailability(last, "Accessory", false, 0)
+	if err == nil {
+		t.Fatal("expected error removing the last item in a subtable")
+	}
+	if !errors.Is(err, ErrLastMerchantItem) {
+		t.Errorf("expected ErrLastMerchantItem, got %v", err)
+	}
+	// Subtable must be untouched by the rejected call.
+	after := subtableWidths(t, "merchant_accessories")
+	if len(after) != 1 {
+		t.Fatalf("subtable mutated despite rejected removal: %v", after)
+	}
+	if _, present := after[last]; !present {
+		t.Errorf("last item %q missing after rejected removal", last)
 	}
 }
 

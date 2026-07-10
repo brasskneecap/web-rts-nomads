@@ -253,3 +253,34 @@ func TestSaveItemIcon_RoundTripAndIconKeyForce(t *testing.T) {
 		t.Error("expected unknown-item error")
 	}
 }
+
+// TestDeleteItemOverride_RejectsTraversalIDs: ids that fail the pattern are
+// never joined into filesystem paths (Windows backslash traversal included).
+func TestDeleteItemOverride_RejectsTraversalIDs(t *testing.T) {
+	t.Setenv("ITEM_CATALOG_DIR", t.TempDir())
+	for _, id := range []string{`..\..\evil`, "../evil", "a/b", `a\b`, "UPPER", ""} {
+		if existed, err := DeleteItemOverride(id); err != nil || existed {
+			t.Errorf("id %q: want (false,nil), got (%v,%v)", id, existed, err)
+		}
+	}
+	if err := SaveItemIcon(`..\evil`, []byte("x")); err == nil {
+		t.Error("SaveItemIcon must reject pattern-failing ids")
+	}
+}
+
+// TestUpgradeGrant_UsesMatchSnapshotNotLiveOverlay: an item added to the live
+// overlay AFTER match creation is not resolvable by in-match upgrade grants —
+// running matches are isolated; new matches pick it up via the snapshot.
+func TestUpgradeGrant_UsesMatchSnapshotNotLiveOverlay(t *testing.T) {
+	const id = "test_post_match_item"
+	itemOverlayCleanup(t, id)
+	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0x15EA)
+	runtimeItemsMu.Lock()
+	runtimeItems[id] = &ItemDef{ID: id, DisplayName: "Late", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon, SlotKind: "any", Overridden: true}
+	runtimeItemsMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.itemCatalog[id]; ok {
+		t.Fatal("snapshot must not see post-creation overlay items")
+	}
+}

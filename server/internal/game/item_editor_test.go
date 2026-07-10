@@ -5,6 +5,54 @@ import (
 	"testing"
 )
 
+// TestDeleteEditorItem_LastMerchantItemIsNonFatal: if the deleted item is the
+// sole surviving entry in a merchant subtable, the cleanup sweep's removal
+// call fails with ErrLastMerchantItem — DeleteEditorItem must treat that as
+// non-fatal (log + continue) rather than aborting the whole delete, per the
+// SetMerchantItemAvailability guard added to keep subtables non-empty.
+func TestDeleteEditorItem_LastMerchantItemIsNonFatal(t *testing.T) {
+	editorEnv(t)
+	const id = "solo_accessory_item"
+	req := EditorItemSaveRequest{
+		Item: ItemDef{ID: id, DisplayName: "Solo", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Accessory", SlotKind: "any"},
+		Availability: EditorAvailability{
+			LootTable: EditorLootAvailability{Enabled: true, Weight: 10},
+		},
+	}
+	if err := SaveEditorItem(req); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	// Drain every pre-existing merchant_accessories entry so id ends up the
+	// sole survivor in the subtable.
+	pi, ok := getPackagedItem("merchant_accessories")
+	if !ok {
+		t.Fatal("merchant_accessories subtable missing")
+	}
+	for _, e := range pi.Entries {
+		if e.Item == id {
+			continue
+		}
+		if err := SetMerchantItemAvailability(e.Item, "Accessory", false, 0); err != nil {
+			t.Fatalf("drain %q: %v", e.Item, err)
+		}
+	}
+	if pi, _ := getPackagedItem("merchant_accessories"); len(pi.Entries) != 1 || pi.Entries[0].Item != id {
+		t.Fatalf("setup: expected subtable drained to just %q, got %+v", id, pi.Entries)
+	}
+
+	existed, err := DeleteEditorItem(id)
+	if err != nil || !existed {
+		t.Fatalf("delete must succeed despite the last-item guard: existed=%v err=%v", existed, err)
+	}
+	if _, ok := getItemDef(id); ok {
+		t.Error("item override must still be removed")
+	}
+	// The dangling loot row is the accepted tradeoff — it survives deletion.
+	if pi, _ := getPackagedItem("merchant_accessories"); len(pi.Entries) != 1 || pi.Entries[0].Item != id {
+		t.Errorf("expected dangling loot row for %q to survive, got %+v", id, pi.Entries)
+	}
+}
+
 // editorEnv points every writable dir at temp dirs and cleans all overlays.
 func editorEnv(t *testing.T) {
 	t.Helper()

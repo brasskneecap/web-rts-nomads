@@ -3,6 +3,7 @@ package game
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 )
 
 // ─── Editor orchestration: one save request → item + recipe + availability ──
@@ -142,8 +143,21 @@ func DeleteEditorItem(id string) (existed bool, err error) {
 		return true, lerr
 	}
 	// Sweep every merchant subtable (category may have changed since save).
+	// ErrLastMerchantItem is non-fatal here: it means id is the sole entry in
+	// that subtable, so removing it would leave an empty subtable, which
+	// SetMerchantItemAvailability refuses to persist. We accept the dangling
+	// loot row rather than abort the whole delete over it: the stale
+	// reference to the now-deleted item is validated away at the next
+	// startup load (loadPersistedLootTablesFromFile rejects a catalog that
+	// references an unknown item and falls back to the trusted embedded
+	// catalog), so it cannot ship as broken state — a single-operator dev
+	// tool, same tradeoff as the loot-table live-ness decision above.
 	for _, sub := range []string{"Weapon", "Armor", "Accessory", "Consumable"} {
 		if lerr := SetMerchantItemAvailability(id, sub, false, 0); lerr != nil {
+			if errors.Is(lerr, ErrLastMerchantItem) {
+				slog.Warn("delete editor item: left dangling loot row (last item in subtable)", "id", id, "subtable", sub, "err", lerr)
+				continue
+			}
 			return true, lerr
 		}
 	}

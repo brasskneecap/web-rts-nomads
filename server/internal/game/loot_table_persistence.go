@@ -2,6 +2,7 @@ package game
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,12 @@ import (
 	"strconv"
 	"sync"
 )
+
+// ErrLastMerchantItem is returned by SetMerchantItemAvailability when a
+// removal would leave its subtable empty. Callers that perform best-effort
+// cleanup sweeps (DeleteEditorItem) match on this with errors.Is to treat it
+// as non-fatal.
+var ErrLastMerchantItem = errors.New("cannot remove: last item in merchant subtable")
 
 // ─── Writable loot-table overlay (single-file catalog) ──────────────────────
 //
@@ -170,6 +177,9 @@ func SetMerchantItemAvailability(itemID, category string, enabled bool, weight i
 			idx = i
 			break
 		}
+	}
+	if !enabled && idx >= 0 && len(sub.Entries) == 1 {
+		return fmt.Errorf("cannot remove %q: it is the last item in %s (merchant subtables cannot be empty): %w", itemID, subtableID, ErrLastMerchantItem)
 	}
 	if enabled == (idx >= 0) {
 		// Already in desired membership state. On enable, still allow weight

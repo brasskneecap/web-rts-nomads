@@ -148,6 +148,9 @@ const maxItemIconBytes = 256 * 1024
 // the item's iconKey to its id so the client's server-URL fallback resolves
 // unambiguously (spec: upload ALWAYS sets iconKey to the item id).
 func SaveItemIcon(id string, data []byte) error {
+	if !itemIDPattern.MatchString(id) {
+		return fmt.Errorf("item id %q must match %s", id, itemIDPattern)
+	}
 	def, ok := getItemDef(id)
 	if !ok {
 		return fmt.Errorf("item %q not found", id)
@@ -203,6 +206,9 @@ func ItemIsEmbedded(id string) bool {
 // For embedded items this is reset-to-default; for editor-created items it is
 // a true delete. existed reports whether any override was found.
 func DeleteItemOverride(id string) (existed bool, err error) {
+	if !itemIDPattern.MatchString(id) {
+		return false, nil // never a valid override id; also blocks path traversal
+	}
 	dir, derr := resolveItemsDir()
 	if derr != nil {
 		return false, derr

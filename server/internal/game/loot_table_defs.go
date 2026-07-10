@@ -208,6 +208,14 @@ func validateTableRanges(rel, tableID string, entries []LootTableEntry) {
 // getLootTable returns the named top-level loot table, or (nil, false) on
 // miss. Overlay-aware: checks the writable loot-table overlay (see
 // loot_table_persistence.go) before falling back to the embedded catalog.
+//
+// DELIBERATE LIVE-NESS: unlike the per-match item-catalog snapshot
+// (newMatchItemCatalog), loot tables are read live under s.mu. Shop stocking
+// samples them once at match start; only mid-match camp-drop rolls could
+// observe an editor save landing mid-match — accepted for a single-operator
+// dev tool (matches the map editor's live-registration semantics). If loot
+// isolation is ever needed, snapshot the effective catalog per match like
+// items do.
 func getLootTable(id string) (LootTableDef, bool) {
 	runtimeLootCatalogMu.RLock()
 	if runtimeLootTables != nil {

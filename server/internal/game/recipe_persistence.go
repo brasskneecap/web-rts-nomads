@@ -246,7 +246,7 @@ func SaveRecipeListDef(def *RecipeListDef) error {
 
 // ensureItemListMembership adds/removes itemID in the named list and saves the
 // whole list. Idempotent: no write when already in the desired state. An
-// unknown list is created on add (empty name = title-cased id).
+// unknown list is created on add (name defaults to the raw list id).
 func ensureItemListMembership(listID, itemID string, member bool) error {
 	cur, ok := getItemListDef(listID)
 	var list ItemListDef
@@ -278,7 +278,8 @@ func ensureItemListMembership(listID, itemID string, member bool) error {
 	return SaveItemListDef(&list)
 }
 
-// ensureRecipeListMembership — mirror for recipe lists.
+// ensureRecipeListMembership — mirror for recipe lists (name defaults to the
+// raw list id on create).
 func ensureRecipeListMembership(listID, recipeID string, member bool) error {
 	cur, ok := getRecipeListDef(listID)
 	var list RecipeListDef
