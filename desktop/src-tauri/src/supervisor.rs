@@ -200,20 +200,23 @@ pub fn spawn_and_wait_ready(
     if let Some(mode) = selftest {
         cmd.env("NOMADS_SELFTEST", mode);
     }
-    // Map editor save path: maps are embedded into the Go binary at
-    // compile time (read path), but writing back to disk requires a real
-    // directory. The Go server probes MAP_CATALOG_DIR first. When this
-    // binary is run from a packaged release in <repo>/desktop/src-tauri/
-    // target/release/, walk up to the repo root and look for the maps
-    // directory there. If found, set the env so the editor's save path
-    // works. If not found (binary distributed to a friend's machine
-    // without the repo), the editor save is unavailable but reads still
-    // work — same UX as before this fix.
-    if let Some(maps_dir) = locate_repo_maps_dir() {
-        info!("supervisor: MAP_CATALOG_DIR={}", maps_dir.display());
-        cmd.env("MAP_CATALOG_DIR", maps_dir);
+    // In-app editor save paths: the map and item editors embed their catalogs
+    // into the Go binary at compile time (read path), but writing saves back
+    // to disk requires real directories. The Go server probes one env var per
+    // catalog (MAP_CATALOG_DIR, ITEM_CATALOG_DIR, RECIPE_CATALOG_DIR — items +
+    // their recipes — and NEUTRAL_GROUPS_DIR for loot-table availability
+    // edits). When this binary runs from a packaged release under the repo,
+    // walk up to find the server catalog dir and point all four env vars at
+    // its subdirs so every editor's save works. If not found (binary shipped
+    // without the repo), editor saves are unavailable but reads still work.
+    if let Some(catalog_dir) = locate_repo_catalog_dir() {
+        info!("supervisor: catalog editor dirs under {}", catalog_dir.display());
+        cmd.env("MAP_CATALOG_DIR", catalog_dir.join("maps"));
+        cmd.env("ITEM_CATALOG_DIR", catalog_dir.join("items"));
+        cmd.env("RECIPE_CATALOG_DIR", catalog_dir.join("recipes"));
+        cmd.env("NEUTRAL_GROUPS_DIR", catalog_dir.join("neutral_groups"));
     } else {
-        info!("supervisor: no repo maps dir found near binary; map editor save will be unavailable");
+        info!("supervisor: no repo catalog dir found near binary; map + item editor saves will be unavailable");
     }
 
     // Windows: the Go binary is built with the console subsystem, so without
@@ -368,11 +371,18 @@ pub fn parse_ready_line(line: &str) -> Option<ReadyInfo> {
 /// `server/internal/game/catalog/maps`. The walk is bounded so we don't
 /// accidentally hit a root-level match on a redistributed binary that
 /// happens to live deep in a user's filesystem.
-fn locate_repo_maps_dir() -> Option<PathBuf> {
+// Locates the repo's server catalog directory (parent of maps/, items/,
+// recipes/, neutral_groups/) by walking up from the running binary. The
+// in-app editors (map + item) embed their catalogs at compile time for reads
+// but need a real directory to write saves back to; the Go server probes the
+// per-catalog env vars set from this. Returns None when the binary is far from
+// the repo (e.g. distributed to a friend), in which case editor saves are
+// unavailable but reads still work.
+fn locate_repo_catalog_dir() -> Option<PathBuf> {
     let exe = env::current_exe().ok()?;
     let mut dir = exe.parent()?.to_path_buf();
     for _ in 0..6 {
-        let candidate = dir.join("server").join("internal").join("game").join("catalog").join("maps");
+        let candidate = dir.join("server").join("internal").join("game").join("catalog");
         if candidate.is_dir() {
             return Some(candidate);
         }
