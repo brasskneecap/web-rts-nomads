@@ -323,11 +323,13 @@
           Crafting
         </button>
         <div v-if="openSection === 'crafting'" class="editor-section__body">
-          <div class="control-group control-group--checkbox">
-            <label for="ie-crafting-enabled">
-              <input id="ie-crafting-enabled" v-model="form.crafting.isRecipe" type="checkbox" />
-              Craftable at the Artificer <span class="field-hint">(a recipe unlocks this item)</span>
-            </label>
+          <div class="control-group">
+            <label for="ie-crafting-source">Crafting source</label>
+            <select id="ie-crafting-source" v-model="craftingSource">
+              <option value="none">Not craftable</option>
+              <option value="recipe">Recipe (ingredients at the Artificer)</option>
+            </select>
+            <span class="field-hint">Some craftables aren't recipe-based — those stay "Not craftable" here and are set up elsewhere.</span>
           </div>
           <template v-if="form.crafting.isRecipe">
             <div class="control-group">
@@ -444,6 +446,16 @@ const filteredItems = computed(() =>
 // Crafting inputs stay equipment-only and are never constrained by the
 // sidebar search (a leftover search term must not truncate the dropdown).
 const allEquipmentItems = computed(() => items.value.filter((d) => d.kind === 'equipment'))
+
+// Crafting source select ↔ the item's isRecipe flag. Modeled as an explicit
+// choice ("Not craftable" / "Recipe") rather than a bare checkbox so future
+// non-recipe crafting sources can be added as options without reworking the UI.
+const craftingSource = computed<'none' | 'recipe'>({
+  get: () => (form.value?.crafting.isRecipe ? 'recipe' : 'none'),
+  set: (v) => {
+    if (form.value) form.value.crafting.isRecipe = v === 'recipe'
+  },
+})
 
 // group by tier for the sidebar; TIER_COLORS drives the badge color.
 const groupedItems = computed(() => {
