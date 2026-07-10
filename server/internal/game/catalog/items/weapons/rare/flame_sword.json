@@ -2,14 +2,14 @@
   "id": "flame_sword",
   "displayName": "Flame Sword",
   "description": "+25 damage.",
-  "iconKey": "flame_sword",
+  "iconKey": "sword_2_0004",
   "kind": "equipment",
   "tier": "rare",
   "category": "Weapon",
   "slotKind": "weapon",
-  "allowedUnitTypes": [],
   "costGold": 250,
   "requiredBuilding": "marketplace",
-  "modifiers": { "damage": 25 },
-  "effects": []
+  "modifiers": {
+    "damage": 25
+  }
 }

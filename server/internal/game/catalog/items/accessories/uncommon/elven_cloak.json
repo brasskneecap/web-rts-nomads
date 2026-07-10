@@ -2,12 +2,14 @@
   "id": "elven_cloak",
   "displayName": "Elven Cloak",
   "description": "+15 armor. +15% dodge chance.",
-  "iconKey": "elven_cloak",
+  "iconKey": "cloaks_robes_0002",
   "kind": "equipment",
   "tier": "uncommon",
   "category": "Accessory",
   "slotKind": "any",
-  "allowedUnitTypes": [],
   "costGold": 150,
-  "modifiers": { "armor": 15, "dodgeChance": 0.15 }
+  "modifiers": {
+    "armor": 15,
+    "dodgeChance": 0.15
+  }
 }
