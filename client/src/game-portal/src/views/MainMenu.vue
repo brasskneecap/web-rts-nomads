@@ -76,6 +76,36 @@
   </div>
 </template>
 
+<script lang="ts">
+// Layout of the menu entries on the sign. `top` is the vertical centre of each
+// plank as a percentage of the sign image height; `left`/`width` and the font
+// caps are shared. These are the shipped defaults — the dev tuner mutates them
+// live so new values can be dialled in, then pasted back here.
+//
+// Declared in a plain (non-setup) script block so DEFAULTS/MENU_ENTRIES can be
+// exported as named exports for testing — `<script setup>` only exposes a
+// component's default export, not named bindings. Consts declared here are
+// still visible inside `<script setup>` below (standard SFC two-block pattern).
+export type Entry = { label: string; to: string; top: number }
+export const DEFAULTS = {
+  left: 52.6,
+  width: 21,
+  fontCqh: 3.2,
+  fontCqw: 2.9,
+  entries: [
+    // Five entries respaced across the four-plank sign art: labels no longer
+    // align 1:1 with planks until main-menu.png gains a fifth plank. Re-tune
+    // with the sign tuner (localStorage 'webrts.signTuner'='1' + backtick).
+    { label: 'Start Game', to: '/war-room', top: 55.97 },
+    { label: 'Profile', to: '/profile', top: 60.79 },
+    { label: 'Map Editor', to: '/editor', top: 65.61 },
+    { label: 'Item Editor', to: '/item-editor', top: 70.43 },
+    { label: 'Settings', to: '/options', top: 75.25 },
+  ] as Entry[],
+}
+export const MENU_ENTRIES = DEFAULTS.entries
+</script>
+
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
@@ -90,23 +120,6 @@ const MAP_ID_STORAGE_KEY = 'webrts.mapId'
 const router = useRouter()
 const { selectedMapName, selectedMapId } = useMapSelection()
 
-// Layout of the menu entries on the sign. `top` is the vertical centre of each
-// plank as a percentage of the sign image height; `left`/`width` and the font
-// caps are shared. These are the shipped defaults — the dev tuner mutates them
-// live so new values can be dialled in, then pasted back here.
-type Entry = { label: string; to: string; top: number }
-const DEFAULTS = {
-  left: 52.6,
-  width: 21,
-  fontCqh: 3.2,
-  fontCqw: 2.9,
-  entries: [
-    { label: 'Start Game', to: '/war-room', top: 55.97 },
-    { label: 'Profile', to: '/profile', top: 62.34 },
-    { label: 'Map Editor', to: '/editor', top: 68.79 },
-    { label: 'Settings', to: '/options', top: 75.25 },
-  ] as Entry[],
-}
 const tune = reactive(structuredClone(DEFAULTS))
 
 // ---- Dev-only layout tuner --------------------------------------------------
