@@ -76,6 +76,13 @@ export type ItemDef = {
   requiredBuilding?: string
   /** Display-only category label ("Weapon", "Trinket", "Consumable"). */
   category?: string
+  /**
+   * Editor-only flag: true when this item's catalog entry lives in the
+   * writable overrides directory rather than the embedded default catalog.
+   * Dev-build quirk: in local dev the writable dir mirrors the embedded
+   * source, so every item reports `overridden: true` — expected, not a bug.
+   */
+  overridden?: boolean
   /** Stat changes applied while held. Absent = no stat changes. */
   modifiers?: ItemModifiers
   /** Named effect tags granted while held. Absent = no effects. */
