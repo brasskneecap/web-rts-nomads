@@ -192,6 +192,18 @@ type ItemDef struct {
 	SlotKind         ItemSlotKind `json:"slotKind"`
 	AllowedUnitTypes []string     `json:"allowedUnitTypes,omitempty"`
 	CostGold         int          `json:"costGold"`
+	// IsRecipe marks an item as craftable at the Artificer: a recipe (whose
+	// output is this item) exists to unlock it. Availability elsewhere (which
+	// shops stock it, loot tables) is decided at the shop/loot level, not
+	// here — the item only declares its own purchase cost (CostGold) and, when
+	// craftable, its craft cost (RecipeCost). The item editor keeps the paired
+	// recipe def in sync with this flag.
+	IsRecipe   bool `json:"isRecipe,omitempty"`
+	RecipeCost int  `json:"recipeCost,omitempty"`
+	// RecipeStarter, when the item is craftable, marks its recipe as one every
+	// player has already learned at match start (no shop/unlock needed). Synced
+	// to RecipeDef.Starter by the item editor.
+	RecipeStarter bool `json:"recipeStarter,omitempty"`
 	// RequiredBuilding was historically the building type that gated an
 	// item's purchase. As of per-building-shop-inventories it is preserved
 	// for backward display only and no longer participates in purchase

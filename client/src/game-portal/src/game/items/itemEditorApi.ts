@@ -15,17 +15,13 @@ export type ProcEffectDef = {
   burnDurationSeconds?: number
 }
 
-export type ItemAvailability = {
-  marketplace: boolean
-  wanderingMerchant: boolean
-  lootTable: { enabled: boolean; weight: number }
-  recipeList: boolean
-}
-
+// An item defines only itself (stats + its own costs). Craftability rides on
+// the item as isRecipe/recipeCost; `inputs` are the recipe ingredients the
+// server uses to sync the paired recipe def. WHERE an item is available (shops,
+// loot) is a shop-level concern edited elsewhere — not part of this request.
 export type EditorSaveRequest = {
   item: Record<string, unknown>
-  recipe: { inputs: string[]; costGold: number } | null
-  availability: ItemAvailability
+  inputs: string[]
 }
 
 // EditorValidationError carries the server's validation message for inline
@@ -44,12 +40,6 @@ export async function fetchProcEffectDefs(): Promise<ProcEffectDef[]> {
   if (!response.ok) throw new Error(`Failed to load proc effects: ${response.status}`)
   const data = (await response.json()) as { procs: ProcEffectDef[] }
   return data.procs
-}
-
-export async function fetchItemAvailability(id: string): Promise<ItemAvailability> {
-  const response = await fetch(`${API_BASE}/items/${encodeURIComponent(id)}/availability`)
-  if (!response.ok) throw new Error(`Failed to load availability: ${response.status}`)
-  return (await response.json()) as ItemAvailability
 }
 
 export async function saveEditorItem(req: EditorSaveRequest): Promise<void> {

@@ -4,7 +4,7 @@
 // for the service layer. Percent<->fraction conversion happens ONLY in this
 // file per project convention.
 import type { ItemDef } from '../maps/itemDefs'
-import type { EditorSaveRequest, ItemAvailability } from './itemEditorApi'
+import type { EditorSaveRequest } from './itemEditorApi'
 
 export type ProcForm = {
   enabled: boolean
@@ -58,8 +58,13 @@ export type ItemEditorForm = {
   elemental: { type: string; amount: number }[]
   onHit: ProcForm
   onStruck: ProcForm
-  crafting: { enabled: boolean; inputs: string[]; costGold: number }
-  availability: ItemAvailability
+  /**
+   * Crafting: an item is craftable (isRecipe) when a recipe unlocks it at the
+   * Artificer. recipeCost is the gold to craft; inputs are the ingredients.
+   * Availability (which shops stock it, loot tables) is NOT modeled here — a
+   * shop-level concern edited elsewhere; the item only owns its own costs.
+   */
+  crafting: { isRecipe: boolean; recipeCost: number; inputs: string[]; starter: boolean }
   /** Unit types allowed to equip this item. Empty = all unit types. */
   allowedUnitTypes: string[]
   /**
@@ -94,8 +99,7 @@ export function createBlankForm(): ItemEditorForm {
     mods: { hp: 0, damage: 0, armor: 0, attackSpeed: 0, moveSpeed: 0, healthRegen: 0, maxShield: 0, dodgePct: 0, blockPct: 0 },
     elemental: [],
     onHit: blankProc(), onStruck: blankProc(),
-    crafting: { enabled: false, inputs: ['', ''], costGold: 150 },
-    availability: { marketplace: false, wanderingMerchant: false, lootTable: { enabled: false, weight: 10 }, recipeList: false },
+    crafting: { isRecipe: false, recipeCost: 150, inputs: ['', ''], starter: false },
     allowedUnitTypes: [],
     unmodeled: {},
   }
@@ -116,11 +120,14 @@ function procFormFromWire(p: ItemDef['onHitProc']): ProcForm {
 
 export function formFromDef(
   def: ItemDef,
-  availability: ItemAvailability,
-  recipe: { inputs: string[]; costGold: number } | null,
+  recipe: { inputs: string[]; costGold: number; starter?: boolean } | null,
 ): ItemEditorForm {
   const m = def.modifiers ?? {}
   const c = def.consumable
+  // Craftability is authoritative from the existing recipe when one is present
+  // (shipped swords/shields predate the item.isRecipe flag), falling back to
+  // the item's own flag/cost for editor-created items.
+  const craftable = recipe !== null || (def.isRecipe ?? false)
   return {
     id: def.id, isNew: false, kind: def.kind === 'consumable' ? 'consumable' : 'equipment',
     displayName: def.displayName, description: def.description ?? '',
@@ -136,10 +143,12 @@ export function formFromDef(
     },
     elemental: (def.onHitElemental ?? []).map((e) => ({ ...e })),
     onHit: procFormFromWire(def.onHitProc), onStruck: procFormFromWire(def.onStruckProc),
-    crafting: recipe
-      ? { enabled: true, inputs: [...recipe.inputs], costGold: recipe.costGold }
-      : { enabled: false, inputs: ['', ''], costGold: 150 },
-    availability: { ...availability, lootTable: { ...availability.lootTable, weight: availability.lootTable.weight || 10 } },
+    crafting: {
+      isRecipe: craftable,
+      recipeCost: recipe?.costGold ?? def.recipeCost ?? 150,
+      inputs: recipe ? [...recipe.inputs] : ['', ''],
+      starter: recipe?.starter ?? def.recipeStarter ?? false,
+    },
     allowedUnitTypes: [...(def.allowedUnitTypes ?? [])],
     unmodeled: pickUnmodeled(def),
   }
@@ -183,6 +192,15 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
   if (form.description) item.description = form.description
   if (form.allowedUnitTypes.length > 0) item.allowedUnitTypes = form.allowedUnitTypes
 
+  // Craftability lives on the item (isRecipe + recipeCost); the ingredient
+  // list rides at the request top level and the server syncs the recipe def.
+  const inputs = form.crafting.isRecipe ? form.crafting.inputs.filter(Boolean) : []
+  if (form.crafting.isRecipe) {
+    item.isRecipe = true
+    if (form.crafting.recipeCost) item.recipeCost = form.crafting.recipeCost
+    if (form.crafting.starter) item.recipeStarter = true
+  }
+
   if (form.kind === 'consumable') {
     const c = form.consumable
     const consumable: Record<string, unknown> = { type: c.type }
@@ -194,8 +212,7 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
     if (c.durationSeconds) consumable.durationSeconds = c.durationSeconds
     item.consumable = consumable
     if (form.maxStacks > 0) item.maxStacks = form.maxStacks
-    // Consumables carry no recipe and never join the recipe list.
-    return { item, recipe: null, availability: { ...form.availability, recipeList: false } }
+    return { item, inputs }
   }
 
   // Equipment: stat modifiers, on-hit elemental, and procs.
@@ -220,14 +237,5 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
   const onStruck = procWireFromForm(form.onStruck)
   if (onStruck) item.onStruckProc = onStruck
 
-  return {
-    item,
-    recipe: form.crafting.enabled
-      ? { inputs: form.crafting.inputs.filter(Boolean), costGold: form.crafting.costGold }
-      : null,
-    availability: {
-      ...form.availability,
-      recipeList: form.availability.recipeList && form.crafting.enabled,
-    },
-  }
+  return { item, inputs }
 }

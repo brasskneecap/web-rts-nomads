@@ -67,7 +67,7 @@ func TestItemsRoute_SaveAndDelete(t *testing.T) {
 	t.Setenv("NEUTRAL_GROUPS_DIR", t.TempDir())
 	srv := newTestRouter(t)
 
-	body := `{"item":{"id":"route_test_item","displayName":"Route Test","iconKey":"route_test_item","kind":"equipment","tier":"common","slotKind":"any","costGold":10},"recipe":null,"availability":{"marketplace":true,"wanderingMerchant":false,"lootTable":{"enabled":false,"weight":0},"recipeList":false}}`
+	body := `{"item":{"id":"route_test_item","displayName":"Route Test","iconKey":"route_test_item","kind":"equipment","tier":"common","slotKind":"any","costGold":10},"inputs":[]}`
 	resp, err := srv.Client().Post(srv.URL+"/items", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -79,7 +79,7 @@ func TestItemsRoute_SaveAndDelete(t *testing.T) {
 	}
 
 	// Invalid body → 400 with the validation envelope.
-	bad := `{"item":{"id":"NOT VALID","displayName":"x","iconKey":"x"},"availability":{}}`
+	bad := `{"item":{"id":"NOT VALID","displayName":"x","iconKey":"x"}}`
 	resp2, err := srv.Client().Post(srv.URL+"/items", "application/json", strings.NewReader(bad))
 	if err != nil {
 		t.Fatalf("POST invalid: %v", err)
@@ -117,7 +117,7 @@ func TestItemImageRoutes(t *testing.T) {
 	srv := newTestRouter(t)
 
 	// Create the item first.
-	body := `{"item":{"id":"img_item","displayName":"Img","iconKey":"img_item","kind":"equipment","tier":"common","slotKind":"any","costGold":1},"recipe":null,"availability":{}}`
+	body := `{"item":{"id":"img_item","displayName":"Img","iconKey":"img_item","kind":"equipment","tier":"common","slotKind":"any","costGold":1},"inputs":[]}`
 	resp, _ := srv.Client().Post(srv.URL+"/items", "application/json", strings.NewReader(body))
 	resp.Body.Close()
 
