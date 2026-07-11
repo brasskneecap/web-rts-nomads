@@ -1,20 +1,14 @@
 <template>
   <MetaSceneView :bg="bg" :title="title">
-    <!-- Middle detail section: pops up when a unit is selected, showing that
-         unit's advancement track inside the parchment panel. -->
-    <div v-if="selectedUnit" class="roster-detail">
-      <UiPanel variant="parchment" class="roster-detail__panel" :padding="20">
-        <button
-          type="button"
-          class="roster-detail__close"
-          aria-label="Close"
-          @click="selectedUnit = null"
-        >
-          ×
-        </button>
-        <Advancements :unit-type="selectedUnit" />
-      </UiPanel>
-    </div>
+    <!-- Full advancement modal: opens when a unit is selected, showing that
+         unit's advancement track in the reference-style wood/brass panel. -->
+    <UnitAdvancementPanel
+      v-if="selectedEntry"
+      :unit-type="selectedEntry.id"
+      :unit-name="selectedEntry.label"
+      :portrait="selectedEntry.portrait"
+      @close="selectedUnit = null"
+    />
 
     <aside
       class="roster"
@@ -61,13 +55,12 @@ export interface RosterEntry extends RosterUnit {
 </script>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import MetaSceneView from '@/components/meta/MetaSceneView.vue'
-import UiPanel from '@/components/ui/UiPanel.vue'
-import Advancements from '@/views/Advancements.vue'
+import UnitAdvancementPanel from '@/components/meta/UnitAdvancementPanel.vue'
 import iconContainerUrl from '@/assets/ui/themes/updated/icon_container.png'
 
-defineProps<{
+const props = defineProps<{
   bg: string
   title: string
   units: ReadonlyArray<RosterEntry>
@@ -76,6 +69,12 @@ defineProps<{
 // Which unit's advancement detail is open in the middle section. `null` closes
 // it. Clicking the active unit again toggles it shut.
 const selectedUnit = ref<string | null>(null)
+
+// The full roster entry (id/label/portrait) for the open unit, driving the
+// advancement modal's title and portrait.
+const selectedEntry = computed(() =>
+  props.units.find((u) => u.id === selectedUnit.value) ?? null,
+)
 
 function selectUnit(id: string) {
   selectedUnit.value = selectedUnit.value === id ? null : id
@@ -158,53 +157,4 @@ function selectUnit(id: string) {
   image-rendering: pixelated;
 }
 
-/*
- * Middle detail section. The overlay spans the scene and centers the panel;
- * it's pointer-events:none so clicks outside the panel still reach the roster
- * (letting you switch units without closing first).
- */
-.roster-detail {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  pointer-events: none;
-}
-
-/*
- * The parchment panel. `container-type: size` establishes a query container so
- * the embedded Advancements component's cqw-based scaling resolves against the
- * panel's content box (same mechanism as the War Room page slot).
- */
-.roster-detail__panel {
-  position: relative;
-  pointer-events: auto;
-  width: min(62%, 1040px);
-  height: min(42%, 360px);
-  container-type: size;
-}
-
-.roster-detail__close {
-  position: absolute;
-  top: 4px;
-  right: 12px;
-  z-index: 3;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-family: var(--font-title);
-  font-size: 26px;
-  line-height: 1;
-  color: #3a1f0a;
-  transition: color 120ms ease, transform 120ms ease;
-}
-
-.roster-detail__close:hover {
-  color: #1f0f02;
-  transform: scale(1.1);
-}
 </style>
