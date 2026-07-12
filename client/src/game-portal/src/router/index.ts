@@ -4,6 +4,7 @@ import Lobby from '@/views/Lobby.vue'
 import Match from '@/views/Match.vue'
 import MatchEnd from '@/views/MatchEnd.vue'
 import Editor from '@/views/Editor.vue'
+import WorldEditor from '@/views/WorldEditor.vue'
 import ItemEditor from '@/views/ItemEditor.vue'
 import ProfileView from '@/views/ProfileView.vue'
 import OptionsView from '@/views/OptionsView.vue'
@@ -38,6 +39,7 @@ export const router = createRouter({
     { path: '/match/:matchId', component: Match, meta: { hideMenuChrome: true, silenceMusic: true } },
     { path: '/match-end', component: MatchEnd, meta: { hideMenuChrome: true, silenceMusic: true } },
     { path: '/editor', component: Editor },
+    { path: '/world-editor', component: WorldEditor, meta: { hideMenuChrome: true } },
     { path: '/item-editor', component: ItemEditor, meta: { hideDominionPanel: true } },
     { path: '/profile', component: ProfileView },
     { path: '/options', component: OptionsView },
