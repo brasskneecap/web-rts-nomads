@@ -1694,6 +1694,18 @@
       </div>
     </div>
     </div>
+
+    <div v-if="itemsPopupOpen" class="we-modal-overlay">
+      <div class="we-modal we-modal--wide">
+        <div class="we-modal__header">
+          <span>Item / Equipment Editor</span>
+          <UiButton size="sm" @click="itemsPopupOpen = false">Close</UiButton>
+        </div>
+        <div class="we-modal__body">
+          <ItemEditorPanel />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1703,6 +1715,8 @@ import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGr
 import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
 import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
+import ItemEditorPanel from '@/components/ItemEditorPanel.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type {
   BuildingType,
   JsonObject,
@@ -6248,5 +6262,48 @@ onBeforeUnmount(() => {
   .editor-preview {
     min-height: 0;
   }
+}
+
+.we-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 8, 14, 0.72);
+}
+
+.we-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #12141c;
+  border: 1px solid rgba(166, 191, 255, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+.we-modal--wide {
+  width: min(1100px, 94vw);
+  height: min(880px, 88vh);
+}
+
+.we-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(166, 191, 255, 0.25);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex: 0 0 auto;
+}
+
+.we-modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 </style>
