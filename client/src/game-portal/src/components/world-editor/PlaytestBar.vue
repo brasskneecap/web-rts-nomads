@@ -1,12 +1,14 @@
 <template>
   <div class="playtest-bar">
-    <UiButton size="sm" @click="emit('stop')">■ Stop &amp; reset</UiButton>
+    <UiButton size="sm" @click="emit('togglePause')">{{ paused ? '▶ Resume' : '⏸ Pause' }}</UiButton>
+    <UiButton size="sm" @click="emit('reset')">↺ Reset</UiButton>
     <span class="playtest-bar__label">Playtest (ephemeral — no rewards)</span>
   </div>
 </template>
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
-const emit = defineEmits<{ stop: [] }>()
+defineProps<{ paused: boolean }>()
+const emit = defineEmits<{ togglePause: []; reset: [] }>()
 </script>
 <style scoped>
 .playtest-bar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);

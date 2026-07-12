@@ -14,6 +14,10 @@ export function resolvePlaytestMapId(map: Pick<MapConfig, 'id'>): string {
 
 export function usePlaytest(getPlayCanvas: () => HTMLCanvasElement | null) {
   const playing = ref(false)
+  // Server-side pause state for the running playtest. A paused match keeps
+  // simulating nothing but stays alive, so Resume continues exactly where it
+  // froze. Distinct from Reset (stop), which tears the match down entirely.
+  const paused = ref(false)
   let client: GameClient | null = null
   // Synchronous in-flight marker. playing.value only flips true after the
   // save + GameClient.start() awaits resolve, so it can't guard the async
@@ -41,6 +45,7 @@ export function usePlaytest(getPlayCanvas: () => HTMLCanvasElement | null) {
       client = new GameClient(canvas, mapId)
       await client.start({ ephemeral: true })
       playing.value = true
+      paused.value = false // a fresh match always starts running
     } catch (err) {
       // Tear down any partially-constructed client and surface the failure
       // to the caller instead of leaving a silent, half-started playtest.
@@ -53,6 +58,14 @@ export function usePlaytest(getPlayCanvas: () => HTMLCanvasElement | null) {
     }
   }
 
+  // togglePause: freeze or resume the running match in place via the server's
+  // set_pause command. No-op when nothing is playing.
+  function togglePause() {
+    if (!client) return
+    paused.value = !paused.value
+    client.sendSetPause(paused.value)
+  }
+
   // stop: tear down the match. The editor's own MapConfig is untouched, so the
   // caller simply re-shows the editor canvas — placements "snap back" for free.
   function stop() {
@@ -61,7 +74,8 @@ export function usePlaytest(getPlayCanvas: () => HTMLCanvasElement | null) {
       client = null
     }
     playing.value = false
+    paused.value = false
   }
 
-  return { playing, start, stop }
+  return { playing, paused, start, stop, togglePause }
 }

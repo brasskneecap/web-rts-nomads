@@ -59,3 +59,40 @@ describe('usePlaytest reentrancy guard', () => {
     expect(gameClientCtor).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('usePlaytest pause', () => {
+  it('toggles pause, forwards set_pause to the client, and clears on stop', async () => {
+    const sendSetPause = vi.fn()
+    gameClientCtor.mockClear()
+    gameClientCtor.mockImplementationOnce(() => ({
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn(),
+      sendSetPause,
+    }))
+    const { usePlaytest } = await import('./usePlaytest')
+    const { paused, start, stop, togglePause } = usePlaytest(() => ({}) as HTMLCanvasElement)
+
+    await start({ id: 'pause_map' } as any)
+    expect(paused.value).toBe(false) // a fresh match starts running
+
+    togglePause()
+    expect(paused.value).toBe(true)
+    expect(sendSetPause).toHaveBeenLastCalledWith(true)
+
+    togglePause()
+    expect(paused.value).toBe(false)
+    expect(sendSetPause).toHaveBeenLastCalledWith(false)
+
+    togglePause() // pause again, then stop must clear it
+    expect(paused.value).toBe(true)
+    stop()
+    expect(paused.value).toBe(false)
+  })
+
+  it('togglePause is a no-op when not playing', async () => {
+    const { usePlaytest } = await import('./usePlaytest')
+    const { paused, togglePause } = usePlaytest(() => ({}) as HTMLCanvasElement)
+    togglePause()
+    expect(paused.value).toBe(false)
+  })
+})

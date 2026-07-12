@@ -1179,7 +1179,12 @@
           @mouseleave="onMinimapMouseUp"
         ></canvas>
         <canvas v-show="playtestPlaying" ref="playCanvas" class="we-play-canvas"></canvas>
-        <PlaytestBar v-if="playtestPlaying" @stop="stopPlaytest" />
+        <PlaytestBar
+          v-if="playtestPlaying"
+          :paused="playtestPaused"
+          @toggle-pause="togglePlaytestPause"
+          @reset="stopPlaytest"
+        />
         <div v-if="selectedEditBuilding && editPanelPos" class="edit-panel" :style="editPanelStyle">
           <div class="edit-panel__header">
             <span class="edit-panel__title">{{ selectedEditBuilding.buildingType }}</span>
@@ -1991,9 +1996,13 @@ function onToolbarSelect(id: string) {
 // stop() tears the match down; the editor's own `model` is never mutated by
 // playtest, so re-showing the editor canvas is the entire "reset".
 const playCanvas = ref<HTMLCanvasElement | null>(null)
-const { playing: playtestPlaying, start: startPlaytestMatch, stop: stopPlaytestMatch } = usePlaytest(
-  () => playCanvas.value,
-)
+const {
+  playing: playtestPlaying,
+  paused: playtestPaused,
+  start: startPlaytestMatch,
+  stop: stopPlaytestMatch,
+  togglePause: togglePlaytestPause,
+} = usePlaytest(() => playCanvas.value)
 
 async function startPlaytest() {
   try {
