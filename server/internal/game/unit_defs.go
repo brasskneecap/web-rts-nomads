@@ -3,6 +3,7 @@ package game
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"sort"
 )
@@ -278,65 +279,8 @@ func loadUnitDefsByType() map[string]UnitDef {
 			if def.Faction != factionKey {
 				panic(rel + `: def.Faction "` + def.Faction + `" does not match parent directory "` + factionKey + `"`)
 			}
-			if def.CombatProfile != "" {
-				if _, ok := combatProfiles[def.CombatProfile]; !ok {
-					panic(rel + `: combatProfile "` + def.CombatProfile + `" is not a known profile (see combat_ai_profiles.go)`)
-				}
-			}
-			if def.DominionPointDropChance < 0 || def.DominionPointDropChance > 1 {
-				panic(rel + `: unit "` + def.Type + `": dominionPointDropChance must be in [0,1]`)
-			}
-			if def.DominionPointAmount < 0 {
-				panic(rel + `: unit "` + def.Type + `": dominionPointAmount must be >= 0`)
-			}
-			for _, t := range def.TargetableTypes {
-				if t != TargetClassGround && t != TargetClassFlyer {
-					panic(rel + `: unit "` + def.Type + `": targetableTypes entry "` + t + `" must be one of "ground" | "flyer"`)
-				}
-			}
-			if def.DamageType != "" && !IsValidDamageType(def.DamageType) {
-				panic(rel + `: damageType "` + string(def.DamageType) + `" is not a registered damage type`)
-			}
-			if def.Projectile != "" {
-				if _, ok := getProjectileDef(def.Projectile); !ok {
-					panic(rel + `: projectile "` + def.Projectile + `" is not a registered projectile def`)
-				}
-			}
-			if def.ProjectileScale < 0 {
-				panic(rel + `: unit "` + def.Type + `": projectileScale must be >= 0 (0/omitted ⇒ client default 1×)`)
-			}
-			if def.ChannelLoop != nil {
-				if def.ChannelLoop.Start < 0 {
-					panic(rel + `: unit "` + def.Type + `": channelLoop.start must be >= 0`)
-				}
-				if def.ChannelLoop.End < def.ChannelLoop.Start {
-					panic(rel + `: unit "` + def.Type + `": channelLoop.end must be >= channelLoop.start`)
-				}
-			}
-			if def.MaxMana < 0 || def.ManaRegenRate < 0 {
-				panic(rel + `: maxMana and manaRegenRate must be >= 0`)
-			}
-			if len(def.PathChances) > 0 {
-				// Weights are relative and normalized at roll time, so any
-				// non-negative set with a positive sum is valid. Per-key
-				// path-existence is cross-checked in path_defs.go init (the
-				// paths catalog is not yet loaded at this var-init stage).
-				var pathWeightSum float64
-				for path, weight := range def.PathChances {
-					if weight < 0 {
-						panic(rel + `: unit "` + def.Type + `": pathChances["` + path + `"] must be >= 0`)
-					}
-					pathWeightSum += weight
-				}
-				if pathWeightSum <= 0 {
-					panic(rel + `: unit "` + def.Type + `": pathChances weights must sum to > 0`)
-				}
-			}
-			for _, b := range def.RequiresBuildings {
-				if _, ok := getBuildingDef(b); !ok {
-					panic(rel + `: requiresBuildings entry "` + b +
-						`" is not a registered building type`)
-				}
+			if err := validateUnitDef(&def); err != nil {
+				panic(rel + ": " + err.Error())
 			}
 			if _, dup := result[def.Type]; dup {
 				panic(rel + `: duplicate unit type "` + def.Type + `" — type ids must be globally unique across factions`)
@@ -345,6 +289,70 @@ func loadUnitDefsByType() map[string]UnitDef {
 		}
 	}
 	return result
+}
+
+// validateUnitDef checks a unit def's internal consistency (field ranges and
+// cross-references). It does NOT check directory placement (type==dir,
+// faction==parent) — those are the loader's concern. Shared by the embed
+// loader (which panics on error) and the editor persistence path (which
+// surfaces the error).
+func validateUnitDef(def *UnitDef) error {
+	if def.CombatProfile != "" {
+		if _, ok := combatProfiles[def.CombatProfile]; !ok {
+			return fmt.Errorf("unit %q: combatProfile %q is not a known profile", def.Type, def.CombatProfile)
+		}
+	}
+	if def.DominionPointDropChance < 0 || def.DominionPointDropChance > 1 {
+		return fmt.Errorf("unit %q: dominionPointDropChance must be in [0,1]", def.Type)
+	}
+	if def.DominionPointAmount < 0 {
+		return fmt.Errorf("unit %q: dominionPointAmount must be >= 0", def.Type)
+	}
+	for _, t := range def.TargetableTypes {
+		if t != TargetClassGround && t != TargetClassFlyer {
+			return fmt.Errorf("unit %q: targetableTypes entry %q must be one of %q | %q", def.Type, t, TargetClassGround, TargetClassFlyer)
+		}
+	}
+	if def.DamageType != "" && !IsValidDamageType(def.DamageType) {
+		return fmt.Errorf("unit %q: damageType %q is not a registered damage type", def.Type, string(def.DamageType))
+	}
+	if def.Projectile != "" {
+		if _, ok := getProjectileDef(def.Projectile); !ok {
+			return fmt.Errorf("unit %q: projectile %q is not a registered projectile def", def.Type, def.Projectile)
+		}
+	}
+	if def.ProjectileScale < 0 {
+		return fmt.Errorf("unit %q: projectileScale must be >= 0", def.Type)
+	}
+	if def.ChannelLoop != nil {
+		if def.ChannelLoop.Start < 0 {
+			return fmt.Errorf("unit %q: channelLoop.start must be >= 0", def.Type)
+		}
+		if def.ChannelLoop.End < def.ChannelLoop.Start {
+			return fmt.Errorf("unit %q: channelLoop.end must be >= channelLoop.start", def.Type)
+		}
+	}
+	if def.MaxMana < 0 || def.ManaRegenRate < 0 {
+		return fmt.Errorf("unit %q: maxMana and manaRegenRate must be >= 0", def.Type)
+	}
+	if len(def.PathChances) > 0 {
+		var sum float64
+		for path, weight := range def.PathChances {
+			if weight < 0 {
+				return fmt.Errorf("unit %q: pathChances[%q] must be >= 0", def.Type, path)
+			}
+			sum += weight
+		}
+		if sum <= 0 {
+			return fmt.Errorf("unit %q: pathChances weights must sum to > 0", def.Type)
+		}
+	}
+	for _, b := range def.RequiresBuildings {
+		if _, ok := getBuildingDef(b); !ok {
+			return fmt.Errorf("unit %q: requiresBuildings entry %q is not a registered building type", def.Type, b)
+		}
+	}
+	return nil
 }
 
 func getUnitDef(unitType string) (UnitDef, bool) {
