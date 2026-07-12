@@ -40,7 +40,7 @@ export const router = createRouter({
     { path: '/match/:matchId', component: Match, meta: { hideMenuChrome: true, silenceMusic: true } },
     { path: '/match-end', component: MatchEnd, meta: { hideMenuChrome: true, silenceMusic: true } },
     { path: '/editor', component: Editor },
-    { path: '/world-editor', component: WorldEditor, meta: { hideMenuChrome: true } },
+    { path: '/world-editor', component: WorldEditor, meta: { hideMenuChrome: true, hideDominionPanel: true } },
     { path: '/item-editor', component: ItemEditor, meta: { hideDominionPanel: true } },
     { path: '/unit-type-editor', component: UnitTypeEditor, meta: { hideDominionPanel: true } },
     { path: '/profile', component: ProfileView },
