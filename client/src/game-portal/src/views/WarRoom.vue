@@ -4,6 +4,29 @@
       <ExitButton aria-label="Back" @click="onBack" />
     </div>
 
+    <!-- Dev-only authoring toolbar. Pinned to the viewport (NOT inside the
+         cover-fit scene, whose corners get cropped). Toggle edit mode, then
+         drag a node to place it, wheel to resize, or select one and nudge with
+         arrow keys (Shift = coarse) for pixel-perfect micro-adjustment. -->
+    <div v-if="HOTSPOT_EDITOR_ENABLED" class="war-room__edit-bar">
+      <button
+        type="button"
+        class="war-room__edit-toggle"
+        :class="{ 'is-on': editing }"
+        @click="editing = !editing"
+      >
+        {{ editing ? '✓ Done' : '✎ Edit nodes' }}
+      </button>
+      <template v-if="editing">
+        <span class="war-room__edit-hint">
+          drag icon / drag box = move each · handles = box size · wheel or +/− = icon size · arrows = nudge last
+        </span>
+        <button type="button" class="war-room__edit-copy" @click="copyConfig">
+          Copy config
+        </button>
+      </template>
+    </div>
+
     <div class="war-room__stage">
       <div
         ref="sceneRef"
@@ -11,55 +34,65 @@
         :style="{ backgroundImage: `url(${warRoomBgUrl})` }"
       >
         <div class="war-room__hotspots">
-          <button
-            v-for="h in hotspots"
-            :key="h.id"
-            type="button"
-            class="war-room__hotspot"
-            :class="{
-              'war-room__hotspot--selected': isSelected(h),
-              'war-room__hotspot--editing': editing,
-            }"
-            :style="hotspotStyle(h)"
-            :aria-label="h.label"
-            @click="onSelect(h)"
-            @pointerdown="onPointerDown($event, h)"
-            @wheel="onWheel($event, h)"
-          >
-            <!-- Orb & Beam: a soft halo orb over the point of interest with a
-                 beam rising to the label — the same "highlight" FX the Kingdom
-                 view uses. There is no icon: the artwork's own points of
-                 interest show through, and the glow appears on hover. -->
-            <span class="fx fx-beam"></span>
-            <span class="fx fx-orb"></span>
+          <template v-for="h in hotspots" :key="h.id">
+            <!-- Transparent hit box: the actual clickable/interactive area,
+                 sized (hitW × hitH) independently of the badge. In edit mode it
+                 shows a dashed outline plus drag handles to resize it. -->
+            <button
+              type="button"
+              class="war-room__hit"
+              :class="{
+                'war-room__hit--editing': editing,
+                'war-room__hit--active': editId === h.id,
+              }"
+              :style="hitStyle(h)"
+              :aria-label="h.label"
+              @click="onSelect(h)"
+              @pointerdown="onPointerDown($event, h)"
+              @wheel="onWheel($event, h)"
+            >
+              <template v-if="editing">
+                <span
+                  v-for="hd in RESIZE_HANDLES"
+                  :key="hd.name"
+                  class="war-room__handle"
+                  :class="`war-room__handle--${hd.name}`"
+                  @pointerdown="onHandleDown($event, h, hd.dx, hd.dy)"
+                ></span>
+              </template>
+            </button>
 
-            <span class="war-room__label">{{ h.label }}</span>
+            <!-- Visual layer: badge medallion + label. Normally non-interactive
+                 (clicks fall through to the hit box). In edit mode it becomes
+                 draggable to move the icon independently of the hit box. `size`
+                 drives the badge width; it glows on hover of the hit box and
+                 stays lit for the active (selected) tab. -->
+            <div
+              class="war-room__node"
+              :class="{
+                'war-room__node--selected': isSelected(h),
+                'war-room__node--editing': editing,
+                'war-room__node--active': editing && editId === h.id && editKind === 'icon',
+              }"
+              :style="nodeStyle(h)"
+              @pointerdown="onIconDown($event, h)"
+              @wheel="onWheel($event, h)"
+            >
+              <img class="war-room__badge" :src="h.icon" :alt="h.label" draggable="false" />
 
-            <!-- Dev-only live coordinate readout while positioning. -->
-            <span v-if="editing" class="war-room__coords">
-              {{ h.x }}, {{ h.y }} · {{ h.w }}×{{ h.h }}
-            </span>
+              <!-- Dark plate with the title + a one-line hint of what the node
+                   does; the badge sits on top of the plate (see reference art). -->
+              <div class="war-room__plate">
+                <span class="war-room__label">{{ h.label }}</span>
+                <span class="war-room__desc">{{ h.desc }}</span>
+              </div>
 
-            <!-- Dev-only resize handles: drag an edge/corner to reshape the
-                 box. Resizes symmetrically about the center. -->
-            <template v-if="editing">
-              <span
-                v-for="hd in RESIZE_HANDLES"
-                :key="hd.name"
-                class="war-room__handle"
-                :class="`war-room__handle--${hd.name}`"
-                @pointerdown="onHandleDown($event, h, hd.dx, hd.dy)"
-              ></span>
-            </template>
-          </button>
-        </div>
-
-        <!-- Dev-only authoring hint, shown while Alt is held. -->
-        <div v-if="editing" class="war-room__edit-hint">
-          <span>EDIT MODE — drag to place · wheel = width · shift+wheel = height</span>
-          <button type="button" class="war-room__edit-copy" @click="copyConfig">
-            Copy config
-          </button>
+              <!-- Dev-only live coordinate readout while positioning. -->
+              <span v-if="editing" class="war-room__coords">
+                icon {{ h.x }},{{ h.y }} · {{ h.size }} — hit {{ h.hitX }},{{ h.hitY }} · {{ h.hitW }}×{{ h.hitH }}
+              </span>
+            </div>
+          </template>
         </div>
 
         <div
@@ -88,47 +121,67 @@ import ExitButton from '@/components/ui/ExitButton.vue'
 import Campaign from '@/views/Campaign.vue'
 import CustomGame from '@/views/CustomGame.vue'
 import warRoomBgUrl from '@/assets/background-images/war_room_bg.png'
+import kingdomNodeUrl from '@/assets/background-images/nodes/kingdom-node.png'
+import campaignNodeUrl from '@/assets/background-images/nodes/campaign-node.png'
+import customGameNodeUrl from '@/assets/background-images/nodes/custom-game-node.png'
 
 const router = useRouter()
 const route = useRoute()
 
 /* ----------------------------------------------------------------
- * Hotspots: transparent buttons positioned over the points of interest
- * baked into war_room_bg.png. x/y are CENTER positions, w/h are size —
- * all percentages of the scene, so they stay locked to the artwork at any
- * window aspect ratio (mirrors KingdomView.vue).
+ * Nodes: visible badge medallions (nodes/*.png) placed over the points of
+ * interest baked into war_room_bg.png. Each node is TWO independently
+ * positioned pieces, both in % of the scene so they stay locked to the artwork
+ * at any window aspect ratio (mirrors KingdomView.vue):
+ *   • the badge icon — centered at (x, y), width `size`, with a text label;
+ *   • the clickable area — a separate box centered at (hitX, hitY), size
+ *     hitW × hitH. It need not sit under the icon, so you can float the badge
+ *     above a building while the click target covers the building itself.
  *
  * `action` picks the behavior: 'route' pushes a route, 'tab' toggles an
  * inline panel (Campaign / Custom Game) in the parchment slot below.
  *
- * To re-align a hotspot: hold Alt (dev builds only) to enter positioning
- * mode, drag it onto its point of interest, then use "Copy config" (or the
- * console log) and paste the numbers back into DEFAULT_HOTSPOTS.
+ * To re-align a node: use the dev authoring toolbar (bottom-right) to enter
+ * Edit mode, drag the icon or the click box independently / wheel or +/- to
+ * resize the icon / handles to resize the click box / arrow-key to micro-nudge,
+ * then "Copy config" and paste the numbers back into DEFAULT_NODES.
  * ---------------------------------------------------------------- */
 type HotspotAction = 'route' | 'tab'
 interface Hotspot {
   id: string
   label: string
-  x: number
-  y: number
-  w: number
-  h: number
+  desc: string // one-line hint shown under the label
+  x: number // badge (icon) center X, % of scene
+  y: number // badge (icon) center Y, % of scene
+  size: number // badge (icon) width, % of scene
+  hitX: number // clickable area center X, % of scene
+  hitY: number // clickable area center Y, % of scene
+  hitW: number // clickable area width, % of scene
+  hitH: number // clickable area height, % of scene
+  icon: string
   action: HotspotAction
   route?: string
   tab?: string
 }
 
-const DEFAULT_HOTSPOTS: Hotspot[] = [
-  { id: 'kingdom', label: 'Kingdom', x: 35.2, y: 43.8, w: 13.3, h: 21.3, action: 'route', route: '/kingdom' },
-  { id: 'custom', label: 'Custom Game', x: 68.3, y: 64.6, w: 10.9, h: 13.2, action: 'tab', tab: 'custom' },
-  { id: 'campaign', label: 'Campaign', x: 58.3, y: 46.6, w: 11.8, h: 15, action: 'tab', tab: 'campaign' },
+const DEFAULT_NODES: Hotspot[] = [
+  { id: 'kingdom', label: 'Kingdom', desc: 'Manage and develop your realm.', x: 49.9, y: 45.2, size: 4, hitX: 49.6, hitY: 40.7, hitW: 11.8, hitH: 18.8, icon: kingdomNodeUrl, action: 'route', route: '/kingdom' },
+  { id: 'custom', label: 'Custom Game', desc: 'Create or join custom battles.', x: 74.9, y: 68.6, size: 4, hitX: 73.1, hitY: 66.6, hitW: 14.5, hitH: 13.8, icon: customGameNodeUrl, action: 'tab', tab: 'custom' },
+  { id: 'campaign', label: 'Campaign', desc: 'Play through the main story.', x: 28.1, y: 49.9, size: 4, hitX: 31.3, hitY: 55.1, hitW: 15.5, hitH: 18.1, icon: campaignNodeUrl, action: 'tab', tab: 'campaign' },
 ]
 
 // Reactive working copy so the dev positioning tool can mutate coordinates.
-const hotspots = reactive(DEFAULT_HOTSPOTS.map((h) => ({ ...h })))
+const hotspots = reactive(DEFAULT_NODES.map((h) => ({ ...h })))
 
-function hotspotStyle(h: Hotspot) {
-  return { left: `${h.x}%`, top: `${h.y}%`, width: `${h.w}%`, height: `${h.h}%` }
+// The badge (visual icon). Centered on x/y; `size` drives width, height auto.
+function nodeStyle(h: Hotspot) {
+  return { left: `${h.x}%`, top: `${h.y}%`, width: `${h.size}%` }
+}
+
+// The clickable hit area — its own center (hitX/hitY) and size (hitW/hitH),
+// fully independent of the badge.
+function hitStyle(h: Hotspot) {
+  return { left: `${h.hitX}%`, top: `${h.hitY}%`, width: `${h.hitW}%`, height: `${h.hitH}%` }
 }
 
 // In-room tab state. The hotspots act as a tab bar: selecting one renders its
@@ -179,26 +232,30 @@ function onBack() {
 }
 
 /* ----------------------------------------------------------------
- * Dev-only hotspot positioning tool.
+ * Dev-only node positioning tool ("micro-adjust").
  *
- * Hold Alt to enter positioning mode: hotspots become draggable, show a live
- * coordinate readout, and a "Copy config" affordance appears. Drag to place,
- * mouse-wheel to resize width (Shift+wheel for height). Every change logs a
- * paste-ready DEFAULT_HOTSPOTS block to the console.
+ * The authoring toolbar (bottom-right, dev builds only) toggles Edit mode.
+ * While it's on:
+ *   • drag a node to move it (x/y),
+ *   • mouse-wheel over a node to resize the BADGE icon (size),
+ *   • drag the edge/corner handles to resize the CLICKABLE AREA (hitW/hitH),
+ *     independently of the badge,
+ *   • click a node to select it, then nudge with the arrow keys — 0.1% per
+ *     press for fine micro-adjustment, or Shift+arrow for 1% coarse steps.
+ * Every change logs a paste-ready DEFAULT_NODES block; "Copy config" puts it
+ * on the clipboard so you can paste the numbers back into the source above.
  *
- * Gated on import.meta.env.DEV so the listeners never attach in packaged
- * builds — there is zero authoring surface in production.
- *
- * Flip HOTSPOT_EDITOR_ENABLED back to true to re-enable the Alt-drag tool.
- * All the machinery below stays intact; this just skips wiring up the
- * Alt key listener so nothing responds to it for now.
+ * Gated on import.meta.env.DEV && HOTSPOT_EDITOR_ENABLED so the listeners and
+ * toolbar never attach in packaged builds — zero authoring surface in prod.
  * ---------------------------------------------------------------- */
 const HOTSPOT_EDITOR_ENABLED = false
 
 const editing = ref(false)
+const editId = ref<string | null>(null) // currently selected node
+const editKind = ref<'icon' | 'hit'>('icon') // which piece arrow keys / highlight target
 const sceneRef = ref<HTMLElement | null>(null)
 
-// The eight resize handles. dx/dy pick which axes a handle affects
+// The eight hit-area resize handles. dx/dy pick which axes a handle affects
 // (-1/1 = that edge, 0 = axis untouched); corners drive both.
 const RESIZE_HANDLES = [
   { name: 'n', dx: 0, dy: -1 },
@@ -211,39 +268,41 @@ const RESIZE_HANDLES = [
   { name: 'sw', dx: -1, dy: 1 },
 ] as const
 
-// Active drag gesture: either moving the whole box or resizing along axes.
-type DragMode = { kind: 'move' } | { kind: 'resize'; dx: number; dy: number }
+// Active drag gesture: move the icon (x/y), move the hit box (hitX/hitY), or
+// resize the hit box along axes.
+type DragMode =
+  | { kind: 'move-icon' }
+  | { kind: 'move-hit' }
+  | { kind: 'resize-hit'; dx: number; dy: number }
 let dragMode: DragMode | null = null
 let dragTarget: Hotspot | null = null
+let dragMoved = false
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
 
-function onKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Alt') editing.value = true
-}
-function onKeyUp(e: KeyboardEvent) {
-  if (e.key === 'Alt') editing.value = false
-}
-
 function onPointerMove(e: PointerEvent) {
   if (!dragTarget || !dragMode || !sceneRef.value) return
+  dragMoved = true
   const rect = sceneRef.value.getBoundingClientRect()
   const px = ((e.clientX - rect.left) / rect.width) * 100
   const py = ((e.clientY - rect.top) / rect.height) * 100
-  if (dragMode.kind === 'move') {
+  if (dragMode.kind === 'move-icon') {
     dragTarget.x = round1(clamp(px, 0, 100))
     dragTarget.y = round1(clamp(py, 0, 100))
+  } else if (dragMode.kind === 'move-hit') {
+    dragTarget.hitX = round1(clamp(px, 0, 100))
+    dragTarget.hitY = round1(clamp(py, 0, 100))
   } else {
-    // Symmetric about the center: the box grows to twice the distance from
-    // its center to the pointer along each active axis.
-    if (dragMode.dx !== 0) dragTarget.w = round1(clamp(2 * Math.abs(px - dragTarget.x), 1, 100))
-    if (dragMode.dy !== 0) dragTarget.h = round1(clamp(2 * Math.abs(py - dragTarget.y), 1, 100))
+    // Resize the hit box symmetrically about its center (hitX/hitY): each
+    // active edge grows the box to twice the center-to-pointer distance.
+    if (dragMode.dx !== 0) dragTarget.hitW = round1(clamp(2 * Math.abs(px - dragTarget.hitX), 1, 100))
+    if (dragMode.dy !== 0) dragTarget.hitH = round1(clamp(2 * Math.abs(py - dragTarget.hitY), 1, 100))
   }
 }
 
 function endDrag() {
-  if (dragTarget) logConfig()
+  if (dragTarget && dragMoved) logConfig()
   dragTarget = null
   dragMode = null
   window.removeEventListener('pointermove', onPointerMove)
@@ -254,27 +313,85 @@ function beginDrag(e: PointerEvent, h: Hotspot, mode: DragMode) {
   if (!editing.value) return
   e.preventDefault()
   e.stopPropagation()
+  editId.value = h.id
+  editKind.value = mode.kind === 'move-icon' ? 'icon' : 'hit'
   dragTarget = h
   dragMode = mode
+  dragMoved = false
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', endDrag)
 }
 
+// Drag the badge → move the icon.
+function onIconDown(e: PointerEvent, h: Hotspot) {
+  beginDrag(e, h, { kind: 'move-icon' })
+}
+
+// Drag the hit box body → move the clickable area.
 function onPointerDown(e: PointerEvent, h: Hotspot) {
-  beginDrag(e, h, { kind: 'move' })
+  beginDrag(e, h, { kind: 'move-hit' })
 }
 
+// Drag an edge/corner handle → resize the clickable area.
 function onHandleDown(e: PointerEvent, h: Hotspot, dx: number, dy: number) {
-  beginDrag(e, h, { kind: 'resize', dx, dy })
+  beginDrag(e, h, { kind: 'resize-hit', dx, dy })
 }
 
+// Mouse-wheel resizes the badge icon (Shift+wheel = fine 0.1% steps).
 function onWheel(e: WheelEvent, h: Hotspot) {
   if (!editing.value) return
   e.preventDefault()
-  const delta = e.deltaY < 0 ? 0.5 : -0.5
-  if (e.shiftKey) h.h = round1(clamp(h.h + delta, 1, 100))
-  else h.w = round1(clamp(h.w + delta, 1, 100))
+  editId.value = h.id
+  editKind.value = 'icon'
+  const step = (e.shiftKey ? 0.1 : 0.5) * (e.deltaY < 0 ? 1 : -1)
+  h.size = round1(clamp(h.size + step, 1, 60))
   logConfig()
+}
+
+// Keyboard controls for the selected node (no precise hovering needed):
+//   • arrows           — micro-nudge the last-touched piece (icon or hit box):
+//                        0.1% fine, Shift = 1% coarse
+//   • + / =  and  -    — resize the badge icon (0.5%, Shift = fine 0.1%)
+// Which piece the arrows move follows editKind (set by the last drag/wheel):
+// drag the badge → arrows move the icon; drag/resize the hit box → arrows move
+// the click area.
+function onKeyDown(e: KeyboardEvent) {
+  if (!editing.value || !editId.value) return
+  const target = hotspots.find((h) => h.id === editId.value)
+  if (!target) return
+
+  // Icon resize: '+'/'=' grow, '-'/'_' shrink.
+  if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') {
+    e.preventDefault()
+    const grow = e.key === '+' || e.key === '='
+    const step = (e.shiftKey ? 0.1 : 0.5) * (grow ? 1 : -1)
+    target.size = round1(clamp(target.size + step, 1, 60))
+    logConfig()
+    return
+  }
+
+  // Position nudge — icon (x/y) or hit box (hitX/hitY) per editKind.
+  const step = e.shiftKey ? 1 : 0.1
+  const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+  const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
+  if (dx === 0 && dy === 0) return
+  e.preventDefault()
+  if (editKind.value === 'icon') {
+    target.x = round1(clamp(target.x + dx, 0, 100))
+    target.y = round1(clamp(target.y + dy, 0, 100))
+  } else {
+    target.hitX = round1(clamp(target.hitX + dx, 0, 100))
+    target.hitY = round1(clamp(target.hitY + dy, 0, 100))
+  }
+  logConfig()
+}
+
+// Map each node back to its imported icon var name so the copied config line
+// references the right import (custom's asset is customGameNodeUrl).
+const ICON_VAR: Record<string, string> = {
+  kingdom: 'kingdomNodeUrl',
+  custom: 'customGameNodeUrl',
+  campaign: 'campaignNodeUrl',
 }
 
 function configText(): string {
@@ -283,14 +400,15 @@ function configText(): string {
       h.action === 'route'
         ? `action: 'route', route: '${h.route}'`
         : `action: 'tab', tab: '${h.tab}'`
-    return `  { id: '${h.id}', label: '${h.label}', x: ${h.x}, y: ${h.y}, w: ${h.w}, h: ${h.h}, ${extra} },`
+    const icon = ICON_VAR[h.id] ?? 'kingdomNodeUrl'
+    return `  { id: '${h.id}', label: '${h.label}', desc: '${h.desc}', x: ${h.x}, y: ${h.y}, size: ${h.size}, hitX: ${h.hitX}, hitY: ${h.hitY}, hitW: ${h.hitW}, hitH: ${h.hitH}, icon: ${icon}, ${extra} },`
   })
-  return `const DEFAULT_HOTSPOTS: Hotspot[] = [\n${lines.join('\n')}\n]`
+  return `const DEFAULT_NODES: Hotspot[] = [\n${lines.join('\n')}\n]`
 }
 
 function logConfig() {
   // eslint-disable-next-line no-console
-  console.log(`[WarRoom hotspots]\n${configText()}`)
+  console.log(`[WarRoom nodes]\n${configText()}`)
 }
 
 function copyConfig() {
@@ -299,15 +417,11 @@ function copyConfig() {
 }
 
 onMounted(() => {
-  if (import.meta.env.DEV && HOTSPOT_EDITOR_ENABLED) {
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('keyup', onKeyUp)
-  }
+  if (HOTSPOT_EDITOR_ENABLED) window.addEventListener('keydown', onKeyDown)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
-  window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', endDrag)
 })
@@ -407,11 +521,17 @@ onBeforeUnmount(() => {
 }
 
 /*
- * Hotspots are invisible hit-targets over the map's points of interest — the
- * artwork shows through. The orb/beam "highlight" FX appears on hover/focus,
- * and stays lit for the active (selected) tab.
+ * Each node is two independently positioned layers:
+ *   .war-room__hit  — a transparent button (the clickable/interactive area),
+ *                     centered at hitX/hitY, sized hitW × hitH.
+ *   .war-room__node — the visual badge + label, centered at x/y, sized by
+ *                     `size`. It is pointer-events:none so clicks fall through
+ *                     to the hit box (except in edit mode, where it becomes
+ *                     draggable to reposition the icon on its own).
+ * Hover/focus of the hit box lights the adjacent badge (they're DOM siblings,
+ * hit first); the active (selected) tab stays lit and retints blue.
  */
-.war-room__hotspot {
+.war-room__hit {
   position: absolute;
   transform: translate(-50%, -50%);
   padding: 0;
@@ -419,152 +539,100 @@ onBeforeUnmount(() => {
   background-color: transparent;
 }
 
-.war-room__hotspot:focus-visible {
+.war-room__hit:focus-visible {
   outline: none;
 }
 
-/* Shared base for the orb/beam layers. */
-.fx {
+.war-room__node {
   position: absolute;
-  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   pointer-events: none;
-  opacity: 0;
-  z-index: 0;
+}
+
+/* In edit mode the badge becomes draggable so the icon can be moved apart
+   from the click box. */
+.war-room__node--editing {
+  pointer-events: auto;
+}
+
+/* The badge image. A steady golden drop-shadow reads it as an interactive
+   marker; hover brightens and lifts it. */
+.war-room__badge {
+  position: relative;
+  z-index: 1; /* sit on top of the plate below */
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-bottom: -6px; /* overlap the top of the plate, as in the reference */
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6))
+    drop-shadow(0 0 6px rgba(212, 168, 71, 0.35));
+  transition:
+    transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 160ms ease;
+}
+
+.war-room__hit:hover + .war-room__node .war-room__badge,
+.war-room__hit:focus-visible + .war-room__node .war-room__badge {
+  transform: translateY(-3px) scale(1.06);
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.7))
+    drop-shadow(0 0 14px rgba(255, 220, 140, 0.85));
+  animation: node-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes node-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.7))
+      drop-shadow(0 0 12px rgba(255, 220, 140, 0.6));
+  }
+  50% {
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.7))
+      drop-shadow(0 0 20px rgba(255, 220, 140, 0.95));
+  }
+}
+
+/* Selected (active tab) — keep the badge lit and retint the glow blue. */
+.war-room__node--selected .war-room__badge {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6))
+    drop-shadow(0 0 16px rgba(106, 178, 255, 0.85));
 }
 
 /*
- * Orb — a soft, edgeless halo of golden light centered under the label.
- * Anchored at (--orb-x, --orb-y) within the hotspot box; bottom + translateY(50%)
- * puts the orb CENTER on the anchor line. The glow uses drop-shadow (follows the
- * shape), and the hover pulse animates it. Colors are vars so the selected
- * (active-tab) state can retint the same shape blue.
+ * Plate — the dark backing box holding the title + hint. Near-opaque black
+ * fill with a faint gold hairline and a soft outer shadow so its edges read
+ * shadowy rather than as a hard box (mirrors the reference art). Top padding
+ * leaves room for the badge that overlaps it.
  */
-.fx-orb {
-  --orb-size: 34px;
-  --orb-soft: 5px;
-  --orb-core: rgba(255, 243, 214, 0.95);
-  --orb-mid: rgba(212, 168, 71, 0.55);
-  --orb-glow: rgba(212, 168, 71, 0.5);
-  left: var(--orb-x, 50%);
-  bottom: calc(100% - var(--orb-y, 90%));
-  width: var(--orb-size);
-  height: var(--orb-size);
-  border-radius: 50%;
+.war-room__plate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 16px 9px;
+  border-radius: 6px;
   background: radial-gradient(
-    circle at 50% 45%,
-    var(--orb-core),
-    var(--orb-mid) 45%,
-    transparent 75%
+    ellipse at center,
+    rgba(8, 7, 5, 0.62) 0%,
+    rgba(8, 7, 5, 0.55) 62%,
+    rgba(8, 7, 5, 0.3) 100%
   );
-  mix-blend-mode: screen;
-  filter: drop-shadow(0 0 6px var(--orb-glow)) blur(var(--orb-soft));
-  transform: translate(-50%, 50%) scale(0);
-  transition:
-    opacity 160ms ease,
-    transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1); /* bounce-in */
+  box-shadow:
+    0 3px 12px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(196, 164, 96, 0.22);
 }
 
-.war-room__hotspot:hover .fx-orb,
-.war-room__hotspot:focus-visible .fx-orb {
-  opacity: 1;
-  transform: translate(-50%, 50%) scale(1);
-  animation: fx-orb-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes fx-orb-pulse {
-  0%,
-  100% {
-    filter: drop-shadow(0 0 6px var(--orb-glow)) blur(var(--orb-soft));
-  }
-  50% {
-    filter: drop-shadow(0 0 13px var(--orb-glow)) blur(var(--orb-soft));
-  }
-}
-
-/*
- * Beam — rises straight up from the orb center to the label. Its bottom edge
- * sits on the anchor line; --beam-h is how far up it reaches (% of hotspot).
- */
-.fx-beam {
-  --beam-w: 16px;
-  --beam-color: rgba(212, 168, 71, 0.85);
-  --beam-color-mid: rgba(212, 168, 71, 0.35);
-  left: var(--orb-x, 50%);
-  bottom: calc(100% - var(--orb-y, 90%));
-  width: var(--beam-w);
-  height: var(--beam-h, 105%);
-  background: linear-gradient(
-    to top,
-    var(--beam-color),
-    var(--beam-color-mid) 50%,
-    transparent 100%
-  );
-  /* 16px wide at bottom -> ~10px at top: inset (16-10)/2 / 16 = 18.75%. */
-  clip-path: polygon(0% 100%, 100% 100%, 81.25% 0%, 18.75% 0%);
-  filter: blur(3px);
-  mix-blend-mode: screen;
-  transform: translateX(-50%) scaleY(0);
-  transform-origin: bottom center;
-  /* 150ms delay so the orb appears first, then the beam grows up. */
-  transition:
-    opacity 200ms ease 150ms,
-    transform 320ms cubic-bezier(0.22, 1, 0.36, 1) 150ms;
-}
-
-.war-room__hotspot:hover .fx-beam,
-.war-room__hotspot:focus-visible .fx-beam {
-  opacity: 1;
-  transform: translateX(-50%) scaleY(1);
-  animation: fx-beam-shimmer 1.8s ease-in-out infinite 0.4s;
-}
-
-@keyframes fx-beam-shimmer {
-  0%,
-  100% {
-    filter: blur(3px) brightness(1);
-  }
-  50% {
-    filter: blur(3px) brightness(1.3);
-  }
-}
-
-/*
- * Selected (active tab) — keep the highlight lit and retint it blue so the
- * open panel's hotspot reads as active even without a hover.
- */
-.war-room__hotspot--selected .fx-orb {
-  --orb-core: rgba(214, 235, 255, 0.95);
-  --orb-mid: rgba(106, 178, 255, 0.6);
-  --orb-glow: rgba(106, 178, 255, 0.65);
-  opacity: 1;
-  transform: translate(-50%, 50%) scale(1);
-}
-
-.war-room__hotspot--selected .fx-beam {
-  --beam-color: rgba(106, 178, 255, 0.85);
-  --beam-color-mid: rgba(106, 178, 255, 0.35);
-  opacity: 1;
-  transform: translateX(-50%) scaleY(1);
-}
-
-/* Label */
+/* Title — the node name. */
 .war-room__label {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  z-index: 1;
-  transform: translateX(-50%);
-  margin-bottom: 8px;
   font-family: var(--font-title);
-  font-size: clamp(12px, 1.2vw, 20px);
+  font-size: clamp(11px, 1vw, 17px);
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   white-space: nowrap;
   color: #f4d27a;
-  text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.9),
-    0 1px 2px rgba(0, 0, 0, 0.9),
-    0 0 10px rgba(255, 200, 100, 0.25);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
   pointer-events: none;
   transition:
     color 140ms ease,
@@ -572,38 +640,68 @@ onBeforeUnmount(() => {
     transform 140ms ease;
 }
 
-.war-room__hotspot:hover .war-room__label,
-.war-room__hotspot:focus-visible .war-room__label {
-  transform: translateX(-50%) translateY(-2px);
-  color: #ffe9a8;
-  text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.95),
-    0 1px 2px rgba(0, 0, 0, 0.95),
-    0 0 12px rgba(255, 220, 140, 0.95),
-    0 0 24px rgba(255, 200, 100, 0.7);
+/* Hint — one line describing what the node does; wraps under the title. */
+.war-room__desc {
+  margin-top: 3px;
+  font-family: var(--font-body, var(--font-title));
+  font-size: clamp(8px, 0.68vw, 11px);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-align: center;
+  color: #d8c8a2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
 }
 
-.war-room__hotspot--selected .war-room__label {
+.war-room__hit:hover + .war-room__node .war-room__label,
+.war-room__hit:focus-visible + .war-room__node .war-room__label {
+  color: #ffe9a8;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 12px rgba(255, 220, 140, 0.85);
+}
+
+.war-room__node--selected .war-room__label {
   color: #b8dcff;
   text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.9),
-    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 1px 3px rgba(0, 0, 0, 0.9),
     0 0 12px rgba(106, 178, 255, 0.7);
 }
 
-/* --- Dev-only positioning tool (Alt held) --- */
-.war-room__hotspot--editing {
-  outline: 2px dashed rgba(255, 220, 140, 0.85);
-  outline-offset: -2px;
-  background-color: rgba(255, 220, 140, 0.08);
+/* --- Dev-only positioning tool --- */
+
+/* Clickable area: dashed box in edit mode; solid brighter ring when selected
+   (the arrow-key target). Blue so it reads apart from the gold badge outline. */
+.war-room__hit--editing {
+  outline: 2px dashed rgba(106, 178, 255, 0.7);
+  outline-offset: -1px;
+  background-color: rgba(106, 178, 255, 0.08);
 }
 
-/* Resize handles — small grabbable squares on each edge/corner of the box. */
+.war-room__hit--active {
+  outline: 2px solid rgba(106, 178, 255, 0.95);
+  background-color: rgba(106, 178, 255, 0.14);
+}
+
+/* Badge (icon) bounds in edit mode — gold dashed, to distinguish from the
+   blue hit box; solid brighter ring when the icon is the arrow-key target. */
+.war-room__node--editing .war-room__badge {
+  outline: 1px dashed rgba(255, 220, 140, 0.7);
+  outline-offset: 2px;
+}
+
+.war-room__node--active .war-room__badge {
+  outline: 2px solid rgba(255, 220, 140, 0.95);
+  outline-offset: 2px;
+}
+
+/* Hit-area resize handles — small grabbable squares on each edge/corner. */
 .war-room__handle {
   position: absolute;
   width: 12px;
   height: 12px;
-  background: #f4d27a;
+  background: #6ab2ff;
   border: 1px solid rgba(0, 0, 0, 0.7);
   border-radius: 2px;
   pointer-events: auto;
@@ -620,11 +718,7 @@ onBeforeUnmount(() => {
 .war-room__handle--sw { top: 100%; left: 0; transform: translate(-50%, -50%); }
 
 .war-room__coords {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-top: 14px;
+  margin-top: 6px;
   padding: 1px 5px;
   font-family: var(--font-mono, monospace);
   font-size: 11px;
@@ -635,15 +729,18 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.war-room__edit-hint {
+/* Authoring toolbar — bottom-right, dev builds only. */
+.war-room__edit-bar {
   position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 3;
+  right: 16px;
+  bottom: 16px;
+  z-index: 4;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
+}
+
+.war-room__edit-hint {
   padding: 6px 12px;
   font-family: var(--font-mono, monospace);
   font-size: 12px;
@@ -654,12 +751,26 @@ onBeforeUnmount(() => {
   border-radius: 4px;
 }
 
+.war-room__edit-toggle,
 .war-room__edit-copy {
-  padding: 3px 10px;
-  font: inherit;
+  padding: 6px 12px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: #ffe9a8;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 220, 140, 0.4);
+  border-radius: 4px;
+}
+
+.war-room__edit-toggle.is-on {
   color: #05080d;
   background: #f4d27a;
-  border: 0;
-  border-radius: 3px;
+  border-color: #f4d27a;
+}
+
+.war-room__edit-copy {
+  color: #05080d;
+  background: #f4d27a;
+  border-color: #f4d27a;
 }
 </style>
