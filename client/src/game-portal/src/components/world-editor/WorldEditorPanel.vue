@@ -1,5 +1,7 @@
 <template>
-  <div class="editor-shell">
+  <div class="world-editor-root">
+    <WorldEditorToolbar :active-id="toolbarActiveId" @select="onToolbarSelect" />
+    <div class="editor-shell">
     <div class="editor-controls">
       <div class="editor-title">Map Editor</div>
       <p class="editor-copy">
@@ -1627,6 +1629,7 @@
         </div>
       </div>
     </div>
+    </div>
   </div>
 </template>
 
@@ -1635,6 +1638,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchRecipeLists, fetchItemLists, fetchUnitDefs, saveMapCatalogFile, LevelConflictError, type RecipeListSummary, type ItemListSummary } from '@/game/maps/catalog'
 import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
+import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
 import type {
   BuildingType,
   JsonObject,
@@ -1828,6 +1832,68 @@ const saveError = ref('')
 const hoverLabel = ref('Hover a tile')
 const paintModeEnabled = ref(false)
 const openSection = ref<'setup' | 'campaign' | 'zones' | 'paint' | 'export' | null>('paint')
+
+// Top toolbar (world-editor-toolbar plan, Task 5). Items category opens a
+// popup implemented in Task 7; Play wires a real playtest flow in Task 8.
+// Terrain/obstacles/buildings/units all reuse the existing Paint section's
+// brush-mode state — the toolbar is a shortcut into tools that already exist,
+// not a parallel state machine.
+const itemsPopupOpen = ref(false)
+
+function onToolbarSelect(id: string) {
+  switch (id) {
+    case 'terrain':
+      openSection.value = 'paint'
+      paintModeEnabled.value = true
+      brushMode.value = 'terrain'
+      break
+    case 'obstacles':
+      openSection.value = 'paint'
+      paintModeEnabled.value = true
+      brushMode.value = 'obstacle'
+      break
+    case 'buildings':
+      openSection.value = 'paint'
+      paintModeEnabled.value = true
+      brushMode.value = 'building'
+      break
+    case 'units':
+      openSection.value = 'paint'
+      paintModeEnabled.value = true
+      brushMode.value = 'unit'
+      break
+    case 'items':
+      itemsPopupOpen.value = true
+      break
+    case 'play':
+      startPlaytest()
+      break
+    default:
+      // unit-types / unit-paths / perks / abilities / effects / projectiles /
+      // campaigns are disabled in the toolbar (coming soon) and never emit.
+      break
+  }
+}
+
+// Stub — real playtest launch (Task 8) will spin up a server-backed
+// preview session. For now this only exists so Play's toolbar wiring has
+// somewhere to go.
+function startPlaytest() {
+  console.warn('playtest not wired yet')
+}
+
+// Drives the toolbar's active-button highlight from the panel's real tool
+// state, so the toolbar never has its own source of truth for "what's on".
+const toolbarActiveId = computed<string | undefined>(() => {
+  if (itemsPopupOpen.value) return 'items'
+  if (openSection.value === 'paint') {
+    if (brushMode.value === 'obstacle') return 'obstacles'
+    if (brushMode.value === 'building') return 'buildings'
+    if (brushMode.value === 'unit') return 'units'
+    if (brushMode.value === 'terrain' || brushMode.value === 'tile') return 'terrain'
+  }
+  return undefined
+})
 const isControlHeld = ref(false)
 const availableMaps = ref<MapCatalogEntry[]>([])
 const selectedLoadMapId = ref('')
@@ -5017,6 +5083,15 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.world-editor-root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
 .editor-shell {
   display: grid;
   grid-template-columns: minmax(410px, 450px) minmax(0, 1fr);
@@ -5024,7 +5099,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   align-items: stretch;
   width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
