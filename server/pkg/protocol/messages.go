@@ -700,6 +700,11 @@ type JoinMatchMessage struct {
 	// nothing", so the welcome carries the map. Transport-agnostic: this is the
 	// only signal used for the hit/miss decision, made server-side here.
 	CachedMapHashes []string `json:"cachedMapHashes,omitempty"`
+	// Ephemeral requests a throwaway editor-playtest match: the server creates
+	// a fresh match via MatchManager.NewEphemeralMatch instead of joining/
+	// creating a shared FindOrCreateMatch match, and suppresses reward
+	// persistence for the duration (see GameState.Ephemeral).
+	Ephemeral bool `json:"ephemeral,omitempty"`
 }
 
 type LeaveMatchMessage struct {
