@@ -156,6 +156,9 @@ export type PlacedUnit = {
   unitType: string
   aggroRange?: number
   leashRange?: number
+  rank?: string
+  items?: string[]
+  perks?: string[]
 }
 
 export interface NeutralSpawn {
@@ -477,6 +480,10 @@ export type JoinMatchMessage = {
    *  already holds in its local cache for `mapId`. The server omits the map
    *  from the welcome when the match map's hash is in this list. */
   cachedMapHashes?: string[]
+  /** When true, the server creates a non-persisting ephemeral match for this
+   *  join (e.g. a World Editor playtest session) instead of a normal saved
+   *  match. Omitted (not sent as false) for regular joins. */
+  ephemeral?: boolean
 }
 
 /** Client→server fallback when the client claimed a cache hit but couldn't load

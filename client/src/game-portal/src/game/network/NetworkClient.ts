@@ -207,6 +207,10 @@ export class NetworkClient {
   private ownedUpgradeRanks: Record<string, number> = {}
   private acquiredAdvancementIds: string[] = []
   private knownRecipeIds: string[] = []
+  /** World Editor playtest support: when true, the next join_match asks the
+   *  server for a non-persisting ephemeral match. Set via setEphemeral()
+   *  before connect(); GameClient.start({ephemeral}) wires this up. */
+  private ephemeral = false
 
   // --- Content-addressed map gate -------------------------------------------
   // While the welcome map is being resolved (decompressed, loaded from cache,
@@ -255,6 +259,10 @@ export class NetworkClient {
 
   setKnownRecipeIds(ids: string[]): void {
     this.knownRecipeIds = ids
+  }
+
+  setEphemeral(v: boolean): void {
+    this.ephemeral = v
   }
 
   /** Provide the renderer so loot pickup events can spawn world-space
@@ -320,6 +328,7 @@ export class NetworkClient {
           acquiredAdvancementIds: this.acquiredAdvancementIds,
           knownRecipeIds: this.knownRecipeIds,
           cachedMapHashes: cachedMapHashes.length > 0 ? cachedMapHashes : undefined,
+          ephemeral: this.ephemeral || undefined,
         }
         console.log('[join_match] activeUpgradeIds:', this.activeUpgradeIds, 'ownedUpgradeRanks:', this.ownedUpgradeRanks)
         // The socket may have closed during the await (rare). Guard the send.
