@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { MENU_ENTRIES } from '@/views/MainMenu.vue'
 
 describe('main menu entries', () => {
-  it('has five entries with Item Editor between Map Editor and Settings', () => {
+  it('has five entries with World Editor between Map Editor and Settings', () => {
     const labels = MENU_ENTRIES.map((e) => e.label)
-    expect(labels).toEqual(['Start Game', 'Profile', 'Map Editor', 'Item Editor', 'Settings'])
-    const editor = MENU_ENTRIES.find((e) => e.label === 'Item Editor')
-    expect(editor?.to).toBe('/item-editor')
+    expect(labels).toEqual(['Start Game', 'Profile', 'Map Editor', 'World Editor', 'Settings'])
+    const editor = MENU_ENTRIES.find((e) => e.label === 'World Editor')
+    expect(editor?.to).toBe('/world-editor')
     // tops strictly increasing within the sign span
     const tops = MENU_ENTRIES.map((e) => e.top)
     expect([...tops].sort((a, b) => a - b)).toEqual(tops)
