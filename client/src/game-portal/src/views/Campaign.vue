@@ -105,7 +105,7 @@
                       <MinimapPreview
                         :map="selectedMap"
                         :show-metadata="false"
-                        :max-display-size="200"
+                        :max-display-size="170"
                       />
                     </div>
                   </UiPanel>
@@ -155,14 +155,14 @@
                             v-if="(obj.rewardDominionPoints ?? 0) > 0"
                             class="campaign-objective__reward"
                             title="Dominion Points, awarded the first time you complete this objective"
-                          >{{ obj.rewardDominionPoints }} DP</span>
+                          ><img :src="dominionBadgeUrl" class="campaign-objective__reward-icon" alt="Dominion Points" />{{ obj.rewardDominionPoints }}</span>
                         </span>
                         <span class="campaign-objective__reward-cell">
                           <span
                             v-if="(obj.rewardConquestBadges ?? 0) > 0"
                             class="campaign-objective__reward campaign-objective__reward--badge"
                             title="Conquest Badges, awarded the first time you complete this objective"
-                          >{{ obj.rewardConquestBadges }}<img :src="badgeIconUrl" class="campaign-objective__reward-icon" alt="Conquest Badges" /></span>
+                          ><img :src="badgeIconUrl" class="campaign-objective__reward-icon" alt="Conquest Badges" />{{ obj.rewardConquestBadges }}</span>
                         </span>
                       </li>
                     </ul>
@@ -214,7 +214,8 @@ import GameScrollArea from '@/components/ui/GameScrollArea.vue'
 import MinimapPreview from '@/components/menu/MinimapPreview.vue'
 import PanelLobby from '@/components/menu/PanelLobby.vue'
 import BackButton from '@/components/menu/custom-game/BackButton.vue'
-import badgeIconUrl from '@/assets/ui/buttons/war_room/advancement/medal-slot.png'
+import badgeIconUrl from '@/assets/ui/themes/updated/advancements/badge-earned.png'
+import dominionBadgeUrl from '@/assets/ui/themes/updated/dominion-badge.png'
 import activeBtnUrl from '@/assets/ui/themes/updated/war-room/war-room-active-button.png'
 import inactiveBtnUrl from '@/assets/ui/themes/updated/war-room/war-room-inactive-button.png'
 import headerUrl from '@/assets/ui/themes/updated/world-panel-header.png'
@@ -866,9 +867,11 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+/* Height-driven with auto width so each badge keeps its own aspect ratio,
+   mirroring the top-right Dominion/Conquest readout (MenuDominionPanel.vue). */
 .campaign-objective__reward-icon {
-  width: calc(var(--s) * 14);
-  height: calc(var(--s) * 14);
+  height: calc(var(--s) * 16);
+  width: auto;
   object-fit: contain;
 }
 

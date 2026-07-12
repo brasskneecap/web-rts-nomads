@@ -26,7 +26,7 @@
               <MinimapPreview
                 :map="selectedMap"
                 :show-metadata="false"
-                :max-display-size="240"
+                :max-display-size="200"
               />
             </div>
           </UiPanel>
@@ -275,11 +275,14 @@ onMounted(() => {
   min-height: 0;
 }
 
-/* World-inner panel around the map preview. Lifted a little and sized to its
-   content so the details panel below can take the rest of the height. */
+/* World-inner panel around the map preview. Takes whatever vertical space the
+   details below don't need (details size to their content), so the map shrinks
+   to fit instead of the details overflowing. A min-height floor keeps the map
+   visible even when the description is long. */
 .cg-start__preview-panel {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   display: flex;
+  min-height: calc(var(--s) * 90);
   margin-top: calc(var(--s) * -10);
 }
 
@@ -290,12 +293,13 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   min-height: 0;
+  overflow: hidden;
 }
 
-/* Bare minimap with no border/padding so it touches the panel's inner edges. */
+/* Bare minimap fills the preview box so the canvas below can scale down to it. */
 .cg-start__preview :deep(.minimap-preview--bare) {
-  width: fit-content;
-  height: auto;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   border: 0;
   background: transparent;
@@ -303,14 +307,25 @@ onMounted(() => {
   box-sizing: border-box;
 }
 
+/* Let the canvas scale down to fit the (shrinking) preview box while keeping the
+   map's aspect ratio. Overrides the component's fixed inline px size; the
+   max-display-size still caps the resolution so it never upscales past it. */
+.cg-start__preview :deep(.minimap-preview__canvas) {
+  width: auto !important;
+  height: auto !important;
+  max-width: 100%;
+  max-height: 100%;
+}
+
 .cg-start__preview :deep(.minimap-preview__empty--bare) {
   color: rgba(233, 219, 184, 0.5);
 }
 
-/* Inner-panel frame around the map details. Grows to fill the space below the
-   preview, and won't shrink below its content (so all detail rows fit). */
+/* Inner-panel frame around the map details. Sizes to its content (the map above
+   gives up space to it), so the detail rows are always fully visible without
+   scrolling. */
 .cg-start__detail-panel {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   display: flex;
 }
 
@@ -338,8 +353,9 @@ onMounted(() => {
   display: grid;
   grid-template-columns: max-content 1fr;
   column-gap: calc(var(--s) * 10);
-  row-gap: calc(var(--s) * 1);
+  row-gap: 0;
   margin: 0;
+  line-height: 1.25;
 }
 
 .cg-start__detail-grid dt {

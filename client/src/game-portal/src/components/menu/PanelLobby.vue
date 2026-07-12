@@ -47,7 +47,7 @@
             <MinimapPreview
               :map="selectedMap"
               :show-metadata="false"
-              :max-display-size="240"
+              :max-display-size="200"
             />
           </div>
         </UiPanel>
@@ -330,9 +330,13 @@ onMounted(async () => {
   min-height: 0;
 }
 
+/* Takes whatever vertical space the details below don't need, so the map
+   shrinks to fit rather than the details overflowing. A min-height floor keeps
+   the map visible when the description is long. */
 .panel-lobby__preview-panel {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   display: flex;
+  min-height: calc(var(--s) * 90);
 }
 
 .panel-lobby__preview {
@@ -341,11 +345,12 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   min-height: 0;
+  overflow: hidden;
 }
 
 .panel-lobby__preview :deep(.minimap-preview--bare) {
-  width: fit-content;
-  height: auto;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   border: 0;
   background: transparent;
@@ -353,12 +358,24 @@ onMounted(async () => {
   box-sizing: border-box;
 }
 
+/* Scale the canvas down to the (shrinking) preview box, keeping aspect ratio.
+   Overrides the component's fixed inline px; max-display-size still caps the
+   resolution so it never upscales past it. */
+.panel-lobby__preview :deep(.minimap-preview__canvas) {
+  width: auto !important;
+  height: auto !important;
+  max-width: 100%;
+  max-height: 100%;
+}
+
 .panel-lobby__preview :deep(.minimap-preview__empty--bare) {
   color: rgba(233, 219, 184, 0.5);
 }
 
+/* Sizes to its content (the map above gives up space to it), so the detail rows
+   are always fully visible without scrolling. */
 .panel-lobby__detail-panel {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   display: flex;
 }
 
@@ -383,8 +400,9 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: max-content 1fr;
   column-gap: calc(var(--s) * 10);
-  row-gap: calc(var(--s) * 1);
+  row-gap: 0;
   margin: 0;
+  line-height: 1.25;
 }
 
 .panel-lobby__detail-grid dt {
