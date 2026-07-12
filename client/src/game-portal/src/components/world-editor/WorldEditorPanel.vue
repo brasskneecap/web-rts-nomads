@@ -1522,6 +1522,70 @@
             </div>
           </template>
 
+          <!-- Rank / Items / Perks instance data — applied by the server at
+               spawn for BOTH player and enemy placed units, so these controls
+               are shown regardless of playerSlot. -->
+          <div class="edit-field">
+            <label>Rank</label>
+            <select
+              :value="selectedEditPlacedUnit.rank ?? ''"
+              @change="onInstanceRankChange(($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">None</option>
+              <option v-for="r in selectedInstanceRankOptions" :key="r" :value="r">{{ r }}</option>
+            </select>
+          </div>
+
+          <div class="edit-field">
+            <label>Items</label>
+            <div
+              v-for="(itemId, idx) in selectedEditPlacedUnit.items ?? []"
+              :key="`item-${idx}`"
+              class="edit-loadout-row"
+            >
+              <select
+                :value="itemId"
+                @change="onInstanceItemChange(idx, ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="def in selectedInstanceItemOptions" :key="def.id" :value="def.id">
+                  {{ def.displayName }}
+                </option>
+              </select>
+              <button type="button" @click="removeInstanceItem(idx)">&#x2715;</button>
+            </div>
+            <button
+              type="button"
+              class="edit-add-btn"
+              :disabled="(selectedEditPlacedUnit.items ?? []).length >= selectedInstanceItemOptions.length"
+              @click="addInstanceItem"
+            >+ Add Item</button>
+          </div>
+
+          <div class="edit-field">
+            <label>Perks</label>
+            <div
+              v-for="(perkId, idx) in selectedEditPlacedUnit.perks ?? []"
+              :key="`perk-${idx}`"
+              class="edit-loadout-row"
+            >
+              <select
+                :value="perkId"
+                @change="onInstancePerkChange(idx, ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="def in selectedInstancePerkOptions" :key="def.id" :value="def.id">
+                  {{ def.displayName }}
+                </option>
+              </select>
+              <button type="button" @click="removeInstancePerk(idx)">&#x2715;</button>
+            </div>
+            <button
+              type="button"
+              class="edit-add-btn"
+              :disabled="(selectedEditPlacedUnit.perks ?? []).length >= selectedInstancePerkOptions.length"
+              @click="addInstancePerk"
+            >+ Add Perk</button>
+          </div>
+
           <button type="button" class="edit-delete-btn" @click="deleteSelectedPlacedUnit">Delete Unit</button>
         </div>
       </div>
@@ -1635,7 +1699,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchRecipeLists, fetchItemLists, fetchUnitDefs, saveMapCatalogFile, LevelConflictError, type RecipeListSummary, type ItemListSummary } from '@/game/maps/catalog'
+import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchRecipeLists, fetchItemLists, fetchUnitDefs, fetchItemDefs, fetchPerkDefs, saveMapCatalogFile, LevelConflictError, type RecipeListSummary, type ItemListSummary } from '@/game/maps/catalog'
 import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
 import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
@@ -1667,7 +1731,10 @@ import { buildZoneCellIndex, cellKey, fillEnclosedZoneCells, zoneBoundaryEdges }
 import type { Campaign } from '@/types/campaign'
 import { fetchCampaignCatalog } from '@/services/campaignApi'
 import { NEUTRAL_PLAYER_COLOR, NEUTRAL_SPAWN_RANDOM_GROUP_ID } from '@/game/network/protocol'
-import type { UnitFaction } from '@/game/maps/unitDefs'
+import type { UnitFaction, UnitDef } from '@/game/maps/unitDefs'
+import type { PerkDef } from '@/game/maps/perkDefs'
+import type { ItemDef } from '@/game/maps/itemDefs'
+import { applyInstanceEdit, ranksForUnitType, perksForUnitType, type InstancePatch } from './placedUnitInstance'
 import { Camera } from '@/game/rendering/Camera'
 import { buildTerrainSurface, drawMinimapBase, drawMinimapPOIs } from '@/game/rendering/minimapLayers'
 import {
@@ -1795,6 +1862,13 @@ const recipeLists = ref<RecipeListSummary[]>([])
 // Item lists (from catalog/items/lists) for the neutral-shop Item List
 // dropdown. Empty until fetchItemLists resolves.
 const itemLists = ref<ItemListSummary[]>([])
+
+// Catalogs backing the placed-unit instance-edit popup (Rank / Items /
+// Perks). Loaded once in onMounted alongside the other catalog fetches;
+// empty arrays until they resolve so the popup just shows no options yet.
+const unitDefsList = ref<UnitDef[]>([])
+const itemDefsList = ref<ItemDef[]>([])
+const perkDefsList = ref<PerkDef[]>([])
 
 const groupsForCurrentTier = computed<NeutralGroupSummary[]>(() => {
   const tiers = neutralGroupTiers.value
@@ -2149,6 +2223,87 @@ function updateSelectedPlacedUnit(patch: Partial<PlacedUnit>) {
   )
   placedUnits.value = next
   model.value = { ...model.value, placedUnits: next }
+}
+
+// Rank/Items/Perks options for the instance-edit popup, scoped to the
+// currently-selected placed unit's type. Empty arrays until the catalogs
+// have loaded (onMounted) or while nothing is selected.
+const selectedInstanceRankOptions = computed(() =>
+  selectedEditPlacedUnit.value
+    ? ranksForUnitType(unitDefsList.value, selectedEditPlacedUnit.value.unitType)
+    : []
+)
+const selectedInstancePerkOptions = computed<PerkDef[]>(() =>
+  selectedEditPlacedUnit.value
+    ? perksForUnitType(perkDefsList.value, selectedEditPlacedUnit.value.unitType)
+    : []
+)
+// Items a unit can be given aren't type-filtered by the catalog (ItemDef
+// carries no unitType field) — the full item catalog is offered.
+const selectedInstanceItemOptions = computed<ItemDef[]>(() => itemDefsList.value)
+
+// applyPlacedUnitInstancePatch mutates rank/items/perks on the selected
+// placed unit via the pure applyInstanceEdit helper, then writes the result
+// back through the same placedUnits+model sync updateSelectedPlacedUnit
+// uses. It replaces the whole entry (rather than updateSelectedPlacedUnit's
+// shallow-merge patch) because applyInstanceEdit needs to be able to delete
+// a cleared rank/items/perks key, which a `{ ...u, ...patch }` merge cannot
+// express (a missing key in patch just leaves the old value in place).
+function applyPlacedUnitInstancePatch(patch: Partial<InstancePatch>) {
+  const current = selectedEditPlacedUnit.value
+  if (!selectedEditPlacedUnitId.value || !current) return
+  const full: InstancePatch = {
+    rank: patch.rank ?? current.rank ?? '',
+    items: patch.items ?? current.items ?? [],
+    perks: patch.perks ?? current.perks ?? [],
+  }
+  const next = placedUnits.value.map((u) =>
+    u.id === selectedEditPlacedUnitId.value ? applyInstanceEdit(u, full) : u
+  )
+  placedUnits.value = next
+  model.value = { ...model.value, placedUnits: next }
+}
+
+function onInstanceRankChange(rank: string) {
+  applyPlacedUnitInstancePatch({ rank })
+}
+
+function addInstanceItem() {
+  const current = selectedEditPlacedUnit.value?.items ?? []
+  const next = selectedInstanceItemOptions.value.find((def) => !current.includes(def.id))
+  if (!next) return
+  applyPlacedUnitInstancePatch({ items: [...current, next.id] })
+}
+
+function onInstanceItemChange(index: number, itemId: string) {
+  const current = [...(selectedEditPlacedUnit.value?.items ?? [])]
+  current[index] = itemId
+  applyPlacedUnitInstancePatch({ items: current })
+}
+
+function removeInstanceItem(index: number) {
+  const current = [...(selectedEditPlacedUnit.value?.items ?? [])]
+  current.splice(index, 1)
+  applyPlacedUnitInstancePatch({ items: current })
+}
+
+function addInstancePerk() {
+  const current = selectedEditPlacedUnit.value?.perks ?? []
+  const next = selectedInstancePerkOptions.value.find((def) => !current.includes(def.id))
+  if (!next) return
+  applyPlacedUnitInstancePatch({ perks: [...current, next.id] })
+}
+
+function onInstancePerkChange(index: number, perkId: string) {
+  const current = [...(selectedEditPlacedUnit.value?.perks ?? [])]
+  current[index] = perkId
+  applyPlacedUnitInstancePatch({ perks: current })
+}
+
+function removeInstancePerk(index: number) {
+  const current = [...(selectedEditPlacedUnit.value?.perks ?? [])]
+  current.splice(index, 1)
+  applyPlacedUnitInstancePatch({ perks: current })
 }
 
 // Edit-panel Faction dropdown handler. Faction isn't stored on the placed
@@ -4940,8 +5095,11 @@ onMounted(() => {
   void fetchNeutralGroups().then((tiers) => { neutralGroupTiers.value = tiers }).catch(() => {})
   void fetchRecipeLists().then((lists) => { recipeLists.value = lists }).catch(() => {})
   void fetchItemLists().then((lists) => { itemLists.value = lists }).catch(() => {})
+  void fetchItemDefs().then((items) => { itemDefsList.value = items }).catch(() => {})
+  void fetchPerkDefs().then((perks) => { perkDefsList.value = perks }).catch(() => {})
   void fetchUnitDefs()
     .then(({ units, paths, pathsByUnit }) => {
+      unitDefsList.value = units
       initPathBounds(paths)
       initPathsByUnitType(pathsByUnit)
       // Bucket every catalog unit by its declared faction. Buckets are created
@@ -6011,19 +6169,17 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 4px;
   color: #fca5a5;
-  cursor: pointer;
   font-size: 11px;
   padding: 2px 5px;
 }
 
-.edit-loadout-row button:disabled { opacity: 0.35; cursor: not-allowed; }
+.edit-loadout-row button:disabled { opacity: 0.35; }
 
 .edit-add-btn {
   background: rgba(59, 130, 246, 0.15);
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 5px;
   color: #93c5fd;
-  cursor: pointer;
   font-size: 11px;
   padding: 4px 8px;
   margin-top: 2px;
