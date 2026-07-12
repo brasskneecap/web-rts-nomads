@@ -44,6 +44,7 @@ describe('NetworkClient join_match ephemeral option', () => {
   afterEach(() => {
     globalThis.WebSocket = originalWebSocket
     FakeWebSocket.instances = []
+    localStorage.removeItem('webrts.matchId')
     vi.restoreAllMocks()
   })
 
@@ -75,5 +76,36 @@ describe('NetworkClient join_match ephemeral option', () => {
     const joinMessage = JSON.parse(ws.sent[0])
     expect(joinMessage.type).toBe('join_match')
     expect(joinMessage.ephemeral).toBe(true)
+  })
+
+  // Regression: an ephemeral playtest must start a FRESH match every time. The
+  // previous playtest's matchId is persisted to localStorage on welcome and
+  // reseeded into a new NetworkClient, so a resume:true ephemeral join would
+  // otherwise re-send it and the server would reconnect to the still-alive old
+  // ephemeral match ("Stop & reset" appears not to reset). Ephemeral joins must
+  // never carry a matchId, regardless of resume.
+  it('omits matchId on an ephemeral join even when one is stored and resume is true', async () => {
+    localStorage.setItem('webrts.matchId', 'match-OLD')
+    const client = mkClient() // constructor seeds matchId from storage
+    client.setEphemeral(true)
+    await client.connect({ resume: true })
+
+    const ws = FakeWebSocket.instances[0]
+    const joinMessage = JSON.parse(ws.sent[0])
+    expect(joinMessage.ephemeral).toBe(true)
+    expect(joinMessage.matchId).toBeUndefined()
+  })
+
+  // Guard against over-suppression: a NORMAL (non-ephemeral) resume join must
+  // still send the stored matchId so real-match reconnect keeps working.
+  it('still sends the stored matchId on a non-ephemeral resume join', async () => {
+    localStorage.setItem('webrts.matchId', 'match-REAL')
+    const client = mkClient()
+    await client.connect({ resume: true })
+
+    const ws = FakeWebSocket.instances[0]
+    const joinMessage = JSON.parse(ws.sent[0])
+    expect(joinMessage.ephemeral).toBeUndefined()
+    expect(joinMessage.matchId).toBe('match-REAL')
   })
 })

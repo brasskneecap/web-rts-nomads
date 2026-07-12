@@ -322,7 +322,11 @@ export class NetworkClient {
           type: 'join_match',
           playerId: this.playerId,
           mapId: this.mapId,
-          matchId: resume ? (this.matchId ?? undefined) : undefined,
+          // Ephemeral playtests must start a FRESH match every time: never send
+          // a persisted matchId, or the server reconnects to the still-alive
+          // prior ephemeral match (Stop & reset would not reset). Only a normal
+          // resume join carries the stored matchId.
+          matchId: resume && !this.ephemeral ? (this.matchId ?? undefined) : undefined,
           activeUpgradeIds: shouldSendActiveUpgrades ? this.activeUpgradeIds! : undefined,
           ownedUpgradeRanks: hasUpgrades ? this.ownedUpgradeRanks : undefined,
           acquiredAdvancementIds: this.acquiredAdvancementIds,
