@@ -1734,7 +1734,7 @@ import { NEUTRAL_PLAYER_COLOR, NEUTRAL_SPAWN_RANDOM_GROUP_ID } from '@/game/netw
 import type { UnitFaction, UnitDef } from '@/game/maps/unitDefs'
 import type { PerkDef } from '@/game/maps/perkDefs'
 import type { ItemDef } from '@/game/maps/itemDefs'
-import { applyInstanceEdit, ranksForUnitType, perksForUnitType, type InstancePatch } from './placedUnitInstance'
+import { applyInstanceEdit, ranksForUnitType, perksForUnitType, itemsForUnitType, type InstancePatch } from './placedUnitInstance'
 import { Camera } from '@/game/rendering/Camera'
 import { buildTerrainSurface, drawMinimapBase, drawMinimapPOIs } from '@/game/rendering/minimapLayers'
 import {
@@ -2238,9 +2238,11 @@ const selectedInstancePerkOptions = computed<PerkDef[]>(() =>
     ? perksForUnitType(perkDefsList.value, selectedEditPlacedUnit.value.unitType)
     : []
 )
-// Items a unit can be given aren't type-filtered by the catalog (ItemDef
-// carries no unitType field) — the full item catalog is offered.
-const selectedInstanceItemOptions = computed<ItemDef[]>(() => itemDefsList.value)
+const selectedInstanceItemOptions = computed<ItemDef[]>(() =>
+  selectedEditPlacedUnit.value
+    ? itemsForUnitType(itemDefsList.value, selectedEditPlacedUnit.value.unitType)
+    : []
+)
 
 // applyPlacedUnitInstancePatch mutates rank/items/perks on the selected
 // placed unit via the pure applyInstanceEdit helper, then writes the result

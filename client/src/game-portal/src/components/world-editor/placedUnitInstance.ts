@@ -8,7 +8,6 @@
 
 import type { PlacedUnit } from '@/game/network/protocol'
 import type { UnitDef } from '@/game/maps/unitDefs'
-import type { PerkDef } from '@/game/maps/perkDefs'
 
 export type InstancePatch = { rank: string; items: string[]; perks: string[] }
 
@@ -50,6 +49,17 @@ export function perksForUnitType<T extends { id: string; unitType?: string }>(
   return perkDefs.filter((p) => !p.unitType || p.unitType === unitType)
 }
 
-// Re-exported for callers that want the concrete PerkDef type without a
-// second import from perkDefs.ts.
-export type { PerkDef }
+// itemsForUnitType filters the item catalog to items valid for a unit type.
+// ItemDef.allowedUnitTypes (see game/maps/itemDefs.ts) is the list of
+// eligible unit types — absent/empty means the item applies to any unit
+// type. Mirrors the itemTypeAllowsUnit semantics in VaultPanel.vue: an item
+// authored onto a placed unit of a disallowed type is silently
+// force-equipped by the server (equipItemDirectLocked) with no drop and no
+// warning, unlike perks (which the server drops at hydrate), so this filter
+// must be applied client-side.
+export function itemsForUnitType<T extends { id: string; allowedUnitTypes?: string[] }>(
+  items: T[],
+  unitType: string,
+): T[] {
+  return items.filter((i) => !i.allowedUnitTypes || i.allowedUnitTypes.length === 0 || i.allowedUnitTypes.includes(unitType))
+}

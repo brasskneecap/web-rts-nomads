@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyInstanceEdit, perksForUnitType, ranksForUnitType } from './placedUnitInstance'
+import { applyInstanceEdit, itemsForUnitType, perksForUnitType, ranksForUnitType } from './placedUnitInstance'
 import type { PlacedUnit } from '@/game/network/protocol'
 import type { UnitDef } from '@/game/maps/unitDefs'
 
@@ -25,6 +25,16 @@ describe('placed unit instance edits', () => {
       { id: 'p_c' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any -- unitType absent = any unit
     ]
     expect(perksForUnitType(perkDefs, 'soldier').map((p) => p.id)).toEqual(['p_a', 'p_c'])
+  })
+
+  it('filters items to the unit type using the real ItemDef.allowedUnitTypes field', () => {
+    const itemDefs = [
+      { id: 'i_a', allowedUnitTypes: ['knight'] } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      { id: 'i_b', allowedUnitTypes: ['archer'] } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      { id: 'i_c' } as any, // eslint-disable-line @typescript-eslint/no-explicit-any -- allowedUnitTypes absent = any unit
+    ]
+    expect(itemsForUnitType(itemDefs, 'knight').map((i) => i.id)).toEqual(['i_a', 'i_c'])
+    expect(itemsForUnitType(itemDefs, 'archer').map((i) => i.id)).toEqual(['i_b', 'i_c'])
   })
 
   it('returns the global rank set for a unit type present in the catalog, empty for an unknown one', () => {
