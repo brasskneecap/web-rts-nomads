@@ -204,16 +204,17 @@ pub fn spawn_and_wait_ready(
     // into the Go binary at compile time (read path), but writing saves back
     // to disk requires real directories. The Go server probes one env var per
     // catalog (MAP_CATALOG_DIR, ITEM_CATALOG_DIR, RECIPE_CATALOG_DIR — items +
-    // their recipes — and NEUTRAL_GROUPS_DIR for loot-table availability
-    // edits). When this binary runs from a packaged release under the repo,
-    // walk up to find the server catalog dir and point all four env vars at
-    // its subdirs so every editor's save works. If not found (binary shipped
-    // without the repo), editor saves are unavailable but reads still work.
+    // their recipes — UNIT_CATALOG_DIR, and NEUTRAL_GROUPS_DIR for loot-table
+    // availability edits). When this binary runs from a packaged release under
+    // the repo, walk up to find the server catalog dir and point all five env
+    // vars at its subdirs so every editor's save works. If not found (binary
+    // shipped without the repo), editor saves are unavailable but reads still work.
     if let Some(catalog_dir) = locate_repo_catalog_dir() {
         info!("supervisor: catalog editor dirs under {}", catalog_dir.display());
         cmd.env("MAP_CATALOG_DIR", catalog_dir.join("maps"));
         cmd.env("ITEM_CATALOG_DIR", catalog_dir.join("items"));
         cmd.env("RECIPE_CATALOG_DIR", catalog_dir.join("recipes"));
+        cmd.env("UNIT_CATALOG_DIR", catalog_dir.join("units"));
         cmd.env("NEUTRAL_GROUPS_DIR", catalog_dir.join("neutral_groups"));
     } else {
         info!("supervisor: no repo catalog dir found near binary; map + item editor saves will be unavailable");

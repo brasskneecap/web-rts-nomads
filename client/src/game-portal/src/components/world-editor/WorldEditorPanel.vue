@@ -1979,7 +1979,7 @@ function onToolbarSelect(id: string) {
       startPlaytest()
       break
     default:
-      // unit-types / unit-paths / perks / abilities / effects / projectiles /
+      // unit-paths / perks / abilities / effects / projectiles /
       // campaigns are disabled in the toolbar (coming soon) and never emit.
       break
   }
