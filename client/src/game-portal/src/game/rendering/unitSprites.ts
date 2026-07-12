@@ -10,6 +10,7 @@
 // Both normalize to the same in-memory shape, so the renderer doesn't care.
 
 import { getUnitBoundsFor } from '../maps/unitDefs'
+import type { UnitDef } from '../maps/unitDefs'
 
 // Multiplier applied to each unit sprite's native size at draw time. Bump
 // until sprites read clearly at common zoom-outs without swamping the UI.
@@ -360,6 +361,29 @@ function imageReady(img: HTMLImageElement | undefined): img is HTMLImageElement 
 //      and vertical padding fractions applied to trim transparent margins.
 //   2. No sprite (placeholder path) → use the def's bounds relative to
 //      (unit.x, unit.y), falling back to DEFAULT_UNIT_BOUNDS when absent.
+
+// Fixed placeholder box for a unit def that has no `bounds` at all — e.g. a
+// brand-new unit type created blank in the unit editor, before any art has
+// been assigned. Distinct from unitDefs' DEFAULT_UNIT_BOUNDS (which sizes
+// hit-test rects): this is the size used to draw a visible render placeholder
+// so an artless unit still shows up as a positive-sized box instead of a
+// zero/NaN-sized (or throwing) render.
+export const PLACEHOLDER_BOUNDS = { w: 32, h: 32 }
+
+// Resolves the render box for a unit def directly (as opposed to
+// getUnitBodyRect, which resolves by catalog unitType/path lookup). Used by
+// the unit editor's live preview, where the def being edited may not be
+// registered in UNIT_DEF_MAP yet. Behavior-preserving for defs that already
+// have `bounds` — only the missing-bounds case gets the new fixed default.
+export function resolvePlaceholderBounds(def: UnitDef | null | undefined): { w: number; h: number } {
+  const bounds = def?.bounds
+  if (!bounds) return PLACEHOLDER_BOUNDS
+  return {
+    w: bounds.halfWidth * 2,
+    h: bounds.bottom - bounds.top,
+  }
+}
+
 export function getUnitBodyRect(args: {
   x: number
   y: number
