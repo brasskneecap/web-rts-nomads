@@ -1709,6 +1709,18 @@
         </div>
       </div>
     </div>
+
+    <div v-if="unitTypesPopupOpen" class="we-modal-overlay">
+      <div class="we-modal we-modal--wide">
+        <div class="we-modal__header">
+          <span>Unit Type Editor</span>
+          <UiButton size="sm" @click="unitTypesPopupOpen = false">Close</UiButton>
+        </div>
+        <div class="we-modal__body">
+          <UnitTypeEditorPanel />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1719,6 +1731,7 @@ import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
 import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
 import ItemEditorPanel from '@/components/ItemEditorPanel.vue'
+import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
 import { usePlaytest } from './usePlaytest'
@@ -1932,6 +1945,7 @@ const openSection = ref<'setup' | 'campaign' | 'zones' | 'paint' | 'export' | nu
 // brush-mode state — the toolbar is a shortcut into tools that already exist,
 // not a parallel state machine.
 const itemsPopupOpen = ref(false)
+const unitTypesPopupOpen = ref(false)
 
 function onToolbarSelect(id: string) {
   switch (id) {
@@ -1957,6 +1971,9 @@ function onToolbarSelect(id: string) {
       break
     case 'items':
       itemsPopupOpen.value = true
+      break
+    case 'unit-types':
+      unitTypesPopupOpen.value = true
       break
     case 'play':
       startPlaytest()
@@ -1994,6 +2011,7 @@ function stopPlaytest() {
 // state, so the toolbar never has its own source of truth for "what's on".
 const toolbarActiveId = computed<string | undefined>(() => {
   if (itemsPopupOpen.value) return 'items'
+  if (unitTypesPopupOpen.value) return 'unit-types'
   if (openSection.value === 'paint') {
     if (brushMode.value === 'obstacle') return 'obstacles'
     if (brushMode.value === 'building') return 'buildings'
