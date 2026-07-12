@@ -162,3 +162,72 @@ func TestSpawnPlacedUnit_RankAssignsPathAndInventorySize(t *testing.T) {
 		t.Errorf("len(Equipped) = %d; want 2", len(spawned.Equipped))
 	}
 }
+
+// TestSpawnPlacedUnit_EnemySlotAppliesRankItemsPerksAndRetainsGuardMode: an
+// ENEMY-slot placed unit with rank + items + perks spawns (via the real
+// enemy-spawn trigger, ensurePlacedEnemiesSpawnedLocked, invoked from
+// EnsurePlayerWithUpgrades) with the rank applied and the item equipped —
+// exactly like the player-owned case — AND still retains the guard-mode
+// behavior spawnPlacedEnemyUnitsLocked stamps on every enemy placed unit
+// (GuardMode/GuardAnchor/GuardAggroRange/GuardLeashRange/Status). This
+// proves instance-data application and guard-mode setup coexist correctly;
+// see the ordering note on the applyPlacedUnitInstanceLocked call site in
+// spawnPlacedEnemyUnitsLocked (state_spawn.go) for why the ordering is safe.
+//
+// No labelled townhall/spawn-point fixture is needed here (unlike the
+// player-slot test above): spawnPlacedEnemyUnitsLocked spawns every
+// entry.PlayerSlot == "enemy" placement unconditionally, independent of any
+// player's label resolution. ensurePlacedEnemiesSpawnedLocked fires
+// unconditionally from EnsurePlayerWithUpgrades regardless of whether the
+// joining player resolves to a labelled slot, so the plain default map
+// (with its unlabelled townhall/spawn-point) is sufficient to trigger it.
+func TestSpawnPlacedUnit_EnemySlotAppliesRankItemsPerksAndRetainsGuardMode(t *testing.T) {
+	cfg := GetMapConfigByID(DefaultMapID())
+	cfg.PlacedUnits = []protocol.PlacedUnit{{
+		GridCoord: protocol.GridCoord{X: 10, Y: 10}, ID: "pu-enemy-1", PlayerSlot: "enemy",
+		UnitType: "soldier", Rank: "silver", Items: []string{"fire_sword"}, Perks: []string{},
+	}}
+	s := NewGameStateWithSeed(cfg, 7)
+	// Any join triggers ensurePlacedEnemiesSpawnedLocked (state.go:3720)
+	// regardless of whether this player resolves to a labelled slot on the
+	// default map.
+	s.EnsurePlayerWithUpgrades("p1", nil, nil, nil, nil)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var spawned *Unit
+	for _, u := range s.Units {
+		if u != nil && u.OwnerID == enemyPlayerID && u.UnitType == "soldier" {
+			spawned = u
+			break
+		}
+	}
+	if spawned == nil {
+		t.Fatal("placed enemy soldier did not spawn")
+	}
+	if spawned.Rank != "silver" {
+		t.Errorf("rank = %q, want silver", spawned.Rank)
+	}
+	equippedFire := false
+	for _, e := range spawned.Equipped {
+		if e != nil && e.ItemID == "fire_sword" {
+			equippedFire = true
+		}
+	}
+	if !equippedFire {
+		t.Error("fire_sword not equipped on the placed enemy unit")
+	}
+	// Guard-mode fields must survive instance-data application untouched.
+	if !spawned.GuardMode {
+		t.Error("GuardMode = false; want true (instance-data application must not clobber guard setup)")
+	}
+	if spawned.Status != "Guarding" {
+		t.Errorf("Status = %q; want %q", spawned.Status, "Guarding")
+	}
+	if spawned.GuardAggroRange <= 0 {
+		t.Errorf("GuardAggroRange = %v; want > 0", spawned.GuardAggroRange)
+	}
+	if spawned.GuardLeashRange < spawned.GuardAggroRange {
+		t.Errorf("GuardLeashRange (%v) < GuardAggroRange (%v)", spawned.GuardLeashRange, spawned.GuardAggroRange)
+	}
+}

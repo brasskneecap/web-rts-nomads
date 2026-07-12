@@ -325,6 +325,14 @@ func (s *GameState) spawnPlacedUnitsForPlayerLocked(playerID, color string) {
 //     (PerkDef.GrantsAbilities) land on unit.Abilities, mirroring
 //     debug_spawn.go's second assignUnitPathAbilitiesLocked call.
 func (s *GameState) applyPlacedUnitInstanceLocked(unit *Unit, entry protocol.PlacedUnit) {
+	// entry.Rank != unit.Rank skips the whole block when the authored rank
+	// already matches the unit's just-spawned rank (unit.Rank == unitRankBase
+	// from spawnUnitFromDefLocked) — e.g. an authored rank of "base", or the
+	// common case of entry.Rank == "" being caught by the first condition.
+	// This is a no-op-avoidance guard, not a correctness requirement:
+	// assignUnitPathOnRankUpLocked has its own internal `unit.Rank ==
+	// unitRankBase` guard (progression.go) that would no-op anyway, so a
+	// base-rank placed unit correctly skips path assignment either way.
 	if entry.Rank != "" && entry.Rank != unit.Rank {
 		unit.Rank = entry.Rank
 		s.assignUnitPathOnRankUpLocked(unit)
@@ -431,6 +439,23 @@ func (s *GameState) spawnPlacedEnemyUnitsLocked() {
 		unit.CombatAnchorX = spawnPos.X
 		unit.CombatAnchorY = spawnPos.Y
 		unit.Status = "Guarding"
+		// Apply authored rank/items/perks after guard-mode fields are set.
+		// Verified none of applyPlacedUnitInstanceLocked's callees
+		// (applyRankModifiersLocked, setInventorySizeForRankLocked,
+		// recomputeUnitEquipmentBonusLocked, assignUnitPathOnRankUpLocked,
+		// rollUnitPoolSpellsLocked, assignUnitPathAbilitiesLocked,
+		// applyPerkGrantedHooksLocked) touch GuardMode/GuardAnchor*/
+		// GuardAggroRange/GuardLeashRange/Order/OrderID/CombatAnchor*/Status/
+		// IgnoreWaveClear, so this ordering is not load-bearing for
+		// correctness today — it is chosen so guard identity is fully
+		// established before any instance-data hook runs, keeping guard
+		// config authoritative over anything a future rank/perk hook might
+		// add. Note spawnEnemyUnitLocked (unlike the player path) does NOT
+		// pre-size InventorySize/Equipped (that setup in
+		// spawnUnitFromDefLocked is player-only); setInventorySizeForRankLocked
+		// inside applyPlacedUnitInstanceLocked has no ownership check, so it
+		// still grows them correctly here when entry.Rank is set.
+		s.applyPlacedUnitInstanceLocked(unit, entry)
 	}
 }
 
