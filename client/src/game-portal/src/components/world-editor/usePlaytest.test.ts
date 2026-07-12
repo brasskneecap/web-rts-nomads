@@ -36,4 +36,26 @@ describe('usePlaytest reentrancy guard', () => {
     await start(file)
     expect(gameClientCtor).toHaveBeenCalledTimes(1)
   })
+
+  it('rejects a concurrent start() call issued while a prior start() is still in flight', async () => {
+    const { usePlaytest } = await import('./usePlaytest')
+    const { playing, start } = usePlaytest(() => ({}) as HTMLCanvasElement)
+    const file = { id: 'my_map_concurrent' } as any
+
+    // Isolate this test's call count from the shared mock's history.
+    gameClientCtor.mockClear()
+
+    // Fire both calls back-to-back without awaiting the first. The first
+    // call runs synchronously up to its first `await` (inside
+    // saveMapCatalogFile), setting the in-flight `starting` marker before
+    // yielding. The second call therefore hits the reentrancy guard
+    // synchronously and returns immediately, before either promise settles.
+    const first = start(file)
+    const second = start(file)
+
+    await Promise.all([first, second])
+
+    expect(playing.value).toBe(true)
+    expect(gameClientCtor).toHaveBeenCalledTimes(1)
+  })
 })
