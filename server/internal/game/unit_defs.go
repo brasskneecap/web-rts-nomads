@@ -356,13 +356,28 @@ func validateUnitDef(def *UnitDef) error {
 }
 
 func getUnitDef(unitType string) (UnitDef, bool) {
+	runtimeUnitsMu.RLock()
+	if def, ok := runtimeUnits[unitType]; ok {
+		runtimeUnitsMu.RUnlock()
+		return def, true
+	}
+	runtimeUnitsMu.RUnlock()
 	def, ok := unitDefsByType[unitType]
 	return def, ok
 }
 
 func ListUnitDefs() []UnitDef {
-	defs := make([]UnitDef, 0, len(unitDefsByType))
-	for _, def := range unitDefsByType {
+	merged := make(map[string]UnitDef, len(unitDefsByType))
+	for t, def := range unitDefsByType {
+		merged[t] = def
+	}
+	runtimeUnitsMu.RLock()
+	for t, def := range runtimeUnits {
+		merged[t] = def
+	}
+	runtimeUnitsMu.RUnlock()
+	defs := make([]UnitDef, 0, len(merged))
+	for _, def := range merged {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Type < defs[j].Type })
