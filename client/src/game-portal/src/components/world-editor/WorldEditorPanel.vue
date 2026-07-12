@@ -1167,8 +1167,9 @@
       </div>
 
       <div class="canvas-frame">
-        <canvas ref="canvas" class="editor-canvas"></canvas>
+        <canvas v-show="!playtestPlaying" ref="canvas" class="editor-canvas"></canvas>
         <canvas
+          v-show="!playtestPlaying"
           ref="minimapCanvas"
           class="editor-minimap"
           aria-label="Map minimap (click or drag to jump)"
@@ -1177,6 +1178,8 @@
           @mouseup="onMinimapMouseUp"
           @mouseleave="onMinimapMouseUp"
         ></canvas>
+        <canvas v-show="playtestPlaying" ref="playCanvas" class="we-play-canvas"></canvas>
+        <PlaytestBar v-if="playtestPlaying" @stop="stopPlaytest" />
         <div v-if="selectedEditBuilding && editPanelPos" class="edit-panel" :style="editPanelStyle">
           <div class="edit-panel__header">
             <span class="edit-panel__title">{{ selectedEditBuilding.buildingType }}</span>
@@ -1717,6 +1720,8 @@ import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGua
 import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
 import ItemEditorPanel from '@/components/ItemEditorPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
+import { usePlaytest } from './usePlaytest'
 import type {
   BuildingType,
   JsonObject,
@@ -1963,11 +1968,22 @@ function onToolbarSelect(id: string) {
   }
 }
 
-// Stub — real playtest launch (Task 8) will spin up a server-backed
-// preview session. For now this only exists so Play's toolbar wiring has
-// somewhere to go.
+// Task 8: ephemeral Play/Reset harness. start() persists the current editor
+// map (including unsaved placements) under its working id (or the scratch id
+// for a never-saved draft) and runs it as a live match on the play canvas.
+// stop() tears the match down; the editor's own `model` is never mutated by
+// playtest, so re-showing the editor canvas is the entire "reset".
+const playCanvas = ref<HTMLCanvasElement | null>(null)
+const { playing: playtestPlaying, start: startPlaytestMatch, stop: stopPlaytestMatch } = usePlaytest(
+  () => playCanvas.value,
+)
+
 function startPlaytest() {
-  console.warn('playtest not wired yet')
+  void startPlaytestMatch(exportedCatalogFile.value)
+}
+
+function stopPlaytest() {
+  stopPlaytestMatch()
 }
 
 // Drives the toolbar's active-button highlight from the panel's real tool
@@ -5253,6 +5269,12 @@ onBeforeUnmount(() => {
   resizeObserver = null
 
   cancelAnimationFrame(animationFrameId)
+
+  // Tear down any in-progress playtest match so it doesn't keep a live
+  // GameClient/network connection open after the editor unmounts.
+  if (playtestPlaying.value) {
+    stopPlaytestMatch()
+  }
 })
 </script>
 
@@ -6229,6 +6251,16 @@ onBeforeUnmount(() => {
   height: 100%;
   display: block;
   background: #0a0a0a;
+}
+
+.we-play-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #0a0a0a;
+  z-index: 25;
 }
 
 .editor-minimap {
