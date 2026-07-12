@@ -1978,8 +1978,12 @@ const { playing: playtestPlaying, start: startPlaytestMatch, stop: stopPlaytestM
   () => playCanvas.value,
 )
 
-function startPlaytest() {
-  void startPlaytestMatch(exportedCatalogFile.value)
+async function startPlaytest() {
+  try {
+    await startPlaytestMatch(exportedCatalogFile.value)
+  } catch (err) {
+    saveError.value = err instanceof Error ? err.message : 'Failed to start playtest'
+  }
 }
 
 function stopPlaytest() {
@@ -5270,11 +5274,12 @@ onBeforeUnmount(() => {
 
   cancelAnimationFrame(animationFrameId)
 
-  // Tear down any in-progress playtest match so it doesn't keep a live
-  // GameClient/network connection open after the editor unmounts.
-  if (playtestPlaying.value) {
-    stopPlaytestMatch()
-  }
+  // Tear down any playtest match so it doesn't keep a live GameClient/network
+  // connection open after the editor unmounts. stop() is idempotent, so this
+  // is safe to call even when no match is active, and it also cleans up a
+  // client that was constructed but hasn't flipped `playing` yet (still
+  // awaiting save/connect inside start()).
+  stopPlaytestMatch()
 })
 </script>
 

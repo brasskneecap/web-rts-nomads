@@ -20,14 +20,27 @@ export function usePlaytest(getPlayCanvas: () => HTMLCanvasElement | null) {
   // including unsaved placements), then run an ephemeral match on the play
   // canvas via a real GameClient.
   async function start(file: MapCatalogFile) {
+    // Reentrancy guard: a second click while already playing (or while a
+    // prior start() is still in flight) must not orphan the existing
+    // client's rAF render loop and websocket.
+    if (playing.value) return
     const canvas = getPlayCanvas()
     if (!canvas) return
-    const mapId = resolvePlaytestMapId(file)
-    // Persist under the resolved id (scratch for drafts) so join_match can find it.
-    await saveMapCatalogFile({ ...file, id: mapId })
-    client = new GameClient(canvas, mapId)
-    await client.start({ ephemeral: true })
-    playing.value = true
+    try {
+      const mapId = resolvePlaytestMapId(file)
+      // Persist under the resolved id (scratch for drafts) so join_match can find it.
+      await saveMapCatalogFile({ ...file, id: mapId })
+      client = new GameClient(canvas, mapId)
+      await client.start({ ephemeral: true })
+      playing.value = true
+    } catch (err) {
+      // Tear down any partially-constructed client and surface the failure
+      // to the caller instead of leaving a silent, half-started playtest.
+      client?.stop()
+      client = null
+      playing.value = false
+      throw err
+    }
   }
 
   // stop: tear down the match. The editor's own MapConfig is untouched, so the
