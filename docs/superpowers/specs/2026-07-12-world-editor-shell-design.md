@@ -25,7 +25,7 @@ This first sub-project builds the **shell**: the unified canvas + toolbar, per-p
 2. **Play presents as an in-editor mode** — swap the editor canvas to the real game renderer in place; a Play/Pause/Stop bar overlays. No navigation to a separate "game" screen.
 3. **Approach A** — copy the map editor into a new `world-editor/` folder and extend it; reuse the maps catalog (`/maps`) for saves so both editors coexist and produce the same `MapConfig`; swap to the game renderer for Play.
 4. **Extend `PlacedUnit`** with optional per-instance rank/items/perks, applied at spawn, so placed units are meaningful in a playtest.
-5. **Play = the map played as the game would** (its configured player slots / waves / objectives), the author observing/controlling — NOT a reduced sandbox.
+5. **Play = an ephemeral ("sandbox") test match**: the real simulation AND the map's objective logic run — objectives fire, complete, and show victory in-sim so the author can verify them — but the session is a throwaway that persists NOTHING to the player's real profile (no Dominion Points, no loot, no XP/advancement, no campaign unlock). The author observes/controls their placed units against the map's configured opponents.
 6. **Toolbar shows the full future category set**, with unbuilt categories disabled ("coming soon"), so the vision is visible.
 
 ## Architecture
@@ -72,18 +72,28 @@ This first sub-project builds the **shell**: the unified canvas + toolbar, per-p
 - New / Load (from `/maps` list) / Save picker, mirroring the map editor's. Start state = an empty map (like the current map editor).
 - The world editor and old map editor read/write the same map catalog; a map authored in one opens in the other (the new per-instance unit fields are simply absent on map-editor-authored maps and ignored by it).
 
-### §5 Play / Reset harness
+### §5 Play / Reset harness (ephemeral test match)
 
 - **Play** (`world-editor/usePlaytest.ts` composable):
   1. Persist the current in-memory `MapConfig` to the maps overlay so the server can start a match that includes unsaved placements. Use the working map's id when it has one; a brand-new, never-saved map is persisted under a reserved scratch id (`__world_editor_scratch__`) so Play works before the author has named/saved their map.
-  2. Start a **real server-authoritative solo playtest match** on that map id, via the existing match-start flow (the same path the game's "Start Game" uses for a single player against the map's configured opponents/waves).
-  3. Swap the editor canvas to the game's live renderer (the match `CanvasRenderer` + `NetworkClient` snapshot stream) and wire input, overlaid with a **Play/Pause/Stop bar**.
+  2. Start a **real server-authoritative playtest match** on that map id, flagged **ephemeral** (see the reward-suppression contract below). The author controls their placed units; the map's configured opponents/waves/objectives run.
+  3. Swap the editor canvas to the game's live renderer (the match `CanvasRenderer` + `NetworkClient` snapshot stream) and wire input, overlaid with a **Play/Pause/Stop bar**. Objective progress/victory is visible (it runs in-sim regardless), so objective logic is testable.
 - **Pause / Stop (reset)**:
   1. Stop and discard the match — `Loop.Stop()` + drop the `GameState` (server), disconnect the snapshot stream (client).
   2. Swap the canvas back to the editor renderer and re-render the editor's **untouched** `MapConfig`.
   - Because the editor retains its own authoritative map, placed units "snap back" for free — there is nothing to undo; the mutated match state is simply thrown away.
-- Playtest outcome is never persisted. The scratch overlay map is the working map's own id (overwritten on the next Play), so no cleanup is needed.
-- Desktop build (embedded server) runs this locally; the dev flow uses the running Go server. Both go through the same match API — no new match-creation primitive is needed if the overlay+match-by-id path is used; if a "start match from posted MapConfig" endpoint proves cleaner during implementation, it is an allowed refinement (documented in the plan).
+- The scratch overlay map is the working map's own id (overwritten on the next Play), so no cleanup is needed.
+- Desktop build (embedded server) runs this locally; the dev flow uses the running Go server — both go through the same match API.
+
+#### Reward-suppression contract (ephemeral match)
+
+A playtest runs the FULL sim and objective evaluation but must persist nothing to the author's real profile. The recon confirmed this is a small, well-bounded set of seams (the `game/` package never imports `profile`; objectives evaluate in the tick loop independent of any payout; loot writes only to the in-match vault, which the profile does not store; XP/advancements are shop-style HTTP purchases, never granted by match play). Mechanism:
+
+- Add `Ephemeral bool` to `GameState` (near `CampaignLevelID`), threaded through `NewMatch` / `newMatchLocked` / `NewGameState[WithSeed]`. The world editor's start path sets it true.
+- **Server-side gating** — when `Ephemeral`, no-op the only sim-reachable profile-write hooks in `game/manager.go`: the immediate Dominion-Point commit hook, the match-end (`OnGameOver`) DP commit loop, and the `RecordKnownRecipe` (crafted-recipe learn) hook.
+- **Client-side gating** — the editor's playtest simply never fires the client-driven end-of-match reward POSTs (`/api/profile/match/award-dominion-points`, `/api/profile/campaign/complete-level`, `/api/profile/campaign/complete-objectives`). Because the playtest is driven by the editor's own composable (not the normal match-end flow), this is achieved by not calling them, not by disabling existing code.
+- **Nothing to gate for loot or XP/advancement** — no persistence seam exists (verified).
+- Server-side hardening (rejecting those reward POSTs for an ephemeral match id) is a nice-to-have for later, not required this milestone since the editor controls its own client and won't send them.
 
 ### §6 Reuse & isolation
 
@@ -100,7 +110,7 @@ This first sub-project builds the **shell**: the unified canvas + toolbar, per-p
 
 ## Testing
 
-- **Server (Go):** `PlacedUnit` round-trip — a map with rank/items/perks saves, hydrates, and a started match spawns those units at the set rank with the items equipped and perks applied; unknown refs dropped-with-warning; old maps (no new fields) load and behave identically.
+- **Server (Go):** `PlacedUnit` round-trip — a map with rank/items/perks saves, hydrates, and a started match spawns those units at the set rank with the items equipped and perks applied; unknown refs dropped-with-warning; old maps (no new fields) load and behave identically. **Ephemeral suppression** — an ephemeral match that rolls a Dominion-Point drop / triggers the match-end DP path does NOT call the profile committer (assert via a spy committer that it receives zero commits when `Ephemeral`, and the normal commits when not); the recipe hook is likewise skipped.
 - **Client (vitest):** pure transforms for the Unit Instance popup (form ↔ `PlacedUnit` fields); maps-service reuse; toolbar renders the full category set with correct enabled/disabled state.
 - **Play/reset (integration-heavy):** a thin harness test that Play starts a match and Stop tears it down cleanly (no leaked loop/goroutine), plus a manual E2E: drop two hostile units → set one's rank/items/perks → Play → watch them fight → Pause → both snap back to placement.
 
