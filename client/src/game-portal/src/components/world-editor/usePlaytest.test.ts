@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { ref } from 'vue'
 import { scratchMapId, resolvePlaytestMapId } from './usePlaytest'
 
 describe('playtest map id resolution', () => {
@@ -13,86 +14,84 @@ vi.mock('@/game/maps/catalog', () => ({
   saveMapCatalogFile: vi.fn().mockResolvedValue(undefined),
 }))
 
-const { gameClientCtor } = vi.hoisted(() => ({
-  gameClientCtor: vi.fn().mockImplementation(() => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn(),
-  })),
+// A single shared mock GameClient handle. useGameClient() returns it every call
+// (mirrors the real module-singleton client); tests reset its spies each run.
+const { gc } = vi.hoisted(() => ({
+  gc: {
+    ui: { value: { paused: false } },
+    init: vi.fn().mockResolvedValue(undefined),
+    destroy: vi.fn(),
+    sendSetPause: vi.fn(),
+  },
 }))
-vi.mock('@/game/core/GameClient', () => ({
-  GameClient: gameClientCtor,
+vi.mock('@/composables/useGameClient', () => ({
+  useGameClient: () => gc,
 }))
 
-describe('usePlaytest reentrancy guard', () => {
-  it('short-circuits start() while already playing instead of constructing a second client', async () => {
-    const { usePlaytest } = await import('./usePlaytest')
-    const { playing, start } = usePlaytest(() => ({}) as HTMLCanvasElement)
-    const file = { id: 'my_map' } as any
-
-    await start(file)
-    expect(playing.value).toBe(true)
-    expect(gameClientCtor).toHaveBeenCalledTimes(1)
-
-    await start(file)
-    expect(gameClientCtor).toHaveBeenCalledTimes(1)
-  })
-
-  it('rejects a concurrent start() call issued while a prior start() is still in flight', async () => {
-    const { usePlaytest } = await import('./usePlaytest')
-    const { playing, start } = usePlaytest(() => ({}) as HTMLCanvasElement)
-    const file = { id: 'my_map_concurrent' } as any
-
-    // Isolate this test's call count from the shared mock's history.
-    gameClientCtor.mockClear()
-
-    // Fire both calls back-to-back without awaiting the first. The first
-    // call runs synchronously up to its first `await` (inside
-    // saveMapCatalogFile), setting the in-flight `starting` marker before
-    // yielding. The second call therefore hits the reentrancy guard
-    // synchronously and returns immediately, before either promise settles.
-    const first = start(file)
-    const second = start(file)
-
-    await Promise.all([first, second])
-
-    expect(playing.value).toBe(true)
-    expect(gameClientCtor).toHaveBeenCalledTimes(1)
-  })
+beforeEach(() => {
+  gc.init.mockClear()
+  gc.destroy.mockClear()
+  gc.sendSetPause.mockClear()
+  gc.ui.value.paused = false
 })
 
-describe('usePlaytest pause', () => {
-  it('toggles pause, forwards set_pause to the client, and clears on stop', async () => {
-    const sendSetPause = vi.fn()
-    gameClientCtor.mockClear()
-    gameClientCtor.mockImplementationOnce(() => ({
-      start: vi.fn().mockResolvedValue(undefined),
-      stop: vi.fn(),
-      sendSetPause,
-    }))
+describe('usePlaytest lifecycle', () => {
+  it('start() inits an ephemeral match and marks playing', async () => {
     const { usePlaytest } = await import('./usePlaytest')
-    const { paused, start, stop, togglePause } = usePlaytest(() => ({}) as HTMLCanvasElement)
+    const canvas = {} as HTMLCanvasElement
+    const { playing, start } = usePlaytest(() => canvas)
 
-    await start({ id: 'pause_map' } as any)
-    expect(paused.value).toBe(false) // a fresh match starts running
+    await start({ id: 'my_map' } as any)
 
-    togglePause()
-    expect(paused.value).toBe(true)
-    expect(sendSetPause).toHaveBeenLastCalledWith(true)
+    expect(playing.value).toBe(true)
+    expect(gc.init).toHaveBeenCalledTimes(1)
+    expect(gc.init).toHaveBeenCalledWith(canvas, 'my_map', { ephemeral: true })
+  })
 
-    togglePause()
-    expect(paused.value).toBe(false)
-    expect(sendSetPause).toHaveBeenLastCalledWith(false)
+  it('start() is reentrancy-guarded once playing', async () => {
+    const { usePlaytest } = await import('./usePlaytest')
+    const { start } = usePlaytest(() => ({}) as HTMLCanvasElement)
+    await start({ id: 'm1' } as any)
+    await start({ id: 'm1' } as any)
+    expect(gc.init).toHaveBeenCalledTimes(1)
+  })
 
-    togglePause() // pause again, then stop must clear it
-    expect(paused.value).toBe(true)
+  it('rejects a concurrent in-flight start()', async () => {
+    const { usePlaytest } = await import('./usePlaytest')
+    const { start } = usePlaytest(() => ({}) as HTMLCanvasElement)
+    const a = start({ id: 'm2' } as any)
+    const b = start({ id: 'm2' } as any)
+    await Promise.all([a, b])
+    expect(gc.init).toHaveBeenCalledTimes(1)
+  })
+
+  it('stop() destroys the client and clears playing', async () => {
+    const { usePlaytest } = await import('./usePlaytest')
+    const { playing, start, stop } = usePlaytest(() => ({}) as HTMLCanvasElement)
+    await start({ id: 'm3' } as any)
     stop()
-    expect(paused.value).toBe(false)
+    expect(gc.destroy).toHaveBeenCalledTimes(1)
+    expect(playing.value).toBe(false)
+  })
+
+  it('togglePause forwards the negated authoritative paused state', async () => {
+    const { usePlaytest } = await import('./usePlaytest')
+    const { start, togglePause } = usePlaytest(() => ({}) as HTMLCanvasElement)
+    await start({ id: 'm4' } as any)
+
+    gc.ui.value.paused = false
+    togglePause()
+    expect(gc.sendSetPause).toHaveBeenLastCalledWith(true)
+
+    gc.ui.value.paused = true
+    togglePause()
+    expect(gc.sendSetPause).toHaveBeenLastCalledWith(false)
   })
 
   it('togglePause is a no-op when not playing', async () => {
     const { usePlaytest } = await import('./usePlaytest')
-    const { paused, togglePause } = usePlaytest(() => ({}) as HTMLCanvasElement)
+    const { togglePause } = usePlaytest(() => ({}) as HTMLCanvasElement)
     togglePause()
-    expect(paused.value).toBe(false)
+    expect(gc.sendSetPause).not.toHaveBeenCalled()
   })
 })

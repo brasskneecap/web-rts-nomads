@@ -123,7 +123,7 @@ export function useGameClient() {
   async function init(
     canvas: HTMLCanvasElement,
     mapId = '',
-    options: { resume?: boolean } = {},
+    options: { resume?: boolean; ephemeral?: boolean } = {},
   ) {
     client?.stop()
     stopUiSync()

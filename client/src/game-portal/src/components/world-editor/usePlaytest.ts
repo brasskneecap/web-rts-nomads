@@ -1,7 +1,7 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { MapConfig, MapCatalogFile } from '@/game/network/protocol'
 import { saveMapCatalogFile } from '@/game/maps/catalog'
-import { GameClient } from '@/game/core/GameClient'
+import { useGameClient } from '@/composables/useGameClient'
 
 export const scratchMapId = '__world_editor_scratch__'
 
@@ -12,45 +12,31 @@ export function resolvePlaytestMapId(map: Pick<MapConfig, 'id'>): string {
   return map.id
 }
 
+// usePlaytest owns the single useGameClient() instance the world-editor
+// playtest uses. Running the match through the shared composable (rather than a
+// private GameClient) is what lets the in-game HUD — which reads the composable
+// snapshot — render the live playtest. The returned `gameClient` is handed to
+// PlaytestHud so it can read `ui` and forward commands.
 export function usePlaytest(getPlayCanvas: () => HTMLCanvasElement | null) {
+  const gameClient = useGameClient()
   const playing = ref(false)
-  // Server-side pause state for the running playtest. A paused match keeps
-  // simulating nothing but stays alive, so Resume continues exactly where it
-  // froze. Distinct from Reset (stop), which tears the match down entirely.
-  const paused = ref(false)
-  let client: GameClient | null = null
-  // Synchronous in-flight marker. playing.value only flips true after the
-  // save + GameClient.start() awaits resolve, so it can't guard the async
-  // window by itself. starting is set before the first await (once we're
-  // committed) and cleared in both the success and catch paths so a second
-  // start() call during that window is rejected instead of orphaning the
-  // first GameClient + websocket.
+  // Authoritative pause state comes from the server snapshot.
+  const paused = computed(() => gameClient.ui.value.paused)
+  // Synchronous in-flight marker (playing flips true only after the awaits).
   let starting = false
 
-  // start: persist the current editor map (so the server can match it,
-  // including unsaved placements), then run an ephemeral match on the play
-  // canvas via a real GameClient.
   async function start(file: MapCatalogFile) {
-    // Reentrancy guard: a second click while already playing, or while a
-    // prior start() is still in flight (starting), must not orphan the
-    // existing client's rAF render loop and websocket.
     if (playing.value || starting) return
     const canvas = getPlayCanvas()
     if (!canvas) return
     starting = true
     try {
       const mapId = resolvePlaytestMapId(file)
-      // Persist under the resolved id (scratch for drafts) so join_match can find it.
       await saveMapCatalogFile({ ...file, id: mapId })
-      client = new GameClient(canvas, mapId)
-      await client.start({ ephemeral: true })
+      await gameClient.init(canvas, mapId, { ephemeral: true })
       playing.value = true
-      paused.value = false // a fresh match always starts running
     } catch (err) {
-      // Tear down any partially-constructed client and surface the failure
-      // to the caller instead of leaving a silent, half-started playtest.
-      client?.stop()
-      client = null
+      gameClient.destroy()
       playing.value = false
       throw err
     } finally {
@@ -58,24 +44,19 @@ export function usePlaytest(getPlayCanvas: () => HTMLCanvasElement | null) {
     }
   }
 
-  // togglePause: freeze or resume the running match in place via the server's
-  // set_pause command. No-op when nothing is playing.
+  // togglePause freezes/continues the running match via the server set_pause
+  // command; the button label reads the authoritative `paused` computed.
   function togglePause() {
-    if (!client) return
-    paused.value = !paused.value
-    client.sendSetPause(paused.value)
+    if (!playing.value) return
+    gameClient.sendSetPause(!gameClient.ui.value.paused)
   }
 
-  // stop: tear down the match. The editor's own MapConfig is untouched, so the
-  // caller simply re-shows the editor canvas — placements "snap back" for free.
+  // stop tears the match down. The editor's MapConfig is untouched, so
+  // re-showing the editor canvas restores the placements.
   function stop() {
-    if (client) {
-      client.stop()
-      client = null
-    }
+    gameClient.destroy()
     playing.value = false
-    paused.value = false
   }
 
-  return { playing, paused, start, stop, togglePause }
+  return { playing, paused, start, stop, togglePause, gameClient }
 }
