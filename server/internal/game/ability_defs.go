@@ -69,6 +69,17 @@ func (c *CastRange) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// MarshalJSON writes the match-attack-range sentinel back as the string
+// "match_attack_range" (symmetric with UnmarshalJSON) so an authored ability
+// round-trips through SaveAbilityDef without collapsing the sentinel to -1.
+// Any concrete range marshals as its plain number.
+func (c CastRange) MarshalJSON() ([]byte, error) {
+	if c.MatchesAttackRange() {
+		return []byte(`"match_attack_range"`), nil
+	}
+	return json.Marshal(float64(c))
+}
+
 // MatchesAttackRange reports whether this cast range mirrors the caster's
 // attack range (the -1 / "match_attack_range" sentinel).
 func (c CastRange) MatchesAttackRange() bool { return float64(c) < 0 }
@@ -495,6 +506,46 @@ func (a AbilityDef) WithinCastRangeScaled(caster, target *Unit, mult float64) bo
 	return distanceSquared(caster.X, caster.Y, target.X, target.Y) <= r*r
 }
 
+// validateAbilityDef checks an ability def's content and normalizes its
+// defaultable numeric fields IN PLACE. It is the single validation gate shared
+// by the catalog loader (loadAbilityDefs) and the editor save path
+// (SaveAbilityDef), so a def that loads cleanly is exactly a def that saves
+// cleanly. It deliberately does NOT check the id — the loader gates that
+// against the directory name and the editor against abilityIDPattern.
+func validateAbilityDef(def *AbilityDef) error {
+	if def.DamageType != "" && !IsValidDamageType(def.DamageType) {
+		return fmt.Errorf("damageType %q is not a registered damage type", def.DamageType)
+	}
+	if def.Category != "" && !IsValidAbilityCategory(def.Category) {
+		return fmt.Errorf("category %q is not a registered ability category", def.Category)
+	}
+	// A burn is carried by the ground hazard spawned at impact (see
+	// ground_hazard.go); with no impact delay there is no hazard to carry the
+	// burn, so a configured burn requires a positive impact delay.
+	if def.BurnDurationSeconds > 0 && def.ImpactDelaySeconds <= 0 {
+		return fmt.Errorf("burnDurationSeconds requires impactDelaySeconds > 0")
+	}
+	// A zero (or negative) tick interval would make tickGroundHazardsLocked
+	// advance its tick timer by 0 each call and loop forever, so a configured
+	// burn requires a positive tick interval.
+	if def.BurnDurationSeconds > 0 && def.BurnTickIntervalSeconds <= 0 {
+		return fmt.Errorf("burnDurationSeconds requires burnTickIntervalSeconds > 0")
+	}
+	if def.TargetCount < 1 {
+		def.TargetCount = 1
+	}
+	if def.SummonCount < 1 {
+		def.SummonCount = 1
+	}
+	if def.ChannelType != "" && def.HealingMultiplier == 0 {
+		def.HealingMultiplier = 1.0
+	}
+	if def.IsChargeFirePassive() && def.ManaToChargeRatio == 0 {
+		def.ManaToChargeRatio = 1.0
+	}
+	return nil
+}
+
 // abilityDefsByID is a package-level var, initialized before any init() that
 // might reference ability defs (same rationale as the other catalogs).
 var abilityDefsByID = loadAbilityDefs()
@@ -527,65 +578,45 @@ func loadAbilityDefs() map[string]AbilityDef {
 		if def.ID != idKey {
 			panic(rel + ": def.ID " + def.ID + " does not match directory name " + idKey)
 		}
-		if def.DamageType != "" && !IsValidDamageType(def.DamageType) {
-			panic(rel + `: damageType "` + string(def.DamageType) + `" is not a registered damage type`)
-		}
-		if def.Category != "" && !IsValidAbilityCategory(def.Category) {
-			panic(rel + `: category "` + string(def.Category) + `" is not a registered ability category`)
-		}
-		// Delayed-impact spells: a configured burn needs a positive tick interval
-		// (else tickGroundHazardsLocked would advance its tick timer by 0 and loop)
-		// and an impact delay (there is no hazard to carry the burn otherwise).
-		if def.BurnDurationSeconds > 0 && def.ImpactDelaySeconds <= 0 {
-			panic(rel + ": burnDurationSeconds requires impactDelaySeconds > 0")
-		}
-		if def.BurnDurationSeconds > 0 && def.BurnTickIntervalSeconds <= 0 {
-			panic(rel + ": burnDurationSeconds requires burnTickIntervalSeconds > 0")
+		if err := validateAbilityDef(&def); err != nil {
+			panic(rel + ": " + err.Error())
 		}
 		if _, dup := result[def.ID]; dup {
 			panic(rel + `: duplicate ability id "` + def.ID + `"`)
-		}
-		// Normalise TargetCount: 0 (omitted) and negative values both mean
-		// single-target (TargetCount == 1). This ensures the multi-target path
-		// is only entered for explicitly-authored values > 1.
-		if def.TargetCount < 1 {
-			def.TargetCount = 1
-		}
-		// Normalise SummonCount the same way: 0 / negative ⇒ 1. The summon
-		// loop in spawnSummonedUnitLocked is only entered when SummonUnitType
-		// is set, so this normalisation is inert for non-summon abilities.
-		if def.SummonCount < 1 {
-			def.SummonCount = 1
-		}
-		// Normalise HealingMultiplier: 0 (omitted) → 1.0 so a siphon_life
-		// that omits the field gets a lossless 1× conversion. Only applies
-		// to channeled abilities; for one-shot casts the field is unused and
-		// this normalisation is a harmless no-op.
-		if def.ChannelType != "" && def.HealingMultiplier == 0 {
-			def.HealingMultiplier = 1.0
-		}
-		// Normalise a charge-fire passive's mana→charge ratio: omitting the
-		// field yields a lossless 1.0 (one charge per mana point), matching the
-		// documented default. Inert for every non-passive ability.
-		if def.IsChargeFirePassive() && def.ManaToChargeRatio == 0 {
-			def.ManaToChargeRatio = 1.0
 		}
 		result[def.ID] = def
 	}
 	return result
 }
 
-// getAbilityDef looks up an ability definition by id. The bool is false when
-// no ability with that id is registered (same contract as getProjectileDef).
+// getAbilityDef looks up an ability definition by id, overlay-first (an
+// authored override wins over the embedded default), then the embedded
+// catalog. The bool is false when no ability with that id is registered.
 func getAbilityDef(id string) (AbilityDef, bool) {
+	runtimeAbilitiesMu.RLock()
+	if def, ok := runtimeAbilities[id]; ok {
+		runtimeAbilitiesMu.RUnlock()
+		return def, true
+	}
+	runtimeAbilitiesMu.RUnlock()
 	def, ok := abilityDefsByID[id]
 	return def, ok
 }
 
-// ListAbilityDefs returns every registered ability definition sorted by id.
+// ListAbilityDefs returns every registered ability definition (overlay merged
+// over embed) sorted by id.
 func ListAbilityDefs() []AbilityDef {
-	defs := make([]AbilityDef, 0, len(abilityDefsByID))
-	for _, def := range abilityDefsByID {
+	merged := make(map[string]AbilityDef, len(abilityDefsByID))
+	for id, def := range abilityDefsByID {
+		merged[id] = def
+	}
+	runtimeAbilitiesMu.RLock()
+	for id, def := range runtimeAbilities {
+		merged[id] = def
+	}
+	runtimeAbilitiesMu.RUnlock()
+	defs := make([]AbilityDef, 0, len(merged))
+	for _, def := range merged {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })

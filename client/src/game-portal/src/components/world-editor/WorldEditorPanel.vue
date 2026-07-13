@@ -1738,6 +1738,18 @@
         </div>
       </div>
     </div>
+
+    <div v-if="abilitiesPopupOpen" class="we-modal-overlay">
+      <div class="we-modal we-modal--wide">
+        <div class="we-modal__header">
+          <span>Ability Editor</span>
+          <UiButton size="sm" @click="abilitiesPopupOpen = false">Close</UiButton>
+        </div>
+        <div class="we-modal__body">
+          <AbilityEditorPanel />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1750,6 +1762,7 @@ import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGua
 import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
 import ItemEditorPanel from '@/components/ItemEditorPanel.vue'
 import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
+import AbilityEditorPanel from '@/components/AbilityEditorPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
 import InGameHud from '@/components/InGameHud.vue'
@@ -1965,6 +1978,7 @@ const openSection = ref<'setup' | 'campaign' | 'zones' | 'paint' | 'export' | nu
 // not a parallel state machine.
 const itemsPopupOpen = ref(false)
 const unitTypesPopupOpen = ref(false)
+const abilitiesPopupOpen = ref(false)
 const router = useRouter()
 
 function onToolbarSelect(id: string) {
@@ -1995,6 +2009,9 @@ function onToolbarSelect(id: string) {
     case 'unit-types':
       unitTypesPopupOpen.value = true
       break
+    case 'abilities':
+      abilitiesPopupOpen.value = true
+      break
     case 'play':
       startPlaytest()
       break
@@ -2002,7 +2019,7 @@ function onToolbarSelect(id: string) {
       router.push('/')
       break
     default:
-      // unit-paths / perks / abilities / effects / projectiles /
+      // unit-paths / perks / effects / projectiles /
       // campaigns are disabled in the toolbar (coming soon) and never emit.
       break
   }
@@ -2040,6 +2057,7 @@ function stopPlaytest() {
 const toolbarActiveId = computed<string | undefined>(() => {
   if (itemsPopupOpen.value) return 'items'
   if (unitTypesPopupOpen.value) return 'unit-types'
+  if (abilitiesPopupOpen.value) return 'abilities'
   if (openSection.value === 'paint') {
     if (brushMode.value === 'obstacle') return 'obstacles'
     if (brushMode.value === 'building') return 'buildings'
