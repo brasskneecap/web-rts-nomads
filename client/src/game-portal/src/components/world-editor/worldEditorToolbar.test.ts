@@ -10,6 +10,7 @@ describe('world editor toolbar categories', () => {
     expect(byId.terrain.enabled).toBe(true)
     expect(byId.items.enabled).toBe(true)
     expect(byId.play.enabled).toBe(true)
+    expect(byId.exit.enabled).toBe(true)
     // Later sub-projects: visible but disabled ("coming soon").
     expect(byId.abilities.enabled).toBe(false)
     expect(byId.effects.enabled).toBe(false)

@@ -1,7 +1,7 @@
 <template>
   <div class="meta-scene">
     <div class="meta-scene__exit">
-      <ExitButton aria-label="Back to Kingdom" @click="onBack" />
+      <ExitButton destination="Kingdom" @click="onBack" />
     </div>
 
     <div class="meta-scene__stage">
@@ -50,12 +50,6 @@ function onBack() {
   top: 50px;
   left: 50px;
   z-index: 2;
-}
-
-/* Meta views use a larger exit icon (2x the base) pinned to the top-left. */
-.meta-scene__exit :deep(.exit-button) {
-  width: 112px;
-  height: 112px;
 }
 
 .meta-scene__stage {
