@@ -583,17 +583,34 @@ func loadAbilityDefs() map[string]AbilityDef {
 	return result
 }
 
-// getAbilityDef looks up an ability definition by id. The bool is false when
-// no ability with that id is registered (same contract as getProjectileDef).
+// getAbilityDef looks up an ability definition by id, overlay-first (an
+// authored override wins over the embedded default), then the embedded
+// catalog. The bool is false when no ability with that id is registered.
 func getAbilityDef(id string) (AbilityDef, bool) {
+	runtimeAbilitiesMu.RLock()
+	if def, ok := runtimeAbilities[id]; ok {
+		runtimeAbilitiesMu.RUnlock()
+		return def, true
+	}
+	runtimeAbilitiesMu.RUnlock()
 	def, ok := abilityDefsByID[id]
 	return def, ok
 }
 
-// ListAbilityDefs returns every registered ability definition sorted by id.
+// ListAbilityDefs returns every registered ability definition (overlay merged
+// over embed) sorted by id.
 func ListAbilityDefs() []AbilityDef {
-	defs := make([]AbilityDef, 0, len(abilityDefsByID))
-	for _, def := range abilityDefsByID {
+	merged := make(map[string]AbilityDef, len(abilityDefsByID))
+	for id, def := range abilityDefsByID {
+		merged[id] = def
+	}
+	runtimeAbilitiesMu.RLock()
+	for id, def := range runtimeAbilities {
+		merged[id] = def
+	}
+	runtimeAbilitiesMu.RUnlock()
+	defs := make([]AbilityDef, 0, len(merged))
+	for _, def := range merged {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
