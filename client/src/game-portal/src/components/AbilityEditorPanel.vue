@@ -336,12 +336,17 @@ async function save() {
 
 async function removeAbility() {
   if (!selectedId.value) return
+  saveError.value = ''
+  statusMessage.value = ''
   busy.value = true
   try {
     const status = await deleteEditorAbility(selectedId.value)
     await reload()
     newAbility()
     statusMessage.value = status === 'deleted' ? 'Deleted.' : 'Reset to default.'
+  } catch (e) {
+    saveError.value = e instanceof EditorValidationError ? e.serverMessage
+      : e instanceof Error ? e.message : String(e)
   } finally {
     busy.value = false
   }

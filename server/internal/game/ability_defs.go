@@ -519,9 +519,15 @@ func validateAbilityDef(def *AbilityDef) error {
 	if def.Category != "" && !IsValidAbilityCategory(def.Category) {
 		return fmt.Errorf("category %q is not a registered ability category", def.Category)
 	}
+	// A burn is carried by the ground hazard spawned at impact (see
+	// ground_hazard.go); with no impact delay there is no hazard to carry the
+	// burn, so a configured burn requires a positive impact delay.
 	if def.BurnDurationSeconds > 0 && def.ImpactDelaySeconds <= 0 {
 		return fmt.Errorf("burnDurationSeconds requires impactDelaySeconds > 0")
 	}
+	// A zero (or negative) tick interval would make tickGroundHazardsLocked
+	// advance its tick timer by 0 each call and loop forever, so a configured
+	// burn requires a positive tick interval.
 	if def.BurnDurationSeconds > 0 && def.BurnTickIntervalSeconds <= 0 {
 		return fmt.Errorf("burnDurationSeconds requires burnTickIntervalSeconds > 0")
 	}
