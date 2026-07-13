@@ -69,6 +69,17 @@ func (c *CastRange) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// MarshalJSON writes the match-attack-range sentinel back as the string
+// "match_attack_range" (symmetric with UnmarshalJSON) so an authored ability
+// round-trips through SaveAbilityDef without collapsing the sentinel to -1.
+// Any concrete range marshals as its plain number.
+func (c CastRange) MarshalJSON() ([]byte, error) {
+	if c.MatchesAttackRange() {
+		return []byte(`"match_attack_range"`), nil
+	}
+	return json.Marshal(float64(c))
+}
+
 // MatchesAttackRange reports whether this cast range mirrors the caster's
 // attack range (the -1 / "match_attack_range" sentinel).
 func (c CastRange) MatchesAttackRange() bool { return float64(c) < 0 }

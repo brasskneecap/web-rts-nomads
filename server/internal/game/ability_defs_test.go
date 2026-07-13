@@ -260,3 +260,32 @@ func TestAbility_HealLoadsFromCatalog(t *testing.T) {
 		t.Errorf("ListAbilityDefs() does not contain heal; got %+v", ListAbilityDefs())
 	}
 }
+
+func TestCastRangeJSONRoundTrip(t *testing.T) {
+	cases := []struct {
+		name string
+		in   CastRange
+		want string
+	}{
+		{"literal", CastRange(220), "220"},
+		{"sentinel", CastRange(CastRangeMatchAttackRange), `"match_attack_range"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal(tc.in)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if string(raw) != tc.want {
+				t.Fatalf("marshal = %s, want %s", raw, tc.want)
+			}
+			var back CastRange
+			if err := json.Unmarshal(raw, &back); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if back.MatchesAttackRange() != tc.in.MatchesAttackRange() || (!tc.in.MatchesAttackRange() && back != tc.in) {
+				t.Fatalf("round-trip = %v, want %v", back, tc.in)
+			}
+		})
+	}
+}
