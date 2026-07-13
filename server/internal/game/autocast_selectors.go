@@ -1,5 +1,7 @@
 package game
 
+import "sort"
+
 // Auto-cast target selectors.
 //
 // An AutoCastSelector picks the unit an auto-cast-enabled ability should fire
@@ -33,6 +35,17 @@ func RegisterAutoCastSelector(name string, fn AutoCastSelector) {
 		panic("RegisterAutoCastSelector: nil selector for " + name)
 	}
 	autoCastSelectors[name] = fn
+}
+
+// ListAutoCastSelectorNames returns the registered auto-cast selector names,
+// sorted. Exposed so the abilities editor can offer a validated dropdown.
+func ListAutoCastSelectorNames() []string {
+	names := make([]string, 0, len(autoCastSelectors))
+	for name := range autoCastSelectors {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // getAutoCastSelector returns the selector registered under name. ok is false
