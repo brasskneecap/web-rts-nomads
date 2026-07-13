@@ -1,7 +1,7 @@
 <template>
   <div class="kingdom">
     <div class="kingdom__back">
-      <ExitButton aria-label="Back to War Room" @click="onBack" />
+      <ExitButton destination="War Room" @click="onBack" />
     </div>
 
     <!-- Dev-only authoring toolbar (pinned to the viewport, not the cropped
@@ -342,12 +342,6 @@ onBeforeUnmount(() => {
   top: 50px;
   left: 50px;
   z-index: 2;
-}
-
-/* Larger exit icon (2x the base) pinned to the top-left, matching meta views. */
-.kingdom__back :deep(.exit-button) {
-  width: 112px;
-  height: 112px;
 }
 
 .kingdom__stage {

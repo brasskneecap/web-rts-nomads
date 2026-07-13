@@ -2,7 +2,7 @@
   <div class="profile-view">
     <div class="profile-view__layout">
       <div class="profile-view__back-row">
-        <ExitButton @click="router.back()" />
+        <ExitButton destination="Main Menu" @click="router.back()" />
       </div>
 
       <MenuPanel class="profile-view__panel">

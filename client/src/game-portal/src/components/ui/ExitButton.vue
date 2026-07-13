@@ -2,20 +2,29 @@
   <button
     type="button"
     class="exit-button"
-    :style="{ backgroundImage: `url(${exitUrl})` }"
-    :aria-label="ariaLabel"
+    :style="{
+      '--ui-panel-image': `url(${panelUrl})`,
+      '--ui-panel-slice': String(theme.warRoomInnerPanel.slice),
+    }"
+    :aria-label="ariaLabel ?? `Return to ${destination}`"
     @click="$emit('click', $event)"
-  ></button>
+  >
+    <span class="exit-button__title">Return</span>
+    <span class="exit-button__destination">to {{ destination }}</span>
+  </button>
 </template>
 
 <script setup lang="ts">
-import exitUrl from '@/assets/ui/buttons/exit.png'
+import panelUrl from '@/assets/ui/themes/updated/war-room/war-room-inner-panel.png'
+import theme from '@/assets/ui/themes/default/theme.json'
 
 withDefaults(
   defineProps<{
+    /** Where the button sends the player, e.g. "Kingdom", "War Room", "Main Menu". */
+    destination?: string
     ariaLabel?: string
   }>(),
-  { ariaLabel: 'Back' },
+  { destination: 'Main Menu', ariaLabel: undefined },
 )
 
 defineEmits<{ click: [MouseEvent] }>()
@@ -23,34 +32,59 @@ defineEmits<{ click: [MouseEvent] }>()
 
 <style scoped>
 .exit-button {
-  width: 56px;
-  height: 56px;
-  padding: 0;
-  border: 0;
-  background-color: transparent;
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 170px;
+  padding: 0 4px;
+  border: calc(var(--ui-panel-slice) * 1px) solid transparent;
+  border-image-source: var(--ui-panel-image);
+  border-image-slice: var(--ui-panel-slice) fill;
+  border-image-width: calc(var(--ui-panel-slice) * 1px);
+  border-image-repeat: round;
   image-rendering: pixelated;
-  filter:
-    drop-shadow(0 0 6px rgba(255, 255, 255, 0.85))
-    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.75))
-    drop-shadow(0 3px 4px rgba(0, 0, 0, 0.5));
-  transition: transform 120ms ease, filter 120ms ease;
+  background: none;
+  text-align: center;
+}
+
+.exit-button__title {
+  font-family: var(--font-title);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #f4d27a;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.exit-button__destination {
+  font-family: var(--font-body, var(--font-title));
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #d8c8a2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 .exit-button:hover,
 .exit-button:focus-visible {
-  transform: scale(1.08);
-  filter:
-    drop-shadow(0 0 8px rgba(255, 255, 255, 0.95))
-    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.75))
-    drop-shadow(0 4px 5px rgba(0, 0, 0, 0.55))
-    drop-shadow(0 0 10px rgba(255, 220, 140, 0.7));
+  filter: brightness(1.18);
   outline: none;
 }
 
 .exit-button:active {
-  transform: scale(0.98);
+  filter: brightness(0.88);
+}
+
+.exit-button:focus-visible {
+  outline: 2px solid rgba(247, 216, 142, 0.9);
+  outline-offset: 3px;
 }
 </style>

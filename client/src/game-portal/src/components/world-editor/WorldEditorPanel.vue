@@ -1755,6 +1755,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchRecipeLists, fetchItemLists, fetchUnitDefs, fetchItemDefs, fetchPerkDefs, saveMapCatalogFile, LevelConflictError, type RecipeListSummary, type ItemListSummary } from '@/game/maps/catalog'
 import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
@@ -1978,6 +1979,7 @@ const openSection = ref<'setup' | 'campaign' | 'zones' | 'paint' | 'export' | nu
 const itemsPopupOpen = ref(false)
 const unitTypesPopupOpen = ref(false)
 const abilitiesPopupOpen = ref(false)
+const router = useRouter()
 
 function onToolbarSelect(id: string) {
   switch (id) {
@@ -2012,6 +2014,9 @@ function onToolbarSelect(id: string) {
       break
     case 'play':
       startPlaytest()
+      break
+    case 'exit':
+      router.push('/')
       break
     default:
       // unit-paths / perks / effects / projectiles /

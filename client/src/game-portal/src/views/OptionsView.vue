@@ -2,7 +2,7 @@
   <div class="options-view">
     <div class="options-view__layout">
       <div class="options-view__back-row">
-        <ExitButton @click="router.back()" />
+        <ExitButton destination="Main Menu" @click="router.back()" />
       </div>
 
       <MenuPanel class="options-view__panel">
