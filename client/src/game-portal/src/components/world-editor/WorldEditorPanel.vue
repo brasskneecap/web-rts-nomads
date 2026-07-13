@@ -1179,6 +1179,7 @@
           @mouseleave="onMinimapMouseUp"
         ></canvas>
         <canvas v-show="playtestPlaying" ref="playCanvas" class="we-play-canvas"></canvas>
+        <PlaytestHud v-if="playtestPlaying" :hud="playtestGameClient" />
         <PlaytestBar
           v-if="playtestPlaying"
           :paused="playtestPaused"
@@ -1739,6 +1740,7 @@ import ItemEditorPanel from '@/components/ItemEditorPanel.vue'
 import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
+import PlaytestHud from '@/components/world-editor/PlaytestHud.vue'
 import { usePlaytest } from './usePlaytest'
 import type {
   BuildingType,
@@ -2002,6 +2004,7 @@ const {
   start: startPlaytestMatch,
   stop: stopPlaytestMatch,
   togglePause: togglePlaytestPause,
+  gameClient: playtestGameClient,
 } = usePlaytest(() => playCanvas.value)
 
 async function startPlaytest() {
