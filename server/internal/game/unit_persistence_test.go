@@ -65,6 +65,107 @@ func TestSaveUnitDef_LosslessArtBlobs(t *testing.T) {
 	}
 }
 
+// Deleting the last override for a type must not leave an orphaned, empty
+// <type>/ directory behind — that skeleton then blocks the parent faction
+// directory from ever being recognized as empty.
+func TestDeleteUnitOverride_RemovesEmptyTypeDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("UNIT_CATALOG_DIR", dir)
+	t.Cleanup(func() {
+		runtimeUnitsMu.Lock()
+		delete(runtimeUnits, "moon_dancer")
+		runtimeUnitsMu.Unlock()
+	})
+
+	unit := UnitDef{
+		Type: "moon_dancer", Faction: "night_elf", Name: "Moon Dancer",
+		HP: 10, MoveSpeed: 1, Damage: 1, AttackRange: 1, AttackSpeed: 1,
+	}
+	if err := SaveUnitDef(&unit); err != nil {
+		t.Fatalf("SaveUnitDef: %v", err)
+	}
+	if _, err := DeleteUnitOverride("moon_dancer"); err != nil {
+		t.Fatalf("DeleteUnitOverride: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "night_elf", "moon_dancer")); !os.IsNotExist(err) {
+		t.Fatalf("expected orphaned unit type directory to be removed, stat err=%v", err)
+	}
+}
+
+// The full lifecycle the E2E run actually caught: save faction, save a unit
+// into it, delete the unit, then delete the faction. If the unit delete
+// leaves an orphaned <type>/ directory behind, the faction directory is never
+// empty and DeleteFactionOverride silently leaves it on disk despite
+// reporting success.
+func TestUnitAndFactionLifecycle_DeletingBothLeavesNoOrphanDirectories(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("UNIT_CATALOG_DIR", dir)
+	t.Cleanup(func() {
+		runtimeFactionsMu.Lock()
+		delete(runtimeFactions, "night_elf")
+		runtimeFactionsMu.Unlock()
+		runtimeUnitsMu.Lock()
+		delete(runtimeUnits, "moon_dancer")
+		runtimeUnitsMu.Unlock()
+	})
+
+	faction := FactionDef{ID: "night_elf", DisplayName: "Night Elf"}
+	if err := SaveFactionDef(&faction); err != nil {
+		t.Fatalf("SaveFactionDef: %v", err)
+	}
+	unit := UnitDef{
+		Type: "moon_dancer", Faction: "night_elf", Name: "Moon Dancer",
+		HP: 10, MoveSpeed: 1, Damage: 1, AttackRange: 1, AttackSpeed: 1,
+	}
+	if err := SaveUnitDef(&unit); err != nil {
+		t.Fatalf("SaveUnitDef: %v", err)
+	}
+	if _, err := DeleteUnitOverride("moon_dancer"); err != nil {
+		t.Fatalf("DeleteUnitOverride: %v", err)
+	}
+	if _, err := DeleteFactionOverride("night_elf"); err != nil {
+		t.Fatalf("DeleteFactionOverride: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "night_elf")); !os.IsNotExist(err) {
+		t.Fatalf("expected the faction directory to be fully removed, stat err=%v", err)
+	}
+}
+
+// A unit directory that still owns other content (e.g. a paths/ subdir) must
+// keep its directory when the unit json is deleted — proving the cleanup
+// never destroys content it doesn't own.
+func TestDeleteUnitOverride_KeepsTypeDirectoryWithOtherContent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("UNIT_CATALOG_DIR", dir)
+	t.Cleanup(func() {
+		runtimeUnitsMu.Lock()
+		delete(runtimeUnits, "ranger")
+		runtimeUnitsMu.Unlock()
+	})
+
+	unit := UnitDef{
+		Type: "ranger", Faction: "human", Name: "Ranger",
+		HP: 10, MoveSpeed: 1, Damage: 1, AttackRange: 1, AttackSpeed: 1,
+	}
+	if err := SaveUnitDef(&unit); err != nil {
+		t.Fatalf("SaveUnitDef: %v", err)
+	}
+	pathsDir := filepath.Join(dir, "human", "ranger", "paths")
+	if err := os.MkdirAll(pathsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pathsDir, "p1.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := DeleteUnitOverride("ranger"); err != nil {
+		t.Fatalf("DeleteUnitOverride: %v", err)
+	}
+	if _, err := os.Stat(pathsDir); err != nil {
+		t.Fatalf("DeleteUnitOverride destroyed content it does not own — the directory must survive: %v", err)
+	}
+}
+
 func TestSaveUnitDef_RejectsBadID(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("UNIT_CATALOG_DIR", dir)

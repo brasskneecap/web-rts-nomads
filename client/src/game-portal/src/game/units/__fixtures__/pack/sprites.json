@@ -1,0 +1,29 @@
+{
+  "key": "__packtest__",
+  "size": {
+    "width": 4,
+    "height": 4
+  },
+  "rotations": {
+    "sheet": "packed/rotations.png",
+    "rowOrder": [
+      "north",
+      "south"
+    ],
+    "frameWidth": 4,
+    "frameHeight": 4
+  },
+  "animations": {
+    "walking": {
+      "frameCount": 2,
+      "frameWidth": 4,
+      "frameHeight": 4,
+      "sheet": "packed/walking.png",
+      "rowOrder": [
+        "north",
+        "south"
+      ]
+    }
+  },
+  "packedAt": "2026-07-13T20:51:28.020Z"
+}

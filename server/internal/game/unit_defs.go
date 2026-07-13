@@ -41,6 +41,15 @@ type UnitDef struct {
 	// `"attack"` capability so the player's attack command is accepted.
 	NonCombat bool `json:"nonCombat,omitempty"`
 	HP        int  `json:"hp"`
+	// HealthRegenRate is the unit's passive HP-per-second regeneration, seeded
+	// onto Unit.HealthRegenPerSecond at spawn (see resolveHealthRegenRate).
+	//
+	// It is a POINTER on purpose: absent (nil) means "inherit the global
+	// defaultHealthRegenPerSecond", while an authored 0 means "this unit never
+	// regenerates" — constructs, skeletons, siege. A plain float64 with
+	// omitempty could not express the second case at all, because 0 and
+	// "unset" would serialize identically.
+	HealthRegenRate *float64 `json:"healthRegenRate,omitempty"`
 	// Armor is the catalog base armor for this unit type. All unit catalog JSON
 	// files carry an explicit "armor" field (0 when the unit has no base armor,
 	// 33 for soldier). The value is used directly by applyRankModifiersLocked to
@@ -258,6 +267,12 @@ func loadUnitDefsByType() map[string]UnitDef {
 		}
 		for _, entry := range unitEntries {
 			if !entry.IsDir() {
+				// faction.json is the faction's own metadata record, owned by
+				// faction_defs.go — not a unit. Every other loose file here is
+				// a mistake and still panics.
+				if entry.Name() == factionMetaFileName {
+					continue
+				}
 				panic("catalog/units/" + factionKey + ": unexpected file " + entry.Name() + " — units must live at catalog/units/<faction>/<unit>/<unit>.json")
 			}
 			unitKey := entry.Name()
@@ -335,6 +350,9 @@ func validateUnitDef(def *UnitDef) error {
 	if def.MaxMana < 0 || def.ManaRegenRate < 0 {
 		return fmt.Errorf("unit %q: maxMana and manaRegenRate must be >= 0", def.Type)
 	}
+	if def.HealthRegenRate != nil && *def.HealthRegenRate < 0 {
+		return fmt.Errorf("unit %q: healthRegenRate must be >= 0, got %v", def.Type, *def.HealthRegenRate)
+	}
 	if len(def.PathChances) > 0 {
 		var sum float64
 		for path, weight := range def.PathChances {
@@ -350,6 +368,30 @@ func validateUnitDef(def *UnitDef) error {
 	for _, b := range def.RequiresBuildings {
 		if _, ok := getBuildingDef(b); !ok {
 			return fmt.Errorf("unit %q: requiresBuildings entry %q is not a registered building type", def.Type, b)
+		}
+	}
+
+	// Stat floors. A unit that violates these spawns but cannot function — 0 HP
+	// cannot die, 0 moveSpeed cannot walk.
+	//
+	// Attack fields are conditional on damage > 0 so that a unit authored with
+	// no attack (damage is omitempty, so absent == 0) stays legal. Note that
+	// every unit shipped today has damage > 0 — including worker, which is
+	// nonCombat but still melees for 3 — so this branch is currently exercised
+	// only by editor-authored defs, not by the catalog. nonCombat means "not an
+	// army unit", NOT "cannot attack".
+	if def.HP <= 0 {
+		return fmt.Errorf("unit %q: hp must be > 0, got %d", def.Type, def.HP)
+	}
+	if def.MoveSpeed <= 0 {
+		return fmt.Errorf("unit %q: moveSpeed must be > 0, got %v", def.Type, def.MoveSpeed)
+	}
+	if def.Damage > 0 {
+		if def.AttackRange <= 0 {
+			return fmt.Errorf("unit %q: attackRange must be > 0 when damage > 0, got %v", def.Type, def.AttackRange)
+		}
+		if def.AttackSpeed <= 0 {
+			return fmt.Errorf("unit %q: attackSpeed must be > 0 when damage > 0, got %v", def.Type, def.AttackSpeed)
 		}
 	}
 	return nil

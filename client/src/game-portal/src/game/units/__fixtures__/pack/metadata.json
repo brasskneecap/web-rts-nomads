@@ -1,0 +1,23 @@
+{
+  "character": {
+    "size": { "width": 4, "height": 4 }
+  },
+  "frames": {
+    "rotations": {
+      "north": "rotations/north.png",
+      "south": "rotations/south.png"
+    },
+    "animations": {
+      "Walking-test": {
+        "north": [
+          "animations/Walking-test/north/frame_000.png",
+          "animations/Walking-test/north/frame_001.png"
+        ],
+        "south": [
+          "animations/Walking-test/south/frame_000.png",
+          "animations/Walking-test/south/frame_001.png"
+        ]
+      }
+    }
+  }
+}

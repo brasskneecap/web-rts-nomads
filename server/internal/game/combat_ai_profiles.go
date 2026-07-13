@@ -1,5 +1,7 @@
 package game
 
+import "sort"
+
 var combatProfiles = map[string]CombatProfile{
 	"soldier": {
 		Name:                       "soldier",
@@ -546,4 +548,22 @@ func inferCombatArchetype(unit *Unit) string {
 	default:
 		return "soldier"
 	}
+}
+
+// ListArchetypes returns every registered combat-profile key, sorted.
+//
+// This one set backs two fields with DIFFERENT strictness:
+//   - CombatProfile IS validated against this map (validateUnitDef), and an
+//     unknown name is rejected — the embed loader panics on it.
+//   - Archetype is NOT validated. An unknown value silently degrades to the
+//     soldier profile via resolveCombatProfile's fallback chain, which is
+//     exactly why the editor must show the author the real list rather than
+//     leaving the field as free text.
+func ListArchetypes() []string {
+	out := make([]string, 0, len(combatProfiles))
+	for key := range combatProfiles {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }

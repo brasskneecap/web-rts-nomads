@@ -64,6 +64,48 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 		})
 	})
 
+	mux.HandleFunc("/catalog/archetypes", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"archetypes": game.ListArchetypes(),
+		})
+	})
+
+	mux.HandleFunc("/catalog/projectiles", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"projectiles": game.ListProjectileDefs(),
+		})
+	})
+
+	mux.HandleFunc("/catalog/abilities", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"abilities": game.ListAbilityDefs(),
+		})
+	})
+
+	mux.HandleFunc("/catalog/effects", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"effects": game.ListEffectDefs(),
+		})
+	})
+
+	mux.HandleFunc("/catalog/damage-types", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"damageTypes": game.DamageTypes(),
+		})
+	})
+
+	mux.HandleFunc("/catalog/factions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"factions": game.ListFactions(),
+		})
+	})
+
 	mux.HandleFunc("/catalog/items", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -120,6 +162,50 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"icons": game.ListActionIconDefs(),
 		})
+	})
+
+	mux.HandleFunc("/catalog/unit-art", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"art": game.ListUnitArt(),
+		})
+	})
+
+	mux.HandleFunc("/unit-art", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req game.UnitArtSaveRequest
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 48<<20)).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+		if err := game.SaveUnitArt(req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "art_rejected", err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{"unit": req.Unit, "status": "saved"})
+	})
+
+	mux.HandleFunc("/assets/units/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		rel := strings.TrimPrefix(r.URL.Path, "/assets/units/")
+		data, contentType, ok := game.ReadUnitArtFile(rel)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		// Art is re-saved in place by the editor (same URL, new bytes), so it must
+		// NOT be cached — a stale sheet would silently show the author their old art.
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(data)
 	})
 
 	mux.HandleFunc("/maps", func(w http.ResponseWriter, r *http.Request) {

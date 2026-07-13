@@ -2,12 +2,15 @@ package httpserver
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"image"
 	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -59,6 +62,257 @@ func TestCatalogProcsRoute(t *testing.T) {
 	if body.Procs[0]["id"] == "" {
 		t.Error("proc entries need ids")
 	}
+}
+
+// TestNewCatalogRoutes_ReturnNonEmptyExpectedKey exercises the five
+// previously-unrouted catalog endpoints. A ListXDefs() unit test can't catch
+// a JSON envelope key typo (e.g. "damageTypes" vs "damage_types") since the
+// SPA parses that key directly and would just render an empty dropdown, so
+// this asserts on the exact wire key and that it decodes to a non-empty
+// array.
+func TestNewCatalogRoutes_ReturnNonEmptyExpectedKey(t *testing.T) {
+	srv := newTestRouter(t)
+
+	cases := []struct {
+		path string
+		key  string
+	}{
+		{"/catalog/archetypes", "archetypes"},
+		{"/catalog/projectiles", "projectiles"},
+		{"/catalog/abilities", "abilities"},
+		{"/catalog/effects", "effects"},
+		{"/catalog/damage-types", "damageTypes"},
+		{"/catalog/factions", "factions"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			resp, err := srv.Client().Get(srv.URL + tc.path)
+			if err != nil {
+				t.Fatalf("GET %s: %v", tc.path, err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("GET %s: status %d", tc.path, resp.StatusCode)
+			}
+			var body map[string]json.RawMessage
+			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+				t.Fatalf("GET %s: decode: %v", tc.path, err)
+			}
+			raw, ok := body[tc.key]
+			if !ok {
+				t.Fatalf("GET %s: response missing key %q, got keys %v", tc.path, tc.key, keysOf(body))
+			}
+			var list []json.RawMessage
+			if err := json.Unmarshal(raw, &list); err != nil {
+				t.Fatalf("GET %s: key %q is not an array: %v", tc.path, tc.key, err)
+			}
+			if len(list) == 0 {
+				t.Fatalf("GET %s: key %q decoded to an empty array", tc.path, tc.key)
+			}
+		})
+	}
+}
+
+// getCatalogUnitArt performs the request/decode boilerplate shared by the two
+// TestCatalogUnitArtRoute subtests below.
+func getCatalogUnitArt(t *testing.T, srv *httptest.Server) []json.RawMessage {
+	t.Helper()
+	resp, err := srv.Client().Get(srv.URL + "/catalog/unit-art")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	var body map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	raw, ok := body["art"]
+	if !ok {
+		t.Fatalf("response missing key %q, got keys %v", "art", keysOf(body))
+	}
+	var list []json.RawMessage
+	if err := json.Unmarshal(raw, &list); err != nil {
+		t.Fatalf("key %q is not an array: %v", "art", err)
+	}
+	return list
+}
+
+// TestCatalogUnitArtRoute_ServesFixtureManifest exercises the route end to
+// end with a real manifest on disk. This is the regression net for the
+// Windows backslash-in-BaseURL trap and for double-encoding of the raw
+// Manifest field — both of which a request against an empty catalog cannot
+// catch, since json.Unmarshal("null", &list) succeeds trivially.
+func TestCatalogUnitArtRoute_ServesFixtureManifest(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("UNIT_ASSETS_DIR", dir)
+
+	rel := filepath.Join("human", "archer", "sprites.json")
+	full := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(`{"key":"archer","size":{"width":104,"height":104}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := newTestRouter(t)
+	list := getCatalogUnitArt(t, srv)
+	if len(list) != 1 {
+		t.Fatalf("want 1 entry, got %d: %s", len(list), list)
+	}
+
+	var entry struct {
+		Key      string          `json:"key"`
+		Faction  string          `json:"faction"`
+		Unit     string          `json:"unit"`
+		BaseURL  string          `json:"baseUrl"`
+		Manifest json.RawMessage `json:"manifest"`
+	}
+	if err := json.Unmarshal(list[0], &entry); err != nil {
+		t.Fatalf("decode entry: %v", err)
+	}
+	if entry.Key != "archer" || entry.Faction != "human" || entry.Unit != "archer" {
+		t.Fatalf("entry wrong: %+v", entry)
+	}
+	// Regression net: on Windows, filepath.Join instead of path.Join for
+	// BaseURL would emit backslashes here.
+	if entry.BaseURL != "/assets/units/human/archer" {
+		t.Fatalf("baseUrl = %q, want /assets/units/human/archer", entry.BaseURL)
+	}
+	// Regression net: if Manifest were double-encoded (a JSON string
+	// containing JSON, rather than a raw JSON object), this Unmarshal target
+	// would fail to decode as a map.
+	var manifest map[string]any
+	if err := json.Unmarshal(entry.Manifest, &manifest); err != nil {
+		t.Fatalf("manifest did not decode as a JSON object (possible double-encoding): %v", err)
+	}
+	if manifest["key"] != "archer" {
+		t.Fatalf("manifest did not round-trip: %v", manifest)
+	}
+}
+
+// TestCatalogUnitArtRoute_EmptyCatalogServesEmptyArray asserts the no-art-dir
+// case renders as JSON "[]", not "null" — a client doing data.art.map(...)
+// would throw on the latter, and that is the DEFAULT response on any
+// checkout/CI run with no writable art dir.
+func TestCatalogUnitArtRoute_EmptyCatalogServesEmptyArray(t *testing.T) {
+	t.Setenv("UNIT_ASSETS_DIR", filepath.Join(t.TempDir(), "does_not_exist"))
+	srv := newTestRouter(t)
+
+	resp, err := srv.Client().Get(srv.URL + "/catalog/unit-art")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !strings.Contains(string(raw), `"art":[]`) {
+		t.Fatalf("expected literal empty array in body, got: %s", raw)
+	}
+
+	list := getCatalogUnitArt(t, srv)
+	if len(list) != 0 {
+		t.Fatalf("want 0 entries, got %d", len(list))
+	}
+}
+
+// TestAssetsUnitsRoute_ServesFixtureAndRejectsTraversal exercises the
+// filesystem-backed /assets/units/ handler end to end through the real
+// router. The exhaustive traversal-string coverage lives in
+// game.ReadUnitArtFile's own unit tests (they call the function directly, so
+// they still prove the containment logic even if http.ServeMux cleans the
+// request path before it reaches this handler); this test just confirms the
+// wiring: a real fixture serves with the right Content-Type, and a
+// traversal attempt never yields 200.
+func TestAssetsUnitsRoute_ServesFixtureAndRejectsTraversal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("UNIT_ASSETS_DIR", dir)
+
+	rel := filepath.Join("human", "archer", "packed", "walking.png")
+	full := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte("\x89PNG\r\n\x1a\n fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A secret sitting just outside the art root.
+	secret := filepath.Join(dir, "..", "secret.json")
+	if err := os.WriteFile(secret, []byte(`{"password":"hunter2"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(secret) })
+
+	srv := newTestRouter(t)
+
+	resp, err := srv.Client().Get(srv.URL + "/assets/units/human/archer/packed/walking.png")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("status %d type %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+
+	badResp, err := srv.Client().Get(srv.URL + "/assets/units/../../secret.json")
+	if err != nil {
+		t.Fatalf("GET traversal: %v", err)
+	}
+	defer badResp.Body.Close()
+	if badResp.StatusCode == http.StatusOK {
+		t.Fatalf("traversal request was SERVED (status 200) — must be refused")
+	}
+}
+
+// TestUnitArtRoute_SavesFileAndRejectsTraversal exercises POST /unit-art end
+// to end through the real router: a valid one-file save must land on disk
+// under the art root, and a request whose file name attempts to escape the
+// root must be refused with 400 and write nothing.
+func TestUnitArtRoute_SavesFileAndRejectsTraversal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("UNIT_ASSETS_DIR", dir)
+	srv := newTestRouter(t)
+
+	body := `{"faction":"human","unit":"moon_dancer","files":[{"name":"sprites.json","contentBase64":"` +
+		base64.StdEncoding.EncodeToString([]byte(`{"key":"moon_dancer"}`)) + `"}]}`
+	resp, err := srv.Client().Post(srv.URL+"/unit-art", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status %d: %s", resp.StatusCode, raw)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "human", "moon_dancer", "sprites.json")); err != nil {
+		t.Fatalf("expected file written: %v", err)
+	}
+
+	badBody := `{"faction":"human","unit":"u","files":[{"name":"../../secret.png","contentBase64":"` +
+		base64.StdEncoding.EncodeToString([]byte("x")) + `"}]}`
+	badResp, err := srv.Client().Post(srv.URL+"/unit-art", "application/json", strings.NewReader(badBody))
+	if err != nil {
+		t.Fatalf("POST traversal: %v", err)
+	}
+	defer badResp.Body.Close()
+	if badResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("traversal request expected 400, got %d", badResp.StatusCode)
+	}
+}
+
+func keysOf(m map[string]json.RawMessage) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 func TestItemsRoute_SaveAndDelete(t *testing.T) {

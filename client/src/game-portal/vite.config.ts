@@ -46,13 +46,23 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: true,
     allowedHosts: true,
+    // Every server route the SPA calls must be listed here, or in `npm run dev`
+    // it silently hits the Vite dev server instead of Go and 404s. This is not
+    // theoretical: /units shipped without an entry, so the unit editor's Save
+    // and Delete were dead in dev (GET /catalog/units worked, because /catalog
+    // IS proxied — which is exactly why it went unnoticed). Adding a write
+    // endpoint on the server means adding its prefix here.
     proxy: {
       '/ws': { target: GO_SERVER, ws: true, changeOrigin: true },
       '/health': { target: GO_SERVER, changeOrigin: true },
       '/api': { target: GO_SERVER, changeOrigin: true },
       '/catalog': { target: GO_SERVER, changeOrigin: true },
+      '/assets': { target: GO_SERVER, changeOrigin: true },
       '/maps': { target: GO_SERVER, changeOrigin: true },
       '/items': { target: GO_SERVER, changeOrigin: true },
+      '/units': { target: GO_SERVER, changeOrigin: true },
+      '/unit-art': { target: GO_SERVER, changeOrigin: true },
+      '/factions': { target: GO_SERVER, changeOrigin: true },
       '/matches': { target: GO_SERVER, changeOrigin: true },
       '/lobbies': { target: GO_SERVER, changeOrigin: true },
     },
