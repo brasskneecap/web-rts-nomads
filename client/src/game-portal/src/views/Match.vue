@@ -72,7 +72,7 @@
       </div>
     </div>
 
-    <InGameHud v-if="hasStarted" :hud="gameClientApi" @exit="requestForfeit">
+    <InGameHud :hud="gameClientApi" :active="hasStarted" @exit="requestForfeit">
       <canvas ref="canvas" class="game-canvas"></canvas>
     </InGameHud>
   </div>

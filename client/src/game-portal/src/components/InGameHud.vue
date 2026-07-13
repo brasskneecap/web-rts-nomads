@@ -1,9 +1,9 @@
 <template>
   <div class="in-game-hud-root">
-    <MatchHud :ui="ui" />
+    <MatchHud v-if="active" :ui="ui" />
 
     <div
-      v-if="ui.objectives.length || ui.zoneCaptureCards.length || ui.zoneInspection"
+      v-if="active && (ui.objectives.length || ui.zoneCaptureCards.length || ui.zoneInspection)"
       class="match-objectives-anchor"
     >
       <MatchObjectivesPanel v-if="ui.objectives.length" :objectives="ui.objectives" />
@@ -12,7 +12,7 @@
     </div>
 
     <WaveUpgradeModal
-      v-if="ui.waveUpgrade"
+      v-if="active && ui.waveUpgrade"
       :upgrade="ui.waveUpgrade!"
       :units="ui.allPlayerUnits.filter(u => u.unitType !== 'worker')"
       :send-choice="hud.sendWaveUpgradeChoice"
@@ -21,16 +21,17 @@
       :paused-since-ms="ui.pausedSinceMs"
     />
 
-    <BattleTrackerPanel :ui="ui" />
+    <BattleTrackerPanel v-if="active" :ui="ui" />
 
     <DebugSpawnPanel
+      v-if="active"
       :ui="ui"
       :targeting-active="debugSpawnTargetingActive"
       :begin-debug-spawn="hud.beginDebugSpawn"
       :cancel-debug-spawn="hud.cancelDebugSpawn"
     />
 
-    <div v-if="ui.paused" class="pause-banner" role="status" aria-live="polite">
+    <div v-if="active && ui.paused" class="pause-banner" role="status" aria-live="polite">
       <div class="pause-banner__title">Game Paused</div>
       <div class="pause-banner__sub">{{ pausedByLabel }} Open Settings to resume.</div>
     </div>
@@ -38,6 +39,7 @@
     <div class="match-stage">
       <slot />
       <SelectionHud
+        v-if="active"
         :ui="ui"
         @action="hud.performSelectionAction"
         @select-unit="hud.selectUnitOnly"
@@ -48,6 +50,7 @@
         @equip-item="({ unitId, slotIndex, instanceId }) => hud.sendEquipItem(unitId, slotIndex, instanceId)"
       />
       <MatchMenuLauncher
+        v-if="active"
         :active-tab="matchMenuOpen ? matchMenuTab : null"
         :abilities="ui.commanderAbilities"
         :active-ability-id="ui.commanderTargetingAbilityId"
@@ -58,20 +61,20 @@
         @settings="matchSettingsOpen = !matchSettingsOpen"
       />
       <ItemsBar
-        v-if="itemsBarVisible"
+        v-if="active && itemsBarVisible"
         :vault="ui.vault"
         :active-instance-id="ui.itemTargeting?.instanceId ?? null"
         @use="onItemUse"
       />
       <MatchSettingsModal
-        v-if="matchSettingsOpen"
+        v-if="active && matchSettingsOpen"
         :paused="ui.paused"
         @close="matchSettingsOpen = false"
         @toggle-pause="(next) => hud.sendSetPause(next)"
         @exit-game="() => { matchSettingsOpen = false; $emit('exit') }"
       />
       <MatchMenu
-        v-if="matchMenuOpen"
+        v-if="active && matchMenuOpen"
         v-model:active-tab="matchMenuTab"
         :shop-catalog="ui.shopCatalog"
         :shop-rerolls-remaining="ui.shopRerollsRemaining"
@@ -99,12 +102,13 @@
     </div>
 
     <LootDropTooltip
+      v-if="active"
       :drop="ui.hoveredLootDrop"
       :cursor-client-x="ui.cursorClientX"
       :cursor-client-y="ui.cursorClientY"
     />
 
-    <DebugHud v-if="debugHudVisible" :stats="ui.netStats" />
+    <DebugHud v-if="active && debugHudVisible" :stats="ui.netStats" />
   </div>
 </template>
 
@@ -128,7 +132,7 @@ import { BUILDABLE_BUILDING_DEFS } from '@/game/maps/buildingDefs'
 
 type HudApi = ReturnType<typeof import('@/composables/useGameClient').useGameClient>
 
-const props = defineProps<{ hud: HudApi }>()
+const props = defineProps<{ hud: HudApi; active: boolean }>()
 defineEmits<{ exit: [] }>()
 
 const ui = computed(() => props.hud.ui.value)
@@ -213,6 +217,7 @@ function selectionWouldHandleKey(letter: string): boolean {
 }
 
 function onMatchMenuHotkey(e: KeyboardEvent) {
+  if (!props.active) return
   const isItemsBarKey = e.code === 'KeyI'
   if (!(e.code in MATCH_MENU_HOTKEYS) && !isItemsBarKey) return
   if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return
@@ -238,6 +243,7 @@ function onMatchMenuHotkey(e: KeyboardEvent) {
 }
 
 function onMatchMenuEscape(e: KeyboardEvent) {
+  if (!props.active) return
   if (e.code !== 'Escape') return
   if (matchSettingsOpen.value) return
   if (!matchMenuOpen.value) return
@@ -247,6 +253,7 @@ function onMatchMenuEscape(e: KeyboardEvent) {
 }
 
 function onDebugHudHotkey(e: KeyboardEvent) {
+  if (!props.active) return
   if (e.code !== 'F3') return
   if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return
   debugHudVisible.value = !debugHudVisible.value

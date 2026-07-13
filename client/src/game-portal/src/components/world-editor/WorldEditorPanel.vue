@@ -1178,8 +1178,8 @@
           @mouseup="onMinimapMouseUp"
           @mouseleave="onMinimapMouseUp"
         ></canvas>
-        <div v-if="playtestPlaying" class="playtest-stage">
-          <InGameHud :hud="playtestGameClient" @exit="stopPlaytest">
+        <div v-show="playtestPlaying" class="playtest-stage">
+          <InGameHud :hud="playtestGameClient" :active="playtestPlaying" @exit="stopPlaytest">
             <canvas ref="playCanvas" class="we-play-canvas"></canvas>
           </InGameHud>
         </div>

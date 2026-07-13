@@ -74,7 +74,7 @@ function mkHud(overrides: Record<string, unknown> = {}) {
 describe('InGameHud', () => {
   it('renders the core HUD components fed by hud.ui', () => {
     const hud = mkHud()
-    const w = shallowMount(InGameHud, { props: { hud: hud as any } })
+    const w = shallowMount(InGameHud, { props: { hud: hud as any, active: true } })
     expect(w.findComponent(MatchHud).exists()).toBe(true)
     expect(w.findComponent(SelectionHud).exists()).toBe(true)
     expect(w.findComponent(MatchMenuLauncher).exists()).toBe(true)
@@ -84,15 +84,26 @@ describe('InGameHud', () => {
   it('renders the game canvas passed via the default slot', () => {
     const hud = mkHud()
     const w = shallowMount(InGameHud, {
-      props: { hud: hud as any },
+      props: { hud: hud as any, active: true },
       slots: { default: '<canvas class="test-canvas"></canvas>' },
     })
     expect(w.find('canvas.test-canvas').exists()).toBe(true)
   })
 
+  it('renders the canvas slot but no HUD when inactive', () => {
+    const hud = mkHud()
+    const w = shallowMount(InGameHud, {
+      props: { hud: hud as any, active: false },
+      slots: { default: '<canvas class="test-canvas"></canvas>' },
+    })
+    expect(w.find('canvas.test-canvas').exists()).toBe(true)
+    expect(w.findComponent(MatchHud).exists()).toBe(false)
+    expect(w.findComponent(SelectionHud).exists()).toBe(false)
+  })
+
   it('opens the match menu on a tab, forwards a shop purchase, and forwards craft', async () => {
     const hud = mkHud()
-    const w = shallowMount(InGameHud, { props: { hud: hud as any } })
+    const w = shallowMount(InGameHud, { props: { hud: hud as any, active: true } })
     // Menu hidden until a tab is opened
     expect(w.findComponent(MatchMenu).exists()).toBe(false)
     w.findComponent(MatchMenuLauncher).vm.$emit('open', 'shop')
@@ -106,7 +117,7 @@ describe('InGameHud', () => {
 
   it('forwards a selection action and casts a commander ability (toggle)', () => {
     const hud = mkHud()
-    const w = shallowMount(InGameHud, { props: { hud: hud as any } })
+    const w = shallowMount(InGameHud, { props: { hud: hud as any, active: true } })
     w.findComponent(SelectionHud).vm.$emit('action', 'move')
     expect(hud.performSelectionAction).toHaveBeenCalledWith('move')
     w.findComponent(MatchMenuLauncher).vm.$emit('cast-ability', 'fireball')
@@ -115,7 +126,7 @@ describe('InGameHud', () => {
 
   it('opens settings, and its exit-game bubbles as the component exit emit', async () => {
     const hud = mkHud()
-    const w = shallowMount(InGameHud, { props: { hud: hud as any } })
+    const w = shallowMount(InGameHud, { props: { hud: hud as any, active: true } })
     w.findComponent(MatchMenuLauncher).vm.$emit('settings')
     await w.vm.$nextTick()
     expect(w.findComponent(MatchSettingsModal).exists()).toBe(true)
