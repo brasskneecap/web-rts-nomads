@@ -16,7 +16,7 @@ export function resolvePlaytestMapId(map: Pick<MapConfig, 'id'>): string {
 // playtest uses. Running the match through the shared composable (rather than a
 // private GameClient) is what lets the in-game HUD — which reads the composable
 // snapshot — render the live playtest. The returned `gameClient` is handed to
-// PlaytestHud so it can read `ui` and forward commands.
+// the shared InGameHud so it can read `ui` and forward commands.
 export function usePlaytest(getPlayCanvas: () => HTMLCanvasElement | null) {
   const gameClient = useGameClient()
   const playing = ref(false)
