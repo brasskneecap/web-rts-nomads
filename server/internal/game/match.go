@@ -35,8 +35,11 @@ type Match struct {
 	loop *Loop
 }
 
-func NewMatch(id string, mapID string) *Match {
+func NewMatch(id string, mapID string) *Match { return newMatchWithEphemeral(id, mapID, false) }
+
+func newMatchWithEphemeral(id string, mapID string, ephemeral bool) *Match {
 	state := NewGameState(GetMapConfigByID(mapID))
+	state.Ephemeral = ephemeral
 
 	match := &Match{
 		ID:                    id,

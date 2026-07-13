@@ -854,6 +854,11 @@ type GameState struct {
 	// starts ticking. Empty for Custom Game / find-game matches.
 	CampaignLevelID string
 
+	// Ephemeral marks a throwaway editor-playtest match: the full sim and
+	// objective evaluation run, but reward persistence is suppressed (see the
+	// gated hooks in manager.go). Set at construction, never changes.
+	Ephemeral bool
+
 	// Objectives holds the per-match runtime state for the launching
 	// campaign level's objectives. Empty slice when CampaignLevelID is empty.
 	// Evaluated each tick by evaluateObjectivesLocked (§8); written by the

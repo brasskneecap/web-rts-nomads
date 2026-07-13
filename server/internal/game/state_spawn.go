@@ -294,8 +294,85 @@ func (s *GameState) spawnPlacedUnitsForPlayerLocked(playerID, color string) {
 		if unit == nil {
 			slog.Warn("spawnPlacedUnitsForPlayerLocked: spawnPlayerUnitLocked returned nil; skipping",
 				"playerID", playerID, "unitType", entry.UnitType)
+			continue
+		}
+		s.applyPlacedUnitInstanceLocked(unit, entry)
+	}
+}
+
+// applyPlacedUnitInstanceLocked stamps a placed unit's authored rank, items,
+// and perks onto a freshly spawned unit. Each is optional; unknown refs were
+// already dropped at hydrate (see hydratePlacedUnits). Caller holds s.mu.
+//
+// Order: rank first, then items, then perks.
+//
+//   - Rank: mirrors the "set rank directly, no XP" pipeline debug_spawn.go
+//     uses (assignUnitPathOnRankUpLocked -> rollUnitPoolSpellsLocked ->
+//     assignUnitPathAbilitiesLocked -> applyRankModifiersLocked), so a
+//     placed Silver Cleric gets the same path roll / spell pool / path
+//     abilities a naturally-promoted Silver Cleric would, not just the raw
+//     stat multipliers. applyRankModifiersLocked does NOT resize
+//     InventorySize/Equipped (that's setInventorySizeForRankLocked, normally
+//     called from onUnitRankUpLocked on the natural rank-up path or directly
+//     by debug_spawn.go) — call it explicitly so a Silver+ placed unit has
+//     enough slots for its authored items before we equip them.
+//   - Items: equipped via equipItemDirectLocked (fills the first free slot,
+//     else appends — placed-unit authoring intent wins over the slot cap).
+//     Equipment bonus is recomputed once after all items are equipped.
+//   - Perks: appended verbatim (no eligibility/prerequisite filtering — same
+//     freedom the debug-spawn tool has) with applyPerkGrantedHooksLocked run
+//     per perk, then path abilities are re-derived so perk-granted abilities
+//     (PerkDef.GrantsAbilities) land on unit.Abilities, mirroring
+//     debug_spawn.go's second assignUnitPathAbilitiesLocked call.
+func (s *GameState) applyPlacedUnitInstanceLocked(unit *Unit, entry protocol.PlacedUnit) {
+	// entry.Rank != unit.Rank skips the whole block when the authored rank
+	// already matches the unit's just-spawned rank (unit.Rank == unitRankBase
+	// from spawnUnitFromDefLocked) — e.g. an authored rank of "base", or the
+	// common case of entry.Rank == "" being caught by the first condition.
+	// This is a no-op-avoidance guard, not a correctness requirement:
+	// assignUnitPathOnRankUpLocked has its own internal `unit.Rank ==
+	// unitRankBase` guard (progression.go) that would no-op anyway, so a
+	// base-rank placed unit correctly skips path assignment either way.
+	if entry.Rank != "" && entry.Rank != unit.Rank {
+		unit.Rank = entry.Rank
+		s.assignUnitPathOnRankUpLocked(unit)
+		s.rollUnitPoolSpellsLocked(unit)
+		s.assignUnitPathAbilitiesLocked(unit)
+		s.applyRankModifiersLocked(unit, false)
+		s.setInventorySizeForRankLocked(unit)
+	}
+	for _, itemID := range entry.Items {
+		if _, ok := getItemDef(itemID); !ok {
+			continue
+		}
+		s.equipItemDirectLocked(unit, itemID)
+	}
+	if len(entry.Items) > 0 {
+		s.recomputeUnitEquipmentBonusLocked(unit)
+	}
+	for _, perkID := range entry.Perks {
+		unit.PerkIDs = append(unit.PerkIDs, perkID)
+		s.applyPerkGrantedHooksLocked(unit, perkID)
+	}
+	if len(entry.Perks) > 0 {
+		s.assignUnitPathAbilitiesLocked(unit)
+	}
+}
+
+// equipItemDirectLocked puts an item into the unit's next free equipment
+// slot without going through the vault/player flow (placed units aren't
+// tied to a vault). Fills the first nil slot; if none, appends. Caller holds
+// s.mu; caller is responsible for calling recomputeUnitEquipmentBonusLocked
+// afterward.
+func (s *GameState) equipItemDirectLocked(unit *Unit, itemID string) {
+	item := &EquippedItem{InstanceID: s.allocItemInstanceIDLocked(), ItemID: itemID, Stacks: 1}
+	for i := range unit.Equipped {
+		if unit.Equipped[i] == nil {
+			unit.Equipped[i] = item
+			return
 		}
 	}
+	unit.Equipped = append(unit.Equipped, item)
 }
 
 // spawnPlacedEnemyUnitsLocked spawns authored enemy placed units as stationary
@@ -362,6 +439,23 @@ func (s *GameState) spawnPlacedEnemyUnitsLocked() {
 		unit.CombatAnchorX = spawnPos.X
 		unit.CombatAnchorY = spawnPos.Y
 		unit.Status = "Guarding"
+		// Apply authored rank/items/perks after guard-mode fields are set.
+		// Verified none of applyPlacedUnitInstanceLocked's callees
+		// (applyRankModifiersLocked, setInventorySizeForRankLocked,
+		// recomputeUnitEquipmentBonusLocked, assignUnitPathOnRankUpLocked,
+		// rollUnitPoolSpellsLocked, assignUnitPathAbilitiesLocked,
+		// applyPerkGrantedHooksLocked) touch GuardMode/GuardAnchor*/
+		// GuardAggroRange/GuardLeashRange/Order/OrderID/CombatAnchor*/Status/
+		// IgnoreWaveClear, so this ordering is not load-bearing for
+		// correctness today — it is chosen so guard identity is fully
+		// established before any instance-data hook runs, keeping guard
+		// config authoritative over anything a future rank/perk hook might
+		// add. Note spawnEnemyUnitLocked (unlike the player path) does NOT
+		// pre-size InventorySize/Equipped (that setup in
+		// spawnUnitFromDefLocked is player-only); setInventorySizeForRankLocked
+		// inside applyPlacedUnitInstanceLocked has no ownership check, so it
+		// still grows them correctly here when entry.Rank is set.
+		s.applyPlacedUnitInstanceLocked(unit, entry)
 	}
 }
 

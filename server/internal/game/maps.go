@@ -146,7 +146,68 @@ func hydratePlacedUnits(units []protocol.PlacedUnit, cfg protocol.MapConfig) []p
 		if entry.LeashRange == 0 {
 			entry.LeashRange = placedUnitDefaultLeashRange
 		}
+		// Drop unknown per-instance refs (never fatal), mirroring the
+		// unknown-unitType discipline above.
+		if entry.Rank != "" && !isValidRankForUnitType(entry.UnitType, entry.Rank) {
+			slog.Warn("hydratePlacedUnits: dropping unknown rank", "unitType", entry.UnitType, "rank", entry.Rank)
+			entry.Rank = ""
+		}
+		entry.Items = filterKnownItemIDs(entry.Items)
+		entry.Perks = filterKnownPerkIDsForUnit(entry.UnitType, entry.Perks)
 		out = append(out, entry)
+	}
+	return out
+}
+
+// isValidRankForUnitType reports whether rank is a known rank string. Ranks
+// are global (base/bronze/silver/gold — see rankProgressionTable in
+// progression.go), not per unit type, so unitType is unused today; it is
+// kept in the signature in case a future unit type authors a restricted rank
+// set. Base is included, though hydrate only calls this for entry.Rank != "".
+func isValidRankForUnitType(unitType, rank string) bool {
+	_ = unitType
+	for _, def := range rankProgressionTable {
+		if def.Rank == rank {
+			return true
+		}
+	}
+	return false
+}
+
+// filterKnownItemIDs drops any item id absent from the item catalog,
+// warning for each drop. Never fatal.
+func filterKnownItemIDs(ids []string) []string {
+	out := ids[:0:0]
+	for _, id := range ids {
+		if _, ok := getItemDef(id); ok {
+			out = append(out, id)
+		} else {
+			slog.Warn("hydratePlacedUnits: dropping unknown item", "item", id)
+		}
+	}
+	return out
+}
+
+// filterKnownPerkIDsForUnit drops any perk id absent from the perk catalog,
+// or authored for a different unit type. Mirrors the UnitType eligibility
+// check in eligiblePerksForUnitAtRank (perk_defs.go) — an empty PerkDef.UnitType
+// is a wildcard. Path/Rank eligibility is deliberately NOT enforced here:
+// placed-unit authoring is allowed to grant perks out of the normal
+// progression order, the same freedom the debug-spawn tool has (see
+// debug_spawn.go). Never fatal.
+func filterKnownPerkIDsForUnit(unitType string, ids []string) []string {
+	out := ids[:0:0]
+	for _, id := range ids {
+		def := perkDefByID(id)
+		if def == nil {
+			slog.Warn("hydratePlacedUnits: dropping unknown perk", "unitType", unitType, "perk", id)
+			continue
+		}
+		if def.UnitType != "" && def.UnitType != unitType {
+			slog.Warn("hydratePlacedUnits: dropping perk not valid for unitType", "unitType", unitType, "perk", id, "perkUnitType", def.UnitType)
+			continue
+		}
+		out = append(out, id)
 	}
 	return out
 }

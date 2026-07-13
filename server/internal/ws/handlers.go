@@ -400,7 +400,11 @@ func (h *Hub) readLoop(client *Client) {
 			}
 			h.manager.EvictPlayerFromOtherMatches(msg.PlayerID, exceptMatchID)
 			if match == nil {
-				match = h.manager.FindOrCreateMatch(mapID)
+				if msg.Ephemeral {
+					match = h.manager.NewEphemeralMatch(mapID)
+				} else {
+					match = h.manager.FindOrCreateMatch(mapID)
+				}
 			}
 
 			client.SetPlayerID(msg.PlayerID)

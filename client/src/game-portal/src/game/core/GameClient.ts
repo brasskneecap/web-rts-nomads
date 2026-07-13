@@ -187,7 +187,7 @@ export class GameClient {
     })
   }
 
-  async start(options: { resume?: boolean } = {}) {
+  async start(options: { resume?: boolean; ephemeral?: boolean } = {}) {
     const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs, recipeDefs] = await Promise.all([
       fetchBuildingDefs(),
       fetchObstacleDefs(),
@@ -208,6 +208,7 @@ export class GameClient {
     initItemDefs(itemDefs)
     initRecipeDefs(recipeDefs)
     window.addEventListener('keydown', this.handleDevHotkey)
+    this.network.setEphemeral(!!options.ephemeral)
     await this.network.connect(options)
     this.loop.start()
   }

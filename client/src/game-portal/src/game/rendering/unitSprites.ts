@@ -360,6 +360,7 @@ function imageReady(img: HTMLImageElement | undefined): img is HTMLImageElement 
 //      and vertical padding fractions applied to trim transparent margins.
 //   2. No sprite (placeholder path) → use the def's bounds relative to
 //      (unit.x, unit.y), falling back to DEFAULT_UNIT_BOUNDS when absent.
+
 export function getUnitBodyRect(args: {
   x: number
   y: number

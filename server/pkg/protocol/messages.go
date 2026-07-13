@@ -194,11 +194,14 @@ const (
 // human) — faction is intrinsic to the UnitDef and is not stored per instance.
 type PlacedUnit struct {
 	GridCoord
-	ID         string  `json:"id"`
-	PlayerSlot string  `json:"playerSlot"`
-	UnitType   string  `json:"unitType"`
-	AggroRange float64 `json:"aggroRange,omitempty"`
-	LeashRange float64 `json:"leashRange,omitempty"`
+	ID         string   `json:"id"`
+	PlayerSlot string   `json:"playerSlot"`
+	UnitType   string   `json:"unitType"`
+	AggroRange float64  `json:"aggroRange,omitempty"`
+	LeashRange float64  `json:"leashRange,omitempty"`
+	Rank       string   `json:"rank,omitempty"`
+	Items      []string `json:"items,omitempty"`
+	Perks      []string `json:"perks,omitempty"`
 }
 
 // UnmarshalJSON accepts both the current shape (`playerSlot`) and the legacy
@@ -215,9 +218,12 @@ func (p *PlacedUnit) UnmarshalJSON(data []byte) error {
 		PlayerSlot  string  `json:"playerSlot"`
 		Owner       string  `json:"owner"`
 		PlayerLabel string  `json:"playerLabel"`
-		UnitType    string  `json:"unitType"`
-		AggroRange  float64 `json:"aggroRange"`
-		LeashRange  float64 `json:"leashRange"`
+		UnitType    string   `json:"unitType"`
+		AggroRange  float64  `json:"aggroRange"`
+		LeashRange  float64  `json:"leashRange"`
+		Rank        string   `json:"rank"`
+		Items       []string `json:"items"`
+		Perks       []string `json:"perks"`
 	}
 	var raw rawShape
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -228,6 +234,9 @@ func (p *PlacedUnit) UnmarshalJSON(data []byte) error {
 	p.UnitType = raw.UnitType
 	p.AggroRange = raw.AggroRange
 	p.LeashRange = raw.LeashRange
+	p.Rank = raw.Rank
+	p.Items = raw.Items
+	p.Perks = raw.Perks
 	switch {
 	case raw.PlayerSlot != "":
 		p.PlayerSlot = raw.PlayerSlot
@@ -700,6 +709,11 @@ type JoinMatchMessage struct {
 	// nothing", so the welcome carries the map. Transport-agnostic: this is the
 	// only signal used for the hit/miss decision, made server-side here.
 	CachedMapHashes []string `json:"cachedMapHashes,omitempty"`
+	// Ephemeral requests a throwaway editor-playtest match: the server creates
+	// a fresh match via MatchManager.NewEphemeralMatch instead of joining/
+	// creating a shared FindOrCreateMatch match, and suppresses reward
+	// persistence for the duration (see GameState.Ephemeral).
+	Ephemeral bool `json:"ephemeral,omitempty"`
 }
 
 type LeaveMatchMessage struct {

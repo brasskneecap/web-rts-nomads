@@ -77,17 +77,33 @@ func (m *MatchManager) NewMatch(mapID string) *Match {
 }
 
 func (m *MatchManager) newMatchLocked(mapID string) *Match {
+	return m.newMatchLockedEphemeral(mapID, false)
+}
+
+// NewEphemeralMatch creates a fresh throwaway match for editor playtesting.
+// It is registered so snapshots/commands route, but FindOrCreateMatch never
+// reuses it (see the Ephemeral skip there), and its reward hooks no-op.
+func (m *MatchManager) NewEphemeralMatch(mapID string) *Match {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.newMatchLockedEphemeral(mapID, true)
+}
+
+func (m *MatchManager) newMatchLockedEphemeral(mapID string, ephemeral bool) *Match {
 	matchID := fmt.Sprintf("match-%d", m.nextID)
 	m.nextID++
 
-	match := NewMatch(matchID, mapID)
+	match := newMatchWithEphemeral(matchID, mapID, ephemeral)
 	m.matches[matchID] = match
-	log.Printf("match created: id=%s mapID=%s seed=%d\n", matchID, mapID, match.State.MatchSeed())
+	log.Printf("match created: id=%s mapID=%s seed=%d ephemeral=%t\n", matchID, mapID, match.State.MatchSeed(), ephemeral)
 
 	// Immediate-commit hook for dominionPoints.commitMode == "immediate".
 	// Fires per kill-drop; runs the actual profile write in a goroutine so
 	// rollDominionPointDropLocked (called from the tick loop) returns instantly.
 	match.State.SetImmediateDominionPointDropHandler(func(playerID string, amount int) {
+		if match.State.Ephemeral {
+			return
+		}
 		committer := m.getCommitter()
 		if committer == nil {
 			return
@@ -105,6 +121,9 @@ func (m *MatchManager) newMatchLocked(mapID string) *Match {
 	// handleCraftItemLocked, so this closure runs off-thread — no extra
 	// goroutine needed here. Captures only the two string args + recorder.
 	match.State.SetRecipeCraftedHandler(func(playerID, recipeID string) {
+		if match.State.Ephemeral {
+			return
+		}
 		recorder := m.getRecipeRecorder()
 		if recorder == nil {
 			return
@@ -115,7 +134,7 @@ func (m *MatchManager) newMatchLocked(mapID string) *Match {
 	})
 
 	match.loop.OnGameOver = func() {
-		if committer := m.getCommitter(); committer != nil {
+		if committer := m.getCommitter(); committer != nil && !match.State.Ephemeral {
 			for _, summary := range match.State.HumanPlayerMatchSummaries() {
 				if summary.DominionPointsEarned <= 0 {
 					continue
@@ -149,7 +168,7 @@ func (m *MatchManager) FindOrCreateMatch(mapID string) *Match {
 	defer m.mu.Unlock()
 
 	for _, match := range m.matches {
-		if match.MapID == mapID && match.PlayerCount() < 4 && !match.State.IsGameOver() {
+		if match.MapID == mapID && match.PlayerCount() < 4 && !match.State.IsGameOver() && !match.State.Ephemeral {
 			return match
 		}
 	}

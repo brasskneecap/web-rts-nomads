@@ -94,13 +94,13 @@ export const DEFAULTS = {
   fontCqw: 2.9,
   entries: [
     // The sign art (main-menu.png) has FIVE plank rows at ~6.42% intervals;
-    // the original four tops sat on planks 1-4, so Item Editor takes plank 4
+    // the original four tops sat on planks 1-4, so World Editor takes plank 4
     // and Settings moves down to plank 5 (75.25 + 6.43). Fine-tune with the
     // sign tuner (localStorage 'webrts.signTuner'='1' + backtick).
     { label: 'Start Game', to: '/war-room', top: 55.97 },
     { label: 'Profile', to: '/profile', top: 62.34 },
     { label: 'Map Editor', to: '/editor', top: 68.79 },
-    { label: 'Item Editor', to: '/item-editor', top: 75.25 },
+    { label: 'World Editor', to: '/world-editor', top: 75.25 },
     { label: 'Settings', to: '/options', top: 81.68 },
   ] as Entry[],
 }
