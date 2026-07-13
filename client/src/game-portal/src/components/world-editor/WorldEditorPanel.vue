@@ -1178,17 +1178,25 @@
           @mouseup="onMinimapMouseUp"
           @mouseleave="onMinimapMouseUp"
         ></canvas>
-        <div v-show="playtestPlaying" class="playtest-stage">
-          <InGameHud :hud="playtestGameClient" :active="playtestPlaying" @exit="stopPlaytest">
-            <canvas ref="playCanvas" class="we-play-canvas"></canvas>
-          </InGameHud>
-        </div>
-        <PlaytestBar
-          v-if="playtestPlaying"
-          :paused="playtestPaused"
-          @toggle-pause="togglePlaytestPause"
-          @reset="stopPlaytest"
-        />
+        <!-- The playtest is teleported to <body> so it renders as a true
+             full-viewport match overlay, escaping the editor panel's
+             backdrop-filter (which would otherwise become the containing block
+             + clip region for every position:fixed HUD element) and its
+             overflow:hidden. This is what makes the in-game HUD render in the
+             editor exactly as it does in a real match. -->
+        <Teleport to="body">
+          <div v-show="playtestPlaying" class="playtest-stage">
+            <InGameHud :hud="playtestGameClient" :active="playtestPlaying" @exit="stopPlaytest">
+              <canvas ref="playCanvas" class="we-play-canvas"></canvas>
+            </InGameHud>
+            <PlaytestBar
+              v-if="playtestPlaying"
+              :paused="playtestPaused"
+              @toggle-pause="togglePlaytestPause"
+              @reset="stopPlaytest"
+            />
+          </div>
+        </Teleport>
         <div v-if="selectedEditBuilding && editPanelPos" class="edit-panel" :style="editPanelStyle">
           <div class="edit-panel__header">
             <span class="edit-panel__title">{{ selectedEditBuilding.buildingType }}</span>
@@ -6301,12 +6309,15 @@ onBeforeUnmount(() => {
 }
 
 .playtest-stage {
-  position: absolute;
+  /* Fixed full-viewport overlay (teleported to <body>), mirroring the real
+     match's .match-view. Opaque backdrop so the editor never shows through. */
+  position: fixed;
   inset: 0;
-  z-index: 26;
+  z-index: 2000;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  background: #05080d;
 }
 
 .editor-minimap {
