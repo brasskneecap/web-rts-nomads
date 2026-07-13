@@ -59,7 +59,13 @@ function onCommanderCast(abilityId: string) {
 /* Full-viewport passthrough overlay: the child HUD components position
    themselves (fixed/absolute), so this wrapper just needs to not block the
    canvas beneath. No literal cursor declarations (global rules own the cursor). */
-.playtest-hud { position: absolute; inset: 0; pointer-events: none; }
+/* The play canvas (.we-play-canvas) is opaque and sits at z-index: 25 in the
+   .canvas-frame stacking context. Without a z-index here, .playtest-hud does
+   not establish a stacking context above it, so the HUD panels (SelectionHud
+   z7, MatchHud z20) render BEHIND the canvas — only CommanderActionBar (z25,
+   later in DOM) escaped. z-index: 26 lifts the whole HUD group above the play
+   canvas (and stays below the PlaytestBar at z30). */
+.playtest-hud { position: absolute; inset: 0; pointer-events: none; z-index: 26; }
 .playtest-hud > * { pointer-events: auto; }
 .playtest-hud__objectives { position: absolute; top: 12px; left: 12px; z-index: 20; }
 </style>
