@@ -7,6 +7,7 @@ import Editor from '@/views/Editor.vue'
 import WorldEditor from '@/views/WorldEditor.vue'
 import ItemEditor from '@/views/ItemEditor.vue'
 import UnitTypeEditor from '@/views/UnitTypeEditor.vue'
+import AbilityEditor from '@/views/AbilityEditor.vue'
 import ProfileView from '@/views/ProfileView.vue'
 import OptionsView from '@/views/OptionsView.vue'
 import WarRoom from '@/views/WarRoom.vue'
@@ -43,6 +44,7 @@ export const router = createRouter({
     { path: '/world-editor', component: WorldEditor, meta: { hideMenuChrome: true, hideDominionPanel: true } },
     { path: '/item-editor', component: ItemEditor, meta: { hideDominionPanel: true } },
     { path: '/unit-type-editor', component: UnitTypeEditor, meta: { hideDominionPanel: true } },
+    { path: '/ability-editor', component: AbilityEditor, meta: { hideDominionPanel: true } },
     { path: '/profile', component: ProfileView },
     { path: '/options', component: OptionsView },
     { path: '/war-room', component: WarRoom, meta: { hideMenuChrome: true } },

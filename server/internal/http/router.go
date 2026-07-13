@@ -16,6 +16,43 @@ import (
 	"webrts/server/internal/ws"
 )
 
+// registerAbilityCatalogRoutes registers the read-only GET /catalog/* routes
+// that back the abilities editor's validated dropdowns (abilities,
+// projectiles, effects, auto-cast selectors, ability categories, damage
+// types). Split out from NewRouter so it can be exercised directly against a
+// bare *http.ServeMux in tests without constructing a full Hub/profile.Manager.
+func registerAbilityCatalogRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/catalog/abilities", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"abilities": game.ListAbilityDefs()})
+	})
+
+	mux.HandleFunc("/catalog/projectiles", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"projectiles": game.ListProjectileDefs()})
+	})
+
+	mux.HandleFunc("/catalog/effects", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"effects": game.ListEffectDefs()})
+	})
+
+	mux.HandleFunc("/catalog/autocast-selectors", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"autoCastSelectors": game.ListAutoCastSelectorNames()})
+	})
+
+	mux.HandleFunc("/catalog/ability-categories", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"abilityCategories": game.AbilityCategories()})
+	})
+
+	mux.HandleFunc("/catalog/damage-types", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"damageTypes": game.DamageTypes()})
+	})
+}
+
 // NewRouter wires the server's HTTP and WebSocket handlers. When spaHandler is
 // non-nil, it is mounted at "/" as a catch-all so the embedded SPA is served
 // for any path that no other route matches; routes registered above keep their
@@ -56,6 +93,8 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 			"pathsByUnit": game.ListPathsByUnitType(),
 		})
 	})
+
+	registerAbilityCatalogRoutes(mux)
 
 	mux.HandleFunc("/catalog/perks", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

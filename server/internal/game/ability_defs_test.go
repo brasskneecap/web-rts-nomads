@@ -260,3 +260,63 @@ func TestAbility_HealLoadsFromCatalog(t *testing.T) {
 		t.Errorf("ListAbilityDefs() does not contain heal; got %+v", ListAbilityDefs())
 	}
 }
+
+func TestCastRangeJSONRoundTrip(t *testing.T) {
+	cases := []struct {
+		name string
+		in   CastRange
+		want string
+	}{
+		{"literal", CastRange(220), "220"},
+		{"sentinel", CastRange(CastRangeMatchAttackRange), `"match_attack_range"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal(tc.in)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if string(raw) != tc.want {
+				t.Fatalf("marshal = %s, want %s", raw, tc.want)
+			}
+			var back CastRange
+			if err := json.Unmarshal(raw, &back); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if back.MatchesAttackRange() != tc.in.MatchesAttackRange() || (!tc.in.MatchesAttackRange() && back != tc.in) {
+				t.Fatalf("round-trip = %v, want %v", back, tc.in)
+			}
+		})
+	}
+}
+
+func TestValidateAbilityDef(t *testing.T) {
+	t.Run("rejects unknown category", func(t *testing.T) {
+		def := AbilityDef{ID: "x", Category: "not_a_category"}
+		if err := validateAbilityDef(&def); err == nil {
+			t.Fatal("expected error for unknown category")
+		}
+	})
+	t.Run("rejects burn without impact delay", func(t *testing.T) {
+		def := AbilityDef{ID: "x", BurnDurationSeconds: 3, BurnTickIntervalSeconds: 1}
+		if err := validateAbilityDef(&def); err == nil {
+			t.Fatal("expected error: burn requires impactDelaySeconds > 0")
+		}
+	})
+	t.Run("normalizes target and summon counts", func(t *testing.T) {
+		def := AbilityDef{ID: "x"}
+		if err := validateAbilityDef(&def); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if def.TargetCount != 1 || def.SummonCount != 1 {
+			t.Fatalf("TargetCount=%d SummonCount=%d, want 1/1", def.TargetCount, def.SummonCount)
+		}
+	})
+	t.Run("normalizes channel healing multiplier", func(t *testing.T) {
+		def := AbilityDef{ID: "x", ChannelType: "beam"}
+		_ = validateAbilityDef(&def)
+		if def.HealingMultiplier != 1.0 {
+			t.Fatalf("HealingMultiplier=%v, want 1.0", def.HealingMultiplier)
+		}
+	})
+}
