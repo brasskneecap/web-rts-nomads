@@ -1178,8 +1178,11 @@
           @mouseup="onMinimapMouseUp"
           @mouseleave="onMinimapMouseUp"
         ></canvas>
-        <canvas v-show="playtestPlaying" ref="playCanvas" class="we-play-canvas"></canvas>
-        <PlaytestHud v-if="playtestPlaying" :hud="playtestGameClient" />
+        <div v-if="playtestPlaying" class="playtest-stage">
+          <InGameHud :hud="playtestGameClient" @exit="stopPlaytest">
+            <canvas ref="playCanvas" class="we-play-canvas"></canvas>
+          </InGameHud>
+        </div>
         <PlaytestBar
           v-if="playtestPlaying"
           :paused="playtestPaused"
@@ -1740,7 +1743,7 @@ import ItemEditorPanel from '@/components/ItemEditorPanel.vue'
 import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
-import PlaytestHud from '@/components/world-editor/PlaytestHud.vue'
+import InGameHud from '@/components/InGameHud.vue'
 import { usePlaytest } from './usePlaytest'
 import type {
   BuildingType,
@@ -6295,7 +6298,15 @@ onBeforeUnmount(() => {
   height: 100%;
   display: block;
   background: #0a0a0a;
-  z-index: 25;
+}
+
+.playtest-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 26;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .editor-minimap {
