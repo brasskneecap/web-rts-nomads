@@ -13,56 +13,6 @@
       </div>
     </div>
 
-    <MatchHud v-if="hasStarted" :ui="ui" />
-
-    <!-- Campaign objectives panel: top-right under the resource tray.
-         Mounted only when this match was launched from the Campaign panel
-         (the campaign session ref is non-null) AND there are objectives to
-         show. Custom Game and Find Game flows never see this panel. -->
-    <div
-      v-if="hasStarted && ((campaignSession && ui.objectives.length) || ui.zoneCaptureCards.length || ui.zoneInspection)"
-      class="match-objectives-anchor"
-    >
-      <MatchObjectivesPanel v-if="campaignSession && ui.objectives.length" :objectives="ui.objectives" />
-      <ZoneCapturePanel v-if="ui.zoneCaptureCards.length" :cards="ui.zoneCaptureCards" />
-      <!-- Zone Inspection Panel: shown when the player left-clicks a zone on
-           the canvas (lowest click priority: only fires when no unit/building/
-           trap was hit). Dismissed by clicking elsewhere (clearSelection). -->
-      <ZoneInspectionPanel v-if="ui.zoneInspection" :info="ui.zoneInspection" />
-    </div>
-
-    <WaveUpgradeModal
-      v-if="hasStarted && ui.waveUpgrade"
-      :upgrade="ui.waveUpgrade!"
-      :units="ui.allPlayerUnits.filter(u => u.unitType !== 'worker')"
-      :send-choice="sendWaveUpgradeChoice"
-      :send-reroll="sendWaveUpgradeReroll"
-      :paused="ui.paused"
-      :paused-since-ms="ui.pausedSinceMs"
-    />
-
-    <BattleTrackerPanel v-if="hasStarted" :ui="ui" />
-
-    <DebugSpawnPanel
-      v-if="hasStarted"
-      :ui="ui"
-      :targeting-active="debugSpawnTargetingActive"
-      :begin-debug-spawn="beginDebugSpawn"
-      :cancel-debug-spawn="cancelDebugSpawn"
-    />
-
-    <div
-      v-if="hasStarted && ui.paused"
-      class="pause-banner"
-      role="status"
-      aria-live="polite"
-    >
-      <div class="pause-banner__title">Game Paused</div>
-      <div class="pause-banner__sub">
-        {{ pausedByLabel }} Open Settings to resume.
-      </div>
-    </div>
-
     <!-- Campaign-victory popup: opens once when all required objectives
          flip to complete. Sticky-dismissed after "Continue Playing" so it
          never re-shows; "Exit" routes to the recap. Only relevant for
@@ -122,109 +72,23 @@
       </div>
     </div>
 
-    <div class="match-stage">
+    <InGameHud v-if="hasStarted" :hud="gameClientApi" @exit="requestForfeit">
       <canvas ref="canvas" class="game-canvas"></canvas>
-      <SelectionHud
-        v-if="hasStarted"
-        :ui="ui"
-        @action="performSelectionAction"
-        @select-unit="selectUnitOnly"
-        @deselect-unit="deselectUnit"
-        @minimap-rect="setMinimapPanelRect"
-        @use-consumable="({ unitId, slotIndex }) => sendUseConsumable(unitId, slotIndex)"
-        @unequip-item="({ unitId, slotIndex }) => sendUnequipItem(unitId, slotIndex)"
-        @equip-item="({ unitId, slotIndex, instanceId }) => sendEquipItem(unitId, slotIndex, instanceId)"
-      />
-      <MatchMenuLauncher
-        v-if="hasStarted"
-        :active-tab="matchMenuOpen ? matchMenuTab : null"
-        :abilities="ui.commanderAbilities"
-        :active-ability-id="ui.commanderTargetingAbilityId"
-        :items-bar-visible="itemsBarVisible"
-        @open="openMenuTab"
-        @cast-ability="onCommanderCast"
-        @toggle-items="itemsBarVisible = !itemsBarVisible"
-        @settings="matchSettingsOpen = !matchSettingsOpen"
-      />
-      <ItemsBar
-        v-if="hasStarted && itemsBarVisible"
-        :vault="ui.vault"
-        :active-instance-id="ui.itemTargeting?.instanceId ?? null"
-        @use="onItemUse"
-      />
-      <MatchSettingsModal
-        v-if="hasStarted && matchSettingsOpen"
-        :paused="ui.paused"
-        @close="matchSettingsOpen = false"
-        @toggle-pause="(next) => sendSetPause(next)"
-        @exit-game="() => { matchSettingsOpen = false; requestForfeit() }"
-      />
-      <MatchMenu
-        v-if="hasStarted && matchMenuOpen"
-        v-model:active-tab="matchMenuTab"
-        :shop-catalog="ui.shopCatalog"
-        :shop-rerolls-remaining="ui.shopRerollsRemaining"
-        :upgrades="ui.upgrades"
-        :on-purchase-upgrade="purchaseUpgrade"
-        :on-cancel-upgrade="cancelUpgrade"
-        :vault="ui.vault"
-        :vault-selected-instance-id="ui.vaultSelectedInstanceId"
-        :units="ui.allPlayerUnits"
-        :on-select-vault-item="setVaultSelectedInstanceId"
-        :on-equip-item="sendEquipItem"
-        :on-unequip-item="sendUnequipItem"
-        :on-use-consumable="sendUseConsumable"
-        :on-transfer-item="sendTransferItem"
-        :on-use-item-on-unit="sendUseItemOnUnit"
-        :on-focus-unit="focusUnit"
-        :craft-catalog="ui.craftCatalog"
-        :has-artificer="ui.hasArtificer"
-        @close="matchMenuOpen = false"
-        @purchase="({ itemId, buildingId }) => sendPurchaseItem(buildingId, itemId)"
-        @purchase-recipe="({ recipeId, buildingId }) => sendPurchaseRecipe(buildingId, recipeId)"
-        @reroll="(buildingId) => rerollShop(buildingId)"
-        @craft="craftItem"
-      />
-    </div>
-
-    <!-- Loot-drop hover tooltip. Rendered outside the canvas stacking
-         context so it can float above all other UI layers. -->
-    <LootDropTooltip
-      v-if="hasStarted"
-      :drop="ui.hoveredLootDrop"
-      :cursor-client-x="ui.cursorClientX"
-      :cursor-client-y="ui.cursorClientY"
-    />
-
-    <DebugHud v-if="hasStarted && debugHudVisible" :stats="ui.netStats" />
+    </InGameHud>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import MatchHud from '@/components/MatchHud.vue'
-import MatchObjectivesPanel from '@/components/match/MatchObjectivesPanel.vue'
-import ZoneCapturePanel from '@/components/match/ZoneCapturePanel.vue'
-import ZoneInspectionPanel from '@/components/match/ZoneInspectionPanel.vue'
 import CampaignVictoryModal from '@/components/match/CampaignVictoryModal.vue'
 import type { MatchEndOutcome } from '@/components/match/matchEndOutcome'
 import { setMatchEndSnapshot } from '@/state/matchEndState'
-import SelectionHud from '@/components/SelectionHud.vue'
-import BattleTrackerPanel from '@/components/BattleTrackerPanel.vue'
-import DebugSpawnPanel from '@/components/DebugSpawnPanel.vue'
-import WaveUpgradeModal from '@/components/WaveUpgradeModal.vue'
-import MatchMenu from '@/components/MatchMenu.vue'
-import MatchMenuLauncher from '@/components/MatchMenuLauncher.vue'
-import ItemsBar from '@/components/ItemsBar.vue'
-import MatchSettingsModal from '@/components/MatchSettingsModal.vue'
-import LootDropTooltip from '@/components/LootDropTooltip.vue'
-import DebugHud from '@/components/DebugHud.vue'
+import InGameHud from '@/components/InGameHud.vue'
 import { useGameClient } from '@/composables/useGameClient'
 import { useMapSelection } from '@/composables/useMapSelection'
 import { setCursorGrab } from '@/services/desktopBridge'
 import { getOrCreatePlayerId, markCampaignLevelComplete } from '@/services/profileApi'
-import { BUILDABLE_BUILDING_DEFS } from '@/game/maps/buildingDefs'
 import { campaignSession, clearCampaignSession } from '@/state/campaignSession'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -259,79 +123,18 @@ const resumeMapName = computed(() => {
 
 const showResumePrompt = computed(() => !hasStarted.value && hasPreviousSession.value)
 
+const gameClientApi = useGameClient()
 const {
   init,
   destroy,
   leaveStoredMatch,
-  performSelectionAction,
   retryReconnect,
-  beginDebugSpawn,
-  cancelDebugSpawn,
-  selectUnitOnly,
-  focusUnit,
-  deselectUnit,
-  setMinimapPanelRect,
-  sendPurchaseItem,
-  sendPurchaseRecipe,
-  rerollShop,
-  craftItem,
-  purchaseUpgrade,
-  cancelUpgrade,
-  sendEquipItem,
-  sendUnequipItem,
-  sendUseConsumable,
-  sendTransferItem,
-  sendUseItemOnUnit,
-  setVaultSelectedInstanceId,
-  sendWaveUpgradeChoice,
-  sendWaveUpgradeReroll,
-  sendSetPause,
-  beginCommanderAbility,
-  cancelCommanderAbility,
-  beginItemUse,
-  cancelItemUse,
   ui,
   connectionState,
   currentMatchId,
   reconnectAttempt,
   maxReconnectAttempts,
-} = useGameClient()
-
-const debugSpawnTargetingActive = computed(() => ui.value.debugSpawnTargetingActive)
-
-const pausedByLabel = computed(() => {
-  const id = ui.value.pausedBy
-  if (!id) return ''
-  if (ui.value.player.playerId && id === ui.value.player.playerId) {
-    return 'Paused by you.'
-  }
-  return `Paused by ${id}.`
-})
-
-function onCommanderCast(abilityId: string) {
-  // Toggle behaviour: clicking the same slot a second time cancels the
-  // pending cast instead of re-arming it. Mirrors the unit-action-bar
-  // ergonomic that already cancels on the second click.
-  if (ui.value.commanderTargetingAbilityId === abilityId) {
-    cancelCommanderAbility()
-    return
-  }
-  beginCommanderAbility(abilityId)
-}
-
-// Consumable items row (ItemsBar). Shown by default; the launcher's Items
-// button toggles it.
-const itemsBarVisible = ref(true)
-
-function onItemUse(instanceId: number, itemId: string) {
-  // Same toggle ergonomic as commander abilities: re-clicking the armed
-  // item cancels targeting instead of re-arming it.
-  if (ui.value.itemTargeting?.instanceId === instanceId) {
-    cancelItemUse()
-    return
-  }
-  beginItemUse(instanceId, itemId)
-}
+} = gameClientApi
 
 function clearStaleSession() {
   localStorage.removeItem(MAP_ID_STORAGE_KEY)
@@ -581,127 +384,7 @@ watch(currentMatchId, (id) => {
   }
 })
 
-const matchMenuOpen = ref(false)
-const matchMenuTab = ref<string>('shop')
-const matchSettingsOpen = ref(false)
-
-// Maps a KeyboardEvent.code to the MatchMenu tab id it opens. Each key
-// jumps directly to its tab; pressing the same key again closes the menu.
-const MATCH_MENU_HOTKEYS: Record<string, string> = {
-  KeyS: 'shop',
-  KeyU: 'upgrades',
-  KeyV: 'vault',
-  KeyC: 'craft',
-}
-
-function isTextInputFocused() {
-  const el = document.activeElement as HTMLElement | null
-  if (!el) return false
-  if (el.isContentEditable) return true
-  const tag = el.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
-}
-
-function openMenuTab(tabId: string) {
-  if (matchMenuOpen.value && matchMenuTab.value === tabId) {
-    matchMenuOpen.value = false
-    return
-  }
-  matchMenuTab.value = tabId
-  matchMenuOpen.value = true
-}
-
-// Network diagnostics overlay (Phase 1A). Hidden by default; F3 toggles.
-// Stats are always being collected on the GameState side (cost is bounded
-// by a 40-sample ring), so toggling visibility is purely a UI concern.
-const debugHudVisible = ref(false)
-
-function onDebugHudHotkey(e: KeyboardEvent) {
-  if (e.code !== 'F3') return
-  if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return
-  debugHudVisible.value = !debugHudVisible.value
-  e.preventDefault()
-}
-
-// Returns true when the current selection would fire a unit/building action
-// on this key (e.g. S routes to blacksmith for a selected worker). Mirrors
-// the resolution in InputManager.getHotkeyAction — building hotkeys win the
-// race when their corresponding action is available and enabled. Used to
-// decide whether V/S/U should open the MatchMenu or defer to the unit
-// action. V and U currently never conflict; S conflicts with blacksmith
-// while a worker is selected.
-function selectionWouldHandleKey(letter: string): boolean {
-  const lower = letter.toLowerCase()
-  const actions = ui.value.selection?.actions
-  if (!actions || actions.length === 0) return false
-
-  for (const def of BUILDABLE_BUILDING_DEFS) {
-    if (!def.hotkey || def.hotkey.toLowerCase() !== lower) continue
-    const buildSpecificId = `build-${def.type}`
-    if (actions.some((a) => a.id === buildSpecificId && !a.disabled)) return true
-  }
-
-  const staticUnitHotkeys: Record<string, string> = {
-    m: 'move', r: 'repair', g: 'gather', a: 'attack', h: 'hold', p: 'patrol',
-  }
-  const staticActionId = staticUnitHotkeys[lower]
-  if (staticActionId && actions.some((a) => a.id === staticActionId && !a.disabled)) return true
-
-  return false
-}
-
-function onMatchMenuHotkey(e: KeyboardEvent) {
-  if (!hasStarted.value) return
-  // KeyI toggles the ItemsBar (not a menu tab, so not in MATCH_MENU_HOTKEYS).
-  const isItemsBarKey = e.code === 'KeyI'
-  if (!(e.code in MATCH_MENU_HOTKEYS) && !isItemsBarKey) return
-  if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return
-  if (isTextInputFocused()) return
-
-  // `e.code` is "Key<X>" for letter keys — strip the prefix to compare
-  // against the action hotkey map. If the current selection would fire a
-  // unit action on this letter, defer to it (building hotkey wins). Otherwise
-  // open the menu, regardless of whether anything is selected.
-  const letter = e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : ''
-  if (letter && selectionWouldHandleKey(letter)) return
-
-  if (isItemsBarKey) {
-    itemsBarVisible.value = !itemsBarVisible.value
-    e.preventDefault()
-    return
-  }
-
-  const targetTab = MATCH_MENU_HOTKEYS[e.code]
-  if (matchMenuOpen.value && matchMenuTab.value === targetTab) {
-    // Pressing the same tab key while already on it closes the menu.
-    matchMenuOpen.value = false
-  } else {
-    // Open (or switch) to the requested tab.
-    matchMenuTab.value = targetTab
-    matchMenuOpen.value = true
-  }
-  e.preventDefault()
-}
-
-// ESC closes the launcher menu (Shop/Upgrades/Vault) when it's open.
-// Capture-phase listener so this runs before InputManager's bubble-phase
-// ESC=clearSelection handler — we stop propagation so the selection
-// doesn't also get wiped underneath the menu dismissal. Defers to the
-// settings modal (which has its own capture-phase ESC handler) so the
-// two never race when both happen to be open.
-function onMatchMenuEscape(e: KeyboardEvent) {
-  if (e.code !== 'Escape') return
-  if (matchSettingsOpen.value) return
-  if (!matchMenuOpen.value) return
-  matchMenuOpen.value = false
-  e.preventDefault()
-  e.stopPropagation()
-}
-
 window.addEventListener('beforeunload', markActiveSession)
-window.addEventListener('keydown', onMatchMenuHotkey)
-window.addEventListener('keydown', onMatchMenuEscape, { capture: true })
-window.addEventListener('keydown', onDebugHudHotkey)
 
 onMounted(async () => {
   // Confine the OS cursor to the game window for the duration of the
@@ -806,9 +489,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   void setCursorGrab(false)
   window.removeEventListener('beforeunload', markActiveSession)
-  window.removeEventListener('keydown', onMatchMenuHotkey)
-  window.removeEventListener('keydown', onMatchMenuEscape, { capture: true })
-  window.removeEventListener('keydown', onDebugHudHotkey)
   destroy()
 })
 </script>
@@ -826,21 +506,6 @@ onBeforeUnmount(() => {
   background:
     radial-gradient(circle at top, rgba(36, 55, 87, 0.35), transparent 48%),
     #05080d;
-}
-
-/* Anchor for the campaign objectives HUD panel. Sits under the resource
-   tray (top-right). The MatchHud header reserves ~64px at the top; we
-   start just below that. Pointer-events handled inside the panel itself. */
-.match-objectives-anchor {
-  position: absolute;
-  top: 70px;
-  right: 16px;
-  z-index: 15;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-end;
 }
 
 .menu {
@@ -872,48 +537,11 @@ onBeforeUnmount(() => {
   margin-top: 10px;
 }
 
-.match-stage {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
 .game-canvas {
   width: 100%;
   height: 100%;
   display: block;
   background: #111;
-}
-
-.pause-banner {
-  position: absolute;
-  top: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 30;
-  padding: 14px 28px;
-  border-radius: 10px;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(8, 12, 20, 0.96));
-  border: 1px solid rgba(220, 180, 100, 0.45);
-  color: #f5ead2;
-  text-align: center;
-  pointer-events: none;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
-}
-
-.pause-banner__title {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #f7d88e;
-}
-
-.pause-banner__sub {
-  margin-top: 4px;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: #cbb893;
 }
 
 /* .victory-overlay / .victory-card / .victory-title / .victory-subtitle /
