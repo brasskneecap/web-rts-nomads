@@ -27,6 +27,17 @@ func resolveTargetableTypes(def UnitDef) []string {
 	return []string{TargetClassGround}
 }
 
+// resolveHealthRegenRate returns the unit def's authored passive HP-per-second
+// regen, falling back to the global default when the def does not author one.
+//
+// An authored 0 is HONORED, not treated as "unset" — that is a unit which never
+// regenerates. This is the entire reason UnitDef.HealthRegenRate is a pointer.
+func resolveHealthRegenRate(def UnitDef) float64 {
+	if def.HealthRegenRate != nil {
+		return *def.HealthRegenRate
+	}
+	return defaultHealthRegenPerSecond
+}
 
 func (s *GameState) spawnPlayerUnitLocked(unitType, playerID, color string, spawn protocol.Vec2) *Unit {
 	def, ok := getUnitDef(unitType)
@@ -81,7 +92,8 @@ func (s *GameState) spawnUnitFromDefLocked(def UnitDef, unitType, playerID, colo
 		SplashRadius:       def.SplashRadius,
 		BaseVisionRange:    baseVision,
 		VisionRange:        baseVision,
-		HealthRegenPerSecond: defaultHealthRegenPerSecond,
+		HealthRegenPerSecond:     resolveHealthRegenRate(def),
+		BaseHealthRegenPerSecond: resolveHealthRegenRate(def),
 		// Spellcaster kit (zero values for non-casters). CurrentMana starts
 		// full per the Acolyte spec.
 		MaxMana:            def.MaxMana,

@@ -59,7 +59,7 @@ interface PackedRotations {
   frameHeight: number
 }
 
-interface SpriteManifest {
+export interface SpriteManifest {
   key?: string
   size?: { width?: number; height?: number }
   // Packed rotations sheet. Legacy per-direction file paths are no longer
@@ -186,10 +186,18 @@ function loadImage(url: string): HTMLImageElement {
 // (and thus naturalWidth) becomes valid once the underlying sheet decodes.
 // Keeps the public UnitSpriteSet.rotations: DirectionMap<HTMLImageElement>
 // shape unchanged, so renderer / portrait / ActionIcon code keeps working.
+//
+// Also returns the raw sheet Image: the sliced per-direction placeholders are
+// NOT themselves the thing that loads over the network (their `src` is a data
+// URL assigned synchronously once the sheet decodes), so a decode-gate that
+// only inspects `directions` would resolve/reject on placeholders that never
+// got a `src` at all when the sheet hasn't decoded yet. Callers that need to
+// know "is this rotation set actually ready" must await the sheet, not the
+// slices — see `whenSetDecoded`.
 function loadPackedRotations(
   sheetUrl: string,
   manifest: PackedRotations,
-): DirectionMap<HTMLImageElement> {
+): { directions: DirectionMap<HTMLImageElement>; sheet: HTMLImageElement } {
   const dest: DirectionMap<HTMLImageElement> = {}
   for (const dir of manifest.rowOrder) {
     dest[dir] = new Image()
@@ -221,29 +229,39 @@ function loadPackedRotations(
   // and onload won't fire. Slice synchronously in that case.
   if (sheet.complete && sheet.naturalWidth > 0) sliceWhenReady(sheet)
 
-  return dest
+  return { directions: dest, sheet }
 }
 
-for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
-  // The directory immediately containing sprites.json is the sprite key —
-  // unit type for base units, path id for promotion variants. Both id
-  // namespaces are globally unique, so a single capture works for either
-  // layout.
-  const match = manifestPath.match(/\/([^/]+)\/sprites\.json$/)
-  if (!match) continue
+// Out-of-band link from a built UnitSpriteSet back to the raw packed-rotations
+// sheet Image that fed it (when it has one). Keyed by object identity so it
+// never leaks into the public UnitSpriteSet shape; see the comment at the end
+// of buildSpriteSet and whenSetDecoded for why this exists.
+const rotationSheetsBySet = new WeakMap<UnitSpriteSet, HTMLImageElement>()
 
-  const key = match[1].toLowerCase()
-  const unitFolder = manifestPath.slice(0, manifestPath.lastIndexOf('/'))
+// Builds a UnitSpriteSet from a manifest. `resolveUrl` maps a manifest-relative
+// path (e.g. "packed/walking.png") to a loadable URL, which is the ONLY thing
+// that differs between bundled art (resolved through Vite's stripGlob) and
+// runtime art (resolved against the server's /assets/units/... base URL).
+// Both callers share this so the two paths cannot drift.
+export function buildSpriteSet(
+  key: string,
+  manifest: SpriteManifest,
+  resolveUrl: (relative: string) => string | undefined,
+): UnitSpriteSet | null {
+  if (!key) return null
   const size = {
     width: manifest.size?.width ?? 64,
     height: manifest.size?.height ?? 64,
   }
 
   let rotations: DirectionMap<HTMLImageElement> = {}
+  let rotationSheet: HTMLImageElement | undefined
   if (isPackedRotations(manifest.rotations)) {
-    const sheetUrl = stripGlob[`${unitFolder}/${manifest.rotations.sheet}`]
+    const sheetUrl = resolveUrl(manifest.rotations.sheet)
     if (sheetUrl) {
-      rotations = loadPackedRotations(sheetUrl, manifest.rotations)
+      const loaded = loadPackedRotations(sheetUrl, manifest.rotations)
+      rotations = loaded.directions
+      rotationSheet = loaded.sheet
     }
   } else if (manifest.rotations) {
     console.warn(
@@ -257,7 +275,7 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
     const directions: DirectionMap<DirectionSource> = {}
 
     if (anim.sheet && anim.rowOrder) {
-      const url = stripGlob[`${unitFolder}/${anim.sheet}`]
+      const url = resolveUrl(anim.sheet)
       if (url) {
         const image = loadImage(url)
         for (let row = 0; row < anim.rowOrder.length; row++) {
@@ -269,7 +287,7 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
     } else if (anim.strips) {
       for (const [dir, rel] of Object.entries(anim.strips)) {
         if (!rel) continue
-        const url = stripGlob[`${unitFolder}/${rel}`]
+        const url = resolveUrl(rel)
         if (!url) continue
         directions[dir as UnitDirection] = { image: loadImage(url), row: 0 }
       }
@@ -284,16 +302,141 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
     })
   }
 
-  sprites.set(key, {
+  const set: UnitSpriteSet = {
     key,
     size,
     rotations,
     animations,
-    beamOrigin: {
-      x: manifest.beamOrigin?.x ?? 0,
-      y: manifest.beamOrigin?.y ?? 0,
-    },
-  })
+    beamOrigin: { x: manifest.beamOrigin?.x ?? 0, y: manifest.beamOrigin?.y ?? 0 },
+  }
+  // The sliced per-direction rotation Images don't get a `src` until the raw
+  // sheet decodes (see loadPackedRotations), so a decode-gate over `rotations`
+  // alone is a no-op for a rotations-only set (no animations). Stash the raw
+  // sheet out-of-band so `whenSetDecoded` can gate on the thing that actually
+  // loads, without adding an internal field to the public UnitSpriteSet shape.
+  if (rotationSheet) rotationSheetsBySet.set(set, rotationSheet)
+  return set
+}
+
+for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
+  // The directory immediately containing sprites.json is the sprite key —
+  // unit type for base units, path id for promotion variants. Both id
+  // namespaces are globally unique, so a single capture works for either
+  // layout.
+  const match = manifestPath.match(/\/([^/]+)\/sprites\.json$/)
+  if (!match) continue
+
+  const key = match[1].toLowerCase()
+  const unitFolder = manifestPath.slice(0, manifestPath.lastIndexOf('/'))
+  const set = buildSpriteSet(key, manifest, (rel) => stripGlob[`${unitFolder}/${rel}`])
+  if (set) sprites.set(key, set)
+}
+
+// Runtime sprite overlay — art served by the server from the writable art dir,
+// which SHADOWS the build-time bundled art above. This is the client-side twin
+// of the server's runtimeUnits-over-embedded-catalog model, and it is what lets
+// newly-authored art appear without a rebuild.
+const runtimeSprites = new Map<string, UnitSpriteSet>()
+const runtimePortraits = new Map<string, HTMLImageElement>()
+
+export function registerRuntimeSpriteSet(set: UnitSpriteSet): void {
+  runtimeSprites.set(set.key.toLowerCase(), set)
+}
+
+export function clearRuntimeSpriteSets(): void {
+  runtimeSprites.clear()
+  runtimePortraits.clear()
+}
+
+interface UnitArtEntry {
+  key: string
+  baseUrl: string
+  manifest: SpriteManifest
+}
+
+// Waits for every image in a set to finish decoding. We register a runtime set
+// only AFTER this resolves: getUnitFrame returns null for an undecoded image and
+// the renderer falls back to a procedural placeholder, so registering early would
+// let a half-loaded overlay shadow perfectly-good bundled art and flash every
+// unit as a placeholder. Never rejects — a broken sheet just stays not-ready.
+//
+// Uses HTMLImageElement.decode() rather than onload/onerror/.complete polling:
+// decode() is the standard DOM API for exactly this ("resolves once the image
+// is decoded and safe to paint"), it resolves immediately for an already-loaded
+// image, and it rejects (caught below) for a broken one instead of leaving a
+// listener that may never fire.
+//
+// Rotations gating note: the sliced per-direction Images in `set.rotations`
+// get a real `src` (a canvas data URL) only once the RAW packed-rotations
+// sheet decodes — see loadPackedRotations. Awaiting the slices alone is a
+// no-op for a set built before that sheet has decoded (they have no `src`
+// yet, so `decode()` just rejects immediately), which would make this gate
+// silently do nothing for a rotations-only runtime set (no animations). We
+// close that gap by also awaiting the source sheet via `rotationSheetsBySet`
+// (set in buildSpriteSet). This does not change drawing correctness either
+// way — `getUnitFrame`'s per-frame `imageReady` check already refuses to draw
+// an undecoded rotation — it only restores the intended "no first-frame miss"
+// property of the decode-then-register gate for rotations-only sets.
+function whenSetDecoded(set: UnitSpriteSet): Promise<void> {
+  const images = new Set<HTMLImageElement>()
+  for (const img of Object.values(set.rotations)) if (img) images.add(img)
+  for (const anim of set.animations.values()) {
+    for (const src of Object.values(anim.directions)) if (src) images.add(src.image)
+  }
+  const rotationSheet = rotationSheetsBySet.get(set)
+  if (rotationSheet) images.add(rotationSheet)
+  return Promise.all([...images].map((img) => img.decode().catch(() => undefined))).then(
+    () => undefined,
+  )
+}
+
+// Fetches the server's writable art catalog and REPLACES the runtime overlay
+// with exactly what it contains. Returns how many sets were registered. Safe
+// to call more than once (the editor calls it again after saving new art, and
+// again after reverting one) — including a key that was present on a previous
+// call but is gone from this one, which must stop shadowing bundled art.
+//
+// Built into FRESH local maps, decoded, THEN swapped wholesale onto the module
+// maps. This preserves the no-flash property (the current overlay stays live
+// until the new one is fully decoded) while still actually dropping any key
+// that vanished from the catalog — clearing the module maps up front would
+// reopen the placeholder-flash window for every unit, including ones whose
+// art didn't change.
+//
+// Never throws: art is an enhancement, and a failure here must degrade to
+// bundled art rather than break the app.
+export async function loadRuntimeSpriteSets(): Promise<number> {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
+  let entries: UnitArtEntry[]
+  try {
+    const res = await fetch(`${API_BASE}/catalog/unit-art`)
+    if (!res.ok) return 0
+    const body = (await res.json()) as { art?: UnitArtEntry[] }
+    entries = body.art ?? []
+  } catch {
+    return 0
+  }
+
+  const nextSprites = new Map<string, UnitSpriteSet>()
+  const nextPortraits = new Map<string, HTMLImageElement>()
+
+  for (const entry of entries) {
+    const key = entry.key.toLowerCase()
+    const set = buildSpriteSet(key, entry.manifest, (rel) => `${API_BASE}${entry.baseUrl}/${rel}`)
+    if (!set) continue
+    nextSprites.set(key, set)
+    const portrait = new Image()
+    portrait.src = `${API_BASE}${entry.baseUrl}/portrait.png`
+    nextPortraits.set(key, portrait)
+  }
+
+  await Promise.all([...nextSprites.values()].map(whenSetDecoded))
+
+  runtimeSprites.clear()
+  for (const [k, v] of nextSprites) runtimeSprites.set(k, v)
+  runtimePortraits.clear()
+  for (const [k, v] of nextPortraits) runtimePortraits.set(k, v)
+  return nextSprites.size
 }
 
 // Picks the first sprite set matching any of the supplied keys (case-insensitive).
@@ -301,8 +444,11 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
 export function getUnitSpriteSet(...keys: Array<string | undefined | null>): UnitSpriteSet | null {
   for (const k of keys) {
     if (!k || k === 'none') continue
-    const set = sprites.get(k.toLowerCase())
-    if (set) return set
+    const lower = k.toLowerCase()
+    const runtime = runtimeSprites.get(lower)
+    if (runtime) return runtime
+    const bundled = sprites.get(lower)
+    if (bundled) return bundled
   }
   return null
 }
@@ -338,8 +484,11 @@ export function getUnitPortraitUrl(path?: string, unitType?: string): string | n
 export function getUnitPortraitImage(path?: string, unitType?: string): HTMLImageElement | null {
   for (const k of [path, unitType]) {
     if (!k || k === 'none') continue
-    const img = portraitImagesByKey.get(k.toLowerCase())
-    if (img) return img
+    const lower = k.toLowerCase()
+    const runtime = runtimePortraits.get(lower)
+    if (imageReady(runtime)) return runtime
+    const bundled = portraitImagesByKey.get(lower)
+    if (bundled) return bundled
   }
   return null
 }

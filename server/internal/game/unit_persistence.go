@@ -98,8 +98,8 @@ func DeleteUnitOverride(unitType string) (existed bool, err error) {
 	return removed || inOverlay, nil
 }
 
-// removeUnitOverrideFiles deletes every <type>.json for the given type under
-// dir, skipping the paths/ subdir. Returns whether anything was removed.
+// removeUnitOverrideFiles deletes every <type>/<type>.json for the given type
+// under dir, skipping the paths/ subdir. Returns whether anything was removed.
 func removeUnitOverrideFiles(dir, unitType string) bool {
 	removed := false
 	target := unitType + ".json"
@@ -113,9 +113,18 @@ func removeUnitOverrideFiles(dir, unitType string) bool {
 			}
 			return nil
 		}
-		if d.Name() == target {
+		// Match ONLY <faction>/<type>/<type>.json. Without the parent-dir check,
+		// deleting a unit legally named "faction" would remove every
+		// faction.json record in the catalog.
+		if d.Name() == target && filepath.Base(filepath.Dir(path)) == unitType {
 			if rerr := os.Remove(path); rerr == nil {
 				removed = true
+				// Drop the now-empty <type>/ dir too. os.Remove on a directory
+				// only succeeds when it is EMPTY, so a unit that still has a
+				// paths/ subdir (or anything else) keeps its directory. Never
+				// recurse this delete — it must never destroy content it
+				// doesn't own.
+				_ = os.Remove(filepath.Dir(path))
 			}
 		}
 		return nil
@@ -146,6 +155,9 @@ func loadPersistedUnitsFromDir(dir string) int {
 				return filepath.SkipDir
 			}
 			return nil
+		}
+		if d.Name() == factionMetaFileName {
+			return nil // owned by the faction registry, not a unit
 		}
 		if !strings.HasSuffix(strings.ToLower(d.Name()), ".json") {
 			return nil

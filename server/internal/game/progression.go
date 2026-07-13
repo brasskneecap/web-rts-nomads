@@ -91,6 +91,7 @@ type pathModifierDef struct {
 	Rank                  string
 	MaxHPMultiplier       float64
 	MaxMPMultiplier       float64
+	HealthRegenMultiplier float64
 	DamageMultiplier      float64
 	AttackSpeedMultiplier float64
 	MoveSpeedMultiplier   float64
@@ -120,7 +121,7 @@ const (
 
 // identityPathModifier is returned for units with no path or unknown path/rank combos.
 var identityPathModifier = pathModifierDef{
-	MaxHPMultiplier: 1.0, MaxMPMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, AttackRangeMultiplier: 1.0, Armor: 0,
+	MaxHPMultiplier: 1.0, MaxMPMultiplier: 1.0, HealthRegenMultiplier: 1.0, DamageMultiplier: 1.0, AttackSpeedMultiplier: 1.0, MoveSpeedMultiplier: 1.0, AttackRangeMultiplier: 1.0, Armor: 0,
 }
 
 // Per-path stat multipliers live in JSON — one file per path under
@@ -519,12 +520,27 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	// BaseArmor no longer carries it — avoiding the previous double-count.
 	unit.Armor += unit.BaseArmor
 
+	// Passive HP regen: base × path/rank multiplier, then flat equipment regen on
+	// top — the same base-then-multiply-then-equip shape as MaxHP and Damage above.
+	//
+	// This used to be excluded here (regen had no Base* counterpart, so equipment
+	// applied a running delta straight onto HealthRegenPerSecond and rank never
+	// touched it). BaseHealthRegenPerSecond now exists, so regen recomputes from
+	// scratch like every other stat and CAN scale with rank.
+	//
+	// A unit authored with healthRegenRate: 0 stays at 0 through every rank — a
+	// multiplier cannot resurrect regen from zero, which is what "never
+	// regenerates" has to mean. Equipment can still grant it regen; that is a flat
+	// add, not a multiply, and is the intended escape hatch.
+	healthRegenMult := pathDef.HealthRegenMultiplier
+	if healthRegenMult <= 0 {
+		healthRegenMult = 1.0
+	}
+	unit.HealthRegenPerSecond = math.Max(0, unit.BaseHealthRegenPerSecond*healthRegenMult+unit.EquipmentBonus.HealthRegen)
+
 	// Fold in equipment bonuses after path/rank multipliers and upgrade armor.
 	// Equipment grants flat bonuses on top of everything else. No-op when
 	// EquipmentBonus is zero (no items equipped).
-	// NOTE: HealthRegen is intentionally excluded here because HealthRegenPerSecond
-	// has no Base* counterpart to recompute from — the delta is applied by
-	// recomputeUnitEquipmentBonusLocked to preserve perk-applied regen correctly.
 	unit.Damage += unit.EquipmentBonus.Damage
 	unit.MaxHP += unit.EquipmentBonus.HP
 	unit.Armor += unit.EquipmentBonus.Armor

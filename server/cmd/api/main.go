@@ -55,6 +55,7 @@ func main() {
 	game.LoadPersistedRecipesIntoOverlay()
 	game.LoadPersistedLootTablesIntoOverlay()
 	game.LoadPersistedUnitsIntoOverlay()
+	game.LoadPersistedFactionsIntoOverlay()
 	game.LoadPersistedAbilitiesIntoOverlay()
 
 	manager := game.NewMatchManager()

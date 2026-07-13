@@ -218,14 +218,12 @@ func (s *GameState) setInventorySizeForRankLocked(unit *Unit) {
 // from the unit's currently equipped items, then rebakes derived stats via
 // applyRankModifiersLocked. Must be called under s.mu.
 //
-// HealthRegen is handled separately from other bonuses because
-// applyRankModifiersLocked does not zero and recompute HealthRegenPerSecond
-// from a Base* value (unlike Damage, MaxHP, Armor, etc.). Instead, we compute
-// the delta between the old and new regen bonus and apply it directly to
-// unit.HealthRegenPerSecond so perk-applied regen is preserved.
+// HealthRegen used to need a special case here: it had no Base* counterpart, so
+// this function applied the old→new bonus delta straight onto
+// unit.HealthRegenPerSecond. That is gone — BaseHealthRegenPerSecond now exists,
+// and applyRankModifiersLocked recomputes regen from base × rank + equipment like
+// every other stat. Re-introducing a delta here would double-count it.
 func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
-	oldRegenBonus := unit.EquipmentBonus.HealthRegen
-
 	unit.EquipmentBonus = UnitEquipmentBonus{}
 	for _, slot := range unit.Equipped {
 		if slot == nil {
@@ -267,18 +265,9 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 		}
 	}
 
-	// Apply delta to HealthRegenPerSecond directly.
-	regenDelta := unit.EquipmentBonus.HealthRegen - oldRegenBonus
-	if regenDelta != 0 {
-		unit.HealthRegenPerSecond += regenDelta
-		if unit.HealthRegenPerSecond < 0 {
-			unit.HealthRegenPerSecond = 0
-		}
-	}
-
 	// Rebake derived stats (Damage, MaxHP, Armor, AttackSpeed, MoveSpeed,
-	// AttackRange). preserveHealthPercent=true so equipping an HP item
-	// preserves the unit's HP fraction rather than capping at old MaxHP.
+	// AttackRange, HealthRegenPerSecond). preserveHealthPercent=true so equipping
+	// an HP item preserves the unit's HP fraction rather than capping at old MaxHP.
 	s.applyRankModifiersLocked(unit, true)
 }
 

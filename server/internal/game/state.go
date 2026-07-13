@@ -110,8 +110,15 @@ type Unit struct {
 	// on spawn; future perks / buffs can modify it. HealthRegenAccumulator carries
 	// fractional progress between ticks so a sub-1 HP/s rate still heals integer
 	// HP on the correct cadence.
-	HealthRegenPerSecond   float64
-	HealthRegenAccumulator float64
+	HealthRegenPerSecond float64
+	// BaseHealthRegenPerSecond is the unit's regen BEFORE path/rank multipliers
+	// and equipment bonuses — the Base* counterpart that lets
+	// applyRankModifiersLocked recompute HealthRegenPerSecond from scratch, the
+	// same way BaseMaxHP → MaxHP and BaseDamage → Damage work. Seeded at spawn
+	// from UnitDef.healthRegenRate (else the global default) and never mutated
+	// afterwards.
+	BaseHealthRegenPerSecond float64
+	HealthRegenAccumulator   float64
 	// Mana is an optional resource (spellcasters). All four fields default to
 	// 0, which means "this unit has no mana" — MaxMana == 0 makes the regen
 	// loop skip the unit entirely (see tickUnitManaRegenLocked in mana.go).

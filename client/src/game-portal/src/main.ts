@@ -5,6 +5,7 @@ import { router } from './router'
 import { useProfile } from './composables/useProfile'
 import { resolveCursor, onCursorChange } from './game/rendering/cursors'
 import { installGlobalErrorReporting } from './services/errorReporting'
+import { loadRuntimeSpriteSets } from './game/rendering/unitSprites'
 
 const { initialize } = useProfile()
 void initialize()
@@ -62,6 +63,13 @@ document.addEventListener('dragstart', (event) => {
   if (target?.closest('[draggable="true"], [data-allow-drag]')) return
   event.preventDefault()
 })
+
+// Overlay server-served unit art on top of the build-time bundled art. Fire-and-
+// forget: it resolves after the app has mounted, and getUnitSpriteSet is called
+// per-frame by the renderer, so a set registered late is picked up on the next
+// frame with no invalidation needed. Never throws — a failure (no art dir, server
+// down) leaves the bundled art in place, which is the correct degraded state.
+void loadRuntimeSpriteSets()
 
 const app = createApp(App)
 // Install before mount so a crash during the first render is captured to the
