@@ -289,3 +289,34 @@ func TestCastRangeJSONRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateAbilityDef(t *testing.T) {
+	t.Run("rejects unknown category", func(t *testing.T) {
+		def := AbilityDef{ID: "x", Category: "not_a_category"}
+		if err := validateAbilityDef(&def); err == nil {
+			t.Fatal("expected error for unknown category")
+		}
+	})
+	t.Run("rejects burn without impact delay", func(t *testing.T) {
+		def := AbilityDef{ID: "x", BurnDurationSeconds: 3, BurnTickIntervalSeconds: 1}
+		if err := validateAbilityDef(&def); err == nil {
+			t.Fatal("expected error: burn requires impactDelaySeconds > 0")
+		}
+	})
+	t.Run("normalizes target and summon counts", func(t *testing.T) {
+		def := AbilityDef{ID: "x"}
+		if err := validateAbilityDef(&def); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if def.TargetCount != 1 || def.SummonCount != 1 {
+			t.Fatalf("TargetCount=%d SummonCount=%d, want 1/1", def.TargetCount, def.SummonCount)
+		}
+	})
+	t.Run("normalizes channel healing multiplier", func(t *testing.T) {
+		def := AbilityDef{ID: "x", ChannelType: "beam"}
+		_ = validateAbilityDef(&def)
+		if def.HealingMultiplier != 1.0 {
+			t.Fatalf("HealingMultiplier=%v, want 1.0", def.HealingMultiplier)
+		}
+	})
+}
