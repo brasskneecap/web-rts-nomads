@@ -124,9 +124,23 @@ export function listAbilityIconKeys(): string[] {
 
 // getAbilityIconSourceUrl resolves a key to an <img>/canvas source URL: the
 // bundled url when present, else the server-served route. For the editor.
+// Only a key matching the ability-id pattern is treated as a real key —
+// placeholder paths (e.g. "TODO/abilities/x.png") return '' ("no art")
+// instead of building a server URL that would 404.
 export function getAbilityIconSourceUrl(iconKey: string): string {
   const key = iconKey.toLowerCase()
   const bundled = abilityUrlsByKey.get(key)
   if (bundled) return bundled
+  if (!ABILITY_ICON_KEY_RE.test(key)) return ''
   return `${API_BASE}/catalog/abilities/${encodeURIComponent(key)}/image`
+}
+
+// getAbilityPreviewUrl resolves the editor preview/gallery source URL the same
+// way the action bar resolves the render: use iconKey when it is a real key
+// (matches the ability-id pattern), else fall back to the ability id. Returns
+// '' when neither yields a resolvable source.
+export function getAbilityPreviewUrl(iconKey: string | undefined, abilityId: string): string {
+  const key = iconKey && ABILITY_ICON_KEY_RE.test(iconKey.toLowerCase()) ? iconKey : abilityId
+  if (!key) return ''
+  return getAbilityIconSourceUrl(key)
 }

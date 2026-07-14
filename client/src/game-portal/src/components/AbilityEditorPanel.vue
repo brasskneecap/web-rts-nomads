@@ -286,7 +286,7 @@ import {
   uploadAbilityIcon, EditorValidationError,
 } from '@/game/abilities/abilityEditorApi'
 import { fetchAuthoredUnitDefs } from '@/game/units/unitEditorApi'
-import { getAbilityIconSourceUrl, listAbilityIconKeys } from '@/game/rendering/abilityAssets'
+import { getAbilityIconSourceUrl, getAbilityPreviewUrl, listAbilityIconKeys } from '@/game/rendering/abilityAssets'
 import { inferProjectileFrameCount } from '@/game/rendering/projectileSprites'
 
 const abilities = ref<AuthoredAbilityDef[]>([])
@@ -319,9 +319,8 @@ const galleryKeys = listAbilityIconKeys()
 const iconCacheBust = ref(0)
 
 const previewIconUrl = computed(() => {
-  const key = form.value.icon || form.value.id
-  if (!key) return ''
-  const base = getAbilityIconSourceUrl(key)
+  const base = getAbilityPreviewUrl(form.value.icon, form.value.id)
+  if (!base) return ''
   if (iconCacheBust.value === 0) return base
   return `${base}${base.includes('?') ? '&' : '?'}v=${iconCacheBust.value}`
 })

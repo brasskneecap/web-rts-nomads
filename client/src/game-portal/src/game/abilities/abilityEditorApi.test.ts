@@ -46,4 +46,15 @@ describe('ability icon upload', () => {
   it('abilityIconUrl points at the serve route', () => {
     expect(abilityIconUrl('pic_bolt')).toContain('/catalog/abilities/pic_bolt/image')
   })
+
+  it('uploadAbilityIcon rejects with the server-provided reason on failure', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'icon_rejected', message: 'icon is not a valid PNG' }),
+    })) as unknown as typeof fetch)
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })
+    await expect(uploadAbilityIcon('x', blob)).rejects.toThrow('not a valid PNG')
+    vi.restoreAllMocks()
+  })
 })

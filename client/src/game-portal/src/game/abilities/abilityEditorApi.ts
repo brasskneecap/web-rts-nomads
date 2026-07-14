@@ -78,7 +78,10 @@ export async function uploadAbilityIcon(id: string, file: Blob): Promise<void> {
     headers: { 'Content-Type': 'image/png' },
     body: file,
   })
-  if (!res.ok) throw new Error(`Failed to upload ability icon: ${res.status}`)
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(body?.message ?? `Failed to upload ability icon: ${res.status}`)
+  }
 }
 
 export function abilityIconUrl(id: string): string {
