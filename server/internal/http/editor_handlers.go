@@ -235,4 +235,134 @@ func registerEditorRoutes(mux *http.ServeMux) {
 		}
 		writeJSON(w, map[string]string{"id": id, "status": status})
 	})
+
+	// POST /paths body: { "unit": string, "path": <raw pathCatalogFile JSON> }.
+	// Routes MUST go through the SaveEditorPath* (not SavePathDef) — that's
+	// where the single-owner guard and per-file validation live.
+	mux.HandleFunc("/paths", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+			return
+		}
+		var req struct {
+			Unit string          `json:"unit"`
+			Path json.RawMessage `json:"path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+		if err := game.SaveEditorPathFromJSON(req.Unit, req.Path); err != nil {
+			if game.IsEditorValidationError(err) {
+				writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "save_failed", err.Error())
+			return
+		}
+		// The path id lives inside the raw path JSON body (pathCatalogFile's
+		// own "path" field) — pull it back out for the response.
+		var pathID struct {
+			Path string `json:"path"`
+		}
+		_ = json.Unmarshal(req.Path, &pathID)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": pathID.Path, "status": "saved"})
+	})
+
+	mux.HandleFunc("/paths/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/paths/")
+		if r.Method != http.MethodDelete {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "DELETE only")
+			return
+		}
+		if id == "" || strings.Contains(id, "/") {
+			writeJSONError(w, http.StatusBadRequest, "invalid_id", "expected /paths/{id}")
+			return
+		}
+		existed, err := game.DeleteEditorPath(id)
+		if err != nil {
+			// A path still referenced by a unit's pathChances is a
+			// validation error (author-fixable — the message names the
+			// referencing unit), not an infrastructure failure. Mirrors
+			// /factions/ DELETE's still-has-units 400.
+			if game.IsEditorValidationError(err) {
+				writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+			return
+		}
+		if !existed {
+			writeJSONError(w, http.StatusNotFound, "not_found", "no editor override for "+id)
+			return
+		}
+		status := "deleted"
+		if game.PathIsEmbedded(id) {
+			status = "reset"
+		}
+		writeJSON(w, map[string]string{"id": id, "status": status})
+	})
+
+	// POST /perks body: { "unit": string, "path": string, "rank": string,
+	// "perks": <raw perk-entry array JSON> }.
+	mux.HandleFunc("/perks", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+			return
+		}
+		var req struct {
+			Unit  string          `json:"unit"`
+			Path  string          `json:"path"`
+			Rank  string          `json:"rank"`
+			Perks json.RawMessage `json:"perks"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+		if err := game.SaveEditorPerkPoolFromJSON(req.Unit, req.Path, req.Rank, req.Perks); err != nil {
+			if game.IsEditorValidationError(err) {
+				writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "save_failed", err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"unit": req.Unit, "path": req.Path, "rank": req.Rank, "status": "saved",
+		})
+	})
+
+	// DELETE /perks/{unit}/{path}/{rank} — exactly 3 non-empty segments.
+	mux.HandleFunc("/perks/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "DELETE only")
+			return
+		}
+		rest := strings.TrimPrefix(r.URL.Path, "/perks/")
+		segs := strings.Split(rest, "/")
+		if len(segs) != 3 || segs[0] == "" || segs[1] == "" || segs[2] == "" {
+			writeJSONError(w, http.StatusBadRequest, "invalid_id", "expected /perks/{unit}/{path}/{rank}")
+			return
+		}
+		unitType, pathName, rank := segs[0], segs[1], segs[2]
+		existed, err := game.DeleteEditorPerkPool(unitType, pathName, rank)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+			return
+		}
+		if !existed {
+			writeJSONError(w, http.StatusNotFound, "not_found", "no editor override for "+rest)
+			return
+		}
+		status := "deleted"
+		if game.PerkPoolIsEmbedded(unitType, pathName, rank) {
+			status = "reset"
+		}
+		writeJSON(w, map[string]string{"unit": unitType, "path": pathName, "rank": rank, "status": status})
+	})
 }

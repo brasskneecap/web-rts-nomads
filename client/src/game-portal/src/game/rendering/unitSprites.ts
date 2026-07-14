@@ -75,6 +75,15 @@ export interface SpriteManifest {
     // Legacy layout: per-direction horizontal strip (row always 0).
     strips?: DirectionMap<string>
   }>
+  // SUPERSEDED by the authored `attackOrigin` block (UnitDef.attackOrigin /
+  // per-path attackOrigin — see unitDefs.ts's getResolvedAttackOriginFor),
+  // which the beam render path now reads instead of this field. Kept
+  // (parsed, typed, defaulted below) for backward compatibility with any
+  // existing sprites.json, but it is CURRENTLY UNUSED — no manifest ships a
+  // value for it and nothing reads UnitSpriteSet.beamOrigin at render time
+  // anymore. Not removed outright to avoid an unnecessary type/parse-site
+  // churn for a field with zero runtime effect either way.
+  //
   // Optional world-pixel offset added to the chest anchor when a channel
   // beam (e.g. siphon_life) originates from this unit. +x = right on screen,
   // +y = down on screen. Use to nudge the beam source onto the actual
@@ -109,6 +118,8 @@ export interface UnitSpriteSet {
   animations: Map<string, StripAnimation>
   // World-pixel offset applied to the chest anchor when this unit is the
   // source of a channel beam. Always present; defaults to { x: 0, y: 0 }.
+  // SUPERSEDED / UNUSED — see the manifest field's doc comment above; the
+  // beam render path resolves origins via getResolvedAttackOriginFor now.
   beamOrigin: { x: number; y: number }
 }
 
@@ -307,6 +318,8 @@ export function buildSpriteSet(
     size,
     rotations,
     animations,
+    // Parsed for backward compatibility only — superseded/unused, see the
+    // UnitSpriteSet.beamOrigin field doc comment above.
     beamOrigin: { x: manifest.beamOrigin?.x ?? 0, y: manifest.beamOrigin?.y ?? 0 },
   }
   // The sliced per-direction rotation Images don't get a `src` until the raw

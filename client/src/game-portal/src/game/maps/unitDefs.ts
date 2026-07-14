@@ -1,4 +1,5 @@
 import type { JsonObject, UnitCapability } from '../network/protocol'
+import type { UnitDirection } from '../rendering/unitSprites'
 
 // Visual footprint of a unit, in canvas pixels relative to its (x, y) anchor.
 // Used to anchor the sprite's feet, size the selection ring, place overhead UI,
@@ -48,6 +49,19 @@ export type ResolvedUnitAttackVisual = {
   effectLength: number
 }
 
+// Screen-space offset from unit.x/unit.y (the same lift the renderer applies)
+// where a unit's projectiles/spells/beams visually leave its body.
+export type UnitOriginPoint = { x: number; y: number }
+
+// Per-facing attack origin authoring. Both fields are optional so an
+// unauthored unit produces an empty (or absent) block — see
+// getResolvedUnitAttackOrigin, which returns null in that case so the
+// renderer falls through to today's exact geometry.
+export type UnitAttackOrigin = {
+  default?: UnitOriginPoint
+  byFacing?: Partial<Record<UnitDirection, UnitOriginPoint>>
+}
+
 /** Default categorisation of a unit type for the map editor brushing flow.
  *  Decoupled from runtime ownership — the placed-unit `playerSlot` decides who
  *  controls the unit in-game; faction just filters which types appear under
@@ -83,6 +97,10 @@ export type UnitDef = {
   /** Server-only: name of the AI combat profile to use. Ignored by the client. */
   combatProfile?: string
   attackVisual?: UnitAttackVisual
+  /** Per-facing point where projectiles/spells/beams leave this unit's body,
+   *  as a screen-space offset from unit.x/unit.y. Absent ⇒ getResolvedUnitAttackOrigin
+   *  returns null and the renderer keeps its existing geometry unchanged. */
+  attackOrigin?: UnitAttackOrigin
   bounds?: UnitBounds
   /** Optional ground-shadow tuning. Absent ⇒ defaults derived from bounds. */
   shadow?: UnitShadow
@@ -174,4 +192,69 @@ export function getResolvedUnitAttackVisual(
       ),
     ),
   }
+}
+
+// Shared "byFacing wins over default" resolution for a single authored
+// attackOrigin block. Extracted so the unit-only resolver (Phase 4, below)
+// and the path-aware resolver (further below) share exactly one
+// implementation of that precedence instead of two copies that could drift.
+function resolveOriginFromBlock(
+  ao: UnitAttackOrigin | null | undefined,
+  facing: UnitDirection | undefined,
+): UnitOriginPoint | null {
+  if (!ao) return null
+  const pick = (facing && ao.byFacing?.[facing]) || ao.default
+  if (!pick) return null
+  return { x: Math.round(pick.x), y: Math.round(pick.y) }
+}
+
+// Resolves the authored attack origin for a unit's current facing. Returns
+// null when the unit has no attackOrigin authored at all (or it authors
+// neither `default` nor a matching `byFacing` entry) — callers MUST treat
+// null as "fall back to today's existing geometry", never as (0, 0).
+export function getResolvedUnitAttackOrigin(
+  def: UnitDef | null | undefined,
+  facing: UnitDirection | undefined,
+): UnitOriginPoint | null {
+  return resolveOriginFromBlock(def?.attackOrigin, facing)
+}
+
+// Per-path attack-origin override: path id (e.g. "marksman") → its authored
+// {default?, byFacing?} block. Populated from the /catalog/units `paths`
+// array's (now unioned) attackOrigin field. Mirrors PATH_BOUNDS_MAP exactly
+// — same map/init/lookup shape, same reason (path variants author their own
+// projectile launch points, distinct from the base unit's).
+export let PATH_ATTACK_ORIGIN_MAP: Map<string, UnitAttackOrigin> = new Map()
+
+export function initPathAttackOrigin(
+  entries: Array<{ path: string; attackOrigin?: UnitAttackOrigin | null }>,
+): void {
+  PATH_ATTACK_ORIGIN_MAP = new Map(
+    entries
+      .filter((e): e is { path: string; attackOrigin: UnitAttackOrigin } => !!e.attackOrigin)
+      .map((e) => [e.path, e.attackOrigin]),
+  )
+}
+
+// Resolves the attack origin for a rendered unit instance, checking the
+// PATH's authored origin before the base unit def's — mirrors
+// getUnitBoundsFor's path-then-type precedence EXACTLY, including the
+// 'none' sentinel check: if the unit is on a path AND that path authored
+// ANY attackOrigin block, the path's block is used exclusively (byFacing >
+// default WITHIN that block) and the base unit def's attackOrigin is never
+// consulted — same "path presence switches the whole source" rule bounds
+// uses, not a per-field merge. Only when the path has no attackOrigin block
+// at all (or there is no path) does resolution fall through to the base
+// unit def, then to null, so the renderer's existing geometric fallback is
+// completely unchanged for any unit/path with no authored origin anywhere.
+export function getResolvedAttackOriginFor(
+  args: { path?: string | null; unitType?: string | null },
+  facing: UnitDirection | undefined,
+): UnitOriginPoint | null {
+  if (args.path && args.path !== 'none') {
+    const pathOrigin = PATH_ATTACK_ORIGIN_MAP.get(args.path)
+    if (pathOrigin) return resolveOriginFromBlock(pathOrigin, facing)
+  }
+  const def = args.unitType ? UNIT_DEF_MAP.get(args.unitType) : undefined
+  return getResolvedUnitAttackOrigin(def, facing)
 }

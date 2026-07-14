@@ -1,6 +1,9 @@
 package game
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func validUnitDefForTest() UnitDef {
 	return UnitDef{
@@ -44,5 +47,39 @@ func TestValidateUnitDef_Rejections(t *testing.T) {
 				t.Fatalf("expected %s to be rejected, got nil", name)
 			}
 		})
+	}
+}
+
+// TestValidateUnitDef_NegativeWeightMessage_DeterministicAcrossMultipleKeys
+// pins Fix 4: with multiple negative pathChances weights, the reported path
+// id must be the same every time (the alphabetically-first key), not
+// whichever one Go's randomized map iteration visits first. Calling
+// validateUnitDef many times on the same def is what actually exercises
+// this — a single call can't distinguish "deterministic" from "got lucky",
+// since Go re-randomizes each range's start point per call.
+func TestValidateUnitDef_NegativeWeightMessage_DeterministicAcrossMultipleKeys(t *testing.T) {
+	def := validUnitDefForTest()
+	def.PathChances = map[string]float64{
+		"zzz_path": -1,
+		"aaa_path": -1,
+		"mmm_path": -1,
+	}
+
+	var first error
+	for i := 0; i < 50; i++ {
+		err := validateUnitDef(&def)
+		if err == nil {
+			t.Fatalf("iteration %d: expected rejection, got nil", i)
+		}
+		if first == nil {
+			first = err
+			continue
+		}
+		if err.Error() != first.Error() {
+			t.Fatalf("message not deterministic across calls: %q vs %q", err.Error(), first.Error())
+		}
+	}
+	if !strings.Contains(first.Error(), `"aaa_path"`) {
+		t.Errorf("error = %q, want it to name the alphabetically-first offending path %q", first.Error(), "aaa_path")
 	}
 }

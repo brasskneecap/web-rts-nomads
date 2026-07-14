@@ -22,7 +22,7 @@ import {
 } from './terrainTileGroups'
 import type { BuildingDef, BuildingStyleRenderDef } from './buildingDefs'
 import type { ObstacleDef } from './obstacleDefs'
-import type { UnitBounds, UnitDef } from './unitDefs'
+import type { UnitAttackOrigin, UnitBounds, UnitDef } from './unitDefs'
 import type { ActionIconDef } from './actionIconDefs'
 import type { PerkDef } from './perkDefs'
 import type { ItemDef } from './itemDefs'
@@ -165,7 +165,14 @@ export async function fetchObstacleDefs(): Promise<ObstacleDef[]> {
   return data.obstacles
 }
 
-export type PathBoundsEntry = { path: string; bounds: UnitBounds }
+// `attackOrigin` is independently optional server-side (a path authoring only
+// bounds, or only attackOrigin, still appears once in the union'd
+// /catalog/units `paths` list — see the server's ListPathBounds doc comment).
+// `bounds` keeps its existing (pre-this-change) type here — initPathBounds's
+// existing null-tolerant `if (pathBounds)` check in getUnitBoundsFor already
+// handles a bounds-less entry correctly at runtime; widening its static type
+// is out of scope for this task.
+export type PathBoundsEntry = { path: string; bounds: UnitBounds; attackOrigin?: UnitAttackOrigin | null }
 
 export async function fetchUnitDefs(): Promise<{
   units: UnitDef[]

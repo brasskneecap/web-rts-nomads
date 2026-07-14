@@ -20,6 +20,7 @@ const fullDef: AuthoredUnitDef = {
   dominionPointAmount: 1, spawnExp: 0, nonCombat: false,
   // art blobs the form does NOT model — must survive untouched:
   attackVisual: { anchor: 'hand' }, bounds: { w: 20, h: 40 }, shadow: { scale: 0.6 },
+  attackOrigin: { default: { x: 3, y: -40 }, byFacing: { east: { x: 14, y: -30 } } },
 }
 
 describe('unitEditorForm round-trip', () => {

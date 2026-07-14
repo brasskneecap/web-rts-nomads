@@ -174,3 +174,33 @@ func TestSaveUnitDef_RejectsBadID(t *testing.T) {
 		t.Fatal("expected bad-id rejection")
 	}
 }
+
+func TestSaveUnitDef_LosslessAttackOrigin(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("UNIT_CATALOG_DIR", dir)
+	def := UnitDef{
+		Type: "origin_unit", Faction: "human", Name: "Origin", HP: 1, Damage: 1,
+		AttackRange: 1, AttackSpeed: 1, MoveSpeed: 1,
+		AttackOrigin: json.RawMessage(`{"default":{"x":3,"y":-40},"byFacing":{"east":{"x":14,"y":-30}}}`),
+	}
+	if err := SaveUnitDef(&def); err != nil {
+		t.Fatalf("SaveUnitDef: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "human", "origin_unit", "origin_unit.json"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var round UnitDef
+	if err := json.Unmarshal(raw, &round); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(round.AttackOrigin) == 0 {
+		t.Fatal("attackOrigin lost on round-trip")
+	}
+	var got struct {
+		Default struct{ X, Y float64 } `json:"default"`
+	}
+	if err := json.Unmarshal(round.AttackOrigin, &got); err != nil || got.Default.X != 3 || got.Default.Y != -40 {
+		t.Fatalf("attackOrigin not preserved verbatim: %s", round.AttackOrigin)
+	}
+}

@@ -200,7 +200,7 @@ func pathModifierFor(path, rank string) pathModifierDef {
 		}
 		return identityPathModifier
 	}
-	if def, ok := pathModifiersByKey[pathModifierKey(path, rank)]; ok {
+	if def, ok := pathModifierLookup(pathModifierKey(path, rank)); ok {
 		return def
 	}
 	return identityPathModifier
@@ -455,7 +455,7 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 		unit.AttackRange = math.Max(0, baseRange*(1.0+s.perkAttackRangeMultiplierLocked(unit)))
 	}
 	baseVision := unit.BaseVisionRange
-	if pathVision, ok := pathVisionRangeByPath[unit.ProgressionPath]; ok {
+	if pathVision, ok := pathVisionRangeFor(unit.ProgressionPath); ok {
 		baseVision = pathVision
 	}
 	unit.VisionRange = baseVision * s.perkVisionRangeMultiplierLocked(unit)
@@ -467,16 +467,16 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	// values untouched. ProgressionPath is monotonic (none → path, never
 	// reverted), so a conditional set suffices — unlike HP/damage there is no
 	// per-tick base to re-derive from.
-	if pathProjectile, ok := pathProjectileByPath[unit.ProgressionPath]; ok {
+	if pathProjectile, ok := pathProjectileFor(unit.ProgressionPath); ok {
 		unit.ProjectileID = pathProjectile
 	}
-	if pathDamageType, ok := pathDamageTypeByPath[unit.ProgressionPath]; ok {
+	if pathDamageType, ok := pathDamageTypeFor(unit.ProgressionPath); ok {
 		unit.AttackDamageType = pathDamageType
 	}
-	if pathAttackType, ok := pathAttackTypeByPath[unit.ProgressionPath]; ok {
+	if pathAttackType, ok := pathAttackTypeFor(unit.ProgressionPath); ok {
 		unit.AttackType = pathAttackType
 	}
-	if pathProjectileScale, ok := pathProjectileScaleByPath[unit.ProgressionPath]; ok {
+	if pathProjectileScale, ok := pathProjectileScaleFor(unit.ProgressionPath); ok {
 		unit.ProjectileScale = pathProjectileScale
 	}
 

@@ -53,27 +53,83 @@
 
     <div class="unit-editor__body">
       <aside class="unit-editor__list">
-        <button type="button" class="unit-editor__new" :disabled="busy" @click="newUnit">+ New Unit</button>
+        <div class="unit-editor__new-menu">
+          <button
+            type="button"
+            class="unit-editor__new"
+            :disabled="busy"
+            @click="showNewMenu = !showNewMenu"
+          >
+            + New ▾
+          </button>
+          <div v-if="showNewMenu" class="unit-editor__new-menu-popover">
+            <button type="button" @click="chooseNewBaseUnit">New Base Unit</button>
+            <button type="button" @click="chooseNewPath">New Path</button>
+          </div>
+        </div>
+
+        <div v-if="showNewPathPicker" class="unit-editor__new-path-picker">
+          <select v-model="newPathParentUnit" class="unit-editor__new-path-parent">
+            <option value="" disabled>— select parent unit —</option>
+            <option v-for="u in visibleUnits" :key="u.type" :value="u.type">{{ u.name || u.type }}</option>
+          </select>
+          <button type="button" :disabled="!newPathParentUnit" @click="confirmNewPath">Create</button>
+          <button type="button" @click="showNewPathPicker = false">Cancel</button>
+        </div>
+
         <p v-if="loadError" class="unit-editor__error">{{ loadError }}</p>
-        <ul>
-          <li v-for="u in visibleUnits" :key="u.type">
-            <button
-              type="button"
-              :class="{ 'is-selected': u.type === selectedType }"
-              @click="selectUnit(u)"
-            >
-              {{ u.name || u.type }}
-            </button>
+        <ul class="unit-editor__tree">
+          <li v-for="u in visibleUnits" :key="u.type" class="unit-editor__tree-node">
+            <div class="unit-editor__tree-row">
+              <button
+                v-if="(pathsByUnit[u.type]?.length ?? 0) > 0"
+                type="button"
+                class="unit-editor__tree-toggle"
+                @click="toggleUnitExpanded(u.type)"
+              >
+                {{ expandedUnits.has(u.type) ? '▾' : '▸' }}
+              </button>
+              <span v-else class="unit-editor__tree-toggle-spacer" aria-hidden="true"></span>
+              <button
+                type="button"
+                class="unit-editor__tree-unit-btn"
+                :class="{ 'is-selected': editorMode === 'unit' && u.type === selectedType }"
+                @click="selectUnit(u)"
+              >
+                {{ u.name || u.type }}
+              </button>
+            </div>
+            <ul v-if="expandedUnits.has(u.type)" class="unit-editor__tree-children">
+              <li v-for="entry in pathsByUnit[u.type] ?? []" :key="entry.path">
+                <button
+                  type="button"
+                  class="unit-editor__tree-path-btn"
+                  :class="{
+                    'is-selected':
+                      editorMode === 'path' && selectedPath === entry.path && selectedPathParent === entry.unit,
+                  }"
+                  @click="selectPath(entry)"
+                >
+                  {{ entry.path }}
+                </button>
+              </li>
+            </ul>
           </li>
         </ul>
       </aside>
 
-      <section class="unit-editor__form">
+      <section v-if="editorMode === 'unit'" class="unit-editor__form">
       <!-- Preview -->
       <section class="unit-editor__section" :class="{ 'unit-editor__section--open': openSections.has('preview') }">
         <button type="button" class="unit-editor__section-summary" @click="toggleSection('preview')">Preview</button>
         <div v-if="openSections.has('preview')" class="unit-editor__section-body">
-          <UnitSpritePreview ref="preview" :unit-key="form.type" />
+          <UnitSpritePreview
+            ref="preview"
+            :unit-key="form.type"
+            :projectile="form.projectile"
+            :projectile-scale="form.projectileScale"
+            v-model:attack-origin="form.attackOrigin"
+          />
 
           <div
             class="unit-editor__art-ingest"
@@ -325,6 +381,185 @@
           <button type="button" :disabled="busy || selectedType === null" @click="removeUnit">Delete</button>
         </div>
       </section>
+
+      <!-- Path editor: mirrors the unit form's accordion pattern. -->
+      <section v-else class="unit-editor__form">
+        <template v-if="pathForm">
+          <!-- Preview (mirrors the unit form's Preview section: same name, top of the form) -->
+          <section class="unit-editor__section" :class="{ 'unit-editor__section--open': openSections.has('path-preview') }">
+            <button type="button" class="unit-editor__section-summary" @click="toggleSection('path-preview')">Preview</button>
+            <div v-if="openSections.has('path-preview')" class="unit-editor__section-body">
+              <UnitSpritePreview
+                ref="preview"
+                :path-key="pathForm.path"
+                :unit-key="pathForm.parentUnit"
+                :projectile="pathForm.projectile"
+                :projectile-scale="pathForm.projectileScale"
+                v-model:attack-origin="pathForm.attackOrigin"
+              />
+
+              <div
+                class="unit-editor__art-ingest"
+                @dragover.prevent
+                @drop.prevent="onFolderDropped"
+              >
+                <label v-if="canIngestArt" class="unit-editor__art-drop">
+                  <input
+                    type="file"
+                    webkitdirectory
+                    multiple
+                    :disabled="ingesting"
+                    @change="onFolderInputChanged(($event.target as HTMLInputElement).files)"
+                  />
+                  {{ ingesting ? 'Packing…' : 'Drop / choose a PixelLab export folder' }}
+                </label>
+                <p v-else class="unit-editor__hint">Set the path's id (parent unit is already fixed) to ingest art.</p>
+
+                <div v-if="pendingArt" class="unit-editor__art-actions">
+                  <button type="button" :disabled="busy" @click="saveArt">Save Art</button>
+                  <button type="button" :disabled="busy" @click="discardPendingArt">Discard</button>
+                </div>
+
+                <p v-for="w in ingestWarnings" :key="w" class="unit-editor__warning">{{ w }}</p>
+                <p v-if="ingestError" class="unit-editor__error">{{ ingestError }}</p>
+              </div>
+            </div>
+          </section>
+
+          <!-- Identity -->
+          <section class="unit-editor__section" :class="{ 'unit-editor__section--open': openSections.has('path-identity') }">
+            <button type="button" class="unit-editor__section-summary" @click="toggleSection('path-identity')">Identity</button>
+            <div v-if="openSections.has('path-identity')" class="unit-editor__section-body">
+              <label>
+                Path ID
+                <span class="unit-editor__hint">
+                  {{ selectedPath === null ? 'a–z 0–9 _' : "an existing path's id can't change" }}
+                </span>
+                <input
+                  :value="pathForm.path"
+                  :disabled="selectedPath !== null"
+                  placeholder="e.g. marksman"
+                  @input="onPathIdInput(($event.target as HTMLInputElement).value)"
+                />
+              </label>
+              <label>Parent Unit <input :value="pathForm.parentUnit" disabled /></label>
+              <label>Description <input v-model="pathForm.description" /></label>
+            </div>
+          </section>
+
+          <!-- Stats (mirrors the base unit's Stats section). A path only
+               flat-overrides Vision Range; every other stat scales per-rank in
+               the Ranks section below, so this is intentionally sparse. -->
+          <section class="unit-editor__section" :class="{ 'unit-editor__section--open': openSections.has('path-stats') }">
+            <button type="button" class="unit-editor__section-summary" @click="toggleSection('path-stats')">Stats</button>
+            <div v-if="openSections.has('path-stats')" class="unit-editor__section-body">
+              <label>Vision Range <input type="number" v-model.number="pathForm.visionRange" /></label>
+              <p class="unit-editor__hint">Other stats (HP, damage, move speed…) scale per-rank in the Ranks section below — they aren't flat overrides here.</p>
+            </div>
+          </section>
+
+          <!-- Combat (mirrors the base unit's Combat section) -->
+          <section class="unit-editor__section" :class="{ 'unit-editor__section--open': openSections.has('path-combat') }">
+            <button type="button" class="unit-editor__section-summary" @click="toggleSection('path-combat')">Combat</button>
+            <div v-if="openSections.has('path-combat')" class="unit-editor__section-body">
+              <label>
+                Projectile
+                <input v-model="pathForm.projectile" list="unit-editor-projectiles" placeholder="(blank = no override)" />
+                <datalist id="unit-editor-projectiles">
+                  <option v-for="p in projectileIds" :key="p" :value="p" />
+                </datalist>
+              </label>
+              <label>Projectile Scale <input type="number" v-model.number="pathForm.projectileScale" /></label>
+              <label>Attack Type <input v-model="pathForm.attackType" placeholder="(blank = no override)" /></label>
+              <label>
+                Damage Type
+                <input v-model="pathForm.damageType" list="unit-editor-damage-types" placeholder="(blank = no override)" />
+                <datalist id="unit-editor-damage-types">
+                  <option v-for="d in damageTypes" :key="d" :value="d" />
+                </datalist>
+              </label>
+            </div>
+          </section>
+
+          <!-- Abilities (mirrors the base unit's Abilities section) -->
+          <section class="unit-editor__section" :class="{ 'unit-editor__section--open': openSections.has('path-abilities') }">
+            <button type="button" class="unit-editor__section-summary" @click="toggleSection('path-abilities')">Abilities</button>
+            <div v-if="openSections.has('path-abilities')" class="unit-editor__section-body">
+              <label>
+                Abilities (comma-separated)
+                <input
+                  :value="(pathForm.abilities ?? []).join(',')"
+                  @input="updatePathAbilities(($event.target as HTMLInputElement).value)"
+                />
+                <span class="unit-editor__hint">Replaces the base unit's abilities entirely — this is not additive.</span>
+              </label>
+              <div class="unit-editor__channel-loop">
+                <span class="unit-editor__map-label">Channel Loop <span class="unit-editor__hint">(casting-animation frames to loop; leave both blank to unset)</span></span>
+                <label>
+                  Start
+                  <input
+                    type="number"
+                    :value="pathChannelLoopStart ?? ''"
+                    @input="pathChannelLoopStart = ($event.target as HTMLInputElement).value === '' ? undefined : Number(($event.target as HTMLInputElement).value)"
+                  />
+                </label>
+                <label>
+                  End
+                  <input
+                    type="number"
+                    :value="pathChannelLoopEnd ?? ''"
+                    @input="pathChannelLoopEnd = ($event.target as HTMLInputElement).value === '' ? undefined : Number(($event.target as HTMLInputElement).value)"
+                  />
+                </label>
+              </div>
+              <!-- `bounds` is an opaque passthrough (no authored UI control here
+                   on purpose) — it stays a plain top-level field on pathForm
+                   (MODELED_PATH_KEYS includes it) so an existing path's bounds
+                   round-trip untouched via saveRequestFromPathForm. -->
+            </div>
+          </section>
+
+          <!-- Rank grid -->
+          <section class="unit-editor__section" :class="{ 'unit-editor__section--open': openSections.has('path-ranks') }">
+            <button type="button" class="unit-editor__section-summary" @click="toggleSection('path-ranks')">Ranks</button>
+            <div v-if="openSections.has('path-ranks')" class="unit-editor__section-body">
+              <PathRankGrid
+                :base-stats="parentBaseStats"
+                :ranks="pathForm.ranks || {}"
+                @update:ranks="onPathRanksUpdate"
+              />
+            </div>
+          </section>
+
+          <!-- Perk pools -->
+          <section class="unit-editor__section" :class="{ 'unit-editor__section--open': openSections.has('path-perks') }">
+            <button type="button" class="unit-editor__section-summary" @click="toggleSection('path-perks')">Perk Pools</button>
+            <div v-if="openSections.has('path-perks')" class="unit-editor__section-body">
+              <PerkPoolEditor
+                :unit="pathForm.parentUnit ?? ''"
+                :path="pathForm.path ?? ''"
+                :pools="pathPools"
+                :catalog="perkCatalog"
+                @update:pools="onPathPoolsUpdate"
+              />
+            </div>
+          </section>
+
+          <!-- Only meaningful for a brand-new path — an existing path's
+               pathChances membership is edited on the UNIT side (Gating
+               section), not re-decided every time the path is re-saved. -->
+          <label v-if="selectedPath === null" class="unit-editor__checkbox-label">
+            <input type="checkbox" v-model="addPathToPathChances" />
+            Also add to {{ pathForm.parentUnit }}'s promotion paths (weight 1)
+          </label>
+
+          <p v-if="saveError" class="unit-editor__error">{{ saveError }}</p>
+          <div class="unit-editor__actions">
+            <button type="button" :disabled="busy || !pathForm.parentUnit || !pathForm.path" @click="savePath">Save Path</button>
+            <button type="button" :disabled="busy || selectedPath === null" @click="removePath">Delete Path</button>
+          </div>
+        </template>
+      </section>
     </div>
   </div>
   <!-- Shared by both Archetype (Identity) and Combat Profile (Combat): one
@@ -344,6 +579,15 @@ import {
 import {
   fetchAuthoredUnitDefs, saveEditorUnit, deleteEditorUnit, EditorValidationError,
 } from '@/game/units/unitEditorApi'
+import { createBlankPathForm, pathFormFromDef, saveRequestFromPathForm, type PathEditorForm, type PathRankStats } from '@/game/units/pathEditorForm'
+import {
+  fetchPaths, fetchPerkCatalog,
+  savePath as savePathApi, deletePath as deletePathApi,
+  savePerks as savePerksApi,
+  type EditorPathEntry, type PerkEntry,
+} from '@/game/units/pathEditorApi'
+import PathRankGrid from '@/components/PathRankGrid.vue'
+import PerkPoolEditor from '@/components/PerkPoolEditor.vue'
 import {
   fetchFactions, saveFaction, deleteFaction, fetchArchetypes,
   fetchProjectileIds, fetchAbilityIds, fetchDamageTypes, fetchBuildingIds,
@@ -385,6 +629,152 @@ const newFactionId = ref('')
 const newFactionName = ref('')
 const showNewFaction = ref(false)
 const factionError = ref('')
+
+// --- Path/perk authoring mode (Task 3): left-list TREE + base-unit-vs-path
+// editor mode. `paths` is the full merged catalog (fetchPaths, GET
+// /catalog/paths); pathsByUnit re-keys it by owning unit type for the tree's
+// child rows. Base-unit editing (form/selectedType/etc. above) is completely
+// unchanged — editorMode just decides which half of the right panel renders.
+const paths = ref<EditorPathEntry[]>([])
+const pathsByUnit = computed(() => {
+  const map: Record<string, EditorPathEntry[]> = {}
+  for (const entry of paths.value) {
+    (map[entry.unit] ??= []).push(entry)
+  }
+  return map
+})
+
+// Which unit rows are expanded in the tree — mirrors openSections' Set idiom.
+const expandedUnits = reactive(new Set<string>())
+function toggleUnitExpanded(type: string) {
+  if (expandedUnits.has(type)) expandedUnits.delete(type)
+  else expandedUnits.add(type)
+}
+
+const editorMode = ref<'unit' | 'path'>('unit')
+const selectedPath = ref<string | null>(null)
+const selectedPathParent = ref<string | null>(null)
+const pathForm = ref<PathEditorForm | null>(null)
+
+// Full /catalog/perks (loaded once in reload(), Task 4b-i's PerkPoolEditor
+// needs it for wired lookups + "add existing" suggestions) and the currently
+// selected/new path's per-rank pools, derived from it (see poolsForPath).
+// Saving pools back to the server is Task 5 — here they only load + bind.
+const perkCatalog = ref<PerkEntry[]>([])
+const pathPools = ref<Record<string, PerkEntry[]>>({ bronze: [], silver: [], gold: [] })
+
+function poolsForPath(parentUnit: string, pathId: string): Record<string, PerkEntry[]> {
+  const pools: Record<string, PerkEntry[]> = { bronze: [], silver: [], gold: [] }
+  for (const entry of perkCatalog.value) {
+    if (entry.unitType !== parentUnit || entry.path !== pathId) continue
+    const rank = entry.rank ?? ''
+    if (!pools[rank]) pools[rank] = []
+    pools[rank].push(entry)
+  }
+  return pools
+}
+
+function onPathRanksUpdate(next: Record<string, PathRankStats>) {
+  if (pathForm.value) pathForm.value.ranks = next
+}
+
+function onPathPoolsUpdate(next: Record<string, PerkEntry[]>) {
+  pathPools.value = next
+}
+
+// The rank grid resolves multiplier cells against the PARENT unit's base
+// stats (hp/damage/attackSpeed/moveSpeed/attackRange/maxMana/healthRegenRate)
+// — find it in the already-loaded unit list by pathForm.parentUnit. Cast
+// rather than pass the AuthoredUnitDef through structurally: AuthoredUnitDef
+// has non-numeric fields (type, faction, …) that don't satisfy
+// PathRankGrid's Record<string, number|undefined> prop type, even though at
+// runtime the grid only ever reads the numeric stat keys it needs.
+const parentBaseStats = computed<Record<string, number | undefined>>(() => {
+  const found = units.value.find((u) => u.type === pathForm.value?.parentUnit)
+  return (found as unknown as Record<string, number | undefined> | undefined) ?? {}
+})
+
+// channelLoop bridging for the path form — same {start,end}-vs-undefined
+// pattern as the unit form's channelLoopStart/channelLoopEnd above.
+const pathChannelLoopStart = ref<number | undefined>(undefined)
+const pathChannelLoopEnd = ref<number | undefined>(undefined)
+watch([pathChannelLoopStart, pathChannelLoopEnd], ([s, e]) => {
+  if (!pathForm.value) return
+  pathForm.value.channelLoop = (s === undefined && e === undefined) ? undefined : { start: s ?? 0, end: e ?? 0 }
+})
+
+// abilities on a path REPLACE the base unit's list entirely (not additive) —
+// same comma-separated binding idiom as updateStringList, scoped to the one
+// string[] field a path form has.
+function updatePathAbilities(raw: string) {
+  if (!pathForm.value) return
+  pathForm.value.abilities = raw.split(',').map((s) => s.trim()).filter(Boolean)
+}
+
+// The path id is the primary key once saved (owns art dir + perk pools), so
+// it locks the same way a unit's `type` does — editable only while
+// `selectedPath === null` (a brand-new, not-yet-saved path).
+function onPathIdInput(raw: string) {
+  if (!pathForm.value) return
+  pathForm.value.path = raw.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+/, '')
+}
+
+function selectPath(entry: EditorPathEntry) {
+  // Same abandon-pending-art hazard as selectUnit — see its doc comment.
+  const hadPending = pendingArt.value !== null
+  clearPending()
+  ingestError.value = ''
+  if (hadPending) void flushPreviewOverlay()
+  editorMode.value = 'path'
+  selectedPath.value = entry.path
+  selectedPathParent.value = entry.unit
+  pathForm.value = pathFormFromDef(entry.def, entry.unit)
+  pathChannelLoopStart.value = pathForm.value.channelLoop?.start
+  pathChannelLoopEnd.value = pathForm.value.channelLoop?.end
+  pathPools.value = poolsForPath(entry.unit, entry.path)
+  preview.value?.refresh()
+}
+
+// "Also add to {parent}'s promotion paths" — only meaningful (and only shown)
+// for a brand-new, not-yet-saved path; defaults CHECKED per spec §7.1.
+const addPathToPathChances = ref(true)
+
+// "+ New" chooser: Base Unit reuses the existing newUnit() flow untouched;
+// Path shows an inline parent-unit picker (defaulting to the currently
+// selected base unit, if any) before creating a blank path form.
+const showNewMenu = ref(false)
+const showNewPathPicker = ref(false)
+const newPathParentUnit = ref('')
+
+function chooseNewBaseUnit() {
+  showNewMenu.value = false
+  newUnit()
+}
+
+function chooseNewPath() {
+  showNewMenu.value = false
+  newPathParentUnit.value = selectedType.value ?? ''
+  showNewPathPicker.value = true
+}
+
+function confirmNewPath() {
+  if (!newPathParentUnit.value) return
+  // Same abandon-pending-art hazard as newUnit — see selectUnit's doc comment.
+  const hadPending = pendingArt.value !== null
+  clearPending()
+  ingestError.value = ''
+  if (hadPending) void flushPreviewOverlay()
+  pathForm.value = createBlankPathForm(newPathParentUnit.value)
+  editorMode.value = 'path'
+  selectedPath.value = null
+  selectedPathParent.value = newPathParentUnit.value
+  pathChannelLoopStart.value = undefined
+  pathChannelLoopEnd.value = undefined
+  pathPools.value = { bronze: [], silver: [], gold: [] }
+  addPathToPathChances.value = true
+  showNewPathPicker.value = false
+  preview.value?.refresh()
+}
 
 const visibleUnits = computed(() =>
   factionFilter.value
@@ -471,7 +861,7 @@ async function removeFaction(id: string) {
 // Collapsible sections — Identity starts open so a freshly loaded panel isn't
 // entirely collapsed; every other section starts closed like ItemEditorPanel's
 // accordion, but as a Set so multiple sections can be open at once.
-const openSections = reactive(new Set<string>(['preview', 'identity']))
+const openSections = reactive(new Set<string>(['preview', 'identity', 'path-preview', 'path-identity']))
 function toggleSection(key: string) {
   if (openSections.has(key)) openSections.delete(key)
   else openSections.add(key)
@@ -571,6 +961,27 @@ function manifestWithKey(manifest: IngestResult['manifest'], key: string): Sprit
   return { ...manifest, key }
 }
 
+// Art ingest (runIngest/onFolderDropped/saveArt below) is shared between unit
+// and path mode — these four computeds are the ONLY mode-aware surface of
+// that machinery, so unit-mode behavior is provably unchanged (each reduces
+// to exactly the old `form.value.*` expression when editorMode==='unit').
+// A path's art is keyed by (parent unit, path id) — saveUnitArt's optional
+// `path` param routes it to the path's own writable art dir instead of the
+// base unit's.
+const artKey = computed(() => editorMode.value === 'path'
+  ? (pathForm.value?.path || pathForm.value?.parentUnit || '')
+  : form.value.type)
+const artUnit = computed(() => editorMode.value === 'path'
+  ? (pathForm.value?.parentUnit ?? '')
+  : form.value.type)
+const artFaction = computed(() => editorMode.value === 'path'
+  ? (units.value.find((u) => u.type === pathForm.value?.parentUnit)?.faction ?? '')
+  : form.value.faction)
+const artPath = computed(() => editorMode.value === 'path' ? (pathForm.value?.path || undefined) : undefined)
+const canIngestArt = computed(() => editorMode.value === 'path'
+  ? !!(pathForm.value?.parentUnit && pathForm.value?.path)
+  : !!(form.value.type && form.value.faction))
+
 async function runIngest(files: DroppedFile[]) {
   // A drop that arrives while a previous one is still decoding/rasterizing
   // is ignored outright rather than raced (see `ingesting`'s doc comment).
@@ -599,8 +1010,8 @@ async function runIngest(files: DroppedFile[]) {
 
     // Feed the Phase 2 overlay so the preview shows the packed art live,
     // before saving — this IS the preview-before-persist path (P3-B).
-    const key = form.value.type.toLowerCase()
-    const manifest = manifestWithKey(result.manifest, form.value.type)
+    const key = artKey.value.toLowerCase()
+    const manifest = manifestWithKey(result.manifest, artKey.value)
     const set = buildSpriteSet(key, manifest, (rel) => urls[rel])
     if (set) registerRuntimeSpriteSet(set)
     preview.value?.refresh()
@@ -676,7 +1087,7 @@ async function collectTopLevelEntry(entry: FileSystemEntry): Promise<DroppedFile
 }
 
 async function onFolderDropped(event: DragEvent) {
-  if (!form.value.type || !form.value.faction) return
+  if (!canIngestArt.value) return
   if (ingesting.value) return
   const items = event.dataTransfer?.items
   if (!items || items.length === 0) return
@@ -701,7 +1112,7 @@ async function saveArt() {
   ingestError.value = ''
   busy.value = true
   try {
-    const manifest = { ...manifestWithKey(art.manifest, form.value.type), packedAt: new Date().toISOString() }
+    const manifest = { ...manifestWithKey(art.manifest, artKey.value), packedAt: new Date().toISOString() }
     const files: UnitArtUploadFile[] = [
       { name: 'sprites.json', contentBase64: await blobToBase64(new Blob([JSON.stringify(manifest, null, 2)])) },
     ]
@@ -711,7 +1122,7 @@ async function saveArt() {
     if (art.portrait) {
       files.push({ name: 'portrait.png', contentBase64: await blobToBase64(art.portrait) })
     }
-    await saveUnitArt({ faction: form.value.faction, unit: form.value.type, files })
+    await saveUnitArt({ faction: artFaction.value, unit: artUnit.value, path: artPath.value, files })
     // Replace the in-memory object-URL preview set with the persisted server art.
     clearPending()
     await flushPreviewOverlay()
@@ -744,7 +1155,10 @@ onBeforeUnmount(() => {
 
 async function reload() {
   try {
-    units.value = await fetchAuthoredUnitDefs()
+    const [u, p, pc] = await Promise.all([fetchAuthoredUnitDefs(), fetchPaths(), fetchPerkCatalog()])
+    units.value = u
+    paths.value = p
+    perkCatalog.value = pc
     loadError.value = ''
     // A successful unit list refresh means the list itself is current — any
     // stale faction-delete error (e.g. naming units the author just deleted)
@@ -765,6 +1179,9 @@ function selectUnit(def: AuthoredUnitDef) {
   clearPending()
   ingestError.value = ''
   if (hadPending) void flushPreviewOverlay()
+  editorMode.value = 'unit'
+  selectedPath.value = null
+  selectedPathParent.value = null
   form.value = formFromDef(def)
   selectedType.value = def.type
   saveError.value = ''
@@ -810,6 +1227,9 @@ function newUnit() {
   clearPending()
   ingestError.value = ''
   if (hadPending) void flushPreviewOverlay()
+  editorMode.value = 'unit'
+  selectedPath.value = null
+  selectedPathParent.value = null
   form.value = createBlankForm(pickTemplateStats(units.value))
   form.value.faction = factionFilter.value || ''
   selectedType.value = null
@@ -845,6 +1265,87 @@ async function removeUnit() {
     await deleteEditorUnit(selectedType.value)
     await reload()
     newUnit()
+  } catch (e) {
+    saveError.value = e instanceof EditorValidationError ? e.serverMessage
+      : e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+const PATH_RANKS = ['bronze', 'silver', 'gold'] as const
+
+// savePath persists the path file, then its three rank perk pools, then —
+// for a brand-new path with the checkbox checked — adds it to the parent
+// unit's pathChances. ORDER IS LOAD-BEARING (spec §7.1/§9.1):
+//   1. the path file must exist before ANYTHING references it — the server's
+//      SaveEditorPerkPool rejects a pool whose path doesn't exist yet, and a
+//      pathChances row pointing at a nonexistent path is exactly the
+//      dangling reference that boot-panics the server (see path_editor.go's
+//      doc comment on ordering). So: path first, unconditionally.
+//   2. perk pools next — they reference the path, which now exists.
+//   3. pathChances last, and ONLY for a new path — re-parenting or touching
+//      an existing path's pathChances is not this button's job.
+// If step 3 fails validation, the path (and its pools) already saved
+// successfully — we surface the error but do NOT attempt to roll that back.
+async function savePath() {
+  if (!pathForm.value) return
+  saveError.value = ''
+  busy.value = true
+  const isNewPath = selectedPath.value === null
+  try {
+    const req = saveRequestFromPathForm(pathForm.value)
+    const pathId = req.path.path ?? ''
+
+    await savePathApi(req)
+
+    for (const rank of PATH_RANKS) {
+      await savePerksApi({ unit: req.unit, path: pathId, rank, perks: pathPools.value[rank] ?? [] })
+    }
+
+    if (isNewPath && addPathToPathChances.value) {
+      const parentDef = units.value.find((u) => u.type === req.unit)
+      if (parentDef) {
+        const parentForm = formFromDef(parentDef)
+        // Merge, don't clobber — a path id already present (unlikely, but not
+        // impossible if pathChances was hand-authored) keeps its own weight.
+        parentForm.pathChances = { ...(parentForm.pathChances ?? {}), [pathId]: parentForm.pathChances?.[pathId] ?? 1 }
+        await saveEditorUnit(saveRequestFromForm(parentForm))
+      }
+    }
+
+    await reload()
+    const savedEntry = paths.value.find((p) => p.unit === req.unit && p.path === pathId)
+    if (savedEntry) selectPath(savedEntry)
+    preview.value?.refresh()
+  } catch (e) {
+    saveError.value = e instanceof EditorValidationError ? e.serverMessage
+      : e instanceof Error ? e.message : String(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function removePath() {
+  if (!selectedPath.value) return
+  saveError.value = ''
+  busy.value = true
+  try {
+    await deletePathApi(selectedPath.value)
+    // Only reached on success — nothing changed server-side when the delete
+    // was rejected (e.g. still referenced by a unit's pathChances), so a
+    // thrown error skips straight to the catch below without reloading.
+    await reload()
+    const parentType = selectedPathParent.value
+    const parentDef = parentType ? units.value.find((u) => u.type === parentType) : undefined
+    if (parentDef) {
+      selectUnit(parentDef)
+    } else {
+      editorMode.value = 'unit'
+      selectedPath.value = null
+      selectedPathParent.value = null
+      pathForm.value = null
+    }
   } catch (e) {
     saveError.value = e instanceof EditorValidationError ? e.serverMessage
       : e instanceof Error ? e.message : String(e)
@@ -900,7 +1401,71 @@ onMounted(async () => {
   padding: 12px;
 }
 
-.unit-editor__list ul {
+.unit-editor__new {
+  font-weight: 700;
+  width: 100%;
+}
+
+.unit-editor__new-menu {
+  position: relative;
+}
+
+.unit-editor__new-menu-popover {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 6px;
+  background: rgba(8, 14, 24, 0.96);
+  border: 1px solid rgba(215, 187, 132, 0.35);
+  border-radius: 10px;
+}
+
+.unit-editor__new-menu-popover button {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #f8fafc;
+  padding: 6px 8px;
+  font-size: 0.76rem;
+  text-align: left;
+}
+
+.unit-editor__new-path-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(215, 187, 132, 0.35);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.unit-editor__new-path-picker select {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  padding: 7px 9px;
+  font-size: 0.78rem;
+}
+
+.unit-editor__new-path-picker button {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #f8fafc;
+  padding: 6px 9px;
+  font-size: 0.76rem;
+}
+
+.unit-editor__tree {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -909,8 +1474,34 @@ onMounted(async () => {
   gap: 4px;
 }
 
-.unit-editor__list button {
-  width: 100%;
+.unit-editor__tree-node + .unit-editor__tree-node {
+  margin-top: 2px;
+}
+
+.unit-editor__tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.unit-editor__tree-toggle {
+  flex: 0 0 auto;
+  width: 18px;
+  border: 0;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.7);
+  padding: 0;
+  font-size: 0.7rem;
+}
+
+.unit-editor__tree-toggle-spacer {
+  flex: 0 0 auto;
+  width: 18px;
+}
+
+.unit-editor__tree-unit-btn,
+.unit-editor__tree-path-btn {
+  flex: 1 1 auto;
   border: 1px solid transparent;
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.6);
@@ -920,13 +1511,24 @@ onMounted(async () => {
   text-align: left;
 }
 
-.unit-editor__list button.is-selected {
+.unit-editor__tree-unit-btn.is-selected,
+.unit-editor__tree-path-btn.is-selected {
   border-color: rgba(215, 187, 132, 0.6);
   background: rgba(30, 41, 59, 0.9);
 }
 
-.unit-editor__new {
-  font-weight: 700;
+.unit-editor__tree-children {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0 0 0 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.unit-editor__tree-path-btn {
+  font-size: 0.74rem;
+  opacity: 0.9;
 }
 
 .unit-editor__form {

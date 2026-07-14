@@ -20,6 +20,14 @@ func SaveEditorUnit(req EditorUnitSaveRequest) error {
 	if err := validateUnitDef(&unit); err != nil {
 		return editorValidationError{err}
 	}
+	// Cross-catalog check: does every pathChances entry reference a real,
+	// usable promotion path? validateUnitDef above only checks the
+	// pathChances map's internal shape (weights >= 0, sum > 0) — it can't
+	// see the path catalog. validateUnitPathChances already returns
+	// editorValidationError, so no double-wrap here.
+	if err := validateUnitPathChances(&unit); err != nil {
+		return err
+	}
 	return SaveUnitDef(&unit)
 }
 
