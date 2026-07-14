@@ -8,6 +8,7 @@
   "category": "Weapon",
   "costGold": 50,
   "requiredBuilding": "marketplace",
-  "modifiers": { "damage": 5 },
-  "effects": []
+  "modifiers": {
+    "damage": 5
+  }
 }

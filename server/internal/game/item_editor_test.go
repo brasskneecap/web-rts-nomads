@@ -149,15 +149,72 @@ func TestDeleteEditorItem_RemovesItemAndRecipe(t *testing.T) {
 	if err := SaveEditorItem(req); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	existed, err := DeleteEditorItem("doomed_item")
+	status, existed, err := DeleteEditorItem("doomed_item")
 	if err != nil || !existed {
 		t.Fatalf("delete: existed=%v err=%v", existed, err)
+	}
+	if status != "deleted" {
+		t.Errorf("status = %q, want deleted (an author-created item is really removed)", status)
 	}
 	if _, ok := getItemDef("doomed_item"); ok {
 		t.Error("item still visible")
 	}
 	if _, ok := getRecipeDef("doomed_item"); ok {
 		t.Error("recipe still visible")
+	}
+}
+
+// TestDeleteEditorItem_ShippedItemRevertsToPreSaveState: Reset on a SHIPPED item
+// undoes the author's last save — it restores the state the item was in before
+// that save, not the catalog default. A second Reset (no undo step left) falls
+// back to the default.
+func TestDeleteEditorItem_ShippedItemRevertsToPreSaveState(t *testing.T) {
+	editorEnv(t)
+	const id = "broad_sword"
+	shipped, ok := getItemDef(id)
+	if !ok {
+		t.Skipf("%s not in catalog", id)
+	}
+	shippedName := shipped.DisplayName
+
+	// First save: a deliberate edit the author wants to keep.
+	first := *shipped
+	first.DisplayName = "Keeper"
+	if err := SaveItemDef(&first); err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+	// Second save: the mistake.
+	second := first
+	second.DisplayName = "Oops"
+	if err := SaveItemDef(&second); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+	if got, _ := getItemDef(id); got.DisplayName != "Oops" {
+		t.Fatalf("setup failed: %q", got.DisplayName)
+	}
+
+	// Reset undoes the LAST save → back to "Keeper", not to the shipped default.
+	status, existed, err := DeleteEditorItem(id)
+	if err != nil || !existed {
+		t.Fatalf("reset: existed=%v err=%v", existed, err)
+	}
+	if status != "reverted" {
+		t.Errorf("status = %q, want reverted", status)
+	}
+	if got, _ := getItemDef(id); got.DisplayName != "Keeper" {
+		t.Errorf("after reset = %q, want %q (the state before the last save)", got.DisplayName, "Keeper")
+	}
+
+	// A second reset has no undo step left, so it falls back to the default.
+	status, existed, err = DeleteEditorItem(id)
+	if err != nil || !existed {
+		t.Fatalf("second reset: existed=%v err=%v", existed, err)
+	}
+	if status != "reset" {
+		t.Errorf("second status = %q, want reset", status)
+	}
+	if got, _ := getItemDef(id); got.DisplayName != shippedName {
+		t.Errorf("after second reset = %q, want the shipped default %q", got.DisplayName, shippedName)
 	}
 }
 

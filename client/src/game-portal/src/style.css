@@ -57,6 +57,27 @@
   --heading: var(--font-title);
   --mono: ui-monospace, Consolas, monospace;
 
+  /* ── Editor design tokens ────────────────────────────────────────────────
+     The content editors (items, unit types, abilities, …) share one visual
+     language, and it is the SAME wood/brass language as the meta screens:
+     panels come from the 9-slice UiPanel variants (worldMenu frame,
+     warRoomInner rails, innerPanel cards, worldInner parchment), buttons from
+     UiButton, scrolling from GameScrollArea. These tokens carry only what the
+     panel art does NOT: text, brass accents, hairlines and form-control fills.
+     Everything under components/editor/ styles itself from them, so a palette
+     change lands in one place. */
+  --ed-brass: #e7c88a;          /* headings, active accents */
+  --ed-brass-dim: #b9985c;      /* secondary brass (labels, rules) */
+  --ed-text: #e9dbb8;           /* body text on wood */
+  --ed-text-dim: rgba(233, 219, 184, 0.55);
+  --ed-line: rgba(212, 168, 71, 0.22);
+  --ed-line-strong: rgba(212, 168, 71, 0.5);
+  --ed-field: rgba(8, 6, 4, 0.55);   /* input/select fill (darkens the wood) */
+  --ed-danger: #f0846c;
+  --ed-ok: #86c46b;
+  --ed-radius: 6px;
+  --ed-gap: 10px;
+
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
   color-scheme: light dark;

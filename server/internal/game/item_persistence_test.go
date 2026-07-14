@@ -211,6 +211,58 @@ func TestDeleteItemOverride_RemovesFileAndOverlay(t *testing.T) {
 	}
 }
 
+// TestDeleteItemOverride_ResetRestoresShippedDefFile is a regression guard for a
+// bug that DESTROYED catalog items: resetting an embedded item deleted its def
+// file and relied on the embedded copy. In a dev tree the writable dir IS the
+// embed source, so the running process looked fine while the file was gone —
+// and the next build embedded a catalog without the item, panicking at startup
+// ("item list ... is not a known item"). Reset must put the shipped def back.
+func TestDeleteItemOverride_ResetRestoresShippedDefFile(t *testing.T) {
+	const id = "broad_sword" // ships in the embedded catalog
+	itemOverlayCleanup(t, id)
+	dir := t.TempDir()
+	t.Setenv("ITEM_CATALOG_DIR", dir)
+
+	shipped, ok := getItemDef(id)
+	if !ok {
+		t.Skipf("%s not in catalog", id)
+	}
+	// Override it, the way the editor does.
+	edited := *shipped
+	edited.DisplayName = "EDITED Sword"
+	if err := SaveItemDef(&edited); err != nil {
+		t.Fatalf("save override: %v", err)
+	}
+	path := filepath.Join(dir, itemCategorySubdir(&edited), string(edited.Tier), id+".json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("override file should exist at %s: %v", path, err)
+	}
+
+	// Reset to default.
+	existed, err := DeleteItemOverride(id)
+	if err != nil || !existed {
+		t.Fatalf("reset: existed=%v err=%v", existed, err)
+	}
+
+	// The def file must still be on disk — and hold the SHIPPED values, not the
+	// edit. Anything else and the next build loses the item.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reset deleted the shipped def file (%s) — the next build would lose %q: %v", path, id, err)
+	}
+	var back ItemDef
+	if uerr := json.Unmarshal(raw, &back); uerr != nil {
+		t.Fatalf("restored file does not parse: %v", uerr)
+	}
+	if back.DisplayName != shipped.DisplayName {
+		t.Errorf("restored def = %q, want the shipped default %q", back.DisplayName, shipped.DisplayName)
+	}
+	// And the runtime reads the default again.
+	if got, _ := getItemDef(id); got.DisplayName != shipped.DisplayName {
+		t.Errorf("after reset getItemDef = %q, want %q", got.DisplayName, shipped.DisplayName)
+	}
+}
+
 // tinyPNG renders a 4x4 PNG in memory.
 func tinyPNG(t *testing.T) []byte {
 	t.Helper()

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { getItemAssetImage, getItemImageSourceUrl, listIconGroups, listItemAssetKeys } from './itemAssets'
+import { afterEach, describe, expect, it } from 'vitest'
+import { getItemAssetImage, getItemImageSourceUrl, listIconGroups, listItemAssetKeys, registerUploadedIcons } from './itemAssets'
 
 describe('itemAssets gallery + fallback', () => {
   it('lists bundled keys sorted and non-empty', () => {
@@ -34,5 +34,43 @@ describe('itemAssets gallery + fallback', () => {
     expect(img).not.toBeNull()
     img!.dispatchEvent(new Event('error'))
     expect(getItemAssetImage('definitely_missing_everywhere')).toBeNull()
+  })
+})
+
+// An uploaded icon has to beat the bundled asset, or replacing a SHIPPED item's
+// icon silently does nothing: every shipped item ships with bundled art keyed by
+// its id, and the upload route forces iconKey to that same id.
+describe('author-uploaded icons override bundled art', () => {
+  afterEach(() => {
+    // Clear the registration so one test's upload can't leak into another.
+    registerUploadedIcons([{ id: 'fire_sword' }, { id: 'broad_sword' }])
+  })
+
+  it('serves the versioned server URL for an item with an uploaded icon, even when bundled art exists', () => {
+    expect(getItemImageSourceUrl('fire_sword')).not.toContain('/catalog/items/')
+
+    registerUploadedIcons([{ id: 'fire_sword', iconUploadedAt: 1700000000 }])
+
+    expect(getItemImageSourceUrl('fire_sword')).toBe('/catalog/items/fire_sword/image?v=1700000000')
+  })
+
+  it('busts the cache when the same icon is re-uploaded', () => {
+    registerUploadedIcons([{ id: 'broad_sword', iconUploadedAt: 111 }])
+    const first = getItemAssetImage('broad_sword')
+    expect(first!.src).toContain('v=111')
+
+    registerUploadedIcons([{ id: 'broad_sword', iconUploadedAt: 222 }])
+    const second = getItemAssetImage('broad_sword')
+    expect(second!.src).toContain('v=222')
+    expect(second).not.toBe(first) // a new Image, not the cached one
+  })
+
+  it('falls back to the bundled asset once the upload is removed', () => {
+    registerUploadedIcons([{ id: 'fire_sword', iconUploadedAt: 1700000000 }])
+    expect(getItemImageSourceUrl('fire_sword')).toContain('/catalog/items/')
+
+    registerUploadedIcons([{ id: 'fire_sword' }]) // reset-to-default deletes the icon
+
+    expect(getItemImageSourceUrl('fire_sword')).not.toContain('/catalog/items/')
   })
 })

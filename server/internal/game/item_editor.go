@@ -117,22 +117,37 @@ func GetItemAvailability(id string) (EditorAvailability, bool) {
 	return av, true
 }
 
-// DeleteEditorItem removes the item override and, for editor-created items
-// (not in the embed), the paired recipe. Availability memberships are not
-// touched — items no longer own availability, so an editor-created item was
-// never added to any shop/loot list by the editor.
-func DeleteEditorItem(id string) (existed bool, err error) {
+// DeleteEditorItem is the editor's destructive action, and what it means depends
+// on where the item came from:
+//
+//   - A SHIPPED item is RESET, not deleted. It goes back to the state it was in
+//     before the author's last save ("undo"), or — with no undo step recorded —
+//     to the shipped catalog default ("default"). The def file always survives;
+//     deleting it would destroy the item on the next build (see ResetItemDef).
+//   - An AUTHOR-CREATED item is genuinely deleted, along with its paired recipe.
+//
+// The returned status is what the client shows, so it must say which happened.
+// existed is false when the id names nothing.
+func DeleteEditorItem(id string) (status string, existed bool, err error) {
+	if ItemIsEmbedded(id) {
+		mode, ok, rerr := ResetItemDef(id)
+		if rerr != nil || !ok {
+			return "", ok, rerr
+		}
+		if mode == "undo" {
+			return "reverted", true, nil
+		}
+		return "reset", true, nil
+	}
+
 	existed, err = DeleteItemOverride(id)
 	if err != nil || !existed {
-		return existed, err
-	}
-	if ItemIsEmbedded(id) {
-		return true, nil // reset-to-default: embed provides the def + recipe
+		return "", existed, err
 	}
 	if _, derr := DeleteRecipeOverride(id); derr != nil {
-		return true, derr
+		return "deleted", true, derr
 	}
-	return true, nil
+	return "deleted", true, nil
 }
 
 // EditorLootAvailability / EditorAvailability describe an item's placement

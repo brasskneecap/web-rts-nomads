@@ -3,7 +3,11 @@
        clipped by a scroll container. Positioned centered above the hovered
        element via its captured viewport rect. Shared by the vault storage
        grid, the vault unit-card inventory slots, and the SelectionHud
-       inventory so item hover reads identically everywhere. -->
+       inventory so item hover reads identically everywhere.
+
+       Note: the item editor's preview card is deliberately NOT this component
+       (see ItemPreviewCard.vue). It shares the CONTENT (buildItemTooltipLines)
+       but owns its own parchment presentation. -->
   <Teleport to="body">
     <div v-if="item && anchor" class="item-tooltip" :style="style">
       <div class="item-tooltip__title">{{ item.displayName }}</div>

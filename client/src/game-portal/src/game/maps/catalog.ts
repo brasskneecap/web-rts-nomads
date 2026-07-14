@@ -7,6 +7,7 @@ import type {
   TerrainTile,
   TileInstance,
 } from '../network/protocol'
+import { registerUploadedIcons } from '../rendering/itemAssets'
 import {
   expandObstacleGroups,
   groupObstacles,
@@ -227,6 +228,11 @@ export async function fetchItemDefs(): Promise<ItemDef[]> {
   }
 
   const data = (await response.json()) as { items: ItemDef[] }
+  // Teach the asset layer which items have an author-uploaded icon, so it can
+  // serve that instead of the bundled art. Done here rather than at each call
+  // site: every surface that shows item icons loads the catalog through this
+  // function, so an upload becomes visible everywhere after one refresh.
+  registerUploadedIcons(data.items)
   return data.items
 }
 

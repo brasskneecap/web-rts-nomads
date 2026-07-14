@@ -61,25 +61,60 @@ export async function saveEditorItem(req: EditorSaveRequest): Promise<void> {
   }
 }
 
-export async function deleteEditorItem(id: string): Promise<'deleted' | 'reset'> {
+/**
+ * What the destructive action did:
+ * - `deleted`  — an author-created item was removed.
+ * - `reverted` — a shipped item went back to the state before the last save.
+ * - `reset`    — a shipped item went back to the catalog default (no undo step
+ *                was left, e.g. after a server restart or a second reset).
+ */
+export type EditorItemRemoveStatus = 'deleted' | 'reverted' | 'reset'
+
+export async function deleteEditorItem(id: string): Promise<EditorItemRemoveStatus> {
   const response = await fetch(`${API_BASE}/items/${encodeURIComponent(id)}`, { method: 'DELETE' })
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText)
     throw new Error(text || `Server error ${response.status}`)
   }
-  const body = (await response.json()) as { status: 'deleted' | 'reset' }
+  const body = (await response.json()) as { status: EditorItemRemoveStatus }
   return body.status
 }
 
+/** Server-side cap (maxItemIconBytes in item_persistence.go). Enforced here too
+ *  — the server uses http.MaxBytesReader, which closes the connection as soon
+ *  as the limit is passed, and the browser reports that reset as an opaque
+ *  "Failed to fetch" instead of surfacing the server's 400. Checking up front
+ *  is the only way the author gets a message that says what went wrong. */
+export const MAX_ITEM_ICON_BYTES = 256 * 1024
+
 export async function uploadItemIcon(id: string, file: Blob): Promise<void> {
-  const response = await fetch(`${API_BASE}/items/${encodeURIComponent(id)}/image`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'image/png' },
-    body: file,
-  })
+  if (file.size > MAX_ITEM_ICON_BYTES) {
+    const kb = Math.round(file.size / 1024)
+    throw new Error(`Icon is ${kb} KB — the limit is ${MAX_ITEM_ICON_BYTES / 1024} KB. Use a smaller PNG.`)
+  }
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}/items/${encodeURIComponent(id)}/image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body: file,
+    })
+  } catch (err) {
+    // fetch only rejects on a network-level failure; say so rather than
+    // letting a bare "Failed to fetch" reach the UI.
+    throw new Error(`Could not reach the server to upload the icon (${err instanceof Error ? err.message : String(err)}).`)
+  }
   if (!response.ok) {
-    const text = await response.text().catch(() => response.statusText)
-    throw new Error(text || `Icon upload failed (${response.status})`)
+    // The route answers with {"error","message"}; show the message, not the JSON.
+    const text = await response.text().catch(() => '')
+    let detail = text
+    try {
+      const body = JSON.parse(text) as { message?: string }
+      if (body.message) detail = body.message
+    } catch {
+      // not JSON — fall back to the raw text
+    }
+    throw new Error(detail || `Icon upload failed (${response.status})`)
   }
 }
 

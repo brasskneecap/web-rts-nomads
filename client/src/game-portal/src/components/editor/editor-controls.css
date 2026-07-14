@@ -1,0 +1,101 @@
+/* Form chrome for every content editor.
+ *
+ * Imported once by EditorShell and scoped under `.ed-shell`, so any input /
+ * select / textarea rendered anywhere inside an editor gets identical styling
+ * without wrapping each control in its own component. Colors come from the
+ * --ed-* tokens in style.css; the surrounding panel art comes from UiPanel.
+ *
+ * Deliberately no `cursor:` declarations — the global rules in style.css own
+ * the custom game cursor (see CLAUDE.md).
+ */
+
+.ed-shell input[type='text'],
+.ed-shell input[type='number'],
+.ed-shell input[type='search'],
+.ed-shell select,
+.ed-shell textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  color: var(--ed-text);
+  background: var(--ed-field);
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+  outline: none;
+}
+
+.ed-shell textarea {
+  resize: vertical;
+  min-height: 54px;
+  line-height: 1.35;
+}
+
+.ed-shell input:focus,
+.ed-shell select:focus,
+.ed-shell textarea:focus {
+  border-color: var(--ed-line-strong);
+  box-shadow: 0 0 0 1px rgba(212, 168, 71, 0.18);
+}
+
+.ed-shell input::placeholder,
+.ed-shell textarea::placeholder {
+  color: var(--ed-text-dim);
+  opacity: 0.6;
+}
+
+.ed-shell input:disabled,
+.ed-shell select:disabled {
+  opacity: 0.55;
+}
+
+/* Native option lists render in the OS popup, which does not inherit the wood
+   background — force a dark fill so the text stays readable. */
+.ed-shell select option {
+  background: #17120c;
+  color: var(--ed-text);
+}
+
+.ed-shell input[type='checkbox'] {
+  width: auto;
+  accent-color: var(--ed-brass-dim);
+}
+
+/* A native file input has a wide intrinsic size (the button + the filename)
+   and will happily overflow a narrow column. Pin it to its container and let
+   the filename ellipsize instead. */
+.ed-shell input[type='file'] {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  color: var(--ed-text-dim);
+}
+
+.ed-shell input[type='file']::file-selector-button {
+  margin-right: 8px;
+  padding: 4px 8px;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  color: var(--ed-brass);
+  background: rgba(212, 168, 71, 0.08);
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+}
+
+.ed-shell input[type='file']::file-selector-button:hover {
+  background: rgba(212, 168, 71, 0.16);
+  border-color: var(--ed-line-strong);
+}
+
+/* A checkbox labels itself: the <label> wraps the box and the text. */
+.ed-shell .ed-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--ed-text);
+}

@@ -49,6 +49,43 @@ for (const path of Object.keys(iconLibraryGlob)) {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
+// uploadedIcons maps an item id to the mtime of the icon its author uploaded
+// (ItemDef.iconUploadedAt). An uploaded icon WINS over bundled art for the same
+// key: without this, replacing a shipped item's icon would silently do nothing,
+// because every shipped item ships with a bundled asset keyed by its id — and
+// the upload route forces iconKey to the item id. The mtime also versions the
+// URL, so a re-upload actually refetches instead of serving the cached image.
+//
+// Populated by registerUploadedIcons, which fetchItemDefs calls on every
+// catalog load — so every surface (editor, vault, shop, canvas) picks up an
+// upload after a catalog refresh, without any of them knowing this rule exists.
+const uploadedIcons = new Map<string, number>()
+
+export function registerUploadedIcons(defs: { id: string; iconUploadedAt?: number }[]): void {
+  for (const def of defs) {
+    const key = def.id.toLowerCase()
+    const version = def.iconUploadedAt ?? 0
+    if (version === 0) {
+      uploadedIcons.delete(key)
+      continue
+    }
+    if (uploadedIcons.get(key) === version) continue
+    uploadedIcons.set(key, version)
+    // Drop any cached Image / negative-cache entry for this key so the new
+    // upload is fetched rather than the stale (or 404'd) one.
+    serverIconCache.delete(key)
+    serverIconFailed.delete(key)
+  }
+}
+
+/** The versioned server URL for an author-uploaded icon, or null when the key
+ *  has none. */
+function uploadedIconUrl(key: string): string | null {
+  const version = uploadedIcons.get(key)
+  if (version === undefined) return null
+  return `${API_BASE}/catalog/items/${encodeURIComponent(key)}/image?v=${version}`
+}
+
 // serverIconCache holds lazily-created Images for iconKeys with no bundled
 // asset (editor-uploaded icons served by the Go server). Canvas callers
 // already guard on img.complete/naturalWidth, so a still-loading image is
@@ -63,9 +100,11 @@ const serverIconFailed = new Set<string>()
 
 export function getItemAssetImage(iconKey: string): HTMLImageElement | null {
   const key = iconKey.toLowerCase()
+  // An author-uploaded icon beats the bundled asset — see uploadedIcons.
+  const uploaded = uploadedIconUrl(key)
   const bundled = images.get(key)
-  if (bundled) return bundled
-  if (serverIconFailed.has(key)) return null
+  if (!uploaded && bundled) return bundled
+  if (serverIconFailed.has(key)) return bundled ?? null
   const cached = serverIconCache.get(key)
   if (cached) return cached
   const img = new Image()
@@ -73,7 +112,7 @@ export function getItemAssetImage(iconKey: string): HTMLImageElement | null {
     serverIconFailed.add(key)
     serverIconCache.delete(key)
   })
-  img.src = `${API_BASE}/catalog/items/${encodeURIComponent(key)}/image`
+  img.src = uploaded ?? `${API_BASE}/catalog/items/${encodeURIComponent(key)}/image`
   serverIconCache.set(key, img)
   return img
 }
@@ -100,11 +139,14 @@ export function listIconGroups(): IconGroup[] {
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-// getItemImageSourceUrl resolves an iconKey to an <img src>: the bundled
-// asset URL when the build contains it, else the server-served uploaded-icon
-// route (finishing the orphaned itemCatalogImages.ts stub, now deleted).
+// getItemImageSourceUrl resolves an iconKey to an <img src>. Order: the
+// author's uploaded icon (versioned, so a re-upload refetches), then the
+// bundled asset when the build contains one, then the server route as a
+// fallback for a key with neither.
 export function getItemImageSourceUrl(iconKey: string): string {
   const key = iconKey.toLowerCase()
+  const uploaded = uploadedIconUrl(key)
+  if (uploaded) return uploaded
   const bundled = urlsByKey.get(key)
   if (bundled) return bundled
   return `${API_BASE}/catalog/items/${encodeURIComponent(key)}/image`

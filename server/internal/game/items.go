@@ -242,6 +242,19 @@ type ItemDef struct {
 	// than the embedded catalog. Runtime-only provenance for the editor UI —
 	// never authored in embed files (the disk writer always strips it).
 	Overridden bool `json:"overridden,omitempty"`
+	// Custom marks a def the author CREATED (it does not ship in the embedded
+	// catalog), as opposed to an edited copy of a shipped def. The editor uses
+	// it to decide whether deleting removes the item or resets it to its
+	// shipped default. Stamped by ListItemDefs on the way out; never authored,
+	// never persisted (the disk writer strips it with Overridden).
+	Custom bool `json:"custom,omitempty"`
+	// IconUploadedAt is the mtime (unix seconds) of the author's uploaded icon,
+	// or 0 when there is none. Non-zero means the client must serve the icon
+	// from /catalog/items/{id}/image rather than its bundled art — without this
+	// a shipped item's icon could never be replaced, because the bundled asset
+	// always wins on key. Doubles as a cache-buster. Stamped by ListItemDefs;
+	// never authored, never persisted.
+	IconUploadedAt int64 `json:"iconUploadedAt,omitempty"`
 }
 
 // itemDefFields is ItemDef without its methods, so UnmarshalJSON can decode
@@ -401,6 +414,14 @@ func validateItemProc(itemID string, i int, p *ItemProc) error {
 // slice (alphabetical by ID), merging the writable editor overlay
 // (runtimeItems) on top of the embedded catalog. Used by the /catalog/items
 // HTTP route.
+//
+// Each returned def carries Custom: true when the item does NOT ship in the
+// embedded catalog, i.e. the author created it. This is the signal the editor
+// needs to know whether deleting means "remove it" or "reset it to the shipped
+// default" (see DeleteEditorItem, which branches on the same ItemIsEmbedded
+// check). Overridden cannot answer that — in a dev build the writable dir IS
+// the embed source, so every item loads through the overlay and reports
+// Overridden: true.
 func ListItemDefs() []*ItemDef {
 	merged := make(map[string]*ItemDef, len(itemCatalogSingleton))
 	for id, def := range itemCatalogSingleton {
@@ -413,7 +434,12 @@ func ListItemDefs() []*ItemDef {
 	runtimeItemsMu.RUnlock()
 	defs := make([]*ItemDef, 0, len(merged))
 	for _, def := range merged {
-		defs = append(defs, def)
+		// Copy before stamping: the map values are the live catalog / overlay
+		// defs and must not be mutated by a read.
+		out := *def
+		out.Custom = !ItemIsEmbedded(out.ID)
+		out.IconUploadedAt = ItemIconUploadedAt(out.ID)
+		defs = append(defs, &out)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
 	return defs

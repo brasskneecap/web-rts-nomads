@@ -69,7 +69,10 @@ func registerEditorRoutes(mux *http.ServeMux) {
 			writeJSONError(w, http.StatusBadRequest, "invalid_id", "expected /items/{id}")
 			return
 		}
-		existed, err := game.DeleteEditorItem(id)
+		// status is "deleted" (author-created item removed), "reverted" (shipped
+		// item taken back to the state before the last save) or "reset" (shipped
+		// item taken back to the catalog default) — DeleteEditorItem decides.
+		status, existed, err := game.DeleteEditorItem(id)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
 			return
@@ -77,10 +80,6 @@ func registerEditorRoutes(mux *http.ServeMux) {
 		if !existed {
 			writeJSONError(w, http.StatusNotFound, "not_found", "no editor override for "+id)
 			return
-		}
-		status := "deleted"
-		if game.ItemIsEmbedded(id) {
-			status = "reset"
 		}
 		writeJSON(w, map[string]string{"id": id, "status": status})
 	})

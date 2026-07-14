@@ -1,403 +1,352 @@
 <template>
-  <div class="item-editor-panel">
-    <aside class="item-editor-sidebar">
-      <div class="sidebar-actions">
-        <UiButton size="sm" @click="newItem">New Item</UiButton>
-        <input v-model="search" type="text" placeholder="Search items…" aria-label="Search items" />
-      </div>
-      <div class="sidebar-list">
-        <div v-for="group in groupedItems" :key="group.tier" class="sidebar-group">
-          <div class="sidebar-group__label" :style="{ color: TIER_COLORS[group.tier] }">{{ group.tier }}</div>
-          <button
-            v-for="d in group.items"
-            :key="d.id"
-            type="button"
-            class="sidebar-item"
-            :class="{ 'sidebar-item--selected': selectedId === d.id }"
-            @click="selectItem(d.id)"
-          >
-            <img :src="getItemImageSourceUrl(d.iconKey)" class="sidebar-item__icon" alt="" />
-            <span class="sidebar-item__name" :style="{ color: TIER_COLORS[d.tier] }">{{ d.displayName }}</span>
-            <!-- Dev-build quirk: the writable catalog dir mirrors the embed
-                 source, so `overridden` reports true for every item in dev
-                 builds — this dot is expected to show on all items locally. -->
-            <span v-if="d.overridden" class="sidebar-item__overridden" title="Overridden from catalog default">●</span>
-          </button>
-        </div>
-        <p v-if="groupedItems.length === 0" class="sidebar-empty">No items match.</p>
-      </div>
-    </aside>
+  <EditorShell class="item-editor">
+    <template #sidebar>
+      <EditorSidebar
+        title="Items"
+        new-label="Add New Item"
+        :groups="sidebarGroups"
+        :selected-id="selectedId"
+        :search="search"
+        search-placeholder="Search items…"
+        empty-text="No items match."
+        @update:search="search = $event"
+        @select="selectItem"
+        @new="newItem"
+        @duplicate="duplicateItem"
+      />
+    </template>
 
-    <section v-if="form" class="item-editor-main">
-      <!-- Section 1: Identity -->
-      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'identity' }">
-        <button
-          class="editor-section__summary"
-          type="button"
-          :aria-expanded="openSection === 'identity'"
-          @click="toggleSection('identity')"
-        >
-          Identity
-        </button>
-        <div v-if="openSection === 'identity'" class="editor-section__body">
-          <div class="control-group">
-            <label for="ie-id">ID <span class="field-hint">(lowercase, digits, underscores; locked after save)</span></label>
-            <input id="ie-id" v-model.trim="form.id" type="text" :disabled="!form.isNew" />
-            <!-- Dev-build quirk: see sidebar dot comment — every item reports
-                 overridden in dev, so this badge is expected to always show
-                 for a selected non-new item locally. -->
-            <span v-if="!form.isNew && selectedOverridden" class="field-hint">Overridden from catalog default</span>
-          </div>
-          <div class="control-group">
-            <label for="ie-display-name">Display Name</label>
-            <input id="ie-display-name" v-model.trim="form.displayName" type="text" />
-          </div>
-          <div class="control-group">
-            <label for="ie-description">Description</label>
-            <textarea id="ie-description" v-model.trim="form.description" rows="3"></textarea>
-          </div>
-          <div class="control-group">
-            <label for="ie-kind">Kind</label>
-            <select id="ie-kind" v-model="form.kind" @change="onKindChanged">
-              <option value="equipment">Equipment</option>
-              <option value="consumable">Consumable</option>
-            </select>
-          </div>
-          <div class="control-group">
-            <label for="ie-tier">Tier</label>
-            <select id="ie-tier" v-model="form.tier">
-              <option v-for="t in TIER_OPTIONS" :key="t" :value="t">{{ t }}</option>
-            </select>
-          </div>
-          <div class="control-group">
-            <label for="ie-category">Category <span class="field-hint">(grouping only; sets the catalog folder)</span></label>
-            <select id="ie-category" v-model="form.category">
-              <option v-for="c in CATEGORY_OPTIONS" :key="c" :value="c">{{ c }}</option>
-            </select>
-          </div>
-        </div>
-      </section>
+    <template #main>
+      <template v-if="form">
+        <EditorHeader
+          :title="form.displayName"
+          :badge="form.tier"
+          :badge-color="TIER_COLORS[form.tier as ItemTier]"
+          :breadcrumb="breadcrumb"
+          :file-path="filePath"
+          :id="form.id"
+          :id-editable="form.isNew"
+          id-input-id="ie-id"
+          :saving="saving"
+          :save-disabled="saving || !canSave"
+          :saved-label="savedLabel"
+          :error="saveError"
+          :remove-label="removeLabel"
+          @update:id="form.id = $event"
+          @save="save"
+          @remove="removeOrReset(form.id)"
+        />
 
-      <!-- Section 2: Icon -->
-      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'icon' }">
-        <button
-          class="editor-section__summary"
-          type="button"
-          :aria-expanded="openSection === 'icon'"
-          @click="toggleSection('icon')"
-        >
-          Icon
-        </button>
-        <div v-if="openSection === 'icon'" class="editor-section__body">
-          <div class="icon-preview-row">
-            <img :src="getItemImageSourceUrl(form.iconKey || form.id)" class="icon-preview" alt="" />
-            <div class="icon-preview-actions">
-              <UiButton size="sm" @click="galleryOpen = true">Choose from gallery</UiButton>
-              <div class="control-group">
-                <label for="ie-icon-upload">Upload custom icon <span class="field-hint">(PNG)</span></label>
-                <input id="ie-icon-upload" type="file" accept="image/png" @change="onIconFileChosen" />
+        <GameScrollArea class="item-editor__scroll">
+          <div class="item-editor__grid">
+            <!-- 1. Identity -->
+            <SectionCard title="Identity" :index="sectionIndex('identity')">
+              <EditorField label="Display Name" for-id="ie-display-name">
+                <input id="ie-display-name" v-model.trim="form.displayName" type="text" />
+              </EditorField>
+              <!-- Generated, not authored: this is verbatim what a match
+                   tooltip shows for the item, so it can never drift from the
+                   stats above it. Written to the def on save. -->
+              <EditorField label="Description" hint="(generated — what the match tooltip shows)" for-id="ie-description">
+                <textarea
+                  id="ie-description"
+                  :value="generatedDescription"
+                  rows="3"
+                  readonly
+                  class="item-editor__generated"
+                ></textarea>
+              </EditorField>
+              <div class="item-editor__pair">
+                <EditorField label="Kind" for-id="ie-kind">
+                  <select id="ie-kind" v-model="form.kind" @change="onKindChanged">
+                    <option value="equipment">Equipment</option>
+                    <option value="consumable">Consumable</option>
+                  </select>
+                </EditorField>
+                <EditorField label="Tier" for-id="ie-tier">
+                  <select id="ie-tier" v-model="form.tier">
+                    <option v-for="t in TIER_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                  </select>
+                </EditorField>
               </div>
-            </div>
-          </div>
-
-          <div v-if="galleryOpen" class="icon-gallery-overlay">
-            <div class="icon-gallery">
-              <div class="icon-gallery__header">
-                <span>Choose an icon</span>
-                <UiButton size="sm" @click="galleryOpen = false">Close</UiButton>
-              </div>
-              <div class="icon-gallery__filter">
-                <span class="icon-gallery__filter-label">Groups</span>
-                <button
-                  v-for="group in iconGroups"
-                  :key="group.name"
-                  type="button"
-                  class="icon-gallery__chip"
-                  :class="{ 'icon-gallery__chip--on': selectedGroups.has(group.name) }"
-                  @click="toggleGroup(group.name)"
-                >
-                  {{ group.name }} <span class="icon-gallery__chip-count">{{ group.keys.length }}</span>
-                </button>
-                <span class="icon-gallery__filter-actions">
-                  <button type="button" class="icon-gallery__chip" @click="setAllGroups(true)">All</button>
-                  <button type="button" class="icon-gallery__chip" @click="setAllGroups(false)">None</button>
-                </span>
-              </div>
-              <div v-if="galleryKeys.length" class="icon-gallery__grid">
-                <button
-                  v-for="key in galleryKeys"
-                  :key="key"
-                  type="button"
-                  class="icon-gallery__item"
-                  @click="pickGalleryIcon(key)"
-                >
-                  <img :src="getItemImageSourceUrl(key)" alt="" />
-                  <span>{{ key }}</span>
-                </button>
-              </div>
-              <p v-else class="icon-gallery__empty">No icon groups selected.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Consumable (only for kind === 'consumable') -->
-      <section
-        v-if="form.kind === 'consumable'"
-        class="editor-section"
-        :class="{ 'editor-section--open': openSection === 'consumable' }"
-      >
-        <button
-          class="editor-section__summary"
-          type="button"
-          :aria-expanded="openSection === 'consumable'"
-          @click="toggleSection('consumable')"
-        >
-          Consumable
-        </button>
-        <div v-if="openSection === 'consumable'" class="editor-section__body">
-          <div class="control-group">
-            <label for="ie-consumable-type">Effect Type</label>
-            <select id="ie-consumable-type" v-model="form.consumable.type">
-              <option v-for="t in CONSUMABLE_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
-            </select>
-          </div>
-          <div class="control-group">
-            <label for="ie-consumable-amount">Amount <span class="field-hint">(HP restored / XP granted)</span></label>
-            <input id="ie-consumable-amount" v-model.number="form.consumable.amount" type="number" min="0" />
-          </div>
-          <div class="control-group">
-            <label for="ie-consumable-range">AoE Range <span class="field-hint">(world units; 0 = default 100)</span></label>
-            <input id="ie-consumable-range" v-model.number="form.consumable.range" type="number" min="0" />
-          </div>
-          <div class="control-group control-group--checkbox">
-            <label for="ie-consumable-split">
-              <input id="ie-consumable-split" v-model="form.consumable.split" type="checkbox" />
-              Split amount across affected units <span class="field-hint">(unchecked = full amount each)</span>
-            </label>
-          </div>
-          <div class="control-group">
-            <label for="ie-consumable-duration">Duration (s) <span class="field-hint">(0 = instant)</span></label>
-            <input id="ie-consumable-duration" v-model.number="form.consumable.durationSeconds" type="number" min="0" />
-          </div>
-          <div class="control-group">
-            <label for="ie-max-stacks">Max Stacks <span class="field-hint">(per inventory slot; 0/1 = single)</span></label>
-            <input id="ie-max-stacks" v-model.number="form.maxStacks" type="number" min="0" />
-          </div>
-        </div>
-      </section>
-
-      <!-- Section 3: Stats (equipment only) -->
-      <section v-if="form.kind === 'equipment'" class="editor-section" :class="{ 'editor-section--open': openSection === 'stats' }">
-        <button
-          class="editor-section__summary"
-          type="button"
-          :aria-expanded="openSection === 'stats'"
-          @click="toggleSection('stats')"
-        >
-          Stats
-        </button>
-        <div v-if="openSection === 'stats'" class="editor-section__body">
-          <div v-for="f in FLAT_MOD_FIELDS" :key="f.key" class="control-group">
-            <label :for="`ie-mod-${f.key}`">{{ f.label }}</label>
-            <input :id="`ie-mod-${f.key}`" v-model.number="form.mods[f.key]" type="number" />
-          </div>
-          <div class="control-group">
-            <label for="ie-mod-dodge">Dodge Chance % <span class="field-hint">(0-99)</span></label>
-            <input id="ie-mod-dodge" v-model.number="form.mods.dodgePct" type="number" min="0" max="99" />
-          </div>
-          <div class="control-group">
-            <label for="ie-mod-block">Block Chance % <span class="field-hint">(0-99)</span></label>
-            <input id="ie-mod-block" v-model.number="form.mods.blockPct" type="number" min="0" max="99" />
-          </div>
-        </div>
-      </section>
-
-      <!-- Section 4: Elemental (equipment only) -->
-      <section v-if="form.kind === 'equipment'" class="editor-section" :class="{ 'editor-section--open': openSection === 'elemental' }">
-        <button
-          class="editor-section__summary"
-          type="button"
-          :aria-expanded="openSection === 'elemental'"
-          @click="toggleSection('elemental')"
-        >
-          Elemental
-        </button>
-        <div v-if="openSection === 'elemental'" class="editor-section__body">
-          <div v-for="(row, idx) in form.elemental" :key="idx" class="elemental-row">
-            <select v-model="row.type">
-              <option v-for="t in ELEMENTAL_TYPES" :key="t" :value="t">{{ t }}</option>
-            </select>
-            <input v-model.number="row.amount" type="number" />
-            <UiButton size="sm" @click="form.elemental.splice(idx, 1)">Remove</UiButton>
-          </div>
-          <UiButton size="sm" @click="form.elemental.push({ type: 'fire', amount: 5 })">Add elemental damage</UiButton>
-        </div>
-      </section>
-
-      <!-- Section 5: Procs (equipment only) -->
-      <section v-if="form.kind === 'equipment'" class="editor-section" :class="{ 'editor-section--open': openSection === 'procs' }">
-        <button
-          class="editor-section__summary"
-          type="button"
-          :aria-expanded="openSection === 'procs'"
-          @click="toggleSection('procs')"
-        >
-          Procs
-        </button>
-        <div v-if="openSection === 'procs'" class="editor-section__body">
-          <p v-if="form.procs.length === 0" class="proc-empty">
-            No procs. Add one to make this item roll a chance effect in combat.
-          </p>
-
-          <!-- One block per proc. An item may carry any number, and more than
-               one on the same trigger — each rolls independently server-side. -->
-          <div v-for="(proc, i) in form.procs" :key="i" class="proc-block">
-            <div class="proc-block__header">
-              <span class="proc-block__title">Proc {{ i + 1 }}</span>
-              <button type="button" class="proc-block__remove" @click="removeProc(i)">Remove</button>
-            </div>
-
-            <div class="control-group">
-              <label :for="`ie-proc-${i}-trigger`">Trigger</label>
-              <select :id="`ie-proc-${i}-trigger`" v-model="proc.trigger">
-                <option v-for="t in PROC_TRIGGERS" :key="t.value" :value="t.value">{{ t.label }}</option>
-              </select>
-            </div>
-
-            <div class="control-group">
-              <label :for="`ie-proc-${i}-effect`">Effect</label>
-              <select :id="`ie-proc-${i}-effect`" v-model="proc.effect">
-                <option value="" disabled>Select an effect…</option>
-                <option v-for="p in procEffects" :key="p.id" :value="p.id">
-                  {{ p.id }} — {{ p.damage }} {{ p.damageType }}
-                </option>
-              </select>
-            </div>
-
-            <div class="control-group">
-              <label :for="`ie-proc-${i}-chance`">Chance % <span class="field-hint">(1-100)</span></label>
-              <input :id="`ie-proc-${i}-chance`" v-model.number="proc.chancePct" type="number" min="1" max="100" />
-            </div>
-
-            <fieldset class="proc-overrides" :class="{ 'proc-overrides--open': overridesOpen[i] }">
-              <button type="button" class="proc-overrides__toggle" @click="overridesOpen[i] = !overridesOpen[i]">
-                Overrides <span class="field-hint">(blank = inherit from effect)</span>
-              </button>
-              <div v-if="overridesOpen[i]" class="proc-overrides__body">
-                <div v-for="f in PROC_OVERRIDE_FIELDS" :key="f.key" class="control-group">
-                  <label :for="`ie-proc-${i}-${f.key}`">{{ f.label }}</label>
-                  <input
-                    :id="`ie-proc-${i}-${f.key}`"
-                    :value="proc[f.key] ?? ''"
-                    :placeholder="effectPlaceholder(proc.effect, f.key)"
-                    type="number"
-                    @input="bindNullable(proc, f.key, $event)"
-                  />
-                </div>
-              </div>
-            </fieldset>
-          </div>
-
-          <UiButton size="sm" @click="addProc">+ Add Proc</UiButton>
-        </div>
-      </section>
-
-      <!-- Section 6: Cost -->
-      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'cost' }">
-        <button
-          class="editor-section__summary"
-          type="button"
-          :aria-expanded="openSection === 'cost'"
-          @click="toggleSection('cost')"
-        >
-          Cost
-        </button>
-        <div v-if="openSection === 'cost'" class="editor-section__body">
-          <div class="control-group">
-            <label for="ie-cost-gold">Purchase Cost (Gold) <span class="field-hint">(where it sells is set at the shop level)</span></label>
-            <input id="ie-cost-gold" v-model.number="form.costGold" type="number" min="0" />
-          </div>
-        </div>
-      </section>
-
-      <!-- Section 7: Crafting — an item is craftable when a recipe unlocks it -->
-      <section class="editor-section" :class="{ 'editor-section--open': openSection === 'crafting' }">
-        <button
-          class="editor-section__summary"
-          type="button"
-          :aria-expanded="openSection === 'crafting'"
-          @click="toggleSection('crafting')"
-        >
-          Crafting
-        </button>
-        <div v-if="openSection === 'crafting'" class="editor-section__body">
-          <div class="control-group">
-            <label for="ie-crafting-source">Crafting source</label>
-            <select id="ie-crafting-source" v-model="craftingSource">
-              <option value="none">Not craftable</option>
-              <option value="recipe">Recipe (ingredients at the Artificer)</option>
-            </select>
-            <span class="field-hint">Some craftables aren't recipe-based — those stay "Not craftable" here and are set up elsewhere.</span>
-          </div>
-          <template v-if="form.crafting.isRecipe">
-            <div class="control-group">
-              <label for="ie-recipe-cost">Craft Cost (Gold)</label>
-              <input id="ie-recipe-cost" v-model.number="form.crafting.recipeCost" type="number" min="0" />
-            </div>
-            <div class="control-group control-group--checkbox">
-              <label for="ie-recipe-starter">
-                <input id="ie-recipe-starter" v-model="form.crafting.starter" type="checkbox" />
-                Automatically learned by every player <span class="field-hint">(no shop unlock needed)</span>
-              </label>
-            </div>
-            <div v-for="(_input, idx) in form.crafting.inputs" :key="idx" class="crafting-input-row">
-              <div class="control-group">
-                <label :for="`ie-crafting-input-${idx}`">Ingredient {{ idx + 1 }}</label>
-                <select :id="`ie-crafting-input-${idx}`" v-model="form.crafting.inputs[idx]">
-                  <option value="" disabled>Select an item…</option>
-                  <option v-for="d in allEquipmentItems" :key="d.id" :value="d.id">{{ d.displayName }} ({{ d.id }})</option>
+              <EditorField label="Category" hint="(grouping only; sets the catalog folder)" for-id="ie-category">
+                <select id="ie-category" v-model="form.category">
+                  <option v-for="c in CATEGORY_OPTIONS" :key="c" :value="c">{{ c }}</option>
                 </select>
-              </div>
-              <UiButton
-                size="sm"
-                :disabled="form.crafting.inputs.length <= 2"
-                @click="form.crafting.inputs.splice(idx, 1)"
-              >
-                Remove
-              </UiButton>
-            </div>
-            <UiButton size="sm" @click="form.crafting.inputs.push('')">Add ingredient</UiButton>
-          </template>
-        </div>
-      </section>
+              </EditorField>
+            </SectionCard>
 
-      <div class="editor-actions">
-        <UiButton :disabled="saving || !form.id" @click="save">{{ saving ? 'Saving…' : 'Save' }}</UiButton>
-        <UiButton v-if="!form.isNew" size="sm" @click="removeOrReset">Delete / Reset</UiButton>
-        <span v-if="saveError" class="save-error" role="alert">{{ saveError }}</span>
-        <span v-else-if="saveOk" class="save-ok">Saved ✓</span>
-        <span v-else-if="deleteStatus" class="save-ok">{{ deleteStatus }}</span>
+            <!-- Preview: the icon (with its art pickers underneath) on the
+                 left, the live description card on the right. -->
+            <SectionCard title="Preview" :index="sectionIndex('preview')" class="item-editor__wide">
+              <div class="item-editor__preview">
+                <div class="item-editor__icon-col">
+                  <IconPreview :src="previewIconUrl" :size="112" />
+                  <UiButton size="sm" variant="active" data-test="icon-gallery-open" @click="galleryOpen = true">Gallery</UiButton>
+                  <EditorField label="Upload PNG" :hint="`(max ${MAX_ITEM_ICON_BYTES / 1024} KB)`" for-id="ie-icon-upload">
+                    <input id="ie-icon-upload" type="file" accept="image/png" @change="onIconFileChosen" />
+                  </EditorField>
+                </div>
+
+                <ItemPreviewCard :def="previewDef" :craft="previewCraft" class="item-editor__preview-card" />
+              </div>
+            </SectionCard>
+
+            <!-- Consumable -->
+            <SectionCard v-if="form.kind === 'consumable'" title="Consumable" :index="sectionIndex('consumable')">
+              <EditorField label="Effect Type" for-id="ie-consumable-type">
+                <select id="ie-consumable-type" v-model="form.consumable.type">
+                  <option v-for="t in CONSUMABLE_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+                </select>
+              </EditorField>
+              <div class="item-editor__pair">
+                <EditorField label="Amount" hint="(HP / XP)" for-id="ie-consumable-amount">
+                  <input id="ie-consumable-amount" v-model.number="form.consumable.amount" type="number" min="0" />
+                </EditorField>
+                <EditorField label="AoE Range" hint="(0 = default 100)" for-id="ie-consumable-range">
+                  <input id="ie-consumable-range" v-model.number="form.consumable.range" type="number" min="0" />
+                </EditorField>
+              </div>
+              <div class="item-editor__pair">
+                <EditorField label="Duration (s)" hint="(0 = instant)" for-id="ie-consumable-duration">
+                  <input id="ie-consumable-duration" v-model.number="form.consumable.durationSeconds" type="number" min="0" />
+                </EditorField>
+                <EditorField label="Max Stacks" hint="(0/1 = single)" for-id="ie-max-stacks">
+                  <input id="ie-max-stacks" v-model.number="form.maxStacks" type="number" min="0" />
+                </EditorField>
+              </div>
+              <label class="ed-check" for="ie-consumable-split">
+                <input id="ie-consumable-split" v-model="form.consumable.split" type="checkbox" />
+                Split amount across affected units
+              </label>
+            </SectionCard>
+
+            <!-- Stats -->
+            <SectionCard v-if="form.kind === 'equipment'" title="Stats" :index="sectionIndex('stats')">
+              <div class="item-editor__stats">
+                <EditorField v-for="f in FLAT_MOD_FIELDS" :key="f.key" :label="f.label" :for-id="`ie-mod-${f.key}`">
+                  <input :id="`ie-mod-${f.key}`" v-model.number="form.mods[f.key]" type="number" />
+                </EditorField>
+                <EditorField label="Dodge %" hint="(0–99)" for-id="ie-mod-dodge">
+                  <input id="ie-mod-dodge" v-model.number="form.mods.dodgePct" type="number" min="0" max="99" />
+                </EditorField>
+                <EditorField label="Block %" hint="(0–99)" for-id="ie-mod-block">
+                  <input id="ie-mod-block" v-model.number="form.mods.blockPct" type="number" min="0" max="99" />
+                </EditorField>
+              </div>
+            </SectionCard>
+
+            <!-- Elemental -->
+            <SectionCard v-if="form.kind === 'equipment'" title="Elemental Damage" :index="sectionIndex('elemental')">
+              <RepeatableList
+                :rows="form.elemental.length"
+                add-label="Add Elemental Damage"
+                empty-text="No elemental damage."
+                @add="form.elemental.push({ type: 'fire', amount: 5 })"
+              >
+                <div v-for="(row, idx) in form.elemental" :key="idx" class="item-editor__elem-row">
+                  <select v-model="row.type" :aria-label="`Element ${idx + 1}`">
+                    <option v-for="t in ELEMENTAL_TYPES" :key="t" :value="t">{{ t }}</option>
+                  </select>
+                  <input v-model.number="row.amount" type="number" :aria-label="`Amount ${idx + 1}`" />
+                  <button type="button" class="item-editor__row-del" @click="form.elemental.splice(idx, 1)">✕</button>
+                </div>
+              </RepeatableList>
+            </SectionCard>
+
+            <!-- Procs -->
+            <SectionCard v-if="form.kind === 'equipment'" title="Proc Effects" :index="sectionIndex('procs')" class="item-editor__wide">
+              <RepeatableList
+                :rows="form.procs.length"
+                add-label="Add Proc"
+                empty-text="No procs. Add one to make this item roll a chance effect in combat."
+                @add="addProc"
+              >
+                <div v-for="(proc, i) in form.procs" :key="i" class="proc-block">
+                  <!-- Summary row: everything that identifies the proc at a
+                       glance. The nine override fields live behind the pencil. -->
+                  <div class="proc-row">
+                    <span class="proc-row__n">Proc {{ i + 1 }}</span>
+                    <select :id="`ie-proc-${i}-trigger`" v-model="proc.trigger" :aria-label="`Proc ${i + 1} trigger`">
+                      <option v-for="t in PROC_TRIGGERS" :key="t.value" :value="t.value">{{ t.label }}</option>
+                    </select>
+                    <div class="proc-row__pct">
+                      <input :id="`ie-proc-${i}-chance`" v-model.number="proc.chancePct" type="number" min="1" max="100" :aria-label="`Proc ${i + 1} chance`" />
+                      <span>%</span>
+                    </div>
+                    <select :id="`ie-proc-${i}-effect`" v-model="proc.effect" :aria-label="`Proc ${i + 1} effect`">
+                      <option value="" disabled>Select an effect…</option>
+                      <option v-for="p in procEffects" :key="p.id" :value="p.id">
+                        {{ p.id }} — {{ p.damage }} {{ p.damageType }}
+                      </option>
+                    </select>
+                    <span class="proc-row__ovr">{{ overrideSummary(proc) }}</span>
+                    <button
+                      type="button"
+                      class="proc-row__act"
+                      :aria-expanded="overridesOpen[i] === true"
+                      :title="overridesOpen[i] ? 'Hide overrides' : 'Edit overrides'"
+                      @click="overridesOpen[i] = !overridesOpen[i]"
+                    >✎</button>
+                    <button type="button" class="proc-row__act proc-block__remove" title="Remove proc" @click="removeProc(i)">✕</button>
+                  </div>
+
+                  <div v-if="overridesOpen[i]" class="proc-overrides">
+                    <p class="proc-overrides__hint">Blank = inherit from the effect.</p>
+                    <div class="proc-overrides__grid">
+                      <EditorField
+                        v-for="f in PROC_OVERRIDE_FIELDS"
+                        :key="f.key"
+                        :label="f.label"
+                        :for-id="`ie-proc-${i}-${f.key}`"
+                      >
+                        <input
+                          :id="`ie-proc-${i}-${f.key}`"
+                          :value="proc[f.key] ?? ''"
+                          :placeholder="effectPlaceholder(proc.effect, f.key)"
+                          type="number"
+                          @input="bindNullable(proc, f.key, $event)"
+                        />
+                      </EditorField>
+                    </div>
+                  </div>
+                </div>
+              </RepeatableList>
+            </SectionCard>
+
+            <!-- Cost -->
+            <SectionCard title="Cost" :index="sectionIndex('cost')">
+              <EditorField label="Purchase Cost (Gold)" hint="(where it sells is set at the shop level)" for-id="ie-cost-gold">
+                <input id="ie-cost-gold" v-model.number="form.costGold" type="number" min="0" />
+              </EditorField>
+            </SectionCard>
+
+            <!-- Crafting -->
+            <SectionCard title="Crafting" :index="sectionIndex('crafting')">
+              <EditorField label="Crafting source" for-id="ie-crafting-source">
+                <select id="ie-crafting-source" v-model="craftingSource">
+                  <option value="none">Not craftable</option>
+                  <option value="recipe">Recipe (ingredients at the Artificer)</option>
+                </select>
+              </EditorField>
+
+              <template v-if="form.crafting.isRecipe">
+                <EditorField label="Craft Cost (Gold)" for-id="ie-recipe-cost">
+                  <input id="ie-recipe-cost" v-model.number="form.crafting.recipeCost" type="number" min="0" />
+                </EditorField>
+                <label class="ed-check" for="ie-recipe-starter">
+                  <input id="ie-recipe-starter" v-model="form.crafting.starter" type="checkbox" />
+                  Automatically learned by every player
+                </label>
+
+                <RepeatableList
+                  :rows="form.crafting.inputs.length"
+                  add-label="Add Ingredient"
+                  @add="form.crafting.inputs.push('')"
+                >
+                  <div v-for="(_input, idx) in form.crafting.inputs" :key="idx" class="item-editor__ingredient">
+                    <select :id="`ie-crafting-input-${idx}`" v-model="form.crafting.inputs[idx]" :aria-label="`Ingredient ${idx + 1}`">
+                      <option value="" disabled>Select an item…</option>
+                      <option v-for="d in allEquipmentItems" :key="d.id" :value="d.id">{{ d.displayName }}</option>
+                    </select>
+                    <button
+                      type="button"
+                      class="item-editor__row-del"
+                      :disabled="form.crafting.inputs.length <= 2"
+                      @click="form.crafting.inputs.splice(idx, 1)"
+                    >✕</button>
+                  </div>
+                </RepeatableList>
+              </template>
+            </SectionCard>
+
+            <!-- Validation sits last, pinned to the final column, so the
+                 checklist reads as the sign-off at the bottom right of the
+                 form rather than competing with it in a side rail. -->
+            <SectionCard title="Validation" class="item-editor__validation">
+              <ValidationChecklist :checks="checks" />
+              <span v-if="statusNote" class="item-editor__status-note">{{ statusNote }}</span>
+            </SectionCard>
+          </div>
+        </GameScrollArea>
+      </template>
+
+      <div v-else class="item-editor__empty">
+        <p v-if="loadError" role="alert">{{ loadError }}</p>
+        <p v-else>Select an item or create a new one.</p>
       </div>
-    </section>
-    <section v-else class="item-editor-main item-editor-main--empty">
-      <p v-if="loadError" role="alert">{{ loadError }}</p>
-      <p v-else>Select an item or create a new one.</p>
-    </section>
+    </template>
+
+  </EditorShell>
+
+  <!-- Icon gallery overlay -->
+  <div v-if="galleryOpen && form" class="icon-gallery-overlay" @click.self="galleryOpen = false">
+    <UiPanel variant="worldMenu" :padding="0" class="icon-gallery">
+      <div class="icon-gallery__inner">
+        <div class="icon-gallery__header">
+          <span>Choose an icon</span>
+          <UiButton size="sm" @click="galleryOpen = false">Close</UiButton>
+        </div>
+        <div class="icon-gallery__filter">
+          <button
+            v-for="group in iconGroups"
+            :key="group.name"
+            type="button"
+            class="icon-gallery__chip"
+            :class="{ 'icon-gallery__chip--on': selectedGroups.has(group.name) }"
+            @click="toggleGroup(group.name)"
+          >
+            {{ group.name }} <span class="icon-gallery__chip-count">{{ group.keys.length }}</span>
+          </button>
+          <button type="button" class="icon-gallery__chip" @click="setAllGroups(true)">All</button>
+          <button type="button" class="icon-gallery__chip" @click="setAllGroups(false)">None</button>
+        </div>
+        <GameScrollArea class="icon-gallery__scroll">
+          <div v-if="galleryKeys.length" class="icon-gallery__grid">
+            <button
+              v-for="key in galleryKeys"
+              :key="key"
+              type="button"
+              class="icon-gallery__item"
+              data-test="icon-gallery-cell"
+              @click="pickGalleryIcon(key)"
+            >
+              <img :src="getItemImageSourceUrl(key)" alt="" />
+              <span>{{ key }}</span>
+            </button>
+          </div>
+          <p v-else class="icon-gallery__empty">No icon groups selected.</p>
+        </GameScrollArea>
+      </div>
+    </UiPanel>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiPanel from '@/components/ui/UiPanel.vue'
+import GameScrollArea from '@/components/ui/GameScrollArea.vue'
+import EditorShell from '@/components/editor/EditorShell.vue'
+import EditorSidebar from '@/components/editor/EditorSidebar.vue'
+import type { SidebarGroup } from '@/components/editor/EditorSidebar.vue'
+import EditorHeader from '@/components/editor/EditorHeader.vue'
+import EditorField from '@/components/editor/EditorField.vue'
+import SectionCard from '@/components/editor/SectionCard.vue'
+import RepeatableList from '@/components/editor/RepeatableList.vue'
+import ValidationChecklist from '@/components/editor/ValidationChecklist.vue'
+import IconPreview from '@/components/editor/IconPreview.vue'
+import ItemPreviewCard from '@/components/ItemPreviewCard.vue'
 import { fetchItemDefs, fetchRecipeDefs } from '@/game/maps/catalog'
 import type { ItemDef, ItemTier } from '@/game/maps/itemDefs'
-import { EditorValidationError, deleteEditorItem, fetchProcEffectDefs, uploadItemIcon, saveEditorItem } from '@/game/items/itemEditorApi'
+import { EditorValidationError, MAX_ITEM_ICON_BYTES, deleteEditorItem, fetchProcEffectDefs, uploadItemIcon, saveEditorItem } from '@/game/items/itemEditorApi'
 import type { ProcEffectDef } from '@/game/items/itemEditorApi'
 import { blankProc, createBlankForm, formFromDef, saveRequestFromForm } from '@/game/items/itemEditorForm'
 import type { ItemEditorForm, ProcForm } from '@/game/items/itemEditorForm'
+import { previewDefFromForm } from '@/game/items/itemEditorPreview'
+import { isFormSaveable, validateItemForm } from '@/game/items/itemEditorValidation'
 import { getItemImageSourceUrl, listIconGroups } from '@/game/rendering/itemAssets'
-import { TIER_COLORS } from '@/game/items/itemRules'
+import { TIER_COLORS, buildItemTooltipBody } from '@/game/items/itemRules'
 
 const items = ref<ItemDef[]>([])            // full catalog, refreshed after saves
 const recipesByOutput = ref(new Map<string, { inputs: string[]; costGold: number; starter?: boolean }>())
@@ -406,12 +355,11 @@ const loadError = ref('')
 const search = ref('')
 const selectedId = ref('')                  // '' = nothing selected
 const form = ref<ItemEditorForm | null>(null)
-const openSection = ref('identity')         // accordion state
 const saving = ref(false)
 const saveError = ref('')                   // EditorValidationError message shown beside Save
-const saveOk = ref(false)
-const deleteStatus = ref('')                // transient feedback after removeOrReset
+const statusNote = ref('')                // transient feedback after removeOrReset
 const galleryOpen = ref(false)
+
 // The icon gallery only surfaces the icon library (assets/icons/**), grouped by
 // subdirectory. Groups start all-selected; toggling a group filters the grid.
 const iconGroups = listIconGroups()
@@ -427,7 +375,8 @@ function setAllGroups(on: boolean) {
   selectedGroups.clear()
   if (on) for (const g of iconGroups) selectedGroups.add(g.name)
 }
-// Overrides-collapsed state per proc, keyed by list index. Indices shift when a
+
+// Overrides-expanded state per proc, keyed by list index. Indices shift when a
 // proc is removed, so removeProc re-keys it rather than leaving it stale.
 const overridesOpen = reactive<Record<number, boolean>>({})
 
@@ -435,6 +384,10 @@ const TIER_OPTIONS: ItemTier[] = ['common', 'uncommon', 'rare', 'epic', 'legenda
 // Organizational grouping only — also picks the catalog subdirectory the def is
 // written to (Weapon → catalog/items/weapons/…). Not an equip restriction.
 const CATEGORY_OPTIONS = ['Weapon', 'Armor', 'Shield', 'Accessory', 'Consumable']
+// Mirrors itemCategorySubdir on the server; drives the file path in the header.
+const CATEGORY_SUBDIR: Record<string, string> = {
+  Weapon: 'weapons', Armor: 'armor', Shield: 'shields', Accessory: 'accessories', Consumable: 'consumables',
+}
 // Only the consumable effect types the server actually implements
 // (applyConsumableToUnitLocked). Future types (buffs, mana) add cases there
 // first, then an option here.
@@ -463,21 +416,107 @@ const PROC_OVERRIDE_FIELDS: { key: ProcNullableKey; label: string }[] = [
   { key: 'projectileScale', label: 'Projectile Scale' },
   { key: 'bounceCount', label: 'Bounce Count' },
   { key: 'bounceRange', label: 'Bounce Range' },
-  { key: 'bounceDamageFalloff', label: 'Bounce Damage Falloff' },
+  { key: 'bounceDamageFalloff', label: 'Bounce Falloff' },
   { key: 'slowMultiplier', label: 'Slow Multiplier' },
   { key: 'slowDurationSeconds', label: 'Slow Duration (s)' },
   { key: 'burnDamagePerSecond', label: 'Burn Damage/s' },
   { key: 'burnDurationSeconds', label: 'Burn Duration (s)' },
 ]
 
-// Sidebar list: every item (equipment AND consumable), search-filtered.
+// The combat events a proc can hang off. Adding a trigger here requires the
+// server to handle it too (game.ItemProcTrigger + rollEquipment*ProcsLocked).
+const PROC_TRIGGERS: { value: ProcForm['trigger']; label: string }[] = [
+  { value: 'onHit', label: 'On hit' },
+  { value: 'onStruck', label: 'When struck' },
+]
+
+// ── Sidebar ─────────────────────────────────────────────────────────────────
+
 const filteredItems = computed(() =>
   items.value.filter((d) =>
     search.value === '' || d.id.includes(search.value.toLowerCase()) || d.displayName.toLowerCase().includes(search.value.toLowerCase())))
 
-// Crafting inputs stay equipment-only and are never constrained by the
-// sidebar search (a leftover search term must not truncate the dropdown).
+const sidebarGroups = computed<SidebarGroup[]>(() =>
+  TIER_OPTIONS
+    .map((tier) => ({
+      label: tier,
+      color: TIER_COLORS[tier],
+      entries: filteredItems.value
+        .filter((d) => d.tier === tier)
+        .map((d) => ({
+          id: d.id,
+          name: d.displayName,
+          iconUrl: getItemImageSourceUrl(d.iconKey),
+          color: TIER_COLORS[d.tier],
+        })),
+    }))
+    .filter((g) => g.entries.length > 0))
+
+// Crafting inputs stay equipment-only and are never constrained by the sidebar
+// search (a leftover search term must not truncate the dropdown).
 const allEquipmentItems = computed(() => items.value.filter((d) => d.kind === 'equipment'))
+
+// ── Header ──────────────────────────────────────────────────────────────────
+
+const breadcrumb = computed(() => {
+  if (!form.value) return ''
+  const kind = form.value.kind === 'consumable' ? 'Consumable' : 'Equipment'
+  return `${kind} • ${form.value.category} • Tier: ${form.value.tier}`
+})
+
+const filePath = computed(() => {
+  if (!form.value?.id) return ''
+  const dir = CATEGORY_SUBDIR[form.value.category] ?? 'misc'
+  return `server/internal/game/catalog/items/${dir}/${form.value.tier}/${form.value.id}.json`
+})
+
+/** True when the open item is one the author created rather than a shipped one.
+ *  `custom` (not `overridden`) is the reliable signal — see ListItemDefs. */
+const selectedIsCustom = computed(() =>
+  items.value.find((d) => d.id === selectedId.value)?.custom === true)
+
+// Deleting an item you made and resetting a shipped one to its catalog default
+// are different acts, so the button says which it is. An unsaved draft has
+// nothing to remove, so it shows no button at all.
+const removeLabel = computed(() => {
+  if (!form.value || form.value.isNew) return ''
+  return selectedIsCustom.value ? 'Delete' : 'Reset'
+})
+
+// "Last saved" is session-only: it starts at the moment the Save button
+// succeeds and ages from there. The server stores no modified time, so a page
+// reload legitimately shows nothing until the next save.
+const lastSavedAt = ref<number | null>(null)
+const now = ref(Date.now())
+let clock: ReturnType<typeof setInterval> | null = null
+
+const savedLabel = computed(() => {
+  if (lastSavedAt.value === null) return ''
+  const secs = Math.max(0, Math.round((now.value - lastSavedAt.value) / 1000))
+  if (secs < 45) return 'just now'
+  const mins = Math.round(secs / 60)
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.round(mins / 60)
+  return `${hours} hr ago`
+})
+
+// ── Sections ────────────────────────────────────────────────────────────────
+
+// Section numbers follow what is actually on screen, so a consumable doesn't
+// show gaps where the equipment-only cards would have been.
+const visibleSections = computed(() => {
+  const equipment = form.value?.kind === 'equipment'
+  return [
+    'identity',
+    'preview',
+    ...(equipment ? ['stats', 'elemental', 'procs'] : ['consumable']),
+    'cost',
+    'crafting',
+  ]
+})
+function sectionIndex(key: string): number {
+  return visibleSections.value.indexOf(key) + 1
+}
 
 // Crafting source select ↔ the item's isRecipe flag. Modeled as an explicit
 // choice ("Not craftable" / "Recipe") rather than a bare checkbox so future
@@ -489,30 +528,7 @@ const craftingSource = computed<'none' | 'recipe'>({
   },
 })
 
-// group by tier for the sidebar; TIER_COLORS drives the badge color.
-const groupedItems = computed(() => {
-  const groups = new Map<ItemTier, ItemDef[]>()
-  for (const t of TIER_OPTIONS) groups.set(t, [])
-  for (const d of filteredItems.value) {
-    const list = groups.get(d.tier)
-    if (list) list.push(d)
-  }
-  return TIER_OPTIONS
-    .map((tier) => ({ tier, items: groups.get(tier) ?? [] }))
-    .filter((g) => g.items.length > 0)
-})
-
-// selectedOverridden: items.find(selectedId)?.overridden (needs `overridden?:
-// boolean` on the client ItemDef type). In dev builds every item reports
-// overridden (writable dir == embed source) — see sidebar dot comment above.
-const selectedOverridden = computed(() => items.value.find((d) => d.id === selectedId.value)?.overridden ?? false)
-
-// The combat events a proc can hang off. Adding a trigger here requires the
-// server to handle it too (game.ItemProcTrigger + rollEquipment*ProcsLocked).
-const PROC_TRIGGERS: { value: ProcForm['trigger']; label: string }[] = [
-  { value: 'onHit', label: 'On hit' },
-  { value: 'onStruck', label: 'When struck' },
-]
+// ── Procs ───────────────────────────────────────────────────────────────────
 
 function addProc() {
   if (!form.value) return
@@ -531,6 +547,13 @@ function removeProc(index: number) {
   open.forEach((v, i) => { overridesOpen[i] = v })
 }
 
+/** "2 overrides" / "no overrides" — the count of fields the item re-tunes. */
+function overrideSummary(proc: ProcForm): string {
+  const n = PROC_OVERRIDE_FIELDS.filter((f) => proc[f.key] !== null).length
+  if (n === 0) return 'no overrides'
+  return `${n} override${n > 1 ? 's' : ''}`
+}
+
 function effectPlaceholder(effectId: string, key: ProcNullableKey): string {
   const effect = procEffects.value.find((p) => p.id === effectId)
   if (!effect) return ''
@@ -546,6 +569,53 @@ function bindNullable(proc: ProcForm, key: ProcNullableKey, ev: Event) {
   proc[key] = value === '' ? null : Number(value)
 }
 
+// ── Preview + validation ────────────────────────────────────────────────────
+
+// The draft as the server would serve it — procs resolved against the effect
+// catalog so the preview can show "25 Fire bolt" for an unsaved item.
+const previewDef = computed<ItemDef>(() =>
+  previewDefFromForm(form.value ?? createBlankForm(), procEffects.value))
+
+// The recipe as the preview card renders it. Ingredients are ids on the form,
+// so resolve each to the icon a player would recognise; an id that names no
+// item (a half-filled row) is dropped rather than shown as a broken icon.
+const previewCraft = computed(() => {
+  if (!form.value?.crafting.isRecipe) return undefined
+  const inputs = form.value.crafting.inputs
+    .map((id) => items.value.find((d) => d.id === id))
+    .filter((d): d is ItemDef => d !== undefined)
+    .map((d) => ({ def: d, iconUrl: getItemImageSourceUrl(d.iconKey) }))
+  return { costGold: form.value.crafting.recipeCost, inputs }
+})
+
+// The icon's <img src>. Reading iconUploadedAt off the catalog entry is what
+// makes this recompute after an upload: reloadCatalog() refreshes `items`, the
+// asset layer learns about the new icon, and getItemImageSourceUrl then hands
+// back the versioned server URL instead of the bundled art.
+const previewIconUrl = computed(() => {
+  if (!form.value) return ''
+  void items.value.find((d) => d.id === form.value?.id)?.iconUploadedAt
+  return getItemImageSourceUrl(form.value.iconKey || form.value.id)
+})
+
+const checks = computed(() => {
+  if (!form.value) return []
+  return validateItemForm(form.value, { knownItemIds: new Set(items.value.map((d) => d.id)) })
+})
+
+// Save is blocked while the checklist has a failure — most importantly an id
+// collision, which would otherwise overwrite an existing item.
+const canSave = computed(() => !!form.value?.id && isFormSaveable(checks.value))
+
+// The item's description is DERIVED, not authored: it is exactly the stat block
+// a match tooltip renders (buildItemTooltipBody). The shop tooltip in a match
+// prints `description` as its stat text, which is why the shipped items
+// hand-copied "+5 damage, …" into it — this keeps that text in lockstep with
+// the stats instead. Written to the def on save.
+const generatedDescription = computed(() => buildItemTooltipBody(previewDef.value))
+
+// ── Catalog + CRUD ──────────────────────────────────────────────────────────
+
 async function reloadCatalog() {
   const [defs, recipes] = await Promise.all([fetchItemDefs(), fetchRecipeDefs().catch(() => [])])
   items.value = defs
@@ -555,6 +625,7 @@ async function reloadCatalog() {
 }
 
 onMounted(async () => {
+  clock = setInterval(() => { now.value = Date.now() }, 15_000)
   try {
     await reloadCatalog()
     procEffects.value = await fetchProcEffectDefs()
@@ -563,33 +634,57 @@ onMounted(async () => {
   }
 })
 
+onBeforeUnmount(() => {
+  if (clock !== null) clearInterval(clock)
+})
+
+function resetStatus() {
+  saveError.value = ''
+  statusNote.value = ''
+  lastSavedAt.value = null
+  for (const key of Object.keys(overridesOpen)) delete overridesOpen[Number(key)]
+}
+
 function selectItem(id: string) {
   const def = items.value.find((d) => d.id === id)
   if (!def) return
   selectedId.value = id
-  saveError.value = ''
-  saveOk.value = false
-  deleteStatus.value = ''
+  resetStatus()
   form.value = formFromDef(def, recipesByOutput.value.get(id) ?? null)
 }
 
 function newItem() {
   selectedId.value = ''
-  saveError.value = ''
-  saveOk.value = false
-  deleteStatus.value = ''
+  resetStatus()
   form.value = createBlankForm()
+}
+
+/** Clone the selected item as a brand-new, unsaved def. The id is blanked (it
+ *  must be unique, and a saved id is immutable), so the author names it. */
+function duplicateItem(id: string) {
+  const def = items.value.find((d) => d.id === id)
+  if (!def) return
+  selectedId.value = ''
+  resetStatus()
+  const copy = formFromDef(def, recipesByOutput.value.get(id) ?? null)
+  copy.id = ''
+  copy.isNew = true
+  copy.displayName = `${def.displayName} Copy`
+  form.value = copy
 }
 
 async function save() {
   if (!form.value) return
   saving.value = true
   saveError.value = ''
-  saveOk.value = false
-  deleteStatus.value = ''
+  statusNote.value = ''
   try {
+    // Description is derived, so stamp the current generated text onto the form
+    // right before saving — that is what the match tooltip will show.
+    form.value.description = generatedDescription.value
     await saveEditorItem(saveRequestFromForm(form.value))
-    saveOk.value = true
+    lastSavedAt.value = Date.now()
+    now.value = lastSavedAt.value
     form.value.isNew = false
     selectedId.value = form.value.id
     await reloadCatalog()
@@ -601,21 +696,35 @@ async function save() {
   }
 }
 
-async function removeOrReset() {
-  if (!form.value || form.value.isNew) return
+/**
+ * Deletes an author-created item, or undoes the last save on a shipped one.
+ * The server decides which and says so in its status (see DeleteEditorItem):
+ * `reverted` = back to the state before the last save, `reset` = back to the
+ * catalog default (nothing left to undo).
+ */
+async function removeOrReset(id: string) {
+  const def = items.value.find((d) => d.id === id)
+  if (!def) return
+  const custom = def.custom === true
+  const ok = window.confirm(custom
+    ? `Delete "${def.displayName}" permanently?`
+    : `Undo the last save on "${def.displayName}"? It goes back to how it was before you last saved (or to the catalog default if there is nothing left to undo).`)
+  if (!ok) return
+
   saveError.value = ''
-  saveOk.value = false
-  deleteStatus.value = ''
+  statusNote.value = ''
   try {
-    const status = await deleteEditorItem(form.value.id)
+    const status = await deleteEditorItem(id)
     await reloadCatalog()
     if (status === 'deleted') {
-      newItem()
-      deleteStatus.value = 'Item deleted.'
-    } else {
-      selectItem(form.value.id) // reset: reload the embedded version
-      deleteStatus.value = 'Reset to catalog default.'
+      if (selectedId.value === id) newItem()
+      statusNote.value = 'Item deleted.'
+      return
     }
+    selectItem(id) // reload the restored def into the form
+    statusNote.value = status === 'reverted'
+      ? 'Reverted to the state before your last save.'
+      : 'Reset to the catalog default.'
   } catch (err) {
     saveError.value = err instanceof Error ? err.message : String(err)
   }
@@ -630,10 +739,15 @@ async function onIconFileChosen(ev: Event) {
     input.value = ''
     return
   }
+  saveError.value = ''
+  statusNote.value = ''
   try {
     await uploadItemIcon(form.value.id, file)
     form.value.iconKey = form.value.id // server forces iconKey to the id
+    // Refreshes iconUploadedAt, which is what tells the asset layer to serve
+    // the upload instead of the bundled art (and busts the browser cache).
     await reloadCatalog()
+    statusNote.value = 'Icon uploaded.'
   } catch (err) {
     saveError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -646,457 +760,339 @@ function pickGalleryIcon(key: string) {
   galleryOpen.value = false
 }
 
-function toggleSection(key: string) {
-  openSection.value = openSection.value === key ? '' : key
-}
-
-// When the item's kind flips, keep category and the open accordion coherent:
-// consumables default to the Consumable category (drives the consumables/
-// catalog subdir + merchant_potions loot bucket) and open the Consumable
-// section; switching back to equipment clears the Consumable category.
-const EQUIPMENT_ONLY_SECTIONS = ['stats', 'elemental', 'procs']
+// When the item's kind flips, keep the category coherent: consumables move to
+// the Consumable category (which drives the consumables/ catalog subdir + the
+// merchant_potions loot bucket); switching back to equipment clears it.
 function onKindChanged() {
   if (!form.value) return
   if (form.value.kind === 'consumable') {
     form.value.category = 'Consumable'
-    if (EQUIPMENT_ONLY_SECTIONS.includes(openSection.value)) openSection.value = 'consumable'
   } else if (form.value.category === 'Consumable') {
     form.value.category = 'Weapon'
-    if (openSection.value === 'consumable') openSection.value = 'identity'
   }
 }
-
 </script>
 
 <style scoped>
-.item-editor-panel {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  min-width: 0;
-  gap: 12px;
-  padding: 16px;
-  box-sizing: border-box;
+.item-editor {
+  font-family: var(--font-body);
+  color: var(--ed-text);
 }
 
-.item-editor-sidebar {
-  flex: 0 0 280px;
+.item-editor__scroll {
+  flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+}
+
+/* Cards flow into as many columns as fit; the proc card asks for two because
+   its rows are wide. */
+.item-editor__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--ed-gap);
+  align-content: start;
+  padding-right: 4px;
+}
+
+.item-editor__wide {
+  grid-column: span 2;
+}
+
+@media (max-width: 1500px) {
+  .item-editor__wide {
+    grid-column: span 1;
+  }
+}
+
+.item-editor__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
-  background: rgba(3, 8, 14, 0.86);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 16px;
-  padding: 12px;
 }
 
-.item-editor-main {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+.item-editor__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
-  background: rgba(3, 8, 14, 0.86);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 16px;
-  padding: 12px;
 }
 
-.item-editor-main--empty {
+.item-editor__empty {
+  flex: 1 1 auto;
+  display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(226, 232, 240, 0.72);
+  color: var(--ed-text-dim);
 }
 
-.sidebar-actions {
+/* A generated, read-only field: dimmer text and no focus ring, so it reads as
+   output rather than an input someone forgot to enable. */
+.item-editor__generated {
+  color: var(--ed-text-dim);
+  font-style: italic;
+  resize: none;
+}
+
+.item-editor__generated:focus {
+  border-color: var(--ed-line);
+  box-shadow: none;
+}
+
+/* ── Preview: icon + its art pickers on the left, description on the right ── */
+.item-editor__preview {
+  display: grid;
+  /* Both tracks are minmax(0, …): a fixed `auto` left track lets the file
+     input's wide intrinsic size push the column open and shove content out of
+     the card. */
+  grid-template-columns: minmax(0, 132px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.item-editor__icon-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.item-editor__icon-col :deep(.ed-icon) {
+  align-self: center;
+}
+
+.item-editor__preview-card {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .item-editor__preview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Repeatable rows ── */
+.item-editor__elem-row {
+  display: grid;
+  grid-template-columns: 1fr 90px auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.item-editor__ingredient {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.item-editor__row-del {
+  padding: 4px 8px;
+  font-size: 0.76rem;
+  color: var(--ed-text-dim);
+  background: none;
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+}
+
+.item-editor__row-del:hover:not(:disabled) {
+  color: var(--ed-danger);
+  border-color: rgba(240, 132, 108, 0.4);
+}
+
+.item-editor__row-del:disabled {
+  opacity: 0.4;
+}
+
+/* ── Procs ── */
+.proc-block {
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+  padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.sidebar-actions input {
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #f8fafc;
-  padding: 7px 9px;
-  font-size: 0.78rem;
-}
-
-.sidebar-list {
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.sidebar-group__label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 6px 4px 2px;
-}
-
-.sidebar-item {
-  display: flex;
+.proc-row {
+  display: grid;
+  grid-template-columns: auto 130px 74px minmax(0, 1fr) auto auto auto;
+  gap: 6px;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.6);
-  padding: 6px 8px;
-  text-align: left;
 }
 
-.sidebar-item--selected {
-  border-color: rgba(215, 187, 132, 0.6);
-  background: rgba(30, 41, 59, 0.9);
-}
-
-.sidebar-item__icon {
-  width: 24px;
-  height: 24px;
-  image-rendering: pixelated;
-  flex: 0 0 auto;
-}
-
-.sidebar-item__name {
-  flex: 1;
-  font-size: 0.78rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.proc-row__n {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ed-brass-dim);
   white-space: nowrap;
 }
 
-.sidebar-item__overridden {
-  color: #86efac;
+.proc-row__pct {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.76rem;
+  color: var(--ed-text-dim);
+}
+
+.proc-row__ovr {
   font-size: 0.7rem;
+  color: var(--ed-text-dim);
+  white-space: nowrap;
 }
 
-.sidebar-empty {
-  color: rgba(226, 232, 240, 0.6);
+.proc-row__act {
+  padding: 4px 7px;
   font-size: 0.78rem;
-  padding: 8px 4px;
+  line-height: 1;
+  color: var(--ed-text-dim);
+  background: none;
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
 }
 
-.icon-preview-row {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
+.proc-row__act:hover {
+  color: var(--ed-brass);
+  border-color: var(--ed-line-strong);
 }
 
-.icon-preview {
-  width: 64px;
-  height: 64px;
-  image-rendering: pixelated;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.92);
+.proc-block__remove:hover {
+  color: var(--ed-danger);
+  border-color: rgba(240, 132, 108, 0.4);
 }
 
-.icon-preview-actions {
-  display: flex;
-  flex-direction: column;
+.proc-overrides {
+  border-top: 1px solid var(--ed-line);
+  padding-top: 6px;
+}
+
+.proc-overrides__hint {
+  margin: 0 0 6px;
+  font-size: 0.7rem;
+  color: var(--ed-text-dim);
+}
+
+.proc-overrides__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 8px;
-  flex: 1;
 }
 
+/* ── Validation ──
+   Last card in the grid AND pinned to the final column, so it lands bottom
+   right of the form no matter how many columns fit. */
+.item-editor__validation {
+  grid-column: -2 / -1;
+}
+
+.item-editor__status-note {
+  font-size: 0.76rem;
+  color: var(--ed-ok);
+}
+
+/* ── Icon gallery ── */
 .icon-gallery-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(3, 8, 14, 0.72);
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  background: rgba(6, 8, 14, 0.72);
 }
 
 .icon-gallery {
-  width: min(640px, 90vw);
-  max-height: 80vh;
-  overflow-y: auto;
-  background: rgba(8, 14, 24, 0.96);
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 12px;
+  width: min(900px, 92vw);
+  height: min(680px, 86vh);
+}
+
+.icon-gallery__inner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px;
+  box-sizing: border-box;
 }
 
 .icon-gallery__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
-  color: #f8fafc;
-  font-weight: 700;
+  font-family: var(--font-title);
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ed-brass);
 }
 
 .icon-gallery__filter {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-}
-
-.icon-gallery__filter-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: rgba(148, 163, 184, 0.9);
-  margin-right: 2px;
-}
-
-.icon-gallery__filter-actions {
-  display: inline-flex;
-  gap: 6px;
-  margin-left: auto;
+  gap: 4px;
 }
 
 .icon-gallery__chip {
-  font-size: 0.68rem;
-  color: rgba(226, 232, 240, 0.82);
-  background: rgba(15, 23, 42, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  padding: 3px 8px;
+  font-size: 0.7rem;
+  color: var(--ed-text-dim);
+  background: rgba(212, 168, 71, 0.06);
+  border: 1px solid var(--ed-line);
   border-radius: 999px;
-  padding: 3px 9px;
 }
 
 .icon-gallery__chip--on {
-  color: #f8fafc;
-  background: rgba(56, 189, 248, 0.22);
-  border-color: rgba(56, 189, 248, 0.55);
+  color: var(--ed-brass);
+  border-color: var(--ed-line-strong);
 }
 
 .icon-gallery__chip-count {
   opacity: 0.6;
-  font-variant-numeric: tabular-nums;
 }
 
-.icon-gallery__empty {
-  color: rgba(148, 163, 184, 0.9);
-  font-size: 0.8rem;
-  text-align: center;
-  padding: 24px 0;
+.icon-gallery__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .icon-gallery__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 6px;
+  padding-right: 4px;
 }
 
 .icon-gallery__item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
-  padding: 6px;
+  gap: 3px;
+  padding: 6px 4px;
+  background: rgba(8, 6, 4, 0.4);
+  border: 1px solid var(--ed-line);
+  border-radius: var(--ed-radius);
+}
+
+.icon-gallery__item:hover {
+  border-color: var(--ed-line-strong);
 }
 
 .icon-gallery__item img {
   width: 40px;
   height: 40px;
+  object-fit: contain;
   image-rendering: pixelated;
 }
 
 .icon-gallery__item span {
-  font-size: 0.62rem;
-  color: rgba(226, 232, 240, 0.82);
+  font-size: 0.6rem;
+  color: var(--ed-text-dim);
   text-align: center;
   word-break: break-all;
 }
 
-.elemental-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.elemental-row select,
-.elemental-row input {
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #f8fafc;
-  padding: 7px 9px;
-  font-size: 0.78rem;
-}
-
-.crafting-input-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-}
-
-.crafting-input-row .control-group {
-  flex: 1;
-}
-
-.proc-empty {
-  margin: 0;
-  font-size: 0.78rem;
-  color: rgba(226, 232, 240, 0.6);
-}
-
-.proc-block {
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 10px;
-  padding: 8px;
-  display: grid;
-  gap: 8px;
-}
-
-.proc-block__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.proc-block__title {
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.proc-block__remove {
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  background: rgba(248, 113, 113, 0.12);
-  color: #fca5a5;
-  border-radius: 6px;
-  padding: 3px 8px;
-  font-size: 0.72rem;
-}
-
-.proc-overrides {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  padding: 0;
-  margin: 0;
-}
-
-.proc-overrides__toggle {
-  width: 100%;
-  border: 0;
-  background: rgba(15, 23, 42, 0.6);
-  color: rgba(226, 232, 240, 0.86);
-  text-align: left;
-  padding: 6px 8px;
-  font-size: 0.74rem;
-  font-weight: 700;
-}
-
-.proc-overrides__body {
-  display: grid;
-  gap: 8px;
-  padding: 8px;
-}
-
-.editor-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: auto;
-  padding-top: 8px;
-}
-
-.save-error {
-  color: #fca5a5;
-  font-size: 0.78rem;
-}
-
-.save-ok {
-  color: #86efac;
-  font-size: 0.78rem;
-}
-
-/* editor-section / control-group idiom, copied locally from MapEditorPanel.vue
-   (scoped styles aren't shared across SFCs — duplication accepted per plan). */
-.editor-section {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 12px;
-  background: rgba(8, 14, 24, 0.55);
-  overflow: clip;
-  flex: 0 0 auto;
-}
-
-.editor-section--open {
-  background: rgba(8, 14, 24, 0.72);
-}
-
-.editor-section__summary {
-  width: 100%;
-  border: 0;
-  padding: 10px 12px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #f8fafc;
-  text-align: left;
-  background: linear-gradient(180deg, rgba(25, 35, 52, 0.92), rgba(14, 22, 36, 0.94));
-}
-
-.editor-section__summary::after {
-  content: '+';
-  float: right;
-  color: #d7bb84;
-}
-
-.editor-section--open .editor-section__summary::after {
-  content: '-';
-}
-
-.editor-section__body {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-}
-
-.control-group {
-  display: grid;
-  gap: 4px;
-}
-
-.control-group--checkbox label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.control-group label {
-  color: rgba(226, 232, 240, 0.86);
-  font-size: 0.75rem;
-}
-
-.control-group input,
-.control-group select,
-.control-group textarea {
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #f8fafc;
-  padding: 7px 9px;
-  font-size: 0.78rem;
-}
-
-.field-hint {
-  font-weight: 400;
-  opacity: 0.65;
-  text-transform: none;
-  letter-spacing: 0;
+.icon-gallery__empty {
+  color: var(--ed-text-dim);
+  font-size: 0.8rem;
 }
 </style>

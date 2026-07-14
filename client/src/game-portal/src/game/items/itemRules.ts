@@ -10,10 +10,14 @@ export const TIER_COLORS: Record<ItemTier, string> = {
 }
 
 /**
- * Builds a short human-readable stat description for an item tooltip.
- * E.g. "+5 Damage, +2 Armor" for equipment; "Heals 50 HP" for a potion.
+ * Builds an item tooltip's stat lines — one entry per fact ("+5 Damage",
+ * "10% on hit: 25 Fire bolt"). This is the single source of truth for what an
+ * item "says": the in-game hover tooltip and the item editor's live preview
+ * both render from it, so the editor can never drift from the game.
+ *
+ * Consumables get a "Heals 50 HP" style line instead of stats.
  */
-export function buildItemTooltipBody(def: ItemDef): string {
+export function buildItemTooltipLines(def: ItemDef): string[] {
   const parts: string[] = []
 
   if (def.kind === 'consumable' && def.consumable) {
@@ -75,5 +79,14 @@ export function buildItemTooltipBody(def: ItemDef): string {
       : `${pct}% on hit: ${proc.damage} ${elem} bolt`)
   }
 
-  return parts.join(', ')
+  return parts
+}
+
+/**
+ * The stat block as one comma-joined string, for the in-game hover tooltip
+ * (ItemHoverTooltip) and the shop action tooltips. The item editor renders the
+ * LINES instead — same facts, its own presentation.
+ */
+export function buildItemTooltipBody(def: ItemDef): string {
+  return buildItemTooltipLines(def).join(', ')
 }

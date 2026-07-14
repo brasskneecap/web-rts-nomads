@@ -3,8 +3,8 @@
     class="ui-button"
     :class="[`ui-button--${size}`, { 'ui-button--selected': selected, 'ui-button--disabled': disabled }]"
     :style="{
-      '--ui-panel-image': `url(${uiPanelUrl})`,
-      '--ui-panel-slice': String(theme.uiPanel.slice),
+      '--ui-panel-image': `url(${art.image})`,
+      '--ui-panel-slice': String(art.slice),
     }"
     :disabled="disabled"
     :aria-pressed="selected"
@@ -17,7 +17,10 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import uiPanelUrl from '@/assets/ui/themes/default/ui_panel.png'
+import activeButtonUrl from '@/assets/ui/themes/updated/active-button.png'
+import secondaryButtonUrl from '@/assets/ui/themes/updated/secondary-button.png'
 import theme from '@/assets/ui/themes/default/theme.json'
 import { useSoundHooks } from '@/composables/useSoundHooks'
 
@@ -25,11 +28,30 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   selected?: boolean
   size?: 'sm' | 'md' | 'lg'
+  /**
+   * Which button plate to paint.
+   * - `default`: the original ui_panel art (every pre-existing call site).
+   * - `active`: the blue "primary action" plate (Save, Add New, Gallery).
+   * - `secondary`: the dark stone plate for the lesser action beside it
+   *   (Reset / Delete).
+   */
+  variant?: 'default' | 'active' | 'secondary'
 }>(), {
   disabled: false,
   selected: false,
   size: 'md',
+  variant: 'default',
 })
+
+// Slices are the brass frame thickness of each plate; `fill` stretches the
+// middle, so the art scales to any label width without distorting the corners.
+const BUTTON_ART = {
+  default: { image: uiPanelUrl, slice: theme.uiPanel.slice },
+  active: { image: activeButtonUrl, slice: 14 },
+  secondary: { image: secondaryButtonUrl, slice: 14 },
+} as const
+
+const art = computed(() => BUTTON_ART[props.variant])
 
 const emit = defineEmits<{
   click: []

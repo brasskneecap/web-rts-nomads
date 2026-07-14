@@ -18,9 +18,18 @@ import theme from '@/assets/ui/themes/default/theme.json'
 const props = withDefaults(defineProps<{
   padding?: number
   variant?: 'default' | 'parchment' | 'footer' | 'worldMenu' | 'worldInner' | 'warRoomInner' | 'innerPanel'
+  /**
+   * How the 9-slice's edges and fill are laid down.
+   * - `round` (default): tiled, so a wood grain or brass rivet keeps its scale
+   *   however large the panel gets. Right for the framing panels.
+   * - `stretch`: scaled to fit. Right when the fill is a continuous texture
+   *   (parchment) and tiling would show a visible repeat seam.
+   */
+  repeat?: 'round' | 'stretch'
 }>(), {
   padding: 12,
   variant: 'default',
+  repeat: 'round',
 })
 
 const variants = {
@@ -38,6 +47,7 @@ const panelStyle = computed(() => {
   return {
     '--ui-panel-image': `url(${v.image})`,
     '--ui-panel-slice': String(v.slice),
+    '--ui-panel-repeat': props.repeat,
     padding: `${props.padding}px`,
   }
 })
@@ -50,7 +60,7 @@ const panelStyle = computed(() => {
   border-image-source: var(--ui-panel-image);
   border-image-slice: var(--ui-panel-slice) fill;
   border-image-width: calc(var(--ui-panel-slice) * 1px);
-  border-image-repeat: round;
+  border-image-repeat: var(--ui-panel-repeat, round);
   image-rendering: pixelated;
   box-sizing: border-box;
 }

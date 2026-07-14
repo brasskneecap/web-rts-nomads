@@ -97,8 +97,23 @@ export type ItemDef = {
    * writable overrides directory rather than the embedded default catalog.
    * Dev-build quirk: in local dev the writable dir mirrors the embedded
    * source, so every item reports `overridden: true` — expected, not a bug.
+   * Because of that quirk it is NOT a usable "did the author make this"
+   * signal; use `custom` for that.
    */
   overridden?: boolean
+  /**
+   * Editor-only flag: true when the author CREATED this item (it does not ship
+   * in the embedded catalog). Drives whether deleting removes the item or
+   * resets it to its shipped default. Unlike `overridden`, it is accurate in
+   * dev builds.
+   */
+  custom?: boolean
+  /**
+   * mtime (unix seconds) of the author's uploaded icon, or absent when there is
+   * none. Non-zero means the icon must be served from the server rather than
+   * from bundled art — see registerUploadedIcons in rendering/itemAssets.ts.
+   */
+  iconUploadedAt?: number
   /** Stat changes applied while held. Absent = no stat changes. */
   modifiers?: ItemModifiers
   /** Named effect tags granted while held. Absent = no effects. */

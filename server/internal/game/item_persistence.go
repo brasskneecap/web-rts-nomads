@@ -69,7 +69,10 @@ type itemDefDisk struct {
 // renderItemDefJSON serializes a def in the AUTHORED form for disk.
 func renderItemDefJSON(def *ItemDef) ([]byte, error) {
 	d := itemDefDisk{ItemDef: *def}
+	// Runtime-only provenance flags never reach disk.
 	d.ItemDef.Overridden = false
+	d.ItemDef.Custom = false
+	d.ItemDef.IconUploadedAt = 0
 	for _, p := range def.Procs {
 		d.Procs = append(d.Procs, itemProcDisk(p))
 	}
@@ -97,19 +100,10 @@ func itemCategorySubdir(def *ItemDef) string {
 	}
 }
 
-// SaveItemDef validates, writes <dir>/<category>/<tier>/<id>.json in authored
-// form, and registers the def into the overlay (live without restart).
-func SaveItemDef(def *ItemDef) error {
-	if !itemIDPattern.MatchString(def.ID) {
-		return fmt.Errorf("item id %q must match %s", def.ID, itemIDPattern)
-	}
-	if err := validateItemDef(def); err != nil {
-		return err
-	}
-	dir, err := resolveItemsDir()
-	if err != nil {
-		return err
-	}
+// writeItemDefFile writes def to <dir>/<category>/<tier>/<id>.json in AUTHORED
+// form, creating the directory as needed. Shared by SaveItemDef and the
+// restore-on-reset path in DeleteItemOverride.
+func writeItemDefFile(dir string, def *ItemDef) error {
 	tier := string(def.Tier)
 	if tier == "" {
 		tier = string(ItemTierCommon)
@@ -122,10 +116,77 @@ func SaveItemDef(def *ItemDef) error {
 	if err != nil {
 		return err
 	}
+	// Trailing newline: these files are committed, and a missing one makes every
+	// editor save show up as a "\ No newline at end of file" diff.
+	return os.WriteFile(filepath.Join(outDir, def.ID+".json"), append(raw, '\n'), 0o644)
+}
+
+// ─── Undo: the state each item was in before its most recent save ───────────
+//
+// itemUndo holds one level of history per item: the def as it stood BEFORE the
+// last SaveItemDef. The editor's Reset restores this, so "reset" means "undo my
+// last save" rather than "throw away everything back to the shipped default" —
+// which is what an author actually wants after a bad edit.
+//
+// In memory, deliberately: an undo step is scoped to the editing session, and
+// persisting it would mean writing shadow copies of every item into a directory
+// that is also the embed source. When there is no undo step (fresh server, or a
+// second Reset in a row), Reset falls back to the shipped catalog default.
+var (
+	itemUndoMu sync.RWMutex
+	itemUndo   = map[string]*ItemDef{}
+)
+
+// snapshotItemForUndoLocked records the item's current def as its undo step.
+// Called before a save overwrites it. A def that does not exist yet (a brand-new
+// item) records nothing — there is no prior state to go back to.
+func snapshotItemForUndo(id string) {
+	prior, ok := getItemDef(id)
+	if !ok {
+		return
+	}
+	snap := *prior
+	// Runtime-only provenance is re-derived on read; never carry it into a def
+	// we might write back to disk.
+	snap.Overridden = false
+	snap.Custom = false
+	snap.IconUploadedAt = 0
+	itemUndoMu.Lock()
+	itemUndo[id] = &snap
+	itemUndoMu.Unlock()
+}
+
+// takeItemUndo pops the item's undo step, if any. One level: after it is used,
+// a further Reset falls back to the shipped default.
+func takeItemUndo(id string) (*ItemDef, bool) {
+	itemUndoMu.Lock()
+	defer itemUndoMu.Unlock()
+	def, ok := itemUndo[id]
+	if ok {
+		delete(itemUndo, id)
+	}
+	return def, ok
+}
+
+// SaveItemDef validates, writes <dir>/<category>/<tier>/<id>.json in authored
+// form, and registers the def into the overlay (live without restart). The
+// item's prior state is recorded as an undo step first (see itemUndo).
+func SaveItemDef(def *ItemDef) error {
+	if !itemIDPattern.MatchString(def.ID) {
+		return fmt.Errorf("item id %q must match %s", def.ID, itemIDPattern)
+	}
+	if err := validateItemDef(def); err != nil {
+		return err
+	}
+	dir, err := resolveItemsDir()
+	if err != nil {
+		return err
+	}
+	snapshotItemForUndo(def.ID)
 	// Remove any previous override saved under a different category/tier so an
 	// edited item never exists at two paths.
 	removeItemOverrideFiles(dir, def.ID)
-	if err := os.WriteFile(filepath.Join(outDir, def.ID+".json"), raw, 0o644); err != nil {
+	if err := writeItemDefFile(dir, def); err != nil {
 		return err
 	}
 	reg := *def
@@ -191,15 +252,94 @@ func ReadItemIcon(id string) ([]byte, bool) {
 	return data, true
 }
 
+// ItemIconUploadedAt returns the mtime (unix seconds) of the uploaded icon for
+// id, or 0 when the author has not uploaded one. Two jobs: it tells the client
+// that an uploaded icon EXISTS (so it can prefer it over the bundled art it
+// ships with — otherwise a shipped item could never have its icon replaced),
+// and it versions the URL so the browser refetches after a re-upload instead of
+// serving the cached one.
+func ItemIconUploadedAt(id string) int64 {
+	if !itemIDPattern.MatchString(id) {
+		return 0 // also blocks path traversal
+	}
+	dir, err := resolveItemsDir()
+	if err != nil {
+		return 0
+	}
+	info, err := os.Stat(filepath.Join(dir, itemIconsSubdirName, id+".png"))
+	if err != nil {
+		return 0
+	}
+	return info.ModTime().Unix()
+}
+
 // ItemIsEmbedded reports whether id ships in the embedded catalog.
 func ItemIsEmbedded(id string) bool {
 	_, ok := itemCatalogSingleton[id]
 	return ok
 }
 
-// DeleteItemOverride removes the writable override file(s) + overlay entry.
-// For embedded items this is reset-to-default; for editor-created items it is
-// a true delete. existed reports whether any override was found.
+// ResetItemDef undoes the item's last save: it restores the def to the state it
+// was in before that save and returns "undo". With no undo step recorded (a
+// fresh server process, or a second reset in a row) it falls back to the shipped
+// catalog default and returns "default".
+//
+// It always leaves a def file on disk. That is not cosmetic: in a dev tree the
+// writable dir IS the embed source (resolveItemsDir), so deleting the file
+// destroys the item — the running process keeps serving it from the copy already
+// embedded in the binary and looks fine, but the next build embeds from disk and
+// the item is gone, taking down startup ("item list ... is not a known item").
+//
+// ok is false when the id names no item at all.
+func ResetItemDef(id string) (mode string, ok bool, err error) {
+	if !itemIDPattern.MatchString(id) {
+		return "", false, nil // never a valid id; also blocks path traversal
+	}
+	dir, derr := resolveItemsDir()
+	if derr != nil {
+		return "", false, derr
+	}
+
+	restore, mode := func() (*ItemDef, string) {
+		if undo, has := takeItemUndo(id); has {
+			return undo, "undo"
+		}
+		if embedded, isEmbedded := itemCatalogSingleton[id]; isEmbedded {
+			return embedded, "default"
+		}
+		return nil, ""
+	}()
+	if restore == nil {
+		// An author-created item with no undo step has no earlier state to go
+		// back to; deleting it is the caller's job (DeleteItemOverride).
+		return "", false, nil
+	}
+
+	removeItemOverrideFiles(dir, id)
+	if werr := writeItemDefFile(dir, restore); werr != nil {
+		return "", false, werr
+	}
+
+	// Re-register so the restored def is live without a restart. An item that
+	// matches the embedded default is dropped from the overlay entirely rather
+	// than re-registered as an "override" of itself.
+	runtimeItemsMu.Lock()
+	if _, isEmbedded := itemCatalogSingleton[id]; isEmbedded && mode == "default" {
+		delete(runtimeItems, id)
+	} else {
+		reg := *restore
+		reg.Overridden = true
+		runtimeItems[id] = &reg
+	}
+	runtimeItemsMu.Unlock()
+	return mode, true, nil
+}
+
+// DeleteItemOverride removes an author-created item: its def file(s), its
+// uploaded icon and its overlay entry. Resetting a SHIPPED item is a different
+// operation — see ResetItemDef, which restores rather than deletes (deleting a
+// shipped def in a dev tree destroys it, see above). existed reports whether
+// anything was found to remove.
 func DeleteItemOverride(id string) (existed bool, err error) {
 	if !itemIDPattern.MatchString(id) {
 		return false, nil // never a valid override id; also blocks path traversal
@@ -219,6 +359,17 @@ func DeleteItemOverride(id string) (existed bool, err error) {
 	_, inOverlay := runtimeItems[id]
 	delete(runtimeItems, id)
 	runtimeItemsMu.Unlock()
+	itemUndoMu.Lock()
+	delete(itemUndo, id)
+	itemUndoMu.Unlock()
+
+	// A shipped item must never lose its def file — restore the default even if
+	// this was called on one by mistake.
+	if embedded, isEmbedded := itemCatalogSingleton[id]; isEmbedded && removed {
+		if werr := writeItemDefFile(dir, embedded); werr != nil {
+			return true, werr
+		}
+	}
 	return removed || inOverlay, nil
 }
 
