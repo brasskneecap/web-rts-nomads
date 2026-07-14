@@ -254,7 +254,7 @@ export type ActionItem = {
     | { kind: 'building'; type: string }
     | { kind: 'unit'; type: string }
     | { kind: 'item'; type: string }
-    | { kind: 'ability'; type: string; projectile?: string }
+    | { kind: 'ability'; type: string; projectile?: string; iconKey?: string }
   /** Seconds remaining on this perk's next activation. 0/undefined = ready. */
   cooldownRemaining?: number
   /** Full cooldown duration corresponding to cooldownRemaining. Drives the
@@ -3797,7 +3797,7 @@ function getAbilityActionItems(
         label: name,
         kind: 'ability' as const,
         // Draw the ability's bundled art if present, else its projectile image.
-        iconDef: { kind: 'ability' as const, type: a.id, projectile: a.projectile },
+        iconDef: { kind: 'ability' as const, type: a.id, projectile: a.projectile, iconKey: a.icon },
         active: activeMode === 'cast-ability' && castAbilityId === a.id,
         autoCast: !!a.autoCast,
         supportsAutoCast: !!a.supportsAutoCast,
@@ -3829,7 +3829,7 @@ function buildPassiveAbilityCell(a: AbilitySnapshot): ActionItem {
     id: `passive-${a.id}`,
     label: name,
     kind: 'ability' as const,
-    iconDef: { kind: 'ability' as const, type: a.id, projectile: a.projectile },
+    iconDef: { kind: 'ability' as const, type: a.id, projectile: a.projectile, iconKey: a.icon },
     disabled: true, // passive — not castable
     chargeText: hasCharge ? `${current}/${required}` : undefined,
     tooltipTitle: `${name} (Passive)`,
@@ -3894,7 +3894,7 @@ function buildSpellSlotCell(
     label: name,
     kind: 'ability' as const,
     perkRank: rank,
-    iconDef: { kind: 'ability' as const, type: ability.id, projectile: ability.projectile },
+    iconDef: { kind: 'ability' as const, type: ability.id, projectile: ability.projectile, iconKey: ability.icon },
     active: activeMode === 'cast-ability' && castAbilityId === ability.id,
     autoCast: !!ability.autoCast,
     supportsAutoCast: !!ability.supportsAutoCast,
@@ -4154,7 +4154,7 @@ function getSharedAbilityActionItems(
         // Draw the ability's bundled art if present, else its projectile image
         // — matches the single-select button so multi-select shows real art
         // instead of the generic placeholder icon.
-        iconDef: { kind: 'ability' as const, type: a.id, projectile: a.projectile },
+        iconDef: { kind: 'ability' as const, type: a.id, projectile: a.projectile, iconKey: a.icon },
         active: activeMode === 'cast-ability' && castAbilityId === a.id,
         autoCast: allAutoCast,
         supportsAutoCast,
