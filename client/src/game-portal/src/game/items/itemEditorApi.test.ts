@@ -11,7 +11,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('itemEditorApi', () => {
   it('saveEditorItem posts to /items and resolves on 201', async () => {
     const mock = stubFetch(201, { id: 'x', status: 'saved' })
-    await saveEditorItem({ item: { id: 'x' }, inputs: [] })
+    await saveEditorItem({ item: { id: 'x' } })
     expect(mock).toHaveBeenCalledOnce()
     const [url, init] = mock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url.endsWith('/items')).toBe(true)
@@ -19,12 +19,12 @@ describe('itemEditorApi', () => {
   })
   it('saveEditorItem throws EditorValidationError with the server message on 400', async () => {
     stubFetch(400, { error: 'validation_failed', message: 'item id "X" must match ^[a-z0-9_]+$' })
-    await expect(saveEditorItem({ item: { id: 'X' }, inputs: [] }))
+    await expect(saveEditorItem({ item: { id: 'X' } }))
       .rejects.toSatisfy((e: unknown) => e instanceof EditorValidationError && (e as EditorValidationError).serverMessage.includes('must match'))
   })
   it('saveEditorItem throws a generic Error on non-validation 400s', async () => {
     stubFetch(400, { error: 'invalid_json', message: 'unexpected end of JSON input' })
-    await expect(saveEditorItem({ item: { id: 'x' }, inputs: [] }))
+    await expect(saveEditorItem({ item: { id: 'x' } }))
       .rejects.toSatisfy((e: unknown) => e instanceof Error && !(e instanceof EditorValidationError))
   })
   it('deleteEditorItem returns the status field', async () => {

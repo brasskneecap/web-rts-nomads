@@ -7,17 +7,37 @@ import (
 
 // ─── Editor orchestration: one save request → item + its recipe ─────────────
 //
-// An item defines only itself: its stats and its own costs (CostGold to
-// purchase; RecipeCost + IsRecipe when craftable). WHERE an item is available
-// — which shops stock it, loot tables — is a shop/loot-level concern edited
-// elsewhere (future work), not baked into the item. The editor keeps a paired
-// recipe def in sync with the item's IsRecipe flag so a craftable item always
-// has exactly one recipe unlocking it at the Artificer.
+// An item defines only itself: its stats and its own purchase price
+// (ItemDef.CostGold). Everything about CRAFTING it — the ingredients, the craft
+// cost, the cost to learn the recipe, whether every player starts knowing it —
+// belongs to the paired RecipeDef, which is the single source of truth for
+// craftability. The item carries no mirror of any of it.
+//
+// WHERE an item is available — which shops stock it, loot tables — is a
+// shop/loot-level concern edited elsewhere (future work), not baked into the
+// item.
 
 type EditorItemSaveRequest struct {
 	Item ItemDef `json:"item"`
-	// Inputs are the recipe ingredients, used only when Item.IsRecipe is true.
+	// Crafting is the item's paired recipe, or nil when the item is not
+	// craftable (in which case any overlay recipe named after it is dropped).
+	Crafting *EditorItemCrafting `json:"crafting,omitempty"`
+}
+
+// EditorItemCrafting is the recipe half of an item save. The two gold fields
+// are independent prices and the editor surfaces them as separate inputs — see
+// RecipeDef for what each one buys.
+type EditorItemCrafting struct {
+	// Inputs are the recipe ingredients (2+), consumed on each craft.
 	Inputs []string `json:"inputs"`
+	// CraftCostGold is charged per craft at the Artificer (→ RecipeDef.CostGold).
+	CraftCostGold int `json:"craftCostGold"`
+	// RecipeCostGold is charged once at a Recipe Shop to learn the recipe
+	// (→ RecipeDef.UnlockCostGold).
+	RecipeCostGold int `json:"recipeCostGold"`
+	// Starter marks the recipe as pre-learned by every player at match start,
+	// which makes RecipeCostGold moot (it is never purchased).
+	Starter bool `json:"starter,omitempty"`
 }
 
 // editorValidationError wraps content errors so the HTTP layer maps them to
@@ -32,9 +52,9 @@ func IsEditorValidationError(err error) bool {
 	return errors.As(err, &v)
 }
 
-// SaveEditorItem validates the item (and its recipe inputs, when craftable)
-// before any write, then saves the item def and syncs its recipe: a craftable
-// item upserts a recipe (output = the item, cost = Item.RecipeCost); a
+// SaveEditorItem validates the item (and its recipe, when craftable) before any
+// write, then saves the item def and syncs its recipe: a craftable item upserts
+// a recipe (output = the item, craft cost + recipe cost from req.Crafting); a
 // non-craftable item drops any overlay recipe named after it. No availability
 // (shop/loot) writes happen here — that is decided at the shop level.
 func SaveEditorItem(req EditorItemSaveRequest) error {
@@ -46,11 +66,11 @@ func SaveEditorItem(req EditorItemSaveRequest) error {
 	if err := validateItemDef(&item); err != nil {
 		return editorValidationError{err}
 	}
-	if item.IsRecipe {
-		if len(req.Inputs) < 2 {
-			return editorValidationError{fmt.Errorf("a craftable item needs at least 2 recipe inputs, has %d", len(req.Inputs))}
+	if c := req.Crafting; c != nil {
+		if len(c.Inputs) < 2 {
+			return editorValidationError{fmt.Errorf("a craftable item needs at least 2 recipe inputs, has %d", len(c.Inputs))}
 		}
-		for i, in := range req.Inputs {
+		for i, in := range c.Inputs {
 			if in == item.ID {
 				return editorValidationError{fmt.Errorf("recipe for %q cannot use itself as an input", item.ID)}
 			}
@@ -60,8 +80,11 @@ func SaveEditorItem(req EditorItemSaveRequest) error {
 				return editorValidationError{fmt.Errorf("recipe input[%d] %q is not a known item", i, in)}
 			}
 		}
-		if item.RecipeCost < 0 {
-			return editorValidationError{fmt.Errorf("recipeCost must not be negative")}
+		if c.CraftCostGold < 0 {
+			return editorValidationError{fmt.Errorf("craft cost must not be negative")}
+		}
+		if c.RecipeCostGold < 0 {
+			return editorValidationError{fmt.Errorf("recipe cost must not be negative")}
 		}
 	}
 
@@ -69,14 +92,15 @@ func SaveEditorItem(req EditorItemSaveRequest) error {
 	if err := SaveItemDef(&item); err != nil {
 		return err
 	}
-	if item.IsRecipe {
+	if c := req.Crafting; c != nil {
 		recipe := &RecipeDef{
-			ID:       item.ID,
-			Name:     item.DisplayName,
-			Inputs:   req.Inputs,
-			CostGold: item.RecipeCost,
-			Output:   item.ID,
-			Starter:  item.RecipeStarter,
+			ID:             item.ID,
+			Name:           item.DisplayName,
+			Inputs:         c.Inputs,
+			CostGold:       c.CraftCostGold,
+			UnlockCostGold: c.RecipeCostGold,
+			Output:         item.ID,
+			Starter:        c.Starter,
 		}
 		return SaveRecipeDef(recipe)
 	}

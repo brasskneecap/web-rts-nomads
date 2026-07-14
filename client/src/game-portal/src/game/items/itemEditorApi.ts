@@ -15,13 +15,24 @@ export type ProcEffectDef = {
   burnDurationSeconds?: number
 }
 
-// An item defines only itself (stats + its own costs). Craftability rides on
-// the item as isRecipe/recipeCost; `inputs` are the recipe ingredients the
-// server uses to sync the paired recipe def. WHERE an item is available (shops,
-// loot) is a shop-level concern edited elsewhere — not part of this request.
+// An item defines only itself: its stats and its own purchase price. Crafting
+// rides beside it in `crafting` (absent = not craftable, which drops any recipe
+// the item had), and the server turns that into the paired recipe def. WHERE an
+// item is available (shops, loot) is a shop-level concern edited elsewhere —
+// not part of this request.
 export type EditorSaveRequest = {
   item: Record<string, unknown>
+  crafting?: EditorSaveCrafting
+}
+
+// The recipe half of a save. The two gold fields buy different things:
+// craftCostGold is charged per craft at the Artificer; recipeCostGold is
+// charged once at a Recipe Shop to learn the recipe.
+export type EditorSaveCrafting = {
   inputs: string[]
+  craftCostGold: number
+  recipeCostGold: number
+  starter: boolean
 }
 
 // EditorValidationError carries the server's validation message for inline

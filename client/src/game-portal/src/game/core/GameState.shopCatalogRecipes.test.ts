@@ -3,10 +3,13 @@ import { GameState } from './GameState'
 import { initRecipeDefs } from '../maps/recipeDefs'
 import type { BuildingTile } from '../network/protocol'
 
+// The craft cost (costGold) and the price of learning the recipe
+// (unlockCostGold) are deliberately different numbers, so a shop that shows the
+// wrong one is a test failure rather than a coincidence.
 beforeEach(() => {
   initRecipeDefs([
-    { id: 'fire_sword', name: 'Fire Sword', inputs: ['broad_sword', 'fire_ring'], costGold: 150, output: 'fire_sword', rarity: 'rare' },
-    { id: 'frost_sword', name: 'Frost Sword', inputs: ['broad_sword', 'ice_ring'], costGold: 150, output: 'frost_sword', rarity: 'rare' },
+    { id: 'fire_sword', name: 'Fire Sword', inputs: ['broad_sword', 'fire_ring'], costGold: 150, unlockCostGold: 300, output: 'fire_sword', rarity: 'rare' },
+    { id: 'frost_sword', name: 'Frost Sword', inputs: ['broad_sword', 'ice_ring'], costGold: 150, unlockCostGold: 300, output: 'frost_sword', rarity: 'rare' },
   ])
 })
 
@@ -41,7 +44,9 @@ describe('getShopCatalogSnapshot — recipe shops', () => {
     const fire = recipes.find((e) => e.itemId === 'fire_sword')!
     expect(fire.displayName).toBe('Recipe: Fire Sword')
     expect(fire.iconKey).toBe('rare_recipe')
-    expect(fire.costGold).toBe(150)
+    // The shelf price is what it costs to LEARN the recipe (300), not the
+    // per-craft cost the Artificer charges afterwards (150).
+    expect(fire.costGold).toBe(300)
     expect(fire.purchaseBuildingId).toBe('rs-1')
   })
 

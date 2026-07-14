@@ -14,12 +14,29 @@ var recipeDefsFS embed.FS
 
 // RecipeDef is the catalog definition for one craftable recipe: a set of input
 // item IDs (consumed) plus a gold cost that produce one output item ID.
+//
+// A recipe carries TWO independent prices, and they are not interchangeable:
+//
+//   - CostGold      — the CRAFT cost, charged at the Artificer on every craft,
+//     on top of consuming the Inputs. See handleCraftItemLocked.
+//   - UnlockCostGold — the RECIPE cost, charged ONCE at a Recipe Shop to learn
+//     the recipe. See handlePurchaseRecipeLocked.
+//
+// (The third price in the item economy, the shop purchase price of a finished
+// item, lives on the item itself as ItemDef.CostGold — not here.)
 type RecipeDef struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Inputs   []string `json:"inputs"`
-	CostGold int      `json:"costGold"`
-	Output   string   `json:"output"`
+	ID     string   `json:"id"`
+	Name   string   `json:"name"`
+	Inputs []string `json:"inputs"`
+	// CostGold is the gold charged per craft at the Artificer, alongside the
+	// consumed Inputs. It is NOT the price of learning the recipe — that is
+	// UnlockCostGold.
+	CostGold int `json:"costGold"`
+	// UnlockCostGold is the gold charged once at a Recipe Shop to learn this
+	// recipe. Zero means the recipe is free to learn (still gated on shop
+	// stock). Ignored for Starter recipes, which are never purchased.
+	UnlockCostGold int    `json:"unlockCostGold"`
+	Output         string `json:"output"`
 	// Rarity is the recipe's quality tier, derived from the subdirectory it
 	// lives in under catalog/recipes (e.g. catalog/recipes/rare/*.json → "rare").
 	// A file directly under catalog/recipes/ defaults to "common". This mirrors
@@ -127,6 +144,11 @@ func validateRecipeDef(def *RecipeDef) error {
 	// allowed for recipes whose only cost is their ingredient items.
 	if def.CostGold < 0 {
 		return fmt.Errorf("recipe %q: costGold must not be negative, got %d", def.ID, def.CostGold)
+	}
+	// Same exploit on the learn path (buying the recipe would pay the player);
+	// zero is allowed for a recipe that is free to learn.
+	if def.UnlockCostGold < 0 {
+		return fmt.Errorf("recipe %q: unlockCostGold must not be negative, got %d", def.ID, def.UnlockCostGold)
 	}
 	return nil
 }

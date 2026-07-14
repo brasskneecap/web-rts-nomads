@@ -76,14 +76,13 @@ export type ItemDef = {
   kind: ItemKind
   /** Rarity tier — drives border color in the vault and inventory UIs. */
   tier: ItemTier
-  /** Gold cost to purchase from a shop building. */
+  /**
+   * Gold to buy this item outright from a shop building. The item's ONLY cost —
+   * the craft cost and the cost to learn the recipe live on the paired RecipeDef
+   * (`costGold` / `unlockCostGold` there), which is also what makes an item
+   * craftable in the first place. An item has no crafting fields of its own.
+   */
   costGold: number
-  /** True when the item is craftable at the Artificer (a recipe unlocks it). */
-  isRecipe?: boolean
-  /** Gold cost to craft, when isRecipe. */
-  recipeCost?: number
-  /** When craftable, whether the recipe is auto-learned by every player. */
-  recipeStarter?: boolean
   /**
    * Building type that must be built and owned for this item to be purchasable.
    * Empty/undefined means no building gate. Drives Shop UI availability and

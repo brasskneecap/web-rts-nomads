@@ -72,13 +72,15 @@ func (s *GameState) handlePurchaseRecipeLocked(playerID, buildingID, recipeID st
 		return
 	}
 
-	// Afford check.
-	if player.Resources["gold"] < def.CostGold {
+	// Afford check. The learn price is UnlockCostGold, NOT CostGold — the
+	// latter is what the Artificer charges per craft, and the two are tuned
+	// independently (see RecipeDef).
+	if player.Resources["gold"] < def.UnlockCostGold {
 		return
 	}
 
 	// Commit: deduct gold, unlock recipe, decrement stock.
-	player.Resources["gold"] -= def.CostGold
+	player.Resources["gold"] -= def.UnlockCostGold
 	s.unlockRecipeForPlayerLocked(player, recipeID)
 	building.RecipeInventory[stockIdx].Quantity--
 }

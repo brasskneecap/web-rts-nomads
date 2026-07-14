@@ -22,7 +22,10 @@ func TestSaveRecipeDef_RarityFromOutputTierAndLiveRegistration(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("RECIPE_CATALOG_DIR", dir)
 	// Inputs/output must be known items — use shipped ones.
-	def := &RecipeDef{ID: id, Name: "Test Recipe", Inputs: []string{"steel_shield", "fire_ring"}, CostGold: 100, Output: "fire_shield"}
+	// The two prices are deliberately different, so a round-trip that drops or
+	// crosses either one is visible here.
+	def := &RecipeDef{ID: id, Name: "Test Recipe", Inputs: []string{"steel_shield", "fire_ring"},
+		CostGold: 100, UnlockCostGold: 250, Output: "fire_shield"}
 	if err := SaveRecipeDef(def); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -31,7 +34,7 @@ func TestSaveRecipeDef_RarityFromOutputTierAndLiveRegistration(t *testing.T) {
 		t.Fatalf("expected rare/%s.json: %v", id, err)
 	}
 	got, ok := getRecipeDef(id)
-	if !ok || got.Rarity != ItemTierRare || got.CostGold != 100 {
+	if !ok || got.Rarity != ItemTierRare || got.CostGold != 100 || got.UnlockCostGold != 250 {
 		t.Fatalf("live registration wrong: ok=%v %+v", ok, got)
 	}
 	// Validation still gates: unknown input rejected before write.

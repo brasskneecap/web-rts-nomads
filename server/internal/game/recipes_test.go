@@ -34,7 +34,13 @@ func TestRecipeCatalog_LoadsAndValidates(t *testing.T) {
 			}
 		}
 		if def.CostGold <= 0 {
-			t.Errorf("%s: costGold must be positive, got %d", tc.id, def.CostGold)
+			t.Errorf("%s: costGold (the craft cost) must be positive, got %d", tc.id, def.CostGold)
+		}
+		// Every purchasable shipped recipe declares its learn price explicitly
+		// rather than leaning on a default — a shipped recipe that is free to
+		// learn is a data mistake, not a design.
+		if def.UnlockCostGold <= 0 {
+			t.Errorf("%s: unlockCostGold (the price to learn it) must be positive, got %d", tc.id, def.UnlockCostGold)
 		}
 	}
 	if len(ListRecipeDefs()) < 3 {
@@ -60,5 +66,13 @@ func TestValidateRecipeDef_Rules(t *testing.T) {
 	}
 	if err := validateRecipeDef(&RecipeDef{ID: "r", Inputs: []string{"broad_sword", "fire_ring"}, CostGold: 150, Output: "fire_sword"}); err != nil {
 		t.Errorf("valid recipe rejected: %v", err)
+	}
+	// The learn price is a separate number and gets the same treatment: negative
+	// would pay the player to learn the recipe; zero is a free-to-learn recipe.
+	if err := validateRecipeDef(&RecipeDef{ID: "r", Inputs: []string{"broad_sword", "fire_ring"}, UnlockCostGold: -1, Output: "fire_sword"}); err == nil {
+		t.Error("expected error for negative unlockCostGold")
+	}
+	if err := validateRecipeDef(&RecipeDef{ID: "r", Inputs: []string{"broad_sword", "fire_ring"}, UnlockCostGold: 0, Output: "fire_sword"}); err != nil {
+		t.Errorf("zero unlockCostGold should be allowed (free-to-learn recipe): %v", err)
 	}
 }

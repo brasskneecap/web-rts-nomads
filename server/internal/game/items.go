@@ -205,19 +205,12 @@ type ItemDef struct {
 	// decides which catalog subdirectory the def is written to. It is NOT an
 	// equip restriction; nothing in combat or equipping reads it.
 	Category string `json:"category,omitempty"`
-	CostGold int    `json:"costGold"`
-	// IsRecipe marks an item as craftable at the Artificer: a recipe (whose
-	// output is this item) exists to unlock it. Availability elsewhere (which
-	// shops stock it, loot tables) is decided at the shop/loot level, not
-	// here — the item only declares its own purchase cost (CostGold) and, when
-	// craftable, its craft cost (RecipeCost). The item editor keeps the paired
-	// recipe def in sync with this flag.
-	IsRecipe   bool `json:"isRecipe,omitempty"`
-	RecipeCost int  `json:"recipeCost,omitempty"`
-	// RecipeStarter, when the item is craftable, marks its recipe as one every
-	// player has already learned at match start (no shop/unlock needed). Synced
-	// to RecipeDef.Starter by the item editor.
-	RecipeStarter bool `json:"recipeStarter,omitempty"`
+	// CostGold is the item's own price: what a shop charges to buy it outright.
+	// It is the ONLY cost an item declares. The two crafting prices — the craft
+	// cost at the Artificer and the cost to learn the recipe at a Recipe Shop —
+	// belong to the paired RecipeDef (CostGold / UnlockCostGold there), which is
+	// the single source of truth for whether an item is craftable at all.
+	CostGold int `json:"costGold"`
 	// RequiredBuilding was historically the building type that gated an
 	// item's purchase. As of per-building-shop-inventories it is preserved
 	// for backward display only and no longer participates in purchase

@@ -216,7 +216,7 @@
 
             <!-- Cost -->
             <SectionCard title="Cost" :index="sectionIndex('cost')">
-              <EditorField label="Purchase Cost (Gold)" hint="(where it sells is set at the shop level)" for-id="ie-cost-gold">
+              <EditorField label="Purchase Cost (Gold)" hint="(buying the finished item off a shop shelf — where it sells is set at the shop level)" for-id="ie-cost-gold">
                 <input id="ie-cost-gold" v-model.number="form.costGold" type="number" min="0" />
               </EditorField>
             </SectionCard>
@@ -231,8 +231,27 @@
               </EditorField>
 
               <template v-if="form.crafting.isRecipe">
-                <EditorField label="Craft Cost (Gold)" for-id="ie-recipe-cost">
-                  <input id="ie-recipe-cost" v-model.number="form.crafting.recipeCost" type="number" min="0" />
+                <EditorField
+                  label="Craft Cost (Gold)"
+                  hint="(paid at the Artificer every time it is crafted, on top of the ingredients)"
+                  for-id="ie-craft-cost"
+                >
+                  <input id="ie-craft-cost" v-model.number="form.crafting.craftCost" type="number" min="0" />
+                </EditorField>
+                <EditorField
+                  label="Recipe Cost (Gold)"
+                  :hint="form.crafting.starter
+                    ? '(unused — every player already knows this recipe)'
+                    : '(paid once at a Recipe Shop to learn the recipe)'"
+                  for-id="ie-recipe-cost"
+                >
+                  <input
+                    id="ie-recipe-cost"
+                    v-model.number="form.crafting.recipeCost"
+                    type="number"
+                    min="0"
+                    :disabled="form.crafting.starter"
+                  />
                 </EditorField>
                 <label class="ed-check" for="ie-recipe-starter">
                   <input id="ie-recipe-starter" v-model="form.crafting.starter" type="checkbox" />
@@ -585,7 +604,12 @@ const previewCraft = computed(() => {
     .map((id) => items.value.find((d) => d.id === id))
     .filter((d): d is ItemDef => d !== undefined)
     .map((d) => ({ def: d, iconUrl: getItemImageSourceUrl(d.iconKey) }))
-  return { costGold: form.value.crafting.recipeCost, inputs }
+  return {
+    costGold: form.value.crafting.craftCost,
+    // A starter recipe is never bought, so there is no learn price to preview.
+    recipeCostGold: form.value.crafting.starter ? undefined : form.value.crafting.recipeCost,
+    inputs,
+  }
 })
 
 // The icon's <img src>. Reading iconUploadedAt off the catalog entry is what

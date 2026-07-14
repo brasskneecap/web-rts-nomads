@@ -78,8 +78,12 @@ export function validateItemForm(form: ItemEditorForm, ctx: ValidationContext): 
             ? { ok: false, message: `Unknown ingredient: ${unknown.join(', ')}.` }
             : { ok: true, message: 'Crafting requirements met.' },
     )
-    if (form.crafting.recipeCost < 0) {
-      checks.push({ ok: false, message: 'Craft cost must not be negative.' })
+    const negative = [
+      form.crafting.craftCost < 0 ? 'Craft cost' : '',
+      form.crafting.recipeCost < 0 ? 'Recipe cost' : '',
+    ].filter(Boolean)
+    if (negative.length > 0) {
+      checks.push({ ok: false, message: `${negative.join(' and ')} must not be negative.` })
     }
   }
 

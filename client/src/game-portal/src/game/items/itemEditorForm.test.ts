@@ -10,14 +10,17 @@ const fireShield: ItemDef = {
 }
 describe('formFromDef / saveRequestFromForm round-trip', () => {
   it('converts fractions to percents and back, and carries craft fields', () => {
-    const form = formFromDef(fireShield, { inputs: ['steel_shield', 'fire_ring'], costGold: 150, starter: true })
+    const form = formFromDef(fireShield, {
+      inputs: ['steel_shield', 'fire_ring'], costGold: 150, unlockCostGold: 300, starter: true,
+    })
     expect(form.mods.blockPct).toBe(15)
     expect(form.procs).toHaveLength(1)
     expect(form.procs[0].trigger).toBe('onStruck')
     expect(form.procs[0].chancePct).toBe(10)
     expect(form.procs[0].effect).toBe('fire_bolt_ignite')
     expect(form.crafting.isRecipe).toBe(true)
-    expect(form.crafting.recipeCost).toBe(150)
+    expect(form.crafting.craftCost).toBe(150)
+    expect(form.crafting.recipeCost).toBe(300)
     expect(form.crafting.starter).toBe(true)
     expect(form.crafting.inputs).toEqual(['steel_shield', 'fire_ring'])
     expect(form.isNew).toBe(false)
@@ -29,10 +32,33 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     expect(item.modifiers.dodgeChance).toBeUndefined() // zero mods omitted
     // overrides all null → omitted
     expect(item.procs).toEqual([{ trigger: 'onStruck', chance: 0.1, effect: 'fire_bolt_ignite' }])
-    expect(item.isRecipe).toBe(true)
-    expect(item.recipeCost).toBe(150)
-    expect(item.recipeStarter).toBe(true)
-    expect(req.inputs).toEqual(['steel_shield', 'fire_ring'])
+    // Crafting never rides on the item — it goes out as its own block, with the
+    // craft cost and the recipe cost kept distinct.
+    expect(item.isRecipe).toBeUndefined()
+    expect(item.recipeCost).toBeUndefined()
+    expect(req.crafting).toEqual({
+      inputs: ['steel_shield', 'fire_ring'],
+      craftCostGold: 150,
+      recipeCostGold: 300,
+      starter: true,
+    })
+  })
+
+  it('keeps the three costs independent: purchase, craft, and recipe', () => {
+    // The item's own price, the per-craft price, and the price of learning the
+    // recipe are three separate numbers that must not bleed into each other.
+    const form = formFromDef(
+      { ...fireShield, costGold: 40 },
+      { inputs: ['steel_shield', 'fire_ring'], costGold: 150, unlockCostGold: 300 },
+    )
+    expect(form.costGold).toBe(40)
+    expect(form.crafting.craftCost).toBe(150)
+    expect(form.crafting.recipeCost).toBe(300)
+
+    const req = saveRequestFromForm(form)
+    expect((req.item as Record<string, any>).costGold).toBe(40)
+    expect(req.crafting?.craftCostGold).toBe(150)
+    expect(req.crafting?.recipeCostGold).toBe(300)
   })
 
   it('includes only non-null proc overrides', () => {
@@ -71,10 +97,10 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     const form = createBlankForm()
     expect(form.isNew).toBe(true)
     const req = saveRequestFromForm(form)
-    expect(req.inputs).toEqual([])
+    // No crafting block at all — which is what tells the server to drop any
+    // recipe the item had.
+    expect(req.crafting).toBeUndefined()
     const item = req.item as Record<string, any>
-    expect(item.isRecipe).toBeUndefined()
-    expect(item.recipeCost).toBeUndefined()
     expect(item.modifiers).toBeUndefined()
     expect(item.onHitElemental).toBeUndefined()
   })
@@ -97,7 +123,7 @@ describe('formFromDef / saveRequestFromForm round-trip', () => {
     const req = saveRequestFromForm(form)
     const item = req.item as Record<string, any>
     expect(item.requiredBuilding).toBe('marketplace')
-    expect(req.inputs).toEqual(['broad_sword', 'broad_sword', 'broad_sword'])
+    expect(req.crafting?.inputs).toEqual(['broad_sword', 'broad_sword', 'broad_sword'])
   })
 
   it('never leaks resolved proc wire fields through preservation', () => {
@@ -145,7 +171,7 @@ describe('consumable items', () => {
     expect(item.modifiers).toBeUndefined()
     expect(item.procs).toBeUndefined()
     expect(item.onHitElemental).toBeUndefined()
-    expect(req.inputs).toEqual([])
+    expect(req.crafting).toBeUndefined()
   })
 
   it('a new consumable sends split:true by default and omits maxStacks when 0', () => {

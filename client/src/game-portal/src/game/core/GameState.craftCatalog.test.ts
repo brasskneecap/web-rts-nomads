@@ -3,9 +3,12 @@ import { GameState } from './GameState'
 import { initRecipeDefs } from '../maps/recipeDefs'
 import type { BuildingTile, VaultItemSnapshot } from '../network/protocol'
 
+// unlockCostGold (what a Recipe Shop charges to learn it) is deliberately a
+// different number from costGold (what the Artificer charges per craft), so the
+// Craft tab reaching for the wrong one fails rather than passing by accident.
 beforeEach(() => {
   initRecipeDefs([
-    { id: 'fire_sword', name: 'Fire Sword', inputs: ['broad_sword', 'fire_ring'], costGold: 150, output: 'fire_sword' },
+    { id: 'fire_sword', name: 'Fire Sword', inputs: ['broad_sword', 'fire_ring'], costGold: 150, unlockCostGold: 300, output: 'fire_sword' },
   ])
 })
 
@@ -57,6 +60,7 @@ describe('GameState.getCraftCatalogSnapshot', () => {
     expect(e.recipeId).toBe('fire_sword')
     expect(e.name).toBe('Fire Sword')
     expect(e.output).toBe('fire_sword')
+    // The craft price (150), never the learn price (300).
     expect(e.costGold).toBe(150)
     expect(e.ingredients).toEqual([
       { itemId: 'broad_sword', have: 1, need: 1 },

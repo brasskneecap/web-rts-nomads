@@ -3036,7 +3036,10 @@ export class GameState {
           // recipe.rarity is a loose string from the catalog; it is always one
           // of the tier folders, so narrow it to the ShopCatalogEntry union.
           tier: rarity as ShopCatalogEntry['tier'],
-          costGold: recipe.costGold,
+          // The shelf price of a recipe is what it costs to LEARN it, not the
+          // craft cost the Artificer will charge later (recipe.costGold). The
+          // server charges UnlockCostGold here — keep the two in step.
+          costGold: recipe.unlockCostGold ?? 0,
           quantity: slot.quantity,
           recipeKnown: knownRecipes.has(recipe.id),
           purchaseBuildingId: b.id,
