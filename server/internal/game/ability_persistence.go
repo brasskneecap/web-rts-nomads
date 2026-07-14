@@ -1,8 +1,10 @@
 package game
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"image/png"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,6 +14,9 @@ import (
 )
 
 var abilityIDPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
+
+// abilityIconsSubdirName holds uploaded ability icons; skipped by the def walk.
+const abilityIconsSubdirName = "_icons"
 
 var (
 	runtimeAbilitiesMu sync.RWMutex
@@ -65,6 +70,61 @@ func SaveAbilityDef(def *AbilityDef) error {
 	return nil
 }
 
+// maxAbilityIconBytes caps uploaded icon size (ability icons are small sprites).
+const maxAbilityIconBytes = 256 * 1024
+
+// SaveAbilityIcon validates and stores an uploaded PNG for the ability, and
+// forces the ability's Icon key to its id so the client's server-URL fallback
+// resolves unambiguously.
+func SaveAbilityIcon(id string, data []byte) error {
+	if !abilityIDPattern.MatchString(id) {
+		return fmt.Errorf("ability id %q must match %s", id, abilityIDPattern)
+	}
+	def, ok := getAbilityDef(id)
+	if !ok {
+		return fmt.Errorf("ability %q not found", id)
+	}
+	if len(data) > maxAbilityIconBytes {
+		return fmt.Errorf("icon exceeds %d bytes", maxAbilityIconBytes)
+	}
+	if _, err := png.DecodeConfig(bytes.NewReader(data)); err != nil {
+		return fmt.Errorf("icon is not a valid PNG: %w", err)
+	}
+	dir, err := resolveAbilitiesDir()
+	if err != nil {
+		return err
+	}
+	iconDir := filepath.Join(dir, abilityIconsSubdirName)
+	if err := os.MkdirAll(iconDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(iconDir, id+".png"), data, 0o644); err != nil {
+		return err
+	}
+	if def.Icon != id {
+		updated := def
+		updated.Icon = id
+		return SaveAbilityDef(&updated)
+	}
+	return nil
+}
+
+// ReadAbilityIcon returns the uploaded PNG for id, if any.
+func ReadAbilityIcon(id string) ([]byte, bool) {
+	if !abilityIDPattern.MatchString(id) {
+		return nil, false // also blocks path traversal
+	}
+	dir, err := resolveAbilitiesDir()
+	if err != nil {
+		return nil, false
+	}
+	data, err := os.ReadFile(filepath.Join(dir, abilityIconsSubdirName, id+".png"))
+	if err != nil {
+		return nil, false
+	}
+	return data, true
+}
+
 // AbilityIsEmbedded reports whether an ability id ships in the embedded catalog.
 func AbilityIsEmbedded(id string) bool {
 	_, ok := abilityDefsByID[id]
@@ -86,6 +146,8 @@ func DeleteAbilityOverride(id string) (existed bool, err error) {
 		removed = true
 		_ = os.Remove(filepath.Join(dir, id)) // best-effort: drop the now-empty dir
 	}
+	// Remove the uploaded icon too, if any.
+	_ = os.Remove(filepath.Join(dir, abilityIconsSubdirName, id+".png"))
 	runtimeAbilitiesMu.Lock()
 	_, inOverlay := runtimeAbilities[id]
 	delete(runtimeAbilities, id)
@@ -109,7 +171,13 @@ func LoadPersistedAbilitiesIntoOverlay() {
 func loadPersistedAbilitiesFromDir(dir string) int {
 	loaded := 0
 	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() && d.Name() == abilityIconsSubdirName {
+			return filepath.SkipDir
+		}
+		if d.IsDir() {
 			return nil
 		}
 		if !strings.HasSuffix(strings.ToLower(d.Name()), ".json") {

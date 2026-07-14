@@ -159,3 +159,50 @@ func TestDeleteAbilityOverrideBadIDNoOp(t *testing.T) {
 		t.Fatal("DeleteAbilityOverride: existed=true for an invalid id, want false")
 	}
 }
+
+func TestSaveAndReadAbilityIcon(t *testing.T) {
+	t.Setenv("ABILITY_CATALOG_DIR", t.TempDir())
+	if err := SaveAbilityDef(&AbilityDef{ID: "icon_bolt", DamageAmount: 5}); err != nil {
+		t.Fatalf("SaveAbilityDef: %v", err)
+	}
+	png := tinyPNG(t)
+	if err := SaveAbilityIcon("icon_bolt", png); err != nil {
+		t.Fatalf("SaveAbilityIcon: %v", err)
+	}
+	// def.Icon forced to the id.
+	if def, ok := getAbilityDef("icon_bolt"); !ok || def.Icon != "icon_bolt" {
+		t.Fatalf("Icon not forced to id: ok=%v icon=%q", ok, def.Icon)
+	}
+	got, ok := ReadAbilityIcon("icon_bolt")
+	if !ok || len(got) != len(png) {
+		t.Fatalf("ReadAbilityIcon ok=%v len=%d want %d", ok, len(got), len(png))
+	}
+	// Delete removes the icon too.
+	if _, err := DeleteAbilityOverride("icon_bolt"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, ok := ReadAbilityIcon("icon_bolt"); ok {
+		t.Fatal("icon still present after delete")
+	}
+}
+
+func TestSaveAbilityIconRejects(t *testing.T) {
+	t.Setenv("ABILITY_CATALOG_DIR", t.TempDir())
+	// def must exist first
+	if err := SaveAbilityIcon("nope", tinyPNG(t)); err == nil {
+		t.Fatal("expected rejection when def missing")
+	}
+	_ = SaveAbilityDef(&AbilityDef{ID: "x1"})
+	// not a PNG
+	if err := SaveAbilityIcon("x1", []byte("not a png")); err == nil {
+		t.Fatal("expected rejection for non-PNG")
+	}
+	// oversize
+	if err := SaveAbilityIcon("x1", make([]byte, maxAbilityIconBytes+1)); err == nil {
+		t.Fatal("expected rejection for oversize")
+	}
+	// bad id (path traversal)
+	if err := SaveAbilityIcon("../x", tinyPNG(t)); err == nil {
+		t.Fatal("expected rejection for bad id")
+	}
+}

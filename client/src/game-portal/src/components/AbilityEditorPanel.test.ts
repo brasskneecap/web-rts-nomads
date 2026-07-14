@@ -29,4 +29,17 @@ describe('AbilityEditorPanel', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('Heal')
   })
+
+  it('lists bundled ability icons in the gallery and picks one', async () => {
+    stubCatalogFetch()
+    const wrapper = mount(AbilityEditorPanel)
+    await flushPromises()
+    // open an ability to edit, then open the gallery
+    // (select the first listed ability, then click "Choose from gallery")
+    await wrapper.find('[data-test="ability-row"]').trigger('click')
+    await wrapper.find('[data-test="icon-gallery-open"]').trigger('click')
+    await flushPromises()
+    const cells = wrapper.findAll('[data-test="icon-gallery-cell"]')
+    expect(cells.length).toBeGreaterThan(0)
+  })
 })

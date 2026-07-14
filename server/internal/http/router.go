@@ -27,6 +27,22 @@ func registerAbilityCatalogRoutes(mux *http.ServeMux) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"abilities": game.ListAbilityDefs()})
 	})
 
+	mux.HandleFunc("/catalog/abilities/", func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/catalog/abilities/")
+		id, suffix, ok := strings.Cut(rest, "/")
+		if !ok || suffix != "image" || r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		data, found := game.ReadAbilityIcon(id)
+		if !found {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(data)
+	})
+
 	mux.HandleFunc("/catalog/projectiles", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"projectiles": game.ListProjectileDefs()})
