@@ -69,3 +69,21 @@ export async function deleteEditorAbility(id: string): Promise<'deleted' | 'rese
   const body = (await res.json()) as { status: 'deleted' | 'reset' }
   return body.status
 }
+
+// uploadAbilityIcon posts a raw PNG blob for the ability; the server stores it
+// and forces the ability's Icon key to its id. Save the ability def first.
+export async function uploadAbilityIcon(id: string, file: Blob): Promise<void> {
+  const res = await fetch(`${API_BASE}/abilities/${encodeURIComponent(id)}/image`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png' },
+    body: file,
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(body?.message ?? `Failed to upload ability icon: ${res.status}`)
+  }
+}
+
+export function abilityIconUrl(id: string): string {
+  return `${API_BASE}/catalog/abilities/${encodeURIComponent(id)}/image`
+}

@@ -16,7 +16,7 @@ import { getBuildingSpriteImage } from '@/game/rendering/buildingSprites'
 import { getUnitSpriteSet, getUnitPortraitImage } from '@/game/rendering/unitSprites'
 import { getActionIconImage } from '@/game/rendering/actionIconSprites'
 import { getItemAssetImage } from '@/game/rendering/itemAssets'
-import { resolveAbilityIconImage, getAbilityAssetImage, getProjectileAssetImage } from '@/game/rendering/abilityAssets'
+import { getAbilityAssetImage, getProjectileAssetImage, getAbilityIconImageByKey, resolveAbilityIconImageKeyed } from '@/game/rendering/abilityAssets'
 import { inferProjectileFrameCount } from '@/game/rendering/projectileSprites'
 
 const props = defineProps<{
@@ -168,7 +168,7 @@ const useCanvas = computed(() => {
   // image, OR a bundled action sprite exists; otherwise it renders the SVG
   // generic icon. (Ability art takes priority — see draw().)
   if (iconDef?.kind === 'ability') {
-    return !!resolveAbilityIconImage(iconDef.type, iconDef.projectile) || !!getActionIconImage(lookupId)
+    return !!resolveAbilityIconImageKeyed(iconDef.iconKey, iconDef.type, iconDef.projectile) || !!getActionIconImage(lookupId)
   }
   if (iconDef) return true
   return !!getActionIconImage(lookupId)
@@ -189,8 +189,8 @@ function draw() {
   // BOTH are authored as horizontal multi-frame strips, so only the first frame
   // is drawn. When neither exists, fall through to the generic path.
   if (props.action.iconDef?.kind === 'ability') {
-    const { type, projectile } = props.action.iconDef
-    const abilityImg = getAbilityAssetImage(type)
+    const { type, projectile, iconKey } = props.action.iconDef
+    const abilityImg = getAbilityIconImageByKey(iconKey) ?? getAbilityAssetImage(type)
     if (abilityImg) {
       if (abilityImg.complete && abilityImg.naturalWidth > 0) {
         drawActionSpriteFirstFrame(ctx, abilityImg)
