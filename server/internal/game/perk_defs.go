@@ -40,10 +40,12 @@ package game
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"path"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // Embeds the per-unit catalog tree so this file can load perk JSONs from
@@ -145,6 +147,16 @@ type PerkDef struct {
 	// strip the ability; we don't currently support perk removal, so this
 	// is unidirectional.
 	GrantsAbilities []string `json:"grantsAbilities,omitempty"`
+	// Wired reports whether a Go handler exists for this perk's id (spec
+	// §7.3) — see perk_wired.go's wiredPerkIDs for exactly what counts. It
+	// is a derived, presentation-only field: it is NEVER set on the
+	// registry's own *PerkDef values (perkDefsByID / perkDefLookup /
+	// snapshotPerkDefs all leave it at its zero value, false). ListPerkDefs
+	// is the ONLY place that populates it, on the per-def COPY it returns —
+	// the shape the /catalog/perks HTTP endpoint and the future editor UI
+	// consume, so an editor-authored perk with no matching handler can be
+	// labeled "inert" instead of silently doing nothing in a match.
+	Wired bool `json:"wired"`
 }
 
 // ConfigForRank returns the effective config map for a perk at a given rank.
@@ -175,7 +187,46 @@ func (def *PerkDef) ConfigForRank(rank string) map[string]float64 {
 // perkDefsByID is the in-memory index populated from the perk catalog at startup.
 // The hierarchy on disk is flattened here so all callers work against a
 // simple id→def map.
+//
+// perkDefsMu guards perkDefsByID. init() populates it single-threaded before
+// any goroutine exists (same exemption documented for path_defs.go's
+// pathCatalogMu), so init's own write bypasses the lock. Every OTHER read —
+// i.e. everything reachable after startup, including the tick-loop rank-up
+// path (eligiblePerksForUnitAtRank) — MUST go through perkDefLookup /
+// snapshotPerkDefs rather than touching perkDefsByID directly. This is what
+// lets a future runtime rebuild (perk_persistence.go's rebuildPerkRegistry)
+// swap the whole map safely while readers are still using it.
+//
+// Returned *PerkDef pointers are READ-ONLY as far as any caller is
+// concerned: a rebuild always builds entirely NEW *PerkDef values into a
+// fresh map before swapping, never mutates a def a reader might already be
+// holding.
+var perkDefsMu sync.RWMutex
 var perkDefsByID map[string]*PerkDef
+
+// perkDefLookup is the synchronized read path for perkDefsByID.
+func perkDefLookup(id string) (*PerkDef, bool) {
+	perkDefsMu.RLock()
+	defer perkDefsMu.RUnlock()
+	def, ok := perkDefsByID[id]
+	return def, ok
+}
+
+// snapshotPerkDefs returns a slice copy of every def currently in
+// perkDefsByID — for callers that need to iterate the whole catalog
+// (eligiblePerksForUnitAtRank, ListPerkDefs). The slice itself is a fresh
+// allocation (safe to sort/filter without racing a concurrent rebuild); the
+// *PerkDef values it holds are shared, read-only pointers (see the
+// perkDefsByID doc comment above).
+func snapshotPerkDefs() []*PerkDef {
+	perkDefsMu.RLock()
+	defer perkDefsMu.RUnlock()
+	out := make([]*PerkDef, 0, len(perkDefsByID))
+	for _, def := range perkDefsByID {
+		out = append(out, def)
+	}
+	return out
+}
 
 // perkEntryJSON is the shape of a single perk entry in a per-rank JSON file.
 // It carries only the perk-specific fields; UnitType, Path, and Rank are
@@ -242,6 +293,125 @@ func splitRankConfig(raw map[string]json.RawMessage) (map[string]float64, map[st
 	return base, overrides, nil
 }
 
+// perkPoolDirName is the fixed subdirectory name holding perk rank files
+// under a path directory (catalog/units/<faction>/<unit>/paths/<path>/perks/
+// <rank>.json). Named so the init() walk and perk_persistence.go's directory
+// matching never drift on the literal.
+const perkPoolDirName = "perks"
+
+// perkPoolKey identifies one rank's perk pool — the unit/path granularity a
+// perks/<rank>.json file is authored at. Used to key both
+// embeddedPerkPools (path_defs.go's init(), below) and runtimePerkPools
+// (perk_persistence.go's writable overlay). unitType/pathName/rank are all
+// constrained to unitIDPattern (no "/"), so joining with "/" round-trips
+// unambiguously via splitPerkPoolKey.
+func perkPoolKey(unitType, pathName, rank string) string {
+	return unitType + "/" + pathName + "/" + rank
+}
+
+// splitPerkPoolKey reverses perkPoolKey. ok is false if key isn't a 3-part
+// "/"-joined string (defensive — every key this package itself produces via
+// perkPoolKey always round-trips).
+func splitPerkPoolKey(key string) (unitType, pathName, rank string, ok bool) {
+	parts := strings.Split(key, "/")
+	if len(parts) != 3 {
+		return "", "", "", false
+	}
+	return parts[0], parts[1], parts[2], true
+}
+
+// buildPerkDefsFromPool converts one rank's raw perk entries into PerkDef
+// values, injecting UnitType/Path/Rank (never present in the source JSON —
+// see perkEntryJSON). Shared by init() (which panics on error — embedded
+// catalog data is a build-time bug if malformed) and the runtime overlay
+// path (perk_persistence.go's rebuildPerkRegistry, which must skip a bad
+// pool rather than crash a running server). Returning the error rather than
+// panicking here is what makes that reuse possible; init() decides whether
+// to panic.
+func buildPerkDefsFromPool(unitType, pathName, rank string, entries []perkEntryJSON) ([]*PerkDef, error) {
+	out := make([]*PerkDef, 0, len(entries))
+	for _, entry := range entries {
+		base, overrides, err := splitRankConfig(entry.Config)
+		if err != nil {
+			return nil, fmt.Errorf("[%s].config: %w", entry.ID, err)
+		}
+		out = append(out, &PerkDef{
+			ID:                         entry.ID,
+			DisplayName:                entry.DisplayName,
+			Description:                entry.Description,
+			TooltipTemplate:            entry.TooltipTemplate,
+			TooltipTemplateByTrap:      entry.TooltipTemplateByTrap,
+			TooltipTemplateByOwnedPerk: entry.TooltipTemplateByOwnedPerk,
+			Icon:                       entry.Icon,
+			UnitType:                   unitType,
+			Path:                       pathName,
+			Rank:                       rank,
+			RequiresPerk:               entry.RequiresPerk,
+			Config:                     base,
+			ConfigByRank:               overrides,
+			Effect:                     entry.Effect,
+			GrantsAbilities:            entry.GrantsAbilities,
+		})
+	}
+	return out, nil
+}
+
+// clonePerkEntries returns a deep-enough copy of a rank's perk entry array:
+// every field holding map/slice/pointer state (the tooltip-by-* maps,
+// Config's RawMessage values, Effect, GrantsAbilities) gets its own backing
+// storage, so neither the embedded baseline snapshot (embeddedPerkPools) nor
+// a stored overlay pool (runtimePerkPools) can be mutated by a caller still
+// holding the original slice. Mirrors clonePathCatalogFile (path_defs.go).
+func clonePerkEntries(entries []perkEntryJSON) []perkEntryJSON {
+	if entries == nil {
+		return nil
+	}
+	out := make([]perkEntryJSON, len(entries))
+	for i, e := range entries {
+		cp := e
+		if e.TooltipTemplateByTrap != nil {
+			m := make(map[string]string, len(e.TooltipTemplateByTrap))
+			for k, v := range e.TooltipTemplateByTrap {
+				m[k] = v
+			}
+			cp.TooltipTemplateByTrap = m
+		}
+		if e.TooltipTemplateByOwnedPerk != nil {
+			m := make(map[string]string, len(e.TooltipTemplateByOwnedPerk))
+			for k, v := range e.TooltipTemplateByOwnedPerk {
+				m[k] = v
+			}
+			cp.TooltipTemplateByOwnedPerk = m
+		}
+		if e.Config != nil {
+			m := make(map[string]json.RawMessage, len(e.Config))
+			for k, v := range e.Config {
+				m[k] = append(json.RawMessage(nil), v...)
+			}
+			cp.Config = m
+		}
+		if e.Effect != nil {
+			eff := *e.Effect
+			cp.Effect = &eff
+		}
+		if e.GrantsAbilities != nil {
+			cp.GrantsAbilities = append([]string(nil), e.GrantsAbilities...)
+		}
+		out[i] = cp
+	}
+	return out
+}
+
+// embeddedPerkPools snapshots the embedded catalog (perkPoolKey -> the
+// rank's raw perk entries) so a runtime rebuild (rebuildPerkRegistry in
+// perk_persistence.go) can regenerate perkDefsByID by merging this baseline
+// with the writable overlay, without re-walking the embed FS. Populated
+// once by init() below via clonePerkEntries (deep copy — nothing can mutate
+// the baseline afterward); read-only for the rest of the process's life, so
+// reads elsewhere in the package do not take a lock — same convention as
+// embeddedPathFiles.
+var embeddedPerkPools = map[string][]perkEntryJSON{}
+
 func init() {
 	// On-disk layout:
 	//   catalog/units/<faction>/<unit>/paths/<path>/perks/<rank>.json
@@ -251,6 +421,16 @@ func init() {
 	// else is a structural mistake and panics so it fails loud at startup.
 	// unitType, path, and rank are derived from the file path and written
 	// into each PerkDef — no redundancy in the source JSON.
+	//
+	// perkDefsByID and embeddedPerkPools are written directly here (no
+	// perkDefsMu / lock) — init() runs single-threaded before any goroutine
+	// exists, the same exemption path_defs.go documents for pathCatalogMu.
+	// perkDefsByID[def.ID] = def below has NO duplicate-id check, matching
+	// the catalog's pre-existing (accepted) behavior: the shipped catalog is
+	// known collision-free, and a later duplicate silently overwriting is
+	// exactly the bug Part C closes for the EDITOR path (SavePerkPool/
+	// SaveEditorPerkPool reject a new collision before it's ever written);
+	// this loader's own embed-time behavior is intentionally left unchanged.
 	perkDefsByID = make(map[string]*PerkDef)
 
 	err := fs.WalkDir(perkDefsFS, "catalog/units", func(p string, d fs.DirEntry, err error) error {
@@ -266,7 +446,7 @@ func init() {
 		// Only files matching <faction>/<unit>/paths/<path>/perks/<rank>.json
 		// are perk definitions. Everything else under catalog/units/ belongs
 		// to unit_defs.go or path_defs.go — ignore it here.
-		if len(parts) != 6 || parts[2] != "paths" || parts[4] != "perks" {
+		if len(parts) != 6 || parts[2] != unitPathsSubdirName || parts[4] != perkPoolDirName {
 			return nil
 		}
 		unitType := parts[1]
@@ -281,30 +461,14 @@ func init() {
 		if err := json.Unmarshal(data, &entries); err != nil {
 			panic(p + ": " + err.Error())
 		}
-		for _, entry := range entries {
-			base, overrides, err := splitRankConfig(entry.Config)
-			if err != nil {
-				panic(p + " [" + entry.ID + "].config: " + err.Error())
-			}
-			def := &PerkDef{
-				ID:                    entry.ID,
-				DisplayName:           entry.DisplayName,
-				Description:           entry.Description,
-				TooltipTemplate:       entry.TooltipTemplate,
-				TooltipTemplateByTrap:      entry.TooltipTemplateByTrap,
-				TooltipTemplateByOwnedPerk: entry.TooltipTemplateByOwnedPerk,
-				Icon:                  entry.Icon,
-				UnitType:              unitType,
-				Path:                  pathName,
-				Rank:                  rank,
-				RequiresPerk:          entry.RequiresPerk,
-				Config:                base,
-				ConfigByRank:          overrides,
-				Effect:                entry.Effect,
-				GrantsAbilities:       entry.GrantsAbilities,
-			}
+		defs, err := buildPerkDefsFromPool(unitType, pathName, rank, entries)
+		if err != nil {
+			panic(p + " " + err.Error())
+		}
+		for _, def := range defs {
 			perkDefsByID[def.ID] = def
 		}
+		embeddedPerkPools[perkPoolKey(unitType, pathName, rank)] = clonePerkEntries(entries)
 		return nil
 	})
 	if err != nil {
@@ -315,7 +479,8 @@ func init() {
 // perkDefByID looks up a perk definition by its ID.
 // Returns nil if not found.
 func perkDefByID(id string) *PerkDef {
-	return perkDefsByID[id]
+	def, _ := perkDefLookup(id)
+	return def
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -337,7 +502,7 @@ func perkDefByID(id string) *PerkDef {
 // ─────────────────────────────────────────────────────────────────────────────
 func eligiblePerksForUnitAtRank(unit *Unit, rank string) []*PerkDef {
 	var eligible []*PerkDef
-	for _, def := range perkDefsByID {
+	for _, def := range snapshotPerkDefs() {
 		if def.UnitType != "" && def.UnitType != unit.UnitType {
 			continue
 		}
@@ -361,9 +526,12 @@ func eligiblePerksForUnitAtRank(unit *Unit, rank string) []*PerkDef {
 // ListPerkDefs returns all perk definitions sorted by ID.
 // Used by the /catalog/perks HTTP endpoint (mirrors ListUnitDefs / ListBuildingDefs).
 func ListPerkDefs() []PerkDef {
-	defs := make([]PerkDef, 0, len(perkDefsByID))
-	for _, def := range perkDefsByID {
-		defs = append(defs, *def)
+	snapshot := snapshotPerkDefs()
+	defs := make([]PerkDef, 0, len(snapshot))
+	for _, def := range snapshot {
+		cp := *def
+		cp.Wired = isWiredPerk(cp.ID)
+		defs = append(defs, cp)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
 	return defs

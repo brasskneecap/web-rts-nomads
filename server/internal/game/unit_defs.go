@@ -87,6 +87,12 @@ type UnitDef struct {
 	// mapping. Validated against combatProfiles at init; unknown names panic.
 	CombatProfile string          `json:"combatProfile,omitempty"`
 	AttackVisual  json.RawMessage `json:"attackVisual,omitempty"`
+	// AttackOrigin is optional per-unit, per-facing tuning of where a projectile
+	// / spell / beam visually leaves the unit's body (screen-space offsets from
+	// unit.x/unit.y). Shape: {default?:{x,y}, byFacing?:{<dir>:{x,y}}}. Client-only
+	// render config, passed through as-is; the server never reads it. Absent ⇒ the
+	// client derives the origin geometrically, exactly as before.
+	AttackOrigin json.RawMessage `json:"attackOrigin,omitempty"`
 	// AttackType names the melee attack sound the client plays when this unit's
 	// swing resolves — "swing", "stab", etc. (keyed to a file in the client's
 	// audio/sfx/combat folder). Melee-only: ranged units leave this empty and
@@ -354,8 +360,17 @@ func validateUnitDef(def *UnitDef) error {
 		return fmt.Errorf("unit %q: healthRegenRate must be >= 0, got %v", def.Type, *def.HealthRegenRate)
 	}
 	if len(def.PathChances) > 0 {
+		// Sorted key order so the reported path id is deterministic when
+		// multiple entries are negative — otherwise it depends on Go's
+		// randomized map iteration order (determinism invariant).
+		pathIDs := make([]string, 0, len(def.PathChances))
+		for path := range def.PathChances {
+			pathIDs = append(pathIDs, path)
+		}
+		sort.Strings(pathIDs)
 		var sum float64
-		for path, weight := range def.PathChances {
+		for _, path := range pathIDs {
+			weight := def.PathChances[path]
 			if weight < 0 {
 				return fmt.Errorf("unit %q: pathChances[%q] must be >= 0", def.Type, path)
 			}

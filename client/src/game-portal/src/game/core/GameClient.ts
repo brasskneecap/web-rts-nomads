@@ -19,7 +19,7 @@ import type {
 import type { CraftCatalogEntry, DebugSpawnConfig, NetStats, PlayerSummary, SelectionSummary, ShopCatalogEntry, Unit, Notification, ZoneInspectionInfo } from './GameState'
 import { BUILDING_DEF_MAP, initBuildingDefs, initBuildingStyleRenders } from '../maps/buildingDefs'
 import { initObstacleDefs } from '../maps/obstacleDefs'
-import { UNIT_DEF_MAP, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
+import { UNIT_DEF_MAP, initPathAttackOrigin, initPathBounds, initPathsByUnitType, initUnitDefs } from '../maps/unitDefs'
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs } from '../maps/perkDefs'
 import { initItemDefs, ITEM_DEF_MAP, DEFAULT_CONSUMABLE_RANGE } from '../maps/itemDefs'
@@ -202,6 +202,7 @@ export class GameClient {
     initObstacleDefs(obstacleDefs)
     initUnitDefs(unitDefs.units)
     initPathBounds(unitDefs.paths)
+    initPathAttackOrigin(unitDefs.paths)
     initPathsByUnitType(unitDefs.pathsByUnit)
     initActionIcons(actionIcons)
     initPerkDefs(perkDefs)
@@ -214,10 +215,11 @@ export class GameClient {
   }
 
   // Dev hotkey: F9 re-fetches /catalog/units + /catalog/buildings and reseeds
-  // UNIT_DEF_MAP + PATH_BOUNDS_MAP + BUILDING_DEF_MAP without a page reload.
-  // Lets unit-bounds and building-def tuning (selection rings, sprite
-  // overflow, etc.) iterate at air's rebuild speed instead of a full browser
-  // refresh + websocket reconnect.
+  // UNIT_DEF_MAP + PATH_BOUNDS_MAP + PATH_ATTACK_ORIGIN_MAP + BUILDING_DEF_MAP
+  // without a page reload. Lets unit-bounds/attack-origin and building-def
+  // tuning (selection rings, sprite overflow, projectile launch points, etc.)
+  // iterate at air's rebuild speed instead of a full browser refresh +
+  // websocket reconnect.
   private handleDevHotkey = (e: KeyboardEvent) => {
     if (e.key !== 'F9') return
     e.preventDefault()
@@ -225,10 +227,11 @@ export class GameClient {
       .then(([{ units, paths, pathsByUnit }, buildingDefs]) => {
         initUnitDefs(units)
         initPathBounds(paths)
+        initPathAttackOrigin(paths)
         initPathsByUnitType(pathsByUnit)
         initBuildingDefs(buildingDefs.buildings)
         initBuildingStyleRenders(buildingDefs.buildingStyles)
-        console.log('[dev] reloaded unit defs + path bounds + building defs')
+        console.log('[dev] reloaded unit defs + path bounds + attack origins + building defs')
       })
       .catch((err) => console.error('[dev] catalog reload failed:', err))
   }

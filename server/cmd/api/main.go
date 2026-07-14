@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -57,6 +58,30 @@ func main() {
 	game.LoadPersistedUnitsIntoOverlay()
 	game.LoadPersistedFactionsIntoOverlay()
 	game.LoadPersistedAbilitiesIntoOverlay()
+
+	// Paths and perks must load LAST among the catalogs above: rebuilding
+	// the path registry (rebuildDerivedPathMaps) re-runs validatePathFile,
+	// which rejects a path whose "abilities"/"projectile" reference isn't a
+	// registered id yet. If the ability overlay hadn't loaded first, an
+	// overlay path referencing an editor-authored ability would be
+	// skipped+warned on every restart and never rebuilt — units on that
+	// path would silently lose the override until someone re-saved it.
+	game.LoadPersistedPathsIntoOverlay()
+	game.LoadPersistedPerksIntoOverlay()
+
+	// A reviewer flagged that init()'s pathChances cross-validation panic
+	// (path_defs.go) only ever sees the EMBEDDED catalog — an overlay unit
+	// referencing an overlay path (or any other overlay-introduced dangling
+	// reference) is invisible to that boot-time check. Re-validate the
+	// MERGED catalog now that both the unit and path overlays have loaded,
+	// and log (never panic) if something's still wrong: a hand-corrupted
+	// overlay file must not brick the server on boot. A dangling
+	// pathChances reference is safe to leave unresolved at runtime — it
+	// simply falls back to unitPathNone (see pathModifierFor's identity
+	// fallback), it does not crash anything.
+	if err := game.ValidateAllUnitPathChances(); err != nil {
+		slog.Warn("boot: merged catalog has a pathChances integrity problem", "err", err)
+	}
 
 	manager := game.NewMatchManager()
 	lobbyManager := game.NewLobbyManager()

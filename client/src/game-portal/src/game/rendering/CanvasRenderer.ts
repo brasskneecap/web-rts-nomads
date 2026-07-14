@@ -38,7 +38,7 @@ import {
   drawAutoTiledTerrain,
   isTerrainTilesetReady,
 } from './terrainTileset'
-import { getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
+import { getResolvedAttackOriginFor, getResolvedUnitAttackVisual, getUnitBounds, getUnitBoundsFor, UNIT_DEF_MAP } from '../maps/unitDefs'
 import type { UnitDef } from '../maps/unitDefs'
 import { resolveUnitShadow, SHADOW_LIGHT_DX, SHADOW_LIGHT_DY, SHADOW_LIGHT_SHIFT } from '../maps/unitShadow'
 import type { BannerSnapshot, BeamSnapshot, BuildingTile, EffectSnapshot, ObstacleTile, ProjectileSnapshot, TrapSnapshot, Zone, ZoneSnapshot } from '../network/protocol'
@@ -63,6 +63,7 @@ import { getActionIconImage } from './actionIconSprites'
 import { getItemAssetImage } from './itemAssets'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
 import { UnitAnimationController } from './unitAnimation'
+import { resolveProjectileOriginLift } from './attackOriginResolve'
 import { cellSetBoundaryEdges, cellKey, zoneBoundaryEdges } from '../maps/zoneGeometry'
 
 // Cache of item-icon HTMLImageElements keyed by itemId. Built lazily on first
@@ -267,6 +268,11 @@ export class CanvasRenderer {
   // same scale; bump this if objects read too small on screen.
   private readonly OBJECT_SPRITE_SCALE = 2
   private unitAnim = new UnitAnimationController()
+  // Origin lift snapshotted per projectile at first sight. Origins are now
+  // facing-dependent, so recomputing from the owner's CURRENT facing each frame
+  // would drag an in-flight shot sideways when the owner turns. Snapshot once,
+  // keep for the shot's life, evict when it disappears.
+  private projectileOriginLiftById = new Map<string, { x: number; y: number }>()
   // Cached last non-zero attack facing per unit id. Prevents findAttackFacing
   // (O(N) scan) from running every frame when the server sends 0,0 (not
   // mid-swing). Updated each frame the server sends a non-zero facing;
@@ -3163,7 +3169,25 @@ export class CanvasRenderer {
 
     const ctx = this.ctx
     for (const proj of projectiles) {
-      const originLift = this.getProjectileOriginLift(unitsById.get(proj.ownerUnitId), originLiftCache)
+      let originLift = this.projectileOriginLiftById.get(proj.id)
+      if (!originLift) {
+        const owner = unitsById.get(proj.ownerUnitId)
+        const facing = owner ? this.unitAnim.currentDirection(owner.id) : undefined
+        // Path-first: a promoted owner's path attackOrigin wins over the base
+        // unit def's (mirrors getUnitBoundsFor's path-then-type precedence).
+        // Snapshotted into projectileOriginLiftById below like every other
+        // origin resolution here — a mid-flight owner re-path/rank change (or
+        // the owner dying) must not retroactively move an in-flight shot.
+        const authored = getResolvedAttackOriginFor(
+          { path: owner?.path, unitType: owner?.unitType },
+          facing,
+        )
+        originLift = resolveProjectileOriginLift(
+          authored,
+          this.getProjectileOriginLift(owner, originLiftCache),
+        )
+        this.projectileOriginLiftById.set(proj.id, originLift)
+      }
       const targetLift = this.getProjectileTargetLift(
         proj.targetUnitId ? unitsById.get(proj.targetUnitId) : undefined,
         targetLiftCache,
@@ -3202,6 +3226,11 @@ export class CanvasRenderer {
         projectile: proj,
       })
       ctx.restore()
+    }
+
+    const liveProjectileIds = new Set(projectiles.map((p) => p.id))
+    for (const id of this.projectileOriginLiftById.keys()) {
+      if (!liveProjectileIds.has(id)) this.projectileOriginLiftById.delete(id)
     }
   }
 
@@ -3375,15 +3404,24 @@ export class CanvasRenderer {
         const originLift = this.getProjectileOriginLift(caster, originLiftCache)
         const targetLift = this.getProjectileTargetLift(target, targetLiftCache)
 
-        // Per-unit nudge for the beam source — sprites whose chest anchor
-        // doesn't fit (tall hood lands the default on the head; staff hand is
-        // off to one side) declare a `beamOrigin` in their sprites.json.
-        // Screen-space delta — does not rotate with facing.
-        const casterSpriteSet = getUnitSpriteSet(caster.path, caster.unitType)
-        const beamOrigin = casterSpriteSet?.beamOrigin ?? { x: 0, y: 0 }
+        // Per-unit nudge for the beam source. The authored per-facing
+        // attackOrigin is an ABSOLUTE screen-space offset from the feet
+        // anchor (same authoring contract the projectile path's fire-test
+        // preview verifies — see attackOriginPreviewMath.ts's canvasToOrigin),
+        // so it must REPLACE the geometric chest-lift here exactly like it
+        // does for projectiles (resolveProjectileOriginLift), not add to it —
+        // an author who verifies their origin on the projectile ghost and
+        // then channels a beam must see the SAME launch point, not
+        // geometric+authored. Path-first, same precedence as the projectile
+        // origin above. When nothing is authored (every currently-shipped
+        // unit today), resolveProjectileOriginLift returns the geometric
+        // fallback unchanged, so this is byte-for-byte today's behavior.
+        const casterFacing = this.unitAnim.currentDirection(caster.id)
+        const authoredBeam = getResolvedAttackOriginFor({ path: caster.path, unitType: caster.unitType }, casterFacing)
+        const beamOriginLift = resolveProjectileOriginLift(authoredBeam, originLift)
 
-        originX = caster.x + originLift.x + beamOrigin.x
-        originY = caster.y + originLift.y + beamOrigin.y
+        originX = caster.x + beamOriginLift.x
+        originY = caster.y + beamOriginLift.y
         endX = target.x + targetLift.x
         endY = target.y + targetLift.y
       }

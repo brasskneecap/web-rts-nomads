@@ -395,7 +395,7 @@ func (s *GameState) clearChannelStateLocked(unit *Unit) {
 // Resolution order (visual data lives on the caster, not the ability — two
 // units sharing one channel ability can pin different frames on their own
 // sheets):
-//   1. Path override:   pathChannelLoopByPath[unit.ProgressionPath]
+//   1. Path override:   pathChannelLoopFor(unit.ProgressionPath)
 //   2. Unit def:        unitDefsByType[unit.UnitType].ChannelLoop
 //   3. Fallback:        (0, 0)
 //
@@ -406,7 +406,7 @@ func (s *GameState) channelLoopRangeForUnitLocked(unit *Unit) (start, end int) {
 	}
 	// Path override wins when present.
 	if unit.ProgressionPath != "" {
-		if r, ok := pathChannelLoopByPath[unit.ProgressionPath]; ok {
+		if r, ok := pathChannelLoopFor(unit.ProgressionPath); ok {
 			return r.Start, r.End
 		}
 	}

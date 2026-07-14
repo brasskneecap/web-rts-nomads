@@ -16,6 +16,18 @@ import (
 	"webrts/server/internal/ws"
 )
 
+// registerPathCatalogRoutes registers the read-only GET /catalog/paths route
+// that backs the path editor's full-detail view (ranks + every per-path
+// override — see game.ListPathDefsFull / game.EditorPathEntry). Split out
+// like registerAbilityCatalogRoutes so it can be exercised directly against
+// a bare *http.ServeMux in tests without constructing a full Hub.
+func registerPathCatalogRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/catalog/paths", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"paths": game.ListPathDefsFull()})
+	})
+}
+
 // registerAbilityCatalogRoutes registers the read-only GET /catalog/* routes
 // that back the abilities editor's validated dropdowns (abilities,
 // projectiles, effects, auto-cast selectors, ability categories, damage
@@ -111,6 +123,7 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 	})
 
 	registerAbilityCatalogRoutes(mux)
+	registerPathCatalogRoutes(mux)
 
 	mux.HandleFunc("/catalog/perks", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

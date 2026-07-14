@@ -231,6 +231,13 @@ export class UnitAnimationController {
       frameDurationMs: this.frameDurationMs,
     }
   }
+
+  // The facing last computed for this unit by sample(), or undefined if the unit
+  // hasn't been sampled yet. Lets the renderer pick a per-facing projectile origin
+  // at the moment of firing.
+  currentDirection(unitId: number): UnitDirection | undefined {
+    return this.states.get(unitId)?.direction
+  }
 }
 
 // Compass angles in screen space (x right, y down): east = 0°, increasing

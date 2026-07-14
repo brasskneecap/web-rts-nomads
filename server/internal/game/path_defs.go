@@ -3,9 +3,11 @@ package game
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"sort"
+	"sync"
 )
 
 // Embeds the per-unit catalog tree so this file can load path JSONs from
@@ -32,6 +34,15 @@ type pathCatalogFile struct {
 	// as-is; client uses path-keyed bounds before falling back to the base
 	// unit's bounds. Server game logic never reads it.
 	Bounds json.RawMessage `json:"bounds,omitempty"`
+	// AttackOrigin is an optional per-path override of where projectiles/
+	// beams visually originate (screen-space offsets from unit.x/unit.y),
+	// shape {default?:{x,y}, byFacing?:{<dir>:{x,y}}} — mirrors
+	// UnitDef.AttackOrigin (unit_defs.go). Path variants often ship their
+	// own sprites at different sizes/proportions than the base unit, so a
+	// path may need its own origin rather than inheriting the unit's.
+	// Opaque client-render data: the server never reads it, only persists
+	// and serves it back, same as Bounds.
+	AttackOrigin json.RawMessage `json:"attackOrigin,omitempty"`
 	// VisionRange overrides BaseVisionRange for units on this path, in world pixels.
 	// When 0 or absent, the unit's BaseVisionRange (from its unit def) is used.
 	VisionRange float64 `json:"visionRange,omitempty"`
@@ -132,6 +143,15 @@ var pathModifiersByKey map[string]pathModifierDef
 // with sprite-appropriate selection rings.
 var pathBoundsByPath = map[string]json.RawMessage{}
 
+// pathAttackOriginByPath holds the optional per-path attack-origin override
+// (screen-space projectile/beam launch offsets, {default?, byFacing?}),
+// keyed by path id. Empty when a path JSON omits the field. Mirrors
+// pathBoundsByPath exactly — same opaque client-render passthrough
+// contract, served via the /catalog/units endpoint's "paths" entries
+// (see PathBoundsEntry / ListPathBounds) so the game client's existing
+// fetch is sufficient; the server never reads it.
+var pathAttackOriginByPath = map[string]json.RawMessage{}
+
 // pathVisionRangeByPath stores the optional per-path base vision range in world
 // pixels, keyed by path id (e.g. "marksman": 448). Zero means "use the unit
 // def's visionRange". Applied in applyRankModifiersLocked.
@@ -185,20 +205,159 @@ var pathChannelLoopByPath = map[string]ChannelLoopRange{}
 // layout instead of duplicating it.
 var pathsByUnitType = map[string][]string{}
 
-// PathBoundsEntry is the shape served to the client: a path id plus its
-// raw bounds blob. Slice form (rather than map) gives stable ordering in
-// the JSON response.
-type PathBoundsEntry struct {
-	Path   string          `json:"path"`
-	Bounds json.RawMessage `json:"bounds"`
+// pathCatalogMu guards all 11 package-global path-catalog maps above
+// (pathModifiersByKey, pathBoundsByPath, pathAttackOriginByPath,
+// pathVisionRangeByPath, pathProjectileByPath, pathDamageTypeByPath,
+// pathAttackTypeByPath, pathProjectileScaleByPath, pathAbilitiesByPath,
+// pathChannelLoopByPath, pathsByUnitType).
+//
+// init() populates these maps single-threaded at startup before any
+// goroutine exists, so init's own reads/writes bypass the lock (see the
+// PathChances cross-validation block at the end of init, and the writes
+// inside the catalog walk). Every OTHER read — i.e. everything that runs
+// during the simulation tick loop, HTTP handlers, or any code path reachable
+// after startup — MUST go through the accessor functions below rather than
+// touching a map directly. This is what makes it safe for a future task to
+// add a writable editor overlay that rebuilds these maps at runtime while
+// the tick loop keeps reading them.
+var pathCatalogMu sync.RWMutex
+
+// pathModifierLookup is the synchronized read path for pathModifiersByKey.
+// Mirrors a direct `def, ok := pathModifiersByKey[key]` map read.
+func pathModifierLookup(key string) (pathModifierDef, bool) {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	def, ok := pathModifiersByKey[key]
+	return def, ok
 }
 
-// ListPathBounds returns all paths that declared a bounds override, sorted
-// by path id. Mirrors ListUnitDefs / ListBuildingDefs.
+// pathBoundsFor is the synchronized read path for pathBoundsByPath.
+func pathBoundsFor(path string) (json.RawMessage, bool) {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	bounds, ok := pathBoundsByPath[path]
+	return bounds, ok
+}
+
+// pathAttackOriginFor is the synchronized read path for
+// pathAttackOriginByPath.
+func pathAttackOriginFor(path string) (json.RawMessage, bool) {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	origin, ok := pathAttackOriginByPath[path]
+	return origin, ok
+}
+
+// pathVisionRangeFor is the synchronized read path for pathVisionRangeByPath.
+func pathVisionRangeFor(path string) (float64, bool) {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	vision, ok := pathVisionRangeByPath[path]
+	return vision, ok
+}
+
+// pathProjectileFor is the synchronized read path for pathProjectileByPath.
+func pathProjectileFor(path string) (string, bool) {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	projectile, ok := pathProjectileByPath[path]
+	return projectile, ok
+}
+
+// pathDamageTypeFor is the synchronized read path for pathDamageTypeByPath.
+func pathDamageTypeFor(path string) (DamageType, bool) {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	damageType, ok := pathDamageTypeByPath[path]
+	return damageType, ok
+}
+
+// pathAttackTypeFor is the synchronized read path for pathAttackTypeByPath.
+func pathAttackTypeFor(path string) (string, bool) {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	attackType, ok := pathAttackTypeByPath[path]
+	return attackType, ok
+}
+
+// pathProjectileScaleFor is the synchronized read path for
+// pathProjectileScaleByPath.
+func pathProjectileScaleFor(path string) (float64, bool) {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	scale, ok := pathProjectileScaleByPath[path]
+	return scale, ok
+}
+
+// pathAbilitiesFor is the synchronized read path for pathAbilitiesByPath. The
+// returned slice is a COPY — callers must not be able to mutate the shared
+// catalog state through it.
+func pathAbilitiesFor(path string) ([]string, bool) {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	abilities, ok := pathAbilitiesByPath[path]
+	if !ok {
+		return nil, false
+	}
+	cp := make([]string, len(abilities))
+	copy(cp, abilities)
+	return cp, true
+}
+
+// pathChannelLoopFor is the synchronized read path for pathChannelLoopByPath.
+func pathChannelLoopFor(path string) (ChannelLoopRange, bool) {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	loop, ok := pathChannelLoopByPath[path]
+	return loop, ok
+}
+
+// pathsForUnitType is the synchronized read path for pathsByUnitType. The
+// returned slice is a COPY — callers must not be able to mutate the shared
+// catalog state through it. Returns nil (not an error) for an unknown unit
+// type, matching a direct map-miss read.
+func pathsForUnitType(unitType string) []string {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	paths := pathsByUnitType[unitType]
+	cp := make([]string, len(paths))
+	copy(cp, paths)
+	return cp
+}
+
+// PathBoundsEntry is the shape served to the client: a path id plus its raw
+// bounds blob and (if declared) its raw attack-origin blob. Slice form
+// (rather than map) gives stable ordering in the JSON response.
+type PathBoundsEntry struct {
+	Path         string          `json:"path"`
+	Bounds       json.RawMessage `json:"bounds"`
+	AttackOrigin json.RawMessage `json:"attackOrigin,omitempty"`
+}
+
+// ListPathBounds returns every path that declared a bounds override and/or
+// an attackOrigin override — the union of both maps, so a path authoring
+// ONLY an attackOrigin (no bounds) still appears — sorted by path id.
+// Mirrors ListUnitDefs / ListBuildingDefs. This is the single "paths" field
+// the game client already fetches via GET /catalog/units, so serving
+// attackOrigin here (rather than adding a new endpoint) keeps that fetch
+// sufficient for path-level attack-origin overrides too.
 func ListPathBounds() []PathBoundsEntry {
-	out := make([]PathBoundsEntry, 0, len(pathBoundsByPath))
-	for path, bounds := range pathBoundsByPath {
-		out = append(out, PathBoundsEntry{Path: path, Bounds: bounds})
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	seen := make(map[string]struct{}, len(pathBoundsByPath)+len(pathAttackOriginByPath))
+	for path := range pathBoundsByPath {
+		seen[path] = struct{}{}
+	}
+	for path := range pathAttackOriginByPath {
+		seen[path] = struct{}{}
+	}
+	out := make([]PathBoundsEntry, 0, len(seen))
+	for path := range seen {
+		out = append(out, PathBoundsEntry{
+			Path:         path,
+			Bounds:       pathBoundsByPath[path],
+			AttackOrigin: pathAttackOriginByPath[path],
+		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out
@@ -209,6 +368,8 @@ func ListPathBounds() []PathBoundsEntry {
 // map is freshly allocated so callers can mutate it without affecting the
 // package state; path-id slices are stable-sorted.
 func ListPathsByUnitType() map[string][]string {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
 	out := make(map[string][]string, len(pathsByUnitType))
 	for unitType, paths := range pathsByUnitType {
 		cp := make([]string, len(paths))
@@ -247,6 +408,303 @@ var validRankName = map[string]struct{}{
 	unitRankBronze: {},
 	unitRankSilver: {},
 	unitRankGold:   {},
+}
+
+// validatePathFile checks a single decoded pathCatalogFile for validity in
+// isolation — no map reads or writes, so it is safe to call before any
+// catalog state exists (a future path-editor task will run this on
+// user-submitted JSON before it ever touches the runtime catalog). It
+// intentionally does NOT catch cross-file collisions (the same path/rank
+// defined twice, or two files each claiming the same path-level channelLoop
+// / abilities override) — those require comparing against already-
+// registered state and live in registerPathFileLocked instead.
+//
+// Error messages match the panic messages the walk in init() used to
+// produce, minus the "<rel>: " file-path prefix — callers add their own
+// context (init prepends the embed path; the editor will prepend whatever
+// identifies the in-flight edit).
+func validatePathFile(file *pathCatalogFile, pathKey string) error {
+	if file.Path == "" {
+		return errors.New(`missing "path" field`)
+	}
+	if file.Path != pathKey {
+		// Directory name is the canonical path id. A mismatch means someone
+		// edited one without the other; fail loud so the catalog stays
+		// coherent.
+		return fmt.Errorf("path %q does not match directory name %q", file.Path, pathKey)
+	}
+	if file.Projectile != "" {
+		if _, ok := getProjectileDef(file.Projectile); !ok {
+			return fmt.Errorf(`projectile %q is not a registered projectile def`, file.Projectile)
+		}
+	}
+	if file.DamageType != "" {
+		if !IsValidDamageType(file.DamageType) {
+			return fmt.Errorf(`damageType %q is not a registered damage type`, string(file.DamageType))
+		}
+	}
+	if file.ProjectileScale < 0 {
+		return errors.New(`projectileScale must be >= 0 (0/omitted ⇒ keep the unit def value)`)
+	}
+	// Frame indices must be non-negative and end >= start. Out-of-range
+	// positive values modulo on the client at draw time, so we don't
+	// bound-check against an expected sheet frame count here — the sprite
+	// sheet is client-side data the server doesn't know about.
+	if file.ChannelLoop != nil {
+		if file.ChannelLoop.Start < 0 {
+			return errors.New(`channelLoop.start must be >= 0`)
+		}
+		if file.ChannelLoop.End < file.ChannelLoop.Start {
+			return errors.New(`channelLoop.end must be >= channelLoop.start`)
+		}
+	}
+	// Each ability id must be a registered AbilityDef so a typo fails loud
+	// at startup. Mirrors the projectile/damage-type validation.
+	if file.Abilities != nil {
+		for _, abilityID := range *file.Abilities {
+			if abilityID == "" {
+				return errors.New(`empty ability id in "abilities"`)
+			}
+			if _, ok := getAbilityDef(abilityID); !ok {
+				return fmt.Errorf("ability %q in \"abilities\" has no registered AbilityDef", abilityID)
+			}
+		}
+	}
+	// Rank keys are sorted before validation so a file with multiple bad
+	// rank names always reports the same one first, regardless of Go's
+	// randomized map iteration order (determinism invariant).
+	rankNames := make([]string, 0, len(file.Ranks))
+	for rankName := range file.Ranks {
+		rankNames = append(rankNames, rankName)
+	}
+	sort.Strings(rankNames)
+	for _, rankName := range rankNames {
+		if _, ok := validRankName[rankName]; !ok {
+			return fmt.Errorf("unknown rank %q (want bronze/silver/gold)", rankName)
+		}
+	}
+	return nil
+}
+
+// pathDerivedMaps bundles the 11 derived path-catalog maps so
+// registerPathFileInto can populate either the live package-global maps
+// (registerPathFileLocked's use, unchanged from Task 2) or a fresh throwaway
+// set (path_persistence.go's rebuildDerivedPathMaps, which builds an entire
+// merged catalog from scratch before ever touching what readers see). Field
+// names mirror the global variable names 1:1.
+type pathDerivedMaps struct {
+	modifiersByKey        map[string]pathModifierDef
+	boundsByPath          map[string]json.RawMessage
+	attackOriginByPath    map[string]json.RawMessage
+	visionRangeByPath     map[string]float64
+	projectileByPath      map[string]string
+	damageTypeByPath      map[string]DamageType
+	attackTypeByPath      map[string]string
+	projectileScaleByPath map[string]float64
+	abilitiesByPath       map[string][]string
+	channelLoopByPath     map[string]ChannelLoopRange
+	pathsByUnitType       map[string][]string
+}
+
+// newPathDerivedMaps returns a pathDerivedMaps wrapping 11 brand-new, empty
+// maps — the "fresh" side of the build-then-swap rebuild.
+func newPathDerivedMaps() *pathDerivedMaps {
+	return &pathDerivedMaps{
+		modifiersByKey:        make(map[string]pathModifierDef, 16),
+		boundsByPath:          map[string]json.RawMessage{},
+		attackOriginByPath:    map[string]json.RawMessage{},
+		visionRangeByPath:     map[string]float64{},
+		projectileByPath:      map[string]string{},
+		damageTypeByPath:      map[string]DamageType{},
+		attackTypeByPath:      map[string]string{},
+		projectileScaleByPath: map[string]float64{},
+		abilitiesByPath:       map[string][]string{},
+		channelLoopByPath:     map[string]ChannelLoopRange{},
+		pathsByUnitType:       map[string][]string{},
+	}
+}
+
+// livePathDerivedMaps returns a pathDerivedMaps view over the package-global
+// map variables — the SAME underlying maps, not copies (maps are reference
+// types, so writes through the returned struct mutate the globals directly).
+// This is what lets registerPathFileLocked keep its original single-call
+// contract unchanged after the pathDerivedMaps generalization.
+func livePathDerivedMaps() *pathDerivedMaps {
+	return &pathDerivedMaps{
+		modifiersByKey:        pathModifiersByKey,
+		boundsByPath:          pathBoundsByPath,
+		attackOriginByPath:    pathAttackOriginByPath,
+		visionRangeByPath:     pathVisionRangeByPath,
+		projectileByPath:      pathProjectileByPath,
+		damageTypeByPath:      pathDamageTypeByPath,
+		attackTypeByPath:      pathAttackTypeByPath,
+		projectileScaleByPath: pathProjectileScaleByPath,
+		abilitiesByPath:       pathAbilitiesByPath,
+		channelLoopByPath:     pathChannelLoopByPath,
+		pathsByUnitType:       pathsByUnitType,
+	}
+}
+
+// registerPathFileLocked writes an already-validated pathCatalogFile's data
+// into the 11 package-global path-catalog maps (topology + per-path
+// overrides + per-rank stat modifiers). file MUST have already passed
+// validatePathFile — this function only guards against CROSS-file
+// collisions (the same path/rank defined twice, or the same path getting
+// two channelLoop/abilities overrides from different files); it does not
+// re-check per-file validity.
+//
+// Caller holds pathCatalogMu.Lock(). Today's only caller is init(), which
+// runs single-threaded before any goroutine exists and therefore calls this
+// WITHOUT actually taking pathCatalogMu (see pathCatalogMu's doc comment
+// above — same exemption Task 1 documented for init's direct map writes).
+// The "Locked" suffix describes the contract for every OTHER caller: a
+// future editor overlay reusing this function to register user-submitted
+// path JSON at runtime MUST hold pathCatalogMu.Lock() first.
+func registerPathFileLocked(unitKey string, file *pathCatalogFile) error {
+	return registerPathFileInto(livePathDerivedMaps(), unitKey, file)
+}
+
+// registerPathFileInto is registerPathFileLocked's logic generalized to
+// target any pathDerivedMaps instance — the live globals (via
+// registerPathFileLocked) or a fresh scratch set (via
+// rebuildDerivedPathMaps in path_persistence.go). See registerPathFileLocked
+// for the locking contract; this function itself takes no lock and assumes
+// the caller has already ensured dst is safe to mutate (either it wraps the
+// globals and the caller holds pathCatalogMu, or it's a private fresh
+// struct no other goroutine can see yet).
+func registerPathFileInto(dst *pathDerivedMaps, unitKey string, file *pathCatalogFile) error {
+	dst.pathsByUnitType[unitKey] = append(dst.pathsByUnitType[unitKey], file.Path)
+
+	if len(file.Bounds) > 0 {
+		dst.boundsByPath[file.Path] = file.Bounds
+	}
+	if len(file.AttackOrigin) > 0 {
+		dst.attackOriginByPath[file.Path] = file.AttackOrigin
+	}
+	if file.VisionRange > 0 {
+		dst.visionRangeByPath[file.Path] = file.VisionRange
+	}
+	if file.Projectile != "" {
+		dst.projectileByPath[file.Path] = file.Projectile
+	}
+	if file.DamageType != "" {
+		dst.damageTypeByPath[file.Path] = file.DamageType
+	}
+	if file.AttackType != "" {
+		dst.attackTypeByPath[file.Path] = file.AttackType
+	}
+	if file.ProjectileScale > 0 {
+		dst.projectileScaleByPath[file.Path] = file.ProjectileScale
+	}
+	if file.ChannelLoop != nil {
+		if _, dup := dst.channelLoopByPath[file.Path]; dup {
+			// Two files define a channelLoop for the same path id. Path ids
+			// are globally unique; fail loud.
+			return fmt.Errorf("duplicate path-level channelLoop override for %q", file.Path)
+		}
+		dst.channelLoopByPath[file.Path] = *file.ChannelLoop
+	}
+	if file.Abilities != nil {
+		if _, dup := dst.abilitiesByPath[file.Path]; dup {
+			return fmt.Errorf("duplicate path-level abilities override for %q", file.Path)
+		}
+		// Copy so the stored slice is independent of the caller's buffer.
+		cp := make([]string, len(*file.Abilities))
+		copy(cp, *file.Abilities)
+		dst.abilitiesByPath[file.Path] = cp
+	}
+	for rankName, stats := range file.Ranks {
+		key := pathModifierKey(file.Path, rankName)
+		if _, exists := dst.modifiersByKey[key]; exists {
+			// Two files define the same (path, rank) — e.g. if berserker
+			// appeared under both soldier/paths and archer/paths. Path ids
+			// are globally unique; fail loud.
+			return fmt.Errorf("duplicate definition for %s", key)
+		}
+		// Attack-range fields are optional in the JSON. AttackRange (flat
+		// override, in pixels) is preserved as-is; 0 means "no override".
+		// AttackRangeMultiplier defaults to 1.0 when missing / zero so paths
+		// that don't tune range continue to work without authoring the
+		// field.
+		attackRangeMult := stats.AttackRangeMultiplier
+		if attackRangeMult <= 0 {
+			attackRangeMult = 1.0
+		}
+		// Max-mana multiplier is optional: omitted / zero ⇒ 1.0, so a
+		// non-caster path that never authors it does not zero a caster's
+		// pool (and casters that don't tune mana keep the catalog value).
+		maxMPMult := stats.MaxMPMultiplier
+		if maxMPMult <= 0 {
+			maxMPMult = 1.0
+		}
+		// Same optional-multiplier convention as maxMP: omitted / zero ⇒
+		// 1.0, so a path that does not tune regen leaves it alone rather
+		// than zeroing it.
+		healthRegenMult := stats.HealthRegenMultiplier
+		if healthRegenMult <= 0 {
+			healthRegenMult = 1.0
+		}
+		dst.modifiersByKey[key] = pathModifierDef{
+			Path:                  file.Path,
+			Rank:                  rankName,
+			MaxHPMultiplier:       stats.MaxHPMultiplier,
+			MaxMPMultiplier:       maxMPMult,
+			HealthRegenMultiplier: healthRegenMult,
+			DamageMultiplier:      stats.DamageMultiplier,
+			AttackSpeedMultiplier: stats.AttackSpeedMultiplier,
+			MoveSpeedMultiplier:   stats.MoveSpeedMultiplier,
+			AttackRange:           stats.AttackRange,
+			AttackRangeMultiplier: attackRangeMult,
+			Armor:                 stats.Armor,
+			DodgeChance:           stats.DodgeChance,
+			BlockChance:           stats.BlockChance,
+		}
+	}
+	return nil
+}
+
+// embeddedPathFiles / embeddedPathUnit snapshot the embedded catalog (path
+// id -> parsed file / owning unit type) so a runtime rebuild
+// (rebuildDerivedPathMaps in path_persistence.go) can regenerate the 10
+// derived maps by merging this baseline with the writable overlay, without
+// re-walking the embed FS. Populated once by init() below via
+// clonePathCatalogFile (a deep-enough copy, so nothing can mutate the
+// baseline afterward); read-only for the rest of the process's life, so
+// reads elsewhere in the package do not take a lock — same convention as
+// unitDefsByType.
+var embeddedPathFiles = map[string]*pathCatalogFile{}
+var embeddedPathUnit = map[string]string{}
+
+// clonePathCatalogFile returns a deep-enough copy of file: every field that
+// holds map/slice/pointer state (Bounds, AttackOrigin, Abilities,
+// ChannelLoop, Ranks) gets its own backing storage so a later mutation to
+// the original — or to a copy taken from a live overlay entry — can never
+// reach back into the embedded baseline snapshot. Scalar fields copy by
+// value via the struct assignment.
+func clonePathCatalogFile(file *pathCatalogFile) *pathCatalogFile {
+	cp := *file
+	if file.Bounds != nil {
+		cp.Bounds = append(json.RawMessage(nil), file.Bounds...)
+	}
+	if file.AttackOrigin != nil {
+		cp.AttackOrigin = append(json.RawMessage(nil), file.AttackOrigin...)
+	}
+	if file.Abilities != nil {
+		abilities := append([]string(nil), (*file.Abilities)...)
+		cp.Abilities = &abilities
+	}
+	if file.ChannelLoop != nil {
+		loop := *file.ChannelLoop
+		cp.ChannelLoop = &loop
+	}
+	if file.Ranks != nil {
+		ranks := make(map[string]pathRankStatsJSON, len(file.Ranks))
+		for k, v := range file.Ranks {
+			ranks[k] = v
+		}
+		cp.Ranks = ranks
+	}
+	return &cp
 }
 
 func init() {
@@ -294,7 +752,6 @@ func init() {
 						pathsDir, pathEntry.Name()))
 				}
 				pathKey := pathEntry.Name()
-				pathsByUnitType[unitKey] = append(pathsByUnitType[unitKey], pathKey)
 				rel := pathsDir + "/" + pathKey + "/" + pathKey + ".json"
 				data, err := pathDefsFS.ReadFile(rel)
 				if err != nil {
@@ -304,130 +761,25 @@ func init() {
 				if err := json.Unmarshal(data, &file); err != nil {
 					panic(rel + ": " + err.Error())
 				}
-				if file.Path == "" {
-					panic(rel + `: missing "path" field`)
+				if err := validatePathFile(&file, pathKey); err != nil {
+					panic(rel + ": " + err.Error())
 				}
-				if file.Path != pathKey {
-					// Directory name is the canonical path id. A mismatch means
-					// someone edited one without the other; fail loud so the
-					// catalog stays coherent.
-					panic(fmt.Sprintf("%s: path %q does not match directory name %q", rel, file.Path, pathKey))
+				// init runs single-threaded before any goroutine exists (see
+				// pathCatalogMu's doc comment above), so this call to
+				// registerPathFileLocked is made WITHOUT holding
+				// pathCatalogMu — safe here only because of that guarantee.
+				// Any other caller (e.g. a future editor overlay) MUST hold
+				// pathCatalogMu.Lock() first.
+				if err := registerPathFileLocked(unitKey, &file); err != nil {
+					panic(rel + ": " + err.Error())
 				}
-				if len(file.Bounds) > 0 {
-					pathBoundsByPath[file.Path] = file.Bounds
-				}
-				if file.VisionRange > 0 {
-					pathVisionRangeByPath[file.Path] = file.VisionRange
-				}
-				if file.Projectile != "" {
-					if _, ok := getProjectileDef(file.Projectile); !ok {
-						panic(rel + `: projectile "` + file.Projectile + `" is not a registered projectile def`)
-					}
-					pathProjectileByPath[file.Path] = file.Projectile
-				}
-				if file.DamageType != "" {
-					if !IsValidDamageType(file.DamageType) {
-						panic(rel + `: damageType "` + string(file.DamageType) + `" is not a registered damage type`)
-					}
-					pathDamageTypeByPath[file.Path] = file.DamageType
-				}
-				if file.AttackType != "" {
-					pathAttackTypeByPath[file.Path] = file.AttackType
-				}
-				if file.ProjectileScale < 0 {
-					panic(rel + `: projectileScale must be >= 0 (0/omitted ⇒ keep the unit def value)`)
-				}
-				if file.ProjectileScale > 0 {
-					pathProjectileScaleByPath[file.Path] = file.ProjectileScale
-				}
-				// Validate and store per-path channel-pose frame override
-				// (when declared). Frame indices must be non-negative and
-				// end >= start. Out-of-range positive values modulo on the
-				// client at draw time, so we don't bound-check against an
-				// expected sheet frame count here — the sprite sheet is
-				// client-side data the server doesn't know about.
-				if file.ChannelLoop != nil {
-					if file.ChannelLoop.Start < 0 {
-						panic(rel + `: channelLoop.start must be >= 0`)
-					}
-					if file.ChannelLoop.End < file.ChannelLoop.Start {
-						panic(rel + `: channelLoop.end must be >= channelLoop.start`)
-					}
-					if _, dup := pathChannelLoopByPath[file.Path]; dup {
-						panic(fmt.Sprintf("%s: duplicate path-level channelLoop override for %q", rel, file.Path))
-					}
-					pathChannelLoopByPath[file.Path] = *file.ChannelLoop
-				}
-				// Validate and store per-path ability override (when declared).
-				// Each id must be a registered AbilityDef so a typo fails loud
-				// at startup. Mirrors the projectile/damage-type validation.
-				if file.Abilities != nil {
-					for _, abilityID := range *file.Abilities {
-						if abilityID == "" {
-							panic(rel + `: empty ability id in "abilities"`)
-						}
-						if _, ok := getAbilityDef(abilityID); !ok {
-							panic(fmt.Sprintf("%s: ability %q in \"abilities\" has no registered AbilityDef", rel, abilityID))
-						}
-					}
-					if _, dup := pathAbilitiesByPath[file.Path]; dup {
-						panic(fmt.Sprintf("%s: duplicate path-level abilities override for %q", rel, file.Path))
-					}
-					// Copy so the stored slice is independent of the unmarshal buffer.
-					cp := make([]string, len(*file.Abilities))
-					copy(cp, *file.Abilities)
-					pathAbilitiesByPath[file.Path] = cp
-				}
-				for rankName, stats := range file.Ranks {
-					if _, ok := validRankName[rankName]; !ok {
-						panic(fmt.Sprintf("%s: unknown rank %q (want bronze/silver/gold)", rel, rankName))
-					}
-					key := pathModifierKey(file.Path, rankName)
-					if _, exists := pathModifiersByKey[key]; exists {
-						// Two files define the same (path, rank) — e.g. if
-						// berserker appeared under both soldier/paths and
-						// archer/paths. Path ids are globally unique; fail loud.
-						panic(fmt.Sprintf("%s: duplicate definition for %s", rel, key))
-					}
-					// Attack-range fields are optional in the JSON. AttackRange
-					// (flat override, in pixels) is preserved as-is; 0 means
-					// "no override". AttackRangeMultiplier defaults to 1.0 when
-					// missing / zero so paths that don't tune range continue to
-					// work without authoring the field.
-					attackRangeMult := stats.AttackRangeMultiplier
-					if attackRangeMult <= 0 {
-						attackRangeMult = 1.0
-					}
-					// Max-mana multiplier is optional: omitted / zero ⇒ 1.0, so a
-					// non-caster path that never authors it does not zero a caster's
-					// pool (and casters that don't tune mana keep the catalog value).
-					maxMPMult := stats.MaxMPMultiplier
-					if maxMPMult <= 0 {
-						maxMPMult = 1.0
-					}
-					// Same optional-multiplier convention as maxMP: omitted / zero
-					// ⇒ 1.0, so a path that does not tune regen leaves it alone
-					// rather than zeroing it.
-					healthRegenMult := stats.HealthRegenMultiplier
-					if healthRegenMult <= 0 {
-						healthRegenMult = 1.0
-					}
-					pathModifiersByKey[key] = pathModifierDef{
-						Path:                  file.Path,
-						Rank:                  rankName,
-						MaxHPMultiplier:       stats.MaxHPMultiplier,
-						MaxMPMultiplier:       maxMPMult,
-						HealthRegenMultiplier: healthRegenMult,
-						DamageMultiplier:      stats.DamageMultiplier,
-						AttackSpeedMultiplier: stats.AttackSpeedMultiplier,
-						MoveSpeedMultiplier:   stats.MoveSpeedMultiplier,
-						AttackRange:           stats.AttackRange,
-						AttackRangeMultiplier: attackRangeMult,
-						Armor:                 stats.Armor,
-						DodgeChance:           stats.DodgeChance,
-						BlockChance:           stats.BlockChance,
-					}
-				}
+				// Snapshot the embedded baseline (deep copy — see
+				// clonePathCatalogFile) so a future runtime rebuild
+				// (path_persistence.go) can regenerate the derived maps by
+				// merging this with the writable overlay, without
+				// re-walking the embed FS.
+				embeddedPathFiles[file.Path] = clonePathCatalogFile(&file)
+				embeddedPathUnit[file.Path] = unitKey
 			}
 		}
 	}

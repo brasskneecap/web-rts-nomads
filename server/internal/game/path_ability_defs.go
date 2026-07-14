@@ -177,7 +177,7 @@ func (s *GameState) assignUnitPathAbilitiesLocked(unit *Unit) {
 	// Step 2: path-level override. Applies whenever a path is assigned (even
 	// at base rank — a debug-spawned cleric/base still gets greater_heal).
 	if unit.ProgressionPath != unitPathNone {
-		if pathAbilities, ok := pathAbilitiesByPath[unit.ProgressionPath]; ok {
+		if pathAbilities, ok := pathAbilitiesFor(unit.ProgressionPath); ok {
 			newAbilities = append([]string(nil), pathAbilities...)
 		}
 	}

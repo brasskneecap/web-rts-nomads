@@ -30,7 +30,10 @@ async function getJSON<T>(path: string): Promise<T> {
   return (await res.json()) as T
 }
 
-async function throwIfValidationFailed(res: Response): Promise<void> {
+// Exported so other editor API modules (e.g. pathEditorApi) can reuse the
+// exact same 400 validation_failed -> EditorValidationError mapping instead
+// of redefining it.
+export async function throwIfValidationFailed(res: Response): Promise<void> {
   if (res.status !== 400) return
   const body = (await res.json()) as { error?: string; message?: string }
   if (body.error === 'validation_failed') throw new EditorValidationError(body.message ?? 'validation failed')

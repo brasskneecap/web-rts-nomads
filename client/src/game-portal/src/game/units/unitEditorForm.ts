@@ -1,3 +1,5 @@
+import type { UnitAttackOrigin } from '@/game/maps/unitDefs'
+
 // AuthoredUnitDef is the full authored shape (superset of the render-time
 // UnitDef). Modeled fields are typed; unmodeled keys (attackVisual/bounds/
 // shadow + any future keys) ride along via the index signature.
@@ -44,6 +46,7 @@ export interface AuthoredUnitDef {
   nonCombat?: boolean
   trainLabel?: string
   channelLoop?: { start: number; end: number }
+  attackOrigin?: UnitAttackOrigin
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
 }
@@ -57,7 +60,7 @@ const MODELED_KEYS = [
   'projectile','projectileScale','goldGatherAmount','woodGatherAmount','maxMana',
   'manaRegenRate','visionRange','flyer','abilities','requiresBuildings','pathChances',
   'dominionPointDropChance','dominionPointAmount','spawnExp','experience','nonCombat',
-  'trainLabel','channelLoop',
+  'trainLabel','channelLoop','attackOrigin',
 ] as const
 
 export interface UnitEditorForm extends AuthoredUnitDef {
