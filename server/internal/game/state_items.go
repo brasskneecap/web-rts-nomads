@@ -253,14 +253,21 @@ func (s *GameState) recomputeUnitEquipmentBonusLocked(unit *Unit) {
 			}
 			unit.EquipmentBonus.OnHitElemental[e.Type.OrPhysical()] += e.Amount
 		}
-		if p := def.OnHitProc; p != nil {
-			if params, ok := p.ResolveParams(); ok {
-				unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, EquipmentProc{Chance: p.Chance, Params: params})
+		// An item can define several procs, including more than one on the same
+		// trigger; each becomes its own EquipmentProc and rolls independently.
+		// Catalog order is preserved, which keeps the seeded RNG stream stable.
+		for i := range def.Procs {
+			p := &def.Procs[i]
+			params, ok := p.ResolveParams()
+			if !ok {
+				continue
 			}
-		}
-		if p := def.OnStruckProc; p != nil {
-			if params, ok := p.ResolveParams(); ok {
-				unit.EquipmentBonus.OnStruckProcs = append(unit.EquipmentBonus.OnStruckProcs, EquipmentProc{Chance: p.Chance, Params: params})
+			entry := EquipmentProc{Chance: p.Chance, Params: params}
+			switch p.Trigger {
+			case ProcOnHit:
+				unit.EquipmentBonus.OnHitProcs = append(unit.EquipmentBonus.OnHitProcs, entry)
+			case ProcOnStruck:
+				unit.EquipmentBonus.OnStruckProcs = append(unit.EquipmentBonus.OnStruckProcs, entry)
 			}
 		}
 	}
@@ -553,20 +560,6 @@ func (s *GameState) handleEquipItemLocked(playerID string, unitID int, slotIdx i
 		return
 	}
 
-	// AllowedUnitTypes restriction.
-	if len(def.AllowedUnitTypes) > 0 {
-		allowed := false
-		for _, t := range def.AllowedUnitTypes {
-			if t == unit.UnitType {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return
-		}
-	}
-
 	// Pull item from vault (decrements stacks or removes entry).
 	removed, ok := s.removeItemFromVaultByInstanceLocked(player, instanceID)
 	if !ok {
@@ -754,23 +747,9 @@ func (s *GameState) handleTransferItemLocked(playerID string, fromUnitID, fromSl
 		return
 	}
 
-	// AllowedUnitTypes restriction on the item def.
-	item := fromUnit.Equipped[fromSlotIdx]
-	def, ok := s.itemCatalog[item.ItemID]
-	if !ok {
+	// The item must still resolve to a catalog def; an unknown id is never moved.
+	if _, ok := s.itemCatalog[fromUnit.Equipped[fromSlotIdx].ItemID]; !ok {
 		return
-	}
-	if len(def.AllowedUnitTypes) > 0 {
-		allowed := false
-		for _, t := range def.AllowedUnitTypes {
-			if t == toUnit.UnitType {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return
-		}
 	}
 
 	// Move the item pointer atomically.

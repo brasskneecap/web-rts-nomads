@@ -6,8 +6,6 @@
   "kind": "consumable",
   "tier": "legendary",
   "category": "Consumable",
-  "slotKind": "any",
-  "allowedUnitTypes": [],
   "costGold": 1000,
   "requiredBuilding": "marketplace",
   "maxStacks": 99,

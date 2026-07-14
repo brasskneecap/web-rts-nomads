@@ -22,7 +22,7 @@ function mkItem(id: string): ItemDef {
     iconKey: id,
     kind: 'equipment',
     tier: 'common',
-    slotKind: 'any',
+   
     costGold: 10,
   }
 }

@@ -25,10 +25,9 @@ export type WorldEditorCategory = { id: string; label: string; enabled: boolean 
 // Full vision, with milestone-1 categories enabled and later sub-projects
 // visible-but-disabled so the roadmap is discoverable in the UI.
 export const WORLD_EDITOR_CATEGORIES: WorldEditorCategory[] = [
-  { id: 'terrain', label: 'Terrain', enabled: true },
-  { id: 'obstacles', label: 'Obstacles', enabled: true },
-  { id: 'buildings', label: 'Buildings', enabled: true },
-  { id: 'units', label: 'Units', enabled: true },
+  // One entry for the map itself — terrain / obstacles / buildings / units are
+  // brush modes inside the Paint section, not separate editors.
+  { id: 'map', label: 'Map', enabled: true },
   { id: 'items', label: 'Items', enabled: true },
   { id: 'unit-types', label: 'Unit Types', enabled: true },
   { id: 'unit-paths', label: 'Unit Paths', enabled: false },

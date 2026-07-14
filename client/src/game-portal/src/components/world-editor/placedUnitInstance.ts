@@ -49,17 +49,6 @@ export function perksForUnitType<T extends { id: string; unitType?: string }>(
   return perkDefs.filter((p) => !p.unitType || p.unitType === unitType)
 }
 
-// itemsForUnitType filters the item catalog to items valid for a unit type.
-// ItemDef.allowedUnitTypes (see game/maps/itemDefs.ts) is the list of
-// eligible unit types — absent/empty means the item applies to any unit
-// type. Mirrors the itemTypeAllowsUnit semantics in VaultPanel.vue: an item
-// authored onto a placed unit of a disallowed type is silently
-// force-equipped by the server (equipItemDirectLocked) with no drop and no
-// warning, unlike perks (which the server drops at hydrate), so this filter
-// must be applied client-side.
-export function itemsForUnitType<T extends { id: string; allowedUnitTypes?: string[] }>(
-  items: T[],
-  unitType: string,
-): T[] {
-  return items.filter((i) => !i.allowedUnitTypes || i.allowedUnitTypes.length === 0 || i.allowedUnitTypes.includes(unitType))
-}
+// Items carry no unit-type restriction: any unit can equip any item. (Perks
+// still do — see perksForUnitType above.) The former itemsForUnitType filter is
+// gone with ItemDef.allowedUnitTypes; call sites list the whole item catalog.

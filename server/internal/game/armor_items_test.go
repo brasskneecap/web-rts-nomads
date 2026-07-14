@@ -40,9 +40,6 @@ func TestArmorItems_Load(t *testing.T) {
 		} else if tierRank < prevTierRank {
 			t.Errorf("%s: tier %q ranks below the previous item in the line — a stronger armor item must not be a lower tier", id, def.Tier)
 		}
-		if def.SlotKind != ItemSlotKindArmor {
-			t.Errorf("%s: slotKind = %q, want armor", id, def.SlotKind)
-		}
 		if def.Category != "Armor" {
 			t.Errorf("%s: category = %q, want Armor", id, def.Category)
 		}

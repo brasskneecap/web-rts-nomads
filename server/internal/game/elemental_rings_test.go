@@ -19,9 +19,6 @@ func TestElementalRings_Load(t *testing.T) {
 		if def.Kind != ItemKindEquipment {
 			t.Errorf("%s: kind = %q, want equipment", tc.id, def.Kind)
 		}
-		if def.SlotKind != ItemSlotKindAny {
-			t.Errorf("%s: slotKind = %q, want any", tc.id, def.SlotKind)
-		}
 		var amount int
 		var found bool
 		for _, e := range def.OnHitElemental {

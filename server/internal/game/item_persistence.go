@@ -50,36 +50,31 @@ func resolveItemsDir() (string, error) {
 	return "", fmt.Errorf("items directory not found at %s; set ITEM_CATALOG_DIR env var to override", dir)
 }
 
-// itemProcDisk strips ItemOnHitProc's wire-enrichment MarshalJSON (a defined
-// type has no methods), so DISK files keep the authored reference+overrides
-// form. Writing the enriched wire form would re-read resolved values as
-// frozen overrides — see the items.go MarshalJSON doc comment.
-type itemProcDisk ItemOnHitProc
+// itemProcDisk strips ItemProc's wire-enrichment MarshalJSON (a defined type
+// has no methods), so DISK files keep the authored reference+overrides form.
+// Writing the enriched wire form would re-read resolved values as frozen
+// overrides — see the items.go MarshalJSON doc comment.
+type itemProcDisk ItemProc
 
-// itemDefDisk shadows the two proc fields with the method-less type; every
-// other field marshals identically to ItemDef.
+// itemDefDisk shadows the proc list with the method-less element type; every
+// other field marshals identically to ItemDef. Marshal-only: reading a def
+// back goes through ItemDef's own UnmarshalJSON (which also folds the legacy
+// singular proc keys), so this type must never be a decode target.
 type itemDefDisk struct {
 	ItemDef
-	Overridden   bool          `json:"overridden,omitempty"` // never persisted (always zero on write path)
-	OnHitProc    *itemProcDisk `json:"onHitProc,omitempty"`
-	OnStruckProc *itemProcDisk `json:"onStruckProc,omitempty"`
+	Overridden bool           `json:"overridden,omitempty"` // never persisted (always zero on write path)
+	Procs      []itemProcDisk `json:"procs,omitempty"`
 }
 
 // renderItemDefJSON serializes a def in the AUTHORED form for disk.
 func renderItemDefJSON(def *ItemDef) ([]byte, error) {
 	d := itemDefDisk{ItemDef: *def}
 	d.ItemDef.Overridden = false
-	if def.OnHitProc != nil {
-		p := itemProcDisk(*def.OnHitProc)
-		d.OnHitProc = &p
+	for _, p := range def.Procs {
+		d.Procs = append(d.Procs, itemProcDisk(p))
 	}
-	if def.OnStruckProc != nil {
-		p := itemProcDisk(*def.OnStruckProc)
-		d.OnStruckProc = &p
-	}
-	// Zero the embedded copies so the shadow fields are the only emitters.
-	d.ItemDef.OnHitProc = nil
-	d.ItemDef.OnStruckProc = nil
+	// Zero the embedded copy so the shadow field is the only emitter.
+	d.ItemDef.Procs = nil
 	return json.MarshalIndent(d, "", "  ")
 }
 

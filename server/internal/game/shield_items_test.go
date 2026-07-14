@@ -45,7 +45,7 @@ func TestShieldItems_CatalogWiring(t *testing.T) {
 }
 
 // TestElementalShields_StruckProcWiring: each elemental shield references its
-// element's shipped proc effect via onStruckProc at a valid chance.
+// element's shipped proc effect on the onStruck trigger at a valid chance.
 func TestElementalShields_StruckProcWiring(t *testing.T) {
 	wiring := map[string]string{
 		"fire_shield":      "fire_bolt_ignite",
@@ -57,10 +57,7 @@ func TestElementalShields_StruckProcWiring(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s not in catalog", id)
 		}
-		p := def.OnStruckProc
-		if p == nil {
-			t.Fatalf("%s has no onStruckProc", id)
-		}
+		p := firstProcFor(t, def, ProcOnStruck)
 		if p.Effect != effect {
 			t.Errorf("%s effect = %q, want %q", id, p.Effect, effect)
 		}
@@ -68,7 +65,7 @@ func TestElementalShields_StruckProcWiring(t *testing.T) {
 			t.Errorf("%s chance %v not a valid probability in (0,1]", id, p.Chance)
 		}
 		if _, ok := p.ResolveParams(); !ok {
-			t.Errorf("%s onStruckProc does not resolve", id)
+			t.Errorf("%s onStruck proc does not resolve", id)
 		}
 	}
 }
@@ -99,13 +96,14 @@ func TestShieldRecipes_Wiring(t *testing.T) {
 }
 
 // TestOnStruckProc_MarshalEmitsResolvedPayload guards the client wire
-// contract for the struck-proc mirror, same as the onHitProc wire test.
+// contract for the struck-proc mirror, same as the onHit proc wire test.
 func TestOnStruckProc_MarshalEmitsResolvedPayload(t *testing.T) {
 	def, ok := getItemDef("fire_shield")
 	if !ok {
 		t.Fatal("fire_shield not in catalog")
 	}
-	data, err := json.Marshal(def.OnStruckProc)
+	proc := firstProcFor(t, def, ProcOnStruck)
+	data, err := json.Marshal(proc)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -113,9 +111,12 @@ func TestOnStruckProc_MarshalEmitsResolvedPayload(t *testing.T) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		t.Fatalf("unmarshal wire: %v", err)
 	}
-	params, _ := def.OnStruckProc.ResolveParams()
-	if wire["effect"] != def.OnStruckProc.Effect {
-		t.Errorf("wire effect = %v, want %v", wire["effect"], def.OnStruckProc.Effect)
+	params, _ := proc.ResolveParams()
+	if wire["trigger"] != string(ProcOnStruck) {
+		t.Errorf("wire trigger = %v, want %v", wire["trigger"], ProcOnStruck)
+	}
+	if wire["effect"] != proc.Effect {
+		t.Errorf("wire effect = %v, want %v", wire["effect"], proc.Effect)
 	}
 	if wire["damage"] != float64(params.Damage) {
 		t.Errorf("wire damage = %v, want %v (resolved)", wire["damage"], params.Damage)

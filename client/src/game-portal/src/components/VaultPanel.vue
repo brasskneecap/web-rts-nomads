@@ -87,7 +87,6 @@
               v-for="card in unitCards"
               :key="card.id"
               :card="card"
-              :has-selected-item="vaultSelectedInstanceId !== null"
               :accepts-drop="acceptsDropForUnit(card.id)"
               :accepts-consumable-drop="dragSource?.kind === 'bag-consumable'"
               :icon-container-url="iconContainerUrl"
@@ -252,21 +251,8 @@ const selectedItem = computed<VaultSelectedItem | null>(() => {
   }
 })
 
-// Whether a specific item is allowed on a unit type. No restriction means any
-// item-capable unit qualifies.
-function itemTypeAllowsUnit(itemId: string, unitType: string): boolean {
-  const def = ITEM_DEF_MAP.get(itemId)
-  if (!def?.allowedUnitTypes || def.allowedUnitTypes.length === 0) return true
-  return def.allowedUnitTypes.includes(unitType)
-}
-
-// Whether the currently-selected item is allowed on a unit type (drives card
-// eligibility / sorting). True when nothing is selected.
-function itemAllowsUnit(unitType: string): boolean {
-  const snap = selectedSnapshot.value
-  if (!snap) return true
-  return itemTypeAllowsUnit(snap.itemId, unitType)
-}
+// Items carry no unit-type restriction: any item-capable unit can equip any
+// item, so eligibility is purely "does the unit have a free unlocked slot".
 
 // ── Per-unit card data ──────────────────────────────────────────────────────
 function buildInventory(unit: Unit): VaultInventorySlot[] {
@@ -364,9 +350,7 @@ const unitCards = computed<VaultUnitCardData[]>(() => {
 
   const cards = capable.map((u, originalIndex) => {
     const inventory = buildInventory(u)
-    const eligible = itemAllowsUnit(u.unitType)
-    const hasEmptyMatchingSlot =
-      eligible && inventory.some((s) => !s.locked && !s.item)
+    const hasEmptyMatchingSlot = inventory.some((s) => !s.locked && !s.item)
     const pathLabel = u.path && u.path !== 'none' ? formatUnitPath(u.path) : ''
     const specializationName = pathLabel || u.name
     const rankChevrons =
@@ -387,7 +371,6 @@ const unitCards = computed<VaultUnitCardData[]>(() => {
         isMaxRank: u.rank === 'gold',
         perks: buildPerks(u),
         inventory,
-        eligible,
         hasEmptyMatchingSlot,
       } as VaultUnitCardData,
       originalIndex,
@@ -416,17 +399,14 @@ type DragSource =
 
 const dragSource = ref<DragSource | null>(null)
 
-// Whether a currently-dragged item could be equipped on a given unit: the item
-// must be allowed on that unit's type and the unit must have an empty unlocked
-// slot. Drives the per-slot drop-target glow on each card.
+// Whether a currently-dragged item could be equipped on a given unit: any item
+// fits any unit, so the only requirement is an empty unlocked slot. Drives the
+// per-slot drop-target glow on each card.
 function acceptsDropForUnit(unitId: number): boolean {
   const src = dragSource.value
   if (!src) return false
   const unit = unitsById.value.get(unitId)
   if (!unit) return false
-  const def = ITEM_DEF_MAP.get(src.itemId)
-  const allowed = !def?.allowedUnitTypes?.length || def.allowedUnitTypes.includes(unit.unitType)
-  if (!allowed) return false
   const size = unit.inventory?.size ?? 0
   const slots = unit.inventory?.slots ?? []
   for (let i = 0; i < Math.min(RANK_SLOTS.length, size); i++) {
@@ -489,8 +469,6 @@ function onCardSlotDrop(payload: { unitId: number; slotIndex: number }) {
   if (payload.slotIndex >= size) return // locked slot
   const held = unit.inventory?.slots?.[payload.slotIndex] ?? null
   if (held) return // occupied — block, never overwrite
-
-  if (!itemTypeAllowsUnit(src.itemId, unit.unitType)) return
 
   if (src.kind === 'vault') {
     props.onEquipItem(unit.id, payload.slotIndex, src.instanceId)

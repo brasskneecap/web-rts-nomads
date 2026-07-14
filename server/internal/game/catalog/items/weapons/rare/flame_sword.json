@@ -6,7 +6,6 @@
   "kind": "equipment",
   "tier": "rare",
   "category": "Weapon",
-  "slotKind": "weapon",
   "costGold": 250,
   "requiredBuilding": "marketplace",
   "modifiers": {

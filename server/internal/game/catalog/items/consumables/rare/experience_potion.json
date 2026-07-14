@@ -6,8 +6,6 @@
   "kind": "consumable",
   "tier": "rare",
   "category": "Consumable",
-  "slotKind": "any",
-  "allowedUnitTypes": [],
   "costGold": 25,
   "requiredBuilding": "marketplace",
   "maxStacks": 99,

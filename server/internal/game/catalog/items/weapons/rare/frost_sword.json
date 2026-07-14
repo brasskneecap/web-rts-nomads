@@ -6,10 +6,10 @@
   "kind": "equipment",
   "tier": "rare",
   "category": "Weapon",
-  "slotKind": "any",
-  "allowedUnitTypes": [],
   "costGold": 0,
   "modifiers": { "damage": 5 },
   "onHitElemental": [ { "type": "cold", "amount": 5 } ],
-  "onHitProc": { "chance": 0.1, "effect": "frost_bolt_chill" }
+  "procs": [
+    { "trigger": "onHit", "chance": 0.1, "effect": "frost_bolt_chill" }
+  ]
 }

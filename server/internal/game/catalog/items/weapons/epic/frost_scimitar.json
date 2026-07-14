@@ -6,8 +6,6 @@
   "kind": "equipment",
   "tier": "epic",
   "category": "Weapon",
-  "slotKind": "weapon",
-  "allowedUnitTypes": [],
   "costGold": 500,
   "requiredBuilding": "marketplace",
   "modifiers": { "damage": 50 },

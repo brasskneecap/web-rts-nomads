@@ -6,8 +6,6 @@
   "kind": "equipment",
   "tier": "common",
   "category": "Weapon",
-  "slotKind": "weapon",
-  "allowedUnitTypes": [],
   "costGold": 50,
   "requiredBuilding": "marketplace",
   "modifiers": { "damage": 5 },

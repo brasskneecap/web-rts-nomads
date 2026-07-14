@@ -4,10 +4,7 @@
        click never equips. -->
   <div
     class="ucard"
-    :class="{
-      'ucard--ineligible': hasSelectedItem && !card.eligible,
-      'ucard--consumable-target': acceptsConsumableDrop,
-    }"
+    :class="{ 'ucard--consumable-target': acceptsConsumableDrop }"
     role="button"
     tabindex="0"
     @click="emit('focus', card.id)"
@@ -94,8 +91,6 @@ import type { VaultUnitCardData } from './types'
 
 const props = defineProps<{
   card: VaultUnitCardData
-  /** A vault item is selected (drives the ineligible-dimming). */
-  hasSelectedItem: boolean
   /** A compatible equipment item is being dragged and could land on this unit. */
   acceptsDrop: boolean
   /** A bag consumable is being dragged — the whole card is a valid drop target
@@ -172,10 +167,6 @@ function onCardDrop(e: DragEvent) {
 .ucard:focus-visible {
   filter: brightness(1.1);
   outline: none;
-}
-
-.ucard--ineligible {
-  opacity: 0.4;
 }
 
 /* A bag consumable is being dragged: the whole card lights up as a drop target

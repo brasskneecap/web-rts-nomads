@@ -26,7 +26,7 @@ func itemOverlayCleanup(t *testing.T, id string) {
 func TestItemOverlay_LoadFromDirOverlaysDisk(t *testing.T) {
 	const id = "test_overlay_item"
 	itemOverlayCleanup(t, id)
-	def := &ItemDef{ID: id, DisplayName: "Overlay Item", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon, SlotKind: "any", Modifiers: &ItemModifiers{Armor: 3}}
+	def := &ItemDef{ID: id, DisplayName: "Overlay Item", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon, Modifiers: &ItemModifiers{Armor: 3}}
 	raw, err := renderItemDefJSON(def)
 	if err != nil {
 		t.Fatalf("render: %v", err)
@@ -97,8 +97,8 @@ func TestItemOverlay_OverlayWinsOverEmbed(t *testing.T) {
 // resolved wire payload (damageType/projectileID), which would freeze resolved
 // values as overrides on reload.
 func TestRenderItemDefJSON_AuthoredFormNotWireForm(t *testing.T) {
-	def := &ItemDef{ID: "x", DisplayName: "X", IconKey: "x", Kind: ItemKindEquipment, Tier: ItemTierRare, SlotKind: "any",
-		OnHitProc: &ItemOnHitProc{Chance: 0.1, Effect: "fire_bolt_ignite"}}
+	def := &ItemDef{ID: "x", DisplayName: "X", IconKey: "x", Kind: ItemKindEquipment, Tier: ItemTierRare,
+		Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Effect: "fire_bolt_ignite"}}}
 	raw, err := renderItemDefJSON(def)
 	if err != nil {
 		t.Fatalf("render: %v", err)
@@ -115,8 +115,12 @@ func TestRenderItemDefJSON_AuthoredFormNotWireForm(t *testing.T) {
 	if err := json.Unmarshal(raw, &back); err != nil {
 		t.Fatalf("round-trip unmarshal: %v", err)
 	}
-	if back.OnHitProc == nil || back.OnHitProc.Effect != "fire_bolt_ignite" || back.OnHitProc.Damage != 0 {
-		t.Errorf("round-trip drifted: %+v", back.OnHitProc)
+	if len(back.Procs) != 1 {
+		t.Fatalf("round-trip should keep exactly 1 proc, got %d: %+v", len(back.Procs), back.Procs)
+	}
+	p := back.Procs[0]
+	if p.Trigger != ProcOnHit || p.Effect != "fire_bolt_ignite" || p.Damage != 0 {
+		t.Errorf("round-trip drifted: %+v", p)
 	}
 }
 
@@ -147,7 +151,7 @@ func TestSaveItemDef_WritesTierPathAndRegistersLive(t *testing.T) {
 	itemOverlayCleanup(t, id)
 	dir := t.TempDir()
 	t.Setenv("ITEM_CATALOG_DIR", dir)
-	def := &ItemDef{ID: id, DisplayName: "Saved", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierUncommon, Category: "Shield", SlotKind: "any", Modifiers: &ItemModifiers{Armor: 7}}
+	def := &ItemDef{ID: id, DisplayName: "Saved", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierUncommon, Category: "Shield", Modifiers: &ItemModifiers{Armor: 7}}
 	if err := SaveItemDef(def); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -172,7 +176,7 @@ func TestSaveItemDef_WritesTierPathAndRegistersLive(t *testing.T) {
 func TestItemOverlay_VisibleToNewMatchCatalog(t *testing.T) {
 	const id = "test_match_visible_item"
 	itemOverlayCleanup(t, id)
-	reg := &ItemDef{ID: id, DisplayName: "Match Visible", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon, SlotKind: "any", Overridden: true}
+	reg := &ItemDef{ID: id, DisplayName: "Match Visible", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon, Overridden: true}
 	runtimeItemsMu.Lock()
 	runtimeItems[id] = reg
 	runtimeItemsMu.Unlock()
@@ -191,7 +195,7 @@ func TestDeleteItemOverride_RemovesFileAndOverlay(t *testing.T) {
 	itemOverlayCleanup(t, id)
 	dir := t.TempDir()
 	t.Setenv("ITEM_CATALOG_DIR", dir)
-	def := &ItemDef{ID: id, DisplayName: "Doomed", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon, SlotKind: "any"}
+	def := &ItemDef{ID: id, DisplayName: "Doomed", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon}
 	if err := SaveItemDef(def); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -224,7 +228,7 @@ func TestSaveItemIcon_RoundTripAndIconKeyForce(t *testing.T) {
 	itemOverlayCleanup(t, id)
 	dir := t.TempDir()
 	t.Setenv("ITEM_CATALOG_DIR", dir)
-	def := &ItemDef{ID: id, DisplayName: "Icon", IconKey: "something_else", Kind: ItemKindEquipment, Tier: ItemTierCommon, SlotKind: "any"}
+	def := &ItemDef{ID: id, DisplayName: "Icon", IconKey: "something_else", Kind: ItemKindEquipment, Tier: ItemTierCommon}
 	if err := SaveItemDef(def); err != nil {
 		t.Fatalf("save def: %v", err)
 	}
@@ -276,7 +280,7 @@ func TestUpgradeGrant_UsesMatchSnapshotNotLiveOverlay(t *testing.T) {
 	itemOverlayCleanup(t, id)
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 0x15EA)
 	runtimeItemsMu.Lock()
-	runtimeItems[id] = &ItemDef{ID: id, DisplayName: "Late", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon, SlotKind: "any", Overridden: true}
+	runtimeItems[id] = &ItemDef{ID: id, DisplayName: "Late", IconKey: id, Kind: ItemKindEquipment, Tier: ItemTierCommon, Overridden: true}
 	runtimeItemsMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()

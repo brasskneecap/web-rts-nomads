@@ -46,27 +46,26 @@ func TestCraftedSwords_LoadAllThree(t *testing.T) {
 				t.Fatalf("%s: expected an onHitElemental entry of type %s with a positive amount, got %+v", tc.id, tc.wantElement, def.OnHitElemental)
 			}
 
-			// onHitProc structural wiring: the proc must fire the element's own
-			// projectile for positive damage at a valid probability. Damage and
-			// chance are catalog-owned tunables, so assert invariants not numbers.
-			if def.OnHitProc == nil {
-				t.Fatalf("%s: OnHitProc is nil", tc.id)
-			}
-			params, ok := def.OnHitProc.ResolveParams()
+			// Proc structural wiring: the sword's onHit proc must fire the
+			// element's own projectile for positive damage at a valid
+			// probability. Damage and chance are catalog-owned tunables, so
+			// assert invariants not numbers.
+			proc := firstProcFor(t, def, ProcOnHit)
+			params, ok := proc.ResolveParams()
 			if !ok {
-				t.Fatalf("%s: onHitProc.effect %q is not a registered proc effect", tc.id, def.OnHitProc.Effect)
+				t.Fatalf("%s: proc effect %q is not a registered proc effect", tc.id, proc.Effect)
 			}
 			if params.Damage <= 0 {
-				t.Errorf("%s: OnHitProc.Damage want > 0, got %d", tc.id, params.Damage)
+				t.Errorf("%s: proc damage want > 0, got %d", tc.id, params.Damage)
 			}
 			if params.DamageType != tc.wantElement {
-				t.Errorf("%s: OnHitProc.DamageType want %s, got %s", tc.id, tc.wantElement, params.DamageType)
+				t.Errorf("%s: proc damageType want %s, got %s", tc.id, tc.wantElement, params.DamageType)
 			}
 			if params.ProjectileID != tc.wantProjectile {
-				t.Errorf("%s: OnHitProc.ProjectileID want %q, got %q", tc.id, tc.wantProjectile, params.ProjectileID)
+				t.Errorf("%s: proc projectileID want %q, got %q", tc.id, tc.wantProjectile, params.ProjectileID)
 			}
-			if def.OnHitProc.Chance <= 0 || def.OnHitProc.Chance > 1 {
-				t.Errorf("%s: OnHitProc.Chance %v is not a valid probability in (0,1]", tc.id, def.OnHitProc.Chance)
+			if proc.Chance <= 0 || proc.Chance > 1 {
+				t.Errorf("%s: proc chance %v is not a valid probability in (0,1]", tc.id, proc.Chance)
 			}
 		})
 	}
@@ -80,15 +79,13 @@ func TestFireSword_EndToEnd(t *testing.T) {
 	if def.Modifiers == nil || def.Modifiers.Damage <= 0 {
 		t.Fatalf("fire_sword should grant positive physical damage, got %+v", def.Modifiers)
 	}
-	if def.OnHitProc == nil {
-		t.Fatalf("fire_sword has no onHitProc")
-	}
-	params, ok := def.OnHitProc.ResolveParams()
+	proc := firstProcFor(t, def, ProcOnHit)
+	params, ok := proc.ResolveParams()
 	if !ok || params.Damage <= 0 || params.DamageType != DamageFire || params.ProjectileID != "fire_bolt" {
 		t.Fatalf("fire_sword proc unexpected: resolved=%+v ok=%v", params, ok)
 	}
-	if def.OnHitProc.Chance <= 0 || def.OnHitProc.Chance > 1 {
-		t.Fatalf("fire_sword proc chance %v is not a valid probability in (0,1]", def.OnHitProc.Chance)
+	if proc.Chance <= 0 || proc.Chance > 1 {
+		t.Fatalf("fire_sword proc chance %v is not a valid probability in (0,1]", proc.Chance)
 	}
 
 	// The fire on-hit amount is a catalog tunable; derive the expected values

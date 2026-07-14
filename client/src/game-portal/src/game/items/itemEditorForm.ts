@@ -3,11 +3,13 @@
 // nullable proc overrides = "inherit"). No fetch/IO here; see itemEditorApi.ts
 // for the service layer. Percent<->fraction conversion happens ONLY in this
 // file per project convention.
-import type { ItemDef } from '../maps/itemDefs'
+import type { ItemDef, ItemProcTrigger } from '../maps/itemDefs'
 import type { EditorSaveRequest } from './itemEditorApi'
 
+/** One row of the editor's proc list. Existence IS enablement — a proc the
+ *  user removes is spliced out of the list, not flagged off. */
 export type ProcForm = {
-  enabled: boolean
+  trigger: ItemProcTrigger
   effect: string
   chancePct: number
   damage: number | null
@@ -38,8 +40,9 @@ export type ItemEditorForm = {
   description: string
   iconKey: string
   tier: string
+  /** Organizational only — groups items in the editor and decides which catalog
+   *  subdirectory the def is written to. Never an equip restriction. */
   category: string
-  slotKind: string
   costGold: number
   /** Consumable effect + stack count. Emitted only when kind === 'consumable'. */
   consumable: ConsumableForm
@@ -56,8 +59,9 @@ export type ItemEditorForm = {
     blockPct: number
   }
   elemental: { type: string; amount: number }[]
-  onHit: ProcForm
-  onStruck: ProcForm
+  /** Any number of procs, in the order they will be saved. Several may share a
+   *  trigger — each rolls independently server-side. */
+  procs: ProcForm[]
   /**
    * Crafting: an item is craftable (isRecipe) when a recipe unlocks it at the
    * Artificer. recipeCost is the gold to craft; inputs are the ingredients.
@@ -65,8 +69,6 @@ export type ItemEditorForm = {
    * shop-level concern edited elsewhere; the item only owns its own costs.
    */
   crafting: { isRecipe: boolean; recipeCost: number; inputs: string[]; starter: boolean }
-  /** Unit types allowed to equip this item. Empty = all unit types. */
-  allowedUnitTypes: string[]
   /**
    * Fields the editor does not model but must survive an edit round-trip.
    * Explicit allowlist — never spread the raw def (its proc fields carry
@@ -85,8 +87,10 @@ const blankConsumable = (): ConsumableForm => ({
   type: 'heal', amount: 50, range: 0, split: true, durationSeconds: 0,
 })
 
-const blankProc = (): ProcForm => ({
-  enabled: false, effect: '', chancePct: 10,
+/** A fresh proc row for the editor's "+ Add Proc". Overrides start null
+ *  ("inherit from the effect"); the user picks the effect. */
+export const blankProc = (trigger: ItemProcTrigger = 'onHit'): ProcForm => ({
+  trigger, effect: '', chancePct: 10,
   damage: null, projectileScale: null, bounceCount: null, bounceRange: null, bounceDamageFalloff: null,
   slowMultiplier: null, slowDurationSeconds: null, burnDamagePerSecond: null, burnDurationSeconds: null,
 })
@@ -94,27 +98,24 @@ const blankProc = (): ProcForm => ({
 export function createBlankForm(): ItemEditorForm {
   return {
     id: '', isNew: true, kind: 'equipment', displayName: '', description: '', iconKey: '', tier: 'common',
-    category: 'Weapon', slotKind: 'any', costGold: 0,
+    category: 'Weapon', costGold: 0,
     consumable: blankConsumable(), maxStacks: 0,
     mods: { hp: 0, damage: 0, armor: 0, attackSpeed: 0, moveSpeed: 0, healthRegen: 0, maxShield: 0, dodgePct: 0, blockPct: 0 },
     elemental: [],
-    onHit: blankProc(), onStruck: blankProc(),
+    procs: [],
     crafting: { isRecipe: false, recipeCost: 150, inputs: ['', ''], starter: false },
-    allowedUnitTypes: [],
     unmodeled: {},
   }
 }
 
-function procFormFromWire(p: ItemDef['onHitProc']): ProcForm {
-  if (!p) return blankProc()
+function procFormFromWire(p: NonNullable<ItemDef['procs']>[number]): ProcForm {
   return {
-    enabled: true, effect: p.effect ?? '', chancePct: Math.round(p.chance * 100),
+    ...blankProc(p.trigger),
+    effect: p.effect ?? '', chancePct: Math.round(p.chance * 100),
     // Wire carries RESOLVED values; overrides are not distinguishable from
     // base values on the wire, so loading an item shows resolved numbers as
     // placeholders and leaves overrides null (= inherit). Editing a field
     // sets an override.
-    damage: null, projectileScale: null, bounceCount: null, bounceRange: null, bounceDamageFalloff: null,
-    slowMultiplier: null, slowDurationSeconds: null, burnDamagePerSecond: null, burnDurationSeconds: null,
   }
 }
 
@@ -131,7 +132,7 @@ export function formFromDef(
   return {
     id: def.id, isNew: false, kind: def.kind === 'consumable' ? 'consumable' : 'equipment',
     displayName: def.displayName, description: def.description ?? '',
-    iconKey: def.iconKey, tier: def.tier, category: def.category ?? 'Weapon', slotKind: def.slotKind, costGold: def.costGold,
+    iconKey: def.iconKey, tier: def.tier, category: def.category ?? 'Weapon', costGold: def.costGold,
     consumable: c
       ? { type: c.type, amount: c.amount ?? 0, range: c.range ?? 0, split: c.split ?? true, durationSeconds: c.durationSeconds ?? 0 }
       : blankConsumable(),
@@ -142,14 +143,13 @@ export function formFromDef(
       dodgePct: Math.round((m.dodgeChance ?? 0) * 100), blockPct: Math.round((m.blockChance ?? 0) * 100),
     },
     elemental: (def.onHitElemental ?? []).map((e) => ({ ...e })),
-    onHit: procFormFromWire(def.onHitProc), onStruck: procFormFromWire(def.onStruckProc),
+    procs: (def.procs ?? []).map(procFormFromWire),
     crafting: {
       isRecipe: craftable,
       recipeCost: recipe?.costGold ?? def.recipeCost ?? 150,
       inputs: recipe ? [...recipe.inputs] : ['', ''],
       starter: recipe?.starter ?? def.recipeStarter ?? false,
     },
-    allowedUnitTypes: [...(def.allowedUnitTypes ?? [])],
     unmodeled: pickUnmodeled(def),
   }
 }
@@ -164,9 +164,12 @@ function pickUnmodeled(def: ItemDef): Record<string, unknown> {
   return picked
 }
 
+// A proc row with no effect chosen yet is dropped rather than saved — the
+// server rejects an empty effect, and a half-filled row is not an intent to
+// author one.
 function procWireFromForm(p: ProcForm): Record<string, unknown> | undefined {
-  if (!p.enabled || !p.effect) return undefined
-  const wire: Record<string, unknown> = { chance: p.chancePct / 100, effect: p.effect }
+  if (!p.effect) return undefined
+  const wire: Record<string, unknown> = { trigger: p.trigger, chance: p.chancePct / 100, effect: p.effect }
   const overrides: [string, number | null][] = [
     ['damage', p.damage], ['projectileScale', p.projectileScale], ['bounceCount', p.bounceCount],
     ['bounceRange', p.bounceRange], ['bounceDamageFalloff', p.bounceDamageFalloff],
@@ -186,11 +189,10 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
   const item: Record<string, unknown> = {
     ...form.unmodeled,
     id: form.id, displayName: form.displayName, iconKey: form.iconKey || form.id,
-    kind: form.kind, tier: form.tier, category: form.category, slotKind: form.slotKind,
+    kind: form.kind, tier: form.tier, category: form.category,
     costGold: form.costGold,
   }
   if (form.description) item.description = form.description
-  if (form.allowedUnitTypes.length > 0) item.allowedUnitTypes = form.allowedUnitTypes
 
   // Craftability lives on the item (isRecipe + recipeCost); the ingredient
   // list rides at the request top level and the server syncs the recipe def.
@@ -232,10 +234,9 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
 
   if (Object.keys(modifiers).length > 0) item.modifiers = modifiers
   if (elemental.length > 0) item.onHitElemental = elemental
-  const onHit = procWireFromForm(form.onHit)
-  if (onHit) item.onHitProc = onHit
-  const onStruck = procWireFromForm(form.onStruck)
-  if (onStruck) item.onStruckProc = onStruck
+
+  const procs = form.procs.map(procWireFromForm).filter((p) => p !== undefined)
+  if (procs.length > 0) item.procs = procs
 
   return { item, inputs }
 }

@@ -24,7 +24,7 @@ function mkItem(id: string): ItemDef {
     iconKey: id,
     kind: 'equipment',
     tier: 'common',
-    slotKind: 'any',
+   
     costGold: 10,
   }
 }
@@ -36,7 +36,7 @@ function mkConsumable(id: string): ItemDef {
     iconKey: id,
     kind: 'consumable',
     tier: 'common',
-    slotKind: 'any',
+   
     costGold: 10,
     maxStacks: 5,
     consumable: { type: 'heal', amount: 50 },

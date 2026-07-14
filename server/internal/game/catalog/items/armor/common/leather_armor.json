@@ -6,8 +6,6 @@
   "kind": "equipment",
   "tier": "common",
   "category": "Armor",
-  "slotKind": "armor",
-  "allowedUnitTypes": [],
   "costGold": 50,
   "modifiers": { "armor": 10 }
 }

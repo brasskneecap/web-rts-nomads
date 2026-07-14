@@ -48,6 +48,20 @@ export type ItemEffect =
   | 'damage-reflect'
   | 'lifesteal'
 
+/** The combat event that rolls a proc. */
+export type ItemProcTrigger = 'onHit' | 'onStruck'
+
+/** One proc as served on the wire: the trigger + chance, the effect reference,
+ *  and the RESOLVED payload the tooltip renders. */
+export type ItemProcWire = {
+  trigger: ItemProcTrigger
+  chance: number
+  effect?: string
+  damage: number
+  damageType: string
+  projectileID: string
+}
+
 export type ItemDef = {
   id: string
   displayName: string
@@ -62,10 +76,6 @@ export type ItemDef = {
   kind: ItemKind
   /** Rarity tier — drives border color in the vault and inventory UIs. */
   tier: ItemTier
-  /** Slot type the item occupies: 'weapon' | 'armor' | 'accessory' | 'any'. */
-  slotKind: string
-  /** Unit types allowed to equip this item. Absent = all unit types. */
-  allowedUnitTypes?: string[]
   /** Gold cost to purchase from a shop building. */
   costGold: number
   /** True when the item is craftable at the Artificer (a recipe unlocks it). */
@@ -95,16 +105,16 @@ export type ItemDef = {
   effects?: ItemEffect[]
   /** Flat elemental damage applied as a separate typed instance on each hit. */
   onHitElemental?: { type: string; amount: number }[]
-  /** Percent-chance on-hit proc: fires an elemental bolt for `damage`.
-   *  Server-side this references a catalog proc effect (+ optional
-   *  overrides); the wire always carries the RESOLVED payload below
-   *  (`effect` is the reference id, included for display/debugging only —
-   *  the client never needs proc-catalog knowledge of its own). */
-  onHitProc?: { chance: number; effect?: string; damage: number; damageType: string; projectileID: string }
-  /** Percent-chance proc when the holder is struck: fires an elemental bolt
-   *  at the attacker for `damage`. Same wire shape as `onHitProc` — the
-   *  server always marshals the resolved payload. */
-  onStruckProc?: { chance: number; effect?: string; damage: number; damageType: string; projectileID: string }
+  /** Percent-chance procs. An item may carry any number of them, including
+   *  several on the same trigger — each rolls independently, so two `onHit`
+   *  procs can both fire on one attack. `trigger` is the combat event
+   *  ('onHit' fires at the target; 'onStruck' fires back at the attacker when
+   *  the holder is hit). Server-side each proc references a catalog proc
+   *  effect (+ optional overrides); the wire always carries the RESOLVED
+   *  payload below (`effect` is the reference id, included for
+   *  display/debugging only — the client never needs proc-catalog knowledge of
+   *  its own). */
+  procs?: ItemProcWire[]
   /** Stack ceiling — items above 1 are stackable. Defaults to 1 when absent. */
   maxStacks?: number
   /** Consumable-specific config. Only set when kind === 'consumable'.

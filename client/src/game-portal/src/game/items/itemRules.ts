@@ -65,15 +65,14 @@ export function buildItemTooltipBody(def: ItemDef): string {
       parts.push(`+${e.amount} ${elem} damage on hit`)
     }
   }
-  if (def.onHitProc) {
-    const pct = Math.round(def.onHitProc.chance * 100)
-    const elem = def.onHitProc.damageType.charAt(0).toUpperCase() + def.onHitProc.damageType.slice(1)
-    parts.push(`${pct}% on hit: ${def.onHitProc.damage} ${elem} bolt`)
-  }
-  if (def.onStruckProc) {
-    const pct = Math.round(def.onStruckProc.chance * 100)
-    const elem = def.onStruckProc.damageType.charAt(0).toUpperCase() + def.onStruckProc.damageType.slice(1)
-    parts.push(`${pct}% when hit: ${def.onStruckProc.damage} ${elem} bolt at the attacker`)
+  // One line per proc, in catalog order — an item may carry several, including
+  // more than one on the same trigger.
+  for (const proc of def.procs ?? []) {
+    const pct = Math.round(proc.chance * 100)
+    const elem = proc.damageType.charAt(0).toUpperCase() + proc.damageType.slice(1)
+    parts.push(proc.trigger === 'onStruck'
+      ? `${pct}% when hit: ${proc.damage} ${elem} bolt at the attacker`
+      : `${pct}% on hit: ${proc.damage} ${elem} bolt`)
   }
 
   return parts.join(', ')

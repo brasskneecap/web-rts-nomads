@@ -70,25 +70,10 @@
             </select>
           </div>
           <div class="control-group">
-            <label for="ie-category">Category</label>
+            <label for="ie-category">Category <span class="field-hint">(grouping only; sets the catalog folder)</span></label>
             <select id="ie-category" v-model="form.category">
               <option v-for="c in CATEGORY_OPTIONS" :key="c" :value="c">{{ c }}</option>
             </select>
-          </div>
-          <div class="control-group">
-            <label for="ie-slot-kind">Slot Kind</label>
-            <select id="ie-slot-kind" v-model="form.slotKind">
-              <option v-for="s in SLOT_KIND_OPTIONS" :key="s" :value="s">{{ s }}</option>
-            </select>
-          </div>
-          <div class="control-group">
-            <label for="ie-allowed-unit-types">Allowed unit types <span class="field-hint">(empty = all units)</span></label>
-            <input
-              id="ie-allowed-unit-types"
-              :value="form.allowedUnitTypes.join(', ')"
-              type="text"
-              @change="onAllowedUnitTypesChanged"
-            />
           </div>
         </div>
       </section>
@@ -261,54 +246,60 @@
           Procs
         </button>
         <div v-if="openSection === 'procs'" class="editor-section__body">
-          <div v-for="ps in procSections" :key="ps.key" class="proc-block">
-            <div class="control-group control-group--checkbox">
-              <label :for="`ie-proc-${ps.key}-enabled`">
-                <input :id="`ie-proc-${ps.key}-enabled`" v-model="ps.proc.enabled" type="checkbox" />
-                {{ ps.label }}
-              </label>
+          <p v-if="form.procs.length === 0" class="proc-empty">
+            No procs. Add one to make this item roll a chance effect in combat.
+          </p>
+
+          <!-- One block per proc. An item may carry any number, and more than
+               one on the same trigger — each rolls independently server-side. -->
+          <div v-for="(proc, i) in form.procs" :key="i" class="proc-block">
+            <div class="proc-block__header">
+              <span class="proc-block__title">Proc {{ i + 1 }}</span>
+              <button type="button" class="proc-block__remove" @click="removeProc(i)">Remove</button>
             </div>
 
-            <template v-if="ps.proc.enabled">
-              <div class="control-group">
-                <label :for="`ie-proc-${ps.key}-effect`">Effect</label>
-                <select :id="`ie-proc-${ps.key}-effect`" v-model="ps.proc.effect">
-                  <option value="" disabled>Select an effect…</option>
-                  <option v-for="p in procEffects" :key="p.id" :value="p.id">
-                    {{ p.id }} — {{ p.damage }} {{ p.damageType }}
-                  </option>
-                </select>
-              </div>
-              <div class="control-group">
-                <label :for="`ie-proc-${ps.key}-chance`">Chance % <span class="field-hint">(1-100)</span></label>
-                <input
-                  :id="`ie-proc-${ps.key}-chance`"
-                  v-model.number="ps.proc.chancePct"
-                  type="number"
-                  min="1"
-                  max="100"
-                />
-              </div>
+            <div class="control-group">
+              <label :for="`ie-proc-${i}-trigger`">Trigger</label>
+              <select :id="`ie-proc-${i}-trigger`" v-model="proc.trigger">
+                <option v-for="t in PROC_TRIGGERS" :key="t.value" :value="t.value">{{ t.label }}</option>
+              </select>
+            </div>
 
-              <fieldset class="proc-overrides" :class="{ 'proc-overrides--open': overridesOpen[ps.key] }">
-                <button type="button" class="proc-overrides__toggle" @click="overridesOpen[ps.key] = !overridesOpen[ps.key]">
-                  Overrides <span class="field-hint">(blank = inherit from effect)</span>
-                </button>
-                <div v-if="overridesOpen[ps.key]" class="proc-overrides__body">
-                  <div v-for="f in PROC_OVERRIDE_FIELDS" :key="f.key" class="control-group">
-                    <label :for="`ie-proc-${ps.key}-${f.key}`">{{ f.label }}</label>
-                    <input
-                      :id="`ie-proc-${ps.key}-${f.key}`"
-                      :value="ps.proc[f.key] ?? ''"
-                      :placeholder="effectPlaceholder(ps.proc.effect, f.key)"
-                      type="number"
-                      @input="bindNullable(ps.proc, f.key, $event)"
-                    />
-                  </div>
+            <div class="control-group">
+              <label :for="`ie-proc-${i}-effect`">Effect</label>
+              <select :id="`ie-proc-${i}-effect`" v-model="proc.effect">
+                <option value="" disabled>Select an effect…</option>
+                <option v-for="p in procEffects" :key="p.id" :value="p.id">
+                  {{ p.id }} — {{ p.damage }} {{ p.damageType }}
+                </option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label :for="`ie-proc-${i}-chance`">Chance % <span class="field-hint">(1-100)</span></label>
+              <input :id="`ie-proc-${i}-chance`" v-model.number="proc.chancePct" type="number" min="1" max="100" />
+            </div>
+
+            <fieldset class="proc-overrides" :class="{ 'proc-overrides--open': overridesOpen[i] }">
+              <button type="button" class="proc-overrides__toggle" @click="overridesOpen[i] = !overridesOpen[i]">
+                Overrides <span class="field-hint">(blank = inherit from effect)</span>
+              </button>
+              <div v-if="overridesOpen[i]" class="proc-overrides__body">
+                <div v-for="f in PROC_OVERRIDE_FIELDS" :key="f.key" class="control-group">
+                  <label :for="`ie-proc-${i}-${f.key}`">{{ f.label }}</label>
+                  <input
+                    :id="`ie-proc-${i}-${f.key}`"
+                    :value="proc[f.key] ?? ''"
+                    :placeholder="effectPlaceholder(proc.effect, f.key)"
+                    type="number"
+                    @input="bindNullable(proc, f.key, $event)"
+                  />
                 </div>
-              </fieldset>
-            </template>
+              </div>
+            </fieldset>
           </div>
+
+          <UiButton size="sm" @click="addProc">+ Add Proc</UiButton>
         </div>
       </section>
 
@@ -403,7 +394,7 @@ import { fetchItemDefs, fetchRecipeDefs } from '@/game/maps/catalog'
 import type { ItemDef, ItemTier } from '@/game/maps/itemDefs'
 import { EditorValidationError, deleteEditorItem, fetchProcEffectDefs, uploadItemIcon, saveEditorItem } from '@/game/items/itemEditorApi'
 import type { ProcEffectDef } from '@/game/items/itemEditorApi'
-import { createBlankForm, formFromDef, saveRequestFromForm } from '@/game/items/itemEditorForm'
+import { blankProc, createBlankForm, formFromDef, saveRequestFromForm } from '@/game/items/itemEditorForm'
 import type { ItemEditorForm, ProcForm } from '@/game/items/itemEditorForm'
 import { getItemImageSourceUrl, listIconGroups } from '@/game/rendering/itemAssets'
 import { TIER_COLORS } from '@/game/items/itemRules'
@@ -436,11 +427,14 @@ function setAllGroups(on: boolean) {
   selectedGroups.clear()
   if (on) for (const g of iconGroups) selectedGroups.add(g.name)
 }
-const overridesOpen = reactive<{ onHit: boolean; onStruck: boolean }>({ onHit: false, onStruck: false })
+// Overrides-collapsed state per proc, keyed by list index. Indices shift when a
+// proc is removed, so removeProc re-keys it rather than leaving it stale.
+const overridesOpen = reactive<Record<number, boolean>>({})
 
 const TIER_OPTIONS: ItemTier[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+// Organizational grouping only — also picks the catalog subdirectory the def is
+// written to (Weapon → catalog/items/weapons/…). Not an equip restriction.
 const CATEGORY_OPTIONS = ['Weapon', 'Armor', 'Shield', 'Accessory', 'Consumable']
-const SLOT_KIND_OPTIONS = ['any', 'weapon', 'armor', 'accessory']
 // Only the consumable effect types the server actually implements
 // (applyConsumableToUnitLocked). Future types (buffs, mana) add cases there
 // first, then an option here.
@@ -463,7 +457,7 @@ const FLAT_MOD_FIELDS: { key: keyof ItemEditorForm['mods']; label: string }[] = 
 // The 9 nullable proc override fields — shared between ProcForm's type and
 // ProcEffectDef's optional fields, so `effect[key]` below type-checks without
 // a cast.
-type ProcNullableKey = Exclude<keyof ProcForm, 'enabled' | 'effect' | 'chancePct'>
+type ProcNullableKey = Exclude<keyof ProcForm, 'trigger' | 'effect' | 'chancePct'>
 const PROC_OVERRIDE_FIELDS: { key: ProcNullableKey; label: string }[] = [
   { key: 'damage', label: 'Damage' },
   { key: 'projectileScale', label: 'Projectile Scale' },
@@ -513,16 +507,29 @@ const groupedItems = computed(() => {
 // overridden (writable dir == embed source) — see sidebar dot comment above.
 const selectedOverridden = computed(() => items.value.find((d) => d.id === selectedId.value)?.overridden ?? false)
 
-// Two proc sub-blocks driven from the same markup — form.onHit / form.onStruck
-// are reactive objects nested inside the `form` ref, so pulling references out
-// into this array preserves reactivity (no destructuring of primitives).
-const procSections = computed(() => {
-  if (!form.value) return []
-  return [
-    { key: 'onHit' as const, label: 'On hit', proc: form.value.onHit },
-    { key: 'onStruck' as const, label: 'When struck', proc: form.value.onStruck },
-  ]
-})
+// The combat events a proc can hang off. Adding a trigger here requires the
+// server to handle it too (game.ItemProcTrigger + rollEquipment*ProcsLocked).
+const PROC_TRIGGERS: { value: ProcForm['trigger']; label: string }[] = [
+  { value: 'onHit', label: 'On hit' },
+  { value: 'onStruck', label: 'When struck' },
+]
+
+function addProc() {
+  if (!form.value) return
+  form.value.procs.push(blankProc())
+  // A fresh proc opens with its overrides collapsed (blank = inherit).
+  overridesOpen[form.value.procs.length - 1] = false
+}
+
+function removeProc(index: number) {
+  if (!form.value) return
+  form.value.procs.splice(index, 1)
+  // overridesOpen is index-keyed: shift the tail down so the open/closed state
+  // still belongs to the proc the user opened.
+  const open = form.value.procs.map((_, i) => overridesOpen[i >= index ? i + 1 : i] ?? false)
+  for (const key of Object.keys(overridesOpen)) delete overridesOpen[Number(key)]
+  open.forEach((v, i) => { overridesOpen[i] = v })
+}
 
 function effectPlaceholder(effectId: string, key: ProcNullableKey): string {
   const effect = procEffects.value.find((p) => p.id === effectId)
@@ -659,14 +666,6 @@ function onKindChanged() {
   }
 }
 
-// Comma-separated text input <-> string[] binding for allowedUnitTypes —
-// mirrors the nullable-override idiom (:value + @change) instead of v-model
-// since the model is an array, not a scalar.
-function onAllowedUnitTypesChanged(ev: Event) {
-  if (!form.value) return
-  const raw = (ev.target as HTMLInputElement).value
-  form.value.allowedUnitTypes = raw.split(',').map((s) => s.trim()).filter(Boolean)
-}
 </script>
 
 <style scoped>
@@ -946,12 +945,40 @@ function onAllowedUnitTypesChanged(ev: Event) {
   flex: 1;
 }
 
+.proc-empty {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.6);
+}
+
 .proc-block {
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 10px;
   padding: 8px;
   display: grid;
   gap: 8px;
+}
+
+.proc-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.proc-block__title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.proc-block__remove {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fca5a5;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 0.72rem;
 }
 
 .proc-overrides {

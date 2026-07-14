@@ -39,9 +39,9 @@ func TestSaveEditorItem_CraftableSyncsRecipe(t *testing.T) {
 	editorEnv(t)
 	req := EditorItemSaveRequest{
 		Item: ItemDef{ID: "editor_test_blade", DisplayName: "Editor Blade", IconKey: "editor_test_blade",
-			Kind: ItemKindEquipment, Tier: ItemTierRare, Category: "Weapon", SlotKind: "any",
+			Kind: ItemKindEquipment, Tier: ItemTierRare, Category: "Weapon",
 			CostGold: 120, IsRecipe: true, RecipeCost: 150, RecipeStarter: true, Modifiers: &ItemModifiers{Damage: 9},
-			OnHitProc: &ItemOnHitProc{Chance: 0.1, Effect: "fire_bolt_ignite"}},
+			Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Effect: "fire_bolt_ignite"}}},
 		Inputs: []string{"broad_sword", "fire_ring"},
 	}
 	if err := SaveEditorItem(req); err != nil {
@@ -69,7 +69,7 @@ func TestSaveEditorItem_CraftableSyncsRecipe(t *testing.T) {
 func TestSaveEditorItem_NonCraftableDropsRecipe(t *testing.T) {
 	editorEnv(t)
 	craftable := EditorItemSaveRequest{
-		Item:   ItemDef{ID: "toggle_item", DisplayName: "Toggle", IconKey: "toggle_item", Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon", SlotKind: "any", IsRecipe: true, RecipeCost: 50},
+		Item:   ItemDef{ID: "toggle_item", DisplayName: "Toggle", IconKey: "toggle_item", Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon", IsRecipe: true, RecipeCost: 50},
 		Inputs: []string{"broad_sword", "fire_ring"},
 	}
 	if err := SaveEditorItem(craftable); err != nil {
@@ -99,8 +99,8 @@ func TestSaveEditorItem_ValidationRejectsBeforeAnyWrite(t *testing.T) {
 	editorEnv(t)
 	req := EditorItemSaveRequest{
 		Item: ItemDef{ID: "bad_item", DisplayName: "Bad", IconKey: "x", Kind: ItemKindEquipment,
-			Tier: ItemTierCommon, SlotKind: "any",
-			OnHitProc: &ItemOnHitProc{Chance: 0.1, Effect: "no_such_effect"}},
+			Tier: ItemTierCommon,
+			Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Effect: "no_such_effect"}}},
 	}
 	err := SaveEditorItem(req)
 	if err == nil {
@@ -119,7 +119,7 @@ func TestSaveEditorItem_ValidationRejectsBeforeAnyWrite(t *testing.T) {
 // write.
 func TestSaveEditorItem_CraftableInputValidation(t *testing.T) {
 	editorEnv(t)
-	base := ItemDef{ID: "craft_probe", DisplayName: "Probe", IconKey: "x", Kind: ItemKindEquipment, Tier: ItemTierCommon, SlotKind: "any", IsRecipe: true, RecipeCost: 10}
+	base := ItemDef{ID: "craft_probe", DisplayName: "Probe", IconKey: "x", Kind: ItemKindEquipment, Tier: ItemTierCommon, IsRecipe: true, RecipeCost: 10}
 
 	tooFew := EditorItemSaveRequest{Item: base, Inputs: []string{"broad_sword"}}
 	if err := SaveEditorItem(tooFew); err == nil {
@@ -143,7 +143,7 @@ func TestSaveEditorItem_CraftableInputValidation(t *testing.T) {
 func TestDeleteEditorItem_RemovesItemAndRecipe(t *testing.T) {
 	editorEnv(t)
 	req := EditorItemSaveRequest{
-		Item:   ItemDef{ID: "doomed_item", DisplayName: "Doomed", IconKey: "doomed_item", Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon", SlotKind: "any", IsRecipe: true, RecipeCost: 10},
+		Item:   ItemDef{ID: "doomed_item", DisplayName: "Doomed", IconKey: "doomed_item", Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon", IsRecipe: true, RecipeCost: 10},
 		Inputs: []string{"broad_sword", "fire_ring"},
 	}
 	if err := SaveEditorItem(req); err != nil {
@@ -167,7 +167,7 @@ func TestDeleteEditorItem_RemovesItemAndRecipe(t *testing.T) {
 func TestGetItemAvailability_ReadsShopSurfaces(t *testing.T) {
 	editorEnv(t)
 	item := ItemDef{ID: "avail_probe", DisplayName: "Probe", IconKey: "avail_probe",
-		Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon", SlotKind: "any", CostGold: 5}
+		Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon", CostGold: 5}
 	if err := SaveItemDef(&item); err != nil {
 		t.Fatalf("save item: %v", err)
 	}

@@ -6,9 +6,9 @@
   "kind": "equipment",
   "tier": "rare",
   "category": "Shield",
-  "slotKind": "any",
-  "allowedUnitTypes": [],
   "costGold": 0,
   "modifiers": { "armor": 35, "blockChance": 0.15 },
-  "onStruckProc": { "chance": 0.1, "effect": "fire_bolt_ignite" }
+  "procs": [
+    { "trigger": "onStruck", "chance": 0.1, "effect": "fire_bolt_ignite" }
+  ]
 }

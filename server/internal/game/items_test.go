@@ -571,7 +571,7 @@ func TestUseItemAt_SplitFalseGivesFullAmountToEach(t *testing.T) {
 	noSplit := false
 	testDef := &ItemDef{
 		ID: "test_nosplit_xp", DisplayName: "test", IconKey: "test",
-		Kind: ItemKindConsumable, Tier: ItemTierCommon, SlotKind: "any",
+		Kind: ItemKindConsumable, Tier: ItemTierCommon,
 		MaxStacks:  9,
 		Consumable: &ConsumableEffect{Type: "grant_xp", Amount: 30, Range: 100, Split: &noSplit},
 	}

@@ -6,8 +6,6 @@
   "kind": "equipment",
   "tier": "rare",
   "category": "Accessory",
-  "slotKind": "any",
-  "allowedUnitTypes": [],
   "costGold": 75,
   "onHitElemental": [ { "type": "lightning", "amount": 5 } ]
 }

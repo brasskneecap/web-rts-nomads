@@ -37,10 +37,7 @@ func TestEquipmentBonus_AggregatesElementalAndProc(t *testing.T) {
 		t.Fatal("fire_sword should carry stat modifiers")
 	}
 	swordDamage := fireSword.Modifiers.Damage
-	if fireSword.OnHitProc == nil {
-		t.Fatal("fire_sword should carry an on-hit proc")
-	}
-	wantProc, ok := fireSword.OnHitProc.ResolveParams()
+	wantProc, ok := firstProcFor(t, fireSword, ProcOnHit).ResolveParams()
 	if !ok {
 		t.Fatal("fire_sword on-hit proc failed to resolve params")
 	}

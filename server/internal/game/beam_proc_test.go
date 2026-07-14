@@ -292,13 +292,10 @@ func TestLightningSword_ProcIsWiredToChain(t *testing.T) {
 	if !ok {
 		t.Fatal("lightning_sword not in catalog")
 	}
-	p := def.OnHitProc
-	if p == nil {
-		t.Fatal("lightning_sword has no onHitProc")
-	}
+	p := firstProcFor(t, def, ProcOnHit)
 	params, ok := p.ResolveParams()
 	if !ok {
-		t.Fatalf("lightning_sword onHitProc.effect %q is not a registered proc effect", p.Effect)
+		t.Fatalf("lightning_sword proc effect %q is not a registered proc effect", p.Effect)
 	}
 	emitter, ok := getProjectileDef(params.ProjectileID)
 	if !ok || !emitter.IsBeam() {

@@ -32,17 +32,6 @@ const (
 	ItemTierLegendary ItemTier = "legendary"
 )
 
-// ItemSlotKind describes which equipment slot an item occupies. Consumables
-// use ItemSlotKindAny because they are not restricted to a particular slot.
-type ItemSlotKind string
-
-const (
-	ItemSlotKindWeapon    ItemSlotKind = "weapon"
-	ItemSlotKindArmor     ItemSlotKind = "armor"
-	ItemSlotKindAccessory ItemSlotKind = "accessory"
-	ItemSlotKindAny       ItemSlotKind = "any" // consumables fit any slot
-)
-
 // ItemModifiers holds the flat stat bonuses granted by an equipment item.
 // Zero values are omitted from JSON via omitempty.
 type ItemModifiers struct {
@@ -70,17 +59,39 @@ type ItemElementalDamage struct {
 	Amount int        `json:"amount"`
 }
 
-// ItemOnHitProc is a percent-chance on-hit trigger: on each landed basic
-// attack the wielder rolls Chance against the seeded perk RNG and, on
-// success, fires the referenced proc effect (catalog/procs) at the current
-// target. Effect names the ProcEffectDef (required); the embedded
-// ProcEffectOverrides let this item re-tune the effect's numbers (damage,
-// scale, bounce, slow, burn) without authoring a new def — the effect's
-// element and emitter are fixed by the def. Damage is applied as its own
-// instance and does NOT re-trigger on-hit effects (no recursion).
-type ItemOnHitProc struct {
-	Chance float64 `json:"chance"`
-	Effect string  `json:"effect"`
+// ItemProcTrigger names the combat event that rolls a proc.
+type ItemProcTrigger string
+
+const (
+	// ProcOnHit rolls on each basic attack the wielder LANDS, firing the effect
+	// at the target.
+	ProcOnHit ItemProcTrigger = "onHit"
+	// ProcOnStruck is the on-BEING-hit mirror: when a basic attack LANDS on the
+	// wearer (post-evasion — dodged/blocked hits never trigger it), the wearer
+	// rolls and, on success, fires the effect back at the attacker.
+	ProcOnStruck ItemProcTrigger = "onStruck"
+)
+
+// IsValidProcTrigger reports whether t is a trigger the combat code handles.
+func IsValidProcTrigger(t ItemProcTrigger) bool {
+	return t == ProcOnHit || t == ProcOnStruck
+}
+
+// ItemProc is one percent-chance proc on an item: on each Trigger event the
+// wielder rolls Chance against the seeded perk RNG and, on success, fires the
+// referenced proc effect (catalog/procs). Effect names the ProcEffectDef
+// (required); the embedded ProcEffectOverrides let this item re-tune the
+// effect's numbers (damage, scale, bounce, slow, burn) without authoring a new
+// def — the effect's element and emitter are fixed by the def. Damage is
+// applied as its own instance and does NOT re-trigger on-hit effects (no
+// recursion).
+//
+// An item may carry any number of procs, including several on the same
+// trigger; each rolls independently (see ItemDef.Procs).
+type ItemProc struct {
+	Trigger ItemProcTrigger `json:"trigger"`
+	Chance  float64         `json:"chance"`
+	Effect  string          `json:"effect"`
 	ProcEffectOverrides
 }
 
@@ -88,7 +99,7 @@ type ItemOnHitProc struct {
 // def with this item's non-zero overrides applied. ok is false when Effect
 // names no registered proc effect — validateItemDef rejects that at load, so
 // a false here can only come from a hand-built def in tests.
-func (p *ItemOnHitProc) ResolveParams() (ProcEffectParams, bool) {
+func (p *ItemProc) ResolveParams() (ProcEffectParams, bool) {
 	def, ok := getProcEffectDef(p.Effect)
 	if !ok {
 		return ProcEffectParams{}, false
@@ -96,11 +107,12 @@ func (p *ItemOnHitProc) ResolveParams() (ProcEffectParams, bool) {
 	return resolveProcEffectParams(def, p.ProcEffectOverrides), true
 }
 
-// itemOnHitProcWire is the JSON shape emitted for ItemOnHitProc. See
-// MarshalJSON for why this exists.
-type itemOnHitProcWire struct {
-	Chance float64 `json:"chance"`
-	Effect string  `json:"effect"`
+// itemProcWire is the JSON shape emitted for ItemProc. See MarshalJSON for why
+// this exists.
+type itemProcWire struct {
+	Trigger ItemProcTrigger `json:"trigger"`
+	Chance  float64         `json:"chance"`
+	Effect  string          `json:"effect"`
 
 	Damage              int        `json:"damage,omitempty"`
 	DamageType          DamageType `json:"damageType,omitempty"`
@@ -118,13 +130,14 @@ type itemOnHitProcWire struct {
 // MarshalJSON exists for ONE reason: the /catalog/items route serves ItemDef
 // to the SPA, and the client tooltip contract predates the effect-reference
 // schema — it reads resolved payload fields (damage, damageType,
-// projectileID) directly off onHitProc. Marshal therefore emits the RESOLVED
+// projectileID) directly off the proc. Marshal therefore emits the RESOLVED
 // params (def + overrides, via ResolveParams) alongside the effect
 // reference, so the client stays a dumb view with no proc-catalog knowledge
-// of its own. There is deliberately no UnmarshalJSON: catalog files keep
-// unmarshaling into Effect + the embedded ProcEffectOverrides untouched.
-func (p ItemOnHitProc) MarshalJSON() ([]byte, error) {
-	wire := itemOnHitProcWire{Chance: p.Chance, Effect: p.Effect}
+// of its own. There is deliberately no UnmarshalJSON on ItemProc: catalog
+// files keep unmarshaling into Effect + the embedded ProcEffectOverrides
+// untouched.
+func (p ItemProc) MarshalJSON() ([]byte, error) {
+	wire := itemProcWire{Trigger: p.Trigger, Chance: p.Chance, Effect: p.Effect}
 	if params, ok := p.ResolveParams(); ok {
 		wire.Damage = params.Damage
 		wire.DamageType = params.DamageType
@@ -182,16 +195,17 @@ func (c *ConsumableEffect) SplitEnabled() bool {
 // display fields (DisplayName, Description, IconKey) are passed through
 // unchanged via the /catalog/items HTTP route.
 type ItemDef struct {
-	ID               string       `json:"id"`
-	DisplayName      string       `json:"displayName"`
-	Description      string       `json:"description,omitempty"`
-	IconKey          string       `json:"iconKey"`
-	Kind             ItemKind     `json:"kind"`
-	Tier             ItemTier     `json:"tier"`
-	Category         string       `json:"category,omitempty"`
-	SlotKind         ItemSlotKind `json:"slotKind"`
-	AllowedUnitTypes []string     `json:"allowedUnitTypes,omitempty"`
-	CostGold         int          `json:"costGold"`
+	ID          string   `json:"id"`
+	DisplayName string   `json:"displayName"`
+	Description string   `json:"description,omitempty"`
+	IconKey     string   `json:"iconKey"`
+	Kind        ItemKind `json:"kind"`
+	Tier        ItemTier `json:"tier"`
+	// Category is organizational only — it groups items in the editor and
+	// decides which catalog subdirectory the def is written to. It is NOT an
+	// equip restriction; nothing in combat or equipping reads it.
+	Category string `json:"category,omitempty"`
+	CostGold int    `json:"costGold"`
 	// IsRecipe marks an item as craftable at the Artificer: a recipe (whose
 	// output is this item) exists to unlock it. Availability elsewhere (which
 	// shops stock it, loot tables) is decided at the shop/loot level, not
@@ -216,18 +230,49 @@ type ItemDef struct {
 	Consumable       *ConsumableEffect     `json:"consumable,omitempty"`
 	MaxStacks        int                   `json:"maxStacks,omitempty"` // consumables only; 0 treated as 1
 	OnHitElemental   []ItemElementalDamage `json:"onHitElemental,omitempty"`
-	OnHitProc        *ItemOnHitProc        `json:"onHitProc,omitempty"`
-	// OnStruckProc is the on-BEING-hit mirror of OnHitProc: when a basic
-	// attack LANDS on the wearer (post-evasion — dodged/blocked hits never
-	// trigger it), the wearer rolls Chance and, on success, fires the
-	// referenced proc effect back at the attacker. Same schema, validation,
-	// resolution, and wire marshaling as OnHitProc.
-	OnStruckProc *ItemOnHitProc `json:"onStruckProc,omitempty"`
+	// Procs are the item's proc triggers, each naming its own combat event
+	// (Trigger), effect, chance and overrides. An item may define any number of
+	// them, including several on the same trigger — every proc rolls
+	// independently, so two onHit procs on one weapon can both fire on the same
+	// attack. Legacy defs that authored a single "onHitProc"/"onStruckProc"
+	// object are folded into this list at load (see UnmarshalJSON).
+	Procs []ItemProc `json:"procs,omitempty"`
 
 	// Overridden marks a def sourced from the writable editor overlay rather
 	// than the embedded catalog. Runtime-only provenance for the editor UI —
 	// never authored in embed files (the disk writer always strips it).
 	Overridden bool `json:"overridden,omitempty"`
+}
+
+// itemDefFields is ItemDef without its methods, so UnmarshalJSON can decode
+// into it without recursing into itself.
+type itemDefFields ItemDef
+
+// UnmarshalJSON accepts the pre-list proc schema — a single "onHitProc" and/or
+// "onStruckProc" object, whose KEY carried the trigger — and folds it into
+// Procs. Kept so item JSON authored before the list schema (shipped catalog
+// files, anything a user saved from the old editor) still loads; nothing
+// writes those keys any more. Marshaling is unaffected: ItemDef emits only
+// "procs".
+func (d *ItemDef) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		itemDefFields
+		OnHitProc    *ItemProc `json:"onHitProc,omitempty"`
+		OnStruckProc *ItemProc `json:"onStruckProc,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*d = ItemDef(raw.itemDefFields)
+	if p := raw.OnHitProc; p != nil {
+		p.Trigger = ProcOnHit
+		d.Procs = append(d.Procs, *p)
+	}
+	if p := raw.OnStruckProc; p != nil {
+		p.Trigger = ProcOnStruck
+		d.Procs = append(d.Procs, *p)
+	}
+	return nil
 }
 
 // itemCatalogSingleton is the package-level item catalog. Populated by a var
@@ -312,11 +357,10 @@ func validateItemDef(def *ItemDef) error {
 			return fmt.Errorf("item %q onHitElemental[%d]: unregistered damage type %q", def.ID, i, e.Type)
 		}
 	}
-	if err := validateItemProcRef(def.ID, "onHitProc", def.OnHitProc); err != nil {
-		return err
-	}
-	if err := validateItemProcRef(def.ID, "onStruckProc", def.OnStruckProc); err != nil {
-		return err
+	for i := range def.Procs {
+		if err := validateItemProc(def.ID, i, &def.Procs[i]); err != nil {
+			return err
+		}
 	}
 	// A consumable's effect must name a type; an empty type is a silent no-op
 	// in applyConsumableToUnitLocked. Unknown types are left to that switch —
@@ -327,12 +371,13 @@ func validateItemDef(def *ItemDef) error {
 	return nil
 }
 
-// validateItemProcRef checks one proc trigger reference (onHitProc or
-// onStruckProc — both share the ItemOnHitProc schema) against the proc
-// catalog and the override sanity rules.
-func validateItemProcRef(itemID, field string, p *ItemOnHitProc) error {
-	if p == nil {
-		return nil
+// validateItemProc checks one entry of ItemDef.Procs — its trigger, its
+// reference into the proc catalog, and the override sanity rules. Index i is
+// carried into the error so the message points at the offending entry.
+func validateItemProc(itemID string, i int, p *ItemProc) error {
+	field := fmt.Sprintf("procs[%d]", i)
+	if !IsValidProcTrigger(p.Trigger) {
+		return fmt.Errorf("item %q %s.trigger %q must be %q or %q", itemID, field, p.Trigger, ProcOnHit, ProcOnStruck)
 	}
 	if p.Chance < 0 || p.Chance > 1 {
 		return fmt.Errorf("item %q %s.chance %v out of range [0,1]", itemID, field, p.Chance)

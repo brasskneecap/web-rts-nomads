@@ -96,19 +96,19 @@ func TestStruckProc_RangedAttackerGetsBoltBack(t *testing.T) {
 	}
 }
 
-// TestValidateItemDef_OnStruckProc: onStruckProc obeys the same rules as
-// onHitProc (chance range, effect required + registered).
+// TestValidateItemDef_OnStruckProc: an onStruck proc obeys the same rules as an
+// onHit one (chance range, effect required + registered).
 func TestValidateItemDef_OnStruckProc(t *testing.T) {
-	good := &ItemDef{ID: "ok", Kind: ItemKindEquipment, OnStruckProc: &ItemOnHitProc{Chance: 0.1, Effect: "fire_bolt_ignite"}}
+	good := &ItemDef{ID: "ok", Kind: ItemKindEquipment, Procs: []ItemProc{{Trigger: ProcOnStruck, Chance: 0.1, Effect: "fire_bolt_ignite"}}}
 	if err := validateItemDef(good); err != nil {
-		t.Fatalf("valid onStruckProc rejected: %v", err)
+		t.Fatalf("valid onStruck proc rejected: %v", err)
 	}
-	unknown := &ItemDef{ID: "bad", OnStruckProc: &ItemOnHitProc{Chance: 0.1, Effect: "no_such_effect"}}
+	unknown := &ItemDef{ID: "bad", Procs: []ItemProc{{Trigger: ProcOnStruck, Chance: 0.1, Effect: "no_such_effect"}}}
 	if err := validateItemDef(unknown); err == nil {
-		t.Error("expected error for unregistered onStruckProc.effect, got nil")
+		t.Error("expected error for unregistered onStruck proc effect, got nil")
 	}
-	badChance := &ItemDef{ID: "bad2", OnStruckProc: &ItemOnHitProc{Chance: 1.5, Effect: "fire_bolt_ignite"}}
+	badChance := &ItemDef{ID: "bad2", Procs: []ItemProc{{Trigger: ProcOnStruck, Chance: 1.5, Effect: "fire_bolt_ignite"}}}
 	if err := validateItemDef(badChance); err == nil {
-		t.Error("expected error for onStruckProc.chance > 1, got nil")
+		t.Error("expected error for onStruck proc chance > 1, got nil")
 	}
 }

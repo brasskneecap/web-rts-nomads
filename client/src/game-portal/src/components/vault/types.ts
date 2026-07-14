@@ -76,9 +76,7 @@ export interface VaultUnitCardData {
   isMaxRank: boolean
   perks: VaultPerkChip[]
   inventory: VaultInventorySlot[]
-  /** True when this unit can receive the currently-selected item (always true
-   *  when no item is selected). */
-  eligible: boolean
-  /** True when the unit is eligible and has at least one empty unlocked slot. */
+  /** True when the unit has at least one empty unlocked slot. Items carry no
+   *  unit-type restriction, so a free slot is the only eligibility rule. */
   hasEmptyMatchingSlot: boolean
 }

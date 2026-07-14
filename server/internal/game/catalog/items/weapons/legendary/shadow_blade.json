@@ -6,8 +6,6 @@
   "kind": "equipment",
   "tier": "legendary",
   "category": "Weapon",
-  "slotKind": "weapon",
-  "allowedUnitTypes": [],
   "costGold": 1000,
   "requiredBuilding": "marketplace",
   "modifiers": { "damage": 100 },

@@ -1,7 +1,9 @@
 <template>
   <div class="world-editor-root">
     <WorldEditorToolbar :active-id="toolbarActiveId" @select="onToolbarSelect" />
-    <div class="editor-shell">
+    <!-- v-show, not v-if: the map canvas keeps its renderer, camera and
+         ResizeObserver alive while another editor screen is on top. -->
+    <div v-show="activeScreen === 'map'" class="editor-shell">
     <div class="editor-controls">
       <div class="editor-title">Map Editor</div>
       <p class="editor-copy">
@@ -1715,41 +1717,13 @@
     </div>
     </div>
 
-    <div v-if="itemsPopupOpen" class="we-modal-overlay">
-      <div class="we-modal we-modal--wide">
-        <div class="we-modal__header">
-          <span>Item / Equipment Editor</span>
-          <UiButton size="sm" @click="itemsPopupOpen = false">Close</UiButton>
-        </div>
-        <div class="we-modal__body">
-          <ItemEditorPanel />
-        </div>
-      </div>
-    </div>
-
-    <div v-if="unitTypesPopupOpen" class="we-modal-overlay">
-      <div class="we-modal we-modal--wide">
-        <div class="we-modal__header">
-          <span>Unit Type Editor</span>
-          <UiButton size="sm" @click="unitTypesPopupOpen = false">Close</UiButton>
-        </div>
-        <div class="we-modal__body">
-          <UnitTypeEditorPanel />
-        </div>
-      </div>
-    </div>
-
-    <div v-if="abilitiesPopupOpen" class="we-modal-overlay">
-      <div class="we-modal we-modal--wide">
-        <div class="we-modal__header">
-          <span>Ability Editor</span>
-          <UiButton size="sm" @click="abilitiesPopupOpen = false">Close</UiButton>
-        </div>
-        <div class="we-modal__body">
-          <AbilityEditorPanel />
-        </div>
-      </div>
-    </div>
+    <!-- No header/close affordance: the toolbar is the tab bar, so Map is
+         always one click away and the editor gets the full height. -->
+    <section v-if="activeScreen !== 'map'" class="we-screen">
+      <ItemEditorPanel v-if="activeScreen === 'items'" />
+      <UnitTypeEditorPanel v-else-if="activeScreen === 'unit-types'" />
+      <AbilityEditorPanel v-else-if="activeScreen === 'abilities'" />
+    </section>
   </div>
 </template>
 
@@ -1763,7 +1737,6 @@ import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue
 import ItemEditorPanel from '@/components/ItemEditorPanel.vue'
 import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
 import AbilityEditorPanel from '@/components/AbilityEditorPanel.vue'
-import UiButton from '@/components/ui/UiButton.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
 import InGameHud from '@/components/InGameHud.vue'
 import { usePlaytest } from './usePlaytest'
@@ -1798,7 +1771,7 @@ import { NEUTRAL_PLAYER_COLOR, NEUTRAL_SPAWN_RANDOM_GROUP_ID } from '@/game/netw
 import type { UnitFaction, UnitDef } from '@/game/maps/unitDefs'
 import type { PerkDef } from '@/game/maps/perkDefs'
 import type { ItemDef } from '@/game/maps/itemDefs'
-import { applyInstanceEdit, ranksForUnitType, perksForUnitType, itemsForUnitType, type InstancePatch } from './placedUnitInstance'
+import { applyInstanceEdit, ranksForUnitType, perksForUnitType, type InstancePatch } from './placedUnitInstance'
 import { Camera } from '@/game/rendering/Camera'
 import { buildTerrainSurface, drawMinimapBase, drawMinimapPOIs } from '@/game/rendering/minimapLayers'
 import {
@@ -1971,48 +1944,30 @@ const hoverLabel = ref('Hover a tile')
 const paintModeEnabled = ref(false)
 const openSection = ref<'setup' | 'campaign' | 'zones' | 'paint' | 'export' | null>('paint')
 
-// Top toolbar (world-editor-toolbar plan, Task 5). Items category opens a
-// popup implemented in Task 7; Play wires a real playtest flow in Task 8.
-// Terrain/obstacles/buildings/units all reuse the existing Paint section's
-// brush-mode state — the toolbar is a shortcut into tools that already exist,
-// not a parallel state machine.
-const itemsPopupOpen = ref(false)
-const unitTypesPopupOpen = ref(false)
-const abilitiesPopupOpen = ref(false)
+// Top toolbar (world-editor-toolbar plan, Task 5). The toolbar switches
+// full-height screens rather than opening modals: 'map' is the paint canvas +
+// controls, the others each own the whole area under the toolbar so the
+// catalog editors have room for their lists and forms.
+type EditorScreen = 'map' | 'items' | 'unit-types' | 'abilities'
+const activeScreen = ref<EditorScreen>('map')
 const router = useRouter()
 
 function onToolbarSelect(id: string) {
   switch (id) {
-    case 'terrain':
+    case 'map':
+      // Opens the Paint section; the brush itself (terrain / obstacle /
+      // building / unit / erase) is picked from that section's dropdown.
+      activeScreen.value = 'map'
       openSection.value = 'paint'
       paintModeEnabled.value = true
-      brushMode.value = 'terrain'
-      break
-    case 'obstacles':
-      openSection.value = 'paint'
-      paintModeEnabled.value = true
-      brushMode.value = 'obstacle'
-      break
-    case 'buildings':
-      openSection.value = 'paint'
-      paintModeEnabled.value = true
-      brushMode.value = 'building'
-      break
-    case 'units':
-      openSection.value = 'paint'
-      paintModeEnabled.value = true
-      brushMode.value = 'unit'
       break
     case 'items':
-      itemsPopupOpen.value = true
-      break
     case 'unit-types':
-      unitTypesPopupOpen.value = true
-      break
     case 'abilities':
-      abilitiesPopupOpen.value = true
+      activeScreen.value = id
       break
     case 'play':
+      activeScreen.value = 'map'
       startPlaytest()
       break
     case 'exit':
@@ -2055,15 +2010,8 @@ function stopPlaytest() {
 // Drives the toolbar's active-button highlight from the panel's real tool
 // state, so the toolbar never has its own source of truth for "what's on".
 const toolbarActiveId = computed<string | undefined>(() => {
-  if (itemsPopupOpen.value) return 'items'
-  if (unitTypesPopupOpen.value) return 'unit-types'
-  if (abilitiesPopupOpen.value) return 'abilities'
-  if (openSection.value === 'paint') {
-    if (brushMode.value === 'obstacle') return 'obstacles'
-    if (brushMode.value === 'building') return 'buildings'
-    if (brushMode.value === 'unit') return 'units'
-    if (brushMode.value === 'terrain' || brushMode.value === 'tile') return 'terrain'
-  }
+  if (activeScreen.value !== 'map') return activeScreen.value
+  if (openSection.value === 'paint') return 'map'
   return undefined
 })
 const isControlHeld = ref(false)
@@ -2336,10 +2284,9 @@ const selectedInstancePerkOptions = computed<PerkDef[]>(() =>
     ? perksForUnitType(perkDefsList.value, selectedEditPlacedUnit.value.unitType)
     : []
 )
+// Any unit can equip any item — items carry no unit-type restriction.
 const selectedInstanceItemOptions = computed<ItemDef[]>(() =>
-  selectedEditPlacedUnit.value
-    ? itemsForUnitType(itemDefsList.value, selectedEditPlacedUnit.value.unitType)
-    : []
+  selectedEditPlacedUnit.value ? itemDefsList.value : []
 )
 
 // applyPlacedUnitInstancePatch mutates rank/items/perks on the selected
@@ -6376,46 +6323,20 @@ onBeforeUnmount(() => {
   }
 }
 
-.we-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(6, 8, 14, 0.72);
-}
-
-.we-modal {
+/* Catalog editors (items / unit types / abilities) render as full screens
+   under the toolbar instead of modals, so they get the entire viewport width
+   and height to lay their lists and forms out in. The panels are each
+   `height: 100%` with their own internal scroll regions, so this wrapper must
+   not add a second scrollbar. */
+.we-screen {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  background: #12141c;
-  border: 1px solid rgba(166, 191, 255, 0.35);
-  border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
-}
-
-.we-modal--wide {
-  width: min(1100px, 94vw);
-  height: min(880px, 88vh);
-}
-
-.we-modal__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(166, 191, 255, 0.25);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  flex: 0 0 auto;
-}
-
-.we-modal__body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  width: 100%;
+  overflow: hidden;
+  background: #12141c;
+  border: 1px solid rgba(166, 191, 255, 0.25);
+  border-radius: 8px;
 }
 </style>

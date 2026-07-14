@@ -6,8 +6,6 @@
   "kind": "equipment",
   "tier": "uncommon",
   "category": "Shield",
-  "slotKind": "any",
-  "allowedUnitTypes": [],
   "costGold": 150,
   "modifiers": { "armor": 25, "blockChance": 0.10 }
 }

@@ -4,10 +4,10 @@ import type { ItemDef } from '../maps/itemDefs'
 
 const fireSword: ItemDef = {
   id: 'fire_sword', displayName: 'Fire Sword', iconKey: 'fire_sword',
-  kind: 'equipment', tier: 'rare', slotKind: 'any', costGold: 0,
+  kind: 'equipment', tier: 'rare', costGold: 0,
   modifiers: { damage: 5 },
   onHitElemental: [{ type: 'fire', amount: 5 }],
-  onHitProc: { chance: 0.05, damage: 25, damageType: 'fire', projectileID: 'fire_bolt' },
+  procs: [{ trigger: 'onHit', chance: 0.05, damage: 25, damageType: 'fire', projectileID: 'fire_bolt' }],
 }
 
 describe('buildItemTooltipBody — elemental on-hit + proc', () => {
