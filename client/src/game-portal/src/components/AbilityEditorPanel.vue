@@ -7,6 +7,7 @@
         <li v-for="a in abilities" :key="a.id">
           <button
             type="button"
+            data-test="ability-row"
             :class="{ 'is-selected': a.id === selectedId }"
             @click="selectAbility(a)"
           >
@@ -113,7 +114,50 @@
       <!-- Presentation / Effects -->
       <section class="ability-editor__section">
         <h3 class="ability-editor__section-title">Presentation / Effects</h3>
-        <label>Icon <input v-model="form.icon" /></label>
+        <div class="ability-editor__icon-field">
+          <span class="ability-editor__icon-field-label">Icon</span>
+          <div class="ability-editor__icon-preview-row">
+            <canvas
+              ref="previewCanvasEl"
+              width="64"
+              height="64"
+              class="ability-editor__icon-preview"
+            />
+            <div class="ability-editor__icon-preview-actions">
+              <button type="button" data-test="icon-gallery-open" @click="galleryOpen = true">
+                Choose from gallery
+              </button>
+              <label>
+                Upload custom icon <span class="ability-editor__hint">(PNG)</span>
+                <input type="file" accept="image/png" @change="onIconFileChosen" />
+              </label>
+              <p v-if="iconUploadError" class="ability-editor__error">{{ iconUploadError }}</p>
+            </div>
+          </div>
+
+          <div v-if="galleryOpen" class="ability-editor__icon-gallery-overlay">
+            <div class="ability-editor__icon-gallery">
+              <div class="ability-editor__icon-gallery-header">
+                <span>Choose an icon</span>
+                <button type="button" @click="galleryOpen = false">Close</button>
+              </div>
+              <div v-if="galleryKeys.length" class="ability-editor__icon-gallery-grid">
+                <button
+                  v-for="key in galleryKeys"
+                  :key="key"
+                  type="button"
+                  class="ability-editor__icon-gallery-item"
+                  data-test="icon-gallery-cell"
+                  @click="pickGalleryIcon(key)"
+                >
+                  <canvas :ref="(el) => onGalleryCellRef(el, key)" width="40" height="40" />
+                  <span>{{ key }}</span>
+                </button>
+              </div>
+              <p v-else class="ability-editor__icon-gallery-empty">No bundled ability icons found.</p>
+            </div>
+          </div>
+        </div>
         <label>Caster Animation <input v-model="form.casterAnimation" /></label>
         <label>
           Effect On Target
@@ -231,7 +275,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   createBlankForm, formFromDef, inferFamily, saveRequestFromForm,
   type AbilityEditorForm, type AbilityFamily, type AuthoredAbilityDef,
@@ -239,9 +283,11 @@ import {
 import {
   fetchAuthoredAbilityDefs, fetchProjectileIds, fetchEffectIds, fetchAutoCastSelectors,
   fetchAbilityCategories, fetchDamageTypes, saveEditorAbility, deleteEditorAbility,
-  EditorValidationError,
+  uploadAbilityIcon, EditorValidationError,
 } from '@/game/abilities/abilityEditorApi'
 import { fetchAuthoredUnitDefs } from '@/game/units/unitEditorApi'
+import { getAbilityIconSourceUrl, listAbilityIconKeys } from '@/game/rendering/abilityAssets'
+import { inferProjectileFrameCount } from '@/game/rendering/projectileSprites'
 
 const abilities = ref<AuthoredAbilityDef[]>([])
 const form = ref<AbilityEditorForm>(createBlankForm())
@@ -258,6 +304,83 @@ const autoCastSelectors = ref<string[]>([])
 const abilityCategories = ref<string[]>([])
 const damageTypes = ref<string[]>([])
 const unitTypeIds = ref<string[]>([])
+
+// Icon section: preview canvas draws the FIRST frame of a (possibly
+// multi-frame) bundled or server-uploaded icon sprite — mirrors
+// ActionIcon.vue's drawActionSpriteFirstFrame. The gallery overlay lists
+// bundled ability-icon keys (assets/abilities/**); picking one just sets
+// form.icon, which already saves via saveRequestFromForm.
+const galleryOpen = ref(false)
+const iconUploadError = ref('')
+const previewCanvasEl = ref<HTMLCanvasElement | null>(null)
+const galleryKeys = listAbilityIconKeys()
+// Bumped after a successful upload so the preview re-fetches the new bytes
+// even though the server URL for the (unchanged) icon key is identical.
+const iconCacheBust = ref(0)
+
+const previewIconUrl = computed(() => {
+  const key = form.value.icon || form.value.id
+  if (!key) return ''
+  const base = getAbilityIconSourceUrl(key)
+  if (iconCacheBust.value === 0) return base
+  return `${base}${base.includes('?') ? '&' : '?'}v=${iconCacheBust.value}`
+})
+
+function drawIconFirstFrame(canvas: HTMLCanvasElement | null, url: string) {
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  if (!url) return
+  const img = new Image()
+  img.onload = () => {
+    const frames = inferProjectileFrameCount(img.naturalWidth, img.naturalHeight)
+    const sw = img.naturalWidth / frames
+    const sh = img.naturalHeight
+    ctx.imageSmoothingEnabled = false
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0, sw, sh, 0, 0, canvas.width, canvas.height)
+  }
+  img.src = url
+}
+
+watch(previewIconUrl, (url) => drawIconFirstFrame(previewCanvasEl.value, url))
+
+// Callback ref for a gallery cell canvas — Vue invokes this with the mounted
+// element (or null on unmount) each time the overlay's v-for re-renders.
+function onGalleryCellRef(el: unknown, key: string) {
+  if (!(el instanceof HTMLCanvasElement)) return
+  drawIconFirstFrame(el, getAbilityIconSourceUrl(key))
+}
+
+function pickGalleryIcon(key: string) {
+  form.value.icon = key
+  galleryOpen.value = false
+}
+
+async function onIconFileChosen(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  iconUploadError.value = ''
+  // selectedId is null only for a brand-new, unsaved ability (see newAbility /
+  // save below) — the same "is this persisted yet" signal the Delete/Reset
+  // button already relies on.
+  if (selectedId.value === null || !form.value.id) {
+    iconUploadError.value = 'Save the ability before uploading an icon.'
+    input.value = ''
+    return
+  }
+  try {
+    await uploadAbilityIcon(form.value.id, file)
+    form.value.icon = form.value.id // server forces the icon key to the id
+    iconCacheBust.value += 1
+  } catch (err) {
+    iconUploadError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    input.value = ''
+  }
+}
 
 const castRangeMatchesAttack = computed({
   get: () => form.value.castRange === 'match_attack_range',
@@ -307,6 +430,8 @@ function selectAbility(def: AuthoredAbilityDef) {
   selectedFamily.value = inferFamily(def)
   saveError.value = ''
   statusMessage.value = ''
+  iconUploadError.value = ''
+  galleryOpen.value = false
 }
 
 function newAbility() {
@@ -315,6 +440,8 @@ function newAbility() {
   selectedFamily.value = 'basic'
   saveError.value = ''
   statusMessage.value = ''
+  iconUploadError.value = ''
+  galleryOpen.value = false
 }
 
 async function save() {
@@ -355,6 +482,7 @@ async function removeAbility() {
 onMounted(() => {
   reload()
   loadCatalogs()
+  drawIconFirstFrame(previewCanvasEl.value, previewIconUrl.value)
 })
 </script>
 
@@ -470,6 +598,112 @@ onMounted(() => {
 .ability-editor__family-body {
   display: grid;
   gap: 8px;
+}
+
+/* Icon section: preview canvas + gallery overlay, mirrors ItemEditorPanel's
+   icon-preview-row / icon-gallery-* idiom (scoped styles aren't shared across
+   SFCs — duplication accepted). */
+.ability-editor__icon-field {
+  display: grid;
+  gap: 4px;
+}
+
+.ability-editor__icon-field-label {
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 0.75rem;
+}
+
+.ability-editor__icon-preview-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.ability-editor__icon-preview {
+  width: 64px;
+  height: 64px;
+  image-rendering: pixelated;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+}
+
+.ability-editor__icon-preview-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.ability-editor__hint {
+  font-weight: 400;
+  opacity: 0.65;
+}
+
+.ability-editor__icon-gallery-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 8, 14, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.ability-editor__icon-gallery {
+  width: min(640px, 90vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: rgba(8, 14, 24, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.ability-editor__icon-gallery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.ability-editor__icon-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+}
+
+.ability-editor__icon-gallery-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 6px;
+}
+
+.ability-editor__icon-gallery-item canvas {
+  width: 40px;
+  height: 40px;
+  image-rendering: pixelated;
+}
+
+.ability-editor__icon-gallery-item span {
+  font-size: 0.62rem;
+  color: rgba(226, 232, 240, 0.82);
+  text-align: center;
+  word-break: break-all;
+}
+
+.ability-editor__icon-gallery-empty {
+  color: rgba(148, 163, 184, 0.9);
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 24px 0;
 }
 
 .ability-editor__actions {
