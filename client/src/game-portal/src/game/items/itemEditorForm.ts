@@ -63,13 +63,13 @@ export type ItemEditorForm = {
    *  trigger — each rolls independently server-side. */
   procs: ProcForm[]
   /**
-   * Crafting: an item is craftable (isRecipe) when a recipe unlocks it at the
-   * Artificer. The two costs are DIFFERENT prices and are tuned separately —
-   * craftCost is paid at the Artificer on every craft, recipeCost is paid once
-   * at a Recipe Shop to learn the recipe at all. (form.costGold, outside this
-   * block, is the third: buying the finished item off a shop shelf.)
-   * Availability (which shops stock it, loot tables) is NOT modeled here — a
-   * shop-level concern edited elsewhere.
+   * Crafting: an item is craftable (isRecipe) when it carries a recipe — an item
+   * IS its own recipe. The two costs are DIFFERENT prices, tuned separately:
+   * craftCost is paid at a crafting building on every craft; recipeCost is paid
+   * once at a Recipe Shop to learn the recipe at all. (form.costGold, outside
+   * this block, is the third: buying the finished item off a shop shelf.)
+   * Availability — which shops stock it, what drops it — is LIST membership,
+   * edited in the Lists tab, not here.
    */
   crafting: {
     isRecipe: boolean
@@ -130,15 +130,12 @@ function procFormFromWire(p: NonNullable<ItemDef['procs']>[number]): ProcForm {
   }
 }
 
-export function formFromDef(
-  def: ItemDef,
-  recipe: { inputs: string[]; costGold: number; unlockCostGold?: number; starter?: boolean } | null,
-): ItemEditorForm {
+export function formFromDef(def: ItemDef): ItemEditorForm {
   const m = def.modifiers ?? {}
   const c = def.consumable
-  // The recipe def IS craftability — an item carries no crafting fields of its
-  // own. A recipe whose output is this item means craftable; no recipe means not.
-  const craftable = recipe !== null
+  // The crafting block IS craftability — an item is its own recipe. Present
+  // means craftable; absent means not.
+  const craft = def.crafting
   return {
     id: def.id, isNew: false, kind: def.kind === 'consumable' ? 'consumable' : 'equipment',
     displayName: def.displayName, description: def.description ?? '',
@@ -155,11 +152,11 @@ export function formFromDef(
     elemental: (def.onHitElemental ?? []).map((e) => ({ ...e })),
     procs: (def.procs ?? []).map(procFormFromWire),
     crafting: {
-      isRecipe: craftable,
-      craftCost: recipe?.costGold ?? 150,
-      recipeCost: recipe?.unlockCostGold ?? 150,
-      inputs: recipe ? [...recipe.inputs] : ['', ''],
-      starter: recipe?.starter ?? false,
+      isRecipe: craft !== undefined,
+      craftCost: craft?.craftCostGold ?? 150,
+      recipeCost: craft?.recipeCostGold ?? 150,
+      inputs: craft ? [...craft.inputs] : ['', ''],
+      starter: craft?.starter ?? false,
     },
     unmodeled: pickUnmodeled(def),
   }
@@ -205,17 +202,16 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
   }
   if (form.description) item.description = form.description
 
-  // Crafting rides beside the item, never on it: the server turns this block
-  // into the paired recipe def (or drops that recipe when it is absent). The
-  // item itself declares only its own purchase price.
-  const crafting = form.crafting.isRecipe
-    ? {
-        inputs: form.crafting.inputs.filter(Boolean),
-        craftCostGold: form.crafting.craftCost,
-        recipeCostGold: form.crafting.recipeCost,
-        starter: form.crafting.starter,
-      }
-    : undefined
+  // Crafting rides ON the item — an item is its own recipe. Absent = not
+  // craftable, and there is no second file to fall out of step with.
+  if (form.crafting.isRecipe) {
+    item.crafting = {
+      inputs: form.crafting.inputs.filter(Boolean),
+      craftCostGold: form.crafting.craftCost,
+      recipeCostGold: form.crafting.recipeCost,
+      ...(form.crafting.starter ? { starter: true } : {}),
+    }
+  }
 
   if (form.kind === 'consumable') {
     const c = form.consumable
@@ -228,7 +224,7 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
     if (c.durationSeconds) consumable.durationSeconds = c.durationSeconds
     item.consumable = consumable
     if (form.maxStacks > 0) item.maxStacks = form.maxStacks
-    return { item, crafting }
+    return { item }
   }
 
   // Equipment: stat modifiers, on-hit elemental, and procs.
@@ -252,5 +248,5 @@ export function saveRequestFromForm(form: ItemEditorForm): EditorSaveRequest {
   const procs = form.procs.map(procWireFromForm).filter((p) => p !== undefined)
   if (procs.length > 0) item.procs = procs
 
-  return { item, crafting }
+  return { item }
 }

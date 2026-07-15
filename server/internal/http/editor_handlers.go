@@ -35,17 +35,10 @@ func registerEditorRoutes(mux *http.ServeMux) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": req.Item.ID, "status": "saved"})
 	})
 
+	// GET /items/{id}/availability is gone: "where is this item available" is now
+	// answered by list membership, which the Lists tab owns.
 	mux.HandleFunc("/items/", func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/items/")
-		if rest, isAvail := strings.CutSuffix(id, "/availability"); isAvail && r.Method == http.MethodGet {
-			av, found := game.GetItemAvailability(rest)
-			if !found {
-				writeJSONError(w, http.StatusNotFound, "not_found", "no item "+rest)
-				return
-			}
-			writeJSON(w, av)
-			return
-		}
 		if rest, isImage := strings.CutSuffix(id, "/image"); isImage && r.Method == http.MethodPost {
 			data, rerr := io.ReadAll(http.MaxBytesReader(w, r.Body, 256*1024+1))
 			if rerr != nil {
@@ -74,6 +67,14 @@ func registerEditorRoutes(mux *http.ServeMux) {
 		// item taken back to the catalog default) — DeleteEditorItem decides.
 		status, existed, err := game.DeleteEditorItem(id)
 		if err != nil {
+			// An item still referenced by a list, another item's recipe, an
+			// upgrade, or a map is a validation error (author-fixable — the
+			// message names every referencing site), not an infrastructure
+			// failure. Mirrors /factions/ DELETE's still-has-units 400.
+			if game.IsEditorValidationError(err) {
+				writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
+				return
+			}
 			writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
 			return
 		}
@@ -82,6 +83,108 @@ func registerEditorRoutes(mux *http.ServeMux) {
 			return
 		}
 		writeJSON(w, map[string]string{"id": id, "status": status})
+	})
+
+	// Lists: the grouping primitive shops, recipe shops, artificers and camps all
+	// bind to. Authorable end-to-end from the editor's Lists tab — before this
+	// there was no write route at all, and no loader, so an authored list could
+	// not even survive a restart.
+	mux.HandleFunc("/lists", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+			return
+		}
+		var req game.EditorListSaveRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+		if err := game.SaveEditorList(req); err != nil {
+			if game.IsEditorValidationError(err) {
+				writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "save_failed", err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": req.List.ID, "status": "saved"})
+	})
+
+	mux.HandleFunc("/lists/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/lists/")
+		if r.Method != http.MethodDelete {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "DELETE only")
+			return
+		}
+		if id == "" || strings.Contains(id, "/") {
+			writeJSONError(w, http.StatusBadRequest, "invalid_id", "expected /lists/{id}")
+			return
+		}
+		existed, err := game.DeleteEditorList(id)
+		if err != nil {
+			// A list still referenced by a table, a map building, or a
+			// neutral group is a validation error (author-fixable — the
+			// message names every referencing site), not an infrastructure
+			// failure. Mirrors /factions/ DELETE's still-has-units 400.
+			if game.IsEditorValidationError(err) {
+				writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+			return
+		}
+		if !existed {
+			writeJSONError(w, http.StatusNotFound, "not_found", "no editor override for "+id)
+			return
+		}
+		writeJSON(w, map[string]string{"id": id, "status": "deleted"})
+	})
+
+	mux.HandleFunc("/tables", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+			return
+		}
+		var req game.EditorTableSaveRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+		if err := game.SaveEditorTable(req); err != nil {
+			if game.IsEditorValidationError(err) {
+				writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "save_failed", err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": req.Table.ID, "status": "saved"})
+	})
+
+	mux.HandleFunc("/tables/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/tables/")
+		if r.Method != http.MethodDelete {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "DELETE only")
+			return
+		}
+		if id == "" || strings.Contains(id, "/") {
+			writeJSONError(w, http.StatusBadRequest, "invalid_id", "expected /tables/{id}")
+			return
+		}
+		existed, err := game.DeleteEditorTable(id)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+			return
+		}
+		if !existed {
+			writeJSONError(w, http.StatusNotFound, "not_found", "no editor override for "+id)
+			return
+		}
+		writeJSON(w, map[string]string{"id": id, "status": "deleted"})
 	})
 
 	mux.HandleFunc("/units", func(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,27 @@
+{
+  "id": "merchant_basic",
+  "name": "Merchant Basic",
+  "maxRoll": 100,
+  "rows": [
+    {
+      "min": 1,
+      "max": 35,
+      "list": "merchant_weapons"
+    },
+    {
+      "min": 36,
+      "max": 65,
+      "list": "merchant_potions"
+    },
+    {
+      "min": 66,
+      "max": 85,
+      "list": "merchant_accessories"
+    },
+    {
+      "min": 86,
+      "max": 100,
+      "list": "merchant_armor"
+    }
+  ]
+}

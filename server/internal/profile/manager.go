@@ -130,25 +130,27 @@ func newDefaultProfile(playerID, commanderID string) *PlayerProfile {
 		AcquiredAdvancements:        []AcquiredAdvancement{},
 		CompletedCampaignLevels:     []string{},
 		CompletedCampaignObjectives: map[string][]string{},
-		KnownRecipeIDs:              []string{},
+		KnownCraftableIDs:           []string{},
 	}
 }
 
-// RecordKnownRecipe records recipeID into the player's permanent KnownRecipeIDs
+// RecordKnownRecipe records itemID into the player's permanent KnownCraftableIDs
 // set (idempotent, sorted). Called fire-and-forget after a successful craft so
-// the recipe is craftable in all future matches. No-op on empty recipeID.
-func (m *Manager) RecordKnownRecipe(playerID, recipeID string) error {
-	if recipeID == "" {
+// the recipe is craftable in all future matches. No-op on empty itemID.
+//
+// itemID names the item that was crafted — an item is its own recipe.
+func (m *Manager) RecordKnownRecipe(playerID, itemID string) error {
+	if itemID == "" {
 		return nil
 	}
 	return m.WithLocked(playerID, func(p *PlayerProfile) error {
-		for _, id := range p.KnownRecipeIDs {
-			if id == recipeID {
+		for _, id := range p.KnownCraftableIDs {
+			if id == itemID {
 				return nil // already known
 			}
 		}
-		p.KnownRecipeIDs = append(p.KnownRecipeIDs, recipeID)
-		sort.Strings(p.KnownRecipeIDs)
+		p.KnownCraftableIDs = append(p.KnownCraftableIDs, itemID)
+		sort.Strings(p.KnownCraftableIDs)
 		return nil
 	})
 }

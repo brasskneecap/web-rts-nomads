@@ -314,7 +314,7 @@
         "shopRerollsRemaining": 1,
         "teamId": 0,
         "townHallTier": 1,
-        "unlockedRecipeIds": [
+        "unlockedCraftableIds": [
           "scimitar"
         ],
         "upgrades": [

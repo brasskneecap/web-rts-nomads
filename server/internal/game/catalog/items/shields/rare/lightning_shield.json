@@ -7,8 +7,23 @@
   "tier": "rare",
   "category": "Shield",
   "costGold": 0,
-  "modifiers": { "armor": 35, "blockChance": 0.15 },
+  "modifiers": {
+    "armor": 35,
+    "blockChance": 0.15
+  },
   "procs": [
-    { "trigger": "onStruck", "chance": 0.1, "effect": "lightning_chain" }
-  ]
+    {
+      "trigger": "onStruck",
+      "chance": 0.1,
+      "effect": "lightning_chain"
+    }
+  ],
+  "crafting": {
+    "inputs": [
+      "steel_shield",
+      "lightning_ring"
+    ],
+    "craftCostGold": 150,
+    "recipeCostGold": 150
+  }
 }

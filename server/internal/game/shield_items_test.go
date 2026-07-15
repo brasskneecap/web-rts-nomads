@@ -79,18 +79,22 @@ func TestShieldRecipes_Wiring(t *testing.T) {
 		"lightning_shield": {"steel_shield", "lightning_ring"},
 	}
 	for id, inputs := range wiring {
-		def, ok := getRecipeDef(id)
+		def, ok := getItemDef(id)
 		if !ok {
-			t.Fatalf("recipe %s not in catalog", id)
+			t.Fatalf("item %s not in catalog", id)
 		}
-		if len(def.Inputs) != 2 || def.Inputs[0] != inputs[0] || def.Inputs[1] != inputs[1] {
-			t.Errorf("recipe %s inputs = %v, want %v", id, def.Inputs, inputs)
+		if !def.IsCraftable() {
+			t.Fatalf("item %s should be craftable", id)
 		}
-		if def.Output != id {
-			t.Errorf("recipe %s output = %q, want %q", id, def.Output, id)
+		c := def.Crafting
+		if len(c.Inputs) != 2 || c.Inputs[0] != inputs[0] || c.Inputs[1] != inputs[1] {
+			t.Errorf("item %s crafting inputs = %v, want %v", id, c.Inputs, inputs)
 		}
-		if def.CostGold <= 0 {
-			t.Errorf("recipe %s costGold = %d, want > 0", id, def.CostGold)
+		if c.CraftCostGold <= 0 {
+			t.Errorf("item %s craftCostGold = %d, want > 0", id, c.CraftCostGold)
+		}
+		if c.RecipeCostGold <= 0 {
+			t.Errorf("item %s recipeCostGold = %d, want > 0", id, c.RecipeCostGold)
 		}
 	}
 }

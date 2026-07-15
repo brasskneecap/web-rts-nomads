@@ -3,6 +3,7 @@ package game
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"regexp"
 	"sort"
@@ -32,11 +33,21 @@ type NeutralGroupCompositionEntry struct {
 }
 
 // NeutralGroup is one named group composition (e.g. "small_raider_group").
+//
+// A group names AT MOST ONE loot source — either a weighted LootTable or a
+// LootList, never both (setting both is a load-time panic). They are two
+// deliberately different shapes:
+//
+//   - LootTable — the rich case. A weighted roll over lists, resource (gold/wood)
+//     grants, and explicit "nothing drops" outcomes.
+//   - LootList  — the simple case. Roll a list directly; always yields an item.
+//     Use a table when you want a chance of nothing, or of gold.
 type NeutralGroup struct {
 	ID          string                         `json:"id"`
 	Name        string                         `json:"name"`
 	Composition []NeutralGroupCompositionEntry `json:"composition"`
 	LootTable   string                         `json:"lootTable,omitempty"`
+	LootList    string                         `json:"lootList,omitempty"`
 }
 
 // NeutralGroupTier holds all groups available at a given tier level.
@@ -68,11 +79,9 @@ func loadNeutralGroupsByTier() map[int]NeutralGroupTier {
 		}
 		m := neutralGroupTierFilenameRE.FindStringSubmatch(entry.Name())
 		if m == nil {
-			// loot_tables.json lives alongside the tier files and is loaded
-			// separately by loot_table_defs.go. Skip it here.
-			if entry.Name() == "loot_tables.json" {
-				continue
-			}
+			// Nothing but tier files lives here any more — loot_tables.json moved
+			// out to catalog/lists + catalog/tables. An unexpected file is a
+			// mistake, not something to skip past silently.
 			panic("catalog/neutral_groups: unexpected file " + entry.Name() + ` — must match "tier_<N>.json"`)
 		}
 		tierNum, err := strconv.Atoi(m[1])
@@ -120,15 +129,37 @@ func loadNeutralGroupsByTier() map[int]NeutralGroupTier {
 					panic(rel + ": group " + g.ID + " references unknown unitType " + c.UnitType)
 				}
 			}
-			if g.LootTable != "" {
-				if _, ok := getLootTable(g.LootTable); !ok {
-					panic(rel + ": group " + g.ID + ` references unknown lootTable "` + g.LootTable + `"`)
-				}
+			if err := validateNeutralGroupLoot(&g); err != nil {
+				panic(rel + ": " + err.Error())
 			}
 		}
 		result[tierNum] = tier
 	}
 	return result
+}
+
+// validateNeutralGroupLoot enforces that a group names AT MOST ONE loot source,
+// and that whichever it names exists.
+//
+// Two sources with a silent winner is precisely the kind of thing that gets
+// mis-authored and never noticed, so it is an error rather than a precedence
+// rule. A group with no loot source at all is legal — it simply drops nothing.
+func validateNeutralGroupLoot(g *NeutralGroup) error {
+	if g.LootTable != "" && g.LootList != "" {
+		return fmt.Errorf("group %s sets both %q and %q — a group drops from one source or the other, never both",
+			g.ID, "lootTable", "lootList")
+	}
+	if g.LootTable != "" {
+		if _, ok := getTableDef(g.LootTable); !ok {
+			return fmt.Errorf("group %s references unknown lootTable %q", g.ID, g.LootTable)
+		}
+	}
+	if g.LootList != "" {
+		if _, ok := getListDef(g.LootList); !ok {
+			return fmt.Errorf("group %s references unknown lootList %q", g.ID, g.LootList)
+		}
+	}
+	return nil
 }
 
 func sortedNeutralTierKeys(m map[int]NeutralGroupTier) []int {

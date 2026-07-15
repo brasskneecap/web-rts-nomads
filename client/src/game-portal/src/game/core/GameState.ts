@@ -45,7 +45,7 @@ import { UNIT_DEF_MAP } from '../maps/unitDefs'
 import { playSfx } from '../../composables/useSfx'
 import { PERK_DEF_MAP } from '../maps/perkDefs'
 import { ITEM_DEF_MAP } from '../maps/itemDefs'
-import { RECIPE_DEF_MAP } from '../maps/recipeDefs'
+import { LIST_DEF_MAP, listItemIds } from '../maps/listDefs'
 import { buildItemTooltipBody } from '../items/itemRules'
 import { formatPerkTooltip } from './perkTooltip'
 import { hasItemAsset } from '../rendering/itemAssets'
@@ -739,7 +739,7 @@ export class GameState {
 
   // Recipes the local player has unlocked (purchased from a Recipe Shop).
   // Mirrored from PlayerSnapshot each tick. Drives craft-* actions at the Artificer.
-  localPlayerUnlockedRecipeIds: string[] = []
+  localPlayerUnlockedCraftableIds: string[] = []
 
   // Effective per-unit training costs for the local player, keyed by unit
   // type. Populated from PlayerSnapshot.unitCostOverrides every tick — only
@@ -3000,7 +3000,7 @@ export class GameState {
     // ('recipe-purchase') and a separate purchase command. They surface on the
     // same Shop tab once their contents are available, gated identically to
     // neutral item shops: discovered in FOW and not guard-locked.
-    const knownRecipes = new Set(this.localPlayerUnlockedRecipeIds)
+    const knownRecipes = new Set(this.localPlayerUnlockedCraftableIds)
     for (const b of this.mapConfig.buildings) {
       if (!b.capabilities?.includes('recipe-purchase')) continue
       if (b.metadata?.['underConstruction'] === true) continue
@@ -3011,37 +3011,35 @@ export class GameState {
 
       const seenRecipes = new Set<string>()
       for (const slot of b.recipeInventory ?? []) {
-        if (seenRecipes.has(slot.recipeId)) continue
-        const recipe = RECIPE_DEF_MAP.get(slot.recipeId)
-        if (!recipe) continue
-        seenRecipes.add(slot.recipeId)
+        if (seenRecipes.has(slot.itemId)) continue
+        // A recipe IS an item's crafting block — the shop stocks item ids.
+        const item = ITEM_DEF_MAP.get(slot.itemId)
+        if (!item?.crafting) continue
+        seenRecipes.add(slot.itemId)
         // Rarity-keyed recipe scroll icon (matching the in-world panel): prefer
-        // ${rarity}_recipe, fall back to rare_recipe when the tier asset is absent.
-        const rarity = recipe.rarity ?? 'common'
-        const rarityIconKey = `${rarity}_recipe`
+        // ${tier}_recipe, fall back to rare_recipe when the tier asset is absent.
+        const rarityIconKey = `${item.tier}_recipe`
         const recipeIconKey = hasItemAsset(rarityIconKey) ? rarityIconKey : 'rare_recipe'
         const need = new Map<string, number>()
-        for (const input of recipe.inputs) need.set(input, (need.get(input) ?? 0) + 1)
+        for (const input of item.crafting.inputs) need.set(input, (need.get(input) ?? 0) + 1)
         const inputLines = [...need].map(([itemId, count]) => {
           const name = ITEM_DEF_MAP.get(itemId)?.displayName ?? itemId
           return count > 1 ? `${name} ×${count}` : name
         })
         entries.push({
           entryType: 'recipe',
-          itemId: recipe.id,
-          displayName: `Recipe: ${recipe.name}`,
+          itemId: item.id,
+          displayName: `Recipe: ${item.displayName}`,
           description: `Requires: ${inputLines.join(', ')}`,
           iconKey: recipeIconKey,
           kind: 'equipment', // placeholder — recipe entries render via entryType
-          // recipe.rarity is a loose string from the catalog; it is always one
-          // of the tier folders, so narrow it to the ShopCatalogEntry union.
-          tier: rarity as ShopCatalogEntry['tier'],
+          tier: item.tier,
           // The shelf price of a recipe is what it costs to LEARN it, not the
-          // craft cost the Artificer will charge later (recipe.costGold). The
-          // server charges UnlockCostGold here — keep the two in step.
-          costGold: recipe.unlockCostGold ?? 0,
+          // craft cost the Artificer will charge later (crafting.craftCostGold).
+          // The server charges recipeCostGold here — keep the two in step.
+          costGold: item.crafting.recipeCostGold,
           quantity: slot.quantity,
-          recipeKnown: knownRecipes.has(recipe.id),
+          recipeKnown: knownRecipes.has(item.id),
           purchaseBuildingId: b.id,
           purchaseBuildingType: b.buildingType,
           purchaseBuildingStyle: b.metadata?.['shopStyle'] as string | undefined,
@@ -3056,8 +3054,8 @@ export class GameState {
 
   // localPlayerHasArtificer reports whether the local player owns at least one
   // fully-built (not under-construction) building with the "crafting"
-  // capability — the client-side mirror of the server's craft gate. Used to
-  // gate the Craft tab's buttons + empty-state hint.
+  // capability — the client-side mirror of the server's craft gate. Used for the
+  // Craft tab's empty-state hint ("you need an Artificer").
   localPlayerHasArtificer(): boolean {
     if (!this.localPlayerId) return false
     for (const b of this.mapConfig.buildings) {
@@ -3068,26 +3066,47 @@ export class GameState {
     return false
   }
 
+  // localPlayerCanCraftHere reports whether the local player owns a built
+  // crafting building that will make THIS item. A building bound to a list makes
+  // only what is on that list (a Dwarven Forge that only makes weapons); an
+  // unbound one makes anything. Mirrors the server's craft gate — the server
+  // re-validates, so this is a UX hint, not the authority.
+  private localPlayerCanCraftHere(itemId: string): boolean {
+    if (!this.localPlayerId) return false
+    for (const b of this.mapConfig.buildings) {
+      if (b.ownerId !== this.localPlayerId) continue
+      if (b.metadata?.['underConstruction'] === true) continue
+      if (!b.capabilities?.includes('crafting')) continue
+      const listId = b.metadata?.['list'] as string | undefined
+      if (!listId) return true // unbound: makes anything
+      const list = LIST_DEF_MAP.get(listId)
+      // Form-agnostic: a weighted list scopes crafting by membership, weights
+      // playing no part.
+      if (list && listItemIds(list).includes(itemId)) return true
+    }
+    return false
+  }
+
   // getCraftCatalogSnapshot builds the Craft tab's data from the player's
   // unlocked recipes: per recipe, the ingredient have/need (have summed from the
   // Vault, need counted from recipe.inputs incl. duplicates) and whether it is
   // craftable right now. Server re-validates on craft_item — this is a UX hint.
   getCraftCatalogSnapshot(): CraftCatalogEntry[] {
-    const hasArtificer = this.localPlayerHasArtificer()
     const have = new Map<string, number>()
     for (const vi of this.localPlayerVault) {
       have.set(vi.itemId, (have.get(vi.itemId) ?? 0) + (vi.stacks ?? 1))
     }
     const entries: CraftCatalogEntry[] = []
-    // Deterministic order: iterate the sorted unlocked ids.
-    for (const recipeId of [...this.localPlayerUnlockedRecipeIds].sort()) {
-      const recipe = RECIPE_DEF_MAP.get(recipeId)
-      if (!recipe) continue
+    // Deterministic order: iterate the sorted learned ids.
+    for (const itemId of [...this.localPlayerUnlockedCraftableIds].sort()) {
+      const item = ITEM_DEF_MAP.get(itemId)
+      if (!item?.crafting) continue
+      const inputs = item.crafting.inputs
       const need = new Map<string, number>()
-      for (const input of recipe.inputs) need.set(input, (need.get(input) ?? 0) + 1)
+      for (const input of inputs) need.set(input, (need.get(input) ?? 0) + 1)
       let allPresent = true
       const ingredients: CraftCatalogIngredient[] = []
-      for (const input of recipe.inputs) {
+      for (const input of inputs) {
         if (ingredients.some((i) => i.itemId === input)) continue // dedup display
         const needCount = need.get(input) ?? 0
         const haveCount = have.get(input) ?? 0
@@ -3095,12 +3114,13 @@ export class GameState {
         ingredients.push({ itemId: input, have: haveCount, need: needCount })
       }
       entries.push({
-        recipeId: recipe.id,
-        name: recipe.name,
-        output: recipe.output,
-        costGold: recipe.costGold,
+        recipeId: item.id,
+        name: item.displayName,
+        output: item.id,
+        // The CRAFT cost. The recipe cost was paid once, when learning it.
+        costGold: item.crafting.craftCostGold,
         ingredients,
-        craftable: hasArtificer && allPresent,
+        craftable: this.localPlayerCanCraftHere(item.id) && allPresent,
       })
     }
     entries.sort((a, b) => a.name.localeCompare(b.name) || a.recipeId.localeCompare(b.recipeId))
@@ -3255,7 +3275,7 @@ export class GameState {
               this.townHallTier,
               new Set(this.lockedUnitTypes),
               this.localPlayerShopRerollsRemaining,
-              new Set(this.localPlayerUnlockedRecipeIds),
+              new Set(this.localPlayerUnlockedCraftableIds),
               this.localPlayerUnitCostOverrides,
             ),
         production: activeProduction
@@ -3531,7 +3551,7 @@ export class GameState {
       this.localPlayerVault = localPlayer.vault ?? []
     }
     this.localPlayerShopRerollsRemaining = localPlayer.shopRerollsRemaining ?? 0
-    this.localPlayerUnlockedRecipeIds = localPlayer.unlockedRecipeIds ?? []
+    this.localPlayerUnlockedCraftableIds = localPlayer.unlockedCraftableIds ?? []
     this.localPlayerCommanderAbilities = localPlayer.commanderAbilities ?? []
   }
 }
@@ -4215,7 +4235,7 @@ export function getBuildingActions(
   _townHallTier: number = 0,
   lockedUnitTypes: ReadonlySet<string> = new Set(),
   shopRerollsRemaining: number = 0,
-  unlockedRecipeIds: ReadonlySet<string> = new Set(),
+  unlockedCraftableIds: ReadonlySet<string> = new Set(),
   unitCostOverrides: ReadonlyMap<string, UnitCostOverride> = new Map(),
 ): ActionItem[] {
   const actions: ActionItem[] = []
@@ -4284,41 +4304,43 @@ export function getBuildingActions(
     // (kept visible but disabled), mirroring item-purchase stock handling.
     const shopLocked = building.shopLocked === true
     for (const slot of building.recipeInventory ?? []) {
-      const recipe = RECIPE_DEF_MAP.get(slot.recipeId)
-      if (!recipe) continue
+      // A recipe IS an item's crafting block — the shop stocks item ids.
+      const item = ITEM_DEF_MAP.get(slot.itemId)
+      if (!item?.crafting) continue
       const soldOut = slot.quantity <= 0
       // Recipes the player already knows are greyed out with an explanatory
       // tooltip — buying again would spend gold for nothing (the server also
       // no-ops these). Takes precedence over the sold-out / locked reasons.
-      const known = unlockedRecipeIds.has(recipe.id)
+      const known = unlockedCraftableIds.has(item.id)
       // List each required ingredient on its own line under "Requires:", using
       // the item's display name (not raw id) and collapsing duplicates to a ×N
       // count — matches how the Artificer renders ingredients.
       const need = new Map<string, number>()
-      for (const input of recipe.inputs) need.set(input, (need.get(input) ?? 0) + 1)
+      for (const input of item.crafting.inputs) need.set(input, (need.get(input) ?? 0) + 1)
       const inputLines = [...need].map(([itemId, count]) => {
         const name = ITEM_DEF_MAP.get(itemId)?.displayName ?? itemId
         return count > 1 ? `${name} ×${count}` : name
       })
-      let tooltipBody = `Unlocks crafting:\n${recipe.name}\n\nRequires:\n${inputLines.join('\n')}`
+      let tooltipBody = `Unlocks crafting:\n${item.displayName}\n\nRequires:\n${inputLines.join('\n')}`
       if (known) tooltipBody = `${tooltipBody}\n\nRecipe already known.`
       else if (soldOut) tooltipBody = `${tooltipBody}\n\nAlready purchased at this shop.`
       else if (shopLocked) tooltipBody = `${tooltipBody}\n\nGuards remain — clear them to unlock this shop.`
       // Recipe Shop sells the *recipe* (not the item), so it renders a recipe
-      // scroll icon keyed by rarity rather than the output item's icon. Prefer a
-      // tier-specific asset (${rarity}_recipe) and fall back to rare_recipe when
-      // one hasn't been added yet — this lets epic_recipe/legendary_recipe drop
-      // in later with no code change. (The Artificer deliberately keeps showing
-      // the output item's icon, since it crafts that item.)
-      const rarity = recipe.rarity ?? 'common'
-      const rarityIconKey = `${rarity}_recipe`
+      // scroll icon keyed by the item's tier rather than the item's own icon.
+      // Prefer a tier-specific asset (${tier}_recipe) and fall back to
+      // rare_recipe when one hasn't been added yet — this lets
+      // epic_recipe/legendary_recipe drop in later with no code change. (The
+      // Artificer deliberately keeps showing the item's icon, since it makes it.)
+      const rarityIconKey = `${item.tier}_recipe`
       const recipeIconKey = hasItemAsset(rarityIconKey) ? rarityIconKey : 'rare_recipe'
       actions.push({
-        id: `buy-recipe-${recipe.id}`,
-        label: `Recipe: ${recipe.name}`,
+        id: `buy-recipe-${item.id}`,
+        label: `Recipe: ${item.displayName}`,
         iconDef: { kind: 'item', type: recipeIconKey },
-        cost: [{ resourceId: 'gold', amount: recipe.costGold, accent: '#d4a84f' }],
-        tooltipTitle: `Recipe: ${recipe.name}`,
+        // The price to LEARN the recipe. This used to charge the CRAFT cost,
+        // so the button lied about the price whenever the two differed.
+        cost: [{ resourceId: 'gold', amount: item.crafting.recipeCostGold, accent: '#d4a84f' }],
+        tooltipTitle: `Recipe: ${item.displayName}`,
         tooltipBody,
         disabled: known || soldOut || shopLocked,
       })
@@ -4326,20 +4348,27 @@ export function getBuildingActions(
   }
 
   if (building.capabilities?.includes('crafting')) {
-    // Artificer: one craft action per unlocked recipe. Ingredient counts are
+    // Artificer: one craft action per learned recipe. Ingredient counts are
     // computed from the Vault snapshot; a recipe is disabled (not hidden) when
     // the vault lacks the required inputs so the player can see what to gather.
     // Affordability (gold) is NOT gated client-side — the server rejects an
     // unaffordable craft, matching how buy-item actions don't gate on gold.
+    //
+    // A building bound to a list makes ONLY what is on that list, so a
+    // list-scoped forge shows a subset of what the player knows. The list
+    // narrows; it never grants a recipe that has not been learned.
+    const boundListId = building.metadata?.['list'] as string | undefined
+    const boundList = boundListId ? LIST_DEF_MAP.get(boundListId) : undefined
     const vault = vaultState?.vault ?? []
     const have = new Map<string, number>()
     for (const vi of vault) have.set(vi.itemId, (have.get(vi.itemId) ?? 0) + (vi.stacks ?? 1))
-    // Deterministic order: iterate the sorted unlocked ids.
-    for (const recipeId of [...unlockedRecipeIds].sort()) {
-      const recipe = RECIPE_DEF_MAP.get(recipeId)
-      if (!recipe) continue
+    // Deterministic order: iterate the sorted learned ids.
+    for (const craftableId of [...unlockedCraftableIds].sort()) {
+      if (boundList && !listItemIds(boundList).includes(craftableId)) continue
+      const item = ITEM_DEF_MAP.get(craftableId)
+      if (!item?.crafting) continue
       const need = new Map<string, number>()
-      for (const input of recipe.inputs) need.set(input, (need.get(input) ?? 0) + 1)
+      for (const input of item.crafting.inputs) need.set(input, (need.get(input) ?? 0) + 1)
       let missing = false
       const parts: string[] = []
       for (const [itemId, count] of need) {
@@ -4349,11 +4378,12 @@ export function getBuildingActions(
         parts.push(`${itemName} ${owned}/${count}`)
       }
       actions.push({
-        id: `craft-${recipe.id}`,
-        label: recipe.name,
-        iconDef: { kind: 'item', type: recipe.output },
-        cost: [{ resourceId: 'gold', amount: recipe.costGold, accent: '#d4a84f' }],
-        tooltipTitle: recipe.name,
+        id: `craft-${item.id}`,
+        label: item.displayName,
+        iconDef: { kind: 'item', type: item.id },
+        // The CRAFT cost — the recipe cost was paid once, when learning it.
+        cost: [{ resourceId: 'gold', amount: item.crafting.craftCostGold, accent: '#d4a84f' }],
+        tooltipTitle: item.displayName,
         // Name + cost are rendered by the tooltip frame (title + cost rows);
         // the body just lists the ingredients, one per line. The disabled /
         // greyed-out state already signals when ingredients are missing.

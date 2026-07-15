@@ -2,17 +2,19 @@ package game
 
 // PurchaseRecipe is the public entry point for buying a recipe from a Recipe
 // Shop. Acquires s.mu and delegates to handlePurchaseRecipeLocked.
-func (s *GameState) PurchaseRecipe(playerID, buildingID, recipeID string) {
+//
+// itemID names the item the recipe MAKES — an item is its own recipe.
+func (s *GameState) PurchaseRecipe(playerID, buildingID, itemID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.handlePurchaseRecipeLocked(playerID, buildingID, recipeID)
+	s.handlePurchaseRecipeLocked(playerID, buildingID, itemID)
 }
 
 // handlePurchaseRecipeLocked validates and executes a recipe purchase from a
 // neutral Recipe Shop. Validation failures are silent no-ops (mirrors
 // handlePurchaseItemLocked). On success: deduct gold, unlock the recipe for
 // the match, decrement shop stock. Must be called under s.mu.
-func (s *GameState) handlePurchaseRecipeLocked(playerID, buildingID, recipeID string) {
+func (s *GameState) handlePurchaseRecipeLocked(playerID, buildingID, itemID string) {
 	player, ok := s.Players[playerID]
 	if !ok {
 		return
@@ -50,7 +52,7 @@ func (s *GameState) handlePurchaseRecipeLocked(playerID, buildingID, recipeID st
 	// Recipe must be in this shop's RecipeInventory with stock remaining.
 	stockIdx := -1
 	for i, e := range building.RecipeInventory {
-		if e.RecipeID == recipeID {
+		if e.ItemID == itemID {
 			stockIdx = i
 			break
 		}
@@ -59,28 +61,29 @@ func (s *GameState) handlePurchaseRecipeLocked(playerID, buildingID, recipeID st
 		return
 	}
 
-	// Recipe must be in the catalog.
-	def, ok := getRecipeDef(recipeID)
-	if !ok {
+	// The item must exist and be craftable — a recipe IS an item's crafting
+	// block, so an item with no crafting block has no recipe to sell.
+	def, ok := getItemDef(itemID)
+	if !ok || !def.IsCraftable() {
 		return
 	}
 
 	// Already-known recipes are a no-op: unlockRecipeForPlayerLocked is
 	// idempotent, so without this guard the player would spend gold and burn
 	// shop stock for nothing. The client greys these out; this backstops it.
-	if s.playerKnowsRecipeLocked(playerID, recipeID) {
+	if s.playerKnowsRecipeLocked(playerID, itemID) {
 		return
 	}
 
-	// Afford check. The learn price is UnlockCostGold, NOT CostGold — the
+	// Afford check. The learn price is RecipeCostGold, NOT CraftCostGold — the
 	// latter is what the Artificer charges per craft, and the two are tuned
-	// independently (see RecipeDef).
-	if player.Resources["gold"] < def.UnlockCostGold {
+	// independently (see ItemCrafting).
+	if player.Resources["gold"] < def.Crafting.RecipeCostGold {
 		return
 	}
 
 	// Commit: deduct gold, unlock recipe, decrement stock.
-	player.Resources["gold"] -= def.UnlockCostGold
-	s.unlockRecipeForPlayerLocked(player, recipeID)
+	player.Resources["gold"] -= def.Crafting.RecipeCostGold
+	s.unlockRecipeForPlayerLocked(player, itemID)
 	building.RecipeInventory[stockIdx].Quantity--
 }

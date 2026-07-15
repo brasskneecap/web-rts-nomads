@@ -28,43 +28,72 @@ func isShopSnapshotBuilding(b *protocol.BuildingTile) bool {
 	return hasItemPurchaseCapability(b) || hasRecipePurchaseCapability(b)
 }
 
-// playerKnowsRecipeLocked reports whether the player may craft recipeID this
-// match (seeded from profile + purchased). Must be called under s.mu.
-func (s *GameState) playerKnowsRecipeLocked(playerID, recipeID string) bool {
+// playerKnowsRecipeLocked reports whether the player has learned itemID's recipe
+// this match (seeded from profile + purchased). Must be called under s.mu.
+func (s *GameState) playerKnowsRecipeLocked(playerID, itemID string) bool {
 	p, ok := s.Players[playerID]
 	if !ok {
 		return false
 	}
-	for _, id := range p.UnlockedRecipeIDs {
-		if id == recipeID {
+	for _, id := range p.UnlockedCraftableIDs {
+		if id == itemID {
 			return true
 		}
 	}
 	return false
 }
 
-// unlockRecipeForPlayerLocked adds recipeID to the player's in-match unlocked
-// set if absent, keeping the slice sorted. Idempotent. Must be called under s.mu.
-func (s *GameState) unlockRecipeForPlayerLocked(player *Player, recipeID string) {
-	if player == nil || recipeID == "" {
+// unlockRecipeForPlayerLocked adds itemID to the player's in-match learned set
+// if absent, keeping the slice sorted. Idempotent. Must be called under s.mu.
+func (s *GameState) unlockRecipeForPlayerLocked(player *Player, itemID string) {
+	if player == nil || itemID == "" {
 		return
 	}
-	for _, id := range player.UnlockedRecipeIDs {
-		if id == recipeID {
+	for _, id := range player.UnlockedCraftableIDs {
+		if id == itemID {
 			return
 		}
 	}
-	player.UnlockedRecipeIDs = append(player.UnlockedRecipeIDs, recipeID)
-	sort.Strings(player.UnlockedRecipeIDs)
+	player.UnlockedCraftableIDs = append(player.UnlockedCraftableIDs, itemID)
+	sort.Strings(player.UnlockedCraftableIDs)
+}
+
+// craftableItemDefs returns every craftable item in the catalog, sorted by ID.
+// This is the global recipe pool — "a recipe" is just an item with a crafting
+// block, so there is no separate recipe catalog to consult.
+func craftableItemDefs() []*ItemDef {
+	all := ListItemDefs() // sorted by ID
+	out := make([]*ItemDef, 0, len(all))
+	for _, def := range all {
+		if def.IsCraftable() {
+			out = append(out, def)
+		}
+	}
+	return out
+}
+
+// starterCraftableItemIDs returns the IDs of every item whose recipe every
+// player starts the match already knowing (crafting.starter), sorted so seeding
+// never depends on map iteration order.
+func starterCraftableItemIDs() []string {
+	ids := make([]string, 0)
+	for _, def := range craftableItemDefs() {
+		if def.Crafting.Starter {
+			ids = append(ids, def.ID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // populateRecipeShopInventoriesLocked fills every recipe-shop building's
-// RecipeInventory with a deterministic random subset of all recipes, sampled
-// via s.rngLoot. Iteration order over buildings is sorted by ID so the sample
-// is reproducible across runs. Must be called under s.mu write lock, once at
-// match start (reads s.MapConfig.Buildings directly; does not require buildingsByID to be populated).
+// RecipeInventory with a deterministic random subset of the recipes it can sell,
+// sampled via s.rngLoot. Iteration order over buildings is sorted by ID so the
+// sample is reproducible across runs. Must be called under s.mu write lock, once
+// at match start (reads s.MapConfig.Buildings directly; does not require
+// buildingsByID to be populated).
 func (s *GameState) populateRecipeShopInventoriesLocked() {
-	all := ListRecipeDefs() // already sorted by ID
+	all := craftableItemDefs() // sorted by ID
 	if len(all) == 0 {
 		return
 	}
@@ -83,8 +112,6 @@ func (s *GameState) populateRecipeShopInventoriesLocked() {
 		if len(b.RecipeInventory) > 0 {
 			continue
 		}
-		// Pool is the shop's assigned recipe list (metadata "recipeList") when
-		// set and valid, else the global recipe pool.
 		src := recipeShopPool(b, all)
 		count := defaultRecipeShopCount
 		if count > len(src) {
@@ -92,7 +119,7 @@ func (s *GameState) populateRecipeShopInventoriesLocked() {
 		}
 		// Partial Fisher-Yates over a copy of the sorted pool using the seeded
 		// loot RNG → deterministic per (seed, building order).
-		pool := make([]*RecipeDef, len(src))
+		pool := make([]*ItemDef, len(src))
 		copy(pool, src)
 		for k := 0; k < count; k++ {
 			j := k + s.rngLoot.Intn(len(pool)-k)
@@ -100,33 +127,31 @@ func (s *GameState) populateRecipeShopInventoriesLocked() {
 		}
 		entries := make([]protocol.RecipeStockEntry, 0, count)
 		for k := 0; k < count; k++ {
-			entries = append(entries, protocol.RecipeStockEntry{RecipeID: pool[k].ID, Quantity: 1})
+			entries = append(entries, protocol.RecipeStockEntry{ItemID: pool[k].ID, Quantity: 1})
 		}
 		b.RecipeInventory = entries
 	}
 }
 
-// recipeShopPool returns the recipe pool a shop samples from: the recipes of its
-// assigned "recipeList" metadata (when set and valid), else the global pool
-// `all`. The returned slice is sorted by recipe ID for deterministic sampling.
-// Unknown recipe IDs in a list are skipped (validated at catalog load, so this
-// is defensive); an unknown list id falls back to the global pool.
-func recipeShopPool(b *protocol.BuildingTile, all []*RecipeDef) []*RecipeDef {
-	listID, ok := getMetadataString(b.Metadata, "recipeList")
-	if !ok || listID == "" {
-		return all
-	}
-	list, ok := getRecipeListDef(listID)
+// recipeShopPool returns the pool a Recipe Shop samples its stock from: the
+// CRAFTABLE members of its bound list, else the global craftable pool `all`.
+//
+// Non-craftable members are silently skipped rather than rejected — a list is
+// untyped, so the same list may legitimately be shop stock or a loot pool where
+// those members do belong. A list with no craftable members at all falls back to
+// the global pool rather than leaving the shop empty.
+func recipeShopPool(b *protocol.BuildingTile, all []*ItemDef) []*ItemDef {
+	list, ok := listForBuilding(b)
 	if !ok {
 		return all
 	}
-	pool := make([]*RecipeDef, 0, len(list.Recipes))
-	seen := make(map[string]bool, len(list.Recipes))
-	for _, id := range list.Recipes {
+	pool := make([]*ItemDef, 0, len(list.Items))
+	seen := make(map[string]bool, len(list.Items))
+	for _, id := range list.Items {
 		if seen[id] {
 			continue
 		}
-		if def, ok := getRecipeDef(id); ok {
+		if def, ok := getItemDef(id); ok && def.IsCraftable() {
 			pool = append(pool, def)
 			seen[id] = true
 		}

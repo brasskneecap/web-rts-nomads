@@ -1,1 +1,0 @@
-{ "id": "fire_shield", "name": "Fire Shield", "inputs": ["steel_shield", "fire_ring"], "costGold": 150, "unlockCostGold": 150, "output": "fire_shield" }

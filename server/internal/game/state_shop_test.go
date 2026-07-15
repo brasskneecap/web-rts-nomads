@@ -114,15 +114,15 @@ func TestPopulateShopInventories_FixedList(t *testing.T) {
 	}
 }
 
-// TestPopulateShopInventories_ItemListMetadata verifies a neutral-shop with an
-// "itemList" metadata treats the list as a POOL and stocks a sampled subset
+// TestPopulateShopInventories_ListMetadata verifies a neutral-shop bound to a
+// list treats it as a POOL and stocks a sampled subset
 // sized to the base item count — every stocked item drawn from the list, no
 // duplicates. Counts/expectations derive from the catalog + tuning, not literals.
-func TestPopulateShopInventories_ItemListMetadata(t *testing.T) {
+func TestPopulateShopInventories_ListMetadata(t *testing.T) {
 	const listID = "marketplace"
-	list, ok := getItemListDef(listID)
+	list, ok := getListDef(listID)
 	if !ok {
-		t.Fatalf("expected item list %q in catalog", listID)
+		t.Fatalf("expected list %q in catalog", listID)
 	}
 	inList := map[string]bool{}
 	for _, id := range list.Items {
@@ -142,7 +142,7 @@ func TestPopulateShopInventories_ItemListMetadata(t *testing.T) {
 		Occupied:     true,
 		OwnerID:      &neutral,
 		Capabilities: []string{"item-purchase"},
-		Metadata:     map[string]interface{}{"itemList": listID},
+		Metadata:     map[string]interface{}{"list": listID},
 	})
 	reindexShopTestState(s)
 	got := playerShopInventoryItemIDs(s, "p1", "merchant-listed")
@@ -168,14 +168,14 @@ func TestPopulateShopInventories_ItemListMetadata(t *testing.T) {
 }
 
 // TestShopWaveReroll_ResamplesOnCadenceRespectsPerShopOverride verifies the
-// wave-based auto-reroll: a shop re-samples its item-list pool when the
+// wave-based auto-reroll: a shop re-samples its list pool when the
 // just-completed wave is a multiple of its interval, a shop with rerollWaves=0
 // is never touched, and the edge marker fires the check once per wave.
 func TestShopWaveReroll_ResamplesOnCadenceRespectsPerShopOverride(t *testing.T) {
 	const listID = "wandering_merchant"
-	list, ok := getItemListDef(listID)
+	list, ok := getListDef(listID)
 	if !ok {
-		t.Skipf("item list %q not present", listID)
+		t.Skipf("list %q not present", listID)
 	}
 	// Sentinel item NOT in the pool, so any re-sample provably replaces it.
 	sentinel := "broad_sword"
@@ -195,13 +195,13 @@ func TestShopWaveReroll_ResamplesOnCadenceRespectsPerShopOverride(t *testing.T) 
 			ID: "merchant-A", BuildingType: "neutral-shop", Width: 3, Height: 3,
 			Visible: true, Occupied: true, OwnerID: &neutral,
 			Capabilities: []string{"item-purchase"},
-			Metadata:     map[string]interface{}{"itemList": listID},
+			Metadata:     map[string]interface{}{"list": listID},
 		},
 		protocol.BuildingTile{
 			ID: "merchant-B", BuildingType: "neutral-shop", Width: 3, Height: 3,
 			Visible: true, Occupied: true, OwnerID: &neutral,
 			Capabilities: []string{"item-purchase"},
-			Metadata:     map[string]interface{}{"itemList": listID, "rerollWaves": float64(0)},
+			Metadata:     map[string]interface{}{"list": listID, "rerollWaves": float64(0)},
 		},
 	)
 	reindexShopTestState(s)
@@ -263,9 +263,9 @@ func TestShopWaveReroll_ResamplesOnCadenceRespectsPerShopOverride(t *testing.T) 
 // one player's purchase never affects another's stock.
 func TestNeutralShop_PerPlayerIndependentViews(t *testing.T) {
 	const listID = "wandering_merchant"
-	list, ok := getItemListDef(listID)
+	list, ok := getListDef(listID)
 	if !ok {
-		t.Skipf("item list %q not present", listID)
+		t.Skipf("list %q not present", listID)
 	}
 	base := neutralShopBaseItemCount()
 	if len(list.Items) < base+1 {
@@ -282,7 +282,7 @@ func TestNeutralShop_PerPlayerIndependentViews(t *testing.T) {
 		ID: "merchant", BuildingType: "neutral-shop", Width: 3, Height: 3,
 		Visible: true, Occupied: true, OwnerID: &neutral,
 		Capabilities: []string{"item-purchase"},
-		Metadata:     map[string]interface{}{"itemList": listID},
+		Metadata:     map[string]interface{}{"list": listID},
 	})
 	reindexShopTestState(s)
 	p1View := playerShopInventoryItemIDs(s, "p1", "merchant")
@@ -332,15 +332,10 @@ func TestPopulateShopInventories_LootTableDeterministic(t *testing.T) {
 		s := makeShopTestState(t, seed)
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		// Use any existing loot table id. neutral_groups/loot_tables.json
-		// ships one named "tier1_loot" (or similar). Look up the first
-		// available table id by exploring the loaded catalog via a dummy
-		// roll: we'll just pick one by reflection through getLootTable on
-		// the conventional name. To keep the test robust to catalog drift
-		// we walk the embedded catalog if needed.
+		// Any shipped table will do — the point is determinism, not the odds.
 		var tableID string
 		for _, candidate := range []string{"raider_loot", "wildborne_loot"} {
-			if _, ok := getLootTable(candidate); ok {
+			if _, ok := getTableDef(candidate); ok {
 				tableID = candidate
 				break
 			}
@@ -379,7 +374,7 @@ func TestPopulateShopInventories_MarketplaceFallback(t *testing.T) {
 	got := shopInventoryItemIDs(s.buildingsByID["ms-default"])
 	s.mu.Unlock()
 
-	marketplaceList, ok := getItemListDef("marketplace")
+	marketplaceList, ok := getListDef("marketplace")
 	if !ok {
 		t.Fatal(`item list "marketplace" not found`)
 	}

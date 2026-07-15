@@ -58,20 +58,11 @@ func TestArmorItems_Load(t *testing.T) {
 // neutral-merchant table so a painted neutral-shop can actually stock it.
 // Same two-tier walk as TestElementalRings_InLootTables.
 func TestArmorItems_InLootTables(t *testing.T) {
-	table, ok := getLootTable("merchant_basic")
+	table, ok := getTableDef("merchant_basic")
 	if !ok {
 		t.Fatal(`loot table "merchant_basic" not found`)
 	}
-	reachable := make(map[string]struct{})
-	for _, entry := range table {
-		pkg, ok := getPackagedItem(entry.Entry)
-		if !ok || pkg.Kind != PackagedItemSubtable {
-			continue
-		}
-		for _, sub := range pkg.Entries {
-			reachable[sub.Item] = struct{}{}
-		}
-	}
+	reachable := table.ReachableItemIDs()
 	for _, id := range armorItemIDs {
 		if _, ok := reachable[id]; !ok {
 			t.Errorf("armor item %q not reachable from merchant_basic", id)

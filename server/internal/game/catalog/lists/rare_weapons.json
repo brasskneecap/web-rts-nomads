@@ -1,0 +1,27 @@
+{
+  "id": "rare_weapons",
+  "name": "Rare Weapons",
+  "maxRoll": 20,
+  "entries": [
+    {
+      "item": "scimitar",
+      "min": 1,
+      "max": 14
+    },
+    {
+      "item": "fire_sword",
+      "min": 15,
+      "max": 16
+    },
+    {
+      "item": "frost_sword",
+      "min": 17,
+      "max": 18
+    },
+    {
+      "item": "lightning_sword",
+      "min": 19,
+      "max": 20
+    }
+  ]
+}

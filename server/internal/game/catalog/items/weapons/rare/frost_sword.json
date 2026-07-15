@@ -7,9 +7,28 @@
   "tier": "rare",
   "category": "Weapon",
   "costGold": 0,
-  "modifiers": { "damage": 5 },
-  "onHitElemental": [ { "type": "cold", "amount": 5 } ],
+  "modifiers": {
+    "damage": 5
+  },
+  "onHitElemental": [
+    {
+      "type": "cold",
+      "amount": 5
+    }
+  ],
   "procs": [
-    { "trigger": "onHit", "chance": 0.1, "effect": "frost_bolt_chill" }
-  ]
+    {
+      "trigger": "onHit",
+      "chance": 0.1,
+      "effect": "frost_bolt_chill"
+    }
+  ],
+  "crafting": {
+    "inputs": [
+      "broad_sword",
+      "ice_ring"
+    ],
+    "craftCostGold": 150,
+    "recipeCostGold": 150
+  }
 }

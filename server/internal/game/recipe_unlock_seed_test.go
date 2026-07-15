@@ -19,7 +19,7 @@ func TestEnsurePlayer_SeedsAndUnlocksRecipes(t *testing.T) {
 	s.unlockRecipeForPlayerLocked(p, "frost_sword")
 	s.unlockRecipeForPlayerLocked(p, "frost_sword")
 	count := 0
-	for _, id := range p.UnlockedRecipeIDs {
+	for _, id := range p.UnlockedCraftableIDs {
 		if id == "frost_sword" {
 			count++
 		}

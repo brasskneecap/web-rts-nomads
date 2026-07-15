@@ -206,7 +206,7 @@ export class NetworkClient {
   private activeUpgradeIds: string[] | null = null
   private ownedUpgradeRanks: Record<string, number> = {}
   private acquiredAdvancementIds: string[] = []
-  private knownRecipeIds: string[] = []
+  private knownCraftableIds: string[] = []
   /** World Editor playtest support: when true, the next join_match asks the
    *  server for a non-persisting ephemeral match. Set via setEphemeral()
    *  before connect(); GameClient.start({ephemeral}) wires this up. */
@@ -257,8 +257,8 @@ export class NetworkClient {
     this.acquiredAdvancementIds = ids
   }
 
-  setKnownRecipeIds(ids: string[]): void {
-    this.knownRecipeIds = ids
+  setKnownCraftableIds(ids: string[]): void {
+    this.knownCraftableIds = ids
   }
 
   setEphemeral(v: boolean): void {
@@ -330,7 +330,7 @@ export class NetworkClient {
           activeUpgradeIds: shouldSendActiveUpgrades ? this.activeUpgradeIds! : undefined,
           ownedUpgradeRanks: hasUpgrades ? this.ownedUpgradeRanks : undefined,
           acquiredAdvancementIds: this.acquiredAdvancementIds,
-          knownRecipeIds: this.knownRecipeIds,
+          knownCraftableIds: this.knownCraftableIds,
           cachedMapHashes: cachedMapHashes.length > 0 ? cachedMapHashes : undefined,
           ephemeral: this.ephemeral || undefined,
         }

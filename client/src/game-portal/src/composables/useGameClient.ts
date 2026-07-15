@@ -145,7 +145,7 @@ export function useGameClient() {
     client.setAcquiredAdvancementIds(
       (profile.value?.acquiredAdvancements ?? []).map((a) => a.id),
     )
-    client.setKnownRecipeIds(profile.value?.knownRecipeIds ?? [])
+    client.setKnownCraftableIds(profile.value?.knownCraftableIds ?? [])
 
     // Wire the connection state callback. This runs outside the RAF loop so
     // connection state changes are never masked by the snapshot polling rhythm.

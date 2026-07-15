@@ -40,7 +40,7 @@ func setupRecipePurchase(t *testing.T) (*GameState, *Player) {
 	}
 	s.initShopBuildingsLocked()
 	// Force a known stock so the test is independent of the sampler.
-	s.buildingsByID["rs-1"].RecipeInventory = []protocol.RecipeStockEntry{{RecipeID: "fire_sword", Quantity: 1}}
+	s.buildingsByID["rs-1"].RecipeInventory = []protocol.RecipeStockEntry{{ItemID: "fire_sword", Quantity: 1}}
 	p := s.Players["p1"]
 	p.Resources["gold"] = 1000
 	markRecipeShopDiscovered(s, "p1", "rs-1")
@@ -56,13 +56,13 @@ func TestPurchaseRecipe_Success(t *testing.T) {
 	if !s.playerKnowsRecipeLocked("p1", "fire_sword") {
 		t.Fatal("recipe should be unlocked after purchase")
 	}
-	fireSwordDef, ok := getRecipeDef("fire_sword")
-	if !ok {
-		t.Fatal("fire_sword recipe not found in catalog")
+	fireSword, ok := getItemDef("fire_sword")
+	if !ok || !fireSword.IsCraftable() {
+		t.Fatal("fire_sword is not a craftable item in the catalog")
 	}
-	// The shop charges the LEARN price (UnlockCostGold), not the per-craft cost
-	// the Artificer will charge later (CostGold).
-	cost := fireSwordDef.UnlockCostGold
+	// The shop charges the LEARN price (RecipeCostGold), not the per-craft cost
+	// the Artificer will charge later (CraftCostGold).
+	cost := fireSword.Crafting.RecipeCostGold
 	if p.Resources["gold"] != 1000-cost {
 		t.Fatalf("gold = %d, want %d", p.Resources["gold"], 1000-cost)
 	}
@@ -73,11 +73,11 @@ func TestPurchaseRecipe_Success(t *testing.T) {
 
 func TestPurchaseRecipe_RejectsWhenUnaffordable(t *testing.T) {
 	s, p := setupRecipePurchase(t)
-	def, ok := getRecipeDef("fire_sword")
-	if !ok {
-		t.Fatal("fire_sword recipe not found in catalog")
+	def, ok := getItemDef("fire_sword")
+	if !ok || !def.IsCraftable() {
+		t.Fatal("fire_sword is not a craftable item in the catalog")
 	}
-	broke := def.UnlockCostGold - 1 // one gold short of the learn price, whatever it is tuned to
+	broke := def.Crafting.RecipeCostGold - 1 // one gold short of the learn price, whatever it is tuned to
 	s.mu.Lock()
 	p.Resources["gold"] = broke
 	s.mu.Unlock()
@@ -143,55 +143,70 @@ func TestPurchaseRecipe_RejectsUndiscovered(t *testing.T) {
 	}
 }
 
-// overrideRecipe swaps a recipe def into the runtime overlay for one test and
-// restores the catalog on cleanup, so a test can pick costs that make the two
-// prices tell apart.
-func overrideRecipe(t *testing.T, def *RecipeDef) {
+
+// overrideItem swaps an item def into the runtime overlay for one test and
+// restores the catalog on cleanup, so a test can pick prices that tell the two
+// crafting costs apart.
+func overrideItem(t *testing.T, def *ItemDef) {
 	t.Helper()
-	runtimeRecipesMu.Lock()
-	prev, had := runtimeRecipes[def.ID]
-	runtimeRecipes[def.ID] = def
-	runtimeRecipesMu.Unlock()
+	runtimeItemsMu.Lock()
+	prev, had := runtimeItems[def.ID]
+	runtimeItems[def.ID] = def
+	runtimeItemsMu.Unlock()
 	t.Cleanup(func() {
-		runtimeRecipesMu.Lock()
+		runtimeItemsMu.Lock()
 		if had {
-			runtimeRecipes[def.ID] = prev
+			runtimeItems[def.ID] = prev
 		} else {
-			delete(runtimeRecipes, def.ID)
+			delete(runtimeItems, def.ID)
 		}
-		runtimeRecipesMu.Unlock()
+		runtimeItemsMu.Unlock()
 	})
 }
 
-// TestRecipeCostsAreIndependent is the guard for the whole point of splitting
-// the two prices: learning a recipe charges UnlockCostGold and crafting with it
-// charges CostGold. They are deliberately different numbers here, so a
-// regression that collapses them back into one field fails this test whichever
-// way it collapses.
-func TestRecipeCostsAreIndependent(t *testing.T) {
-	const learnCost, craftCost = 200, 30
-	overrideRecipe(t, &RecipeDef{
-		ID: "fire_sword", Name: "Fire Sword",
-		Inputs:         []string{"broad_sword", "fire_ring"},
-		CostGold:       craftCost,
-		UnlockCostGold: learnCost,
-		Output:         "fire_sword", Rarity: ItemTierRare,
-	})
-
-	s, p := setupRecipePurchase(t)
-
-	// The craft half of the test needs an Artificer and the ingredients.
-	s.mu.Lock()
+// addArtificer gives p1 a built crafting building, optionally bound to a list.
+// Pass listID "" for an unbound Artificer (makes anything).
+func addArtificer(t *testing.T, s *GameState, listID string) {
+	t.Helper()
 	owner := "p1"
+	meta := map[string]interface{}{}
+	if listID != "" {
+		meta["list"] = listID
+	}
 	s.MapConfig.Buildings = append(s.MapConfig.Buildings, protocol.BuildingTile{
 		ID: "art-1", BuildingType: "artificer", Visible: true, Occupied: true,
-		OwnerID: &owner, Capabilities: []string{"crafting"}, Metadata: map[string]interface{}{},
+		OwnerID: &owner, Capabilities: []string{"crafting"}, Metadata: meta,
 	})
 	// The append may have reallocated the slice, so re-index every building.
 	for i := range s.MapConfig.Buildings {
 		b := &s.MapConfig.Buildings[i]
 		s.buildingsByID[b.ID] = b
 	}
+}
+
+// TestCraftAndRecipeCostsAreIndependent is the guard for the whole point of
+// keeping two crafting prices: LEARNING an item's recipe charges RecipeCostGold,
+// and CRAFTING it charges CraftCostGold. They are deliberately different numbers
+// here, so a regression that collapses them into one field fails this test
+// whichever way it collapses.
+func TestCraftAndRecipeCostsAreIndependent(t *testing.T) {
+	const learnCost, craftCost = 200, 30
+	base, ok := getItemDef("fire_sword")
+	if !ok {
+		t.Fatal("fire_sword not in catalog")
+	}
+	swapped := *base
+	swapped.Crafting = &ItemCrafting{
+		Inputs:         []string{"broad_sword", "fire_ring"},
+		CraftCostGold:  craftCost,
+		RecipeCostGold: learnCost,
+	}
+	overrideItem(t, &swapped)
+
+	s, p := setupRecipePurchase(t)
+
+	s.mu.Lock()
+	addArtificer(t, s, "") // unbound: makes anything the player has learned
 	for _, id := range []string{"broad_sword", "fire_ring"} {
 		def, ok := getItemDef(id)
 		if !ok {
@@ -202,12 +217,12 @@ func TestRecipeCostsAreIndependent(t *testing.T) {
 	}
 	s.mu.Unlock()
 
-	// Learn it: the shop charges the learn price.
+	// Learn it: the shop charges the LEARN price.
 	s.PurchaseRecipe("p1", "rs-1", "fire_sword")
 	s.mu.Lock()
 	if !s.playerKnowsRecipeLocked("p1", "fire_sword") {
 		s.mu.Unlock()
-		t.Fatal("recipe should be unlocked after purchase")
+		t.Fatal("recipe should be learned after purchase")
 	}
 	afterLearn := p.Resources["gold"]
 	if afterLearn != 1000-learnCost {
@@ -217,12 +232,62 @@ func TestRecipeCostsAreIndependent(t *testing.T) {
 	}
 	s.mu.Unlock()
 
-	// Craft it: the Artificer charges the craft price, not the learn price again.
-	s.CraftItem("p1", "fire_sword")
+	// Craft it: the Artificer charges the CRAFT price, not the learn price again.
+	if !s.CraftItem("p1", "fire_sword") {
+		t.Fatal("craft should succeed")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if got := afterLearn - p.Resources["gold"]; got != craftCost {
 		t.Fatalf("crafting charged %d gold, want the craft cost %d (the learn price is %d)",
 			got, craftCost, learnCost)
+	}
+}
+
+// TestCraftingBuildingListScopesWhatItMakes: a crafting building bound to a list
+// makes only what is ON that list, even for recipes the player has learned. This
+// is what lets a Dwarven Forge be weapons-only. The list NARROWS; it never grants.
+func TestCraftingBuildingListScopesWhatItMakes(t *testing.T) {
+	s, p := setupRecipePurchase(t)
+
+	s.mu.Lock()
+	// druid_recipes_1 contains fire_sword but NOT scimitar.
+	addArtificer(t, s, "druid_recipes_1")
+	// Learn both, and stock the ingredients for each.
+	s.unlockRecipeForPlayerLocked(p, "fire_sword")
+	s.unlockRecipeForPlayerLocked(p, "scimitar")
+	for _, id := range []string{"broad_sword", "broad_sword", "broad_sword", "fire_ring"} {
+		def, _ := getItemDef(id)
+		s.addItemToVaultLocked(p, def)
+	}
+	p.Resources["gold"] = 10000
+	s.mu.Unlock()
+
+	// scimitar is learned and affordable, but it is NOT on this forge's list.
+	if s.CraftItem("p1", "scimitar") {
+		t.Error("a crafting building bound to a list must refuse an item not on it, even when learned")
+	}
+	// fire_sword IS on the list.
+	if !s.CraftItem("p1", "fire_sword") {
+		t.Error("a crafting building must make an item that is both learned and on its list")
+	}
+}
+
+// TestCraftingBuildingListDoesNotGrantUnlearnedRecipes: being on the building's
+// list is not a substitute for learning the recipe.
+func TestCraftingBuildingListDoesNotGrantUnlearnedRecipes(t *testing.T) {
+	s, p := setupRecipePurchase(t)
+	s.mu.Lock()
+	addArtificer(t, s, "druid_recipes_1") // contains fire_sword
+	for _, id := range []string{"broad_sword", "fire_ring"} {
+		def, _ := getItemDef(id)
+		s.addItemToVaultLocked(p, def)
+	}
+	p.Resources["gold"] = 10000
+	// Deliberately do NOT learn fire_sword.
+	s.mu.Unlock()
+
+	if s.CraftItem("p1", "fire_sword") {
+		t.Error("a list must not grant a recipe the player has never learned")
 	}
 }

@@ -151,9 +151,20 @@ func migrateProfile(p *PlayerProfile) {
 		p.LifetimeDominionPoints = *p.LegacyLifetimeLegendPoints
 		p.LegacyLifetimeLegendPoints = nil
 	}
-	// v7 -> v8: initialize KnownRecipeIDs (recipe crafting unlock ledger).
-	if p.KnownRecipeIDs == nil {
-		p.KnownRecipeIDs = []string{}
+	// v8 -> v9: recipes were folded into items, so the crafting-unlock ledger
+	// was renamed from knownRecipeIds to knownCraftableIds. A "recipe id" was
+	// always the id of the item it produced, so this is a pure KEY rename — the
+	// values carry across verbatim and a player keeps everything they learned.
+	// Guarded on non-nil so it is a no-op (and idempotent) for v9+ files.
+	if p.LegacyKnownRecipeIDs != nil {
+		if p.KnownCraftableIDs == nil {
+			p.KnownCraftableIDs = p.LegacyKnownRecipeIDs
+		}
+		p.LegacyKnownRecipeIDs = nil
+	}
+	// v7 -> v8: initialize the crafting unlock ledger (under its v9 name).
+	if p.KnownCraftableIDs == nil {
+		p.KnownCraftableIDs = []string{}
 	}
 	// Stamp current version so the next Save persists the new schema.
 	p.Version = CurrentVersion

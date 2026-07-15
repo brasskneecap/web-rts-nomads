@@ -1,9 +1,0 @@
-{
-  "id": "scimitar",
-  "name": "Scimitar",
-  "inputs": ["broad_sword", "broad_sword", "broad_sword"],
-  "costGold": 25,
-  "unlockCostGold": 25,
-  "output": "scimitar",
-  "starter": true
-}

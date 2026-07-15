@@ -1,0 +1,12 @@
+{
+  "id": "druid_recipes_1",
+  "name": "Druid Recipes I",
+  "items": [
+    "fire_sword",
+    "frost_sword",
+    "lightning_sword",
+    "fire_shield",
+    "frost_shield",
+    "lightning_shield"
+  ]
+}

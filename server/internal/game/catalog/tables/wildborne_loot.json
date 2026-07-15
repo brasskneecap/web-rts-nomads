@@ -1,0 +1,28 @@
+{
+  "id": "wildborne_loot",
+  "name": "Wildborne Loot",
+  "maxRoll": 100,
+  "rows": [
+    {
+      "min": 1,
+      "max": 25,
+      "resources": {
+        "gold": 50,
+        "wood": 15
+      }
+    },
+    {
+      "min": 26,
+      "max": 75,
+      "resources": {
+        "gold": 100,
+        "wood": 45
+      }
+    },
+    {
+      "min": 76,
+      "max": 100,
+      "list": "rare_weapons"
+    }
+  ]
+}

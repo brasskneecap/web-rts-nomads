@@ -30,19 +30,23 @@ func TestLootDrop_DropsOnHit(t *testing.T) {
 	}
 }
 
-// TestLootDrop_NoDropOnTopLevelGap: when the top-level roll lands in a
-// range NOT covered by any table entry, no chest spawns. Injects a
-// throwaway test-only table with a deliberate gap so this stays valid
-// regardless of how the shipped raider_loot table is tuned for balance.
-func TestLootDrop_NoDropOnTopLevelGap(t *testing.T) {
-	// Build a single-entry table covering only [1,10] — rolls 11..100 fall
-	// into the gap. Inject it into the loader's package-level registry
-	// just for this test.
-	const testTableID = "__test_gap_table__"
-	lootTablesByID[testTableID] = LootTableDef{
-		{Entry: "small_resource_bundle", Min: 1, Max: 10},
+// TestLootDrop_NothingRowDropsNoChest: a roll that lands on a `nothing` row
+// spawns no chest.
+//
+// This used to be "the roll landed in a GAP". Gaps are now a validation error —
+// a hole in the ranges is indistinguishable from a typo — so a no-drop chance is
+// something a table says out loud. Same behaviour, but now it is authored rather
+// than inferred from an absence.
+func TestLootDrop_NothingRowDropsNoChest(t *testing.T) {
+	const testTableID = "__test_nothing_table__"
+	tableCatalogSingleton[testTableID] = &TableDef{
+		ID: testTableID, Name: "Test", MaxRoll: 100,
+		Rows: []TableRow{
+			{Min: 1, Max: 10, Resources: map[string]int{"gold": 50}},
+			{Min: 11, Max: 100, Nothing: true},
+		},
 	}
-	t.Cleanup(func() { delete(lootTablesByID, testTableID) })
+	t.Cleanup(func() { delete(tableCatalogSingleton, testTableID) })
 
 	// Patch the small_raider_group in tier-1 to reference our throwaway
 	// gap table. Restore the original after the test.
@@ -60,14 +64,14 @@ func TestLootDrop_NoDropOnTopLevelGap(t *testing.T) {
 		neutralGroupsByTier[1] = restored
 	})
 
-	// Seed 1 → first rngLoot.Intn(100)+1 == a value in [11,100] (gap).
+	// Seed 1 → first rngLoot.Intn(100)+1 lands in [11,100] → the `nothing` row.
 	s := newTestStateForLootDrops(t, 1)
 	camp := &s.NeutralCamps[0]
 	camp.SpawnedGroupID = "small_raider_group"
 	s.maybeDropChestForCampLocked(camp)
 
 	if got := len(s.LootDrops); got != 0 {
-		t.Errorf("LootDrops after a gap roll: got %d, want 0", got)
+		t.Errorf("LootDrops after a `nothing` roll: got %d, want 0", got)
 	}
 }
 

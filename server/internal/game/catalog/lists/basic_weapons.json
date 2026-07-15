@@ -1,0 +1,17 @@
+{
+  "id": "basic_weapons",
+  "name": "Basic Weapons",
+  "maxRoll": 15,
+  "entries": [
+    {
+      "item": "broad_sword",
+      "min": 1,
+      "max": 10
+    },
+    {
+      "item": "scimitar",
+      "min": 11,
+      "max": 15
+    }
+  ]
+}

@@ -32,7 +32,7 @@
           :saved-label="savedLabel"
           :error="saveError"
           :remove-label="removeLabel"
-          @update:id="form.id = $event"
+          @update:id="onIdInput"
           @save="save"
           @remove="removeOrReset(form.id)"
         />
@@ -342,7 +342,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiPanel from '@/components/ui/UiPanel.vue'
 import GameScrollArea from '@/components/ui/GameScrollArea.vue'
@@ -356,7 +356,7 @@ import RepeatableList from '@/components/editor/RepeatableList.vue'
 import ValidationChecklist from '@/components/editor/ValidationChecklist.vue'
 import IconPreview from '@/components/editor/IconPreview.vue'
 import ItemPreviewCard from '@/components/ItemPreviewCard.vue'
-import { fetchItemDefs, fetchRecipeDefs } from '@/game/maps/catalog'
+import { fetchItemDefs } from '@/game/maps/catalog'
 import type { ItemDef, ItemTier } from '@/game/maps/itemDefs'
 import { EditorValidationError, MAX_ITEM_ICON_BYTES, deleteEditorItem, fetchProcEffectDefs, uploadItemIcon, saveEditorItem } from '@/game/items/itemEditorApi'
 import type { ProcEffectDef } from '@/game/items/itemEditorApi'
@@ -368,7 +368,6 @@ import { getItemImageSourceUrl, listIconGroups } from '@/game/rendering/itemAsse
 import { TIER_COLORS, buildItemTooltipBody } from '@/game/items/itemRules'
 
 const items = ref<ItemDef[]>([])            // full catalog, refreshed after saves
-const recipesByOutput = ref(new Map<string, { inputs: string[]; costGold: number; starter?: boolean }>())
 const procEffects = ref<ProcEffectDef[]>([])
 const loadError = ref('')
 const search = ref('')
@@ -640,12 +639,10 @@ const generatedDescription = computed(() => buildItemTooltipBody(previewDef.valu
 
 // ── Catalog + CRUD ──────────────────────────────────────────────────────────
 
+// No recipe fetch: an item carries its own recipe (ItemDef.crafting), so the
+// item catalog IS the recipe catalog.
 async function reloadCatalog() {
-  const [defs, recipes] = await Promise.all([fetchItemDefs(), fetchRecipeDefs().catch(() => [])])
-  items.value = defs
-  const map = new Map<string, { inputs: string[]; costGold: number; starter?: boolean }>()
-  for (const r of recipes) map.set(r.output, { inputs: r.inputs, costGold: r.costGold, starter: r.starter })
-  recipesByOutput.value = map
+  items.value = await fetchItemDefs()
 }
 
 onMounted(async () => {
@@ -669,28 +666,65 @@ function resetStatus() {
   for (const key of Object.keys(overridesOpen)) delete overridesOpen[Number(key)]
 }
 
+// ─── Id ← Display Name ──────────────────────────────────────────────────────
+//
+// The id is the item's primary key (its def filename, its icon key, and what
+// recipes/shops/loot reference), so it must match `^[a-z0-9_]+$`. Rather than
+// make the author type a display name and then a matching id by hand, the id is
+// slugged from the name. Mirrors the Unit Type editor's Name → type behaviour.
+
+function slugifyItemId(raw: string): string {
+  return raw.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+// True once the author has hand-edited the id, which stops it tracking the
+// display name (standard slug-field behaviour). Reset whenever a form is loaded.
+const idManuallyEdited = ref(false)
+
+function onIdInput(raw: string) {
+  // Slug the manual input too, so a typed "Fire Sword" is a valid id rather
+  // than a save-time validation failure. No trailing-underscore trim here, so
+  // typing mid-word (e.g. "fire_") isn't fought.
+  if (!form.value) return
+  form.value.id = raw.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+/, '')
+  idManuallyEdited.value = true
+}
+
+// Auto-derive the id from the display name for NEW items only, until the author
+// edits it by hand. An existing item keeps its id — renaming it would orphan the
+// item's icon and every recipe, shop list and loot table that references it.
+watch(() => form.value?.displayName, (name) => {
+  if (form.value?.isNew && !idManuallyEdited.value) {
+    form.value.id = slugifyItemId(name ?? '')
+  }
+})
+
 function selectItem(id: string) {
   const def = items.value.find((d) => d.id === id)
   if (!def) return
   selectedId.value = id
   resetStatus()
-  form.value = formFromDef(def, recipesByOutput.value.get(id) ?? null)
+  idManuallyEdited.value = false
+  form.value = formFromDef(def)
 }
 
 function newItem() {
   selectedId.value = ''
   resetStatus()
+  idManuallyEdited.value = false
   form.value = createBlankForm()
 }
 
-/** Clone the selected item as a brand-new, unsaved def. The id is blanked (it
- *  must be unique, and a saved id is immutable), so the author names it. */
+/** Clone the selected item as a brand-new, unsaved def. The id is left to the
+ *  display-name slug ("Fire Sword Copy" → fire_sword_copy), which the author can
+ *  still override by hand — a saved id is unique and immutable. */
 function duplicateItem(id: string) {
   const def = items.value.find((d) => d.id === id)
   if (!def) return
   selectedId.value = ''
   resetStatus()
-  const copy = formFromDef(def, recipesByOutput.value.get(id) ?? null)
+  idManuallyEdited.value = false
+  const copy = formFromDef(def)
   copy.id = ''
   copy.isNew = true
   copy.displayName = `${def.displayName} Copy`
@@ -750,7 +784,11 @@ async function removeOrReset(id: string) {
       ? 'Reverted to the state before your last save.'
       : 'Reset to the catalog default.'
   } catch (err) {
-    saveError.value = err instanceof Error ? err.message : String(err)
+    // A blocked delete (item still referenced) arrives as an
+    // EditorValidationError whose message names every referrer.
+    saveError.value = err instanceof EditorValidationError
+      ? err.serverMessage
+      : err instanceof Error ? err.message : String(err)
   }
 }
 

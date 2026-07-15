@@ -8,6 +8,18 @@
   "category": "Weapon",
   "costGold": 100,
   "requiredBuilding": "marketplace",
-  "modifiers": { "damage": 10 },
-  "effects": []
+  "modifiers": {
+    "damage": 10
+  },
+  "effects": [],
+  "crafting": {
+    "inputs": [
+      "broad_sword",
+      "broad_sword",
+      "broad_sword"
+    ],
+    "craftCostGold": 25,
+    "recipeCostGold": 25,
+    "starter": true
+  }
 }

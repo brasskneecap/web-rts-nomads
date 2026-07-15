@@ -115,8 +115,10 @@ export type ShopStockEntry = {
   quantity: number
 }
 
+/** One purchasable recipe slot in a Recipe Shop. `itemId` names the item the
+ *  recipe MAKES — an item is its own recipe (see ItemDef.crafting). */
 export type RecipeStockEntry = {
-  recipeId: string
+  itemId: string
   quantity: number
 }
 
@@ -475,7 +477,7 @@ export type JoinMatchMessage = {
   activeUpgradeIds?: string[]
   ownedUpgradeRanks?: Record<string, number>
   acquiredAdvancementIds?: string[]
-  knownRecipeIds?: string[]
+  knownCraftableIds?: string[]
   /** Content-addressed map distribution: the map contentHashes this client
    *  already holds in its local cache for `mapId`. The server omits the map
    *  from the welcome when the match map's hash is in this list. */
@@ -799,7 +801,7 @@ export type PlayerSnapshot = {
   townHallTier?: number
   vault?: VaultItemSnapshot[]
   vaultCapacity?: number
-  unlockedRecipeIds?: string[]
+  unlockedCraftableIds?: string[]
   /** Unit types this player cannot train because their server-side
    *  RequiresBuildings list is unsatisfied. Absent/empty = no locks. */
   lockedUnitTypes?: string[]
@@ -846,12 +848,14 @@ export type RerollShopCommand = {
 export type PurchaseRecipeCommand = {
   type: 'purchase_recipe'
   buildingId: string
-  recipeId: string
+  /** The item whose recipe is being learned. */
+  itemId: string
 }
 
 export type CraftItemCommand = {
   type: 'craft_item'
-  recipeId: string
+  /** The item being made. */
+  itemId: string
 }
 
 export type EquipItemCommand = {

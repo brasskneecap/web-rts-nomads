@@ -53,8 +53,8 @@ func main() {
 
 	// Same restart-survival contract for the item editor's catalogs.
 	game.LoadPersistedItemsIntoOverlay()
-	game.LoadPersistedRecipesIntoOverlay()
-	game.LoadPersistedLootTablesIntoOverlay()
+	game.LoadPersistedListsIntoOverlay()
+	game.LoadPersistedTablesIntoOverlay()
 	game.LoadPersistedUnitsIntoOverlay()
 	game.LoadPersistedFactionsIntoOverlay()
 	game.LoadPersistedAbilitiesIntoOverlay()

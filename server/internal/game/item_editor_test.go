@@ -1,7 +1,6 @@
 package game
 
 import (
-	"os"
 	"testing"
 )
 
@@ -9,103 +8,96 @@ import (
 func editorEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("ITEM_CATALOG_DIR", t.TempDir())
-	t.Setenv("RECIPE_CATALOG_DIR", t.TempDir())
-	t.Setenv("NEUTRAL_GROUPS_DIR", t.TempDir())
+	t.Setenv("LIST_CATALOG_DIR", t.TempDir())
+	t.Setenv("TABLE_CATALOG_DIR", t.TempDir())
 	t.Cleanup(func() {
 		runtimeItemsMu.Lock()
 		runtimeItems = map[string]*ItemDef{}
 		runtimeItemsMu.Unlock()
-		runtimeRecipesMu.Lock()
-		runtimeRecipes = map[string]*RecipeDef{}
-		runtimeRecipesMu.Unlock()
-		runtimeItemListsMu.Lock()
-		runtimeItemLists = map[string]*ItemListDef{}
-		runtimeItemListsMu.Unlock()
-		runtimeRecipeListsMu.Lock()
-		runtimeRecipeLists = map[string]*RecipeListDef{}
-		runtimeRecipeListsMu.Unlock()
-		runtimeLootCatalogMu.Lock()
-		runtimeLootCatalog, runtimePackagedItems, runtimeLootTables = nil, nil, nil
-		runtimeLootCatalogMu.Unlock()
+		runtimeListsMu.Lock()
+		runtimeLists = map[string]*ListDef{}
+		runtimeListsMu.Unlock()
+		runtimeTablesMu.Lock()
+		runtimeTables = map[string]*TableDef{}
+		runtimeTablesMu.Unlock()
 	})
-	_ = os.Getenv // silence unused import if not otherwise used
 }
 
-// TestSaveEditorItem_CraftableSyncsRecipe: a craftable item registers the item
-// def (which owns ONLY its purchase price) AND a paired recipe that owns
-// everything about crafting — inputs, the per-craft cost, and the price of
-// learning the recipe, which are three separate numbers here so a save that
-// crosses any two of them fails. No availability (shop/loot) writes happen —
-// that is a shop-level concern.
-func TestSaveEditorItem_CraftableSyncsRecipe(t *testing.T) {
+// TestSaveEditorItem_CraftableItemOwnsItsRecipe: a craftable item is saved as ONE
+// def carrying its own crafting block. There is no second entity to sync — an
+// item is its own recipe. The three prices (buy / craft / learn) are deliberately
+// three different numbers here, so a save that crosses any two of them fails.
+func TestSaveEditorItem_CraftableItemOwnsItsRecipe(t *testing.T) {
 	editorEnv(t)
 	req := EditorItemSaveRequest{
 		Item: ItemDef{ID: "editor_test_blade", DisplayName: "Editor Blade", IconKey: "editor_test_blade",
 			Kind: ItemKindEquipment, Tier: ItemTierRare, Category: "Weapon",
 			CostGold: 120, Modifiers: &ItemModifiers{Damage: 9},
-			Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Effect: "fire_bolt_ignite"}}},
-		Crafting: &EditorItemCrafting{
-			Inputs:         []string{"broad_sword", "fire_ring"},
-			CraftCostGold:  150,
-			RecipeCostGold: 300,
-			Starter:        true,
-		},
+			Procs: []ItemProc{{Trigger: ProcOnHit, Chance: 0.1, Effect: "fire_bolt_ignite"}},
+			Crafting: &ItemCrafting{
+				Inputs:         []string{"broad_sword", "fire_ring"},
+				CraftCostGold:  150,
+				RecipeCostGold: 300,
+				Starter:        true,
+			}},
 	}
 	if err := SaveEditorItem(req); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	def, ok := getItemDef("editor_test_blade")
-	if !ok || !def.Overridden || def.CostGold != 120 {
-		t.Fatalf("item not registered with its purchase price: ok=%v %+v", ok, def)
+	if !ok || !def.Overridden {
+		t.Fatalf("item not registered: ok=%v %+v", ok, def)
 	}
-	rec, ok := getRecipeDef("editor_test_blade")
-	if !ok {
-		t.Fatal("craftable item must have a paired recipe")
+	if !def.IsCraftable() {
+		t.Fatal("an item with a crafting block must be craftable")
 	}
-	if rec.Output != "editor_test_blade" || !rec.Starter {
-		t.Errorf("recipe output/starter wrong: %+v", rec)
+	if def.CostGold != 120 {
+		t.Errorf("CostGold (buy the finished item) = %d, want 120", def.CostGold)
 	}
-	if rec.CostGold != 150 {
-		t.Errorf("recipe CostGold (the craft cost) = %d, want 150", rec.CostGold)
+	if def.Crafting.CraftCostGold != 150 {
+		t.Errorf("CraftCostGold (make it at an Artificer) = %d, want 150", def.Crafting.CraftCostGold)
 	}
-	if rec.UnlockCostGold != 300 {
-		t.Errorf("recipe UnlockCostGold (the price to learn it) = %d, want 300", rec.UnlockCostGold)
+	if def.Crafting.RecipeCostGold != 300 {
+		t.Errorf("RecipeCostGold (learn it at a Recipe Shop) = %d, want 300", def.Crafting.RecipeCostGold)
 	}
-	if len(rec.Inputs) != 2 || rec.Inputs[0] != "broad_sword" || rec.Inputs[1] != "fire_ring" {
-		t.Errorf("recipe inputs = %v, want [broad_sword fire_ring]", rec.Inputs)
+	if !def.Crafting.Starter {
+		t.Error("starter flag lost")
 	}
-	// The editor writes no availability: the item joins no marketplace list.
-	if mkt, ok := getItemListDef("marketplace"); ok && containsString(mkt.Items, "editor_test_blade") {
+	if got := def.Crafting.Inputs; len(got) != 2 || got[0] != "broad_sword" || got[1] != "fire_ring" {
+		t.Errorf("inputs = %v, want [broad_sword fire_ring]", got)
+	}
+	// The editor writes no availability: membership is a list-level concern.
+	if mkt, ok := getListDef("marketplace"); ok && containsString(mkt.Items, "editor_test_blade") {
 		t.Error("editor must not add items to the marketplace list")
 	}
 }
 
-// TestSaveEditorItem_NonCraftableDropsRecipe: saving an item with no Crafting
-// block removes any overlay recipe named after it (toggling craftable off).
-// The recipe's existence IS the item's craftability — there is no flag on the
-// item to fall out of step with it.
-func TestSaveEditorItem_NonCraftableDropsRecipe(t *testing.T) {
+// TestSaveEditorItem_DroppingCraftingMakesItUncraftable: re-saving with no
+// crafting block makes the item uncraftable. There is no separate recipe file to
+// fall out of step — the block IS the recipe.
+func TestSaveEditorItem_DroppingCraftingMakesItUncraftable(t *testing.T) {
 	editorEnv(t)
 	craftable := EditorItemSaveRequest{
-		Item: ItemDef{ID: "toggle_item", DisplayName: "Toggle", IconKey: "toggle_item", Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon"},
-		Crafting: &EditorItemCrafting{
-			Inputs: []string{"broad_sword", "fire_ring"}, CraftCostGold: 50, RecipeCostGold: 75,
-		},
+		Item: ItemDef{ID: "toggle_item", DisplayName: "Toggle", IconKey: "toggle_item",
+			Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon",
+			Crafting: &ItemCrafting{
+				Inputs: []string{"broad_sword", "fire_ring"}, CraftCostGold: 50, RecipeCostGold: 75,
+			}},
 	}
 	if err := SaveEditorItem(craftable); err != nil {
 		t.Fatalf("save craftable: %v", err)
 	}
-	if _, ok := getRecipeDef("toggle_item"); !ok {
-		t.Fatal("recipe should exist while craftable")
+	if def, _ := getItemDef("toggle_item"); !def.IsCraftable() {
+		t.Fatal("item should be craftable while it has a crafting block")
 	}
-	// Re-save with crafting off.
+
 	notCraftable := craftable
-	notCraftable.Crafting = nil
+	notCraftable.Item.Crafting = nil
 	if err := SaveEditorItem(notCraftable); err != nil {
 		t.Fatalf("save non-craftable: %v", err)
 	}
-	if _, ok := getRecipeDef("toggle_item"); ok {
-		t.Error("recipe should be dropped when crafting is toggled off")
+	if def, _ := getItemDef("toggle_item"); def.IsCraftable() {
+		t.Error("item must not be craftable once its crafting block is dropped")
 	}
 }
 
@@ -130,15 +122,16 @@ func TestSaveEditorItem_ValidationRejectsBeforeAnyWrite(t *testing.T) {
 	}
 }
 
-// TestSaveEditorItem_CraftableInputValidation: fewer than two inputs, an
-// unknown input, a self-referencing input, and a negative price on EITHER of
-// the two crafting costs are all rejected before any write.
-func TestSaveEditorItem_CraftableInputValidation(t *testing.T) {
+// TestSaveEditorItem_CraftingValidation: fewer than two inputs, an unknown input,
+// a self-referencing input, and a negative price on EITHER crafting cost are all
+// rejected before any write.
+func TestSaveEditorItem_CraftingValidation(t *testing.T) {
 	editorEnv(t)
-	base := ItemDef{ID: "craft_probe", DisplayName: "Probe", IconKey: "x", Kind: ItemKindEquipment, Tier: ItemTierCommon}
 	craft := func(inputs []string, craftCost, recipeCost int) EditorItemSaveRequest {
-		return EditorItemSaveRequest{Item: base, Crafting: &EditorItemCrafting{
-			Inputs: inputs, CraftCostGold: craftCost, RecipeCostGold: recipeCost,
+		return EditorItemSaveRequest{Item: ItemDef{
+			ID: "craft_probe", DisplayName: "Probe", IconKey: "x",
+			Kind: ItemKindEquipment, Tier: ItemTierCommon,
+			Crafting: &ItemCrafting{Inputs: inputs, CraftCostGold: craftCost, RecipeCostGold: recipeCost},
 		}}
 	}
 	good := []string{"broad_sword", "fire_ring"}
@@ -163,15 +156,17 @@ func TestSaveEditorItem_CraftableInputValidation(t *testing.T) {
 	}
 }
 
-// TestDeleteEditorItem_RemovesItemAndRecipe: deleting an editor-created
-// craftable item removes both the item override and its recipe.
-func TestDeleteEditorItem_RemovesItemAndRecipe(t *testing.T) {
+// TestDeleteEditorItem_RemovesItemAndItsRecipe: deleting an editor-created
+// craftable item removes its recipe for free — the crafting block was never a
+// separate file.
+func TestDeleteEditorItem_RemovesItemAndItsRecipe(t *testing.T) {
 	editorEnv(t)
 	req := EditorItemSaveRequest{
-		Item: ItemDef{ID: "doomed_item", DisplayName: "Doomed", IconKey: "doomed_item", Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon"},
-		Crafting: &EditorItemCrafting{
-			Inputs: []string{"broad_sword", "fire_ring"}, CraftCostGold: 10, RecipeCostGold: 20,
-		},
+		Item: ItemDef{ID: "doomed_item", DisplayName: "Doomed", IconKey: "doomed_item",
+			Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon",
+			Crafting: &ItemCrafting{
+				Inputs: []string{"broad_sword", "fire_ring"}, CraftCostGold: 10, RecipeCostGold: 20,
+			}},
 	}
 	if err := SaveEditorItem(req); err != nil {
 		t.Fatalf("save: %v", err)
@@ -185,9 +180,6 @@ func TestDeleteEditorItem_RemovesItemAndRecipe(t *testing.T) {
 	}
 	if _, ok := getItemDef("doomed_item"); ok {
 		t.Error("item still visible")
-	}
-	if _, ok := getRecipeDef("doomed_item"); ok {
-		t.Error("recipe still visible")
 	}
 }
 
@@ -245,35 +237,3 @@ func TestDeleteEditorItem_ShippedItemRevertsToPreSaveState(t *testing.T) {
 	}
 }
 
-// TestGetItemAvailability_ReadsShopSurfaces: GetItemAvailability (read-only
-// infra for a future shop editor) reflects placements written directly through
-// the membership helpers — the item editor no longer writes these itself.
-func TestGetItemAvailability_ReadsShopSurfaces(t *testing.T) {
-	editorEnv(t)
-	item := ItemDef{ID: "avail_probe", DisplayName: "Probe", IconKey: "avail_probe",
-		Kind: ItemKindEquipment, Tier: ItemTierCommon, Category: "Weapon", CostGold: 5}
-	if err := SaveItemDef(&item); err != nil {
-		t.Fatalf("save item: %v", err)
-	}
-	// Place it via the shop/loot helpers directly (the future shop-editor path).
-	if err := ensureItemListMembership("marketplace", "avail_probe", true); err != nil {
-		t.Fatalf("marketplace: %v", err)
-	}
-	if err := SetMerchantItemAvailability("avail_probe", "Weapon", true, 20); err != nil {
-		t.Fatalf("loot: %v", err)
-	}
-
-	got, ok := GetItemAvailability("avail_probe")
-	if !ok {
-		t.Fatal("item exists, availability must resolve")
-	}
-	if !got.Marketplace || got.WanderingMerchant {
-		t.Errorf("list flags wrong: %+v", got)
-	}
-	if !got.LootTable.Enabled || got.LootTable.Weight < 15 || got.LootTable.Weight > 25 {
-		t.Errorf("loot flag/weight wrong (want enabled, ~20): %+v", got.LootTable)
-	}
-	if _, ok := GetItemAvailability("no_such_item_at_all"); ok {
-		t.Error("unknown item must report ok=false")
-	}
-}

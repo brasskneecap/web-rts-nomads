@@ -1,1 +1,0 @@
-{ "id": "lightning_sword", "name": "Lightning Sword", "inputs": ["broad_sword", "lightning_ring"], "costGold": 150, "unlockCostGold": 150, "output": "lightning_sword" }

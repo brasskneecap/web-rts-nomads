@@ -1,1 +1,0 @@
-{ "id": "frost_sword", "name": "Frost Sword", "inputs": ["broad_sword", "ice_ring"], "costGold": 150, "unlockCostGold": 150, "output": "frost_sword" }

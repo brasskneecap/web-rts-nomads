@@ -21,27 +21,14 @@ func TestElementalRings_InLootTables(t *testing.T) {
 		"lightning_ring": false,
 	}
 
-	// reachableItems walks a top-level loot table and returns the set of item
-	// IDs that can be reached through any item_subtable packaged-item entry.
+	// reachableItems returns every item a table can ever produce — the union of
+	// the members of every list it rolls.
 	reachableItems := func(tableID string) map[string]struct{} {
-		out := make(map[string]struct{})
-		table, ok := getLootTable(tableID)
+		table, ok := getTableDef(tableID)
 		if !ok {
 			t.Fatalf("loot table %q not found", tableID)
 		}
-		for _, entry := range table {
-			pkg, ok := getPackagedItem(entry.Entry)
-			if !ok {
-				continue
-			}
-			if pkg.Kind != PackagedItemSubtable {
-				continue
-			}
-			for _, sub := range pkg.Entries {
-				out[sub.Item] = struct{}{}
-			}
-		}
-		return out
+		return table.ReachableItemIDs()
 	}
 
 	merchantItems := reachableItems("merchant_basic")

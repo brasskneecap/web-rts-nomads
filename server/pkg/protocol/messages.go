@@ -682,8 +682,11 @@ type ShopStockEntry struct {
 // RecipeStockEntry is one purchasable recipe slot in a Recipe Shop's inventory.
 // Quantity decrements on purchase; 0 means sold out (kept in the list so the
 // client can render it disabled), mirroring ShopStockEntry.
+//
+// ItemID names the item the recipe MAKES. An item is its own recipe (see
+// ItemDef.Crafting), so a recipe has no identity of its own to carry here.
 type RecipeStockEntry struct {
-	RecipeID string `json:"recipeId"`
+	ItemID   string `json:"itemId"`
 	Quantity int    `json:"quantity"`
 }
 
@@ -698,10 +701,10 @@ type JoinMatchMessage struct {
 	// player currently owns (extracted from PlayerProfile.AcquiredAdvancements
 	// by the client at join time). Nil / absent means no advancements.
 	AcquiredAdvancementIDs []string `json:"acquiredAdvancementIds,omitempty"`
-	// KnownRecipeIDs is the list of recipe IDs the player may craft this match,
-	// sourced from the profile's KnownRecipeIDs at join time. Nil / absent means
-	// no recipes are pre-unlocked.
-	KnownRecipeIDs []string `json:"knownRecipeIds,omitempty"`
+	// KnownCraftableIDs is the list of ITEM IDs whose recipes the player has
+	// learned and may craft this match, sourced from the profile's
+	// KnownCraftableIDs at join time. Nil / absent means nothing is pre-learned.
+	KnownCraftableIDs []string `json:"knownCraftableIds,omitempty"`
 	// CachedMapHashes is the set of map contentHashes the client already holds
 	// locally for MapID (content-addressed map distribution). The server omits
 	// the (gzipped) map from the welcome when the match map's contentHash is in
@@ -941,18 +944,19 @@ type PurchaseItemCommandMessage struct {
 }
 
 // PurchaseRecipeCommandMessage buys one recipe from a Recipe Shop, unlocking it
-// for crafting this match.
+// for crafting this match. ItemID names the item the recipe makes — an item is
+// its own recipe (see game.ItemDef.Crafting).
 type PurchaseRecipeCommandMessage struct {
 	Type       string `json:"type"`
 	BuildingID string `json:"buildingId"`
-	RecipeID   string `json:"recipeId"`
+	ItemID     string `json:"itemId"`
 }
 
-// CraftItemCommandMessage crafts one recipe at the player's Artificer,
-// consuming the recipe's input items from the vault plus gold.
+// CraftItemCommandMessage crafts one item at the player's Artificer, consuming
+// that item's crafting inputs from the vault plus its craft cost in gold.
 type CraftItemCommandMessage struct {
-	Type     string `json:"type"`
-	RecipeID string `json:"recipeId"`
+	Type   string `json:"type"`
+	ItemID string `json:"itemId"`
 }
 
 // RerollShopCommandMessage requests rerolling the inventory of a neutral
@@ -1164,10 +1168,11 @@ type PlayerSnapshot struct {
 	// budget for this match. Drives the reroll button on neutral-shop
 	// buildings (enabled when > 0).
 	ShopRerollsRemaining int `json:"shopRerollsRemaining,omitempty"`
-	// UnlockedRecipeIDs is the player's in-match set of recipe IDs they may
-	// craft at an Artificer. Seeded from profile KnownRecipeIDs at join and
-	// grown by purchase_recipe commands. Omitted when empty.
-	UnlockedRecipeIDs []string `json:"unlockedRecipeIds,omitempty"`
+	// UnlockedCraftableIDs is the player's in-match set of ITEM IDs whose
+	// recipes they have learned and may craft at an Artificer. Seeded from
+	// profile KnownCraftableIDs at join and grown by purchase_recipe commands.
+	// Omitted when empty.
+	UnlockedCraftableIDs []string `json:"unlockedCraftableIds,omitempty"`
 	// Metrics carries this player's cumulative match metrics (gold earned,
 	// kills, buildings built, etc). Always present so every snapshot
 	// recipient can render the end-of-round per-player comparison columns

@@ -46,13 +46,15 @@ func TestCraftItem_Success(t *testing.T) {
 	if vaultItemCountLocked(p, "fire_sword") != 1 {
 		t.Fatal("output should be added to vault")
 	}
-	fireSwordDef, ok := getRecipeDef("fire_sword")
-	if !ok {
-		t.Fatal("fire_sword recipe not found in catalog")
+	fireSword, ok := getItemDef("fire_sword")
+	if !ok || !fireSword.IsCraftable() {
+		t.Fatal("fire_sword is not a craftable item in the catalog")
 	}
-	wantGold := 1000 - fireSwordDef.CostGold
+	// The CRAFT cost, not the recipe cost — that was paid once, when learning.
+	craftCost := fireSword.Crafting.CraftCostGold
+	wantGold := 1000 - craftCost
 	if p.Resources["gold"] != wantGold {
-		t.Fatalf("gold = %d, want %d (%d charged)", p.Resources["gold"], wantGold, fireSwordDef.CostGold)
+		t.Fatalf("gold = %d, want %d (%d charged)", p.Resources["gold"], wantGold, craftCost)
 	}
 }
 

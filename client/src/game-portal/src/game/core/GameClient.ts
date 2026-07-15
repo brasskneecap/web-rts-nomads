@@ -23,7 +23,6 @@ import { UNIT_DEF_MAP, initPathAttackOrigin, initPathBounds, initPathsByUnitType
 import { initActionIcons } from '../maps/actionIconDefs'
 import { initPerkDefs } from '../maps/perkDefs'
 import { initItemDefs, ITEM_DEF_MAP, DEFAULT_CONSUMABLE_RANGE } from '../maps/itemDefs'
-import { initRecipeDefs } from '../maps/recipeDefs'
 import {
   fetchBuildingDefs,
   fetchObstacleDefs,
@@ -31,7 +30,6 @@ import {
   fetchActionIcons,
   fetchPerkDefs,
   fetchItemDefs,
-  fetchRecipeDefs,
 } from '../maps/catalog'
 
 export type GameUiSnapshot = {
@@ -188,14 +186,13 @@ export class GameClient {
   }
 
   async start(options: { resume?: boolean; ephemeral?: boolean } = {}) {
-    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs, recipeDefs] = await Promise.all([
+    const [buildingDefs, obstacleDefs, unitDefs, actionIcons, perkDefs, itemDefs] = await Promise.all([
       fetchBuildingDefs(),
       fetchObstacleDefs(),
       fetchUnitDefs(),
       fetchActionIcons(),
       fetchPerkDefs(),
       fetchItemDefs().catch(() => []),
-      fetchRecipeDefs().catch(() => []),
     ])
     initBuildingDefs(buildingDefs.buildings)
     initBuildingStyleRenders(buildingDefs.buildingStyles)
@@ -206,8 +203,8 @@ export class GameClient {
     initPathsByUnitType(unitDefs.pathsByUnit)
     initActionIcons(actionIcons)
     initPerkDefs(perkDefs)
+    // No initRecipeDefs: an item carries its own recipe (ItemDef.crafting).
     initItemDefs(itemDefs)
-    initRecipeDefs(recipeDefs)
     window.addEventListener('keydown', this.handleDevHotkey)
     this.network.setEphemeral(!!options.ephemeral)
     await this.network.connect(options)
@@ -248,8 +245,8 @@ export class GameClient {
     this.network.setAcquiredAdvancementIds(ids)
   }
 
-  setKnownRecipeIds(ids: string[]): void {
-    this.network.setKnownRecipeIds(ids)
+  setKnownCraftableIds(ids: string[]): void {
+    this.network.setKnownCraftableIds(ids)
   }
 
   async leaveStoredMatch() {
@@ -370,12 +367,13 @@ export class GameClient {
     this.network.send({ type: 'reroll_shop', buildingId })
   }
 
-  sendPurchaseRecipe(buildingId: string, recipeId: string): void {
-    this.network.send({ type: 'purchase_recipe', buildingId, recipeId })
+  /** itemId names the item the recipe MAKES — an item is its own recipe. */
+  sendPurchaseRecipe(buildingId: string, itemId: string): void {
+    this.network.send({ type: 'purchase_recipe', buildingId, itemId })
   }
 
-  sendCraftItem(recipeId: string): void {
-    this.network.send({ type: 'craft_item', recipeId })
+  sendCraftItem(itemId: string): void {
+    this.network.send({ type: 'craft_item', itemId })
   }
 
   sendEquipItem(unitId: number, slotIndex: number, instanceId: number): void {

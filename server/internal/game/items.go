@@ -190,6 +190,32 @@ func (c *ConsumableEffect) SplitEnabled() bool {
 	return c.Split == nil || *c.Split
 }
 
+// ItemCrafting is an item's recipe: what it consumes, and the two prices that
+// gate it. Its presence on an ItemDef IS that item's craftability — there is no
+// separate recipe entity, and an item is its own recipe.
+//
+// The two gold fields buy different things and are tuned independently:
+//
+//   - CraftCostGold  — charged at a crafting building on EVERY craft, on top of
+//     consuming Inputs. See handleCraftItemLocked.
+//   - RecipeCostGold — charged ONCE at a Recipe Shop to learn the recipe. See
+//     handlePurchaseRecipeLocked.
+//
+// The third price in the item economy — buying the finished item off a shop
+// shelf — is ItemDef.CostGold, not here.
+type ItemCrafting struct {
+	// Inputs are the item IDs consumed by one craft (2+, duplicates allowed).
+	Inputs []string `json:"inputs"`
+	// CraftCostGold is charged per craft at a crafting building.
+	CraftCostGold int `json:"craftCostGold"`
+	// RecipeCostGold is charged once at a Recipe Shop to learn this recipe. Zero
+	// means free to learn (still gated on shop stock). Moot when Starter is set.
+	RecipeCostGold int `json:"recipeCostGold"`
+	// Starter, when true, marks this recipe as one every player has already
+	// learned at match start — no Recipe Shop purchase required.
+	Starter bool `json:"starter,omitempty"`
+}
+
 // ItemDef is the catalog definition for one item type, loaded from
 // catalog/items/<id>.json. All game-logic reads go through this struct; client
 // display fields (DisplayName, Description, IconKey) are passed through
@@ -205,12 +231,13 @@ type ItemDef struct {
 	// decides which catalog subdirectory the def is written to. It is NOT an
 	// equip restriction; nothing in combat or equipping reads it.
 	Category string `json:"category,omitempty"`
-	// CostGold is the item's own price: what a shop charges to buy it outright.
-	// It is the ONLY cost an item declares. The two crafting prices — the craft
-	// cost at the Artificer and the cost to learn the recipe at a Recipe Shop —
-	// belong to the paired RecipeDef (CostGold / UnlockCostGold there), which is
-	// the single source of truth for whether an item is craftable at all.
+	// CostGold is what a shop charges to buy this item outright, finished. The
+	// two crafting prices live on Crafting, which is also what makes the item
+	// craftable at all.
 	CostGold int `json:"costGold"`
+	// Crafting is this item's recipe, or nil when the item cannot be crafted.
+	// Its presence is the single craftability predicate — see IsCraftable.
+	Crafting *ItemCrafting `json:"crafting,omitempty"`
 	// RequiredBuilding was historically the building type that gated an
 	// item's purchase. As of per-building-shop-inventories it is preserved
 	// for backward display only and no longer participates in purchase
@@ -288,11 +315,6 @@ func (d *ItemDef) UnmarshalJSON(data []byte) error {
 // before they run.
 var itemCatalogSingleton = loadItemCatalog()
 
-// itemListsSubdir is the catalog/items subdirectory that holds named item
-// lists (a different schema — see ItemListDef). It is skipped by the item
-// def walk so list files are never parsed as item defs. Mirrors
-// recipeListsSubdir.
-const itemListsSubdir = "catalog/items/lists"
 
 func loadItemCatalog() map[string]*ItemDef {
 	catalog := make(map[string]*ItemDef)
@@ -301,8 +323,8 @@ func loadItemCatalog() map[string]*ItemDef {
 			return err
 		}
 		if d.IsDir() {
-			if path == itemListsSubdir || d.Name() == itemIconsSubdirName {
-				return fs.SkipDir // lists load separately; _icons holds uploaded PNGs
+			if d.Name() == itemIconsSubdirName {
+				return fs.SkipDir // _icons holds uploaded PNGs, not defs
 			}
 			return nil
 		}
@@ -328,6 +350,20 @@ func loadItemCatalog() map[string]*ItemDef {
 	})
 	if err != nil {
 		panic("catalog/items: " + err.Error())
+	}
+	// Second pass: crafting inputs point at OTHER items, so they can only be
+	// resolved once every def has been read. Deterministic order (sorted ids) so
+	// a broken catalog always names the same offender first.
+	ids := make([]string, 0, len(catalog))
+	for id := range catalog {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	inCatalog := func(id string) bool { _, ok := catalog[id]; return ok }
+	for _, id := range ids {
+		if err := validateItemCraftingRefs(catalog[id], inCatalog); err != nil {
+			panic("catalog/items: " + err.Error())
+		}
 	}
 	return catalog
 }
@@ -374,8 +410,69 @@ func validateItemDef(def *ItemDef) error {
 	if def.Consumable != nil && def.Consumable.Type == "" {
 		return fmt.Errorf("item %q consumable.type is required", def.ID)
 	}
+	if err := validateItemCrafting(def); err != nil {
+		return err
+	}
 	return nil
 }
+
+// validateItemCrafting checks the SELF-CONTAINED crafting rules — the ones that
+// need nothing but this def. Whether each input names a real item is checked
+// separately (validateItemCraftingRefs), because at catalog-load time the item
+// map is still being filled and an input may not have been read yet.
+func validateItemCrafting(def *ItemDef) error {
+	c := def.Crafting
+	if c == nil {
+		return nil
+	}
+	// Two inputs is what makes a craft a combination rather than a purchase.
+	if len(c.Inputs) < 2 {
+		return fmt.Errorf("item %q: a craftable item needs at least 2 inputs, has %d", def.ID, len(c.Inputs))
+	}
+	for i, in := range c.Inputs {
+		if in == def.ID {
+			return fmt.Errorf("item %q: cannot be its own crafting input (inputs[%d])", def.ID, i)
+		}
+	}
+	// Negative gold would PAY the player to craft or to learn (an exploit). Zero
+	// is legal: a recipe whose only cost is its ingredients, or a free-to-learn one.
+	if c.CraftCostGold < 0 {
+		return fmt.Errorf("item %q: crafting.craftCostGold must not be negative, got %d", def.ID, c.CraftCostGold)
+	}
+	if c.RecipeCostGold < 0 {
+		return fmt.Errorf("item %q: crafting.recipeCostGold must not be negative, got %d", def.ID, c.RecipeCostGold)
+	}
+	return nil
+}
+
+// validateItemCraftingRefs checks that every crafting input names a real item.
+// Runs as a second pass once the whole catalog is loaded — see validateItemCrafting.
+//
+// `known` is passed in rather than resolved through getItemDef because the
+// embed loader calls this while it is still BUILDING the catalog singleton, so
+// getItemDef would see a nil map. Overlay writers pass the live lookup.
+func validateItemCraftingRefs(def *ItemDef, known func(string) bool) error {
+	if def.Crafting == nil {
+		return nil
+	}
+	for i, in := range def.Crafting.Inputs {
+		if !known(in) {
+			return fmt.Errorf("item %q: crafting.inputs[%d] %q is not a known item", def.ID, i, in)
+		}
+	}
+	return nil
+}
+
+// itemKnownInCatalog is the `known` lookup for a fully-loaded catalog.
+func itemKnownInCatalog(id string) bool {
+	_, ok := getItemDef(id)
+	return ok
+}
+
+// IsCraftable reports whether this item can be produced at a crafting building.
+// The presence of the crafting block is the single source of truth — there is no
+// separate recipe entity to consult.
+func (d *ItemDef) IsCraftable() bool { return d != nil && d.Crafting != nil }
 
 // validateItemProc checks one entry of ItemDef.Procs — its trigger, its
 // reference into the proc catalog, and the override sanity rules. Index i is
@@ -438,90 +535,3 @@ func ListItemDefs() []*ItemDef {
 	return defs
 }
 
-// ItemListDef is a named, curated set of item IDs, authored under
-// catalog/items/lists/<id>.json. Mirrors RecipeListDef: shops resolve a list
-// by ID to stock its items instead of hardcoding item IDs in Go (the
-// player-built marketplace stocks the "marketplace" list).
-type ItemListDef struct {
-	ID    string   `json:"id"`
-	Name  string   `json:"name"`
-	Items []string `json:"items"`
-}
-
-var itemListCatalogSingleton = loadItemListCatalog()
-
-func loadItemListCatalog() map[string]*ItemListDef {
-	catalog := make(map[string]*ItemListDef)
-	entries, err := fs.ReadDir(itemDefsFS, itemListsSubdir)
-	if err != nil {
-		// No lists/ directory is valid — item lists are optional.
-		return catalog
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		path := itemListsSubdir + "/" + e.Name()
-		data, err := itemDefsFS.ReadFile(path)
-		if err != nil {
-			panic(path + ": " + err.Error())
-		}
-		var def ItemListDef
-		if err := json.Unmarshal(data, &def); err != nil {
-			panic(path + ": " + err.Error())
-		}
-		if def.ID == "" {
-			panic(path + `: missing "id" field`)
-		}
-		if err := validateItemListDef(&def); err != nil {
-			panic(path + ": " + err.Error())
-		}
-		catalog[def.ID] = &def
-	}
-	return catalog
-}
-
-// validateItemListDef enforces: at least one item, and every referenced item
-// ID resolves to a real item def. Called at catalog load (fail-fast).
-func validateItemListDef(def *ItemListDef) error {
-	if len(def.Items) == 0 {
-		return fmt.Errorf("item list %q: needs at least 1 item", def.ID)
-	}
-	for i, id := range def.Items {
-		if _, ok := getItemDef(id); !ok {
-			return fmt.Errorf("item list %q: items[%d] %q is not a known item", def.ID, i, id)
-		}
-	}
-	return nil
-}
-
-func getItemListDef(id string) (*ItemListDef, bool) {
-	runtimeItemListsMu.RLock()
-	if def, ok := runtimeItemLists[id]; ok {
-		runtimeItemListsMu.RUnlock()
-		return def, true
-	}
-	runtimeItemListsMu.RUnlock()
-	def, ok := itemListCatalogSingleton[id]
-	return def, ok
-}
-
-// ListItemListDefs returns all item-list defs sorted by ID (for the HTTP
-// route and deterministic iteration).
-func ListItemListDefs() []*ItemListDef {
-	merged := make(map[string]*ItemListDef, len(itemListCatalogSingleton))
-	for id, def := range itemListCatalogSingleton {
-		merged[id] = def
-	}
-	runtimeItemListsMu.RLock()
-	for id, def := range runtimeItemLists {
-		merged[id] = def
-	}
-	runtimeItemListsMu.RUnlock()
-	defs := make([]*ItemListDef, 0, len(merged))
-	for _, def := range merged {
-		defs = append(defs, def)
-	}
-	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
-	return defs
-}

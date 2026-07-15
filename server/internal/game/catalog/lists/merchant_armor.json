@@ -1,0 +1,22 @@
+{
+  "id": "merchant_armor",
+  "name": "Merchant Armor",
+  "maxRoll": 100,
+  "entries": [
+    {
+      "item": "leather_armor",
+      "min": 1,
+      "max": 50
+    },
+    {
+      "item": "half_plate",
+      "min": 51,
+      "max": 85
+    },
+    {
+      "item": "plate_armor",
+      "min": 86,
+      "max": 100
+    }
+  ]
+}

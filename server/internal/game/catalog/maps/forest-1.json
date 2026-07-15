@@ -554,7 +554,7 @@
           "item-purchase"
         ],
         "metadata": {
-          "itemList": "wandering_merchant",
+          "list": "wandering_merchant",
           "rerollWaves": 2,
           "shopStyle": "wildeborne-market"
         }

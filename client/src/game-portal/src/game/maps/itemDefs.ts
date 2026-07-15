@@ -62,6 +62,32 @@ export type ItemProcWire = {
   projectileID: string
 }
 
+/**
+ * An item's recipe: what it consumes, and the two prices that gate it.
+ *
+ * The two gold fields buy DIFFERENT things and are tuned independently:
+ *  - `craftCostGold`  — paid at a crafting building on EVERY craft, on top of
+ *    consuming the inputs.
+ *  - `recipeCostGold` — paid ONCE at a Recipe Shop to learn the recipe.
+ * The third price in the item economy — buying the finished item off a shop
+ * shelf — is `ItemDef.costGold`, not here.
+ */
+export type ItemCrafting = {
+  /** Item IDs consumed by one craft (2+, duplicates allowed). */
+  inputs: string[]
+  /** Gold charged per craft at a crafting building. */
+  craftCostGold: number
+  /** Gold charged once at a Recipe Shop to learn this recipe. Moot when starter. */
+  recipeCostGold: number
+  /** When true, every player has already learned this recipe at match start. */
+  starter?: boolean
+}
+
+/** True when this item can be crafted — i.e. it carries a recipe. */
+export function isCraftable(def: ItemDef | undefined): boolean {
+  return def?.crafting !== undefined
+}
+
 export type ItemDef = {
   id: string
   displayName: string
@@ -76,13 +102,14 @@ export type ItemDef = {
   kind: ItemKind
   /** Rarity tier — drives border color in the vault and inventory UIs. */
   tier: ItemTier
-  /**
-   * Gold to buy this item outright from a shop building. The item's ONLY cost —
-   * the craft cost and the cost to learn the recipe live on the paired RecipeDef
-   * (`costGold` / `unlockCostGold` there), which is also what makes an item
-   * craftable in the first place. An item has no crafting fields of its own.
-   */
+  /** Gold to buy this item outright, finished, from a shop building. */
   costGold: number
+  /**
+   * This item's recipe, or absent when it cannot be crafted. Its presence IS the
+   * item's craftability — there is no separate recipe entity, an item is its own
+   * recipe.
+   */
+  crafting?: ItemCrafting
   /**
    * Building type that must be built and owned for this item to be purchasable.
    * Empty/undefined means no building gate. Drives Shop UI availability and

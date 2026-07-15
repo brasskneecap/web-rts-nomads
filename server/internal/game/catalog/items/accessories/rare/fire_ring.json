@@ -7,5 +7,10 @@
   "tier": "rare",
   "category": "Accessory",
   "costGold": 75,
-  "onHitElemental": [ { "type": "fire", "amount": 5 } ]
+  "onHitElemental": [
+    {
+      "type": "fire",
+      "amount": 5
+    }
+  ]
 }

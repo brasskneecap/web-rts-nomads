@@ -1,0 +1,22 @@
+{
+  "id": "merchant_accessories",
+  "name": "Merchant Accessories",
+  "maxRoll": 100,
+  "entries": [
+    {
+      "item": "fire_ring",
+      "min": 1,
+      "max": 33
+    },
+    {
+      "item": "ice_ring",
+      "min": 34,
+      "max": 67
+    },
+    {
+      "item": "lightning_ring",
+      "min": 68,
+      "max": 100
+    }
+  ]
+}

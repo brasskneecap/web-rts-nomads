@@ -55,15 +55,14 @@ func (s *GameState) shopItemTargetCountForPlayerLocked(playerID string) int {
 	return target
 }
 
-// defaultMarketplaceItemListID names the authored item list
-// (catalog/items/lists/<id>.json) a player-built marketplace stocks when the
-// map author did not configure a shopFixedInventory or shopLootTableId.
-// Growing the marketplace is a catalog edit, not a code change — mirrors how
-// recipe shops resolve recipe lists.
+// defaultMarketplaceItemListID names the authored list
+// (catalog/lists/<id>.json) a player-built marketplace stocks when the map
+// author did not configure a shopFixedInventory, a shopLootTableId, or a bound
+// list. Growing the marketplace is a catalog edit, not a code change.
 const defaultMarketplaceItemListID = "marketplace"
 
 // defaultMarketplaceStarterInventory is the last-ditch fallback should the
-// "marketplace" item list ever be missing from the embedded catalog (it is
+// "marketplace" list ever be missing from the embedded catalog (it is
 // validated at load, so this is belt-and-braces, not an expected path).
 var defaultMarketplaceStarterInventory = []string{
 	"broad_sword",
@@ -168,7 +167,7 @@ func (s *GameState) initShopBuildingsLocked() {
 //
 //  1. ShopFixedInventory (authored list, copied verbatim)
 //  2. ShopLootTableID (rolled via the seeded loot RNG)
-//  3. "itemList" metadata (a named catalog/items/lists entry, copied verbatim)
+//  3. the building's bound list ("list" metadata, a catalog/lists entry, copied verbatim)
 //  4. Per-building-type defaults (marketplace stocks the "marketplace" list;
 //     a neutral-shop rolls the default merchant loot table)
 //  5. Otherwise: leave nil and log a warning
@@ -224,30 +223,26 @@ func (s *GameState) populateShopInventoryForBuildingLocked(b *protocol.BuildingT
 		b.ShopInventory = makeShopStockEntries(rolled, b.BuildingType)
 		return
 	}
-	// Precedence 3: authored item list (map metadata "itemList"), stocked
+	// Precedence 3: the building's bound list (map metadata "list"), stocked
 	// verbatim for non-neutral shops (e.g. a marketplace pointed at a curated
 	// list). Neutral shops handle their list above (as a sampled pool).
-	if listID, ok := getMetadataString(b.Metadata, "itemList"); ok && listID != "" {
-		if list, ok := getItemListDef(listID); ok {
-			b.ShopInventory = makeShopStockEntries(list.Items, b.BuildingType)
-			return
-		}
-		slog.Warn("populateShopInventoryForBuildingLocked: itemList metadata references unknown list; falling back to defaults",
-			"buildingID", b.ID, "itemList", listID)
+	if list, ok := listForBuilding(b); ok {
+		b.ShopInventory = makeShopStockEntries(list.ItemIDs(), b.BuildingType)
+		return
 	}
 	// Precedence 4: per-building-type defaults.
 	switch b.BuildingType {
 	case "marketplace":
 		// Player-built marketplace with no authored shopFixedInventory /
-		// shopLootTableId stocks the authored "marketplace" item list.
+		// shopLootTableId stocks the authored "marketplace" list.
 		// The legacy "every item with RequiredBuilding == marketplace"
 		// behavior is intentionally retired; authors who want a per-map
 		// marketplace declare it via shopFixedInventory on the map JSON.
-		if list, ok := getItemListDef(defaultMarketplaceItemListID); ok {
-			b.ShopInventory = makeShopStockEntries(list.Items, b.BuildingType)
+		if list, ok := getListDef(defaultMarketplaceItemListID); ok {
+			b.ShopInventory = makeShopStockEntries(list.ItemIDs(), b.BuildingType)
 			return
 		}
-		slog.Warn("populateShopInventoryForBuildingLocked: marketplace item list missing; using starter fallback",
+		slog.Warn("populateShopInventoryForBuildingLocked: marketplace list missing; using starter fallback",
 			"listID", defaultMarketplaceItemListID)
 		b.ShopInventory = makeShopStockEntries(defaultMarketplaceStarterInventory, b.BuildingType)
 		return
@@ -258,20 +253,19 @@ func (s *GameState) populateShopInventoryForBuildingLocked(b *protocol.BuildingT
 }
 
 // rollNeutralShopStockIDsLocked samples the item IDs for a neutral shop's stock
-// from its configured source, sampling `count` items: an assigned item list
-// (map metadata "itemList", treated as a POOL) when set and valid, else its
-// loot table (b.ShopLootTableID or the default merchant table). Returns (ids,
-// true) or (nil, false) on a failed roll (unknown loot table); an unknown item
-// list falls through to the loot table. When both an item list and a loot table
-// are set the item list wins. Must be called under s.mu write lock (advances
-// s.rngLoot).
+// from its configured source, sampling `count` items: its bound list (map
+// metadata "list", treated as a POOL) when set and valid, else its loot table
+// (b.ShopLootTableID or the default merchant table). Returns (ids, true) or
+// (nil, false) on a failed roll (unknown loot table); a list that does not
+// resolve falls through to the loot table. When both a list and a loot table are
+// set the list wins. Must be called under s.mu write lock (advances s.rngLoot).
+//
+// Note a neutral shop treats its list as a POOL to sample from, while a
+// marketplace stocks its list VERBATIM. That difference belongs to the building,
+// not to the list — the same list can serve both.
 func (s *GameState) rollNeutralShopStockIDsLocked(b *protocol.BuildingTile, count int) ([]string, bool) {
-	if listID, ok := getMetadataString(b.Metadata, "itemList"); ok && listID != "" {
-		if list, ok := getItemListDef(listID); ok {
-			return s.sampleItemsFromListLocked(list.Items, count), true
-		}
-		slog.Warn("rollNeutralShopStockIDsLocked: itemList metadata references unknown list; falling back to loot table",
-			"buildingID", b.ID, "itemList", listID)
+	if list, ok := listForBuilding(b); ok {
+		return s.sampleListLocked(list, count), true
 	}
 	tableID := b.ShopLootTableID
 	if tableID == "" {
@@ -365,10 +359,62 @@ func (s *GameState) sortedRealPlayerIDsLocked() []string {
 	return ids
 }
 
+// sampleListLocked returns up to `count` DISTINCT items from a list, using the
+// seeded loot RNG (deterministic).
+//
+// A WEIGHTED list is sampled BY WEIGHT: it is rolled repeatedly and duplicates
+// are discarded, so a member with a bigger slice of the die shows up on the
+// shelf more often — a rare sword is rare in a shop for the same reason it is
+// rare in a chest. A UNIFORM list is sampled evenly (a partial Fisher-Yates
+// shuffle), which is exactly what every list did before weights existed.
+//
+// Fewer than `count` results only when the list has fewer distinct members (or,
+// for a weighted list, when the attempt budget runs out before the rare tail
+// turns up — which is itself the weighting working). Must be called under s.mu
+// write lock (advances s.rngLoot).
+func (s *GameState) sampleListLocked(list *ListDef, count int) []string {
+	if list == nil || count <= 0 {
+		return nil
+	}
+	if list.IsWeighted() {
+		return s.sampleWeightedListLocked(list, count)
+	}
+	return s.sampleItemsFromListLocked(list.Items, count)
+}
+
+// sampleWeightedListLocked rolls the list until it has `count` distinct items or
+// the attempt budget is spent. The budget is what keeps a list whose tail is
+// vanishingly rare from spinning: it is a shop shelf, not a guarantee.
+func (s *GameState) sampleWeightedListLocked(list *ListDef, count int) []string {
+	distinct := map[string]struct{}{}
+	for _, e := range list.Entries {
+		distinct[e.Item] = struct{}{}
+	}
+	n := count
+	if n > len(distinct) {
+		n = len(distinct)
+	}
+	maxAttempts := n * 8
+	seen := make(map[string]struct{}, n)
+	out := make([]string, 0, n)
+	for attempt := 0; attempt < maxAttempts && len(out) < n; attempt++ {
+		id := s.rollListLocked(list)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
 // sampleItemsFromListLocked returns up to `count` distinct items chosen at
 // random from the pool using the seeded loot RNG (deterministic). Duplicates in
 // the pool are collapsed first; fewer than `count` results only when the pool is
-// smaller. Order is randomized (a partial Fisher–Yates shuffle). Must be called
+// smaller. Order is randomized (a partial Fisher-Yates shuffle). Must be called
 // under s.mu write lock (advances s.rngLoot).
 func (s *GameState) sampleItemsFromListLocked(pool []string, count int) []string {
 	if count <= 0 || len(pool) == 0 {
@@ -450,15 +496,13 @@ func (s *GameState) handleRerollShopLocked(playerID, buildingID string) {
 	player.ShopRerollsRemaining--
 }
 
-// shopDisplayNameFor returns a shop's display label from its assigned item list
-// (metadata "itemList") — e.g. "Wandering Merchant" — or "" when it has no list
-// or the list is unknown (the client then falls back to the building type
-// label). Used to populate the snapshot-only BuildingTile.ShopDisplayName.
+// shopDisplayNameFor returns a shop's display label from its bound list — e.g.
+// "Wandering Merchant" — or "" when it has no list or the list is unknown (the
+// client then falls back to the building type label). Used to populate the
+// snapshot-only BuildingTile.ShopDisplayName.
 func shopDisplayNameFor(b *protocol.BuildingTile) string {
-	if listID, ok := getMetadataString(b.Metadata, "itemList"); ok && listID != "" {
-		if list, ok := getItemListDef(listID); ok {
-			return list.Name
-		}
+	if list, ok := listForBuilding(b); ok {
+		return list.Name
 	}
 	return ""
 }
@@ -519,17 +563,19 @@ func (s *GameState) RerollShop(playerID, buildingID string) {
 	s.handleRerollShopLocked(playerID, buildingID)
 }
 
-// rollShopLootTableLocked rolls the named top-level loot table repeatedly
-// until it has accumulated `targetCount` distinct item IDs, or until the
-// attempt budget (targetCount * 8) is exhausted. Returns (nil, false) and
-// logs slog.Error when the table is missing. Roll order is RNG-
-// deterministic. Resource bundles are skipped (shops don't sell resources);
-// sub-table gaps and duplicates are skipped silently. If the table cannot
-// produce targetCount distinct items within the attempt budget (degenerate
-// table, all resources, etc.), returns whatever it has collected — never
-// loops forever.
+// rollShopLootTableLocked rolls the named table repeatedly until it has
+// accumulated `targetCount` distinct item IDs, or until the attempt budget
+// (targetCount * 8) is exhausted. Returns (nil, false) and logs when the table
+// is missing.
+//
+// Rows that grant resources or `nothing` are skipped — a shop sells items, and
+// those outcomes simply produce no shelf entry — as are duplicates. A degenerate
+// table (all-resources, say) cannot produce targetCount items, so the attempt
+// budget is what stops this looping forever; it returns whatever it collected.
+//
+// Roll order is RNG-deterministic. Must be called under s.mu write lock.
 func (s *GameState) rollShopLootTableLocked(buildingID, tableID string, targetCount int) ([]string, bool) {
-	table, ok := getLootTable(tableID)
+	table, ok := getTableDef(tableID)
 	if !ok {
 		slog.Error("rollShopLootTableLocked: unknown loot table",
 			"buildingID", buildingID, "lootTableId", tableID)
@@ -542,42 +588,13 @@ func (s *GameState) rollShopLootTableLocked(buildingID, tableID string, targetCo
 	seen := make(map[string]struct{}, targetCount)
 	items := make([]string, 0, targetCount)
 	for attempt := 0; attempt < maxAttempts && len(items) < targetCount; attempt++ {
-		r := s.rngLoot.Intn(100) + 1
-		var hit *LootTableEntry
-		for i := range table {
-			if r >= table[i].Min && r <= table[i].Max {
-				hit = &table[i]
-				break
+		result := s.rollTableLocked(table)
+		for _, id := range result.Items {
+			if _, dup := seen[id]; dup {
+				continue
 			}
-		}
-		if hit == nil {
-			continue
-		}
-		pkg, ok := getPackagedItem(hit.Entry)
-		if !ok {
-			continue
-		}
-		if pkg.Kind != PackagedItemSubtable {
-			continue
-		}
-		maxSub := 0
-		for _, e := range pkg.Entries {
-			if e.Max > maxSub {
-				maxSub = e.Max
-			}
-		}
-		if maxSub == 0 {
-			continue
-		}
-		subRoll := s.rngLoot.Intn(maxSub) + 1
-		for _, e := range pkg.Entries {
-			if subRoll >= e.Min && subRoll <= e.Max {
-				if _, dup := seen[e.Item]; !dup {
-					seen[e.Item] = struct{}{}
-					items = append(items, e.Item)
-				}
-				break
-			}
+			seen[id] = struct{}{}
+			items = append(items, id)
 		}
 	}
 	return items, true

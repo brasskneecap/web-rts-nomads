@@ -1,16 +1,25 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { GameState } from './GameState'
-import { initRecipeDefs } from '../maps/recipeDefs'
+import { initItemDefs } from '../maps/itemDefs'
+import type { ItemDef } from '../maps/itemDefs'
 import type { BuildingTile } from '../network/protocol'
 
-// The craft cost (costGold) and the price of learning the recipe
-// (unlockCostGold) are deliberately different numbers, so a shop that shows the
+// An item IS its own recipe. The craft cost (150) and the price of learning the
+// recipe (300) are deliberately different numbers, so a shop that shows the
 // wrong one is a test failure rather than a coincidence.
+const FIRE_SWORD: ItemDef = {
+  id: 'fire_sword', displayName: 'Fire Sword', iconKey: 'fire_sword',
+  kind: 'equipment', tier: 'rare', costGold: 40,
+  crafting: { inputs: ['broad_sword', 'fire_ring'], craftCostGold: 150, recipeCostGold: 300 },
+}
+const FROST_SWORD: ItemDef = {
+  id: 'frost_sword', displayName: 'Frost Sword', iconKey: 'frost_sword',
+  kind: 'equipment', tier: 'rare', costGold: 40,
+  crafting: { inputs: ['broad_sword', 'ice_ring'], craftCostGold: 150, recipeCostGold: 300 },
+}
+
 beforeEach(() => {
-  initRecipeDefs([
-    { id: 'fire_sword', name: 'Fire Sword', inputs: ['broad_sword', 'fire_ring'], costGold: 150, unlockCostGold: 300, output: 'fire_sword', rarity: 'rare' },
-    { id: 'frost_sword', name: 'Frost Sword', inputs: ['broad_sword', 'ice_ring'], costGold: 150, unlockCostGold: 300, output: 'frost_sword', rarity: 'rare' },
-  ])
+  initItemDefs([FIRE_SWORD, FROST_SWORD])
 })
 
 function mkRecipeShop(over: Partial<BuildingTile> = {}): BuildingTile {
@@ -21,8 +30,8 @@ function mkRecipeShop(over: Partial<BuildingTile> = {}): BuildingTile {
     shopDiscovered: true,
     shopLocked: false,
     recipeInventory: [
-      { recipeId: 'fire_sword', quantity: 1 },
-      { recipeId: 'frost_sword', quantity: 1 },
+      { itemId: 'fire_sword', quantity: 1 },
+      { itemId: 'frost_sword', quantity: 1 },
     ],
     ...over,
   } as BuildingTile
@@ -32,7 +41,7 @@ function stateWith(buildings: BuildingTile[], knownRecipes: string[] = []): Game
   const s = new GameState()
   s.localPlayerId = 'p1'
   s.mapConfig.buildings = buildings
-  s.localPlayerUnlockedRecipeIds = knownRecipes
+  s.localPlayerUnlockedCraftableIds = knownRecipes
   return s
 }
 

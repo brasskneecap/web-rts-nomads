@@ -38,7 +38,7 @@ func TestRecipeShop_PopulatesDeterministicSubset(t *testing.T) {
 			if e.Quantity != 1 {
 				t.Errorf("recipe stock quantity = %d, want 1", e.Quantity)
 			}
-			out = append(out, e.RecipeID)
+			out = append(out, e.ItemID)
 		}
 		return out
 	}
@@ -69,15 +69,15 @@ func TestRecipeShop_PopulatesDeterministicSubset(t *testing.T) {
 	}
 }
 
-// TestRecipeShop_SamplesFromAssignedList verifies that a recipe-shop with a
-// "recipeList" metadata only ever stocks recipes drawn from that list (never
-// from the global pool). A subset list is registered for the test duration.
+// TestRecipeShop_SamplesFromAssignedList verifies that a recipe-shop bound to a
+// list only ever stocks recipes drawn from that list (never from the global
+// pool). A subset list is registered for the test duration.
 func TestRecipeShop_SamplesFromAssignedList(t *testing.T) {
 	const listID = "test_two_swords"
-	recipeListCatalogSingleton[listID] = &RecipeListDef{
-		ID: listID, Name: "Two Swords", Recipes: []string{"fire_sword", "frost_sword"},
+	listCatalogSingleton[listID] = &ListDef{
+		ID: listID, Name: "Two Swords", Items: []string{"fire_sword", "frost_sword"},
 	}
-	t.Cleanup(func() { delete(recipeListCatalogSingleton, listID) })
+	t.Cleanup(func() { delete(listCatalogSingleton, listID) })
 
 	allowed := map[string]bool{"fire_sword": true, "frost_sword": true}
 
@@ -92,7 +92,7 @@ func TestRecipeShop_SamplesFromAssignedList(t *testing.T) {
 			ID: "rs-list", BuildingType: "recipe-shop", Width: 3, Height: 3,
 			Visible: true, Occupied: true, OwnerID: &neutral,
 			Capabilities: []string{"recipe-purchase"},
-			Metadata:     map[string]interface{}{"recipeList": listID},
+			Metadata:     map[string]interface{}{"list": listID},
 		})
 		if s.buildingsByID == nil {
 			s.buildingsByID = map[string]*protocol.BuildingTile{}
@@ -109,17 +109,17 @@ func TestRecipeShop_SamplesFromAssignedList(t *testing.T) {
 			t.Fatalf("seed %d: assigned shop stocked nothing", seed)
 		}
 		for _, e := range b.RecipeInventory {
-			if !allowed[e.RecipeID] {
+			if !allowed[e.ItemID] {
 				s.mu.Unlock()
-				t.Fatalf("seed %d: shop stocked %q, not in the assigned list", seed, e.RecipeID)
+				t.Fatalf("seed %d: shop stocked %q, not in the assigned list", seed, e.ItemID)
 			}
 		}
 		s.mu.Unlock()
 	}
 }
 
-// TestRecipeShop_UnknownListFallsBackToAll verifies an invalid/unknown recipeList
-// does not break population — the shop falls back to the global recipe pool.
+// TestRecipeShop_UnknownListFallsBackToAll verifies an invalid/unknown list does
+// not break population — the shop falls back to the global craftable pool.
 func TestRecipeShop_UnknownListFallsBackToAll(t *testing.T) {
 	s := NewGameStateWithSeed(GetMapConfigByID(DefaultMapID()), 7)
 	s.EnsurePlayer("p1")
@@ -130,7 +130,7 @@ func TestRecipeShop_UnknownListFallsBackToAll(t *testing.T) {
 		ID: "rs-bad", BuildingType: "recipe-shop", Width: 3, Height: 3,
 		Visible: true, Occupied: true, OwnerID: &neutral,
 		Capabilities: []string{"recipe-purchase"},
-		Metadata:     map[string]interface{}{"recipeList": "no_such_list"},
+		Metadata:     map[string]interface{}{"list": "no_such_list"},
 	})
 	if s.buildingsByID == nil {
 		s.buildingsByID = map[string]*protocol.BuildingTile{}
@@ -142,7 +142,7 @@ func TestRecipeShop_UnknownListFallsBackToAll(t *testing.T) {
 	s.initShopBuildingsLocked()
 	s.populateRecipeShopInventoriesLocked()
 	if len(s.buildingsByID["rs-bad"].RecipeInventory) == 0 {
-		t.Fatal("unknown recipeList should fall back to all recipes; stocked nothing")
+		t.Fatal("an unknown list should fall back to all craftable items; stocked nothing")
 	}
 }
 

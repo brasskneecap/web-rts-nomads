@@ -1421,13 +1421,13 @@
                 <span class="edit-field__hint">Sprite art from assets/buildings/neutral-shops. Default uses neutral-shops/sprite.png.</span>
               </div>
               <div class="edit-field">
-                <label>Item List</label>
+                <label>List</label>
                 <select
-                  :value="(selectedEditBuilding.metadata?.['itemList'] as string | undefined) ?? ''"
-                  @change="updateEditMeta('itemList', ($event.target as HTMLSelectElement).value || undefined)"
+                  :value="(selectedEditBuilding.metadata?.['list'] as string | undefined) ?? ''"
+                  @change="updateEditMeta('list', ($event.target as HTMLSelectElement).value || undefined)"
                 >
                   <option value="">Default (merchant loot)</option>
-                  <option v-for="list in itemListOptions" :key="list.id" :value="list.id">{{ list.name || list.id }}</option>
+                  <option v-for="list in listOptions" :key="list.id" :value="list.id">{{ list.name || list.id }}</option>
                 </select>
                 <span class="edit-field__hint">A pool the shop samples a few items from. Default rolls the merchant loot table.</span>
               </div>
@@ -1455,15 +1455,15 @@
                 <span class="edit-field__hint">Sprite art from assets/buildings/recipe-shops. Default uses the shared recipe-shop sprite.</span>
               </div>
               <div class="edit-field">
-                <label>Recipe List</label>
+                <label>List</label>
                 <select
-                  :value="(selectedEditBuilding.metadata?.['recipeList'] as string | undefined) ?? ''"
-                  @change="updateEditMeta('recipeList', ($event.target as HTMLSelectElement).value || undefined)"
+                  :value="(selectedEditBuilding.metadata?.['list'] as string | undefined) ?? ''"
+                  @change="updateEditMeta('list', ($event.target as HTMLSelectElement).value || undefined)"
                 >
                   <option value="">All recipes</option>
-                  <option v-for="list in recipeListOptions" :key="list.id" :value="list.id">{{ list.name || list.id }}</option>
+                  <option v-for="list in listOptions" :key="list.id" :value="list.id">{{ list.name || list.id }}</option>
                 </select>
-                <span class="edit-field__hint">The shop stocks a random sample from this list. All recipes = draw from the global pool.</span>
+                <span class="edit-field__hint">The shop stocks a random sample of the CRAFTABLE items on this list. All recipes = draw from every craftable item.</span>
               </div>
             </template>
             <div
@@ -1720,7 +1720,7 @@
     <!-- No header/close affordance: the toolbar is the tab bar, so Map is
          always one click away and the editor gets the full height. -->
     <section v-if="activeScreen !== 'map'" class="we-screen">
-      <ItemEditorPanel v-if="activeScreen === 'items'" />
+      <ItemCatalogEditor v-if="activeScreen === 'items'" />
       <UnitTypeEditorPanel v-else-if="activeScreen === 'unit-types'" />
       <AbilityEditorPanel v-else-if="activeScreen === 'abilities'" />
     </section>
@@ -1728,13 +1728,14 @@
 </template>
 
 <script setup lang="ts">
+import type { ListDef } from '@/game/maps/listDefs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchRecipeLists, fetchItemLists, fetchUnitDefs, fetchItemDefs, fetchPerkDefs, saveMapCatalogFile, LevelConflictError, type RecipeListSummary, type ItemListSummary } from '@/game/maps/catalog'
+import { fetchBuildingDefs, fetchMapCatalog, fetchMapCatalogFile, fetchNeutralGroups, fetchObstacleDefs, fetchLists, fetchUnitDefs, fetchItemDefs, fetchPerkDefs, saveMapCatalogFile, LevelConflictError } from '@/game/maps/catalog'
 import type { LevelConflict } from '@/game/maps/catalog'
 import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGuardEditor'
 import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
-import ItemEditorPanel from '@/components/ItemEditorPanel.vue'
+import ItemCatalogEditor from '@/components/ItemCatalogEditor.vue'
 import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
 import AbilityEditorPanel from '@/components/AbilityEditorPanel.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
@@ -1892,13 +1893,10 @@ const neutralHealthMultiplierPerWave = ref(0.0)
 const neutralDamageMultiplier = ref(1.0)
 const neutralDamageMultiplierPerWave = ref(0.0)
 const neutralGroupTiers = ref<NeutralGroupTierSummary[] | null>(null)
-// Recipe lists (from catalog/recipes/lists) for the recipe-shop Recipe List
-// dropdown. Empty until fetchRecipeLists resolves.
-const recipeLists = ref<RecipeListSummary[]>([])
-
-// Item lists (from catalog/items/lists) for the neutral-shop Item List
-// dropdown. Empty until fetchItemLists resolves.
-const itemLists = ref<ItemListSummary[]>([])
+// Lists (from catalog/lists) for every building's List dropdown. One list type
+// serves shops, recipe shops, artificers and camps — what a list MEANS is
+// decided by the building that consumes it. Empty until fetchLists resolves.
+const lists = ref<ListDef[]>([])
 
 // Catalogs backing the placed-unit instance-edit popup (Rank / Items /
 // Perks). Loaded once in onMounted alongside the other catalog fetches;
@@ -2248,13 +2246,11 @@ const guardGroupOptions = computed<NeutralGroupSummary[]>(() =>
 watch(selectedEditBuildingId, () => { placingGuardSpawn.value = false })
 
 const shopStyleOptions = computed<string[]>(() => listRecipeShopStyles())
-const recipeListOptions = computed<RecipeListSummary[]>(() =>
-  [...recipeLists.value].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)),
+const listOptions = computed<ListDef[]>(() =>
+  [...lists.value].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)),
 )
 const neutralShopStyleOptions = computed<string[]>(() => listNeutralShopStyles())
-const itemListOptions = computed<ItemListSummary[]>(() =>
-  [...itemLists.value].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)),
-)
+
 
 const selectedEditPlacedUnit = computed(() =>
   selectedEditPlacedUnitId.value
@@ -5140,8 +5136,7 @@ onMounted(() => {
     .catch(() => {})
   void fetchObstacleDefs().then(initObstacleDefs).catch(() => {})
   void fetchNeutralGroups().then((tiers) => { neutralGroupTiers.value = tiers }).catch(() => {})
-  void fetchRecipeLists().then((lists) => { recipeLists.value = lists }).catch(() => {})
-  void fetchItemLists().then((lists) => { itemLists.value = lists }).catch(() => {})
+  void fetchLists().then((defs) => { lists.value = defs }).catch(() => {})
   void fetchItemDefs().then((items) => { itemDefsList.value = items }).catch(() => {})
   void fetchPerkDefs().then((perks) => { perkDefsList.value = perks }).catch(() => {})
   void fetchUnitDefs()

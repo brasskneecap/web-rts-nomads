@@ -78,12 +78,17 @@ func spawnBronzeUnit(t *testing.T, s *GameState, playerID string) *Unit {
 
 // ─── Catalog loading ─────────────────────────────────────────────────────────
 
-// TestItemCatalog_AllItemsLoaded verifies the embedded catalog has all items
-// and that both equipment and consumable kinds are represented.
+// TestItemCatalog_AllItemsLoaded verifies the catalog has every item this test
+// names and that both equipment and consumable kinds are represented.
+//
+// It deliberately does NOT pin an exact def count: authoring a new item through
+// the editor writes a real def into the catalog dir, and a magic number here
+// would turn every such addition into a spurious failure in an unrelated test.
+// The named-item checks below are what this test actually cares about.
 func TestItemCatalog_AllItemsLoaded(t *testing.T) {
 	defs := ListItemDefs()
-	if len(defs) != 27 {
-		t.Fatalf("expected 27 item defs, got %d", len(defs))
+	if len(defs) == 0 {
+		t.Fatal("item catalog is empty")
 	}
 
 	byID := make(map[string]*ItemDef, len(defs))

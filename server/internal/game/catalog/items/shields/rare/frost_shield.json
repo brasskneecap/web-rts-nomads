@@ -7,8 +7,23 @@
   "tier": "rare",
   "category": "Shield",
   "costGold": 0,
-  "modifiers": { "armor": 35, "blockChance": 0.15 },
+  "modifiers": {
+    "armor": 35,
+    "blockChance": 0.15
+  },
   "procs": [
-    { "trigger": "onStruck", "chance": 0.1, "effect": "frost_bolt_chill" }
-  ]
+    {
+      "trigger": "onStruck",
+      "chance": 0.1,
+      "effect": "frost_bolt_chill"
+    }
+  ],
+  "crafting": {
+    "inputs": [
+      "steel_shield",
+      "ice_ring"
+    ],
+    "craftCostGold": 150,
+    "recipeCostGold": 150
+  }
 }

@@ -3,13 +3,13 @@
     <div class="item-editor-topbar item-editor-topbar--right">
       <ExitButton @click="router.push('/')" />
     </div>
-    <ItemEditorPanel />
+    <ItemCatalogEditor />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import ItemEditorPanel from '@/components/ItemEditorPanel.vue'
+import ItemCatalogEditor from '@/components/ItemCatalogEditor.vue'
 import ExitButton from '@/components/ui/ExitButton.vue'
 
 const router = useRouter()

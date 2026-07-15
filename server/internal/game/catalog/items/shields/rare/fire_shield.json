@@ -7,8 +7,23 @@
   "tier": "rare",
   "category": "Shield",
   "costGold": 0,
-  "modifiers": { "armor": 35, "blockChance": 0.15 },
+  "modifiers": {
+    "armor": 35,
+    "blockChance": 0.15
+  },
   "procs": [
-    { "trigger": "onStruck", "chance": 0.1, "effect": "fire_bolt_ignite" }
-  ]
+    {
+      "trigger": "onStruck",
+      "chance": 0.1,
+      "effect": "fire_bolt_ignite"
+    }
+  ],
+  "crafting": {
+    "inputs": [
+      "steel_shield",
+      "fire_ring"
+    ],
+    "craftCostGold": 150,
+    "recipeCostGold": 150
+  }
 }

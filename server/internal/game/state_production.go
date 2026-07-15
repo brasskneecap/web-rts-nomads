@@ -500,7 +500,7 @@ func (s *GameState) buildPlayerSnapshotLocked(player *Player) protocol.PlayerSna
 		LockedUnitTypes:      s.lockedUnitTypesForPlayerLocked(player.ID),
 		UnitCostOverrides:    unitCostOverridesForPlayer(player),
 		ShopRerollsRemaining: player.ShopRerollsRemaining,
-		UnlockedRecipeIDs:    append([]string(nil), player.UnlockedRecipeIDs...),
+		UnlockedCraftableIDs: append([]string(nil), player.UnlockedCraftableIDs...),
 		// Per-player match metrics for the end-of-round comparison columns
 		// (§15) and any client-side display that wants to read the live
 		// totals (e.g. an in-match resource tracker that shows

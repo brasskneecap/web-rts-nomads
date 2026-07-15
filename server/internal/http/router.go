@@ -176,24 +176,24 @@ func NewRouter(hub *ws.Hub, corsOrigin string, profileManager *profile.Manager, 
 		_, _ = w.Write(data)
 	})
 
-	mux.HandleFunc("/catalog/item-lists", func(w http.ResponseWriter, r *http.Request) {
+	// One list route, because there is one kind of list. It replaces the old
+	// /catalog/item-lists + /catalog/recipe-lists pair — a list is an untyped set
+	// of item IDs, and the building that consumes it decides what it means.
+	// There is no /catalog/recipes: an item IS its own recipe (ItemDef.Crafting),
+	// so the item catalog already carries every recipe.
+	mux.HandleFunc("/catalog/lists", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"lists": game.ListItemListDefs(),
+			"lists": game.ListListDefs(),
 		})
 	})
 
-	mux.HandleFunc("/catalog/recipes", func(w http.ResponseWriter, r *http.Request) {
+	// Tables: a weighted roll over lists, resource grants and no-drop outcomes.
+	// This is what a camp rolls when cleared and what a shop rolls to stock.
+	mux.HandleFunc("/catalog/tables", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"recipes": game.ListRecipeDefs(),
-		})
-	})
-
-	mux.HandleFunc("/catalog/recipe-lists", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"lists": game.ListRecipeListDefs(),
+			"tables": game.ListTableDefs(),
 		})
 	})
 

@@ -244,73 +244,54 @@ func (s *GameState) maybeDropChestForCampLocked(camp *NeutralCamp) {
 		return
 	}
 	group, ok := getNeutralGroup(tier, camp.SpawnedGroupID)
-	if !ok || group.LootTable == "" {
+	if !ok {
 		return
 	}
-	table, ok := getLootTable(group.LootTable)
+	// A group drops from a TABLE (a weighted roll over lists, resource grants and
+	// no-drop outcomes) or straight from a LIST (roll it, always get an item) —
+	// never both; the catalog loader rejects a group that sets two sources.
+	if group.LootList != "" {
+		s.dropListChestForCampLocked(camp, group.LootList)
+		return
+	}
+	if group.LootTable == "" {
+		return
+	}
+	table, ok := getTableDef(group.LootTable)
 	if !ok {
 		slog.Warn("maybeDropChestForCampLocked: loot table missing (catalog drift)",
 			"campID", camp.PlacementID, "lootTable", group.LootTable)
 		return
 	}
 
-	// Top-level d100. Gap = no drop.
-	roll := s.rngLoot.Intn(100) + 1
-	var hit *LootTableEntry
-	for i := range table {
-		if roll >= table[i].Min && roll <= table[i].Max {
-			hit = &table[i]
-			break
-		}
-	}
-	if hit == nil {
+	result := s.rollTableLocked(table)
+	if result.Empty() {
+		// The roll landed on a `nothing` row. A real outcome, not a failure.
 		return
 	}
+	s.spawnLootDropLocked(camp, result.Resources, result.Items)
+}
 
-	pkg, ok := getPackagedItem(hit.Entry)
+// dropListChestForCampLocked drops one item from a list — by weight if the list
+// is weighted, evenly if it is uniform.
+//
+// A list ALWAYS yields an item, so a camp whose loot source is a list always
+// drops a chest. To give a camp a chance of dropping nothing (or of dropping
+// gold), give it a TABLE: whether anything drops at all is a table's decision,
+// not a pool's.
+//
+// Rolls on s.rngLoot like every other loot decision, so a fixed seed still
+// reproduces the drop exactly. Must be called under s.mu write lock.
+func (s *GameState) dropListChestForCampLocked(camp *NeutralCamp, listID string) {
+	list, ok := getListDef(listID)
 	if !ok {
-		slog.Warn("maybeDropChestForCampLocked: packaged item missing (catalog drift)",
-			"campID", camp.PlacementID, "entry", hit.Entry)
+		slog.Warn("dropListChestForCampLocked: loot list missing (catalog drift)",
+			"campID", camp.PlacementID, "lootList", listID)
 		return
 	}
-
-	var resources map[string]int
-	var items []string
-
-	switch pkg.Kind {
-	case PackagedItemResourceBundle:
-		// Defensive copy so subsequent mutation of LootDrop.ResourceGrants
-		// can't leak back into the catalog's shared map.
-		resources = make(map[string]int, len(pkg.Resources))
-		for k, v := range pkg.Resources {
-			resources[k] = v
-		}
-	case PackagedItemSubtable:
-		maxRoll := 0
-		for _, e := range pkg.Entries {
-			if e.Max > maxRoll {
-				maxRoll = e.Max
-			}
-		}
-		if maxRoll == 0 {
-			slog.Warn("maybeDropChestForCampLocked: sub-table has no max range",
-				"campID", camp.PlacementID, "entry", hit.Entry)
-			return
-		}
-		subRoll := s.rngLoot.Intn(maxRoll) + 1
-		for _, e := range pkg.Entries {
-			if subRoll >= e.Min && subRoll <= e.Max {
-				items = append(items, e.Item)
-				break
-			}
-		}
-		// Sub-table gap is legal but produces no item. Fall through.
+	item := s.rollListLocked(list)
+	if item == "" {
+		return // validateListDef forbids an empty list; defensive.
 	}
-
-	if len(resources) == 0 && len(items) == 0 {
-		// Indistinguishable from no drop — skip chest creation.
-		return
-	}
-
-	s.spawnLootDropLocked(camp, resources, items)
+	s.spawnLootDropLocked(camp, nil, []string{item})
 }

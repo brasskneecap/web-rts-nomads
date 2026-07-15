@@ -413,7 +413,7 @@ func (h *Hub) readLoop(client *Client) {
 
 			match.AddClient(client)
 			log.Printf("join_match: player=%s\n", msg.PlayerID)
-			match.State.EnsurePlayerWithUpgrades(msg.PlayerID, msg.OwnedUpgradeRanks, msg.ActiveUpgradeIDs, msg.AcquiredAdvancementIDs, msg.KnownRecipeIDs)
+			match.State.EnsurePlayerWithUpgrades(msg.PlayerID, msg.OwnedUpgradeRanks, msg.ActiveUpgradeIDs, msg.AcquiredAdvancementIDs, msg.KnownCraftableIDs)
 
 			// Marshal welcome under the state RLock. WelcomeMessage embeds
 			// the live MapConfig, whose Buildings/Obstacles slices alias
@@ -1088,7 +1088,7 @@ func (h *Hub) readLoop(client *Client) {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid purchase_recipe payload"})
 				continue
 			}
-			match.State.PurchaseRecipe(client.PlayerID(), msg.BuildingID, msg.RecipeID)
+			match.State.PurchaseRecipe(client.PlayerID(), msg.BuildingID, msg.ItemID)
 
 		case "craft_item":
 			if client.MatchID() == "" {
@@ -1105,7 +1105,7 @@ func (h *Hub) readLoop(client *Client) {
 				_ = client.WriteJSON(protocol.ErrorMessage{Type: "error", Message: "invalid craft_item payload"})
 				continue
 			}
-			match.State.CraftItem(client.PlayerID(), msg.RecipeID)
+			match.State.CraftItem(client.PlayerID(), msg.ItemID)
 
 		case "reroll_shop":
 			if client.MatchID() == "" {

@@ -7,9 +7,28 @@
   "tier": "rare",
   "category": "Weapon",
   "costGold": 0,
-  "modifiers": { "damage": 5 },
-  "onHitElemental": [ { "type": "fire", "amount": 5 } ],
+  "modifiers": {
+    "damage": 5
+  },
+  "onHitElemental": [
+    {
+      "type": "fire",
+      "amount": 5
+    }
+  ],
   "procs": [
-    { "trigger": "onHit", "chance": 0.1, "effect": "fire_bolt_ignite" }
-  ]
+    {
+      "trigger": "onHit",
+      "chance": 0.1,
+      "effect": "fire_bolt_ignite"
+    }
+  ],
+  "crafting": {
+    "inputs": [
+      "broad_sword",
+      "fire_ring"
+    ],
+    "craftCostGold": 150,
+    "recipeCostGold": 150
+  }
 }

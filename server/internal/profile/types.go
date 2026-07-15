@@ -2,7 +2,7 @@ package profile
 
 // CurrentVersion is the schema version written into every new profile.
 // Increment this when the struct layout changes and add migration logic.
-const CurrentVersion = 8
+const CurrentVersion = 9
 
 // DefaultCommanderID is the commander assigned to new profiles when no other
 // commander is specified.
@@ -83,10 +83,20 @@ type PlayerProfile struct {
 	// treats a missing ledger the same as an empty one.
 	CreditedMatchIDs []string `json:"creditedMatchIds,omitempty"`
 
-	// KnownRecipeIDs is the set of crafting recipe IDs this player has crafted
-	// at least once, unlocking them for crafting in all future matches. Added in
-	// schema version 8. Sorted, deduped. nil == empty.
-	KnownRecipeIDs []string `json:"knownRecipeIds"`
+	// KnownCraftableIDs is the set of ITEM IDs whose recipes this player has
+	// learned, unlocking them for crafting in all future matches. Sorted,
+	// deduped. nil == empty.
+	//
+	// Added in schema version 8 as KnownRecipeIDs; renamed in version 9 when
+	// recipes were folded into items (an item is its own recipe, so a "recipe
+	// id" was always an item id). The VALUES are unchanged by that rename —
+	// see LegacyKnownRecipeIDs and migrateProfile.
+	KnownCraftableIDs []string `json:"knownCraftableIds"`
+
+	// LegacyKnownRecipeIDs is the v8 spelling of KnownCraftableIDs. Read from
+	// old files, copied across, then cleared to nil so it is never re-serialized
+	// (omitempty drops nil). Mirrors the LegacyLegendPoints pattern above.
+	LegacyKnownRecipeIDs []string `json:"knownRecipeIds,omitempty"`
 }
 
 // AcquiredAdvancement records a single purchased advancement node.

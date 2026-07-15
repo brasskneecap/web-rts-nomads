@@ -15,24 +15,14 @@ export type ProcEffectDef = {
   burnDurationSeconds?: number
 }
 
-// An item defines only itself: its stats and its own purchase price. Crafting
-// rides beside it in `crafting` (absent = not craftable, which drops any recipe
-// the item had), and the server turns that into the paired recipe def. WHERE an
-// item is available (shops, loot) is a shop-level concern edited elsewhere —
-// not part of this request.
+// An item defines everything about itself: its stats, its purchase price, and —
+// in its `crafting` block — its ingredients and the two crafting prices. There is
+// no second entity to keep in sync: an item IS its own recipe.
+//
+// WHERE an item is available (which shops stock it, what drops it) is LIST
+// membership, edited in the Lists tab — not part of this request.
 export type EditorSaveRequest = {
   item: Record<string, unknown>
-  crafting?: EditorSaveCrafting
-}
-
-// The recipe half of a save. The two gold fields buy different things:
-// craftCostGold is charged per craft at the Artificer; recipeCostGold is
-// charged once at a Recipe Shop to learn the recipe.
-export type EditorSaveCrafting = {
-  inputs: string[]
-  craftCostGold: number
-  recipeCostGold: number
-  starter: boolean
 }
 
 // EditorValidationError carries the server's validation message for inline
@@ -83,6 +73,17 @@ export type EditorItemRemoveStatus = 'deleted' | 'reverted' | 'reset'
 
 export async function deleteEditorItem(id: string): Promise<EditorItemRemoveStatus> {
   const response = await fetch(`${API_BASE}/items/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  // A delete blocked by referential integrity (the item is still referenced by
+  // a list, another item's recipe, a map, or an upgrade) comes back as a 400
+  // validation_failed whose message names every referrer — surface it like a
+  // save validation error so the editor shows exactly what to clear first.
+  if (response.status === 400) {
+    const body = (await response.json().catch(() => null)) as { error?: string; message?: string } | null
+    if (body?.error === 'validation_failed') {
+      throw new EditorValidationError(body.message ?? 'Validation failed')
+    }
+    throw new Error(body?.message ?? 'Bad request (400)')
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText)
     throw new Error(text || `Server error ${response.status}`)

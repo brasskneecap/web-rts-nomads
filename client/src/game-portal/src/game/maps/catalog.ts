@@ -27,7 +27,8 @@ import type { UnitAttackOrigin, UnitBounds, UnitDef } from './unitDefs'
 import type { ActionIconDef } from './actionIconDefs'
 import type { PerkDef } from './perkDefs'
 import type { ItemDef } from './itemDefs'
-import type { RecipeDef } from './recipeDefs'
+import type { ListDef } from './listDefs'
+import type { TableDef } from './tableDefs'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -236,43 +237,35 @@ export async function fetchItemDefs(): Promise<ItemDef[]> {
   return data.items
 }
 
-export async function fetchRecipeDefs(): Promise<RecipeDef[]> {
-  const response = await fetch(`${API_BASE}/catalog/recipes`)
+// There is no fetchRecipeDefs: an item IS its own recipe (ItemDef.crafting), so
+// the item catalog already carries every recipe.
+
+// Lists (catalog/lists/<id>.json) — one route, because there is one kind of list.
+// Replaces the old /catalog/item-lists + /catalog/recipe-lists pair; what a list
+// MEANS is decided by the building that consumes it, not by the list.
+export async function fetchLists(): Promise<ListDef[]> {
+  const response = await fetch(`${API_BASE}/catalog/lists`)
 
   if (!response.ok) {
-    throw new Error(`Failed to load recipe defs: ${response.status}`)
+    throw new Error(`Failed to load lists: ${response.status}`)
   }
 
-  const data = (await response.json()) as { recipes: RecipeDef[] }
-  return data.recipes
-}
-
-export type RecipeListSummary = { id: string; name: string; recipes: string[] }
-
-export async function fetchRecipeLists(): Promise<RecipeListSummary[]> {
-  const response = await fetch(`${API_BASE}/catalog/recipe-lists`)
-
-  if (!response.ok) {
-    throw new Error(`Failed to load recipe lists: ${response.status}`)
-  }
-
-  const data = (await response.json()) as { lists: RecipeListSummary[] }
+  const data = (await response.json()) as { lists: ListDef[] }
   return data.lists
 }
 
-export type ItemListSummary = { id: string; name: string; items: string[] }
-
-// Named item lists (catalog/items/lists/<id>.json) a shop can stock from,
-// selected per-instance in the map editor. Mirrors fetchRecipeLists.
-export async function fetchItemLists(): Promise<ItemListSummary[]> {
-  const response = await fetch(`${API_BASE}/catalog/item-lists`)
+// Tables (catalog/tables/<id>.json) — a weighted roll over lists, resource
+// grants and no-drop outcomes. What a camp rolls when cleared, and what a shop
+// rolls to stock. This is what map authors bind to a camp's loot source.
+export async function fetchTables(): Promise<TableDef[]> {
+  const response = await fetch(`${API_BASE}/catalog/tables`)
 
   if (!response.ok) {
-    throw new Error(`Failed to load item lists: ${response.status}`)
+    throw new Error(`Failed to load tables: ${response.status}`)
   }
 
-  const data = (await response.json()) as { lists: ItemListSummary[] }
-  return data.lists
+  const data = (await response.json()) as { tables: TableDef[] }
+  return data.tables
 }
 
 export async function fetchNeutralGroups(): Promise<NeutralGroupTierSummary[]> {

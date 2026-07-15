@@ -84,12 +84,12 @@ const props = defineProps<{
   /** The item as it would be served — for an unsaved draft, built by
    *  previewDefFromForm (which resolves procs against the effect catalog). */
   def: ItemDef
-  /** The recipe, when the item is craftable. Ingredients do not live on ItemDef
-   *  (they belong to the paired RecipeDef), so the editor resolves them and
-   *  hands them in. Absent = not craftable, and the crafting lines are not shown.
-   *  `costGold` is the craft price at the Artificer; `recipeCostGold` is what a
-   *  Recipe Shop charges to learn it (absent for a starter recipe, which is
-   *  never bought). */
+  /** The recipe, when the item is craftable. The editor resolves the ingredient
+   *  ids to their defs + icons and hands them in, so this component never has to
+   *  reach into the catalog. Absent = not craftable, and the crafting lines are
+   *  not shown. `costGold` is the craft price at the Artificer; `recipeCostGold`
+   *  is what a Recipe Shop charges to learn it (absent for a starter recipe,
+   *  which is never bought). */
   craft?: { costGold: number; recipeCostGold?: number; inputs: PreviewCraftInput[] }
 }>()
 

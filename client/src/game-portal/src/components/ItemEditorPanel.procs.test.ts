@@ -141,7 +141,11 @@ describe('ItemEditorPanel — procs', () => {
     expect(wrapper.find('.ipc__craft').exists()).toBe(false)
 
     await wrapper.find('#ie-crafting-source').setValue('recipe')
-    await wrapper.find('#ie-recipe-cost').setValue('150')
+    // The craft cost and the recipe cost are different prices, so give them
+    // different numbers — a preview that shows one where the other belongs must
+    // fail rather than pass on a shared default.
+    await wrapper.find('#ie-craft-cost').setValue('150')
+    await wrapper.find('#ie-recipe-cost').setValue('300')
     await wrapper.find('#ie-crafting-input-0').setValue('iron_ingot')
     await wrapper.find('#ie-crafting-input-1').setValue('wooden_hilt')
 
@@ -149,11 +153,30 @@ describe('ItemEditorPanel — procs', () => {
     expect(craft.exists()).toBe(true)
     expect(craft.text()).toContain('Crafted:')
     expect(craft.text()).toContain('150')
+    expect(craft.text()).not.toContain('300')
 
     // One icon per ingredient, each labelled with the item it stands for.
     const icons = craft.findAll('.ipc__ingredient')
     expect(icons).toHaveLength(2)
     expect(icons.map((i) => i.attributes('alt'))).toEqual(['Iron Ingot', 'Wooden Hilt'])
+
+    // The learn price gets its own line.
+    const recipeLine = wrapper.findAll('.ipc__craft').find((d) => d.text().startsWith('Recipe:'))
+    expect(recipeLine).toBeDefined()
+    expect(recipeLine!.text()).toContain('300')
+  })
+
+  it('a starter recipe has no learn price to charge, so the field and the preview line go away', async () => {
+    const wrapper = await mountWithCraftableCatalog()
+    await wrapper.find('#ie-crafting-source').setValue('recipe')
+    await wrapper.find('#ie-recipe-cost').setValue('300')
+    expect(wrapper.findAll('.ipc__craft').some((d) => d.text().startsWith('Recipe:'))).toBe(true)
+
+    await wrapper.find('#ie-recipe-starter').setValue(true)
+
+    // Every player already knows it, so it is never bought at a Recipe Shop.
+    expect((wrapper.find('#ie-recipe-cost').element as HTMLInputElement).disabled).toBe(true)
+    expect(wrapper.findAll('.ipc__craft').some((d) => d.text().startsWith('Recipe:'))).toBe(false)
   })
 
   it('hovering an ingredient shows the real in-game item tooltip', async () => {

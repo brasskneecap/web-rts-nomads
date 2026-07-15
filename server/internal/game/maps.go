@@ -795,6 +795,7 @@ func parsePersistedMapFile(dir, name string) (entry MapCatalogEntry, err error) 
 	entry.Map.Zones = normalizeZones(entry.Map.Zones)
 	validateZones(name, entry.Map.Zones)
 	validateZoneTriggers(name, entry.Map.Buildings, entry.Map.Zones)
+	validateBuildingListKeys(name, entry.Map.Buildings)
 	attachMapContentHash(&entry)
 
 	if entry.ID == "" {
@@ -854,6 +855,7 @@ func mustLoadMapCatalog() []MapCatalogEntry {
 		entry.Map.Zones = normalizeZones(entry.Map.Zones)
 		validateZones(file.Name(), entry.Map.Zones)
 		validateZoneTriggers(file.Name(), entry.Map.Buildings, entry.Map.Zones)
+		validateBuildingListKeys(file.Name(), entry.Map.Buildings)
 		attachMapContentHash(&entry)
 
 		entries = append(entries, entry)

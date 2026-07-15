@@ -1,0 +1,32 @@
+{
+  "id": "merchant_weapons",
+  "name": "Merchant Weapons",
+  "maxRoll": 100,
+  "entries": [
+    {
+      "item": "broad_sword",
+      "min": 1,
+      "max": 40
+    },
+    {
+      "item": "scimitar",
+      "min": 41,
+      "max": 65
+    },
+    {
+      "item": "flame_sword",
+      "min": 66,
+      "max": 85
+    },
+    {
+      "item": "frost_scimitar",
+      "min": 86,
+      "max": 95
+    },
+    {
+      "item": "shadow_blade",
+      "min": 96,
+      "max": 100
+    }
+  ]
+}

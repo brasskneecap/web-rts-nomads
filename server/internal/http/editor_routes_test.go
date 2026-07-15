@@ -405,35 +405,85 @@ func TestItemImageRoutes(t *testing.T) {
 	}
 }
 
-func TestItemAvailabilityRoute(t *testing.T) {
+// TestListRoutes covers the list CRUD that replaced GET /items/{id}/availability:
+// "where is this item available" is now answered by list membership, and lists
+// are authorable end-to-end (they previously had no write route at all).
+func TestListRoutes(t *testing.T) {
 	t.Setenv("ITEM_CATALOG_DIR", t.TempDir())
-	t.Setenv("RECIPE_CATALOG_DIR", t.TempDir())
+	t.Setenv("LIST_CATALOG_DIR", t.TempDir())
 	t.Setenv("NEUTRAL_GROUPS_DIR", t.TempDir())
 	srv := newTestRouter(t)
-	resp, err := srv.Client().Get(srv.URL + "/items/frost_sword/availability")
+
+	// Create.
+	body := `{"list":{"id":"test_blades","name":"Test Blades","items":["broad_sword","fire_sword"]}}`
+	resp, err := srv.Client().Post(srv.URL+"/lists", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 201 {
+		t.Fatalf("POST status = %d, want 201", resp.StatusCode)
+	}
+
+	// Read back through the catalog route.
+	got, err := srv.Client().Get(srv.URL + "/catalog/lists")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("status %d", resp.StatusCode)
+	defer got.Body.Close()
+	var payload struct {
+		Lists []struct {
+			ID    string   `json:"id"`
+			Name  string   `json:"name"`
+			Items []string `json:"items"`
+		} `json:"lists"`
 	}
-	var av struct {
-		Marketplace bool `json:"marketplace"`
-		LootTable   struct {
-			Enabled bool `json:"enabled"`
-			Weight  int  `json:"weight"`
-		} `json:"lootTable"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&av); err != nil {
+	if err := json.NewDecoder(got.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	miss, err := srv.Client().Get(srv.URL + "/items/no_such_item/availability")
-	if err != nil {
-		t.Fatalf("GET miss: %v", err)
+	found := false
+	for _, l := range payload.Lists {
+		if l.ID == "test_blades" {
+			found = true
+			if len(l.Items) != 2 || l.Items[0] != "broad_sword" {
+				t.Errorf("list items = %v, want [broad_sword fire_sword]", l.Items)
+			}
+		}
 	}
-	defer miss.Body.Close()
-	if miss.StatusCode != 404 {
-		t.Fatalf("unknown item expected 404, got %d", miss.StatusCode)
+	if !found {
+		t.Fatal("saved list is not served by /catalog/lists")
+	}
+
+	// A list naming an unknown item is a 400, not a 500.
+	bad := `{"list":{"id":"bad_list","name":"Bad","items":["no_such_item"]}}`
+	badResp, err := srv.Client().Post(srv.URL+"/lists", "application/json", strings.NewReader(bad))
+	if err != nil {
+		t.Fatalf("POST bad: %v", err)
+	}
+	defer badResp.Body.Close()
+	if badResp.StatusCode != 400 {
+		t.Errorf("unknown-item list status = %d, want 400", badResp.StatusCode)
+	}
+
+	// An empty list is refused.
+	empty := `{"list":{"id":"empty_list","name":"Empty","items":[]}}`
+	emptyResp, err := srv.Client().Post(srv.URL+"/lists", "application/json", strings.NewReader(empty))
+	if err != nil {
+		t.Fatalf("POST empty: %v", err)
+	}
+	defer emptyResp.Body.Close()
+	if emptyResp.StatusCode != 400 {
+		t.Errorf("empty list status = %d, want 400", emptyResp.StatusCode)
+	}
+
+	// Delete.
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/lists/test_blades", nil)
+	del, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	defer del.Body.Close()
+	if del.StatusCode != 200 {
+		t.Fatalf("DELETE status = %d, want 200", del.StatusCode)
 	}
 }

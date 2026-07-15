@@ -1,0 +1,15 @@
+{
+  "id": "greater_experience_potion",
+  "displayName": "Greater Experience Potion",
+  "description": "Grants 150 XP, split between units in the area",
+  "iconKey": "potion_0003",
+  "kind": "consumable",
+  "tier": "epic",
+  "category": "Consumable",
+  "costGold": 350,
+  "consumable": {
+    "type": "grant_xp",
+    "amount": 150,
+    "split": true
+  }
+}

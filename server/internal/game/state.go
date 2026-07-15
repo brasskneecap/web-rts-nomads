@@ -802,10 +802,11 @@ type Player struct {
 	// affect this field. Nil / empty means no advancements purchased.
 	AcquiredAdvancements []string
 
-	// UnlockedRecipeIDs is the in-match set of recipe IDs this player may craft
-	// at an Artificer. Seeded at join from the profile's KnownRecipeIDs and
-	// grown by purchase_recipe. Sorted, deduped.
-	UnlockedRecipeIDs []string
+	// UnlockedCraftableIDs is the in-match set of ITEM IDs whose recipes this
+	// player has learned and may craft at an Artificer. Seeded at join from the
+	// profile's KnownCraftableIDs and grown by purchase_recipe. Sorted, deduped.
+	// An item is its own recipe (see ItemDef.Crafting), so these are item IDs.
+	UnlockedCraftableIDs []string
 
 	// EffectiveUnitDefs is a per-player map of unitType → modified UnitDef
 	// reflecting all owned advancements. Computed once at match start by
@@ -3612,9 +3613,9 @@ func (s *GameState) EnsurePlayer(playerID string) {
 // all owned upgrades are active (backwards-compatible default).
 // acquiredAdvancementIDs is the sorted list of advancement IDs the player owns
 // (from PlayerProfile.AcquiredAdvancements); nil / empty means no advancements.
-// knownRecipeIDs is the list of recipe IDs the player may craft this match,
-// seeded from the profile's KnownRecipeIDs; nil / empty means no recipes unlocked.
-func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks map[string]int, activeUpgradeIDs []string, acquiredAdvancementIDs []string, knownRecipeIDs []string) {
+// knownCraftableIDs is the list of ITEM IDs whose recipes the player has learned,
+// seeded from the profile's KnownCraftableIDs; nil / empty means nothing learned.
+func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks map[string]int, activeUpgradeIDs []string, acquiredAdvancementIDs []string, knownCraftableIDs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -3652,24 +3653,24 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		}
 	}
 
-	// Seed the in-match unlocked recipe set from the profile's known recipes
-	// plus every starter recipe (always available at an Artificer, no purchase).
-	// Deduped, empties dropped, sorted so playerKnowsRecipeLocked and
-	// unlockRecipeForPlayerLocked maintain their invariant.
-	recipeSet := make(map[string]struct{}, len(knownRecipeIDs))
-	for _, id := range knownRecipeIDs {
+	// Seed the in-match learned set from the profile's known recipes plus every
+	// starter recipe (always craftable, no purchase). Deduped, empties dropped,
+	// sorted so playerKnowsRecipeLocked and unlockRecipeForPlayerLocked maintain
+	// their invariant.
+	craftableSet := make(map[string]struct{}, len(knownCraftableIDs))
+	for _, id := range knownCraftableIDs {
 		if id != "" {
-			recipeSet[id] = struct{}{}
+			craftableSet[id] = struct{}{}
 		}
 	}
-	for _, id := range starterRecipeIDs() {
-		recipeSet[id] = struct{}{}
+	for _, id := range starterCraftableItemIDs() {
+		craftableSet[id] = struct{}{}
 	}
-	recipeIDs := make([]string, 0, len(recipeSet))
-	for id := range recipeSet {
-		recipeIDs = append(recipeIDs, id)
+	craftableIDs := make([]string, 0, len(craftableSet))
+	for id := range craftableSet {
+		craftableIDs = append(craftableIDs, id)
 	}
-	sort.Strings(recipeIDs)
+	sort.Strings(craftableIDs)
 
 	player := &Player{
 		ID: playerID,
@@ -3691,7 +3692,7 @@ func (s *GameState) EnsurePlayerWithUpgrades(playerID string, ownedUpgradeRanks 
 		ShopRerollsRemaining:          defaultShopRerollsPerPlayer,
 		NeutralShopInventories:        map[string][]protocol.ShopStockEntry{},
 		AcquiredAdvancements:          advancementIDs,
-		UnlockedRecipeIDs:             recipeIDs,
+		UnlockedCraftableIDs:          craftableIDs,
 		Metrics:                       NewMatchMetrics(),
 		ZoneStatModifiers:             newPlayerStatModifierSet(),
 	}

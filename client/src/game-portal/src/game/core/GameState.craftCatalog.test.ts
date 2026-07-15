@@ -1,15 +1,32 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { GameState } from './GameState'
-import { initRecipeDefs } from '../maps/recipeDefs'
+import { initItemDefs } from '../maps/itemDefs'
+import { initListDefs } from '../maps/listDefs'
+import type { ItemDef } from '../maps/itemDefs'
 import type { BuildingTile, VaultItemSnapshot } from '../network/protocol'
 
-// unlockCostGold (what a Recipe Shop charges to learn it) is deliberately a
-// different number from costGold (what the Artificer charges per craft), so the
-// Craft tab reaching for the wrong one fails rather than passing by accident.
+// An item IS its own recipe. The three prices are deliberately different numbers
+// so a surface reaching for the wrong one fails rather than passing by accident:
+//   costGold 40        — buy the finished sword off a shelf
+//   craftCostGold 150  — make it at an Artificer
+//   recipeCostGold 300 — learn the recipe at a Recipe Shop
+const FIRE_SWORD: ItemDef = {
+  id: 'fire_sword', displayName: 'Fire Sword', iconKey: 'fire_sword',
+  kind: 'equipment', tier: 'rare', costGold: 40,
+  crafting: { inputs: ['broad_sword', 'fire_ring'], craftCostGold: 150, recipeCostGold: 300 },
+}
+const BROAD_SWORD: ItemDef = {
+  id: 'broad_sword', displayName: 'Broad Sword', iconKey: 'broad_sword',
+  kind: 'equipment', tier: 'common', costGold: 50,
+}
+const FIRE_RING: ItemDef = {
+  id: 'fire_ring', displayName: 'Fire Ring', iconKey: 'fire_ring',
+  kind: 'equipment', tier: 'rare', costGold: 90,
+}
+
 beforeEach(() => {
-  initRecipeDefs([
-    { id: 'fire_sword', name: 'Fire Sword', inputs: ['broad_sword', 'fire_ring'], costGold: 150, unlockCostGold: 300, output: 'fire_sword' },
-  ])
+  initItemDefs([FIRE_SWORD, BROAD_SWORD, FIRE_RING])
+  initListDefs([])
 })
 
 function artificer(ownerId: string, over: Partial<BuildingTile> = {}): BuildingTile {
@@ -46,7 +63,7 @@ describe('GameState.getCraftCatalogSnapshot', () => {
   function mk(): GameState {
     const s = new GameState()
     s.localPlayerId = 'p1'
-    s.localPlayerUnlockedRecipeIds = ['fire_sword']
+    s.localPlayerUnlockedCraftableIds = ['fire_sword']
     s.mapConfig.buildings = [artificer('p1')]
     return s
   }
@@ -84,9 +101,26 @@ describe('GameState.getCraftCatalogSnapshot', () => {
     expect(s.getCraftCatalogSnapshot()[0].craftable).toBe(false)
   })
 
-  it('skips unlocked ids with no catalog def', () => {
+  it('a crafting building bound to a list makes only what is ON that list', () => {
+    // The list narrows what this forge can make. It never grants a recipe the
+    // player has not learned — that is checked separately, server-side.
+    initListDefs([{ id: 'shields_only', name: 'Shields', items: ['steel_shield'] }])
     const s = mk()
-    s.localPlayerUnlockedRecipeIds = ['fire_sword', 'unknown_recipe']
+    s.mapConfig.buildings = [artificer('p1', { metadata: { list: 'shields_only' } })]
+    s.localPlayerVault = vault('broad_sword', 'fire_ring')
+    // fire_sword is learned and its ingredients are in hand, but this forge
+    // does not make swords.
+    expect(s.getCraftCatalogSnapshot()[0].craftable).toBe(false)
+
+    // Bind a list that DOES include it and the same craft becomes available.
+    initListDefs([{ id: 'swords', name: 'Swords', items: ['fire_sword'] }])
+    s.mapConfig.buildings = [artificer('p1', { metadata: { list: 'swords' } })]
+    expect(s.getCraftCatalogSnapshot()[0].craftable).toBe(true)
+  })
+
+  it('skips learned ids with no catalog def', () => {
+    const s = mk()
+    s.localPlayerUnlockedCraftableIds = ['fire_sword', 'unknown_recipe']
     s.localPlayerVault = vault('broad_sword', 'fire_ring')
     expect(s.getCraftCatalogSnapshot().map((e) => e.recipeId)).toEqual(['fire_sword'])
   })
