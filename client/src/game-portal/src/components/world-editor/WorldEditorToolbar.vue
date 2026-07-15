@@ -29,8 +29,7 @@ export const WORLD_EDITOR_CATEGORIES: WorldEditorCategory[] = [
   // brush modes inside the Paint section, not separate editors.
   { id: 'map', label: 'Map', enabled: true },
   { id: 'items', label: 'Items', enabled: true },
-  { id: 'unit-types', label: 'Unit Types', enabled: true },
-  { id: 'unit-paths', label: 'Unit Paths', enabled: false },
+  { id: 'unit-types', label: 'Units', enabled: true },
   { id: 'perks', label: 'Perks', enabled: false },
   { id: 'abilities', label: 'Abilities', enabled: true },
   { id: 'effects', label: 'Effects', enabled: false },

@@ -129,6 +129,11 @@ type pathRankStatsJSON struct {
 	// game-wide base (baseUnitDodgeChance) always applies on top.
 	DodgeChance float64 `json:"dodgeChance"`
 	BlockChance float64 `json:"blockChance"`
+	// VisionRange is a per-rank FLAT override (world pixels). When > 0 it
+	// replaces the resolved base/path vision for this (path, rank), before the
+	// perk vision multiplier. Absent (0) leaves vision at the path-level /
+	// unit-def value. Applied in applyRankModifiersLocked.
+	VisionRange float64 `json:"visionRange"`
 }
 
 // pathModifiersByKey is the loaded lookup map. Key is path + "/" + rank (e.g.
@@ -658,6 +663,7 @@ func registerPathFileInto(dst *pathDerivedMaps, unitKey string, file *pathCatalo
 			Armor:                 stats.Armor,
 			DodgeChance:           stats.DodgeChance,
 			BlockChance:           stats.BlockChance,
+			VisionRange:           stats.VisionRange,
 		}
 	}
 	return nil

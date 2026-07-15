@@ -63,28 +63,46 @@ describe('PathRankGrid — editing emits update:ranks', () => {
   })
 })
 
-describe('PathRankGrid — attack-range conflict', () => {
-  it('shows both the flat value and the multiplier result, plus a caution that the flat override wins', () => {
-    const wrapper = mount(PathRankGrid, {
-      props: {
-        baseStats: { attackRange: 100 },
-        ranks: { bronze: { attackRange: 150, attackRangeMultiplier: 2 } },
-      },
-    })
-    const text = wrapper.text()
-    expect(text).toContain('150')
-    expect(text).toContain('200') // 100 × 2, the multiplier's would-be result
-    expect(text.toLowerCase()).toContain('flat override wins')
-  })
-
-  it('shows no caution when only one of flat/multiplier is authored', () => {
+describe('PathRankGrid — attack-range mode (flat OR multiplier)', () => {
+  it('in Flat mode edits attackRange and resolves it inline', () => {
     const wrapper = mount(PathRankGrid, {
       props: {
         baseStats: { attackRange: 100 },
         ranks: { bronze: { attackRange: 150 } },
       },
     })
-    expect(wrapper.text().toLowerCase()).not.toContain('flat override wins')
+    const mode = wrapper.find('select[data-rank="bronze"]')
+    expect((mode.element as HTMLSelectElement).value).toBe('flat')
+    const input = wrapper.find('input[data-rank="bronze"][data-field="attackRange"]')
+    expect((input.element as HTMLInputElement).value).toBe('150')
+    expect(wrapper.text()).toContain('Flat: 150')
+  })
+
+  it('in Multiplier mode edits the multiplier and shows base × mult = result', () => {
+    const wrapper = mount(PathRankGrid, {
+      props: {
+        baseStats: { attackRange: 100 },
+        ranks: { bronze: { attackRangeMultiplier: 2 } },
+      },
+    })
+    const mode = wrapper.find('select[data-rank="bronze"]')
+    expect((mode.element as HTMLSelectElement).value).toBe('mult')
+    expect(wrapper.text()).toContain('200') // 100 × 2
+  })
+
+  it('switching mode clears the other field so both are never set at once', async () => {
+    const wrapper = mount(PathRankGrid, {
+      props: {
+        baseStats: { attackRange: 100 },
+        ranks: { bronze: { attackRange: 150 } },
+      },
+    })
+    await wrapper.find('select[data-rank="bronze"]').setValue('mult')
+
+    const emitted = wrapper.emitted('update:ranks')!
+    const last = emitted[emitted.length - 1][0] as Record<string, PathRankStats>
+    expect('attackRange' in last.bronze).toBe(false)
+    expect(last.bronze.attackRangeMultiplier).toBeUndefined()
   })
 })
 

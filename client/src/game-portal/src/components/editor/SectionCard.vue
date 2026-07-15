@@ -1,7 +1,8 @@
 <template>
   <!-- innerPanel = the plain dark-wood 9-slice; the brass hairline under the
-       title is ours, so a card reads as a card without a second frame. -->
-  <UiPanel variant="innerPanel" :padding="0" class="ed-card">
+       title is ours, so a card reads as a card without a second frame. A card
+       can opt into a different UiPanel skin (e.g. worldMenu) via `variant`. -->
+  <UiPanel :variant="variant" :padding="0" class="ed-card">
     <div class="ed-card__inner">
       <header class="ed-card__head">
         <span class="ed-card__title">
@@ -20,11 +21,15 @@
 <script setup lang="ts">
 import UiPanel from '@/components/ui/UiPanel.vue'
 
-defineProps<{
+withDefaults(defineProps<{
   title: string
   /** Optional leading number, matching the editor's section order. */
   index?: number
-}>()
+  /** UiPanel skin for the card frame. Defaults to the plain inner panel. */
+  variant?: 'default' | 'parchment' | 'footer' | 'worldMenu' | 'worldInner' | 'warRoomInner' | 'innerPanel'
+}>(), {
+  variant: 'innerPanel',
+})
 </script>
 
 <style scoped>

@@ -8,37 +8,90 @@
     "ringOffsetX": 0,
     "ringOffsetY": 3
   },
+  "attackOrigin": {
+    "byFacing": {
+      "south": {
+        "x": 1,
+        "y": -32
+      },
+      "north": {
+        "x": 0,
+        "y": -64
+      },
+      "north-east": {
+        "x": 16,
+        "y": -42
+      },
+      "east": {
+        "x": 16,
+        "y": -37
+      },
+      "south-east": {
+        "x": 4,
+        "y": -35
+      },
+      "south-west": {
+        "x": -9,
+        "y": -34
+      },
+      "west": {
+        "x": -16,
+        "y": -36
+      },
+      "north-west": {
+        "x": -15,
+        "y": -41
+      }
+    }
+  },
   "projectile": "shadow_bolt",
   "damageType": "shadow",
   "projectileScale": 2.5,
-  "abilities": ["arcane_missiles"],
+  "abilities": [
+    "arcane_missiles"
+  ],
   "ranks": {
     "bronze": {
-      "maxHPMultiplier": 1.10,
-      "maxMPMultiplier": 1.20,
-      "damageMultiplier": 1.10,
-      "attackSpeedMultiplier": 1.00,
-      "moveSpeedMultiplier": 1.00,
-      "attackRangeMultiplier": 1.00,
-      "armor": 0
-    },
-    "silver": {
-      "maxHPMultiplier": 1.20,
-      "maxMPMultiplier": 1.20,
-      "damageMultiplier": 1.25,
-      "attackSpeedMultiplier": 1.10,
-      "moveSpeedMultiplier": 1.00,
-      "attackRangeMultiplier": 1.00,
-      "armor": 0
+      "maxHPMultiplier": 1.1,
+      "maxMPMultiplier": 1.2,
+      "healthRegenMultiplier": 0,
+      "damageMultiplier": 1.1,
+      "attackSpeedMultiplier": 1,
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 1,
+      "armor": 0,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
     },
     "gold": {
       "maxHPMultiplier": 1.35,
       "maxMPMultiplier": 1.35,
-      "damageMultiplier": 1.50,
+      "healthRegenMultiplier": 0,
+      "damageMultiplier": 1.5,
       "attackSpeedMultiplier": 1.25,
-      "moveSpeedMultiplier": 1.00,
-      "attackRangeMultiplier": 1.00,
-      "armor": 0
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 1,
+      "armor": 0,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
+    },
+    "silver": {
+      "maxHPMultiplier": 1.2,
+      "maxMPMultiplier": 1.2,
+      "healthRegenMultiplier": 0,
+      "damageMultiplier": 1.25,
+      "attackSpeedMultiplier": 1.1,
+      "moveSpeedMultiplier": 1,
+      "attackRange": 0,
+      "attackRangeMultiplier": 1,
+      "armor": 0,
+      "dodgeChance": 0,
+      "blockChance": 0,
+      "visionRange": 0
     }
   }
 }

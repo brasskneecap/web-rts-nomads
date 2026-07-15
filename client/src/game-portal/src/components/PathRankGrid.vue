@@ -6,6 +6,7 @@
         <th v-for="col in MULTIPLIER_COLUMNS" :key="col.key">{{ col.label }}</th>
         <th>Attack Range</th>
         <th v-for="col in ADDITIVE_COLUMNS" :key="col.key">{{ col.label }}</th>
+        <th>Vision Range</th>
       </tr>
     </thead>
     <tbody>
@@ -30,41 +31,36 @@
           <span v-else-if="rankStats(rank)[col.key] !== undefined" class="rank-grid__hint">(no base value)</span>
         </td>
 
-        <!-- Attack Range: flat override AND multiplier both live here (they're
-             mutually exclusive in intent, but both are authorable — see the
-             conflict caution below, matching applyRankModifiersLocked's
-             flat-wins precedence server-side). -->
+        <!-- Attack Range: pick ONE mode (flat override OR multiplier) from the
+             dropdown; the single input then edits that mode's field. Selecting a
+             mode clears the other field, so the two can never both be set (which
+             is what the old flat-wins conflict warning existed to flag). -->
         <td class="rank-grid__cell rank-grid__cell--range">
-          <label class="rank-grid__subfield">
-            Flat
+          <div class="rank-grid__range-row">
+            <select
+              class="rank-grid__range-mode"
+              :data-rank="rank"
+              :value="rangeMode(rank)"
+              @change="setRangeMode(rank, ($event.target as HTMLSelectElement).value as 'flat' | 'mult')"
+            >
+              <option value="flat">Flat</option>
+              <option value="mult">Mult</option>
+            </select>
             <input
               type="number"
+              :step="rangeMode(rank) === 'mult' ? '0.01' : undefined"
               :data-rank="rank"
-              data-field="attackRange"
-              :value="rankStats(rank).attackRange ?? ''"
-              @input="updateField(rank, 'attackRange', ($event.target as HTMLInputElement).value)"
+              :data-field="rangeMode(rank) === 'flat' ? 'attackRange' : 'attackRangeMultiplier'"
+              :value="rankStats(rank)[rangeMode(rank) === 'flat' ? 'attackRange' : 'attackRangeMultiplier'] ?? ''"
+              @input="updateField(rank, rangeMode(rank) === 'flat' ? 'attackRange' : 'attackRangeMultiplier', ($event.target as HTMLInputElement).value)"
             />
-          </label>
-          <label class="rank-grid__subfield">
-            × Mult
-            <input
-              type="number"
-              step="0.01"
-              :data-rank="rank"
-              data-field="attackRangeMultiplier"
-              :value="rankStats(rank).attackRangeMultiplier ?? ''"
-              @input="updateField(rank, 'attackRangeMultiplier', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <div v-if="attackRangeResolved(rank).flat !== undefined" class="rank-grid__resolved">
+          </div>
+          <div v-if="rangeMode(rank) === 'flat' && attackRangeResolved(rank).flat !== undefined" class="rank-grid__resolved">
             Flat: {{ attackRangeResolved(rank).flat }}
           </div>
-          <div v-if="attackRangeResolved(rank).multResult !== undefined" class="rank-grid__resolved">
+          <div v-else-if="rangeMode(rank) === 'mult' && attackRangeResolved(rank).multResult !== undefined" class="rank-grid__resolved">
             {{ baseStats.attackRange }} × {{ rankStats(rank).attackRangeMultiplier }} = {{ attackRangeResolved(rank).multResult }}
           </div>
-          <p v-if="attackRangeConflict(rank)" class="rank-grid__caution">
-            Both set — the flat override wins in-game; the multiplier result above is ignored.
-          </p>
         </td>
 
         <!-- Flat/additive columns: no base × mult expansion, just the value. -->
@@ -78,12 +74,29 @@
             @input="updateField(rank, col.key, ($event.target as HTMLInputElement).value)"
           />
         </td>
+
+        <!-- Vision Range: per-rank FLAT override (world pixels). When blank the
+             unit falls back to its base/path vision, shown here for reference. -->
+        <td class="rank-grid__cell">
+          <input
+            type="number"
+            :data-rank="rank"
+            data-field="visionRange"
+            :value="rankStats(rank).visionRange ?? ''"
+            @input="updateField(rank, 'visionRange', ($event.target as HTMLInputElement).value)"
+          />
+          <span
+            v-if="baseStats.visionRange !== undefined && rankStats(rank).visionRange === undefined"
+            class="rank-grid__hint"
+          >base: {{ baseStats.visionRange }}</span>
+        </td>
       </tr>
     </tbody>
   </table>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { PathRankStats } from '@/game/units/pathEditorForm'
 
 const props = defineProps<{
@@ -156,18 +169,26 @@ function attackRangeResolved(rank: string): { flat: number | undefined; multResu
   return { flat, multResult }
 }
 
-// A flat override AND a non-identity multiplier both authored on the same
-// rank is a real conflict at runtime: applyRankModifiersLocked (server) lets
-// the flat override win outright. Surfacing it here — rather than silently
-// picking one to display — is the whole point of this task (don't hide the
-// multiplier's would-be result, show the author what actually happens).
-function attackRangeConflict(rank: string): boolean {
+// Attack Range is authored as ONE of two mutually-exclusive fields (flat
+// override OR multiplier). The active mode is derived from whichever field is
+// present; when neither is (a blank cell) it falls back to a per-rank override
+// that remembers the author's dropdown choice.
+const rangeModeOverride = ref<Record<string, 'flat' | 'mult'>>({})
+
+function rangeMode(rank: string): 'flat' | 'mult' {
   const stats = rankStats(rank)
-  const flat = stats.attackRange as number | undefined
-  const mult = stats.attackRangeMultiplier as number | undefined
-  const hasFlat = flat !== undefined && flat > 0
-  const hasMult = mult !== undefined && mult !== 1
-  return hasFlat && hasMult
+  if (stats.attackRange !== undefined) return 'flat'
+  if (stats.attackRangeMultiplier !== undefined) return 'mult'
+  return rangeModeOverride.value[rank] ?? 'flat'
+}
+
+// Switching mode records the choice AND clears the other field, so a rank can
+// never carry both a flat override and a multiplier at once.
+function setRangeMode(rank: string, mode: 'flat' | 'mult') {
+  rangeModeOverride.value = { ...rangeModeOverride.value, [rank]: mode }
+  const nextRankStats: PathRankStats = { ...rankStats(rank) }
+  delete nextRankStats[mode === 'flat' ? 'attackRangeMultiplier' : 'attackRange']
+  emit('update:ranks', { ...props.ranks, [rank]: nextRankStats })
 }
 
 // Writes an update:ranks emission for a single field. Preserves the
@@ -254,22 +275,28 @@ function updateField(rank: string, key: string, raw: string) {
   gap: 4px;
 }
 
-.rank-grid__subfield {
+/* Mode dropdown + its single value input, side by side. */
+.rank-grid__range-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 0.68rem;
-  color: rgba(226, 232, 240, 0.72);
 }
 
-.rank-grid__caution {
-  margin: 4px 0 0;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: rgba(127, 29, 29, 0.35);
-  color: #fcd34d;
-  font-size: 0.68rem;
-  font-weight: 600;
+.rank-grid__range-mode {
+  flex: 0 0 auto;
+  width: 52px;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  padding: 4px 2px;
+  font-size: 0.72rem;
+}
+
+/* Keep the value input from being shoved out of the cell by the dropdown. */
+.rank-grid__range-row input {
+  min-width: 0;
 }
 
 .rank-grid__additive-prefix {

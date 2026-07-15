@@ -8,6 +8,31 @@ export interface UnitAnimationSample {
   frameIndex: number
 }
 
+/** Channel-beam loop frame selection. Given the authored [start, end] frame
+ *  range and an integer `phase` (number of frame-steps elapsed), returns the
+ *  frame index to draw, or null when no loop is authored (start absent or
+ *  negative) so the caller falls through to its normal cycling behaviour.
+ *
+ *  The loop runs one-way over [start, end] inclusive; start === end (or
+ *  end < start / end absent) degenerates to a single held frame. Out-of-range
+ *  positive indices are left as-is — getUnitFrame modulos them into the sheet
+ *  at draw time. Negative phases wrap the same way positive ones do.
+ *
+ *  Single source of truth shared by UnitAnimationController.sample (gameplay)
+ *  and the editor's channel-loop preview, so the preview matches in-game. */
+export function channelLoopFrameIndex(
+  channelLoopStart: number | undefined,
+  channelLoopEnd: number | undefined,
+  phase: number,
+): number | null {
+  const start = typeof channelLoopStart === 'number' && channelLoopStart >= 0 ? channelLoopStart : -1
+  if (start < 0) return null
+  const endRaw = typeof channelLoopEnd === 'number' ? channelLoopEnd : start
+  const end = endRaw < start ? start : endRaw
+  const frameCount = end - start + 1
+  return start + (frameCount > 0 ? ((phase % frameCount) + frameCount) % frameCount : 0)
+}
+
 /** Timing inputs for a unit's attack animation, derived from its effective
  *  attackSpeed. `cycleMs` is the full server-side cooldown (= 1000/attackSpeed);
  *  `animDurationMs` is how long the animation actually plays within that cycle
@@ -196,13 +221,9 @@ export class UnitAnimationController {
     // fall through to the normal cycling default. Out-of-range positive
     // values modulo into the sheet at draw time via getUnitFrame.
     if (status === 'Channeling' && animation === 'casting') {
-      const start = typeof channelLoopStart === 'number' && channelLoopStart >= 0 ? channelLoopStart : -1
-      const endRaw = typeof channelLoopEnd === 'number' ? channelLoopEnd : start
-      if (start >= 0) {
-        const end = endRaw < start ? start : endRaw
-        const frameCount = end - start + 1
-        const phase = Math.floor((renderTime - state.animStartedAt) / this.frameDurationMs)
-        const frameIndex = start + (frameCount > 0 ? ((phase % frameCount) + frameCount) % frameCount : 0)
+      const phase = Math.floor((renderTime - state.animStartedAt) / this.frameDurationMs)
+      const frameIndex = channelLoopFrameIndex(channelLoopStart, channelLoopEnd, phase)
+      if (frameIndex !== null) {
         return { direction, animation, frameIndex }
       }
     }

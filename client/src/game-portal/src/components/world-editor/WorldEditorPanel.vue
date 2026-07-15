@@ -1972,8 +1972,8 @@ function onToolbarSelect(id: string) {
       router.push('/')
       break
     default:
-      // unit-paths / perks / effects / projectiles /
-      // campaigns are disabled in the toolbar (coming soon) and never emit.
+      // perks / effects / projectiles / campaigns are disabled in the toolbar
+      // (coming soon) and never emit.
       break
   }
 }

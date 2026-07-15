@@ -29,75 +29,77 @@ function stubCatalogFetch(overrides: Record<string, unknown> = {}) {
   }) as unknown as typeof fetch)
 }
 
+// The Items-style editor renders the unit list, Save/Delete and the id in shared
+// primitives (EditorSidebar / EditorHeader / SectionCard). Selecting a unit is a
+// click on its sidebar row button; promotion paths now live inside the unit's
+// "Promotion Paths" tab — open it, then the paths are a nested tab strip and the
+// selected path edits inline (compact action bar + its own sub-tabs).
 function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
   const btn = wrapper.findAll('button').find((b) => b.text() === text)
   if (!btn) throw new Error(`no button with text "${text}"`)
   return btn
 }
 
-// Finds the <input> nested inside the <label> whose visible text STARTS WITH
-// the given prefix (labels also render hint/placeholder text after the
-// field name, so an exact match would be brittle).
-function findLabeledInput(wrapper: ReturnType<typeof mount>, labelPrefix: string) {
-  const label = wrapper.findAll('label').find((l) => l.text().startsWith(labelPrefix))
-  if (!label) throw new Error(`no label starting with "${labelPrefix}"`)
-  const input = label.find('input')
-  if (!input.exists()) throw new Error(`label "${labelPrefix}" has no nested input`)
-  return input
+function maybeButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
+  return wrapper.findAll('button').find((b) => b.text() === text)
+}
+
+// Open the unit's Promotion Paths tab (auto-opens the first existing path).
+async function openPathsTab(wrapper: ReturnType<typeof mount>) {
+  await findButtonByText(wrapper, 'Promotion Paths').trigger('click')
+  await flushPromises()
 }
 
 afterEach(() => vi.restoreAllMocks())
 
-describe('UnitTypeEditorPanel tree list', () => {
-  it('renders archer with an expand affordance; expanding shows its path children, collapsed by default', async () => {
+describe('UnitTypeEditorPanel unit list + promotion paths', () => {
+  it('lists units in the sidebar; selecting a unit reveals its promotion paths (hidden until then)', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
 
     expect(wrapper.text()).toContain('Archer')
-    const toggle = wrapper.find('button.unit-editor__tree-toggle')
-    expect(toggle.exists()).toBe(true)
 
-    // Collapsed by default: children not rendered.
+    // The blank new-unit form is open by default: its paths are not shown until
+    // the unit is selected and its Promotion Paths tab opened.
     expect(wrapper.text()).not.toContain('marksman')
     expect(wrapper.text()).not.toContain('trapper')
 
-    await toggle.trigger('click')
+    await findButtonByText(wrapper, 'Archer').trigger('click')
+    await openPathsTab(wrapper)
 
     expect(wrapper.text()).toContain('marksman')
     expect(wrapper.text()).toContain('trapper')
   })
 
-  it('clicking a path child flips to path mode and renders the real path form', async () => {
+  it('selecting a promotion-path tab edits it inline (no page swap) with the real path form', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
 
-    await wrapper.find('button.unit-editor__tree-toggle').trigger('click')
+    await findButtonByText(wrapper, 'Archer').trigger('click')
+    await openPathsTab(wrapper)
     await findButtonByText(wrapper, 'marksman').trigger('click')
 
-    // Identity: id locked (existing path), parent unit shown read-only.
-    const idInput = findLabeledInput(wrapper, 'Path ID')
+    // Action bar: id locked (existing path); Identity card parent read-only.
+    const idInput = wrapper.find('#pe-id')
     expect((idInput.element as HTMLInputElement).value).toBe('marksman')
     expect(idInput.attributes('disabled')).toBeDefined()
-    const parentInput = findLabeledInput(wrapper, 'Parent Unit')
+    const parentInput = wrapper.find('#pe-parent')
     expect((parentInput.element as HTMLInputElement).value).toBe('archer')
 
-    // Path sections mirror the base unit's names (Stats/Combat/Abilities)
-    // instead of a single "Overlay" section.
-    expect(wrapper.text()).toContain('Stats')
+    // Path sub-tab sections: Combat/Abilities/Rank Stats live under the Combat
+    // tab, Perk Pools under Perks, plus Identity/Preview — all mounted (v-show).
     expect(wrapper.text()).toContain('Combat')
     expect(wrapper.text()).toContain('Abilities')
-    expect(wrapper.text()).toContain('Ranks')
+    expect(wrapper.text()).toContain('Rank Stats')
     expect(wrapper.text()).toContain('Perk Pools')
-    // Path mode has its own Preview section (same name + top position as the
-    // unit form, for consistency).
     expect(wrapper.text()).toContain('Preview')
-    // Unit-mode-only sections must not render in path mode.
+    // Unit-only sections must not render while the path editor is showing.
     expect(wrapper.text()).not.toContain('Gating')
   })
 
-  it('a unit with no paths gets no expand toggle', async () => {
+  it('a unit with no paths shows an add-a-path hint under the Paths tab', async () => {
     stubCatalogFetch({
       '/catalog/units': { units: [{ type: 'grunt', name: 'Grunt', faction: 'orc' }] },
       '/catalog/paths': { paths: [] },
@@ -105,68 +107,57 @@ describe('UnitTypeEditorPanel tree list', () => {
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
 
-    expect(wrapper.find('button.unit-editor__tree-toggle').exists()).toBe(false)
+    await findButtonByText(wrapper, 'Grunt').trigger('click')
+    await openPathsTab(wrapper)
+    expect(wrapper.text()).toContain('Select a path, or add a new one.')
+    // The New Path affordance is always available in the strip.
+    expect(maybeButtonByText(wrapper, '+ New Path')).toBeDefined()
   })
 })
 
-describe('UnitTypeEditorPanel New chooser (Base vs Path)', () => {
-  it('offers Base Unit vs Path, and New Path (with a parent unit selected) enters path mode with a blank, unsaved-disabled form', async () => {
+describe('UnitTypeEditorPanel create flows (unit vs path)', () => {
+  it('New Path (from the Paths tab) opens a blank, save-disabled path form inline', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
 
-    // Select archer as the base unit first, so it becomes the New Path default parent.
+    // Select archer first — the "+ New Path" affordance uses it as the parent.
     await findButtonByText(wrapper, 'Archer').trigger('click')
+    await openPathsTab(wrapper)
+    await findButtonByText(wrapper, '+ New Path').trigger('click')
 
-    await wrapper.find('button.unit-editor__new').trigger('click')
-    expect(wrapper.text()).toContain('New Base Unit')
-    expect(wrapper.text()).toContain('New Path')
-
-    await findButtonByText(wrapper, 'New Path').trigger('click')
-
-    const parentSelect = wrapper.find('select.unit-editor__new-path-parent')
-    expect(parentSelect.exists()).toBe(true)
-    expect((parentSelect.element as HTMLSelectElement).value).toBe('archer')
-
-    await findButtonByText(wrapper, 'Create').trigger('click')
-
-    // Entered path mode with a blank, EDITABLE id (a brand-new path) and the
-    // parent unit locked in.
-    const idInput = findLabeledInput(wrapper, 'Path ID')
+    // A blank, EDITABLE id (a brand-new path) and the parent unit locked in.
+    const idInput = wrapper.find('#pe-id')
     expect((idInput.element as HTMLInputElement).value).toBe('')
     expect(idInput.attributes('disabled')).toBeUndefined()
-    const parentInput = findLabeledInput(wrapper, 'Parent Unit')
+    const parentInput = wrapper.find('#pe-parent')
     expect((parentInput.element as HTMLInputElement).value).toBe('archer')
 
-    // Save is disabled until an id exists — a brand-new form has none.
+    // Save Path is disabled until an id exists — a brand-new form has none.
     const saveBtn = findButtonByText(wrapper, 'Save Path')
     expect(saveBtn.attributes('disabled')).toBeDefined()
   })
 
-  it('New Base Unit reuses the existing base-unit creation flow untouched', async () => {
+  it('Add New Unit opens a blank base-unit form (save disabled until type/faction set)', async () => {
+    stubCatalogFetch()
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Add New Unit').trigger('click')
+
+    expect(wrapper.text()).toContain('Preview')
+    expect(wrapper.text()).toContain('Identity')
+    const saveBtn = findButtonByText(wrapper, 'Save')
+    expect(saveBtn.attributes('disabled')).toBeDefined()
+  })
+
+  it('selecting an already-saved path (a non-blank id) leaves Save enabled', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
 
     await findButtonByText(wrapper, 'Archer').trigger('click')
-    await wrapper.find('button.unit-editor__new').trigger('click')
-    await findButtonByText(wrapper, 'New Base Unit').trigger('click')
-
-    // Back in unit mode, with the base-unit form's Preview section visible
-    // and no base unit selected (a blank new-unit form).
-    expect(wrapper.text()).toContain('Preview')
-    const saveBtn = findButtonByText(wrapper, 'Save')
-    // Blank new unit has no type/faction set (faction only seeded from the
-    // active filter, which is '' here), so Save must still be disabled.
-    expect(saveBtn.attributes('disabled')).toBeDefined()
-  })
-
-  it('selecting an already-saved path (a non-blank id) leaves Save Path enabled', async () => {
-    stubCatalogFetch()
-    const wrapper = mount(UnitTypeEditorPanel)
-    await flushPromises()
-
-    await wrapper.find('button.unit-editor__tree-toggle').trigger('click')
+    await openPathsTab(wrapper)
     await findButtonByText(wrapper, 'marksman').trigger('click')
 
     const saveBtn = findButtonByText(wrapper, 'Save Path')
@@ -175,7 +166,7 @@ describe('UnitTypeEditorPanel New chooser (Base vs Path)', () => {
 })
 
 describe('UnitTypeEditorPanel base-unit mode (regression)', () => {
-  it('selecting a base unit still shows unit mode (Preview/Identity sections, Save/Delete actions)', async () => {
+  it('selecting a base unit shows unit mode (Preview/Identity, Save/Delete, selected row)', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
@@ -184,10 +175,10 @@ describe('UnitTypeEditorPanel base-unit mode (regression)', () => {
 
     expect(wrapper.text()).toContain('Preview')
     expect(wrapper.text()).toContain('Identity')
-    expect(wrapper.find('.unit-editor__tree-unit-btn.is-selected').text()).toBe('Archer')
-    expect(findButtonByText(wrapper, 'Save').exists()).toBe(true)
-    expect(findButtonByText(wrapper, 'Delete').exists()).toBe(true)
+    expect(wrapper.find('.ed-side__row--on .ed-side__name').text()).toBe('Archer')
+    expect(maybeButtonByText(wrapper, 'Save')).toBeDefined()
+    expect(maybeButtonByText(wrapper, 'Delete')).toBeDefined()
     // Path-mode-only content must not leak into unit mode.
-    expect(wrapper.text()).not.toContain('Parent unit:')
+    expect(wrapper.text()).not.toContain('Perk Pools')
   })
 })

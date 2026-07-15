@@ -71,7 +71,7 @@
               </div>
               <EditorField label="Category" hint="(grouping only; sets the catalog folder)" for-id="ie-category">
                 <select id="ie-category" v-model="form.category">
-                  <option v-for="c in CATEGORY_OPTIONS" :key="c" :value="c">{{ c }}</option>
+                  <option v-for="c in categoryOptions" :key="c" :value="c">{{ c }}</option>
                 </select>
               </EditorField>
             </SectionCard>
@@ -403,7 +403,12 @@ const overridesOpen = reactive<Record<number, boolean>>({})
 const TIER_OPTIONS: ItemTier[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 // Organizational grouping only — also picks the catalog subdirectory the def is
 // written to (Weapon → catalog/items/weapons/…). Not an equip restriction.
-const CATEGORY_OPTIONS = ['Weapon', 'Armor', 'Shield', 'Accessory', 'Consumable']
+const EQUIPMENT_CATEGORY_OPTIONS = ['Weapon', 'Armor', 'Shield', 'Accessory']
+// Consumable items live in their own category and nowhere else: equipment kinds
+// never offer Consumable, and a consumable is only ever the Consumable category.
+const categoryOptions = computed(() =>
+  form.value?.kind === 'consumable' ? ['Consumable'] : EQUIPMENT_CATEGORY_OPTIONS,
+)
 // Mirrors itemCategorySubdir on the server; drives the file path in the header.
 const CATEGORY_SUBDIR: Record<string, string> = {
   Weapon: 'weapons', Armor: 'armor', Shield: 'shields', Accessory: 'accessories', Consumable: 'consumables',

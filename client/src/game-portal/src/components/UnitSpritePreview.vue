@@ -45,9 +45,24 @@
             FPS
             <input type="number" min="1" max="30" v-model.number="fps" />
           </label>
+
+          <button
+            v-if="hasChannelAbility"
+            type="button"
+            class="sprite-preview__channel"
+            :class="{ 'is-active': channelActive }"
+            @click="toggleChannel"
+          >
+            Channel Loop {{ channelActive ? '■' : '▶' }}
+          </button>
         </div>
 
         <p v-if="fallbackNote" class="sprite-preview__note">{{ fallbackNote }}</p>
+        <p v-if="channelActive" class="sprite-preview__note sprite-preview__note--channel">
+          Channelling <strong>{{ channelAbility?.id }}</strong> — looping casting frames
+          {{ channelRangeLabel }}, firing from the attack origin every
+          {{ channelAbility?.tickIntervalSeconds ? channelAbility.tickIntervalSeconds + 's' : 'tick' }}.
+        </p>
 
         <div class="sprite-preview__origin">
           <button
@@ -103,6 +118,8 @@ import {
   getUnitFrame, getUnitSpriteSet, UNIT_DIRECTIONS,
   type UnitDirection, type UnitSpriteSet,
 } from '@/game/rendering/unitSprites'
+import { channelLoopFrameIndex } from '@/game/rendering/unitAnimation'
+import { channelTickPhase, type ChannelAbilityInfo } from '@/game/units/channelPreview'
 import { getUnitBoundsFor, type UnitAttackOrigin, type UnitOriginPoint } from '@/game/maps/unitDefs'
 import {
   canvasToOrigin, deriveDefaultOrigin, originToCanvas, resolveFacingOrigin, unitAnchorCanvas,
@@ -121,6 +138,13 @@ const props = defineProps<{
   // the game uses renders it here.
   projectile?: string
   projectileScale?: number
+  // Channel-loop preview: the [start,end] casting frames the unit loops while
+  // channelling, and info about the channelling ability driving it. When
+  // `channelAbility` is present the "Channel Loop" control appears so the
+  // author can replay the exact in-game loop (and see it fire from the attack
+  // origin). Both are undefined for units that don't channel.
+  channelLoop?: { start: number; end: number }
+  channelAbility?: ChannelAbilityInfo | null
 }>()
 const emit = defineEmits<{ 'update:attackOrigin': [UnitAttackOrigin | undefined] }>()
 
@@ -320,6 +344,52 @@ function fireTestProjectile() {
   fireTestStartedAt = performance.now()
 }
 
+// --- Channel-loop preview ---
+// Replays the unit's channel exactly as it renders in game: the casting sheet
+// looping over [channelLoop.start, channelLoop.end] (via the shared
+// channelLoopFrameIndex the runtime controller uses), with a pulse firing from
+// the attack origin on the ability's tick cadence. Only offered when the unit
+// actually has a channelling ability.
+const hasChannelAbility = computed(() => props.channelAbility != null)
+const channelActive = ref(false)
+// Integer frame-step counter, advanced once per fps tick while channelling —
+// the phase fed to channelLoopFrameIndex. Independent of `frame` so a manual
+// scrub can't corrupt the loop.
+const channelStep = ref(0)
+let channelStartedAt = 0
+
+const channelRangeLabel = computed(() => {
+  const loop = props.channelLoop
+  if (!loop || channelLoopFrameIndex(loop.start, loop.end, 0) === null) return '(no loop range set)'
+  return `${loop.start}–${loop.end}`
+})
+
+// The casting frame for a given loop step. Falls back to plain cycling of the
+// casting sheet when no valid loop range is authored, so the author still sees
+// the channel play (and can tell the loop is unset).
+function channelFrameFor(step: number): number {
+  const loop = props.channelLoop
+  const idx = channelLoopFrameIndex(loop?.start, loop?.end, step)
+  return idx ?? (step % Math.max(1, frameCount.value))
+}
+
+function toggleChannel() {
+  channelActive.value = !channelActive.value
+  if (!channelActive.value) return
+  // Drive the casting sheet (matches pickAnimation's Channeling -> 'casting').
+  // Set BEFORE writing `frame` so the animation-change watch — which is guarded
+  // against clobbering the pinned frame while channelling — has already seen
+  // channelActive === true.
+  animation.value = 'casting'
+  channelStep.value = 0
+  channelStartedAt = performance.now()
+  playing.value = true
+  // The whole point of the mode is to see the loop leave the attack origin, so
+  // surface the crosshair too.
+  showAttackOrigin.value = true
+  frame.value = channelFrameFor(0)
+}
+
 const hasArt = computed(() => set.value !== null)
 const displayKey = computed(() => props.pathKey || props.unitKey || '(none)')
 // rotations first, then the unit's real packed animations, sorted.
@@ -371,8 +441,17 @@ watch(() => [props.unitKey, props.pathKey], refresh, { immediate: true })
 
 // Reset/clamp the frame whenever the selected animation (or its frame count)
 // changes, so a scrubber left past a shorter animation's end doesn't break.
-watch(animation, () => { frame.value = 0 })
+// While channelling, picking any non-casting animation exits channel mode; the
+// frame reset is skipped for the casting sheet so the loop stays pinned.
+watch(animation, (a) => {
+  if (channelActive.value && a !== 'casting') channelActive.value = false
+  if (!channelActive.value) frame.value = 0
+})
 watch(frameCount, (fc) => { frame.value = frame.value % Math.max(1, fc) })
+
+// A unit swap that clears the channelling ability must drop channel mode —
+// otherwise the casting sheet keeps looping on a unit that doesn't channel.
+watch(() => props.channelAbility, (ca) => { if (!ca) channelActive.value = false })
 
 let raf = 0
 let lastStep = 0
@@ -380,7 +459,12 @@ function tick(now: number) {
   raf = requestAnimationFrame(tick)
   if (playing.value && now - lastStep >= 1000 / Math.max(1, fps.value)) {
     lastStep = now
-    frame.value = (frame.value + 1) % Math.max(1, frameCount.value)
+    if (channelActive.value) {
+      channelStep.value += 1
+      frame.value = channelFrameFor(channelStep.value)
+    } else {
+      frame.value = (frame.value + 1) % Math.max(1, frameCount.value)
+    }
   }
   drawMain(now)
 }
@@ -503,8 +587,41 @@ function drawMain(now: number) {
   if (!geo) return
   const ctx = mainCanvas.value?.getContext('2d')
   if (!ctx) return
-  if (showAttackOrigin.value) drawAttackOriginOverlay(ctx, geo)
+  // Channelling always shows the origin crosshair (the loop is meant to be read
+  // against its launch point) even if the author collapsed the section.
+  if (showAttackOrigin.value || channelActive.value) drawAttackOriginOverlay(ctx, geo)
+  if (channelActive.value) drawChannelBeam(ctx, geo, now)
   if (fireTestActive.value) drawFireTestGhost(ctx, geo, now)
+}
+
+// Draws the channel beam: a faint line from the attack origin along the current
+// facing, plus a pulse that travels outward once per ability tick — a
+// preview-only visualization of where the channel emits and at what cadence.
+// Never touches sim state.
+function drawChannelBeam(ctx: CanvasRenderingContext2D, geo: PreviewDrawGeometry, now: number) {
+  const anchor = unitAnchorCanvas(geo, bounds.value)
+  const originPt = originToCanvas(currentOrigin.value, anchor, geo.scale)
+  const dir = FIRE_TEST_DIRECTION_VECTORS[direction.value]
+  const endX = originPt.x + dir.x * FIRE_TEST_TRAVEL
+  const endY = originPt.y + dir.y * FIRE_TEST_TRAVEL
+
+  ctx.save()
+  ctx.strokeStyle = 'rgba(125, 211, 252, 0.35)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.moveTo(originPt.x, originPt.y)
+  ctx.lineTo(endX, endY)
+  ctx.stroke()
+
+  // Pulse position along the beam = phase [0,1) through the current tick.
+  const phase = channelTickPhase(now - channelStartedAt, props.channelAbility?.tickIntervalSeconds)
+  const px = originPt.x + dir.x * FIRE_TEST_TRAVEL * phase
+  const py = originPt.y + dir.y * FIRE_TEST_TRAVEL * phase
+  ctx.fillStyle = `rgba(56, 189, 248, ${(0.4 + 0.6 * (1 - phase)).toFixed(3)})`
+  ctx.beginPath()
+  ctx.arc(px, py, 4, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
 }
 </script>
 
@@ -604,6 +721,35 @@ function drawMain(now: number) {
   color: #fcd34d;
   font-size: 0.72rem;
   text-align: center;
+}
+
+.sprite-preview__note--channel {
+  color: #7dd3fc;
+}
+
+.sprite-preview__note--channel strong {
+  color: #bae6fd;
+}
+
+.sprite-preview__channel {
+  align-self: flex-end;
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.14);
+  color: #f8fafc;
+  padding: 7px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.sprite-preview__channel:hover {
+  border-color: rgba(56, 189, 248, 0.85);
+  background: rgba(56, 189, 248, 0.24);
+}
+
+.sprite-preview__channel.is-active {
+  border-color: rgba(56, 189, 248, 0.9);
+  background: rgba(56, 189, 248, 0.32);
 }
 
 .sprite-preview__empty {

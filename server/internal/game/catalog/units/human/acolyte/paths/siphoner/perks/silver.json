@@ -1,53 +1,53 @@
 [
   {
-    "id": "chain_siphon",
-    "displayName": "Chain Siphon",
-    "icon": "perk-chain-siphon",
-    "description": "Siphon Life chains to additional nearby enemies for reduced damage and healing.",
-    "tooltipTemplate": "Siphon Life arcs to up to {additionalTargetCount:0} additional enemies within {chainRange:0}. Secondary beams deal {secondaryDamageMultiplier%} damage and produce {secondaryHealingMultiplier%} healing.",
+    "id": "amplify_damage",
+    "displayName": "Amplify Damage",
+    "description": "Periodically afflicts enemies around the Siphoner's target so they take amplified damage from all sources.",
+    "tooltipTemplate": "Every {cooldownSeconds:1}s the Siphoner amplifies enemies within {radius:0} of its current foe. Afflicted enemies take {damageTakenMultiplier+%} damage from all sources for {durationSeconds:1}s.",
+    "icon": "perk-amplify-damage",
     "config": {
-      "additionalTargetCount": 1,
-      "chainRange": 140,
-      "secondaryDamageMultiplier": 0.50,
-      "secondaryHealingMultiplier": 0.50
+      "castRange": 240,
+      "cooldownSeconds": 14,
+      "damageTakenMultiplier": 0.25,
+      "durationSeconds": 6,
+      "radius": 90
     }
   },
   {
-    "id": "amplify_damage",
-    "displayName": "Amplify Damage",
-    "icon": "perk-amplify-damage",
-    "description": "Periodically afflicts enemies around the Siphoner's target so they take amplified damage from all sources.",
-    "tooltipTemplate": "Every {cooldownSeconds:1}s the Siphoner amplifies enemies within {radius:0} of its current foe. Afflicted enemies take {damageTakenMultiplier+%} damage from all sources for {durationSeconds:1}s.",
+    "id": "chain_siphon",
+    "displayName": "Chain Siphon",
+    "description": "Siphon Life chains to additional nearby enemies for reduced damage and healing.",
+    "tooltipTemplate": "Siphon Life arcs to up to {additionalTargetCount:0} additional enemies within {chainRange:0}. Secondary beams deal {secondaryDamageMultiplier%} damage and produce {secondaryHealingMultiplier%} healing.",
+    "icon": "perk-chain-siphon",
     "config": {
-      "radius": 90,
-      "durationSeconds": 6.0,
-      "damageTakenMultiplier": 0.25,
-      "cooldownSeconds": 14.0,
-      "castRange": 240
+      "additionalTargetCount": 1,
+      "chainRange": 140,
+      "secondaryDamageMultiplier": 0.5,
+      "secondaryHealingMultiplier": 0.5
     }
   },
   {
     "id": "dark_renewal",
     "displayName": "Dark Renewal",
-    "icon": "perk-dark-renewal",
     "description": "Excess Siphon Life healing converts to a persistent shield on the Siphoner, then on a nearby ally.",
     "tooltipTemplate": "{shieldConversionPercent%} of excess Siphon Life healing converts to shielding. Fills the Siphoner's pool (cap {maxSelfShield:0}), then overflows to a nearby ally within {allyRadius:0} (cap {maxAllyShield:0} per ally). Shields persist until depleted.",
+    "icon": "perk-dark-renewal",
     "config": {
-      "shieldConversionPercent": 1.0,
-      "maxSelfShield": 40,
+      "allyRadius": 220,
       "maxAllyShield": 40,
-      "allyRadius": 220
+      "maxSelfShield": 40,
+      "shieldConversionPercent": 1
     }
   },
   {
     "id": "shared_suffering",
     "displayName": "Shared Suffering",
-    "icon": "perk-shared-suffering",
     "description": "A portion of Siphon Life damage echoes to every nearby enemy.",
     "tooltipTemplate": "Siphon Life damage echoes for {damageSharePercent%} to every other visible enemy within {radius:0} of the primary target.",
+    "icon": "perk-shared-suffering",
     "config": {
-      "radius": 120,
-      "damageSharePercent": 0.40
+      "damageSharePercent": 0.4,
+      "radius": 120
     }
   }
 ]

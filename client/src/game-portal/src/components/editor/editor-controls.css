@@ -9,6 +9,11 @@
  * the custom game cursor (see CLAUDE.md).
  */
 
+/* An <input> with no `type` attribute defaults to type=text but is NOT matched
+   by input[type='text'] — so a bare <input> (abilities list, targetable types,
+   combat profile, etc.) would otherwise fall through to the browser's white
+   default. `input:not([type])` pulls those back into the themed set. */
+.ed-shell input:not([type]),
 .ed-shell input[type='text'],
 .ed-shell input[type='number'],
 .ed-shell input[type='search'],

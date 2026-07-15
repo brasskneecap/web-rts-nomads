@@ -19,8 +19,7 @@ function stubCatalogFetch(overrides: Record<string, unknown> = {}) {
           def: {
             path: 'marksman',
             description: 'A ranged specialist path.',
-            visionRange: 6,
-            ranks: { bronze: { damageMultiplier: 1.5 }, silver: {}, gold: {} },
+            ranks: { bronze: { damageMultiplier: 1.5, visionRange: 7 }, silver: {}, gold: {} },
           },
         },
       ],
@@ -51,57 +50,41 @@ function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
   return btn
 }
 
-function findLabeledInput(wrapper: ReturnType<typeof mount>, labelPrefix: string) {
-  const label = wrapper.findAll('label').find((l) => l.text().startsWith(labelPrefix))
-  if (!label) throw new Error(`no label starting with "${labelPrefix}"`)
-  const input = label.find('input')
-  if (!input.exists()) throw new Error(`label "${labelPrefix}" has no nested input`)
-  return input
-}
-
 afterEach(() => vi.restoreAllMocks())
 
-async function expandAndSelectMarksman(wrapper: ReturnType<typeof mount>) {
-  await wrapper.find('button.unit-editor__tree-toggle').trigger('click')
+// Reach a path: select its parent unit, open the Promotion Paths tab, then click
+// the path's tab in the nested strip. Sections within a path are sub-tabbed but
+// all stay mounted (v-show), so text assertions see every section.
+async function selectMarksman(wrapper: ReturnType<typeof mount>) {
+  await findButtonByText(wrapper, 'Archer').trigger('click')
+  await findButtonByText(wrapper, 'Promotion Paths').trigger('click')
+  await flushPromises()
   await findButtonByText(wrapper, 'marksman').trigger('click')
 }
 
-// Path-mode sections are a collapsible accordion (only Identity starts open,
-// same as the unit form) — a section's field markup isn't in the DOM at all
-// until its summary button is clicked open.
-async function openPathSection(wrapper: ReturnType<typeof mount>, summaryText: string) {
-  await wrapper.findAll('button.unit-editor__section-summary')
-    .find((b) => b.text() === summaryText)!
-    .trigger('click')
-}
-
 describe('UnitTypeEditorPanel path form — selecting an existing path', () => {
-  it('shows the locked Identity id, the Stats overlay value, a resolved rank-grid cell, and perk pool badges', async () => {
+  it('shows the locked action-bar id, the per-rank vision override, a resolved rank-grid cell, and perk pool badges', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
-    await expandAndSelectMarksman(wrapper)
+    await selectMarksman(wrapper)
 
-    // Identity: id locked for an existing path.
-    const idInput = findLabeledInput(wrapper, 'Path ID')
+    // Identity: id locked for an existing path (lives in the action bar).
+    const idInput = wrapper.find('#pe-id')
     expect((idInput.element as HTMLInputElement).value).toBe('marksman')
     expect(idInput.attributes('disabled')).toBeDefined()
 
-    // Stats: the path's own authored Vision Range override shows up (Vision
-    // lives in Stats, matching the base unit's layout).
-    await openPathSection(wrapper, 'Stats')
-    const visionInput = findLabeledInput(wrapper, 'Vision Range')
-    expect((visionInput.element as HTMLInputElement).value).toBe('6')
+    // Vision Range is now a per-rank flat override — bronze authored 7.
+    const bronzeVision = wrapper.find('input[data-rank="bronze"][data-field="visionRange"]')
+    expect((bronzeVision.element as HTMLInputElement).value).toBe('7')
 
-    // Rank grid: base 18 damage × 1.5 = 27, resolved inline (Task 4a's honesty
-    // requirement) — proves the parent unit's real stats reached the grid.
-    await openPathSection(wrapper, 'Ranks')
+    // Rank grid: base 18 damage × 1.5 = 27, resolved inline — proves the parent
+    // unit's real stats reached the grid.
     const rankText = wrapper.text()
     expect(rankText).toContain('18')
     expect(rankText).toContain('27')
 
     // Perk pools: both a wired and an inert perk render with honest badges.
-    await openPathSection(wrapper, 'Perk Pools')
     const perkText = wrapper.text()
     expect(perkText).toContain('piercing_shot')
     expect(perkText).toContain('Wired')
@@ -117,16 +100,15 @@ describe('UnitTypeEditorPanel path form — creating a new path', () => {
     await flushPromises()
 
     await findButtonByText(wrapper, 'Archer').trigger('click')
-    await wrapper.find('button.unit-editor__new').trigger('click')
-    await findButtonByText(wrapper, 'New Path').trigger('click')
-    await findButtonByText(wrapper, 'Create').trigger('click')
+    await findButtonByText(wrapper, 'Promotion Paths').trigger('click')
+    await flushPromises()
+    await findButtonByText(wrapper, '+ New Path').trigger('click')
 
-    const idInput = findLabeledInput(wrapper, 'Path ID')
+    const idInput = wrapper.find('#pe-id')
     expect((idInput.element as HTMLInputElement).value).toBe('')
     expect(idInput.attributes('disabled')).toBeUndefined()
 
     // Empty rank grid: all three ranks render, no resolved values anywhere.
-    await openPathSection(wrapper, 'Ranks')
     const rankText = wrapper.text()
     expect(rankText).toContain('bronze')
     expect(rankText).toContain('silver')
@@ -134,7 +116,6 @@ describe('UnitTypeEditorPanel path form — creating a new path', () => {
     expect(rankText).not.toContain('27')
 
     // Empty perk pools: the empty-pool hint, no perk ids from the catalog.
-    await openPathSection(wrapper, 'Perk Pools')
     const perkText = wrapper.text()
     expect(perkText.toLowerCase()).toContain('empty pool')
     expect(perkText).not.toContain('piercing_shot')
@@ -153,6 +134,6 @@ describe('UnitTypeEditorPanel path form — base-unit mode regression', () => {
     expect(wrapper.text()).toContain('Stats')
     // Path-only sections must not leak into base-unit mode.
     expect(wrapper.text()).not.toContain('Perk Pools')
-    expect(wrapper.text()).not.toContain('Ranks')
+    expect(wrapper.text()).not.toContain('Rank Stats')
   })
 })

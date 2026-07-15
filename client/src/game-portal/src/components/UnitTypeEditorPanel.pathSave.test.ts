@@ -60,17 +60,21 @@ function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
   return btn
 }
 
-function findLabeledInput(wrapper: ReturnType<typeof mount>, labelPrefix: string) {
-  const label = wrapper.findAll('label').find((l) => l.text().startsWith(labelPrefix))
-  if (!label) throw new Error(`no label starting with "${labelPrefix}"`)
-  const input = label.find('input')
-  if (!input.exists()) throw new Error(`label "${labelPrefix}" has no nested input`)
-  return input
+// Reach a path: select its parent unit, open the Promotion Paths tab, then click
+// the path's tab in the nested strip. The path now saves/deletes via its own
+// compact action bar ("Save Path" / "Delete Path"), NOT the unit header's "Save".
+async function selectMarksman(wrapper: ReturnType<typeof mount>) {
+  await findButtonByText(wrapper, 'Archer').trigger('click')
+  await findButtonByText(wrapper, 'Promotion Paths').trigger('click')
+  await flushPromises()
+  await findButtonByText(wrapper, 'marksman').trigger('click')
 }
 
-async function expandAndSelectMarksman(wrapper: ReturnType<typeof mount>) {
-  await wrapper.find('button.unit-editor__tree-toggle').trigger('click')
-  await findButtonByText(wrapper, 'marksman').trigger('click')
+async function startNewPath(wrapper: ReturnType<typeof mount>) {
+  await findButtonByText(wrapper, 'Archer').trigger('click')
+  await findButtonByText(wrapper, 'Promotion Paths').trigger('click')
+  await flushPromises()
+  await findButtonByText(wrapper, '+ New Path').trigger('click')
 }
 
 afterEach(() => vi.restoreAllMocks())
@@ -80,7 +84,7 @@ describe('UnitTypeEditorPanel — savePath (existing path)', () => {
     const calls = stubApi()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
-    await expandAndSelectMarksman(wrapper)
+    await selectMarksman(wrapper)
 
     await findButtonByText(wrapper, 'Save Path').trigger('click')
     await flushPromises()
@@ -113,7 +117,7 @@ describe('UnitTypeEditorPanel — savePath (existing path)', () => {
     })
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
-    await expandAndSelectMarksman(wrapper)
+    await selectMarksman(wrapper)
 
     await findButtonByText(wrapper, 'Save Path').trigger('click')
     await flushPromises()
@@ -137,12 +141,9 @@ describe('UnitTypeEditorPanel — Add Path ordering (spec §7.1/§9.1)', () => {
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
 
-    await findButtonByText(wrapper, 'Archer').trigger('click')
-    await wrapper.find('button.unit-editor__new').trigger('click')
-    await findButtonByText(wrapper, 'New Path').trigger('click')
-    await findButtonByText(wrapper, 'Create').trigger('click')
+    await startNewPath(wrapper)
 
-    const idInput = findLabeledInput(wrapper, 'Path ID')
+    const idInput = wrapper.find('#pe-id')
     await idInput.setValue('gold_arrow')
 
     // Checkbox defaults CHECKED per spec §7.1 — leave it as-is.
@@ -176,12 +177,9 @@ describe('UnitTypeEditorPanel — Add Path ordering (spec §7.1/§9.1)', () => {
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
 
-    await findButtonByText(wrapper, 'Archer').trigger('click')
-    await wrapper.find('button.unit-editor__new').trigger('click')
-    await findButtonByText(wrapper, 'New Path').trigger('click')
-    await findButtonByText(wrapper, 'Create').trigger('click')
+    await startNewPath(wrapper)
 
-    const idInput = findLabeledInput(wrapper, 'Path ID')
+    const idInput = wrapper.find('#pe-id')
     await idInput.setValue('gold_arrow')
 
     const checkboxLabel = wrapper.findAll('label').find((l) => l.text().includes('Also add to'))!
@@ -202,7 +200,7 @@ describe('UnitTypeEditorPanel — removePath', () => {
     })
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
-    await expandAndSelectMarksman(wrapper)
+    await selectMarksman(wrapper)
 
     const getPathsCallsBefore = calls.filter((c) => c.method === 'GET' && c.url.endsWith('/catalog/paths')).length
 
@@ -214,17 +212,16 @@ describe('UnitTypeEditorPanel — removePath', () => {
     expect(getPathsCallsAfter).toBe(getPathsCallsBefore)
   })
 
-  it('Delete Path is disabled for a brand-new, not-yet-saved path', async () => {
+  it('has no Delete Path action for a brand-new, not-yet-saved path', async () => {
     stubApi()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
 
-    await findButtonByText(wrapper, 'Archer').trigger('click')
-    await wrapper.find('button.unit-editor__new').trigger('click')
-    await findButtonByText(wrapper, 'New Path').trigger('click')
-    await findButtonByText(wrapper, 'Create').trigger('click')
+    await startNewPath(wrapper)
 
-    const deleteBtn = findButtonByText(wrapper, 'Delete Path')
-    expect(deleteBtn.attributes('disabled')).toBeDefined()
+    // A brand-new path has nothing to delete, so the header shows no destructive
+    // action at all (rather than a disabled one).
+    const deleteBtn = wrapper.findAll('button').find((b) => b.text() === 'Delete Path')
+    expect(deleteBtn).toBeUndefined()
   })
 })

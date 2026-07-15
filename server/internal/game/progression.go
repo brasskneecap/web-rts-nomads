@@ -100,6 +100,8 @@ type pathModifierDef struct {
 	Armor                 int
 	DodgeChance           float64
 	BlockChance           float64
+	// VisionRange is a per-rank flat override (world pixels); 0 = no override.
+	VisionRange float64
 }
 
 // Armor tuning. Damage reduction follows reduction = armor / (armor + armorMitigationK).
@@ -457,6 +459,11 @@ func (s *GameState) applyRankModifiersLocked(unit *Unit, preserveHealthPercent b
 	baseVision := unit.BaseVisionRange
 	if pathVision, ok := pathVisionRangeFor(unit.ProgressionPath); ok {
 		baseVision = pathVision
+	}
+	// A per-rank flat vision override is the most specific source, so it wins
+	// over both the path-level override and the unit-def base.
+	if pathDef.VisionRange > 0 {
+		baseVision = pathDef.VisionRange
 	}
 	unit.VisionRange = baseVision * s.perkVisionRangeMultiplierLocked(unit)
 

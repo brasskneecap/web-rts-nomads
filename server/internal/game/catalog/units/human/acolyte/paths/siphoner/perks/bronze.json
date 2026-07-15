@@ -1,10 +1,42 @@
 [
   {
+    "id": "lingering_hex",
+    "displayName": "Lingering Hex",
+    "description": "Periodically hex an area near the Siphoner's target, slowing enemy movement and attack speed.",
+    "tooltipTemplate": "While in combat, every {cooldownSeconds:1}s the Siphoner automatically hexes enemies within {radius:0} of its current foe. Hexed enemies move at {moveSpeedMultiplier%} speed and attack at {attackSpeedMultiplier%} speed for {durationSeconds:1}s. Costs {manaCost:0} mana per pulse.",
+    "icon": "perk-lingering-hex",
+    "config": {
+      "attackSpeedMultiplier": 0.8,
+      "castRange": 240,
+      "cooldownSeconds": 14,
+      "durationSeconds": 7,
+      "manaCost": 15,
+      "moveSpeedMultiplier": 0.75,
+      "radius": 90
+    }
+  },
+  {
+    "id": "mark_of_weakness",
+    "displayName": "Mark of Weakness",
+    "description": "Periodically mark an area near the Siphoner's target, exposing enemies to armor loss and reduced healing.",
+    "tooltipTemplate": "While in combat, every {cooldownSeconds:1}s the Siphoner automatically marks enemies within {radius:0} of its current foe. Marked enemies lose {armorReduction:0} armor and receive {healingReceivedMultiplier%} of incoming healing for {durationSeconds:1}s. Costs {manaCost:0} mana per pulse.",
+    "icon": "perk-mark-of-weakness",
+    "config": {
+      "armorReduction": 50,
+      "castRange": 240,
+      "cooldownSeconds": 14,
+      "durationSeconds": 6,
+      "healingReceivedMultiplier": 0.7,
+      "manaCost": 15,
+      "radius": 90
+    }
+  },
+  {
     "id": "soul_leech",
     "displayName": "Soul Leech",
-    "icon": "perk-soul-leech",
     "description": "Siphon Life deals more damage and generates more healing.",
     "tooltipTemplate": "Siphon Life deals {damageMultiplier+%} damage and produces {healingMultiplier+%} healing.",
+    "icon": "perk-soul-leech",
     "config": {
       "damageMultiplier": 2,
       "healingMultiplier": 2
@@ -13,46 +45,14 @@
   {
     "id": "withering_beam",
     "displayName": "Withering Beam",
-    "icon": "perk-withering-beam",
     "description": "Channeling Siphon Life weakens the target, reducing its outgoing damage.",
     "tooltipTemplate": "Every {secondsPerStack:1}s of continuous Siphon Life applies a stack of Withering ({damageReductionPerStack%} less damage dealt per stack, up to {maxStacks:0} stacks). Stacks linger {lingerSeconds:1}s after the beam breaks.",
+    "icon": "perk-withering-beam",
     "config": {
-      "secondsPerStack": 1.0,
-      "damageReductionPerStack": 0.10,
+      "damageReductionPerStack": 0.1,
+      "lingerSeconds": 1.5,
       "maxStacks": 3,
-      "lingerSeconds": 1.5
-    }
-  },
-  {
-    "id": "lingering_hex",
-    "displayName": "Lingering Hex",
-    "icon": "perk-lingering-hex",
-    "description": "Periodically hex an area near the Siphoner's target, slowing enemy movement and attack speed.",
-    "tooltipTemplate": "While in combat, every {cooldownSeconds:1}s the Siphoner automatically hexes enemies within {radius:0} of its current foe. Hexed enemies move at {moveSpeedMultiplier%} speed and attack at {attackSpeedMultiplier%} speed for {durationSeconds:1}s. Costs {manaCost:0} mana per pulse.",
-    "config": {
-      "radius": 90,
-      "durationSeconds": 7.0,
-      "moveSpeedMultiplier": 0.75,
-      "attackSpeedMultiplier": 0.80,
-      "manaCost": 15,
-      "cooldownSeconds": 14.0,
-      "castRange": 240
-    }
-  },
-  {
-    "id": "mark_of_weakness",
-    "displayName": "Mark of Weakness",
-    "icon": "perk-mark-of-weakness",
-    "description": "Periodically mark an area near the Siphoner's target, exposing enemies to armor loss and reduced healing.",
-    "tooltipTemplate": "While in combat, every {cooldownSeconds:1}s the Siphoner automatically marks enemies within {radius:0} of its current foe. Marked enemies lose {armorReduction:0} armor and receive {healingReceivedMultiplier%} of incoming healing for {durationSeconds:1}s. Costs {manaCost:0} mana per pulse.",
-    "config": {
-      "radius": 90,
-      "durationSeconds": 6.0,
-      "armorReduction": 50,
-      "healingReceivedMultiplier": 0.70,
-      "manaCost": 15,
-      "cooldownSeconds": 14.0,
-      "castRange": 240
+      "secondsPerStack": 1
     }
   }
 ]

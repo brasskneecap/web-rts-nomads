@@ -16,6 +16,8 @@ export interface PathRankStats {
   armor?: number
   dodgeChance?: number
   blockChance?: number
+  // Per-rank flat vision override (world pixels); undefined = no override.
+  visionRange?: number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
 }
