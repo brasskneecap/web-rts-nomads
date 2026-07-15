@@ -304,7 +304,6 @@
       <div class="icon-gallery__inner">
         <div class="icon-gallery__header">
           <span>Choose an icon</span>
-          <UiButton size="sm" @click="galleryOpen = false">Close</UiButton>
         </div>
         <div class="icon-gallery__filter">
           <button
@@ -336,6 +335,9 @@
           </div>
           <p v-else class="icon-gallery__empty">No icon groups selected.</p>
         </GameScrollArea>
+        <div class="icon-gallery__footer">
+          <UiButton size="sm" variant="secondary" @click="galleryOpen = false">Close</UiButton>
+        </div>
       </div>
     </UiPanel>
   </div>
@@ -1092,6 +1094,13 @@ function onKindChanged() {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+/* Standard modal footer: the dismiss action sits at the bottom-right. The
+   scroll area above flexes to fill, pinning this row to the panel's bottom. */
+.icon-gallery__footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .icon-gallery__chip {
