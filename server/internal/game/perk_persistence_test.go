@@ -155,6 +155,81 @@ func TestPerkSelectionEquivalence(t *testing.T) {
 	}
 }
 
+// TestEligiblePerksUnionWithReferences pins Task 2's union step:
+// eligiblePerksForUnitAtRank must include a perk referenced via the path's
+// PerksByRank even when that perk's OWN eligibility fields would not match
+// the unit, must not duplicate a perk that matches BOTH the eligibility scan
+// AND the reference list, and must keep the ID-sorted output determinism
+// invariant that rngPerks.Intn relies on.
+func TestEligiblePerksUnionWithReferences(t *testing.T) {
+	withIsolatedPerkCatalogDir(t)
+	withIsolatedPathCatalogDir(t)
+
+	// Eligibility does NOT match soldier/berserker/bronze (UnitType "nobody"),
+	// so this perk can only appear in the pool via the explicit reference.
+	if err := SavePerkDef(&PerkDef{ID: "ref_only_perk", DisplayName: "Ref Only", UnitType: "nobody", Rank: unitRankBronze}); err != nil {
+		t.Fatalf("SavePerkDef(ref_only_perk): %v", err)
+	}
+	// Eligibility DOES match soldier/berserker/bronze AND is also referenced
+	// explicitly — must appear exactly once (dedup via seen).
+	if err := SavePerkDef(&PerkDef{ID: "dual_match_perk", DisplayName: "Dual Match", UnitType: "soldier", Path: "berserker", Rank: unitRankBronze}); err != nil {
+		t.Fatalf("SavePerkDef(dual_match_perk): %v", err)
+	}
+
+	if err := SavePathDef("soldier", &pathCatalogFile{
+		Path:        "berserker",
+		PerksByRank: map[string][]string{unitRankBronze: {"ref_only_perk", "dual_match_perk"}},
+	}); err != nil {
+		t.Fatalf("SavePathDef(berserker): %v", err)
+	}
+
+	unit := &Unit{UnitType: "soldier", ProgressionPath: "berserker"}
+	pool := eligiblePerksForUnitAtRank(unit, unitRankBronze)
+
+	counts := map[string]int{}
+	for _, def := range pool {
+		counts[def.ID]++
+	}
+	if counts["ref_only_perk"] != 1 {
+		t.Fatalf("ref_only_perk count = %d, want 1 (pool=%v)", counts["ref_only_perk"], perkIDs(pool))
+	}
+	if counts["dual_match_perk"] != 1 {
+		t.Fatalf("dual_match_perk count = %d, want 1 (pool=%v)", counts["dual_match_perk"], perkIDs(pool))
+	}
+	for i := 1; i < len(pool); i++ {
+		if pool[i-1].ID > pool[i].ID {
+			t.Fatalf("pool not ID-sorted: %v", perkIDs(pool))
+		}
+	}
+}
+
+// TestEligiblePerksUnion_EmptyRefsIsNoOp asserts that with no path perk
+// references authored (the default/pre-Task-1 state), eligiblePerksForUnitAtRank
+// returns exactly the eligibility-matched set — the union step is a byte-
+// identical no-op when pathPerkRefsForRank returns nil.
+func TestEligiblePerksUnion_EmptyRefsIsNoOp(t *testing.T) {
+	unit := &Unit{UnitType: "soldier", ProgressionPath: "berserker"}
+	want := []string{"bloodlust", "cleaving_rage", "frenzy_core", "relentless", "savage_strikes"}
+	var got []string
+	for _, def := range eligiblePerksForUnitAtRank(unit, unitRankBronze) {
+		got = append(got, def.ID)
+	}
+	sort.Strings(got)
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("no-refs pool = %v, want %v", got, want)
+	}
+}
+
+// perkIDs is a small test helper for readable failure messages.
+func perkIDs(pool []*PerkDef) []string {
+	ids := make([]string, len(pool))
+	for i, def := range pool {
+		ids[i] = def.ID
+	}
+	return ids
+}
+
 func TestPerkDefAccessors_ConcurrentReadsDoNotRace(t *testing.T) {
 	const goroutines = 8
 	const iterations = 200

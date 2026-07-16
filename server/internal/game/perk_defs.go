@@ -323,6 +323,7 @@ func perkDefByID(id string) *PerkDef {
 // ─────────────────────────────────────────────────────────────────────────────
 func eligiblePerksForUnitAtRank(unit *Unit, rank string) []*PerkDef {
 	var eligible []*PerkDef
+	seen := map[string]struct{}{}
 	for _, def := range snapshotPerkDefs() {
 		if def.UnitType != "" && def.UnitType != unit.UnitType {
 			continue
@@ -334,6 +335,20 @@ func eligiblePerksForUnitAtRank(unit *Unit, rank string) []*PerkDef {
 			continue
 		}
 		eligible = append(eligible, def)
+		seen[def.ID] = struct{}{}
+	}
+	// Union in the path's explicit per-rank perk references (SP2). A referenced
+	// perk that already matched via eligibility is not added twice (dedup via
+	// seen). Unknown ids resolve fail-safe (skipped). The ID-sort below keeps
+	// rngPerks.Intn deterministic regardless of insertion order.
+	for _, perkID := range pathPerkRefsForRank(unit.ProgressionPath, rank) {
+		if _, dup := seen[perkID]; dup {
+			continue
+		}
+		if def, ok := perkDefLookup(perkID); ok {
+			eligible = append(eligible, def)
+			seen[perkID] = struct{}{}
+		}
 	}
 	// Sort by ID before returning so that rngPerks.Intn picks from a
 	// deterministic order regardless of map iteration order. Without this sort,
