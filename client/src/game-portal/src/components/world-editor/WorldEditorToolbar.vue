@@ -32,7 +32,7 @@ export const WORLD_EDITOR_CATEGORIES: WorldEditorCategory[] = [
   { id: 'unit-types', label: 'Units', enabled: true },
   { id: 'perks', label: 'Perks', enabled: false },
   { id: 'abilities', label: 'Abilities', enabled: true },
-  { id: 'effects', label: 'Effects', enabled: false },
+  { id: 'effects', label: 'Effects', enabled: true },
   { id: 'projectiles', label: 'Projectiles', enabled: false },
   { id: 'campaigns', label: 'Campaigns', enabled: false },
   { id: 'play', label: '▶ Play', enabled: true },

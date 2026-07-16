@@ -17,7 +17,7 @@ describe('world editor toolbar categories', () => {
     expect(byId.abilities.enabled).toBe(true)
     expect(byId.exit.enabled).toBe(true)
     // Later sub-projects: visible but disabled ("coming soon").
-    expect(byId.effects.enabled).toBe(false)
+    expect(byId.effects.enabled).toBe(true)
     expect(byId.projectiles.enabled).toBe(false)
     expect(byId.perks.enabled).toBe(false)
     expect(byId.campaigns.enabled).toBe(false)
