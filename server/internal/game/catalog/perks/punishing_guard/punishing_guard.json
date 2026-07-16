@@ -1,0 +1,15 @@
+{
+  "id": "punishing_guard",
+  "displayName": "Punishing Guard",
+  "description": "Whenever this unit is struck, the attacker briefly deals reduced damage.",
+  "tooltipTemplate": "Each hit you receive causes the attacker to deal {weakenedMultiplier%} less damage for {durationSeconds:1}s.",
+  "icon": "perk-punishing-guard",
+  "unitType": "soldier",
+  "path": "vanguard",
+  "rank": "silver",
+  "config": {
+    "durationSeconds": 2.5,
+    "weakenedMultiplier": 0.3
+  },
+  "wired": false
+}

@@ -1,0 +1,14 @@
+{
+  "id": "wider_nets",
+  "displayName": "Wider Nets",
+  "description": "Your traps cover 50% more ground — larger zones, bigger explosions, wider triggers.",
+  "tooltipTemplate": "All trap radii increased by {radiusMultiplier+%}.",
+  "icon": "perk-wider-nets",
+  "unitType": "archer",
+  "path": "trapper",
+  "rank": "silver",
+  "config": {
+    "radiusMultiplier": 1.5
+  },
+  "wired": false
+}

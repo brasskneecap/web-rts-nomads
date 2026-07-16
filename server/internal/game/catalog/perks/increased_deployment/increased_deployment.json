@@ -1,0 +1,15 @@
+{
+  "id": "increased_deployment",
+  "displayName": "Increased Deployment",
+  "description": "Each trap placement deploys additional traps at a short offset from the original.",
+  "tooltipTemplate": "Each placement also deploys {bonusTrapCount} additional traps offset by {bonusOffsetDistance} units.",
+  "icon": "perk-increased-deployment",
+  "unitType": "archer",
+  "path": "trapper",
+  "rank": "gold",
+  "config": {
+    "bonusOffsetDistance": 50,
+    "bonusTrapCount": 2
+  },
+  "wired": false
+}

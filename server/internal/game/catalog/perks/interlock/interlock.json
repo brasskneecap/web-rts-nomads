@@ -1,0 +1,15 @@
+{
+  "id": "interlock",
+  "displayName": "Interlock",
+  "description": "Gain bonus armor while standing near any allied unit.",
+  "tooltipTemplate": "Gain +{bonusArmor} armor while any ally is within {radius} units.",
+  "icon": "perk-interlock",
+  "unitType": "soldier",
+  "path": "vanguard",
+  "rank": "bronze",
+  "config": {
+    "bonusArmor": 30,
+    "radius": 80
+  },
+  "wired": false
+}

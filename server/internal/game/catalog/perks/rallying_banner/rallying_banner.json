@@ -1,0 +1,19 @@
+{
+  "id": "rallying_banner",
+  "displayName": "Rallying Banner",
+  "description": "After holding position, plant a banner that grants allies bonus armor and attack speed. The banner persists after you move or fall. Replanting requires a cooldown.",
+  "tooltipTemplate": "After standing still for {stationaryThresholdSeconds:1}s, plant a banner ({bannerRadius} radius, lasts {bannerDurationSeconds:1}s) that grants nearby allies +{bannerArmorBonus} armor and +{bannerAttackSpeedBonus%} attack speed. Replant cooldown: {cooldownSeconds:1}s.",
+  "icon": "perk-rallying-banner",
+  "unitType": "soldier",
+  "path": "vanguard",
+  "rank": "gold",
+  "config": {
+    "bannerArmorBonus": 24,
+    "bannerAttackSpeedBonus": 0.25,
+    "bannerDurationSeconds": 15,
+    "bannerRadius": 160,
+    "cooldownSeconds": 12,
+    "stationaryThresholdSeconds": 3
+  },
+  "wired": false
+}

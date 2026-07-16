@@ -1,0 +1,16 @@
+{
+  "id": "split_shot",
+  "displayName": "Split Shot",
+  "description": "Each attack fires additional arrows at nearby enemies for full damage. When fewer extra targets are in range, the surplus shots fall back onto the primary target at reduced damage.",
+  "tooltipTemplate": "Each attack fires {extraShots} extra arrows at distinct in-range enemies for full damage. Excess shots fall back to the primary target for {secondaryDamageMultiplier%} damage.",
+  "icon": "perk-split-shot",
+  "unitType": "archer",
+  "path": "marksman",
+  "rank": "silver",
+  "config": {
+    "extraShots": 1,
+    "fallbackOnPrimary": 1,
+    "secondaryDamageMultiplier": 0.2
+  },
+  "wired": false
+}

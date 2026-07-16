@@ -1,0 +1,14 @@
+{
+  "id": "hold_the_line",
+  "displayName": "Hold the Line",
+  "description": "Permanently increases maximum HP.",
+  "tooltipTemplate": "Permanently gain +{bonusMaxHP} maximum HP.",
+  "icon": "perk-hold-the-line",
+  "unitType": "soldier",
+  "path": "vanguard",
+  "rank": "bronze",
+  "config": {
+    "bonusMaxHP": 90
+  },
+  "wired": false
+}

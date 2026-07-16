@@ -1,0 +1,15 @@
+{
+  "id": "double_shot",
+  "displayName": "Double Shot",
+  "description": "Each attack has a chance to fire a second arrow shortly after the first. The second shot rolls its own crit and benefits from Split Shot and Pierce when owned.",
+  "tooltipTemplate": "{procChance%} chance on each attack to fire a second shot {delaySeconds:2}s later. The second shot rerolls crit and triggers Split Shot / Pierce when owned.",
+  "icon": "perk-double-shot",
+  "unitType": "archer",
+  "path": "marksman",
+  "rank": "gold",
+  "config": {
+    "delaySeconds": 0.2,
+    "procChance": 0.25
+  },
+  "wired": false
+}
