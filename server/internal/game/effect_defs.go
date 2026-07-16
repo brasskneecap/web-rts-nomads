@@ -3,6 +3,7 @@ package game
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"sort"
 )
@@ -102,6 +103,21 @@ type EffectDef struct {
 // projectileDefsByID / unitDefsByType).
 var effectDefsByID = loadEffectDefs()
 
+// validateEffectDef checks an effect def's content. It is the single validation
+// gate shared by the catalog loader and the editor save path, so a def that
+// loads cleanly is exactly a def that saves cleanly. It does NOT check the id —
+// the loader gates that against the directory name, the editor against
+// effectIDPattern.
+func validateEffectDef(def *EffectDef) error {
+	if def.Duration < 0 {
+		return fmt.Errorf("duration must be >= 0")
+	}
+	if def.Anchor != "" && !isValidEffectAnchor(def.Anchor) {
+		return fmt.Errorf("anchor %q must be one of \"center\" | \"feet\" | \"head\"", def.Anchor)
+	}
+	return nil
+}
+
 func loadEffectDefs() map[string]EffectDef {
 	idEntries, err := fs.ReadDir(effectDefsFS, "catalog/effects")
 	if err != nil {
@@ -128,11 +144,8 @@ func loadEffectDefs() map[string]EffectDef {
 		if def.ID != idKey {
 			panic(rel + ": def.ID " + def.ID + " does not match directory name " + idKey)
 		}
-		if def.Duration < 0 {
-			panic(rel + `: duration must be >= 0`)
-		}
-		if def.Anchor != "" && !isValidEffectAnchor(def.Anchor) {
-			panic(rel + `: anchor "` + string(def.Anchor) + `" must be one of "center" | "feet" | "head"`)
+		if err := validateEffectDef(&def); err != nil {
+			panic(rel + ": " + err.Error())
 		}
 		if _, dup := result[def.ID]; dup {
 			panic(rel + `: duplicate effect id "` + def.ID + `"`)
