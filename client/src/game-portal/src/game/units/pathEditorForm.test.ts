@@ -107,3 +107,20 @@ describe('blank path form serialization', () => {
     expect(req).toEqual({ unit: 'archer', path: { path: '', ranks: {} } })
   })
 })
+
+describe('perksByRank as a modeled field', () => {
+  it('round-trips perksByRank as a modeled field', () => {
+    const form = pathFormFromDef({ path: 'berserker', perksByRank: { bronze: ['tough'] } } as AuthoredPathDef, 'warrior')
+    expect(form.perksByRank).toEqual({ bronze: ['tough'] })
+    expect(form.remainder?.perksByRank).toBeUndefined()
+    const out = saveRequestFromPathForm(form)
+    expect(out.path.perksByRank).toEqual({ bronze: ['tough'] })
+  })
+
+  it('omits an unset perksByRank from the save output', () => {
+    const form = pathFormFromDef({ path: 'berserker' } as AuthoredPathDef, 'warrior')
+    expect(form.perksByRank).toBeUndefined()
+    const out = saveRequestFromPathForm(form)
+    expect('perksByRank' in out.path).toBe(false)
+  })
+})

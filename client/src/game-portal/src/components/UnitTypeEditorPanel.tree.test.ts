@@ -89,11 +89,12 @@ describe('UnitTypeEditorPanel unit list + promotion paths', () => {
     expect((parentInput.element as HTMLInputElement).value).toBe('archer')
 
     // Path sub-tab sections: Combat/Abilities/Rank Stats live under the Combat
-    // tab, Perk Pools under Perks, plus Identity/Preview — all mounted (v-show).
+    // tab, plus Identity/Preview — all mounted (v-show). Perk pools were
+    // retired from the unit editor (perks are now standalone defs edited in
+    // the world-editor Perks screen).
     expect(wrapper.text()).toContain('Combat')
     expect(wrapper.text()).toContain('Abilities')
     expect(wrapper.text()).toContain('Rank Stats')
-    expect(wrapper.text()).toContain('Perk Pools')
     expect(wrapper.text()).toContain('Preview')
     // Unit-only sections must not render while the path editor is showing.
     expect(wrapper.text()).not.toContain('Gating')

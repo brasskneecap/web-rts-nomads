@@ -39,7 +39,7 @@ var (
 	runtimePathUnit = map[string]string{}
 )
 
-// rebuildDerivedPathMaps rebuilds all 10 derived path-catalog maps
+// rebuildDerivedPathMaps rebuilds all 12 derived path-catalog maps
 // (pathModifiersByKey, pathBoundsByPath, ... pathsByUnitType — see
 // path_defs.go) from embeddedPathFiles/embeddedPathUnit merged with the
 // current runtimePaths overlay. An overlay id WINS over an embedded id of
@@ -48,7 +48,7 @@ var (
 //
 // The whole merge + registration pass is built into FRESH local maps
 // (newPathDerivedMaps) with zero effect on what readers see; only the final
-// assignment of all 10 fresh maps into the package globals happens under
+// assignment of all 12 fresh maps into the package globals happens under
 // pathCatalogMu.Lock(), so a reader taking pathCatalogMu.RLock() (any of the
 // Task-1 accessors) never observes a partially rebuilt catalog — it sees
 // either the complete old set or the complete new set, never a mix.
@@ -123,6 +123,7 @@ func rebuildDerivedPathMaps() {
 	pathAttackTypeByPath = fresh.attackTypeByPath
 	pathProjectileScaleByPath = fresh.projectileScaleByPath
 	pathAbilitiesByPath = fresh.abilitiesByPath
+	pathPerkRefsByPath = fresh.perkRefsByPath
 	pathChannelLoopByPath = fresh.channelLoopByPath
 	pathsByUnitType = fresh.pathsByUnitType
 	pathCatalogMu.Unlock()

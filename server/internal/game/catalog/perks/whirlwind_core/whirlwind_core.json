@@ -1,0 +1,20 @@
+{
+  "id": "whirlwind_core",
+  "displayName": "Whirlwind Core",
+  "description": "Attacks have a chance to trigger a bonus spin that hits all nearby enemies.",
+  "tooltipTemplate": "{procChance%} chance on attack to spin, dealing full damage to all enemies within {radius} units.",
+  "icon": "perk-whirlwind-core",
+  "unitType": "soldier",
+  "path": "berserker",
+  "rank": "gold",
+  "config": {
+    "procChance": 0.2,
+    "radius": 70
+  },
+  "effect": {
+    "name": "whirlwind",
+    "target": "self",
+    "durationSeconds": 1
+  },
+  "wired": false
+}

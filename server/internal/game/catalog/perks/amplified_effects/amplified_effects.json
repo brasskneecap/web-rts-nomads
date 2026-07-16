@@ -1,0 +1,14 @@
+{
+  "id": "amplified_effects",
+  "displayName": "Amplified Effects",
+  "description": "Your traps hit 35% harder — more damage, stronger slows, stronger marks.",
+  "tooltipTemplate": "Trap damage, slow strength, and mark bonus all increased by {effectMultiplier+%}.",
+  "icon": "perk-amplified-effects",
+  "unitType": "archer",
+  "path": "trapper",
+  "rank": "silver",
+  "config": {
+    "effectMultiplier": 1.35
+  },
+  "wired": false
+}

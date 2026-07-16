@@ -166,3 +166,26 @@ func mustProjDef(t *testing.T, id string) ProjectileDef {
 	}
 	return def
 }
+
+func TestValidateEffectDef(t *testing.T) {
+	t.Run("rejects negative duration", func(t *testing.T) {
+		if err := validateEffectDef(&EffectDef{ID: "x", Duration: -1}); err == nil {
+			t.Fatal("expected error for negative duration")
+		}
+	})
+	t.Run("rejects unknown anchor", func(t *testing.T) {
+		if err := validateEffectDef(&EffectDef{ID: "x", Anchor: "sideways"}); err == nil {
+			t.Fatal("expected error for unknown anchor")
+		}
+	})
+	t.Run("accepts empty anchor and zero duration", func(t *testing.T) {
+		if err := validateEffectDef(&EffectDef{ID: "x"}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	t.Run("accepts a known anchor", func(t *testing.T) {
+		if err := validateEffectDef(&EffectDef{ID: "x", Anchor: "feet", Duration: 0.5}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}

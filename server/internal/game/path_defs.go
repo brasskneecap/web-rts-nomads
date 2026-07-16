@@ -90,6 +90,13 @@ type pathCatalogFile struct {
 	// from the unit def. Validated at load (start >= 0, end >= start).
 	ChannelLoop *ChannelLoopRange            `json:"channelLoop,omitempty"`
 	Ranks       map[string]pathRankStatsJSON `json:"ranks"`
+	// PerksByRank is the explicit opt-in perk references for this path, keyed by
+	// rank (bronze/silver/gold). Each value is a list of standalone perk ids
+	// (catalog/perks). At rank-up, these are UNION'd with the perks that match
+	// via their own eligibility wildcards (see eligiblePerksForUnitAtRank).
+	// Absent/empty ⇒ no explicit refs (auto-match only). Perk ids resolve
+	// fail-safe at selection; validated at save via perkDefLookup.
+	PerksByRank map[string][]string `json:"perksByRank,omitempty"`
 }
 
 // pathRankStatsJSON mirrors the stat-modifier fields of pathModifierDef (the
@@ -195,6 +202,15 @@ var pathProjectileScaleByPath = map[string]float64{}
 // pass.
 var pathAbilitiesByPath = map[string][]string{}
 
+// pathPerkRefsByPath stores the optional per-path, per-rank explicit perk-id
+// references (PathDef.PerksByRank), keyed by path id then rank (e.g.
+// "berserker" -> "bronze" -> ["frenzy"]). A path absent from the map, or a
+// rank absent from a path's inner map, means "no explicit refs for that
+// (path, rank) — auto-match eligibility only" (see eligiblePerksForUnitAtRank
+// / pathPerkRefsForRank). Populated by registerPathFileInto, mirroring
+// pathAbilitiesByPath's contract exactly.
+var pathPerkRefsByPath = map[string]map[string][]string{}
+
 // pathChannelLoopByPath stores the optional per-path channel-pose frame
 // override, keyed by path id (e.g. "siphoner": {Start: 3, End: 4}). A path
 // absent from the map means "no override — fall back to the base unit
@@ -210,11 +226,11 @@ var pathChannelLoopByPath = map[string]ChannelLoopRange{}
 // layout instead of duplicating it.
 var pathsByUnitType = map[string][]string{}
 
-// pathCatalogMu guards all 11 package-global path-catalog maps above
+// pathCatalogMu guards all 12 package-global path-catalog maps above
 // (pathModifiersByKey, pathBoundsByPath, pathAttackOriginByPath,
 // pathVisionRangeByPath, pathProjectileByPath, pathDamageTypeByPath,
 // pathAttackTypeByPath, pathProjectileScaleByPath, pathAbilitiesByPath,
-// pathChannelLoopByPath, pathsByUnitType).
+// pathPerkRefsByPath, pathChannelLoopByPath, pathsByUnitType).
 //
 // init() populates these maps single-threaded at startup before any
 // goroutine exists, so init's own reads/writes bypass the lock (see the
@@ -307,6 +323,28 @@ func pathAbilitiesFor(path string) ([]string, bool) {
 	cp := make([]string, len(abilities))
 	copy(cp, abilities)
 	return cp, true
+}
+
+// pathPerkRefsForRank returns the explicit perk-id references authored on the
+// given path for the given rank, or nil. Path ids are globally unique so the
+// unit type is not part of the key. Caller must NOT hold pathCatalogMu. The
+// returned slice is a COPY (mirrors pathAbilitiesFor / pathsForUnitType) —
+// callers (e.g. eligiblePerksForUnitAtRank's union step) must not be able to
+// mutate the shared catalog state through it.
+func pathPerkRefsForRank(pathName, rank string) []string {
+	pathCatalogMu.RLock()
+	defer pathCatalogMu.RUnlock()
+	byRank := pathPerkRefsByPath[pathName]
+	if byRank == nil {
+		return nil
+	}
+	refs := byRank[rank]
+	if refs == nil {
+		return nil
+	}
+	cp := make([]string, len(refs))
+	copy(cp, refs)
+	return cp
 }
 
 // pathChannelLoopFor is the synchronized read path for pathChannelLoopByPath.
@@ -488,10 +526,31 @@ func validatePathFile(file *pathCatalogFile, pathKey string) error {
 			return fmt.Errorf("unknown rank %q (want bronze/silver/gold)", rankName)
 		}
 	}
+	// PerksByRank: rank keys must be valid ranks; each perk id must resolve to a
+	// registered standalone PerkDef so a typo fails loud at save. Sorted for a
+	// deterministic first-error.
+	perkRefRanks := make([]string, 0, len(file.PerksByRank))
+	for rankName := range file.PerksByRank {
+		perkRefRanks = append(perkRefRanks, rankName)
+	}
+	sort.Strings(perkRefRanks)
+	for _, rankName := range perkRefRanks {
+		if _, ok := validRankName[rankName]; !ok {
+			return fmt.Errorf("unknown rank %q in \"perksByRank\" (want bronze/silver/gold)", rankName)
+		}
+		for _, perkID := range file.PerksByRank[rankName] {
+			if perkID == "" {
+				return fmt.Errorf("empty perk id in perksByRank[%q]", rankName)
+			}
+			if _, ok := perkDefLookup(perkID); !ok {
+				return fmt.Errorf("perk %q in perksByRank[%q] has no registered PerkDef", perkID, rankName)
+			}
+		}
+	}
 	return nil
 }
 
-// pathDerivedMaps bundles the 11 derived path-catalog maps so
+// pathDerivedMaps bundles the 12 derived path-catalog maps so
 // registerPathFileInto can populate either the live package-global maps
 // (registerPathFileLocked's use, unchanged from Task 2) or a fresh throwaway
 // set (path_persistence.go's rebuildDerivedPathMaps, which builds an entire
@@ -507,11 +566,12 @@ type pathDerivedMaps struct {
 	attackTypeByPath      map[string]string
 	projectileScaleByPath map[string]float64
 	abilitiesByPath       map[string][]string
+	perkRefsByPath        map[string]map[string][]string
 	channelLoopByPath     map[string]ChannelLoopRange
 	pathsByUnitType       map[string][]string
 }
 
-// newPathDerivedMaps returns a pathDerivedMaps wrapping 11 brand-new, empty
+// newPathDerivedMaps returns a pathDerivedMaps wrapping 12 brand-new, empty
 // maps — the "fresh" side of the build-then-swap rebuild.
 func newPathDerivedMaps() *pathDerivedMaps {
 	return &pathDerivedMaps{
@@ -524,6 +584,7 @@ func newPathDerivedMaps() *pathDerivedMaps {
 		attackTypeByPath:      map[string]string{},
 		projectileScaleByPath: map[string]float64{},
 		abilitiesByPath:       map[string][]string{},
+		perkRefsByPath:        map[string]map[string][]string{},
 		channelLoopByPath:     map[string]ChannelLoopRange{},
 		pathsByUnitType:       map[string][]string{},
 	}
@@ -545,13 +606,14 @@ func livePathDerivedMaps() *pathDerivedMaps {
 		attackTypeByPath:      pathAttackTypeByPath,
 		projectileScaleByPath: pathProjectileScaleByPath,
 		abilitiesByPath:       pathAbilitiesByPath,
+		perkRefsByPath:        pathPerkRefsByPath,
 		channelLoopByPath:     pathChannelLoopByPath,
 		pathsByUnitType:       pathsByUnitType,
 	}
 }
 
 // registerPathFileLocked writes an already-validated pathCatalogFile's data
-// into the 11 package-global path-catalog maps (topology + per-path
+// into the 12 package-global path-catalog maps (topology + per-path
 // overrides + per-rank stat modifiers). file MUST have already passed
 // validatePathFile — this function only guards against CROSS-file
 // collisions (the same path/rank defined twice, or the same path getting
@@ -618,6 +680,15 @@ func registerPathFileInto(dst *pathDerivedMaps, unitKey string, file *pathCatalo
 		copy(cp, *file.Abilities)
 		dst.abilitiesByPath[file.Path] = cp
 	}
+	if len(file.PerksByRank) > 0 {
+		refs := make(map[string][]string, len(file.PerksByRank))
+		for rankName, ids := range file.PerksByRank {
+			cp := make([]string, len(ids))
+			copy(cp, ids)
+			refs[rankName] = cp
+		}
+		dst.perkRefsByPath[file.Path] = refs
+	}
 	for rankName, stats := range file.Ranks {
 		key := pathModifierKey(file.Path, rankName)
 		if _, exists := dst.modifiersByKey[key]; exists {
@@ -683,7 +754,7 @@ var embeddedPathUnit = map[string]string{}
 
 // clonePathCatalogFile returns a deep-enough copy of file: every field that
 // holds map/slice/pointer state (Bounds, AttackOrigin, Abilities,
-// ChannelLoop, Ranks) gets its own backing storage so a later mutation to
+// ChannelLoop, Ranks, PerksByRank) gets its own backing storage so a later mutation to
 // the original — or to a copy taken from a live overlay entry — can never
 // reach back into the embedded baseline snapshot. Scalar fields copy by
 // value via the struct assignment.
@@ -709,6 +780,13 @@ func clonePathCatalogFile(file *pathCatalogFile) *pathCatalogFile {
 			ranks[k] = v
 		}
 		cp.Ranks = ranks
+	}
+	if file.PerksByRank != nil {
+		refs := make(map[string][]string, len(file.PerksByRank))
+		for rankName, ids := range file.PerksByRank {
+			refs[rankName] = append([]string(nil), ids...)
+		}
+		cp.PerksByRank = refs
 	}
 	return &cp
 }

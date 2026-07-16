@@ -190,3 +190,32 @@ func TestApplyProjectileDamage_NoopGuards(t *testing.T) {
 		t.Errorf("nil-attacker projectile: target HP = %d; want %d", target.HP, start-10)
 	}
 }
+
+func TestValidateProjectileDef(t *testing.T) {
+	t.Run("normalizes empty kind to projectile", func(t *testing.T) {
+		def := ProjectileDef{ID: "x"}
+		if err := validateProjectileDef(&def); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if def.Kind != EmitterKindProjectile {
+			t.Fatalf("kind not normalized: %q", def.Kind)
+		}
+	})
+	t.Run("rejects an invalid kind", func(t *testing.T) {
+		if err := validateProjectileDef(&ProjectileDef{ID: "x", Kind: "laser"}); err == nil {
+			t.Fatal("expected error for invalid kind")
+		}
+	})
+	t.Run("defaults beam duration and projectile speed", func(t *testing.T) {
+		beam := ProjectileDef{ID: "b", Kind: EmitterKindBeam}
+		_ = validateProjectileDef(&beam)
+		if beam.DurationMs != defaultBeamDurationMs {
+			t.Fatalf("beam DurationMs=%d, want %d", beam.DurationMs, defaultBeamDurationMs)
+		}
+		proj := ProjectileDef{ID: "p"}
+		_ = validateProjectileDef(&proj)
+		if proj.Speed != defaultProjectileSpeed {
+			t.Fatalf("Speed=%v, want %v", proj.Speed, defaultProjectileSpeed)
+		}
+	})
+}

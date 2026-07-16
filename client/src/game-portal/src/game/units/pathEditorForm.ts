@@ -56,6 +56,7 @@ export interface AuthoredPathDef {
   // (a remainder-only field would silently ignore a clear-to-undefined edit,
   // since saveRequestFromPathForm's overlay loop skips `undefined` values).
   attackOrigin?: UnitAttackOrigin
+  perksByRank?: Record<string, string[]>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any
 }
@@ -66,7 +67,7 @@ export interface AuthoredPathDef {
 // or written back into the persisted def.
 const MODELED_PATH_KEYS = [
   'path', 'description', 'visionRange', 'projectile', 'damageType', 'attackType',
-  'projectileScale', 'abilities', 'channelLoop', 'bounds', 'ranks', 'attackOrigin',
+  'projectileScale', 'abilities', 'channelLoop', 'bounds', 'ranks', 'attackOrigin', 'perksByRank',
 ] as const
 
 export interface PathEditorForm extends AuthoredPathDef {

@@ -1,0 +1,17 @@
+{
+  "id": "last_stand",
+  "displayName": "Last Stand",
+  "description": "When dropping below a health threshold, gain a large armor bonus and taunt nearby enemies for a short window.",
+  "tooltipTemplate": "When HP drops below {hpThresholdPercent%}: gain +{bonusArmor} armor and taunt all enemies within {tauntRadius} for {durationSeconds:1}s.",
+  "icon": "perk-last-stand",
+  "unitType": "soldier",
+  "path": "vanguard",
+  "rank": "silver",
+  "config": {
+    "bonusArmor": 500,
+    "durationSeconds": 10,
+    "hpThresholdPercent": 0.35,
+    "tauntRadius": 120
+  },
+  "wired": false
+}

@@ -1,0 +1,15 @@
+{
+  "id": "hawk_spirit",
+  "displayName": "Hawk Spirit",
+  "description": "Swift, deadly strikes: fire faster and hit harder with every shot.",
+  "tooltipTemplate": "Attack speed +{attackSpeedBonus%}. Damage +{damageMultiplier%}.",
+  "icon": "perk-hawk-spirit",
+  "unitType": "archer",
+  "path": "marksman",
+  "rank": "bronze",
+  "config": {
+    "attackSpeedBonus": 0.3,
+    "damageMultiplier": 0.15
+  },
+  "wired": false
+}
