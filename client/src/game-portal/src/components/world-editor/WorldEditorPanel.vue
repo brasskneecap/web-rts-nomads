@@ -1724,6 +1724,7 @@
       <UnitTypeEditorPanel v-else-if="activeScreen === 'unit-types'" />
       <AbilityEditorPanel v-else-if="activeScreen === 'abilities'" />
       <EffectEditorPanel v-else-if="activeScreen === 'effects'" />
+      <ProjectileEditorPanel v-else-if="activeScreen === 'projectiles'" />
     </section>
   </div>
 </template>
@@ -1740,6 +1741,7 @@ import ItemCatalogEditor from '@/components/ItemCatalogEditor.vue'
 import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
 import AbilityEditorPanel from '@/components/AbilityEditorPanel.vue'
 import EffectEditorPanel from '@/components/EffectEditorPanel.vue'
+import ProjectileEditorPanel from '@/components/ProjectileEditorPanel.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
 import InGameHud from '@/components/InGameHud.vue'
 import { usePlaytest } from './usePlaytest'
@@ -1948,7 +1950,7 @@ const openSection = ref<'setup' | 'campaign' | 'zones' | 'paint' | 'export' | nu
 // full-height screens rather than opening modals: 'map' is the paint canvas +
 // controls, the others each own the whole area under the toolbar so the
 // catalog editors have room for their lists and forms.
-type EditorScreen = 'map' | 'items' | 'unit-types' | 'abilities' | 'effects'
+type EditorScreen = 'map' | 'items' | 'unit-types' | 'abilities' | 'effects' | 'projectiles'
 const activeScreen = ref<EditorScreen>('map')
 const router = useRouter()
 
@@ -1965,6 +1967,7 @@ function onToolbarSelect(id: string) {
     case 'unit-types':
     case 'abilities':
     case 'effects':
+    case 'projectiles':
       activeScreen.value = id
       break
     case 'play':
@@ -1975,8 +1978,8 @@ function onToolbarSelect(id: string) {
       router.push('/')
       break
     default:
-      // perks / projectiles / campaigns are disabled in the toolbar
-      // (coming soon) and never emit.
+      // perks / campaigns are disabled in the toolbar (coming soon) and
+      // never emit.
       break
   }
 }
