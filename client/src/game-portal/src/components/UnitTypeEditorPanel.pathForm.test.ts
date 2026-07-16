@@ -104,6 +104,64 @@ describe('UnitTypeEditorPanel path form — creating a new path', () => {
   })
 })
 
+describe('UnitTypeEditorPanel path form — Perk References section', () => {
+  it('lists currently-referenced perks (with an inert hint), excludes them from the add picker, and add/remove round-trips into perksByRank', async () => {
+    stubCatalogFetch({
+      '/catalog/paths': {
+        paths: [
+          {
+            unit: 'archer',
+            path: 'marksman',
+            def: {
+              path: 'marksman',
+              description: 'A ranged specialist path.',
+              ranks: { bronze: { damageMultiplier: 1.5, visionRange: 7 }, silver: {}, gold: {} },
+              perksByRank: { bronze: ['perk_wired', 'perk_inert'] },
+            },
+          },
+        ],
+      },
+      '/catalog/perks': {
+        perks: [
+          { id: 'perk_wired', displayName: 'Wired Perk', wired: true },
+          { id: 'perk_inert', displayName: 'Inert Perk', wired: false },
+          { id: 'perk_new', displayName: 'New Perk', wired: true },
+        ],
+      },
+    })
+    const wrapper = mount(UnitTypeEditorPanel)
+    await flushPromises()
+    await selectMarksman(wrapper)
+
+    // Pre-authored refs render with their catalog displayName; the unwired
+    // one carries the inert hint.
+    const text = wrapper.text()
+    expect(text).toContain('Wired Perk')
+    expect(text).toContain('Inert Perk')
+    expect(text).toContain('inert')
+
+    // The bronze add picker excludes already-referenced ids and offers the
+    // not-yet-referenced catalog perk.
+    const bronzeAdd = wrapper.find('select[aria-label="Add perk to bronze"]')
+    expect(bronzeAdd.exists()).toBe(true)
+    expect(bronzeAdd.text()).not.toContain('Wired Perk')
+    expect(bronzeAdd.text()).not.toContain('Inert Perk')
+    expect(bronzeAdd.text()).toContain('New Perk')
+
+    // Selecting it writes into pathForm.perksByRank.bronze — reflected as a
+    // new list row with a remove button.
+    await bronzeAdd.setValue('perk_new')
+    await flushPromises()
+    expect(wrapper.text()).toContain('New Perk')
+    expect(wrapper.findAll('button[title="Remove perk_new"]').length).toBe(1)
+
+    // Removing it drops it back out of perksByRank.bronze.
+    await wrapper.find('button[title="Remove perk_new"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('button[title="Remove perk_new"]').length).toBe(0)
+  })
+})
+
 describe('UnitTypeEditorPanel path form — base-unit mode regression', () => {
   it('still renders the unit form (Preview/Stats sections), not the path form', async () => {
     stubCatalogFetch()
