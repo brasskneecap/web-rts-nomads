@@ -622,7 +622,12 @@
               </div>
             </SectionCard>
 
-            <SectionCard v-if="selectedPath === null" title="Membership" :index="8">
+            <SectionCard
+              v-if="selectedPath === null"
+              v-show="activePathTab === pathSectionTab('membership')"
+              title="Membership"
+              :index="pathSectionIndex('membership')"
+            >
               <label class="ed-check" for="pe-add-chances">
                 <input id="pe-add-chances" v-model="addPathToPathChances" type="checkbox" />
                 Also add to {{ pathForm.parentUnit }}'s promotion paths (weight 1)
@@ -1046,12 +1051,16 @@ function sectionIndex(key: string): number {
 }
 
 // The promotion-path editor now lives INSIDE the unit's Promotion Paths tab
-// (no separate page). It has its own inner tab strip over the same 8 sections,
+// (no separate page). It has its own inner tab strip over the same sections,
 // grouped and numbered exactly like the unit tabs above.
+//
+// The former 'perks' tab (Perk Pools authoring) was retired — perks are now
+// standalone defs edited in the world-editor Perks screen — and its only
+// other content, the new-path-only Membership checkbox, was folded into the
+// Identity tab so it stays reachable without a dedicated (now-empty) tab.
 const PATH_TABS: { id: string; label: string; sections: string[] }[] = [
-  { id: 'identity', label: 'Identity', sections: ['identity', 'preview'] },
+  { id: 'identity', label: 'Identity', sections: ['identity', 'preview', 'membership'] },
   { id: 'combat', label: 'Combat', sections: ['combat', 'abilities', 'ranks'] },
-  { id: 'perks', label: 'Perks', sections: ['perks', 'membership'] },
 ]
 const activePathTab = ref<string>(PATH_TABS[0].id)
 function pathSectionTab(key: string): string {
