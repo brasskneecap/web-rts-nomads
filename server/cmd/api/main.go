@@ -58,6 +58,7 @@ func main() {
 	game.LoadPersistedUnitsIntoOverlay()
 	game.LoadPersistedFactionsIntoOverlay()
 	game.LoadPersistedAbilitiesIntoOverlay()
+	game.LoadPersistedEffectsIntoOverlay()
 
 	// Paths and perks must load LAST among the catalogs above: rebuilding
 	// the path registry (rebuildDerivedPathMaps) re-runs validatePathFile,

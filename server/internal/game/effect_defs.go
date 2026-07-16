@@ -155,17 +155,33 @@ func loadEffectDefs() map[string]EffectDef {
 	return result
 }
 
-// getEffectDef looks up an effect definition by id. The bool is false when no
-// effect with that id is registered (same contract as getProjectileDef).
+// getEffectDef looks up an effect definition by id, overlay-first (an authored
+// override wins over the embedded default), then the embedded catalog.
 func getEffectDef(id string) (EffectDef, bool) {
+	runtimeEffectsMu.RLock()
+	if def, ok := runtimeEffects[id]; ok {
+		runtimeEffectsMu.RUnlock()
+		return def, true
+	}
+	runtimeEffectsMu.RUnlock()
 	def, ok := effectDefsByID[id]
 	return def, ok
 }
 
-// ListEffectDefs returns every registered effect definition sorted by id.
+// ListEffectDefs returns every registered effect definition (overlay merged
+// over embed) sorted by id.
 func ListEffectDefs() []EffectDef {
-	defs := make([]EffectDef, 0, len(effectDefsByID))
-	for _, def := range effectDefsByID {
+	merged := make(map[string]EffectDef, len(effectDefsByID))
+	for id, def := range effectDefsByID {
+		merged[id] = def
+	}
+	runtimeEffectsMu.RLock()
+	for id, def := range runtimeEffects {
+		merged[id] = def
+	}
+	runtimeEffectsMu.RUnlock()
+	defs := make([]EffectDef, 0, len(merged))
+	for _, def := range merged {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
