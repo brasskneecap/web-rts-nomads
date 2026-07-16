@@ -176,20 +176,33 @@ func loadProjectileDefs() map[string]ProjectileDef {
 // than a flying projectile. The single point spawn code branches on.
 func (d ProjectileDef) IsBeam() bool { return d.Kind == EmitterKindBeam }
 
-// getProjectileDef looks up a projectile definition by id. The bool is false
-// when no projectile with that id is registered. Callers that resolve a
-// projectile by id must handle the not-found case (same contract as
-// getUnitDef / getObstacleDef).
+// getProjectileDef looks up a projectile definition by id, overlay-first, then
+// the embedded catalog.
 func getProjectileDef(id string) (ProjectileDef, bool) {
+	runtimeProjectilesMu.RLock()
+	if def, ok := runtimeProjectiles[id]; ok {
+		runtimeProjectilesMu.RUnlock()
+		return def, true
+	}
+	runtimeProjectilesMu.RUnlock()
 	def, ok := projectileDefsByID[id]
 	return def, ok
 }
 
-// ListProjectileDefs returns every registered projectile definition sorted by
-// id (stable order for catalog APIs and tests).
+// ListProjectileDefs returns every registered projectile definition (overlay
+// merged over embed) sorted by id.
 func ListProjectileDefs() []ProjectileDef {
-	defs := make([]ProjectileDef, 0, len(projectileDefsByID))
-	for _, def := range projectileDefsByID {
+	merged := make(map[string]ProjectileDef, len(projectileDefsByID))
+	for id, def := range projectileDefsByID {
+		merged[id] = def
+	}
+	runtimeProjectilesMu.RLock()
+	for id, def := range runtimeProjectiles {
+		merged[id] = def
+	}
+	runtimeProjectilesMu.RUnlock()
+	defs := make([]ProjectileDef, 0, len(merged))
+	for _, def := range merged {
 		defs = append(defs, def)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
