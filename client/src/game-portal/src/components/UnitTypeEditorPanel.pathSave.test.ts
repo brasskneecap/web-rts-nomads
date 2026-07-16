@@ -25,7 +25,6 @@ function stubApi(handlers: Record<string, Handler> = {}, getOverrides: Record<st
     '/catalog/abilities': { abilities: [] },
     '/catalog/damage-types': { damageTypes: [] },
     '/catalog/buildings': { buildings: [] },
-    '/catalog/perks': { perks: [] },
     ...getOverrides,
   }
 
@@ -80,7 +79,7 @@ async function startNewPath(wrapper: ReturnType<typeof mount>) {
 afterEach(() => vi.restoreAllMocks())
 
 describe('UnitTypeEditorPanel — savePath (existing path)', () => {
-  it('calls savePath, then savePerks for each rank, in order — with no pathChances write', async () => {
+  it('calls savePath — with no pathChances write', async () => {
     const calls = stubApi()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
@@ -90,29 +89,23 @@ describe('UnitTypeEditorPanel — savePath (existing path)', () => {
     await flushPromises()
 
     const pathCallIdx = calls.findIndex((c) => c.method === 'POST' && c.url.endsWith('/paths'))
-    const perkCallIdxs = calls
-      .map((c, i) => ({ c, i }))
-      .filter(({ c }) => c.method === 'POST' && c.url.endsWith('/perks'))
-      .map(({ i }) => i)
-
     expect(pathCallIdx).toBeGreaterThanOrEqual(0)
-    expect(perkCallIdxs).toHaveLength(3)
-    for (const idx of perkCallIdxs) expect(idx).toBeGreaterThan(pathCallIdx)
 
     const pathBody = calls[pathCallIdx].body as { unit: string; path: { path: string } }
     expect(pathBody.unit).toBe('archer')
     expect(pathBody.path.path).toBe('marksman')
 
-    const ranksSaved = perkCallIdxs.map((i) => (calls[i].body as { rank: string }).rank).sort()
-    expect(ranksSaved).toEqual(['bronze', 'gold', 'silver'])
+    // Perk pools are no longer saved from here — perks are standalone defs
+    // edited in the world-editor Perks screen.
+    expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/perks'))).toBe(false)
 
     // Re-saving an EXISTING path never touches pathChances.
     expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/units'))).toBe(false)
   })
 
-  it('surfaces a 400 validation_failed message and does not attempt the perk saves', async () => {
+  it('surfaces a 400 validation_failed message', async () => {
     const message = 'path id "marksman" must match ^[a-z0-9_]+$'
-    const calls = stubApi({
+    stubApi({
       'POST /paths': () => ({ status: 400, json: { error: 'validation_failed', message } }),
     })
     const wrapper = mount(UnitTypeEditorPanel)
@@ -123,12 +116,11 @@ describe('UnitTypeEditorPanel — savePath (existing path)', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain(message)
-    expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/perks'))).toBe(false)
   })
 })
 
 describe('UnitTypeEditorPanel — Add Path ordering (spec §7.1/§9.1)', () => {
-  it('saves the path (and its perk pools) BEFORE writing the parent unit pathChances, merging rather than clobbering', async () => {
+  it('saves the path BEFORE writing the parent unit pathChances, merging rather than clobbering', async () => {
     const calls = stubApi({}, {
       '/catalog/units': {
         units: [{
@@ -153,20 +145,14 @@ describe('UnitTypeEditorPanel — Add Path ordering (spec §7.1/§9.1)', () => {
     await flushPromises()
 
     const pathCallIdx = calls.findIndex((c) => c.method === 'POST' && c.url.endsWith('/paths'))
-    const perkCallIdxs = calls
-      .map((c, i) => ({ c, i }))
-      .filter(({ c }) => c.method === 'POST' && c.url.endsWith('/perks'))
-      .map(({ i }) => i)
     const unitsCallIdx = calls.findIndex((c) => c.method === 'POST' && c.url.endsWith('/units'))
 
     expect(pathCallIdx).toBeGreaterThanOrEqual(0)
-    expect(perkCallIdxs).toHaveLength(3)
     expect(unitsCallIdx).toBeGreaterThanOrEqual(0)
 
-    // Path first, then ALL THREE perk saves, then (and only then) the unit's
-    // pathChances write — the exact ordering the ID-safety rule requires.
-    for (const idx of perkCallIdxs) expect(idx).toBeGreaterThan(pathCallIdx)
-    expect(unitsCallIdx).toBeGreaterThan(Math.max(...perkCallIdxs))
+    // Path first, then (and only then) the unit's pathChances write — the
+    // exact ordering the ID-safety rule requires.
+    expect(unitsCallIdx).toBeGreaterThan(pathCallIdx)
 
     const unitBody = calls[unitsCallIdx].body as { unit: { pathChances?: Record<string, number> } }
     expect(unitBody.unit.pathChances).toEqual({ trapper: 2, gold_arrow: 1 })

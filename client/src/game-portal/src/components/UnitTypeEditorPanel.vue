@@ -622,17 +622,6 @@
               </div>
             </SectionCard>
 
-            <!-- Perk pools -->
-            <SectionCard v-show="activePathTab === pathSectionTab('perks')" title="Perk Pools" :index="pathSectionIndex('perks')" class="unit-editor__wide">
-              <PerkPoolEditor
-                :unit="pathForm.parentUnit ?? ''"
-                :path="pathForm.path ?? ''"
-                :pools="pathPools"
-                :catalog="perkCatalog"
-                @update:pools="onPathPoolsUpdate"
-              />
-            </SectionCard>
-
             <SectionCard v-if="selectedPath === null" title="Membership" :index="8">
               <label class="ed-check" for="pe-add-chances">
                 <input id="pe-add-chances" v-model="addPathToPathChances" type="checkbox" />
@@ -677,13 +666,11 @@ import {
 } from '@/game/units/unitEditorApi'
 import { createBlankPathForm, pathFormFromDef, saveRequestFromPathForm, type PathEditorForm, type PathRankStats } from '@/game/units/pathEditorForm'
 import {
-  fetchPaths, fetchPerkCatalog,
+  fetchPaths,
   savePath as savePathApi, deletePath as deletePathApi,
-  savePerks as savePerksApi,
-  type EditorPathEntry, type PerkEntry,
+  type EditorPathEntry,
 } from '@/game/units/pathEditorApi'
 import PathRankGrid from '@/components/PathRankGrid.vue'
-import PerkPoolEditor from '@/components/PerkPoolEditor.vue'
 import {
   fetchFactions, saveFaction, deleteFaction, fetchArchetypes,
   fetchProjectileIds, fetchDamageTypes, fetchBuildingIds,
@@ -777,28 +764,8 @@ const selectedPath = ref<string | null>(null)
 const selectedPathParent = ref<string | null>(null)
 const pathForm = ref<PathEditorForm | null>(null)
 
-// Full /catalog/perks (PerkPoolEditor needs it for wired lookups + "add
-// existing" suggestions) and the currently selected/new path's per-rank pools.
-const perkCatalog = ref<PerkEntry[]>([])
-const pathPools = ref<Record<string, PerkEntry[]>>({ bronze: [], silver: [], gold: [] })
-
-function poolsForPath(parentUnit: string, pathId: string): Record<string, PerkEntry[]> {
-  const pools: Record<string, PerkEntry[]> = { bronze: [], silver: [], gold: [] }
-  for (const entry of perkCatalog.value) {
-    if (entry.unitType !== parentUnit || entry.path !== pathId) continue
-    const rank = entry.rank ?? ''
-    if (!pools[rank]) pools[rank] = []
-    pools[rank].push(entry)
-  }
-  return pools
-}
-
 function onPathRanksUpdate(next: Record<string, PathRankStats>) {
   if (pathForm.value) pathForm.value.ranks = next
-}
-
-function onPathPoolsUpdate(next: Record<string, PerkEntry[]>) {
-  pathPools.value = next
 }
 
 // The rank grid resolves multiplier cells against the PARENT unit's base
@@ -896,7 +863,7 @@ function removeRequiresBuildingAt(idx: number) {
   form.value.requiresBuildings = next
 }
 
-// The path id is the primary key once saved (owns art dir + perk pools), so it
+// The path id is the primary key once saved (owns art dir), so it
 // locks the same way a unit's `type` does — editable only while a brand-new,
 // not-yet-saved path (selectedPath === null).
 function onPathIdInput(raw: string) {
@@ -917,7 +884,6 @@ function selectPath(entry: EditorPathEntry) {
   activePathTab.value = PATH_TABS[0].id
   pathChannelLoopStart.value = pathForm.value.channelLoop?.start
   pathChannelLoopEnd.value = pathForm.value.channelLoop?.end
-  pathPools.value = poolsForPath(entry.unit, entry.path)
   preview.value?.refresh()
 }
 
@@ -950,7 +916,6 @@ function confirmNewPath() {
   activePathTab.value = PATH_TABS[0].id
   pathChannelLoopStart.value = undefined
   pathChannelLoopEnd.value = undefined
-  pathPools.value = { bronze: [], silver: [], gold: [] }
   addPathToPathChances.value = true
   preview.value?.refresh()
 }
@@ -1535,10 +1500,9 @@ async function discardPendingArt() {
 
 async function reload() {
   try {
-    const [u, p, pc] = await Promise.all([fetchAuthoredUnitDefs(), fetchPaths(), fetchPerkCatalog()])
+    const [u, p] = await Promise.all([fetchAuthoredUnitDefs(), fetchPaths()])
     units.value = u
     paths.value = p
-    perkCatalog.value = pc
     loadError.value = ''
     factionError.value = ''
   } catch (e) {
@@ -1675,13 +1639,10 @@ async function removeUnit() {
   }
 }
 
-const PATH_RANKS = ['bronze', 'silver', 'gold'] as const
-
-// savePath persists the path file, then its three rank perk pools, then — for a
-// brand-new path with the checkbox checked — adds it to the parent unit's
-// pathChances. ORDER IS LOAD-BEARING: (1) path file first (nothing may
-// reference a path that doesn't exist), (2) perk pools, (3) pathChances last
-// and only for a new path.
+// savePath persists the path file, then — for a brand-new path with the
+// checkbox checked — adds it to the parent unit's pathChances. ORDER IS
+// LOAD-BEARING: (1) path file first (nothing may reference a path that
+// doesn't exist), (2) pathChances last and only for a new path.
 async function savePath() {
   if (!pathForm.value) return
   saveError.value = ''
@@ -1694,10 +1655,6 @@ async function savePath() {
     const pathId = req.path.path ?? ''
 
     await savePathApi(req)
-
-    for (const rank of PATH_RANKS) {
-      await savePerksApi({ unit: req.unit, path: pathId, rank, perks: pathPools.value[rank] ?? [] })
-    }
 
     if (isNewPath && addPathToPathChances.value) {
       const parentDef = units.value.find((u) => u.type === req.unit)
@@ -1861,8 +1818,8 @@ onBeforeUnmount(() => {
   padding-right: 4px;
 }
 
-/* Preview, the rank grid and the perk pools are wide — they take two card
-   columns when there's room (Preview then sits to the right of Identity). */
+/* Preview and the rank grid are wide — they take two card columns when
+   there's room (Preview then sits to the right of Identity). */
 .unit-editor__wide {
   grid-column: span 2;
 }

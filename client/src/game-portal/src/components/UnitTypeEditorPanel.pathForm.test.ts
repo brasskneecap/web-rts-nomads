@@ -30,12 +30,6 @@ function stubCatalogFetch(overrides: Record<string, unknown> = {}) {
     '/catalog/abilities': { abilities: [] },
     '/catalog/damage-types': { damageTypes: [] },
     '/catalog/buildings': { buildings: [] },
-    '/catalog/perks': {
-      perks: [
-        { id: 'piercing_shot', displayName: 'Piercing Shot', wired: true, unitType: 'archer', path: 'marksman', rank: 'bronze' },
-        { id: 'ghost_arrow', displayName: 'Ghost Arrow', wired: false, unitType: 'archer', path: 'marksman', rank: 'silver' },
-      ],
-    },
     ...overrides,
   }
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -63,7 +57,7 @@ async function selectMarksman(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('UnitTypeEditorPanel path form — selecting an existing path', () => {
-  it('shows the locked action-bar id, the per-rank vision override, a resolved rank-grid cell, and perk pool badges', async () => {
+  it('shows the locked action-bar id, the per-rank vision override, and a resolved rank-grid cell', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
@@ -83,18 +77,11 @@ describe('UnitTypeEditorPanel path form — selecting an existing path', () => {
     const rankText = wrapper.text()
     expect(rankText).toContain('18')
     expect(rankText).toContain('27')
-
-    // Perk pools: both a wired and an inert perk render with honest badges.
-    const perkText = wrapper.text()
-    expect(perkText).toContain('piercing_shot')
-    expect(perkText).toContain('Wired')
-    expect(perkText).toContain('ghost_arrow')
-    expect(perkText).toContain('Inert')
   })
 })
 
 describe('UnitTypeEditorPanel path form — creating a new path', () => {
-  it('shows an editable id, an empty rank grid, and empty perk pools', async () => {
+  it('shows an editable id and an empty rank grid', async () => {
     stubCatalogFetch()
     const wrapper = mount(UnitTypeEditorPanel)
     await flushPromises()
@@ -114,11 +101,6 @@ describe('UnitTypeEditorPanel path form — creating a new path', () => {
     expect(rankText).toContain('silver')
     expect(rankText).toContain('gold')
     expect(rankText).not.toContain('27')
-
-    // Empty perk pools: the empty-pool hint, no perk ids from the catalog.
-    const perkText = wrapper.text()
-    expect(perkText.toLowerCase()).toContain('empty pool')
-    expect(perkText).not.toContain('piercing_shot')
   })
 })
 
