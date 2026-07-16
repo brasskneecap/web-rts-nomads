@@ -520,24 +520,18 @@ func registerEditorRoutes(mux *http.ServeMux) {
 		writeJSON(w, map[string]string{"id": id, "status": status})
 	})
 
-	// POST /perks body: { "unit": string, "path": string, "rank": string,
-	// "perks": <raw perk-entry array JSON> }.
+	// POST /perks body: { "perk": <PerkDef JSON> }.
 	mux.HandleFunc("/perks", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
 			return
 		}
-		var req struct {
-			Unit  string          `json:"unit"`
-			Path  string          `json:"path"`
-			Rank  string          `json:"rank"`
-			Perks json.RawMessage `json:"perks"`
-		}
+		var req game.EditorPerkSaveRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid_json", err.Error())
 			return
 		}
-		if err := game.SaveEditorPerkPoolFromJSON(req.Unit, req.Path, req.Rank, req.Perks); err != nil {
+		if err := game.SaveEditorPerk(req); err != nil {
 			if game.IsEditorValidationError(err) {
 				writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
 				return
@@ -547,37 +541,33 @@ func registerEditorRoutes(mux *http.ServeMux) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"unit": req.Unit, "path": req.Path, "rank": req.Rank, "status": "saved",
-		})
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": req.Perk.ID, "status": "saved"})
 	})
 
-	// DELETE /perks/{unit}/{path}/{rank} — exactly 3 non-empty segments.
+	// DELETE /perks/{id}.
 	mux.HandleFunc("/perks/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/perks/")
 		if r.Method != http.MethodDelete {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "DELETE only")
 			return
 		}
-		rest := strings.TrimPrefix(r.URL.Path, "/perks/")
-		segs := strings.Split(rest, "/")
-		if len(segs) != 3 || segs[0] == "" || segs[1] == "" || segs[2] == "" {
-			writeJSONError(w, http.StatusBadRequest, "invalid_id", "expected /perks/{unit}/{path}/{rank}")
+		if id == "" || strings.Contains(id, "/") {
+			writeJSONError(w, http.StatusBadRequest, "invalid_id", "expected /perks/{id}")
 			return
 		}
-		unitType, pathName, rank := segs[0], segs[1], segs[2]
-		existed, err := game.DeleteEditorPerkPool(unitType, pathName, rank)
+		existed, err := game.DeleteEditorPerk(id)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
 			return
 		}
 		if !existed {
-			writeJSONError(w, http.StatusNotFound, "not_found", "no editor override for "+rest)
+			writeJSONError(w, http.StatusNotFound, "not_found", "no editor override for "+id)
 			return
 		}
 		status := "deleted"
-		if game.PerkPoolIsEmbedded(unitType, pathName, rank) {
+		if game.PerkIsEmbedded(id) {
 			status = "reset"
 		}
-		writeJSON(w, map[string]string{"unit": unitType, "path": pathName, "rank": rank, "status": status})
+		writeJSON(w, map[string]string{"id": id, "status": status})
 	})
 }
