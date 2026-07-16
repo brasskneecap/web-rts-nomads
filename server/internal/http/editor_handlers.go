@@ -402,6 +402,55 @@ func registerEditorRoutes(mux *http.ServeMux) {
 		writeJSON(w, map[string]string{"id": id, "status": status})
 	})
 
+	mux.HandleFunc("/projectiles", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST only")
+			return
+		}
+		var req game.EditorProjectileSaveRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_json", err.Error())
+			return
+		}
+		if err := game.SaveEditorProjectile(req); err != nil {
+			if game.IsEditorValidationError(err) {
+				writeJSONError(w, http.StatusBadRequest, "validation_failed", err.Error())
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "save_failed", err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": req.Projectile.ID, "status": "saved"})
+	})
+
+	mux.HandleFunc("/projectiles/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/projectiles/")
+		if r.Method != http.MethodDelete {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "DELETE only")
+			return
+		}
+		if id == "" || strings.Contains(id, "/") {
+			writeJSONError(w, http.StatusBadRequest, "invalid_id", "expected /projectiles/{id}")
+			return
+		}
+		existed, err := game.DeleteEditorProjectile(id)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+			return
+		}
+		if !existed {
+			writeJSONError(w, http.StatusNotFound, "not_found", "no editor override for "+id)
+			return
+		}
+		status := "deleted"
+		if game.ProjectileIsEmbedded(id) {
+			status = "reset"
+		}
+		writeJSON(w, map[string]string{"id": id, "status": status})
+	})
+
 	// POST /paths body: { "unit": string, "path": <raw pathCatalogFile JSON> }.
 	// Routes MUST go through the SaveEditorPath* (not SavePathDef) — that's
 	// where the single-owner guard and per-file validation live.
