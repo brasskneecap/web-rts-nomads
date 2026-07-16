@@ -3,6 +3,7 @@ package game
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"sort"
 )
@@ -109,6 +110,28 @@ type ProjectileDef struct {
 // obstacleDefsByType / unitDefsByType).
 var projectileDefsByID = loadProjectileDefs()
 
+// validateProjectileDef normalizes an emitter def's defaultable fields IN PLACE
+// (Kind, beam DurationMs, Speed) and returns an error for an invalid Kind. It is
+// the single gate shared by the catalog loader and the editor save path, so a
+// def that loads cleanly is exactly a def that saves cleanly. It does NOT check
+// the id (the loader gates that against the dir name, the editor against
+// projectileIDPattern).
+func validateProjectileDef(def *ProjectileDef) error {
+	if def.Kind == "" {
+		def.Kind = EmitterKindProjectile
+	}
+	if def.Kind != EmitterKindProjectile && def.Kind != EmitterKindBeam {
+		return fmt.Errorf("invalid kind %q — must be \"projectile\" or \"beam\"", def.Kind)
+	}
+	if def.Kind == EmitterKindBeam && def.DurationMs <= 0 {
+		def.DurationMs = defaultBeamDurationMs
+	}
+	if def.Speed <= 0 {
+		def.Speed = defaultProjectileSpeed
+	}
+	return nil
+}
+
 func loadProjectileDefs() map[string]ProjectileDef {
 	// Single-level directory layout: catalog/projectiles/<id>/<id>.json.
 	// The id directory name must match the JSON's "id" field; any drift
@@ -138,19 +161,8 @@ func loadProjectileDefs() map[string]ProjectileDef {
 		if def.ID != idKey {
 			panic(rel + ": def.ID " + def.ID + " does not match directory name " + idKey)
 		}
-		// Normalize + validate the emitter kind. Empty means "projectile" so
-		// defs authored before the field existed stay valid.
-		if def.Kind == "" {
-			def.Kind = EmitterKindProjectile
-		}
-		if def.Kind != EmitterKindProjectile && def.Kind != EmitterKindBeam {
-			panic(rel + `: invalid "kind" ` + string(def.Kind) + ` — must be "projectile" or "beam"`)
-		}
-		if def.Kind == EmitterKindBeam && def.DurationMs <= 0 {
-			def.DurationMs = defaultBeamDurationMs
-		}
-		if def.Speed <= 0 {
-			def.Speed = defaultProjectileSpeed
+		if err := validateProjectileDef(&def); err != nil {
+			panic(rel + ": " + err.Error())
 		}
 		if _, dup := result[def.ID]; dup {
 			panic(rel + `: duplicate projectile id "` + def.ID + `"`)
