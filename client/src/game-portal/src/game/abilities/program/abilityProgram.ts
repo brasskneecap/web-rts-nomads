@@ -33,7 +33,6 @@ export type TriggerType =
   | 'on_zone_exit'
   | 'on_status_tick'
   | 'on_status_expire'
-  | 'on_target_hit'
   | 'on_damage_dealt'
   | 'on_unit_death'
   | 'on_action_complete'
@@ -156,7 +155,14 @@ export interface TargetQueryDef {
   maxCount?: number
   ordering?: TargetOrdering
   includeInitialTarget?: boolean
+  // excludeSource drops the CASTER. excludeCurrentEvent drops the unit the
+  // current trigger is ABOUT (whoever entered the zone / died / was just hit).
+  // Two separate booleans rather than one widened field: excludeSource's
+  // "drop the caster" meaning is already on the wire and in authored programs,
+  // so repurposing it would be a silent migration. Mirrors Go's
+  // TargetQueryDef.ExcludeSource / ExcludeCurrentEvent.
   excludeSource?: boolean
+  excludeCurrentEvent?: boolean
   requireLineOfSight?: boolean
   aliveState?: string
 }

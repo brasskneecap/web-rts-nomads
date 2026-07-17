@@ -34,17 +34,35 @@ type RuntimeAbilityContext struct {
 	EventPosition  protocol.Vec2
 	ImpactPosition protocol.Vec2
 	ZoneCenter     protocol.Vec2
-	OwnerUnitID    int   // owner of the current zone/status/projectile, if any
-	Selected       []int // most recent select_targets output (previous_action_targets)
-	Named          map[string]ContextValue
-	Trace          *AbilityExecutionTrace
+	// ProjectilePosition is a ticking ("direction" travelMode + TickInterval>0)
+	// projectile's CURRENT world position, bound fresh every firing by
+	// tickArcaneOrbProjectileLocked (projectile.go). Resolved by
+	// resolveOriginLocked's OriginProjectilePos case (ability_exec_targeting.go)
+	// — the seam BLOCKER 2 of the arcane_orb composable migration made real.
+	// Zero value {0,0} for every non-projectile-tick context (zone ticks,
+	// ordinary casts, ...), which is harmless since nothing else references
+	// this origin today.
+	ProjectilePosition protocol.Vec2
+	OwnerUnitID        int // owner of the current zone/status/projectile, if any
+	// CurrentEventUnitID is the unit ID bound to the "current_event" target
+	// source (SrcCurrentEvent, candidatePoolIDsLocked in
+	// ability_exec_targeting.go) for a trigger whose event centers on one
+	// specific unit — today only on_zone_enter/on_zone_exit
+	// (fireAbilityZoneOccupancyEventLocked, ability_zone.go) set this; 0 means
+	// no unit is bound (SrcCurrentEvent then yields an empty candidate pool).
+	// Resolved to *Unit at point of use like every other ID field on this
+	// struct, never stored as a pointer.
+	CurrentEventUnitID int
+	Selected           []int // most recent select_targets output (previous_action_targets)
+	Named              map[string]ContextValue
+	Trace              *AbilityExecutionTrace
 	// now is the sim time stamped onto trace events. Set from
 	// GameState.previewClock at ctx build time by top-level executor entry
 	// points (resolveAbilityProgramCastLocked, fireAbilityZoneTickLocked,
 	// ...); 0 in production, where it is never read (Trace is nil so
 	// record() no-ops regardless).
-	now            float64
-	depth          int // recursion guard for trigger_event / named triggers (Phase 3 Task 6)
+	now   float64
+	depth int // recursion guard for trigger_event / named triggers (Phase 3 Task 6)
 	// program is the AbilityProgram trigger_event resolves NamedTriggers
 	// against. Nil in most Phase 3 contexts (zone tick, etc.) — trigger_event
 	// traces "no_program" and no-ops when nil. Set by the (later-phase) cast
@@ -93,6 +111,41 @@ type RuntimeAbilityContext struct {
 	// Input["targets"] is resolved for deal_damage/restore_health — see
 	// resolveActionTargetsLocked below.
 	currentActionHasAttachInput bool
+	// sharedOpsRemaining, when non-nil, is a budget pointer SHARED across every
+	// RuntimeAbilityContext in one projectile-impact lineage (a cast that
+	// launches a projectile, whose impact may itself launch another
+	// projectile, and so on) — see ability_exec_projectile.go's CROSS-TICK OP
+	// BUDGET doc section. When set, opsExhausted/consumeOp gate and decrement
+	// THIS shared counter instead of the per-ctx opsUsed/maxExecutionOps pair,
+	// so total work across the WHOLE lineage — however many projectiles it
+	// branches into, however many ticks it spans — is bounded by ONE number
+	// instead of resetting to a fresh maxExecutionOps every time a later tick
+	// builds a fresh ctx for the next hop. nil (the default) for every
+	// non-projectile ctx (zone ticks, statuses, markers, ordinary casts),
+	// which keeps the original per-run behavior unchanged.
+	sharedOpsRemaining *int
+}
+
+// opsExhausted reports whether this ctx's op budget has been fully spent.
+// See sharedOpsRemaining's doc comment for the two modes this checks.
+func (ctx *RuntimeAbilityContext) opsExhausted() bool {
+	if ctx.sharedOpsRemaining != nil {
+		return *ctx.sharedOpsRemaining <= 0
+	}
+	return ctx.opsUsed >= maxExecutionOps
+}
+
+// consumeOp records one unit of executor work. It always increments opsUsed
+// (so every existing per-ctx diagnostic/test — e.g.
+// TestExecutor_OpBudget_BoundsExponentialFanout — keeps reading a real,
+// monotonically increasing count) and, when this ctx participates in a
+// shared projectile-impact budget, ALSO decrements the shared counter — see
+// sharedOpsRemaining's doc comment.
+func (ctx *RuntimeAbilityContext) consumeOp() {
+	ctx.opsUsed++
+	if ctx.sharedOpsRemaining != nil {
+		*ctx.sharedOpsRemaining--
+	}
 }
 
 // maxTriggerDepth bounds trigger_event -> named-trigger recursion (Phase 3
@@ -183,7 +236,7 @@ func (s *GameState) runProgramTriggersLocked(ctx *RuntimeAbilityContext, trigger
 		}
 		ctx.trace("trigger_fired", trg.ID, map[string]any{"type": string(trg.Type)})
 		for ai := range trg.Actions {
-			if ctx.opsUsed >= maxExecutionOps {
+			if ctx.opsExhausted() {
 				break
 			}
 			s.executeActionLocked(ctx, &trg.Actions[ai], trg.ID)
@@ -200,11 +253,11 @@ func (s *GameState) runProgramTriggersLocked(ctx *RuntimeAbilityContext, trigger
 // do any further work through this entry point, no matter how it's shaped.
 func (s *GameState) executeActionLocked(ctx *RuntimeAbilityContext, a *AbilityActionDef, path string) {
 	apath := path + ".actions[" + a.ID + "]"
-	if ctx.opsUsed >= maxExecutionOps {
+	if ctx.opsExhausted() {
 		ctx.trace("op_budget_exceeded", apath, map[string]any{"limit": maxExecutionOps})
 		return
 	}
-	ctx.opsUsed++
+	ctx.consumeOp()
 	if !a.IsEnabled() {
 		return
 	}

@@ -1,6 +1,10 @@
 package game
 
-import "math"
+import (
+	"math"
+
+	"webrts/server/pkg/protocol"
+)
 
 // Channeled-ability lifecycle.
 //
@@ -267,6 +271,12 @@ func (s *GameState) beginAbilityChannelLocked(caster *Unit, abilityID string, ta
 	}
 	armAbilityGlobalCooldownLocked(caster)
 
+	// Fire on_cast_start (composable-only) now that every gate has passed
+	// and cooldown/GCD are armed — mirrors the unit-target/point cast entry
+	// points; see fireCastStartTriggerLocked (ability_cast.go) for the full
+	// ordering rationale and the unpaired-on-interrupt hazard it accepts.
+	s.fireCastStartTriggerLocked(caster, def, target, protocol.Vec2{})
+
 	// Composable (schemaVersion>=2) abilities dispatch the mechanical start
 	// step (startChannelLocked) through the executor's channel_beam action
 	// instead of calling it directly, so the migrated Program is the real
@@ -384,9 +394,10 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 		// dark-purple without any per-callsite plumbing here.
 		if tickDamage > 0 {
 			s.applyUnitDamageWithSourceLocked(target, tickDamage, DamageSource{
-				AttackerUnitID: unit.ID,
-				Kind:           "ability",
-				DamageType:     def.DamageType.OrPhysical(),
+				AttackerUnitID:  unit.ID,
+				Kind:            "ability",
+				DamageType:      def.DamageType.OrPhysical(),
+				SourceAbilityID: def.ID,
 			})
 		}
 
@@ -417,7 +428,7 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 		// No-op when the perk isn't owned or when no afflicted neighbor is
 		// in range. Echo damage is tagged Kind="shared_suffering" and the
 		// caster-side recursion guard prevents re-entry within a tick.
-		s.applySharedSufferingLocked(unit, target, tickDamage)
+		s.applySharedSufferingLocked(unit, target, tickDamage, unit.ChannelAbilityID)
 
 		// Withering Beam — accrue continuous-siphon time and stamp stacks
 		// on the target every secondsPerStack. Runs after damage so a

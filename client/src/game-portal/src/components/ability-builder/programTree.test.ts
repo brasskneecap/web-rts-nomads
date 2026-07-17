@@ -51,7 +51,7 @@ function baseProgram(): AbilityProgram {
       },
       {
         id: 't2',
-        type: 'on_target_hit',
+        type: 'on_zone_enter',
         actions: [{ id: 'a3', type: 'play_sound' }],
       },
     ],
@@ -163,7 +163,7 @@ describe('addTrigger', () => {
     let prog = emptyProgram()
     prog = addTrigger(prog, 'on_cast_start')
     prog = addTrigger(prog, 'on_cast_complete')
-    prog = addTrigger(prog, 'on_target_hit')
+    prog = addTrigger(prog, 'on_zone_enter')
     const ids = prog.triggers.map((t) => t.id)
     expect(new Set(ids).size).toBe(ids.length)
     expect(ids).toEqual(['t1', 't2', 't3'])
@@ -190,7 +190,7 @@ describe('removeTrigger', () => {
 describe('findTrigger', () => {
   it('finds an existing trigger and returns undefined otherwise', () => {
     const prog = baseProgram()
-    expect(findTrigger(prog, 't2')?.type).toBe('on_target_hit')
+    expect(findTrigger(prog, 't2')?.type).toBe('on_zone_enter')
     expect(findTrigger(prog, 'nope')).toBeUndefined()
   })
 })
@@ -885,5 +885,51 @@ describe('id minting scans config.triggers, not just children', () => {
     const newAction = findTrigger(after, 't1')!.actions[1]
     expect(newAction.id).not.toBe('a2')
     expect(newAction.id).toBe('a3')
+  })
+})
+
+describe('addTrigger — nested slot rule', () => {
+  // The slot decides WHEN a trigger fires, and the wrong one fails SILENTLY:
+  // `children` fires as on_action_complete (immediately after the action's
+  // Execute returns), while `config.triggers` is decoded by the action's own
+  // Go descriptor and fired by the object it creates. Put an
+  // on_projectile_impact trigger in `children` and it fires when the bolt is
+  // LAUNCHED, not when it lands — and the Go decoder never sees it at all.
+  // Mirrors the three Go configs that decode a Triggers field.
+  const CONFIG_SLOT: [string, string][] = [
+    ['create_zone', 'on_zone_tick'],
+    ['apply_status', 'on_status_tick'],
+    ['launch_projectile', 'on_projectile_impact'],
+  ]
+
+  it.each(CONFIG_SLOT)('%s nests a new trigger into config.triggers, not children', (actionType, triggerType) => {
+    let prog = emptyProgram()
+    prog = addTrigger(prog, 'on_cast_complete')
+    const tPath: NodePath = [{ kind: 'trigger', id: 't1' }]
+    prog = addAction(prog, tPath, actionType)
+    const aPath: NodePath = [...tPath, { kind: 'action', id: 'a1' }]
+
+    prog = addTrigger(prog, aPath, triggerType)
+
+    const action = resolveNode(prog, aPath)
+    if (!action || action.kind !== 'action') throw new Error('action did not resolve')
+    const cfgTriggers = (action.node.config?.triggers ?? []) as { type: string }[]
+    expect(cfgTriggers.map((t) => t.type)).toEqual([triggerType])
+    expect(action.node.children ?? []).toEqual([])
+  })
+
+  it('an action with no config-trigger slot nests into children', () => {
+    let prog = emptyProgram()
+    prog = addTrigger(prog, 'on_cast_complete')
+    const tPath: NodePath = [{ kind: 'trigger', id: 't1' }]
+    prog = addAction(prog, tPath, 'deal_damage')
+    const aPath: NodePath = [...tPath, { kind: 'action', id: 'a1' }]
+
+    prog = addTrigger(prog, aPath, 'on_action_complete')
+
+    const action = resolveNode(prog, aPath)
+    if (!action || action.kind !== 'action') throw new Error('action did not resolve')
+    expect((action.node.children ?? []).map((t) => t.type)).toEqual(['on_action_complete'])
+    expect(action.node.config?.triggers).toBeUndefined()
   })
 })

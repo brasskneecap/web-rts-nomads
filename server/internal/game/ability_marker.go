@@ -179,7 +179,7 @@ func (s *GameState) fireScheduledMarkerLocked(m *scheduledMarker) {
 	}
 	path := "marker[" + m.marker + "]"
 	for i := range m.actions {
-		if ctx.opsUsed >= maxExecutionOps {
+		if ctx.opsExhausted() {
 			break
 		}
 		s.executeActionLocked(ctx, &m.actions[i], path)

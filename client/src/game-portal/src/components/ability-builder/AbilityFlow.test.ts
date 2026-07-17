@@ -25,7 +25,7 @@ function makeProgram(): AbilityProgram {
           { id: 'a3', type: 'camera_shake' },
         ],
       },
-      { id: 't2', type: 'on_target_hit', actions: [] },
+      { id: 't2', type: 'on_zone_enter', actions: [] },
     ],
   }
 }

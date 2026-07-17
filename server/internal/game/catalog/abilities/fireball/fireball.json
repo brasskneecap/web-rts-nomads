@@ -41,10 +41,43 @@
             },
             "config": {
               "projectile": "fire_bolt",
-              "amount": 90,
-              "type": "fire",
-              "radius": 100,
-              "projectileScale": 2.5
+              "projectileScale": 2.5,
+              "triggers": [
+                {
+                  "id": "impact",
+                  "type": "on_projectile_impact",
+                  "actions": [
+                    {
+                      "id": "sel",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "all_in_scene",
+                        "origin": "impact_position",
+                        "relations": [
+                          "enemy"
+                        ],
+                        "radius": 100
+                      },
+                      "outputs": {
+                        "targets": "splashHits"
+                      }
+                    },
+                    {
+                      "id": "dmg",
+                      "type": "deal_damage",
+                      "input": {
+                        "targets": {
+                          "key": "splashHits"
+                        }
+                      },
+                      "config": {
+                        "amount": 90,
+                        "type": "fire"
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           }
         ]

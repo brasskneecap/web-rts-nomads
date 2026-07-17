@@ -123,11 +123,15 @@
     </select>
 
     <!-- target_query: delegate to TargetQueryEditor, forwarding its merged
-         TargetQueryDef straight up as this field's value. -->
+         TargetQueryDef straight up as this field's value. `field.targetQueryFields`
+         (declared by the server per-action, e.g. launch_projectile's 10 vs.
+         nothing) picks which sub-fields actually render — see
+         TargetQueryEditor's own doc comment. -->
     <TargetQueryEditor
       v-else-if="field.control === 'target_query'"
       :model-value="modelValue as TargetQueryDef | undefined"
       :enums="enums"
+      :fields="field.targetQueryFields"
       @update:model-value="(v) => emit('update:modelValue', v)"
     />
 

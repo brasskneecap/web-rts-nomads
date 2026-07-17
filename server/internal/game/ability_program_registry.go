@@ -28,13 +28,218 @@ type ValidationScope struct {
 }
 
 // SchemaField describes ONE editable control for the schema-driven editor.
+//
+// TargetQueryFields is ONLY meaningful on a field whose Control is
+// "target_query" (e.g. select_targets' "target", ability_program_registry.go
+// below): it names, in display order, the TargetQueryDef (ability_program.go)
+// sub-fields THIS action's targeting shape actually uses, out of the 13 that
+// exist — select_targets IS the free-form scene-query/narrowing action and
+// declares targetQueryFieldsFull, while launch_projectile/channel_beam each
+// resolve to exactly ONE unit to fly at/channel and declare the much
+// narrower targetQueryFieldsSourceOnly (see that var's doc comment for the
+// full argument). Neither declares MinCount/Filters/RequireLineOfSight
+// (decoded and validated, but not yet enforced by
+// resolveTargetQueryLocked/applyTargetFiltersLocked — ability_exec_targeting.go's
+// own TODO(phase-3b) notes — so declaring them here would just re-create the
+// exact "advertises a field the action can't use" bug this mechanism exists
+// to fix). An action with NO target_query field declares no targeting shape
+// at all: the editor shows no Targeting section for it.
+//
+// ShowWhen is a minimal, data-driven conditional-visibility gate: when
+// non-nil, the field is only shown in the inspector while ShowWhen evaluates
+// true against the action's OWN config (see FieldCondition's doc comment).
+// nil means "always shown" (every field declared before this mechanism
+// existed keeps that behavior for free — the zero value is the common case).
 type SchemaField struct {
-	Key     string   `json:"key"`
-	Label   string   `json:"label"`
-	Control string   `json:"control"` // number|text|boolean|enum|multiselect|asset|sentinel_number|duration|percentage|target_query|context_ref|animation_marker|nested_triggers
-	Options []string `json:"options,omitempty"`
-	Section string   `json:"section,omitempty"` // Basic|Targeting|Timing|Properties|Presentation|Conditions|Advanced|Notes
+	Key               string          `json:"key"`
+	Label             string          `json:"label"`
+	Control           string          `json:"control"` // number|text|boolean|enum|multiselect|asset|sentinel_number|duration|percentage|target_query|context_ref|animation_marker
+	Options           []string        `json:"options,omitempty"`
+	Section           string          `json:"section,omitempty"` // Basic|Targeting|Timing|Properties|Presentation|Conditions|Advanced|Notes
+	TargetQueryFields []string        `json:"targetQueryFields,omitempty"`
+	ShowWhen          *FieldCondition `json:"showWhen,omitempty"`
 }
+
+// FieldCondition is a minimal, data-driven visibility gate for a SchemaField:
+// "show this field only when the action's own config[Key] <Op> Value" —
+// evaluated against the SAME config object the wire already carries (no
+// second lookup, no cross-action reference). This is deliberately NOT a
+// rules engine: no boolean AND/OR/NOT composition of multiple conditions, no
+// comparing one config field against another. If a future field ever needs
+// more than "one config field vs. one constant," extend Op's vocabulary
+// before reaching for a nested structure.
+//
+// Op reuses (a subset of) AbilityConditionDef's existing comparison
+// vocabulary (evaluateOneConditionLocked, ability_exec_flow.go — also
+// surfaced to the editor as ProgramEnums()["conditionOps"]) rather than
+// inventing a second one: eq|ne|lt|lte|gt|gte. eq/ne compare config[Key]
+// against Value as plain JSON scalars (numbers, strings, or booleans alike —
+// needed for e.g. launch_projectile's travelMode == "direction" gate, a
+// string field, alongside chainCount > 0, a numeric one). lt/lte/gt/gte are
+// numeric-only (ordering a string is never meaningful here), matching every
+// current use (chainCount > 0). Value is json.RawMessage so both shapes
+// round-trip through the SAME field without a Go-side union type.
+type FieldCondition struct {
+	Key   string          `json:"key"`
+	Op    string          `json:"op"`
+	Value json.RawMessage `json:"value,omitempty"`
+}
+
+// FieldConditionMatches evaluates cond against config — a decoded JSON
+// object in exactly the shape the client's evaluator reads action.config as
+// (JSON scalars decode to float64/string/bool in both Go's map[string]any
+// and JS/TS alike), so this doubles as a Go-side reference implementation of
+// what the client must do, not just a server-only convenience.
+//
+// A Key absent from config resolves to the ZERO VALUE OF Value's OWN TYPE
+// (0 for a number, "" for a string, false for a bool) rather than
+// "unevaluable" — an omitempty field the author hasn't touched yet (e.g.
+// launch_projectile's chainCount before it's ever set, or travelMode before
+// it's ever authored away from its "to_target" default) must gate
+// identically to one explicitly authored as that zero value. An unparseable
+// Value, a type mismatch between config[Key] and Value, or an unrecognized
+// Op all conservatively resolve to false (hide the field), mirroring
+// evaluateOneConditionLocked's conservative-fail convention.
+func FieldConditionMatches(cond FieldCondition, config map[string]any) bool {
+	var want any
+	if err := json.Unmarshal(cond.Value, &want); err != nil {
+		return false
+	}
+	got, present := config[cond.Key]
+	if !present {
+		switch want.(type) {
+		case string:
+			got = ""
+		case bool:
+			got = false
+		default:
+			got = 0.0
+		}
+	}
+
+	switch cond.Op {
+	case "eq":
+		eq, comparable := scalarEqual(got, want)
+		return comparable && eq
+	case "ne":
+		eq, comparable := scalarEqual(got, want)
+		return comparable && !eq
+	case "lt", "lte", "gt", "gte":
+		gotNum, ok := got.(float64)
+		if !ok {
+			return false
+		}
+		wantNum, ok := want.(float64)
+		if !ok {
+			return false
+		}
+		switch cond.Op {
+		case "lt":
+			return gotNum < wantNum
+		case "lte":
+			return gotNum <= wantNum
+		case "gt":
+			return gotNum > wantNum
+		default: // "gte"
+			return gotNum >= wantNum
+		}
+	default:
+		return false
+	}
+}
+
+// scalarEqual compares a and b for equality, but ONLY when both are one of
+// the JSON scalar kinds (nil, bool, float64, string) Go's `==` can safely
+// compare on interface values. Guards against a run-time panic: comparing
+// two interface values with identical dynamic types is only safe when that
+// type is itself comparable — a slice or map decoded from a malformed/
+// unexpected showWhen.value or config[Key] would panic on a bare `==`
+// otherwise. The second return value reports whether the comparison was
+// even attempted; false means "can't tell," which every caller here treats
+// as "condition doesn't match" (eq) / "condition doesn't match" (ne) — i.e.
+// hide the field, the same conservative-fail default as everywhere else in
+// this evaluator.
+func scalarEqual(a, b any) (equal bool, comparable bool) {
+	switch a.(type) {
+	case nil, bool, float64, string:
+	default:
+		return false, false
+	}
+	switch b.(type) {
+	case nil, bool, float64, string:
+	default:
+		return false, false
+	}
+	return a == b, true
+}
+
+// FieldVisible reports whether f should be shown in the inspector for the
+// given action config. nil ShowWhen -> always visible (every pre-existing
+// field, unchanged).
+func FieldVisible(f SchemaField, config map[string]any) bool {
+	if f.ShowWhen == nil {
+		return true
+	}
+	return FieldConditionMatches(*f.ShowWhen, config)
+}
+
+// targetQueryFieldsFull names every currently-ENFORCED TargetQueryDef
+// (ability_program.go) sub-field, in display order. select_targets — the
+// action whose entire job is resolving a free-form, possibly-many-unit scene
+// query — declares this full shape. launch_projectile/channel_beam do NOT
+// reuse it verbatim (see targetQueryFieldsSourceOnly's doc comment for why a
+// bolt/beam only ever needs to say WHO, via "source," never narrow a pool):
+// the two shapes are deliberately different, not a shared verbatim list.
+//
+// minCount/filters/requireLineOfSight are deliberately excluded from every
+// action's declared shape (this one included): they decode and validate, but
+// resolveTargetQueryLocked/applyTargetFiltersLocked do not enforce them yet
+// (that file's own TODO(phase-3b) notes) — declaring them here would just
+// re-create the exact "advertises a field the action can't use" bug this
+// mechanism exists to fix. Add them back once they're wired.
+var targetQueryFieldsFull = []string{
+	"source", "origin", "originRef", "relations", "radius",
+	"ordering", "maxCount", "includeInitialTarget", "excludeSource", "excludeCurrentEvent", "aliveState",
+}
+
+// targetQueryFieldsSourceOnly is launch_projectile's and channel_beam's
+// targeting shape: a bolt/beam resolves to exactly ONE live unit and flies
+// at (or channels at) it — it never needs to narrow a pool down from many
+// candidates. Every field targetQueryFieldsFull carries beyond "source"
+// (radius/ordering/maxCount/origin/originRef/includeInitialTarget/
+// excludeSource) is a POOL-NARROWING concept: it only means something when
+// the Source can yield more than one candidate. That narrowing is
+// select_targets' job — the intended composition is select_targets (pick
+// who, with the full narrowing toolkit) -> launch_projectile/channel_beam
+// (deliver to them), chained via a preceding select_targets action's
+// Outputs + this action's Input["targets"], exactly like deal_damage/
+// restore_health already consume a preceding selection. Declaring the full
+// set here would let an author configure e.g. Radius/MaxCount on the bolt
+// itself and have it silently do nothing useful beyond "source" — the exact
+// "advertises a field the action can't meaningfully use" bug this whole
+// per-action-shape mechanism exists to fix (see SchemaField's doc comment).
+//
+// relations and aliveState are deliberately excluded too, not just the
+// narrowing five:
+//   - relations is redundant by construction. When Source is initial_target,
+//     the cast's own canTarget*/Relations gating (AbilityEntryDef, evaluated
+//     at cast-target-acquisition time — see compileEntryLegacy/the cast
+//     handlers) already decided who's a legal target before InitialTarget was
+//     ever set. When Source is prev_action_targets, the PRECEDING
+//     select_targets action already applied its own Relations filter to
+//     produce that selection. A second relations filter here can only ever
+//     narrow a set that's already exactly right, or (if authored
+//     inconsistently with the upstream gate) silently drop the one target
+//     this action needs — never a genuine use.
+//   - aliveState is excluded for the same "nothing upstream ever needs it"
+//     reason PLUS a concrete harm: applyTargetFiltersLocked's default
+//     AliveState ("") already excludes HP<=0 candidates, which is exactly
+//     "don't fire a bolt at a corpse" — the correct default for every
+//     shipped and planned projectile/beam ability. Exposing aliveState here
+//     would let an author flip it to "dead"/"any" and bolt a corpse, a
+//     capability nothing in the catalog wants and the mechanism (source
+//     resolves ONE thing to hit) doesn't need to offer.
+var targetQueryFieldsSourceOnly = []string{"source"}
 
 // ActionFieldSchema is the ordered set of controls the inspector renders for an
 // action type. Emitted to the editor in a later phase.
@@ -107,7 +312,15 @@ func ActionSchemas() []ActionSchema {
 type dealDamageConfig struct {
 	Amount int        `json:"amount"`
 	Type   DamageType `json:"type"`
-	Radius float64    `json:"radius,omitempty"`
+	// Radius decodes for backward JSON-compat only: NO code path ever reads
+	// it — Execute below applies Amount to every id in its resolved `targets`
+	// unconditionally, and AoE/splash damage is composed a completely
+	// different way (a preceding select_targets action with its OWN
+	// TargetQueryDef.Radius, feeding this action via Input["targets"] — see
+	// compileProjectileImpactTrigger/compileMeteorActions, ability_compile.go).
+	// Not surfaced in Schema (below) for exactly that reason: an inspector
+	// field for it would advertise a capability this action has never had.
+	Radius float64 `json:"radius,omitempty"`
 }
 
 func (dealDamageConfig) actionConfig() {}
@@ -150,7 +363,6 @@ func init() {
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "amount", Label: "Amount", Control: "number", Section: "Properties"},
 			{Key: "type", Label: "Damage Type", Control: "enum", Section: "Properties"},
-			{Key: "radius", Label: "Radius", Control: "number", Section: "Targeting"},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(dealDamageConfig)
@@ -177,7 +389,7 @@ func init() {
 				if u == nil || u.HP <= 0 {
 					continue
 				}
-				s.applyUnitDamageWithSourceLocked(u, amount, DamageSource{AttackerUnitID: ctx.CasterID, Kind: "ability", DamageType: dt})
+				s.applyUnitDamageWithSourceLocked(u, amount, DamageSource{AttackerUnitID: ctx.CasterID, Kind: "ability", DamageType: dt, SourceAbilityID: ctx.AbilityID})
 				hit = append(hit, id)
 				ctx.trace("damage_applied", ctx.currentActionPath, map[string]any{"unit": id, "amount": amount, "type": string(dt)})
 			}
@@ -251,7 +463,9 @@ func init() {
 		Type:     ActionSelectTargets,
 		Decode:   func(b json.RawMessage) (ActionConfig, error) { return selectTargetsConfig{}, nil },
 		Validate: func(cfg ActionConfig, _ ValidationScope) []ValidationIssue { return nil },
-		Schema:   ActionFieldSchema{Fields: []SchemaField{{Key: "target", Label: "Target Query", Control: "target_query", Section: "Targeting"}}},
+		Schema: ActionFieldSchema{Fields: []SchemaField{
+			{Key: "target", Label: "Target Query", Control: "target_query", Section: "Targeting", TargetQueryFields: targetQueryFieldsFull},
+		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, _ ActionConfig, targets []int) []int {
 			ctx.trace("targets_selected", ctx.currentActionPath, map[string]any{"count": len(targets)})
 			return targets

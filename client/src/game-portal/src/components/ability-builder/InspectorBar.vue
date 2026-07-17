@@ -109,14 +109,6 @@
                 />
               </template>
             </SectionCard>
-
-            <!-- Every action carries a generic `target` (TargetQueryDef) —
-                 shown here unless a schema field already renders it (avoids
-                 editing the same value through two different widgets at
-                 once). -->
-            <SectionCard v-if="!hasTargetQueryField" title="Targeting" class="ib-card">
-              <TargetQueryEditor :model-value="selectedAction.target" :enums="enumsValue" @update:model-value="commitActionTarget" />
-            </SectionCard>
           </template>
           <p v-else class="ib-hint">This action no longer exists — select another node.</p>
         </template>
@@ -138,13 +130,12 @@
 // a new action config field server-side needs no client change here.
 import { computed } from 'vue'
 import type { AbilityActionDef, AbilityTriggerDef, TargetQueryDef, TriggerType } from '@/game/abilities/program/abilityProgram'
-import { schemaForAction, type SchemaField as SchemaFieldDescriptor } from '@/game/abilities/program/programSchema'
+import { fieldVisible, schemaForAction, type SchemaField as SchemaFieldDescriptor } from '@/game/abilities/program/programSchema'
 import { issuesForPath, type ValidationIssue } from '@/game/abilities/program/programValidation'
 import SectionCard from '@/components/editor/SectionCard.vue'
 import { useAbilityBuilderContext } from './AbilityBuilderContext'
 import { indexPathFor, resolveNode } from './programTree'
 import SchemaField from './SchemaField.vue'
-import TargetQueryEditor from './TargetQueryEditor.vue'
 
 const builder = useAbilityBuilderContext()
 
@@ -196,12 +187,19 @@ const selectedIssues = computed<ValidationIssue[]>(() => {
 })
 
 // ── Trigger: type options + timing-field-per-type ───────────────────────────
+// Fallback for when the server's schema hasn't loaded yet. These are all
+// triggers that ACTUALLY FIRE at runtime — the server's TriggerType enum still
+// carries aspirational values with no producer (on_projectile_impact,
+// on_damage_dealt, ...), so a curated fallback should not widen the offer
+// beyond what works. `on_target_hit` was removed from the enum entirely: it
+// had no definition that distinguished it from on_damage_dealt.
 const CURATED_TRIGGER_TYPES: TriggerType[] = [
   'on_cast_start',
   'on_cast_complete',
   'on_animation_marker',
   'on_zone_tick',
-  'on_target_hit',
+  'on_zone_enter',
+  'on_zone_exit',
 ]
 const triggerTypeOptions = computed<string[]>(() => {
   const fromSchema = builder.schema.value?.enums.triggerTypes
@@ -236,10 +234,22 @@ const actionSchema = computed(() => {
 // Fields grouped by their declared `section` (falling back to "Properties"),
 // in first-seen order — a Map preserves insertion order, so this needs no
 // separate sort step. Each group renders as its own `.ib-card` in the stack.
+//
+// Fields gated by `showWhen` are filtered out BEFORE grouping, evaluated
+// against the selected action's OWN config (fieldVisible/programSchema.ts —
+// a pure mirror of the Go registry's FieldConditionMatches). A section that
+// ends up with no visible fields at all (e.g. launch_projectile's
+// "Targeting" once travelMode is "direction" hides `target`... though
+// distance's own Properties-section placement means that specific example
+// doesn't empty a whole section, this still generalizes correctly) simply
+// never gets a Map entry, so it renders no card — no separate "is this
+// section empty" check needed.
 const fieldSections = computed<[string, SchemaFieldDescriptor[]][]>(() => {
   const fields = actionSchema.value?.fields ?? []
+  const config = selectedAction.value?.config ?? {}
   const groups = new Map<string, SchemaFieldDescriptor[]>()
   for (const f of fields) {
+    if (!fieldVisible(f, config)) continue
     const section = f.section || 'Properties'
     const list = groups.get(section) ?? []
     list.push(f)
@@ -247,8 +257,6 @@ const fieldSections = computed<[string, SchemaFieldDescriptor[]][]>(() => {
   }
   return [...groups.entries()]
 })
-
-const hasTargetQueryField = computed(() => (actionSchema.value?.fields ?? []).some((f) => f.control === 'target_query'))
 
 function commitActionConfig(key: string, value: unknown) {
   if (!selectedAction.value || selected.value.kind !== 'action') return

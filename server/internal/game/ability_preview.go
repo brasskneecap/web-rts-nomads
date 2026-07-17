@@ -238,7 +238,20 @@ func RunAbilityPreview(req PreviewRequest) (PreviewResult, error) {
 	caster.AttackRange = 1_000_000
 	caster.MaxMana = 999_999
 	caster.CurrentMana = 999_999
-	caster.Abilities = append(caster.Abilities, pdef.ID)
+	// REPLACE the loadout, never append to it. spawnPlayerUnitLocked gives the
+	// caster its full CATALOG loadout (the adept carries arcane_bolt), and
+	// spawnUnitFromDefLocked's seedDefaultAutoCastLocked has already switched
+	// auto-cast ON for anything flagged defaultAutoCast. Appending left those
+	// abilities live, so the Update loop below auto-fired them at scene units
+	// for the whole preview — with CurrentMana at 999,999 there was nothing to
+	// stop it. The preview's contract is that ONLY the ability under test acts.
+	//
+	// Clearing AutoCastEnabled after that seeding pass also means pdef.ID is
+	// never seeded into it, so an ability that is itself defaultAutoCast (heal,
+	// meteor, ...) can only fire via the explicit RequestAbilityCast below —
+	// exactly one cast, never a second unrequested one.
+	caster.Abilities = []string{pdef.ID}
+	caster.AutoCastEnabled = nil
 	s.initializeCombatUnitLocked(caster)
 	manaBefore := caster.CurrentMana
 	casterID := caster.ID

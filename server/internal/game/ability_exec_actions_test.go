@@ -61,6 +61,49 @@ func TestActionApplyForce_PullsTargetTowardCaster(t *testing.T) {
 	}
 }
 
+// mode:"push" pushes the target AWAY from the origin (here, the caster)
+// instead of pulling it toward the origin.
+func TestActionApplyForce_ModePush_PushesTargetAwayFromCaster(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+	enemy := teamCombatUnit(t, s, "p2", 200, 0)
+
+	tr := runOneActionProgram(t, s, caster.ID, 0, ActionApplyForce,
+		`{"strength":100,"duration":2,"mode":"push"}`, []int{enemy.ID})
+
+	if enemy.PullRemaining <= 0 {
+		t.Fatalf("enemy.PullRemaining = %v; want > 0 after apply_force", enemy.PullRemaining)
+	}
+	if !enemy.PullPush {
+		t.Fatal("enemy.PullPush = false; want true for mode:push")
+	}
+	if enemy.PullCenterX != caster.X || enemy.PullCenterY != caster.Y {
+		t.Fatalf("enemy push center = (%v,%v); want caster pos (%v,%v)", enemy.PullCenterX, enemy.PullCenterY, caster.X, caster.Y)
+	}
+	if !traceHas(tr, "force_applied") {
+		t.Fatalf("missing force_applied trace event: %+v", tr.Events)
+	}
+}
+
+func TestIsValidApplyForceMode(t *testing.T) {
+	tests := []struct {
+		mode string
+		want bool
+	}{
+		{"", true}, // unset ⇒ byte-identical pull default
+		{applyForceModePull, true},
+		{applyForceModePush, true},
+		{"sideways", false},
+	}
+	for _, tt := range tests {
+		if got := isValidApplyForceMode(tt.mode); got != tt.want {
+			t.Errorf("isValidApplyForceMode(%q) = %v; want %v", tt.mode, got, tt.want)
+		}
+	}
+}
+
 // ── apply_status: slow ───────────────────────────────────────────────────
 
 func TestActionApplyStatus_Slow_Cold_SetsColdSlowTrack(t *testing.T) {

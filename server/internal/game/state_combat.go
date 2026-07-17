@@ -425,7 +425,11 @@ func (s *GameState) applySplashDamageLocked(attacker, primaryTarget *Unit, damag
 // (deterministic); the radius test is pure geometry.
 //
 // Caller holds s.mu write lock.
-func (s *GameState) applyAbilitySplashDamageLocked(ownerUnitID int, ownerPlayerID string, cx, cy, radius float64, damage int, dmgType DamageType, primaryID int) {
+// sourceAbilityID carries the launching ability's id for on_unit_death
+// attribution (DamageSource.SourceAbilityID) — "" for legacy call sites that
+// have no ability id in scope (spawnGroundHazardLocked's meteor path today;
+// see that call site's comment).
+func (s *GameState) applyAbilitySplashDamageLocked(ownerUnitID int, ownerPlayerID string, cx, cy, radius float64, damage int, dmgType DamageType, primaryID int, sourceAbilityID string) {
 	if radius <= 0 || damage <= 0 {
 		return
 	}
@@ -446,9 +450,10 @@ func (s *GameState) applyAbilitySplashDamageLocked(ownerUnitID int, ownerPlayerI
 			continue
 		}
 		s.applyUnitDamageWithSourceLocked(u, damage, DamageSource{
-			AttackerUnitID: ownerUnitID,
-			Kind:           "ability",
-			DamageType:     dmgType,
+			AttackerUnitID:  ownerUnitID,
+			Kind:            "ability",
+			DamageType:      dmgType,
+			SourceAbilityID: sourceAbilityID,
 		})
 	}
 }

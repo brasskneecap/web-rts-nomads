@@ -10,7 +10,7 @@ import "fmt"
 var allActionTypes = []ActionType{
 	ActionSelectTargets, ActionStoreTargets, ActionFilterTargets, ActionDealDamage,
 	ActionRestoreHealth, ActionApplyStatus, ActionRemoveStatus, ActionCreateZone,
-	ActionLaunchProjectile, ActionLaunchVortex, ActionChargeFireVolley, ActionChannelBeam, ActionSummonUnit, ActionMoveUnit, ActionApplyForce,
+	ActionLaunchProjectile, ActionChargeFireVolley, ActionChannelBeam, ActionSummonUnit, ActionMoveUnit, ActionApplyForce,
 	ActionModifyResource, ActionTriggerEvent, ActionPlayPresentation, ActionPlaySound,
 	ActionChangeRenderLayer, ActionCameraShake, ActionWait, ActionConditional,
 	ActionRepeat, ActionCustom,
@@ -128,15 +128,31 @@ func (w *validationWalker) walkAction(action AbilityActionDef, path string) {
 				w.issues = append(w.issues, issue)
 			}
 
-			// create_zone is the only ActionType whose config carries a
-			// decoded, live trigger container (createZoneConfig.Triggers,
-			// json "triggers" — see ability_zone.go). Only recurse when the
-			// decode above succeeded: on failure cfg is the zero value and
-			// walking it would validate garbage instead of reporting
-			// invalid_config once (which the branch above already did).
-			if action.Type == ActionCreateZone {
+			// create_zone, apply_status(authored), and launch_projectile
+			// (non-chain) are the ActionTypes whose config carries a decoded,
+			// live trigger container (createZoneConfig.Triggers /
+			// applyStatusConfig.Triggers / launchProjectileConfig.Triggers,
+			// json "triggers" — see ability_zone.go / ability_status.go /
+			// ability_compile.go). Only recurse when the decode above
+			// succeeded: on failure cfg is the zero value and walking it would
+			// validate garbage instead of reporting invalid_config once (which
+			// the branch above already did).
+			switch action.Type {
+			case ActionCreateZone:
 				if zc, ok := cfg.(createZoneConfig); ok {
 					for i, child := range zc.Triggers {
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i))
+					}
+				}
+			case ActionApplyStatus:
+				if ac, ok := cfg.(applyStatusConfig); ok {
+					for i, child := range ac.Triggers {
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i))
+					}
+				}
+			case ActionLaunchProjectile:
+				if lc, ok := cfg.(launchProjectileConfig); ok {
+					for i, child := range lc.Triggers {
 						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i))
 					}
 				}
@@ -177,11 +193,14 @@ func (w *validationWalker) checkDuplicateID(id string, path string) {
 //   - animation marker bounds checking against the caster's animation clip
 //   - missing/invalid target source combinations (e.g. previous_action_targets
 //     used before any prior action produced targets)
-//   - descending into status/projectile nested triggers that live inside an
-//     action's Config raw JSON (StatusDef.Triggers, ProjectileSpawnDef.Triggers)
-//     — these remain dead model types with no decoding ActionDescriptor, so
-//     there's nothing to walk yet (create_zone's config.triggers IS walked,
-//     see walkAction above)
+//   - descending into status/zone-spawn nested triggers that live inside a
+//     STILL-DEAD model type with no decoding ActionDescriptor (StatusDef/
+//     ZoneDef/ProjectileSpawnDef, ability_program.go, are unused proposals —
+//     create_zone's config.triggers, apply_status's config.triggers, AND
+//     launch_projectile's config.triggers (on_projectile_impact) ARE walked,
+//     see walkAction above — none of them decode through those dead types;
+//     each action's own concrete config struct carries its own Triggers
+//     field instead)
 //   - duration < tickInterval on zones/statuses
 //   - persistent objects (zones/statuses) created without any termination path
 //   - outputs referenced before they are produced by a prior action

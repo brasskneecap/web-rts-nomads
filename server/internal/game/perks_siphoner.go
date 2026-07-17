@@ -758,9 +758,10 @@ func (s *GameState) applyChainSiphonBeamsLocked(caster, primary *Unit, primaryDa
 			// auto-colors dark purple via the damage-type hint emitted inside
 			// applyUnitDamageWithSourceLocked off DamageType=DamageShadow.
 			s.applyUnitDamageWithSourceLocked(t, secondaryDamage, DamageSource{
-				AttackerUnitID: caster.ID,
-				Kind:           "chain_siphon",
-				DamageType:     DamageShadow,
+				AttackerUnitID:  caster.ID,
+				Kind:            "chain_siphon",
+				DamageType:      DamageShadow,
+				SourceAbilityID: abilityID,
 			})
 		}
 		// Heal generation runs per chain victim so two chain targets produce
@@ -1215,10 +1216,13 @@ func (s *GameState) darkRenewalAllyRecipientLockedExcluding(siphoner *Unit, radi
 
 // applySharedSufferingLocked echoes a fraction of `primaryDamage` to every
 // visible hostile within `radius` of `primary`. Fires no-op when the caster
-// doesn't own the perk.
+// doesn't own the perk. abilityID (the channel ability that produced
+// primaryDamage — unit.ChannelAbilityID at the call site) is stamped onto
+// each echo's DamageSource.SourceAbilityID, mirroring applyChainSiphonBeamsLocked's
+// abilityID threading, so an echo kill attributes to the same ability.
 //
 // Caller holds s.mu write lock.
-func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDamage int) {
+func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDamage int, abilityID string) {
 	if caster == nil || primary == nil || primaryDamage <= 0 {
 		return
 	}
@@ -1271,9 +1275,10 @@ func (s *GameState) applySharedSufferingLocked(caster, primary *Unit, primaryDam
 		// popup is naturally consumed when no remainder is left.
 		s.recordMinorDamageHitLocked(u, echoDamage, "shadow")
 		s.applyUnitDamageWithSourceLocked(u, echoDamage, DamageSource{
-			AttackerUnitID: caster.ID,
-			Kind:           "shared_suffering",
-			DamageType:     DamageShadow,
+			AttackerUnitID:  caster.ID,
+			Kind:            "shared_suffering",
+			DamageType:      DamageShadow,
+			SourceAbilityID: abilityID,
 		})
 	}
 }

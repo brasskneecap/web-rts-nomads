@@ -216,6 +216,24 @@ export class CanvasRenderer {
   private camera: Camera
   private resizeObserver: ResizeObserver | null = null
   private renderTime = 0
+  // ── Injectable render clock (N3) ────────────────────────────────────────
+  // Every wall-clock read in this file (frame-cycling math, fade/rise timers,
+  // pulse animations, one-off event stamps) goes through `this.timeSource()`
+  // instead of calling `performance.now()` directly. Defaults to the real
+  // clock, so the LIVE match path is unchanged byte-for-byte: same call
+  // sites, same call count, `this.timeSource()` literally IS
+  // `performance.now()` unless a caller overrides the constructor param.
+  //
+  // The ability-editor preview (AbilityPreviewCanvas.vue) is the one caller
+  // that overrides it — it injects a clock derived from the currently
+  // displayed frame index (`previewClockMs` in previewPlayback.ts), so
+  // pause/scrub freezes every cosmetic (unit sprite cycling, effect/beam
+  // loop frames, floating-number fade) exactly in sync with the frozen sim
+  // snapshot, instead of those cosmetics free-running on real elapsed time
+  // while the displayed frame stays still. See that file's own doc comment
+  // for the scrub-semantics contract (numbers spawn un-expired, loops are
+  // idempotent per frame index).
+  private timeSource: () => number
   // Cached unit-circle radial gradient (opaque black center → transparent
   // edge) reused for every ground shadow (units, buildings, loot drops). Built
   // once against the stable `this.ctx`; per-entity size/opacity come from a
@@ -388,7 +406,12 @@ export class CanvasRenderer {
   private readonly LOOT_OPENING_FRAME_MS = 110
   private readonly LOOT_OPENING_DURATION_MS = this.LOOT_OPENING_FRAME_MS * 4
 
-  constructor(canvas: HTMLCanvasElement, state: GameState, camera: Camera) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    state: GameState,
+    camera: Camera,
+    timeSource: () => number = () => performance.now(),
+  ) {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas not supported')
 
@@ -396,6 +419,7 @@ export class CanvasRenderer {
     this.ctx = ctx
     this.state = state
     this.camera = camera
+    this.timeSource = timeSource
 
     this.fogCanvas = document.createElement('canvas')
     this.fogCtx = this.fogCanvas.getContext('2d')!
@@ -425,7 +449,7 @@ export class CanvasRenderer {
 
   render() {
     const ctx = this.ctx
-    const renderTime = performance.now()
+    const renderTime = this.timeSource()
     this.renderTime = renderTime
 
     // Publish the camera's visible world rect so GameState (which plays
@@ -633,7 +657,7 @@ export class CanvasRenderer {
   }): void {
     this.floatingLootPickups.push({
       ...opts,
-      startedAt: performance.now(),
+      startedAt: this.timeSource(),
     })
   }
 
@@ -641,6 +665,20 @@ export class CanvasRenderer {
     window.removeEventListener('resize', this.resize)
     this.resizeObserver?.disconnect()
     this.resizeObserver = null
+  }
+
+  // clearFloatingDamageNumbers: minimal public seam for the ability-preview
+  // replay (AbilityPreviewCanvas.vue), which spawns floating numbers by
+  // pushing directly onto GameState.damageEvents (same drain path render()
+  // already uses — see the top of render() above) but has no other way to
+  // discard in-flight popups on a scrub/restart/new-run boundary, since
+  // floatingDamageNumbers is otherwise private and there's no live-path
+  // reason to ever clear it out of turn (the network path just lets them
+  // age out naturally). Preview replay must clear here: rewinding or
+  // re-running would otherwise leave stale numbers from the old timeline
+  // fading out over a NEW scene.
+  clearFloatingDamageNumbers(): void {
+    this.floatingDamageNumbers = []
   }
 
   // Cells of fully-dark fog added outside the playable map on every side.
@@ -1389,7 +1427,7 @@ export class CanvasRenderer {
 
   private drawMoveMarkers() {
     const ctx = this.ctx
-    const now = performance.now()
+    const now = this.timeSource()
 
     for (const marker of this.state.moveMarkers) {
       const elapsed = now - marker.createdAt
@@ -1430,7 +1468,18 @@ export class CanvasRenderer {
     const idleAnim = spriteSet?.animations.get('idle')
     if (spriteSet && idleAnim) {
       const frameMs = idleAnim.frameDurationMs ?? this.BANNER_IDLE_FRAME_MS
-      const elapsed = performance.now()
+      // NOTE: `elapsed` here is the raw clock reading, not time-since-this-
+      // marker-appeared (unlike drawBanners' per-id bannerAnimStartedAt
+      // tracking below) — under the real clock this always dwarfs a short
+      // idle-loop's total duration, so a NON-loop animation here is pinned to
+      // its last frame in practice from the first render onward. Under the
+      // injected preview clock (which starts near 0), a non-loop animation
+      // would instead genuinely play through its frames near the start of a
+      // run — more correct/deterministic, though currently moot: rally-point
+      // markers only draw for a selected building, and the ability preview
+      // has no building selection, so this call site is inert in preview
+      // today. Routed through the seam anyway for consistency (see N3).
+      const elapsed = this.timeSource()
       const frameIndex = idleAnim.loop
         ? Math.floor(elapsed / frameMs) % idleAnim.frameCount
         : Math.min(Math.floor(elapsed / frameMs), idleAnim.frameCount - 1)
@@ -1476,7 +1525,7 @@ export class CanvasRenderer {
   // ──────────────────────────────────────────────────────────────────────────
   private drawTraps(traps: TrapSnapshot[]) {
     const ctx = this.ctx
-    const now = performance.now()
+    const now = this.timeSource()
     const currentIds = new Set<string>()
     for (const t of traps) currentIds.add(t.id)
 
@@ -2120,7 +2169,7 @@ export class CanvasRenderer {
     const seen = new Set<number>()
     const spriteSet = getObjectSpriteSet('rallying_banner')
     const idleAnim = spriteSet?.animations.get('idle')
-    const now = performance.now()
+    const now = this.timeSource()
 
     for (const banner of banners) {
       seen.add(banner.id)
@@ -2215,7 +2264,7 @@ export class CanvasRenderer {
   private drawLootDrops() {
     const drops = this.state.lootDropsById
     const ctx = this.ctx
-    const now = performance.now()
+    const now = this.timeSource()
 
     const spriteSet = getObjectSpriteSet('chest')
     const idleAnim = spriteSet?.animations.get('idle') ?? null
@@ -3094,12 +3143,19 @@ export class CanvasRenderer {
       }
 
       // Frame selection. Looping effects (e.g. a burning crater that persists
-      // for a burn window) cycle their frames on a wall clock, decoupled from
-      // progress — the effect's LIFETIME is still governed by the server (it
-      // stays in the snapshot until its duration elapses). Non-looping effects
-      // play once, frame 0→frames-1 as progress goes 0→1.
+      // for a burn window) cycle their frames on the render clock (N3 seam —
+      // see this.timeSource()), decoupled from progress — the effect's
+      // LIFETIME is still governed by the server (it stays in the snapshot
+      // until its duration elapses). This is a genuinely preview-reachable
+      // cosmetic (the ability-editor preview direct-assigns state.effects
+      // from the captured snapshot — Meteor's burning_crater loop is exactly
+      // this path), so pausing the preview must freeze it: without the
+      // injected clock this modulo kept advancing on real time even while
+      // the displayed frame stood still. Non-looping effects play once,
+      // frame 0→frames-1 as progress goes 0→1 — already server-driven via
+      // `effect.progress`, not a wall-clock read, so no seam was needed there.
       const frameIndex = sprite.loop
-        ? Math.floor(performance.now() / EFFECT_LOOP_FRAME_MS) % frames
+        ? Math.floor(this.timeSource() / EFFECT_LOOP_FRAME_MS) % frames
         : Math.min(frames - 1, Math.floor(effect.progress * frames))
       const sx = frameIndex * frameWidth
       const sy = 0
@@ -3456,7 +3512,10 @@ export class CanvasRenderer {
    * Hybrid render:
    *   1. Animated sprite body — frame strip from assets/beams/siphon_life/,
    *      stretched along the caster→target vector. Frame index advances from
-   *      performance.now() so the beam wiggles continuously while channeling.
+   *      the render clock (this.timeSource() — N3 seam) so the beam wiggles
+   *      continuously while channeling. Preview-reachable: state.beams is
+   *      direct-assigned from the captured snapshot, so this must freeze on
+   *      pause/scrub like everything else fed by the injected clock.
    *      Sprite supplies its own outline + core; manifest's axisRotation
    *      compensates for art painted on a diagonal.
    *   2. Caster-side puff   — soft radial gradient at origin (energy emanating
@@ -3476,7 +3535,10 @@ export class CanvasRenderer {
     if (length < 0.5) return // caster and target coincident — nothing meaningful to draw
 
     // Pulse used by the end-glows so they breathe in time with the channel.
-    const pulseT = (Math.sin((performance.now() / 700) * Math.PI * 2) + 1) / 2 // 0..1
+    // Routed through this.timeSource() (N3) — same reasoning as the frame
+    // strip above: a wall-clock-driven breathing pulse would keep animating
+    // through a paused preview scrub even though the beam itself is frozen.
+    const pulseT = (Math.sin((this.timeSource() / 700) * Math.PI * 2) + 1) / 2 // 0..1
     const pulseFactor = 0.85 + 0.15 * pulseT
 
     this.stretchBeamSprite('siphon_life', originX, originY, endX, endY)
@@ -3513,8 +3575,10 @@ export class CanvasRenderer {
   /**
    * Blit an animated beam sprite stretched along origin→end. Shared by every
    * beam variant (siphon_life, lightning_bolt, …): reads the beam manifest from
-   * assets/beams/<spriteName>/, advances the frame from performance.now(), and
-   * rotates/mirrors so the painted axis aligns with the origin→target vector.
+   * assets/beams/<spriteName>/, advances the frame from this.timeSource() (N3
+   * render-clock seam — real clock live, injected/frozen clock in the ability
+   * preview), and rotates/mirrors so the painted axis aligns with the
+   * origin→target vector.
    * No-op (returns false) if the sheet hasn't decoded yet or the endpoints are
    * coincident, so callers can still draw their own end-glows as a fallback.
    */
@@ -3536,7 +3600,7 @@ export class CanvasRenderer {
     const ctx = this.ctx
     const angle = Math.atan2(dy, dx)
     const { image, frameWidth, frameHeight, frames, frameDurationMs, axisRotation, headOnRight, displayHeight } = sprite
-    const frameIndex = Math.floor(performance.now() / frameDurationMs) % frames
+    const frameIndex = Math.floor(this.timeSource() / frameDurationMs) % frames
     const sx = frameIndex * frameWidth
     const axisRad = (axisRotation * Math.PI) / 180
 
@@ -3896,7 +3960,7 @@ export class CanvasRenderer {
   private drawFloatingLootPickups() {
     if (this.floatingLootPickups.length === 0) return
     const ctx = this.ctx
-    const now = performance.now()
+    const now = this.timeSource()
 
     // Drop expired entries first so we only iterate live ones.
     this.floatingLootPickups = this.floatingLootPickups.filter(

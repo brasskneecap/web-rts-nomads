@@ -184,7 +184,12 @@ func (s *GameState) applyHazardImpactLocked(h *GroundHazard) {
 	if h.ImpactDamage <= 0 || h.ImpactRadius <= 0 {
 		return
 	}
-	s.applyAbilitySplashDamageLocked(h.OwnerUnitID, h.OwnerPlayerID, h.X, h.Y, h.ImpactRadius, h.ImpactDamage, h.DamageType, 0)
+	// "" — GroundHazard carries no ability id (legacy delayed-impact path;
+	// meteor itself has since migrated to create_zone/v2, see the file doc
+	// comment). Only reachable by a pre-migration legacy ability today, which
+	// can never author on_unit_death anyway (production-safety guard), so
+	// there is no attribution to lose in practice.
+	s.applyAbilitySplashDamageLocked(h.OwnerUnitID, h.OwnerPlayerID, h.X, h.Y, h.ImpactRadius, h.ImpactDamage, h.DamageType, 0, "")
 }
 
 // applyHazardBurnTickLocked deals one burn tick to all hostile units currently
@@ -193,5 +198,6 @@ func (s *GameState) applyHazardBurnTickLocked(h *GroundHazard) {
 	if h.BurnDamagePerTick <= 0 || h.BurnRadius <= 0 {
 		return
 	}
-	s.applyAbilitySplashDamageLocked(h.OwnerUnitID, h.OwnerPlayerID, h.X, h.Y, h.BurnRadius, h.BurnDamagePerTick, h.DamageType, 0)
+	// "" — see applyHazardImpactLocked's comment above.
+	s.applyAbilitySplashDamageLocked(h.OwnerUnitID, h.OwnerPlayerID, h.X, h.Y, h.BurnRadius, h.BurnDamagePerTick, h.DamageType, 0, "")
 }

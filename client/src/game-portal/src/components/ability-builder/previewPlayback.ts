@@ -14,6 +14,37 @@ import type { PreviewFrame } from '../../game/abilities/program/programPreview'
 // Matches the harness's previewTickDT (server-side tick capture interval).
 export const PREVIEW_FRAME_DT_SECONDS = 0.05
 
+// ── deterministic render clock (N3) ─────────────────────────────────────
+// previewClockMs maps a captured frame INDEX onto a millisecond timestamp on
+// the same axis CanvasRenderer's injected `timeSource` seam reads. One
+// preview frame is PREVIEW_FRAME_DT_SECONDS of SIMULATED time (50ms), so
+// frame 7 -> 350ms — this is deliberately NOT wall-clock time; it's a pure
+// function of "which frame is currently displayed."
+//
+// Single source of truth for TWO call sites that must land on the exact
+// same axis or floating damage/heal numbers desync from the cosmetics that
+// gate them:
+//   1. AbilityPreviewCanvas.vue passes `() => previewClockMs(<displayed
+//      frame index>)` as CanvasRenderer's injected clock, so `this.renderTime`
+//      inside render() equals previewClockMs(index) for whichever frame is
+//      on screen — freezing every cosmetic (unit sprite cycling, effect/beam
+//      loop frames, floating-number fade) exactly when the sim is paused,
+//      instead of those free-running on real elapsed time.
+//   2. previewDamageNumbers' spawn stamps (`createdAt`) use
+//      previewClockMs(<the same frame index>) instead of `performance.now()`,
+//      so a number spawned for frame N has elapsed === 0 against that same
+//      frame's renderTime — un-expired at spawn, not already faded out
+//      because it was stamped on a disjoint wall clock.
+//
+// Scrub semantics: going backward just picks a smaller frame index, so
+// previewClockMs can (and does) run non-monotonically — that's fine, every
+// consumer treats it as a pure function of "which frame", not an
+// accumulating timer. Rendering frame N twice (e.g. while paused) always
+// yields the identical clock value both times.
+export function previewClockMs(frameIndex: number): number {
+  return frameIndex * PREVIEW_FRAME_DT_SECONDS * 1000
+}
+
 // Clamps a raw tick/frame index into the valid [0, frameCount-1] range.
 // frameCount === 0 (no frames captured — older response shape or a failed
 // cast) always yields 0 so callers never index into an empty array.

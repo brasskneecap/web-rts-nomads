@@ -502,17 +502,26 @@ type Unit struct {
 	// While > 0 the unit cannot attack or move along its path, but
 	// AttackTargetID and Path are preserved so it resumes cleanly when it expires.
 	StunnedRemaining float64
-	// ── Forced displacement / pull CC (arch-mage-spell-system) ─────────────
-	// PullRemaining > 0 marks a unit under forced displacement (arcane_orb):
-	// each tick it is dragged toward (PullCenterX, PullCenterY) at PullStrength
-	// world-px/sec, and normal path advancement is skipped for that tick
-	// (displacement wins). On expiry the unit's stale path is dropped so it
-	// re-plans from its displaced position (no snap-back). Pure-math, seed-safe.
-	// See spell_pull.go. All zero ⇒ not being pulled.
+	// ── Forced displacement / pull+push CC (arch-mage-spell-system) ────────
+	// PullRemaining > 0 marks a unit under forced displacement (arcane_orb,
+	// apply_force): each tick it is moved relative to (PullCenterX,
+	// PullCenterY) at PullStrength world-px/sec, and normal path advancement
+	// is skipped for that tick (displacement wins). On expiry the unit's
+	// stale path is dropped so it re-plans from its displaced position (no
+	// snap-back). Pure-math, seed-safe. See spell_pull.go. All zero ⇒ not
+	// being displaced.
 	PullRemaining float64
 	PullCenterX   float64
 	PullCenterY   float64
 	PullStrength  float64
+	// PullPush selects the displacement DIRECTION: false (the zero value —
+	// every pre-existing pull, including arcane_orb's vortex) drags the unit
+	// TOWARD center and snaps to it on arrival (tickUnitPullLocked's
+	// overshoot clamp). true pushes the unit AWAY from center instead, with
+	// NO snap clamp — a pushed unit keeps moving outward every tick until
+	// PullRemaining expires. Only meaningful while PullRemaining > 0; reset
+	// to false by endUnitPullLocked.
+	PullPush bool
 	// SlowedRemaining is seconds left on the PHYSICAL/generic slow CC (traps,
 	// concussive perks) applied by ApplySlowLocked. Decays in state.go Update();
 	// when it reaches 0, SlowedMultiplier is also cleared.
@@ -1004,6 +1013,19 @@ type GameState struct {
 	AbilityZones      []*AbilityZone
 	nextAbilityZoneID int
 
+	// AbilityStatuses is the set of active, tick-driven buff/debuff objects
+	// spawned by an AUTHORED apply_status action (ability_status.go). The
+	// three legacy CC primitives (slow/stun/burn) do NOT go through this —
+	// they keep routing to their existing seams
+	// (applyProcSlowLocked/ApplyStunLocked/applyAbilityBurnLocked) exactly as
+	// before; only a status carrying Triggers creates one of these. Server-
+	// only: never serialized. Spawned by spawnAbilityStatusLocked; ticked by
+	// tickAbilityStatusesLocked in Update (immediately after
+	// tickAbilityZonesLocked, before drainPendingDeaths — see that function's
+	// doc comment for why).
+	AbilityStatuses     []*AbilityStatus
+	nextAbilityStatusID int
+
 	// previewTrace/previewClock are non-nil/non-zero ONLY during a
 	// RunAbilityPreview harness run. When set, the ability executor attaches
 	// previewTrace to every RuntimeAbilityContext it builds and stamps
@@ -1353,6 +1375,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		nextTrapID:                1,
 		nextGroundHazardID:        1,
 		nextAbilityZoneID:         1,
+		nextAbilityStatusID:       1,
 		nextProjectileID:          1,
 		matchSeed:                 seed,
 		rngPerks:                  mrand.New(mrand.NewSource(seed ^ saltPerks)),
@@ -2848,6 +2871,15 @@ func (s *GameState) Update(dt float64) {
 	profileSection("traps", func() { s.tickTrapsLocked(dt) })                 // lifetime decay + triggered cull
 	profileSection("groundHazards", func() { s.tickGroundHazardsLocked(dt) }) // delayed-impact + lingering burn zones
 	profileSection("abilityZones", func() { s.tickAbilityZonesLocked(dt) })   // composable create_zone zones (no-op until one is spawned)
+	// AbilityStatuses tick immediately after zones, for the same reason zones
+	// sit here: statuses attach to units that may have taken lethal damage
+	// earlier in this same Update pass (combat/trap/projectile/zone ticks,
+	// all above) — pendingDeaths is queued but the unit is NOT YET removed
+	// from s.unitsByID (drainPendingDeathsLocked runs below), so a status
+	// whose target died this tick observes HP<=0 and fires on_status_expire
+	// NOW rather than one tick late. See tickAbilityStatusesLocked's own doc
+	// comment for the full placement rationale.
+	profileSection("abilityStatuses", func() { s.tickAbilityStatusesLocked(dt) }) // composable apply_status(authored) statuses (no-op until one is spawned)
 	// simTime advances every tick (production and preview alike) so the
 	// on_animation_marker scheduler (ability_marker.go) has a monotonic,
 	// dt-accumulated clock to fire scheduledMarker entries against. Must run

@@ -276,11 +276,22 @@ func (s *GameState) perkRedirectIncomingDamageLocked(target *Unit, damage int, s
 	// the kill credits the unit/building/trap that triggered the hit — not the
 	// unit being protected. Kind is overridden to "pain_share_redirect" for
 	// telemetry clarity.
+	//
+	// SourceAbilityID is propagated too, deliberately: this is the SAME
+	// damage instance as src, just redirected to a different victim — it is
+	// still, transitively, that ability's damage. If the absorbing Vanguard
+	// dies from it, an authored execute/cleave-style ability's on_unit_death
+	// should fire for the Vanguard exactly as it would for the originally
+	// intended victim. See DamageSource.SourceAbilityID's doc comment
+	// (damage_pipeline.go) for the full argument and its contrast with
+	// retaliation's reflected counter-hit, which is NOT propagated (a brand
+	// new damage instance, not this one redirected).
 	redirectSrc := DamageSource{
 		AttackerUnitID:     src.AttackerUnitID,
 		AttackerBuildingID: src.AttackerBuildingID,
 		AttackerTrapID:     src.AttackerTrapID,
 		Kind:               "pain_share_redirect",
+		SourceAbilityID:    src.SourceAbilityID,
 	}
 	s.applyUnitDamageWithSourceLocked(best, redirected, redirectSrc)
 	best.PerkState.PainShareActive = false

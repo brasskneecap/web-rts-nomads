@@ -62,7 +62,7 @@ describe('FlowTriggerCard — Add Action dialog wiring', () => {
   it('clicking "+ Action" opens the dialog scoped to THIS trigger, not the current selection', async () => {
     // Selection points at an unrelated trigger — the dialog must still target
     // the trigger this card owns, passed explicitly as a prop.
-    const trigger: AbilityTriggerDef = { id: 't2', type: 'on_target_hit', actions: [] }
+    const trigger: AbilityTriggerDef = { id: 't2', type: 'on_zone_enter', actions: [] }
     const builder = makeBuilderStub({
       selected: { kind: 'trigger', path: [{ kind: 'trigger', id: 'some-other-trigger' }] },
     })

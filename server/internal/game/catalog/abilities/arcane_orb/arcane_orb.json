@@ -30,16 +30,67 @@
         "actions": [
           {
             "id": "orb",
-            "type": "launch_vortex",
+            "type": "launch_projectile",
             "config": {
               "projectile": "arcane_orb",
+              "travelMode": "direction",
+              "distance": 400,
               "projectileScale": 2.5,
               "projectileSpeed": 150,
-              "radius": 130,
-              "pullStrength": 160,
-              "damagePerSecond": 16,
-              "type": "arcane",
-              "castRange": 400
+              "tickInterval": 0.25,
+              "triggers": [
+                {
+                  "id": "tick",
+                  "type": "on_projectile_tick",
+                  "actions": [
+                    {
+                      "id": "sel",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "all_in_scene",
+                        "origin": "projectile_position",
+                        "relations": [
+                          "enemy"
+                        ],
+                        "radius": 130
+                      },
+                      "outputs": {
+                        "targets": "vortexHits"
+                      }
+                    },
+                    {
+                      "id": "dmg",
+                      "type": "deal_damage",
+                      "input": {
+                        "targets": {
+                          "key": "vortexHits"
+                        }
+                      },
+                      "config": {
+                        "amount": 4,
+                        "type": "arcane"
+                      },
+                      "timing": {
+                        "tickInterval": 0.25
+                      }
+                    },
+                    {
+                      "id": "force",
+                      "type": "apply_force",
+                      "input": {
+                        "targets": {
+                          "key": "vortexHits"
+                        }
+                      },
+                      "config": {
+                        "strength": 160,
+                        "duration": 0.2,
+                        "origin": "projectile_position"
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           }
         ]

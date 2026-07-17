@@ -1,6 +1,7 @@
 package game
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -121,16 +122,26 @@ func TestCompileAllCatalogAbilities(t *testing.T) {
 }
 
 // TestCompileCatalogActionTypeShape locks the top-level on_cast_complete
-// action-type sequence per ability. A future compiler change that alters an
-// ability's structure will fail this test — that's the point. It asserts
-// SHAPE only (action types in order), never tunable numbers (damage/heal
-// amounts etc. belong to fixture/golden tests, and per project convention we
-// don't pin balance numbers in tests).
+// action-type sequence for each of the KNOWN, hand-curated abilities below.
+// A future compiler change that alters one of THEIR structures will fail
+// this test — that's the point. It asserts SHAPE only (action types in
+// order), never tunable numbers (damage/heal amounts etc. belong to
+// fixture/golden tests, and per project convention we don't pin balance
+// numbers in tests).
+//
+// Deliberately NOT a census: this test does not assert
+// len(ListAbilityDefs()) == len(expected). The abilities editor exists so a
+// player/author can add new abilities (e.g. "frost_bolt", authored via the
+// editor's launch_projectile support) — a hard census here would fail every
+// time someone uses the feature the editor exists for. Any catalog ability
+// not in this table is intentionally left unchecked by this test;
+// TestCompileAllCatalogAbilities already guarantees every catalog ability
+// (known or newly authored) compiles to a structurally valid program.
 func TestCompileCatalogActionTypeShape(t *testing.T) {
 	expected := map[string][]ActionType{
 		"arcane_bolt":     {ActionLaunchProjectile},
 		"arcane_missiles": {ActionChargeFireVolley},
-		"arcane_orb":      {ActionLaunchVortex},
+		"arcane_orb":      {ActionLaunchProjectile},
 		"chain_lightning": {ActionLaunchProjectile},
 		"fireball":        {ActionLaunchProjectile},
 		"greater_heal":    {ActionSelectTargets, ActionRestoreHealth, ActionPlayPresentation},
@@ -141,26 +152,22 @@ func TestCompileCatalogActionTypeShape(t *testing.T) {
 		"siphon_life":     {ActionChannelBeam},
 	}
 
-	defs := ListAbilityDefs()
-	if len(defs) != len(expected) {
-		ids := make([]string, len(defs))
-		for i, d := range defs {
-			ids[i] = d.ID
-		}
-		t.Fatalf("catalog has %d abilities but expectation table has %d entries; catalog ids: %v", len(defs), len(expected), ids)
+	byID := map[string]AbilityDef{}
+	for _, def := range ListAbilityDefs() {
+		byID[def.ID] = def
 	}
 
-	for _, def := range defs {
-		def := def
-		t.Run(def.ID, func(t *testing.T) {
-			want, ok := expected[def.ID]
+	for id, want := range expected {
+		id, want := id, want
+		t.Run(id, func(t *testing.T) {
+			def, ok := byID[id]
 			if !ok {
-				t.Fatalf("ability %q has no entry in the expected action-type table", def.ID)
+				t.Fatalf("known ability %q is missing from the catalog", id)
 			}
 			prog := catalogProgram(def)
 			got := actionTypes(prog.Triggers[0].Actions)
 			if !actionTypeSlicesEqual(got, want) {
-				t.Fatalf("ability %q top-level on_cast_complete action types = %v, want %v", def.ID, got, want)
+				t.Fatalf("ability %q top-level on_cast_complete action types = %v, want %v", id, got, want)
 			}
 		})
 	}
@@ -244,10 +251,12 @@ func TestCompileMeteorActions_ImpactTriggerUsesAuthoredDelay(t *testing.T) {
 // compileLegacyAbility purely for this structural classification, same as
 // every other still-legacy ability).
 //
-// UPDATED (arcane_orb composable migration): launch_vortex now has a
-// registered ActionDescriptor too (ability_exec_vortex.go), and arcane_orb
-// IS migrated to schemaVersion:2 in the live catalog (catalogProgram returns
-// its shipped Program directly rather than recompiling).
+// UPDATED (arcane_orb composable migration): arcane_orb's moving pull+DoT
+// vortex is now a launch_projectile action (TravelMode "direction" +
+// TickInterval > 0 — the retired launch_vortex action type's replacement),
+// and arcane_orb IS migrated to schemaVersion:2 in the live catalog
+// (catalogProgram returns its shipped Program directly rather than
+// recompiling).
 //
 // UPDATED (arcane_missiles composable migration): charge_fire_volley now has
 // a registered ActionDescriptor too (spell_charge.go), and arcane_missiles IS
@@ -258,6 +267,11 @@ func TestCompileMeteorActions_ImpactTriggerUsesAuthoredDelay(t *testing.T) {
 // (ability_exec_channel.go), and siphon_life IS migrated to schemaVersion:2
 // in the live catalog. Every catalog ability is now executor-runnable; there
 // is no remaining deferred ability.
+//
+// Deliberately NOT a census (see TestCompileCatalogActionTypeShape's doc
+// comment for why): this only asserts runnability for the KNOWN, hand-
+// curated ids below, so an author adding a new ability via the editor (e.g.
+// "frost_bolt") doesn't fail this test just by existing.
 func TestCompileExecutorRunnableClassification(t *testing.T) {
 	wantRunnable := map[string]bool{
 		"raise_skeleton":  true,
@@ -273,15 +287,148 @@ func TestCompileExecutorRunnableClassification(t *testing.T) {
 		"siphon_life":     true,
 	}
 
+	byID := map[string]AbilityDef{}
+	for _, def := range ListAbilityDefs() {
+		byID[def.ID] = def
+	}
+
+	for id, want := range wantRunnable {
+		id, want := id, want
+		t.Run(id, func(t *testing.T) {
+			def, ok := byID[id]
+			if !ok {
+				t.Fatalf("known ability %q is missing from the catalog", id)
+			}
+			prog := catalogProgram(def)
+			got := programIsExecutorRunnable(prog)
+			if got != want {
+				t.Fatalf("ability %q executor-runnable = %v, want %v (action types: %v)", id, got, want, collectProgramActionTypes(prog))
+			}
+		})
+	}
+}
+
+// TestCompileLegacyAbility_NeverEmitsSpawnOriginOrExcludeCurrentEvent guards
+// launch_projectile's spawnOrigin (launchProjectileConfig.SpawnOrigin,
+// ability_compile.go) and TargetQueryDef's excludeCurrentEvent
+// (ability_program.go) — both additive, AUTHORED-ONLY fields introduced
+// alongside a preceding on_projectile_impact split: no legacy AbilityDef
+// field maps to either one, and compileLegacyAbility never sets them on any
+// TargetQueryDef or launchProjectileConfig literal it builds. Walks every
+// catalog ability's freshly-recompiled compileLegacyAbility(def) output (the
+// same "compile everything fresh" style TestCompileAllCatalogAbilities uses,
+// deliberately NOT catalogProgram's migrated-ability short-circuit — this
+// test is specifically about what compileLegacyAbility itself emits) and
+// fails if either wire key appears anywhere in the marshaled program.
+func TestCompileLegacyAbility_NeverEmitsSpawnOriginOrExcludeCurrentEvent(t *testing.T) {
+	for _, def := range ListAbilityDefs() {
+		def := def
+		t.Run(def.ID, func(t *testing.T) {
+			prog := compileLegacyAbility(def)
+			b, err := json.Marshal(prog)
+			if err != nil {
+				t.Fatalf("marshal compiled program: %v", err)
+			}
+			if bytes.Contains(b, []byte(`"spawnOrigin"`)) {
+				t.Errorf("ability %q: compileLegacyAbility emitted spawnOrigin (must be authored-only): %s", def.ID, b)
+			}
+			if bytes.Contains(b, []byte(`"excludeCurrentEvent"`)) {
+				t.Errorf("ability %q: compileLegacyAbility emitted excludeCurrentEvent (must be authored-only): %s", def.ID, b)
+			}
+		})
+	}
+}
+
+// collectAllTriggerTypesIncludingLaunchProjectile walks prog exactly like
+// collectAllTriggerTypesForProductionGuard (ability_zone_occupancy_test.go)
+// but ALSO descends into an ActionLaunchProjectile action's own nested
+// Triggers (its on_projectile_impact / on_projectile_tick slot —
+// launchProjectileConfig.Triggers, ability_compile.go) — the one nested-
+// trigger config shape that walker doesn't cover, since on_projectile_tick
+// (arcane_orb's ticking-vortex shape) lives there, not under create_zone/
+// apply_status.
+func collectAllTriggerTypesIncludingLaunchProjectile(prog *AbilityProgram) []TriggerType {
+	var out []TriggerType
+	var walkTrigger func(trig AbilityTriggerDef)
+	var walkAction func(a AbilityActionDef)
+
+	walkAction = func(a AbilityActionDef) {
+		for _, child := range a.Children {
+			walkTrigger(child)
+		}
+		if a.Type == ActionLaunchProjectile {
+			d, ok := lookupActionDescriptor(ActionLaunchProjectile)
+			if !ok {
+				return
+			}
+			cfg, err := d.Decode(a.Config)
+			if err != nil {
+				return
+			}
+			lc, ok := cfg.(launchProjectileConfig)
+			if !ok {
+				return
+			}
+			for _, child := range lc.Triggers {
+				walkTrigger(child)
+			}
+		}
+	}
+	walkTrigger = func(trig AbilityTriggerDef) {
+		out = append(out, trig.Type)
+		for _, a := range trig.Actions {
+			walkAction(a)
+		}
+	}
+
+	for _, trig := range prog.Triggers {
+		walkTrigger(trig)
+	}
+	for _, pres := range prog.Presentations {
+		for _, trig := range pres.Triggers {
+			walkTrigger(trig)
+		}
+	}
+	for _, trig := range prog.NamedTriggers {
+		walkTrigger(trig)
+	}
+	return out
+}
+
+// TestCatalog_OnlyArcaneOrbCompilesProjectileTickTrigger guards
+// on_projectile_tick (TriggerOnProjectileTick): arcane_orb's ticking-vortex
+// shape (compileTickingProjectileActions, ability_compile.go) is the ONLY
+// producer today. No other catalog ability's compiled/shipped program may
+// use it, today or as a regression later — mirrors
+// TestCatalog_NoAbilityUsesZoneEnterExitTriggers's discipline, adapted to
+// assert a single NAMED exception instead of "never emitted by anyone" (this
+// trigger IS compiler-emitted, just for exactly one ability).
+func TestCatalog_OnlyArcaneOrbCompilesProjectileTickTrigger(t *testing.T) {
+	sawArcaneOrb := false
 	for _, def := range ListAbilityDefs() {
 		def := def
 		t.Run(def.ID, func(t *testing.T) {
 			prog := catalogProgram(def)
-			got := programIsExecutorRunnable(prog)
-			want := wantRunnable[def.ID]
-			if got != want {
-				t.Fatalf("ability %q executor-runnable = %v, want %v (action types: %v)", def.ID, got, want, collectProgramActionTypes(prog))
+			usesIt := false
+			for _, tt := range collectAllTriggerTypesIncludingLaunchProjectile(prog) {
+				if tt == TriggerOnProjectileTick {
+					usesIt = true
+					break
+				}
+			}
+			if def.ID == "arcane_orb" {
+				sawArcaneOrb = true
+				if !usesIt {
+					t.Fatalf("ability %q must compile an on_projectile_tick trigger (its vortex shape) but does not", def.ID)
+				}
+				return
+			}
+			if usesIt {
+				t.Fatalf("ability %q compiles an on_projectile_tick trigger; only arcane_orb's ticking-vortex shape may use it", def.ID)
 			}
 		})
+	}
+	if !sawArcaneOrb {
+		t.Fatal(`catalog is missing "arcane_orb" — test is vacuous without it`)
 	}
 }

@@ -224,17 +224,31 @@ func TestUnstableMagic_CastsLearnedSpellAtReducedEffectiveness(t *testing.T) {
 	caster.PoolSpellsByRank = map[string]string{"bronze": "fireball"}
 	target := spawnEnemy(t, s, 360, 300)
 
+	target.Armor = 0
+	startHP := target.HP
+
 	before := len(s.Projectiles)
 	s.fireUnstableMagicLocked(caster, target, effect)
 	if len(s.Projectiles) != before+1 {
 		t.Fatalf("Unstable Magic should launch a fireball projectile: projectiles %d -> %d",
 			before, len(s.Projectiles))
 	}
-	proj := s.Projectiles[len(s.Projectiles)-1]
+	// fireball is schemaVersion:2's composable-impact shape: the launched
+	// bolt no longer bakes Damage on the in-flight Projectile (it resolves
+	// only when the nested on_projectile_impact trigger fires at landing —
+	// see Projectile.ImpactActions' doc comment). Tick to impact and assert
+	// the reduced-effectiveness multiplier landed on the TARGET, the same
+	// observable behavior the pre-redesign in-flight assertion stood in for.
 	want := int(math.Round(float64(fbShadow.DamageAmount) * effect))
-	if proj.Damage != want {
+	for i := 0; i < 80 && len(s.Projectiles) > 0; i++ {
+		s.tickProjectilesLocked(0.05)
+	}
+	if len(s.Projectiles) != 0 {
+		t.Fatal("Unstable Magic fireball projectile never landed")
+	}
+	if got := startHP - target.HP; got != want {
 		t.Errorf("Unstable Magic fireball damage = %d; want %d (%.0f%% of %d)",
-			proj.Damage, want, effect*100, fbShadow.DamageAmount)
+			got, want, effect*100, fbShadow.DamageAmount)
 	}
 	if caster.CurrentMana != 0 {
 		t.Errorf("Unstable Magic proc should be free; caster mana changed to %d", caster.CurrentMana)

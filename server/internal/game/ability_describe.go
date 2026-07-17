@@ -183,11 +183,12 @@ type programMechanics struct {
 	slowMultiplier      float64
 	slowDurationSeconds float64
 
-	// damagePerSecond / pullStrength are recovered from a launch_vortex
-	// action's config (arcane_orb's compiled shape — see
-	// compileVortexActions). radius/projectile/projectileScale above are
-	// shared with launch_projectile's recovery (mutually exclusive per
-	// program, same "first primary wins" guard).
+	// damagePerSecond / pullStrength are recovered from a launch_projectile
+	// action's config with TickInterval>0 (arcane_orb's ticking-vortex shape
+	// — see compileTickingProjectileActions). radius/projectile/
+	// projectileScale above are shared with launch_projectile's other shapes'
+	// recovery (mutually exclusive per program, same "first primary wins"
+	// guard).
 	damagePerSecond float64
 	pullStrength    float64
 
@@ -204,8 +205,8 @@ type programMechanics struct {
 	// missileDelayMs / chargeTargeting / chargeAllowDuplicateTargets are
 	// recovered from a charge_fire_volley action's config (arcane_missiles'
 	// compiled shape — see compileChargeFireAction). projectile /
-	// projectileScale / minorDamage above are shared with launch_projectile/
-	// launch_vortex's recovery: a charge-fire program has no primary-damage
+	// projectileScale / minorDamage above are shared with launch_projectile's
+	// recovery (both shapes): a charge-fire program has no primary-damage
 	// action, so sawPrimaryDamage never gates this branch.
 	chargeRequired              float64
 	manaToChargeRatio           float64
@@ -223,12 +224,12 @@ type programMechanics struct {
 	// describeLegacyAbility's dispatch switch keys on a.ChannelType != ""
 	// (a discriminator string, unlike every other mechanic family's own
 	// nonzero magnitude).
-	channelType                  string
-	channelTickIntervalSeconds   float64
-	channelManaCostPerTick       int
-	channelDamagePerTick         int
-	channelHealingMultiplier     float64
-	channelAllyHealRadius        float64
+	channelType                string
+	channelTickIntervalSeconds float64
+	channelManaCostPerTick     int
+	channelDamagePerTick       int
+	channelHealingMultiplier   float64
+	channelAllyHealRadius      float64
 
 	sawPrimaryDamage bool // first non-zone deal_damage wins (matches one-hit-per-cast shape)
 }
@@ -271,39 +272,71 @@ func (m *programMechanics) walkTrigger(t AbilityTriggerDef, inZone bool) {
 				m.sawPrimaryDamage = true
 			}
 		case ActionLaunchProjectile:
-			// arcane_bolt / fireball / chain_lightning's compiled shape (a
-			// single launch_projectile action with its own Target query, no
-			// preceding select_targets — see compileProjectileActions). Its
-			// config carries the primary hit's magnitudes directly, unlike
-			// deal_damage's "pendingRadius from a preceding select_targets
-			// query" recovery: a launch_projectile's Radius is the impact
-			// splash (fireball), not a target-query search radius.
+			// arcane_bolt / fireball / chain_lightning / arcane_orb's compiled
+			// shape (a single launch_projectile action with its own Target
+			// query, no preceding select_targets — see compileProjectileActions
+			// / compileTickingProjectileActions).
 			var cfg launchProjectileConfig
 			decodeActionConfig(act.Config, &cfg)
-			if !m.sawPrimaryDamage {
+			if m.sawPrimaryDamage {
+				break
+			}
+			m.projectile = cfg.Projectile
+			m.projectileScale = cfg.ProjectileScale
+			if cfg.ChainCount > 0 {
+				// chain_lightning's kept shim: still bakes its magnitudes directly
+				// on this action's config (see launchProjectileConfig's doc
+				// comment) — recover them the same way as before the
+				// launch_projectile redesign.
 				m.damageAmount = cfg.Amount
-				m.radius = cfg.Radius
 				m.chainCount = cfg.ChainCount
 				m.bounceDamageFalloff = cfg.BounceDamageFalloff
-				m.projectile = cfg.Projectile
-				m.projectileScale = cfg.ProjectileScale
 				m.minorDamage = cfg.MinorDamage
 				m.sawPrimaryDamage = true
+				break
 			}
-		case ActionLaunchVortex:
-			// arcane_orb's compiled shape (a single launch_vortex action, no
-			// preceding select_targets — see compileVortexActions). Its config
-			// carries the vortex's magnitudes directly, mirroring
-			// ActionLaunchProjectile's recovery above.
-			var cfg launchVortexConfig
-			decodeActionConfig(act.Config, &cfg)
-			if !m.sawPrimaryDamage {
-				m.damagePerSecond = cfg.DamagePerSecond
-				m.radius = cfg.Radius
-				m.pullStrength = cfg.PullStrength
-				m.projectile = cfg.Projectile
-				m.projectileScale = cfg.ProjectileScale
+			if cfg.TickInterval > 0 {
+				// arcane_orb's ticking-vortex shim: its magnitudes live SOLELY
+				// in the nested on_projectile_tick trigger (see
+				// launchProjectileConfig's TickInterval doc comment — the
+				// genuine-composition fix removed the top-level sibling
+				// scalars this used to read, since Execute never consulted
+				// them for anything but a copy of the SAME nested trigger's
+				// numbers). Recover via the SAME vortexMagnitudesFromTrigger
+				// reader Execute/Validate use (ability_exec_projectile.go), so
+				// this description and the live executor can never drift on
+				// what these numbers mean. damagePerSecond is recovered as the
+				// authored per-tick chunk divided back by TickInterval — the
+				// raw per-second rate, matching the legacy def's own
+				// DamagePerSecond field (this recovery reads the AUTHORED
+				// baseline, never a live-cast-folded value, same as every
+				// other magnitude here).
+				for _, trig := range cfg.Triggers {
+					if trig.Type != TriggerOnProjectileTick {
+						continue
+					}
+					vm := vortexMagnitudesFromTrigger(trig)
+					m.radius = vm.radius
+					m.pullStrength = vm.pullStrength
+					if cfg.TickInterval > 0 {
+						m.damagePerSecond = float64(vm.damageAmount) / cfg.TickInterval
+					}
+					break
+				}
 				m.sawPrimaryDamage = true
+				break
+			}
+			// arcane_bolt / fireball's migrated shape: damage (+ splash) now
+			// lives in the nested on_projectile_impact trigger's
+			// select_targets/deal_damage pair (compileProjectileImpactTrigger) —
+			// recurse into it exactly like create_zone's on_zone_tick recursion
+			// below, reusing the SAME select_targets/deal_damage recovery
+			// (pendingRadius -> m.radius) so fireball's splash radius comes back
+			// out correctly.
+			for _, trig := range cfg.Triggers {
+				if trig.Type == TriggerOnProjectileImpact {
+					m.walkTrigger(trig, false)
+				}
 			}
 		case ActionRestoreHealth:
 			var cfg restoreHealthConfig

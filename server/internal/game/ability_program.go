@@ -34,17 +34,25 @@ const (
 	TriggerOnCastComplete     TriggerType = "on_cast_complete"
 	TriggerOnAnimationMarker  TriggerType = "on_animation_marker"
 	TriggerOnProjectileImpact TriggerType = "on_projectile_impact"
-	TriggerOnZoneTick         TriggerType = "on_zone_tick"
-	TriggerOnZoneEnter        TriggerType = "on_zone_enter"
-	TriggerOnZoneExit         TriggerType = "on_zone_exit"
-	TriggerOnStatusTick       TriggerType = "on_status_tick"
-	TriggerOnStatusExpire     TriggerType = "on_status_expire"
-	TriggerOnTargetHit        TriggerType = "on_target_hit"
-	TriggerOnDamageDealt      TriggerType = "on_damage_dealt"
-	TriggerOnUnitDeath        TriggerType = "on_unit_death"
-	TriggerOnActionComplete   TriggerType = "on_action_complete"
-	TriggerOnChargeFull       TriggerType = "on_charge_full"
-	TriggerCustom             TriggerType = "custom"
+	// TriggerOnProjectileTick fires repeatedly while a "direction" travelMode
+	// launch_projectile bolt is in flight (arcane_orb's migrated shape — see
+	// launchProjectileConfig's TickInterval doc comment, ability_compile.go,
+	// and tickArcaneOrbProjectileLocked, projectile.go, for the firing
+	// cadence). Distinct from on_projectile_impact, which fires at most once,
+	// at the END of a bolt's flight (or on the first hostile it crosses, for
+	// an impact-shaped "direction" bolt) — a ticking bolt never fires impact
+	// at all.
+	TriggerOnProjectileTick TriggerType = "on_projectile_tick"
+	TriggerOnZoneTick       TriggerType = "on_zone_tick"
+	TriggerOnZoneEnter      TriggerType = "on_zone_enter"
+	TriggerOnZoneExit       TriggerType = "on_zone_exit"
+	TriggerOnStatusTick     TriggerType = "on_status_tick"
+	TriggerOnStatusExpire   TriggerType = "on_status_expire"
+	TriggerOnDamageDealt    TriggerType = "on_damage_dealt"
+	TriggerOnUnitDeath      TriggerType = "on_unit_death"
+	TriggerOnActionComplete TriggerType = "on_action_complete"
+	TriggerOnChargeFull     TriggerType = "on_charge_full"
+	TriggerCustom           TriggerType = "custom"
 )
 
 // ActionType identifies the behavior an AbilityActionDef performs when its
@@ -52,24 +60,22 @@ const (
 type ActionType string
 
 const (
-	ActionSelectTargets    ActionType = "select_targets"
-	ActionStoreTargets     ActionType = "store_targets"
-	ActionFilterTargets    ActionType = "filter_targets"
-	ActionDealDamage       ActionType = "deal_damage"
-	ActionRestoreHealth    ActionType = "restore_health"
-	ActionApplyStatus      ActionType = "apply_status"
-	ActionRemoveStatus     ActionType = "remove_status"
-	ActionCreateZone       ActionType = "create_zone"
+	ActionSelectTargets ActionType = "select_targets"
+	ActionStoreTargets  ActionType = "store_targets"
+	ActionFilterTargets ActionType = "filter_targets"
+	ActionDealDamage    ActionType = "deal_damage"
+	ActionRestoreHealth ActionType = "restore_health"
+	ActionApplyStatus   ActionType = "apply_status"
+	ActionRemoveStatus  ActionType = "remove_status"
+	ActionCreateZone    ActionType = "create_zone"
+	// ActionLaunchProjectile also covers arcane_orb's moving pull+DoT vortex
+	// shape (TravelMode "direction" + TickInterval > 0 — see
+	// launchProjectileConfig's doc comment, ability_compile.go): a formerly
+	// separate "launch_vortex" action type was retired in favor of this one,
+	// since the vortex IS a "direction" travelMode projectile (no target
+	// lock, no impact hit — it just never fires on_projectile_impact and
+	// instead fires on_projectile_tick repeatedly while airborne).
 	ActionLaunchProjectile ActionType = "launch_projectile"
-	// ActionLaunchVortex spawns a traveling, non-impacting pull+DoT vortex
-	// (arcane_orb's moving orb). Kept distinct from ActionLaunchProjectile
-	// rather than folding vortex fields into that action's config: a
-	// launch_projectile action's identity is "home in on a target and deal
-	// impact damage" (optionally chaining) — the orb does neither (no target
-	// lock, no impact hit, damage instead ticks on a fixed cadence to
-	// whatever is in its radius as it travels) — see ability_exec_vortex.go's
-	// file doc comment for the full design rationale.
-	ActionLaunchVortex ActionType = "launch_vortex"
 	// ActionChargeFireVolley enqueues the staggered volley of a charge-fire
 	// passive's on_charge_full trigger (arcane_missiles). Kept distinct from
 	// every other action rather than folded into an existing one: its identity
@@ -262,8 +268,36 @@ type AbilityActionDef struct {
 	// task. Kept as raw JSON so unknown sub-keys survive a round-trip untouched —
 	// decoders READ fields from it; they must never re-marshal it back.
 	Config json.RawMessage `json:"config,omitempty"`
+	// Timing throttles THIS action to fire at most once every
+	// Timing.TickInterval seconds, even while its enclosing trigger fires on
+	// every simulation tick — e.g. arcane_orb's on_projectile_tick trigger
+	// fires every dt (so select_targets/apply_force track the orb's live
+	// position for pull accuracy), but its deal_damage action carries
+	// Timing.TickInterval so the DoT still lands on a fixed cadence rather
+	// than once per simulation tick (see fireProjectileTickLocked,
+	// projectile.go, for the accumulator that drives this). nil/absent (every
+	// action authored before this field existed) means "runs every time its
+	// trigger fires" — the pre-existing, unthrottled behavior. Distinct from
+	// AbilityTriggerDef.Timing (TriggerTiming), which times/delays the WHOLE
+	// TRIGGER (e.g. on_animation_marker's Marker/DelaySeconds) — this throttles
+	// one action inside a trigger that already fires unconditionally.
+	Timing *ActionTiming `json:"timing,omitempty"`
 	// Children are follow-up / nested triggers (e.g. on_action_complete).
 	Children []AbilityTriggerDef `json:"children,omitempty"`
+}
+
+// ActionTiming is the per-action throttle attached via AbilityActionDef.Timing.
+// A single-field struct today (mirrors TriggerTiming's shape) so a future
+// per-action delay/frame-gate can be added the same way TriggerTiming grew
+// its own fields, without another migration of every existing caller.
+type ActionTiming struct {
+	// TickInterval, when > 0, gates the action to run at most once every this
+	// many seconds — see AbilityActionDef.Timing's doc comment. The
+	// accumulator that tracks elapsed time toward the next due firing lives on
+	// the runtime object driving the trigger (e.g. Projectile.TickActionTimers,
+	// keyed by this action's ID), never on this struct — this is pure,
+	// stateless authored data.
+	TickInterval float64 `json:"tickInterval,omitempty"`
 }
 
 // IsEnabled reports whether the action runs. It is the inverse of Disabled so
@@ -364,8 +398,26 @@ type TargetQueryDef struct {
 	Ordering             TargetOrdering   `json:"ordering,omitempty"`
 	IncludeInitialTarget bool             `json:"includeInitialTarget,omitempty"`
 	ExcludeSource        bool             `json:"excludeSource,omitempty"`
-	RequireLineOfSight   bool             `json:"requireLineOfSight,omitempty"`
-	AliveState           string           `json:"aliveState,omitempty"`
+	// ExcludeCurrentEvent drops the "current_event" unit (ctx.CurrentEventUnitID
+	// — the unit a trigger's event centers on, e.g. the enemy a projectile just
+	// hit) from this query's results, the same way ExcludeSource drops the
+	// caster. Deliberately a SEPARATE bool rather than folding into
+	// ExcludeSource or widening ExcludeSource's meaning: ExcludeSource is
+	// already on the wire, in the TS mirror, in the editor UI, and in shipped
+	// authored programs, all with the fixed meaning "drop the caster" —
+	// changing what it excludes would be a silent migration for every existing
+	// consumer. This is needed for a "hit an enemy, then splash to OTHER
+	// nearby enemies" query (all_in_scene, origin: current_event_position):
+	// without it, the current-event unit is its own enemy at distance 0 from
+	// itself and is always included. Zero value (false, the default for every
+	// query authored before this field existed) is a no-op — current_event is
+	// included exactly like before. Only meaningful when the executing
+	// trigger actually bound a current-event unit (ctx.CurrentEventUnitID !=
+	// 0, e.g. on_projectile_impact/on_zone_enter/on_zone_exit); a query run
+	// from a context with no bound current-event unit is unaffected.
+	ExcludeCurrentEvent bool   `json:"excludeCurrentEvent,omitempty"`
+	RequireLineOfSight  bool   `json:"requireLineOfSight,omitempty"`
+	AliveState          string `json:"aliveState,omitempty"`
 }
 
 // TargetFilter is a placeholder for a richer unit/object filter (defined further

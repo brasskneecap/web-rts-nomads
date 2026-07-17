@@ -1,6 +1,10 @@
 package game
 
-import "testing"
+import (
+	"testing"
+
+	"webrts/server/pkg/protocol"
+)
 
 // setupHostileTargetingPair builds a GameState with p1 (team 0) and p2
 // (team 1, hostile to p1) via the shared team-combat test helpers
@@ -124,6 +128,85 @@ func TestResolveTargetQuery_ExcludeSource_RemovesCasterFromAllInSceneQuery(t *te
 	got := s.resolveTargetQueryLocked(ctx, q)
 	if len(got) != 1 || got[0] != ally.ID {
 		t.Fatalf("got %v, want [%d] (caster excluded)", got, ally.ID)
+	}
+}
+
+// TestResolveTargetQuery_ExcludeCurrentEvent_RemovesEventUnitFromRadiusQuery
+// proves Gap 2's fix: a "hit an enemy, then splash to nearby OTHER enemies"
+// query (all_in_scene, origin: current_event_position) must not include the
+// current-event unit itself — it's an enemy at distance 0 from its own
+// position, so without ExcludeCurrentEvent it always leaks back in.
+func TestResolveTargetQuery_ExcludeCurrentEvent_RemovesEventUnitFromRadiusQuery(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+	hitUnit := teamCombatUnit(t, s, "p2", 300, 0) // the "current event" unit
+	near1 := teamCombatUnit(t, s, "p2", 350, 0)   // 50px from hitUnit
+	near2 := teamCombatUnit(t, s, "p2", 300, 150) // 150px from hitUnit
+	_ = teamCombatUnit(t, s, "p2", 300, 900)      // well outside the radius below
+
+	ctx := &RuntimeAbilityContext{
+		CasterID:           caster.ID,
+		CurrentEventUnitID: hitUnit.ID,
+		EventPosition:      protocol.Vec2{X: hitUnit.X, Y: hitUnit.Y},
+	}
+	q := TargetQueryDef{
+		Source:              SrcAllInScene,
+		Origin:              OriginCurrentEventPos,
+		Relations:           []TargetRelation{RelEnemy},
+		Radius:              200,
+		ExcludeCurrentEvent: true,
+		Ordering:            OrderUnitID,
+	}
+	got := s.resolveTargetQueryLocked(ctx, q)
+	wantSet := map[int]bool{near1.ID: true, near2.ID: true}
+	if len(got) != len(wantSet) {
+		t.Fatalf("got %v, want exactly [%d %d] (hit unit excluded, out-of-radius bystander excluded)", got, near1.ID, near2.ID)
+	}
+	for _, id := range got {
+		if !wantSet[id] {
+			t.Fatalf("got %v, unexpected id %d", got, id)
+		}
+		if id == hitUnit.ID {
+			t.Fatalf("got %v, current-event unit %d must be excluded by ExcludeCurrentEvent", got, hitUnit.ID)
+		}
+	}
+}
+
+// TestResolveTargetQuery_ExcludeCurrentEvent_DefaultOff_EventUnitIncluded
+// guards the byte-identical default: every query authored before this field
+// existed leaves ExcludeCurrentEvent false, so the current-event unit stays
+// in the result set exactly like before this fix.
+func TestResolveTargetQuery_ExcludeCurrentEvent_DefaultOff_EventUnitIncluded(t *testing.T) {
+	s := setupHostileTargetingPair(t)
+	defer s.mu.Unlock()
+
+	caster := teamCombatUnit(t, s, "p1", 0, 0)
+	hitUnit := teamCombatUnit(t, s, "p2", 300, 0)
+
+	ctx := &RuntimeAbilityContext{
+		CasterID:           caster.ID,
+		CurrentEventUnitID: hitUnit.ID,
+		EventPosition:      protocol.Vec2{X: hitUnit.X, Y: hitUnit.Y},
+	}
+	q := TargetQueryDef{
+		Source:    SrcAllInScene,
+		Origin:    OriginCurrentEventPos,
+		Relations: []TargetRelation{RelEnemy},
+		Radius:    200,
+		Ordering:  OrderUnitID,
+		// ExcludeCurrentEvent left unset (false).
+	}
+	got := s.resolveTargetQueryLocked(ctx, q)
+	found := false
+	for _, id := range got {
+		if id == hitUnit.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("got %v, want hit unit %d included by default (ExcludeCurrentEvent unset)", got, hitUnit.ID)
 	}
 }
 

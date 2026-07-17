@@ -1,6 +1,9 @@
 package game
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"math"
+)
 
 // ═════════════════════════════════════════════════════════════════════════════
 // LEGACY -> COMPOSABLE COMPILER (Phase 4, Task 1)
@@ -308,7 +311,7 @@ type playPresentationAtPointConfig struct {
 func compileOffensiveActions(def AbilityDef) ([]AbilityActionDef, []PresentationInstanceDef) {
 	switch {
 	case def.DamagePerSecond > 0 && def.DamageAmount <= 0:
-		return compileVortexActions(def), nil
+		return compileTickingProjectileActions(def), nil
 	case def.Projectile != "":
 		return compileProjectileActions(def), nil
 	case def.ImpactDelaySeconds > 0:
@@ -321,31 +324,131 @@ func compileOffensiveActions(def AbilityDef) ([]AbilityActionDef, []Presentation
 }
 
 // launchProjectileConfig is the compiled config for launch_projectile.
-// ActionLaunchProjectile has a registered ActionDescriptor (Phase 6c;
-// ability_exec_projectile.go): it delegates to the SAME seams the legacy
-// cast resolver uses (fireAbilityProjectileLocked / fireAbilityChainLocked),
-// so every field the projectile/chain mechanic reads from an AbilityDef must
-// be baked in here rather than read back off a def at execute time — a
-// converted (schemaVersion 2) ability has its legacy mechanic fields cleared
-// (see ConvertLegacyAbility), so Config is this action's ONLY source of
-// truth once that conversion happens.
+// ActionLaunchProjectile has a registered ActionDescriptor
+// (ability_exec_projectile.go). As of the launch_projectile redesign (the
+// "composable delivery primitive" phase) this action is SPAWN + TRAVEL ONLY
+// for arcane_bolt/fireball's shape: damage/splash live in a nested
+// on_projectile_impact trigger carried in Triggers below (the create_zone
+// precedent — config.triggers, not Children, so it never auto-fires via
+// on_action_complete; it fires only when the spawned Projectile actually
+// lands — see fireProjectileImpactLocked, projectile.go).
+//
+// chain_lightning is the ONE exception, kept exactly as it was before this
+// redesign: its bounce is not a projectile delivery at all — it resolves the
+// whole beam-bounce chain inline via fireAbilityChainLocked at fire time
+// (chain_lightning never spawns a Projectile). Amount/Type/ChainCount/
+// BounceRange/BounceDamageFalloff/MinorDamage stay baked here and keep
+// delegating unchanged, gated on ChainCount > 0 — see
+// ability_exec_projectile.go's Execute.
 type launchProjectileConfig struct {
-	Projectile string     `json:"projectile"`
-	Amount     int        `json:"amount"`
-	Type       DamageType `json:"type,omitempty"`
-	// Radius is the impact splash radius (fireball). 0 ⇒ single-target impact.
-	// Deliberately NOT modifier-scaled (mirrors dealDamageConfig.Radius, which
-	// is likewise never folded by the executor today — no action's Radius is).
-	Radius float64 `json:"radius,omitempty"`
-	// ProjectileScale / MinorDamage are presentation/rendering passthroughs
-	// (Projectile.Scale / Projectile.MinorDamage) baked in for the same
-	// "Config is the sole authority post-conversion" reason as Radius.
-	ProjectileScale     float64 `json:"projectileScale,omitempty"`
-	MinorDamage         bool    `json:"minorDamage,omitempty"`
-	ChainCount          int     `json:"chainCount,omitempty"`
-	BounceRange         float64 `json:"bounceRange,omitempty"`
-	BounceDamageFalloff int     `json:"bounceDamageFalloff,omitempty"`
+	Projectile string `json:"projectile"`
+	// TravelMode selects how the bolt gets from launch to impact:
+	// "to_target" (default/empty — homes on the resolved unit target, current
+	// behavior) or "direction" (flies toward the aim point and keeps going,
+	// like arcane_orb's straight-line flight; see
+	// launchDirectionalProjectileLocked, projectile.go, for the impact
+	// semantics this chooses).
+	TravelMode string `json:"travelMode,omitempty"`
+	// Distance is the flight length for TravelMode "direction". Carries the
+	// CastRange type (not a plain float64) so the "match_attack_range"
+	// sentinel round-trips exactly like the legacy def's own CastRange field
+	// — arcane_orb's compiled shape bakes def.CastRange here (see
+	// compileTickingProjectileActions) and Execute resolves it against the
+	// live caster (c.Distance.Resolve(caster)), mirroring
+	// spawnArcaneOrbLocked's own CastRange.Resolve call. 0/unresolved derives
+	// it from the caster-to-aim-point distance instead (mirrors
+	// spawnArcaneOrbLocked's identical fallback). Unused for "to_target".
+	Distance CastRange `json:"distance,omitempty"`
+	// ProjectileScale is a presentation/rendering passthrough
+	// (Projectile.Scale), baked in so Config is the sole authority once an
+	// ability converts (schemaVersion 2 clears the legacy def fields).
+	ProjectileScale float64 `json:"projectileScale,omitempty"`
+	// ProjectileSpeed overrides the flight speed that would otherwise come
+	// from the named Projectile's own ProjectileDef.Speed (or
+	// defaultProjectileSpeed/arcaneOrbDefaultSpeed when the def is
+	// unregistered). 0/absent ⇒ no override, the pre-existing behavior for
+	// every "to_target" bolt (arcane_bolt/fireball/chain_lightning never set
+	// this). Only arcane_orb's ticking-vortex shim (TickInterval > 0, below)
+	// sets this today, mirroring the legacy def's own ProjectileSpeed field
+	// (folded through SpellModFieldProjectileSpeed — see the FOLD PARITY note
+	// on the TickInterval-shape fields below).
+	ProjectileSpeed float64 `json:"projectileSpeed,omitempty"`
+
+	// SpawnOrigin selects the world position this bolt spawns FROM — NOT who
+	// it flies at/toward, which stays `target`/`targets` as always. Reuses
+	// TargetQueryDef's TargetOrigin enum (ability_program.go) and resolves via
+	// the SAME s.resolveOriginLocked (ability_exec_targeting.go) every
+	// TargetQueryDef.Origin already uses, rather than inventing a parallel
+	// position vocabulary. The empty value ("") is the byte-identical
+	// default: resolveOriginLocked's own default case returns the caster's
+	// position for an empty/unrecognized origin, exactly the pre-existing
+	// "bolt always leaves from the caster" behavior — compileLegacyAbility
+	// never sets this field, so every legacy/compiled ability is unaffected.
+	// Lets a composed ability whose impact splits into more bolts (a
+	// "hit an enemy, then splits to nearby enemies" shape) spawn the split
+	// bolts at the HIT enemy's position instead of back at the original
+	// caster. See launchProjectileSpawnOriginOptions (ability_exec_
+	// projectile.go) for which concrete TargetOrigin values the schema
+	// actually offers, and why the rest are deliberately withheld.
+	SpawnOrigin TargetOrigin `json:"spawnOrigin,omitempty"`
+
+	// ── chain_lightning's kept shim (see the type doc comment above) ──
+	Amount              int        `json:"amount,omitempty"`
+	Type                DamageType `json:"type,omitempty"`
+	MinorDamage         bool       `json:"minorDamage,omitempty"`
+	ChainCount          int        `json:"chainCount,omitempty"`
+	BounceRange         float64    `json:"bounceRange,omitempty"`
+	BounceDamageFalloff int        `json:"bounceDamageFalloff,omitempty"`
+
+	// ── arcane_orb's ticking-vortex shim (retired launch_vortex's fields) ──
+	// TickInterval > 0 selects the vortex shape: a "direction" travelMode
+	// bolt that NEVER fires on_projectile_impact (it flies its full Distance
+	// regardless of what it passes near) and instead fires
+	// on_projectile_tick repeatedly while airborne — see
+	// tickArcaneOrbProjectileLocked (projectile.go) for the exact firing
+	// cadence (apply_force/select_targets every simulation tick so the pull
+	// tracks the orb's live position; deal_damage throttled to a fixed
+	// cadence via its own Timing.TickInterval — see AbilityActionDef.Timing's
+	// doc comment). 0/absent (every "to_target" and impact-shaped "direction"
+	// bolt) means "not a ticking vortex" — the pre-existing behavior.
+	//
+	// NO SIBLING SCALARS HERE — SINGLE SOURCE OF TRUTH: this config used to
+	// ALSO carry Radius/PullStrength/DamagePerSecond/Type top-level fields
+	// mirroring the nested Triggers' magnitudes, and Execute read the
+	// TOP-LEVEL copies while the flow view rendered the NESTED ones — so
+	// editing the nested (visible, "authored") select_targets radius /
+	// apply_force strength / deal_damage amount / apply_force mode did
+	// NOTHING at runtime. That was a live bug (apply_force's "push" Mode
+	// lived only in the dead nested copy and was never reachable). Fixed: the
+	// magnitudes now live in EXACTLY ONE place — the nested on_projectile_tick
+	// trigger below — and Execute reads them from there (see
+	// executeTickingVortexShimLocked's vortexMagnitudesFromTrigger call).
+	// Radius/PullStrength/ProjectileSpeed are still folded through the
+	// caster's spell modifiers exactly once, at LAUNCH time (frozen for the
+	// whole flight, never re-folded per tick — apply_force itself has no
+	// fold seam of its own, unlike deal_damage, so this is the only place
+	// they can be scaled), via the SAME applySpellModField helper /
+	// collectSpellModifiersLocked(caster, *ctx.abilityDef) mods collection
+	// legacy uses. deal_damage's amount is NOT frozen here: it folds itself,
+	// once per firing, through the ordinary ctx.abilityDef seam every other
+	// deal_damage action already uses — see fireProjectileTickLocked's
+	// ROUNDING DECISION doc comment (projectile.go) for the exact arithmetic
+	// this implies relative to legacy's single frozen-then-rounded DoT chunk.
+	TickInterval float64 `json:"tickInterval,omitempty"`
+
+	// Triggers carries the compiled on_projectile_impact trigger(s), OR (for
+	// the TickInterval>0 vortex shape) the on_projectile_tick trigger shown
+	// in the flow view — this action's nested-trigger slot. Populated for
+	// every non-chain composable projectile (arcane_bolt/fireball's migrated
+	// shape, and arcane_orb's vortex shape); empty for the chain_lightning
+	// shim (its "impact" is the inline beam chain, not a nested trigger).
+	Triggers []AbilityTriggerDef `json:"triggers,omitempty"`
 }
+
+// projectileImpactTriggerID names the single on_projectile_impact trigger
+// compileProjectileImpactTrigger emits, mirroring meteorPresentationID's role
+// for the delayed-impact shape.
+const projectileImpactTriggerID = "impact"
 
 // compileProjectileActions builds the single launch_projectile action for a
 // def with a non-empty Projectile. The action carries its own Target query
@@ -354,19 +457,25 @@ type launchProjectileConfig struct {
 // chain_lightning are all single-target casts — this doubles as the "target
 // still alive" guard (the query's default AliveState excludes HP<=0), mirroring
 // legacy's `eff.Damage > 0 && target.HP > 0` gate in resolveAbilityCastOnTargetLocked.
+//
+// chain_lightning (ChainCount > 0) keeps the pre-redesign baked-amount shim
+// untouched — see launchProjectileConfig's doc comment. Every other
+// projectile ability (arcane_bolt/fireball) gets its damage (+ splash)
+// composed into a nested on_projectile_impact trigger instead.
 func compileProjectileActions(def AbilityDef) []AbilityActionDef {
 	cfg := launchProjectileConfig{
 		Projectile:      def.Projectile,
-		Amount:          def.DamageAmount,
-		Type:            def.DamageType,
-		Radius:          def.Radius,
 		ProjectileScale: def.ProjectileScale,
-		MinorDamage:     def.MinorDamage,
 	}
 	if def.ChainCount > 0 {
+		cfg.Amount = def.DamageAmount
+		cfg.Type = def.DamageType
+		cfg.MinorDamage = def.MinorDamage
 		cfg.ChainCount = def.ChainCount
 		cfg.BounceRange = def.BounceRange
 		cfg.BounceDamageFalloff = def.BounceDamageFalloff
+	} else {
+		cfg.Triggers = []AbilityTriggerDef{compileProjectileImpactTrigger(def)}
 	}
 	return []AbilityActionDef{{
 		ID:     "proj",
@@ -376,56 +485,147 @@ func compileProjectileActions(def AbilityDef) []AbilityActionDef {
 	}}
 }
 
-// launchVortexConfig is the compiled config for launch_vortex (arcane_orb's
-// moving pull+DoT vortex). ActionLaunchVortex has a registered
-// ActionDescriptor (ability_exec_vortex.go): it delegates to the SAME seam
-// the legacy point-cast resolver uses (spawnArcaneOrbLocked), so every field
-// spawnArcaneOrbLocked/tickArcaneOrbProjectileLocked read from an AbilityDef/
-// EffectiveSpell must be baked in here rather than read back off a def at
-// execute time — a converted (schemaVersion 2) ability has its legacy
-// mechanic fields cleared (see ConvertLegacyAbility), so Config is this
-// action's ONLY source of truth for them once that conversion happens.
+// compileProjectileImpactTrigger builds the on_projectile_impact trigger for
+// a non-chain projectile ability: single-target damage to the unit the bolt
+// actually hit (SrcCurrentEvent — bound to the hit unit by
+// fireProjectileImpactLocked, projectile.go) when def.Radius <= 0
+// (arcane_bolt's shape), or a splash select_targets(origin: impact_position,
+// radius) -> deal_damage when def.Radius > 0 (fireball's shape).
 //
-// CastRange is the one exception: it is baked here too (rather than read
-// live off ctx.abilityDef) so this action's Config is fully self-contained
-// even outside the normal resolveAbilityProgramCastLocked entry point (which
-// always sets ctx.abilityDef) — mirroring how launchProjectileConfig bakes
-// Radius/ProjectileScale/etc. defensively. It carries the CastRange type
-// (not a plain float64) so the "match_attack_range" sentinel round-trips
-// exactly like the legacy def's own CastRange field.
-type launchVortexConfig struct {
-	Projectile      string     `json:"projectile"`
-	ProjectileScale float64    `json:"projectileScale,omitempty"`
-	ProjectileSpeed float64    `json:"projectileSpeed,omitempty"`
-	Radius          float64    `json:"radius,omitempty"`
-	PullStrength    float64    `json:"pullStrength"`
-	DamagePerSecond float64    `json:"damagePerSecond,omitempty"`
-	Type            DamageType `json:"type,omitempty"`
-	CastRange       CastRange  `json:"castRange"`
+// FIREBALL'S SPLASH-EXCLUDING-PRIMARY, made byte-identical without any
+// exclusion filter: legacy's applyAbilitySplashDamageLocked explicitly skips
+// the primary target (it already took the SAME damage amount directly) so it
+// isn't hit twice. Here there is no separate "hit the primary directly" step
+// at all — the splash query alone (all enemies within Radius of the impact
+// point) already includes the primary, since the primary IS the impact point
+// (distance 0 <= Radius), and deal_damage applies the SAME folded amount to
+// every unit the query returns. One unified query, one deal_damage: exactly
+// the legacy set of (unit, amount) pairs, with no double-hit and no need for
+// includeInitialTarget/excludeSource (verified: both already do something
+// else — see ability_exec_targeting.go — includeInitialTarget FORCES an
+// out-of-radius target in, excludeSource drops the CASTER; neither is "drop
+// the primary from a radius match", which this design doesn't need).
+func compileProjectileImpactTrigger(def AbilityDef) AbilityTriggerDef {
+	var actions []AbilityActionDef
+	if def.Radius > 0 {
+		actions = []AbilityActionDef{
+			{
+				ID:   "sel",
+				Type: ActionSelectTargets,
+				Target: &TargetQueryDef{
+					Source:    SrcAllInScene,
+					Origin:    OriginImpactPosition,
+					Radius:    def.Radius,
+					Relations: []TargetRelation{RelEnemy},
+				},
+				Outputs: map[string]string{"targets": "splashHits"},
+			},
+			{
+				ID:     "dmg",
+				Type:   ActionDealDamage,
+				Input:  map[string]ContextRef{"targets": {Key: "splashHits"}},
+				Config: marshalConfig(dealDamageConfig{Amount: def.DamageAmount, Type: def.DamageType}),
+			},
+		}
+	} else {
+		actions = []AbilityActionDef{
+			{
+				ID:      "sel",
+				Type:    ActionSelectTargets,
+				Target:  &TargetQueryDef{Source: SrcCurrentEvent},
+				Outputs: map[string]string{"targets": "hit"},
+			},
+			{
+				ID:     "dmg",
+				Type:   ActionDealDamage,
+				Input:  map[string]ContextRef{"targets": {Key: "hit"}},
+				Config: marshalConfig(dealDamageConfig{Amount: def.DamageAmount, Type: def.DamageType}),
+			},
+		}
+	}
+	return AbilityTriggerDef{ID: projectileImpactTriggerID, Type: TriggerOnProjectileImpact, Actions: actions}
 }
 
-// compileVortexActions builds the single launch_vortex action for a def with
-// DamagePerSecond>0 and no DamageAmount (arcane_orb's shape — see
-// compileOffensiveActions' dispatch comment). No preceding select_targets:
-// the orb never resolves a unit target set, it travels from the caster
-// toward the cast point and pulls/damages whatever enters its radius along
-// the way — see ability_exec_vortex.go.
-func compileVortexActions(def AbilityDef) []AbilityActionDef {
-	cfg := launchVortexConfig{
+// compileTickingProjectileActions builds the single launch_projectile action
+// for a def with DamagePerSecond>0 and no DamageAmount (arcane_orb's shape —
+// see compileOffensiveActions' dispatch comment): a "direction" travelMode
+// bolt with TickInterval>0, replacing the retired launch_vortex action type.
+// No preceding select_targets: the orb never resolves a unit target set, it
+// travels from the caster toward the cast point and pulls/damages whatever
+// enters its radius along the way — see launchProjectileConfig's TickInterval
+// doc comment and tickArcaneOrbProjectileLocked (projectile.go).
+//
+// Distance is baked from def.CastRange (the CastRange type, not a plain
+// float64, so the "match_attack_range" sentinel round-trips exactly like the
+// legacy def's own CastRange field — see launchProjectileConfig.Distance's
+// doc comment).
+func compileTickingProjectileActions(def AbilityDef) []AbilityActionDef {
+	// Radius/PullStrength/DamagePerSecond/Type are DELIBERATELY NOT baked as
+	// sibling scalars on launchProjectileConfig here (unlike before the
+	// genuine-composition fix): the nested on_projectile_tick trigger below is
+	// now the SOLE source of truth for those magnitudes (its select_targets'
+	// radius, apply_force's strength, deal_damage's amount/type) — see
+	// launchProjectileConfig's TickInterval doc comment for why a second,
+	// unread copy of the same numbers was a live bug (apply_force's Mode was
+	// only ever reachable through this now-removed dead copy). Only genuinely
+	// projectile-level fields (art, scale, speed, distance, tickInterval,
+	// travelMode) stay on this config.
+	cfg := launchProjectileConfig{
 		Projectile:      def.Projectile,
+		TravelMode:      travelModeDirection,
+		Distance:        def.CastRange,
 		ProjectileScale: def.ProjectileScale,
 		ProjectileSpeed: def.ProjectileSpeed,
-		Radius:          def.Radius,
-		PullStrength:    def.PullStrength,
-		DamagePerSecond: def.DamagePerSecond,
-		Type:            def.DamageType,
-		CastRange:       def.CastRange,
+		TickInterval:    arcaneOrbDamageIntervalSeconds,
+		Triggers:        []AbilityTriggerDef{compileProjectileTickTrigger(def)},
 	}
 	return []AbilityActionDef{{
 		ID:     "orb",
-		Type:   ActionLaunchVortex,
+		Type:   ActionLaunchProjectile,
 		Config: marshalConfig(cfg),
 	}}
+}
+
+// compileProjectileTickTrigger builds the on_projectile_tick trigger for a
+// ticking (vortex-shaped) launch_projectile action: select the hostiles
+// currently within radius of the bolt's live position, pull them toward it,
+// and deal this tick's share of damage. AS OF THE GENUINE-COMPOSITION FIX
+// (ability_exec_projectile.go's executeTickingVortexShimLocked), this is no
+// longer flow-display metadata — it is the trigger the executor actually
+// extracts and RUNS every tick (select_targets/apply_force unthrottled for
+// positional accuracy; deal_damage throttled to this tick trigger's own
+// cadence via its Timing.TickInterval — see AbilityActionDef.Timing's doc
+// comment and fireProjectileTickLocked, projectile.go). Editing this trigger's
+// authored radius/strength/amount now has real runtime effect.
+func compileProjectileTickTrigger(def AbilityDef) AbilityTriggerDef {
+	perTick := int(math.Round(def.DamagePerSecond * arcaneOrbDamageIntervalSeconds))
+	actions := []AbilityActionDef{
+		{
+			ID:   "sel",
+			Type: ActionSelectTargets,
+			Target: &TargetQueryDef{
+				Source:    SrcAllInScene,
+				Origin:    OriginProjectilePos,
+				Radius:    def.Radius,
+				Relations: []TargetRelation{RelEnemy},
+			},
+			Outputs: map[string]string{"targets": "vortexHits"},
+		},
+		{
+			ID:     "dmg",
+			Type:   ActionDealDamage,
+			Timing: &ActionTiming{TickInterval: arcaneOrbDamageIntervalSeconds},
+			Input:  map[string]ContextRef{"targets": {Key: "vortexHits"}},
+			Config: marshalConfig(dealDamageConfig{Amount: perTick, Type: def.DamageType}),
+		},
+		{
+			ID:     "force",
+			Type:   ActionApplyForce,
+			Input:  map[string]ContextRef{"targets": {Key: "vortexHits"}},
+			Config: marshalConfig(applyForceConfig{Strength: def.PullStrength, Duration: arcaneOrbPullRefreshSeconds, Origin: OriginProjectilePos}),
+		},
+	}
+	return AbilityTriggerDef{ID: "tick", Type: TriggerOnProjectileTick, Actions: actions}
 }
 
 // compileShatterActions builds the instant point-AoE shape (Shatter):

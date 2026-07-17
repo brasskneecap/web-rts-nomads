@@ -192,6 +192,89 @@ func TestValidateProgram_NestedZoneTrigger_TickIntervalChecked(t *testing.T) {
 	}
 }
 
+// TestValidateProgram_NestedStatusTrigger_TickIntervalChecked mirrors
+// TestValidateProgram_NestedZoneTrigger_TickIntervalChecked for the
+// AbilityStatus subsystem: a trigger nested inside an apply_status action's
+// config.triggers gets the same invalid_tick_interval check as a root
+// trigger, at the same path grammar.
+func TestValidateProgram_NestedStatusTrigger_TickIntervalChecked(t *testing.T) {
+	statusCfg := applyStatusConfig{
+		Status: "custom_poison", Duration: 5, TickInterval: 1,
+		Triggers: []AbilityTriggerDef{
+			{
+				ID:     "tick",
+				Type:   TriggerOnStatusTick,
+				Timing: &TriggerTiming{TickInterval: 0}, // invalid
+				Actions: []AbilityActionDef{
+					{ID: "sdmg", Type: ActionDealDamage, Config: marshalConfig(dealDamageConfig{Amount: 1})},
+				},
+			},
+		},
+	}
+	prog := &AbilityProgram{
+		Entry: AbilityEntryDef{Type: EntryUnit},
+		Triggers: []AbilityTriggerDef{
+			{ID: "t1", Type: TriggerOnCastComplete, Actions: []AbilityActionDef{
+				{ID: "status", Type: ActionApplyStatus, Config: marshalConfig(statusCfg)},
+			}},
+		},
+	}
+	issues := validateAbilityProgram(prog)
+	wantPath := "triggers[0].actions[0].config.triggers[0]"
+	if got := issueAt(issues, wantPath, "invalid_tick_interval"); got == nil {
+		t.Fatalf("want invalid_tick_interval at %q, got issues: %+v", wantPath, issues)
+	}
+}
+
+// TestValidateProgram_ApplyStatus_RequiresConfigTickIntervalWhenTriggersPresent
+// verifies apply_status's own tickInterval requirement (the cadence driver
+// AbilityStatus reads at runtime — see applyStatusConfig's doc comment): an
+// authored status (Triggers non-empty) with no top-level tickInterval is
+// flagged, mirroring create_zone's identical unconditional requirement.
+func TestValidateProgram_ApplyStatus_RequiresConfigTickIntervalWhenTriggersPresent(t *testing.T) {
+	statusCfg := applyStatusConfig{
+		Status:   "custom_poison",
+		Duration: 5,
+		// TickInterval intentionally omitted despite carrying Triggers.
+		Triggers: []AbilityTriggerDef{
+			{ID: "expire", Type: TriggerOnStatusExpire, Actions: nil},
+		},
+	}
+	prog := &AbilityProgram{
+		Entry: AbilityEntryDef{Type: EntryUnit},
+		Triggers: []AbilityTriggerDef{
+			{ID: "t1", Type: TriggerOnCastComplete, Actions: []AbilityActionDef{
+				{ID: "status", Type: ActionApplyStatus, Config: marshalConfig(statusCfg)},
+			}},
+		},
+	}
+	issues := validateAbilityProgram(prog)
+	wantPath := "triggers[0].actions[0]"
+	if got := issueAt(issues, wantPath, "empty_required_property"); got == nil {
+		t.Fatalf("want empty_required_property (missing tickInterval) at %q, got issues: %+v", wantPath, issues)
+	}
+}
+
+// TestValidateProgram_LegacyApplyStatus_NoTickIntervalRequired proves the new
+// check is scoped to the authored path only: a legacy-shaped apply_status
+// (Triggers empty — e.g. shatter's compiled slow rider) with no tickInterval
+// must NOT be flagged; it has no cadence to validate.
+func TestValidateProgram_LegacyApplyStatus_NoTickIntervalRequired(t *testing.T) {
+	statusCfg := applyStatusConfig{Status: "slow", Multiplier: 0.5, Duration: 3}
+	prog := &AbilityProgram{
+		Entry: AbilityEntryDef{Type: EntryUnit},
+		Triggers: []AbilityTriggerDef{
+			{ID: "t1", Type: TriggerOnCastComplete, Actions: []AbilityActionDef{
+				{ID: "status", Type: ActionApplyStatus, Config: marshalConfig(statusCfg)},
+			}},
+		},
+	}
+	issues := validateAbilityProgram(prog)
+	if got := issueAt(issues, "triggers[0].actions[0]", "empty_required_property"); got != nil {
+		t.Fatalf("legacy apply_status (no triggers) must not require tickInterval, got issue: %+v", got)
+	}
+}
+
 // TestValidateProgram_NestedZoneAction_DuplicateIDDetected verifies that ids
 // inside config.triggers share the single id namespace with root
 // triggers/actions, so a nested action id colliding with a root action id is

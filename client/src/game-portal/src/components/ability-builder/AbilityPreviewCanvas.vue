@@ -94,6 +94,23 @@
 // with applySnapshot's own per-tick unit mapping via GameState's exported
 // mapUnitSnapshot() so the two paths can never silently diverge.
 //
+// Render clock (N3): CanvasRenderer's frame-cycling cosmetics (unit sprite
+// idle/walk/attack cycling, looping effect/beam frames, floating-number
+// fade) all free-run on a wall clock by default — correct for a LIVE match,
+// wrong here: DIRECT-ASSIGN freezes state.units/projectiles/beams/effects
+// exactly at the displayed frame's snapshot while paused/scrubbed, but those
+// cosmetics would keep aging on real elapsed time regardless (the unit
+// visibly keeps mid-stride-cycling, a damage number keeps fading out, after
+// hitting pause). We inject a DETERMINISTIC clock instead — see
+// `previewClock` below — derived from the frame index actually on screen,
+// via `previewClockMs` (previewPlayback.ts), so pausing genuinely freezes
+// everything and scrubbing is idempotent (frame N looks the same every time
+// it's displayed). The SEPARATE playback clock above (`seekBase`/
+// `startedAtMs`, driven by real performance.now()) still decides WHICH frame
+// index to show — that part is deliberately still wall-clock-real-time so
+// speed/play/pause read naturally; only the RENDERER's own cosmetics clock
+// is swapped for a frame-index-derived one.
+//
 // Playback controls (Task 7) follow the SAME controlled-with-fallback shape
 // `currentTick` already established: `playing` and `speed` are optional
 // props with defaults, mirrored into local refs (`playing`/`speed` below) so
@@ -116,11 +133,20 @@ import { GameState, mapUnitSnapshot } from '@/game/core/GameState'
 import { Camera } from '@/game/rendering/Camera'
 import { CanvasRenderer } from '@/game/rendering/CanvasRenderer'
 import type { PreviewFrame } from '@/game/abilities/program/programPreview'
-import { FALLBACK_BBOX, PREVIEW_FRAME_DT_SECONDS, computeCameraFit, computeSceneBBox, frameIndexAt, type SceneBBox } from './previewPlayback'
+import type { AbilityExecutionTraceEvent } from '@/game/abilities/program/programPreview'
+import { FALLBACK_BBOX, PREVIEW_FRAME_DT_SECONDS, computeCameraFit, computeSceneBBox, frameIndexAt, previewClockMs, type SceneBBox } from './previewPlayback'
+import { damageNumbersForFrameIndex } from './previewDamageNumbers'
 import { overlayCircles } from './PreviewOverlays'
 
 interface Props {
   frames: PreviewFrame[]
+  /**
+   * The preview run's full execution trace (Task 9: floating damage/heal
+   * numbers). Optional/defaults to [] so every existing caller (and every
+   * test in AbilityPreviewCanvas.test.ts) that doesn't pass it keeps working
+   * — it simply means no numbers spawn, same as before this prop existed.
+   */
+  trace?: AbilityExecutionTraceEvent[]
   /**
    * Controlled frame index — v-model'd by the parent (Task 7/8's transport
    * controls). REQUIRED and always controlled: unlike `playing`/`speed`
@@ -148,6 +174,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   playing: true,
   speed: 1,
+  trace: () => [],
 })
 
 const emit = defineEmits<{
@@ -191,6 +218,16 @@ let renderer: CanvasRenderer | null = null
 let overlayCtx: CanvasRenderingContext2D | null = null
 let raf = 0
 
+// previewFrameIndex is the frame index CURRENTLY on screen — updated right
+// before every render()/spawnDamageNumbersForIndex call so both read the
+// exact same value within one tick. `previewClock` (passed to CanvasRenderer
+// as its injected timeSource) is a closure over this `let`, so it always
+// reports previewClockMs(<whatever frame is displayed right now>), never a
+// stale value from a previous tick. See the module doc comment's "Render
+// clock (N3)" section above for why this exists.
+let previewFrameIndex = 0
+const previewClock = () => previewClockMs(previewFrameIndex)
+
 // lastAppliedIndex guards applyFrame's per-unit remap against redundant work:
 // frames advance at 20fps (PREVIEW_FRAME_DT_SECONDS) but tick() runs at
 // display refresh rate (~60fps) and also re-runs continuously while paused,
@@ -216,6 +253,74 @@ function applyFrame(i: number) {
   state.projectiles = snap.projectiles ?? []
   state.beams = snap.beams ?? []
   state.effects = snap.effects ?? []
+}
+
+// ── floating damage/heal numbers (Task 9) ───────────────────────────────
+// lastDamageFrameIndex guards spawnDamageNumbersForIndex the same way
+// lastAppliedIndex guards applyFrame above, but is tracked SEPARATELY (not
+// shared) — a reset here must not silently perturb the per-unit remap
+// guard, or vice versa. -1 is never a valid frame index, so rearming it
+// forces the very next call to (re)spawn whatever events belong to the
+// currently-displayed frame even if that frame's index hasn't changed.
+let lastDamageFrameIndex = -1
+
+// clearDamageNumbers is the seek/restart/new-run reset point: wipes the
+// renderer's in-flight floating numbers (via the minimal public seam added
+// to CanvasRenderer for exactly this — see its doc comment) and rearms
+// lastDamageFrameIndex so the destination frame's own numbers reliably
+// (re)spawn next, instead of silently staying cleared until the index
+// happens to change again.
+function clearDamageNumbers() {
+  renderer?.clearFloatingDamageNumbers()
+  lastDamageFrameIndex = -1
+}
+
+// spawnDamageNumbersForIndex pushes frame `i`'s damage_applied/healing_applied
+// trace events onto GameState.damageEvents — the SAME drain path
+// CanvasRenderer.render() already uses for the live network path (see its
+// "Drain new damage events" comment at the top of render()) — so the replay
+// gets floating numbers from the renderer's existing paint logic with no
+// further renderer changes. Guarded by lastDamageFrameIndex so a frame
+// already spawned this run doesn't re-spawn every RAF tick while
+// paused/idle on it (frames advance at 20fps, tick() runs at ~60fps and
+// keeps spinning while paused — same cadence mismatch lastAppliedIndex's
+// doc comment above describes).
+function spawnDamageNumbersForIndex(i: number) {
+  if (!state || i === lastDamageFrameIndex) return
+  lastDamageFrameIndex = i
+  const frame = props.frames[i]
+  if (!frame) return
+  const specs = damageNumbersForFrameIndex(
+    props.trace ?? [],
+    i,
+    frame.snapshot.units ?? [],
+    props.casterX ?? 0,
+    props.casterY ?? 0,
+  )
+  if (specs.length === 0) return
+  // createdAt lands on previewClockMs(i) — the SAME injected-clock axis
+  // CanvasRenderer's render() reads via `previewClock` (this component's
+  // injected timeSource) for this same frame index. Using performance.now()
+  // here instead would stamp a number on the real wall clock while the
+  // renderer's own renderTime is the frame-index clock — the two would
+  // disagree the instant they're compared, so a number spawns already
+  // "elapsed" (aged/faded, possibly past FLOATING_DAMAGE_DURATION_MS
+  // entirely) instead of freshly popping in at elapsed===0. See N3 doc
+  // comment at the top of this file and previewClockMs's own comment.
+  const now = previewClockMs(i)
+  for (const spec of specs) {
+    state.damageEvents.push({
+      unitId: spec.unitId,
+      unitType: spec.unitType,
+      x: spec.x,
+      y: spec.y,
+      amount: spec.amount,
+      isFriendly: spec.isFriendly,
+      createdAt: now,
+      kind: spec.kind,
+      damageType: spec.damageType,
+    })
+  }
 }
 
 // ── overlay rings (cast range / AoE) ────────────────────────────────────
@@ -307,6 +412,10 @@ watch(
     // External scrub/seek: resume (or stay paused) from exactly this tick.
     seekBase.value = val
     startedAtMs.value = performance.now()
+    // A parent-driven seek (e.g. clicking a trace-log row via onSeekEvent)
+    // is exactly the "scrub" case Task 9 must not leave stale numbers
+    // across — clear so only the destination frame's own numbers show.
+    clearDamageNumbers()
   },
 )
 
@@ -379,6 +488,7 @@ function onScrub(e: Event) {
   seekBase.value = value
   startedAtMs.value = performance.now()
   emitTick(value)
+  clearDamageNumbers()
 }
 
 function onRestart() {
@@ -386,6 +496,7 @@ function onRestart() {
   startedAtMs.value = performance.now()
   emitTick(0)
   setPlaying(true)
+  clearDamageNumbers()
 }
 
 const maxTimeSeconds = computed(() => Math.max(0, props.frames.length - 1) * PREVIEW_FRAME_DT_SECONDS)
@@ -404,6 +515,13 @@ watch(
     applyFrame(0)
     lastAppliedIndex = 0
     emitTick(0)
+    // A re-run (or the error path clearing frames) must not leave the
+    // PREVIOUS run's floating numbers on screen fading out over the new
+    // scene — clear, then immediately (re)spawn whatever frame 0 of the
+    // fresh trace carries (typically none; frame 0 is captured before the
+    // cast is even requested — see ability_preview.go).
+    clearDamageNumbers()
+    spawnDamageNumbersForIndex(0)
   },
 )
 
@@ -427,6 +545,14 @@ function tick() {
     seekTick: seekBase.value,
   })
 
+  // Seed the injected render clock (previewClock, read by `rend.render()`
+  // below via CanvasRenderer's timeSource seam) with the frame index this
+  // tick is about to display — BEFORE applyFrame/spawnDamageNumbersForIndex
+  // run, so a number spawned this tick and the renderer's own renderTime
+  // agree on the exact same previewClockMs(index) value (see N3 doc comment
+  // + previewClockMs's comment for why that equality matters).
+  previewFrameIndex = index
+
   // Frames advance at 20fps while RAF runs at display refresh (and this loop
   // also spins continuously while paused) — most ticks resolve to the same
   // index, so only re-map units when it actually changes. refreshCamera
@@ -437,6 +563,12 @@ function tick() {
     applyFrame(index)
     lastAppliedIndex = index
   }
+  // Guarded independently by lastDamageFrameIndex (see its own doc comment)
+  // — always called, not nested in the `if` above, so a clearDamageNumbers()
+  // reset (which rearms lastDamageFrameIndex to -1 without touching
+  // lastAppliedIndex) reliably respawns even when the displayed index itself
+  // didn't change.
+  spawnDamageNumbersForIndex(index)
   refreshCamera(canvas, cam, sceneBBox.value, st.mapWidth, st.mapHeight)
   rend.render()
   drawOverlays(cam, canvas)
@@ -457,7 +589,11 @@ onMounted(() => {
   st.minimapPanelRect = { x: 0, y: 0, width: 1, height: 1 }
 
   const cam = new Camera()
-  const rend = new CanvasRenderer(canvas, st, cam)
+  // previewClock (this component's injected clock — see the N3 doc comment
+  // above) replaces CanvasRenderer's default real-clock timeSource so every
+  // cosmetic it drives freezes/scrubs in lockstep with the displayed frame
+  // instead of free-running on real elapsed time.
+  const rend = new CanvasRenderer(canvas, st, cam, previewClock)
 
   state = st
   camera = cam
@@ -465,8 +601,10 @@ onMounted(() => {
   overlayCtx = overlayCanvasEl.value?.getContext('2d') ?? null
 
   sceneBBox.value = computeSceneBBox(props.frames)
+  previewFrameIndex = props.currentTick
   applyFrame(props.currentTick)
   lastAppliedIndex = props.currentTick
+  spawnDamageNumbersForIndex(props.currentTick)
   refreshCamera(canvas, cam, sceneBBox.value, st.mapWidth, st.mapHeight)
   rend.render()
   drawOverlays(cam, canvas)

@@ -78,6 +78,15 @@ type Beam struct {
 	// victim, but the kill must still credit the original wielder. Defaults to
 	// CasterUnitID for the primary hit (attacker == visual origin).
 	AttackerUnitID int
+	// SourceAbilityID carries ProcSource.SourceAbilityID through to the
+	// deferred damage's DamageSource (applyBeamPendingDamageLocked) so a
+	// chain-bounce kill fired from an authored ability (chain_lightning-shape,
+	// via fireAbilityChainLocked) attributes to that ability for on_unit_death
+	// purposes. "" for every non-ability proc beam (equipment/item/perk),
+	// matching ProcSource.SourceAbilityID's zero-value contract. Distinct from
+	// AbilityID above, which is the CHANNEL-beam field (siphon_life) and is
+	// never set on a momentary beam.
+	SourceAbilityID string
 	// SlowMultiplier / SlowDurationSeconds: an on-hit chill carried from the
 	// proc config, applied to TargetUnitID when the deferred damage lands (via
 	// ApplySlowLocked). Zero ⇒ no slow.
@@ -168,6 +177,7 @@ func (s *GameState) spawnMomentaryDamageBeamLocked(src ProcSource, fromUnitID in
 		DamageType:           dmgType,
 		DamageDelayRemaining: delaySec,
 		ImpactEffect:         impactEffect,
+		SourceAbilityID:      src.SourceAbilityID,
 	}
 	s.nextBeamID++
 	s.Beams = append(s.Beams, b)
@@ -238,9 +248,10 @@ func (s *GameState) applyBeamPendingDamageLocked(b *Beam, deadUnitIDs *[]int) {
 		return
 	}
 	s.applyUnitDamageWithSourceLocked(target, damage, DamageSource{
-		AttackerUnitID: b.AttackerUnitID,
-		Kind:           "item-proc",
-		DamageType:     b.DamageType,
+		AttackerUnitID:  b.AttackerUnitID,
+		Kind:            "item-proc",
+		DamageType:      b.DamageType,
+		SourceAbilityID: b.SourceAbilityID,
 	})
 	// On-hit slow: routed to the cold (chill) or physical track by the beam's
 	// damage type. No-op on zero / out-of-range values.
@@ -253,7 +264,23 @@ func (s *GameState) applyBeamPendingDamageLocked(b *Beam, deadUnitIDs *[]int) {
 	}
 	if target.HP <= 0 {
 		target.HP = 0
-		*deadUnitIDs = append(*deadUnitIDs, target.ID)
+		// Ability-attributed beam kills (chain_lightning-shape, primary or
+		// bounce hop) defer removal + kill-XP/on_unit_death to the
+		// attributed pending-death drain that applyUnitDamageWithSourceLocked
+		// already enqueued — mirrors landProjectileLocked's
+		// proj.SourceKind=="ability" carve-out (projectile.go): appending to
+		// deadUnitIDs here would strip the unit via tickBeamsLocked's
+		// immediate removeUnitLocked BEFORE drainPendingDeathsLocked runs
+		// later this same tick, which is exactly the "already removed by the
+		// primary call site" skip path — silently discarding XP/kill
+		// bookkeeping AND making an authored ability's on_unit_death
+		// unreachable for every beam-delivered kill. Non-ability proc beams
+		// (equipment/item procs — b.SourceAbilityID == "") keep their legacy
+		// immediate removal; they never routed through the drain's XP path
+		// to begin with, so this is unchanged for them.
+		if b.SourceAbilityID == "" {
+			*deadUnitIDs = append(*deadUnitIDs, target.ID)
+		}
 	}
 }
 

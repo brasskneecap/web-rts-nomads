@@ -159,6 +159,12 @@ func (s *GameState) beginAbilityCastLocked(caster *Unit, abilityID string, targe
 	}
 	armAbilityGlobalCooldownLocked(caster)
 
+	// Fire on_cast_start (composable-only; no-op for a legacy ability) now
+	// that every gate has passed and cooldown/GCD are armed — see
+	// fireCastStartTriggerLocked's doc comment for the exact ordering
+	// rationale and the unpaired-on-interrupt hazard it accepts.
+	s.fireCastStartTriggerLocked(caster, def, target, protocol.Vec2{})
+
 	// Zero / negative cast time ⇒ instant ability (no lock, resolve now).
 	if eff.CastTime <= 0 {
 		targets := s.buildCastTargetSetLocked(caster, def, target)
@@ -215,6 +221,9 @@ func (s *GameState) beginAbilityCastAtPointLocked(caster *Unit, abilityID string
 		caster.AbilityCooldowns[abilityID] = cd
 	}
 	armAbilityGlobalCooldownLocked(caster)
+	// Fire on_cast_start (composable-only) now that every gate has passed and
+	// cooldown/GCD are armed — see fireCastStartTriggerLocked's doc comment.
+	s.fireCastStartTriggerLocked(caster, def, nil, protocol.Vec2{X: x, Y: y})
 	// Timed point cast: lock the caster and store the target point; resolution
 	// happens in tickUnitCastLocked when the timer elapses. Zero cast time keeps
 	// the prior behavior (resolve now). Mana is spent on completion, so an
@@ -260,7 +269,7 @@ func (s *GameState) resolveAbilityCastAtPointLocked(caster *Unit, def AbilityDef
 	// Traveling orb: launch a slow straight-line vortex from the caster toward
 	// the clicked point, up to the ability's full cast-range distance.
 	if eff.PullStrength > 0 && def.Projectile != "" {
-		s.spawnArcaneOrbLocked(caster, x, y, def, eff, def.CastRange.Resolve(caster))
+		s.spawnArcaneOrbLocked(caster, x, y, def, eff, def.CastRange.Resolve(caster), arcaneOrbDamageIntervalSeconds, nil, nil)
 	}
 
 	// Delayed-impact ground hazard (Meteor and future sky-drop spells). A point
@@ -461,6 +470,83 @@ func (s *GameState) resolveAbilityAoeAtPointLocked(caster *Unit, def AbilityDef,
 		// no slow, or the value is out of range, or the unit just died.
 		s.applyProcSlowLocked(u.ID, def.SlowMultiplier, def.SlowDurationSeconds, dmgType)
 	}
+}
+
+// fireCastStartTriggerLocked fires a composable ability's on_cast_start
+// triggers, if it has any. Called once from each of the three cast-begin
+// entry points — beginAbilityCastLocked (unit-target), beginAbilityCastAtPointLocked
+// (point), and beginAbilityChannelLocked (channel) — right after cooldown and
+// the global cooldown are armed, and (unit-target / channel paths) after the
+// mana-availability check has already passed. No-op for a legacy
+// (SchemaVersion<2 or Program nil) ability: on_cast_start can only be
+// authored on a composable Program, so a legacy cast is completely
+// unaffected by this call (same guard resolveAbilityProgramCastLocked and
+// every other trigger-dispatch call site already uses).
+//
+// ── PLACEMENT: why here, not earlier or later ──────────────────────────────
+// "Started" is defined as "every gate has passed and the cast is
+// committed" — ownership, busy, target legality, range, and mana have ALL
+// already been checked (mana CHECKED here, not yet SPENT — see the hazard
+// note below), and cooldown/GCD have already been armed. Placing the hook
+// any earlier (before the mana check) would fire on_cast_start for a cast
+// that's about to be rejected for insufficient mana, which is not "started"
+// by any reasonable definition. Placing it any later (e.g. after
+// buildCastTargetSetLocked/resolveAbilityCastLocked for an instant-cast)
+// would make instant-cast ordering ambiguous relative to on_cast_complete.
+//
+// This placement is AFTER eff is resolved (unit-target / channel paths) but
+// the context deliberately does NOT carry eff.DamageEffectivenessMultiplier
+// or ImpactPosition — those describe the RESOLVED effect, which does not
+// exist yet at start time. The context mirrors a strict subset of
+// resolveAbilityProgramCastLocked's shape: CasterID, AbilityID, program,
+// abilityDef, InitialTarget, and (point path only) CastPoint.
+//
+// ── THE UNPAIRED-ON-INTERRUPT HAZARD ───────────────────────────────────────
+// A cast that begins (non-zero cast time) can be abandoned before it
+// resolves three ways (tickUnitCastLocked): unknown ability, caster died, or
+// target lost/out of range. In every one of those, on_cast_complete NEVER
+// fires — so if this cast already fired on_cast_start, that trigger's
+// effects (a self-buff, a summoned unit, a spawned zone, ...) are NOT
+// undone. There is no on_cast_interrupted counterpart.
+//
+// DECISION: fire anyway, and document the hazard loudly (this comment) —
+// do not build a new "undo" trigger, and do not withhold on_cast_start to
+// dodge the problem. This matches the EXISTING design philosophy in this
+// file: the per-ability cooldown and the GCD are both armed at cast START
+// and are NEVER refunded on an interrupted cast ("An interrupted cast keeps
+// the cooldown — consistent with how every other RTS handles it", see
+// beginAbilityCastLocked above). on_cast_start joins mana-checked/cooldown-
+// armed/GCD-armed in the same "committed at start, not reversed on
+// interrupt" bucket — it is not a new category of risk, it is the SAME
+// category applied to one more piece of state. An ability author who wires
+// a persistent effect onto on_cast_start needs to know a cast can be
+// interrupted after it fires; that is a content-authoring concern (the
+// editor/description layer's job to surface), not a reason to withhold the
+// trigger from the runtime.
+//
+// primary is the resolved/validated target for the unit-target and channel
+// paths (nil for the point path); castPoint is the point-cast's world
+// target (zero Vec2 otherwise).
+//
+// Caller holds s.mu.
+func (s *GameState) fireCastStartTriggerLocked(caster *Unit, def AbilityDef, primary *Unit, castPoint protocol.Vec2) {
+	if def.SchemaVersion < 2 || def.Program == nil {
+		return
+	}
+	ctx := &RuntimeAbilityContext{
+		CasterID:   caster.ID,
+		AbilityID:  def.ID,
+		program:    def.Program,
+		abilityDef: &def,
+		Named:      map[string]ContextValue{},
+		CastPoint:  castPoint,
+		Trace:      s.previewTrace,
+		now:        s.previewClock,
+	}
+	if primary != nil {
+		ctx.InitialTarget = primary.ID
+	}
+	s.runProgramTriggersLocked(ctx, def.Program.Triggers, TriggerOnCastStart)
 }
 
 // failCastLocked records the failure reason on the unit (for async/UI
@@ -710,7 +796,13 @@ func (s *GameState) fireAbilityChainLocked(caster, target *Unit, def AbilityDef,
 	if emitter == "" {
 		emitter = "lightning_bolt"
 	}
-	s.executeProcEffectLocked(procSourceFromUnit(caster), target, ProcEffectParams{
+	// Stamp ability attribution onto the proc source so every hop's beam
+	// (primary + bounces) carries def.ID through to its DamageSource —
+	// closes the on_unit_death attribution gap for chain-killed victims (see
+	// ProcSource.SourceAbilityID's doc comment, proc_effects.go).
+	src := procSourceFromUnit(caster)
+	src.SourceAbilityID = def.ID
+	s.executeProcEffectLocked(src, target, ProcEffectParams{
 		Damage:              eff.Damage,
 		DamageType:          def.DamageType.OrPhysical(),
 		ProjectileID:        emitter,

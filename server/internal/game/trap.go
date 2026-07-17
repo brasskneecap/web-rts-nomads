@@ -1593,12 +1593,18 @@ func (s *GameState) perkShareDamageToMarkedLocked(source *Unit, rawDamage int, s
 	// Shadow because Shared Pain is a marker_trap effect — every redistribution
 	// reads as necrotic (dark-purple popup) regardless of what flavor of damage
 	// originally hit the source victim.
+	//
+	// SourceAbilityID is propagated for the same reason redirectSrc does in
+	// perkRedirectIncomingDamageLocked (perks_auras.go): this is the SAME
+	// damage instance fanned out to more victims, not a new one — see
+	// DamageSource.SourceAbilityID's doc comment (damage_pipeline.go).
 	sharedSrc := DamageSource{
 		AttackerUnitID:     src.AttackerUnitID,
 		AttackerBuildingID: src.AttackerBuildingID,
 		AttackerTrapID:     src.AttackerTrapID,
 		Kind:               "shared_pain",
 		DamageType:         DamageShadow,
+		SourceAbilityID:    src.SourceAbilityID,
 	}
 	for _, u := range s.Units {
 		if u == nil || u.ID == source.ID {

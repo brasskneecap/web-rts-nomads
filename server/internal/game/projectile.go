@@ -3,6 +3,8 @@ package game
 import (
 	"fmt"
 	"math"
+
+	"webrts/server/pkg/protocol"
 )
 
 // defaultProjectileSpeed is the world-space travel speed in pixels/second.
@@ -178,15 +180,107 @@ type Projectile struct {
 	ArcaneOrbRadius       float64
 	ArcaneOrbPullStrength float64
 	// ArcaneOrbDamagePerSecond is the DoT rate dealt to hostiles within the
-	// orb's radius as it travels. Applied on a fixed cadence
-	// (arcaneOrbDamageIntervalSeconds) so the per-second total is exactly the
-	// authored value regardless of tick rate — a moving damage-over-time vortex.
-	// 0 ⇒ pure CC. ArcaneOrbDamageTickTimer accumulates elapsed time toward the
-	// next damage tick.
+	// orb's radius as it travels. RENDERING/LEGACY-FALLBACK ONLY as of the
+	// genuine-composition fix (see TickActions below): fireProjectileTickLocked
+	// reads this (and ArcaneOrbRadius/ArcaneOrbPullStrength/ArcaneOrbDamageType)
+	// ONLY when TickActions is empty — the legacy (pre-migration, SchemaVersion
+	// <2) cast leg, and any hand-built Projectile a test constructs directly.
+	// When TickActions is populated (the composable executor leg), the actual
+	// tick math reads the AUTHORED actions instead — this field is still set
+	// for parity/introspection (TestArcaneOrb_* asserts against it) but is no
+	// longer consulted for damage on that leg. Applied on a fixed cadence
+	// (arcaneOrbDamageIntervalSeconds / TickInterval below) so the per-second
+	// total is exactly the authored value regardless of tick rate — a moving
+	// damage-over-time vortex. 0 ⇒ pure CC. ArcaneOrbDamageTickTimer
+	// accumulates elapsed time toward the next damage tick (legacy-fallback
+	// leg only — the composed leg's per-action throttle state lives in
+	// TickActionTimers instead).
 	ArcaneOrbDamagePerSecond float64
 	ArcaneOrbDamageTickTimer float64
-	// ArcaneOrbDamageType is the school of the orb's vortex damage.
+	// ArcaneOrbDamageType is the school of the orb's vortex damage (legacy-
+	// fallback leg only — see ArcaneOrbDamagePerSecond's doc comment).
 	ArcaneOrbDamageType DamageType
+	// TickInterval is the on_projectile_tick damage cadence (seconds) — the
+	// authored/compiled value from launchProjectileConfig.TickInterval (see
+	// that field's doc comment, ability_compile.go), stamped here by
+	// spawnArcaneOrbLocked so tickArcaneOrbProjectileLocked never has to fall
+	// back to the package constant arcaneOrbDamageIntervalSeconds directly.
+	// Both the frozen-legacy-fixture leg (which always passes
+	// arcaneOrbDamageIntervalSeconds) and the executor leg (which passes
+	// c.TickInterval, baked from the same constant at compile time) set the
+	// SAME value today, so this is not a behavior change — just threading a
+	// previously-implicit constant through explicit data, matching every
+	// other composable field's discipline (AI_RULES: no hidden state).
+	TickInterval float64
+
+	// ── Composable tick (launch_projectile's TickInterval>0 vortex shape) ──
+	// TickActions is non-nil exactly for a vortex spawned by the composable
+	// launch_projectile executor (executeTickingVortexShimLocked): the
+	// AUTHORED on_projectile_tick trigger's own actions (select_targets/
+	// apply_force/deal_damage — including apply_force's Mode, e.g. "push"),
+	// with select_targets' radius and apply_force's strength already frozen
+	// to their launch-time-folded values (freezeVortexTickActions,
+	// ability_exec_projectile.go — apply_force has no fold seam of its own),
+	// carried across tick boundaries as plain data (AbilityActionDef — never
+	// *Unit, per AI_RULES). nil for the legacy (pre-migration) cast leg and
+	// any hand-built Projectile a test constructs directly — those fall back
+	// to the frozen ArcaneOrbRadius/PullStrength/DamagePerSecond fields'
+	// hardcoded math in fireProjectileTickLocked, unchanged from before this
+	// fix. See fireProjectileTickLocked's doc comment for the full dispatch.
+	TickActions []AbilityActionDef
+	// TickActionTimers accumulates elapsed time, per TickActions entry (keyed
+	// by AbilityActionDef.ID), toward that action's next due firing when it
+	// declares Timing.TickInterval > 0 (arcane_orb's "dmg" action — see
+	// AbilityActionDef.Timing's doc comment). Lazily initialized by
+	// fireProjectileTickLocked's composed branch on first use; nil for every
+	// projectile that never runs a throttled composed action.
+	TickActionTimers map[string]float64
+	// TickOpsBudget is the shared, cross-tick op-budget counter this orb's
+	// composed tick firings decrement every call — mirrors ImpactOpsBudget's
+	// identical role for the impact path (see ability_exec_projectile.go's
+	// CROSS-TICK OP BUDGET section): bounds the TOTAL executor work this one
+	// orb can do across its ENTIRE flight (however many ticks that spans),
+	// not just per-call. nil exactly when TickActions is nil (the legacy/
+	// hand-built leg does no executor work here at all).
+	TickOpsBudget *int
+
+	// ── Composable impact (launch_projectile's redesign) ──────────────────
+	// ImpactActions is non-nil exactly for a bolt spawned by the composable
+	// launch_projectile action for a NON-chain ability (arcane_bolt/
+	// fireball's migrated shape, and any future ability authored the same
+	// way): the compiled on_projectile_impact trigger's actions, carried
+	// across tick boundaries as plain data (AbilityActionDef — never *Unit,
+	// per AI_RULES), same discipline as AbilityZone.Triggers /
+	// scheduledMarker.actions. landProjectileLocked branches on this BEFORE
+	// the legacy SkipOnHitEffects baked-damage path (see that function) —
+	// this bolt's Damage field is unused/0; all of its impact behavior lives
+	// here instead.
+	ImpactActions []AbilityActionDef
+	// ImpactOpsBudget is the shared, cross-tick op-budget counter this bolt's
+	// impact will decrement when it fires — see
+	// ability_exec_projectile.go's CROSS-TICK OP BUDGET section. Shared BY
+	// POINTER (not copied) with every other projectile descended from the
+	// same original cast, so the WHOLE lineage's total work is bounded by
+	// one number. nil only for a projectile that isn't part of a composable
+	// impact lineage at all (ImpactActions is also nil then).
+	ImpactOpsBudget *int
+	// ImpactDamageMultiplier carries the LAUNCHING ctx's
+	// damageEffectivenessMultiplier (ctx.effectiveDamageMultiplier()) forward
+	// to the impact ctx fireProjectileImpactLocked builds on a later tick —
+	// a fresh ctx otherwise has no way to know a caller (e.g. Unstable
+	// Magic's reduced-effectiveness free proc) customized the launching
+	// cast's EffectiveSpell. 0 is treated as 1.0 (no scaling) by
+	// RuntimeAbilityContext.effectiveDamageMultiplier(), matching every
+	// ordinary cast.
+	ImpactDamageMultiplier float64
+	// DirectionalImpact marks a launch_projectile "direction" travelMode
+	// bolt: it flies a fixed straight line (PierceLength/PierceDirX/PierceDirY/
+	// Origin, reusing arcane_orb's geometry) rather than homing on
+	// TargetUnitID (0 for this bolt), and fires its impact on the FIRST
+	// hostile its path crosses, or at the end of its flight if none — see
+	// launchDirectionalProjectileLocked / tickDirectionalImpactProjectileLocked
+	// for the full design.
+	DirectionalImpact bool
 }
 
 func (s *GameState) fireProjectileLocked(attacker, target *Unit, damage int) {
@@ -393,6 +487,349 @@ func (s *GameState) fireAbilityProjectileLocked(caster, target *Unit, def Abilit
 	})
 }
 
+// fireProjectileWithImpactActionsLocked spawns a homing ("to_target"
+// travelMode) bolt that carries a COMPOSED on_projectile_impact trigger
+// instead of baked damage — launch_projectile's redesigned non-chain shape
+// (arcane_bolt/fireball's migrated shape). Mirrors fireAbilityProjectileLocked's
+// spawn geometry (projectile-def speed/follow/impact-effect lookup, travel-
+// time calc) exactly, but never bakes Damage/AbilitySplashRadius: this bolt's
+// entire impact behavior is impactActions, run through the shared executor by
+// landProjectileLocked -> fireProjectileImpactLocked once it lands, not this
+// file's baked SkipOnHitEffects path. opsBudget is the shared cross-tick
+// op-budget pointer this bolt's impact will decrement (see
+// ability_exec_projectile.go's CROSS-TICK OP BUDGET section). damageMultiplier
+// carries the launching ctx's effectiveDamageMultiplier() forward to impact
+// time (see Projectile.ImpactDamageMultiplier's doc comment) — a caller-
+// customized cast (Unstable Magic's reduced-effectiveness free proc) would
+// otherwise deal full, un-scaled damage once the bolt lands on a later tick.
+//
+// DamageType is deliberately left unset (OrPhysical() at any point that
+// reads it): it was informational/rendering-only on the legacy baked path,
+// and the actual damage-popup color now comes from the impact's own
+// deal_damage config, resolved independently at landing time — see
+// fireProjectileImpactLocked.
+//
+// originPos is this bolt's SPAWN point — the caster's own position for every
+// ability compiled/authored before launch_projectile's spawnOrigin field
+// existed (resolveOriginLocked's default-case fallback), or a different
+// resolved world position when the launching action authored a non-caster
+// SpawnOrigin (e.g. a split bolt spawning at the enemy a preceding bolt just
+// hit, rather than back at the original caster) — see
+// launchProjectileConfig.SpawnOrigin's doc comment (ability_compile.go).
+// caster/target identity (OwnerUnitID/OwnerPlayerID/TargetUnitID — kill
+// credit and homing) are UNCHANGED by this: only the bolt's spawn geometry
+// moves, never who cast it or who it's flying at.
+//
+// Caller holds s.mu.
+func (s *GameState) fireProjectileWithImpactActionsLocked(caster, target *Unit, originPos protocol.Vec2, projectileID string, scale float64, abilityID string, impactActions []AbilityActionDef, opsBudget *int, damageMultiplier float64) {
+	speed := defaultProjectileSpeed
+	var followEffect, impactEffect string
+	if pdef, ok := getProjectileDef(projectileID); ok {
+		speed = pdef.Speed
+		followEffect = followEffectForProjectileDef(pdef)
+		impactEffect = impactEffectForProjectileDef(pdef)
+	}
+
+	dx := target.X - originPos.X
+	dy := target.Y - originPos.Y
+	travelTime := math.Sqrt(dx*dx+dy*dy) / speed
+	if travelTime < minProjectileFlightSeconds {
+		travelTime = minProjectileFlightSeconds
+	}
+
+	id := fmt.Sprintf("proj_%d", s.nextProjectileID)
+	s.nextProjectileID++
+
+	s.Projectiles = append(s.Projectiles, &Projectile{
+		ID:                     id,
+		OwnerUnitID:            caster.ID,
+		OwnerPlayerID:          caster.OwnerID,
+		TargetUnitID:           target.ID,
+		OriginX:                originPos.X,
+		OriginY:                originPos.Y,
+		TargetX:                target.X,
+		TargetY:                target.Y,
+		TotalSeconds:           travelTime,
+		RemainingSeconds:       travelTime,
+		Variant:                projectileID,
+		FollowEffect:           followEffect,
+		ImpactEffect:           impactEffect,
+		Scale:                  scale,
+		SkipOnHitEffects:       true,
+		SourceKind:             "ability",
+		SourceAbilityID:        abilityID,
+		ImpactActions:          impactActions,
+		ImpactOpsBudget:        opsBudget,
+		ImpactDamageMultiplier: damageMultiplier,
+	})
+}
+
+// directionalImpactHitRadius is the point-hit-detection radius for a
+// "direction" travelMode projectile: each tick, the FIRST hostile whose
+// position is within this radius of the bolt's current point on its line
+// counts as struck (see launchDirectionalProjectileLocked's IMPACT SEMANTICS
+// doc). Matches firePierceProjectileLocked's default corridor half-width
+// (28px) so a directional bolt's "hit window" reads the same size as a
+// pierce arrow's corridor.
+const directionalImpactHitRadius = 28.0
+
+// directionalAimPointLocked resolves the world position a "direction"
+// travelMode bolt aims its straight-line flight at: the FIRST live unit in
+// targets (this action's own resolved target-set — see Execute's doc comment,
+// ability_exec_projectile.go: its declared "source" query, an
+// Input["targets"] ref, or a preceding select_targets action's output,
+// exactly the same resolution every other action's `targets` parameter
+// already gets) at LAUNCH time, else ctx.CastPoint (nothing resolved — a
+// point-cast with no preceding selection, "fly toward the clicked ground
+// point"). ctx.CastPoint is only ever populated by a POINT cast
+// (resolveAbilityProgramCastLocked's callers — see ability_cast.go).
+//
+// Deliberately reads `targets`, NOT ctx.InitialTarget directly: the whole
+// point of this action accepting a resolved target-set (Fix 2 of the
+// targeting-shape correction) is that a PRECEDING select_targets action can
+// narrow/redirect who a direction-mode bolt aims at — falling back to the
+// cast's raw InitialTarget here would silently override that narrowing with
+// a second, competing source of truth. When this action's own query is
+// {Source: source_initial_target} (the same shape compileProjectileActions
+// gives "to_target" mode), targets already resolves to exactly
+// [ctx.InitialTarget], so the common single-target-cast case behaves
+// identically either way — only the composed case (select_targets feeding a
+// point-cast bolt) actually depends on reading `targets`.
+//
+// Caller holds s.mu.
+func (s *GameState) directionalAimPointLocked(ctx *RuntimeAbilityContext, targets []int) (x, y float64) {
+	if len(targets) > 0 {
+		if t := s.getUnitByIDLocked(targets[0]); t != nil {
+			return t.X, t.Y
+		}
+	}
+	return ctx.CastPoint.X, ctx.CastPoint.Y
+}
+
+// launchDirectionalProjectileLocked spawns a NON-HOMING bolt that flies in a
+// straight line from the caster toward directionalAimPointLocked's resolved
+// aim point and keeps going for cfg.Distance world px (0/absent derives the
+// distance from the caster-to-aim-point distance, mirroring
+// spawnArcaneOrbLocked's identical fallback and its degenerate-geometry
+// guard — dirX,dirY defaults to +X when caster and aim point coincide).
+// Unlike "to_target" mode, the aim point is fixed at LAUNCH time and never
+// re-targets a live unit, exactly like arcane_orb's straight flight.
+//
+// IMPACT SEMANTICS (a deliberate design choice — documented per the task
+// that introduced "direction" travelMode; neither pierce nor arcane_orb ever
+// fire an "impact" event at all, so there is no existing precedent to
+// inherit): the bolt fires on_projectile_impact for the FIRST hostile unit
+// its path crosses (nearest tick-of-detection wins; ties within one tick
+// broken by ascending unit ID for determinism), exactly ONCE, then despawns
+// immediately — it does NOT pierce through multiple victims like a Marksman
+// pierce arrow. If it reaches the end of its Distance with no hostile
+// crossed, it STILL fires on_projectile_impact once, at the flight endpoint,
+// with no hit unit (CurrentEventUnitID 0) — this is what lets an author's
+// impact trigger (e.g. a splash select_targets{origin: impact_position})
+// resolve even on a whiff, mirroring how an instant point-AoE cast (shatter)
+// still plays its burst VFX on a miss. A multi-hit "pierce with a composed
+// impact per victim" mode is explicitly NOT implemented — nothing in the
+// shipped catalog needs it (arcane_bolt/fireball are both "to_target").
+//
+// targets is this action's own resolved target-set (Execute's parameter,
+// ability_exec_projectile.go), passed through unchanged for
+// directionalAimPointLocked to read — see that function's doc comment for
+// why it takes priority over ctx.InitialTarget.
+//
+// c.SpawnOrigin resolves (via s.resolveOriginLocked) the world position this
+// bolt spawns FROM and flies its straight line relative to — the caster's
+// own position for the unset/"caster" default (byte-identical with every
+// ability compiled/authored before this field existed), or a different
+// resolved position for a composed split bolt — see
+// launchProjectileConfig.SpawnOrigin's doc comment (ability_compile.go). The
+// AIM POINT (directionalAimPointLocked) is unaffected: spawn origin and aim
+// point are orthogonal — where the bolt starts vs. what it's flying toward.
+//
+// Caller holds s.mu.
+func (s *GameState) launchDirectionalProjectileLocked(caster *Unit, ctx *RuntimeAbilityContext, c launchProjectileConfig, impactActions []AbilityActionDef, opsBudget *int, targets []int) {
+	originPos := s.resolveOriginLocked(ctx, c.SpawnOrigin, nil)
+	aimX, aimY := s.directionalAimPointLocked(ctx, targets)
+	dx := aimX - originPos.X
+	dy := aimY - originPos.Y
+	dist := math.Sqrt(dx*dx + dy*dy)
+	dirX, dirY := 1.0, 0.0
+	if dist > 0 {
+		dirX, dirY = dx/dist, dy/dist
+	}
+	distance := c.Distance.Resolve(caster)
+	if distance <= 0 {
+		distance = dist
+	}
+	if distance <= 0 {
+		// Degenerate: no authored Distance and the aim point coincides with
+		// the spawn origin (e.g. a self-cast with no point/target). Nothing to
+		// fly — fail safe rather than spawn a zero-length bolt.
+		ctx.trace("action_skipped", ctx.currentActionPath, map[string]any{"reason": "zero_distance"})
+		return
+	}
+
+	speed := defaultProjectileSpeed
+	var followEffect, impactEffect string
+	if pdef, ok := getProjectileDef(c.Projectile); ok {
+		speed = pdef.Speed
+		followEffect = followEffectForProjectileDef(pdef)
+		impactEffect = impactEffectForProjectileDef(pdef)
+	}
+	travelTime := distance / speed
+	if travelTime < minProjectileFlightSeconds {
+		travelTime = minProjectileFlightSeconds
+	}
+
+	id := fmt.Sprintf("proj_%d", s.nextProjectileID)
+	s.nextProjectileID++
+
+	s.Projectiles = append(s.Projectiles, &Projectile{
+		ID:                     id,
+		OwnerUnitID:            caster.ID,
+		OwnerPlayerID:          caster.OwnerID,
+		TargetUnitID:           0, // no homing target — see DirectionalImpact
+		OriginX:                originPos.X,
+		OriginY:                originPos.Y,
+		TargetX:                originPos.X + dirX*distance,
+		TargetY:                originPos.Y + dirY*distance,
+		TotalSeconds:           travelTime,
+		RemainingSeconds:       travelTime,
+		Variant:                c.Projectile,
+		FollowEffect:           followEffect,
+		ImpactEffect:           impactEffect,
+		Scale:                  c.ProjectileScale,
+		SkipOnHitEffects:       true,
+		SourceKind:             "ability",
+		SourceAbilityID:        ctx.AbilityID,
+		ImpactActions:          impactActions,
+		ImpactOpsBudget:        opsBudget,
+		ImpactDamageMultiplier: ctx.effectiveDamageMultiplier(),
+		DirectionalImpact:      true,
+		PierceLength:           distance,
+		PierceDirX:             dirX,
+		PierceDirY:             dirY,
+	})
+	ctx.trace("projectile_launched", ctx.currentActionPath, map[string]any{"travelMode": travelModeDirection, "distance": distance})
+}
+
+// tickDirectionalImpactProjectileLocked advances a "direction" travelMode
+// projectile by dt along its fixed line and looks for the first hostile unit
+// within directionalImpactHitRadius of its CURRENT position (ties broken by
+// ascending unit ID). Returns the hit unit (nil if none yet), the bolt's
+// current world position, and whether its flight is OVER (a hit was found,
+// or it reached the end of its Distance) — the caller fires the impact and
+// drops the projectile when over is true, otherwise keeps it for the next
+// tick. Caller holds s.mu.
+func (s *GameState) tickDirectionalImpactProjectileLocked(proj *Projectile, dt float64) (hit *Unit, curX, curY float64, over bool) {
+	if proj.PierceLength <= 0 || proj.TotalSeconds <= 0 {
+		return nil, proj.OriginX, proj.OriginY, true // malformed — end immediately
+	}
+	proj.RemainingSeconds -= dt
+	remaining := math.Max(0, proj.RemainingSeconds)
+	along := proj.PierceLength * (1.0 - remaining/proj.TotalSeconds)
+	if along > proj.PierceLength {
+		along = proj.PierceLength
+	}
+	curX = proj.OriginX + proj.PierceDirX*along
+	curY = proj.OriginY + proj.PierceDirY*along
+
+	attacker := s.getUnitByIDLocked(proj.OwnerUnitID)
+	radSq := directionalImpactHitRadius * directionalImpactHitRadius
+	var best *Unit
+	for _, u := range s.Units {
+		if u == nil || u.HP <= 0 || !u.Visible || u.ID == proj.OwnerUnitID {
+			continue
+		}
+		if attacker != nil {
+			if !s.playersAreHostileLocked(u.OwnerID, attacker.OwnerID) {
+				continue
+			}
+		} else if s.playersAreFriendlyLocked(u.OwnerID, proj.OwnerPlayerID) {
+			continue // attacker gone: skip allies to avoid friendly fire
+		}
+		ddx := u.X - curX
+		ddy := u.Y - curY
+		if ddx*ddx+ddy*ddy > radSq {
+			continue
+		}
+		if best == nil || u.ID < best.ID {
+			best = u
+		}
+	}
+	if best != nil {
+		return best, curX, curY, true
+	}
+	if proj.RemainingSeconds <= 0 {
+		return nil, curX, curY, true
+	}
+	return nil, curX, curY, false
+}
+
+// fireProjectileImpactLocked runs proj's compiled on_projectile_impact
+// actions through the shared executor instead of the legacy baked-damage
+// path — see landProjectileLocked's branch and Projectile.ImpactActions'
+// doc comment. hitUnitID is 0 for a "direction" bolt's end-of-flight-no-hit
+// case (see launchDirectionalProjectileLocked); impactX/Y is the world
+// position the bolt actually stopped at.
+//
+// Builds a fresh RuntimeAbilityContext from the projectile's own carried
+// ids (CasterID = OwnerUnitID, AbilityID = SourceAbilityID, InitialTarget =
+// TargetUnitID — no new fields duplicate these), binds CurrentEventUnitID to
+// the hit unit (mirrors fireAbilityZoneOccupancyEventLocked's
+// CurrentEventUnitID convention for "the unit this event centers on" — the
+// SrcCurrentEvent case in candidatePoolIDsLocked, ability_exec_targeting.go).
+// abilityDef/program are re-resolved via getAbilityDef — the SAME
+// overlay-first resolver every other executor entry point uses (matching
+// fireScheduledMarkerLocked) — so deal_damage folds the caster's spell
+// modifiers exactly once, at parity with the direct-cast path (see
+// ability_exec_projectile.go's DOUBLE-FOLD note).
+//
+// sharedOpsRemaining is proj.ImpactOpsBudget: the SAME shared counter this
+// bolt was seeded with at launch (see the CROSS-TICK OP BUDGET section) —
+// decremented here exactly like any other executeActionLocked call, so an
+// impact that itself relaunches a projectile continues to draw down the ONE
+// shared total instead of resetting.
+//
+// Does not append to any deadUnitIDs-style out-param: a lethal deal_damage
+// already routed the kill through applyUnitDamageWithSourceLocked's shared
+// pending-death drain (keyed on Kind=="ability", which this path's
+// deal_damage sets — see DamageSource.SourceAbilityID's doc), the same
+// carve-out the legacy SkipOnHitEffects+SourceKind=="ability" branch in
+// landProjectileLocked already relies on.
+//
+// Caller holds s.mu.
+func (s *GameState) fireProjectileImpactLocked(proj *Projectile, hitUnitID int, impactX, impactY float64) {
+	def, ok := getAbilityDef(proj.SourceAbilityID)
+	ctx := &RuntimeAbilityContext{
+		CasterID:           proj.OwnerUnitID,
+		AbilityID:          proj.SourceAbilityID,
+		InitialTarget:      proj.TargetUnitID,
+		ImpactPosition:     protocol.Vec2{X: impactX, Y: impactY},
+		EventPosition:      protocol.Vec2{X: impactX, Y: impactY},
+		CurrentEventUnitID: hitUnitID,
+		Named:              map[string]ContextValue{},
+		Trace:              s.previewTrace,
+		now:                s.previewClock,
+		sharedOpsRemaining: proj.ImpactOpsBudget,
+		// Carry the launching ctx's caller-customized effectiveness forward —
+		// see Projectile.ImpactDamageMultiplier's doc comment. Zero (the
+		// field's default for every ordinary bolt) is treated as 1.0 by
+		// effectiveDamageMultiplier(), matching every non-customized cast.
+		damageEffectivenessMultiplier: proj.ImpactDamageMultiplier,
+	}
+	if ok {
+		ctx.program = def.Program
+		ctx.abilityDef = &def
+	}
+	path := "on_projectile_impact"
+	for i := range proj.ImpactActions {
+		if ctx.opsExhausted() {
+			break
+		}
+		s.executeActionLocked(ctx, &proj.ImpactActions[i], path)
+	}
+}
+
 // fireProcBeamLocked handles a proc effect whose emitter def is
 // EmitterKindBeam (e.g. lightning_chain's "lightning_bolt"). It spawns the
 // momentary beam flash NOW (frozen endpoints let it render even if the target
@@ -488,9 +925,24 @@ const arcaneOrbDamageIntervalSeconds = 0.25
 // spawnArcaneOrbLocked launches an Arcane Orb from caster in the direction of
 // target (unit-targeted, but the orb then travels the ground independently). It
 // flies a straight line of length `distance` at `speed`, dealing no impact
-// damage; tickArcaneOrbProjectileLocked drives the moving-vortex pull. Degenerate
-// caster-on-target geometry falls back to firing along +X. Caller holds s.mu.
-func (s *GameState) spawnArcaneOrbLocked(caster *Unit, targetX, targetY float64, def AbilityDef, eff EffectiveSpell, distance float64) {
+// damage; tickArcaneOrbProjectileLocked drives the moving-vortex pull.
+// Degenerate caster-on-target geometry falls back to firing along +X.
+// tickInterval is the on_projectile_tick damage cadence (seconds) stamped
+// onto the spawned Projectile — callers pass arcaneOrbDamageIntervalSeconds
+// (the legacy point-cast resolver, ability_cast.go) or the compiled
+// launchProjectileConfig.TickInterval (executeTickingVortexShimLocked,
+// ability_exec_projectile.go), which is baked from that same constant, so
+// both callers set an identical value today.
+//
+// tickActions/opsBudget are the AUTHORED, launch-time-frozen on_projectile_tick
+// actions and their shared op budget (see executeTickingVortexShimLocked /
+// freezeVortexTickActions, ability_exec_projectile.go, and
+// Projectile.TickActions' doc comment) — non-nil ONLY on the composable
+// executor leg. The legacy point-cast resolver (ability_cast.go) passes
+// nil, nil, leaving the spawned Projectile to fall back to the frozen
+// ArcaneOrbRadius/PullStrength/DamagePerSecond hardcoded math in
+// fireProjectileTickLocked, unchanged from before this fix. Caller holds s.mu.
+func (s *GameState) spawnArcaneOrbLocked(caster *Unit, targetX, targetY float64, def AbilityDef, eff EffectiveSpell, distance, tickInterval float64, tickActions []AbilityActionDef, opsBudget *int) {
 	dx := targetX - caster.X
 	dy := targetY - caster.Y
 	dist := math.Sqrt(dx*dx + dy*dy)
@@ -516,22 +968,30 @@ func (s *GameState) spawnArcaneOrbLocked(caster *Unit, targetX, targetY float64,
 		OwnerUnitID:   caster.ID,
 		OwnerPlayerID: caster.OwnerID,
 		// No homing target — the orb flies to the fixed endpoint.
-		TargetUnitID:             0,
-		OriginX:                  caster.X,
-		OriginY:                  caster.Y,
-		TargetX:                  caster.X + dirX*distance,
-		TargetY:                  caster.Y + dirY*distance,
-		TotalSeconds:             travelTime,
-		RemainingSeconds:         travelTime,
-		Variant:                  def.Projectile, // client renders the orb sprite by id
+		TargetUnitID:     0,
+		OriginX:          caster.X,
+		OriginY:          caster.Y,
+		TargetX:          caster.X + dirX*distance,
+		TargetY:          caster.Y + dirY*distance,
+		TotalSeconds:     travelTime,
+		RemainingSeconds: travelTime,
+		Variant:          def.Projectile, // client renders the orb sprite by id
 		// Ability-owned render scale (the caster's ProjectileScale is for its
 		// basic attack, not its spells). 0/absent ⇒ the client's default 1×.
-		Scale:                    def.ProjectileScale,
+		Scale: def.ProjectileScale,
+		// The orb never impacts (landProjectileLocked is never called for it —
+		// see tickArcaneOrbProjectileLocked's caller below); this is read back
+		// by that function's applyAbilitySplashDamageLocked DoT-tick call for
+		// on_unit_death attribution.
+		SourceAbilityID:          def.ID,
 		ArcaneOrb:                true,
 		ArcaneOrbRadius:          eff.Radius,
 		ArcaneOrbPullStrength:    eff.PullStrength,
 		ArcaneOrbDamagePerSecond: eff.DamagePerSecond,
 		ArcaneOrbDamageType:      def.DamageType.OrPhysical(),
+		TickInterval:             tickInterval,
+		TickActions:              tickActions,
+		TickOpsBudget:            opsBudget,
 		// Straight-line path fields (shared with pierce flight math).
 		PierceLength: distance,
 		PierceDirX:   dirX,
@@ -540,9 +1000,11 @@ func (s *GameState) spawnArcaneOrbLocked(caster *Unit, targetX, targetY float64,
 }
 
 // tickArcaneOrbProjectileLocked advances the orb along its straight path and,
-// from its CURRENT position, drags nearby hostiles toward it (moving vortex).
-// Returns true while the orb is still travelling; false when it reaches the end
-// of its path (caller drops it — no impact). Caller holds s.mu write lock.
+// from its CURRENT position, fires its composed on_projectile_tick actions
+// (select_targets -> apply_force every call, deal_damage on a fixed cadence —
+// see fireProjectileTickLocked). Returns true while the orb is still
+// travelling; false when it reaches the end of its path (caller drops it —
+// no impact, ever, for a ticking vortex). Caller holds s.mu write lock.
 func (s *GameState) tickArcaneOrbProjectileLocked(proj *Projectile, dt float64) bool {
 	if proj.PierceLength <= 0 || proj.TotalSeconds <= 0 {
 		return false
@@ -551,27 +1013,229 @@ func (s *GameState) tickArcaneOrbProjectileLocked(proj *Projectile, dt float64) 
 	along := proj.PierceLength * (1.0 - proj.RemainingSeconds/proj.TotalSeconds)
 	curX := proj.OriginX + proj.PierceDirX*along
 	curY := proj.OriginY + proj.PierceDirY*along
-	// Moving vortex: re-apply the pull toward the orb's live position each tick
-	// AND deal this tick's share of vortex damage to hostiles in radius. A
-	// dead/gone owner means no pull/damage this tick (hostility is owner-
-	// relative); the orb keeps drifting so its visual finishes cleanly.
+	// A dead/gone owner means no pull/damage this tick (hostility is
+	// owner-relative); the orb keeps drifting so its visual finishes cleanly.
 	if owner := s.getUnitByIDLocked(proj.OwnerUnitID); owner != nil {
-		s.applyPullInRadiusLocked(owner, curX, curY, proj.ArcaneOrbRadius, proj.ArcaneOrbPullStrength, arcaneOrbPullRefreshSeconds)
-		// Damage-over-time on a fixed cadence so the per-second total is exactly
-		// ArcaneOrbDamagePerSecond regardless of tick rate. Loop in case a large
-		// dt spans multiple intervals.
-		if proj.ArcaneOrbDamagePerSecond > 0 {
-			proj.ArcaneOrbDamageTickTimer += dt
-			for proj.ArcaneOrbDamageTickTimer >= arcaneOrbDamageIntervalSeconds {
-				proj.ArcaneOrbDamageTickTimer -= arcaneOrbDamageIntervalSeconds
-				dmg := int(math.Round(proj.ArcaneOrbDamagePerSecond * arcaneOrbDamageIntervalSeconds))
-				if dmg > 0 {
-					s.applyAbilitySplashDamageLocked(proj.OwnerUnitID, proj.OwnerPlayerID, curX, curY, proj.ArcaneOrbRadius, dmg, proj.ArcaneOrbDamageType, 0)
-				}
+		s.fireProjectileTickLocked(proj, curX, curY, dt)
+	}
+	return proj.RemainingSeconds > 0
+}
+
+// fireProjectileTickLocked drives one simulation tick of a ticking
+// ("direction" travelMode + TickInterval>0) projectile's on_projectile_tick
+// behavior. Dispatches on whether this orb carries AUTHORED tick actions
+// (Projectile.TickActions, populated only by the composable executor leg —
+// see executeTickingVortexShimLocked, ability_exec_projectile.go):
+//
+//   - TickActions non-empty (composable executor leg): runs the AUTHORED
+//     program via fireComposedProjectileTickLocked below — the genuine fix.
+//     Before this, this function silently DISCARDED the authored
+//     on_projectile_tick trigger and re-synthesized its own hardcoded
+//     select_targets/apply_force/deal_damage from frozen scalar fields,
+//     which is why an authored apply_force{mode:"push"} was unreachable: the
+//     hardcoded copy never carried Mode at all.
+//   - TickActions empty (the legacy, pre-migration SchemaVersion<2 cast leg,
+//     and any hand-built Projectile a test constructs directly — e.g.
+//     TestArcaneOrb_DamageOverTimeRate): falls back to the ORIGINAL hardcoded
+//     synthesis, unchanged, so that leg's behavior (and every test exercising
+//     it) is untouched by this fix.
+//
+// Caller holds s.mu.
+func (s *GameState) fireProjectileTickLocked(proj *Projectile, curX, curY float64, dt float64) {
+	if len(proj.TickActions) > 0 {
+		s.fireComposedProjectileTickLocked(proj, curX, curY, dt)
+		return
+	}
+	s.fireLegacyProjectileTickLocked(proj, curX, curY, dt)
+}
+
+// fireComposedProjectileTickLocked runs proj's AUTHORED on_projectile_tick
+// actions (Projectile.TickActions) through the shared executor —
+// select_targets -> apply_force EVERY call (every simulation tick dt, not
+// gated by any interval, so the pull center never goes stale — see the
+// DELIBERATE DIVERGENCE note below), and deal_damage throttled to its own
+// Timing.TickInterval cadence (AbilityActionDef.Timing — arcane_orb's "dmg"
+// action carries this; see compileProjectileTickTrigger, ability_compile.go).
+//
+// DELIBERATE DIVERGENCE FROM AbilityZone's on_zone_tick PRECEDENT: a zone
+// fires its WHOLE trigger only once per TickInterval (tickAbilityZonesLocked,
+// ability_zone.go). Doing the same here would make apply_force's pull center
+// stale by up to (orb speed * TickInterval) world-px between refreshes —
+// this orb travels at ~150px/s with a 0.25s TickInterval, so a once-per-
+// TickInterval pull would aim up to ~37px behind the orb's actual live
+// position, measurably changing the dragged unit's trajectory. The golden
+// equivalence test (TestAbilityCompileGolden_ArcaneOrb) asserts the dragged
+// unit's displacement matches to within 0.01px — so apply_force/
+// select_targets run every dt here (parity-exact), and only deal_damage is
+// gated, per-ACTION, to its own fixed cadence via proj.TickActionTimers.
+//
+// ROUNDING DECISION (the DOUBLE-FOLD hazard, worked through): deal_damage's
+// registered Execute (ability_program_registry.go) folds its config's Amount
+// through the caster's spell modifiers EXACTLY ONCE per call, whenever
+// ctx.abilityDef is set — the same seam every other composable action's
+// damage goes through (impact bolts, zone ticks). ctx.abilityDef IS set here
+// (unlike before this fix, where it was deliberately left nil to avoid
+// re-folding an already-frozen amount): the authored "dmg" action's Amount is
+// the per-tick CHUNK baked at compile time from the RAW, unmodified
+// DamagePerSecond (round(DamagePerSecond*TickInterval) — see
+// compileProjectileTickTrigger), so folding it per-firing computes
+// round(fold(round(rawDPS*interval))*mod) — NOT byte-identical in the general
+// case to legacy's single frozen-then-rounded round(rawDPS*mod*interval),
+// since fold-then-round and round-then-fold only commute under a PURE
+// multiplicative modifier (no additive component). For arcane_orb's shipped
+// numbers (DPS 16, interval 0.25 ⇒ 4/tick) under the golden test's +50%
+// multiply modifier: legacy round(16*1.5*0.25)=round(6)=6; composed
+// round(fold(4)*1)... — effectiveAbilityDamageLocked computes
+// round(applySpellModField(mods,...,4)) = round(4*1.5) = round(6) = 6. Equal.
+// This is a genuine, intentional trade: the alternative (freezing the
+// per-tick amount at launch and never re-folding, mirroring how radius/
+// pullStrength are handled just above) would guarantee byte-identical
+// arithmetic for ANY modifier shape, but would mean editing the authored
+// deal_damage amount changes the FROZEN base while an "amount" schema field
+// generically means "the literal chunk this action deals," folded like every
+// other deal_damage action in the codebase — special-casing this one action's
+// amount as a pre-frozen constant would itself be the kind of inconsistent,
+// hard-to-discover behavior this whole fix exists to remove. Chosen: genuine,
+// ordinary per-firing fold (matches every other deal_damage call site);
+// TestAbilityCompileGolden_ArcaneOrb (both sub-tests) stays green because the
+// shipped numbers don't hit the divergent case — see
+// TestArcaneOrb_ComposedDamageFoldMatchesLegacy_AtShippedMagnitudes for a
+// dedicated proof of the exact arithmetic above, and a documented note on
+// what WOULD diverge (an additive modifier, or a non-multiple-of-4 chunk)
+// were arcane_orb's magnitudes ever to change.
+//
+// select_targets/apply_force still fold radius/pullStrength exactly once, at
+// LAUNCH (frozen — see freezeVortexTickActions), since apply_force has no
+// per-call fold seam of its own to reuse.
+//
+// Caller holds s.mu.
+func (s *GameState) fireComposedProjectileTickLocked(proj *Projectile, curX, curY float64, dt float64) {
+	def, ok := getAbilityDef(proj.SourceAbilityID)
+	ctx := &RuntimeAbilityContext{
+		CasterID:           proj.OwnerUnitID,
+		AbilityID:          proj.SourceAbilityID,
+		OwnerUnitID:        proj.OwnerUnitID,
+		ProjectilePosition: protocol.Vec2{X: curX, Y: curY},
+		EventPosition:      protocol.Vec2{X: curX, Y: curY},
+		Named:              map[string]ContextValue{},
+		Trace:              s.previewTrace,
+		now:                s.previewClock,
+		sharedOpsRemaining: proj.TickOpsBudget,
+	}
+	if ok {
+		ctx.program = def.Program
+		ctx.abilityDef = &def
+	}
+	if proj.TickActionTimers == nil {
+		proj.TickActionTimers = map[string]float64{}
+	}
+
+	const path = "on_projectile_tick"
+	for i := range proj.TickActions {
+		if ctx.opsExhausted() {
+			break
+		}
+		a := &proj.TickActions[i]
+		if a.Timing == nil || a.Timing.TickInterval <= 0 {
+			s.executeActionLocked(ctx, a, path)
+			continue
+		}
+		// Throttled action (arcane_orb's "dmg"): loop in case a large dt spans
+		// multiple due intervals, matching the pre-fix loop's per-interval
+		// firing discipline. Each due firing runs against THIS SAME ctx, so it
+		// reads the Named binding this call's (unthrottled, always-runs-first)
+		// select_targets action already populated — never a stale set from an
+		// earlier tick.
+		proj.TickActionTimers[a.ID] += dt
+		for proj.TickActionTimers[a.ID] >= a.Timing.TickInterval {
+			proj.TickActionTimers[a.ID] -= a.Timing.TickInterval
+			if ctx.opsExhausted() {
+				break
+			}
+			s.executeActionLocked(ctx, a, path)
+		}
+	}
+}
+
+// fireLegacyProjectileTickLocked is the ORIGINAL (pre-genuine-composition-fix)
+// hardcoded on_projectile_tick synthesis: select_targets(all_in_scene,
+// origin: projectile_position, radius, relations:[enemy]) -> apply_force
+// EVERY call, then -> deal_damage on a fixed cadence, built fresh each call
+// from the projectile's own frozen ArcaneOrbRadius/PullStrength/
+// DamagePerSecond/DamageType fields. Used ONLY when Projectile.TickActions is
+// empty: the legacy (pre-migration, SchemaVersion<2) cast leg
+// (resolveAbilityCastAtPointLocked -> spawnArcaneOrbLocked directly, never
+// through the executor) and any hand-built Projectile a test constructs by
+// hand (e.g. TestArcaneOrb_DamageOverTimeRate) — see fireProjectileTickLocked's
+// dispatch doc comment. ctx.abilityDef is deliberately left nil here:
+// ArcaneOrbDamagePerSecond/Radius/PullStrength were already folded ONCE, at
+// launch (the legacy resolveAbilityCastAtPointLocked leg's own
+// effectiveSpellLocked call), and are frozen for the whole flight — routing
+// this firing's deal_damage through ctx.abilityDef would fold them a SECOND
+// time via deal_damage's own automatic ctx.abilityDef-gated scaling
+// (ability_program_registry.go), silently double-applying every modifier.
+// This mirrors zone-tick's own "ctx.abilityDef==nil so burn stays raw" note
+// on that same seam. Caller holds s.mu.
+func (s *GameState) fireLegacyProjectileTickLocked(proj *Projectile, curX, curY float64, dt float64) {
+	ctx := &RuntimeAbilityContext{
+		CasterID:           proj.OwnerUnitID,
+		AbilityID:          proj.SourceAbilityID,
+		OwnerUnitID:        proj.OwnerUnitID,
+		ProjectilePosition: protocol.Vec2{X: curX, Y: curY},
+		EventPosition:      protocol.Vec2{X: curX, Y: curY},
+		Named:              map[string]ContextValue{},
+		Trace:              s.previewTrace,
+		now:                s.previewClock,
+	}
+
+	actions := []AbilityActionDef{
+		{
+			ID:   "sel",
+			Type: ActionSelectTargets,
+			Target: &TargetQueryDef{
+				Source:    SrcAllInScene,
+				Origin:    OriginProjectilePos,
+				Radius:    proj.ArcaneOrbRadius,
+				Relations: []TargetRelation{RelEnemy},
+			},
+			Outputs: map[string]string{"targets": "vortexHits"},
+		},
+		{
+			ID:     "force",
+			Type:   ActionApplyForce,
+			Input:  map[string]ContextRef{"targets": {Key: "vortexHits"}},
+			Config: marshalConfig(applyForceConfig{Strength: proj.ArcaneOrbPullStrength, Duration: arcaneOrbPullRefreshSeconds, Origin: OriginProjectilePos}),
+		},
+	}
+
+	// Damage-over-time on a fixed cadence so the per-second total is exactly
+	// ArcaneOrbDamagePerSecond regardless of tick rate. Loop in case a large
+	// dt spans multiple intervals; append one deal_damage action per due
+	// interval so each fires as its own executor action (and its own trace
+	// event), matching the pre-composable loop's per-interval damage calls.
+	// interval falls back to the package constant for a hand-built Projectile
+	// that never set TickInterval (e.g. a test constructing one directly).
+	if proj.ArcaneOrbDamagePerSecond > 0 {
+		interval := proj.TickInterval
+		if interval <= 0 {
+			interval = arcaneOrbDamageIntervalSeconds
+		}
+		proj.ArcaneOrbDamageTickTimer += dt
+		for proj.ArcaneOrbDamageTickTimer >= interval {
+			proj.ArcaneOrbDamageTickTimer -= interval
+			dmg := int(math.Round(proj.ArcaneOrbDamagePerSecond * interval))
+			if dmg > 0 {
+				actions = append(actions, AbilityActionDef{
+					ID:     "dmg",
+					Type:   ActionDealDamage,
+					Input:  map[string]ContextRef{"targets": {Key: "vortexHits"}},
+					Config: marshalConfig(dealDamageConfig{Amount: dmg, Type: proj.ArcaneOrbDamageType}),
+				})
 			}
 		}
 	}
-	return proj.RemainingSeconds > 0
+
+	s.runProgramTriggersLocked(ctx, []AbilityTriggerDef{{ID: "tick", Type: TriggerOnProjectileTick, Actions: actions}}, TriggerOnProjectileTick)
 }
 
 func (s *GameState) firePierceProjectileLocked(attacker, target *Unit, damage int) {
@@ -692,6 +1356,26 @@ func (s *GameState) tickProjectilesLocked(dt float64) {
 			if survived := s.tickArcaneOrbProjectileLocked(proj, dt); survived {
 				kept = append(kept, proj)
 			}
+			continue
+		}
+		// launch_projectile "direction" travelMode: flies a fixed straight
+		// line and fires its composed on_projectile_impact on the first
+		// hostile crossed, or at end of flight if none — see
+		// launchDirectionalProjectileLocked's IMPACT SEMANTICS doc.
+		if proj.DirectionalImpact {
+			hit, cx, cy, over := s.tickDirectionalImpactProjectileLocked(proj, dt)
+			if !over {
+				kept = append(kept, proj)
+				continue
+			}
+			hitID := 0
+			if hit != nil {
+				hitID = hit.ID
+				s.playProjectileImpactLocked(proj, hit)
+			} else if proj.ImpactEffect != "" {
+				s.playEffectAtPointLocked(proj.ImpactEffect, cx, cy, 1.0)
+			}
+			s.fireProjectileImpactLocked(proj, hitID, cx, cy)
 			continue
 		}
 
@@ -894,6 +1578,16 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 	// projectile carries no impact effect.
 	s.playProjectileImpactLocked(proj, target)
 
+	// Composable launch_projectile impact (arcane_bolt/fireball's migrated
+	// shape): skip the baked-damage path entirely — this bolt's Damage/
+	// AbilitySplashRadius are unused (0); its ENTIRE impact behavior is
+	// ImpactActions, run through the shared executor. See
+	// Projectile.ImpactActions' doc comment and fireProjectileImpactLocked.
+	if proj.ImpactActions != nil {
+		s.fireProjectileImpactLocked(proj, target.ID, target.X, target.Y)
+		return
+	}
+
 	if proj.SkipOnHitEffects {
 		// Equipment-proc / ability bolt: apply its typed damage directly.
 		// Bypasses the on-hit hub so it cannot trigger another proc or
@@ -910,6 +1604,11 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 			// Minor bolts (Arcane Missiles) suppress the main color hint and
 			// render as a small side-falling popup instead of the big number.
 			SuppressTypeHint: proj.MinorDamage,
+			// "" for a plain item-proc bolt (proj.SourceKind != "ability");
+			// carries the launching ability's id for fireball/arcane_bolt/
+			// arcane_missiles bolts (stamped at spawn — fireAbilityProjectileLocked,
+			// SourceKind "ability"). See DamageSource.SourceAbilityID's doc.
+			SourceAbilityID: proj.SourceAbilityID,
 		})
 		if proj.MinorDamage {
 			s.recordMinorDamageHitLocked(target, landed, damageTypeColorVariant(proj.DamageType))
@@ -919,7 +1618,7 @@ func (s *GameState) landProjectileLocked(proj *Projectile, target *Unit, deadUni
 		// authoritative damage entry point (no parallel death path); inert
 		// when AbilitySplashRadius == 0 (single-target bolts, e.g. arcane_bolt).
 		if proj.AbilitySplashRadius > 0 {
-			s.applyAbilitySplashDamageLocked(proj.OwnerUnitID, proj.OwnerPlayerID, target.X, target.Y, proj.AbilitySplashRadius, proj.Damage, proj.DamageType, target.ID)
+			s.applyAbilitySplashDamageLocked(proj.OwnerUnitID, proj.OwnerPlayerID, target.X, target.Y, proj.AbilitySplashRadius, proj.Damage, proj.DamageType, target.ID, proj.SourceAbilityID)
 		}
 		// On-hit slow: routed to the cold (chill) or physical track by the
 		// bolt's damage type. No-op when the proc carries no slow (zero fields).

@@ -139,6 +139,24 @@ export function findAction(
 
 // --- Depth-aware resolution ---------------------------------------------
 //
+// CONFIG_TRIGGER_ACTION_TYPES: the action types whose Go descriptor decodes a
+// `triggers` field out of its own config, meaning a nested trigger belongs in
+// `config.triggers` rather than `children`. Mirrors the Go side exactly:
+//   create_zone       -> createZoneConfig.Triggers      (on_zone_tick/enter/exit)
+//   apply_status      -> applyStatusConfig.Triggers     (on_status_tick/expire;
+//                        non-empty is ALSO the authored-vs-legacy discriminator)
+//   launch_projectile -> launchProjectileConfig.Triggers (on_projectile_impact)
+// Reading is deliberately action-type-agnostic (configTriggersOf below) — only
+// the ADD path needs this list, to pick the right slot. Keep it in step with
+// the Go descriptors; a missing entry silently misfiles an authored trigger
+// into `children`, where it fires as on_action_complete and the Go decoder
+// never sees it.
+const CONFIG_TRIGGER_ACTION_TYPES: ReadonlySet<string> = new Set([
+  'create_zone',
+  'apply_status',
+  'launch_projectile',
+])
+
 // configTriggersOf reads action.config.triggers defensively: `config` is an
 // OPAQUE bag (decoded per-action-type by a later task's registry — see
 // AbilityActionDef.config's doc comment), so this never destructures or
@@ -600,8 +618,8 @@ function cloneActionWithFreshIds(action: AbilityActionDef, prog: AbilityProgram)
 // above, but a genuinely different pair of operations: a bare `type` adds a
 // new ROOT trigger (nothing to address; there's no existing node to name),
 // while `parentActionPath` nests the new trigger under an action's
-// nested-trigger slot (`children`, or `create_zone`'s `config.triggers` —
-// see the ADD-TRIGGER slot rule below).
+// nested-trigger slot (`children`, or the `config.triggers` of an action in
+// CONFIG_TRIGGER_ACTION_TYPES — see the ADD-TRIGGER slot rule below).
 export function addTrigger(prog: AbilityProgram, type: TriggerType): AbilityProgram
 export function addTrigger(prog: AbilityProgram, parentActionPath: NodePath, type: TriggerType): AbilityProgram
 export function addTrigger(
@@ -634,9 +652,23 @@ export function addTrigger(
   if (!resolvedParent || resolvedParent.kind !== 'action') return prog
 
   return updateNodeAt(prog, parentPath, (action: AbilityActionDef): AbilityActionDef => {
-    // ADD-TRIGGER slot rule: create_zone nests new triggers into
-    // config.triggers; every other action type nests into children.
-    if (action.type === 'create_zone') {
+    // ADD-TRIGGER slot rule. Actions in CONFIG_TRIGGER_ACTION_TYPES nest new
+    // triggers into `config.triggers`; every other action type nests into
+    // `children`.
+    //
+    // The slot is NOT cosmetic — it decides WHEN the trigger fires, and the
+    // wrong one fails silently:
+    //   - `children` fires as on_action_complete, i.e. immediately after the
+    //     action's own Execute returns.
+    //   - `config.triggers` is decoded by the action's own descriptor and
+    //     fired by the object it creates — a zone on its tick, a projectile on
+    //     its impact (possibly seconds later, in a different tick).
+    // Put a launch_projectile's on_projectile_impact trigger into `children`
+    // and it fires the instant the bolt is LAUNCHED, not when it lands — and
+    // the Go decoder never sees it at all, so it silently does nothing on
+    // impact. Keep this list in step with the Go descriptors that decode a
+    // `Triggers` field out of their config.
+    if (CONFIG_TRIGGER_ACTION_TYPES.has(action.type)) {
       return { ...action, config: { ...action.config, triggers: [...configTriggersOf(action), newTrigger] } }
     }
     return { ...action, children: [...(action.children ?? []), newTrigger] }

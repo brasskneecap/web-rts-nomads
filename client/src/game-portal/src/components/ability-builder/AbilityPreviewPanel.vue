@@ -11,6 +11,7 @@
       v-model:current-tick="currentTick"
       v-model:playing="canvasPlaying"
       :frames="result?.frames ?? []"
+      :trace="result?.trace ?? []"
       :cast-range="overlayCastRange"
       :aoe-radius="overlayAoeRadius"
       :caster-x="lastCasterX"

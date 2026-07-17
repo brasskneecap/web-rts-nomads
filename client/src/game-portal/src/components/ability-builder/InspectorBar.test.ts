@@ -252,6 +252,226 @@ describe('InspectorBar', () => {
     expect((amountInput.element as HTMLInputElement).value).toBe('5')
   })
 
+  // ── target-query schema fallback removal ────────────────────────────────
+  // deal_damage's real server schema (amount, type) declares NO target_query
+  // field at all — this must render NO Targeting section, proving the old
+  // blanket `!hasTargetQueryField` fallback (which unconditionally rendered
+  // TargetQueryEditor for any action lacking a target_query field) is gone.
+  it('shows no Targeting section for an action whose schema declares no target_query field', () => {
+    const builder = makeBuilderStub({
+      program: makeProgram(),
+      schema: {
+        actions: [
+          {
+            type: 'deal_damage',
+            runnable: true,
+            fields: [
+              { key: 'amount', label: 'Amount', control: 'number', section: 'Properties' },
+              { key: 'type', label: 'Damage Type', control: 'enum', section: 'Properties' },
+            ],
+          },
+        ],
+        enums: {},
+      },
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.text()).not.toContain('Targeting')
+  })
+
+  // ── showWhen conditional field visibility ───────────────────────────────
+  function launchProjectileSchema(): ActionSchemaBundle {
+    return {
+      actions: [
+        {
+          type: 'launch_projectile',
+          runnable: true,
+          fields: [
+            { key: 'travelMode', label: 'Travel Mode', control: 'enum', section: 'Properties', options: ['to_target', 'direction'] },
+            {
+              key: 'target',
+              label: 'Target',
+              control: 'target_query',
+              section: 'Targeting',
+              targetQueryFields: ['source', 'radius'],
+              showWhen: { key: 'travelMode', op: 'ne', value: 'direction' },
+            },
+            {
+              key: 'distance',
+              label: 'Distance',
+              control: 'number',
+              section: 'Properties',
+              showWhen: { key: 'travelMode', op: 'eq', value: 'direction' },
+            },
+            { key: 'chainCount', label: 'Chain Count', control: 'number', section: 'Properties' },
+            {
+              key: 'amount',
+              label: 'Amount (chain only)',
+              control: 'number',
+              section: 'Properties',
+              showWhen: { key: 'chainCount', op: 'gt', value: 0 },
+            },
+            {
+              key: 'type',
+              label: 'Damage Type (chain only)',
+              control: 'enum',
+              section: 'Properties',
+              showWhen: { key: 'chainCount', op: 'gt', value: 0 },
+            },
+            {
+              key: 'bounceRange',
+              label: 'Bounce Range',
+              control: 'number',
+              section: 'Properties',
+              showWhen: { key: 'chainCount', op: 'gt', value: 0 },
+            },
+            {
+              key: 'bounceDamageFalloff',
+              label: 'Bounce Damage Falloff',
+              control: 'number',
+              section: 'Properties',
+              showWhen: { key: 'chainCount', op: 'gt', value: 0 },
+            },
+          ],
+        },
+      ],
+      enums: {},
+    }
+  }
+
+  function launchProjectileProgram(config: Record<string, unknown>): AbilityProgram {
+    return {
+      entry: { type: 'unit', range: 300 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_cast_complete',
+          actions: [{ id: 'a1', type: 'launch_projectile', config }],
+        },
+      ],
+    }
+  }
+
+  it('with chainCount: 0, hides the 4 chain-only fields', () => {
+    const builder = makeBuilderStub({
+      program: launchProjectileProgram({ travelMode: 'to_target', chainCount: 0 }),
+      schema: launchProjectileSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.text()).not.toContain('Amount (chain only)')
+    expect(wrapper.text()).not.toContain('Damage Type (chain only)')
+    expect(wrapper.text()).not.toContain('Bounce Range')
+    expect(wrapper.text()).not.toContain('Bounce Damage Falloff')
+  })
+
+  it('with chainCount omitted entirely, chain-only fields stay hidden (missing key = zero value)', () => {
+    const builder = makeBuilderStub({
+      program: launchProjectileProgram({ travelMode: 'to_target' }),
+      schema: launchProjectileSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.text()).not.toContain('Bounce Range')
+  })
+
+  it('with chainCount: 2, shows the 4 chain-only fields', () => {
+    const builder = makeBuilderStub({
+      program: launchProjectileProgram({ travelMode: 'to_target', chainCount: 2 }),
+      schema: launchProjectileSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.text()).toContain('Amount (chain only)')
+    expect(wrapper.text()).toContain('Damage Type (chain only)')
+    expect(wrapper.text()).toContain('Bounce Range')
+    expect(wrapper.text()).toContain('Bounce Damage Falloff')
+  })
+
+  it('travelMode "direction" hides Target and shows Distance', () => {
+    const builder = makeBuilderStub({
+      program: launchProjectileProgram({ travelMode: 'direction' }),
+      schema: launchProjectileSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.text()).not.toContain('Targeting')
+    expect(wrapper.text()).toContain('Distance')
+  })
+
+  // Proves a newly-exposed TargetQueryDef sub-field (excludeSource — reachable
+  // for the first time via the declared targetQueryFields subset) routes
+  // through the SAME builder op as every other target edit: updateAction
+  // with the merged TargetQueryDef, at the selected action's path.
+  it('editing a newly-exposed target-query field (excludeSource) commits via updateAction at the right path', async () => {
+    const selectTargetsSchema: ActionSchemaBundle = {
+      actions: [
+        {
+          type: 'select_targets',
+          runnable: true,
+          fields: [
+            {
+              key: 'target',
+              label: 'Target Query',
+              control: 'target_query',
+              section: 'Targeting',
+              targetQueryFields: [
+                'source', 'origin', 'originRef', 'relations', 'radius',
+                'ordering', 'maxCount', 'includeInitialTarget', 'excludeSource', 'aliveState',
+              ],
+            },
+          ],
+        },
+      ],
+      enums: {},
+    }
+    const program: AbilityProgram = {
+      entry: { type: 'unit', range: 300 },
+      triggers: [
+        {
+          id: 't1',
+          type: 'on_cast_complete',
+          actions: [{ id: 'a1', type: 'select_targets', target: { source: 'all_in_scene' } }],
+        },
+      ],
+    }
+    const builder = makeBuilderStub({
+      program,
+      schema: selectTargetsSchema,
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    // excludeSource is the second-to-last checkbox rendered (the last is
+    // aliveState, a select, so the checkboxes are includeInitialTarget then
+    // excludeSource, per the declared order).
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    const excludeSourceCheckbox = checkboxes[checkboxes.length - 1]
+    await excludeSourceCheckbox.setValue(true)
+
+    expect(builder.updateAction).toHaveBeenCalledTimes(1)
+    expect(builder.updateAction).toHaveBeenCalledWith(t1ActionA1Path, {
+      target: { source: 'all_in_scene', excludeSource: true },
+    })
+  })
+
+  it('travelMode "to_target" (the inverse) shows Target and hides Distance', () => {
+    const builder = makeBuilderStub({
+      program: launchProjectileProgram({ travelMode: 'to_target' }),
+      schema: launchProjectileSchema(),
+      selected: { kind: 'action', path: t1ActionA1Path },
+    })
+    const wrapper = mountInspectorBar(builder)
+
+    expect(wrapper.text()).toContain('Targeting')
+    expect(wrapper.text()).not.toContain('Distance')
+  })
+
   it("derives the nested config.triggers index path for issuesForPath, matching the Go validator's grammar", () => {
     const builder = makeBuilderStub({
       program: nestedCraterProgram(),

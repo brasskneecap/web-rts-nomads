@@ -625,3 +625,86 @@ func TestRunAbilityPreview_ConcurrentCallsDoNotCrossContaminate(t *testing.T) {
 		t.Fatalf("runtimeAbilities still has preview keys after all concurrent runs returned: %v", leftover)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Preview isolation: ONLY the ability under test may act.
+//
+// Regression: the harness used to APPEND the previewed ability to the caster's
+// catalog loadout. previewCasterUnitType is "adept", which ships arcane_bolt
+// (defaultAutoCast:true), so seedDefaultAutoCastLocked switched auto-cast on
+// for it and the Update loop below fired it at scene units for the whole
+// preview — with CurrentMana at 999,999, repeatedly. The author saw casts they
+// never asked for.
+//
+// Note these assert EXACT values on purpose. The pre-existing preview tests
+// only assert >/</presence, which is exactly why they all passed while this
+// bug was live: the stray arcane_bolt damage was absorbed into their
+// inequalities.
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestRunAbilityPreview_CasterCarriesOnlyAbilityUnderTest(t *testing.T) {
+	def, ok := getAbilityDef("greater_heal")
+	if !ok {
+		t.Fatal(`getAbilityDef("greater_heal") = _, false`)
+	}
+	res, err := RunAbilityPreview(PreviewRequest{
+		Ability: def, Seed: 1, CasterX: 0, CasterY: 0, Target: -1, DurationSeconds: 1,
+		Units:   []PreviewSceneUnit{{Team: "ally", X: 40, Y: 0, HP: 20, MaxHP: 100}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Frames) == 0 {
+		t.Fatal("no frames captured")
+	}
+	// The caster is the only unit spawned at the request's caster position.
+	var casterAbilities []protocol.AbilitySnapshot
+	found := false
+	for _, u := range res.Frames[0].Snapshot.Units {
+		if u.X == 0 && u.Y == 0 {
+			casterAbilities = u.Abilities
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("caster not present in frame 0")
+	}
+	if len(casterAbilities) != 1 {
+		t.Fatalf("caster loadout = %v (%d abilities), want exactly 1 (the ability under test)",
+			casterAbilities, len(casterAbilities))
+	}
+}
+
+func TestRunAbilityPreview_NoUnrequestedAutoCast_HealPreviewDealsZeroDamage(t *testing.T) {
+	def, ok := getAbilityDef("greater_heal")
+	if !ok {
+		t.Fatal(`getAbilityDef("greater_heal") = _, false`)
+	}
+	// Guard the test's own premise: greater_heal can never damage an enemy, so
+	// ANY damage here is unambiguous cross-contamination from another ability.
+	if def.CanTargetEnemies {
+		t.Fatal("greater_heal unexpectedly canTargetEnemies; this test's premise is broken")
+	}
+	const enemyHP = 200
+	// Enemy sits well inside arcane_bolt's 400 castRange. 4s clears the adept's
+	// cast time + GCD several times over, so a leaked auto-cast would land.
+	res, err := RunAbilityPreview(PreviewRequest{
+		Ability: def, Seed: 1, CasterX: 0, CasterY: 0, Target: -1, DurationSeconds: 4,
+		Units: []PreviewSceneUnit{
+			{Team: "ally", X: 40, Y: 0, HP: 20, MaxHP: 100},
+			{Team: "enemy", X: 150, Y: 0, HP: enemyHP, MaxHP: enemyHP},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if previewTraceHasType(res.Trace, "damage_applied") {
+		t.Fatalf("a heal preview produced damage_applied events — another ability acted: %+v", res.Trace)
+	}
+	enemy := res.Units[1]
+	if enemy.HPAfter != enemyHP {
+		t.Fatalf("enemy HP %d -> %d during a HEAL preview; want unchanged %d (unrequested auto-cast leaked)",
+			enemy.HPBefore, enemy.HPAfter, enemyHP)
+	}
+}

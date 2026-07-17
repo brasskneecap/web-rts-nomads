@@ -36,9 +36,38 @@
             },
             "config": {
               "projectile": "arcane_bolt",
-              "amount": 50,
-              "type": "arcane",
-              "projectileScale": 1.5
+              "projectileScale": 1.5,
+              "triggers": [
+                {
+                  "id": "impact",
+                  "type": "on_projectile_impact",
+                  "actions": [
+                    {
+                      "id": "sel",
+                      "type": "select_targets",
+                      "target": {
+                        "source": "current_event"
+                      },
+                      "outputs": {
+                        "targets": "hit"
+                      }
+                    },
+                    {
+                      "id": "dmg",
+                      "type": "deal_damage",
+                      "input": {
+                        "targets": {
+                          "key": "hit"
+                        }
+                      },
+                      "config": {
+                        "amount": 50,
+                        "type": "arcane"
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           }
         ]

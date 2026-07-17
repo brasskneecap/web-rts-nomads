@@ -9,7 +9,7 @@ function program(): AbilityProgram {
       { id: 't1', type: 'on_cast_complete', actions: [{ id: 'a1', type: 'select_targets' }] },
       {
         id: 't2',
-        type: 'on_target_hit',
+        type: 'on_zone_enter',
         actions: [
           { id: 'a2', type: 'deal_damage' },
           { id: 'a3', type: 'restore_health' },

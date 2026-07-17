@@ -103,6 +103,85 @@ func TestPull_ResumesCleanlyNoSnapBack(t *testing.T) {
 	}
 }
 
+// mode defaults to pull when unset: applyPullLocked (the byte-identical-guard
+// entry point every pre-existing caller — including arcane_orb — uses) leaves
+// a unit's PullPush at its zero value (false), i.e. pull.
+func TestPull_ModeDefaultsToPull(t *testing.T) {
+	s := newProjectileTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := spawnProjTestUnit(t, s, "p1", 300, 100)
+	s.applyPullLocked(u, 100, 100, 200, 1.0)
+	if u.PullPush {
+		t.Error("applyPullLocked must leave PullPush false (pull default)")
+	}
+}
+
+// Push moves a unit AWAY from its center, monotonically increasing distance,
+// for as long as the effect is active.
+func TestPush_MovesAwayFromCenterEachTick(t *testing.T) {
+	s := newProjectileTestState(t)
+	s.mu.Lock()
+	u := spawnProjTestUnit(t, s, "p1", 105, 100)
+	cx, cy := 100.0, 100.0
+	s.applyPushLocked(u, cx, cy, 200, 1.0) // 200px/s for 1s
+	startDist := dist(u.X, u.Y, cx, cy)
+	s.mu.Unlock()
+
+	prev := startDist
+	for i := 0; i < 8; i++ {
+		s.Update(0.1)
+		s.mu.Lock()
+		d := dist(u.X, u.Y, cx, cy)
+		s.mu.Unlock()
+		if d < prev-1e-6 {
+			t.Fatalf("distance decreased tick %d: %v → %v (push should only grow)", i, prev, d)
+		}
+		prev = d
+	}
+	if prev <= startDist {
+		t.Errorf("after push ticks, distance to center = %v; want > start %v", prev, startDist)
+	}
+}
+
+// Anti-clamp: push never snaps/teleports the unit onto the center even when a
+// single step's magnitude would, under pull's rule, have "arrived".
+func TestPush_NeverSnapsToCenterOnLargeStep(t *testing.T) {
+	s := newProjectileTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := spawnProjTestUnit(t, s, "p1", 105, 100)
+	startDist := dist(u.X, u.Y, 100, 100)
+	s.applyPushLocked(u, 100, 100, 100000, 1.0) // a huge single-tick step
+	s.tickUnitPullLocked(u, 0.1)
+	if u.X == 100 && u.Y == 100 {
+		t.Fatal("push snapped the unit onto the center; push must never clamp")
+	}
+	if d := dist(u.X, u.Y, 100, 100); d <= startDist {
+		t.Errorf("distance after push step = %v; want > start %v (moved outward, not clamped)", d, startDist)
+	}
+}
+
+// A unit exactly on the push center has no defined push direction: it must
+// not move and must not NaN, but the duration still ticks down.
+func TestPush_UnitExactlyOnCenter_NoMovementNoNaN(t *testing.T) {
+	s := newProjectileTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := spawnProjTestUnit(t, s, "p1", 100, 100)
+	s.applyPushLocked(u, 100, 100, 200, 1.0)
+	s.tickUnitPullLocked(u, 0.1)
+	if math.IsNaN(u.X) || math.IsNaN(u.Y) {
+		t.Fatalf("unit position is NaN after push from dist=0: (%v,%v)", u.X, u.Y)
+	}
+	if u.X != 100 || u.Y != 100 {
+		t.Errorf("unit at (%v,%v); want unchanged (100,100) — no defined push direction at dist=0", u.X, u.Y)
+	}
+	if u.PullRemaining >= 1.0 {
+		t.Errorf("PullRemaining = %v; want decremented even though no movement occurred", u.PullRemaining)
+	}
+}
+
 // Displacement is deterministic under a seed.
 func TestPull_Deterministic(t *testing.T) {
 	run := func() (float64, float64) {

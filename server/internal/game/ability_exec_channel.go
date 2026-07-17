@@ -60,6 +60,19 @@ func init() {
 			return out
 		},
 		Schema: ActionFieldSchema{Fields: []SchemaField{
+			// "target" (target_query): Execute reads targets[0] as the ONE
+			// unit the beam channels at (see below) — the compiler always
+			// gives it its own direct TargetQueryDef (SrcInitialTarget,
+			// compileChannelBeamAction, ability_compile.go) rather than
+			// chaining off a preceding select_targets action, so — unlike
+			// deal_damage/restore_health/apply_status, which normally consume
+			// previous_action_targets — this action needs its own declared
+			// targeting shape, same as select_targets/launch_projectile. Its
+			// TargetQueryFields is the narrow targetQueryFieldsSourceOnly (not
+			// select_targets' full set): a beam channels at exactly one unit,
+			// so it only ever needs to say WHO — see that var's doc comment
+			// (ability_program_registry.go) for the full argument.
+			{Key: "target", Label: "Target", Control: "target_query", Section: "Targeting", TargetQueryFields: targetQueryFieldsSourceOnly},
 			{Key: "channelType", Label: "Channel Type", Control: "text", Section: "Properties"},
 			{Key: "tickIntervalSeconds", Label: "Tick Interval (s)", Control: "number", Section: "Timing"},
 			{Key: "manaCostPerTick", Label: "Mana Cost Per Tick", Control: "number", Section: "Properties"},

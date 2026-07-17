@@ -35,8 +35,11 @@ func TestSpellModifier_CastUsesEffectiveValues(t *testing.T) {
 		caster.MaxMana = 100
 		caster.SpellModifiers = mods
 		enemy := spawnProjTestUnit(t, s, enemyPlayerID, 200, 100) // 100px away, in range
+		enemy.Armor = 0
+		enemy.MaxHP, enemy.HP = 5000, 5000 // survive even a doubled hit
 
 		startMana := caster.CurrentMana
+		startHP := enemy.HP
 		before := len(s.Projectiles)
 		if ok, reason := s.beginAbilityCastLocked(caster, "arcane_bolt", enemy); !ok {
 			t.Fatalf("beginAbilityCastLocked failed: %q", reason)
@@ -46,7 +49,18 @@ func TestSpellModifier_CastUsesEffectiveValues(t *testing.T) {
 		if len(s.Projectiles) != before+1 {
 			t.Fatalf("expected 1 bolt fired; projectiles %d→%d", before, len(s.Projectiles))
 		}
-		return startMana - caster.CurrentMana, s.Projectiles[len(s.Projectiles)-1].Damage
+		// arcane_bolt is schemaVersion:2's composable-impact shape: the bolt no
+		// longer bakes Damage on the in-flight Projectile — it resolves only
+		// when the nested on_projectile_impact trigger fires at landing (see
+		// Projectile.ImpactActions' doc comment). Tick to impact and read the
+		// modifier-scaled damage off the target's HP delta instead.
+		for i := 0; i < 80 && len(s.Projectiles) > 0; i++ {
+			s.tickProjectilesLocked(0.05)
+		}
+		if len(s.Projectiles) != 0 {
+			t.Fatal("arcane_bolt projectile never landed")
+		}
+		return startMana - caster.CurrentMana, startHP - enemy.HP
 	}
 
 	// No modifiers → base values.

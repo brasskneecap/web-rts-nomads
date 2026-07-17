@@ -276,16 +276,27 @@ func init() {
 			return c, err
 		},
 		Validate: func(cfg ActionConfig, _ ValidationScope) []ValidationIssue { return nil },
-		Schema: ActionFieldSchema{Fields: []SchemaField{
-			{Key: "conditions", Label: "Conditions", Control: "nested_triggers", Section: "Conditions"},
-			{Key: "then", Label: "Then", Control: "nested_triggers", Section: "Advanced"},
-		}},
+		// conditional's "conditions"/"then" used to declare nested_triggers
+		// fields here. Unlike create_zone/apply_status/launch_projectile's
+		// config.triggers (a slice of AbilityTriggerDef, real cards in the
+		// flow view — see programTree.ts's CONFIG_TRIGGER_ACTION_TYPES),
+		// Conditions ([]AbilityConditionDef) and Then ([]AbilityActionDef)
+		// are a GENUINELY DIFFERENT shape the flow view has no rendering for
+		// at all — nestedTriggersFor only ever walks children/config.triggers
+		// (AbilityTriggerDef slices), never a raw action or condition list.
+		// So removing the field here isn't closing a redundancy, it's
+		// removing a stub that was already non-functional (SchemaField.vue's
+		// nested_triggers control has only ever rendered a static "edit in
+		// flow view" note — there was no such view to edit it in for these
+		// two keys). See the report to the frontend follow-up task: branch
+		// authoring needs its own real editing surface, not this one.
+		Schema: ActionFieldSchema{Fields: []SchemaField{}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(conditionalConfig)
 			if s.evaluateConditionsLocked(ctx, c.Conditions) {
 				ctx.trace("conditional_taken", ctx.currentActionPath, map[string]any{"count": len(c.Then)})
 				for i := range c.Then {
-					if ctx.opsUsed >= maxExecutionOps {
+					if ctx.opsExhausted() {
 						break
 					}
 					s.executeActionLocked(ctx, &c.Then[i], "conditional.then")
@@ -314,9 +325,12 @@ func init() {
 			}
 			return nil
 		},
+		// "actions" ([]AbilityActionDef) used to declare a nested_triggers
+		// field here too — see conditional's identical note just above: it's
+		// the same genuinely-unrendered shape, not a redundancy with the flow
+		// view's config.triggers cards.
 		Schema: ActionFieldSchema{Fields: []SchemaField{
 			{Key: "count", Label: "Count", Control: "number", Section: "Properties"},
-			{Key: "actions", Label: "Actions", Control: "nested_triggers", Section: "Advanced"},
 		}},
 		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
 			c := cfg.(repeatConfig)
@@ -329,7 +343,7 @@ func init() {
 				n = 0
 			}
 			for i := 0; i < n; i++ {
-				if ctx.opsUsed >= maxExecutionOps {
+				if ctx.opsExhausted() {
 					break
 				}
 				for ai := range c.Actions {
@@ -379,7 +393,7 @@ func init() {
 			ctx.depth++
 			defer func() { ctx.depth-- }() // robustness: restores depth even if anything below ever panics
 			for i := range trg.Actions {
-				if ctx.opsUsed >= maxExecutionOps {
+				if ctx.opsExhausted() {
 					break
 				}
 				s.executeActionLocked(ctx, &trg.Actions[i], "namedTrigger["+c.Trigger+"]")

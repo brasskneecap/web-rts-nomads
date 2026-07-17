@@ -9,9 +9,16 @@ import (
 // resolveOriginLocked maps a TargetOrigin to the concrete world position a
 // TargetQueryDef's radius filter searches around. Caller holds s.mu.
 //
-// OriginProjectilePos / OriginStatusOwner / OriginSummonedUnit are not wired
-// yet (no projectile/status/summon runtime context exists in Phase 3) and
-// fall through to the caster-position default; see the TODO(phase-3b) below.
+// OriginProjectilePos resolves to ctx.ProjectilePosition — real for a firing
+// built by tickArcaneOrbProjectileLocked (projectile.go), which binds it to
+// the bolt's current world position every tick; zero-value {0,0} for any
+// other context, since nothing else sets it (no existing compiled/authored
+// program references this origin outside arcane_orb's on_projectile_tick
+// firing, so this has no effect on any other caller).
+//
+// OriginStatusOwner / OriginSummonedUnit are still not wired (no status/summon
+// runtime context exists yet) and fall through to the caster-position
+// default; see the TODO(phase-3b) below.
 func (s *GameState) resolveOriginLocked(ctx *RuntimeAbilityContext, origin TargetOrigin, ref *ContextRef) protocol.Vec2 {
 	casterPos := func() protocol.Vec2 {
 		if u := s.getUnitByIDLocked(ctx.CasterID); u != nil {
@@ -53,9 +60,11 @@ func (s *GameState) resolveOriginLocked(ctx *RuntimeAbilityContext, origin Targe
 			}
 		}
 		return casterPos()
-	case OriginProjectilePos, OriginStatusOwner, OriginSummonedUnit:
-		// TODO(phase-3b): no projectile/status/summon runtime context is
-		// threaded into RuntimeAbilityContext yet. Fall back to caster pos.
+	case OriginProjectilePos:
+		return ctx.ProjectilePosition
+	case OriginStatusOwner, OriginSummonedUnit:
+		// TODO(phase-3b): no status/summon runtime context is threaded into
+		// RuntimeAbilityContext yet. Fall back to caster pos.
 		return casterPos()
 	default:
 		return casterPos()
@@ -65,8 +74,14 @@ func (s *GameState) resolveOriginLocked(ctx *RuntimeAbilityContext, origin Targe
 // candidatePoolIDsLocked gathers the raw (unfiltered) unit-id candidate pool
 // for a TargetQueryDef's Source. Caller holds s.mu.
 //
-// SrcCurrentEvent / SrcSourceObject are not wired yet (no event/source-object
-// runtime context exists in Phase 3); see the TODO(phase-3b) below.
+// SrcCurrentEvent resolves ctx.CurrentEventUnitID, the unit bound by whichever
+// producer fired the current trigger (today: on_zone_enter/on_zone_exit via
+// fireAbilityZoneOccupancyEventLocked in ability_zone.go). 0 (no producer has
+// bound a unit) yields an empty pool rather than an error, matching every
+// other "nothing to resolve" case in this file.
+//
+// SrcSourceObject is not wired yet (no non-unit source-object runtime context
+// exists); see the TODO(phase-3b) below.
 func (s *GameState) candidatePoolIDsLocked(ctx *RuntimeAbilityContext, q TargetQueryDef) []int {
 	switch q.Source {
 	case SrcAllInScene:
@@ -107,9 +122,14 @@ func (s *GameState) candidatePoolIDsLocked(ctx *RuntimeAbilityContext, q TargetQ
 			return nil
 		}
 		return []int{ctx.InitialTarget}
-	case SrcCurrentEvent, SrcSourceObject:
-		// TODO(phase-3b): no current-event / source-object runtime context is
-		// threaded into RuntimeAbilityContext yet.
+	case SrcCurrentEvent:
+		if ctx.CurrentEventUnitID == 0 {
+			return nil
+		}
+		return []int{ctx.CurrentEventUnitID}
+	case SrcSourceObject:
+		// TODO(phase-3b): no source-object runtime context is threaded into
+		// RuntimeAbilityContext yet.
 		return nil
 	default:
 		return nil
@@ -239,6 +259,15 @@ func (s *GameState) applyTargetFiltersLocked(ctx *RuntimeAbilityContext, caster 
 			return false
 		}
 		if q.ExcludeSource && u.ID == caster.ID {
+			return false
+		}
+		// ExcludeCurrentEvent: drop the unit a trigger's event centers on
+		// (ctx.CurrentEventUnitID) — see TargetQueryDef.ExcludeCurrentEvent's
+		// doc comment (ability_program.go). 0 means no producer bound a
+		// current-event unit, so nothing is excluded (matches SrcCurrentEvent's
+		// own "no producer -> empty pool" convention rather than treating an
+		// unset ctx field as if it names a real unit id).
+		if q.ExcludeCurrentEvent && ctx.CurrentEventUnitID != 0 && u.ID == ctx.CurrentEventUnitID {
 			return false
 		}
 		return true

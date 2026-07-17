@@ -18,9 +18,9 @@ func ProgramEnums() map[string][]string {
 		},
 		"triggerTypes": {
 			string(TriggerOnCastStart), string(TriggerOnCastComplete), string(TriggerOnAnimationMarker),
-			string(TriggerOnProjectileImpact), string(TriggerOnZoneTick), string(TriggerOnZoneEnter),
+			string(TriggerOnProjectileImpact), string(TriggerOnProjectileTick), string(TriggerOnZoneTick), string(TriggerOnZoneEnter),
 			string(TriggerOnZoneExit), string(TriggerOnStatusTick), string(TriggerOnStatusExpire),
-			string(TriggerOnTargetHit), string(TriggerOnDamageDealt), string(TriggerOnUnitDeath),
+			string(TriggerOnDamageDealt), string(TriggerOnUnitDeath),
 			string(TriggerOnActionComplete), string(TriggerOnChargeFull), string(TriggerCustom),
 		},
 		"actionTypes": actionTypeStrs,

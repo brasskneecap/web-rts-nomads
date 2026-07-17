@@ -8,6 +8,7 @@ import {
   PREVIEW_FRAME_DT_SECONDS,
   computeSceneBBox,
   frameIndexAt,
+  previewClockMs,
 } from './previewPlayback'
 
 describe('frameIndexAt', () => {
@@ -126,6 +127,51 @@ describe('frameIndexAt', () => {
         seekTick: 7,
       }),
     ).toBe(7)
+  })
+})
+
+describe('previewClockMs', () => {
+  it('maps frame 0 to 0ms', () => {
+    expect(previewClockMs(0)).toBe(0)
+  })
+
+  it('maps a frame index to frameIndex * PREVIEW_FRAME_DT_SECONDS * 1000', () => {
+    expect(previewClockMs(7)).toBeCloseTo(7 * PREVIEW_FRAME_DT_SECONDS * 1000, 10)
+    expect(previewClockMs(20)).toBeCloseTo(1000, 10) // 20 frames * 50ms = 1s
+  })
+
+  it('is a pure function of the index — calling it twice for the same frame is identical (idempotence)', () => {
+    expect(previewClockMs(12)).toBe(previewClockMs(12))
+  })
+
+  it('is non-monotonic-safe: a smaller (scrubbed-back) index yields a smaller clock value with no special-casing', () => {
+    // No accumulator/state involved — going "backward" just means a smaller
+    // input, which this pure function handles exactly like any other input.
+    expect(previewClockMs(3)).toBeLessThan(previewClockMs(10))
+    expect(previewClockMs(3)).toBe(3 * PREVIEW_FRAME_DT_SECONDS * 1000)
+  })
+
+  it('reconciles with a damage number spawned for the SAME frame index: elapsed is exactly 0', () => {
+    // This is the createdAt/renderTime seam contract: previewDamageNumbers
+    // stamps a spawned number's createdAt as previewClockMs(frameIndex), and
+    // CanvasRenderer's injected clock reports previewClockMs(frameIndex) for
+    // that same displayed frame — so `renderTime - startedAt` is exactly 0
+    // the instant the number spawns, not a stale/aged value from a disjoint
+    // wall clock.
+    const frameIndex = 42
+    const createdAt = previewClockMs(frameIndex)
+    const renderTime = previewClockMs(frameIndex)
+    expect(renderTime - createdAt).toBe(0)
+  })
+
+  it('one preview frame later, elapsed advances by exactly PREVIEW_FRAME_DT_SECONDS in ms', () => {
+    const spawnFrame = 5
+    const createdAt = previewClockMs(spawnFrame)
+    const oneFrameLater = previewClockMs(spawnFrame + 1)
+    // IEEE-754: 6 * 0.05 * 1000 lands a hair off 300 — assert within float
+    // tolerance rather than exact equality, same convention as
+    // previewDamageNumbers.test.ts's own EPS handling for this tick grid.
+    expect(oneFrameLater - createdAt).toBeCloseTo(PREVIEW_FRAME_DT_SECONDS * 1000, 9)
   })
 })
 
