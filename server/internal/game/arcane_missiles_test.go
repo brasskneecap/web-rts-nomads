@@ -2,6 +2,13 @@ package game
 
 import "testing"
 
+// arcaneMissilesDef returns the effective (post-conversion-recovered)
+// arcane_missiles def: abilityMechanicsShadow resolves the live catalog def's
+// ChargeRequired/ManaToChargeRatio/MissileCount/DamagePerMissile/etc from its
+// compiled Program (SchemaVersion 2 as of the composable-abilities migration
+// clears these fields on the raw def — see ConvertLegacyAbility), so every
+// test below that reads def.ChargeRequired etc. gets the real values instead
+// of silently reading zero.
 func arcaneMissilesDef(t *testing.T) AbilityDef {
 	t.Helper()
 	def, ok := getAbilityDef("arcane_missiles")
@@ -11,7 +18,7 @@ func arcaneMissilesDef(t *testing.T) AbilityDef {
 	if !def.IsChargeFirePassive() {
 		t.Fatalf("arcane_missiles should be a charge-fire passive; type=%q chargeRequired=%v", def.Type, def.ChargeRequired)
 	}
-	return def
+	return abilityMechanicsShadow(def)
 }
 
 // Charge accrues on mana spend ONLY for a unit that owns the passive.

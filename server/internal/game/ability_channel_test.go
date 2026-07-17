@@ -56,14 +56,20 @@ func spawnChannelAlly(t *testing.T, s *GameState, owner string, x, y float64, hp
 	return u
 }
 
-// getSiphonLifeDef retrieves the siphon_life AbilityDef or fails the test.
+// getSiphonLifeDef retrieves the siphon_life AbilityDef, recovered through
+// abilityMechanicsShadow so every test in this file can keep reading
+// def.TickIntervalSeconds / ManaCostPerTick / DamagePerTick /
+// HealingMultiplier / AllyHealRadius unchanged even though the live catalog
+// def is schemaVersion:2 (those flat fields are cleared per
+// ConvertLegacyAbility — see abilityMechanicsShadow's doc comment). Fails
+// the test if the ability isn't registered.
 func getSiphonLifeDef(t *testing.T) AbilityDef {
 	t.Helper()
 	def, ok := getAbilityDef("siphon_life")
 	if !ok {
 		t.Fatal("siphon_life ability def not registered; check catalog/abilities/siphon_life/siphon_life.json")
 	}
-	return def
+	return abilityMechanicsShadow(def)
 }
 
 // ── Channel start / stop happy path ──────────────────────────────────────────

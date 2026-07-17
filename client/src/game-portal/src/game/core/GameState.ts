@@ -29,6 +29,7 @@ import type {
   TrapSnapshot,
   UnitCapability,
   UnitOrder,
+  UnitSnapshot,
   UnitType,
   WaveSnapshot,
   WaveUpgradeOfferSnapshot,
@@ -197,6 +198,77 @@ export type Unit = {
    *  range values modulo into the sheet at draw time. */
   channelLoopStart?: number
   channelLoopEnd?: number
+}
+
+// mapUnitSnapshot converts one wire UnitSnapshot into the client-side Unit
+// shape applySnapshot stores. Pure field mapping — no reference to "now",
+// the interpolation buffer, or any per-tick popup/sound bookkeeping — so
+// callers outside the live network path (e.g. the ability preview replay)
+// can reuse it directly instead of forking the field list.
+export function mapUnitSnapshot(unit: UnitSnapshot): Unit {
+  return {
+    id: unit.id,
+    unitType: unit.unitType,
+    archetype: unit.archetype,
+    name: unit.name,
+    capabilities: unit.capabilities ?? [],
+    flyer: unit.flyer,
+    visible: unit.visible,
+    status: unit.status,
+    x: unit.x,
+    y: unit.y,
+    hp: unit.hp,
+    maxHp: unit.maxHp,
+    damage: unit.damage,
+    attackSpeed: unit.attackSpeed,
+    slowedRemaining: unit.slowedRemaining,
+    slowedMultiplier: unit.slowedMultiplier,
+    coldSlowedRemaining: unit.coldSlowedRemaining,
+    coldSlowedMultiplier: unit.coldSlowedMultiplier,
+    burningRemaining: unit.burningRemaining,
+    arcaneCharge: unit.arcaneCharge,
+    burningAnchor: unit.burningAnchor,
+    attackRange: unit.attackRange,
+    moveSpeed: unit.moveSpeed,
+    armor: unit.armor,
+    critChance: unit.critChance,
+    critMultiplier: unit.critMultiplier,
+    healthRegen: unit.healthRegen,
+    xp: unit.xp,
+    rank: unit.rank,
+    xpToNextRank: unit.xpToNextRank,
+    xpIntoCurrentRank: unit.xpIntoCurrentRank,
+    recentRankUpSeconds: unit.recentRankUpSeconds,
+    path: unit.progressionPath,
+    perkIds: unit.perkIds,
+    extraPerkSlots: unit.extraPerkSlots,
+    shield: unit.shield,
+    maxShield: unit.maxShield,
+    shieldPools: unit.shieldPools,
+    mana: unit.mana,
+    maxMana: unit.maxMana,
+    manaRegen: unit.manaRegen,
+    activeBuffs: unit.activeBuffs,
+    activeDebuffs: unit.activeDebuffs,
+    perkCooldowns: unit.perkCooldowns,
+    abilities: unit.abilities,
+    ownerId: unit.ownerId,
+    color: unit.color,
+    carriedResourceType: unit.carriedResourceType,
+    carriedAmount: unit.carriedAmount,
+    targetX: unit.targetX,
+    targetY: unit.targetY,
+    moving: unit.moving,
+    actionFacingDx: unit.actionFacingDx,
+    actionFacingDy: unit.actionFacingDy,
+    workTargetId: unit.workTargetId,
+    effectiveTrap: unit.effectiveTrap,
+    order: unit.order,
+    focusTargetId: unit.focusTargetId,
+    inventory: unit.inventory,
+    channelLoopStart: unit.channelLoopStart,
+    channelLoopEnd: unit.channelLoopEnd,
+  }
 }
 
 /** A held item — carries the item id and optional stack count. Look up
@@ -1139,69 +1211,7 @@ export class GameState {
       tick: message.tick,
       serverNow: message.serverNow,
       receivedAt: now,
-      units: message.units.map((unit) => ({
-        id: unit.id,
-        unitType: unit.unitType,
-        archetype: unit.archetype,
-        name: unit.name,
-        capabilities: unit.capabilities ?? [],
-        flyer: unit.flyer,
-        visible: unit.visible,
-        status: unit.status,
-        x: unit.x,
-        y: unit.y,
-        hp: unit.hp,
-        maxHp: unit.maxHp,
-        damage: unit.damage,
-        attackSpeed: unit.attackSpeed,
-        slowedRemaining: unit.slowedRemaining,
-        slowedMultiplier: unit.slowedMultiplier,
-        coldSlowedRemaining: unit.coldSlowedRemaining,
-        coldSlowedMultiplier: unit.coldSlowedMultiplier,
-        burningRemaining: unit.burningRemaining,
-        arcaneCharge: unit.arcaneCharge,
-        burningAnchor: unit.burningAnchor,
-        attackRange: unit.attackRange,
-        moveSpeed: unit.moveSpeed,
-        armor: unit.armor,
-        critChance: unit.critChance,
-        critMultiplier: unit.critMultiplier,
-        healthRegen: unit.healthRegen,
-        xp: unit.xp,
-        rank: unit.rank,
-        xpToNextRank: unit.xpToNextRank,
-        xpIntoCurrentRank: unit.xpIntoCurrentRank,
-        recentRankUpSeconds: unit.recentRankUpSeconds,
-        path: unit.progressionPath,
-        perkIds: unit.perkIds,
-        extraPerkSlots: unit.extraPerkSlots,
-        shield: unit.shield,
-        maxShield: unit.maxShield,
-        shieldPools: unit.shieldPools,
-        mana: unit.mana,
-        maxMana: unit.maxMana,
-        manaRegen: unit.manaRegen,
-        activeBuffs: unit.activeBuffs,
-        activeDebuffs: unit.activeDebuffs,
-        perkCooldowns: unit.perkCooldowns,
-        abilities: unit.abilities,
-        ownerId: unit.ownerId,
-        color: unit.color,
-        carriedResourceType: unit.carriedResourceType,
-        carriedAmount: unit.carriedAmount,
-        targetX: unit.targetX,
-        targetY: unit.targetY,
-        moving: unit.moving,
-        actionFacingDx: unit.actionFacingDx,
-        actionFacingDy: unit.actionFacingDy,
-        workTargetId: unit.workTargetId,
-        effectiveTrap: unit.effectiveTrap,
-        order: unit.order,
-        focusTargetId: unit.focusTargetId,
-        inventory: unit.inventory,
-        channelLoopStart: unit.channelLoopStart,
-        channelLoopEnd: unit.channelLoopEnd,
-      })),
+      units: message.units.map(mapUnitSnapshot),
     }
 
     this.snapshotBuffer.push(frame)
@@ -3796,6 +3806,18 @@ function buildFocusTargetActionItem(
   }
 }
 
+// abilityTooltipBody composes an ability button's tooltip body: the
+// server-provided description prose (author override or generated from the
+// ability's config — the single source of truth, never hardcoded here) followed
+// by the control hint. Falls back to just the hint for the (transitional) case
+// of a snapshot with no description.
+function abilityTooltipBody(a: AbilitySnapshot): string {
+  const hint = a.supportsAutoCast
+    ? 'Left-click: cast. Right-click: toggle auto-cast.'
+    : 'Left-click: cast.'
+  return a.description ? `${a.description}\n${hint}` : hint
+}
+
 // getAbilityActionItems builds interactive ability buttons from the unit's
 // snapshot abilities. id `cast-ability-<id>` drives left-click (cast →
 // targeting) and, via the `autocast-toggle-` prefix, right-click. `active`
@@ -3828,9 +3850,7 @@ function getAbilityActionItems(
         cooldownRemaining: a.cooldownRemaining,
         cooldownTotal: a.cooldownTotal,
         tooltipTitle: name,
-        tooltipBody: a.supportsAutoCast
-          ? 'Left-click: cast. Right-click: toggle auto-cast.'
-          : 'Left-click: cast.',
+        tooltipBody: abilityTooltipBody(a),
       }
     })
 }
@@ -3845,9 +3865,11 @@ function buildPassiveAbilityCell(a: AbilitySnapshot): ActionItem {
   const required = a.chargeRequired ?? 0
   const current = Math.floor(a.chargeCurrent ?? 0)
   const hasCharge = required > 0
-  const tooltipBody = hasCharge
-    ? `Passive. Spend mana to build Arcane Charge (1 per mana). At ${required} charge it automatically fires a volley of Arcane Missiles at nearby enemies, then resets. Charge: ${current}/${required}.`
-    : 'Passive ability.'
+  // Prose comes from the server description (single source of truth); the live
+  // charge readout is appended locally since it's per-tick state, not authored
+  // text. Fall back to a minimal label only if a description is somehow absent.
+  const prose = a.description ?? (hasCharge ? 'Passive.' : 'Passive ability.')
+  const tooltipBody = hasCharge ? `${prose}\nCharge: ${current}/${required}.` : prose
   return {
     id: `passive-${a.id}`,
     label: name,
@@ -3925,9 +3947,7 @@ function buildSpellSlotCell(
     cooldownRemaining: ability.cooldownRemaining,
     cooldownTotal: ability.cooldownTotal,
     tooltipTitle: `${name} (${rank.charAt(0).toUpperCase() + rank.slice(1)} Spell)`,
-    tooltipBody: ability.supportsAutoCast
-      ? 'Left-click: cast. Right-click: toggle auto-cast.'
-      : 'Left-click: cast.',
+    tooltipBody: abilityTooltipBody(ability),
   }
 }
 

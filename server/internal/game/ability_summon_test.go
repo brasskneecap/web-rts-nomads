@@ -6,17 +6,22 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
-// raiseSkeletonDef returns the catalog-authored Raise Skeleton ability so
-// tests derive expected mana / cooldown values from the JSON rather than
-// hardcoding numbers — tuning the catalog never breaks a behavioural test,
-// only a real regression in the cast logic does.
+// raiseSkeletonDef returns the catalog-authored Raise Skeleton ability, with
+// mechanic magnitudes RECOVERED from the compiled Program
+// (abilityMechanicsShadow) — raise_skeleton is schemaVersion:2 as of the
+// composable-abilities migration, so the raw catalog def's
+// SummonUnitType/SummonCount are cleared and the shipped Program is the sole
+// authority for them. Tests derive expected mana / cooldown / summon-count
+// values from this rather than hardcoding numbers — tuning the catalog (or
+// its compiled Program) never breaks a behavioural test, only a real
+// regression in the cast logic does.
 func raiseSkeletonDef(t *testing.T) AbilityDef {
 	t.Helper()
 	def, ok := getAbilityDef("raise_skeleton")
 	if !ok {
 		t.Fatal(`getAbilityDef("raise_skeleton") = _, false; want the catalog-authored Raise Skeleton`)
 	}
-	return def
+	return abilityMechanicsShadow(def)
 }
 
 func countUnitsOfType(s *GameState, unitType string) int {

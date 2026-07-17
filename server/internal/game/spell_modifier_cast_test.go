@@ -12,7 +12,13 @@ func TestSpellModifier_CastUsesEffectiveValues(t *testing.T) {
 		t.Fatal(`getAbilityDef("arcane_bolt") missing`)
 	}
 	baseMana := boltDef.ManaCost
-	baseDamage := boltDef.DamageAmount
+	// arcane_bolt is schemaVersion:2 as of the composable-abilities migration:
+	// DamageAmount is cleared on the raw def (the compiled launch_projectile
+	// action's Config.Amount — the exact same number the executor's modifier
+	// fold uses, see ability_exec_projectile.go — is the sole authority now).
+	// Recovered via abilityMechanicsShadow so this end-to-end expectation still
+	// tracks the catalog instead of reading the now-zeroed flat field directly.
+	baseDamage := abilityMechanicsShadow(boltDef).DamageAmount
 	if baseMana <= 0 || baseDamage <= 0 {
 		t.Fatalf("arcane_bolt base mana=%d damage=%d; both must be > 0 for this test", baseMana, baseDamage)
 	}

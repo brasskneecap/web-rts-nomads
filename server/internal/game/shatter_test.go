@@ -2,13 +2,21 @@ package game
 
 import "testing"
 
+// shatterDef returns the live catalog "shatter" ability with its mechanic
+// magnitudes RECOVERED from the compiled Program (abilityMechanicsShadow) —
+// shatter is schemaVersion:2 as of the composable-abilities migration, so the
+// raw catalog def's DamageAmount/Radius/SlowMultiplier/etc. are cleared to 0
+// and the shipped Program is the sole authority for them. The recovered
+// values are exactly what a real cast actually uses (same seam
+// describeAbilityProgram uses for tooltip prose), so tests below still
+// derive expectations from "the catalog" rather than a hardcoded number.
 func shatterDef(t *testing.T) AbilityDef {
 	t.Helper()
 	def, ok := getAbilityDef("shatter")
 	if !ok {
 		t.Fatal(`getAbilityDef("shatter") missing`)
 	}
-	return def
+	return abilityMechanicsShadow(def)
 }
 
 // Shatter's authored shape matches its design brief: a cold, point-targeted,

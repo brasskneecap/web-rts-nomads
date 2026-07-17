@@ -362,18 +362,11 @@ func (s *GameState) fireAbilityProjectileLocked(caster, target *Unit, def Abilit
 	id := fmt.Sprintf("proj_%d", s.nextProjectileID)
 	s.nextProjectileID++
 
-	// Render scale: start from the caster's projectile scale, then apply the
-	// ability's optional per-projectile multiplier (e.g. arcane_missiles at 0.5
-	// for smaller bolts). A caster with no scale is treated as 1× so the
-	// multiplier still bites.
-	scale := caster.ProjectileScale
-	if def.ProjectileScale > 0 {
-		base := scale
-		if base <= 0 {
-			base = 1
-		}
-		scale = base * def.ProjectileScale
-	}
+	// Render scale is owned by the ABILITY, not the caster: a spell's visuals
+	// are authored per-ability (e.g. arcane_missiles at 0.5 for smaller bolts).
+	// The caster unit's ProjectileScale governs only its BASIC ATTACK, never its
+	// abilities. 0/absent ⇒ the client's default 1×.
+	scale := def.ProjectileScale
 
 	s.Projectiles = append(s.Projectiles, &Projectile{
 		ID:                  id,
@@ -531,7 +524,9 @@ func (s *GameState) spawnArcaneOrbLocked(caster *Unit, targetX, targetY float64,
 		TotalSeconds:             travelTime,
 		RemainingSeconds:         travelTime,
 		Variant:                  def.Projectile, // client renders the orb sprite by id
-		Scale:                    caster.ProjectileScale,
+		// Ability-owned render scale (the caster's ProjectileScale is for its
+		// basic attack, not its spells). 0/absent ⇒ the client's default 1×.
+		Scale:                    def.ProjectileScale,
 		ArcaneOrb:                true,
 		ArcaneOrbRadius:          eff.Radius,
 		ArcaneOrbPullStrength:    eff.PullStrength,

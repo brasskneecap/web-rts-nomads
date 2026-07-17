@@ -196,14 +196,21 @@ func (s *GameState) tickUnitAutoCastLocked(unit *Unit) {
 		// the caster or a nearby ally needs healing. Without this guard, the
 		// auto-cast would drain mana whenever an enemy is in range even when
 		// the caster's team is at full health — wasteful and player-hostile.
-		if def.ChannelType != "" && !s.siphonHealingNeededLocked(unit, def) {
-			continue
-		}
-		// Also gate: don't start a channel while already channeling another
-		// ability (the channel lifecycle itself enforces this, but skipping
-		// here avoids routing a no-op cast through beginAbilityCastLocked).
-		if def.ChannelType != "" && unit.ChannelAbilityID != "" {
-			continue
+		// def.IsChannelAbility() (not a raw ChannelType != "" check) so a
+		// converted (SchemaVersion>=2) channel ability is still recognized —
+		// see that method's doc comment.
+		if def.IsChannelAbility() {
+			spec, _ := channelSpecFor(def)
+			if !s.siphonHealingNeededLocked(unit, spec.AllyHealRadius) {
+				continue
+			}
+			// Also gate: don't start a channel while already channeling
+			// another ability (the channel lifecycle itself enforces this,
+			// but skipping here avoids routing a no-op cast through
+			// beginAbilityCastLocked).
+			if unit.ChannelAbilityID != "" {
+				continue
+			}
 		}
 		target := s.resolveAutoCastTargetLocked(unit, def)
 		if target == nil {
@@ -267,6 +274,7 @@ func (s *GameState) abilityStatesLocked(unit *Unit) []protocol.AbilitySnapshot {
 		snap := protocol.AbilitySnapshot{
 			ID:               def.ID,
 			DisplayName:      def.DisplayName,
+			Description:      def.EffectiveDescription(),
 			Icon:             def.Icon,
 			ManaCost:         def.ManaCost,
 			TargetCount:      def.TargetCount,
@@ -290,9 +298,12 @@ func (s *GameState) abilityStatesLocked(unit *Unit) []protocol.AbilitySnapshot {
 			Projectile:    def.Projectile,
 			TargetsPoint:  def.TargetsPoint,
 		}
-		if def.IsChargeFirePassive() {
+		// chargeFireSpecFor (not a raw def.ChargeRequired read) so a converted
+		// (SchemaVersion>=2) charge-fire ability still reports its real
+		// threshold to the client — see spell_charge.go.
+		if spec, ok := chargeFireSpecFor(def); ok {
 			snap.ChargeCurrent = unit.ArcaneCharge
-			snap.ChargeRequired = def.ChargeRequired
+			snap.ChargeRequired = spec.ChargeRequired
 		}
 		out = append(out, snap)
 	}

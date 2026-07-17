@@ -1722,7 +1722,7 @@
     <section v-if="activeScreen !== 'map'" class="we-screen">
       <ItemCatalogEditor v-if="activeScreen === 'items'" />
       <UnitTypeEditorPanel v-else-if="activeScreen === 'unit-types'" />
-      <AbilityEditorPanel v-else-if="activeScreen === 'abilities'" />
+      <AbilityBuilderPanel v-else-if="activeScreen === 'abilities'" />
     </section>
   </div>
 </template>
@@ -1737,7 +1737,7 @@ import { isShopGuardableBuildingType, allGuardGroups } from '@/game/maps/shopGua
 import WorldEditorToolbar from '@/components/world-editor/WorldEditorToolbar.vue'
 import ItemCatalogEditor from '@/components/ItemCatalogEditor.vue'
 import UnitTypeEditorPanel from '@/components/UnitTypeEditorPanel.vue'
-import AbilityEditorPanel from '@/components/AbilityEditorPanel.vue'
+import AbilityBuilderPanel from '@/components/ability-builder/AbilityBuilderPanel.vue'
 import PlaytestBar from '@/components/world-editor/PlaytestBar.vue'
 import InGameHud from '@/components/InGameHud.vue'
 import { usePlaytest } from './usePlaytest'

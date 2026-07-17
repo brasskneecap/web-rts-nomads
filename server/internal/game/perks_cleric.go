@@ -426,6 +426,27 @@ func (s *GameState) perkClericHealOutputMultiplierLocked(caster *Unit) float64 {
 	return m
 }
 
+// effectiveAbilityHealLocked scales a composable ability action's base heal
+// amount by perkClericHealOutputMultiplierLocked, at PARITY with legacy
+// resolveAbilityCastOnTargetLocked's heal step:
+//
+//	amount := int(math.Round(float64(def.HealAmount) * s.perkClericHealOutputMultiplierLocked(caster)))
+//
+// base is the action's configured amount (e.g. restoreHealthConfig.Amount),
+// not necessarily def.HealAmount, mirroring effectiveAbilityDamageLocked's
+// "action's amount, not the legacy def field" contract — a composable
+// ability's restore_health amount is independent of the legacy def's own
+// HealAmount field. Deliberately does NOT fold SpellModifiers (there is no
+// heal-amount SpellModField; only the cleric perk multiplier scales heals,
+// exactly as legacy does). Caller holds s.mu.
+func (s *GameState) effectiveAbilityHealLocked(caster *Unit, def AbilityDef, base int) int {
+	amount := int(math.Round(float64(base) * s.perkClericHealOutputMultiplierLocked(caster)))
+	if amount < 0 {
+		amount = 0
+	}
+	return amount
+}
+
 // perkClericHealTriggeredMultiplierLocked returns the multiplier applied to
 // the BUFF VALUES stamped by heal-triggered perks (battle_prayer,
 // bolstering_prayer, and any future heal-trigger perks). Default is 1.0;

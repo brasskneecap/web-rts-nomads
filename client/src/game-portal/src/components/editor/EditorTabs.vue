@@ -13,6 +13,7 @@
       class="ed-tabs__tab"
       :class="{ 'ed-tabs__tab--active': tab.id === modelValue }"
       role="tab"
+      :data-test="`${idPrefix}-tab-${tab.id}`"
       :aria-selected="tab.id === modelValue"
       :aria-controls="`${idPrefix}-panel-${tab.id}`"
       :tabindex="tab.id === modelValue ? 0 : -1"

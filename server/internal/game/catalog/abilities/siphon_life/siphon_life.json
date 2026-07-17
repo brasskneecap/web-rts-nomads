@@ -2,22 +2,44 @@
   "id": "siphon_life",
   "displayName": "Siphon Life",
   "type": "spell",
-  "channelType": "beam",
   "canTargetEnemies": true,
   "castRange": 220,
-  "castTime": 0,
-  "manaCost": 0,
-  "cooldown": 0,
   "damageType": "shadow",
-  "damageAmount": 0,
-  "icon": "TODO/abilities/siphon_life.png",
-  "casterAnimation": "Casting",
   "supportsAutoCast": true,
   "autoCastTargetSelector": "lowest_hp_percentage_enemy_in_range",
-  "defaultAutoCast": false,
-  "tickIntervalSeconds": 0.25,
-  "manaCostPerTick": 1,
-  "damagePerTick": 6,
-  "healingMultiplier": 1.0,
-  "allyHealRadius": 220
+  "icon": "TODO/abilities/siphon_life.png",
+  "casterAnimation": "Casting",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "enemy"
+      ],
+      "range": 220
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "channel",
+            "type": "channel_beam",
+            "target": {
+              "source": "initial_target"
+            },
+            "config": {
+              "channelType": "beam",
+              "tickIntervalSeconds": 0.25,
+              "manaCostPerTick": 1,
+              "damagePerTick": 6,
+              "healingMultiplier": 1,
+              "allyHealRadius": 220
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

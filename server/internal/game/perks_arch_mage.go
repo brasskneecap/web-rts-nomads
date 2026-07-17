@@ -89,7 +89,13 @@ func (s *GameState) fireUnstableMagicLocked(caster, target *Unit, effectiveness 
 	if def.TargetsPoint {
 		s.resolveAbilityCastAtPointLocked(caster, def, eff, target.X, target.Y)
 	} else {
-		s.resolveAbilityCastOnTargetLocked(caster, def, eff, target)
+		// Route through the shared unit-targeted seam (branches on
+		// SchemaVersion exactly like resolveAbilityCastAtPointLocked does
+		// above) instead of reaching past it into the legacy-only
+		// resolveAbilityCastOnTargetLocked — see resolveAbilityCastWithEffLocked's
+		// doc comment for why that direct call was a silent no-op bug for a
+		// v2 unit-targeted spell.
+		s.resolveAbilityCastWithEffLocked(caster, def, eff, []*Unit{target})
 	}
 }
 
@@ -116,8 +122,15 @@ func (s *GameState) randomLearnedSpellLocked(caster *Unit) string {
 // chain, pull) are left intact so the spell still behaves like itself, just
 // weaker. Pure — no lock, no RNG. Values are floored at 0 by construction
 // (factor is validated > 0 by the caller and the base fields are non-negative).
+//
+// Also stamps DamageEffectivenessMultiplier so a composable (SchemaVersion>=2)
+// spell resolved through this reduced-effectiveness eff scales its
+// deal_damage actions identically to how .Damage/.DamagePerSecond already
+// scale the legacy path — see resolveAbilityProgramCastLocked, which honours
+// the caller-supplied eff instead of re-deriving one from scratch.
 func scaleEffectiveSpellDamage(eff EffectiveSpell, factor float64) EffectiveSpell {
 	eff.Damage = int(math.Round(float64(eff.Damage) * factor))
 	eff.DamagePerSecond *= factor
+	eff.DamageEffectivenessMultiplier = eff.effectivenessMultiplier() * factor
 	return eff
 }

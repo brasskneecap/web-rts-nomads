@@ -2,24 +2,53 @@
   "id": "chain_lightning",
   "displayName": "Chain Lightning",
   "type": "spell",
-  "category": "offensive",
-  "manaCost": 16,
-  "damageAmount": 65,
-  "chainCount": 2,
-  "bounceRange": 220,
-  "bounceDamageFalloff": 5,
+  "canTargetEnemies": true,
   "castRange": 400,
   "castTime": 0.5,
+  "manaCost": 16,
   "cooldown": 5,
   "damageType": "lightning",
-  "projectile": "lightning_bolt",
-  "tags": ["chain", "damage"],
-  "canTargetSelf": false,
-  "canTargetAllies": false,
-  "canTargetEnemies": true,
-  "casterAnimation": "Attacking",
-  "icon": "TODO/abilities/chain_lightning.png",
+  "tags": [
+    "chain",
+    "damage"
+  ],
+  "category": "offensive",
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
-  "defaultAutoCast": true
+  "defaultAutoCast": true,
+  "icon": "TODO/abilities/chain_lightning.png",
+  "casterAnimation": "Attacking",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "enemy"
+      ],
+      "range": 400
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "proj",
+            "type": "launch_projectile",
+            "target": {
+              "source": "initial_target"
+            },
+            "config": {
+              "projectile": "lightning_bolt",
+              "amount": 65,
+              "type": "lightning",
+              "chainCount": 2,
+              "bounceRange": 220,
+              "bounceDamageFalloff": 5
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

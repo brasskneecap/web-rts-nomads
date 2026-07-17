@@ -2,21 +2,81 @@
   "id": "greater_heal",
   "displayName": "Greater Heal",
   "type": "spell",
-  "category": "heal",
-  "targetCount": 3,
-  "manaCost": 10,
-  "healAmount": 15,
-  "castRange": "match_attack_range",
-  "castTime": 1.0,
-  "cooldown": 3,
-  "damageType": "holy",
   "canTargetSelf": true,
   "canTargetAllies": true,
-  "canTargetEnemies": false,
-  "casterAnimation": "Casting",
-  "effectOnTarget": "healing_glow",
-  "icon": "TODO/abilities/greater_heal.png",
+  "castRange": "match_attack_range",
+  "castTime": 1,
+  "manaCost": 10,
+  "cooldown": 3,
+  "damageType": "holy",
+  "category": "heal",
   "supportsAutoCast": true,
   "autoCastTargetSelector": "lowest_hp_percentage_ally_in_range",
-  "defaultAutoCast": true
+  "defaultAutoCast": true,
+  "icon": "TODO/abilities/greater_heal.png",
+  "casterAnimation": "Casting",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "self",
+        "ally"
+      ],
+      "range": "match_attack_range"
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "sel",
+            "type": "select_targets",
+            "target": {
+              "source": "all_in_scene",
+              "origin": "caster",
+              "relations": [
+                "self",
+                "ally"
+              ],
+              "radius": -1,
+              "maxCount": 3,
+              "ordering": "lowest_health_percentage",
+              "includeInitialTarget": true
+            },
+            "outputs": {
+              "targets": "healTargets"
+            }
+          },
+          {
+            "id": "heal",
+            "type": "restore_health",
+            "input": {
+              "targets": {
+                "key": "healTargets"
+              }
+            },
+            "config": {
+              "amount": 15,
+              "school": "holy"
+            }
+          },
+          {
+            "id": "vfx",
+            "type": "play_presentation",
+            "input": {
+              "attach": {
+                "key": "healTargets"
+              }
+            },
+            "config": {
+              "asset": "healing_glow",
+              "oncePerTarget": true
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

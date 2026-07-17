@@ -2,13 +2,23 @@ package game
 
 import "testing"
 
+// chainLightningDef returns the live catalog "chain_lightning" ability with
+// its mechanic magnitudes RECOVERED from the compiled Program
+// (abilityMechanicsShadow) — chain_lightning is schemaVersion:2 as of the
+// composable-abilities migration, so the raw catalog def's DamageAmount/
+// ChainCount/BounceRange/BounceDamageFalloff/Projectile/etc. are cleared to
+// their zero values and the shipped Program (a single launch_projectile
+// action) is the sole authority for them. The recovered values are exactly
+// what a real cast actually uses, so test sanity-checks below still derive
+// their expectations from "the catalog" rather than a hardcoded number. Same
+// pattern as shatterDef (shatter_test.go) / fireballDef (fireball_test.go).
 func chainLightningDef(t *testing.T) AbilityDef {
 	t.Helper()
 	def, ok := getAbilityDef("chain_lightning")
 	if !ok {
 		t.Fatal(`getAbilityDef("chain_lightning") missing`)
 	}
-	return def
+	return abilityMechanicsShadow(def)
 }
 
 // castChainLightning casts at primary and advances beams until deferred damage

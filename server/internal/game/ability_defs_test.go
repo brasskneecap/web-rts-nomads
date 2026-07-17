@@ -209,6 +209,10 @@ func TestAbility_HealLoadsFromCatalog(t *testing.T) {
 	if !ok {
 		t.Fatal(`getAbilityDef("heal") = _, false; want the catalog-authored Heal`)
 	}
+	// heal is schemaVersion:2 as of the composable-abilities migration:
+	// HealAmount/EffectOnTarget (checked below) are cleared on the raw def
+	// and recovered from the compiled Program instead — see abilityMechanicsShadow.
+	def = abilityMechanicsShadow(def)
 	if def.ID != "heal" || def.DisplayName != "Heal" || def.Type != AbilitySpell {
 		t.Errorf("identity: id=%q name=%q type=%q", def.ID, def.DisplayName, def.Type)
 	}

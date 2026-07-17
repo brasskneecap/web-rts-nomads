@@ -994,6 +994,41 @@ type GameState struct {
 	GroundHazards      []*GroundHazard
 	nextGroundHazardID int
 
+	// AbilityZones is the set of active composable, tick-driven zones spawned
+	// by the create_zone action (ability_zone.go). Server-only: never
+	// serialized. Generalizes GroundHazard for spells authored as a program
+	// rather than the legacy meteor-specific fields; GroundHazards keeps
+	// serving Meteor and stays untouched. Spawned by spawnAbilityZoneLocked;
+	// ticked by tickAbilityZonesLocked in Update (immediately after
+	// tickGroundHazardsLocked, before drainPendingDeaths).
+	AbilityZones      []*AbilityZone
+	nextAbilityZoneID int
+
+	// previewTrace/previewClock are non-nil/non-zero ONLY during a
+	// RunAbilityPreview harness run. When set, the ability executor attaches
+	// previewTrace to every RuntimeAbilityContext it builds and stamps
+	// events with previewClock (the harness's accumulated sim time). In
+	// real matches these stay nil/0 ⇒ the executor's trace is inert
+	// (record() no-ops on a nil trace) and there is zero behavior change.
+	previewTrace *AbilityExecutionTrace
+	previewClock float64
+
+	// simTime accumulates dt every Update() tick, in production and preview
+	// alike (unlike previewClock, which stays 0 in production). It is a
+	// plain dt-accumulator, never wall-clock — see the determinism rule in
+	// AI_RULES.md. Read-only outside ability_marker.go, where it is the
+	// clock the on_animation_marker scheduler fires scheduledMarker entries
+	// against (scheduleMarkerTriggersLocked / tickAbilityMarkersLocked).
+	simTime float64
+	// pendingMarkers holds on_animation_marker triggers enqueued by
+	// play_presentation (ability_exec_presentation.go) via
+	// scheduleMarkerTriggersLocked, waiting for their fireAtSimTime. Ticked
+	// by tickAbilityMarkersLocked in Update, immediately after
+	// tickAbilityZonesLocked. Empty in every match today — no ability is
+	// authored v2 with a marker-triggered presentation reachable from live
+	// play (see ability_marker.go's TestMarkerScheduler_ProductionNoOp).
+	pendingMarkers []scheduledMarker
+
 	// Projectiles is the set of in-flight ranged attacks. Ticked once per
 	// Update() after tickUnitCombatLocked so freshly-fired shots decay on the
 	// next tick, not their birth tick. Damage and all on-hit perk triggers
@@ -1317,6 +1352,7 @@ func NewGameStateWithSeed(mapConfig protocol.MapConfig, seed int64) *GameState {
 		nextBannerID:              1,
 		nextTrapID:                1,
 		nextGroundHazardID:        1,
+		nextAbilityZoneID:         1,
 		nextProjectileID:          1,
 		matchSeed:                 seed,
 		rngPerks:                  mrand.New(mrand.NewSource(seed ^ saltPerks)),
@@ -2811,6 +2847,15 @@ func (s *GameState) Update(dt float64) {
 	profileSection("banners", func() { s.tickBannersLocked(dt) })
 	profileSection("traps", func() { s.tickTrapsLocked(dt) })                 // lifetime decay + triggered cull
 	profileSection("groundHazards", func() { s.tickGroundHazardsLocked(dt) }) // delayed-impact + lingering burn zones
+	profileSection("abilityZones", func() { s.tickAbilityZonesLocked(dt) })   // composable create_zone zones (no-op until one is spawned)
+	// simTime advances every tick (production and preview alike) so the
+	// on_animation_marker scheduler (ability_marker.go) has a monotonic,
+	// dt-accumulated clock to fire scheduledMarker entries against. Must run
+	// AFTER tickAbilityZonesLocked (matches the ordering play_presentation's
+	// scheduling call sits in relative to zone-spawning actions) and BEFORE
+	// tickAbilityMarkersLocked reads it.
+	s.simTime += dt
+	profileSection("abilityMarkers", func() { s.tickAbilityMarkersLocked() }) // on_animation_marker scheduler (no-op until a marker is scheduled)
 	// Drain the per-tick death queue. Must run AFTER all combat/trap/projectile
 	// ticks have finished so every HP=0 unit from indirect damage paths (Shared
 	// Pain, pain_share redirect, retaliation) is cleaned up before the per-unit

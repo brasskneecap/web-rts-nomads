@@ -2,25 +2,48 @@
   "id": "arcane_orb",
   "displayName": "Arcane Orb",
   "type": "spell",
-  "category": "offensive",
-  "manaCost": 20,
-  "damagePerSecond": 16,
-  "radius": 130,
-  "pullStrength": 160,
-  "projectile": "arcane_orb",
-  "projectileSpeed": 150,
+  "targetsPoint": true,
   "castRange": 400,
-  "castTime": 0,
+  "manaCost": 20,
   "cooldown": 8,
   "damageType": "arcane",
-  "tags": ["cc", "aoe"],
-  "targetsPoint": true,
-  "canTargetSelf": false,
-  "canTargetAllies": false,
-  "canTargetEnemies": false,
-  "casterAnimation": "Attacking",
-  "icon": "TODO/abilities/arcane_orb.png",
+  "tags": [
+    "cc",
+    "aoe"
+  ],
+  "category": "offensive",
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
-  "defaultAutoCast": true
+  "defaultAutoCast": true,
+  "icon": "TODO/abilities/arcane_orb.png",
+  "casterAnimation": "Attacking",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "ground_point",
+      "range": 400
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "orb",
+            "type": "launch_vortex",
+            "config": {
+              "projectile": "arcane_orb",
+              "projectileScale": 2.5,
+              "projectileSpeed": 150,
+              "radius": 130,
+              "pullStrength": 160,
+              "damagePerSecond": 16,
+              "type": "arcane",
+              "castRange": 400
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

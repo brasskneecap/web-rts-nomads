@@ -204,8 +204,15 @@ func TestUnstableMagic_CastsLearnedSpellAtReducedEffectiveness(t *testing.T) {
 	if fb.TargetsPoint {
 		t.Fatal("test assumes fireball is unit-targeted (no mana spent by resolveAbilityCastOnTargetLocked)")
 	}
-	if fb.DamageAmount <= 0 {
-		t.Fatalf("test assumes fireball deals direct damage; DamageAmount=%d", fb.DamageAmount)
+	// fireball is schemaVersion:2 as of the composable-abilities migration:
+	// its DamageAmount is cleared (the compiled launch_projectile action's
+	// Config.Amount is the sole authority now — see ConvertLegacyAbility).
+	// abilityMechanicsShadow recovers the same magnitude from the Program so
+	// this test's expectation still tracks the catalog instead of reading
+	// the now-zeroed flat field directly.
+	fbShadow := abilityMechanicsShadow(fb)
+	if fbShadow.DamageAmount <= 0 {
+		t.Fatalf("test assumes fireball deals direct damage; DamageAmount=%d", fbShadow.DamageAmount)
 	}
 	effect := perkDefByID("unstable_magic").Config["effectiveness"]
 
@@ -224,10 +231,10 @@ func TestUnstableMagic_CastsLearnedSpellAtReducedEffectiveness(t *testing.T) {
 			before, len(s.Projectiles))
 	}
 	proj := s.Projectiles[len(s.Projectiles)-1]
-	want := int(math.Round(float64(fb.DamageAmount) * effect))
+	want := int(math.Round(float64(fbShadow.DamageAmount) * effect))
 	if proj.Damage != want {
 		t.Errorf("Unstable Magic fireball damage = %d; want %d (%.0f%% of %d)",
-			proj.Damage, want, effect*100, fb.DamageAmount)
+			proj.Damage, want, effect*100, fbShadow.DamageAmount)
 	}
 	if caster.CurrentMana != 0 {
 		t.Errorf("Unstable Magic proc should be free; caster mana changed to %d", caster.CurrentMana)

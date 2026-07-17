@@ -2,13 +2,22 @@ package game
 
 import "testing"
 
+// fireballDef returns the live catalog "fireball" ability with its mechanic
+// magnitudes RECOVERED from the compiled Program (abilityMechanicsShadow) —
+// fireball is schemaVersion:2 as of the composable-abilities migration, so
+// the raw catalog def's DamageAmount/Radius/Projectile/etc. are cleared to
+// their zero values and the shipped Program (a single launch_projectile
+// action) is the sole authority for them. The recovered values are exactly
+// what a real cast actually uses, so test sanity-checks below still derive
+// their expectations from "the catalog" rather than a hardcoded number. Same
+// pattern as shatterDef (shatter_test.go).
 func fireballDef(t *testing.T) AbilityDef {
 	t.Helper()
 	def, ok := getAbilityDef("fireball")
 	if !ok {
 		t.Fatal(`getAbilityDef("fireball") missing`)
 	}
-	return def
+	return abilityMechanicsShadow(def)
 }
 
 // landFireballOn casts fireball at primary and advances projectiles until the

@@ -2,20 +2,47 @@
   "id": "arcane_bolt",
   "displayName": "Arcane Bolt",
   "type": "spell",
-  "category": "offensive",
-  "manaCost": 8,
-  "damageAmount": 50,
+  "canTargetEnemies": true,
   "castRange": 400,
   "castTime": 0.5,
+  "manaCost": 8,
   "cooldown": 2,
   "damageType": "arcane",
-  "projectile": "arcane_bolt",
-  "canTargetSelf": false,
-  "canTargetAllies": false,
-  "canTargetEnemies": true,
-  "casterAnimation": "Attacking",
-  "icon": "TODO/abilities/arcane_bolt.png",
+  "category": "offensive",
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
-  "defaultAutoCast": true
+  "defaultAutoCast": true,
+  "icon": "TODO/abilities/arcane_bolt.png",
+  "casterAnimation": "Attacking",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "enemy"
+      ],
+      "range": 400
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "proj",
+            "type": "launch_projectile",
+            "target": {
+              "source": "initial_target"
+            },
+            "config": {
+              "projectile": "arcane_bolt",
+              "amount": 50,
+              "type": "arcane",
+              "projectileScale": 1.5
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

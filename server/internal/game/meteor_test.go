@@ -7,15 +7,32 @@ import (
 	"webrts/server/pkg/protocol"
 )
 
-// meteorDef returns the catalog-authored Meteor ability. Tests derive expected
-// values from this so tuning meteor.json never breaks a behavioral test.
+// meteorDef returns the frozen pre-migration Meteor ability shape
+// (ability_legacy_fixtures_test.go). Catalog "meteor" is schemaVersion:2 as
+// of the composable-abilities migration (mechanic fields cleared, Program is
+// authoritative — see TestAbilityCompileGolden_Meteor for that path's own
+// coverage), so it no longer carries ImpactDelaySeconds/Radius/Burn* etc.
+// directly. The tests below are specifically about the LEGACY delayed-impact
+// + GroundHazard resolve path (resolveAbilityCastAtPointLocked's flat-field
+// branch, spawnGroundHazardLocked), which is still live production code —
+// just no longer reachable via the "meteor" id — so they exercise it through
+// the frozen fixture registered under a synthetic id instead.
 func meteorDef(t *testing.T) AbilityDef {
 	t.Helper()
-	def, ok := getAbilityDef("meteor")
-	if !ok {
-		t.Fatal(`getAbilityDef("meteor") = _, false; want the catalog-authored Meteor`)
-	}
-	return def
+	return legacyMeteorFixture()
+}
+
+// legacyMeteorTestAbilityID registers the frozen pre-migration meteor fixture
+// under a synthetic ability id so a test can drive it through the real
+// beginAbilityCastAtPointLocked entry point and observe the LEGACY
+// GroundHazard mechanism (s.GroundHazards) end-to-end, exactly as it behaved
+// before the migration.
+func legacyMeteorTestAbilityID(t *testing.T) string {
+	t.Helper()
+	def := legacyMeteorFixture()
+	def.ID = "meteor_legacy_ground_hazard_test"
+	registerRuntimeTestAbility(t, def)
+	return def.ID
 }
 
 func TestMeteorDef_ParsesConfigFields(t *testing.T) {
@@ -48,19 +65,20 @@ func TestMeteorDef_ParsesConfigFields(t *testing.T) {
 // GroundHazard, deals no damage until the fall delay elapses, then impacts.
 func TestMeteor_PointCastSpawnsHazardAndEffect(t *testing.T) {
 	def := meteorDef(t)
+	abilityID := legacyMeteorTestAbilityID(t)
 	s := newProjectileTestState(t)
 	s.mu.Lock()
 	s.Players["p1"] = &Player{ID: "p1", Resources: map[string]int{}}
 	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 300, Y: 300})
 	caster.Visible = true
 	caster.CurrentMana = def.ManaCost + 10
-	caster.Abilities = append(caster.Abilities, "meteor") // grant it for the test
-	enemy := spawnEnemy(t, s, 360, 300)                   // within impact radius of the cast point
+	caster.Abilities = append(caster.Abilities, abilityID) // grant it for the test
+	enemy := spawnEnemy(t, s, 360, 300)                    // within impact radius of the cast point
 	enemyID := enemy.ID
 	startHP := enemy.HP
 	startMana := caster.CurrentMana
 
-	ok, reason := s.beginAbilityCastAtPointLocked(caster, "meteor", 360, 300)
+	ok, reason := s.beginAbilityCastAtPointLocked(caster, abilityID, 360, 300)
 	s.mu.Unlock()
 	if !ok {
 		t.Fatalf("beginAbilityCastAtPointLocked failed: %q", reason)
@@ -80,7 +98,7 @@ func TestMeteor_PointCastSpawnsHazardAndEffect(t *testing.T) {
 	if caster.CurrentMana != startMana-def.ManaCost {
 		t.Errorf("mana = %d; want %d (spent on resolution)", caster.CurrentMana, startMana-def.ManaCost)
 	}
-	if queuedEffectFor(s, "meteor", 0) == nil { // anchorUnitID 0 == world-anchored
+	if queuedEffectFor(s, def.EffectAtPoint, 0) == nil { // anchorUnitID 0 == world-anchored
 		t.Error("meteor effect should have been queued at the cast point")
 	}
 	preImpactHP := s.unitsByID[enemyID].HP
@@ -102,6 +120,7 @@ func TestMeteor_PointCastSpawnsHazardAndEffect(t *testing.T) {
 // when the cast timer elapses (not at initiation).
 func TestMeteor_TimedPointCast(t *testing.T) {
 	def := meteorDef(t)
+	abilityID := legacyMeteorTestAbilityID(t)
 	if def.CastTime <= 0 {
 		t.Skip("meteor castTime is 0; timed-point-cast path not exercised")
 	}
@@ -111,16 +130,16 @@ func TestMeteor_TimedPointCast(t *testing.T) {
 	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 300, Y: 300})
 	caster.Visible = true
 	caster.CurrentMana = def.ManaCost + 10
-	caster.Abilities = append(caster.Abilities, "meteor")
+	caster.Abilities = append(caster.Abilities, abilityID)
 	startMana := caster.CurrentMana
-	ok, reason := s.beginAbilityCastAtPointLocked(caster, "meteor", 360, 300)
+	ok, reason := s.beginAbilityCastAtPointLocked(caster, abilityID, 360, 300)
 	casting := caster.CastAbilityID
 	manaAtStart := caster.CurrentMana
 	s.mu.Unlock()
 	if !ok {
 		t.Fatalf("cast failed: %q", reason)
 	}
-	if casting != "meteor" {
+	if casting != abilityID {
 		t.Errorf("caster should be locked casting meteor mid-cast; CastAbilityID=%q", casting)
 	}
 	if manaAtStart != startMana {
@@ -157,6 +176,7 @@ func TestMeteor_TimedPointCast(t *testing.T) {
 // point. The crater appears at castTime + meteor-effect duration.
 func TestMeteor_ImpactQueuesLingeringCraterEffect(t *testing.T) {
 	def := meteorDef(t)
+	abilityID := legacyMeteorTestAbilityID(t)
 	if def.BurnEffectAtPoint == "" {
 		t.Skip("meteor has no burnEffectAtPoint configured")
 	}
@@ -177,8 +197,8 @@ func TestMeteor_ImpactQueuesLingeringCraterEffect(t *testing.T) {
 	caster := s.spawnPlayerUnitLocked("acolyte", "p1", "#3498db", protocol.Vec2{X: 300, Y: 300})
 	caster.Visible = true
 	caster.CurrentMana = def.ManaCost + 10
-	caster.Abilities = append(caster.Abilities, "meteor")
-	ok, reason := s.beginAbilityCastAtPointLocked(caster, "meteor", 360, 300)
+	caster.Abilities = append(caster.Abilities, abilityID)
+	ok, reason := s.beginAbilityCastAtPointLocked(caster, abilityID, 360, 300)
 	s.mu.Unlock()
 	if !ok {
 		t.Fatalf("cast failed: %q", reason)

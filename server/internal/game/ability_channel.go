@@ -4,10 +4,10 @@ import "math"
 
 // Channeled-ability lifecycle.
 //
-// A channeled ability (ChannelType != "") differs from a one-shot cast in
-// that it persists across multiple ticks, applying its effect on a cadence
-// (TickIntervalSeconds) until one of the stop conditions is met. The Siphon
-// Life ability is the first in-game channeled ability.
+// A channeled ability (channelSpecFor(def) ok) differs from a one-shot cast
+// in that it persists across multiple ticks, applying its effect on a
+// cadence (TickIntervalSeconds) until one of the stop conditions is met. The
+// Siphon Life ability is the first in-game channeled ability.
 //
 // Flow:
 //   beginAbilityChannelLocked  — validate, lock caster, spawn Beam, start
@@ -21,8 +21,8 @@ import "math"
 //
 // Channels are mutually exclusive with one-shot casts: a unit may have
 // either CastAbilityID or ChannelAbilityID set, never both. The entry point
-// (beginAbilityCastLocked in ability_cast.go) branches on ChannelType so
-// existing callers need no change.
+// (beginAbilityCastLocked in ability_cast.go) branches on
+// def.IsChannelAbility() so existing callers need no change.
 //
 // Cancel triggers (any of these → stopUnitChannelLocked):
 //   - Caster dies (HP <= 0) → clearUnitChannelLocked (no UI reason needed).
@@ -32,6 +32,54 @@ import "math"
 //   - New order issued (move, attack, stop) → "Order issued"
 //     (via resetUnitMovementLocked in state_movement.go).
 //   - Caster stunned → "Channel interrupted."
+//
+// ── composable migration ────────────────────────────────────────────────────
+// siphon_life is migrated to schemaVersion 2 like the ten abilities before
+// it, following the SAME "keep the legacy runtime, delegate to it" shape as
+// launch_projectile/launch_vortex/charge_fire_volley: every function below
+// (beginAbilityChannelLocked, tickUnitChannelLocked, the stop/clear helpers,
+// the four Siphoner perk hooks, distributeSiphonHealLocked's self/ally/
+// dark_renewal rule) is UNCHANGED runtime. What changes is WHERE the
+// mechanic config comes from:
+//
+//   - channelSpec is the resolved, effective config every function below
+//     reads instead of a raw AbilityDef's channel fields directly.
+//     channelSpecFor resolves it from either a legacy def's flat fields
+//     (unchanged) or, for a converted (SchemaVersion>=2) def, from the
+//     compiled Program's channel_beam action config — never from the
+//     converted def's own (cleared, per ConvertLegacyAbility) flat fields.
+//     Mirrors chargeFireSpec/chargeFireSpecFor (spell_charge.go) exactly.
+//   - startChannelLocked is the extracted MECHANICAL start step (state
+//     fields, cast lock, beam spawn) with NO validation of its own — shared
+//     by the legacy direct call in beginAbilityChannelLocked below and the
+//     channel_beam action's Execute (ability_exec_channel.go) for a
+//     converted ability.
+//
+// ── THE ORDERING DECISION (why the dispatch lives INSIDE
+// beginAbilityChannelLocked, not in cast RESOLUTION) ────────────────────────
+// Every other migration's action fires from resolveAbilityProgramCastLocked
+// (cast RESOLUTION, well after mana/GCD/cooldown have already been
+// committed by beginAbilityCastLocked). Channel-start cannot use that same
+// seam: beginAbilityChannelLocked is not a "resolve a completed cast" step,
+// it IS the begin-time gate (ownership → busy → GCD → target → range → mana-
+// for-first-tick), and it also ARMS the per-ability cooldown and the global
+// cooldown itself. If beginAbilityCastLocked instead let a channel-shaped
+// ability fall through into the normal one-shot path (mana check, GCD arm,
+// cooldown arm, then — since siphon_life's castTime is 0 — an immediate
+// resolveAbilityCastLocked call) and the channel actually STARTED from
+// inside that resolution step, beginAbilityChannelLocked's own GCD guard
+// (`caster.GlobalCooldownRemaining > 0`) would immediately reject the start
+// it was just asked to perform, because the outer path already armed the
+// GCD before resolving. Rather than special-case that self-inflicted
+// conflict, beginAbilityCastLocked keeps its ORIGINAL structural position:
+// a begin-time branch, evaluated BEFORE any one-shot-cast plumbing runs (see
+// that function), just re-keyed on def.IsChannelAbility() instead of the
+// now-cleared def.ChannelType field. beginAbilityChannelLocked owns 100% of
+// the gating exactly as it did pre-migration; only the COMMIT step at the
+// end dispatches through the executor for a converted ability, mirroring
+// fireChargeFullLocked's gate-then-dispatch split (spell_charge.go) — the
+// gate (everything above) runs first and unconditionally; the trigger firing
+// after it is unconditional too.
 
 // channelInterruptedStun is the failure reason recorded when a stun stops a
 // channel. Kept here (not in ability_cast.go) since it is channel-specific.
@@ -45,6 +93,111 @@ const channelInterruptedOrder = "Order issued."
 // Update() call when dt is unusually large. Prevents pathological dt
 // explosions from applying dozens of ticks in a single frame.
 const channelMaxTicksPerUpdate = 4
+
+// channelSpec is the resolved, effective channel configuration every
+// function in this file reads instead of a raw AbilityDef's channel fields
+// directly — see the file doc comment's "composable migration" section and
+// chargeFireSpec (spell_charge.go) for the identical rationale/shape.
+type channelSpec struct {
+	ChannelType         string
+	TickIntervalSeconds float64
+	ManaCostPerTick     int
+	DamagePerTick       int
+	HealingMultiplier   float64
+	AllyHealRadius      float64
+}
+
+// channelSpecFor resolves def's channel configuration, if any. For a legacy
+// (SchemaVersion<2) def this reads the flat mechanic fields directly
+// (ChannelType != "" gates it, same condition as always). For a converted
+// (SchemaVersion>=2, Program!=nil) def it recovers the same magnitudes from
+// the compiled on_cast_complete trigger's channel_beam action config
+// instead — see compileChannelBeamAction (ability_compile.go). Pure; no lock
+// needed. Mirrors chargeFireSpecFor (spell_charge.go) exactly.
+func channelSpecFor(def AbilityDef) (channelSpec, bool) {
+	if def.ChannelType != "" {
+		return channelSpec{
+			ChannelType:         def.ChannelType,
+			TickIntervalSeconds: def.TickIntervalSeconds,
+			ManaCostPerTick:     def.ManaCostPerTick,
+			DamagePerTick:       def.DamagePerTick,
+			HealingMultiplier:   def.HealingMultiplier,
+			AllyHealRadius:      def.AllyHealRadius,
+		}, true
+	}
+	if def.SchemaVersion >= 2 && def.Program != nil {
+		if cfg, ok := findChannelBeamConfig(def.Program); ok {
+			return channelSpec{
+				ChannelType:         cfg.ChannelType,
+				TickIntervalSeconds: cfg.TickIntervalSeconds,
+				ManaCostPerTick:     cfg.ManaCostPerTick,
+				DamagePerTick:       cfg.DamagePerTick,
+				HealingMultiplier:   cfg.HealingMultiplier,
+				AllyHealRadius:      cfg.AllyHealRadius,
+			}, true
+		}
+	}
+	return channelSpec{}, false
+}
+
+// findChannelBeamConfig walks prog's top-level triggers for an
+// on_cast_complete trigger with a channel_beam action and decodes its
+// config. Also the seam AbilityDef.IsChannelAbility() uses to recognize a
+// converted channel ability by its Program's SHAPE (never by a cleared flat
+// field) — mirrors findChargeFireVolleyConfig (spell_charge.go).
+func findChannelBeamConfig(prog *AbilityProgram) (channelBeamConfig, bool) {
+	if prog == nil {
+		return channelBeamConfig{}, false
+	}
+	for _, trig := range prog.Triggers {
+		if trig.Type != TriggerOnCastComplete {
+			continue
+		}
+		for _, act := range trig.Actions {
+			if act.Type != ActionChannelBeam {
+				continue
+			}
+			var cfg channelBeamConfig
+			decodeActionConfig(act.Config, &cfg)
+			return cfg, true
+		}
+	}
+	return channelBeamConfig{}, false
+}
+
+// startChannelLocked performs the MECHANICAL channel-start step only: state
+// fields, the cast lock, and the beam spawn. Every gating decision
+// (ownership, busy, GCD, mana-for-first-tick, range) has ALREADY run in
+// beginAbilityChannelLocked by the time this is called — it validates
+// nothing itself. Shared by the legacy direct call below and the
+// channel_beam action's Execute (ability_exec_channel.go) for a converted
+// ability, mirroring how spawnArcaneOrbLocked is the shared mechanical seam
+// both legacy and launch_vortex's Execute call.
+//
+// Caller holds s.mu write lock.
+func (s *GameState) startChannelLocked(caster, target *Unit, abilityID string, spec channelSpec) {
+	// Set channel state. ChannelNextTickIn starts at TickIntervalSeconds so
+	// the first effect tick fires after one full interval has elapsed. This
+	// prevents a double-fire on the very first Update call when dt exactly
+	// equals the interval (decrement would land exactly on 0, triggering the
+	// loop a second time).
+	caster.ChannelAbilityID = abilityID
+	caster.ChannelTargetID = target.ID
+	caster.ChannelTickInterval = spec.TickIntervalSeconds
+	caster.ChannelNextTickIn = spec.TickIntervalSeconds
+
+	// Lock movement and set "Casting" animation — reuses the one-shot cast
+	// primitive so existing movement / combat guards treat this unit as busy.
+	// Then upgrade the status string to "Channeling" so the client can pin
+	// the sprite to ChannelHoldFrame instead of cycling the casting cycle.
+	// The combat-tick guard in state_combat.go re-derives the right status
+	// each tick (Channeling when ChannelAbilityID is set, else Casting).
+	s.beginUnitCastingLocked(caster)
+	caster.Status = unitStatusChanneling
+
+	// Spawn the beam visual entity.
+	s.spawnBeamLocked(caster, target, abilityID, abilityID) // variant = abilityID
+}
 
 // beginAbilityChannelLocked starts a channel on caster for the named ability
 // targeting target. Returns (true, "") when the channel has started;
@@ -60,6 +213,13 @@ func (s *GameState) beginAbilityChannelLocked(caster *Unit, abilityID string, ta
 	}
 	def, ok := getAbilityDef(abilityID)
 	if !ok {
+		return s.failCastLocked(caster, castFailUnknownAbility)
+	}
+	spec, ok := channelSpecFor(def)
+	if !ok {
+		// Reached only via beginAbilityCastLocked's own IsChannelAbility()
+		// gate, which uses this same resolver — should never fail here.
+		// Defensive fallback (e.g. a content edit racing a live cast).
 		return s.failCastLocked(caster, castFailUnknownAbility)
 	}
 	if !containsAbility(caster, abilityID) {
@@ -80,8 +240,10 @@ func (s *GameState) beginAbilityChannelLocked(caster *Unit, abilityID string, ta
 		return s.failCastLocked(caster, castFailOutOfRange)
 	}
 	// Require mana for at least the first tick so the channel doesn't start
-	// on a caster that is already empty.
-	if caster.CurrentMana < def.ManaCostPerTick {
+	// on a caster that is already empty. Reads spec.ManaCostPerTick, never
+	// def.ManaCostPerTick directly — that field is cleared on a converted
+	// (SchemaVersion>=2) ability, see channelSpecFor.
+	if caster.CurrentMana < spec.ManaCostPerTick {
 		return s.failCastLocked(caster, castFailNotEnoughMana)
 	}
 
@@ -92,7 +254,10 @@ func (s *GameState) beginAbilityChannelLocked(caster *Unit, abilityID string, ta
 	s.clearUnitCastLocked(caster)
 
 	// Arm cooldown at channel START, matching the one-shot cast convention so
-	// both manual and auto-cast paths share the same gate.
+	// both manual and auto-cast paths share the same gate. Cooldown/CastTime
+	// are cast-setup fields that survive conversion untouched (see
+	// ConvertLegacyAbility), so def.EffectiveCooldown() needs no spec
+	// resolution.
 	cdDuration := def.EffectiveCooldown()
 	if cdDuration > 0 {
 		if caster.AbilityCooldowns == nil {
@@ -102,27 +267,29 @@ func (s *GameState) beginAbilityChannelLocked(caster *Unit, abilityID string, ta
 	}
 	armAbilityGlobalCooldownLocked(caster)
 
-	// Set channel state. ChannelNextTickIn starts at TickIntervalSeconds so
-	// the first effect tick fires after one full interval has elapsed. This
-	// prevents a double-fire on the very first Update call when dt exactly
-	// equals the interval (decrement would land exactly on 0, triggering the
-	// loop a second time).
-	caster.ChannelAbilityID = abilityID
-	caster.ChannelTargetID = target.ID
-	caster.ChannelTickInterval = def.TickIntervalSeconds
-	caster.ChannelNextTickIn = def.TickIntervalSeconds
-
-	// Lock movement and set "Casting" animation — reuses the one-shot cast
-	// primitive so existing movement / combat guards treat this unit as busy.
-	// Then upgrade the status string to "Channeling" so the client can pin
-	// the sprite to ChannelHoldFrame instead of cycling the casting cycle.
-	// The combat-tick guard in state_combat.go re-derives the right status
-	// each tick (Channeling when ChannelAbilityID is set, else Casting).
-	s.beginUnitCastingLocked(caster)
-	caster.Status = unitStatusChanneling
-
-	// Spawn the beam visual entity.
-	s.spawnBeamLocked(caster, target, abilityID, abilityID) // variant = abilityID
+	// Composable (schemaVersion>=2) abilities dispatch the mechanical start
+	// step (startChannelLocked) through the executor's channel_beam action
+	// instead of calling it directly, so the migrated Program is the real
+	// runtime path — not a shape kept alive only for describe/shape parity.
+	// Every gating decision above has ALREADY run; the trigger fires
+	// unconditionally, mirroring fireChargeFullLocked's gate-then-dispatch
+	// split (spell_charge.go). See the file doc comment's ORDERING section
+	// for why this dispatch lives HERE and not in cast resolution.
+	if def.SchemaVersion >= 2 && def.Program != nil {
+		ctx := &RuntimeAbilityContext{
+			CasterID:      caster.ID,
+			AbilityID:     def.ID,
+			InitialTarget: target.ID,
+			program:       def.Program,
+			abilityDef:    &def,
+			Named:         map[string]ContextValue{},
+			Trace:         s.previewTrace,
+			now:           s.previewClock,
+		}
+		s.runProgramTriggersLocked(ctx, def.Program.Triggers, TriggerOnCastComplete)
+	} else {
+		s.startChannelLocked(caster, target, abilityID, spec)
+	}
 
 	return true, ""
 }
@@ -140,6 +307,13 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 	def, ok := getAbilityDef(unit.ChannelAbilityID)
 	if !ok {
 		// Unknown ability — clear silently, no reason to surface.
+		s.clearUnitChannelLocked(unit)
+		return
+	}
+	spec, ok := channelSpecFor(def)
+	if !ok {
+		// Ability is no longer channel-shaped (e.g. a content edit racing a
+		// live channel) — clear silently, same as the unknown-ability case.
 		s.clearUnitChannelLocked(unit)
 		return
 	}
@@ -181,7 +355,7 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 		// computed from the scaled value with a floor of 0 — a heavy
 		// beam_mastery discount could in theory floor mana cost.
 		mods := s.siphonLifeChannelModifiersForCasterLocked(unit)
-		tickManaCost := int(math.Round(float64(def.ManaCostPerTick) * mods.ManaCostMult))
+		tickManaCost := int(math.Round(float64(spec.ManaCostPerTick) * mods.ManaCostMult))
 		if tickManaCost < 0 {
 			tickManaCost = 0
 		}
@@ -197,7 +371,7 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 			return
 		}
 
-		tickDamage := int(math.Round(float64(def.DamagePerTick) * mods.DamageMult))
+		tickDamage := int(math.Round(float64(spec.DamagePerTick) * mods.DamageMult))
 		if tickDamage < 0 {
 			tickDamage = 0
 		}
@@ -220,9 +394,9 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 		// damage multiplier feeds through proportionally) and distribute
 		// via siphon heal logic. HealingMultiplier (ability-level) stacks
 		// multiplicatively with mods.HealMult (perk-level).
-		healAmount := int(math.Round(float64(tickDamage) * def.HealingMultiplier * mods.HealMult))
+		healAmount := int(math.Round(float64(tickDamage) * spec.HealingMultiplier * mods.HealMult))
 		if healAmount > 0 {
-			s.distributeSiphonHealLocked(unit, healAmount, def.AllyHealRadius)
+			s.distributeSiphonHealLocked(unit, healAmount, spec.AllyHealRadius)
 		}
 
 		// ── Silver Siphoner perks ──────────────────────────────────────────
@@ -236,7 +410,7 @@ func (s *GameState) tickUnitChannelLocked(unit *Unit, dt float64) {
 		// dies"). The channel ability id is threaded through so the spawned
 		// chain beams carry the same AbilityID on the wire as the primary,
 		// keeping the client's per-ability beam dispatch consistent.
-		s.applyChainSiphonBeamsLocked(unit, target, tickDamage, healAmount, def.AllyHealRadius, unit.ChannelAbilityID)
+		s.applyChainSiphonBeamsLocked(unit, target, tickDamage, healAmount, spec.AllyHealRadius, unit.ChannelAbilityID)
 
 		// Shared Suffering: echo a fraction of the primary tick damage to
 		// every nearby enemy that already carries any Siphoner affliction.
@@ -434,16 +608,19 @@ func (s *GameState) channelLoopEndForUnitLocked(unit *Unit) int {
 // ── Auto-cast precondition ────────────────────────────────────────────────────
 
 // siphonHealingNeededLocked reports whether the Siphon Life auto-cast
-// precondition is met: the caster OR any ally within def.AllyHealRadius has
+// precondition is met: the caster OR any ally within allyHealRadius has
 // HP < MaxHP. Only when this returns true does the auto-cast loop consider
 // starting the channel. This prevents wasteful mana drain when the whole team
 // is at full health.
 //
-// Generic over any channeled ability with AllyHealRadius: if AllyHealRadius
-// is 0, only the caster's own HP is tested (no ally scan).
+// Generic over any channeled ability with AllyHealRadius: if allyHealRadius
+// is 0, only the caster's own HP is tested (no ally scan). Takes the resolved
+// radius directly (not an AbilityDef) — callers resolve it via
+// channelSpecFor first, since a converted (SchemaVersion>=2) ability's
+// AllyHealRadius field is cleared (see channelSpecFor's doc comment).
 //
 // Caller holds s.mu (read or write).
-func (s *GameState) siphonHealingNeededLocked(caster *Unit, def AbilityDef) bool {
+func (s *GameState) siphonHealingNeededLocked(caster *Unit, allyHealRadius float64) bool {
 	if caster == nil {
 		return false
 	}
@@ -452,10 +629,10 @@ func (s *GameState) siphonHealingNeededLocked(caster *Unit, def AbilityDef) bool
 		return true
 	}
 	// Scan allies within allyHealRadius.
-	if def.AllyHealRadius <= 0 {
+	if allyHealRadius <= 0 {
 		return false
 	}
-	radiusSq := def.AllyHealRadius * def.AllyHealRadius
+	radiusSq := allyHealRadius * allyHealRadius
 	for _, u := range s.Units {
 		if u == nil || u.HP <= 0 || !u.Visible {
 			continue

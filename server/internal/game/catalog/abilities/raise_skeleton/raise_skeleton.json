@@ -2,19 +2,41 @@
   "id": "raise_skeleton",
   "displayName": "Raise Skeleton",
   "type": "spell",
-  "category": "summon",
   "canTargetSelf": true,
-  "canTargetAllies": false,
-  "canTargetEnemies": false,
   "castRange": 0,
   "castTime": 1.5,
   "manaCost": 30,
   "cooldown": 10,
   "damageType": "shadow",
-  "casterAnimation": "Casting",
-  "summonUnitType": "skeleton_soldier",
-  "summonCount": 3,
+  "category": "summon",
   "supportsAutoCast": true,
   "autoCastTargetSelector": "self",
-  "defaultAutoCast": true
+  "defaultAutoCast": true,
+  "casterAnimation": "Casting",
+  "schemaVersion": 2,
+  "program": {
+    "entry": {
+      "type": "unit",
+      "relations": [
+        "self"
+      ],
+      "range": 0
+    },
+    "triggers": [
+      {
+        "id": "cast",
+        "type": "on_cast_complete",
+        "actions": [
+          {
+            "id": "summon",
+            "type": "summon_unit",
+            "config": {
+              "unitType": "skeleton_soldier",
+              "count": 3
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

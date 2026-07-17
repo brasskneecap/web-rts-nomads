@@ -41,6 +41,18 @@ describe('abilityEditorForm', () => {
     expect('displayName' in out).toBe(false)
   })
 
+  it('persists a description override but never the server-generated text', () => {
+    const def: AuthoredAbilityDef = {
+      id: 'heal',
+      description: 'Custom prose.',
+      // generatedDescription is server-computed, display-only metadata:
+      generatedDescription: 'Restores 10 health to an ally.',
+    } as AuthoredAbilityDef
+    const out = saveRequestFromForm(formFromDef(def)) as Record<string, unknown>
+    expect(out.description).toBe('Custom prose.')
+    expect('generatedDescription' in out).toBe(false)
+  })
+
   it('inferFamily picks the family from non-zero fields', () => {
     expect(inferFamily({ id: 'a', channelType: 'beam' } as AuthoredAbilityDef)).toBe('channel')
     expect(inferFamily({ id: 'a', chargeRequired: 5 } as AuthoredAbilityDef)).toBe('charge')

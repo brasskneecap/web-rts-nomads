@@ -35,8 +35,8 @@ describe('AbilityEditorPanel', () => {
     const wrapper = mount(AbilityEditorPanel)
     await flushPromises()
     // open an ability to edit, then open the gallery
-    // (select the first listed ability, then click "Choose from gallery")
-    await wrapper.find('[data-test="ability-row"]').trigger('click')
+    // (select the first listed sidebar entry, then click "Choose from gallery")
+    await wrapper.find('.ed-side__pick').trigger('click')
     await wrapper.find('[data-test="icon-gallery-open"]').trigger('click')
     await flushPromises()
     const cells = wrapper.findAll('[data-test="icon-gallery-cell"]')
