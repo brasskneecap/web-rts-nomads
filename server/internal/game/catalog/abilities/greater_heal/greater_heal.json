@@ -10,10 +10,12 @@
   "cooldown": 3,
   "damageType": "holy",
   "category": "heal",
+  "targetCount": 3,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "lowest_hp_percentage_ally_in_range",
   "defaultAutoCast": true,
-  "icon": "TODO/abilities/greater_heal.png",
+  "icon": "projectile:holy_bolt",
   "casterAnimation": "Casting",
   "schemaVersion": 2,
   "program": {

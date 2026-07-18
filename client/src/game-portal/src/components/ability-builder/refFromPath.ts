@@ -76,7 +76,7 @@
 // grammar.
 
 import type { AbilityActionDef, AbilityProgram, AbilityTriggerDef } from '@/game/abilities/program/abilityProgram'
-import { findNodePathById, nestedTriggersFor, type NodePath, type NodeRef } from './programTree'
+import { findNodePathById, loopBodyOf, nestedTriggersFor, type NodePath, type NodeRef } from './programTree'
 
 // --- Index grammar (walk top-down; unbounded depth) ------------------------
 
@@ -85,6 +85,9 @@ const ROOT_TRIGGER = /^triggers\[(\d+)\]/
 const STEP_ACTION = /^\.actions\[(\d+)\]/
 const STEP_CHILDREN = /^\.children\[(\d+)\]/
 const STEP_CONFIG_TRIGGERS = /^\.config\.triggers\[(\d+)\]/
+// A loop action's nested ACTION list — the one place ".body[K]" leads to
+// another action rather than a trigger.
+const STEP_BODY = /^\.body\[(\d+)\]/
 
 // configTriggersOf is a local mirror of programTree.ts's (unexported)
 // helper of the same name — `config` is an OPAQUE bag (see
@@ -167,6 +170,17 @@ function refFromIndexPath(program: AbilityProgram, path: string): NodeRef | null
       if (!nested) return null
       state = { kind: 'trigger', node: nested, path: [...state.path, { kind: 'trigger', id: nested.id }] }
       rest = rest.slice(cfgMatch[0].length)
+      continue
+    }
+
+    // A loop action's config.body: ".body[K]" resolves to a nested ACTION (not
+    // a trigger), so state stays an action and can be followed by further steps.
+    const bodyMatch = STEP_BODY.exec(rest)
+    if (bodyMatch) {
+      const nested: AbilityActionDef | undefined = loopBodyOf(state.node)[Number(bodyMatch[1])]
+      if (!nested) return null
+      state = { kind: 'action', node: nested, path: [...state.path, { kind: 'action', id: nested.id }] }
+      rest = rest.slice(bodyMatch[0].length)
       continue
     }
 

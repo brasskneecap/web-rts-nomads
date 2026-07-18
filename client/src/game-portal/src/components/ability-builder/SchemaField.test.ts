@@ -9,13 +9,24 @@ function emptyCatalogs(): AbilityBuilderCatalogs {
   return { effects: [], projectiles: [], damageTypes: [], categories: [], autoCastSelectors: [], unitTypes: [] }
 }
 
-function mountField(field: SchemaFieldDescriptor, modelValue: unknown, opts: { enums?: Record<string, string[]>; catalogs?: AbilityBuilderCatalogs } = {}) {
+function mountField(
+  field: SchemaFieldDescriptor,
+  modelValue: unknown,
+  opts: {
+    enums?: Record<string, string[]>
+    catalogs?: AbilityBuilderCatalogs
+    loopVars?: string[]
+    variableCapable?: boolean
+  } = {},
+) {
   return mount(SchemaField, {
     props: {
       field,
       modelValue,
       enums: opts.enums ?? {},
       catalogs: opts.catalogs ?? emptyCatalogs(),
+      loopVars: opts.loopVars,
+      variableCapable: opts.variableCapable,
     },
   })
 }
@@ -123,5 +134,55 @@ describe('SchemaField', () => {
     const wrapper = mountField({ key: 'weird', label: 'Weird', control: 'totally_unknown_control' }, 'x')
     expect(wrapper.find('input[type="text"]').exists()).toBe(true)
     expect((wrapper.find('input[type="text"]').element as HTMLInputElement).value).toBe('x')
+  })
+})
+
+describe('SchemaField number field: literal-or-variable (loop bodies)', () => {
+  const amount: SchemaFieldDescriptor = { key: 'amount', label: 'Amount', control: 'number' }
+
+  it('stays a plain number input when NOT variable-capable (no regression)', () => {
+    const wrapper = mountField(amount, 10)
+    expect(wrapper.find('[data-test="numvar"]').exists()).toBe(false)
+    expect(wrapper.find('input[type="number"]').exists()).toBe(true)
+  })
+
+  it('offers a Number/Variable selector inside a loop; a literal value starts in Number mode', () => {
+    const wrapper = mountField(amount, 10, { variableCapable: true, loopVars: ['a', 'b'] })
+    expect(wrapper.find('[data-test="numvar"]').exists()).toBe(true)
+    expect((wrapper.find('[data-test="numvar-mode"]').element as HTMLSelectElement).value).toBe('number')
+    expect((wrapper.find('[data-test="numvar-number"]').element as HTMLInputElement).value).toBe('10')
+  })
+
+  it('a variable value starts in Variable mode with that variable selected', () => {
+    const wrapper = mountField(amount, 'a', { variableCapable: true, loopVars: ['a', 'b'] })
+    expect((wrapper.find('[data-test="numvar-mode"]').element as HTMLSelectElement).value).toBe('variable')
+    const pick = wrapper.find('[data-test="numvar-variable"]')
+    expect((pick.element as HTMLSelectElement).value).toBe('a')
+    // The available variables are the loop's.
+    expect(pick.findAll('option').map((o) => (o.element as HTMLOptionElement).value)).toEqual(['', 'a', 'b'])
+  })
+
+  it('switching to Variable mode shows the (blank) variable dropdown; picking one emits the letter', async () => {
+    const wrapper = mountField(amount, 10, { variableCapable: true, loopVars: ['a'] })
+    await wrapper.find('[data-test="numvar-mode"]').setValue('variable')
+    const pick = wrapper.find('[data-test="numvar-variable"]')
+    expect(pick.exists()).toBe(true)
+    expect((pick.element as HTMLSelectElement).value).toBe('') // nothing picked yet
+    await pick.setValue('a')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['a'])
+  })
+
+  it('switching from Variable back to Number commits a real number', async () => {
+    const wrapper = mountField(amount, 'a', { variableCapable: true, loopVars: ['a'] })
+    await wrapper.find('[data-test="numvar-mode"]').setValue('number')
+    // The old "a" can't be a number, so it commits 0 rather than NaN.
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([0])
+  })
+
+  it('the variable dropdown is empty when the loop declares no variables', () => {
+    const wrapper = mountField(amount, 'a', { variableCapable: true, loopVars: [] })
+    const pick = wrapper.find('[data-test="numvar-variable"]')
+    // Only the "—" placeholder.
+    expect(pick.findAll('option').map((o) => (o.element as HTMLOptionElement).value)).toEqual([''])
   })
 })

@@ -142,7 +142,7 @@ func TestCompileCatalogActionTypeShape(t *testing.T) {
 		"arcane_bolt":     {ActionLaunchProjectile},
 		"arcane_missiles": {ActionChargeFireVolley},
 		"arcane_orb":      {ActionLaunchProjectile},
-		"chain_lightning": {ActionBeam},
+		"chain_lightning": {ActionDealDamage, ActionBeam, ActionStoreTargets, ActionStoreTargets, ActionLoop},
 		"fireball":        {ActionLaunchProjectile},
 		"greater_heal":    {ActionSelectTargets, ActionRestoreHealth, ActionPlayPresentation},
 		"heal":            {ActionSelectTargets, ActionRestoreHealth, ActionPlayPresentation},

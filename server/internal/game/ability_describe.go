@@ -3,6 +3,7 @@ package game
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
@@ -126,7 +127,7 @@ func abilityMechanicsShadow(a AbilityDef) AbilityDef {
 	shadow.SchemaVersion = 0
 	shadow.Program = nil
 
-	m := &programMechanics{}
+	m := &programMechanics{program: a.Program}
 	m.walkTriggers(a.Program.Triggers, false)
 	for _, pres := range a.Program.Presentations {
 		m.walkTriggers(pres.Triggers, false)
@@ -232,6 +233,13 @@ type programMechanics struct {
 	channelAllyHealRadius      float64
 
 	sawPrimaryDamage bool // first non-zone deal_damage wins (matches one-hit-per-cast shape)
+
+	// program is the AbilityProgram being walked, set by abilityMechanicsShadow
+	// so recoverChainLightningLoop can follow a beam's on_beam_impact
+	// trigger_event handoff into the named `bounce` trigger. Nil for callers
+	// that build a programMechanics without a program in hand (the loop
+	// recovery then no-ops and the legacy nested-beam recovery still runs).
+	program *AbilityProgram
 }
 
 // walkTriggers walks each trigger's action list. inZone is true while walking
@@ -284,16 +292,20 @@ func (m *programMechanics) walkTrigger(t AbilityTriggerDef, inZone bool) {
 				m.channelAllyHealRadius = cfg.AllyHealRadius
 				break
 			}
-			// chain_lightning's authored bounce chain (momentary)
-			// (compileChainLightningActions, ability_compile.go): a ladder of
-			// nested beam actions, one per hop (0 = primary, 1..ChainCount =
-			// bounces). See recoverChainLightningBeam's doc comment.
+			// A direct momentary beam is the LEGACY unrolled chain ladder
+			// (compileChainLightningActions) — recovered by recoverChainLightningBeam.
+			// The current chain_lightning form has its beam INSIDE a loop action's
+			// body instead, recovered by the ActionLoop case below.
 			if m.sawPrimaryDamage {
 				break
 			}
 			m.projectile = cfg.Variant
 			m.sawPrimaryDamage = true
 			m.recoverChainLightningBeam(cfg, 0)
+		case ActionLoop:
+			var cfg loopConfig
+			decodeActionConfig(act.Config, &cfg)
+			m.recoverLoop(cfg)
 		case ActionLaunchProjectile:
 			// arcane_bolt / fireball / arcane_orb's compiled shape (a single
 			// launch_projectile action with its own Target query, no preceding
@@ -457,6 +469,85 @@ func (m *programMechanics) recoverChainLightningBeam(cfg beamConfig, hop int) {
 			}
 		}
 	}
+}
+
+// recoverLoop recovers chain mechanics from a `loop` action (chain_lightning's
+// shape: the loop is the BOUNCES — the primary hit is a direct deal_damage
+// before the loop, recovered by walkTrigger's own ActionDealDamage case).
+// Recovers:
+//   - chainCount: Iterations bounces beyond the primary — but only when the
+//     body actually chains (has both a select_targets and a beam), so a
+//     non-chain loop gets no spurious "arcs to N enemies" clause.
+//   - bounceDamageFalloff: -Step of the body deal_damage's amount variable.
+//   - damageAmount: only as a FALLBACK — the primary is normally recovered
+//     before this; a loop with no preceding primary damage falls back to the
+//     body deal_damage's amount (literal, or a variable's Start).
+//   - projectile: the body beam's variant (for the icon fallback).
+func (m *programMechanics) recoverLoop(cfg loopConfig) {
+	vars := map[string]LoopVar{}
+	for _, v := range cfg.Vars {
+		vars[v.Name] = v
+	}
+	hasBeam, hasSelect := false, false
+	for _, act := range cfg.Body {
+		switch act.Type {
+		case ActionBeam:
+			hasBeam = true
+			var bc beamConfig
+			decodeActionConfig(act.Config, &bc)
+			if m.projectile == "" {
+				m.projectile = bc.Variant
+			}
+		case ActionSelectTargets:
+			hasSelect = true
+		case ActionDealDamage:
+			amtLit, amtRef := fieldLiteralOrRef(act.Config, "amount")
+			if amtRef != "" {
+				if v, ok := vars[amtRef]; ok {
+					if m.damageAmount == 0 {
+						m.damageAmount = int(v.Start)
+					}
+					// The "-N damage per bounce" prose only fits an ADDITIVE step;
+					// a percent step scales multiplicatively, so leave the flat
+					// falloff unset (no misleading clause) for it.
+					if v.Step != 0 && v.StepMode != loopStepPercent && m.bounceDamageFalloff == 0 {
+						m.bounceDamageFalloff = int(math.Round(-v.Step))
+					}
+				}
+			} else if m.damageAmount == 0 {
+				m.damageAmount = amtLit
+			}
+		}
+	}
+	if hasBeam && hasSelect && m.chainCount == 0 && cfg.Iterations > 0 {
+		m.chainCount = cfg.Iterations
+	}
+}
+
+// fieldLiteralOrRef reads a numeric config field by key, which may be a literal
+// number or a loop-variable reference (a bare letter string). Returns
+// (number, "") for a literal, (0, name) for a reference, (0, "") when absent.
+func fieldLiteralOrRef(raw json.RawMessage, key string) (int, string) {
+	if len(raw) == 0 {
+		return 0, ""
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return 0, ""
+	}
+	f, ok := fields[key]
+	if !ok {
+		return 0, ""
+	}
+	var n float64
+	if json.Unmarshal(f, &n) == nil {
+		return int(n), ""
+	}
+	var s string
+	if json.Unmarshal(f, &s) == nil {
+		return 0, s
+	}
+	return 0, ""
 }
 
 // decodeActionConfig best-effort unmarshals raw into out. An empty config or a

@@ -1,6 +1,34 @@
 package game
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+// chainLoopIterations reads the bounce loop's iteration count (the number of
+// bounces beyond the primary hit) from the migrated chain_lightning program, so
+// cap-related tests derive from the catalog rather than hardcoding a number.
+func chainLoopIterations(t *testing.T) int {
+	t.Helper()
+	def, ok := getAbilityDef("chain_lightning")
+	if !ok || def.Program == nil {
+		t.Fatal("chain_lightning has no program")
+	}
+	for _, trig := range def.Program.Triggers {
+		for _, act := range trig.Actions {
+			if act.Type != ActionLoop {
+				continue
+			}
+			var lc loopConfig
+			if err := json.Unmarshal(act.Config, &lc); err != nil {
+				t.Fatalf("chain_lightning loop config: %v", err)
+			}
+			return lc.Iterations
+		}
+	}
+	t.Fatal("chain_lightning has no loop action")
+	return 0
+}
 
 // chainLightningDef returns the live catalog "chain_lightning" ability with
 // its mechanic magnitudes RECOVERED from the compiled Program
@@ -21,17 +49,21 @@ func chainLightningDef(t *testing.T) AbilityDef {
 	return abilityMechanicsShadow(def)
 }
 
-// castChainLightning casts at primary and advances beams until deferred damage
-// lands. Returns start HP map for delta assertions.
+// castChainLightning casts at primary and drives the loop-iteration scheduler
+// until every bounce has landed. The chain is a `loop` action: iteration 0 (the
+// primary hit) resolves synchronously at cast; each later bounce is scheduled
+// ~0.12s after the last (the body's wait) and fired by tickPendingLoopsLocked as
+// simTime advances.
 func castChainLightning(t *testing.T, s *GameState, caster, primary *Unit) {
 	t.Helper()
 	def := chainLightningDef(t)
 	if ok, r := s.beginAbilityCastLocked(caster, "chain_lightning", primary); !ok {
 		t.Fatalf("beginAbilityCastLocked chain_lightning: %s", r)
 	}
-	s.tickUnitCastLocked(caster, def.CastTime) // resolve → spawn chain beams
-	for i := 0; i < 40 && len(s.Beams) > 0; i++ {
-		s.tickBeamsLocked(0.05)
+	s.tickUnitCastLocked(caster, def.CastTime) // resolve → primary hit + schedule bounces
+	for i := 0; i < 60 && len(s.pendingLoops) > 0; i++ {
+		s.simTime += 0.05
+		s.tickPendingLoopsLocked()
 	}
 }
 
@@ -79,6 +111,53 @@ func TestChainLightning_ArcsWithFalloff(t *testing.T) {
 	// decreases along the chain.
 	if !(dPrimary > d1 && d1 > d2) {
 		t.Errorf("expected falloff primary>b1>b2; got %d,%d,%d", dPrimary, d1, d2)
+	}
+}
+
+// TestChainLightning_HardCapStopsBeyondReach proves the loop's iteration cap: a
+// line of enemies each within one bounce radius (220) of the previous — ONE MORE
+// than the chain can hit (primary + loop-iterations bounces) — and the chain
+// still stops at the cap, leaving the last, perfectly-chainable enemy untouched.
+// Derives the cap from the catalog so it survives a balance change to the bounce
+// count.
+func TestChainLightning_HardCapStopsBeyondReach(t *testing.T) {
+	bounces := chainLoopIterations(t)
+	totalHits := 1 + bounces // primary + bounces
+
+	s := newProjectileTestState(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	caster := spawnProjTestUnit(t, s, "p1", 100, 100)
+	caster.Abilities = []string{"chain_lightning"}
+	caster.AttackRange = 500
+	caster.CurrentMana = 100
+	caster.MaxMana = 100
+	caster.Damage = 0
+
+	// One more enemy than the chain can reach: primary + totalHits (index 0 is
+	// the primary; index totalHits is the one past the cap), each 100px apart.
+	enemies := make([]*Unit, totalHits+1)
+	start := map[int]int{}
+	for i := range enemies {
+		enemies[i] = spawnProjTestUnit(t, s, enemyPlayerID, float64(300+i*100), 100)
+		enemies[i].MoveSpeed = 0
+		enemies[i].Damage = 0
+		start[enemies[i].ID] = enemies[i].HP
+	}
+
+	castChainLightning(t, s, caster, enemies[0])
+
+	// The first totalHits enemies each take damage…
+	for i := 0; i < totalHits; i++ {
+		if start[enemies[i].ID]-enemies[i].HP <= 0 {
+			t.Fatalf("expected hit %d/%d to take damage, but it took none", i+1, totalHits)
+		}
+	}
+	// …and the one past the cap takes none, though it was in reach.
+	last := enemies[totalHits]
+	if last.HP != start[last.ID] {
+		t.Errorf("cap breached: the enemy past the %d-hit cap took %d damage", totalHits, start[last.ID]-last.HP)
 	}
 }
 

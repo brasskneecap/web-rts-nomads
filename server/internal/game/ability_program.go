@@ -122,7 +122,21 @@ const (
 	ActionWait              ActionType = "wait"
 	ActionConditional       ActionType = "conditional"
 	ActionRepeat            ActionType = "repeat"
-	ActionCustom            ActionType = "custom"
+	// ActionSetContext writes a scalar (ctxScalar) into Named[key] — set to a
+	// literal or add a delta to the current value. A general counter/tally
+	// primitive; scalar conditions and value-references read it.
+	ActionSetContext ActionType = "set_context"
+	// ActionLoop is a WRAPPER: it runs its body (loopConfig.Body) once per
+	// iteration, binding its Vars (a..z = start + step*iteration) so body number
+	// fields can reference them by letter. Iterations are spaced over time by a
+	// wait in the body — the loop runs one iteration to completion, then
+	// schedules the next after the body's total wait (see runLoopIterationLocked
+	// / the pendingLoop scheduler, ability_exec_loop.go). A body with no wait
+	// runs all iterations in one tick. This is chain_lightning's shape: a loop
+	// inside on_cast_complete whose body damages, picks the next target, arcs a
+	// beam, and waits.
+	ActionLoop   ActionType = "loop"
+	ActionCustom ActionType = "custom"
 )
 
 // TargetSource identifies where a TargetQueryDef begins gathering candidates
@@ -253,6 +267,21 @@ type AbilityTriggerDef struct {
 	Timing     *TriggerTiming        `json:"timing,omitempty"`
 	Conditions []AbilityConditionDef `json:"conditions,omitempty"`
 	Actions    []AbilityActionDef    `json:"actions"`
+}
+
+// LoopVar is one loop variable. At iteration k (0-based) it holds:
+//   - StepMode "" / "number" (default): Start + Step*k   — additive.
+//   - StepMode "percent": Start * (1 + Step/100)^k        — multiplicative,
+//     compounding by Step% each iteration (Step -10 ⇒ ×0.9 per iteration).
+// The value is rounded to the nearest integer (loop vars are discrete — damage,
+// counts — and feed integer config fields). Name is a single lowercase letter
+// "a".."z"; body number fields reference it by that letter. maxLoopVars caps the
+// count at 26. Used by the `loop` action's config (loopConfig, ability_exec_loop.go).
+type LoopVar struct {
+	Name     string  `json:"name"`
+	Start    float64 `json:"start"`
+	Step     float64 `json:"step"`
+	StepMode string  `json:"stepMode,omitempty"`
 }
 
 // TriggerTiming refines when a trigger fires relative to its event.

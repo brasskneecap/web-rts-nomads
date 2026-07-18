@@ -58,6 +58,15 @@ func (s *GameState) resolveOriginLocked(ctx *RuntimeAbilityContext, origin Targe
 			if u := s.getUnitByIDLocked(v.UnitID); u != nil {
 				return protocol.Vec2{X: u.X, Y: u.Y}
 			}
+		case ctxUnitSet:
+			// A named unit set resolves to its FIRST member's position — the
+			// "cursor" idiom a loop chain uses (the current target being arced
+			// from). Empty set / dead unit falls back to the caster.
+			if len(v.UnitIDs) > 0 {
+				if u := s.getUnitByIDLocked(v.UnitIDs[0]); u != nil {
+					return protocol.Vec2{X: u.X, Y: u.Y}
+				}
+			}
 		}
 		return casterPos()
 	case OriginProjectilePos:
@@ -84,19 +93,36 @@ func (s *GameState) resolveOriginLocked(ctx *RuntimeAbilityContext, origin Targe
 // previous victim, never the caster.
 //
 // Caller holds s.mu (read or write).
-func (s *GameState) originUnitForSpawnLocked(ctx *RuntimeAbilityContext, origin TargetOrigin) int {
+func (s *GameState) originUnitForSpawnLocked(ctx *RuntimeAbilityContext, origin TargetOrigin, ref *ContextRef) int {
 	switch origin {
 	case OriginCurrentEventPos:
 		return ctx.CurrentEventUnitID
 	case OriginInitialTarget, OriginInitialTargetPos:
 		return ctx.InitialTarget
+	case OriginNamedContextValue:
+		// A named "cursor" set/id: lift the beam from that unit (the current
+		// chain target being arced from), matching resolveOriginLocked's
+		// named-context position. 0 when unresolvable ⇒ client default anchor.
+		if ref != nil && ctx.Named != nil {
+			if v, ok := ctx.Named[ref.Key]; ok {
+				switch v.Kind {
+				case ctxUnitID:
+					return v.UnitID
+				case ctxUnitSet:
+					if len(v.UnitIDs) > 0 {
+						return v.UnitIDs[0]
+					}
+				}
+			}
+		}
+		return 0
 	case OriginCastPoint, OriginImpactPosition, OriginZoneCenter, OriginProjectilePos:
 		// Pure world positions with no single owning unit — the client falls
 		// back to its default beam anchor offset when the unit id is 0/absent.
 		return 0
 	default:
 		// OriginCaster and every caster-fallback case in resolveOriginLocked
-		// (empty origin, named-context, status/summon-owner not-yet-threaded).
+		// (empty origin, status/summon-owner not-yet-threaded).
 		return ctx.CasterID
 	}
 }

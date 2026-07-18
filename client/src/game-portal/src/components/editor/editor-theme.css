@@ -1,0 +1,75 @@
+/* ── "Forge" editor theme ─────────────────────────────────────────────────
+   A warmer, flatter, brass-accented skin for the content editors, matching the
+   ability-editor mockup. It is OPT-IN per editor: EditorShell adds
+   `.ed-theme-forge` to the shell when given `theme="forge"`, and everything
+   here is scoped under that class. Because every editor shares the same
+   --ed-* tokens + components/editor/ primitives, converting the item / unit
+   editors is a one-liner — pass the same `theme` prop.
+
+   How it works:
+   - It re-values the shared --ed-* tokens (palette), so all the token-driven
+     editor chrome (headers, labels, hairlines, form controls) re-skins for free.
+   - It replaces the inner wood 9-slice cards (SectionCard's UiPanel, class
+     .ed-card) with a thin gold-bordered gradient card + corner ticks. The
+     shell's own worldMenu frame is NOT a descendant of itself, so the outer
+     editor frame is untouched. */
+
+.ed-theme-forge {
+  /* Palette — punchier brass on a warmer near-black wood. */
+  --ed-brass: #f2d090;
+  --ed-brass-dim: #c39a55;
+  --ed-text: #ece0c4;
+  --ed-text-dim: rgba(236, 224, 196, 0.5);
+  --ed-line: rgba(226, 182, 92, 0.26);
+  --ed-line-strong: rgba(226, 182, 92, 0.6);
+  --ed-field: rgba(6, 5, 3, 0.62);
+
+  /* Surface tokens the flat card treatment reads (theme-local). */
+  --ed-card-border: rgba(226, 182, 92, 0.34);
+  --ed-card-tick: rgba(242, 208, 144, 0.85);
+}
+
+/* Flat card: strip the wood 9-slice from inner SectionCards and paint a thin
+   gold-bordered panel whose FILL is the inner-panel-background texture (tiled).
+   `.ed-shell.ed-theme-forge .ed-card` out-specifies UiPanel's own scoped
+   `.ui-panel` rule, so no !important. */
+.ed-shell.ed-theme-forge .ed-card {
+  position: relative;
+  border-image: none;
+  border: 1px solid var(--ed-card-border);
+  border-radius: var(--ed-radius);
+  background-color: #0b0906;
+  background-image: url('../../assets/ui/themes/updated/inner-panel-background.png');
+  background-repeat: repeat;
+  box-shadow: inset 0 1px 0 rgba(242, 208, 144, 0.06);
+}
+
+/* Little brass corner ticks, echoing the mockup's panel corners. Two
+   pseudo-elements draw an L at the top-left and bottom-right. */
+.ed-shell.ed-theme-forge .ed-card::before,
+.ed-shell.ed-theme-forge .ed-card::after {
+  content: '';
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-color: var(--ed-card-tick);
+  border-style: solid;
+  pointer-events: none;
+}
+
+.ed-shell.ed-theme-forge .ed-card::before {
+  top: 3px;
+  left: 3px;
+  border-width: 1px 0 0 1px;
+}
+
+.ed-shell.ed-theme-forge .ed-card::after {
+  right: 3px;
+  bottom: 3px;
+  border-width: 0 1px 1px 0;
+}
+
+/* Section header hairline reads a touch brighter under the flatter card. */
+.ed-shell.ed-theme-forge .ed-card__head {
+  border-bottom-color: var(--ed-line-strong);
+}

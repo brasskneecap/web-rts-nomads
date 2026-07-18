@@ -227,6 +227,16 @@ export function useAbilityBuilder() {
     updateAction(path, { config: merged })
   }
 
+  // updateProgram is the general immutable-rewrite escape hatch for editors
+  // that operate on parts of the program the path-based tree ops don't address
+  // — e.g. the LoopCard, which edits a chain's namedTriggers body (named
+  // triggers aren't in the NodePath traversal). It routes through the same
+  // applyProgramMutation funnel, so it still snapshots for undo, marks dirty,
+  // and re-validates like every other mutation.
+  function updateProgram(fn: (p: AbilityProgram) => AbilityProgram) {
+    applyProgramMutation(fn)
+  }
+
   function updateForm(patch: Partial<AuthoredAbilityDef>) {
     pushHistory()
     form.value = { ...form.value, ...patch }
@@ -475,6 +485,7 @@ export function useAbilityBuilder() {
     updateAction,
     updateActionConfig,
     updateTrigger,
+    updateProgram,
     updateForm,
     select,
     // validation

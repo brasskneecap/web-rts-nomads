@@ -14,10 +14,12 @@
     "damage"
   ],
   "category": "offensive",
+  "targetCount": 1,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
   "defaultAutoCast": true,
-  "icon": "TODO/abilities/shatter.png",
+  "icon": "effect:shatter@1",
   "casterAnimation": "Attacking",
   "schemaVersion": 2,
   "program": {

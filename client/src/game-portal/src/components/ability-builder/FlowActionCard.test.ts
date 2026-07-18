@@ -36,6 +36,22 @@ function makeBuilderStub(overrides: {
     moveAction: vi.fn(),
     duplicateAction: vi.fn(),
     toggleActionDisabled: vi.fn(),
+    updateActionConfig: vi.fn(),
+  }
+}
+
+function loopAction(): AbilityActionDef {
+  return {
+    id: 'a1',
+    type: 'loop',
+    config: {
+      iterations: 3,
+      vars: [{ name: 'a', start: 65, step: -5 }],
+      body: [
+        { id: 'dmg', type: 'deal_damage', config: { amount: 'a', type: 'lightning' } },
+        { id: 'gap', type: 'wait', config: { seconds: 0.12 } },
+      ],
+    },
   }
 }
 
@@ -157,5 +173,75 @@ describe('FlowActionCard', () => {
     const wrapper = mountCard(action, builder)
 
     expect(wrapper.find('[data-test="flow-action-presentation"]').exists()).toBe(false)
+  })
+
+  describe('loop wrapper', () => {
+    it('renders the loop header (iterations + vars) and its body as real action cards', () => {
+      const wrapper = mountCard(loopAction(), makeBuilderStub())
+      expect(wrapper.find('[data-test="flow-action-loop"]').exists()).toBe(true)
+      expect((wrapper.find('[data-test="loop-iterations"]').element as HTMLInputElement).value).toBe('3')
+      expect((wrapper.find('[data-test="loop-var-a-start"]').element as HTMLInputElement).value).toBe('65')
+      expect((wrapper.find('[data-test="loop-var-a-step"]').element as HTMLInputElement).value).toBe('-5')
+      // The 2 body actions render as nested FlowActionCards (deal_damage, wait),
+      // so 3 cards total: the loop wrapper itself + its 2 body steps.
+      expect(wrapper.findAll('[data-test="flow-action-card"]')).toHaveLength(3)
+      // …and the loop has its own "+ Action" affordance to add more steps.
+      expect(wrapper.find('[data-test="loop-add-action"]').exists()).toBe(true)
+    })
+
+    it('editing iterations writes back via updateActionConfig', async () => {
+      const builder = makeBuilderStub()
+      const wrapper = mountCard(loopAction(), builder)
+      const input = wrapper.find('[data-test="loop-iterations"]')
+      ;(input.element as HTMLInputElement).value = '6'
+      await input.trigger('change')
+      expect(builder.updateActionConfig).toHaveBeenCalledWith(defaultPath, { iterations: 6 })
+    })
+
+    it('adding a variable writes the next letter', async () => {
+      const builder = makeBuilderStub()
+      const wrapper = mountCard(loopAction(), builder)
+      await wrapper.find('[data-test="loop-add-var"]').trigger('click')
+      expect(builder.updateActionConfig).toHaveBeenCalledWith(defaultPath, {
+        vars: [{ name: 'a', start: 65, step: -5 }, { name: 'b', start: 0, step: 0 }],
+      })
+    })
+
+    it('editing a variable step (negative) writes back', async () => {
+      const builder = makeBuilderStub()
+      const wrapper = mountCard(loopAction(), builder)
+      const input = wrapper.find('[data-test="loop-var-a-step"]')
+      ;(input.element as HTMLInputElement).value = '-8'
+      await input.trigger('change')
+      expect(builder.updateActionConfig).toHaveBeenCalledWith(defaultPath, {
+        vars: [{ name: 'a', start: 65, step: -8 }],
+      })
+    })
+
+    it('toggling "step first" writes stepFirst back', async () => {
+      const builder = makeBuilderStub()
+      const wrapper = mountCard(loopAction(), builder)
+      const cb = wrapper.find('[data-test="loop-step-first"]')
+      expect((cb.element as HTMLInputElement).checked).toBe(false)
+      await cb.setValue(true)
+      expect(builder.updateActionConfig).toHaveBeenCalledWith(defaultPath, { stepFirst: true })
+    })
+
+    it('switching a variable step to percent writes stepMode back', async () => {
+      const builder = makeBuilderStub()
+      const wrapper = mountCard(loopAction(), builder)
+      const mode = wrapper.find('[data-test="loop-var-a-stepmode"]')
+      expect((mode.element as HTMLSelectElement).value).toBe('number') // default flat
+      await mode.setValue('percent')
+      expect(builder.updateActionConfig).toHaveBeenCalledWith(defaultPath, {
+        vars: [{ name: 'a', start: 65, step: -5, stepMode: 'percent' }],
+      })
+    })
+
+    it('renders no loop block for a non-loop action', () => {
+      const action: AbilityActionDef = { id: 'a1', type: 'deal_damage', config: { amount: 10 } }
+      const wrapper = mountCard(action, makeBuilderStub())
+      expect(wrapper.find('[data-test="flow-action-loop"]').exists()).toBe(false)
+    })
   })
 })

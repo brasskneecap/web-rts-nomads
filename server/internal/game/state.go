@@ -1051,6 +1051,14 @@ type GameState struct {
 	// play (see ability_marker.go's TestMarkerScheduler_ProductionNoOp).
 	pendingMarkers []scheduledMarker
 
+	// pendingLoops holds `loop`-action iterations enqueued by
+	// runLoopIterationLocked (ability_exec_loop.go), waiting for their
+	// fireAtSimTime — the mechanism that spaces a loop's iterations over time
+	// (chain_lightning's per-hop wait). Ticked by tickPendingLoopsLocked in
+	// Update, right after tickAbilityMarkersLocked. Empty unless a loop with a
+	// wait in its body is mid-run.
+	pendingLoops []pendingLoopIteration
+
 	// Projectiles is the set of in-flight ranged attacks. Ticked once per
 	// Update() after tickUnitCombatLocked so freshly-fired shots decay on the
 	// next tick, not their birth tick. Damage and all on-hit perk triggers
@@ -2888,6 +2896,7 @@ func (s *GameState) Update(dt float64) {
 	// tickAbilityMarkersLocked reads it.
 	s.simTime += dt
 	profileSection("abilityMarkers", func() { s.tickAbilityMarkersLocked() }) // on_animation_marker scheduler (no-op until a marker is scheduled)
+	profileSection("abilityLoops", func() { s.tickPendingLoopsLocked() })     // loop-action iteration scheduler (no-op until a loop with a body wait is running)
 	// Drain the per-tick death queue. Must run AFTER all combat/trap/projectile
 	// ticks have finished so every HP=0 unit from indirect damage paths (Shared
 	// Pain, pain_share redirect, retaliation) is cleaned up before the per-unit

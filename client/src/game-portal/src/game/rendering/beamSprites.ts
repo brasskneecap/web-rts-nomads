@@ -92,6 +92,12 @@ for (const [manifestPath, manifest] of Object.entries(manifestGlob)) {
 
 const warnedMissing = new Set<string>()
 
+// listBeamNames returns every registered beam name (sprite-sheet folder),
+// sorted — for the ability-editor icon picker's Beam gallery.
+export function listBeamNames(): string[] {
+  return [...registry.keys()].sort()
+}
+
 export function getBeamSprite(name: string): BeamSpriteSet | undefined {
   const lower = name.toLowerCase()
   const entry = registry.get(lower)

@@ -9,6 +9,7 @@ import type {
   AbilityProgram,
   AbilityTriggerDef,
   ActionType,
+  LoopVar,
   PresentationInstanceDef,
   TriggerType,
 } from '@/game/abilities/program/abilityProgram'
@@ -85,6 +86,9 @@ function walkAction(a: AbilityActionDef, ids: string[]): void {
   if (a.children) {
     for (const child of a.children) walkTrigger(child, ids)
   }
+  // A loop action's config.body is a nested ACTION list — scan it so a newly
+  // minted id can never collide with one living inside a loop body.
+  for (const body of loopBodyOf(a)) walkAction(body, ids)
   // config.triggers (create_zone's nested-trigger slot) is addressable now
   // that resolveNode/updateNodeAt reach into it — a new id minted without
   // scanning this slot could collide with an id already living inside it,
@@ -170,6 +174,39 @@ const CONFIG_TRIGGER_ACTION_TYPES: ReadonlySet<string> = new Set([
 function configTriggersOf(action: AbilityActionDef): AbilityTriggerDef[] {
   const raw = action.config?.triggers
   return Array.isArray(raw) ? (raw as AbilityTriggerDef[]) : []
+}
+
+// loopBodyOf reads a `loop` action's config.body — the nested ACTION list it
+// runs each iteration — defensively (opaque config, never destructured). This
+// is the one place an action owns a list of ACTIONS (not triggers), so the
+// path model can reach into it: an `action` segment following a loop action
+// resolves against this list (see walkPath / rebuildActionList).
+export function loopBodyOf(action: AbilityActionDef): AbilityActionDef[] {
+  const raw = action.config?.body
+  return Array.isArray(raw) ? (raw as AbilityActionDef[]) : []
+}
+
+// loopScopeFor reports whether the node at `path` sits inside a loop, and which
+// loop variables are in scope for it — the union of every ANCESTOR loop
+// action's declared variables. A loop's OWN fields (e.g. iterations) are NOT in
+// its own variable scope, so only proper ancestors (prefixes shorter than the
+// full path) are walked. Used by the inspector so a body field can offer a
+// literal-or-variable choice. Nested loops accumulate (both loops' vars).
+export function loopScopeFor(prog: AbilityProgram, path: NodePath): { inLoop: boolean; vars: string[] } {
+  let inLoop = false
+  const vars: string[] = []
+  for (let i = 1; i < path.length; i++) {
+    if (path[i - 1].kind !== 'action') continue
+    const node = resolveNode(prog, path.slice(0, i))
+    if (node?.kind === 'action' && node.node.type === 'loop') {
+      inLoop = true
+      const raw = node.node.config?.vars
+      if (Array.isArray(raw)) {
+        for (const v of raw as LoopVar[]) if (typeof v?.name === 'string') vars.push(v.name)
+      }
+    }
+  }
+  return { inLoop, vars }
 }
 
 // nestedTriggersFor returns every trigger nested directly under an action,
@@ -272,8 +309,20 @@ function walkPath(prog: AbilityProgram, path: NodePath): WalkStep[] | undefined 
       continue
     }
 
-    // prev.kind === 'action': the only legal next step is into one of its
-    // nested-trigger slots.
+    // prev.kind === 'action': the next step is either a nested TRIGGER (its
+    // children / config.triggers slots) or, for a loop action, a nested ACTION
+    // in its config.body.
+    if (seg.kind === 'action') {
+      const body = loopBodyOf(prev.node)
+      const idx = body.findIndex((a) => a.id === seg.id)
+      if (idx === -1) return undefined
+      steps.push({
+        kind: 'action',
+        node: body[idx],
+        indexFrag: `${prev.indexFrag}.body[${idx}]`,
+      })
+      continue
+    }
     if (seg.kind !== 'trigger') return undefined
     const slot = slotOfNestedTrigger(prev.node, seg.id)
     if (!slot) return undefined
@@ -360,6 +409,12 @@ function findIdInAction(a: AbilityActionDef, id: string, path: NodePath): NodePa
   if (a.id === id) return path
   for (const nested of nestedTriggersFor(a)) {
     const found = findIdInTrigger(nested, id, [...path, { kind: 'trigger', id: nested.id }])
+    if (found) return found
+  }
+  // A loop action owns a nested ACTION list (config.body) — recurse into it so
+  // a body action (or anything nested under it) is addressable.
+  for (const body of loopBodyOf(a)) {
+    const found = findIdInAction(body, id, [...path, { kind: 'action', id: body.id }])
     if (found) return found
   }
   return undefined
@@ -504,8 +559,20 @@ function rebuildActionList(
     updated[idx] = (fn as (node: AbilityActionDef) => AbilityActionDef)(actions[idx])
     return updated
   }
-  if (rest[0].kind !== 'trigger') return undefined
   const action = actions[idx]
+
+  // A loop action's nested ACTION list (config.body): descend when the next
+  // step is an `action` segment. Spread the opaque config, replacing only
+  // `body`, so unknown keys round-trip untouched (same discipline as the
+  // config.triggers branch below).
+  if (rest[0].kind === 'action') {
+    const body = rebuildActionList(loopBodyOf(action), rest[0].id, rest.slice(1), fn)
+    if (!body) return undefined
+    updated[idx] = { ...action, config: { ...action.config, body } }
+    return updated
+  }
+
+  if (rest[0].kind !== 'trigger') return undefined
   const slot = slotOfNestedTrigger(action, rest[0].id)
   if (!slot) return undefined
 
@@ -577,6 +644,10 @@ function reidAction(a: AbilityActionDef, mint: (prefix: string) => string): Abil
   const cfgTriggers = configTriggersOf(a)
   if (cfgTriggers.length > 0) {
     a.config = { ...a.config, triggers: cfgTriggers.map((t) => reidTrigger(t, mint)) }
+  }
+  const body = loopBodyOf(a)
+  if (body.length > 0) {
+    a.config = { ...a.config, body: body.map((b) => reidAction(b, mint)) }
   }
   return a
 }
@@ -714,16 +785,51 @@ export function removeTrigger(prog: AbilityProgram, path: NodePath): AbilityProg
   })
 }
 
-export function addAction(prog: AbilityProgram, triggerPath: NodePath, actionType: ActionType): AbilityProgram {
-  const resolved = resolveNode(prog, triggerPath)
-  if (!resolved || resolved.kind !== 'trigger') return prog
+// updateActionListAt rebuilds the ACTION LIST owned by whatever container
+// parentPath resolves to — a trigger's `actions` (root/presentation/nested
+// trigger), or a `loop` action's `config.body`. This is the single seam the
+// list-mutating ops (add/remove/move/duplicate) funnel through so they work
+// identically whether an action sits directly under a trigger or inside a loop.
+function updateActionListAt(
+  prog: AbilityProgram,
+  parentPath: NodePath,
+  fn: (actions: AbilityActionDef[]) => AbilityActionDef[],
+): AbilityProgram {
+  const parentSeg = parentPath[parentPath.length - 1]
+  if (parentSeg?.kind === 'action') {
+    // Loop body: rebuild config.body, preserving every other opaque config key.
+    return updateNodeAt(prog, parentPath, (a: AbilityActionDef): AbilityActionDef => ({
+      ...a,
+      config: { ...a.config, body: fn(loopBodyOf(a)) },
+    }))
+  }
+  return updateNodeAt(prog, parentPath, (t: AbilityTriggerDef): AbilityTriggerDef => ({
+    ...t,
+    actions: fn(t.actions),
+  }))
+}
 
+// addAction appends a new action to a CONTAINER: a trigger (its `actions`) or a
+// loop action (its `config.body`). containerPath must resolve to one of those.
+export function addAction(prog: AbilityProgram, containerPath: NodePath, actionType: ActionType): AbilityProgram {
+  const resolved = resolveNode(prog, containerPath)
+  if (!resolved) return prog
   const id = nextUniqueId(prog, 'a')
   const newAction: AbilityActionDef = { id, type: actionType, disabled: false }
-  return updateNodeAt(prog, triggerPath, (t: AbilityTriggerDef): AbilityTriggerDef => ({
-    ...t,
-    actions: [...t.actions, newAction],
-  }))
+
+  if (resolved.kind === 'trigger') {
+    return updateNodeAt(prog, containerPath, (t: AbilityTriggerDef): AbilityTriggerDef => ({
+      ...t,
+      actions: [...t.actions, newAction],
+    }))
+  }
+  if (resolved.kind === 'action' && resolved.node.type === 'loop') {
+    return updateNodeAt(prog, containerPath, (a: AbilityActionDef): AbilityActionDef => ({
+      ...a,
+      config: { ...a.config, body: [...loopBodyOf(a), newAction] },
+    }))
+  }
+  return prog
 }
 
 export function removeAction(prog: AbilityProgram, path: NodePath): AbilityProgram {
@@ -731,12 +837,8 @@ export function removeAction(prog: AbilityProgram, path: NodePath): AbilityProgr
   if (!resolved || resolved.kind !== 'action') return prog
 
   const targetId = path[path.length - 1].id
-  const parentPath = path.slice(0, -1) // always resolves to the owning trigger
-
-  return updateNodeAt(prog, parentPath, (t: AbilityTriggerDef): AbilityTriggerDef => ({
-    ...t,
-    actions: t.actions.filter((a) => a.id !== targetId),
-  }))
+  const parentPath = path.slice(0, -1)
+  return updateActionListAt(prog, parentPath, (actions) => actions.filter((a) => a.id !== targetId))
 }
 
 export function moveAction(prog: AbilityProgram, path: NodePath, dir: 'up' | 'down'): AbilityProgram {
@@ -745,17 +847,16 @@ export function moveAction(prog: AbilityProgram, path: NodePath, dir: 'up' | 'do
 
   const targetId = path[path.length - 1].id
   const parentPath = path.slice(0, -1)
-
-  return updateNodeAt(prog, parentPath, (t: AbilityTriggerDef): AbilityTriggerDef => {
-    const idx = t.actions.findIndex((a) => a.id === targetId)
-    if (idx === -1) return t
+  return updateActionListAt(prog, parentPath, (actions) => {
+    const idx = actions.findIndex((a) => a.id === targetId)
+    if (idx === -1) return actions
     const swapIdx = dir === 'up' ? idx - 1 : idx + 1
-    if (swapIdx < 0 || swapIdx >= t.actions.length) return t
-    const actions = [...t.actions]
-    const tmp = actions[idx]
-    actions[idx] = actions[swapIdx]
-    actions[swapIdx] = tmp
-    return { ...t, actions }
+    if (swapIdx < 0 || swapIdx >= actions.length) return actions
+    const next = actions.slice()
+    const tmp = next[idx]
+    next[idx] = next[swapIdx]
+    next[swapIdx] = tmp
+    return next
   })
 }
 
@@ -766,13 +867,12 @@ export function duplicateAction(prog: AbilityProgram, path: NodePath): AbilityPr
   const targetId = path[path.length - 1].id
   const parentPath = path.slice(0, -1)
   const copy = cloneActionWithFreshIds(resolved.node, prog)
-
-  return updateNodeAt(prog, parentPath, (t: AbilityTriggerDef): AbilityTriggerDef => {
-    const idx = t.actions.findIndex((a) => a.id === targetId)
-    if (idx === -1) return t
-    const actions = [...t.actions]
-    actions.splice(idx + 1, 0, copy)
-    return { ...t, actions }
+  return updateActionListAt(prog, parentPath, (actions) => {
+    const idx = actions.findIndex((a) => a.id === targetId)
+    if (idx === -1) return actions
+    const next = actions.slice()
+    next.splice(idx + 1, 0, copy)
+    return next
   })
 }
 

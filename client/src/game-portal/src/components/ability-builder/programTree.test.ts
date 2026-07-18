@@ -9,6 +9,7 @@ import {
   findNodePathById,
   findTrigger,
   indexPathFor,
+  loopScopeFor,
   moveAction,
   nestedTriggersFor,
   removeAction,
@@ -934,5 +935,128 @@ describe('addTrigger — nested slot rule', () => {
     if (!action || action.kind !== 'action') throw new Error('action did not resolve')
     expect((action.node.children ?? []).map((t) => t.type)).toEqual(['on_action_complete'])
     expect(action.node.config?.triggers).toBeUndefined()
+  })
+})
+
+// ── loop body: actions nested in a `loop` action's config.body ──────────────
+//
+// A loop action owns a list of ACTIONS (config.body), addressed by extending
+// its path with an `{kind:'action', id}` segment. These verify the traversal
+// and every list-mutating op works into that body exactly like a trigger's
+// own actions.
+function loopProgram(): AbilityProgram {
+  return {
+    entry: { type: 'unit', range: 300 },
+    triggers: [
+      {
+        id: 'cast',
+        type: 'on_cast_complete',
+        actions: [
+          {
+            id: 'lp',
+            type: 'loop',
+            config: {
+              iterations: 3,
+              vars: [{ name: 'a', start: 60, step: -5 }],
+              body: [
+                { id: 'b1', type: 'select_targets', target: { source: 'all_in_scene' } },
+                { id: 'b2', type: 'deal_damage', config: { amount: 'a' } },
+                { id: 'b3', type: 'wait', config: { seconds: 0.1 } },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  }
+}
+
+function loopBodyPath(bodyId: string): NodePath {
+  return [{ kind: 'trigger', id: 'cast' }, { kind: 'action', id: 'lp' }, { kind: 'action', id: bodyId }]
+}
+
+describe('loop body traversal', () => {
+  it('resolveNode reaches an action inside config.body', () => {
+    const node = resolveNode(loopProgram(), loopBodyPath('b2'))
+    expect(node?.kind).toBe('action')
+    expect(node?.kind === 'action' && node.node.type).toBe('deal_damage')
+  })
+
+  it('indexPathFor derives the validator grammar `...body[k]`', () => {
+    expect(indexPathFor(loopProgram(), loopBodyPath('b2'))).toBe('triggers[0].actions[0].body[1]')
+  })
+
+  it('findNodePathById locates a body action anywhere in the loop', () => {
+    expect(findNodePathById(loopProgram(), 'b3')).toEqual(loopBodyPath('b3'))
+  })
+})
+
+describe('loop body mutation ops', () => {
+  it('addAction appends to the loop body (container path = the loop action)', () => {
+    const loopPath: NodePath = [{ kind: 'trigger', id: 'cast' }, { kind: 'action', id: 'lp' }]
+    const next = addAction(loopProgram(), loopPath, 'deal_damage')
+    const loop = resolveNode(next, loopPath)
+    const body = (loop?.kind === 'action' && loop.node.config?.body) as AbilityActionDef[]
+    expect(body.map((b) => b.id)).toEqual(['b1', 'b2', 'b3', 'a1'])
+  })
+
+  it('removeAction drops a body action', () => {
+    const next = removeAction(loopProgram(), loopBodyPath('b2'))
+    expect(resolveNode(next, loopBodyPath('b2'))).toBeUndefined()
+    expect(resolveNode(next, loopBodyPath('b1'))?.kind).toBe('action')
+  })
+
+  it('moveAction reorders within the body', () => {
+    const next = moveAction(loopProgram(), loopBodyPath('b1'), 'down')
+    const loop = resolveNode(next, [{ kind: 'trigger', id: 'cast' }, { kind: 'action', id: 'lp' }])
+    const body = (loop?.kind === 'action' && loop.node.config?.body) as AbilityActionDef[]
+    expect(body.map((b) => b.id)).toEqual(['b2', 'b1', 'b3'])
+  })
+
+  it('updateAction patches a body action in place', () => {
+    const next = updateAction(loopProgram(), loopBodyPath('b2'), { config: { amount: 99 } })
+    const node = resolveNode(next, loopBodyPath('b2'))
+    expect(node?.kind === 'action' && node.node.config?.amount).toBe(99)
+  })
+
+  it('setActionDisabled toggles a body action', () => {
+    const next = setActionDisabled(loopProgram(), loopBodyPath('b3'), true)
+    const node = resolveNode(next, loopBodyPath('b3'))
+    expect(node?.kind === 'action' && node.node.disabled).toBe(true)
+  })
+
+  it('duplicateAction inserts a re-id\'d copy after the body action', () => {
+    const next = duplicateAction(loopProgram(), loopBodyPath('b2'))
+    const loop = resolveNode(next, [{ kind: 'trigger', id: 'cast' }, { kind: 'action', id: 'lp' }])
+    const body = (loop?.kind === 'action' && loop.node.config?.body) as AbilityActionDef[]
+    expect(body).toHaveLength(4)
+    expect(body[2].type).toBe('deal_damage') // the copy sits right after b2
+    expect(body[2].id).not.toBe('b2') // …with a fresh id
+  })
+
+  it('the original program is never mutated by a body op', () => {
+    const p = loopProgram()
+    removeAction(p, loopBodyPath('b2'))
+    const loop = resolveNode(p, [{ kind: 'trigger', id: 'cast' }, { kind: 'action', id: 'lp' }])
+    const body = (loop?.kind === 'action' && loop.node.config?.body) as AbilityActionDef[]
+    expect(body.map((b) => b.id)).toEqual(['b1', 'b2', 'b3'])
+  })
+})
+
+describe('loopScopeFor', () => {
+  it('reports the loop variables in scope for a body action', () => {
+    const scope = loopScopeFor(loopProgram(), loopBodyPath('b2'))
+    expect(scope.inLoop).toBe(true)
+    expect(scope.vars).toEqual(['a'])
+  })
+
+  it('reports not-in-loop for an action directly under a trigger', () => {
+    const p = baseProgram()
+    expect(loopScopeFor(p, actionPath('t1', 'a1'))).toEqual({ inLoop: false, vars: [] })
+  })
+
+  it('does NOT put a loop in its own variable scope (its iterations field is a plain number)', () => {
+    const scope = loopScopeFor(loopProgram(), [{ kind: 'trigger', id: 'cast' }, { kind: 'action', id: 'lp' }])
+    expect(scope.inLoop).toBe(false)
   })
 })

@@ -1,5 +1,5 @@
 <template>
-  <EditorShell class="ab-panel" wide-rail>
+  <EditorShell class="ab-panel" wide-rail theme="forge">
     <!-- ── Sidebar: abilities grouped by damage school ─────────────────────── -->
     <template #sidebar>
       <div class="ab-panel__sidebar">

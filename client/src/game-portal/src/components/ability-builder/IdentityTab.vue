@@ -48,28 +48,6 @@
       </EditorField>
     </SectionCard>
 
-    <!-- Entry is READ-ONLY here on purpose: the program's `entry` (type/
-         relations/range) has no builder op to edit it directly (the
-         composable only exposes updateForm/updateTrigger/updateAction, all
-         of which operate on the FORM or the TRIGGER/ACTION tree — nothing
-         mutates `program.entry`). The cast gates (Phase-4) read the FORM's
-         canTarget*/targetsPoint/castRange fields, not `entry`, so those are
-         what this tab makes editable below; `entry` is shown as a derived
-         summary so an author isn't left wondering where it went.
-         TODO: add an `updateEntry` composable op if authoring `entry`
-         directly (rather than via the cast-setup fields) becomes required. -->
-    <SectionCard title="Entry (read-only)">
-      <p class="ins-note">
-        Type: {{ builder.program.value.entry.type }}<br />
-        Relations: {{ (builder.program.value.entry.relations ?? []).join(', ') || '—' }}<br />
-        Range: {{ builder.program.value.entry.range }}
-      </p>
-      <p class="ins-hint">
-        Targeting is edited via the Cast Setup fields below (Can Target */Targets Point/Cast Range) —
-        those are what the cast gates read.
-      </p>
-    </SectionCard>
-
     <SectionCard title="Cast Setup">
       <div class="ins-pair">
         <SchemaField
@@ -152,6 +130,28 @@
           @update:model-value="(v) => builder.updateForm({ defaultAutoCast: v as boolean })"
         />
       </template>
+    </SectionCard>
+
+    <!-- Entry is READ-ONLY here on purpose: the program's `entry` (type/
+         relations/range) has no builder op to edit it directly (the
+         composable only exposes updateForm/updateTrigger/updateAction, all
+         of which operate on the FORM or the TRIGGER/ACTION tree — nothing
+         mutates `program.entry`). The cast gates (Phase-4) read the FORM's
+         canTarget*/targetsPoint/castRange fields, not `entry`, so those are
+         what the Cast Setup card above makes editable; `entry` is shown as a
+         derived summary so an author isn't left wondering where it went.
+         TODO: add an `updateEntry` composable op if authoring `entry`
+         directly (rather than via the cast-setup fields) becomes required. -->
+    <SectionCard title="Entry (read-only)">
+      <p class="ins-note">
+        Type: {{ builder.program.value.entry.type }}<br />
+        Relations: {{ (builder.program.value.entry.relations ?? []).join(', ') || '—' }}<br />
+        Range: {{ builder.program.value.entry.range }}
+      </p>
+      <p class="ins-hint">
+        Targeting is edited via the Cast Setup fields above (Can Target */Targets Point/Cast Range) —
+        those are what the cast gates read.
+      </p>
     </SectionCard>
   </div>
 </template>

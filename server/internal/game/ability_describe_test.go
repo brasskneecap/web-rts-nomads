@@ -204,8 +204,22 @@ func TestDescribeAbility_ProgramEquivalence(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s: live catalog ability not found", id)
 			}
-			if gotShipped := describeAbility(shipped); gotShipped != want {
-				t.Errorf("%s: LIVE catalog description differs from the frozen-fixture/compiler baseline\n  baseline: %q\n  live:     %q", id, want, gotShipped)
+			live := describeAbility(shipped)
+			if id == "chain_lightning" {
+				// chain_lightning has been REBALANCED away from legacy
+				// (author-tuned loop: more bounces, percent falloff), so its live
+				// prose legitimately differs from the frozen legacy baseline. The
+				// compiler-equivalence check above (converting the frozen fixture)
+				// still holds; here we only sanity-check the live prose is present
+				// and still describes a chain.
+				if strings.TrimSpace(live) == "" {
+					t.Errorf("%s: live description is empty", id)
+				}
+				if !strings.Contains(live, "arcs to") {
+					t.Errorf("%s: live description no longer mentions chaining: %q", id, live)
+				}
+			} else if live != want {
+				t.Errorf("%s: LIVE catalog description differs from the frozen-fixture/compiler baseline\n  baseline: %q\n  live:     %q", id, want, live)
 			}
 		})
 	}

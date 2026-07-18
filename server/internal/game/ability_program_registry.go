@@ -403,7 +403,9 @@ func init() {
 				amount = int(math.Round(float64(amount) * m))
 			}
 			// FlatOffset (see the field's doc comment) applies LAST, after
-			// both scaling steps, and is itself never scaled.
+			// both scaling steps, and is itself never scaled. Per-hop decay is now
+			// expressed with a loop variable (deal_damage amount: "a") rather than
+			// a bespoke ref field — see ability_exec_loop.go.
 			amount += c.FlatOffset
 			// lastAppliedDamage is reset here (start of this Execute) and
 			// accumulated below so a 0-hit run reports 0 rather than leaking a

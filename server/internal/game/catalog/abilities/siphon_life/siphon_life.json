@@ -5,9 +5,11 @@
   "canTargetEnemies": true,
   "castRange": 220,
   "damageType": "shadow",
+  "targetCount": 1,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "lowest_hp_percentage_enemy_in_range",
-  "icon": "TODO/abilities/siphon_life.png",
+  "icon": "beam:siphon_life",
   "casterAnimation": "Casting",
   "schemaVersion": 2,
   "program": {

@@ -105,6 +105,8 @@
                   :model-value="selectedAction.config?.[f.key]"
                   :enums="enumsValue"
                   :catalogs="builder.catalogs.value"
+                  :loop-vars="loopScope.vars"
+                  :variable-capable="loopScope.inLoop"
                   @update:model-value="(v) => commitActionConfig(f.key, v)"
                 />
               </template>
@@ -134,7 +136,7 @@ import { fieldVisible, schemaForAction, type SchemaField as SchemaFieldDescripto
 import { issuesForPath, type ValidationIssue } from '@/game/abilities/program/programValidation'
 import SectionCard from '@/components/editor/SectionCard.vue'
 import { useAbilityBuilderContext } from './AbilityBuilderContext'
-import { indexPathFor, resolveNode } from './programTree'
+import { indexPathFor, loopScopeFor, resolveNode } from './programTree'
 import SchemaField from './SchemaField.vue'
 
 const builder = useAbilityBuilderContext()
@@ -229,6 +231,15 @@ const actionSchema = computed(() => {
   const action = selectedAction.value
   if (!action || !builder.schema.value) return undefined
   return schemaForAction(builder.schema.value, action.type)
+})
+
+// loopScope: whether the selected action sits inside a loop, and which loop
+// variables are in scope for its number fields (see loopScopeFor). Drives the
+// literal-or-variable selector SchemaField shows for `number` controls.
+const loopScope = computed<{ inLoop: boolean; vars: string[] }>(() => {
+  const sel = selected.value
+  if (sel.kind !== 'action') return { inLoop: false, vars: [] }
+  return loopScopeFor(builder.program.value, sel.path)
 })
 
 // Fields grouped by their declared `section` (falling back to "Properties"),

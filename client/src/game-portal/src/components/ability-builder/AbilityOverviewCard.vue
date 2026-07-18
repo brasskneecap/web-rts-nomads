@@ -1,25 +1,46 @@
 <template>
   <div class="ab-overview" data-test="ability-overview-card">
-    <button
-      type="button"
-      class="ab-overview__identity"
-      data-test="overview-open-settings"
-      aria-label="Open ability settings"
-      @click="onOpenSettings"
-    >
-      <img v-if="iconUrl" :src="iconUrl" alt="" class="ab-overview__icon" />
-      <div v-else class="ab-overview__icon ab-overview__icon--empty" aria-hidden="true" />
+    <div class="ab-overview__top">
+      <!-- Click the icon to open the picker (effects / projectiles / upload).
+           Rendered by AbilityIconCanvas — the SAME code the in-game action bar
+           uses — so this preview is exactly the action icon. -->
+      <button
+        type="button"
+        class="ab-overview__icon-btn"
+        data-test="ability-overview-icon"
+        aria-label="Change icon"
+        title="Change icon"
+        @click="pickerOpen = true"
+      >
+        <AbilityIconCanvas :icon="form.icon" :ability-id="form.id" :size="64" />
+      </button>
 
-      <div class="ab-overview__name-block">
-        <span class="ab-overview__name">{{ displayName }}</span>
-        <span class="ab-overview__id">{{ form.id || '(unsaved)' }}</span>
-      </div>
+      <button
+        type="button"
+        class="ab-overview__identity"
+        data-test="overview-open-settings"
+        aria-label="Open ability settings"
+        @click="onOpenSettings"
+      >
+        <div class="ab-overview__name-block">
+          <span class="ab-overview__name">{{ displayName }}</span>
+          <span class="ab-overview__id">{{ form.id || '(unsaved)' }}</span>
+        </div>
 
-      <div class="ab-overview__badges">
-        <span v-if="form.category" class="ab-overview__badge">{{ form.category }}</span>
-        <span v-if="typeLabel" class="ab-overview__badge">{{ typeLabel }}</span>
-      </div>
-    </button>
+        <div class="ab-overview__badges">
+          <span v-if="form.category" class="ab-overview__badge">{{ form.category }}</span>
+          <span v-if="typeLabel" class="ab-overview__badge">{{ typeLabel }}</span>
+        </div>
+      </button>
+    </div>
+
+    <AbilityIconPicker
+      v-if="pickerOpen"
+      :model-icon="form.icon"
+      :ability-id="form.id"
+      @update:icon="onIconChosen"
+      @close="pickerOpen = false"
+    />
 
     <div v-if="statRows.length" class="ab-overview__stats">
       <span v-for="row in statRows" :key="row.label" class="ab-overview__stat">
@@ -60,10 +81,11 @@
 // selected is already 'ability' would be a same-value write a watcher never
 // fires for. The click is a distinct user action every time; it needs its
 // own event.
-import { computed } from 'vue'
-import { getAbilityPreviewUrl } from '@/game/rendering/abilityAssets'
+import { computed, ref } from 'vue'
 import { useAbilityBuilderContext } from './AbilityBuilderContext'
 import { summarizeEntry } from './summarizeEntry'
+import AbilityIconCanvas from './AbilityIconCanvas.vue'
+import AbilityIconPicker from './AbilityIconPicker.vue'
 
 const emit = defineEmits<{
   (e: 'open-identity'): void
@@ -78,6 +100,13 @@ function onOpenSettings() {
 
 const form = computed(() => builder.form.value)
 
+// ── icon picker ─────────────────────────────────────────────────────────────
+const pickerOpen = ref(false)
+function onIconChosen(icon: string) {
+  builder.updateForm({ icon })
+  pickerOpen.value = false
+}
+
 const displayName = computed(() => form.value.displayName || form.value.id || 'New ability')
 
 const typeLabel = computed(() => {
@@ -85,8 +114,6 @@ const typeLabel = computed(() => {
   if (form.value.type === 'passive') return 'Passive'
   return ''
 })
-
-const iconUrl = computed(() => getAbilityPreviewUrl(form.value.icon, form.value.id))
 
 // statRows: only the cost/timing fields that are actually set — an unset
 // field means "not authored yet", not "authored as zero", so both are
@@ -120,11 +147,32 @@ const descriptionText = computed(() => (isOverride.value ? form.value.descriptio
   background: rgba(15, 23, 42, 0.25);
 }
 
+.ab-overview__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ab-overview__icon-btn {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  padding: 2px;
+  border: 1px solid var(--ed-line);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.ab-overview__icon-btn:hover {
+  border-color: var(--ed-brass);
+}
+
 .ab-overview__identity {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 0;
   border: none;
   background: none;
@@ -137,21 +185,6 @@ const descriptionText = computed(() => (isOverride.value ? form.value.descriptio
   outline: 2px solid rgba(247, 216, 142, 0.9);
   outline-offset: 3px;
   border-radius: 4px;
-}
-
-.ab-overview__icon {
-  flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--ed-line);
-  border-radius: 6px;
-  background: rgba(15, 23, 42, 0.4);
-  image-rendering: pixelated;
-  object-fit: cover;
-}
-
-.ab-overview__icon--empty {
-  opacity: 0.4;
 }
 
 .ab-overview__name-block {

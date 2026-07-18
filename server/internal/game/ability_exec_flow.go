@@ -45,14 +45,22 @@ func (s *GameState) evaluateConditionsLocked(ctx *RuntimeAbilityContext, conds [
 func evaluateOneConditionLocked(ctx *RuntimeAbilityContext, c AbilityConditionDef) bool {
 	switch c.Op {
 	case "eq", "ne", "lt", "lte", "gt", "gte":
-		if c.Left.Key != "selected_count" {
+		// Left operand is either the built-in "selected_count" or a Named
+		// ctxScalar (a loop/hop counter set by set_context). An unknown key that
+		// isn't a bound scalar conservatively fails (documented) so a typo'd gate
+		// never silently runs a branch.
+		var got float64
+		if c.Left.Key == "selected_count" {
+			got = float64(len(ctx.Selected))
+		} else if v, ok := ctx.resolveScalarRef(c.Left); ok {
+			got = v
+		} else {
 			return false
 		}
 		var want float64
 		if err := json.Unmarshal(c.Right, &want); err != nil {
 			return false
 		}
-		got := float64(len(ctx.Selected))
 		switch c.Op {
 		case "eq":
 			return got == want
@@ -88,6 +96,10 @@ func namedContextValueNonEmpty(v ContextValue) bool {
 	case ctxUnitID:
 		return v.UnitID != 0
 	case ctxPosition:
+		return true
+	case ctxScalar:
+		// A bound counter is "present" regardless of value (0 is a real count),
+		// so `has` sees a zeroed hop counter and `not` sees an unset one.
 		return true
 	default:
 		return false
@@ -160,6 +172,25 @@ type repeatConfig struct {
 }
 
 func (repeatConfig) actionConfig() {}
+
+// ── set_context ───────────────────────────────────────────────────────────
+
+// setContextConfig writes a scalar into ctx.Named[Key]. Op "set" (or empty,
+// the zero-value default) stores Value verbatim; op "add" adds Value to the
+// existing scalar there (treating an absent/non-scalar binding as 0), so a
+// loop body can do set_context(add 1) each pass to advance a hop counter.
+type setContextConfig struct {
+	Key   string  `json:"key"`
+	Op    string  `json:"op,omitempty"`
+	Value float64 `json:"value"`
+}
+
+func (setContextConfig) actionConfig() {}
+
+const (
+	setContextOpSet = "set"
+	setContextOpAdd = "add"
+)
 
 // ── trigger_event ───────────────────────────────────────────────────────
 
@@ -385,6 +416,54 @@ func init() {
 	})
 
 	registerAction(ActionDescriptor{
+		Type: ActionSetContext,
+		Decode: func(b json.RawMessage) (ActionConfig, error) {
+			var c setContextConfig
+			if len(b) == 0 {
+				return c, nil
+			}
+			err := json.Unmarshal(b, &c)
+			return c, err
+		},
+		Validate: func(cfg ActionConfig, _ ValidationScope) []ValidationIssue {
+			c := cfg.(setContextConfig)
+			var out []ValidationIssue
+			if c.Key == "" {
+				out = append(out, ValidationIssue{Code: "empty_required_property", Message: "set_context requires key", Severity: "error"})
+			}
+			if c.Op != "" && c.Op != setContextOpSet && c.Op != setContextOpAdd {
+				out = append(out, ValidationIssue{Code: "invalid_property", Message: "set_context op must be set or add", Severity: "error"})
+			}
+			return out
+		},
+		Schema: ActionFieldSchema{Fields: []SchemaField{
+			{Key: "key", Label: "Key", Control: "text", Section: "Basic"},
+			{Key: "op", Label: "Operation", Control: "enum", Options: []string{setContextOpSet, setContextOpAdd}, Section: "Basic"},
+			{Key: "value", Label: "Value", Control: "number", Section: "Basic"},
+		}},
+		// Acts on ctx.Named, not the target set: passes targets through unchanged
+		// so it can sit mid-chain without disturbing previous_action_targets.
+		Execute: func(s *GameState, ctx *RuntimeAbilityContext, cfg ActionConfig, targets []int) []int {
+			c := cfg.(setContextConfig)
+			if c.Key == "" {
+				return targets
+			}
+			if ctx.Named == nil {
+				ctx.Named = map[string]ContextValue{}
+			}
+			next := c.Value
+			if c.Op == setContextOpAdd {
+				if prev, ok := ctx.resolveScalarRef(ContextRef{Key: c.Key}); ok {
+					next = prev + c.Value
+				}
+			}
+			ctx.Named[c.Key] = ContextValue{Kind: ctxScalar, Scalar: next}
+			ctx.trace("context_set", ctx.currentActionPath, map[string]any{"key": c.Key, "op": c.Op, "value": next})
+			return targets
+		},
+	})
+
+	registerAction(ActionDescriptor{
 		Type: ActionTriggerEvent,
 		Decode: func(b json.RawMessage) (ActionConfig, error) {
 			var c triggerEventConfig
@@ -421,12 +500,11 @@ func init() {
 			}
 			ctx.depth++
 			defer func() { ctx.depth-- }() // robustness: restores depth even if anything below ever panics
-			for i := range trg.Actions {
-				if ctx.opsExhausted() {
-					break
-				}
-				s.executeActionLocked(ctx, &trg.Actions[i], "namedTrigger["+c.Trigger+"]")
-			}
+			// runTriggerActionsLocked applies the trigger's Loop header (if any),
+			// so a named trigger re-invoked here as a loop body advances one
+			// iteration per call. A copy is taken because trg is a map value.
+			named := trg
+			s.runTriggerActionsLocked(ctx, &named, "namedTrigger["+c.Trigger+"]")
 			ctx.trace("named_trigger_invoked", ctx.currentActionPath, map[string]any{"trigger": c.Trigger})
 			return nil
 		},

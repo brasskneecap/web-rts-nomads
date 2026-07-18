@@ -13,7 +13,7 @@ var allActionTypes = []ActionType{
 	ActionLaunchProjectile, ActionBeam, ActionChargeFireVolley, ActionSummonUnit, ActionMoveUnit, ActionApplyForce,
 	ActionModifyResource, ActionTriggerEvent, ActionPlayPresentation, ActionPlaySound,
 	ActionChangeRenderLayer, ActionCameraShake, ActionWait, ActionConditional,
-	ActionRepeat, ActionCustom,
+	ActionRepeat, ActionSetContext, ActionLoop, ActionCustom,
 }
 
 // knownActionTypes is the lookup set derived from allActionTypes; the set of
@@ -57,14 +57,14 @@ func validateAbilityProgram(prog *AbilityProgram) []ValidationIssue {
 		// triggers pass channeledBeamAllowed=true; everything else (other root
 		// trigger types, named triggers, presentations, and every NESTED
 		// trigger) passes false, so a channeled beam anywhere else is flagged.
-		w.walkTrigger(trig, fmt.Sprintf("triggers[%d]", i), trig.Type == TriggerOnCastComplete)
+		w.walkTrigger(trig, fmt.Sprintf("triggers[%d]", i), trig.Type == TriggerOnCastComplete, nil)
 	}
 	for key, trig := range prog.NamedTriggers {
-		w.walkTrigger(trig, fmt.Sprintf("namedTriggers[%s]", key), false)
+		w.walkTrigger(trig, fmt.Sprintf("namedTriggers[%s]", key), false, nil)
 	}
 	for p, pres := range prog.Presentations {
 		for i, trig := range pres.Triggers {
-			w.walkTrigger(trig, fmt.Sprintf("presentations[%d].triggers[%d]", p, i), false)
+			w.walkTrigger(trig, fmt.Sprintf("presentations[%d].triggers[%d]", p, i), false, nil)
 		}
 	}
 
@@ -83,7 +83,7 @@ func validateAbilityProgram(prog *AbilityProgram) []ValidationIssue {
 // walkTrigger validates one trigger (duplicate id, tick-interval requirement)
 // and then walks its actions, recursing into any child triggers nested
 // inside those actions.
-func (w *validationWalker) walkTrigger(trig AbilityTriggerDef, path string, channeledBeamAllowed bool) {
+func (w *validationWalker) walkTrigger(trig AbilityTriggerDef, path string, channeledBeamAllowed bool, loopVars map[string]bool) {
 	w.checkDuplicateID(trig.ID, path)
 
 	if trig.Type == TriggerOnZoneTick || trig.Type == TriggerOnStatusTick {
@@ -98,7 +98,7 @@ func (w *validationWalker) walkTrigger(trig AbilityTriggerDef, path string, chan
 	}
 
 	for i, action := range trig.Actions {
-		w.walkAction(action, fmt.Sprintf("%s.actions[%d]", path, i), channeledBeamAllowed)
+		w.walkAction(action, fmt.Sprintf("%s.actions[%d]", path, i), channeledBeamAllowed, loopVars)
 	}
 }
 
@@ -106,7 +106,7 @@ func (w *validationWalker) walkTrigger(trig AbilityTriggerDef, path string, chan
 // descriptor validation) and recurses into any child triggers.
 // channeledBeamAllowed is true only for a direct action of a root
 // on_cast_complete trigger — the one place a channeled beam may start.
-func (w *validationWalker) walkAction(action AbilityActionDef, path string, channeledBeamAllowed bool) {
+func (w *validationWalker) walkAction(action AbilityActionDef, path string, channeledBeamAllowed bool, loopVars map[string]bool) {
 	w.numAction++
 	w.checkDuplicateID(action.ID, path)
 
@@ -118,7 +118,11 @@ func (w *validationWalker) walkAction(action AbilityActionDef, path string, chan
 			Severity: "error",
 		})
 	} else if d, ok := lookupActionDescriptor(action.Type); ok {
-		cfg, err := d.Decode(action.Config)
+		// Replace any in-scope loop-variable references with placeholder numbers
+		// so a body field authored as a variable (e.g. "flatOffset":"a") decodes
+		// for static validation — the runtime substitutes real values per
+		// iteration (resolveConfigVars, ability_exec_loop.go).
+		cfg, err := d.Decode(substituteLoopVarPlaceholders(action.Config, loopVars))
 		if err != nil {
 			w.issues = append(w.issues, ValidationIssue{
 				Path:     path,
@@ -164,25 +168,43 @@ func (w *validationWalker) walkAction(action AbilityActionDef, path string, chan
 			case ActionCreateZone:
 				if zc, ok := cfg.(createZoneConfig); ok {
 					for i, child := range zc.Triggers {
-						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false)
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false, loopVars)
 					}
 				}
 			case ActionApplyStatus:
 				if ac, ok := cfg.(applyStatusConfig); ok {
 					for i, child := range ac.Triggers {
-						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false)
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false, loopVars)
 					}
 				}
 			case ActionLaunchProjectile:
 				if lc, ok := cfg.(launchProjectileConfig); ok {
 					for i, child := range lc.Triggers {
-						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false)
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false, loopVars)
 					}
 				}
 			case ActionBeam:
 				if bc, ok := cfg.(beamConfig); ok {
 					for i, child := range bc.Triggers {
-						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false)
+						w.walkTrigger(child, fmt.Sprintf("%s.config.triggers[%d]", path, i), false, loopVars)
+					}
+				}
+			case ActionLoop:
+				// The loop's variables come into scope for its body, so a body
+				// field authored as a variable reference (e.g. "amount":"a")
+				// validates. Walk each body action under path.body[i].
+				if lc, ok := cfg.(loopConfig); ok {
+					bodyVars := map[string]bool{}
+					for k := range loopVars {
+						bodyVars[k] = true
+					}
+					for _, v := range lc.Vars {
+						if len(v.Name) == 1 {
+							bodyVars[v.Name] = true
+						}
+					}
+					for i := range lc.Body {
+						w.walkAction(lc.Body[i], fmt.Sprintf("%s.body[%d]", path, i), false, bodyVars)
 					}
 				}
 			}
@@ -192,7 +214,7 @@ func (w *validationWalker) walkAction(action AbilityActionDef, path string, chan
 	// silently (no decode, no flag). See task doc for rationale.
 
 	for i, child := range action.Children {
-		w.walkTrigger(child, fmt.Sprintf("%s.children[%d]", path, i), false)
+		w.walkTrigger(child, fmt.Sprintf("%s.children[%d]", path, i), false, loopVars)
 	}
 }
 

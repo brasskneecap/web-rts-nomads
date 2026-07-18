@@ -64,6 +64,8 @@ func TestActionTargetingShape_MatchesExecuteUsage(t *testing.T) {
 		ActionWait:             false,
 		ActionConditional:      false,
 		ActionRepeat:           false,
+		ActionSetContext:       false, // writes a scalar into ctx.Named, passes targets through untouched (ability_exec_flow.go)
+		ActionLoop:             false, // runs its own body; ignores the incoming target set (ability_exec_loop.go)
 		ActionTriggerEvent:     false,
 		ActionPlayPresentation: false, // attaches via Input["attach"] or renders at a position
 	}

@@ -5,7 +5,7 @@
   "canTargetEnemies": true,
   "castRange": 250,
   "castTime": 0.5,
-  "manaCost": 5,
+  "manaCost": 10,
   "cooldown": 5,
   "damageType": "cold",
   "category": "offensive",
@@ -14,6 +14,7 @@
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
   "defaultAutoCast": true,
+  "icon": "projectile:frost_bolt",
   "schemaVersion": 2,
   "program": {
     "entry": {

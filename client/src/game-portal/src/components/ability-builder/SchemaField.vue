@@ -9,9 +9,31 @@
   </label>
 
   <EditorField v-else :label="field.label" :hint="hint" :for-id="fieldId">
-    <!-- number -->
+    <!-- number: inside a loop (variableCapable), a Number/Variable mode
+         selector swaps a literal number input for a dropdown of the loop's
+         variables (blank when the loop has none). Outside a loop it's a plain
+         number input, unchanged. -->
+    <div v-if="field.control === 'number' && variableCapable" class="sf-numvar" data-test="numvar">
+      <select class="sf-numvar__mode" :value="mode" :aria-label="`${field.label} value kind`" data-test="numvar-mode" @change="onModeChange">
+        <option value="number">Number</option>
+        <option value="variable">Variable</option>
+      </select>
+      <input
+        v-if="mode === 'number'"
+        :id="fieldId"
+        type="number"
+        :value="localText"
+        data-test="numvar-number"
+        @input="onLocalInput"
+        @change="commitNumber"
+      />
+      <select v-else class="sf-numvar__pick" :value="variablePick" :aria-label="`${field.label} variable`" data-test="numvar-variable" @change="onVariablePick">
+        <option value="">—</option>
+        <option v-for="v in (loopVars ?? [])" :key="v" :value="v">{{ v }}</option>
+      </select>
+    </div>
     <input
-      v-if="field.control === 'number'"
+      v-else-if="field.control === 'number'"
       :id="fieldId"
       type="number"
       :value="localText"
@@ -188,6 +210,13 @@ const props = defineProps<{
   enums: Record<string, string[]>
   /** Display catalogs (effects, projectiles, damageTypes, ...) for enum/asset resolution. */
   catalogs: AbilityBuilderCatalogs
+  /** When this field sits inside a loop, a `number` control offers a
+   *  Number/Variable choice; the loop's variable names go here. */
+  loopVars?: string[]
+  /** True when this field is inside a loop — enables the number field's
+   *  literal-or-variable selector. Off (default) keeps every existing field
+   *  a plain number input. */
+  variableCapable?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [value: unknown] }>()
@@ -233,6 +262,35 @@ function commitText() {
 function commitNumber() {
   const n = Number(localText.value)
   emit('update:modelValue', Number.isFinite(n) ? n : 0)
+}
+
+// ── number field's literal-or-variable selector (loop bodies only) ──────────
+// A value is a variable reference when it's a single lowercase letter string
+// (matching the a..z loop-variable grammar). `mode` is a local toggle seeded
+// from the value and re-seeded whenever the value changes externally, but the
+// user can flip it to author a variable before one is picked.
+const isVariableValue = computed(() => typeof props.modelValue === 'string' && /^[a-z]$/.test(props.modelValue))
+const mode = ref<'number' | 'variable'>(isVariableValue.value ? 'variable' : 'number')
+watch(isVariableValue, (isVar) => {
+  mode.value = isVar ? 'variable' : 'number'
+})
+
+const variablePick = computed(() => (isVariableValue.value ? (props.modelValue as string) : ''))
+
+function onModeChange(e: Event) {
+  const next = (e.target as HTMLSelectElement).value
+  if (next === 'variable') {
+    mode.value = 'variable' // leave the value until a variable is picked (dropdown blank)
+  } else {
+    mode.value = 'number'
+    const n = Number(localText.value)
+    emit('update:modelValue', Number.isFinite(n) ? n : 0) // commit a real number
+  }
+}
+
+function onVariablePick(e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  if (v) emit('update:modelValue', v) // the "—" placeholder emits nothing
 }
 
 function commitBoolean(e: Event) {
@@ -323,6 +381,32 @@ function commitContextRef(e: Event) {
 </script>
 
 <style scoped>
+.sf-numvar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* The global .ed-shell rule forces width:100% on every input/select, which
+   makes both children of this flex row overflow the narrow inspector column
+   (one gets shoved off). Reset to auto here so flex sizes them instead: the
+   mode select shrinks to its content, the value input takes the rest and can
+   shrink to fit. */
+.sf-numvar__mode {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 7em;
+}
+
+.sf-numvar input,
+.sf-numvar__pick {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+}
+
 .sf-suffixed {
   display: flex;
   align-items: center;

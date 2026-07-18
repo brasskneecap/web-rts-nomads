@@ -15,10 +15,12 @@
     "dot"
   ],
   "category": "offensive",
+  "targetCount": 1,
+  "summonCount": 1,
   "supportsAutoCast": true,
   "autoCastTargetSelector": "closest_enemy_in_range",
   "defaultAutoCast": true,
-  "icon": "TODO/abilities/meteor.png",
+  "icon": "effect:meteor@3",
   "casterAnimation": "Attacking",
   "schemaVersion": 2,
   "program": {

@@ -10,6 +10,12 @@ const (
 	ctxUnitID
 	ctxUnitSet
 	ctxPosition
+	// ctxScalar holds a plain number (Scalar field) — a loop/hop counter, a
+	// running tally, etc. Set/incremented by the set_context action, read by
+	// scalar-comparison conditions and by deal_damage's flatOffsetRef. Rides
+	// CarriedNamed across beam/projectile hops like every other Named entry, so
+	// a chain's bounce counter survives from one impact to the next.
+	ctxScalar
 )
 
 // ContextValue is one typed runtime value bound under a name (an output binding)
@@ -20,6 +26,7 @@ type ContextValue struct {
 	UnitID   int
 	UnitIDs  []int
 	Position protocol.Vec2
+	Scalar   float64
 }
 
 // RuntimeAbilityContext is the typed context one program execution runs under.
@@ -247,12 +254,7 @@ func (s *GameState) runProgramTriggersLocked(ctx *RuntimeAbilityContext, trigger
 			continue
 		}
 		ctx.trace("trigger_fired", trg.ID, map[string]any{"type": string(trg.Type)})
-		for ai := range trg.Actions {
-			if ctx.opsExhausted() {
-				break
-			}
-			s.executeActionLocked(ctx, &trg.Actions[ai], trg.ID)
-		}
+		s.runTriggerActionsLocked(ctx, trg, trg.ID)
 	}
 }
 
@@ -278,7 +280,10 @@ func (s *GameState) executeActionLocked(ctx *RuntimeAbilityContext, a *AbilityAc
 		ctx.trace("action_skipped", apath, map[string]any{"type": string(a.Type)})
 		return
 	}
-	cfg, err := desc.Decode(a.Config)
+	// Resolve loop-variable references (a..z) in the raw config to their current
+	// iteration values before decode — a no-op with zero cost when no loop is
+	// active (see resolveConfigVars, ability_exec_loop.go).
+	cfg, err := desc.Decode(ctx.resolveConfigVars(a.Config))
 	if err != nil {
 		ctx.trace("validation_error", apath, map[string]any{"error": err.Error()})
 		return
@@ -368,4 +373,15 @@ func (ctx *RuntimeAbilityContext) resolveTargetRef(ref ContextRef) []int {
 		}
 	}
 	return nil
+}
+
+// resolveScalarRef reads a ContextRef into a number: the Named binding at
+// ref.Key when it holds a ctxScalar. Returns (0, false) when the key is absent
+// or bound to a non-scalar value, so callers can distinguish "counter not set
+// yet" from "counter is 0".
+func (ctx *RuntimeAbilityContext) resolveScalarRef(ref ContextRef) (float64, bool) {
+	if v, ok := ctx.Named[ref.Key]; ok && v.Kind == ctxScalar {
+		return v.Scalar, true
+	}
+	return 0, false
 }

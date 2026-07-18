@@ -69,6 +69,8 @@ export type ActionType =
   | 'wait'
   | 'conditional'
   | 'repeat'
+  | 'set_context'
+  | 'loop'
   | 'custom'
   | (string & {})
 
@@ -219,6 +221,21 @@ export interface AbilityTriggerDef {
   timing?: TriggerTiming
   conditions?: AbilityConditionDef[]
   actions: AbilityActionDef[]
+}
+
+// LoopVar is one loop variable: at iteration k it holds start + step*k. Name is
+// a single lowercase letter a..z. Used by a `loop` action's config (Go's
+// LoopVar). The loop action's config also carries `iterations` and `body`
+// (a nested AbilityActionDef[]); config is an opaque bag, so those are read
+// ad hoc (see loopEditor.ts) rather than typed on AbilityActionDef.
+export interface LoopVar {
+  name: string
+  start: number
+  step: number
+  // stepMode selects how `step` applies each iteration: "number" (or omitted) =
+  // additive (start + step*k); "percent" = multiplicative, compounding step%
+  // per iteration. Mirrors Go's LoopVar.StepMode.
+  stepMode?: string
 }
 
 // ZoneDef describes a persistent area-of-effect spawned by an action.

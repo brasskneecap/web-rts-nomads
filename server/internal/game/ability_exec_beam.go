@@ -40,6 +40,25 @@ import "encoding/json"
 // beam leaves Variant unset.
 const defaultBeamVariant = "lightning_bolt"
 
+// beamSpawnOriginOptions extends the launch_projectile origins with
+// named_context_value — a beam (unlike a projectile) threads a SpawnOriginRef,
+// so it can arc FROM a named "cursor" unit (a loop chain's current target).
+var beamSpawnOriginOptions = append(append([]string{}, launchProjectileSpawnOriginOptions...), string(OriginNamedContextValue))
+
+// isValidBeamSpawnOrigin reports whether origin is unset (caster default) or one
+// of beamSpawnOriginOptions.
+func isValidBeamSpawnOrigin(origin TargetOrigin) bool {
+	if origin == "" {
+		return true
+	}
+	for _, o := range beamSpawnOriginOptions {
+		if string(origin) == o {
+			return true
+		}
+	}
+	return false
+}
+
 // beamConfig is the unified beam action config. The Channeled toggle selects
 // which field group and which nested trigger apply:
 //   - momentary: Variant/SpawnOrigin/ImpactDelaySeconds/DurationMs + on_beam_impact
@@ -56,6 +75,10 @@ const defaultBeamVariant = "lightning_bolt"
 type beamConfig struct {
 	Variant     string       `json:"variant,omitempty"`
 	SpawnOrigin TargetOrigin `json:"spawnOrigin,omitempty"`
+	// SpawnOriginRef supplies the named-context key when SpawnOrigin is
+	// "named_context_value" — e.g. a loop chain arcing FROM its "cursor" unit
+	// (the current target) TO the next. nil for every other origin.
+	SpawnOriginRef *ContextRef `json:"spawnOriginRef,omitempty"`
 	// Channeled selects the channeled lifecycle over the momentary one-shot.
 	Channeled bool `json:"channeled,omitempty"`
 
@@ -107,7 +130,7 @@ func init() {
 				if c.ImpactDelaySeconds < 0 {
 					out = append(out, ValidationIssue{Code: "invalid_property", Message: "beam impactDelaySeconds must not be negative", Severity: "error"})
 				}
-				if !isValidLaunchProjectileSpawnOrigin(c.SpawnOrigin) {
+				if !isValidBeamSpawnOrigin(c.SpawnOrigin) {
 					out = append(out, ValidationIssue{Code: "invalid_property", Message: "unknown spawnOrigin " + string(c.SpawnOrigin), Severity: "error"})
 				}
 			}
@@ -121,7 +144,7 @@ func init() {
 			{Key: "variant", Label: "Variant", Control: "text", Section: "Presentation"},
 			{Key: "channeled", Label: "Channeled", Control: "boolean", Section: "Properties"},
 			// momentary-only fields (hidden while channeled)
-			{Key: "spawnOrigin", Label: "Spawn Origin", Control: "enum", Options: launchProjectileSpawnOriginOptions, Section: "Advanced", ShowWhen: beamMomentaryShowWhen()},
+			{Key: "spawnOrigin", Label: "Spawn Origin", Control: "enum", Options: beamSpawnOriginOptions, Section: "Advanced", ShowWhen: beamMomentaryShowWhen()},
 			{Key: "impactDelaySeconds", Label: "Impact Delay (s)", Control: "number", Section: "Advanced", ShowWhen: beamMomentaryShowWhen()},
 			{Key: "durationMs", Label: "Duration (ms)", Control: "number", Section: "Presentation", ShowWhen: beamMomentaryShowWhen()},
 			// channeled-only fields (shown only while channeled) — this is the
@@ -187,14 +210,14 @@ func (s *GameState) executeMomentaryBeamLocked(ctx *RuntimeAbilityContext, c bea
 	if delay == 0 {
 		delay = beamProcDamageDelaySeconds
 	}
-	originPos := s.resolveOriginLocked(ctx, c.SpawnOrigin, nil)
+	originPos := s.resolveOriginLocked(ctx, c.SpawnOrigin, c.SpawnOriginRef)
 	// The VISUAL-origin unit (Beam.CasterUnitID) is the unit at the spawn
 	// origin, NOT necessarily the caster: a chain bounce spawns from
 	// current_event_position, so it must lift from the previous victim's chest
 	// to read as a continuous chain. Falls back to the caster for
 	// caster-relative origins, 0 for pure-position origins. Attribution / beam
 	// ownership still come from caster.ID (first arg), unchanged.
-	originUnit := s.originUnitForSpawnLocked(ctx, c.SpawnOrigin)
+	originUnit := s.originUnitForSpawnLocked(ctx, c.SpawnOrigin, c.SpawnOriginRef)
 
 	hit := make([]int, 0, len(targets))
 	for _, id := range targets {

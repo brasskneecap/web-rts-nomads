@@ -2,7 +2,7 @@
   <!-- worldMenu = the black/brass outer frame used by the meta screens
        (advancements, custom game), so an editor reads as part of the same
        world rather than a bolted-on tool. -->
-  <UiPanel variant="worldMenu" :padding="0" class="ed-shell">
+  <UiPanel variant="worldMenu" :padding="0" :class="['ed-shell', theme ? `ed-theme-${theme}` : '']">
     <div
       class="ed-shell__grid"
       :class="{
@@ -38,6 +38,9 @@ import UiPanel from '@/components/ui/UiPanel.vue'
 // Form chrome for every control rendered inside .ed-shell. Imported here (not
 // in each field component) so a single import covers the whole editor.
 import './editor-controls.css'
+// Opt-in editor skins (e.g. `theme="forge"`). Scoped under .ed-theme-<name>,
+// so importing it is inert until a shell actually sets the theme prop.
+import './editor-theme.css'
 
 withDefaults(defineProps<{
   /** Rail gets ~2/3 of the content width instead of a fixed narrow column,
@@ -45,6 +48,10 @@ withDefaults(defineProps<{
    *  rather than a companion (the ability builder). Default false keeps the
    *  five existing EditorShell consumers byte-identical. */
   wideRail?: boolean
+  /** Opt-in visual skin, applied as `.ed-theme-<theme>` on the shell (see
+   *  editor-theme.css). Omit for the default wood look. Set the same value on
+   *  the item/unit editors' shells to bring them along. */
+  theme?: string
 }>(), {
   wideRail: false,
 })
